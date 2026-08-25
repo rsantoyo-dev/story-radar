@@ -1,0 +1,185 @@
+.panel {
+  border: 1px solid rgba(83, 101, 87, 0.2);
+  border-radius: 22px;
+  background: #f8fbf8;
+  box-shadow: 0 14px 36px rgba(32, 53, 38, 0.06);
+  padding: clamp(1.2rem, 2.5vw, 2rem);
+}
+
+.heading,
+.topicRow,
+.sourcesHeading,
+.sourceList > li,
+.sourceActions,
+.topicActions,
+.formActions {
+  display: flex;
+  align-items: center;
+}
+
+.heading,
+.sourcesHeading {
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.heading p,
+.sourcesHeading p {
+  margin: 0 0 0.25rem;
+  color: #62806b;
+  font-size: 0.76rem;
+  font-weight: 750;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.heading h2,
+.sourcesHeading h3 {
+  margin: 0;
+  color: #1f3627;
+}
+
+.heading small,
+.sourcesHeading p {
+  display: block;
+  margin-top: 0.45rem;
+  color: #637065;
+  line-height: 1.45;
+}
+
+.count,
+.enabled,
+.disabled {
+  border-radius: 999px;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.count,
+.enabled {
+  background: #dff2e1;
+  color: #27613a;
+}
+
+.disabled {
+  background: #ecefed;
+  color: #647067;
+}
+
+.topicRow {
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1.4rem;
+  padding: 1rem;
+  border-radius: 14px;
+  background: #eaf2eb;
+}
+
+.topicRow label,
+.topicForm label,
+.formGrid label,
+.sourceForm > label {
+  display: grid;
+  gap: 0.35rem;
+  color: #405347;
+  font-size: 0.79rem;
+  font-weight: 700;
+}
+
+.topicRow select {
+  min-width: min(22rem, 60vw);
+}
+
+.topicActions,
+.sourceActions,
+.formActions {
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.panel button {
+  border: 1px solid #b9c9bc;
+  border-radius: 9px;
+  background: #fff;
+  color: #24442e;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 0.5rem 0.7rem;
+}
+
+.panel button:hover:not(:disabled) { background: #ecf5ed; }
+.panel button:disabled { cursor: not-allowed; opacity: 0.55; }
+.panel .remove { border-color: #e5b9b5; color: #a04239; }
+
+.locked,
+.loading,
+.empty,
+.notice,
+.error {
+  margin: 1rem 0 0;
+  border-radius: 10px;
+  padding: 0.75rem 0.9rem;
+  font-size: 0.88rem;
+}
+
+.locked { background: #f2f2ed; color: #636658; }
+.loading { color: #647067; }
+.empty { display: grid; gap: 0.25rem; background: #edf3ed; color: #4c6151; }
+.notice { background: #e3f3e5; color: #2d6339; }
+.error { background: #fde9e6; color: #953c35; }
+
+.topicForm,
+.sourceForm {
+  display: grid;
+  gap: 0.9rem;
+  margin-top: 1rem;
+  border: 1px solid #d1ddd3;
+  border-radius: 14px;
+  background: #fff;
+  padding: 1rem;
+}
+
+.topicForm { grid-template-columns: minmax(12rem, 1fr) minmax(15rem, 2fr) auto; align-items: end; }
+.sourceForm > p { margin: 0; color: #68766b; font-size: 0.8rem; line-height: 1.45; }
+
+.formGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.8rem; }
+
+.panel input,
+.panel select {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid #bdcbbf;
+  border-radius: 8px;
+  background: #fff;
+  color: #1f3324;
+  font: inherit;
+  padding: 0.52rem 0.6rem;
+}
+
+.toggle { display: flex !important; align-items: center; gap: 0.5rem; }
+.toggle input { width: auto; }
+
+.sourcesHeading { margin-top: 1.7rem; }
+.sourceList { display: grid; gap: 0.7rem; margin: 1rem 0 0; padding: 0; list-style: none; }
+.sourceList > li { flex-wrap: wrap; justify-content: space-between; gap: 0.8rem; border: 1px solid #d8e1d9; border-radius: 13px; background: #fff; padding: 0.85rem 0.9rem; }
+.sourceCopy { min-width: 0; flex: 1; display: grid; gap: 0.25rem; }
+.sourceCopy > div { display: flex; align-items: center; gap: 0.5rem; }
+.sourceCopy a { overflow: hidden; color: #336a47; font-size: 0.82rem; text-overflow: ellipsis; white-space: nowrap; }
+.sourceCopy small { color: #6a766c; font-size: 0.75rem; }
+.preview { width: 100%; border-top: 1px solid #e1e8e2; padding-top: 0.7rem; color: #45584a; font-size: 0.82rem; }
+.preview ol { display: grid; gap: 0.35rem; margin: 0.45rem 0 0; padding-left: 1.2rem; }
+.preview a { color: #2b6040; }
+
+@media (max-width: 700px) {
+  .heading,
+  .topicRow,
+  .sourcesHeading { align-items: flex-start; flex-direction: column; }
+  .topicRow select { min-width: 0; }
+  .topicForm,
+  .formGrid { grid-template-columns: 1fr; }
+  .sourceList > li { align-items: stretch; }
+}

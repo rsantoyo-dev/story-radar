@@ -1,0 +1,2 @@
+CREATE TYPE "public"."story_content_enrichment_method" AS ENUM('direct', 'reader');--> statement-breakpoint
+ALTER TABLE "story_content_enrichments" ADD COLUMN "method" "story_content_enrichment_method" DEFAULT 'direct' NOT NULL;

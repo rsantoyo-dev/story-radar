@@ -1,0 +1,1 @@
+CREATE INDEX "stories_retention_idx" ON "stories" USING btree ("processing_status","last_seen_at");

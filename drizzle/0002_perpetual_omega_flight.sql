@@ -1,0 +1,1 @@
+ALTER TABLE "stories" ADD COLUMN "relevance_reasons" text[] DEFAULT ARRAY[]::text[] NOT NULL;

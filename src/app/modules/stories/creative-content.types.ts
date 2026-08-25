@@ -1,0 +1,315 @@
+export const CREATIVE_FORMATS = ["meme", "carousel"] as const;
+export type CreativeFormat = (typeof CREATIVE_FORMATS)[number];
+
+export const CREATIVE_ASPECT_RATIOS = ["1:1", "4:5", "16:9"] as const;
+export type CreativeAspectRatio = (typeof CREATIVE_ASPECT_RATIOS)[number];
+
+export const CREATIVE_IMAGE_QUALITIES = [
+  "auto",
+  "low",
+  "medium",
+  "high",
+] as const;
+export type CreativeImageQuality = (typeof CREATIVE_IMAGE_QUALITIES)[number];
+/** Default for new batches. Existing batches are migrated as high. */
+export const DEFAULT_CREATIVE_IMAGE_QUALITY: CreativeImageQuality = "low";
+
+export const DEFAULT_CREATIVE_VISUAL_GUIDANCE =
+  "Create a clear, modern editorial visual direction appropriate to the topic and audience. Use a focused composition, high legibility, inclusive imagery, and generous negative space. Respect the selected output format and avoid watermarks, unapproved logos, or misleading visual claims.";
+
+export const CREATIVE_TONES = [
+  "informative",
+  "curious",
+  "playful",
+  "inspiring",
+  "cautious",
+  "urgent",
+  "somber",
+] as const;
+export type CreativeTone = (typeof CREATIVE_TONES)[number];
+
+export type CreativeContentSufficiency =
+  | "sufficient"
+  | "limited"
+  | "insufficient";
+export type CreativeDraftStatus = "draft" | "approved";
+export type CreativeUnitRole =
+  | "cover"
+  | "content"
+  | "conclusion"
+  | "call-to-action";
+export type CreativeAssetRequest = "generated-image" | "typography-only";
+export type CreativeAssetBatchStatus =
+  | "queued"
+  | "generating"
+  | "partial"
+  | "completed"
+  | "failed"
+  | "stale";
+export type CreativeAssetStatus =
+  | "queued"
+  | "generating"
+  | "generated"
+  | "failed"
+  | "approved"
+  | "stale";
+
+export type CreativeProfile = {
+  id: string;
+  name: string;
+  language: string;
+  region: string;
+  platform: string;
+  audience: string;
+  visualGuidance: string;
+  brandPersonality: string[];
+  formality: number;
+  humor: number;
+  energy: number;
+  optimism: number;
+  provocation: number;
+  allowEmojis: boolean;
+  maxEmojis: number;
+  callToActionStyle: string;
+  updatedAt: Date;
+};
+
+export type EditableCreativeProfile = Omit<
+  CreativeProfile,
+  "id" | "updatedAt"
+>;
+
+export type CreativeFormatScore = {
+  format: CreativeFormat;
+  score: number;
+  reason: string;
+};
+
+export type CreativeKeyFact = {
+  id: string;
+  statement: string;
+};
+
+export type CreativeSuggestedConcept = {
+  format: CreativeFormat;
+  title: string;
+  concept: string;
+};
+
+export type GeneratedCreativeBrief = {
+  recommendedFormat: CreativeFormat;
+  fallbackFormat: CreativeFormat;
+  formatScores: CreativeFormatScore[];
+  confidence: number;
+  targetAudience: string;
+  keyMessage: string;
+  angle: string;
+  hook: string;
+  tone: {
+    primary: CreativeTone;
+    energy: number;
+    humor: number;
+    reason: string;
+  };
+  contentSufficiency: CreativeContentSufficiency;
+  keyFacts: CreativeKeyFact[];
+  riskFlags: string[];
+  suggestedConcepts: CreativeSuggestedConcept[];
+};
+
+export type CreativeBrief = GeneratedCreativeBrief & {
+  id: string;
+  storyId: string;
+  profileId: string;
+  profileSnapshot: CreativeProfile;
+  provider: string;
+  model: string;
+  modelVersion?: string;
+  promptVersion: string;
+  inputHash: string;
+  usage: CreativeAiUsage;
+  createdAt: Date;
+};
+
+export type CreativeUnit = {
+  id?: string;
+  order: number;
+  type: "meme-frame" | "carousel-slide";
+  role: CreativeUnitRole;
+  headline: string;
+  body?: string;
+  visualDirection: string;
+  factIds: string[];
+  assetRequest: CreativeAssetRequest;
+  aspectRatio: CreativeAspectRatio;
+};
+
+export type GeneratedCreativeDraft = {
+  concept: string;
+  caption: string;
+  callToAction?: string;
+  hashtags: string[];
+  altText: string;
+  units: CreativeUnit[];
+};
+
+export type CreativeDraft = GeneratedCreativeDraft & {
+  id: string;
+  storyId: string;
+  briefId: string;
+  format: CreativeFormat;
+  outputAspectRatio: CreativeAspectRatio;
+  status: CreativeDraftStatus;
+  version: number;
+  provider: string;
+  model: string;
+  modelVersion?: string;
+  promptVersion: string;
+  inputHash: string;
+  usage: CreativeAiUsage;
+  approvedAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type EditableCreativeDraft = Pick<
+  GeneratedCreativeDraft,
+  "concept" | "caption" | "callToAction" | "hashtags" | "altText" | "units"
+> & {
+  outputAspectRatio: CreativeAspectRatio;
+};
+
+export type CreativeAiUsage = {
+  promptTokens: number;
+  outputTokens: number;
+  thoughtsTokens: number;
+  totalTokens: number;
+};
+
+export type CreativeDailyUsage = CreativeAiUsage & {
+  runs: number;
+  maxRuns: number;
+  remainingRuns: number;
+};
+
+export type CreativeWorkspaceState = {
+  story: {
+    storyId: string;
+    title: string;
+    url: string;
+    contentStatus: "excerpt" | "full" | "likely-full" | "missing";
+    contentSource: "rss" | "article";
+    hasContent: boolean;
+  };
+  profile: CreativeProfile;
+  brief?: CreativeBrief;
+  briefIsCurrent: boolean;
+  drafts: CreativeDraft[];
+  daily: CreativeDailyUsage;
+  configuration: {
+    provider: string;
+    model: string;
+    briefPromptVersion: string;
+    draftPromptVersions: Record<CreativeFormat, string>;
+  };
+};
+
+export type CreativeGenerationResult = {
+  outcome: "generated" | "cached";
+  state: CreativeWorkspaceState;
+};
+
+export type CreativeGeneratedAsset = {
+  id: string;
+  batchId: string;
+  unitOrder: number;
+  unitRole: CreativeUnitRole;
+  version: number;
+  availableVersions: number;
+  status: CreativeAssetStatus;
+  provider: string;
+  model: string;
+  promptVersion: string;
+  prompt: string;
+  expectedText: string;
+  unitSnapshot: CreativeUnit;
+  requestId?: string;
+  imageUrl?: string;
+  contentType?: string;
+  fileName?: string;
+  fileSize?: number;
+  width?: number;
+  height?: number;
+  seed?: number;
+  safetyFlag?: boolean;
+  error?: string;
+  completedAt?: Date;
+  approvedAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type CreativeAssetBatch = {
+  id: string;
+  draftId: string;
+  draftVersion: number;
+  status: CreativeAssetBatchStatus;
+  provider: string;
+  model: string;
+  promptVersion: string;
+  outputAspectRatio: CreativeAspectRatio;
+  imageQuality: CreativeImageQuality;
+  width: number;
+  height: number;
+  totalAssets: number;
+  approvedAssets: number;
+  allApproved: boolean;
+  assets: CreativeGeneratedAsset[];
+  completedAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type CreativeAssetConfiguration = {
+  provider: string;
+  model: string;
+  width: number;
+  height: number;
+  promptVersion: string;
+  imageQuality: CreativeImageQuality;
+  outputFormat: "png";
+};
+
+export type CreativeAssetBatchResponse = {
+  batch?: CreativeAssetBatch;
+  configuration: CreativeAssetConfiguration;
+};
+
+export function isCreativeFormat(value: unknown): value is CreativeFormat {
+  return value === "meme" || value === "carousel";
+}
+
+export function isCreativeAspectRatio(
+  value: unknown,
+): value is CreativeAspectRatio {
+  return (
+    typeof value === "string" &&
+    (CREATIVE_ASPECT_RATIOS as readonly string[]).includes(value)
+  );
+}
+
+export function isCreativeImageQuality(
+  value: unknown,
+): value is CreativeImageQuality {
+  return (
+    typeof value === "string" &&
+    (CREATIVE_IMAGE_QUALITIES as readonly string[]).includes(value)
+  );
+}
+
+export function isCreativeTone(value: unknown): value is CreativeTone {
+  return (
+    typeof value === "string" &&
+    (CREATIVE_TONES as readonly string[]).includes(value)
+  );
+}
