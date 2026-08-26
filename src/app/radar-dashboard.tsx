@@ -349,6 +349,7 @@ export function RadarDashboard({
     title: string;
   }>();
   const [notice, setNotice] = useState<Notice>();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const isBusy = activeOperation !== undefined;
   const canAuthenticate = secret.trim().length > 0;
@@ -812,9 +813,12 @@ export function RadarDashboard({
   }
 
   return (
-    <main className={styles.page}>
-      <div className={styles.shell}>
-        <header className={styles.header}>
+    <main className={styles.appShell}>
+      <aside
+        className={`${styles.sidebar} ${sidebarOpen ? styles.sidebarOpen : ""}`}
+        aria-label="Primary navigation"
+      >
+        <div className={styles.sidebarHeader}>
           <div className={styles.brand}>
             <span className={styles.logo} aria-hidden="true">
               <span />
@@ -824,10 +828,109 @@ export function RadarDashboard({
               <h1>Story Radar</h1>
             </div>
           </div>
+          <button
+            type="button"
+            className={styles.closeSidebarButton}
+            onClick={() => setSidebarOpen(false)}
+            aria-label="Close navigation"
+          >
+            ×
+          </button>
+        </div>
+
+        <nav className={styles.sidebarNav}>
+          <p className={styles.navLabel}>Workspace</p>
+          <a href="#overview" onClick={() => setSidebarOpen(false)}>
+            <span className={styles.navIcon} aria-hidden="true">⌂</span>
+            Overview
+          </a>
+          <a href="#configuration" onClick={() => setSidebarOpen(false)}>
+            <span className={styles.navIcon} aria-hidden="true">◈</span>
+            Topics & sources
+          </a>
+          <a href="#editorial" onClick={() => setSidebarOpen(false)}>
+            <span className={styles.navIcon} aria-hidden="true">✦</span>
+            Editorial AI
+          </a>
+          <a href="#stories" onClick={() => setSidebarOpen(false)}>
+            <span className={styles.navIcon} aria-hidden="true">▤</span>
+            Story review
+          </a>
+          <a href="#optimization" onClick={() => setSidebarOpen(false)}>
+            <span className={styles.navIcon} aria-hidden="true">◌</span>
+            Optimization
+          </a>
+          <a href="#settings" onClick={() => setSidebarOpen(false)}>
+            <span className={styles.navIcon} aria-hidden="true">⚙</span>
+            System settings
+          </a>
+        </nav>
+
+        <div className={styles.sidebarFooter}>
           <span className={styles.environment}>Neon · Development</span>
+          <p>Editorial operations workspace</p>
+        </div>
+      </aside>
+
+      {sidebarOpen ? (
+        <button
+          type="button"
+          className={styles.sidebarBackdrop}
+          onClick={() => setSidebarOpen(false)}
+          aria-label="Close navigation"
+        />
+      ) : null}
+
+      <div className={styles.appMain}>
+        <header className={styles.topbar}>
+          <div className={styles.topbarLeft}>
+            <button
+              type="button"
+              className={styles.menuButton}
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Open navigation"
+              aria-expanded={sidebarOpen}
+            >
+              <span />
+              <span />
+              <span />
+            </button>
+            <div className={styles.currentTopic}>
+              <span className={styles.topbarLabel}>Current topic</span>
+              <div className={styles.topicSelectWrap}>
+                <select
+                  value={selectedTopicId}
+                  onChange={(event) => handleTopicChange(event.target.value)}
+                  disabled={isBusy}
+                  aria-label="Current topic"
+                >
+                  {topics.map((topic) => (
+                    <option key={topic.id} value={topic.id}>
+                      {topic.name}
+                    </option>
+                  ))}
+                </select>
+                <span aria-hidden="true">⌄</span>
+              </div>
+            </div>
+          </div>
+
+          <label className={styles.searchField}>
+            <span className={styles.searchIcon} aria-hidden="true">⌕</span>
+            <input
+              type="search"
+              placeholder="Search news · coming soon"
+              disabled
+              aria-label="Search news (coming soon)"
+            />
+            <span className={styles.searchHint}>⌘ K</span>
+          </label>
         </header>
 
-        <section className={styles.hero}>
+        <div className={styles.page}>
+          <div className={styles.shell}>
+
+        <section id="overview" className={`${styles.hero} ${styles.anchorTarget}`}>
           <div>
             <p className={styles.kicker}>RSS intelligence pipeline</p>
             <h2>Operate your radar from one place.</h2>
@@ -843,42 +946,46 @@ export function RadarDashboard({
           </div>
         </section>
 
-        <TopicConfigurationPanel
-          topics={topics}
-          selectedTopicId={selectedTopicId}
-          secret={secret}
-          disabled={isBusy}
-          onTopicsChange={setTopics}
-          onTopicChange={handleTopicChange}
-        />
+        <div id="configuration" className={styles.anchorTarget}>
+          <TopicConfigurationPanel
+            topics={topics}
+            selectedTopicId={selectedTopicId}
+            secret={secret}
+            disabled={isBusy}
+            onTopicsChange={setTopics}
+            onTopicChange={handleTopicChange}
+          />
+        </div>
 
-        <EditorialProfilePanel
-          topicId={selectedTopicId}
-          secret={secret}
-          disabled={isBusy}
-          onProfileSaved={(profile, reactivatedStories) => {
-            setMaxAgeHours(
-              String(
-                Math.max(
-                  profile.freshness.newsMaxAgeHours,
-                  profile.freshness.researchMaxAgeHours,
+        <div id="editorial" className={styles.anchorTarget}>
+          <EditorialProfilePanel
+            topicId={selectedTopicId}
+            secret={secret}
+            disabled={isBusy}
+            onProfileSaved={(profile, reactivatedStories) => {
+              setMaxAgeHours(
+                String(
+                  Math.max(
+                    profile.freshness.newsMaxAgeHours,
+                    profile.freshness.researchMaxAgeHours,
+                  ),
                 ),
-              ),
-            );
+              );
 
-            if (reactivatedStories > 0) {
-              void fetchDatabaseStats(secret, profile.topicId)
-                .then((nextStats) => {
-                  if (selectedTopicIdRef.current === profile.topicId) {
-                    setStats(nextStats);
-                  }
-                })
-                .catch(() => undefined);
-            }
-          }}
-        />
+              if (reactivatedStories > 0) {
+                void fetchDatabaseStats(secret, profile.topicId)
+                  .then((nextStats) => {
+                    if (selectedTopicIdRef.current === profile.topicId) {
+                      setStats(nextStats);
+                    }
+                  })
+                  .catch(() => undefined);
+              }
+            }}
+          />
+        </div>
 
-        <div className={styles.mainGrid}>
+        <div id="settings" className={`${styles.mainGrid} ${styles.anchorTarget}`}>
           <section className={styles.panel}>
             <div className={styles.panelHeading}>
               <div>
@@ -1056,44 +1163,48 @@ export function RadarDashboard({
           </div>
         </section>
 
-        <OptimizationPanel run={stats?.latestCollectionRun} />
+        <div id="optimization" className={styles.anchorTarget}>
+          <OptimizationPanel run={stats?.latestCollectionRun} />
+        </div>
 
-        <EditorialEvaluationPanel
-          key={selectedTopicId}
-          editorial={stats?.editorial}
-          canEvaluate={canAuthenticate && !isBusy}
-          isEvaluating={activeOperation === "evaluate"}
-          onEvaluate={handleEvaluate}
-          selectedStoryIds={selectedStoryIds}
-          canReview={canAuthenticate && !isBusy}
-          isReviewing={activeOperation === "review"}
-          onToggleStory={toggleStorySelection}
-          onToggleAll={toggleAllShortlistStories}
-          onReview={handleReview}
-          canPrepare={canAuthenticate && !isBusy}
-          preparingStoryId={
-            activeOperation === "prepare" ? activeStoryId : undefined
-          }
-          viewingStoryId={
-            activeOperation === "view" ? activeStoryId : undefined
-          }
-          onPrepareContent={handlePrepareContent}
-          onViewContent={handleViewContent}
-          canPromote={canAuthenticate && !isBusy}
-          promotingStoryId={
-            activeOperation === "promote" ? activeStoryId : undefined
-          }
-          onPromote={handlePromoteReviewCandidate}
-          canTrackPublications={canAuthenticate && !isBusy}
-          updatingPublicationStoryId={
-            activeOperation === "publication" ? activeStoryId : undefined
-          }
-          onUpdatePublication={handlePublicationUpdate}
-          onOpenCreativeStory={(storyId, title) => {
-            setContentViewer(undefined);
-            setCreativeStory({ storyId, title });
-          }}
-        />
+        <div id="stories" className={styles.anchorTarget}>
+          <EditorialEvaluationPanel
+            key={selectedTopicId}
+            editorial={stats?.editorial}
+            canEvaluate={canAuthenticate && !isBusy}
+            isEvaluating={activeOperation === "evaluate"}
+            onEvaluate={handleEvaluate}
+            selectedStoryIds={selectedStoryIds}
+            canReview={canAuthenticate && !isBusy}
+            isReviewing={activeOperation === "review"}
+            onToggleStory={toggleStorySelection}
+            onToggleAll={toggleAllShortlistStories}
+            onReview={handleReview}
+            canPrepare={canAuthenticate && !isBusy}
+            preparingStoryId={
+              activeOperation === "prepare" ? activeStoryId : undefined
+            }
+            viewingStoryId={
+              activeOperation === "view" ? activeStoryId : undefined
+            }
+            onPrepareContent={handlePrepareContent}
+            onViewContent={handleViewContent}
+            canPromote={canAuthenticate && !isBusy}
+            promotingStoryId={
+              activeOperation === "promote" ? activeStoryId : undefined
+            }
+            onPromote={handlePromoteReviewCandidate}
+            canTrackPublications={canAuthenticate && !isBusy}
+            updatingPublicationStoryId={
+              activeOperation === "publication" ? activeStoryId : undefined
+            }
+            onUpdatePublication={handlePublicationUpdate}
+            onOpenCreativeStory={(storyId, title) => {
+              setContentViewer(undefined);
+              setCreativeStory({ storyId, title });
+            }}
+          />
+        </div>
 
         {contentViewer ? (
           <StoryContentViewer
@@ -1170,6 +1281,8 @@ export function RadarDashboard({
             </div>
           </div>
         </section>
+          </div>
+        </div>
       </div>
     </main>
   );
