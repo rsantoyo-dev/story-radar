@@ -7,7 +7,7 @@ import type {
   TopicEditorialProfile,
   UpdateTopicEditorialProfileInput,
 } from "./modules/stories/editorial-profile.types";
-import styles from "./editorial-profile-panel.module.css";
+import styles from "./editorial-profile-panel.generated.module.css";
 
 type EditorialProfileDraft = UpdateTopicEditorialProfileInput;
 type SaveEditorialProfileResponse = TopicEditorialProfile & {

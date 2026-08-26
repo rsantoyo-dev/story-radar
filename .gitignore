@@ -40,3 +40,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# UXDSL build artifacts
+/src/app/radar-dashboard.generated.module.css
+/src/app/creative-draft-workspace.generated.module.css
+/src/app/editorial-profile-panel.generated.module.css
+/src/app/topic-configuration-panel.generated.module.css
+/src/app/uxdsl.css

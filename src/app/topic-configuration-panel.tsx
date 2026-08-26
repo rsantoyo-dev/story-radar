@@ -2,7 +2,7 @@
 
 import { type ReactNode, useEffect, useState } from "react";
 
-import styles from "./topic-configuration-panel.module.css";
+import styles from "./topic-configuration-panel.generated.module.css";
 
 export type DashboardTopic = {
   id: string;

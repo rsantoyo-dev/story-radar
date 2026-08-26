@@ -18,7 +18,7 @@ import type {
   CreativeWorkspaceState,
   EditableCreativeDraft,
 } from "./modules/stories/creative-content.types";
-import styles from "./creative-draft-workspace.module.css";
+import styles from "./creative-draft-workspace.generated.module.css";
 
 type WorkspaceProps = {
   topicId: string;

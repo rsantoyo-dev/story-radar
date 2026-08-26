@@ -56,6 +56,134 @@ ready for publishing.
 
 ## UXDSL Design System
 
+.uxdsl-card {
+    @ds-surface (contained);
+    width: xs(100%) md(400px);
+    border-radius: radius(3);
+    box-shadow: shadow(3);
+    transition: all 0.2s;
+    overflow: hidden;
+  }
+
+  .card-header {
+    background: linear-gradient(135deg, palette(primary-main), palette(primary-dark));
+    padding: density(6);
+    display: grid;
+    place-items: center;
+  }
+
+  .logo-circle {
+    @ds-surface (contained light);
+    width: density(10);
+    height: density(10);
+    border-radius: radius(full);
+    display: grid;
+    place-items: center;
+    box-shadow: shadow(2);
+  }
+
+  .card-logo {
+    width: 60%;
+    height: auto;
+  }
+
+  .card-body {
+    padding: density(5);
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: density(3);
+  }
+
+  .card-title {
+    @ds-typo (h5);
+    color: palette(primary-main);
+  }
+
+  .card-desc {
+    @ds-typo (body);
+    color: palette(primary-main);
+  }
+
+  .card-actions {
+    padding: density(4);
+    border-top: border(1);
+    display: flex;
+    gap: density(2);
+  }
+
+  .btn-primary {
+    @ds-button (contained primary);
+    width: 100%;
+    justify-content: center;
+  }
+
+  .btn-secondary {
+    @ds-button (outlined neutral);
+    width: 100%;
+    justify-content: center;
+  }
+
+https://uxdsl.io/docs/breakpoints
+#DemoBreakpointsCards {
+display: flex;
+flex-direction: xs(column) md(row);
+gap: xs(space(2)) md(space(4));
+padding: xs(space(3)) md(space(6));
+}
+https://uxdsl.io/docs/colors
+https://uxdsl.io/docs/palette
+.my-element
+{
+background:palette(primary-main);
+color:palette(primary-contrast);
+}
+https://uxdsl.io/docs/spacing
+.any-class {
+  padding: space(15);
+}
+https://uxdsl.io/docs/densities
+prioritaze densities over spacing
+.any-class {
+  padding: density(14);
+}
+https://uxdsl.io/docs/typography
+.any-class
+{
+@ds-typo
+(
+h1
+)
+;
+}
+https://uxdsl.io/docs/borders
+.element {
+  border: border(1, palette(primary-main), solid);
+  border-radius: radius(2);
+  width: 200px;
+  height: 200px;
+}
+https://uxdsl.io/docs/shadows
+please pply to all components, and check also palette primary main, make every color using palette, same as typograpphy [https://uxdsl.io/docs/typography](https://uxdsl.io/docs/typography) [https://uxdsl.io/docs/colors](https://uxdsl.io/docs/colors)
+https://uxdsl.io/docs/surfaces
+.my-element {
+  background-color: palette(primary-main);
+  color: palette(primary-contrast);
+  padding: density(2);
+  border-radius: radius(2);
+  border: none;
+  box-shadow: shadow(1);
+}
+https://uxdsl.io/docs/buttons
+.my-button {
+  @ds-button(contained primary density(2) radius(2) shadow(1));
+}
+https://uxdsl.io/docs/inputs
+.my-input {
+  @ds-input(outlined neutral density(2) radius(2));
+}
+
+
 UXDSL is the source of truth for new design tokens and responsive CSS. Tokens
 are defined in `uxdsl.config.js`; the compiler is configured in
 `postcss.config.mjs`. Use the existing green Story Radar palette rather than

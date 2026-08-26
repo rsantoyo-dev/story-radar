@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 
 import { CreativeDraftWorkspace } from "./creative-draft-workspace";
 import { EditorialProfilePanel } from "./editorial-profile-panel";
-import styles from "./radar-dashboard.module.css";
+import styles from "./radar-dashboard.generated.module.css";
 import {
   TopicConfigurationPanel,
   type DashboardTopic,

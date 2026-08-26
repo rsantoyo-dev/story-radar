@@ -1,0 +1,85 @@
+/* Global palette, spacing, and font tokens are emitted from uxdsl.config.js. */
+:root {
+    --ds__palette__primary-main: #246b4a;
+    --ds__palette__primary-light: #4a936b;
+    --ds__palette__primary-dark: #17422f;
+    --ds__palette__primary-contrast: #ffffff;
+    --ds__palette__secondary-main: #c25b3f;
+    --ds__palette__secondary-light: #dc8068;
+    --ds__palette__secondary-dark: #7f3827;
+    --ds__palette__secondary-contrast: #ffffff;
+    --ds__palette__surface-main: #ffffff;
+    --ds__palette__surface-light: #f7faf8;
+    --ds__palette__surface-dark: #dbe5df;
+    --ds__palette__surface-contrast: #18392d;
+    --ds__palette__tertiary-main: #7b9086;
+    --ds__palette__tertiary-light: #aabbb3;
+    --ds__palette__tertiary-dark: #50665c;
+    --ds__palette__tertiary-contrast: #ffffff;
+    --ds__palette__success-main: #2f855a;
+    --ds__palette__success-light: #68b68b;
+    --ds__palette__success-dark: #1f5b3e;
+    --ds__palette__success-contrast: #ffffff;
+    --ds__palette__info-main: #28728a;
+    --ds__palette__info-light: #65a9bb;
+    --ds__palette__info-dark: #1b4d5d;
+    --ds__palette__info-contrast: #ffffff;
+    --ds__palette__warning-main: #b7791f;
+    --ds__palette__warning-light: #d9a441;
+    --ds__palette__warning-dark: #744b13;
+    --ds__palette__warning-contrast: #ffffff;
+    --ds__palette__error-main: #b84935;
+    --ds__palette__error-light: #d87862;
+    --ds__palette__error-dark: #762e22;
+    --ds__palette__error-contrast: #ffffff;
+    --ds__palette__dark-main: #18392d;
+    --ds__palette__dark-light: #315746;
+    --ds__palette__dark-dark: #0d2119;
+    --ds__palette__dark-contrast: #ffffff;
+    --ds__palette__neutral-main: #6b8077;
+    --ds__palette__neutral-light: #aabbb3;
+    --ds__palette__neutral-dark: #40564c;
+    --ds__palette__neutral-contrast: #ffffff;
+    --ds__palette__light-main: #f1f6f3;
+    --ds__palette__light-light: #ffffff;
+    --ds__palette__light-dark: #dbe5df;
+    --ds__palette__light-contrast: #18392d;
+    --space-1: 0.125rem;
+    --space-2: 0.25rem;
+    --space-3: 0.5rem;
+    --space-4: 0.75rem;
+    --space-5: 1rem;
+    --space-6: 1.5rem;
+    --space-7: 2rem;
+    --space-8: 2.5rem;
+    --space-9: 3.125rem;
+    --space-10: 3.875rem;
+    --space-11: 4.875rem;
+    --space-12: 6.125rem;
+    --space-13: 7.75rem;
+    --space-14: 9.75rem;
+    --space-15: 12.25rem;
+    --space-16: 15.375rem;
+    --h1-size: clamp(var(--space-7), 4vw, var(--space-10));
+    --h2-size: clamp(var(--space-6), 3vw, var(--space-8));
+    --h3-size: var(--space-6);
+    --h4-size: var(--space-5);
+    --h5-size: var(--space-5);
+    --h6-size: var(--space-4);
+    --body-size: 1rem;
+    --body-line: 1.6;
+    --body-weight: 400;
+    --p-size: 1rem;
+    --span-size: 1rem;
+    --small-size: 0.875rem;
+    --small-line: 1.4;
+    --caption-size: 0.75rem;
+    --code-size: 0.875rem;
+    --pre-size: 0.875rem;
+    --font-ui: var(--font-geist-sans), ui-sans-serif, sans-serif;
+    --font-ui-2: var(--font-geist-sans), ui-sans-serif, sans-serif;
+    --font-code: var(--font-geist-mono), ui-monospace, monospace
+}
+
+/*@uxdsl-bp {"xs":0,"sm":640,"md":768,"lg":1024,"xl":1280}*/
+#uxdsl-bp-meta { --bp: '{"xs":0,"sm":640,"md":768,"lg":1024,"xl":1280}'; display: none; }
