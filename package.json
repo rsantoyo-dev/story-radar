@@ -39,7 +39,10 @@
     "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
+    "postcss-uxdsl": "^0.3.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "uxdsl-core": "^0.3.0",
+    "vite-plugin-uxdsl": "^0.3.0"
   }
 }

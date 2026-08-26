@@ -20,6 +20,31 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## UXDSL
+
+UXDSL is the design-token and responsive CSS layer for this project. Tokens
+are defined in [`uxdsl.config.js`](uxdsl.config.js) and compiled through
+PostCSS. Use UXDSL functions in new global CSS or CSS Modules instead of
+hard-coded spacing, colors, radii, shadows, or responsive values:
+
+```css
+.stress-grid {
+	display: grid;
+	grid-template-columns: xs(1fr) md(repeat(auto-fill, minmax(120px, 1fr)));
+	gap: density(2);
+}
+
+.stress-card {
+	@ds-surface(flat primary radius(3));
+	padding: space(4);
+	box-shadow: shadow(2);
+}
+```
+
+Use `@ds-button(...)` and `@ds-input(...)` for new controls, and use
+`@ds-typo(...)` for shared typography variants. Keep existing CSS Modules
+compatible while migrating touched surfaces incrementally.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
