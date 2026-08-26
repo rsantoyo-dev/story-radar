@@ -78,6 +78,7 @@ export function TopicConfigurationPanel({
   const [topicName, setTopicName] = useState("");
   const [topicDescription, setTopicDescription] = useState("");
   const [editingTopic, setEditingTopic] = useState(false);
+  const [showSources, setShowSources] = useState(false);
   const [showSourceForm, setShowSourceForm] = useState(false);
   const [sourceFormTopicId, setSourceFormTopicId] = useState<string>();
   const [editingSource, setEditingSource] = useState<TopicSource>();
@@ -96,7 +97,7 @@ export function TopicConfigurationPanel({
   const sourceFormVisible = showSourceForm && sourceFormTopicId === selectedTopicId;
 
   useEffect(() => {
-    if (!canUseApi || !selectedTopicId) {
+    if (!canUseApi || !selectedTopicId || !showSources) {
       return;
     }
 
@@ -117,7 +118,7 @@ export function TopicConfigurationPanel({
       });
 
     return () => controller.abort();
-  }, [canUseApi, secret, selectedTopicId]);
+  }, [canUseApi, secret, selectedTopicId, showSources]);
 
   function changeTopic(topicId: string) {
     if (topicId === selectedTopicId || disabled) return;
@@ -193,6 +194,7 @@ export function TopicConfigurationPanel({
   }
 
   function openNewSource() {
+    setShowSources(true);
     setEditingSource(undefined);
     setSourceDraft(EMPTY_SOURCE);
     setSourceFormTopicId(selectedTopicId);
@@ -201,6 +203,7 @@ export function TopicConfigurationPanel({
   }
 
   function openSourceEdit(source: TopicSource) {
+    setShowSources(true);
     setEditingSource(source);
     setSourceDraft({
       name: source.name,
@@ -349,7 +352,7 @@ export function TopicConfigurationPanel({
           <small>Feeds, tags, preferences, reviews, AI usage, and creative work stay scoped to the selected topic.</small>
         </div>
         <span className={styles.count}>
-          {sources ? `${sources.filter((source) => source.enabled).length} active feeds` : "RSS setup"}
+          {sources ? `${sources.filter((source) => source.enabled).length} active feeds` : "Source setup"}
         </span>
       </div>
 
@@ -379,7 +382,7 @@ export function TopicConfigurationPanel({
       </div>
 
       {!canUseApi ? (
-        <p className={styles.locked}>Enter the collector secret below to manage topics and RSS sources.</p>
+        <p className={styles.locked}>Enter the collector secret below to manage topics and sources.</p>
       ) : null}
       {error ? <p className={styles.error} role="alert">{error}</p> : null}
       {notice ? <p className={styles.notice} role="status">{notice}</p> : null}
@@ -407,17 +410,31 @@ export function TopicConfigurationPanel({
         </form>
       ) : null}
 
-      <div className={styles.sourcesHeading}>
-        <div>
-          <h3>RSS sources</h3>
-          <p>Adding a source here attaches it only to {selectedTopic?.name ?? "this topic"}.</p>
-        </div>
-        <button type="button" onClick={openNewSource} disabled={!canUseApi || disabled || Boolean(busy)}>
-          Add RSS source
-        </button>
-      </div>
+      <details
+        className={styles.sourcesDisclosure}
+        open={showSources}
+        onToggle={(event) => setShowSources(event.currentTarget.open)}
+      >
+        <summary>
+          <span>
+            <strong>Sources</strong>
+            <small>Manage feed connections for {selectedTopic?.name ?? "this topic"}.</small>
+          </span>
+          <span className={styles.disclosureState}>{showSources ? "Hide" : "Manage"}</span>
+        </summary>
 
-      {sourceFormVisible ? (
+        <div className={styles.sourcesContent}>
+          <div className={styles.sourcesHeading}>
+            <div>
+              <h3>RSS sources</h3>
+              <p>Adding a source here attaches it only to {selectedTopic?.name ?? "this topic"}.</p>
+            </div>
+            <button type="button" onClick={openNewSource} disabled={!canUseApi || disabled || Boolean(busy)}>
+              Add RSS source
+            </button>
+          </div>
+
+          {sourceFormVisible ? (
         <form
           className={styles.sourceForm}
           onSubmit={(event) => {
@@ -443,9 +460,9 @@ export function TopicConfigurationPanel({
             <button type="button" onClick={() => { setShowSourceForm(false); setSourceFormTopicId(undefined); setEditingSource(undefined); }} disabled={Boolean(busy)}>Cancel</button>
           </div>
         </form>
-      ) : null}
+          ) : null}
 
-      {!canUseApi ? null : !sources ? <p className={styles.loading}>Loading RSS sources…</p> : sources.length === 0 ? (
+          {!canUseApi ? null : !sources ? <p className={styles.loading}>Loading RSS sources…</p> : sources.length === 0 ? (
         <div className={styles.empty}><strong>No RSS sources yet.</strong><span>Add a feed before collecting this topic.</span></div>
       ) : (
         <ul className={styles.sourceList}>
@@ -471,7 +488,9 @@ export function TopicConfigurationPanel({
             </li>
           ))}
         </ul>
-      )}
+          )}
+        </div>
+      </details>
     </section>
   );
 }

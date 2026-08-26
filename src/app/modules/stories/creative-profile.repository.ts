@@ -14,7 +14,7 @@ import {
 export const DEFAULT_CREATIVE_PROFILE_ID = "default";
 
 const DEFAULT_PROFILE: EditableCreativeProfile = {
-  name: "Story Radar",
+  name: "Press Craftor",
   language: "English",
   region: "Global",
   platform: "Facebook",

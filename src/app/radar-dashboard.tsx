@@ -825,7 +825,7 @@ export function RadarDashboard({
             </span>
             <div>
               <p className={styles.eyebrow}>Control center</p>
-              <h1>Story Radar</h1>
+              <h1>Press Craftor</h1>
             </div>
           </div>
           <button
@@ -915,16 +915,24 @@ export function RadarDashboard({
             </div>
           </div>
 
-          <label className={styles.searchField}>
-            <span className={styles.searchIcon} aria-hidden="true">⌕</span>
-            <input
-              type="search"
-              placeholder="Search news · coming soon"
-              disabled
-              aria-label="Search news (coming soon)"
-            />
-            <span className={styles.searchHint}>⌘ K</span>
-          </label>
+          <div className={styles.topbarTools}>
+            <div className={styles.secretControl}>
+              <label className={styles.secretField}>
+                <span>Collector secret</span>
+                <input
+                  type="password"
+                  value={secret}
+                  onChange={(event) => setSecret(event.target.value)}
+                  placeholder="Paste secret"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </label>
+              <span className={`${styles.topbarStatus} ${stats ? styles.online : styles.idle}`}>
+                {stats ? "Connected" : "Not checked"}
+              </span>
+            </div>
+          </div>
         </header>
 
         <div className={styles.page}>
@@ -990,25 +998,9 @@ export function RadarDashboard({
             <div className={styles.panelHeading}>
               <div>
                 <p className={styles.sectionNumber}>01</p>
-                <h2>Access and collection</h2>
+                <h2>Collection</h2>
               </div>
-              <span className={stats ? styles.online : styles.idle}>
-                {stats ? "Connected" : "Not checked"}
-              </span>
             </div>
-
-            <label className={styles.field}>
-              <span>Collector secret</span>
-              <input
-                type="password"
-                value={secret}
-                onChange={(event) => setSecret(event.target.value)}
-                placeholder="RADAR_COLLECTOR_SECRET"
-                autoComplete="off"
-                spellCheck={false}
-              />
-              <small>Kept in memory only for this browser session.</small>
-            </label>
 
             <label className={styles.field}>
               <span>Story window</span>

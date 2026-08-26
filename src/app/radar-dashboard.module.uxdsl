@@ -177,7 +177,7 @@
 .topbarLeft,
 .currentTopic,
 .topicSelectWrap,
-.searchField {
+.topbarTools {
   display: flex;
   align-items: center;
 }
@@ -185,6 +185,60 @@
 .topbarLeft {
   min-width: 0;
   gap: space(5);
+}
+
+.topbarTools {
+  min-width: 0;
+  justify-content: flex-end;
+  gap: space(3);
+}
+
+.secretControl {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: space(3);
+}
+
+.secretField {
+  display: flex;
+  align-items: center;
+  min-width: 16rem;
+  gap: space(4);
+}
+
+.secretField > span {
+  color: palette(tertiary-main);
+  @ds-typo(caption);
+  font-size: 0.625rem;
+  font-weight: 750;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.secretField input {
+  @ds-input(outlined primary 2);
+  box-sizing: border-box;
+  min-width: 0;
+  flex: 1;
+  min-height: 40px;
+  padding: density(1) density(3);
+  border-color: palette(surface-dark);
+  background: palette(light-light);
+  color: palette(dark-main);
+  @ds-typo(caption);
+}
+
+.secretField input:focus-visible {
+  border-color: palette(primary-main);
+  box-shadow: 0 0 0 4px palette(primary-main, 0.12);
+}
+
+.topbarStatus {
+  flex: none;
+  padding: density(1) density(2);
+  white-space: nowrap;
 }
 
 .currentTopic {
@@ -238,52 +292,6 @@
   font-size: 16px;
   pointer-events: none;
   transform: translateY(-55%);
-}
-
-.searchField {
-  @ds-surface(outlined surface 2);
-  width: min(305px, 34vw);
-  min-height: 40px;
-  gap: space(3);
-  padding: 0 space(4);
-  border-color: palette(surface-dark);
-  background: palette(light-light, 0.68);
-}
-
-.searchIcon {
-  color: palette(surface-dark);
-  @ds-typo (body);
-  font-size: space(5);
-  line-height: 1;
-}
-
-.searchField input {
-  min-width: 0;
-  flex: 1;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: palette(primary-dark);
-  @ds-typo (caption);
-  font-size: 0.75rem;
-}
-
-.searchField input::placeholder {
-  color: palette(tertiary-main);
-}
-
-.searchField input:disabled {
-  cursor: not-allowed;
-}
-
-.searchHint {
-  padding: space(1) space(3);
-  border: 1px solid palette(surface-light);
-  border-radius: radius(1);
-  color: palette(surface-dark);
-  @ds-typo (caption);
-  font-size: 0.625rem;
-  white-space: nowrap;
 }
 
 .page {
@@ -2026,18 +2034,42 @@
 
   .topbarLeft,
   .currentTopic,
-  .searchField {
+  .topbarTools {
     width: 100%;
   }
 
-  .currentTopic {
-    justify-content: space-between;
+  .topbarLeft {
+    align-items: flex-start;
+    gap: space(4);
   }
 
-  .topicSelectWrap {
+  .currentTopic {
     min-width: 0;
     flex: 1;
+    align-items: stretch;
+    flex-direction: column;
+    gap: density(1);
+    margin-left: space(2);
   }
+
+  .topicSelectWrap { width: 100%; min-width: 0; }
+
+  .topbarTools { justify-content: flex-start; }
+
+  .secretControl {
+    display: grid;
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+  }
+
+  .secretField {
+    min-width: 0;
+    display: grid;
+    gap: density(1);
+  }
+
+  .secretField input { width: 100%; flex: none; }
 
   .page {
     padding: density(5) density(4) density(7);

@@ -8,11 +8,11 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 <!-- END:nextjs-agent-rules -->
 
-# Story Radar Agent Guide
+# Press Craftor Agent Guide
 
 ## Purpose
 
-Story Radar is an editorial operations application. It collects news stories,
+Press Craftor is an editorial operations application. It collects news stories,
 enriches and evaluates them, and helps a team turn an approved story into a
 creative brief, editable meme or carousel draft, and reviewable generated
 images. Human approval remains required before creative assets are treated as
@@ -186,7 +186,7 @@ https://uxdsl.io/docs/inputs
 
 UXDSL is the source of truth for new design tokens and responsive CSS. Tokens
 are defined in `uxdsl.config.js`; the compiler is configured in
-`postcss.config.mjs`. Use the existing green Story Radar palette rather than
+`postcss.config.mjs`. Use the existing green Press Craftor palette rather than
 introducing a purple default theme.
 
 For new or touched styles, prefer UXDSL tokens over hard-coded values:

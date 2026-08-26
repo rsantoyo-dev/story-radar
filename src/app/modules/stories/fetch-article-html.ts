@@ -8,7 +8,7 @@ const ARTICLE_FETCH_TIMEOUT_MS = 12_000;
 const MAX_ARTICLE_BYTES = 2_000_000;
 const MAX_REDIRECTS = 5;
 const USER_AGENT =
-  "StoryRadar/0.1 (+local editorial research; article enrichment)";
+  "PressCraftor/0.1 (+local editorial research; article enrichment)";
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const BLOCKED_HOST_SUFFIXES = [".localhost", ".local", ".internal"];

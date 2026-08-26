@@ -37,7 +37,7 @@ export type EditorialEvaluationCandidate = {
 export type StoryEditorialEvaluation = EditorialSignalScores & {
   storyId: string;
   /**
-   * Deterministic weighted score calculated by Story Radar from the generic
+   * Deterministic weighted score calculated by Press Craftor from the generic
    * signals and the topic's editorial profile. This is the primary score for
    * new evaluations.
    */

@@ -21,7 +21,7 @@ export async function fetchArticleWithReader(
 ): Promise<ReaderArticleResult> {
   const headers: Record<string, string> = {
     Accept: "application/json",
-    "User-Agent": "StoryRadar/0.1 (selected story enrichment)",
+    "User-Agent": "PressCraftor/0.1 (selected story enrichment)",
   };
   const apiKey = process.env.JINA_API_KEY?.trim();
 

@@ -25,7 +25,7 @@ const RSS_REQUEST_HEADERS = {
   Accept:
     "application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.1",
   "Accept-Encoding": "identity",
-  "User-Agent": "StoryRadar/0.1 RSS reader",
+  "User-Agent": "PressCraftor/0.1 RSS reader",
 };
 
 const parser = new Parser<Record<string, unknown>, ParsedRssItem>();

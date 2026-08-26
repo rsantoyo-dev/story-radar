@@ -1,7 +1,7 @@
 import "server-only";
 
 export const EDITORIAL_EVALUATION_PROVIDER = "google";
-// v2 returns topic-agnostic signals and lets Story Radar calculate the final
+// v2 returns topic-agnostic signals and lets Press Craftor calculate the final
 // priority with each topic's editorial-profile weights.
 export const EDITORIAL_PROMPT_VERSION = "editorial-v2";
 

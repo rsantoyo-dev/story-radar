@@ -71,7 +71,7 @@ CREATE INDEX "topic_sources_workspace_topic_enabled_idx" ON "topic_sources" USIN
 CREATE INDEX "topic_sources_rss_source_id_idx" ON "topic_sources" USING btree ("rss_source_id");--> statement-breakpoint
 CREATE INDEX "topics_workspace_active_idx" ON "topics" USING btree ("workspace_id","is_active");--> statement-breakpoint
 INSERT INTO "workspaces" ("id", "name", "slug")
-VALUES ('default', 'Story Radar', 'default')
+VALUES ('default', 'Press Craftor', 'default')
 ON CONFLICT ("id") DO NOTHING;--> statement-breakpoint
 INSERT INTO "topics" ("workspace_id", "name", "slug", "description")
 VALUES ('default', 'Tech', 'tech', 'Technology and AI news')

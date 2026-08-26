@@ -59,7 +59,7 @@ export async function POST(request: Request) {
     const topicError = topicRequestErrorResponse(error);
     if (topicError) return topicError;
 
-    console.error("Failed to collect and persist story radar", error);
+    console.error("Failed to collect and persist Press Craftor stories", error);
 
     return NextResponse.json(
       {

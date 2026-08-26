@@ -25,7 +25,7 @@ export async function GET(request: Request) {
     const topicError = topicRequestErrorResponse(error);
     if (topicError) return topicError;
 
-    console.error("Failed to read story radar database stats", error);
+    console.error("Failed to read Press Craftor database stats", error);
 
     return NextResponse.json(
       {
@@ -68,7 +68,7 @@ export async function DELETE(request: Request) {
     const topicError = topicRequestErrorResponse(error);
     if (topicError) return topicError;
 
-    console.error("Failed to clear story radar data", error);
+    console.error("Failed to clear Press Craftor data", error);
 
     return NextResponse.json(
       {

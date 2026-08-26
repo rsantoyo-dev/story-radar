@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Story Radar",
-  description: "Story Radar collection and editorial operations dashboard",
+  title: "Press Craftor",
+  description: "Press Craftor collection and editorial operations dashboard",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
