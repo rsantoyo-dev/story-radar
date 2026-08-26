@@ -120,6 +120,34 @@
       "when": 1787665977804,
       "tag": "0016_creative-image-quality",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1787683957981,
+      "tag": "0017_material_hellcat",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1787684507183,
+      "tag": "0018_soft_lilandra",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1787708153746,
+      "tag": "0019_mature_magdalene",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1787708518784,
+      "tag": "0020_lying_scourge",
+      "breakpoints": true
     }
   ]
 }

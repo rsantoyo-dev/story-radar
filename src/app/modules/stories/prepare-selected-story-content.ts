@@ -23,8 +23,8 @@ import {
   beginStoryContentEnrichment,
   completeStoryContentEnrichment,
   failStoryContentEnrichment,
-  findSelectedStoryForEnrichment,
-  getSelectedStoryContent,
+  findStoryForEnrichment,
+  getStoryContent,
   type SelectedStoryContentRecord,
 } from "./story-content.repository";
 
@@ -35,15 +35,19 @@ export type PrepareSelectedStoryContentResult = SelectedStoryContentRecord & {
 export class StoryContentPreparationBlockedError extends Error {}
 export class StoryContentPreparationFailedError extends Error {}
 
-export async function prepareSelectedStoryContent(
+/**
+ * Prepares a collected or selected story. A complete article gives the
+ * evaluator better evidence before a human decides whether to select it.
+ */
+export async function prepareStoryContent(
   topicId: string,
   storyId: string,
 ): Promise<PrepareSelectedStoryContentResult> {
-  const story = await findSelectedStoryForEnrichment(topicId, storyId);
+  const story = await findStoryForEnrichment(topicId, storyId);
 
   if (story.contentStatus === "full" && story.contentText) {
     return {
-      ...(await getSelectedStoryContent(topicId, storyId)),
+      ...(await getStoryContent(topicId, storyId)),
       outcome: "already-ready",
     };
   }
@@ -74,7 +78,7 @@ export async function prepareSelectedStoryContent(
     });
 
     return {
-      ...(await getSelectedStoryContent(topicId, storyId)),
+      ...(await getStoryContent(topicId, storyId)),
       outcome: "prepared",
     };
   } catch (error) {
@@ -96,6 +100,9 @@ export async function prepareSelectedStoryContent(
     throw new StoryContentPreparationFailedError(message, { cause: error });
   }
 }
+
+/** @deprecated Prefer prepareStoryContent; retained for internal callers. */
+export const prepareSelectedStoryContent = prepareStoryContent;
 
 async function fetchPreparedArticle(sourceUrl: string): Promise<{
   extracted: ExtractedArticleContent;

@@ -3,6 +3,7 @@ import "server-only";
 import type {
   CreativeAspectRatio,
   CreativeBrief,
+  CreativeCharacterSnapshot,
   CreativeDraft,
   CreativeUnit,
 } from "./creative-content.types";
@@ -13,10 +14,12 @@ export function buildCreativeImagePrompt({
   draft,
   unit,
   brief,
+  characters = [],
 }: {
   draft: CreativeDraft;
   unit: CreativeUnit;
   brief: CreativeBrief;
+  characters?: CreativeCharacterSnapshot[];
 }): { prompt: string; expectedText: string } {
   const expectedText = [unit.headline.trim(), unit.body?.trim()]
     .filter(Boolean)
@@ -34,6 +37,9 @@ export function buildCreativeImagePrompt({
       : "Create a strong editorial illustration or photorealistic scene that supports the message.";
   const platform = brief.profileSnapshot.platform.trim() || "social media";
   const visualGuidance = resolveCreativeVisualGuidance(brief.profileSnapshot);
+  const referenceImageCount = characters.flatMap(
+    (character) => character.referenceImages,
+  ).length;
 
   return {
     expectedText,
@@ -43,6 +49,15 @@ export function buildCreativeImagePrompt({
       assetStyle,
       `Overall concept: ${draft.concept}`,
       `Visual direction: ${unit.visualDirection}`,
+      ...(characters.length > 0
+        ? [
+            `Supporting character consistency: ${referenceImageCount} supplied reference image${referenceImageCount === 1 ? "" : "s"} are authoritative for the following optional fictional supporting characters. Preserve each selected character's recognizable visual identity while adapting pose, expression, wardrobe, and scene to this graphic. Do not add unselected people as recurring characters. Do not introduce animals, mascots, or creatures unless they are explicitly required by the visual direction or a selected character description. Treat every explicit exclusion in a character description, including phrases such as "no", "not a", or "without", as a hard visual constraint.`,
+            ...characters.map(
+              (character) =>
+                `Character ${character.name}: ${character.description}`,
+            ),
+          ]
+        : []),
       `Audience: ${brief.profileSnapshot.audience}`,
       `Brand personality: ${brief.profileSnapshot.brandPersonality.join(", ")}.`,
       `Tone: ${brief.tone.primary}; energy ${brief.tone.energy}/100; humor ${brief.tone.humor}/100.`,

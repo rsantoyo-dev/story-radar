@@ -564,6 +564,7 @@ export async function failEditorialEvaluationRun(
 }
 
 export class EditorialStoryReviewConflictError extends Error {}
+export class EditorialStoryPromotionConflictError extends Error {}
 
 export async function reviewEditorialShortlist(
   topicId: string,
@@ -627,6 +628,69 @@ export async function reviewEditorialShortlist(
   }
 
   return reviewedRows.length;
+}
+
+/**
+ * A human can explicitly promote an AI "review" recommendation after reading
+ * the source. The underlying AI decision remains "review" for auditability;
+ * only the topic workflow becomes selected. This deliberately cannot revive a
+ * reject or bypass a story already given a human decision.
+ */
+export async function promoteEditorialReviewCandidate(
+  topicId: string,
+  storyId: string,
+  configuration: EditorialEvaluationPublicConfig,
+  reviewedAt = new Date(),
+): Promise<void> {
+  const latestEvaluation = createLatestEditorialEvaluation(
+    "review_promotion_latest_evaluation",
+    topicId,
+    configuration,
+  );
+  const [eligible] = await db
+    .select({ storyId: topicStories.storyId })
+    .from(topicStories)
+    .innerJoin(
+      latestEvaluation,
+      eq(latestEvaluation.storyId, topicStories.storyId),
+    )
+    .where(
+      and(
+        eq(topicStories.topicId, topicId),
+        eq(topicStories.storyId, storyId),
+        eq(latestEvaluation.decision, "review"),
+        isNull(topicStories.reviewDecision),
+      ),
+    )
+    .limit(1);
+
+  if (!eligible) {
+    throw new EditorialStoryPromotionConflictError(
+      "This story is no longer available for human promotion",
+    );
+  }
+
+  const [promoted] = await db
+    .update(topicStories)
+    .set({
+      reviewDecision: "approved",
+      reviewedAt,
+      processingStatus: "selected",
+    })
+    .where(
+      and(
+        eq(topicStories.topicId, topicId),
+        eq(topicStories.storyId, storyId),
+        isNull(topicStories.reviewDecision),
+      ),
+    )
+    .returning({ storyId: topicStories.storyId });
+
+  if (!promoted) {
+    throw new EditorialStoryPromotionConflictError(
+      "The story changed while it was being promoted",
+    );
+  }
 }
 
 export async function getEditorialDashboardStats(

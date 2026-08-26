@@ -5,6 +5,7 @@ import {
 } from "@/app/api/radar/radar-topic";
 import {
   generateCreativeDraftAssets,
+  generateNextCreativeDraftAssetVersion,
   getCreativeDraftAssets,
 } from "@/app/modules/stories/manage-creative-assets";
 import {
@@ -35,6 +36,8 @@ export async function GET(request: Request, context: Context) {
   if (imageQuality instanceof InvalidImageQualityError) {
     return noStoreJson({ error: imageQuality.message }, 400);
   }
+  const includeHistorical =
+    new URL(request.url).searchParams.get("history") === "true";
 
   try {
     return noStoreJson(
@@ -42,6 +45,7 @@ export async function GET(request: Request, context: Context) {
         await requireActiveRequestTopic(request),
         draftId,
         imageQuality,
+        includeHistorical,
       ),
     );
   } catch (error) {
@@ -64,13 +68,20 @@ export async function POST(request: Request, context: Context) {
   }
 
   try {
-    const imageQuality = await parseGenerationImageQuality(request);
+    const generation = await parseGenerationInput(request);
+    const topicId = await requireActiveRequestTopic(request);
     return noStoreJson(
-      await generateCreativeDraftAssets(
-        await requireActiveRequestTopic(request),
-        draftId,
-        imageQuality,
-      ),
+      generation.createNewVersion
+        ? await generateNextCreativeDraftAssetVersion(
+            topicId,
+            draftId,
+            generation.batchId!,
+          )
+        : await generateCreativeDraftAssets(
+            topicId,
+            draftId,
+            generation.imageQuality,
+          ),
       202,
     );
   } catch (error) {
@@ -102,11 +113,18 @@ function parseImageQualityQuery(
   return imageQuality;
 }
 
-async function parseGenerationImageQuality(
-  request: Request,
-): Promise<CreativeImageQuality> {
+async function parseGenerationInput(request: Request): Promise<{
+  imageQuality: CreativeImageQuality;
+  createNewVersion: boolean;
+  batchId?: string;
+}> {
   const text = await request.text();
-  if (!text.trim()) return DEFAULT_CREATIVE_IMAGE_QUALITY;
+  if (!text.trim()) {
+    return {
+      imageQuality: DEFAULT_CREATIVE_IMAGE_QUALITY,
+      createNewVersion: false,
+    };
+  }
 
   let body: unknown;
   try {
@@ -117,17 +135,55 @@ async function parseGenerationImageQuality(
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
     throw new InvalidImageQualityError("A JSON object is required");
   }
-  if (Object.keys(body).some((key) => key !== "quality")) {
-    throw new InvalidImageQualityError("Only quality may be provided");
+  if (
+    Object.keys(body).some(
+      (key) => key !== "quality" && key !== "createNewVersion" && key !== "batchId",
+    )
+  ) {
+    throw new InvalidImageQualityError(
+      "Only quality, createNewVersion, and batchId may be provided",
+    );
   }
-  const quality = (body as { quality?: unknown }).quality;
-  if (quality === undefined) return DEFAULT_CREATIVE_IMAGE_QUALITY;
-  if (!isCreativeImageQuality(quality)) {
+  const input = body as {
+    quality?: unknown;
+    createNewVersion?: unknown;
+    batchId?: unknown;
+  };
+  const quality = input.quality;
+  const imageQuality =
+    quality === undefined ? DEFAULT_CREATIVE_IMAGE_QUALITY : quality;
+  if (!isCreativeImageQuality(imageQuality)) {
     throw new InvalidImageQualityError(
       "quality must be auto, low, medium, or high",
     );
   }
-  return quality;
+
+  if (
+    input.createNewVersion !== undefined &&
+    typeof input.createNewVersion !== "boolean"
+  ) {
+    throw new InvalidImageQualityError("createNewVersion must be true or false");
+  }
+  const createNewVersion = input.createNewVersion === true;
+  if (input.batchId !== undefined && typeof input.batchId !== "string") {
+    throw new InvalidImageQualityError("batchId must be a valid UUID");
+  }
+  const batchId = input.batchId?.trim();
+  if (batchId && !UUID_PATTERN.test(batchId)) {
+    throw new InvalidImageQualityError("batchId must be a valid UUID");
+  }
+  if (createNewVersion && !batchId) {
+    throw new InvalidImageQualityError(
+      "batchId is required when creating a new image version",
+    );
+  }
+  if (!createNewVersion && batchId) {
+    throw new InvalidImageQualityError(
+      "batchId may only be provided when creating a new image version",
+    );
+  }
+
+  return { imageQuality, createNewVersion, ...(batchId ? { batchId } : {}) };
 }
 
 class InvalidImageQualityError extends Error {}

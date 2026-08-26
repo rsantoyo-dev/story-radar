@@ -1,13 +1,18 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
+
 import {
   completeCreativeAsset,
   createCreativeAssetBatch,
   failCreativeAsset,
   findCreativeAssetById,
+  findCreativeAssetBatchById,
   findCurrentCreativeAssetBatch,
   findLatestCompatibleCreativeAssetBatch,
   findLatestCreativeAssetBatch,
+  findLatestCreativeAssetBatchForDraft,
+  getCreativeAssetReferenceSnapshot,
   insertRegeneratedCreativeAsset,
   refreshCreativeAssetBatchStatus,
   setCreativeAssetApproval,
@@ -16,6 +21,7 @@ import {
 } from "./creative-assets.repository";
 import { resolveCreativeOutputAspectRatio } from "./creative-aspect-ratio";
 import { buildCreativeImagePrompt } from "./build-creative-image-prompt";
+import { snapshotsForCreativeUnits } from "./creative-characters.repository";
 import { findCreativeBriefById, findCreativeDraftById } from "./creative-content.repository";
 import {
   DEFAULT_CREATIVE_IMAGE_QUALITY,
@@ -23,6 +29,7 @@ import {
   type CreativeAssetBatch,
   type CreativeAssetBatchResponse,
   type CreativeAssetConfiguration,
+  type CreativeCharacterSnapshot,
   type CreativeDraft,
   type CreativeGeneratedAsset,
   type CreativeImageQuality,
@@ -31,7 +38,14 @@ import {
   getFalImagePublicConfig,
   getFalImageRuntimeConfig,
 } from "./fal-image-generation.config";
-import { pollFalImage, submitFalImage } from "./fal-image-client";
+import {
+  FAL_REFERENCE_GUIDED_ENDPOINT,
+  FAL_TEXT_TO_IMAGE_ENDPOINT,
+  pollFalImage,
+  submitFalImage,
+  type FalImageEndpoint,
+} from "./fal-image-client";
+import { readPrivateR2ImageFile } from "./r2-storage";
 import {
   CreativeContentConflictError,
   CreativeContentNotFoundError,
@@ -41,13 +55,28 @@ export async function getCreativeDraftAssets(
   topicId: string,
   draftId: string,
   requestedImageQuality?: CreativeImageQuality,
+  includeHistorical = false,
 ): Promise<CreativeAssetBatchResponse> {
   const draft = await requireCreativeDraft(topicId, draftId);
+  const draftNeedsReferenceGuidance = draft.units.some(
+    (unit) => (unit.characterIds?.length ?? 0) > 0,
+  );
   const outputAspectRatio = outputAspectRatioForDraft(draft);
   const preferredConfiguration = getFalImagePublicConfig(
     outputAspectRatio,
     requestedImageQuality,
   );
+
+  if (includeHistorical) {
+    const historicalBatch = await findLatestCreativeAssetBatchForDraft(draft.id);
+    return {
+      ...(historicalBatch ? { batch: historicalBatch } : {}),
+      configuration: historicalBatch
+        ? publicConfigurationForBatch(historicalBatch)
+        : preferredConfiguration,
+    };
+  }
+
   let batch = await findCurrentCreativeAssetBatch(draft.id, draft.version, {
     provider: preferredConfiguration.provider,
     model: preferredConfiguration.model,
@@ -74,6 +103,22 @@ export async function getCreativeDraftAssets(
   // fallback so existing asset batches remain visible after this rollout.
   if (!batch && requestedImageQuality === undefined) {
     batch = await findLatestCreativeAssetBatch(draft.id, draft.version);
+  }
+
+  // A batch created before reference-guided support (or by the old text
+  // endpoint) must not mask the Generate action for a draft that now selects
+  // characters. Existing historical assets remain in the database, but the
+  // Studio needs a fresh, correctly routed batch.
+  if (
+    batch &&
+    draftNeedsReferenceGuidance &&
+    !batchMatchesDraftGenerationModes(batch, draft)
+  ) {
+    batch = undefined;
+  }
+
+  if (batch?.status === "stale") {
+    batch = undefined;
   }
 
   if (
@@ -104,6 +149,9 @@ export async function generateCreativeDraftAssets(
   requireApprovedDraft(draft.status);
   const outputAspectRatio = outputAspectRatioForDraft(draft);
   const configuration = getFalImageRuntimeConfig(outputAspectRatio, imageQuality);
+  const draftNeedsReferenceGuidance = draft.units.some(
+    (unit) => (unit.characterIds?.length ?? 0) > 0,
+  );
 
   let existing = await findCurrentCreativeAssetBatch(draft.id, draft.version, {
     provider: configuration.provider,
@@ -112,7 +160,7 @@ export async function generateCreativeDraftAssets(
     imageQuality: configuration.imageQuality,
   });
   if (!existing) {
-    existing = await findLatestCompatibleCreativeAssetBatch(
+    const compatible = await findLatestCompatibleCreativeAssetBatch(
       draft.id,
       draft.version,
       {
@@ -122,6 +170,19 @@ export async function generateCreativeDraftAssets(
         imageQuality: configuration.imageQuality,
       },
     );
+    if (
+      compatible &&
+      (!draftNeedsReferenceGuidance ||
+        batchMatchesDraftGenerationModes(compatible, draft))
+    ) {
+      existing = compatible;
+    }
+  }
+  if (existing && !batchMatchesDraftGenerationModes(existing, draft)) {
+    existing = undefined;
+  }
+  if (existing?.status === "stale") {
+    existing = undefined;
   }
   if (existing) {
     const existingConfiguration = runtimeConfigurationForBatch(
@@ -147,6 +208,11 @@ export async function generateCreativeDraftAssets(
     );
   }
 
+  const characterSnapshotsByUnit = await snapshotsForCreativeUnits(
+    draft.units.flatMap((unit) => (unit.id ? [unit.id] : [])),
+  );
+  assertCharacterSnapshotsForDraft(draft, characterSnapshotsByUnit);
+
   let batch = await createCreativeAssetBatch({
     draftId: draft.id,
     draftVersion: draft.version,
@@ -161,10 +227,18 @@ export async function generateCreativeDraftAssets(
       imageQuality: configuration.imageQuality,
     },
     assets: draft.units.map((unit) => ({
+      ...assetInputForUnit(
+        snapshotsForUnit(characterSnapshotsByUnit, unit.id),
+      ),
       unitOrder: unit.order,
       unitRole: unit.role,
       unitSnapshot: unit,
-      ...buildCreativeImagePrompt({ draft, unit, brief }),
+      ...buildCreativeImagePrompt({
+        draft,
+        unit,
+        brief,
+        characters: snapshotsForUnit(characterSnapshotsByUnit, unit.id),
+      }),
     })),
   });
 
@@ -177,6 +251,62 @@ export async function generateCreativeDraftAssets(
     outcome: "submitted",
     batch,
     configuration: publicConfiguration(configuration),
+  };
+}
+
+/**
+ * Creates a fresh image variation for every slide in an existing batch. The
+ * draft, prompt, and immutable character snapshots remain unchanged; each
+ * slide receives its next asset version within the same image batch.
+ */
+export async function generateNextCreativeDraftAssetVersion(
+  topicId: string,
+  draftId: string,
+  batchId: string,
+): Promise<CreativeAssetGenerationResponse> {
+  const draft = await requireCreativeDraft(topicId, draftId);
+  requireApprovedDraft(draft.status);
+
+  const batch = await findCreativeAssetBatchById(batchId);
+  if (!batch || batch.draftId !== draft.id) {
+    throw new CreativeContentNotFoundError("The creative image batch was not found");
+  }
+  if (batch.status === "stale" || batch.draftVersion !== draft.version) {
+    throw new CreativeContentConflictError(
+      "This image batch belongs to an earlier draft version. Generate images for the current approved draft instead.",
+    );
+  }
+  if (hasPendingAssets(batch)) {
+    throw new CreativeContentConflictError(
+      "Wait for the current image generation to finish before creating another version.",
+    );
+  }
+  if (!batchMatchesDraftGenerationModes(batch, draft)) {
+    throw new CreativeContentConflictError(
+      "This image batch does not match the current character-reference setup. Generate a new image batch first.",
+    );
+  }
+
+  const configuration = runtimeConfigurationForBatch(
+    batch,
+    outputAspectRatioForDraft(draft),
+  );
+  assertRegenerationCompatibility(batch, configuration);
+
+  await mapWithConcurrency(batch.assets, 3, async (asset) => {
+    assertCurrentAsset(asset, batch, draft.version);
+    const nextAsset = await insertRegeneratedCreativeAsset({
+      previous: asset,
+      prompt: asset.prompt,
+    });
+    await submitStoredAsset(nextAsset, configuration);
+  });
+
+  const refreshedBatch = await refreshCreativeAssetBatchStatus(batch.id);
+  return {
+    outcome: "versioned",
+    batch: refreshedBatch,
+    configuration: publicConfigurationForBatch(refreshedBatch),
   };
 }
 
@@ -248,6 +378,7 @@ async function syncCreativeAssetBatch(
     const result = await pollFalImage({
       apiKey: configuration.apiKey,
       requestId: asset.requestId,
+      endpoint: falEndpointForAsset(asset),
       targetWidth: configuration.width,
       targetHeight: configuration.height,
       retention: configuration.retention,
@@ -267,16 +398,139 @@ async function submitStoredAsset(
   configuration: ReturnType<typeof getFalImageRuntimeConfig>,
 ): Promise<void> {
   try {
+    const characters = await getCreativeAssetReferenceSnapshot(asset.id);
+    const referenceImages = await Promise.all(
+      characters.flatMap((character) => character.referenceImages).map(
+        (reference) =>
+          readPrivateR2ImageFile({
+            objectKey: reference.objectKey,
+            contentType: reference.contentType,
+            fileName: reference.fileName,
+          }),
+      ),
+    );
     const requestId = await submitFalImage({
       apiKey: configuration.apiKey,
       prompt: asset.prompt,
       width: configuration.generationWidth,
       height: configuration.generationHeight,
       imageQuality: configuration.imageQuality,
+      endpoint: falEndpointForAsset(asset),
+      referenceImages,
+      retention: configuration.retention,
     });
     await setCreativeAssetRequest(asset.id, requestId);
   } catch (error) {
     await failCreativeAsset(asset.id, errorMessage(error));
+  }
+}
+
+function assetInputForUnit(characters: CreativeCharacterSnapshot[]): {
+  generationMode: CreativeGeneratedAsset["generationMode"];
+  providerEndpoint: FalImageEndpoint;
+  referenceSnapshot: CreativeCharacterSnapshot[];
+  referenceInputHash: string;
+} {
+  const generationMode =
+    characters.length > 0 ? "reference-guided" : "text-to-image";
+
+  return {
+    generationMode,
+    providerEndpoint:
+      generationMode === "reference-guided"
+        ? FAL_REFERENCE_GUIDED_ENDPOINT
+        : FAL_TEXT_TO_IMAGE_ENDPOINT,
+    referenceSnapshot: characters,
+    referenceInputHash: referenceInputHash(characters),
+  };
+}
+
+function referenceInputHash(characters: CreativeCharacterSnapshot[]): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify(
+        characters.map((character) => ({
+          id: character.id,
+          name: character.name,
+          description: character.description,
+          referenceImages: character.referenceImages.map((image) => ({
+            id: image.id,
+            objectKey: image.objectKey,
+            contentType: image.contentType,
+            fileSize: image.fileSize,
+            order: image.order,
+          })),
+        })),
+      ),
+    )
+    .digest("hex");
+}
+
+function falEndpointForAsset(asset: CreativeGeneratedAsset): FalImageEndpoint {
+  if (asset.generationMode === "reference-guided") {
+    if (asset.providerEndpoint !== FAL_REFERENCE_GUIDED_ENDPOINT) {
+      throw new CreativeContentConflictError(
+        "This reference-guided image does not have a compatible Fal endpoint. Generate a fresh image batch.",
+      );
+    }
+    return FAL_REFERENCE_GUIDED_ENDPOINT;
+  }
+
+  if (asset.providerEndpoint !== FAL_TEXT_TO_IMAGE_ENDPOINT) {
+    throw new CreativeContentConflictError(
+      "This text-to-image asset does not have a compatible Fal endpoint. Generate a fresh image batch.",
+    );
+  }
+  return FAL_TEXT_TO_IMAGE_ENDPOINT;
+}
+
+function batchMatchesDraftGenerationModes(
+  batch: CreativeAssetBatch,
+  draft: CreativeDraft,
+): boolean {
+  const assetsByOrder = new Map(
+    batch.assets.map((asset) => [asset.unitOrder, asset]),
+  );
+
+  return draft.units.every((unit) => {
+    const asset = assetsByOrder.get(unit.order);
+    if (!asset) return false;
+    const shouldUseReferences = (unit.characterIds?.length ?? 0) > 0;
+    return shouldUseReferences
+      ? asset.generationMode === "reference-guided" &&
+          asset.providerEndpoint === FAL_REFERENCE_GUIDED_ENDPOINT
+      : asset.generationMode === "text-to-image" &&
+          asset.providerEndpoint === FAL_TEXT_TO_IMAGE_ENDPOINT;
+  });
+}
+
+function snapshotsForUnit(
+  snapshotsByUnit: Map<string, CreativeCharacterSnapshot[]>,
+  unitId: string | undefined,
+): CreativeCharacterSnapshot[] {
+  return unitId ? snapshotsByUnit.get(unitId) ?? [] : [];
+}
+
+function assertCharacterSnapshotsForDraft(
+  draft: CreativeDraft,
+  snapshotsByUnit: Map<string, CreativeCharacterSnapshot[]>,
+): void {
+  const incompleteUnit = draft.units.find((unit) => {
+    const selected = new Set(unit.characterIds ?? []);
+    if (selected.size === 0) return false;
+    const snapshotted = new Set(
+      snapshotsForUnit(snapshotsByUnit, unit.id).map((character) => character.id),
+    );
+    return (
+      selected.size !== snapshotted.size ||
+      [...selected].some((characterId) => !snapshotted.has(characterId))
+    );
+  });
+
+  if (incompleteUnit) {
+    throw new CreativeContentConflictError(
+      `Slide ${incompleteUnit.order} has supporting-character selections without a current reference snapshot. Refresh character references, approve the draft, and try again.`,
+    );
   }
 }
 
@@ -452,7 +706,7 @@ function errorMessage(error: unknown): string {
 }
 
 export type CreativeAssetGenerationResponse = CreativeAssetBatchResponse & {
-  outcome: "submitted" | "existing";
+  outcome: "submitted" | "existing" | "versioned";
 };
 
 export class CreativeAssetValidationError extends Error {}

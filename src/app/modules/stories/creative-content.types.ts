@@ -28,6 +28,61 @@ export const CREATIVE_TONES = [
 ] as const;
 export type CreativeTone = (typeof CREATIVE_TONES)[number];
 
+/**
+ * The small, metadata-only roster that may be offered to the script model.
+ * Reference images and storage details intentionally never cross this boundary.
+ */
+export type CreativeCharacterRosterEntry = {
+  id: string;
+  name: string;
+  description: string;
+  /**
+   * Opaque server-generated fingerprint of the current reference set. It is
+   * included in the draft cache identity, but never sent to Gemini or Fal.
+   */
+  referenceFingerprint?: string;
+};
+
+export type CreativeCharacterReferenceImage = {
+  id: string;
+  fileName: string;
+  contentType: string;
+  fileSize: number;
+  order: number;
+  createdAt: Date;
+};
+
+export type CreativeCharacter = {
+  id: string;
+  slot: 1 | 2;
+  name: string;
+  description: string;
+  isActive: boolean;
+  referenceImages: CreativeCharacterReferenceImage[];
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type EditableCreativeCharacter = Pick<
+  CreativeCharacter,
+  "name" | "description"
+>;
+
+/** Server-only immutable copy used to regenerate an approved draft consistently. */
+export type CreativeCharacterSnapshot = CreativeCharacterRosterEntry & {
+  referenceImages: Array<
+    CreativeCharacterReferenceImage & {
+      objectKey: string;
+    }
+  >;
+};
+
+export type CreativeCharacterPlan = {
+  recommendation: "not-needed" | "use-characters";
+  rationale: string;
+  suggestedCharacterIds: string[];
+};
+
 export type CreativeContentSufficiency =
   | "sufficient"
   | "limited"
@@ -39,6 +94,9 @@ export type CreativeUnitRole =
   | "conclusion"
   | "call-to-action";
 export type CreativeAssetRequest = "generated-image" | "typography-only";
+export type CreativeAssetGenerationMode =
+  | "text-to-image"
+  | "reference-guided";
 export type CreativeAssetBatchStatus =
   | "queued"
   | "generating"
@@ -142,6 +200,11 @@ export type CreativeUnit = {
   factIds: string[];
   assetRequest: CreativeAssetRequest;
   aspectRatio: CreativeAspectRatio;
+  /**
+   * Optional for backward compatibility with drafts created before supporting
+   * characters existed. Runtime mappers always normalize this to an empty list.
+   */
+  characterIds?: string[];
 };
 
 export type GeneratedCreativeDraft = {
@@ -150,6 +213,8 @@ export type GeneratedCreativeDraft = {
   callToAction?: string;
   hashtags: string[];
   altText: string;
+  /** The model's recommendation; slide assignments remain user-editable. */
+  characterPlan?: CreativeCharacterPlan;
   units: CreativeUnit[];
 };
 
@@ -167,6 +232,8 @@ export type CreativeDraft = GeneratedCreativeDraft & {
   promptVersion: string;
   inputHash: string;
   usage: CreativeAiUsage;
+  /** Derived when loading a workspace; historical rows intentionally omit it. */
+  inputIsCurrent?: boolean;
   approvedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -202,6 +269,8 @@ export type CreativeWorkspaceState = {
     hasContent: boolean;
   };
   profile: CreativeProfile;
+  /** Active, metadata-only supporting characters available for this topic. */
+  characterRoster: CreativeCharacterRosterEntry[];
   brief?: CreativeBrief;
   briefIsCurrent: boolean;
   drafts: CreativeDraft[];
@@ -233,6 +302,10 @@ export type CreativeGeneratedAsset = {
   prompt: string;
   expectedText: string;
   unitSnapshot: CreativeUnit;
+  /** Safe display metadata; private reference object keys never leave the server. */
+  generationMode: CreativeAssetGenerationMode;
+  providerEndpoint: string;
+  referenceInputHash: string;
   requestId?: string;
   imageUrl?: string;
   contentType?: string;

@@ -1382,7 +1382,8 @@
 
 .prepareTableButton,
 .viewContentButton,
-.creativeStudioButton {
+.creativeStudioButton,
+.promoteStoryButton {
   min-height: 32px;
   padding: 0 10px;
   border-radius: 8px;
@@ -1412,15 +1413,23 @@
   color: #76561c;
 }
 
+.promoteStoryButton {
+  border: 1px solid #38668a;
+  background: #edf6ff;
+  color: #285675;
+}
+
 .prepareTableButton:hover:not(:disabled),
 .viewContentButton:hover:not(:disabled),
-.creativeStudioButton:hover:not(:disabled) {
+.creativeStudioButton:hover:not(:disabled),
+.promoteStoryButton:hover:not(:disabled) {
   transform: translateY(-1px);
 }
 
 .prepareTableButton:disabled,
 .viewContentButton:disabled,
-.creativeStudioButton:disabled {
+.creativeStudioButton:disabled,
+.promoteStoryButton:disabled {
   cursor: not-allowed;
   opacity: 0.45;
 }

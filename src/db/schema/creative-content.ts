@@ -18,13 +18,14 @@ import {
   creativeAiRunStatusEnum,
   creativeAiTaskEnum,
   creativeAspectRatioEnum,
-  creativeImageQualityEnum,
+  creativeAssetGenerationModeEnum,
   creativeAssetBatchStatusEnum,
   creativeAssetRequestTypeEnum,
   creativeAssetStatusEnum,
   creativeContentSufficiencyEnum,
   creativeDraftStatusEnum,
   creativeFormatEnum,
+  creativeImageQualityEnum,
   creativeToneEnum,
   creativeUnitRoleEnum,
   creativeUnitTypeEnum,
@@ -76,6 +77,73 @@ export const creativeProfiles = pgTable(
     check(
       "creative_profiles_max_emojis_check",
       sql`${table.maxEmojis} BETWEEN 0 AND 10`,
+    ),
+  ],
+);
+
+export const creativeCharacters = pgTable(
+  "creative_characters",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    topicId: uuid("topic_id")
+      .notNull()
+      .references(() => topics.id, { onDelete: "cascade" }),
+    slot: integer("slot"),
+    name: text("name").notNull(),
+    description: text("description").notNull(),
+    isActive: boolean("is_active").default(true).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("creative_characters_topic_slot_unique").on(
+      table.topicId,
+      table.slot,
+    ),
+    index("creative_characters_topic_id_idx").on(table.topicId),
+    index("creative_characters_topic_active_idx").on(
+      table.topicId,
+      table.isActive,
+    ),
+    check(
+      "creative_characters_slot_check",
+      sql`(${table.slot} IS NULL OR ${table.slot} BETWEEN 1 AND 2)
+        AND (${table.isActive} = false OR ${table.slot} IS NOT NULL)`,
+    ),
+  ],
+);
+
+export const creativeCharacterReferenceImages = pgTable(
+  "creative_character_reference_images",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    characterId: uuid("character_id")
+      .notNull()
+      .references(() => creativeCharacters.id, { onDelete: "cascade" }),
+    objectKey: text("object_key").notNull(),
+    contentType: text("content_type").notNull(),
+    fileName: text("file_name").notNull(),
+    fileSize: integer("file_size").notNull(),
+    order: integer("order").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("creative_character_reference_images_character_order_unique").on(
+      table.characterId,
+      table.order,
+    ),
+    index("creative_character_reference_images_character_id_idx").on(
+      table.characterId,
+    ),
+    check(
+      "creative_character_reference_images_values_check",
+      sql`${table.order} BETWEEN 1 AND 5 AND ${table.fileSize} > 0`,
     ),
   ],
 );
@@ -271,6 +339,31 @@ export const creativeUnits = pgTable(
   ],
 );
 
+export const creativeUnitCharacters = pgTable(
+  "creative_unit_characters",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    unitId: uuid("unit_id")
+      .notNull()
+      .references(() => creativeUnits.id, { onDelete: "cascade" }),
+    characterId: uuid("character_id")
+      .notNull()
+      .references(() => creativeCharacters.id, { onDelete: "restrict" }),
+    characterSnapshot: jsonb("character_snapshot").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("creative_unit_characters_unit_character_unique").on(
+      table.unitId,
+      table.characterId,
+    ),
+    index("creative_unit_characters_unit_id_idx").on(table.unitId),
+    index("creative_unit_characters_character_id_idx").on(table.characterId),
+  ],
+);
+
 export const creativeAssetBatches = pgTable(
   "creative_asset_batches",
   {
@@ -343,6 +436,18 @@ export const creativeAssets = pgTable(
     prompt: text("prompt").notNull(),
     expectedText: text("expected_text").notNull(),
     unitSnapshot: jsonb("unit_snapshot").notNull(),
+    generationMode: creativeAssetGenerationModeEnum("generation_mode")
+      .default("text-to-image")
+      .notNull(),
+    /** The exact Fal endpoint must survive polling and regeneration. */
+    providerEndpoint: text("provider_endpoint")
+      .default("openai/gpt-image-2")
+      .notNull(),
+    /** Immutable R2-backed character references; never signed/Fal URLs. */
+    referenceSnapshot: jsonb("reference_snapshot")
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    referenceInputHash: text("reference_input_hash").default("").notNull(),
     requestId: text("request_id"),
     imageUrl: text("image_url"),
     contentType: text("content_type"),

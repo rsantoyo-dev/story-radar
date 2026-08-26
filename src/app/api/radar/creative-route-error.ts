@@ -1,5 +1,6 @@
 import { ApiError } from "@google/genai";
 import { ApiError as FalApiError } from "@fal-ai/client";
+import { APIError as GroqApiError } from "groq-sdk";
 import { NextResponse } from "next/server";
 
 import { CreativeContentConfigurationError } from "@/app/modules/stories/creative-content.config";
@@ -15,6 +16,17 @@ import {
   CreativeDraftValidationError,
 } from "@/app/modules/stories/manage-creative-content";
 import { CreativeProfileValidationError } from "@/app/modules/stories/creative-profile.repository";
+import {
+  CreativeCharacterConflictError,
+  CreativeCharacterNotFoundError,
+  CreativeCharacterValidationError,
+} from "@/app/modules/stories/creative-characters.repository";
+import { CreativeCharacterReferenceValidationError } from "@/app/modules/stories/manage-creative-characters";
+import {
+  R2StorageConfigurationError,
+  R2StorageObjectError,
+  R2StorageValidationError,
+} from "@/app/modules/stories/r2-storage";
 import { SelectedStoryContentNotFoundError } from "@/app/modules/stories/story-content.repository";
 
 export function creativeRouteErrorResponse(
@@ -23,21 +35,25 @@ export function creativeRouteErrorResponse(
 ): NextResponse {
   if (
     error instanceof CreativeContentNotFoundError ||
-    error instanceof SelectedStoryContentNotFoundError
+    error instanceof SelectedStoryContentNotFoundError ||
+    error instanceof CreativeCharacterNotFoundError
   ) {
     return NextResponse.json({ error: error.message }, { status: 404 });
+  }
+
+  if (error instanceof SyntaxError) {
+    return NextResponse.json({ error: "The JSON body is invalid" }, { status: 400 });
   }
 
   if (
     error instanceof CreativeProfileValidationError ||
     error instanceof CreativeAssetValidationError ||
     error instanceof CreativeDraftValidationError ||
-    error instanceof SyntaxError
+    error instanceof CreativeCharacterValidationError ||
+    error instanceof CreativeCharacterReferenceValidationError ||
+    error instanceof R2StorageValidationError
   ) {
-    return NextResponse.json(
-      { error: error instanceof SyntaxError ? "The JSON body is invalid" : error.message },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
   if (error instanceof CreativeContentInsufficientError) {
@@ -48,20 +64,26 @@ export function creativeRouteErrorResponse(
     return NextResponse.json({ error: error.message }, { status: 409 });
   }
 
+  if (error instanceof CreativeCharacterConflictError) {
+    return NextResponse.json({ error: error.message }, { status: 409 });
+  }
+
   if (error instanceof CreativeContentDailyLimitError) {
     return NextResponse.json({ error: error.message }, { status: 429 });
   }
 
   if (
     error instanceof CreativeContentConfigurationError ||
-    error instanceof FalImageConfigurationError
+    error instanceof FalImageConfigurationError ||
+    error instanceof R2StorageConfigurationError
   ) {
     return NextResponse.json({ error: error.message }, { status: 503 });
   }
 
   if (
     error instanceof CreativeContentResponseError ||
-    error instanceof FalImageResponseError
+    error instanceof FalImageResponseError ||
+    error instanceof R2StorageObjectError
   ) {
     return NextResponse.json({ error: error.message }, { status: 502 });
   }
@@ -70,6 +92,14 @@ export function creativeRouteErrorResponse(
     const status = error.status === 429 ? 429 : 502;
     return NextResponse.json(
       { error: `Gemini could not ${operation} (HTTP ${error.status})` },
+      { status },
+    );
+  }
+
+  if (error instanceof GroqApiError) {
+    const status = error.status === 429 ? 429 : 502;
+    return NextResponse.json(
+      { error: `Groq could not ${operation} (HTTP ${error.status})` },
       { status },
     );
   }

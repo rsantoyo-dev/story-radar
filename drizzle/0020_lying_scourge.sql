@@ -1,0 +1,2 @@
+ALTER TABLE "creative_character_reference_images" DROP CONSTRAINT "creative_character_reference_images_values_check";--> statement-breakpoint
+ALTER TABLE "creative_character_reference_images" ADD CONSTRAINT "creative_character_reference_images_values_check" CHECK ("creative_character_reference_images"."order" BETWEEN 1 AND 5 AND "creative_character_reference_images"."file_size" > 0);

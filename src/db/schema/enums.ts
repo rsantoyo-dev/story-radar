@@ -86,6 +86,15 @@ export const creativeAssetRequestTypeEnum = pgEnum(
   ["generated-image", "typography-only"],
 );
 
+/**
+ * Kept on the asset—not the batch—because a carousel may use references on
+ * one slide and plain text-to-image on another.
+ */
+export const creativeAssetGenerationModeEnum = pgEnum(
+  "creative_asset_generation_mode",
+  ["text-to-image", "reference-guided"],
+);
+
 export const creativeAspectRatioEnum = pgEnum("creative_aspect_ratio", [
   "1:1",
   "4:5",

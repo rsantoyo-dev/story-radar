@@ -10,6 +10,7 @@ import {
   creativeAssetBatches,
   creativeDrafts,
   creativeUnits,
+  creativeUnitCharacters,
   storyCreativeBriefs,
 } from "@/db/schema";
 
@@ -18,6 +19,7 @@ import {
   type CreativeAspectRatio,
   type CreativeAiUsage,
   type CreativeBrief,
+  type CreativeCharacterSnapshot,
   type CreativeDailyUsage,
   type CreativeDraft,
   type CreativeFormat,
@@ -69,8 +71,6 @@ export async function findCreativeBriefById(
 export async function findCachedCreativeBrief(
   topicId: string,
   storyId: string,
-  provider: string,
-  model: string,
   promptVersion: string,
   inputHash: string,
 ): Promise<CreativeBrief | undefined> {
@@ -81,12 +81,11 @@ export async function findCachedCreativeBrief(
       and(
         eq(storyCreativeBriefs.topicId, topicId),
         eq(storyCreativeBriefs.storyId, storyId),
-        eq(storyCreativeBriefs.provider, provider),
-        eq(storyCreativeBriefs.model, model),
         eq(storyCreativeBriefs.promptVersion, promptVersion),
         eq(storyCreativeBriefs.inputHash, inputHash),
       ),
     )
+    .orderBy(desc(storyCreativeBriefs.createdAt))
     .limit(1);
 
   return row ? mapCreativeBrief(row) : undefined;
@@ -171,15 +170,45 @@ export async function findCreativeDrafts(
     )
     .orderBy(desc(creativeDrafts.updatedAt));
 
-  if (rows.length === 0) {
-    return [];
-  }
+  return loadCreativeDrafts(rows);
+}
+
+/**
+ * Returns every draft ever created for one story within a topic. The current
+ * workspace uses this to retain an inspectable history when a fresh brief
+ * supersedes an older draft that already has generated assets.
+ */
+export async function findCreativeDraftsForStory(
+  topicId: string,
+  storyId: string,
+): Promise<CreativeDraft[]> {
+  const rows = await db
+    .select()
+    .from(creativeDrafts)
+    .where(
+      and(
+        eq(creativeDrafts.topicId, topicId),
+        eq(creativeDrafts.storyId, storyId),
+      ),
+    )
+    .orderBy(desc(creativeDrafts.updatedAt));
+
+  return loadCreativeDrafts(rows);
+}
+
+async function loadCreativeDrafts(
+  rows: Array<typeof creativeDrafts.$inferSelect>,
+): Promise<CreativeDraft[]> {
+  if (rows.length === 0) return [];
 
   const unitRows = await db
     .select()
     .from(creativeUnits)
     .where(inArray(creativeUnits.draftId, rows.map((row) => row.id)))
     .orderBy(creativeUnits.draftId, creativeUnits.order);
+  const characterIdsByUnit = await findCharacterIdsByUnit(
+    unitRows.map((unit) => unit.id),
+  );
   const unitsByDraft = new Map<
     string,
     (typeof creativeUnits.$inferSelect)[]
@@ -191,7 +220,13 @@ export async function findCreativeDrafts(
     unitsByDraft.set(unit.draftId, existing);
   });
 
-  return rows.map((row) => mapCreativeDraft(row, unitsByDraft.get(row.id) ?? []));
+  return rows.map((row) =>
+    mapCreativeDraft(
+      row,
+      unitsByDraft.get(row.id) ?? [],
+      characterIdsByUnit,
+    ),
+  );
 }
 
 export async function findCreativeDraftById(
@@ -218,8 +253,11 @@ export async function findCreativeDraftById(
     .from(creativeUnits)
     .where(eq(creativeUnits.draftId, draftId))
     .orderBy(creativeUnits.order);
+  const characterIdsByUnit = await findCharacterIdsByUnit(
+    units.map((unit) => unit.id),
+  );
 
-  return mapCreativeDraft(row, units);
+  return mapCreativeDraft(row, units, characterIdsByUnit);
 }
 
 export async function findCachedCreativeDraft(
@@ -250,8 +288,11 @@ export async function findCachedCreativeDraft(
     .from(creativeUnits)
     .where(eq(creativeUnits.draftId, row.id))
     .orderBy(creativeUnits.order);
+  const characterIdsByUnit = await findCharacterIdsByUnit(
+    units.map((unit) => unit.id),
+  );
 
-  return mapCreativeDraft(row, units);
+  return mapCreativeDraft(row, units, characterIdsByUnit);
 }
 
 export async function insertCreativeDraft({
@@ -267,6 +308,7 @@ export async function insertCreativeDraft({
   inputHash,
   generated,
   usage,
+  characterSnapshots,
 }: {
   topicId: string;
   storyId: string;
@@ -280,9 +322,12 @@ export async function insertCreativeDraft({
   inputHash: string;
   generated: GeneratedCreativeDraft;
   usage: CreativeAiUsage;
+  characterSnapshots: Map<string, CreativeCharacterSnapshot>;
 }): Promise<CreativeDraft> {
   const id = randomUUID();
   const now = new Date();
+  const units = draftUnitRows(id, generated.units, now);
+  const assignments = unitCharacterAssignments(units, characterSnapshots, now);
 
   await db.batch([
     db.insert(creativeDrafts).values({
@@ -307,23 +352,10 @@ export async function insertCreativeDraft({
       createdAt: now,
       updatedAt: now,
     }),
-    db.insert(creativeUnits).values(
-      generated.units.map((unit) => ({
-        id: randomUUID(),
-        draftId: id,
-        order: unit.order,
-        type: unit.type,
-        role: unit.role,
-        headline: unit.headline,
-        body: unit.body ?? null,
-        visualDirection: unit.visualDirection,
-        factIds: unit.factIds,
-        assetRequest: unit.assetRequest,
-        aspectRatio: unit.aspectRatio,
-        createdAt: now,
-        updatedAt: now,
-      })),
-    ),
+    db.insert(creativeUnits).values(units),
+    ...(assignments.length > 0
+      ? [db.insert(creativeUnitCharacters).values(assignments)]
+      : []),
   ]);
 
   const saved = await findCreativeDraftById(topicId, id);
@@ -337,8 +369,12 @@ export async function replaceCreativeDraft(
   topicId: string,
   current: CreativeDraft,
   input: EditableCreativeDraft,
+  characterSnapshots: Map<string, CreativeCharacterSnapshot>,
+  options: { inputHash?: string } = {},
 ): Promise<CreativeDraft> {
   const now = new Date();
+  const units = draftUnitRows(current.id, input.units, now);
+  const assignments = unitCharacterAssignments(units, characterSnapshots, now);
 
   await db.batch([
     db
@@ -349,9 +385,8 @@ export async function replaceCreativeDraft(
         callToAction: input.callToAction ?? null,
         hashtags: input.hashtags,
         altText: input.altText,
-        // The ratio is selected while creating the draft. Validation prevents
-        // an edit request from silently changing this existing variant.
-        outputAspectRatio: current.outputAspectRatio,
+        outputAspectRatio: input.outputAspectRatio,
+        ...(options.inputHash ? { inputHash: options.inputHash } : {}),
         status: "draft",
         approvedAt: null,
         version: current.version + 1,
@@ -368,23 +403,10 @@ export async function replaceCreativeDraft(
       .set({ status: "stale", updatedAt: now })
       .where(eq(creativeAssetBatches.draftId, current.id)),
     db.delete(creativeUnits).where(eq(creativeUnits.draftId, current.id)),
-    db.insert(creativeUnits).values(
-      input.units.map((unit) => ({
-        id: randomUUID(),
-        draftId: current.id,
-        order: unit.order,
-        type: unit.type,
-        role: unit.role,
-        headline: unit.headline,
-        body: unit.body ?? null,
-        visualDirection: unit.visualDirection,
-        factIds: unit.factIds,
-        assetRequest: unit.assetRequest,
-        aspectRatio: unit.aspectRatio,
-        createdAt: now,
-        updatedAt: now,
-      })),
-    ),
+    db.insert(creativeUnits).values(units),
+    ...(assignments.length > 0
+      ? [db.insert(creativeUnitCharacters).values(assignments)]
+      : []),
   ]);
 
   const saved = await findCreativeDraftById(topicId, current.id);
@@ -459,6 +481,10 @@ export async function getCreativeDailyUsage(
     .where(
       and(
         eq(creativeAiRuns.topicId, topicId),
+        // A provider error must not spend the topic's daily creative budget.
+        // Keep in-flight runs in the count to prevent concurrent requests from
+        // bypassing the limit, and retain completed runs for cost control.
+        inArray(creativeAiRuns.status, ["running", "completed"]),
         gte(creativeAiRuns.startedAt, start),
         lt(creativeAiRuns.startedAt, end),
       ),
@@ -519,6 +545,7 @@ export async function completeCreativeAiRun(
   runId: string,
   usage: CreativeAiUsage,
   ids: { briefId?: string; draftId?: string },
+  provider?: { provider: string; model: string },
 ): Promise<void> {
   await db
     .update(creativeAiRuns)
@@ -526,6 +553,7 @@ export async function completeCreativeAiRun(
       status: "completed",
       ...(ids.briefId ? { briefId: ids.briefId } : {}),
       ...(ids.draftId ? { draftId: ids.draftId } : {}),
+      ...(provider ? provider : {}),
       ...usage,
       error: null,
       finishedAt: new Date(),
@@ -598,7 +626,9 @@ function mapCreativeBrief(
 function mapCreativeDraft(
   row: typeof creativeDrafts.$inferSelect,
   units: (typeof creativeUnits.$inferSelect)[],
+  characterIdsByUnit: Map<string, string[]>,
 ): CreativeDraft {
+  const generated = row.aiSnapshot as Partial<GeneratedCreativeDraft>;
   return {
     id: row.id,
     storyId: row.storyId,
@@ -609,6 +639,7 @@ function mapCreativeDraft(
     concept: row.concept,
     caption: row.caption,
     ...(row.callToAction ? { callToAction: row.callToAction } : {}),
+    ...(generated.characterPlan ? { characterPlan: generated.characterPlan } : {}),
     hashtags: row.hashtags,
     altText: row.altText,
     units: units.map((unit) => ({
@@ -622,6 +653,7 @@ function mapCreativeDraft(
       factIds: unit.factIds,
       assetRequest: unit.assetRequest,
       aspectRatio: unit.aspectRatio,
+      characterIds: characterIdsByUnit.get(unit.id) ?? [],
     })),
     provider: row.provider,
     model: row.model,
@@ -634,6 +666,73 @@ function mapCreativeDraft(
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+function draftUnitRows(
+  draftId: string,
+  units: GeneratedCreativeDraft["units"],
+  now: Date,
+) {
+  return units.map((unit) => ({
+    id: randomUUID(),
+    draftId,
+    order: unit.order,
+    type: unit.type,
+    role: unit.role,
+    headline: unit.headline,
+    body: unit.body ?? null,
+    visualDirection: unit.visualDirection,
+    factIds: unit.factIds,
+    assetRequest: unit.assetRequest,
+    aspectRatio: unit.aspectRatio,
+    createdAt: now,
+    updatedAt: now,
+    characterIds: unit.characterIds ?? [],
+  }));
+}
+
+function unitCharacterAssignments(
+  units: Array<ReturnType<typeof draftUnitRows>[number]>,
+  characterSnapshots: Map<string, CreativeCharacterSnapshot>,
+  now: Date,
+) {
+  return units.flatMap((unit) =>
+    unit.characterIds.map((characterId) => {
+      const characterSnapshot = characterSnapshots.get(characterId);
+      if (!characterSnapshot) {
+        throw new Error("The selected supporting character snapshot is missing");
+      }
+      return {
+        id: randomUUID(),
+        unitId: unit.id,
+        characterId,
+        characterSnapshot,
+        createdAt: now,
+      };
+    }),
+  );
+}
+
+async function findCharacterIdsByUnit(
+  unitIds: string[],
+): Promise<Map<string, string[]>> {
+  if (unitIds.length === 0) return new Map();
+  const rows = await db
+    .select({
+      unitId: creativeUnitCharacters.unitId,
+      characterId: creativeUnitCharacters.characterId,
+    })
+    .from(creativeUnitCharacters)
+    .where(inArray(creativeUnitCharacters.unitId, unitIds));
+  const characterIdsByUnit = new Map<string, string[]>();
+
+  rows.forEach((row) => {
+    const current = characterIdsByUnit.get(row.unitId) ?? [];
+    current.push(row.characterId);
+    characterIdsByUnit.set(row.unitId, current);
+  });
+
+  return characterIdsByUnit;
 }
 
 function usageFromRow(row: {

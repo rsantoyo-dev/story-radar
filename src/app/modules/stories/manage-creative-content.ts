@@ -17,7 +17,7 @@ import {
   findCachedCreativeDraft,
   findCreativeBriefById,
   findCreativeDraftById,
-  findCreativeDrafts,
+  findCreativeDraftsForStory,
   findLatestCreativeBrief,
   getCreativeDailyUsage,
   insertCreativeBrief,
@@ -25,8 +25,13 @@ import {
   replaceCreativeDraft,
   unapproveCreativeDraft,
 } from "./creative-content.repository";
+import {
+  listCreativeCharacterRoster,
+  snapshotsForCreativeCharacterIds,
+} from "./creative-characters.repository";
 import type {
   CreativeAspectRatio,
+  CreativeCharacterRosterEntry,
   CreativeDraft,
   CreativeFormat,
   CreativeGenerationResult,
@@ -41,8 +46,8 @@ import {
   resolveCreativeOutputAspectRatio,
 } from "./creative-aspect-ratio";
 import {
-  generateCreativeBriefWithGemini,
-  generateCreativeDraftWithGemini,
+  generateCreativeBrief,
+  generateCreativeDraft,
   type CreativeTopicContext,
 } from "./gemini-creative-content-generator";
 import { getCreativeProfile } from "./creative-profile.repository";
@@ -57,10 +62,11 @@ export async function getCreativeWorkspaceState(
   storyId: string,
 ): Promise<CreativeWorkspaceState> {
   const configuration = getCreativeContentPublicConfig();
-  const [topic, story, profile, brief, daily] = await Promise.all([
+  const [topic, story, profile, characterRoster, latestBrief, daily] = await Promise.all([
     requireTopic(topicId, { active: true }),
     getSelectedStoryContent(topicId, storyId),
     getCreativeProfile(topicId),
+    listCreativeCharacterRoster(topicId),
     findLatestCreativeBrief(topicId, storyId),
     getCreativeDailyUsage(topicId, configuration.maxRunsPerDay),
   ]);
@@ -73,7 +79,46 @@ export async function getCreativeWorkspaceState(
         shortenContent(story.text.trim(), configuration.maxContentCharacters),
       )
     : undefined;
-  const drafts = brief ? await findCreativeDrafts(topicId, brief.id) : [];
+  // A user can switch a profile back to a previous configuration. In that
+  // case, prefer its already-valid cached brief over a newer but stale one.
+  const cachedCurrentBrief =
+    inputHash && latestBrief?.inputHash !== inputHash
+      ? await findCachedCreativeBrief(
+          topicId,
+          storyId,
+          configuration.briefPromptVersion,
+          inputHash,
+        )
+      : undefined;
+  const brief = cachedCurrentBrief ?? latestBrief;
+  const briefIsCurrent = Boolean(brief && inputHash === brief.inputHash);
+  const drafts = (await findCreativeDraftsForStory(topicId, storyId))
+    .map((draft) => ({
+      ...draft,
+      // Historical drafts remain in the workspace response for a future
+      // read-only history view, but only a draft made from the selected,
+      // current brief may be used by the active editing/generation workflow.
+      inputIsCurrent: Boolean(
+        briefIsCurrent &&
+          brief?.id === draft.briefId &&
+          draft.inputHash ===
+            createDraftInputHash(
+              brief.id,
+              brief.inputHash,
+              draft.format,
+              draft.outputAspectRatio,
+              characterRoster,
+              {
+                provider: configuration.provider,
+                model: configuration.model,
+                promptVersion: configuration.draftPromptVersions[draft.format],
+              },
+            ),
+      ),
+    }))
+    // Keep the latest saved version first. The Studio still distinguishes a
+    // current draft from a read-only historical one after the user opens it.
+    .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
 
   return {
     story: {
@@ -85,8 +130,9 @@ export async function getCreativeWorkspaceState(
       hasContent: Boolean(story.text?.trim()),
     },
     profile,
+    characterRoster,
     ...(brief ? { brief } : {}),
-    briefIsCurrent: Boolean(brief && inputHash === brief.inputHash),
+    briefIsCurrent,
     drafts,
     daily,
     configuration: {
@@ -120,8 +166,6 @@ export async function createCreativeBrief(
   const cached = await findCachedCreativeBrief(
     topicId,
     storyId,
-    configuration.provider,
-    configuration.model,
     configuration.briefPromptVersion,
     inputHash,
   );
@@ -145,9 +189,12 @@ export async function createCreativeBrief(
   });
 
   try {
-    const result = await generateCreativeBriefWithGemini({
+    const result = await generateCreativeBrief({
       apiKey: configuration.apiKey,
       model: configuration.model,
+      primaryProvider: configuration.primaryProvider,
+      groqApiKey: configuration.groqApiKey,
+      groqModel: configuration.groqModel,
       story: storyForGenerator(story, content),
       topic,
       profile,
@@ -156,17 +203,21 @@ export async function createCreativeBrief(
       topicId,
       storyId,
       profile,
-      provider: configuration.provider,
-      model: configuration.model,
+      provider: result.provider,
+      model: result.model,
       modelVersion: result.modelVersion,
       promptVersion: configuration.briefPromptVersion,
       inputHash,
       generated: result.brief,
       usage: result.usage,
     });
-    await completeCreativeAiRun(topicId, runId, result.usage, {
-      briefId: brief.id,
-    });
+    await completeCreativeAiRun(
+      topicId,
+      runId,
+      result.usage,
+      { briefId: brief.id },
+      { provider: result.provider, model: result.model },
+    );
 
     return {
       outcome: "generated",
@@ -183,6 +234,7 @@ export async function createCreativeDraft(
   briefId: string,
   format: CreativeFormat,
   aspectRatio?: CreativeAspectRatio,
+  createNewVersion = false,
 ): Promise<CreativeGenerationResult> {
   const configuration = getCreativeContentRuntimeConfig();
   const brief = await findCreativeBriefById(topicId, briefId);
@@ -195,10 +247,11 @@ export async function createCreativeDraft(
     throw new CreativeContentNotFoundError("The creative brief was not found");
   }
 
-  const [topic, story, currentProfile, daily] = await Promise.all([
+  const [topic, story, currentProfile, characterRoster, daily] = await Promise.all([
     requireTopic(topicId, { active: true }),
     getSelectedStoryContent(topicId, brief.storyId),
     getCreativeProfile(topicId),
+    listCreativeCharacterRoster(topicId),
     getCreativeDailyUsage(topicId, configuration.maxRunsPerDay),
   ]);
   const content = requireStoryContent(story, configuration.maxContentCharacters);
@@ -222,6 +275,7 @@ export async function createCreativeDraft(
     brief.inputHash,
     format,
     outputAspectRatio,
+    characterRoster,
     {
       provider: configuration.provider,
       model: configuration.model,
@@ -235,7 +289,7 @@ export async function createCreativeDraft(
     inputHash,
   );
 
-  if (cached) {
+  if (cached && !createNewVersion) {
     return {
       outcome: "cached",
       state: await getCreativeWorkspaceState(topicId, brief.storyId),
@@ -255,33 +309,53 @@ export async function createCreativeDraft(
   });
 
   try {
-    const result = await generateCreativeDraftWithGemini({
+    const result = await generateCreativeDraft({
       apiKey: configuration.apiKey,
       model: configuration.model,
+      primaryProvider: configuration.primaryProvider,
+      groqApiKey: configuration.groqApiKey,
+      groqModel: configuration.groqModel,
       story: storyForGenerator(story, content),
       topic,
       profile: brief.profileSnapshot,
       brief,
       format,
       outputAspectRatio,
+      characterRoster,
     });
-    const draft = await insertCreativeDraft({
+    const characterSnapshots = await snapshotsForCreativeCharacterIds(
       topicId,
-      storyId: brief.storyId,
-      briefId: brief.id,
-      format,
-      outputAspectRatio,
-      provider: configuration.provider,
-      model: configuration.model,
-      modelVersion: result.modelVersion,
-      promptVersion,
-      inputHash,
-      generated: result.draft,
-      usage: result.usage,
-    });
-    await completeCreativeAiRun(topicId, runId, result.usage, {
-      draftId: draft.id,
-    });
+      result.draft.units.flatMap((unit) => unit.characterIds ?? []),
+    );
+    const draft = cached
+      ? await replaceCreativeDraft(
+          topicId,
+          cached,
+          { ...result.draft, outputAspectRatio },
+          characterSnapshots,
+        )
+      : await insertCreativeDraft({
+          topicId,
+          storyId: brief.storyId,
+          briefId: brief.id,
+          format,
+          outputAspectRatio,
+          provider: result.provider,
+          model: result.model,
+          modelVersion: result.modelVersion,
+          promptVersion,
+          inputHash,
+          generated: result.draft,
+          usage: result.usage,
+          characterSnapshots,
+        });
+    await completeCreativeAiRun(
+      topicId,
+      runId,
+      result.usage,
+      { draftId: draft.id },
+      { provider: result.provider, model: result.model },
+    );
 
     return {
       outcome: "generated",
@@ -309,13 +383,19 @@ export async function saveCreativeDraft(
     throw new CreativeContentNotFoundError("The creative brief was not found");
   }
 
+  const characterRoster = await listCreativeCharacterRoster(topicId);
   const validated = validateEditableDraft(
     input,
     current.format,
     brief.keyFacts.map((fact) => fact.id),
     outputAspectRatioForDraft(current),
+    characterRoster.map((character) => character.id),
   );
-  return replaceCreativeDraft(topicId, current, validated);
+  const characterSnapshots = await snapshotsForCreativeCharacterIds(
+    topicId,
+    validated.units.flatMap((unit) => unit.characterIds ?? []),
+  );
+  return replaceCreativeDraft(topicId, current, validated, characterSnapshots);
 }
 
 export async function approveSavedCreativeDraft(
@@ -333,11 +413,13 @@ export async function approveSavedCreativeDraft(
     throw new CreativeContentNotFoundError("The creative brief was not found");
   }
 
+  const characterRoster = await listCreativeCharacterRoster(topicId);
   validateEditableDraft(
     current,
     current.format,
     brief.keyFacts.map((fact) => fact.id),
     outputAspectRatioForDraft(current),
+    characterRoster.map((character) => character.id),
   );
   return approveCreativeDraft(topicId, draftId);
 }
@@ -359,6 +441,87 @@ export async function unapproveSavedCreativeDraft(
   }
 
   return unapproveCreativeDraft(topicId, draftId);
+}
+
+/**
+ * Replaces immutable draft snapshots with the character profile's current
+ * description and references. This deliberately creates a new draft version,
+ * so assets generated with the earlier identity can never be regenerated by
+ * accident after the user changes a character.
+ */
+export async function refreshCreativeDraftCharacterReferences(
+  topicId: string,
+  draftId: string,
+): Promise<CreativeDraft> {
+  const current = await findCreativeDraftById(topicId, draftId);
+
+  if (!current) {
+    throw new CreativeContentNotFoundError("The creative draft was not found");
+  }
+
+  const brief = await findCreativeBriefById(topicId, current.briefId);
+  if (!brief) {
+    throw new CreativeContentNotFoundError("The creative brief was not found");
+  }
+
+  const configuration = getCreativeContentPublicConfig();
+  const [topic, story, profile, characterRoster] = await Promise.all([
+    requireTopic(topicId, { active: true }),
+    getSelectedStoryContent(topicId, current.storyId),
+    getCreativeProfile(topicId),
+    listCreativeCharacterRoster(topicId),
+  ]);
+  const content = requireStoryContent(story, configuration.maxContentCharacters);
+  const currentBriefHash = createBriefInputHash(
+    story,
+    profile,
+    topic,
+    configuration,
+    content,
+  );
+
+  if (currentBriefHash !== brief.inputHash) {
+    throw new CreativeContentConflictError(
+      "The story content or creative profile changed. Refresh the creative brief and create a current draft before refreshing character references.",
+    );
+  }
+
+  const refreshed = validateEditableDraft(
+    current,
+    current.format,
+    brief.keyFacts.map((fact) => fact.id),
+    outputAspectRatioForDraft(current),
+    characterRoster.map((character) => character.id),
+  );
+  const characterIds = refreshed.units.flatMap(
+    (unit) => unit.characterIds ?? [],
+  );
+
+  if (characterIds.length === 0) {
+    throw new CreativeContentConflictError(
+      "This draft does not assign a supporting character to any slide.",
+    );
+  }
+
+  const characterSnapshots = await snapshotsForCreativeCharacterIds(
+    topicId,
+    characterIds,
+  );
+  const inputHash = createDraftInputHash(
+    brief.id,
+    brief.inputHash,
+    current.format,
+    outputAspectRatioForDraft(current),
+    characterRoster,
+    {
+      provider: configuration.provider,
+      model: configuration.model,
+      promptVersion: configuration.draftPromptVersions[current.format],
+    },
+  );
+  return replaceCreativeDraft(topicId, current, refreshed, characterSnapshots, {
+    inputHash,
+  });
 }
 
 function requireStoryContent(
@@ -453,6 +616,7 @@ function createDraftInputHash(
   briefInputHash: string,
   format: CreativeFormat,
   outputAspectRatio: CreativeAspectRatio,
+  characterRoster: CreativeCharacterRosterEntry[],
   configuration: { provider: string; model: string; promptVersion: string },
 ): string {
   return hash({
@@ -460,6 +624,12 @@ function createDraftInputHash(
     briefInputHash,
     format,
     outputAspectRatio,
+    characterRoster: characterRoster.map((character) => ({
+      id: character.id,
+      name: character.name,
+      description: character.description,
+      referenceFingerprint: character.referenceFingerprint ?? null,
+    })),
     ...configuration,
   });
 }
@@ -473,6 +643,7 @@ function validateEditableDraft(
   format: CreativeFormat,
   knownFactIds: string[],
   outputAspectRatio: CreativeAspectRatio,
+  availableCharacterIds: string[],
 ): EditableCreativeDraft {
   const record = recordValue(input, "A draft object is required");
   const selectedOutputAspectRatio = editableDraftOutputAspectRatio(
@@ -492,9 +663,14 @@ function validateEditableDraft(
   }
 
   const facts = new Set(knownFactIds);
+  const characters = new Set(availableCharacterIds);
   const units: CreativeUnit[] = rawUnits.map((value, index) => {
     const unit = recordValue(value, `Slide ${index + 1} is invalid`);
     const factIds = textArray(unit.factIds, `unit ${index + 1} factIds`, 6, 30);
+    const characterIds = optionalCharacterIds(
+      unit.characterIds,
+      `unit ${index + 1} characterIds`,
+    );
     const role = unit.role;
     const assetRequest = unit.assetRequest;
 
@@ -519,6 +695,12 @@ function validateEditableDraft(
       );
     }
 
+    if (characterIds.some((id) => !characters.has(id))) {
+      throw new CreativeDraftValidationError(
+        `Unit ${index + 1} selects an unavailable supporting character`,
+      );
+    }
+
     return {
       order: index + 1,
       type: format === "meme" ? "meme-frame" : "carousel-slide",
@@ -533,6 +715,7 @@ function validateEditableDraft(
       factIds,
       assetRequest,
       aspectRatio: selectedOutputAspectRatio,
+      characterIds,
     };
   });
 
@@ -554,7 +737,7 @@ function editableDraftOutputAspectRatio(
   if (value === undefined) return fallback;
   if (!isCreativeOutputAspectRatio(value)) {
     throw new CreativeDraftValidationError(
-      "outputAspectRatio must be 1:1, 4:5, or 16:9",
+      "outputAspectRatio must be 4:5",
     );
   }
   if (value !== fallback) {
@@ -617,6 +800,11 @@ function textArray(
   return [...new Set(value.map((item) => item.trim()).filter(Boolean))]
     .slice(0, maxItems)
     .map((item) => item.slice(0, maxLength));
+}
+
+function optionalCharacterIds(value: unknown, field: string): string[] {
+  if (value === undefined || value === null) return [];
+  return textArray(value, field, 2, 100);
 }
 
 function normalizeHashtags(hashtags: string[]): string[] {

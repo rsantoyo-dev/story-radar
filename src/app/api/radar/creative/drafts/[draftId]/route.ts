@@ -5,6 +5,7 @@ import {
 } from "@/app/api/radar/radar-topic";
 import {
   approveSavedCreativeDraft,
+  refreshCreativeDraftCharacterReferences,
   saveCreativeDraft,
   unapproveSavedCreativeDraft,
 } from "@/app/modules/stories/manage-creative-content";
@@ -56,14 +57,26 @@ export async function PATCH(request: Request, context: Context) {
 
   try {
     const body = (await request.json()) as { action?: unknown };
-    if (body.action !== "approve" && body.action !== "unapprove") {
-      return noStoreJson({ error: "action must be approve or unapprove" }, 400);
+    if (
+      body.action !== "approve" &&
+      body.action !== "unapprove" &&
+      body.action !== "refresh-character-references"
+    ) {
+      return noStoreJson(
+        {
+          error:
+            "action must be approve, unapprove, or refresh-character-references",
+        },
+        400,
+      );
     }
     const topicId = await requireActiveRequestTopic(request);
     return noStoreJson(
       body.action === "approve"
         ? await approveSavedCreativeDraft(topicId, draftId)
-        : await unapproveSavedCreativeDraft(topicId, draftId),
+        : body.action === "unapprove"
+          ? await unapproveSavedCreativeDraft(topicId, draftId)
+          : await refreshCreativeDraftCharacterReferences(topicId, draftId),
     );
   } catch (error) {
     const topicError = topicRequestErrorResponse(error);

@@ -31,6 +31,7 @@ export async function POST(request: Request, context: Context) {
     const body = (await request.json()) as {
       format?: unknown;
       aspectRatio?: unknown;
+      createNewVersion?: unknown;
     };
 
     if (!isCreativeFormat(body.format)) {
@@ -45,6 +46,12 @@ export async function POST(request: Request, context: Context) {
         400,
       );
     }
+    if (
+      body.createNewVersion !== undefined &&
+      typeof body.createNewVersion !== "boolean"
+    ) {
+      return noStoreJson({ error: "createNewVersion must be true or false" }, 400);
+    }
 
     return noStoreJson(
       await createCreativeDraft(
@@ -52,6 +59,7 @@ export async function POST(request: Request, context: Context) {
         briefId,
         body.format,
         body.aspectRatio,
+        body.createNewVersion === true,
       ),
     );
   } catch (error) {

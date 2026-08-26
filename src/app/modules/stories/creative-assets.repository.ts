@@ -10,8 +10,10 @@ import { creativeAssetBatches, creativeAssets } from "@/db/schema";
 import {
   DEFAULT_CREATIVE_IMAGE_QUALITY,
   type CreativeAspectRatio,
+  type CreativeAssetGenerationMode,
   type CreativeAssetBatch,
   type CreativeAssetBatchStatus,
+  type CreativeCharacterSnapshot,
   type CreativeGeneratedAsset,
   type CreativeImageQuality,
   type CreativeUnit,
@@ -36,6 +38,10 @@ type NewAsset = {
   prompt: string;
   expectedText: string;
   unitSnapshot: CreativeUnit;
+  generationMode: CreativeAssetGenerationMode;
+  providerEndpoint: string;
+  referenceSnapshot: CreativeCharacterSnapshot[];
+  referenceInputHash: string;
 };
 
 export async function findCurrentCreativeAssetBatch(
@@ -114,6 +120,24 @@ export async function findLatestCreativeAssetBatch(
         eq(creativeAssetBatches.draftVersion, draftVersion),
       ),
     )
+    .orderBy(desc(creativeAssetBatches.createdAt))
+    .limit(1);
+
+  return batch ? loadCreativeAssetBatch(batch) : undefined;
+}
+
+/**
+ * Retrieves the most recent saved batch across every version of a draft for
+ * the read-only Studio history. New generation keeps using version-scoped
+ * lookups, so historical viewing cannot affect a current batch.
+ */
+export async function findLatestCreativeAssetBatchForDraft(
+  draftId: string,
+): Promise<CreativeAssetBatch | undefined> {
+  const [batch] = await db
+    .select()
+    .from(creativeAssetBatches)
+    .where(eq(creativeAssetBatches.draftId, draftId))
     .orderBy(desc(creativeAssetBatches.createdAt))
     .limit(1);
 
@@ -210,6 +234,10 @@ export async function createCreativeAssetBatch({
         prompt: asset.prompt,
         expectedText: asset.expectedText,
         unitSnapshot: asset.unitSnapshot,
+        generationMode: asset.generationMode,
+        providerEndpoint: asset.providerEndpoint,
+        referenceSnapshot: asset.referenceSnapshot,
+        referenceInputHash: asset.referenceInputHash,
         createdAt: now,
         updatedAt: now,
       })),
@@ -230,6 +258,21 @@ export async function insertRegeneratedCreativeAsset({
 }): Promise<CreativeGeneratedAsset> {
   const now = new Date();
   const nextVersion = previous.availableVersions + 1;
+  const [previousRow] = await db
+    .select({
+      generationMode: creativeAssets.generationMode,
+      providerEndpoint: creativeAssets.providerEndpoint,
+      referenceSnapshot: creativeAssets.referenceSnapshot,
+      referenceInputHash: creativeAssets.referenceInputHash,
+    })
+    .from(creativeAssets)
+    .where(eq(creativeAssets.id, previous.id))
+    .limit(1);
+
+  if (!previousRow) {
+    throw new Error("The previous creative image could not be found");
+  }
+
   const [row] = await db
     .insert(creativeAssets)
     .values({
@@ -245,6 +288,10 @@ export async function insertRegeneratedCreativeAsset({
       prompt,
       expectedText: previous.expectedText,
       unitSnapshot: previous.unitSnapshot,
+      generationMode: previousRow.generationMode,
+      providerEndpoint: previousRow.providerEndpoint,
+      referenceSnapshot: previousRow.referenceSnapshot,
+      referenceInputHash: previousRow.referenceInputHash,
       createdAt: now,
       updatedAt: now,
     })
@@ -253,6 +300,26 @@ export async function insertRegeneratedCreativeAsset({
   if (!row) throw new Error("The regenerated creative asset could not be saved");
   await updateBatchStatus(previous.batchId, "generating", null);
   return mapCreativeAsset(row, nextVersion);
+}
+
+/**
+ * Internal-only immutable reference material for a stored asset. The public
+ * asset mapper intentionally does not expose private R2 keys to the browser.
+ */
+export async function getCreativeAssetReferenceSnapshot(
+  assetId: string,
+): Promise<CreativeCharacterSnapshot[]> {
+  const [row] = await db
+    .select({ referenceSnapshot: creativeAssets.referenceSnapshot })
+    .from(creativeAssets)
+    .where(eq(creativeAssets.id, assetId))
+    .limit(1);
+
+  if (!row || !Array.isArray(row.referenceSnapshot)) {
+    return [];
+  }
+
+  return row.referenceSnapshot as CreativeCharacterSnapshot[];
 }
 
 export async function setCreativeAssetRequest(
@@ -433,6 +500,9 @@ function mapCreativeAsset(
     prompt: row.prompt,
     expectedText: row.expectedText,
     unitSnapshot: row.unitSnapshot as CreativeUnit,
+    generationMode: row.generationMode,
+    providerEndpoint: row.providerEndpoint,
+    referenceInputHash: row.referenceInputHash,
     ...(row.requestId ? { requestId: row.requestId } : {}),
     ...(row.imageUrl ? { imageUrl: row.imageUrl } : {}),
     ...(row.contentType ? { contentType: row.contentType } : {}),

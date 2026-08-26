@@ -189,6 +189,7 @@ type EditorialTableStory = {
   publishedAt?: string;
   lastSeenAt?: string;
   localScore: number;
+  reviewDecision?: "approved" | "rejected";
   reviewable?: boolean;
   evaluationDecision?: "reject" | "review" | "shortlist";
   editorialPriority?: number;
@@ -289,6 +290,7 @@ type Operation =
   | "collect"
   | "evaluate"
   | "review"
+  | "promote"
   | "prepare"
   | "view"
   | "publication"
@@ -473,6 +475,45 @@ export function RadarDashboard({
     });
   }
 
+  async function handlePromoteReviewCandidate(
+    storyId: string,
+    title: string,
+  ) {
+    if (!canAuthenticate || isBusy) return;
+    if (
+      !window.confirm(
+        `Promote “${title}” to Selected? This records a human approval while preserving the AI decision as Review.`,
+      )
+    ) {
+      return;
+    }
+
+    setActiveOperation("promote");
+    setActiveStoryId(storyId);
+    setNotice(undefined);
+
+    try {
+      await promoteReviewCandidate(secret, selectedTopicId, storyId);
+      const nextStats = await fetchDatabaseStats(secret, selectedTopicId);
+      setStats(nextStats);
+      setNotice({
+        tone: "success",
+        title: "Story promoted to Selected",
+        message:
+          "Your human approval is recorded. The original AI decision remains Review for context.",
+      });
+    } catch (error) {
+      setNotice({
+        tone: "error",
+        title: "Story could not be promoted",
+        message: getErrorMessage(error),
+      });
+    } finally {
+      setActiveOperation(undefined);
+      setActiveStoryId(undefined);
+    }
+  }
+
   async function handlePrepareContent(storyId: string) {
     if (!canAuthenticate || isBusy) {
       return;
@@ -495,7 +536,7 @@ export function RadarDashboard({
             ? "Content already ready"
             : "Article content prepared",
         message: content.text
-          ? `${formatNumber(countTextWords(content.text))} words are available from ${content.source === "article" ? "the article page" : "the RSS feed"}.`
+          ? `${formatNumber(countTextWords(content.text))} words are available from ${content.source === "article" ? "the article page" : "the RSS feed"}. Run Evaluate with AI to refresh an unselected story’s recommendation.`
           : "No readable text is currently available.",
       });
     } catch (error) {
@@ -1038,6 +1079,11 @@ export function RadarDashboard({
           }
           onPrepareContent={handlePrepareContent}
           onViewContent={handleViewContent}
+          canPromote={canAuthenticate && !isBusy}
+          promotingStoryId={
+            activeOperation === "promote" ? activeStoryId : undefined
+          }
+          onPromote={handlePromoteReviewCandidate}
           canTrackPublications={canAuthenticate && !isBusy}
           updatingPublicationStoryId={
             activeOperation === "publication" ? activeStoryId : undefined
@@ -1233,6 +1279,9 @@ function EditorialEvaluationPanel({
   viewingStoryId,
   onPrepareContent,
   onViewContent,
+  canPromote,
+  promotingStoryId,
+  onPromote,
   canTrackPublications,
   updatingPublicationStoryId,
   onUpdatePublication,
@@ -1253,6 +1302,9 @@ function EditorialEvaluationPanel({
   viewingStoryId?: string;
   onPrepareContent: (storyId: string) => void;
   onViewContent: (storyId: string) => void;
+  canPromote: boolean;
+  promotingStoryId?: string;
+  onPromote: (storyId: string, title: string) => void;
   canTrackPublications: boolean;
   updatingPublicationStoryId?: string;
   onUpdatePublication: (
@@ -1506,6 +1558,14 @@ function EditorialEvaluationPanel({
                 secondaryRank={collectedTableState.secondaryRank}
                 selectedStoryIds={selectedStoryIds}
                 onToggleStory={onToggleStory}
+                canPrepare={canPrepare}
+                preparingStoryId={preparingStoryId}
+                viewingStoryId={viewingStoryId}
+                onPrepareContent={onPrepareContent}
+                onViewContent={onViewContent}
+                canPromote={canPromote}
+                promotingStoryId={promotingStoryId}
+                onPromote={onPromote}
               />
             </div>
           ) : (
@@ -1897,6 +1957,9 @@ function SortableStoriesTable({
   viewingStoryId,
   onPrepareContent,
   onViewContent,
+  canPromote = false,
+  promotingStoryId,
+  onPromote,
   canTrackPublications = false,
   updatingPublicationStoryId,
   onUpdatePublication,
@@ -1914,6 +1977,9 @@ function SortableStoriesTable({
   viewingStoryId?: string;
   onPrepareContent?: (storyId: string) => void;
   onViewContent?: (storyId: string) => void;
+  canPromote?: boolean;
+  promotingStoryId?: string;
+  onPromote?: (storyId: string, title: string) => void;
   canTrackPublications?: boolean;
   updatingPublicationStoryId?: string;
   onUpdatePublication?: (
@@ -1956,7 +2022,7 @@ function SortableStoriesTable({
             <TableHeader label="AI decision" />
             <TableHeader label="Workflow" />
             {mode === "selected" ? <TableHeader label="Publication" /> : null}
-            {mode === "selected" ? <th>Action</th> : null}
+            <th>Action</th>
           </tr>
         </thead>
         <tbody>
@@ -2070,51 +2136,95 @@ function SortableStoriesTable({
                     />
                   </td>
                 ) : null}
-                {mode === "selected" ? (
-                  <td className={styles.contentActionsCell}>
-                    <PublicationQuickControl
-                      storyId={story.storyId}
-                      publications={story.publications}
-                      disabled={!canTrackPublications}
-                      isUpdating={updatingPublicationStoryId === story.storyId}
-                      onUpdate={onUpdatePublication}
-                    />
-                    <button
-                      type="button"
-                      className={styles.creativeStudioButton}
-                      disabled={!canPrepare}
-                      onClick={() =>
-                        onOpenCreativeStory?.(story.storyId, story.title)
-                      }
-                    >
-                      Creative studio
-                    </button>
-                    {story.contentStatus !== "missing" ? (
+                <td className={styles.contentActionsCell}>
+                  {mode === "selected" ? (
+                    <>
+                      <PublicationQuickControl
+                        storyId={story.storyId}
+                        publications={story.publications}
+                        disabled={!canTrackPublications}
+                        isUpdating={updatingPublicationStoryId === story.storyId}
+                        onUpdate={onUpdatePublication}
+                      />
                       <button
                         type="button"
-                        className={styles.viewContentButton}
+                        className={styles.creativeStudioButton}
                         disabled={!canPrepare}
-                        onClick={() => onViewContent?.(story.storyId)}
+                        onClick={() =>
+                          onOpenCreativeStory?.(story.storyId, story.title)
+                        }
                       >
-                        {viewingStoryId === story.storyId
-                          ? "Loading…"
-                          : "View content"}
+                        Creative studio
                       </button>
-                    ) : null}
-                    {shouldPrepareStory(story) ? (
-                      <button
-                        type="button"
-                        className={styles.prepareTableButton}
-                        disabled={!canPrepare}
-                        onClick={() => onPrepareContent?.(story.storyId)}
-                      >
-                        {preparingStoryId === story.storyId
-                          ? "Preparing…"
-                          : prepareContentLabel(story)}
-                      </button>
-                    ) : null}
-                  </td>
-                ) : null}
+                      {story.contentStatus !== "missing" ? (
+                        <button
+                          type="button"
+                          className={styles.viewContentButton}
+                          disabled={!canPrepare}
+                          onClick={() => onViewContent?.(story.storyId)}
+                        >
+                          {viewingStoryId === story.storyId
+                            ? "Loading…"
+                            : "View content"}
+                        </button>
+                      ) : null}
+                      {shouldPrepareStory(story) ? (
+                        <button
+                          type="button"
+                          className={styles.prepareTableButton}
+                          disabled={!canPrepare}
+                          onClick={() => onPrepareContent?.(story.storyId)}
+                        >
+                          {preparingStoryId === story.storyId
+                            ? "Preparing…"
+                            : prepareContentLabel(story)}
+                        </button>
+                      ) : null}
+                    </>
+                  ) : (
+                    <>
+                      {story.contentStatus !== "missing" ? (
+                        <button
+                          type="button"
+                          className={styles.viewContentButton}
+                          disabled={!canPrepare}
+                          onClick={() => onViewContent?.(story.storyId)}
+                        >
+                          {viewingStoryId === story.storyId
+                            ? "Loading…"
+                            : "View content"}
+                        </button>
+                      ) : null}
+                      {shouldPrepareStory(story) ? (
+                        <button
+                          type="button"
+                          className={styles.prepareTableButton}
+                          disabled={!canPrepare}
+                          onClick={() => onPrepareContent?.(story.storyId)}
+                        >
+                          {preparingStoryId === story.storyId
+                            ? "Preparing…"
+                            : prepareContentLabel(story)}
+                        </button>
+                      ) : null}
+                      {story.evaluationDecision === "review" &&
+                      !story.reviewDecision ? (
+                        <button
+                          type="button"
+                          className={styles.promoteStoryButton}
+                          disabled={!canPromote}
+                          onClick={() =>
+                            onPromote?.(story.storyId, story.title)
+                          }
+                        >
+                          {promotingStoryId === story.storyId
+                            ? "Promoting…"
+                            : "Promote to selected"}
+                        </button>
+                      ) : null}
+                    </>
+                  )}
+                </td>
               </tr>
             );
           })}
@@ -2462,6 +2572,21 @@ async function prepareStoryContent(
 ): Promise<StoryContentResponse> {
   return requestJson<StoryContentResponse>(
     topicUrl(`/api/radar/stories/${encodeURIComponent(storyId)}/content`, topicId),
+    secret,
+    { method: "POST" },
+  );
+}
+
+async function promoteReviewCandidate(
+  secret: string,
+  topicId: string,
+  storyId: string,
+): Promise<{ storyId: string; promoted: true }> {
+  return requestJson<{ storyId: string; promoted: true }>(
+    topicUrl(
+      `/api/radar/stories/${encodeURIComponent(storyId)}/promote`,
+      topicId,
+    ),
     secret,
     { method: "POST" },
   );

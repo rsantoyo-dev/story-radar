@@ -63,7 +63,13 @@ export type CompleteStoryContentEnrichmentInput = {
 
 export class SelectedStoryContentNotFoundError extends Error {}
 
-export async function findSelectedStoryForEnrichment(
+/**
+ * Content preparation is useful before a human selects a story: it lets the
+ * editorial evaluator reassess a complete article instead of an RSS excerpt.
+ * A human-rejected story remains final and cannot be revived through this
+ * helper.
+ */
+export async function findStoryForEnrichment(
   topicId: string,
   storyId: string,
 ): Promise<SelectedStoryForEnrichment> {
@@ -90,9 +96,9 @@ export async function findSelectedStoryForEnrichment(
     throw new SelectedStoryContentNotFoundError("The story was not found");
   }
 
-  if (story.reviewDecision !== "approved") {
+  if (story.reviewDecision === "rejected") {
     throw new SelectedStoryContentNotFoundError(
-      "Only approved stories can be prepared",
+      "A human-rejected story cannot be prepared",
     );
   }
 
@@ -105,9 +111,30 @@ export async function findSelectedStoryForEnrichment(
   };
 }
 
+/** Read the stored RSS/article content for any story in the active topic. */
+export async function getStoryContent(
+  topicId: string,
+  storyId: string,
+): Promise<SelectedStoryContentRecord> {
+  return getStoryContentRecord(topicId, storyId, false);
+}
+
+/**
+ * Compatibility helper for flows (such as Creative Studio) that still need a
+ * human-approved story. The content route intentionally uses getStoryContent
+ * so a Review row can be verified before selection.
+ */
 export async function getSelectedStoryContent(
   topicId: string,
   storyId: string,
+): Promise<SelectedStoryContentRecord> {
+  return getStoryContentRecord(topicId, storyId, true);
+}
+
+async function getStoryContentRecord(
+  topicId: string,
+  storyId: string,
+  requireApproved: boolean,
 ): Promise<SelectedStoryContentRecord> {
   const [row] = await db
     .select({
@@ -143,9 +170,11 @@ export async function getSelectedStoryContent(
     )
     .limit(1);
 
-  if (!row || row.reviewDecision !== "approved") {
+  if (!row || (requireApproved && row.reviewDecision !== "approved")) {
     throw new SelectedStoryContentNotFoundError(
-      "The selected story was not found",
+      requireApproved
+        ? "The selected story was not found"
+        : "The story was not found",
     );
   }
 
@@ -260,6 +289,18 @@ export async function completeStoryContentEnrichment({
         contentStatus,
       })
       .where(eq(stories.id, storyId)),
+    // Once richer article content is available, only promote the collection
+    // workflow state that was waiting specifically for enrichment. It does
+    // not override a human selection, rejection, or publication state.
+    db
+      .update(topicStories)
+      .set({ processingStatus: "ready" })
+      .where(
+        and(
+          eq(topicStories.storyId, storyId),
+          eq(topicStories.processingStatus, "needs-enrichment"),
+        ),
+      ),
   ]);
 }
 

@@ -1,10 +1,10 @@
 import {
-  prepareSelectedStoryContent,
+  prepareStoryContent,
   StoryContentPreparationBlockedError,
   StoryContentPreparationFailedError,
 } from "@/app/modules/stories/prepare-selected-story-content";
 import {
-  getSelectedStoryContent,
+  getStoryContent,
   SelectedStoryContentNotFoundError,
 } from "@/app/modules/stories/story-content.repository";
 import { authorizeRadarCollector } from "@/app/api/radar/radar-api-auth";
@@ -44,7 +44,7 @@ export async function GET(
 
   try {
     return noStoreJson(
-      await getSelectedStoryContent(
+      await getStoryContent(
         await requireActiveRequestTopic(request),
         storyId,
       ),
@@ -57,10 +57,10 @@ export async function GET(
       return NextResponse.json({ error: error.message }, { status: 404 });
     }
 
-    console.error("Failed to read selected story content", error);
+    console.error("Failed to read story content", error);
 
     return NextResponse.json(
-      { error: "The selected story content could not be read" },
+      { error: "The story content could not be read" },
       { status: 500 },
     );
   }
@@ -87,7 +87,7 @@ export async function POST(
 
   try {
     return noStoreJson(
-      await prepareSelectedStoryContent(
+      await prepareStoryContent(
         await requireActiveRequestTopic(request),
         storyId,
       ),
@@ -108,10 +108,10 @@ export async function POST(
       return NextResponse.json({ error: error.message }, { status: 502 });
     }
 
-    console.error("Failed to prepare selected story content", error);
+    console.error("Failed to prepare story content", error);
 
     return NextResponse.json(
-      { error: "The selected story content could not be prepared" },
+      { error: "The story content could not be prepared" },
       { status: 500 },
     );
   }
