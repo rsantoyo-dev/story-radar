@@ -25,6 +25,7 @@ export const topics = pgTable(
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     description: text("description"),
+    themeKey: text("theme_key").default("press-green").notNull(),
     isActive: boolean("is_active").default(true).notNull(),
     createdAt: timestamp("created_at", {
       withTimezone: true,

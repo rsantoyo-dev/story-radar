@@ -9,6 +9,7 @@ import {
   TopicConfigurationPanel,
   type DashboardTopic,
 } from "./topic-configuration-panel";
+import { topicThemeStyle } from "@/design/topic-themes";
 
 type DatabaseStats = {
   stories: number;
@@ -350,10 +351,13 @@ export function RadarDashboard({
   }>();
   const [notice, setNotice] = useState<Notice>();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isTopicLoading, setIsTopicLoading] = useState(false);
 
   const isBusy = activeOperation !== undefined;
   const canAuthenticate = secret.trim().length > 0;
   const canDelete = canAuthenticate && confirmation === "DELETE" && !isBusy;
+  const selectedTopic = topics.find((topic) => topic.id === selectedTopicId);
+  const selectedTopicName = selectedTopic?.name ?? "this topic";
 
   async function handleLoadStatus() {
     await runOperation("status", async () => {
@@ -740,6 +744,7 @@ export function RadarDashboard({
 
     selectedTopicIdRef.current = topicId;
     setSelectedTopicId(topicId);
+    setIsTopicLoading(canAuthenticate);
     setStats(undefined);
     setSelectedStoryIds([]);
     setContentViewer(undefined);
@@ -784,6 +789,10 @@ export function RadarDashboard({
           message: getErrorMessage(error),
         });
       }
+    } finally {
+      if (selectedTopicIdRef.current === topicId) {
+        setIsTopicLoading(false);
+      }
     }
   }
 
@@ -813,7 +822,10 @@ export function RadarDashboard({
   }
 
   return (
-    <main className={styles.appShell}>
+    <main
+      className={styles.appShell}
+      style={topicThemeStyle(selectedTopic?.themeKey)}
+    >
       <aside
         className={`${styles.sidebar} ${sidebarOpen ? styles.sidebarOpen : ""}`}
         aria-label="Primary navigation"
@@ -901,7 +913,7 @@ export function RadarDashboard({
                 <select
                   value={selectedTopicId}
                   onChange={(event) => handleTopicChange(event.target.value)}
-                  disabled={isBusy}
+                  disabled={isBusy || isTopicLoading}
                   aria-label="Current topic"
                 >
                   {topics.map((topic) => (
@@ -910,7 +922,12 @@ export function RadarDashboard({
                     </option>
                   ))}
                 </select>
-                <span aria-hidden="true">⌄</span>
+                <span
+                  className={isTopicLoading ? styles.topicLoadingIndicator : undefined}
+                  aria-hidden="true"
+                >
+                  {isTopicLoading ? "◌" : "⌄"}
+                </span>
               </div>
             </div>
           </div>
@@ -936,7 +953,11 @@ export function RadarDashboard({
         </header>
 
         <div className={styles.page}>
-          <div className={styles.shell}>
+          <div
+            className={`${styles.shell} ${isTopicLoading ? styles.topicSwitching : ""}`}
+            aria-busy={isTopicLoading}
+            aria-label={isTopicLoading ? `Loading ${selectedTopicName}` : undefined}
+          >
 
         <section id="overview" className={`${styles.hero} ${styles.anchorTarget}`}>
           <div>

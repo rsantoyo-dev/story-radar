@@ -1,0 +1,1 @@
+ALTER TABLE "topics" ADD COLUMN "theme_key" text DEFAULT 'press-green' NOT NULL;

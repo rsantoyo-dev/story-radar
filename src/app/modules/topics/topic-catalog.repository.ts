@@ -7,6 +7,11 @@ import type {
   RssSourceConfig,
 } from "@/app/modules/sources/rss/rss-source.types";
 import { parseAllowedRssUrl } from "@/app/modules/sources/rss/fetch-rss-feed";
+import {
+  DEFAULT_TOPIC_THEME_KEY,
+  isTopicThemeKey,
+  type TopicThemeKey,
+} from "@/design/topic-themes";
 import { db } from "@/db/client";
 import {
   rssSources,
@@ -26,6 +31,7 @@ export type CreateTopicInput = {
   name: string;
   slug?: string;
   description?: string | null;
+  themeKey?: TopicThemeKey;
   isActive?: boolean;
 };
 
@@ -539,6 +545,7 @@ function normalizeTopicInput(input: CreateTopicInput) {
     name,
     slug: slugValue(input.slug ?? name, "slug"),
     description: optionalTextValue(input.description, "description", 1_000),
+    themeKey: themeKeyValue(input.themeKey ?? DEFAULT_TOPIC_THEME_KEY),
     isActive: optionalBoolean(input.isActive, true, "isActive"),
   };
 }
@@ -556,10 +563,21 @@ function normalizeTopicUpdate(input: UpdateTopicInput, existing: Topic) {
     description: input.description === undefined
       ? existing.description
       : optionalTextValue(input.description, "description", 1_000),
+    themeKey: input.themeKey === undefined
+      ? existing.themeKey
+      : themeKeyValue(input.themeKey),
     isActive: input.isActive === undefined
       ? existing.isActive
       : optionalBoolean(input.isActive, existing.isActive, "isActive"),
   };
+}
+
+function themeKeyValue(value: unknown): TopicThemeKey {
+  if (isTopicThemeKey(value)) {
+    return value;
+  }
+
+  throw new TopicCatalogValidationError("themeKey must be a configured topic theme");
 }
 
 function normalizeRssSourceInput(input: CreateRssSourceInput) {

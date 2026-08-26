@@ -24,6 +24,7 @@ export default async function Home() {
         name: topic.name,
         slug: topic.slug,
         ...(topic.description ? { description: topic.description } : {}),
+        themeKey: topic.themeKey,
         isActive: topic.isActive,
       }))}
       initialPreferences={{

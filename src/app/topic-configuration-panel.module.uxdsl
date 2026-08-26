@@ -135,7 +135,8 @@
   padding: density(4);
 }
 
-.topicForm { grid-template-columns: minmax(12rem, 1fr) minmax(15rem, 2fr) auto; align-items: end; }
+.topicForm { grid-template-columns: minmax(12rem, 1fr) minmax(15rem, 2fr) minmax(10rem, 1fr) auto; align-items: end; }
+.themeField select { @ds-input(outlined primary 2); }
 .sourceForm > p { @ds-typo(small); margin: 0; color: palette(tertiary-main); }
 
 .formGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: space(3); }

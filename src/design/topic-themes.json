@@ -1,0 +1,60 @@
+{
+  "themes": [
+    {
+      "key": "press-green",
+      "label": "Press green",
+      "description": "The default Press Craftor editorial palette.",
+      "palette": {
+        "primary": { "main": "#246b4a", "light": "#4a936b", "dark": "#17422f", "contrast": "#ffffff" },
+        "secondary": { "main": "#c25b3f", "light": "#dc8068", "dark": "#7f3827", "contrast": "#ffffff" },
+        "surface": { "main": "#ffffff", "light": "#f7faf8", "dark": "#dbe5df", "contrast": "#18392d" },
+        "tertiary": { "main": "#7b9086", "light": "#aabbb3", "dark": "#50665c", "contrast": "#ffffff" },
+        "dark": { "main": "#18392d", "light": "#315746", "dark": "#0d2119", "contrast": "#ffffff" },
+        "neutral": { "main": "#6b8077", "light": "#aabbb3", "dark": "#40564c", "contrast": "#ffffff" },
+        "light": { "main": "#f1f6f3", "light": "#ffffff", "dark": "#dbe5df", "contrast": "#18392d" }
+      }
+    },
+    {
+      "key": "signal-blue",
+      "label": "Signal blue",
+      "description": "A composed blue palette for technology and research coverage.",
+      "palette": {
+        "primary": { "main": "#246b8e", "light": "#4a93b2", "dark": "#17445f", "contrast": "#ffffff" },
+        "secondary": { "main": "#b96736", "light": "#d88d62", "dark": "#7d4321", "contrast": "#ffffff" },
+        "surface": { "main": "#ffffff", "light": "#f6fafc", "dark": "#d9e6eb", "contrast": "#173b4b" },
+        "tertiary": { "main": "#738a95", "light": "#a8bbc2", "dark": "#4d6671", "contrast": "#ffffff" },
+        "dark": { "main": "#173b4b", "light": "#315b6c", "dark": "#0d232d", "contrast": "#ffffff" },
+        "neutral": { "main": "#68808b", "light": "#a8bbc2", "dark": "#405965", "contrast": "#ffffff" },
+        "light": { "main": "#f0f6f8", "light": "#ffffff", "dark": "#d9e6eb", "contrast": "#173b4b" }
+      }
+    },
+    {
+      "key": "culture-amber",
+      "label": "Culture amber",
+      "description": "A warm palette for culture, arts, and lifestyle coverage.",
+      "palette": {
+        "primary": { "main": "#9c651b", "light": "#c38d43", "dark": "#6a420b", "contrast": "#ffffff" },
+        "secondary": { "main": "#92596e", "light": "#b97d91", "dark": "#623447", "contrast": "#ffffff" },
+        "surface": { "main": "#ffffff", "light": "#fdf9f3", "dark": "#ece0c9", "contrast": "#47361f" },
+        "tertiary": { "main": "#8b7c68", "light": "#bdb09e", "dark": "#655847", "contrast": "#ffffff" },
+        "dark": { "main": "#47361f", "light": "#65513a", "dark": "#291d0e", "contrast": "#ffffff" },
+        "neutral": { "main": "#827866", "light": "#bdb09e", "dark": "#5b5241", "contrast": "#ffffff" },
+        "light": { "main": "#f8f3ea", "light": "#ffffff", "dark": "#ece0c9", "contrast": "#47361f" }
+      }
+    },
+    {
+      "key": "focus-coral",
+      "label": "Focus coral",
+      "description": "A clear coral palette for health, people, and wellbeing coverage.",
+      "palette": {
+        "primary": { "main": "#ab503f", "light": "#d47b66", "dark": "#762f23", "contrast": "#ffffff" },
+        "secondary": { "main": "#2a7286", "light": "#63a4b4", "dark": "#1b4e5c", "contrast": "#ffffff" },
+        "surface": { "main": "#ffffff", "light": "#fdf8f6", "dark": "#eadbd5", "contrast": "#4a3029" },
+        "tertiary": { "main": "#8d7872", "light": "#c0aea8", "dark": "#69544e", "contrast": "#ffffff" },
+        "dark": { "main": "#4a3029", "light": "#6a4a41", "dark": "#2b1a15", "contrast": "#ffffff" },
+        "neutral": { "main": "#85716b", "light": "#c0aea8", "dark": "#5e4c47", "contrast": "#ffffff" },
+        "light": { "main": "#f9f1ef", "light": "#ffffff", "dark": "#eadbd5", "contrast": "#4a3029" }
+      }
+    }
+  ]
+}

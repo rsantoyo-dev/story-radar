@@ -2,6 +2,11 @@
 
 import { type ReactNode, useEffect, useState } from "react";
 
+import {
+  DEFAULT_TOPIC_THEME_KEY,
+  TOPIC_THEMES,
+} from "@/design/topic-themes";
+
 import styles from "./topic-configuration-panel.generated.module.css";
 
 export type DashboardTopic = {
@@ -9,6 +14,7 @@ export type DashboardTopic = {
   name: string;
   slug: string;
   description?: string;
+  themeKey: string;
   isActive: boolean;
 };
 
@@ -77,6 +83,7 @@ export function TopicConfigurationPanel({
   const [showTopicForm, setShowTopicForm] = useState(false);
   const [topicName, setTopicName] = useState("");
   const [topicDescription, setTopicDescription] = useState("");
+  const [topicThemeKey, setTopicThemeKey] = useState<string>(DEFAULT_TOPIC_THEME_KEY);
   const [editingTopic, setEditingTopic] = useState(false);
   const [showSources, setShowSources] = useState(false);
   const [showSourceForm, setShowSourceForm] = useState(false);
@@ -141,6 +148,7 @@ export function TopicConfigurationPanel({
           body: JSON.stringify({
             name: topicName,
             description: topicDescription || undefined,
+            themeKey: topicThemeKey,
           }),
         },
       );
@@ -150,6 +158,7 @@ export function TopicConfigurationPanel({
       onTopicsChange(nextTopics);
       setTopicName("");
       setTopicDescription("");
+      setTopicThemeKey(DEFAULT_TOPIC_THEME_KEY);
       setShowTopicForm(false);
       setNotice(`“${response.topic.name}” was created. Add RSS sources after selecting it.`);
       onTopicChange(response.topic.id);
@@ -172,6 +181,7 @@ export function TopicConfigurationPanel({
           body: JSON.stringify({
             name: topicName,
             description: topicDescription || null,
+            themeKey: topicThemeKey,
           }),
         },
       );
@@ -189,6 +199,7 @@ export function TopicConfigurationPanel({
     if (!selectedTopic) return;
     setTopicName(selectedTopic.name);
     setTopicDescription(selectedTopic.description ?? "");
+    setTopicThemeKey(selectedTopic.themeKey);
     setEditingTopic(true);
     setShowTopicForm(false);
   }
@@ -402,6 +413,14 @@ export function TopicConfigurationPanel({
           <label>
             <span>Description</span>
             <input value={topicDescription} onChange={(event) => setTopicDescription(event.target.value)} maxLength={1000} placeholder="Audience or editorial focus" />
+          </label>
+          <label className={styles.themeField}>
+            <span>Topic theme</span>
+            <select value={topicThemeKey} onChange={(event) => setTopicThemeKey(event.target.value)}>
+              {TOPIC_THEMES.map((theme) => (
+                <option key={theme.key} value={theme.key}>{theme.label}</option>
+              ))}
+            </select>
           </label>
           <div>
             <button type="submit" disabled={Boolean(busy)}>{editingTopic ? "Save topic" : "Create topic"}</button>
