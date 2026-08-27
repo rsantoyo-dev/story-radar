@@ -5,11 +5,11 @@ import { useEffect, useState } from "react";
 
 import {
   CAROUSEL_EDITORIAL_GOAL_OPTIONS,
-  evaluateCarouselNarrative,
   getDefaultViewerQuestion,
   getPreferredCarouselArc,
   type CarouselEditorialGoal,
 } from "./modules/stories/carousel-narrative";
+import { deterministicCreativeQualityIssues } from "./modules/stories/creative-quality";
 import type {
   CreativeAssetBatchResponse,
   CreativeAspectRatio,
@@ -20,6 +20,7 @@ import type {
   CreativeFormat,
   CreativeGeneratedAsset,
   CreativeImageQuality,
+  CreativeKeyFact,
   CreativeProfile,
   CreativeUnit,
   CreativeWorkspaceState,
@@ -141,9 +142,21 @@ export function CreativeDraftWorkspace({
   const activeDraft = workspace?.drafts.find(
     (draft) => draft.id === activeDraftId,
   );
+  const activeDeterministicIssues =
+    editableDraft && workspace?.brief
+      ? deterministicCreativeQualityIssues(
+          editableDraft,
+          selectedFormat,
+          workspace.brief.keyFacts,
+        )
+      : [];
+  const activeDraftHasDeterministicBlockers = activeDeterministicIssues.some(
+    (issue) => issue.severity === "blocker",
+  );
   const activeDraftFailedQualityGate = Boolean(
-    activeDraft?.qualityReviewIsCurrent &&
-      activeDraft.qualityReview?.status !== "accepted",
+    activeDraftHasDeterministicBlockers ||
+      (activeDraft?.qualityReviewIsCurrent &&
+        activeDraft.qualityReview?.status === "rejected"),
   );
   const viewingHistoricalDraft = Boolean(
     activeDraft &&
@@ -629,8 +642,17 @@ export function CreativeDraftWorkspace({
         },
       );
       await reloadWorkspace(selectedFormat);
+      const savedBlockers = workspace?.brief
+        ? deterministicCreativeQualityIssues(
+            saved,
+            saved.format,
+            workspace.brief.keyFacts,
+          ).filter((issue) => issue.severity === "blocker")
+        : [];
       setNotice(
-        `Draft version ${saved.version} saved. Approve this version before generating images.`,
+        savedBlockers.length > 0
+          ? `Draft version ${saved.version} saved. Resolve the ${savedBlockers.length} editorial ${savedBlockers.length === 1 ? "blocker" : "blockers"} shown below before approval and image generation.`
+          : `Draft version ${saved.version} saved. Approve this version before generating images.`,
       );
     });
   }
@@ -1406,12 +1428,14 @@ export function CreativeDraftWorkspace({
                 {activeDraft && editableDraft && !viewingHistoricalDraft ? (
                   <div className={styles.approvalBar}>
                     <div>
-                      <strong>{activeDraft.status === "approved" && !dirty ? "Ready for asset generation" : dirty ? "Unsaved draft changes" : activeDraftFailedQualityGate ? "Quality gate rejected this version" : "Ready for human approval"}</strong>
+                      <strong>{activeDraft.status === "approved" && !dirty ? "Ready for asset generation" : dirty ? "Unsaved draft changes" : activeDraftFailedQualityGate ? "Saved draft needs editorial fixes" : "Ready for human approval"}</strong>
                       <small>{activeDraft.status === "approved" && !dirty
                         ? activeDraftHasSupportingCharacters
                           ? "Refresh character references before generating if their description or images changed."
                           : "Generate and review each integrated text image below."
-                        : "Editing and saving creates a new draft version. The earlier image batch remains in Saved studies."}</small>
+                        : !dirty && activeDraftFailedQualityGate
+                          ? "This version is saved. Resolve the blockers in the deterministic editorial review before approval and image generation."
+                          : "Editing and saving creates a new draft version. The earlier image batch remains in Saved studies."}</small>
                     </div>
                     <div>
                       <button
@@ -1457,6 +1481,7 @@ export function CreativeDraftWorkspace({
                           type="button"
                           className={styles.approveButton}
                           disabled={Boolean(busy) || dirty || activeDraftFailedQualityGate}
+                          title={activeDraftFailedQualityGate ? "Resolve the deterministic editorial blockers before approval." : undefined}
                           onClick={handleApproveDraft}
                         >
                           {busy === "approve" ? "Approving…" : "Approve draft"}
@@ -2071,14 +2096,15 @@ function DraftEditor({
   draft: EditableCreativeDraft;
   qualityReview?: CreativeDraft["qualityReview"];
   qualityReviewIsCurrent: boolean;
-  keyFacts: { id: string; statement: string }[];
+  keyFacts: CreativeKeyFact[];
   characterRoster: CreativeCharacterRosterEntry[];
   onChange: (draft: EditableCreativeDraft) => void;
 }) {
-  const narrativeWarnings =
-    format === "carousel"
-      ? evaluateCarouselNarrative(draft.units, draft.narrativeRationale)
-      : [];
+  const deterministicWarnings = deterministicCreativeQualityIssues(
+    draft,
+    format,
+    keyFacts,
+  );
 
   function updateUnit(index: number, unit: CreativeUnit) {
     const units = draft.units.map((current, candidate) => candidate === index ? unit : current);
@@ -2189,16 +2215,24 @@ function DraftEditor({
             Quality gate · {qualityReviewIsCurrent
               ? qualityReview.status === "accepted"
                 ? `${qualityReview.scores.overall}/100 accepted`
-                : qualityReview.status.replaceAll("-", " ")
+                : qualityReview.status === "needs-review"
+                  ? "critic unavailable — needs human review"
+                  : qualityReview.status.replaceAll("-", " ")
               : "needs re-review after edits"}
           </strong>
-          <p>
-            Overall {qualityReview.scores.overall} · Factuality {qualityReview.scores.factuality} · Hook {qualityReview.scores.hook} · Relevance {qualityReview.scores.relevance} · Clarity {qualityReview.scores.clarity}
-            {format === "carousel"
-              ? ` · Swipe reward ${qualityReview.scores.swipeReward} · Continuity ${qualityReview.scores.continuity}`
-              : ""}
-            {` · CTA ${qualityReview.scores.cta}`}
-          </p>
+          {qualityReview.status !== "needs-review" ? (
+            <p>
+              Overall {qualityReview.scores.overall} · Factuality {qualityReview.scores.factuality} · Hook {qualityReview.scores.hook} · Relevance {qualityReview.scores.relevance} · Clarity {qualityReview.scores.clarity}
+              {format === "carousel"
+                ? ` · Swipe reward ${qualityReview.scores.swipeReward} · Continuity ${qualityReview.scores.continuity}`
+                : ""}
+              {` · CTA ${qualityReview.scores.cta}`}
+            </p>
+          ) : (
+            <p>
+              The automated critic did not complete a review. Read the draft and the narrative checks below, then approve it explicitly if it is correct.
+            </p>
+          )}
           {!qualityReviewIsCurrent ? (
             <p>
               The score belongs to the generated copy. Deterministic narrative blockers are recalculated below for the edited version.
@@ -2207,6 +2241,7 @@ function DraftEditor({
             <ul>
               {qualityReview.issues.map((issue, index) => (
                 <li key={`${issue.code}-${issue.unitOrder ?? 0}-${index}`}>
+                  {issue.severity === "blocker" ? "Blocker: " : "Note: "}
                   {issue.message}
                 </li>
               ))}
@@ -2220,12 +2255,12 @@ function DraftEditor({
         {format === "carousel" ? <button type="button" onClick={addSlide} disabled={draft.units.length >= 8}>+ Add slide</button> : null}
       </div>
 
-      {narrativeWarnings.length ? (
+      {deterministicWarnings.length ? (
         <div className={styles.narrativeReview} role="status">
-          <strong>Narrative review</strong>
+          <strong>Deterministic editorial review</strong>
           <ul>
-            {narrativeWarnings.map((warning, index) => (
-              <li key={`${warning.code}-${warning.unitIndex ?? "draft"}-${index}`}>
+            {deterministicWarnings.map((warning, index) => (
+              <li key={`${warning.code}-${warning.unitOrder ?? "draft"}-${index}`}>
                 {warning.severity === "blocker" ? "Blocker: " : "Advisory: "}
                 {warning.message}
               </li>

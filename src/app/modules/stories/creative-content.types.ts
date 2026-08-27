@@ -148,6 +148,25 @@ export type CreativeFormatScore = {
   reason: string;
 };
 
+export type CreativeFactClaimGuard = {
+  /** The strongest certainty level that editable copy may express. */
+  certainty:
+    | "asserted"
+    | "reported"
+    | "estimated"
+    | "detected-signal"
+    | "projection"
+    | "association";
+  /** Source wording that should survive paraphrasing when relevant. */
+  requiredPhrases: string[];
+  /** Certainty upgrades that are never supported by this fact. */
+  forbiddenPhrases: string[];
+  /** Population/timeframe phrases needed to interpret its numbers correctly. */
+  scopePhrases: string[];
+  /** Normalized numeric values allowed in copy citing this fact. */
+  allowedNumbers: string[];
+};
+
 export type CreativeKeyFact = {
   id: string;
   statement: string;
@@ -155,6 +174,8 @@ export type CreativeKeyFact = {
   requiredQualifiers?: string[];
   /** Source attribution that must remain attached when the claim needs it. */
   attribution?: string;
+  /** Deterministic guard metadata; inferred on load for historical briefs. */
+  claimGuard?: CreativeFactClaimGuard;
 };
 
 export type CreativeSuggestedConcept = {
@@ -243,7 +264,9 @@ export type CreativeQualityIssue = {
 };
 
 export type CreativeQualityReview = {
-  status: "accepted" | "needs-repair" | "rejected";
+  // "needs-review": the automated critic could not run; the draft awaits
+  // explicit human approval instead of being rejected by a service outage.
+  status: "accepted" | "needs-repair" | "needs-review" | "rejected";
   scores: CreativeQualityScores;
   issues: CreativeQualityIssue[];
   repairPasses: number;

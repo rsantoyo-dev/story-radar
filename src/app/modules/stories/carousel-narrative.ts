@@ -150,6 +150,7 @@ export type CarouselNarrativeWarning = {
     | "new-closing-fact"
     | "cover-role"
     | "closing-role"
+    | "closing-goal"
     | "cta-position"
     | "missing-debate-question"
     | "closing-question-count"
@@ -242,6 +243,13 @@ export function validateCarouselPlan(
     slide.allowedFactIds.forEach((factId) => establishedFacts.add(factId));
   });
 
+  const closingGoal = plan.slides.at(-1)?.editorialGoal;
+  if (closingGoal !== "conclude" && closingGoal !== "debate") {
+    errors.push(
+      "carouselPlan final slide must conclude the story or open a debate",
+    );
+  }
+
   return errors;
 }
 
@@ -269,7 +277,9 @@ export function carouselNarrativePolicyForPrompt() {
       "Use only facts necessary to advance the story; do not use every available fact simply because it exists.",
       "viewerQuestion describes the mental question answered by that slide and is not visible slide copy.",
       "ctaQuestion is optional visible copy and belongs only on the final conclusion or call-to-action slide.",
+      "The final slide must use conclude or debate. This terminal narrative job is required even when the earlier arc deviates from the preferred sequence.",
       "A conclude or debate slide should reuse earlier facts and should not introduce unsupported or new information.",
+      "Establish related comparison facts together before the final slide; never reserve a new statistic solely for the closing slide.",
     ],
   };
 }
@@ -370,6 +380,15 @@ export function evaluateCarouselNarrative(
         unitIndex: lastIndex,
         message:
           "The final carousel slide should normally use the conclusion or call-to-action role.",
+      });
+    }
+    if (last.editorialGoal !== "conclude" && last.editorialGoal !== "debate") {
+      warnings.push({
+        severity: "blocker",
+        code: "closing-goal",
+        unitIndex: lastIndex,
+        message:
+          "The final slide must conclude the established story or open one evidence-grounded debate; impact and comparison facts belong earlier.",
       });
     }
     if (last.editorialGoal === "debate" && !last.ctaQuestion?.trim()) {

@@ -51,7 +51,10 @@ import {
   type CreativeTopicContext,
 } from "./gemini-creative-content-generator";
 import { isCarouselEditorialGoal } from "./carousel-narrative";
-import { deterministicCreativeQualityIssues } from "./creative-quality";
+import {
+  deterministicCreativeQualityIssues,
+  repairDeterministicCreativeCopy,
+} from "./creative-quality";
 import { getCreativeProfile } from "./creative-profile.repository";
 import { resolveCreativeVisualGuidance } from "./creative-visual-guidance";
 import {
@@ -400,11 +403,23 @@ export async function saveCreativeDraft(
     outputAspectRatioForDraft(current),
     characterRoster.map((character) => character.id),
   );
+  const repaired = {
+    ...repairDeterministicCreativeCopy(
+      validated,
+      current.format,
+      brief.keyFacts,
+    ),
+    outputAspectRatio: validated.outputAspectRatio,
+  };
+  // Saving preserves the user's work as a new draft version even when it
+  // still needs editorial correction. Approval and image generation remain
+  // strict quality gates below; a draft must never be unsaveable merely
+  // because it is unfinished.
   const characterSnapshots = await snapshotsForCreativeCharacterIds(
     topicId,
-    validated.units.flatMap((unit) => unit.characterIds ?? []),
+    repaired.units.flatMap((unit) => unit.characterIds ?? []),
   );
-  return replaceCreativeDraft(topicId, current, validated, characterSnapshots);
+  return replaceCreativeDraft(topicId, current, repaired, characterSnapshots);
 }
 
 export async function approveSavedCreativeDraft(
@@ -433,6 +448,7 @@ export async function approveSavedCreativeDraft(
   const blockers = deterministicCreativeQualityIssues(
     current,
     current.format,
+    brief.keyFacts,
   ).filter((issue) => issue.severity === "blocker");
   if (blockers.length > 0) {
     throw new CreativeDraftValidationError(
@@ -441,9 +457,12 @@ export async function approveSavedCreativeDraft(
         .join(" ")}`,
     );
   }
+  // A rejected automated review only blocks approval when the rejection came
+  // from real quality findings. Infrastructure failures (CRITIC_UNAVAILABLE)
+  // produce a "needs-review" state that a human can approve explicitly.
   if (
     current.qualityReviewIsCurrent &&
-    current.qualityReview?.status !== "accepted"
+    current.qualityReview?.status === "rejected"
   ) {
     throw new CreativeDraftValidationError(
       "This generated draft did not pass the editorial quality gate. Generate a new version or edit and save it for explicit human review.",

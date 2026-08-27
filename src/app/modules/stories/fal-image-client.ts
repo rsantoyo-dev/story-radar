@@ -48,7 +48,9 @@ export async function submitFalImage({
     input: {
       prompt,
       image_size: { width, height },
-      ...(imageUrls.length > 0 ? { image_urls: imageUrls } : {}),
+      ...(imageUrls.length > 0
+        ? { image_urls: imageUrls, input_fidelity: "high" as const }
+        : {}),
       // The installed client endpoint map omits the current `auto` option,
       // though GPT Image 2 accepts it. Keep that compatibility cast at the
       // provider boundary; the app-level union is validated before this call.

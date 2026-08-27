@@ -21,6 +21,7 @@ import {
 } from "./creative-assets.repository";
 import { resolveCreativeOutputAspectRatio } from "./creative-aspect-ratio";
 import { buildCreativeImagePrompt } from "./build-creative-image-prompt";
+import { charactersForImageGeneration } from "./creative-character-generation";
 import { snapshotsForCreativeUnits } from "./creative-characters.repository";
 import { findCreativeBriefById, findCreativeDraftById } from "./creative-content.repository";
 import {
@@ -33,6 +34,7 @@ import {
   type CreativeDraft,
   type CreativeGeneratedAsset,
   type CreativeImageQuality,
+  type CreativeKeyFact,
 } from "./creative-content.types";
 import {
   getFalImagePublicConfig,
@@ -113,7 +115,8 @@ export async function getCreativeDraftAssets(
   if (
     batch &&
     draftNeedsReferenceGuidance &&
-    !batchMatchesDraftGenerationModes(batch, draft)
+    (batch.promptVersion !== preferredConfiguration.promptVersion ||
+      !batchMatchesDraftGenerationModes(batch, draft))
   ) {
     batch = undefined;
   }
@@ -148,7 +151,8 @@ export async function generateCreativeDraftAssets(
 ): Promise<CreativeAssetGenerationResponse> {
   const draft = await requireCreativeDraft(topicId, draftId);
   requireApprovedDraft(draft.status);
-  requireNarrativeQuality(draft);
+  const brief = await requireCreativeBrief(topicId, draft.briefId);
+  requireNarrativeQuality(draft, brief.keyFacts);
   const outputAspectRatio = outputAspectRatioForDraft(draft);
   const configuration = getFalImageRuntimeConfig(outputAspectRatio, imageQuality);
   const draftNeedsReferenceGuidance = draft.units.some(
@@ -175,7 +179,8 @@ export async function generateCreativeDraftAssets(
     if (
       compatible &&
       (!draftNeedsReferenceGuidance ||
-        batchMatchesDraftGenerationModes(compatible, draft))
+        (compatible.promptVersion === configuration.promptVersion &&
+          batchMatchesDraftGenerationModes(compatible, draft)))
     ) {
       existing = compatible;
     }
@@ -200,10 +205,6 @@ export async function generateCreativeDraftAssets(
     };
   }
 
-  const brief = await findCreativeBriefById(topicId, draft.briefId);
-  if (!brief) {
-    throw new CreativeContentNotFoundError("The creative brief was not found");
-  }
   if (draft.units.length === 0) {
     throw new CreativeContentConflictError(
       "The approved draft does not contain any visual units.",
@@ -228,20 +229,24 @@ export async function generateCreativeDraftAssets(
       promptVersion: configuration.promptVersion,
       imageQuality: configuration.imageQuality,
     },
-    assets: draft.units.map((unit) => ({
-      ...assetInputForUnit(
-        snapshotsForUnit(characterSnapshotsByUnit, unit.id),
-      ),
-      unitOrder: unit.order,
-      unitRole: unit.role,
-      unitSnapshot: unit,
-      ...buildCreativeImagePrompt({
-        draft,
-        unit,
-        brief,
-        characters: snapshotsForUnit(characterSnapshotsByUnit, unit.id),
-      }),
-    })),
+    assets: draft.units.map((unit) => {
+      const characterSnapshots = snapshotsForUnit(
+        characterSnapshotsByUnit,
+        unit.id,
+      );
+      return {
+        ...assetInputForUnit(characterSnapshots),
+        unitOrder: unit.order,
+        unitRole: unit.role,
+        unitSnapshot: unit,
+        ...buildCreativeImagePrompt({
+          draft,
+          unit,
+          brief,
+          characters: charactersForImageGeneration(characterSnapshots),
+        }),
+      };
+    }),
   });
 
   await mapWithConcurrency(batch.assets, 3, (asset) =>
@@ -268,7 +273,8 @@ export async function generateNextCreativeDraftAssetVersion(
 ): Promise<CreativeAssetGenerationResponse> {
   const draft = await requireCreativeDraft(topicId, draftId);
   requireApprovedDraft(draft.status);
-  requireNarrativeQuality(draft);
+  const brief = await requireCreativeBrief(topicId, draft.briefId);
+  requireNarrativeQuality(draft, brief.keyFacts);
 
   const batch = await findCreativeAssetBatchById(batchId);
   if (!batch || batch.draftId !== draft.id) {
@@ -321,6 +327,8 @@ export async function regenerateCreativeAsset(
   const found = await requireCreativeAsset(assetId);
   const draft = await requireCreativeDraft(topicId, found.batch.draftId);
   requireApprovedDraft(draft.status);
+  const brief = await requireCreativeBrief(topicId, draft.briefId);
+  requireNarrativeQuality(draft, brief.keyFacts);
   assertCurrentAsset(found.asset, found.batch, draft.version);
   const configuration = runtimeConfigurationForBatch(
     found.batch,
@@ -403,7 +411,9 @@ async function submitStoredAsset(
   try {
     const characters = await getCreativeAssetReferenceSnapshot(asset.id);
     const referenceImages = await Promise.all(
-      characters.flatMap((character) => character.referenceImages).map(
+      charactersForImageGeneration(characters).flatMap(
+        (character) => character.referenceImages,
+      ).map(
         (reference) =>
           readPrivateR2ImageFile({
             objectKey: reference.objectKey,
@@ -545,6 +555,14 @@ async function requireCreativeDraft(topicId: string, draftId: string) {
   return draft;
 }
 
+async function requireCreativeBrief(topicId: string, briefId: string) {
+  const brief = await findCreativeBriefById(topicId, briefId);
+  if (!brief) {
+    throw new CreativeContentNotFoundError("The creative brief was not found");
+  }
+  return brief;
+}
+
 async function requireCreativeAsset(assetId: string) {
   const found = await findCreativeAssetById(assetId);
   if (!found) {
@@ -561,10 +579,14 @@ function requireApprovedDraft(status: "draft" | "approved"): void {
   }
 }
 
-function requireNarrativeQuality(draft: CreativeDraft): void {
+function requireNarrativeQuality(
+  draft: CreativeDraft,
+  keyFacts: readonly CreativeKeyFact[],
+): void {
   const blockers = deterministicCreativeQualityIssues(
     draft,
     draft.format,
+    keyFacts,
   ).filter((issue) => issue.severity === "blocker");
   if (blockers.length > 0) {
     throw new CreativeContentConflictError(

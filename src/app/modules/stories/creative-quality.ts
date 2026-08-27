@@ -4,11 +4,16 @@ import {
 } from "./carousel-narrative";
 import type {
   CreativeFormat,
+  CreativeKeyFact,
   CreativeQualityIssue,
   CreativeQualityReview,
   CreativeQualityScores,
   GeneratedCreativeDraft,
 } from "./creative-content.types";
+import {
+  deterministicFactQualityIssues,
+  repairDeterministicFactCopy,
+} from "./creative-fact-guard";
 
 export const CREATIVE_QUALITY_THRESHOLDS = {
   factuality: 95,
@@ -26,6 +31,7 @@ export const MAX_CREATIVE_EDITORIAL_REPAIRS = 1;
 export function repairDeterministicCreativeCopy(
   draft: GeneratedCreativeDraft,
   format: CreativeFormat,
+  keyFacts: readonly CreativeKeyFact[] = [],
 ): GeneratedCreativeDraft {
   const repaired: GeneratedCreativeDraft = {
     ...draft,
@@ -36,62 +42,66 @@ export function repairDeterministicCreativeCopy(
       characterIds: [...(unit.characterIds ?? [])],
     })),
   };
-  if (format !== "carousel") return repaired;
+  if (format === "carousel") {
+    const closing = repaired.units.at(-1);
+    if (closing) {
+      if (
+        closing.editorialGoal === "debate" &&
+        closing.ctaQuestion?.trim() &&
+        !closing.ctaQuestion.includes("?")
+      ) {
+        closing.ctaQuestion = `${closing.ctaQuestion.replace(/[.!]+$/u, "").trim()}?`;
+      }
 
-  const closing = repaired.units.at(-1);
-  if (!closing) return repaired;
+      const fields = ["headline", "body", "ctaQuestion"] as const;
+      const questionFields = fields.filter(
+        (field) => closing[field]?.includes("?"),
+      );
+      if (questionFields.length > 1) {
+        const canonicalField = questionFields.includes("ctaQuestion")
+          ? "ctaQuestion"
+          : questionFields.includes("body")
+            ? "body"
+            : "headline";
 
-  if (
-    closing.editorialGoal === "debate" &&
-    closing.ctaQuestion?.trim() &&
-    !closing.ctaQuestion.includes("?")
-  ) {
-    closing.ctaQuestion = `${closing.ctaQuestion.replace(/[.!]+$/u, "").trim()}?`;
-  }
-
-  const fields = ["headline", "body", "ctaQuestion"] as const;
-  const questionFields = fields.filter(
-    (field) => closing[field]?.includes("?"),
-  );
-  if (questionFields.length <= 1) return repaired;
-
-  const canonicalField = questionFields.includes("ctaQuestion")
-    ? "ctaQuestion"
-    : questionFields.includes("body")
-      ? "body"
-      : "headline";
-
-  questionFields.forEach((field) => {
-    if (field === canonicalField) return;
-    const replacement = withoutQuestionSentences(closing[field]);
-    if (field === "headline") {
-      closing.headline = replacement || closingHeadlineFallback(closing.editorialGoal);
-    } else if (replacement) {
-      closing[field] = replacement;
-    } else {
-      delete closing[field];
+        questionFields.forEach((field) => {
+          if (field === canonicalField) return;
+          const replacement = withoutQuestionSentences(closing[field]);
+          if (field === "headline") {
+            closing.headline =
+              replacement || closingHeadlineFallback(closing.editorialGoal);
+          } else if (replacement) {
+            closing[field] = replacement;
+          } else {
+            delete closing[field];
+          }
+        });
+      }
     }
-  });
-  return repaired;
+  }
+  return repairDeterministicFactCopy(repaired, keyFacts);
 }
 
 export function deterministicCreativeQualityIssues(
   draft: GeneratedCreativeDraft,
   format: CreativeFormat,
+  keyFacts: readonly CreativeKeyFact[] = [],
 ): CreativeQualityIssue[] {
-  if (format !== "carousel") return [];
-
-  return evaluateCarouselNarrative(
-    draft.units,
-    draft.narrativeRationale,
-  ).map((issue) => ({
-    code: issue.code.toUpperCase().replaceAll("-", "_"),
-    severity: issue.severity === "blocker" ? "blocker" : "warning",
-    message: issue.message,
-    ...(issue.unitIndex === undefined
-      ? {}
-      : { unitOrder: issue.unitIndex + 1 }),
-  }));
+  const narrativeIssues =
+    format === "carousel"
+      ? evaluateCarouselNarrative(
+          draft.units,
+          draft.narrativeRationale,
+        ).map((issue) => ({
+          code: issue.code.toUpperCase().replaceAll("-", "_"),
+          severity: issue.severity === "blocker" ? "blocker" as const : "warning" as const,
+          message: issue.message,
+          ...(issue.unitIndex === undefined
+            ? {}
+            : { unitOrder: issue.unitIndex + 1 }),
+        }))
+      : [];
+  return [...narrativeIssues, ...deterministicFactQualityIssues(draft, keyFacts)];
 }
 
 export function creativeQualityThresholdFailures(
@@ -134,14 +144,20 @@ export function buildCreativeQualityReview({
   scores,
   criticIssues,
   repairPasses,
+  keyFacts = [],
 }: {
   draft: GeneratedCreativeDraft;
   format: CreativeFormat;
   scores: CreativeQualityScores;
   criticIssues: CreativeQualityIssue[];
   repairPasses: number;
+  keyFacts?: readonly CreativeKeyFact[];
 }): CreativeQualityReview {
-  const deterministicIssues = deterministicCreativeQualityIssues(draft, format);
+  const deterministicIssues = deterministicCreativeQualityIssues(
+    draft,
+    format,
+    keyFacts,
+  );
   const issues = deduplicateQualityIssues([
     ...deterministicIssues,
     ...criticIssues,
@@ -192,6 +208,10 @@ function calibrateCreativeQualityScores(
       "FACT_MISMATCH",
       "LOST_QUALIFIER",
       "MISATTRIBUTED",
+      "CERTAINTY_UPGRADE",
+      "UNSUPPORTED_NUMBER",
+      "MISSING_SCOPE",
+      "UNSUPPORTED_INFERENCE",
     )
   ) {
     scores.factuality = Math.min(scores.factuality, 94);
@@ -199,7 +219,7 @@ function calibrateCreativeQualityScores(
   if (hasCode("WEAK_HOOK", "BURIED_HOOK")) {
     scores.hook = Math.min(scores.hook, 81);
   }
-  if (hasCode("LOW_STORY_RELEVANCE", "NEW_CLOSING_FACT")) {
+  if (hasCode("LOW_STORY_RELEVANCE", "NEW_CLOSING_FACT", "CLOSING_GOAL")) {
     scores.relevance = Math.min(scores.relevance, 79);
   }
   if (hasCode("VIEWER_QUESTION_MISMATCH", "WEAK_SWIPE_REWARD")) {
@@ -210,6 +230,7 @@ function calibrateCreativeQualityScores(
       "SEMANTIC_REPETITION",
       "WEAK_CONTINUITY",
       "NEW_CLOSING_FACT",
+      "CLOSING_GOAL",
     )
   ) {
     scores.continuity = Math.min(scores.continuity, 79);
@@ -221,12 +242,18 @@ function calibrateCreativeQualityScores(
       "CTA_CONFLICT",
       "MISSING_DEBATE_QUESTION",
       "CLOSING_QUESTION_COUNT",
+      "CLOSING_GOAL",
     )
   ) {
     scores.cta = Math.min(scores.cta, 74);
   }
   if (hasCode("CLOSING_QUESTION_COUNT", "FACT_BUDGET")) {
     scores.clarity = Math.min(scores.clarity, 84);
+  }
+  if (hasCode("EMPTY_CONCLUSION")) {
+    scores.clarity = Math.min(scores.clarity, 79);
+    scores.relevance = Math.min(scores.relevance, 79);
+    scores.cta = Math.min(scores.cta, 74);
   }
 
   const weightedOverall =
@@ -255,15 +282,22 @@ function calibrateCreativeQualityScores(
 export function assertNoDeterministicCreativeBlockers(
   draft: GeneratedCreativeDraft,
   format: CreativeFormat,
+  keyFacts: readonly CreativeKeyFact[] = [],
 ): void {
-  if (format !== "carousel") return;
-  const blockers = blockingCarouselNarrativeIssues(
-    draft.units,
-    draft.narrativeRationale,
-  );
+  const blockers = [
+    ...(format === "carousel"
+      ? blockingCarouselNarrativeIssues(
+          draft.units,
+          draft.narrativeRationale,
+        ).map((issue) => issue.message)
+      : []),
+    ...deterministicFactQualityIssues(draft, keyFacts)
+      .filter((issue) => issue.severity === "blocker")
+      .map((issue) => issue.message),
+  ];
   if (blockers.length > 0) {
     throw new CreativeQualityGateError(
-      blockers.map((issue) => issue.message).join(" "),
+      blockers.join(" "),
     );
   }
 }

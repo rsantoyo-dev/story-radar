@@ -23,12 +23,14 @@ import {
   type CreativeDailyUsage,
   type CreativeDraft,
   type CreativeFormat,
+  type CreativeKeyFact,
   type CreativeProfile,
   type EditableCreativeDraft,
   type GeneratedCreativeBrief,
   type GeneratedCreativeDraft,
 } from "./creative-content.types";
 import { isCarouselEditorialGoal } from "./carousel-narrative";
+import { withCreativeFactClaimGuard } from "./creative-fact-guard";
 
 type CreativeRunTask = "brief" | "draft";
 
@@ -619,7 +621,9 @@ function mapCreativeBrief(
       reason: row.toneReason,
     },
     contentSufficiency: row.contentSufficiency,
-    keyFacts: row.keyFacts as CreativeBrief["keyFacts"],
+    keyFacts: (row.keyFacts as CreativeKeyFact[]).map(
+      withCreativeFactClaimGuard,
+    ),
     ...(row.carouselPlan
       ? { carouselPlan: row.carouselPlan as CreativeBrief["carouselPlan"] }
       : {}),
