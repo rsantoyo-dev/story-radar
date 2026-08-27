@@ -51,6 +51,7 @@ import {
   type CreativeTopicContext,
 } from "./gemini-creative-content-generator";
 import { isCarouselEditorialGoal } from "./carousel-narrative";
+import { deterministicCreativeQualityIssues } from "./creative-quality";
 import { getCreativeProfile } from "./creative-profile.repository";
 import { resolveCreativeVisualGuidance } from "./creative-visual-guidance";
 import {
@@ -340,6 +341,7 @@ export async function createCreativeDraft(
           cached,
           { ...result.draft, outputAspectRatio },
           characterSnapshots,
+          { aiSnapshot: result.draft },
         )
       : await insertCreativeDraft({
           topicId,
@@ -428,6 +430,25 @@ export async function approveSavedCreativeDraft(
     outputAspectRatioForDraft(current),
     characterRoster.map((character) => character.id),
   );
+  const blockers = deterministicCreativeQualityIssues(
+    current,
+    current.format,
+  ).filter((issue) => issue.severity === "blocker");
+  if (blockers.length > 0) {
+    throw new CreativeDraftValidationError(
+      `Resolve the narrative quality blockers before approval: ${blockers
+        .map((issue) => issue.message)
+        .join(" ")}`,
+    );
+  }
+  if (
+    current.qualityReviewIsCurrent &&
+    current.qualityReview?.status !== "accepted"
+  ) {
+    throw new CreativeDraftValidationError(
+      "This generated draft did not pass the editorial quality gate. Generate a new version or edit and save it for explicit human review.",
+    );
+  }
   return approveCreativeDraft(topicId, draftId);
 }
 

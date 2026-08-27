@@ -25,7 +25,7 @@ export type CreativeContentRuntimeConfig = CreativeContentPublicConfig & {
   cloudflareAiModel?: string;
 };
 
-const DEFAULT_MAX_RUNS_PER_DAY = 20;
+const DEFAULT_MAX_RUNS_PER_DAY = 40;
 const DEFAULT_MAX_CONTENT_CHARACTERS = 15_000;
 
 export function getCreativeContentRuntimeConfig(): CreativeContentRuntimeConfig {
@@ -100,10 +100,10 @@ export function getCreativeContentPublicConfig(): CreativeContentPublicConfig {
     provider: primaryProvider === "groq" ? "groq" : "google",
     model: primaryProvider === "groq" ? groqModel : geminiModel,
     primaryProvider,
-    briefPromptVersion: "creative-brief-v3",
+    briefPromptVersion: "creative-brief-v4",
     draftPromptVersions: {
-      meme: "meme-draft-v5",
-      carousel: "carousel-draft-v6",
+      meme: "meme-draft-v9",
+      carousel: "carousel-draft-v10",
     },
     maxRunsPerDay: parsePositiveInteger(
       process.env.CREATIVE_MAX_RUNS_PER_DAY,

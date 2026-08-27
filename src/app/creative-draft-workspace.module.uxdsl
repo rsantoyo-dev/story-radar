@@ -1322,6 +1322,8 @@
 
 .approvalBar > div:last-child {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: space(3);
 }
 

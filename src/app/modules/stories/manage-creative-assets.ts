@@ -50,6 +50,7 @@ import {
   CreativeContentConflictError,
   CreativeContentNotFoundError,
 } from "./manage-creative-content";
+import { deterministicCreativeQualityIssues } from "./creative-quality";
 
 export async function getCreativeDraftAssets(
   topicId: string,
@@ -147,6 +148,7 @@ export async function generateCreativeDraftAssets(
 ): Promise<CreativeAssetGenerationResponse> {
   const draft = await requireCreativeDraft(topicId, draftId);
   requireApprovedDraft(draft.status);
+  requireNarrativeQuality(draft);
   const outputAspectRatio = outputAspectRatioForDraft(draft);
   const configuration = getFalImageRuntimeConfig(outputAspectRatio, imageQuality);
   const draftNeedsReferenceGuidance = draft.units.some(
@@ -266,6 +268,7 @@ export async function generateNextCreativeDraftAssetVersion(
 ): Promise<CreativeAssetGenerationResponse> {
   const draft = await requireCreativeDraft(topicId, draftId);
   requireApprovedDraft(draft.status);
+  requireNarrativeQuality(draft);
 
   const batch = await findCreativeAssetBatchById(batchId);
   if (!batch || batch.draftId !== draft.id) {
@@ -554,6 +557,20 @@ function requireApprovedDraft(status: "draft" | "approved"): void {
   if (status !== "approved") {
     throw new CreativeContentConflictError(
       "Approve the current script before generating or reviewing images.",
+    );
+  }
+}
+
+function requireNarrativeQuality(draft: CreativeDraft): void {
+  const blockers = deterministicCreativeQualityIssues(
+    draft,
+    draft.format,
+  ).filter((issue) => issue.severity === "blocker");
+  if (blockers.length > 0) {
+    throw new CreativeContentConflictError(
+      `Resolve the narrative quality blockers before generating images: ${blockers
+        .map((issue) => issue.message)
+        .join(" ")}`,
     );
   }
 }

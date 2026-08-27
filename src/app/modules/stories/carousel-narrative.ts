@@ -132,10 +132,15 @@ export type CarouselNarrativeUnit = {
   editorialGoal?: CarouselEditorialGoal;
   viewerQuestion?: string;
   ctaQuestion?: string;
+  headline?: string;
+  body?: string;
   factIds: readonly string[];
 };
 
+export type CarouselNarrativeIssueSeverity = "blocker" | "warning" | "info";
+
 export type CarouselNarrativeWarning = {
+  severity: CarouselNarrativeIssueSeverity;
   code:
     | "missing-goal"
     | "missing-viewer-question"
@@ -146,7 +151,13 @@ export type CarouselNarrativeWarning = {
     | "cover-role"
     | "closing-role"
     | "cta-position"
-    | "missing-debate-question";
+    | "missing-debate-question"
+    | "closing-question-count"
+    | "role-goal-mismatch"
+    | "evidence-without-facts"
+    | "fact-overuse"
+    | "headline-too-long"
+    | "body-too-long";
   message: string;
   unitIndex?: number;
 };
@@ -211,6 +222,15 @@ export function validateCarouselPlan(
       );
     }
     if (
+      slide.allowedFactIds.length === 0 &&
+      slide.editorialGoal !== "conclude" &&
+      slide.editorialGoal !== "debate"
+    ) {
+      errors.push(
+        `carouselPlan slide ${index + 1} needs evidence for its ${slide.editorialGoal} purpose`,
+      );
+    }
+    if (
       (slide.editorialGoal === "conclude" ||
         slide.editorialGoal === "debate") &&
       slide.allowedFactIds.some((factId) => !establishedFacts.has(factId))
@@ -265,6 +285,7 @@ export function evaluateCarouselNarrative(
     const slide = unitIndex + 1;
     if (!unit.editorialGoal) {
       warnings.push({
+        severity: "blocker",
         code: "missing-goal",
         unitIndex,
         message: `Slide ${slide} needs an editorial purpose.`,
@@ -272,6 +293,7 @@ export function evaluateCarouselNarrative(
     }
     if (!unit.viewerQuestion?.trim()) {
       warnings.push({
+        severity: "blocker",
         code: "missing-viewer-question",
         unitIndex,
         message: `Slide ${slide} does not define the viewer question it answers.`,
@@ -282,6 +304,7 @@ export function evaluateCarouselNarrative(
       unit.factIds.length > MAX_FACTS_BY_GOAL[unit.editorialGoal]
     ) {
       warnings.push({
+        severity: "blocker",
         code: "fact-budget",
         unitIndex,
         message: `Slide ${slide} uses ${unit.factIds.length} facts; ${unit.editorialGoal} usually needs at most ${MAX_FACTS_BY_GOAL[unit.editorialGoal]}.`,
@@ -289,9 +312,40 @@ export function evaluateCarouselNarrative(
     }
     if (unit.ctaQuestion?.trim() && unitIndex !== units.length - 1) {
       warnings.push({
+        severity: "blocker",
         code: "cta-position",
         unitIndex,
         message: `Slide ${slide} has a CTA question, but visible CTA copy should normally be reserved for the final slide.`,
+      });
+    }
+
+    if (
+      unit.editorialGoal &&
+      !["conclude", "debate"].includes(unit.editorialGoal) &&
+      unit.factIds.length === 0
+    ) {
+      warnings.push({
+        severity: "blocker",
+        code: "evidence-without-facts",
+        unitIndex,
+        message: `Slide ${slide} has a ${unit.editorialGoal} purpose but does not cite supporting evidence.`,
+      });
+    }
+
+    if (wordCount(unit.headline) > 14) {
+      warnings.push({
+        severity: "warning",
+        code: "headline-too-long",
+        unitIndex,
+        message: `Slide ${slide} headline uses ${wordCount(unit.headline)} words; aim for 14 or fewer.`,
+      });
+    }
+    if (wordCount(unit.body) > 45) {
+      warnings.push({
+        severity: "warning",
+        code: "body-too-long",
+        unitIndex,
+        message: `Slide ${slide} supporting text uses ${wordCount(unit.body)} words; aim for 45 or fewer.`,
       });
     }
   });
@@ -299,6 +353,7 @@ export function evaluateCarouselNarrative(
   const first = units[0];
   if (first && first.role !== "cover") {
     warnings.push({
+      severity: "blocker",
       code: "cover-role",
       unitIndex: 0,
       message: "The first carousel slide should normally use the cover role.",
@@ -310,6 +365,7 @@ export function evaluateCarouselNarrative(
   if (last) {
     if (last.role !== "conclusion" && last.role !== "call-to-action") {
       warnings.push({
+        severity: "blocker",
         code: "closing-role",
         unitIndex: lastIndex,
         message:
@@ -318,6 +374,7 @@ export function evaluateCarouselNarrative(
     }
     if (last.editorialGoal === "debate" && !last.ctaQuestion?.trim()) {
       warnings.push({
+        severity: "blocker",
         code: "missing-debate-question",
         unitIndex: lastIndex,
         message: "A debate ending should include a visible CTA question.",
@@ -335,13 +392,88 @@ export function evaluateCarouselNarrative(
       );
       if (newClosingFacts.length > 0) {
         warnings.push({
+          severity: "blocker",
           code: "new-closing-fact",
           unitIndex: lastIndex,
           message: `The final slide introduces ${newClosingFacts.join(", ")}; conclusions should normally reuse facts established earlier.`,
         });
       }
     }
+
+    const visibleQuestionCount = [
+      last.headline,
+      last.body,
+      last.ctaQuestion,
+    ].reduce(
+      (count, value) => count + (value?.match(/\?/g)?.length ?? 0),
+      0,
+    );
+    if (visibleQuestionCount > 1) {
+      warnings.push({
+        severity: "blocker",
+        code: "closing-question-count",
+        unitIndex: lastIndex,
+        message: `The final slide contains ${visibleQuestionCount} visible questions; keep exactly one closing question.`,
+      });
+    }
+    else if (last.editorialGoal === "debate" && visibleQuestionCount !== 1) {
+      warnings.push({
+        severity: "blocker",
+        code: "closing-question-count",
+        unitIndex: lastIndex,
+        message: "A debate ending must contain exactly one visible question.",
+      });
+    }
   }
+
+  units.forEach((unit, unitIndex) => {
+    const isFirst = unitIndex === 0;
+    const isLast = unitIndex === lastIndex;
+    if (!isFirst && !isLast && unit.role !== "content") {
+      warnings.push({
+        severity: "blocker",
+        code: "role-goal-mismatch",
+        unitIndex,
+        message: `Slide ${unitIndex + 1} uses the ${unit.role} role in a position that does not match its narrative job.`,
+      });
+    }
+    const goalMatchesRole =
+      !unit.editorialGoal ||
+      (unit.role === "cover" &&
+        unit.editorialGoal !== "conclude" &&
+        unit.editorialGoal !== "debate") ||
+      (unit.role === "content" &&
+        unit.editorialGoal !== "conclude" &&
+        unit.editorialGoal !== "debate") ||
+      ((unit.role === "conclusion" || unit.role === "call-to-action") &&
+        ["impact", "opportunity", "watch", "conclude", "debate"].includes(
+          unit.editorialGoal,
+        ));
+    if (!goalMatchesRole) {
+      warnings.push({
+        severity: "blocker",
+        code: "role-goal-mismatch",
+        unitIndex,
+        message: `Slide ${unitIndex + 1} combines the ${unit.role} role with the ${unit.editorialGoal} purpose; those presentation and narrative jobs conflict.`,
+      });
+    }
+  });
+
+  const factUsage = new Map<string, number>();
+  units.forEach((unit) => {
+    new Set(unit.factIds).forEach((factId) =>
+      factUsage.set(factId, (factUsage.get(factId) ?? 0) + 1),
+    );
+  });
+  factUsage.forEach((count, factId) => {
+    if (count > 2) {
+      warnings.push({
+        severity: "warning",
+        code: "fact-overuse",
+        message: `${factId} is cited on ${count} slides; repeated evidence can make the carousel feel static.`,
+      });
+    }
+  });
 
   if (
     preferredArc &&
@@ -351,11 +483,13 @@ export function evaluateCarouselNarrative(
     )
   ) {
     warnings.push({
+      severity: "warning",
       code: "arc-deviation",
       message: `This arc differs from the preferred ${units.length}-slide sequence: ${preferredArc.join(" → ")}. Keep the deviation when it better serves the story.`,
     });
     if (!narrativeRationale?.trim()) {
       warnings.push({
+        severity: "warning",
         code: "missing-deviation-rationale",
         message:
           "Add a narrative rationale so reviewers understand why this story uses a different arc.",
@@ -364,4 +498,17 @@ export function evaluateCarouselNarrative(
   }
 
   return warnings;
+}
+
+export function blockingCarouselNarrativeIssues(
+  units: readonly CarouselNarrativeUnit[],
+  narrativeRationale?: string,
+): CarouselNarrativeWarning[] {
+  return evaluateCarouselNarrative(units, narrativeRationale).filter(
+    (issue) => issue.severity === "blocker",
+  );
+}
+
+function wordCount(value?: string): number {
+  return value?.trim() ? value.trim().split(/\s+/u).length : 0;
 }

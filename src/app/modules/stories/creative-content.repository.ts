@@ -373,7 +373,7 @@ export async function replaceCreativeDraft(
   current: CreativeDraft,
   input: EditableCreativeDraft,
   characterSnapshots: Map<string, CreativeCharacterSnapshot>,
-  options: { inputHash?: string } = {},
+  options: { inputHash?: string; aiSnapshot?: GeneratedCreativeDraft } = {},
 ): Promise<CreativeDraft> {
   const now = new Date();
   const units = draftUnitRows(current.id, input.units, now);
@@ -391,6 +391,7 @@ export async function replaceCreativeDraft(
         altText: input.altText,
         outputAspectRatio: input.outputAspectRatio,
         ...(options.inputHash ? { inputHash: options.inputHash } : {}),
+        ...(options.aiSnapshot ? { aiSnapshot: options.aiSnapshot } : {}),
         status: "draft",
         approvedAt: null,
         version: current.version + 1,
@@ -636,6 +637,41 @@ function mapCreativeDraft(
   characterIdsByUnit: Map<string, string[]>,
 ): CreativeDraft {
   const generated = row.aiSnapshot as Partial<GeneratedCreativeDraft>;
+  const mappedUnits: CreativeDraft["units"] = units.map((unit) => ({
+    id: unit.id,
+    order: unit.order,
+    type: unit.type,
+    role: unit.role,
+    ...(isCarouselEditorialGoal(unit.editorialGoal)
+      ? { editorialGoal: unit.editorialGoal }
+      : {}),
+    ...(unit.viewerQuestion ? { viewerQuestion: unit.viewerQuestion } : {}),
+    ...(unit.ctaQuestion ? { ctaQuestion: unit.ctaQuestion } : {}),
+    headline: unit.headline,
+    ...(unit.body ? { body: unit.body } : {}),
+    visualDirection: unit.visualDirection,
+    factIds: unit.factIds,
+    assetRequest: unit.assetRequest,
+    aspectRatio: unit.aspectRatio,
+    characterIds: characterIdsByUnit.get(unit.id) ?? [],
+  }));
+  const qualityReviewIsCurrent = Boolean(
+    generated.qualityReview &&
+      generatedDraftCopyMatches(
+        generated,
+        {
+          concept: row.concept,
+          ...(row.narrativeRationale
+            ? { narrativeRationale: row.narrativeRationale }
+            : {}),
+          caption: row.caption,
+          ...(row.callToAction ? { callToAction: row.callToAction } : {}),
+          hashtags: row.hashtags,
+          altText: row.altText,
+          units: mappedUnits,
+        },
+      ),
+  );
   return {
     id: row.id,
     storyId: row.storyId,
@@ -650,28 +686,15 @@ function mapCreativeDraft(
     caption: row.caption,
     ...(row.callToAction ? { callToAction: row.callToAction } : {}),
     ...(generated.characterPlan ? { characterPlan: generated.characterPlan } : {}),
+    ...(generated.qualityReview
+      ? {
+          qualityReview: generated.qualityReview,
+          qualityReviewIsCurrent,
+        }
+      : {}),
     hashtags: row.hashtags,
     altText: row.altText,
-    units: units.map((unit) => ({
-      id: unit.id,
-      order: unit.order,
-      type: unit.type,
-      role: unit.role,
-      ...(isCarouselEditorialGoal(unit.editorialGoal)
-        ? { editorialGoal: unit.editorialGoal }
-        : {}),
-      ...(unit.viewerQuestion
-        ? { viewerQuestion: unit.viewerQuestion }
-        : {}),
-      ...(unit.ctaQuestion ? { ctaQuestion: unit.ctaQuestion } : {}),
-      headline: unit.headline,
-      ...(unit.body ? { body: unit.body } : {}),
-      visualDirection: unit.visualDirection,
-      factIds: unit.factIds,
-      assetRequest: unit.assetRequest,
-      aspectRatio: unit.aspectRatio,
-      characterIds: characterIdsByUnit.get(unit.id) ?? [],
-    })),
+    units: mappedUnits,
     provider: row.provider,
     model: row.model,
     ...(row.modelVersion ? { modelVersion: row.modelVersion } : {}),
@@ -683,6 +706,36 @@ function mapCreativeDraft(
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+function generatedDraftCopyMatches(
+  generated: Partial<GeneratedCreativeDraft>,
+  current: GeneratedCreativeDraft,
+): boolean {
+  const comparable = (draft: Partial<GeneratedCreativeDraft>) => ({
+    concept: draft.concept ?? "",
+    narrativeRationale: draft.narrativeRationale ?? "",
+    caption: draft.caption ?? "",
+    callToAction: draft.callToAction ?? "",
+    hashtags: draft.hashtags ?? [],
+    altText: draft.altText ?? "",
+    units: (draft.units ?? []).map((unit) => ({
+      order: unit.order,
+      type: unit.type,
+      role: unit.role,
+      editorialGoal: unit.editorialGoal ?? "",
+      viewerQuestion: unit.viewerQuestion ?? "",
+      ctaQuestion: unit.ctaQuestion ?? "",
+      headline: unit.headline,
+      body: unit.body ?? "",
+      visualDirection: unit.visualDirection,
+      factIds: unit.factIds,
+      assetRequest: unit.assetRequest,
+      aspectRatio: unit.aspectRatio,
+      characterIds: unit.characterIds ?? [],
+    })),
+  });
+  return JSON.stringify(comparable(generated)) === JSON.stringify(comparable(current));
 }
 
 function draftUnitRows(

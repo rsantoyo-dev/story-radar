@@ -224,6 +224,31 @@ export type CreativeUnit = {
   characterIds?: string[];
 };
 
+export type CreativeQualityScores = {
+  factuality: number;
+  hook: number;
+  swipeReward: number;
+  continuity: number;
+  relevance: number;
+  clarity: number;
+  cta: number;
+  overall: number;
+};
+
+export type CreativeQualityIssue = {
+  code: string;
+  severity: "blocker" | "warning";
+  message: string;
+  unitOrder?: number;
+};
+
+export type CreativeQualityReview = {
+  status: "accepted" | "needs-repair" | "rejected";
+  scores: CreativeQualityScores;
+  issues: CreativeQualityIssue[];
+  repairPasses: number;
+};
+
 export type GeneratedCreativeDraft = {
   concept: string;
   /** Explains a deliberate departure from the preferred carousel arc. */
@@ -234,6 +259,8 @@ export type GeneratedCreativeDraft = {
   altText: string;
   /** The model's recommendation; slide assignments remain user-editable. */
   characterPlan?: CreativeCharacterPlan;
+  /** Review of the exact generated copy. Manual edits make this review stale. */
+  qualityReview?: CreativeQualityReview;
   units: CreativeUnit[];
 };
 
@@ -253,6 +280,8 @@ export type CreativeDraft = GeneratedCreativeDraft & {
   usage: CreativeAiUsage;
   /** Derived when loading a workspace; historical rows intentionally omit it. */
   inputIsCurrent?: boolean;
+  /** False when saved copy no longer matches the AI-reviewed snapshot. */
+  qualityReviewIsCurrent?: boolean;
   approvedAt?: Date;
   createdAt: Date;
   updatedAt: Date;

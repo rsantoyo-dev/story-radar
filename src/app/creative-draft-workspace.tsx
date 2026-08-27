@@ -141,6 +141,10 @@ export function CreativeDraftWorkspace({
   const activeDraft = workspace?.drafts.find(
     (draft) => draft.id === activeDraftId,
   );
+  const activeDraftFailedQualityGate = Boolean(
+    activeDraft?.qualityReviewIsCurrent &&
+      activeDraft.qualityReview?.status !== "accepted",
+  );
   const viewingHistoricalDraft = Boolean(
     activeDraft &&
       (activeDraft.inputIsCurrent === false || historyDraftId === activeDraft.id),
@@ -517,13 +521,10 @@ export function CreativeDraftWorkspace({
   }
 
   async function handleRefreshDraftFromProfile() {
-    if (!workspace?.brief || busy) return;
-    if (profileDirty) {
-      setError("Save the creative profile before updating the draft.");
-      return;
-    }
+    if (!workspace?.brief || !profile || busy) return;
 
-    const refreshBrief = !workspace.briefIsCurrent;
+    const saveProfile = profileDirty;
+    const refreshBrief = saveProfile || !workspace.briefIsCurrent;
     const maximumRunsNeeded = refreshBrief ? 2 : 1;
     if (workspace.daily.remainingRuns < maximumRunsNeeded) {
       setError(
@@ -534,7 +535,7 @@ export function CreativeDraftWorkspace({
 
     if (
       !window.confirm(
-        `Create a fresh ${selectedFormat} draft from the current creative profile${refreshBrief ? " and refresh its brief" : " and supporting-character roster"}? This uses up to ${maximumRunsNeeded} AI ${maximumRunsNeeded === 1 ? "run" : "runs"}. Your existing draft and images will remain in history.`,
+        `Generate a new ${selectedFormat} draft from the current parameters${saveProfile ? ", save the modified creative profile," : ""}${refreshBrief ? " and refresh its brief" : ""}? This uses up to ${maximumRunsNeeded} AI ${maximumRunsNeeded === 1 ? "run" : "runs"}.${dirty ? " Unsaved edits in the current draft will be discarded." : ""} Existing generated images remain available in history.`,
       )
     ) {
       return;
@@ -542,6 +543,17 @@ export function CreativeDraftWorkspace({
 
     await run("profile-draft", async () => {
       let currentState = workspace;
+      if (saveProfile) {
+        await requestJson(
+          topicUrl("/api/radar/creative-profile", topicId),
+          secret,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(profile),
+          },
+        );
+      }
       if (refreshBrief) {
         const refreshedBrief = await requestJson<{
           outcome: "generated" | "cached";
@@ -596,7 +608,7 @@ export function CreativeDraftWorkspace({
       );
       setDirty(false);
       setNotice(
-        `Fresh ${selectedFormat} draft created from the current profile. The prior draft and its images remain in history.`,
+        `New ${selectedFormat} draft generated from the current parameters. Previous generated images remain in history.`,
       );
     });
   }
@@ -1327,8 +1339,6 @@ export function CreativeDraftWorkspace({
                         creating={busy === "profile-draft"}
                         createDisabled={
                           Boolean(busy) ||
-                          dirty ||
-                          profileDirty ||
                           !workspace.story.hasContent
                         }
                         generationError={error}
@@ -1352,8 +1362,6 @@ export function CreativeDraftWorkspace({
                       className={styles.primaryButton}
                       disabled={
                         Boolean(busy) ||
-                        dirty ||
-                        profileDirty ||
                         !workspace.story.hasContent
                       }
                       onClick={handleRefreshDraftFromProfile}
@@ -1382,6 +1390,10 @@ export function CreativeDraftWorkspace({
                     format={selectedFormat}
                     outputAspectRatio={activeOutputAspectRatio}
                     draft={editableDraft}
+                    qualityReview={activeDraft.qualityReview}
+                    qualityReviewIsCurrent={
+                      !dirty && activeDraft.qualityReviewIsCurrent !== false
+                    }
                     keyFacts={workspace.brief.keyFacts}
                     characterRoster={characterRosterFromSlots(characterSlots)}
                     onChange={(next) => {
@@ -1394,7 +1406,7 @@ export function CreativeDraftWorkspace({
                 {activeDraft && editableDraft && !viewingHistoricalDraft ? (
                   <div className={styles.approvalBar}>
                     <div>
-                      <strong>{activeDraft.status === "approved" && !dirty ? "Ready for asset generation" : dirty ? "Unsaved draft changes" : "Ready for human approval"}</strong>
+                      <strong>{activeDraft.status === "approved" && !dirty ? "Ready for asset generation" : dirty ? "Unsaved draft changes" : activeDraftFailedQualityGate ? "Quality gate rejected this version" : "Ready for human approval"}</strong>
                       <small>{activeDraft.status === "approved" && !dirty
                         ? activeDraftHasSupportingCharacters
                           ? "Refresh character references before generating if their description or images changed."
@@ -1402,6 +1414,20 @@ export function CreativeDraftWorkspace({
                         : "Editing and saving creates a new draft version. The earlier image batch remains in Saved studies."}</small>
                     </div>
                     <div>
+                      <button
+                        type="button"
+                        className={styles.secondaryButton}
+                        disabled={
+                          Boolean(busy) ||
+                          Boolean(characterBusy) ||
+                          !workspace.story.hasContent
+                        }
+                        onClick={handleRefreshDraftFromProfile}
+                      >
+                        {busy === "profile-draft"
+                          ? "Generating new AI draft…"
+                          : "Generate new AI draft"}
+                      </button>
                       {activeDraftHasSupportingCharacters ? (
                         <button
                           type="button"
@@ -1430,7 +1456,7 @@ export function CreativeDraftWorkspace({
                         <button
                           type="button"
                           className={styles.approveButton}
-                          disabled={Boolean(busy) || dirty}
+                          disabled={Boolean(busy) || dirty || activeDraftFailedQualityGate}
                           onClick={handleApproveDraft}
                         >
                           {busy === "approve" ? "Approving…" : "Approve draft"}
@@ -2034,6 +2060,8 @@ function DraftEditor({
   format,
   outputAspectRatio,
   draft,
+  qualityReview,
+  qualityReviewIsCurrent,
   keyFacts,
   characterRoster,
   onChange,
@@ -2041,6 +2069,8 @@ function DraftEditor({
   format: CreativeFormat;
   outputAspectRatio: CreativeAspectRatio;
   draft: EditableCreativeDraft;
+  qualityReview?: CreativeDraft["qualityReview"];
+  qualityReviewIsCurrent: boolean;
   keyFacts: { id: string; statement: string }[];
   characterRoster: CreativeCharacterRosterEntry[];
   onChange: (draft: EditableCreativeDraft) => void;
@@ -2153,6 +2183,38 @@ function DraftEditor({
         />
       ) : null}
 
+      {qualityReview ? (
+        <div className={styles.narrativeReview} role="status">
+          <strong>
+            Quality gate · {qualityReviewIsCurrent
+              ? qualityReview.status === "accepted"
+                ? `${qualityReview.scores.overall}/100 accepted`
+                : qualityReview.status.replaceAll("-", " ")
+              : "needs re-review after edits"}
+          </strong>
+          <p>
+            Overall {qualityReview.scores.overall} · Factuality {qualityReview.scores.factuality} · Hook {qualityReview.scores.hook} · Relevance {qualityReview.scores.relevance} · Clarity {qualityReview.scores.clarity}
+            {format === "carousel"
+              ? ` · Swipe reward ${qualityReview.scores.swipeReward} · Continuity ${qualityReview.scores.continuity}`
+              : ""}
+            {` · CTA ${qualityReview.scores.cta}`}
+          </p>
+          {!qualityReviewIsCurrent ? (
+            <p>
+              The score belongs to the generated copy. Deterministic narrative blockers are recalculated below for the edited version.
+            </p>
+          ) : qualityReview.issues.length ? (
+            <ul>
+              {qualityReview.issues.map((issue, index) => (
+                <li key={`${issue.code}-${issue.unitOrder ?? 0}-${index}`}>
+                  {issue.message}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className={styles.unitsHeading}>
         <div><h4>{format === "meme" ? "Meme frame" : "Carousel slides"}</h4><p>Text and visual directions remain separate for later composition.</p></div>
         {format === "carousel" ? <button type="button" onClick={addSlide} disabled={draft.units.length >= 8}>+ Add slide</button> : null}
@@ -2164,6 +2226,7 @@ function DraftEditor({
           <ul>
             {narrativeWarnings.map((warning, index) => (
               <li key={`${warning.code}-${warning.unitIndex ?? "draft"}-${index}`}>
+                {warning.severity === "blocker" ? "Blocker: " : "Advisory: "}
                 {warning.message}
               </li>
             ))}
@@ -2745,7 +2808,8 @@ function topicUrl(path: string, topicId: string): string {
 
 async function requestJson<T>(url: string, secret: string, init: RequestInit = {}): Promise<T> {
   const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), 75_000);
+  const timeoutMs = init.method === "POST" ? 300_000 : 75_000;
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
   const abortRequest = () => controller.abort();
   init.signal?.addEventListener("abort", abortRequest, { once: true });
 
