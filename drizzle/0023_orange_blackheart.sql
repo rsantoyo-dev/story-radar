@@ -1,0 +1,1 @@
+ALTER TABLE "story_creative_briefs" ADD COLUMN "carousel_plan" jsonb;

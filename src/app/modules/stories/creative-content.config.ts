@@ -19,6 +19,10 @@ export type CreativeContentRuntimeConfig = CreativeContentPublicConfig & {
   /** Optional capacity/token-limit fallback for creative briefs and drafts. */
   groqApiKey?: string;
   groqModel?: string;
+  /** Optional final fallback using Cloudflare Workers AI JSON mode. */
+  cloudflareAiAccountId?: string;
+  cloudflareAiApiToken?: string;
+  cloudflareAiModel?: string;
 };
 
 const DEFAULT_MAX_RUNS_PER_DAY = 20;
@@ -27,7 +31,25 @@ const DEFAULT_MAX_CONTENT_CHARACTERS = 15_000;
 export function getCreativeContentRuntimeConfig(): CreativeContentRuntimeConfig {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   const groqApiKey = process.env.GROQ_API_KEY?.trim();
+  const cloudflareAiAccountId = process.env.CLOUDFLARE_AI_ACCOUNT_ID?.trim();
+  const cloudflareAiApiToken = process.env.CLOUDFLARE_AI_API_TOKEN?.trim();
+  const cloudflareAiModel =
+    process.env.CLOUDFLARE_AI_MODEL?.trim() ||
+    "@cf/zai-org/glm-4.7-flash";
   const publicConfig = getCreativeContentPublicConfig();
+  if (Boolean(cloudflareAiAccountId) !== Boolean(cloudflareAiApiToken)) {
+    throw new CreativeContentConfigurationError(
+      "CLOUDFLARE_AI_ACCOUNT_ID and CLOUDFLARE_AI_API_TOKEN must be configured together",
+    );
+  }
+  const cloudflareFallback =
+    cloudflareAiAccountId && cloudflareAiApiToken
+      ? {
+          cloudflareAiAccountId,
+          cloudflareAiApiToken,
+          cloudflareAiModel,
+        }
+      : {};
 
   if (publicConfig.primaryProvider === "groq") {
     if (!groqApiKey) {
@@ -40,6 +62,7 @@ export function getCreativeContentRuntimeConfig(): CreativeContentRuntimeConfig 
       apiKey: groqApiKey,
       groqApiKey,
       groqModel: publicConfig.model,
+      ...cloudflareFallback,
       ...publicConfig,
     };
   }
@@ -59,6 +82,7 @@ export function getCreativeContentRuntimeConfig(): CreativeContentRuntimeConfig 
             process.env.CREATIVE_GROQ_MODEL?.trim() || "openai/gpt-oss-20b",
         }
       : {}),
+    ...cloudflareFallback,
     ...publicConfig,
   };
 }
@@ -76,10 +100,10 @@ export function getCreativeContentPublicConfig(): CreativeContentPublicConfig {
     provider: primaryProvider === "groq" ? "groq" : "google",
     model: primaryProvider === "groq" ? groqModel : geminiModel,
     primaryProvider,
-    briefPromptVersion: "creative-brief-v2",
+    briefPromptVersion: "creative-brief-v3",
     draftPromptVersions: {
-      meme: "meme-draft-v2",
-      carousel: "carousel-draft-v2",
+      meme: "meme-draft-v5",
+      carousel: "carousel-draft-v6",
     },
     maxRunsPerDay: parsePositiveInteger(
       process.env.CREATIVE_MAX_RUNS_PER_DAY,

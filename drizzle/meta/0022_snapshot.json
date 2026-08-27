@@ -1,0 +1,5073 @@
+{
+  "id": "adae75b8-27ee-4a1d-b645-69e90aa00664",
+  "prevId": "ed2f9d8b-1586-44fc-a816-c78af3182196",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.collection_runs": {
+      "name": "collection_runs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "topic_id": {
+          "name": "topic_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "collection_run_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "requested_sources": {
+          "name": "requested_sources",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "successful_sources": {
+          "name": "successful_sources",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "failed_sources": {
+          "name": "failed_sources",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fetched_items": {
+          "name": "fetched_items",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "included_items": {
+          "name": "included_items",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "filtered_out_items": {
+          "name": "filtered_out_items",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "duplicates_removed": {
+          "name": "duplicates_removed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "exact_duplicates_removed": {
+          "name": "exact_duplicates_removed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "similar_duplicates_removed": {
+          "name": "similar_duplicates_removed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "ready_items": {
+          "name": "ready_items",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "needs_enrichment_items": {
+          "name": "needs_enrichment_items",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "review_items": {
+          "name": "review_items",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "rejected_items": {
+          "name": "rejected_items",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "collection_runs_topic_started_at_idx": {
+          "name": "collection_runs_topic_started_at_idx",
+          "columns": [
+            {
+              "expression": "topic_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "started_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "collection_runs_started_at_idx": {
+          "name": "collection_runs_started_at_idx",
+          "columns": [
+            {
+              "expression": "started_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "collection_runs_topic_id_topics_id_fk": {
+          "name": "collection_runs_topic_id_topics_id_fk",
+          "tableFrom": "collection_runs",
+          "tableTo": "topics",
+          "columnsFrom": [
+            "topic_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "collection_runs_sources_check": {
+          "name": "collection_runs_sources_check",
+          "value": "\"collection_runs\".\"requested_sources\" >= 0\n        AND \"collection_runs\".\"successful_sources\" >= 0\n        AND \"collection_runs\".\"failed_sources\" >= 0\n        AND \"collection_runs\".\"requested_sources\" = \"collection_runs\".\"successful_sources\" + \"collection_runs\".\"failed_sources\""
+        },
+        "collection_runs_items_check": {
+          "name": "collection_runs_items_check",
+          "value": "\"collection_runs\".\"fetched_items\" >= 0\n        AND \"collection_runs\".\"included_items\" >= 0\n        AND \"collection_runs\".\"filtered_out_items\" >= 0\n        AND \"collection_runs\".\"duplicates_removed\" >= 0\n        AND \"collection_runs\".\"fetched_items\" = \"collection_runs\".\"included_items\" + \"collection_runs\".\"filtered_out_items\" + \"collection_runs\".\"duplicates_removed\""
+        },
+        "collection_runs_dates_check": {
+          "name": "collection_runs_dates_check",
+          "value": "\"collection_runs\".\"finished_at\" >= \"collection_runs\".\"started_at\""
+        },
+        "collection_runs_duplicate_types_check": {
+          "name": "collection_runs_duplicate_types_check",
+          "value": "\"collection_runs\".\"exact_duplicates_removed\" >= 0\n        AND \"collection_runs\".\"similar_duplicates_removed\" >= 0\n        AND \"collection_runs\".\"duplicates_removed\" = \"collection_runs\".\"exact_duplicates_removed\" + \"collection_runs\".\"similar_duplicates_removed\""
+        },
+        "collection_runs_relevance_check": {
+          "name": "collection_runs_relevance_check",
+          "value": "\"collection_runs\".\"ready_items\" >= 0\n        AND \"collection_runs\".\"needs_enrichment_items\" >= 0\n        AND \"collection_runs\".\"review_items\" >= 0\n        AND \"collection_runs\".\"rejected_items\" >= 0\n        AND \"collection_runs\".\"included_items\" = \"collection_runs\".\"ready_items\" + \"collection_runs\".\"needs_enrichment_items\" + \"collection_runs\".\"review_items\" + \"collection_runs\".\"rejected_items\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.collection_source_runs": {
+      "name": "collection_source_runs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "collection_run_id": {
+          "name": "collection_run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_id": {
+          "name": "source_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_name": {
+          "name": "source_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "collection_source_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fetched_items": {
+          "name": "fetched_items",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "included_items": {
+          "name": "included_items",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "filtered_out_items": {
+          "name": "filtered_out_items",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "duplicates_removed": {
+          "name": "duplicates_removed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "error": {
+          "name": "error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "collection_source_runs_run_source_unique": {
+          "name": "collection_source_runs_run_source_unique",
+          "columns": [
+            {
+              "expression": "collection_run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "source_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "collection_source_runs_collection_run_id_idx": {
+          "name": "collection_source_runs_collection_run_id_idx",
+          "columns": [
+            {
+              "expression": "collection_run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "collection_source_runs_source_id_idx": {
+          "name": "collection_source_runs_source_id_idx",
+          "columns": [
+            {
+              "expression": "source_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "collection_source_runs_collection_run_id_collection_runs_id_fk": {
+          "name": "collection_source_runs_collection_run_id_collection_runs_id_fk",
+          "tableFrom": "collection_source_runs",
+          "tableTo": "collection_runs",
+          "columnsFrom": [
+            "collection_run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "collection_source_runs_items_check": {
+          "name": "collection_source_runs_items_check",
+          "value": "\"collection_source_runs\".\"fetched_items\" >= 0\n        AND \"collection_source_runs\".\"included_items\" >= 0\n        AND \"collection_source_runs\".\"filtered_out_items\" >= 0\n        AND \"collection_source_runs\".\"duplicates_removed\" >= 0\n        AND \"collection_source_runs\".\"fetched_items\" = \"collection_source_runs\".\"included_items\" + \"collection_source_runs\".\"filtered_out_items\" + \"collection_source_runs\".\"duplicates_removed\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.creative_ai_runs": {
+      "name": "creative_ai_runs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "topic_id": {
+          "name": "topic_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "story_id": {
+          "name": "story_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "brief_id": {
+          "name": "brief_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "draft_id": {
+          "name": "draft_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "task": {
+          "name": "task",
+          "type": "creative_ai_task",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "model": {
+          "name": "model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prompt_version": {
+          "name": "prompt_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "input_hash": {
+          "name": "input_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "creative_ai_run_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'running'"
+        },
+        "prompt_tokens": {
+          "name": "prompt_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "output_tokens": {
+          "name": "output_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "thoughts_tokens": {
+          "name": "thoughts_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "total_tokens": {
+          "name": "total_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "error": {
+          "name": "error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "creative_ai_runs_story_id_idx": {
+          "name": "creative_ai_runs_story_id_idx",
+          "columns": [
+            {
+              "expression": "story_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "creative_ai_runs_topic_started_at_idx": {
+          "name": "creative_ai_runs_topic_started_at_idx",
+          "columns": [
+            {
+              "expression": "topic_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "started_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "creative_ai_runs_started_at_idx": {
+          "name": "creative_ai_runs_started_at_idx",
+          "columns": [
+            {
+              "expression": "started_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "creative_ai_runs_status_idx": {
+          "name": "creative_ai_runs_status_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "creative_ai_runs_topic_id_topics_id_fk": {
+          "name": "creative_ai_runs_topic_id_topics_id_fk",
+          "tableFrom": "creative_ai_runs",
+          "tableTo": "topics",
+          "columnsFrom": [
+            "topic_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "creative_ai_runs_story_id_stories_id_fk": {
+          "name": "creative_ai_runs_story_id_stories_id_fk",
+          "tableFrom": "creative_ai_runs",
+          "tableTo": "stories",
+          "columnsFrom": [
+            "story_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "creative_ai_runs_brief_id_story_creative_briefs_id_fk": {
+          "name": "creative_ai_runs_brief_id_story_creative_briefs_id_fk",
+          "tableFrom": "creative_ai_runs",
+          "tableTo": "story_creative_briefs",
+          "columnsFrom": [
+            "brief_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "creative_ai_runs_draft_id_creative_drafts_id_fk": {
+          "name": "creative_ai_runs_draft_id_creative_drafts_id_fk",
+          "tableFrom": "creative_ai_runs",
+          "tableTo": "creative_drafts",
+          "columnsFrom": [
+            "draft_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "creative_ai_runs_tokens_check": {
+          "name": "creative_ai_runs_tokens_check",
+          "value": "\"creative_ai_runs\".\"prompt_tokens\" >= 0\n        AND \"creative_ai_runs\".\"output_tokens\" >= 0\n        AND \"creative_ai_runs\".\"thoughts_tokens\" >= 0\n        AND \"creative_ai_runs\".\"total_tokens\" >= 0"
+        },
+        "creative_ai_runs_dates_check": {
+          "name": "creative_ai_runs_dates_check",
+          "value": "\"creative_ai_runs\".\"finished_at\" IS NULL OR \"creative_ai_runs\".\"finished_at\" >= \"creative_ai_runs\".\"started_at\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.creative_asset_batches": {
+      "name": "creative_asset_batches",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "draft_id": {
+          "name": "draft_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "draft_version": {
+          "name": "draft_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "creative_asset_batch_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'queued'"
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "model": {
+          "name": "model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prompt_version": {
+          "name": "prompt_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "output_aspect_ratio": {
+          "name": "output_aspect_ratio",
+          "type": "creative_aspect_ratio",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "image_quality": {
+          "name": "image_quality",
+          "type": "creative_image_quality",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'low'"
+        },
+        "width": {
+          "name": "width",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "height": {
+          "name": "height",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "total_assets": {
+          "name": "total_assets",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "creative_asset_batches_generation_unique": {
+          "name": "creative_asset_batches_generation_unique",
+          "columns": [
+            {
+              "expression": "draft_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "draft_version",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "provider",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "model",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "prompt_version",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "image_quality",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "creative_asset_batches_draft_id_idx": {
+          "name": "creative_asset_batches_draft_id_idx",
+          "columns": [
+            {
+              "expression": "draft_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "creative_asset_batches_status_idx": {
+          "name": "creative_asset_batches_status_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "creative_asset_batches_draft_id_creative_drafts_id_fk": {
+          "name": "creative_asset_batches_draft_id_creative_drafts_id_fk",
+          "tableFrom": "creative_asset_batches",
+          "tableTo": "creative_drafts",
+          "columnsFrom": [
+            "draft_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "creative_asset_batches_values_check": {
+          "name": "creative_asset_batches_values_check",
+          "value": "\"creative_asset_batches\".\"draft_version\" > 0\n        AND \"creative_asset_batches\".\"width\" BETWEEN 512 AND 2048\n        AND \"creative_asset_batches\".\"height\" BETWEEN 512 AND 2048\n        AND \"creative_asset_batches\".\"total_assets\" > 0"
+        },
+        "creative_asset_batches_dates_check": {
+          "name": "creative_asset_batches_dates_check",
+          "value": "\"creative_asset_batches\".\"completed_at\" IS NULL OR \"creative_asset_batches\".\"completed_at\" >= \"creative_asset_batches\".\"created_at\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.creative_assets": {
+      "name": "creative_assets",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "batch_id": {
+          "name": "batch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "unit_order": {
+          "name": "unit_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "unit_role": {
+          "name": "unit_role",
+          "type": "creative_unit_role",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "status": {
+          "name": "status",
+          "type": "creative_asset_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'queued'"
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "model": {
+          "name": "model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prompt_version": {
+          "name": "prompt_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prompt": {
+          "name": "prompt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expected_text": {
+          "name": "expected_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "unit_snapshot": {
+          "name": "unit_snapshot",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "generation_mode": {
+          "name": "generation_mode",
+          "type": "creative_asset_generation_mode",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'text-to-image'"
+        },
+        "provider_endpoint": {
+          "name": "provider_endpoint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'openai/gpt-image-2'"
+        },
+        "reference_snapshot": {
+          "name": "reference_snapshot",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "reference_input_hash": {
+          "name": "reference_input_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "image_url": {
+          "name": "image_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "content_type": {
+          "name": "content_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "file_name": {
+          "name": "file_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "file_size": {
+          "name": "file_size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "width": {
+          "name": "width",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "height": {
+          "name": "height",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "seed": {
+          "name": "seed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "safety_flag": {
+          "name": "safety_flag",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "error": {
+          "name": "error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approved_at": {
+          "name": "approved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "creative_assets_batch_unit_version_unique": {
+          "name": "creative_assets_batch_unit_version_unique",
+          "columns": [
+            {
+              "expression": "batch_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "unit_order",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "version",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "creative_assets_request_id_unique": {
+          "name": "creative_assets_request_id_unique",
+          "columns": [
+            {
+              "expression": "request_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "creative_assets_batch_id_idx": {
+          "name": "creative_assets_batch_id_idx",
+          "columns": [
+            {
+              "expression": "batch_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "creative_assets_status_idx": {
+          "name": "creative_assets_status_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "creative_assets_batch_id_creative_asset_batches_id_fk": {
+          "name": "creative_assets_batch_id_creative_asset_batches_id_fk",
+          "tableFrom": "creative_assets",
+          "tableTo": "creative_asset_batches",
+          "columnsFrom": [
+            "batch_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "creative_assets_values_check": {
+          "name": "creative_assets_values_check",
+          "value": "\"creative_assets\".\"unit_order\" > 0\n        AND \"creative_assets\".\"version\" > 0\n        AND (\"creative_assets\".\"file_size\" IS NULL OR \"creative_assets\".\"file_size\" >= 0)\n        AND (\"creative_assets\".\"width\" IS NULL OR \"creative_assets\".\"width\" > 0)\n        AND (\"creative_assets\".\"height\" IS NULL OR \"creative_assets\".\"height\" > 0)"
+        },
+        "creative_assets_approval_check": {
+          "name": "creative_assets_approval_check",
+          "value": "(\"creative_assets\".\"status\" = 'approved' AND \"creative_assets\".\"approved_at\" IS NOT NULL)\n        OR (\"creative_assets\".\"status\" <> 'approved' AND \"creative_assets\".\"approved_at\" IS NULL)"
+        },
+        "creative_assets_dates_check": {
+          "name": "creative_assets_dates_check",
+          "value": "(\"creative_assets\".\"completed_at\" IS NULL OR \"creative_assets\".\"completed_at\" >= \"creative_assets\".\"created_at\")\n        AND (\"creative_assets\".\"approved_at\" IS NULL OR \"creative_assets\".\"approved_at\" >= \"creative_assets\".\"created_at\")"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.creative_character_reference_images": {
+      "name": "creative_character_reference_images",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "character_id": {
+          "name": "character_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "object_key": {
+          "name": "object_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_type": {
+          "name": "content_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "file_name": {
+          "name": "file_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "file_size": {
+          "name": "file_size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "order": {
+          "name": "order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "creative_character_reference_images_character_order_unique": {
+          "name": "creative_character_reference_images_character_order_unique",
+          "columns": [
+            {
+              "expression": "character_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "order",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "creative_character_reference_images_character_id_idx": {
+          "name": "creative_character_reference_images_character_id_idx",
+          "columns": [
+            {
+              "expression": "character_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "creative_character_reference_images_character_id_creative_characters_id_fk": {
+          "name": "creative_character_reference_images_character_id_creative_characters_id_fk",
+          "tableFrom": "creative_character_reference_images",
+          "tableTo": "creative_characters",
+          "columnsFrom": [
+            "character_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "creative_character_reference_images_values_check": {
+          "name": "creative_character_reference_images_values_check",
+          "value": "\"creative_character_reference_images\".\"order\" BETWEEN 1 AND 5 AND \"creative_character_reference_images\".\"file_size\" > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.creative_characters": {
+      "name": "creative_characters",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "topic_id": {
+          "name": "topic_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slot": {
+          "name": "slot",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "creative_characters_topic_slot_unique": {
+          "name": "creative_characters_topic_slot_unique",
+          "columns": [
+            {
+              "expression": "topic_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "slot",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "creative_characters_topic_id_idx": {
+          "name": "creative_characters_topic_id_idx",
+          "columns": [
+            {
+              "expression": "topic_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "creative_characters_topic_active_idx": {
+          "name": "creative_characters_topic_active_idx",
+          "columns": [
+            {
+              "expression": "topic_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "is_active",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "creative_characters_topic_id_topics_id_fk": {
+          "name": "creative_characters_topic_id_topics_id_fk",
+          "tableFrom": "creative_characters",
+          "tableTo": "topics",
+          "columnsFrom": [
+            "topic_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "creative_characters_slot_check": {
+          "name": "creative_characters_slot_check",
+          "value": "(\"creative_characters\".\"slot\" IS NULL OR \"creative_characters\".\"slot\" BETWEEN 1 AND 2)\n        AND (\"creative_characters\".\"is_active\" = false OR \"creative_characters\".\"slot\" IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.creative_drafts": {
+      "name": "creative_drafts",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "topic_id": {
+          "name": "topic_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "story_id": {
+          "name": "story_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "brief_id": {
+          "name": "brief_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "format": {
+          "name": "format",
+          "type": "creative_format",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "output_aspect_ratio": {
+          "name": "output_aspect_ratio",
+          "type": "creative_aspect_ratio",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "creative_draft_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'draft'"
+        },
+        "concept": {
+          "name": "concept",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "narrative_rationale": {
+          "name": "narrative_rationale",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "caption": {
+          "name": "caption",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "call_to_action": {
+          "name": "call_to_action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hashtags": {
+          "name": "hashtags",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "ARRAY[]::text[]"
+        },
+        "alt_text": {
+          "name": "alt_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "model": {
+          "name": "model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "model_version": {
+          "name": "model_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prompt_version": {
+          "name": "prompt_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "input_hash": {
+          "name": "input_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ai_snapshot": {
+          "name": "ai_snapshot",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "prompt_tokens": {
+          "name": "prompt_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "output_tokens": {
+          "name": "output_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "thoughts_tokens": {
+          "name": "thoughts_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "total_tokens": {
+          "name": "total_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "approved_at": {
+          "name": "approved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "creative_drafts_cache_unique": {
+          "name": "creative_drafts_cache_unique",
+          "columns": [
+            {
+              "expression": "brief_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "format",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "input_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "creative_drafts_story_id_idx": {
+          "name": "creative_drafts_story_id_idx",
+          "columns": [
+            {
+              "expression": "story_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "creative_drafts_topic_id_idx": {
+          "name": "creative_drafts_topic_id_idx",
+          "columns": [
+            {
+              "expression": "topic_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "creative_drafts_brief_id_idx": {
+          "name": "creative_drafts_brief_id_idx",
+          "columns": [
+            {
+              "expression": "brief_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "creative_drafts_status_idx": {
+          "name": "creative_drafts_status_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "creative_drafts_topic_id_topics_id_fk": {
+          "name": "creative_drafts_topic_id_topics_id_fk",
+          "tableFrom": "creative_drafts",
+          "tableTo": "topics",
+          "columnsFrom": [
+            "topic_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "creative_drafts_story_id_stories_id_fk": {
+          "name": "creative_drafts_story_id_stories_id_fk",
+          "tableFrom": "creative_drafts",
+          "tableTo": "stories",
+          "columnsFrom": [
+            "story_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "creative_drafts_brief_id_story_creative_briefs_id_fk": {
+          "name": "creative_drafts_brief_id_story_creative_briefs_id_fk",
+          "tableFrom": "creative_drafts",
+          "tableTo": "story_creative_briefs",
+          "columnsFrom": [
+            "brief_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "creative_drafts_version_check": {
+          "name": "creative_drafts_version_check",
+          "value": "\"creative_drafts\".\"version\" > 0"
+        },
+        "creative_drafts_approval_check": {
+          "name": "creative_drafts_approval_check",
+          "value": "(\"creative_drafts\".\"status\" = 'draft' AND \"creative_drafts\".\"approved_at\" IS NULL)\n        OR (\"creative_drafts\".\"status\" = 'approved' AND \"creative_drafts\".\"approved_at\" IS NOT NULL)"
+        },
+        "creative_drafts_tokens_check": {
+          "name": "creative_drafts_tokens_check",
+          "value": "\"creative_drafts\".\"prompt_tokens\" >= 0\n        AND \"creative_drafts\".\"output_tokens\" >= 0\n        AND \"creative_drafts\".\"thoughts_tokens\" >= 0\n        AND \"creative_drafts\".\"total_tokens\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.creative_profiles": {
+      "name": "creative_profiles",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "topic_id": {
+          "name": "topic_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "language": {
+          "name": "language",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "region": {
+          "name": "region",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "platform": {
+          "name": "platform",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "audience": {
+          "name": "audience",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "visual_guidance": {
+          "name": "visual_guidance",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'Create a clear, modern editorial visual direction appropriate to the topic and audience. Use a focused composition, high legibility, inclusive imagery, and generous negative space. Respect the selected output format and avoid watermarks, unapproved logos, or misleading visual claims.'"
+        },
+        "brand_personality": {
+          "name": "brand_personality",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "ARRAY[]::text[]"
+        },
+        "formality": {
+          "name": "formality",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "humor": {
+          "name": "humor",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "energy": {
+          "name": "energy",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "optimism": {
+          "name": "optimism",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provocation": {
+          "name": "provocation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "allow_emojis": {
+          "name": "allow_emojis",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "max_emojis": {
+          "name": "max_emojis",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 2
+        },
+        "call_to_action_style": {
+          "name": "call_to_action_style",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "creative_profiles_topic_id_unique": {
+          "name": "creative_profiles_topic_id_unique",
+          "columns": [
+            {
+              "expression": "topic_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "creative_profiles_topic_id_topics_id_fk": {
+          "name": "creative_profiles_topic_id_topics_id_fk",
+          "tableFrom": "creative_profiles",
+          "tableTo": "topics",
+          "columnsFrom": [
+            "topic_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "creative_profiles_dimensions_check": {
+          "name": "creative_profiles_dimensions_check",
+          "value": "\"creative_profiles\".\"formality\" BETWEEN 0 AND 100\n        AND \"creative_profiles\".\"humor\" BETWEEN 0 AND 100\n        AND \"creative_profiles\".\"energy\" BETWEEN 0 AND 100\n        AND \"creative_profiles\".\"optimism\" BETWEEN 0 AND 100\n        AND \"creative_profiles\".\"provocation\" BETWEEN 0 AND 100"
+        },
+        "creative_profiles_max_emojis_check": {
+          "name": "creative_profiles_max_emojis_check",
+          "value": "\"creative_profiles\".\"max_emojis\" BETWEEN 0 AND 10"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.creative_unit_characters": {
+      "name": "creative_unit_characters",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "unit_id": {
+          "name": "unit_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "character_id": {
+          "name": "character_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "character_snapshot": {
+          "name": "character_snapshot",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "creative_unit_characters_unit_character_unique": {
+          "name": "creative_unit_characters_unit_character_unique",
+          "columns": [
+            {
+              "expression": "unit_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "character_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "creative_unit_characters_unit_id_idx": {
+          "name": "creative_unit_characters_unit_id_idx",
+          "columns": [
+            {
+              "expression": "unit_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "creative_unit_characters_character_id_idx": {
+          "name": "creative_unit_characters_character_id_idx",
+          "columns": [
+            {
+              "expression": "character_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "creative_unit_characters_unit_id_creative_units_id_fk": {
+          "name": "creative_unit_characters_unit_id_creative_units_id_fk",
+          "tableFrom": "creative_unit_characters",
+          "tableTo": "creative_units",
+          "columnsFrom": [
+            "unit_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "creative_unit_characters_character_id_creative_characters_id_fk": {
+          "name": "creative_unit_characters_character_id_creative_characters_id_fk",
+          "tableFrom": "creative_unit_characters",
+          "tableTo": "creative_characters",
+          "columnsFrom": [
+            "character_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.creative_units": {
+      "name": "creative_units",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "draft_id": {
+          "name": "draft_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "order": {
+          "name": "order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "creative_unit_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "creative_unit_role",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "editorial_goal": {
+          "name": "editorial_goal",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "viewer_question": {
+          "name": "viewer_question",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cta_question": {
+          "name": "cta_question",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "headline": {
+          "name": "headline",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "visual_direction": {
+          "name": "visual_direction",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fact_ids": {
+          "name": "fact_ids",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "ARRAY[]::text[]"
+        },
+        "asset_request": {
+          "name": "asset_request",
+          "type": "creative_asset_request_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "type": "creative_aspect_ratio",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "creative_units_draft_order_unique": {
+          "name": "creative_units_draft_order_unique",
+          "columns": [
+            {
+              "expression": "draft_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "order",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "creative_units_draft_id_idx": {
+          "name": "creative_units_draft_id_idx",
+          "columns": [
+            {
+              "expression": "draft_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "creative_units_draft_id_creative_drafts_id_fk": {
+          "name": "creative_units_draft_id_creative_drafts_id_fk",
+          "tableFrom": "creative_units",
+          "tableTo": "creative_drafts",
+          "columnsFrom": [
+            "draft_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "creative_units_order_check": {
+          "name": "creative_units_order_check",
+          "value": "\"creative_units\".\"order\" > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.story_creative_briefs": {
+      "name": "story_creative_briefs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "topic_id": {
+          "name": "topic_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "story_id": {
+          "name": "story_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "profile_id": {
+          "name": "profile_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "profile_snapshot": {
+          "name": "profile_snapshot",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "model": {
+          "name": "model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "model_version": {
+          "name": "model_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prompt_version": {
+          "name": "prompt_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "input_hash": {
+          "name": "input_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recommended_format": {
+          "name": "recommended_format",
+          "type": "creative_format",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fallback_format": {
+          "name": "fallback_format",
+          "type": "creative_format",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "format_scores": {
+          "name": "format_scores",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "confidence": {
+          "name": "confidence",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "target_audience": {
+          "name": "target_audience",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "key_message": {
+          "name": "key_message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "angle": {
+          "name": "angle",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "hook": {
+          "name": "hook",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tone_primary": {
+          "name": "tone_primary",
+          "type": "creative_tone",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tone_energy": {
+          "name": "tone_energy",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tone_humor": {
+          "name": "tone_humor",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tone_reason": {
+          "name": "tone_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_sufficiency": {
+          "name": "content_sufficiency",
+          "type": "creative_content_sufficiency",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "key_facts": {
+          "name": "key_facts",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "risk_flags": {
+          "name": "risk_flags",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "ARRAY[]::text[]"
+        },
+        "suggested_concepts": {
+          "name": "suggested_concepts",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prompt_tokens": {
+          "name": "prompt_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "output_tokens": {
+          "name": "output_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "thoughts_tokens": {
+          "name": "thoughts_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "total_tokens": {
+          "name": "total_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "story_creative_briefs_topic_cache_unique": {
+          "name": "story_creative_briefs_topic_cache_unique",
+          "columns": [
+            {
+              "expression": "topic_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "story_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "provider",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "model",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "prompt_version",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "input_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "story_creative_briefs_story_id_idx": {
+          "name": "story_creative_briefs_story_id_idx",
+          "columns": [
+            {
+              "expression": "story_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "story_creative_briefs_topic_story_id_idx": {
+          "name": "story_creative_briefs_topic_story_id_idx",
+          "columns": [
+            {
+              "expression": "topic_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "story_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "story_creative_briefs_created_at_idx": {
+          "name": "story_creative_briefs_created_at_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "story_creative_briefs_topic_id_topics_id_fk": {
+          "name": "story_creative_briefs_topic_id_topics_id_fk",
+          "tableFrom": "story_creative_briefs",
+          "tableTo": "topics",
+          "columnsFrom": [
+            "topic_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "story_creative_briefs_story_id_stories_id_fk": {
+          "name": "story_creative_briefs_story_id_stories_id_fk",
+          "tableFrom": "story_creative_briefs",
+          "tableTo": "stories",
+          "columnsFrom": [
+            "story_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "story_creative_briefs_profile_id_creative_profiles_id_fk": {
+          "name": "story_creative_briefs_profile_id_creative_profiles_id_fk",
+          "tableFrom": "story_creative_briefs",
+          "tableTo": "creative_profiles",
+          "columnsFrom": [
+            "profile_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "story_creative_briefs_scores_check": {
+          "name": "story_creative_briefs_scores_check",
+          "value": "\"story_creative_briefs\".\"confidence\" BETWEEN 0 AND 100\n        AND \"story_creative_briefs\".\"tone_energy\" BETWEEN 0 AND 100\n        AND \"story_creative_briefs\".\"tone_humor\" BETWEEN 0 AND 100"
+        },
+        "story_creative_briefs_formats_check": {
+          "name": "story_creative_briefs_formats_check",
+          "value": "\"story_creative_briefs\".\"recommended_format\" <> \"story_creative_briefs\".\"fallback_format\""
+        },
+        "story_creative_briefs_tokens_check": {
+          "name": "story_creative_briefs_tokens_check",
+          "value": "\"story_creative_briefs\".\"prompt_tokens\" >= 0\n        AND \"story_creative_briefs\".\"output_tokens\" >= 0\n        AND \"story_creative_briefs\".\"thoughts_tokens\" >= 0\n        AND \"story_creative_briefs\".\"total_tokens\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.editorial_evaluation_runs": {
+      "name": "editorial_evaluation_runs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "topic_id": {
+          "name": "topic_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "model": {
+          "name": "model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "model_version": {
+          "name": "model_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prompt_version": {
+          "name": "prompt_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "editorial_evaluation_run_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'running'"
+        },
+        "requested_stories": {
+          "name": "requested_stories",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "evaluated_stories": {
+          "name": "evaluated_stories",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "cached_stories": {
+          "name": "cached_stories",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "prompt_tokens": {
+          "name": "prompt_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "output_tokens": {
+          "name": "output_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "thoughts_tokens": {
+          "name": "thoughts_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "total_tokens": {
+          "name": "total_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "error": {
+          "name": "error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "editorial_evaluation_runs_topic_started_at_idx": {
+          "name": "editorial_evaluation_runs_topic_started_at_idx",
+          "columns": [
+            {
+              "expression": "topic_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "started_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "editorial_evaluation_runs_started_at_idx": {
+          "name": "editorial_evaluation_runs_started_at_idx",
+          "columns": [
+            {
+              "expression": "started_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "editorial_evaluation_runs_status_idx": {
+          "name": "editorial_evaluation_runs_status_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "editorial_evaluation_runs_topic_id_topics_id_fk": {
+          "name": "editorial_evaluation_runs_topic_id_topics_id_fk",
+          "tableFrom": "editorial_evaluation_runs",
+          "tableTo": "topics",
+          "columnsFrom": [
+            "topic_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "editorial_evaluation_runs_counts_check": {
+          "name": "editorial_evaluation_runs_counts_check",
+          "value": "\"editorial_evaluation_runs\".\"requested_stories\" >= 0\n        AND \"editorial_evaluation_runs\".\"evaluated_stories\" >= 0\n        AND \"editorial_evaluation_runs\".\"cached_stories\" >= 0\n        AND \"editorial_evaluation_runs\".\"evaluated_stories\" <= \"editorial_evaluation_runs\".\"requested_stories\""
+        },
+        "editorial_evaluation_runs_tokens_check": {
+          "name": "editorial_evaluation_runs_tokens_check",
+          "value": "\"editorial_evaluation_runs\".\"prompt_tokens\" >= 0\n        AND \"editorial_evaluation_runs\".\"output_tokens\" >= 0\n        AND \"editorial_evaluation_runs\".\"thoughts_tokens\" >= 0\n        AND \"editorial_evaluation_runs\".\"total_tokens\" >= 0"
+        },
+        "editorial_evaluation_runs_dates_check": {
+          "name": "editorial_evaluation_runs_dates_check",
+          "value": "\"editorial_evaluation_runs\".\"finished_at\" IS NULL OR \"editorial_evaluation_runs\".\"finished_at\" >= \"editorial_evaluation_runs\".\"started_at\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.story_editorial_evaluations": {
+      "name": "story_editorial_evaluations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "story_id": {
+          "name": "story_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "topic_id": {
+          "name": "topic_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "model": {
+          "name": "model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prompt_version": {
+          "name": "prompt_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "input_hash": {
+          "name": "input_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "editorial_score": {
+          "name": "editorial_score",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "editorial_priority": {
+          "name": "editorial_priority",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "canada_relevance": {
+          "name": "canada_relevance",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ai_relevance": {
+          "name": "ai_relevance",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "social_potential": {
+          "name": "social_potential",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "novelty": {
+          "name": "novelty",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "decision": {
+          "name": "decision",
+          "type": "editorial_evaluation_decision",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "suggested_angles": {
+          "name": "suggested_angles",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "ARRAY[]::text[]"
+        },
+        "risk_flags": {
+          "name": "risk_flags",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "ARRAY[]::text[]"
+        },
+        "evaluated_at": {
+          "name": "evaluated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "story_editorial_evaluations_topic_cache_unique": {
+          "name": "story_editorial_evaluations_topic_cache_unique",
+          "columns": [
+            {
+              "expression": "topic_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "story_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "provider",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "model",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "prompt_version",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "input_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "story_editorial_evaluations_story_id_idx": {
+          "name": "story_editorial_evaluations_story_id_idx",
+          "columns": [
+            {
+              "expression": "story_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "story_editorial_evaluations_topic_story_id_idx": {
+          "name": "story_editorial_evaluations_topic_story_id_idx",
+          "columns": [
+            {
+              "expression": "topic_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "story_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "story_editorial_evaluations_run_id_idx": {
+          "name": "story_editorial_evaluations_run_id_idx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "story_editorial_evaluations_decision_idx": {
+          "name": "story_editorial_evaluations_decision_idx",
+          "columns": [
+            {
+              "expression": "decision",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "story_editorial_evaluations_score_idx": {
+          "name": "story_editorial_evaluations_score_idx",
+          "columns": [
+            {
+              "expression": "editorial_score",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "story_editorial_evaluations_evaluated_at_idx": {
+          "name": "story_editorial_evaluations_evaluated_at_idx",
+          "columns": [
+            {
+              "expression": "evaluated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "story_editorial_evaluations_run_id_editorial_evaluation_runs_id_fk": {
+          "name": "story_editorial_evaluations_run_id_editorial_evaluation_runs_id_fk",
+          "tableFrom": "story_editorial_evaluations",
+          "tableTo": "editorial_evaluation_runs",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "story_editorial_evaluations_story_id_stories_id_fk": {
+          "name": "story_editorial_evaluations_story_id_stories_id_fk",
+          "tableFrom": "story_editorial_evaluations",
+          "tableTo": "stories",
+          "columnsFrom": [
+            "story_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "story_editorial_evaluations_topic_id_topics_id_fk": {
+          "name": "story_editorial_evaluations_topic_id_topics_id_fk",
+          "tableFrom": "story_editorial_evaluations",
+          "tableTo": "topics",
+          "columnsFrom": [
+            "topic_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "story_editorial_evaluations_scores_check": {
+          "name": "story_editorial_evaluations_scores_check",
+          "value": "\"story_editorial_evaluations\".\"editorial_score\" BETWEEN 0 AND 100\n        AND \"story_editorial_evaluations\".\"canada_relevance\" BETWEEN 0 AND 100\n        AND \"story_editorial_evaluations\".\"ai_relevance\" BETWEEN 0 AND 100\n        AND \"story_editorial_evaluations\".\"social_potential\" BETWEEN 0 AND 100\n        AND \"story_editorial_evaluations\".\"novelty\" BETWEEN 0 AND 100"
+        },
+        "story_editorial_evaluations_editorial_priority_check": {
+          "name": "story_editorial_evaluations_editorial_priority_check",
+          "value": "\"story_editorial_evaluations\".\"editorial_priority\" IS NULL\n        OR \"story_editorial_evaluations\".\"editorial_priority\" BETWEEN 0 AND 100"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.topic_editorial_profiles": {
+      "name": "topic_editorial_profiles",
+      "schema": "",
+      "columns": {
+        "topic_id": {
+          "name": "topic_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "audience": {
+          "name": "audience",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mission": {
+          "name": "mission",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_pillars": {
+          "name": "content_pillars",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "ARRAY[]::text[]"
+        },
+        "exclusions": {
+          "name": "exclusions",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "ARRAY[]::text[]"
+        },
+        "news_max_age_hours": {
+          "name": "news_max_age_hours",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 72
+        },
+        "research_max_age_hours": {
+          "name": "research_max_age_hours",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 72
+        },
+        "topic_fit_weight": {
+          "name": "topic_fit_weight",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 35
+        },
+        "evidence_depth_weight": {
+          "name": "evidence_depth_weight",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 20
+        },
+        "novelty_timeliness_weight": {
+          "name": "novelty_timeliness_weight",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 15
+        },
+        "audience_value_weight": {
+          "name": "audience_value_weight",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 20
+        },
+        "social_potential_weight": {
+          "name": "social_potential_weight",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 10
+        },
+        "local_candidate_min_score": {
+          "name": "local_candidate_min_score",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 25
+        },
+        "profile_version": {
+          "name": "profile_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "topic_editorial_profiles_topic_id_topics_id_fk": {
+          "name": "topic_editorial_profiles_topic_id_topics_id_fk",
+          "tableFrom": "topic_editorial_profiles",
+          "tableTo": "topics",
+          "columnsFrom": [
+            "topic_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "topic_editorial_profiles_audience_not_blank_check": {
+          "name": "topic_editorial_profiles_audience_not_blank_check",
+          "value": "char_length(btrim(\"topic_editorial_profiles\".\"audience\")) > 0"
+        },
+        "topic_editorial_profiles_mission_not_blank_check": {
+          "name": "topic_editorial_profiles_mission_not_blank_check",
+          "value": "char_length(btrim(\"topic_editorial_profiles\".\"mission\")) > 0"
+        },
+        "topic_editorial_profiles_freshness_check": {
+          "name": "topic_editorial_profiles_freshness_check",
+          "value": "\"topic_editorial_profiles\".\"news_max_age_hours\" BETWEEN 1 AND 8760\n        AND \"topic_editorial_profiles\".\"research_max_age_hours\" BETWEEN 1 AND 8760"
+        },
+        "topic_editorial_profiles_weights_check": {
+          "name": "topic_editorial_profiles_weights_check",
+          "value": "\"topic_editorial_profiles\".\"topic_fit_weight\" BETWEEN 0 AND 100\n        AND \"topic_editorial_profiles\".\"evidence_depth_weight\" BETWEEN 0 AND 100\n        AND \"topic_editorial_profiles\".\"novelty_timeliness_weight\" BETWEEN 0 AND 100\n        AND \"topic_editorial_profiles\".\"audience_value_weight\" BETWEEN 0 AND 100\n        AND \"topic_editorial_profiles\".\"social_potential_weight\" BETWEEN 0 AND 100\n        AND (\n          \"topic_editorial_profiles\".\"topic_fit_weight\"\n          + \"topic_editorial_profiles\".\"evidence_depth_weight\"\n          + \"topic_editorial_profiles\".\"novelty_timeliness_weight\"\n          + \"topic_editorial_profiles\".\"audience_value_weight\"\n          + \"topic_editorial_profiles\".\"social_potential_weight\"\n        ) = 100"
+        },
+        "topic_editorial_profiles_local_candidate_min_score_check": {
+          "name": "topic_editorial_profiles_local_candidate_min_score_check",
+          "value": "\"topic_editorial_profiles\".\"local_candidate_min_score\" BETWEEN 0 AND 100"
+        },
+        "topic_editorial_profiles_profile_version_check": {
+          "name": "topic_editorial_profiles_profile_version_check",
+          "value": "\"topic_editorial_profiles\".\"profile_version\" >= 1"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.radar_preferences": {
+      "name": "radar_preferences",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "favored_terms": {
+          "name": "favored_terms",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "ARRAY[]::text[]"
+        },
+        "unfavored_terms": {
+          "name": "unfavored_terms",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "ARRAY[]::text[]"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.rss_sources": {
+      "name": "rss_sources",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "url": {
+          "name": "url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "language": {
+          "name": "language",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "region": {
+          "name": "region",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_mode": {
+          "name": "content_mode",
+          "type": "rss_content_mode",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'auto'"
+        },
+        "poll_every_minutes": {
+          "name": "poll_every_minutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 60
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "rss_sources_workspace_active_idx": {
+          "name": "rss_sources_workspace_active_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "is_active",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "rss_sources_workspace_id_workspaces_id_fk": {
+          "name": "rss_sources_workspace_id_workspaces_id_fk",
+          "tableFrom": "rss_sources",
+          "tableTo": "workspaces",
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "rss_sources_workspace_slug_unique": {
+          "name": "rss_sources_workspace_slug_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "workspace_id",
+            "slug"
+          ]
+        },
+        "rss_sources_workspace_url_unique": {
+          "name": "rss_sources_workspace_url_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "workspace_id",
+            "url"
+          ]
+        },
+        "rss_sources_workspace_id_id_unique": {
+          "name": "rss_sources_workspace_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "workspace_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "rss_sources_name_not_blank_check": {
+          "name": "rss_sources_name_not_blank_check",
+          "value": "char_length(btrim(\"rss_sources\".\"name\")) > 0"
+        },
+        "rss_sources_slug_format_check": {
+          "name": "rss_sources_slug_format_check",
+          "value": "\"rss_sources\".\"slug\" ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'"
+        },
+        "rss_sources_url_protocol_check": {
+          "name": "rss_sources_url_protocol_check",
+          "value": "\"rss_sources\".\"url\" ~* '^https?://'"
+        },
+        "rss_sources_poll_interval_check": {
+          "name": "rss_sources_poll_interval_check",
+          "value": "\"rss_sources\".\"poll_every_minutes\" BETWEEN 5 AND 1440"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.topic_sources": {
+      "name": "topic_sources",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "topic_id": {
+          "name": "topic_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rss_source_id": {
+          "name": "rss_source_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "enabled": {
+          "name": "enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "tags": {
+          "name": "tags",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "ARRAY[]::text[]"
+        },
+        "priority": {
+          "name": "priority",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "topic_sources_workspace_topic_enabled_idx": {
+          "name": "topic_sources_workspace_topic_enabled_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "topic_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "enabled",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "topic_sources_rss_source_id_idx": {
+          "name": "topic_sources_rss_source_id_idx",
+          "columns": [
+            {
+              "expression": "rss_source_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "topic_sources_workspace_id_workspaces_id_fk": {
+          "name": "topic_sources_workspace_id_workspaces_id_fk",
+          "tableFrom": "topic_sources",
+          "tableTo": "workspaces",
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "topic_sources_workspace_topic_fk": {
+          "name": "topic_sources_workspace_topic_fk",
+          "tableFrom": "topic_sources",
+          "tableTo": "topics",
+          "columnsFrom": [
+            "workspace_id",
+            "topic_id"
+          ],
+          "columnsTo": [
+            "workspace_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "topic_sources_workspace_rss_source_fk": {
+          "name": "topic_sources_workspace_rss_source_fk",
+          "tableFrom": "topic_sources",
+          "tableTo": "rss_sources",
+          "columnsFrom": [
+            "workspace_id",
+            "rss_source_id"
+          ],
+          "columnsTo": [
+            "workspace_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "topic_sources_topic_source_unique": {
+          "name": "topic_sources_topic_source_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "topic_id",
+            "rss_source_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "topic_sources_priority_check": {
+          "name": "topic_sources_priority_check",
+          "value": "\"topic_sources\".\"priority\" BETWEEN 0 AND 100"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.stories": {
+      "name": "stories",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "canonical_url": {
+          "name": "canonical_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "original_url": {
+          "name": "original_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_text": {
+          "name": "content_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "content_status": {
+          "name": "content_status",
+          "type": "story_content_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "language": {
+          "name": "language",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "region": {
+          "name": "region",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tags": {
+          "name": "tags",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "ARRAY[]::text[]"
+        },
+        "published_at": {
+          "name": "published_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "first_seen_at": {
+          "name": "first_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "last_seen_at": {
+          "name": "last_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "relevance_score": {
+          "name": "relevance_score",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "relevance_reasons": {
+          "name": "relevance_reasons",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "ARRAY[]::text[]"
+        },
+        "processing_status": {
+          "name": "processing_status",
+          "type": "story_processing_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'new'"
+        },
+        "review_decision": {
+          "name": "review_decision",
+          "type": "story_review_decision",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reviewed_at": {
+          "name": "reviewed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "stories_canonical_url_unique": {
+          "name": "stories_canonical_url_unique",
+          "columns": [
+            {
+              "expression": "canonical_url",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "stories_published_at_idx": {
+          "name": "stories_published_at_idx",
+          "columns": [
+            {
+              "expression": "published_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "stories_processing_status_idx": {
+          "name": "stories_processing_status_idx",
+          "columns": [
+            {
+              "expression": "processing_status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "stories_review_decision_idx": {
+          "name": "stories_review_decision_idx",
+          "columns": [
+            {
+              "expression": "review_decision",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "stories_retention_idx": {
+          "name": "stories_retention_idx",
+          "columns": [
+            {
+              "expression": "processing_status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "last_seen_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "stories_relevance_score_idx": {
+          "name": "stories_relevance_score_idx",
+          "columns": [
+            {
+              "expression": "relevance_score",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "stories_relevance_score_check": {
+          "name": "stories_relevance_score_check",
+          "value": "\"stories\".\"relevance_score\" BETWEEN 0 AND 100"
+        },
+        "stories_seen_dates_check": {
+          "name": "stories_seen_dates_check",
+          "value": "\"stories\".\"last_seen_at\" >= \"stories\".\"first_seen_at\""
+        },
+        "stories_review_fields_check": {
+          "name": "stories_review_fields_check",
+          "value": "(\"stories\".\"review_decision\" IS NULL AND \"stories\".\"reviewed_at\" IS NULL)\n        OR (\"stories\".\"review_decision\" IS NOT NULL AND \"stories\".\"reviewed_at\" IS NOT NULL)"
+        },
+        "stories_review_status_check": {
+          "name": "stories_review_status_check",
+          "value": "\"stories\".\"review_decision\" IS NULL\n        OR (\"stories\".\"review_decision\" = 'approved' AND \"stories\".\"processing_status\" IN ('selected', 'published'))\n        OR (\"stories\".\"review_decision\" = 'rejected' AND \"stories\".\"processing_status\" = 'rejected')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.story_content_enrichments": {
+      "name": "story_content_enrichments",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "story_id": {
+          "name": "story_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "story_content_enrichment_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "method": {
+          "name": "method",
+          "type": "story_content_enrichment_method",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'direct'"
+        },
+        "source_url": {
+          "name": "source_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "resolved_url": {
+          "name": "resolved_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "article_title": {
+          "name": "article_title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "byline": {
+          "name": "byline",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "content_text": {
+          "name": "content_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "content_hash": {
+          "name": "content_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "content_status": {
+          "name": "content_status",
+          "type": "story_content_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "word_count": {
+          "name": "word_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "error": {
+          "name": "error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "fetched_at": {
+          "name": "fetched_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "story_content_enrichments_story_id_unique": {
+          "name": "story_content_enrichments_story_id_unique",
+          "columns": [
+            {
+              "expression": "story_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "story_content_enrichments_status_idx": {
+          "name": "story_content_enrichments_status_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "story_content_enrichments_updated_at_idx": {
+          "name": "story_content_enrichments_updated_at_idx",
+          "columns": [
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "story_content_enrichments_story_id_stories_id_fk": {
+          "name": "story_content_enrichments_story_id_stories_id_fk",
+          "tableFrom": "story_content_enrichments",
+          "tableTo": "stories",
+          "columnsFrom": [
+            "story_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "story_content_enrichments_counts_check": {
+          "name": "story_content_enrichments_counts_check",
+          "value": "\"story_content_enrichments\".\"attempts\" >= 0\n        AND (\"story_content_enrichments\".\"word_count\" IS NULL OR \"story_content_enrichments\".\"word_count\" >= 0)"
+        },
+        "story_content_enrichments_dates_check": {
+          "name": "story_content_enrichments_dates_check",
+          "value": "\"story_content_enrichments\".\"fetched_at\" IS NULL OR \"story_content_enrichments\".\"fetched_at\" >= \"story_content_enrichments\".\"started_at\""
+        },
+        "story_content_enrichments_result_check": {
+          "name": "story_content_enrichments_result_check",
+          "value": "(\n          \"story_content_enrichments\".\"status\" = 'completed'\n          AND \"story_content_enrichments\".\"resolved_url\" IS NOT NULL\n          AND \"story_content_enrichments\".\"content_text\" IS NOT NULL\n          AND \"story_content_enrichments\".\"content_hash\" IS NOT NULL\n          AND \"story_content_enrichments\".\"content_status\" IS NOT NULL\n          AND \"story_content_enrichments\".\"word_count\" IS NOT NULL\n          AND \"story_content_enrichments\".\"fetched_at\" IS NOT NULL\n          AND \"story_content_enrichments\".\"error\" IS NULL\n        ) OR (\n          \"story_content_enrichments\".\"status\" = 'pending'\n          AND \"story_content_enrichments\".\"fetched_at\" IS NULL\n          AND \"story_content_enrichments\".\"error\" IS NULL\n        ) OR (\n          \"story_content_enrichments\".\"status\" IN ('failed', 'blocked')\n          AND \"story_content_enrichments\".\"error\" IS NOT NULL\n        )"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.story_social_publications": {
+      "name": "story_social_publications",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "topic_id": {
+          "name": "topic_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "story_id": {
+          "name": "story_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "platform": {
+          "name": "platform",
+          "type": "social_publication_platform",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "social_publication_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'draft'"
+        },
+        "scheduled_at": {
+          "name": "scheduled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "published_at": {
+          "name": "published_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "post_url": {
+          "name": "post_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "story_social_publications_topic_story_platform_unique": {
+          "name": "story_social_publications_topic_story_platform_unique",
+          "columns": [
+            {
+              "expression": "topic_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "story_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "platform",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "story_social_publications_topic_status_idx": {
+          "name": "story_social_publications_topic_status_idx",
+          "columns": [
+            {
+              "expression": "topic_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "story_social_publications_story_id_idx": {
+          "name": "story_social_publications_story_id_idx",
+          "columns": [
+            {
+              "expression": "story_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "story_social_publications_topic_id_topics_id_fk": {
+          "name": "story_social_publications_topic_id_topics_id_fk",
+          "tableFrom": "story_social_publications",
+          "tableTo": "topics",
+          "columnsFrom": [
+            "topic_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "story_social_publications_story_id_stories_id_fk": {
+          "name": "story_social_publications_story_id_stories_id_fk",
+          "tableFrom": "story_social_publications",
+          "tableTo": "stories",
+          "columnsFrom": [
+            "story_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "story_social_publications_dates_check": {
+          "name": "story_social_publications_dates_check",
+          "value": "\"story_social_publications\".\"published_at\" IS NULL\n        OR \"story_social_publications\".\"scheduled_at\" IS NULL\n        OR \"story_social_publications\".\"published_at\" >= \"story_social_publications\".\"scheduled_at\""
+        },
+        "story_social_publications_post_url_check": {
+          "name": "story_social_publications_post_url_check",
+          "value": "\"story_social_publications\".\"post_url\" IS NULL OR \"story_social_publications\".\"post_url\" ~* '^https?://'"
+        },
+        "story_social_publications_note_length_check": {
+          "name": "story_social_publications_note_length_check",
+          "value": "\"story_social_publications\".\"note\" IS NULL OR char_length(\"story_social_publications\".\"note\") <= 2000"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.story_sources": {
+      "name": "story_sources",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "story_id": {
+          "name": "story_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_id": {
+          "name": "source_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_name": {
+          "name": "source_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "external_id": {
+          "name": "external_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_url": {
+          "name": "source_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fetched_at": {
+          "name": "fetched_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "story_sources_source_external_id_unique": {
+          "name": "story_sources_source_external_id_unique",
+          "columns": [
+            {
+              "expression": "source_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "external_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "story_sources_story_id_idx": {
+          "name": "story_sources_story_id_idx",
+          "columns": [
+            {
+              "expression": "story_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "story_sources_source_id_idx": {
+          "name": "story_sources_source_id_idx",
+          "columns": [
+            {
+              "expression": "source_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "story_sources_story_id_stories_id_fk": {
+          "name": "story_sources_story_id_stories_id_fk",
+          "tableFrom": "story_sources",
+          "tableTo": "stories",
+          "columnsFrom": [
+            "story_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.topic_stories": {
+      "name": "topic_stories",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "topic_id": {
+          "name": "topic_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "story_id": {
+          "name": "story_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "relevance_score": {
+          "name": "relevance_score",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "relevance_reasons": {
+          "name": "relevance_reasons",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "ARRAY[]::text[]"
+        },
+        "processing_status": {
+          "name": "processing_status",
+          "type": "story_processing_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'new'"
+        },
+        "review_decision": {
+          "name": "review_decision",
+          "type": "story_review_decision",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reviewed_at": {
+          "name": "reviewed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "first_seen_at": {
+          "name": "first_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "last_seen_at": {
+          "name": "last_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "topic_stories_topic_story_unique": {
+          "name": "topic_stories_topic_story_unique",
+          "columns": [
+            {
+              "expression": "topic_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "story_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "topic_stories_topic_status_idx": {
+          "name": "topic_stories_topic_status_idx",
+          "columns": [
+            {
+              "expression": "topic_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "processing_status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "topic_stories_topic_review_idx": {
+          "name": "topic_stories_topic_review_idx",
+          "columns": [
+            {
+              "expression": "topic_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "review_decision",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "topic_stories_topic_relevance_idx": {
+          "name": "topic_stories_topic_relevance_idx",
+          "columns": [
+            {
+              "expression": "topic_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "relevance_score",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "topic_stories_topic_retention_idx": {
+          "name": "topic_stories_topic_retention_idx",
+          "columns": [
+            {
+              "expression": "topic_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "processing_status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "last_seen_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "topic_stories_topic_id_topics_id_fk": {
+          "name": "topic_stories_topic_id_topics_id_fk",
+          "tableFrom": "topic_stories",
+          "tableTo": "topics",
+          "columnsFrom": [
+            "topic_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "topic_stories_story_id_stories_id_fk": {
+          "name": "topic_stories_story_id_stories_id_fk",
+          "tableFrom": "topic_stories",
+          "tableTo": "stories",
+          "columnsFrom": [
+            "story_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "topic_stories_relevance_score_check": {
+          "name": "topic_stories_relevance_score_check",
+          "value": "\"topic_stories\".\"relevance_score\" BETWEEN 0 AND 100"
+        },
+        "topic_stories_seen_dates_check": {
+          "name": "topic_stories_seen_dates_check",
+          "value": "\"topic_stories\".\"last_seen_at\" >= \"topic_stories\".\"first_seen_at\""
+        },
+        "topic_stories_review_fields_check": {
+          "name": "topic_stories_review_fields_check",
+          "value": "(\"topic_stories\".\"review_decision\" IS NULL AND \"topic_stories\".\"reviewed_at\" IS NULL)\n        OR (\"topic_stories\".\"review_decision\" IS NOT NULL AND \"topic_stories\".\"reviewed_at\" IS NOT NULL)"
+        },
+        "topic_stories_review_status_check": {
+          "name": "topic_stories_review_status_check",
+          "value": "\"topic_stories\".\"review_decision\" IS NULL\n        OR (\"topic_stories\".\"review_decision\" = 'approved' AND \"topic_stories\".\"processing_status\" IN ('selected', 'published'))\n        OR (\"topic_stories\".\"review_decision\" = 'rejected' AND \"topic_stories\".\"processing_status\" = 'rejected')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.topics": {
+      "name": "topics",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "theme_key": {
+          "name": "theme_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'press-green'"
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "topics_workspace_active_idx": {
+          "name": "topics_workspace_active_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "is_active",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "topics_workspace_id_workspaces_id_fk": {
+          "name": "topics_workspace_id_workspaces_id_fk",
+          "tableFrom": "topics",
+          "tableTo": "workspaces",
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "topics_workspace_slug_unique": {
+          "name": "topics_workspace_slug_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "workspace_id",
+            "slug"
+          ]
+        },
+        "topics_workspace_id_id_unique": {
+          "name": "topics_workspace_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "workspace_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "topics_name_not_blank_check": {
+          "name": "topics_name_not_blank_check",
+          "value": "char_length(btrim(\"topics\".\"name\")) > 0"
+        },
+        "topics_slug_format_check": {
+          "name": "topics_slug_format_check",
+          "value": "\"topics\".\"slug\" ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.workspaces": {
+      "name": "workspaces",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "workspaces_slug_unique": {
+          "name": "workspaces_slug_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "slug"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "workspaces_name_not_blank_check": {
+          "name": "workspaces_name_not_blank_check",
+          "value": "char_length(btrim(\"workspaces\".\"name\")) > 0"
+        },
+        "workspaces_slug_format_check": {
+          "name": "workspaces_slug_format_check",
+          "value": "\"workspaces\".\"slug\" ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "public.collection_run_status": {
+      "name": "collection_run_status",
+      "schema": "public",
+      "values": [
+        "completed",
+        "partial",
+        "failed"
+      ]
+    },
+    "public.collection_source_status": {
+      "name": "collection_source_status",
+      "schema": "public",
+      "values": [
+        "successful",
+        "failed"
+      ]
+    },
+    "public.creative_ai_run_status": {
+      "name": "creative_ai_run_status",
+      "schema": "public",
+      "values": [
+        "running",
+        "completed",
+        "failed"
+      ]
+    },
+    "public.creative_ai_task": {
+      "name": "creative_ai_task",
+      "schema": "public",
+      "values": [
+        "brief",
+        "draft"
+      ]
+    },
+    "public.creative_aspect_ratio": {
+      "name": "creative_aspect_ratio",
+      "schema": "public",
+      "values": [
+        "1:1",
+        "4:5",
+        "16:9"
+      ]
+    },
+    "public.creative_asset_batch_status": {
+      "name": "creative_asset_batch_status",
+      "schema": "public",
+      "values": [
+        "queued",
+        "generating",
+        "partial",
+        "completed",
+        "failed",
+        "stale"
+      ]
+    },
+    "public.creative_asset_generation_mode": {
+      "name": "creative_asset_generation_mode",
+      "schema": "public",
+      "values": [
+        "text-to-image",
+        "reference-guided"
+      ]
+    },
+    "public.creative_asset_request_type": {
+      "name": "creative_asset_request_type",
+      "schema": "public",
+      "values": [
+        "generated-image",
+        "typography-only"
+      ]
+    },
+    "public.creative_asset_status": {
+      "name": "creative_asset_status",
+      "schema": "public",
+      "values": [
+        "queued",
+        "generating",
+        "generated",
+        "failed",
+        "approved",
+        "stale"
+      ]
+    },
+    "public.creative_content_sufficiency": {
+      "name": "creative_content_sufficiency",
+      "schema": "public",
+      "values": [
+        "sufficient",
+        "limited",
+        "insufficient"
+      ]
+    },
+    "public.creative_draft_status": {
+      "name": "creative_draft_status",
+      "schema": "public",
+      "values": [
+        "draft",
+        "approved"
+      ]
+    },
+    "public.creative_format": {
+      "name": "creative_format",
+      "schema": "public",
+      "values": [
+        "meme",
+        "carousel"
+      ]
+    },
+    "public.creative_image_quality": {
+      "name": "creative_image_quality",
+      "schema": "public",
+      "values": [
+        "auto",
+        "low",
+        "medium",
+        "high"
+      ]
+    },
+    "public.creative_tone": {
+      "name": "creative_tone",
+      "schema": "public",
+      "values": [
+        "informative",
+        "curious",
+        "playful",
+        "inspiring",
+        "cautious",
+        "urgent",
+        "somber"
+      ]
+    },
+    "public.creative_unit_role": {
+      "name": "creative_unit_role",
+      "schema": "public",
+      "values": [
+        "cover",
+        "content",
+        "conclusion",
+        "call-to-action"
+      ]
+    },
+    "public.creative_unit_type": {
+      "name": "creative_unit_type",
+      "schema": "public",
+      "values": [
+        "meme-frame",
+        "carousel-slide"
+      ]
+    },
+    "public.editorial_evaluation_decision": {
+      "name": "editorial_evaluation_decision",
+      "schema": "public",
+      "values": [
+        "reject",
+        "review",
+        "shortlist"
+      ]
+    },
+    "public.editorial_evaluation_run_status": {
+      "name": "editorial_evaluation_run_status",
+      "schema": "public",
+      "values": [
+        "running",
+        "completed",
+        "failed"
+      ]
+    },
+    "public.rss_content_mode": {
+      "name": "rss_content_mode",
+      "schema": "public",
+      "values": [
+        "excerpt",
+        "full",
+        "auto"
+      ]
+    },
+    "public.social_publication_platform": {
+      "name": "social_publication_platform",
+      "schema": "public",
+      "values": [
+        "instagram",
+        "linkedin",
+        "tiktok",
+        "facebook",
+        "x",
+        "youtube",
+        "newsletter"
+      ]
+    },
+    "public.social_publication_status": {
+      "name": "social_publication_status",
+      "schema": "public",
+      "values": [
+        "draft",
+        "scheduled",
+        "published"
+      ]
+    },
+    "public.story_content_enrichment_method": {
+      "name": "story_content_enrichment_method",
+      "schema": "public",
+      "values": [
+        "direct",
+        "reader"
+      ]
+    },
+    "public.story_content_enrichment_status": {
+      "name": "story_content_enrichment_status",
+      "schema": "public",
+      "values": [
+        "pending",
+        "completed",
+        "failed",
+        "blocked"
+      ]
+    },
+    "public.story_content_status": {
+      "name": "story_content_status",
+      "schema": "public",
+      "values": [
+        "excerpt",
+        "full",
+        "likely-full",
+        "missing"
+      ]
+    },
+    "public.story_processing_status": {
+      "name": "story_processing_status",
+      "schema": "public",
+      "values": [
+        "new",
+        "needs-enrichment",
+        "ready",
+        "selected",
+        "rejected",
+        "published",
+        "failed"
+      ]
+    },
+    "public.story_review_decision": {
+      "name": "story_review_decision",
+      "schema": "public",
+      "values": [
+        "approved",
+        "rejected"
+      ]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

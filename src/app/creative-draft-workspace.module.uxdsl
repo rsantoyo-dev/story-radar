@@ -681,7 +681,8 @@
 
 .historicalDraftHeading {
   display: flex;
-  align-items: flex-start;
+  flex-direction: xs(column) md(row);
+  align-items: xs(stretch) md(flex-start);
   justify-content: space-between;
   gap: space(5);
 }
@@ -706,6 +707,49 @@
   @ds-typo (caption);
   font-size: 9px;
   font-weight: 800;
+}
+
+.historicalRegenerationAction {
+  @ds-surface (contained primary radius(2) shadow(1));
+  display: flex;
+  flex-direction: xs(column) md(row);
+  align-items: xs(stretch) md(center);
+  justify-content: space-between;
+  gap: density(4);
+  padding: density(4);
+}
+
+.historicalRegenerationAction strong {
+  color: palette(primary-contrast);
+  @ds-typo (caption);
+  font-size: 11px;
+}
+
+.historicalRegenerationAction p {
+  margin: density(1) 0 0;
+  color: palette(primary-contrast);
+  @ds-typo (caption);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.historicalRegenerationAction button {
+  @ds-button (contained light density(3) radius(2) shadow(1));
+  flex: 0 0 auto;
+}
+
+.historicalRegenerationControls {
+  display: grid;
+  flex: 0 0 auto;
+  gap: density(2);
+}
+
+.historicalRegenerationControls small {
+  max-width: xs(none) md(320px);
+  color: palette(error-light);
+  @ds-typo (caption);
+  font-size: 9px;
+  line-height: 1.4;
 }
 
 .historicalDraftFields {
@@ -884,6 +928,68 @@
   border-radius: 10px;
 }
 
+.carouselPlanSummary {
+  display: grid;
+  gap: density(3);
+  padding: density(4);
+  border: border(1, palette(surface-light), solid);
+  border-radius: radius(2);
+  background: palette(light-light);
+}
+
+.carouselPlanSummary h4,
+.carouselPlanSummary p {
+  margin: 0;
+}
+
+.carouselPlanSummary h4 {
+  color: palette(primary-dark);
+  @ds-typo (h4);
+  font-size: 11px;
+}
+
+.carouselPlanSummary p {
+  margin-top: density(1);
+  color: palette(tertiary-main);
+  @ds-typo (caption);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.carouselPlanSummary ol {
+  display: grid;
+  grid-template-columns: xs(1fr) md(repeat(2, minmax(0, 1fr)));
+  gap: density(2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.carouselPlanSummary li {
+  display: grid;
+  gap: density(1);
+  padding: density(3);
+  border-radius: radius(1);
+  background: palette(surface-light);
+}
+
+.carouselPlanSummary strong,
+.carouselPlanSummary span,
+.carouselPlanSummary small {
+  @ds-typo (caption);
+}
+
+.carouselPlanSummary strong {
+  color: palette(primary-dark);
+  font-size: 10px;
+}
+
+.carouselPlanSummary span,
+.carouselPlanSummary small {
+  color: palette(tertiary-main);
+  font-size: 9px;
+}
+
 .formatOptions {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -1013,6 +1119,14 @@
   line-height: 1.45;
 }
 
+.factsAndRisks li small {
+  display: block;
+  margin-top: density(1);
+  color: palette(tertiary-main);
+  @ds-typo (caption);
+  font-size: 8px;
+}
+
 .factsAndRisks li span {
   display: inline-block;
   margin-right: space(3);
@@ -1069,6 +1183,32 @@
 .units {
   display: grid;
   gap: space(4);
+}
+
+.narrativeReview {
+  padding: density(4);
+  border: border(1, palette(warning-light), solid);
+  border-radius: radius(2);
+  background: palette(light-light);
+  color: palette(warning-dark);
+}
+
+.narrativeReview strong {
+  @ds-typo (caption);
+  font-weight: 800;
+}
+
+.narrativeReview ul {
+  display: grid;
+  gap: density(1);
+  margin: density(2) 0 0;
+  padding-left: density(5);
+}
+
+.narrativeReview li {
+  @ds-typo (caption);
+  font-size: 10px;
+  line-height: 1.45;
 }
 
 .unit {

@@ -15,7 +15,7 @@ const ASPECT_RATIO_CONFIGURATIONS = {
     height: 1080,
     generationWidth: 1088,
     generationHeight: 1088,
-    promptVersion: "integrated-square-1x1-v3",
+    promptVersion: "integrated-square-1x1-v4",
   },
   "4:5": {
     width: 1080,
@@ -24,7 +24,7 @@ const ASPECT_RATIO_CONFIGURATIONS = {
     // exact 4:5 canvas that is normalized to the requested output size later.
     generationWidth: 1088,
     generationHeight: 1360,
-    promptVersion: "integrated-portrait-4x5-v4",
+    promptVersion: "integrated-portrait-4x5-v5",
   },
   "16:9": {
     width: 1920,
@@ -33,7 +33,7 @@ const ASPECT_RATIO_CONFIGURATIONS = {
     // 1920×1080 output is normalized after generation.
     generationWidth: 1920,
     generationHeight: 1088,
-    promptVersion: "integrated-landscape-16x9-v2",
+    promptVersion: "integrated-landscape-16x9-v3",
   },
 } as const satisfies Record<
   CreativeAspectRatio,

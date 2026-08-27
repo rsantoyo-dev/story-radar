@@ -183,6 +183,7 @@ export const storyCreativeBriefs = pgTable(
       "content_sufficiency",
     ).notNull(),
     keyFacts: jsonb("key_facts").notNull(),
+    carouselPlan: jsonb("carousel_plan"),
     riskFlags: text("risk_flags")
       .array()
       .notNull()
@@ -248,6 +249,7 @@ export const creativeDrafts = pgTable(
     outputAspectRatio: creativeAspectRatioEnum("output_aspect_ratio").notNull(),
     status: creativeDraftStatusEnum("status").default("draft").notNull(),
     concept: text("concept").notNull(),
+    narrativeRationale: text("narrative_rationale"),
     caption: text("caption").notNull(),
     callToAction: text("call_to_action"),
     hashtags: text("hashtags")
@@ -313,6 +315,9 @@ export const creativeUnits = pgTable(
     order: integer("order").notNull(),
     type: creativeUnitTypeEnum("type").notNull(),
     role: creativeUnitRoleEnum("role").notNull(),
+    editorialGoal: text("editorial_goal"),
+    viewerQuestion: text("viewer_question"),
+    ctaQuestion: text("cta_question"),
     headline: text("headline").notNull(),
     body: text("body"),
     visualDirection: text("visual_direction").notNull(),

@@ -1,3 +1,8 @@
+import type {
+  CarouselEditorialGoal,
+  CarouselPlan,
+} from "./carousel-narrative";
+
 export const CREATIVE_FORMATS = ["meme", "carousel"] as const;
 export type CreativeFormat = (typeof CREATIVE_FORMATS)[number];
 
@@ -146,6 +151,10 @@ export type CreativeFormatScore = {
 export type CreativeKeyFact = {
   id: string;
   statement: string;
+  /** Words such as "estimated" or "show signs" that copy must preserve. */
+  requiredQualifiers?: string[];
+  /** Source attribution that must remain attached when the claim needs it. */
+  attribution?: string;
 };
 
 export type CreativeSuggestedConcept = {
@@ -171,6 +180,8 @@ export type GeneratedCreativeBrief = {
   };
   contentSufficiency: CreativeContentSufficiency;
   keyFacts: CreativeKeyFact[];
+  /** Optional only for briefs created before narrative planning existed. */
+  carouselPlan?: CarouselPlan;
   riskFlags: string[];
   suggestedConcepts: CreativeSuggestedConcept[];
 };
@@ -194,6 +205,12 @@ export type CreativeUnit = {
   order: number;
   type: "meme-frame" | "carousel-slide";
   role: CreativeUnitRole;
+  /** Narrative purpose; optional only for drafts created before narrative arcs. */
+  editorialGoal?: CarouselEditorialGoal;
+  /** Internal question this slide resolves. It is never rendered as copy. */
+  viewerQuestion?: string;
+  /** Optional visible question reserved for the carousel closing slide. */
+  ctaQuestion?: string;
   headline: string;
   body?: string;
   visualDirection: string;
@@ -209,6 +226,8 @@ export type CreativeUnit = {
 
 export type GeneratedCreativeDraft = {
   concept: string;
+  /** Explains a deliberate departure from the preferred carousel arc. */
+  narrativeRationale?: string;
   caption: string;
   callToAction?: string;
   hashtags: string[];
@@ -241,7 +260,13 @@ export type CreativeDraft = GeneratedCreativeDraft & {
 
 export type EditableCreativeDraft = Pick<
   GeneratedCreativeDraft,
-  "concept" | "caption" | "callToAction" | "hashtags" | "altText" | "units"
+  | "concept"
+  | "narrativeRationale"
+  | "caption"
+  | "callToAction"
+  | "hashtags"
+  | "altText"
+  | "units"
 > & {
   outputAspectRatio: CreativeAspectRatio;
 };

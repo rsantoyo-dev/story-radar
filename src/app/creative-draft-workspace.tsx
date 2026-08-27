@@ -3,6 +3,13 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 
+import {
+  CAROUSEL_EDITORIAL_GOAL_OPTIONS,
+  evaluateCarouselNarrative,
+  getDefaultViewerQuestion,
+  getPreferredCarouselArc,
+  type CarouselEditorialGoal,
+} from "./modules/stories/carousel-narrative";
 import type {
   CreativeAssetBatchResponse,
   CreativeAspectRatio,
@@ -399,6 +406,7 @@ export function CreativeDraftWorkspace({
   async function handleCreateBrief() {
     if (busy) return;
     if (profileDirty) {
+      setError("Save the creative profile before creating or refreshing the brief.");
       return;
     }
     await run("brief", async () => {
@@ -441,12 +449,41 @@ export function CreativeDraftWorkspace({
   async function handleGenerateDraft() {
     if (!workspace?.brief || busy) return;
     await run("draft", async () => {
+      let currentState = workspace;
+      const needsBriefRefresh =
+        !currentState.briefIsCurrent ||
+        (selectedFormat === "carousel" && !currentState.brief?.carouselPlan);
+
+      if (needsBriefRefresh) {
+        const refreshedBrief = await requestJson<{
+          outcome: "generated" | "cached";
+          state: CreativeWorkspaceState;
+        }>(
+          topicUrl(
+            `/api/radar/stories/${encodeURIComponent(storyId)}/creative`,
+            topicId,
+          ),
+          secret,
+          { method: "POST" },
+        );
+        currentState = refreshedBrief.state;
+        setWorkspace(currentState);
+        setProfile(currentState.profile);
+        setProfileDirty(false);
+      }
+
+      if (!currentState.brief || !currentState.briefIsCurrent) {
+        throw new Error(
+          "The current creative brief could not be prepared for this draft.",
+        );
+      }
+
       const result = await requestJson<{
         outcome: "generated" | "cached";
         state: CreativeWorkspaceState;
       }>(
         topicUrl(
-          `/api/radar/creative/briefs/${encodeURIComponent(workspace.brief!.id)}/drafts`,
+          `/api/radar/creative/briefs/${encodeURIComponent(currentState.brief.id)}/drafts`,
           topicId,
         ),
         secret,
@@ -1268,26 +1305,12 @@ export function CreativeDraftWorkspace({
                         <p>
                           Its posting copy, question, hashtags, prompts, and
                           generated images remain available here. This saved
-                          version is read-only.
+                          version is read-only. Use Create improved version
+                          below to apply the current narrative rules.
                         </p>
                       </div>
-                      <div className={styles.historyActions}>
-                        <button
-                          type="button"
-                          className={styles.primaryButton}
-                          disabled={
-                            Boolean(busy) ||
-                            dirty ||
-                            profileDirty ||
-                            !workspace.story.hasContent
-                          }
-                          onClick={handleRefreshDraftFromProfile}
-                        >
-                          {busy === "profile-draft"
-                            ? "Creating draft..."
-                            : "Create current draft"}
-                        </button>
-                        {currentDraft ? (
+                      {currentDraft ? (
+                        <div className={styles.historyActions}>
                           <button
                             type="button"
                             className={styles.secondaryButton}
@@ -1295,10 +1318,23 @@ export function CreativeDraftWorkspace({
                           >
                             Return to current draft
                           </button>
-                        ) : null}
-                      </div>
+                        </div>
+                      ) : null}
                     </div>
-                    {activeDraft ? <HistoricalDraftDetails draft={activeDraft} /> : null}
+                    {activeDraft ? (
+                      <HistoricalDraftDetails
+                        draft={activeDraft}
+                        creating={busy === "profile-draft"}
+                        createDisabled={
+                          Boolean(busy) ||
+                          dirty ||
+                          profileDirty ||
+                          !workspace.story.hasContent
+                        }
+                        generationError={error}
+                        onCreateImprovedVersion={handleRefreshDraftFromProfile}
+                      />
+                    ) : null}
                   </>
                 ) : draftNeedsRefresh ? (
                   <div className={styles.briefCallout}>
@@ -1337,7 +1373,7 @@ export function CreativeDraftWorkspace({
                         This creates copy, fact references, and visual directions—no images.
                       </p>
                     </div>
-                    <button type="button" className={styles.primaryButton} disabled={Boolean(busy) || !workspace.briefIsCurrent} onClick={handleGenerateDraft}>
+                    <button type="button" className={styles.primaryButton} disabled={Boolean(busy) || !workspace.story.hasContent} onClick={handleGenerateDraft}>
                       {busy === "draft" ? "Generating draft…" : `Generate ${selectedFormat} draft`}
                     </button>
                   </div>
@@ -1662,7 +1698,19 @@ function CreativeDraftHistory({
  * Keep this deliberately read-only: editing or generating from history would
  * mix an old brief with the current creative profile.
  */
-function HistoricalDraftDetails({ draft }: { draft: CreativeDraft }) {
+function HistoricalDraftDetails({
+  draft,
+  creating,
+  createDisabled,
+  generationError,
+  onCreateImprovedVersion,
+}: {
+  draft: CreativeDraft;
+  creating: boolean;
+  createDisabled: boolean;
+  generationError?: string;
+  onCreateImprovedVersion: () => void;
+}) {
   const hashtags = draft.hashtags
     .map((tag) => (tag.startsWith("#") ? tag : `#${tag}`))
     .join(" ");
@@ -1677,6 +1725,30 @@ function HistoricalDraftDetails({ draft }: { draft: CreativeDraft }) {
         <small>
           {capitalize(draft.format)} · v{draft.version}
         </small>
+      </div>
+      <div className={styles.historicalRegenerationAction}>
+        <div>
+          <strong>Generate with the new narrative rules</strong>
+          <p>
+            Creates a new brief and carousel when needed. This saved version
+            and its images remain unchanged in history.
+          </p>
+        </div>
+        <div className={styles.historicalRegenerationControls}>
+          <button
+            type="button"
+            className={styles.primaryButton}
+            disabled={createDisabled}
+            onClick={onCreateImprovedVersion}
+          >
+            {creating
+              ? "Generating new brief and carousel…"
+              : "Generate new brief and carousel"}
+          </button>
+          {generationError ? (
+            <small role="alert">Generation failed: {generationError}</small>
+          ) : null}
+        </div>
       </div>
       <div className={styles.historicalDraftFields}>
         <ReadOnlyDraftField label="Concept" value={draft.concept} rows={3} />
@@ -1918,6 +1990,23 @@ function BriefView({
         <BriefCopy label="Audience" value={brief.targetAudience} />
         <BriefCopy label="Tone" value={`${capitalize(brief.tone.primary)} · ${brief.tone.reason}`} />
       </div>
+      {brief.carouselPlan ? (
+        <div className={styles.carouselPlanSummary}>
+          <div>
+            <h4>Planned carousel · {brief.carouselPlan.slideCount} slides</h4>
+            <p>{brief.carouselPlan.rationale}</p>
+          </div>
+          <ol>
+            {brief.carouselPlan.slides.map((slide, index) => (
+              <li key={`${slide.editorialGoal}-${index}`}>
+                <strong>Slide {index + 1} · {capitalize(slide.editorialGoal)}</strong>
+                <span>{slide.allowedFactIds.length ? slide.allowedFactIds.join(", ") : "No new facts"}</span>
+                <small>{slide.viewerQuestion}</small>
+              </li>
+            ))}
+          </ol>
+        </div>
+      ) : null}
       <div className={styles.formatOptions}>
         {brief.formatScores.map((score) => (
           <button key={score.format} type="button" className={selectedFormat === score.format ? styles.selectedFormat : ""} onClick={() => onSelectFormat(score.format)}>
@@ -1930,7 +2019,7 @@ function BriefView({
       <div className={styles.factsAndRisks}>
         <div>
           <h4>Verified working facts</h4>
-          <ul>{brief.keyFacts.map((fact) => <li key={fact.id}><span>{fact.id}</span>{fact.statement}</li>)}</ul>
+          <ul>{brief.keyFacts.map((fact) => <li key={fact.id}><span>{fact.id}</span>{fact.statement}{fact.requiredQualifiers?.length || fact.attribution ? <small>{fact.requiredQualifiers?.length ? `Preserve: ${fact.requiredQualifiers.join(", ")}` : ""}{fact.requiredQualifiers?.length && fact.attribution ? " · " : ""}{fact.attribution ? `Source: ${fact.attribution}` : ""}</small> : null}</li>)}</ul>
         </div>
         <div>
           <h4>Risk flags</h4>
@@ -1956,6 +2045,11 @@ function DraftEditor({
   characterRoster: CreativeCharacterRosterEntry[];
   onChange: (draft: EditableCreativeDraft) => void;
 }) {
+  const narrativeWarnings =
+    format === "carousel"
+      ? evaluateCarouselNarrative(draft.units, draft.narrativeRationale)
+      : [];
+
   function updateUnit(index: number, unit: CreativeUnit) {
     const units = draft.units.map((current, candidate) => candidate === index ? unit : current);
     onChange({ ...draft, units });
@@ -1971,10 +2065,23 @@ function DraftEditor({
 
   function addSlide() {
     if (format !== "carousel" || draft.units.length >= 8) return;
+    const currentArc = getPreferredCarouselArc(draft.units.length);
+    const nextArc = getPreferredCarouselArc(draft.units.length + 1);
+    const followsPreferredArc = Boolean(
+      currentArc &&
+        draft.units.every(
+          (candidate, index) =>
+            candidate.editorialGoal === currentArc[index],
+        ),
+    );
+    const insertionIndex = Math.max(1, draft.units.length - 1);
+    const defaultGoal = nextArc?.[insertionIndex] ?? "explain";
     const unit: CreativeUnit = {
-      order: draft.units.length + 1,
+      order: insertionIndex + 1,
       type: "carousel-slide",
       role: "content",
+      editorialGoal: defaultGoal,
+      viewerQuestion: getDefaultViewerQuestion(defaultGoal),
       headline: "New slide",
       visualDirection: "Define the visual composition and mood.",
       factIds: [],
@@ -1982,14 +2089,45 @@ function DraftEditor({
       aspectRatio: outputAspectRatio,
       characterIds: [],
     };
-    onChange({ ...draft, units: [...draft.units, unit] });
+    const inserted = [
+      ...draft.units.slice(0, insertionIndex),
+      unit,
+      ...draft.units.slice(insertionIndex),
+    ];
+    onChange({
+      ...draft,
+      units: inserted.map((candidate, index) =>
+        withCarouselOrderAndPreferredGoal(
+          candidate,
+          index,
+          followsPreferredArc ? nextArc?.[index] : undefined,
+        ),
+      ),
+    });
   }
 
   function removeSlide(index: number) {
     if (format !== "carousel" || draft.units.length <= 3) return;
+    const currentArc = getPreferredCarouselArc(draft.units.length);
+    const nextArc = getPreferredCarouselArc(draft.units.length - 1);
+    const followsPreferredArc = Boolean(
+      currentArc &&
+        draft.units.every(
+          (candidate, candidateIndex) =>
+            candidate.editorialGoal === currentArc[candidateIndex],
+        ),
+    );
     onChange({
       ...draft,
-      units: draft.units.filter((_, candidate) => candidate !== index).map((unit, position) => ({ ...unit, order: position + 1 })),
+      units: draft.units
+        .filter((_, candidate) => candidate !== index)
+        .map((candidate, position) =>
+          withCarouselOrderAndPreferredGoal(
+            candidate,
+            position,
+            followsPreferredArc ? nextArc?.[position] : undefined,
+          ),
+        ),
     });
   }
 
@@ -2004,11 +2142,34 @@ function DraftEditor({
         </div>
       </div>
       <TextAreaField label="Accessibility alt text" value={draft.altText} onChange={(altText) => onChange({ ...draft, altText })} rows={2} />
+      {format === "carousel" ? (
+        <TextAreaField
+          label="Narrative rationale (optional)"
+          value={draft.narrativeRationale ?? ""}
+          onChange={(narrativeRationale) =>
+            onChange({ ...draft, narrativeRationale })
+          }
+          rows={2}
+        />
+      ) : null}
 
       <div className={styles.unitsHeading}>
         <div><h4>{format === "meme" ? "Meme frame" : "Carousel slides"}</h4><p>Text and visual directions remain separate for later composition.</p></div>
         {format === "carousel" ? <button type="button" onClick={addSlide} disabled={draft.units.length >= 8}>+ Add slide</button> : null}
       </div>
+
+      {narrativeWarnings.length ? (
+        <div className={styles.narrativeReview} role="status">
+          <strong>Narrative review</strong>
+          <ul>
+            {narrativeWarnings.map((warning, index) => (
+              <li key={`${warning.code}-${warning.unitIndex ?? "draft"}-${index}`}>
+                {warning.message}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <div className={styles.units}>
         {draft.units.map((unit, index) => (
@@ -2019,10 +2180,63 @@ function DraftEditor({
             </header>
             <div className={styles.fieldGrid}>
               <label className={styles.field}><span>Role</span><select value={unit.role} onChange={(event) => updateUnit(index, { ...unit, role: event.target.value as CreativeUnit["role"] })}><option value="cover">Cover</option><option value="content">Content</option><option value="conclusion">Conclusion</option><option value="call-to-action">Call to action</option></select></label>
-              <label className={styles.field}><span>Visual asset</span><select value={unit.assetRequest} onChange={(event) => updateUnit(index, { ...unit, assetRequest: event.target.value as CreativeUnit["assetRequest"] })}><option value="generated-image">Generated image later</option><option value="typography-only">Typography only</option></select></label>
+              {format === "carousel" ? (
+                <label className={styles.field}>
+                  <span>Editorial purpose</span>
+                  <select
+                    value={unit.editorialGoal ?? ""}
+                    onChange={(event) => {
+                      const editorialGoal = event.target.value as CarouselEditorialGoal;
+                      const previousDefault = unit.editorialGoal
+                        ? getDefaultViewerQuestion(unit.editorialGoal)
+                        : undefined;
+                      updateUnit(index, {
+                        ...unit,
+                        editorialGoal,
+                        viewerQuestion:
+                          !unit.viewerQuestion?.trim() ||
+                          unit.viewerQuestion === previousDefault
+                            ? getDefaultViewerQuestion(editorialGoal)
+                            : unit.viewerQuestion,
+                      });
+                    }}
+                  >
+                    <option value="" disabled>Select a purpose</option>
+                    {CAROUSEL_EDITORIAL_GOAL_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <label className={styles.field}><span>Visual asset</span><select value={unit.assetRequest} onChange={(event) => updateUnit(index, { ...unit, assetRequest: event.target.value as CreativeUnit["assetRequest"] })}><option value="generated-image">Generated image later</option><option value="typography-only">Typography only</option></select></label>
+              )}
             </div>
+            {format === "carousel" ? (
+              <div className={styles.fieldGrid}>
+                <label className={styles.field}><span>Visual asset</span><select value={unit.assetRequest} onChange={(event) => updateUnit(index, { ...unit, assetRequest: event.target.value as CreativeUnit["assetRequest"] })}><option value="generated-image">Generated image later</option><option value="typography-only">Typography only</option></select></label>
+                <TextField
+                  label="Viewer question (internal)"
+                  value={unit.viewerQuestion ?? ""}
+                  onChange={(viewerQuestion) =>
+                    updateUnit(index, { ...unit, viewerQuestion })
+                  }
+                />
+              </div>
+            ) : null}
             <TextField label="On-image headline" value={unit.headline} onChange={(headline) => updateUnit(index, { ...unit, headline })} />
             <TextAreaField label="Supporting text (optional)" value={unit.body ?? ""} onChange={(body) => updateUnit(index, { ...unit, body })} rows={2} />
+            {format === "carousel" &&
+            (index === draft.units.length - 1 || unit.ctaQuestion) ? (
+              <TextField
+                label="Visible CTA question (optional)"
+                value={unit.ctaQuestion ?? ""}
+                onChange={(ctaQuestion) =>
+                  updateUnit(index, { ...unit, ctaQuestion })
+                }
+              />
+            ) : null}
             <TextAreaField label="Visual direction" value={unit.visualDirection} onChange={(visualDirection) => updateUnit(index, { ...unit, visualDirection })} rows={3} />
             <fieldset className={styles.factPicker}>
               <legend>Facts used in this {format === "meme" ? "frame" : "slide"}</legend>
@@ -2404,6 +2618,9 @@ function characterRosterFromSlots(
 function editableFromDraft(draft: CreativeDraft): EditableCreativeDraft {
   return {
     concept: draft.concept,
+    ...(draft.narrativeRationale
+      ? { narrativeRationale: draft.narrativeRationale }
+      : {}),
     caption: draft.caption,
     ...(draft.callToAction ? { callToAction: draft.callToAction } : {}),
     hashtags: [...draft.hashtags],
@@ -2414,6 +2631,27 @@ function editableFromDraft(draft: CreativeDraft): EditableCreativeDraft {
       characterIds: [...(unit.characterIds ?? [])],
     })),
     outputAspectRatio: outputAspectRatioForDraft(draft),
+  };
+}
+
+function withCarouselOrderAndPreferredGoal(
+  unit: CreativeUnit,
+  index: number,
+  preferredGoal?: CarouselEditorialGoal,
+): CreativeUnit {
+  if (!preferredGoal) {
+    return { ...unit, order: index + 1 };
+  }
+
+  const goalChanged = unit.editorialGoal !== preferredGoal;
+  return {
+    ...unit,
+    order: index + 1,
+    editorialGoal: preferredGoal,
+    viewerQuestion:
+      goalChanged || !unit.viewerQuestion?.trim()
+        ? getDefaultViewerQuestion(preferredGoal)
+        : unit.viewerQuestion,
   };
 }
 

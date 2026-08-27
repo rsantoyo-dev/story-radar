@@ -21,7 +21,11 @@ export function buildCreativeImagePrompt({
   brief: CreativeBrief;
   characters?: CreativeCharacterSnapshot[];
 }): { prompt: string; expectedText: string } {
-  const expectedText = [unit.headline.trim(), unit.body?.trim()]
+  const expectedText = [
+    unit.headline.trim(),
+    unit.body?.trim(),
+    unit.ctaQuestion?.trim(),
+  ]
     .filter(Boolean)
     .join("\n");
   const position =
@@ -46,6 +50,14 @@ export function buildCreativeImagePrompt({
     prompt: [
       `Create a finished ${canvas} social-media graphic for ${platform}.`,
       `Deliverable: ${position}, role: ${unit.role}.`,
+      ...(unit.editorialGoal
+        ? [`Narrative purpose: ${unit.editorialGoal}.`]
+        : []),
+      ...(unit.viewerQuestion
+        ? [
+            `The composition should help answer this viewer question without rendering it as text: ${unit.viewerQuestion}`,
+          ]
+        : []),
       assetStyle,
       `Overall concept: ${draft.concept}`,
       `Visual direction: ${unit.visualDirection}`,

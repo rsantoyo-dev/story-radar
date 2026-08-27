@@ -28,6 +28,7 @@ import {
   type GeneratedCreativeBrief,
   type GeneratedCreativeDraft,
 } from "./creative-content.types";
+import { isCarouselEditorialGoal } from "./carousel-narrative";
 
 type CreativeRunTask = "brief" | "draft";
 
@@ -142,6 +143,7 @@ export async function insertCreativeBrief({
       toneReason: generated.tone.reason,
       contentSufficiency: generated.contentSufficiency,
       keyFacts: generated.keyFacts,
+      carouselPlan: generated.carouselPlan ?? null,
       riskFlags: generated.riskFlags,
       suggestedConcepts: generated.suggestedConcepts,
       ...usage,
@@ -338,6 +340,7 @@ export async function insertCreativeDraft({
       format,
       outputAspectRatio,
       concept: generated.concept,
+      narrativeRationale: generated.narrativeRationale ?? null,
       caption: generated.caption,
       callToAction: generated.callToAction ?? null,
       hashtags: generated.hashtags,
@@ -381,6 +384,7 @@ export async function replaceCreativeDraft(
       .update(creativeDrafts)
       .set({
         concept: input.concept,
+        narrativeRationale: input.narrativeRationale ?? null,
         caption: input.caption,
         callToAction: input.callToAction ?? null,
         hashtags: input.hashtags,
@@ -615,6 +619,9 @@ function mapCreativeBrief(
     },
     contentSufficiency: row.contentSufficiency,
     keyFacts: row.keyFacts as CreativeBrief["keyFacts"],
+    ...(row.carouselPlan
+      ? { carouselPlan: row.carouselPlan as CreativeBrief["carouselPlan"] }
+      : {}),
     riskFlags: row.riskFlags,
     suggestedConcepts:
       row.suggestedConcepts as CreativeBrief["suggestedConcepts"],
@@ -637,6 +644,9 @@ function mapCreativeDraft(
     outputAspectRatio: row.outputAspectRatio,
     status: row.status,
     concept: row.concept,
+    ...(row.narrativeRationale
+      ? { narrativeRationale: row.narrativeRationale }
+      : {}),
     caption: row.caption,
     ...(row.callToAction ? { callToAction: row.callToAction } : {}),
     ...(generated.characterPlan ? { characterPlan: generated.characterPlan } : {}),
@@ -647,6 +657,13 @@ function mapCreativeDraft(
       order: unit.order,
       type: unit.type,
       role: unit.role,
+      ...(isCarouselEditorialGoal(unit.editorialGoal)
+        ? { editorialGoal: unit.editorialGoal }
+        : {}),
+      ...(unit.viewerQuestion
+        ? { viewerQuestion: unit.viewerQuestion }
+        : {}),
+      ...(unit.ctaQuestion ? { ctaQuestion: unit.ctaQuestion } : {}),
       headline: unit.headline,
       ...(unit.body ? { body: unit.body } : {}),
       visualDirection: unit.visualDirection,
@@ -679,6 +696,9 @@ function draftUnitRows(
     order: unit.order,
     type: unit.type,
     role: unit.role,
+    editorialGoal: unit.editorialGoal ?? null,
+    viewerQuestion: unit.viewerQuestion ?? null,
+    ctaQuestion: unit.ctaQuestion ?? null,
     headline: unit.headline,
     body: unit.body ?? null,
     visualDirection: unit.visualDirection,

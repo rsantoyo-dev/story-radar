@@ -50,6 +50,7 @@ import {
   generateCreativeDraft,
   type CreativeTopicContext,
 } from "./gemini-creative-content-generator";
+import { isCarouselEditorialGoal } from "./carousel-narrative";
 import { getCreativeProfile } from "./creative-profile.repository";
 import { resolveCreativeVisualGuidance } from "./creative-visual-guidance";
 import {
@@ -195,6 +196,9 @@ export async function createCreativeBrief(
       primaryProvider: configuration.primaryProvider,
       groqApiKey: configuration.groqApiKey,
       groqModel: configuration.groqModel,
+      cloudflareAiAccountId: configuration.cloudflareAiAccountId,
+      cloudflareAiApiToken: configuration.cloudflareAiApiToken,
+      cloudflareAiModel: configuration.cloudflareAiModel,
       story: storyForGenerator(story, content),
       topic,
       profile,
@@ -315,6 +319,9 @@ export async function createCreativeDraft(
       primaryProvider: configuration.primaryProvider,
       groqApiKey: configuration.groqApiKey,
       groqModel: configuration.groqModel,
+      cloudflareAiAccountId: configuration.cloudflareAiAccountId,
+      cloudflareAiApiToken: configuration.cloudflareAiApiToken,
+      cloudflareAiModel: configuration.cloudflareAiModel,
       story: storyForGenerator(story, content),
       topic,
       profile: brief.profileSnapshot,
@@ -672,6 +679,7 @@ function validateEditableDraft(
       `unit ${index + 1} characterIds`,
     );
     const role = unit.role;
+    const editorialGoal = unit.editorialGoal;
     const assetRequest = unit.assetRequest;
 
     if (
@@ -681,6 +689,12 @@ function validateEditableDraft(
       role !== "call-to-action"
     ) {
       throw new CreativeDraftValidationError(`Unit ${index + 1} has an invalid role`);
+    }
+
+    if (format === "carousel" && !isCarouselEditorialGoal(editorialGoal)) {
+      throw new CreativeDraftValidationError(
+        `Unit ${index + 1} has an invalid editorial goal`,
+      );
     }
 
     if (assetRequest !== "generated-image" && assetRequest !== "typography-only") {
@@ -705,6 +719,21 @@ function validateEditableDraft(
       order: index + 1,
       type: format === "meme" ? "meme-frame" : "carousel-slide",
       role,
+      ...(format === "carousel" && isCarouselEditorialGoal(editorialGoal)
+        ? {
+            editorialGoal,
+            viewerQuestion: requiredText(
+              unit.viewerQuestion,
+              `unit ${index + 1} viewerQuestion`,
+              500,
+            ),
+            ...optionalText(
+              unit.ctaQuestion,
+              `unit ${index + 1} ctaQuestion`,
+              500,
+            ),
+          }
+        : {}),
       headline: requiredText(unit.headline, `unit ${index + 1} headline`, 240),
       ...optionalText(unit.body, "body", 600),
       visualDirection: requiredText(
@@ -721,6 +750,13 @@ function validateEditableDraft(
 
   return {
     concept: requiredText(record.concept, "concept", 1_000),
+    ...(format === "carousel"
+      ? optionalText(
+          record.narrativeRationale,
+          "narrativeRationale",
+          1_000,
+        )
+      : {}),
     caption: requiredText(record.caption, "caption", 3_000),
     ...optionalText(record.callToAction, "callToAction", 500),
     hashtags: normalizeHashtags(textArray(record.hashtags, "hashtags", 8, 80)),
@@ -773,11 +809,11 @@ function requiredText(value: unknown, field: string, max: number): string {
   return value.replace(/\s+/g, " ").trim().slice(0, max);
 }
 
-function optionalText(
+function optionalText<Field extends string>(
   value: unknown,
-  field: "body" | "callToAction",
+  field: Field,
   max: number,
-): Partial<Record<"body" | "callToAction", string>> {
+): Partial<Record<Field, string>> {
   if (value === undefined || value === null || value === "") {
     return {};
   }
@@ -785,7 +821,9 @@ function optionalText(
     throw new CreativeDraftValidationError(`${field} must be text`);
   }
   const normalized = value.replace(/\s+/g, " ").trim().slice(0, max);
-  return normalized ? { [field]: normalized } : {};
+  return normalized
+    ? ({ [field]: normalized } as Partial<Record<Field, string>>)
+    : {};
 }
 
 function textArray(
