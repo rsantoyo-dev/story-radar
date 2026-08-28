@@ -9,7 +9,10 @@ import {
   getPreferredCarouselArc,
   type CarouselEditorialGoal,
 } from "./modules/stories/carousel-narrative";
-import { deterministicCreativeQualityIssues } from "./modules/stories/creative-quality";
+import {
+  deterministicCreativeQualityIssues,
+  repairDeterministicCreativeCopy,
+} from "./modules/stories/creative-quality";
 import type {
   CreativeAssetBatchResponse,
   CreativeAspectRatio,
@@ -142,19 +145,21 @@ export function CreativeDraftWorkspace({
   const activeDraft = workspace?.drafts.find(
     (draft) => draft.id === activeDraftId,
   );
-  const activeDeterministicIssues =
-    editableDraft && workspace?.brief
-      ? deterministicCreativeQualityIssues(
+  const activeApprovalHasDeterministicBlockers = Boolean(
+    editableDraft &&
+      workspace?.brief &&
+      deterministicCreativeQualityIssues(
+        repairDeterministicCreativeCopy(
           editableDraft,
           selectedFormat,
           workspace.brief.keyFacts,
-        )
-      : [];
-  const activeDraftHasDeterministicBlockers = activeDeterministicIssues.some(
-    (issue) => issue.severity === "blocker",
+        ),
+        selectedFormat,
+        workspace.brief.keyFacts,
+      ).some((issue) => issue.severity === "blocker"),
   );
   const activeDraftFailedQualityGate = Boolean(
-    activeDraftHasDeterministicBlockers ||
+    activeApprovalHasDeterministicBlockers ||
       (activeDraft?.qualityReviewIsCurrent &&
         activeDraft.qualityReview?.status === "rejected"),
   );
@@ -1428,13 +1433,13 @@ export function CreativeDraftWorkspace({
                 {activeDraft && editableDraft && !viewingHistoricalDraft ? (
                   <div className={styles.approvalBar}>
                     <div>
-                      <strong>{activeDraft.status === "approved" && !dirty ? "Ready for asset generation" : dirty ? "Unsaved draft changes" : activeDraftFailedQualityGate ? "Saved draft needs editorial fixes" : "Ready for human approval"}</strong>
+                      <strong>{activeDraft.status === "approved" && !dirty ? "Ready for asset generation" : dirty ? "Unsaved draft changes" : activeDraftFailedQualityGate ? "Draft saved successfully — approval needs fixes" : "Ready for human approval"}</strong>
                       <small>{activeDraft.status === "approved" && !dirty
                         ? activeDraftHasSupportingCharacters
                           ? "Refresh character references before generating if their description or images changed."
                           : "Generate and review each integrated text image below."
                         : !dirty && activeDraftFailedQualityGate
-                          ? "This version is saved. Resolve the blockers in the deterministic editorial review before approval and image generation."
+                          ? "This version is already saved. Resolve the blockers shown below before approval and image generation; you do not need to save it again unless you edit it."
                           : "Editing and saving creates a new draft version. The earlier image batch remains in Saved studies."}</small>
                     </div>
                     <div>
@@ -1465,7 +1470,9 @@ export function CreativeDraftWorkspace({
                       <button type="button" className={styles.secondaryButton} disabled={Boolean(busy) || !dirty} onClick={handleSaveDraft}>
                         {busy === "save"
                           ? `Saving version ${activeDraft.version + 1}...`
-                          : `Save as version ${activeDraft.version + 1}`}
+                          : dirty
+                            ? `Save as version ${activeDraft.version + 1}`
+                            : `Version ${activeDraft.version} saved`}
                       </button>
                       {activeDraft.status === "approved" && !dirty ? (
                         <button
@@ -1481,7 +1488,7 @@ export function CreativeDraftWorkspace({
                           type="button"
                           className={styles.approveButton}
                           disabled={Boolean(busy) || dirty || activeDraftFailedQualityGate}
-                          title={activeDraftFailedQualityGate ? "Resolve the deterministic editorial blockers before approval." : undefined}
+                          title={activeDraftFailedQualityGate ? "Resolve the editorial blockers shown below before approval." : undefined}
                           onClick={handleApproveDraft}
                         >
                           {busy === "approve" ? "Approving…" : "Approve draft"}

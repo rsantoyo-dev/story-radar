@@ -438,15 +438,23 @@ export async function approveSavedCreativeDraft(
   }
 
   const characterRoster = await listCreativeCharacterRoster(topicId);
-  validateEditableDraft(
+  const validated = validateEditableDraft(
     current,
     current.format,
     brief.keyFacts.map((fact) => fact.id),
     outputAspectRatioForDraft(current),
     characterRoster.map((character) => character.id),
   );
+  const repaired = {
+    ...repairDeterministicCreativeCopy(
+      validated,
+      current.format,
+      brief.keyFacts,
+    ),
+    outputAspectRatio: validated.outputAspectRatio,
+  };
   const blockers = deterministicCreativeQualityIssues(
-    current,
+    repaired,
     current.format,
     brief.keyFacts,
   ).filter((issue) => issue.severity === "blocker");
@@ -457,18 +465,31 @@ export async function approveSavedCreativeDraft(
         .join(" ")}`,
     );
   }
+  let approvalCandidate = current;
+  if (JSON.stringify(repaired) !== JSON.stringify(validated)) {
+    const characterSnapshots = await snapshotsForCreativeCharacterIds(
+      topicId,
+      repaired.units.flatMap((unit) => unit.characterIds ?? []),
+    );
+    approvalCandidate = await replaceCreativeDraft(
+      topicId,
+      current,
+      repaired,
+      characterSnapshots,
+    );
+  }
   // A rejected automated review only blocks approval when the rejection came
   // from real quality findings. Infrastructure failures (CRITIC_UNAVAILABLE)
   // produce a "needs-review" state that a human can approve explicitly.
   if (
-    current.qualityReviewIsCurrent &&
-    current.qualityReview?.status === "rejected"
+    approvalCandidate.qualityReviewIsCurrent &&
+    approvalCandidate.qualityReview?.status === "rejected"
   ) {
     throw new CreativeDraftValidationError(
       "This generated draft did not pass the editorial quality gate. Generate a new version or edit and save it for explicit human review.",
     );
   }
-  return approveCreativeDraft(topicId, draftId);
+  return approveCreativeDraft(topicId, approvalCandidate.id);
 }
 
 export async function unapproveSavedCreativeDraft(

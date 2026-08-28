@@ -6,6 +6,8 @@ import {
   type CarouselPlan,
   validateCarouselPlan,
 } from "./carousel-narrative";
+import { repairDeterministicCreativeCopy } from "./creative-quality";
+import type { GeneratedCreativeDraft } from "./creative-content.types";
 
 test("rejects a carousel plan that spends its final slide on another impact fact", () => {
   const plan: CarouselPlan = {
@@ -42,6 +44,37 @@ test("reports a closing-goal blocker for an editable draft", () => {
   );
 });
 
+test("promotes an internal debate question to the visible CTA", () => {
+  const draft: GeneratedCreativeDraft = {
+    concept: "Evidence-led debate",
+    caption: "A concise evidence-led carousel.",
+    hashtags: [],
+    altText: "A three-slide evidence-led carousel.",
+    units: [
+      fullUnit(1, "cover", "hook", ["fact-1"]),
+      fullUnit(2, "content", "explain", ["fact-2"]),
+      {
+        ...fullUnit(3, "call-to-action", "debate", ["fact-1"]),
+        viewerQuestion: "What should readers consider next?",
+      },
+    ],
+  };
+
+  const repaired = repairDeterministicCreativeCopy(draft, "carousel");
+
+  assert.equal(
+    repaired.units[2]?.ctaQuestion,
+    "What should readers consider next?",
+  );
+  assert.ok(
+    !evaluateCarouselNarrative(repaired.units).some(
+      (issue) =>
+        issue.code === "missing-debate-question" ||
+        issue.code === "closing-question-count",
+    ),
+  );
+});
+
 function slide(
   editorialGoal: CarouselPlan["slides"][number]["editorialGoal"],
   allowedFactIds: string[],
@@ -65,5 +98,27 @@ function unit(
     headline: "Editorial headline",
     body: "Concise supporting copy.",
     factIds,
+  };
+}
+
+function fullUnit(
+  order: number,
+  role: "cover" | "content" | "conclusion" | "call-to-action",
+  editorialGoal: CarouselPlan["slides"][number]["editorialGoal"],
+  factIds: string[],
+): GeneratedCreativeDraft["units"][number] {
+  return {
+    order,
+    type: "carousel-slide",
+    role,
+    editorialGoal,
+    viewerQuestion: "What should the viewer understand?",
+    headline: "Editorial headline",
+    body: "Concise supporting copy.",
+    visualDirection: "Editorial infographic.",
+    factIds,
+    assetRequest: "generated-image",
+    aspectRatio: "4:5",
+    characterIds: [],
   };
 }

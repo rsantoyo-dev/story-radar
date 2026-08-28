@@ -176,6 +176,75 @@ test("repairs AI-written certainty upgrades that use a non-breaking hyphen", () 
   );
 });
 
+test("normalizes sentence punctuation in persisted allowed numbers", () => {
+  const publicationFact: CreativeKeyFact = {
+    id: "fact-date",
+    statement: "The study was published on August 24, 2026.",
+    attribution: "JAMA Pediatrics",
+    claimGuard: {
+      certainty: "reported",
+      requiredPhrases: [],
+      forbiddenPhrases: [],
+      scopePhrases: [],
+      allowedNumbers: ["24", "2026."],
+    },
+  };
+  const publicationDraft: GeneratedCreativeDraft = {
+    concept: "Study publication",
+    caption: "A newly published study.",
+    hashtags: [],
+    altText: "A slide about a published study.",
+    units: [
+      unit(
+        1,
+        "cover",
+        "hook",
+        "Published in 2026",
+        "The study was published on August 24, 2026.",
+        ["fact-date"],
+      ),
+    ],
+  };
+
+  assert.ok(
+    !deterministicFactQualityIssues(publicationDraft, [publicationFact]).some(
+      (issue) => issue.code === "UNSUPPORTED_NUMBER",
+    ),
+  );
+});
+
+test("accepts a causal phrase when the selected fact explicitly supports it", () => {
+  const workflowFact: CreativeKeyFact = {
+    id: "fact-workflow",
+    statement:
+      "Figma's VP of Product describes the expanded scope of work as leading to collapsed workflows.",
+    attribution: "Figma VP of Product",
+    requiredQualifiers: ["describes", "as leading to"],
+  };
+  const workflowDraft: GeneratedCreativeDraft = {
+    concept: "Collapsed workflows",
+    caption: "A carousel about changing product workflows.",
+    hashtags: [],
+    altText: "A carousel about product workflows.",
+    units: [
+      unit(
+        1,
+        "cover",
+        "hook",
+        "Collapsed workflows",
+        "The expansion of tasks leads to collapsed workflows.",
+        ["fact-workflow"],
+      ),
+    ],
+  };
+
+  assert.ok(
+    !deterministicFactQualityIssues(workflowDraft, [workflowFact]).some(
+      (issue) => issue.code === "UNSUPPORTED_INFERENCE",
+    ),
+  );
+});
+
 function unit(
   order: number,
   role: CreativeUnit["role"],

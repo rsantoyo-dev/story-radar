@@ -28,8 +28,8 @@ const UNSUPPORTED_INFERENCE_PATTERNS: Array<{
     sourceSupport: /\b(?:prove|proved|proof)\b/iu,
   },
   {
-    pattern: /\b(?:causes?|caused|causing|leads? to|led to|drives?|driving)\b/iu,
-    sourceSupport: /\b(?:cause|caused|lead to|led to|drive|driving)\b/iu,
+    pattern: /\b(?:causes?|caused|causing|leads? to|leading to|led to|drives?|driving)\b/iu,
+    sourceSupport: /\b(?:cause|caused|lead(?:s|ing)? to|led to|drive|driving)\b/iu,
   },
   {
     pattern: /\b(?:changing|reshaping|transforming)\s+how\b/iu,
@@ -79,7 +79,7 @@ export function withCreativeFactClaimGuard(
           allowedNumbers: mergeText(
             existing.allowedNumbers,
             inferred.allowedNumbers,
-          ),
+          ).map(normalizeNumber),
         }
       : inferred,
   };
@@ -586,7 +586,8 @@ function normalizeNumber(value: string): string {
     .replace(/^~/u, "")
     .replace(/,/gu, "")
     .replace(/\s*percent$/u, "%")
-    .replace(/\s+/gu, "");
+    .replace(/\s+/gu, "")
+    .replace(/[.,]+$/u, "");
 }
 
 function scopeMatches(copy: string, scope: string): boolean {

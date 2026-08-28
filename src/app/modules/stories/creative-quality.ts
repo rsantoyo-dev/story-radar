@@ -47,6 +47,14 @@ export function repairDeterministicCreativeCopy(
     if (closing) {
       if (
         closing.editorialGoal === "debate" &&
+        !closing.ctaQuestion?.trim() &&
+        ![closing.headline, closing.body].some((value) => value?.includes("?")) &&
+        closing.viewerQuestion?.trim()
+      ) {
+        closing.ctaQuestion = ensureQuestion(closing.viewerQuestion);
+      }
+      if (
+        closing.editorialGoal === "debate" &&
         closing.ctaQuestion?.trim() &&
         !closing.ctaQuestion.includes("?")
       ) {
@@ -80,6 +88,11 @@ export function repairDeterministicCreativeCopy(
     }
   }
   return repairDeterministicFactCopy(repaired, keyFacts);
+}
+
+function ensureQuestion(value: string): string {
+  const question = value.trim().replace(/[.!]+$/u, "");
+  return question.includes("?") ? question : `${question}?`;
 }
 
 export function deterministicCreativeQualityIssues(
