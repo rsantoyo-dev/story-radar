@@ -75,6 +75,7 @@ type EditorialDashboardStats = {
   latestRun?: {
     id: string;
     status: "running" | "completed" | "failed";
+    provider: string;
     model: string;
     modelVersion?: string;
     requestedStories: number;
@@ -245,6 +246,8 @@ type ClearResponse = {
 
 type EditorialEvaluationResponse = {
   status: "completed" | "no-candidates";
+  provider: string;
+  model: string;
   evaluatedStories: number;
   candidatesScanned: number;
   cachedStories: number;
@@ -418,14 +421,27 @@ export function RadarDashboard({
     });
   }
 
-  async function handleEvaluate() {
+  async function handleEvaluate(force = false) {
     if (preferencesDirty) {
       showUnsavedPreferences();
       return;
     }
 
+    if (
+      force &&
+      !window.confirm(
+        "Re-evaluate eligible stories with the current settings? Cached AI decisions will be ignored, while human approvals and rejections remain unchanged.",
+      )
+    ) {
+      return;
+    }
+
     await runOperation("evaluate", async () => {
-      const evaluation = await evaluateStories(secret, selectedTopicId);
+      const evaluation = await evaluateStories(
+        secret,
+        selectedTopicId,
+        force,
+      );
       const nextStats = await fetchDatabaseStats(secret, selectedTopicId);
 
       setStats(nextStats);
@@ -434,15 +450,21 @@ export function RadarDashboard({
       if (evaluation.status === "no-candidates") {
         return {
           tone: "success",
-          title: "Evaluation is up to date",
-          message: `${evaluation.candidatesScanned} candidates were scanned; ${evaluation.cachedStories} already had a current evaluation and did not consume AI.`,
+          title: force
+            ? "No eligible stories to re-evaluate"
+            : "Evaluation is up to date",
+          message: force
+            ? "No automatic, unreviewed stories currently meet the topic floor and freshness settings. Human decisions were left unchanged."
+            : `${evaluation.candidatesScanned} candidates were scanned; ${evaluation.cachedStories} already had a current evaluation and did not consume AI.`,
         };
       }
 
       return {
         tone: "success",
-        title: "Editorial evaluation completed",
-        message: `${evaluation.evaluatedStories} stories were evaluated with Gemini, ${evaluation.cachedStories} were skipped by cache, and ${formatNumber(evaluation.usage.totalTokens)} tokens were consumed.`,
+        title: force
+          ? "Editorial re-evaluation completed"
+          : "Editorial evaluation completed",
+        message: `${evaluation.evaluatedStories} stories were evaluated with ${formatEditorialProvider(evaluation.provider)} (${evaluation.model}), ${evaluation.cachedStories} were skipped by cache, and ${formatNumber(evaluation.usage.totalTokens)} tokens were consumed.`,
       };
     });
   }
@@ -1416,7 +1438,7 @@ function EditorialEvaluationPanel({
   editorial?: EditorialDashboardStats;
   canEvaluate: boolean;
   isEvaluating: boolean;
-  onEvaluate: () => void;
+  onEvaluate: (force?: boolean) => void;
   selectedStoryIds: string[];
   canReview: boolean;
   isReviewing: boolean;
@@ -1494,21 +1516,32 @@ function EditorialEvaluationPanel({
       <div className={styles.editorialIntro}>
         <div>
           <p>
-            Gemini ranks eligible candidates against this topic’s editorial
-            profile, with a maximum of {editorial?.configuration.maxContentCharacters ?? 500} characters per story.
+            Editorial AI ranks eligible candidates against this topic’s
+            profile, using Gemini first and configured Groq and Cloudflare
+            fallbacks, with a maximum of {editorial?.configuration.maxContentCharacters ?? 500} characters per story.
           </p>
           <small>
             AI floor {editorial?.configuration.effectiveCandidatePolicy?.localCandidateMinScore ?? editorial?.configuration.minLocalScore ?? 25} · news {editorial?.configuration.effectiveCandidatePolicy?.freshness.newsMaxAgeHours ?? editorial?.configuration.maxAgeHours ?? 72} h · research {editorial?.configuration.effectiveCandidatePolicy?.freshness.researchMaxAgeHours ?? editorial?.configuration.maxAgeHours ?? 72} h · daily reset at 00:00 UTC
           </small>
         </div>
-        <button
-          type="button"
-          className={styles.evaluateButton}
-          onClick={onEvaluate}
-          disabled={!canEvaluate}
-        >
-          {isEvaluating ? "Evaluating…" : "Evaluate with AI"}
-        </button>
+        <div className={styles.evaluationActions}>
+          <button
+            type="button"
+            className={styles.reevaluateButton}
+            onClick={() => onEvaluate(true)}
+            disabled={!canEvaluate}
+          >
+            Re-evaluate with current settings
+          </button>
+          <button
+            type="button"
+            className={styles.evaluateButton}
+            onClick={() => onEvaluate(false)}
+            disabled={!canEvaluate}
+          >
+            {isEvaluating ? "Evaluating…" : "Evaluate with AI"}
+          </button>
+        </div>
       </div>
 
       {editorial ? (
@@ -1542,7 +1575,7 @@ function EditorialEvaluationPanel({
                 Latest run: <strong>{editorial.latestRun.status}</strong>
               </span>
               <span>
-                {editorial.latestRun.evaluatedStories} evaluated · {formatNumber(editorial.latestRun.totalTokens)} tokens
+                {editorial.latestRun.evaluatedStories} evaluated by {formatEditorialProvider(editorial.latestRun.provider)} · {formatNumber(editorial.latestRun.totalTokens)} tokens
               </span>
               <span>
                 {formatDate(editorial.latestRun.finishedAt ?? editorial.latestRun.startedAt)}
@@ -2412,6 +2445,20 @@ function StoryContentViewer({
           ) : null}
         </div>
 
+        {content.source === "rss" &&
+        (content.enrichment?.status === "failed" ||
+          content.enrichment?.status === "blocked") ? (
+          <div className={styles.contentViewerWarning} role="status">
+            <strong>Full article unavailable.</strong>
+            <span>
+              Showing the stored RSS excerpt.
+              {content.enrichment.error
+                ? ` ${content.enrichment.error}`
+                : ""}
+            </span>
+          </div>
+        ) : null}
+
         <div className={styles.contentViewerBody}>
           {content.text ? (
             <p>{content.text}</p>
@@ -2653,11 +2700,16 @@ async function collectStories(
 async function evaluateStories(
   secret: string,
   topicId: string,
+  force = false,
 ): Promise<EditorialEvaluationResponse> {
   return requestJson<EditorialEvaluationResponse>(
     topicUrl("/api/radar/evaluate", topicId),
     secret,
-    { method: "POST" },
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ force }),
+    },
   );
 }
 
@@ -2870,6 +2922,15 @@ function countTextWords(value: string | undefined): number {
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat("en-CA").format(value);
+}
+
+function formatEditorialProvider(provider: string): string {
+  const names: Record<string, string> = {
+    google: "Gemini",
+    groq: "Groq",
+    cloudflare: "Cloudflare",
+  };
+  return names[provider] ?? provider;
 }
 
 function formatDate(value: string): string {

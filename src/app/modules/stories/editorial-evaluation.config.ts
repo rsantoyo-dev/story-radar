@@ -32,6 +32,11 @@ export type EditorialEvaluationPublicConfig =
 export type EditorialEvaluationRuntimeConfig =
   EditorialEvaluationPublicConfig & {
     apiKey: string;
+    groqApiKey?: string;
+    groqModel?: string;
+    cloudflareAiAccountId?: string;
+    cloudflareAiApiToken?: string;
+    cloudflareAiModel?: string;
   };
 
 export function getEditorialEvaluationPublicConfig(): EditorialEvaluationPublicConfig {
@@ -70,6 +75,15 @@ export function getEditorialEvaluationPublicConfig(): EditorialEvaluationPublicC
 
 export function getEditorialEvaluationRuntimeConfig(): EditorialEvaluationRuntimeConfig {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
+  const groqApiKey = process.env.GROQ_API_KEY?.trim();
+  const cloudflareAiAccountId = process.env.CLOUDFLARE_AI_ACCOUNT_ID?.trim();
+  const cloudflareAiApiToken = process.env.CLOUDFLARE_AI_API_TOKEN?.trim();
+
+  if (Boolean(cloudflareAiAccountId) !== Boolean(cloudflareAiApiToken)) {
+    throw new EditorialEvaluationConfigurationError(
+      "CLOUDFLARE_AI_ACCOUNT_ID and CLOUDFLARE_AI_API_TOKEN must be configured together",
+    );
+  }
 
   if (!apiKey) {
     throw new EditorialEvaluationConfigurationError(
@@ -80,6 +94,25 @@ export function getEditorialEvaluationRuntimeConfig(): EditorialEvaluationRuntim
   return {
     ...getEditorialEvaluationPublicConfig(),
     apiKey,
+    ...(groqApiKey
+      ? {
+          groqApiKey,
+          groqModel:
+            process.env.EDITORIAL_GROQ_MODEL?.trim() ||
+            process.env.CREATIVE_GROQ_MODEL?.trim() ||
+            "openai/gpt-oss-20b",
+        }
+      : {}),
+    ...(cloudflareAiAccountId && cloudflareAiApiToken
+      ? {
+          cloudflareAiAccountId,
+          cloudflareAiApiToken,
+          cloudflareAiModel:
+            process.env.EDITORIAL_CLOUDFLARE_AI_MODEL?.trim() ||
+            process.env.CLOUDFLARE_AI_MODEL?.trim() ||
+            "@cf/zai-org/glm-4.7-flash",
+        }
+      : {}),
   };
 }
 

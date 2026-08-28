@@ -18,7 +18,7 @@ import type {
   EditorialEvaluationCandidate,
   EditorialEvaluationRunResult,
 } from "./editorial-evaluation.types";
-import { evaluateStoriesWithGemini } from "./gemini-story-editorial-evaluator";
+import { evaluateStoriesWithFallback } from "./gemini-story-editorial-evaluator";
 import { getStoryKeywordPreferences } from "./story-preferences.repository";
 import {
   completeEditorialEvaluationRun,
@@ -33,6 +33,7 @@ import {
 export async function evaluateEditorialCandidates(
   topicId: string,
   now = new Date(),
+  { force = false }: { force?: boolean } = {},
 ): Promise<EditorialEvaluationRunResult> {
   const configuration = getEditorialEvaluationRuntimeConfig();
   const [topic, preferences, editorialProfile, usageBefore] = await Promise.all([
@@ -46,9 +47,10 @@ export async function evaluateEditorialCandidates(
     minLocalScore: editorialProfile.localCandidateMinScore,
     maxContentCharacters: configuration.maxContentCharacters,
     useLegacySourceFallback: editorialProfile.isDefault,
+    includeAutoRejected: force,
     now,
   });
-  const candidates = storedCandidates.map((candidate) => ({
+  const baseCandidates = storedCandidates.map((candidate) => ({
     ...candidate,
     inputHash: createEditorialInputHash(
       topicId,
@@ -63,15 +65,35 @@ export async function evaluateEditorialCandidates(
   }));
   const cachedKeys = await getCachedEditorialEvaluationKeys(
     topicId,
-    candidates,
-    configuration.provider,
-    configuration.model,
+    baseCandidates,
+    configuredProviderIdentities(configuration),
     configuration.promptVersion,
   );
-  const uncachedCandidates = candidates.filter(
-    (candidate) =>
-      !cachedKeys.has(editorialCacheKey(candidate.storyId, candidate.inputHash)),
-  );
+  // The cache key is unique in storage. A forced evaluation therefore gets a
+  // one-off hash only when an exact cached evaluation already exists, which
+  // preserves both the old result and the newly requested re-evaluation.
+  const candidates = force
+    ? baseCandidates.map((candidate) =>
+        cachedKeys.has(
+          editorialCacheKey(candidate.storyId, candidate.inputHash),
+        )
+          ? {
+              ...candidate,
+              inputHash: createHash("sha256")
+                .update(`${candidate.inputHash}:forced:${now.toISOString()}`)
+                .digest("hex"),
+            }
+          : candidate,
+      )
+    : baseCandidates;
+  const uncachedCandidates = force
+    ? candidates
+    : candidates.filter(
+        (candidate) =>
+          !cachedKeys.has(
+            editorialCacheKey(candidate.storyId, candidate.inputHash),
+          ),
+      );
   const cachedStories = candidates.length - uncachedCandidates.length;
 
   if (uncachedCandidates.length === 0) {
@@ -107,9 +129,14 @@ export async function evaluateEditorialCandidates(
   });
 
   try {
-    const result = await evaluateStoriesWithGemini({
+    const result = await evaluateStoriesWithFallback({
       apiKey: configuration.apiKey,
       model: configuration.model,
+      groqApiKey: configuration.groqApiKey,
+      groqModel: configuration.groqModel,
+      cloudflareAiAccountId: configuration.cloudflareAiAccountId,
+      cloudflareAiApiToken: configuration.cloudflareAiApiToken,
+      cloudflareAiModel: configuration.cloudflareAiModel,
       topic: {
         name: topic.name,
         description: topic.description,
@@ -122,8 +149,8 @@ export async function evaluateEditorialCandidates(
     await completeEditorialEvaluationRun({
       topicId,
       runId,
-      provider: configuration.provider,
-      model: configuration.model,
+      provider: result.provider,
+      model: result.model,
       promptVersion: configuration.promptVersion,
       candidates: selectedCandidates,
       result,
@@ -134,8 +161,8 @@ export async function evaluateEditorialCandidates(
     return {
       status: "completed",
       runId,
-      provider: configuration.provider,
-      model: configuration.model,
+      provider: result.provider,
+      model: result.model,
       promptVersion: configuration.promptVersion,
       candidatesScanned: candidates.length,
       cachedStories,
@@ -158,6 +185,22 @@ export async function evaluateEditorialCandidates(
 
     throw error;
   }
+}
+
+function configuredProviderIdentities(
+  configuration: ReturnType<typeof getEditorialEvaluationRuntimeConfig>,
+): Array<{ provider: string; model: string }> {
+  return [
+    { provider: configuration.provider, model: configuration.model },
+    ...(configuration.groqApiKey && configuration.groqModel
+      ? [{ provider: "groq", model: configuration.groqModel }]
+      : []),
+    ...(configuration.cloudflareAiAccountId &&
+    configuration.cloudflareAiApiToken &&
+    configuration.cloudflareAiModel
+      ? [{ provider: "cloudflare", model: configuration.cloudflareAiModel }]
+      : []),
+  ];
 }
 
 function createEditorialInputHash(

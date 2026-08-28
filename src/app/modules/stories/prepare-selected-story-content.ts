@@ -55,9 +55,7 @@ export async function prepareStoryContent(
   await beginStoryContentEnrichment(story.storyId, story.url);
 
   try {
-    const prepared = await fetchPreparedArticle(story.url);
-
-    assertContentImproved(story.contentText, prepared.extracted.text);
+    const prepared = await fetchPreparedArticle(story.url, story.contentText);
 
     await completeStoryContentEnrichment({
       storyId: story.storyId,
@@ -104,39 +102,79 @@ export async function prepareStoryContent(
 /** @deprecated Prefer prepareStoryContent; retained for internal callers. */
 export const prepareSelectedStoryContent = prepareStoryContent;
 
-async function fetchPreparedArticle(sourceUrl: string): Promise<{
+async function fetchPreparedArticle(
+  sourceUrl: string,
+  existingText?: string,
+): Promise<{
   extracted: ExtractedArticleContent;
   resolvedUrl: string;
   method: "direct" | "reader";
 }> {
+  let directError: unknown;
+
   try {
     const fetched = await fetchArticleHtml(sourceUrl);
+    const extracted = extractArticleContent(fetched.html, fetched.resolvedUrl);
+    assertContentImproved(existingText, extracted.text);
 
     return {
-      extracted: extractArticleContent(fetched.html, fetched.resolvedUrl),
+      extracted,
       resolvedUrl: fetched.resolvedUrl,
       method: "direct",
     };
   } catch (error) {
-    if (
-      !(error instanceof PublisherArticleAccessBlockedError) ||
-      !isArticleReaderFallbackEnabled()
-    ) {
+    if (!shouldAttemptReaderFallback(error) || !isArticleReaderFallbackEnabled()) {
       throw error;
     }
 
+    directError = error;
+  }
+
+  try {
     const reader = await fetchArticleWithReader(sourceUrl);
+    const extracted = extractReaderArticleContent({
+      markdown: reader.markdown,
+      ...(reader.title ? { title: reader.title } : {}),
+      ...(reader.description ? { description: reader.description } : {}),
+    });
+    assertContentImproved(existingText, extracted.text);
 
     return {
-      extracted: extractReaderArticleContent({
-        markdown: reader.markdown,
-        ...(reader.title ? { title: reader.title } : {}),
-        ...(reader.description ? { description: reader.description } : {}),
-      }),
+      extracted,
       resolvedUrl: reader.resolvedUrl,
       method: "reader",
     };
+  } catch (readerError) {
+    throw new ArticleFetchError(
+      `Direct extraction failed (${articleErrorSummary(directError)}); Reader fallback failed (${articleErrorSummary(readerError)})`,
+      { cause: readerError },
+    );
   }
+}
+
+/**
+ * Reader is a generic publisher fallback. Security-policy failures remain
+ * excluded so private, malformed, oversized, or redirect-loop URLs are never
+ * handed to a third-party fetcher.
+ */
+function shouldAttemptReaderFallback(error: unknown): boolean {
+  return (
+    error instanceof PublisherArticleAccessBlockedError ||
+    error instanceof ArticleFetchError ||
+    error instanceof ArticleExtractionError
+  );
+}
+
+function articleErrorSummary(error: unknown): string {
+  if (
+    error instanceof ArticleAccessBlockedError ||
+    error instanceof ArticleFetchError ||
+    error instanceof ArticleExtractionError
+  ) {
+    return error.message.replace(/\s+/g, " ").slice(0, 240);
+  }
+
+  return "unknown error";
 }
 
 function assertContentImproved(

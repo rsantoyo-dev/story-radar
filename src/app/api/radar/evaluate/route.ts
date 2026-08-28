@@ -5,8 +5,10 @@ import {
   EditorialEvaluationDailyLimitError,
   evaluateEditorialCandidates,
 } from "@/app/modules/stories/evaluate-editorial-candidates";
-import { EditorialEvaluationResponseError } from "@/app/modules/stories/gemini-story-editorial-evaluator";
-import { ApiError } from "@google/genai";
+import {
+  EditorialEvaluationResponseError,
+  EditorialProviderFallbackError,
+} from "@/app/modules/stories/gemini-story-editorial-evaluator";
 import { NextResponse } from "next/server";
 
 import { authorizeRadarCollector } from "../radar-api-auth";
@@ -25,10 +27,19 @@ export async function POST(request: Request) {
   }
 
   try {
+    const requestBody = await readEvaluationRequest(request);
     return NextResponse.json(
-      await evaluateEditorialCandidates(await requireActiveRequestTopic(request)),
+      await evaluateEditorialCandidates(
+        await requireActiveRequestTopic(request),
+        new Date(),
+        { force: requestBody.force },
+      ),
     );
   } catch (error) {
+    if (error instanceof InvalidEditorialEvaluationRequestError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
     const topicError = topicRequestErrorResponse(error);
     if (topicError) return topicError;
 
@@ -53,31 +64,22 @@ export async function POST(request: Request) {
       );
     }
 
-    if (error instanceof EditorialEvaluationResponseError) {
-      console.error("Gemini returned an invalid editorial response", error);
-
+    if (error instanceof EditorialProviderFallbackError) {
+      console.error("All editorial AI providers failed", error);
       return NextResponse.json(
-        { error: "Gemini returned an invalid editorial evaluation" },
+        {
+          error: `${error.providers.join(", ")} could not complete the editorial evaluation`,
+        },
         { status: 502 },
       );
     }
 
-    if (error instanceof ApiError) {
-      console.error("Gemini API failed during editorial evaluation", error);
-      const status = [429, 503].includes(error.status)
-        ? error.status
-        : 502;
+    if (error instanceof EditorialEvaluationResponseError) {
+      console.error("Editorial AI returned an invalid response", error);
 
       return NextResponse.json(
-        {
-          error:
-            status === 429
-              ? "Gemini daily or rate limit reached"
-              : status === 503
-                ? "Gemini is temporarily unavailable; try again later"
-                : "Gemini rejected the editorial evaluation request",
-        },
-        { status },
+        { error: "Editorial AI returned an invalid editorial evaluation" },
+        { status: 502 },
       );
     }
 
@@ -89,3 +91,39 @@ export async function POST(request: Request) {
     );
   }
 }
+
+async function readEvaluationRequest(
+  request: Request,
+): Promise<{ force: boolean }> {
+  const text = await request.text();
+  if (!text.trim()) return { force: false };
+
+  let value: unknown;
+  try {
+    value = JSON.parse(text) as unknown;
+  } catch {
+    throw new InvalidEditorialEvaluationRequestError(
+      "The editorial evaluation request must be valid JSON",
+    );
+  }
+
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    ("force" in value && typeof value.force !== "boolean")
+  ) {
+    throw new InvalidEditorialEvaluationRequestError(
+      "force must be a boolean",
+    );
+  }
+
+  return {
+    force:
+      "force" in value && typeof value.force === "boolean"
+        ? value.force
+        : false,
+  };
+}
+
+class InvalidEditorialEvaluationRequestError extends Error {}

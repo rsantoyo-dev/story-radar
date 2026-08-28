@@ -9,6 +9,7 @@ import {
   inArray,
   isNull,
   lt,
+  or,
   sql,
 } from "drizzle-orm";
 
@@ -135,6 +136,7 @@ export type EditorialDashboardStats = {
   latestRun?: {
     id: string;
     status: "running" | "completed" | "failed";
+    provider: string;
     model: string;
     modelVersion?: string;
     requestedStories: number;
@@ -159,6 +161,8 @@ type FindEditorialCandidatesOptions = {
    * behavior as well as their legacy runtime candidate limits.
    */
   useLegacySourceFallback: boolean;
+  /** Include automatic rejections when explicitly re-running current rules. */
+  includeAutoRejected?: boolean;
   now?: Date;
 };
 
@@ -199,6 +203,7 @@ export async function findEditorialEvaluationCandidates(
     minLocalScore,
     maxContentCharacters,
     useLegacySourceFallback,
+    includeAutoRejected = false,
     now = new Date(),
   }: FindEditorialCandidatesOptions,
 ): Promise<StoredEditorialCandidate[]> {
@@ -209,7 +214,7 @@ export async function findEditorialEvaluationCandidates(
     freshness.researchMaxAgeHours,
   );
   const cutoff = new Date(now.getTime() - maxAgeHours * 60 * 60 * 1_000);
-  const candidateStatuses = useLegacySourceFallback
+  const candidateStatuses = useLegacySourceFallback && !includeAutoRejected
     ? LEGACY_CANDIDATE_STATUSES
     : PROFILE_CANDIDATE_STATUSES;
   const effectiveDate = sql<Date>`coalesce(
@@ -240,7 +245,9 @@ export async function findEditorialEvaluationCandidates(
         // A saved profile may intentionally lower its AI candidate floor below
         // the legacy local review threshold. In that case, recover only
         // automatic rejections: a human rejection remains final.
-        ...(useLegacySourceFallback ? [] : [isNull(topicStories.reviewDecision)]),
+        ...(useLegacySourceFallback && !includeAutoRejected
+          ? []
+          : [isNull(topicStories.reviewDecision)]),
         gte(topicStories.relevanceScore, minLocalScore),
         gte(effectiveDate, cutoff),
       ),
@@ -258,7 +265,7 @@ export async function findEditorialEvaluationCandidates(
     useLegacySourceFallback,
   );
 
-  const profileEligibleRows = useLegacySourceFallback
+  const profileEligibleRows = useLegacySourceFallback && !includeAutoRejected
     ? storyRows
     : storyRows.filter(
         (story) =>
@@ -372,11 +379,10 @@ function isResearchSource(tags: readonly string[]): boolean {
 export async function getCachedEditorialEvaluationKeys(
   topicId: string,
   candidates: readonly EditorialEvaluationCandidate[],
-  provider: string,
-  model: string,
+  providers: ReadonlyArray<{ provider: string; model: string }>,
   promptVersion: string,
 ): Promise<Set<string>> {
-  if (candidates.length === 0) {
+  if (candidates.length === 0 || providers.length === 0) {
     return new Set();
   }
 
@@ -389,8 +395,14 @@ export async function getCachedEditorialEvaluationKeys(
     .where(
       and(
         eq(storyEditorialEvaluations.topicId, topicId),
-        eq(storyEditorialEvaluations.provider, provider),
-        eq(storyEditorialEvaluations.model, model),
+        or(
+          ...providers.map(({ provider, model }) =>
+            and(
+              eq(storyEditorialEvaluations.provider, provider),
+              eq(storyEditorialEvaluations.model, model),
+            ),
+          ),
+        ),
         eq(storyEditorialEvaluations.promptVersion, promptVersion),
         inArray(
           storyEditorialEvaluations.storyId,
@@ -411,8 +423,8 @@ export async function getEditorialDailyUsage(
   const { start, end } = getUtcDayRange(now);
   const [usage] = await db
     .select({
-      runs: count(),
-      stories: sql<number>`coalesce(sum(${editorialEvaluationRuns.requestedStories}), 0)::int`,
+      runs: sql<number>`count(*) filter (where ${editorialEvaluationRuns.status} <> 'failed')::int`,
+      stories: sql<number>`coalesce(sum(case when ${editorialEvaluationRuns.status} = 'failed' then 0 else ${editorialEvaluationRuns.requestedStories} end), 0)::int`,
       evaluatedStories: sql<number>`coalesce(sum(${editorialEvaluationRuns.evaluatedStories}), 0)::int`,
       promptTokens: sql<number>`coalesce(sum(${editorialEvaluationRuns.promptTokens}), 0)::int`,
       outputTokens: sql<number>`coalesce(sum(${editorialEvaluationRuns.outputTokens}), 0)::int`,
@@ -524,6 +536,8 @@ export async function completeEditorialEvaluationRun({
       .update(editorialEvaluationRuns)
       .set({
         status: "completed",
+        provider,
+        model,
         modelVersion: result.modelVersion ?? null,
         evaluatedStories: result.evaluations.length,
         promptTokens: result.usage.promptTokens,
@@ -739,6 +753,7 @@ export async function getEditorialDashboardStats(
       .select({
         id: editorialEvaluationRuns.id,
         status: editorialEvaluationRuns.status,
+        provider: editorialEvaluationRuns.provider,
         model: editorialEvaluationRuns.model,
         modelVersion: editorialEvaluationRuns.modelVersion,
         requestedStories: editorialEvaluationRuns.requestedStories,
@@ -933,6 +948,7 @@ export async function getEditorialDashboardStats(
           latestRun: {
             id: latestRun.id,
             status: latestRun.status,
+            provider: latestRun.provider,
             model: latestRun.model,
             ...(latestRun.modelVersion
               ? { modelVersion: latestRun.modelVersion }
@@ -1065,16 +1081,14 @@ function createLatestEditorialEvaluation(
   const filters = eq(storyEditorialEvaluations.topicId, topicId);
 
   /**
-   * A configuration identifies the current evaluator contract. It is a
-   * preference rather than a filter so stored v1 results remain visible and
-   * reviewable until that story receives a v2 result. The cache deliberately
-   * remains stricter: only an exact configuration match can skip a new call.
+   * The prompt version identifies the current evaluator contract across the
+   * provider fallback chain. It is a preference rather than a filter so stored
+   * v1 results remain visible until a story receives a v2 result. The cache is
+   * deliberately stricter and still requires an exact provider/model match.
    */
   const currentEvaluatorFirst = configuration
     ? sql<number>`case
-        when ${storyEditorialEvaluations.provider} = ${configuration.provider}
-          and ${storyEditorialEvaluations.model} = ${configuration.model}
-          and ${storyEditorialEvaluations.promptVersion} = ${configuration.promptVersion}
+        when ${storyEditorialEvaluations.promptVersion} = ${configuration.promptVersion}
         then 0
         else 1
       end`

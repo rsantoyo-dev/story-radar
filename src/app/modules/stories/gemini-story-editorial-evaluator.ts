@@ -1,6 +1,7 @@
 import "server-only";
 
-import { ApiError, GoogleGenAI, ThinkingLevel } from "@google/genai";
+import { ApiError, GoogleGenAI } from "@google/genai";
+import Groq from "groq-sdk";
 
 import { calculateEditorialPriority } from "./editorial-priority";
 import {
@@ -26,6 +27,19 @@ type EvaluateWithGeminiOptions = {
    * The production workflow always supplies the resolved topic profile.
    */
   editorialProfile?: EditorialProfile;
+};
+
+type EvaluateWithFallbackOptions = EvaluateWithGeminiOptions & {
+  groqApiKey?: string;
+  groqModel?: string;
+  cloudflareAiAccountId?: string;
+  cloudflareAiApiToken?: string;
+  cloudflareAiModel?: string;
+};
+
+export type EditorialProviderEvaluatorResult = EditorialEvaluatorResult & {
+  provider: "google" | "groq" | "cloudflare";
+  model: string;
 };
 
 export type EditorialEvaluationTopic = {
@@ -57,6 +71,62 @@ Decisions:
 
 Keep reason under 240 characters. Return at most two concise suggested angles and three concise risk flags. Do not invent facts beyond the supplied fields.`;
 
+const GROQ_PROVIDER_TIMEOUT_MS = 60_000;
+const GEMINI_PROVIDER_TIMEOUT_MS = 45_000;
+const CLOUDFLARE_PROVIDER_TIMEOUT_MS = 120_000;
+
+export async function evaluateStoriesWithFallback(
+  options: EvaluateWithFallbackOptions,
+): Promise<EditorialProviderEvaluatorResult> {
+  const attempts: Array<{ provider: string; error: string }> = [];
+
+  try {
+    const result = await evaluateStoriesWithGemini(options);
+    return { ...result, provider: "google", model: options.model };
+  } catch (error) {
+    attempts.push({ provider: "Gemini", error: providerErrorSummary(error) });
+    console.warn("Gemini editorial evaluation failed; trying configured fallback.");
+  }
+
+  if (options.groqApiKey && options.groqModel) {
+    try {
+      const result = await evaluateStoriesWithGroq({
+        ...options,
+        apiKey: options.groqApiKey,
+        model: options.groqModel,
+      });
+      return { ...result, provider: "groq", model: options.groqModel };
+    } catch (error) {
+      attempts.push({ provider: "Groq", error: providerErrorSummary(error) });
+      console.warn("Groq editorial evaluation failed; trying configured fallback.");
+    }
+  }
+
+  if (
+    options.cloudflareAiAccountId &&
+    options.cloudflareAiApiToken &&
+    options.cloudflareAiModel
+  ) {
+    try {
+      const result = await evaluateStoriesWithCloudflare({
+        ...options,
+        accountId: options.cloudflareAiAccountId,
+        apiToken: options.cloudflareAiApiToken,
+        model: options.cloudflareAiModel,
+      });
+      return { ...result, provider: "cloudflare", model: options.cloudflareAiModel };
+    } catch (error) {
+      attempts.push({
+        provider: "Cloudflare",
+        error: providerErrorSummary(error),
+      });
+    }
+  }
+
+  console.error("All configured editorial evaluation providers failed", attempts);
+  throw new EditorialProviderFallbackError(attempts);
+}
+
 export async function evaluateStoriesWithGemini({
   apiKey,
   model,
@@ -78,58 +148,31 @@ export async function evaluateStoriesWithGemini({
   }
 
   const ai = new GoogleGenAI({ apiKey });
-  const profileWeights = editorialProfile?.weights ?? DEFAULT_EDITORIAL_PROFILE_WEIGHTS;
+  const profileWeights =
+    editorialProfile?.weights ?? DEFAULT_EDITORIAL_PROFILE_WEIGHTS;
   const response = await retryTransientGeminiRequest(() =>
-    ai.models.generateContent({
-      model,
-      contents: JSON.stringify({
-        topic: {
-          name: topic.name,
-          description: topic.description ?? null,
+    withProviderTimeout(
+      ai.models.generateContent({
+        model,
+        contents: JSON.stringify(
+          createEvaluationInput(
+            topic,
+            candidates,
+            preferences,
+            editorialProfile,
+          ),
+        ),
+        config: {
+          systemInstruction: SYSTEM_INSTRUCTION,
+          temperature: 0.1,
+          maxOutputTokens: 4_096,
+          responseMimeType: "application/json",
+          responseJsonSchema: createResponseSchema(),
         },
-        editorialProfile: editorialProfile
-          ? {
-              audience: editorialProfile.audience,
-              mission: editorialProfile.mission,
-              contentPillars: editorialProfile.contentPillars,
-              exclusions: editorialProfile.exclusions,
-              freshness: editorialProfile.freshness,
-              weights: editorialProfile.weights,
-              profileVersion: editorialProfile.profileVersion,
-            }
-          : null,
-        editorialPreferences: {
-          favoredTerms: preferences.favoredTerms,
-          unfavoredTerms: preferences.unfavoredTerms,
-          guidance:
-            "Treat these terms as editorial signals, not absolute acceptance or rejection rules.",
-        },
-        stories: candidates.map((candidate) => ({
-          storyId: candidate.storyId,
-          sourceId: candidate.sourceId,
-          sourceName: candidate.sourceName,
-          title: candidate.title,
-          url: candidate.url,
-          contentPreview: candidate.contentPreview ?? null,
-          contentStatus: candidate.contentStatus,
-          language: candidate.language,
-          region: candidate.region,
-          tags: candidate.tags,
-          publishedAt: candidate.publishedAt?.toISOString() ?? null,
-        })),
       }),
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
-        temperature: 0.1,
-        maxOutputTokens: 4_096,
-        thinkingConfig: {
-          includeThoughts: false,
-          thinkingLevel: ThinkingLevel.MINIMAL,
-        },
-        responseMimeType: "application/json",
-        responseJsonSchema: createResponseSchema(),
-      },
-    }),
+      "Gemini",
+      GEMINI_PROVIDER_TIMEOUT_MS,
+    ),
   );
   const responseText = response.text?.trim();
 
@@ -155,6 +198,221 @@ export async function evaluateStoriesWithGemini({
       thoughtsTokens: usage?.thoughtsTokenCount ?? 0,
       totalTokens: usage?.totalTokenCount ?? 0,
     },
+  };
+}
+
+async function evaluateStoriesWithGroq({
+  apiKey,
+  model,
+  topic,
+  candidates,
+  preferences,
+  editorialProfile,
+}: EvaluateWithGeminiOptions): Promise<EditorialEvaluatorResult> {
+  const response = await withProviderTimeout(
+    new Groq({ apiKey, maxRetries: 1 }).chat.completions.create({
+      model,
+      ...(model.startsWith("openai/gpt-oss-")
+        ? { reasoning_effort: "low" as const }
+        : {}),
+      messages: [
+        {
+          role: "system",
+          content: `${SYSTEM_INSTRUCTION}\n\nReturn only the requested JSON object with no Markdown fences or commentary.`,
+        },
+        {
+          role: "user",
+          content: JSON.stringify(
+            createEvaluationInput(
+              topic,
+              candidates,
+              preferences,
+              editorialProfile,
+            ),
+          ),
+        },
+      ],
+      max_completion_tokens: 4_096,
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "editorial_evaluations",
+          strict: false,
+          schema: createResponseSchema(),
+        },
+      },
+    }),
+    "Groq",
+    GROQ_PROVIDER_TIMEOUT_MS,
+  );
+  const responseText = normalizeJsonText(
+    response.choices[0]?.message.content ?? "",
+  );
+  if (!responseText) {
+    throw new EditorialEvaluationResponseError(
+      "Groq returned an empty editorial evaluation",
+    );
+  }
+
+  return {
+    ...(response.system_fingerprint
+      ? { modelVersion: response.system_fingerprint }
+      : {}),
+    evaluations: parseEditorialEvaluations(
+      responseText,
+      candidates,
+      editorialProfile?.weights ?? DEFAULT_EDITORIAL_PROFILE_WEIGHTS,
+    ),
+    usage: {
+      promptTokens: response.usage?.prompt_tokens ?? 0,
+      outputTokens: response.usage?.completion_tokens ?? 0,
+      thoughtsTokens:
+        response.usage?.completion_tokens_details?.reasoning_tokens ?? 0,
+      totalTokens: response.usage?.total_tokens ?? 0,
+    },
+  };
+}
+
+async function evaluateStoriesWithCloudflare({
+  accountId,
+  apiToken,
+  model,
+  topic,
+  candidates,
+  preferences,
+  editorialProfile,
+}: Omit<EvaluateWithGeminiOptions, "apiKey"> & {
+  accountId: string;
+  apiToken: string;
+}): Promise<EditorialEvaluatorResult> {
+  if (!model.startsWith("@cf/")) {
+    throw new EditorialEvaluationResponseError(
+      "EDITORIAL_CLOUDFLARE_AI_MODEL must be a Workers AI @cf model",
+    );
+  }
+
+  const response = await withProviderTimeout(
+    fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/run/${model}`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              role: "system",
+              content: `${SYSTEM_INSTRUCTION}\n\nReturn only one valid JSON object with no Markdown fences or commentary. It must conform to this JSON Schema:\n${JSON.stringify(createResponseSchema())}`,
+            },
+            {
+              role: "user",
+              content: JSON.stringify(
+                createEvaluationInput(
+                  topic,
+                  candidates,
+                  preferences,
+                  editorialProfile,
+                ),
+              ),
+            },
+          ],
+          max_completion_tokens: 4_096,
+          reasoning_effort: "low",
+          temperature: 0.1,
+        }),
+      },
+    ),
+    "Cloudflare Workers AI",
+    CLOUDFLARE_PROVIDER_TIMEOUT_MS,
+  );
+  const payload = (await response.json().catch(() => undefined)) as unknown;
+  if (!response.ok || !isRecord(payload) || payload.success !== true) {
+    throw new CloudflareEditorialRequestError(response.status);
+  }
+
+  const result = isRecord(payload.result) ? payload.result : undefined;
+  const firstChoice = Array.isArray(result?.choices)
+    ? result.choices[0]
+    : undefined;
+  const choice = isRecord(firstChoice) ? firstChoice : undefined;
+  const message = isRecord(choice?.message) ? choice.message : undefined;
+  const generated = result?.response ?? message?.content;
+  const responseText = normalizeJsonText(
+    typeof generated === "string"
+      ? generated
+      : generated === undefined || generated === null
+        ? ""
+        : JSON.stringify(generated),
+  );
+  if (!responseText) {
+    throw new EditorialEvaluationResponseError(
+      "Cloudflare returned an empty editorial evaluation",
+    );
+  }
+
+  const usage = isRecord(result?.usage) ? result.usage : undefined;
+  const promptTokens = nonNegativeUsageNumber(usage?.prompt_tokens);
+  const outputTokens = nonNegativeUsageNumber(usage?.completion_tokens);
+  return {
+    evaluations: parseEditorialEvaluations(
+      responseText,
+      candidates,
+      editorialProfile?.weights ?? DEFAULT_EDITORIAL_PROFILE_WEIGHTS,
+    ),
+    usage: {
+      promptTokens,
+      outputTokens,
+      thoughtsTokens: 0,
+      totalTokens:
+        nonNegativeUsageNumber(usage?.total_tokens) ||
+        promptTokens + outputTokens,
+    },
+  };
+}
+
+function createEvaluationInput(
+  topic: EditorialEvaluationTopic,
+  candidates: readonly EditorialEvaluationCandidate[],
+  preferences: StoryKeywordPreferences,
+  editorialProfile?: EditorialProfile,
+) {
+  return {
+    topic: {
+      name: topic.name,
+      description: topic.description ?? null,
+    },
+    editorialProfile: editorialProfile
+      ? {
+          audience: editorialProfile.audience,
+          mission: editorialProfile.mission,
+          contentPillars: editorialProfile.contentPillars,
+          exclusions: editorialProfile.exclusions,
+          freshness: editorialProfile.freshness,
+          weights: editorialProfile.weights,
+          profileVersion: editorialProfile.profileVersion,
+        }
+      : null,
+    editorialPreferences: {
+      favoredTerms: preferences.favoredTerms,
+      unfavoredTerms: preferences.unfavoredTerms,
+      guidance:
+        "Treat these terms as editorial signals, not absolute acceptance or rejection rules.",
+    },
+    stories: candidates.map((candidate) => ({
+      storyId: candidate.storyId,
+      sourceId: candidate.sourceId,
+      sourceName: candidate.sourceName,
+      title: candidate.title,
+      url: candidate.url,
+      contentPreview: candidate.contentPreview ?? null,
+      contentStatus: candidate.contentStatus,
+      language: candidate.language,
+      region: candidate.region,
+      tags: candidate.tags,
+      publishedAt: candidate.publishedAt?.toISOString() ?? null,
+    })),
   };
 }
 
@@ -231,13 +489,13 @@ function parseEditorialEvaluations(
     payload = JSON.parse(responseText) as unknown;
   } catch {
     throw new EditorialEvaluationResponseError(
-      "Gemini returned invalid JSON",
+      "Editorial AI returned invalid JSON",
     );
   }
 
   if (!isRecord(payload) || !Array.isArray(payload.evaluations)) {
     throw new EditorialEvaluationResponseError(
-      "Gemini returned an invalid evaluation structure",
+      "Editorial AI returned an invalid evaluation structure",
     );
   }
 
@@ -255,7 +513,7 @@ function parseEditorialEvaluations(
 
     if (evaluationsByStoryId.has(evaluation.storyId)) {
       throw new EditorialEvaluationResponseError(
-        `Gemini evaluated story ${evaluation.storyId} more than once`,
+        `Editorial AI evaluated story ${evaluation.storyId} more than once`,
       );
     }
 
@@ -264,7 +522,7 @@ function parseEditorialEvaluations(
 
   if (evaluationsByStoryId.size !== candidates.length) {
     throw new EditorialEvaluationResponseError(
-      "Gemini did not evaluate every requested story",
+      "Editorial AI did not evaluate every requested story",
     );
   }
 
@@ -273,7 +531,7 @@ function parseEditorialEvaluations(
 
     if (!evaluation) {
       throw new EditorialEvaluationResponseError(
-        `Gemini omitted story ${candidate.storyId}`,
+        `Editorial AI omitted story ${candidate.storyId}`,
       );
     }
 
@@ -288,19 +546,19 @@ function parseEditorialEvaluation(
 ): StoryEditorialEvaluation {
   if (!isRecord(value) || typeof value.storyId !== "string") {
     throw new EditorialEvaluationResponseError(
-      "Gemini returned an evaluation without a storyId",
+      "Editorial AI returned an evaluation without a storyId",
     );
   }
 
   if (!expectedIds.has(value.storyId)) {
     throw new EditorialEvaluationResponseError(
-      `Gemini returned an unknown storyId: ${value.storyId}`,
+      `Editorial AI returned an unknown storyId: ${value.storyId}`,
     );
   }
 
   if (!isDecision(value.decision)) {
     throw new EditorialEvaluationResponseError(
-      `Gemini returned an invalid decision for ${value.storyId}`,
+      `Editorial AI returned an invalid decision for ${value.storyId}`,
     );
   }
 
@@ -400,7 +658,7 @@ function parseLegacyEditorialEvaluation(
 function parseStoryId(value: Record<string, unknown>): string {
   if (typeof value.storyId !== "string") {
     throw new EditorialEvaluationResponseError(
-      "Gemini returned an evaluation without a storyId",
+      "Editorial AI returned an evaluation without a storyId",
     );
   }
 
@@ -412,7 +670,7 @@ function parseDecision(
 ): StoryEditorialEvaluation["decision"] {
   if (!isDecision(value.decision)) {
     throw new EditorialEvaluationResponseError(
-      `Gemini returned an invalid decision for ${parseStoryId(value)}`,
+      `Editorial AI returned an invalid decision for ${parseStoryId(value)}`,
     );
   }
 
@@ -422,7 +680,7 @@ function parseDecision(
 function parseScore(value: unknown, field: string): number {
   if (!Number.isInteger(value) || (value as number) < 0 || (value as number) > 100) {
     throw new EditorialEvaluationResponseError(
-      `Gemini returned an invalid ${field}`,
+      `Editorial AI returned an invalid ${field}`,
     );
   }
 
@@ -436,7 +694,7 @@ function parseShortText(
 ): string {
   if (typeof value !== "string" || !value.trim()) {
     throw new EditorialEvaluationResponseError(
-      `Gemini returned an invalid ${field}`,
+      `Editorial AI returned an invalid ${field}`,
     );
   }
 
@@ -451,7 +709,7 @@ function parseShortTextList(
 ): string[] {
   if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
     throw new EditorialEvaluationResponseError(
-      `Gemini returned an invalid ${field}`,
+      `Editorial AI returned an invalid ${field}`,
     );
   }
 
@@ -502,3 +760,70 @@ function delay(milliseconds: number): Promise<void> {
 }
 
 export class EditorialEvaluationResponseError extends Error {}
+
+export class EditorialProviderFallbackError extends Error {
+  readonly providers: string[];
+
+  constructor(attempts: ReadonlyArray<{ provider: string; error: string }>) {
+    super(
+      attempts
+        .map(({ provider, error }) => `${provider} failed (${error})`)
+        .join("; "),
+    );
+    this.providers = attempts.map(({ provider }) => provider);
+  }
+}
+
+class EditorialProviderTimeoutError extends Error {}
+
+class CloudflareEditorialRequestError extends Error {
+  constructor(readonly status: number) {
+    super(`Cloudflare Workers AI failed with HTTP ${status}`);
+  }
+}
+
+async function withProviderTimeout<T>(
+  request: Promise<T>,
+  provider: string,
+  timeoutMs: number,
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(
+        new EditorialProviderTimeoutError(
+          `${provider} editorial evaluation timed out`,
+        ),
+      );
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([request, timeout]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+function normalizeJsonText(value: string): string {
+  const trimmed = value.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return (fenced?.[1] ?? trimmed).trim();
+}
+
+function nonNegativeUsageNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.round(value)
+    : 0;
+}
+
+function providerErrorSummary(error: unknown): string {
+  if (error instanceof ApiError) return `HTTP ${error.status}`;
+  if (error instanceof CloudflareEditorialRequestError) {
+    return `HTTP ${error.status}`;
+  }
+  if (error instanceof EditorialProviderTimeoutError) return "request timed out";
+  return error instanceof Error
+    ? error.message.replace(/\s+/g, " ").slice(0, 180)
+    : "unknown provider error";
+}

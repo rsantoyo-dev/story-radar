@@ -1152,6 +1152,32 @@
   opacity: 0.42;
 }
 
+.evaluationActions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: density(2);
+}
+
+.reevaluateButton {
+  @ds-button(outlined neutral 3);
+  min-height: 44px;
+  padding: 0 density(4);
+  border: border(1, palette(info-dark), solid);
+  border-radius: radius(3);
+  background: palette(light-light);
+  color: palette(info-dark);
+  @ds-typo (small);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.reevaluateButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
 .aiMetrics {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -1920,6 +1946,27 @@
   font-size: 10px;
 }
 
+.contentViewerWarning {
+  display: flex;
+  gap: density(1);
+  padding: density(3) density(5);
+  border-bottom: border(1, palette(warning-main), solid);
+  background: palette(warning-light);
+  color: palette(warning-dark);
+  flex-direction: column;
+}
+
+.contentViewerWarning strong {
+  @ds-typo (small);
+  font-size: 12px;
+}
+
+.contentViewerWarning span {
+  @ds-typo (caption);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .contentViewerBody {
   overflow: auto;
   padding: density(5);
@@ -2255,6 +2302,11 @@
   }
 
   .evaluateButton {
+    width: 100%;
+  }
+
+  .evaluationActions,
+  .reevaluateButton {
     width: 100%;
   }
 
