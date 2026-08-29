@@ -93,13 +93,105 @@ test("promotes an internal debate question to the visible CTA", () => {
 
   assert.equal(
     repaired.units[2]?.ctaQuestion,
-    "What should readers consider next?",
+    "What stands out most to you?",
   );
   assert.ok(
     !evaluateCarouselNarrative(repaired.units).some(
       (issue) =>
         issue.code === "missing-debate-question" ||
         issue.code === "closing-question-count",
+    ),
+  );
+});
+
+test("does not leak an English internal question into a Spanish CTA", () => {
+  const draft: GeneratedCreativeDraft = {
+    concept: "Cierre localizado",
+    caption: "Carrusel en español.",
+    hashtags: [],
+    altText: "Carrusel en español.",
+    units: [
+      fullUnit(1, "cover", "hook", ["fact-1"]),
+      {
+        ...fullUnit(2, "call-to-action", "debate", ["fact-1"]),
+        viewerQuestion: "What did you find most surprising about this information?",
+      },
+    ],
+  };
+
+  const repaired = repairDeterministicCreativeCopy(
+    draft,
+    "carousel",
+    [],
+    "espanol",
+  );
+
+  assert.equal(
+    repaired.units[1]?.ctaQuestion,
+    "¿Qué te sorprendió más de esta información?",
+  );
+});
+
+test("replaces a verbatim internal planning question in visible CTA copy", () => {
+  const internalQuestion =
+    "What question should the viewer consider regarding autonomous agent governance?";
+  const draft: GeneratedCreativeDraft = {
+    concept: "Agent governance",
+    caption: "A governance carousel.",
+    hashtags: [],
+    altText: "A governance carousel.",
+    units: [
+      fullUnit(1, "cover", "hook", ["fact-1"]),
+      {
+        ...fullUnit(2, "call-to-action", "debate", ["fact-1"]),
+        viewerQuestion: internalQuestion,
+        ctaQuestion: internalQuestion,
+      },
+    ],
+  };
+
+  const repaired = repairDeterministicCreativeCopy(draft, "carousel");
+
+  assert.equal(repaired.units[1]?.ctaQuestion, "What stands out most to you?");
+});
+
+test("blocks a slide that combines two editorial questions", () => {
+  const issues = evaluateCarouselNarrative([
+    unit("cover", "hook", ["fact-1"]),
+    {
+      ...unit("content", "prove", ["fact-2", "fact-3"]),
+      viewerQuestion:
+        "¿Cómo se estima la ovulación y cómo cambia la probabilidad con la edad?",
+    },
+    unit("call-to-action", "debate", ["fact-1"]),
+  ]);
+
+  assert.ok(
+    issues.some(
+      (issue) =>
+        issue.code === "multiple-slide-claims" && issue.severity === "blocker",
+    ),
+  );
+});
+
+test("blocks consecutive middle slides that repeat the same numerical evidence", () => {
+  const issues = evaluateCarouselNarrative([
+    unit("cover", "hook", ["fact-1"]),
+    {
+      ...unit("content", "explain", ["fact-2"]),
+      body: "The comparison begins with 14 days.",
+    },
+    {
+      ...unit("content", "impact", ["fact-2"]),
+      body: "In practice, the estimate still uses 14 days.",
+    },
+    unit("call-to-action", "debate", ["fact-1"]),
+  ]);
+
+  assert.ok(
+    issues.some(
+      (issue) =>
+        issue.code === "semantic-repetition" && issue.severity === "blocker",
     ),
   );
 });

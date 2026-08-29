@@ -192,7 +192,7 @@ export function deterministicFactQualityIssues(
         "The caption, call to action, or alt text turns detected AI-authorship signals into a categorical AI-generated claim.",
     });
   }
-  const unsupportedDraftNumbers = extractAllowedNumbers(draftCopy).filter(
+  const unsupportedDraftNumbers = extractBriefClaimNumbers(draftCopy).filter(
     (number) =>
       !allFacts.some((fact) =>
         fact.claimGuard?.allowedNumbers.includes(number),

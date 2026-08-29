@@ -451,6 +451,28 @@ test("blocks English visible copy when the profile language is Spanish", () => {
   );
 });
 
+test("does not treat carousel slide counts as factual claims", () => {
+  const fact: CreativeKeyFact = {
+    id: "fact-1",
+    statement: "The source describes a biological process.",
+    attribution: "Source",
+  };
+  const draft: GeneratedCreativeDraft = {
+    concept: "Proceso biológico",
+    caption: "Una explicación respaldada por la fuente.",
+    hashtags: [],
+    altText: "Carrusel educativo de 5 diapositivas sobre el proceso.",
+    units: [unit(1, "cover", "hook", "Proceso biológico", "Información respaldada.", ["fact-1"])],
+  };
+
+  assert.equal(
+    deterministicFactQualityIssues(draft, [fact]).some(
+      (issue) => issue.code === "UNSUPPORTED_NUMBER",
+    ),
+    false,
+  );
+});
+
 test("rejects a brief that promises pregnancy stages absent from its facts", () => {
   const brief: GeneratedCreativeBrief = {
     recommendedFormat: "carousel",

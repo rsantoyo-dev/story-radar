@@ -1551,11 +1551,13 @@ function creativeGroundingAuditSchema(): Record<string, unknown> {
             unitOrder: { type: "integer", minimum: 0, maximum: 8 },
             field: {
               type: "string",
-              enum: [...GROUNDING_AUDIT_FIELDS],
+              // Gemini 3.7 rejects this audit schema when the two long enums
+              // are embedded in it. parseGroundingAuditField still enforces
+              // the allowlist before any correction is applied.
             },
             category: {
               type: "string",
-              enum: [...GROUNDING_AUDIT_CATEGORIES],
+              // Kept open for the provider; parsed against the local allowlist.
             },
             severity: {
               type: "string",

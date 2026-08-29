@@ -52,7 +52,24 @@ export function repairDeterministicCreativeCopy(
         ![closing.headline, closing.body].some((value) => value?.includes("?")) &&
         closing.viewerQuestion?.trim()
       ) {
-        closing.ctaQuestion = ensureQuestion(closing.viewerQuestion);
+        closing.ctaQuestion = localizedDebateQuestion(language);
+      }
+      if (
+        closing.editorialGoal === "debate" &&
+        closing.ctaQuestion?.trim() &&
+        closing.viewerQuestion?.trim() &&
+        normalizeQuestionCopy(closing.ctaQuestion) ===
+          normalizeQuestionCopy(closing.viewerQuestion)
+      ) {
+        closing.ctaQuestion = localizedDebateQuestion(language);
+      }
+      if (
+        closing.editorialGoal === "debate" &&
+        closing.ctaQuestion?.trim() &&
+        isSpanishProfileLanguage(language) &&
+        hasLikelyEnglishSentence(closing.ctaQuestion)
+      ) {
+        closing.ctaQuestion = "¿Qué te sorprendió más de esta información?";
       }
       if (
         closing.editorialGoal === "debate" &&
@@ -91,9 +108,18 @@ export function repairDeterministicCreativeCopy(
   return repairDeterministicFactCopy(repaired, keyFacts, language);
 }
 
-function ensureQuestion(value: string): string {
-  const question = value.trim().replace(/[.!]+$/u, "");
-  return question.includes("?") ? question : `${question}?`;
+function localizedDebateQuestion(language?: string): string {
+  return isSpanishProfileLanguage(language)
+    ? "¿Qué te sorprendió más de esta información?"
+    : "What stands out most to you?";
+}
+
+function normalizeQuestionCopy(value: string): string {
+  return value
+    .normalize("NFKC")
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
 }
 
 export function deterministicCreativeQualityIssues(
@@ -159,7 +185,7 @@ function isSpanishProfileLanguage(language?: string): boolean {
 function hasLikelyEnglishSentence(value?: string): boolean {
   if (!value?.trim()) return false;
   const markers = value.match(
-    /\b(?:the|when|from|your|will|within|during|there|chance|age|count|backwards|end|cycle|estimate|fertile|occur)\b/giu,
+    /\b(?:the|when|from|your|will|within|during|there|chance|age|count|backwards|end|cycle|estimate|fertile|occur|what|why|how|did|you|know|that|is|are|available|only|hours|long)\b/giu,
   );
   return (markers?.length ?? 0) >= 3;
 }

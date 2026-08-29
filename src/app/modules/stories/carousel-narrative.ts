@@ -157,6 +157,8 @@ export type CarouselNarrativeWarning = {
     | "role-goal-mismatch"
     | "evidence-without-facts"
     | "fact-overuse"
+    | "multiple-slide-claims"
+    | "semantic-repetition"
     | "headline-too-long"
     | "body-too-long";
   message: string;
@@ -269,6 +271,14 @@ export function validateCarouselPlan(
     if (!slide.viewerQuestion.trim()) {
       errors.push(`carouselPlan slide ${index + 1} needs a viewerQuestion`);
     }
+    if (
+      slide.editorialGoal !== "hook" &&
+      questionIntentCount(slide.viewerQuestion) > 1
+    ) {
+      errors.push(
+        `carouselPlan slide ${index + 1} asks multiple editorial questions; give the slide one job`,
+      );
+    }
     if (slide.allowedFactIds.some((factId) => !knownFactIds.has(factId))) {
       errors.push(`carouselPlan slide ${index + 1} cites an unknown fact`);
     }
@@ -296,6 +306,19 @@ export function validateCarouselPlan(
       );
     }
     slide.allowedFactIds.forEach((factId) => establishedFacts.add(factId));
+
+    const previous = plan.slides[index - 1];
+    const isMiddlePair = index >= 2 && index < plan.slides.length - 1;
+    if (
+      isMiddlePair &&
+      previous?.allowedFactIds.some((factId) =>
+        slide.allowedFactIds.includes(factId),
+      )
+    ) {
+      errors.push(
+        `carouselPlan slides ${index} and ${index + 1} reuse evidence in consecutive middle slides; assign each slide one primary factual job`,
+      );
+    }
   });
 
   const closingGoal = plan.slides.at(-1)?.editorialGoal;
@@ -335,6 +358,9 @@ export function carouselNarrativePolicyForPrompt() {
       "The final slide must use conclude or debate. This terminal narrative job is required even when the earlier arc deviates from the preferred sequence.",
       "A conclude or debate slide should reuse earlier facts and should not introduce unsupported or new information.",
       "Establish related comparison facts together before the final slide; never reserve a new statistic solely for the closing slide.",
+      "Each viewerQuestion must ask exactly one editorial question; do not join two questions with 'and'.",
+      "Give each middle slide primary ownership of its evidence. Consecutive middle slides should not reuse the same fact or numerical claim.",
+      "If the preferred arc would force an impact slide to paraphrase evidence, choose a better evidence-led goal and explain the deviation.",
     ],
   };
 }
@@ -362,6 +388,18 @@ export function evaluateCarouselNarrative(
         code: "missing-viewer-question",
         unitIndex,
         message: `Slide ${slide} does not define the viewer question it answers.`,
+      });
+    }
+    if (
+      unit.editorialGoal !== "hook" &&
+      unit.viewerQuestion?.trim() &&
+      questionIntentCount(unit.viewerQuestion) > 1
+    ) {
+      warnings.push({
+        severity: "blocker",
+        code: "multiple-slide-claims",
+        unitIndex,
+        message: `Slide ${slide} asks more than one editorial question; split the ideas so the slide has one clear job.`,
       });
     }
     if (
@@ -411,6 +449,26 @@ export function evaluateCarouselNarrative(
         code: "body-too-long",
         unitIndex,
         message: `Slide ${slide} supporting text uses ${wordCount(unit.body)} words; aim for 45 or fewer.`,
+      });
+    }
+  });
+
+  units.forEach((unit, unitIndex) => {
+    if (unitIndex < 2 || unitIndex >= units.length - 1) return;
+    const previous = units[unitIndex - 1];
+    if (!previous) return;
+    const sharedFacts = unit.factIds.filter((factId) =>
+      previous.factIds.includes(factId),
+    );
+    const sharedNumbers = numericTokens(unit.body).filter((number) =>
+      numericTokens(previous.body).includes(number),
+    );
+    if (sharedFacts.length > 0 && sharedNumbers.length > 0) {
+      warnings.push({
+        severity: "blocker",
+        code: "semantic-repetition",
+        unitIndex,
+        message: `Slides ${unitIndex} and ${unitIndex + 1} repeat ${sharedFacts.join(", ")} and the same numerical claim (${sharedNumbers.join(", ")}); give each slide distinct evidence.`,
       });
     }
   });
@@ -585,4 +643,15 @@ export function blockingCarouselNarrativeIssues(
 
 function wordCount(value?: string): number {
   return value?.trim() ? value.trim().split(/\s+/u).length : 0;
+}
+
+function questionIntentCount(value: string): number {
+  const interrogatives = value.match(
+    /\b(?:what|why|how|when|where|which|who|qué|por qué|cómo|cuándo|dónde|cuál|quién)\b/giu,
+  );
+  return Math.max(value.match(/\?/gu)?.length ?? 0, interrogatives?.length ?? 0);
+}
+
+function numericTokens(value?: string): string[] {
+  return [...new Set(value?.match(/\b\d+(?:[.,]\d+)?%?\b/gu) ?? [])];
 }
