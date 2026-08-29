@@ -217,6 +217,70 @@ test("normalizes sentence punctuation in persisted allowed numbers", () => {
   );
 });
 
+test("accepts numbers preserved in a fact source excerpt", () => {
+  const microDecisionFact: CreativeKeyFact = {
+    id: "fact-decisions",
+    statement:
+      "AI coding agents make hundreds of visual micro-decisions during a session.",
+    sourceExcerpt:
+      "The AI made somewhere between 200 and 300 visual micro-decisions during that session.",
+    attribution: "the author",
+  };
+  const microDecisionDraft: GeneratedCreativeDraft = {
+    concept: "Design-system drift",
+    caption: "Why AI coding sessions drift.",
+    hashtags: [],
+    altText: "A carousel about design-system drift.",
+    units: [
+      unit(
+        1,
+        "cover",
+        "hook",
+        "Why AI coding sessions drift",
+        "In a single session, an AI makes somewhere between 200 and 300 visual micro-decisions.",
+        ["fact-decisions"],
+      ),
+    ],
+  };
+
+  assert.ok(
+    !deterministicFactQualityIssues(microDecisionDraft, [
+      microDecisionFact,
+    ]).some((issue) => issue.code === "UNSUPPORTED_NUMBER"),
+  );
+});
+
+test("accepts the numeric count of an explicit multi-item fact list", () => {
+  const architectureFact: CreativeKeyFact = {
+    id: "fact-architecture",
+    statement:
+      "An LLM-readable design system uses structured spec files, a closed token layer, automated audit scripts, and upstream drift detection.",
+    attribution: "the author",
+  };
+  const architectureDraft: GeneratedCreativeDraft = {
+    concept: "LLM-readable architecture",
+    caption: "A machine-readable design system.",
+    hashtags: [],
+    altText: "A carousel explaining an LLM-readable design system.",
+    units: [
+      unit(
+        1,
+        "content",
+        "explain",
+        "The 4-part machine-readable architecture",
+        "Structured specs, closed tokens, automated audits, and drift detection keep agents aligned.",
+        ["fact-architecture"],
+      ),
+    ],
+  };
+
+  assert.ok(
+    !deterministicFactQualityIssues(architectureDraft, [
+      architectureFact,
+    ]).some((issue) => issue.code === "UNSUPPORTED_NUMBER"),
+  );
+});
+
 test("accepts a numeric ordinal when the selected fact spells it out", () => {
   const dueDateFact: CreativeKeyFact = {
     id: "fact-due-date",

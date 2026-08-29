@@ -30,6 +30,7 @@ type EvaluateWithGeminiOptions = {
 };
 
 type EvaluateWithFallbackOptions = EvaluateWithGeminiOptions & {
+  paidGeminiApiKey?: string;
   groqApiKey?: string;
   groqModel?: string;
   cloudflareAiAccountId?: string;
@@ -86,6 +87,27 @@ export async function evaluateStoriesWithFallback(
   } catch (error) {
     attempts.push({ provider: "Gemini", error: providerErrorSummary(error) });
     console.warn("Gemini editorial evaluation failed; trying configured fallback.");
+  }
+
+  if (
+    options.paidGeminiApiKey &&
+    options.paidGeminiApiKey !== options.apiKey
+  ) {
+    try {
+      const result = await evaluateStoriesWithGemini({
+        ...options,
+        apiKey: options.paidGeminiApiKey,
+      });
+      return { ...result, provider: "google", model: options.model };
+    } catch (error) {
+      attempts.push({
+        provider: "Gemini secondary",
+        error: providerErrorSummary(error),
+      });
+      console.warn(
+        "Secondary Gemini editorial evaluation failed; trying configured fallback.",
+      );
+    }
   }
 
   if (options.groqApiKey && options.groqModel) {

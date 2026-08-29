@@ -16,6 +16,8 @@ export type CreativeContentPublicConfig = {
 
 export type CreativeContentRuntimeConfig = CreativeContentPublicConfig & {
   apiKey: string;
+  /** Optional second Gemini account, attempted before non-Google providers. */
+  paidGeminiApiKey?: string;
   /** Optional capacity/token-limit fallback for creative briefs and drafts. */
   groqApiKey?: string;
   groqModel?: string;
@@ -30,6 +32,7 @@ const DEFAULT_MAX_CONTENT_CHARACTERS = 15_000;
 
 export function getCreativeContentRuntimeConfig(): CreativeContentRuntimeConfig {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
+  const paidGeminiApiKey = process.env.GEMINI_PAID_API_KEY?.trim();
   const groqApiKey = process.env.GROQ_API_KEY?.trim();
   const cloudflareAiAccountId = process.env.CLOUDFLARE_AI_ACCOUNT_ID?.trim();
   const cloudflareAiApiToken = process.env.CLOUDFLARE_AI_API_TOKEN?.trim();
@@ -75,6 +78,9 @@ export function getCreativeContentRuntimeConfig(): CreativeContentRuntimeConfig 
 
   return {
     apiKey,
+    ...(paidGeminiApiKey && paidGeminiApiKey !== apiKey
+      ? { paidGeminiApiKey }
+      : {}),
     ...(groqApiKey
       ? {
           groqApiKey,

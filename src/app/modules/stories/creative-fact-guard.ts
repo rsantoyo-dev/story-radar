@@ -158,7 +158,7 @@ export function inferCreativeFactClaimGuard(
   fact: CreativeKeyFact,
 ): CreativeFactClaimGuard {
   const qualifierText = (fact.requiredQualifiers ?? []).join(" ");
-  const source = `${fact.statement} ${qualifierText}`;
+  const source = `${fact.statement} ${fact.sourceExcerpt ?? ""} ${qualifierText}`;
   const certainty: CreativeFactClaimGuard["certainty"] = SIGNAL_PATTERN.test(source)
     ? "detected-signal"
     : PROJECTION_PATTERN.test(source)
@@ -178,7 +178,14 @@ export function inferCreativeFactClaimGuard(
         ? ["is AI-generated", "are AI-generated", "is AI-written", "are AI-written"]
         : [],
     scopePhrases: extractScopePhrases(fact.statement),
-    allowedNumbers: extractAllowedNumbers(fact.statement),
+    // The concise fact statement may intentionally spell out or omit details
+    // that remain explicit in the cited excerpt. Both are evidence, so retain
+    // numeric literals from each instead of rejecting faithful slide copy.
+    allowedNumbers: uniqueText([
+      ...extractAllowedNumbers(fact.statement),
+      ...extractAllowedNumbers(fact.sourceExcerpt ?? ""),
+      ...extractExplicitEnumerationCounts(fact.statement),
+    ]),
   };
 }
 
@@ -969,6 +976,25 @@ function extractAllowedNumbers(value: string): string[] {
   // verbal approximation of the source statistic.
   if (numbers.includes("35%")) numbers.push("33%");
   return uniqueText(numbers);
+}
+
+function extractExplicitEnumerationCounts(value: string): string[] {
+  const counts: string[] = [];
+  const sentences = value.match(/[^.!?]+[.!?]?/gu) ?? [];
+
+  for (const sentence of sentences) {
+    // Only infer a count from an explicit list of at least three items. This
+    // supports concise labels such as "4-part architecture" without treating
+    // an ordinary two-clause sentence as a numbered factual claim.
+    const commaParts = sentence.split(/\s*,\s*/u);
+    if (commaParts.length < 3) continue;
+    const finalPart = commaParts.at(-1) ?? "";
+    if (!/^(?:and|or|y|o)\s+/iu.test(finalPart.trim())) continue;
+    const count = commaParts.length;
+    if (count >= 3 && count <= 10) counts.push(String(count));
+  }
+
+  return uniqueText(counts);
 }
 
 function extractBriefClaimNumbers(value: string): string[] {

@@ -202,6 +202,7 @@ export async function createCreativeBrief(
   try {
     const result = await generateCreativeBrief({
       apiKey: configuration.apiKey,
+      paidGeminiApiKey: configuration.paidGeminiApiKey,
       model: configuration.model,
       primaryProvider: configuration.primaryProvider,
       groqApiKey: configuration.groqApiKey,
@@ -328,6 +329,7 @@ export async function createCreativeDraft(
   try {
     const result = await generateCreativeDraft({
       apiKey: configuration.apiKey,
+      paidGeminiApiKey: configuration.paidGeminiApiKey,
       model: configuration.model,
       primaryProvider: configuration.primaryProvider,
       groqApiKey: configuration.groqApiKey,

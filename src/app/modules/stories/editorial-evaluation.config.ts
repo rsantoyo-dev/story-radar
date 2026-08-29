@@ -32,6 +32,7 @@ export type EditorialEvaluationPublicConfig =
 export type EditorialEvaluationRuntimeConfig =
   EditorialEvaluationPublicConfig & {
     apiKey: string;
+    paidGeminiApiKey?: string;
     groqApiKey?: string;
     groqModel?: string;
     cloudflareAiAccountId?: string;
@@ -75,6 +76,7 @@ export function getEditorialEvaluationPublicConfig(): EditorialEvaluationPublicC
 
 export function getEditorialEvaluationRuntimeConfig(): EditorialEvaluationRuntimeConfig {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
+  const paidGeminiApiKey = process.env.GEMINI_PAID_API_KEY?.trim();
   const groqApiKey = process.env.GROQ_API_KEY?.trim();
   const cloudflareAiAccountId = process.env.CLOUDFLARE_AI_ACCOUNT_ID?.trim();
   const cloudflareAiApiToken = process.env.CLOUDFLARE_AI_API_TOKEN?.trim();
@@ -94,6 +96,9 @@ export function getEditorialEvaluationRuntimeConfig(): EditorialEvaluationRuntim
   return {
     ...getEditorialEvaluationPublicConfig(),
     apiKey,
+    ...(paidGeminiApiKey && paidGeminiApiKey !== apiKey
+      ? { paidGeminiApiKey }
+      : {}),
     ...(groqApiKey
       ? {
           groqApiKey,

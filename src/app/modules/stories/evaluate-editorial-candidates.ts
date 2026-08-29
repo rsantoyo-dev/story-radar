@@ -131,6 +131,7 @@ export async function evaluateEditorialCandidates(
   try {
     const result = await evaluateStoriesWithFallback({
       apiKey: configuration.apiKey,
+      paidGeminiApiKey: configuration.paidGeminiApiKey,
       model: configuration.model,
       groqApiKey: configuration.groqApiKey,
       groqModel: configuration.groqModel,

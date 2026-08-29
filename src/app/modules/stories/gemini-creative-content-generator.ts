@@ -58,6 +58,7 @@ export type CreativeTopicContext = {
 
 type GeneratorOptions = {
   apiKey: string;
+  paidGeminiApiKey?: string;
   model: string;
   primaryProvider: CreativeTextProvider;
   groqApiKey?: string;
@@ -214,6 +215,7 @@ const CLOUDFLARE_JSON_MODE_MODELS = new Set([
 
 export async function generateCreativeBrief({
   apiKey,
+  paidGeminiApiKey,
   model,
   primaryProvider,
   groqApiKey,
@@ -229,10 +231,10 @@ export async function generateCreativeBrief({
   const requestBrief = (
     extraInstruction = "",
     extraContents = {},
-    preferCloudflare = false,
   ) =>
     generateJson({
       apiKey,
+      paidGeminiApiKey,
       model,
       primaryProvider,
       groqApiKey,
@@ -251,7 +253,6 @@ export async function generateCreativeBrief({
         ...extraContents,
       },
       maxOutputTokens: 4_096,
-      preferCloudflare,
     });
 
   const response = await requestBrief();
@@ -272,7 +273,6 @@ export async function generateCreativeBrief({
       const retryResponse = await requestBrief(
         `\n\n${BRIEF_RETRY_INSTRUCTION}`,
         { previousValidationError: error.message },
-        response.provider === "cloudflare",
       );
       return {
         brief: parseGroundedCreativeBrief(retryResponse.text, story.text),
@@ -294,6 +294,7 @@ export async function generateCreativeBrief({
 
 export async function generateCreativeDraft({
   apiKey,
+  paidGeminiApiKey,
   model,
   primaryProvider,
   groqApiKey,
@@ -338,6 +339,7 @@ export async function generateCreativeDraft({
   };
   const response = await generateJson({
     apiKey,
+    paidGeminiApiKey,
     model,
     primaryProvider,
     groqApiKey,
@@ -373,6 +375,7 @@ export async function generateCreativeDraft({
 
     const retryResponse = await generateJson({
       apiKey,
+      paidGeminiApiKey,
       model,
       primaryProvider,
       groqApiKey,
@@ -391,7 +394,6 @@ export async function generateCreativeDraft({
         previousValidationError: error.message,
       },
       maxOutputTokens: format === "meme" ? 3_072 : 6_144,
-      preferCloudflare: response.provider === "cloudflare",
     });
     generationUsage = sumCreativeAiUsage(generationUsage, retryResponse.usage);
     initialDraft = parseCreativeDraft(
@@ -423,6 +425,7 @@ export async function generateCreativeDraft({
     try {
       auditResponse = await generateJson({
         apiKey,
+        paidGeminiApiKey,
         model,
         primaryProvider,
         groqApiKey,
@@ -441,7 +444,6 @@ export async function generateCreativeDraft({
           currentDraft,
         },
         maxOutputTokens: format === "meme" ? 1_536 : 3_072,
-        preferCloudflare: response.provider === "cloudflare",
       });
       totalUsage = sumCreativeAiUsage(totalUsage, auditResponse.usage);
       audited = parseCreativeGroundingAudit(
@@ -566,6 +568,7 @@ function assertVisibleDraftLanguage(
 
 async function generateJson({
   apiKey,
+  paidGeminiApiKey,
   model,
   primaryProvider,
   groqApiKey,
@@ -577,9 +580,9 @@ async function generateJson({
   schema,
   contents,
   maxOutputTokens,
-  preferCloudflare = false,
 }: {
   apiKey: string;
+  paidGeminiApiKey?: string;
   model: string;
   primaryProvider: CreativeTextProvider;
   groqApiKey?: string;
@@ -591,7 +594,6 @@ async function generateJson({
   schema: Record<string, unknown>;
   contents: unknown;
   maxOutputTokens: number;
-  preferCloudflare?: boolean;
 }): Promise<{
   text: string;
   provider: "google" | "groq" | "cloudflare";
@@ -618,10 +620,6 @@ async function generateJson({
         CLOUDFLARE_COMPLETION_TOKEN_LIMIT,
       ),
     });
-
-  if (preferCloudflare && cloudflareConfigured) {
-    return runCloudflare();
-  }
 
   if (primaryProvider === "groq") {
     try {
@@ -663,6 +661,25 @@ async function generateJson({
       throw error;
     }
 
+    let paidGeminiError: unknown;
+    if (paidGeminiApiKey && paidGeminiApiKey !== apiKey) {
+      console.warn(
+        "Primary Gemini account failed; using the secondary Gemini account.",
+      );
+      try {
+        return await generateGeminiJson({
+          apiKey: paidGeminiApiKey,
+          model,
+          systemInstruction,
+          schema,
+          contents,
+          maxOutputTokens,
+        });
+      } catch (fallbackError) {
+        paidGeminiError = fallbackError;
+      }
+    }
+
     let groqError: unknown;
     if (groqApiKey && groqModel) {
       // A request rejected by Gemini can still be valid for Groq (for example,
@@ -694,6 +711,9 @@ async function generateJson({
       } catch (cloudflareError) {
         throw combinedProviderError([
           ["Gemini", error],
+          ...(paidGeminiError
+            ? ([["Gemini secondary", paidGeminiError]] as const)
+            : []),
           ...(groqError ? ([["Groq", groqError]] as const) : []),
           ["Cloudflare", cloudflareError],
         ]);
@@ -703,7 +723,16 @@ async function generateJson({
     if (groqError) {
       throw combinedProviderError([
         ["Gemini", error],
+        ...(paidGeminiError
+          ? ([["Gemini secondary", paidGeminiError]] as const)
+          : []),
         ["Groq", groqError],
+      ]);
+    }
+    if (paidGeminiError) {
+      throw combinedProviderError([
+        ["Gemini", error],
+        ["Gemini secondary", paidGeminiError],
       ]);
     }
     throw error;
@@ -2715,7 +2744,7 @@ function isGroqFallbackEligibleGeminiError(error: unknown): boolean {
     return true;
   }
   if (!(error instanceof ApiError)) return false;
-  return [400, 413, 429, 500, 502, 503, 504].includes(error.status);
+  return [400, 401, 403, 413, 429, 500, 502, 503, 504].includes(error.status);
 }
 
 function providerErrorSummary(error: unknown): string {
