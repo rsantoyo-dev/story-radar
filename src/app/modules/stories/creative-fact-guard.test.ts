@@ -280,6 +280,37 @@ test("accepts numeric ratios translated from verbal source ratios", () => {
   );
 });
 
+test("recognizes cardinal words and common verbal fractions", () => {
+  const facts: CreativeKeyFact[] = [
+    {
+      id: "fact-pillars",
+      statement: "The workflow has six foundations.",
+      attribution: "Source",
+    },
+    {
+      id: "fact-time",
+      statement: "Workers waste a quarter of their workweek.",
+      attribution: "Source",
+    },
+  ];
+  const draft: GeneratedCreativeDraft = {
+    concept: "Workflow",
+    caption: "The workflow has 6 foundations.",
+    hashtags: [],
+    altText: "A workflow diagram.",
+    units: [
+      unit(1, "cover", "hook", "Workflow cost", "Workers waste 25% of their workweek.", ["fact-time"]),
+    ],
+  };
+
+  assert.equal(
+    deterministicFactQualityIssues(draft, facts).some(
+      (issue) => issue.code === "UNSUPPORTED_NUMBER",
+    ),
+    false,
+  );
+});
+
 test("repairs mixed-language estimates and unsupported Spanish synthesis", () => {
   const pregnancyFacts: CreativeKeyFact[] = [
     {

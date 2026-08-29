@@ -196,6 +196,22 @@ test("blocks consecutive middle slides that repeat the same numerical evidence",
   );
 });
 
+test("blocks a middle slide with no supporting copy", () => {
+  const issues = evaluateCarouselNarrative([
+    unit("cover", "hook", ["fact-1"]),
+    { ...unit("content", "impact", ["fact-2"]), body: undefined },
+    unit("call-to-action", "debate", ["fact-1"]),
+  ]);
+
+  assert.ok(
+    issues.some(
+      (issue) =>
+        issue.code === "missing-supporting-copy" &&
+        issue.severity === "blocker",
+    ),
+  );
+});
+
 function slide(
   editorialGoal: CarouselPlan["slides"][number]["editorialGoal"],
   allowedFactIds: string[],

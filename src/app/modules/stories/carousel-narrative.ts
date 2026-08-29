@@ -159,6 +159,7 @@ export type CarouselNarrativeWarning = {
     | "fact-overuse"
     | "multiple-slide-claims"
     | "semantic-repetition"
+    | "missing-supporting-copy"
     | "headline-too-long"
     | "body-too-long";
   message: string;
@@ -449,6 +450,19 @@ export function evaluateCarouselNarrative(
         code: "body-too-long",
         unitIndex,
         message: `Slide ${slide} supporting text uses ${wordCount(unit.body)} words; aim for 45 or fewer.`,
+      });
+    }
+    if (
+      unitIndex > 0 &&
+      unitIndex < units.length - 1 &&
+      unit.role === "content" &&
+      !unit.body?.trim()
+    ) {
+      warnings.push({
+        severity: "blocker",
+        code: "missing-supporting-copy",
+        unitIndex,
+        message: `Slide ${slide} has a headline but no supporting copy; add the evidence that fulfills its viewer question.`,
       });
     }
   });

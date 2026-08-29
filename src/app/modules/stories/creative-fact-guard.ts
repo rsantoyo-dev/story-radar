@@ -107,6 +107,26 @@ const VERBAL_RATIO_PATTERNS: ReadonlyArray<{
   { pattern: /\buna?\s+de\s+cada\s+veinte\b/iu, numbers: ["1", "20"] },
 ];
 
+const CARDINAL_NUMBER_PATTERNS: ReadonlyArray<{
+  number: string;
+  pattern: RegExp;
+}> = [
+  {
+    number: "1",
+    pattern: /\b(?:one(?![- ](?:third|quarter))|un[oa](?!\s+cuarta\s+parte))\b/iu,
+  },
+  { number: "2", pattern: /\b(?:two|dos)\b/iu },
+  { number: "3", pattern: /\b(?:three|tres)\b/iu },
+  { number: "4", pattern: /\b(?:four|cuatro)\b/iu },
+  { number: "5", pattern: /\b(?:five|cinco)\b/iu },
+  { number: "6", pattern: /\b(?:six|seis)\b/iu },
+  { number: "7", pattern: /\b(?:seven|siete)\b/iu },
+  { number: "8", pattern: /\b(?:eight|ocho)\b/iu },
+  { number: "9", pattern: /\b(?:nine|nueve)\b/iu },
+  { number: "10", pattern: /\b(?:ten|diez)\b/iu },
+  { number: "20", pattern: /\b(?:twenty|veinte)\b/iu },
+];
+
 export function withCreativeFactClaimGuard(
   fact: CreativeKeyFact,
 ): CreativeKeyFact {
@@ -936,6 +956,12 @@ function extractAllowedNumbers(value: string): string[] {
   VERBAL_RATIO_PATTERNS.forEach(({ pattern, numbers: ratioNumbers }) => {
     if (pattern.test(value)) numbers.push(...ratioNumbers);
   });
+  CARDINAL_NUMBER_PATTERNS.forEach(({ number, pattern }) => {
+    if (pattern.test(value)) numbers.push(number);
+  });
+  if (/\b(?:a|one) quarter\b|\buna? cuarta parte\b/iu.test(value)) {
+    numbers.push("25%");
+  }
   if (/\bone[- ]third\b/iu.test(value)) numbers.push("33%");
   if (/\btwo[- ]thirds\b/iu.test(value)) numbers.push("67%");
   // 35% is commonly and accurately summarized as "roughly one-third".
