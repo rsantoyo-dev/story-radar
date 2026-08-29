@@ -550,6 +550,20 @@
   line-height: 1.45;
 }
 
+.editorialDirectionPanel {
+  @ds-surface(flat neutral radius(3));
+  display: grid;
+  gap: density(2);
+  padding: density(4);
+  border: border(1, palette(surface-light), solid);
+}
+
+.editorialDirectionPanel > p {
+  margin: 0;
+  color: palette(tertiary-main);
+  @ds-typo(caption);
+}
+
 .historyPanel {
   margin-top: space(5);
   border: 1px solid palette(surface-light);

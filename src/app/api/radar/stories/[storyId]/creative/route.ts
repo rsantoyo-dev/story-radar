@@ -5,6 +5,7 @@ import {
 } from "@/app/api/radar/radar-topic";
 import {
   createCreativeBrief,
+  CreativeDraftValidationError,
   getCreativeWorkspaceState,
 } from "@/app/modules/stories/manage-creative-content";
 import {
@@ -53,10 +54,12 @@ export async function POST(request: Request, context: Context) {
   }
 
   try {
+    const editorialDirection = await parseEditorialDirection(request);
     return noStoreJson(
       await createCreativeBrief(
         await requireActiveRequestTopic(request),
         storyId,
+        editorialDirection,
       ),
     );
   } catch (error) {
@@ -65,6 +68,25 @@ export async function POST(request: Request, context: Context) {
 
     return creativeRouteErrorResponse(error, "create the creative brief");
   }
+}
+
+async function parseEditorialDirection(
+  request: Request,
+): Promise<string | undefined> {
+  const text = await request.text();
+  if (!text.trim()) return undefined;
+  const body = JSON.parse(text) as unknown;
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new CreativeDraftValidationError("A JSON object is required");
+  }
+  const value = (body as Record<string, unknown>).editorialDirection;
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value !== "string") {
+    throw new CreativeDraftValidationError(
+      "editorialDirection must be text",
+    );
+  }
+  return value;
 }
 
 async function parseId(context: Context): Promise<string | undefined> {

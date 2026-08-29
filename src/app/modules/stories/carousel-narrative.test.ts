@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   evaluateCarouselNarrative,
+  repairCarouselPlanEvidence,
   type CarouselPlan,
   validateCarouselPlan,
 } from "./carousel-narrative";
@@ -26,6 +27,34 @@ test("rejects a carousel plan that spends its final slide on another impact fact
       plan,
       new Set(["fact-1", "fact-2", "fact-3", "fact-4"]),
     ).some((error) => error.includes("final slide must conclude")),
+  );
+});
+
+test("repairs missing hook evidence and reuses established evidence at closing", () => {
+  const original: CarouselPlan = {
+    slideCount: 3,
+    rationale: "Hook, explanation, conclusion.",
+    slides: [
+      slide("hook", []),
+      slide("explain", ["fact-2"]),
+      slide("conclude", ["fact-3"]),
+    ],
+  };
+
+  const { plan, repaired } = repairCarouselPlanEvidence(
+    original,
+    new Set(["fact-1", "fact-2", "fact-3"]),
+  );
+
+  assert.equal(repaired, true);
+  assert.deepEqual(plan.slides[0]?.allowedFactIds, ["fact-1"]);
+  assert.deepEqual(plan.slides[2]?.allowedFactIds, ["fact-1"]);
+  assert.deepEqual(
+    validateCarouselPlan(
+      plan,
+      new Set(["fact-1", "fact-2", "fact-3"]),
+    ),
+    [],
   );
 });
 

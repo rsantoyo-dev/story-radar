@@ -4,12 +4,16 @@ import test from "node:test";
 import type {
   CreativeKeyFact,
   CreativeUnit,
+  GeneratedCreativeBrief,
   GeneratedCreativeDraft,
 } from "./creative-content.types";
 import {
+  deterministicBriefFactQualityIssues,
   deterministicFactQualityIssues,
+  repairDeterministicBriefScope,
   repairDeterministicFactCopy,
 } from "./creative-fact-guard";
+import { visibleDraftLanguageIssues } from "./creative-quality";
 
 const keyFacts: CreativeKeyFact[] = [
   {
@@ -209,6 +213,557 @@ test("normalizes sentence punctuation in persisted allowed numbers", () => {
   assert.ok(
     !deterministicFactQualityIssues(publicationDraft, [publicationFact]).some(
       (issue) => issue.code === "UNSUPPORTED_NUMBER",
+    ),
+  );
+});
+
+test("accepts a numeric ordinal when the selected fact spells it out", () => {
+  const dueDateFact: CreativeKeyFact = {
+    id: "fact-due-date",
+    statement:
+      "The due date is calculated from the first day of the last menstrual period.",
+    attribution: "INSPQ",
+  };
+  const dueDateDraft: GeneratedCreativeDraft = {
+    concept: "Pregnancy timeline",
+    caption: "A practical explanation of the pregnancy timeline.",
+    hashtags: [],
+    altText: "A calendar explaining how a pregnancy due date is calculated.",
+    units: [
+      unit(
+        1,
+        "content",
+        "explain",
+        "The secret of day 1",
+        "The due date is calculated from the first day of the last menstrual period.",
+        ["fact-due-date"],
+      ),
+    ],
+  };
+
+  assert.ok(
+    !deterministicFactQualityIssues(dueDateDraft, [dueDateFact]).some(
+      (issue) => issue.code === "UNSUPPORTED_NUMBER",
+    ),
+  );
+});
+
+test("accepts numeric ratios translated from verbal source ratios", () => {
+  const probabilityFact: CreativeKeyFact = {
+    id: "fact-probability",
+    statement:
+      "There is a one in four chance at age 20 and a one in twenty chance at age 40.",
+    attribution: "INSPQ",
+  };
+  const probabilityDraft: GeneratedCreativeDraft = {
+    concept: "Probabilidad por edad",
+    caption: "Una comparación respaldada por la fuente.",
+    hashtags: [],
+    altText: "Comparación de probabilidades.",
+    units: [
+      unit(
+        1,
+        "content",
+        "prove",
+        "Probabilidad por edad",
+        "La probabilidad es de 1 en 4 a los 20 años y de 1 en 20 a los 40 años.",
+        ["fact-probability"],
+      ),
+    ],
+  };
+
+  assert.equal(
+    deterministicFactQualityIssues(probabilityDraft, [probabilityFact]).some(
+      (issue) => issue.code === "UNSUPPORTED_NUMBER",
+    ),
+    false,
+  );
+});
+
+test("repairs mixed-language estimates and unsupported Spanish synthesis", () => {
+  const pregnancyFacts: CreativeKeyFact[] = [
+    {
+      id: "fact-1",
+      statement: "Fertilization marks the beginning of pregnancy.",
+      attribution: "INSPQ",
+    },
+    {
+      id: "fact-2",
+      statement: "Pregnancy lasts about 40 weeks, or roughly 9 months.",
+      requiredQualifiers: ["about"],
+      attribution: "INSPQ",
+    },
+    {
+      id: "fact-3",
+      statement:
+        "The due date is calculated from the first day of the last menstrual period.",
+      attribution: "INSPQ",
+    },
+  ];
+  const pregnancyDraft: GeneratedCreativeDraft = {
+    concept: "Calendario del embarazo",
+    caption: "Tres referencias para entender el calendario del embarazo.",
+    hashtags: [],
+    altText: "Carrusel sobre la duración y el cálculo del embarazo.",
+    units: [
+      unit(
+        1,
+        "cover",
+        "hook",
+        "Paso a paso hacia tu embarazo",
+        "La fecundación marca el comienzo.",
+        ["fact-1"],
+      ),
+      unit(
+        2,
+        "content",
+        "explain",
+        "¿Cómo avanza la gestación?",
+        "Tu viaje dura, en promedio, poco más de about 9 meses. Es lo que popularmente se conoce como un año gestacional.",
+        ["fact-2"],
+      ),
+      unit(
+        3,
+        "content",
+        "impact",
+        "El secreto del día 1",
+        "La fecha se calcula desde el primer día de la última menstruación. Esto anticipa tu calendario de cuidados.",
+        ["fact-3"],
+      ),
+      {
+        ...unit(
+          4,
+          "call-to-action",
+          "debate",
+          "Planificar el cuidado",
+          "Entender las etapas te permite anticipar necesidades físicas y emocionales.",
+          ["fact-1"],
+        ),
+        ctaQuestion:
+          "¿Cuál es la mejor manera de usar esta información para planificar el cuidado del bebé?",
+      },
+    ],
+  };
+
+  const repaired = repairDeterministicFactCopy(
+    pregnancyDraft,
+    pregnancyFacts,
+    "español",
+  );
+
+  assert.match(repaired.units[1]?.body ?? "", /aproximadamente 9 meses/iu);
+  assert.doesNotMatch(repaired.units[1]?.body ?? "", /\babout\b|año gestacional/iu);
+  assert.doesNotMatch(repaired.units[2]?.body ?? "", /anticipa.*cuidados/iu);
+  assert.equal(repaired.units[3]?.body, undefined);
+  assert.match(repaired.units[3]?.ctaQuestion ?? "", /planificar/iu);
+  assert.deepEqual(
+    deterministicFactQualityIssues(repaired, pregnancyFacts).filter(
+      (issue) => issue.severity === "blocker",
+    ),
+    [],
+  );
+});
+
+test("adds the uniquely supporting fact when a slide cites its numbers", () => {
+  const facts: CreativeKeyFact[] = [
+    {
+      id: "fact-1",
+      statement: "Sperm can live 72 to 120 hours.",
+      attribution: "Source",
+      claimGuard: {
+        certainty: "asserted",
+        requiredPhrases: [],
+        forbiddenPhrases: [],
+        scopePhrases: [],
+        allowedNumbers: ["72", "120"],
+      },
+    },
+    {
+      id: "fact-2",
+      statement: "The chance is one in four at age 20 and one in twenty at age 40.",
+      attribution: "Source",
+      claimGuard: {
+        certainty: "asserted",
+        requiredPhrases: [],
+        forbiddenPhrases: [],
+        scopePhrases: [],
+        allowedNumbers: ["20", "40"],
+      },
+    },
+  ];
+  const draft: GeneratedCreativeDraft = {
+    concept: "Fertility timing",
+    caption: "Biological timing",
+    hashtags: [],
+    altText: "A fertility carousel",
+    units: [{
+      type: "carousel-slide",
+      order: 1,
+      role: "content",
+      editorialGoal: "impact",
+      viewerQuestion: "How does age affect probability?",
+      headline: "Probability by age",
+      body: "The comparison uses ages 20 and 40.",
+      visualDirection: "A simple comparison.",
+      factIds: ["fact-1"],
+      assetRequest: "typography-only",
+      aspectRatio: "4:5",
+      characterIds: [],
+    }],
+  };
+
+  const repaired = repairDeterministicFactCopy(draft, facts, "espanol");
+
+  assert.deepEqual(repaired.units[0]?.factIds, ["fact-1", "fact-2"]);
+  assert.equal(
+    deterministicFactQualityIssues(repaired, facts).some(
+      (issue) => issue.code === "UNSUPPORTED_NUMBER",
+    ),
+    false,
+  );
+});
+
+test("blocks English visible copy when the profile language is Spanish", () => {
+  const draft: GeneratedCreativeDraft = {
+    concept: "Ventana fértil",
+    caption: "Una explicación del ciclo menstrual.",
+    hashtags: [],
+    altText: "Carrusel sobre fertilidad.",
+    units: [{
+      type: "carousel-slide",
+      order: 1,
+      role: "content",
+      editorialGoal: "explain",
+      viewerQuestion: "¿Cómo se estima la ovulación?",
+      headline: "Cálculo de la ovulación",
+      body: "To estimate when you will ovulate, count backwards 14 days from the end of your menstrual cycle.",
+      visualDirection: "Calendar illustration",
+      factIds: ["fact-1"],
+      assetRequest: "typography-only",
+      aspectRatio: "4:5",
+      characterIds: [],
+    }],
+  };
+
+  assert.deepEqual(
+    visibleDraftLanguageIssues(draft, "espanol").map((issue) => issue.code),
+    ["MIXED_LANGUAGE"],
+  );
+});
+
+test("rejects a brief that promises pregnancy stages absent from its facts", () => {
+  const brief: GeneratedCreativeBrief = {
+    recommendedFormat: "carousel",
+    fallbackFormat: "meme",
+    formatScores: [
+      { format: "carousel", score: 90, reason: "Needs explanation." },
+      { format: "meme", score: 40, reason: "Too little depth." },
+    ],
+    confidence: 90,
+    targetAudience: "Madres primerizas",
+    keyMessage:
+      "El embarazo avanza por etapas con cambios físicos y emocionales que preparan a los padres.",
+    angle: "Explicar las etapas con consejos prácticos.",
+    hook: "¿Conoces las tres etapas de tu embarazo?",
+    tone: {
+      primary: "informative",
+      energy: 60,
+      humor: 0,
+      reason: "Tema educativo.",
+    },
+    contentSufficiency: "sufficient",
+    keyFacts: [
+      {
+        id: "fact-1",
+        statement: "Fertilization marks the beginning of pregnancy.",
+      },
+      {
+        id: "fact-2",
+        statement: "Pregnancy lasts about 40 weeks, or roughly 9 months.",
+        requiredQualifiers: ["about"],
+      },
+      {
+        id: "fact-3",
+        statement:
+          "The due date is calculated from the first day of the last menstrual period.",
+      },
+    ],
+    carouselPlan: {
+      slideCount: 3,
+      rationale: "Hook, explanation, conclusion.",
+      slides: [
+        {
+          editorialGoal: "hook",
+          viewerQuestion: "¿Conoces las tres etapas del embarazo?",
+          allowedFactIds: ["fact-1"],
+        },
+        {
+          editorialGoal: "explain",
+          viewerQuestion: "¿Cuánto dura aproximadamente?",
+          allowedFactIds: ["fact-2"],
+        },
+        {
+          editorialGoal: "conclude",
+          viewerQuestion: "¿Cómo se calcula la fecha probable de parto?",
+          allowedFactIds: ["fact-3"],
+        },
+      ],
+    },
+    riskFlags: [],
+    suggestedConcepts: [
+      {
+        format: "carousel",
+        title: "Las etapas del embarazo",
+        concept: "Consejos prácticos para cada etapa.",
+      },
+      {
+        format: "meme",
+        title: "Calendario",
+        concept: "Una referencia sobre la duración.",
+      },
+    ],
+  };
+
+  const issues = deterministicBriefFactQualityIssues(brief);
+  assert.ok(issues.some((issue) => issue.code === "UNSUPPORTED_BRIEF_SCOPE"));
+});
+
+test("does not treat editorial ordinals in a brief as factual statistics", () => {
+  const brief: GeneratedCreativeBrief = {
+    recommendedFormat: "carousel",
+    fallbackFormat: "meme",
+    formatScores: [
+      { format: "carousel", score: 80, reason: "First choice." },
+      { format: "meme", score: 60, reason: "Second choice." },
+    ],
+    confidence: 80,
+    targetAudience: "Parents",
+    keyMessage: "A first look at fertilization.",
+    angle: "Use a second explanatory beat.",
+    hook: "First things first: fertilization begins pregnancy.",
+    tone: {
+      primary: "informative",
+      energy: 50,
+      humor: 0,
+      reason: "Clear explanation.",
+    },
+    contentSufficiency: "limited",
+    keyFacts: [
+      {
+        id: "fact-1",
+        statement: "Fertilization marks the beginning of pregnancy.",
+      },
+    ],
+    riskFlags: [],
+    suggestedConcepts: [
+      {
+        format: "carousel",
+        title: "First look",
+        concept: "A concise explanation.",
+      },
+      {
+        format: "meme",
+        title: "Second option",
+        concept: "A fourth editorial treatment.",
+      },
+    ],
+  };
+
+  assert.ok(
+    !deterministicBriefFactQualityIssues(brief).some(
+      (issue) => issue.code === "UNSUPPORTED_NUMBER",
+    ),
+  );
+});
+
+test("does not treat carousel structure numbers as factual statistics", () => {
+  const brief: GeneratedCreativeBrief = {
+    recommendedFormat: "carousel",
+    fallbackFormat: "meme",
+    formatScores: [
+      { format: "carousel", score: 80, reason: "Use a 3-slide carousel." },
+      { format: "meme", score: 60, reason: "Fallback." },
+    ],
+    confidence: 80,
+    targetAudience: "Parents",
+    keyMessage: "Fertilization marks the beginning of pregnancy.",
+    angle: "A source-supported explanation.",
+    hook: "Fertilization marks the beginning of pregnancy.",
+    tone: {
+      primary: "informative",
+      energy: 50,
+      humor: 0,
+      reason: "Clear explanation.",
+    },
+    contentSufficiency: "limited",
+    keyFacts: [
+      {
+        id: "fact-1",
+        statement: "Fertilization marks the beginning of pregnancy.",
+      },
+    ],
+    riskFlags: [],
+    suggestedConcepts: [
+      {
+        format: "carousel",
+        title: "3-slide carousel",
+        concept: "Explain the source-supported finding.",
+      },
+      {
+        format: "meme",
+        title: "Source finding",
+        concept: "Fertilization marks the beginning of pregnancy.",
+      },
+    ],
+  };
+
+  assert.ok(
+    !deterministicBriefFactQualityIssues(brief).some(
+      (issue) => issue.code === "UNSUPPORTED_NUMBER",
+    ),
+  );
+});
+
+test("narrows unsupported brief strategy to verified facts", () => {
+  const brief: GeneratedCreativeBrief = {
+    recommendedFormat: "carousel",
+    fallbackFormat: "meme",
+    formatScores: [
+      { format: "carousel", score: 80, reason: "Educational sequence." },
+      { format: "meme", score: 60, reason: "Less context." },
+    ],
+    confidence: 80,
+    targetAudience: "First-time parents",
+    keyMessage: "Three stages prepare parents for physical changes.",
+    angle: "Practical tips for all 3 stages.",
+    hook: "Do you know the 3 stages?",
+    tone: {
+      primary: "informative",
+      energy: 50,
+      humor: 0,
+      reason: "Clear explanation.",
+    },
+    contentSufficiency: "sufficient",
+    keyFacts: [
+      {
+        id: "fact-1",
+        statement: "Pregnancy lasts about 40 weeks.",
+        requiredQualifiers: ["about"],
+      },
+    ],
+    carouselPlan: {
+      slideCount: 3,
+      rationale: "Hook, explanation, conclusion.",
+      slides: [
+        {
+          editorialGoal: "hook",
+          viewerQuestion: "What are the 3 stages?",
+          allowedFactIds: ["fact-1"],
+        },
+        {
+          editorialGoal: "explain",
+          viewerQuestion: "What does the source establish?",
+          allowedFactIds: ["fact-1"],
+        },
+        {
+          editorialGoal: "conclude",
+          viewerQuestion: "What does the source establish?",
+          allowedFactIds: ["fact-1"],
+        },
+      ],
+    },
+    riskFlags: [],
+    suggestedConcepts: [
+      {
+        format: "carousel",
+        title: "3 stages",
+        concept: "Practical advice for physical and emotional changes.",
+      },
+      {
+        format: "meme",
+        title: "40 weeks",
+        concept: "Pregnancy lasts about 40 weeks.",
+      },
+    ],
+  };
+
+  const repaired = repairDeterministicBriefScope(brief);
+
+  assert.equal(repaired.contentSufficiency, "limited");
+  assert.equal(repaired.hook, "Pregnancy lasts about 40 weeks.");
+  assert.equal(
+    repaired.carouselPlan?.slides[0]?.viewerQuestion,
+    "What does the source establish here?",
+  );
+  assert.deepEqual(deterministicBriefFactQualityIssues(repaired), []);
+});
+
+test("requires every generated fact to cite evidence present in the source", () => {
+  const source =
+    "Pregnancy lasts about 40 weeks, or roughly 9 months. The estimated due date is calculated from the first day of the last menstrual period.";
+  const grounded: GeneratedCreativeBrief = {
+    recommendedFormat: "carousel",
+    fallbackFormat: "meme",
+    formatScores: [
+      { format: "carousel", score: 80, reason: "Two facts to explain." },
+      { format: "meme", score: 50, reason: "Less explanatory space." },
+    ],
+    confidence: 85,
+    targetAudience: "Expecting parents",
+    keyMessage: "Pregnancy lasts about 40 weeks.",
+    angle: "Explain pregnancy duration.",
+    hook: "How long does pregnancy last?",
+    tone: {
+      primary: "informative",
+      energy: 50,
+      humor: 0,
+      reason: "Clear health education.",
+    },
+    contentSufficiency: "limited",
+    keyFacts: [
+      {
+        id: "fact-1",
+        statement: "Pregnancy lasts about 40 weeks, or roughly 9 months.",
+        sourceExcerpt:
+          "Pregnancy lasts about 40 weeks, or roughly 9 months.",
+        requiredQualifiers: ["about"],
+      },
+    ],
+    riskFlags: [],
+    suggestedConcepts: [
+      {
+        format: "carousel",
+        title: "Pregnancy duration",
+        concept: "Explain the reported duration.",
+      },
+      {
+        format: "meme",
+        title: "40 weeks",
+        concept: "Highlight the approximate duration.",
+      },
+    ],
+  };
+
+  assert.ok(
+    !deterministicBriefFactQualityIssues(grounded, source).some((issue) =>
+      [
+        "MISSING_SOURCE_EVIDENCE",
+        "SOURCE_EVIDENCE_NOT_FOUND",
+        "FACT_NUMBER_NOT_IN_EVIDENCE",
+      ].includes(issue.code),
+    ),
+  );
+
+  const inventedEvidence: GeneratedCreativeBrief = {
+    ...grounded,
+    keyFacts: grounded.keyFacts.map((fact) => ({
+      ...fact,
+      sourceExcerpt: "Pregnancy always lasts exactly 42 weeks.",
+    })),
+  };
+  assert.ok(
+    deterministicBriefFactQualityIssues(inventedEvidence, source).some(
+      (issue) => issue.code === "SOURCE_EVIDENCE_NOT_FOUND",
     ),
   );
 });

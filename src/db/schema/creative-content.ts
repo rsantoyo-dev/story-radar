@@ -167,6 +167,8 @@ export const storyCreativeBriefs = pgTable(
     modelVersion: text("model_version"),
     promptVersion: text("prompt_version").notNull(),
     inputHash: text("input_hash").notNull(),
+    /** Editor-authored framing; configuration only, never source evidence. */
+    editorialDirection: text("editorial_direction"),
     recommendedFormat: creativeFormatEnum("recommended_format").notNull(),
     fallbackFormat: creativeFormatEnum("fallback_format").notNull(),
     formatScores: jsonb("format_scores").notNull(),

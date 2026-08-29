@@ -215,6 +215,9 @@ export async function generateCreativeDraftAssets(
     draft.units.flatMap((unit) => (unit.id ? [unit.id] : [])),
   );
   assertCharacterSnapshotsForDraft(draft, characterSnapshotsByUnit);
+  const campaignCharacters = charactersForImageGeneration(
+    uniqueCharacterSnapshots(characterSnapshotsByUnit),
+  );
 
   let batch = await createCreativeAssetBatch({
     draftId: draft.id,
@@ -244,6 +247,7 @@ export async function generateCreativeDraftAssets(
           unit,
           brief,
           characters: charactersForImageGeneration(characterSnapshots),
+          campaignCharacters,
         }),
       };
     }),
@@ -522,6 +526,18 @@ function snapshotsForUnit(
   unitId: string | undefined,
 ): CreativeCharacterSnapshot[] {
   return unitId ? snapshotsByUnit.get(unitId) ?? [] : [];
+}
+
+function uniqueCharacterSnapshots(
+  snapshotsByUnit: Map<string, CreativeCharacterSnapshot[]>,
+): CreativeCharacterSnapshot[] {
+  const unique = new Map<string, CreativeCharacterSnapshot>();
+  snapshotsByUnit.forEach((characters) => {
+    characters.forEach((character) => {
+      if (!unique.has(character.id)) unique.set(character.id, character);
+    });
+  });
+  return [...unique.values()];
 }
 
 function assertCharacterSnapshotsForDraft(

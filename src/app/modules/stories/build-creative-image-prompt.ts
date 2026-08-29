@@ -9,17 +9,20 @@ import type {
 } from "./creative-content.types";
 import { resolveCreativeOutputAspectRatio } from "./creative-aspect-ratio";
 import { resolveCreativeVisualGuidance } from "./creative-visual-guidance";
+import { buildCarouselVisualSystem } from "./creative-visual-system";
 
 export function buildCreativeImagePrompt({
   draft,
   unit,
   brief,
   characters = [],
+  campaignCharacters = characters,
 }: {
   draft: CreativeDraft;
   unit: CreativeUnit;
   brief: CreativeBrief;
   characters?: CreativeCharacterSnapshot[];
+  campaignCharacters?: CreativeCharacterSnapshot[];
 }): { prompt: string; expectedText: string } {
   const expectedText = [
     unit.headline.trim(),
@@ -46,6 +49,10 @@ export function buildCreativeImagePrompt({
   const referenceImageCount = characters.flatMap(
     (character) => character.referenceImages,
   ).length;
+  const carouselVisualSystem =
+    draft.format === "carousel"
+      ? buildCarouselVisualSystem(campaignCharacters)
+      : undefined;
 
   return {
     expectedText,
@@ -79,6 +86,11 @@ export function buildCreativeImagePrompt({
           ]
         : []),
       `Overall concept: ${draft.concept}`,
+      ...(carouselVisualSystem
+        ? [
+            `Apply this shared system as a higher-priority constraint than slide-specific style suggestions:\n<CAROUSEL_VISUAL_SYSTEM>\n${carouselVisualSystem}\n</CAROUSEL_VISUAL_SYSTEM>`,
+          ]
+        : []),
       `Visual direction: ${unit.visualDirection}`,
       ...(characters.length > 0
         ? [
@@ -100,6 +112,11 @@ export function buildCreativeImagePrompt({
       "Render the following visible text EXACTLY, preserving spelling, capitalization, punctuation, and line meaning:",
       `<VISIBLE_TEXT>\n${expectedText}\n</VISIBLE_TEXT>`,
       "Do not add, paraphrase, repeat, or invent any other visible words. Do not add logos, brand marks, watermarks, signatures, URLs, UI chrome, or fine-print text. If the visual campaign guide requests a logo, monogram, or brand mark placement, reserve that area as clean empty space only; do not recreate, modify, approximate, or imply the mark.",
+      ...(carouselVisualSystem
+        ? [
+            "FINAL CAROUSEL STYLE CHECK: this slide must visibly belong to the same campaign sequence as the other slides. Do not switch medium, palette, lighting, texture, typography language, icon language, or overall art direction.",
+          ]
+        : []),
       ...(characters.length > 0
         ? [
             characters.length === 1

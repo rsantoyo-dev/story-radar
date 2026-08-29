@@ -1005,6 +1005,11 @@ export function RadarDashboard({
             disabled={isBusy}
             onTopicsChange={setTopics}
             onTopicChange={handleTopicChange}
+            onCandidateCreated={() => {
+              void fetchDatabaseStats(secret, selectedTopicId)
+                .then(setStats)
+                .catch(() => undefined);
+            }}
           />
         </div>
 

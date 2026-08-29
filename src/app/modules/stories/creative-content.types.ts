@@ -170,6 +170,8 @@ export type CreativeFactClaimGuard = {
 export type CreativeKeyFact = {
   id: string;
   statement: string;
+  /** Short extractive evidence copied from the source; optional for history. */
+  sourceExcerpt?: string;
   /** Words such as "estimated" or "show signs" that copy must preserve. */
   requiredQualifiers?: string[];
   /** Source attribution that must remain attached when the claim needs it. */
@@ -210,6 +212,8 @@ export type GeneratedCreativeBrief = {
 export type CreativeBrief = GeneratedCreativeBrief & {
   id: string;
   storyId: string;
+  /** Editor-authored framing; it guides composition but is never evidence. */
+  editorialDirection?: string;
   profileId: string;
   profileSnapshot: CreativeProfile;
   provider: string;

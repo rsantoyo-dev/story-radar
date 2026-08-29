@@ -32,6 +32,7 @@ export function repairDeterministicCreativeCopy(
   draft: GeneratedCreativeDraft,
   format: CreativeFormat,
   keyFacts: readonly CreativeKeyFact[] = [],
+  language?: string,
 ): GeneratedCreativeDraft {
   const repaired: GeneratedCreativeDraft = {
     ...draft,
@@ -87,7 +88,7 @@ export function repairDeterministicCreativeCopy(
       }
     }
   }
-  return repairDeterministicFactCopy(repaired, keyFacts);
+  return repairDeterministicFactCopy(repaired, keyFacts, language);
 }
 
 function ensureQuestion(value: string): string {
@@ -99,6 +100,7 @@ export function deterministicCreativeQualityIssues(
   draft: GeneratedCreativeDraft,
   format: CreativeFormat,
   keyFacts: readonly CreativeKeyFact[] = [],
+  language?: string,
 ): CreativeQualityIssue[] {
   const narrativeIssues =
     format === "carousel"
@@ -114,7 +116,52 @@ export function deterministicCreativeQualityIssues(
             : { unitOrder: issue.unitIndex + 1 }),
         }))
       : [];
-  return [...narrativeIssues, ...deterministicFactQualityIssues(draft, keyFacts)];
+  return [
+    ...narrativeIssues,
+    ...deterministicFactQualityIssues(draft, keyFacts),
+    ...visibleDraftLanguageIssues(draft, language),
+  ];
+}
+
+export function visibleDraftLanguageIssues(
+  draft: GeneratedCreativeDraft,
+  language?: string,
+): CreativeQualityIssue[] {
+  if (!isSpanishProfileLanguage(language)) return [];
+  const issues: CreativeQualityIssue[] = [];
+  const publishingFields = [draft.concept, draft.caption, draft.callToAction, draft.altText];
+  if (publishingFields.some(hasLikelyEnglishSentence)) {
+    issues.push({
+      code: "MIXED_LANGUAGE",
+      severity: "blocker",
+      message: "The publishing copy contains English sentences, but the creative profile requires Spanish.",
+    });
+  }
+  draft.units.forEach((unit) => {
+    if ([unit.headline, unit.body, unit.ctaQuestion].some(hasLikelyEnglishSentence)) {
+      issues.push({
+        code: "MIXED_LANGUAGE",
+        severity: "blocker",
+        unitOrder: unit.order,
+        message: `Slide ${unit.order} contains English copy, but the creative profile requires Spanish.`,
+      });
+    }
+  });
+  return issues;
+}
+
+function isSpanishProfileLanguage(language?: string): boolean {
+  return /^(?:es|spa|spanish|espanol|español)(?:\b|[-_])/iu.test(
+    language?.trim() ?? "",
+  );
+}
+
+function hasLikelyEnglishSentence(value?: string): boolean {
+  if (!value?.trim()) return false;
+  const markers = value.match(
+    /\b(?:the|when|from|your|will|within|during|there|chance|age|count|backwards|end|cycle|estimate|fertile|occur)\b/giu,
+  );
+  return (markers?.length ?? 0) >= 3;
 }
 
 export function creativeQualityThresholdFailures(

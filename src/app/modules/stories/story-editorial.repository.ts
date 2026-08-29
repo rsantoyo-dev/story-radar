@@ -16,10 +16,15 @@ import {
 import { db } from "@/db/client";
 import {
   editorialEvaluationRuns,
+  knowledgeDocumentSections,
+  knowledgeDocuments,
+  knowledgeDocumentVersions,
   stories,
   storyContentEnrichments,
   storyEditorialEvaluations,
   storySources,
+  storyKnowledgeOrigins,
+  topicKnowledgeDocuments,
   topicSources,
   topicStories,
 } from "@/db/schema";
@@ -320,7 +325,7 @@ async function findCandidateSources(
     return new Map();
   }
 
-  const sourceRows: CandidateSource[] = useLegacySourceFallback
+  const rssSourceRows: CandidateSource[] = useLegacySourceFallback
     ? (await db
         .select({
           storyId: storySources.storyId,
@@ -355,6 +360,53 @@ async function findCandidateSources(
         .where(inArray(storySources.storyId, [...storyIds]))
         .orderBy(desc(storySources.fetchedAt));
 
+  const knowledgeSourceRows = await db
+    .select({
+      storyId: storyKnowledgeOrigins.storyId,
+      documentId: knowledgeDocuments.id,
+      publisher: knowledgeDocuments.publisher,
+      versionTitle: knowledgeDocumentVersions.title,
+      fetchedAt: knowledgeDocumentVersions.extractedAt,
+      tags: topicKnowledgeDocuments.tags,
+    })
+    .from(storyKnowledgeOrigins)
+    .innerJoin(
+      knowledgeDocumentSections,
+      eq(knowledgeDocumentSections.id, storyKnowledgeOrigins.sectionId),
+    )
+    .innerJoin(
+      knowledgeDocumentVersions,
+      eq(
+        knowledgeDocumentVersions.id,
+        knowledgeDocumentSections.documentVersionId,
+      ),
+    )
+    .innerJoin(
+      knowledgeDocuments,
+      eq(knowledgeDocuments.id, knowledgeDocumentVersions.documentId),
+    )
+    .innerJoin(
+      topicKnowledgeDocuments,
+      and(
+        eq(topicKnowledgeDocuments.topicId, storyKnowledgeOrigins.topicId),
+        eq(topicKnowledgeDocuments.documentId, knowledgeDocuments.id),
+      ),
+    )
+    .where(and(
+      eq(storyKnowledgeOrigins.topicId, topicId),
+      inArray(storyKnowledgeOrigins.storyId, [...storyIds]),
+    ));
+
+  const sourceRows: CandidateSource[] = [
+    ...knowledgeSourceRows.map((source) => ({
+      storyId: source.storyId,
+      sourceId: `knowledge:${source.documentId}`,
+      sourceName: source.publisher?.trim() || source.versionTitle,
+      fetchedAt: source.fetchedAt,
+      tags: [...new Set([...source.tags, "research", "knowledge-document"])],
+    })),
+    ...rssSourceRows,
+  ];
   const sourceByStoryId = new Map<string, CandidateSource>();
 
   sourceRows.forEach((source) => {

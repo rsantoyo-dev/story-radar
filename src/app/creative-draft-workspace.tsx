@@ -117,6 +117,7 @@ export function CreativeDraftWorkspace({
   const [workspace, setWorkspace] = useState<CreativeWorkspaceState>();
   const [profile, setProfile] = useState<CreativeProfile>();
   const [profileDirty, setProfileDirty] = useState(false);
+  const [editorialDirection, setEditorialDirection] = useState("");
   const [characterSlots, setCharacterSlots] = useState<CharacterSlot[]>(
     emptyCharacterSlots,
   );
@@ -153,9 +154,11 @@ export function CreativeDraftWorkspace({
           editableDraft,
           selectedFormat,
           workspace.brief.keyFacts,
+          workspace.brief.profileSnapshot.language,
         ),
         selectedFormat,
         workspace.brief.keyFacts,
+        workspace.brief.profileSnapshot.language,
       ).some((issue) => issue.severity === "blocker"),
   );
   const activeDraftFailedQualityGate = Boolean(
@@ -171,6 +174,11 @@ export function CreativeDraftWorkspace({
     workspace?.drafts.filter((draft) => draft.inputIsCurrent === false) ?? [];
   const currentDraft = workspace?.drafts.find(
     (draft) => draft.inputIsCurrent !== false,
+  );
+  const editorialDirectionDirty = Boolean(
+    workspace?.brief &&
+      normalizeEditorialDirection(editorialDirection) !==
+        (workspace.brief.editorialDirection ?? ""),
   );
 
   useEffect(() => {
@@ -195,6 +203,7 @@ export function CreativeDraftWorkspace({
         setWorkspace(next);
         setProfile(next.profile);
         setProfileDirty(false);
+        setEditorialDirection(next.brief?.editorialDirection ?? "");
         setCharacterSlots(characterSlotsFromCharacters(characters));
         // Prefer the editable draft for the current profile. If there is no
         // current one, open the latest saved study so its copy and images do
@@ -441,11 +450,12 @@ export function CreativeDraftWorkspace({
           topicId,
         ),
         secret,
-        { method: "POST" },
+        creativeBriefRequest(editorialDirection),
       );
       setWorkspace(result.state);
       setProfile(result.state.profile);
       setProfileDirty(false);
+      setEditorialDirection(result.state.brief?.editorialDirection ?? "");
       const format = result.state.brief?.recommendedFormat ?? "meme";
       const aspectRatio = resolveDraftAspectRatio(result.state, format);
       setSelectedFormat(format);
@@ -474,6 +484,7 @@ export function CreativeDraftWorkspace({
       let currentState = workspace;
       const needsBriefRefresh =
         !currentState.briefIsCurrent ||
+        editorialDirectionDirty ||
         (selectedFormat === "carousel" && !currentState.brief?.carouselPlan);
 
       if (needsBriefRefresh) {
@@ -486,12 +497,13 @@ export function CreativeDraftWorkspace({
             topicId,
           ),
           secret,
-          { method: "POST" },
+          creativeBriefRequest(editorialDirection),
         );
         currentState = refreshedBrief.state;
         setWorkspace(currentState);
         setProfile(currentState.profile);
         setProfileDirty(false);
+        setEditorialDirection(currentState.brief?.editorialDirection ?? "");
       }
 
       if (!currentState.brief || !currentState.briefIsCurrent) {
@@ -542,7 +554,8 @@ export function CreativeDraftWorkspace({
     if (!workspace?.brief || !profile || busy) return;
 
     const saveProfile = profileDirty;
-    const refreshBrief = saveProfile || !workspace.briefIsCurrent;
+    const refreshBrief =
+      saveProfile || !workspace.briefIsCurrent || editorialDirectionDirty;
     const maximumRunsNeeded = refreshBrief ? 2 : 1;
     if (workspace.daily.remainingRuns < maximumRunsNeeded) {
       setError(
@@ -582,9 +595,10 @@ export function CreativeDraftWorkspace({
             topicId,
           ),
           secret,
-          { method: "POST" },
+          creativeBriefRequest(editorialDirection),
         );
         currentState = refreshedBrief.state;
+        setEditorialDirection(currentState.brief?.editorialDirection ?? "");
       }
 
       if (!currentState.brief || !currentState.briefIsCurrent) {
@@ -648,10 +662,11 @@ export function CreativeDraftWorkspace({
       );
       await reloadWorkspace(selectedFormat);
       const savedBlockers = workspace?.brief
-        ? deterministicCreativeQualityIssues(
+          ? deterministicCreativeQualityIssues(
             saved,
             saved.format,
             workspace.brief.keyFacts,
+            workspace.brief.profileSnapshot.language,
           ).filter((issue) => issue.severity === "blocker")
         : [];
       setNotice(
@@ -1296,14 +1311,27 @@ export function CreativeDraftWorkspace({
                 </div>
               ) : null}
 
-              {!workspace.brief || !workspace.briefIsCurrent ? (
+              <div className={styles.editorialDirectionPanel}>
+                <TextAreaField
+                  label="Editorial focus for this story (optional)"
+                  value={editorialDirection}
+                  onChange={setEditorialDirection}
+                  rows={4}
+                />
+                <p>
+                  Describe the audience, learning objective, scope, and angle.
+                  This guides the brief but is never treated as source evidence.
+                </p>
+              </div>
+
+              {!workspace.brief || !workspace.briefIsCurrent || editorialDirectionDirty ? (
                 <div className={styles.briefCallout}>
                   <div>
                     <strong>{workspace.brief ? "The brief is out of date" : "No creative brief yet"}</strong>
-                    <p>{workspace.brief ? "Story content or profile settings changed. Refresh before generating another draft." : "Gemini will assess the story and recommend a meme or carousel."}</p>
+                    <p>{workspace.brief ? "Story content, profile settings, or editorial focus changed. Refresh before generating another draft." : "AI will use the source and your optional focus to recommend a meme or carousel."}</p>
                   </div>
                   <button type="button" className={styles.primaryButton} disabled={Boolean(busy) || !workspace.story.hasContent} onClick={handleCreateBrief}>
-                    {busy === "brief" ? "Creating brief…" : workspace.brief ? "Refresh creative brief" : "Create creative brief"}
+                    {busy === "brief" ? "Creating brief…" : workspace.brief ? "Apply focus and refresh brief" : "Create creative brief"}
                   </button>
                 </div>
               ) : null}
@@ -1422,6 +1450,7 @@ export function CreativeDraftWorkspace({
                       !dirty && activeDraft.qualityReviewIsCurrent !== false
                     }
                     keyFacts={workspace.brief.keyFacts}
+                    profileLanguage={workspace.brief.profileSnapshot.language}
                     characterRoster={characterRosterFromSlots(characterSlots)}
                     onChange={(next) => {
                       setEditableDraft(next);
@@ -2077,7 +2106,30 @@ function BriefView({
       <div className={styles.factsAndRisks}>
         <div>
           <h4>Verified working facts</h4>
-          <ul>{brief.keyFacts.map((fact) => <li key={fact.id}><span>{fact.id}</span>{fact.statement}{fact.requiredQualifiers?.length || fact.attribution ? <small>{fact.requiredQualifiers?.length ? `Preserve: ${fact.requiredQualifiers.join(", ")}` : ""}{fact.requiredQualifiers?.length && fact.attribution ? " · " : ""}{fact.attribution ? `Source: ${fact.attribution}` : ""}</small> : null}</li>)}</ul>
+          <ul>
+            {brief.keyFacts.map((fact) => (
+              <li key={fact.id}>
+                <span>{fact.id}</span>
+                {fact.statement}
+                {fact.sourceExcerpt ? (
+                  <small>Evidence: “{fact.sourceExcerpt}”</small>
+                ) : null}
+                {fact.requiredQualifiers?.length || fact.attribution ? (
+                  <small>
+                    {fact.requiredQualifiers?.length
+                      ? `Preserve: ${fact.requiredQualifiers.join(", ")}`
+                      : ""}
+                    {fact.requiredQualifiers?.length && fact.attribution
+                      ? " · "
+                      : ""}
+                    {fact.attribution
+                      ? `Source: ${fact.attribution}`
+                      : ""}
+                  </small>
+                ) : null}
+              </li>
+            ))}
+          </ul>
         </div>
         <div>
           <h4>Risk flags</h4>
@@ -2095,6 +2147,7 @@ function DraftEditor({
   qualityReview,
   qualityReviewIsCurrent,
   keyFacts,
+  profileLanguage,
   characterRoster,
   onChange,
 }: {
@@ -2104,6 +2157,7 @@ function DraftEditor({
   qualityReview?: CreativeDraft["qualityReview"];
   qualityReviewIsCurrent: boolean;
   keyFacts: CreativeKeyFact[];
+  profileLanguage: string;
   characterRoster: CreativeCharacterRosterEntry[];
   onChange: (draft: EditableCreativeDraft) => void;
 }) {
@@ -2111,6 +2165,7 @@ function DraftEditor({
     draft,
     format,
     keyFacts,
+    profileLanguage,
   );
 
   function updateUnit(index: number, unit: CreativeUnit) {
@@ -2846,6 +2901,24 @@ function topicUrl(path: string, topicId: string): string {
   const separator = path.includes("?") ? "&" : "?";
 
   return `${path}${separator}topicId=${encodeURIComponent(topicId)}`;
+}
+
+function creativeBriefRequest(editorialDirection: string): RequestInit {
+  return {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      editorialDirection: normalizeEditorialDirection(editorialDirection),
+    }),
+  };
+}
+
+function normalizeEditorialDirection(value: string): string {
+  return value
+    .replace(/\r\n?/g, "\n")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 async function requestJson<T>(url: string, secret: string, init: RequestInit = {}): Promise<T> {

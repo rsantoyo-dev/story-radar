@@ -82,6 +82,7 @@ export async function getCreativeWorkspaceState(
         topic,
         configuration,
         shortenContent(story.text.trim(), configuration.maxContentCharacters),
+        latestBrief?.editorialDirection,
       )
     : undefined;
   // A user can switch a profile back to a previous configuration. In that
@@ -152,6 +153,7 @@ export async function getCreativeWorkspaceState(
 export async function createCreativeBrief(
   topicId: string,
   storyId: string,
+  editorialDirection?: string,
 ): Promise<CreativeGenerationResult> {
   const configuration = getCreativeContentRuntimeConfig();
   const [topic, story, profile, daily] = await Promise.all([
@@ -161,12 +163,16 @@ export async function createCreativeBrief(
     getCreativeDailyUsage(topicId, configuration.maxRunsPerDay),
   ]);
   const content = requireStoryContent(story, configuration.maxContentCharacters);
+  const normalizedEditorialDirection = normalizeEditorialDirection(
+    editorialDirection,
+  );
   const inputHash = createBriefInputHash(
     story,
     profile,
     topic,
     configuration,
     content,
+    normalizedEditorialDirection,
   );
   const cached = await findCachedCreativeBrief(
     topicId,
@@ -206,6 +212,7 @@ export async function createCreativeBrief(
       story: storyForGenerator(story, content),
       topic,
       profile,
+      editorialDirection: normalizedEditorialDirection,
     });
     const brief = await insertCreativeBrief({
       topicId,
@@ -216,6 +223,7 @@ export async function createCreativeBrief(
       modelVersion: result.modelVersion,
       promptVersion: configuration.briefPromptVersion,
       inputHash,
+      editorialDirection: normalizedEditorialDirection,
       generated: result.brief,
       usage: result.usage,
     });
@@ -269,6 +277,7 @@ export async function createCreativeDraft(
     topic,
     configuration,
     content,
+    brief.editorialDirection,
   );
 
   if (currentBriefHash !== brief.inputHash) {
@@ -408,6 +417,7 @@ export async function saveCreativeDraft(
       validated,
       current.format,
       brief.keyFacts,
+      brief.profileSnapshot.language,
     ),
     outputAspectRatio: validated.outputAspectRatio,
   };
@@ -450,6 +460,7 @@ export async function approveSavedCreativeDraft(
       validated,
       current.format,
       brief.keyFacts,
+      brief.profileSnapshot.language,
     ),
     outputAspectRatio: validated.outputAspectRatio,
   };
@@ -457,6 +468,7 @@ export async function approveSavedCreativeDraft(
     repaired,
     current.format,
     brief.keyFacts,
+    brief.profileSnapshot.language,
   ).filter((issue) => issue.severity === "blocker");
   if (blockers.length > 0) {
     throw new CreativeDraftValidationError(
@@ -546,6 +558,7 @@ export async function refreshCreativeDraftCharacterReferences(
     topic,
     configuration,
     content,
+    brief.editorialDirection,
   );
 
   if (currentBriefHash !== brief.inputHash) {
@@ -642,6 +655,7 @@ function createBriefInputHash(
     maxContentCharacters: number;
   },
   normalizedContent: string,
+  editorialDirection?: string,
 ): string {
   return hash({
     story: {
@@ -673,10 +687,31 @@ function createBriefInputHash(
       name: topic.name,
       description: topic.description ?? null,
     },
+    editorialDirection: editorialDirection ?? null,
     provider: configuration.provider,
     model: configuration.model,
     promptVersion: configuration.briefPromptVersion,
   });
+}
+
+function normalizeEditorialDirection(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") {
+    throw new CreativeDraftValidationError(
+      "editorialDirection must be text",
+    );
+  }
+  const normalized = value
+    .replace(/\r\n?/g, "\n")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  if (normalized.length > 1_500) {
+    throw new CreativeDraftValidationError(
+      "Editorial direction must be 1,500 characters or fewer",
+    );
+  }
+  return normalized || undefined;
 }
 
 function createDraftInputHash(

@@ -1,0 +1,2 @@
+DROP INDEX "story_knowledge_origins_topic_section_unique";--> statement-breakpoint
+CREATE UNIQUE INDEX "story_knowledge_origins_topic_story_section_unique" ON "story_knowledge_origins" USING btree ("topic_id","story_id","section_id");

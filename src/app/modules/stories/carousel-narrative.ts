@@ -199,6 +199,61 @@ export function maximumFactsForGoal(goal: CarouselEditorialGoal): number {
   return MAX_FACTS_BY_GOAL[goal];
 }
 
+/**
+ * Repairs mechanical fact-assignment mistakes without inventing evidence.
+ * Models sometimes return a sound narrative plan but leave allowedFactIds
+ * empty (especially on the hook) or spend a new fact on the closing slide.
+ * The factual-scope guard still validates the resulting viewer question
+ * against the assigned facts after this normalization.
+ */
+export function repairCarouselPlanEvidence(
+  plan: CarouselPlan,
+  knownFactIds: ReadonlySet<string>,
+): { plan: CarouselPlan; repaired: boolean } {
+  const availableFactIds = [...knownFactIds];
+  const establishedFacts = new Set<string>();
+  let repaired = false;
+
+  const slides = plan.slides.map((slide) => {
+    let allowedFactIds = [
+      ...new Set(
+        slide.allowedFactIds.filter((factId) => knownFactIds.has(factId)),
+      ),
+    ];
+    if (allowedFactIds.length !== slide.allowedFactIds.length) repaired = true;
+
+    const isClosing =
+      slide.editorialGoal === "conclude" || slide.editorialGoal === "debate";
+    if (isClosing) {
+      const reusableFacts = allowedFactIds.filter((factId) =>
+        establishedFacts.has(factId),
+      );
+      if (reusableFacts.length !== allowedFactIds.length) repaired = true;
+      allowedFactIds = reusableFacts;
+      if (allowedFactIds.length === 0 && establishedFacts.size > 0) {
+        allowedFactIds = [[...establishedFacts][0]!];
+        repaired = true;
+      }
+    } else if (allowedFactIds.length === 0 && availableFactIds.length > 0) {
+      allowedFactIds = [
+        availableFactIds.find((factId) => !establishedFacts.has(factId)) ??
+          availableFactIds[0]!,
+      ];
+      repaired = true;
+    }
+
+    const budget = maximumFactsForGoal(slide.editorialGoal);
+    if (allowedFactIds.length > budget) {
+      allowedFactIds = allowedFactIds.slice(0, budget);
+      repaired = true;
+    }
+    allowedFactIds.forEach((factId) => establishedFacts.add(factId));
+    return { ...slide, allowedFactIds };
+  });
+
+  return { plan: { ...plan, slides }, repaired };
+}
+
 /** Hard plan invariants. Arc deviations remain valid when rationale explains them. */
 export function validateCarouselPlan(
   plan: CarouselPlan,

@@ -46,6 +46,53 @@ type SourceDraft = {
   enabled: boolean;
 };
 
+type KnowledgeDocument = {
+  topicDocumentId: string;
+  documentId: string;
+  canonicalUrl: string;
+  documentType: "guideline" | "report" | "study" | "manual" | "other";
+  language: string;
+  publisher?: string;
+  enabled: boolean;
+  tags: string[];
+  priority: number;
+  createdAt: string;
+  latestVersion?: {
+    id: string;
+    title: string;
+    pageCount: number;
+    sectionCount: number;
+    extractedAt: string;
+  };
+  latestRun?: {
+    id: string;
+    status: "queued" | "processing" | "completed" | "failed";
+    stage: "queued" | "fetching" | "extracting" | "persisting" | "completed" | "failed";
+    pagesProcessed: number;
+    pagesTotal?: number;
+    error?: string;
+    updatedAt: string;
+  };
+};
+
+type KnowledgeDocumentDraft = {
+  url: string;
+  documentType: KnowledgeDocument["documentType"];
+  language: string;
+  publisher: string;
+  tags: string;
+  priority: string;
+};
+
+const EMPTY_DOCUMENT: KnowledgeDocumentDraft = {
+  url: "",
+  documentType: "guideline",
+  language: "fr",
+  publisher: "",
+  tags: "",
+  priority: "50",
+};
+
 const EMPTY_SOURCE: SourceDraft = {
   name: "",
   url: "",
@@ -65,6 +112,7 @@ export function TopicConfigurationPanel({
   disabled,
   onTopicsChange,
   onTopicChange,
+  onCandidateCreated,
 }: {
   topics: DashboardTopic[];
   selectedTopicId: string;
@@ -72,6 +120,7 @@ export function TopicConfigurationPanel({
   disabled: boolean;
   onTopicsChange: (topics: DashboardTopic[]) => void;
   onTopicChange: (topicId: string) => void;
+  onCandidateCreated?: () => void;
 }) {
   const [sourceResult, setSourceResult] = useState<{
     topicId: string;
@@ -90,6 +139,30 @@ export function TopicConfigurationPanel({
   const [sourceFormTopicId, setSourceFormTopicId] = useState<string>();
   const [editingSource, setEditingSource] = useState<TopicSource>();
   const [sourceDraft, setSourceDraft] = useState<SourceDraft>(EMPTY_SOURCE);
+  const [documentResult, setDocumentResult] = useState<{
+    topicId: string;
+    documents: KnowledgeDocument[];
+  }>();
+  const [showDocumentForm, setShowDocumentForm] = useState(false);
+  const [documentDraft, setDocumentDraft] = useState<KnowledgeDocumentDraft>(EMPTY_DOCUMENT);
+  const [selectedKnowledgeChapterIds, setSelectedKnowledgeChapterIds] = useState<string[]>([]);
+  const [knowledgeDossierTitle, setKnowledgeDossierTitle] = useState("");
+  const [documentDetails, setDocumentDetails] = useState<{
+    topicId: string;
+    topicDocumentId: string;
+    chapters: Array<{
+      id: string;
+      heading: string;
+      pageStart: number;
+      pageEnd: number;
+      printedPageStart?: number;
+      printedPageEnd?: number;
+      characterCount: number;
+      partCount: number;
+      candidateStoryId?: string;
+      hasPartialCandidate: boolean;
+    }>;
+  }>();
   const [preview, setPreview] = useState<{
     topicId: string;
     topicSourceId: string;
@@ -102,6 +175,9 @@ export function TopicConfigurationPanel({
     ? sourceResult.sources
     : undefined;
   const sourceFormVisible = showSourceForm && sourceFormTopicId === selectedTopicId;
+  const documents = documentResult?.topicId === selectedTopicId
+    ? documentResult.documents
+    : undefined;
 
   useEffect(() => {
     if (!canUseApi || !selectedTopicId || !showSources) {
@@ -126,6 +202,44 @@ export function TopicConfigurationPanel({
 
     return () => controller.abort();
   }, [canUseApi, secret, selectedTopicId, showSources]);
+
+  useEffect(() => {
+    if (!canUseApi || !selectedTopicId || !showSources) return;
+    const controller = new AbortController();
+
+    requestJson<{ documents: KnowledgeDocument[] }>(
+      `/api/radar/topics/${encodeURIComponent(selectedTopicId)}/documents`,
+      secret,
+      { signal: controller.signal },
+    )
+      .then((response) => {
+        if (!controller.signal.aborted) {
+          setDocumentResult({ topicId: selectedTopicId, documents: response.documents });
+        }
+      })
+      .catch((loadError) => {
+        if (!controller.signal.aborted) setError(errorMessage(loadError));
+      });
+
+    return () => controller.abort();
+  }, [canUseApi, secret, selectedTopicId, showSources]);
+
+  useEffect(() => {
+    const hasActiveIngestion = documents?.some(
+      (document) => document.latestRun?.status === "queued" || document.latestRun?.status === "processing",
+    );
+    if (!hasActiveIngestion || !canUseApi) return;
+
+    const timer = window.setTimeout(() => {
+      requestJson<{ documents: KnowledgeDocument[] }>(
+        `/api/radar/topics/${encodeURIComponent(selectedTopicId)}/documents`,
+        secret,
+      )
+        .then((response) => setDocumentResult({ topicId: selectedTopicId, documents: response.documents }))
+        .catch((loadError) => setError(errorMessage(loadError)));
+    }, 1_500);
+    return () => window.clearTimeout(timer);
+  }, [canUseApi, documents, secret, selectedTopicId]);
 
   function changeTopic(topicId: string) {
     if (topicId === selectedTopicId || disabled) return;
@@ -340,6 +454,163 @@ export function TopicConfigurationPanel({
     setSourceResult({ topicId: selectedTopicId, sources: response.sources });
   }
 
+  async function addKnowledgeDocument() {
+    if (!documentDraft.url.trim()) {
+      setError("A PDF URL is required.");
+      return;
+    }
+
+    await run("add-document", async () => {
+      await requestJson(
+        `/api/radar/topics/${encodeURIComponent(selectedTopicId)}/documents`,
+        secret,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            url: documentDraft.url,
+            documentType: documentDraft.documentType,
+            language: documentDraft.language,
+            publisher: documentDraft.publisher || undefined,
+            tags: parseTags(documentDraft.tags),
+            priority: Number(documentDraft.priority),
+          }),
+        },
+      );
+      await reloadDocuments();
+      setDocumentDraft(EMPTY_DOCUMENT);
+      setShowDocumentForm(false);
+      setNotice("PDF queued. Extraction continues in the background.");
+    });
+  }
+
+  async function retryKnowledgeDocument(document: KnowledgeDocument) {
+    await run(`retry-document:${document.topicDocumentId}`, async () => {
+      await requestJson(
+        `/api/radar/topics/${encodeURIComponent(selectedTopicId)}/documents/${encodeURIComponent(document.topicDocumentId)}/ingest`,
+        secret,
+        { method: "POST" },
+      );
+      await reloadDocuments();
+      setNotice("PDF ingestion queued again.");
+    });
+  }
+
+  async function showKnowledgeDocumentSections(
+    document: KnowledgeDocument,
+    forceReload = false,
+  ) {
+    await run(`view-document:${document.topicDocumentId}`, async () => {
+      if (
+        documentDetails?.topicId === selectedTopicId &&
+        documentDetails.topicDocumentId === document.topicDocumentId &&
+        !forceReload
+      ) {
+        setDocumentDetails(undefined);
+        setSelectedKnowledgeChapterIds([]);
+        setKnowledgeDossierTitle("");
+        return;
+      }
+      const response = await requestJson<{
+        chapters: Array<{
+          id: string;
+          heading: string;
+          pageStart: number;
+          pageEnd: number;
+          printedPageStart?: number;
+          printedPageEnd?: number;
+          characterCount: number;
+          partCount: number;
+          candidateStoryId?: string;
+          hasPartialCandidate: boolean;
+        }>;
+      }>(
+        `/api/radar/topics/${encodeURIComponent(selectedTopicId)}/documents/${encodeURIComponent(document.topicDocumentId)}`,
+        secret,
+      );
+      setDocumentDetails({
+        topicId: selectedTopicId,
+        topicDocumentId: document.topicDocumentId,
+        chapters: response.chapters,
+      });
+      setSelectedKnowledgeChapterIds([]);
+      setKnowledgeDossierTitle("");
+    });
+  }
+
+  async function reloadDocuments() {
+    const response = await requestJson<{ documents: KnowledgeDocument[] }>(
+      `/api/radar/topics/${encodeURIComponent(selectedTopicId)}/documents`,
+      secret,
+    );
+    setDocumentResult({ topicId: selectedTopicId, documents: response.documents });
+  }
+
+  async function createKnowledgeCandidate(
+    document: KnowledgeDocument,
+    chapter: {
+      id: string;
+      heading: string;
+      pageStart: number;
+      pageEnd: number;
+    },
+  ) {
+    await run(`create-candidate:${chapter.id}`, async () => {
+      const response = await requestJson<{
+        candidate: { storyId: string; created: boolean; title: string };
+      }>(
+        `/api/radar/topics/${encodeURIComponent(selectedTopicId)}/documents/${encodeURIComponent(document.topicDocumentId)}/chapters/${encodeURIComponent(chapter.id)}/candidate`,
+        secret,
+        { method: "POST" },
+      );
+      await showKnowledgeDocumentSections(document, true);
+      onCandidateCreated?.();
+      setNotice(
+        response.candidate.created
+          ? `“${response.candidate.title}” was added to Stories and is ready for AI evaluation.`
+          : `“${response.candidate.title}” is already a story candidate.`,
+      );
+    });
+  }
+
+  function toggleKnowledgeChapter(chapterId: string) {
+    setSelectedKnowledgeChapterIds((current) =>
+      current.includes(chapterId)
+        ? current.filter((id) => id !== chapterId)
+        : [...current, chapterId],
+    );
+  }
+
+  async function createKnowledgeDossier(document: KnowledgeDocument) {
+    if (selectedKnowledgeChapterIds.length < 2) {
+      setError("Select at least two chapters to build a dossier.");
+      return;
+    }
+    await run(`create-dossier:${document.topicDocumentId}`, async () => {
+      const response = await requestJson<{
+        candidate: { storyId: string; created: boolean; title: string };
+      }>(
+        `/api/radar/topics/${encodeURIComponent(selectedTopicId)}/documents/${encodeURIComponent(document.topicDocumentId)}/dossiers`,
+        secret,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chapterIds: selectedKnowledgeChapterIds,
+            title: knowledgeDossierTitle || undefined,
+          }),
+        },
+      );
+      await showKnowledgeDocumentSections(document, true);
+      onCandidateCreated?.();
+      setNotice(
+        response.candidate.created
+          ? `Dossier “${response.candidate.title}” was added to Stories with ${selectedKnowledgeChapterIds.length} chapters.`
+          : `Dossier “${response.candidate.title}” already exists in Stories.`,
+      );
+    });
+  }
+
   async function run(action: string, task: () => Promise<void>) {
     if (!canUseApi || disabled || busy) return;
     setBusy(action);
@@ -363,7 +634,9 @@ export function TopicConfigurationPanel({
           <small>Feeds, tags, preferences, reviews, AI usage, and creative work stay scoped to the selected topic.</small>
         </div>
         <span className={styles.count}>
-          {sources ? `${sources.filter((source) => source.enabled).length} active feeds` : "Source setup"}
+          {sources || documents
+            ? `${sources?.filter((source) => source.enabled).length ?? 0} feeds · ${documents?.filter((document) => document.enabled).length ?? 0} documents`
+            : "Source setup"}
         </span>
       </div>
 
@@ -508,6 +781,192 @@ export function TopicConfigurationPanel({
           ))}
         </ul>
           )}
+
+          <div className={styles.knowledgeHeading}>
+            <div>
+              <h3>Knowledge documents</h3>
+              <p>Guidelines, reports, studies, and manuals are extracted into page-linked sections.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowDocumentForm(true)}
+              disabled={!canUseApi || disabled || Boolean(busy)}
+            >
+              Add PDF
+            </button>
+          </div>
+
+          {showDocumentForm ? (
+            <form
+              className={styles.sourceForm}
+              onSubmit={(event) => {
+                event.preventDefault();
+                void addKnowledgeDocument();
+              }}
+            >
+              <strong>Add a public PDF</strong>
+              <div className={styles.formGrid}>
+                <Field label="PDF URL">
+                  <input
+                    type="url"
+                    value={documentDraft.url}
+                    onChange={(event) => setDocumentDraft({ ...documentDraft, url: event.target.value })}
+                    placeholder="https://example.org/guide.pdf"
+                  />
+                </Field>
+                <Field label="Document type">
+                  <select
+                    value={documentDraft.documentType}
+                    onChange={(event) => setDocumentDraft({
+                      ...documentDraft,
+                      documentType: event.target.value as KnowledgeDocumentDraft["documentType"],
+                    })}
+                  >
+                    <option value="guideline">Guideline</option>
+                    <option value="report">Report</option>
+                    <option value="study">Study</option>
+                    <option value="manual">Manual</option>
+                    <option value="other">Other</option>
+                  </select>
+                </Field>
+                <Field label="Language">
+                  <input value={documentDraft.language} onChange={(event) => setDocumentDraft({ ...documentDraft, language: event.target.value })} maxLength={32} />
+                </Field>
+                <Field label="Publisher">
+                  <input value={documentDraft.publisher} onChange={(event) => setDocumentDraft({ ...documentDraft, publisher: event.target.value })} maxLength={200} placeholder="INSPQ" />
+                </Field>
+                <Field label="Topic tags">
+                  <input value={documentDraft.tags} onChange={(event) => setDocumentDraft({ ...documentDraft, tags: event.target.value })} placeholder="postpartum, mental health" />
+                </Field>
+                <Field label="Priority (0–100)">
+                  <input type="number" min="0" max="100" value={documentDraft.priority} onChange={(event) => setDocumentDraft({ ...documentDraft, priority: event.target.value })} />
+                </Field>
+              </div>
+              <p>The source must be a public PDF under 40 MB. Page numbers are preserved for editorial citations.</p>
+              <div className={styles.formActions}>
+                <button type="submit" disabled={Boolean(busy)}>Add and extract</button>
+                <button type="button" onClick={() => setShowDocumentForm(false)} disabled={Boolean(busy)}>Cancel</button>
+              </div>
+            </form>
+          ) : null}
+
+          {!canUseApi ? null : !documents ? (
+            <p className={styles.loading}>Loading knowledge documents…</p>
+          ) : documents.length === 0 ? (
+            <div className={styles.empty}>
+              <strong>No knowledge documents yet.</strong>
+              <span>Add a public PDF to build the topic&apos;s durable evidence library.</span>
+            </div>
+          ) : (
+            <ul className={styles.documentList}>
+              {documents.map((document) => {
+                const run = document.latestRun;
+                const progress = run?.pagesTotal
+                  ? Math.round((run.pagesProcessed / run.pagesTotal) * 100)
+                  : undefined;
+                const detailsVisible =
+                  documentDetails?.topicId === selectedTopicId &&
+                  documentDetails.topicDocumentId === document.topicDocumentId;
+                return (
+                  <li key={document.topicDocumentId}>
+                    <div className={styles.sourceCopy}>
+                      <div>
+                        <strong>{document.latestVersion?.title ?? "PDF awaiting extraction"}</strong>
+                        <span className={run?.status === "failed" ? styles.failed : run?.status === "completed" ? styles.enabled : styles.processing}>
+                          {knowledgeRunLabel(run)}
+                        </span>
+                      </div>
+                      <a href={document.canonicalUrl} target="_blank" rel="noreferrer">{document.canonicalUrl}</a>
+                      <small>
+                        {document.documentType} · {document.language}
+                        {document.publisher ? ` · ${document.publisher}` : ""}
+                        {document.latestVersion ? ` · ${document.latestVersion.pageCount} pages · ${document.latestVersion.sectionCount} technical chunks` : ""}
+                        {progress !== undefined && run?.status === "processing" ? ` · ${progress}%` : ""}
+                      </small>
+                      {run?.error ? <span className={styles.inlineError}>{run.error}</span> : null}
+                    </div>
+                    <div className={styles.sourceActions}>
+                      {document.latestVersion ? (
+                        <button type="button" onClick={() => void showKnowledgeDocumentSections(document)} disabled={Boolean(busy)}>
+                          {detailsVisible ? "Hide chapters" : "View chapters"}
+                        </button>
+                      ) : null}
+                      {run?.status === "failed" ? (
+                        <button type="button" onClick={() => void retryKnowledgeDocument(document)} disabled={Boolean(busy)}>Retry</button>
+                      ) : null}
+                    </div>
+                    {detailsVisible ? (
+                      <div className={styles.documentSections}>
+                        <strong>Editorial chapters</strong>
+                        <div className={styles.dossierBuilder}>
+                          <div>
+                            <strong>Build a multi-chapter story</strong>
+                            <small>
+                              Select related chapters to create one evidence dossier before AI evaluation.
+                              Chapters already used in another story remain reusable here.
+                            </small>
+                          </div>
+                          <label className={styles.dossierTitle}>
+                            <span>Working title (optional)</span>
+                            <input
+                              value={knowledgeDossierTitle}
+                              onChange={(event) => setKnowledgeDossierTitle(event.target.value)}
+                              placeholder="Pregnancy stages for first-time mothers"
+                              maxLength={500}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => void createKnowledgeDossier(document)}
+                            disabled={Boolean(busy) || selectedKnowledgeChapterIds.length < 2}
+                          >
+                            Create dossier from {selectedKnowledgeChapterIds.length} chapters
+                          </button>
+                        </div>
+                        <ol>
+                          {documentDetails.chapters.map((chapter) => (
+                            <li key={chapter.id}>
+                              <div>
+                                <label className={styles.chapterSelect}>
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedKnowledgeChapterIds.includes(chapter.id)}
+                                    onChange={() => toggleKnowledgeChapter(chapter.id)}
+                                    aria-label={`Select ${chapter.heading} for a story dossier`}
+                                  />
+                                  <span>{chapter.heading}</span>
+                                </label>
+                                <small>
+                                  {chapter.printedPageStart !== undefined && chapter.printedPageEnd !== undefined
+                                    ? `Printed pages ${chapter.printedPageStart}–${chapter.printedPageEnd} · `
+                                    : ""}
+                                  PDF pages {chapter.pageStart}–{chapter.pageEnd} · {chapter.characterCount.toLocaleString()} characters
+                                  {chapter.partCount > 1 ? ` · ${chapter.partCount} internal chunks joined` : ""}
+                                </small>
+                              </div>
+                              {chapter.candidateStoryId ? (
+                                <span className={styles.candidateReady}>In Stories · reusable</span>
+                              ) : chapter.hasPartialCandidate ? (
+                                <span className={styles.candidateReady}>Parts in Stories · reusable</span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => void createKnowledgeCandidate(document, chapter)}
+                                  disabled={Boolean(busy)}
+                                >
+                                  Create chapter story
+                                </button>
+                              )}
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
       </details>
     </section>
@@ -535,4 +994,16 @@ function parseTags(value: string): string[] {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
+}
+
+function knowledgeRunLabel(run: KnowledgeDocument["latestRun"]): string {
+  if (!run) return "Queued";
+  if (run.status === "failed") return "Failed";
+  if (run.status === "completed") return "Ready";
+  if (run.stage === "fetching") return "Downloading";
+  if (run.stage === "extracting") return run.pagesTotal
+    ? `Extracting ${run.pagesProcessed}/${run.pagesTotal}`
+    : "Extracting";
+  if (run.stage === "persisting") return "Saving sections";
+  return "Queued";
 }

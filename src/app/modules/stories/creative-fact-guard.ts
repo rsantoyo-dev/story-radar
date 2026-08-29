@@ -1,5 +1,6 @@
 import type {
   CreativeFactClaimGuard,
+  GeneratedCreativeBrief,
   CreativeKeyFact,
   CreativeQualityIssue,
   GeneratedCreativeDraft,
@@ -10,7 +11,7 @@ const CERTAINTY_UPGRADE_PATTERN =
 const SIGNAL_PATTERN =
   /\b(?:show(?:s|ed)? signs?|significant signs?|authorship signs?|signals?|likely (?:written|edited|generated)|detect(?:ed|ion)|identify|identified)\b/iu;
 const ESTIMATE_PATTERN =
-  /~|\b(?:about|approximately|estimated|estimate|nearly|roughly|around|over|more than)\b/iu;
+  /~|\b(?:about|approximately|estimated|estimate|nearly|roughly|around|over|more than|aproximadamente|estimad[oa]s?|casi|alrededor de|cerca de|unos?|en promedio|más de)\b/iu;
 const PROJECTION_PATTERN = /\b(?:projected|forecast|expected to|could reach)\b/iu;
 const ASSOCIATION_PATTERN = /\b(?:associated with|correlat(?:ed|ion)|linked to)\b/iu;
 const REPORTED_PATTERN = /\b(?:according to|reported|report says|study says)\b/iu;
@@ -53,10 +54,58 @@ const UNSUPPORTED_INFERENCE_PATTERNS: Array<{
     pattern: /\b(?:rise|rising|growth|growing|surge|shifted|shifting)\b/iu,
     sourceSupport: /\b(?:rise|rising|growth|growing|surge|shifted|shifting)\b/iu,
   },
+  {
+    pattern: /\b(?:gestational year|año gestacional)\b/iu,
+    sourceSupport: /\b(?:gestational year|año gestacional)\b/iu,
+  },
+  {
+    pattern:
+      /\besto\s+(?:anticipa|permite|ayuda|mejora|reduce|garantiza)\b|\b(?:entender|conocer)\b[^.!?]{0,100}\b(?:te|les|nos)\s+(?:permite|ayuda)\s+(?:anticipar|prevenir|mejorar|reducir|planificar)\b/iu,
+    sourceSupport:
+      /\b(?:anticipat(?:e|es|ed|ing)?|allows?|helps?|improves?|reduces?|guarantees?|plans?|anticipa|permite|ayuda|mejora|reduce|garantiza|anticipar|prevenir|planificar)\b/iu,
+  },
+  {
+    pattern:
+      /\b(?:stages?|trimesters?|phases?|etapas?|trimestres?|fases?)\b/iu,
+    sourceSupport:
+      /\b(?:stages?|trimesters?|phases?|etapas?|trimestres?|fases?)\b/iu,
+  },
+  {
+    pattern:
+      /\b(?:physical|emotional|físic[oa]s?|emocionales?)\b[^.!?]{0,60}\b(?:changes?|needs?|cambios?|necesidades?)\b|\b(?:practical tips?|consejos? prácticos?)\b|\b(?:prepar(?:e|es|ed|ing) parents?|preparación de (?:los )?padres)\b/iu,
+    sourceSupport:
+      /\b(?:physical|emotional|físic[oa]s?|emocionales?|practical tips?|consejos? prácticos?|prepar(?:e|es|ed|ing)|preparación)\b/iu,
+  },
 ];
 
 const GENERIC_CLOSING_PATTERN =
   /^(?:the\s+)?(?:takeaway|conclusion|bottom line|what next)\??$/iu;
+
+const ORDINAL_NUMBER_PATTERNS: ReadonlyArray<{
+  number: string;
+  pattern: RegExp;
+}> = [
+  { number: "1", pattern: /\bfirst\b/iu },
+  { number: "2", pattern: /\bsecond\b/iu },
+  { number: "3", pattern: /\bthird\b/iu },
+  { number: "4", pattern: /\bfourth\b/iu },
+  { number: "5", pattern: /\bfifth\b/iu },
+  { number: "6", pattern: /\bsixth\b/iu },
+  { number: "7", pattern: /\bseventh\b/iu },
+  { number: "8", pattern: /\beighth\b/iu },
+  { number: "9", pattern: /\bninth\b/iu },
+  { number: "10", pattern: /\btenth\b/iu },
+];
+
+const VERBAL_RATIO_PATTERNS: ReadonlyArray<{
+  pattern: RegExp;
+  numbers: readonly string[];
+}> = [
+  { pattern: /\bone\s+in\s+four\b/iu, numbers: ["1", "4"] },
+  { pattern: /\bone\s+in\s+twenty\b/iu, numbers: ["1", "20"] },
+  { pattern: /\buna?\s+de\s+cada\s+cuatro\b/iu, numbers: ["1", "4"] },
+  { pattern: /\buna?\s+de\s+cada\s+veinte\b/iu, numbers: ["1", "20"] },
+];
 
 export function withCreativeFactClaimGuard(
   fact: CreativeKeyFact,
@@ -268,9 +317,207 @@ export function deterministicFactQualityIssues(
   return deduplicateIssues(issues);
 }
 
+export function deterministicBriefFactQualityIssues(
+  brief: GeneratedCreativeBrief,
+  sourceText?: string,
+): CreativeQualityIssue[] {
+  if (brief.keyFacts.length === 0) return [];
+  const facts = brief.keyFacts.map(withCreativeFactClaimGuard);
+  const factsById = new Map(facts.map((fact) => [fact.id, fact] as const));
+  const allSourceCopy = facts.map((fact) => fact.statement).join(" ");
+  const issues: CreativeQualityIssue[] = [];
+  if (sourceText !== undefined) {
+    const normalizedSource = normalizeText(sourceText);
+    facts.forEach((fact) => {
+      const excerpt = fact.sourceExcerpt?.trim();
+      if (!excerpt) {
+        issues.push({
+          code: "MISSING_SOURCE_EVIDENCE",
+          severity: "blocker",
+          message: `${fact.id} does not include a source excerpt.`,
+        });
+        return;
+      }
+      if (!normalizedSource.includes(normalizeText(excerpt))) {
+        issues.push({
+          code: "SOURCE_EVIDENCE_NOT_FOUND",
+          severity: "blocker",
+          message: `${fact.id} cites evidence that does not appear verbatim in the supplied source.`,
+        });
+        return;
+      }
+      const evidenceNumbers = new Set(extractBriefClaimNumbers(excerpt));
+      const unsupportedFactNumbers = extractBriefClaimNumbers(
+        fact.statement,
+      ).filter((number) => !evidenceNumbers.has(number));
+      if (unsupportedFactNumbers.length > 0) {
+        issues.push({
+          code: "FACT_NUMBER_NOT_IN_EVIDENCE",
+          severity: "blocker",
+          message: `${fact.id} uses ${unsupportedFactNumbers.join(", ")} outside its cited source excerpt.`,
+        });
+      }
+      if (hasUnsupportedInference(fact.statement, excerpt)) {
+        issues.push({
+          code: "FACT_EXCEEDS_SOURCE_EVIDENCE",
+          severity: "blocker",
+          message: `${fact.id} adds a topic, benefit, or interpretation not established by its cited source excerpt.`,
+        });
+      }
+    });
+  }
+  const strategyCopy = [
+    brief.keyMessage,
+    brief.angle,
+    brief.hook,
+    ...brief.suggestedConcepts.flatMap((concept) => [
+      concept.title,
+      concept.concept,
+    ]),
+  ].join(" ");
+
+  appendUnsupportedCopyIssues(
+    issues,
+    strategyCopy,
+    allSourceCopy,
+    facts,
+    "The creative brief",
+  );
+
+  brief.carouselPlan?.slides.forEach((slide, index) => {
+    const selectedFacts = slide.allowedFactIds.flatMap((id) => {
+      const fact = factsById.get(id);
+      return fact ? [fact] : [];
+    });
+    appendUnsupportedCopyIssues(
+      issues,
+      slide.viewerQuestion,
+      selectedFacts.map((fact) => fact.statement).join(" "),
+      selectedFacts,
+      `Carousel plan slide ${index + 1}`,
+      index + 1,
+    );
+  });
+
+  return deduplicateIssues(issues);
+}
+
+/**
+ * Narrows only unsupported strategy/planning copy to already verified facts.
+ * This is deliberately conservative: it never repairs fact statements or
+ * source excerpts, which must still pass the source-evidence gate unchanged.
+ */
+export function repairDeterministicBriefScope(
+  brief: GeneratedCreativeBrief,
+): GeneratedCreativeBrief {
+  if (brief.keyFacts.length === 0) return brief;
+  const facts = brief.keyFacts.map(withCreativeFactClaimGuard);
+  const allSourceCopy = facts.map((fact) => fact.statement).join(" ");
+  let repaired = false;
+
+  const repairStrategyCopy = (
+    value: string,
+    fallbackFact: CreativeKeyFact,
+    maxLength?: number,
+  ): string => {
+    if (!briefCopyExceedsFacts(value, allSourceCopy, facts)) return value;
+    repaired = true;
+    return maxLength
+      ? truncateWithoutBreakingWord(fallbackFact.statement, maxLength)
+      : fallbackFact.statement;
+  };
+
+  const keyMessage = repairStrategyCopy(brief.keyMessage, facts[0]!);
+  const angle = repairStrategyCopy(brief.angle, facts[1] ?? facts[0]!);
+  const hook = repairStrategyCopy(brief.hook, facts[0]!, 300);
+  const suggestedConcepts = brief.suggestedConcepts.map((concept, index) => {
+    const fallbackFact = facts[index % facts.length]!;
+    return {
+      ...concept,
+      title: repairStrategyCopy(concept.title, fallbackFact, 120),
+      concept: repairStrategyCopy(concept.concept, fallbackFact, 500),
+    };
+  });
+  const carouselPlan = brief.carouselPlan
+    ? {
+        ...brief.carouselPlan,
+        slides: brief.carouselPlan.slides.map((slide) => {
+          const selectedFacts = slide.allowedFactIds.flatMap((id) => {
+            const fact = facts.find((candidate) => candidate.id === id);
+            return fact ? [fact] : [];
+          });
+          const selectedSourceCopy = selectedFacts
+            .map((fact) => fact.statement)
+            .join(" ");
+          if (
+            selectedFacts.length === 0 ||
+            !briefCopyExceedsFacts(
+              slide.viewerQuestion,
+              selectedSourceCopy,
+              selectedFacts,
+            )
+          ) {
+            return slide;
+          }
+          repaired = true;
+          return {
+            ...slide,
+            viewerQuestion: localizedSourceQuestion(slide.viewerQuestion),
+          };
+        }),
+      }
+    : undefined;
+
+  if (!repaired) return brief;
+  const repairFlag =
+    "Automated factual-scope repair narrowed the strategy to verified source evidence.";
+  return {
+    ...brief,
+    keyMessage,
+    angle,
+    hook,
+    contentSufficiency:
+      brief.contentSufficiency === "insufficient" ? "insufficient" : "limited",
+    riskFlags: uniqueText([...brief.riskFlags, repairFlag]).slice(0, 5),
+    suggestedConcepts,
+    ...(carouselPlan ? { carouselPlan } : {}),
+  };
+}
+
+function appendUnsupportedCopyIssues(
+  issues: CreativeQualityIssue[],
+  copy: string,
+  sourceCopy: string,
+  facts: readonly CreativeKeyFact[],
+  label: string,
+  unitOrder?: number,
+): void {
+  const unsupportedNumbers = extractBriefClaimNumbers(copy).filter(
+    (number) =>
+      !facts.some((fact) => fact.claimGuard?.allowedNumbers.includes(number)),
+  );
+  if (unsupportedNumbers.length > 0) {
+    issues.push({
+      code: "UNSUPPORTED_NUMBER",
+      severity: "blocker",
+      ...(unitOrder === undefined ? {} : { unitOrder }),
+      message: `${label} uses ${unsupportedNumbers.join(", ")} without support from its facts.`,
+    });
+  }
+  if (hasUnsupportedInference(copy, sourceCopy)) {
+    issues.push({
+      code: "UNSUPPORTED_BRIEF_SCOPE",
+      severity: "blocker",
+      ...(unitOrder === undefined ? {} : { unitOrder }),
+      message: `${label} promises a topic, benefit, or interpretation that its facts do not establish.`,
+    });
+  }
+}
+
 export function repairDeterministicFactCopy(
   draft: GeneratedCreativeDraft,
   keyFacts: readonly CreativeKeyFact[],
+  language?: string,
 ): GeneratedCreativeDraft {
   if (keyFacts.length === 0) return draft;
   const factsById = new Map(
@@ -286,27 +533,41 @@ export function repairDeterministicFactCopy(
     caption: repairPublishingCopy(
       draft.caption,
       allSourceCopy,
-      "A summary of reported findings about AI-authorship signals on web pages.",
+      localizedFallback(language, "summary"),
+      language,
     ),
     altText: repairPublishingCopy(
       draft.altText,
       allSourceCopy,
-      "Carousel explaining reported findings about AI-authorship signals on web pages.",
+      localizedFallback(language, "alt-text"),
+      language,
     ),
     units: draft.units.map((unit) => {
-      const selectedFacts = unit.factIds.flatMap((id) => {
+      const factIds = repairNumericFactAssignments(unit, factsById);
+      const selectedFacts = factIds.flatMap((id) => {
         const fact = factsById.get(id);
         return fact ? [fact] : [];
       });
       const sourceCopy = selectedFacts
         .map((fact) => fact.statement)
         .join(" ");
-      let headline = repairCertaintyUpgrade(unit.headline);
+      let headline = localizeEstimateQualifiers(
+        repairCertaintyUpgrade(unit.headline),
+        language,
+      );
       let body = unit.body
-        ? repairCertaintyUpgrade(repairUnsupportedInference(unit.body))
+        ? localizeEstimateQualifiers(
+            repairCertaintyUpgrade(
+              repairUnsupportedInference(unit.body, sourceCopy),
+            ),
+            language,
+          )
         : undefined;
       let ctaQuestion = unit.ctaQuestion
-        ? repairCertaintyUpgrade(unit.ctaQuestion)
+        ? localizeEstimateQualifiers(
+            repairCertaintyUpgrade(unit.ctaQuestion),
+            language,
+          )
         : undefined;
       if (
         ctaQuestion &&
@@ -334,9 +595,13 @@ export function repairDeterministicFactCopy(
         ) && !ESTIMATE_PATTERN.test(visibleCopy)
       ) {
         if (body && extractAllowedNumbers(body).length > 0) {
-          body = repairMissingEstimateQualifier(body, selectedFacts);
+          body = repairMissingEstimateQualifier(body, selectedFacts, language);
         } else {
-          headline = repairMissingEstimateQualifier(headline, selectedFacts);
+          headline = repairMissingEstimateQualifier(
+            headline,
+            selectedFacts,
+            language,
+          );
         }
         visibleCopy = [headline, body, ctaQuestion]
           .filter(Boolean)
@@ -383,10 +648,14 @@ export function repairDeterministicFactCopy(
               ))),
       );
       if (closingFact && closingNeedsSafeSynthesis) {
-        body = safeConclusionForFact(closingFact);
+        body =
+          unit.editorialGoal === "debate" && ctaQuestion?.trim()
+            ? undefined
+            : safeConclusionForFact(closingFact, language);
       }
       return {
         ...unit,
+        factIds,
         headline,
         ...(body ? { body } : { body: undefined }),
         ...(ctaQuestion
@@ -406,9 +675,36 @@ export function repairDeterministicFactCopy(
     GENERIC_CLOSING_PATTERN.test(closing.headline.trim())
   ) {
     const fact = closing.factIds.map((id) => factsById.get(id)).find(Boolean);
-    if (fact) closing.body = safeConclusionForFact(fact);
+    if (fact) closing.body = safeConclusionForFact(fact, language);
   }
   return repaired;
+}
+
+function repairNumericFactAssignments(
+  unit: GeneratedCreativeDraft["units"][number],
+  factsById: ReadonlyMap<string, CreativeKeyFact>,
+): string[] {
+  const factIds = [...unit.factIds];
+  const visibleNumbers = extractAllowedNumbers(
+    [unit.headline, unit.body, unit.ctaQuestion].filter(Boolean).join(" "),
+  );
+
+  for (const number of visibleNumbers) {
+    const alreadySupported = factIds.some((id) =>
+      factsById.get(id)?.claimGuard?.allowedNumbers.includes(number),
+    );
+    if (alreadySupported) continue;
+
+    const matchingFacts = [...factsById.values()].filter((fact) =>
+      fact.claimGuard?.allowedNumbers.includes(number),
+    );
+    if (matchingFacts.length !== 1) continue;
+    const matchingId = matchingFacts[0]!.id;
+    if (!factIds.includes(matchingId) && factIds.length < 6) {
+      factIds.push(matchingId);
+    }
+  }
+  return factIds;
 }
 
 function repairCertaintyUpgrade(value: string): string {
@@ -434,8 +730,12 @@ function repairPublishingCopy(
   value: string,
   sourceCopy: string,
   fallback: string,
+  language?: string,
 ): string {
-  const repaired = repairCertaintyUpgrade(repairUnsupportedInference(value));
+  const repaired = localizeEstimateQualifiers(
+    repairCertaintyUpgrade(repairUnsupportedInference(value, sourceCopy)),
+    language,
+  );
   const safeSentences =
     repaired.match(/[^.!?]+[.!?]+|[^.!?]+$/gu)?.filter(
       (sentence) => !hasUnsupportedInference(sentence, sourceCopy),
@@ -451,21 +751,28 @@ function hasUnsupportedInference(value: string, sourceCopy: string): boolean {
   );
 }
 
-function repairUnsupportedInference(value: string): string {
-  return normalizePunctuation(
-    value
+function repairUnsupportedInference(
+  value: string,
+  sourceCopy: string,
+): string {
+  const partiallyRepaired = value
       .replace(/,?\s*confirm(?:s|ed|ing)?\s+(?:the\s+)?trend\.?\s*$/iu, "")
       .replace(
         /,?\s*(?:suggest(?:s|ed|ing)?|implies?|implying|points? to)\b[^.?!]*[.?!]?\s*$/iu,
         "",
       )
-      .replace(/[—–-]\s*(?:changing|reshaping|transforming)\s+how\b[^.?!]*[.?!]?\s*$/iu, ""),
-  );
+      .replace(/[—–-]\s*(?:changing|reshaping|transforming)\s+how\b[^.?!]*[.?!]?\s*$/iu, "");
+  const safeSentences =
+    partiallyRepaired.match(/[^.!?]+[.!?]+|[^.!?]+$/gu)?.filter(
+      (sentence) => !hasUnsupportedInference(sentence, sourceCopy),
+    ) ?? [];
+  return normalizePunctuation(safeSentences.join(" "));
 }
 
 function repairMissingEstimateQualifier(
   value: string,
   facts: readonly CreativeKeyFact[],
+  language?: string,
 ): string {
   const allowedApproximateNumbers = new Set(
     facts
@@ -474,8 +781,8 @@ function repairMissingEstimateQualifier(
   );
   const qualifier = facts
     .flatMap((fact) => fact.requiredQualifiers ?? [])
-    .map(estimatePrefix)
-    .find(Boolean) ?? "about";
+    .map((candidate) => estimatePrefix(candidate, language))
+    .find(Boolean) ?? defaultEstimateQualifier(language);
   return value.replace(
     /~?\d[\d,.]*(?:\s*%|\s*percent)?/giu,
     (number) =>
@@ -486,14 +793,19 @@ function repairMissingEstimateQualifier(
   );
 }
 
-function estimatePrefix(value: string): string | undefined {
+function estimatePrefix(
+  value: string,
+  language?: string,
+): string | undefined {
   const normalized = normalizeText(value);
   if (normalized.includes("more than") || normalized.startsWith("over ")) {
-    return "more than";
+    return isSpanishLanguage(language) ? "más de" : "more than";
   }
-  return normalized.match(
+  const prefix = normalized.match(
     /\b(?:about|approximately|estimated|nearly|roughly|around)\b/iu,
   )?.[0];
+  if (!prefix || !isSpanishLanguage(language)) return prefix;
+  return prefix === "nearly" ? "casi" : "aproximadamente";
 }
 
 function repairMissingPublishingScope(
@@ -530,16 +842,70 @@ function integrateScopeNaturally(value: string, scope: string): string {
   );
 }
 
-function safeConclusionForFact(fact: CreativeKeyFact): string {
+function safeConclusionForFact(
+  fact: CreativeKeyFact,
+  language?: string,
+): string {
   if (fact.claimGuard?.certainty === "detected-signal") {
     const event = fact.statement.match(
       /pages?\s+published\s+after\s+(.+?)(?=\s+(?:show|were|had|display)|[,.;]|$)/iu,
     )?.[1];
+    if (isSpanishLanguage(language)) {
+      return event
+        ? `Para las páginas publicadas después de ${event}, estos resultados describen señales de autoría con IA, no certeza sobre cómo se escribió cada página.`
+        : "Estos resultados describen señales de autoría con IA, no certeza sobre cómo se escribió cada página.";
+    }
     return event
       ? `For pages published after ${event}, these findings describe AI-authorship signals—not certainty about how every page was written.`
       : "These findings describe AI-authorship signals—not certainty about how every page was written.";
   }
   return fact.statement;
+}
+
+function localizeEstimateQualifiers(
+  value: string,
+  language?: string,
+): string {
+  if (!isSpanishLanguage(language)) return value;
+  return value
+    .replace(
+      /\bpoco más de\s+(?:about|approximately|roughly|around)\s+(?=~?\d)/giu,
+      "aproximadamente ",
+    )
+    .replace(
+      /\b(?:about|approximately|roughly|around)\s+(?=~?\d)/giu,
+      "aproximadamente ",
+    )
+    .replace(/\bnearly\s+(?=~?\d)/giu, "casi ")
+    .replace(/\bmore than\s+(?=~?\d)/giu, "más de ");
+}
+
+function defaultEstimateQualifier(language?: string): string {
+  return isSpanishLanguage(language) ? "aproximadamente" : "about";
+}
+
+function localizedFallback(
+  language: string | undefined,
+  kind: "summary" | "alt-text",
+): string {
+  if (isSpanishLanguage(language)) {
+    return kind === "summary"
+      ? "Resumen de la información respaldada por la fuente."
+      : "Carrusel que explica información respaldada por la fuente.";
+  }
+  return kind === "summary"
+    ? "A summary of information supported by the source."
+    : "A carousel explaining information supported by the source.";
+}
+
+function isSpanishLanguage(language: string | undefined): boolean {
+  const normalized = normalizeText(language ?? "");
+  return (
+    normalized === "es" ||
+    normalized.startsWith("es ") ||
+    normalized.includes("espanol") ||
+    normalized.includes("spanish")
+  );
 }
 
 function extractScopePhrases(statement: string): string[] {
@@ -555,9 +921,21 @@ function extractScopePhrases(statement: string): string[] {
 }
 
 function extractAllowedNumbers(value: string): string[] {
-  const numbers = [...value.matchAll(/~?\d[\d,.]*(?:\s*%|\s*percent)?/giu)].map(
-    (match) => normalizeNumber(match[0]),
+  const numbers = extractNumericLiterals(value);
+  // Key facts often express an ordinal in words while concise slide copy uses
+  // its numeric form (for example, "the first day" -> "day 1"). Treat those
+  // forms as equivalent so an accurate shortening is not rejected as an
+  // invented statistic.
+  const ordinalCopy = value.replace(
+    /\b(?:one[- ]third|two[- ]thirds)\b/giu,
+    "",
   );
+  ORDINAL_NUMBER_PATTERNS.forEach(({ number, pattern }) => {
+    if (pattern.test(ordinalCopy)) numbers.push(number);
+  });
+  VERBAL_RATIO_PATTERNS.forEach(({ pattern, numbers: ratioNumbers }) => {
+    if (pattern.test(value)) numbers.push(...ratioNumbers);
+  });
   if (/\bone[- ]third\b/iu.test(value)) numbers.push("33%");
   if (/\btwo[- ]thirds\b/iu.test(value)) numbers.push("67%");
   // 35% is commonly and accurately summarized as "roughly one-third".
@@ -565,6 +943,69 @@ function extractAllowedNumbers(value: string): string[] {
   // verbal approximation of the source statistic.
   if (numbers.includes("35%")) numbers.push("33%");
   return uniqueText(numbers);
+}
+
+function extractBriefClaimNumbers(value: string): string[] {
+  // Slide/page/part numbers describe document structure, not factual claims.
+  const factualCopy = value
+    .replace(
+      /\b(?:slide|page|part|diapositiva|pagina|página|parte)\s*#?\s*\d+\b/giu,
+      " ",
+    )
+    .replace(
+      /\b\d+\s*[- ]?\s*(?:slides?|pages?|parts?|diapositivas?|paginas?|páginas?|partes?)\b/giu,
+      " ",
+    )
+    .replace(
+      /\b(?:carousel|carrusel)\s+(?:of|de|with|con)\s+\d+\b/giu,
+      " ",
+    );
+  const numbers = extractNumericLiterals(factualCopy);
+  if (/\bone[- ]third\b/iu.test(factualCopy)) numbers.push("33%");
+  if (/\btwo[- ]thirds\b/iu.test(factualCopy)) numbers.push("67%");
+  return uniqueText(numbers);
+}
+
+function briefCopyExceedsFacts(
+  copy: string,
+  sourceCopy: string,
+  facts: readonly CreativeKeyFact[],
+): boolean {
+  const unsupportedNumber = extractBriefClaimNumbers(copy).some(
+    (number) =>
+      !facts.some((fact) => fact.claimGuard?.allowedNumbers.includes(number)),
+  );
+  return unsupportedNumber || hasUnsupportedInference(copy, sourceCopy);
+}
+
+function localizedSourceQuestion(existingQuestion: string): string {
+  if (
+    /[¿áéíóúñ]|\b(?:que|qué|como|cómo|cual|cuál|embarazo|fuente)\b/iu.test(
+      existingQuestion,
+    )
+  ) {
+    return "¿Qué establece la fuente aquí?";
+  }
+  if (
+    /[àâçéèêëîïôûùüÿœ]|\b(?:que|quoi|comment|source)\b/iu.test(
+      existingQuestion,
+    )
+  ) {
+    return "Que rapporte la source ici ?";
+  }
+  return "What does the source establish here?";
+}
+
+function truncateWithoutBreakingWord(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  const shortened = value.slice(0, maxLength + 1).replace(/\s+\S*$/u, "");
+  return (shortened || value.slice(0, maxLength)).trim();
+}
+
+function extractNumericLiterals(value: string): string[] {
+  return [...value.matchAll(/~?\d[\d,.]*(?:\s*%|\s*percent)?/giu)].map(
+    (match) => normalizeNumber(match[0]),
+  );
 }
 
 function factUsesNumberInCopy(fact: CreativeKeyFact, copy: string): boolean {
