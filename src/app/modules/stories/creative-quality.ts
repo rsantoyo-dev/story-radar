@@ -44,6 +44,14 @@ export function repairDeterministicCreativeCopy(
     })),
   };
   if (format === "carousel") {
+    repaired.units.forEach((unit) => {
+      const evidence = evidenceForUnit(unit.factIds, keyFacts);
+      unit.headline = softenUnsupportedAbsolutes(unit.headline, evidence);
+      if (unit.body) unit.body = softenUnsupportedAbsolutes(unit.body, evidence);
+      if (unit.ctaQuestion) {
+        unit.ctaQuestion = softenUnsupportedAbsolutes(unit.ctaQuestion, evidence);
+      }
+    });
     const closing = repaired.units.at(-1);
     if (closing) {
       if (
@@ -77,6 +85,17 @@ export function repairDeterministicCreativeCopy(
         !closing.ctaQuestion.includes("?")
       ) {
         closing.ctaQuestion = `${closing.ctaQuestion.replace(/[.!]+$/u, "").trim()}?`;
+      }
+      if (
+        closing.editorialGoal === "debate" &&
+        closing.ctaQuestion?.trim() &&
+        isGenericClosingQuestion(closing.ctaQuestion)
+      ) {
+        closing.ctaQuestion = groundedClosingQuestion(
+          repaired.concept,
+          language,
+          closing.viewerQuestion,
+        );
       }
 
       const fields = ["headline", "body", "ctaQuestion"] as const;
@@ -114,6 +133,87 @@ function localizedDebateQuestion(language?: string): string {
     : "What stands out most to you?";
 }
 
+const GENERIC_CTA_PATTERN =
+  /^[¿¡\s]*(?:what stands out(?: most)? to you|what do you think|thoughts|what surprised you(?: most)?|qué te sorprendió más(?: de esta información)?|qué opinas|cuál es tu opinión)[?.!¿¡\s]*$/iu;
+
+const ABSOLUTE_PATTERNS: ReadonlyArray<{
+  pattern: RegExp;
+  support: RegExp;
+  replacement: string;
+}> = [
+  { pattern: /\bzero[- ]drift\b/giu, support: /\bzero[- ]drift\b/iu, replacement: "automated drift" },
+  { pattern: /\beliminat(?:e|es|ed|ing)\b/giu, support: /\beliminat(?:e|es|ed|ing)\b/iu, replacement: "reduces" },
+  { pattern: /\bguarantee(?:s|d|ing)?\b/giu, support: /\bguarantee(?:s|d|ing)?\b/iu, replacement: "helps ensure" },
+  { pattern: /\b(?:always|never)\b/giu, support: /\b(?:always|never)\b/iu, replacement: "consistently" },
+];
+
+function evidenceForUnit(
+  factIds: readonly string[],
+  keyFacts: readonly CreativeKeyFact[],
+): string {
+  return keyFacts
+    .filter((fact) => factIds.includes(fact.id))
+    .map((fact) => fact.sourceExcerpt?.trim() || fact.statement)
+    .join(" ");
+}
+
+function softenUnsupportedAbsolutes(value: string, evidence: string): string {
+  return ABSOLUTE_PATTERNS.reduce(
+    (copy, rule) =>
+      rule.support.test(evidence)
+        ? copy
+        : copy.replace(rule.pattern, (match) =>
+            /^\p{Lu}/u.test(match)
+              ? `${rule.replacement.charAt(0).toUpperCase()}${rule.replacement.slice(1)}`
+              : rule.replacement,
+          ),
+    value,
+  );
+}
+
+function containsUnsupportedAbsolute(value: string, evidence: string): boolean {
+  return ABSOLUTE_PATTERNS.some(
+    (rule) => rule.pattern.test(value) && !rule.support.test(evidence),
+  );
+}
+
+function isGenericClosingQuestion(value: string): boolean {
+  return GENERIC_CTA_PATTERN.test(value.trim());
+}
+
+function groundedClosingQuestion(
+  concept: string,
+  language?: string,
+  viewerQuestion?: string,
+): string {
+  const internalQuestion = viewerQuestion?.trim();
+  if (
+    internalQuestion?.includes("?") &&
+    !isInternalPlanningQuestion(internalQuestion) &&
+    !isGenericClosingQuestion(internalQuestion) &&
+    !(isSpanishProfileLanguage(language) && hasLikelyEnglishSentence(internalQuestion))
+  ) {
+    return internalQuestion;
+  }
+  const subject = concept
+    .replace(
+      /^a\s+\d+[- ](?:slide|part|step)\s+(?:breakdown|carousel|guide)\s+(?:of|to)\s+/iu,
+      "",
+    )
+    .trim()
+    .replace(/[?.!]+$/u, "");
+  if (!subject) return localizedDebateQuestion(language);
+  return isSpanishProfileLanguage(language)
+    ? `¿Dónde aplicarías primero ${subject}?`
+    : `Where would you apply ${subject} first?`;
+}
+
+function isInternalPlanningQuestion(value: string): boolean {
+  return /\b(?:what question should (?:the )?viewer|what should (?:the )?(?:viewer|readers?|audience) consider|why should (?:the viewer|i) care|what happened and why|viewer question|pregunta (?:interna|para el espectador))\b/iu.test(
+    value,
+  );
+}
+
 function normalizeQuestionCopy(value: string): string {
   return value
     .normalize("NFKC")
@@ -142,9 +242,38 @@ export function deterministicCreativeQualityIssues(
             : { unitOrder: issue.unitIndex + 1 }),
         }))
       : [];
+  const editorialPrecisionIssues = draft.units.flatMap((unit) => {
+    const evidence = evidenceForUnit(unit.factIds, keyFacts);
+    const visibleCopy = [unit.headline, unit.body, unit.ctaQuestion]
+      .filter(Boolean)
+      .join(" ");
+    return containsUnsupportedAbsolute(visibleCopy, evidence)
+      ? [{
+          code: "UNSUPPORTED_ABSOLUTE",
+          severity: "blocker" as const,
+          unitOrder: unit.order,
+          message: `Slide ${unit.order} uses an absolute promise that its selected evidence does not establish.`,
+        }]
+      : [];
+  });
+  const closing = draft.units.at(-1);
+  const ctaSpecificityIssues =
+    format === "carousel" &&
+    closing?.ctaQuestion?.trim() &&
+    isGenericClosingQuestion(closing.ctaQuestion)
+      ? [{
+          code: "GENERIC_CTA",
+          severity: "blocker" as const,
+          unitOrder: closing.order,
+          message:
+            "The closing question is generic; connect it to the carousel's central concept.",
+        }]
+      : [];
   return [
     ...narrativeIssues,
     ...deterministicFactQualityIssues(draft, keyFacts),
+    ...editorialPrecisionIssues,
+    ...ctaSpecificityIssues,
     ...visibleDraftLanguageIssues(draft, language),
   ];
 }
@@ -329,6 +458,7 @@ function calibrateCreativeQualityScores(
       "MISSING_DEBATE_QUESTION",
       "CLOSING_QUESTION_COUNT",
       "CLOSING_GOAL",
+      "GENERIC_CTA",
     )
   ) {
     scores.cta = Math.min(scores.cta, 74);

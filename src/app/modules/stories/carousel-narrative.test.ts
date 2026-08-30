@@ -93,7 +93,7 @@ test("promotes an internal debate question to the visible CTA", () => {
 
   assert.equal(
     repaired.units[2]?.ctaQuestion,
-    "What stands out most to you?",
+    "Where would you apply Evidence-led debate first?",
   );
   assert.ok(
     !evaluateCarouselNarrative(repaired.units).some(
@@ -128,7 +128,7 @@ test("does not leak an English internal question into a Spanish CTA", () => {
 
   assert.equal(
     repaired.units[1]?.ctaQuestion,
-    "¿Qué te sorprendió más de esta información?",
+    "¿Dónde aplicarías primero Cierre localizado?",
   );
 });
 
@@ -152,7 +152,10 @@ test("replaces a verbatim internal planning question in visible CTA copy", () =>
 
   const repaired = repairDeterministicCreativeCopy(draft, "carousel");
 
-  assert.equal(repaired.units[1]?.ctaQuestion, "What stands out most to you?");
+  assert.equal(
+    repaired.units[1]?.ctaQuestion,
+    "Where would you apply Agent governance first?",
+  );
 });
 
 test("blocks a slide that combines two editorial questions", () => {

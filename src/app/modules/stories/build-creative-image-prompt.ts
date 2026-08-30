@@ -53,6 +53,7 @@ export function buildCreativeImagePrompt({
     draft.format === "carousel"
       ? buildCarouselVisualSystem(campaignCharacters)
       : undefined;
+  const countedStructure = countedStructureInstruction(unit);
 
   return {
     expectedText,
@@ -92,6 +93,7 @@ export function buildCreativeImagePrompt({
           ]
         : []),
       `Visual direction: ${unit.visualDirection}`,
+      ...(countedStructure ? [countedStructure] : []),
       ...(characters.length > 0
         ? [
             `Supporting character consistency: ${referenceImageCount} supplied reference image${referenceImageCount === 1 ? " is" : "s are"} authoritative. Do not add unselected people as recurring characters. Do not introduce animals, mascots, or creatures unless they are explicitly required by the visual direction or a selected character description. Treat every explicit exclusion in a character description, including phrases such as "no", "not a", or "without", as a hard visual constraint.`,
@@ -127,6 +129,15 @@ export function buildCreativeImagePrompt({
       `Return one polished ${graphicShape} graphic, ready to review. Human review will verify the rendered text.`,
     ].join("\n\n"),
   };
+}
+
+function countedStructureInstruction(unit: CreativeUnit): string | undefined {
+  const match = unit.headline.match(
+    /\b([3-9]|10)[- ](?:part|step|stage|component|layer|point|parte|paso|etapa|componente|capa|punto)s?\b/iu,
+  );
+  if (!match?.[1]) return undefined;
+  const count = Number(match[1]);
+  return `COUNTED STRUCTURE LOCK: the headline promises exactly ${count} parts. Depict exactly ${count} clearly separated, ordered visual components—no more and no fewer. Each component must correspond to one item already stated in the visible copy. Do not invent extra labels, steps, files, or categories.`;
 }
 
 function characterReferencePromptLines(
