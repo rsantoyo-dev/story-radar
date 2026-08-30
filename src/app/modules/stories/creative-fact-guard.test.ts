@@ -127,6 +127,50 @@ test("blocks unsupported interpretive framing", () => {
   );
 });
 
+test("removes an unsupported wealth inference from an income comparison", () => {
+  const housingFact: CreativeKeyFact = {
+    id: "fact-1",
+    statement:
+      "In 2023, repeat home buyers had higher median family incomes than first-time buyers in the reported jurisdictions except British Columbia.",
+    sourceExcerpt:
+      "The median family income of first-time home buyers was lower than that of repeat buyers in all jurisdictions with available data except British Columbia.",
+    attribution: "Statistics Canada",
+  };
+  const housingDraft: GeneratedCreativeDraft = {
+    concept: "Ingresos de compradores de vivienda",
+    caption: "Una comparación de ingresos familiares medianos.",
+    hashtags: [],
+    altText: "Carrusel que compara ingresos de compradores.",
+    units: [
+      unit(
+        1,
+        "conclusion",
+        "conclude",
+        "Entrar al mercado exige competir con años de patrimonio previo",
+        "Los compradores recurrentes tuvieron ingresos familiares medianos más altos, salvo en Columbia Británica.",
+        ["fact-1"],
+      ),
+    ],
+  };
+
+  assert.ok(
+    deterministicFactQualityIssues(housingDraft, [housingFact]).some(
+      (issue) => issue.code === "UNSUPPORTED_INFERENCE",
+    ),
+  );
+  const repaired = repairDeterministicFactCopy(
+    housingDraft,
+    [housingFact],
+    "español",
+  );
+  assert.equal(repaired.units[0]?.headline, "Lo que muestran los datos");
+  assert.ok(
+    !deterministicFactQualityIssues(repaired, [housingFact]).some(
+      (issue) => issue.code === "UNSUPPORTED_INFERENCE",
+    ),
+  );
+});
+
 test("accepts roughly one-third and since-launch as a cautious rendering of 35%", () => {
   const exactFact: CreativeKeyFact = {
     id: "fact-1",
@@ -281,6 +325,38 @@ test("accepts the numeric count of an explicit multi-item fact list", () => {
   );
 });
 
+test("treats compact currency suffixes as equivalent to full amounts", () => {
+  const costFact: CreativeKeyFact = {
+    id: "fact-cost",
+    statement:
+      "Infrastructure cost about $12,000 versus a roughly $6 million staffing estimate.",
+    attribution: "Asana",
+    requiredQualifiers: ["about", "roughly", "estimate"],
+  };
+  const costDraft: GeneratedCreativeDraft = {
+    concept: "Migration economics",
+    caption: "A comparison of migration costs.",
+    hashtags: [],
+    altText: "A cost comparison.",
+    units: [
+      unit(
+        1,
+        "content",
+        "prove",
+        "About $12K vs a roughly $6M estimate",
+        "Infrastructure cost about $12,000.",
+        ["fact-cost"],
+      ),
+    ],
+  };
+
+  assert.ok(
+    !deterministicFactQualityIssues(costDraft, [costFact]).some(
+      (issue) => issue.code === "UNSUPPORTED_NUMBER",
+    ),
+  );
+});
+
 test("accepts a numeric ordinal when the selected fact spells it out", () => {
   const dueDateFact: CreativeKeyFact = {
     id: "fact-due-date",
@@ -369,6 +445,37 @@ test("recognizes cardinal words and common verbal fractions", () => {
 
   assert.equal(
     deterministicFactQualityIssues(draft, facts).some(
+      (issue) => issue.code === "UNSUPPORTED_NUMBER",
+    ),
+    false,
+  );
+});
+
+test("does not treat a Spanish indefinite article as the number one", () => {
+  const pregnancyFact: CreativeKeyFact = {
+    id: "fact-20-weeks",
+    statement: "Around 20 weeks, the baby's movements can be felt.",
+    attribution: "INSPQ",
+  };
+  const pregnancyDraft: GeneratedCreativeDraft = {
+    concept: "Movimientos del bebé",
+    caption: "Un dato sobre el desarrollo fetal.",
+    hashtags: [],
+    altText: "Carrusel sobre movimientos fetales.",
+    units: [
+      unit(
+        1,
+        "content",
+        "impact",
+        "Una etapa importante",
+        "Alrededor de las 20 semanas, los movimientos pueden sentirse.",
+        ["fact-20-weeks"],
+      ),
+    ],
+  };
+
+  assert.equal(
+    deterministicFactQualityIssues(pregnancyDraft, [pregnancyFact]).some(
       (issue) => issue.code === "UNSUPPORTED_NUMBER",
     ),
     false,

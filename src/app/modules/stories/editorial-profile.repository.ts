@@ -14,6 +14,8 @@ import { reactivateAutoRejectedStories } from "./reactivate-auto-rejected-storie
 import {
   DEFAULT_EDITORIAL_PROFILE_FRESHNESS,
   DEFAULT_EDITORIAL_PROFILE_WEIGHTS,
+  MAX_EDITORIAL_PROFILE_LIST_ITEMS,
+  MAX_EDITORIAL_PROFILE_LIST_ITEM_LENGTH,
   type EditableEditorialProfile,
   type EditorialProfile,
   type EditorialProfileFreshnessPolicy,
@@ -37,9 +39,6 @@ export type SavedEditorialProfile = EditorialProfile & {
 
 const MAX_AUDIENCE_LENGTH = 500;
 const MAX_MISSION_LENGTH = 1_000;
-const MAX_PILLARS = 12;
-const MAX_EXCLUSIONS = 12;
-const MAX_LIST_ITEM_LENGTH = 160;
 const MAX_AGE_HOURS = 8_760;
 
 /**
@@ -274,9 +273,13 @@ function validateEditorialProfile(
     contentPillars: textList(
       value.contentPillars,
       "contentPillars",
-      MAX_PILLARS,
+      MAX_EDITORIAL_PROFILE_LIST_ITEMS,
     ),
-    exclusions: textList(value.exclusions, "exclusions", MAX_EXCLUSIONS),
+    exclusions: textList(
+      value.exclusions,
+      "exclusions",
+      MAX_EDITORIAL_PROFILE_LIST_ITEMS,
+    ),
     freshness: freshnessPolicy(value.freshness),
     weights,
     localCandidateMinScore: boundedInteger(
@@ -360,9 +363,23 @@ function textList(
     throw new EditorialProfileValidationError(`${field} must be a text array`);
   }
 
-  return [...new Set(value.map((item) => item.trim()).filter(Boolean))]
-    .slice(0, maxItems)
-    .map((item) => item.slice(0, MAX_LIST_ITEM_LENGTH));
+  const normalized = [
+    ...new Set(value.map((item) => item.trim()).filter(Boolean)),
+  ];
+  if (normalized.length > maxItems) {
+    throw new EditorialProfileValidationError(
+      `${field} supports at most ${maxItems} items`,
+    );
+  }
+  const oversized = normalized.find(
+    (item) => item.length > MAX_EDITORIAL_PROFILE_LIST_ITEM_LENGTH,
+  );
+  if (oversized) {
+    throw new EditorialProfileValidationError(
+      `${field} items support at most ${MAX_EDITORIAL_PROFILE_LIST_ITEM_LENGTH} characters`,
+    );
+  }
+  return normalized;
 }
 
 function boundedInteger(

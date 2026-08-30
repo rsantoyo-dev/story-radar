@@ -436,12 +436,13 @@ export function evaluateCarouselNarrative(
       });
     }
 
-    if (wordCount(unit.headline) > 14) {
+    const headlineTarget = unit.role === "cover" ? 12 : 14;
+    if (wordCount(unit.headline) > headlineTarget) {
       warnings.push({
         severity: "warning",
         code: "headline-too-long",
         unitIndex,
-        message: `Slide ${slide} headline uses ${wordCount(unit.headline)} words; aim for 14 or fewer.`,
+        message: `Slide ${slide} headline uses ${wordCount(unit.headline)} words; aim for ${headlineTarget} or fewer.`,
       });
     }
     if (wordCount(unit.body) > 45) {

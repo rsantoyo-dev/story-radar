@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { CreativeFormat } from "./creative-content.types";
+import type { CreativeEditorialModelConfig } from "./creative-editorial-router";
 
 export type CreativeTextProvider = "gemini" | "groq";
 
@@ -25,6 +26,9 @@ export type CreativeContentRuntimeConfig = CreativeContentPublicConfig & {
   cloudflareAiAccountId?: string;
   cloudflareAiApiToken?: string;
   cloudflareAiModel?: string;
+  /** Optional OpenAI quality gate. Gemini remains the draft author. */
+  openAiApiKey?: string;
+  openAiEditorialModels: CreativeEditorialModelConfig;
 };
 
 const DEFAULT_MAX_RUNS_PER_DAY = 40;
@@ -39,6 +43,17 @@ export function getCreativeContentRuntimeConfig(): CreativeContentRuntimeConfig 
   const cloudflareAiModel =
     process.env.CLOUDFLARE_AI_MODEL?.trim() ||
     "@cf/zai-org/glm-4.7-flash";
+  const openAiApiKey = process.env.OPENAI_API_KEY?.trim();
+  const openAiEditorialModels: CreativeEditorialModelConfig = {
+    criticModel:
+      process.env.CREATIVE_CRITIC_MODEL?.trim() || "gpt-5.6-terra",
+    minorRepairModel:
+      process.env.CREATIVE_MINOR_REPAIR_MODEL?.trim() || "gpt-5.6-luna",
+    structuralRepairModel:
+      process.env.CREATIVE_STRUCTURAL_REPAIR_MODEL?.trim() || "gpt-5.6-terra",
+    severeRepairModel:
+      process.env.CREATIVE_SEVERE_REPAIR_MODEL?.trim() || "gpt-5.6-sol",
+  };
   const publicConfig = getCreativeContentPublicConfig();
   if (Boolean(cloudflareAiAccountId) !== Boolean(cloudflareAiApiToken)) {
     throw new CreativeContentConfigurationError(
@@ -66,6 +81,8 @@ export function getCreativeContentRuntimeConfig(): CreativeContentRuntimeConfig 
       groqApiKey,
       groqModel: publicConfig.model,
       ...cloudflareFallback,
+      ...(openAiApiKey ? { openAiApiKey } : {}),
+      openAiEditorialModels,
       ...publicConfig,
     };
   }
@@ -89,6 +106,8 @@ export function getCreativeContentRuntimeConfig(): CreativeContentRuntimeConfig 
         }
       : {}),
     ...cloudflareFallback,
+    ...(openAiApiKey ? { openAiApiKey } : {}),
+    openAiEditorialModels,
     ...publicConfig,
   };
 }
@@ -106,10 +125,10 @@ export function getCreativeContentPublicConfig(): CreativeContentPublicConfig {
     provider: primaryProvider === "groq" ? "groq" : "google",
     model: primaryProvider === "groq" ? groqModel : geminiModel,
     primaryProvider,
-    briefPromptVersion: "creative-brief-v12",
+    briefPromptVersion: "creative-brief-v13",
     draftPromptVersions: {
-      meme: "meme-draft-v10",
-      carousel: "carousel-draft-v15",
+      meme: "meme-draft-v12",
+      carousel: "carousel-draft-v17",
     },
     maxRunsPerDay: parsePositiveInteger(
       process.env.CREATIVE_MAX_RUNS_PER_DAY,

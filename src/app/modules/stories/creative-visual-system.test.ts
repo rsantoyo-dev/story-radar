@@ -32,3 +32,17 @@ test("applies recurring-character style to slides without requiring the characte
   assert.match(system, /even when the recurring character is not selected/iu);
   assert.match(system, /must not cause an unselected character/iu);
 });
+
+test("uses one realistic editorial medium when a photo character lacks style metadata", () => {
+  const system = buildCarouselVisualSystem([
+    {
+      id: "sofi",
+      name: "Sofi",
+      description: "Sofi is the recurring presenter for this channel.",
+    },
+  ]);
+
+  assert.match(system, /premium editorial realism/iu);
+  assert.match(system, /never switch to flat cartoon illustration/iu);
+  assert.match(system, /must not cause an unselected character/iu);
+});

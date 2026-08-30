@@ -93,7 +93,7 @@ test("promotes an internal debate question to the visible CTA", () => {
 
   assert.equal(
     repaired.units[2]?.ctaQuestion,
-    "Where would you apply Evidence-led debate first?",
+    "How would Evidence-led debate change your approach?",
   );
   assert.ok(
     !evaluateCarouselNarrative(repaired.units).some(
@@ -128,7 +128,7 @@ test("does not leak an English internal question into a Spanish CTA", () => {
 
   assert.equal(
     repaired.units[1]?.ctaQuestion,
-    "¿Dónde aplicarías primero Cierre localizado?",
+    "¿Cómo cambiaría Cierre localizado tu enfoque?",
   );
 });
 
@@ -154,7 +154,7 @@ test("replaces a verbatim internal planning question in visible CTA copy", () =>
 
   assert.equal(
     repaired.units[1]?.ctaQuestion,
-    "Where would you apply Agent governance first?",
+    "How would Agent governance change your approach?",
   );
 });
 

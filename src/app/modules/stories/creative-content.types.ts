@@ -252,10 +252,14 @@ export type CreativeUnit = {
 export type CreativeQualityScores = {
   factuality: number;
   hook: number;
+  /** Human curiosity and immediate personal relevance of the opening. */
+  curiosity: number;
   swipeReward: number;
   continuity: number;
   relevance: number;
   clarity: number;
+  /** How clearly the ending pays off the opening promise. */
+  resolution: number;
   cta: number;
   overall: number;
 };
@@ -274,6 +278,16 @@ export type CreativeQualityReview = {
   scores: CreativeQualityScores;
   issues: CreativeQualityIssue[];
   repairPasses: number;
+  /** Traceability for the independent editorial quality gate. */
+  critic?: {
+    provider: "openai";
+    model: string;
+  };
+  repair?: {
+    provider: "openai";
+    model: string;
+    severity: "minor" | "structural" | "severe";
+  };
 };
 
 export type GeneratedCreativeDraft = {

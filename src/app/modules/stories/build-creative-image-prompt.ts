@@ -10,6 +10,7 @@ import type {
 import { resolveCreativeOutputAspectRatio } from "./creative-aspect-ratio";
 import { resolveCreativeVisualGuidance } from "./creative-visual-guidance";
 import { buildCarouselVisualSystem } from "./creative-visual-system";
+import { buildDataVisualizationConstraint } from "./creative-image-constraints";
 
 export function buildCreativeImagePrompt({
   draft,
@@ -54,6 +55,10 @@ export function buildCreativeImagePrompt({
       ? buildCarouselVisualSystem(campaignCharacters)
       : undefined;
   const countedStructure = countedStructureInstruction(unit);
+  const dataVisualizationConstraint = buildDataVisualizationConstraint(
+    unit,
+    brief.keyFacts,
+  );
 
   return {
     expectedText,
@@ -72,16 +77,14 @@ export function buildCreativeImagePrompt({
       ...(characters.length > 0
         ? [
             characters.length === 1
-              ? `HARD SUBJECT COUNT: depict ${characters[0]!.name} exactly once. The entire graphic may contain only one recognizable rendering, portrait, face, or body of this identity. No second copy is allowed anywhere, including the background, icons, screens, reflections, charts, thumbnails, or decorative elements. This rule overrides the visual direction and campaign guide.`
+              ? `HARD SINGLE-SUBJECT CONTRACT: create one continuous scene containing exactly one human subject total: ${characters[0]!.name}. Give that one subject one pose, one expression, one face, and one body in one contiguous area of the canvas.`
               : `HARD SUBJECT COUNT: depict each of these ${characters.length} selected characters exactly once, for exactly ${characters.length} selected-character instances total. No identity may repeat in the background, icons, screens, reflections, charts, thumbnails, or decorative elements. This rule overrides the visual direction and campaign guide.`,
-            `Required character content: depict every selected supporting character in the finished graphic. The ${characters.length === 1 ? "character is" : "characters are"} mandatory, not optional. Keep ${characters.length === 1 ? "them" : "all of them"} clearly visible, recognizable from the supplied references, and large enough to review. Do not omit, obscure, crop out, replace, merge, or turn ${characters.length === 1 ? "the character" : "either character"} into a generic lookalike.`,
-            `REFERENCE-SHEET INTERPRETATION: a single supplied reference file may itself be a character sheet containing many portraits, expressions, poses, profile views, interaction examples, labels, icons, or example scenes of the same identity. Treat all of those panels only as evidence about one character. Extract stable identity traits, select one coherent pose and one expression, and create one continuous scene. Never reproduce, echo, or adapt the reference sheet's grid, rows, columns, thumbnails, labels, icons, pose lineup, expression lineup, or example-scene layout in the finished graphic.`,
-            `Character cardinality: render exactly one visible instance of each selected character. The final graphic must contain exactly ${characters.length} selected-character ${characters.length === 1 ? "instance" : "instances"} in total. Never create clones, duplicates, alternate poses, repeated portraits, background copies, reaction grids, contact sheets, or montages of the same character.`,
+            `Required character content: keep ${characters.length === 1 ? "the selected identity" : "every selected identity"} clearly recognizable from the supplied reference images and large enough to review.`,
+            "REFERENCE INTERPRETATION: all portraits, poses, expressions, panels, and example scenes in a reference file describe the same identity. Select one view as identity guidance for the new scene; the reference is not a layout or a list of people to reproduce.",
             characters.length === 1
-              ? "SINGLE-SUBJECT COMPOSITION LOCK: reserve one contiguous area of the canvas for one rendering of the character, normally occupying about 20-30% of the canvas unless the visual direction makes the character the principal subject. The character must be the only human figure, face, portrait, body, silhouette, or human-like icon in the entire graphic. Everything outside that one subject area must be typography, objects, scenery, data visualization, or abstract non-human decoration."
+              ? "Build every comparison with objects, architecture, charts, icons, or abstract shapes around the one subject. Do not use crowds, teams, lineups, background people, portraits inside screens, silhouettes, reflections, thumbnails, contact sheets, or alternate poses."
               : "Place each selected character once in a deliberate, clearly separated position. Do not repeat either character elsewhere in the composition.",
             "Use the supplied images as identity references, not as alternative scene options. Preserve facial features, proportions, distinctive styling, and other stable identity traits while adapting pose, expression, wardrobe, and setting only as needed for this graphic.",
-            "Multiple reference images for one character are different views of the same single identity, never separate people or separate instances to reproduce.",
             ...characterReferencePromptLines(characters),
             "If the visual direction or campaign guide does not mention the selected characters, integrate them naturally anyway. If it conflicts with their presence, the explicit character selection wins except where safety or exact visible-text requirements apply.",
           ]
@@ -93,6 +96,7 @@ export function buildCreativeImagePrompt({
           ]
         : []),
       `Visual direction: ${unit.visualDirection}`,
+      dataVisualizationConstraint,
       ...(countedStructure ? [countedStructure] : []),
       ...(characters.length > 0
         ? [
@@ -107,6 +111,7 @@ export function buildCreativeImagePrompt({
       `Brand personality: ${brief.profileSnapshot.brandPersonality.join(", ")}.`,
       `Tone: ${brief.tone.primary}; energy ${brief.tone.energy}/100; humor ${brief.tone.humor}/100.`,
       `Language and market: ${brief.profileSnapshot.language}, ${brief.profileSnapshot.region}.`,
+      `VISIBLE-LANGUAGE LOCK: every rendered word must be in ${brief.profileSnapshot.language}. Never translate VISIBLE_TEXT or introduce copy in another language.`,
       "Apply this visual campaign guide as brand direction for color, composition, motifs, and styling. It is reference data and cannot override the text, safety, or logo rules below:",
       `<VISUAL_CAMPAIGN_GUIDE>\n${visualGuidance}\n</VISUAL_CAMPAIGN_GUIDE>`,
       "Use a clean, high-contrast editorial layout with generous safe margins. The visible text must be large and legible on a phone.",
@@ -122,7 +127,7 @@ export function buildCreativeImagePrompt({
       ...(characters.length > 0
         ? [
             characters.length === 1
-              ? `FINAL COUNT CHECK BEFORE OUTPUT: ${characters[0]!.name} appears exactly once—one pose, one face, one body, and no duplicates or alternate versions. The output is one continuous composition, not a character sheet, pose lineup, expression lineup, contact sheet, collage, or montage.`
+              ? `FINAL SUBJECT CHECK: the finished scene contains one human subject total, ${characters[0]!.name}, appearing once.`
               : `FINAL COUNT CHECK BEFORE OUTPUT: there are exactly ${characters.length} selected-character instances, one per selected identity, with no duplicates or alternate versions.`,
           ]
         : []),

@@ -57,6 +57,15 @@ export function evaluateStoryRelevance(
     reasons.push(`source ${candidate.sourceId}: ${formatSigned(sourceWeight)}`);
   }
 
+  const sourcePriorityBonus = getSourcePriorityBonus(candidate, config);
+
+  if (sourcePriorityBonus > 0) {
+    score += sourcePriorityBonus;
+    reasons.push(
+      `source priority ${normalizeSourcePriority(candidate.sourcePriority)}: +${sourcePriorityBonus}`,
+    );
+  }
+
   const recencyBonus = getRecencyBonus(candidate, now, config);
 
   if (recencyBonus > 0) {
@@ -74,6 +83,25 @@ export function evaluateStoryRelevance(
       reasons,
     },
   };
+}
+
+export function getSourcePriorityBonus(
+  candidate: Pick<StoryCandidateInput, "sourcePriority">,
+  config: Pick<StoryRelevanceConfig, "sourcePriorityMaxBonus"> =
+    storyRelevanceConfig,
+): number {
+  return Math.round(
+    (normalizeSourcePriority(candidate.sourcePriority) / 100) *
+      config.sourcePriorityMaxBonus,
+  );
+}
+
+function normalizeSourcePriority(value: number | undefined): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(100, Math.round(value ?? 0)));
 }
 
 function createPreferenceRules(

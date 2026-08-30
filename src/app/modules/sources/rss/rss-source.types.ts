@@ -13,6 +13,11 @@ export type RssSourceConfig = {
   region: string;
 
   tags: string[];
+  /**
+   * Topic-specific editorial importance. Seeded/global sources may omit it,
+   * while sources loaded through the topic catalog provide a value from 0–100.
+   */
+  priority?: number;
   pollEveryMinutes: number;
   contentMode: RssContentMode;
 };

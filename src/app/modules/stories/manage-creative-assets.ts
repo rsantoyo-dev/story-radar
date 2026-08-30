@@ -61,9 +61,6 @@ export async function getCreativeDraftAssets(
   includeHistorical = false,
 ): Promise<CreativeAssetBatchResponse> {
   const draft = await requireCreativeDraft(topicId, draftId);
-  const draftNeedsReferenceGuidance = draft.units.some(
-    (unit) => (unit.characterIds?.length ?? 0) > 0,
-  );
   const outputAspectRatio = outputAspectRatioForDraft(draft);
   const preferredConfiguration = getFalImagePublicConfig(
     outputAspectRatio,
@@ -108,13 +105,11 @@ export async function getCreativeDraftAssets(
     batch = await findLatestCreativeAssetBatch(draft.id, draft.version);
   }
 
-  // A batch created before reference-guided support (or by the old text
-  // endpoint) must not mask the Generate action for a draft that now selects
-  // characters. Existing historical assets remain in the database, but the
-  // Studio needs a fresh, correctly routed batch.
+  // Any prompt-policy change must expose a fresh Generate action. Historical
+  // assets remain available through includeHistorical, but they must not mask
+  // a new batch with current language, data-integrity, or character rules.
   if (
     batch &&
-    draftNeedsReferenceGuidance &&
     (batch.promptVersion !== preferredConfiguration.promptVersion ||
       !batchMatchesDraftGenerationModes(batch, draft))
   ) {
@@ -152,12 +147,13 @@ export async function generateCreativeDraftAssets(
   const draft = await requireCreativeDraft(topicId, draftId);
   requireApprovedDraft(draft.status);
   const brief = await requireCreativeBrief(topicId, draft.briefId);
-  requireNarrativeQuality(draft, brief.keyFacts);
+  requireNarrativeQuality(
+    draft,
+    brief.keyFacts,
+    brief.profileSnapshot.language,
+  );
   const outputAspectRatio = outputAspectRatioForDraft(draft);
   const configuration = getFalImageRuntimeConfig(outputAspectRatio, imageQuality);
-  const draftNeedsReferenceGuidance = draft.units.some(
-    (unit) => (unit.characterIds?.length ?? 0) > 0,
-  );
 
   let existing = await findCurrentCreativeAssetBatch(draft.id, draft.version, {
     provider: configuration.provider,
@@ -178,9 +174,8 @@ export async function generateCreativeDraftAssets(
     );
     if (
       compatible &&
-      (!draftNeedsReferenceGuidance ||
-        (compatible.promptVersion === configuration.promptVersion &&
-          batchMatchesDraftGenerationModes(compatible, draft)))
+      compatible.promptVersion === configuration.promptVersion &&
+      batchMatchesDraftGenerationModes(compatible, draft)
     ) {
       existing = compatible;
     }
@@ -278,7 +273,11 @@ export async function generateNextCreativeDraftAssetVersion(
   const draft = await requireCreativeDraft(topicId, draftId);
   requireApprovedDraft(draft.status);
   const brief = await requireCreativeBrief(topicId, draft.briefId);
-  requireNarrativeQuality(draft, brief.keyFacts);
+  requireNarrativeQuality(
+    draft,
+    brief.keyFacts,
+    brief.profileSnapshot.language,
+  );
 
   const batch = await findCreativeAssetBatchById(batchId);
   if (!batch || batch.draftId !== draft.id) {
@@ -332,7 +331,11 @@ export async function regenerateCreativeAsset(
   const draft = await requireCreativeDraft(topicId, found.batch.draftId);
   requireApprovedDraft(draft.status);
   const brief = await requireCreativeBrief(topicId, draft.briefId);
-  requireNarrativeQuality(draft, brief.keyFacts);
+  requireNarrativeQuality(
+    draft,
+    brief.keyFacts,
+    brief.profileSnapshot.language,
+  );
   assertCurrentAsset(found.asset, found.batch, draft.version);
   const configuration = runtimeConfigurationForBatch(
     found.batch,
@@ -598,11 +601,13 @@ function requireApprovedDraft(status: "draft" | "approved"): void {
 function requireNarrativeQuality(
   draft: CreativeDraft,
   keyFacts: readonly CreativeKeyFact[],
+  language?: string,
 ): void {
   const blockers = deterministicCreativeQualityIssues(
     draft,
     draft.format,
     keyFacts,
+    language,
   ).filter((issue) => issue.severity === "blocker");
   if (blockers.length > 0) {
     throw new CreativeContentConflictError(
@@ -662,9 +667,13 @@ function validateRegenerationPrompt(input: unknown, fallback: string): string {
   if (typeof value !== "string" || !value.trim()) {
     throw new CreativeAssetValidationError("prompt must contain text");
   }
-  if (value.trim().length > 8_000) {
+  // Integrated prompts include the visual system, exact-text contract, and
+  // character-reference constraints. Current generated prompts can exceed
+  // 8k characters and are accepted by the configured Fal endpoint, so the
+  // editor must not reject its own persisted prompt during regeneration.
+  if (value.trim().length > 20_000) {
     throw new CreativeAssetValidationError(
-      "prompt must be 8,000 characters or fewer",
+      "prompt must be 20,000 characters or fewer",
     );
   }
   return value.trim();

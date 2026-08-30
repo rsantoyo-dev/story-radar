@@ -7,6 +7,10 @@ import type {
   TopicEditorialProfile,
   UpdateTopicEditorialProfileInput,
 } from "./modules/stories/editorial-profile.types";
+import {
+  MAX_EDITORIAL_PROFILE_LIST_ITEMS,
+  MAX_EDITORIAL_PROFILE_LIST_ITEM_LENGTH,
+} from "./modules/stories/editorial-profile.types";
 import styles from "./editorial-profile-panel.generated.module.css";
 
 type EditorialProfileDraft = UpdateTopicEditorialProfileInput;
@@ -30,6 +34,8 @@ export function EditorialProfilePanel({
 }) {
   const [profile, setProfile] = useState<TopicEditorialProfile>();
   const [draft, setDraft] = useState<EditorialProfileDraft>();
+  const [contentPillarsText, setContentPillarsText] = useState("");
+  const [exclusionsText, setExclusionsText] = useState("");
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -38,6 +44,10 @@ export function EditorialProfilePanel({
   const weightTotal = useMemo(
     () => totalWeights(draft?.weights),
     [draft?.weights],
+  );
+  const listValidationError = useMemo(
+    () => validateProfileLists(draft),
+    [draft],
   );
 
   useEffect(() => {
@@ -56,6 +66,8 @@ export function EditorialProfilePanel({
         setNotice(undefined);
         setProfile(nextProfile);
         setDraft(toDraft(nextProfile));
+        setContentPillarsText(nextProfile.contentPillars.join("\n"));
+        setExclusionsText(nextProfile.exclusions.join("\n"));
         setDirty(false);
       })
       .catch((loadError) => {
@@ -90,6 +102,10 @@ export function EditorialProfilePanel({
       setError("The five priority weights must add up to 100.");
       return;
     }
+    if (listValidationError) {
+      setError(listValidationError);
+      return;
+    }
 
     setBusy(true);
     setError(undefined);
@@ -109,6 +125,8 @@ export function EditorialProfilePanel({
       const reactivatedStories = result.reactivatedStories ?? 0;
       setProfile(saved);
       setDraft(toDraft(saved));
+      setContentPillarsText(saved.contentPillars.join("\n"));
+      setExclusionsText(saved.exclusions.join("\n"));
       setDirty(false);
       onProfileSaved?.(saved, reactivatedStories);
       setNotice(
@@ -198,28 +216,36 @@ export function EditorialProfilePanel({
         <label>
           <span>Content pillars</span>
           <textarea
-            value={draft.contentPillars.join("\n")}
-            onChange={(event) =>
-              updateDraft({ contentPillars: parseLines(event.target.value) })
-            }
+            value={contentPillarsText}
+            onChange={(event) => {
+              setContentPillarsText(event.target.value);
+              updateDraft({ contentPillars: parseLines(event.target.value) });
+            }}
             disabled={disabled || busy}
             placeholder={"Evidence-informed parenting\nPerinatal mental health\nChild development"}
             rows={5}
           />
-          <small>One theme per line. They guide relevance; they are not hard rules.</small>
+          <small>
+            One theme per line. {draft.contentPillars.length} / {MAX_EDITORIAL_PROFILE_LIST_ITEMS} used.
+            They guide relevance; they are not hard rules.
+          </small>
         </label>
         <label>
           <span>Exclude or down-rank</span>
           <textarea
-            value={draft.exclusions.join("\n")}
-            onChange={(event) =>
-              updateDraft({ exclusions: parseLines(event.target.value) })
-            }
+            value={exclusionsText}
+            onChange={(event) => {
+              setExclusionsText(event.target.value);
+              updateDraft({ exclusions: parseLines(event.target.value) });
+            }}
             disabled={disabled || busy}
             placeholder={"Sponsored content\nUnrelated drug discovery\nUnsupported claims"}
             rows={5}
           />
-          <small>One exclusion per line. AI treats these as editorial cautions.</small>
+          <small>
+            One exclusion per line. {draft.exclusions.length} / {MAX_EDITORIAL_PROFILE_LIST_ITEMS} used.
+            AI treats these as editorial cautions.
+          </small>
         </label>
       </div>
 
@@ -287,14 +313,29 @@ export function EditorialProfilePanel({
 
       <div className={styles.footer}>
         <small>
-          {profile.isDefault
-            ? "This topic still uses legacy-compatible values. Save once to customize it."
-            : `Last saved ${formatDate(profile.updatedAt)}.`}
+          {listValidationError
+            ? listValidationError
+            : disabled
+              ? "Finish the current dashboard operation before saving this profile."
+              : weightTotal !== 100
+                ? "The five priority weights must add up to 100 before saving."
+                : !dirty
+                  ? profile.isDefault
+                    ? "Edit a field to customize this compatible default."
+                    : `Last saved ${formatDate(profile.updatedAt)}.`
+                  : "Changes are ready to save."}
         </small>
         <button
           type="button"
           onClick={save}
-          disabled={!dirty || disabled || busy || weightTotal !== 100}
+          disabled={
+            !dirty ||
+            disabled ||
+            busy ||
+            weightTotal !== 100 ||
+            Boolean(listValidationError)
+          }
+          title={listValidationError}
         >
           {busy ? "Saving…" : "Save editorial profile"}
         </button>
@@ -359,6 +400,25 @@ function toDraft(profile: TopicEditorialProfile): EditorialProfileDraft {
 
 function parseLines(value: string): string[] {
   return [...new Set(value.split("\n").map((line) => line.trim()).filter(Boolean))];
+}
+
+function validateProfileLists(
+  draft: EditorialProfileDraft | undefined,
+): string | undefined {
+  if (!draft) return undefined;
+  const lists = [
+    ["Content pillars", draft.contentPillars],
+    ["Exclusions", draft.exclusions],
+  ] as const;
+  for (const [label, items] of lists) {
+    if (items.length > MAX_EDITORIAL_PROFILE_LIST_ITEMS) {
+      return `${label} supports at most ${MAX_EDITORIAL_PROFILE_LIST_ITEMS} lines; remove ${items.length - MAX_EDITORIAL_PROFILE_LIST_ITEMS}.`;
+    }
+    if (items.some((item) => item.length > MAX_EDITORIAL_PROFILE_LIST_ITEM_LENGTH)) {
+      return `${label} entries support at most ${MAX_EDITORIAL_PROFILE_LIST_ITEM_LENGTH} characters per line.`;
+    }
+  }
+  return undefined;
 }
 
 function totalWeights(weights?: EditorialProfileWeights): number {

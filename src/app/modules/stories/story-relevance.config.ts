@@ -17,6 +17,7 @@ export type StoryRelevanceConfig = {
   baseScore: number;
   readyScore: number;
   reviewScore: number;
+  sourcePriorityMaxBonus: number;
   fieldMultipliers: Record<RelevanceField, number>;
   recencyBonuses: readonly {
     maxAgeHours: number;
@@ -54,6 +55,10 @@ export const storyRelevanceConfig: StoryRelevanceConfig = {
   baseScore: 8,
   readyScore: 50,
   reviewScore: 25,
+  // Topic source priority is a candidacy signal, not an automatic approval.
+  // Even priority 100 contributes only 40 points, leaving the content and
+  // recency signals responsible for crossing the ready threshold.
+  sourcePriorityMaxBonus: 40,
   fieldMultipliers: {
     title: 2,
     content: 1,

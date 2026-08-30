@@ -28,7 +28,12 @@ export function buildCarouselVisualSystem(
           `Shared campaign art direction: ${styleAnchors.join(" ")}`,
           "This shared art direction applies even when the recurring character is not selected for this slide. It is a style reference only and must not cause an unselected character, face, body, or lookalike to appear.",
         ]
-      : []),
+      : characters.length > 0
+        ? [
+            "Shared campaign art direction: use premium editorial realism with restrained infographic overlays, consistent lighting, and the same material finish on every slide. Character-free slides must use realistic objects or environments in that same medium, never switch to flat cartoon illustration.",
+            "The shared medium applies even when the recurring character is not selected. It must not cause an unselected character, face, body, silhouette, or lookalike to appear.",
+          ]
+        : []),
     "The slide-specific visual direction controls subject matter and composition. If it requests a conflicting medium, palette, aesthetic, or rendering style, preserve its idea but restyle it to this shared carousel system.",
   ].join("\n");
 }

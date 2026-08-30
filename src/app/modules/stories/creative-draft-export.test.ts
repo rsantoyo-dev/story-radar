@@ -1,0 +1,54 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { buildCompleteDraftScript } from "./creative-draft-export";
+
+test("exports the complete carousel as one paste-ready script", () => {
+  const output = buildCompleteDraftScript(
+    {
+      concept: "A housing comparison",
+      caption: "What the Canadian data shows.",
+      callToAction: "Review the comparison.",
+      hashtags: ["Canada", "#Housing"],
+      altText: "A two-slide housing carousel.",
+      narrativeRationale: "Contrast, then conclusion.",
+      units: [
+        {
+          order: 1,
+          type: "carousel-slide",
+          role: "cover",
+          editorialGoal: "hook",
+          viewerQuestion: "What is different?",
+          headline: "First-time vs. repeat buyers",
+          body: "Median family incomes differed in 2023.",
+          visualDirection: "One person beside a symbolic balance.",
+          factIds: ["fact-1"],
+          assetRequest: "generated-image",
+          aspectRatio: "4:5",
+          characterIds: [],
+        },
+        {
+          order: 2,
+          type: "carousel-slide",
+          role: "call-to-action",
+          editorialGoal: "debate",
+          viewerQuestion: "What stands out?",
+          headline: "What the comparison shows",
+          ctaQuestion: "Which difference surprised you most?",
+          visualDirection: "Two non-proportional comparison cards.",
+          factIds: ["fact-1"],
+          assetRequest: "generated-image",
+          aspectRatio: "4:5",
+          characterIds: [],
+        },
+      ],
+    },
+    "carousel",
+  );
+
+  assert.match(output, /FULL CREATIVE SCRIPT/);
+  assert.match(output, /IMAGE 1[\s\S]*First-time vs\. repeat buyers/);
+  assert.match(output, /IMAGE 2[\s\S]*Which difference surprised you most\?/);
+  assert.match(output, /IMAGE OUTPUT \/ VISUAL DIRECTION/);
+  assert.match(output, /#Canada #Housing/);
+});

@@ -172,13 +172,30 @@ function stringValue(value: unknown): string | undefined {
     return value;
   }
 
-  if (
-    value &&
-    typeof value === "object" &&
-    "_" in value &&
-    typeof value._ === "string"
-  ) {
-    return value._;
+  if (typeof value === "number") {
+    return String(value);
+  }
+
+  if (Array.isArray(value)) {
+    const text = value.map(stringValue).filter(Boolean).join(" ").trim();
+    return text || undefined;
+  }
+
+  if (value && typeof value === "object") {
+    // Atom permits title/summary elements with type="xhtml". rss-parser keeps
+    // those as nested xml2js objects (for example { _: "Title, ", div: ...,
+    // span: ... }) instead of a plain string. Recursively collect text nodes
+    // while excluding the `$` XML-attribute bag so standards-compliant Atom
+    // feeds are not silently reduced to zero usable entries.
+    const record = value as Record<string, unknown>;
+    const text = Object.entries(record)
+      .filter(([key]) => key !== "$")
+      .map(([, child]) => stringValue(child))
+      .filter(Boolean)
+      .join(" ")
+      .replace(/\s+([,.;:!?])/gu, "$1")
+      .trim();
+    return text || undefined;
   }
 
   return undefined;

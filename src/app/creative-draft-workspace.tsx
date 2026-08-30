@@ -10,9 +10,11 @@ import {
   type CarouselEditorialGoal,
 } from "./modules/stories/carousel-narrative";
 import {
+  creativeQualityReviewHasUnresolvedBlockers,
   deterministicCreativeQualityIssues,
   repairDeterministicCreativeCopy,
 } from "./modules/stories/creative-quality";
+import { buildCompleteDraftScript } from "./modules/stories/creative-draft-export";
 import type {
   CreativeAssetBatchResponse,
   CreativeAspectRatio,
@@ -146,10 +148,9 @@ export function CreativeDraftWorkspace({
   const activeDraft = workspace?.drafts.find(
     (draft) => draft.id === activeDraftId,
   );
-  const activeApprovalHasDeterministicBlockers = Boolean(
-    editableDraft &&
-      workspace?.brief &&
-      deterministicCreativeQualityIssues(
+  const activeApprovalDeterministicIssues =
+    editableDraft && workspace?.brief
+      ? deterministicCreativeQualityIssues(
         repairDeterministicCreativeCopy(
           editableDraft,
           selectedFormat,
@@ -159,12 +160,19 @@ export function CreativeDraftWorkspace({
         selectedFormat,
         workspace.brief.keyFacts,
         workspace.brief.profileSnapshot.language,
-      ).some((issue) => issue.severity === "blocker"),
-  );
+      )
+      : [];
+  const activeApprovalHasDeterministicBlockers =
+    activeApprovalDeterministicIssues.some(
+      (issue) => issue.severity === "blocker",
+    );
   const activeDraftFailedQualityGate = Boolean(
     activeApprovalHasDeterministicBlockers ||
       (activeDraft?.qualityReviewIsCurrent &&
-        activeDraft.qualityReview?.status === "rejected"),
+        creativeQualityReviewHasUnresolvedBlockers(
+          activeDraft.qualityReview,
+          activeApprovalDeterministicIssues,
+        )),
   );
   const viewingHistoricalDraft = Boolean(
     activeDraft &&
@@ -856,8 +864,53 @@ export function CreativeDraftWorkspace({
   }
 
   async function handleRegenerateImage(assetId: string, prompt: string) {
-    if (!activeDraftId || assetBusy || viewingHistoricalDraft) return;
+    if (!activeDraftId || !activeDraft) {
+      setError("Select a current creative draft before regenerating an image.");
+      return;
+    }
+    if (assetBusy) {
+      setError("Another image action is still running. Wait for it to finish and try again.");
+      return;
+    }
+    if (viewingHistoricalDraft) {
+      setError(
+        "Historical images are read-only. Return to the current draft to regenerate this slide.",
+      );
+      return;
+    }
+    if (dirty) {
+      setError(
+        "Save the draft changes before regenerating an image so the image stays attached to the correct version.",
+      );
+      return;
+    }
+    if (activeDraft.status !== "approved") {
+      setError("Approve the current draft before regenerating an image.");
+      return;
+    }
+    if (
+      !currentAssetBatch ||
+      currentAssetBatch.status === "stale" ||
+      currentAssetBatch.draftVersion !== activeDraft.version
+    ) {
+      setError(
+        "This image belongs to an earlier draft version. Generate a current image batch first.",
+      );
+      return;
+    }
+    if (!currentAssetBatch.assets.some((asset) => asset.id === assetId)) {
+      setError(
+        "This image is no longer the current version. Reload the image batch and edit its latest prompt.",
+      );
+      setAssetsReloadKey((key) => key + 1);
+      return;
+    }
+    if (!prompt.trim()) {
+      setError("The regeneration prompt cannot be empty.");
+      return;
+    }
     await runAsset(`regenerate:${assetId}`, async () => {
+      setNotice("Submitting the edited prompt to GPT Image…");
       const response = await requestJson<CreativeAssetBatchResponse>(
         topicUrl(
           `/api/radar/creative/assets/${encodeURIComponent(assetId)}`,
@@ -871,7 +924,16 @@ export function CreativeDraftWorkspace({
         },
       );
       setLoadedAssets({ ...response, draftId: activeDraftId });
-      setNotice("A new image version was submitted. The previous version remains recorded.");
+      const regenerated = response.batch?.assets.find(
+        (asset) => asset.unitOrder === currentAssetBatch.assets.find(
+          (current) => current.id === assetId,
+        )?.unitOrder,
+      );
+      setNotice(
+        regenerated
+          ? `Image version ${regenerated.version} submitted. The previous version remains recorded.`
+          : "A new image version was submitted. The previous version remains recorded.",
+      );
     });
   }
 
@@ -1855,6 +1917,7 @@ function HistoricalDraftDetails({
           rows={3}
         />
       </div>
+      <CompleteDraftScript draft={draft} format={draft.format} />
       <details className={styles.historicalUnits}>
         <summary>Show slide copy and generation prompts</summary>
         <div>
@@ -1905,6 +1968,74 @@ function ReadOnlyDraftField({
       <span>{label}</span>
       <textarea readOnly value={value} rows={rows} />
     </label>
+  );
+}
+
+function CompleteDraftScript({
+  draft,
+  format,
+}: {
+  draft: Pick<
+    EditableCreativeDraft,
+    | "concept"
+    | "caption"
+    | "callToAction"
+    | "hashtags"
+    | "altText"
+    | "narrativeRationale"
+    | "units"
+  >;
+  format: CreativeFormat;
+}) {
+  const [copyResult, setCopyResult] = useState<{
+    script: string;
+    status: "copied" | "failed";
+  }>();
+  const script = buildCompleteDraftScript(draft, format);
+  const copyState = copyResult?.script === script ? copyResult.status : "idle";
+
+  async function copyCompleteScript() {
+    try {
+      await navigator.clipboard.writeText(script);
+      setCopyResult({ script, status: "copied" });
+    } catch {
+      setCopyResult({ script, status: "failed" });
+    }
+  }
+
+  return (
+    <details className={styles.completeScript}>
+      <summary>Full script · one copyable output</summary>
+      <div className={styles.completeScriptBody}>
+        <div className={styles.completeScriptHeading}>
+          <div>
+            <strong>Complete text script</strong>
+            <p>
+              Includes publishing copy, every image, internal narrative purpose,
+              visible text, visual direction, and selected fact IDs.
+            </p>
+          </div>
+          <button
+            type="button"
+            className={styles.secondaryButton}
+            onClick={copyCompleteScript}
+          >
+            {copyState === "copied" ? "Copied" : "Copy full script"}
+          </button>
+        </div>
+        <textarea
+          readOnly
+          value={script}
+          rows={24}
+          aria-label="Complete creative script"
+        />
+        {copyState === "failed" ? (
+          <small role="alert">
+            Clipboard access was unavailable. Select and copy the text manually.
+          </small>
+        ) : null}
+      </div>
+    </details>
   );
 }
 
@@ -1997,8 +2128,12 @@ function CreativeAssetCard({
           rows={9}
           value={prompt}
           disabled={readOnly || isPending || isBusy}
+          maxLength={20_000}
           onChange={(event) => setPrompt(event.target.value)}
         />
+        {!readOnly ? (
+          <small>{prompt.length.toLocaleString("en-CA")} / 20,000 characters</small>
+        ) : null}
       </details>
 
       <footer className={styles.assetActions}>
@@ -2284,7 +2419,7 @@ function DraftEditor({
           </strong>
           {qualityReview.status !== "needs-review" ? (
             <p>
-              Overall {qualityReview.scores.overall} · Factuality {qualityReview.scores.factuality} · Hook {qualityReview.scores.hook} · Relevance {qualityReview.scores.relevance} · Clarity {qualityReview.scores.clarity}
+              Overall {qualityReview.scores.overall} · Factuality {qualityReview.scores.factuality} · Hook {qualityReview.scores.hook} · Curiosity {qualityReview.scores.curiosity ?? "—"} · Relevance {qualityReview.scores.relevance} · Clarity {qualityReview.scores.clarity} · Resolution {qualityReview.scores.resolution ?? "—"}
               {format === "carousel"
                 ? ` · Swipe reward ${qualityReview.scores.swipeReward} · Continuity ${qualityReview.scores.continuity}`
                 : ""}
@@ -2295,6 +2430,14 @@ function DraftEditor({
               The automated critic did not complete a review. Read the draft and the narrative checks below, then approve it explicitly if it is correct.
             </p>
           )}
+          {qualityReview.critic ? (
+            <p>
+              Critic: {qualityReview.critic.model}
+              {qualityReview.repair
+                ? ` · ${qualityReview.repair.severity} repair: ${qualityReview.repair.model}`
+                : " · no repair needed"}
+            </p>
+          ) : null}
           {!qualityReviewIsCurrent ? (
             <p>
               The score belongs to the generated copy. Deterministic narrative blockers are recalculated below for the edited version.
@@ -2432,6 +2575,7 @@ function DraftEditor({
           </article>
         ))}
       </div>
+      <CompleteDraftScript draft={draft} format={format} />
     </div>
   );
 }

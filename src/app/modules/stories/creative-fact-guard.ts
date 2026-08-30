@@ -33,12 +33,24 @@ const UNSUPPORTED_INFERENCE_PATTERNS: Array<{
     sourceSupport: /\b(?:cause|caused|lead(?:s|ing)? to|led to|drive|driving)\b/iu,
   },
   {
+    pattern:
+      /\b(?:factors?|reasons?|factores?|razones?)\b[^.!?]{0,80}\b(?:explain(?:s|ed|ing)?|explican?|explicar)\b/iu,
+    sourceSupport:
+      /\b(?:because|due to|explains?|explained by|caused by|porque|debido a|explica|explican)\b/iu,
+  },
+  {
     pattern: /\b(?:changing|reshaping|transforming)\s+how\b/iu,
     sourceSupport: /\b(?:changing|reshaping|transforming)\s+how\b/iu,
   },
   {
     pattern: /\b(?:therefore|which means|this means)\b/iu,
     sourceSupport: /\b(?:therefore|means)\b/iu,
+  },
+  {
+    pattern:
+      /\b(?:wealth|home equity|equity advantage|financial head start|years? of (?:prior )?wealth|down payment advantage|patrimonio|plusval[ií]a|capital acumulado|ventaja financiera|a[nñ]os? de patrimonio|ventaja (?:en el )?pago inicial)\b/iu,
+    sourceSupport:
+      /\b(?:wealth|home equity|equity|financial head start|prior wealth|down payment|patrimonio|plusval[ií]a|capital acumulado|ventaja financiera|pago inicial)\b/iu,
   },
   {
     pattern: /\b(?:suggest(?:s|ed|ing)?|implies?|implying|points? to)\b/iu,
@@ -113,9 +125,12 @@ const CARDINAL_NUMBER_PATTERNS: ReadonlyArray<{
 }> = [
   {
     number: "1",
-    pattern: /\b(?:one(?![- ](?:third|quarter))|un[oa](?!\s+cuarta\s+parte))\b/iu,
+    // Spanish "un/una" is normally an indefinite article ("una etapa"),
+    // not the numeric claim 1. Explicit Spanish ratios and fractions are
+    // handled by their dedicated patterns above.
+    pattern: /\bone(?![- ](?:third|quarter))\b/iu,
   },
-  { number: "2", pattern: /\b(?:two|dos)\b/iu },
+  { number: "2", pattern: /\b(?:two|twice|double|dos|dos veces|doble)\b/iu },
   { number: "3", pattern: /\b(?:three|tres)\b/iu },
   { number: "4", pattern: /\b(?:four|cuatro)\b/iu },
   { number: "5", pattern: /\b(?:five|cinco)\b/iu },
@@ -436,6 +451,7 @@ export function deterministicBriefFactQualityIssues(
  */
 export function repairDeterministicBriefScope(
   brief: GeneratedCreativeBrief,
+  language?: string,
 ): GeneratedCreativeBrief {
   if (brief.keyFacts.length === 0) return brief;
   const facts = brief.keyFacts.map(withCreativeFactClaimGuard);
@@ -489,7 +505,10 @@ export function repairDeterministicBriefScope(
           repaired = true;
           return {
             ...slide,
-            viewerQuestion: localizedSourceQuestion(slide.viewerQuestion),
+            viewerQuestion: localizedSourceQuestion(
+              slide.viewerQuestion,
+              language,
+            ),
           };
         }),
       }
@@ -578,10 +597,16 @@ export function repairDeterministicFactCopy(
       const sourceCopy = selectedFacts
         .map((fact) => fact.statement)
         .join(" ");
+      const repairedHeadline = hasUnsupportedInference(
+        unit.headline,
+        sourceCopy,
+      )
+        ? repairUnsupportedInference(unit.headline, sourceCopy)
+        : unit.headline;
       let headline = localizeEstimateQualifiers(
-        repairCertaintyUpgrade(unit.headline),
+        repairCertaintyUpgrade(repairedHeadline),
         language,
-      );
+      ) || localizedEvidenceHeadline(language);
       let body = unit.body
         ? localizeEstimateQualifiers(
             repairCertaintyUpgrade(
@@ -602,7 +627,9 @@ export function repairDeterministicFactCopy(
         (unit.editorialGoal === "conclude" ||
           unit.editorialGoal === "debate")
       ) {
-        ctaQuestion = "How should readers interpret these AI-authorship signals?";
+        ctaQuestion = isSpanishLanguage(language)
+          ? "¿Cómo interpretarías estos datos?"
+          : "How would you interpret these findings?";
       }
       if (
         unit.editorialGoal === "prove" &&
@@ -695,6 +722,26 @@ export function repairDeterministicFactCopy(
   repaired.caption = repairMissingPublishingScope(repaired.caption, allFacts);
 
   const closing = repaired.units.at(-1);
+  if (closing?.editorialGoal === "debate" && closing.factIds.length > 1) {
+    const visibleNumbers = extractAllowedNumbers(
+      [closing.headline, closing.body, closing.ctaQuestion]
+        .filter(Boolean)
+        .join(" "),
+    );
+    const fullySupportingFacts = closing.factIds.filter((id) => {
+      const fact = factsById.get(id);
+      return Boolean(
+        fact &&
+          visibleNumbers.length > 0 &&
+          visibleNumbers.every((number) =>
+            fact.claimGuard?.allowedNumbers.includes(number),
+          ),
+      );
+    });
+    if (fullySupportingFacts.length === 1) {
+      closing.factIds = [fullySupportingFacts[0]!];
+    }
+  }
   if (
     closing?.editorialGoal === "conclude" &&
     !closing.body?.trim() &&
@@ -889,6 +936,12 @@ function safeConclusionForFact(
   return fact.statement;
 }
 
+function localizedEvidenceHeadline(language?: string): string {
+  return isSpanishLanguage(language)
+    ? "Lo que muestran los datos"
+    : "What the data shows";
+}
+
 function localizeEstimateQualifiers(
   value: string,
   language?: string,
@@ -1030,7 +1083,16 @@ function briefCopyExceedsFacts(
   return unsupportedNumber || hasUnsupportedInference(copy, sourceCopy);
 }
 
-function localizedSourceQuestion(existingQuestion: string): string {
+function localizedSourceQuestion(
+  existingQuestion: string,
+  language?: string,
+): string {
+  if (isSpanishLanguage(language)) {
+    return "¿Qué establece la fuente aquí?";
+  }
+  if (/^(?:fr|fra|french|français|francais)(?:\b|[-_])/iu.test(language ?? "")) {
+    return "Que rapporte la source ici ?";
+  }
   if (
     /[¿áéíóúñ]|\b(?:que|qué|como|cómo|cual|cuál|embarazo|fuente)\b/iu.test(
       existingQuestion,
@@ -1055,9 +1117,11 @@ function truncateWithoutBreakingWord(value: string, maxLength: number): string {
 }
 
 function extractNumericLiterals(value: string): string[] {
-  return [...value.matchAll(/~?\d[\d,.]*(?:\s*%|\s*percent)?/giu)].map(
-    (match) => normalizeNumber(match[0]),
-  );
+  return [
+    ...value.matchAll(
+      /(?:[$€£]\s*)?~?\d[\d,.]*(?:\s*(?:%|(?:percent|mil millones|thousand|million|billion|millones?|millón|mil|k|m|b)\b))?/giu,
+    ),
+  ].map((match) => normalizeNumber(match[0]));
 }
 
 function factUsesNumberInCopy(fact: CreativeKeyFact, copy: string): boolean {
@@ -1074,13 +1138,28 @@ function factRequiresEstimateQualifier(fact: CreativeKeyFact): boolean {
 }
 
 function normalizeNumber(value: string): string {
-  return value
+  const normalized = value
     .toLowerCase()
+    .replace(/[$€£]/gu, "")
     .replace(/^~/u, "")
     .replace(/,/gu, "")
     .replace(/\s*percent$/u, "%")
-    .replace(/\s+/gu, "")
+    .trim()
     .replace(/[.,]+$/u, "");
+  const scaled = normalized.match(
+    /^(\d+(?:\.\d+)?)\s*(k|m|b|thousand|million|billion|mil millones|mil|millones?|millón)$/iu,
+  );
+  if (scaled?.[1] && scaled[2]) {
+    const scale = scaled[2].toLowerCase();
+    const multiplier =
+      scale === "k" || scale === "thousand" || scale === "mil"
+        ? 1_000
+        : scale === "b" || scale === "billion" || scale === "mil millones"
+          ? 1_000_000_000
+          : 1_000_000;
+    return String(Number(scaled[1]) * multiplier);
+  }
+  return normalized.replace(/\s+/gu, "");
 }
 
 function scopeMatches(copy: string, scope: string): boolean {

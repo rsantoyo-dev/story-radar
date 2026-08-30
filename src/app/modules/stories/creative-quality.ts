@@ -1,6 +1,7 @@
 import {
   blockingCarouselNarrativeIssues,
   evaluateCarouselNarrative,
+  maximumFactsForGoal,
 } from "./carousel-narrative";
 import type {
   CreativeFormat,
@@ -16,14 +17,16 @@ import {
 } from "./creative-fact-guard";
 
 export const CREATIVE_QUALITY_THRESHOLDS = {
-  factuality: 95,
-  hook: 82,
+  factuality: 96,
+  hook: 90,
+  curiosity: 88,
   swipeReward: 80,
   continuity: 80,
   relevance: 80,
   clarity: 80,
+  resolution: 88,
   cta: 75,
-  overall: 88,
+  overall: 92,
 } as const satisfies CreativeQualityScores;
 
 export const MAX_CREATIVE_EDITORIAL_REPAIRS = 1;
@@ -36,16 +39,55 @@ export function repairDeterministicCreativeCopy(
 ): GeneratedCreativeDraft {
   const repaired: GeneratedCreativeDraft = {
     ...draft,
+    concept: repairMalformedGroupedNumbers(draft.concept),
+    caption: repairMalformedGroupedNumbers(draft.caption),
+    ...(draft.callToAction === undefined
+      ? {}
+      : { callToAction: repairMalformedGroupedNumbers(draft.callToAction) }),
+    altText: repairMalformedGroupedNumbers(draft.altText),
     hashtags: [...draft.hashtags],
     units: draft.units.map((unit) => ({
       ...unit,
+      headline: repairMalformedGroupedNumbers(unit.headline),
+      ...(unit.body === undefined
+        ? {}
+        : { body: repairMalformedGroupedNumbers(unit.body) }),
+      ...(unit.ctaQuestion === undefined
+        ? {}
+        : { ctaQuestion: repairMalformedGroupedNumbers(unit.ctaQuestion) }),
       factIds: [...unit.factIds],
       characterIds: [...(unit.characterIds ?? [])],
     })),
   };
   if (format === "carousel") {
     repaired.units.forEach((unit) => {
+      if (unit.editorialGoal) {
+        unit.factIds = unit.factIds.slice(
+          0,
+          maximumFactsForGoal(unit.editorialGoal),
+        );
+      }
+      if (isSpanishProfileLanguage(language)) {
+        // A critic can accidentally paste an English source excerpt into an
+        // otherwise Spanish slide. Optional copy is safer to omit than to
+        // publish a guessed translation of source evidence.
+        if (
+          unit.body &&
+          hasLikelyEnglishSentence(unit.body) &&
+          !hasLikelyEnglishSentence(unit.headline)
+        ) {
+          unit.body = localizedEvidenceFallback(unit.editorialGoal, language);
+        }
+        if (unit.ctaQuestion && hasLikelyEnglishSentence(unit.ctaQuestion)) {
+          unit.ctaQuestion = localizedDebateQuestion(language);
+        }
+      }
       const evidence = evidenceForUnit(unit.factIds, keyFacts);
+      unit.visualDirection = repairUnverifiedQuantitativeVisual(
+        unit.visualDirection,
+        evidence,
+        language,
+      );
       unit.headline = softenUnsupportedAbsolutes(unit.headline, evidence);
       if (unit.body) unit.body = softenUnsupportedAbsolutes(unit.body, evidence);
       if (unit.ctaQuestion) {
@@ -124,7 +166,37 @@ export function repairDeterministicCreativeCopy(
       }
     }
   }
-  return repairDeterministicFactCopy(repaired, keyFacts, language);
+  const factRepaired = repairDeterministicFactCopy(
+    repaired,
+    keyFacts,
+    language,
+  );
+  if (format === "carousel") {
+    // Fact repair may add a uniquely matching numeric fact or restore a source
+    // statement on an evidence slide. Re-apply presentation constraints last
+    // so those useful factual repairs cannot violate the narrative budget or
+    // leak source-language copy into the published slide.
+    factRepaired.units.forEach((unit) => {
+      if (unit.editorialGoal) {
+        unit.factIds = unit.factIds.slice(
+          0,
+          maximumFactsForGoal(unit.editorialGoal),
+        );
+      }
+      if (!isSpanishProfileLanguage(language)) return;
+      if (
+        unit.body &&
+        hasLikelyEnglishSentence(unit.body) &&
+        !hasLikelyEnglishSentence(unit.headline)
+      ) {
+        unit.body = localizedEvidenceFallback(unit.editorialGoal, language);
+      }
+      if (unit.ctaQuestion && hasLikelyEnglishSentence(unit.ctaQuestion)) {
+        unit.ctaQuestion = localizedDebateQuestion(language);
+      }
+    });
+  }
+  return factRepaired;
 }
 
 function localizedDebateQuestion(language?: string): string {
@@ -133,8 +205,18 @@ function localizedDebateQuestion(language?: string): string {
     : "What stands out most to you?";
 }
 
+function localizedEvidenceFallback(
+  goal: GeneratedCreativeDraft["units"][number]["editorialGoal"],
+  language?: string,
+): string | undefined {
+  if (goal === "conclude" || goal === "debate") return undefined;
+  return isSpanishProfileLanguage(language)
+    ? "Este es el dato clave señalado por la fuente."
+    : "This is the key point established by the source.";
+}
+
 const GENERIC_CTA_PATTERN =
-  /^[¿¡\s]*(?:what stands out(?: most)? to you|what do you think|thoughts|what surprised you(?: most)?|qué te sorprendió más(?: de esta información)?|qué opinas|cuál es tu opinión)[?.!¿¡\s]*$/iu;
+  /^(?:[¿¡\s]*(?:what stands out(?: most)? to you|what do you think|thoughts|what surprised you(?: most)?|qué te sorprendió más(?: de esta información)?|qué opinas|cuál es tu opinión)[?.!¿¡\s]*|where would you apply how\b.*\bfirst\?)$/iu;
 
 const ABSOLUTE_PATTERNS: ReadonlyArray<{
   pattern: RegExp;
@@ -203,9 +285,14 @@ function groundedClosingQuestion(
     .trim()
     .replace(/[?.!]+$/u, "");
   if (!subject) return localizedDebateQuestion(language);
+  if (/^(?:how|cómo)\b/iu.test(subject)) {
+    return isSpanishProfileLanguage(language)
+      ? "¿Dónde podría encajar este enfoque en tu proceso?"
+      : "Where could this approach fit your workflow?";
+  }
   return isSpanishProfileLanguage(language)
-    ? `¿Dónde aplicarías primero ${subject}?`
-    : `Where would you apply ${subject} first?`;
+    ? `¿Cómo cambiaría ${subject} tu enfoque?`
+    : `How would ${subject} change your approach?`;
 }
 
 function isInternalPlanningQuestion(value: string): boolean {
@@ -247,7 +334,7 @@ export function deterministicCreativeQualityIssues(
     const visibleCopy = [unit.headline, unit.body, unit.ctaQuestion]
       .filter(Boolean)
       .join(" ");
-    return containsUnsupportedAbsolute(visibleCopy, evidence)
+    const issues: CreativeQualityIssue[] = containsUnsupportedAbsolute(visibleCopy, evidence)
       ? [{
           code: "UNSUPPORTED_ABSOLUTE",
           severity: "blocker" as const,
@@ -255,6 +342,27 @@ export function deterministicCreativeQualityIssues(
           message: `Slide ${unit.order} uses an absolute promise that its selected evidence does not establish.`,
         }]
       : [];
+    if (hasMalformedGroupedNumber(visibleCopy)) {
+      issues.push({
+        code: "MALFORMED_NUMBER_FORMAT",
+        severity: "blocker",
+        unitOrder: unit.order,
+        message: `Slide ${unit.order} contains whitespace inside a grouped number. Use a form such as 155.000 or 155,000 without spaces around the separator.`,
+      });
+    }
+    if (
+      requestsQuantitativeChart(unit.visualDirection) &&
+      substantiveEvidenceNumbers(evidence).length < 2 &&
+      !declaresQualitativeVisual(unit.visualDirection)
+    ) {
+      issues.push({
+        code: "UNVERIFIED_QUANTITATIVE_VISUAL",
+        severity: "warning",
+        unitOrder: unit.order,
+        message: `Slide ${unit.order} requests a quantitative chart without enough exact values; use a clearly non-proportional conceptual comparison instead.`,
+      });
+    }
+    return issues;
   });
   const closing = draft.units.at(-1);
   const ctaSpecificityIssues =
@@ -276,6 +384,50 @@ export function deterministicCreativeQualityIssues(
     ...ctaSpecificityIssues,
     ...visibleDraftLanguageIssues(draft, language),
   ];
+}
+
+const MALFORMED_GROUPED_NUMBER_PATTERN =
+  /\d\s*[.,]\s+(?=\d{3}\b)/gu;
+
+function hasMalformedGroupedNumber(value: string): boolean {
+  return new RegExp(MALFORMED_GROUPED_NUMBER_PATTERN).test(value);
+}
+
+function repairMalformedGroupedNumbers(value: string): string {
+  return value.replace(/(\d)\s*([.,])\s+(?=\d{3}\b)/gu, "$1$2");
+}
+
+const AUTOMATICALLY_REPAIRABLE_REVIEW_CODES = new Set([
+  "FACT_BUDGET",
+  "MIXED_LANGUAGE",
+  "GENERIC_CTA",
+  "UNSUPPORTED_INFERENCE",
+  "UNSUPPORTED_ABSOLUTE",
+  "CLOSING_QUESTION_COUNT",
+  "MISSING_DEBATE_QUESTION",
+]);
+
+/**
+ * The saved critic review describes the generated copy, while approval first
+ * applies deterministic repairs. A repaired mechanical finding must not keep
+ * human approval disabled; subjective and factual critic findings still do.
+ */
+export function creativeQualityReviewHasUnresolvedBlockers(
+  review: CreativeQualityReview | undefined,
+  currentIssues: readonly CreativeQualityIssue[],
+): boolean {
+  if (review?.status !== "rejected") return false;
+
+  const currentBlockerKeys = new Set(
+    currentIssues
+      .filter((issue) => issue.severity === "blocker")
+      .map((issue) => `${issue.code}:${issue.unitOrder ?? 0}`),
+  );
+  return review.issues.some((issue) => {
+    if (issue.severity !== "blocker") return false;
+    if (!AUTOMATICALLY_REPAIRABLE_REVIEW_CODES.has(issue.code)) return true;
+    return currentBlockerKeys.has(`${issue.code}:${issue.unitOrder ?? 0}`);
+  });
 }
 
 export function visibleDraftLanguageIssues(
@@ -314,9 +466,52 @@ function isSpanishProfileLanguage(language?: string): boolean {
 function hasLikelyEnglishSentence(value?: string): boolean {
   if (!value?.trim()) return false;
   const markers = value.match(
-    /\b(?:the|when|from|your|will|within|during|there|chance|age|count|backwards|end|cycle|estimate|fertile|occur|what|why|how|did|you|know|that|is|are|available|only|hours|long)\b/giu,
+    /\b(?:the|when|from|your|will|within|during|there|chance|age|count|backwards|end|cycle|estimate|fertile|occur|what|why|how|did|does|this|mean|for|those|planning|buy|their|first|home|should|could|would|with|who|which|most|stands|out|you|know|that|is|are|available|only|hours|long)\b/giu,
   );
   return (markers?.length ?? 0) >= 3;
+}
+
+const QUANTITATIVE_CHART_PATTERN =
+  /\b(?:bar chart|column chart|line chart|comparison chart|comparative chart|quantitative chart|gr[aá]fic[oa] (?:de barras|de columnas|de l[ií]neas|comparativ[oa]|cuantitativ[oa])|barras? (?:comparativas?|proporcionales?)|ejes? (?:num[eé]ricos?|cuantitativos?)|plot)\b/iu;
+const QUALITATIVE_VISUAL_PATTERN =
+  /\b(?:qualitative|conceptual|non[- ]proportional|not to scale|without (?:a )?scale|sin escala|no proporcional|sin ejes|sin valores inventados)\b/iu;
+
+function requestsQuantitativeChart(value: string): boolean {
+  return QUANTITATIVE_CHART_PATTERN.test(value);
+}
+
+function declaresQualitativeVisual(value: string): boolean {
+  return QUALITATIVE_VISUAL_PATTERN.test(value);
+}
+
+function substantiveEvidenceNumbers(value: string): string[] {
+  const matches = value.match(/\b\d[\d,.]*(?:\s*%)?/gu) ?? [];
+  return [...new Set(matches.flatMap((match) => {
+    const normalized = match.replace(/[,%\s]/gu, "");
+    const numeric = Number(normalized);
+    if (!Number.isFinite(numeric) || (numeric >= 1900 && numeric <= 2100)) {
+      return [];
+    }
+    return [normalized];
+  }))];
+}
+
+function repairUnverifiedQuantitativeVisual(
+  value: string,
+  evidence: string,
+  language?: string,
+): string {
+  if (
+    !requestsQuantitativeChart(value) ||
+    substantiveEvidenceNumbers(evidence).length >= 2 ||
+    declaresQualitativeVisual(value)
+  ) {
+    return value;
+  }
+  const constraint = isSpanishProfileLanguage(language)
+    ? "Representa la comparación de forma conceptual y no proporcional, sin escala, ejes, barras cuantitativas ni valores inventados."
+    : "Show the comparison conceptually and non-proportionally, with no scale, axes, quantitative bars, or invented values.";
+  return `${value.replace(/\s+$/u, "")} ${constraint}`;
 }
 
 export function creativeQualityThresholdFailures(
@@ -328,8 +523,10 @@ export function creativeQualityThresholdFailures(
   const required = {
     factuality: CREATIVE_QUALITY_THRESHOLDS.factuality,
     hook: CREATIVE_QUALITY_THRESHOLDS.hook,
+    curiosity: CREATIVE_QUALITY_THRESHOLDS.curiosity,
     relevance: CREATIVE_QUALITY_THRESHOLDS.relevance,
     clarity: CREATIVE_QUALITY_THRESHOLDS.clarity,
+    resolution: CREATIVE_QUALITY_THRESHOLDS.resolution,
     ...(requireCta ? { cta: CREATIVE_QUALITY_THRESHOLDS.cta } : {}),
     overall: CREATIVE_QUALITY_THRESHOLDS.overall,
     ...(format === "carousel"
@@ -434,6 +631,15 @@ function calibrateCreativeQualityScores(
   if (hasCode("WEAK_HOOK", "BURIED_HOOK")) {
     scores.hook = Math.min(scores.hook, 81);
   }
+  if (
+    hasCode(
+      "LOW_HUMAN_CURIOSITY",
+      "ABSTRACT_HOOK",
+      "UNEARNED_PERSONAL_IMPACT",
+    )
+  ) {
+    scores.curiosity = Math.min(scores.curiosity, 81);
+  }
   if (hasCode("LOW_STORY_RELEVANCE", "NEW_CLOSING_FACT", "CLOSING_GOAL")) {
     scores.relevance = Math.min(scores.relevance, 79);
   }
@@ -471,21 +677,28 @@ function calibrateCreativeQualityScores(
     scores.relevance = Math.min(scores.relevance, 79);
     scores.cta = Math.min(scores.cta, 74);
   }
+  if (hasCode("WEAK_RESOLUTION", "HOOK_RESOLUTION_GAP")) {
+    scores.resolution = Math.min(scores.resolution, 81);
+  }
 
   const weightedOverall =
     format === "carousel"
-      ? scores.factuality * 0.25 +
-        scores.hook * 0.15 +
-        scores.swipeReward * 0.1 +
-        scores.continuity * 0.1 +
-        scores.relevance * 0.15 +
-        scores.clarity * 0.15 +
-        scores.cta * 0.1
-      : scores.factuality * 0.3 +
-        scores.hook * 0.2 +
-        scores.relevance * 0.2 +
-        scores.clarity * 0.2 +
-        scores.cta * 0.1;
+      ? scores.factuality * 0.22 +
+        scores.hook * 0.12 +
+        scores.curiosity * 0.12 +
+        scores.swipeReward * 0.08 +
+        scores.continuity * 0.08 +
+        scores.relevance * 0.12 +
+        scores.clarity * 0.1 +
+        scores.resolution * 0.08 +
+        scores.cta * 0.08
+      : scores.factuality * 0.28 +
+        scores.hook * 0.16 +
+        scores.curiosity * 0.16 +
+        scores.relevance * 0.14 +
+        scores.clarity * 0.12 +
+        scores.resolution * 0.08 +
+        scores.cta * 0.06;
   scores.overall = Math.min(scores.overall, Math.round(weightedOverall), 98);
   if (issues.some((issue) => issue.severity === "blocker")) {
     scores.overall = Math.min(scores.overall, 87);

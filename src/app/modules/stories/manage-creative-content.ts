@@ -52,6 +52,7 @@ import {
 } from "./gemini-creative-content-generator";
 import { isCarouselEditorialGoal } from "./carousel-narrative";
 import {
+  creativeQualityReviewHasUnresolvedBlockers,
   deterministicCreativeQualityIssues,
   repairDeterministicCreativeCopy,
 } from "./creative-quality";
@@ -337,6 +338,8 @@ export async function createCreativeDraft(
       cloudflareAiAccountId: configuration.cloudflareAiAccountId,
       cloudflareAiApiToken: configuration.cloudflareAiApiToken,
       cloudflareAiModel: configuration.cloudflareAiModel,
+      openAiApiKey: configuration.openAiApiKey,
+      openAiEditorialModels: configuration.openAiEditorialModels,
       story: storyForGenerator(story, content),
       topic,
       profile: brief.profileSnapshot,
@@ -466,17 +469,29 @@ export async function approveSavedCreativeDraft(
     ),
     outputAspectRatio: validated.outputAspectRatio,
   };
-  const blockers = deterministicCreativeQualityIssues(
+  const qualityIssues = deterministicCreativeQualityIssues(
     repaired,
     current.format,
     brief.keyFacts,
     brief.profileSnapshot.language,
-  ).filter((issue) => issue.severity === "blocker");
+  );
+  const blockers = qualityIssues.filter((issue) => issue.severity === "blocker");
   if (blockers.length > 0) {
     throw new CreativeDraftValidationError(
       `Resolve the narrative quality blockers before approval: ${blockers
         .map((issue) => issue.message)
         .join(" ")}`,
+    );
+  }
+  if (
+    current.qualityReviewIsCurrent &&
+    creativeQualityReviewHasUnresolvedBlockers(
+      current.qualityReview,
+      qualityIssues,
+    )
+  ) {
+    throw new CreativeDraftValidationError(
+      "This generated draft did not pass the editorial quality gate. Generate a new version or edit and save it for explicit human review.",
     );
   }
   let approvalCandidate = current;
@@ -490,17 +505,6 @@ export async function approveSavedCreativeDraft(
       current,
       repaired,
       characterSnapshots,
-    );
-  }
-  // A rejected automated review only blocks approval when the rejection came
-  // from real quality findings. Infrastructure failures (CRITIC_UNAVAILABLE)
-  // produce a "needs-review" state that a human can approve explicitly.
-  if (
-    approvalCandidate.qualityReviewIsCurrent &&
-    approvalCandidate.qualityReview?.status === "rejected"
-  ) {
-    throw new CreativeDraftValidationError(
-      "This generated draft did not pass the editorial quality gate. Generate a new version or edit and save it for explicit human review.",
     );
   }
   return approveCreativeDraft(topicId, approvalCandidate.id);

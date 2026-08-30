@@ -102,6 +102,9 @@ export async function collectStoryCandidates(
         externalId: item.externalId,
         sourceId: source.id,
         sourceName: source.name,
+        ...(source.priority !== undefined
+          ? { sourcePriority: source.priority }
+          : {}),
         title: item.title,
         url: item.url,
         content: {

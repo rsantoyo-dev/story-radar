@@ -14,6 +14,7 @@ export type StoryCandidateInput = {
   externalId: string;
   sourceId: string;
   sourceName: string;
+  sourcePriority?: number;
 
   title: string;
   url: string;

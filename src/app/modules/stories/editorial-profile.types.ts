@@ -40,6 +40,9 @@ export type TopicEditorialProfile = EditorialProfile;
 /** Complete replacement input for a topic's persisted profile. */
 export type UpdateTopicEditorialProfileInput = EditableEditorialProfile;
 
+export const MAX_EDITORIAL_PROFILE_LIST_ITEMS = 24;
+export const MAX_EDITORIAL_PROFILE_LIST_ITEM_LENGTH = 160;
+
 export const DEFAULT_EDITORIAL_PROFILE_WEIGHTS: Readonly<EditorialProfileWeights> =
   {
     topicFit: 35,
