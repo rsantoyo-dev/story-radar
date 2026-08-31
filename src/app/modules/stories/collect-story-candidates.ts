@@ -1,6 +1,7 @@
 import "server-only";
 
 import { fetchRssFeed } from "@/app/modules/sources/rss/fetch-rss-feed";
+import { fetchRssFeedsWithHostLimit } from "@/app/modules/sources/rss/fetch-rss-feeds-with-host-limit";
 import { rssSources } from "@/app/modules/sources/rss/rss-sources.config";
 import type { ContentStatus } from "@/app/modules/sources/rss/rss-feed.types";
 import type { RssSourceConfig } from "@/app/modules/sources/rss/rss-source.types";
@@ -48,12 +49,7 @@ export async function collectStoryCandidates(
     Promise.resolve(
       options.preferences ?? DEFAULT_STORY_KEYWORD_PREFERENCES,
     ),
-    Promise.allSettled(
-      activeSources.map(async (source) => ({
-        source,
-        feed: await fetchFeed(source),
-      })),
-    ),
+    fetchRssFeedsWithHostLimit(activeSources, fetchFeed),
   ]);
 
   const candidates: StoryCandidateInput[] = [];

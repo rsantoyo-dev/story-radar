@@ -52,8 +52,8 @@ import {
 } from "./gemini-creative-content-generator";
 import { isCarouselEditorialGoal } from "./carousel-narrative";
 import {
-  creativeQualityReviewHasUnresolvedBlockers,
   deterministicCreativeQualityIssues,
+  getCreativeDraftApprovalState,
   repairDeterministicCreativeCopy,
 } from "./creative-quality";
 import { getCreativeProfile } from "./creative-profile.repository";
@@ -358,7 +358,7 @@ export async function createCreativeDraft(
           cached,
           { ...result.draft, outputAspectRatio },
           characterSnapshots,
-          { aiSnapshot: result.draft },
+          { inputHash, aiSnapshot: result.draft },
         )
       : await insertCreativeDraft({
           topicId,
@@ -440,6 +440,7 @@ export async function saveCreativeDraft(
 export async function approveSavedCreativeDraft(
   topicId: string,
   draftId: string,
+  humanReviewed = false,
 ): Promise<CreativeDraft> {
   const current = await findCreativeDraftById(topicId, draftId);
 
@@ -475,7 +476,12 @@ export async function approveSavedCreativeDraft(
     brief.keyFacts,
     brief.profileSnapshot.language,
   );
-  const blockers = qualityIssues.filter((issue) => issue.severity === "blocker");
+  const approvalState = getCreativeDraftApprovalState({
+    deterministicIssues: qualityIssues,
+    qualityReview: current.qualityReview,
+    qualityReviewIsCurrent: current.qualityReviewIsCurrent,
+  });
+  const { blockers } = approvalState;
   if (blockers.length > 0) {
     throw new CreativeDraftValidationError(
       `Resolve the narrative quality blockers before approval: ${blockers
@@ -484,30 +490,30 @@ export async function approveSavedCreativeDraft(
     );
   }
   if (
-    current.qualityReviewIsCurrent &&
-    creativeQualityReviewHasUnresolvedBlockers(
-      current.qualityReview,
-      qualityIssues,
-    )
+    approvalState.requiresHumanReviewAcknowledgement &&
+    !humanReviewed
   ) {
     throw new CreativeDraftValidationError(
-      "This generated draft did not pass the editorial quality gate. Generate a new version or edit and save it for explicit human review.",
+      "Review the automated quality findings and explicitly confirm human approval before approving this draft.",
     );
   }
-  let approvalCandidate = current;
   if (JSON.stringify(repaired) !== JSON.stringify(validated)) {
     const characterSnapshots = await snapshotsForCreativeCharacterIds(
       topicId,
       repaired.units.flatMap((unit) => unit.characterIds ?? []),
     );
-    approvalCandidate = await replaceCreativeDraft(
+    // Persist the deterministic repair and approval in the same Neon batch.
+    // A transient transport failure must not leave the repaired version in
+    // draft state between two otherwise dependent database mutations.
+    return replaceCreativeDraft(
       topicId,
       current,
       repaired,
       characterSnapshots,
+      { approve: true },
     );
   }
-  return approveCreativeDraft(topicId, approvalCandidate.id);
+  return approveCreativeDraft(topicId, current.id);
 }
 
 export async function unapproveSavedCreativeDraft(

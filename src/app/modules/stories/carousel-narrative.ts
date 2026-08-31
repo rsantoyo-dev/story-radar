@@ -1,3 +1,5 @@
+import { extractCreativeNumericLiterals } from "./creative-number-normalization";
+
 export const CAROUSEL_EDITORIAL_GOALS = [
   "hook",
   "explain",
@@ -123,8 +125,8 @@ const MAX_FACTS_BY_GOAL: Record<CarouselEditorialGoal, number> = {
   problem: 3,
   opportunity: 3,
   watch: 2,
-  conclude: 1,
-  debate: 1,
+  conclude: 2,
+  debate: 2,
 };
 
 export type CarouselNarrativeUnit = {
@@ -668,5 +670,5 @@ function questionIntentCount(value: string): number {
 }
 
 function numericTokens(value?: string): string[] {
-  return [...new Set(value?.match(/\b\d+(?:[.,]\d+)?%?\b/gu) ?? [])];
+  return [...new Set(extractCreativeNumericLiterals(value ?? ""))];
 }

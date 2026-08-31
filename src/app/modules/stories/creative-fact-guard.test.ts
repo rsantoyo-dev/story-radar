@@ -12,8 +12,13 @@ import {
   deterministicFactQualityIssues,
   repairDeterministicBriefScope,
   repairDeterministicFactCopy,
+  withCreativeFactClaimGuard,
 } from "./creative-fact-guard";
-import { visibleDraftLanguageIssues } from "./creative-quality";
+import {
+  repairDeterministicCreativeCopy,
+  visibleDraftLanguageIssues,
+} from "./creative-quality";
+import { blockingCarouselNarrativeIssues } from "./carousel-narrative";
 
 const keyFacts: CreativeKeyFact[] = [
   {
@@ -201,6 +206,331 @@ test("accepts roughly one-third and since-launch as a cautious rendering of 35%"
   );
   assert.ok(!codes.includes("UNSUPPORTED_NUMBER"));
   assert.ok(!codes.includes("MISSING_SCOPE"));
+});
+
+test("accepts Spanish month-year scope for an English source fact", () => {
+  const payrollFact: CreativeKeyFact = {
+    id: "fact-payroll",
+    statement:
+      "There were 2.9 unemployed persons for every job vacancy in June 2026, down from 3.1 in June 2025.",
+    sourceExcerpt:
+      "There were 2.9 unemployed persons for every job vacancy in June 2026, down from 3.1 in June 2025.",
+    requiredQualifiers: ["in June 2026"],
+    attribution: "Statistics Canada",
+  };
+  const spanishDraft: GeneratedCreativeDraft = {
+    concept: "Vacantes de empleo en Canadá",
+    caption: "Una comparación del mercado laboral canadiense.",
+    hashtags: [],
+    altText: "Gráfico sobre personas desempleadas y vacantes.",
+    units: [
+      unit(
+        1,
+        "cover",
+        "hook",
+        "2.9 personas desempleadas por vacante",
+        "En junio de 2026 hubo 2.9 personas desempleadas por vacante, frente a 3.1 en junio de 2025.",
+        ["fact-payroll"],
+      ),
+    ],
+  };
+
+  assert.ok(
+    !deterministicFactQualityIssues(spanishDraft, [payrollFact]).some(
+      (issue) => issue.code === "MISSING_SCOPE",
+    ),
+  );
+});
+
+test("repairs a missing English month-year scope in Spanish copy", () => {
+  const payrollFact: CreativeKeyFact = {
+    id: "fact-payroll",
+    statement:
+      "There were 2.9 unemployed persons for every job vacancy in June 2026.",
+    sourceExcerpt:
+      "There were 2.9 unemployed persons for every job vacancy in June 2026.",
+    requiredQualifiers: ["in June 2026"],
+    attribution: "Statistics Canada",
+  };
+  const spanishDraft: GeneratedCreativeDraft = {
+    concept: "Vacantes de empleo en Canada",
+    caption: "En junio hubo 2.9 personas desempleadas por vacante.",
+    hashtags: [],
+    altText: "Grafico sobre personas desempleadas y vacantes.",
+    units: [
+      unit(
+        1,
+        "cover",
+        "hook",
+        "2.9 personas desempleadas por vacante",
+        "En junio hubo 2.9 personas desempleadas por vacante.",
+        ["fact-payroll"],
+      ),
+    ],
+  };
+
+  const repaired = repairDeterministicFactCopy(
+    spanishDraft,
+    [payrollFact],
+    "espanol",
+  );
+
+  assert.match(repaired.units[0]?.body ?? "", /junio de 2026/iu);
+  assert.match(repaired.caption, /junio de 2026/iu);
+  assert.ok(
+    !deterministicFactQualityIssues(repaired, [payrollFact]).some(
+      (issue) => issue.code === "MISSING_SCOPE",
+    ),
+  );
+});
+
+test("allows a brief-supported calendar year as slide context", () => {
+  const earningsFact: CreativeKeyFact = {
+    id: "fact-earnings",
+    statement: "Average weekly earnings reached $1,344 in June.",
+    attribution: "Statistics Canada",
+  };
+  const datedVacancyFact: CreativeKeyFact = {
+    id: "fact-date",
+    statement: "The vacancy ratio was measured in June 2026.",
+    attribution: "Statistics Canada",
+  };
+  const datedDraft: GeneratedCreativeDraft = {
+    concept: "Mercado laboral canadiense",
+    caption: "Resumen del mercado laboral de junio de 2026.",
+    hashtags: [],
+    altText: "Resumen del mercado laboral canadiense.",
+    units: [
+      unit(
+        1,
+        "conclusion",
+        "debate",
+        "Un mercado laboral mixto en 2026",
+        "El promedio semanal fue de $1,344.",
+        ["fact-earnings"],
+      ),
+    ],
+  };
+
+  const issues = deterministicFactQualityIssues(datedDraft, [
+    earningsFact,
+    datedVacancyFact,
+  ]);
+  assert.ok(
+    !issues.some(
+      (issue) =>
+        issue.code === "UNSUPPORTED_NUMBER" && issue.unitOrder === 1,
+    ),
+  );
+});
+
+test("removes unsupported numbers from a closing slide instead of trapping the repair loop", () => {
+  const earningsFact: CreativeKeyFact = {
+    id: "fact-1",
+    statement:
+      "Average weekly earnings rose 3.4% year-over-year to $1,344 in June 2026.",
+    sourceExcerpt:
+      "Average weekly earnings rose 3.4% year-over-year to $1,344 in June 2026.",
+    attribution: "Statistics Canada",
+  };
+  const closingDraft: GeneratedCreativeDraft = {
+    concept: "Mercado laboral canadiense",
+    caption: "Resumen del mercado laboral canadiense.",
+    hashtags: [],
+    altText: "Carrusel sobre salarios en Canadá.",
+    units: [
+      unit(
+        1,
+        "content",
+        "explain",
+        "El dato salarial",
+        "El reporte establece el promedio semanal.",
+        ["fact-1"],
+      ),
+      {
+        ...unit(
+          2,
+          "conclusion",
+          "debate",
+          "El ingreso promedio aumentó 3.4%",
+          "El promedio fue de $1,344 CAD. Dos provincias duplicaron esa cifra.",
+          ["fact-1"],
+        ),
+        ctaQuestion: "¿Tu sector supera este promedio?",
+      },
+    ],
+  };
+
+  const repaired = repairDeterministicFactCopy(
+    closingDraft,
+    [earningsFact],
+    "español",
+  );
+  assert.match(
+    repaired.units.at(-1)?.body ?? "",
+    /^El promedio fue de \$1,344 CAD\./u,
+  );
+  assert.doesNotMatch(repaired.units.at(-1)?.body ?? "", /dos provincias/iu);
+  assert.ok(
+    !deterministicFactQualityIssues(repaired, [earningsFact]).some(
+      (issue) => issue.code === "UNSUPPORTED_NUMBER",
+    ),
+  );
+});
+
+test("normalizes Spanish estimate qualifiers around currency and signed values", () => {
+  const earningsFact: CreativeKeyFact = {
+    id: "fact-earnings",
+    statement:
+      "Average weekly earnings were up 3.4% to $1,344 in June 2026.",
+    sourceExcerpt:
+      "Average weekly earnings were up 3.4% to $1,344 in June 2026.",
+    requiredQualifiers: ["approximately"],
+    attribution: "Statistics Canada",
+  };
+  const malformedDraft: GeneratedCreativeDraft = {
+    concept: "Ingresos semanales en Canadá",
+    caption: "Datos de ingresos semanales.",
+    hashtags: [],
+    altText: "Gráfico de ingresos semanales.",
+    units: [
+      unit(
+        1,
+        "cover",
+        "hook",
+        "Ingresos semanales",
+        "El promedio fue de $aproximadamente 1,344 CAD, con un avance del aproximadamente 3.4% y una variación de +aproximadamente 3.4%.",
+        ["fact-earnings"],
+      ),
+    ],
+  };
+
+  const repaired = repairDeterministicFactCopy(
+    malformedDraft,
+    [earningsFact],
+    "español",
+  );
+  const body = repaired.units[0]?.body ?? "";
+  assert.match(body, /aproximadamente \$1,344 CAD/iu);
+  assert.match(body, /de aproximadamente 3.4%/iu);
+  assert.match(body, /aproximadamente \+3.4%/iu);
+  assert.doesNotMatch(body, /[$+-]aproximadamente/iu);
+});
+
+test("matches localized Spanish statistics to English source numbers", () => {
+  const localizedFacts: CreativeKeyFact[] = [
+    {
+      id: "fact-1",
+      statement: "The reported shares were 21.8% and 10.4%.",
+      sourceExcerpt: "The reported shares were 21.8% and 10.4%.",
+      attribution: "Statistics Canada",
+    },
+    {
+      id: "fact-2",
+      statement:
+        "The reported counts were 726,820 and 251,585, with shares of 0.9%, 2.0%, and 42.1%.",
+      sourceExcerpt:
+        "The reported counts were 726,820 and 251,585, with shares of 0.9%, 2.0%, and 42.1%.",
+      attribution: "Statistics Canada",
+    },
+    {
+      id: "fact-3",
+      statement: "The reported shares were 12.7% and 9.9%.",
+      sourceExcerpt: "The reported shares were 12.7% and 9.9%.",
+      attribution: "Statistics Canada",
+    },
+    {
+      id: "fact-4",
+      statement: "The reported shares were 59.8%, 78.3%, and 44.7%.",
+      sourceExcerpt: "The reported shares were 59.8%, 78.3%, and 44.7%.",
+      attribution: "Statistics Canada",
+    },
+  ];
+  const localizedDraft: GeneratedCreativeDraft = {
+    concept: "Retrato de la población latinoamericana en Canadá",
+    caption:
+      "El estudio reportó 726.820 personas y proporciones de 21,8 %, 10,4 % y 42,1 %.",
+    hashtags: [],
+    altText: "Carrusel sobre la población latinoamericana en Canadá.",
+    units: [
+      unit(
+        1,
+        "cover",
+        "hook",
+        "Proporciones que definían el retrato",
+        "La población tenía proporciones reportadas de 21,8 % y 10,4 %.",
+        ["fact-1"],
+      ),
+      unit(
+        2,
+        "content",
+        "explain",
+        "El tamaño de la población",
+        "Los datos reportaron 726.820 y 251.585 personas; las proporciones fueron 0,9 %, 2,0 % y 42,1 %.",
+        ["fact-2"],
+      ),
+      unit(
+        3,
+        "content",
+        "prove",
+        "Otra comparación",
+        "Las proporciones reportadas fueron 12,7 % y 9,9 %.",
+        ["fact-3"],
+      ),
+      unit(
+        4,
+        "content",
+        "impact",
+        "Tres resultados adicionales",
+        "Las proporciones reportadas fueron 59,8 %, 78,3 % y 44,7 %.",
+        ["fact-4"],
+      ),
+    ],
+  };
+
+  const issues = deterministicFactQualityIssues(
+    localizedDraft,
+    localizedFacts,
+  );
+  assert.deepEqual(
+    issues.filter((issue) => issue.code === "UNSUPPORTED_NUMBER"),
+    [],
+  );
+
+  const changedStatistic = structuredClone(localizedDraft);
+  changedStatistic.units[0]!.body =
+    "La población tenía proporciones reportadas de 21,9 % y 10,4 %.";
+  assert.ok(
+    deterministicFactQualityIssues(changedStatistic, localizedFacts).some(
+      (issue) =>
+        issue.code === "UNSUPPORTED_NUMBER" && issue.unitOrder === 1,
+    ),
+  );
+});
+
+test("does not mistake year-over-year or month-over-month for estimates", () => {
+  const annual = withCreativeFactClaimGuard({
+    id: "fact-annual",
+    statement: "Average weekly earnings rose 3.4% year-over-year.",
+    requiredQualifiers: ["year-over-year"],
+    attribution: "Statistics Canada",
+    claimGuard: {
+      certainty: "estimated",
+      requiredPhrases: ["year-over-year"],
+      forbiddenPhrases: [],
+      scopePhrases: [],
+      allowedNumbers: ["3.4%"],
+    },
+  });
+  const monthly = withCreativeFactClaimGuard({
+    id: "fact-monthly",
+    statement: "Payroll employment rose 0.8% month-over-month.",
+    requiredQualifiers: ["month-over-month"],
+    attribution: "Statistics Canada",
+  });
+
+  assert.equal(annual.claimGuard?.certainty, "asserted");
+  assert.equal(monthly.claimGuard?.certainty, "asserted");
 });
 
 test("repairs AI-written certainty upgrades that use a non-breaking hyphen", () => {
@@ -620,6 +950,785 @@ test("adds the uniquely supporting fact when a slide cites its numbers", () => {
   assert.equal(
     deterministicFactQualityIssues(repaired, facts).some(
       (issue) => issue.code === "UNSUPPORTED_NUMBER",
+    ),
+    false,
+  );
+});
+
+test("repairs a closing sector summary and an alt-text slide mismatch without another model call", () => {
+  const laborFacts: CreativeKeyFact[] = [
+    {
+      id: "fact-1",
+      statement: "Payroll employment changed little in June, up 4,800 (+0.0%).",
+      attribution: "Statistics Canada",
+    },
+    {
+      id: "fact-2",
+      statement:
+        "Average weekly earnings rose 3.4% year-over-year to $1,344 in June.",
+      attribution: "Statistics Canada",
+    },
+    {
+      id: "fact-3",
+      statement:
+        "There were 2.9 unemployed persons per vacancy in June 2026, down from 3.0 in May and 3.1 in June 2025.",
+      attribution: "Statistics Canada",
+    },
+    {
+      id: "fact-4",
+      statement:
+        "Payroll employment increased in public administration and construction but decreased in manufacturing, accommodation and food services, and retail trade.",
+      attribution: "Statistics Canada",
+    },
+  ];
+  const laborDraft: GeneratedCreativeDraft = {
+    concept: "El mercado laboral canadiense en junio",
+    caption: "Datos de empleo, ingresos y vacantes en Canadá.",
+    hashtags: [],
+    altText:
+      "Carrusel de cinco diapositivas sobre el empleo en Canadá. La última diapositiva compara la proporción en junio de 2026 con junio de 2025.",
+    units: [
+      unit(
+        1,
+        "cover",
+        "hook",
+        "El empleo de nómina cambió poco",
+        "El movimiento total fue mínimo.",
+        ["fact-1"],
+      ),
+      unit(
+        2,
+        "content",
+        "explain",
+        "Los sectores no se movieron igual",
+        "Hubo aumentos y descensos entre actividades económicas.",
+        ["fact-4"],
+      ),
+      unit(
+        3,
+        "content",
+        "prove",
+        "Los ingresos semanales aumentaron",
+        "El dato nacional ofrece otra señal del mercado.",
+        ["fact-2"],
+      ),
+      unit(
+        4,
+        "content",
+        "impact",
+        "La competencia por vacante bajó",
+        "En junio de 2026 hubo 2.9 personas desempleadas por vacante, frente a 3.0 en mayo y 3.1 en junio de 2025.",
+        ["fact-3"],
+      ),
+      {
+        ...unit(
+          5,
+          "conclusion",
+          "debate",
+          "La cifra nacional no cuenta toda la historia",
+          "El empleo de nómina cambió poco en total, pero hubo avances y retrocesos según el sector. Por eso, una misma cifra nacional puede sentirse distinta.",
+          ["fact-1"],
+        ),
+        ctaQuestion:
+          "¿En tu sector ves más o menos competencia que hace un año?",
+      },
+    ],
+  };
+
+  const originalIssues = deterministicFactQualityIssues(
+    laborDraft,
+    laborFacts,
+  );
+  assert.ok(
+    originalIssues.some(
+      (issue) =>
+        issue.code === "MISSING_FACT_ASSIGNMENT" && issue.unitOrder === 5,
+    ),
+  );
+  assert.ok(
+    originalIssues.some(
+      (issue) =>
+        issue.code === "ALT_TEXT_SLIDE_MISMATCH" && issue.unitOrder === 5,
+    ),
+  );
+
+  const repaired = repairDeterministicCreativeCopy(
+    laborDraft,
+    "carousel",
+    laborFacts,
+    "español",
+  );
+  assert.deepEqual(repaired.units[4]?.factIds, ["fact-4"]);
+  assert.equal(
+    repaired.units[4]?.body,
+    "Hubo avances y retrocesos según el sector.",
+  );
+  assert.match(repaired.altText, /la diapositiva 4 compara/iu);
+  assert.equal(
+    deterministicFactQualityIssues(repaired, laborFacts).some((issue) =>
+      ["MISSING_FACT_ASSIGNMENT", "ALT_TEXT_SLIDE_MISMATCH"].includes(
+        issue.code,
+      ),
+    ),
+    false,
+  );
+});
+
+test("prioritizes the two-fact earnings and payroll contrast in the current labor closing", () => {
+  const laborFacts: CreativeKeyFact[] = [
+    {
+      id: "fact-1",
+      statement: "Payroll employment changed little, up 4,800 (+0.0%).",
+      attribution: "Statistics Canada",
+    },
+    {
+      id: "fact-2",
+      statement:
+        "Average weekly earnings rose 3.4% year-over-year to $1,344.",
+      attribution: "Statistics Canada",
+    },
+    {
+      id: "fact-4",
+      statement:
+        "Payroll employment increased in public administration and construction but decreased in manufacturing, accommodation and food services, and retail trade.",
+      attribution: "Statistics Canada",
+    },
+  ];
+  const laborDraft: GeneratedCreativeDraft = {
+    concept: "Ingresos y empleo no avanzaron de la misma manera",
+    caption: "Resumen de los indicadores laborales de Statistics Canada.",
+    hashtags: [],
+    altText:
+      "Carrusel sobre ingresos y empleo en Canadá. La quinta aclara que el alza de las ganancias promedio no equivale a un aumento del empleo y resume los movimientos opuestos entre industrias.",
+    units: [
+      unit(
+        1,
+        "cover",
+        "hook",
+        "Ingresos al alza, empleo casi sin cambios",
+        "Las ganancias semanales aumentaron mientras el empleo de nómina cambió poco.",
+        ["fact-1", "fact-2"],
+      ),
+      {
+        ...unit(
+          5,
+          "conclusion",
+          "debate",
+          "El promedio salarial y el empleo no miden lo mismo",
+          "El alza de las ganancias semanales promedio no equivale a un aumento del empleo. En junio, el empleo en nómina cambió poco y las alzas de algunas industrias fueron parcialmente compensadas por descensos en otras.",
+          ["fact-1"],
+        ),
+        ctaQuestion:
+          "¿Tu sector estuvo entre los que aumentaron o entre los que descendieron?",
+        visualDirection:
+          "Cierre editorial que contraste el indicador ascendente de ganancias semanales promedio con un indicador de empleo en nómina casi plano. Añadir una composición equilibrada de industrias en aumento y descenso, sin incorporar datos nuevos.",
+      },
+    ],
+  };
+
+  assert.ok(
+    deterministicFactQualityIssues(laborDraft, laborFacts).some(
+      (issue) =>
+        issue.code === "MISSING_FACT_ASSIGNMENT" &&
+        issue.unitOrder === 5 &&
+        issue.message.includes("fact-2"),
+    ),
+  );
+
+  const repaired = repairDeterministicCreativeCopy(
+    laborDraft,
+    "carousel",
+    laborFacts,
+    "español",
+  );
+  const closing = repaired.units.at(-1);
+  assert.deepEqual(closing?.factIds, ["fact-1", "fact-2"]);
+  assert.equal(
+    closing?.body,
+    "El alza de las ganancias semanales promedio no equivale a un aumento del empleo. En junio, el empleo en nómina cambió poco.",
+  );
+  assert.equal(
+    closing?.ctaQuestion,
+    "¿Qué indicador refleja mejor lo que observas: ingresos o empleo?",
+  );
+  assert.doesNotMatch(closing?.body ?? "", /industrias|descensos/iu);
+  assert.doesNotMatch(
+    closing?.visualDirection ?? "",
+    /industrias|descenso/iu,
+  );
+  assert.match(
+    closing?.visualDirection ?? "",
+    /ganancias semanales promedio.*empleo en nómina/iu,
+  );
+  assert.doesNotMatch(repaired.altText, /resume.*industrias/iu);
+  assert.match(repaired.altText, /la quinta aclara.*aumento del empleo\./iu);
+  assert.equal(
+    deterministicFactQualityIssues(repaired, laborFacts).some(
+      (issue) => issue.code === "MISSING_FACT_ASSIGNMENT",
+    ),
+    false,
+  );
+});
+
+test("does not post-collapse a numbered earnings-payroll closing to one fact", () => {
+  const facts: CreativeKeyFact[] = [
+    {
+      id: "fact-payroll",
+      statement: "Payroll employment changed little overall in June 2026.",
+      attribution: "Statistics Canada",
+    },
+    {
+      id: "fact-earnings",
+      statement: "Average weekly earnings rose 3.4% year-over-year.",
+      attribution: "Statistics Canada",
+    },
+  ];
+  const numberedDraft: GeneratedCreativeDraft = {
+    concept: "Ingresos frente a empleo",
+    caption: "Dos indicadores laborales.",
+    hashtags: [],
+    altText: "Carrusel sobre ingresos y empleo.",
+    units: [
+      unit(
+        1,
+        "cover",
+        "hook",
+        "Dos señales laborales",
+        "En junio de 2026, ingresos y empleo dieron señales distintas.",
+        ["fact-payroll", "fact-earnings"],
+      ),
+      {
+        ...unit(
+          2,
+          "conclusion",
+          "debate",
+          "Ingresos al alza, empleo casi sin cambios",
+          "En junio de 2026, los ingresos semanales aumentaron 3.4% interanual, mientras el empleo de nómina cambió poco.",
+          ["fact-payroll", "fact-earnings"],
+        ),
+        ctaQuestion: "¿Qué indicador refleja mejor tu realidad?",
+      },
+    ],
+  };
+
+  const repaired = repairDeterministicCreativeCopy(
+    numberedDraft,
+    "carousel",
+    facts,
+    "español",
+  );
+  assert.deepEqual(repaired.units.at(-1)?.factIds, [
+    "fact-payroll",
+    "fact-earnings",
+  ]);
+  assert.equal(
+    deterministicFactQualityIssues(repaired, facts).some(
+      (issue) =>
+        issue.code === "MISSING_FACT_ASSIGNMENT" ||
+        issue.code === "MISSING_SCOPE",
+    ),
+    false,
+  );
+});
+
+test("does not introduce an unestablished fact in a closing contrast", () => {
+  const facts: CreativeKeyFact[] = [
+    {
+      id: "fact-payroll",
+      statement: "Payroll employment changed little in June 2026.",
+      attribution: "Statistics Canada",
+    },
+    {
+      id: "fact-earnings",
+      statement: "Average weekly earnings rose 3.4% year-over-year.",
+      attribution: "Statistics Canada",
+    },
+  ];
+  const draftWithNewClosingFact: GeneratedCreativeDraft = {
+    concept: "Empleo en Canadá",
+    caption: "Un indicador laboral.",
+    hashtags: [],
+    altText: "Carrusel sobre empleo.",
+    units: [
+      unit(1, "cover", "hook", "El empleo cambió poco", "En junio de 2026, el total se mantuvo casi plano.", ["fact-payroll"]),
+      {
+        ...unit(
+          2,
+          "conclusion",
+          "debate",
+          "Ingresos al alza, empleo casi sin cambios",
+          "Los ingresos semanales aumentaron 3.4%, mientras el empleo de nómina cambió poco.",
+          ["fact-payroll"],
+        ),
+        ctaQuestion: "¿Cuál refleja mejor tu realidad?",
+      },
+    ],
+  };
+
+  const repaired = repairDeterministicCreativeCopy(
+    draftWithNewClosingFact,
+    "carousel",
+    facts,
+    "español",
+  );
+  const closing = repaired.units.at(-1);
+  assert.deepEqual(closing?.factIds, []);
+  assert.equal(closing?.headline, "Una pregunta para cerrar");
+  assert.equal(closing?.body, undefined);
+  assert.doesNotMatch(
+    `${closing?.headline} ${closing?.ctaQuestion}`,
+    /ingresos|salari|ganancias/iu,
+  );
+  assert.equal(
+    deterministicFactQualityIssues(repaired, facts).some(
+      (issue) =>
+        issue.code === "MISSING_FACT_ASSIGNMENT" ||
+        issue.code === "MISSING_SCOPE",
+    ),
+    false,
+  );
+  assert.equal(
+    blockingCarouselNarrativeIssues(repaired.units).some(
+      (issue) => issue.code === "new-closing-fact",
+    ),
+    false,
+  );
+});
+
+test("lets a closing reuse a contrast pair repaired onto an earlier cover", () => {
+  const facts: CreativeKeyFact[] = [
+    {
+      id: "fact-payroll",
+      statement: "Payroll employment changed little overall.",
+      attribution: "Statistics Canada",
+    },
+    {
+      id: "fact-earnings",
+      statement: "Average weekly earnings rose 3.4% year-over-year.",
+      attribution: "Statistics Canada",
+    },
+  ];
+  const draft: GeneratedCreativeDraft = {
+    concept: "Ingresos frente a empleo",
+    caption: "Dos indicadores laborales.",
+    hashtags: [],
+    altText: "Carrusel sobre ingresos y empleo.",
+    units: [
+      unit(
+        1,
+        "cover",
+        "hook",
+        "Ingresos al alza, empleo casi sin cambios",
+        "Los ingresos semanales aumentaron 3.4%, mientras el empleo de nómina cambió poco.",
+        ["fact-payroll"],
+      ),
+      {
+        ...unit(
+          2,
+          "conclusion",
+          "debate",
+          "Ingresos y empleo no avanzaron igual",
+          "Los ingresos semanales aumentaron, mientras el empleo de nómina cambió poco.",
+          ["fact-payroll"],
+        ),
+        ctaQuestion: "¿Qué indicador refleja mejor tu realidad?",
+      },
+    ],
+  };
+
+  const repaired = repairDeterministicCreativeCopy(
+    draft,
+    "carousel",
+    facts,
+    "español",
+  );
+  assert.deepEqual(repaired.units[0]?.factIds, [
+    "fact-payroll",
+    "fact-earnings",
+  ]);
+  assert.deepEqual(repaired.units.at(-1)?.factIds, [
+    "fact-payroll",
+    "fact-earnings",
+  ]);
+  assert.equal(
+    blockingCarouselNarrativeIssues(repaired.units).some(
+      (issue) => issue.code === "new-closing-fact",
+    ),
+    false,
+  );
+  assert.equal(
+    deterministicFactQualityIssues(repaired, facts).some(
+      (issue) => issue.code === "MISSING_FACT_ASSIGNMENT",
+    ),
+    false,
+  );
+});
+
+for (const editorialGoal of ["prove", "compare"] as const) {
+  test(`preserves a third known fact within the ${editorialGoal} budget`, () => {
+    const facts: CreativeKeyFact[] = [
+      {
+        id: "fact-payroll",
+        statement: "Payroll employment increased by 4,800 overall.",
+        attribution: "Statistics Canada",
+      },
+      {
+        id: "fact-earnings",
+        statement: "Average weekly earnings rose 3.4%.",
+        attribution: "Statistics Canada",
+      },
+      {
+        id: "fact-vacancies",
+        statement: "Job vacancies reached 509,100.",
+        attribution: "Statistics Canada",
+      },
+    ];
+    const evidenceDraft: GeneratedCreativeDraft = {
+      concept: "Indicadores laborales",
+      caption: "Datos laborales.",
+      hashtags: [],
+      altText: "Gráfico de indicadores laborales.",
+      units: [
+        unit(
+          1,
+          "content",
+          editorialGoal,
+          "Señales del mercado laboral",
+          "Los ingresos semanales aumentaron 3.4%, mientras el empleo de nómina sumó 4,800; las vacantes llegaron a 509,100.",
+          ["fact-payroll", "fact-vacancies"],
+        ),
+      ],
+    };
+
+    const repaired = repairDeterministicCreativeCopy(
+      evidenceDraft,
+      "carousel",
+      facts,
+      "español",
+    );
+    assert.equal(repaired.units[0]?.factIds.length, 3);
+    assert.deepEqual(new Set(repaired.units[0]?.factIds), new Set(facts.map((fact) => fact.id)));
+    assert.deepEqual(
+      deterministicFactQualityIssues(repaired, facts).filter((issue) =>
+        ["UNSUPPORTED_NUMBER", "MISSING_FACT_ASSIGNMENT"].includes(issue.code),
+      ),
+      [],
+    );
+  });
+}
+
+test("does not classify sector or generic employment facts as aggregate payroll evidence", () => {
+  const earningsFact: CreativeKeyFact = {
+    id: "fact-earnings",
+    statement: "Average weekly earnings increased 3.4%.",
+    attribution: "Statistics Canada",
+  };
+  for (const employmentFact of [
+    {
+      id: "fact-construction",
+      statement: "Construction payroll employment increased.",
+      attribution: "Statistics Canada",
+    },
+    {
+      id: "fact-generic",
+      statement: "Employment increased.",
+      attribution: "Statistics Canada",
+    },
+  ] satisfies CreativeKeyFact[]) {
+    const facts = [earningsFact, employmentFact];
+    const contrastDraft: GeneratedCreativeDraft = {
+      concept: "Ingresos y empleo",
+      caption: "Indicadores laborales.",
+      hashtags: [],
+      altText: "Carrusel laboral.",
+      units: [
+        unit(
+          1,
+          "cover",
+          "hook",
+          "Ingresos frente a empleo",
+          "Los ingresos semanales aumentaron, mientras el empleo cambió.",
+          ["fact-earnings"],
+        ),
+      ],
+    };
+
+    assert.equal(
+      deterministicFactQualityIssues(contrastDraft, facts).some(
+        (issue) => issue.code === "MISSING_FACT_ASSIGNMENT",
+      ),
+      false,
+    );
+    assert.deepEqual(
+      repairDeterministicFactCopy(contrastDraft, facts).units[0]?.factIds,
+      ["fact-earnings"],
+    );
+  }
+
+  const sectorEarningsFact: CreativeKeyFact = {
+    id: "fact-manufacturing-wages",
+    statement: "Manufacturing wages rose.",
+    attribution: "Statistics Canada",
+  };
+  const aggregatePayrollFact: CreativeKeyFact = {
+    id: "fact-payroll",
+    statement: "Payroll employment changed little overall.",
+    attribution: "Statistics Canada",
+  };
+  const wageContrastDraft: GeneratedCreativeDraft = {
+    concept: "Salarios y empleo",
+    caption: "Indicadores laborales.",
+    hashtags: [],
+    altText: "Carrusel laboral.",
+    units: [
+      unit(
+        1,
+        "cover",
+        "hook",
+        "Salarios frente a empleo",
+        "Los salarios aumentaron, mientras el empleo de nómina cambió poco.",
+        ["fact-payroll"],
+      ),
+    ],
+  };
+  assert.equal(
+    deterministicFactQualityIssues(wageContrastDraft, [
+      sectorEarningsFact,
+      aggregatePayrollFact,
+    ]).some((issue) => issue.code === "MISSING_FACT_ASSIGNMENT"),
+    false,
+  );
+});
+
+test("does not infer an earnings-payroll contrast from a generic topic label", () => {
+  const laborFacts: CreativeKeyFact[] = [
+    {
+      id: "fact-earnings",
+      statement: "Average weekly earnings increased.",
+      attribution: "Statistics Canada",
+    },
+    {
+      id: "fact-payroll",
+      statement: "Payroll employment changed little.",
+      attribution: "Statistics Canada",
+    },
+  ];
+  const topicDraft: GeneratedCreativeDraft = {
+    concept: "Salarios y empleo en Canadá",
+    caption: "Dos temas del reporte laboral.",
+    hashtags: [],
+    altText: "Carrusel sobre salarios y empleo.",
+    units: [
+      unit(
+        1,
+        "cover",
+        "hook",
+        "Salarios y empleo en Canadá",
+        "Dos indicadores incluidos en el reporte.",
+        ["fact-payroll"],
+      ),
+    ],
+  };
+
+  assert.equal(
+    deterministicFactQualityIssues(topicDraft, laborFacts).some(
+      (issue) => issue.code === "MISSING_FACT_ASSIGNMENT",
+    ),
+    false,
+  );
+  assert.deepEqual(
+    repairDeterministicFactCopy(topicDraft, laborFacts).units[0]?.factIds,
+    ["fact-payroll"],
+  );
+});
+
+test("recognizes Spanish alzas and descensos as a sector movement summary", () => {
+  const sectorFacts: CreativeKeyFact[] = [
+    {
+      id: "fact-total",
+      statement: "Payroll employment changed little overall.",
+      attribution: "Statistics Canada",
+    },
+    {
+      id: "fact-sectors",
+      statement:
+        "Some industries recorded gains while manufacturing and retail trade recorded losses.",
+      attribution: "Statistics Canada",
+    },
+  ];
+  const sectorDraft: GeneratedCreativeDraft = {
+    concept: "Movimientos por industria",
+    caption: "Resumen sectorial.",
+    hashtags: [],
+    altText: "Carrusel sobre movimientos sectoriales.",
+    units: [
+      unit(
+        1,
+        "conclusion",
+        "debate",
+        "Movimientos distintos por sector",
+        "Hubo alzas y descensos según la industria.",
+        ["fact-total"],
+      ),
+    ],
+  };
+
+  assert.ok(
+    deterministicFactQualityIssues(sectorDraft, sectorFacts).some(
+      (issue) => issue.code === "MISSING_FACT_ASSIGNMENT",
+    ),
+  );
+  assert.deepEqual(
+    repairDeterministicFactCopy(
+      sectorDraft,
+      sectorFacts,
+      "español",
+    ).units[0]?.factIds,
+    ["fact-sectors"],
+  );
+});
+
+test("cleans sector copy only from the sentence that explicitly names the final slide", () => {
+  const facts: CreativeKeyFact[] = [
+    {
+      id: "fact-payroll",
+      statement: "Payroll employment changed little overall.",
+      attribution: "Statistics Canada",
+    },
+    {
+      id: "fact-earnings",
+      statement: "Average weekly earnings increased.",
+      attribution: "Statistics Canada",
+    },
+  ];
+  const makeDraft = (closingOrder: number): GeneratedCreativeDraft => ({
+    concept: "Ingresos y empleo",
+    caption: "Indicadores laborales.",
+    hashtags: [],
+    altText:
+      `La segunda compara datos y resume movimientos opuestos entre industrias. La quinta contrasta ingresos y empleo y resume movimientos opuestos entre industrias.${closingOrder === 6 ? " La sexta contrasta ingresos y empleo." : ""}`,
+    units: [
+      unit(1, "cover", "hook", "Ingresos y empleo", "Dos indicadores.", ["fact-payroll", "fact-earnings"]),
+      {
+        ...unit(
+          closingOrder,
+          "conclusion",
+          "debate",
+          "Ingresos y empleo no avanzaron igual",
+          "Los ingresos semanales aumentaron, mientras el empleo de nómina cambió poco.",
+          ["fact-payroll", "fact-earnings"],
+        ),
+        ctaQuestion: "¿Qué observas?",
+      },
+    ],
+  });
+
+  const fiveSlideRepair = repairDeterministicFactCopy(
+    makeDraft(5),
+    facts,
+    "español",
+  );
+  assert.match(
+    fiveSlideRepair.altText,
+    /La segunda compara datos y resume movimientos opuestos entre industrias\./u,
+  );
+  assert.doesNotMatch(fiveSlideRepair.altText, /La quinta[^.]*resume/iu);
+
+  const sixSlideRepair = repairDeterministicFactCopy(
+    makeDraft(6),
+    facts,
+    "español",
+  );
+  assert.match(
+    sixSlideRepair.altText,
+    /La quinta contrasta ingresos y empleo y resume movimientos opuestos entre industrias\./u,
+  );
+});
+
+test("removes a trailing sector clause without deleting the labor contrast in the same sentence", () => {
+  const facts: CreativeKeyFact[] = [
+    {
+      id: "fact-payroll",
+      statement: "Payroll employment changed little overall.",
+      attribution: "Statistics Canada",
+    },
+    {
+      id: "fact-earnings",
+      statement: "Average weekly earnings increased.",
+      attribution: "Statistics Canada",
+    },
+  ];
+  const mixedSentenceDraft: GeneratedCreativeDraft = {
+    concept: "Ingresos y empleo",
+    caption: "Indicadores laborales.",
+    hashtags: [],
+    altText: "Carrusel sobre ingresos y empleo.",
+    units: [
+      unit(1, "cover", "hook", "Dos indicadores", "Ingresos y empleo.", ["fact-payroll", "fact-earnings"]),
+      {
+        ...unit(
+          2,
+          "conclusion",
+          "debate",
+          "Ingresos al alza, empleo casi sin cambios",
+          "Los ingresos semanales aumentaron mientras el empleo de nómina cambió poco, y algunas industrias registraron alzas y descensos.",
+          ["fact-payroll", "fact-earnings"],
+        ),
+        ctaQuestion: "¿Qué indicador refleja mejor tu realidad?",
+      },
+    ],
+  };
+
+  const repaired = repairDeterministicFactCopy(
+    mixedSentenceDraft,
+    facts,
+    "español",
+  );
+  assert.equal(
+    repaired.units.at(-1)?.body,
+    "Los ingresos semanales aumentaron mientras el empleo de nómina cambió poco.",
+  );
+  assert.deepEqual(repaired.units.at(-1)?.factIds, [
+    "fact-payroll",
+    "fact-earnings",
+  ]);
+});
+
+test("does not guess an alt-text slide from a prose-only description", () => {
+  const fact: CreativeKeyFact = {
+    id: "fact-1",
+    statement:
+      "Some sectors gained payroll employees while other sectors lost them.",
+    attribution: "Statistics Canada",
+  };
+  const proseOnlyDraft: GeneratedCreativeDraft = {
+    concept: "Movimientos sectoriales",
+    caption: "Resumen del mercado laboral.",
+    hashtags: [],
+    altText:
+      "Carrusel sobre el mercado laboral; la última diapositiva resume diferencias sectoriales.",
+    units: [
+      unit(1, "cover", "hook", "El mercado laboral", undefined, ["fact-1"]),
+      unit(
+        2,
+        "conclusion",
+        "debate",
+        "Diferencias por sector",
+        "Algunos sectores ganaron empleos y otros los perdieron.",
+        ["fact-1"],
+      ),
+    ],
+  };
+
+  const repaired = repairDeterministicFactCopy(
+    proseOnlyDraft,
+    [fact],
+    "español",
+  );
+  assert.equal(repaired.altText, proseOnlyDraft.altText);
+  assert.equal(
+    deterministicFactQualityIssues(repaired, [fact]).some(
+      (issue) => issue.code === "ALT_TEXT_SLIDE_MISMATCH",
     ),
     false,
   );

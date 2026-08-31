@@ -42,3 +42,28 @@ test("allows a supported chart while prohibiting invented values", () => {
   assert.match(constraint, /never invent chart categories/iu);
   assert.doesNotMatch(constraint, /does not provide enough exact category values/iu);
 });
+
+test("does not count English and Spanish renderings as two chart values", () => {
+  const facts: CreativeKeyFact[] = [{
+    id: "fact-1",
+    statement: "The reported share was 21.8%.",
+    attribution: "Statistics Canada",
+    claimGuard: {
+      certainty: "reported",
+      allowedNumbers: ["21.8%", "21,8 %"],
+      requiredPhrases: [],
+      forbiddenPhrases: [],
+      scopePhrases: [],
+    },
+  }];
+
+  const constraint = buildDataVisualizationConstraint(
+    {
+      visualDirection: "A comparative bar chart.",
+      factIds: ["fact-1"],
+    },
+    facts,
+  );
+
+  assert.match(constraint, /does not provide enough exact category values/iu);
+});

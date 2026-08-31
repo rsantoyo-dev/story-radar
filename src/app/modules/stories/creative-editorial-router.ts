@@ -1,5 +1,4 @@
 import type {
-  CreativeContentSufficiency,
   CreativeQualityIssue,
   CreativeQualityScores,
 } from "./creative-content.types";
@@ -12,6 +11,26 @@ export type CreativeEditorialModelConfig = {
   structuralRepairModel: string;
   severeRepairModel: string;
 };
+
+export type CreativeRepairCandidate = {
+  model: string;
+  tier: CreativeRepairSeverity;
+};
+
+/**
+ * Criticism is cheaper than rewriting and must not have a single point of
+ * failure. Use one economical editor pass, then at most one stronger pass.
+ * Luna is intentionally excluded from factual publication decisions.
+ */
+export function criticCandidates(
+  models: CreativeEditorialModelConfig,
+): string[] {
+  const ordered = [
+    models.criticModel,
+    models.severeRepairModel,
+  ];
+  return [...new Set(ordered)];
+}
 
 const SEVERE_FACTUAL_CODES = new Set([
   "CERTAINTY_UPGRADE",
@@ -82,8 +101,42 @@ export function repairModelForSeverity(
   }
 }
 
-export function evidenceSupportsSevereRepair(
-  contentSufficiency: CreativeContentSufficiency,
-): boolean {
-  return contentSufficiency === "sufficient";
+/**
+ * A provider timeout is an availability failure, not an editorial verdict.
+ * Start with the model matched to the diagnosis, then try the other configured
+ * tiers without issuing duplicate requests when two tiers share a model.
+ */
+export function repairCandidatesForSeverity(
+  severity: CreativeRepairSeverity,
+  models: CreativeEditorialModelConfig,
+): CreativeRepairCandidate[] {
+  const tierOrder: CreativeRepairSeverity[] =
+    severity === "minor"
+      ? ["minor", "structural", "severe"]
+      : ["structural", "severe"];
+  const seenModels = new Set<string>();
+
+  return tierOrder.flatMap((tier) => {
+    const model = repairModelForSeverity(tier, models);
+    if (seenModels.has(model)) return [];
+    seenModels.add(model);
+    return [{ model, tier }];
+  });
+}
+
+/**
+ * A rewrite should be verified by an independent model. Terra rewrites are
+ * checked by Sol; Sol rewrites return to Terra. Availability fallbacks remain
+ * deduplicated, with Luna reserved for a provider outage rather than factual
+ * adjudication.
+ */
+export function verificationCriticCandidates(
+  repairModel: string,
+  models: CreativeEditorialModelConfig,
+): string[] {
+  const ordered =
+    repairModel === models.criticModel
+      ? [models.severeRepairModel, models.criticModel, models.minorRepairModel]
+      : [models.criticModel, models.severeRepairModel, models.minorRepairModel];
+  return [...new Set(ordered)];
 }

@@ -2,6 +2,9 @@ import type {
   CreativeKeyFact,
   CreativeUnit,
 } from "./creative-content.types";
+import {
+  substantiveCreativeNumericLiterals,
+} from "./creative-number-normalization";
 
 const CHART_REQUEST_PATTERN =
   /\b(?:bar chart|column chart|line chart|comparison chart|comparative chart|graph|plot|quantitative chart|gr[aá]fic[oa](?: de barras| de columnas| de l[ií]neas| comparativ[oa])?|barras? comparativas?|ejes? num[eé]ricos?)\b/iu;
@@ -16,11 +19,11 @@ export function buildDataVisualizationConstraint(
   keyFacts: readonly CreativeKeyFact[],
 ): string {
   const facts = keyFacts.filter((fact) => unit.factIds.includes(fact.id));
-  const exactValues = uniqueSubstantiveNumbers(
+  const exactValues = substantiveCreativeNumericLiterals(
     facts.flatMap((fact) =>
       fact.claimGuard?.allowedNumbers?.length
         ? fact.claimGuard.allowedNumbers
-        : extractNumbers(fact.sourceExcerpt?.trim() || fact.statement),
+        : [fact.sourceExcerpt?.trim() || fact.statement],
     ),
   );
 
@@ -32,20 +35,4 @@ export function buildDataVisualizationConstraint(
   }
 
   return "HARD DATA-INTEGRITY LOCK: never invent chart categories, values, labels, scales, dates, percentages, currency amounts, or proportional relationships. If a chart is used, every depicted magnitude must be explicitly supported by the selected facts and already present in VISIBLE_TEXT; otherwise use symbolic cards, objects, or a non-proportional conceptual comparison.";
-}
-
-function extractNumbers(value: string): string[] {
-  return value.match(/\b\d[\d,.]*(?:\s*%)?/gu) ?? [];
-}
-
-function uniqueSubstantiveNumbers(values: readonly string[]): string[] {
-  const normalized = values.flatMap((value) => {
-    const compact = value.replace(/[,%\s]/gu, "");
-    const numeric = Number(compact);
-    if (!Number.isFinite(numeric) || (numeric >= 1900 && numeric <= 2100)) {
-      return [];
-    }
-    return [compact];
-  });
-  return [...new Set(normalized)];
 }

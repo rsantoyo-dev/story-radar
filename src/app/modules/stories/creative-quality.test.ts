@@ -3,14 +3,24 @@ import test from "node:test";
 
 import type {
   CreativeKeyFact,
+  CreativeQualityReview,
   GeneratedCreativeDraft,
 } from "./creative-content.types";
 import {
+  buildCreativeQualityReview,
+  CREATIVE_QUALITY_THRESHOLDS,
   creativeQualityReviewHasUnresolvedBlockers,
   creativeQualityThresholdFailures,
   deterministicCreativeQualityIssues,
+  getCreativeDraftApprovalState,
   repairDeterministicCreativeCopy,
+  visibleDraftLanguageIssues,
 } from "./creative-quality";
+
+test("sets the automated editorial target to 9.5 with stricter factuality", () => {
+  assert.equal(CREATIVE_QUALITY_THRESHOLDS.overall, 95);
+  assert.equal(CREATIVE_QUALITY_THRESHOLDS.factuality, 96);
+});
 
 const facts: CreativeKeyFact[] = [
   {
@@ -156,7 +166,7 @@ test("repairs a malformed concept-derived CTA without leaking structural numbers
   );
   assert.equal(
     repaired.units.at(-1)?.ctaQuestion,
-    "Where could this approach fit your workflow?",
+    "What is your reading of these findings?",
   );
 });
 
@@ -254,6 +264,95 @@ test("repairs a short English CTA leaked into an otherwise Spanish closing slide
   );
 });
 
+test("flags short English editorial phrases in Spanish caption, headline, and body", () => {
+  const spanishBase: GeneratedCreativeDraft = {
+    ...draft,
+    concept: "Señales del mercado laboral canadiense",
+    caption: "Las cifras muestran cambios distintos entre sectores.",
+    callToAction: "Compara estas cifras con la realidad de tu sector.",
+    altText: "Carrusel sobre el mercado laboral de Canadá.",
+    units: draft.units.map((unit, index) => ({
+      ...unit,
+      headline:
+        index === 0
+          ? "El empleo cambió poco en junio"
+          : "La lectura depende del sector",
+      body:
+        index === 0
+          ? "Los datos nacionales muestran un movimiento moderado."
+          : "Cada industria presenta condiciones diferentes.",
+      ...(index === draft.units.length - 1
+        ? { ctaQuestion: "¿Qué ocurre en tu sector?" }
+        : { ctaQuestion: undefined }),
+    })),
+  };
+  const cases: Array<{
+    label: string;
+    mutate: (candidate: GeneratedCreativeDraft) => void;
+    unitOrder?: number;
+  }> = [
+    {
+      label: "caption",
+      mutate: (candidate) => {
+        candidate.caption =
+          "Los ingresos semanales aumentaron 3.4% year-over-year.";
+      },
+    },
+    {
+      label: "headline",
+      mutate: (candidate) => {
+        candidate.units[0]!.headline = "Las vacantes edged up";
+      },
+      unitOrder: 1,
+    },
+    {
+      label: "body",
+      mutate: (candidate) => {
+        candidate.units[0]!.body =
+          "En junio, las vacantes edged up hasta 509,100.";
+      },
+      unitOrder: 1,
+    },
+  ];
+
+  cases.forEach(({ label, mutate, unitOrder }) => {
+    const candidate = structuredClone(spanishBase);
+    mutate(candidate);
+
+    assert.deepEqual(
+      visibleDraftLanguageIssues(candidate, "español").map((issue) => ({
+        code: issue.code,
+        unitOrder: issue.unitOrder,
+      })),
+      [{ code: "MIXED_LANGUAGE", unitOrder }],
+      label,
+    );
+  });
+});
+
+test("does not flag common English loanwords in otherwise Spanish copy", () => {
+  const spanishWithLoanwords: GeneratedCreativeDraft = {
+    ...draft,
+    concept: "Software para pequeñas empresas",
+    caption:
+      "Una startup canadiense usa software de marketing para organizar su trabajo.",
+    altText: "Carrusel sobre una plataforma de software.",
+    units: draft.units.map((unit, index) => ({
+      ...unit,
+      headline: "Tecnología para equipos canadienses",
+      body: "La empresa combina software y edge computing.",
+      ...(index === draft.units.length - 1
+        ? { ctaQuestion: "¿Usas una herramienta similar?" }
+        : { ctaQuestion: undefined }),
+    })),
+  };
+
+  assert.deepEqual(
+    visibleDraftLanguageIssues(spanishWithLoanwords, "español"),
+    [],
+  );
+});
+
 test("does not let a repaired critic blocker keep human approval disabled", () => {
   assert.equal(
     creativeQualityReviewHasUnresolvedBlockers(
@@ -287,7 +386,155 @@ test("does not let a repaired critic blocker keep human approval disabled", () =
   );
 });
 
-test("blocks drafts with weak earned curiosity or an unresolved opening promise", () => {
+test("does not keep a stale unsupported-number review after current validation passes", () => {
+  const review: CreativeQualityReview = {
+    status: "rejected",
+    scores: {
+      factuality: 94,
+      hook: 98,
+      curiosity: 98,
+      swipeReward: 98,
+      continuity: 98,
+      relevance: 98,
+      clarity: 98,
+      resolution: 98,
+      cta: 98,
+      overall: 87,
+    },
+    issues: [
+      {
+        code: "UNSUPPORTED_NUMBER",
+        severity: "blocker",
+        unitOrder: 1,
+        message: "Slide 1 uses 218% without support from its selected facts.",
+      },
+    ],
+    repairPasses: 2,
+  };
+
+  assert.equal(
+    creativeQualityReviewHasUnresolvedBlockers(review, []),
+    false,
+  );
+  assert.equal(
+    creativeQualityReviewHasUnresolvedBlockers(review, [
+      {
+        code: "UNSUPPORTED_NUMBER",
+        severity: "blocker",
+        unitOrder: 1,
+        message: "Slide 1 uses 21.9% without support from its selected facts.",
+      },
+    ]),
+    true,
+  );
+});
+
+test("does not reject copy for an unsupported number reported only by the critic", () => {
+  const review = buildCreativeQualityReview({
+    draft: repairDeterministicCreativeCopy(
+      draft,
+      "carousel",
+      facts,
+      "English",
+    ),
+    format: "carousel",
+    scores: {
+      factuality: 99,
+      hook: 99,
+      curiosity: 99,
+      swipeReward: 99,
+      continuity: 99,
+      relevance: 99,
+      clarity: 99,
+      resolution: 99,
+      cta: 99,
+      overall: 99,
+    },
+    criticIssues: [
+      {
+        code: "UNSUPPORTED_NUMBER",
+        severity: "blocker",
+        unitOrder: 1,
+        message: "The critic could not match a localized number.",
+      },
+    ],
+    repairPasses: 1,
+    keyFacts: facts,
+  });
+
+  assert.equal(review.status, "accepted");
+  assert.ok(
+    review.issues.some(
+      (issue) =>
+        issue.code === "CRITIC_VALIDATOR_DISAGREEMENT" &&
+        issue.severity === "warning" &&
+        issue.unitOrder === 1,
+    ),
+  );
+});
+
+test("requires explicit acknowledgement for unresolved automated review notes", () => {
+  const review: CreativeQualityReview = {
+    status: "rejected",
+    scores: {
+      factuality: 100,
+      hook: 72,
+      curiosity: 70,
+      swipeReward: 100,
+      continuity: 100,
+      relevance: 100,
+      clarity: 100,
+      resolution: 100,
+      cta: 100,
+      overall: 80,
+    },
+    issues: [
+      {
+        code: "QUALITY_HOOK_BELOW_THRESHOLD",
+        severity: "blocker",
+        message: "Hook scored 72; the minimum is 90.",
+      },
+    ],
+    repairPasses: 1,
+  };
+
+  assert.deepEqual(
+    getCreativeDraftApprovalState({
+      deterministicIssues: [],
+      qualityReview: review,
+      qualityReviewIsCurrent: true,
+    }),
+    {
+      blockers: [],
+      requiresHumanReviewAcknowledgement: true,
+    },
+  );
+  assert.deepEqual(
+    getCreativeDraftApprovalState({
+      deterministicIssues: [
+        {
+          code: "UNSUPPORTED_INFERENCE",
+          severity: "blocker",
+          message: "The headline needs a supported claim.",
+        },
+      ],
+      qualityReview: review,
+      qualityReviewIsCurrent: true,
+    }),
+    {
+      blockers: [
+        {
+          code: "UNSUPPORTED_INFERENCE",
+          severity: "blocker",
+          message: "The headline needs a supported claim.",
+        },
+      ],
+      requiresHumanReviewAcknowledgement: false,
+    },
+  );
+});
+
+test("treats weak editorial scores as repair signals instead of factual blockers", () => {
   const failures = creativeQualityThresholdFailures(
     {
       factuality: 98,
@@ -307,4 +554,91 @@ test("blocks drafts with weak earned curiosity or an unresolved opening promise"
   const codes = failures.map((issue) => issue.code);
   assert.ok(codes.includes("QUALITY_CURIOSITY_BELOW_THRESHOLD"));
   assert.ok(codes.includes("QUALITY_RESOLUTION_BELOW_THRESHOLD"));
+  assert.ok(failures.every((issue) => issue.severity === "warning"));
+});
+
+test("accepts a factually safe draft after one editorial rewrite despite subjective score misses", () => {
+  const factuallySafeDraft = repairDeterministicCreativeCopy(
+    draft,
+    "carousel",
+    facts,
+    "English",
+  );
+  const scores = {
+    factuality: 98,
+    hook: 84,
+    curiosity: 82,
+    swipeReward: 84,
+    continuity: 85,
+    relevance: 92,
+    clarity: 91,
+    resolution: 83,
+    cta: 80,
+    overall: 86,
+  };
+
+  const initial = buildCreativeQualityReview({
+    draft: factuallySafeDraft,
+    format: "carousel",
+    scores,
+    criticIssues: [],
+    repairPasses: 0,
+    keyFacts: facts,
+  });
+  const afterRewrite = buildCreativeQualityReview({
+    draft: factuallySafeDraft,
+    format: "carousel",
+    scores,
+    criticIssues: [
+      {
+        code: "WEAK_HOOK",
+        severity: "blocker",
+        message: "The hook could be stronger.",
+      },
+    ],
+    repairPasses: 1,
+    keyFacts: facts,
+  });
+
+  assert.equal(initial.status, "needs-repair");
+  assert.equal(afterRewrite.status, "accepted");
+  assert.equal(
+    afterRewrite.issues.find((issue) => issue.code === "WEAK_HOOK")?.severity,
+    "warning",
+  );
+});
+
+test("does not block on a low factuality score without a concrete factual issue", () => {
+  const review = buildCreativeQualityReview({
+    draft: repairDeterministicCreativeCopy(
+      draft,
+      "carousel",
+      facts,
+      "English",
+    ),
+    format: "carousel",
+    scores: {
+      factuality: 70,
+      hook: 94,
+      curiosity: 92,
+      swipeReward: 92,
+      continuity: 92,
+      relevance: 94,
+      clarity: 94,
+      resolution: 92,
+      cta: 92,
+      overall: 94,
+    },
+    criticIssues: [],
+    repairPasses: 1,
+    keyFacts: facts,
+  });
+
+  assert.equal(review.status, "accepted");
+  assert.equal(
+    review.issues.find(
+      (issue) => issue.code === "QUALITY_FACTUALITY_BELOW_THRESHOLD",
+    )?.severity,
+    "warning",
+  );
 });

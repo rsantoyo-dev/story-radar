@@ -21,16 +21,15 @@ import { isCreativeFormat, isCreativeTone } from "./creative-content.types";
 import type { CreativeTextProvider } from "./creative-content.config";
 import {
   classifyCreativeRepairSeverity,
-  evidenceSupportsSevereRepair,
-  repairModelForSeverity,
+  criticCandidates,
   type CreativeEditorialModelConfig,
-  type CreativeRepairSeverity,
 } from "./creative-editorial-router";
 import {
   CAROUSEL_EDITORIAL_GOALS,
   carouselNarrativePolicyForPrompt,
   isCarouselSlideCount,
   isCarouselEditorialGoal,
+  maximumFactsForGoal,
   repairCarouselPlanEvidence,
   validateCarouselPlan,
   type CarouselPlan,
@@ -48,11 +47,13 @@ import {
   repairDeterministicBriefScope,
   withCreativeFactClaimGuard,
 } from "./creative-fact-guard";
+import {
+  reconcileCriticIssuesWithDeterministicValidation,
+} from "./creative-issue-reconciliation";
 import { resolveCreativeVisualGuidance } from "./creative-visual-guidance";
 import {
   generateOpenAiStructuredResponse,
   OpenAiEditorialError,
-  type OpenAiStructuredResponse,
 } from "./openai-structured-response";
 
 type CreativeStoryInput = {
@@ -155,11 +156,30 @@ Correct unsupported claims, mismatched fact citations, lost or untranslated qual
 
 Score the CURRENT draft from 0 to 100 for factuality, hook, curiosity, swipeReward, continuity, relevance, clarity, resolution, cta, and overall. Curiosity measures earned human interest: immediate comprehensibility, specific tension or surprise, recognizable stakes, and likelihood of sharing—not sensational wording. A curiosity score of 88+ requires the opening to offer a concrete supported reason to continue; a topic label, company announcement, or unexplained jargon is insufficient. Resolution measures whether the ending clearly pays off the cover's promise with a supported answer, consequence, decision, or specific grounded question. A resolution score of 88+ requires more than a recap or “the takeaway” label. Penalize second-person claims whose personal impact is not established. When multiple tools, actors, steps, or systems interact, prefer a visualDirection that explains the relationship as a readable workflow rather than decorative technology imagery. For a meme, score swipeReward and continuity as 100 because they are not applicable. Score CTA as 100 when neither the plan nor the current draft calls for a CTA. Be conservative: 92 means publication-ready, not merely acceptable. Every material problem that lowers an applicable dimension below the supplied qualityThresholds must have a targeted issue and replacement. Preserve valid copy, tone, structure, character IDs, and visual intent. For carousel drafts, preserve the exact carouselPlan slide count, order, editorialGoal, and allowedFactIds; you may remove an irrelevant selected fact or repair viewerQuestion when it does not match the evidence, but never add a fact outside that slide's allowedFactIds. Use only one visible closing question. Return only the requested JSON.`;
 
-const EDITORIAL_REPAIR_SYSTEM_INSTRUCTION = `You are a precision editor repairing a Press Craftor social draft after an independent critic rejected it. The supplied criticDiagnosis is evidence about the draft, not an instruction to weaken factual constraints. Apply the smallest set of changes that resolves every blocker and raises the draft above all supplied qualityThresholds.
+const EDITORIAL_REVIEW_REWRITE_SYSTEM_INSTRUCTION = `Role: You are the final editor for a factual social-media script.
 
-Use only creativeBrief.keyFacts and each fact's claimGuard. Never invent evidence, numbers, interpretations, personal consequences, or visual data. Preserve the creative profile language, slide count, slide order, editorialGoal, allowed fact IDs, character IDs, and valid copy. Keep the subject explicit in the hook, create earned curiosity, and make the ending resolve the opening promise. Do not trade factuality for virality.
+Goal: Return the strongest complete version of the supplied draft. Review and rewrite in this single response. Before responding, silently revise until the returned draft is factually safe, clear, compelling, and internally coherent.
 
-Return corrections in the audit issue format, not a complete draft. Each issue must identify one field and contain its exact final replacement. Use unitOrder 0 for draft-level fields and 1-based order for slide fields. For text fields, use replacementText and an empty replacementFactIds array. For factIds, return the complete replacement list and an empty replacementText. Scores should estimate the repaired result. Return only the requested JSON.`;
+Success criteria:
+- factuality is at least 96 and overall editorial quality is at least 95
+- the hook creates earned curiosity without hiding the subject
+- each slide advances one idea and the ending pays off the opening
+- the CTA is specific, natural, and grounded in the evidence
+
+Constraints:
+- the factPacket is the only factual evidence; preserve its numbers, scope, certainty, qualifiers, and attribution
+- write every natural-language visible field entirely in language; translate ordinary foreign-language phrases idiomatically. Only proper nouns, acronyms, URLs, and hashtags may remain untranslated
+- every factual proposition in a unit must be semantically supported by that same unit's returned factIds; listing an ID is not evidence. Stay within maxFactIds: include every supporting ID when allowed, otherwise narrow or delete the claim
+- caption and altText must accurately summarize the returned units and their order; never assign a comparison or statistic to the wrong slide
+- each unit's visible copy must answer—not copy or expose—its internal viewerQuestion and fulfill role/editorialGoal: prove presents evidence, impact explains supported significance instead of repeating numbers, and conclude/debate resolves the cover promise with at most one grounded question
+- each visualDirection must support the same unit's role and facts without requesting invented labels, text, or data
+- use UNSUPPORTED_NUMBER only when a literal is absent from the selected fact evidence; when the literal exists but its meaning is wrong, use FACT_MISMATCH
+- delete or narrow any unsupported claim instead of inventing evidence
+- preserve editorial_news mode, language, format, slide count, and valid character usage
+- improve the full script coherently; do not return isolated patches or promotional product claims
+- scores and issues must describe the returned draft, not the input; list only problems that remain unresolved
+
+Stop rule: return accepted or revised only when the returned draft meets the success criteria. Return escalate when the factPacket cannot support a safe high-quality version. Return only the structured response.`;
 
 const DRAFT_RETRY_INSTRUCTION =
   "Your previous response failed validation. Correct every previousValidationError, write every visible field entirely in the creative profile language, return the exact requested number of units, and obey the JSON schema and carouselPlan exactly.";
@@ -365,7 +385,12 @@ export async function generateCreativeDraft({
     topic: topicForPrompt(topic),
     creativeProfile: profileForPrompt(profile),
     creativeBrief: briefForPrompt(brief),
-    supportingCharacterRoster: characterRosterForPrompt(characterRoster),
+    // Script generation only needs stable identities. Detailed character
+    // descriptions belong to image generation and waste writing context here.
+    supportingCharacterRoster: characterRoster.slice(0, 2).map((character) => ({
+      id: character.id,
+      name: character.name,
+    })),
     story,
   };
   const response = await generateJson({
@@ -454,7 +479,6 @@ export async function generateCreativeDraft({
       profile,
       outputAspectRatio,
       characterRoster,
-      carouselPlan,
     });
     return {
       draft: editorial.draft,
@@ -489,8 +513,13 @@ export async function generateCreativeDraft({
         contents: {
           requestedFormat: format,
           creativeProfile: profileForPrompt(profile),
-          creativeBrief: briefForPrompt(brief),
-          supportingCharacterRoster: characterRosterForPrompt(characterRoster),
+          creativeBrief: editorialBriefForPrompt(brief),
+          supportingCharacterRoster: characterRoster
+            .slice(0, 2)
+            .map((character) => ({
+              id: character.id,
+              name: character.name,
+            })),
           qualityThresholds: CREATIVE_QUALITY_THRESHOLDS,
           currentDraft,
         },
@@ -620,7 +649,6 @@ async function runOpenAiEditorialQualityGate({
   profile,
   outputAspectRatio,
   characterRoster,
-  carouselPlan,
 }: {
   apiKey: string;
   models: CreativeEditorialModelConfig;
@@ -630,346 +658,235 @@ async function runOpenAiEditorialQualityGate({
   profile: CreativeProfile;
   outputAspectRatio: CreativeAspectRatio;
   characterRoster: CreativeCharacterRosterEntry[];
-  carouselPlan?: CarouselPlan;
 }): Promise<{ draft: GeneratedCreativeDraft; usage: CreativeAiUsage }> {
   let usage = emptyCreativeAiUsage();
-  const critic = { provider: "openai" as const, model: models.criticModel };
-  const deterministicPreflight = deterministicCreativeQualityIssues(
+  let workingDraft = repairDeterministicCreativeCopy(
     currentDraft,
     format,
     brief.keyFacts,
     profile.language,
   );
-  const commonContents = {
-    requestedFormat: format,
-    creativeProfile: profileForPrompt(profile),
-    creativeBrief: briefForPrompt(brief),
-    supportingCharacterRoster: characterRosterForPrompt(characterRoster),
-    qualityThresholds: CREATIVE_QUALITY_THRESHOLDS,
-    deterministicPreflight,
-  };
-
-  let initialAudit: ReturnType<typeof parseCreativeGroundingAudit>;
-  let initialAuditText: string;
-  try {
-    const response = await generateOpenAiCriticResponse({
-      apiKey,
-      model: models.criticModel,
-      schemaName: "creative_editorial_audit",
-      contents: { ...commonContents, currentDraft },
-      format,
-    });
-    usage = sumCreativeAiUsage(usage, response.usage);
-    initialAuditText = response.text;
-    initialAudit = parseCreativeGroundingAudit(
-      response.text,
-      currentDraft,
-      format,
-      brief,
-      outputAspectRatio,
-      characterRoster,
-      carouselPlan,
-      `OpenAI ${models.criticModel}`,
-    );
-  } catch (error) {
-    const reason = editorialErrorMessage(error);
-    console.warn(`OpenAI creative critic unavailable: ${reason}`);
-    return {
-      draft: {
-        ...currentDraft,
-        qualityReview: {
-          ...unavailableCreativeQualityReview(
-            reason,
-            0,
-            currentDraft,
-            format,
-            brief.keyFacts,
-            profile.language,
-          ),
-          critic,
-        },
-      },
-      usage,
-    };
-  }
-
-  const initialReview = buildCreativeQualityReview({
-    draft: currentDraft,
-    format,
-    scores: initialAudit.scores,
-    criticIssues: initialAudit.criticIssues,
-    repairPasses: 0,
-    keyFacts: brief.keyFacts,
-  });
-  if (initialReview.status === "accepted") {
-    return {
-      draft: {
-        ...currentDraft,
-        qualityReview: { ...initialReview, critic },
-      },
-      usage,
-    };
-  }
-
-  const severity = classifyCreativeRepairSeverity(
-    initialReview.issues,
-    initialReview.scores,
-  );
-  if (
-    severity === "severe" &&
-    !evidenceSupportsSevereRepair(brief.contentSufficiency)
-  ) {
-    return {
-      draft: {
-        ...currentDraft,
-        qualityReview: {
-          ...initialReview,
-          status: "rejected",
-          issues: [
-            ...initialReview.issues,
-            {
-              code: "EVIDENCE_INSUFFICIENT_FOR_REPAIR",
-              severity: "blocker",
-              message:
-                "The critic found a severe factual problem, but the brief does not contain sufficient evidence for a safe rewrite. Rebuild or expand the brief before generating another draft.",
-            },
-          ],
-          critic,
-        },
-      },
-      usage,
-    };
-  }
-
-  const repairModel = repairModelForSeverity(severity, models);
-  const repair = {
-    provider: "openai" as const,
-    model: repairModel,
-    severity,
-  };
-  let repairedDraft: GeneratedCreativeDraft;
-  try {
-    const repairResponse = await generateOpenAiStructuredResponse({
-      apiKey,
-      model: repairModel,
-      instructions: EDITORIAL_REPAIR_SYSTEM_INSTRUCTION,
-      schema: creativeGroundingAuditSchema(),
-      schemaName: "creative_editorial_repair",
-      contents: {
-        ...commonContents,
-        repairSeverity: severity,
-        currentDraft,
-        criticDiagnosis: {
-          scores: initialReview.scores,
-          issues: initialReview.issues,
-          structuredAudit: safeParsedJson(initialAuditText),
-          criticSuggestedDraft: initialAudit.draft,
-        },
-      },
-      maxOutputTokens: editorialRepairTokenBudget(format, severity),
-      reasoningEffort: repairReasoningEffort(severity),
-    });
-    usage = sumCreativeAiUsage(usage, repairResponse.usage);
-    const repaired = parseCreativeGroundingAudit(
-      repairResponse.text,
-      currentDraft,
-      format,
-      brief,
-      outputAspectRatio,
-      characterRoster,
-      carouselPlan,
-      `OpenAI ${repairModel}`,
-    );
-    repairedDraft = repairDeterministicCreativeCopy(
-      repaired.draft,
-      format,
-      brief.keyFacts,
-      profile.language,
-    );
-    assertVisibleDraftLanguage(repairedDraft, profile.language);
-  } catch (error) {
-    const reason = editorialErrorMessage(error);
-    console.warn(`OpenAI creative repair unavailable: ${reason}`);
-    return {
-      draft: {
-        ...currentDraft,
-        qualityReview: {
-          ...initialReview,
-          status: "rejected",
-          issues: [
-            ...initialReview.issues,
-            {
-              code: "EDITORIAL_REPAIR_UNAVAILABLE",
-              severity: "warning",
-              message: `The ${severity} repair could not complete: ${reason}`,
-            },
-          ],
-          critic,
-          repair,
-        },
-      },
-      usage,
-    };
-  }
-
-  const deterministicIssues = deterministicCreativeQualityIssues(
-    repairedDraft,
+  let previousFeedback = deterministicCreativeQualityIssues(
+    workingDraft,
     format,
     brief.keyFacts,
     profile.language,
   );
-  if (deterministicIssues.some((issue) => issue.severity === "blocker")) {
-    return {
-      draft: {
-        ...repairedDraft,
-        qualityReview: {
-          ...initialReview,
-          status: "rejected",
-          issues: deterministicIssues,
-          repairPasses: 1,
-          critic,
-          repair,
-        },
-      },
-      usage,
-    };
-  }
+  const availabilityIssues: CreativeQualityIssue[] = [];
+  let lastReason = "All configured editorial models were unavailable.";
+  let safeCandidate:
+    | {
+        draft: GeneratedCreativeDraft;
+        review: CreativeQualityReview;
+      }
+    | undefined;
 
-  try {
-    const finalResponse = await generateOpenAiCriticResponse({
-      apiKey,
-      model: models.criticModel,
-      schemaName: "creative_editorial_reaudit",
-      contents: { ...commonContents, currentDraft: repairedDraft },
-      format,
-    });
-    usage = sumCreativeAiUsage(usage, finalResponse.usage);
-    const finalAudit = parseCreativeGroundingAudit(
-      finalResponse.text,
-      repairedDraft,
-      format,
-      brief,
-      outputAspectRatio,
-      characterRoster,
-      carouselPlan,
-      `OpenAI ${models.criticModel}`,
-    );
-    const finalReview = buildCreativeQualityReview({
-      draft: repairedDraft,
-      format,
-      scores: finalAudit.scores,
-      criticIssues: finalAudit.criticIssues,
-      repairPasses: 1,
-      keyFacts: brief.keyFacts,
-    });
-    return {
-      draft: {
-        ...repairedDraft,
-        qualityReview: { ...finalReview, critic, repair },
-      },
-      usage,
-    };
-  } catch (error) {
-    const reason = editorialErrorMessage(error);
-    console.warn(`OpenAI creative re-critic unavailable: ${reason}`);
-    return {
-      draft: {
-        ...repairedDraft,
-        qualityReview: {
-          ...unavailableCreativeQualityReview(
-            reason,
-            1,
-            repairedDraft,
-            format,
-            brief.keyFacts,
-            profile.language,
-          ),
-          critic,
-          repair,
-        },
-      },
-      usage,
-    };
-  }
-}
+  const candidates = criticCandidates(models);
+  // Hard cost ceiling: each unique editor runs once. In the default setup
+  // this is Terra followed, only when needed, by Sol.
+  for (const [index, model] of candidates.entries()) {
+    try {
+      const response = await generateOpenAiStructuredResponse({
+        apiKey,
+        model,
+        instructions: EDITORIAL_REVIEW_REWRITE_SYSTEM_INSTRUCTION,
+        schema: creativeEditorialReviewRewriteSchema(workingDraft.units.length),
+        schemaName: "creative_editorial_review_rewrite",
+        contents: compactEditorialReviewContents({
+          draft: workingDraft,
+          brief,
+          profile,
+          format,
+          previousFeedback,
+        }),
+        maxOutputTokens: format === "meme" ? 6_144 : 12_288,
+        reasoningEffort: "medium",
+      });
+      usage = sumCreativeAiUsage(usage, response.usage);
+      const result = parseCreativeEditorialReviewRewrite(
+        response.text,
+        workingDraft,
+        format,
+        brief,
+        outputAspectRatio,
+        characterRoster,
+        `OpenAI ${model}`,
+      );
+      const revisedDraft = repairDeterministicCreativeCopy(
+        result.draft,
+        format,
+        brief.keyFacts,
+        profile.language,
+      );
+      assertVisibleDraftLanguage(revisedDraft, profile.language);
 
-function repairReasoningEffort(
-  severity: CreativeRepairSeverity,
-): "medium" | "high" | "xhigh" {
-  if (severity === "minor") return "medium";
-  if (severity === "severe") return "xhigh";
-  return "high";
-}
+      const deterministicIssues = deterministicCreativeQualityIssues(
+        revisedDraft,
+        format,
+        brief.keyFacts,
+        profile.language,
+      );
+      const criticIssues = reconcileCriticIssuesWithDeterministicValidation(
+        result.issues,
+        deterministicIssues,
+      );
+      const remainingIssues = mergeCreativeQualityIssues([
+        ...criticIssues,
+        ...deterministicIssues,
+      ]);
+      const deterministicBlockerKeys = new Set(
+        deterministicIssues
+          .filter((issue) => issue.severity === "blocker")
+          .map((issue) => `${issue.code}:${issue.unitOrder ?? 0}`),
+      );
+      const hardBlockers = remainingIssues.filter(
+        (issue) =>
+          issue.severity === "blocker" &&
+          (deterministicBlockerKeys.has(
+            `${issue.code}:${issue.unitOrder ?? 0}`,
+          ) ||
+            isConcreteFactualQualityIssue(issue)),
+      );
+      const targetMet =
+        result.verdict !== "escalate" &&
+        hardBlockers.length === 0 &&
+        result.scores.factuality >= CREATIVE_QUALITY_THRESHOLDS.factuality &&
+        result.scores.overall >= CREATIVE_QUALITY_THRESHOLDS.overall;
+      const repairPasses = index + 1;
+      const baseReview = buildCreativeQualityReview({
+        draft: revisedDraft,
+        format,
+        scores: result.scores,
+        criticIssues,
+        repairPasses,
+        keyFacts: brief.keyFacts,
+      });
+      const qualityTargetIssue: CreativeQualityIssue[] = targetMet
+        ? []
+        : [{
+            code: "EDITORIAL_QUALITY_TARGET_NOT_MET",
+            severity: "warning",
+            message: `The returned draft did not reach every target (overall ${result.scores.overall}/${CREATIVE_QUALITY_THRESHOLDS.overall}; factuality ${result.scores.factuality}/${CREATIVE_QUALITY_THRESHOLDS.factuality}).`,
+          }];
+      const severity = classifyCreativeRepairSeverity(
+        remainingIssues,
+        result.scores,
+      );
+      const review: CreativeQualityReview = {
+        ...baseReview,
+        status: hardBlockers.length > 0
+          ? "rejected"
+          : targetMet
+            ? "accepted"
+            : "needs-review",
+        issues: mergeCreativeQualityIssues([
+          ...baseReview.issues,
+          ...deterministicIssues,
+          ...availabilityIssues,
+          ...qualityTargetIssue,
+        ]),
+        critic: { provider: "openai", model },
+        repair: { provider: "openai", model, severity },
+      };
 
-async function generateOpenAiCriticResponse({
-  apiKey,
-  model,
-  schemaName,
-  contents,
-  format,
-}: {
-  apiKey: string;
-  model: string;
-  schemaName: string;
-  contents: unknown;
-  format: CreativeFormat;
-}): Promise<OpenAiStructuredResponse> {
-  const request = (reasoningEffort: "medium" | "high") =>
-    generateOpenAiStructuredResponse({
-      apiKey,
-      model,
-      instructions: GROUNDING_AUDIT_SYSTEM_INSTRUCTION,
-      schema: creativeGroundingAuditSchema(),
-      schemaName,
-      contents,
-      maxOutputTokens: editorialAuditTokenBudget(format),
-      reasoningEffort,
-    });
-  try {
-    return await request("high");
-  } catch (error) {
-    if (
-      !(error instanceof OpenAiEditorialError) ||
-      !/max_output_tokens/iu.test(error.message)
-    ) {
-      throw error;
+      if (hardBlockers.length === 0) {
+        safeCandidate = { draft: revisedDraft, review };
+      }
+      if (targetMet) {
+        return {
+          draft: { ...revisedDraft, qualityReview: review },
+          usage,
+        };
+      }
+
+      workingDraft = revisedDraft;
+      previousFeedback = mergeCreativeQualityIssues([
+        ...hardBlockers,
+        ...criticIssues,
+        ...qualityTargetIssue,
+      ]);
+
+      if (index === candidates.length - 1) {
+        return {
+          draft: { ...revisedDraft, qualityReview: review },
+          usage,
+        };
+      }
+    } catch (error) {
+      // Provider and structured-response failures may use the one bounded
+      // fallback. Programming or local-validator errors must fail fast: a
+      // second model cannot fix our code and would only spend more tokens.
+      if (
+        !(error instanceof OpenAiEditorialError) &&
+        !(error instanceof CreativeContentResponseError)
+      ) {
+        throw error;
+      }
+      if (error instanceof OpenAiEditorialError && error.usage) {
+        usage = sumCreativeAiUsage(usage, error.usage);
+      }
+      lastReason = editorialErrorMessage(error);
+      console.warn(
+        `OpenAI editorial review-and-rewrite ${model} failed; trying the bounded fallback: ${lastReason}`,
+      );
+      availabilityIssues.push({
+        code: "EDITORIAL_REVIEW_ATTEMPT_FAILED",
+        severity: "warning",
+        message: `${model} could not complete its review-and-rewrite pass: ${lastReason}`,
+      });
     }
-    console.warn(
-      `OpenAI ${model} exhausted its high-reasoning output budget; retrying the critic once with medium reasoning.`,
-    );
-    const retry = await request("medium");
+  }
+
+  if (safeCandidate) {
     return {
-      ...retry,
-      usage: error.usage
-        ? sumCreativeAiUsage(error.usage, retry.usage)
-        : retry.usage,
+      draft: {
+        ...safeCandidate.draft,
+        qualityReview: {
+          ...safeCandidate.review,
+          status: "needs-review",
+          issues: mergeCreativeQualityIssues([
+            ...safeCandidate.review.issues,
+            ...availabilityIssues,
+          ]),
+        },
+      },
+      usage,
     };
   }
-}
 
-function editorialAuditTokenBudget(format: CreativeFormat): number {
-  // Reasoning tokens share max_output_tokens with the structured JSON. Terra
-  // previously exhausted a 4k budget before emitting any JSON for a five-slide
-  // carousel, so leave enough room for both analysis and the strict response.
-  return format === "meme" ? 6_144 : 12_288;
-}
-
-function editorialRepairTokenBudget(
-  format: CreativeFormat,
-  severity: CreativeRepairSeverity,
-): number {
-  if (format === "meme") return severity === "severe" ? 8_192 : 6_144;
-  if (severity === "minor") return 8_192;
-  if (severity === "severe") return 16_384;
-  return 12_288;
-}
-
-function safeParsedJson(value: string): unknown {
-  try {
-    return JSON.parse(value) as unknown;
-  } catch {
-    return null;
-  }
+  const unavailable = unavailableCreativeQualityReview(
+    lastReason,
+    0,
+    workingDraft,
+    format,
+    brief.keyFacts,
+    profile.language,
+  );
+  const finalIssues = mergeCreativeQualityIssues([
+    ...unavailable.issues,
+    ...previousFeedback,
+    ...availabilityIssues,
+  ]);
+  const hasKnownHardBlocker = finalIssues.some(
+    (issue) =>
+      issue.severity === "blocker" &&
+      isConcreteFactualQualityIssue(issue),
+  );
+  return {
+    draft: {
+      ...workingDraft,
+      qualityReview: {
+        ...unavailable,
+        status: hasKnownHardBlocker ? "rejected" : unavailable.status,
+        issues: finalIssues,
+        critic: {
+          provider: "openai",
+          model: candidates.at(-1) ?? models.criticModel,
+        },
+      },
+    },
+    usage,
+  };
 }
 
 function editorialErrorMessage(error: unknown): string {
@@ -2039,6 +1956,119 @@ function creativeGroundingAuditSchema(): Record<string, unknown> {
   };
 }
 
+function creativeEditorialReviewRewriteSchema(
+  unitCount: number,
+): Record<string, unknown> {
+  const scoreProperties = Object.fromEntries(
+    [
+      "factuality",
+      "hook",
+      "curiosity",
+      "swipeReward",
+      "continuity",
+      "relevance",
+      "clarity",
+      "resolution",
+      "cta",
+      "overall",
+    ].map((field) => [
+      field,
+      { type: "integer", minimum: 0, maximum: 100 },
+    ]),
+  );
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["verdict", "scores", "issues", "draft"],
+    properties: {
+      verdict: {
+        type: "string",
+        enum: ["accepted", "revised", "escalate"],
+      },
+      scores: {
+        type: "object",
+        additionalProperties: false,
+        required: Object.keys(scoreProperties),
+        properties: scoreProperties,
+      },
+      issues: {
+        type: "array",
+        maxItems: 12,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["unitOrder", "code", "severity", "message"],
+          properties: {
+            unitOrder: { type: "integer", minimum: 0, maximum: unitCount },
+            code: { type: "string" },
+            severity: {
+              type: "string",
+              enum: ["blocker", "warning"],
+            },
+            message: { type: "string" },
+          },
+        },
+      },
+      draft: creativeEditorialCopySchema(unitCount),
+    },
+  };
+}
+
+function creativeEditorialCopySchema(
+  unitCount: number,
+): Record<string, unknown> {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "concept",
+      "caption",
+      "callToAction",
+      "hashtags",
+      "altText",
+      "units",
+    ],
+    properties: {
+      concept: { type: "string" },
+      caption: { type: "string" },
+      callToAction: { type: "string" },
+      hashtags: {
+        type: "array",
+        maxItems: 8,
+        items: { type: "string" },
+      },
+      altText: { type: "string" },
+      units: {
+        type: "array",
+        minItems: unitCount,
+        maxItems: unitCount,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: [
+            "headline",
+            "body",
+            "ctaQuestion",
+            "visualDirection",
+            "factIds",
+          ],
+          properties: {
+            headline: { type: "string" },
+            body: { type: "string" },
+            ctaQuestion: { type: "string" },
+            visualDirection: { type: "string" },
+            factIds: {
+              type: "array",
+              maxItems: 6,
+              items: { type: "string" },
+            },
+          },
+        },
+      },
+    },
+  };
+}
+
 function parseCreativeBrief(
   text: string,
   provider = "The AI provider",
@@ -2565,6 +2595,180 @@ function parseCreativeGroundingAudit(
   };
 }
 
+function parseCreativeEditorialReviewRewrite(
+  text: string,
+  currentDraft: GeneratedCreativeDraft,
+  format: CreativeFormat,
+  brief: GeneratedCreativeBrief,
+  outputAspectRatio: CreativeAspectRatio,
+  characterRoster: CreativeCharacterRosterEntry[],
+  provider: string,
+): {
+  verdict: "accepted" | "revised" | "escalate";
+  scores: CreativeQualityScores;
+  issues: CreativeQualityIssue[];
+  draft: GeneratedCreativeDraft;
+} {
+  const value = parseJsonObject(text, provider);
+  if (
+    value.verdict !== "accepted" &&
+    value.verdict !== "revised" &&
+    value.verdict !== "escalate"
+  ) {
+    throw new CreativeContentResponseError(
+      `${provider} returned an invalid editorial verdict`,
+    );
+  }
+  const scores = parseCreativeQualityScores(value.scores);
+  const issues = arrayValue(value.issues, "editorial issues", 0, 12).map(
+    (item, index): CreativeQualityIssue => {
+      const issue = recordValue(item, `editorial issue ${index + 1}`);
+      if (
+        !Number.isInteger(issue.unitOrder) ||
+        (issue.unitOrder as number) < 0 ||
+        (issue.unitOrder as number) > currentDraft.units.length
+      ) {
+        throw new CreativeContentResponseError(
+          `${provider} returned an invalid editorial issue unit`,
+        );
+      }
+      if (issue.severity !== "blocker" && issue.severity !== "warning") {
+        throw new CreativeContentResponseError(
+          `${provider} returned an invalid editorial issue severity`,
+        );
+      }
+      const rawCode = shortText(issue.code, "editorial issue code", 80)
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/gu, "_")
+        .replace(/^_+|_+$/gu, "");
+      if (!rawCode) {
+        throw new CreativeContentResponseError(
+          `${provider} returned an empty editorial issue code`,
+        );
+      }
+      return {
+        code: rawCode,
+        severity: issue.severity,
+        message: shortText(issue.message, "editorial issue message", 600),
+        ...((issue.unitOrder as number) > 0
+          ? { unitOrder: issue.unitOrder as number }
+          : {}),
+      };
+    },
+  );
+  const copy = recordValue(value.draft, "editorial revised draft");
+  const units = arrayValue(
+    copy.units,
+    "editorial revised units",
+    currentDraft.units.length,
+    currentDraft.units.length,
+  );
+  const revisedCallToAction = optionalText(
+    copy.callToAction,
+    500,
+    "callToAction",
+  ).callToAction;
+  const mergedDraft: GeneratedCreativeDraft = {
+    ...currentDraft,
+    concept: shortText(copy.concept, "concept", 1_000),
+    caption: shortText(copy.caption, "caption", 3_000),
+    ...(revisedCallToAction
+      ? { callToAction: revisedCallToAction }
+      : { callToAction: undefined }),
+    hashtags: normalizeHashtags(
+      shortTextArray(copy.hashtags, "hashtags", 8, 80),
+    ),
+    altText: shortText(copy.altText, "altText", 1_000),
+    units: currentDraft.units.map((unit, index) => {
+      const revised = recordValue(
+        units[index],
+        `editorial revised unit ${index + 1}`,
+      );
+      const factIds = shortTextArray(revised.factIds, "factIds", 6, 30);
+      const body = optionalText(revised.body, 600, "body").body;
+      const ctaQuestion = optionalText(
+        revised.ctaQuestion,
+        500,
+        "ctaQuestion",
+      ).ctaQuestion;
+      return {
+        ...unit,
+        headline: shortText(revised.headline, "headline", 240),
+        ...(body ? { body } : { body: undefined }),
+        ...(format === "carousel"
+          ? ctaQuestion
+            ? { ctaQuestion }
+            : { ctaQuestion: undefined }
+          : {}),
+        visualDirection: shortText(
+          revised.visualDirection,
+          "visualDirection",
+          1_000,
+        ),
+        factIds,
+      };
+    }),
+  };
+  const parsedDraft = parseCreativeDraft(
+    JSON.stringify(mergedDraft),
+    format,
+    brief,
+    outputAspectRatio,
+    characterRoster,
+    undefined,
+    true,
+    false,
+    provider,
+  );
+  return {
+    verdict: value.verdict,
+    scores,
+    issues,
+    draft: {
+      ...parsedDraft,
+      ...(currentDraft.characterPlan
+        ? { characterPlan: currentDraft.characterPlan }
+        : {}),
+      ...(currentDraft.narrativeRationale
+        ? { narrativeRationale: currentDraft.narrativeRationale }
+        : {}),
+    },
+  };
+}
+
+const CONCRETE_FACTUAL_ISSUE_CODES = new Set([
+  "CERTAINTY_UPGRADE",
+  "FACT_MISMATCH",
+  "LOST_QUALIFIER",
+  "MISATTRIBUTED",
+  "MISSING_SCOPE",
+  "OVERSTATED",
+  "UNSUPPORTED",
+  "UNSUPPORTED_INFERENCE",
+  "UNSUPPORTED_NUMBER",
+]);
+
+function isConcreteFactualQualityIssue(issue: CreativeQualityIssue): boolean {
+  return (
+    CONCRETE_FACTUAL_ISSUE_CODES.has(issue.code) ||
+    /(?:FACT|UNSUPPORTED|SCOPE|QUALIFIER|ATTRIBUT|NUMBER|OVERSTAT|CERTAINTY)/u.test(
+      issue.code,
+    )
+  );
+}
+
+function mergeCreativeQualityIssues(
+  issues: readonly CreativeQualityIssue[],
+): CreativeQualityIssue[] {
+  const merged = new Map<string, CreativeQualityIssue>();
+  issues.forEach((issue) => {
+    const key = `${issue.code}:${issue.unitOrder ?? 0}:${issue.message}`;
+    const existing = merged.get(key);
+    if (!existing || issue.severity === "blocker") merged.set(key, issue);
+  });
+  return [...merged.values()];
+}
+
 function parseCreativeQualityScores(value: unknown): CreativeQualityScores {
   const scores = recordValue(value, "quality scores");
   return {
@@ -2824,16 +3028,6 @@ function profileForPrompt(profile: CreativeProfile) {
   };
 }
 
-function characterRosterForPrompt(
-  roster: CreativeCharacterRosterEntry[],
-): Array<Pick<CreativeCharacterRosterEntry, "id" | "name" | "description">> {
-  return roster.slice(0, 2).map((character) => ({
-    id: character.id,
-    name: character.name,
-    description: character.description,
-  }));
-}
-
 function topicForPrompt(topic: CreativeTopicContext) {
   return {
     name: topic.name,
@@ -2860,6 +3054,86 @@ function briefForPrompt(
     carouselPlan: brief.carouselPlan,
     riskFlags: brief.riskFlags,
     suggestedConcepts: brief.suggestedConcepts,
+  };
+}
+
+function editorialBriefForPrompt(
+  brief: GeneratedCreativeBrief & { editorialDirection?: string },
+) {
+  return {
+    editorialDirection: brief.editorialDirection ?? null,
+    targetAudience: brief.targetAudience,
+    keyMessage: brief.keyMessage,
+    angle: brief.angle,
+    contentSufficiency: brief.contentSufficiency,
+    keyFacts: brief.keyFacts,
+    carouselPlan: brief.carouselPlan,
+    riskFlags: brief.riskFlags,
+  };
+}
+
+function compactEditorialReviewContents({
+  draft,
+  brief,
+  profile,
+  format,
+  previousFeedback,
+}: {
+  draft: GeneratedCreativeDraft;
+  brief: GeneratedCreativeBrief;
+  profile: CreativeProfile;
+  format: CreativeFormat;
+  previousFeedback: readonly CreativeQualityIssue[];
+}) {
+  return {
+    contentMode: "editorial_news",
+    format,
+    language: profile.language,
+    contentSufficiency: brief.contentSufficiency,
+    qualityTarget: {
+      factuality: CREATIVE_QUALITY_THRESHOLDS.factuality,
+      overall: CREATIVE_QUALITY_THRESHOLDS.overall,
+    },
+    voice: {
+      audience: profile.audience,
+      personality: profile.brandPersonality.slice(0, 5),
+      callToActionStyle: profile.callToActionStyle,
+    },
+    factPacket: brief.keyFacts.map((fact) => ({
+      id: fact.id,
+      claim: fact.statement,
+      evidence: fact.sourceExcerpt ?? fact.statement,
+      requiredQualifiers: fact.requiredQualifiers ?? [],
+      attribution: fact.attribution ?? "",
+      claimGuard: fact.claimGuard ?? null,
+    })),
+    previousFeedback: previousFeedback.slice(0, 12).map((issue) => ({
+      code: issue.code,
+      severity: issue.severity,
+      unitOrder: issue.unitOrder ?? 0,
+      message: issue.message,
+    })),
+    draft: {
+      concept: draft.concept,
+      caption: draft.caption,
+      callToAction: draft.callToAction ?? "",
+      hashtags: draft.hashtags,
+      altText: draft.altText,
+      units: draft.units.map((unit) => ({
+        order: unit.order,
+        role: unit.role,
+        editorialGoal: unit.editorialGoal ?? null,
+        viewerQuestion: unit.viewerQuestion ?? null,
+        maxFactIds: unit.editorialGoal
+          ? maximumFactsForGoal(unit.editorialGoal)
+          : 6,
+        headline: unit.headline,
+        body: unit.body ?? "",
+        ctaQuestion: unit.ctaQuestion ?? "",
+        visualDirection: unit.visualDirection,
+        factIds: unit.factIds,
+      })),
+    },
   };
 }
 

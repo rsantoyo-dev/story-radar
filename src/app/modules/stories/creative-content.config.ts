@@ -127,8 +127,8 @@ export function getCreativeContentPublicConfig(): CreativeContentPublicConfig {
     primaryProvider,
     briefPromptVersion: "creative-brief-v13",
     draftPromptVersions: {
-      meme: "meme-draft-v12",
-      carousel: "carousel-draft-v17",
+      meme: "meme-draft-v15",
+      carousel: "carousel-draft-v21",
     },
     maxRunsPerDay: parsePositiveInteger(
       process.env.CREATIVE_MAX_RUNS_PER_DAY,

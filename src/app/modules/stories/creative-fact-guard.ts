@@ -5,13 +5,18 @@ import type {
   CreativeQualityIssue,
   GeneratedCreativeDraft,
 } from "./creative-content.types";
+import { maximumFactsForGoal } from "./carousel-narrative";
+import {
+  extractCreativeNumericLiterals as extractNumericLiterals,
+  normalizeCreativeNumericLiteral as normalizeNumber,
+} from "./creative-number-normalization";
 
 const CERTAINTY_UPGRADE_PATTERN =
   /\b(?:is|are|was|were)\s+(?:fully\s+|entirely\s+)?(?:ai[-‐‑‒–— ]generated|ai[-‐‑‒–— ]written|written by ai)\b|\bai[-‐‑‒–— ]written\s+(?:content|pages?|articles?|text)\b/iu;
 const SIGNAL_PATTERN =
   /\b(?:show(?:s|ed)? signs?|significant signs?|authorship signs?|signals?|likely (?:written|edited|generated)|detect(?:ed|ion)|identify|identified)\b/iu;
 const ESTIMATE_PATTERN =
-  /~|\b(?:about|approximately|estimated|estimate|nearly|roughly|around|over|more than|aproximadamente|estimad[oa]s?|casi|alrededor de|cerca de|unos?|en promedio|más de)\b/iu;
+  /~|\b(?:about|approximately|estimated|estimate|nearly|roughly|around|more than|aproximadamente|estimad[oa]s?|casi|alrededor de|cerca de|unos?|en promedio|más de)\b|(?<![-‐‑‒–—])\bover\b(?![-‐‑‒–—])/iu;
 const PROJECTION_PATTERN = /\b(?:projected|forecast|expected to|could reach)\b/iu;
 const ASSOCIATION_PATTERN = /\b(?:associated with|correlat(?:ed|ion)|linked to)\b/iu;
 const REPORTED_PATTERN = /\b(?:according to|reported|report says|study says)\b/iu;
@@ -93,6 +98,37 @@ const UNSUPPORTED_INFERENCE_PATTERNS: Array<{
 const GENERIC_CLOSING_PATTERN =
   /^(?:the\s+)?(?:takeaway|conclusion|bottom line|what next)\??$/iu;
 
+// A broad "some sectors gained while others lost" conclusion still needs the
+// fact that establishes both directions. Numbers alone cannot catch this
+// assignment error, so keep this guard deliberately narrow: it only applies
+// when the copy explicitly mentions sectors/industries and both movement
+// directions, and only auto-assigns a uniquely matching fact.
+const SECTOR_SCOPE_PATTERN =
+  /\b(?:sector(?:es)?|industr(?:ia|ias|y|ies))\b/iu;
+const POSITIVE_SECTOR_MOVEMENT_PATTERN =
+  /\b(?:alza(?:s)?|avance(?:s)?|aument(?:o|os|aron)|subi(?:o|eron)|creci(?:o|eron)|sum(?:o|aron)|gan(?:o|aron)|growth|gain(?:s|ed)?|increase(?:s|d)?|rose|grew|added|up)\b/iu;
+const NEGATIVE_SECTOR_MOVEMENT_PATTERN =
+  /\b(?:descenso(?:s)?|descendi(?:o|eron)|retroceso(?:s)?|ca(?:ida|idas|yo|yeron)|baj(?:o|aron)|perdi(?:o|eron)|rest(?:o|aron)|decline(?:s|d)?|decrease(?:s|d)?|loss(?:es)?|fell|dropped|down)\b/iu;
+const SECTOR_ENTITY_PATTERN =
+  /\b(?:public administration|administracion publica|construction|construccion|manufacturing|manufactura|accommodation|alojamiento|food services?|servicios de comida|retail trade|comercio minorista)\b/iu;
+
+// This guard covers one recurring labor-story synthesis: average earnings
+// moved in one direction while aggregate payroll employment moved differently.
+// Requiring an explicit contrast in the copy and exactly one evidence fact for
+// each side keeps generic "wages and jobs" topic labels from being matched.
+const EARNINGS_SCOPE_PATTERN =
+  /\b(?:average weekly earnings?|weekly earnings?|earnings?|wages?|salar(?:y|ies|io|ios)|salari(?:al|ales)|ganancias? semanales?|ingresos? semanales?|remuneraci(?:o|ó)n semanal)\b/iu;
+const AGGREGATE_EARNINGS_SCOPE_PATTERN =
+  /\b(?:average weekly earnings?|national average earnings?|average wages?|weekly average earnings?|ganancias? semanales? promedio|ingresos? semanales? promedio|salarios? semanales? promedio|remuneraci(?:o|ó)n semanal promedio)\b/iu;
+const PAYROLL_EMPLOYMENT_SCOPE_PATTERN =
+  /\b(?:payroll employment|payroll employees?|employment|empleo(?: en nomina)?|empleados? en nomina|nomina)\b/iu;
+const AGGREGATE_PAYROLL_SCOPE_PATTERN =
+  /\b(?:payroll employment|payroll employees?|aggregate employment|total employment|national employment|employment (?:overall|nationally|across (?:the )?country)|empleo en nomina|empleados? en nomina|empleo (?:agregado|total|nacional)|nomina nacional|a nivel nacional|en todo el pais)\b/iu;
+const LABOR_CONTRAST_PATTERN =
+  /\b(?:while|whereas|but|however|versus|vs|contrast(?:s|ed)?|differ(?:s|ed|ent)?|not the same|does not (?:equal|mean)|mientras|mientras que|pero|sin embargo|frente a|en cambio|contrast(?:a|an)|difer(?:ente|entes|ia|ian)|distint(?:o|a|os|as)|no (?:miden|avanzan|crecen) (?:igual|lo mismo)|no equivale)\b/iu;
+const AGGREGATE_LABOR_MOVEMENT_PATTERN =
+  /\b(?:changed? little|little changed|change(?:d|s)?|unchanged|nearly unchanged|almost unchanged|flat|stagnant|rose|grew|increased?|decreased?|fell|dropped|added|cambi(?:o|aron)|cambio poco|sin cambios?|casi sin cambios?|practicamente no cambio|aument(?:o|aron)|subi(?:o|eron)|creci(?:o|eron)|baj(?:o|aron)|cay(?:o|eron)|alza(?:s)?|descenso(?:s)?)\b/iu;
+
 const ORDINAL_NUMBER_PATTERNS: ReadonlyArray<{
   number: string;
   pattern: RegExp;
@@ -128,18 +164,53 @@ const CARDINAL_NUMBER_PATTERNS: ReadonlyArray<{
     // Spanish "un/una" is normally an indefinite article ("una etapa"),
     // not the numeric claim 1. Explicit Spanish ratios and fractions are
     // handled by their dedicated patterns above.
-    pattern: /\bone(?![- ](?:third|quarter))\b/iu,
+    pattern:
+      /(?<![\p{L}\p{N}_])one(?![- ](?:third|quarter))(?![\p{L}\p{N}_])/iu,
   },
-  { number: "2", pattern: /\b(?:two|twice|double|dos|dos veces|doble)\b/iu },
-  { number: "3", pattern: /\b(?:three|tres)\b/iu },
-  { number: "4", pattern: /\b(?:four|cuatro)\b/iu },
-  { number: "5", pattern: /\b(?:five|cinco)\b/iu },
-  { number: "6", pattern: /\b(?:six|seis)\b/iu },
-  { number: "7", pattern: /\b(?:seven|siete)\b/iu },
-  { number: "8", pattern: /\b(?:eight|ocho)\b/iu },
-  { number: "9", pattern: /\b(?:nine|nueve)\b/iu },
-  { number: "10", pattern: /\b(?:ten|diez)\b/iu },
-  { number: "20", pattern: /\b(?:twenty|veinte)\b/iu },
+  {
+    number: "2",
+    pattern:
+      /(?<![\p{L}\p{N}_])(?:two|twice|double|dos|dos veces|doble)(?![\p{L}\p{N}_])/iu,
+  },
+  {
+    number: "3",
+    pattern: /(?<![\p{L}\p{N}_])(?:three|tres)(?![\p{L}\p{N}_])/iu,
+  },
+  {
+    number: "4",
+    pattern: /(?<![\p{L}\p{N}_])(?:four|cuatro)(?![\p{L}\p{N}_])/iu,
+  },
+  {
+    number: "5",
+    pattern: /(?<![\p{L}\p{N}_])(?:five|cinco)(?![\p{L}\p{N}_])/iu,
+  },
+  {
+    number: "6",
+    pattern: /(?<![\p{L}\p{N}_])(?:six|seis)(?![\p{L}\p{N}_])/iu,
+  },
+  {
+    number: "7",
+    pattern: /(?<![\p{L}\p{N}_])(?:seven|siete)(?![\p{L}\p{N}_])/iu,
+  },
+  {
+    number: "8",
+    pattern: /(?<![\p{L}\p{N}_])(?:eight|ocho)(?![\p{L}\p{N}_])/iu,
+  },
+  {
+    number: "9",
+    pattern: /(?<![\p{L}\p{N}_])(?:nine|nueve)(?![\p{L}\p{N}_])/iu,
+  },
+  {
+    number: "10",
+    // JavaScript's ASCII-only \b treats the accented í in "tenía" as a
+    // boundary, so /\bten\b/ incorrectly inferred the number 10. Unicode
+    // letter/number guards keep translated prose from becoming a statistic.
+    pattern: /(?<![\p{L}\p{N}_])(?:ten|diez)(?![\p{L}\p{N}_])/iu,
+  },
+  {
+    number: "20",
+    pattern: /(?<![\p{L}\p{N}_])(?:twenty|veinte)(?![\p{L}\p{N}_])/iu,
+  },
 ];
 
 export function withCreativeFactClaimGuard(
@@ -147,13 +218,17 @@ export function withCreativeFactClaimGuard(
 ): CreativeKeyFact {
   const inferred = inferCreativeFactClaimGuard(fact);
   const existing = fact.claimGuard;
+  const certainty =
+    existing?.certainty === "estimated" && inferred.certainty !== "estimated"
+      ? inferred.certainty
+      : existing && isFactCertainty(existing.certainty)
+        ? existing.certainty
+        : inferred.certainty;
   return {
     ...fact,
     claimGuard: existing
       ? {
-          certainty: isFactCertainty(existing.certainty)
-            ? existing.certainty
-            : inferred.certainty,
+          certainty,
           requiredPhrases: mergeText(existing.requiredPhrases, inferred.requiredPhrases),
           forbiddenPhrases: mergeText(
             existing.forbiddenPhrases,
@@ -260,6 +335,15 @@ export function deterministicFactQualityIssues(
         "The publishing copy adds a trend, causal effect, or consequence that the key facts do not establish.",
     });
   }
+  const altTextMismatch = findAltTextSlideMismatch(draft);
+  if (altTextMismatch) {
+    issues.push({
+      code: "ALT_TEXT_SLIDE_MISMATCH",
+      severity: "blocker",
+      unitOrder: altTextMismatch.claimedOrder,
+      message: `The alt text attributes a numeric comparison to slide ${altTextMismatch.claimedOrder}, but that comparison appears on slide ${altTextMismatch.actualOrder}.`,
+    });
+  }
 
   draft.units.forEach((unit) => {
     const selectedFacts = unit.factIds.flatMap((id) => {
@@ -287,7 +371,8 @@ export function deterministicFactQualityIssues(
       (number) =>
         !selectedFacts.some((fact) =>
           fact.claimGuard?.allowedNumbers.includes(number),
-        ),
+        ) &&
+        !isBriefSupportedCalendarYear(number, allFacts),
     );
     if (unsupportedNumbers.length > 0) {
       issues.push({
@@ -295,6 +380,36 @@ export function deterministicFactQualityIssues(
         severity: "blocker",
         unitOrder: unit.order,
         message: `Slide ${unit.order} uses ${unsupportedNumbers.join(", ")} without support from its selected facts.`,
+      });
+    }
+
+    const missingLaborContrastFactIds =
+      uniqueMissingLaborContrastFactIds(
+        visibleCopy,
+        selectedFacts,
+        allFacts,
+      );
+    if (missingLaborContrastFactIds.length > 0) {
+      issues.push({
+        code: "MISSING_FACT_ASSIGNMENT",
+        severity: "blocker",
+        unitOrder: unit.order,
+        message: `Slide ${unit.order} contrasts average earnings with aggregate payroll employment but does not select ${missingLaborContrastFactIds.join(", ")}, the uniquely supporting ${missingLaborContrastFactIds.length === 1 ? "fact" : "facts"}.`,
+      });
+    }
+
+    const missingSectorMovementFactId =
+      uniqueMissingSectorMovementFactId(
+        visibleCopy,
+        selectedFacts,
+        allFacts,
+      );
+    if (missingSectorMovementFactId) {
+      issues.push({
+        code: "MISSING_FACT_ASSIGNMENT",
+        severity: "blocker",
+        unitOrder: unit.order,
+        message: `Slide ${unit.order} summarizes gains and losses across sectors but does not select ${missingSectorMovementFactId}, the fact that establishes both movements.`,
       });
     }
 
@@ -574,6 +689,11 @@ export function repairDeterministicFactCopy(
   );
   const allFacts = [...factsById.values()];
   const allSourceCopy = allFacts.map((fact) => fact.statement).join(" ");
+  // Array.map runs sequentially. Record the effective repaired assignments as
+  // each unit completes so a later closing can reuse a fact recovered for an
+  // earlier slide, while never treating its original broken assignment as
+  // established evidence.
+  const establishedFactIds = new Set<string>();
   const repaired: GeneratedCreativeDraft = {
     ...draft,
     caption: repairPublishingCopy(
@@ -583,13 +703,59 @@ export function repairDeterministicFactCopy(
       language,
     ),
     altText: repairPublishingCopy(
-      draft.altText,
+      repairAltTextSlideReference(draft),
       allSourceCopy,
       localizedFallback(language, "alt-text"),
       language,
     ),
     units: draft.units.map((unit) => {
-      const factIds = repairNumericFactAssignments(unit, factsById);
+      const isClosingUnit =
+        unit.editorialGoal === "conclude" ||
+        unit.editorialGoal === "debate";
+      const numericFactIds = repairNumericFactAssignments(
+        unit,
+        factsById,
+        establishedFactIds,
+      );
+      const laborContrastFactIds = uniqueLaborContrastFactIds(
+        unitVisibleCopy(unit),
+        allFacts,
+      );
+      const narrowedUnsupportedClosingLaborContrast = Boolean(
+        laborContrastFactIds &&
+          isClosingUnit &&
+          !laborContrastFactIds.every((id) => establishedFactIds.has(id)),
+      );
+      const contrastFactIds = repairLaborContrastFactAssignment(
+        unit,
+        numericFactIds,
+        allFacts,
+        establishedFactIds,
+      );
+      const selectedContrastFacts = contrastFactIds.flatMap((id) => {
+        const fact = factsById.get(id);
+        return fact ? [fact] : [];
+      });
+      const sectorMovementFactId = uniqueMissingSectorMovementFactId(
+        unitVisibleCopy(unit),
+        selectedContrastFacts,
+        allFacts,
+      );
+      const factIds = repairSectorMovementFactAssignment(
+        unit,
+        contrastFactIds,
+        factsById,
+      );
+      const prioritizedClosingLaborContrast = Boolean(
+        laborContrastFactIds &&
+          isClosingUnit &&
+          !narrowedUnsupportedClosingLaborContrast,
+      );
+      const narrowedToSectorEvidence = Boolean(
+        sectorMovementFactId &&
+          factIds.length === 1 &&
+          !contrastFactIds.includes(sectorMovementFactId),
+      );
       const selectedFacts = factIds.flatMap((id) => {
         const fact = factsById.get(id);
         return fact ? [fact] : [];
@@ -613,14 +779,34 @@ export function repairDeterministicFactCopy(
               repairUnsupportedInference(unit.body, sourceCopy),
             ),
             language,
-          )
+        )
         : undefined;
+      if (narrowedUnsupportedClosingLaborContrast) {
+        headline = localizedNarrowedClosingHeadline(language);
+        body = undefined;
+      }
+      if (prioritizedClosingLaborContrast && body) {
+        body = removeSectorMovementSentences(body);
+      }
+      if (narrowedToSectorEvidence && body) {
+        body = retainSectorMovementSummary(body);
+      }
       let ctaQuestion = unit.ctaQuestion
         ? localizeEstimateQualifiers(
-            repairCertaintyUpgrade(unit.ctaQuestion),
-            language,
-          )
+          repairCertaintyUpgrade(unit.ctaQuestion),
+          language,
+        )
         : undefined;
+      if (narrowedUnsupportedClosingLaborContrast) {
+        ctaQuestion = localizedNarrowedClosingQuestion(language);
+      }
+      if (
+        prioritizedClosingLaborContrast &&
+        ctaQuestion &&
+        isSectorMovementSummary(ctaQuestion)
+      ) {
+        ctaQuestion = localizedLaborContrastQuestion(language);
+      }
       if (
         ctaQuestion &&
         hasUnsupportedInference(ctaQuestion, sourceCopy) &&
@@ -641,6 +827,38 @@ export function repairDeterministicFactCopy(
       let visibleCopy = [headline, body, ctaQuestion]
         .filter(Boolean)
         .join(" ");
+      if (
+        unit.editorialGoal === "conclude" ||
+        unit.editorialGoal === "debate"
+      ) {
+        const repairedHeadline = removeUnsupportedNumericClauses(
+          headline,
+          selectedFacts,
+          allFacts,
+        );
+        const repairedBody = body
+          ? removeUnsupportedNumericClauses(body, selectedFacts, allFacts)
+          : undefined;
+        const repairedCta = ctaQuestion
+          ? removeUnsupportedNumericClauses(
+              ctaQuestion,
+              selectedFacts,
+              allFacts,
+            )
+          : undefined;
+        headline = repairedHeadline || localizedEvidenceHeadline(language);
+        body = repairedBody || undefined;
+        ctaQuestion =
+          repairedCta ||
+          (unit.editorialGoal === "debate"
+            ? isSpanishLanguage(language)
+              ? "¿Cómo interpretarías estos datos?"
+              : "How would you interpret these findings?"
+            : undefined);
+        visibleCopy = [headline, body, ctaQuestion]
+          .filter(Boolean)
+          .join(" ");
+      }
       if (
         selectedFacts.some(
           (fact) =>
@@ -683,9 +901,13 @@ export function repairDeterministicFactCopy(
       )?.claimGuard?.scopePhrases[0];
       if (missingNumericScope) {
         if (body && extractAllowedNumbers(body).length > 0) {
-          body = integrateScopeNaturally(body, missingNumericScope);
+          body = integrateScopeNaturally(body, missingNumericScope, language);
         } else {
-          headline = integrateScopeNaturally(headline, missingNumericScope);
+          headline = integrateScopeNaturally(
+            headline,
+            missingNumericScope,
+            language,
+          );
         }
       }
       visibleCopy = [headline, body, ctaQuestion].filter(Boolean).join(" ");
@@ -707,22 +929,49 @@ export function repairDeterministicFactCopy(
             ? undefined
             : safeConclusionForFact(closingFact, language);
       }
-      return {
+      const visualDirection = prioritizedClosingLaborContrast
+        ? removeSectorMovementSentences(unit.visualDirection) ??
+          localizedLaborContrastVisualDirection(language)
+        : narrowedUnsupportedClosingLaborContrast
+          ? localizedNarrowedClosingVisualDirection(language)
+          : unit.visualDirection;
+      const repairedUnit: GeneratedCreativeDraft["units"][number] = {
         ...unit,
         factIds,
         headline,
+        visualDirection,
         ...(body ? { body } : { body: undefined }),
         ...(ctaQuestion
           ? { ctaQuestion }
           : { ctaQuestion: undefined }),
       };
+      repairedUnit.factIds.forEach((id) => establishedFactIds.add(id));
+      return repairedUnit;
     }),
   };
 
-  repaired.caption = repairMissingPublishingScope(repaired.caption, allFacts);
+  repaired.caption = repairMissingPublishingScope(
+    repaired.caption,
+    allFacts,
+    language,
+  );
 
   const closing = repaired.units.at(-1);
-  if (closing?.editorialGoal === "debate" && closing.factIds.length > 1) {
+  if (
+    closing &&
+    uniqueLaborContrastFactIds(unitVisibleCopy(closing), allFacts)
+  ) {
+    repaired.altText = removeClosingSectorAltTextClause(
+      repaired.altText,
+      closing.order,
+    );
+  }
+  if (
+    closing?.editorialGoal === "debate" &&
+    closing.factIds.length > 1 &&
+    !isSectorMovementSummary(unitVisibleCopy(closing)) &&
+    !uniqueLaborContrastFactIds(unitVisibleCopy(closing), allFacts)
+  ) {
     const visibleNumbers = extractAllowedNumbers(
       [closing.headline, closing.body, closing.ctaQuestion]
         .filter(Boolean)
@@ -757,8 +1006,13 @@ export function repairDeterministicFactCopy(
 function repairNumericFactAssignments(
   unit: GeneratedCreativeDraft["units"][number],
   factsById: ReadonlyMap<string, CreativeKeyFact>,
+  establishedFactIds: ReadonlySet<string>,
 ): string[] {
-  const factIds = [...unit.factIds];
+  const isClosingUnit =
+    unit.editorialGoal === "conclude" || unit.editorialGoal === "debate";
+  const factIsEligible = (id: string): boolean =>
+    factsById.has(id) && (!isClosingUnit || establishedFactIds.has(id));
+  const factIds = unit.factIds.filter(factIsEligible);
   const visibleNumbers = extractAllowedNumbers(
     [unit.headline, unit.body, unit.ctaQuestion].filter(Boolean).join(" "),
   );
@@ -769,8 +1023,10 @@ function repairNumericFactAssignments(
     );
     if (alreadySupported) continue;
 
-    const matchingFacts = [...factsById.values()].filter((fact) =>
-      fact.claimGuard?.allowedNumbers.includes(number),
+    const matchingFacts = [...factsById.values()].filter(
+      (fact) =>
+        factIsEligible(fact.id) &&
+        fact.claimGuard?.allowedNumbers.includes(number),
     );
     if (matchingFacts.length !== 1) continue;
     const matchingId = matchingFacts[0]!.id;
@@ -781,8 +1037,410 @@ function repairNumericFactAssignments(
   return factIds;
 }
 
+function repairLaborContrastFactAssignment(
+  unit: GeneratedCreativeDraft["units"][number],
+  factIds: readonly string[],
+  allFacts: readonly CreativeKeyFact[],
+  establishedFactIds: ReadonlySet<string>,
+): string[] {
+  const supportingIds = uniqueLaborContrastFactIds(
+    unitVisibleCopy(unit),
+    allFacts,
+  );
+  if (!supportingIds) return [...factIds];
+
+  const isClosingUnit =
+    unit.editorialGoal === "conclude" || unit.editorialGoal === "debate";
+  if (
+    isClosingUnit &&
+    !supportingIds.every((id) => establishedFactIds.has(id))
+  ) {
+    // A closing may synthesize facts established earlier, but must never
+    // introduce the missing half of a new contrast. The caller narrows this
+    // unit to a non-factual closing prompt.
+    return [];
+  }
+
+  // Prioritize the supporting pair, then preserve other known facts up to the
+  // actual narrative budget. In particular, prove/compare legitimately allow
+  // a third evidence fact.
+  const prioritizedIds = [
+    ...factIds.filter((id) => supportingIds.includes(id)),
+    ...supportingIds.filter((id) => !factIds.includes(id)),
+    ...factIds.filter((id) => !supportingIds.includes(id)),
+  ];
+  const budget = unit.editorialGoal
+    ? maximumFactsForGoal(unit.editorialGoal)
+    : prioritizedIds.length;
+  return prioritizedIds.slice(0, budget);
+}
+
+function repairSectorMovementFactAssignment(
+  unit: GeneratedCreativeDraft["units"][number],
+  factIds: readonly string[],
+  factsById: ReadonlyMap<string, CreativeKeyFact>,
+): string[] {
+  const selectedFacts = factIds.flatMap((id) => {
+    const fact = factsById.get(id);
+    return fact ? [fact] : [];
+  });
+  if (
+    uniqueLaborContrastFactIds(
+      unitVisibleCopy(unit),
+      [...factsById.values()],
+    )
+  ) {
+    // When the slide explicitly resolves the earnings-vs-employment hook, its
+    // two uniquely supporting facts take precedence over a third sector fact.
+    return [...factIds];
+  }
+  const matchingId = uniqueMissingSectorMovementFactId(
+    unitVisibleCopy(unit),
+    selectedFacts,
+    [...factsById.values()],
+  );
+  if (!matchingId) return [...factIds];
+  if (
+    unit.editorialGoal === "conclude" ||
+    unit.editorialGoal === "debate"
+  ) {
+    // A sector summary is one proposition. Replace unrelated assignments
+    // instead of retaining facts that the closing copy no longer uses.
+    return [matchingId];
+  }
+  if (factIds.length >= 6) return [...factIds];
+  return [...factIds, matchingId];
+}
+
+function uniqueMissingLaborContrastFactIds(
+  visibleCopy: string,
+  selectedFacts: readonly CreativeKeyFact[],
+  allFacts: readonly CreativeKeyFact[],
+): string[] {
+  const supportingIds = uniqueLaborContrastFactIds(visibleCopy, allFacts);
+  if (!supportingIds) return [];
+  const selectedIds = new Set(selectedFacts.map((fact) => fact.id));
+  return supportingIds.filter((id) => !selectedIds.has(id));
+}
+
+function uniqueLaborContrastFactIds(
+  visibleCopy: string,
+  allFacts: readonly CreativeKeyFact[],
+): string[] | undefined {
+  if (!isLaborMarketContrast(visibleCopy)) return undefined;
+
+  const earningsFacts = allFacts.filter(isEarningsMovementEvidenceFact);
+  const payrollFacts = allFacts.filter(isAggregatePayrollMovementEvidenceFact);
+  if (earningsFacts.length !== 1 || payrollFacts.length !== 1) {
+    return undefined;
+  }
+
+  const requiredIds = new Set([
+    earningsFacts[0]!.id,
+    payrollFacts[0]!.id,
+  ]);
+  if (requiredIds.size !== 2) return undefined;
+
+  // Retain brief order for stable persisted output and predictable tests.
+  return allFacts
+    .map((fact) => fact.id)
+    .filter((id) => requiredIds.has(id));
+}
+
+function isLaborMarketContrast(value: string): boolean {
+  const normalized = normalizeText(value);
+  return (
+    EARNINGS_SCOPE_PATTERN.test(normalized) &&
+    PAYROLL_EMPLOYMENT_SCOPE_PATTERN.test(normalized) &&
+    LABOR_CONTRAST_PATTERN.test(normalized)
+  );
+}
+
+function isEarningsMovementEvidenceFact(fact: CreativeKeyFact): boolean {
+  const evidence = normalizeText(
+    [fact.statement, fact.sourceExcerpt].filter(Boolean).join(" "),
+  );
+  return (
+    AGGREGATE_EARNINGS_SCOPE_PATTERN.test(evidence) &&
+    AGGREGATE_LABOR_MOVEMENT_PATTERN.test(evidence) &&
+    !SECTOR_SCOPE_PATTERN.test(evidence) &&
+    !SECTOR_ENTITY_PATTERN.test(evidence)
+  );
+}
+
+function isAggregatePayrollMovementEvidenceFact(
+  fact: CreativeKeyFact,
+): boolean {
+  const evidence = normalizeText(
+    [fact.statement, fact.sourceExcerpt].filter(Boolean).join(" "),
+  );
+  return (
+    AGGREGATE_PAYROLL_SCOPE_PATTERN.test(evidence) &&
+    AGGREGATE_LABOR_MOVEMENT_PATTERN.test(evidence) &&
+    !SECTOR_SCOPE_PATTERN.test(evidence) &&
+    !SECTOR_ENTITY_PATTERN.test(evidence)
+  );
+}
+
+function uniqueMissingSectorMovementFactId(
+  visibleCopy: string,
+  selectedFacts: readonly CreativeKeyFact[],
+  allFacts: readonly CreativeKeyFact[],
+): string | undefined {
+  if (!isSectorMovementSummary(visibleCopy)) return undefined;
+  if (selectedFacts.some(isSectorMovementEvidenceFact)) return undefined;
+
+  const matchingFacts = allFacts.filter(isSectorMovementEvidenceFact);
+  return matchingFacts.length === 1 ? matchingFacts[0]?.id : undefined;
+}
+
+function isSectorMovementSummary(value: string): boolean {
+  const normalized = normalizeText(value);
+  return (
+    SECTOR_SCOPE_PATTERN.test(normalized) &&
+    POSITIVE_SECTOR_MOVEMENT_PATTERN.test(normalized) &&
+    NEGATIVE_SECTOR_MOVEMENT_PATTERN.test(normalized)
+  );
+}
+
+function isSectorMovementEvidenceFact(fact: CreativeKeyFact): boolean {
+  const evidence = normalizeText(
+    [fact.statement, fact.sourceExcerpt].filter(Boolean).join(" "),
+  );
+  const hasSectorEvidence =
+    SECTOR_SCOPE_PATTERN.test(evidence) || SECTOR_ENTITY_PATTERN.test(evidence);
+  return (
+    hasSectorEvidence &&
+    POSITIVE_SECTOR_MOVEMENT_PATTERN.test(evidence) &&
+    NEGATIVE_SECTOR_MOVEMENT_PATTERN.test(evidence)
+  );
+}
+
+function retainSectorMovementSummary(value: string): string | undefined {
+  for (const sentence of splitSentenceClauses(value)) {
+    const candidates = sentence.split(
+      /\b(?:pero|sin embargo|mientras que|but|however|while)\b/iu,
+    );
+    const supported = candidates.find(isSectorMovementSummary);
+    if (supported) {
+      const trimmed = supported.trim();
+      return normalizePunctuation(
+        `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`,
+      );
+    }
+  }
+  return undefined;
+}
+
+function removeSectorMovementSentences(value: string): string | undefined {
+  const retained = splitSentenceClauses(value).flatMap((sentence) => {
+    if (!isSectorMovementSummary(sentence)) return [sentence];
+    const narrowed = retainLaborContrastClause(sentence);
+    return narrowed ? [narrowed] : [];
+  });
+  const result = retained.join(" ").replace(/\s+/gu, " ").trim();
+  return result || undefined;
+}
+
+function retainLaborContrastClause(sentence: string): string | undefined {
+  const connectorPattern =
+    /(?:[,;]\s*|\s+)(?:y|pero|aunque|mientras que|and|but|although|while)\s+/giu;
+  for (const match of sentence.matchAll(connectorPattern)) {
+    if (match.index === undefined || !match[0]) continue;
+    const prefix = sentence
+      .slice(0, match.index)
+      .replace(/[,;:\s]+$/gu, "")
+      .trim();
+    const sectorClause = sentence.slice(match.index + match[0].length).trim();
+    if (
+      prefix &&
+      isSupportedLaborIndicatorClause(prefix) &&
+      isSectorMovementSummary(sectorClause)
+    ) {
+      return normalizePunctuation(prefix);
+    }
+  }
+  return undefined;
+}
+
+function isSupportedLaborIndicatorClause(value: string): boolean {
+  const normalized = normalizeText(value);
+  if (isLaborMarketContrast(normalized)) return true;
+  if (
+    SECTOR_SCOPE_PATTERN.test(normalized) ||
+    SECTOR_ENTITY_PATTERN.test(normalized)
+  ) {
+    return false;
+  }
+  return (
+    (PAYROLL_EMPLOYMENT_SCOPE_PATTERN.test(normalized) &&
+      AGGREGATE_LABOR_MOVEMENT_PATTERN.test(normalized)) ||
+    (EARNINGS_SCOPE_PATTERN.test(normalized) &&
+      AGGREGATE_LABOR_MOVEMENT_PATTERN.test(normalized))
+  );
+}
+
+function localizedLaborContrastQuestion(language?: string): string {
+  return isSpanishLanguage(language)
+    ? "¿Qué indicador refleja mejor lo que observas: ingresos o empleo?"
+    : "Which indicator better reflects what you see: earnings or employment?";
+}
+
+function localizedLaborContrastVisualDirection(language?: string): string {
+  return isSpanishLanguage(language)
+    ? "Contraste editorial entre ingresos promedio y empleo de nómina."
+    : "Editorial contrast between average earnings and payroll employment.";
+}
+
+function localizedNarrowedClosingHeadline(language?: string): string {
+  return isSpanishLanguage(language)
+    ? "Una pregunta para cerrar"
+    : "One question before you go";
+}
+
+function localizedNarrowedClosingQuestion(language?: string): string {
+  return isSpanishLanguage(language)
+    ? "¿Qué observas en tu sector?"
+    : "What are you seeing in your field?";
+}
+
+function localizedNarrowedClosingVisualDirection(language?: string): string {
+  return isSpanishLanguage(language)
+    ? "Cierre editorial tipográfico sin cifras ni comparaciones nuevas."
+    : "Typographic editorial closing without new numbers or comparisons.";
+}
+
+function removeClosingSectorAltTextClause(
+  value: string,
+  finalOrder: number,
+): string {
+  return splitSentenceClauses(value)
+    .map((sentence) => {
+      if (!explicitlyReferencesSlideOrder(sentence, finalOrder, finalOrder)) {
+        return sentence;
+      }
+      const withoutSectorClause = sentence.replace(
+        /\s*(?:,?\s+y\s+|,?\s+and\s+)(?:resume|summarizes?)\b[^.!?]*(?:sector(?:es)?|industr(?:ia|ias|y|ies))[^.!?]*/giu,
+        "",
+      );
+      return normalizePunctuation(withoutSectorClause);
+    })
+    .join(" ")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+const SPANISH_SLIDE_ORDINALS: Readonly<Record<number, string>> = {
+  1: "primera",
+  2: "segunda",
+  3: "tercera",
+  4: "cuarta",
+  5: "quinta",
+  6: "sexta",
+  7: "septima",
+  8: "octava",
+};
+
+function explicitlyReferencesSlideOrder(
+  sentence: string,
+  order: number,
+  lastOrder: number,
+): boolean {
+  const explicitReference = extractExplicitSlideReference(sentence, lastOrder);
+  if (explicitReference?.claimedOrder === order) return true;
+  const ordinal = SPANISH_SLIDE_ORDINALS[order];
+  return Boolean(
+    ordinal &&
+      new RegExp(`\\bla\\s+${ordinal}\\b`, "iu").test(normalizeText(sentence)),
+  );
+}
+
+type AltTextSlideMismatch = {
+  claimedOrder: number;
+  actualOrder: number;
+  referenceText: string;
+  spanishReference: boolean;
+};
+
+function findAltTextSlideMismatch(
+  draft: GeneratedCreativeDraft,
+): AltTextSlideMismatch | undefined {
+  if (draft.units.length < 2) return undefined;
+  const lastOrder = Math.max(...draft.units.map((unit) => unit.order));
+
+  for (const sentence of splitSentenceClauses(draft.altText)) {
+    const reference = extractExplicitSlideReference(sentence, lastOrder);
+    if (!reference) continue;
+    const claimNumbers = extractBriefClaimNumbers(sentence);
+    // Without a numeric fingerprint there is no inexpensive, deterministic
+    // way to map a prose summary to exactly one slide.
+    if (claimNumbers.length === 0) continue;
+
+    const matchingOrders = draft.units
+      .filter((unit) => {
+        const unitNumbers = new Set(extractAllowedNumbers(unitVisibleCopy(unit)));
+        return claimNumbers.every((number) => unitNumbers.has(number));
+      })
+      .map((unit) => unit.order);
+    if (
+      matchingOrders.length !== 1 ||
+      matchingOrders[0] === reference.claimedOrder
+    ) {
+      continue;
+    }
+
+    return {
+      ...reference,
+      actualOrder: matchingOrders[0]!,
+    };
+  }
+  return undefined;
+}
+
+function extractExplicitSlideReference(
+  sentence: string,
+  lastOrder: number,
+): Omit<AltTextSlideMismatch, "actualOrder"> | undefined {
+  const numbered =
+    /\b(?:slide|panel|image|diapositiva|imagen|l[aá]mina)\s*(?:n(?:o|º|°|\.)?\.?\s*)?#?\s*(\d+)\b/iu.exec(
+      sentence,
+    );
+  if (numbered?.[0] && numbered[1]) {
+    return {
+      claimedOrder: Number(numbered[1]),
+      referenceText: numbered[0],
+      spanishReference: /diapositiva|imagen|lamina/iu.test(
+        normalizeText(numbered[0]),
+      ),
+    };
+  }
+
+  const finalReference =
+    /\b(?:(?:the\s+)?(?:last|final)\s+(?:slide|panel|image)|(?:la\s+)?(?:[uú]ltima|final)\s+(?:diapositiva|imagen|l[aá]mina)|(?:la\s+)?(?:diapositiva|imagen|l[aá]mina)\s+final)\b/iu.exec(
+      sentence,
+    );
+  if (!finalReference?.[0]) return undefined;
+  return {
+    claimedOrder: lastOrder,
+    referenceText: finalReference[0],
+    spanishReference: /diapositiva|imagen|lamina|ultima/iu.test(
+      normalizeText(finalReference[0]),
+    ),
+  };
+}
+
+function repairAltTextSlideReference(draft: GeneratedCreativeDraft): string {
+  const mismatch = findAltTextSlideMismatch(draft);
+  if (!mismatch) return draft.altText;
+  const replacement = mismatch.spanishReference
+    ? `la diapositiva ${mismatch.actualOrder}`
+    : `slide ${mismatch.actualOrder}`;
+  return draft.altText.replace(mismatch.referenceText, replacement);
+}
+
 function repairCertaintyUpgrade(value: string): string {
   return value
+    .replace(/\bun\s+aproximadamente\s+(?=~?\d)/giu, "aproximadamente un ")
     .replace(/\bare\s+(?:fully\s+|entirely\s+)?ai[-‐‑‒–— ]generated\b/giu, "show signs of AI authorship")
     .replace(/\bis\s+(?:fully\s+|entirely\s+)?ai[-‐‑‒–— ]generated\b/giu, "shows signs of AI authorship")
     .replace(/\bare\s+ai[-‐‑‒–— ]written\b/giu, "show signs of AI authorship")
@@ -800,6 +1458,32 @@ function repairCertaintyUpgrade(value: string): string {
     );
 }
 
+function splitSentenceClauses(value: string): string[] {
+  if (!value.trim()) return [];
+  const pattern =
+    /(?:\b(?:Dr|Mr|Mrs|Ms|vs|e\.g|i\.e|etc)\.|\.(?=\d)|[^.!?]|[.!?](?!\s|$))+[.!?]*/giu;
+  return (value.match(pattern) ?? []).map((s) => s.trim()).filter(Boolean);
+}
+
+function removeUnsupportedNumericClauses(
+  value: string,
+  selectedFacts: readonly CreativeKeyFact[],
+  allFacts: readonly CreativeKeyFact[],
+): string {
+  return splitSentenceClauses(value)
+    .filter((sentence) =>
+      extractAllowedNumbers(sentence).every(
+        (number) =>
+          selectedFacts.some((fact) =>
+            fact.claimGuard?.allowedNumbers.includes(number),
+          ) || isBriefSupportedCalendarYear(number, allFacts),
+      ),
+    )
+    .join(" ")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
 function repairPublishingCopy(
   value: string,
   sourceCopy: string,
@@ -810,10 +1494,9 @@ function repairPublishingCopy(
     repairCertaintyUpgrade(repairUnsupportedInference(value, sourceCopy)),
     language,
   );
-  const safeSentences =
-    repaired.match(/[^.!?]+[.!?]+|[^.!?]+$/gu)?.filter(
-      (sentence) => !hasUnsupportedInference(sentence, sourceCopy),
-    ) ?? [];
+  const safeSentences = splitSentenceClauses(repaired).filter(
+    (sentence) => !hasUnsupportedInference(sentence, sourceCopy),
+  );
   const result = safeSentences.join(" ").replace(/\s+/gu, " ").trim();
   return result || fallback;
 }
@@ -836,10 +1519,9 @@ function repairUnsupportedInference(
         "",
       )
       .replace(/[—–-]\s*(?:changing|reshaping|transforming)\s+how\b[^.?!]*[.?!]?\s*$/iu, "");
-  const safeSentences =
-    partiallyRepaired.match(/[^.!?]+[.!?]+|[^.!?]+$/gu)?.filter(
-      (sentence) => !hasUnsupportedInference(sentence, sourceCopy),
-    ) ?? [];
+  const safeSentences = splitSentenceClauses(partiallyRepaired).filter(
+    (sentence) => !hasUnsupportedInference(sentence, sourceCopy),
+  );
   return normalizePunctuation(safeSentences.join(" "));
 }
 
@@ -885,6 +1567,7 @@ function estimatePrefix(
 function repairMissingPublishingScope(
   caption: string,
   facts: readonly CreativeKeyFact[],
+  language?: string,
 ): string {
   const matchingFact = facts.find(
     (fact) =>
@@ -895,11 +1578,41 @@ function repairMissingPublishingScope(
       ),
   );
   const scope = matchingFact?.claimGuard?.scopePhrases[0];
-  return scope ? integrateScopeNaturally(caption, scope) : caption;
+  return scope ? integrateScopeNaturally(caption, scope, language) : caption;
 }
 
-function integrateScopeNaturally(value: string, scope: string): string {
+function integrateScopeNaturally(
+  value: string,
+  scope: string,
+  language?: string,
+): string {
   if (scopeMatches(value, scope)) return value;
+  const monthYear = normalizeText(scope).match(
+    /^(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{4})$/u,
+  );
+  if (monthYear?.[1] && monthYear[2]) {
+    const month = isSpanishLanguage(language)
+      ? SPANISH_MONTHS[monthYear[1]]
+      : monthYear[1];
+    if (month) {
+      const scopedMonth = isSpanishLanguage(language)
+        ? `${month} de ${monthYear[2]}`
+        : `${month} ${monthYear[2]}`;
+      const unscopedMonth = new RegExp(
+        `\\b${month}(?!\\s+(?:de\\s+)?${monthYear[2]})\\b`,
+        "iu",
+      );
+      if (unscopedMonth.test(value)) {
+        return value.replace(unscopedMonth, scopedMonth);
+      }
+      return appendSentence(
+        value,
+        isSpanishLanguage(language)
+          ? `Periodo: ${scopedMonth}.`
+          : `Period: ${scopedMonth}.`,
+      );
+    }
+  }
   const afterPublication = scope.match(/^pages?\s+published\s+after\s+(.+)$/iu);
   if (!afterPublication?.[1]) return value;
 
@@ -913,6 +1626,16 @@ function integrateScopeNaturally(value: string, scope: string): string {
     /\b(?:new\s+|recently\s+published\s+)?(?:(web)\s+)?pages?(?:\s+published)?\b/iu,
     (_, web: string | undefined) =>
       `${web ? "web " : ""}pages published after ${event}`,
+  );
+}
+
+function isBriefSupportedCalendarYear(
+  number: string,
+  facts: readonly CreativeKeyFact[],
+): boolean {
+  return (
+    /^(?:19|20)\d{2}$/u.test(number) &&
+    facts.some((fact) => fact.claimGuard?.allowedNumbers.includes(number))
   );
 }
 
@@ -957,7 +1680,13 @@ function localizeEstimateQualifiers(
       "aproximadamente ",
     )
     .replace(/\bnearly\s+(?=~?\d)/giu, "casi ")
-    .replace(/\bmore than\s+(?=~?\d)/giu, "más de ");
+    .replace(/\bmore than\s+(?=~?\d)/giu, "más de ")
+    .replace(
+      /([$€£])\s*aproximadamente\s+([+-]?\d)/giu,
+      "aproximadamente $1$2",
+    )
+    .replace(/([+-])\s*aproximadamente\s+(\d)/giu, "aproximadamente $1$2")
+    .replace(/\bdel\s+aproximadamente\b/giu, "de aproximadamente");
 }
 
 function defaultEstimateQualifier(language?: string): string {
@@ -1033,7 +1762,7 @@ function extractAllowedNumbers(value: string): string[] {
 
 function extractExplicitEnumerationCounts(value: string): string[] {
   const counts: string[] = [];
-  const sentences = value.match(/[^.!?]+[.!?]?/gu) ?? [];
+  const sentences = splitSentenceClauses(value);
 
   for (const sentence of sentences) {
     // Only infer a count from an explicit list of at least three items. This
@@ -1116,14 +1845,6 @@ function truncateWithoutBreakingWord(value: string, maxLength: number): string {
   return (shortened || value.slice(0, maxLength)).trim();
 }
 
-function extractNumericLiterals(value: string): string[] {
-  return [
-    ...value.matchAll(
-      /(?:[$€£]\s*)?~?\d[\d,.]*(?:\s*(?:%|(?:percent|mil millones|thousand|million|billion|millones?|millón|mil|k|m|b)\b))?/giu,
-    ),
-  ].map((match) => normalizeNumber(match[0]));
-}
-
 function factUsesNumberInCopy(fact: CreativeKeyFact, copy: string): boolean {
   const copyNumbers = new Set(extractAllowedNumbers(copy));
   return (fact.claimGuard?.allowedNumbers ?? []).some((number) =>
@@ -1137,35 +1858,23 @@ function factRequiresEstimateQualifier(fact: CreativeKeyFact): boolean {
   );
 }
 
-function normalizeNumber(value: string): string {
-  const normalized = value
-    .toLowerCase()
-    .replace(/[$€£]/gu, "")
-    .replace(/^~/u, "")
-    .replace(/,/gu, "")
-    .replace(/\s*percent$/u, "%")
-    .trim()
-    .replace(/[.,]+$/u, "");
-  const scaled = normalized.match(
-    /^(\d+(?:\.\d+)?)\s*(k|m|b|thousand|million|billion|mil millones|mil|millones?|millón)$/iu,
-  );
-  if (scaled?.[1] && scaled[2]) {
-    const scale = scaled[2].toLowerCase();
-    const multiplier =
-      scale === "k" || scale === "thousand" || scale === "mil"
-        ? 1_000
-        : scale === "b" || scale === "billion" || scale === "mil millones"
-          ? 1_000_000_000
-          : 1_000_000;
-    return String(Number(scaled[1]) * multiplier);
-  }
-  return normalized.replace(/\s+/gu, "");
-}
-
 function scopeMatches(copy: string, scope: string): boolean {
   const normalizedCopy = normalizeText(copy);
   const normalizedScope = normalizeText(scope);
   if (normalizedCopy.includes(normalizedScope)) return true;
+  const monthYear = normalizedScope.match(
+    /^(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{4})$/u,
+  );
+  if (monthYear?.[1] && monthYear[2]) {
+    const spanishMonth = SPANISH_MONTHS[monthYear[1]];
+    if (
+      spanishMonth &&
+      (normalizedCopy.includes(`${spanishMonth} ${monthYear[2]}`) ||
+        normalizedCopy.includes(`${spanishMonth} de ${monthYear[2]}`))
+    ) {
+      return true;
+    }
+  }
   if (normalizedScope === "older pages") {
     return /\b(?:older|pre-chatgpt|published before)\b.*\bpages?\b/iu.test(copy);
   }
@@ -1208,6 +1917,21 @@ function scopeMatches(copy: string, scope: string): boolean {
   if (normalizedScope === "random sample") return /\bsample\b/iu.test(copy);
   return false;
 }
+
+const SPANISH_MONTHS: Record<string, string> = {
+  january: "enero",
+  february: "febrero",
+  march: "marzo",
+  april: "abril",
+  may: "mayo",
+  june: "junio",
+  july: "julio",
+  august: "agosto",
+  september: "septiembre",
+  october: "octubre",
+  november: "noviembre",
+  december: "diciembre",
+};
 
 function unitVisibleCopy(
   unit: GeneratedCreativeDraft["units"][number],

@@ -56,7 +56,10 @@ export async function PATCH(request: Request, context: Context) {
   }
 
   try {
-    const body = (await request.json()) as { action?: unknown };
+    const body = (await request.json()) as {
+      action?: unknown;
+      humanReviewed?: unknown;
+    };
     if (
       body.action !== "approve" &&
       body.action !== "unapprove" &&
@@ -70,10 +73,20 @@ export async function PATCH(request: Request, context: Context) {
         400,
       );
     }
+    if (
+      body.humanReviewed !== undefined &&
+      typeof body.humanReviewed !== "boolean"
+    ) {
+      return noStoreJson({ error: "humanReviewed must be true or false" }, 400);
+    }
     const topicId = await requireActiveRequestTopic(request);
     return noStoreJson(
       body.action === "approve"
-        ? await approveSavedCreativeDraft(topicId, draftId)
+        ? await approveSavedCreativeDraft(
+            topicId,
+            draftId,
+            body.humanReviewed === true,
+          )
         : body.action === "unapprove"
           ? await unapproveSavedCreativeDraft(topicId, draftId)
           : await refreshCreativeDraftCharacterReferences(topicId, draftId),

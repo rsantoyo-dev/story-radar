@@ -12,6 +12,7 @@ import {
 import {
   creativeQualityReviewHasUnresolvedBlockers,
   deterministicCreativeQualityIssues,
+  getCreativeDraftApprovalState,
   repairDeterministicCreativeCopy,
 } from "./modules/stories/creative-quality";
 import { buildCompleteDraftScript } from "./modules/stories/creative-draft-export";
@@ -162,18 +163,15 @@ export function CreativeDraftWorkspace({
         workspace.brief.profileSnapshot.language,
       )
       : [];
+  const activeDraftApprovalState = getCreativeDraftApprovalState({
+    deterministicIssues: activeApprovalDeterministicIssues,
+    qualityReview: activeDraft?.qualityReview,
+    qualityReviewIsCurrent: activeDraft?.qualityReviewIsCurrent,
+  });
   const activeApprovalHasDeterministicBlockers =
-    activeApprovalDeterministicIssues.some(
-      (issue) => issue.severity === "blocker",
-    );
-  const activeDraftFailedQualityGate = Boolean(
-    activeApprovalHasDeterministicBlockers ||
-      (activeDraft?.qualityReviewIsCurrent &&
-        creativeQualityReviewHasUnresolvedBlockers(
-          activeDraft.qualityReview,
-          activeApprovalDeterministicIssues,
-        )),
-  );
+    activeDraftApprovalState.blockers.length > 0;
+  const activeDraftRequiresHumanReviewAcknowledgement =
+    activeDraftApprovalState.requiresHumanReviewAcknowledgement;
   const viewingHistoricalDraft = Boolean(
     activeDraft &&
       (activeDraft.inputIsCurrent === false || historyDraftId === activeDraft.id),
@@ -553,7 +551,7 @@ export function CreativeDraftWorkspace({
       setNotice(
         result.outcome === "cached"
           ? `The existing ${selectedFormat} ${outputAspectRatioLabel(selectedAspectRatio)} draft was loaded without an AI call.`
-          : `${capitalize(selectedFormat)} ${outputAspectRatioLabel(selectedAspectRatio)} draft generated. Edit and save it before approval.`,
+          : `${capitalize(selectedFormat)} ${outputAspectRatioLabel(selectedAspectRatio)} draft generated. Review it, then approve it before generating images.`,
       );
     });
   }
@@ -686,7 +684,20 @@ export function CreativeDraftWorkspace({
   }
 
   async function handleApproveDraft() {
-    if (!activeDraftId || dirty || busy || viewingHistoricalDraft) return;
+    if (
+      !activeDraftId ||
+      dirty ||
+      busy ||
+      viewingHistoricalDraft ||
+      activeApprovalHasDeterministicBlockers
+    ) {
+      return;
+    }
+    // The button is already explicitly labelled "Approve after review" when
+    // acknowledgement is required. Treat that deliberate click as the human
+    // confirmation instead of relying on window.confirm, which browsers and
+    // embedded previews may suppress and report as `false` without feedback.
+    const humanReviewed = activeDraftRequiresHumanReviewAcknowledgement;
     await run("approve", async () => {
       await requestJson(
         topicUrl(
@@ -697,7 +708,10 @@ export function CreativeDraftWorkspace({
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "approve" }),
+          body: JSON.stringify({
+            action: "approve",
+            ...(humanReviewed ? { humanReviewed: true } : {}),
+          }),
         },
       );
       await reloadWorkspace(selectedFormat);
@@ -1524,13 +1538,15 @@ export function CreativeDraftWorkspace({
                 {activeDraft && editableDraft && !viewingHistoricalDraft ? (
                   <div className={styles.approvalBar}>
                     <div>
-                      <strong>{activeDraft.status === "approved" && !dirty ? "Ready for asset generation" : dirty ? "Unsaved draft changes" : activeDraftFailedQualityGate ? "Draft saved successfully — approval needs fixes" : "Ready for human approval"}</strong>
+                      <strong>{activeDraft.status === "approved" && !dirty ? "Ready for asset generation" : dirty ? "Unsaved draft changes" : activeApprovalHasDeterministicBlockers ? "Draft needs fixes before approval" : activeDraftRequiresHumanReviewAcknowledgement ? "Automated review needs acknowledgement" : "Ready for human approval"}</strong>
                       <small>{activeDraft.status === "approved" && !dirty
                         ? activeDraftHasSupportingCharacters
                           ? "Refresh character references before generating if their description or images changed."
                           : "Generate and review each integrated text image below."
-                        : !dirty && activeDraftFailedQualityGate
-                          ? "This version is already saved. Resolve the blockers shown below before approval and image generation; you do not need to save it again unless you edit it."
+                        : !dirty && activeApprovalHasDeterministicBlockers
+                          ? "Resolve the deterministic editorial blockers shown below before approval and image generation."
+                          : !dirty && activeDraftRequiresHumanReviewAcknowledgement
+                            ? "Review the automated quality notes below. You can then explicitly confirm approval for this version."
                           : "Editing and saving creates a new draft version. The earlier image batch remains in Saved studies."}</small>
                     </div>
                     <div>
@@ -1578,11 +1594,11 @@ export function CreativeDraftWorkspace({
                         <button
                           type="button"
                           className={styles.approveButton}
-                          disabled={Boolean(busy) || dirty || activeDraftFailedQualityGate}
-                          title={activeDraftFailedQualityGate ? "Resolve the editorial blockers shown below before approval." : undefined}
+                          disabled={Boolean(busy) || dirty || activeApprovalHasDeterministicBlockers}
+                          title={activeApprovalHasDeterministicBlockers ? "Resolve the deterministic editorial blockers shown below before approval." : activeDraftRequiresHumanReviewAcknowledgement ? "Review the automated quality notes before approving." : undefined}
                           onClick={handleApproveDraft}
                         >
-                          {busy === "approve" ? "Approving…" : "Approve draft"}
+                          {busy === "approve" ? "Approving…" : activeDraftRequiresHumanReviewAcknowledgement ? "Approve after review" : "Approve draft"}
                         </button>
                       )}
                     </div>
@@ -2302,6 +2318,15 @@ function DraftEditor({
     keyFacts,
     profileLanguage,
   );
+  const qualityReviewResolvedByCurrentValidation = Boolean(
+    qualityReviewIsCurrent &&
+      qualityReview?.status === "rejected" &&
+      !deterministicWarnings.some((issue) => issue.severity === "blocker") &&
+      !creativeQualityReviewHasUnresolvedBlockers(
+        qualityReview,
+        deterministicWarnings,
+      ),
+  );
 
   function updateUnit(index: number, unit: CreativeUnit) {
     const units = draft.units.map((current, candidate) => candidate === index ? unit : current);
@@ -2409,15 +2434,23 @@ function DraftEditor({
       {qualityReview ? (
         <div className={styles.narrativeReview} role="status">
           <strong>
-            Quality gate · {qualityReviewIsCurrent
-              ? qualityReview.status === "accepted"
+            Automated quality review · {qualityReviewResolvedByCurrentValidation
+              ? "current deterministic checks passed"
+              : qualityReview.status === "needs-review"
+              ? "critic unavailable — needs human review"
+              : qualityReviewIsCurrent
+                ? qualityReview.status === "accepted"
                 ? `${qualityReview.scores.overall}/100 accepted`
-                : qualityReview.status === "needs-review"
-                  ? "critic unavailable — needs human review"
-                  : qualityReview.status.replaceAll("-", " ")
-              : "needs re-review after edits"}
+                : qualityReview.status.replaceAll("-", " ")
+                : "needs re-review after edits"}
           </strong>
-          {qualityReview.status !== "needs-review" ? (
+          {qualityReviewResolvedByCurrentValidation ? (
+            <p>
+              The saved score was reduced by findings that are no longer
+              present in the current factual check. This version can proceed
+              to approval.
+            </p>
+          ) : qualityReview.status !== "needs-review" ? (
             <p>
               Overall {qualityReview.scores.overall} · Factuality {qualityReview.scores.factuality} · Hook {qualityReview.scores.hook} · Curiosity {qualityReview.scores.curiosity ?? "—"} · Relevance {qualityReview.scores.relevance} · Clarity {qualityReview.scores.clarity} · Resolution {qualityReview.scores.resolution ?? "—"}
               {format === "carousel"
@@ -2435,14 +2468,20 @@ function DraftEditor({
               Critic: {qualityReview.critic.model}
               {qualityReview.repair
                 ? ` · ${qualityReview.repair.severity} repair: ${qualityReview.repair.model}`
-                : " · no repair needed"}
+                : qualityReview.status === "accepted"
+                  ? " · no repair needed"
+                  : " · repair not attempted"}
             </p>
           ) : null}
-          {!qualityReviewIsCurrent ? (
+          {!qualityReviewIsCurrent && qualityReview.status === "needs-review" ? (
+            <p>
+              The critic timed out before scoring the generated copy. Deterministic checks below apply to the current edited version.
+            </p>
+          ) : !qualityReviewIsCurrent ? (
             <p>
               The score belongs to the generated copy. Deterministic narrative blockers are recalculated below for the edited version.
             </p>
-          ) : qualityReview.issues.length ? (
+          ) : qualityReviewResolvedByCurrentValidation ? null : qualityReview.issues.length ? (
             <ul>
               {qualityReview.issues.map((issue, index) => (
                 <li key={`${issue.code}-${issue.unitOrder ?? 0}-${index}`}>

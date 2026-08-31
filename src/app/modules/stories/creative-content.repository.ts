@@ -378,7 +378,11 @@ export async function replaceCreativeDraft(
   current: CreativeDraft,
   input: EditableCreativeDraft,
   characterSnapshots: Map<string, CreativeCharacterSnapshot>,
-  options: { inputHash?: string; aiSnapshot?: GeneratedCreativeDraft } = {},
+  options: {
+    inputHash?: string;
+    aiSnapshot?: GeneratedCreativeDraft;
+    approve?: boolean;
+  } = {},
 ): Promise<CreativeDraft> {
   const now = new Date();
   const units = draftUnitRows(current.id, input.units, now);
@@ -397,8 +401,8 @@ export async function replaceCreativeDraft(
         outputAspectRatio: input.outputAspectRatio,
         ...(options.inputHash ? { inputHash: options.inputHash } : {}),
         ...(options.aiSnapshot ? { aiSnapshot: options.aiSnapshot } : {}),
-        status: "draft",
-        approvedAt: null,
+        status: options.approve ? "approved" : "draft",
+        approvedAt: options.approve ? now : null,
         version: current.version + 1,
         updatedAt: now,
       })
@@ -421,7 +425,11 @@ export async function replaceCreativeDraft(
 
   const saved = await findCreativeDraftById(topicId, current.id);
   if (!saved) {
-    throw new Error("The creative draft could not be saved");
+    throw new Error(
+      options.approve
+        ? "The creative draft could not be saved and approved"
+        : "The creative draft could not be saved",
+    );
   }
   return saved;
 }

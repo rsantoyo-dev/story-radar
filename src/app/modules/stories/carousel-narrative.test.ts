@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   evaluateCarouselNarrative,
+  maximumFactsForGoal,
   repairCarouselPlanEvidence,
   type CarouselPlan,
   validateCarouselPlan,
@@ -58,6 +59,58 @@ test("repairs missing hook evidence and reuses established evidence at closing",
   );
 });
 
+test("allows a closing slide to synthesize two facts established earlier", () => {
+  assert.equal(maximumFactsForGoal("conclude"), 2);
+  assert.equal(maximumFactsForGoal("debate"), 2);
+
+  const original: CarouselPlan = {
+    slideCount: 4,
+    rationale: "Establish two findings, explain their impact, then synthesize them.",
+    slides: [
+      slide("hook", ["fact-1"]),
+      slide("explain", ["fact-2"]),
+      slide("impact", ["fact-3"]),
+      slide("conclude", ["fact-1", "fact-2"]),
+    ],
+  };
+
+  const { plan, repaired } = repairCarouselPlanEvidence(
+    original,
+    new Set(["fact-1", "fact-2", "fact-3"]),
+  );
+
+  assert.equal(repaired, false);
+  assert.deepEqual(plan.slides[3]?.allowedFactIds, ["fact-1", "fact-2"]);
+  assert.deepEqual(
+    validateCarouselPlan(plan, new Set(["fact-1", "fact-2", "fact-3"])),
+    [],
+  );
+});
+
+test("still rejects a new fact introduced among two closing facts", () => {
+  const plan: CarouselPlan = {
+    slideCount: 4,
+    rationale: "Establish the findings before drawing the conclusion.",
+    slides: [
+      slide("hook", ["fact-1"]),
+      slide("explain", ["fact-2"]),
+      slide("impact", ["fact-3"]),
+      slide("conclude", ["fact-1", "fact-4"]),
+    ],
+  };
+
+  const errors = validateCarouselPlan(
+    plan,
+    new Set(["fact-1", "fact-2", "fact-3", "fact-4"]),
+  );
+
+  assert.ok(
+    errors.some((error) =>
+      error.includes("introduces a fact in the closing stage"),
+    ),
+  );
+});
+
 test("reports a closing-goal blocker for an editable draft", () => {
   const issues = evaluateCarouselNarrative([
     unit("cover", "hook", ["fact-1"]),
@@ -93,7 +146,7 @@ test("promotes an internal debate question to the visible CTA", () => {
 
   assert.equal(
     repaired.units[2]?.ctaQuestion,
-    "How would Evidence-led debate change your approach?",
+    "What is your reading of these findings?",
   );
   assert.ok(
     !evaluateCarouselNarrative(repaired.units).some(
@@ -128,7 +181,7 @@ test("does not leak an English internal question into a Spanish CTA", () => {
 
   assert.equal(
     repaired.units[1]?.ctaQuestion,
-    "¿Cómo cambiaría Cierre localizado tu enfoque?",
+    "¿Qué lectura haces de estos datos?",
   );
 });
 
@@ -154,7 +207,7 @@ test("replaces a verbatim internal planning question in visible CTA copy", () =>
 
   assert.equal(
     repaired.units[1]?.ctaQuestion,
-    "How would Agent governance change your approach?",
+    "What is your reading of these findings?",
   );
 });
 
@@ -187,6 +240,28 @@ test("blocks consecutive middle slides that repeat the same numerical evidence",
     {
       ...unit("content", "impact", ["fact-2"]),
       body: "In practice, the estimate still uses 14 days.",
+    },
+    unit("call-to-action", "debate", ["fact-1"]),
+  ]);
+
+  assert.ok(
+    issues.some(
+      (issue) =>
+        issue.code === "semantic-repetition" && issue.severity === "blocker",
+    ),
+  );
+});
+
+test("detects repeated numerical evidence across English and Spanish punctuation", () => {
+  const issues = evaluateCarouselNarrative([
+    unit("cover", "hook", ["fact-1"]),
+    {
+      ...unit("content", "explain", ["fact-2"]),
+      body: "The reported share was 21.8%.",
+    },
+    {
+      ...unit("content", "impact", ["fact-2"]),
+      body: "La proporción reportada fue 21,8 %.",
     },
     unit("call-to-action", "debate", ["fact-1"]),
   ]);

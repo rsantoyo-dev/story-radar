@@ -15,6 +15,12 @@ import {
   deterministicFactQualityIssues,
   repairDeterministicFactCopy,
 } from "./creative-fact-guard";
+import {
+  substantiveCreativeNumericLiterals as substantiveEvidenceNumbers,
+} from "./creative-number-normalization";
+import {
+  reconcileCriticIssuesWithDeterministicValidation,
+} from "./creative-issue-reconciliation";
 
 export const CREATIVE_QUALITY_THRESHOLDS = {
   factuality: 96,
@@ -26,10 +32,47 @@ export const CREATIVE_QUALITY_THRESHOLDS = {
   clarity: 80,
   resolution: 88,
   cta: 75,
-  overall: 92,
+  overall: 95,
 } as const satisfies CreativeQualityScores;
 
 export const MAX_CREATIVE_EDITORIAL_REPAIRS = 1;
+
+export type CreativeDraftApprovalState = {
+  blockers: CreativeQualityIssue[];
+  requiresHumanReviewAcknowledgement: boolean;
+};
+
+/**
+ * Keeps deterministic validation separate from the automated critic's
+ * judgment. A reviewer must explicitly acknowledge the latter, but may never
+ * approve around a deterministic factual or editorial blocker.
+ */
+export function getCreativeDraftApprovalState({
+  deterministicIssues,
+  qualityReview,
+  qualityReviewIsCurrent,
+}: {
+  deterministicIssues: readonly CreativeQualityIssue[];
+  qualityReview?: CreativeQualityReview;
+  qualityReviewIsCurrent?: boolean;
+}): CreativeDraftApprovalState {
+  const blockers = deterministicIssues.filter(
+    (issue) => issue.severity === "blocker",
+  );
+
+  return {
+    blockers,
+    requiresHumanReviewAcknowledgement:
+      blockers.length === 0 &&
+      Boolean(
+        qualityReviewIsCurrent &&
+          creativeQualityReviewHasUnresolvedBlockers(
+            qualityReview,
+            deterministicIssues,
+          ),
+      ),
+  };
+}
 
 export function repairDeterministicCreativeCopy(
   draft: GeneratedCreativeDraft,
@@ -216,7 +259,7 @@ function localizedEvidenceFallback(
 }
 
 const GENERIC_CTA_PATTERN =
-  /^(?:[¿¡\s]*(?:what stands out(?: most)? to you|what do you think|thoughts|what surprised you(?: most)?|qué te sorprendió más(?: de esta información)?|qué opinas|cuál es tu opinión)[?.!¿¡\s]*|where would you apply how\b.*\bfirst\?)$/iu;
+  /^(?:[¿¡\s]*(?:what stands out(?: most)? to you|what do you think|thoughts|what surprised you(?: most)?|qué te sorprendió más(?: de esta información)?|qué opinas|cuál es tu opinión)[?.!¿¡\s]*|where would you apply how\b.*\bfirst\?|how would\b.+\bchange your approach\?|¿cómo cambiaría\b.+\btu enfoque\?)$/iu;
 
 const ABSOLUTE_PATTERNS: ReadonlyArray<{
   pattern: RegExp;
@@ -264,7 +307,7 @@ function isGenericClosingQuestion(value: string): boolean {
 }
 
 function groundedClosingQuestion(
-  concept: string,
+  _concept: string,
   language?: string,
   viewerQuestion?: string,
 ): string {
@@ -277,22 +320,9 @@ function groundedClosingQuestion(
   ) {
     return internalQuestion;
   }
-  const subject = concept
-    .replace(
-      /^a\s+\d+[- ](?:slide|part|step)\s+(?:breakdown|carousel|guide)\s+(?:of|to)\s+/iu,
-      "",
-    )
-    .trim()
-    .replace(/[?.!]+$/u, "");
-  if (!subject) return localizedDebateQuestion(language);
-  if (/^(?:how|cómo)\b/iu.test(subject)) {
-    return isSpanishProfileLanguage(language)
-      ? "¿Dónde podría encajar este enfoque en tu proceso?"
-      : "Where could this approach fit your workflow?";
-  }
   return isSpanishProfileLanguage(language)
-    ? `¿Cómo cambiaría ${subject} tu enfoque?`
-    : `How would ${subject} change your approach?`;
+    ? "¿Qué lectura haces de estos datos?"
+    : "What is your reading of these findings?";
 }
 
 function isInternalPlanningQuestion(value: string): boolean {
@@ -402,6 +432,10 @@ const AUTOMATICALLY_REPAIRABLE_REVIEW_CODES = new Set([
   "MIXED_LANGUAGE",
   "GENERIC_CTA",
   "UNSUPPORTED_INFERENCE",
+  // Numeric support is recalculated from the current copy and current facts.
+  // Do not keep approval locked on a stale critic finding after deterministic
+  // normalization (for example, Spanish decimal commas) proves it supported.
+  "UNSUPPORTED_NUMBER",
   "UNSUPPORTED_ABSOLUTE",
   "CLOSING_QUESTION_COUNT",
   "MISSING_DEBATE_QUESTION",
@@ -465,11 +499,19 @@ function isSpanishProfileLanguage(language?: string): boolean {
 
 function hasLikelyEnglishSentence(value?: string): boolean {
   if (!value?.trim()) return false;
+  if (SHORT_ENGLISH_EDITORIAL_PHRASE_PATTERN.test(value)) return true;
   const markers = value.match(
     /\b(?:the|when|from|your|will|within|during|there|chance|age|count|backwards|end|cycle|estimate|fertile|occur|what|why|how|did|does|this|mean|for|those|planning|buy|their|first|home|should|could|would|with|who|which|most|stands|out|you|know|that|is|are|available|only|hours|long)\b/giu,
   );
   return (markers?.length ?? 0) >= 3;
 }
+
+// Short source-language phrases can be unambiguously English without meeting
+// the broader three-marker threshold above. Keep this list intentionally
+// narrow so ordinary Spanish copy containing established loanwords such as
+// "software", "startup", or "marketing" is not rejected.
+const SHORT_ENGLISH_EDITORIAL_PHRASE_PATTERN =
+  /\b(?:year[\s\-‐‑‒–—]+over[\s\-‐‑‒–—]+year|year[\s\-‐‑‒–—]+on[\s\-‐‑‒–—]+year|month[\s\-‐‑‒–—]+over[\s\-‐‑‒–—]+month|edge(?:d)?\s+(?:up|down)|little\s+changed)\b/iu;
 
 const QUANTITATIVE_CHART_PATTERN =
   /\b(?:bar chart|column chart|line chart|comparison chart|comparative chart|quantitative chart|gr[aá]fic[oa] (?:de barras|de columnas|de l[ií]neas|comparativ[oa]|cuantitativ[oa])|barras? (?:comparativas?|proporcionales?)|ejes? (?:num[eé]ricos?|cuantitativos?)|plot)\b/iu;
@@ -482,18 +524,6 @@ function requestsQuantitativeChart(value: string): boolean {
 
 function declaresQualitativeVisual(value: string): boolean {
   return QUALITATIVE_VISUAL_PATTERN.test(value);
-}
-
-function substantiveEvidenceNumbers(value: string): string[] {
-  const matches = value.match(/\b\d[\d,.]*(?:\s*%)?/gu) ?? [];
-  return [...new Set(matches.flatMap((match) => {
-    const normalized = match.replace(/[,%\s]/gu, "");
-    const numeric = Number(normalized);
-    if (!Number.isFinite(numeric) || (numeric >= 1900 && numeric <= 2100)) {
-      return [];
-    }
-    return [normalized];
-  }))];
 }
 
 function repairUnverifiedQuantitativeVisual(
@@ -542,7 +572,10 @@ export function creativeQualityThresholdFailures(
     if (score < minimum) {
       failures.push({
         code: `QUALITY_${dimension.toUpperCase()}_BELOW_THRESHOLD`,
-        severity: "blocker",
+        // Scores are editorial signals. Hard factual blocking requires a
+        // concrete issue (unsupported number, scope, qualifier, attribution,
+        // etc.), not a model's subjective numeric score by itself.
+        severity: "warning",
         message: `${qualityLabel(dimension)} scored ${score}; the minimum is ${minimum}.`,
       });
     }
@@ -570,9 +603,14 @@ export function buildCreativeQualityReview({
     format,
     keyFacts,
   );
+  const reconciledCriticIssues =
+    reconcileCriticIssuesWithDeterministicValidation(
+      criticIssues,
+      deterministicIssues,
+    );
   const issues = deduplicateQualityIssues([
     ...deterministicIssues,
-    ...criticIssues,
+    ...reconciledCriticIssues,
   ]);
   const calibratedScores = calibrateCreativeQualityScores(
     scores,
@@ -591,18 +629,61 @@ export function buildCreativeQualityReview({
       ),
     ),
   ]);
-  const blocked = reviewedIssues.some((issue) => issue.severity === "blocker");
+  const deterministicBlockerKeys = new Set(
+    deterministicIssues
+      .filter((issue) => issue.severity === "blocker")
+      .map(qualityIssueLocationKey),
+  );
+  const hardBlocked = reviewedIssues.some(
+    (issue) =>
+      issue.severity === "blocker" &&
+      (deterministicBlockerKeys.has(qualityIssueLocationKey(issue)) ||
+        HARD_FACTUAL_QUALITY_CODES.has(issue.code)),
+  );
+  const editorialRepairRequested =
+    repairPasses === 0 &&
+    reviewedIssues.some(
+      (issue) =>
+        issue.severity === "blocker" ||
+        issue.code.startsWith("QUALITY_"),
+    );
+  const normalizedIssues =
+    repairPasses > 0
+      ? reviewedIssues.map((issue) =>
+          issue.severity === "blocker" &&
+          !deterministicBlockerKeys.has(qualityIssueLocationKey(issue)) &&
+          !HARD_FACTUAL_QUALITY_CODES.has(issue.code)
+            ? { ...issue, severity: "warning" as const }
+            : issue,
+        )
+      : reviewedIssues;
   return {
-    status: blocked
+    status: hardBlocked || editorialRepairRequested
       ? repairPasses >= MAX_CREATIVE_EDITORIAL_REPAIRS
         ? "rejected"
         : "needs-repair"
       : "accepted",
     scores: calibratedScores,
-    issues: reviewedIssues,
+    issues: normalizedIssues,
     repairPasses,
   };
 }
+
+function qualityIssueLocationKey(issue: CreativeQualityIssue): string {
+  return `${issue.code}:${issue.unitOrder ?? 0}`;
+}
+
+const HARD_FACTUAL_QUALITY_CODES = new Set([
+  "CERTAINTY_UPGRADE",
+  "FACT_MISMATCH",
+  "LOST_QUALIFIER",
+  "MISATTRIBUTED",
+  "MISSING_SCOPE",
+  "OVERSTATED",
+  "UNSUPPORTED",
+  "UNSUPPORTED_INFERENCE",
+  "UNSUPPORTED_NUMBER",
+]);
 
 function calibrateCreativeQualityScores(
   input: CreativeQualityScores,
@@ -751,8 +832,11 @@ function qualityLabel(dimension: string): string {
 
 function withoutQuestionSentences(value?: string): string {
   if (!value?.trim()) return "";
-  return (value.match(/[^.!?]+[.!?]?/gu) ?? [])
-    .filter((sentence) => !sentence.includes("?"))
+  const pattern =
+    /(?:\b(?:Dr|Mr|Mrs|Ms|vs|e\.g|i\.e|etc)\.|\.(?=\d)|[^.!?]|[.!?](?!\s|$))+[.!?]*/giu;
+  return (value.match(pattern) ?? [])
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => Boolean(sentence) && !sentence.includes("?"))
     .join(" ")
     .replace(/\s+/g, " ")
     .trim();
