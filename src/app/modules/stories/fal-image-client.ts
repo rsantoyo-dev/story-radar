@@ -18,6 +18,22 @@ export type FalImageEndpoint =
   | typeof FAL_TEXT_TO_IMAGE_ENDPOINT
   | typeof FAL_REFERENCE_GUIDED_ENDPOINT;
 
+export type FalImagePostProcessInput = Readonly<{
+  normalizedPng: Uint8Array;
+  requestId: string;
+  width: number;
+  height: number;
+}>;
+
+/**
+ * Runs only after Fal has completed and its image has been normalized to the
+ * requested output dimensions. The returned bytes must be a PNG with those
+ * same dimensions; they become the persisted image output.
+ */
+export type FalImagePostProcessor = (
+  input: FalImagePostProcessInput,
+) => Uint8Array | Promise<Uint8Array>;
+
 export async function submitFalImage({
   apiKey,
   prompt,
@@ -69,6 +85,7 @@ export async function pollFalImage({
   targetWidth,
   targetHeight,
   retention,
+  postProcess,
 }: {
   apiKey: string;
   requestId: string;
@@ -76,6 +93,7 @@ export async function pollFalImage({
   targetWidth: number;
   targetHeight: number;
   retention: "30d";
+  postProcess?: FalImagePostProcessor;
 }): Promise<FalImagePollResult> {
   configureFal(apiKey);
   const status = await fal.queue.status(endpoint, {
@@ -111,6 +129,7 @@ export async function pollFalImage({
     targetWidth,
     targetHeight,
     retention,
+    postProcess,
   });
 
   return {
@@ -162,14 +181,20 @@ async function normalizeFalImage({
   targetWidth,
   targetHeight,
   retention,
+  postProcess,
 }: {
   image: FalImage;
   requestId: string;
   targetWidth: number;
   targetHeight: number;
   retention: "30d";
+  postProcess?: FalImagePostProcessor;
 }): Promise<FalImage> {
-  if (image.width === targetWidth && image.height === targetHeight) {
+  if (
+    !postProcess &&
+    image.width === targetWidth &&
+    image.height === targetHeight
+  ) {
     return image;
   }
 
@@ -180,14 +205,23 @@ async function normalizeFalImage({
     );
   }
 
-  const output = await sharp(Buffer.from(await source.arrayBuffer()))
+  const normalizedPng = await sharp(Buffer.from(await source.arrayBuffer()))
     .rotate()
     .resize(targetWidth, targetHeight, { fit: "cover", position: "centre" })
     .png()
     .toBuffer();
+  const output = postProcess
+    ? await postProcess({
+        normalizedPng,
+        requestId,
+        width: targetWidth,
+        height: targetHeight,
+      })
+    : normalizedPng;
+  await assertFinalPngDimensions(output, targetWidth, targetHeight);
   const fileName = `creative-${requestId}.png`;
   const url = await fal.storage.upload(
-    new File([output], fileName, { type: "image/png" }),
+    new File([Buffer.from(output)], fileName, { type: "image/png" }),
     { lifecycle: { expiresIn: retention } },
   );
 
@@ -199,6 +233,29 @@ async function normalizeFalImage({
     width: targetWidth,
     height: targetHeight,
   };
+}
+
+async function assertFinalPngDimensions(
+  output: Uint8Array,
+  targetWidth: number,
+  targetHeight: number,
+): Promise<void> {
+  if (!(output instanceof Uint8Array) || output.byteLength === 0) {
+    throw new FalImageResponseError(
+      "The image post-processor did not return PNG bytes",
+    );
+  }
+
+  const metadata = await sharp(Buffer.from(output)).metadata();
+  if (
+    metadata.format !== "png" ||
+    metadata.width !== targetWidth ||
+    metadata.height !== targetHeight
+  ) {
+    throw new FalImageResponseError(
+      `The final image must be a ${targetWidth}x${targetHeight} PNG`,
+    );
+  }
 }
 
 type FalImage = {

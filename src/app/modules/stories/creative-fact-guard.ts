@@ -274,6 +274,7 @@ export function inferCreativeFactClaimGuard(
     allowedNumbers: uniqueText([
       ...extractAllowedNumbers(fact.statement),
       ...extractAllowedNumbers(fact.sourceExcerpt ?? ""),
+      ...extractAllowedNumbers(qualifierText),
       ...extractExplicitEnumerationCounts(fact.statement),
     ]),
   };
@@ -452,6 +453,82 @@ export function deterministicFactQualityIssues(
         severity: "blocker",
         unitOrder: unit.order,
         message: `Slide ${unit.order} adds a trend, causal effect, or consequence that its selected facts do not establish.`,
+      });
+    }
+  });
+
+  draft.units.forEach((unit, unitIndex) => {
+    const cue = unit.continuationCue?.trim();
+    if (!cue) return;
+
+    const nextUnit = draft.units[unitIndex + 1];
+    const cueFacts = [...new Set([...unit.factIds, ...(nextUnit?.factIds ?? [])])]
+      .flatMap((id) => {
+        const fact = factsById.get(id);
+        return fact ? [fact] : [];
+      });
+    const cueSourceCopy = cueFacts.map((fact) => fact.statement).join(" ");
+    const unsupportedCueNumbers = extractAllowedNumbers(cue).filter(
+      (number) =>
+        !cueFacts.some((fact) =>
+          fact.claimGuard?.allowedNumbers.includes(number),
+        ) && !isBriefSupportedCalendarYear(number, allFacts),
+    );
+    if (unsupportedCueNumbers.length > 0) {
+      issues.push({
+        code: "UNSUPPORTED_NUMBER",
+        severity: "blocker",
+        unitOrder: unit.order,
+        message: `Slide ${unit.order} continuation cue uses ${unsupportedCueNumbers.join(", ")} without support from this slide or the next slide.`,
+      });
+    }
+    const cueNumberFacts = cueFacts.filter((fact) =>
+      factUsesNumberInCopy(fact, cue),
+    );
+    if (
+      cueNumberFacts.some(factRequiresEstimateQualifier) &&
+      !ESTIMATE_PATTERN.test(cue)
+    ) {
+      issues.push({
+        code: "LOST_QUALIFIER",
+        severity: "blocker",
+        unitOrder: unit.order,
+        message: `Slide ${unit.order} continuation cue presents an approximate value as exact. Preserve its estimate qualifier.`,
+      });
+    }
+    const missingCueScopeFacts = cueNumberFacts.filter((fact) => {
+      const scopes = fact.claimGuard?.scopePhrases ?? [];
+      return (
+        scopes.length > 0 &&
+        !scopes.some((scope) => scopeMatches(cue, scope))
+      );
+    });
+    if (missingCueScopeFacts.length > 0) {
+      issues.push({
+        code: "MISSING_SCOPE",
+        severity: "blocker",
+        unitOrder: unit.order,
+        message: `Slide ${unit.order} continuation cue omits the population or timeframe needed for ${missingCueScopeFacts.map((fact) => fact.id).join(", ")}.`,
+      });
+    }
+    if (
+      cueFacts.some(
+        (fact) => fact.claimGuard?.certainty === "detected-signal",
+      ) && CERTAINTY_UPGRADE_PATTERN.test(cue)
+    ) {
+      issues.push({
+        code: "CERTAINTY_UPGRADE",
+        severity: "blocker",
+        unitOrder: unit.order,
+        message: `Slide ${unit.order} continuation cue upgrades an uncertain source claim to certainty.`,
+      });
+    }
+    if (hasUnsupportedInference(cue, cueSourceCopy)) {
+      issues.push({
+        code: "UNSUPPORTED_INFERENCE",
+        severity: "blocker",
+        unitOrder: unit.order,
+        message: `Slide ${unit.order} continuation cue promises a consequence that this slide and the next slide do not establish.`,
       });
     }
   });
@@ -773,6 +850,14 @@ export function repairDeterministicFactCopy(
         repairCertaintyUpgrade(repairedHeadline),
         language,
       ) || localizedEvidenceHeadline(language);
+      let subheadline = unit.subheadline
+        ? localizeEstimateQualifiers(
+            repairCertaintyUpgrade(
+              repairUnsupportedInference(unit.subheadline, sourceCopy),
+            ),
+            language,
+          )
+        : undefined;
       let body = unit.body
         ? localizeEstimateQualifiers(
             repairCertaintyUpgrade(
@@ -783,6 +868,7 @@ export function repairDeterministicFactCopy(
         : undefined;
       if (narrowedUnsupportedClosingLaborContrast) {
         headline = localizedNarrowedClosingHeadline(language);
+        subheadline = undefined;
         body = undefined;
       }
       if (prioritizedClosingLaborContrast && body) {
@@ -824,7 +910,7 @@ export function repairDeterministicFactCopy(
       ) {
         body = selectedFacts[0].statement;
       }
-      let visibleCopy = [headline, body, ctaQuestion]
+      let visibleCopy = [headline, subheadline, body, ctaQuestion]
         .filter(Boolean)
         .join(" ");
       if (
@@ -839,6 +925,13 @@ export function repairDeterministicFactCopy(
         const repairedBody = body
           ? removeUnsupportedNumericClauses(body, selectedFacts, allFacts)
           : undefined;
+        const repairedSubheadline = subheadline
+          ? removeUnsupportedNumericClauses(
+              subheadline,
+              selectedFacts,
+              allFacts,
+            )
+          : undefined;
         const repairedCta = ctaQuestion
           ? removeUnsupportedNumericClauses(
               ctaQuestion,
@@ -847,6 +940,7 @@ export function repairDeterministicFactCopy(
             )
           : undefined;
         headline = repairedHeadline || localizedEvidenceHeadline(language);
+        subheadline = repairedSubheadline || undefined;
         body = repairedBody || undefined;
         ctaQuestion =
           repairedCta ||
@@ -855,7 +949,7 @@ export function repairDeterministicFactCopy(
               ? "¿Cómo interpretarías estos datos?"
               : "How would you interpret these findings?"
             : undefined);
-        visibleCopy = [headline, body, ctaQuestion]
+        visibleCopy = [headline, subheadline, body, ctaQuestion]
           .filter(Boolean)
           .join(" ");
       }
@@ -866,7 +960,13 @@ export function repairDeterministicFactCopy(
             factRequiresEstimateQualifier(fact),
         ) && !ESTIMATE_PATTERN.test(visibleCopy)
       ) {
-        if (body && extractAllowedNumbers(body).length > 0) {
+        if (subheadline && extractAllowedNumbers(subheadline).length > 0) {
+          subheadline = repairMissingEstimateQualifier(
+            subheadline,
+            selectedFacts,
+            language,
+          );
+        } else if (body && extractAllowedNumbers(body).length > 0) {
           body = repairMissingEstimateQualifier(body, selectedFacts, language);
         } else {
           headline = repairMissingEstimateQualifier(
@@ -875,7 +975,7 @@ export function repairDeterministicFactCopy(
             language,
           );
         }
-        visibleCopy = [headline, body, ctaQuestion]
+        visibleCopy = [headline, subheadline, body, ctaQuestion]
           .filter(Boolean)
           .join(" ");
       }
@@ -887,7 +987,7 @@ export function repairDeterministicFactCopy(
       );
       if (olderPagesFact) {
         body = appendSentence(body, "The sample includes older pages.");
-        visibleCopy = [headline, body, ctaQuestion]
+        visibleCopy = [headline, subheadline, body, ctaQuestion]
           .filter(Boolean)
           .join(" ");
       }
@@ -900,7 +1000,13 @@ export function repairDeterministicFactCopy(
           ),
       )?.claimGuard?.scopePhrases[0];
       if (missingNumericScope) {
-        if (body && extractAllowedNumbers(body).length > 0) {
+        if (subheadline && extractAllowedNumbers(subheadline).length > 0) {
+          subheadline = integrateScopeNaturally(
+            subheadline,
+            missingNumericScope,
+            language,
+          );
+        } else if (body && extractAllowedNumbers(body).length > 0) {
           body = integrateScopeNaturally(body, missingNumericScope, language);
         } else {
           headline = integrateScopeNaturally(
@@ -910,7 +1016,9 @@ export function repairDeterministicFactCopy(
           );
         }
       }
-      visibleCopy = [headline, body, ctaQuestion].filter(Boolean).join(" ");
+      visibleCopy = [headline, subheadline, body, ctaQuestion]
+        .filter(Boolean)
+        .join(" ");
       const closingFact = selectedFacts[0];
       const closingNeedsSafeSynthesis = Boolean(
         closingFact &&
@@ -940,6 +1048,9 @@ export function repairDeterministicFactCopy(
         factIds,
         headline,
         visualDirection,
+        ...(subheadline
+          ? { subheadline }
+          : { subheadline: undefined }),
         ...(body ? { body } : { body: undefined }),
         ...(ctaQuestion
           ? { ctaQuestion }
@@ -973,7 +1084,12 @@ export function repairDeterministicFactCopy(
     !uniqueLaborContrastFactIds(unitVisibleCopy(closing), allFacts)
   ) {
     const visibleNumbers = extractAllowedNumbers(
-      [closing.headline, closing.body, closing.ctaQuestion]
+      [
+        closing.headline,
+        closing.subheadline,
+        closing.body,
+        closing.ctaQuestion,
+      ]
         .filter(Boolean)
         .join(" "),
     );
@@ -1000,6 +1116,7 @@ export function repairDeterministicFactCopy(
     const fact = closing.factIds.map((id) => factsById.get(id)).find(Boolean);
     if (fact) closing.body = safeConclusionForFact(fact, language);
   }
+  repairContinuationCues(repaired, factsById, allFacts, language);
   return repaired;
 }
 
@@ -1014,7 +1131,9 @@ function repairNumericFactAssignments(
     factsById.has(id) && (!isClosingUnit || establishedFactIds.has(id));
   const factIds = unit.factIds.filter(factIsEligible);
   const visibleNumbers = extractAllowedNumbers(
-    [unit.headline, unit.body, unit.ctaQuestion].filter(Boolean).join(" "),
+    [unit.headline, unit.subheadline, unit.body, unit.ctaQuestion]
+      .filter(Boolean)
+      .join(" "),
   );
 
   for (const number of visibleNumbers) {
@@ -1035,6 +1154,77 @@ function repairNumericFactAssignments(
     }
   }
   return factIds;
+}
+
+function repairContinuationCues(
+  draft: GeneratedCreativeDraft,
+  factsById: ReadonlyMap<string, CreativeKeyFact>,
+  allFacts: readonly CreativeKeyFact[],
+  language?: string,
+): void {
+  draft.units.forEach((unit, unitIndex) => {
+    const originalCue = unit.continuationCue?.trim();
+    const nextUnit = draft.units[unitIndex + 1];
+    if (!originalCue || !nextUnit) {
+      delete unit.continuationCue;
+      return;
+    }
+
+    const cueFacts = [...new Set([...unit.factIds, ...nextUnit.factIds])]
+      .flatMap((id) => {
+        const fact = factsById.get(id);
+        return fact ? [fact] : [];
+      });
+    const sourceCopy = cueFacts.map((fact) => fact.statement).join(" ");
+    let cue = localizeEstimateQualifiers(
+      repairCertaintyUpgrade(
+        repairUnsupportedInference(originalCue, sourceCopy),
+      ),
+      language,
+    );
+    cue = removeUnsupportedNumericClauses(cue, cueFacts, allFacts);
+    if (
+      cue &&
+      cueFacts.some(
+        (fact) =>
+          factUsesNumberInCopy(fact, cue) &&
+          factRequiresEstimateQualifier(fact),
+      ) &&
+      !ESTIMATE_PATTERN.test(cue)
+    ) {
+      cue = repairMissingEstimateQualifier(cue, cueFacts, language);
+    }
+    if (cue) {
+      const numericCueFacts = cueFacts.filter((fact) =>
+        factUsesNumberInCopy(fact, cue),
+      );
+      for (const fact of numericCueFacts) {
+        const scopes = fact.claimGuard?.scopePhrases ?? [];
+        if (
+          scopes.length === 0 ||
+          scopes.some((scope) => scopeMatches(cue, scope))
+        ) {
+          continue;
+        }
+        const scopedCue = scopes
+          .map((scope) => integrateScopeNaturally(cue, scope, language))
+          .find((candidate, scopeIndex) =>
+            scopeMatches(candidate, scopes[scopeIndex]!),
+          );
+        if (!scopedCue) {
+          cue = "";
+          break;
+        }
+        cue = scopedCue;
+      }
+    }
+
+    if (!cue || hasUnsupportedInference(cue, sourceCopy)) {
+      delete unit.continuationCue;
+      return;
+    }
+    unit.continuationCue = cue;
+  });
 }
 
 function repairLaborContrastFactAssignment(
@@ -1936,7 +2126,14 @@ const SPANISH_MONTHS: Record<string, string> = {
 function unitVisibleCopy(
   unit: GeneratedCreativeDraft["units"][number],
 ): string {
-  return [unit.headline, unit.body, unit.ctaQuestion].filter(Boolean).join(" ");
+  return [
+    unit.headline,
+    unit.subheadline,
+    unit.body,
+    unit.ctaQuestion,
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function appendSentence(value: string | undefined, sentence: string): string {

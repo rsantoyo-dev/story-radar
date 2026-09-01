@@ -41,14 +41,21 @@ export async function putPrivateR2Object({
   }
 
   const { client, configuration } = getR2Client();
-  await client.send(
-    new PutObjectCommand({
-      Bucket: configuration.bucket,
-      Key: objectKey,
-      Body: body,
-      ContentType: resolvedContentType,
-    }),
-  );
+  try {
+    await client.send(
+      new PutObjectCommand({
+        Bucket: configuration.bucket,
+        Key: objectKey,
+        Body: body,
+        ContentType: resolvedContentType,
+      }),
+    );
+  } catch (error) {
+    throw new R2StorageObjectError(
+      `The private object could not be stored in R2: ${errorMessage(error)}`,
+      { retryable: isRetryableR2Error(error) },
+    );
+  }
 
   return { objectKey, contentType: resolvedContentType, size: body.byteLength };
 }
@@ -67,6 +74,7 @@ export async function deletePrivateR2Object(objectKey: string): Promise<void> {
   } catch (error) {
     throw new R2StorageObjectError(
       `The private object could not be deleted from R2: ${errorMessage(error)}`,
+      { retryable: isRetryableR2Error(error) },
     );
   }
 }
@@ -111,6 +119,27 @@ export function buildCreativeCharacterReferenceObjectKey({
   return key;
 }
 
+/** Creates the canonical private key for an immutable profile brand asset. */
+export function buildCreativeBrandAssetObjectKey({
+  topicId,
+  assetId,
+}: {
+  topicId: string;
+  assetId: string;
+}): string {
+  const { objectPrefix } = getR2Client().configuration;
+  const key = [
+    objectPrefix,
+    "topics",
+    safeKeySegment(topicId, "topic ID"),
+    "creative",
+    "brand-assets",
+    `${safeKeySegment(assetId, "brand asset ID")}.png`,
+  ].join("/");
+  assertObjectKey(key);
+  return key;
+}
+
 /**
  * Reads a private R2 image into a server-side File for temporary upload to
  * fal storage. This intentionally does not mint or retain a signed R2 URL.
@@ -138,12 +167,14 @@ export async function readPrivateR2ImageFile({
   } catch (error) {
     throw new R2StorageObjectError(
       `The private reference image could not be read from R2: ${errorMessage(error)}`,
+      { retryable: isRetryableR2Error(error) },
     );
   }
 
   if (!object.Body) {
     throw new R2StorageObjectError(
       "The private reference image did not include an object body",
+      { retryable: false },
     );
   }
   if (
@@ -161,6 +192,7 @@ export async function readPrivateR2ImageFile({
   } catch (error) {
     throw new R2StorageObjectError(
       `The private reference image could not be downloaded from R2: ${errorMessage(error)}`,
+      { retryable: true },
     );
   }
   if (bytes.byteLength > MAX_REFERENCE_IMAGE_BYTES) {
@@ -279,6 +311,23 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown R2 error";
 }
 
+function isRetryableR2Error(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return true;
+  const metadata = (error as { $metadata?: { httpStatusCode?: unknown } })
+    .$metadata;
+  const status = metadata?.httpStatusCode;
+  if (typeof status !== "number") return true;
+  return status === 408 || status === 429 || status >= 500;
+}
+
 export class R2StorageConfigurationError extends Error {}
-export class R2StorageObjectError extends Error {}
+export class R2StorageObjectError extends Error {
+  readonly retryable: boolean;
+
+  constructor(message: string, options: { retryable?: boolean } = {}) {
+    super(message);
+    this.name = "R2StorageObjectError";
+    this.retryable = options.retryable ?? true;
+  }
+}
 export class R2StorageValidationError extends Error {}

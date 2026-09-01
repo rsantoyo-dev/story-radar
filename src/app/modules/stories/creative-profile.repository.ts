@@ -3,13 +3,27 @@ import "server-only";
 import { eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { creativeProfiles } from "@/db/schema";
+import { creativeBrandAssets, creativeProfiles } from "@/db/schema";
 
 import {
+  CREATIVE_CONVERSION_GOALS,
+  DEFAULT_CREATIVE_BRAND_OVERLAY_SETTINGS,
+  DEFAULT_CREATIVE_CONVERSION_GOAL,
   DEFAULT_CREATIVE_VISUAL_GUIDANCE,
+  isCreativeConversionGoal,
+  type CreativeConversionGoal,
   type CreativeProfile,
   type EditableCreativeProfile,
 } from "./creative-content.types";
+import {
+  findCreativeBrandAsset,
+  publicCreativeBrandAsset,
+  type StoredCreativeBrandAsset,
+} from "./creative-brand-assets.repository";
+import {
+  parseCreativeBrandOverlayInput,
+  parseCreativeBrandOverlaySettings,
+} from "./creative-brand-overlay-validation";
 
 export const DEFAULT_CREATIVE_PROFILE_ID = "default";
 
@@ -21,6 +35,7 @@ const DEFAULT_PROFILE: EditableCreativeProfile = {
   audience:
     "Professionals, creators, and small businesses interested in the selected topic",
   visualGuidance: DEFAULT_CREATIVE_VISUAL_GUIDANCE,
+  brandOverlay: { ...DEFAULT_CREATIVE_BRAND_OVERLAY_SETTINGS },
   brandPersonality: ["insightful", "clear", "clever", "practical"],
   formality: 45,
   humor: 45,
@@ -29,21 +44,18 @@ const DEFAULT_PROFILE: EditableCreativeProfile = {
   provocation: 25,
   allowEmojis: true,
   maxEmojis: 2,
+  conversionGoal: DEFAULT_CREATIVE_CONVERSION_GOAL,
   callToActionStyle:
-    "Invite informed discussion without engagement bait or artificial urgency.",
+    "Use one natural call to action aligned with the primary conversion goal. State a concrete audience benefit without engagement bait or artificial urgency.",
 };
 
 export async function getCreativeProfile(
   topicId: string,
 ): Promise<CreativeProfile> {
-  const [existing] = await db
-    .select()
-    .from(creativeProfiles)
-    .where(eq(creativeProfiles.topicId, topicId))
-    .limit(1);
+  const existing = await findStoredCreativeProfile(topicId);
 
   if (existing) {
-    return existing;
+    return mapCreativeProfile(existing.profile, existing.brandAsset);
   }
 
   const [created] = await db
@@ -53,38 +65,62 @@ export async function getCreativeProfile(
     .returning();
 
   if (created) {
-    return created;
+    return mapCreativeProfile(created);
   }
 
-  const [concurrent] = await db
-    .select()
-    .from(creativeProfiles)
-    .where(eq(creativeProfiles.topicId, topicId))
-    .limit(1);
+  const concurrent = await findStoredCreativeProfile(topicId);
 
   if (!concurrent) {
     throw new Error("The creative profile could not be initialized");
   }
 
-  return concurrent;
+  return mapCreativeProfile(concurrent.profile, concurrent.brandAsset);
 }
 
 export async function saveCreativeProfile(
   topicId: string,
   input: EditableCreativeProfile,
+  options: { preserveExistingBrandOverlay?: boolean } = {},
 ): Promise<CreativeProfile> {
   const profile = validateCreativeProfile(input);
+  const { brandOverlay, ...profileFields } = profile;
+  const brandAssetId = brandOverlay.assetId ?? null;
+  const brandAsset = brandAssetId
+    ? await findCreativeBrandAsset(topicId, brandAssetId)
+    : undefined;
+  if (brandAssetId && !brandAsset) {
+    throw new CreativeProfileValidationError(
+      "brandOverlay.assetId must belong to the selected topic",
+    );
+  }
+  const brandOverlaySettings = parseCreativeBrandOverlaySettings(brandOverlay);
+  const updateFields = options.preserveExistingBrandOverlay
+    ? {
+        ...profileFields,
+        updatedAt: new Date(),
+      }
+    : {
+        ...profileFields,
+        brandAssetId,
+        brandOverlay: brandOverlaySettings,
+        updatedAt: new Date(),
+      };
   const [saved] = await db
     .insert(creativeProfiles)
     .values({
       id: profileId(topicId),
       topicId,
-      ...profile,
+      ...profileFields,
+      brandAssetId,
+      brandOverlay: brandOverlaySettings,
       updatedAt: new Date(),
     })
     .onConflictDoUpdate({
       target: creativeProfiles.topicId,
-      set: { ...profile, updatedAt: new Date() },
+      // Older clients do not know about brandOverlay. Their full-profile PUT
+      // may update legacy fields, but must not unlink a logo selected in a
+      // newer tab. On insert, the disabled defaults above still apply.
+      set: updateFields,
     })
     .returning();
 
@@ -92,7 +128,10 @@ export async function saveCreativeProfile(
     throw new Error("The creative profile could not be saved");
   }
 
-  return saved;
+  const resolvedBrandAsset = saved.brandAssetId
+    ? await findCreativeBrandAsset(topicId, saved.brandAssetId)
+    : undefined;
+  return mapCreativeProfile(saved, resolvedBrandAsset ?? brandAsset);
 }
 
 function profileId(topicId: string): string {
@@ -111,6 +150,7 @@ export function parseCreativeProfileInput(value: unknown): EditableCreativeProfi
     platform: value.platform,
     audience: value.audience,
     visualGuidance: value.visualGuidance,
+    brandOverlay: value.brandOverlay,
     brandPersonality: value.brandPersonality,
     formality: value.formality,
     humor: value.humor,
@@ -119,6 +159,7 @@ export function parseCreativeProfileInput(value: unknown): EditableCreativeProfi
     provocation: value.provocation,
     allowEmojis: value.allowEmojis,
     maxEmojis: value.maxEmojis,
+    conversionGoal: value.conversionGoal,
     callToActionStyle: value.callToActionStyle,
   } as EditableCreativeProfile);
 }
@@ -133,6 +174,7 @@ function validateCreativeProfile(
     platform: textValue(value.platform, "platform", 80),
     audience: textValue(value.audience, "audience", 500),
     visualGuidance: visualGuidanceValue(value.visualGuidance),
+    brandOverlay: parseCreativeBrandOverlayInput(value.brandOverlay),
     brandPersonality: textList(
       value.brandPersonality,
       "brandPersonality",
@@ -146,11 +188,76 @@ function validateCreativeProfile(
     provocation: score(value.provocation, "provocation"),
     allowEmojis: booleanValue(value.allowEmojis, "allowEmojis"),
     maxEmojis: boundedInteger(value.maxEmojis, "maxEmojis", 0, 10),
+    conversionGoal: conversionGoalValue(value.conversionGoal),
     callToActionStyle: textValue(
       value.callToActionStyle,
       "callToActionStyle",
       500,
     ),
+  };
+}
+
+async function findStoredCreativeProfile(topicId: string): Promise<
+  | {
+      profile: typeof creativeProfiles.$inferSelect;
+      brandAsset: StoredCreativeBrandAsset | null;
+    }
+  | undefined
+> {
+  const [row] = await db
+    .select({ profile: creativeProfiles, brandAsset: creativeBrandAssets })
+    .from(creativeProfiles)
+    .leftJoin(
+      creativeBrandAssets,
+      eq(creativeProfiles.brandAssetId, creativeBrandAssets.id),
+    )
+    .where(eq(creativeProfiles.topicId, topicId))
+    .limit(1);
+  return row;
+}
+
+function mapCreativeProfile(
+  profile: typeof creativeProfiles.$inferSelect,
+  brandAsset?: StoredCreativeBrandAsset | null,
+): CreativeProfile {
+  const settings = parseCreativeBrandOverlaySettings(profile.brandOverlay);
+  if (
+    profile.brandAssetId &&
+    (!brandAsset ||
+      brandAsset.id !== profile.brandAssetId ||
+      brandAsset.topicId !== profile.topicId)
+  ) {
+    throw new Error("The creative profile brand asset is inconsistent");
+  }
+
+  return {
+    id: profile.id,
+    name: profile.name,
+    language: profile.language,
+    region: profile.region,
+    platform: profile.platform,
+    audience: profile.audience,
+    visualGuidance: profile.visualGuidance,
+    brandOverlay: {
+      ...settings,
+      ...(brandAsset
+        ? {
+            assetId: brandAsset.id,
+            asset: publicCreativeBrandAsset(brandAsset),
+          }
+        : {}),
+    },
+    brandPersonality: profile.brandPersonality,
+    formality: profile.formality,
+    humor: profile.humor,
+    energy: profile.energy,
+    optimism: profile.optimism,
+    provocation: profile.provocation,
+    allowEmojis: profile.allowEmojis,
+    maxEmojis: profile.maxEmojis,
+    conversionGoal: conversionGoalValue(profile.conversionGoal),
+    callToActionStyle: profile.callToActionStyle,
+    updatedAt: profile.updatedAt,
   };
 }
 
@@ -214,6 +321,20 @@ function booleanValue(value: unknown, field: string): boolean {
   }
 
   return value;
+}
+
+export function conversionGoalValue(value: unknown): CreativeConversionGoal {
+  if (value === undefined) {
+    return DEFAULT_CREATIVE_CONVERSION_GOAL;
+  }
+
+  if (typeof value !== "string" || !isCreativeConversionGoal(value)) {
+    throw new CreativeProfileValidationError(
+      `conversionGoal must be one of: ${CREATIVE_CONVERSION_GOALS.join(", ")}`,
+    );
+  }
+
+  return value as CreativeConversionGoal;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -42,8 +42,10 @@ export function buildCompleteDraftScript(
           ? `Internal viewer question (not visible): ${unit.viewerQuestion}`
           : undefined,
         field("ON-IMAGE HEADLINE", unit.headline),
+        field("SUBHEADLINE", unit.subheadline),
         field("SUPPORTING TEXT", unit.body),
-        field("VISIBLE CTA QUESTION", unit.ctaQuestion),
+        field("CONTINUATION CUE", unit.continuationCue),
+        field("VISIBLE CTA", unit.ctaQuestion),
         field("IMAGE OUTPUT / VISUAL DIRECTION", unit.visualDirection),
         unit.factIds.length
           ? `Selected facts: ${unit.factIds.join(", ")}`

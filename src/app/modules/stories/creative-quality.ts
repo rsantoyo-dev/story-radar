@@ -4,6 +4,7 @@ import {
   maximumFactsForGoal,
 } from "./carousel-narrative";
 import type {
+  CreativeConversionGoal,
   CreativeFormat,
   CreativeKeyFact,
   CreativeQualityIssue,
@@ -79,6 +80,7 @@ export function repairDeterministicCreativeCopy(
   format: CreativeFormat,
   keyFacts: readonly CreativeKeyFact[] = [],
   language?: string,
+  conversionGoal?: CreativeConversionGoal,
 ): GeneratedCreativeDraft {
   const repaired: GeneratedCreativeDraft = {
     ...draft,
@@ -92,9 +94,19 @@ export function repairDeterministicCreativeCopy(
     units: draft.units.map((unit) => ({
       ...unit,
       headline: repairMalformedGroupedNumbers(unit.headline),
+      ...(unit.subheadline === undefined
+        ? {}
+        : { subheadline: repairMalformedGroupedNumbers(unit.subheadline) }),
       ...(unit.body === undefined
         ? {}
         : { body: repairMalformedGroupedNumbers(unit.body) }),
+      ...(unit.continuationCue === undefined
+        ? {}
+        : {
+            continuationCue: repairMalformedGroupedNumbers(
+              unit.continuationCue,
+            ),
+          }),
       ...(unit.ctaQuestion === undefined
         ? {}
         : { ctaQuestion: repairMalformedGroupedNumbers(unit.ctaQuestion) }),
@@ -103,7 +115,13 @@ export function repairDeterministicCreativeCopy(
     })),
   };
   if (format === "carousel") {
-    repaired.units.forEach((unit) => {
+    if (
+      repaired.callToAction &&
+      isGenericFollowCallToAction(repaired.callToAction)
+    ) {
+      delete repaired.callToAction;
+    }
+    repaired.units.forEach((unit, unitIndex) => {
       if (unit.editorialGoal) {
         unit.factIds = unit.factIds.slice(
           0,
@@ -121,18 +139,56 @@ export function repairDeterministicCreativeCopy(
         ) {
           unit.body = localizedEvidenceFallback(unit.editorialGoal, language);
         }
+        if (
+          unit.subheadline &&
+          hasLikelyEnglishSentence(unit.subheadline) &&
+          !hasLikelyEnglishSentence(unit.headline)
+        ) {
+          delete unit.subheadline;
+        }
+        if (
+          unit.continuationCue &&
+          hasLikelyEnglishSentence(unit.continuationCue)
+        ) {
+          delete unit.continuationCue;
+        }
         if (unit.ctaQuestion && hasLikelyEnglishSentence(unit.ctaQuestion)) {
-          unit.ctaQuestion = localizedDebateQuestion(language);
+          if (unit.editorialGoal === "debate") {
+            unit.ctaQuestion = localizedDebateQuestion(language);
+          } else {
+            delete unit.ctaQuestion;
+          }
         }
       }
       const evidence = evidenceForUnit(unit.factIds, keyFacts);
+      const cueEvidence = evidenceForUnit(
+        [
+          ...new Set([
+            ...unit.factIds,
+            ...(repaired.units[unitIndex + 1]?.factIds ?? []),
+          ]),
+        ],
+        keyFacts,
+      );
       unit.visualDirection = repairUnverifiedQuantitativeVisual(
         unit.visualDirection,
         evidence,
         language,
       );
       unit.headline = softenUnsupportedAbsolutes(unit.headline, evidence);
+      if (unit.subheadline) {
+        unit.subheadline = softenUnsupportedAbsolutes(
+          unit.subheadline,
+          evidence,
+        );
+      }
       if (unit.body) unit.body = softenUnsupportedAbsolutes(unit.body, evidence);
+      if (unit.continuationCue) {
+        unit.continuationCue = softenUnsupportedAbsolutes(
+          unit.continuationCue,
+          cueEvidence,
+        );
+      }
       if (unit.ctaQuestion) {
         unit.ctaQuestion = softenUnsupportedAbsolutes(unit.ctaQuestion, evidence);
       }
@@ -140,6 +196,26 @@ export function repairDeterministicCreativeCopy(
     const closing = repaired.units.at(-1);
     if (closing) {
       if (
+        closing.ctaQuestion &&
+        isGenericFollowCallToAction(closing.ctaQuestion)
+      ) {
+        if (closing.editorialGoal === "debate") {
+          closing.ctaQuestion = localizedDebateQuestion(language);
+        } else {
+          delete closing.ctaQuestion;
+        }
+      }
+      // A carousel gets one primary conversion action. Prefer the visible
+      // closing CTA over repeating a second request in publishing copy.
+      if (
+        !conversionGoal &&
+        closing.ctaQuestion?.trim() &&
+        repaired.callToAction?.trim()
+      ) {
+        delete repaired.callToAction;
+      }
+      if (
+        !conversionGoal &&
         closing.editorialGoal === "debate" &&
         !closing.ctaQuestion?.trim() &&
         ![closing.headline, closing.body].some((value) => value?.includes("?")) &&
@@ -183,7 +259,12 @@ export function repairDeterministicCreativeCopy(
         );
       }
 
-      const fields = ["headline", "body", "ctaQuestion"] as const;
+      const fields = [
+        "headline",
+        "subheadline",
+        "body",
+        "ctaQuestion",
+      ] as const;
       const questionFields = fields.filter(
         (field) => closing[field]?.includes("?"),
       );
@@ -234,12 +315,109 @@ export function repairDeterministicCreativeCopy(
       ) {
         unit.body = localizedEvidenceFallback(unit.editorialGoal, language);
       }
+      if (
+        unit.subheadline &&
+        hasLikelyEnglishSentence(unit.subheadline) &&
+        !hasLikelyEnglishSentence(unit.headline)
+      ) {
+        delete unit.subheadline;
+      }
+      if (
+        unit.continuationCue &&
+        hasLikelyEnglishSentence(unit.continuationCue)
+      ) {
+        delete unit.continuationCue;
+      }
       if (unit.ctaQuestion && hasLikelyEnglishSentence(unit.ctaQuestion)) {
-        unit.ctaQuestion = localizedDebateQuestion(language);
+        if (unit.editorialGoal === "debate") {
+          unit.ctaQuestion = localizedDebateQuestion(language);
+        } else {
+          delete unit.ctaQuestion;
+        }
       }
     });
   }
-  return factRepaired;
+  return repairConversionGoalCtas(
+    factRepaired,
+    format,
+    conversionGoal,
+    language,
+  );
+}
+
+const FOLLOW_CTA_PATTERN =
+  /\b(?:follow(?: us| this account)?|síguenos?|sígueme|seguir)\b/iu;
+const SAVE_CTA_PATTERN =
+  /\b(?:save this|save it|bookmark|guarda(?: este| esta| esto)?|guárdalo|guardarlo|guardar)\b/iu;
+const SHARE_CTA_PATTERN =
+  /\b(?:share this|share it|send this|forward this|comparte (?:este|esta|esto)|compártelo|envía(?:lo)? a|reenvía)\b/iu;
+const DISCUSSION_CTA_PATTERN =
+  /\b(?:comment|tell us|share your (?:view|experience)|comenta|cu[eé]ntanos|dinos|qu[eé] opinas|tu opini[oó]n)\b/iu;
+
+function detectedCtaGoals(value: string): Set<CreativeConversionGoal> {
+  const copy = value.trim();
+  const detected = new Set<CreativeConversionGoal>();
+  if (!copy) return detected;
+  if (FOLLOW_CTA_PATTERN.test(copy)) detected.add("followers");
+  if (SAVE_CTA_PATTERN.test(copy)) detected.add("saves");
+  if (SHARE_CTA_PATTERN.test(copy)) detected.add("shares");
+  if (DISCUSSION_CTA_PATTERN.test(copy)) detected.add("discussion");
+  if (detected.size === 0 && copy.includes("?")) detected.add("discussion");
+  return detected;
+}
+
+function ctaConflictsWithConversionGoal(
+  value: string,
+  goal: CreativeConversionGoal,
+  language?: string,
+): boolean {
+  const detected = detectedCtaGoals(value);
+  if (detected.size > 1) return true;
+  if (detected.size === 1) return !detected.has(goal);
+  return isEnglishProfileLanguage(language) || isSpanishProfileLanguage(language);
+}
+
+function repairConversionGoalCtas(
+  draft: GeneratedCreativeDraft,
+  format: CreativeFormat,
+  goal?: CreativeConversionGoal,
+  language?: string,
+): GeneratedCreativeDraft {
+  if (!goal) return draft;
+  const repaired = {
+    ...draft,
+    units: draft.units.map((unit) => ({ ...unit })),
+  };
+
+  if (format === "meme") {
+    if (
+      repaired.callToAction &&
+      ctaConflictsWithConversionGoal(repaired.callToAction, goal, language)
+    ) {
+      delete repaired.callToAction;
+    }
+    return repaired;
+  }
+
+  const closing = repaired.units.at(-1);
+  if (!closing) {
+    delete repaired.callToAction;
+    return repaired;
+  }
+  const visibleCta = closing.ctaQuestion?.trim();
+  const generalCta = repaired.callToAction?.trim();
+  const matchingCta =
+    (visibleCta && !ctaConflictsWithConversionGoal(visibleCta, goal, language)
+      ? visibleCta
+      : undefined) ??
+    (generalCta && !ctaConflictsWithConversionGoal(generalCta, goal, language)
+      ? generalCta
+      : undefined);
+
+  delete repaired.callToAction;
+  if (matchingCta) closing.ctaQuestion = matchingCta;
+  else delete closing.ctaQuestion;
+  return repaired;
 }
 
 function localizedDebateQuestion(language?: string): string {
@@ -260,6 +438,13 @@ function localizedEvidenceFallback(
 
 const GENERIC_CTA_PATTERN =
   /^(?:[¿¡\s]*(?:what stands out(?: most)? to you|what do you think|thoughts|what surprised you(?: most)?|qué te sorprendió más(?: de esta información)?|qué opinas|cuál es tu opinión)[?.!¿¡\s]*|where would you apply how\b.*\bfirst\?|how would\b.+\bchange your approach\?|¿cómo cambiaría\b.+\btu enfoque\?)$/iu;
+
+const GENERIC_FOLLOW_CTA_PATTERN =
+  /^(?:follow(?: us| this account)? for more(?: content| updates)?|síguenos?(?: en esta cuenta)? para (?:más|más contenido|más información|más novedades))[.!¡\s]*$/iu;
+
+function isGenericFollowCallToAction(value: string): boolean {
+  return GENERIC_FOLLOW_CTA_PATTERN.test(value.trim());
+}
 
 const ABSOLUTE_PATTERNS: ReadonlyArray<{
   pattern: RegExp;
@@ -344,12 +529,14 @@ export function deterministicCreativeQualityIssues(
   format: CreativeFormat,
   keyFacts: readonly CreativeKeyFact[] = [],
   language?: string,
+  conversionGoal?: CreativeConversionGoal,
 ): CreativeQualityIssue[] {
   const narrativeIssues =
     format === "carousel"
       ? evaluateCarouselNarrative(
           draft.units,
           draft.narrativeRationale,
+          conversionGoal,
         ).map((issue) => ({
           code: issue.code.toUpperCase().replaceAll("-", "_"),
           severity: issue.severity === "blocker" ? "blocker" as const : "warning" as const,
@@ -359,12 +546,30 @@ export function deterministicCreativeQualityIssues(
             : { unitOrder: issue.unitIndex + 1 }),
         }))
       : [];
-  const editorialPrecisionIssues = draft.units.flatMap((unit) => {
+  const editorialPrecisionIssues = draft.units.flatMap((unit, unitIndex) => {
     const evidence = evidenceForUnit(unit.factIds, keyFacts);
-    const visibleCopy = [unit.headline, unit.body, unit.ctaQuestion]
+    const cueEvidence = evidenceForUnit(
+      [
+        ...new Set([
+          ...unit.factIds,
+          ...(draft.units[unitIndex + 1]?.factIds ?? []),
+        ]),
+      ],
+      keyFacts,
+    );
+    const unitCopy = [
+      unit.headline,
+      unit.subheadline,
+      unit.body,
+      unit.ctaQuestion,
+    ]
       .filter(Boolean)
       .join(" ");
-    const issues: CreativeQualityIssue[] = containsUnsupportedAbsolute(visibleCopy, evidence)
+    const continuationCopy = unit.continuationCue?.trim() ?? "";
+    const visibleCopy = [unitCopy, continuationCopy].filter(Boolean).join(" ");
+    const issues: CreativeQualityIssue[] =
+      containsUnsupportedAbsolute(unitCopy, evidence) ||
+      containsUnsupportedAbsolute(continuationCopy, cueEvidence)
       ? [{
           code: "UNSUPPORTED_ABSOLUTE",
           severity: "blocker" as const,
@@ -407,13 +612,111 @@ export function deterministicCreativeQualityIssues(
             "The closing question is generic; connect it to the carousel's central concept.",
         }]
       : [];
+  const followCtaIssues = format === "carousel"
+    ? [
+        ...(draft.callToAction?.trim() &&
+        isGenericFollowCallToAction(draft.callToAction)
+          ? [{ unitOrder: undefined }]
+          : []),
+        ...(closing?.ctaQuestion?.trim() &&
+        isGenericFollowCallToAction(closing.ctaQuestion)
+          ? [{ unitOrder: closing.order }]
+          : []),
+      ].map(({ unitOrder }) => ({
+        code: "GENERIC_FOLLOW_CTA",
+        severity: "blocker" as const,
+        ...(unitOrder === undefined ? {} : { unitOrder }),
+        message:
+          "The follow CTA is generic; state the recurring topic value people will receive, or omit the CTA when it is inappropriate.",
+      }))
+    : [];
+  const conversionGoalIssues = conversionGoal
+    ? deterministicConversionGoalIssues(
+        draft,
+        format,
+        conversionGoal,
+        language,
+      )
+    : [];
   return [
     ...narrativeIssues,
     ...deterministicFactQualityIssues(draft, keyFacts),
     ...editorialPrecisionIssues,
     ...ctaSpecificityIssues,
+    ...followCtaIssues,
+    ...conversionGoalIssues,
     ...visibleDraftLanguageIssues(draft, language),
   ];
+}
+
+function deterministicConversionGoalIssues(
+  draft: GeneratedCreativeDraft,
+  format: CreativeFormat,
+  goal: CreativeConversionGoal,
+  language?: string,
+): CreativeQualityIssue[] {
+  const issues: CreativeQualityIssue[] = [];
+  if (format === "meme") {
+    if (!draft.callToAction?.trim()) {
+      issues.push({
+        code: "MISSING_CONVERSION_CTA",
+        severity: "warning",
+        message: `The ${goal} conversion goal has no CTA. Add one when it is appropriate for the story; omission remains allowed for sensitive coverage.`,
+      });
+      return issues;
+    }
+    if (
+      ctaConflictsWithConversionGoal(draft.callToAction, goal, language)
+    ) {
+      issues.push({
+        code: "CTA_GOAL_MISMATCH",
+        severity: "blocker",
+        message: `The meme CTA does not match the ${goal} conversion goal.`,
+      });
+    }
+    return issues;
+  }
+
+  const closing = draft.units.at(-1);
+  if (!closing?.ctaQuestion?.trim()) {
+    issues.push({
+      code: "MISSING_CONVERSION_CTA",
+      severity: "warning",
+      ...(closing ? { unitOrder: closing.order } : {}),
+      message: `The ${goal} conversion goal has no CTA on the closing slide. Add one when it is appropriate for the story; omission remains allowed for sensitive coverage.`,
+    });
+  }
+  if (draft.callToAction?.trim()) {
+    issues.push({
+      code: "CTA_LOCATION",
+      severity: "blocker",
+      message:
+        "A carousel must keep its single CTA on the closing slide, not in the general CTA field.",
+    });
+  }
+  if (
+    closing &&
+    closing.editorialGoal !== (goal === "discussion" ? "debate" : "conclude")
+  ) {
+    issues.push({
+      code: "CTA_GOAL_MISMATCH",
+      severity: "blocker",
+      unitOrder: closing.order,
+      message: `The closing narrative goal does not match the ${goal} conversion goal.`,
+    });
+  }
+  if (
+    closing?.ctaQuestion?.trim() &&
+    ctaConflictsWithConversionGoal(closing.ctaQuestion, goal, language)
+  ) {
+    issues.push({
+      code: "CTA_GOAL_MISMATCH",
+      severity: "blocker",
+      unitOrder: closing.order,
+      message: `The visible closing CTA does not match the ${goal} conversion goal.`,
+    });
+  }
+  return issues;
 }
 
 const MALFORMED_GROUPED_NUMBER_PATTERN =
@@ -431,6 +734,9 @@ const AUTOMATICALLY_REPAIRABLE_REVIEW_CODES = new Set([
   "FACT_BUDGET",
   "MIXED_LANGUAGE",
   "GENERIC_CTA",
+  "GENERIC_FOLLOW_CTA",
+  "CTA_GOAL_MISMATCH",
+  "CTA_LOCATION",
   "UNSUPPORTED_INFERENCE",
   // Numeric support is recalculated from the current copy and current facts.
   // Do not keep approval locked on a stale critic finding after deterministic
@@ -479,7 +785,15 @@ export function visibleDraftLanguageIssues(
     });
   }
   draft.units.forEach((unit) => {
-    if ([unit.headline, unit.body, unit.ctaQuestion].some(hasLikelyEnglishSentence)) {
+    if (
+      [
+        unit.headline,
+        unit.subheadline,
+        unit.body,
+        unit.continuationCue,
+        unit.ctaQuestion,
+      ].some(hasLikelyEnglishSentence)
+    ) {
       issues.push({
         code: "MIXED_LANGUAGE",
         severity: "blocker",
@@ -495,6 +809,10 @@ function isSpanishProfileLanguage(language?: string): boolean {
   return /^(?:es|spa|spanish|espanol|español)(?:\b|[-_])/iu.test(
     language?.trim() ?? "",
   );
+}
+
+function isEnglishProfileLanguage(language?: string): boolean {
+  return /^(?:en|eng|english)(?:\b|[-_])/iu.test(language?.trim() ?? "");
 }
 
 function hasLikelyEnglishSentence(value?: string): boolean {
@@ -590,6 +908,8 @@ export function buildCreativeQualityReview({
   criticIssues,
   repairPasses,
   keyFacts = [],
+  conversionGoal,
+  language,
 }: {
   draft: GeneratedCreativeDraft;
   format: CreativeFormat;
@@ -597,11 +917,15 @@ export function buildCreativeQualityReview({
   criticIssues: CreativeQualityIssue[];
   repairPasses: number;
   keyFacts?: readonly CreativeKeyFact[];
+  conversionGoal?: CreativeConversionGoal;
+  language?: string;
 }): CreativeQualityReview {
   const deterministicIssues = deterministicCreativeQualityIssues(
     draft,
     format,
     keyFacts,
+    language,
+    conversionGoal,
   );
   const reconciledCriticIssues =
     reconcileCriticIssuesWithDeterministicValidation(
@@ -742,10 +1066,13 @@ function calibrateCreativeQualityScores(
       "DUPLICATE_CTA",
       "WEAK_CTA",
       "CTA_CONFLICT",
+      "CTA_GOAL_MISMATCH",
+      "CTA_LOCATION",
       "MISSING_DEBATE_QUESTION",
       "CLOSING_QUESTION_COUNT",
       "CLOSING_GOAL",
       "GENERIC_CTA",
+      "GENERIC_FOLLOW_CTA",
     )
   ) {
     scores.cta = Math.min(scores.cta, 74);

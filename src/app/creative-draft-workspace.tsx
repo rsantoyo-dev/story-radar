@@ -16,21 +16,26 @@ import {
   repairDeterministicCreativeCopy,
 } from "./modules/stories/creative-quality";
 import { buildCompleteDraftScript } from "./modules/stories/creative-draft-export";
-import type {
-  CreativeAssetBatchResponse,
-  CreativeAspectRatio,
-  CreativeCharacter,
-  CreativeCharacterReferenceImage,
-  CreativeCharacterRosterEntry,
-  CreativeDraft,
-  CreativeFormat,
-  CreativeGeneratedAsset,
-  CreativeImageQuality,
-  CreativeKeyFact,
-  CreativeProfile,
-  CreativeUnit,
-  CreativeWorkspaceState,
-  EditableCreativeDraft,
+import {
+  CREATIVE_BRAND_BACKDROP_MODES,
+  CREATIVE_BRAND_PLACEMENTS,
+  CREATIVE_BRAND_SCOPES,
+  CREATIVE_CONVERSION_GOALS,
+  type CreativeAssetBatchResponse,
+  type CreativeAspectRatio,
+  type CreativeBrandAsset,
+  type CreativeCharacter,
+  type CreativeCharacterReferenceImage,
+  type CreativeCharacterRosterEntry,
+  type CreativeDraft,
+  type CreativeFormat,
+  type CreativeGeneratedAsset,
+  type CreativeImageQuality,
+  type CreativeKeyFact,
+  type CreativeProfile,
+  type CreativeUnit,
+  type CreativeWorkspaceState,
+  type EditableCreativeDraft,
 } from "./modules/stories/creative-content.types";
 import styles from "./creative-draft-workspace.generated.module.css";
 
@@ -44,6 +49,7 @@ type WorkspaceProps = {
 
 type BusyAction =
   | "profile"
+  | "brand"
   | "profile-draft"
   | "brief"
   | "draft"
@@ -157,10 +163,12 @@ export function CreativeDraftWorkspace({
           selectedFormat,
           workspace.brief.keyFacts,
           workspace.brief.profileSnapshot.language,
+          workspace.brief.profileSnapshot.conversionGoal,
         ),
         selectedFormat,
         workspace.brief.keyFacts,
         workspace.brief.profileSnapshot.language,
+        workspace.brief.profileSnapshot.conversionGoal,
       )
       : [];
   const activeDraftApprovalState = getCreativeDraftApprovalState({
@@ -386,6 +394,7 @@ export function CreativeDraftWorkspace({
   async function reloadWorkspace(
     preferredFormat = selectedFormat,
     preferredAspectRatio = selectedAspectRatio,
+    preserveUnsavedProfile = profileDirty,
   ) {
     const next = await requestJson<CreativeWorkspaceState>(
       topicUrl(
@@ -395,8 +404,13 @@ export function CreativeDraftWorkspace({
       secret,
     );
     setWorkspace(next);
-    setProfile(next.profile);
-    setProfileDirty(false);
+    // Draft, approval, and character actions also refresh the workspace. Do
+    // not let those unrelated requests silently replace local profile/logo
+    // edits that the user has not saved yet.
+    if (!preserveUnsavedProfile) {
+      setProfile(next.profile);
+      setProfileDirty(false);
+    }
     const aspectRatio = resolveDraftAspectRatio(
       next,
       preferredFormat,
@@ -433,7 +447,7 @@ export function CreativeDraftWorkspace({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(profile),
       });
-      await reloadWorkspace();
+      await reloadWorkspace(selectedFormat, selectedAspectRatio, false);
       setNotice(
         "Creative profile saved. Refresh the brief if its current inputs changed.",
       );
@@ -486,6 +500,10 @@ export function CreativeDraftWorkspace({
 
   async function handleGenerateDraft() {
     if (!workspace?.brief || busy) return;
+    if (profileDirty) {
+      setError("Save the creative profile before generating a draft.");
+      return;
+    }
     await run("draft", async () => {
       let currentState = workspace;
       const needsBriefRefresh =
@@ -673,6 +691,7 @@ export function CreativeDraftWorkspace({
             saved.format,
             workspace.brief.keyFacts,
             workspace.brief.profileSnapshot.language,
+            workspace.brief.profileSnapshot.conversionGoal,
           ).filter((issue) => issue.severity === "blocker")
         : [];
       setNotice(
@@ -783,6 +802,12 @@ export function CreativeDraftWorkspace({
 
   async function handleGenerateImages() {
     if (!activeDraftId || !activeDraft || busy || viewingHistoricalDraft) return;
+    if (profileDirty) {
+      setError(
+        "Save the creative profile before generating images so the selected logo and placement are used.",
+      );
+      return;
+    }
     const count = activeDraft.units.length;
     if (
       !window.confirm(
@@ -831,6 +856,7 @@ export function CreativeDraftWorkspace({
       assetBusy ||
       assetsPending ||
       viewingHistoricalDraft ||
+      profileDirty ||
       dirty ||
       activeDraft.status !== "approved"
     ) {
@@ -895,6 +921,12 @@ export function CreativeDraftWorkspace({
     if (dirty) {
       setError(
         "Save the draft changes before regenerating an image so the image stays attached to the correct version.",
+      );
+      return;
+    }
+    if (profileDirty) {
+      setError(
+        "Save the creative profile before regenerating an image so its logo settings are unambiguous.",
       );
       return;
     }
@@ -1104,6 +1136,43 @@ export function CreativeDraftWorkspace({
     setProfileDirty(true);
   }
 
+  function updateBrandOverlay(
+    values: Partial<CreativeProfile["brandOverlay"]>,
+  ) {
+    if (!profile) return;
+    updateProfile({
+      brandOverlay: { ...profile.brandOverlay, ...values },
+    });
+  }
+
+  async function handleUploadBrandAsset(file: File) {
+    if (!profile || busy) return;
+    if (file.type !== "image/png" && !file.name.toLowerCase().endsWith(".png")) {
+      setError("The brand logo must be a PNG image.");
+      return;
+    }
+
+    await run("brand", async () => {
+      const body = new FormData();
+      body.append("image", file);
+      const asset = await requestJson<CreativeBrandAsset>(
+        topicUrl("/api/radar/creative-profile/brand-assets", topicId),
+        secret,
+        { method: "POST", body },
+      );
+      updateProfile({
+        brandOverlay: {
+          ...profile.brandOverlay,
+          assetId: asset.id,
+          asset,
+        },
+      });
+      setNotice(
+        "Brand logo uploaded. Choose its placement, then save the creative profile.",
+      );
+    });
+  }
+
   function updateCharacterSlot(
     slot: 1 | 2,
     values: Partial<Pick<CharacterSlot, "name" | "description">>,
@@ -1260,12 +1329,26 @@ export function CreativeDraftWorkspace({
     });
   }
 
+  function closeWorkspace() {
+    if (
+      (profileDirty || dirty) &&
+      !window.confirm(
+        "Close Creative Studio and discard the unsaved profile or draft changes?",
+      )
+    ) {
+      return;
+    }
+    onClose();
+  }
+
   return (
     <div
       className={styles.backdrop}
       role="presentation"
           onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !busy && !characterBusy) onClose();
+        if (event.target === event.currentTarget && !busy && !characterBusy) {
+          closeWorkspace();
+        }
       }}
     >
       <section
@@ -1279,7 +1362,7 @@ export function CreativeDraftWorkspace({
             <p>Creative studio · script and images</p>
             <h2 id="creative-studio-title">{storyTitle}</h2>
           </div>
-          <button type="button" onClick={onClose} disabled={Boolean(busy) || Boolean(characterBusy)} aria-label="Close">
+          <button type="button" onClick={closeWorkspace} disabled={Boolean(busy) || Boolean(characterBusy)} aria-label="Close">
             ×
           </button>
         </header>
@@ -1298,7 +1381,11 @@ export function CreativeDraftWorkspace({
             </div>
 
             {error ? <ErrorMessage message={error} /> : null}
-            {notice ? <div className={styles.notice}>{notice}</div> : null}
+            {notice ? (
+              <div className={styles.notice} role="status" aria-live="polite">
+                {notice}
+              </div>
+            ) : null}
 
             <details className={styles.profilePanel}>
               <summary>
@@ -1308,12 +1395,33 @@ export function CreativeDraftWorkspace({
                 </span>
                 <span>Edit parameters</span>
               </summary>
-              <div className={styles.profileBody}>
+              <fieldset
+                className={styles.profileBody}
+                disabled={Boolean(busy) || Boolean(characterBusy)}
+              >
                 <div className={styles.fieldGrid}>
                   <TextField label="Profile name" value={profile.name} onChange={(name) => updateProfile({ name })} />
                   <TextField label="Platform" value={profile.platform} onChange={(platform) => updateProfile({ platform })} />
                   <TextField label="Language" value={profile.language} onChange={(language) => updateProfile({ language })} />
                   <TextField label="Region" value={profile.region} onChange={(region) => updateProfile({ region })} />
+                  <label className={styles.field}>
+                    <span>Primary conversion goal</span>
+                    <select
+                      value={profile.conversionGoal}
+                      onChange={(event) =>
+                        updateProfile({
+                          conversionGoal: event.target
+                            .value as CreativeProfile["conversionGoal"],
+                        })
+                      }
+                    >
+                      {CREATIVE_CONVERSION_GOALS.map((goal) => (
+                        <option key={goal} value={goal}>
+                          {capitalize(goal)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
                 <TextAreaField label="Audience" value={profile.audience} onChange={(audience) => updateProfile({ audience })} rows={2} />
                 <TextAreaField
@@ -1324,10 +1432,20 @@ export function CreativeDraftWorkspace({
                 />
                 <p className={styles.profileGuideHint}>
                   Add the complete visual direction for this topic: palette,
-                  typography, motifs, safe margins, reserved logo area, and
-                  what to avoid. Save it, then update the draft from the
-                  current profile to apply it to new prompts and images.
+                  typography, motifs, safe margins, and what to avoid. Save it,
+                  then update the draft from the current profile to apply that
+                  art direction. Logo settings below apply directly to the next
+                  image batch and do not require regenerating the script.
                 </p>
+                <BrandOverlayEditor
+                  overlay={profile.brandOverlay}
+                  topicId={topicId}
+                  secret={secret}
+                  disabled={Boolean(busy)}
+                  uploading={busy === "brand"}
+                  onChange={updateBrandOverlay}
+                  onUpload={handleUploadBrandAsset}
+                />
                 <ListField
                   key={profile.brandPersonality.join("|")}
                   label="Brand personality (comma-separated)"
@@ -1352,7 +1470,11 @@ export function CreativeDraftWorkspace({
                     <input type="number" min="0" max="10" value={profile.maxEmojis} onChange={(event) => updateProfile({ maxEmojis: Number(event.target.value) })} />
                   </label>
                 </div>
-                <TextAreaField label="Call-to-action style" value={profile.callToActionStyle} onChange={(callToActionStyle) => updateProfile({ callToActionStyle })} rows={2} />
+                <TextAreaField label="CTA tone and wording" value={profile.callToActionStyle} onChange={(callToActionStyle) => updateProfile({ callToActionStyle })} rows={2} />
+                <p className={styles.profileGuideHint}>
+                  The conversion goal defines the action; this field defines
+                  only its tone and wording.
+                </p>
                 <SupportingCharactersEditor
                   slots={characterSlots}
                   topicId={topicId}
@@ -1367,7 +1489,7 @@ export function CreativeDraftWorkspace({
                 <button className={styles.secondaryButton} type="button" disabled={Boolean(busy) || !profileDirty} onClick={handleSaveProfile}>
                   {busy === "profile" ? "Saving profile…" : "Save creative profile"}
                 </button>
-              </div>
+              </fieldset>
             </details>
 
             <section className={styles.section}>
@@ -1527,6 +1649,7 @@ export function CreativeDraftWorkspace({
                     }
                     keyFacts={workspace.brief.keyFacts}
                     profileLanguage={workspace.brief.profileSnapshot.language}
+                    conversionGoal={workspace.brief.profileSnapshot.conversionGoal}
                     characterRoster={characterRosterFromSlots(characterSlots)}
                     onChange={(next) => {
                       setEditableDraft(next);
@@ -1677,11 +1800,19 @@ export function CreativeDraftWorkspace({
                             A {imageQualityLabel(returnedImageQuality).toLowerCase()} batch already exists for this draft. Generate this {imageQualityLabel(selectedImageQuality).toLowerCase()} variant without changing it.
                           </p>
                         ) : null}
+                        {profileDirty ? (
+                          <p className={styles.assetVariantHint}>
+                            Save the creative profile first to apply the selected
+                            logo and placement to this image batch.
+                          </p>
+                        ) : null}
                       </div>
                       <button
                         type="button"
                         className={styles.primaryButton}
-                        disabled={Boolean(busy) || Boolean(assetBusy)}
+                        disabled={
+                          Boolean(busy) || Boolean(assetBusy) || profileDirty
+                        }
                         onClick={handleGenerateImages}
                       >
                         {busy === "images" ? "Submitting images..." : "Generate images"}
@@ -1743,7 +1874,10 @@ export function CreativeDraftWorkspace({
                           type="button"
                           className={styles.primaryButton}
                           disabled={
-                            Boolean(busy) || Boolean(assetBusy) || assetsPending
+                            Boolean(busy) ||
+                            Boolean(assetBusy) ||
+                            assetsPending ||
+                            profileDirty
                           }
                           onClick={handleGenerateNextImageVersion}
                         >
@@ -1781,10 +1915,12 @@ export function CreativeDraftWorkspace({
                             format={activeDraft.format}
                             outputWidth={currentAssetBatch.width}
                             outputHeight={currentAssetBatch.height}
+                            totalSlides={currentAssetBatch.totalAssets}
                             busyAction={assetBusy}
                             readOnly={
                               viewingHistoricalDraft ||
                               activeDraft.status !== "approved" ||
+                              profileDirty ||
                               dirty ||
                               currentAssetBatch.status === "stale" ||
                               currentAssetBatch.draftVersion !== activeDraft.version
@@ -1950,11 +2086,25 @@ function HistoricalDraftDetails({
                 value={unit.headline}
                 rows={2}
               />
+              {unit.subheadline ? (
+                <ReadOnlyDraftField
+                  label="Subheadline"
+                  value={unit.subheadline}
+                  rows={2}
+                />
+              ) : null}
               {unit.body ? (
                 <ReadOnlyDraftField
                   label="Supporting text"
                   value={unit.body}
                   rows={3}
+                />
+              ) : null}
+              {unit.continuationCue ? (
+                <ReadOnlyDraftField
+                  label="Continuation cue"
+                  value={unit.continuationCue}
+                  rows={2}
                 />
               ) : null}
               <ReadOnlyDraftField
@@ -2060,6 +2210,7 @@ function CreativeAssetCard({
   format,
   outputWidth,
   outputHeight,
+  totalSlides,
   busyAction,
   readOnly = false,
   onRegenerate,
@@ -2069,6 +2220,7 @@ function CreativeAssetCard({
   format: CreativeFormat;
   outputWidth: number;
   outputHeight: number;
+  totalSlides: number;
   busyAction?: string;
   readOnly?: boolean;
   onRegenerate: (assetId: string, prompt: string) => void;
@@ -2078,6 +2230,10 @@ function CreativeAssetCard({
   const isPending = asset.status === "queued" || asset.status === "generating";
   const isBusy = busyAction?.endsWith(asset.id) ?? false;
   const label = format === "meme" ? "Meme" : `Slide ${asset.unitOrder}`;
+  const carouselPaginationText =
+    format === "carousel"
+      ? carouselPaginationPreview(asset, totalSlides)
+      : undefined;
 
   return (
     <article className={styles.assetCard}>
@@ -2122,9 +2278,16 @@ function CreativeAssetCard({
       </div>
 
       <div className={styles.expectedText}>
-        <span>Text that must appear exactly</span>
+        <span>Text requested exactly from the image model</span>
         <p>{asset.expectedText}</p>
       </div>
+
+      {carouselPaginationText ? (
+        <div className={styles.expectedText}>
+          <span>Deterministic carousel pagination · fitted automatically</span>
+          <p>{carouselPaginationText}</p>
+        </div>
+      ) : null}
 
       {asset.expectedText.length > 140 ? (
         <div className={styles.assetTextWarning}>
@@ -2197,6 +2360,16 @@ function CreativeAssetCard({
       </footer>
     </article>
   );
+}
+
+function carouselPaginationPreview(
+  asset: CreativeGeneratedAsset,
+  totalSlides: number,
+): string {
+  const progress = `${asset.unitOrder}/${totalSlides}`;
+  if (asset.unitOrder >= totalSlides) return progress;
+  const cue = asset.unitSnapshot.continuationCue?.trim();
+  return cue ? `${progress} · ${cue} →` : progress;
 }
 
 function BriefView({
@@ -2299,6 +2472,7 @@ function DraftEditor({
   qualityReviewIsCurrent,
   keyFacts,
   profileLanguage,
+  conversionGoal,
   characterRoster,
   onChange,
 }: {
@@ -2309,6 +2483,7 @@ function DraftEditor({
   qualityReviewIsCurrent: boolean;
   keyFacts: CreativeKeyFact[];
   profileLanguage: string;
+  conversionGoal: CreativeProfile["conversionGoal"];
   characterRoster: CreativeCharacterRosterEntry[];
   onChange: (draft: EditableCreativeDraft) => void;
 }) {
@@ -2317,6 +2492,7 @@ function DraftEditor({
     format,
     keyFacts,
     profileLanguage,
+    conversionGoal,
   );
   const qualityReviewResolvedByCurrentValidation = Boolean(
     qualityReviewIsCurrent &&
@@ -2329,7 +2505,12 @@ function DraftEditor({
   );
 
   function updateUnit(index: number, unit: CreativeUnit) {
-    const units = draft.units.map((current, candidate) => candidate === index ? unit : current);
+    const units = normalizeContinuationCues(
+      draft.units.map((current, candidate) =>
+        candidate === index ? unit : current,
+      ),
+      format,
+    );
     onChange({ ...draft, units });
   }
 
@@ -2338,13 +2519,25 @@ function DraftEditor({
     if (destination < 0 || destination >= draft.units.length) return;
     const units = [...draft.units];
     [units[index], units[destination]] = [units[destination]!, units[index]!];
-    onChange({ ...draft, units: units.map((unit, position) => ({ ...unit, order: position + 1 })) });
+    onChange({
+      ...draft,
+      units: normalizeContinuationCues(
+        units.map((unit, position) => ({ ...unit, order: position + 1 })),
+        format,
+      ),
+    });
   }
 
   function addSlide() {
     if (format !== "carousel" || draft.units.length >= 8) return;
-    const currentArc = getPreferredCarouselArc(draft.units.length);
-    const nextArc = getPreferredCarouselArc(draft.units.length + 1);
+    const currentArc = getPreferredCarouselArc(
+      draft.units.length,
+      conversionGoal,
+    );
+    const nextArc = getPreferredCarouselArc(
+      draft.units.length + 1,
+      conversionGoal,
+    );
     const followsPreferredArc = Boolean(
       currentArc &&
         draft.units.every(
@@ -2374,20 +2567,29 @@ function DraftEditor({
     ];
     onChange({
       ...draft,
-      units: inserted.map((candidate, index) =>
-        withCarouselOrderAndPreferredGoal(
-          candidate,
-          index,
-          followsPreferredArc ? nextArc?.[index] : undefined,
+      units: normalizeContinuationCues(
+        inserted.map((candidate, index) =>
+          withCarouselOrderAndPreferredGoal(
+            candidate,
+            index,
+            followsPreferredArc ? nextArc?.[index] : undefined,
+          ),
         ),
+        format,
       ),
     });
   }
 
   function removeSlide(index: number) {
     if (format !== "carousel" || draft.units.length <= 3) return;
-    const currentArc = getPreferredCarouselArc(draft.units.length);
-    const nextArc = getPreferredCarouselArc(draft.units.length - 1);
+    const currentArc = getPreferredCarouselArc(
+      draft.units.length,
+      conversionGoal,
+    );
+    const nextArc = getPreferredCarouselArc(
+      draft.units.length - 1,
+      conversionGoal,
+    );
     const followsPreferredArc = Boolean(
       currentArc &&
         draft.units.every(
@@ -2397,15 +2599,18 @@ function DraftEditor({
     );
     onChange({
       ...draft,
-      units: draft.units
-        .filter((_, candidate) => candidate !== index)
-        .map((candidate, position) =>
-          withCarouselOrderAndPreferredGoal(
-            candidate,
-            position,
-            followsPreferredArc ? nextArc?.[position] : undefined,
-          ),
+      units: normalizeContinuationCues(
+        draft.units
+          .filter((_, candidate) => candidate !== index)
+          .map((candidate, position) =>
+            withCarouselOrderAndPreferredGoal(
+              candidate,
+              position,
+              followsPreferredArc ? nextArc?.[position] : undefined,
+            ),
         ),
+        format,
+      ),
     });
   }
 
@@ -2415,7 +2620,9 @@ function DraftEditor({
       <div className={styles.fieldGrid}>
         <TextAreaField label="Caption" value={draft.caption} onChange={(caption) => onChange({ ...draft, caption })} rows={5} />
         <div>
-          <TextAreaField label="Call to action (optional)" value={draft.callToAction ?? ""} onChange={(callToAction) => onChange({ ...draft, callToAction })} rows={2} />
+          {format === "meme" ? (
+            <TextAreaField label="General CTA (optional)" value={draft.callToAction ?? ""} onChange={(callToAction) => onChange({ ...draft, callToAction })} rows={2} />
+          ) : null}
           <ListField key={draft.hashtags.join("|")} label="Hashtags (comma-separated)" values={draft.hashtags} onChange={(hashtags) => onChange({ ...draft, hashtags })} />
         </div>
       </div>
@@ -2568,11 +2775,27 @@ function DraftEditor({
               </div>
             ) : null}
             <TextField label="On-image headline" value={unit.headline} onChange={(headline) => updateUnit(index, { ...unit, headline })} />
+            <TextField
+              label="Subheadline (optional)"
+              value={unit.subheadline ?? ""}
+              onChange={(subheadline) =>
+                updateUnit(index, { ...unit, subheadline })
+              }
+            />
             <TextAreaField label="Supporting text (optional)" value={unit.body ?? ""} onChange={(body) => updateUnit(index, { ...unit, body })} rows={2} />
+            {format === "carousel" && index < draft.units.length - 1 ? (
+              <TextField
+                label="Continuation cue (optional)"
+                value={unit.continuationCue ?? ""}
+                onChange={(continuationCue) =>
+                  updateUnit(index, { ...unit, continuationCue })
+                }
+              />
+            ) : null}
             {format === "carousel" &&
             (index === draft.units.length - 1 || unit.ctaQuestion) ? (
               <TextField
-                label="Visible CTA question (optional)"
+                label="Visible CTA (optional)"
                 value={unit.ctaQuestion ?? ""}
                 onChange={(ctaQuestion) =>
                   updateUnit(index, { ...unit, ctaQuestion })
@@ -2637,6 +2860,315 @@ function TextField({ label, value, onChange }: { label: string; value: string; o
 
 function TextAreaField({ label, value, onChange, rows }: { label: string; value: string; onChange: (value: string) => void; rows: number }) {
   return <label className={styles.field}><span>{label}</span><textarea value={value} rows={rows} onChange={(event) => onChange(event.target.value)} /></label>;
+}
+
+function BrandOverlayEditor({
+  overlay,
+  topicId,
+  secret,
+  disabled,
+  uploading,
+  onChange,
+  onUpload,
+}: {
+  overlay: CreativeProfile["brandOverlay"];
+  topicId: string;
+  secret: string;
+  disabled: boolean;
+  uploading: boolean;
+  onChange: (values: Partial<CreativeProfile["brandOverlay"]>) => void;
+  onUpload: (file: File) => void;
+}) {
+  const hasAsset = Boolean(overlay.assetId);
+
+  return (
+    <section className={styles.brandOverlayPanel} aria-labelledby="brand-logo-title">
+      <header className={styles.brandOverlayHeader}>
+        <div>
+          <strong id="brand-logo-title">Brand logo</strong>
+          <p>
+            Upload a transparent PNG and choose where it will be composited after
+            image generation. The prompt reserves a slot calculated from the
+            logo proportions, inset, backdrop, and safety buffer; text can use
+            the open lane beside it and the full canvas beyond it. Save the
+            profile before generating images.
+          </p>
+        </div>
+        <label className={styles.brandEnabledToggle}>
+          <input
+            type="checkbox"
+            checked={overlay.enabled}
+            disabled={disabled || !hasAsset}
+            onChange={(event) => onChange({ enabled: event.target.checked })}
+          />
+          <span>Enabled</span>
+        </label>
+      </header>
+
+      <div className={styles.brandOverlayGrid}>
+        <div className={styles.brandAssetCard}>
+          <div className={styles.brandAssetPreview}>
+            {overlay.assetId ? (
+              <BrandAssetPreview
+                key={overlay.assetId}
+                topicId={topicId}
+                secret={secret}
+                assetId={overlay.assetId}
+                fileName={overlay.asset?.fileName ?? "Brand logo"}
+                width={overlay.asset?.width ?? 320}
+                height={overlay.asset?.height ?? 160}
+              />
+            ) : (
+              <div className={styles.brandAssetPlaceholder}>PNG logo</div>
+            )}
+          </div>
+          {overlay.asset ? (
+            <div className={styles.brandAssetMeta} title={overlay.asset.fileName}>
+              <strong>{overlay.asset.fileName}</strong>
+              <span>
+                {overlay.asset.width}×{overlay.asset.height} · PNG
+              </span>
+            </div>
+          ) : (
+            <p className={styles.brandAssetHint}>
+              A transparent background gives the cleanest result.
+            </p>
+          )}
+          <label
+            className={`${styles.brandUpload} ${
+              disabled ? styles.brandUploadDisabled : ""
+            }`}
+          >
+            <input
+              type="file"
+              accept="image/png,.png"
+              disabled={disabled}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.currentTarget.value = "";
+                if (file) onUpload(file);
+              }}
+            />
+            {uploading
+              ? "Uploading logo…"
+              : overlay.assetId
+                ? "Replace PNG"
+                : "Upload PNG"}
+          </label>
+          {!hasAsset ? (
+            <small className={styles.brandEnableHint}>
+              Upload a logo before enabling the overlay.
+            </small>
+          ) : null}
+        </div>
+
+        <fieldset className={styles.brandControls} disabled={disabled}>
+          <div className={styles.brandControlGroup}>
+            <span className={styles.brandControlLabel}>Apply logo to</span>
+            <div className={styles.brandSegmented} role="group" aria-label="Logo scope">
+              {CREATIVE_BRAND_SCOPES.map((scope) => (
+                <button
+                  type="button"
+                  key={scope}
+                  className={`${styles.brandOptionButton} ${
+                    overlay.scope === scope ? styles.brandOptionSelected : ""
+                  }`}
+                  aria-pressed={overlay.scope === scope}
+                  onClick={() => onChange({ scope })}
+                >
+                  {scope === "first-unit" ? "First unit" : "All units"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className={styles.brandControlGroup}>
+            <span className={styles.brandControlLabel}>
+              Placement · {capitalize(overlay.placement.replace("-", " "))}
+            </span>
+            <div
+              className={styles.brandPlacementGrid}
+              role="group"
+              aria-label="Logo placement"
+            >
+              {CREATIVE_BRAND_PLACEMENTS.map((placement) => (
+                <button
+                  type="button"
+                  key={placement}
+                  data-placement={placement}
+                  className={`${styles.brandPlacementButton} ${
+                    overlay.placement === placement
+                      ? styles.brandPlacementSelected
+                      : ""
+                  }`}
+                  aria-label={capitalize(placement.replace("-", " "))}
+                  aria-pressed={overlay.placement === placement}
+                  title={capitalize(placement.replace("-", " "))}
+                  onClick={() => onChange({ placement })}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className={styles.brandRangeGrid}>
+            <label className={styles.brandRange}>
+              <span>
+                Logo size <strong>{overlay.sizePercent}%</strong>
+              </span>
+              <input
+                type="range"
+                min="5"
+                max="40"
+                value={overlay.sizePercent}
+                onChange={(event) =>
+                  onChange({ sizePercent: Number(event.target.value) })
+                }
+              />
+            </label>
+            <label className={styles.brandRange}>
+              <span>
+                Edge inset <strong>{overlay.insetPercent}%</strong>
+              </span>
+              <input
+                type="range"
+                min="0"
+                max="20"
+                value={overlay.insetPercent}
+                onChange={(event) =>
+                  onChange({ insetPercent: Number(event.target.value) })
+                }
+              />
+            </label>
+          </div>
+
+          <div className={styles.brandControlGroup}>
+            <span className={styles.brandControlLabel}>Backdrop</span>
+            <div
+              className={styles.brandSegmented}
+              role="group"
+              aria-label="Logo backdrop"
+            >
+              {CREATIVE_BRAND_BACKDROP_MODES.map((backdropMode) => (
+                <button
+                  type="button"
+                  key={backdropMode}
+                  className={`${styles.brandOptionButton} ${
+                    overlay.backdropMode === backdropMode
+                      ? styles.brandOptionSelected
+                      : ""
+                  }`}
+                  aria-pressed={overlay.backdropMode === backdropMode}
+                  onClick={() => onChange({ backdropMode })}
+                >
+                  {capitalize(backdropMode)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {overlay.backdropMode === "solid" ? (
+            <div className={styles.brandBackdropSettings}>
+              <label className={styles.brandColorControl}>
+                <span>Color</span>
+                <span className={styles.brandColorPicker}>
+                  <input
+                    type="color"
+                    value={overlay.backdropColor}
+                    aria-label="Backdrop color"
+                    onChange={(event) =>
+                      onChange({ backdropColor: event.target.value.toUpperCase() })
+                    }
+                  />
+                  <code>{overlay.backdropColor.toUpperCase()}</code>
+                </span>
+              </label>
+              <label className={styles.brandRange}>
+                <span>
+                  Opacity <strong>{overlay.backdropOpacity}%</strong>
+                </span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={overlay.backdropOpacity}
+                  onChange={(event) =>
+                    onChange({ backdropOpacity: Number(event.target.value) })
+                  }
+                />
+              </label>
+            </div>
+          ) : (
+            <p className={styles.brandBackdropHint}>
+              The logo will be placed without a background panel.
+            </p>
+          )}
+        </fieldset>
+      </div>
+    </section>
+  );
+}
+
+function BrandAssetPreview({
+  topicId,
+  secret,
+  assetId,
+  fileName,
+  width,
+  height,
+}: {
+  topicId: string;
+  secret: string;
+  assetId: string;
+  fileName: string;
+  width: number;
+  height: number;
+}) {
+  const [source, setSource] = useState<string>();
+  const [unavailable, setUnavailable] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let objectUrl: string | undefined;
+
+    fetch(
+      topicUrl(
+        `/api/radar/creative-profile/brand-assets/${encodeURIComponent(assetId)}`,
+        topicId,
+      ),
+      {
+        cache: "no-store",
+        signal: controller.signal,
+        headers: { Authorization: `Bearer ${secret.trim()}` },
+      },
+    )
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Brand logo preview unavailable");
+        objectUrl = URL.createObjectURL(await response.blob());
+        setSource(objectUrl);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setUnavailable(true);
+      });
+
+    return () => {
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [assetId, secret, topicId]);
+
+  return source ? (
+    <Image
+      src={source}
+      alt={fileName}
+      width={width}
+      height={height}
+      unoptimized
+    />
+  ) : (
+    <div className={styles.brandAssetPlaceholder}>
+      {unavailable ? "Preview unavailable" : "Loading preview…"}
+    </div>
+  );
 }
 
 function SupportingCharactersEditor({
@@ -2968,13 +3500,29 @@ function editableFromDraft(draft: CreativeDraft): EditableCreativeDraft {
     ...(draft.callToAction ? { callToAction: draft.callToAction } : {}),
     hashtags: [...draft.hashtags],
     altText: draft.altText,
-    units: draft.units.map((unit) => ({
-      ...unit,
-      factIds: [...unit.factIds],
-      characterIds: [...(unit.characterIds ?? [])],
-    })),
+    units: normalizeContinuationCues(
+      draft.units.map((unit) => ({
+        ...unit,
+        factIds: [...unit.factIds],
+        characterIds: [...(unit.characterIds ?? [])],
+      })),
+      draft.format,
+    ),
     outputAspectRatio: outputAspectRatioForDraft(draft),
   };
+}
+
+function normalizeContinuationCues(
+  units: CreativeUnit[],
+  format: CreativeFormat,
+): CreativeUnit[] {
+  return units.map((unit, index) =>
+    format === "carousel" && index < units.length - 1
+      ? unit
+      : unit.continuationCue === undefined
+        ? unit
+        : { ...unit, continuationCue: undefined },
+  );
 }
 
 function withCarouselOrderAndPreferredGoal(

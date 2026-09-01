@@ -196,9 +196,12 @@
 
 .profileBody {
   display: grid;
+  min-width: 0;
   gap: space(4);
+  margin: 0;
   padding: density(5);
-  border-top: 1px solid palette(surface-light);
+  border: 0;
+  border-top: border(1, palette(surface-light), solid);
 }
 
 .profileGuideHint {
@@ -207,6 +210,344 @@
   @ds-typo (caption);
   font-size: 10px;
   line-height: 1.45;
+}
+
+.brandOverlayPanel {
+  @ds-surface(flat neutral density(4) radius(3) shadow(1));
+  display: grid;
+  gap: density(4);
+  padding: density(4);
+  border: border(1, palette(surface-dark), solid);
+  border-radius: radius(3);
+  background: palette(surface-light);
+  box-shadow: shadow(1);
+}
+
+.brandOverlayHeader {
+  display: flex;
+  align-items: xs(stretch) sm(center);
+  justify-content: space-between;
+  flex-direction: xs(column) sm(row);
+  gap: density(3);
+}
+
+.brandOverlayHeader strong {
+  display: block;
+  color: palette(primary-dark);
+  @ds-typo(caption);
+  font-weight: 750;
+}
+
+.brandOverlayHeader p {
+  max-width: 660px;
+  margin: density(1) 0 0;
+  color: palette(tertiary-dark);
+  @ds-typo(caption);
+  line-height: 1.45;
+}
+
+.brandEnabledToggle {
+  @ds-surface(flat light density(3) radius(2));
+  display: inline-flex;
+  width: max-content;
+  align-items: center;
+  gap: density(2);
+  padding: density(2) density(3);
+  border: border(1, palette(surface-dark), solid);
+  border-radius: radius(2);
+  background: palette(light-light);
+  color: palette(primary-dark);
+  @ds-typo(caption);
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.brandEnabledToggle input,
+.brandRange input {
+  accent-color: palette(primary-main);
+}
+
+.brandEnabledToggle:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.brandOverlayGrid {
+  display: grid;
+  grid-template-columns: xs(1fr) md(minmax(180px, 0.58fr) minmax(0, 1.42fr));
+  gap: density(4);
+  align-items: start;
+}
+
+.brandAssetCard {
+  @ds-surface(flat light density(3) radius(2));
+  display: grid;
+  min-width: 0;
+  gap: density(3);
+  padding: density(3);
+  border: border(1, palette(surface-dark), solid);
+  border-radius: radius(2);
+  background: palette(light-light);
+}
+
+.brandAssetPreview {
+  display: grid;
+  min-height: density(14);
+  overflow: hidden;
+  place-items: center;
+  padding: density(4);
+  border: border(1, palette(surface-light), solid);
+  border-radius: radius(2);
+  background:
+    linear-gradient(45deg, palette(surface-light) 25%, transparent 25%),
+    linear-gradient(-45deg, palette(surface-light) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, palette(surface-light) 75%),
+    linear-gradient(-45deg, transparent 75%, palette(surface-light) 75%),
+    palette(light-light);
+  background-position: 0 0, 0 density(2), density(2) calc(density(2) * -1), calc(density(2) * -1) 0;
+  background-size: density(4) density(4);
+}
+
+.brandAssetPreview img {
+  width: 100%;
+  max-height: density(14);
+  object-fit: contain;
+}
+
+.brandAssetPlaceholder {
+  display: grid;
+  min-height: density(10);
+  place-items: center;
+  color: palette(tertiary-main);
+  @ds-typo(caption);
+  text-align: center;
+}
+
+.brandAssetMeta {
+  display: grid;
+  min-width: 0;
+  gap: density(1);
+}
+
+.brandAssetMeta strong {
+  overflow: hidden;
+  color: palette(primary-dark);
+  @ds-typo(caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brandAssetMeta span,
+.brandAssetHint,
+.brandEnableHint,
+.brandBackdropHint {
+  margin: 0;
+  color: palette(tertiary-dark);
+  @ds-typo(caption);
+  line-height: 1.45;
+}
+
+.brandAssetHint,
+.brandEnableHint {
+  font-size: 10px;
+}
+
+.brandUpload {
+  @ds-button(outlined primary density(3) radius(2));
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  min-height: density(7);
+  align-items: center;
+  justify-content: center;
+  padding: 0 density(4);
+  border-radius: radius(2);
+  @ds-typo(caption);
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.brandUpload input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.brandUpload:focus-within {
+  outline: 2px solid palette(primary-main);
+  outline-offset: density(1);
+}
+
+.brandUploadDisabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.brandControls {
+  display: grid;
+  min-width: 0;
+  gap: density(4);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.brandControls:disabled {
+  opacity: 0.65;
+}
+
+.brandControlGroup,
+.brandRange,
+.brandColorControl {
+  display: grid;
+  gap: density(2);
+}
+
+.brandControlLabel,
+.brandRange > span,
+.brandColorControl > span:first-child {
+  color: palette(primary-dark);
+  @ds-typo(caption);
+  font-weight: 750;
+}
+
+.brandSegmented {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: density(2);
+}
+
+.brandOptionButton {
+  @ds-button(outlined neutral density(2) radius(2));
+  min-height: density(7);
+  justify-content: center;
+  padding: 0 density(3);
+  border-radius: radius(2);
+  @ds-typo(caption);
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.brandOptionSelected {
+  @ds-button(contained primary density(2) radius(2));
+  border: border(1, palette(primary-main), solid);
+}
+
+.brandPlacementGrid {
+  display: grid;
+  width: min(100%, 220px);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: density(2);
+}
+
+.brandPlacementButton {
+  @ds-button(outlined neutral density(2) radius(2));
+  position: relative;
+  min-height: density(7);
+  padding: 0;
+  border-radius: radius(2);
+  cursor: pointer;
+}
+
+.brandPlacementButton::after {
+  position: absolute;
+  width: density(2);
+  height: density(2);
+  border-radius: radius(full);
+  background: palette(tertiary-main);
+  content: "";
+}
+
+.brandPlacementButton[data-placement^="top"]::after {
+  top: density(2);
+}
+
+.brandPlacementButton[data-placement^="center"]::after {
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.brandPlacementButton[data-placement^="bottom"]::after {
+  bottom: density(2);
+}
+
+.brandPlacementButton[data-placement$="left"]::after {
+  left: density(2);
+}
+
+.brandPlacementButton[data-placement$="center"]::after {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.brandPlacementButton[data-placement$="right"]::after {
+  right: density(2);
+}
+
+.brandPlacementButton[data-placement="center"]::after {
+  transform: translate(-50%, -50%);
+}
+
+.brandPlacementSelected {
+  @ds-button(contained primary density(2) radius(2));
+  border: border(1, palette(primary-main), solid);
+}
+
+.brandPlacementSelected::after {
+  background: palette(primary-contrast);
+}
+
+.brandRangeGrid,
+.brandBackdropSettings {
+  display: grid;
+  grid-template-columns: xs(1fr) sm(repeat(2, minmax(0, 1fr)));
+  gap: density(4);
+}
+
+.brandRange > span {
+  display: flex;
+  justify-content: space-between;
+  gap: density(3);
+}
+
+.brandRange input {
+  width: 100%;
+}
+
+.brandColorPicker {
+  @ds-input(outlined neutral density(2) radius(2));
+  display: flex;
+  min-height: density(7);
+  align-items: center;
+  gap: density(3);
+  padding: density(2) density(3);
+  border-radius: radius(2);
+  background: palette(light-light);
+}
+
+.brandColorPicker input {
+  width: density(7);
+  height: density(6);
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: radius(1);
+  background: transparent;
+  cursor: pointer;
+}
+
+.brandColorPicker code {
+  color: palette(dark-main);
+  @ds-typo(code);
+}
+
+.brandBackdropHint {
+  padding: density(3);
+  border: border(1, palette(surface-dark), solid);
+  border-radius: radius(2);
+  background: palette(light-light);
 }
 
 .charactersSection {

@@ -142,6 +142,357 @@ test("repairs whitespace inside grouped numbers before factual validation", () =
   );
 });
 
+test("blocks an unsupported number introduced by a continuation cue", () => {
+  const withUnsupportedCue = structuredClone(draft);
+  withUnsupportedCue.units[0]!.continuationCue =
+    "Why the result rises by 80%";
+
+  const issues = deterministicCreativeQualityIssues(
+    withUnsupportedCue,
+    "carousel",
+    facts,
+    "English",
+  );
+
+  assert.ok(
+    issues.some(
+      (issue) =>
+        issue.code === "UNSUPPORTED_NUMBER" && issue.unitOrder === 1,
+    ),
+  );
+});
+
+test("grounds a continuation cue against the current and next slide facts", () => {
+  const withNextSlideEvidence = structuredClone(draft);
+  const factsWithNextSlideEvidence: CreativeKeyFact[] = [
+    ...facts,
+    {
+      id: "fact-2",
+      statement: "The system guarantees consistency for this specific check.",
+      sourceExcerpt:
+        "The system guarantees consistency for this specific check.",
+    },
+  ];
+  withNextSlideEvidence.units[0]!.headline = "Consistency moves into CI";
+  withNextSlideEvidence.units[0]!.continuationCue =
+    "Why this check guarantees consistency";
+  withNextSlideEvidence.units.splice(1, 0, {
+    order: 2,
+    type: "carousel-slide",
+    role: "content",
+    editorialGoal: "explain",
+    viewerQuestion: "What does the check establish?",
+    headline: "This check guarantees consistency",
+    body: "The guarantee applies to this specific check.",
+    visualDirection: "A passing CI check.",
+    factIds: ["fact-2"],
+    assetRequest: "generated-image",
+    aspectRatio: "4:5",
+    characterIds: [],
+  });
+  withNextSlideEvidence.units[2]!.order = 3;
+
+  const repaired = repairDeterministicCreativeCopy(
+    withNextSlideEvidence,
+    "carousel",
+    factsWithNextSlideEvidence,
+    "English",
+  );
+  assert.equal(
+    repaired.units[0]!.continuationCue,
+    "Why this check guarantees consistency.",
+  );
+  assert.equal(
+    deterministicCreativeQualityIssues(
+      repaired,
+      "carousel",
+      factsWithNextSlideEvidence,
+      "English",
+    ).some(
+      (issue) =>
+        issue.code === "UNSUPPORTED_ABSOLUTE" && issue.unitOrder === 1,
+    ),
+    false,
+  );
+});
+
+test("removes a generic follow-for-more CTA instead of publishing engagement bait", () => {
+  const withGenericFollowCta: GeneratedCreativeDraft = {
+    ...draft,
+    callToAction: "Follow us for more.",
+  };
+
+  assert.ok(
+    deterministicCreativeQualityIssues(
+      withGenericFollowCta,
+      "carousel",
+      facts,
+      "English",
+    ).some((issue) => issue.code === "GENERIC_FOLLOW_CTA"),
+  );
+
+  const repaired = repairDeterministicCreativeCopy(
+    withGenericFollowCta,
+    "carousel",
+    facts,
+    "English",
+  );
+  assert.equal(repaired.callToAction, undefined);
+});
+
+test("keeps one visible carousel CTA and removes generic closing follow bait", () => {
+  const withStackedCtas = structuredClone(draft);
+  withStackedCtas.callToAction = "Read the findings before your next review.";
+  withStackedCtas.units.at(-1)!.editorialGoal = "conclude";
+  withStackedCtas.units.at(-1)!.ctaQuestion =
+    "Follow this account for more updates.";
+
+  assert.ok(
+    deterministicCreativeQualityIssues(
+      withStackedCtas,
+      "carousel",
+      facts,
+      "English",
+    ).some(
+      (issue) =>
+        issue.code === "GENERIC_FOLLOW_CTA" && issue.unitOrder === 2,
+    ),
+  );
+
+  const withoutGenericClosingCta = repairDeterministicCreativeCopy(
+    withStackedCtas,
+    "carousel",
+    facts,
+    "English",
+  );
+  assert.equal(withoutGenericClosingCta.callToAction, withStackedCtas.callToAction);
+  assert.equal(withoutGenericClosingCta.units.at(-1)!.ctaQuestion, undefined);
+
+  const withOneBenefitLedCta = structuredClone(draft);
+  withOneBenefitLedCta.callToAction = "Comment with your experience.";
+  withOneBenefitLedCta.units.at(-1)!.editorialGoal = "conclude";
+  withOneBenefitLedCta.units.at(-1)!.ctaQuestion =
+    "Follow for practical explanations of Canadian policy changes.";
+  const repaired = repairDeterministicCreativeCopy(
+    withOneBenefitLedCta,
+    "carousel",
+    facts,
+    "English",
+  );
+  assert.equal(repaired.callToAction, undefined);
+  assert.equal(
+    repaired.units.at(-1)!.ctaQuestion,
+    withOneBenefitLedCta.units.at(-1)!.ctaQuestion,
+  );
+});
+
+test("normalizes one carousel CTA to the final slide for every conversion goal", () => {
+  const cases = [
+    ["followers", "Follow for practical Canadian policy explanations."],
+    ["discussion", "Which finding matters most in your review?"],
+    ["saves", "Save this guide for your next housing review."],
+    ["shares", "Share this with someone comparing housing costs."],
+  ] as const;
+
+  cases.forEach(([goal, cta]) => {
+    const candidate = structuredClone(draft);
+    candidate.callToAction = cta;
+    candidate.units.at(-1)!.editorialGoal =
+      goal === "discussion" ? "debate" : "conclude";
+    delete candidate.units.at(-1)!.ctaQuestion;
+
+    const repaired = repairDeterministicCreativeCopy(
+      candidate,
+      "carousel",
+      facts,
+      "English",
+      goal,
+    );
+    assert.equal(repaired.callToAction, undefined);
+    if (goal === "discussion") {
+      assert.match(repaired.units.at(-1)!.ctaQuestion ?? "", /\?$/u);
+    } else {
+      assert.equal(repaired.units.at(-1)!.ctaQuestion, cta);
+    }
+    assert.equal(
+      deterministicCreativeQualityIssues(
+        repaired,
+        "carousel",
+        facts,
+        "English",
+        goal,
+      ).some((issue) => issue.code === "CTA_GOAL_MISMATCH"),
+      false,
+    );
+  });
+});
+
+test("removes recognized competing and stacked actions without inventing a CTA", () => {
+  const competing = structuredClone(draft);
+  competing.units.at(-1)!.editorialGoal = "conclude";
+  competing.units.at(-1)!.ctaQuestion = "Comment with your experience.";
+  const repairedCompeting = repairDeterministicCreativeCopy(
+    competing,
+    "carousel",
+    facts,
+    "English",
+    "followers",
+  );
+  assert.equal(repairedCompeting.units.at(-1)!.ctaQuestion, undefined);
+
+  const stacked = structuredClone(draft);
+  stacked.units.at(-1)!.editorialGoal = "conclude";
+  stacked.units.at(-1)!.ctaQuestion =
+    "Share this and tell us what you think.";
+  const repairedStacked = repairDeterministicCreativeCopy(
+    stacked,
+    "carousel",
+    facts,
+    "English",
+    "shares",
+  );
+  assert.equal(repairedStacked.units.at(-1)!.ctaQuestion, undefined);
+
+  const missing = structuredClone(draft);
+  missing.units.at(-1)!.editorialGoal = "conclude";
+  delete missing.units.at(-1)!.ctaQuestion;
+  const repairedMissing = repairDeterministicCreativeCopy(
+    missing,
+    "carousel",
+    facts,
+    "English",
+    "followers",
+  );
+  assert.equal(repairedMissing.units.at(-1)!.ctaQuestion, undefined);
+});
+
+test("signals a missing configured conversion CTA without blocking sensitive stories", () => {
+  const missingCarouselCta = structuredClone(draft);
+  missingCarouselCta.units.at(-1)!.editorialGoal = "conclude";
+  delete missingCarouselCta.units.at(-1)!.ctaQuestion;
+
+  const carouselIssue = deterministicCreativeQualityIssues(
+    missingCarouselCta,
+    "carousel",
+    facts,
+    "English",
+    "followers",
+  ).find((issue) => issue.code === "MISSING_CONVERSION_CTA");
+
+  assert.deepEqual(carouselIssue, {
+    code: "MISSING_CONVERSION_CTA",
+    severity: "warning",
+    unitOrder: 2,
+    message:
+      "The followers conversion goal has no CTA on the closing slide. Add one when it is appropriate for the story; omission remains allowed for sensitive coverage.",
+  });
+  assert.deepEqual(
+    getCreativeDraftApprovalState({
+      deterministicIssues: [carouselIssue!],
+    }).blockers,
+    [],
+  );
+
+  const missingMemeCta: GeneratedCreativeDraft = {
+    ...missingCarouselCta,
+    units: [
+      {
+        ...missingCarouselCta.units[0]!,
+        type: "meme-frame",
+        role: "content",
+        editorialGoal: undefined,
+        viewerQuestion: undefined,
+      },
+    ],
+  };
+  const memeIssue = deterministicCreativeQualityIssues(
+    missingMemeCta,
+    "meme",
+    facts,
+    "English",
+    "followers",
+  ).find((issue) => issue.code === "MISSING_CONVERSION_CTA");
+  assert.equal(memeIssue?.severity, "warning");
+  assert.equal(memeIssue?.unitOrder, undefined);
+});
+
+test("does not signal a missing conversion CTA when the correct field has one", () => {
+  const carousel = structuredClone(draft);
+  carousel.units.at(-1)!.editorialGoal = "conclude";
+  carousel.units.at(-1)!.ctaQuestion =
+    "Follow for practical explanations of Canadian policy changes.";
+
+  assert.equal(
+    deterministicCreativeQualityIssues(
+      carousel,
+      "carousel",
+      facts,
+      "English",
+      "followers",
+    ).some((issue) => issue.code === "MISSING_CONVERSION_CTA"),
+    false,
+  );
+});
+
+test("preserves an unrecognized-language CTA for critic review", () => {
+  const french = structuredClone(draft);
+  french.units.at(-1)!.editorialGoal = "conclude";
+  french.units.at(-1)!.ctaQuestion =
+    "Abonnez-vous pour comprendre les changements au Canada.";
+  const repaired = repairDeterministicCreativeCopy(
+    french,
+    "carousel",
+    facts,
+    "French",
+    "followers",
+  );
+  assert.equal(
+    repaired.units.at(-1)!.ctaQuestion,
+    french.units.at(-1)!.ctaQuestion,
+  );
+  assert.equal(
+    deterministicCreativeQualityIssues(
+      repaired,
+      "carousel",
+      facts,
+      "French",
+      "followers",
+    ).some((issue) => issue.code === "CTA_GOAL_MISMATCH"),
+    false,
+  );
+});
+
+test("removes an unrecognized CTA when the matcher supports the profile language", () => {
+  const english = structuredClone(draft);
+  english.units.at(-1)!.editorialGoal = "conclude";
+  english.units.at(-1)!.ctaQuestion = "Review this information later.";
+  const repaired = repairDeterministicCreativeCopy(
+    english,
+    "carousel",
+    facts,
+    "English",
+    "followers",
+  );
+  assert.equal(repaired.units.at(-1)!.ctaQuestion, undefined);
+});
+
+test("never turns a leaked-language conclude CTA into a debate question", () => {
+  const spanish = structuredClone(draft);
+  spanish.units.at(-1)!.editorialGoal = "conclude";
+  spanish.units.at(-1)!.headline = "Una conclusión respaldada";
+  spanish.units.at(-1)!.body = "La fuente establece el dato principal.";
+  spanish.units.at(-1)!.ctaQuestion =
+    "Follow this account for the practical Canadian policy explanations you need.";
+  const repaired = repairDeterministicCreativeCopy(
+    spanish,
+    "carousel",
+    facts,
+    "Spanish",
+    "followers",
+  );
+  assert.equal(repaired.units.at(-1)!.ctaQuestion, undefined);
+});
+
 test("repairs a malformed concept-derived CTA without leaking structural numbers", () => {
   const malformed: GeneratedCreativeDraft = {
     ...draft,

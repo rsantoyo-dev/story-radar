@@ -22,6 +22,24 @@ export const DEFAULT_CREATIVE_IMAGE_QUALITY: CreativeImageQuality = "low";
 export const DEFAULT_CREATIVE_VISUAL_GUIDANCE =
   "Create a clear, modern editorial visual direction appropriate to the topic and audience. Use a focused composition, high legibility, inclusive imagery, and generous negative space. Respect the selected output format and avoid watermarks, unapproved logos, or misleading visual claims.";
 
+export const CREATIVE_CONVERSION_GOALS = [
+  "followers",
+  "discussion",
+  "saves",
+  "shares",
+] as const;
+export type CreativeConversionGoal =
+  (typeof CREATIVE_CONVERSION_GOALS)[number];
+/** Follower conversion is the active default for both profiles and old briefs. */
+export const DEFAULT_CREATIVE_CONVERSION_GOAL: CreativeConversionGoal =
+  "followers";
+
+export function isCreativeConversionGoal(
+  value: unknown,
+): value is CreativeConversionGoal {
+  return CREATIVE_CONVERSION_GOALS.includes(value as CreativeConversionGoal);
+}
+
 export const CREATIVE_TONES = [
   "informative",
   "curious",
@@ -32,6 +50,76 @@ export const CREATIVE_TONES = [
   "somber",
 ] as const;
 export type CreativeTone = (typeof CREATIVE_TONES)[number];
+
+export const CREATIVE_BRAND_PLACEMENTS = [
+  "top-left",
+  "top-center",
+  "top-right",
+  "center-left",
+  "center",
+  "center-right",
+  "bottom-left",
+  "bottom-center",
+  "bottom-right",
+] as const;
+export type CreativeBrandPlacement =
+  (typeof CREATIVE_BRAND_PLACEMENTS)[number];
+
+export const CREATIVE_BRAND_SCOPES = ["first-unit", "all-units"] as const;
+export type CreativeBrandScope = (typeof CREATIVE_BRAND_SCOPES)[number];
+
+export const CREATIVE_BRAND_BACKDROP_MODES = ["none", "solid"] as const;
+export type CreativeBrandBackdropMode =
+  (typeof CREATIVE_BRAND_BACKDROP_MODES)[number];
+
+export type CreativeBrandAsset = {
+  id: string;
+  fileName: string;
+  contentType: "image/png";
+  fileSize: number;
+  width: number;
+  height: number;
+  createdAt: Date;
+};
+
+export type CreativeBrandOverlaySettings = {
+  enabled: boolean;
+  scope: CreativeBrandScope;
+  placement: CreativeBrandPlacement;
+  /** Maximum logo edge as a percentage of the canvas short edge. */
+  sizePercent: number;
+  /** Distance from the selected canvas edge, based on the short edge. */
+  insetPercent: number;
+  backdropMode: CreativeBrandBackdropMode;
+  backdropColor: string;
+  backdropOpacity: number;
+};
+
+export type CreativeBrandOverlay = CreativeBrandOverlaySettings & {
+  assetId?: string;
+  asset?: CreativeBrandAsset;
+};
+
+/**
+ * Server-only immutable input captured for asset composition. Unlike the
+ * browser-facing overlay, this snapshot retains the private R2 object key.
+ */
+export type CreativeBrandOverlaySnapshot = CreativeBrandOverlaySettings & {
+  /** Selects the immutable geometry/composition policy used for this batch. */
+  compositorVersion: 1;
+  asset: CreativeBrandAsset & { objectKey: string; sha256: string };
+};
+
+export const DEFAULT_CREATIVE_BRAND_OVERLAY_SETTINGS = {
+  enabled: false,
+  scope: "first-unit",
+  placement: "top-left",
+  sizePercent: 18,
+  insetPercent: 5,
+  backdropMode: "solid",
+  backdropColor: "#F6F0E4",
+  backdropOpacity: 95,
+} as const satisfies CreativeBrandOverlaySettings;
 
 /**
  * The small, metadata-only roster that may be offered to the script model.
@@ -125,6 +213,7 @@ export type CreativeProfile = {
   platform: string;
   audience: string;
   visualGuidance: string;
+  brandOverlay: CreativeBrandOverlay;
   brandPersonality: string[];
   formality: number;
   humor: number;
@@ -133,6 +222,7 @@ export type CreativeProfile = {
   provocation: number;
   allowEmojis: boolean;
   maxEmojis: number;
+  conversionGoal: CreativeConversionGoal;
   callToActionStyle: string;
   updatedAt: Date;
 };
@@ -234,10 +324,21 @@ export type CreativeUnit = {
   editorialGoal?: CarouselEditorialGoal;
   /** Internal question this slide resolves. It is never rendered as copy. */
   viewerQuestion?: string;
-  /** Optional visible question reserved for the carousel closing slide. */
+  /**
+   * Optional visible CTA reserved for the carousel closing slide. It may be a
+   * question or a concise imperative; the legacy property name is retained so
+   * stored drafts remain compatible.
+   */
   ctaQuestion?: string;
   headline: string;
+  /** Optional secondary line between the headline and supporting copy. */
+  subheadline?: string;
   body?: string;
+  /**
+   * Optional, concrete promise of what the next carousel slide will deliver.
+   * The compact pagination badge supplies progress and direction.
+   */
+  continuationCue?: string;
   visualDirection: string;
   factIds: string[];
   assetRequest: CreativeAssetRequest;
@@ -427,6 +528,8 @@ export type CreativeAssetBatch = {
   promptVersion: string;
   outputAspectRatio: CreativeAspectRatio;
   imageQuality: CreativeImageQuality;
+  /** Opaque identity of the immutable logo plus placement settings. */
+  brandInputHash: string;
   width: number;
   height: number;
   totalAssets: number;

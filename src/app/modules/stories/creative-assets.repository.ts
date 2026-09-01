@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { creativeAssetBatches, creativeAssets } from "@/db/schema";
@@ -13,6 +13,7 @@ import {
   type CreativeAssetGenerationMode,
   type CreativeAssetBatch,
   type CreativeAssetBatchStatus,
+  type CreativeBrandOverlaySnapshot,
   type CreativeCharacterSnapshot,
   type CreativeGeneratedAsset,
   type CreativeImageQuality,
@@ -25,11 +26,14 @@ type GenerationIdentity = {
   promptVersion: string;
   /** Omitted callers use the current new-batch default. */
   imageQuality?: CreativeImageQuality;
+  /** Omitted historical callers resolve to an unbranded batch. */
+  brandInputHash?: string;
 };
 
 type GenerationCompatibility = Pick<GenerationIdentity, "provider" | "model"> & {
   outputAspectRatio: CreativeAspectRatio;
   imageQuality?: CreativeImageQuality;
+  brandInputHash?: string;
 };
 
 type NewAsset = {
@@ -42,6 +46,7 @@ type NewAsset = {
   providerEndpoint: string;
   referenceSnapshot: CreativeCharacterSnapshot[];
   referenceInputHash: string;
+  brandOverlaySnapshot?: CreativeBrandOverlaySnapshot;
 };
 
 export async function findCurrentCreativeAssetBatch(
@@ -50,6 +55,7 @@ export async function findCurrentCreativeAssetBatch(
   identity: GenerationIdentity,
 ): Promise<CreativeAssetBatch | undefined> {
   const imageQuality = identity.imageQuality ?? DEFAULT_CREATIVE_IMAGE_QUALITY;
+  const brandInputHash = identity.brandInputHash ?? "none";
   const [batch] = await db
     .select()
     .from(creativeAssetBatches)
@@ -61,6 +67,7 @@ export async function findCurrentCreativeAssetBatch(
         eq(creativeAssetBatches.model, identity.model),
         eq(creativeAssetBatches.promptVersion, identity.promptVersion),
         eq(creativeAssetBatches.imageQuality, imageQuality),
+        eq(creativeAssetBatches.brandInputHash, brandInputHash),
       ),
     )
     .limit(1);
@@ -81,6 +88,7 @@ export async function findLatestCompatibleCreativeAssetBatch(
 ): Promise<CreativeAssetBatch | undefined> {
   const imageQuality =
     compatibility.imageQuality ?? DEFAULT_CREATIVE_IMAGE_QUALITY;
+  const brandInputHash = compatibility.brandInputHash ?? "none";
   const [batch] = await db
     .select()
     .from(creativeAssetBatches)
@@ -95,6 +103,7 @@ export async function findLatestCompatibleCreativeAssetBatch(
           compatibility.outputAspectRatio,
         ),
         eq(creativeAssetBatches.imageQuality, imageQuality),
+        eq(creativeAssetBatches.brandInputHash, brandInputHash),
       ),
     )
     .orderBy(desc(creativeAssetBatches.createdAt))
@@ -142,6 +151,27 @@ export async function findLatestCreativeAssetBatchForDraft(
     .limit(1);
 
   return batch ? loadCreativeAssetBatch(batch) : undefined;
+}
+
+/**
+ * Pending provider jobs must remain pollable even after the profile logo or
+ * another batch identity changes. Otherwise the old job can be orphaned.
+ */
+export async function findPendingCreativeAssetBatchesForDraft(
+  draftId: string,
+): Promise<CreativeAssetBatch[]> {
+  const rows = await db
+    .select()
+    .from(creativeAssetBatches)
+    .where(
+      and(
+        eq(creativeAssetBatches.draftId, draftId),
+        inArray(creativeAssetBatches.status, ["queued", "generating"]),
+      ),
+    )
+    .orderBy(desc(creativeAssetBatches.createdAt));
+
+  return Promise.all(rows.map(loadCreativeAssetBatch));
 }
 
 export async function findCreativeAssetBatchById(
@@ -216,6 +246,7 @@ export async function createCreativeAssetBatch({
       status: "queued",
       ...assetIdentity,
       imageQuality,
+      brandInputHash: identity.brandInputHash ?? "none",
       width,
       height,
       totalAssets: assets.length,
@@ -238,6 +269,7 @@ export async function createCreativeAssetBatch({
         providerEndpoint: asset.providerEndpoint,
         referenceSnapshot: asset.referenceSnapshot,
         referenceInputHash: asset.referenceInputHash,
+        brandOverlaySnapshot: asset.brandOverlaySnapshot ?? null,
         createdAt: now,
         updatedAt: now,
       })),
@@ -264,6 +296,7 @@ export async function insertRegeneratedCreativeAsset({
       providerEndpoint: creativeAssets.providerEndpoint,
       referenceSnapshot: creativeAssets.referenceSnapshot,
       referenceInputHash: creativeAssets.referenceInputHash,
+      brandOverlaySnapshot: creativeAssets.brandOverlaySnapshot,
     })
     .from(creativeAssets)
     .where(eq(creativeAssets.id, previous.id))
@@ -292,6 +325,7 @@ export async function insertRegeneratedCreativeAsset({
       providerEndpoint: previousRow.providerEndpoint,
       referenceSnapshot: previousRow.referenceSnapshot,
       referenceInputHash: previousRow.referenceInputHash,
+      brandOverlaySnapshot: previousRow.brandOverlaySnapshot,
       createdAt: now,
       updatedAt: now,
     })
@@ -320,6 +354,22 @@ export async function getCreativeAssetReferenceSnapshot(
   }
 
   return row.referenceSnapshot as CreativeCharacterSnapshot[];
+}
+
+/**
+ * Internal-only immutable logo and placement material for post-processing.
+ * The public asset mapper deliberately omits the private R2 object key.
+ */
+export async function getCreativeAssetBrandOverlaySnapshot(
+  assetId: string,
+): Promise<CreativeBrandOverlaySnapshot | undefined> {
+  const [row] = await db
+    .select({ brandOverlaySnapshot: creativeAssets.brandOverlaySnapshot })
+    .from(creativeAssets)
+    .where(eq(creativeAssets.id, assetId))
+    .limit(1);
+
+  return row?.brandOverlaySnapshot ?? undefined;
 }
 
 export async function setCreativeAssetRequest(
@@ -470,6 +520,7 @@ async function loadCreativeAssetBatch(
     promptVersion: row.promptVersion,
     outputAspectRatio: row.outputAspectRatio,
     imageQuality: row.imageQuality,
+    brandInputHash: row.brandInputHash,
     width: row.width,
     height: row.height,
     totalAssets: row.totalAssets,

@@ -15,7 +15,12 @@ import {
 } from "@/db/schema";
 
 import {
+  DEFAULT_CREATIVE_BRAND_OVERLAY_SETTINGS,
+  DEFAULT_CREATIVE_CONVERSION_GOAL,
   DEFAULT_CREATIVE_VISUAL_GUIDANCE,
+  isCreativeConversionGoal,
+  type CreativeBrandAsset,
+  type CreativeBrandOverlay,
   type CreativeAspectRatio,
   type CreativeAiUsage,
   type CreativeBrief,
@@ -30,6 +35,7 @@ import {
   type GeneratedCreativeDraft,
 } from "./creative-content.types";
 import { isCarouselEditorialGoal } from "./carousel-narrative";
+import { parseCreativeBrandOverlayInput } from "./creative-brand-overlay-validation";
 import { withCreativeFactClaimGuard } from "./creative-fact-guard";
 
 type CreativeRunTask = "brief" | "draft";
@@ -666,7 +672,11 @@ function mapCreativeDraft(
     ...(unit.viewerQuestion ? { viewerQuestion: unit.viewerQuestion } : {}),
     ...(unit.ctaQuestion ? { ctaQuestion: unit.ctaQuestion } : {}),
     headline: unit.headline,
+    ...(unit.subheadline ? { subheadline: unit.subheadline } : {}),
     ...(unit.body ? { body: unit.body } : {}),
+    ...(unit.continuationCue
+      ? { continuationCue: unit.continuationCue }
+      : {}),
     visualDirection: unit.visualDirection,
     factIds: unit.factIds,
     assetRequest: unit.assetRequest,
@@ -745,7 +755,9 @@ function generatedDraftCopyMatches(
       viewerQuestion: unit.viewerQuestion ?? "",
       ctaQuestion: unit.ctaQuestion ?? "",
       headline: unit.headline,
+      subheadline: unit.subheadline ?? "",
       body: unit.body ?? "",
+      continuationCue: unit.continuationCue ?? "",
       visualDirection: unit.visualDirection,
       factIds: unit.factIds,
       assetRequest: unit.assetRequest,
@@ -771,7 +783,9 @@ function draftUnitRows(
     viewerQuestion: unit.viewerQuestion ?? null,
     ctaQuestion: unit.ctaQuestion ?? null,
     headline: unit.headline,
+    subheadline: unit.subheadline ?? null,
     body: unit.body ?? null,
+    continuationCue: unit.continuationCue ?? null,
     visualDirection: unit.visualDirection,
     factIds: unit.factIds,
     assetRequest: unit.assetRequest,
@@ -841,13 +855,49 @@ function usageFromRow(row: {
 }
 
 function mapProfileSnapshot(value: unknown): CreativeProfile {
-  const profile = value as CreativeProfile & { updatedAt: Date | string };
+  const profile = value as Omit<
+    CreativeProfile,
+    "brandOverlay" | "conversionGoal" | "updatedAt"
+  > & {
+    brandOverlay?: CreativeBrandOverlay & {
+      asset?: Omit<CreativeBrandAsset, "createdAt"> & {
+        createdAt: Date | string;
+      };
+    };
+    conversionGoal?: unknown;
+    updatedAt: Date | string;
+  };
+  const brandOverlay =
+    profile.brandOverlay === undefined
+      ? { ...DEFAULT_CREATIVE_BRAND_OVERLAY_SETTINGS }
+      : parseCreativeBrandOverlayInput(profile.brandOverlay);
+  const snapshotAsset = profile.brandOverlay?.asset;
+
   return {
     ...profile,
+    conversionGoal: isCreativeConversionGoal(profile.conversionGoal)
+      ? profile.conversionGoal
+      : DEFAULT_CREATIVE_CONVERSION_GOAL,
     visualGuidance:
       typeof profile.visualGuidance === "string" && profile.visualGuidance.trim()
         ? profile.visualGuidance
         : DEFAULT_CREATIVE_VISUAL_GUIDANCE,
+    brandOverlay: {
+      ...brandOverlay,
+      ...(snapshotAsset && snapshotAsset.id === brandOverlay.assetId
+        ? {
+            asset: {
+              id: snapshotAsset.id,
+              fileName: snapshotAsset.fileName,
+              contentType: "image/png",
+              fileSize: snapshotAsset.fileSize,
+              width: snapshotAsset.width,
+              height: snapshotAsset.height,
+              createdAt: new Date(snapshotAsset.createdAt),
+            },
+          }
+        : {}),
+    },
     updatedAt: new Date(profile.updatedAt),
   };
 }

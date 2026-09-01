@@ -20,7 +20,9 @@ test("exports the complete carousel as one paste-ready script", () => {
           editorialGoal: "hook",
           viewerQuestion: "What is different?",
           headline: "First-time vs. repeat buyers",
+          subheadline: "A 2023 income snapshot",
           body: "Median family incomes differed in 2023.",
+          continuationCue: "the gap behind the comparison",
           visualDirection: "One person beside a symbolic balance.",
           factIds: ["fact-1"],
           assetRequest: "generated-image",
@@ -48,6 +50,11 @@ test("exports the complete carousel as one paste-ready script", () => {
 
   assert.match(output, /FULL CREATIVE SCRIPT/);
   assert.match(output, /IMAGE 1[\s\S]*First-time vs\. repeat buyers/);
+  assert.match(output, /SUBHEADLINE:\nA 2023 income snapshot/);
+  assert.match(
+    output,
+    /CONTINUATION CUE:\nthe gap behind the comparison/,
+  );
   assert.match(output, /IMAGE 2[\s\S]*Which difference surprised you most\?/);
   assert.match(output, /IMAGE OUTPUT \/ VISUAL DIRECTION/);
   assert.match(output, /#Canada #Housing/);

@@ -324,6 +324,84 @@ test("allows a brief-supported calendar year as slide context", () => {
   );
 });
 
+test("grounds localized effective dates and numeric required qualifiers", () => {
+  const noticeFact: CreativeKeyFact = {
+    id: "fact-notice",
+    statement: "The change takes effect Jan. 1, 2027.",
+    requiredQualifiers: ["Landlords must provide three months of notice."],
+    attribution: "Government of British Columbia",
+  };
+  const localizedDraft: GeneratedCreativeDraft = {
+    concept: "Cambio en el aviso de alquiler",
+    caption: "La medida entra en vigor el 1 de enero de 2027.",
+    hashtags: [],
+    altText: "Carrusel sobre el nuevo aviso de alquiler.",
+    units: [
+      unit(
+        1,
+        "cover",
+        "hook",
+        "El cambio llega en enero",
+        "La medida entra en vigor el 1 de enero de 2027.",
+        ["fact-notice"],
+      ),
+      unit(
+        2,
+        "content",
+        "explain",
+        "El aviso requiere anticipación",
+        "Los propietarios deben dar tres meses de aviso.",
+        ["fact-notice"],
+      ),
+    ],
+  };
+
+  const unsupportedNumbers = deterministicFactQualityIssues(
+    localizedDraft,
+    [noticeFact],
+  ).filter((issue) => issue.code === "UNSUPPORTED_NUMBER");
+
+  assert.deepEqual(unsupportedNumbers, []);
+  assert.deepEqual(
+    withCreativeFactClaimGuard(noticeFact).claimGuard?.allowedNumbers,
+    ["1", "2027", "3"],
+  );
+});
+
+test("keeps an unsupported slash ratio blocked as factual copy", () => {
+  const leaseFact: CreativeKeyFact = {
+    id: "fact-lease",
+    statement: "The policy applies to eligible residential leases.",
+    attribution: "Government source",
+  };
+  const ratioDraft: GeneratedCreativeDraft = {
+    concept: "Política de alquiler",
+    caption: "Resumen de la política de alquiler.",
+    hashtags: [],
+    altText: "Carrusel sobre una política de alquiler.",
+    units: [
+      unit(
+        1,
+        "cover",
+        "hook",
+        "A quién se aplica",
+        "La medida alcanza a 1/3 de los contratos.",
+        ["fact-lease"],
+      ),
+    ],
+  };
+
+  const unsupported = deterministicFactQualityIssues(
+    ratioDraft,
+    [leaseFact],
+  ).find(
+    (issue) =>
+      issue.code === "UNSUPPORTED_NUMBER" && issue.unitOrder === 1,
+  );
+
+  assert.match(unsupported?.message ?? "", /1, 3/u);
+});
+
 test("removes unsupported numbers from a closing slide instead of trapping the repair loop", () => {
   const earningsFact: CreativeKeyFact = {
     id: "fact-1",
@@ -588,6 +666,71 @@ test("normalizes sentence punctuation in persisted allowed numbers", () => {
     !deterministicFactQualityIssues(publicationDraft, [publicationFact]).some(
       (issue) => issue.code === "UNSUPPORTED_NUMBER",
     ),
+  );
+});
+
+test("accepts a comma-separated calendar date and a numeric required qualifier", () => {
+  const rentFacts: CreativeKeyFact[] = [
+    {
+      id: "fact-date",
+      statement:
+        "The maximum annual allowable rent increase takes effect Jan. 1, 2027.",
+      sourceExcerpt:
+        "The maximum annual allowable rent increase takes effect Jan. 1, 2027.",
+      attribution: "Government of British Columbia",
+      // Mimic an older persisted guard produced before date punctuation was
+      // normalized correctly. Runtime inference must supplement, not trust,
+      // this stale representation.
+      claimGuard: {
+        certainty: "asserted",
+        requiredPhrases: [],
+        forbiddenPhrases: [],
+        scopePhrases: [],
+        allowedNumbers: ["2027", "1.2027"],
+      },
+    },
+    {
+      id: "fact-notice",
+      statement:
+        "Landlords can only increase rent once every 12 months.",
+      sourceExcerpt:
+        "Landlords can only increase rent once every 12 months.",
+      requiredQualifiers: ["required minimum of three months notice"],
+      attribution: "Government of British Columbia",
+      claimGuard: {
+        certainty: "asserted",
+        requiredPhrases: ["required minimum of three months notice"],
+        forbiddenPhrases: [],
+        scopePhrases: [],
+        allowedNumbers: ["12"],
+      },
+    },
+  ];
+  const rentDraft: GeneratedCreativeDraft = {
+    concept: "The 2027 rent increase rules",
+    caption: "The rules take effect in 2027.",
+    hashtags: [],
+    altText: "The second slide says the rules take effect on January 1, 2027.",
+    units: [
+      {
+        ...unit(
+          2,
+          "content",
+          "explain",
+          "When the increase can apply",
+          "A landlord may increase rent once every 12 months with the required minimum notice of three months.",
+          ["fact-date", "fact-notice"],
+        ),
+        subheadline: "The 2027 limit takes effect January 1.",
+      },
+    ],
+  };
+
+  assert.deepEqual(
+    deterministicFactQualityIssues(rentDraft, rentFacts).filter(
+      (issue) => issue.code === "UNSUPPORTED_NUMBER",
+    ),
+    [],
   );
 });
 
@@ -2129,6 +2272,102 @@ test("accepts a causal phrase when the selected fact explicitly supports it", ()
   assert.ok(
     !deterministicFactQualityIssues(workflowDraft, [workflowFact]).some(
       (issue) => issue.code === "UNSUPPORTED_INFERENCE",
+    ),
+  );
+});
+
+test("guards optional subheadline numbers with the slide's selected facts", () => {
+  const guardedDraft: GeneratedCreativeDraft = {
+    concept: "AI authorship signals",
+    caption: "A sourced comparison.",
+    hashtags: [],
+    altText: "A sourced comparison.",
+    units: [
+      {
+        ...unit(
+          1,
+          "cover",
+          "hook",
+          "What the study detected",
+          undefined,
+          ["fact-1"],
+        ),
+        subheadline: "The unsupported figure is 99%",
+      },
+    ],
+  };
+
+  assert.ok(
+    deterministicFactQualityIssues(guardedDraft, keyFacts).some(
+      (issue) =>
+        issue.code === "UNSUPPORTED_NUMBER" && issue.unitOrder === 1,
+    ),
+  );
+});
+
+test("grounds a continuation cue in the current or following slide", () => {
+  const cueDraft: GeneratedCreativeDraft = {
+    concept: "AI authorship signals",
+    caption: "A sourced comparison.",
+    hashtags: [],
+    altText: "A sourced comparison.",
+    units: [
+      {
+        ...unit(
+          1,
+          "cover",
+          "hook",
+          "What the study detected",
+          undefined,
+          ["fact-6"],
+        ),
+        continuationCue: "The result was about 10%",
+      },
+      unit(
+        2,
+        "content",
+        "prove",
+        "The sample result",
+        "A July 2026 random sample found about 10% with significant signs.",
+        ["fact-4"],
+      ),
+      unit(
+        3,
+        "conclusion",
+        "conclude",
+        "What the report established",
+        "Cloudflare reported that bot traffic had overtaken human traffic.",
+        ["fact-6"],
+      ),
+    ],
+  };
+
+  const initialIssues = deterministicFactQualityIssues(cueDraft, keyFacts);
+  assert.ok(
+    !initialIssues.some(
+      (issue) =>
+        issue.code === "UNSUPPORTED_NUMBER" && issue.unitOrder === 1,
+    ),
+  );
+  assert.ok(
+    initialIssues.some(
+      (issue) => issue.code === "MISSING_SCOPE" && issue.unitOrder === 1,
+    ),
+  );
+
+  const repaired = repairDeterministicFactCopy(cueDraft, keyFacts, "English");
+  assert.match(repaired.units[0]!.continuationCue ?? "", /July 2026/iu);
+  assert.ok(
+    !deterministicFactQualityIssues(repaired, keyFacts).some(
+      (issue) => issue.code === "MISSING_SCOPE" && issue.unitOrder === 1,
+    ),
+  );
+
+  cueDraft.units[0]!.continuationCue = "An unsupported result of 77%";
+  assert.ok(
+    deterministicFactQualityIssues(cueDraft, keyFacts).some(
+      (issue) =>
+        issue.code === "UNSUPPORTED_NUMBER" && issue.unitOrder === 1,
     ),
   );
 });

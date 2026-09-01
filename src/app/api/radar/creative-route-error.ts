@@ -16,12 +16,15 @@ import {
   CreativeDraftValidationError,
 } from "@/app/modules/stories/manage-creative-content";
 import { CreativeProfileValidationError } from "@/app/modules/stories/creative-profile.repository";
+import { CreativeBrandOverlayValidationError } from "@/app/modules/stories/creative-brand-overlay-validation";
+import { CreativeBrandAssetNotFoundError } from "@/app/modules/stories/creative-brand-assets.repository";
 import {
   CreativeCharacterConflictError,
   CreativeCharacterNotFoundError,
   CreativeCharacterValidationError,
 } from "@/app/modules/stories/creative-characters.repository";
 import { CreativeCharacterReferenceValidationError } from "@/app/modules/stories/manage-creative-characters";
+import { CreativeBrandAssetValidationError } from "@/app/modules/stories/manage-creative-brand-assets";
 import {
   R2StorageConfigurationError,
   R2StorageObjectError,
@@ -36,7 +39,8 @@ export function creativeRouteErrorResponse(
   if (
     error instanceof CreativeContentNotFoundError ||
     error instanceof SelectedStoryContentNotFoundError ||
-    error instanceof CreativeCharacterNotFoundError
+    error instanceof CreativeCharacterNotFoundError ||
+    error instanceof CreativeBrandAssetNotFoundError
   ) {
     return NextResponse.json({ error: error.message }, { status: 404 });
   }
@@ -47,6 +51,8 @@ export function creativeRouteErrorResponse(
 
   if (
     error instanceof CreativeProfileValidationError ||
+    error instanceof CreativeBrandOverlayValidationError ||
+    error instanceof CreativeBrandAssetValidationError ||
     error instanceof CreativeAssetValidationError ||
     error instanceof CreativeDraftValidationError ||
     error instanceof CreativeCharacterValidationError ||

@@ -33,6 +33,20 @@ test("supports grouped spaces and keeps genuinely different values distinct", ()
   );
 });
 
+test("does not merge a calendar day with a comma-separated year", () => {
+  assert.deepEqual(
+    extractCreativeNumericLiterals("Takes effect Jan. 1, 2027"),
+    ["1", "2027"],
+  );
+  assert.deepEqual(
+    extractCreativeNumericLiterals("Entra en vigor el 1 de enero de 2027"),
+    ["1", "2027"],
+  );
+  assert.deepEqual(extractCreativeNumericLiterals("1 344 500 personas"), [
+    "1344500",
+  ]);
+});
+
 test("extracts scaled and localized values through the same contract", () => {
   assert.deepEqual(
     extractCreativeNumericLiterals(

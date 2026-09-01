@@ -12,6 +12,8 @@ import {
   findLatestCompatibleCreativeAssetBatch,
   findLatestCreativeAssetBatch,
   findLatestCreativeAssetBatchForDraft,
+  findPendingCreativeAssetBatchesForDraft,
+  getCreativeAssetBrandOverlaySnapshot,
   getCreativeAssetReferenceSnapshot,
   insertRegeneratedCreativeAsset,
   refreshCreativeAssetBatchStatus,
@@ -21,6 +23,13 @@ import {
 } from "./creative-assets.repository";
 import { resolveCreativeOutputAspectRatio } from "./creative-aspect-ratio";
 import { buildCreativeImagePrompt } from "./build-creative-image-prompt";
+import {
+  appendCreativeCarouselChromeContract,
+  buildCreativeCarouselChrome,
+  compositeCreativeCarouselChrome,
+  CreativeCarouselChromeError,
+  hasCreativeCarouselChromeContract,
+} from "./creative-carousel-chrome";
 import { charactersForImageGeneration } from "./creative-character-generation";
 import { snapshotsForCreativeUnits } from "./creative-characters.repository";
 import { findCreativeBriefById, findCreativeDraftById } from "./creative-content.repository";
@@ -30,12 +39,31 @@ import {
   type CreativeAssetBatch,
   type CreativeAssetBatchResponse,
   type CreativeAssetConfiguration,
+  type CreativeBrandOverlay,
+  type CreativeBrandOverlaySettings,
+  type CreativeBrandOverlaySnapshot,
   type CreativeCharacterSnapshot,
+  type CreativeConversionGoal,
   type CreativeDraft,
   type CreativeGeneratedAsset,
   type CreativeImageQuality,
   type CreativeKeyFact,
 } from "./creative-content.types";
+import {
+  creativeBrandOverlaySnapshot,
+  findCreativeBrandAsset,
+} from "./creative-brand-assets.repository";
+import {
+  appendCreativeBrandContract,
+  buildCreativeBrandExclusionZonePrompt,
+  compositeCreativeBrandOverlaySnapshot,
+  computeCreativeBrandPromptExclusionRect,
+  creativeCanvasDimensions,
+  creativeBrandInputHash,
+  CreativeBrandOverlayError,
+  shouldApplyCreativeBrandOverlay,
+} from "./creative-brand-overlay";
+import { getCreativeProfile } from "./creative-profile.repository";
 import {
   getFalImagePublicConfig,
   getFalImageRuntimeConfig,
@@ -46,8 +74,14 @@ import {
   pollFalImage,
   submitFalImage,
   type FalImageEndpoint,
+  type FalImagePostProcessor,
 } from "./fal-image-client";
-import { readPrivateR2ImageFile } from "./r2-storage";
+import {
+  readPrivateR2ImageFile,
+  R2StorageConfigurationError,
+  R2StorageObjectError,
+  R2StorageValidationError,
+} from "./r2-storage";
 import {
   CreativeContentConflictError,
   CreativeContentNotFoundError,
@@ -67,6 +101,12 @@ export async function getCreativeDraftAssets(
     requestedImageQuality,
   );
 
+  await syncPendingCreativeAssetBatches(
+    draft.id,
+    outputAspectRatio,
+    preferredConfiguration,
+  );
+
   if (includeHistorical) {
     const historicalBatch = await findLatestCreativeAssetBatchForDraft(draft.id);
     return {
@@ -77,11 +117,14 @@ export async function getCreativeDraftAssets(
     };
   }
 
+  const brand = await resolveCreativeBrandGeneration(topicId);
+
   let batch = await findCurrentCreativeAssetBatch(draft.id, draft.version, {
     provider: preferredConfiguration.provider,
     model: preferredConfiguration.model,
     promptVersion: preferredConfiguration.promptVersion,
     imageQuality: preferredConfiguration.imageQuality,
+    brandInputHash: brand.inputHash,
   });
 
   if (!batch) {
@@ -94,6 +137,7 @@ export async function getCreativeDraftAssets(
           model: preferredConfiguration.model,
           outputAspectRatio,
           imageQuality: preferredConfiguration.imageQuality,
+          brandInputHash: brand.inputHash,
         },
       ));
   }
@@ -103,6 +147,10 @@ export async function getCreativeDraftAssets(
   // fallback so existing asset batches remain visible after this rollout.
   if (!batch && requestedImageQuality === undefined) {
     batch = await findLatestCreativeAssetBatch(draft.id, draft.version);
+  }
+
+  if (batch?.brandInputHash !== brand.inputHash) {
+    batch = undefined;
   }
 
   // Any prompt-policy change must expose a fresh Generate action. Historical
@@ -151,15 +199,18 @@ export async function generateCreativeDraftAssets(
     draft,
     brief.keyFacts,
     brief.profileSnapshot.language,
+    brief.profileSnapshot.conversionGoal,
   );
   const outputAspectRatio = outputAspectRatioForDraft(draft);
   const configuration = getFalImageRuntimeConfig(outputAspectRatio, imageQuality);
+  const brand = await resolveCreativeBrandGeneration(topicId);
 
   let existing = await findCurrentCreativeAssetBatch(draft.id, draft.version, {
     provider: configuration.provider,
     model: configuration.model,
     promptVersion: configuration.promptVersion,
     imageQuality: configuration.imageQuality,
+    brandInputHash: brand.inputHash,
   });
   if (!existing) {
     const compatible = await findLatestCompatibleCreativeAssetBatch(
@@ -170,6 +221,7 @@ export async function generateCreativeDraftAssets(
         model: configuration.model,
         outputAspectRatio,
         imageQuality: configuration.imageQuality,
+        brandInputHash: brand.inputHash,
       },
     );
     if (
@@ -194,7 +246,10 @@ export async function generateCreativeDraftAssets(
     return {
       outcome: "existing",
       batch: hasPendingAssets(existing)
-        ? await syncCreativeAssetBatch(existing, existingConfiguration)
+        ? await syncCreativeAssetBatch(
+            existing,
+            existingConfiguration,
+          )
         : existing,
       configuration: publicConfigurationForBatch(existing),
     };
@@ -226,6 +281,7 @@ export async function generateCreativeDraftAssets(
       model: configuration.model,
       promptVersion: configuration.promptVersion,
       imageQuality: configuration.imageQuality,
+      brandInputHash: brand.inputHash,
     },
     assets: draft.units.map((unit) => {
       const characterSnapshots = snapshotsForUnit(
@@ -234,6 +290,10 @@ export async function generateCreativeDraftAssets(
       );
       return {
         ...assetInputForUnit(characterSnapshots),
+        ...(brand.snapshot &&
+        shouldApplyCreativeBrandOverlay(brand.snapshot, unit.order)
+          ? { brandOverlaySnapshot: brand.snapshot }
+          : {}),
         unitOrder: unit.order,
         unitRole: unit.role,
         unitSnapshot: unit,
@@ -243,6 +303,7 @@ export async function generateCreativeDraftAssets(
           brief,
           characters: charactersForImageGeneration(characterSnapshots),
           campaignCharacters,
+          brandOverlay: brand.overlay,
         }),
       };
     }),
@@ -277,6 +338,7 @@ export async function generateNextCreativeDraftAssetVersion(
     draft,
     brief.keyFacts,
     brief.profileSnapshot.language,
+    brief.profileSnapshot.conversionGoal,
   );
 
   const batch = await findCreativeAssetBatchById(batchId);
@@ -288,6 +350,8 @@ export async function generateNextCreativeDraftAssetVersion(
       "This image batch belongs to an earlier draft version. Generate images for the current approved draft instead.",
     );
   }
+  const brand = await resolveCreativeBrandGeneration(topicId);
+  assertCurrentBrandConfiguration(batch, brand.inputHash);
   if (hasPendingAssets(batch)) {
     throw new CreativeContentConflictError(
       "Wait for the current image generation to finish before creating another version.",
@@ -335,15 +399,41 @@ export async function regenerateCreativeAsset(
     draft,
     brief.keyFacts,
     brief.profileSnapshot.language,
+    brief.profileSnapshot.conversionGoal,
   );
   assertCurrentAsset(found.asset, found.batch, draft.version);
+  const brand = await resolveCreativeBrandGeneration(topicId);
+  assertCurrentBrandConfiguration(found.batch, brand.inputHash);
   const configuration = runtimeConfigurationForBatch(
     found.batch,
     outputAspectRatioForDraft(draft),
   );
   assertRegenerationCompatibility(found.batch, configuration);
 
-  const prompt = validateRegenerationPrompt(input, found.asset.prompt);
+  const validatedPrompt = validateRegenerationPrompt(input, found.asset.prompt);
+  const brandSnapshot = await getCreativeAssetBrandOverlaySnapshot(
+    found.asset.id,
+  );
+  const chrome = buildAssetCarouselChrome({
+    asset: found.asset,
+    batch: found.batch,
+    brandSnapshot,
+  });
+  const brandPrompt = brandSnapshot
+    ? enforceBrandPromptContract({
+        prompt: validatedPrompt,
+        snapshot: brandSnapshot,
+        unitOrder: found.asset.unitOrder,
+        aspectRatio: outputAspectRatioForBatch(
+          found.batch,
+          outputAspectRatioForDraft(draft),
+        ),
+      })
+    : validatedPrompt;
+  const prompt = enforceCarouselChromePromptContract(
+    brandPrompt,
+    chrome?.promptReservation,
+  );
   const asset = await insertRegeneratedCreativeAsset({
     previous: found.asset,
     prompt,
@@ -393,14 +483,30 @@ async function syncCreativeAssetBatch(
       return;
     }
 
-    const result = await pollFalImage({
-      apiKey: configuration.apiKey,
-      requestId: asset.requestId,
-      endpoint: falEndpointForAsset(asset),
-      targetWidth: configuration.width,
-      targetHeight: configuration.height,
-      retention: configuration.retention,
-    });
+    let result: Awaited<ReturnType<typeof pollFalImage>>;
+    try {
+      result = await pollFalImage({
+        apiKey: configuration.apiKey,
+        requestId: asset.requestId,
+        endpoint: falEndpointForAsset(asset),
+        targetWidth: configuration.width,
+        targetHeight: configuration.height,
+        retention: configuration.retention,
+        postProcess: await creativePostProcessorForAsset({
+          asset,
+          batch,
+        }),
+      });
+    } catch (error) {
+      if (
+        error instanceof CreativeBrandPostProcessError ||
+        error instanceof CreativeCarouselPostProcessError
+      ) {
+        await failCreativeAsset(asset.id, error.message);
+        return;
+      }
+      throw error;
+    }
     if (result.status === "generated") {
       await completeCreativeAsset(asset.id, result.image);
       return;
@@ -442,6 +548,268 @@ async function submitStoredAsset(
     await setCreativeAssetRequest(asset.id, requestId);
   } catch (error) {
     await failCreativeAsset(asset.id, errorMessage(error));
+  }
+}
+
+async function syncPendingCreativeAssetBatches(
+  draftId: string,
+  fallbackAspectRatio: CreativeAspectRatio,
+  preferredConfiguration: Pick<
+    CreativeAssetConfiguration,
+    "provider"
+  >,
+): Promise<void> {
+  const pendingBatches = await findPendingCreativeAssetBatchesForDraft(draftId);
+  await mapWithConcurrency(pendingBatches, 2, async (pendingBatch) => {
+    if (!canSyncCreativeAssetBatch(pendingBatch, preferredConfiguration)) return;
+    try {
+      await syncCreativeAssetBatch(
+        pendingBatch,
+        runtimeConfigurationForBatch(pendingBatch, fallbackAspectRatio),
+      );
+    } catch (error) {
+      // A retired/previous brand batch must not hide the current completed
+      // batch. Its provider job remains pending and can be retried next poll.
+      console.error(
+        `Failed to refresh pending creative asset batch ${pendingBatch.id}`,
+        error,
+      );
+    }
+  });
+}
+
+type ResolvedCreativeBrandGeneration = {
+  inputHash: string;
+  overlay?: CreativeBrandOverlay;
+  snapshot?: CreativeBrandOverlaySnapshot;
+};
+
+/**
+ * Branding is independent from the text brief: changing a logo must create a
+ * new image identity without spending another script-generation request.
+ */
+async function resolveCreativeBrandGeneration(
+  topicId: string,
+): Promise<ResolvedCreativeBrandGeneration> {
+  const profile = await getCreativeProfile(topicId);
+  const overlay = profile.brandOverlay;
+  if (!overlay.enabled) {
+    return { inputHash: "none" };
+  }
+
+  if (!overlay.assetId || !overlay.asset) {
+    throw new CreativeContentConflictError(
+      "The enabled brand overlay does not have a current PNG asset. Upload and save a logo in the creative profile.",
+    );
+  }
+
+  const storedAsset = await findCreativeBrandAsset(topicId, overlay.assetId);
+  if (!storedAsset || storedAsset.id !== overlay.asset.id) {
+    throw new CreativeContentConflictError(
+      "The selected brand logo is no longer available for this topic. Choose and save a current logo.",
+    );
+  }
+
+  const settings = creativeBrandSettings(overlay);
+  const inputHash = creativeBrandInputHash({
+    settings,
+    assetId: storedAsset.id,
+    assetSha256: storedAsset.sha256,
+  });
+
+  return {
+    inputHash,
+    overlay: {
+      ...settings,
+      assetId: storedAsset.id,
+      asset: overlay.asset,
+    },
+    snapshot: creativeBrandOverlaySnapshot(settings, storedAsset),
+  };
+}
+
+function creativeBrandSettings(
+  overlay: CreativeBrandOverlay,
+): CreativeBrandOverlaySettings {
+  return {
+    enabled: overlay.enabled,
+    scope: overlay.scope,
+    placement: overlay.placement,
+    sizePercent: overlay.sizePercent,
+    insetPercent: overlay.insetPercent,
+    backdropMode: overlay.backdropMode,
+    backdropColor: overlay.backdropColor,
+    backdropOpacity: overlay.backdropOpacity,
+  };
+}
+
+function enforceBrandPromptContract({
+  prompt,
+  snapshot,
+  unitOrder,
+  aspectRatio,
+}: {
+  prompt: string;
+  snapshot: CreativeBrandOverlaySnapshot;
+  unitOrder: number;
+  aspectRatio: CreativeAspectRatio;
+}): string {
+  const contract = buildCreativeBrandExclusionZonePrompt({
+    brandOverlay: snapshot,
+    unitOrder,
+    aspectRatio,
+  });
+  if (!contract) return prompt;
+
+  const integrated = appendCreativeBrandContract(prompt, contract);
+  if (integrated.length > 20_000) {
+    throw new CreativeAssetValidationError(
+      "prompt plus the required brand safe-zone contract must be 20,000 characters or fewer",
+    );
+  }
+  return integrated;
+}
+
+function enforceCarouselChromePromptContract(
+  prompt: string,
+  contract: string | undefined,
+): string {
+  const integrated = appendCreativeCarouselChromeContract(prompt, contract);
+  if (integrated.length > 20_000) {
+    throw new CreativeAssetValidationError(
+      "prompt plus the required carousel navigation contract must be 20,000 characters or fewer",
+    );
+  }
+  return integrated;
+}
+
+function buildAssetCarouselChrome({
+  asset,
+  batch,
+  brandSnapshot,
+}: {
+  asset: CreativeGeneratedAsset;
+  batch: CreativeAssetBatch;
+  brandSnapshot?: CreativeBrandOverlaySnapshot;
+}) {
+  if (
+    asset.unitSnapshot.type !== "carousel-slide" ||
+    !hasCreativeCarouselChromeContract(asset.prompt)
+  ) {
+    return undefined;
+  }
+
+  return buildCreativeCarouselChrome({
+    aspectRatio: batch.outputAspectRatio,
+    unitOrder: asset.unitOrder,
+    totalSlides: batch.totalAssets,
+    continuationCue: asset.unitSnapshot.continuationCue,
+    logoExclusionZone: brandSnapshot
+      ? brandSnapshotOccupiedRect(brandSnapshot, batch.outputAspectRatio)
+      : undefined,
+  });
+}
+
+function brandSnapshotOccupiedRect(
+  snapshot: CreativeBrandOverlaySnapshot,
+  aspectRatio: CreativeAspectRatio,
+) {
+  const canvas = creativeCanvasDimensions(aspectRatio);
+  return computeCreativeBrandPromptExclusionRect({
+    settings: snapshot,
+    canvasWidth: canvas.width,
+    canvasHeight: canvas.height,
+    logoWidth: snapshot.asset.width,
+    logoHeight: snapshot.asset.height,
+  });
+}
+
+async function creativePostProcessorForAsset({
+  asset,
+  batch,
+}: {
+  asset: CreativeGeneratedAsset;
+  batch: CreativeAssetBatch;
+}): Promise<FalImagePostProcessor | undefined> {
+  const brandSnapshot = await getCreativeAssetBrandOverlaySnapshot(asset.id);
+  const chrome = buildAssetCarouselChrome({
+    asset,
+    batch,
+    brandSnapshot,
+  });
+  if (!brandSnapshot && !chrome?.overlay) return undefined;
+
+  return async ({ normalizedPng }) => {
+    let processed: Uint8Array = normalizedPng;
+    if (chrome?.overlay) {
+      try {
+        processed = await compositeCreativeCarouselChrome({
+          image: processed,
+          chrome,
+        });
+      } catch (error) {
+        if (!(error instanceof CreativeCarouselChromeError)) throw error;
+        throw new CreativeCarouselPostProcessError(
+          `The carousel navigation could not be composited: ${errorMessage(error)}`,
+        );
+      }
+    }
+    if (!brandSnapshot) return processed;
+    return compositeStoredCreativeBrand({
+      image: processed,
+      snapshot: brandSnapshot,
+    });
+  };
+}
+
+async function compositeStoredCreativeBrand({
+  image,
+  snapshot,
+}: {
+  image: Uint8Array;
+  snapshot: CreativeBrandOverlaySnapshot;
+}): Promise<Buffer> {
+  let logo: File;
+  try {
+    logo = await readPrivateR2ImageFile({
+      objectKey: snapshot.asset.objectKey,
+      contentType: snapshot.asset.contentType,
+      fileName: snapshot.asset.fileName,
+    });
+  } catch (error) {
+    if (
+      error instanceof R2StorageConfigurationError ||
+      error instanceof R2StorageValidationError ||
+      (error instanceof R2StorageObjectError && !error.retryable)
+    ) {
+      throw new CreativeBrandPostProcessError(
+        `The stored brand logo cannot be loaded: ${errorMessage(error)}`,
+      );
+    }
+    throw error;
+  }
+  const logoBytes = new Uint8Array(await logo.arrayBuffer());
+  const actualSha256 = createHash("sha256").update(logoBytes).digest("hex");
+  if (actualSha256 !== snapshot.asset.sha256) {
+    throw new CreativeBrandPostProcessError(
+      "The stored brand logo no longer matches its immutable snapshot.",
+    );
+  }
+
+  try {
+    const composited = await compositeCreativeBrandOverlaySnapshot({
+      image,
+      logo: logoBytes,
+      snapshot,
+    });
+    return composited.body;
+  } catch (error) {
+    // Deterministic geometry/input failures cannot improve on the next poll.
+    // R2/network failures happen before this block and remain retryable.
+    if (!(error instanceof CreativeBrandOverlayError)) throw error;
+    throw new CreativeBrandPostProcessError(
+      `The brand logo could not be composited: ${errorMessage(error)}`,
+    );
   }
 }
 
@@ -602,12 +970,14 @@ function requireNarrativeQuality(
   draft: CreativeDraft,
   keyFacts: readonly CreativeKeyFact[],
   language?: string,
+  conversionGoal?: CreativeConversionGoal,
 ): void {
   const blockers = deterministicCreativeQualityIssues(
     draft,
     draft.format,
     keyFacts,
     language,
+    conversionGoal,
   ).filter((issue) => issue.severity === "blocker");
   if (blockers.length > 0) {
     throw new CreativeContentConflictError(
@@ -645,6 +1015,17 @@ function assertRegenerationCompatibility(
   ) {
     throw new CreativeContentConflictError(
       "This historical image can still be viewed and approved, but it was generated with a retired model. Create a new current image batch to regenerate it.",
+    );
+  }
+}
+
+function assertCurrentBrandConfiguration(
+  batch: CreativeAssetBatch,
+  brandInputHash: string,
+): void {
+  if (batch.brandInputHash !== brandInputHash) {
+    throw new CreativeContentConflictError(
+      "The creative profile logo or its placement changed. Generate a new image batch to use the current brand settings.",
     );
   }
 }
@@ -742,11 +1123,11 @@ function outputAspectRatioForBatch(
 
 function canSyncCreativeAssetBatch(
   batch: CreativeAssetBatch,
-  configuration: Pick<CreativeAssetConfiguration, "provider" | "model">,
+  configuration: Pick<CreativeAssetConfiguration, "provider">,
 ): boolean {
-  return (
-    batch.provider === configuration.provider && batch.model === configuration.model
-  );
+  // Polling uses the immutable request ID and per-asset Fal endpoint. A model
+  // configuration change must not strand a job that was already submitted.
+  return batch.provider === configuration.provider;
 }
 
 async function mapWithConcurrency<T>(
@@ -774,3 +1155,7 @@ export type CreativeAssetGenerationResponse = CreativeAssetBatchResponse & {
 };
 
 export class CreativeAssetValidationError extends Error {}
+
+class CreativeBrandPostProcessError extends Error {}
+
+class CreativeCarouselPostProcessError extends Error {}

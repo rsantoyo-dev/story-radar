@@ -423,6 +423,7 @@ export async function saveCreativeDraft(
       current.format,
       brief.keyFacts,
       brief.profileSnapshot.language,
+      brief.profileSnapshot.conversionGoal,
     ),
     outputAspectRatio: validated.outputAspectRatio,
   };
@@ -467,6 +468,7 @@ export async function approveSavedCreativeDraft(
       current.format,
       brief.keyFacts,
       brief.profileSnapshot.language,
+      brief.profileSnapshot.conversionGoal,
     ),
     outputAspectRatio: validated.outputAspectRatio,
   };
@@ -475,6 +477,7 @@ export async function approveSavedCreativeDraft(
     current.format,
     brief.keyFacts,
     brief.profileSnapshot.language,
+    brief.profileSnapshot.conversionGoal,
   );
   const approvalState = getCreativeDraftApprovalState({
     deterministicIssues: qualityIssues,
@@ -692,6 +695,7 @@ function createBriefInputHash(
       provocation: profile.provocation,
       allowEmojis: profile.allowEmojis,
       maxEmojis: profile.maxEmojis,
+      conversionGoal: profile.conversionGoal,
       callToActionStyle: profile.callToActionStyle,
       visualGuidance: resolveCreativeVisualGuidance(profile),
     },
@@ -823,6 +827,17 @@ function validateEditableDraft(
       );
     }
 
+    if (
+      format === "carousel" &&
+      index === rawUnits.length - 1 &&
+      typeof unit.continuationCue === "string" &&
+      unit.continuationCue.trim()
+    ) {
+      throw new CreativeDraftValidationError(
+        "The final carousel slide cannot contain a continuation cue",
+      );
+    }
+
     return {
       order: index + 1,
       type: format === "meme" ? "meme-frame" : "carousel-slide",
@@ -843,7 +858,19 @@ function validateEditableDraft(
           }
         : {}),
       headline: requiredText(unit.headline, `unit ${index + 1} headline`, 240),
+      ...optionalText(
+        unit.subheadline,
+        `unit ${index + 1} subheadline`,
+        240,
+      ),
       ...optionalText(unit.body, "body", 600),
+      ...(format === "carousel"
+        ? optionalText(
+            unit.continuationCue,
+            `unit ${index + 1} continuationCue`,
+            240,
+          )
+        : {}),
       visualDirection: requiredText(
         unit.visualDirection,
         `unit ${index + 1} visualDirection`,

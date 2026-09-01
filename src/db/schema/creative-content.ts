@@ -12,7 +12,14 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-import { DEFAULT_CREATIVE_VISUAL_GUIDANCE } from "@/app/modules/stories/creative-content.types";
+import {
+  DEFAULT_CREATIVE_BRAND_OVERLAY_SETTINGS,
+  DEFAULT_CREATIVE_CONVERSION_GOAL,
+  DEFAULT_CREATIVE_VISUAL_GUIDANCE,
+  type CreativeBrandOverlaySnapshot,
+  type CreativeBrandOverlaySettings,
+  type CreativeConversionGoal,
+} from "@/app/modules/stories/creative-content.types";
 
 import {
   creativeAiRunStatusEnum,
@@ -33,6 +40,41 @@ import {
 import { stories } from "./stories";
 import { topics } from "./topics";
 
+export const creativeBrandAssets = pgTable(
+  "creative_brand_assets",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    topicId: uuid("topic_id")
+      .notNull()
+      .references(() => topics.id, { onDelete: "cascade" }),
+    /** Private immutable R2 key. Never return this column to the browser. */
+    objectKey: text("object_key").notNull(),
+    sha256: text("sha256").notNull(),
+    contentType: text("content_type").default("image/png").notNull(),
+    fileName: text("file_name").notNull(),
+    fileSize: integer("file_size").notNull(),
+    width: integer("width").notNull(),
+    height: integer("height").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("creative_brand_assets_object_key_unique").on(table.objectKey),
+    index("creative_brand_assets_topic_id_idx").on(table.topicId),
+    check(
+      "creative_brand_assets_values_check",
+      sql`${table.contentType} = 'image/png'
+        AND ${table.sha256} ~ '^[0-9a-f]{64}$'
+        AND ${table.fileSize} BETWEEN 1 AND 5242880
+        AND ${table.width} BETWEEN 16 AND 4096
+        AND ${table.height} BETWEEN 16 AND 4096
+        AND ${table.width} <= ${table.height} * 20
+        AND ${table.height} <= ${table.width} * 20`,
+    ),
+  ],
+);
+
 export const creativeProfiles = pgTable(
   "creative_profiles",
   {
@@ -48,6 +90,14 @@ export const creativeProfiles = pgTable(
     visualGuidance: text("visual_guidance")
       .notNull()
       .default(DEFAULT_CREATIVE_VISUAL_GUIDANCE),
+    brandAssetId: uuid("brand_asset_id").references(
+      () => creativeBrandAssets.id,
+      { onDelete: "set null" },
+    ),
+    brandOverlay: jsonb("brand_overlay")
+      .$type<CreativeBrandOverlaySettings>()
+      .default(DEFAULT_CREATIVE_BRAND_OVERLAY_SETTINGS)
+      .notNull(),
     brandPersonality: text("brand_personality")
       .array()
       .notNull()
@@ -59,6 +109,10 @@ export const creativeProfiles = pgTable(
     provocation: integer("provocation").notNull(),
     allowEmojis: boolean("allow_emojis").default(true).notNull(),
     maxEmojis: integer("max_emojis").default(2).notNull(),
+    conversionGoal: text("conversion_goal")
+      .$type<CreativeConversionGoal>()
+      .default(DEFAULT_CREATIVE_CONVERSION_GOAL)
+      .notNull(),
     callToActionStyle: text("call_to_action_style").notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
       .defaultNow()
@@ -77,6 +131,10 @@ export const creativeProfiles = pgTable(
     check(
       "creative_profiles_max_emojis_check",
       sql`${table.maxEmojis} BETWEEN 0 AND 10`,
+    ),
+    check(
+      "creative_profiles_conversion_goal_check",
+      sql`${table.conversionGoal} IN ('followers', 'discussion', 'saves', 'shares')`,
     ),
   ],
 );
@@ -321,7 +379,9 @@ export const creativeUnits = pgTable(
     viewerQuestion: text("viewer_question"),
     ctaQuestion: text("cta_question"),
     headline: text("headline").notNull(),
+    subheadline: text("subheadline"),
     body: text("body"),
+    continuationCue: text("continuation_cue"),
     visualDirection: text("visual_direction").notNull(),
     factIds: text("fact_ids")
       .array()
@@ -387,6 +447,7 @@ export const creativeAssetBatches = pgTable(
     imageQuality: creativeImageQualityEnum("image_quality")
       .default("low")
       .notNull(),
+    brandInputHash: text("brand_input_hash").default("none").notNull(),
     width: integer("width").notNull(),
     height: integer("height").notNull(),
     totalAssets: integer("total_assets").notNull(),
@@ -409,6 +470,7 @@ export const creativeAssetBatches = pgTable(
       table.model,
       table.promptVersion,
       table.imageQuality,
+      table.brandInputHash,
     ),
     index("creative_asset_batches_draft_id_idx").on(table.draftId),
     index("creative_asset_batches_status_idx").on(table.status),
@@ -455,6 +517,7 @@ export const creativeAssets = pgTable(
       .default(sql`'[]'::jsonb`)
       .notNull(),
     referenceInputHash: text("reference_input_hash").default("").notNull(),
+    brandOverlaySnapshot: jsonb("brand_overlay_snapshot").$type<CreativeBrandOverlaySnapshot>(),
     requestId: text("request_id"),
     imageUrl: text("image_url"),
     contentType: text("content_type"),

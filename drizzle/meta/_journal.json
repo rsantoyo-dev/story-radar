@@ -204,6 +204,27 @@
       "when": 1787959495408,
       "tag": "0028_wealthy_switch",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1788205548029,
+      "tag": "0029_flippant_psynapse",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1788226330406,
+      "tag": "0030_wooden_electro",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1788229703930,
+      "tag": "0031_wide_masked_marvel",
+      "breakpoints": true
     }
   ]
 }

@@ -34,9 +34,17 @@ export async function PUT(request: Request) {
   if (unauthorized) return unauthorized;
 
   try {
-    const input = parseCreativeProfileInput(await request.json());
+    const value: unknown = await request.json();
+    const preserveExistingBrandOverlay =
+      typeof value === "object" &&
+      value !== null &&
+      !Array.isArray(value) &&
+      !("brandOverlay" in value);
+    const input = parseCreativeProfileInput(value);
     return noStoreJson(
-      await saveCreativeProfile(await requireRequestTopic(request), input),
+      await saveCreativeProfile(await requireRequestTopic(request), input, {
+        preserveExistingBrandOverlay,
+      }),
     );
   } catch (error) {
     const topicError = topicRequestErrorResponse(error);

@@ -1,4 +1,5 @@
 import { extractCreativeNumericLiterals } from "./creative-number-normalization";
+import type { CreativeConversionGoal } from "./creative-content.types";
 
 export const CAROUSEL_EDITORIAL_GOALS = [
   "hook",
@@ -125,9 +126,12 @@ const MAX_FACTS_BY_GOAL: Record<CarouselEditorialGoal, number> = {
   problem: 3,
   opportunity: 3,
   watch: 2,
-  conclude: 2,
+  conclude: 3,
   debate: 2,
 };
+
+export const CAROUSEL_SUBHEADLINE_MAX_WORDS = 18;
+export const CAROUSEL_CONTINUATION_CUE_MAX_WORDS = 10;
 
 export type CarouselNarrativeUnit = {
   role: string;
@@ -135,7 +139,9 @@ export type CarouselNarrativeUnit = {
   viewerQuestion?: string;
   ctaQuestion?: string;
   headline?: string;
+  subheadline?: string;
   body?: string;
+  continuationCue?: string;
   factIds: readonly string[];
 };
 
@@ -163,7 +169,13 @@ export type CarouselNarrativeWarning = {
     | "semantic-repetition"
     | "missing-supporting-copy"
     | "headline-too-long"
-    | "body-too-long";
+    | "subheadline-too-long"
+    | "redundant-subheadline"
+    | "body-too-long"
+    | "missing-cover-continuation-cue"
+    | "generic-continuation-cue"
+    | "continuation-cue-too-long"
+    | "continuation-cue-on-final";
   message: string;
   unitIndex?: number;
 };
@@ -179,10 +191,49 @@ export function isCarouselEditorialGoal(
 
 export function getPreferredCarouselArc(
   slideCount: number,
+  conversionGoal?: CreativeConversionGoal,
 ): readonly CarouselEditorialGoal[] | undefined {
-  return slideCount >= 3 && slideCount <= 8
-    ? PREFERRED_CAROUSEL_ARCS[slideCount as CarouselSlideCount]
-    : undefined;
+  if (slideCount < 3 || slideCount > 8) return undefined;
+  const preferred = PREFERRED_CAROUSEL_ARCS[slideCount as CarouselSlideCount];
+  if (!conversionGoal) return preferred;
+  return [
+    ...preferred.slice(0, -1),
+    getPreferredCarouselClosingGoal(conversionGoal),
+  ];
+}
+
+export function getPreferredCarouselClosingGoal(
+  conversionGoal: CreativeConversionGoal,
+): Extract<CarouselEditorialGoal, "conclude" | "debate"> {
+  return conversionGoal === "discussion" ? "debate" : "conclude";
+}
+
+export function alignCarouselPlanWithConversionGoal(
+  plan: CarouselPlan,
+  conversionGoal: CreativeConversionGoal,
+): { plan: CarouselPlan; repaired: boolean } {
+  const expectedClosingGoal =
+    getPreferredCarouselClosingGoal(conversionGoal);
+  const closingIndex = plan.slides.length - 1;
+  const closing = plan.slides[closingIndex];
+  if (!closing || closing.editorialGoal === expectedClosingGoal) {
+    return { plan, repaired: false };
+  }
+  return {
+    repaired: true,
+    plan: {
+      ...plan,
+      slides: plan.slides.map((slide, index) =>
+        index === closingIndex
+          ? {
+              ...slide,
+              editorialGoal: expectedClosingGoal,
+              viewerQuestion: getDefaultViewerQuestion(expectedClosingGoal),
+            }
+          : slide,
+      ),
+    },
+  };
 }
 
 export function getDefaultViewerQuestion(
@@ -263,6 +314,7 @@ export function repairCarouselPlanEvidence(
 export function validateCarouselPlan(
   plan: CarouselPlan,
   knownFactIds: ReadonlySet<string>,
+  conversionGoal?: CreativeConversionGoal,
 ): string[] {
   const errors: string[] = [];
   if (plan.slides.length !== plan.slideCount) {
@@ -330,6 +382,14 @@ export function validateCarouselPlan(
       "carouselPlan final slide must conclude the story or open a debate",
     );
   }
+  if (
+    conversionGoal &&
+    closingGoal !== getPreferredCarouselClosingGoal(conversionGoal)
+  ) {
+    errors.push(
+      `carouselPlan final slide must use ${getPreferredCarouselClosingGoal(conversionGoal)} for the ${conversionGoal} conversion goal`,
+    );
+  }
 
   return errors;
 }
@@ -338,16 +398,23 @@ export function validateCarouselPlan(
  * Serializable policy sent to the draft model. The same definitions power the
  * editor warnings below, so prompt guidance and review cannot silently drift.
  */
-export function carouselNarrativePolicyForPrompt() {
+export function carouselNarrativePolicyForPrompt(
+  conversionGoal?: CreativeConversionGoal,
+) {
+  const preferredClosingGoal = conversionGoal
+    ? getPreferredCarouselClosingGoal(conversionGoal)
+    : undefined;
   return {
     flexibility:
-      "Use the preferred arc for the selected slide count unless the story clearly benefits from another sequence. If you deviate, explain why in narrativeRationale.",
+      "Use the preferred arc for the selected slide count unless the story requires another sequence. It already reflects preferredClosingGoal. Explain other deviations in narrativeRationale.",
+    ...(preferredClosingGoal ? { preferredClosingGoal } : {}),
     roleSemantics:
       "role controls presentation and layout; editorialGoal controls the narrative job of the slide.",
     preferredArcs: Object.entries(PREFERRED_CAROUSEL_ARCS).map(
       ([slideCount, goals]) => ({
         slideCount: Number(slideCount),
-        goals,
+        goals:
+          getPreferredCarouselArc(Number(slideCount), conversionGoal) ?? goals,
       }),
     ),
     editorialGoals: CAROUSEL_EDITORIAL_GOAL_OPTIONS,
@@ -358,11 +425,24 @@ export function carouselNarrativePolicyForPrompt() {
       "Use only facts necessary to advance the story; do not use every available fact simply because it exists.",
       "viewerQuestion describes the mental question answered by that slide and is not visible slide copy.",
       "ctaQuestion is optional visible copy and belongs only on the final conclusion or call-to-action slide.",
+      `subheadline is optional visible hierarchy copy. Use it only when it adds a distinct clarifying layer below the headline, and keep it to ${CAROUSEL_SUBHEADLINE_MAX_WORDS} words or fewer.`,
+      `continuationCue is optional visible semantic reward copy for non-final slides. The cover should normally include one concrete reason to continue, in ${CAROUSEL_CONTINUATION_CUE_MAX_WORDS} words or fewer. Do not put a continuationCue on the final slide.`,
+      "Never use a bare navigation label such as Desliza, Swipe, Next, or Siguiente as continuationCue. The renderer supplies navigation chrome; continuationCue must name the specific idea the next slide will resolve.",
+      "Treat subheadline and continuationCue as factual visible copy: do not add claims or numbers that the supplied evidence does not support.",
       "The final slide must use conclude or debate. This terminal narrative job is required even when the earlier arc deviates from the preferred sequence.",
+      ...(preferredClosingGoal
+        ? [
+            `Use ${preferredClosingGoal} as the final editorialGoal for the configured conversion goal.`,
+          ]
+        : []),
       "A conclude or debate slide should reuse earlier facts and should not introduce unsupported or new information.",
       "Establish related comparison facts together before the final slide; never reserve a new statistic solely for the closing slide.",
       "Each viewerQuestion must ask exactly one editorial question; do not join two questions with 'and'.",
       "Give each middle slide primary ownership of its evidence. Consecutive middle slides should not reuse the same fact or numerical claim.",
+      "Use one fact on at most two slides. The cover and closing may reuse the thesis, but never repeat that same finding across the cover, a middle slide, and the closing.",
+      "Scope comparisons explicitly. If a change is relative to a previous event in the same category, program, cohort, or region, name that comparison set; never let 'previous' imply the immediately prior overall event.",
+      "Preserve as-of scope for a record in a current or unfinished period: use the supported equivalent of 'so far', 'to date', or 'as of', and never turn it into an unbounded full-period or full-year claim.",
+      "Treat sequence numbers, edition counts, identifiers, and other administrative ordinals as context, not impact. Do not give one an impact slide unless the evidence establishes a meaningful consequence; choose a better goal or fewer slides.",
       "If the preferred arc would force an impact slide to paraphrase evidence, choose a better evidence-led goal and explain the deviation.",
     ],
   };
@@ -371,9 +451,13 @@ export function carouselNarrativePolicyForPrompt() {
 export function evaluateCarouselNarrative(
   units: readonly CarouselNarrativeUnit[],
   narrativeRationale?: string,
+  conversionGoal?: CreativeConversionGoal,
 ): CarouselNarrativeWarning[] {
   const warnings: CarouselNarrativeWarning[] = [];
-  const preferredArc = getPreferredCarouselArc(units.length);
+  const preferredArc = getPreferredCarouselArc(
+    units.length,
+    conversionGoal,
+  );
 
   units.forEach((unit, unitIndex) => {
     const slide = unitIndex + 1;
@@ -421,7 +505,7 @@ export function evaluateCarouselNarrative(
         severity: "blocker",
         code: "cta-position",
         unitIndex,
-        message: `Slide ${slide} has a CTA question, but visible CTA copy should normally be reserved for the final slide.`,
+        message: `Slide ${slide} has visible CTA copy, but it should normally be reserved for the final slide.`,
       });
     }
 
@@ -447,12 +531,54 @@ export function evaluateCarouselNarrative(
         message: `Slide ${slide} headline uses ${wordCount(unit.headline)} words; aim for ${headlineTarget} or fewer.`,
       });
     }
+    if (wordCount(unit.subheadline) > CAROUSEL_SUBHEADLINE_MAX_WORDS) {
+      warnings.push({
+        severity: "warning",
+        code: "subheadline-too-long",
+        unitIndex,
+        message: `Slide ${slide} subheadline uses ${wordCount(unit.subheadline)} words; aim for ${CAROUSEL_SUBHEADLINE_MAX_WORDS} or fewer.`,
+      });
+    }
+    if (
+      unit.subheadline?.trim() &&
+      normalizedVisibleCopy(unit.subheadline) ===
+        normalizedVisibleCopy(unit.headline)
+    ) {
+      warnings.push({
+        severity: "warning",
+        code: "redundant-subheadline",
+        unitIndex,
+        message: `Slide ${slide} repeats its headline as the subheadline; use the second line only when it adds useful hierarchy.`,
+      });
+    }
     if (wordCount(unit.body) > 45) {
       warnings.push({
         severity: "warning",
         code: "body-too-long",
         unitIndex,
         message: `Slide ${slide} supporting text uses ${wordCount(unit.body)} words; aim for 45 or fewer.`,
+      });
+    }
+    if (
+      wordCount(unit.continuationCue) >
+      CAROUSEL_CONTINUATION_CUE_MAX_WORDS
+    ) {
+      warnings.push({
+        severity: "warning",
+        code: "continuation-cue-too-long",
+        unitIndex,
+        message: `Slide ${slide} continuation cue uses ${wordCount(unit.continuationCue)} words; aim for ${CAROUSEL_CONTINUATION_CUE_MAX_WORDS} or fewer.`,
+      });
+    }
+    if (
+      unit.continuationCue?.trim() &&
+      isGenericContinuationCue(unit.continuationCue)
+    ) {
+      warnings.push({
+        severity: "blocker",
+        code: "generic-continuation-cue",
+        unitIndex,
+        message: `Slide ${slide} uses a generic navigation label; name the concrete idea the next slide will reveal instead.`,
       });
     }
     if (
@@ -499,10 +625,28 @@ export function evaluateCarouselNarrative(
       message: "The first carousel slide should normally use the cover role.",
     });
   }
+  if (first?.role === "cover" && !first.continuationCue?.trim()) {
+    warnings.push({
+      severity: "warning",
+      code: "missing-cover-continuation-cue",
+      unitIndex: 0,
+      message:
+        "The cover should normally include a concrete continuation cue that previews the next slide's reward.",
+    });
+  }
 
   const lastIndex = units.length - 1;
   const last = units[lastIndex];
   if (last) {
+    if (last.continuationCue?.trim()) {
+      warnings.push({
+        severity: "blocker",
+        code: "continuation-cue-on-final",
+        unitIndex: lastIndex,
+        message:
+          "The final carousel slide cannot include a continuation cue because there is no next slide.",
+      });
+    }
     if (last.role !== "conclusion" && last.role !== "call-to-action") {
       warnings.push({
         severity: "blocker",
@@ -551,8 +695,10 @@ export function evaluateCarouselNarrative(
 
     const visibleQuestionCount = [
       last.headline,
+      last.subheadline,
       last.body,
       last.ctaQuestion,
+      last.continuationCue,
     ].reduce(
       (count, value) => count + (value?.match(/\?/g)?.length ?? 0),
       0,
@@ -608,18 +754,21 @@ export function evaluateCarouselNarrative(
     }
   });
 
-  const factUsage = new Map<string, number>();
-  units.forEach((unit) => {
+  const factUsage = new Map<string, number[]>();
+  units.forEach((unit, unitIndex) => {
     new Set(unit.factIds).forEach((factId) =>
-      factUsage.set(factId, (factUsage.get(factId) ?? 0) + 1),
+      factUsage.set(factId, [
+        ...(factUsage.get(factId) ?? []),
+        unitIndex + 1,
+      ]),
     );
   });
-  factUsage.forEach((count, factId) => {
-    if (count > 2) {
+  factUsage.forEach((slideNumbers, factId) => {
+    if (slideNumbers.length > 2) {
       warnings.push({
         severity: "warning",
         code: "fact-overuse",
-        message: `${factId} is cited on ${count} slides; repeated evidence can make the carousel feel static.`,
+        message: `${factId} is cited on slides ${slideNumbers.join(", ")}; keep one finding to at most two narrative jobs instead of repeating it across the cover, middle, and closing.`,
       });
     }
   });
@@ -652,14 +801,33 @@ export function evaluateCarouselNarrative(
 export function blockingCarouselNarrativeIssues(
   units: readonly CarouselNarrativeUnit[],
   narrativeRationale?: string,
+  conversionGoal?: CreativeConversionGoal,
 ): CarouselNarrativeWarning[] {
-  return evaluateCarouselNarrative(units, narrativeRationale).filter(
-    (issue) => issue.severity === "blocker",
-  );
+  return evaluateCarouselNarrative(
+    units,
+    narrativeRationale,
+    conversionGoal,
+  ).filter((issue) => issue.severity === "blocker");
 }
 
 function wordCount(value?: string): number {
   return value?.trim() ? value.trim().split(/\s+/u).length : 0;
+}
+
+function normalizedVisibleCopy(value?: string): string {
+  return (value ?? "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/gu, "")
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+function isGenericContinuationCue(value: string): boolean {
+  const normalized = normalizedVisibleCopy(value);
+  return /^(?:(?:desliza|desliza para (?:ver|continuar)|sigue deslizando|siguiente|continua|ver mas)|(?:swipe|swipe (?:left|for more)|keep swiping|next|continue|read more))$/u.test(
+    normalized,
+  );
 }
 
 function questionIntentCount(value: string): number {

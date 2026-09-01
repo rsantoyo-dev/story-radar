@@ -1,5 +1,5 @@
 const CREATIVE_NUMERIC_LITERAL_PATTERN =
-  /(?:[$€£]\s*)?~?\d(?:[\d.,'’]|[ \t\u00a0\u202f](?=\d))*(?:\s*(?:%|(?:percent|por ciento|mil millones|thousand|million|billion|millones?|millón|mil|k|m|b)\b))?/giu;
+  /(?:[$€£]\s*)?~?\d(?:[\d.,'’]|(?<![.,])[ \t\u00a0\u202f](?=\d{3}(?:[ \t\u00a0\u202f]\d{3})*(?!\d)))*(?:\s*(?:%|(?:percent|por ciento|mil millones|thousand|million|billion|millones?|millón|mil|k|m|b)\b))?/giu;
 
 /**
  * Extracts numeric evidence using one locale-neutral representation.
