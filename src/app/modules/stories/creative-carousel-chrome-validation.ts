@@ -84,7 +84,9 @@ export function cloneDefaultPalette(): CreativeBrandPaletteColor[] {
 function defaultChromeForPalette(
   palette: readonly CreativeBrandPaletteColor[],
 ): CreativeCarouselChromeSettings {
-  const defaultColors = new Set(DEFAULT_CREATIVE_BRAND_PALETTE.map((entry) => entry.color));
+  const defaultColors = new Set<string>(
+    DEFAULT_CREATIVE_BRAND_PALETTE.map((entry) => entry.color),
+  );
   if (
     DEFAULT_CREATIVE_CAROUSEL_CHROME_SETTINGS.backgroundColor &&
     DEFAULT_CREATIVE_CAROUSEL_CHROME_SETTINGS.textColor &&

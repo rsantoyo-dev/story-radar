@@ -59,3 +59,42 @@ test("exports the complete carousel as one paste-ready script", () => {
   assert.match(output, /IMAGE OUTPUT \/ VISUAL DIRECTION/);
   assert.match(output, /#Canada #Housing/);
 });
+
+test("exports the editor-facing native interaction without putting it in image copy", () => {
+  const output = buildCompleteDraftScript(
+    {
+      concept: "A fact-safe Story",
+      caption: "Context for the Story.",
+      hashtags: [],
+      altText: "A calm Story frame.",
+      units: [
+        {
+          order: 1,
+          type: "meme-frame",
+          role: "cover",
+          headline: "A supported fact",
+          visualDirection: "Keep the lower third empty.",
+          factIds: ["fact-1"],
+          assetRequest: "generated-image",
+          aspectRatio: "9:16",
+          interactiveOverlay: {
+            kind: "instagram-sticker",
+            placement: "bottom-third",
+            recommendation: {
+              kind: "poll",
+              prompt: "Should this concern you?",
+              options: ["Yes", "Not yet"],
+              rationale: "It invites a low-friction reaction to the verified context.",
+            },
+          },
+        },
+      ],
+    },
+    "meme",
+  );
+
+  assert.match(output, /MANUAL INSTAGRAM INTERACTION/);
+  assert.match(output, /Type: poll/);
+  assert.match(output, /Options: Yes \| Not yet/);
+  assert.match(output, /Why this works:/);
+});

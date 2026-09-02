@@ -171,7 +171,7 @@ export function getCreativeCompanionRuntimeConfig(): CreativeCompanionRuntimeCon
       process.env.CREATIVE_COMPANION_TERRA_MODEL?.trim() ||
       process.env.CREATIVE_CRITIC_MODEL?.trim() ||
       "gpt-5.6-terra",
-    promptVersion: "companion-story-v1",
+    promptVersion: "companion-story-v2-interaction",
   };
 }
 

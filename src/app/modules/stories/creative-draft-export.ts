@@ -47,6 +47,9 @@ export function buildCompleteDraftScript(
         field("CONTINUATION CUE", unit.continuationCue),
         field("VISIBLE CTA", unit.ctaQuestion),
         field("IMAGE OUTPUT / VISUAL DIRECTION", unit.visualDirection),
+        unit.interactiveOverlay?.recommendation
+          ? interactionRecommendation(unit.interactiveOverlay.recommendation)
+          : undefined,
         unit.factIds.length
           ? `Selected facts: ${unit.factIds.join(", ")}`
           : undefined,
@@ -57,6 +60,29 @@ export function buildCompleteDraftScript(
   ];
 
   return sections.filter(isText).join("\n\n").trim();
+}
+
+function interactionRecommendation(
+  recommendation: NonNullable<
+    DraftScriptSource["units"][number]["interactiveOverlay"]
+  >["recommendation"],
+): string | undefined {
+  if (!recommendation) return undefined;
+  return [
+    "MANUAL INSTAGRAM INTERACTION (add after export)",
+    `Type: ${recommendation.kind}`,
+    `Prompt: ${recommendation.prompt}`,
+    recommendation.options?.length
+      ? `Options: ${recommendation.options.join(" | ")}`
+      : undefined,
+    recommendation.correctOption
+      ? `Correct quiz answer: ${recommendation.correctOption}`
+      : undefined,
+    recommendation.emoji ? `Slider emoji: ${recommendation.emoji}` : undefined,
+    `Why this works: ${recommendation.rationale}`,
+  ]
+    .filter(isText)
+    .join("\n");
 }
 
 function field(label: string, value?: string): string | undefined {

@@ -2,6 +2,7 @@ import type {
   CreativeAspectRatio,
   CreativeBrandOverlaySettings,
   CreativeInteractiveOverlay,
+  CreativeInstagramInteractionRecommendation,
 } from "./creative-content.types";
 import { creativeCanvasDimensions } from "./creative-brand-overlay";
 
@@ -23,11 +24,79 @@ export function isCreativeInteractiveOverlay(
   }
 
   const overlay = value as Record<string, unknown>;
-  return (
-    overlay.kind === "instagram-sticker" &&
-    CREATIVE_INTERACTIVE_OVERLAY_PLACEMENTS.includes(
-      overlay.placement as CreativeInteractiveOverlay["placement"],
+  if (
+    !(
+      overlay.kind === "instagram-sticker" &&
+      CREATIVE_INTERACTIVE_OVERLAY_PLACEMENTS.includes(
+        overlay.placement as CreativeInteractiveOverlay["placement"],
+      )
     )
+  ) {
+    return false;
+  }
+  return (
+    overlay.recommendation === undefined ||
+    isCreativeInstagramInteractionRecommendation(overlay.recommendation)
+  );
+}
+
+export function isCreativeInstagramInteractionRecommendation(
+  value: unknown,
+): value is CreativeInstagramInteractionRecommendation {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const recommendation = value as Record<string, unknown>;
+  if (
+    !["poll", "question", "quiz", "slider"].includes(
+      recommendation.kind as string,
+    ) ||
+    !validText(recommendation.prompt, 180) ||
+    !validText(recommendation.rationale, 300)
+  ) {
+    return false;
+  }
+
+  const options = recommendation.options;
+  if (
+    options !== undefined &&
+    (!Array.isArray(options) ||
+      !options.every((option) => validText(option, 40)))
+  ) {
+    return false;
+  }
+  if (
+    recommendation.kind === "poll" &&
+    (!Array.isArray(options) || options.length !== 2)
+  ) {
+    return false;
+  }
+  if (recommendation.kind === "quiz") {
+    if (!Array.isArray(options) || options.length < 2 || options.length > 4) {
+      return false;
+    }
+    if (
+      typeof recommendation.correctOption !== "string" ||
+      !options.includes(recommendation.correctOption)
+    ) {
+      return false;
+    }
+  }
+  if (
+    recommendation.kind === "slider" &&
+    recommendation.emoji !== undefined &&
+    !validText(recommendation.emoji, 8)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function validText(value: unknown, maxLength: number): value is string {
+  return (
+    typeof value === "string" &&
+    Boolean(value.trim()) &&
+    value.trim().length <= maxLength
   );
 }
 

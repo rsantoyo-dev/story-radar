@@ -188,6 +188,29 @@ export type CreativeUnitRole =
   | "call-to-action";
 export type CreativeAssetRequest = "generated-image" | "typography-only";
 
+export const CREATIVE_INSTAGRAM_INTERACTION_KINDS = [
+  "poll",
+  "question",
+  "quiz",
+  "slider",
+] as const;
+export type CreativeInstagramInteractionKind =
+  (typeof CREATIVE_INSTAGRAM_INTERACTION_KINDS)[number];
+
+/** Editor-facing native sticker copy; it is intentionally never image copy. */
+export type CreativeInstagramInteractionRecommendation = {
+  kind: CreativeInstagramInteractionKind;
+  prompt: string;
+  /** Poll/quiz options, in the order they should be added in Instagram. */
+  options?: string[];
+  /** Required only for a quiz and must exactly match one option. */
+  correctOption?: string;
+  /** Optional emoji for the native slider. */
+  emoji?: string;
+  /** Why this is the strongest interaction for this specific Story. */
+  rationale: string;
+};
+
 /**
  * A deliberately empty canvas region for an editor to add a native Instagram
  * poll, question, quiz, or slider after export. It is never rendered as copy.
@@ -195,6 +218,7 @@ export type CreativeAssetRequest = "generated-image" | "typography-only";
 export type CreativeInteractiveOverlay = {
   kind: "instagram-sticker";
   placement: "top-third" | "middle-third" | "bottom-third";
+  recommendation?: CreativeInstagramInteractionRecommendation;
 };
 
 export const CREATIVE_COMPANION_APPROACHES = [

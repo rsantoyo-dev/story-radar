@@ -3076,6 +3076,27 @@ function DraftEditor({
                 }
               />
             ) : null}
+            {unit.interactiveOverlay?.recommendation ? (
+              <div className={styles.narrativeReview}>
+                <strong>
+                  Manual Instagram {capitalize(unit.interactiveOverlay.recommendation.kind)}
+                  {" · "}add after exporting the image
+                </strong>
+                <p>{unit.interactiveOverlay.recommendation.prompt}</p>
+                {unit.interactiveOverlay.recommendation.options?.length ? (
+                  <p>
+                    Options: {unit.interactiveOverlay.recommendation.options.join(" · ")}
+                  </p>
+                ) : null}
+                {unit.interactiveOverlay.recommendation.correctOption ? (
+                  <p>Correct answer: {unit.interactiveOverlay.recommendation.correctOption}</p>
+                ) : null}
+                {unit.interactiveOverlay.recommendation.emoji ? (
+                  <p>Slider emoji: {unit.interactiveOverlay.recommendation.emoji}</p>
+                ) : null}
+                <p>{unit.interactiveOverlay.recommendation.rationale}</p>
+              </div>
+            ) : null}
             <TextAreaField label="Visual direction" value={unit.visualDirection} onChange={(visualDirection) => updateUnit(index, { ...unit, visualDirection })} rows={3} />
             <fieldset className={styles.factPicker}>
               <legend>Facts used in this {format === "meme" ? "frame" : "slide"}</legend>
