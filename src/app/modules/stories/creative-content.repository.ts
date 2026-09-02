@@ -37,6 +37,10 @@ import {
 } from "./creative-content.types";
 import { isCarouselEditorialGoal } from "./carousel-narrative";
 import { parseCreativeBrandOverlayInput } from "./creative-brand-overlay-validation";
+import {
+  parseCreativeBrandPaletteInput,
+  parseCreativeCarouselChromeInput,
+} from "./creative-carousel-chrome-validation";
 import { withCreativeFactClaimGuard } from "./creative-fact-guard";
 
 type CreativeRunTask = "brief" | "draft";
@@ -867,13 +871,19 @@ function usageFromRow(row: {
 function mapProfileSnapshot(value: unknown): CreativeProfile {
   const profile = value as Omit<
     CreativeProfile,
-    "brandOverlay" | "conversionGoal" | "updatedAt"
+    | "brandOverlay"
+    | "brandPalette"
+    | "carouselChrome"
+    | "conversionGoal"
+    | "updatedAt"
   > & {
     brandOverlay?: CreativeBrandOverlay & {
       asset?: Omit<CreativeBrandAsset, "createdAt"> & {
         createdAt: Date | string;
       };
     };
+    brandPalette?: unknown;
+    carouselChrome?: unknown;
     conversionGoal?: unknown;
     updatedAt: Date | string;
   };
@@ -882,6 +892,11 @@ function mapProfileSnapshot(value: unknown): CreativeProfile {
       ? { ...DEFAULT_CREATIVE_BRAND_OVERLAY_SETTINGS }
       : parseCreativeBrandOverlayInput(profile.brandOverlay);
   const snapshotAsset = profile.brandOverlay?.asset;
+  const brandPalette = parseCreativeBrandPaletteInput(profile.brandPalette);
+  const carouselChrome = parseCreativeCarouselChromeInput(
+    profile.carouselChrome,
+    brandPalette,
+  );
 
   return {
     ...profile,
@@ -892,6 +907,8 @@ function mapProfileSnapshot(value: unknown): CreativeProfile {
       typeof profile.visualGuidance === "string" && profile.visualGuidance.trim()
         ? profile.visualGuidance
         : DEFAULT_CREATIVE_VISUAL_GUIDANCE,
+    brandPalette,
+    carouselChrome,
     brandOverlay: {
       ...brandOverlay,
       ...(snapshotAsset && snapshotAsset.id === brandOverlay.assetId

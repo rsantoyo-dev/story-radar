@@ -14,6 +14,7 @@ import {
   findLatestCreativeAssetBatchForDraft,
   findPendingCreativeAssetBatchesForDraft,
   getCreativeAssetBrandOverlaySnapshot,
+  getCreativeAssetCarouselChromeSnapshot,
   getCreativeAssetReferenceSnapshot,
   insertRegeneratedCreativeAsset,
   refreshCreativeAssetBatchStatus,
@@ -42,6 +43,8 @@ import {
   type CreativeBrandOverlay,
   type CreativeBrandOverlaySettings,
   type CreativeBrandOverlaySnapshot,
+  type CreativeCarouselChromeSettings,
+  type CreativeCarouselChromeSnapshot,
   type CreativeCharacterSnapshot,
   type CreativeConversionGoal,
   type CreativeDraft,
@@ -294,6 +297,9 @@ export async function generateCreativeDraftAssets(
         shouldApplyCreativeBrandOverlay(brand.snapshot, unit.order)
           ? { brandOverlaySnapshot: brand.snapshot }
           : {}),
+        ...(brand.carouselChromeSnapshot && unit.type === "carousel-slide"
+          ? { carouselChromeSnapshot: brand.carouselChromeSnapshot }
+          : {}),
         unitOrder: unit.order,
         unitRole: unit.role,
         unitSnapshot: unit,
@@ -304,6 +310,7 @@ export async function generateCreativeDraftAssets(
           characters: charactersForImageGeneration(characterSnapshots),
           campaignCharacters,
           brandOverlay: brand.overlay,
+          carouselChromeSettings: brand.carouselChrome,
         }),
       };
     }),
@@ -582,6 +589,8 @@ type ResolvedCreativeBrandGeneration = {
   inputHash: string;
   overlay?: CreativeBrandOverlay;
   snapshot?: CreativeBrandOverlaySnapshot;
+  carouselChrome: CreativeCarouselChromeSettings;
+  carouselChromeSnapshot?: CreativeCarouselChromeSnapshot;
 };
 
 /**
@@ -593,38 +602,60 @@ async function resolveCreativeBrandGeneration(
 ): Promise<ResolvedCreativeBrandGeneration> {
   const profile = await getCreativeProfile(topicId);
   const overlay = profile.brandOverlay;
-  if (!overlay.enabled) {
-    return { inputHash: "none" };
-  }
+  const carouselChrome = profile.carouselChrome;
+  const carouselChromeSnapshot = carouselChrome.enabled
+    ? { ...carouselChrome, compositorVersion: 1 as const }
+    : undefined;
+  let overlayInputHash = "none";
+  let resolvedOverlay: CreativeBrandOverlay | undefined;
+  let snapshot: CreativeBrandOverlaySnapshot | undefined;
 
-  if (!overlay.assetId || !overlay.asset) {
-    throw new CreativeContentConflictError(
-      "The enabled brand overlay does not have a current PNG asset. Upload and save a logo in the creative profile.",
-    );
-  }
+  if (overlay.enabled) {
+    if (!overlay.assetId || !overlay.asset) {
+      throw new CreativeContentConflictError(
+        "The enabled brand overlay does not have a current PNG asset. Upload and save a logo in the creative profile.",
+      );
+    }
 
-  const storedAsset = await findCreativeBrandAsset(topicId, overlay.assetId);
-  if (!storedAsset || storedAsset.id !== overlay.asset.id) {
-    throw new CreativeContentConflictError(
-      "The selected brand logo is no longer available for this topic. Choose and save a current logo.",
-    );
-  }
+    const storedAsset = await findCreativeBrandAsset(topicId, overlay.assetId);
+    if (!storedAsset || storedAsset.id !== overlay.asset.id) {
+      throw new CreativeContentConflictError(
+        "The selected brand logo is no longer available for this topic. Choose and save a current logo.",
+      );
+    }
 
-  const settings = creativeBrandSettings(overlay);
-  const inputHash = creativeBrandInputHash({
-    settings,
-    assetId: storedAsset.id,
-    assetSha256: storedAsset.sha256,
-  });
-
-  return {
-    inputHash,
-    overlay: {
+    const settings = creativeBrandSettings(overlay);
+    overlayInputHash = creativeBrandInputHash({
+      settings,
+      assetId: storedAsset.id,
+      assetSha256: storedAsset.sha256,
+    });
+    resolvedOverlay = {
       ...settings,
       assetId: storedAsset.id,
       asset: overlay.asset,
-    },
-    snapshot: creativeBrandOverlaySnapshot(settings, storedAsset),
+    };
+    snapshot = creativeBrandOverlaySnapshot(settings, storedAsset);
+  }
+
+  const inputHash =
+    overlayInputHash === "none" && !carouselChromeSnapshot
+      ? "none"
+      : createHash("sha256")
+          .update(
+            JSON.stringify({
+              policy: "brand-and-carousel-chrome-v1",
+              overlayInputHash,
+              carouselChrome: carouselChromeSnapshot ?? { enabled: false },
+            }),
+          )
+          .digest("hex");
+  return {
+    inputHash,
+    ...(resolvedOverlay ? { overlay: resolvedOverlay } : {}),
+    ...(snapshot ? { snapshot } : {}),
+    carouselChrome,
+    ...(carouselChromeSnapshot ? { carouselChromeSnapshot } : {}),
   };
 }
 
@@ -687,10 +718,12 @@ function buildAssetCarouselChrome({
   asset,
   batch,
   brandSnapshot,
+  carouselChromeSnapshot,
 }: {
   asset: CreativeGeneratedAsset;
   batch: CreativeAssetBatch;
   brandSnapshot?: CreativeBrandOverlaySnapshot;
+  carouselChromeSnapshot?: CreativeCarouselChromeSnapshot;
 }) {
   if (
     asset.unitSnapshot.type !== "carousel-slide" ||
@@ -704,6 +737,7 @@ function buildAssetCarouselChrome({
     unitOrder: asset.unitOrder,
     totalSlides: batch.totalAssets,
     continuationCue: asset.unitSnapshot.continuationCue,
+    settings: carouselChromeSnapshot,
     logoExclusionZone: brandSnapshot
       ? brandSnapshotOccupiedRect(brandSnapshot, batch.outputAspectRatio)
       : undefined,
@@ -732,10 +766,13 @@ async function creativePostProcessorForAsset({
   batch: CreativeAssetBatch;
 }): Promise<FalImagePostProcessor | undefined> {
   const brandSnapshot = await getCreativeAssetBrandOverlaySnapshot(asset.id);
+  const carouselChromeSnapshot =
+    await getCreativeAssetCarouselChromeSnapshot(asset.id);
   const chrome = buildAssetCarouselChrome({
     asset,
     batch,
     brandSnapshot,
+    carouselChromeSnapshot,
   });
   if (!brandSnapshot && !chrome?.overlay) return undefined;
 

@@ -14,10 +14,15 @@ import {
 
 import {
   DEFAULT_CREATIVE_BRAND_OVERLAY_SETTINGS,
+  DEFAULT_CREATIVE_BRAND_PALETTE,
+  DEFAULT_CREATIVE_CAROUSEL_CHROME_SETTINGS,
   DEFAULT_CREATIVE_CONVERSION_GOAL,
   DEFAULT_CREATIVE_VISUAL_GUIDANCE,
   type CreativeBrandOverlaySnapshot,
   type CreativeBrandOverlaySettings,
+  type CreativeBrandPaletteColor,
+  type CreativeCarouselChromeSettings,
+  type CreativeCarouselChromeSnapshot,
   type CreativeConversionGoal,
   type CreativeInteractiveOverlay,
 } from "@/app/modules/stories/creative-content.types";
@@ -91,6 +96,14 @@ export const creativeProfiles = pgTable(
     visualGuidance: text("visual_guidance")
       .notNull()
       .default(DEFAULT_CREATIVE_VISUAL_GUIDANCE),
+    brandPalette: jsonb("brand_palette")
+      .$type<CreativeBrandPaletteColor[]>()
+      .default(DEFAULT_CREATIVE_BRAND_PALETTE.map((entry) => ({ ...entry })))
+      .notNull(),
+    carouselChrome: jsonb("carousel_chrome")
+      .$type<CreativeCarouselChromeSettings>()
+      .default(DEFAULT_CREATIVE_CAROUSEL_CHROME_SETTINGS)
+      .notNull(),
     brandAssetId: uuid("brand_asset_id").references(
       () => creativeBrandAssets.id,
       { onDelete: "set null" },
@@ -521,6 +534,7 @@ export const creativeAssets = pgTable(
       .notNull(),
     referenceInputHash: text("reference_input_hash").default("").notNull(),
     brandOverlaySnapshot: jsonb("brand_overlay_snapshot").$type<CreativeBrandOverlaySnapshot>(),
+    carouselChromeSnapshot: jsonb("carousel_chrome_snapshot").$type<CreativeCarouselChromeSnapshot>(),
     requestId: text("request_id"),
     imageUrl: text("image_url"),
     contentType: text("content_type"),

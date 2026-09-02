@@ -20,11 +20,13 @@ import {
   CREATIVE_BRAND_BACKDROP_MODES,
   CREATIVE_BRAND_PLACEMENTS,
   CREATIVE_BRAND_SCOPES,
+  CREATIVE_CAROUSEL_CHROME_STYLES,
   CREATIVE_COMPANION_APPROACHES,
   CREATIVE_CONVERSION_GOALS,
   type CreativeAssetBatchResponse,
   type CreativeAspectRatio,
   type CreativeBrandAsset,
+  type CreativeBrandPaletteColor,
   type CreativeCharacter,
   type CreativeCharacterReferenceImage,
   type CreativeCharacterRosterEntry,
@@ -1273,6 +1275,36 @@ export function CreativeDraftWorkspace({
     });
   }
 
+  function updateBrandPalette(brandPalette: CreativeBrandPaletteColor[]) {
+    if (!profile) return;
+    const paletteColors = new Set(brandPalette.map((entry) => entry.color));
+    const fallback = brandPalette[0]!.color;
+    updateProfile({
+      brandPalette,
+      carouselChrome: {
+        ...profile.carouselChrome,
+        backgroundColor: paletteColors.has(profile.carouselChrome.backgroundColor)
+          ? profile.carouselChrome.backgroundColor
+          : fallback,
+        textColor: paletteColors.has(profile.carouselChrome.textColor)
+          ? profile.carouselChrome.textColor
+          : fallback,
+        accentColor: paletteColors.has(profile.carouselChrome.accentColor)
+          ? profile.carouselChrome.accentColor
+          : fallback,
+      },
+    });
+  }
+
+  function updateCarouselChrome(
+    values: Partial<CreativeProfile["carouselChrome"]>,
+  ) {
+    if (!profile) return;
+    updateProfile({
+      carouselChrome: { ...profile.carouselChrome, ...values },
+    });
+  }
+
   async function handleUploadBrandAsset(file: File) {
     if (!profile || busy) return;
     if (file.type !== "image/png" && !file.name.toLowerCase().endsWith(".png")) {
@@ -1565,6 +1597,13 @@ export function CreativeDraftWorkspace({
                   art direction. Logo settings below apply directly to the next
                   image batch and do not require regenerating the script.
                 </p>
+                <BrandPaletteAndCarouselChromeEditor
+                  palette={profile.brandPalette}
+                  chrome={profile.carouselChrome}
+                  disabled={Boolean(busy) || Boolean(characterBusy)}
+                  onPaletteChange={updateBrandPalette}
+                  onChromeChange={updateCarouselChrome}
+                />
                 <BrandOverlayEditor
                   overlay={profile.brandOverlay}
                   topicId={topicId}
@@ -2460,7 +2499,7 @@ function CreativeAssetCard({
   const isBusy = busyAction?.endsWith(asset.id) ?? false;
   const label = format === "meme" ? "Meme" : `Slide ${asset.unitOrder}`;
   const carouselPaginationText =
-    format === "carousel"
+    format === "carousel" && hasCarouselPaginationContract(asset.prompt)
       ? carouselPaginationPreview(asset, totalSlides)
       : undefined;
 
@@ -2513,7 +2552,7 @@ function CreativeAssetCard({
 
       {carouselPaginationText ? (
         <div className={styles.expectedText}>
-          <span>Deterministic carousel pagination · fitted automatically</span>
+          <span>Carousel numbering · set in the Creative profile</span>
           <p>{carouselPaginationText}</p>
         </div>
       ) : null}
@@ -2599,6 +2638,12 @@ function carouselPaginationPreview(
   if (asset.unitOrder >= totalSlides) return progress;
   const cue = asset.unitSnapshot.continuationCue?.trim();
   return cue ? `${progress} · ${cue} →` : progress;
+}
+
+function hasCarouselPaginationContract(prompt: string): boolean {
+  return /<CAROUSEL_CHROME_CONTRACT>[\s\S]*?<\/CAROUSEL_CHROME_CONTRACT>/iu.test(
+    prompt,
+  );
 }
 
 function BriefView({
@@ -3089,6 +3134,195 @@ function TextField({ label, value, onChange }: { label: string; value: string; o
 
 function TextAreaField({ label, value, onChange, rows }: { label: string; value: string; onChange: (value: string) => void; rows: number }) {
   return <label className={styles.field}><span>{label}</span><textarea value={value} rows={rows} onChange={(event) => onChange(event.target.value)} /></label>;
+}
+
+function BrandPaletteAndCarouselChromeEditor({
+  palette,
+  chrome,
+  disabled,
+  onPaletteChange,
+  onChromeChange,
+}: {
+  palette: CreativeBrandPaletteColor[];
+  chrome: CreativeProfile["carouselChrome"];
+  disabled: boolean;
+  onPaletteChange: (palette: CreativeBrandPaletteColor[]) => void;
+  onChromeChange: (values: Partial<CreativeProfile["carouselChrome"]>) => void;
+}) {
+  const updatePaletteColor = (index: number, color: string) =>
+    onPaletteChange(
+      palette.map((entry, entryIndex) =>
+        entryIndex === index ? { ...entry, color: color.toUpperCase() } : entry,
+      ),
+    );
+  const updatePaletteName = (index: number, name: string) =>
+    onPaletteChange(
+      palette.map((entry, entryIndex) =>
+        entryIndex === index ? { ...entry, name } : entry,
+      ),
+    );
+
+  return (
+    <section className={styles.carouselChromePanel} aria-labelledby="brand-palette-title">
+      <header className={styles.brandOverlayHeader}>
+        <div>
+          <strong id="brand-palette-title">Brand palette & carousel numbering</strong>
+          <p>
+            Define the colours available to this topic, then choose the optional
+            deterministic counter rendered on carousel slides. The palette also
+            becomes part of the visual campaign guide sent to image generation.
+          </p>
+        </div>
+        <label className={styles.brandEnabledToggle}>
+          <input
+            type="checkbox"
+            checked={chrome.enabled}
+            disabled={disabled}
+            onChange={(event) => onChromeChange({ enabled: event.target.checked })}
+          />
+          <span>Numbering enabled</span>
+        </label>
+      </header>
+
+      <fieldset className={styles.carouselChromeControls} disabled={disabled}>
+        <div className={styles.paletteGrid} aria-label="Brand palette">
+          {palette.map((entry, index) => (
+            <div className={styles.paletteColor} key={`${entry.color}-${index}`}>
+              <input
+                type="color"
+                aria-label={`${entry.name} colour`}
+                value={entry.color}
+                onChange={(event) => updatePaletteColor(index, event.target.value)}
+              />
+              <input
+                aria-label={`Name for ${entry.color}`}
+                value={entry.name}
+                maxLength={40}
+                onChange={(event) => updatePaletteName(index, event.target.value)}
+              />
+              <code>{entry.color}</code>
+              <button
+                type="button"
+                className={styles.paletteRemove}
+                disabled={palette.length <= 3}
+                onClick={() => onPaletteChange(palette.filter((_, item) => item !== index))}
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+          {palette.length < 8 ? (
+            <button
+              type="button"
+              className={styles.paletteAdd}
+              onClick={() =>
+                onPaletteChange([
+                  ...palette,
+                  {
+                    name: `Brand colour ${palette.length + 1}`,
+                    color: nextAvailablePaletteColor(palette),
+                  },
+                ])
+              }
+            >
+              + Add colour
+            </button>
+          ) : null}
+        </div>
+
+        <div className={styles.carouselChromeOptions}>
+          <div className={styles.brandControlGroup}>
+            <span className={styles.brandControlLabel}>Counter style</span>
+            <div className={styles.brandSegmented} role="group" aria-label="Carousel counter style">
+              {CREATIVE_CAROUSEL_CHROME_STYLES.map((style) => (
+                <button
+                  key={style}
+                  type="button"
+                  className={`${styles.brandOptionButton} ${
+                    chrome.style === style ? styles.brandOptionSelected : ""
+                  }`}
+                  aria-pressed={chrome.style === style}
+                  onClick={() => onChromeChange({ style })}
+                >
+                  {style === "pill" ? "Pill badge" : "Minimal"}
+                </button>
+              ))}
+            </div>
+          </div>
+          <CarouselChromePaletteSelect
+            label="Badge"
+            value={chrome.backgroundColor}
+            palette={palette}
+            onChange={(backgroundColor) => onChromeChange({ backgroundColor })}
+          />
+          <CarouselChromePaletteSelect
+            label="Counter text"
+            value={chrome.textColor}
+            palette={palette}
+            onChange={(textColor) => onChromeChange({ textColor })}
+          />
+          <CarouselChromePaletteSelect
+            label="Accent"
+            value={chrome.accentColor}
+            palette={palette}
+            onChange={(accentColor) => onChromeChange({ accentColor })}
+          />
+        </div>
+
+        <div className={styles.carouselChromePreview} aria-label="Carousel numbering preview">
+          <span>Preview · slide 2 of 6</span>
+          {chrome.enabled ? (
+            <div
+              className={`${styles.carouselChromePreviewBadge} ${
+                chrome.style === "minimal" ? styles.carouselChromePreviewMinimal : ""
+              }`}
+              style={{
+                backgroundColor: chrome.backgroundColor,
+                borderColor: chrome.accentColor,
+                color: chrome.textColor,
+              }}
+            >
+              <b style={{ color: chrome.style === "minimal" ? chrome.textColor : chrome.accentColor }}>2/6</b>
+              <span> · next idea </span>
+              <b style={{ color: chrome.accentColor }}>→</b>
+            </div>
+          ) : (
+            <p>Numbering is off for the next carousel batch.</p>
+          )}
+        </div>
+      </fieldset>
+    </section>
+  );
+}
+
+function nextAvailablePaletteColor(palette: CreativeBrandPaletteColor[]): string {
+  const candidates = ["#F4AF36", "#173F43", "#EF644B", "#2F777B", "#FAF5E6", "#6F8FAF"];
+  return candidates.find((color) => !palette.some((entry) => entry.color === color)) ?? "#6F8FAF";
+}
+
+function CarouselChromePaletteSelect({
+  label,
+  value,
+  palette,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  palette: CreativeBrandPaletteColor[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className={styles.carouselChromeSelect}>
+      <span>{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)}>
+        {palette.map((entry) => (
+          <option key={entry.color} value={entry.color}>
+            {entry.name} · {entry.color}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
 }
 
 function BrandOverlayEditor({

@@ -4,6 +4,7 @@ import type {
   CreativeAspectRatio,
   CreativeBrandOverlay,
   CreativeBrief,
+  CreativeCarouselChromeSettings,
   CreativeCharacterSnapshot,
   CreativeDraft,
   CreativeUnit,
@@ -33,6 +34,7 @@ export function buildCreativeImagePrompt({
   characters = [],
   campaignCharacters = characters,
   brandOverlay,
+  carouselChromeSettings,
 }: {
   draft: CreativeDraft;
   unit: CreativeUnit;
@@ -40,6 +42,7 @@ export function buildCreativeImagePrompt({
   characters?: CreativeCharacterSnapshot[];
   campaignCharacters?: CreativeCharacterSnapshot[];
   brandOverlay?: CreativeBrandOverlay;
+  carouselChromeSettings?: CreativeCarouselChromeSettings;
 }): { prompt: string; expectedText: string } {
   const expectedText = creativeImageModelVisibleText(unit);
   const position =
@@ -65,6 +68,7 @@ export function buildCreativeImagePrompt({
           unitOrder: unit.order,
           totalSlides: draft.units.length,
           continuationCue: unit.continuationCue,
+          settings: carouselChromeSettings,
           logoExclusionZone: brandExclusionRect({
             brandOverlay,
             unitOrder: unit.order,

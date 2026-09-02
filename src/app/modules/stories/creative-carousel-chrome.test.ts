@@ -64,6 +64,43 @@ test("reserves a compact ratio-aware pagination badge on every canvas", () => {
   }
 });
 
+test("can disable numbering and uses selected palette colours for the overlay", () => {
+  const disabled = buildCreativeCarouselChrome({
+    aspectRatio: "4:5",
+    unitOrder: 2,
+    totalSlides: 5,
+    settings: {
+      enabled: false,
+      style: "minimal",
+      backgroundColor: "#173F43",
+      textColor: "#FAF5E6",
+      accentColor: "#EF644B",
+    },
+  });
+  assert.equal(disabled.geometry.layout, "skipped");
+  assert.equal(disabled.geometry.skipReason, "disabled");
+  assert.equal(disabled.overlay, undefined);
+  assert.equal(disabled.promptReservation, undefined);
+
+  const styled = buildCreativeCarouselChrome({
+    aspectRatio: "4:5",
+    unitOrder: 2,
+    totalSlides: 5,
+    continuationCue: "the next idea",
+    settings: {
+      enabled: true,
+      style: "minimal",
+      backgroundColor: "#173F43",
+      textColor: "#FAF5E6",
+      accentColor: "#EF644B",
+    },
+  });
+  assert.equal(styled.style, "minimal");
+  assert.match(styled.overlay!.input.toString(), /#173F43/);
+  assert.match(styled.overlay!.input.toString(), /#FAF5E6/);
+  assert.match(styled.overlay!.input.toString(), /#EF644B/);
+});
+
 test("derives progress and uses only a meaningful continuation cue", () => {
   assert.deepEqual(
     buildCreativeCarouselChromeCopy({

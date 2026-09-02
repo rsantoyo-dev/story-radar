@@ -8,6 +8,7 @@ import { creativeBrandAssets, creativeProfiles } from "@/db/schema";
 import {
   CREATIVE_CONVERSION_GOALS,
   DEFAULT_CREATIVE_BRAND_OVERLAY_SETTINGS,
+  DEFAULT_CREATIVE_CAROUSEL_CHROME_SETTINGS,
   DEFAULT_CREATIVE_CONVERSION_GOAL,
   DEFAULT_CREATIVE_VISUAL_GUIDANCE,
   isCreativeConversionGoal,
@@ -24,6 +25,11 @@ import {
   parseCreativeBrandOverlayInput,
   parseCreativeBrandOverlaySettings,
 } from "./creative-brand-overlay-validation";
+import {
+  cloneDefaultPalette,
+  parseCreativeBrandPaletteInput,
+  parseCreativeCarouselChromeInput,
+} from "./creative-carousel-chrome-validation";
 
 export const DEFAULT_CREATIVE_PROFILE_ID = "default";
 
@@ -35,6 +41,8 @@ const DEFAULT_PROFILE: EditableCreativeProfile = {
   audience:
     "Professionals, creators, and small businesses interested in the selected topic",
   visualGuidance: DEFAULT_CREATIVE_VISUAL_GUIDANCE,
+  brandPalette: cloneDefaultPalette(),
+  carouselChrome: { ...DEFAULT_CREATIVE_CAROUSEL_CHROME_SETTINGS },
   brandOverlay: { ...DEFAULT_CREATIVE_BRAND_OVERLAY_SETTINGS },
   brandPersonality: ["insightful", "clear", "clever", "practical"],
   formality: 45,
@@ -150,6 +158,8 @@ export function parseCreativeProfileInput(value: unknown): EditableCreativeProfi
     platform: value.platform,
     audience: value.audience,
     visualGuidance: value.visualGuidance,
+    brandPalette: value.brandPalette,
+    carouselChrome: value.carouselChrome,
     brandOverlay: value.brandOverlay,
     brandPersonality: value.brandPersonality,
     formality: value.formality,
@@ -167,6 +177,7 @@ export function parseCreativeProfileInput(value: unknown): EditableCreativeProfi
 function validateCreativeProfile(
   value: EditableCreativeProfile,
 ): EditableCreativeProfile {
+  const brandPalette = parseCreativeBrandPaletteInput(value.brandPalette);
   return {
     name: textValue(value.name, "name", 100),
     language: textValue(value.language, "language", 80),
@@ -174,6 +185,11 @@ function validateCreativeProfile(
     platform: textValue(value.platform, "platform", 80),
     audience: textValue(value.audience, "audience", 500),
     visualGuidance: visualGuidanceValue(value.visualGuidance),
+    brandPalette,
+    carouselChrome: parseCreativeCarouselChromeInput(
+      value.carouselChrome,
+      brandPalette,
+    ),
     brandOverlay: parseCreativeBrandOverlayInput(value.brandOverlay),
     brandPersonality: textList(
       value.brandPersonality,
@@ -221,6 +237,11 @@ function mapCreativeProfile(
   brandAsset?: StoredCreativeBrandAsset | null,
 ): CreativeProfile {
   const settings = parseCreativeBrandOverlaySettings(profile.brandOverlay);
+  const brandPalette = parseCreativeBrandPaletteInput(profile.brandPalette);
+  const carouselChrome = parseCreativeCarouselChromeInput(
+    profile.carouselChrome,
+    brandPalette,
+  );
   if (
     profile.brandAssetId &&
     (!brandAsset ||
@@ -238,6 +259,8 @@ function mapCreativeProfile(
     platform: profile.platform,
     audience: profile.audience,
     visualGuidance: profile.visualGuidance,
+    brandPalette,
+    carouselChrome,
     brandOverlay: {
       ...settings,
       ...(brandAsset

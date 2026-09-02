@@ -1,0 +1,3 @@
+ALTER TABLE "creative_assets" ADD COLUMN "carousel_chrome_snapshot" jsonb;--> statement-breakpoint
+ALTER TABLE "creative_profiles" ADD COLUMN "brand_palette" jsonb DEFAULT '[{"name":"Warm cream","color":"#F6F0E4"},{"name":"Editorial navy","color":"#102A43"},{"name":"Editorial gold","color":"#E8A83E"},{"name":"Teal","color":"#2F777B"},{"name":"Coral","color":"#EF644B"}]'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "creative_profiles" ADD COLUMN "carousel_chrome" jsonb DEFAULT '{"enabled":true,"style":"pill","backgroundColor":"#102A43","textColor":"#F6F0E4","accentColor":"#E8A83E"}'::jsonb NOT NULL;

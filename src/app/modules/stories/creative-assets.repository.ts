@@ -14,6 +14,7 @@ import {
   type CreativeAssetBatch,
   type CreativeAssetBatchStatus,
   type CreativeBrandOverlaySnapshot,
+  type CreativeCarouselChromeSnapshot,
   type CreativeCharacterSnapshot,
   type CreativeGeneratedAsset,
   type CreativeImageQuality,
@@ -47,6 +48,7 @@ type NewAsset = {
   referenceSnapshot: CreativeCharacterSnapshot[];
   referenceInputHash: string;
   brandOverlaySnapshot?: CreativeBrandOverlaySnapshot;
+  carouselChromeSnapshot?: CreativeCarouselChromeSnapshot;
 };
 
 export async function findCurrentCreativeAssetBatch(
@@ -270,6 +272,7 @@ export async function createCreativeAssetBatch({
         referenceSnapshot: asset.referenceSnapshot,
         referenceInputHash: asset.referenceInputHash,
         brandOverlaySnapshot: asset.brandOverlaySnapshot ?? null,
+        carouselChromeSnapshot: asset.carouselChromeSnapshot ?? null,
         createdAt: now,
         updatedAt: now,
       })),
@@ -297,6 +300,7 @@ export async function insertRegeneratedCreativeAsset({
       referenceSnapshot: creativeAssets.referenceSnapshot,
       referenceInputHash: creativeAssets.referenceInputHash,
       brandOverlaySnapshot: creativeAssets.brandOverlaySnapshot,
+      carouselChromeSnapshot: creativeAssets.carouselChromeSnapshot,
     })
     .from(creativeAssets)
     .where(eq(creativeAssets.id, previous.id))
@@ -326,6 +330,7 @@ export async function insertRegeneratedCreativeAsset({
       referenceSnapshot: previousRow.referenceSnapshot,
       referenceInputHash: previousRow.referenceInputHash,
       brandOverlaySnapshot: previousRow.brandOverlaySnapshot,
+      carouselChromeSnapshot: previousRow.carouselChromeSnapshot,
       createdAt: now,
       updatedAt: now,
     })
@@ -370,6 +375,19 @@ export async function getCreativeAssetBrandOverlaySnapshot(
     .limit(1);
 
   return row?.brandOverlaySnapshot ?? undefined;
+}
+
+/** Internal-only immutable pagination material for post-processing. */
+export async function getCreativeAssetCarouselChromeSnapshot(
+  assetId: string,
+): Promise<CreativeCarouselChromeSnapshot | undefined> {
+  const [row] = await db
+    .select({ carouselChromeSnapshot: creativeAssets.carouselChromeSnapshot })
+    .from(creativeAssets)
+    .where(eq(creativeAssets.id, assetId))
+    .limit(1);
+
+  return row?.carouselChromeSnapshot ?? undefined;
 }
 
 export async function setCreativeAssetRequest(

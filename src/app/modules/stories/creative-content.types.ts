@@ -240,6 +240,49 @@ export type CreativeAssetStatus =
   | "approved"
   | "stale";
 
+export const CREATIVE_CAROUSEL_CHROME_STYLES = ["pill", "minimal"] as const;
+export type CreativeCarouselChromeStyle =
+  (typeof CREATIVE_CAROUSEL_CHROME_STYLES)[number];
+
+/** A named, approved brand colour that can be reused by deterministic visuals. */
+export type CreativeBrandPaletteColor = {
+  name: string;
+  color: string;
+};
+
+/**
+ * Settings for the compositor-rendered carousel counter. Every colour must
+ * be selected from the profile's approved brand palette.
+ */
+export type CreativeCarouselChromeSettings = {
+  enabled: boolean;
+  style: CreativeCarouselChromeStyle;
+  backgroundColor: string;
+  textColor: string;
+  accentColor: string;
+};
+
+/** Immutable per-asset material so a regenerated historical image is exact. */
+export type CreativeCarouselChromeSnapshot = CreativeCarouselChromeSettings & {
+  compositorVersion: 1;
+};
+
+export const DEFAULT_CREATIVE_BRAND_PALETTE = [
+  { name: "Warm cream", color: "#F6F0E4" },
+  { name: "Editorial navy", color: "#102A43" },
+  { name: "Editorial gold", color: "#E8A83E" },
+  { name: "Teal", color: "#2F777B" },
+  { name: "Coral", color: "#EF644B" },
+] as const satisfies readonly CreativeBrandPaletteColor[];
+
+export const DEFAULT_CREATIVE_CAROUSEL_CHROME_SETTINGS = {
+  enabled: true,
+  style: "pill",
+  backgroundColor: "#102A43",
+  textColor: "#F6F0E4",
+  accentColor: "#E8A83E",
+} as const satisfies CreativeCarouselChromeSettings;
+
 export type CreativeProfile = {
   id: string;
   name: string;
@@ -248,6 +291,8 @@ export type CreativeProfile = {
   platform: string;
   audience: string;
   visualGuidance: string;
+  brandPalette: CreativeBrandPaletteColor[];
+  carouselChrome: CreativeCarouselChromeSettings;
   brandOverlay: CreativeBrandOverlay;
   brandPersonality: string[];
   formality: number;

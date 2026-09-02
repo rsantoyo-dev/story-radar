@@ -212,6 +212,140 @@
   line-height: 1.45;
 }
 
+.carouselChromePanel {
+  @ds-surface(flat neutral density(4) radius(3) shadow(1));
+  display: grid;
+  gap: density(4);
+  padding: density(4);
+  border: border(1, palette(surface-dark), solid);
+  border-radius: radius(3);
+  background: palette(surface-light);
+  box-shadow: shadow(1);
+}
+
+.carouselChromeControls {
+  display: grid;
+  gap: density(4);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.carouselChromeControls:disabled {
+  opacity: 0.65;
+}
+
+.paletteGrid {
+  display: grid;
+  grid-template-columns: xs(1fr) md(repeat(2, minmax(0, 1fr)));
+  gap: density(2);
+}
+
+.paletteColor {
+  @ds-surface(flat light density(2) radius(2));
+  display: grid;
+  grid-template-columns: density(7) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: density(2);
+  padding: density(2);
+  border: border(1, palette(surface-dark), solid);
+  border-radius: radius(2);
+  background: palette(light-light);
+}
+
+.paletteColor input[type="color"] {
+  width: density(7);
+  height: density(7);
+  padding: 0;
+  border: 0;
+  border-radius: radius(1);
+  cursor: pointer;
+}
+
+.paletteColor input:not([type="color"]) {
+  @ds-input(outlined neutral density(2) radius(1));
+  min-width: 0;
+  padding: density(1) density(2);
+  @ds-typo(caption);
+}
+
+.paletteColor code {
+  color: palette(tertiary-dark);
+  @ds-typo(caption);
+  font-size: 10px;
+}
+
+.paletteRemove,
+.paletteAdd {
+  @ds-button(outlined neutral density(2) radius(1));
+  width: max-content;
+  min-height: density(6);
+  @ds-typo(caption);
+  font-weight: 700;
+}
+
+.paletteRemove {
+  grid-column: 2 / -1;
+  justify-self: end;
+}
+
+.paletteAdd {
+  justify-self: start;
+}
+
+.carouselChromeOptions {
+  display: grid;
+  grid-template-columns: xs(1fr) md(1.2fr repeat(3, minmax(0, 1fr)));
+  align-items: end;
+  gap: density(3);
+}
+
+.carouselChromeSelect {
+  display: grid;
+  gap: density(2);
+  color: palette(primary-dark);
+  @ds-typo(caption);
+  font-weight: 700;
+}
+
+.carouselChromeSelect select {
+  @ds-input(outlined neutral density(2) radius(2));
+  min-width: 0;
+}
+
+.carouselChromePreview {
+  @ds-surface(flat light density(3) radius(2));
+  display: grid;
+  gap: density(2);
+  justify-items: start;
+  padding: density(3);
+  border: border(1, palette(surface-dark), solid);
+  border-radius: radius(2);
+  background: palette(light-light);
+}
+
+.carouselChromePreview > span,
+.carouselChromePreview p {
+  margin: 0;
+  color: palette(tertiary-dark);
+  @ds-typo(caption);
+}
+
+.carouselChromePreviewBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: density(7);
+  padding: density(1) density(3);
+  border: border(1, palette(surface-dark), solid);
+  border-radius: radius(full);
+  @ds-typo(caption);
+  font-weight: 600;
+}
+
+.carouselChromePreviewMinimal {
+  border-radius: radius(1);
+}
+
 .brandOverlayPanel {
   @ds-surface(flat neutral density(4) radius(3) shadow(1));
   display: grid;

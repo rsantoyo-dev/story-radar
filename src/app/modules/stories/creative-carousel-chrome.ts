@@ -1,6 +1,11 @@
 import sharp from "sharp";
 
-import type { CreativeAspectRatio } from "./creative-content.types";
+import {
+  DEFAULT_CREATIVE_CAROUSEL_CHROME_SETTINGS,
+  type CreativeAspectRatio,
+  type CreativeCarouselChromeSettings,
+  type CreativeCarouselChromeStyle,
+} from "./creative-content.types";
 import { creativeCanvasDimensions } from "./creative-brand-overlay";
 
 const BADGE_HEIGHT_PERCENT = 5.2;
@@ -59,7 +64,7 @@ export type CreativeCarouselChromeGeometry =
   | {
       canvas: CreativeCarouselChromeCanvas;
       layout: "skipped";
-      skipReason: "no-safe-region" | "copy-does-not-fit";
+      skipReason: "disabled" | "no-safe-region" | "copy-does-not-fit";
       badge?: never;
       text?: never;
     };
@@ -74,6 +79,7 @@ export type CreativeCarouselChromeOverlay = {
 export type CreativeCarouselChrome = {
   copy: CreativeCarouselChromeCopy;
   colors: CreativeCarouselChromeColors;
+  style: CreativeCarouselChromeStyle;
   geometry: CreativeCarouselChromeGeometry;
   /** Undefined when the chrome was skipped to protect a logo or legibility. */
   promptReservation?: string;
@@ -87,6 +93,7 @@ export type CreativeCarouselChromeInput = {
   totalSlides: number;
   /** Editor/model supplied copy only. This module never invents a cue. */
   continuationCue?: string;
+  settings?: CreativeCarouselChromeSettings;
   colors?: Partial<CreativeCarouselChromeColors>;
   /**
    * Pixel coordinates on the final output canvas. Pass the brand compositor's
@@ -103,7 +110,25 @@ export function buildCreativeCarouselChrome(
   input: CreativeCarouselChromeInput,
 ): CreativeCarouselChrome {
   let copy = buildCreativeCarouselChromeCopy(input);
-  const colors = normalizeColors(input.colors);
+  const settings = normalizeSettings(input.settings);
+  const colors = normalizeColors({
+    background: settings.backgroundColor,
+    text: settings.textColor,
+    accent: settings.accentColor,
+    ...input.colors,
+  });
+  if (!settings.enabled) {
+    return {
+      copy,
+      colors,
+      style: settings.style,
+      geometry: {
+        canvas: creativeCanvasDimensions(input.aspectRatio),
+        layout: "skipped",
+        skipReason: "disabled",
+      },
+    };
+  }
   let geometry = computeCreativeCarouselChromeGeometry({
     aspectRatio: input.aspectRatio,
     copy,
@@ -120,7 +145,7 @@ export function buildCreativeCarouselChrome(
       logoExclusionZone: input.logoExclusionZone,
     });
   }
-  const model = { copy, colors, geometry };
+  const model = { copy, colors, style: settings.style, geometry };
 
   if (geometry.layout === "skipped") {
     return model;
@@ -295,8 +320,11 @@ export function hasCreativeCarouselChromeContract(prompt: string): boolean {
 export function renderCreativeCarouselChromeSvg({
   copy,
   colors,
+  style = "pill",
   geometry,
-}: Pick<CreativeCarouselChrome, "copy" | "colors" | "geometry">): Buffer {
+}: Pick<CreativeCarouselChrome, "copy" | "colors" | "geometry"> & {
+  style?: CreativeCarouselChromeStyle;
+}): Buffer {
   if (geometry.layout === "skipped") {
     throw new CreativeCarouselChromeError(
       "Skipped carousel chrome has no SVG overlay.",
@@ -304,8 +332,11 @@ export function renderCreativeCarouselChromeSvg({
   }
 
   const badge = geometry.badge;
-  const badgeRect = `<rect x="${badge.left}" y="${badge.top}" width="${badge.width}" height="${badge.height}" rx="${Math.round(badge.height / 2)}" fill="${colors.background}" fill-opacity="0.88" stroke="${colors.accent}" stroke-width="2"/>`;
-  const text = renderChromeText(geometry.text, copy, colors);
+  const badgeRect =
+    style === "pill"
+      ? `<rect x="${badge.left}" y="${badge.top}" width="${badge.width}" height="${badge.height}" rx="${Math.round(badge.height / 2)}" fill="${colors.background}" fill-opacity="0.88" stroke="${colors.accent}" stroke-width="2"/>`
+      : `<rect x="${badge.left}" y="${badge.top}" width="${badge.width}" height="${badge.height}" rx="${Math.round(badge.height / 4)}" fill="${colors.background}" fill-opacity="0.38"/>`;
+  const text = renderChromeText(geometry.text, copy, colors, style);
 
   return Buffer.from(
     `<svg xmlns="http://www.w3.org/2000/svg" width="${geometry.canvas.width}" height="${geometry.canvas.height}" viewBox="0 0 ${geometry.canvas.width} ${geometry.canvas.height}" xml:space="preserve">${badgeRect}${text}</svg>`,
@@ -343,10 +374,11 @@ function renderChromeText(
   text: CreativeCarouselChromeText,
   copy: CreativeCarouselChromeCopy,
   colors: CreativeCarouselChromeColors,
+  style: CreativeCarouselChromeStyle,
 ): string {
   const shared = `x="${text.centerX}" y="${text.centerY}" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Helvetica, sans-serif" font-size="${text.fontSize}"`;
   if (!copy.continuationCue) {
-    return `<text ${shared} font-weight="700" fill="${colors.accent}">${escapeXml(copy.progress)}</text>`;
+    return `<text ${shared} font-weight="700" fill="${style === "minimal" ? colors.text : colors.accent}">${escapeXml(copy.progress)}</text>`;
   }
 
   return [
@@ -527,6 +559,19 @@ function normalizeColors(
     }
   }
   return result;
+}
+
+function normalizeSettings(
+  settings: CreativeCarouselChromeSettings | undefined,
+): CreativeCarouselChromeSettings {
+  const value = { ...DEFAULT_CREATIVE_CAROUSEL_CHROME_SETTINGS, ...settings };
+  if (typeof value.enabled !== "boolean") {
+    throw new CreativeCarouselChromeError("Carousel chrome enabled must be a boolean.");
+  }
+  if (value.style !== "pill" && value.style !== "minimal") {
+    throw new CreativeCarouselChromeError("Carousel chrome style must be pill or minimal.");
+  }
+  return value;
 }
 
 function assertPixelRect(value: CreativeCarouselPixelRect, label: string): void {
