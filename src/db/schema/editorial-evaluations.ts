@@ -100,6 +100,17 @@ export const storyEditorialEvaluations = pgTable(
     // nullable and consumers can fall back to editorialScore while rows age
     // out or are re-evaluated.
     editorialPriority: integer("editorial_priority"),
+    /**
+     * Independent from editorial priority: estimates whether a story can
+     * introduce the configured channel to new people. Legacy rows remain
+     * readable while the new evaluator contract rolls out.
+     */
+    growthScore: integer("growth_score"),
+    growthNewAudience: integer("growth_new_audience"),
+    growthViralPotential: integer("growth_viral_potential"),
+    growthConstructiveTension: integer("growth_constructive_tension"),
+    growthExplainability: integer("growth_explainability"),
+    growthReason: text("growth_reason"),
     canadaRelevance: integer("canada_relevance").notNull(),
     aiRelevance: integer("ai_relevance").notNull(),
     socialPotential: integer("social_potential").notNull(),
@@ -138,6 +149,9 @@ export const storyEditorialEvaluations = pgTable(
     index("story_editorial_evaluations_run_id_idx").on(table.runId),
     index("story_editorial_evaluations_decision_idx").on(table.decision),
     index("story_editorial_evaluations_score_idx").on(table.editorialScore),
+    index("story_editorial_evaluations_growth_score_idx").on(
+      table.growthScore,
+    ),
     index("story_editorial_evaluations_evaluated_at_idx").on(
       table.evaluatedAt,
     ),
@@ -153,6 +167,14 @@ export const storyEditorialEvaluations = pgTable(
       "story_editorial_evaluations_editorial_priority_check",
       sql`${table.editorialPriority} IS NULL
         OR ${table.editorialPriority} BETWEEN 0 AND 100`,
+    ),
+    check(
+      "story_editorial_evaluations_growth_scores_check",
+      sql`(${table.growthScore} IS NULL OR ${table.growthScore} BETWEEN 0 AND 100)
+        AND (${table.growthNewAudience} IS NULL OR ${table.growthNewAudience} BETWEEN 0 AND 100)
+        AND (${table.growthViralPotential} IS NULL OR ${table.growthViralPotential} BETWEEN 0 AND 100)
+        AND (${table.growthConstructiveTension} IS NULL OR ${table.growthConstructiveTension} BETWEEN 0 AND 100)
+        AND (${table.growthExplainability} IS NULL OR ${table.growthExplainability} BETWEEN 0 AND 100)`,
     ),
   ],
 );

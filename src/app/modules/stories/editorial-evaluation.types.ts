@@ -13,6 +13,19 @@ export type EditorialSignalScores = {
   socialPotential: number;
 };
 
+/**
+ * Acquisition-oriented signals returned by the evaluator. They describe how
+ * well a story can help the configured channel reach people beyond its
+ * existing audience; they are intentionally independent from Editorial
+ * Priority and its editorial selection decision.
+ */
+export type GrowthPotentialSignals = {
+  newAudienceReach: number;
+  viralPotential: number;
+  constructiveTension: number;
+  explainability: number;
+};
+
 export type EditorialEvaluationDecision =
   | "reject"
   | "review"
@@ -47,6 +60,13 @@ export type StoryEditorialEvaluation = EditorialSignalScores & {
    * new evaluations.
    */
   editorialPriority: number;
+  /**
+   * Deterministic acquisition score calculated only from `growthSignals`.
+   * It never changes Editorial Priority or the editorial decision.
+   */
+  growthScore: number;
+  growthSignals: GrowthPotentialSignals;
+  growthReason: string;
   /**
    * Legacy fields are deliberately retained while existing dashboard and
    * persistence consumers are migrated to generic signal names.

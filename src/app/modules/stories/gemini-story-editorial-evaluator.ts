@@ -3,7 +3,10 @@ import "server-only";
 import { ApiError, GoogleGenAI } from "@google/genai";
 import Groq from "groq-sdk";
 
-import { calculateEditorialPriority } from "./editorial-priority";
+import {
+  calculateEditorialPriority,
+  calculateGrowthScore,
+} from "./editorial-priority";
 import {
   DEFAULT_EDITORIAL_PROFILE_WEIGHTS,
   type EditorialProfile,
@@ -13,6 +16,7 @@ import type { StoryKeywordPreferences } from "./story-relevance.config";
 import type {
   EditorialEvaluationCandidate,
   EditorialEvaluatorResult,
+  GrowthPotentialSignals,
   StoryEditorialEvaluation,
 } from "./editorial-evaluation.types";
 
@@ -63,7 +67,15 @@ Scoring dimensions use integers from 0 to 100:
 - audienceValue: likely practical insight, context, or usefulness for the configured audience.
 - socialPotential: potential for a valuable post, meme, carousel, or short video.
 
-Press Craftor calculates the final Editorial Priority from these five signals and the profile weights. Do not return a separate overall score.
+Growth potential is a separate acquisition lens. It estimates whether a story can bring new people to this configured channel; it is not a substitute for evidence, topic fit, or editorial judgment. Do not raise the editorial signals or change the shortlist/review/reject decision just because a story could travel widely.
+
+Also return these growthSignals as integers from 0 to 100, always in the context of the configured audience and channel:
+- newAudienceReach: how likely the story is to be understandable and appealing to people who do not already follow this channel.
+- viralPotential: likelihood of organic sharing, conversation, or repeated exposure when presented accurately in a suitable format.
+- constructiveTension: supported contrast, debate, surprise, or friction that can spark thoughtful discussion without sensationalism, harassment, or manufactured conflict. Score low when such tension is absent or unsupported.
+- explainability: how easily the supported core idea can be explained accurately and quickly in the channel's likely formats.
+
+Press Craftor calculates Editorial Priority from the five editorial signals and profile weights, and calculates Growth Score from growthSignals. Do not return either overall score yourself.
 
 Some stories include a web-grounded researchSelectionConfidence. It records
 how strictly the discovery collector matched the requested topic, time range,
@@ -75,7 +87,7 @@ Decisions:
 - review: potentially useful but needs human review, enrichment, or a clearer angle.
 - reject: noise, weak fit, promotional content, repetition, or little audience value.
 
-Keep reason under 240 characters. Return at most two concise suggested angles and three concise risk flags. Do not invent facts beyond the supplied fields.`;
+Keep both reason and growthReason under 240 characters. Return at most two concise suggested angles and three concise risk flags. Do not invent facts beyond the supplied fields.`;
 
 const GROQ_PROVIDER_TIMEOUT_MS = 60_000;
 const GEMINI_PROVIDER_TIMEOUT_MS = 45_000;
@@ -462,6 +474,8 @@ function createResponseSchema() {
             "noveltyTimeliness",
             "audienceValue",
             "socialPotential",
+            "growthSignals",
+            "growthReason",
             "decision",
             "reason",
             "suggestedAngles",
@@ -476,6 +490,23 @@ function createResponseSchema() {
             noveltyTimeliness: scoreSchema(),
             audienceValue: scoreSchema(),
             socialPotential: scoreSchema(),
+            growthSignals: {
+              type: "object",
+              additionalProperties: false,
+              required: [
+                "newAudienceReach",
+                "viralPotential",
+                "constructiveTension",
+                "explainability",
+              ],
+              properties: {
+                newAudienceReach: scoreSchema(),
+                viralPotential: scoreSchema(),
+                constructiveTension: scoreSchema(),
+                explainability: scoreSchema(),
+              },
+            },
+            growthReason: { type: "string" },
             decision: {
               type: "string",
               enum: ["reject", "review", "shortlist"],
@@ -643,11 +674,13 @@ function parseGenericEditorialEvaluation(
     profileWeights,
     researchConfidence,
   );
+  const growth = parseGrowthPotential(value);
 
   return {
     storyId: parseStoryId(value),
     ...signals,
     editorialPriority,
+    ...growth,
     // Keep the original storage and dashboard contract working while v2's
     // generic fields are adopted by downstream consumers.
     editorialScore: editorialPriority,
@@ -689,6 +722,7 @@ function parseLegacyEditorialEvaluation(
     audienceValue: canadaRelevance,
     socialPotential,
     editorialPriority: editorialScore,
+    ...legacyGrowthPotential(),
     editorialScore,
     canadaRelevance,
     aiRelevance,
@@ -702,6 +736,80 @@ function parseLegacyEditorialEvaluation(
       140,
     ),
     riskFlags: parseShortTextList(value.riskFlags, "riskFlags", 3, 80),
+  };
+}
+
+/**
+ * Older model responses did not contain growth information. Keep them
+ * readable without pretending that an editorial or social score proves the
+ * story can acquire a new audience. Prompt v3 invalidates normal caches, so
+ * this conservative result is a compatibility path rather than a ranking
+ * input for newly evaluated stories.
+ */
+function legacyGrowthPotential(): Pick<
+  StoryEditorialEvaluation,
+  "growthScore" | "growthSignals" | "growthReason"
+> {
+  const growthSignals: GrowthPotentialSignals = {
+    newAudienceReach: 0,
+    viralPotential: 0,
+    constructiveTension: 0,
+    explainability: 0,
+  };
+
+  return {
+    growthScore: calculateGrowthScore(growthSignals),
+    growthSignals,
+    growthReason:
+      "Growth potential was not evaluated by this legacy editorial response.",
+  };
+}
+
+function parseGrowthPotential(
+  value: Record<string, unknown>,
+): Pick<
+  StoryEditorialEvaluation,
+  "growthScore" | "growthSignals" | "growthReason"
+> {
+  if (!("growthSignals" in value)) {
+    return legacyGrowthPotential();
+  }
+
+  if (!isRecord(value.growthSignals)) {
+    throw new EditorialEvaluationResponseError(
+      "Editorial AI returned invalid growthSignals",
+    );
+  }
+
+  const growthSignals: GrowthPotentialSignals = {
+    newAudienceReach: parseScore(
+      value.growthSignals.newAudienceReach,
+      "growthSignals.newAudienceReach",
+    ),
+    viralPotential: parseScore(
+      value.growthSignals.viralPotential,
+      "growthSignals.viralPotential",
+    ),
+    constructiveTension: parseScore(
+      value.growthSignals.constructiveTension,
+      "growthSignals.constructiveTension",
+    ),
+    explainability: parseScore(
+      value.growthSignals.explainability,
+      "growthSignals.explainability",
+    ),
+  };
+
+  return {
+    growthScore: calculateGrowthScore(growthSignals),
+    growthSignals,
+    // `growthReason` was added alongside the signal object. Permit a missing
+    // reason for a short compatibility window, but reject malformed data so
+    // it cannot silently become a misleading explanation in the dashboard.
+    growthReason:
+      value.growthReason === undefined
+        ? "Growth potential is based on the returned acquisition signals."
+        : parseShortText(value.growthReason, "growthReason", 240),
   };
 }
 

@@ -1,9 +1,10 @@
 import "server-only";
 
 export const EDITORIAL_EVALUATION_PROVIDER = "google";
-// v2 returns topic-agnostic signals and lets Press Craftor calculate the final
-// priority with each topic's editorial-profile weights.
-export const EDITORIAL_PROMPT_VERSION = "editorial-v2";
+// v3 returns topic-agnostic editorial signals plus independent acquisition
+// signals. Press Craftor calculates both Editorial Priority and Growth Score
+// deterministically, so the old cache must not be reused.
+export const EDITORIAL_PROMPT_VERSION = "editorial-v3";
 
 const DEFAULT_MODEL = "gemini-3.7-flash";
 const DEFAULT_MAX_RUNS_PER_DAY = 6;

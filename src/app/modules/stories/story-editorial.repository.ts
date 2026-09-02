@@ -38,6 +38,7 @@ import type {
   EditorialDailyUsage,
   EditorialEvaluationCandidate,
   EditorialEvaluatorResult,
+  GrowthPotentialSignals,
 } from "./editorial-evaluation.types";
 import type { StoryContentStatus } from "./story-candidate.types";
 
@@ -61,6 +62,10 @@ export type EditorialDashboardStory = {
   localScore: number;
   evaluationDecision: "reject" | "review" | "shortlist";
   editorialPriority?: number;
+  /** Independent acquisition potential; absent for pre-growth evaluations. */
+  growthScore?: number;
+  growthSignals?: GrowthPotentialSignals;
+  growthReason?: string;
   editorialScore: number;
   canadaRelevance: number;
   aiRelevance: number;
@@ -107,6 +112,9 @@ export type EditorialCollectedStory = {
   reviewable: boolean;
   evaluationDecision?: "reject" | "review" | "shortlist";
   editorialPriority?: number;
+  growthScore?: number;
+  growthSignals?: GrowthPotentialSignals;
+  growthReason?: string;
   editorialScore?: number;
   canadaRelevance?: number;
   aiRelevance?: number;
@@ -611,6 +619,13 @@ export async function completeEditorialEvaluationRun({
             inputHash: candidate.inputHash,
             editorialScore: evaluation.editorialScore,
             editorialPriority: evaluation.editorialPriority,
+            growthScore: evaluation.growthScore,
+            growthNewAudience: evaluation.growthSignals.newAudienceReach,
+            growthViralPotential: evaluation.growthSignals.viralPotential,
+            growthConstructiveTension:
+              evaluation.growthSignals.constructiveTension,
+            growthExplainability: evaluation.growthSignals.explainability,
+            growthReason: evaluation.growthReason,
             canadaRelevance: evaluation.canadaRelevance,
             aiRelevance: evaluation.aiRelevance,
             socialPotential: evaluation.socialPotential,
@@ -875,6 +890,12 @@ export async function getEditorialDashboardStats(
         reviewDecision: topicStories.reviewDecision,
         evaluationDecision: latestEvaluation.decision,
         editorialPriority: latestEvaluation.editorialPriority,
+        growthScore: latestEvaluation.growthScore,
+        growthNewAudience: latestEvaluation.growthNewAudience,
+        growthViralPotential: latestEvaluation.growthViralPotential,
+        growthConstructiveTension: latestEvaluation.growthConstructiveTension,
+        growthExplainability: latestEvaluation.growthExplainability,
+        growthReason: latestEvaluation.growthReason,
         editorialScore: latestEvaluation.editorialScore,
         canadaRelevance: latestEvaluation.canadaRelevance,
         aiRelevance: latestEvaluation.aiRelevance,
@@ -908,6 +929,12 @@ export async function getEditorialDashboardStats(
         localScore: topicStories.relevanceScore,
         evaluationDecision: latestEvaluation.decision,
         editorialPriority: latestEvaluation.editorialPriority,
+        growthScore: latestEvaluation.growthScore,
+        growthNewAudience: latestEvaluation.growthNewAudience,
+        growthViralPotential: latestEvaluation.growthViralPotential,
+        growthConstructiveTension: latestEvaluation.growthConstructiveTension,
+        growthExplainability: latestEvaluation.growthExplainability,
+        growthReason: latestEvaluation.growthReason,
         editorialScore: latestEvaluation.editorialScore,
         canadaRelevance: latestEvaluation.canadaRelevance,
         aiRelevance: latestEvaluation.aiRelevance,
@@ -954,6 +981,13 @@ export async function getEditorialDashboardStats(
         localScore: topicStories.relevanceScore,
         evaluationDecision: latestStoredEvaluation.decision,
         editorialPriority: latestStoredEvaluation.editorialPriority,
+        growthScore: latestStoredEvaluation.growthScore,
+        growthNewAudience: latestStoredEvaluation.growthNewAudience,
+        growthViralPotential: latestStoredEvaluation.growthViralPotential,
+        growthConstructiveTension:
+          latestStoredEvaluation.growthConstructiveTension,
+        growthExplainability: latestStoredEvaluation.growthExplainability,
+        growthReason: latestStoredEvaluation.growthReason,
         editorialScore: latestStoredEvaluation.editorialScore,
         canadaRelevance: latestStoredEvaluation.canadaRelevance,
         aiRelevance: latestStoredEvaluation.aiRelevance,
@@ -1079,6 +1113,7 @@ export async function getEditorialDashboardStats(
       ...(row.editorialPriority !== null
         ? { editorialPriority: row.editorialPriority }
         : {}),
+      ...growthFieldsFromRow(row),
       ...(row.editorialScore !== null
         ? { editorialScore: row.editorialScore }
         : {}),
@@ -1110,6 +1145,7 @@ export async function getEditorialDashboardStats(
       ...(row.editorialPriority !== null
         ? { editorialPriority: row.editorialPriority }
         : {}),
+      ...growthFieldsFromRow(row),
       editorialScore: row.editorialScore,
       canadaRelevance: row.canadaRelevance,
       aiRelevance: row.aiRelevance,
@@ -1134,6 +1170,7 @@ export async function getEditorialDashboardStats(
       ...(row.editorialPriority !== null
         ? { editorialPriority: row.editorialPriority }
         : {}),
+      ...growthFieldsFromRow(row),
       editorialScore: row.editorialScore,
       canadaRelevance: row.canadaRelevance,
       aiRelevance: row.aiRelevance,
@@ -1165,6 +1202,43 @@ export async function getEditorialDashboardStats(
   };
 }
 
+function growthFieldsFromRow(row: {
+  growthScore: number | null;
+  growthNewAudience: number | null;
+  growthViralPotential: number | null;
+  growthConstructiveTension: number | null;
+  growthExplainability: number | null;
+  growthReason: string | null;
+}): {
+  growthScore?: number;
+  growthSignals?: GrowthPotentialSignals;
+  growthReason?: string;
+} {
+  if (row.growthScore === null) return {};
+
+  const hasSignals = [
+    row.growthNewAudience,
+    row.growthViralPotential,
+    row.growthConstructiveTension,
+    row.growthExplainability,
+  ];
+
+  return {
+    growthScore: row.growthScore,
+    ...(hasSignals.every((value): value is number => value !== null)
+      ? {
+          growthSignals: {
+            newAudienceReach: row.growthNewAudience!,
+            viralPotential: row.growthViralPotential!,
+            constructiveTension: row.growthConstructiveTension!,
+            explainability: row.growthExplainability!,
+          },
+        }
+      : {}),
+    ...(row.growthReason ? { growthReason: row.growthReason } : {}),
+  };
+}
+
 function createLatestEditorialEvaluation(
   alias: string,
   topicId: string,
@@ -1190,6 +1264,13 @@ function createLatestEditorialEvaluation(
     .selectDistinctOn([storyEditorialEvaluations.storyId], {
       storyId: storyEditorialEvaluations.storyId,
       editorialPriority: storyEditorialEvaluations.editorialPriority,
+      growthScore: storyEditorialEvaluations.growthScore,
+      growthNewAudience: storyEditorialEvaluations.growthNewAudience,
+      growthViralPotential: storyEditorialEvaluations.growthViralPotential,
+      growthConstructiveTension:
+        storyEditorialEvaluations.growthConstructiveTension,
+      growthExplainability: storyEditorialEvaluations.growthExplainability,
+      growthReason: storyEditorialEvaluations.growthReason,
       editorialScore: storyEditorialEvaluations.editorialScore,
       canadaRelevance: storyEditorialEvaluations.canadaRelevance,
       aiRelevance: storyEditorialEvaluations.aiRelevance,

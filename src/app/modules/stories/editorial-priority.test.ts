@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   AI_RESEARCH_CONFIDENCE_WEIGHT,
   calculateEditorialPriority,
+  calculateGrowthScore,
+  GROWTH_POTENTIAL_WEIGHTS,
 } from "./editorial-priority";
 import { DEFAULT_EDITORIAL_PROFILE_WEIGHTS } from "./editorial-profile.types";
 
@@ -40,5 +42,43 @@ test("rejects an invalid AI research confidence", () => {
         101,
       ),
     /researchConfidence/,
+  );
+});
+
+test("calculates Growth Score independently from Editorial Priority", () => {
+  const editorialPriority = calculateEditorialPriority(
+    signals,
+    DEFAULT_EDITORIAL_PROFILE_WEIGHTS,
+  );
+  const growthScore = calculateGrowthScore({
+    newAudienceReach: 90,
+    viralPotential: 80,
+    constructiveTension: 70,
+    explainability: 100,
+  });
+
+  assert.deepEqual(GROWTH_POTENTIAL_WEIGHTS, {
+    newAudienceReach: 0.35,
+    viralPotential: 0.3,
+    constructiveTension: 0.2,
+    explainability: 0.15,
+  });
+  assert.equal(growthScore, 85);
+  assert.equal(
+    calculateEditorialPriority(signals, DEFAULT_EDITORIAL_PROFILE_WEIGHTS),
+    editorialPriority,
+  );
+});
+
+test("rejects invalid Growth Score inputs", () => {
+  assert.throws(
+    () =>
+      calculateGrowthScore({
+        newAudienceReach: 101,
+        viralPotential: 80,
+        constructiveTension: 70,
+        explainability: 100,
+      }),
+    /newAudienceReach/,
   );
 });

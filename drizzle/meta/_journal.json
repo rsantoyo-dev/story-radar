@@ -239,6 +239,13 @@
       "when": 1788311182894,
       "tag": "0033_slow_microbe",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1788356383993,
+      "tag": "0034_editorial-growth-potential",
+      "breakpoints": true
     }
   ]
 }

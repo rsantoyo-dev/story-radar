@@ -1,5 +1,8 @@
 import type { EditorialProfileWeights } from "./editorial-profile.types";
-import type { EditorialSignalScores } from "./editorial-evaluation.types";
+import type {
+  EditorialSignalScores,
+  GrowthPotentialSignals,
+} from "./editorial-evaluation.types";
 
 const EDITORIAL_SIGNAL_KEYS = [
   "topicFit",
@@ -15,6 +18,18 @@ const EDITORIAL_SIGNAL_KEYS = [
  * refine, but never dominate, the profile-based editorial assessment.
  */
 export const AI_RESEARCH_CONFIDENCE_WEIGHT = 0.2;
+
+/**
+ * Growth is an acquisition lens, not an editorial-selection lens. The model
+ * scores each signal in the context of the configured channel and we apply a
+ * stable, transparent weighting so results are comparable across stories.
+ */
+export const GROWTH_POTENTIAL_WEIGHTS = {
+  newAudienceReach: 0.35,
+  viralPotential: 0.3,
+  constructiveTension: 0.2,
+  explainability: 0.15,
+} as const satisfies Record<keyof GrowthPotentialSignals, number>;
 
 /**
  * Converts Gemini's generic editorial signals into the one score used to
@@ -66,5 +81,31 @@ export function calculateEditorialPriority(
   return Math.round(
     profilePriority * (1 - AI_RESEARCH_CONFIDENCE_WEIGHT) +
       researchConfidence * AI_RESEARCH_CONFIDENCE_WEIGHT,
+  );
+}
+
+/**
+ * Computes the Growth Score without looking at profile weights, editorial
+ * signals, or the evaluator's shortlist/review/reject decision. The profile
+ * informs the AI's four input signals, while this calculation stays stable
+ * and independently auditable.
+ */
+export function calculateGrowthScore(
+  signals: GrowthPotentialSignals,
+): number {
+  const entries = Object.entries(
+    GROWTH_POTENTIAL_WEIGHTS,
+  ) as Array<[keyof GrowthPotentialSignals, number]>;
+
+  return Math.round(
+    entries.reduce((total, [key, weight]) => {
+      const score = signals[key];
+
+      if (!Number.isFinite(score) || score < 0 || score > 100) {
+        throw new RangeError(`${key} must be a score between 0 and 100`);
+      }
+
+      return total + score * weight;
+    }, 0),
   );
 }

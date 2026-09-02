@@ -129,6 +129,9 @@ type EditorialDashboardStory = {
   localScore: number;
   evaluationDecision: "reject" | "review" | "shortlist";
   editorialPriority?: number;
+  growthScore?: number;
+  growthReason?: string;
+  growthSignals?: EditorialGrowthSignals;
   editorialScore: number;
   canadaRelevance: number;
   aiRelevance: number;
@@ -170,6 +173,9 @@ type EditorialCollectedStory = {
   reviewable: boolean;
   evaluationDecision?: "reject" | "review" | "shortlist";
   editorialPriority?: number;
+  growthScore?: number;
+  growthReason?: string;
+  growthSignals?: EditorialGrowthSignals;
   editorialScore?: number;
   canadaRelevance?: number;
   aiRelevance?: number;
@@ -196,6 +202,9 @@ type EditorialTableStory = {
   reviewable?: boolean;
   evaluationDecision?: "reject" | "review" | "shortlist";
   editorialPriority?: number;
+  growthScore?: number;
+  growthReason?: string;
+  growthSignals?: EditorialGrowthSignals;
   editorialScore?: number;
   canadaRelevance?: number;
   aiRelevance?: number;
@@ -212,6 +221,13 @@ type EditorialTableStory = {
   enrichmentError?: string;
   enrichedAt?: string;
   publications?: StoryPublication[];
+};
+
+type EditorialGrowthSignals = {
+  newAudienceReach?: number;
+  viralPotential?: number;
+  constructiveTension?: number;
+  explainability?: number;
 };
 
 type CollectionResponse = {
@@ -1668,6 +1684,12 @@ function EditorialEvaluationPanel({
                     minimumEditorialPriority,
                   }))
                 }
+                onMinimumGrowthScoreChange={(minimumGrowthScore) =>
+                  setCollectedTableState((current) => ({
+                    ...current,
+                    minimumGrowthScore,
+                  }))
+                }
                 onResetFilters={() =>
                   setCollectedTableState((current) => resetStoryTableFilters(current))
                 }
@@ -1778,6 +1800,12 @@ function EditorialEvaluationPanel({
                     minimumEditorialPriority,
                   }))
                 }
+                onMinimumGrowthScoreChange={(minimumGrowthScore) =>
+                  setSelectedTableState((current) => ({
+                    ...current,
+                    minimumGrowthScore,
+                  }))
+                }
                 showPublicationFilters
                 onPublicationFilterChange={(publicationFilter) =>
                   setSelectedTableState((current) => ({
@@ -1825,13 +1853,18 @@ function EditorialEvaluationPanel({
 }
 
 type StoryTableMode = "collected" | "selected";
-type StoryRankKey = "publishedAt" | "editorialPriority" | "localScore";
+type StoryRankKey =
+  | "publishedAt"
+  | "editorialPriority"
+  | "growthScore"
+  | "localScore";
 type StoryTableViewState = {
   primaryRank: StoryRankKey;
   secondaryRank: StoryRankKey;
   publishedWithinDays?: number;
   hideBelowTopicFloor: boolean;
   minimumEditorialPriority?: number;
+  minimumGrowthScore?: number;
   publicationFilter: PublicationFilter;
   publicationPlatform: PublicationPlatform;
 };
@@ -1856,6 +1889,7 @@ function resetStoryTableFilters(
     publishedWithinDays: undefined,
     hideBelowTopicFloor: false,
     minimumEditorialPriority: undefined,
+    minimumGrowthScore: undefined,
     publicationFilter: "all",
     publicationPlatform: "instagram",
   };
@@ -1891,6 +1925,14 @@ function filterTableStories(
       filters.minimumEditorialPriority !== undefined &&
       (editorialPriority === undefined ||
         editorialPriority < filters.minimumEditorialPriority)
+    ) {
+      return false;
+    }
+
+    if (
+      filters.minimumGrowthScore !== undefined &&
+      (story.growthScore === undefined ||
+        story.growthScore < filters.minimumGrowthScore)
     ) {
       return false;
     }
@@ -1937,6 +1979,7 @@ function StoryListControls({
   onPublishedWithinDaysChange,
   onHideBelowTopicFloorChange,
   onMinimumEditorialPriorityChange,
+  onMinimumGrowthScoreChange,
   showPublicationFilters = false,
   onPublicationFilterChange,
   onPublicationPlatformChange,
@@ -1951,6 +1994,7 @@ function StoryListControls({
   onPublishedWithinDaysChange: (days: number | undefined) => void;
   onHideBelowTopicFloorChange: (enabled: boolean) => void;
   onMinimumEditorialPriorityChange: (minimum: number | undefined) => void;
+  onMinimumGrowthScoreChange: (minimum: number | undefined) => void;
   showPublicationFilters?: boolean;
   onPublicationFilterChange?: (filter: PublicationFilter) => void;
   onPublicationPlatformChange?: (platform: PublicationPlatform) => void;
@@ -1960,6 +2004,7 @@ function StoryListControls({
     state.publishedWithinDays !== undefined ||
     state.hideBelowTopicFloor ||
     state.minimumEditorialPriority !== undefined ||
+    state.minimumGrowthScore !== undefined ||
     state.publicationFilter !== "all";
 
   return (
@@ -1975,6 +2020,7 @@ function StoryListControls({
           >
             <option value="publishedAt">Newest</option>
             <option value="editorialPriority">Highest AI priority</option>
+            <option value="growthScore">Highest growth potential</option>
             <option value="localScore">Highest local score</option>
           </select>
         </label>
@@ -1989,6 +2035,7 @@ function StoryListControls({
           >
             <option value="publishedAt">Newest</option>
             <option value="editorialPriority">Highest AI priority</option>
+            <option value="growthScore">Highest growth potential</option>
             <option value="localScore">Highest local score</option>
           </select>
         </label>
@@ -2029,6 +2076,25 @@ function StoryListControls({
             }
             placeholder="Any"
             aria-label="Minimum AI editorial priority"
+          />
+        </label>
+
+        <label className={styles.storyFilterField}>
+          <span>Growth potential at least</span>
+          <input
+            type="number"
+            min="0"
+            max="100"
+            step="1"
+            inputMode="numeric"
+            value={state.minimumGrowthScore ?? ""}
+            onChange={(event) =>
+              onMinimumGrowthScoreChange(
+                parseStoryScoreThreshold(event.currentTarget.value),
+              )
+            }
+            placeholder="Any"
+            aria-label="Minimum audience growth potential"
           />
         </label>
 
@@ -2100,7 +2166,8 @@ function StoryListControls({
       </span>
       <small className={styles.storyFilterHint}>
         Active filters combine. Results use First, then Then. An AI minimum
-        hides stories that have not been evaluated yet.
+        hides stories that have not been evaluated yet; a growth minimum hides
+        stories without a growth evaluation.
         {showPublicationFilters
           ? " Publication status is tracked per platform."
           : ""}
@@ -2184,6 +2251,7 @@ function SortableStoriesTable({
             <TableHeader label="Content" />
             <TableHeader label="Local" numeric />
             <TableHeader label="Editorial priority" numeric />
+            <TableHeader label="Growth potential" numeric />
             <TableHeader label="AI decision" />
             <TableHeader label="Workflow" />
             {mode === "selected" ? <TableHeader label="Publication" /> : null}
@@ -2296,6 +2364,11 @@ function SortableStoriesTable({
                 <ScoreCell
                   value={story.editorialPriority ?? story.editorialScore}
                   accent
+                />
+                <GrowthScoreCell
+                  value={story.growthScore}
+                  reason={story.growthReason}
+                  signals={story.growthSignals}
                 />
                 <td>
                   <StatusBadge tone={evaluationDecisionTone(story.evaluationDecision)}>
@@ -2521,6 +2594,56 @@ function ScoreCell({
   return (
     <td className={`${styles.scoreCell} ${accent ? styles.accentScoreCell : ""}`}>
       {value ?? "—"}
+    </td>
+  );
+}
+
+function GrowthScoreCell({
+  value,
+  reason,
+  signals,
+}: {
+  value?: number;
+  reason?: string;
+  signals?: EditorialGrowthSignals;
+}) {
+  const signalEntries = growthSignalEntries(signals);
+  const hasBreakdown = Boolean(reason || signalEntries.length > 0);
+  const tooltip = growthScoreTooltip(reason, signalEntries);
+  const displayValue = value ?? "—";
+
+  return (
+    <td className={`${styles.scoreCell} ${styles.growthScoreCell}`}>
+      {value !== undefined || hasBreakdown ? (
+        <div className={styles.growthScoreSummary}>
+          <strong title={tooltip}>{displayValue}</strong>
+          {hasBreakdown ? (
+            <details className={styles.growthScoreDetails}>
+              <summary
+                aria-label={`View growth-potential breakdown for ${displayValue}`}
+                title={tooltip}
+              >
+                Signals
+              </summary>
+              <div className={styles.growthScorePopover}>
+                {reason ? <p>{reason}</p> : null}
+                {signalEntries.length > 0 ? (
+                  <dl>
+                    {signalEntries.map(([label, score]) => (
+                      <div key={label}>
+                        <dt>{label}</dt>
+                        <dd>{score}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                ) : null}
+              </div>
+            </details>
+          ) : null}
+        </div>
+      ) : (
+        "—"
+      )}
     </td>
   );
 }
@@ -3051,6 +3174,38 @@ function compareStoryRank(
   return rightValue - leftValue;
 }
 
+function growthSignalEntries(
+  signals?: EditorialGrowthSignals,
+): Array<readonly [label: string, score: number]> {
+  if (!signals) {
+    return [];
+  }
+
+  const candidates: Array<readonly [string, number | undefined]> = [
+    ["New audience", signals.newAudienceReach],
+    ["Viral potential", signals.viralPotential],
+    ["Constructive tension", signals.constructiveTension],
+    ["Easy to explain", signals.explainability],
+  ];
+
+  return candidates.filter(
+    (candidate): candidate is readonly [string, number] =>
+      typeof candidate[1] === "number" && Number.isFinite(candidate[1]),
+  );
+}
+
+function growthScoreTooltip(
+  reason: string | undefined,
+  signals: readonly (readonly [label: string, score: number])[],
+): string | undefined {
+  const parts = [
+    reason?.trim(),
+    ...signals.map(([label, score]) => `${label}: ${score}`),
+  ].filter((part): part is string => Boolean(part));
+
+  return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
 function storyRankValue(
   story: EditorialTableStory,
   rank: StoryRankKey,
@@ -3066,6 +3221,8 @@ function storyRankValue(
       return story.localScore;
     case "editorialPriority":
       return story.editorialPriority ?? story.editorialScore;
+    case "growthScore":
+      return story.growthScore;
   }
 }
 

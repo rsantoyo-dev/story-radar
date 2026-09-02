@@ -1507,7 +1507,7 @@
 
 .storyTable {
   width: 100%;
-  min-width: 1710px;
+  min-width: 1815px;
   border-collapse: separate;
   border-spacing: 0;
   color: palette(primary-dark);
@@ -1641,6 +1641,105 @@
 
 .accentScoreCell {
   color: palette(info-dark);
+}
+
+.growthScoreCell {
+  width: 106px;
+  min-width: 106px;
+  white-space: normal;
+}
+
+.growthScoreSummary {
+  display: grid;
+  justify-items: end;
+  gap: density(1);
+}
+
+.growthScoreSummary > strong {
+  color: palette(primary-dark);
+  font-variant-numeric: tabular-nums;
+}
+
+.growthScoreDetails {
+  position: relative;
+}
+
+.growthScoreDetails summary {
+  display: inline-flex;
+  align-items: center;
+  gap: density(1);
+  color: palette(primary-main);
+  @ds-typo (caption);
+  font-size: 9px;
+  font-weight: 750;
+  cursor: pointer;
+  list-style: none;
+}
+
+.growthScoreDetails summary::-webkit-details-marker {
+  display: none;
+}
+
+.growthScoreDetails summary::after {
+  color: palette(tertiary-main);
+  content: "⌄";
+}
+
+.growthScoreDetails[open] summary::after {
+  content: "⌃";
+}
+
+.growthScorePopover {
+  @ds-surface(contained light density(3) radius(2) shadow(3));
+  position: absolute;
+  z-index: 4;
+  top: calc(100% + density(1));
+  right: 0;
+  width: 220px;
+  padding: density(3);
+  border: border(1, palette(surface-light), solid);
+  border-radius: radius(2);
+  box-shadow: shadow(3);
+  color: palette(dark-main);
+  text-align: left;
+}
+
+.growthScorePopover p {
+  margin: 0 0 density(2);
+  color: palette(tertiary-main);
+  @ds-typo (caption);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.growthScorePopover dl {
+  display: grid;
+  gap: density(1);
+  margin: 0;
+}
+
+.growthScorePopover dl > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: density(2);
+}
+
+.growthScorePopover dt,
+.growthScorePopover dd {
+  margin: 0;
+  @ds-typo (caption);
+  font-size: 10px;
+}
+
+.growthScorePopover dt {
+  color: palette(tertiary-main);
+}
+
+.growthScorePopover dd {
+  color: palette(primary-dark);
+  font-variant-numeric: tabular-nums;
+  font-weight: 750;
 }
 
 .tableRiskFlags {
