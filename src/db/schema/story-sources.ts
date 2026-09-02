@@ -1,5 +1,8 @@
+import { sql } from "drizzle-orm";
 import {
+  check,
   index,
+  integer,
   pgTable,
   text,
   timestamp,
@@ -20,6 +23,12 @@ export const storySources = pgTable(
     sourceName: text("source_name").notNull(),
     externalId: text("external_id").notNull(),
     sourceUrl: text("source_url").notNull(),
+    /**
+     * Present only when a web-grounded AI research collector selected this
+     * source. The normal topic relevance score remains on topic_stories.
+     */
+    researchScore: integer("research_score"),
+    researchReasons: text("research_reasons").array(),
     fetchedAt: timestamp("fetched_at", {
       withTimezone: true,
       mode: "date",
@@ -38,5 +47,9 @@ export const storySources = pgTable(
     ),
     index("story_sources_story_id_idx").on(table.storyId),
     index("story_sources_source_id_idx").on(table.sourceId),
+    check(
+      "story_sources_research_score_check",
+      sql`${table.researchScore} IS NULL OR ${table.researchScore} BETWEEN 0 AND 100`,
+    ),
   ],
 );

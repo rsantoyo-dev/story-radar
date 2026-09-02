@@ -166,7 +166,8 @@
 .formGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: space(3); }
 
 .panel input,
-.panel select {
+.panel select,
+.panel textarea {
   @ds-input(outlined primary 2);
   box-sizing: border-box;
   width: 100%;
@@ -174,8 +175,20 @@
   padding: density(2);
 }
 
+.panel textarea { min-height: density(16); resize: vertical; }
+
 .toggle { display: flex !important; align-items: center; gap: density(1); }
-.toggle input { width: auto; }
+.toggle input[type="checkbox"] {
+  appearance: auto;
+  width: density(3);
+  height: density(3);
+  min-height: 0;
+  padding: 0;
+  border: none;
+  background: initial;
+  accent-color: palette(primary-main);
+  cursor: pointer;
+}
 
 .sourcesDisclosure {
   margin-top: space(7);

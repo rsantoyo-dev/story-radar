@@ -1596,6 +1596,12 @@
   text-underline-offset: 3px;
 }
 
+.aiResearchStoryBadge {
+  margin-top: density(1);
+  background: palette(primary-main);
+  color: palette(primary-contrast);
+}
+
 .storyTitleCell > small {
   display: -webkit-box;
   margin-top: space(2);
@@ -1612,6 +1618,13 @@
   min-width: 130px;
   color: palette(primary-dark);
   font-weight: 650;
+}
+
+.sourceCellContent {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: density(1);
 }
 
 .numericColumn,

@@ -19,6 +19,7 @@ import {
   type CreativeBrandOverlaySnapshot,
   type CreativeBrandOverlaySettings,
   type CreativeConversionGoal,
+  type CreativeInteractiveOverlay,
 } from "@/app/modules/stories/creative-content.types";
 
 import {
@@ -383,6 +384,8 @@ export const creativeUnits = pgTable(
     body: text("body"),
     continuationCue: text("continuation_cue"),
     visualDirection: text("visual_direction").notNull(),
+    interactiveOverlay: jsonb("interactive_overlay")
+      .$type<CreativeInteractiveOverlay>(),
     factIds: text("fact_ids")
       .array()
       .notNull()

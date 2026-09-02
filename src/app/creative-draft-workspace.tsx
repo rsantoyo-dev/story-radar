@@ -20,6 +20,7 @@ import {
   CREATIVE_BRAND_BACKDROP_MODES,
   CREATIVE_BRAND_PLACEMENTS,
   CREATIVE_BRAND_SCOPES,
+  CREATIVE_COMPANION_APPROACHES,
   CREATIVE_CONVERSION_GOALS,
   type CreativeAssetBatchResponse,
   type CreativeAspectRatio,
@@ -27,6 +28,7 @@ import {
   type CreativeCharacter,
   type CreativeCharacterReferenceImage,
   type CreativeCharacterRosterEntry,
+  type CreativeCompanionApproach,
   type CreativeDraft,
   type CreativeFormat,
   type CreativeGeneratedAsset,
@@ -57,6 +59,7 @@ type BusyAction =
   | "references"
   | "approve"
   | "unapprove"
+  | "companion"
   | "images";
 
 type LoadedAssets = CreativeAssetBatchResponse & { draftId: string };
@@ -82,6 +85,11 @@ const OUTPUT_ASPECT_RATIO_OPTIONS = [
     value: "4:5",
     label: "1080x1350 · Portrait (4:5)",
     detail: "Every image and carousel slide uses this feed-ready canvas.",
+  },
+  {
+    value: "9:16",
+    label: "1080x1920 · Instagram Story (9:16)",
+    detail: "A full-height Story canvas, used for post-approval companion stories.",
   },
 ] as const satisfies ReadonlyArray<{
   value: CreativeAspectRatio;
@@ -148,6 +156,10 @@ export function CreativeDraftWorkspace({
   const [historyDraftId, setHistoryDraftId] = useState<string>();
   const [assetBusy, setAssetBusy] = useState<string>();
   const [characterBusy, setCharacterBusy] = useState<string>();
+  const [companionAngle, setCompanionAngle] = useState("");
+  const [companionApproach, setCompanionApproach] =
+    useState<CreativeCompanionApproach>("editorial");
+  const [reserveInteractiveSpace, setReserveInteractiveSpace] = useState(true);
   const requestedImageQuality =
     assetQualityRequest && assetQualityRequest.draftId === activeDraftId
       ? assetQualityRequest.quality
@@ -155,17 +167,29 @@ export function CreativeDraftWorkspace({
   const activeDraft = workspace?.drafts.find(
     (draft) => draft.id === activeDraftId,
   );
+  const primaryDrafts = workspace?.drafts.filter((draft) => !draft.companion) ?? [];
+  const companionDrafts = workspace?.drafts.filter((draft) => Boolean(draft.companion)) ?? [];
+  const companionParentDraft = activeDraft?.companion
+    ? workspace?.drafts.find(
+        (draft) => draft.id === activeDraft.companion?.parentDraftId,
+      )
+    : undefined;
+  const companionsForActiveDraft = activeDraft && !activeDraft.companion
+    ? companionDrafts.filter(
+        (draft) => draft.companion?.parentDraftId === activeDraft.id,
+      )
+    : [];
   const activeApprovalDeterministicIssues =
     editableDraft && workspace?.brief
       ? deterministicCreativeQualityIssues(
         repairDeterministicCreativeCopy(
           editableDraft,
-          selectedFormat,
+          activeDraft?.format ?? selectedFormat,
           workspace.brief.keyFacts,
           workspace.brief.profileSnapshot.language,
           workspace.brief.profileSnapshot.conversionGoal,
         ),
-        selectedFormat,
+        activeDraft?.format ?? selectedFormat,
         workspace.brief.keyFacts,
         workspace.brief.profileSnapshot.language,
         workspace.brief.profileSnapshot.conversionGoal,
@@ -184,9 +208,10 @@ export function CreativeDraftWorkspace({
     activeDraft &&
       (activeDraft.inputIsCurrent === false || historyDraftId === activeDraft.id),
   );
-  const historicDrafts =
-    workspace?.drafts.filter((draft) => draft.inputIsCurrent === false) ?? [];
-  const currentDraft = workspace?.drafts.find(
+  const historicDrafts = primaryDrafts.filter(
+    (draft) => draft.inputIsCurrent === false,
+  );
+  const currentDraft = primaryDrafts.find(
     (draft) => draft.inputIsCurrent !== false,
   );
   const editorialDirectionDirty = Boolean(
@@ -222,15 +247,17 @@ export function CreativeDraftWorkspace({
         // Prefer the editable draft for the current profile. If there is no
         // current one, open the latest saved study so its copy and images do
         // not appear to vanish after a brief/profile refresh.
+        const primaryDrafts = next.drafts.filter((draft) => !draft.companion);
         const latestDraft =
-          next.drafts.find((draft) => draft.inputIsCurrent !== false) ??
-          next.drafts[0];
+          primaryDrafts.find((draft) => draft.inputIsCurrent !== false) ??
+          primaryDrafts[0];
         const format = latestDraft?.format ?? next.brief?.recommendedFormat ?? "meme";
         const aspectRatio = latestDraft
           ? outputAspectRatioForDraft(latestDraft)
           : resolveDraftAspectRatio(next, format);
         setSelectedFormat(format);
         setSelectedAspectRatio(aspectRatio);
+        setCompanionAngle(next.brief?.angle ?? "");
         setHistoryDraftId(undefined);
         if (latestDraft) {
           setActiveDraftId(latestDraft.id);
@@ -323,18 +350,21 @@ export function CreativeDraftWorkspace({
   );
   const currentDraftForSelection = workspace?.drafts.find(
     (draft) =>
+      !draft.companion &&
       draft.format === selectedFormat &&
       outputAspectRatioForDraft(draft) === selectedAspectRatio &&
       draft.inputIsCurrent !== false,
   );
   const staleDraftForSelection = workspace?.drafts.find(
     (draft) =>
+      !draft.companion &&
       draft.format === selectedFormat &&
       outputAspectRatioForDraft(draft) === selectedAspectRatio &&
       draft.inputIsCurrent === false,
   );
   const draftNeedsRefresh = Boolean(
-    workspace?.brief &&
+    !activeDraft?.companion &&
+      workspace?.brief &&
       (!workspace.briefIsCurrent ||
         (!currentDraftForSelection && staleDraftForSelection)),
   );
@@ -395,6 +425,7 @@ export function CreativeDraftWorkspace({
     preferredFormat = selectedFormat,
     preferredAspectRatio = selectedAspectRatio,
     preserveUnsavedProfile = profileDirty,
+    preferredCompanionDraftId = activeDraft?.companion ? activeDraft.id : undefined,
   ) {
     const next = await requestJson<CreativeWorkspaceState>(
       topicUrl(
@@ -411,19 +442,29 @@ export function CreativeDraftWorkspace({
       setProfile(next.profile);
       setProfileDirty(false);
     }
-    const aspectRatio = resolveDraftAspectRatio(
-      next,
-      preferredFormat,
-      preferredAspectRatio,
-    );
-    setSelectedAspectRatio(aspectRatio);
-    selectDraft(
-      next,
-      preferredFormat,
-      aspectRatio,
-      setActiveDraftId,
-      setEditableDraft,
-    );
+    const preferredCompanionDraft = preferredCompanionDraftId
+      ? next.drafts.find((draft) => draft.id === preferredCompanionDraftId)
+      : undefined;
+    if (preferredCompanionDraft?.companion) {
+      setSelectedFormat(preferredCompanionDraft.format);
+      setSelectedAspectRatio(outputAspectRatioForDraft(preferredCompanionDraft));
+      setActiveDraftId(preferredCompanionDraft.id);
+      setEditableDraft(editableFromDraft(preferredCompanionDraft));
+    } else {
+      const aspectRatio = resolveDraftAspectRatio(
+        next,
+        preferredFormat,
+        preferredAspectRatio,
+      );
+      setSelectedAspectRatio(aspectRatio);
+      selectDraft(
+        next,
+        preferredFormat,
+        aspectRatio,
+        setActiveDraftId,
+        setEditableDraft,
+      );
+    }
     // Saving a profile, draft, or approval changes which batch is valid. Do
     // not leave an old in-memory response in place while the new version is
     // loading; otherwise a stale batch can hide the Generate images action.
@@ -570,6 +611,67 @@ export function CreativeDraftWorkspace({
         result.outcome === "cached"
           ? `The existing ${selectedFormat} ${outputAspectRatioLabel(selectedAspectRatio)} draft was loaded without an AI call.`
           : `${capitalize(selectedFormat)} ${outputAspectRatioLabel(selectedAspectRatio)} draft generated. Review it, then approve it before generating images.`,
+      );
+    });
+  }
+
+  async function handleGenerateCompanionStory() {
+    if (
+      !workspace?.brief ||
+      !activeDraft ||
+      activeDraft.companion ||
+      activeDraft.status !== "approved" ||
+      dirty ||
+      busy
+    ) {
+      return;
+    }
+
+    const angle = companionAngle.trim() || workspace.brief.angle.trim();
+    if (!angle) {
+      setError("Add the companion Story angle before generating its script.");
+      return;
+    }
+
+    await run("companion", async () => {
+      const result = await requestJson<{
+        outcome: "generated" | "cached";
+        state: CreativeWorkspaceState;
+      }>(
+        topicUrl(
+          `/api/radar/creative/drafts/${encodeURIComponent(activeDraft.id)}/companion`,
+          topicId,
+        ),
+        secret,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            angle,
+            approach: companionApproach,
+            reserveInteractiveSpace,
+          }),
+        },
+      );
+      const companion = result.state.drafts.find(
+        (draft) => draft.companion?.parentDraftId === activeDraft.id,
+      );
+      if (!companion) {
+        throw new Error("The companion Story was generated but could not be opened.");
+      }
+
+      setWorkspace(result.state);
+      setSelectedFormat(companion.format);
+      setSelectedAspectRatio(outputAspectRatioForDraft(companion));
+      setActiveDraftId(companion.id);
+      setEditableDraft(editableFromDraft(companion));
+      setHistoryDraftId(undefined);
+      resetAssetWorkspace();
+      setDirty(false);
+      setNotice(
+        result.outcome === "cached"
+          ? "The matching companion Story was reopened without another AI call."
+          : "Companion Story script generated with Luna and reviewed by Terra. Review and approve it before generating its image.",
       );
     });
   }
@@ -1026,6 +1128,24 @@ export function CreativeDraftWorkspace({
     setDirty(false);
     setError(undefined);
     setNotice(undefined);
+  }
+
+  function openCompanionDraft(draft: CreativeDraft) {
+    if (dirty && !window.confirm("Discard unsaved draft changes?")) return;
+    setSelectedFormat(draft.format);
+    setSelectedAspectRatio(outputAspectRatioForDraft(draft));
+    setActiveDraftId(draft.id);
+    setEditableDraft(editableFromDraft(draft));
+    setHistoryDraftId(undefined);
+    resetAssetWorkspace();
+    setDirty(false);
+    setError(undefined);
+    setNotice(undefined);
+  }
+
+  function returnToCompanionParent() {
+    if (!companionParentDraft) return;
+    openCompanionDraft(companionParentDraft);
   }
 
   function viewHistoricalDraft(draft: CreativeDraft) {

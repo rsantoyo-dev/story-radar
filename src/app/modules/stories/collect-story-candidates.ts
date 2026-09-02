@@ -5,6 +5,10 @@ import { fetchRssFeedsWithHostLimit } from "@/app/modules/sources/rss/fetch-rss-
 import { rssSources } from "@/app/modules/sources/rss/rss-sources.config";
 import type { ContentStatus } from "@/app/modules/sources/rss/rss-feed.types";
 import type { RssSourceConfig } from "@/app/modules/sources/rss/rss-source.types";
+import {
+  collectAiResearchCandidates,
+  type CollectAiResearchCandidatesOptions,
+} from "@/app/modules/sources/ai-research/collect-ai-research-candidates";
 
 import { deduplicateSimilarStories } from "./deduplicate-similar-stories";
 import { deduplicateStoryCandidates } from "./deduplicate-story-candidates";
@@ -31,6 +35,8 @@ export type CollectStoryCandidatesOptions = {
   sources?: readonly RssSourceConfig[];
   fetchFeed?: FetchRssFeed;
   preferences?: StoryKeywordPreferences;
+  /** Optional web-grounded collector run in parallel with RSS feeds. */
+  aiResearch?: Omit<CollectAiResearchCandidatesOptions, "now" | "lookbackHours">;
 };
 
 export async function collectStoryCandidates(
@@ -41,15 +47,30 @@ export async function collectStoryCandidates(
   const configuredSources = options.sources ?? rssSources;
   const fetchFeed = options.fetchFeed ?? fetchRssFeed;
   const activeSources = configuredSources.filter((source) => source.enabled);
+  const aiResearch = options.aiResearch?.config.enabled
+    ? options.aiResearch
+    : undefined;
   const oldestPublishedAt = new Date(
     generatedAt.getTime() - maxAgeHours * 60 * 60 * 1_000,
   );
 
-  const [preferences, results] = await Promise.all([
+  const [preferences, results, aiResearchResult] = await Promise.all([
     Promise.resolve(
       options.preferences ?? DEFAULT_STORY_KEYWORD_PREFERENCES,
     ),
     fetchRssFeedsWithHostLimit(activeSources, fetchFeed),
+    aiResearch
+      ? collectAiResearchCandidates({
+          ...aiResearch,
+          now: generatedAt,
+          ...(options.maxAgeHours !== undefined
+            ? { lookbackHours: options.maxAgeHours }
+            : {}),
+        }).then(
+          (value) => ({ status: "fulfilled", value }) as const,
+          (reason) => ({ status: "rejected", reason }) as const,
+        )
+      : Promise.resolve(undefined),
   ]);
 
   const candidates: StoryCandidateInput[] = [];
@@ -128,6 +149,43 @@ export async function collectStoryCandidates(
     });
   });
 
+  if (aiResearchResult) {
+    const sourceId = aiResearchResult.status === "fulfilled"
+      ? aiResearchResult.value.sourceId
+      : `ai-research:${aiResearch!.config.topicId}`;
+    const sourceName = aiResearchResult.status === "fulfilled"
+      ? aiResearchResult.value.sourceName
+      : "AI research";
+
+    if (aiResearchResult.status === "rejected") {
+      console.error("Failed to collect AI research source", aiResearchResult.reason);
+      sourceDetails.push({
+        sourceId,
+        sourceName,
+        status: "failed",
+        fetchedItems: 0,
+        includedItems: 0,
+        filteredOutItems: 0,
+        duplicatesRemoved: 0,
+        error: getErrorMessage(aiResearchResult.reason),
+      });
+    } else {
+      const research = aiResearchResult.value;
+      candidates.push(...research.items);
+      sourceDetails.push({
+        sourceId: research.sourceId,
+        sourceName: research.sourceName,
+        status: "successful",
+        fetchedItems: research.fetchedItems,
+        includedItems: 0,
+        filteredOutItems: research.filteredOutItems,
+        duplicatesRemoved: 0,
+      });
+      fetchedItems += research.fetchedItems;
+      successful += 1;
+    }
+  }
+
   const evaluatedCandidates = candidates.map((candidate) =>
     evaluateStoryRelevance(candidate, generatedAt, preferences),
   );
@@ -154,9 +212,9 @@ export async function collectStoryCandidates(
   return {
     generatedAt,
     sources: {
-      requested: activeSources.length,
+      requested: activeSources.length + (aiResearch ? 1 : 0),
       successful,
-      failed: activeSources.length - successful,
+      failed: activeSources.length + (aiResearch ? 1 : 0) - successful,
       details: finalizedSourceDetails,
     },
     counts: {

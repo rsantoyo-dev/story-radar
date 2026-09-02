@@ -28,6 +28,7 @@ import {
   type CreativeDailyUsage,
   type CreativeDraft,
   type CreativeFormat,
+  type CreativeInteractiveOverlay,
   type CreativeKeyFact,
   type CreativeProfile,
   type EditableCreativeDraft,
@@ -678,6 +679,12 @@ function mapCreativeDraft(
       ? { continuationCue: unit.continuationCue }
       : {}),
     visualDirection: unit.visualDirection,
+    ...(unit.interactiveOverlay
+      ? {
+          interactiveOverlay:
+            unit.interactiveOverlay as CreativeInteractiveOverlay,
+        }
+      : {}),
     factIds: unit.factIds,
     assetRequest: unit.assetRequest,
     aspectRatio: unit.aspectRatio,
@@ -714,6 +721,7 @@ function mapCreativeDraft(
     caption: row.caption,
     ...(row.callToAction ? { callToAction: row.callToAction } : {}),
     ...(generated.characterPlan ? { characterPlan: generated.characterPlan } : {}),
+    ...(generated.companion ? { companion: generated.companion } : {}),
     ...(generated.qualityReview
       ? {
           qualityReview: generated.qualityReview,
@@ -759,6 +767,7 @@ function generatedDraftCopyMatches(
       body: unit.body ?? "",
       continuationCue: unit.continuationCue ?? "",
       visualDirection: unit.visualDirection,
+      interactiveOverlay: unit.interactiveOverlay ?? null,
       factIds: unit.factIds,
       assetRequest: unit.assetRequest,
       aspectRatio: unit.aspectRatio,
@@ -787,6 +796,7 @@ function draftUnitRows(
     body: unit.body ?? null,
     continuationCue: unit.continuationCue ?? null,
     visualDirection: unit.visualDirection,
+    interactiveOverlay: unit.interactiveOverlay ?? null,
     factIds: unit.factIds,
     assetRequest: unit.assetRequest,
     aspectRatio: unit.aspectRatio,

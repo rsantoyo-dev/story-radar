@@ -31,6 +31,19 @@ export type CreativeContentRuntimeConfig = CreativeContentPublicConfig & {
   openAiEditorialModels: CreativeEditorialModelConfig;
 };
 
+/**
+ * Companion Stories deliberately use the OpenAI editorial pipeline rather
+ * than the primary Gemini/Groq draft provider. Keep this separate so an
+ * approved script can still produce a Story in installations that only have
+ * the OpenAI key configured for this feature.
+ */
+export type CreativeCompanionRuntimeConfig = {
+  apiKey: string;
+  lunaModel: string;
+  terraModel: string;
+  promptVersion: string;
+};
+
 const DEFAULT_MAX_RUNS_PER_DAY = 40;
 const DEFAULT_MAX_CONTENT_CHARACTERS = 15_000;
 
@@ -138,6 +151,27 @@ export function getCreativeContentPublicConfig(): CreativeContentPublicConfig {
       process.env.CREATIVE_MAX_CONTENT_CHARACTERS,
       DEFAULT_MAX_CONTENT_CHARACTERS,
     ),
+  };
+}
+
+export function getCreativeCompanionRuntimeConfig(): CreativeCompanionRuntimeConfig {
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+
+  if (!apiKey) {
+    throw new CreativeContentConfigurationError(
+      "OPENAI_API_KEY is not configured for companion Stories",
+    );
+  }
+
+  return {
+    apiKey,
+    lunaModel:
+      process.env.CREATIVE_COMPANION_LUNA_MODEL?.trim() || "gpt-5.6-luna",
+    terraModel:
+      process.env.CREATIVE_COMPANION_TERRA_MODEL?.trim() ||
+      process.env.CREATIVE_CRITIC_MODEL?.trim() ||
+      "gpt-5.6-terra",
+    promptVersion: "companion-story-v1",
   };
 }
 

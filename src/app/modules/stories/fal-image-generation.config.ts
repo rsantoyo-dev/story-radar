@@ -26,6 +26,15 @@ const ASPECT_RATIO_CONFIGURATIONS = {
     generationHeight: 1360,
     promptVersion: "integrated-portrait-4x5-v13",
   },
+  "9:16": {
+    width: 1080,
+    height: 1920,
+    // fal.ai accepts custom image sizes only in 16px increments. 1088×1920
+    // preserves the Story composition and is normalized to 1080×1920 later.
+    generationWidth: 1088,
+    generationHeight: 1920,
+    promptVersion: "integrated-story-9x16-v1",
+  },
   "16:9": {
     width: 1920,
     height: 1080,

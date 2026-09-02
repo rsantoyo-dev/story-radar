@@ -183,6 +183,7 @@ type EditorialCollectedStory = {
 
 type EditorialTableStory = {
   storyId: string;
+  sourceId: string;
   sourceName: string;
   title: string;
   url: string;
@@ -2193,6 +2194,7 @@ function SortableStoriesTable({
           {sortedStories.map((story) => {
             const selected = selectedStoryIds.includes(story.storyId);
             const effectiveDate = story.publishedAt ?? story.lastSeenAt;
+            const isAiResearchStory = story.sourceId.startsWith("ai-research:");
 
             return (
               <tr
@@ -2225,6 +2227,11 @@ function SortableStoriesTable({
                   <a href={story.url} target="_blank" rel="noreferrer">
                     {story.title}
                   </a>
+                  {isAiResearchStory ? (
+                    <span className={`${styles.tableBadge} ${styles.aiResearchStoryBadge}`}>
+                      Encontrada por IA
+                    </span>
+                  ) : null}
                   {story.reason ? <small>{story.reason}</small> : null}
                   {story.riskFlags.length > 0 ? (
                     <div className={styles.tableRiskFlags}>
@@ -2244,7 +2251,16 @@ function SortableStoriesTable({
                     <strong aria-hidden="true">↗</strong>
                   </a>
                 </td>
-                <td className={styles.sourceCell}>{story.sourceName}</td>
+                <td className={styles.sourceCell}>
+                  <div className={styles.sourceCellContent}>
+                    <span>{story.sourceName}</span>
+                    {isAiResearchStory ? (
+                      <span className={`${styles.tableBadge} ${styles.tableBadgePositive}`}>
+                        AI research
+                      </span>
+                    ) : null}
+                  </div>
+                </td>
                 <td>
                   <div className={styles.contentStatusCell}>
                     <StatusBadge tone="neutral">

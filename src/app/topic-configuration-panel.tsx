@@ -46,6 +46,18 @@ type SourceDraft = {
   enabled: boolean;
 };
 
+type AiResearchSource = {
+  enabled: boolean;
+  instruction: string;
+  orientation: "informative" | "trend" | "provocative";
+  resultLimit: number;
+  lookbackHours: number;
+  language: string;
+  region: string;
+  includeContent: boolean;
+  priority: number;
+};
+
 type KnowledgeDocument = {
   topicDocumentId: string;
   documentId: string;
@@ -126,6 +138,10 @@ export function TopicConfigurationPanel({
     topicId: string;
     sources: TopicSource[];
   }>();
+  const [aiResearchResult, setAiResearchResult] = useState<{
+    topicId: string;
+    source: AiResearchSource;
+  }>();
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [busy, setBusy] = useState<string>();
@@ -174,6 +190,9 @@ export function TopicConfigurationPanel({
   const sources = sourceResult?.topicId === selectedTopicId
     ? sourceResult.sources
     : undefined;
+  const aiResearch = aiResearchResult?.topicId === selectedTopicId
+    ? aiResearchResult.source
+    : undefined;
   const sourceFormVisible = showSourceForm && sourceFormTopicId === selectedTopicId;
   const documents = documentResult?.topicId === selectedTopicId
     ? documentResult.documents
@@ -195,6 +214,27 @@ export function TopicConfigurationPanel({
         if (controller.signal.aborted) return;
         setError(undefined);
         setSourceResult({ topicId: selectedTopicId, sources: response.sources });
+      })
+      .catch((loadError) => {
+        if (!controller.signal.aborted) setError(errorMessage(loadError));
+      });
+
+    return () => controller.abort();
+  }, [canUseApi, secret, selectedTopicId, showSources]);
+
+  useEffect(() => {
+    if (!canUseApi || !selectedTopicId || !showSources) return;
+    const controller = new AbortController();
+
+    requestJson<{ source: AiResearchSource }>(
+      `/api/radar/topics/${encodeURIComponent(selectedTopicId)}/ai-research`,
+      secret,
+      { signal: controller.signal },
+    )
+      .then((response) => {
+        if (!controller.signal.aborted) {
+          setAiResearchResult({ topicId: selectedTopicId, source: response.source });
+        }
       })
       .catch((loadError) => {
         if (!controller.signal.aborted) setError(errorMessage(loadError));
@@ -454,6 +494,23 @@ export function TopicConfigurationPanel({
     setSourceResult({ topicId: selectedTopicId, sources: response.sources });
   }
 
+  async function saveAiResearch() {
+    if (!aiResearch) return;
+    await run("save-ai-research", async () => {
+      const response = await requestJson<{ source: AiResearchSource }>(
+        `/api/radar/topics/${encodeURIComponent(selectedTopicId)}/ai-research`,
+        secret,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(aiResearch),
+        },
+      );
+      setAiResearchResult({ topicId: selectedTopicId, source: response.source });
+      setNotice("AI research settings saved. It will run with the next collection.");
+    });
+  }
+
   async function addKnowledgeDocument() {
     if (!documentDraft.url.trim()) {
       setError("A PDF URL is required.");
@@ -634,8 +691,8 @@ export function TopicConfigurationPanel({
           <small>Feeds, tags, preferences, reviews, AI usage, and creative work stay scoped to the selected topic.</small>
         </div>
         <span className={styles.count}>
-          {sources || documents
-            ? `${sources?.filter((source) => source.enabled).length ?? 0} feeds · ${documents?.filter((document) => document.enabled).length ?? 0} documents`
+          {sources || documents || aiResearch
+            ? `${sources?.filter((source) => source.enabled).length ?? 0} feeds · ${aiResearch?.enabled ? "AI research" : "no AI research"} · ${documents?.filter((document) => document.enabled).length ?? 0} documents`
             : "Source setup"}
         </span>
       </div>
@@ -780,6 +837,78 @@ export function TopicConfigurationPanel({
             </li>
           ))}
         </ul>
+          )}
+
+          <div className={styles.knowledgeHeading}>
+            <div>
+              <h3>AI research</h3>
+              <p>Use Luna web search to discover cited, recent stories for this topic.</p>
+            </div>
+          </div>
+
+          {!canUseApi ? null : !aiResearch ? (
+            <p className={styles.loading}>Loading AI research settings…</p>
+          ) : (
+            <form
+              className={styles.sourceForm}
+              onSubmit={(event) => {
+                event.preventDefault();
+                void saveAiResearch();
+              }}
+            >
+              <strong>Web-grounded AI collector</strong>
+              <div className={styles.formGrid}>
+                <Field label="What should AI find?">
+                  <textarea
+                    value={aiResearch.instruction}
+                    onChange={(event) => setAiResearchResult({
+                      topicId: selectedTopicId,
+                      source: { ...aiResearch, instruction: event.target.value },
+                    })}
+                    maxLength={2000}
+                    placeholder="Find practical news relevant to this topic, oriented toward…"
+                    rows={4}
+                  />
+                </Field>
+                <Field label="Orientation">
+                  <select
+                    value={aiResearch.orientation}
+                    onChange={(event) => setAiResearchResult({
+                      topicId: selectedTopicId,
+                      source: {
+                        ...aiResearch,
+                        orientation: event.target.value as AiResearchSource["orientation"],
+                      },
+                    })}
+                  >
+                    <option value="informative">Informative</option>
+                    <option value="trend">Trend-focused</option>
+                    <option value="provocative">Provocative</option>
+                  </select>
+                </Field>
+                <Field label="Look back (hours)">
+                  <input type="number" min="1" max="8760" value={aiResearch.lookbackHours} onChange={(event) => setAiResearchResult({ topicId: selectedTopicId, source: { ...aiResearch, lookbackHours: Number(event.target.value) } })} />
+                </Field>
+                <Field label="Stories to return">
+                  <input type="number" min="1" max="10" value={aiResearch.resultLimit} onChange={(event) => setAiResearchResult({ topicId: selectedTopicId, source: { ...aiResearch, resultLimit: Number(event.target.value) } })} />
+                </Field>
+                <Field label="Language">
+                  <input value={aiResearch.language} maxLength={32} onChange={(event) => setAiResearchResult({ topicId: selectedTopicId, source: { ...aiResearch, language: event.target.value } })} />
+                </Field>
+                <Field label="Region">
+                  <input value={aiResearch.region} maxLength={80} onChange={(event) => setAiResearchResult({ topicId: selectedTopicId, source: { ...aiResearch, region: event.target.value } })} />
+                </Field>
+                <Field label="Priority (0–100)">
+                  <input type="number" min="0" max="100" value={aiResearch.priority} onChange={(event) => setAiResearchResult({ topicId: selectedTopicId, source: { ...aiResearch, priority: Number(event.target.value) } })} />
+                </Field>
+              </div>
+              <label className={styles.toggle}><input type="checkbox" checked={aiResearch.enabled} onChange={(event) => setAiResearchResult({ topicId: selectedTopicId, source: { ...aiResearch, enabled: event.target.checked } })} /> Enable AI research for this topic</label>
+              <label className={styles.toggle}><input type="checkbox" checked={aiResearch.includeContent} onChange={(event) => setAiResearchResult({ topicId: selectedTopicId, source: { ...aiResearch, includeContent: event.target.checked } })} /> Include the AI&apos;s grounded summary as a story excerpt</label>
+              <p>AI returns only articles found through web search. The source URL is retained, and the normal story evaluation still runs after collection.</p>
+              <div className={styles.formActions}>
+                <button type="submit" disabled={Boolean(busy)}>Save AI research</button>
+              </div>
+            </form>
           )}
 
           <div className={styles.knowledgeHeading}>

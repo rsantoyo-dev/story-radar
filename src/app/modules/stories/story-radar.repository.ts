@@ -619,6 +619,8 @@ async function upsertStoryCandidate(
       sourceName: candidate.sourceName,
       externalId: candidate.externalId,
       sourceUrl: candidate.url,
+      researchScore: candidate.research?.score ?? null,
+      researchReasons: candidate.research?.reasons ?? null,
       fetchedAt: candidate.fetchedAt,
     })
     .onConflictDoUpdate({
@@ -627,6 +629,8 @@ async function upsertStoryCandidate(
         storyId: storedStory.id,
         sourceName: candidate.sourceName,
         sourceUrl: candidate.url,
+        researchScore: candidate.research?.score ?? null,
+        researchReasons: candidate.research?.reasons ?? null,
         fetchedAt: candidate.fetchedAt,
       },
     });

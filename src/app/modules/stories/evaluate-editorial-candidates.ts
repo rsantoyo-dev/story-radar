@@ -234,6 +234,7 @@ function createEditorialInputHash(
     region: candidate.region,
     tags: [...candidate.tags].sort(),
     publishedAt: candidate.publishedAt?.toISOString() ?? null,
+    researchScore: candidate.researchScore ?? null,
     favoredTerms: [...preferences.favoredTerms].sort(),
     unfavoredTerms: [...preferences.unfavoredTerms].sort(),
     editorialProfile: createEditorialProfileFingerprint(editorialProfile),

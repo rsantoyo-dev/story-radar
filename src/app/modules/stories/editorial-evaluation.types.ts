@@ -31,6 +31,11 @@ export type EditorialEvaluationCandidate = {
   tags: string[];
   publishedAt?: Date;
   localScore: number;
+  /**
+   * Web-grounded selection confidence supplied only by the AI research
+   * collector. It contributes a bounded amount to Editorial Priority.
+   */
+  researchScore?: number;
   inputHash: string;
 };
 

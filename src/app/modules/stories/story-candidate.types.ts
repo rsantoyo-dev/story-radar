@@ -29,6 +29,12 @@ export type StoryCandidateInput = {
 
   publishedAt?: Date;
   fetchedAt: Date;
+
+  /** Selection metadata supplied by a web-grounded AI research source. */
+  research?: {
+    score: number;
+    reasons: string[];
+  };
 };
 
 export type StoryRelevanceEvaluation = {

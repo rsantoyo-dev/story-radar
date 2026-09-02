@@ -1117,6 +1117,7 @@ function outputAspectRatioForBatch(
 ): CreativeAspectRatio {
   if (batch.width === batch.height) return "1:1";
   if (batch.width * 5 === batch.height * 4) return "4:5";
+  if (batch.width * 16 === batch.height * 9) return "9:16";
   if (batch.width * 9 === batch.height * 16) return "16:9";
   return batch.outputAspectRatio ?? fallback;
 }

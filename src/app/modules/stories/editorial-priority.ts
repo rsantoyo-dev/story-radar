@@ -10,6 +10,13 @@ const EDITORIAL_SIGNAL_KEYS = [
 ] as const satisfies readonly (keyof EditorialSignalScores)[];
 
 /**
+ * AI research is a curated discovery source, not a replacement for the
+ * editorial review. Its web-grounded selection confidence can therefore
+ * refine, but never dominate, the profile-based editorial assessment.
+ */
+export const AI_RESEARCH_CONFIDENCE_WEIGHT = 0.2;
+
+/**
  * Converts Gemini's generic editorial signals into the one score used to
  * rank a topic. We normalize by the total weight so a valid profile always
  * produces a 0–100 result, even while profiles are being edited or imported.
@@ -17,6 +24,7 @@ const EDITORIAL_SIGNAL_KEYS = [
 export function calculateEditorialPriority(
   signals: EditorialSignalScores,
   weights: EditorialProfileWeights,
+  researchConfidence?: number,
 ): number {
   let weightedTotal = 0;
   let totalWeight = 0;
@@ -41,5 +49,22 @@ export function calculateEditorialPriority(
     throw new RangeError("At least one editorial profile weight must be positive");
   }
 
-  return Math.round(weightedTotal / totalWeight);
+  const profilePriority = weightedTotal / totalWeight;
+
+  if (researchConfidence === undefined) {
+    return Math.round(profilePriority);
+  }
+
+  if (
+    !Number.isFinite(researchConfidence) ||
+    researchConfidence < 0 ||
+    researchConfidence > 100
+  ) {
+    throw new RangeError("researchConfidence must be a score between 0 and 100");
+  }
+
+  return Math.round(
+    profilePriority * (1 - AI_RESEARCH_CONFIDENCE_WEIGHT) +
+      researchConfidence * AI_RESEARCH_CONFIDENCE_WEIGHT,
+  );
 }

@@ -177,6 +177,7 @@ type CandidateSource = {
   sourceName: string;
   fetchedAt: Date;
   tags: string[];
+  researchScore?: number;
 };
 
 const RESEARCH_SOURCE_TAG_KEYWORDS = ["research", "academic", "journal"];
@@ -312,6 +313,9 @@ export async function findEditorialEvaluationCandidates(
         tags: story.tags,
         ...(story.publishedAt ? { publishedAt: story.publishedAt } : {}),
         localScore: story.localScore,
+        ...(source?.researchScore !== undefined
+          ? { researchScore: source.researchScore }
+          : {}),
       };
     });
 }
@@ -332,11 +336,20 @@ async function findCandidateSources(
           sourceId: storySources.sourceId,
           sourceName: storySources.sourceName,
           fetchedAt: storySources.fetchedAt,
+          researchScore: storySources.researchScore,
         })
         .from(storySources)
         .where(inArray(storySources.storyId, [...storyIds]))
         .orderBy(desc(storySources.fetchedAt)))
-        .map((source) => ({ ...source, tags: [] }))
+        .map(({ researchScore, ...source }) => ({
+          ...source,
+          tags: source.sourceId.startsWith("ai-research:")
+            ? ["ai-research"]
+            : [],
+          ...(researchScore === null
+            ? {}
+            : { researchScore }),
+        }))
     : await db
         .select({
           storyId: storySources.storyId,
@@ -359,6 +372,32 @@ async function findCandidateSources(
         )
         .where(inArray(storySources.storyId, [...storyIds]))
         .orderBy(desc(storySources.fetchedAt));
+
+  const aiResearchSourceRows: CandidateSource[] = useLegacySourceFallback
+    ? []
+    : (await db
+        .select({
+          storyId: storySources.storyId,
+          sourceId: storySources.sourceId,
+          sourceName: storySources.sourceName,
+          fetchedAt: storySources.fetchedAt,
+          researchScore: storySources.researchScore,
+        })
+        .from(storySources)
+        .where(
+          and(
+            inArray(storySources.storyId, [...storyIds]),
+            sql`${storySources.sourceId} like ${"ai-research:%"}`,
+          ),
+        )
+        .orderBy(desc(storySources.fetchedAt)))
+        .map(({ researchScore, ...source }) => ({
+          ...source,
+          tags: ["ai-research"],
+          ...(researchScore === null
+            ? {}
+            : { researchScore }),
+        }));
 
   const knowledgeSourceRows = await db
     .select({
@@ -398,6 +437,7 @@ async function findCandidateSources(
     ));
 
   const sourceRows: CandidateSource[] = [
+    ...aiResearchSourceRows,
     ...knowledgeSourceRows.map((source) => ({
       storyId: source.storyId,
       sourceId: `knowledge:${source.documentId}`,

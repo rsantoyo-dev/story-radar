@@ -1,5 +1,7 @@
 import { collectAndPersistStoryCandidates } from "@/app/modules/stories/collect-and-persist-story-candidates";
+import { getEditorialProfile } from "@/app/modules/stories/editorial-profile.repository";
 import { getStoryKeywordPreferences } from "@/app/modules/stories/story-preferences.repository";
+import { getAiResearchSourceConfig } from "@/app/modules/sources/ai-research/ai-research.repository";
 import { listTopicRssSourceConfigs } from "@/app/modules/topics/topic-catalog.repository";
 import { NextResponse } from "next/server";
 
@@ -8,6 +10,8 @@ import {
   requireActiveRequestTopic,
   topicRequestErrorResponse,
 } from "../radar-topic";
+
+export const maxDuration = 120;
 
 export async function POST(request: Request) {
   const unauthorizedResponse = authorizeRadarCollector(request);
@@ -33,11 +37,16 @@ export async function POST(request: Request) {
 
   try {
     const topicId = await requireActiveRequestTopic(request);
-    const sources = await listTopicRssSourceConfigs(topicId);
+    const [sources, aiResearch, profile, preferences] = await Promise.all([
+      listTopicRssSourceConfigs(topicId),
+      getAiResearchSourceConfig(topicId),
+      getEditorialProfile(topicId),
+      getStoryKeywordPreferences(topicId),
+    ]);
 
-    if (!sources.some((source) => source.enabled)) {
+    if (!sources.some((source) => source.enabled) && !aiResearch.enabled) {
       return NextResponse.json(
-        { error: "This topic does not have any active RSS sources" },
+        { error: "This topic does not have any active RSS or AI research sources" },
         { status: 422 },
       );
     }
@@ -45,7 +54,8 @@ export async function POST(request: Request) {
     const { radar, persistence } = await collectAndPersistStoryCandidates({
       topicId,
       sources,
-      preferences: await getStoryKeywordPreferences(topicId),
+      preferences,
+      aiResearch: { config: aiResearch, profile },
       ...(maxAgeHours !== undefined ? { maxAgeHours } : {}),
     });
 

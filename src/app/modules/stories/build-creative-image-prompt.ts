@@ -24,6 +24,7 @@ import {
   creativeImageTextQualityInstruction,
   shouldApplyCreativeBrandOverlay,
 } from "./creative-brand-overlay";
+import { buildCreativeInteractiveOverlayPrompt } from "./creative-interactive-overlay";
 
 export function buildCreativeImagePrompt({
   draft,
@@ -51,6 +52,10 @@ export function buildCreativeImagePrompt({
   const brandExclusionZone = buildCreativeBrandExclusionZonePrompt({
     brandOverlay,
     unitOrder: unit.order,
+    aspectRatio: outputAspectRatio,
+  });
+  const interactiveOverlay = buildCreativeInteractiveOverlayPrompt({
+    overlay: unit.interactiveOverlay,
     aspectRatio: outputAspectRatio,
   });
   const carouselChrome =
@@ -145,6 +150,7 @@ export function buildCreativeImagePrompt({
         `<VISUAL_CAMPAIGN_GUIDE>\n${visualGuidance}\n</VISUAL_CAMPAIGN_GUIDE>`,
         "Use a clean, high-contrast editorial layout with generous safe margins. The visible text must be large and legible on a phone.",
         creativeImageTextQualityInstruction(brandExclusionZone),
+        ...(interactiveOverlay ? [interactiveOverlay] : []),
         "Render the following visible text EXACTLY, preserving spelling, capitalization, punctuation, and line meaning:",
         `<VISIBLE_TEXT>\n${expectedText}\n</VISIBLE_TEXT>`,
         "Do not add, paraphrase, repeat, or invent any other visible words. Do not add logos, brand marks, watermarks, signatures, URLs, UI chrome, or fine-print text. If the visual campaign guide requests a logo, monogram, or brand mark placement, reserve that area as clean empty space only; do not recreate, modify, approximate, or imply the mark.",
@@ -228,6 +234,11 @@ function canvasForAspectRatio(aspectRatio: CreativeAspectRatio): {
   switch (aspectRatio) {
     case "4:5":
       return { canvas: "1080×1350 portrait (4:5)", graphicShape: "portrait" };
+    case "9:16":
+      return {
+        canvas: "1080×1920 vertical Instagram Story (9:16)",
+        graphicShape: "vertical Story",
+      };
     case "16:9":
       return {
         canvas: "1920×1080 landscape (16:9)",

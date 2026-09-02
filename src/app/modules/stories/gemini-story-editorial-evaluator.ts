@@ -65,6 +65,11 @@ Scoring dimensions use integers from 0 to 100:
 
 Press Craftor calculates the final Editorial Priority from these five signals and the profile weights. Do not return a separate overall score.
 
+Some stories include a web-grounded researchSelectionConfidence. It records
+how strictly the discovery collector matched the requested topic, time range,
+orientation, and publisher evidence. Use it only as contextual evidence; do
+not raise individual signals unless the supplied story data supports it.
+
 Decisions:
 - shortlist: strong candidate worth developing now.
 - review: potentially useful but needs human review, enrichment, or a clearer angle.
@@ -434,6 +439,7 @@ function createEvaluationInput(
       region: candidate.region,
       tags: candidate.tags,
       publishedAt: candidate.publishedAt?.toISOString() ?? null,
+      researchSelectionConfidence: candidate.researchScore ?? null,
     })),
   };
 }
@@ -524,6 +530,13 @@ function parseEditorialEvaluations(
   const expectedIds = new Set(
     candidates.map((candidate) => candidate.storyId),
   );
+  const researchScoreByStoryId = new Map(
+    candidates.flatMap((candidate) =>
+      candidate.researchScore === undefined
+        ? []
+        : [[candidate.storyId, candidate.researchScore] as const],
+    ),
+  );
   const evaluationsByStoryId = new Map<string, StoryEditorialEvaluation>();
 
   payload.evaluations.forEach((value) => {
@@ -531,6 +544,11 @@ function parseEditorialEvaluations(
       value,
       expectedIds,
       profileWeights,
+      researchScoreByStoryId.get(
+        isRecord(value) && typeof value.storyId === "string"
+          ? value.storyId
+          : "",
+      ),
     );
 
     if (evaluationsByStoryId.has(evaluation.storyId)) {
@@ -565,6 +583,7 @@ function parseEditorialEvaluation(
   value: unknown,
   expectedIds: ReadonlySet<string>,
   profileWeights: EditorialProfileWeights,
+  researchConfidence?: number,
 ): StoryEditorialEvaluation {
   if (!isRecord(value) || typeof value.storyId !== "string") {
     throw new EditorialEvaluationResponseError(
@@ -585,7 +604,11 @@ function parseEditorialEvaluation(
   }
 
   if (hasGenericSignals(value)) {
-    return parseGenericEditorialEvaluation(value, profileWeights);
+    return parseGenericEditorialEvaluation(
+      value,
+      profileWeights,
+      researchConfidence,
+    );
   }
 
   return parseLegacyEditorialEvaluation(value);
@@ -603,6 +626,7 @@ function hasGenericSignals(value: Record<string, unknown>): boolean {
 function parseGenericEditorialEvaluation(
   value: Record<string, unknown>,
   profileWeights: EditorialProfileWeights,
+  researchConfidence?: number,
 ): StoryEditorialEvaluation {
   const signals = {
     topicFit: parseScore(value.topicFit, "topicFit"),
@@ -614,7 +638,11 @@ function parseGenericEditorialEvaluation(
     audienceValue: parseScore(value.audienceValue, "audienceValue"),
     socialPotential: parseScore(value.socialPotential, "socialPotential"),
   };
-  const editorialPriority = calculateEditorialPriority(signals, profileWeights);
+  const editorialPriority = calculateEditorialPriority(
+    signals,
+    profileWeights,
+    researchConfidence,
+  );
 
   return {
     storyId: parseStoryId(value),

@@ -6,7 +6,7 @@ import type {
 export const CREATIVE_FORMATS = ["meme", "carousel"] as const;
 export type CreativeFormat = (typeof CREATIVE_FORMATS)[number];
 
-export const CREATIVE_ASPECT_RATIOS = ["1:1", "4:5", "16:9"] as const;
+export const CREATIVE_ASPECT_RATIOS = ["1:1", "4:5", "9:16", "16:9"] as const;
 export type CreativeAspectRatio = (typeof CREATIVE_ASPECT_RATIOS)[number];
 
 export const CREATIVE_IMAGE_QUALITIES = [
@@ -187,6 +187,31 @@ export type CreativeUnitRole =
   | "conclusion"
   | "call-to-action";
 export type CreativeAssetRequest = "generated-image" | "typography-only";
+
+/**
+ * A deliberately empty canvas region for an editor to add a native Instagram
+ * poll, question, quiz, or slider after export. It is never rendered as copy.
+ */
+export type CreativeInteractiveOverlay = {
+  kind: "instagram-sticker";
+  placement: "top-third" | "middle-third" | "bottom-third";
+};
+
+export const CREATIVE_COMPANION_APPROACHES = [
+  "editorial",
+  "humor",
+  "confrontation",
+] as const;
+export type CreativeCompanionApproach =
+  (typeof CREATIVE_COMPANION_APPROACHES)[number];
+
+/** Immutable origin and editor-selected treatment for a companion Story. */
+export type CreativeCompanionMetadata = {
+  parentDraftId: string;
+  angle: string;
+  approach: CreativeCompanionApproach;
+  reserveInteractiveSpace: boolean;
+};
 export type CreativeAssetGenerationMode =
   | "text-to-image"
   | "reference-guided";
@@ -348,6 +373,8 @@ export type CreativeUnit = {
    * characters existed. Runtime mappers always normalize this to an empty list.
    */
   characterIds?: string[];
+  /** A reserved blank zone for a native Instagram interaction sticker. */
+  interactiveOverlay?: CreativeInteractiveOverlay;
 };
 
 export type CreativeQualityScores = {
@@ -403,6 +430,8 @@ export type GeneratedCreativeDraft = {
   characterPlan?: CreativeCharacterPlan;
   /** Review of the exact generated copy. Manual edits make this review stale. */
   qualityReview?: CreativeQualityReview;
+  /** Present only for a post-approval Story derived from another draft. */
+  companion?: CreativeCompanionMetadata;
   units: CreativeUnit[];
 };
 
