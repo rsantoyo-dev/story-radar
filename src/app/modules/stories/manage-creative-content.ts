@@ -6,6 +6,7 @@ import { requireTopic } from "@/app/modules/topics/topic-context";
 
 import {
   getCreativeContentPublicConfig,
+  getCreativeCompanionRuntimeConfig,
   getCreativeContentRuntimeConfig,
 } from "./creative-content.config";
 import {
@@ -28,10 +29,13 @@ import {
 import {
   listCreativeCharacterRoster,
   snapshotsForCreativeCharacterIds,
+  snapshotsForCreativeUnits,
 } from "./creative-characters.repository";
 import type {
   CreativeAspectRatio,
   CreativeCharacterRosterEntry,
+  CreativeCharacterSnapshot,
+  CreativeCompanionApproach,
   CreativeDraft,
   CreativeFormat,
   CreativeGenerationResult,
@@ -40,6 +44,7 @@ import type {
   CreativeWorkspaceState,
   EditableCreativeDraft,
 } from "./creative-content.types";
+import { isCreativeCompanionApproach } from "./creative-content.types";
 import {
   defaultCreativeOutputAspectRatio,
   isCreativeOutputAspectRatio,
@@ -58,6 +63,9 @@ import {
 } from "./creative-quality";
 import { getCreativeProfile } from "./creative-profile.repository";
 import { resolveCreativeVisualGuidance } from "./creative-visual-guidance";
+import { generateCompanionStoryScript } from "./companion-story-generator";
+import { defaultCreativeInteractiveOverlay } from "./creative-interactive-overlay";
+import { isCreativeInteractiveOverlay } from "./creative-interactive-overlay";
 import {
   getSelectedStoryContent,
   type SelectedStoryContentRecord,
@@ -99,29 +107,48 @@ export async function getCreativeWorkspaceState(
       : undefined;
   const brief = cachedCurrentBrief ?? latestBrief;
   const briefIsCurrent = Boolean(brief && inputHash === brief.inputHash);
-  const drafts = (await findCreativeDraftsForStory(topicId, storyId))
+  const draftsForStory = await findCreativeDraftsForStory(topicId, storyId);
+  const isCurrentPrimaryDraft = (draft: CreativeDraft) =>
+    Boolean(
+      briefIsCurrent &&
+        brief?.id === draft.briefId &&
+        draft.inputHash ===
+          createDraftInputHash(
+            brief.id,
+            brief.inputHash,
+            draft.format,
+            draft.outputAspectRatio,
+            characterRoster,
+            {
+              provider: configuration.provider,
+              model: configuration.model,
+              promptVersion: configuration.draftPromptVersions[draft.format],
+            },
+          ),
+    );
+  const currentApprovedParentIds = new Set(
+    draftsForStory
+      .filter(
+        (draft) =>
+          !draft.companion &&
+          draft.status === "approved" &&
+          isCurrentPrimaryDraft(draft),
+      )
+      .map((draft) => draft.id),
+  );
+  const drafts = draftsForStory
     .map((draft) => ({
       ...draft,
       // Historical drafts remain in the workspace response for a future
-      // read-only history view, but only a draft made from the selected,
-      // current brief may be used by the active editing/generation workflow.
-      inputIsCurrent: Boolean(
-        briefIsCurrent &&
-          brief?.id === draft.briefId &&
-          draft.inputHash ===
-            createDraftInputHash(
-              brief.id,
-              brief.inputHash,
-              draft.format,
-              draft.outputAspectRatio,
-              characterRoster,
-              {
-                provider: configuration.provider,
-                model: configuration.model,
-                promptVersion: configuration.draftPromptVersions[draft.format],
-              },
-            ),
-      ),
+      // read-only history view. A companion has its own provenance hash, so it
+      // inherits freshness from its still-approved current parent draft.
+      inputIsCurrent: draft.companion
+        ? Boolean(
+            briefIsCurrent &&
+              brief?.id === draft.briefId &&
+              currentApprovedParentIds.has(draft.companion.parentDraftId),
+          )
+        : isCurrentPrimaryDraft(draft),
     }))
     // Keep the latest saved version first. The Studio still distinguishes a
     // current draft from a read-only historical one after the user opens it.
@@ -386,6 +413,147 @@ export async function createCreativeDraft(
     return {
       outcome: "generated",
       state: await getCreativeWorkspaceState(topicId, brief.storyId),
+    };
+  } catch (error) {
+    await failRunSafely(topicId, runId, error);
+    throw error;
+  }
+}
+
+export async function createCompanionStory(
+  topicId: string,
+  parentDraftId: string,
+  input: unknown,
+): Promise<CreativeGenerationResult> {
+  const request = parseCompanionStoryRequest(input);
+  const configuration = getCreativeCompanionRuntimeConfig();
+  const publicConfiguration = getCreativeContentPublicConfig();
+  const parent = await findCreativeDraftById(topicId, parentDraftId);
+
+  if (!parent) {
+    throw new CreativeContentNotFoundError("The approved parent draft was not found");
+  }
+  if (parent.companion) {
+    throw new CreativeContentConflictError(
+      "A companion Story cannot create another companion Story.",
+    );
+  }
+  if (parent.status !== "approved") {
+    throw new CreativeContentConflictError(
+      "Approve the parent draft before creating a companion Story.",
+    );
+  }
+
+  const brief = await findCreativeBriefById(topicId, parent.briefId);
+  if (!brief) {
+    throw new CreativeContentNotFoundError("The creative brief was not found");
+  }
+
+  const verifiedFactIds = new Set(
+    parent.units.flatMap((unit) => unit.factIds),
+  );
+  const verifiedFacts = brief.keyFacts.filter((fact) => verifiedFactIds.has(fact.id));
+  if (verifiedFacts.length === 0) {
+    throw new CreativeContentConflictError(
+      "The approved parent draft does not cite any verified facts for a companion Story.",
+    );
+  }
+
+  const inheritedSnapshots = await inheritedCharacterSnapshots(parent);
+  const characterRoster = [...inheritedSnapshots.values()].map((character) => ({
+    id: character.id,
+    name: character.name,
+    description: character.description,
+  }));
+  const characterIds = [...inheritedSnapshots.keys()];
+  const companion = {
+    parentDraftId: parent.id,
+    ...request,
+  };
+  const inputHash = hash({
+    parent: { id: parent.id, version: parent.version },
+    verifiedFacts,
+    companion,
+    characterSnapshots: [...inheritedSnapshots.values()],
+    profile: brief.profileSnapshot,
+    provider: "openai",
+    model: configuration.lunaModel,
+    promptVersion: configuration.promptVersion,
+  });
+  const cached = await findCachedCreativeDraft(
+    topicId,
+    brief.id,
+    "meme",
+    inputHash,
+  );
+  if (cached) {
+    return {
+      outcome: "cached",
+      state: await getCreativeWorkspaceState(topicId, parent.storyId),
+    };
+  }
+
+  const daily = await getCreativeDailyUsage(
+    topicId,
+    publicConfiguration.maxRunsPerDay,
+  );
+  assertCreativeDailyBudget(daily.runs, publicConfiguration.maxRunsPerDay);
+  const runId = await createCreativeAiRun({
+    topicId,
+    storyId: parent.storyId,
+    briefId: brief.id,
+    task: "draft",
+    provider: "openai",
+    model: configuration.lunaModel,
+    promptVersion: configuration.promptVersion,
+    inputHash,
+  });
+
+  try {
+    const result = await generateCompanionStoryScript({
+      apiKey: configuration.apiKey,
+      lunaModel: configuration.lunaModel,
+      terraModel: configuration.terraModel,
+      topic: await requireTopic(topicId, { active: true }),
+      profile: brief.profileSnapshot,
+      verifiedFacts,
+      approvedParentDraft: parent,
+      companion,
+      characterRoster,
+      characterIds,
+      ...(request.reserveInteractiveSpace
+        ? {
+            interactiveOverlay: defaultCreativeInteractiveOverlay(
+              brief.profileSnapshot.brandOverlay,
+            ),
+          }
+        : {}),
+    });
+    const draft = await insertCreativeDraft({
+      topicId,
+      storyId: parent.storyId,
+      briefId: brief.id,
+      format: "meme",
+      outputAspectRatio: "9:16",
+      provider: result.provider,
+      model: result.model,
+      promptVersion: configuration.promptVersion,
+      inputHash,
+      generated: result.draft,
+      usage: result.usage,
+      characterSnapshots: inheritedSnapshots,
+    });
+    await completeCreativeAiRun(
+      topicId,
+      runId,
+      result.usage,
+      { draftId: draft.id },
+      { provider: result.provider, model: result.model },
+    );
+
+    return {
+      outcome: "generated",
+      state: await getCreativeWorkspaceState(topicId, parent.storyId),
     };
   } catch (error) {
     await failRunSafely(topicId, runId, error);
@@ -753,6 +921,42 @@ function createDraftInputHash(
   });
 }
 
+function parseCompanionStoryRequest(input: unknown): {
+  angle: string;
+  approach: CreativeCompanionApproach;
+  reserveInteractiveSpace: boolean;
+} {
+  const value = recordValue(input, "A companion Story request is required");
+  if (!isCreativeCompanionApproach(value.approach)) {
+    throw new CreativeDraftValidationError("The companion Story format is invalid");
+  }
+  if (typeof value.reserveInteractiveSpace !== "boolean") {
+    throw new CreativeDraftValidationError(
+      "reserveInteractiveSpace must be true or false",
+    );
+  }
+  return {
+    angle: requiredText(value.angle, "Companion Story angle", 600),
+    approach: value.approach,
+    reserveInteractiveSpace: value.reserveInteractiveSpace,
+  };
+}
+
+async function inheritedCharacterSnapshots(
+  parent: CreativeDraft,
+): Promise<Map<string, CreativeCharacterSnapshot>> {
+  const snapshotsByUnit = await snapshotsForCreativeUnits(
+    parent.units.flatMap((unit) => (unit.id ? [unit.id] : [])),
+  );
+  const snapshots = new Map<string, CreativeCharacterSnapshot>();
+  snapshotsByUnit.forEach((unitSnapshots) => {
+    unitSnapshots.forEach((snapshot) => {
+      if (!snapshots.has(snapshot.id)) snapshots.set(snapshot.id, snapshot);
+    });
+  });
+  return snapshots;
+}
+
 function hash(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
@@ -793,6 +997,7 @@ function validateEditableDraft(
     const role = unit.role;
     const editorialGoal = unit.editorialGoal;
     const assetRequest = unit.assetRequest;
+    const interactiveOverlay = unit.interactiveOverlay;
 
     if (
       role !== "cover" &&
@@ -812,6 +1017,15 @@ function validateEditableDraft(
     if (assetRequest !== "generated-image" && assetRequest !== "typography-only") {
       throw new CreativeDraftValidationError(
         `Unit ${index + 1} has an invalid asset request`,
+      );
+    }
+
+    if (
+      interactiveOverlay !== undefined &&
+      !isCreativeInteractiveOverlay(interactiveOverlay)
+    ) {
+      throw new CreativeDraftValidationError(
+        `Unit ${index + 1} has an invalid interactive overlay`,
       );
     }
 
@@ -880,6 +1094,7 @@ function validateEditableDraft(
       assetRequest,
       aspectRatio: selectedOutputAspectRatio,
       characterIds,
+      ...(interactiveOverlay ? { interactiveOverlay } : {}),
     };
   });
 

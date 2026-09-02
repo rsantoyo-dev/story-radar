@@ -5,6 +5,8 @@ import { NextResponse } from "next/server";
 
 import { CreativeContentConfigurationError } from "@/app/modules/stories/creative-content.config";
 import { CreativeContentResponseError } from "@/app/modules/stories/gemini-creative-content-generator";
+import { CompanionStoryResponseError } from "@/app/modules/stories/companion-story-generator";
+import { OpenAiEditorialError } from "@/app/modules/stories/openai-structured-response";
 import { FalImageConfigurationError } from "@/app/modules/stories/fal-image-generation.config";
 import { FalImageResponseError } from "@/app/modules/stories/fal-image-client";
 import { CreativeAssetValidationError } from "@/app/modules/stories/manage-creative-assets";
@@ -88,6 +90,8 @@ export function creativeRouteErrorResponse(
 
   if (
     error instanceof CreativeContentResponseError ||
+    error instanceof CompanionStoryResponseError ||
+    error instanceof OpenAiEditorialError ||
     error instanceof FalImageResponseError ||
     error instanceof R2StorageObjectError
   ) {

@@ -124,6 +124,14 @@ const IMAGE_QUALITY_OPTIONS = [
   detail: string;
 }>;
 
+const COMPANION_STORY_FORMAT_LABELS = {
+  "expectation-vs-reality": "Expectation vs. reality",
+  "myth-vs-fact": "Myth vs. fact",
+  "quick-fact": "Quick fact",
+  "editorial-reaction": "Editorial reaction / meme",
+  "story-question": "Question or poll for Stories",
+} as const satisfies Record<CreativeCompanionApproach, string>;
+
 export function CreativeDraftWorkspace({
   topicId,
   storyId,
@@ -158,7 +166,7 @@ export function CreativeDraftWorkspace({
   const [characterBusy, setCharacterBusy] = useState<string>();
   const [companionAngle, setCompanionAngle] = useState("");
   const [companionApproach, setCompanionApproach] =
-    useState<CreativeCompanionApproach>("editorial");
+    useState<CreativeCompanionApproach>("expectation-vs-reality");
   const [reserveInteractiveSpace, setReserveInteractiveSpace] = useState(true);
   const requestedImageQuality =
     assetQualityRequest && assetQualityRequest.draftId === activeDraftId
@@ -1682,6 +1690,25 @@ export function CreativeDraftWorkspace({
                   <p>{outputAspectRatioDetail(selectedAspectRatio)}</p>
                 </div>
 
+                {activeDraft?.companion && companionParentDraft ? (
+                  <div className={styles.historyCallout}>
+                    <div>
+                      <strong>Companion Story</strong>
+                      <p>
+                        This 1080x1920 script uses only the facts cited by its approved parent draft.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className={styles.secondaryButton}
+                      disabled={dirty}
+                      onClick={returnToCompanionParent}
+                    >
+                      Return to approved draft
+                    </button>
+                  </div>
+                ) : null}
+
                 {viewingHistoricalDraft ? (
                   <>
                     <div className={styles.historyCallout}>
@@ -1850,11 +1877,93 @@ export function CreativeDraftWorkspace({
               </section>
             ) : null}
 
+            {activeDraft &&
+            !activeDraft.companion &&
+            activeDraft.status === "approved" &&
+            !dirty &&
+            !viewingHistoricalDraft ? (
+              <section className={styles.section}>
+                <div className={styles.sectionHeading}>
+                  <div>
+                    <span>After approval</span>
+                    <h3>Create companion Story</h3>
+                  </div>
+                </div>
+                <div className={styles.generateDraftCard}>
+                  <div>
+                    <strong>Turn approved facts into a distinct 1080x1920 Story</strong>
+                    <p>
+                      Luna writes from only the facts cited by this approved draft. Terra reviews it before you approve its separate image.
+                    </p>
+                  </div>
+                  <label className={styles.field}>
+                    <span>Story format</span>
+                    <select
+                      value={companionApproach}
+                      disabled={Boolean(busy)}
+                      onChange={(event) =>
+                        setCompanionApproach(
+                          event.target.value as CreativeCompanionApproach,
+                        )
+                      }
+                    >
+                      {CREATIVE_COMPANION_APPROACHES.map((approach) => (
+                        <option key={approach} value={approach}>
+                          {COMPANION_STORY_FORMAT_LABELS[approach]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <TextAreaField
+                    label="Editorial angle"
+                    value={companionAngle}
+                    onChange={setCompanionAngle}
+                    rows={3}
+                  />
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={reserveInteractiveSpace}
+                      disabled={Boolean(busy)}
+                      onChange={(event) =>
+                        setReserveInteractiveSpace(event.target.checked)
+                      }
+                    />
+                    Reserve blank space for a manual Instagram question, poll, quiz, or slider
+                  </label>
+                  <button
+                    type="button"
+                    className={styles.primaryButton}
+                    disabled={Boolean(busy)}
+                    onClick={handleGenerateCompanionStory}
+                  >
+                    {busy === "companion"
+                      ? "Generating companion Story..."
+                      : "Create companion Story"}
+                  </button>
+                  {companionsForActiveDraft.length ? (
+                    <div className={styles.historyActions}>
+                      {companionsForActiveDraft.map((draft) => (
+                        <button
+                          key={draft.id}
+                          type="button"
+                          className={styles.secondaryButton}
+                          onClick={() => openCompanionDraft(draft)}
+                        >
+                          Open companion Story v{draft.version}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+            ) : null}
+
             {activeDraft ? (
               <section className={styles.section}>
                 <div className={styles.sectionHeading}>
                   <div>
-                    <span>Stage 3</span>
+                    <span>Stage 4</span>
                     <h3>Generated images</h3>
                   </div>
                   {currentAssetBatch ? (

@@ -198,12 +198,22 @@ export type CreativeInteractiveOverlay = {
 };
 
 export const CREATIVE_COMPANION_APPROACHES = [
-  "editorial",
-  "humor",
-  "confrontation",
+  "expectation-vs-reality",
+  "myth-vs-fact",
+  "quick-fact",
+  "editorial-reaction",
+  "story-question",
 ] as const;
 export type CreativeCompanionApproach =
   (typeof CREATIVE_COMPANION_APPROACHES)[number];
+
+export function isCreativeCompanionApproach(
+  value: unknown,
+): value is CreativeCompanionApproach {
+  return CREATIVE_COMPANION_APPROACHES.includes(
+    value as CreativeCompanionApproach,
+  );
+}
 
 /** Immutable origin and editor-selected treatment for a companion Story. */
 export type CreativeCompanionMetadata = {
