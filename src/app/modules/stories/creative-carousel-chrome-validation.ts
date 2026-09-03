@@ -2,6 +2,7 @@ import {
   CREATIVE_CAROUSEL_CHROME_STYLES,
   DEFAULT_CREATIVE_BRAND_PALETTE,
   DEFAULT_CREATIVE_CAROUSEL_CHROME_SETTINGS,
+  isCreativeBrandUiRole,
   type CreativeBrandPaletteColor,
   type CreativeCarouselChromeSettings,
   type CreativeCarouselChromeStyle,
@@ -34,11 +35,23 @@ export function parseCreativeBrandPaletteInput(
     }
     const name = text(entry.name, `brandPalette[${index}].name`, 40);
     const color = hex(entry.color, `brandPalette[${index}].color`);
-    return { name, color };
+    const role = entry.role;
+    if (role !== undefined && !isCreativeBrandUiRole(role)) {
+      throw new CreativeCarouselChromeValidationError(
+        `brandPalette[${index}].role must be primary, secondary, or surface`,
+      );
+    }
+    return { name, color, ...(role ? { role } : {}) };
   });
   if (new Set(colors.map((color) => color.color)).size !== colors.length) {
     throw new CreativeCarouselChromeValidationError(
       "brandPalette colours must be unique",
+    );
+  }
+  const roles = colors.flatMap((color) => color.role ?? []);
+  if (new Set(roles).size !== roles.length) {
+    throw new CreativeCarouselChromeValidationError(
+      "Each brandPalette UI role may be assigned to only one colour",
     );
   }
   return colors;

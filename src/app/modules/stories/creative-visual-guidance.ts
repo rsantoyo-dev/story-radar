@@ -1,6 +1,7 @@
 import {
   DEFAULT_CREATIVE_BRAND_PALETTE,
   DEFAULT_CREATIVE_VISUAL_GUIDANCE,
+  isCreativeBrandUiRole,
   type CreativeBrandPaletteColor,
   type CreativeProfile,
 } from "./creative-content.types";
@@ -21,7 +22,7 @@ export function resolveCreativeVisualGuidance(
     : DEFAULT_CREATIVE_VISUAL_GUIDANCE;
   const palette = normalizePalette(profile.brandPalette);
   return `${guidance}\n\nApproved brand palette: ${palette
-    .map((entry) => `${entry.name} ${entry.color}`)
+    .map((entry) => `${entry.role ? `${entry.role}: ` : ""}${entry.name} ${entry.color}`)
     .join("; ")}. Use these colours as the visual system unless the brief explicitly requires a factual chart colour.`;
 }
 
@@ -37,9 +38,11 @@ function normalizePalette(value: unknown): CreativeBrandPaletteColor[] {
     ) {
       return [];
     }
+    const role = (entry as { role?: unknown }).role;
     return [{
       name: (entry as { name: string }).name.trim(),
       color: (entry as { color: string }).color.toUpperCase(),
+      ...(isCreativeBrandUiRole(role) ? { role } : {}),
     }];
   });
   return palette.length >= 3 ? palette : DEFAULT_CREATIVE_BRAND_PALETTE.map((entry) => ({ ...entry }));

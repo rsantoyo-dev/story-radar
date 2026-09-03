@@ -290,10 +290,25 @@ export const CREATIVE_CAROUSEL_CHROME_STYLES = ["pill", "minimal"] as const;
 export type CreativeCarouselChromeStyle =
   (typeof CREATIVE_CAROUSEL_CHROME_STYLES)[number];
 
+export const CREATIVE_BRAND_UI_ROLES = [
+  "primary",
+  "secondary",
+  "surface",
+] as const;
+export type CreativeBrandUiRole = (typeof CREATIVE_BRAND_UI_ROLES)[number];
+
+export function isCreativeBrandUiRole(
+  value: unknown,
+): value is CreativeBrandUiRole {
+  return CREATIVE_BRAND_UI_ROLES.includes(value as CreativeBrandUiRole);
+}
+
 /** A named, approved brand colour that can be reused by deterministic visuals. */
 export type CreativeBrandPaletteColor = {
   name: string;
   color: string;
+  /** Optional semantic role used to theme the selected topic's application UI. */
+  role?: CreativeBrandUiRole;
 };
 
 /**

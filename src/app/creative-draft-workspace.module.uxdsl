@@ -336,6 +336,13 @@
   @ds-typo(caption);
 }
 
+.paletteRoleSelect {
+  @ds-input(outlined neutral density(2) radius(1));
+  grid-column: 2 / -1;
+  min-width: 0;
+  @ds-typo(caption);
+}
+
 .paletteColor code {
   color: palette(tertiary-dark);
   @ds-typo(caption);

@@ -40,11 +40,13 @@ export function CreativeProfilePanel({
   topicId,
   secret,
   disabled,
+  onProfileLoaded,
   onProfileSaved,
 }: {
   topicId: string;
   secret: string;
   disabled: boolean;
+  onProfileLoaded?: (profile: CreativeProfile) => void;
   onProfileSaved?: (profile: CreativeProfile) => void;
 }) {
   const [draft, setDraft] = useState<CreativeProfile>();
@@ -67,13 +69,14 @@ export function CreativeProfilePanel({
         setNotice(undefined);
         setDraft(profile);
         setDirty(false);
+        onProfileLoaded?.(profile);
       })
       .catch((loadError) => {
         if (!controller.signal.aborted) setError(getErrorMessage(loadError));
       });
 
     return () => controller.abort();
-  }, [authenticated, secret, topicId]);
+  }, [authenticated, onProfileLoaded, secret, topicId]);
 
   function updateDraft(values: Partial<CreativeProfile>) {
     setDraft((current) => (current ? { ...current, ...values } : current));
@@ -180,7 +183,7 @@ export function CreativeProfilePanel({
       setDirty(false);
       onProfileSaved?.(saved);
       setNotice(
-        "Creative profile saved. Open a story's creative studio and refresh its brief to apply the new settings.",
+        "Creative profile saved. The topic UI now uses its brand palette; refresh existing creative briefs to apply the new settings to generated content.",
       );
     } catch (saveError) {
       setError(getErrorMessage(saveError));

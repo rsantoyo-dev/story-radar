@@ -11,6 +11,7 @@ import {
   type DashboardTopic,
 } from "./topic-configuration-panel";
 import { topicThemeStyle } from "@/design/topic-themes";
+import type { CreativeProfile } from "./modules/stories/creative-content.types";
 
 type DatabaseStats = {
   stories: number;
@@ -412,6 +413,8 @@ export function RadarDashboard({
   const [notice, setNotice] = useState<Notice>();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isTopicLoading, setIsTopicLoading] = useState(false);
+  const [selectedCreativeProfile, setSelectedCreativeProfile] =
+    useState<CreativeProfile>();
 
   const isBusy = activeOperation !== undefined;
   const canAuthenticate = secret.trim().length > 0;
@@ -848,6 +851,7 @@ export function RadarDashboard({
     setSelectedStoryIds([]);
     setContentViewer(undefined);
     setCreativeStory(undefined);
+    setSelectedCreativeProfile(undefined);
     setConfirmation("");
     setFavoredTerms("");
     setUnfavoredTerms("");
@@ -923,7 +927,10 @@ export function RadarDashboard({
   return (
     <main
       className={styles.appShell}
-      style={topicThemeStyle(selectedTopic?.themeKey)}
+      style={topicThemeStyle(
+        selectedTopic?.themeKey,
+        selectedCreativeProfile,
+      )}
     >
       <aside
         className={`${styles.sidebar} ${sidebarOpen ? styles.sidebarOpen : ""}`}
@@ -1171,6 +1178,8 @@ export function RadarDashboard({
             topicId={selectedTopicId}
             secret={secret}
             disabled={isBusy}
+            onProfileLoaded={setSelectedCreativeProfile}
+            onProfileSaved={setSelectedCreativeProfile}
           />
         </div>
 

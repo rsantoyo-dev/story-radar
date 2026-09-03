@@ -7,6 +7,7 @@ import {
   CREATIVE_BRAND_BACKDROP_MODES,
   CREATIVE_BRAND_PLACEMENTS,
   CREATIVE_BRAND_SCOPES,
+  CREATIVE_BRAND_UI_ROLES,
   CREATIVE_CAROUSEL_CHROME_STYLES,
   type CreativeBrandPaletteColor,
   type CreativeProfile,
@@ -94,6 +95,18 @@ export function BrandPaletteAndCarouselChromeEditor({
         entryIndex === index ? { ...entry, name } : entry,
       ),
     );
+  const updatePaletteRole = (
+    index: number,
+    role: CreativeBrandPaletteColor["role"],
+  ) =>
+    onPaletteChange(
+      palette.map((entry, entryIndex) => {
+        if (entryIndex === index) {
+          return role ? { ...entry, role } : { ...entry, role: undefined };
+        }
+        return role === entry.role ? { ...entry, role: undefined } : entry;
+      }),
+    );
 
   return (
     <section className={styles.carouselChromePanel} aria-labelledby="brand-palette-title">
@@ -104,6 +117,8 @@ export function BrandPaletteAndCarouselChromeEditor({
             Define the colours available to this topic, then choose the optional
             deterministic counter rendered on carousel slides. The palette also
             becomes part of the visual campaign guide sent to image generation.
+            Assign Primary, Secondary, and Surface to theme this topic&rsquo;s UI;
+            readable shades and text contrast are generated automatically.
           </p>
         </div>
         <label className={styles.brandEnabledToggle}>
@@ -133,6 +148,26 @@ export function BrandPaletteAndCarouselChromeEditor({
                 maxLength={40}
                 onChange={(event) => updatePaletteName(index, event.target.value)}
               />
+              <select
+                className={styles.paletteRoleSelect}
+                aria-label={`UI role for ${entry.name}`}
+                value={entry.role ?? ""}
+                onChange={(event) =>
+                  updatePaletteRole(
+                    index,
+                    event.target.value
+                      ? (event.target.value as CreativeBrandPaletteColor["role"])
+                      : undefined,
+                  )
+                }
+              >
+                <option value="">Supporting colour</option>
+                {CREATIVE_BRAND_UI_ROLES.map((role) => (
+                  <option key={role} value={role}>
+                    {capitalize(role)}
+                  </option>
+                ))}
+              </select>
               <code>{entry.color}</code>
               <button
                 type="button"
