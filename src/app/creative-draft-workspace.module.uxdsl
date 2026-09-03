@@ -194,6 +194,63 @@
   font-weight: 500;
 }
 
+.profileSummaryHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: space(5);
+  padding: density(5);
+}
+
+.profileSummaryHead > div {
+  display: flex;
+  flex-direction: column;
+  gap: space(1);
+}
+
+.profileSummaryHead strong {
+  @ds-typo (caption);
+  font-size: 11px;
+  font-weight: 750;
+  color: palette(primary-dark);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.profileSummaryHead small {
+  @ds-typo (caption);
+  font-size: 10px;
+  font-weight: 500;
+  color: palette(tertiary-main);
+}
+
+.profileSummaryLink {
+  flex: 0 0 auto;
+  padding: density(2) density(3);
+  border: 1px solid palette(surface-light);
+  border-radius: radius(full);
+  background: palette(light-light);
+  color: palette(primary-main);
+  @ds-typo (caption);
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.profileSummaryLink:hover,
+.profileSummaryLink:focus-visible {
+  border-color: palette(primary-main);
+  outline: 0;
+}
+
+.profileSummaryGrid {
+  display: grid;
+  grid-template-columns: xs(1fr) sm(repeat(2, minmax(0, 1fr)));
+  gap: space(3) space(5);
+  padding: 0 density(5) density(5);
+}
+
 .profileBody {
   display: grid;
   min-width: 0;
@@ -202,6 +259,16 @@
   padding: density(5);
   border: 0;
   border-top: border(1, palette(surface-light), solid);
+}
+
+/* Grouped creative-profile panel: a stack of disclosure cards, no fieldset chrome. */
+.profileBodyPlain {
+  display: grid;
+  min-width: 0;
+  gap: space(4);
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 
 .profileGuideHint {

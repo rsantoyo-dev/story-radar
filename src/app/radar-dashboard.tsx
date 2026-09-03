@@ -1,8 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { CreativeDraftWorkspace } from "./creative-draft-workspace";
+import { CreativeProfilePanel } from "./creative-profile-panel";
 import { EditorialProfilePanel } from "./editorial-profile-panel";
 import styles from "./radar-dashboard.generated.module.css";
 import {
@@ -108,6 +109,45 @@ type PublicationFilter =
   | "not-published-anywhere"
   | "scheduled-on-platform"
   | "published-on-platform";
+
+/** Deep-link a Story review view: #stories/selected/unpublished, #stories/collected, … */
+type StoryReviewView = {
+  tab: "collected" | "selected";
+  publicationFilter?: PublicationFilter;
+};
+
+const STORY_REVIEW_ANCHOR = "stories";
+
+function storyReviewHash(view: StoryReviewView): string {
+  if (view.tab === "collected") return `#${STORY_REVIEW_ANCHOR}/collected`;
+  const segment =
+    view.publicationFilter === "not-published-anywhere" ? "unpublished" : "all";
+  return `#${STORY_REVIEW_ANCHOR}/selected/${segment}`;
+}
+
+function parseStoryReviewHash(hash: string): StoryReviewView | undefined {
+  if (hash === `#${STORY_REVIEW_ANCHOR}/collected`) {
+    return { tab: "collected" };
+  }
+  const match = /^#stories\/selected\/(all|unpublished)$/.exec(hash);
+  if (!match) return undefined;
+  return {
+    tab: "selected",
+    publicationFilter:
+      match[1] === "unpublished" ? "not-published-anywhere" : "all",
+  };
+}
+
+function countUnpublishedSelected(
+  stories: readonly { publications?: readonly { status: PublicationStatus }[] }[],
+): number {
+  return stories.filter(
+    (story) =>
+      !(story.publications ?? []).some(
+        (publication) => publication.status === "published",
+      ),
+  ).length;
+}
 
 type StoryPublication = {
   platform: PublicationPlatform;
@@ -378,6 +418,21 @@ export function RadarDashboard({
   const canDelete = canAuthenticate && confirmation === "DELETE" && !isBusy;
   const selectedTopic = topics.find((topic) => topic.id === selectedTopicId);
   const selectedTopicName = selectedTopic?.name ?? "this topic";
+  const readyToProduceCount = countUnpublishedSelected(
+    stats?.editorial?.selectedStories ?? [],
+  );
+
+  function goToStoryReview(view: StoryReviewView) {
+    setSidebarOpen(false);
+    if (typeof window !== "undefined") {
+      window.location.hash = storyReviewHash(view);
+    }
+    requestAnimationFrame(() =>
+      document
+        .getElementById(STORY_REVIEW_ANCHOR)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+    );
+  }
 
   async function handleLoadStatus() {
     await runOperation("status", async () => {
@@ -908,9 +963,37 @@ export function RadarDashboard({
             <span className={styles.navIcon} aria-hidden="true">✦</span>
             Editorial AI
           </a>
+          <a
+            href="#editorial-creative"
+            className={styles.navSubItem}
+            onClick={() => setSidebarOpen(false)}
+          >
+            <span className={styles.navIcon} aria-hidden="true">▸</span>
+            Creative profile
+          </a>
           <a href="#stories" onClick={() => setSidebarOpen(false)}>
             <span className={styles.navIcon} aria-hidden="true">▤</span>
             Story review
+          </a>
+          <a
+            href={storyReviewHash({
+              tab: "selected",
+              publicationFilter: "not-published-anywhere",
+            })}
+            className={styles.navSubItem}
+            onClick={(event) => {
+              event.preventDefault();
+              goToStoryReview({
+                tab: "selected",
+                publicationFilter: "not-published-anywhere",
+              });
+            }}
+          >
+            <span className={styles.navIcon} aria-hidden="true">▸</span>
+            Ready to produce
+            {readyToProduceCount > 0 ? (
+              <span className={styles.navBadge}>{readyToProduceCount}</span>
+            ) : null}
           </a>
           <a href="#optimization" onClick={() => setSidebarOpen(false)}>
             <span className={styles.navIcon} aria-hidden="true">◌</span>
@@ -1079,6 +1162,15 @@ export function RadarDashboard({
                   .catch(() => undefined);
               }
             }}
+          />
+        </div>
+
+        <div id="editorial-creative" className={styles.anchorTarget}>
+          <CreativeProfilePanel
+            key={selectedTopicId}
+            topicId={selectedTopicId}
+            secret={secret}
+            disabled={isBusy}
           />
         </div>
 
@@ -1515,9 +1607,80 @@ function EditorialEvaluationPanel({
     useState<StoryTableViewState>(() => createStoryTableViewState("collected"));
   const [selectedTableState, setSelectedTableState] =
     useState<StoryTableViewState>(() => createStoryTableViewState("selected"));
+
+  // A deep link (#stories/selected/unpublished) or the sidebar shortcut drives
+  // the tab + publication filter. Bare #stories keeps whatever the user last had.
+  useEffect(() => {
+    function applyHash() {
+      const view = parseStoryReviewHash(window.location.hash);
+      if (!view) return;
+      setActiveTab(view.tab);
+      if (view.publicationFilter) {
+        const setter =
+          view.tab === "selected"
+            ? setSelectedTableState
+            : setCollectedTableState;
+        setter((current) => ({
+          ...current,
+          publicationFilter: view.publicationFilter as PublicationFilter,
+        }));
+      }
+    }
+    applyHash();
+    window.addEventListener("hashchange", applyHash);
+    return () => window.removeEventListener("hashchange", applyHash);
+  }, []);
+
+  function goToView(
+    tab: "collected" | "selected",
+    publicationFilter: PublicationFilter,
+  ) {
+    setActiveTab(tab);
+    const setter =
+      tab === "selected" ? setSelectedTableState : setCollectedTableState;
+    setter((current) => ({ ...current, publicationFilter }));
+    if (typeof window !== "undefined") {
+      window.history.replaceState(
+        null,
+        "",
+        storyReviewHash({ tab, publicationFilter }),
+      );
+    }
+  }
+
   const shortlist = editorial?.shortlist ?? [];
   const collectedStories = editorial?.collectedStories ?? [];
   const selectedStories = editorial?.selectedStories ?? [];
+  const selectedUnpublishedCount = countUnpublishedSelected(selectedStories);
+  // Deliberately no "Published" chip: the only "published" filter value is
+  // scoped to a single platform, so a "published anywhere" count would not
+  // match the rows it shows. Use the publication filter in the toolbar for
+  // per-platform published views.
+  const quickViews: {
+    label: string;
+    count: number;
+    tab: "collected" | "selected";
+    publicationFilter: PublicationFilter;
+  }[] = [
+    {
+      label: "Unpublished",
+      count: selectedUnpublishedCount,
+      tab: "selected",
+      publicationFilter: "not-published-anywhere",
+    },
+    {
+      label: "All selected",
+      count: selectedStories.length,
+      tab: "selected",
+      publicationFilter: "all",
+    },
+    {
+      label: "Collected",
+      count: collectedStories.length,
+      tab: "collected",
+      publicationFilter: "all",
+    },
+  ];
   const localCandidateFloor =
     editorial?.configuration.effectiveCandidatePolicy?.localCandidateMinScore ??
     editorial?.configuration.minLocalScore ??
@@ -1659,6 +1822,33 @@ function EditorialEvaluationPanel({
                 <span>{editorial.selectedStories.length}</span>
               </button>
             </div>
+          </div>
+
+          <div className={styles.quickViews} aria-label="Quick views">
+            {quickViews.map((view) => {
+              const currentFilter =
+                view.tab === "selected"
+                  ? selectedTableState.publicationFilter
+                  : collectedTableState.publicationFilter;
+              const isActive =
+                activeTab === view.tab &&
+                (view.tab === "collected" ||
+                  currentFilter === view.publicationFilter);
+              return (
+                <button
+                  key={view.label}
+                  type="button"
+                  aria-pressed={isActive}
+                  className={isActive ? styles.quickViewActive : ""}
+                  onClick={() =>
+                    goToView(view.tab, view.publicationFilter)
+                  }
+                >
+                  {view.label}
+                  <span>{view.count}</span>
+                </button>
+              );
+            })}
           </div>
 
           {activeTab === "collected" ? (

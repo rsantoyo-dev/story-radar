@@ -17,17 +17,9 @@ import {
 } from "./modules/stories/creative-quality";
 import { buildCompleteDraftScript } from "./modules/stories/creative-draft-export";
 import {
-  CREATIVE_BRAND_BACKDROP_MODES,
-  CREATIVE_BRAND_PLACEMENTS,
-  CREATIVE_BRAND_SCOPES,
-  CREATIVE_CAROUSEL_CHROME_STYLES,
   CREATIVE_COMPANION_APPROACHES,
-  CREATIVE_CONVERSION_GOALS,
-  CREATIVE_FRAMING_STRATEGIES,
   type CreativeAssetBatchResponse,
   type CreativeAspectRatio,
-  type CreativeBrandAsset,
-  type CreativeBrandPaletteColor,
   type CreativeCharacter,
   type CreativeCharacterReferenceImage,
   type CreativeCharacterRosterEntry,
@@ -42,6 +34,7 @@ import {
   type CreativeWorkspaceState,
   type EditableCreativeDraft,
 } from "./modules/stories/creative-content.types";
+import { ListField, TextAreaField, TextField } from "./creative-profile-fields";
 import styles from "./creative-draft-workspace.generated.module.css";
 
 type WorkspaceProps = {
@@ -53,8 +46,6 @@ type WorkspaceProps = {
 };
 
 type BusyAction =
-  | "profile"
-  | "brand"
   | "profile-draft"
   | "brief"
   | "draft"
@@ -151,7 +142,9 @@ export function CreativeDraftWorkspace({
 }: WorkspaceProps) {
   const [workspace, setWorkspace] = useState<CreativeWorkspaceState>();
   const [profile, setProfile] = useState<CreativeProfile>();
-  const [profileDirty, setProfileDirty] = useState(false);
+  // The creative profile is edited in the topic "Creative profile" panel now;
+  // the studio only reads it, so it can never be dirty here.
+  const profileDirty = false;
   const [editorialDirection, setEditorialDirection] = useState("");
   const [characterSlots, setCharacterSlots] = useState<CharacterSlot[]>(
     emptyCharacterSlots,
@@ -260,7 +253,6 @@ export function CreativeDraftWorkspace({
       .then(([next, characters]) => {
         setWorkspace(next);
         setProfile(next.profile);
-        setProfileDirty(false);
         setEditorialDirection(next.brief?.editorialDirection ?? "");
         setCharacterSlots(characterSlotsFromCharacters(characters));
         // Prefer the editable draft for the current profile. If there is no
@@ -443,7 +435,6 @@ export function CreativeDraftWorkspace({
   async function reloadWorkspace(
     preferredFormat = selectedFormat,
     preferredAspectRatio = selectedAspectRatio,
-    preserveUnsavedProfile = profileDirty,
     preferredCompanionDraftId = activeDraft?.companion ? activeDraft.id : undefined,
   ) {
     const next = await requestJson<CreativeWorkspaceState>(
@@ -454,13 +445,7 @@ export function CreativeDraftWorkspace({
       secret,
     );
     setWorkspace(next);
-    // Draft, approval, and character actions also refresh the workspace. Do
-    // not let those unrelated requests silently replace local profile/logo
-    // edits that the user has not saved yet.
-    if (!preserveUnsavedProfile) {
-      setProfile(next.profile);
-      setProfileDirty(false);
-    }
+    setProfile(next.profile);
     const preferredCompanionDraft = preferredCompanionDraftId
       ? next.drafts.find((draft) => draft.id === preferredCompanionDraftId)
       : undefined;
@@ -499,21 +484,6 @@ export function CreativeDraftWorkspace({
     setAssetsReloadKey((current) => current + 1);
   }
 
-  async function handleSaveProfile() {
-    if (!profile || busy) return;
-    await run("profile", async () => {
-      await requestJson(topicUrl("/api/radar/creative-profile", topicId), secret, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(profile),
-      });
-      await reloadWorkspace(selectedFormat, selectedAspectRatio, false);
-      setNotice(
-        "Creative profile saved. Refresh the brief if its current inputs changed.",
-      );
-    });
-  }
-
   async function handleCreateBrief() {
     if (busy) return;
     if (profileDirty) {
@@ -534,7 +504,6 @@ export function CreativeDraftWorkspace({
       );
       setWorkspace(result.state);
       setProfile(result.state.profile);
-      setProfileDirty(false);
       setEditorialDirection(result.state.brief?.editorialDirection ?? "");
       const format = result.state.brief?.recommendedFormat ?? "meme";
       const aspectRatio = resolveDraftAspectRatio(result.state, format);
@@ -586,7 +555,6 @@ export function CreativeDraftWorkspace({
         currentState = refreshedBrief.state;
         setWorkspace(currentState);
         setProfile(currentState.profile);
-        setProfileDirty(false);
         setEditorialDirection(currentState.brief?.editorialDirection ?? "");
       }
 
@@ -698,9 +666,8 @@ export function CreativeDraftWorkspace({
   async function handleRefreshDraftFromProfile() {
     if (!workspace?.brief || !profile || busy) return;
 
-    const saveProfile = profileDirty;
     const refreshBrief =
-      saveProfile || !workspace.briefIsCurrent || editorialDirectionDirty;
+      !workspace.briefIsCurrent || editorialDirectionDirty;
     const maximumRunsNeeded = refreshBrief ? 2 : 1;
     if (workspace.daily.remainingRuns < maximumRunsNeeded) {
       setError(
@@ -711,7 +678,7 @@ export function CreativeDraftWorkspace({
 
     if (
       !window.confirm(
-        `Generate a new ${selectedFormat} draft from the current parameters${saveProfile ? ", save the modified creative profile," : ""}${refreshBrief ? " and refresh its brief" : ""}? This uses up to ${maximumRunsNeeded} AI ${maximumRunsNeeded === 1 ? "run" : "runs"}.${dirty ? " Unsaved edits in the current draft will be discarded." : ""} Existing generated images remain available in history.`,
+        `Generate a new ${selectedFormat} draft from the current parameters${refreshBrief ? " and refresh its brief" : ""}? This uses up to ${maximumRunsNeeded} AI ${maximumRunsNeeded === 1 ? "run" : "runs"}.${dirty ? " Unsaved edits in the current draft will be discarded." : ""} Existing generated images remain available in history.`,
       )
     ) {
       return;
@@ -719,17 +686,6 @@ export function CreativeDraftWorkspace({
 
     await run("profile-draft", async () => {
       let currentState = workspace;
-      if (saveProfile) {
-        await requestJson(
-          topicUrl("/api/radar/creative-profile", topicId),
-          secret,
-          {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(profile),
-          },
-        );
-      }
       if (refreshBrief) {
         const refreshedBrief = await requestJson<{
           outcome: "generated" | "cached";
@@ -773,7 +729,6 @@ export function CreativeDraftWorkspace({
       );
       setWorkspace(refreshedDraft.state);
       setProfile(refreshedDraft.state.profile);
-      setProfileDirty(false);
       setHistoryDraftId(undefined);
       resetAssetWorkspace();
       selectDraft(
@@ -1271,78 +1226,6 @@ export function CreativeDraftWorkspace({
     }
   }
 
-  function updateProfile(values: Partial<CreativeProfile>) {
-    setProfile((current) => (current ? { ...current, ...values } : current));
-    setProfileDirty(true);
-  }
-
-  function updateBrandOverlay(
-    values: Partial<CreativeProfile["brandOverlay"]>,
-  ) {
-    if (!profile) return;
-    updateProfile({
-      brandOverlay: { ...profile.brandOverlay, ...values },
-    });
-  }
-
-  function updateBrandPalette(brandPalette: CreativeBrandPaletteColor[]) {
-    if (!profile) return;
-    const paletteColors = new Set(brandPalette.map((entry) => entry.color));
-    const fallback = brandPalette[0]!.color;
-    updateProfile({
-      brandPalette,
-      carouselChrome: {
-        ...profile.carouselChrome,
-        backgroundColor: paletteColors.has(profile.carouselChrome.backgroundColor)
-          ? profile.carouselChrome.backgroundColor
-          : fallback,
-        textColor: paletteColors.has(profile.carouselChrome.textColor)
-          ? profile.carouselChrome.textColor
-          : fallback,
-        accentColor: paletteColors.has(profile.carouselChrome.accentColor)
-          ? profile.carouselChrome.accentColor
-          : fallback,
-      },
-    });
-  }
-
-  function updateCarouselChrome(
-    values: Partial<CreativeProfile["carouselChrome"]>,
-  ) {
-    if (!profile) return;
-    updateProfile({
-      carouselChrome: { ...profile.carouselChrome, ...values },
-    });
-  }
-
-  async function handleUploadBrandAsset(file: File) {
-    if (!profile || busy) return;
-    if (file.type !== "image/png" && !file.name.toLowerCase().endsWith(".png")) {
-      setError("The brand logo must be a PNG image.");
-      return;
-    }
-
-    await run("brand", async () => {
-      const body = new FormData();
-      body.append("image", file);
-      const asset = await requestJson<CreativeBrandAsset>(
-        topicUrl("/api/radar/creative-profile/brand-assets", topicId),
-        secret,
-        { method: "POST", body },
-      );
-      updateProfile({
-        brandOverlay: {
-          ...profile.brandOverlay,
-          assetId: asset.id,
-          asset,
-        },
-      });
-      setNotice(
-        "Brand logo uploaded. Choose its placement, then save the creative profile.",
-      );
-    });
-  }
-
   function updateCharacterSlot(
     slot: 1 | 2,
     values: Partial<Pick<CharacterSlot, "name" | "description">>,
@@ -1501,9 +1384,9 @@ export function CreativeDraftWorkspace({
 
   function closeWorkspace() {
     if (
-      (profileDirty || dirty) &&
+      dirty &&
       !window.confirm(
-        "Close Creative Studio and discard the unsaved profile or draft changes?",
+        "Close Creative Studio and discard the unsaved draft changes?",
       )
     ) {
       return;
@@ -1557,127 +1440,64 @@ export function CreativeDraftWorkspace({
               </div>
             ) : null}
 
+            <div className={styles.profilePanel}>
+              <div className={styles.profileSummaryHead}>
+                <div>
+                  <strong>Creative profile</strong>
+                  <small>{profile.platform} · {profile.language} · {profile.region}</small>
+                </div>
+                <a
+                  href="#editorial-creative"
+                  className={styles.profileSummaryLink}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    if (
+                      dirty &&
+                      !window.confirm(
+                        "Close Creative Studio and discard the unsaved draft changes?",
+                      )
+                    ) {
+                      return;
+                    }
+                    onClose();
+                    window.location.hash = "editorial-creative";
+                  }}
+                >
+                  Edit in Topic voice →
+                </a>
+              </div>
+              <div className={styles.profileSummaryGrid}>
+                <BriefCopy label="Audience" value={profile.audience || "—"} />
+                <BriefCopy
+                  label="Framing"
+                  value={FRAMING_STRATEGY_LABELS[profile.framingStrategy ?? "auto"]}
+                />
+                <BriefCopy label="Conversion goal" value={capitalize(profile.conversionGoal)} />
+                <BriefCopy
+                  label="Personality"
+                  value={profile.brandPersonality.join(", ") || "—"}
+                />
+              </div>
+              <p className={styles.profileGuideHint}>
+                This profile is defined for the topic and applies to every meme
+                and carousel here. Editing it in Topic voice refreshes future
+                briefs; this draft keeps the snapshot it was generated with until
+                you refresh it.
+              </p>
+            </div>
+
             <details className={styles.profilePanel}>
               <summary>
                 <span>
-                  <strong>Creative profile</strong>
-                  <small>{profile.platform} · {profile.language} · {profile.region}{profileDirty ? " · unsaved" : ""}</small>
+                  <strong>Supporting characters</strong>
+                  <small>Optional recurring narrators for this topic</small>
                 </span>
-                <span>Edit parameters</span>
+                <span>Manage</span>
               </summary>
               <fieldset
                 className={styles.profileBody}
                 disabled={Boolean(busy) || Boolean(characterBusy)}
               >
-                <div className={styles.fieldGrid}>
-                  <TextField label="Profile name" value={profile.name} onChange={(name) => updateProfile({ name })} />
-                  <TextField label="Platform" value={profile.platform} onChange={(platform) => updateProfile({ platform })} />
-                  <TextField label="Language" value={profile.language} onChange={(language) => updateProfile({ language })} />
-                  <TextField label="Region" value={profile.region} onChange={(region) => updateProfile({ region })} />
-                  <label className={styles.field}>
-                    <span>Primary conversion goal</span>
-                    <select
-                      value={profile.conversionGoal}
-                      onChange={(event) =>
-                        updateProfile({
-                          conversionGoal: event.target
-                            .value as CreativeProfile["conversionGoal"],
-                        })
-                      }
-                    >
-                      {CREATIVE_CONVERSION_GOALS.map((goal) => (
-                        <option key={goal} value={goal}>
-                          {capitalize(goal)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className={styles.field}>
-                    <span>Editorial framing</span>
-                    <select
-                      value={profile.framingStrategy ?? "auto"}
-                      onChange={(event) =>
-                        updateProfile({
-                          framingStrategy: event.target
-                            .value as CreativeProfile["framingStrategy"],
-                        })
-                      }
-                    >
-                      {CREATIVE_FRAMING_STRATEGIES.map((strategy) => (
-                        <option key={strategy} value={strategy}>
-                          {FRAMING_STRATEGY_LABELS[strategy]}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-                <p className={styles.profileGuideHint}>
-                  Editorial framing fixes the lens for the hook.{" "}
-                  <strong>Reader consequence</strong> forces the opening onto what
-                  changes for the audience whenever the facts support it;{" "}
-                  <strong>Explainer</strong> and <strong>Authority</strong> allow a
-                  neutral or institutional opening; <strong>Auto</strong> lets the
-                  brief choose per story.
-                </p>
-                <TextAreaField label="Audience" value={profile.audience} onChange={(audience) => updateProfile({ audience })} rows={2} />
-                <TextAreaField
-                  label="Visual campaign guide"
-                  value={profile.visualGuidance ?? ""}
-                  onChange={(visualGuidance) => updateProfile({ visualGuidance })}
-                  rows={8}
-                />
-                <p className={styles.profileGuideHint}>
-                  Add the complete visual direction for this topic: palette,
-                  typography, motifs, safe margins, and what to avoid. Save it,
-                  then update the draft from the current profile to apply that
-                  art direction. Logo settings below apply directly to the next
-                  image batch and do not require regenerating the script.
-                </p>
-                <BrandPaletteAndCarouselChromeEditor
-                  palette={profile.brandPalette}
-                  chrome={profile.carouselChrome}
-                  disabled={Boolean(busy) || Boolean(characterBusy)}
-                  onPaletteChange={updateBrandPalette}
-                  onChromeChange={updateCarouselChrome}
-                />
-                <BrandOverlayEditor
-                  overlay={profile.brandOverlay}
-                  topicId={topicId}
-                  secret={secret}
-                  disabled={Boolean(busy)}
-                  uploading={busy === "brand"}
-                  onChange={updateBrandOverlay}
-                  onUpload={handleUploadBrandAsset}
-                />
-                <ListField
-                  key={profile.brandPersonality.join("|")}
-                  label="Brand personality (comma-separated)"
-                  values={profile.brandPersonality}
-                  onChange={(brandPersonality) => updateProfile({ brandPersonality })}
-                />
-                <div className={styles.sliders}>
-                  {(["formality", "humor", "energy", "optimism", "provocation"] as const).map((dimension) => (
-                    <label key={dimension}>
-                      <span>{capitalize(dimension)} <strong>{profile[dimension]}</strong></span>
-                      <input type="range" min="0" max="100" value={profile[dimension]} onChange={(event) => updateProfile({ [dimension]: Number(event.target.value) })} />
-                    </label>
-                  ))}
-                </div>
-                <div className={styles.emojiRow}>
-                  <label>
-                    <input type="checkbox" checked={profile.allowEmojis} onChange={(event) => updateProfile({ allowEmojis: event.target.checked })} />
-                    Allow emojis
-                  </label>
-                  <label>
-                    Maximum
-                    <input type="number" min="0" max="10" value={profile.maxEmojis} onChange={(event) => updateProfile({ maxEmojis: Number(event.target.value) })} />
-                  </label>
-                </div>
-                <TextAreaField label="CTA tone and wording" value={profile.callToActionStyle} onChange={(callToActionStyle) => updateProfile({ callToActionStyle })} rows={2} />
-                <p className={styles.profileGuideHint}>
-                  The conversion goal defines the action; this field defines
-                  only its tone and wording.
-                </p>
                 <SupportingCharactersEditor
                   slots={characterSlots}
                   topicId={topicId}
@@ -1689,9 +1509,6 @@ export function CreativeDraftWorkspace({
                   onUpload={handleUploadCharacterReferences}
                   onRemoveReference={handleRemoveCharacterReference}
                 />
-                <button className={styles.secondaryButton} type="button" disabled={Boolean(busy) || !profileDirty} onClick={handleSaveProfile}>
-                  {busy === "profile" ? "Saving profile…" : "Save creative profile"}
-                </button>
               </fieldset>
             </details>
 
@@ -3189,512 +3006,6 @@ function BriefCopy({ label, value }: { label: string; value: string }) {
   return <div className={styles.briefCopy}><span>{label}</span><p>{value}</p></div>;
 }
 
-function TextField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  return <label className={styles.field}><span>{label}</span><input value={value} onChange={(event) => onChange(event.target.value)} /></label>;
-}
-
-function TextAreaField({ label, value, onChange, rows }: { label: string; value: string; onChange: (value: string) => void; rows: number }) {
-  return <label className={styles.field}><span>{label}</span><textarea value={value} rows={rows} onChange={(event) => onChange(event.target.value)} /></label>;
-}
-
-function BrandPaletteAndCarouselChromeEditor({
-  palette,
-  chrome,
-  disabled,
-  onPaletteChange,
-  onChromeChange,
-}: {
-  palette: CreativeBrandPaletteColor[];
-  chrome: CreativeProfile["carouselChrome"];
-  disabled: boolean;
-  onPaletteChange: (palette: CreativeBrandPaletteColor[]) => void;
-  onChromeChange: (values: Partial<CreativeProfile["carouselChrome"]>) => void;
-}) {
-  const updatePaletteColor = (index: number, color: string) =>
-    onPaletteChange(
-      palette.map((entry, entryIndex) =>
-        entryIndex === index ? { ...entry, color: color.toUpperCase() } : entry,
-      ),
-    );
-  const updatePaletteName = (index: number, name: string) =>
-    onPaletteChange(
-      palette.map((entry, entryIndex) =>
-        entryIndex === index ? { ...entry, name } : entry,
-      ),
-    );
-
-  return (
-    <section className={styles.carouselChromePanel} aria-labelledby="brand-palette-title">
-      <header className={styles.brandOverlayHeader}>
-        <div>
-          <strong id="brand-palette-title">Brand palette & carousel numbering</strong>
-          <p>
-            Define the colours available to this topic, then choose the optional
-            deterministic counter rendered on carousel slides. The palette also
-            becomes part of the visual campaign guide sent to image generation.
-          </p>
-        </div>
-        <label className={styles.brandEnabledToggle}>
-          <input
-            type="checkbox"
-            checked={chrome.enabled}
-            disabled={disabled}
-            onChange={(event) => onChromeChange({ enabled: event.target.checked })}
-          />
-          <span>Numbering enabled</span>
-        </label>
-      </header>
-
-      <fieldset className={styles.carouselChromeControls} disabled={disabled}>
-        <div className={styles.paletteGrid} aria-label="Brand palette">
-          {palette.map((entry, index) => (
-            <div className={styles.paletteColor} key={`${entry.color}-${index}`}>
-              <input
-                type="color"
-                aria-label={`${entry.name} colour`}
-                value={entry.color}
-                onChange={(event) => updatePaletteColor(index, event.target.value)}
-              />
-              <input
-                aria-label={`Name for ${entry.color}`}
-                value={entry.name}
-                maxLength={40}
-                onChange={(event) => updatePaletteName(index, event.target.value)}
-              />
-              <code>{entry.color}</code>
-              <button
-                type="button"
-                className={styles.paletteRemove}
-                disabled={palette.length <= 3}
-                onClick={() => onPaletteChange(palette.filter((_, item) => item !== index))}
-              >
-                Remove
-              </button>
-            </div>
-          ))}
-          {palette.length < 8 ? (
-            <button
-              type="button"
-              className={styles.paletteAdd}
-              onClick={() =>
-                onPaletteChange([
-                  ...palette,
-                  {
-                    name: `Brand colour ${palette.length + 1}`,
-                    color: nextAvailablePaletteColor(palette),
-                  },
-                ])
-              }
-            >
-              + Add colour
-            </button>
-          ) : null}
-        </div>
-
-        <div className={styles.carouselChromeOptions}>
-          <div className={styles.brandControlGroup}>
-            <span className={styles.brandControlLabel}>Counter style</span>
-            <div className={styles.brandSegmented} role="group" aria-label="Carousel counter style">
-              {CREATIVE_CAROUSEL_CHROME_STYLES.map((style) => (
-                <button
-                  key={style}
-                  type="button"
-                  className={`${styles.brandOptionButton} ${
-                    chrome.style === style ? styles.brandOptionSelected : ""
-                  }`}
-                  aria-pressed={chrome.style === style}
-                  onClick={() => onChromeChange({ style })}
-                >
-                  {style === "pill" ? "Pill badge" : "Minimal"}
-                </button>
-              ))}
-            </div>
-          </div>
-          <CarouselChromePaletteSelect
-            label="Badge"
-            value={chrome.backgroundColor}
-            palette={palette}
-            onChange={(backgroundColor) => onChromeChange({ backgroundColor })}
-          />
-          <CarouselChromePaletteSelect
-            label="Counter text"
-            value={chrome.textColor}
-            palette={palette}
-            onChange={(textColor) => onChromeChange({ textColor })}
-          />
-          <CarouselChromePaletteSelect
-            label="Accent"
-            value={chrome.accentColor}
-            palette={palette}
-            onChange={(accentColor) => onChromeChange({ accentColor })}
-          />
-        </div>
-
-        <div className={styles.carouselChromePreview} aria-label="Carousel numbering preview">
-          <span>Preview · slide 2 of 6</span>
-          {chrome.enabled ? (
-            <div
-              className={`${styles.carouselChromePreviewBadge} ${
-                chrome.style === "minimal" ? styles.carouselChromePreviewMinimal : ""
-              }`}
-              style={{
-                backgroundColor: chrome.backgroundColor,
-                borderColor: chrome.accentColor,
-                color: chrome.textColor,
-              }}
-            >
-              <b style={{ color: chrome.style === "minimal" ? chrome.textColor : chrome.accentColor }}>2/6</b>
-              <span> · next idea </span>
-              <b style={{ color: chrome.accentColor }}>→</b>
-            </div>
-          ) : (
-            <p>Numbering is off for the next carousel batch.</p>
-          )}
-        </div>
-      </fieldset>
-    </section>
-  );
-}
-
-function nextAvailablePaletteColor(palette: CreativeBrandPaletteColor[]): string {
-  const candidates = ["#F4AF36", "#173F43", "#EF644B", "#2F777B", "#FAF5E6", "#6F8FAF"];
-  return candidates.find((color) => !palette.some((entry) => entry.color === color)) ?? "#6F8FAF";
-}
-
-function CarouselChromePaletteSelect({
-  label,
-  value,
-  palette,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  palette: CreativeBrandPaletteColor[];
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className={styles.carouselChromeSelect}>
-      <span>{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)}>
-        {palette.map((entry) => (
-          <option key={entry.color} value={entry.color}>
-            {entry.name} · {entry.color}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function BrandOverlayEditor({
-  overlay,
-  topicId,
-  secret,
-  disabled,
-  uploading,
-  onChange,
-  onUpload,
-}: {
-  overlay: CreativeProfile["brandOverlay"];
-  topicId: string;
-  secret: string;
-  disabled: boolean;
-  uploading: boolean;
-  onChange: (values: Partial<CreativeProfile["brandOverlay"]>) => void;
-  onUpload: (file: File) => void;
-}) {
-  const hasAsset = Boolean(overlay.assetId);
-
-  return (
-    <section className={styles.brandOverlayPanel} aria-labelledby="brand-logo-title">
-      <header className={styles.brandOverlayHeader}>
-        <div>
-          <strong id="brand-logo-title">Brand logo</strong>
-          <p>
-            Upload a transparent PNG and choose where it will be composited after
-            image generation. The prompt reserves a slot calculated from the
-            logo proportions, inset, backdrop, and safety buffer; text can use
-            the open lane beside it and the full canvas beyond it. Save the
-            profile before generating images.
-          </p>
-        </div>
-        <label className={styles.brandEnabledToggle}>
-          <input
-            type="checkbox"
-            checked={overlay.enabled}
-            disabled={disabled || !hasAsset}
-            onChange={(event) => onChange({ enabled: event.target.checked })}
-          />
-          <span>Enabled</span>
-        </label>
-      </header>
-
-      <div className={styles.brandOverlayGrid}>
-        <div className={styles.brandAssetCard}>
-          <div className={styles.brandAssetPreview}>
-            {overlay.assetId ? (
-              <BrandAssetPreview
-                key={overlay.assetId}
-                topicId={topicId}
-                secret={secret}
-                assetId={overlay.assetId}
-                fileName={overlay.asset?.fileName ?? "Brand logo"}
-                width={overlay.asset?.width ?? 320}
-                height={overlay.asset?.height ?? 160}
-              />
-            ) : (
-              <div className={styles.brandAssetPlaceholder}>PNG logo</div>
-            )}
-          </div>
-          {overlay.asset ? (
-            <div className={styles.brandAssetMeta} title={overlay.asset.fileName}>
-              <strong>{overlay.asset.fileName}</strong>
-              <span>
-                {overlay.asset.width}×{overlay.asset.height} · PNG
-              </span>
-            </div>
-          ) : (
-            <p className={styles.brandAssetHint}>
-              A transparent background gives the cleanest result.
-            </p>
-          )}
-          <label
-            className={`${styles.brandUpload} ${
-              disabled ? styles.brandUploadDisabled : ""
-            }`}
-          >
-            <input
-              type="file"
-              accept="image/png,.png"
-              disabled={disabled}
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                event.currentTarget.value = "";
-                if (file) onUpload(file);
-              }}
-            />
-            {uploading
-              ? "Uploading logo…"
-              : overlay.assetId
-                ? "Replace PNG"
-                : "Upload PNG"}
-          </label>
-          {!hasAsset ? (
-            <small className={styles.brandEnableHint}>
-              Upload a logo before enabling the overlay.
-            </small>
-          ) : null}
-        </div>
-
-        <fieldset className={styles.brandControls} disabled={disabled}>
-          <div className={styles.brandControlGroup}>
-            <span className={styles.brandControlLabel}>Apply logo to</span>
-            <div className={styles.brandSegmented} role="group" aria-label="Logo scope">
-              {CREATIVE_BRAND_SCOPES.map((scope) => (
-                <button
-                  type="button"
-                  key={scope}
-                  className={`${styles.brandOptionButton} ${
-                    overlay.scope === scope ? styles.brandOptionSelected : ""
-                  }`}
-                  aria-pressed={overlay.scope === scope}
-                  onClick={() => onChange({ scope })}
-                >
-                  {scope === "first-unit" ? "First unit" : "All units"}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className={styles.brandControlGroup}>
-            <span className={styles.brandControlLabel}>
-              Placement · {capitalize(overlay.placement.replace("-", " "))}
-            </span>
-            <div
-              className={styles.brandPlacementGrid}
-              role="group"
-              aria-label="Logo placement"
-            >
-              {CREATIVE_BRAND_PLACEMENTS.map((placement) => (
-                <button
-                  type="button"
-                  key={placement}
-                  data-placement={placement}
-                  className={`${styles.brandPlacementButton} ${
-                    overlay.placement === placement
-                      ? styles.brandPlacementSelected
-                      : ""
-                  }`}
-                  aria-label={capitalize(placement.replace("-", " "))}
-                  aria-pressed={overlay.placement === placement}
-                  title={capitalize(placement.replace("-", " "))}
-                  onClick={() => onChange({ placement })}
-                />
-              ))}
-            </div>
-          </div>
-
-          <div className={styles.brandRangeGrid}>
-            <label className={styles.brandRange}>
-              <span>
-                Logo size <strong>{overlay.sizePercent}%</strong>
-              </span>
-              <input
-                type="range"
-                min="5"
-                max="40"
-                value={overlay.sizePercent}
-                onChange={(event) =>
-                  onChange({ sizePercent: Number(event.target.value) })
-                }
-              />
-            </label>
-            <label className={styles.brandRange}>
-              <span>
-                Edge inset <strong>{overlay.insetPercent}%</strong>
-              </span>
-              <input
-                type="range"
-                min="0"
-                max="20"
-                value={overlay.insetPercent}
-                onChange={(event) =>
-                  onChange({ insetPercent: Number(event.target.value) })
-                }
-              />
-            </label>
-          </div>
-
-          <div className={styles.brandControlGroup}>
-            <span className={styles.brandControlLabel}>Backdrop</span>
-            <div
-              className={styles.brandSegmented}
-              role="group"
-              aria-label="Logo backdrop"
-            >
-              {CREATIVE_BRAND_BACKDROP_MODES.map((backdropMode) => (
-                <button
-                  type="button"
-                  key={backdropMode}
-                  className={`${styles.brandOptionButton} ${
-                    overlay.backdropMode === backdropMode
-                      ? styles.brandOptionSelected
-                      : ""
-                  }`}
-                  aria-pressed={overlay.backdropMode === backdropMode}
-                  onClick={() => onChange({ backdropMode })}
-                >
-                  {capitalize(backdropMode)}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {overlay.backdropMode === "solid" ? (
-            <div className={styles.brandBackdropSettings}>
-              <label className={styles.brandColorControl}>
-                <span>Color</span>
-                <span className={styles.brandColorPicker}>
-                  <input
-                    type="color"
-                    value={overlay.backdropColor}
-                    aria-label="Backdrop color"
-                    onChange={(event) =>
-                      onChange({ backdropColor: event.target.value.toUpperCase() })
-                    }
-                  />
-                  <code>{overlay.backdropColor.toUpperCase()}</code>
-                </span>
-              </label>
-              <label className={styles.brandRange}>
-                <span>
-                  Opacity <strong>{overlay.backdropOpacity}%</strong>
-                </span>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={overlay.backdropOpacity}
-                  onChange={(event) =>
-                    onChange({ backdropOpacity: Number(event.target.value) })
-                  }
-                />
-              </label>
-            </div>
-          ) : (
-            <p className={styles.brandBackdropHint}>
-              The logo will be placed without a background panel.
-            </p>
-          )}
-        </fieldset>
-      </div>
-    </section>
-  );
-}
-
-function BrandAssetPreview({
-  topicId,
-  secret,
-  assetId,
-  fileName,
-  width,
-  height,
-}: {
-  topicId: string;
-  secret: string;
-  assetId: string;
-  fileName: string;
-  width: number;
-  height: number;
-}) {
-  const [source, setSource] = useState<string>();
-  const [unavailable, setUnavailable] = useState(false);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    let objectUrl: string | undefined;
-
-    fetch(
-      topicUrl(
-        `/api/radar/creative-profile/brand-assets/${encodeURIComponent(assetId)}`,
-        topicId,
-      ),
-      {
-        cache: "no-store",
-        signal: controller.signal,
-        headers: { Authorization: `Bearer ${secret.trim()}` },
-      },
-    )
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Brand logo preview unavailable");
-        objectUrl = URL.createObjectURL(await response.blob());
-        setSource(objectUrl);
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setUnavailable(true);
-      });
-
-    return () => {
-      controller.abort();
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [assetId, secret, topicId]);
-
-  return source ? (
-    <Image
-      src={source}
-      alt={fileName}
-      width={width}
-      height={height}
-      unoptimized
-    />
-  ) : (
-    <div className={styles.brandAssetPlaceholder}>
-      {unavailable ? "Preview unavailable" : "Loading preview…"}
-    </div>
-  );
-}
-
 function SupportingCharactersEditor({
   slots,
   topicId,
@@ -3917,29 +3228,6 @@ function CharacterReferencePreview({
   );
 }
 
-function ListField({
-  label,
-  values,
-  onChange,
-}: {
-  label: string;
-  values: string[];
-  onChange: (values: string[]) => void;
-}) {
-  const [text, setText] = useState(values.join(", "));
-
-  return (
-    <label className={styles.field}>
-      <span>{label}</span>
-      <input
-        value={text}
-        onChange={(event) => setText(event.target.value)}
-        onBlur={() => onChange(parseList(text))}
-      />
-    </label>
-  );
-}
-
 function ErrorMessage({ message }: { message: string }) {
   return <div className={styles.error} role="alert"><strong>Creative studio error</strong><p>{message}</p></div>;
 }
@@ -4146,10 +3434,6 @@ function creativeAssetBatchUrl(
   const path = `/api/radar/creative/drafts/${encodeURIComponent(draftId)}/assets${query}`;
 
   return topicUrl(path, topicId);
-}
-
-function parseList(value: string): string[] {
-  return [...new Set(value.split(/[,\n]+/).map((item) => item.trim()).filter(Boolean))];
 }
 
 function topicUrl(path: string, topicId: string): string {

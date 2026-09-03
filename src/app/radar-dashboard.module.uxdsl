@@ -129,6 +129,43 @@
   line-height: 1;
 }
 
+.sidebarNav a.navSubItem {
+  min-height: 2.25rem;
+  margin-left: space(6);
+  padding-left: space(3);
+  border-left: 2px solid palette(primary-light, 0.16);
+  border-radius: 0 radius(2) radius(2) 0;
+  color: palette(primary-light, 0.82);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.sidebarNav a.navSubItem .navIcon {
+  width: 14px;
+  height: 14px;
+  font-size: space(3);
+}
+
+.sidebarNav a.navSubItem:hover,
+.sidebarNav a.navSubItem:focus-visible {
+  border-left-color: palette(secondary-main);
+}
+
+.navBadge {
+  margin-left: auto;
+  display: inline-grid;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 density(1);
+  place-items: center;
+  border-radius: radius(full);
+  background: palette(secondary-main);
+  color: palette(secondary-contrast);
+  @ds-typo (caption);
+  font-size: 10px;
+  font-weight: 750;
+}
+
 .sidebarFooter {
   margin-top: auto;
   padding: space(5) space(3) 0;
@@ -1373,6 +1410,60 @@
   background: palette(light-light);
   color: palette(dark-main);
   box-shadow: 0 3px 10px palette(dark-main, 0.09);
+}
+
+.quickViews {
+  display: flex;
+  flex-wrap: wrap;
+  gap: density(1);
+  margin-top: space(4);
+}
+
+.quickViews button {
+  display: inline-flex;
+  align-items: center;
+  gap: density(1);
+  min-height: 32px;
+  padding: 0 density(3);
+  border: 1px solid palette(surface-light);
+  border-radius: radius(full);
+  background: palette(light-light);
+  color: palette(tertiary-main);
+  font: inherit;
+  @ds-typo (caption);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
+}
+
+.quickViews button:hover,
+.quickViews button:focus-visible {
+  border-color: palette(secondary-main, 0.5);
+  outline: 0;
+}
+
+.quickViews button span {
+  display: inline-grid;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 density(1);
+  place-items: center;
+  border-radius: radius(full);
+  background: palette(dark-main, 0.08);
+  @ds-typo (caption);
+  font-size: 10px;
+}
+
+.quickViews .quickViewActive {
+  border-color: palette(secondary-main);
+  background: palette(secondary-main);
+  color: palette(secondary-contrast);
+}
+
+.quickViews .quickViewActive span {
+  background: palette(secondary-contrast, 0.22);
+  color: palette(secondary-contrast);
 }
 
 .tableViewHeading {
