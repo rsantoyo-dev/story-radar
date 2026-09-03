@@ -4,7 +4,8 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import {
   BrandOverlayEditor,
-  BrandPaletteAndCarouselChromeEditor,
+  BrandPaletteEditor,
+  CarouselNumberingEditor,
   ListField,
   TextAreaField,
   TextField,
@@ -392,12 +393,10 @@ export function CreativeProfilePanel({
             apply directly to the next image batch and do not require
             regenerating the script.
           </p>
-          <BrandPaletteAndCarouselChromeEditor
+          <BrandPaletteEditor
             palette={draft.brandPalette}
-            chrome={draft.carouselChrome}
             disabled={controlsDisabled}
-            onPaletteChange={updateBrandPalette}
-            onChromeChange={updateCarouselChrome}
+            onChange={updateBrandPalette}
           />
           <BrandOverlayEditor
             overlay={draft.brandOverlay}
@@ -407,6 +406,15 @@ export function CreativeProfilePanel({
             uploading={busy === "brand"}
             onChange={updateBrandOverlay}
             onUpload={handleUploadBrandAsset}
+          />
+        </Group>
+
+        <Group title="Carousel numbering">
+          <CarouselNumberingEditor
+            chrome={draft.carouselChrome}
+            palette={draft.brandPalette}
+            disabled={controlsDisabled}
+            onChange={updateCarouselChrome}
           />
         </Group>
 

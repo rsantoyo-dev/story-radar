@@ -70,27 +70,23 @@ export function ListField({
   );
 }
 
-export function BrandPaletteAndCarouselChromeEditor({
+export function BrandPaletteEditor({
   palette,
-  chrome,
   disabled,
-  onPaletteChange,
-  onChromeChange,
+  onChange,
 }: {
   palette: CreativeBrandPaletteColor[];
-  chrome: CreativeProfile["carouselChrome"];
   disabled: boolean;
-  onPaletteChange: (palette: CreativeBrandPaletteColor[]) => void;
-  onChromeChange: (values: Partial<CreativeProfile["carouselChrome"]>) => void;
+  onChange: (palette: CreativeBrandPaletteColor[]) => void;
 }) {
   const updatePaletteColor = (index: number, color: string) =>
-    onPaletteChange(
+    onChange(
       palette.map((entry, entryIndex) =>
         entryIndex === index ? { ...entry, color: color.toUpperCase() } : entry,
       ),
     );
   const updatePaletteName = (index: number, name: string) =>
-    onPaletteChange(
+    onChange(
       palette.map((entry, entryIndex) =>
         entryIndex === index ? { ...entry, name } : entry,
       ),
@@ -99,12 +95,14 @@ export function BrandPaletteAndCarouselChromeEditor({
     index: number,
     role: CreativeBrandPaletteColor["role"],
   ) =>
-    onPaletteChange(
+    onChange(
       palette.map((entry, entryIndex) => {
         if (entryIndex === index) {
           return role ? { ...entry, role } : { ...entry, role: undefined };
         }
-        return role === entry.role ? { ...entry, role: undefined } : entry;
+        return role !== undefined && entry.role === role
+          ? { ...entry, role: undefined }
+          : entry;
       }),
     );
 
@@ -112,24 +110,14 @@ export function BrandPaletteAndCarouselChromeEditor({
     <section className={styles.carouselChromePanel} aria-labelledby="brand-palette-title">
       <header className={styles.brandOverlayHeader}>
         <div>
-          <strong id="brand-palette-title">Brand palette & carousel numbering</strong>
+          <strong id="brand-palette-title">Brand palette</strong>
           <p>
-            Define the colours available to this topic, then choose the optional
-            deterministic counter rendered on carousel slides. The palette also
-            becomes part of the visual campaign guide sent to image generation.
-            Assign Primary, Secondary, and Surface to theme this topic&rsquo;s UI;
+            Define the colours available to this topic. The palette becomes part
+            of the visual campaign guide sent to image generation. Assign
+            Primary, Secondary, and Surface to theme this topic&rsquo;s UI;
             readable shades and text contrast are generated automatically.
           </p>
         </div>
-        <label className={styles.brandEnabledToggle}>
-          <input
-            type="checkbox"
-            checked={chrome.enabled}
-            disabled={disabled}
-            onChange={(event) => onChromeChange({ enabled: event.target.checked })}
-          />
-          <span>Numbering enabled</span>
-        </label>
       </header>
 
       <fieldset className={styles.carouselChromeControls} disabled={disabled}>
@@ -173,7 +161,7 @@ export function BrandPaletteAndCarouselChromeEditor({
                 type="button"
                 className={styles.paletteRemove}
                 disabled={palette.length <= 3}
-                onClick={() => onPaletteChange(palette.filter((_, item) => item !== index))}
+                onClick={() => onChange(palette.filter((_, item) => item !== index))}
               >
                 Remove
               </button>
@@ -184,7 +172,7 @@ export function BrandPaletteAndCarouselChromeEditor({
               type="button"
               className={styles.paletteAdd}
               onClick={() =>
-                onPaletteChange([
+                onChange([
                   ...palette,
                   {
                     name: `Brand colour ${palette.length + 1}`,
@@ -197,7 +185,47 @@ export function BrandPaletteAndCarouselChromeEditor({
             </button>
           ) : null}
         </div>
+      </fieldset>
+    </section>
+  );
+}
 
+export function CarouselNumberingEditor({
+  chrome,
+  palette,
+  disabled,
+  onChange,
+}: {
+  chrome: CreativeProfile["carouselChrome"];
+  palette: CreativeBrandPaletteColor[];
+  disabled: boolean;
+  onChange: (values: Partial<CreativeProfile["carouselChrome"]>) => void;
+}) {
+  return (
+    <section
+      className={styles.carouselChromePanel}
+      aria-labelledby="carousel-numbering-title"
+    >
+      <header className={styles.brandOverlayHeader}>
+        <div>
+          <strong id="carousel-numbering-title">Carousel numbering</strong>
+          <p>
+            The optional deterministic counter rendered on carousel slides. Its
+            colours are picked from the brand palette above.
+          </p>
+        </div>
+        <label className={styles.brandEnabledToggle}>
+          <input
+            type="checkbox"
+            checked={chrome.enabled}
+            disabled={disabled}
+            onChange={(event) => onChange({ enabled: event.target.checked })}
+          />
+          <span>Numbering enabled</span>
+        </label>
+      </header>
+
+      <fieldset className={styles.carouselChromeControls} disabled={disabled}>
         <div className={styles.carouselChromeOptions}>
           <div className={styles.brandControlGroup}>
             <span className={styles.brandControlLabel}>Counter style</span>
@@ -210,7 +238,7 @@ export function BrandPaletteAndCarouselChromeEditor({
                     chrome.style === style ? styles.brandOptionSelected : ""
                   }`}
                   aria-pressed={chrome.style === style}
-                  onClick={() => onChromeChange({ style })}
+                  onClick={() => onChange({ style })}
                 >
                   {style === "pill" ? "Pill badge" : "Minimal"}
                 </button>
@@ -221,19 +249,19 @@ export function BrandPaletteAndCarouselChromeEditor({
             label="Badge"
             value={chrome.backgroundColor}
             palette={palette}
-            onChange={(backgroundColor) => onChromeChange({ backgroundColor })}
+            onChange={(backgroundColor) => onChange({ backgroundColor })}
           />
           <CarouselChromePaletteSelect
             label="Counter text"
             value={chrome.textColor}
             palette={palette}
-            onChange={(textColor) => onChromeChange({ textColor })}
+            onChange={(textColor) => onChange({ textColor })}
           />
           <CarouselChromePaletteSelect
             label="Accent"
             value={chrome.accentColor}
             palette={palette}
-            onChange={(accentColor) => onChromeChange({ accentColor })}
+            onChange={(accentColor) => onChange({ accentColor })}
           />
         </div>
 
