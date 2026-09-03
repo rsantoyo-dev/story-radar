@@ -1,4 +1,39 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Press Craftor
+
+Press Craftor is an editorial operations platform that turns news, research,
+and owned materials into high-quality social content while preserving factual
+rigor, brand identity, and human approval.
+
+It starts by collecting signals from RSS feeds, uploaded documents such as
+PDFs and reports, and AI-assisted research. The AI research source acts like
+another feed provider: it finds recent stories according to a topic, region,
+time window, and editorial criteria chosen by the team. The platform is also
+evolving to accept directly submitted stories and source material, supporting
+campaigns, brand announcements, internal research, and other owned content.
+
+Collected stories are organized, deduplicated, filtered, and evaluated using
+both local rules and AI. Press Craftor measures editorial priority—how reliable
+and useful a story is for a channel—alongside growth potential: its ability to
+bring in new audiences, create conversation, or become clear, shareable
+content.
+
+Once an editor selects a story, the creative workflow turns verified facts into
+a brief and an editable script matched to the brand's audience, language,
+format, and conversion goal. Structured validation and high-capacity AI review
+check factual accuracy, editorial clarity, CTA quality, and storytelling before
+anything is approved. Human approval remains required.
+
+Each brand has a Creative Profile that defines personality, tone, visual
+guidance, logo treatment, palette, and carousel numbering style. Those settings
+guide the creation of memes, carousels, and companion Stories, including empty
+zones for native Instagram polls, questions, quizzes, or sliders. Press Craftor
+can recommend the best interaction for the image while keeping that sticker
+outside the generated artwork.
+
+The result is one editorial chain: discover, verify, prioritize, write, review,
+design, and approve. Future work extends this foundation to video and
+multi-format campaign production, using the same principle: AI-assisted
+creativity directed by evidence, brand systems, and human judgment.
 
 ## Getting Started
 

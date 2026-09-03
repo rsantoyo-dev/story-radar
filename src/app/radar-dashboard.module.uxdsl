@@ -200,6 +200,14 @@
   gap: space(3);
 }
 
+.secretConnectButton {
+  @ds-button(contained primary 2);
+  flex: none;
+  min-height: 40px;
+  box-shadow: shadow(1);
+  white-space: nowrap;
+}
+
 .secretField {
   display: flex;
   align-items: center;
@@ -2249,7 +2257,7 @@
   .secretControl {
     display: grid;
     width: 100%;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     align-items: end;
   }
 

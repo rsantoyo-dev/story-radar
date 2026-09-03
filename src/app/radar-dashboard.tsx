@@ -400,6 +400,11 @@ export function RadarDashboard({
     });
   }
 
+  async function handleConnect() {
+    if (!canAuthenticate || isBusy) return;
+    await handleLoadStatus();
+  }
+
   async function handleCollect() {
     if (preferencesDirty) {
       showUnsavedPreferences();
@@ -972,22 +977,41 @@ export function RadarDashboard({
           </div>
 
           <div className={styles.topbarTools}>
-            <div className={styles.secretControl}>
+            <form
+              className={styles.secretControl}
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleConnect();
+              }}
+            >
               <label className={styles.secretField}>
                 <span>Collector secret</span>
                 <input
                   type="password"
                   value={secret}
-                  onChange={(event) => setSecret(event.target.value)}
+                  onChange={(event) => {
+                    setSecret(event.target.value);
+                    setStats(undefined);
+                  }}
                   placeholder="Paste secret"
                   autoComplete="off"
                   spellCheck={false}
                 />
               </label>
-              <span className={`${styles.topbarStatus} ${stats ? styles.online : styles.idle}`}>
+              <button
+                type="submit"
+                className={styles.secretConnectButton}
+                disabled={!canAuthenticate || isBusy}
+              >
+                {activeOperation === "status" ? "Connecting…" : "Connect"}
+              </button>
+              <span
+                className={`${styles.topbarStatus} ${stats ? styles.online : styles.idle}`}
+                aria-live="polite"
+              >
                 {stats ? "Connected" : "Not checked"}
               </span>
-            </div>
+            </form>
           </div>
         </header>
 
