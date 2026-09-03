@@ -40,6 +40,28 @@ export function isCreativeConversionGoal(
   return CREATIVE_CONVERSION_GOALS.includes(value as CreativeConversionGoal);
 }
 
+export const CREATIVE_FRAMING_STRATEGIES = [
+  "auto",
+  "reader-consequence",
+  "explainer",
+  "authority",
+] as const;
+export type CreativeFramingStrategy =
+  (typeof CREATIVE_FRAMING_STRATEGIES)[number];
+/**
+ * Which editorial lens the brief must use for the angle and hook. "auto" keeps
+ * the model's four-lens assessment; the others let a campaign fix the framing.
+ */
+export const DEFAULT_CREATIVE_FRAMING_STRATEGY: CreativeFramingStrategy = "auto";
+
+export function isCreativeFramingStrategy(
+  value: unknown,
+): value is CreativeFramingStrategy {
+  return CREATIVE_FRAMING_STRATEGIES.includes(
+    value as CreativeFramingStrategy,
+  );
+}
+
 export const CREATIVE_TONES = [
   "informative",
   "curious",
@@ -327,6 +349,7 @@ export type CreativeProfile = {
   allowEmojis: boolean;
   maxEmojis: number;
   conversionGoal: CreativeConversionGoal;
+  framingStrategy: CreativeFramingStrategy;
   callToActionStyle: string;
   updatedAt: Date;
 };

@@ -17,8 +17,10 @@ import {
 import {
   DEFAULT_CREATIVE_BRAND_OVERLAY_SETTINGS,
   DEFAULT_CREATIVE_CONVERSION_GOAL,
+  DEFAULT_CREATIVE_FRAMING_STRATEGY,
   DEFAULT_CREATIVE_VISUAL_GUIDANCE,
   isCreativeConversionGoal,
+  isCreativeFramingStrategy,
   type CreativeBrandAsset,
   type CreativeBrandOverlay,
   type CreativeAspectRatio,
@@ -875,6 +877,7 @@ function mapProfileSnapshot(value: unknown): CreativeProfile {
     | "brandPalette"
     | "carouselChrome"
     | "conversionGoal"
+    | "framingStrategy"
     | "updatedAt"
   > & {
     brandOverlay?: CreativeBrandOverlay & {
@@ -885,6 +888,7 @@ function mapProfileSnapshot(value: unknown): CreativeProfile {
     brandPalette?: unknown;
     carouselChrome?: unknown;
     conversionGoal?: unknown;
+    framingStrategy?: unknown;
     updatedAt: Date | string;
   };
   const brandOverlay =
@@ -903,6 +907,9 @@ function mapProfileSnapshot(value: unknown): CreativeProfile {
     conversionGoal: isCreativeConversionGoal(profile.conversionGoal)
       ? profile.conversionGoal
       : DEFAULT_CREATIVE_CONVERSION_GOAL,
+    framingStrategy: isCreativeFramingStrategy(profile.framingStrategy)
+      ? profile.framingStrategy
+      : DEFAULT_CREATIVE_FRAMING_STRATEGY,
     visualGuidance:
       typeof profile.visualGuidance === "string" && profile.visualGuidance.trim()
         ? profile.visualGuidance

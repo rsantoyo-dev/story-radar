@@ -90,6 +90,48 @@ test("detects certainty, scope, inference, and empty-conclusion blockers", () =>
   assert.ok(codes.has("EMPTY_CONCLUSION"));
 });
 
+test("removes unsupported numeric publishing copy before editorial review", () => {
+  const supportedFacts: CreativeKeyFact[] = [
+    {
+      id: "fact-supported",
+      statement: "The report found that 60% of respondents completed the survey.",
+      sourceExcerpt:
+        "The report found that 60% of respondents completed the survey.",
+    },
+  ];
+  const leakingDraft: GeneratedCreativeDraft = {
+    concept: "Survey completion",
+    caption: "Completion ranged from 15%, to 25%, to 50%.",
+    callToAction: "Follow after comparing 15%, 25%, and 50%.",
+    hashtags: [],
+    altText: "A chart showing 15%, 25%, and 50% completion.",
+    units: [
+      unit(
+        1,
+        "cover",
+        "hook",
+        "Survey completion",
+        "The report found that 60% of respondents completed the survey. It also compares 15%, 25%, and 50%.",
+        ["fact-supported"],
+      ),
+    ],
+  };
+
+  const repaired = repairDeterministicFactCopy(
+    leakingDraft,
+    supportedFacts,
+    "English",
+  );
+
+  assert.equal(repaired.callToAction, undefined);
+  assert.equal(
+    deterministicFactQualityIssues(repaired, supportedFacts).some(
+      (issue) => issue.code === "UNSUPPORTED_NUMBER",
+    ),
+    false,
+  );
+});
+
 test("repairs safe factual defects without inventing new claims", () => {
   const repaired = repairDeterministicFactCopy(draft, keyFacts);
 
@@ -493,6 +535,76 @@ test("normalizes Spanish estimate qualifiers around currency and signed values",
   assert.match(body, /de aproximadamente 3.4%/iu);
   assert.match(body, /aproximadamente \+3.4%/iu);
   assert.doesNotMatch(body, /[$+-]aproximadamente/iu);
+});
+
+test("moves the capital with the qualifier at the start of a sentence", () => {
+  const householdFact: CreativeKeyFact = {
+    id: "fact-households",
+    statement: "About 40% of households notice it.",
+    sourceExcerpt: "About 40% of households notice it.",
+    requiredQualifiers: ["about"],
+    attribution: "Source",
+  };
+  const build = (body: string): GeneratedCreativeDraft => ({
+    concept: "Hogares en Canadá",
+    caption: "Datos de hogares.",
+    hashtags: [],
+    altText: "Gráfico de hogares.",
+    units: [
+      unit(1, "content", "explain", "Titular", body, ["fact-households"]),
+    ],
+  });
+  const repairedBody = (body: string) =>
+    repairDeterministicFactCopy(build(body), [householdFact], "español")
+      .units[0]?.body ?? "";
+
+  assert.equal(
+    repairedBody("El 40% de los hogares lo nota."),
+    "Aproximadamente el 40% de los hogares lo nota.",
+  );
+  assert.equal(
+    repairedBody("Lo nota el 40% de los hogares."),
+    "Lo nota aproximadamente el 40% de los hogares.",
+  );
+  assert.equal(
+    repairedBody("Del 40% depende el resultado."),
+    "De aproximadamente 40% depende el resultado.",
+  );
+});
+
+test("places an inserted estimate qualifier after a preposition and before an article", () => {
+  const rateFact: CreativeKeyFact = {
+    id: "fact-rate",
+    statement:
+      "Inflation was approximately 3% recently, or about 2.2% excluding gasoline.",
+    sourceExcerpt:
+      "Inflation was approximately 3% recently, or about 2.2% excluding gasoline.",
+    requiredQualifiers: ["approximately", "about"],
+    attribution: "Bank of Canada",
+  };
+  const rateDraft: GeneratedCreativeDraft = {
+    concept: "Inflación en Canadá",
+    caption: "Datos de inflación reciente.",
+    hashtags: [],
+    altText: "Gráfico de inflación reciente.",
+    units: [
+      unit(
+        1,
+        "content",
+        "explain",
+        "La inflación reciente",
+        "La inflación general rondó el 3% y, sin gasolina, fue del 2.2%.",
+        ["fact-rate"],
+      ),
+    ],
+  };
+
+  const body =
+    repairDeterministicFactCopy(rateDraft, [rateFact], "español").units[0]
+      ?.body ?? "";
+  assert.match(body, /aproximadamente el 3%/iu);
+  assert.match(body, /de aproximadamente 2\.2%/iu);
+  assert.doesNotMatch(body, /\b(?:el|del) aproximadamente\b/iu);
 });
 
 test("matches localized Spanish statistics to English source numbers", () => {

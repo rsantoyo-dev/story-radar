@@ -19,6 +19,7 @@ import {
   knowledgeDocumentSections,
   knowledgeDocuments,
   knowledgeDocumentVersions,
+  ownedContentEntries,
   stories,
   storyContentEnrichments,
   storyEditorialEvaluations,
@@ -235,6 +236,20 @@ export async function findEditorialEvaluationCandidates(
     ${stories.publishedAt},
     ${topicStories.lastSeenAt}
   )`;
+  // Owned content is evergreen: the filter below exempts it from every
+  // freshness window, so the scan must not drop it first. Legacy fallback mode
+  // does not resolve owned-content sources at all, so it keeps the plain cutoff
+  // and the exemption stays unreachable there by design.
+  const withinFreshnessWindow = useLegacySourceFallback
+    ? gte(effectiveDate, cutoff)
+    : or(
+        gte(effectiveDate, cutoff),
+        sql`exists (
+          select 1 from ${ownedContentEntries}
+          where ${ownedContentEntries.storyId} = ${topicStories.storyId}
+            and ${ownedContentEntries.topicId} = ${topicId}
+        )`,
+      );
   const storyRows = await db
     .select({
       storyId: topicStories.storyId,
@@ -263,7 +278,7 @@ export async function findEditorialEvaluationCandidates(
           ? []
           : [isNull(topicStories.reviewDecision)]),
         gte(topicStories.relevanceScore, minLocalScore),
-        gte(effectiveDate, cutoff),
+        withinFreshnessWindow,
       ),
     )
     .orderBy(desc(topicStories.relevanceScore), desc(effectiveDate))
@@ -291,7 +306,12 @@ export async function findEditorialEvaluationCandidates(
   return profileEligibleRows
     .filter((story) => {
       const source = sourceByStoryId.get(story.storyId);
-      const allowedAgeHours = isResearchSource(source?.tags ?? [])
+      const sourceTags = source?.tags ?? [];
+      if (isOwnedContentSource(sourceTags)) {
+        return true;
+      }
+
+      const allowedAgeHours = isResearchSource(sourceTags)
         ? freshness.researchMaxAgeHours
         : freshness.newsMaxAgeHours;
       const effectiveStoryDate = story.publishedAt ?? story.lastSeenAt;
@@ -444,8 +464,37 @@ async function findCandidateSources(
       inArray(storyKnowledgeOrigins.storyId, [...storyIds]),
     ));
 
+  const ownedContentSourceRows: CandidateSource[] = useLegacySourceFallback
+    ? []
+    : (await db
+        .select({
+          storyId: storySources.storyId,
+          sourceId: storySources.sourceId,
+          sourceName: storySources.sourceName,
+          fetchedAt: storySources.fetchedAt,
+          contentType: ownedContentEntries.contentType,
+        })
+        .from(storySources)
+        .innerJoin(
+          ownedContentEntries,
+          and(
+            eq(ownedContentEntries.storyId, storySources.storyId),
+            eq(ownedContentEntries.topicId, topicId),
+          ),
+        )
+        .where(and(
+          inArray(storySources.storyId, [...storyIds]),
+          sql`${storySources.sourceId} like ${"owned-content:%"}`,
+        ))
+        .orderBy(desc(storySources.fetchedAt)))
+      .map((source) => ({
+        ...source,
+        tags: ["owned-content", source.contentType],
+      }));
+
   const sourceRows: CandidateSource[] = [
     ...aiResearchSourceRows,
+    ...ownedContentSourceRows,
     ...knowledgeSourceRows.map((source) => ({
       storyId: source.storyId,
       sourceId: `knowledge:${source.documentId}`,
@@ -474,6 +523,10 @@ function isResearchSource(tags: readonly string[]): boolean {
       normalizedTag.includes(keyword),
     );
   });
+}
+
+function isOwnedContentSource(tags: readonly string[]): boolean {
+  return tags.some((tag) => tag.trim().toLowerCase() === "owned-content");
 }
 
 export async function getCachedEditorialEvaluationKeys(

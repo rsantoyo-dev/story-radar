@@ -2,10 +2,37 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  collapseStackedEstimateQualifiers,
   extractCreativeNumericLiterals,
   normalizeCreativeNumericLiteral,
   substantiveCreativeNumericLiterals,
 } from "./creative-number-normalization";
+
+test("collapses stacked estimate hedges to a single qualifier", () => {
+  assert.equal(
+    collapseStackedEstimateQualifiers(
+      "la inflación se ha mantenido alrededor de aproximadamente 3%",
+    ),
+    "la inflación se ha mantenido alrededor de 3%",
+  );
+  assert.equal(
+    collapseStackedEstimateQualifiers("la subyacente quedó cerca de aproximadamente 2%"),
+    "la subyacente quedó cerca de 2%",
+  );
+  assert.equal(
+    collapseStackedEstimateQualifiers("una cifra cercana a aproximadamente 3%"),
+    "una cifra cercana a 3%",
+  );
+  assert.equal(
+    collapseStackedEstimateQualifiers("roughly approximately 10%"),
+    "roughly 10%",
+  );
+  // A single qualifier is left untouched.
+  assert.equal(
+    collapseStackedEstimateQualifiers("alrededor del 3% en meses recientes"),
+    "alrededor del 3% en meses recientes",
+  );
+});
 
 test("normalizes English and Spanish decimal and grouping punctuation", () => {
   const equivalentPairs = [

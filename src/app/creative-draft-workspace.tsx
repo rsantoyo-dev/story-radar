@@ -23,6 +23,7 @@ import {
   CREATIVE_CAROUSEL_CHROME_STYLES,
   CREATIVE_COMPANION_APPROACHES,
   CREATIVE_CONVERSION_GOALS,
+  CREATIVE_FRAMING_STRATEGIES,
   type CreativeAssetBatchResponse,
   type CreativeAspectRatio,
   type CreativeBrandAsset,
@@ -134,6 +135,13 @@ const COMPANION_STORY_FORMAT_LABELS = {
   "story-question": "Question or poll for Stories",
 } as const satisfies Record<CreativeCompanionApproach, string>;
 
+const FRAMING_STRATEGY_LABELS = {
+  auto: "Auto (brief decides)",
+  "reader-consequence": "Reader consequence",
+  explainer: "Explainer",
+  authority: "Authority",
+} as const satisfies Record<CreativeProfile["framingStrategy"], string>;
+
 export function CreativeDraftWorkspace({
   topicId,
   storyId,
@@ -203,6 +211,7 @@ export function CreativeDraftWorkspace({
         workspace.brief.keyFacts,
         workspace.brief.profileSnapshot.language,
         workspace.brief.profileSnapshot.conversionGoal,
+        workspace.brief.profileSnapshot.framingStrategy,
       )
       : [];
   const activeDraftApprovalState = getCreativeDraftApprovalState({
@@ -804,6 +813,7 @@ export function CreativeDraftWorkspace({
             workspace.brief.keyFacts,
             workspace.brief.profileSnapshot.language,
             workspace.brief.profileSnapshot.conversionGoal,
+            workspace.brief.profileSnapshot.framingStrategy,
           ).filter((issue) => issue.severity === "blocker")
         : [];
       setNotice(
@@ -1582,7 +1592,33 @@ export function CreativeDraftWorkspace({
                       ))}
                     </select>
                   </label>
+                  <label className={styles.field}>
+                    <span>Editorial framing</span>
+                    <select
+                      value={profile.framingStrategy ?? "auto"}
+                      onChange={(event) =>
+                        updateProfile({
+                          framingStrategy: event.target
+                            .value as CreativeProfile["framingStrategy"],
+                        })
+                      }
+                    >
+                      {CREATIVE_FRAMING_STRATEGIES.map((strategy) => (
+                        <option key={strategy} value={strategy}>
+                          {FRAMING_STRATEGY_LABELS[strategy]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
+                <p className={styles.profileGuideHint}>
+                  Editorial framing fixes the lens for the hook.{" "}
+                  <strong>Reader consequence</strong> forces the opening onto what
+                  changes for the audience whenever the facts support it;{" "}
+                  <strong>Explainer</strong> and <strong>Authority</strong> allow a
+                  neutral or institutional opening; <strong>Auto</strong> lets the
+                  brief choose per story.
+                </p>
                 <TextAreaField label="Audience" value={profile.audience} onChange={(audience) => updateProfile({ audience })} rows={2} />
                 <TextAreaField
                   label="Visual campaign guide"
@@ -1836,6 +1872,7 @@ export function CreativeDraftWorkspace({
                     keyFacts={workspace.brief.keyFacts}
                     profileLanguage={workspace.brief.profileSnapshot.language}
                     conversionGoal={workspace.brief.profileSnapshot.conversionGoal}
+                    framingStrategy={workspace.brief.profileSnapshot.framingStrategy}
                     characterRoster={characterRosterFromSlots(characterSlots)}
                     onChange={(next) => {
                       setEditableDraft(next);
@@ -2747,6 +2784,7 @@ function DraftEditor({
   keyFacts,
   profileLanguage,
   conversionGoal,
+  framingStrategy,
   characterRoster,
   onChange,
 }: {
@@ -2758,6 +2796,7 @@ function DraftEditor({
   keyFacts: CreativeKeyFact[];
   profileLanguage: string;
   conversionGoal: CreativeProfile["conversionGoal"];
+  framingStrategy: CreativeProfile["framingStrategy"];
   characterRoster: CreativeCharacterRosterEntry[];
   onChange: (draft: EditableCreativeDraft) => void;
 }) {
@@ -2767,6 +2806,7 @@ function DraftEditor({
     keyFacts,
     profileLanguage,
     conversionGoal,
+    framingStrategy,
   );
   const qualityReviewResolvedByCurrentValidation = Boolean(
     qualityReviewIsCurrent &&

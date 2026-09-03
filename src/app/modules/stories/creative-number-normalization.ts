@@ -127,3 +127,24 @@ function canonicalNumericString(value: string): string {
   const fraction = rawFraction?.replace(/0+$/u, "");
   return fraction ? `${integer}.${fraction}` : integer;
 }
+
+/**
+ * Collapses stacked estimate hedges ("alrededor de aproximadamente 3%",
+ * "cerca de aproximadamente 2%", "roughly approximately") down to one.
+ * Preserving every source qualifier is right; two of them next to one number
+ * is not.
+ */
+export function collapseStackedEstimateQualifiers(value: string): string {
+  return value
+    .replace(
+      /\b(alrededor de|cerca de|en torno a|por (?:encima|debajo) de)\s+aproximadamente\b/giu,
+      "$1",
+    )
+    .replace(/\baproximadamente\s+(alrededor de|cerca de|en torno a)\b/giu, "$1")
+    .replace(/\b(cercan[oa]s?)\s+a\s+aproximadamente\b/giu, "$1 a")
+    .replace(/\b(casi|unos?|unas?)\s+aproximadamente\b/giu, "$1")
+    .replace(/\baproximadamente\s+(casi|unos?|unas?)\b/giu, "$1")
+    .replace(/\b(roughly|around|about|nearly)\s+approximately\b/giu, "$1")
+    .replace(/\bapproximately\s+(roughly|around|about|nearly)\b/giu, "$1")
+    .replace(/\s{2,}/gu, " ");
+}

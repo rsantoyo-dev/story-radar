@@ -1,11 +1,14 @@
 import {
   blockingCarouselNarrativeIssues,
   evaluateCarouselNarrative,
+  isInstitutionFirstCoverCopy,
   maximumFactsForGoal,
+  stripRecapLabelPrefix,
 } from "./carousel-narrative";
 import type {
   CreativeConversionGoal,
   CreativeFormat,
+  CreativeFramingStrategy,
   CreativeKeyFact,
   CreativeQualityIssue,
   CreativeQualityReview,
@@ -17,6 +20,7 @@ import {
   repairDeterministicFactCopy,
 } from "./creative-fact-guard";
 import {
+  collapseStackedEstimateQualifiers,
   substantiveCreativeNumericLiterals as substantiveEvidenceNumbers,
 } from "./creative-number-normalization";
 import {
@@ -82,34 +86,30 @@ export function repairDeterministicCreativeCopy(
   language?: string,
   conversionGoal?: CreativeConversionGoal,
 ): GeneratedCreativeDraft {
+  const cleanText = (value: string) =>
+    collapseStackedEstimateQualifiers(repairMalformedGroupedNumbers(value));
   const repaired: GeneratedCreativeDraft = {
     ...draft,
-    concept: repairMalformedGroupedNumbers(draft.concept),
-    caption: repairMalformedGroupedNumbers(draft.caption),
+    concept: cleanText(draft.concept),
+    caption: cleanText(draft.caption),
     ...(draft.callToAction === undefined
       ? {}
-      : { callToAction: repairMalformedGroupedNumbers(draft.callToAction) }),
-    altText: repairMalformedGroupedNumbers(draft.altText),
+      : { callToAction: cleanText(draft.callToAction) }),
+    altText: cleanText(draft.altText),
     hashtags: [...draft.hashtags],
     units: draft.units.map((unit) => ({
       ...unit,
-      headline: repairMalformedGroupedNumbers(unit.headline),
+      headline: cleanText(unit.headline),
       ...(unit.subheadline === undefined
         ? {}
-        : { subheadline: repairMalformedGroupedNumbers(unit.subheadline) }),
-      ...(unit.body === undefined
-        ? {}
-        : { body: repairMalformedGroupedNumbers(unit.body) }),
+        : { subheadline: cleanText(unit.subheadline) }),
+      ...(unit.body === undefined ? {} : { body: cleanText(unit.body) }),
       ...(unit.continuationCue === undefined
         ? {}
-        : {
-            continuationCue: repairMalformedGroupedNumbers(
-              unit.continuationCue,
-            ),
-          }),
+        : { continuationCue: cleanText(unit.continuationCue) }),
       ...(unit.ctaQuestion === undefined
         ? {}
-        : { ctaQuestion: repairMalformedGroupedNumbers(unit.ctaQuestion) }),
+        : { ctaQuestion: cleanText(unit.ctaQuestion) }),
       factIds: [...unit.factIds],
       characterIds: [...(unit.characterIds ?? [])],
     })),
@@ -127,6 +127,9 @@ export function repairDeterministicCreativeCopy(
           0,
           maximumFactsForGoal(unit.editorialGoal),
         );
+      }
+      if (unit.continuationCue) {
+        unit.continuationCue = stripRecapLabelPrefix(unit.continuationCue);
       }
       if (isSpanishProfileLanguage(language)) {
         // A critic can accidentally paste an English source excerpt into an
@@ -195,6 +198,10 @@ export function repairDeterministicCreativeCopy(
     });
     const closing = repaired.units.at(-1);
     if (closing) {
+      closing.headline = stripRecapLabelPrefix(closing.headline);
+      if (closing.subheadline) {
+        closing.subheadline = stripRecapLabelPrefix(closing.subheadline);
+      }
       if (
         closing.ctaQuestion &&
         isGenericFollowCallToAction(closing.ctaQuestion)
@@ -415,9 +422,32 @@ function repairConversionGoalCtas(
       : undefined);
 
   delete repaired.callToAction;
-  if (matchingCta) closing.ctaQuestion = matchingCta;
-  else delete closing.ctaQuestion;
+  if (matchingCta) {
+    closing.ctaQuestion = matchingCta;
+  } else if (
+    goal === "followers" &&
+    // Only for a language this repair can actually write. Any other profile
+    // language would get an English CTA that no language check would catch.
+    (isSpanishProfileLanguage(language) || isEnglishProfileLanguage(language)) &&
+    !draftLooksLikeSensitiveCoverage(draft) &&
+    (closing.role === "conclusion" ||
+      closing.role === "call-to-action" ||
+      closing.editorialGoal === "conclude" ||
+      closing.editorialGoal === "debate")
+  ) {
+    // The model routinely omits the follow request on routine stories. Insert a
+    // benefit-led default rather than surface a blocker; an editor can refine it.
+    closing.ctaQuestion = defaultFollowCta(language);
+  } else {
+    delete closing.ctaQuestion;
+  }
   return repaired;
+}
+
+function defaultFollowCta(language?: string): string {
+  return isSpanishProfileLanguage(language)
+    ? "Síguenos para entender qué significa para ti cada novedad del tema."
+    : "Follow to see what each update on this topic means for you.";
 }
 
 function localizedDebateQuestion(language?: string): string {
@@ -530,6 +560,7 @@ export function deterministicCreativeQualityIssues(
   keyFacts: readonly CreativeKeyFact[] = [],
   language?: string,
   conversionGoal?: CreativeConversionGoal,
+  framingStrategy?: CreativeFramingStrategy,
 ): CreativeQualityIssue[] {
   const narrativeIssues =
     format === "carousel"
@@ -537,6 +568,7 @@ export function deterministicCreativeQualityIssues(
           draft.units,
           draft.narrativeRationale,
           conversionGoal,
+          framingStrategy,
         ).map((issue) => ({
           code: issue.code.toUpperCase().replaceAll("-", "_"),
           severity: issue.severity === "blocker" ? "blocker" as const : "warning" as const,
@@ -638,6 +670,26 @@ export function deterministicCreativeQualityIssues(
         language,
       )
     : [];
+  const captionTableOfContentsIssues =
+    format === "carousel" && isTableOfContentsCaption(draft.caption)
+      ? [{
+          code: "CAPTION_TABLE_OF_CONTENTS",
+          severity: "warning" as const,
+          message:
+            "The caption describes the carousel's structure (\"El carrusel comienza con…\", \"Luego, la inflación:\", \"primero… después…\") instead of carrying the story's hook; open it with the reader-relevant point.",
+        }]
+      : [];
+  const captionInstitutionRecapIssues =
+    format === "carousel" &&
+    framingStrategy === "reader-consequence" &&
+    isInstitutionFirstCoverCopy(firstSentenceOf(draft.caption))
+      ? [{
+          code: "CAPTION_INSTITUTION_RECAP",
+          severity: "warning" as const,
+          message:
+            "The reader-consequence framing requires the caption's first sentence to carry the reader stake, but it opens with an institution or a bare policy-status statement.",
+        }]
+      : [];
   return [
     ...narrativeIssues,
     ...deterministicFactQualityIssues(draft, keyFacts),
@@ -645,8 +697,47 @@ export function deterministicCreativeQualityIssues(
     ...ctaSpecificityIssues,
     ...followCtaIssues,
     ...conversionGoalIssues,
+    ...captionTableOfContentsIssues,
+    ...captionInstitutionRecapIssues,
     ...visibleDraftLanguageIssues(draft, language),
   ];
+}
+
+function firstSentenceOf(value?: string): string {
+  return value?.trim().split(/(?<=[.!?])\s+/u)[0]?.trim() ?? "";
+}
+
+const SENSITIVE_COVERAGE_PATTERN =
+  /\b(?:muert|falleci|fallec|deceso|tragedia|tr[aá]gic|crisis|catastr|desastr|emergencia|v[ií]ctima|violenci|abus|asalt|tiroteo|disparo|homicid|asesinat|suicid|autolesi|accidente|herido|heridos|desaparecid|secuestr|guerra|conflicto armado|masacre|inundaci|terremot|incendio|brote|epidemi|pandemi|contagi|diagn[oó]stic|c[aá]ncer|enfermedad grave|hospitali|cuidados paliativos|duelo|death|died|fatal|tragedy|tragic|casualties|victim|violence|shooting|homicide|murder|suicide|self-harm|disaster|catastrophe|war|massacre|outbreak|epidemic|pandemic|terminal illness|palliative|grief|layoffs?|despidos?)\b/iu;
+
+function draftLooksLikeSensitiveCoverage(draft: GeneratedCreativeDraft): boolean {
+  const text = [
+    draft.concept,
+    draft.caption,
+    ...draft.units.flatMap((unit) => [unit.headline, unit.subheadline, unit.body]),
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return SENSITIVE_COVERAGE_PATTERN.test(text);
+}
+
+function isTableOfContentsCaption(caption?: string): boolean {
+  const value = caption?.trim();
+  if (!value) return false;
+  return (
+    /\b(?:este|el)\s+carrusel\s+(?:comienza|empieza|arranca|abre|explica|desglosa|repasa|cubre|te\s+(?:explica|cuenta|lleva))\b/iu.test(
+      value,
+    ) ||
+    /\bdesglosa\s+por\s+qu[eé]\b/iu.test(value) ||
+    /\bprimero\b[^.]*\b(?:despu[eé]s|luego|y\s+termina)\b/iu.test(value) ||
+    /(?:^|[.!?]\s+)(?:luego|despu[eé]s|a\s+continuaci[oó]n)\s*,?\s+(?:la|el|los|las)\s+[\p{L}\p{N}]+\s*[:,]/iu.test(
+      value,
+    ) ||
+    /\bthis\s+carousel\s+(?:starts|begins|opens|walks|breaks?\s+down|covers|explains)\b/iu.test(
+      value,
+    ) ||
+    /\bfirst\b[^.]*\bthen\b[^.]*\b(?:finally|ends?\s+with)\b/iu.test(value)
+  );
 }
 
 function deterministicConversionGoalIssues(
@@ -679,11 +770,18 @@ function deterministicConversionGoalIssues(
 
   const closing = draft.units.at(-1);
   if (!closing?.ctaQuestion?.trim()) {
+    // A routine story with a "followers" goal must ship the follow request; a
+    // visual note about following the account does not fill the ctaQuestion
+    // field. Omission stays a soft warning only for sensitive coverage.
+    const routineFollowersGoal =
+      goal === "followers" && !draftLooksLikeSensitiveCoverage(draft);
     issues.push({
       code: "MISSING_CONVERSION_CTA",
-      severity: "warning",
+      severity: routineFollowersGoal ? "blocker" : "warning",
       ...(closing ? { unitOrder: closing.order } : {}),
-      message: `The ${goal} conversion goal has no CTA on the closing slide. Add one when it is appropriate for the story; omission remains allowed for sensitive coverage.`,
+      message: routineFollowersGoal
+        ? "The followers conversion goal needs the follow request in the closing slide's ctaQuestion; this routine story is not sensitive coverage and a visual-direction note does not count."
+        : `The ${goal} conversion goal has no CTA on the closing slide. Add one when it is appropriate for the story; omission remains allowed for sensitive coverage.`,
     });
   }
   if (draft.callToAction?.trim()) {
@@ -909,6 +1007,7 @@ export function buildCreativeQualityReview({
   repairPasses,
   keyFacts = [],
   conversionGoal,
+  framingStrategy,
   language,
 }: {
   draft: GeneratedCreativeDraft;
@@ -918,6 +1017,7 @@ export function buildCreativeQualityReview({
   repairPasses: number;
   keyFacts?: readonly CreativeKeyFact[];
   conversionGoal?: CreativeConversionGoal;
+  framingStrategy?: CreativeFramingStrategy;
   language?: string;
 }): CreativeQualityReview {
   const deterministicIssues = deterministicCreativeQualityIssues(
@@ -926,6 +1026,7 @@ export function buildCreativeQualityReview({
     keyFacts,
     language,
     conversionGoal,
+    framingStrategy,
   );
   const reconciledCriticIssues =
     reconcileCriticIssuesWithDeterministicValidation(
@@ -1041,14 +1142,25 @@ function calibrateCreativeQualityScores(
       "LOW_HUMAN_CURIOSITY",
       "ABSTRACT_HOOK",
       "UNEARNED_PERSONAL_IMPACT",
+      "COVER_NOT_READER_FRAMED",
+      "COVER_SUPPORTING_RESTATES_HOLD",
     )
   ) {
     scores.curiosity = Math.min(scores.curiosity, 81);
   }
+  if (hasCode("COVER_NOT_READER_FRAMED")) {
+    scores.hook = Math.min(scores.hook, 81);
+  }
   if (hasCode("LOW_STORY_RELEVANCE", "NEW_CLOSING_FACT", "CLOSING_GOAL")) {
     scores.relevance = Math.min(scores.relevance, 79);
   }
-  if (hasCode("VIEWER_QUESTION_MISMATCH", "WEAK_SWIPE_REWARD")) {
+  if (
+    hasCode(
+      "VIEWER_QUESTION_MISMATCH",
+      "WEAK_SWIPE_REWARD",
+      "CUE_ECHOES_NEXT_HEADLINE",
+    )
+  ) {
     scores.swipeReward = Math.min(scores.swipeReward, 79);
   }
   if (
@@ -1085,7 +1197,15 @@ function calibrateCreativeQualityScores(
     scores.relevance = Math.min(scores.relevance, 79);
     scores.cta = Math.min(scores.cta, 74);
   }
-  if (hasCode("WEAK_RESOLUTION", "HOOK_RESOLUTION_GAP")) {
+  if (
+    hasCode(
+      "WEAK_RESOLUTION",
+      "HOOK_RESOLUTION_GAP",
+      "RECAP_LABEL_HEADLINE",
+      "REDUNDANT_CLOSING",
+      "CLOSING_NOT_READER_RESOLVED",
+    )
+  ) {
     scores.resolution = Math.min(scores.resolution, 81);
   }
 
@@ -1120,12 +1240,15 @@ export function assertNoDeterministicCreativeBlockers(
   draft: GeneratedCreativeDraft,
   format: CreativeFormat,
   keyFacts: readonly CreativeKeyFact[] = [],
+  framingStrategy?: CreativeFramingStrategy,
 ): void {
   const blockers = [
     ...(format === "carousel"
       ? blockingCarouselNarrativeIssues(
           draft.units,
           draft.narrativeRationale,
+          undefined,
+          framingStrategy,
         ).map((issue) => issue.message)
       : []),
     ...deterministicFactQualityIssues(draft, keyFacts)

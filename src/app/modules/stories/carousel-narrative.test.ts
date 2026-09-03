@@ -8,8 +8,10 @@ import {
   carouselNarrativePolicyForPrompt,
   evaluateCarouselNarrative,
   getPreferredCarouselArc,
+  isInstitutionFirstCoverCopy,
   maximumFactsForGoal,
   repairCarouselPlanEvidence,
+  stripRecapLabelPrefix,
   type CarouselPlan,
   validateCarouselPlan,
 } from "./carousel-narrative";
@@ -484,6 +486,518 @@ test("warns when optional hierarchy and continuation copy exceed their limits", 
   ]);
   assert.ok(
     redundant.some((issue) => issue.code === "redundant-subheadline"),
+  );
+});
+
+test("blocks a final slide that opens with a summary label instead of the answer", () => {
+  const issues = evaluateCarouselNarrative([
+    unit("cover", "hook", ["fact-1"]),
+    unit("content", "explain", ["fact-2"]),
+    {
+      ...unit("conclusion", "conclude", ["fact-1"]),
+      headline: "La conclusión: no hubo cambio",
+      body: "Por ahora la tasa objetivo sigue igual.",
+    },
+  ]);
+
+  assert.ok(
+    issues.some(
+      (issue) =>
+        issue.code === "recap-label-headline" &&
+        issue.severity === "blocker" &&
+        issue.unitIndex === 2,
+    ),
+  );
+});
+
+test("blocks summary-label synonyms on the final slide headline", () => {
+  for (const headline of [
+    "La clave: tasa estable no significa precios quietos",
+    "El punto: los aranceles pueden empujar precios",
+    "En pocas palabras: nada cambió hoy",
+  ]) {
+    const issues = evaluateCarouselNarrative([
+      unit("cover", "hook", ["fact-1"]),
+      unit("content", "explain", ["fact-2"]),
+      { ...unit("conclusion", "conclude", ["fact-1"]), headline },
+    ]);
+    assert.ok(
+      issues.some((issue) => issue.code === "recap-label-headline"),
+      `expected recap-label-headline for "${headline}"`,
+    );
+  }
+});
+
+test("blocks a summary-label continuation cue on a middle slide", () => {
+  const issues = evaluateCarouselNarrative([
+    {
+      ...unit("cover", "hook", ["fact-1"]),
+      continuationCue: "Por qué la gasolina pesa en la inflación",
+    },
+    {
+      ...unit("content", "explain", ["fact-2"]),
+      continuationCue: "La conclusión: tasa estable, precios bajo vigilancia",
+    },
+    unit("conclusion", "conclude", ["fact-1"]),
+  ]);
+
+  assert.ok(
+    issues.some(
+      (issue) =>
+        issue.code === "generic-continuation-cue" &&
+        issue.severity === "blocker" &&
+        issue.unitIndex === 1,
+    ),
+  );
+});
+
+test("warns when the final slide only restates the cover's fact and wording", () => {
+  const sharedHeadline = "La tasa objetivo se queda en dos veinticinco";
+  const sharedBody =
+    "El banco central mantuvo su tasa objetivo para operaciones a un dia.";
+  const issues = evaluateCarouselNarrative([
+    {
+      ...unit("cover", "hook", ["fact-1"]),
+      headline: sharedHeadline,
+      body: sharedBody,
+    },
+    unit("content", "explain", ["fact-2"]),
+    {
+      ...unit("conclusion", "conclude", ["fact-1"]),
+      headline: sharedHeadline,
+      body: sharedBody,
+    },
+  ]);
+
+  assert.ok(
+    issues.some(
+      (issue) =>
+        issue.code === "redundant-closing" &&
+        issue.severity === "warning" &&
+        issue.unitIndex === 2,
+    ),
+  );
+});
+
+test("does not flag a closing slide that resolves the cover with new wording", () => {
+  const issues = evaluateCarouselNarrative([
+    {
+      ...unit("cover", "hook", ["fact-1"]),
+      headline: "La economia crecio pero los precios no ceden",
+      body: "El indice de precios ronda el tres por ciento por la gasolina.",
+    },
+    unit("content", "explain", ["fact-2"]),
+    {
+      ...unit("conclusion", "conclude", ["fact-1"]),
+      headline: "Sin recorte, el costo de vida sigue tenso",
+      body: "La decision deja el alivio inmediato fuera de la mesa este trimestre.",
+    },
+  ]);
+
+  assert.ok(
+    !issues.some((issue) =>
+      ["recap-label-headline", "redundant-closing"].includes(issue.code),
+    ),
+  );
+});
+
+test("blocks an institution-first cover when the profile asks for reader-consequence framing", () => {
+  const units = [
+    {
+      ...unit("cover", "hook", ["fact-1"]),
+      headline: "El Banco de Canadá mantuvo su tasa en 2,25%",
+    },
+    unit("content", "explain", ["fact-2"]),
+    unit("conclusion", "conclude", ["fact-1"]),
+  ];
+
+  assert.ok(
+    !evaluateCarouselNarrative(units).some(
+      (issue) => issue.code === "cover-not-reader-framed",
+    ),
+    "no framing strategy means no cover-not-reader-framed check",
+  );
+
+  const issues = evaluateCarouselNarrative(
+    units,
+    undefined,
+    undefined,
+    "reader-consequence",
+  );
+  assert.ok(
+    issues.some(
+      (issue) =>
+        issue.code === "cover-not-reader-framed" &&
+        issue.severity === "blocker" &&
+        issue.unitIndex === 0,
+    ),
+  );
+
+  const bareStatus = evaluateCarouselNarrative(
+    [
+      {
+        ...unit("cover", "hook", ["fact-1"]),
+        headline: "La tasa se mantiene en 2,25%",
+      },
+      unit("content", "explain", ["fact-2"]),
+      unit("conclusion", "conclude", ["fact-1"]),
+    ],
+    undefined,
+    undefined,
+    "reader-consequence",
+  );
+  assert.ok(
+    bareStatus.some((issue) => issue.code === "cover-not-reader-framed"),
+  );
+});
+
+test("blocks a withheld-answer yes/no question cover under reader-consequence", () => {
+  const withQuestionCover = (headline: string) => [
+    { ...unit("cover", "hook", ["fact-1"]), headline },
+    unit("content", "explain", ["fact-2"]),
+    unit("conclusion", "conclude", ["fact-1"]),
+  ];
+
+  const blocked = evaluateCarouselNarrative(
+    withQuestionCover("¿Bajó hoy la tasa objetivo del 2,25%?"),
+    undefined,
+    undefined,
+    "reader-consequence",
+  );
+  assert.ok(
+    blocked.some(
+      (issue) =>
+        issue.code === "cover-not-reader-framed" && issue.unitIndex === 0,
+    ),
+  );
+
+  // A wh-question and a stake-bearing question are both fine.
+  for (const headline of [
+    "¿Cuánto más vas a pagar por tu hipoteca este año?",
+    "¿La pausa del banco te ayuda o te perjudica?",
+  ]) {
+    const ok = evaluateCarouselNarrative(
+      withQuestionCover(headline),
+      undefined,
+      undefined,
+      "reader-consequence",
+    );
+    assert.ok(
+      !ok.some((issue) => issue.code === "cover-not-reader-framed"),
+      `expected no block for "${headline}"`,
+    );
+  }
+});
+
+test("flags a closing that restates the cover's number with different words", () => {
+  const issues = evaluateCarouselNarrative([
+    {
+      ...unit("cover", "hook", ["fact-1"]),
+      headline: "¿Bajó hoy la tasa objetivo del 2,25%?",
+      body: "El banco comunicó hoy su decisión.",
+    },
+    unit("content", "explain", ["fact-2"]),
+    {
+      ...unit("conclusion", "conclude", ["fact-1"]),
+      headline: "No hubo rebaja: la tasa objetivo sigue en 2,25%",
+      body: "El banco mantuvo hoy su tasa objetivo en 2,25%.",
+    },
+  ]);
+
+  assert.ok(
+    issues.some(
+      (issue) =>
+        issue.code === "redundant-closing" && issue.unitIndex === 2,
+    ),
+  );
+});
+
+test("warns when a continuation cue repeats the next slide's headline verbatim", () => {
+  const issues = evaluateCarouselNarrative([
+    {
+      ...unit("cover", "hook", ["fact-1"]),
+      continuationCue: "Algunas compras podrían encarecerse con el tiempo",
+    },
+    {
+      ...unit("content", "impact", ["fact-2"]),
+      headline: "Algunas compras podrían encarecerse con el tiempo",
+    },
+    unit("conclusion", "conclude", ["fact-1"]),
+  ]);
+
+  assert.ok(
+    issues.some(
+      (issue) =>
+        issue.code === "cue-echoes-next-headline" && issue.unitIndex === 0,
+    ),
+  );
+});
+
+test("flags a closing that resolves with figures instead of the reader's stake", () => {
+  const issues = evaluateCarouselNarrative(
+    [
+      {
+        ...unit("cover", "hook", ["fact-1"]),
+        headline: "Tus deudas variables: sin nuevo recorte oficial",
+        continuationCue: "Por qué el banco no recortó",
+      },
+      unit("content", "explain", ["fact-2"]),
+      {
+        ...unit("conclusion", "conclude", ["fact-1"]),
+        headline: "No hubo un nuevo recorte de la tasa objetivo",
+        body: "La tasa objetivo se mantuvo en 2,25%. La tasa de depósito quedó en 2,20%.",
+      },
+    ],
+    undefined,
+    undefined,
+    "reader-consequence",
+  );
+
+  assert.ok(
+    issues.some(
+      (issue) =>
+        issue.code === "closing-not-reader-resolved" && issue.unitIndex === 2,
+    ),
+  );
+
+  const readerResolved = evaluateCarouselNarrative(
+    [
+      {
+        ...unit("cover", "hook", ["fact-1"]),
+        headline: "Tus deudas variables: sin nuevo recorte oficial",
+        continuationCue: "Por qué el banco no recortó",
+      },
+      unit("content", "explain", ["fact-2"]),
+      {
+        ...unit("conclusion", "conclude", ["fact-1"]),
+        headline: "Tu tasa variable no baja: sigue en 2,25%",
+        body: "Para tus pagos, no cambia nada este mes: la tasa objetivo se mantuvo en 2,25%.",
+      },
+    ],
+    undefined,
+    undefined,
+    "reader-consequence",
+  );
+  assert.ok(
+    !readerResolved.some(
+      (issue) => issue.code === "closing-not-reader-resolved",
+    ),
+  );
+});
+
+test("catches 'permanece' / 'no sube' bare-status covers under reader-consequence", () => {
+  for (const headline of [
+    "La tasa no sube: permanece en 2,25%",
+    "La tasa de referencia sigue en 2,25%",
+    "El tipo de interés no bajó: queda en 2,25%",
+  ]) {
+    const issues = evaluateCarouselNarrative(
+      [
+        { ...unit("cover", "hook", ["fact-1"]), headline },
+        unit("content", "explain", ["fact-2"]),
+        unit("conclusion", "conclude", ["fact-1"]),
+      ],
+      undefined,
+      undefined,
+      "reader-consequence",
+    );
+    assert.ok(
+      issues.some((issue) => issue.code === "cover-not-reader-framed"),
+      `expected block for "${headline}"`,
+    );
+  }
+});
+
+test("flags a cover whose supporting text restates the headline's thesis number", () => {
+  const issues = evaluateCarouselNarrative([
+    {
+      ...unit("cover", "hook", ["fact-1"]),
+      headline: "La tasa no sube: permanece en 2,25%",
+      body: "La decisión conserva la tasa de referencia en 2,25%.",
+      continuationCue: "Por qué no hubo recorte",
+    },
+    unit("content", "explain", ["fact-2"]),
+    unit("conclusion", "conclude", ["fact-1"]),
+  ]);
+  assert.ok(
+    issues.some(
+      (issue) =>
+        issue.code === "redundant-cover-body" && issue.unitIndex === 0,
+    ),
+  );
+});
+
+test("warns when a hold cover's supporting text restates the hold instead of the second signal", () => {
+  const deck = [
+    {
+      ...unit("cover", "hook", ["fact-1"]),
+      headline:
+        "Para tu deuda, no cambió la tasa; para tus compras, vigila la inflación",
+      body: "La tasa objetivo se mantiene hoy. Eso deja una señal estable para quienes siguen su presupuesto.",
+      continuationCue: "¿Qué empuja la inflación?",
+    },
+    unit("content", "explain", ["fact-2"]),
+    unit("conclusion", "conclude", ["fact-1"]),
+  ];
+  assert.ok(
+    !evaluateCarouselNarrative(deck).some(
+      (issue) => issue.code === "cover-supporting-restates-hold",
+    ),
+    "no framing strategy means no check",
+  );
+  assert.ok(
+    evaluateCarouselNarrative(deck, undefined, undefined, "reader-consequence").some(
+      (issue) => issue.code === "cover-supporting-restates-hold",
+    ),
+  );
+
+  // Supporting text that carries the second signal passes.
+  const withSecondSignal = evaluateCarouselNarrative(
+    [
+      {
+        ...deck[0]!,
+        body: "La gasolina ha mantenido la inflación cerca del 3% en meses recientes.",
+      },
+      deck[1]!,
+      deck[2]!,
+    ],
+    undefined,
+    undefined,
+    "reader-consequence",
+  );
+  assert.ok(
+    !withSecondSignal.some(
+      (issue) => issue.code === "cover-supporting-restates-hold",
+    ),
+  );
+});
+
+test("allows a two-clause reader-contrast cover headline to run longer", () => {
+  const headline =
+    "Para tu deuda, no cambió la tasa objetivo; para tus compras, vigila la inflación";
+  const issues = evaluateCarouselNarrative([
+    { ...unit("cover", "hook", ["fact-1"]), headline, continuationCue: "¿Por qué?" },
+    unit("content", "explain", ["fact-2"]),
+    unit("conclusion", "conclude", ["fact-1"]),
+  ]);
+  assert.ok(
+    !issues.some((issue) => issue.code === "headline-too-long"),
+    "a semicolon-separated two-clause cover gets a 16-word budget",
+  );
+
+  const longSingle = evaluateCarouselNarrative([
+    {
+      ...unit("cover", "hook", ["fact-1"]),
+      headline:
+        "El Banco de Canadá mantuvo la tasa objetivo de referencia sin cambios en dos veinticinco por ciento",
+      continuationCue: "¿Por qué?",
+    },
+    unit("content", "explain", ["fact-2"]),
+    unit("conclusion", "conclude", ["fact-1"]),
+  ]);
+  assert.ok(
+    longSingle.some((issue) => issue.code === "headline-too-long"),
+    "a single-clause cover keeps the 12-word budget",
+  );
+});
+
+test("warns (never blocks) on a missing cover continuation cue", () => {
+  const deck = [
+    {
+      ...unit("cover", "hook", ["fact-1"]),
+      headline: "Tu tasa variable no baja: sigue en 2,25%",
+    },
+    unit("content", "explain", ["fact-2"]),
+    unit("conclusion", "conclude", ["fact-1"]),
+  ];
+  for (const framing of [undefined, "reader-consequence" as const]) {
+    assert.equal(
+      evaluateCarouselNarrative(deck, undefined, undefined, framing).find(
+        (issue) => issue.code === "missing-cover-continuation-cue",
+      )?.severity,
+      "warning",
+    );
+  }
+});
+
+test("detects a capitalized institution lead, not only a lowercased one", () => {
+  for (const headline of [
+    "El Banco de Canadá anunció su decisión de diciembre",
+    "La Reserva Federal mantuvo el tipo de referencia",
+    "Anthropic announced a new model",
+  ]) {
+    assert.ok(
+      isInstitutionFirstCoverCopy(headline),
+      `expected institution-first for "${headline}"`,
+    );
+  }
+  for (const headline of [
+    "Tu hipoteca no sube este mes",
+    "La gasolina explica la inflación reciente",
+  ]) {
+    assert.ok(
+      !isInstitutionFirstCoverCopy(headline),
+      `expected no flag for "${headline}"`,
+    );
+  }
+});
+
+test("only raises a recap-label blocker the repair can actually clear", () => {
+  const labelled = (headline: string) => [
+    {
+      ...unit("cover", "hook", ["fact-1"]),
+      continuationCue: "Por qué cambia",
+    },
+    unit("content", "explain", ["fact-2"]),
+    { ...unit("conclusion", "conclude", ["fact-1"]), headline },
+  ];
+
+  // A comma-delimited label is both detected and strippable.
+  const commaLabel = "En resumen, tu pago mensual sigue igual";
+  assert.ok(
+    evaluateCarouselNarrative(labelled(commaLabel)).some(
+      (issue) => issue.code === "recap-label-headline",
+    ),
+  );
+  assert.equal(
+    stripRecapLabelPrefix(commaLabel),
+    "Tu pago mensual sigue igual",
+  );
+
+  // Every raised blocker must be clearable: the repaired headline stops flagging.
+  assert.ok(
+    !evaluateCarouselNarrative(
+      labelled(stripRecapLabelPrefix(commaLabel)),
+    ).some((issue) => issue.code === "recap-label-headline"),
+  );
+
+  // A label word inside an ordinary sentence is not a label prefix.
+  const sentence = "La clave está en los precios";
+  assert.equal(stripRecapLabelPrefix(sentence), sentence);
+  assert.ok(
+    !evaluateCarouselNarrative(labelled(sentence)).some(
+      (issue) => issue.code === "recap-label-headline",
+    ),
+  );
+});
+
+test("accepts a reader-first cover under reader-consequence framing", () => {
+  const issues = evaluateCarouselNarrative(
+    [
+      {
+        ...unit("cover", "hook", ["fact-1"]),
+        headline: "Tu hipoteca no sube, pero la gasolina sigue cara",
+      },
+      unit("content", "explain", ["fact-2"]),
+      unit("conclusion", "conclude", ["fact-1"]),
+    ],
+    undefined,
+    undefined,
+    "reader-consequence",
+  );
+
+  assert.ok(
+    !issues.some((issue) => issue.code === "cover-not-reader-framed"),
   );
 });
 

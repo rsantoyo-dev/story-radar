@@ -2287,6 +2287,7 @@ function SortableStoriesTable({
             const selected = selectedStoryIds.includes(story.storyId);
             const effectiveDate = story.publishedAt ?? story.lastSeenAt;
             const isAiResearchStory = story.sourceId.startsWith("ai-research:");
+            const isOwnedContentStory = story.sourceId.startsWith("owned-content:");
 
             return (
               <tr
@@ -2324,6 +2325,11 @@ function SortableStoriesTable({
                       Encontrada por IA
                     </span>
                   ) : null}
+                  {isOwnedContentStory ? (
+                    <span className={`${styles.tableBadge} ${styles.tableBadgePositive}`}>
+                      Owned content
+                    </span>
+                  ) : null}
                   {story.reason ? <small>{story.reason}</small> : null}
                   {story.riskFlags.length > 0 ? (
                     <div className={styles.tableRiskFlags}>
@@ -2349,6 +2355,11 @@ function SortableStoriesTable({
                     {isAiResearchStory ? (
                       <span className={`${styles.tableBadge} ${styles.tableBadgePositive}`}>
                         AI research
+                      </span>
+                    ) : null}
+                    {isOwnedContentStory ? (
+                      <span className={`${styles.tableBadge} ${styles.tableBadgePositive}`}>
+                        Owned content
                       </span>
                     ) : null}
                   </div>

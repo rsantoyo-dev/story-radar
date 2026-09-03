@@ -96,6 +96,112 @@ test("repairs unsupported absolutes and grounds a generic CTA", () => {
   assert.ok(!codes.includes("GENERIC_CTA"));
 });
 
+test("flags a table-of-contents caption on a carousel", () => {
+  const tocDraft = structuredClone(draft);
+  tocDraft.caption =
+    "¿Bajó hoy la tasa? El carrusel comienza con esa pregunta, desglosa por qué la inflación ronda el 3% y termina con la decisión.";
+
+  const codes = deterministicCreativeQualityIssues(
+    tocDraft,
+    "carousel",
+    facts,
+    "Spanish",
+  ).map((issue) => issue.code);
+  assert.ok(codes.includes("CAPTION_TABLE_OF_CONTENTS"));
+
+  const luegoDraft = structuredClone(draft);
+  luegoDraft.caption =
+    "Si tienes hipoteca, la tasa sigue en 2,25%. Luego, la inflación: ronda el 3% por la gasolina.";
+  assert.ok(
+    deterministicCreativeQualityIssues(luegoDraft, "carousel", facts, "Spanish")
+      .map((issue) => issue.code)
+      .includes("CAPTION_TABLE_OF_CONTENTS"),
+  );
+
+  const cleanDraft = structuredClone(draft);
+  cleanDraft.caption =
+    "La tasa sigue en 2,25% y la gasolina mantiene la inflación cerca del 3%.";
+  const cleanCodes = deterministicCreativeQualityIssues(
+    cleanDraft,
+    "carousel",
+    facts,
+    "Spanish",
+  ).map((issue) => issue.code);
+  assert.ok(!cleanCodes.includes("CAPTION_TABLE_OF_CONTENTS"));
+});
+
+test("flags an institution-recap caption first sentence under reader-consequence", () => {
+  const recapDraft = structuredClone(draft);
+  recapDraft.caption =
+    "El Banco de Canadá mantuvo su tasa de referencia en 2,25%. La gasolina mantiene la inflación cerca del 3%.";
+
+  const withFraming = deterministicCreativeQualityIssues(
+    recapDraft,
+    "carousel",
+    facts,
+    "Spanish",
+    "followers",
+    "reader-consequence",
+  ).map((issue) => issue.code);
+  assert.ok(withFraming.includes("CAPTION_INSTITUTION_RECAP"));
+
+  // No framing strategy → no check.
+  const withoutFraming = deterministicCreativeQualityIssues(
+    recapDraft,
+    "carousel",
+    facts,
+    "Spanish",
+  ).map((issue) => issue.code);
+  assert.ok(!withoutFraming.includes("CAPTION_INSTITUTION_RECAP"));
+
+  // A reader-stake first sentence passes.
+  const stakeDraft = structuredClone(draft);
+  stakeDraft.caption =
+    "Si tienes hipoteca o crédito, la tasa sigue en 2,25%. El Banco de Canadá la mantuvo.";
+  assert.ok(
+    !deterministicCreativeQualityIssues(
+      stakeDraft,
+      "carousel",
+      facts,
+      "Spanish",
+      "followers",
+      "reader-consequence",
+    )
+      .map((issue) => issue.code)
+      .includes("CAPTION_INSTITUTION_RECAP"),
+  );
+});
+
+test("strips a summary-label prefix from the closing headline and continuation cue", () => {
+  const labelled = structuredClone(draft);
+  labelled.units[0]!.continuationCue = "La conclusión: por qué falla el sistema";
+  labelled.units[1]!.headline = "La clave: mover la consistencia al build";
+
+  const repaired = repairDeterministicCreativeCopy(
+    labelled,
+    "carousel",
+    facts,
+    "Spanish",
+  );
+
+  assert.equal(
+    repaired.units[1]?.headline,
+    "Mover la consistencia al build",
+  );
+  assert.match(
+    repaired.units[0]?.continuationCue ?? "",
+    /^Por qué falla el sistema/,
+  );
+  const codes = deterministicCreativeQualityIssues(
+    repaired,
+    "carousel",
+    facts,
+    "Spanish",
+  ).map((issue) => issue.code);
+  assert.ok(!codes.includes("RECAP_LABEL_HEADLINE"));
+  assert.ok(!codes.includes("GENERIC_CONTINUATION_CUE"));
+});
+
 test("repairs whitespace inside grouped numbers before factual validation", () => {
   const malformed = structuredClone(draft);
   const amountFacts: CreativeKeyFact[] = [
@@ -327,7 +433,7 @@ test("normalizes one carousel CTA to the final slide for every conversion goal",
   });
 });
 
-test("removes recognized competing and stacked actions without inventing a CTA", () => {
+test("removes a competing/stacked action, and gives a routine followers story a default follow CTA", () => {
   const competing = structuredClone(draft);
   competing.units.at(-1)!.editorialGoal = "conclude";
   competing.units.at(-1)!.ctaQuestion = "Comment with your experience.";
@@ -338,8 +444,14 @@ test("removes recognized competing and stacked actions without inventing a CTA",
     "English",
     "followers",
   );
-  assert.equal(repairedCompeting.units.at(-1)!.ctaQuestion, undefined);
+  // The comment CTA conflicts with followers; a routine story then gets the
+  // benefit-led follow default instead of being left with no CTA.
+  assert.match(
+    repairedCompeting.units.at(-1)!.ctaQuestion ?? "",
+    /^Follow to see what each update/,
+  );
 
+  // A non-followers goal keeps the old behavior: the conflicting CTA is dropped.
   const stacked = structuredClone(draft);
   stacked.units.at(-1)!.editorialGoal = "conclude";
   stacked.units.at(-1)!.ctaQuestion =
@@ -363,7 +475,22 @@ test("removes recognized competing and stacked actions without inventing a CTA",
     "English",
     "followers",
   );
-  assert.equal(repairedMissing.units.at(-1)!.ctaQuestion, undefined);
+  assert.match(
+    repairedMissing.units.at(-1)!.ctaQuestion ?? "",
+    /^Follow to see what each update/,
+  );
+
+  // Sensitive coverage is left without an invented CTA.
+  const sensitiveMissing = structuredClone(missing);
+  sensitiveMissing.concept = "Coverage of the crisis and the layoffs it caused";
+  const repairedSensitive = repairDeterministicCreativeCopy(
+    sensitiveMissing,
+    "carousel",
+    facts,
+    "English",
+    "followers",
+  );
+  assert.equal(repairedSensitive.units.at(-1)!.ctaQuestion, undefined);
 });
 
 test("signals a missing configured conversion CTA without blocking sensitive stories", () => {
@@ -371,27 +498,45 @@ test("signals a missing configured conversion CTA without blocking sensitive sto
   missingCarouselCta.units.at(-1)!.editorialGoal = "conclude";
   delete missingCarouselCta.units.at(-1)!.ctaQuestion;
 
-  const carouselIssue = deterministicCreativeQualityIssues(
+  // A routine followers story must ship the follow request: blocker.
+  const routineIssue = deterministicCreativeQualityIssues(
     missingCarouselCta,
     "carousel",
     facts,
     "English",
     "followers",
   ).find((issue) => issue.code === "MISSING_CONVERSION_CTA");
+  assert.equal(routineIssue?.severity, "blocker");
+  assert.equal(routineIssue?.unitOrder, 2);
 
-  assert.deepEqual(carouselIssue, {
-    code: "MISSING_CONVERSION_CTA",
-    severity: "warning",
-    unitOrder: 2,
-    message:
-      "The followers conversion goal has no CTA on the closing slide. Add one when it is appropriate for the story; omission remains allowed for sensitive coverage.",
-  });
+  // Sensitive coverage keeps it a soft warning.
+  const sensitiveDraft = structuredClone(missingCarouselCta);
+  sensitiveDraft.concept =
+    "Coverage of the layoffs and the crisis facing affected workers";
+  const sensitiveIssue = deterministicCreativeQualityIssues(
+    sensitiveDraft,
+    "carousel",
+    facts,
+    "English",
+    "followers",
+  ).find((issue) => issue.code === "MISSING_CONVERSION_CTA");
+  assert.equal(sensitiveIssue?.severity, "warning");
   assert.deepEqual(
     getCreativeDraftApprovalState({
-      deterministicIssues: [carouselIssue!],
+      deterministicIssues: [sensitiveIssue!],
     }).blockers,
     [],
   );
+
+  // A non-followers goal stays a soft warning too.
+  const savesIssue = deterministicCreativeQualityIssues(
+    missingCarouselCta,
+    "carousel",
+    facts,
+    "English",
+    "saves",
+  ).find((issue) => issue.code === "MISSING_CONVERSION_CTA");
+  assert.equal(savesIssue?.severity, "warning");
 
   const missingMemeCta: GeneratedCreativeDraft = {
     ...missingCarouselCta,
@@ -462,7 +607,7 @@ test("preserves an unrecognized-language CTA for critic review", () => {
   );
 });
 
-test("removes an unrecognized CTA when the matcher supports the profile language", () => {
+test("replaces an unrecognized followers CTA with the benefit-led follow default", () => {
   const english = structuredClone(draft);
   english.units.at(-1)!.editorialGoal = "conclude";
   english.units.at(-1)!.ctaQuestion = "Review this information later.";
@@ -473,7 +618,10 @@ test("removes an unrecognized CTA when the matcher supports the profile language
     "English",
     "followers",
   );
-  assert.equal(repaired.units.at(-1)!.ctaQuestion, undefined);
+  assert.match(
+    repaired.units.at(-1)!.ctaQuestion ?? "",
+    /^Follow to see what each update/,
+  );
 });
 
 test("never turns a leaked-language conclude CTA into a debate question", () => {
@@ -490,7 +638,11 @@ test("never turns a leaked-language conclude CTA into a debate question", () => 
     "Spanish",
     "followers",
   );
-  assert.equal(repaired.units.at(-1)!.ctaQuestion, undefined);
+  const cta = repaired.units.at(-1)!.ctaQuestion ?? "";
+  // The leaked English CTA is dropped; a routine Spanish followers story gets
+  // the Spanish follow default, never a debate question.
+  assert.doesNotMatch(cta, /\?/u);
+  assert.match(cta, /^Síguenos para/u);
 });
 
 test("repairs a malformed concept-derived CTA without leaking structural numbers", () => {

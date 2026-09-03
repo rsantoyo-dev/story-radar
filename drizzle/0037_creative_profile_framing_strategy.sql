@@ -1,0 +1,2 @@
+ALTER TABLE "creative_profiles" ADD COLUMN "framing_strategy" text DEFAULT 'auto' NOT NULL;--> statement-breakpoint
+ALTER TABLE "creative_profiles" ADD CONSTRAINT "creative_profiles_framing_strategy_check" CHECK ("creative_profiles"."framing_strategy" IN ('auto', 'reader-consequence', 'explainer', 'authority'));

@@ -96,6 +96,36 @@ type KnowledgeDocumentDraft = {
   priority: string;
 };
 
+type OwnedContentEntry = {
+  id: string;
+  storyId: string;
+  title: string;
+  content: string;
+  contentType:
+    | "campaign"
+    | "launch"
+    | "promotion"
+    | "product"
+    | "announcement"
+    | "educational";
+  language: string;
+  region: string;
+  sourceUrl?: string;
+  publishedAt: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type OwnedContentDraft = {
+  title: string;
+  content: string;
+  contentType: OwnedContentEntry["contentType"];
+  language: string;
+  region: string;
+  sourceUrl: string;
+  publishedAt: string;
+};
+
 const EMPTY_DOCUMENT: KnowledgeDocumentDraft = {
   url: "",
   documentType: "guideline",
@@ -116,6 +146,18 @@ const EMPTY_SOURCE: SourceDraft = {
   priority: "0",
   enabled: true,
 };
+
+function emptyOwnedContentDraft(): OwnedContentDraft {
+  return {
+    title: "",
+    content: "",
+    contentType: "campaign",
+    language: "en",
+    region: "global",
+    sourceUrl: "",
+    publishedAt: new Date().toISOString().slice(0, 10),
+  };
+}
 
 export function TopicConfigurationPanel({
   topics,
@@ -159,6 +201,13 @@ export function TopicConfigurationPanel({
     topicId: string;
     documents: KnowledgeDocument[];
   }>();
+  const [ownedContentResult, setOwnedContentResult] = useState<{
+    topicId: string;
+    entries: OwnedContentEntry[];
+  }>();
+  const [showOwnedContentForm, setShowOwnedContentForm] = useState(false);
+  const [ownedContentDraft, setOwnedContentDraft] =
+    useState<OwnedContentDraft>(emptyOwnedContentDraft);
   const [showDocumentForm, setShowDocumentForm] = useState(false);
   const [documentDraft, setDocumentDraft] = useState<KnowledgeDocumentDraft>(EMPTY_DOCUMENT);
   const [selectedKnowledgeChapterIds, setSelectedKnowledgeChapterIds] = useState<string[]>([]);
@@ -197,6 +246,9 @@ export function TopicConfigurationPanel({
   const documents = documentResult?.topicId === selectedTopicId
     ? documentResult.documents
     : undefined;
+  const ownedContent = ownedContentResult?.topicId === selectedTopicId
+    ? ownedContentResult.entries
+    : undefined;
 
   useEffect(() => {
     if (!canUseApi || !selectedTopicId || !showSources) {
@@ -214,6 +266,27 @@ export function TopicConfigurationPanel({
         if (controller.signal.aborted) return;
         setError(undefined);
         setSourceResult({ topicId: selectedTopicId, sources: response.sources });
+      })
+      .catch((loadError) => {
+        if (!controller.signal.aborted) setError(errorMessage(loadError));
+      });
+
+    return () => controller.abort();
+  }, [canUseApi, secret, selectedTopicId, showSources]);
+
+  useEffect(() => {
+    if (!canUseApi || !selectedTopicId || !showSources) return;
+    const controller = new AbortController();
+
+    requestJson<{ entries: OwnedContentEntry[] }>(
+      `/api/radar/topics/${encodeURIComponent(selectedTopicId)}/owned-content`,
+      secret,
+      { signal: controller.signal },
+    )
+      .then((response) => {
+        if (!controller.signal.aborted) {
+          setOwnedContentResult({ topicId: selectedTopicId, entries: response.entries });
+        }
       })
       .catch((loadError) => {
         if (!controller.signal.aborted) setError(errorMessage(loadError));
@@ -541,6 +614,33 @@ export function TopicConfigurationPanel({
     });
   }
 
+  async function addOwnedContent() {
+    if (!ownedContentDraft.title.trim() || !ownedContentDraft.content.trim()) {
+      setError("A title and content are required.");
+      return;
+    }
+
+    await run("add-owned-content", async () => {
+      const response = await requestJson<{ entry: OwnedContentEntry }>(
+        `/api/radar/topics/${encodeURIComponent(selectedTopicId)}/owned-content`,
+        secret,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...ownedContentDraft,
+            sourceUrl: ownedContentDraft.sourceUrl || undefined,
+          }),
+        },
+      );
+      await reloadOwnedContent();
+      setOwnedContentDraft(emptyOwnedContentDraft());
+      setShowOwnedContentForm(false);
+      onCandidateCreated?.();
+      setNotice(`“${response.entry.title}” was added to Stories and is ready for AI evaluation.`);
+    });
+  }
+
   async function retryKnowledgeDocument(document: KnowledgeDocument) {
     await run(`retry-document:${document.topicDocumentId}`, async () => {
       await requestJson(
@@ -601,6 +701,14 @@ export function TopicConfigurationPanel({
       secret,
     );
     setDocumentResult({ topicId: selectedTopicId, documents: response.documents });
+  }
+
+  async function reloadOwnedContent() {
+    const response = await requestJson<{ entries: OwnedContentEntry[] }>(
+      `/api/radar/topics/${encodeURIComponent(selectedTopicId)}/owned-content`,
+      secret,
+    );
+    setOwnedContentResult({ topicId: selectedTopicId, entries: response.entries });
   }
 
   async function createKnowledgeCandidate(
@@ -691,8 +799,8 @@ export function TopicConfigurationPanel({
           <small>Feeds, tags, preferences, reviews, AI usage, and creative work stay scoped to the selected topic.</small>
         </div>
         <span className={styles.count}>
-          {sources || documents || aiResearch
-            ? `${sources?.filter((source) => source.enabled).length ?? 0} feeds · ${aiResearch?.enabled ? "AI research" : "no AI research"} · ${documents?.filter((document) => document.enabled).length ?? 0} documents`
+          {sources || documents || aiResearch || ownedContent
+            ? `${sources?.filter((source) => source.enabled).length ?? 0} feeds · ${aiResearch?.enabled ? "AI research" : "no AI research"} · ${documents?.filter((document) => document.enabled).length ?? 0} documents · ${ownedContent?.length ?? 0} owned`
             : "Source setup"}
         </span>
       </div>
@@ -909,6 +1017,141 @@ export function TopicConfigurationPanel({
                 <button type="submit" disabled={Boolean(busy)}>Save AI research</button>
               </div>
             </form>
+          )}
+
+          <div className={styles.knowledgeHeading}>
+            <div>
+              <h3>Owned content</h3>
+              <p>Create a campaign, product update, promotion, or announcement as a source story for this topic.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowOwnedContentForm(true)}
+              disabled={!canUseApi || disabled || Boolean(busy)}
+            >
+              Add custom story
+            </button>
+          </div>
+
+          {showOwnedContentForm ? (
+            <form
+              className={styles.sourceForm}
+              onSubmit={(event) => {
+                event.preventDefault();
+                void addOwnedContent();
+              }}
+            >
+              <strong>New owned-content story</strong>
+              <div className={styles.formGrid}>
+                <Field label="Title">
+                  <input
+                    value={ownedContentDraft.title}
+                    onChange={(event) => setOwnedContentDraft({ ...ownedContentDraft, title: event.target.value })}
+                    maxLength={240}
+                    placeholder="New spicy empanada launch"
+                  />
+                </Field>
+                <Field label="Content type">
+                  <select
+                    value={ownedContentDraft.contentType}
+                    onChange={(event) => setOwnedContentDraft({
+                      ...ownedContentDraft,
+                      contentType: event.target.value as OwnedContentDraft["contentType"],
+                    })}
+                  >
+                    <option value="campaign">Campaign</option>
+                    <option value="launch">Launch</option>
+                    <option value="promotion">Promotion</option>
+                    <option value="product">Product</option>
+                    <option value="announcement">Announcement</option>
+                    <option value="educational">Educational</option>
+                  </select>
+                </Field>
+                <Field label="Language">
+                  <input
+                    value={ownedContentDraft.language}
+                    onChange={(event) => setOwnedContentDraft({ ...ownedContentDraft, language: event.target.value })}
+                    maxLength={32}
+                  />
+                </Field>
+                <Field label="Region">
+                  <input
+                    value={ownedContentDraft.region}
+                    onChange={(event) => setOwnedContentDraft({ ...ownedContentDraft, region: event.target.value })}
+                    maxLength={80}
+                  />
+                </Field>
+                <Field label="Publish date">
+                  <input
+                    type="date"
+                    value={ownedContentDraft.publishedAt}
+                    onChange={(event) => setOwnedContentDraft({ ...ownedContentDraft, publishedAt: event.target.value })}
+                  />
+                </Field>
+                <Field label="Source URL (optional)">
+                  <input
+                    type="url"
+                    value={ownedContentDraft.sourceUrl}
+                    onChange={(event) => setOwnedContentDraft({ ...ownedContentDraft, sourceUrl: event.target.value })}
+                    placeholder="https://yourbrand.com/campaign"
+                  />
+                </Field>
+              </div>
+              <Field label="Your story or campaign context">
+                <textarea
+                  value={ownedContentDraft.content}
+                  onChange={(event) => setOwnedContentDraft({ ...ownedContentDraft, content: event.target.value })}
+                  maxLength={12_000}
+                  rows={8}
+                  placeholder="Write the approved context, product details, campaign conditions, dates, and claims that the editorial workflow can use."
+                />
+              </Field>
+              <p>This becomes a full source story immediately. It is ready for normal editorial and AI evaluation; it is not published automatically.</p>
+              <div className={styles.formActions}>
+                <button type="submit" disabled={Boolean(busy)}>Add to Stories</button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowOwnedContentForm(false);
+                    setOwnedContentDraft(emptyOwnedContentDraft());
+                  }}
+                  disabled={Boolean(busy)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          ) : null}
+
+          {!canUseApi ? null : !ownedContent ? (
+            <p className={styles.loading}>Loading owned content…</p>
+          ) : ownedContent.length === 0 ? (
+            <div className={styles.empty}>
+              <strong>No custom stories yet.</strong>
+              <span>Add a campaign or product update to send it through the normal editorial workflow.</span>
+            </div>
+          ) : (
+            <ul className={styles.documentList}>
+              {ownedContent.map((entry) => (
+                <li key={entry.id}>
+                  <div className={styles.sourceCopy}>
+                    <div>
+                      <strong>{entry.title}</strong>
+                      <span className={styles.enabled}>Owned content</span>
+                    </div>
+                    <small>
+                      {entry.contentType} · {entry.language} · {entry.region} · {new Date(entry.publishedAt).toLocaleDateString()}
+                    </small>
+                    <p>{entry.content}</p>
+                  </div>
+                  {entry.sourceUrl ? (
+                    <div className={styles.sourceActions}>
+                      <a href={entry.sourceUrl} target="_blank" rel="noreferrer">Open source ↗</a>
+                    </div>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
           )}
 
           <div className={styles.knowledgeHeading}>

@@ -3,6 +3,7 @@ export * from "./collection-runs";
 export * from "./creative-content";
 export * from "./editorial-evaluations";
 export * from "./knowledge-documents";
+export * from "./owned-content";
 export * from "./topic-editorial-profiles";
 export * from "./enums";
 export * from "./radar-preferences";

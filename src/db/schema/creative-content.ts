@@ -17,6 +17,7 @@ import {
   DEFAULT_CREATIVE_BRAND_PALETTE,
   DEFAULT_CREATIVE_CAROUSEL_CHROME_SETTINGS,
   DEFAULT_CREATIVE_CONVERSION_GOAL,
+  DEFAULT_CREATIVE_FRAMING_STRATEGY,
   DEFAULT_CREATIVE_VISUAL_GUIDANCE,
   type CreativeBrandOverlaySnapshot,
   type CreativeBrandOverlaySettings,
@@ -24,6 +25,7 @@ import {
   type CreativeCarouselChromeSettings,
   type CreativeCarouselChromeSnapshot,
   type CreativeConversionGoal,
+  type CreativeFramingStrategy,
   type CreativeInteractiveOverlay,
 } from "@/app/modules/stories/creative-content.types";
 
@@ -127,6 +129,10 @@ export const creativeProfiles = pgTable(
       .$type<CreativeConversionGoal>()
       .default(DEFAULT_CREATIVE_CONVERSION_GOAL)
       .notNull(),
+    framingStrategy: text("framing_strategy")
+      .$type<CreativeFramingStrategy>()
+      .default(DEFAULT_CREATIVE_FRAMING_STRATEGY)
+      .notNull(),
     callToActionStyle: text("call_to_action_style").notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
       .defaultNow()
@@ -149,6 +155,10 @@ export const creativeProfiles = pgTable(
     check(
       "creative_profiles_conversion_goal_check",
       sql`${table.conversionGoal} IN ('followers', 'discussion', 'saves', 'shares')`,
+    ),
+    check(
+      "creative_profiles_framing_strategy_check",
+      sql`${table.framingStrategy} IN ('auto', 'reader-consequence', 'explainer', 'authority')`,
     ),
   ],
 );

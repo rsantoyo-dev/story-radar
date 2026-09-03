@@ -253,6 +253,20 @@
       "when": 1788359662102,
       "tag": "0035_creative_profile_palette_carousel_chrome",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1788399060250,
+      "tag": "0036_owned_content_entries",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1788443475961,
+      "tag": "0037_creative_profile_framing_strategy",
+      "breakpoints": true
     }
   ]
 }

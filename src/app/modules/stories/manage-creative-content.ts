@@ -646,6 +646,7 @@ export async function approveSavedCreativeDraft(
     brief.keyFacts,
     brief.profileSnapshot.language,
     brief.profileSnapshot.conversionGoal,
+    brief.profileSnapshot.framingStrategy,
   );
   const approvalState = getCreativeDraftApprovalState({
     deterministicIssues: qualityIssues,
@@ -864,6 +865,7 @@ function createBriefInputHash(
       allowEmojis: profile.allowEmojis,
       maxEmojis: profile.maxEmojis,
       conversionGoal: profile.conversionGoal,
+      framingStrategy: profile.framingStrategy ?? "auto",
       callToActionStyle: profile.callToActionStyle,
       visualGuidance: resolveCreativeVisualGuidance(profile),
     },

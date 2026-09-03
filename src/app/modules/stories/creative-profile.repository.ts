@@ -7,12 +7,16 @@ import { creativeBrandAssets, creativeProfiles } from "@/db/schema";
 
 import {
   CREATIVE_CONVERSION_GOALS,
+  CREATIVE_FRAMING_STRATEGIES,
   DEFAULT_CREATIVE_BRAND_OVERLAY_SETTINGS,
   DEFAULT_CREATIVE_CAROUSEL_CHROME_SETTINGS,
   DEFAULT_CREATIVE_CONVERSION_GOAL,
+  DEFAULT_CREATIVE_FRAMING_STRATEGY,
   DEFAULT_CREATIVE_VISUAL_GUIDANCE,
   isCreativeConversionGoal,
+  isCreativeFramingStrategy,
   type CreativeConversionGoal,
+  type CreativeFramingStrategy,
   type CreativeProfile,
   type EditableCreativeProfile,
 } from "./creative-content.types";
@@ -53,6 +57,7 @@ const DEFAULT_PROFILE: EditableCreativeProfile = {
   allowEmojis: true,
   maxEmojis: 2,
   conversionGoal: DEFAULT_CREATIVE_CONVERSION_GOAL,
+  framingStrategy: DEFAULT_CREATIVE_FRAMING_STRATEGY,
   callToActionStyle:
     "Use one natural call to action aligned with the primary conversion goal. State a concrete audience benefit without engagement bait or artificial urgency.",
 };
@@ -170,6 +175,7 @@ export function parseCreativeProfileInput(value: unknown): EditableCreativeProfi
     allowEmojis: value.allowEmojis,
     maxEmojis: value.maxEmojis,
     conversionGoal: value.conversionGoal,
+    framingStrategy: value.framingStrategy,
     callToActionStyle: value.callToActionStyle,
   } as EditableCreativeProfile);
 }
@@ -205,6 +211,7 @@ function validateCreativeProfile(
     allowEmojis: booleanValue(value.allowEmojis, "allowEmojis"),
     maxEmojis: boundedInteger(value.maxEmojis, "maxEmojis", 0, 10),
     conversionGoal: conversionGoalValue(value.conversionGoal),
+    framingStrategy: framingStrategyValue(value.framingStrategy),
     callToActionStyle: textValue(
       value.callToActionStyle,
       "callToActionStyle",
@@ -279,6 +286,7 @@ function mapCreativeProfile(
     allowEmojis: profile.allowEmojis,
     maxEmojis: profile.maxEmojis,
     conversionGoal: conversionGoalValue(profile.conversionGoal),
+    framingStrategy: framingStrategyValue(profile.framingStrategy),
     callToActionStyle: profile.callToActionStyle,
     updatedAt: profile.updatedAt,
   };
@@ -358,6 +366,20 @@ export function conversionGoalValue(value: unknown): CreativeConversionGoal {
   }
 
   return value as CreativeConversionGoal;
+}
+
+export function framingStrategyValue(value: unknown): CreativeFramingStrategy {
+  if (value === undefined || value === null || value === "") {
+    return DEFAULT_CREATIVE_FRAMING_STRATEGY;
+  }
+
+  if (typeof value !== "string" || !isCreativeFramingStrategy(value)) {
+    throw new CreativeProfileValidationError(
+      `framingStrategy must be one of: ${CREATIVE_FRAMING_STRATEGIES.join(", ")}`,
+    );
+  }
+
+  return value as CreativeFramingStrategy;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

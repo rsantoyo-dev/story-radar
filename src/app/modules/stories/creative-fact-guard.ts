@@ -7,6 +7,7 @@ import type {
 } from "./creative-content.types";
 import { maximumFactsForGoal } from "./carousel-narrative";
 import {
+  collapseStackedEstimateQualifiers,
   extractCreativeNumericLiterals as extractNumericLiterals,
   normalizeCreativeNumericLiteral as normalizeNumber,
 } from "./creative-number-normalization";
@@ -778,13 +779,26 @@ export function repairDeterministicFactCopy(
       allSourceCopy,
       localizedFallback(language, "summary"),
       language,
+      allFacts,
     ),
     altText: repairPublishingCopy(
       repairAltTextSlideReference(draft),
       allSourceCopy,
       localizedFallback(language, "alt-text"),
       language,
+      allFacts,
     ),
+    ...(draft.callToAction === undefined
+      ? {}
+      : {
+          callToAction: repairPublishingCopy(
+            draft.callToAction,
+            allSourceCopy,
+            "",
+            language,
+            allFacts,
+          ) || undefined,
+        }),
     units: draft.units.map((unit) => {
       const isClosingUnit =
         unit.editorialGoal === "conclude" ||
@@ -913,10 +927,10 @@ export function repairDeterministicFactCopy(
       let visibleCopy = [headline, subheadline, body, ctaQuestion]
         .filter(Boolean)
         .join(" ");
-      if (
-        unit.editorialGoal === "conclude" ||
-        unit.editorialGoal === "debate"
-      ) {
+      {
+        // Numeric claims need the same evidence rule on every slide. Earlier
+        // slides may add a uniquely matching fact ID above; any remaining
+        // number has no verified support and must not survive to review.
         const repairedHeadline = removeUnsupportedNumericClauses(
           headline,
           selectedFacts,
@@ -1679,13 +1693,20 @@ function repairPublishingCopy(
   sourceCopy: string,
   fallback: string,
   language?: string,
+  facts: readonly CreativeKeyFact[] = [],
 ): string {
   const repaired = localizeEstimateQualifiers(
     repairCertaintyUpgrade(repairUnsupportedInference(value, sourceCopy)),
     language,
   );
   const safeSentences = splitSentenceClauses(repaired).filter(
-    (sentence) => !hasUnsupportedInference(sentence, sourceCopy),
+    (sentence) =>
+      !hasUnsupportedInference(sentence, sourceCopy) &&
+      extractBriefClaimNumbers(sentence).every(
+        (number) =>
+          facts.some((fact) => fact.claimGuard?.allowedNumbers.includes(number)) ||
+          isBriefSupportedCalendarYear(number, facts),
+      ),
   );
   const result = safeSentences.join(" ").replace(/\s+/gu, " ").trim();
   return result || fallback;
@@ -1729,14 +1750,42 @@ function repairMissingEstimateQualifier(
     .flatMap((fact) => fact.requiredQualifiers ?? [])
     .map((candidate) => estimatePrefix(candidate, language))
     .find(Boolean) ?? defaultEstimateQualifier(language);
-  return value.replace(
-    /~?\d[\d,.]*(?:\s*%|\s*percent)?/giu,
-    (number) =>
-      allowedApproximateNumbers.has(normalizeNumber(number)) &&
-      !ESTIMATE_PATTERN.test(number)
-        ? `${qualifier} ${number}`
-        : number,
+  const inserted = value.replace(
+    /(\b(?:del|al|de|a|el|la|los|las|un|una)\s+)?(~?\d[\d,.]*(?:\s*%|\s*percent)?)/giu,
+    (match: string, lead: string | undefined, number: string) => {
+      if (
+        !allowedApproximateNumbers.has(normalizeNumber(number)) ||
+        ESTIMATE_PATTERN.test(number)
+      ) {
+        return match;
+      }
+      if (!lead) return `${qualifier} ${number}`;
+      const raw = lead.trimEnd();
+      const article = raw.trim().toLocaleLowerCase();
+      // The lead word may open a sentence. Whenever the qualifier moves in front
+      // of it, the capital has to move too, or the copy reads
+      // "aproximadamente El 40%".
+      const leadIsCapitalized = raw !== raw.toLocaleLowerCase();
+      const opener = leadIsCapitalized
+        ? qualifier.charAt(0).toLocaleUpperCase() + qualifier.slice(1)
+        : qualifier;
+      const spacing = lead.slice(raw.length) || " ";
+      // The qualifier reads before a definite/indefinite article ("aproximadamente
+      // el 3%") but after a preposition ("de aproximadamente 2,2%"). "del" and
+      // "al" contract a preposition with an article, so split them.
+      if (["el", "la", "los", "las", "un", "una"].includes(article)) {
+        return `${opener} ${article}${spacing}${number}`;
+      }
+      if (article === "del") {
+        return `${leadIsCapitalized ? "De" : "de"} ${qualifier} ${number}`;
+      }
+      if (article === "al") {
+        return `${leadIsCapitalized ? "A" : "a"} ${qualifier} ${number}`;
+      }
+      return `${raw}${spacing}${qualifier} ${number}`;
+    },
   );
+  return collapseStackedEstimateQualifiers(inserted);
 }
 
 function estimatePrefix(

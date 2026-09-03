@@ -48,6 +48,7 @@ import {
   type CreativeCharacterSnapshot,
   type CreativeConversionGoal,
   type CreativeDraft,
+  type CreativeFramingStrategy,
   type CreativeGeneratedAsset,
   type CreativeImageQuality,
   type CreativeKeyFact,
@@ -89,7 +90,10 @@ import {
   CreativeContentConflictError,
   CreativeContentNotFoundError,
 } from "./manage-creative-content";
-import { deterministicCreativeQualityIssues } from "./creative-quality";
+import {
+  deterministicCreativeQualityIssues,
+  repairDeterministicCreativeCopy,
+} from "./creative-quality";
 
 export async function getCreativeDraftAssets(
   topicId: string,
@@ -203,6 +207,7 @@ export async function generateCreativeDraftAssets(
     brief.keyFacts,
     brief.profileSnapshot.language,
     brief.profileSnapshot.conversionGoal,
+    brief.profileSnapshot.framingStrategy,
   );
   const outputAspectRatio = outputAspectRatioForDraft(draft);
   const configuration = getFalImageRuntimeConfig(outputAspectRatio, imageQuality);
@@ -346,6 +351,7 @@ export async function generateNextCreativeDraftAssetVersion(
     brief.keyFacts,
     brief.profileSnapshot.language,
     brief.profileSnapshot.conversionGoal,
+    brief.profileSnapshot.framingStrategy,
   );
 
   const batch = await findCreativeAssetBatchById(batchId);
@@ -407,6 +413,7 @@ export async function regenerateCreativeAsset(
     brief.keyFacts,
     brief.profileSnapshot.language,
     brief.profileSnapshot.conversionGoal,
+    brief.profileSnapshot.framingStrategy,
   );
   assertCurrentAsset(found.asset, found.batch, draft.version);
   const brand = await resolveCreativeBrandGeneration(topicId);
@@ -1008,13 +1015,26 @@ function requireNarrativeQuality(
   keyFacts: readonly CreativeKeyFact[],
   language?: string,
   conversionGoal?: CreativeConversionGoal,
+  framingStrategy?: CreativeFramingStrategy,
 ): void {
-  const blockers = deterministicCreativeQualityIssues(
+  // Validate what approval validates. approveSavedCreativeDraft repairs before
+  // it checks, so a stored draft that only fails a deterministically repairable
+  // rule (a missing follow CTA, a summary-label headline) must not block image
+  // generation here — otherwise an already-approved draft becomes unusable.
+  const repaired = repairDeterministicCreativeCopy(
     draft,
     draft.format,
     keyFacts,
     language,
     conversionGoal,
+  );
+  const blockers = deterministicCreativeQualityIssues(
+    repaired,
+    draft.format,
+    keyFacts,
+    language,
+    conversionGoal,
+    framingStrategy,
   ).filter((issue) => issue.severity === "blocker");
   if (blockers.length > 0) {
     throw new CreativeContentConflictError(

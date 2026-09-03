@@ -1,5 +1,8 @@
 import { extractCreativeNumericLiterals } from "./creative-number-normalization";
-import type { CreativeConversionGoal } from "./creative-content.types";
+import type {
+  CreativeConversionGoal,
+  CreativeFramingStrategy,
+} from "./creative-content.types";
 
 export const CAROUSEL_EDITORIAL_GOALS = [
   "hook",
@@ -175,7 +178,14 @@ export type CarouselNarrativeWarning = {
     | "missing-cover-continuation-cue"
     | "generic-continuation-cue"
     | "continuation-cue-too-long"
-    | "continuation-cue-on-final";
+    | "continuation-cue-on-final"
+    | "recap-label-headline"
+    | "redundant-closing"
+    | "cover-not-reader-framed"
+    | "cue-echoes-next-headline"
+    | "closing-not-reader-resolved"
+    | "redundant-cover-body"
+    | "cover-supporting-restates-hold";
   message: string;
   unitIndex?: number;
 };
@@ -452,12 +462,30 @@ export function evaluateCarouselNarrative(
   units: readonly CarouselNarrativeUnit[],
   narrativeRationale?: string,
   conversionGoal?: CreativeConversionGoal,
+  framingStrategy?: CreativeFramingStrategy,
 ): CarouselNarrativeWarning[] {
   const warnings: CarouselNarrativeWarning[] = [];
   const preferredArc = getPreferredCarouselArc(
     units.length,
     conversionGoal,
   );
+
+  const coverUnit = units[0];
+  if (
+    framingStrategy === "reader-consequence" &&
+    coverUnit &&
+    coverUnit.role === "cover" &&
+    (isInstitutionFirstCoverCopy(coverUnit.headline) ||
+      isWithheldAnswerCoverCopy(coverUnit.headline))
+  ) {
+    warnings.push({
+      severity: "blocker",
+      code: "cover-not-reader-framed",
+      unitIndex: 0,
+      message:
+        "The creative profile uses the reader-consequence framing, but the cover headline opens with an organization, a bare policy-status statement, or a yes/no question that withholds the answer, and never names what changes for the audience. State the outcome and lead with the reader's stake (what they pay, owe, save, or decide); mention the institution only after and do not defer the central fact to a later slide. When the decision is a hold or no-change, contrast what is settled for the reader against what still moves (their debt vs. their purchases) — do not announce the unchanged figure.",
+    });
+  }
 
   units.forEach((unit, unitIndex) => {
     const slide = unitIndex + 1;
@@ -522,7 +550,12 @@ export function evaluateCarouselNarrative(
       });
     }
 
-    const headlineTarget = unit.role === "cover" ? 12 : 14;
+    // A cover that contrasts two reader-facing clauses ("Para X …; para Y …")
+    // legitimately runs longer than a single-idea headline.
+    const isTwoClauseCover =
+      unit.role === "cover" && /[;—–]|\s-\s/u.test(unit.headline ?? "");
+    const headlineTarget =
+      unit.role === "cover" ? (isTwoClauseCover ? 16 : 12) : 14;
     if (wordCount(unit.headline) > headlineTarget) {
       warnings.push({
         severity: "warning",
@@ -581,6 +614,20 @@ export function evaluateCarouselNarrative(
         message: `Slide ${slide} uses a generic navigation label; name the concrete idea the next slide will reveal instead.`,
       });
     }
+    const nextUnit = units[unitIndex + 1];
+    if (
+      unit.continuationCue?.trim() &&
+      nextUnit?.headline?.trim() &&
+      normalizedVisibleCopy(unit.continuationCue) ===
+        normalizedVisibleCopy(nextUnit.headline)
+    ) {
+      warnings.push({
+        severity: "warning",
+        code: "cue-echoes-next-headline",
+        unitIndex,
+        message: `Slide ${slide} continuation cue repeats the next slide's headline verbatim; tease the idea instead of stating its answer.`,
+      });
+    }
     if (
       unitIndex > 0 &&
       unitIndex < units.length - 1 &&
@@ -631,8 +678,48 @@ export function evaluateCarouselNarrative(
       code: "missing-cover-continuation-cue",
       unitIndex: 0,
       message:
-        "The cover should normally include a concrete continuation cue that previews the next slide's reward.",
+        "The cover should include a concrete continuation cue that previews the next slide's reward.",
     });
+  }
+  if (
+    framingStrategy === "reader-consequence" &&
+    first?.role === "cover" &&
+    first.body?.trim() &&
+    isInstitutionFirstCoverCopy(firstSentenceOfCopy(first.body))
+  ) {
+    warnings.push({
+      severity: "warning",
+      code: "cover-supporting-restates-hold",
+      unitIndex: 0,
+      message:
+        "The reader-consequence cover's supporting text restates the unchanged decision; use it to carry the second signal — the thing still moving for the reader — not to repeat the hold.",
+    });
+  }
+  if (first?.role === "cover" && first.body?.trim()) {
+    const bodyNumbers = new Set(numericTokens(first.body));
+    const restatesExactly = [first.headline, first.subheadline].some(
+      (value) =>
+        value?.trim() &&
+        normalizedVisibleCopy(first.body) === normalizedVisibleCopy(value),
+    );
+    const restatesTheThesisNumber =
+      bodyNumbers.size > 0 &&
+      [first.headline, first.subheadline].some((value) => {
+        if (!value?.trim()) return false;
+        const otherNumbers = new Set(numericTokens(value));
+        const shared = [...bodyNumbers].some((n) => otherNumbers.has(n));
+        const bodyOnly = [...bodyNumbers].some((n) => !otherNumbers.has(n));
+        return shared && !bodyOnly;
+      });
+    if (restatesExactly || restatesTheThesisNumber) {
+      warnings.push({
+        severity: "warning",
+        code: "redundant-cover-body",
+        unitIndex: 0,
+        message:
+          "The cover's supporting text restates the headline or subheadline without adding a distinct fact; add one or drop the field.",
+      });
+    }
   }
 
   const lastIndex = units.length - 1;
@@ -689,6 +776,55 @@ export function evaluateCarouselNarrative(
           code: "new-closing-fact",
           unitIndex: lastIndex,
           message: `The final slide introduces ${newClosingFacts.join(", ")}; conclusions should normally reuse facts established earlier.`,
+        });
+      }
+    }
+
+    if (
+      isRecapLabelCopy(last.headline) ||
+      isRecapLabelCopy(last.subheadline)
+    ) {
+      warnings.push({
+        severity: "blocker",
+        code: "recap-label-headline",
+        unitIndex: lastIndex,
+        message:
+          "The final slide opens with a summary label such as “La conclusión” or “The takeaway”; deliver the actual answer or decision the cover promised instead of announcing that a summary follows.",
+      });
+    }
+
+    if (
+      first &&
+      last !== first &&
+      last.factIds.length > 0 &&
+      last.factIds.every((factId) => first.factIds.includes(factId)) &&
+      (visibleCopyOverlapRatio(last, first) >= CLOSING_COVER_OVERLAP_LIMIT ||
+        sharesOnlyNumericThesis(last, first))
+    ) {
+      warnings.push({
+        severity: "warning",
+        code: "redundant-closing",
+        unitIndex: lastIndex,
+        message:
+          "The final slide reuses only the cover's facts and adds no new evidence, consequence, or decision beyond the cover's central number; a conclusion should resolve the opening rather than restate it in different words.",
+      });
+    }
+
+    if (framingStrategy === "reader-consequence") {
+      const closingCopy = [last.headline, last.body]
+        .filter((value): value is string => Boolean(value?.trim()))
+        .join(" ");
+      if (
+        closingCopy &&
+        !hasReaderStakeLanguage(closingCopy) &&
+        numericTokens(closingCopy).length >= 2
+      ) {
+        warnings.push({
+          severity: "warning",
+          code: "closing-not-reader-resolved",
+          unitIndex: lastIndex,
+          message:
+            "The reader-consequence framing promises an answer for the reader, but the final slide resolves with a list of figures and never says what the decision means for what they pay, owe, or decide.",
         });
       }
     }
@@ -802,11 +938,13 @@ export function blockingCarouselNarrativeIssues(
   units: readonly CarouselNarrativeUnit[],
   narrativeRationale?: string,
   conversionGoal?: CreativeConversionGoal,
+  framingStrategy?: CreativeFramingStrategy,
 ): CarouselNarrativeWarning[] {
   return evaluateCarouselNarrative(
     units,
     narrativeRationale,
     conversionGoal,
+    framingStrategy,
   ).filter((issue) => issue.severity === "blocker");
 }
 
@@ -825,9 +963,177 @@ function normalizedVisibleCopy(value?: string): string {
 
 function isGenericContinuationCue(value: string): boolean {
   const normalized = normalizedVisibleCopy(value);
-  return /^(?:(?:desliza|desliza para (?:ver|continuar)|sigue deslizando|siguiente|continua|ver mas)|(?:swipe|swipe (?:left|for more)|keep swiping|next|continue|read more))$/u.test(
-    normalized,
+  if (
+    /^(?:(?:desliza|desliza para (?:ver|continuar)|sigue deslizando|siguiente|continua|ver mas)|(?:swipe|swipe (?:left|for more)|keep swiping|next|continue|read more))$/u.test(
+      normalized,
+    )
+  ) {
+    return true;
+  }
+  // A summary-label opener ("La conclusión: …", "La clave: …") is a lazy label,
+  // not a concrete promise of what the next slide reveals.
+  return isRecapLabelCopy(value);
+}
+
+/**
+ * Fraction of the shorter copy's meaningful tokens shared with the longer one.
+ * Used to detect a closing slide that just restates the cover.
+ */
+const CLOSING_COVER_OVERLAP_LIMIT = 0.7;
+
+// One source of truth for "this copy is a summary label followed by the real
+// clause". The detector below and the repair share it, so every issue the
+// detector raises is one the repair can actually clear. The separator is
+// required on purpose: "La clave está en los precios" is a sentence, while
+// "La clave: …" / "En resumen, …" are labels standing in for the answer.
+const RECAP_LABEL_PREFIX =
+  /^\s*(?:la conclusi[oó]n|la clave|el punto|lo esencial|lo importante|la moraleja|el resumen|en resumen|en s[ií]ntesis|en pocas palabras|para (?:resumir|cerrar|concluir|terminar)|la lecci[oó]n|el veredicto|el balance|conclusi[oó]n|resumen|the takeaway|the bottom line|the point|in summary|key (?:takeaway|point)|tl ?;?dr)\s*[:,–—-]\s*/iu;
+
+function isRecapLabelCopy(value?: string): boolean {
+  const trimmed = value?.trim();
+  if (!trimmed) return false;
+  return stripRecapLabelPrefix(trimmed) !== trimmed;
+}
+
+/**
+ * Removes a leading summary label ("La conclusión: …", "En resumen, …") so a
+ * deterministic repair can keep the real clause instead of surfacing a blocker.
+ * Returns the input unchanged when there is no separator-delimited label or
+ * nothing meaningful remains after it.
+ */
+export function stripRecapLabelPrefix(value: string): string {
+  const stripped = value.replace(RECAP_LABEL_PREFIX, "").trim();
+  if (!stripped || stripped === value.trim()) return value;
+  return stripped.charAt(0).toLocaleUpperCase() + stripped.slice(1);
+}
+
+// Deliberately strict: second-person address or a noun the reader pays or owns.
+// Bare verbs such as "sube"/"baja" are excluded because "la tasa no sube" is a
+// policy-status line, not a reader stake.
+const READER_STAKE_PATTERN =
+  /\b(?:tu|tus|t[uú]|ti|te|usted|ustedes|contigo|your|yours?|you)\b|\b(?:pag(?:o|os|as|ar|ues|ar[aá]s?|ar[aá]n|u[eé])|cuot[ao]s?|mensualidad(?:es)?|factura|facturas|hipoteca|hipotecas|deuda|deudas|cr[eé]dito|cr[eé]ditos|pr[eé]stamo|pr[eé]stamos|renta|alquiler|salario|sueldo|n[oó]mina|ingreso|ingresos|presupuesto|bolsillo|ahorr(?:o|os|as|ar)|gast(?:o|os|as|ar)|mortgage|loans?|payment|installments?|bills?|budget|paycheck|savings|debt|wages?|rent|to\s+pay|you\s+(?:pay|owe|save|spend))\b/iu;
+
+/**
+ * True when copy contains second-person address or a concrete thing the reader
+ * pays or owns (a payment, a bill, a debt, a budget). Used to tell "resolved for
+ * the reader" from "answered with institutional data".
+ */
+export function hasReaderStakeLanguage(value?: string): boolean {
+  return Boolean(value && READER_STAKE_PATTERN.test(value));
+}
+
+function firstSentenceOfCopy(value?: string): string {
+  return value?.trim().split(/(?<=[.!?])\s+/u)[0]?.trim() ?? "";
+}
+
+// Named-institution openers. Case-insensitive: a real headline capitalizes them.
+const INSTITUTION_LEAD_PATTERN =
+  /^(?:el|la|los|las)\s+(?:banco|reserva|gobierno|ministerio|congreso|senado|parlamento|comisi[oó]n|autoridad|ag(?:e|é)ncia|junta)\b|^(?:banco central|reserva federal|federal reserve|central bank|the fed|white house|casa blanca)\b/iu;
+
+// "Anthropic announced…", "OpenAI unveiled…". This one stays case-sensitive on
+// purpose: the leading capital is what marks the proper noun, and matching any
+// word here would flag ordinary sentences that happen to use an announce verb.
+const ORGANIZATION_LEAD_PATTERN =
+  /^[A-Z][\w.-]+(?:\s+(?:Inc|Corp|Co|SA|Ltd|AI))?\s+(?:anunci|mantuv|mantien|dej[oó]|conserv|fij[oó]|report[oó]|present[oó]|lanz[oó]|announ|held|kept|maintain|report|unveil|launch)/u;
+
+const POLICY_STATUS_VERB_PATTERN =
+  /\b(?:mantuvo|mantiene|mantendr[aá]|mantien|dej[oó]|deja|conserv[oó]|conserva|fij[oó]|fija|sostuvo|sostiene|permanece|permaneci[oó]|permanecer[aá]|sin cambios|sin cambio|no modific|no cambi|no sub(?:e|i[oó]|ir[aá])|no baj(?:a|[oó]|ar[aá])|queda en|qued[oó] en|sigue en|se ubica en|se mantiene en|held|keeps?|kept|holds?|holding|stays? at|unchanged|maintains?|maintained|announced?|announces?|leaves? rates?)\b/iu;
+
+const POLICY_RATE_NOUN_PATTERN =
+  /\b(?:tasa|tasas|tipo de inter[eé]s|tipos de inter[eé]s|tasa de referencia|tasa objetivo|pol[ií]tica monetaria|rate|rates|target rate|benchmark rate)\b/iu;
+
+const WH_QUESTION_OPENER_PATTERN =
+  /^¿?\s*(?:qu[eé]|c[oó]mo|cu[aá]nto?s?|cu[aá]ndo|cu[aá]l(?:es)?|por\s+qu[eé]|para\s+qu[eé]|d[oó]nde|qui[eé]n(?:es)?|what|why|how|when|which|where|who)\b/iu;
+
+const YESNO_QUESTION_OPENER_PATTERN =
+  /^(?:did|will|has|have|is|are|was|were|does|do|can|could|should|would)\b/iu;
+
+/**
+ * True when copy leads with an institution or is a bare policy-status statement
+ * and never names a stake the audience feels. Used for the reader-consequence
+ * cover check and for the caption's first sentence.
+ */
+export function isInstitutionFirstCoverCopy(headline?: string): boolean {
+  const trimmed = headline?.trim();
+  if (!trimmed) return false;
+  if (READER_STAKE_PATTERN.test(trimmed)) return false;
+  if (
+    INSTITUTION_LEAD_PATTERN.test(trimmed) ||
+    ORGANIZATION_LEAD_PATTERN.test(trimmed)
+  ) {
+    return true;
+  }
+  return (
+    POLICY_STATUS_VERB_PATTERN.test(trimmed) &&
+    POLICY_RATE_NOUN_PATTERN.test(trimmed)
   );
+}
+
+/**
+ * True when the cover is a yes/no question ("¿Bajó la tasa hoy?", "Did rates
+ * drop?") with no reader stake. Such a cover withholds the answer and defers the
+ * central fact to a later slide, which reader-consequence framing forbids.
+ */
+function isWithheldAnswerCoverCopy(headline?: string): boolean {
+  const trimmed = headline?.trim();
+  if (!trimmed || !trimmed.endsWith("?")) return false;
+  if (READER_STAKE_PATTERN.test(trimmed)) return false;
+  if (WH_QUESTION_OPENER_PATTERN.test(trimmed)) return false;
+  // A Spanish opener is a yes/no question when the first token after "¿" is a
+  // verb rather than an interrogative; English yes/no openers are explicit.
+  return (
+    /^¿/u.test(trimmed) || YESNO_QUESTION_OPENER_PATTERN.test(trimmed)
+  );
+}
+
+function meaningfulTokens(...values: (string | undefined)[]): Set<string> {
+  return new Set(
+    values
+      .flatMap((value) => normalizedVisibleCopy(value).split(/\s+/u))
+      .filter((token) => token.length >= 3),
+  );
+}
+
+/**
+ * True when the closing slide shares a numeric claim with the cover and
+ * introduces no numeric claim the cover lacks — the "different words, same
+ * number" restatement that lexical overlap misses (a question vs a statement).
+ */
+function sharesOnlyNumericThesis(
+  a: CarouselNarrativeUnit,
+  b: CarouselNarrativeUnit,
+): boolean {
+  // Same fields as visibleCopyOverlapRatio: a figure the closing adds in its
+  // subheadline is still new evidence, so it must not read as a restatement.
+  const aNums = new Set([
+    ...numericTokens(a.headline),
+    ...numericTokens(a.subheadline),
+    ...numericTokens(a.body),
+  ]);
+  if (aNums.size === 0) return false;
+  const bNums = new Set([
+    ...numericTokens(b.headline),
+    ...numericTokens(b.subheadline),
+    ...numericTokens(b.body),
+  ]);
+  const shared = [...aNums].some((token) => bNums.has(token));
+  const closingOnly = [...aNums].some((token) => !bNums.has(token));
+  return shared && !closingOnly;
+}
+
+function visibleCopyOverlapRatio(
+  a: CarouselNarrativeUnit,
+  b: CarouselNarrativeUnit,
+): number {
+  const tokensA = meaningfulTokens(a.headline, a.subheadline, a.body);
+  const tokensB = meaningfulTokens(b.headline, b.subheadline, b.body);
+  const smaller = tokensA.size <= tokensB.size ? tokensA : tokensB;
+  if (smaller.size === 0) return 0;
+  let shared = 0;
+  smaller.forEach((token) => {
+    if ((smaller === tokensA ? tokensB : tokensA).has(token)) shared += 1;
+  });
+  return shared / smaller.size;
 }
 
 function questionIntentCount(value: string): number {
