@@ -11,6 +11,13 @@ import {
   parseCreativeCarouselChromeInput,
 } from "./creative-carousel-chrome-validation";
 import { topicThemeStyle } from "@/design/topic-themes";
+import { contrastRatio, hexToOklch } from "@/design/color/oklch";
+
+const HEX = /^#[0-9A-F]{6}$/;
+const hueGap = (a: number, b: number) => {
+  const diff = Math.abs(a - b) % 360;
+  return diff > 180 ? 360 - diff : diff;
+};
 
 test("palette and carousel chrome default to the current campaign system", () => {
   const palette = parseCreativeBrandPaletteInput(undefined);
@@ -81,7 +88,7 @@ test("palette UI roles are persisted and remain unique", () => {
   );
 });
 
-test("brand palette roles override UXDSL tokens for the selected topic", () => {
+test("brand palette roles theme the topic UI while keeping brand hues", () => {
   const style = topicThemeStyle("press-green", {
     brandPalette: [
       { name: "Cream", color: "#FAF5E6", role: "surface" },
@@ -95,14 +102,50 @@ test("brand palette roles override UXDSL tokens for the selected topic", () => {
     },
   });
 
-  assert.equal(style["--ds__palette__primary-main"], "#2F777B");
-  assert.equal(style["--ds__palette__secondary-main"], "#EF644B");
-  assert.equal(style["--ds__palette__surface-main"], "#FAF5E6");
-  assert.equal(style["--ds__palette__primary-contrast"], "#FFFFFF");
-  assert.equal(style["--ds__palette__surface-contrast"], "#111111");
+  // Every emitted token is a valid opaque hex.
+  for (const value of Object.values(style)) {
+    assert.match(String(value), HEX);
+  }
+
+  // The primary role still reads as teal, the secondary still as coral.
+  assert.ok(
+    hueGap(
+      hexToOklch(style["--ds__palette__primary-main"]).h,
+      hexToOklch("#2F777B").h,
+    ) < 18,
+  );
+  assert.ok(
+    hueGap(
+      hexToOklch(style["--ds__palette__secondary-main"]).h,
+      hexToOklch("#EF644B").h,
+    ) < 22,
+  );
+
+  // Working surface stays near-white regardless of the cream seed's warmth.
+  assert.ok(hexToOklch(style["--ds__palette__surface-main"]).L > 0.9);
+
+  // Contrast floors the engine promises.
+  assert.ok(
+    contrastRatio(
+      style["--ds__palette__surface-contrast"],
+      style["--ds__palette__surface-main"],
+    ) >= 7,
+  );
+  assert.ok(
+    contrastRatio(
+      style["--ds__palette__primary-contrast"],
+      style["--ds__palette__primary-main"],
+    ) >= 4.5,
+  );
+  assert.ok(
+    contrastRatio(
+      style["--ds__palette__dark-contrast"],
+      style["--ds__palette__dark-main"],
+    ) >= 4.5,
+  );
 });
 
-test("carousel colours provide sensible UI roles for legacy palettes", () => {
+test("carousel colours seed sensible UI roles for legacy palettes", () => {
   const style = topicThemeStyle("press-green", {
     brandPalette: [
       { name: "Cream", color: "#FAF5E6" },
@@ -116,7 +159,25 @@ test("carousel colours provide sensible UI roles for legacy palettes", () => {
     },
   });
 
-  assert.equal(style["--ds__palette__primary-main"], "#102A43");
-  assert.equal(style["--ds__palette__secondary-main"], "#E8A83E");
-  assert.equal(style["--ds__palette__surface-main"], "#FAF5E6");
+  // No roles tagged: the carousel background hue drives primary, the accent
+  // hue drives secondary.
+  assert.ok(
+    hueGap(
+      hexToOklch(style["--ds__palette__primary-main"]).h,
+      hexToOklch("#102A43").h,
+    ) < 20,
+  );
+  assert.ok(
+    hueGap(
+      hexToOklch(style["--ds__palette__secondary-main"]).h,
+      hexToOklch("#E8A83E").h,
+    ) < 20,
+  );
+  assert.ok(hexToOklch(style["--ds__palette__surface-main"]).L > 0.9);
+  assert.ok(
+    contrastRatio(
+      style["--ds__palette__surface-contrast"],
+      style["--ds__palette__surface-main"],
+    ) >= 7,
+  );
 });

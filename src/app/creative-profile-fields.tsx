@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   CREATIVE_BRAND_BACKDROP_MODES,
@@ -12,6 +12,8 @@ import {
   type CreativeBrandPaletteColor,
   type CreativeProfile,
 } from "./modules/stories/creative-content.types";
+import { contrastRatio } from "@/design/color/oklch";
+import { deriveBrandUiPalette } from "@/design/topic-themes";
 import styles from "./creative-draft-workspace.generated.module.css";
 
 // Shared editing primitives for the topic creative profile. These live outside
@@ -72,10 +74,12 @@ export function ListField({
 
 export function BrandPaletteEditor({
   palette,
+  carouselChrome,
   disabled,
   onChange,
 }: {
   palette: CreativeBrandPaletteColor[];
+  carouselChrome: CreativeProfile["carouselChrome"];
   disabled: boolean;
   onChange: (palette: CreativeBrandPaletteColor[]) => void;
 }) {
@@ -186,7 +190,138 @@ export function BrandPaletteEditor({
           ) : null}
         </div>
       </fieldset>
+
+      <BrandUiPreview palette={palette} carouselChrome={carouselChrome} />
     </section>
+  );
+}
+
+const BRAND_UI_CHECKS = [
+  ["Body text", "surface", "contrast", "surface", "main", 7],
+  ["Primary button", "primary", "contrast", "primary", "main", 4.5],
+  ["Secondary badge", "secondary", "contrast", "secondary", "main", 4.5],
+  ["Sidebar text", "dark", "contrast", "dark", "main", 4.5],
+  ["Muted caption", "tertiary", "dark", "surface", "main", 4.5],
+] as const;
+
+/**
+ * Live mock of the topic app chrome painted from the *derived* palette, plus a
+ * contrast report and any adjustments the engine made. This is the guardrail:
+ * you see the working UI — not a carousel badge — before saving the palette.
+ */
+function BrandUiPreview({
+  palette,
+  carouselChrome,
+}: {
+  palette: CreativeBrandPaletteColor[];
+  carouselChrome: CreativeProfile["carouselChrome"];
+}) {
+  const { palette: ui, warnings } = useMemo(
+    () => deriveBrandUiPalette({ brandPalette: palette, carouselChrome }),
+    [palette, carouselChrome],
+  );
+
+  const checks = BRAND_UI_CHECKS.map(
+    ([label, fgRole, fgTone, bgRole, bgTone, floor]) => ({
+      label,
+      floor,
+      ratio: contrastRatio(ui[fgRole][fgTone], ui[bgRole][bgTone]),
+    }),
+  );
+
+  return (
+    <div className={styles.brandUiPreview}>
+      <span className={styles.brandUiPreviewLabel}>App preview · this topic</span>
+      <div
+        className={styles.brandUiFrame}
+        style={{ background: ui.surface.main, borderColor: ui.surface.dark }}
+      >
+        <div
+          className={styles.brandUiNav}
+          style={{ background: ui.dark.main, color: ui.dark.contrast }}
+        >
+          <strong>Topic</strong>
+          <span style={{ color: ui.primary.light }}>Story review</span>
+          <span style={{ opacity: 0.68 }}>Editorial</span>
+          <span style={{ opacity: 0.68 }}>Creative</span>
+        </div>
+        <div className={styles.brandUiMain}>
+          <div
+            className={styles.brandUiCard}
+            style={{ background: ui.light.main, borderColor: ui.surface.dark }}
+          >
+            <strong style={{ color: ui.primary.dark }}>Selected stories</strong>
+            <p style={{ color: ui.surface.contrast }}>
+              Human-approved stories ranked for the next stage.
+            </p>
+            <p style={{ color: ui.tertiary.dark }}>12 shown · updated just now</p>
+            <div className={styles.brandUiRow}>
+              <span
+                className={styles.brandUiButton}
+                style={{
+                  background: ui.primary.main,
+                  color: ui.primary.contrast,
+                  borderColor: ui.primary.main,
+                }}
+              >
+                Prepare content
+              </span>
+              <span
+                className={styles.brandUiButton}
+                style={{
+                  background: "transparent",
+                  color: ui.primary.dark,
+                  borderColor: ui.neutral.main,
+                }}
+              >
+                View
+              </span>
+              <span
+                className={styles.brandUiBadge}
+                style={{
+                  background: ui.secondary.main,
+                  color: ui.secondary.contrast,
+                }}
+              >
+                3 new
+              </span>
+            </div>
+            <span
+              className={styles.brandUiInput}
+              style={{
+                borderColor: ui.neutral.main,
+                color: ui.tertiary.dark,
+                background: ui.surface.main,
+              }}
+            >
+              Search stories…
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <ul className={styles.brandUiChecks}>
+        {checks.map((check) => (
+          <li
+            key={check.label}
+            className={styles.brandUiCheck}
+            data-pass={check.ratio >= check.floor}
+          >
+            <span aria-hidden>{check.ratio >= check.floor ? "✓" : "⚠"}</span>
+            <span>{check.label}</span>
+            <code>{check.ratio.toFixed(1)}:1</code>
+          </li>
+        ))}
+      </ul>
+
+      {warnings.length > 0 ? (
+        <ul className={styles.brandUiWarnings}>
+          {warnings.map((warning) => (
+            <li key={warning}>{warning}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   );
 }
 

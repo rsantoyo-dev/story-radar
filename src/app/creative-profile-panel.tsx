@@ -395,6 +395,7 @@ export function CreativeProfilePanel({
           </p>
           <BrandPaletteEditor
             palette={draft.brandPalette}
+            carouselChrome={draft.carouselChrome}
             disabled={controlsDisabled}
             onChange={updateBrandPalette}
           />

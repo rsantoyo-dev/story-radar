@@ -420,6 +420,144 @@
   border-radius: radius(1);
 }
 
+.brandUiPreview {
+  display: grid;
+  gap: density(2);
+  margin-top: density(2);
+}
+
+.brandUiPreviewLabel {
+  color: palette(tertiary-dark);
+  @ds-typo(caption);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.brandUiFrame {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  overflow: hidden;
+  border: border(1, palette(surface-dark), solid);
+  border-radius: radius(2);
+  box-shadow: shadow(1);
+}
+
+.brandUiNav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: density(3);
+  padding: density(2) density(3);
+  @ds-typo(caption);
+}
+
+.brandUiNav strong {
+  @ds-typo(caption);
+  font-weight: 800;
+}
+
+.brandUiMain {
+  padding: density(3);
+}
+
+.brandUiCard {
+  display: grid;
+  gap: density(1);
+  padding: density(3);
+  border: border(1, palette(surface-dark), solid);
+  border-radius: radius(2);
+}
+
+.brandUiCard strong {
+  @ds-typo(body);
+  font-weight: 750;
+}
+
+.brandUiCard p {
+  margin: 0;
+  @ds-typo(caption);
+  line-height: 1.4;
+}
+
+.brandUiRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: density(2);
+  margin-top: density(2);
+}
+
+.brandUiButton {
+  display: inline-flex;
+  align-items: center;
+  padding: density(1) density(3);
+  border: border(1, transparent, solid);
+  border-radius: radius(1);
+  @ds-typo(caption);
+  font-weight: 700;
+}
+
+.brandUiBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: density(1) density(2);
+  border-radius: radius(full);
+  @ds-typo(caption);
+  font-weight: 700;
+}
+
+.brandUiInput {
+  display: block;
+  margin-top: density(2);
+  padding: density(1) density(2);
+  border: border(1, palette(neutral-main), solid);
+  border-radius: radius(1);
+  @ds-typo(caption);
+}
+
+.brandUiChecks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: density(2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.brandUiCheck {
+  display: inline-flex;
+  align-items: center;
+  gap: density(1);
+  padding: density(1) density(2);
+  border: border(1, palette(surface-dark), solid);
+  border-radius: radius(full);
+  color: palette(tertiary-dark);
+  @ds-typo(caption);
+}
+
+.brandUiCheck[data-pass="false"] {
+  border-color: palette(secondary-main);
+  font-weight: 800;
+}
+
+.brandUiCheck code {
+  font-size: 10px;
+}
+
+.brandUiWarnings {
+  display: grid;
+  gap: density(1);
+  margin: 0;
+  padding: density(2) density(3);
+  border-left: border(2, palette(secondary-main), solid);
+  border-radius: radius(1);
+  background: palette(light-light);
+  color: palette(tertiary-dark);
+  @ds-typo(caption);
+  line-height: 1.4;
+}
+
 .brandOverlayPanel {
   @ds-surface(flat neutral density(4) radius(3) shadow(1));
   display: grid;
