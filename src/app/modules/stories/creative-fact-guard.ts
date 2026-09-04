@@ -22,6 +22,16 @@ const PROJECTION_PATTERN = /\b(?:projected|forecast|expected to|could reach)\b/i
 const ASSOCIATION_PATTERN = /\b(?:associated with|correlat(?:ed|ion)|linked to)\b/iu;
 const REPORTED_PATTERN = /\b(?:according to|reported|report says|study says)\b/iu;
 
+/**
+ * Evidence that the source itself frames a claim as a suggestion. The noun
+ * forms count: a key fact recorded as "with suggestions it may be contributing"
+ * licenses draft copy that says "some outlets suggested". Matching only the
+ * bare verb stem made the repair amputate that attributed clause and leave a
+ * truncated fragment behind.
+ */
+const SUGGESTION_SOURCE_SUPPORT =
+  /\b(?:suggest(?:s|ed|ing|ion|ions)?|impl(?:y|ies|ied|ying)|points? to)\b/iu;
+
 const UNSUPPORTED_INFERENCE_PATTERNS: Array<{
   pattern: RegExp;
   sourceSupport: RegExp;
@@ -65,7 +75,7 @@ const UNSUPPORTED_INFERENCE_PATTERNS: Array<{
   },
   {
     pattern: /\b(?:suggest(?:s|ed|ing)?|implies?|implying|points? to)\b/iu,
-    sourceSupport: /\b(?:suggest|imply|point to)\b/iu,
+    sourceSupport: SUGGESTION_SOURCE_SUPPORT,
   },
   {
     pattern:
@@ -1734,12 +1744,17 @@ function repairUnsupportedInference(
   value: string,
   sourceCopy: string,
 ): string {
-  const partiallyRepaired = value
-      .replace(/,?\s*confirm(?:s|ed|ing)?\s+(?:the\s+)?trend\.?\s*$/iu, "")
-      .replace(
+  // Only remove a trailing "…, as some outlets suggested" clause when the
+  // source does not frame the claim that way. When it does, the attribution is
+  // the supported form and cutting it leaves a fragment ("…, as.").
+  const withoutUnsupportedSuggestion = SUGGESTION_SOURCE_SUPPORT.test(sourceCopy)
+    ? value
+    : value.replace(
         /,?\s*(?:suggest(?:s|ed|ing)?|implies?|implying|points? to)\b[^.?!]*[.?!]?\s*$/iu,
         "",
-      )
+      );
+  const partiallyRepaired = withoutUnsupportedSuggestion
+      .replace(/,?\s*confirm(?:s|ed|ing)?\s+(?:the\s+)?trend\.?\s*$/iu, "")
       .replace(/[—–-]\s*(?:changing|reshaping|transforming)\s+how\b[^.?!]*[.?!]?\s*$/iu, "");
   const safeSentences = splitSentenceClauses(partiallyRepaired).filter(
     (sentence) => !hasUnsupportedInference(sentence, sourceCopy),

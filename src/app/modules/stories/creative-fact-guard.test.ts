@@ -2542,6 +2542,46 @@ test("grounds a continuation cue in the current or following slide", () => {
   );
 });
 
+test("keeps an attributed suggestion the source itself frames as a suggestion", () => {
+  // Mirrors the stored Azure fact: the source records the causal claim as a
+  // suggestion, and requiredQualifiers forces the draft to attribute it.
+  const azureFacts: CreativeKeyFact[] = [
+    {
+      id: "fact-1",
+      statement:
+        "Microsoft Azure, which provides cloud services for all three models, was also experiencing outages, with suggestions it may be contributing to the disruption.",
+      sourceExcerpt:
+        "Microsoft Azure, which provides cloud services for all three models, is also experiencing outages, and some tech outlets have suggested Microsoft's problem may be contributing to the AI model outages.",
+      attribution: "some tech outlets",
+      requiredQualifiers: ["suggested by some tech outlets"],
+    },
+  ];
+  const draft: GeneratedCreativeDraft = {
+    concept: "A shared cloud dependency",
+    caption:
+      "Azure was also experiencing outages. Some tech outlets suggested Microsoft's problem may be contributing.",
+    hashtags: [],
+    altText: "A carousel about overlapping AI outages.",
+    units: [
+      unit(
+        1,
+        "cover",
+        "explain",
+        "All three run on one cloud",
+        "Azure was also experiencing outages, as some tech outlets suggested.",
+        ["fact-1"],
+      ),
+    ],
+  };
+
+  const repaired = repairDeterministicFactCopy(draft, azureFacts, "English");
+  const body = repaired.units[0]?.body ?? "";
+
+  // The attribution survives whole instead of being cut to "…, as."
+  assert.match(body, /suggested/iu);
+  assert.doesNotMatch(body, /,\s*as\.\s*$/iu);
+});
+
 function unit(
   order: number,
   role: CreativeUnit["role"],
