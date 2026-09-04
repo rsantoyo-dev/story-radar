@@ -128,6 +128,48 @@ test("removes a truncated trailing attribution instead of inventing its claim", 
   );
 });
 
+test("drops a leftover rationale when the arc follows the preferred sequence", () => {
+  const boilerplate =
+    "A 4-slide arc introduces the workflow failure, explains the common cloud choke point, and concludes with takeaways.";
+
+  // The preferred 4-slide arc with no conversion goal is
+  // hook → explain → impact → debate.
+  const fourSlideDraft = (
+    goals: GeneratedCreativeDraft["units"][number]["editorialGoal"][],
+  ): GeneratedCreativeDraft => ({
+    ...structuredClone(draft),
+    narrativeRationale: boilerplate,
+    units: goals.map((editorialGoal, index) => ({
+      ...structuredClone(draft.units[0]!),
+      order: index + 1,
+      role: index === goals.length - 1 ? "call-to-action" : "content",
+      editorialGoal,
+    })),
+  });
+
+  assert.equal(
+    repairDeterministicCreativeCopy(
+      fourSlideDraft(["hook", "explain", "impact", "debate"]),
+      "carousel",
+      facts,
+      "English",
+    ).narrativeRationale,
+    undefined,
+    "a draft that follows the preferred arc has nothing to justify",
+  );
+
+  // A genuine deviation keeps its explanation.
+  assert.equal(
+    repairDeterministicCreativeCopy(
+      fourSlideDraft(["hook", "compare", "impact", "debate"]),
+      "carousel",
+      facts,
+      "English",
+    ).narrativeRationale,
+    boilerplate,
+  );
+});
+
 test("blocks an unsupported common-infrastructure conclusion in the rationale", () => {
   const unsupportedInference = structuredClone(draft);
   unsupportedInference.narrativeRationale =

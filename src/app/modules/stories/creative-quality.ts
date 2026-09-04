@@ -2,6 +2,7 @@ import {
   blockingCarouselNarrativeIssues,
   dropTrailingSentenceFragment,
   evaluateCarouselNarrative,
+  getPreferredCarouselArc,
   isInstitutionFirstCoverCopy,
   maximumFactsForGoal,
   stripRecapLabelPrefix,
@@ -122,6 +123,13 @@ export function repairDeterministicCreativeCopy(
       isGenericFollowCallToAction(repaired.callToAction)
     ) {
       delete repaired.callToAction;
+    }
+    // narrativeRationale exists only to explain a deliberate departure from the
+    // preferred arc. When the draft follows that arc there is nothing to
+    // justify, and a leftover boilerplate rationale only asserts claims the
+    // facts do not establish.
+    if (repaired.narrativeRationale && !deviatesFromPreferredArc(repaired, conversionGoal)) {
+      delete repaired.narrativeRationale;
     }
     repaired.units.forEach((unit, unitIndex) => {
       if (unit.editorialGoal) {
@@ -715,6 +723,22 @@ export function deterministicCreativeQualityIssues(
     ...captionTruncationIssues,
     ...visibleDraftLanguageIssues(draft, language),
   ];
+}
+
+/**
+ * True when the draft's slide goals differ from the preferred arc for its slide
+ * count and conversion goal — the only case where narrativeRationale has
+ * something to explain.
+ */
+function deviatesFromPreferredArc(
+  draft: GeneratedCreativeDraft,
+  conversionGoal?: CreativeConversionGoal,
+): boolean {
+  const preferred = getPreferredCarouselArc(draft.units.length, conversionGoal);
+  if (!preferred) return true;
+  return draft.units.some(
+    (unit, index) => unit.editorialGoal !== preferred[index],
+  );
 }
 
 function firstSentenceOf(value?: string): string {

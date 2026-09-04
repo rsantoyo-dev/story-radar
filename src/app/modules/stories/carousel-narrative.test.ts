@@ -409,13 +409,14 @@ test("flags a generic analysis label as the final slide headline", () => {
     { ...unit("conclusion", "conclude", ["fact-1"]), headline: "What the data shows" },
   ]);
 
-  assert.ok(
-    issues.some(
-      (issue) =>
-        issue.code === "generic-closing-headline" &&
-        issue.severity === "warning",
-    ),
+  // One issue only: the per-slide blocker covers the final slide too, and its
+  // message carries the closing-specific guidance.
+  const generic = issues.filter(
+    (issue) => issue.code === "generic-analysis-headline",
   );
+  assert.equal(generic.length, 1);
+  assert.equal(generic[0]?.severity, "blocker");
+  assert.match(generic[0]?.message ?? "", /actual conclusion/iu);
 });
 
 test("blocks a generic analysis label on a middle slide", () => {
@@ -448,7 +449,7 @@ test("accepts a final slide headline that states the actual takeaway", () => {
   ]);
 
   assert.ok(
-    !issues.some((issue) => issue.code === "generic-closing-headline"),
+    !issues.some((issue) => issue.code === "generic-analysis-headline"),
   );
 });
 

@@ -188,8 +188,7 @@ export type CarouselNarrativeWarning = {
     | "cover-supporting-restates-hold"
     | "duplicate-headline"
     | "truncated-supporting-copy"
-    | "generic-analysis-headline"
-    | "generic-closing-headline";
+    | "generic-analysis-headline";
   message: string;
   unitIndex?: number;
 };
@@ -574,11 +573,14 @@ export function evaluateCarouselNarrative(
       unit.headline?.trim() &&
       GENERIC_ANALYSIS_HEADLINE.test(unit.headline.trim())
     ) {
+      const isFinalSlide = unitIndex === units.length - 1;
       warnings.push({
         severity: "blocker",
         code: "generic-analysis-headline",
         unitIndex,
-        message: `Slide ${slide} uses a generic analysis label ("${unit.headline.trim()}") instead of stating its specific point.`,
+        message: isFinalSlide
+          ? `Slide ${slide} uses a generic analysis label ("${unit.headline.trim()}") instead of the actual conclusion; state the decision, consequence, or answer the cover promised.`
+          : `Slide ${slide} uses a generic analysis label ("${unit.headline.trim()}") instead of stating its specific point.`,
       });
     }
     if (wordCount(unit.subheadline) > CAROUSEL_SUBHEADLINE_MAX_WORDS) {
@@ -832,19 +834,6 @@ export function evaluateCarouselNarrative(
         unitIndex: lastIndex,
         message:
           "The final slide opens with a summary label such as “La conclusión” or “The takeaway”; deliver the actual answer or decision the cover promised instead of announcing that a summary follows.",
-      });
-    }
-
-    if (
-      last.headline?.trim() &&
-      GENERIC_ANALYSIS_HEADLINE.test(last.headline.trim())
-    ) {
-      warnings.push({
-        severity: "warning",
-        code: "generic-closing-headline",
-        unitIndex: lastIndex,
-        message:
-          "The final slide's headline is a generic analysis label (“What the data shows”, “The takeaway”, “Lo que muestran los datos”); state the actual conclusion — the decision, consequence, or answer the cover promised.",
       });
     }
 
