@@ -352,6 +352,7 @@ type Operation =
   | "collect"
   | "evaluate"
   | "review"
+  | "unselect"
   | "promote"
   | "prepare"
   | "view"
@@ -578,6 +579,32 @@ export function RadarDashboard({
             ? "Stories approved"
             : "Stories rejected",
         message: `${review.reviewedStories} ${review.reviewedStories === 1 ? "story was" : "stories were"} ${decision}.`,
+      };
+    });
+  }
+
+  async function handleUnselectStories(storyIds: string[]) {
+    if (storyIds.length === 0) return;
+
+    const plural = storyIds.length === 1 ? "story" : "stories";
+    if (
+      !window.confirm(
+        `Remove ${storyIds.length} selected ${plural} from this board? They will remain collected with their AI evaluation, drafts, and publication records, and can be approved again later.`,
+      )
+    ) {
+      return;
+    }
+
+    await runOperation("unselect", async () => {
+      const result = await unselectStories(secret, selectedTopicId, storyIds);
+      const nextStats = await fetchDatabaseStats(secret, selectedTopicId);
+
+      setStats(nextStats);
+      setSelectedStoryIds([]);
+      return {
+        tone: "success",
+        title: "Selection cleared",
+        message: `${result.unselectedStories} ${result.unselectedStories === 1 ? "story was" : "stories were"} returned to the collected review queue.`,
       };
     });
   }
@@ -1361,10 +1388,13 @@ export function RadarDashboard({
             onEvaluate={handleEvaluate}
             selectedStoryIds={selectedStoryIds}
             canReview={canAuthenticate && !isBusy}
-            isReviewing={activeOperation === "review"}
+            isReviewing={
+              activeOperation === "review" || activeOperation === "unselect"
+            }
             onToggleStory={toggleStorySelection}
             onToggleAll={toggleAllShortlistStories}
             onReview={handleReview}
+            onUnselect={handleUnselectStories}
             canPrepare={canAuthenticate && !isBusy}
             preparingStoryId={
               activeOperation === "prepare" ? activeStoryId : undefined
@@ -1572,6 +1602,7 @@ function EditorialEvaluationPanel({
   onToggleStory,
   onToggleAll,
   onReview,
+  onUnselect,
   canPrepare,
   preparingStoryId,
   viewingStoryId,
@@ -1595,6 +1626,7 @@ function EditorialEvaluationPanel({
   onToggleStory: (storyId: string) => void;
   onToggleAll: (storyIds: readonly string[]) => void;
   onReview: (decision: "approved" | "rejected") => void;
+  onUnselect: (storyIds: string[]) => void;
   canPrepare: boolean;
   preparingStoryId?: string;
   viewingStoryId?: string;
@@ -1668,6 +1700,7 @@ function EditorialEvaluationPanel({
   const collectedStories = editorial?.collectedStories ?? [];
   const selectedStories = editorial?.selectedStories ?? [];
   const selectedUnpublishedCount = countUnpublishedSelected(selectedStories);
+  const selectedStoryIdsForClear = selectedStories.map((story) => story.storyId);
   // Deliberately no "Published" chip: the only "published" filter value is
   // scoped to a single platform, so a "published anywhere" count would not
   // match the rows it shows. Use the publication filter in the toolbar for
@@ -1992,9 +2025,23 @@ function EditorialEvaluationPanel({
                   <h3>Selected stories</h3>
                   <p>Human-approved stories ranked and ready for the next stage.</p>
                 </div>
-                <span>
-                  {filteredSelectedStories.length} of {selectedStories.length} shown
-                </span>
+                <div className={styles.selectedTableActions}>
+                  <span>
+                    {filteredSelectedStories.length} of {selectedStories.length} shown
+                  </span>
+                  {selectedStoryIdsForClear.length > 0 ? (
+                    <button
+                      type="button"
+                      className={styles.clearSelectedStoriesButton}
+                      disabled={!canReview || isReviewing}
+                      onClick={() => onUnselect(selectedStoryIdsForClear)}
+                    >
+                      {isReviewing
+                        ? "Clearing…"
+                        : `Clear selected stories (${selectedStoryIdsForClear.length})`}
+                    </button>
+                  ) : null}
+                </div>
               </div>
 
               <StoryListControls
@@ -2069,6 +2116,9 @@ function EditorialEvaluationPanel({
                 updatingPublicationStoryId={updatingPublicationStoryId}
                 onUpdatePublication={onUpdatePublication}
                 onOpenCreativeStory={onOpenCreativeStory}
+                canUnselect={canReview}
+                isUnselecting={isReviewing}
+                onUnselect={onUnselect}
               />
             </div>
           )}
@@ -2426,6 +2476,9 @@ function SortableStoriesTable({
   updatingPublicationStoryId,
   onUpdatePublication,
   onOpenCreativeStory,
+  canUnselect = false,
+  isUnselecting = false,
+  onUnselect,
 }: {
   stories: readonly EditorialTableStory[];
   totalStoryCount: number;
@@ -2454,6 +2507,9 @@ function SortableStoriesTable({
     status?: PublicationStatus,
   ) => void;
   onOpenCreativeStory?: (storyId: string, title: string) => void;
+  canUnselect?: boolean;
+  isUnselecting?: boolean;
+  onUnselect?: (storyIds: string[]) => void;
 }) {
   const sortedStories = [...stories].sort((left, right) =>
     rankTableStories(left, right, primaryRank, secondaryRank),
@@ -2637,6 +2693,14 @@ function SortableStoriesTable({
                 <td className={styles.contentActionsCell}>
                   {mode === "selected" ? (
                     <>
+                      <button
+                        type="button"
+                        className={styles.unselectStoryButton}
+                        disabled={!canUnselect || isUnselecting}
+                        onClick={() => onUnselect?.([story.storyId])}
+                      >
+                        {isUnselecting ? "Clearing…" : "Unselect"}
+                      </button>
                       <PublicationQuickControl
                         storyId={story.storyId}
                         publications={story.publications}
@@ -3124,6 +3188,24 @@ async function reviewStories(
       "Content-Type": "application/json",
     },
       body: JSON.stringify({ storyIds, decision }),
+    },
+  );
+}
+
+async function unselectStories(
+  secret: string,
+  topicId: string,
+  storyIds: string[],
+): Promise<{ unselectedStories: number }> {
+  return requestJson<{ unselectedStories: number }>(
+    topicUrl("/api/radar/reviews", topicId),
+    secret,
+    {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ storyIds }),
     },
   );
 }

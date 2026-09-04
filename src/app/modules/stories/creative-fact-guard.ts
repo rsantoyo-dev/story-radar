@@ -54,6 +54,11 @@ const UNSUPPORTED_INFERENCE_PATTERNS: Array<{
   },
   {
     pattern:
+      /\b(?:common|shared)\s+(?:(?:cloud|infrastructure)\s+)?(?:choke[ -]?point|single point of failure)\b/iu,
+    sourceSupport: /\b(?:choke[ -]?point|single point of failure)\b/iu,
+  },
+  {
+    pattern:
       /\b(?:wealth|home equity|equity advantage|financial head start|years? of (?:prior )?wealth|down payment advantage|patrimonio|plusval[ií]a|capital acumulado|ventaja financiera|a[nñ]os? de patrimonio|ventaja (?:en el )?pago inicial)\b/iu,
     sourceSupport:
       /\b(?:wealth|home equity|equity|financial head start|prior wealth|down payment|patrimonio|plusval[ií]a|capital acumulado|ventaja financiera|pago inicial)\b/iu,
@@ -294,7 +299,13 @@ export function deterministicFactQualityIssues(
   );
   const issues: CreativeQualityIssue[] = [];
 
-  const draftCopy = [draft.caption, draft.callToAction, draft.altText]
+  const draftCopy = [
+    draft.concept,
+    draft.narrativeRationale,
+    draft.caption,
+    draft.callToAction,
+    draft.altText,
+  ]
     .filter(Boolean)
     .join(" ");
   const allFacts = [...factsById.values()];
@@ -334,7 +345,7 @@ export function deterministicFactQualityIssues(
       code: "UNSUPPORTED_INFERENCE",
       severity: "blocker",
       message:
-        "The publishing copy adds a trend, causal effect, or consequence that the key facts do not establish.",
+        "The draft copy or narrative rationale adds a trend, causal effect, or consequence that the key facts do not establish.",
     });
   }
   const altTextMismatch = findAltTextSlideMismatch(draft);
@@ -2018,6 +2029,16 @@ function extractExplicitEnumerationCounts(value: string): string[] {
   return uniqueText(counts);
 }
 
+// Product and model version tokens ("Opus 4.8", "GPT-5", "Gemini 2.5 Pro",
+// "o3", "v4.8"). They name which software is involved, not a quantity a fact
+// claims, so — like slide/page numbers — they must not be scored against a
+// cited excerpt. This matters constantly for AI/tech coverage.
+const MODEL_VERSION_PATTERN =
+  /\b(?:gpt|chatgpt|claude|opus|sonnet|haiku|gemini|gemma|bard|palm|llama|grok|mistral|mixtral|qwen|deepseek|phi|command|titan|nova|olmo|falcon|codex|copilot|dall-?e|imagen|sora|veo|flux|sdxl|midjourney)\s*-?\s*v?\d+(?:\.\d+)*(?:\s*-?\s*(?:o|pro|max|mini|turbo|flash|ultra|nano|lite|preview|instruct|base|chat|opus|sonnet|haiku))?\b/giu;
+const SHORT_MODEL_VERSION_PATTERN = /\bo\d+(?:-(?:mini|preview|pro))?\b/giu;
+const GENERIC_VERSION_PATTERN =
+  /\b(?:v|version|versi[oó]n|ver\.?)\s*\d+(?:\.\d+)+\b/giu;
+
 function extractBriefClaimNumbers(value: string): string[] {
   // Slide/page/part numbers describe document structure, not factual claims.
   const factualCopy = value
@@ -2032,7 +2053,10 @@ function extractBriefClaimNumbers(value: string): string[] {
     .replace(
       /\b(?:carousel|carrusel)\s+(?:of|de|with|con)\s+\d+\b/giu,
       " ",
-    );
+    )
+    .replace(MODEL_VERSION_PATTERN, " ")
+    .replace(SHORT_MODEL_VERSION_PATTERN, " ")
+    .replace(GENERIC_VERSION_PATTERN, " ");
   const numbers = extractNumericLiterals(factualCopy);
   if (/\bone[- ]third\b/iu.test(factualCopy)) numbers.push("33%");
   if (/\btwo[- ]thirds\b/iu.test(factualCopy)) numbers.push("67%");

@@ -361,6 +361,200 @@ test("reports the slide positions when one thesis fact is overused", () => {
   );
 });
 
+test("flags two slides that share the same headline", () => {
+  const issues = evaluateCarouselNarrative([
+    { ...unit("cover", "hook", ["fact-1"]), headline: "Your AI backup may be down too" },
+    { ...unit("content", "explain", ["fact-2"]), headline: "What the data shows" },
+    { ...unit("content", "impact", ["fact-3"]), headline: "The disruption was uneven" },
+    { ...unit("conclusion", "conclude", ["fact-1"]), headline: "What the data shows" },
+  ]);
+
+  assert.ok(
+    issues.some(
+      (issue) =>
+        issue.code === "duplicate-headline" &&
+        issue.severity === "warning" &&
+        issue.message.includes("Slides 2 and 4"),
+    ),
+  );
+});
+
+test("flags supporting copy that ends on a truncated noun phrase", () => {
+  const issues = evaluateCarouselNarrative([
+    { ...unit("cover", "hook", ["fact-1"]), headline: "Three AI tools went dark" },
+    {
+      ...unit("content", "explain", ["fact-2"]),
+      headline: "One shared cloud sits underneath",
+      body: "Microsoft Azure also experienced outages. Some tech outlets.",
+    },
+    { ...unit("content", "impact", ["fact-3"]), headline: "The disruption was uneven" },
+    { ...unit("conclusion", "conclude", ["fact-1"]), headline: "Plan for a shared dependency" },
+  ]);
+
+  assert.ok(
+    issues.some(
+      (issue) =>
+        issue.code === "truncated-supporting-copy" &&
+        issue.severity === "blocker" &&
+        issue.message.includes("Slide 2"),
+    ),
+  );
+});
+
+test("flags a generic analysis label as the final slide headline", () => {
+  const issues = evaluateCarouselNarrative([
+    { ...unit("cover", "hook", ["fact-1"]), headline: "Your AI backup was down too" },
+    { ...unit("content", "explain", ["fact-2"]), headline: "One shared cloud underneath" },
+    { ...unit("content", "impact", ["fact-3"]), headline: "The disruption was uneven" },
+    { ...unit("conclusion", "conclude", ["fact-1"]), headline: "What the data shows" },
+  ]);
+
+  assert.ok(
+    issues.some(
+      (issue) =>
+        issue.code === "generic-closing-headline" &&
+        issue.severity === "warning",
+    ),
+  );
+});
+
+test("blocks a generic analysis label on a middle slide", () => {
+  const issues = evaluateCarouselNarrative([
+    { ...unit("cover", "hook", ["fact-1"]), headline: "Your AI backup was down too" },
+    { ...unit("content", "explain", ["fact-2"]), headline: "What the data shows" },
+    { ...unit("content", "impact", ["fact-3"]), headline: "The disruption was uneven" },
+    { ...unit("conclusion", "conclude", ["fact-1"]), headline: "Plan for a shared dependency" },
+  ]);
+
+  assert.ok(
+    issues.some(
+      (issue) =>
+        issue.code === "generic-analysis-headline" &&
+        issue.severity === "blocker" &&
+        issue.message.includes("Slide 2"),
+    ),
+  );
+});
+
+test("accepts a final slide headline that states the actual takeaway", () => {
+  const issues = evaluateCarouselNarrative([
+    { ...unit("cover", "hook", ["fact-1"]), headline: "Your AI backup was down too" },
+    { ...unit("content", "explain", ["fact-2"]), headline: "One shared cloud underneath" },
+    { ...unit("content", "impact", ["fact-3"]), headline: "The disruption was uneven" },
+    {
+      ...unit("conclusion", "conclude", ["fact-1"]),
+      headline: "A second chatbot is not an independent backup",
+    },
+  ]);
+
+  assert.ok(
+    !issues.some((issue) => issue.code === "generic-closing-headline"),
+  );
+});
+
+test("flags a sentence that stops on a bare copula", () => {
+  for (const body of [
+    "Microsoft Azure was also experiencing outages. A possible contribution to the AI disruptions was.",
+    "Azure was also experiencing outages, but its possible contribution was only.",
+  ]) {
+    const issues = evaluateCarouselNarrative([
+      { ...unit("cover", "hook", ["fact-1"]), headline: "Three AI tools went dark" },
+      { ...unit("content", "explain", ["fact-2"]), headline: "One shared cloud underneath", body },
+      { ...unit("content", "impact", ["fact-3"]), headline: "The disruption was uneven" },
+      { ...unit("conclusion", "conclude", ["fact-1"]), headline: "Plan for a shared dependency" },
+    ]);
+    assert.ok(
+      issues.some((issue) => issue.code === "truncated-supporting-copy"),
+      body,
+    );
+  }
+});
+
+test("does not flag a comparative that ends on a pronoun + copula", () => {
+  const issues = evaluateCarouselNarrative([
+    { ...unit("cover", "hook", ["fact-1"]), headline: "Three AI tools went dark" },
+    {
+      ...unit("content", "explain", ["fact-2"]),
+      headline: "One shared cloud underneath",
+      body: "Recovery was slower this time. Uptime is lower than it was.",
+    },
+    { ...unit("content", "impact", ["fact-3"]), headline: "The disruption was uneven" },
+    { ...unit("conclusion", "conclude", ["fact-1"]), headline: "Plan for a shared dependency" },
+  ]);
+  assert.ok(
+    !issues.some((issue) => issue.code === "truncated-supporting-copy"),
+  );
+});
+
+test("flags a hanging 'and some X' clause without touching Oxford-comma lists", () => {
+  const flagged = evaluateCarouselNarrative([
+    { ...unit("cover", "hook", ["fact-1"]), headline: "Three AI tools went dark" },
+    {
+      ...unit("content", "explain", ["fact-2"]),
+      headline: "One shared cloud underneath",
+      body: "Microsoft Azure was also experiencing outages, and some tech outlets.",
+    },
+    { ...unit("content", "impact", ["fact-3"]), headline: "The disruption was uneven" },
+    { ...unit("conclusion", "conclude", ["fact-1"]), headline: "Plan for a shared dependency" },
+  ]);
+  assert.ok(
+    flagged.some((issue) => issue.code === "truncated-supporting-copy"),
+  );
+
+  const clean = evaluateCarouselNarrative([
+    { ...unit("cover", "hook", ["fact-1"]), headline: "Three AI tools went dark" },
+    {
+      ...unit("content", "explain", ["fact-2"]),
+      headline: "One shared cloud underneath",
+      body: "Downdetector logged outages affecting ChatGPT, Claude, and Grok.",
+    },
+    { ...unit("content", "impact", ["fact-3"]), headline: "The disruption was uneven" },
+    { ...unit("conclusion", "conclude", ["fact-1"]), headline: "Plan for a shared dependency" },
+  ]);
+  assert.ok(
+    !clean.some((issue) => issue.code === "truncated-supporting-copy"),
+  );
+});
+
+test("flags supporting copy that ends on a dangling connector, any length", () => {
+  const issues = evaluateCarouselNarrative([
+    { ...unit("cover", "hook", ["fact-1"]), headline: "Three AI tools went dark" },
+    { ...unit("content", "explain", ["fact-2"]), headline: "One shared cloud sits underneath" },
+    { ...unit("content", "impact", ["fact-3"]), headline: "The disruption was uneven" },
+    {
+      ...unit("conclusion", "conclude", ["fact-1"]),
+      headline: "Plan for a shared dependency",
+      body:
+        "Switching among the three could not restore access. Azure's outage was a possible contributing factor, as.",
+    },
+  ]);
+
+  assert.ok(
+    issues.some(
+      (issue) =>
+        issue.code === "truncated-supporting-copy" &&
+        issue.message.includes("Slide 4"),
+    ),
+  );
+});
+
+test("does not flag a short final supporting sentence that carries a verb", () => {
+  const issues = evaluateCarouselNarrative([
+    { ...unit("cover", "hook", ["fact-1"]), headline: "Three AI tools went dark" },
+    {
+      ...unit("content", "explain", ["fact-2"]),
+      headline: "One shared cloud sits underneath",
+      body: "Microsoft Azure runs all three assistants. It also went down.",
+    },
+    { ...unit("content", "impact", ["fact-3"]), headline: "The disruption was uneven" },
+    { ...unit("conclusion", "conclude", ["fact-1"]), headline: "Plan for a shared dependency" },
+  ]);
+
+  assert.ok(
+    !issues.some((issue) => issue.code === "truncated-supporting-copy"),
+  );
+});
+
 test("detects repeated numerical evidence across English and Spanish punctuation", () => {
   const issues = evaluateCarouselNarrative([
     unit("cover", "hook", ["fact-1"]),

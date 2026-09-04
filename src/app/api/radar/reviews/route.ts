@@ -1,7 +1,9 @@
 import { getEditorialEvaluationPublicConfig } from "@/app/modules/stories/editorial-evaluation.config";
 import {
   EditorialStoryReviewConflictError,
+  EditorialStoryUnselectionConflictError,
   reviewEditorialShortlist,
+  unselectEditorialStories,
   type StoryReviewDecision,
 } from "@/app/modules/stories/story-editorial.repository";
 import { NextResponse } from "next/server";
@@ -58,6 +60,45 @@ export async function PATCH(request: Request) {
   }
 }
 
+/**
+ * Clears a human approval without deleting the story or its AI evaluation.
+ * This is the inverse of approving a shortlist story and is used to clear the
+ * Selected stories board after editorial priorities change.
+ */
+export async function DELETE(request: Request) {
+  const unauthorizedResponse = authorizeRadarCollector(request);
+
+  if (unauthorizedResponse) {
+    return unauthorizedResponse;
+  }
+
+  try {
+    const storyIds = parseStoryIds((await request.json()) as unknown);
+    const topicId = await requireActiveRequestTopic(request);
+    const unselectedStories = await unselectEditorialStories(topicId, storyIds);
+
+    return NextResponse.json({ unselectedStories });
+  } catch (error) {
+    const topicError = topicRequestErrorResponse(error);
+    if (topicError) return topicError;
+
+    if (error instanceof InvalidStoryReviewError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    if (error instanceof EditorialStoryUnselectionConflictError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
+
+    console.error("Failed to clear editorial story selection", error);
+
+    return NextResponse.json(
+      { error: "The editorial selection could not be cleared" },
+      { status: 500 },
+    );
+  }
+}
+
 function parseReviewRequest(value: unknown): {
   storyIds: string[];
   decision: StoryReviewDecision;
@@ -72,6 +113,16 @@ function parseReviewRequest(value: unknown): {
     );
   }
 
+  return {
+    storyIds: parseStoryIds(value),
+    decision: value.decision,
+  };
+}
+
+function parseStoryIds(value: unknown): string[] {
+  if (!isRecord(value)) {
+    throw new InvalidStoryReviewError("The request body must be an object");
+  }
   if (
     !Array.isArray(value.storyIds) ||
     !value.storyIds.every((storyId) => typeof storyId === "string")
@@ -95,10 +146,7 @@ function parseReviewRequest(value: unknown): {
     throw new InvalidStoryReviewError("Every storyId must be a valid UUID");
   }
 
-  return {
-    storyIds,
-    decision: value.decision,
-  };
+  return storyIds;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

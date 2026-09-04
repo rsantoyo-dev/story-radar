@@ -185,7 +185,11 @@ export type CarouselNarrativeWarning = {
     | "cue-echoes-next-headline"
     | "closing-not-reader-resolved"
     | "redundant-cover-body"
-    | "cover-supporting-restates-hold";
+    | "cover-supporting-restates-hold"
+    | "duplicate-headline"
+    | "truncated-supporting-copy"
+    | "generic-analysis-headline"
+    | "generic-closing-headline";
   message: string;
   unitIndex?: number;
 };
@@ -439,6 +443,8 @@ export function carouselNarrativePolicyForPrompt(
       `continuationCue is optional visible semantic reward copy for non-final slides. The cover should normally include one concrete reason to continue, in ${CAROUSEL_CONTINUATION_CUE_MAX_WORDS} words or fewer. Do not put a continuationCue on the final slide.`,
       "Never use a bare navigation label such as Desliza, Swipe, Next, or Siguiente as continuationCue. The renderer supplies navigation chrome; continuationCue must name the specific idea the next slide will resolve.",
       "Treat subheadline and continuationCue as factual visible copy: do not add claims or numbers that the supplied evidence does not support.",
+      "Every visible sentence must be grammatically complete. Never leave a clause hanging on a connector ('…, as.', '…, with some outlets.') or a bare noun phrase ('Some tech outlets.'). If a source clause only offers unsupported speculation you cannot state, omit that clause entirely rather than truncating it.",
+      "Each slide needs its own distinct headline that states that slide's specific point. Do not reuse a headline across slides, and never use a generic analysis label ('What the data shows', 'Key findings', 'Lo que muestran los datos') — least of all on the final slide, whose headline must state the actual conclusion.",
       "The final slide must use conclude or debate. This terminal narrative job is required even when the earlier arc deviates from the preferred sequence.",
       ...(preferredClosingGoal
         ? [
@@ -564,6 +570,17 @@ export function evaluateCarouselNarrative(
         message: `Slide ${slide} headline uses ${wordCount(unit.headline)} words; aim for ${headlineTarget} or fewer.`,
       });
     }
+    if (
+      unit.headline?.trim() &&
+      GENERIC_ANALYSIS_HEADLINE.test(unit.headline.trim())
+    ) {
+      warnings.push({
+        severity: "blocker",
+        code: "generic-analysis-headline",
+        unitIndex,
+        message: `Slide ${slide} uses a generic analysis label ("${unit.headline.trim()}") instead of stating its specific point.`,
+      });
+    }
     if (wordCount(unit.subheadline) > CAROUSEL_SUBHEADLINE_MAX_WORDS) {
       warnings.push({
         severity: "warning",
@@ -590,6 +607,15 @@ export function evaluateCarouselNarrative(
         code: "body-too-long",
         unitIndex,
         message: `Slide ${slide} supporting text uses ${wordCount(unit.body)} words; aim for 45 or fewer.`,
+      });
+    }
+    const trailingFragment = trailingSentenceFragment(unit.body);
+    if (trailingFragment) {
+      warnings.push({
+        severity: "blocker",
+        code: "truncated-supporting-copy",
+        unitIndex,
+        message: `Slide ${slide} supporting text ends with an incomplete sentence ("${trailingFragment}"); finish the thought or drop it.`,
       });
     }
     if (
@@ -662,6 +688,22 @@ export function evaluateCarouselNarrative(
       });
     }
   });
+
+  const headlineSlides = new Map<string, number[]>();
+  units.forEach((unit, unitIndex) => {
+    const key = normalizedVisibleCopy(unit.headline);
+    if (!key) return;
+    headlineSlides.set(key, [...(headlineSlides.get(key) ?? []), unitIndex + 1]);
+  });
+  for (const slides of headlineSlides.values()) {
+    if (slides.length < 2) continue;
+    warnings.push({
+      severity: "warning",
+      code: "duplicate-headline",
+      unitIndex: slides[slides.length - 1]! - 1,
+      message: `Slides ${slides.join(" and ")} use the same headline; give each slide a distinct headline that states its own point.`,
+    });
+  }
 
   const first = units[0];
   if (first && first.role !== "cover") {
@@ -790,6 +832,19 @@ export function evaluateCarouselNarrative(
         unitIndex: lastIndex,
         message:
           "The final slide opens with a summary label such as “La conclusión” or “The takeaway”; deliver the actual answer or decision the cover promised instead of announcing that a summary follows.",
+      });
+    }
+
+    if (
+      last.headline?.trim() &&
+      GENERIC_ANALYSIS_HEADLINE.test(last.headline.trim())
+    ) {
+      warnings.push({
+        severity: "warning",
+        code: "generic-closing-headline",
+        unitIndex: lastIndex,
+        message:
+          "The final slide's headline is a generic analysis label (“What the data shows”, “The takeaway”, “Lo que muestran los datos”); state the actual conclusion — the decision, consequence, or answer the cover promised.",
       });
     }
 
@@ -958,6 +1013,120 @@ function normalizedVisibleCopy(value?: string): string {
     .replace(/[\u0300-\u036f]/gu, "")
     .toLocaleLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+const NOUN_PHRASE_OPENER =
+  /^(?:the|a|an|some|this|that|these|those|several|many|most|few|its|their|his|her|our|el|la|los|las|un|una|unos|unas|este|esta|estos|estas|su|sus|algunos|algunas|varios|varias|otro|otra|otros|otras)$/iu;
+// Words that cannot end a grammatical sentence: a period straight after one is a
+// truncation artifact regardless of how long the clause is ("\u2026factor, as.").
+const DANGLING_TAIL_WORD =
+  /^(?:and|or|but|with|for|to|of|in|on|at|by|from|such|as|including|according|because|which|that|while|whether|than|into|onto|about|after|before|during|over|under|through|between|versus|vs|y|o|pero|con|para|por|de|en|que|porque|seg[u\u00fa]n|como|incluyendo|mientras|aunque|sobre|entre|hacia|desde|hasta|tal|tales)$/iu;
+const FINITE_VERB_HINT =
+  /^(?:is|are|was|were|be|been|being|has|have|had|do|does|did|said|says|say|show|shows|showed|shown|found|finds|find|rose|rise|rises|risen|fell|fall|falls|fallen|grew|grow|grows|grown|drop|drops|dropped|report|reports|reported|add|adds|added|note|notes|noted|confirm|confirms|confirmed|remain|remains|remained|stay|stays|stayed|climb|climbs|climbed|jump|jumps|jumped|slow|slows|slowed|expect|expects|expected|estimate|estimates|estimated|announce|announces|announced|warn|warns|warned|suggest|suggests|suggested|recover|recovers|recovered|went|go|goes|gone|came|come|comes|made|make|makes|took|take|takes|taken|gave|give|gives|given|saw|see|sees|seen|got|get|gets|set|sets|put|puts|led|lead|leads|run|runs|ran|hit|hits|lost|lose|loses|won|win|wins|began|begin|begins|begun|ended|end|ends|held|hold|holds|kept|keep|keeps|move|moves|moved|use|uses|used|need|needs|needed|mean|means|meant|sit|sits|sat|will|can|could|may|might|would|should|es|son|era|fue|fueron|ha|han|hab[i\u00ed]a|hace|hizo|tiene|tienen|tuvo|va|van|dio|vio|puso|llev[o\u00f3]|us[o\u00f3]|usa|usan|necesita|significa|dice|dijo|dicen|report[o\u00f3]|reportaron|muestra|mostr[o\u00f3]|sube|subi[o\u00f3]|baja|baj[o\u00f3]|creci[o\u00f3]|cay[o\u00f3]|sigue|siguen|queda|quedan|permanece|permanecen|advierte|advirti[o\u00f3]|estima|estim[o\u00f3])$/iu;
+
+// A conclusion headline that names the act of analysis instead of its result.
+// Distinct from isRecapLabelCopy, which needs an explicit "Label: \u2026" separator.
+const GENERIC_ANALYSIS_HEADLINE =
+  /^(?:what (?:the (?:data|numbers?|study|studies|research|findings?|results?|chart|charts|report|reports|figures?) (?:shows?|say|says|tell us|tells us|reveals?|means?|indicates?)|this means|it (?:means|shows)|to (?:know|watch|take away))|(?:the )?(?:takeaways?|bottom line|big picture|upshot|verdict|main point|key (?:takeaways?|points?|findings?))|final thoughts?|in (?:summary|short|closing)|lo que (?:(?:muestran|dicen|revelan|indican) los (?:datos|n[u\u00fa]meros|estudios)|significa(?:n)? (?:esto|todo esto|los datos)|hay que saber)|la (?:conclusi[o\u00f3]n|clave|moraleja|lecci[o\u00f3]n|idea)|el (?:balance|veredicto|panorama|punto (?:clave|principal)|resumen)|en (?:resumen|s[i\u00ed]ntesis|conclusi[o\u00f3]n))\s*[.:!?]?$/iu;
+
+// A sentence that stops on a bare copula/auxiliary ("\u2026the disruptions was.",
+// "\u2026its contribution was only.") \u2014 the complement never arrived.
+const TRAILING_ADVERB =
+  /^(?:only|not|also|still|yet|already|too|now|then|likely|possibly|probably|apparently|reportedly|solo|s[i\u00ed]|tambi[e\u00e9]n|a[u\u00fa]n|todav[i\u00ed]a|ya|quiz[a\u00e1]s?|posiblemente|probablemente)$/iu;
+const BARE_COPULA =
+  /^(?:was|were|is|are|am|be|been|being|had|has|have|will|would|could|should|shall|may|might|can|must|do|does|did|fue|fueron|era|eran|es|son|sido|ha|han|hab[i\u00ed]a|est[a\u00e1]|est[a\u00e1]n|estaba|ser[a\u00e1]|ser[i\u00ed]a)$/iu;
+const PRONOUN_SUBJECT =
+  /^(?:it|that|this|these|those|he|she|they|there|what|which|who|ello?|eso|esto|ellos?|ellas?)$/iu;
+
+// A trailing comma-clause that hangs off the end of an otherwise complete
+// sentence: "\u2026, with some tech outlets.", "\u2026, such as older accounts." The
+// original clause continued ("\u2026with some outlets suggesting\u2026") and was cut.
+// Attribution tails ("\u2026, according to X.", "\u2026, per the report.") are excluded.
+const DANGLING_TRAILING_CLAUSE =
+  /,\s+(?:(?:with|for|such as|including|alongside|plus|amid|con|para|incluyendo|junto con|adem[a\u00e1]s de)\s+[^,.]{1,40}|(?:and|with|for|y|con)\s+(?:some|several|many|certain|various|numerous|other|a few|algunos?|algunas|vari[ao]s|ciertos?|otros?)\s+[^,.]{1,30})\.$/iu;
+
+/**
+ * A trailing sentence in visible copy that reads as a truncation artifact:
+ * it ends on a word that cannot close a sentence ("\u2026contributing factor, as."),
+ * it is a short verbless noun phrase ("Some tech outlets."), or it trails off
+ * in a hanging comma-clause ("\u2026, with some tech outlets."). Returns the
+ * offending sentence, or undefined when the text ends cleanly. Used for slide
+ * bodies and for the carousel caption.
+ */
+export function trailingSentenceFragment(body?: string): string | undefined {
+  const trimmed = body?.trim();
+  if (!trimmed) return undefined;
+  const sentences = trimmed
+    .split(/(?<=[.!?\u2026])\s+/u)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+  const last = sentences[sentences.length - 1];
+  if (!last || !/[.]$/u.test(last) || /[?!\u2026]$/u.test(last)) return undefined;
+  const words = last
+    .replace(/[.]+$/u, "")
+    .split(/\s+/u)
+    .map((word) => word.replace(/[,;:]+$/u, ""))
+    .filter(Boolean);
+  if (words.length === 0) return undefined;
+  // High-precision truncation signals \u2014 a period straight after a word that
+  // cannot close a sentence, or a hanging comma-clause. These read as cut-off
+  // even when the fragment is the only sentence present.
+  if (DANGLING_TAIL_WORD.test(words[words.length - 1]!)) return last;
+  {
+    let copulaIndex = words.length - 1;
+    if (copulaIndex >= 1 && TRAILING_ADVERB.test(words[copulaIndex]!)) {
+      copulaIndex -= 1;
+    }
+    if (
+      copulaIndex >= 1 &&
+      BARE_COPULA.test(words[copulaIndex]!) &&
+      !PRONOUN_SUBJECT.test(words[copulaIndex - 1]!)
+    ) {
+      return last;
+    }
+  }
+  if (DANGLING_TRAILING_CLAUSE.test(last)) {
+    const tailWords = last
+      .slice(last.lastIndexOf(",") + 1)
+      .replace(/[.]+$/u, "")
+      .split(/\s+/u)
+      .filter(Boolean);
+    const lastTailWord = tailWords[tailWords.length - 1] ?? "";
+    // "with X unchanged / planned / rising" is a valid absolute construction;
+    // only a tail that ends on a plain noun reads as a cut-off clause.
+    const isAbsoluteConstruction = /(?:ed|ing|en)$/iu.test(lastTailWord);
+    if (
+      !isAbsoluteConstruction &&
+      !tailWords.some((word) => FINITE_VERB_HINT.test(word))
+    ) {
+      return last;
+    }
+  }
+  // Bare verbless noun phrase ("Some tech outlets.") — only treat it as a
+  // fragment when it trails a prior complete sentence, so a deliberately terse
+  // standalone line is left alone.
+  if (sentences.length < 2) return undefined;
+  if (words.length > 3) return undefined;
+  if (words.some((word) => FINITE_VERB_HINT.test(word))) return undefined;
+  return NOUN_PHRASE_OPENER.test(words[0]!) ? last : undefined;
+}
+
+/**
+ * Removes only a trailing fragment that `trailingSentenceFragment` has already
+ * identified. This is deliberately conservative: complete attribution and
+ * complete final sentences remain untouched. It lets the deterministic repair
+ * retain the supported sentence instead of asking a model to invent the
+ * missing attribution or claim.
+ */
+export function dropTrailingSentenceFragment(value: string): string {
+  const trimmed = value.trim();
+  const fragment = trailingSentenceFragment(trimmed);
+  if (!fragment) return value;
+
+  return trimmed
+    .slice(0, -fragment.length)
+    .replace(/[\s,;:]+$/u, "")
     .trim();
 }
 

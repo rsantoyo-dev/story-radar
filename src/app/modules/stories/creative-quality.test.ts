@@ -96,6 +96,53 @@ test("repairs unsupported absolutes and grounds a generic CTA", () => {
   assert.ok(!codes.includes("GENERIC_CTA"));
 });
 
+test("removes a truncated trailing attribution instead of inventing its claim", () => {
+  const truncatedDraft = structuredClone(draft);
+  truncatedDraft.units[0]!.body =
+    "An automated audit catches raw CSS values. Some tech outlets.";
+  truncatedDraft.caption =
+    "Make design constraints readable by coding agents. Some tech outlets.";
+
+  const repaired = repairDeterministicCreativeCopy(
+    truncatedDraft,
+    "carousel",
+    facts,
+    "English",
+  );
+
+  assert.equal(
+    repaired.units[0]?.body,
+    "An automated audit catches raw CSS values.",
+  );
+  assert.equal(
+    repaired.caption,
+    "Make design constraints readable by coding agents.",
+  );
+  assert.ok(
+    !deterministicCreativeQualityIssues(
+      repaired,
+      "carousel",
+      facts,
+      "English",
+    ).some((issue) => issue.code === "TRUNCATED_SUPPORTING_COPY"),
+  );
+});
+
+test("blocks an unsupported common-infrastructure conclusion in the rationale", () => {
+  const unsupportedInference = structuredClone(draft);
+  unsupportedInference.narrativeRationale =
+    "The overlapping outages expose a common cloud choke point.";
+
+  assert.ok(
+    deterministicCreativeQualityIssues(
+      unsupportedInference,
+      "carousel",
+      facts,
+      "English",
+    ).some((issue) => issue.code === "UNSUPPORTED_INFERENCE"),
+  );
+});
+
 test("flags a table-of-contents caption on a carousel", () => {
   const tocDraft = structuredClone(draft);
   tocDraft.caption =
@@ -128,6 +175,29 @@ test("flags a table-of-contents caption on a carousel", () => {
     "Spanish",
   ).map((issue) => issue.code);
   assert.ok(!cleanCodes.includes("CAPTION_TABLE_OF_CONTENTS"));
+});
+
+test("flags a carousel caption that ends on an incomplete sentence", () => {
+  const truncated = structuredClone(draft);
+  truncated.caption =
+    "Your backup AI may not be available. ChatGPT, Claude and Grok were all reported down, according to Downdetector; Azure was also experiencing outages, with some tech outlets.";
+
+  const codes = deterministicCreativeQualityIssues(
+    truncated,
+    "carousel",
+    facts,
+    "English",
+  ).map((issue) => issue.code);
+  assert.ok(codes.includes("CAPTION_TRUNCATED"));
+
+  const clean = structuredClone(draft);
+  clean.caption =
+    "Your backup AI may not be available. ChatGPT, Claude and Grok were all reported down, according to Downdetector.";
+  assert.ok(
+    !deterministicCreativeQualityIssues(clean, "carousel", facts, "English")
+      .map((issue) => issue.code)
+      .includes("CAPTION_TRUNCATED"),
+  );
 });
 
 test("flags an institution-recap caption first sentence under reader-consequence", () => {

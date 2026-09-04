@@ -1,9 +1,11 @@
 import {
   blockingCarouselNarrativeIssues,
+  dropTrailingSentenceFragment,
   evaluateCarouselNarrative,
   isInstitutionFirstCoverCopy,
   maximumFactsForGoal,
   stripRecapLabelPrefix,
+  trailingSentenceFragment,
 } from "./carousel-narrative";
 import type {
   CreativeConversionGoal,
@@ -91,7 +93,7 @@ export function repairDeterministicCreativeCopy(
   const repaired: GeneratedCreativeDraft = {
     ...draft,
     concept: cleanText(draft.concept),
-    caption: cleanText(draft.caption),
+    caption: dropTrailingSentenceFragment(cleanText(draft.caption)),
     ...(draft.callToAction === undefined
       ? {}
       : { callToAction: cleanText(draft.callToAction) }),
@@ -130,6 +132,9 @@ export function repairDeterministicCreativeCopy(
       }
       if (unit.continuationCue) {
         unit.continuationCue = stripRecapLabelPrefix(unit.continuationCue);
+      }
+      if (unit.body) {
+        unit.body = dropTrailingSentenceFragment(unit.body);
       }
       if (isSpanishProfileLanguage(language)) {
         // A critic can accidentally paste an English source excerpt into an
@@ -690,6 +695,14 @@ export function deterministicCreativeQualityIssues(
             "The reader-consequence framing requires the caption's first sentence to carry the reader stake, but it opens with an institution or a bare policy-status statement.",
         }]
       : [];
+  const captionFragment = trailingSentenceFragment(draft.caption);
+  const captionTruncationIssues = captionFragment
+    ? [{
+        code: "CAPTION_TRUNCATED",
+        severity: "warning" as const,
+        message: `The caption ends with an incomplete sentence ("${captionFragment}"); finish the thought or drop it.`,
+      }]
+    : [];
   return [
     ...narrativeIssues,
     ...deterministicFactQualityIssues(draft, keyFacts),
@@ -699,6 +712,7 @@ export function deterministicCreativeQualityIssues(
     ...conversionGoalIssues,
     ...captionTableOfContentsIssues,
     ...captionInstitutionRecapIssues,
+    ...captionTruncationIssues,
     ...visibleDraftLanguageIssues(draft, language),
   ];
 }

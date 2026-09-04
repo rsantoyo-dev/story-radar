@@ -2367,6 +2367,17 @@ function parseGroundedCreativeBrief(
     (issue) => issue.severity === "blocker",
   );
   if (blockers.length > 0) {
+    console.warn(
+      "Creative brief rejected as out of factual scope",
+      JSON.stringify({
+        blockers: blockers.map((issue) => issue.message),
+        keyFacts: brief.keyFacts.map((fact) => ({
+          id: fact.id,
+          statement: fact.statement,
+          sourceExcerpt: fact.sourceExcerpt,
+        })),
+      }),
+    );
     throw new CreativeContentResponseError(
       `The creative brief exceeds its factual scope: ${blockers
         .map((issue) => issue.message)

@@ -1329,6 +1329,31 @@
   box-shadow: 0 7px 18px palette(primary-dark, 0.14);
 }
 
+.selectedTableActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: density(2);
+}
+
+.clearSelectedStoriesButton,
+.unselectStoryButton {
+  @ds-button(outlined neutral density(2) radius(2));
+  min-height: density(7);
+  padding: 0 density(3);
+  border-color: palette(secondary-main);
+  color: palette(secondary-dark);
+  @ds-typo(caption);
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.clearSelectedStoriesButton:disabled,
+.unselectStoryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .storyWorkspaceHeader,
 .tableViewHeading {
   display: flex;
@@ -2393,6 +2418,11 @@
   .tableViewHeading {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .selectedTableActions {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .storyTabs {

@@ -35,6 +35,7 @@ import type { EditorialProfileFreshnessPolicy } from "./editorial-profile.types"
 import { getEditorialProfile } from "./editorial-profile.repository";
 import { listStoryPublications } from "./social-publications.repository";
 import type { StorySocialPublication } from "./social-publications.types";
+import { processingStatusAfterUnselect } from "./story-selection-reset";
 import type {
   EditorialDailyUsage,
   EditorialEvaluationCandidate,
@@ -739,6 +740,7 @@ export async function failEditorialEvaluationRun(
 
 export class EditorialStoryReviewConflictError extends Error {}
 export class EditorialStoryPromotionConflictError extends Error {}
+export class EditorialStoryUnselectionConflictError extends Error {}
 
 export async function reviewEditorialShortlist(
   topicId: string,
@@ -802,6 +804,88 @@ export async function reviewEditorialShortlist(
   }
 
   return reviewedRows.length;
+}
+
+/**
+ * Removes a human approval without deleting the story, its evaluation, or any
+ * creative history. The story returns to the collected queue and can be
+ * shortlisted/approved again later. Publication records are deliberately left
+ * untouched: clearing an editorial board is not a destructive operation.
+ */
+export async function unselectEditorialStories(
+  topicId: string,
+  storyIds: readonly string[],
+): Promise<number> {
+  const approvedRows = await db
+    .select({
+      storyId: topicStories.storyId,
+      contentStatus: stories.contentStatus,
+    })
+    .from(topicStories)
+    .innerJoin(stories, eq(stories.id, topicStories.storyId))
+    .where(
+      and(
+        eq(topicStories.topicId, topicId),
+        inArray(topicStories.storyId, [...storyIds]),
+        eq(topicStories.reviewDecision, "approved"),
+      ),
+    );
+
+  if (approvedRows.length !== storyIds.length) {
+    throw new EditorialStoryUnselectionConflictError(
+      "One or more stories are no longer selected",
+    );
+  }
+
+  const readyIds = approvedRows
+    .filter((row) => processingStatusAfterUnselect(row.contentStatus) === "ready")
+    .map((row) => row.storyId);
+  const enrichmentIds = approvedRows
+    .filter(
+      (row) =>
+        processingStatusAfterUnselect(row.contentStatus) === "needs-enrichment",
+    )
+    .map((row) => row.storyId);
+
+  const clearApproval = (
+    ids: readonly string[],
+    processingStatus: "ready" | "needs-enrichment",
+  ) =>
+    db
+      .update(topicStories)
+      .set({
+        reviewDecision: null,
+        reviewedAt: null,
+        processingStatus,
+      })
+      .where(
+        and(
+          eq(topicStories.topicId, topicId),
+          inArray(topicStories.storyId, [...ids]),
+          eq(topicStories.reviewDecision, "approved"),
+        ),
+      )
+      .returning({ storyId: topicStories.storyId });
+
+  // neon-http deliberately does not support interactive `db.transaction()`.
+  // Its batch API executes the pair of updates in one Neon transaction.
+  const returnedRows =
+    readyIds.length > 0 && enrichmentIds.length > 0
+      ? (await db.batch([
+          clearApproval(readyIds, "ready"),
+          clearApproval(enrichmentIds, "needs-enrichment"),
+        ])).flat()
+      : readyIds.length > 0
+        ? await clearApproval(readyIds, "ready")
+        : await clearApproval(enrichmentIds, "needs-enrichment");
+
+  if (returnedRows.length !== storyIds.length) {
+    throw new EditorialStoryUnselectionConflictError(
+      "The selected stories changed while they were being cleared",
+    );
+  }
+
+  return returnedRows.length;
 }
 
 /**

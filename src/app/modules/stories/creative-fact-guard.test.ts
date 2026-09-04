@@ -2212,6 +2212,64 @@ test("does not treat carousel structure numbers as factual statistics", () => {
   );
 });
 
+test("does not score AI model version numbers against the cited excerpt", () => {
+  const sourceText =
+    "OpenAI's ChatGPT, Anthropic's Claude, and xAI's Grok are all down Thursday morning, according to Downdetector. " +
+    "Anthropic's Claude dashboard is experiencing outages across Opus 4.8 and Opus 5, and says all other models have recovered to baseline error rate.";
+  const brief: GeneratedCreativeBrief = {
+    recommendedFormat: "carousel",
+    fallbackFormat: "meme",
+    formatScores: [
+      { format: "carousel", score: 80, reason: "Breaking sequence." },
+      { format: "meme", score: 60, reason: "Fallback." },
+    ],
+    confidence: 70,
+    targetAudience: "AI users",
+    keyMessage: "Three major AI assistants went down at once.",
+    angle: "A rare simultaneous outage.",
+    hook: "ChatGPT, Claude and Grok all went dark this morning.",
+    tone: { primary: "informative", energy: 50, humor: 0, reason: "Clear." },
+    contentSufficiency: "limited",
+    keyFacts: [
+      {
+        id: "fact-1",
+        statement:
+          "ChatGPT, Claude, and Grok are all down Thursday morning, according to Downdetector.",
+        sourceExcerpt:
+          "OpenAI's ChatGPT, Anthropic's Claude, and xAI's Grok are all down Thursday morning, according to Downdetector.",
+        attribution: "Downdetector",
+      },
+      {
+        id: "fact-2",
+        statement:
+          "Anthropic reports outages across Claude Opus 4.8 and Opus 5 on its dashboard.",
+        sourceExcerpt:
+          "Anthropic's Claude dashboard is experiencing outages across Opus 4.8 and Opus 5, and says all other models have recovered to baseline error rate.",
+        attribution: "Anthropic",
+      },
+    ],
+    riskFlags: [],
+    suggestedConcepts: [
+      {
+        format: "carousel",
+        title: "The simultaneous outage",
+        concept: "Walk through which assistants are affected.",
+      },
+      {
+        format: "meme",
+        title: "All down at once",
+        concept: "The rare triple outage.",
+      },
+    ],
+  };
+
+  const issues = deterministicBriefFactQualityIssues(brief, sourceText);
+  assert.ok(
+    !issues.some((issue) => issue.code === "FACT_NUMBER_NOT_IN_EVIDENCE"),
+    JSON.stringify(issues),
+  );
+});
+
 test("narrows unsupported brief strategy to verified facts", () => {
   const brief: GeneratedCreativeBrief = {
     recommendedFormat: "carousel",
