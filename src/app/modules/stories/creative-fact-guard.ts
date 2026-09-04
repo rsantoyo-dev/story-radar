@@ -32,6 +32,11 @@ const REPORTED_PATTERN = /\b(?:according to|reported|report says|study says)\b/i
 const SUGGESTION_SOURCE_SUPPORT =
   /\b(?:suggest(?:s|ed|ing|ion|ions)?|impl(?:y|ies|ied|ying)|points? to)\b/iu;
 
+/** Subject anchors for the pregnancy-specific inference guards below. */
+const PREGNANCY_SUBJECT =
+  /(?:pregnan\w*|gestation\w*|prenatal|fetal|fetus|embarazo|embarazada|gestaci[oó]n|feto|prenatales?)/;
+const STAGE_NOUN = /(?:stages?|trimesters?|phases?|etapas?|trimestres?|fases?)/;
+
 const UNSUPPORTED_INFERENCE_PATTERNS: Array<{
   pattern: RegExp;
   sourceSupport: RegExp;
@@ -98,10 +103,15 @@ const UNSUPPORTED_INFERENCE_PATTERNS: Array<{
       /\b(?:anticipat(?:e|es|ed|ing)?|allows?|helps?|improves?|reduces?|guarantees?|plans?|anticipa|permite|ayuda|mejora|reduce|garantiza|anticipar|prevenir|planificar)\b/iu,
   },
   {
-    pattern:
-      /\b(?:stages?|trimesters?|phases?|etapas?|trimestres?|fases?)\b/iu,
-    sourceSupport:
-      /\b(?:stages?|trimesters?|phases?|etapas?|trimestres?|fases?)\b/iu,
+    // Guards against inventing pregnancy stages/trimesters, so it must stay
+    // anchored to that subject. Without the anchor it fired on any story that
+    // legitimately described something in "dos etapas" / "two phases".
+    pattern: new RegExp(
+      `\\b${PREGNANCY_SUBJECT.source}\\b[^.!?]{0,80}\\b${STAGE_NOUN.source}\\b` +
+        `|\\b${STAGE_NOUN.source}\\b[^.!?]{0,80}\\b${PREGNANCY_SUBJECT.source}\\b`,
+      "iu",
+    ),
+    sourceSupport: new RegExp(STAGE_NOUN.source, "iu"),
   },
   {
     pattern:

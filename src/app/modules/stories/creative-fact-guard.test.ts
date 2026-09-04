@@ -2542,6 +2542,78 @@ test("grounds a continuation cue in the current or following slide", () => {
   );
 });
 
+test("does not treat 'dos etapas' outside pregnancy copy as an invented stage", () => {
+  const fuelFacts: CreativeKeyFact[] = [
+    {
+      id: "fact-1",
+      statement:
+        "The fuel excise tax will return to half its regular rate for two months before being fully restored on April 1.",
+      sourceExcerpt:
+        "The fuel excise tax will return to half its regular rate for two months before being fully restored on April 1.",
+      attribution: "the Department of Finance",
+    },
+  ];
+  const draft: GeneratedCreativeDraft = {
+    concept:
+      "El impuesto federal al combustible seguirá suspendido y después regresará en dos etapas.",
+    caption:
+      "El impuesto volverá a media tasa durante dos meses y se restablecerá por completo el 1 de abril.",
+    hashtags: [],
+    altText: "Carrusel sobre el calendario del impuesto al combustible.",
+    units: [
+      unit(
+        1,
+        "cover",
+        "hook",
+        "El regreso del impuesto será gradual",
+        "Volverá a media tasa durante dos meses antes del restablecimiento total.",
+        ["fact-1"],
+      ),
+    ],
+  };
+
+  assert.ok(
+    !deterministicFactQualityIssues(draft, fuelFacts).some(
+      (issue) => issue.code === "UNSUPPORTED_INFERENCE",
+    ),
+  );
+});
+
+test("still blocks invented pregnancy stages when the facts do not establish them", () => {
+  const durationFacts: CreativeKeyFact[] = [
+    {
+      id: "fact-1",
+      statement:
+        "Pregnancy lasts about 40 weeks counted from the first day of the last menstrual period.",
+      sourceExcerpt:
+        "Pregnancy lasts about 40 weeks counted from the first day of the last menstrual period.",
+      attribution: "INSPQ",
+    },
+  ];
+  const draft: GeneratedCreativeDraft = {
+    concept: "Las etapas del embarazo explicadas paso a paso.",
+    caption: "Conoce las etapas del embarazo.",
+    hashtags: [],
+    altText: "Carrusel sobre el embarazo.",
+    units: [
+      unit(
+        1,
+        "cover",
+        "hook",
+        "Las etapas del embarazo",
+        "El embarazo dura aproximadamente 40 semanas.",
+        ["fact-1"],
+      ),
+    ],
+  };
+
+  assert.ok(
+    deterministicFactQualityIssues(draft, durationFacts).some(
+      (issue) => issue.code === "UNSUPPORTED_INFERENCE",
+    ),
+  );
+});
+
 test("keeps an attributed suggestion the source itself frames as a suggestion", () => {
   // Mirrors the stored Azure fact: the source records the causal claim as a
   // suggestion, and requiredQualifiers forces the draft to attribute it.
