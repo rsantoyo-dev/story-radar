@@ -585,11 +585,15 @@ export function RadarDashboard({
   async function handlePromoteReviewCandidate(
     storyId: string,
     title: string,
+    decision?: "reject" | "review" | "shortlist",
   ) {
     if (!canAuthenticate || isBusy) return;
+    const aiDecisionLabel = decision === "reject" ? "Reject" : "Review";
     if (
       !window.confirm(
-        `Promote “${title}” to Selected? This records a human approval while preserving the AI decision as Review.`,
+        `${
+          decision === "reject" ? "Override" : "Promote"
+        } “${title}” to Selected? This records a human approval while preserving the AI decision as ${aiDecisionLabel}.`,
       )
     ) {
       return;
@@ -606,8 +610,7 @@ export function RadarDashboard({
       setNotice({
         tone: "success",
         title: "Story promoted to Selected",
-        message:
-          "Your human approval is recorded. The original AI decision remains Review for context.",
+        message: `Your human approval is recorded. The original AI decision remains ${aiDecisionLabel} for context.`,
       });
     } catch (error) {
       setNotice({
@@ -1599,7 +1602,11 @@ function EditorialEvaluationPanel({
   onViewContent: (storyId: string) => void;
   canPromote: boolean;
   promotingStoryId?: string;
-  onPromote: (storyId: string, title: string) => void;
+  onPromote: (
+    storyId: string,
+    title: string,
+    decision: EditorialTableStory["evaluationDecision"],
+  ) => void;
   canTrackPublications: boolean;
   updatingPublicationStoryId?: string;
   onUpdatePublication: (
@@ -2434,7 +2441,11 @@ function SortableStoriesTable({
   onViewContent?: (storyId: string) => void;
   canPromote?: boolean;
   promotingStoryId?: string;
-  onPromote?: (storyId: string, title: string) => void;
+  onPromote?: (
+    storyId: string,
+    title: string,
+    decision: EditorialTableStory["evaluationDecision"],
+  ) => void;
   canTrackPublications?: boolean;
   updatingPublicationStoryId?: string;
   onUpdatePublication?: (
@@ -2694,19 +2705,26 @@ function SortableStoriesTable({
                             : prepareContentLabel(story)}
                         </button>
                       ) : null}
-                      {story.evaluationDecision === "review" &&
+                      {(story.evaluationDecision === "review" ||
+                        story.evaluationDecision === "reject") &&
                       !story.reviewDecision ? (
                         <button
                           type="button"
                           className={styles.promoteStoryButton}
                           disabled={!canPromote}
                           onClick={() =>
-                            onPromote?.(story.storyId, story.title)
+                            onPromote?.(
+                              story.storyId,
+                              story.title,
+                              story.evaluationDecision,
+                            )
                           }
                         >
                           {promotingStoryId === story.storyId
                             ? "Promoting…"
-                            : "Promote to selected"}
+                            : story.evaluationDecision === "reject"
+                              ? "Override to selected"
+                              : "Promote to selected"}
                         </button>
                       ) : null}
                     </>

@@ -18,9 +18,9 @@ const UUID_PATTERN =
 type Context = { params: Promise<{ storyId: string }> };
 
 /**
- * Explicit human override for an AI review candidate. It is intentionally a
- * separate route from shortlist approval so the UI can label the action and
- * preserve the evaluator's original Review decision.
+ * Explicit human override for an AI "review" or "reject" candidate. It is
+ * intentionally a separate route from shortlist approval so the UI can label
+ * the action and preserve the evaluator's original decision.
  */
 export async function POST(request: Request, context: Context) {
   const unauthorized = authorizeRadarCollector(request);

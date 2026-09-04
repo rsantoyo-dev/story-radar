@@ -805,10 +805,11 @@ export async function reviewEditorialShortlist(
 }
 
 /**
- * A human can explicitly promote an AI "review" recommendation after reading
- * the source. The underlying AI decision remains "review" for auditability;
- * only the topic workflow becomes selected. This deliberately cannot revive a
- * reject or bypass a story already given a human decision.
+ * A human can explicitly promote an AI "review" or "reject" recommendation
+ * after reading the source (e.g. evergreen owned-content reference material the
+ * evaluator scores as low-novelty). The underlying AI decision is left intact
+ * for auditability; only the topic workflow becomes selected. This still cannot
+ * bypass a story that already has a human decision.
  */
 export async function promoteEditorialReviewCandidate(
   topicId: string,
@@ -832,7 +833,7 @@ export async function promoteEditorialReviewCandidate(
       and(
         eq(topicStories.topicId, topicId),
         eq(topicStories.storyId, storyId),
-        eq(latestEvaluation.decision, "review"),
+        inArray(latestEvaluation.decision, ["review", "reject"]),
         isNull(topicStories.reviewDecision),
       ),
     )
