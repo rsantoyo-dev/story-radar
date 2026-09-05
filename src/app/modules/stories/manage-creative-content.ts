@@ -1066,26 +1066,14 @@ function validateEditableDraft(
               `unit ${index + 1} viewerQuestion`,
               500,
             ),
-            ...optionalText(
-              unit.ctaQuestion,
-              `unit ${index + 1} ctaQuestion`,
-              500,
-            ),
+            ...optionalText(unit.ctaQuestion, "ctaQuestion", 500),
           }
         : {}),
       headline: requiredText(unit.headline, `unit ${index + 1} headline`, 240),
-      ...optionalText(
-        unit.subheadline,
-        `unit ${index + 1} subheadline`,
-        240,
-      ),
+      ...optionalText(unit.subheadline, "subheadline", 240),
       ...optionalText(unit.body, "body", 600),
       ...(format === "carousel"
-        ? optionalText(
-            unit.continuationCue,
-            `unit ${index + 1} continuationCue`,
-            240,
-          )
+        ? optionalText(unit.continuationCue, "continuationCue", 240)
         : {}),
       visualDirection: requiredText(
         unit.visualDirection,

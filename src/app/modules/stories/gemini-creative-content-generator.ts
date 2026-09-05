@@ -49,6 +49,7 @@ import {
 } from "./creative-quality";
 import {
   deterministicBriefFactQualityIssues,
+  repairBriefFactEvidence,
   repairDeterministicBriefScope,
   withCreativeFactClaimGuard,
 } from "./creative-fact-guard";
@@ -227,7 +228,7 @@ const BRIEF_FRAMING_FALLBACK_INSTRUCTION =
   "Disregard creativeProfile.framingStrategy entirely for this response. Choose the neutral angle and hook that the sourceExcerpts support with no added interpretation, hedge removal, causal word, or trend word. A valid, in-scope brief with a plain explanatory angle is required; do not fail.";
 
 const BRIEF_RETRY_INSTRUCTION =
-  "Your previous response failed structural, source-evidence, or factual-scope validation. Correct every previousValidationError, copy each sourceExcerpt exactly from the supplied story, keep all strategy and carousel-plan claims within the returned keyFacts, return 1-6 keyFacts with sequential IDs fact-1, fact-2, ..., and obey the JSON schema and carouselPlan exactly. If a fact exceeded its source excerpt, narrow its statement to exactly what that excerpt says — keeping every hedge such as \"could\", \"for some\", or \"over time\" and adding no causal or trend word the excerpt lacks — or drop that fact; do not restate the same overreach in different words. The framingStrategy never justifies exceeding a source excerpt: if a reader-consequence hook cannot be built without inflating a fact, use explainer framing and note it in riskFlags.";
+  "Your previous response failed structural, source-evidence, or factual-scope validation. Correct every previousValidationError, copy each sourceExcerpt exactly from the supplied story, keep all strategy and carousel-plan claims within the returned keyFacts, return 1-6 keyFacts with sequential IDs fact-1, fact-2, ..., and obey the JSON schema and carouselPlan exactly. If a fact exceeded its source excerpt, narrow its statement to exactly what that excerpt says — keeping every hedge such as \"could\", \"for some\", or \"over time\" and adding no causal or trend word the excerpt lacks — or drop that fact; do not restate the same overreach in different words. For a date, the cited excerpt must explicitly contain every claimed day and year. Never infer an event year from the publication date, the current year, another fact, or a table heading outside the excerpt. If needed, use the verified excerpt itself as the statement, in its original language, and update the strategy and slide questions to match that narrower evidence. The framingStrategy never justifies exceeding a source excerpt: if a reader-consequence hook cannot be built without inflating a fact, use explainer framing and note it in riskFlags.";
 
 const GROUNDING_AUDIT_FIELDS = [
   "concept",
@@ -2389,7 +2390,7 @@ function parseGroundedCreativeBrief(
   conversionGoal?: CreativeProfile["conversionGoal"],
 ): GeneratedCreativeBrief {
   const brief = repairDeterministicBriefScope(
-    parseCreativeBrief(text, conversionGoal),
+    repairBriefFactEvidence(parseCreativeBrief(text, conversionGoal), sourceText),
   );
   const blockers = deterministicBriefFactQualityIssues(brief, sourceText).filter(
     (issue) => issue.severity === "blocker",

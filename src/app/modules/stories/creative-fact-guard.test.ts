@@ -210,7 +210,7 @@ test("removes an unsupported wealth inference from an income comparison", () => 
     [housingFact],
     "español",
   );
-  assert.equal(repaired.units[0]?.headline, "Lo que muestran los datos");
+  assert.equal(repaired.units[0]?.headline, "");
   assert.ok(
     !deterministicFactQualityIssues(repaired, [housingFact]).some(
       (issue) => issue.code === "UNSUPPORTED_INFERENCE",

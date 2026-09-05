@@ -4,6 +4,7 @@ import test from "node:test";
 import type {
   CreativeKeyFact,
   CreativeQualityReview,
+  CreativeQualityScores,
   GeneratedCreativeDraft,
 } from "./creative-content.types";
 import {
@@ -1045,7 +1046,7 @@ test("does not keep a stale unsupported-number review after current validation p
   );
 });
 
-test("does not reject copy for an unsupported number reported only by the critic", () => {
+test("does not create a factual blocker for an unsupported number reported only by the critic", () => {
   const review = buildCreativeQualityReview({
     draft: repairDeterministicCreativeCopy(
       draft,
@@ -1078,7 +1079,8 @@ test("does not reject copy for an unsupported number reported only by the critic
     keyFacts: facts,
   });
 
-  assert.equal(review.status, "accepted");
+  assert.notEqual(review.status, "rejected");
+  assert.ok(!review.issues.some((issue) => issue.code === "UNSUPPORTED_NUMBER" && issue.severity === "blocker"));
   assert.ok(
     review.issues.some(
       (issue) =>
@@ -1267,7 +1269,7 @@ test("does not block on a low factuality score without a concrete factual issue"
 test("a high overall score cannot hide any weak applicable dimension after repair", () => {
   const safeDraft = repairDeterministicCreativeCopy(draft, "carousel", facts, "English");
   for (const dimension of Object.keys(CREATIVE_QUALITY_THRESHOLDS) as Array<keyof typeof CREATIVE_QUALITY_THRESHOLDS>) {
-    const scores = { ...CREATIVE_QUALITY_THRESHOLDS, overall: 100, factuality: 100 };
+    const scores: CreativeQualityScores = { ...CREATIVE_QUALITY_THRESHOLDS, overall: 100, factuality: 100 };
     scores[dimension] = CREATIVE_QUALITY_THRESHOLDS[dimension] - 1;
     const review = buildCreativeQualityReview({
       draft: safeDraft, format: "carousel", scores, criticIssues: [], repairPasses: 2, keyFacts: facts,

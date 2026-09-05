@@ -669,6 +669,51 @@ export function deterministicBriefFactQualityIssues(
 }
 
 /**
+ * When a fact adds a number or interpretation absent from its citation, the
+ * verified excerpt itself is a safe fallback. Never borrow evidence from a
+ * different paragraph, infer a year, or retain the old claim's numeric guard.
+ * Fact IDs stay stable so the existing carousel plan remains usable.
+ */
+export function repairBriefFactEvidence(
+  brief: GeneratedCreativeBrief,
+  sourceText: string,
+): GeneratedCreativeBrief {
+  const repairedIds: string[] = [];
+  const keyFacts = brief.keyFacts.map((fact) => {
+    const excerpt = fact.sourceExcerpt?.trim();
+    if (!excerpt || excerpt.length > 500 || !sourceText.includes(excerpt)) return fact;
+    const evidenceNumbers = new Set(extractBriefClaimNumbers(excerpt));
+    const exceedsEvidence = extractBriefClaimNumbers(fact.statement).some(
+      (number) => !evidenceNumbers.has(number),
+    ) || hasUnsupportedInference(fact.statement, excerpt);
+    if (!exceedsEvidence) return fact;
+
+    repairedIds.push(fact.id);
+    return withCreativeFactClaimGuard({
+      id: fact.id,
+      statement: excerpt,
+      sourceExcerpt: excerpt,
+      requiredQualifiers: (fact.requiredQualifiers ?? []).filter((qualifier) =>
+        normalizeText(excerpt).includes(normalizeText(qualifier)),
+      ),
+      ...(fact.attribution && normalizeText(excerpt).includes(normalizeText(fact.attribution))
+        ? { attribution: fact.attribution }
+        : {}),
+    });
+  });
+  if (repairedIds.length === 0) return brief;
+  return {
+    ...brief,
+    keyFacts,
+    contentSufficiency: brief.contentSufficiency === "insufficient" ? "insufficient" : "limited",
+    riskFlags: [
+      `Source-evidence repair narrowed ${repairedIds.join(", ")} to their verified excerpts; unsupported dates, numbers, or interpretations were removed.`,
+      ...brief.riskFlags,
+    ].slice(0, 5),
+  };
+}
+
+/**
  * Narrows only unsupported strategy/planning copy to already verified facts.
  * This is deliberately conservative: it never repairs fact statements or
  * source excerpts, which must still pass the source-evidence gate unchanged.
