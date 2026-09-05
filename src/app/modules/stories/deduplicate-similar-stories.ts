@@ -76,6 +76,39 @@ export type SimilarStoryDeduplicationOptions = {
   windowDays?: number;
 };
 
+export type TitledDatedItem = {
+  title: string;
+  publishedAt: Date;
+};
+
+/**
+ * Reuses the same fuzzy title-similarity check that merges cross-run
+ * duplicates in story-radar.repository.ts, applied here to catch a candidate
+ * that describes the same underlying story as something already covered even
+ * when the source (for example an AI research call) failed to recognize the
+ * overlap itself.
+ */
+export function matchesAnyCoveredStory(
+  candidate: TitledDatedItem,
+  covered: readonly TitledDatedItem[],
+  options: SimilarStoryDeduplicationOptions = {},
+): boolean {
+  const titleThreshold = options.titleThreshold ?? DEFAULT_SIMILAR_TITLE_THRESHOLD;
+  const windowDays = options.windowDays ?? DEFAULT_SIMILAR_TITLE_WINDOW_DAYS;
+  const windowMilliseconds = windowDays * 24 * 60 * 60 * 1_000;
+
+  return covered.some((item) => {
+    const withinWindow =
+      Math.abs(item.publishedAt.getTime() - candidate.publishedAt.getTime()) <=
+      windowMilliseconds;
+
+    return (
+      withinWindow &&
+      calculateTitleSimilarity(item.title, candidate.title) >= titleThreshold
+    );
+  });
+}
+
 export function deduplicateSimilarStories(
   candidates: readonly StoryCandidate[],
   options: SimilarStoryDeduplicationOptions = {},

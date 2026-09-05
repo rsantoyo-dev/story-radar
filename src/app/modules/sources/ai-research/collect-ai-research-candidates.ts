@@ -4,6 +4,10 @@ import { createHash } from "node:crypto";
 
 import type { StoryCandidateInput } from "@/app/modules/stories/story-candidate.types";
 import { canonicalizeStoryUrl } from "@/app/modules/stories/deduplicate-story-candidates";
+import {
+  matchesAnyCoveredStory,
+  type TitledDatedItem,
+} from "@/app/modules/stories/deduplicate-similar-stories";
 import type { EditorialProfile } from "@/app/modules/stories/editorial-profile.types";
 
 import type { AiResearchSourceConfig } from "./ai-research.types";
@@ -27,6 +31,8 @@ export type CollectAiResearchCandidatesOptions = {
   profile: EditorialProfile;
   now?: Date;
   lookbackHours?: number;
+  /** Recently surfaced stories for this topic, at any processing status. */
+  alreadyCovered?: readonly TitledDatedItem[];
   discover?: (
     input: Parameters<typeof discoverAiResearchStories>[0],
   ) => Promise<AiResearchDiscovery[]>;
@@ -37,6 +43,7 @@ export async function collectAiResearchCandidates({
   profile,
   now = new Date(),
   lookbackHours,
+  alreadyCovered = [],
   discover = discoverAiResearchStories,
 }: CollectAiResearchCandidatesOptions): Promise<AiResearchCollectionResult> {
   const sourceId = aiResearchSourceId(config.topicId);
@@ -48,9 +55,13 @@ export async function collectAiResearchCandidates({
     profile,
     from,
     to: now,
+    alreadyCovered,
   });
   const items = discoveries
     .filter((discovery) => isInsideWindow(discovery.publishedAt, from, now))
+    // Second-layer defense: catch a discovery matching an already-covered
+    // story even if the model's own alreadyCovered check missed it.
+    .filter((discovery) => !matchesAnyCoveredStory(discovery, alreadyCovered))
     .map((discovery) => toStoryCandidate(discovery, config, sourceId, now));
 
   return {

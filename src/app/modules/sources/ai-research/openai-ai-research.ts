@@ -1,6 +1,7 @@
 import "server-only";
 
 import { canonicalizeStoryUrl } from "@/app/modules/stories/deduplicate-story-candidates";
+import type { TitledDatedItem } from "@/app/modules/stories/deduplicate-similar-stories";
 import type { EditorialProfile } from "@/app/modules/stories/editorial-profile.types";
 
 import type { AiResearchSourceConfig } from "./ai-research.types";
@@ -10,6 +11,8 @@ const OPENAI_TIMEOUT_MS = 90_000;
 const DEFAULT_MODEL = "gpt-5.6-luna";
 const MAX_SUMMARY_LENGTH = 2_000;
 const MAX_REASON_LENGTH = 400;
+/** Bounds prompt size; recency-ordered, so this keeps the most relevant items. */
+const MAX_ALREADY_COVERED_ITEMS = 60;
 /** Only keep discoveries that clear the strict collector-quality floor. */
 export const MIN_AI_RESEARCH_SCORE = 70;
 
@@ -27,6 +30,7 @@ type DiscoverAiResearchStoriesInput = {
   profile: EditorialProfile;
   from: Date;
   to: Date;
+  alreadyCovered: readonly TitledDatedItem[];
 };
 
 type OpenAiResponsesPayload = {
@@ -117,7 +121,9 @@ function researchInstructions(): string {
 
 Return only independently published, real news or reporting items. Every item must use the original publisher URL found through web search; never use a search-result, social-media, home-page, tracking, or invented URL. Include only articles published inside the requested date range. Do not claim full article text: summary is a concise, factual excerpt grounded in the cited publisher page.
 
-researchScore is a strict source-selection confidence, not a popularity score. Score direct adherence to the configured topic, free-text instruction, requested date range, orientation, language/region, publisher credibility, and concrete evidence in the reporting. Scores of 90–100 require a direct match and a credible original publisher; below 70 is not eligible. Return fewer items rather than weak, tangential, unsupported, or speculative items. In scoreReasons, state the specific matching evidence briefly.`;
+researchScore is a strict source-selection confidence, not a popularity score. Score direct adherence to the configured topic, free-text instruction, requested date range, orientation, language/region, publisher credibility, and concrete evidence in the reporting. Scores of 90–100 require a direct match and a credible original publisher; below 70 is not eligible. Return fewer items rather than weak, tangential, unsupported, or speculative items. In scoreReasons, state the specific matching evidence briefly.
+
+researchRequest.alreadyCovered lists stories this topic has already collected, queued, or published recently. Treat a candidate as the same story as an alreadyCovered item when it reports the same underlying event, announcement, decision, or development — judge by the actual news event, not by shared keywords or a similar headline shape. Never return such a candidate, even when it comes from a different publisher or uses noticeably different wording. A genuine follow-up is only acceptable when it reports materially new, independently newsworthy information beyond every alreadyCovered item it relates to; state that new information in its scoreReasons.`;
 }
 
 function researchInput({
@@ -125,6 +131,7 @@ function researchInput({
   profile,
   from,
   to,
+  alreadyCovered,
 }: DiscoverAiResearchStoriesInput) {
   return {
     topic: {
@@ -145,6 +152,12 @@ function researchInput({
         from: from.toISOString(),
         to: to.toISOString(),
       },
+      alreadyCovered: alreadyCovered
+        .slice(0, MAX_ALREADY_COVERED_ITEMS)
+        .map((item) => ({
+          title: item.title,
+          publishedAt: item.publishedAt.toISOString(),
+        })),
     },
   };
 }

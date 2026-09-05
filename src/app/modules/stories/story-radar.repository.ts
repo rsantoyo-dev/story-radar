@@ -378,6 +378,23 @@ type RecentStoredStory = {
   effectiveDate: Date;
 };
 
+/**
+ * Recent titles for this topic's radar regardless of processing status — used
+ * to tell the AI research collector what has already surfaced (queued,
+ * selected, or published) so it does not resurface the same underlying story
+ * under a different headline.
+ */
+export async function getRecentTopicStoryTitles(
+  topicId: string,
+  now: Date,
+): Promise<Array<{ title: string; publishedAt: Date }>> {
+  const recent = await getRecentStoredStories(topicId, now);
+  return recent.map((story) => ({
+    title: story.title,
+    publishedAt: story.effectiveDate,
+  }));
+}
+
 async function getRecentStoredStories(
   topicId: string,
   now: Date,
