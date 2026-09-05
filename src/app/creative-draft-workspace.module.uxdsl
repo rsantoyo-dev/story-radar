@@ -625,6 +625,69 @@
   align-items: start;
 }
 
+.metaStatusChip {
+  flex: 0 0 auto;
+  padding: density(2) density(3);
+  border: border(1, palette(surface-dark), solid);
+  border-radius: radius(full);
+  background: palette(light-light);
+  color: palette(tertiary-dark);
+  @ds-typo(caption);
+  font-size: 10px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.metaStatusConnected {
+  border-color: palette(success-main);
+  background: palette(success-light);
+  color: palette(success-dark);
+}
+
+.metaConnectionBody {
+  display: grid;
+  gap: density(3);
+}
+
+.metaConnectionDetails {
+  display: grid;
+  grid-template-columns: xs(1fr) sm(repeat(auto-fit, minmax(160px, 1fr)));
+  gap: density(2) density(4);
+  margin: 0;
+}
+
+.metaConnectionDetails > div {
+  display: grid;
+  gap: density(1);
+}
+
+.metaConnectionDetails dt {
+  color: palette(tertiary-dark);
+  @ds-typo(caption);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.metaConnectionDetails dd {
+  margin: 0;
+  color: palette(primary-dark);
+  @ds-typo(caption);
+  font-weight: 700;
+}
+
+.metaConnectionActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: density(2);
+}
+
+.metaAppFields {
+  display: grid;
+  grid-template-columns: xs(1fr) sm(repeat(2, minmax(0, 1fr)));
+  gap: density(3);
+}
+
 .brandAssetCard {
   @ds-surface(flat light density(3) radius(2));
   display: grid;
