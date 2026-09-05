@@ -3,6 +3,7 @@ import {
   dropTrailingSentenceFragment,
   evaluateCarouselNarrative,
   getPreferredCarouselArc,
+  isGenericAnalysisHeadline,
   isInstitutionFirstCoverCopy,
   maximumFactsForGoal,
   stripRecapLabelPrefix,
@@ -74,10 +75,12 @@ export function getCreativeDraftApprovalState({
       blockers.length === 0 &&
       Boolean(
         qualityReviewIsCurrent &&
-          creativeQualityReviewHasUnresolvedBlockers(
-            qualityReview,
-            deterministicIssues,
-          ),
+          (qualityReview?.status === "needs-review" ||
+            qualityReview?.status === "needs-repair" ||
+            creativeQualityReviewHasUnresolvedBlockers(
+              qualityReview,
+              deterministicIssues,
+            )),
       ),
   };
 }
@@ -357,12 +360,50 @@ export function repairDeterministicCreativeCopy(
       }
     });
   }
+  repairMissingOrGenericHeadlines(factRepaired, language);
   return repairConversionGoalCtas(
     factRepaired,
     format,
     conversionGoal,
     language,
   );
+}
+
+/**
+ * Promote only complete, already repaired visible copy from the same slide.
+ * Never truncate a clause, borrow another slide's evidence, or paste a source
+ * excerpt in a different language. A missing replacement stays reviewable.
+ */
+function repairMissingOrGenericHeadlines(
+  draft: GeneratedCreativeDraft,
+  language?: string,
+): void {
+  for (const [index, unit] of draft.units.entries()) {
+    if (unit.headline.trim() && !isGenericAnalysisHeadline(unit.headline)) continue;
+    for (const field of ["subheadline", "body"] as const) {
+      const copy = unit[field]?.trim();
+      const firstSentence = copy
+        ? [...new Intl.Segmenter(undefined, { granularity: "sentence" }).segment(copy)][0]?.segment.trim()
+        : undefined;
+      const candidate = field === "body" ? firstSentence : copy;
+      const remainder = candidate ? copy?.slice(candidate.length).trim() : undefined;
+      if (
+        !candidate ||
+        candidate.length > 240 ||
+        candidate.split(/\s+/u).length > 18 ||
+        candidate.includes("?") ||
+        (field === "body" && !remainder && unit.role === "content" && index > 0 && index < draft.units.length - 1) ||
+        isGenericAnalysisHeadline(candidate) ||
+        trailingSentenceFragment(candidate) ||
+        /\b(?:key point established by the source|dato clave señalado por la fuente)\b/iu.test(candidate) ||
+        (isSpanishProfileLanguage(language) && hasLikelyEnglishSentence(candidate))
+      ) continue;
+      unit.headline = candidate;
+      if (field === "body" && remainder) unit.body = remainder;
+      else delete unit[field];
+      break;
+    }
+  }
 }
 
 const FOLLOW_CTA_PATTERN =
@@ -526,7 +567,7 @@ function softenUnsupportedAbsolutes(value: string, evidence: string): string {
 
 function containsUnsupportedAbsolute(value: string, evidence: string): boolean {
   return ABSOLUTE_PATTERNS.some(
-    (rule) => rule.pattern.test(value) && !rule.support.test(evidence),
+    (rule) => new RegExp(rule.pattern).test(value) && !rule.support.test(evidence),
   );
 }
 
@@ -622,6 +663,22 @@ export function deterministicCreativeQualityIssues(
           message: `Slide ${unit.order} uses an absolute promise that its selected evidence does not establish.`,
         }]
       : [];
+    if (!unit.headline.trim()) {
+      issues.push({
+        code: "MISSING_HEADLINE",
+        severity: "blocker",
+        unitOrder: unit.order,
+        message: `Slide ${unit.order} needs a specific, supported headline; factual repair removed the unsupported claim.`,
+      });
+    }
+    if (format === "meme" && isGenericAnalysisHeadline(unit.headline)) {
+      issues.push({
+        code: "GENERIC_ANALYSIS_HEADLINE",
+        severity: "blocker",
+        unitOrder: unit.order,
+        message: "The post headline must state its specific point instead of using a generic analysis label.",
+      });
+    }
     if (hasMalformedGroupedNumber(visibleCopy)) {
       issues.push({
         code: "MALFORMED_NUMBER_FORMAT",
@@ -1023,7 +1080,7 @@ export function creativeQualityThresholdFailures(
 
   Object.entries(required).forEach(([dimension, minimum]) => {
     const score = scores[dimension as keyof CreativeQualityScores];
-    if (score < minimum) {
+    if (!Number.isFinite(score) || score < minimum) {
       failures.push({
         code: `QUALITY_${dimension.toUpperCase()}_BELOW_THRESHOLD`,
         // Scores are editorial signals. Hard factual blocking requires a
@@ -1104,7 +1161,6 @@ export function buildCreativeQualityReview({
         HARD_FACTUAL_QUALITY_CODES.has(issue.code)),
   );
   const editorialRepairRequested =
-    repairPasses === 0 &&
     reviewedIssues.some(
       (issue) =>
         issue.severity === "blocker" ||
@@ -1121,15 +1177,34 @@ export function buildCreativeQualityReview({
         )
       : reviewedIssues;
   return {
-    status: hardBlocked || editorialRepairRequested
+    status: hardBlocked
       ? repairPasses >= MAX_CREATIVE_EDITORIAL_REPAIRS
         ? "rejected"
         : "needs-repair"
+      : editorialRepairRequested
+        ? repairPasses >= MAX_CREATIVE_EDITORIAL_REPAIRS
+          ? "needs-review"
+          : "needs-repair"
       : "accepted",
     scores: calibratedScores,
     issues: normalizedIssues,
     repairPasses,
   };
+}
+
+/** Keep the strongest reviewed version when a later editorial pass regresses. */
+export function isBetterCreativeQualityReview(
+  candidate: CreativeQualityReview,
+  current: CreativeQualityReview,
+): boolean {
+  const statusRank = { accepted: 3, "needs-review": 2, "needs-repair": 1, rejected: 0 };
+  if (statusRank[candidate.status] !== statusRank[current.status]) {
+    return statusRank[candidate.status] > statusRank[current.status];
+  }
+  if (candidate.scores.overall !== current.scores.overall) {
+    return candidate.scores.overall > current.scores.overall;
+  }
+  return candidate.scores.factuality > current.scores.factuality;
 }
 
 function qualityIssueLocationKey(issue: CreativeQualityIssue): string {

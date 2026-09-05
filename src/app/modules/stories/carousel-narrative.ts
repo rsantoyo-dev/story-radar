@@ -571,7 +571,7 @@ export function evaluateCarouselNarrative(
     }
     if (
       unit.headline?.trim() &&
-      GENERIC_ANALYSIS_HEADLINE.test(unit.headline.trim())
+      isGenericAnalysisHeadline(unit.headline)
     ) {
       const isFinalSlide = unitIndex === units.length - 1;
       warnings.push({
@@ -1018,6 +1018,10 @@ const FINITE_VERB_HINT =
 // Distinct from isRecapLabelCopy, which needs an explicit "Label: \u2026" separator.
 const GENERIC_ANALYSIS_HEADLINE =
   /^(?:what (?:the (?:data|numbers?|study|studies|research|findings?|results?|chart|charts|report|reports|figures?) (?:shows?|say|says|tell us|tells us|reveals?|means?|indicates?)|this means|it (?:means|shows)|to (?:know|watch|take away))|(?:the )?(?:takeaways?|bottom line|big picture|upshot|verdict|main point|key (?:takeaways?|points?|findings?))|final thoughts?|in (?:summary|short|closing)|lo que (?:(?:muestran|dicen|revelan|indican) los (?:datos|n[u\u00fa]meros|estudios)|significa(?:n)? (?:esto|todo esto|los datos)|hay que saber)|la (?:conclusi[o\u00f3]n|clave|moraleja|lecci[o\u00f3]n|idea)|el (?:balance|veredicto|panorama|punto (?:clave|principal)|resumen)|en (?:resumen|s[i\u00ed]ntesis|conclusi[o\u00f3]n))\s*[.:!?]?$/iu;
+
+export function isGenericAnalysisHeadline(value: string): boolean {
+  return GENERIC_ANALYSIS_HEADLINE.test(value.trim());
+}
 
 // A sentence that stops on a bare copula/auxiliary ("\u2026the disruptions was.",
 // "\u2026its contribution was only.") \u2014 the complement never arrived.

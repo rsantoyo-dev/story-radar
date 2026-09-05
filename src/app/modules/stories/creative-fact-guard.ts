@@ -894,7 +894,7 @@ export function repairDeterministicFactCopy(
       let headline = localizeEstimateQualifiers(
         repairCertaintyUpgrade(repairedHeadline),
         language,
-      ) || localizedEvidenceHeadline(language);
+      );
       let subheadline = unit.subheadline
         ? localizeEstimateQualifiers(
             repairCertaintyUpgrade(
@@ -984,7 +984,10 @@ export function repairDeterministicFactCopy(
               allFacts,
             )
           : undefined;
-        headline = repairedHeadline || localizedEvidenceHeadline(language);
+        // Do not replace a removed claim with an analysis label that the
+        // narrative validator rejects. Presentation repair can promote this
+        // slide's surviving copy; otherwise the editor must write a headline.
+        headline = repairedHeadline;
         subheadline = repairedSubheadline || undefined;
         body = repairedBody || undefined;
         ctaQuestion =
@@ -1932,12 +1935,6 @@ function safeConclusionForFact(
       : "These findings describe AI-authorship signals—not certainty about how every page was written.";
   }
   return fact.statement;
-}
-
-function localizedEvidenceHeadline(language?: string): string {
-  return isSpanishLanguage(language)
-    ? "Lo que muestran los datos"
-    : "What the data shows";
 }
 
 function localizeEstimateQualifiers(

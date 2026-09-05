@@ -13,6 +13,7 @@ import {
   creativeQualityThresholdFailures,
   deterministicCreativeQualityIssues,
   getCreativeDraftApprovalState,
+  isBetterCreativeQualityReview,
   repairDeterministicCreativeCopy,
   visibleDraftLanguageIssues,
 } from "./creative-quality";
@@ -1172,7 +1173,7 @@ test("treats weak editorial scores as repair signals instead of factual blockers
   assert.ok(failures.every((issue) => issue.severity === "warning"));
 });
 
-test("accepts a factually safe draft after one editorial rewrite despite subjective score misses", () => {
+test("keeps a factually safe draft in review when a rewrite still misses editorial targets", () => {
   const factuallySafeDraft = repairDeterministicCreativeCopy(
     draft,
     "carousel",
@@ -1216,7 +1217,12 @@ test("accepts a factually safe draft after one editorial rewrite despite subject
   });
 
   assert.equal(initial.status, "needs-repair");
-  assert.equal(afterRewrite.status, "accepted");
+  assert.equal(afterRewrite.status, "needs-review");
+  assert.equal(getCreativeDraftApprovalState({
+    deterministicIssues: [],
+    qualityReview: afterRewrite,
+    qualityReviewIsCurrent: true,
+  }).requiresHumanReviewAcknowledgement, true);
   assert.equal(
     afterRewrite.issues.find((issue) => issue.code === "WEAK_HOOK")?.severity,
     "warning",
@@ -1249,11 +1255,123 @@ test("does not block on a low factuality score without a concrete factual issue"
     keyFacts: facts,
   });
 
-  assert.equal(review.status, "accepted");
+  assert.equal(review.status, "needs-review");
   assert.equal(
     review.issues.find(
       (issue) => issue.code === "QUALITY_FACTUALITY_BELOW_THRESHOLD",
     )?.severity,
     "warning",
   );
+});
+
+test("a high overall score cannot hide any weak applicable dimension after repair", () => {
+  const safeDraft = repairDeterministicCreativeCopy(draft, "carousel", facts, "English");
+  for (const dimension of Object.keys(CREATIVE_QUALITY_THRESHOLDS) as Array<keyof typeof CREATIVE_QUALITY_THRESHOLDS>) {
+    const scores = { ...CREATIVE_QUALITY_THRESHOLDS, overall: 100, factuality: 100 };
+    scores[dimension] = CREATIVE_QUALITY_THRESHOLDS[dimension] - 1;
+    const review = buildCreativeQualityReview({
+      draft: safeDraft, format: "carousel", scores, criticIssues: [], repairPasses: 2, keyFacts: facts,
+    });
+    assert.equal(review.status, "needs-review", dimension);
+    assert.ok(review.issues.some((issue) => issue.code === `QUALITY_${dimension.toUpperCase()}_BELOW_THRESHOLD`), dimension);
+  }
+});
+
+test("does not accept missing or non-finite applicable quality scores", () => {
+  for (const score of [NaN, Infinity, undefined]) {
+    const scores = { ...CREATIVE_QUALITY_THRESHOLDS, hook: score };
+    const failures = creativeQualityThresholdFailures(scores as Parameters<typeof creativeQualityThresholdFailures>[0], "carousel", true);
+    assert.ok(failures.some((issue) => issue.code === "QUALITY_HOOK_BELOW_THRESHOLD"));
+  }
+});
+
+test("meme quality excludes swipe metrics and a deliberately omitted CTA", () => {
+  const failures = creativeQualityThresholdFailures({
+    ...CREATIVE_QUALITY_THRESHOLDS, swipeReward: 0, continuity: 0, cta: 0,
+  }, "meme", false);
+  assert.deepEqual(failures, []);
+});
+
+test("retains the stronger reviewed candidate instead of the last rewrite", () => {
+  const previous: CreativeQualityReview = {
+    status: "needs-review", scores: { ...CREATIVE_QUALITY_THRESHOLDS, overall: 94 }, issues: [], repairPasses: 1,
+  };
+  assert.equal(isBetterCreativeQualityReview({ ...previous, status: "rejected", scores: { ...previous.scores, overall: 99 } }, previous), false);
+  assert.equal(isBetterCreativeQualityReview({ ...previous, scores: { ...previous.scores, overall: 89 } }, previous), false);
+  assert.equal(isBetterCreativeQualityReview({ ...previous, status: "accepted", scores: { ...previous.scores, overall: 96 } }, previous), true);
+});
+
+test("critic outages require acknowledgement without creating factual blockers", () => {
+  const review: CreativeQualityReview = {
+    status: "needs-review", scores: { ...CREATIVE_QUALITY_THRESHOLDS },
+    issues: [{ code: "CRITIC_UNAVAILABLE", severity: "warning", message: "Review unavailable." }], repairPasses: 0,
+  };
+  assert.deepEqual(getCreativeDraftApprovalState({ deterministicIssues: [], qualityReview: review, qualityReviewIsCurrent: true }), {
+    blockers: [], requiresHumanReviewAcknowledgement: true,
+  });
+});
+
+test("unsupported absolute validation is stable across repeated checks and adjacent slides", () => {
+  const repeated = structuredClone(draft);
+  repeated.units.forEach((unit) => {
+    unit.headline = "The audit guarantees consistency";
+    unit.body = undefined;
+  });
+  for (let pass = 0; pass < 4; pass += 1) {
+    const issues = deterministicCreativeQualityIssues(repeated, "carousel", facts);
+    assert.deepEqual(issues.filter((issue) => issue.code === "UNSUPPORTED_ABSOLUTE").map((issue) => issue.unitOrder), [1, 2]);
+  }
+});
+
+test("repairs the generic slide-2 headline from its own copy without losing supporting evidence", () => {
+  for (const language of ["English", "Spanish"]) {
+    const spanish = language === "Spanish";
+    const statement = spanish ? "El informe registra una caída del empleo." : "The report records a decline in employment.";
+    const context = spanish ? "La encuesta cubre las empresas participantes." : "The survey covers participating businesses.";
+    const sourceFacts: CreativeKeyFact[] = [{ id: "fact-2", statement: `${statement} ${context}` }];
+    const broken = structuredClone(draft);
+    broken.units.splice(1, 0, {
+      ...broken.units[0]!, order: 2, role: "content", editorialGoal: "explain",
+      viewerQuestion: spanish ? "¿Qué registra el informe?" : "What does the report record?",
+      headline: spanish ? "Lo que muestran los datos" : "What the data shows",
+      body: `${statement} ${context}`, factIds: ["fact-2"],
+    });
+    broken.units[2]!.order = 3;
+    const repaired = repairDeterministicCreativeCopy(broken, "carousel", sourceFacts, language);
+    assert.equal(repaired.units[1]!.headline, statement);
+    assert.equal(repaired.units[1]!.body, context);
+    assert.equal(broken.units[1]!.headline, spanish ? "Lo que muestran los datos" : "What the data shows");
+    assert.equal(deterministicCreativeQualityIssues(repaired, "carousel", sourceFacts, language).some((issue) => issue.unitOrder === 2 && issue.severity === "blocker"), false);
+    assert.deepEqual(repairDeterministicCreativeCopy(repaired, "carousel", sourceFacts, language), repaired);
+  }
+});
+
+test("numeric headline repair uses surviving copy instead of injecting an analysis label", () => {
+  const sourceFacts: CreativeKeyFact[] = [{ id: "fact-1", statement: "The survey includes participating businesses." }];
+  const broken = structuredClone(draft);
+  broken.units = [{ ...broken.units[0]!, headline: "Employment increased 99%", body: "The survey includes participating businesses." }];
+  const repaired = repairDeterministicCreativeCopy(broken, "meme", sourceFacts, "English");
+  assert.equal(repaired.units[0]!.headline, "The survey includes participating businesses.");
+  assert.equal(deterministicCreativeQualityIssues(repaired, "meme", sourceFacts).some((issue) => ["UNSUPPORTED_NUMBER", "MISSING_HEADLINE", "GENERIC_ANALYSIS_HEADLINE"].includes(issue.code)), false);
+});
+
+test("an unsupported headline with no surviving copy remains blocked without invented text", () => {
+  const broken = structuredClone(draft);
+  broken.units = [{ ...broken.units[0]!, headline: "Employment increased 99%", body: undefined }];
+  const repaired = repairDeterministicCreativeCopy(broken, "meme", facts, "English");
+  assert.equal(repaired.units[0]!.headline, "");
+  assert.ok(deterministicCreativeQualityIssues(repaired, "meme", facts).some((issue) => issue.code === "MISSING_HEADLINE" && issue.severity === "blocker"));
+});
+
+test("headline repair does not promote unsupported numbers or translated source fallbacks", () => {
+  const broken = structuredClone(draft);
+  broken.units = [{ ...broken.units[0]!, headline: "What the data shows", subheadline: "Employment increased 99%", body: undefined }];
+  const repaired = repairDeterministicCreativeCopy(broken, "meme", facts, "English");
+  assert.equal(repaired.units[0]!.headline, "What the data shows");
+  assert.equal(repaired.units[0]!.subheadline, undefined);
+  const spanish = structuredClone(broken);
+  spanish.units[0]!.headline = "Lo que muestran los datos";
+  spanish.units[0]!.body = "The survey covers the businesses in the region.";
+  const spanishRepair = repairDeterministicCreativeCopy(spanish, "carousel", facts, "Spanish");
+  assert.equal(spanishRepair.units[0]!.headline, "Lo que muestran los datos");
 });
