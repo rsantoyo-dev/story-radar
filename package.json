@@ -4,9 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "npm run uxdsl:build && concurrently --kill-others-on-fail \"npm run uxdsl:watch\" \"next dev\"",
+    "dev:https": "npm run uxdsl:build && concurrently --kill-others-on-fail \"npm run uxdsl:watch\" \"next dev --experimental-https\"",
     "build": "npm run uxdsl:build && next build",
     "start": "next start",
-    "test": "tsx --test src/app/modules/stories/*.test.ts src/app/modules/documents/*.test.ts src/design/*.test.ts src/design/*/*.test.ts",
+    "test": "tsx --test src/app/modules/stories/*.test.ts src/app/modules/documents/*.test.ts src/app/modules/meta/*.test.ts src/design/*.test.ts src/design/*/*.test.ts",
     "uxdsl:build": "npm run uxdsl:build:theme && npm run uxdsl:build:dashboard && npm run uxdsl:build:creative && npm run uxdsl:build:editorial && npm run uxdsl:build:topic",
     "uxdsl:build:theme": "uxdsl build --config uxdsl.theme.config.cjs",
     "uxdsl:build:dashboard": "uxdsl build --config uxdsl.config.cjs",

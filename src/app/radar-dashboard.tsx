@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { CreativeDraftWorkspace } from "./creative-draft-workspace";
 import { CreativeProfilePanel } from "./creative-profile-panel";
+import { MetaConnectionPanel } from "./meta-connection-panel";
 import { EditorialProfilePanel } from "./editorial-profile-panel";
 import styles from "./radar-dashboard.generated.module.css";
 import {
@@ -377,6 +378,36 @@ const STATUS_LABELS: Record<string, string> = {
   failed: "Failed",
 };
 
+const COLLECTOR_SECRET_STORAGE_KEY = "story-radar:collector-secret";
+
+/**
+ * The Instagram connect button navigates away with window.location.href and
+ * Meta's OAuth callback redirects back with a full page load, which remounts
+ * this component and would otherwise drop the in-memory secret. sessionStorage
+ * survives that reload but clears when the tab closes.
+ */
+function readStoredSecret(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return window.sessionStorage.getItem(COLLECTOR_SECRET_STORAGE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function writeStoredSecret(secret: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (secret) {
+      window.sessionStorage.setItem(COLLECTOR_SECRET_STORAGE_KEY, secret);
+    } else {
+      window.sessionStorage.removeItem(COLLECTOR_SECRET_STORAGE_KEY);
+    }
+  } catch {
+    // Ignore storage failures (private browsing, quota, disabled storage).
+  }
+}
+
 export function RadarDashboard({
   initialTopicId,
   initialTopics,
@@ -386,7 +417,11 @@ export function RadarDashboard({
   initialTopics: DashboardTopic[];
   initialPreferences: KeywordPreferences;
 }) {
-  const [secret, setSecret] = useState("");
+  const [secret, setSecretState] = useState(() => readStoredSecret());
+  const setSecret = useCallback((next: string) => {
+    setSecretState(next);
+    writeStoredSecret(next);
+  }, []);
   const [topics, setTopics] = useState(initialTopics);
   const [selectedTopicId, setSelectedTopicId] = useState(initialTopicId);
   const selectedTopicIdRef = useRef(initialTopicId);
@@ -425,6 +460,49 @@ export function RadarDashboard({
   const readyToProduceCount = countUnpublishedSelected(
     stats?.editorial?.selectedStories ?? [],
   );
+
+  // The Meta OAuth callback (/api/radar/meta/callback) is a full-page
+  // redirect, so it reports its outcome via query params rather than a fetch
+  // response. This must run in an effect, not a lazy useState initializer:
+  // the page is server-rendered (see page.tsx's `connection()`), and reading
+  // window.location during the initial render would make the client's first
+  // pass diverge from the server-rendered HTML and produce a hydration
+  // mismatch. Deferring to a post-mount, client-only effect keeps the first
+  // paint identical to the server output; the one extra render this causes is
+  // the price of applying a URL-only outcome safely.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const metaTopicId = params.get("metaTopicId");
+    const metaConnected = params.get("metaConnected");
+    const metaError = params.get("metaError");
+    if (!metaTopicId && !metaConnected && !metaError) return;
+
+    // Syncing from window.location, unavailable during SSR; see comment above.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (metaTopicId) setSelectedTopicId(metaTopicId);
+    setNotice(
+      metaError
+        ? { tone: "error", title: "Instagram connection failed", message: metaError }
+        : {
+            tone: "success",
+            title: "Instagram connected",
+            message: "This topic can now publish to its connected Instagram account.",
+          },
+    );
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete("metaTopicId");
+    url.searchParams.delete("metaConnected");
+    url.searchParams.delete("metaError");
+    url.hash = "editorial-meta";
+    window.history.replaceState(null, "", url.toString());
+    requestAnimationFrame(() =>
+      document
+        .getElementById("editorial-meta")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+    );
+  }, []);
 
   function goToStoryReview(view: StoryReviewView) {
     setSidebarOpen(false);
@@ -1008,6 +1086,14 @@ export function RadarDashboard({
             <span className={styles.navIcon} aria-hidden="true">▸</span>
             Creative profile
           </a>
+          <a
+            href="#editorial-meta"
+            className={styles.navSubItem}
+            onClick={() => setSidebarOpen(false)}
+          >
+            <span className={styles.navIcon} aria-hidden="true">▸</span>
+            Instagram
+          </a>
           <a href="#stories" onClick={() => setSidebarOpen(false)}>
             <span className={styles.navIcon} aria-hidden="true">▤</span>
             Story review
@@ -1210,6 +1296,15 @@ export function RadarDashboard({
             disabled={isBusy}
             onProfileLoaded={setSelectedCreativeProfile}
             onProfileSaved={setSelectedCreativeProfile}
+          />
+        </div>
+
+        <div id="editorial-meta" className={styles.anchorTarget}>
+          <MetaConnectionPanel
+            key={selectedTopicId}
+            topicId={selectedTopicId}
+            secret={secret}
+            disabled={isBusy}
           />
         </div>
 
