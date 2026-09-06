@@ -1,0 +1,93 @@
+{
+    "title": "Instagram conectado al rendimiento editorial (FEAT-IG-001)",
+    "cols": [
+        {
+            "title": "Backlog / Propuestas",
+            "tasks": [
+                {
+                    "id": "ig-07",
+                    "text": "**IG-07 — Sincronización automática (histórico de métricas)**\n\nP1 · dep: IG-05 · Histórico\n\nTrabajo programado con frecuencia configurable y foco en posts recientes. Capturas con timestamp sin sobrescribir histórico. Evita duplicados, respeta rate limits, backoff en transitorios. Mediciones ~24h, ~72h y ~7d con edad real y tolerancia."
+                },
+                {
+                    "id": "ig-08",
+                    "text": "**IG-08 — Comparar rendimiento de publicaciones equivalentes**\n\nP1 · dep: IG-06, IG-07 · Histórico\n\nComparar posts de misma cuenta, formato y ventana de antigüedad. Valores absolutos, tasas y diferencia vs. mediana. Explicitar tamaño de muestra. Métricas ausentes no cuentan como cero. Crecimiento de seguidores = dato de cuenta, aparte."
+                },
+                {
+                    "id": "ig-09",
+                    "text": "**IG-09 — Conectar resultados con decisiones creativas**\n\nP2 · dep: IG-08 + muestra suficiente · Aprendizaje editorial\n\nUsa la versión creativa publicada/identificada, no el borrador reciente. Explora hook, enfoque, tema, nº de slides, objetivo, CTA y evaluación editorial. Distingue asociación de causalidad. Nada modifica prompts/aprobaciones automáticamente."
+                }
+            ],
+            "id": "q8v24vd47ol07cp1daoahoul",
+            "color": "#6b7280"
+        },
+        {
+            "title": "Por Hacer (MVP P0)",
+            "tasks": [
+                {
+                    "id": "ig-02",
+                    "text": "**IG-02 — Importar publicaciones de la cuenta conectada**\n\nP0 · dep: IG-01\n\n\"Sincronizar\" importa publicaciones recientes con paginación. Cada post conserva cuenta origen, ID externo, permalink, texto, tipo y fecha. Carrusel = una publicación con elementos. Sin duplicados al re-sincronizar. Fallo parcial conserva lo importado."
+                },
+                {
+                    "id": "ig-03",
+                    "text": "**IG-03 — Explorar la galería de Instagram**\n\nP0 · dep: IG-02\n\nMiniatura, extracto, formato, fecha, enlace externo y estado de vinculación. Filtros por periodo/formato/vinculadas. Cargar más sin perder filtros. Estados de carga, vacío, error y reconexión. Móvil y escritorio con paleta verde y tokens UXDSL."
+                },
+                {
+                    "id": "ig-04",
+                    "text": "**IG-04 — Vincular un post con su historia y versión creativa**\n\nP0 · dep: IG-02, IG-03\n\nBuscar y seleccionar historia aprobada del mismo tema. Una historia admite varios posts; un post máx. una historia. Borrador/versión de imágenes opcional para históricos. URL única normalizada = automático; ambiguo = manual. Corregir/quitar vínculo sin borrar métricas."
+                },
+                {
+                    "id": "ig-05",
+                    "text": "**IG-05 — Consultar métricas actuales por publicación**\n\nP0 · dep: IG-01, IG-02\n\nEl servidor consulta métricas compatibles con tipo/permisos/versión de API. Alcance, visualizaciones, likes, comentarios, guardados, compartidos cuando existan. Distinguir cero real / no disponible / pendiente / error. Guardar fecha, periodo y unidad. Ratios solo con alcance > 0."
+                },
+                {
+                    "id": "ig-06",
+                    "text": "**IG-06 — Ver resultados desde la historia editorial**\n\nP0 · dep: IG-04, IG-05\n\nLa historia muestra todos sus posts vinculados con formato, fecha, métricas y enlace. Identifica versión creativa o \"Versión no identificada\". Navegar post / historia / versión histórica sin reemplazar el borrador actual. No sumar alcance como personas únicas."
+                }
+            ],
+            "id": "oysw01f2je8yrrwoy1hilm1a",
+            "color": "#2f6f4f"
+        },
+        {
+            "title": "En Progreso",
+            "tasks": [],
+            "id": "e9i9f4ez748x3v5aebwqo9yv",
+            "color": "#c98a1b"
+        },
+        {
+            "title": "En Revisión / QA",
+            "tasks": [],
+            "id": "wtjccdfe2o394ryi9jvftero",
+            "color": "#7c5cbf"
+        },
+        {
+            "title": "Hecho",
+            "tasks": [
+                {
+                    "id": "ig-01",
+                    "text": "**IG-01 — Habilitar y verificar acceso a insights**\n\nP0 · dep: ninguna\n\nOAuth incorpora `instagram_business_manage_insights`; el servidor verifica capacidades concedidas. La UI distingue: desconectada / conectada sin insights / operativa / pendiente de reconexión. Reconectar la misma cuenta conserva historial. Tokens solo en servidor."
+                },
+                {
+                    "id": "base-01",
+                    "text": "**Conexión de Instagram por tema** — credenciales cifradas en el servidor."
+                },
+                {
+                    "id": "base-02",
+                    "text": "**Cliente Meta** — autenticación y consulta de username."
+                },
+                {
+                    "id": "base-03",
+                    "text": "**OAuth con permisos básicos y de publicación** — falta `instagram_business_manage_insights` (ver IG-01)."
+                },
+                {
+                    "id": "base-04",
+                    "text": "**Modelo base `story_social_publications`** — estado, fechas, URL; un registro por tema/historia/plataforma."
+                }
+            ],
+            "id": "zuachctbhf0bzrvofzn2p4xm",
+            "color": "#2f6f4f"
+        }
+    ],
+    "autosave": true,
+    "saveToFile": true,
+    "timestamp": 1788660795701
+}

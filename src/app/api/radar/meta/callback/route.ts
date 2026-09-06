@@ -10,10 +10,14 @@ import {
   exchangeInstagramCodeForToken,
   fetchInstagramUsername,
   MetaGraphApiError,
+  verifyInstagramInsightsAccess,
 } from "@/app/modules/meta/meta-graph-client";
+import { classifyMetaGraphError, describeMetaVerificationError } from "@/app/modules/meta/meta-verification";
 import { verifyMetaOAuthState } from "@/app/modules/meta/meta-oauth-state";
 import {
   getEffectiveMetaAppCredentials,
+  recordMetaVerificationFailure,
+  recordMetaVerificationSuccess,
   saveTopicMetaConnection,
 } from "@/app/modules/meta/topic-meta-connections.repository";
 
@@ -68,12 +72,40 @@ export async function GET(request: Request) {
       longLived.accessToken,
     ).catch(() => undefined);
 
-    await saveTopicMetaConnection(topicId, {
+    const { connectionVersion } = await saveTopicMetaConnection(topicId, {
       igUserId: shortLived.userId,
       ...(username ? { igUsername: username } : {}),
       accessToken: longLived.accessToken,
       tokenExpiresAt: new Date(Date.now() + longLived.expiresIn * 1_000),
+      grantedPermissions: shortLived.grantedPermissions,
     });
+
+    // Best-effort: prove insights actually work right now, the same way
+    // fetchInstagramUsername above is allowed to fail without breaking the
+    // redirect. This lets a fresh connect show the correct state immediately
+    // instead of requiring the admin to remember to click "Verify access".
+    const connectedTopicId = topicId;
+    await verifyInstagramInsightsAccess(shortLived.userId, longLived.accessToken)
+      .then(() =>
+        recordMetaVerificationSuccess(
+          connectedTopicId,
+          connectionVersion,
+          new Date(),
+        ),
+      )
+      .catch(async (verificationError) => {
+        const graphError =
+          verificationError instanceof MetaGraphApiError
+            ? verificationError.graphError
+            : undefined;
+        await recordMetaVerificationFailure(connectedTopicId, connectionVersion, {
+          message: describeMetaVerificationError(
+            graphError,
+            "Instagram insights verification failed",
+          ),
+          forceReconnect: classifyMetaGraphError(graphError) === "auth",
+        });
+      });
 
     return NextResponse.redirect(
       metaConnectReturnUrl(topicId, { connected: true }),

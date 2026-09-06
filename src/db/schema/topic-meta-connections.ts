@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   pgTable,
   text,
@@ -43,6 +44,35 @@ export const topicMetaConnections = pgTable("topic_meta_connections", {
   }),
   connectedAt: timestamp("connected_at", { withTimezone: true, mode: "date" }),
   connectedBy: text("connected_by"),
+  /**
+   * A fresh random marker assigned on every (re)connect (see
+   * saveTopicMetaConnection). Reconnecting the same Instagram account keeps
+   * the same igUserId, so igUserId alone cannot distinguish "the connection a
+   * refresh/verification started against" from "the one that replaced it
+   * moments later" — this can. A stale write whose captured version no
+   * longer matches the stored one is dropped rather than applied.
+   */
+  connectionVersion: text("connection_version").notNull().default(""),
+  /**
+   * OAuth scopes Instagram actually granted at the last connect/reconnect
+   * (see meta-connection-state.ts's INSTAGRAM_INSIGHTS_SCOPE). Reset on every
+   * reconnect since a new authorization supersedes the old grant.
+   */
+  grantedPermissions: text("granted_permissions")
+    .array()
+    .notNull()
+    .default(sql`ARRAY[]::text[]`),
+  /** Set only by a successful live verification call (see the verify route). */
+  lastVerifiedAt: timestamp("last_verified_at", {
+    withTimezone: true,
+    mode: "date",
+  }),
+  /**
+   * Human-readable reason the last verification attempt failed, or null after
+   * a success. An auth-classified failure also sets tokenExpiresAt to now, so
+   * this text alone never has to encode whether reconnect is required.
+   */
+  lastVerificationError: text("last_verification_error"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
     .defaultNow()
     .notNull(),

@@ -1,0 +1,161 @@
+{
+  "todo": [
+    {
+      "id": "ig-01",
+      "type": "note",
+      "title": "IG-01 — Habilitar y verificar acceso a insights",
+      "category": "MVP P0",
+      "tag": "P0",
+      "prio": 3,
+      "creation_time": "2026-09-05T14:15:00.000Z",
+      "description": {
+        "mime": "text/markdown",
+        "content": "**Prioridad:** P0 · **Dependencias:** ninguna\n\nOAuth incorpora `instagram_business_manage_insights`; el servidor verifica capacidades concedidas. La UI distingue: desconectada / conectada sin insights / operativa / pendiente de reconexión. Reconectar la misma cuenta conserva el historial. Tokens y secretos solo en el servidor.\n\nRef: instagram-performance.md · IG-01"
+      }
+    },
+    {
+      "id": "ig-02",
+      "type": "note",
+      "title": "IG-02 — Importar publicaciones de la cuenta conectada",
+      "category": "MVP P0",
+      "tag": "P0",
+      "prio": 3,
+      "creation_time": "2026-09-05T14:15:00.000Z",
+      "description": {
+        "mime": "text/markdown",
+        "content": "**Prioridad:** P0 · **Dependencias:** IG-01\n\n\"Sincronizar\" importa publicaciones recientes con paginación. Cada post conserva cuenta origen, ID externo, permalink, texto, tipo y fecha. Carrusel = una publicación con elementos. Sin duplicados al re-sincronizar. Fallo parcial conserva lo importado.\n\nRef: instagram-performance.md · IG-02"
+      }
+    },
+    {
+      "id": "ig-03",
+      "type": "note",
+      "title": "IG-03 — Explorar la galería de Instagram",
+      "category": "MVP P0",
+      "tag": "P0",
+      "prio": 3,
+      "creation_time": "2026-09-05T14:15:00.000Z",
+      "description": {
+        "mime": "text/markdown",
+        "content": "**Prioridad:** P0 · **Dependencias:** IG-02\n\nMiniatura, extracto, formato, fecha, enlace externo y estado de vinculación. Filtros por periodo/formato/vinculadas. Cargar más sin perder filtros. Estados de carga, vacío, error y reconexión. Móvil y escritorio con paleta verde y tokens UXDSL.\n\nRef: instagram-performance.md · IG-03"
+      }
+    },
+    {
+      "id": "ig-04",
+      "type": "note",
+      "title": "IG-04 — Vincular un post con su historia y versión creativa",
+      "category": "MVP P0",
+      "tag": "P0",
+      "prio": 3,
+      "creation_time": "2026-09-05T14:15:00.000Z",
+      "description": {
+        "mime": "text/markdown",
+        "content": "**Prioridad:** P0 · **Dependencias:** IG-02, IG-03\n\nBuscar y seleccionar historia aprobada del mismo tema. Una historia admite varios posts; un post máx. una historia. Borrador/versión de imágenes opcional para históricos. Vínculo por URL única normalizada = automático; ambiguo = manual. Corregir/quitar vínculo sin borrar post ni métricas.\n\nRef: instagram-performance.md · IG-04"
+      }
+    },
+    {
+      "id": "ig-05",
+      "type": "note",
+      "title": "IG-05 — Consultar métricas actuales por publicación",
+      "category": "MVP P0",
+      "tag": "P0",
+      "prio": 3,
+      "creation_time": "2026-09-05T14:15:00.000Z",
+      "description": {
+        "mime": "text/markdown",
+        "content": "**Prioridad:** P0 · **Dependencias:** IG-01, IG-02\n\nEl servidor consulta métricas compatibles con tipo/permisos/versión de API. Alcance, visualizaciones, likes, comentarios, guardados, compartidos cuando existan. Distinguir cero real / no disponible / pendiente / error. Guardar fecha de consulta, periodo y unidad. Ratios solo con alcance > 0.\n\nRef: instagram-performance.md · IG-05"
+      }
+    },
+    {
+      "id": "ig-06",
+      "type": "note",
+      "title": "IG-06 — Ver resultados desde la historia editorial",
+      "category": "MVP P0",
+      "tag": "P0",
+      "prio": 3,
+      "creation_time": "2026-09-05T14:15:00.000Z",
+      "description": {
+        "mime": "text/markdown",
+        "content": "**Prioridad:** P0 · **Dependencias:** IG-04, IG-05\n\nLa historia muestra todos sus posts vinculados con formato, fecha, métricas y enlace. Identifica versión creativa o \"Versión no identificada\". Navegar post / historia / versión histórica sin reemplazar el borrador actual. No sumar alcance como personas únicas.\n\nRef: instagram-performance.md · IG-06"
+      }
+    },
+    {
+      "id": "ig-07",
+      "type": "note",
+      "title": "IG-07 — Sincronización automática (histórico de métricas)",
+      "category": "Histórico",
+      "tag": "P1",
+      "prio": 2,
+      "creation_time": "2026-09-05T14:15:00.000Z",
+      "description": {
+        "mime": "text/markdown",
+        "content": "**Prioridad:** P1 · **Dependencias:** IG-05\n\nTrabajo programado con frecuencia configurable y foco en posts recientes. Capturas con timestamp sin sobrescribir histórico. Evita duplicados, respeta rate limits, reintenta transitorios con backoff. Errores de permisos/token = acción, no reintento infinito. Mediciones ~24h, ~72h y ~7d con edad real y tolerancia.\n\nRef: instagram-performance.md · IG-07"
+      }
+    },
+    {
+      "id": "ig-08",
+      "type": "note",
+      "title": "IG-08 — Comparar rendimiento de publicaciones equivalentes",
+      "category": "Histórico",
+      "tag": "P1",
+      "prio": 2,
+      "creation_time": "2026-09-05T14:15:00.000Z",
+      "description": {
+        "mime": "text/markdown",
+        "content": "**Prioridad:** P1 · **Dependencias:** IG-06, IG-07\n\nComparar posts de misma cuenta, formato y ventana de antigüedad. Valores absolutos, tasas y diferencia vs. mediana del grupo. Explicitar tamaño de muestra. Métricas ausentes no cuentan como cero. Capturas fuera de tolerancia se excluyen o se marcan. Crecimiento de seguidores = dato de cuenta, aparte.\n\nRef: instagram-performance.md · IG-08"
+      }
+    },
+    {
+      "id": "ig-09",
+      "type": "note",
+      "title": "IG-09 — Conectar resultados con decisiones creativas",
+      "category": "Aprendizaje editorial",
+      "tag": "P2",
+      "prio": 1,
+      "creation_time": "2026-09-05T14:15:00.000Z",
+      "description": {
+        "mime": "text/markdown",
+        "content": "**Prioridad:** P2 · **Dependencias:** IG-08 + suficientes posts con versiones identificadas\n\nUsa la versión creativa publicada/identificada, no el borrador más reciente. Explorar hook, enfoque, tema, nº de slides, objetivo de conversión, CTA y evaluación editorial previa. Cada observación con ejemplos, ventana, métrica y tamaño de muestra. Distingue asociación de causalidad. Ningún resultado modifica prompts/perfiles/aprobaciones.\n\nRef: instagram-performance.md · IG-09"
+      }
+    }
+  ],
+  "in-progress": [],
+  "testing": [],
+  "done": [
+    {
+      "id": "base-01",
+      "type": "note",
+      "title": "Conexión de Instagram por tema (credenciales cifradas en servidor)",
+      "category": "Punto de partida",
+      "prio": 0,
+      "creation_time": "2026-09-05T14:15:00.000Z",
+      "description": { "mime": "text/markdown", "content": "Existe una conexión de Instagram por tema con credenciales cifradas en el servidor." }
+    },
+    {
+      "id": "base-02",
+      "type": "note",
+      "title": "Cliente Meta: autenticación y consulta de username",
+      "category": "Punto de partida",
+      "prio": 0,
+      "creation_time": "2026-09-05T14:15:00.000Z",
+      "description": { "mime": "text/markdown", "content": "El cliente de Meta implementa autenticación y consulta del nombre de usuario." }
+    },
+    {
+      "id": "base-03",
+      "type": "note",
+      "title": "OAuth con permisos básicos y de publicación",
+      "category": "Punto de partida",
+      "prio": 0,
+      "creation_time": "2026-09-05T14:15:00.000Z",
+      "description": { "mime": "text/markdown", "content": "OAuth solicita permisos básicos y de publicación. Falta incorporar el acceso a insights (ver IG-01)." }
+    },
+    {
+      "id": "base-04",
+      "type": "note",
+      "title": "Modelo base story_social_publications",
+      "category": "Punto de partida",
+      "prio": 0,
+      "creation_time": "2026-09-05T14:15:00.000Z",
+      "description": { "mime": "text/markdown", "content": "Guarda estado, fechas y URL con restricción de un registro por tema, historia y plataforma." }
+    }
+  ]
+}

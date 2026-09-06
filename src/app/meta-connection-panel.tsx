@@ -4,16 +4,26 @@ import { useEffect, useState } from "react";
 
 import styles from "./creative-draft-workspace.generated.module.css";
 
+type MetaConnectionState =
+  | "disconnected"
+  | "connected-without-insights"
+  | "operational"
+  | "needs-reconnect";
+
 type MetaConnectionStatus = {
   connected: boolean;
+  state: MetaConnectionState;
   igUsername?: string;
   pageName?: string;
   tokenExpiresAt?: string;
   connectedAt?: string;
   hasCustomApp: boolean;
+  grantedPermissions?: string[];
+  lastVerifiedAt?: string;
+  lastVerificationError?: string;
 };
 
-type Busy = "connect" | "disconnect" | "save-app" | "clear-app" | undefined;
+type Busy = "connect" | "disconnect" | "verify" | "save-app" | "clear-app" | undefined;
 
 /**
  * Lets an admin connect this topic to its own Instagram Business account.
@@ -101,6 +111,33 @@ export function MetaConnectionPanel({
     }
   }
 
+  async function handleVerify() {
+    if (!authenticated || busy) return;
+    setBusy("verify");
+    setError(undefined);
+    setNotice(undefined);
+    try {
+      const next = await requestJson<MetaConnectionStatus>(
+        `${metaUrl(topicId)}/verify`,
+        secret,
+        { method: "POST" },
+      );
+      setStatus(next);
+      if (next.state === "operational") {
+        setNotice("Instagram insights access verified.");
+      } else {
+        setError(
+          next.lastVerificationError ??
+            "Instagram insights access could not be verified.",
+        );
+      }
+    } catch (requestError) {
+      setError(getErrorMessage(requestError));
+    } finally {
+      setBusy(undefined);
+    }
+  }
+
   async function handleSaveApp() {
     if (!authenticated || busy || !appId.trim() || !appSecret.trim()) return;
     setBusy("save-app");
@@ -163,19 +200,18 @@ export function MetaConnectionPanel({
         </div>
         {status ? (
           <span
-            className={`${styles.metaStatusChip} ${
-              status.connected ? styles.metaStatusConnected : ""
-            }`}
+            className={`${styles.metaStatusChip} ${metaStatusToneClass(status.state)}`}
           >
-            {status.connected
-              ? `Connected · @${status.igUsername ?? "unknown"}`
-              : "Not connected"}
+            {metaStatusLabel(status)}
           </span>
         ) : null}
       </header>
 
       {error ? <p className={styles.brandAssetHint}>{error}</p> : null}
       {notice ? <p className={styles.brandAssetHint}>{notice}</p> : null}
+      {!error && status?.lastVerificationError ? (
+        <p className={styles.brandAssetHint}>{status.lastVerificationError}</p>
+      ) : null}
 
       <div className={styles.metaConnectionBody}>
         {status?.connected ? (
@@ -214,6 +250,16 @@ export function MetaConnectionPanel({
                 ? "Reconnect"
                 : "Connect Instagram account"}
           </button>
+          {status?.connected ? (
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              disabled={controlsDisabled}
+              onClick={handleVerify}
+            >
+              {busy === "verify" ? "Verifying…" : "Verify access"}
+            </button>
+          ) : null}
           {status?.connected ? (
             <button
               type="button"
@@ -295,6 +341,33 @@ export function MetaConnectionPanel({
 
 function metaUrl(topicId: string): string {
   return `/api/radar/topics/${encodeURIComponent(topicId)}/meta`;
+}
+
+function metaStatusToneClass(state: MetaConnectionState): string {
+  switch (state) {
+    case "operational":
+      return styles.metaStatusConnected;
+    case "connected-without-insights":
+      return styles.metaStatusWarning;
+    case "needs-reconnect":
+      return styles.metaStatusError;
+    case "disconnected":
+      return "";
+  }
+}
+
+function metaStatusLabel(status: MetaConnectionStatus): string {
+  const account = `@${status.igUsername ?? "unknown"}`;
+  switch (status.state) {
+    case "disconnected":
+      return "Not connected";
+    case "connected-without-insights":
+      return `Connected · ${account} · Insights not verified`;
+    case "operational":
+      return `Connected · ${account} · Insights active`;
+    case "needs-reconnect":
+      return `Reconnect needed · ${account}`;
+  }
 }
 
 function getErrorMessage(error: unknown): string {

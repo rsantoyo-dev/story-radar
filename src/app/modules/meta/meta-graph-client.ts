@@ -11,21 +11,16 @@ import "server-only";
 
 const GRAPH_API_VERSION = "v21.0";
 
-export class MetaGraphApiError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly graphError?: unknown,
-  ) {
-    super(message);
-  }
-}
-
-export type InstagramShortLivedToken = {
-  accessToken: string;
-  /** The connected Instagram Business/Creator account's own ID. */
-  userId: string;
-};
+export {
+  MetaGraphApiError,
+  parseInstagramShortLivedTokenResponse,
+  type InstagramShortLivedToken,
+} from "./meta-token-response";
+import {
+  MetaGraphApiError,
+  parseInstagramShortLivedTokenResponse,
+  type InstagramShortLivedToken,
+} from "./meta-token-response";
 
 export type InstagramLongLivedToken = {
   accessToken: string;
@@ -46,11 +41,11 @@ export async function exchangeInstagramCodeForToken(input: {
     code: input.code,
   });
 
-  const payload = await instagramPost<{
-    access_token: string;
-    user_id: string;
-  }>("https://api.instagram.com/oauth/access_token", body);
-  return { accessToken: payload.access_token, userId: String(payload.user_id) };
+  const payload = await instagramPost<unknown>(
+    "https://api.instagram.com/oauth/access_token",
+    body,
+  );
+  return parseInstagramShortLivedTokenResponse(payload);
 }
 
 export async function exchangeForLongLivedInstagramToken(input: {
@@ -67,6 +62,48 @@ export async function exchangeForLongLivedInstagramToken(input: {
     expires_in: number;
   }>(url);
   return { accessToken: payload.access_token, expiresIn: payload.expires_in };
+}
+
+/**
+ * Instagram long-lived tokens (60-day validity) are refreshable once at
+ * least 24h old and not yet expired; a successful refresh extends validity
+ * another 60 days. See meta-token-refresh-policy.ts for the eligibility
+ * check that gates when this is called.
+ */
+export async function refreshLongLivedInstagramToken(
+  accessToken: string,
+): Promise<InstagramLongLivedToken> {
+  const url = new URL("https://graph.instagram.com/refresh_access_token");
+  url.searchParams.set("grant_type", "ig_refresh_token");
+  url.searchParams.set("access_token", accessToken);
+
+  const payload = await instagramGet<{
+    access_token: string;
+    expires_in: number;
+  }>(url);
+  return { accessToken: payload.access_token, expiresIn: payload.expires_in };
+}
+
+/**
+ * The minimal account-level (not media-level) insights read available under
+ * "Instagram API with Instagram Login": needs no published post yet, and
+ * only requires instagram_business_basic + instagram_business_manage_insights.
+ * The response is discarded — only whether it throws matters here; IG-05
+ * owns real metric consumption. Throws MetaGraphApiError on any failure,
+ * which the caller classifies via meta-verification.ts.
+ */
+export async function verifyInstagramInsightsAccess(
+  igUserId: string,
+  accessToken: string,
+): Promise<void> {
+  const url = new URL(
+    `https://graph.instagram.com/${GRAPH_API_VERSION}/${igUserId}/insights`,
+  );
+  url.searchParams.set("metric", "reach");
+  url.searchParams.set("period", "day");
+  url.searchParams.set("metric_type", "total_value");
+  url.searchParams.set("access_token", accessToken);
+  await instagramGet<unknown>(url);
 }
 
 export async function fetchInstagramUsername(

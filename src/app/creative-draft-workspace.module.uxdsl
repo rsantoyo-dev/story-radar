@@ -644,6 +644,18 @@
   color: palette(success-dark);
 }
 
+.metaStatusWarning {
+  border-color: palette(warning-main);
+  background: palette(warning-light);
+  color: palette(warning-dark);
+}
+
+.metaStatusError {
+  border-color: palette(error-main);
+  background: palette(error-light);
+  color: palette(error-main);
+}
+
 .metaConnectionBody {
   display: grid;
   gap: density(3);

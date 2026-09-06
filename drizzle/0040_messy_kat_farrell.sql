@@ -1,0 +1,1 @@
+ALTER TABLE "topic_meta_connections" ADD COLUMN "connection_version" text DEFAULT '' NOT NULL;
