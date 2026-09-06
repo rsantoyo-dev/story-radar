@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { CreativeDocumentaryPanel } from "./creative-documentary-panel";
+import { StoryInstagramResults } from "./story-instagram-results";
 import { useEffect, useState } from "react";
 
 import {
@@ -2108,6 +2109,37 @@ export function CreativeDraftWorkspace({
                 )}
               </section>
             ) : null}
+
+            <section className={styles.section}>
+              <StoryInstagramResults
+                topicId={topicId}
+                storyId={storyId}
+                secret={secret}
+                disabled={dirty}
+                onNavigateToDraft={(draftId) => {
+                  const draft = workspace.drafts.find((d) => d.id === draftId);
+                  if (draft) {
+                    viewHistoricalDraft(draft);
+                  } else {
+                    setNotice(
+                      "The linked draft is no longer available in this story.",
+                    );
+                  }
+                }}
+                onGoToConnectionPanel={() => {
+                  if (
+                    dirty &&
+                    !window.confirm(
+                      "Close Creative Studio and discard the unsaved draft changes?",
+                    )
+                  ) {
+                    return;
+                  }
+                  onClose();
+                  window.location.hash = "editorial-meta";
+                }}
+              />
+            </section>
 
             <footer className={styles.footer}>
               <a href={workspace.story.url} target="_blank" rel="noreferrer">Open original story ↗</a>

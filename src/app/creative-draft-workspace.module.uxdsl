@@ -2794,3 +2794,71 @@
   line-height: 1.45;
   color: palette(tertiary-dark);
 }
+
+/* IG-06 — story Instagram results */
+.storyInstagramResults {
+  display: flex;
+  flex-direction: column;
+  gap: density(3);
+}
+
+.storyInstagramList {
+  display: flex;
+  flex-direction: column;
+  gap: density(3);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.storyInstagramPost {
+  @ds-surface(flat light radius(2) shadow(1));
+  display: grid;
+  grid-template-columns: xs(1fr) sm(96px 1fr);
+  gap: density(3);
+  padding: density(3);
+}
+
+.storyInstagramPostBody {
+  display: flex;
+  flex-direction: column;
+  gap: density(2);
+  min-width: 0;
+}
+
+.storyInstagramPostMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: density(2);
+}
+
+.storyInstagramVersionChip {
+  @ds-typo(caption);
+  font-weight: 700;
+  color: palette(primary-main);
+  display: flex;
+  align-items: center;
+  gap: density(2);
+}
+
+.storyInstagramVersionMissing {
+  @ds-typo(caption);
+  color: palette(tertiary-main);
+}
+
+.storyInstagramPicker {
+  @ds-surface(flat light radius(2));
+  display: flex;
+  flex-direction: column;
+  gap: density(2);
+  padding: density(3);
+}
+
+.storyInstagramPickerItem {
+  display: grid;
+  grid-template-columns: 56px 1fr auto;
+  gap: density(2);
+  align-items: center;
+}

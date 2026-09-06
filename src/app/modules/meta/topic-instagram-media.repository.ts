@@ -474,6 +474,39 @@ export async function getTopicInstagramMediaListItem(
   return toInstagramMediaListItem(row, childCounts.get(row.id) ?? 0);
 }
 
+/**
+ * Every imported publication linked to one editorial story (IG-06), newest
+ * first. Unlike the gallery reads this is **not** scoped to the connected
+ * account's `igUserId`: the link is the editorial fact, so a post stays on the
+ * story's record even if the topic's Instagram account was later swapped.
+ * A story has few linked posts — no cursor.
+ */
+export async function listStoryInstagramPosts(
+  topicId: string,
+  storyId: string,
+): Promise<InstagramMediaListItem[]> {
+  const rows = await db
+    .select(MEDIA_ITEM_COLUMNS)
+    .from(topicInstagramMedia)
+    .leftJoin(stories, eq(stories.id, topicInstagramMedia.linkedStoryId))
+    .where(
+      and(
+        eq(topicInstagramMedia.topicId, topicId),
+        eq(topicInstagramMedia.linkedStoryId, storyId),
+      ),
+    )
+    .orderBy(
+      sql`${topicInstagramMedia.publishedAt} desc`,
+      sql`${topicInstagramMedia.id} desc`,
+    )
+    .limit(100);
+
+  const childCounts = await countChildrenByMedia(rows.map((row) => row.id));
+  return rows.map((row) =>
+    toInstagramMediaListItem(row, childCounts.get(row.id) ?? 0),
+  );
+}
+
 export type InstagramMediaMetricsTarget = {
   externalId: string;
   mediaType: string;
