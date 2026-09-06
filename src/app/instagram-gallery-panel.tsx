@@ -116,9 +116,22 @@ export function InstagramGalleryPanel({
     [topicId, filters],
   );
 
-  // First page: runs on mount, on any filter change, on Retry, and when the
-  // connection panel signals a change (refreshToken). No synchronous setState
-  // in the effect body — state moves only inside the async callbacks.
+  // An external refresh signal from the connection panel (after a sync /
+  // disconnect / verify) gets the same protection as a filter change or Retry:
+  // drop the list + cursor and block "Load older" before the reload lands.
+  // Skips the initial mount (refreshToken starts at 0).
+  const firstRefresh = useRef(true);
+  useEffect(() => {
+    if (firstRefresh.current) {
+      firstRefresh.current = false;
+      return;
+    }
+    retry();
+  }, [refreshToken]);
+
+  // First page: runs on mount, on any filter change, on Retry, and (via the
+  // effect above bumping reloadKey) on an external refresh. No synchronous
+  // setState in this effect body — state moves only inside the async callbacks.
   useEffect(() => {
     if (!authenticated || !topicId) return;
     inFlight.current?.abort();
@@ -144,7 +157,7 @@ export function InstagramGalleryPanel({
         }
       });
     return () => controller.abort();
-  }, [authenticated, topicId, mediaUrl, secret, reloadKey, refreshToken]);
+  }, [authenticated, topicId, mediaUrl, secret, reloadKey]);
 
   const loadMore = () => {
     // No pagination while the first page is (re)loading — the cursor in state
