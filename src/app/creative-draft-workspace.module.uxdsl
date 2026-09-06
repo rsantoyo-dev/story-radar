@@ -2705,3 +2705,34 @@
   cursor: pointer;
   text-decoration: underline;
 }
+
+/* IG-04 — link a publication to its editorial story */
+.instagramLinkChip {
+  @ds-typo(caption);
+  font-weight: 700;
+  color: palette(primary-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.instagramLinkForm {
+  @ds-surface(flat light radius(2));
+  display: flex;
+  flex-direction: xs(column) sm(row);
+  flex-wrap: wrap;
+  align-items: xs(stretch) sm(flex-end);
+  gap: density(2);
+  padding: density(3);
+}
+
+.instagramLinkSuggested {
+  @ds-typo(caption);
+  color: palette(tertiary-main);
+}
+
+.instagramLinkActions {
+  display: flex;
+  align-items: center;
+  gap: density(2);
+}

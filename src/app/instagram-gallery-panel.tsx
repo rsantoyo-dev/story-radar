@@ -24,6 +24,37 @@ type MediaItem = {
   childCount: number;
   linkState: "linked" | "pending";
   linkedStoryId: string | null;
+  linkedStoryTitle: string | null;
+  linkedDraftId: string | null;
+  linkedBatchId: string | null;
+  linkedAt: string | null;
+  linkedBy: string | null;
+};
+
+type ApprovedStoryBrief = {
+  id: string;
+  title: string;
+  publishedAt: string | null;
+};
+
+type LinkOptions = {
+  stories: ApprovedStoryBrief[];
+  suggestion?: { storyId: string; storyTitle: string };
+};
+
+type DraftOption = {
+  id: string;
+  format: string;
+  status: string;
+  version: number;
+};
+
+type BatchOption = {
+  id: string;
+  draftVersion: number;
+  status: string;
+  totalAssets: number;
+  createdAt: string;
 };
 
 type MediaResponse = {
@@ -98,6 +129,24 @@ export function InstagramGalleryPanel({
     setError(undefined);
     setReloading(true);
     setReloadKey((key) => key + 1);
+  };
+
+  // Patch one card in place after a link change (IG-04) — no refetch, so
+  // filters, cursor and scroll are untouched. If the card no longer matches an
+  // active link filter, drop it from the list.
+  const applyLinked = (updated: MediaItem) => {
+    setItems((prev) => {
+      const next = prev.map((entry) =>
+        entry.externalId === updated.externalId ? updated : entry,
+      );
+      if (filters.linked === "linked" && updated.linkState !== "linked") {
+        return next.filter((entry) => entry.externalId !== updated.externalId);
+      }
+      if (filters.linked === "pending" && updated.linkState !== "pending") {
+        return next.filter((entry) => entry.externalId !== updated.externalId);
+      }
+      return next;
+    });
   };
 
   const mediaUrl = useCallback(
@@ -377,27 +426,13 @@ export function InstagramGalleryPanel({
                     {item.caption ? (
                       <p className={styles.instagramCaption}>{item.caption}</p>
                     ) : null}
-                    <div className={styles.instagramCardMeta}>
-                      <span
-                        className={`${styles.instagramLinkPill} ${
-                          item.linkState === "linked"
-                            ? styles.instagramLinkPillOn
-                            : ""
-                        }`}
-                      >
-                        {item.linkState === "linked" ? "Linked" : "Pending"}
-                      </span>
-                      {item.permalink ? (
-                        <a
-                          className={styles.instagramLink}
-                          href={item.permalink}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          View on Instagram
-                        </a>
-                      ) : null}
-                    </div>
+                    <MediaLinkControl
+                      topicId={topicId}
+                      secret={secret}
+                      disabled={disabled}
+                      item={item}
+                      onLinked={applyLinked}
+                    />
                   </div>
                 </li>
               ))}
@@ -417,6 +452,298 @@ export function InstagramGalleryPanel({
         </>
       )}
     </section>
+  );
+}
+
+const DRAFT_FORMAT_LABEL: Record<string, string> = {
+  meme: "Meme",
+  carousel: "Carousel",
+};
+
+function draftOptionLabel(draft: DraftOption): string {
+  const format = DRAFT_FORMAT_LABEL[draft.format] ?? draft.format;
+  const approved = draft.status === "approved" ? " · approved" : "";
+  return `${format} · v${draft.version}${approved}`;
+}
+
+function batchOptionLabel(batch: BatchOption): string {
+  const images =
+    batch.totalAssets === 1 ? "1 image" : `${batch.totalAssets} images`;
+  return `Batch v${batch.draftVersion} · ${images} · ${batch.status}`;
+}
+
+function linkUrl(topicId: string, query: Record<string, string>): string {
+  const url = new URL(
+    `/api/radar/topics/${encodeURIComponent(topicId)}/meta/media/link`,
+    window.location.origin,
+  );
+  for (const [key, value] of Object.entries(query)) {
+    url.searchParams.set(key, value);
+  }
+  return url.pathname + url.search;
+}
+
+/**
+ * Per-card link control (IG-04). Collapsed: the link state plus a link/edit
+ * button (and Remove when linked). Expanded: an inline form to pick the
+ * approved story and, optionally, the draft and image batch that produced the
+ * post. All requests reuse the module `requestJson`; state moves only in event
+ * handlers and promise callbacks (no effect-body setState).
+ */
+function MediaLinkControl({
+  topicId,
+  secret,
+  disabled,
+  item,
+  onLinked,
+}: {
+  topicId: string;
+  secret: string;
+  disabled: boolean;
+  item: MediaItem;
+  onLinked: (updated: MediaItem) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [loadingOptions, setLoadingOptions] = useState(false);
+  const [stories, setStories] = useState<ApprovedStoryBrief[]>([]);
+  const [suggestion, setSuggestion] = useState<LinkOptions["suggestion"]>();
+  const [drafts, setDrafts] = useState<DraftOption[]>([]);
+  const [batches, setBatches] = useState<BatchOption[]>([]);
+  const [storyId, setStoryId] = useState("");
+  const [draftId, setDraftId] = useState("");
+  const [batchId, setBatchId] = useState("");
+  const [by, setBy] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string>();
+
+  const loadDrafts = (nextStoryId: string) => {
+    setDrafts([]);
+    setBatches([]);
+    if (!nextStoryId) return;
+    requestJson<{ drafts: DraftOption[] }>(
+      linkUrl(topicId, { storyId: nextStoryId }),
+      secret,
+    )
+      .then((response) => setDrafts(response.drafts))
+      .catch(() => setDrafts([]));
+  };
+
+  const loadBatches = (nextDraftId: string) => {
+    setBatches([]);
+    if (!nextDraftId) return;
+    requestJson<{ batches: BatchOption[] }>(
+      linkUrl(topicId, { draftId: nextDraftId }),
+      secret,
+    )
+      .then((response) => setBatches(response.batches))
+      .catch(() => setBatches([]));
+  };
+
+  const openForm = () => {
+    setOpen(true);
+    setErr(undefined);
+    setLoadingOptions(true);
+    setStoryId(item.linkedStoryId ?? "");
+    setDraftId(item.linkedDraftId ?? "");
+    setBatchId(item.linkedBatchId ?? "");
+    setBy("");
+    requestJson<LinkOptions>(
+      linkUrl(topicId, { externalId: item.externalId }),
+      secret,
+    )
+      .then((response) => {
+        setStories(response.stories);
+        setSuggestion(response.suggestion);
+        const preselect =
+          item.linkedStoryId ?? response.suggestion?.storyId ?? "";
+        setStoryId(preselect);
+        if (preselect) loadDrafts(preselect);
+        if (item.linkedDraftId) loadBatches(item.linkedDraftId);
+      })
+      .catch((error) => setErr(getErrorMessage(error)))
+      .finally(() => setLoadingOptions(false));
+  };
+
+  const submit = (nextStoryId: string | null) => {
+    setBusy(true);
+    setErr(undefined);
+    requestJson<MediaItem>(linkUrl(topicId, {}), secret, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        externalId: item.externalId,
+        storyId: nextStoryId,
+        ...(nextStoryId
+          ? { draftId: draftId || null, batchId: batchId || null }
+          : {}),
+        ...(by.trim() ? { by: by.trim() } : {}),
+      }),
+    })
+      .then((updated) => {
+        onLinked(updated);
+        setOpen(false);
+      })
+      .catch((error) => setErr(getErrorMessage(error)))
+      .finally(() => setBusy(false));
+  };
+
+  const linked = item.linkState === "linked";
+
+  return (
+    <>
+      <div className={styles.instagramCardMeta}>
+        {linked ? (
+          <span className={styles.instagramLinkChip}>
+            ↪ {item.linkedStoryTitle ?? "Linked story"}
+            {item.linkedDraftId ? " · with draft" : ""}
+            {item.linkedBatchId ? " · with batch" : ""}
+          </span>
+        ) : (
+          <span className={styles.instagramLinkPill}>Pending</span>
+        )}
+        {item.permalink ? (
+          <a
+            className={styles.instagramLink}
+            href={item.permalink}
+            target="_blank"
+            rel="noreferrer"
+          >
+            View on Instagram
+          </a>
+        ) : null}
+      </div>
+
+      {!open ? (
+        <div className={styles.instagramCardMeta}>
+          <button
+            type="button"
+            className={styles.instagramLink}
+            disabled={disabled}
+            onClick={openForm}
+          >
+            {linked ? "Edit link" : "Link to story"}
+          </button>
+          {linked ? (
+            <button
+              type="button"
+              className={styles.instagramLink}
+              disabled={disabled || busy}
+              onClick={() => submit(null)}
+            >
+              Remove link
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {open ? (
+        <div className={styles.instagramLinkForm}>
+          {loadingOptions ? (
+            <p className={styles.brandAssetHint}>Loading stories…</p>
+          ) : (
+            <>
+              <label className={styles.field}>
+                <span>Approved story</span>
+                <select
+                  value={storyId}
+                  disabled={busy}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setStoryId(value);
+                    setDraftId("");
+                    setBatchId("");
+                    loadDrafts(value);
+                  }}
+                >
+                  <option value="">Select…</option>
+                  {stories.map((story) => (
+                    <option key={story.id} value={story.id}>
+                      {story.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {suggestion && suggestion.storyId === storyId ? (
+                <span className={styles.instagramLinkSuggested}>
+                  Suggested from the registered URL
+                </span>
+              ) : null}
+              {drafts.length > 0 ? (
+                <label className={styles.field}>
+                  <span>Draft (optional)</span>
+                  <select
+                    value={draftId}
+                    disabled={busy}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setDraftId(value);
+                      setBatchId("");
+                      loadBatches(value);
+                    }}
+                  >
+                    <option value="">No draft</option>
+                    {drafts.map((draft) => (
+                      <option key={draft.id} value={draft.id}>
+                        {draftOptionLabel(draft)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              {draftId && batches.length > 0 ? (
+                <label className={styles.field}>
+                  <span>Image batch (optional)</span>
+                  <select
+                    value={batchId}
+                    disabled={busy}
+                    onChange={(event) => setBatchId(event.target.value)}
+                  >
+                    <option value="">No batch</option>
+                    {batches.map((batch) => (
+                      <option key={batch.id} value={batch.id}>
+                        {batchOptionLabel(batch)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              <label className={styles.field}>
+                <span>Your name (optional)</span>
+                <input
+                  type="text"
+                  value={by}
+                  disabled={busy}
+                  maxLength={200}
+                  onChange={(event) => setBy(event.target.value)}
+                />
+              </label>
+              <div className={styles.instagramLinkActions}>
+                <button
+                  type="button"
+                  className={styles.secondaryButton}
+                  disabled={busy || !storyId}
+                  onClick={() => submit(storyId)}
+                >
+                  {busy ? "Saving…" : "Link"}
+                </button>
+                <button
+                  type="button"
+                  className={styles.instagramLink}
+                  disabled={busy}
+                  onClick={() => {
+                    setOpen(false);
+                    setErr(undefined);
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </>
+          )}
+          {err ? <p className={styles.brandAssetHint}>{err}</p> : null}
+        </div>
+      ) : null}
+    </>
   );
 }
 

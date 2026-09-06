@@ -14,6 +14,7 @@ import {
 } from "./topic-meta-connections.repository";
 import {
   countTopicInstagramMedia,
+  reconcileTopicInstagramMediaLinks,
   upsertInstagramMediaPage,
 } from "./topic-instagram-media.repository";
 
@@ -93,6 +94,17 @@ export async function syncInstagramMediaPage(
     account.igUserId,
     page.media,
   );
+
+  // URL auto-link (IG-04). Never let a reconcile failure fail the sync or the
+  // recorded summary — the imported media is already safely persisted.
+  try {
+    await reconcileTopicInstagramMediaLinks(topicId, account.igUserId);
+  } catch (error) {
+    console.error(
+      `Instagram media link reconcile failed for topic ${topicId}`,
+      error,
+    );
+  }
 
   return finalize(topicId, account, {
     ...counts,

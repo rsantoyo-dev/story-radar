@@ -155,6 +155,43 @@ export async function findLatestCreativeAssetBatchForDraft(
   return batch ? loadCreativeAssetBatch(batch) : undefined;
 }
 
+export type CreativeAssetBatchSummary = {
+  id: string;
+  draftVersion: number;
+  status: CreativeAssetBatchStatus;
+  totalAssets: number;
+  createdAt: string;
+};
+
+/**
+ * Lightweight list of a draft's image batches (id + version + status + count),
+ * newest first — for pickers like the IG-04 link dialog. Does not load the
+ * batch assets the way `loadCreativeAssetBatch` does.
+ */
+export async function listCreativeAssetBatchSummariesForDraft(
+  draftId: string,
+): Promise<CreativeAssetBatchSummary[]> {
+  const rows = await db
+    .select({
+      id: creativeAssetBatches.id,
+      draftVersion: creativeAssetBatches.draftVersion,
+      status: creativeAssetBatches.status,
+      totalAssets: creativeAssetBatches.totalAssets,
+      createdAt: creativeAssetBatches.createdAt,
+    })
+    .from(creativeAssetBatches)
+    .where(eq(creativeAssetBatches.draftId, draftId))
+    .orderBy(desc(creativeAssetBatches.createdAt));
+
+  return rows.map((row) => ({
+    id: row.id,
+    draftVersion: row.draftVersion,
+    status: row.status,
+    totalAssets: row.totalAssets,
+    createdAt: row.createdAt.toISOString(),
+  }));
+}
+
 /**
  * Pending provider jobs must remain pollable even after the profile logo or
  * another batch identity changes. Otherwise the old job can be orphaned.

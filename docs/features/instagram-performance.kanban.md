@@ -16,10 +16,6 @@
 
 ## Por hacer
 
-### IG-04 — Vincular un post con su historia y versión creativa
-
-  - tags: [ig]
-
 ### IG-05 — Consultar métricas actuales por publicación
 
   - tags: [ig]
@@ -31,6 +27,10 @@
 ## En progreso
 
 ## En revisión / QA
+
+### IG-04 — Vincular un post con su historia y versión creativa
+
+  - tags: [ig]
 
 ### IG-03 — Explorar la galería de Instagram
 

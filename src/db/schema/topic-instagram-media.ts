@@ -11,6 +11,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+import { creativeAssetBatches, creativeDrafts } from "./creative-content";
 import { stories } from "./stories";
 import { topics } from "./topics";
 
@@ -57,6 +58,28 @@ export const topicInstagramMedia = pgTable(
     linkedStoryId: uuid("linked_story_id").references(() => stories.id, {
       onDelete: "set null",
     }),
+    /**
+     * Optional creative draft and image batch that produced this publication
+     * (IG-04). Both are optional even when a story is linked (historical posts
+     * may predate the draft model). A draft is only accepted when it belongs to
+     * `linkedStoryId`; a batch only when it belongs to `linkedDraftId` — those
+     * invariants are enforced by `linkInstagramMediaToStory`, not a DB check,
+     * because a hard story delete cascades several `SET NULL`s onto this row.
+     */
+    linkedDraftId: uuid("linked_draft_id").references(() => creativeDrafts.id, {
+      onDelete: "set null",
+    }),
+    linkedBatchId: uuid("linked_batch_id").references(
+      () => creativeAssetBatches.id,
+      { onDelete: "set null" },
+    ),
+    /**
+     * When and who last changed the link (create, correct or remove). Never
+     * nulled — an unlink still records who did it. `linked_by` is free text
+     * ("auto" for URL auto-linking) since the app has no user identity yet.
+     */
+    linkedAt: timestamp("linked_at", { withTimezone: true, mode: "date" }),
+    linkedBy: text("linked_by"),
     /** Snapshot of the Graph node as received, for debugging and future fields. */
     raw: jsonb("raw").notNull(),
     importedAt: timestamp("imported_at", { withTimezone: true, mode: "date" })
@@ -83,6 +106,10 @@ export const topicInstagramMedia = pgTable(
     check(
       "topic_instagram_media_access_state_check",
       sql`${table.accessState} IN ('accessible', 'inaccessible')`,
+    ),
+    check(
+      "topic_instagram_media_linked_by_length_check",
+      sql`${table.linkedBy} IS NULL OR char_length(${table.linkedBy}) <= 200`,
     ),
   ],
 );

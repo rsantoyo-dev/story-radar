@@ -15,8 +15,11 @@ import {
 
 import { db } from "@/db/client";
 import {
+  stories,
+  storySocialPublications,
   topicInstagramMedia,
   topicInstagramMediaChildren,
+  topicStories,
 } from "@/db/schema";
 
 import type { InstagramMediaNode } from "./instagram-media-response";
@@ -24,6 +27,7 @@ import {
   instagramMediaFormat,
   type InstagramMediaFormat,
 } from "./instagram-media-format";
+import { instagramPermalinkShortcode } from "./instagram-permalink";
 
 export type InstagramMediaUpsertCounts = {
   imported: number;
@@ -213,7 +217,78 @@ export type InstagramMediaListItem = {
   childCount: number;
   linkState: "linked" | "pending";
   linkedStoryId: string | null;
+  linkedStoryTitle: string | null;
+  linkedDraftId: string | null;
+  linkedBatchId: string | null;
+  /** ISO timestamp of the last link change (create, correct or remove). */
+  linkedAt: string | null;
+  linkedBy: string | null;
 };
+
+const CAPTION_EXCERPT_MAX = 280;
+
+const MEDIA_ITEM_COLUMNS = {
+  id: topicInstagramMedia.id,
+  externalId: topicInstagramMedia.externalId,
+  mediaType: topicInstagramMedia.mediaType,
+  mediaProductType: topicInstagramMedia.mediaProductType,
+  permalink: topicInstagramMedia.permalink,
+  caption: topicInstagramMedia.caption,
+  mediaUrl: topicInstagramMedia.mediaUrl,
+  thumbnailUrl: topicInstagramMedia.thumbnailUrl,
+  publishedAt: topicInstagramMedia.publishedAt,
+  accessState: topicInstagramMedia.accessState,
+  linkedStoryId: topicInstagramMedia.linkedStoryId,
+  linkedStoryTitle: stories.title,
+  linkedDraftId: topicInstagramMedia.linkedDraftId,
+  linkedBatchId: topicInstagramMedia.linkedBatchId,
+  linkedAt: topicInstagramMedia.linkedAt,
+  linkedBy: topicInstagramMedia.linkedBy,
+};
+
+type MediaItemRow = {
+  id: string;
+  externalId: string;
+  mediaType: string;
+  mediaProductType: string | null;
+  permalink: string | null;
+  caption: string | null;
+  mediaUrl: string | null;
+  thumbnailUrl: string | null;
+  publishedAt: Date;
+  accessState: string;
+  linkedStoryId: string | null;
+  linkedStoryTitle: string | null;
+  linkedDraftId: string | null;
+  linkedBatchId: string | null;
+  linkedAt: Date | null;
+  linkedBy: string | null;
+};
+
+function toInstagramMediaListItem(
+  row: MediaItemRow,
+  childCount: number,
+): InstagramMediaListItem {
+  return {
+    id: row.id,
+    externalId: row.externalId,
+    format: instagramMediaFormat(row),
+    permalink: row.permalink,
+    caption: row.caption ? row.caption.slice(0, CAPTION_EXCERPT_MAX) : null,
+    thumbnailUrl: row.thumbnailUrl ?? row.mediaUrl,
+    publishedAt: row.publishedAt.toISOString(),
+    accessState:
+      row.accessState === "inaccessible" ? "inaccessible" : "accessible",
+    childCount,
+    linkState: row.linkedStoryId ? "linked" : "pending",
+    linkedStoryId: row.linkedStoryId,
+    linkedStoryTitle: row.linkedStoryTitle,
+    linkedDraftId: row.linkedDraftId,
+    linkedBatchId: row.linkedBatchId,
+    linkedAt: row.linkedAt ? row.linkedAt.toISOString() : null,
+    linkedBy: row.linkedBy,
+  };
+}
 
 export type InstagramMediaListFilters = {
   limit?: number;
@@ -225,8 +300,6 @@ export type InstagramMediaListFilters = {
   /** Inclusive YYYY-MM-DD upper bound (the whole day is included). */
   to?: string;
 };
-
-const CAPTION_EXCERPT_MAX = 280;
 
 /**
  * Reads one keyset page of a topic's imported Instagram media for its current
@@ -277,20 +350,9 @@ export async function listTopicInstagramMedia(
   }
 
   const rows = await db
-    .select({
-      id: topicInstagramMedia.id,
-      externalId: topicInstagramMedia.externalId,
-      mediaType: topicInstagramMedia.mediaType,
-      mediaProductType: topicInstagramMedia.mediaProductType,
-      permalink: topicInstagramMedia.permalink,
-      caption: topicInstagramMedia.caption,
-      mediaUrl: topicInstagramMedia.mediaUrl,
-      thumbnailUrl: topicInstagramMedia.thumbnailUrl,
-      publishedAt: topicInstagramMedia.publishedAt,
-      accessState: topicInstagramMedia.accessState,
-      linkedStoryId: topicInstagramMedia.linkedStoryId,
-    })
+    .select(MEDIA_ITEM_COLUMNS)
     .from(topicInstagramMedia)
+    .leftJoin(stories, eq(stories.id, topicInstagramMedia.linkedStoryId))
     .where(and(...conditions))
     .orderBy(
       sql`${topicInstagramMedia.publishedAt} desc`,
@@ -303,24 +365,209 @@ export async function listTopicInstagramMedia(
 
   const childCounts = await countChildrenByMedia(page.map((row) => row.id));
 
-  const items: InstagramMediaListItem[] = page.map((row) => ({
-    id: row.id,
-    externalId: row.externalId,
-    format: instagramMediaFormat(row),
-    permalink: row.permalink,
-    caption: row.caption ? row.caption.slice(0, CAPTION_EXCERPT_MAX) : null,
-    thumbnailUrl: row.thumbnailUrl ?? row.mediaUrl,
-    publishedAt: row.publishedAt.toISOString(),
-    accessState: row.accessState === "inaccessible" ? "inaccessible" : "accessible",
-    childCount: childCounts.get(row.id) ?? 0,
-    linkState: row.linkedStoryId ? "linked" : "pending",
-    linkedStoryId: row.linkedStoryId,
-  }));
+  const items: InstagramMediaListItem[] = page.map((row) =>
+    toInstagramMediaListItem(row, childCounts.get(row.id) ?? 0),
+  );
 
   const last = page.at(-1);
   return hasMore && last
     ? { items, nextCursor: encodeCursor(last.publishedAt, last.id) }
     : { items };
+}
+
+/**
+ * Reads one imported media as a list item (same shape and mapping as
+ * `listTopicInstagramMedia`), scoped to the topic's current account. Used to
+ * return the fresh row after a link mutation so the gallery can patch it in
+ * place. Returns undefined when the media is not found for that account.
+ */
+export async function getTopicInstagramMediaListItem(
+  topicId: string,
+  igUserId: string,
+  externalId: string,
+): Promise<InstagramMediaListItem | undefined> {
+  const [row] = await db
+    .select(MEDIA_ITEM_COLUMNS)
+    .from(topicInstagramMedia)
+    .leftJoin(stories, eq(stories.id, topicInstagramMedia.linkedStoryId))
+    .where(
+      and(
+        eq(topicInstagramMedia.topicId, topicId),
+        eq(topicInstagramMedia.igUserId, igUserId),
+        eq(topicInstagramMedia.externalId, externalId),
+      ),
+    )
+    .limit(1);
+  if (!row) return undefined;
+  const childCounts = await countChildrenByMedia([row.id]);
+  return toInstagramMediaListItem(row, childCounts.get(row.id) ?? 0);
+}
+
+export type SetInstagramMediaLink =
+  | { storyId: null; by?: string | null }
+  | {
+      storyId: string;
+      draftId?: string | null;
+      batchId?: string | null;
+      by?: string | null;
+    };
+
+/**
+ * Writes the story link (IG-04) on one imported media, scoped to the topic's
+ * current account. `storyId: null` clears the link; the story/draft/batch
+ * columns go null but `linked_at` / `linked_by` still record who removed it and
+ * when. Belonging checks (draft ∈ story, batch ∈ draft, story approved) are the
+ * caller's job — see `linkInstagramMediaToStory`. Returns the fresh list item,
+ * or undefined when no row matched.
+ */
+export async function setInstagramMediaStoryLink(input: {
+  topicId: string;
+  igUserId: string;
+  externalId: string;
+  link: SetInstagramMediaLink;
+}): Promise<InstagramMediaListItem | undefined> {
+  const now = new Date();
+  const set =
+    input.link.storyId === null
+      ? {
+          linkedStoryId: null,
+          linkedDraftId: null,
+          linkedBatchId: null,
+          linkedAt: now,
+          linkedBy: input.link.by ?? null,
+          updatedAt: now,
+        }
+      : {
+          linkedStoryId: input.link.storyId,
+          linkedDraftId: input.link.draftId ?? null,
+          linkedBatchId: input.link.batchId ?? null,
+          linkedAt: now,
+          linkedBy: input.link.by ?? null,
+          updatedAt: now,
+        };
+
+  const updated = await db
+    .update(topicInstagramMedia)
+    .set(set)
+    .where(
+      and(
+        eq(topicInstagramMedia.topicId, input.topicId),
+        eq(topicInstagramMedia.igUserId, input.igUserId),
+        eq(topicInstagramMedia.externalId, input.externalId),
+      ),
+    )
+    .returning({ id: topicInstagramMedia.id });
+
+  if (updated.length === 0) return undefined;
+  return getTopicInstagramMediaListItem(
+    input.topicId,
+    input.igUserId,
+    input.externalId,
+  );
+}
+
+/**
+ * Finds the single approved story in this topic whose `instagram` publication
+ * URL resolves to the same shortcode as `permalink`. Returns null when there is
+ * no match or more than one distinct story (ambiguous — never auto-confirmed).
+ * Text/date similarity is deliberately not considered.
+ */
+export async function findApprovedStoryMatchForPermalink(
+  topicId: string,
+  permalink: string | null | undefined,
+): Promise<{ storyId: string; storyTitle: string } | null> {
+  const shortcode = instagramPermalinkShortcode(permalink);
+  if (!shortcode) return null;
+
+  const rows = await db
+    .select({
+      storyId: storySocialPublications.storyId,
+      storyTitle: stories.title,
+      postUrl: storySocialPublications.postUrl,
+    })
+    .from(storySocialPublications)
+    .innerJoin(
+      topicStories,
+      and(
+        eq(topicStories.topicId, storySocialPublications.topicId),
+        eq(topicStories.storyId, storySocialPublications.storyId),
+      ),
+    )
+    .innerJoin(stories, eq(stories.id, storySocialPublications.storyId))
+    .where(
+      and(
+        eq(storySocialPublications.topicId, topicId),
+        eq(storySocialPublications.platform, "instagram"),
+        isNotNull(storySocialPublications.postUrl),
+        eq(topicStories.reviewDecision, "approved"),
+      ),
+    );
+
+  const matches = new Map<string, string>();
+  for (const row of rows) {
+    if (instagramPermalinkShortcode(row.postUrl) === shortcode) {
+      matches.set(row.storyId, row.storyTitle);
+    }
+  }
+  if (matches.size !== 1) return null;
+  const [[storyId, storyTitle]] = matches;
+  return { storyId, storyTitle };
+}
+
+/**
+ * URL auto-link (IG-04). For every still-pending imported media with a
+ * permalink, links it to the unique approved story that already registered the
+ * same Instagram URL (`findApprovedStoryMatchForPermalink`), stamping
+ * `linked_by = 'auto'`. Idempotent — only pending rows are touched, and each
+ * update re-checks `linked_story_id IS NULL`. A failure here must not break the
+ * sync that calls it.
+ */
+export async function reconcileTopicInstagramMediaLinks(
+  topicId: string,
+  igUserId: string,
+): Promise<{ linked: number }> {
+  const candidates = await db
+    .select({
+      id: topicInstagramMedia.id,
+      permalink: topicInstagramMedia.permalink,
+    })
+    .from(topicInstagramMedia)
+    .where(
+      and(
+        eq(topicInstagramMedia.topicId, topicId),
+        eq(topicInstagramMedia.igUserId, igUserId),
+        isNull(topicInstagramMedia.linkedStoryId),
+        isNotNull(topicInstagramMedia.permalink),
+      ),
+    );
+  if (candidates.length === 0) return { linked: 0 };
+
+  const now = new Date();
+  let linked = 0;
+  for (const candidate of candidates) {
+    const match = await findApprovedStoryMatchForPermalink(
+      topicId,
+      candidate.permalink,
+    );
+    if (!match) continue;
+    const updated = await db
+      .update(topicInstagramMedia)
+      .set({
+        linkedStoryId: match.storyId,
+        linkedBy: "auto",
+        linkedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(topicInstagramMedia.id, candidate.id),
+          isNull(topicInstagramMedia.linkedStoryId),
+        ),
+      )
+      .returning({ id: topicInstagramMedia.id });
+    linked += updated.length;
+  }
+  return { linked };
 }
 
 async function countChildrenByMedia(
