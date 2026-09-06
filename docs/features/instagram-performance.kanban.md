@@ -24,10 +24,6 @@
 
 ## En revisión / QA
 
-### IG-05 — Consultar métricas actuales por publicación
-
-  - tags: [ig]
-
 ### IG-03 — Explorar la galería de Instagram
 
   - tags: [ig]
@@ -37,6 +33,10 @@
   - tags: [ig]
 
 ## Hecho
+
+### IG-05 — Consultar métricas actuales por publicación
+
+  - tags: [ig]
 
 ### IG-04 — Vincular un post con su historia y versión creativa
 
