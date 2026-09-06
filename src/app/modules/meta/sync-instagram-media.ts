@@ -51,11 +51,7 @@ export async function syncInstagramMediaPage(
   const empty = { imported: 0, updated: 0, carousels: 0 };
   const status = await getTopicMetaConnectionStatus(topicId);
   if (status.state === "needs-reconnect") {
-    return finalize(topicId, account.igUserId, {
-      ...empty,
-      cursor: options.after ?? null,
-      error: "needs-reconnect",
-    });
+    return finalize(topicId, account, { ...empty, error: "needs-reconnect" });
   }
 
   let page;
@@ -77,9 +73,8 @@ export async function syncInstagramMediaPage(
         forceReconnect: true,
       });
     }
-    return finalize(topicId, account.igUserId, {
+    return finalize(topicId, account, {
       ...empty,
-      cursor: options.after ?? null,
       error:
         kind === "auth"
           ? "needs-reconnect"
@@ -99,21 +94,31 @@ export async function syncInstagramMediaPage(
     page.media,
   );
 
-  return finalize(topicId, account.igUserId, {
+  return finalize(topicId, account, {
     ...counts,
+    // Advance the stored cursor only on a clean page (null once fully paged).
     cursor: page.nextCursor ?? null,
   });
 }
 
 async function finalize(
   topicId: string,
-  igUserId: string,
-  input: MediaSyncSummary & { cursor: string | null },
+  account: { igUserId: string; connectionVersion: string },
+  input: MediaSyncSummary & { cursor?: string | null },
 ): Promise<InstagramMediaSyncResult> {
   const syncedAt = new Date();
   const { cursor, ...summary } = input;
-  await recordInstagramMediaSync(topicId, { cursor, summary, syncedAt });
-  const totalImported = await countTopicInstagramMedia(topicId, igUserId);
+  await recordInstagramMediaSync(topicId, {
+    connectionVersion: account.connectionVersion,
+    summary,
+    // Omit `cursor` on a failed sync so the stored one is left untouched.
+    ...(cursor !== undefined ? { cursor } : {}),
+    syncedAt,
+  });
+  const totalImported = await countTopicInstagramMedia(
+    topicId,
+    account.igUserId,
+  );
   return {
     ...summary,
     connected: true,

@@ -4,10 +4,15 @@
  * access token) so this pure, tolerant parsing stays directly unit-testable —
  * the same split used by meta-token-response.ts and meta-oauth-state.ts.
  *
- * Tolerant on purpose: article content and model/API responses are untrusted
- * data. Entries missing an `id` or a usable `timestamp` are dropped rather
- * than failing the whole page.
+ * Tolerant *within* a well-formed envelope: individual entries missing an
+ * `id` or a usable `timestamp` are dropped rather than failing the page. But
+ * a body that is not `{ data: [...] }` at all (no `data` key, `data` not an
+ * array, non-object) is a malformed response, not an empty page — it throws
+ * so the sync is not recorded as a success that wipes the cursor.
+ * `{ "data": [] }` is a valid empty page and is accepted.
  */
+
+import { MetaGraphApiError } from "./meta-token-response";
 
 export type InstagramMediaChildNode = {
   externalId: string;
@@ -41,7 +46,14 @@ export function parseInstagramMediaListResponse(
   payload: unknown,
 ): InstagramMediaListPage {
   const body = asRecord(payload);
-  const data = Array.isArray(body?.data) ? body!.data : [];
+  if (!body || !Array.isArray(body.data)) {
+    throw new MetaGraphApiError(
+      "Instagram returned 200 but the media response was not in the expected shape",
+      200,
+      payload,
+    );
+  }
+  const data = body.data;
 
   const media = data.flatMap((entry) => {
     const node = asRecord(entry);

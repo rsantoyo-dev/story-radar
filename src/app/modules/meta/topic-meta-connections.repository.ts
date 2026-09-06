@@ -68,23 +68,40 @@ export async function getTopicMetaConnectionStatus(
 }
 
 /**
- * Records the outcome of one IG-02 media sync page. `cursor` is the Graph
- * `paging.cursors.after` for the next page, or null once fully paged.
+ * Records the outcome of one IG-02 media sync page.
+ * - `cursor`: the Graph `paging.cursors.after` for the next page, or null once
+ *   fully paged. Omit it entirely (e.g. on a failed sync) to leave the stored
+ *   cursor untouched — a malformed response must not wipe it.
+ * - Guarded on `connectionVersion` (like recordMetaVerificationSuccess): a
+ *   sync that started against the previous connection cannot write its cursor
+ *   onto a freshly (re)connected account.
  */
 export async function recordInstagramMediaSync(
   topicId: string,
-  input: { cursor: string | null; summary: MediaSyncSummary; syncedAt?: Date },
+  input: {
+    connectionVersion: string;
+    summary: MediaSyncSummary;
+    cursor?: string | null;
+    syncedAt?: Date;
+  },
 ): Promise<void> {
   const at = input.syncedAt ?? new Date();
   await db
     .update(topicMetaConnections)
     .set({
       lastMediaSyncAt: at,
-      lastMediaSyncCursor: input.cursor,
+      ...(input.cursor !== undefined
+        ? { lastMediaSyncCursor: input.cursor }
+        : {}),
       lastMediaSyncSummary: input.summary,
       updatedAt: at,
     })
-    .where(eq(topicMetaConnections.topicId, topicId));
+    .where(
+      and(
+        eq(topicMetaConnections.topicId, topicId),
+        eq(topicMetaConnections.connectionVersion, input.connectionVersion),
+      ),
+    );
 }
 
 /**
@@ -247,6 +264,9 @@ export async function saveTopicMetaConnection(
       connectionVersion,
       lastVerifiedAt: null,
       lastVerificationError: null,
+      lastMediaSyncAt: null,
+      lastMediaSyncCursor: null,
+      lastMediaSyncSummary: null,
       updatedAt: now,
     })
     .onConflictDoUpdate({
@@ -262,6 +282,9 @@ export async function saveTopicMetaConnection(
         connectionVersion,
         lastVerifiedAt: null,
         lastVerificationError: null,
+        lastMediaSyncAt: null,
+        lastMediaSyncCursor: null,
+        lastMediaSyncSummary: null,
         updatedAt: now,
       },
     });
@@ -295,6 +318,9 @@ export async function disconnectTopicMeta(topicId: string): Promise<void> {
       connectionVersion: randomUUID(),
       lastVerifiedAt: null,
       lastVerificationError: null,
+      lastMediaSyncAt: null,
+      lastMediaSyncCursor: null,
+      lastMediaSyncSummary: null,
       updatedAt: new Date(),
     })
     .where(eq(topicMetaConnections.topicId, topicId));

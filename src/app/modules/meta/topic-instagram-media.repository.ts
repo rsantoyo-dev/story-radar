@@ -102,20 +102,29 @@ export async function upsertInstagramMediaPage(
 
     if (node.mediaType === "CAROUSEL_ALBUM" || node.children.length > 0) {
       counts.carousels += 1;
-      await db
+      // Replace the carousel's elements atomically: delete + insert in one
+      // db.batch (a transaction on Neon). A failed insert can no longer wipe
+      // the previously imported elements, and a concurrent sync of the same
+      // carousel serializes on the row locks instead of colliding.
+      const deleteChildren = db
         .delete(topicInstagramMediaChildren)
         .where(eq(topicInstagramMediaChildren.mediaId, saved.id));
       if (node.children.length > 0) {
-        await db.insert(topicInstagramMediaChildren).values(
-          node.children.map((child, index) => ({
-            mediaId: saved.id,
-            externalId: child.externalId,
-            mediaType: child.mediaType,
-            mediaUrl: child.mediaUrl,
-            thumbnailUrl: child.thumbnailUrl,
-            order: index + 1,
-          })),
-        );
+        await db.batch([
+          deleteChildren,
+          db.insert(topicInstagramMediaChildren).values(
+            node.children.map((child, index) => ({
+              mediaId: saved.id,
+              externalId: child.externalId,
+              mediaType: child.mediaType,
+              mediaUrl: child.mediaUrl,
+              thumbnailUrl: child.thumbnailUrl,
+              order: index + 1,
+            })),
+          ),
+        ]);
+      } else {
+        await deleteChildren;
       }
     }
   }

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { parseInstagramMediaListResponse } from "./instagram-media-response";
+import { MetaGraphApiError } from "./meta-token-response";
 
 test("parses an image post with no children", () => {
   const { media, nextCursor } = parseInstagramMediaListResponse({
@@ -83,7 +84,15 @@ test("returns nextCursor only when paging.next is present", () => {
   );
 });
 
-test("a non-object payload yields an empty page", () => {
-  assert.deepEqual(parseInstagramMediaListResponse(null), { media: [] });
-  assert.deepEqual(parseInstagramMediaListResponse("nope"), { media: [] });
+test("an empty data array is a valid empty page", () => {
+  assert.deepEqual(parseInstagramMediaListResponse({ data: [] }), { media: [] });
+});
+
+test("a body that is not { data: [...] } throws instead of being an empty page", () => {
+  for (const bad of [null, "nope", 200, [], {}, { data: null }, { data: "x" }]) {
+    assert.throws(
+      () => parseInstagramMediaListResponse(bad),
+      MetaGraphApiError,
+    );
+  }
 });
