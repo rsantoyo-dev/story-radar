@@ -47,6 +47,50 @@ export type ParsedInstagramMediaMetric = {
   unit: "accounts" | "count";
 };
 
+/** A metric as persisted — `"error"` carries a possibly-stale last good value. */
+export type StoredInstagramMediaMetric = {
+  value: number | null;
+  state: "ok" | "unavailable" | "error";
+  period: string | null;
+  unit: string | null;
+  error?: string;
+};
+
+const NOT_RETURNED = "Not returned by the last refresh";
+
+/**
+ * Merges a fresh parse into the stored blob (IG-05). Rules:
+ * - a metric with a real value → replaces.
+ * - a metric that came back `"unavailable"` (incl. a wholly empty response)
+ *   while any value is already on file → keeps that value, flagged
+ *   `"error"` (stale). Holds across any number of empty refreshes — the guard
+ *   is "there is a value", not "the previous state was ok".
+ * - a metric dropped from the request entirely (retry-drop) → same: kept stale.
+ * A genuinely never-seen metric just carries its `"unavailable"` entry.
+ */
+export function mergeInstagramMediaMetricsBlob(
+  prior: Record<string, StoredInstagramMediaMetric>,
+  fresh: Record<string, ParsedInstagramMediaMetric>,
+): Record<string, StoredInstagramMediaMetric> {
+  const stale = (name: string): StoredInstagramMediaMetric => ({
+    ...prior[name],
+    state: "error",
+    error: prior[name].error ?? NOT_RETURNED,
+  });
+
+  const merged: Record<string, StoredInstagramMediaMetric> = { ...prior };
+  for (const [name, metric] of Object.entries(fresh)) {
+    merged[name] =
+      metric.state === "unavailable" && prior[name]?.value != null
+        ? stale(name)
+        : metric;
+  }
+  for (const name of Object.keys(prior)) {
+    if (!(name in fresh)) merged[name] = stale(name);
+  }
+  return merged;
+}
+
 /**
  * Reads one media-insights envelope. `requested` is the metric list that was
  * asked for; every one gets an entry — `"ok"` with a numeric value when the

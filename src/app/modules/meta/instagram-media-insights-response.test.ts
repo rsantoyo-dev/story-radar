@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { MetaGraphApiError } from "./meta-token-response";
 import {
   computeMetricRatios,
+  mergeInstagramMediaMetricsBlob,
   parseInstagramMediaInsights,
   unsupportedMetricFromGraphError,
 } from "./instagram-media-insights-response";
@@ -65,6 +66,50 @@ test("accepts an empty data set (every requested metric unavailable)", () => {
   for (const metric of REQUESTED) {
     assert.equal(parsed[metric].state, "unavailable");
   }
+});
+
+test("mergeInstagramMediaMetricsBlob keeps the last value across repeated empty responses", () => {
+  const empty = parseInstagramMediaInsights({ data: [] }, ["reach"]);
+  const first = mergeInstagramMediaMetricsBlob(
+    { reach: { value: 120, state: "ok", period: "lifetime", unit: "accounts" } },
+    empty,
+  );
+  assert.deepEqual(first.reach, {
+    value: 120,
+    state: "error",
+    period: "lifetime",
+    unit: "accounts",
+    error: "Not returned by the last refresh",
+  });
+
+  // Second empty refresh must NOT drop the still-preserved 120.
+  const second = mergeInstagramMediaMetricsBlob(first, empty);
+  assert.equal(second.reach.value, 120);
+  assert.equal(second.reach.state, "error");
+
+  // A real value later replaces the stale one.
+  const recovered = mergeInstagramMediaMetricsBlob(
+    second,
+    parseInstagramMediaInsights(
+      { data: [{ name: "reach", period: "lifetime", total_value: { value: 200 } }] },
+      ["reach"],
+    ),
+  );
+  assert.deepEqual(recovered.reach, {
+    value: 200,
+    state: "ok",
+    period: "lifetime",
+    unit: "accounts",
+  });
+});
+
+test("mergeInstagramMediaMetricsBlob takes a clean unavailable when there is no prior value", () => {
+  const merged = mergeInstagramMediaMetricsBlob(
+    {},
+    parseInstagramMediaInsights({ data: [] }, ["follows"]),
+  );
+  assert.equal(merged.follows.state, "unavailable");
+  assert.equal(merged.follows.value, null);
 });
 
 test("throws MetaGraphApiError(200) on a malformed envelope", () => {

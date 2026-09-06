@@ -29,7 +29,10 @@ import {
 } from "./instagram-media-format";
 import {
   computeMetricRatios,
+  mergeInstagramMediaMetricsBlob,
   type MetricRatios,
+  type ParsedInstagramMediaMetric,
+  type StoredInstagramMediaMetric,
 } from "./instagram-media-insights-response";
 import { instagramPermalinkShortcode } from "./instagram-permalink";
 
@@ -210,14 +213,7 @@ export async function countTopicInstagramMedia(
 }
 
 /** One metric in `InstagramMediaListItem.metrics` (IG-05). */
-export type InstagramMediaMetric = {
-  value: number | null;
-  state: "ok" | "unavailable" | "error";
-  period: string | null;
-  unit: string | null;
-  /** Present only when `state === "error"`. */
-  error?: string;
-};
+export type InstagramMediaMetric = StoredInstagramMediaMetric;
 
 export type InstagramMediaListItem = {
   id: string;
@@ -514,7 +510,7 @@ export async function listInstagramMediaForMetricsRefresh(
 }
 
 export type InstagramMediaMetricsWrite =
-  | { ok: Record<string, InstagramMediaMetric>; apiVersion: string }
+  | { ok: Record<string, ParsedInstagramMediaMetric>; apiVersion: string }
   | { error: string };
 
 /**
@@ -558,26 +554,7 @@ export async function saveInstagramMediaMetrics(input: {
       .where(where)
       .limit(1);
     const prior = normalizeMetricsBlob(existing?.metrics) ?? {};
-    const merged: Record<string, InstagramMediaMetric> = { ...prior };
-    const stale = (name: string): InstagramMediaMetric => ({
-      ...prior[name],
-      state: "error",
-      error: prior[name].error ?? "Not returned by the last refresh",
-    });
-    for (const [name, metric] of Object.entries(input.result.ok)) {
-      // A metric that came back "unavailable" (incl. a wholly empty response)
-      // must not wipe a real value already on file — keep it, flagged stale.
-      merged[name] =
-        metric.state === "unavailable" &&
-        prior[name]?.state === "ok" &&
-        prior[name].value != null
-          ? stale(name)
-          : metric;
-    }
-    for (const name of Object.keys(prior)) {
-      // Dropped from the request entirely (retry-drop) — same rule.
-      if (!(name in input.result.ok)) merged[name] = stale(name);
-    }
+    const merged = mergeInstagramMediaMetricsBlob(prior, input.result.ok);
     updated = await db
       .update(topicInstagramMedia)
       .set({
