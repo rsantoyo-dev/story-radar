@@ -117,12 +117,14 @@ export function InstagramGalleryPanel({
   secret,
   disabled,
   refreshToken = 0,
+  onLinked,
 }: {
   topicId: string;
   secret: string;
   disabled: boolean;
   /** Bumped by the connection panel after a sync / connect / disconnect. */
   refreshToken?: number;
+  onLinked?: () => void;
 }) {
   const [data, setData] = useState<MediaResponse>();
   const [items, setItems] = useState<MediaItem[]>([]);
@@ -458,7 +460,7 @@ export function InstagramGalleryPanel({
                       secret={secret}
                       disabled={disabled}
                       item={item}
-                      onLinked={applyLinked}
+                      onLinked={updated => { applyLinked(updated); onLinked?.(); }}
                     />
                     <MediaMetrics
                       topicId={topicId}

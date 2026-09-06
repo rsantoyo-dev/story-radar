@@ -1,6 +1,7 @@
 import "server-only";
 
-import { findCreativeDraftsForStory } from "@/app/modules/stories/creative-content.repository";
+import { findCreativeAssetBatchById } from "@/app/modules/stories/creative-assets.repository";
+import { findCreativeDraftById } from "@/app/modules/stories/creative-content.repository";
 
 import { instagramCreativeVersionLabel } from "./instagram-creative-version-label";
 import type { MetaConnectionState } from "./meta-connection.types";
@@ -49,19 +50,12 @@ export async function getStoryInstagramResults(
     listStoryInstagramPosts(topicId, storyId),
   ]);
 
-  const hasLinkedDraft = items.some((item) => item.linkedDraftId);
-  const draftsById = new Map<
-    string,
-    { format: string; status: string; version: number }
-  >();
-  if (hasLinkedDraft) {
-    for (const draft of await findCreativeDraftsForStory(topicId, storyId)) {
-      draftsById.set(draft.id, {
-        format: draft.format,
-        status: draft.status,
-        version: draft.version,
-      });
-    }
+  const draftsById = new Map<string, { format: string }>();
+  const draftIds = new Set(items.flatMap(item => item.linkedDraftId ? [item.linkedDraftId] : []));
+  // The workspace list excludes documentary drafts; resolve linked IDs directly.
+  for (const id of draftIds) {
+    const draft = await findCreativeDraftById(topicId, id);
+    if (draft?.storyId === storyId) draftsById.set(id, { format: draft.format });
   }
 
   const posts: StoryInstagramPost[] = items.map((item) => {
@@ -71,16 +65,16 @@ export async function getStoryInstagramResults(
     return {
       ...item,
       creativeVersion:
-        item.linkedDraftId && draft
+        item.linkedDraftId && draft && item.linkedDraftVersion != null
           ? {
               draftId: item.linkedDraftId,
               draftVersion: item.linkedDraftVersion,
               batchId: item.linkedBatchId,
-              status: draft.status,
+              status: "historical",
               label: instagramCreativeVersionLabel({
                 format: draft.format,
-                status: draft.status,
-                version: item.linkedDraftVersion ?? draft.version,
+                status: "historical",
+                version: item.linkedDraftVersion,
               }),
             }
           : null,
@@ -92,4 +86,28 @@ export async function getStoryInstagramResults(
     account: account ? { igUsername: account.igUsername } : null,
     posts,
   };
+}
+
+
+export type StoryInstagramVersion = {
+  draftVersion: number | null;
+  batchId: string | null;
+  unavailable?: string;
+  units: { order: number; headline: string; body: string; imageUrl?: string }[];
+};
+
+/** Resolve only the version attached to a post in this topic and story. */
+export async function getStoryInstagramVersion(topicId: string, storyId: string, externalId: string): Promise<StoryInstagramVersion> {
+  const post = (await listStoryInstagramPosts(topicId, storyId)).find(item => item.externalId === externalId);
+  const result: StoryInstagramVersion = { draftVersion: post?.linkedDraftVersion ?? null, batchId: post?.linkedBatchId ?? null, units: [] };
+  if (!post?.linkedDraftId || post.linkedDraftVersion == null) return { ...result, unavailable: "The linked version is not identified." };
+  const draft = await findCreativeDraftById(topicId, post.linkedDraftId);
+  if (!draft || draft.storyId !== storyId) return { ...result, unavailable: "The linked draft is no longer available." };
+  if (post.linkedBatchId) {
+    const batch = await findCreativeAssetBatchById(post.linkedBatchId);
+    if (!batch || batch.draftId !== draft.id || batch.draftVersion !== post.linkedDraftVersion) return { ...result, unavailable: "The exact linked image batch is unavailable." };
+    return { ...result, units: batch.assets.map(asset => ({ order: asset.unitOrder, headline: asset.unitSnapshot.headline, body: asset.unitSnapshot.body || "", imageUrl: asset.imageUrl })) };
+  }
+  if (draft.version !== post.linkedDraftVersion) return { ...result, unavailable: "This draft revision has no preserved content snapshot. The current draft has a different version." };
+  return { ...result, units: draft.units.map(unit => ({ order: unit.order, headline: unit.headline, body: unit.body || "" })) };
 }

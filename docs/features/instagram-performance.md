@@ -127,6 +127,10 @@ No se incluyen publicación automática, programación de contenido, respuestas 
 - No se suma el alcance de varios posts como si fueran personas únicas.
 - Los cambios de vínculo se reflejan en ambos lados sin duplicar registros.
 
+**Corrección de revisión (IG-06):** la consulta de versión usa el post vinculado al tema e historia y carga únicamente su lote y revisión exactos. La vista es de solo lectura dentro del panel y no cambia el borrador activo. Una revisión antigua sin snapshot disponible muestra la limitación; no se reconstruye ni sustituye por la actual. El selector de publicaciones pendientes permite paginar con deduplicación, cancelación y reintento. Los cambios de vínculo notifican a ambas vistas mediante la señal compartida del dashboard. La validación de interacción en navegador sigue pendiente.
+
+La resolución directa de borradores incluye los documentales y verifica su pertenencia al tema y a la historia. Los resultados muestran la última consulta exitosa de métricas y los fallos globales, con advertencia sobre los valores conservados. Las regresiones de servidor y renderizado cubren estos casos.
+
 ### IG-07 — Conservar la evolución mediante sincronización automática
 
 **Como** responsable editorial, **quiero** guardar mediciones periódicas, **para** entender cómo evolucionan las publicaciones y evitar depender de consultas manuales.

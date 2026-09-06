@@ -1320,6 +1320,7 @@ export function RadarDashboard({
             secret={secret}
             disabled={isBusy}
             refreshToken={metaRefreshToken}
+            onLinked={() => setMetaRefreshToken(n => n + 1)}
           />
         </div>
 
@@ -1545,6 +1546,8 @@ export function RadarDashboard({
             storyTitle={creativeStory.title}
             secret={secret}
             onClose={() => setCreativeStory(undefined)}
+            onInstagramChanged={() => setMetaRefreshToken(n => n + 1)}
+            instagramRefreshToken={metaRefreshToken}
           />
         ) : null}
 

@@ -47,6 +47,8 @@ type WorkspaceProps = {
   storyTitle: string;
   secret: string;
   onClose: () => void;
+  onInstagramChanged?: () => void;
+  instagramRefreshToken?: number;
 };
 
 type BusyAction =
@@ -150,6 +152,8 @@ export function CreativeDraftWorkspace({
   storyTitle,
   secret,
   onClose,
+  onInstagramChanged,
+  instagramRefreshToken,
 }: WorkspaceProps) {
   const [workspace, setWorkspace] = useState<CreativeWorkspaceState>();
   const [profile, setProfile] = useState<CreativeProfile>();
@@ -2116,16 +2120,8 @@ export function CreativeDraftWorkspace({
                 storyId={storyId}
                 secret={secret}
                 disabled={dirty}
-                onNavigateToDraft={(draftId) => {
-                  const draft = workspace.drafts.find((d) => d.id === draftId);
-                  if (draft) {
-                    viewHistoricalDraft(draft);
-                  } else {
-                    setNotice(
-                      "The linked draft is no longer available in this story.",
-                    );
-                  }
-                }}
+                onLinked={onInstagramChanged}
+                refreshToken={instagramRefreshToken}
                 onGoToConnectionPanel={() => {
                   if (
                     dirty &&

@@ -5,7 +5,7 @@ import {
   requireActiveRequestTopic,
   topicRequestErrorResponse,
 } from "@/app/api/radar/radar-topic";
-import { getStoryInstagramResults } from "@/app/modules/meta/story-instagram-results";
+import { getStoryInstagramResults, getStoryInstagramVersion } from "@/app/modules/meta/story-instagram-results";
 
 export const runtime = "nodejs";
 
@@ -32,12 +32,13 @@ export async function GET(request: Request, context: Context) {
   }
 
   try {
-    return noStoreJson(
-      await getStoryInstagramResults(
-        await requireActiveRequestTopic(request),
-        storyId,
-      ),
-    );
+    const topicId = await requireActiveRequestTopic(request);
+    const externalId = new URL(request.url).searchParams.get("externalId");
+    if (externalId !== null) {
+      if (!externalId.trim() || externalId.length > 200) return NextResponse.json({ error: "Invalid publication id" }, { status: 400 });
+      return noStoreJson(await getStoryInstagramVersion(topicId, storyId, externalId));
+    }
+    return noStoreJson(await getStoryInstagramResults(topicId, storyId));
   } catch (error) {
     const topicError = topicRequestErrorResponse(error);
     if (topicError) return topicError;

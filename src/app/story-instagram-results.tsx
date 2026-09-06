@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import type { StoryInstagramVersion } from "./modules/meta/story-instagram-results";
+
 import styles from "./creative-draft-workspace.generated.module.css";
 
 type MetaConnectionState =
@@ -29,6 +31,9 @@ type StoryPost = {
   accessState: "accessible" | "inaccessible";
   childCount: number;
   metrics: Record<string, MediaMetric> | null;
+  metricsError: string | null;
+  metricsQueriedAt: string | null;
+  metricsErroredAt: string | null;
   metricRatios: {
     savedPerReach?: number;
     sharesPerReach?: number;
@@ -85,14 +90,16 @@ export function StoryInstagramResults({
   storyId,
   secret,
   disabled,
-  onNavigateToDraft,
+  onLinked,
+  refreshToken = 0,
   onGoToConnectionPanel,
 }: {
   topicId: string;
   storyId: string;
   secret: string;
   disabled: boolean;
-  onNavigateToDraft: (draftId: string) => void;
+  onLinked?: () => void;
+  refreshToken?: number;
   onGoToConnectionPanel: () => void;
 }) {
   const [data, setData] = useState<StoryInstagramResponse>();
@@ -102,6 +109,9 @@ export function StoryInstagramResults({
   const [broken, setBroken] = useState<Set<string>>(new Set());
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pending, setPending] = useState<PendingItem[]>();
+  const [pendingCursor, setPendingCursor] = useState<string>();
+  const pickerRequest = useRef<AbortController | null>(null);
+  const [versionPost, setVersionPost] = useState<string>();
   const [pendingLoading, setPendingLoading] = useState(false);
   const [pickerError, setPickerError] = useState<string>();
   const [busyExternalId, setBusyExternalId] = useState<string>();
@@ -134,7 +144,7 @@ export function StoryInstagramResults({
         }
       });
     return () => controller.abort();
-  }, [authenticated, topicId, storyId, secret, reloadKey]);
+  }, [authenticated, topicId, storyId, secret, reloadKey, refreshToken]);
 
   const reload = () => {
     setError(undefined);
@@ -144,15 +154,26 @@ export function StoryInstagramResults({
 
   const loading = (!data && !error) || reloading;
 
-  const openPicker = () => {
+  useEffect(() => () => pickerRequest.current?.abort(), [topicId, storyId]);
+
+  const loadPending = (cursor?: string) => {
+    pickerRequest.current?.abort();
+    const controller = new AbortController();
+    pickerRequest.current = controller;
     setPickerOpen(true);
     setPickerError(undefined);
     setPendingLoading(true);
-    requestJson<{ items: PendingItem[] }>(pendingMediaUrl(topicId), secret)
-      .then((response) => setPending(response.items))
-      .catch((requestError) => setPickerError(getErrorMessage(requestError)))
-      .finally(() => setPendingLoading(false));
+    if (!cursor) { setPending([]); setPendingCursor(undefined); }
+    requestJson<{ items: PendingItem[]; nextCursor?: string }>(pendingMediaUrl(topicId, cursor), secret, { signal: controller.signal })
+      .then(response => {
+        if (controller.signal.aborted) return;
+        setPending(previous => [...new Map([...(cursor ? previous ?? [] : []), ...response.items].map(item => [item.externalId, item])).values()]);
+        setPendingCursor(response.nextCursor);
+      })
+      .catch(requestError => { if (!controller.signal.aborted) setPickerError(getErrorMessage(requestError)); })
+      .finally(() => { if (!controller.signal.aborted) setPendingLoading(false); });
   };
+  const openPicker = () => loadPending();
 
   const linkPending = (externalId: string) => {
     if (busyExternalId) return;
@@ -164,8 +185,10 @@ export function StoryInstagramResults({
       body: JSON.stringify({ externalId, storyId }),
     })
       .then(() => {
+        pickerRequest.current?.abort();
         setPickerOpen(false);
         setPending(undefined);
+        onLinked?.();
         setReloadKey((key) => key + 1);
       })
       .catch((requestError) => setPickerError(getErrorMessage(requestError)))
@@ -222,11 +245,11 @@ export function StoryInstagramResults({
                 >
                   Link a publication
                 </button>
-              ) : pendingLoading ? (
+              ) : pendingLoading && !pending?.length ? (
                 <p className={styles.brandAssetHint}>
                   Loading imported publications…
                 </p>
-              ) : (pending ?? []).length === 0 ? (
+              ) : !pickerError && (pending ?? []).length === 0 ? (
                 <p className={styles.brandAssetHint}>
                   No unlinked imported publications. Sync from the Instagram
                   panel first.
@@ -262,13 +285,14 @@ export function StoryInstagramResults({
                       </button>
                     </div>
                   ))}
+                  {pendingCursor ? <button type="button" className={styles.secondaryButton} disabled={pendingLoading || Boolean(busyExternalId)} onClick={() => loadPending(pendingCursor)}>{pendingLoading ? "Loading…" : "Load older publications"}</button> : null}
                   {pickerError ? (
-                    <p className={styles.brandAssetHint}>{pickerError}</p>
+                    <p className={styles.brandAssetHint}>{pickerError} <button type="button" className={styles.instagramLink} onClick={() => loadPending(pendingCursor)}>Retry</button></p>
                   ) : null}
                   <button
                     type="button"
                     className={styles.instagramLink}
-                    onClick={() => setPickerOpen(false)}
+                    onClick={() => { pickerRequest.current?.abort(); setPendingLoading(false); setPickerOpen(false); }}
                   >
                     Cancel
                   </button>
@@ -327,11 +351,12 @@ export function StoryInstagramResults({
                         className={styles.instagramLink}
                         disabled={disabled}
                         onClick={() =>
-                          onNavigateToDraft(post.creativeVersion!.draftId)
+                          setVersionPost(post.externalId)
                         }
                       >
                         View version
                       </button>
+                      {versionPost === post.externalId ? <HistoricalVersion key={`${topicId}:${storyId}:${post.externalId}`} topicId={topicId} storyId={storyId} externalId={post.externalId} secret={secret} onClose={() => setVersionPost(undefined)} /> : null}
                     </span>
                   ) : (
                     <span className={styles.storyInstagramVersionMissing}>
@@ -394,13 +419,20 @@ function Thumb({
   );
 }
 
-function PostMetrics({ post }: { post: StoryPost }) {
-  if (!post.metrics) {
-    return <p className={styles.brandAssetHint}>No metrics fetched yet</p>;
-  }
+export function PostMetrics({ post }: { post: StoryPost }) {
   const metrics = post.metrics;
+  const timestamp = (value: string | null) => value && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : "unknown";
+  const notice = <>
+    {post.metricsError ? <p role="status" className={styles.instagramMetricError}>
+      Metrics refresh failed: {post.metricsError}. {metrics ? "Showing previously stored values; they may be outdated." : "No stored values are available."}
+      {post.metricsErroredAt ? ` Last failed attempt: ${timestamp(post.metricsErroredAt)}.` : ""}
+    </p> : null}
+    <p className={styles.brandAssetHint}>Last successful metrics query: {post.metricsQueriedAt ? timestamp(post.metricsQueriedAt) : "none"}.</p>
+  </>;
+  if (!metrics) return <>{notice}{!post.metricsError ? <p className={styles.brandAssetHint}>No metrics fetched yet</p> : null}</>;
   return (
     <>
+      {notice}
       <div className={styles.instagramMetricsGrid}>
         {METRIC_ROW.map(({ key, label }) => (
           <div key={key} className={styles.instagramMetricCell}>
@@ -467,8 +499,8 @@ function storyInstagramUrl(topicId: string, storyId: string): string {
   return `/api/radar/stories/${encodeURIComponent(storyId)}/instagram?topicId=${encodeURIComponent(topicId)}`;
 }
 
-function pendingMediaUrl(topicId: string): string {
-  return `/api/radar/topics/${encodeURIComponent(topicId)}/meta/media?linked=pending&limit=12`;
+function pendingMediaUrl(topicId: string, cursor?: string): string {
+  return `/api/radar/topics/${encodeURIComponent(topicId)}/meta/media?linked=pending&limit=12${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
 }
 
 function mediaLinkUrl(topicId: string): string {
@@ -494,4 +526,45 @@ async function requestJson<T>(
     throw new Error(payload?.error ?? `Request failed (${response.status})`);
   }
   return payload as T;
+}
+
+
+function HistoricalVersion({ topicId, storyId, externalId, secret, onClose }: { topicId: string; storyId: string; externalId: string; secret: string; onClose: () => void }) {
+  const [version, setVersion] = useState<StoryInstagramVersion>();
+  const [error, setError] = useState<string>();
+  useEffect(() => {
+    const controller = new AbortController();
+    requestJson<StoryInstagramVersion>(`${storyInstagramUrl(topicId, storyId)}&externalId=${encodeURIComponent(externalId)}`, secret, { signal: controller.signal })
+      .then(value => { if (!controller.signal.aborted) setVersion(value); })
+      .catch(reason => { if (!controller.signal.aborted) setError(getErrorMessage(reason)); });
+    return () => controller.abort();
+  }, [topicId, storyId, externalId, secret]);
+  return <span className={styles.storyInstagramPicker}>
+    <strong>Linked version · read only</strong>
+    <button type="button" className={styles.instagramLink} onClick={onClose}>Close version</button>
+    {error || version?.unavailable || (!version ? "Loading version…" : null)}
+    {version?.units.map((unit, index) => <span key={index}>
+      <strong>{unit.order}. {unit.headline}</strong><span>{unit.body}</span>
+      {unit.imageUrl ? <VersionImage url={unit.imageUrl} secret={secret} /> : null}
+    </span>)}
+  </span>;
+}
+
+function VersionImage({ url, secret }: { url: string; secret: string }) {
+  const [local, setLocal] = useState<string>();
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (!url.startsWith("/api/")) return;
+    const controller = new AbortController();
+    let objectUrl: string | undefined;
+    fetch(url, { headers: { Authorization: `Bearer ${secret.trim()}` }, signal: controller.signal })
+      .then(response => { if (!response.ok) throw new Error("Image unavailable"); return response.blob(); })
+      .then(blob => { if (controller.signal.aborted) return; objectUrl = URL.createObjectURL(blob); setLocal(objectUrl); })
+      .catch(() => { if (!controller.signal.aborted) setFailed(true); });
+    return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [url, secret]);
+  if (failed) return <span>Historical image unavailable</span>;
+  const src = url.startsWith("/api/") ? local : url;
+  // eslint-disable-next-line @next/next/no-img-element
+  return src ? <img src={src} alt="Linked historical asset" className={styles.instagramThumb} onError={() => setFailed(true)} /> : <span>Loading image…</span>;
 }
