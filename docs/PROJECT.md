@@ -9,17 +9,17 @@ Tablero por feature: `docs/features/*.kanban.md` (extensión **Markdown Kanban**
 
 ## Por estado
 
-### [[status-review]] — 🟡 En revisión / QA (1)
+### [[status-review]] — 🟡 En revisión / QA (2)
 
-[[GEO-07]]
+[[GEO-07]] · [[IG-02]]
 
 ### [[status-in-progress]] — 🔵 En progreso (0)
 
 _(vacío)_
 
-### [[status-todo]] — ⬜ Por hacer (5)
+### [[status-todo]] — ⬜ Por hacer (4)
 
-[[IG-02]] · [[IG-03]] · [[IG-04]] · [[IG-05]] · [[IG-06]]
+[[IG-03]] · [[IG-04]] · [[IG-05]] · [[IG-06]]
 
 ### [[status-backlog]] — 🅱️ Backlog (4)
 
@@ -33,5 +33,5 @@ _(vacío)_
 
 | Feature | ✅ | 🟡 | 🔵 | ⬜ | 🅱️ |
 |---|---|---|---|---|---|
-| FEAT-IG-001 | 5 | 0 | 0 | 5 | 3 |
+| FEAT-IG-001 | 5 | 1 | 0 | 4 | 3 |
 | FEAT-GEO-001 | 10 | 1 | 0 | 0 | 1 |

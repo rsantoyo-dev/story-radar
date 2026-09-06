@@ -10,6 +10,13 @@ type MetaConnectionState =
   | "operational"
   | "needs-reconnect";
 
+type MediaSyncSummary = {
+  imported: number;
+  updated: number;
+  carousels: number;
+  error?: string;
+};
+
 type MetaConnectionStatus = {
   connected: boolean;
   state: MetaConnectionState;
@@ -21,9 +28,26 @@ type MetaConnectionStatus = {
   grantedPermissions?: string[];
   lastVerifiedAt?: string;
   lastVerificationError?: string;
+  lastMediaSyncAt?: string;
+  lastMediaSyncCursor?: string;
+  lastMediaSyncSummary?: MediaSyncSummary;
 };
 
-type Busy = "connect" | "disconnect" | "verify" | "save-app" | "clear-app" | undefined;
+type MediaSyncResult = MediaSyncSummary & {
+  connected: boolean;
+  totalImported: number;
+  nextCursor?: string;
+  syncedAt: string;
+};
+
+type Busy =
+  | "connect"
+  | "disconnect"
+  | "verify"
+  | "save-app"
+  | "clear-app"
+  | "sync"
+  | undefined;
 
 /**
  * Lets an admin connect this topic to its own Instagram Business account.
@@ -46,7 +70,11 @@ export function MetaConnectionPanel({
   const [notice, setNotice] = useState<string>();
   const [appId, setAppId] = useState("");
   const [appSecret, setAppSecret] = useState("");
+  const [syncResult, setSyncResult] = useState<MediaSyncResult>();
   const authenticated = secret.trim().length > 0;
+  const syncCursor = syncResult
+    ? syncResult.nextCursor
+    : status?.lastMediaSyncCursor;
 
   useEffect(() => {
     if (!authenticated || !topicId) return;
@@ -131,6 +159,53 @@ export function MetaConnectionPanel({
             "Instagram insights access could not be verified.",
         );
       }
+    } catch (requestError) {
+      setError(getErrorMessage(requestError));
+    } finally {
+      setBusy(undefined);
+    }
+  }
+
+  async function handleSync(after?: string) {
+    if (!authenticated || busy) return;
+    setBusy("sync");
+    setError(undefined);
+    setNotice(undefined);
+    try {
+      const result = await requestJson<MediaSyncResult>(
+        `${metaUrl(topicId)}/media/sync`,
+        secret,
+        {
+          method: "POST",
+          ...(after
+            ? {
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ after }),
+              }
+            : {}),
+        },
+      );
+      setSyncResult(result);
+      if (result.error === "needs-reconnect") {
+        setError(
+          "The Instagram token was rejected. Reconnect the account and sync again.",
+        );
+      } else if (result.error) {
+        setError(
+          `Sync stopped early: ${result.error}. ${result.imported} imported before it failed.`,
+        );
+      } else {
+        setNotice(
+          `${result.imported} imported · ${result.updated} updated · ` +
+            `${result.totalImported} total · ${new Date(
+              result.syncedAt,
+            ).toLocaleString()}`,
+        );
+      }
+      // Refresh the status so "last sync" and reconnect state stay current.
+      setStatus(
+        await requestJson<MetaConnectionStatus>(metaUrl(topicId), secret),
+      );
     } catch (requestError) {
       setError(getErrorMessage(requestError));
     } finally {
@@ -230,6 +305,17 @@ export function MetaConnectionPanel({
                 <dd>{new Date(status.tokenExpiresAt).toLocaleDateString()}</dd>
               </div>
             ) : null}
+            {status.lastMediaSyncAt ? (
+              <div>
+                <dt>Publications synced</dt>
+                <dd>
+                  {new Date(status.lastMediaSyncAt).toLocaleString()}
+                  {status.lastMediaSyncSummary
+                    ? ` · ${status.lastMediaSyncSummary.imported + status.lastMediaSyncSummary.updated} in last run`
+                    : ""}
+                </dd>
+              </div>
+            ) : null}
           </dl>
         ) : (
           <p className={styles.brandAssetHint}>
@@ -258,6 +344,37 @@ export function MetaConnectionPanel({
               onClick={handleVerify}
             >
               {busy === "verify" ? "Verifying…" : "Verify access"}
+            </button>
+          ) : null}
+          {status?.connected ? (
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              disabled={
+                controlsDisabled || status.state === "needs-reconnect"
+              }
+              title={
+                status.state === "needs-reconnect"
+                  ? "Reconnect the account before syncing."
+                  : undefined
+              }
+              onClick={() => handleSync()}
+            >
+              {busy === "sync" && !syncResult?.nextCursor
+                ? "Syncing…"
+                : "Sync publications"}
+            </button>
+          ) : null}
+          {status?.connected && syncCursor ? (
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              disabled={
+                controlsDisabled || status.state === "needs-reconnect"
+              }
+              onClick={() => handleSync(syncCursor)}
+            >
+              {busy === "sync" ? "Loading…" : "Load older"}
             </button>
           ) : null}
           {status?.connected ? (

@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -73,6 +74,18 @@ export const topicMetaConnections = pgTable("topic_meta_connections", {
    * this text alone never has to encode whether reconnect is required.
    */
   lastVerificationError: text("last_verification_error"),
+  /**
+   * IG-02 media sync state. `lastMediaSyncCursor` is the Graph
+   * `paging.cursors.after` of the last page brought in (null once fully
+   * paged); `lastMediaSyncSummary` is the per-run counts (imported, updated,
+   * markedInaccessible, …) plus an optional `error` for a partial failure.
+   */
+  lastMediaSyncAt: timestamp("last_media_sync_at", {
+    withTimezone: true,
+    mode: "date",
+  }),
+  lastMediaSyncCursor: text("last_media_sync_cursor"),
+  lastMediaSyncSummary: jsonb("last_media_sync_summary"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
     .defaultNow()
     .notNull(),

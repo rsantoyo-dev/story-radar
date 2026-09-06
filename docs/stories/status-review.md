@@ -1,5 +1,5 @@
 # 🟡 En revisión / QA
 
-Historias en este estado (1): [[GEO-07]]
+Historias en este estado (2): [[GEO-07]] · [[IG-02]]
 
 > Ancla del grafo de Foam. Estado canónico: `docs/features/*.kanban.md`. Regenera con `python3 scripts/foam-sync.py`.

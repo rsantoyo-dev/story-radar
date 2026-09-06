@@ -16,7 +16,10 @@ import {
   requireMetaTokenEncryptionKeyFromEnv,
 } from "./meta-integration.config";
 import { deriveMetaConnectionState } from "./meta-connection-state";
-import type { TopicMetaConnectionStatus } from "./meta-connection.types";
+import type {
+  MediaSyncSummary,
+  TopicMetaConnectionStatus,
+} from "./meta-connection.types";
 import { isMetaTokenRefreshEligible } from "./meta-token-refresh-policy";
 import { classifyMetaGraphError } from "./meta-verification";
 import {
@@ -53,8 +56,35 @@ export async function getTopicMetaConnectionStatus(
     ...(row.lastVerificationError
       ? { lastVerificationError: row.lastVerificationError }
       : {}),
+    ...(row.lastMediaSyncAt ? { lastMediaSyncAt: row.lastMediaSyncAt } : {}),
+    ...(row.lastMediaSyncCursor
+      ? { lastMediaSyncCursor: row.lastMediaSyncCursor }
+      : {}),
+    ...(row.lastMediaSyncSummary
+      ? { lastMediaSyncSummary: row.lastMediaSyncSummary as MediaSyncSummary }
+      : {}),
     hasCustomApp: Boolean(row.appId && row.appSecretEncrypted),
   };
+}
+
+/**
+ * Records the outcome of one IG-02 media sync page. `cursor` is the Graph
+ * `paging.cursors.after` for the next page, or null once fully paged.
+ */
+export async function recordInstagramMediaSync(
+  topicId: string,
+  input: { cursor: string | null; summary: MediaSyncSummary; syncedAt?: Date },
+): Promise<void> {
+  const at = input.syncedAt ?? new Date();
+  await db
+    .update(topicMetaConnections)
+    .set({
+      lastMediaSyncAt: at,
+      lastMediaSyncCursor: input.cursor,
+      lastMediaSyncSummary: input.summary,
+      updatedAt: at,
+    })
+    .where(eq(topicMetaConnections.topicId, topicId));
 }
 
 /**

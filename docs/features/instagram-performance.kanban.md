@@ -16,10 +16,6 @@
 
 ## Por hacer
 
-### IG-02 — Importar publicaciones de la cuenta conectada
-
-  - tags: [ig]
-
 ### IG-03 — Explorar la galería de Instagram
 
   - tags: [ig]
@@ -39,6 +35,10 @@
 ## En progreso
 
 ## En revisión / QA
+
+### IG-02 — Importar publicaciones de la cuenta conectada
+
+  - tags: [ig]
 
 ## Hecho
 

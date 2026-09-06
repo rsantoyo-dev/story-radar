@@ -21,6 +21,28 @@ import {
   parseInstagramShortLivedTokenResponse,
   type InstagramShortLivedToken,
 } from "./meta-token-response";
+export {
+  parseInstagramMediaListResponse,
+  type InstagramMediaNode,
+  type InstagramMediaChildNode,
+  type InstagramMediaListPage,
+} from "./instagram-media-response";
+import {
+  parseInstagramMediaListResponse,
+  type InstagramMediaListPage,
+} from "./instagram-media-response";
+
+const INSTAGRAM_MEDIA_FIELDS = [
+  "id",
+  "media_type",
+  "media_product_type",
+  "permalink",
+  "caption",
+  "timestamp",
+  "media_url",
+  "thumbnail_url",
+  "children{id,media_type,media_url,thumbnail_url}",
+].join(",");
 
 export type InstagramLongLivedToken = {
   accessToken: string;
@@ -104,6 +126,29 @@ export async function verifyInstagramInsightsAccess(
   url.searchParams.set("metric_type", "total_value");
   url.searchParams.set("access_token", accessToken);
   await instagramGet<unknown>(url);
+}
+
+/**
+ * One page of the connected account's published media, newest first (IG-02).
+ * Needs instagram_business_basic. `after` continues from a previous page's
+ * cursor; the result's `nextCursor` is set only while more pages remain.
+ * Throws MetaGraphApiError on any HTTP failure.
+ */
+export async function listInstagramMedia(
+  igUserId: string,
+  accessToken: string,
+  options: { after?: string; limit?: number } = {},
+): Promise<InstagramMediaListPage> {
+  const limit = Math.min(Math.max(options.limit ?? 25, 1), 50);
+  const url = new URL(
+    `https://graph.instagram.com/${GRAPH_API_VERSION}/${igUserId}/media`,
+  );
+  url.searchParams.set("fields", INSTAGRAM_MEDIA_FIELDS);
+  url.searchParams.set("limit", String(limit));
+  if (options.after) url.searchParams.set("after", options.after);
+  url.searchParams.set("access_token", accessToken);
+
+  return parseInstagramMediaListResponse(await instagramGet<unknown>(url));
 }
 
 export async function fetchInstagramUsername(
