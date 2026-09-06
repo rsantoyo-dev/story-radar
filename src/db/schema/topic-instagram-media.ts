@@ -69,6 +69,13 @@ export const topicInstagramMedia = pgTable(
     linkedDraftId: uuid("linked_draft_id").references(() => creativeDrafts.id, {
       onDelete: "set null",
     }),
+    /**
+     * The draft revision that was published, snapshotted at link time. A draft
+     * row's `version` is an in-place counter, so without this a later edit of
+     * the same draft would silently move the publication's reference to newer
+     * content. When a batch is linked this is that batch's `draftVersion`.
+     */
+    linkedDraftVersion: integer("linked_draft_version"),
     linkedBatchId: uuid("linked_batch_id").references(
       () => creativeAssetBatches.id,
       { onDelete: "set null" },
@@ -110,6 +117,10 @@ export const topicInstagramMedia = pgTable(
     check(
       "topic_instagram_media_linked_by_length_check",
       sql`${table.linkedBy} IS NULL OR char_length(${table.linkedBy}) <= 200`,
+    ),
+    check(
+      "topic_instagram_media_linked_draft_version_check",
+      sql`${table.linkedDraftVersion} IS NULL OR ${table.linkedDraftVersion} > 0`,
     ),
   ],
 );

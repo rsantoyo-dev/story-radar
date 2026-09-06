@@ -1,0 +1,2 @@
+ALTER TABLE "topic_instagram_media" ADD COLUMN "linked_draft_version" integer;--> statement-breakpoint
+ALTER TABLE "topic_instagram_media" ADD CONSTRAINT "topic_instagram_media_linked_draft_version_check" CHECK ("topic_instagram_media"."linked_draft_version" IS NULL OR "topic_instagram_media"."linked_draft_version" > 0);

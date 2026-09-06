@@ -26,6 +26,7 @@ type MediaItem = {
   linkedStoryId: string | null;
   linkedStoryTitle: string | null;
   linkedDraftId: string | null;
+  linkedDraftVersion: number | null;
   linkedBatchId: string | null;
   linkedAt: string | null;
   linkedBy: string | null;
@@ -515,28 +516,49 @@ function MediaLinkControl({
   const [by, setBy] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string>();
+  // Guards the chained option fetches (stories → drafts → batches). Any newer
+  // story/draft pick aborts the previous chain, so a slow earlier response can
+  // never replace the current, valid options.
+  const optionsAbort = useRef<AbortController | null>(null);
 
-  const loadDrafts = (nextStoryId: string) => {
+  const beginOptions = () => {
+    optionsAbort.current?.abort();
+    const controller = new AbortController();
+    optionsAbort.current = controller;
+    return controller.signal;
+  };
+
+  const loadDrafts = (nextStoryId: string, signal: AbortSignal) => {
     setDrafts([]);
     setBatches([]);
     if (!nextStoryId) return;
     requestJson<{ drafts: DraftOption[] }>(
       linkUrl(topicId, { storyId: nextStoryId }),
       secret,
+      { signal },
     )
-      .then((response) => setDrafts(response.drafts))
-      .catch(() => setDrafts([]));
+      .then((response) => {
+        if (!signal.aborted) setDrafts(response.drafts);
+      })
+      .catch(() => {
+        if (!signal.aborted) setDrafts([]);
+      });
   };
 
-  const loadBatches = (nextDraftId: string) => {
+  const loadBatches = (nextDraftId: string, signal: AbortSignal) => {
     setBatches([]);
     if (!nextDraftId) return;
     requestJson<{ batches: BatchOption[] }>(
       linkUrl(topicId, { draftId: nextDraftId }),
       secret,
+      { signal },
     )
-      .then((response) => setBatches(response.batches))
-      .catch(() => setBatches([]));
+      .then((response) => {
+        if (!signal.aborted) setBatches(response.batches);
+      })
+      .catch(() => {
+        if (!signal.aborted) setBatches([]);
+      });
   };
 
   const openForm = () => {
@@ -547,21 +569,34 @@ function MediaLinkControl({
     setDraftId(item.linkedDraftId ?? "");
     setBatchId(item.linkedBatchId ?? "");
     setBy("");
+    const signal = beginOptions();
     requestJson<LinkOptions>(
       linkUrl(topicId, { externalId: item.externalId }),
       secret,
+      { signal },
     )
       .then((response) => {
+        if (signal.aborted) return;
         setStories(response.stories);
         setSuggestion(response.suggestion);
         const preselect =
           item.linkedStoryId ?? response.suggestion?.storyId ?? "";
         setStoryId(preselect);
-        if (preselect) loadDrafts(preselect);
-        if (item.linkedDraftId) loadBatches(item.linkedDraftId);
+        if (preselect) loadDrafts(preselect, signal);
+        if (item.linkedDraftId) loadBatches(item.linkedDraftId, signal);
       })
-      .catch((error) => setErr(getErrorMessage(error)))
-      .finally(() => setLoadingOptions(false));
+      .catch((error) => {
+        if (!signal.aborted) setErr(getErrorMessage(error));
+      })
+      .finally(() => {
+        if (!signal.aborted) setLoadingOptions(false);
+      });
+  };
+
+  const closeForm = () => {
+    optionsAbort.current?.abort();
+    setOpen(false);
+    setErr(undefined);
   };
 
   const submit = (nextStoryId: string | null) => {
@@ -581,6 +616,7 @@ function MediaLinkControl({
     })
       .then((updated) => {
         onLinked(updated);
+        optionsAbort.current?.abort();
         setOpen(false);
       })
       .catch((error) => setErr(getErrorMessage(error)))
@@ -595,7 +631,11 @@ function MediaLinkControl({
         {linked ? (
           <span className={styles.instagramLinkChip}>
             ↪ {item.linkedStoryTitle ?? "Linked story"}
-            {item.linkedDraftId ? " · with draft" : ""}
+            {item.linkedDraftId
+              ? ` · draft${
+                  item.linkedDraftVersion ? ` v${item.linkedDraftVersion}` : ""
+                }`
+              : ""}
             {item.linkedBatchId ? " · with batch" : ""}
           </span>
         ) : (
@@ -652,7 +692,7 @@ function MediaLinkControl({
                     setStoryId(value);
                     setDraftId("");
                     setBatchId("");
-                    loadDrafts(value);
+                    loadDrafts(value, beginOptions());
                   }}
                 >
                   <option value="">Select…</option>
@@ -678,7 +718,7 @@ function MediaLinkControl({
                       const value = event.target.value;
                       setDraftId(value);
                       setBatchId("");
-                      loadBatches(value);
+                      loadBatches(value, beginOptions());
                     }}
                   >
                     <option value="">No draft</option>
@@ -730,10 +770,7 @@ function MediaLinkControl({
                   type="button"
                   className={styles.instagramLink}
                   disabled={busy}
-                  onClick={() => {
-                    setOpen(false);
-                    setErr(undefined);
-                  }}
+                  onClick={closeForm}
                 >
                   Cancel
                 </button>

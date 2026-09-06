@@ -100,6 +100,12 @@ export async function linkInstagramMediaToStory(
     );
   }
 
+  // Snapshot the published draft revision. A draft's `version` is an in-place
+  // counter, so without this a later edit of the same draft would move the
+  // publication's reference onto newer content. A linked batch pins the exact
+  // revision it was generated against; otherwise take the draft's current one.
+  let draftVersion: number | null = null;
+
   if (draftId) {
     const draft = await findCreativeDraftById(topicId, draftId);
     if (!draft || draft.storyId !== storyId) {
@@ -107,14 +113,17 @@ export async function linkInstagramMediaToStory(
         "That draft does not belong to the selected story",
       );
     }
-  }
+    draftVersion = draft.version;
 
-  if (batchId && draftId) {
-    const batches = await listCreativeAssetBatchSummariesForDraft(draftId);
-    if (!batches.some((batch) => batch.id === batchId)) {
-      throw new InstagramMediaLinkError(
-        "That image batch does not belong to the selected draft",
-      );
+    if (batchId) {
+      const batches = await listCreativeAssetBatchSummariesForDraft(draftId);
+      const batch = batches.find((entry) => entry.id === batchId);
+      if (!batch) {
+        throw new InstagramMediaLinkError(
+          "That image batch does not belong to the selected draft",
+        );
+      }
+      draftVersion = batch.draftVersion;
     }
   }
 
@@ -122,7 +131,7 @@ export async function linkInstagramMediaToStory(
     topicId,
     igUserId: account.igUserId,
     externalId,
-    link: { storyId, draftId, batchId, by },
+    link: { storyId, draftId, draftVersion, batchId, by },
   });
   if (!item) throw new InstagramMediaLinkError("Publication not found");
   return item;

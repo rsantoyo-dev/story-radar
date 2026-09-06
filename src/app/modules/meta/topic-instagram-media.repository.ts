@@ -219,6 +219,7 @@ export type InstagramMediaListItem = {
   linkedStoryId: string | null;
   linkedStoryTitle: string | null;
   linkedDraftId: string | null;
+  linkedDraftVersion: number | null;
   linkedBatchId: string | null;
   /** ISO timestamp of the last link change (create, correct or remove). */
   linkedAt: string | null;
@@ -241,6 +242,7 @@ const MEDIA_ITEM_COLUMNS = {
   linkedStoryId: topicInstagramMedia.linkedStoryId,
   linkedStoryTitle: stories.title,
   linkedDraftId: topicInstagramMedia.linkedDraftId,
+  linkedDraftVersion: topicInstagramMedia.linkedDraftVersion,
   linkedBatchId: topicInstagramMedia.linkedBatchId,
   linkedAt: topicInstagramMedia.linkedAt,
   linkedBy: topicInstagramMedia.linkedBy,
@@ -260,6 +262,7 @@ type MediaItemRow = {
   linkedStoryId: string | null;
   linkedStoryTitle: string | null;
   linkedDraftId: string | null;
+  linkedDraftVersion: number | null;
   linkedBatchId: string | null;
   linkedAt: Date | null;
   linkedBy: string | null;
@@ -284,6 +287,7 @@ function toInstagramMediaListItem(
     linkedStoryId: row.linkedStoryId,
     linkedStoryTitle: row.linkedStoryTitle,
     linkedDraftId: row.linkedDraftId,
+    linkedDraftVersion: row.linkedDraftVersion,
     linkedBatchId: row.linkedBatchId,
     linkedAt: row.linkedAt ? row.linkedAt.toISOString() : null,
     linkedBy: row.linkedBy,
@@ -408,6 +412,8 @@ export type SetInstagramMediaLink =
   | {
       storyId: string;
       draftId?: string | null;
+      /** The published draft revision, snapshotted by the caller. */
+      draftVersion?: number | null;
       batchId?: string | null;
       by?: string | null;
     };
@@ -432,6 +438,7 @@ export async function setInstagramMediaStoryLink(input: {
       ? {
           linkedStoryId: null,
           linkedDraftId: null,
+          linkedDraftVersion: null,
           linkedBatchId: null,
           linkedAt: now,
           linkedBy: input.link.by ?? null,
@@ -440,6 +447,9 @@ export async function setInstagramMediaStoryLink(input: {
       : {
           linkedStoryId: input.link.storyId,
           linkedDraftId: input.link.draftId ?? null,
+          linkedDraftVersion: input.link.draftId
+            ? input.link.draftVersion ?? null
+            : null,
           linkedBatchId: input.link.batchId ?? null,
           linkedAt: now,
           linkedBy: input.link.by ?? null,
@@ -515,12 +525,16 @@ export async function findApprovedStoryMatchForPermalink(
 }
 
 /**
- * URL auto-link (IG-04). For every still-pending imported media with a
- * permalink, links it to the unique approved story that already registered the
- * same Instagram URL (`findApprovedStoryMatchForPermalink`), stamping
- * `linked_by = 'auto'`. Idempotent — only pending rows are touched, and each
- * update re-checks `linked_story_id IS NULL`. A failure here must not break the
- * sync that calls it.
+ * URL auto-link (IG-04). For every imported media that has never had a link
+ * (`linked_story_id IS NULL AND linked_at IS NULL`) and has a permalink, links
+ * it to the unique approved story that already registered the same Instagram
+ * URL (`findApprovedStoryMatchForPermalink`), stamping `linked_by = 'auto'`.
+ *
+ * `linked_at` is what separates a never-linked post from one a person
+ * deliberately unlinked (or a prior auto-link): an explicit "Remove link"
+ * leaves `linked_at` set, so a later sync must not silently re-link it.
+ * Idempotent — each update still re-checks the row is untouched.
+ * A failure here must not break the sync that calls it.
  */
 export async function reconcileTopicInstagramMediaLinks(
   topicId: string,
@@ -537,6 +551,7 @@ export async function reconcileTopicInstagramMediaLinks(
         eq(topicInstagramMedia.topicId, topicId),
         eq(topicInstagramMedia.igUserId, igUserId),
         isNull(topicInstagramMedia.linkedStoryId),
+        isNull(topicInstagramMedia.linkedAt),
         isNotNull(topicInstagramMedia.permalink),
       ),
     );
@@ -562,6 +577,7 @@ export async function reconcileTopicInstagramMediaLinks(
         and(
           eq(topicInstagramMedia.id, candidate.id),
           isNull(topicInstagramMedia.linkedStoryId),
+          isNull(topicInstagramMedia.linkedAt),
         ),
       )
       .returning({ id: topicInstagramMedia.id });
