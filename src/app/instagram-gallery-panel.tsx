@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import styles from "./creative-draft-workspace.generated.module.css";
 
@@ -58,10 +58,13 @@ export function InstagramGalleryPanel({
   topicId,
   secret,
   disabled,
+  refreshToken = 0,
 }: {
   topicId: string;
   secret: string;
   disabled: boolean;
+  /** Bumped by the connection panel after a sync / connect / disconnect. */
+  refreshToken?: number;
 }) {
   const [data, setData] = useState<MediaResponse>();
   const [items, setItems] = useState<MediaItem[]>([]);
@@ -71,6 +74,9 @@ export function InstagramGalleryPanel({
   const [error, setError] = useState<string>();
   const [reloadKey, setReloadKey] = useState(0);
   const [brokenThumbs, setBrokenThumbs] = useState<Set<string>>(new Set());
+  // The in-flight request. A filter change / reload aborts it, so a late
+  // "Load older" from the previous filter set never appends to the new list.
+  const inFlight = useRef<AbortController | null>(null);
   const authenticated = secret.trim().length > 0;
 
   const mediaUrl = useCallback(
@@ -89,12 +95,14 @@ export function InstagramGalleryPanel({
     [topicId, filters],
   );
 
-  // First page: runs on mount, on any filter change, and on Retry. No
-  // synchronous setState in the effect body — state moves only inside the
-  // async callbacks (same shape as MetaConnectionPanel).
+  // First page: runs on mount, on any filter change, on Retry, and when the
+  // connection panel signals a change (refreshToken). No synchronous setState
+  // in the effect body — state moves only inside the async callbacks.
   useEffect(() => {
     if (!authenticated || !topicId) return;
+    inFlight.current?.abort();
     const controller = new AbortController();
+    inFlight.current = controller;
     requestJson<MediaResponse>(mediaUrl(), secret, {
       signal: controller.signal,
     })
@@ -104,6 +112,8 @@ export function InstagramGalleryPanel({
         setItems(response.items);
         setCursor(response.nextCursor);
         setError(undefined);
+        // A fresh page may carry refreshed (un-expired) thumbnail URLs.
+        setBrokenThumbs(new Set());
       })
       .catch((requestError) => {
         if (!controller.signal.aborted) {
@@ -111,30 +121,41 @@ export function InstagramGalleryPanel({
         }
       });
     return () => controller.abort();
-  }, [authenticated, topicId, mediaUrl, secret, reloadKey]);
+  }, [authenticated, topicId, mediaUrl, secret, reloadKey, refreshToken]);
 
   const loadMore = () => {
     if (!cursor || loadingMore) return;
+    inFlight.current?.abort();
+    const controller = new AbortController();
+    inFlight.current = controller;
     setLoadingMore(true);
     setError(undefined);
-    requestJson<MediaResponse>(mediaUrl(cursor), secret)
+    requestJson<MediaResponse>(mediaUrl(cursor), secret, {
+      signal: controller.signal,
+    })
       .then((response) => {
+        if (controller.signal.aborted) return;
         setData(response);
         setItems((prev) => [...prev, ...response.items]);
         setCursor(response.nextCursor);
       })
-      .catch((requestError) => setError(getErrorMessage(requestError)))
-      .finally(() => setLoadingMore(false));
+      .catch((requestError) => {
+        if (!controller.signal.aborted) setError(getErrorMessage(requestError));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoadingMore(false);
+      });
   };
-
-  const loading = authenticated && !data && !error;
 
   if (!authenticated) return null;
 
+  const loading = !data && !error;
   const state = data?.state ?? "disconnected";
+  // Only branch on connection state once a response actually says so; a failed
+  // first load falls through to the error + Retry block below.
   const notConnected =
-    state === "disconnected" || (!data?.account && state !== "operational");
-  const needsReconnect = state === "needs-reconnect";
+    data !== undefined && (data.state === "disconnected" || !data.account);
+  const needsReconnect = data?.state === "needs-reconnect";
 
   return (
     <section
@@ -156,7 +177,23 @@ export function InstagramGalleryPanel({
         </span>
       </header>
 
-      {notConnected ? (
+      {loading ? (
+        <p className={styles.brandAssetHint}>Loading publications…</p>
+      ) : !data ? (
+        <p className={styles.brandAssetHint}>
+          {error}{" "}
+          <button
+            type="button"
+            className={styles.instagramLink}
+            onClick={() => {
+              setError(undefined);
+              setReloadKey((key) => key + 1);
+            }}
+          >
+            Retry
+          </button>
+        </p>
+      ) : notConnected ? (
         <p className={styles.brandAssetHint}>
           Connect this topic&rsquo;s Instagram account in the panel above, then
           use &ldquo;Sync publications&rdquo;.
@@ -255,9 +292,7 @@ export function InstagramGalleryPanel({
             </p>
           ) : null}
 
-          {loading ? (
-            <p className={styles.brandAssetHint}>Loading publications…</p>
-          ) : items.length === 0 && !error ? (
+          {items.length === 0 && !error ? (
             <p className={styles.brandAssetHint}>
               No publications match. Sync from the Instagram panel or clear the
               filters.

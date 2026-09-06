@@ -59,10 +59,13 @@ export function MetaConnectionPanel({
   topicId,
   secret,
   disabled,
+  onConnectionChanged,
 }: {
   topicId: string;
   secret: string;
   disabled: boolean;
+  /** Fired after a sync / disconnect / verify so the gallery can refetch. */
+  onConnectionChanged?: () => void;
 }) {
   const [status, setStatus] = useState<MetaConnectionStatus>();
   const [busy, setBusy] = useState<Busy>();
@@ -135,6 +138,8 @@ export function MetaConnectionPanel({
           method: "DELETE",
         }),
       );
+      setSyncResult(undefined);
+      onConnectionChanged?.();
       setNotice("Instagram account disconnected.");
     } catch (requestError) {
       setError(getErrorMessage(requestError));
@@ -155,6 +160,7 @@ export function MetaConnectionPanel({
         { method: "POST" },
       );
       setStatus(next);
+      onConnectionChanged?.();
       if (next.state === "operational") {
         setNotice("Instagram insights access verified.");
       } else {
@@ -210,6 +216,7 @@ export function MetaConnectionPanel({
       setStatus(
         await requestJson<MetaConnectionStatus>(metaUrl(topicId), secret),
       );
+      onConnectionChanged?.();
     } catch (requestError) {
       setError(getErrorMessage(requestError));
     } finally {

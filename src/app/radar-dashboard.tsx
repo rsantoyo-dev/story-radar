@@ -452,6 +452,9 @@ export function RadarDashboard({
   const [isTopicLoading, setIsTopicLoading] = useState(false);
   const [selectedCreativeProfile, setSelectedCreativeProfile] =
     useState<CreativeProfile>();
+  // Bumped by the Instagram connection panel (sync / disconnect / verify) so
+  // the gallery below it refetches.
+  const [metaRefreshToken, setMetaRefreshToken] = useState(0);
 
   const isBusy = activeOperation !== undefined;
   const canAuthenticate = secret.trim().length > 0;
@@ -1306,6 +1309,7 @@ export function RadarDashboard({
             topicId={selectedTopicId}
             secret={secret}
             disabled={isBusy}
+            onConnectionChanged={() => setMetaRefreshToken((n) => n + 1)}
           />
         </div>
 
@@ -1315,6 +1319,7 @@ export function RadarDashboard({
             topicId={selectedTopicId}
             secret={secret}
             disabled={isBusy}
+            refreshToken={metaRefreshToken}
           />
         </div>
 
