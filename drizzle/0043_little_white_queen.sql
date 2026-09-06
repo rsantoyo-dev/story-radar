@@ -1,0 +1,3 @@
+ALTER TABLE "topic_instagram_media" ADD COLUMN "linked_story_id" uuid;--> statement-breakpoint
+ALTER TABLE "topic_instagram_media" ADD CONSTRAINT "topic_instagram_media_linked_story_id_stories_id_fk" FOREIGN KEY ("linked_story_id") REFERENCES "public"."stories"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "topic_instagram_media_topic_linked_story_idx" ON "topic_instagram_media" USING btree ("topic_id","linked_story_id");

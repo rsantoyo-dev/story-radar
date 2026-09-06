@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { CreativeDraftWorkspace } from "./creative-draft-workspace";
 import { CreativeProfilePanel } from "./creative-profile-panel";
+import { InstagramGalleryPanel } from "./instagram-gallery-panel";
 import { MetaConnectionPanel } from "./meta-connection-panel";
 import { EditorialProfilePanel } from "./editorial-profile-panel";
 import styles from "./radar-dashboard.generated.module.css";
@@ -1301,6 +1302,15 @@ export function RadarDashboard({
 
         <div id="editorial-meta" className={styles.anchorTarget}>
           <MetaConnectionPanel
+            key={selectedTopicId}
+            topicId={selectedTopicId}
+            secret={secret}
+            disabled={isBusy}
+          />
+        </div>
+
+        <div id="editorial-instagram" className={styles.anchorTarget}>
+          <InstagramGalleryPanel
             key={selectedTopicId}
             topicId={selectedTopicId}
             secret={secret}

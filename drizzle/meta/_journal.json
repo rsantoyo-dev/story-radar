@@ -302,6 +302,13 @@
       "when": 1788717242512,
       "tag": "0042_superb_pixie",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1788720054259,
+      "tag": "0043_little_white_queen",
+      "breakpoints": true
     }
   ]
 }

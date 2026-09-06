@@ -11,6 +11,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+import { stories } from "./stories";
 import { topics } from "./topics";
 
 /**
@@ -47,6 +48,15 @@ export const topicInstagramMedia = pgTable(
       mode: "date",
     }).notNull(),
     accessState: text("access_state").default("accessible").notNull(),
+    /**
+     * The editorial story this publication is linked to (IG-04). Null = pending
+     * to link; a post has at most one linked story within the topic. Kept here
+     * so IG-03's link-state and its "linked / pending" filter are real from the
+     * start; IG-04 only fills it in.
+     */
+    linkedStoryId: uuid("linked_story_id").references(() => stories.id, {
+      onDelete: "set null",
+    }),
     /** Snapshot of the Graph node as received, for debugging and future fields. */
     raw: jsonb("raw").notNull(),
     importedAt: timestamp("imported_at", { withTimezone: true, mode: "date" })
@@ -65,6 +75,10 @@ export const topicInstagramMedia = pgTable(
       table.topicId,
       table.igUserId,
       table.publishedAt,
+    ),
+    index("topic_instagram_media_topic_linked_story_idx").on(
+      table.topicId,
+      table.linkedStoryId,
     ),
     check(
       "topic_instagram_media_access_state_check",

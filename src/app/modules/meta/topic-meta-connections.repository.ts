@@ -380,6 +380,18 @@ export async function getDecryptedTopicMetaAccessToken(
   };
 }
 
+/**
+ * The connected account's identity (no token material) — for read-only
+ * features like the IG-03 gallery that only need to scope rows by igUserId.
+ */
+export async function getConnectedInstagramAccount(
+  topicId: string,
+): Promise<{ igUserId: string; igUsername: string | null } | undefined> {
+  const row = await findRow(topicId);
+  if (!row?.igUserId || !row.accessTokenEncrypted) return undefined;
+  return { igUserId: row.igUserId, igUsername: row.igUsername ?? null };
+}
+
 async function findRow(topicId: string) {
   const [row] = await db
     .select()

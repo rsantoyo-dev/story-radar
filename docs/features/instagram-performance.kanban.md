@@ -16,10 +16,6 @@
 
 ## Por hacer
 
-### IG-03 — Explorar la galería de Instagram
-
-  - tags: [ig]
-
 ### IG-04 — Vincular un post con su historia y versión creativa
 
   - tags: [ig]
@@ -35,6 +31,10 @@
 ## En progreso
 
 ## En revisión / QA
+
+### IG-03 — Explorar la galería de Instagram
+
+  - tags: [ig]
 
 ### IG-02 — Importar publicaciones de la cuenta conectada
 

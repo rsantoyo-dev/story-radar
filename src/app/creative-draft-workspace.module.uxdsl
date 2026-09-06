@@ -2583,3 +2583,125 @@
   color: palette(primary-main);
   overflow-wrap: anywhere;
 }
+
+/* IG-03 — Instagram publications gallery */
+.instagramGallery {
+  @ds-surface(flat primary radius(3));
+  @ds-typo(body);
+  display: flex;
+  flex-direction: column;
+  gap: density(3);
+  padding: density(5);
+  color: palette(surface-contrast);
+  background: palette(surface-main);
+  border: border(1, palette(primary-light), solid);
+}
+
+.instagramGalleryHeader {
+  display: flex;
+  flex-direction: xs(column) sm(row);
+  align-items: xs(flex-start) sm(center);
+  justify-content: space-between;
+  gap: density(2);
+}
+
+.instagramFilters {
+  display: flex;
+  flex-direction: xs(column) sm(row);
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: density(3);
+}
+
+.instagramGrid {
+  display: grid;
+  grid-template-columns: xs(1fr) sm(repeat(2, minmax(0, 1fr))) md(repeat(3, minmax(0, 1fr)));
+  gap: density(4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.instagramCard {
+  @ds-surface(flat light radius(2) shadow(1));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.instagramCardMuted {
+  opacity: 0.6;
+}
+
+.instagramThumb {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  object-fit: cover;
+  background: palette(surface-light);
+}
+
+.instagramThumbFallback {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  padding: density(3);
+  text-align: center;
+  color: palette(tertiary-main);
+  background: palette(surface-light);
+  @ds-typo(caption);
+}
+
+.instagramCardBody {
+  display: flex;
+  flex-direction: column;
+  gap: density(2);
+  padding: density(3);
+}
+
+.instagramCardMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: density(2);
+}
+
+.instagramBadge {
+  @ds-typo(caption);
+  font-weight: 700;
+  color: palette(primary-main);
+}
+
+.instagramCaption {
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  @ds-typo(caption);
+  color: palette(surface-contrast);
+}
+
+.instagramLinkPill {
+  @ds-typo(caption);
+  padding: density(1) density(2);
+  border-radius: radius(full);
+  color: palette(tertiary-contrast);
+  background: palette(tertiary-main);
+}
+
+.instagramLinkPillOn {
+  color: palette(primary-contrast);
+  background: palette(primary-main);
+}
+
+.instagramLink {
+  @ds-typo(caption);
+  color: palette(primary-main);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
