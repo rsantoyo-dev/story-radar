@@ -2,7 +2,7 @@
 id: GEO-07
 feature: FEAT-GEO-001
 status: review
-board: real-place-visual-fidelity.board.md
+board: real-place-visual-fidelity.kanban.md
 tags: [geo, review, p0]
 ---
 

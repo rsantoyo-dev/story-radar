@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Sync the Foam story graph from the markdown kanban boards.
 
-Source of truth for STATUS: docs/features/*.board.md
-  (`shd101wyy.markdown-kanban` format: `#` board title, `##` columns,
-   `- [ ] **ID** ... — title` cards). Drag cards there.
+Source of truth for STATUS: docs/features/*.kanban.md
+  (`holooooo.markdown-kanban` format: `#` board title, `##` columns,
+   `### ID — title` task headings). Drag cards there.
 
 Source of truth for the story TEXT: the body of docs/stories/<ID>.md, below the
 `<!-- body -->` marker. Hand-edit it freely; this script never touches it. On
@@ -33,8 +33,7 @@ COLUMN_STATUS = [
 ]
 STATUS_ORDER = ["review", "in-progress", "todo", "backlog", "done"]
 BODY_MARKER = "<!-- body -->"
-ID_RE = re.compile(r"\*\*((?:GEO|IG|BASE)-\d+)\*\*")
-CARD_RE = re.compile(r"^\s*[-*]\s*\[[ xX]\]\s")
+CARD_RE = re.compile(r"^###\s+((?:GEO|IG|BASE)-\d+)\b")
 
 
 def label_for(slug):
@@ -50,14 +49,14 @@ def status_for_heading(heading):
 
 
 def parse_board(path):
-    """Return {ID: status_slug} from a markdown-kanban board file."""
+    """Return {ID: status_slug} from a holooooo.markdown-kanban board file."""
     out = {}
     current = None
     for line in open(path, encoding="utf-8"):
         if line.startswith("## "):
             current = status_for_heading(line[3:].strip())
-        elif current and CARD_RE.match(line):
-            m = ID_RE.search(line)
+        elif current:
+            m = CARD_RE.match(line)
             if m:
                 out[m.group(1).upper()] = current
     return out
@@ -69,7 +68,7 @@ def prio(text):
 
 
 def deps(text):
-    m = re.search(r"Dependencias:\*\*?\s*([^\n·]+)", text or "")
+    m = re.search(r"(?:Dependencias:\*\*?|\bdep:)\s*([^\n·]+)", text or "")
     return [x.upper() for x in re.findall(r"(?:GEO|IG)-\d+", m.group(1))] if m else []
 
 
@@ -97,7 +96,7 @@ def main():
     per_spec_ids = {spec: [] for spec in FEATURES}
 
     for spec, meta in FEATURES.items():
-        board_path = os.path.join("docs/features", f"{spec}.board.md")
+        board_path = os.path.join("docs/features", f"{spec}.kanban.md")
         if not os.path.exists(board_path):
             print(f"skip: {board_path} missing")
             continue
@@ -114,7 +113,7 @@ def main():
             if tid.startswith("BASE"):
                 tags.append("infra")
             fm = ["---", f"id: {tid}", f"feature: {meta['id']}", f"status: {slug}",
-                  f"board: {spec}.board.md", f"tags: [{', '.join(tags)}]", "---", ""]
+                  f"board: {spec}.kanban.md", f"tags: [{', '.join(tags)}]", "---", ""]
             head = [f"# {tid}", "",
                     f"**Estado:** [[status-{slug}]] · **Feature:** [[{spec}]] ({meta['id']})", ""]
             if d:
@@ -130,16 +129,16 @@ def main():
         open(f"docs/stories/status-{slug}.md", "w", encoding="utf-8").write(
             f"# {label_for(slug)}\n\nHistorias en este estado ({len(items)}): "
             + " · ".join(f"[[{i}]]" for i in items)
-            + "\n\n> Ancla del grafo de Foam. Estado canónico: `docs/features/*.board.md`. "
+            + "\n\n> Ancla del grafo de Foam. Estado canónico: `docs/features/*.kanban.md`. "
             "Regenera con `python3 scripts/foam-sync.py`.\n")
 
     # project hub
     lines = ["# Proyecto — mapa de historias (Foam)", "",
-             "Tablero por feature: `docs/features/*.board.md` (extensión **Markdown Kanban**, "
-             "shd101wyy). Grafo: **Foam: Show Graph**. Regenera este índice con "
+             "Tablero por feature: `docs/features/*.kanban.md` (extensión **Markdown Kanban**, "
+             "holooooo). Grafo: **Foam: Show Graph**. Regenera este índice con "
              "`python3 scripts/foam-sync.py`.", "", "## Features", ""]
     for spec, meta in FEATURES.items():
-        lines.append(f"- [[{spec}]] — {meta['id']} · tablero `docs/features/{spec}.board.md`")
+        lines.append(f"- [[{spec}]] — {meta['id']} · tablero `docs/features/{spec}.kanban.md`")
     lines += ["", "## Por estado", ""]
     for slug in STATUS_ORDER:
         ids = sorted(r[0] for r in rows if r[2] == slug)
@@ -163,7 +162,7 @@ def main():
         index = " · ".join(f"[[{i}]]" for i in sorted(per_spec_ids[spec]))
         open(path, "w", encoding="utf-8").write(f"{content}\n\n## Historias (Foam)\n{marker}\n\n{index}\n")
 
-    print(f"{len(rows)} stories synced from *.board.md")
+    print(f"{len(rows)} stories synced from *.kanban.md")
     for r in sorted(rows):
         print(f"  {r[0]:9} {r[2]}")
 

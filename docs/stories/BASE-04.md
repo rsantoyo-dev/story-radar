@@ -2,7 +2,7 @@
 id: BASE-04
 feature: FEAT-IG-001
 status: done
-board: instagram-performance.board.md
+board: instagram-performance.kanban.md
 tags: [ig, done, infra]
 ---
 

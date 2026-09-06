@@ -2,7 +2,7 @@
 id: GEO-10
 feature: FEAT-GEO-001
 status: backlog
-board: real-place-visual-fidelity.board.md
+board: real-place-visual-fidelity.kanban.md
 tags: [geo, backlog, p2]
 ---
 

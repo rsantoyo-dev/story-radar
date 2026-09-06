@@ -340,11 +340,11 @@ No incluye publicar automáticamente, reconocer identidades de personas, certifi
 
 ## Uso del tablero en VS Code
 
-Un tablero por feature en markdown: [`real-place-visual-fidelity.board.md`](real-place-visual-fidelity.board.md). Formato de la extensión **Markdown Kanban** (`shd101wyy.vscode-markdown-kanban`): `#` título, `##` columnas, `- [ ] **ID** … — título` tarjetas. Abre el `.board.md` y pulsa el icono de tablero en la barra del editor; arrastrar reescribe el archivo.
+Un tablero por feature en markdown: [`real-place-visual-fidelity.kanban.md`](real-place-visual-fidelity.kanban.md). Formato de la extensión **Markdown Kanban** (`holooooo.markdown-kanban` v2): `#` título, `##` columnas, `### ID — título` como tarjetas (atributos como `- priority:` / `- tags:` indentados debajo). Clic derecho en el `.kanban.md` → «Kanban» (o «Open Kanban Board» en la paleta); el selector de la barra alterna entre features. Arrastrar reescribe el archivo.
 
 Detalle de cada historia (user story + criterios) en [`../stories/GEO-01.md`](../stories/) … — notas Foam, editables a mano; el cuerpo bajo `<!-- body -->` no lo toca el sync.
 
-Tras mover tarjetas: `python3 scripts/foam-sync.py` regenera las notas de historia, los `status-*`, [`../PROJECT.md`](../PROJECT.md) y el índice de abajo. El `.board.md` es la verdad del estado; el kanban JSON quedó obsoleto (en el historial de git).
+Tras mover tarjetas: `python3 scripts/foam-sync.py` regenera las notas de historia, los `status-*`, [`../PROJECT.md`](../PROJECT.md) y el índice de abajo. El `.kanban.md` es la fuente del estado; el cuerpo de cada nota de historia (bajo `<!-- body -->`) es la fuente del texto y no lo toca el sync.
 
 ## Historias (Foam)
 <!-- foam-stories -->

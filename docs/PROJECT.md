@@ -1,11 +1,11 @@
 # Proyecto — mapa de historias (Foam)
 
-Tablero por feature: `docs/features/*.board.md` (extensión **Markdown Kanban**, shd101wyy). Grafo: **Foam: Show Graph**. Regenera este índice con `python3 scripts/foam-sync.py`.
+Tablero por feature: `docs/features/*.kanban.md` (extensión **Markdown Kanban**, holooooo). Grafo: **Foam: Show Graph**. Regenera este índice con `python3 scripts/foam-sync.py`.
 
 ## Features
 
-- [[instagram-performance]] — FEAT-IG-001 · tablero `docs/features/instagram-performance.board.md`
-- [[real-place-visual-fidelity]] — FEAT-GEO-001 · tablero `docs/features/real-place-visual-fidelity.board.md`
+- [[instagram-performance]] — FEAT-IG-001 · tablero `docs/features/instagram-performance.kanban.md`
+- [[real-place-visual-fidelity]] — FEAT-GEO-001 · tablero `docs/features/real-place-visual-fidelity.kanban.md`
 
 ## Por estado
 
