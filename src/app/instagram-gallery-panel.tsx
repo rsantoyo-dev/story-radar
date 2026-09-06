@@ -71,6 +71,7 @@ export function InstagramGalleryPanel({
   const [cursor, setCursor] = useState<string>();
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [reloading, setReloading] = useState(false);
   const [error, setError] = useState<string>();
   const [reloadKey, setReloadKey] = useState(0);
   const [brokenThumbs, setBrokenThumbs] = useState<Set<string>>(new Set());
@@ -78,6 +79,26 @@ export function InstagramGalleryPanel({
   // "Load older" from the previous filter set never appends to the new list.
   const inFlight = useRef<AbortController | null>(null);
   const authenticated = secret.trim().length > 0;
+
+  // Every path that starts a fresh first page: drops the previous list and
+  // cursor (so "Load older" can't fire with a stale query's cursor) and marks
+  // the reload in progress. These are event-handler calls, never effect-body
+  // setState.
+  const startReload = (next: Filters) => {
+    setFilters(next);
+    setItems([]);
+    setCursor(undefined);
+    setError(undefined);
+    setReloading(true);
+  };
+
+  const retry = () => {
+    setItems([]);
+    setCursor(undefined);
+    setError(undefined);
+    setReloading(true);
+    setReloadKey((key) => key + 1);
+  };
 
   const mediaUrl = useCallback(
     (next?: string) => {
@@ -112,19 +133,23 @@ export function InstagramGalleryPanel({
         setItems(response.items);
         setCursor(response.nextCursor);
         setError(undefined);
+        setReloading(false);
         // A fresh page may carry refreshed (un-expired) thumbnail URLs.
         setBrokenThumbs(new Set());
       })
       .catch((requestError) => {
         if (!controller.signal.aborted) {
           setError(getErrorMessage(requestError));
+          setReloading(false);
         }
       });
     return () => controller.abort();
   }, [authenticated, topicId, mediaUrl, secret, reloadKey, refreshToken]);
 
   const loadMore = () => {
-    if (!cursor || loadingMore) return;
+    // No pagination while the first page is (re)loading — the cursor in state
+    // belongs to the query that produced it, and a reload has cleared it.
+    if (!cursor || loadingMore || reloading) return;
     inFlight.current?.abort();
     const controller = new AbortController();
     inFlight.current = controller;
@@ -142,9 +167,9 @@ export function InstagramGalleryPanel({
       .catch((requestError) => {
         if (!controller.signal.aborted) setError(getErrorMessage(requestError));
       })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoadingMore(false);
-      });
+      // Always clear the flag: an abort by a filter change must not leave the
+      // button stuck disabled.
+      .finally(() => setLoadingMore(false));
   };
 
   if (!authenticated) return null;
@@ -185,10 +210,7 @@ export function InstagramGalleryPanel({
           <button
             type="button"
             className={styles.instagramLink}
-            onClick={() => {
-              setError(undefined);
-              setReloadKey((key) => key + 1);
-            }}
+            onClick={retry}
           >
             Retry
           </button>
@@ -212,10 +234,10 @@ export function InstagramGalleryPanel({
                 value={filters.format}
                 disabled={disabled}
                 onChange={(event) =>
-                  setFilters((f) => ({
-                    ...f,
+                  startReload({
+                    ...filters,
                     format: event.target.value as Filters["format"],
-                  }))
+                  })
                 }
               >
                 <option value="">All</option>
@@ -231,10 +253,10 @@ export function InstagramGalleryPanel({
                 value={filters.linked}
                 disabled={disabled}
                 onChange={(event) =>
-                  setFilters((f) => ({
-                    ...f,
+                  startReload({
+                    ...filters,
                     linked: event.target.value as Filters["linked"],
-                  }))
+                  })
                 }
               >
                 <option value="">All</option>
@@ -249,7 +271,7 @@ export function InstagramGalleryPanel({
                 value={filters.from}
                 disabled={disabled}
                 onChange={(event) =>
-                  setFilters((f) => ({ ...f, from: event.target.value }))
+                  startReload({ ...filters, from: event.target.value })
                 }
               />
             </label>
@@ -260,7 +282,7 @@ export function InstagramGalleryPanel({
                 value={filters.to}
                 disabled={disabled}
                 onChange={(event) =>
-                  setFilters((f) => ({ ...f, to: event.target.value }))
+                  startReload({ ...filters, to: event.target.value })
                 }
               />
             </label>
@@ -269,7 +291,7 @@ export function InstagramGalleryPanel({
                 type="button"
                 className={styles.secondaryButton}
                 disabled={disabled}
-                onClick={() => setFilters(EMPTY_FILTERS)}
+                onClick={() => startReload(EMPTY_FILTERS)}
               >
                 Clear filters
               </button>
@@ -282,17 +304,16 @@ export function InstagramGalleryPanel({
               <button
                 type="button"
                 className={styles.instagramLink}
-                onClick={() => {
-                  setError(undefined);
-                  setReloadKey((key) => key + 1);
-                }}
+                onClick={retry}
               >
                 Retry
               </button>
             </p>
           ) : null}
 
-          {items.length === 0 && !error ? (
+          {reloading ? (
+            <p className={styles.brandAssetHint}>Loading publications…</p>
+          ) : items.length === 0 && !error ? (
             <p className={styles.brandAssetHint}>
               No publications match. Sync from the Instagram panel or clear the
               filters.
@@ -370,11 +391,11 @@ export function InstagramGalleryPanel({
             </ul>
           )}
 
-          {cursor ? (
+          {cursor && !reloading ? (
             <button
               type="button"
               className={styles.secondaryButton}
-              disabled={disabled || loading || loadingMore}
+              disabled={disabled || loading || loadingMore || reloading}
               onClick={loadMore}
             >
               {loadingMore ? "Loading…" : "Load older"}
