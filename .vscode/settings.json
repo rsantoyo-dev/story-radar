@@ -1,6 +1,3 @@
 {
-  "kanban.saveFiles.pathPreferences": [
-    "docs/features/real-place-visual-fidelity.kanban.json",
-    "docs/features/instagram-performance.kanban.json"
-  ]
+  "//": "Project board is per-feature markdown: docs/features/<feature>.board.md, edited with the 'Markdown Kanban' extension (shd101wyy.vscode-markdown-kanban). Open a .board.md file and click the board icon in the editor title bar. After moving cards run: python3 scripts/foam-sync.py"
 }

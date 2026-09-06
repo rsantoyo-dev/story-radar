@@ -340,18 +340,13 @@ No incluye publicar automáticamente, reconocer identidades de personas, certifi
 
 ## Uso del tablero en VS Code
 
-La extensión instalada es **lbauskar.kanban 1.8.1**, y su formato nativo es JSON con `title`, `cols` y `tasks`. El tablero acompañante usa ese formato; cada tarjeta contiene la historia y sus criterios completos.
+Un tablero por feature en markdown: [`real-place-visual-fidelity.board.md`](real-place-visual-fidelity.board.md). Formato de la extensión **Markdown Kanban** (`shd101wyy.vscode-markdown-kanban`): `#` título, `##` columnas, `- [ ] **ID** … — título` tarjetas. Abre el `.board.md` y pulsa el icono de tablero en la barra del editor; arrastrar reescribe el archivo.
 
-Actualmente el workspace carga `.vscode/kanban.json` mediante `kanban.saveFiles.pathPreferences`. Para abrir este tablero, cambiar temporalmente ese ajuste a:
+Detalle de cada historia (user story + criterios) en [`../stories/GEO-01.md`](../stories/) … — notas Foam, editables a mano; el cuerpo bajo `<!-- body -->` no lo toca el sync.
 
-```json
-{
-  "kanban.saveFiles.pathPreferences": [
-    "docs/features/real-place-visual-fidelity.kanban.json"
-  ]
-}
-```
+Tras mover tarjetas: `python3 scripts/foam-sync.py` regenera las notas de historia, los `status-*`, [`../PROJECT.md`](../PROJECT.md) y el índice de abajo. El `.board.md` es la verdad del estado; el kanban JSON quedó obsoleto (en el historial de git).
 
-Después ejecutar **Kanban: View**; recargar la ventana si conserva el tablero anterior. Para volver a Instagram, restaurar `.vscode/kanban.json`. La extensión carga la primera ruta existente: añadir ambas a la lista no crea un selector de tableros.
+## Historias (Foam)
+<!-- foam-stories -->
 
-No se modifica el tablero de Instagram ni la configuración activa. El JSON guarda el avance; este documento conserva el alcance y criterios de referencia. Si se cambia el alcance de una tarjeta, actualizar también su historia en este documento.
+[[GEO-01]] · [[GEO-02]] · [[GEO-03]] · [[GEO-04]] · [[GEO-05]] · [[GEO-06]] · [[GEO-07]] · [[GEO-08]] · [[GEO-09]] · [[GEO-10]] · [[GEO-11]] · [[GEO-12]]

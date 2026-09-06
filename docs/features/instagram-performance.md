@@ -211,3 +211,8 @@ No se incluyen publicación automática, programación de contenido, respuestas 
 - [API de Instagram y métricas por publicación, Meta](https://www.postman.com/meta/instagram/documentation/6yqw8pt/instagram-api?entity=request-23987686-1ff01566-3509-48bd-a0f4-8571a91ccfdf).
 
 Las métricas y permisos concretos se verifican contra la versión de API elegida durante IG-01 e IG-05; no se asume disponibilidad uniforme entre formatos.
+
+## Historias (Foam)
+<!-- foam-stories -->
+
+[[BASE-01]] · [[BASE-02]] · [[BASE-03]] · [[BASE-04]] · [[IG-01]] · [[IG-02]] · [[IG-03]] · [[IG-04]] · [[IG-05]] · [[IG-06]] · [[IG-07]] · [[IG-08]] · [[IG-09]]
