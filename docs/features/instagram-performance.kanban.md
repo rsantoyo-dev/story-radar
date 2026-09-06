@@ -28,10 +28,6 @@
 
 ## En revisión / QA
 
-### IG-04 — Vincular un post con su historia y versión creativa
-
-  - tags: [ig]
-
 ### IG-03 — Explorar la galería de Instagram
 
   - tags: [ig]
@@ -41,6 +37,10 @@
   - tags: [ig]
 
 ## Hecho
+
+### IG-04 — Vincular un post con su historia y versión creativa
+
+  - tags: [ig]
 
 ### BASE-01 — Conexión de Instagram por tema
 
