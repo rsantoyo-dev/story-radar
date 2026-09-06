@@ -42,14 +42,14 @@ test("missing token alone is also disconnected", () => {
   );
 });
 
-test("connected without the insights scope stays connected-without-insights", () => {
+test("a passing verification is operational even when OAuth never echoed the scope", () => {
   assert.equal(
     deriveMetaConnectionState(baseRow({ grantedPermissions: [] }), NOW),
-    "connected-without-insights",
+    "operational",
   );
 });
 
-test("scope granted but never verified stays connected-without-insights", () => {
+test("no verification yet stays connected-without-insights (scope alone is not enough)", () => {
   assert.equal(
     deriveMetaConnectionState(
       baseRow({ lastVerifiedAt: null, lastVerificationError: null }),

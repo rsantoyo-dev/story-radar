@@ -22,11 +22,13 @@ export type MetaConnectionStateInput = {
 };
 
 /**
- * "operational" means insights were proven live by a real verification call,
- * not merely that OAuth once claimed the scope was granted — Meta can accept
- * a scope request without the app actually having Advanced Access for it.
- * A dead or expired token always outranks a scope/verification problem,
- * since reconnecting is the fix for that regardless of anything else.
+ * "operational" means insights were proven live by a real verification call.
+ * That call IS the evidence — a clean verification proves insights work even
+ * when the OAuth response never echoed `permissions` (Meta sometimes omits
+ * it), so the granted-scope list is not required on top of it; conversely a
+ * granted scope without a passing verification is not enough (Meta can accept
+ * a scope request without the app having Advanced Access for it). A dead or
+ * expired token always outranks this, since reconnecting is the fix.
  */
 export function deriveMetaConnectionState(
   row: MetaConnectionStateInput,
@@ -40,11 +42,8 @@ export function deriveMetaConnectionState(
   );
   if (tokenExpired) return "needs-reconnect";
 
-  const hasInsightsScope = row.grantedPermissions.includes(
-    INSTAGRAM_INSIGHTS_SCOPE,
-  );
   const verifiedOk = Boolean(row.lastVerifiedAt) && !row.lastVerificationError;
-  if (hasInsightsScope && verifiedOk) return "operational";
+  if (verifiedOk) return "operational";
 
   return "connected-without-insights";
 }

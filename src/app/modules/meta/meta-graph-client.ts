@@ -31,6 +31,7 @@ import {
   parseInstagramMediaListResponse,
   type InstagramMediaListPage,
 } from "./instagram-media-response";
+import { assertInstagramInsightsShape } from "./instagram-insights-response";
 
 const INSTAGRAM_MEDIA_FIELDS = [
   "id",
@@ -110,9 +111,9 @@ export async function refreshLongLivedInstagramToken(
  * The minimal account-level (not media-level) insights read available under
  * "Instagram API with Instagram Login": needs no published post yet, and
  * only requires instagram_business_basic + instagram_business_manage_insights.
- * The response is discarded — only whether it throws matters here; IG-05
- * owns real metric consumption. Throws MetaGraphApiError on any failure,
- * which the caller classifies via meta-verification.ts.
+ * A 200 with an empty or malformed body is NOT a pass — the response shape is
+ * validated before returning. Throws MetaGraphApiError on any failure, which
+ * the caller classifies via meta-verification.ts. IG-05 owns real metrics.
  */
 export async function verifyInstagramInsightsAccess(
   igUserId: string,
@@ -125,7 +126,7 @@ export async function verifyInstagramInsightsAccess(
   url.searchParams.set("period", "day");
   url.searchParams.set("metric_type", "total_value");
   url.searchParams.set("access_token", accessToken);
-  await instagramGet<unknown>(url);
+  assertInstagramInsightsShape(await instagramGet<unknown>(url));
 }
 
 /**
