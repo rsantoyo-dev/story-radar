@@ -9,7 +9,6 @@ import {
   isNotNull,
   isNull,
   lt,
-  notInArray,
   or,
   sql,
 } from "drizzle-orm";
@@ -122,60 +121,45 @@ export async function upsertInstagramMediaPage(
 }
 
 /**
- * Reconciles a carousel's elements without a delete-all window: each element
- * is upserted on (media_id, external_id) and any element no longer in the
- * carousel is removed. Two concurrent syncs of the same carousel converge on
- * the same rows — the upsert turns what would be a unique-violation into an
- * update, so no parent-row lock is needed and nothing is lost on failure.
+ * Replaces a carousel's elements in one transaction. The first statement locks
+ * the parent row (`FOR UPDATE`), so a second concurrent sync of the same
+ * carousel blocks until this one commits and then works from a consistent
+ * state — no cross-deletion between differing element lists, and the
+ * delete + insert either both land or neither does (no partial update, no
+ * unique-violation window).
  */
 async function replaceCarouselChildren(
   mediaId: string,
   children: InstagramMediaNode["children"],
 ): Promise<void> {
+  const lockParent = db
+    .select({ id: topicInstagramMedia.id })
+    .from(topicInstagramMedia)
+    .where(eq(topicInstagramMedia.id, mediaId))
+    .for("update");
+  const deleteChildren = db
+    .delete(topicInstagramMediaChildren)
+    .where(eq(topicInstagramMediaChildren.mediaId, mediaId));
+
   if (children.length === 0) {
-    await db
-      .delete(topicInstagramMediaChildren)
-      .where(eq(topicInstagramMediaChildren.mediaId, mediaId));
+    await db.batch([lockParent, deleteChildren]);
     return;
   }
 
-  for (const [index, child] of children.entries()) {
-    const row = {
-      mediaId,
-      externalId: child.externalId,
-      mediaType: child.mediaType,
-      mediaUrl: child.mediaUrl,
-      thumbnailUrl: child.thumbnailUrl,
-      order: index + 1,
-    };
-    await db
-      .insert(topicInstagramMediaChildren)
-      .values(row)
-      .onConflictDoUpdate({
-        target: [
-          topicInstagramMediaChildren.mediaId,
-          topicInstagramMediaChildren.externalId,
-        ],
-        set: {
-          mediaType: row.mediaType,
-          mediaUrl: row.mediaUrl,
-          thumbnailUrl: row.thumbnailUrl,
-          order: row.order,
-        },
-      });
-  }
-
-  await db
-    .delete(topicInstagramMediaChildren)
-    .where(
-      and(
-        eq(topicInstagramMediaChildren.mediaId, mediaId),
-        notInArray(
-          topicInstagramMediaChildren.externalId,
-          children.map((child) => child.externalId),
-        ),
-      ),
-    );
+  await db.batch([
+    lockParent,
+    deleteChildren,
+    db.insert(topicInstagramMediaChildren).values(
+      children.map((child, index) => ({
+        mediaId,
+        externalId: child.externalId,
+        mediaType: child.mediaType,
+        mediaUrl: child.mediaUrl,
+        thumbnailUrl: child.thumbnailUrl,
+        order: index + 1,
+      })),
+    ),
+  ]);
 }
 
 /**
