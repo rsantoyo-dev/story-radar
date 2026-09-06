@@ -559,17 +559,24 @@ export async function saveInstagramMediaMetrics(input: {
       .limit(1);
     const prior = normalizeMetricsBlob(existing?.metrics) ?? {};
     const merged: Record<string, InstagramMediaMetric> = { ...prior };
+    const stale = (name: string): InstagramMediaMetric => ({
+      ...prior[name],
+      state: "error",
+      error: prior[name].error ?? "Not returned by the last refresh",
+    });
     for (const [name, metric] of Object.entries(input.result.ok)) {
-      merged[name] = metric;
+      // A metric that came back "unavailable" (incl. a wholly empty response)
+      // must not wipe a real value already on file — keep it, flagged stale.
+      merged[name] =
+        metric.state === "unavailable" &&
+        prior[name]?.state === "ok" &&
+        prior[name].value != null
+          ? stale(name)
+          : metric;
     }
     for (const name of Object.keys(prior)) {
-      if (!(name in input.result.ok)) {
-        merged[name] = {
-          ...prior[name],
-          state: "error",
-          error: prior[name].error ?? "Not returned by the last refresh",
-        };
-      }
+      // Dropped from the request entirely (retry-drop) — same rule.
+      if (!(name in input.result.ok)) merged[name] = stale(name);
     }
     updated = await db
       .update(topicInstagramMedia)

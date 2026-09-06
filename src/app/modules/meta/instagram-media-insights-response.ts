@@ -70,7 +70,7 @@ export function parseInstagramMediaInsights(
     const node = asRecord(entry);
     const name = asNonEmptyString(node?.name);
     if (!node || !name) continue;
-    const value = readTotalValue(node.total_value);
+    const value = readMetricValue(node);
     if (value === undefined) continue;
     returned.set(name, {
       value,
@@ -133,28 +133,55 @@ export function computeMetricRatios(
 
 /**
  * When a media-insights request 400s because one metric is not valid for that
- * media type, Graph names the offending metric in the message. Returns that
- * name so the caller can drop it and retry, or null if none is recognizable.
+ * media type, Graph names the offending metric in the message — but the message
+ * usually also enumerates the *allowed* metrics ("must be one of the following
+ * values: reach, views, …"). That list is dropped before scanning so an allowed
+ * alternative is never mistaken for the offender. Only a name in `candidates`
+ * (the set actually requested) is returned; null when nothing is recognizable.
  */
 export function unsupportedMetricFromGraphError(
   graphError: unknown,
+  candidates: readonly string[] = INSTAGRAM_MEDIA_INSIGHT_METRICS,
 ): string | null {
   const message = extractMessage(graphError);
   if (!message) return null;
-  for (const metric of INSTAGRAM_MEDIA_INSIGHT_METRICS) {
-    // e.g. "(#100) metric[0] must be one of the following ... : saved"
-    //      "The 'follows' metric is not supported for this media product type"
-    const pattern = new RegExp(`\\b${metric}\\b`, "i");
-    if (pattern.test(message)) return metric;
+  const head = message
+    .toLowerCase()
+    .split(
+      /one of the following|following (?:values|metrics)|allowed (?:values|metrics)|available metrics/,
+    )[0];
+  for (const metric of candidates) {
+    if (new RegExp(`\\b${metric}\\b`).test(head)) return metric;
   }
   return null;
 }
 
-function readTotalValue(value: unknown): number | null | undefined {
-  const record = asRecord(value);
-  if (!record) return undefined;
-  const raw = record.value;
-  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+/**
+ * The metric value regardless of response shape: `metric_type=total_value`
+ * gives `total_value: { value }`; the classic time series gives
+ * `values: [{ value, end_time }]` (the latest entry is the current total).
+ */
+function readMetricValue(node: Record<string, unknown>): number | undefined {
+  const total = asRecord(node.total_value);
+  if (
+    total &&
+    typeof total.value === "number" &&
+    Number.isFinite(total.value)
+  ) {
+    return total.value;
+  }
+  if (Array.isArray(node.values)) {
+    for (let i = node.values.length - 1; i >= 0; i -= 1) {
+      const entry = asRecord(node.values[i]);
+      if (
+        entry &&
+        typeof entry.value === "number" &&
+        Number.isFinite(entry.value)
+      ) {
+        return entry.value;
+      }
+    }
+  }
   return undefined;
 }
 

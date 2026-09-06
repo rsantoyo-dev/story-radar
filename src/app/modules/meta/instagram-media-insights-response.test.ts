@@ -10,7 +10,7 @@ import {
 
 const REQUESTED = ["reach", "likes", "saved", "shares", "comments"] as const;
 
-test("maps returned metrics and marks the rest unavailable", () => {
+test("maps returned metrics (both response shapes) and marks the rest unavailable", () => {
   const parsed = parseInstagramMediaInsights(
     {
       data: [
@@ -21,6 +21,15 @@ test("maps returned metrics and marks the rest unavailable", () => {
           total_value: { value: 1000 },
         },
         { name: "likes", period: "lifetime", total_value: { value: 0 } },
+        // Classic time-series shape — the latest entry is the current total.
+        {
+          name: "shares",
+          period: "lifetime",
+          values: [
+            { value: 4, end_time: "2026-09-01T07:00:00+0000" },
+            { value: 12, end_time: "2026-09-06T07:00:00+0000" },
+          ],
+        },
       ],
     },
     REQUESTED,
@@ -39,9 +48,16 @@ test("maps returned metrics and marks the rest unavailable", () => {
     period: "lifetime",
     unit: "count",
   });
+  // `values[]` is read, not just `total_value`.
+  assert.deepEqual(parsed.shares, {
+    value: 12,
+    state: "ok",
+    period: "lifetime",
+    unit: "count",
+  });
   assert.equal(parsed.saved.state, "unavailable");
   assert.equal(parsed.saved.value, null);
-  assert.equal(parsed.shares.state, "unavailable");
+  assert.equal(parsed.comments.state, "unavailable");
 });
 
 test("accepts an empty data set (every requested metric unavailable)", () => {
@@ -96,7 +112,7 @@ test("computeMetricRatios needs a real reach > 0 and real numerators", () => {
   );
 });
 
-test("unsupportedMetricFromGraphError pulls the metric name out of a 400", () => {
+test("unsupportedMetricFromGraphError names the offender, not an allowed alternative", () => {
   assert.equal(
     unsupportedMetricFromGraphError({
       error: {
@@ -106,11 +122,23 @@ test("unsupportedMetricFromGraphError pulls the metric name out of a 400", () =>
     }),
     "follows",
   );
+  // The allowed-metrics enumeration must not be mistaken for the offender.
   assert.equal(
     unsupportedMetricFromGraphError({
-      message: "metric[0] must be one of the following values: ... saved",
+      error: {
+        message:
+          "(#100) The follows metric must be one of the following values: reach, views, likes, comments, saved, shares",
+      },
     }),
-    "saved",
+    "follows",
+  );
+  // Only a name in `candidates` is returned.
+  assert.equal(
+    unsupportedMetricFromGraphError(
+      { error: { message: "the follows metric is not supported" } },
+      ["reach", "likes", "saved"],
+    ),
+    null,
   );
   assert.equal(
     unsupportedMetricFromGraphError({ error: { message: "Something broke" } }),

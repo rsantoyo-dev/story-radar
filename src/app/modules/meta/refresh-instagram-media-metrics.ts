@@ -153,8 +153,18 @@ async function refreshOne(
       const status =
         error instanceof MetaGraphApiError ? error.status : undefined;
       const unsupported =
-        status === 400 ? unsupportedMetricFromGraphError(graphError) : null;
-      if (unsupported && candidates.includes(unsupported)) {
+        status === 400
+          ? unsupportedMetricFromGraphError(graphError, candidates)
+          : null;
+      // Never drop `reach` (valid for every media type, and the ratio
+      // denominator) nor the last remaining candidate — fall through to the
+      // per-publication error instead of blinding ourselves.
+      if (
+        unsupported &&
+        unsupported !== "reach" &&
+        candidates.length > 1 &&
+        candidates.includes(unsupported)
+      ) {
         candidates = candidates.filter((metric) => metric !== unsupported);
         continue;
       }
