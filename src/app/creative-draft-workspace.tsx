@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { CreativeDocumentaryPanel } from "./creative-documentary-panel";
 import { useEffect, useState } from "react";
 
 import {
@@ -18,6 +19,7 @@ import {
 import { buildCompleteDraftScript } from "./modules/stories/creative-draft-export";
 import {
   CREATIVE_COMPANION_APPROACHES,
+  VISUAL_FIDELITY_MODES,
   type CreativeAssetBatchResponse,
   type CreativeAspectRatio,
   type CreativeCharacter,
@@ -34,6 +36,7 @@ import {
   type CreativeWorkspaceState,
   type EditableCreativeDraft,
 } from "./modules/stories/creative-content.types";
+import { resolveEffectiveVisualFidelity } from "./modules/stories/creative-visual-fidelity";
 import { ListField, TextAreaField, TextField } from "./creative-profile-fields";
 import styles from "./creative-draft-workspace.generated.module.css";
 
@@ -53,6 +56,7 @@ type BusyAction =
   | "references"
   | "approve"
   | "unapprove"
+  | "visual-fidelity"
   | "companion"
   | "images";
 
@@ -132,6 +136,12 @@ const FRAMING_STRATEGY_LABELS = {
   explainer: "Explainer",
   authority: "Authority",
 } as const satisfies Record<CreativeProfile["framingStrategy"], string>;
+
+const VISUAL_FIDELITY_MODE_LABELS = {
+  "illustration-editorial": "Editorial illustration",
+  "verified-references": "Verified references",
+  "photo-required": "Real photo required",
+} as const satisfies Record<CreativeProfile["visualFidelityMode"], string>;
 
 export function CreativeDraftWorkspace({
   topicId,
@@ -839,6 +849,32 @@ export function CreativeDraftWorkspace({
     });
   }
 
+  async function handleSetVisualFidelity(
+    override: { mode: null } | { mode: string; reason: string },
+  ) {
+    if (!activeDraftId || busy || dirty || viewingHistoricalDraft) return;
+    await run("visual-fidelity", async () => {
+      await requestJson(
+        topicUrl(
+          `/api/radar/creative/drafts/${encodeURIComponent(activeDraftId)}`,
+          topicId,
+        ),
+        secret,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "set-visual-fidelity", ...override }),
+        },
+      );
+      await reloadWorkspace(selectedFormat);
+      setNotice(
+        override.mode === null
+          ? "This draft now inherits the topic's place fidelity policy."
+          : `Place fidelity for this draft set to "${VISUAL_FIDELITY_MODE_LABELS[override.mode as CreativeProfile["visualFidelityMode"]]}".`,
+      );
+    });
+  }
+
   async function handleRefreshCharacterReferences() {
     if (
       !activeDraftId ||
@@ -1440,6 +1476,8 @@ export function CreativeDraftWorkspace({
               </div>
             ) : null}
 
+            <CreativeDocumentaryPanel key={`${topicId}:${storyId}`} topicId={topicId} storyId={storyId} secret={secret} format={selectedFormat} disabled={Boolean(busy) || dirty} />
+
             <div className={styles.profilePanel}>
               <div className={styles.profileSummaryHead}>
                 <div>
@@ -1766,6 +1804,19 @@ export function CreativeDraftWorkspace({
                       )}
                     </div>
                   </div>
+                ) : null}
+
+                {activeDraft && !viewingHistoricalDraft ? (
+                  <VisualFidelityControl
+                    inheritedMode={
+                      workspace.profile.visualFidelityMode
+                    }
+                    override={activeDraft.visualFidelityOverride}
+                    draftIsApproved={activeDraft.status === "approved"}
+                    busy={busy === "visual-fidelity"}
+                    disabled={Boolean(busy) || dirty}
+                    onSubmit={handleSetVisualFidelity}
+                  />
                 ) : null}
               </section>
             ) : null}
@@ -3004,6 +3055,158 @@ function StatusPill({ status, version }: { status: CreativeDraft["status"]; vers
 
 function BriefCopy({ label, value }: { label: string; value: string }) {
   return <div className={styles.briefCopy}><span>{label}</span><p>{value}</p></div>;
+}
+
+function VisualFidelityControl({
+  inheritedMode,
+  override,
+  draftIsApproved,
+  busy,
+  disabled,
+  onSubmit,
+}: {
+  inheritedMode: CreativeProfile["visualFidelityMode"];
+  override: CreativeDraft["visualFidelityOverride"];
+  draftIsApproved: boolean;
+  busy: boolean;
+  disabled: boolean;
+  onSubmit: (
+    override: { mode: null } | { mode: string; reason: string },
+  ) => void;
+}) {
+  const effective = resolveEffectiveVisualFidelity({
+    inheritedMode,
+    override: override?.mode ?? null,
+    overrideReason: override?.reason,
+  });
+  const [editing, setEditing] = useState(false);
+  const [mode, setMode] =
+    useState<CreativeProfile["visualFidelityMode"]>(effective.mode);
+  const [reason, setReason] = useState("");
+  // Any override that differs from the inherited policy needs a reason (the DB
+  // enforces it); so does leaving "photo-required" even to match a laxer
+  // inherited policy — that stays an explicit, recorded decision.
+  const looseningFromPhoto =
+    effective.mode === "photo-required" && mode !== "photo-required";
+  const reasonRequired = mode !== inheritedMode || looseningFromPhoto;
+  const canSubmit = !disabled && (!reasonRequired || reason.trim().length > 0);
+  const clearNeedsReason =
+    effective.mode === "photo-required" && inheritedMode !== "photo-required";
+
+  function submit() {
+    onSubmit(
+      mode === inheritedMode && !looseningFromPhoto
+        ? { mode: null }
+        : { mode, reason: reason.trim() },
+    );
+  }
+
+  function cancel() {
+    setEditing(false);
+    setReason("");
+    setMode(effective.mode);
+  }
+
+  return (
+    <div className={styles.approvalBar}>
+      <div>
+        <strong>
+          Place fidelity: {VISUAL_FIDELITY_MODE_LABELS[effective.mode]}
+          {effective.source === "override" ? " (override)" : " (inherited)"}
+        </strong>
+        <small>
+          {effective.source === "override"
+            ? `Reason: ${effective.reason}`
+            : "Inherited from the topic's creative profile."}
+          {draftIsApproved
+            ? " Unapprove this draft to change it."
+            : ""}
+        </small>
+      </div>
+      <div>
+        {editing && !draftIsApproved ? (
+          <>
+            <label className={styles.field}>
+              <span>Mode</span>
+              <select
+                value={mode}
+                onChange={(event) =>
+                  setMode(
+                    event.target
+                      .value as CreativeProfile["visualFidelityMode"],
+                  )
+                }
+              >
+                {VISUAL_FIDELITY_MODES.map((option) => (
+                  <option key={option} value={option}>
+                    {VISUAL_FIDELITY_MODE_LABELS[option]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {reasonRequired ? (
+              <label className={styles.field}>
+                <span>Reason (required)</span>
+                <input
+                  value={reason}
+                  onChange={(event) => setReason(event.target.value)}
+                  placeholder="Why this draft's place fidelity differs from the topic policy"
+                />
+              </label>
+            ) : null}
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              disabled={!canSubmit || busy}
+              onClick={submit}
+            >
+              {busy ? "Saving…" : "Save"}
+            </button>
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              disabled={busy}
+              onClick={cancel}
+            >
+              Cancel
+            </button>
+          </>
+        ) : (
+          <>
+            {override ? (
+              <button
+                type="button"
+                className={styles.secondaryButton}
+                disabled={disabled || draftIsApproved || busy}
+                onClick={() => {
+                  if (clearNeedsReason) {
+                    setMode(inheritedMode);
+                    setReason("");
+                    setEditing(true);
+                  } else {
+                    onSubmit({ mode: null });
+                  }
+                }}
+              >
+                {busy ? "Clearing…" : "Use inherited policy"}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              disabled={disabled || draftIsApproved}
+              onClick={() => {
+                setMode(effective.mode);
+                setEditing(true);
+              }}
+            >
+              Change for this draft
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function SupportingCharactersEditor({

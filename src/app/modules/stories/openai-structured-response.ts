@@ -23,6 +23,7 @@ export type OpenAiStructuredResponse = {
   provider: "openai";
   model: string;
   usage: CreativeAiUsage;
+  webSearch?: { calls: number; sources: { url: string; title: string; imageUrl?: string }[] };
 };
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
@@ -37,6 +38,8 @@ export async function generateOpenAiStructuredResponse({
   schemaName,
   maxOutputTokens,
   reasoningEffort = "high",
+  timeoutMs = OPENAI_TIMEOUT_MS,
+  webSearch = false,
 }: {
   apiKey: string;
   model: string;
@@ -46,10 +49,13 @@ export async function generateOpenAiStructuredResponse({
   schemaName: string;
   maxOutputTokens: number;
   reasoningEffort?: OpenAiReasoningEffort;
+  timeoutMs?: number;
+  webSearch?: boolean;
 }): Promise<OpenAiStructuredResponse> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), OPENAI_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;
+  let rawText: string;
   try {
     response = await fetch(OPENAI_RESPONSES_URL, {
       method: "POST",
@@ -72,13 +78,19 @@ export async function generateOpenAiStructuredResponse({
         },
         max_output_tokens: maxOutputTokens,
         store: false,
+        ...(webSearch ? {
+          tools: [{ type: "web_search", search_content_types: ["text", "image"], image_settings: { max_results: 3, caption: true } }],
+          tool_choice: "required", max_tool_calls: 3,
+          include: ["web_search_call.action.sources", "web_search_call.results"],
+        } : {}),
       }),
       signal: controller.signal,
     });
+    rawText = await response.text();
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       throw new OpenAiEditorialError(
-        `OpenAI ${model} did not respond within ${OPENAI_TIMEOUT_MS / 1_000} seconds`,
+        `OpenAI ${model} did not respond within ${timeoutMs / 1_000} seconds`,
       );
     }
     throw new OpenAiEditorialError(
@@ -88,7 +100,6 @@ export async function generateOpenAiStructuredResponse({
     clearTimeout(timeout);
   }
 
-  const rawText = await response.text();
   const payload = parsePayload(rawText);
   if (!response.ok) {
     throw new OpenAiEditorialError(
@@ -110,6 +121,7 @@ export async function generateOpenAiStructuredResponse({
     provider: "openai",
     model,
     usage: openAiUsage(payload.usage),
+    ...(webSearch ? { webSearch: extractWebSearchSources(payload.output) } : {}),
   };
 }
 
@@ -207,4 +219,40 @@ export class OpenAiEditorialError extends Error {
   ) {
     super(message);
   }
+}
+
+/** Only tool-returned URLs count as discovered sources; assistant prose never does. */
+export function extractWebSearchSources(output: unknown): NonNullable<OpenAiStructuredResponse["webSearch"]> {
+  const sources: NonNullable<OpenAiStructuredResponse["webSearch"]>["sources"] = [];
+  let calls = 0;
+  const seen = new Set<string>();
+  if (!Array.isArray(output)) return { calls, sources };
+  const object = (v: unknown): Record<string, unknown> => v && typeof v === "object" ? v as Record<string, unknown> : {};
+  const safeUrl = (v: unknown): string | undefined => {
+    if (typeof v !== "string" || v.length > 2048) return;
+    try {
+      const u = new URL(v);
+      if (u.protocol !== "https:" || u.username || u.password || u.port || !u.hostname.includes(".") || /^(localhost|127\.|10\.|192\.168\.|169\.254\.)/i.test(u.hostname) || /\.(local|internal)$/i.test(u.hostname)) return;
+      return u.href;
+    } catch { return; }
+  };
+  for (const raw of output) {
+    const call = object(raw);
+    if (call.type !== "web_search_call") continue;
+    calls++;
+    if (call.status !== "completed") continue;
+    const action = object(call.action);
+    const items = [...(Array.isArray(action.sources) ? action.sources : []), ...(Array.isArray(call.results) ? call.results : [])];
+    for (const rawItem of items) {
+      const item = object(rawItem);
+      const url = safeUrl(item.type === "image_result" ? item.source_website_url : item.url);
+      const imageUrl = item.type === "image_result" ? safeUrl(item.image_url) : undefined;
+      const key = `${url}:${imageUrl || ""}`;
+      if (!url || seen.has(key) || sources.length >= 24) continue;
+      seen.add(key);
+      const title = typeof item.title === "string" ? item.title : typeof item.caption === "string" ? item.caption : new URL(url).hostname;
+      sources.push({ url, title: title.slice(0, 300), ...(imageUrl ? { imageUrl } : {}) });
+    }
+  }
+  return { calls, sources };
 }

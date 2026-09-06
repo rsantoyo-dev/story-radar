@@ -18,7 +18,9 @@ import {
   DEFAULT_CREATIVE_CAROUSEL_CHROME_SETTINGS,
   DEFAULT_CREATIVE_CONVERSION_GOAL,
   DEFAULT_CREATIVE_FRAMING_STRATEGY,
+  DEFAULT_CREATIVE_GEO_SCOPE,
   DEFAULT_CREATIVE_VISUAL_GUIDANCE,
+  DEFAULT_VISUAL_FIDELITY_MODE,
   type CreativeBrandOverlaySnapshot,
   type CreativeBrandOverlaySettings,
   type CreativeBrandPaletteColor,
@@ -26,7 +28,9 @@ import {
   type CreativeCarouselChromeSnapshot,
   type CreativeConversionGoal,
   type CreativeFramingStrategy,
+  type CreativeGeoScope,
   type CreativeInteractiveOverlay,
+  type VisualFidelityMode,
 } from "@/app/modules/stories/creative-content.types";
 
 import {
@@ -133,6 +137,26 @@ export const creativeProfiles = pgTable(
       .$type<CreativeFramingStrategy>()
       .default(DEFAULT_CREATIVE_FRAMING_STRATEGY)
       .notNull(),
+    /**
+     * How real places may be represented (FEAT-GEO-001 / GEO-01). The default
+     * keeps pre-GEO behavior; changing it advances visualPolicyVersion and
+     * invalidates approvals that captured the old policy.
+     */
+    visualFidelityMode: text("visual_fidelity_mode")
+      .$type<VisualFidelityMode>()
+      .default(DEFAULT_VISUAL_FIDELITY_MODE)
+      .notNull(),
+    /** Confirmed municipality/region/country of the covered place. */
+    geoScope: jsonb("geo_scope")
+      .$type<CreativeGeoScope>()
+      .default(DEFAULT_CREATIVE_GEO_SCOPE)
+      .notNull(),
+    /**
+     * Monotonic revision that advances only when visualFidelityMode or
+     * geoScope change on a save. Briefs capture it in profileSnapshot so a
+     * later policy change can be detected and stale approvals invalidated.
+     */
+    visualPolicyVersion: integer("visual_policy_version").default(1).notNull(),
     callToActionStyle: text("call_to_action_style").notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
       .defaultNow()
@@ -159,6 +183,14 @@ export const creativeProfiles = pgTable(
     check(
       "creative_profiles_framing_strategy_check",
       sql`${table.framingStrategy} IN ('auto', 'reader-consequence', 'explainer', 'authority')`,
+    ),
+    check(
+      "creative_profiles_visual_fidelity_mode_check",
+      sql`${table.visualFidelityMode} IN ('illustration-editorial', 'verified-references', 'photo-required')`,
+    ),
+    check(
+      "creative_profiles_visual_policy_version_check",
+      sql`${table.visualPolicyVersion} >= 1`,
     ),
   ],
 );
@@ -352,6 +384,21 @@ export const creativeDrafts = pgTable(
     outputTokens: integer("output_tokens").default(0).notNull(),
     thoughtsTokens: integer("thoughts_tokens").default(0).notNull(),
     totalTokens: integer("total_tokens").default(0).notNull(),
+    /**
+     * Per-publication override of the topic's visual fidelity policy
+     * (FEAT-GEO-001 / GEO-01). NULL means the draft inherits the current
+     * topic policy. A non-null override always carries an
+     * explicit editor reason (see the check below): moving off
+     * "photo-required" is never a silent fallback.
+     */
+    visualFidelityOverride: text("visual_fidelity_override")
+      .$type<VisualFidelityMode>(),
+    visualFidelityOverrideReason: text("visual_fidelity_override_reason"),
+    visualFidelityOverrideAt: timestamp("visual_fidelity_override_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    visualFidelityOverrideBy: text("visual_fidelity_override_by"),
     approvedAt: timestamp("approved_at", {
       withTimezone: true,
       mode: "date",
@@ -378,6 +425,19 @@ export const creativeDrafts = pgTable(
       "creative_drafts_approval_check",
       sql`(${table.status} = 'draft' AND ${table.approvedAt} IS NULL)
         OR (${table.status} = 'approved' AND ${table.approvedAt} IS NOT NULL)`,
+    ),
+    check(
+      "creative_drafts_visual_fidelity_override_check",
+      sql`(
+        ${table.visualFidelityOverride} IS NULL
+        AND ${table.visualFidelityOverrideReason} IS NULL
+        AND ${table.visualFidelityOverrideAt} IS NULL
+      ) OR (
+        ${table.visualFidelityOverride}
+          IN ('illustration-editorial', 'verified-references', 'photo-required')
+        AND char_length(btrim(${table.visualFidelityOverrideReason})) > 0
+        AND ${table.visualFidelityOverrideAt} IS NOT NULL
+      )`,
     ),
     check(
       "creative_drafts_tokens_check",

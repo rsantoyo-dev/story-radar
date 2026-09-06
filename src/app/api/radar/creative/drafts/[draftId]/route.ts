@@ -7,8 +7,10 @@ import {
   approveSavedCreativeDraft,
   refreshCreativeDraftCharacterReferences,
   saveCreativeDraft,
+  setSavedCreativeDraftVisualFidelity,
   unapproveSavedCreativeDraft,
 } from "@/app/modules/stories/manage-creative-content";
+import { VISUAL_FIDELITY_MODES } from "@/app/modules/stories/creative-content.types";
 import {
   creativeRouteErrorResponse,
   noStoreJson,
@@ -59,16 +61,20 @@ export async function PATCH(request: Request, context: Context) {
     const body = (await request.json()) as {
       action?: unknown;
       humanReviewed?: unknown;
+      mode?: unknown;
+      reason?: unknown;
+      by?: unknown;
     };
     if (
       body.action !== "approve" &&
       body.action !== "unapprove" &&
-      body.action !== "refresh-character-references"
+      body.action !== "refresh-character-references" &&
+      body.action !== "set-visual-fidelity"
     ) {
       return noStoreJson(
         {
           error:
-            "action must be approve, unapprove, or refresh-character-references",
+            "action must be approve, unapprove, refresh-character-references, or set-visual-fidelity",
         },
         400,
       );
@@ -80,6 +86,26 @@ export async function PATCH(request: Request, context: Context) {
       return noStoreJson({ error: "humanReviewed must be true or false" }, 400);
     }
     const topicId = await requireActiveRequestTopic(request);
+
+    if (body.action === "set-visual-fidelity") {
+      const override = parseVisualFidelityBody(body);
+      if ("error" in override) {
+        return noStoreJson({ error: override.error }, 400);
+      }
+      const actor =
+        typeof body.by === "string" && body.by.trim()
+          ? body.by.trim().slice(0, 200)
+          : null;
+      return noStoreJson(
+        await setSavedCreativeDraftVisualFidelity(
+          topicId,
+          draftId,
+          override.value,
+          actor,
+        ),
+      );
+    }
+
     return noStoreJson(
       body.action === "approve"
         ? await approveSavedCreativeDraft(
@@ -100,6 +126,30 @@ export async function PATCH(request: Request, context: Context) {
       "change the creative draft approval",
     );
   }
+}
+
+function parseVisualFidelityBody(body: {
+  mode?: unknown;
+  reason?: unknown;
+}):
+  | { value: { mode: null } | { mode: string; reason: string } }
+  | { error: string } {
+  if (body.mode === null || body.mode === undefined) {
+    return { value: { mode: null } };
+  }
+  if (
+    typeof body.mode !== "string" ||
+    !(VISUAL_FIDELITY_MODES as readonly string[]).includes(body.mode)
+  ) {
+    return {
+      error: `mode must be null or one of: ${VISUAL_FIDELITY_MODES.join(", ")}`,
+    };
+  }
+  const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+  if (!reason) {
+    return { error: "reason is required when setting a visual fidelity override" };
+  }
+  return { value: { mode: body.mode, reason: reason.slice(0, 500) } };
 }
 
 async function parseId(context: Context): Promise<string | undefined> {

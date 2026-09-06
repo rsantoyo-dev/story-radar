@@ -1,6 +1,6 @@
 import "server-only";
 
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { creativeBrandAssets, creativeProfiles } from "@/db/schema";
@@ -12,14 +12,23 @@ import {
   DEFAULT_CREATIVE_CAROUSEL_CHROME_SETTINGS,
   DEFAULT_CREATIVE_CONVERSION_GOAL,
   DEFAULT_CREATIVE_FRAMING_STRATEGY,
+  CREATIVE_VISUAL_GUIDANCE_MAX_LENGTH,
+  DEFAULT_CREATIVE_GEO_SCOPE,
   DEFAULT_CREATIVE_VISUAL_GUIDANCE,
+  DEFAULT_VISUAL_FIDELITY_MODE,
+  VISUAL_FIDELITY_MODES,
   isCreativeConversionGoal,
   isCreativeFramingStrategy,
+  isVisualFidelityMode,
   type CreativeConversionGoal,
   type CreativeFramingStrategy,
+  type CreativeGeoScope,
   type CreativeProfile,
   type EditableCreativeProfile,
+  type VisualFidelityMode,
 } from "./creative-content.types";
+import { parseCreativeGeoScopeInput } from "./creative-geo-scope-validation";
+import { invalidateApprovalsForVisualPolicyChange } from "./creative-visual-policy-invalidation";
 import {
   findCreativeBrandAsset,
   publicCreativeBrandAsset,
@@ -58,6 +67,8 @@ const DEFAULT_PROFILE: EditableCreativeProfile = {
   maxEmojis: 2,
   conversionGoal: DEFAULT_CREATIVE_CONVERSION_GOAL,
   framingStrategy: DEFAULT_CREATIVE_FRAMING_STRATEGY,
+  visualFidelityMode: DEFAULT_VISUAL_FIDELITY_MODE,
+  geoScope: { ...DEFAULT_CREATIVE_GEO_SCOPE },
   callToActionStyle:
     "Use one natural call to action aligned with the primary conversion goal. State a concrete audience benefit without engagement bait or artificial urgency.",
 };
@@ -90,11 +101,43 @@ export async function getCreativeProfile(
   return mapCreativeProfile(concurrent.profile, concurrent.brandAsset);
 }
 
+export type VisualPolicyChangeResult = {
+  policyVersion: number;
+  draftsRetired: number;
+};
+
+export type SaveCreativeProfileResult = {
+  profile: CreativeProfile;
+  /**
+   * Non-null when this save either advanced the visual fidelity policy or
+   * finished invalidating approvals a previous save left stale (the
+   * invalidation runs on every save and is idempotent — GEO-01 criterion 4).
+   */
+  visualPolicyChange: VisualPolicyChangeResult | null;
+};
+
+/**
+ * The topic's CURRENT place-fidelity mode, read straight from the profile row
+ * (no brand-asset join). Used by the image pipeline as a live safety gate so a
+ * re-approved old draft cannot generate under a superseded policy. Falls back
+ * to the default when the topic has no profile row yet.
+ */
+export async function getTopicVisualFidelityMode(
+  topicId: string,
+): Promise<VisualFidelityMode> {
+  const [row] = await db
+    .select({ visualFidelityMode: creativeProfiles.visualFidelityMode })
+    .from(creativeProfiles)
+    .where(eq(creativeProfiles.topicId, topicId))
+    .limit(1);
+  return row ? visualFidelityModeValue(row.visualFidelityMode) : DEFAULT_VISUAL_FIDELITY_MODE;
+}
+
 export async function saveCreativeProfile(
   topicId: string,
   input: EditableCreativeProfile,
   options: { preserveExistingBrandOverlay?: boolean } = {},
-): Promise<CreativeProfile> {
+): Promise<SaveCreativeProfileResult> {
   const profile = validateCreativeProfile(input);
   const { brandOverlay, ...profileFields } = profile;
   const brandAssetId = brandOverlay.assetId ?? null;
@@ -106,14 +149,31 @@ export async function saveCreativeProfile(
       "brandOverlay.assetId must belong to the selected topic",
     );
   }
+
+  // Read the row before the upsert so a visual-policy change (mode or
+  // geoScope) can be detected. A palette or tone edit must not advance
+  // visualPolicyVersion or invalidate approvals — GEO-01 criterion 2/4.
+  const previous = await findStoredCreativeProfile(topicId);
+  const policyChanged =
+    previous !== undefined &&
+    (previous.profile.visualFidelityMode !== profileFields.visualFidelityMode ||
+      !geoScopeEquals(previous.profile.geoScope, profileFields.geoScope));
+
   const brandOverlaySettings = parseCreativeBrandOverlaySettings(brandOverlay);
+  const bumpPolicyVersion = policyChanged
+    ? {
+        visualPolicyVersion: sql`${creativeProfiles.visualPolicyVersion} + 1`,
+      }
+    : {};
   const updateFields = options.preserveExistingBrandOverlay
     ? {
         ...profileFields,
+        ...bumpPolicyVersion,
         updatedAt: new Date(),
       }
     : {
         ...profileFields,
+        ...bumpPolicyVersion,
         brandAssetId,
         brandOverlay: brandOverlaySettings,
         updatedAt: new Date(),
@@ -144,7 +204,31 @@ export async function saveCreativeProfile(
   const resolvedBrandAsset = saved.brandAssetId
     ? await findCreativeBrandAsset(topicId, saved.brandAssetId)
     : undefined;
-  return mapCreativeProfile(saved, resolvedBrandAsset ?? brandAsset);
+  const mapped = mapCreativeProfile(saved, resolvedBrandAsset ?? brandAsset);
+
+  // Run on EVERY save, not only when this call changed the policy: the pass is
+  // idempotent (it selects stale approvals from stored state), so a retry
+  // after a partial failure still completes even though `policyChanged` is now
+  // false. When nothing is stale it is one indexed query and a no-op.
+  const invalidation = await invalidateApprovalsForVisualPolicyChange({
+    topicId,
+    currentPolicyVersion: saved.visualPolicyVersion,
+  });
+  const visualPolicyChange: VisualPolicyChangeResult | null =
+    policyChanged || invalidation.draftsRetired > 0
+      ? { policyVersion: saved.visualPolicyVersion, ...invalidation }
+      : null;
+
+  return { profile: mapped, visualPolicyChange };
+}
+
+function geoScopeEquals(a: CreativeGeoScope, b: CreativeGeoScope): boolean {
+  return (
+    a.municipality === b.municipality &&
+    a.region === b.region &&
+    a.country === b.country &&
+    a.validatedLocationId === b.validatedLocationId
+  );
 }
 
 function profileId(topicId: string): string {
@@ -176,6 +260,8 @@ export function parseCreativeProfileInput(value: unknown): EditableCreativeProfi
     maxEmojis: value.maxEmojis,
     conversionGoal: value.conversionGoal,
     framingStrategy: value.framingStrategy,
+    visualFidelityMode: value.visualFidelityMode,
+    geoScope: value.geoScope,
     callToActionStyle: value.callToActionStyle,
   } as EditableCreativeProfile);
 }
@@ -212,6 +298,8 @@ function validateCreativeProfile(
     maxEmojis: boundedInteger(value.maxEmojis, "maxEmojis", 0, 10),
     conversionGoal: conversionGoalValue(value.conversionGoal),
     framingStrategy: framingStrategyValue(value.framingStrategy),
+    visualFidelityMode: visualFidelityModeValue(value.visualFidelityMode),
+    geoScope: parseCreativeGeoScopeInput(value.geoScope),
     callToActionStyle: textValue(
       value.callToActionStyle,
       "callToActionStyle",
@@ -287,6 +375,9 @@ function mapCreativeProfile(
     maxEmojis: profile.maxEmojis,
     conversionGoal: conversionGoalValue(profile.conversionGoal),
     framingStrategy: framingStrategyValue(profile.framingStrategy),
+    visualFidelityMode: visualFidelityModeValue(profile.visualFidelityMode),
+    geoScope: parseCreativeGeoScopeInput(profile.geoScope),
+    visualPolicyVersion: profile.visualPolicyVersion,
     callToActionStyle: profile.callToActionStyle,
     updatedAt: profile.updatedAt,
   };
@@ -301,7 +392,10 @@ function visualGuidanceValue(value: unknown): string {
     throw new CreativeProfileValidationError("visualGuidance is required");
   }
 
-  return value.replace(/\r\n?/g, "\n").trim().slice(0, 4_000);
+  return value
+    .replace(/\r\n?/g, "\n")
+    .trim()
+    .slice(0, CREATIVE_VISUAL_GUIDANCE_MAX_LENGTH);
 }
 
 function textValue(value: unknown, field: string, max: number): string {
@@ -380,6 +474,20 @@ export function framingStrategyValue(value: unknown): CreativeFramingStrategy {
   }
 
   return value as CreativeFramingStrategy;
+}
+
+export function visualFidelityModeValue(value: unknown): VisualFidelityMode {
+  if (value === undefined || value === null || value === "") {
+    return DEFAULT_VISUAL_FIDELITY_MODE;
+  }
+
+  if (typeof value !== "string" || !isVisualFidelityMode(value)) {
+    throw new CreativeProfileValidationError(
+      `visualFidelityMode must be one of: ${VISUAL_FIDELITY_MODES.join(", ")}`,
+    );
+  }
+
+  return value;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

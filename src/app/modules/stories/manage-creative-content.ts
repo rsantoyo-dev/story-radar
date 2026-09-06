@@ -24,6 +24,7 @@ import {
   insertCreativeBrief,
   insertCreativeDraft,
   replaceCreativeDraft,
+  setCreativeDraftVisualFidelityOverride,
   unapproveCreativeDraft,
 } from "./creative-content.repository";
 import {
@@ -46,6 +47,11 @@ import type {
 } from "./creative-content.types";
 import { isCreativeCompanionApproach } from "./creative-content.types";
 import {
+  assertExplicitFidelityChange,
+  resolveEffectiveVisualFidelity,
+  VisualFidelityError,
+} from "./creative-visual-fidelity";
+import {
   defaultCreativeOutputAspectRatio,
   isCreativeOutputAspectRatio,
   resolveCreativeOutputAspectRatio,
@@ -61,7 +67,11 @@ import {
   getCreativeDraftApprovalState,
   repairDeterministicCreativeCopy,
 } from "./creative-quality";
-import { getCreativeProfile } from "./creative-profile.repository";
+import { CreativeVisualPolicyConflictError } from "./creative-draft-visual-policy.repository";
+import {
+  getCreativeProfile,
+  getTopicVisualFidelityMode,
+} from "./creative-profile.repository";
 import { resolveCreativeVisualGuidance } from "./creative-visual-guidance";
 import { generateCompanionStoryScript } from "./companion-story-generator";
 import { defaultCreativeInteractiveOverlay } from "./creative-interactive-overlay";
@@ -617,6 +627,10 @@ export async function approveSavedCreativeDraft(
     throw new CreativeContentNotFoundError("The creative draft was not found");
   }
 
+  if (current.provider === "documentary") {
+    throw new CreativeContentConflictError("Review the complete documentary publication in its final review panel.");
+  }
+
   const brief = await findCreativeBriefById(topicId, current.briefId);
   if (!brief) {
     throw new CreativeContentNotFoundError("The creative brief was not found");
@@ -705,6 +719,86 @@ export async function unapproveSavedCreativeDraft(
   }
 
   return unapproveCreativeDraft(topicId, draftId);
+}
+
+/**
+ * Sets or clears the per-publication visual fidelity override for one draft
+ * (FEAT-GEO-001 / GEO-01, criterion 3). `mode: null` reverts to the topic
+ * policy currently configured on the topic. Changing the mode needs an explicit
+ * editor reason — leaving "photo-required" is never a silent fallback. An
+ * approved draft must be unapproved first so the change is a conscious act.
+ */
+export async function setSavedCreativeDraftVisualFidelity(
+  topicId: string,
+  draftId: string,
+  input: { mode: null } | { mode: string; reason: string },
+  actor?: string | null,
+): Promise<CreativeDraft> {
+  const current = await findCreativeDraftById(topicId, draftId);
+  if (!current) {
+    throw new CreativeContentNotFoundError("The creative draft was not found");
+  }
+  if (current.status === "approved") {
+    throw new CreativeContentConflictError(
+      "Unapprove this draft before changing its visual fidelity mode.",
+    );
+  }
+
+  const inherited = await getTopicVisualFidelityMode(topicId);
+  const currentEffective = resolveEffectiveVisualFidelity({
+    inheritedMode: inherited,
+    override: current.visualFidelityOverride?.mode ?? null,
+    overrideReason: current.visualFidelityOverride?.reason,
+  }).mode;
+
+  try {
+    if (input.mode === null) {
+      // A plain clear is only allowed when it does not loosen the effective
+      // mode off "photo-required". Loosening must be an explicit, recorded
+      // override (below), so the reason and actor are persisted rather than
+      // discarded — GEO-01 criterion 3, anti-silent-fallback.
+      if (currentEffective === "photo-required" && inherited !== "photo-required") {
+        throw new CreativeDraftValidationError(
+          "To move this draft off required-photo, set an explicit mode with a reason instead of clearing the override.",
+        );
+      }
+      return await setCreativeDraftVisualFidelityOverride(
+        topicId,
+        draftId,
+        { mode: null },
+        { expectedVersion: current.version },
+      );
+    }
+
+    const resolved = resolveEffectiveVisualFidelity({
+      inheritedMode: inherited,
+      override: input.mode,
+      overrideReason: input.reason,
+    });
+    assertExplicitFidelityChange({
+      inheritedMode: currentEffective,
+      nextMode: resolved.mode,
+      reason: resolved.reason,
+    });
+    return await setCreativeDraftVisualFidelityOverride(
+      topicId,
+      draftId,
+      {
+        mode: resolved.mode,
+        reason: resolved.reason ?? input.reason,
+        by: actor ?? null,
+      },
+      { expectedVersion: current.version },
+    );
+  } catch (error) {
+    if (error instanceof CreativeVisualPolicyConflictError) {
+      throw new CreativeContentConflictError(error.message);
+    }
+    if (error instanceof VisualFidelityError) {
+      throw new CreativeDraftValidationError(error.message);
+    }
+    throw error;
+  }
 }
 
 /**
@@ -866,6 +960,17 @@ function createBriefInputHash(
       maxEmojis: profile.maxEmojis,
       conversionGoal: profile.conversionGoal,
       framingStrategy: profile.framingStrategy ?? "auto",
+      // GEO-01: a place-fidelity policy change must bust the brief cache so a
+      // refresh cannot resurrect a snapshot from the previous policy. Added
+      // only once the policy has actually moved (version > 1) so pre-GEO
+      // briefs on the default policy keep their existing hash on deploy.
+      ...((profile.visualPolicyVersion ?? 1) > 1
+        ? {
+            visualFidelityMode: profile.visualFidelityMode,
+            geoScope: profile.geoScope,
+            visualPolicyVersion: profile.visualPolicyVersion,
+          }
+        : {}),
       callToActionStyle: profile.callToActionStyle,
       visualGuidance: resolveCreativeVisualGuidance(profile),
     },

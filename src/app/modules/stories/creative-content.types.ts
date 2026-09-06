@@ -22,6 +22,14 @@ export const DEFAULT_CREATIVE_IMAGE_QUALITY: CreativeImageQuality = "low";
 export const DEFAULT_CREATIVE_VISUAL_GUIDANCE =
   "Create a clear, modern editorial visual direction appropriate to the topic and audience. Use a focused composition, high legibility, inclusive imagery, and generous negative space. Respect the selected output format and avoid watermarks, unapproved logos, or misleading visual claims.";
 
+/**
+ * Max length of the "Visual campaign guide" free text. It is injected verbatim
+ * into every image prompt as <VISUAL_CAMPAIGN_GUIDE>, so this doubles as a
+ * prompt-budget cap (~3k tokens at the ceiling). The server truncates to this;
+ * the editor sees a live counter and a matching maxLength on the textarea.
+ */
+export const CREATIVE_VISUAL_GUIDANCE_MAX_LENGTH = 12_000;
+
 export const CREATIVE_CONVERSION_GOALS = [
   "followers",
   "discussion",
@@ -61,6 +69,47 @@ export function isCreativeFramingStrategy(
     value as CreativeFramingStrategy,
   );
 }
+
+export const VISUAL_FIDELITY_MODES = [
+  "illustration-editorial",
+  "verified-references",
+  "photo-required",
+] as const;
+export type VisualFidelityMode = (typeof VISUAL_FIDELITY_MODES)[number];
+/**
+ * How a real place may be represented (FEAT-GEO-001 / GEO-01). The default
+ * keeps the pre-GEO behavior — free editorial illustration — so existing
+ * profiles are unaffected until an editor changes the policy.
+ * "photo-required" forbids generative reconstruction of the place;
+ * "verified-references" allows illustration guided by approved references.
+ */
+export const DEFAULT_VISUAL_FIDELITY_MODE: VisualFidelityMode =
+  "illustration-editorial";
+
+export function isVisualFidelityMode(
+  value: unknown,
+): value is VisualFidelityMode {
+  return VISUAL_FIDELITY_MODES.includes(value as VisualFidelityMode);
+}
+
+/**
+ * Confirmed geographic scope of the place a topic covers (municipality,
+ * region, country). `validatedLocationId` stays null until GEO-03/GEO-08
+ * resolve a concrete place; it is never inferred here.
+ */
+export type CreativeGeoScope = {
+  municipality: string;
+  region: string;
+  country: string;
+  validatedLocationId: string | null;
+};
+
+export const DEFAULT_CREATIVE_GEO_SCOPE: CreativeGeoScope = {
+  municipality: "",
+  region: "",
+  country: "",
+  validatedLocationId: null,
+};
 
 export const CREATIVE_TONES = [
   "informative",
@@ -365,13 +414,23 @@ export type CreativeProfile = {
   maxEmojis: number;
   conversionGoal: CreativeConversionGoal;
   framingStrategy: CreativeFramingStrategy;
+  visualFidelityMode: VisualFidelityMode;
+  geoScope: CreativeGeoScope;
+  /**
+   * Monotonic marker of the topic's visual representation policy. Advances
+   * only when `visualFidelityMode` or `geoScope` change on a profile save, so
+   * a palette tweak never invalidates approved assets. Consumers compare the
+   * value captured in a brief's `profileSnapshot` against the live profile.
+   * Read-only: not part of `EditableCreativeProfile`.
+   */
+  visualPolicyVersion: number;
   callToActionStyle: string;
   updatedAt: Date;
 };
 
 export type EditableCreativeProfile = Omit<
   CreativeProfile,
-  "id" | "updatedAt"
+  "id" | "updatedAt" | "visualPolicyVersion"
 >;
 
 export type CreativeFormatScore = {
@@ -570,9 +629,21 @@ export type CreativeDraft = GeneratedCreativeDraft & {
   inputIsCurrent?: boolean;
   /** False when saved copy no longer matches the AI-reviewed snapshot. */
   qualityReviewIsCurrent?: boolean;
+  /**
+   * Per-publication visual fidelity override (FEAT-GEO-001 / GEO-01). Absent
+   * when the draft inherits the current topic policy.
+   */
+  visualFidelityOverride?: VisualFidelityOverride;
   approvedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
+};
+
+export type VisualFidelityOverride = {
+  mode: VisualFidelityMode;
+  reason: string;
+  at: Date;
+  by: string | null;
 };
 
 export type EditableCreativeDraft = Pick<

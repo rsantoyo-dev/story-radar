@@ -1,5 +1,6 @@
 {
   "kanban.saveFiles.pathPreferences": [
-    ".vscode/kanban.json"
+    "docs/features/real-place-visual-fidelity.kanban.json",
+    "docs/features/instagram-performance.kanban.json"
   ]
 }

@@ -34,8 +34,35 @@ export function TextField({ label, value, onChange }: { label: string; value: st
   return <label className={styles.field}><span>{label}</span><input value={value} onChange={(event) => onChange(event.target.value)} /></label>;
 }
 
-export function TextAreaField({ label, value, onChange, rows }: { label: string; value: string; onChange: (value: string) => void; rows: number }) {
-  return <label className={styles.field}><span>{label}</span><textarea value={value} rows={rows} onChange={(event) => onChange(event.target.value)} /></label>;
+export function TextAreaField({
+  label,
+  value,
+  onChange,
+  rows,
+  maxLength,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  rows: number;
+  maxLength?: number;
+}) {
+  return (
+    <label className={styles.field}>
+      <span>{label}</span>
+      <textarea
+        value={value}
+        rows={rows}
+        maxLength={maxLength}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      {maxLength !== undefined ? (
+        <small className={styles.profileGuideHint}>
+          {value.length.toLocaleString()} / {maxLength.toLocaleString()}
+        </small>
+      ) : null}
+    </label>
+  );
 }
 
 export function parseList(value: string): string[] {

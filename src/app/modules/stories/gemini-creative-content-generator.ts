@@ -56,7 +56,10 @@ import {
 import {
   reconcileCriticIssuesWithDeterministicValidation,
 } from "./creative-issue-reconciliation";
-import { resolveCreativeVisualGuidance } from "./creative-visual-guidance";
+import {
+  CREATIVE_VISUAL_GUIDANCE_TEXT_PROMPT_MAX_CHARS,
+  resolveCreativeVisualGuidance,
+} from "./creative-visual-guidance";
 import {
   generateOpenAiStructuredResponse,
   OpenAiEditorialError,
@@ -3304,7 +3307,12 @@ function profileForPrompt(profile: CreativeProfile) {
     callToActionStyle: profile.callToActionStyle,
     conversionGoal: profile.conversionGoal,
     framingStrategy: profile.framingStrategy ?? "auto",
-    visualGuidance: resolveCreativeVisualGuidance(profile),
+    // Brief and draft prompts get the gist only; the full art-direction guide
+    // reaches the per-slide image prompt (build-creative-image-prompt.ts). A
+    // long guide here truncates draft JSON past the output-token limit.
+    visualGuidance: resolveCreativeVisualGuidance(profile, {
+      maxChars: CREATIVE_VISUAL_GUIDANCE_TEXT_PROMPT_MAX_CHARS,
+    }),
     brandLogoReservation: describeBrandLogoReservation(profile.brandOverlay),
   };
 }

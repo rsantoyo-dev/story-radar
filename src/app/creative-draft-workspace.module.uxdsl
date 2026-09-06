@@ -2542,3 +2542,44 @@
     grid-template-columns: 1fr;
   }
 }
+
+.documentaryPanel {
+  @ds-surface(flat primary radius(3));
+  @ds-typo(body);
+  display: flex;
+  flex-direction: column;
+  gap: density(3);
+  padding: density(5);
+  color: palette(surface-contrast);
+  background: palette(surface-main);
+  border: border(1, palette(primary-light), solid);
+}
+
+.documentaryPreview {
+  display: block;
+  width: xs(100%) md(432px);
+  max-width: 100%;
+  height: auto;
+  border-radius: radius(2);
+}
+
+.documentaryActions {
+  display: flex;
+  flex-direction: xs(column) md(row);
+  gap: density(3);
+}
+
+.documentaryCheck {
+  display: flex;
+  align-items: flex-start;
+  gap: density(2);
+}
+
+.documentaryPanel button {
+  @ds-button(outlined primary density(2) radius(2));
+}
+
+.documentaryPanel a {
+  color: palette(primary-main);
+  overflow-wrap: anywhere;
+}

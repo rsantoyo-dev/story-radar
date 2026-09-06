@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { and, count, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, lt, ne, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import {
@@ -19,8 +19,10 @@ import {
   DEFAULT_CREATIVE_CONVERSION_GOAL,
   DEFAULT_CREATIVE_FRAMING_STRATEGY,
   DEFAULT_CREATIVE_VISUAL_GUIDANCE,
+  DEFAULT_VISUAL_FIDELITY_MODE,
   isCreativeConversionGoal,
   isCreativeFramingStrategy,
+  isVisualFidelityMode,
   type CreativeBrandAsset,
   type CreativeBrandOverlay,
   type CreativeAspectRatio,
@@ -36,9 +38,15 @@ import {
   type EditableCreativeDraft,
   type GeneratedCreativeBrief,
   type GeneratedCreativeDraft,
+  type VisualFidelityMode,
 } from "./creative-content.types";
 import { isCarouselEditorialGoal } from "./carousel-narrative";
 import { parseCreativeBrandOverlayInput } from "./creative-brand-overlay-validation";
+import {
+  reviseCreativeDraftVisualPolicy,
+  CreativeVisualPolicyConflictError,
+} from "./creative-draft-visual-policy.repository";
+import { parseCreativeGeoScopeInput } from "./creative-geo-scope-validation";
 import {
   parseCreativeBrandPaletteInput,
   parseCreativeCarouselChromeInput,
@@ -58,6 +66,7 @@ export async function findLatestCreativeBrief(
       and(
         eq(storyCreativeBriefs.topicId, topicId),
         eq(storyCreativeBriefs.storyId, storyId),
+        ne(storyCreativeBriefs.provider, "documentary"),
       ),
     )
     .orderBy(desc(storyCreativeBriefs.createdAt))
@@ -209,6 +218,7 @@ export async function findCreativeDraftsForStory(
       and(
         eq(creativeDrafts.topicId, topicId),
         eq(creativeDrafts.storyId, storyId),
+        ne(creativeDrafts.provider, "documentary"),
       ),
     )
     .orderBy(desc(creativeDrafts.updatedAt));
@@ -491,6 +501,32 @@ export async function unapproveCreativeDraft(
   return saved;
 }
 
+/** Each policy decision creates a revision and atomically retires its older batches. */
+export async function setCreativeDraftVisualFidelityOverride(
+  topicId: string,
+  draftId: string,
+  input:
+    | { mode: null }
+    | { mode: VisualFidelityMode; reason: string; by?: string | null },
+  options: { expectedVersion: number },
+): Promise<CreativeDraft> {
+  const changed = await reviseCreativeDraftVisualPolicy({
+    topicId,
+    draftId,
+    expectedVersion: options.expectedVersion,
+    expectedStatus: "draft",
+    override: input,
+  });
+  if (!changed) {
+    throw new CreativeVisualPolicyConflictError(
+      "The draft changed or was approved while saving its place fidelity. Refresh and try again.",
+    );
+  }
+  const saved = await findCreativeDraftById(topicId, draftId);
+  if (!saved) throw new Error("The creative draft visual fidelity override could not be saved");
+  return saved;
+}
+
 export async function getCreativeDailyUsage(
   topicId: string,
   maxRuns: number,
@@ -744,6 +780,18 @@ function mapCreativeDraft(
     inputHash: row.inputHash,
     version: row.version,
     usage: usageFromRow(row),
+    ...(row.visualFidelityOverride &&
+    row.visualFidelityOverrideReason &&
+    row.visualFidelityOverrideAt
+      ? {
+          visualFidelityOverride: {
+            mode: row.visualFidelityOverride,
+            reason: row.visualFidelityOverrideReason,
+            at: row.visualFidelityOverrideAt,
+            by: row.visualFidelityOverrideBy ?? null,
+          },
+        }
+      : {}),
     ...(row.approvedAt ? { approvedAt: row.approvedAt } : {}),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -878,6 +926,9 @@ function mapProfileSnapshot(value: unknown): CreativeProfile {
     | "carouselChrome"
     | "conversionGoal"
     | "framingStrategy"
+    | "visualFidelityMode"
+    | "geoScope"
+    | "visualPolicyVersion"
     | "updatedAt"
   > & {
     brandOverlay?: CreativeBrandOverlay & {
@@ -889,6 +940,9 @@ function mapProfileSnapshot(value: unknown): CreativeProfile {
     carouselChrome?: unknown;
     conversionGoal?: unknown;
     framingStrategy?: unknown;
+    visualFidelityMode?: unknown;
+    geoScope?: unknown;
+    visualPolicyVersion?: unknown;
     updatedAt: Date | string;
   };
   const brandOverlay =
@@ -910,6 +964,16 @@ function mapProfileSnapshot(value: unknown): CreativeProfile {
     framingStrategy: isCreativeFramingStrategy(profile.framingStrategy)
       ? profile.framingStrategy
       : DEFAULT_CREATIVE_FRAMING_STRATEGY,
+    visualFidelityMode: isVisualFidelityMode(profile.visualFidelityMode)
+      ? profile.visualFidelityMode
+      : DEFAULT_VISUAL_FIDELITY_MODE,
+    geoScope: parseCreativeGeoScopeInput(profile.geoScope),
+    visualPolicyVersion:
+      typeof profile.visualPolicyVersion === "number" &&
+      Number.isInteger(profile.visualPolicyVersion) &&
+      profile.visualPolicyVersion >= 1
+        ? profile.visualPolicyVersion
+        : 1,
     visualGuidance:
       typeof profile.visualGuidance === "string" && profile.visualGuidance.trim()
         ? profile.visualGuidance

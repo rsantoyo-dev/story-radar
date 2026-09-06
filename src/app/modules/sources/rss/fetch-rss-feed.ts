@@ -177,7 +177,7 @@ function requestRssUrl(url: URL, timeoutMs: number): Promise<IncomingMessage> {
  * preflight. It closes the DNS-rebinding gap that a fetch-after-lookup approach
  * would leave open.
  */
-const lookupPublicAddress: LookupFunction = (hostname, options, callback) => {
+export const lookupPublicAddress: LookupFunction = (hostname, options, callback) => {
   const family = options.family === 4 || options.family === 6
     ? options.family
     : undefined;

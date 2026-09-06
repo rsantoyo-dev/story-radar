@@ -34,6 +34,7 @@ import {
 import { charactersForImageGeneration } from "./creative-character-generation";
 import { snapshotsForCreativeUnits } from "./creative-characters.repository";
 import { findCreativeBriefById, findCreativeDraftById } from "./creative-content.repository";
+import { resolveEffectiveVisualFidelity } from "./creative-visual-fidelity";
 import {
   DEFAULT_CREATIVE_IMAGE_QUALITY,
   type CreativeAspectRatio,
@@ -67,7 +68,10 @@ import {
   CreativeBrandOverlayError,
   shouldApplyCreativeBrandOverlay,
 } from "./creative-brand-overlay";
-import { getCreativeProfile } from "./creative-profile.repository";
+import {
+  getCreativeProfile,
+  getTopicVisualFidelityMode,
+} from "./creative-profile.repository";
 import {
   getFalImagePublicConfig,
   getFalImageRuntimeConfig,
@@ -202,6 +206,10 @@ export async function generateCreativeDraftAssets(
   const draft = await requireCreativeDraft(topicId, draftId);
   requireApprovedDraft(draft.status);
   const brief = await requireCreativeBrief(topicId, draft.briefId);
+  assertGenerativeImageryAllowed(
+    draft,
+    await getTopicVisualFidelityMode(topicId),
+  );
   requireNarrativeQuality(
     draft,
     brief.keyFacts,
@@ -346,6 +354,10 @@ export async function generateNextCreativeDraftAssetVersion(
   const draft = await requireCreativeDraft(topicId, draftId);
   requireApprovedDraft(draft.status);
   const brief = await requireCreativeBrief(topicId, draft.briefId);
+  assertGenerativeImageryAllowed(
+    draft,
+    await getTopicVisualFidelityMode(topicId),
+  );
   requireNarrativeQuality(
     draft,
     brief.keyFacts,
@@ -408,6 +420,10 @@ export async function regenerateCreativeAsset(
   const draft = await requireCreativeDraft(topicId, found.batch.draftId);
   requireApprovedDraft(draft.status);
   const brief = await requireCreativeBrief(topicId, draft.briefId);
+  assertGenerativeImageryAllowed(
+    draft,
+    await getTopicVisualFidelityMode(topicId),
+  );
   requireNarrativeQuality(
     draft,
     brief.keyFacts,
@@ -467,9 +483,15 @@ export async function changeCreativeAssetApproval(
   requireApprovedDraft(draft.status);
   assertCurrentAsset(found.asset, found.batch, draft.version);
 
-  if (action === "approve" && found.asset.status !== "generated") {
-    throw new CreativeContentConflictError(
-      "Only a generated image can be approved.",
+  if (action === "approve") {
+    if (found.asset.status !== "generated") {
+      throw new CreativeContentConflictError(
+        "Only a generated image can be approved.",
+      );
+    }
+    assertGenerativeImageryAllowed(
+      draft,
+      await getTopicVisualFidelityMode(topicId),
     );
   }
   if (action === "unapprove" && found.asset.status !== "approved") {
@@ -983,6 +1005,9 @@ async function requireCreativeDraft(topicId: string, draftId: string) {
   if (!draft) {
     throw new CreativeContentNotFoundError("The creative draft was not found");
   }
+  if (draft.provider === "documentary") {
+    throw new CreativeContentConflictError("Use documentary preparation and its complete final review for this publication.");
+  }
   return draft;
 }
 
@@ -1000,6 +1025,38 @@ async function requireCreativeAsset(assetId: string) {
     throw new CreativeContentNotFoundError("The creative image was not found");
   }
   return found;
+}
+
+/**
+ * GEO-01 (criterion 1). Generative imagery is only allowed when the effective
+ * place-fidelity mode is "illustration-editorial". `photo-required` needs an
+ * approved real photo (deterministic composition arrives with GEO-06) and
+ * `verified-references` needs the approved-reference flow (GEO-09/GEO-10);
+ * until those exist, both hard-stop text-to-image / image-to-image /
+ * regeneration and the approval of a generated image. Never a fallback.
+ *
+ * `liveInheritedMode` is the CURRENT topic policy, not the brief snapshot:
+ * re-approving an old draft must not let it generate under a superseded mode.
+ */
+function assertGenerativeImageryAllowed(
+  draft: Pick<CreativeDraft, "visualFidelityOverride">,
+  liveInheritedMode: unknown,
+): void {
+  const effective = resolveEffectiveVisualFidelity({
+    inheritedMode: liveInheritedMode,
+    override: draft.visualFidelityOverride?.mode ?? null,
+    overrideReason: draft.visualFidelityOverride?.reason,
+  });
+  if (effective.mode === "photo-required") {
+    throw new CreativeContentConflictError(
+      "This topic requires an approved real photograph of the place. Generative image creation is disabled for this draft. Approved-photo composition arrives with GEO-06.",
+    );
+  }
+  if (effective.mode === "verified-references") {
+    throw new CreativeContentConflictError(
+      "This draft's place fidelity is set to verified references, which generates only from approved place references. That flow is not available yet (GEO-09 / GEO-10).",
+    );
+  }
 }
 
 function requireApprovedDraft(status: "draft" | "approved"): void {

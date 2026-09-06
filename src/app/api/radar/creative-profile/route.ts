@@ -41,11 +41,15 @@ export async function PUT(request: Request) {
       !Array.isArray(value) &&
       !("brandOverlay" in value);
     const input = parseCreativeProfileInput(value);
-    return noStoreJson(
-      await saveCreativeProfile(await requireRequestTopic(request), input, {
-        preserveExistingBrandOverlay,
-      }),
+    const { profile, visualPolicyChange } = await saveCreativeProfile(
+      await requireRequestTopic(request),
+      input,
+      { preserveExistingBrandOverlay },
     );
+    return noStoreJson({
+      ...profile,
+      ...(visualPolicyChange ? { visualPolicyChange } : {}),
+    });
   } catch (error) {
     const topicError = topicRequestErrorResponse(error);
     if (topicError) return topicError;

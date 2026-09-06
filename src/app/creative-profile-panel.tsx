@@ -14,6 +14,8 @@ import {
 import {
   CREATIVE_CONVERSION_GOALS,
   CREATIVE_FRAMING_STRATEGIES,
+  CREATIVE_VISUAL_GUIDANCE_MAX_LENGTH,
+  VISUAL_FIDELITY_MODES,
   type CreativeBrandAsset,
   type CreativeBrandPaletteColor,
   type CreativeProfile,
@@ -26,6 +28,19 @@ const FRAMING_STRATEGY_LABELS = {
   explainer: "Explainer",
   authority: "Authority",
 } as const satisfies Record<CreativeProfile["framingStrategy"], string>;
+
+const VISUAL_FIDELITY_MODE_LABELS = {
+  "illustration-editorial": "Editorial illustration",
+  "verified-references": "Verified references",
+  "photo-required": "Real photo required",
+} as const satisfies Record<CreativeProfile["visualFidelityMode"], string>;
+
+type ProfileSaveResponse = CreativeProfile & {
+  visualPolicyChange?: {
+    policyVersion: number;
+    draftsRetired: number;
+  };
+};
 
 const DIMENSIONS = [
   "formality",
@@ -81,6 +96,16 @@ export function CreativeProfilePanel({
 
   function updateDraft(values: Partial<CreativeProfile>) {
     setDraft((current) => (current ? { ...current, ...values } : current));
+    setDirty(true);
+    setNotice(undefined);
+  }
+
+  function updateGeoScope(values: Partial<CreativeProfile["geoScope"]>) {
+    setDraft((current) =>
+      current
+        ? { ...current, geoScope: { ...current.geoScope, ...values } }
+        : current,
+    );
     setDirty(true);
     setNotice(undefined);
   }
@@ -171,20 +196,21 @@ export function CreativeProfilePanel({
     setError(undefined);
     setNotice(undefined);
     try {
-      const saved = await requestJson<CreativeProfile>(
-        profileUrl(topicId),
-        secret,
-        {
+      const { visualPolicyChange, ...saved } =
+        await requestJson<ProfileSaveResponse>(profileUrl(topicId), secret, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(draft),
-        },
-      );
+        });
       setDraft(saved);
       setDirty(false);
       onProfileSaved?.(saved);
       setNotice(
-        "Creative profile saved. The topic UI now uses its brand palette; refresh existing creative briefs to apply the new settings to generated content.",
+        visualPolicyChange
+          ? `Creative profile saved. Place fidelity policy v${visualPolicyChange.policyVersion}: ` +
+            `${visualPolicyChange.draftsRetired} draft(s) on the previous policy moved to a new version; ` +
+            "their earlier image batches are retired. Refresh those briefs to regenerate under the new policy."
+          : "Creative profile saved. The topic UI now uses its brand palette; refresh existing creative briefs to apply the new settings to generated content.",
       );
     } catch (saveError) {
       setError(getErrorMessage(saveError));
@@ -333,6 +359,59 @@ export function CreativeProfilePanel({
           </p>
         </Group>
 
+        <Group title="Place fidelity">
+          <label className={styles.field}>
+            <span>How real places are represented</span>
+            <select
+              value={draft.visualFidelityMode}
+              onChange={(event) =>
+                updateDraft({
+                  visualFidelityMode: event.target
+                    .value as CreativeProfile["visualFidelityMode"],
+                })
+              }
+            >
+              {VISUAL_FIDELITY_MODES.map((mode) => (
+                <option key={mode} value={mode}>
+                  {VISUAL_FIDELITY_MODE_LABELS[mode]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className={styles.profileGuideHint}>
+            <strong>Editorial illustration</strong> allows a conceptual image
+            labelled as an illustration — never a reconstruction shown as a
+            photo. <strong>Verified references</strong> generates from approved
+            reference material; it is still an illustration that can alter
+            details. <strong>Real photo required</strong> composes on an
+            approved photo with no generation, replacement, or artificial
+            expansion of the place. Changing this policy sends drafts and images
+            approved under the old one back to review.
+          </p>
+          <div className={styles.fieldGrid}>
+            <TextField
+              label="Municipality"
+              value={draft.geoScope.municipality}
+              onChange={(municipality) => updateGeoScope({ municipality })}
+            />
+            <TextField
+              label="Region / province"
+              value={draft.geoScope.region}
+              onChange={(region) => updateGeoScope({ region })}
+            />
+            <TextField
+              label="Country"
+              value={draft.geoScope.country}
+              onChange={(country) => updateGeoScope({ country })}
+            />
+          </div>
+          <p className={styles.profileGuideHint}>
+            Confirm the covered place. The brand name alone is not enough to
+            infer these. A validated location is linked later, from place
+            identification.
+          </p>
+        </Group>
+
         <Group title="Voice">
           <ListField
             key={draft.brandPersonality.join("|")}
@@ -386,6 +465,7 @@ export function CreativeProfilePanel({
             value={draft.visualGuidance ?? ""}
             onChange={(visualGuidance) => updateDraft({ visualGuidance })}
             rows={8}
+            maxLength={CREATIVE_VISUAL_GUIDANCE_MAX_LENGTH}
           />
           <p className={styles.profileGuideHint}>
             Add the complete visual direction for this topic: palette,

@@ -29,10 +29,12 @@ export async function putPrivateR2Object({
   objectKey,
   body,
   contentType,
+  signal,
 }: {
   objectKey: string;
   body: Uint8Array;
   contentType: string;
+  signal?: AbortSignal;
 }): Promise<{ objectKey: string; contentType: string; size: number }> {
   assertObjectKey(objectKey);
   const resolvedContentType = contentType.trim();
@@ -49,6 +51,7 @@ export async function putPrivateR2Object({
         Body: body,
         ContentType: resolvedContentType,
       }),
+      { abortSignal: signal },
     );
   } catch (error) {
     throw new R2StorageObjectError(
@@ -148,10 +151,12 @@ export async function readPrivateR2ImageFile({
   objectKey,
   contentType,
   fileName,
+  signal,
 }: {
   objectKey: string;
   contentType?: string;
   fileName?: string;
+  signal?: AbortSignal;
 }): Promise<File> {
   assertObjectKey(objectKey);
 
@@ -163,6 +168,7 @@ export async function readPrivateR2ImageFile({
         Bucket: configuration.bucket,
         Key: objectKey,
       }),
+      { abortSignal: signal },
     );
   } catch (error) {
     throw new R2StorageObjectError(
@@ -331,3 +337,9 @@ export class R2StorageObjectError extends Error {
   }
 }
 export class R2StorageValidationError extends Error {}
+
+/** Content-addressed originals and immutable documentary outputs, isolated by topic. */
+export function buildDocumentaryObjectKey(topicId: string, kind: "originals" | "outputs", id: string): string {
+  const { objectPrefix } = getR2Client().configuration;
+  return [objectPrefix, "topics", safeKeySegment(topicId, "topic ID"), "creative", "documentary", kind, safeKeySegment(id, "documentary object ID")].join("/");
+}
