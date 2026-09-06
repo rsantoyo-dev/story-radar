@@ -102,8 +102,7 @@ export async function linkInstagramMediaToStory(
 
   // Snapshot the published draft revision. A draft's `version` is an in-place
   // counter, so without this a later edit of the same draft would move the
-  // publication's reference onto newer content. A linked batch pins the exact
-  // revision it was generated against; otherwise take the draft's current one.
+  // publication's reference onto newer content.
   let draftVersion: number | null = null;
 
   if (draftId) {
@@ -113,9 +112,9 @@ export async function linkInstagramMediaToStory(
         "That draft does not belong to the selected story",
       );
     }
-    draftVersion = draft.version;
 
     if (batchId) {
+      // A batch pins the exact revision it was generated against.
       const batches = await listCreativeAssetBatchSummariesForDraft(draftId);
       const batch = batches.find((entry) => entry.id === batchId);
       if (!batch) {
@@ -124,6 +123,25 @@ export async function linkInstagramMediaToStory(
         );
       }
       draftVersion = batch.draftVersion;
+    } else {
+      // No batch: keep the version already linked when the selection
+      // (story + draft + no batch) is unchanged — re-saving the same link must
+      // not follow a later in-place draft edit. Snapshot the current version
+      // only when the draft is being selected or changed.
+      const current = await getTopicInstagramMediaListItem(
+        topicId,
+        account.igUserId,
+        externalId,
+      );
+      const unchanged =
+        current !== undefined &&
+        current.linkedStoryId === storyId &&
+        current.linkedDraftId === draftId &&
+        current.linkedBatchId === null &&
+        current.linkedDraftVersion !== null;
+      draftVersion = unchanged
+        ? current.linkedDraftVersion
+        : draft.version;
     }
   }
 
