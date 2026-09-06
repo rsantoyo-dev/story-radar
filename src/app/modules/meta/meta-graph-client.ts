@@ -9,7 +9,7 @@ import "server-only";
  * calls are a later phase.
  */
 
-const GRAPH_API_VERSION = "v21.0";
+export const GRAPH_API_VERSION = "v21.0";
 
 export {
   MetaGraphApiError,
@@ -150,6 +150,27 @@ export async function listInstagramMedia(
   url.searchParams.set("access_token", accessToken);
 
   return parseInstagramMediaListResponse(await instagramGet<unknown>(url));
+}
+
+/**
+ * Current insights for one published media (IG-05):
+ * `GET /{ig-media-id}/insights?metric=<list>&metric_type=total_value`. Returns
+ * the raw payload — `parseInstagramMediaInsights` validates and shapes it, and
+ * the caller drops any metric named in a 400 and retries. Throws
+ * MetaGraphApiError on any HTTP failure (with `.graphError` for classification).
+ */
+export async function fetchInstagramMediaInsights(
+  mediaId: string,
+  accessToken: string,
+  metrics: readonly string[],
+): Promise<unknown> {
+  const url = new URL(
+    `https://graph.instagram.com/${GRAPH_API_VERSION}/${mediaId}/insights`,
+  );
+  url.searchParams.set("metric", metrics.join(","));
+  url.searchParams.set("metric_type", "total_value");
+  url.searchParams.set("access_token", accessToken);
+  return instagramGet<unknown>(url);
 }
 
 export async function fetchInstagramUsername(

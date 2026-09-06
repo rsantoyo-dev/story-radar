@@ -27,6 +27,10 @@ import {
   instagramMediaFormat,
   type InstagramMediaFormat,
 } from "./instagram-media-format";
+import {
+  computeMetricRatios,
+  type MetricRatios,
+} from "./instagram-media-insights-response";
 import { instagramPermalinkShortcode } from "./instagram-permalink";
 
 export type InstagramMediaUpsertCounts = {
@@ -205,6 +209,16 @@ export async function countTopicInstagramMedia(
   return rows.length;
 }
 
+/** One metric in `InstagramMediaListItem.metrics` (IG-05). */
+export type InstagramMediaMetric = {
+  value: number | null;
+  state: "ok" | "unavailable" | "error";
+  period: string | null;
+  unit: string | null;
+  /** Present only when `state === "error"`. */
+  error?: string;
+};
+
 export type InstagramMediaListItem = {
   id: string;
   externalId: string;
@@ -224,6 +238,14 @@ export type InstagramMediaListItem = {
   /** ISO timestamp of the last link change (create, correct or remove). */
   linkedAt: string | null;
   linkedBy: string | null;
+  /** IG-05. `null` = never fetched (pending, ≠ a real zero). */
+  metrics: Record<string, InstagramMediaMetric> | null;
+  metricsQueriedAt: string | null;
+  metricsApiVersion: string | null;
+  metricsError: string | null;
+  metricsErroredAt: string | null;
+  /** saves/shares/comments per reach — only when reach is a real value > 0. */
+  metricRatios: MetricRatios | null;
 };
 
 const CAPTION_EXCERPT_MAX = 280;
@@ -246,6 +268,11 @@ const MEDIA_ITEM_COLUMNS = {
   linkedBatchId: topicInstagramMedia.linkedBatchId,
   linkedAt: topicInstagramMedia.linkedAt,
   linkedBy: topicInstagramMedia.linkedBy,
+  metrics: topicInstagramMedia.metrics,
+  metricsQueriedAt: topicInstagramMedia.metricsQueriedAt,
+  metricsApiVersion: topicInstagramMedia.metricsApiVersion,
+  metricsError: topicInstagramMedia.metricsError,
+  metricsErroredAt: topicInstagramMedia.metricsErroredAt,
 };
 
 type MediaItemRow = {
@@ -266,12 +293,46 @@ type MediaItemRow = {
   linkedBatchId: string | null;
   linkedAt: Date | null;
   linkedBy: string | null;
+  metrics: unknown;
+  metricsQueriedAt: Date | null;
+  metricsApiVersion: string | null;
+  metricsError: string | null;
+  metricsErroredAt: Date | null;
 };
+
+const METRIC_STATES = new Set(["ok", "unavailable", "error"]);
+
+/** Defensively shapes the stored `metrics` jsonb into the item contract. */
+function normalizeMetricsBlob(
+  raw: unknown,
+): Record<string, InstagramMediaMetric> | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const out: Record<string, InstagramMediaMetric> = {};
+  for (const [name, entry] of Object.entries(raw as Record<string, unknown>)) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const e = entry as Record<string, unknown>;
+    const state =
+      typeof e.state === "string" && METRIC_STATES.has(e.state)
+        ? (e.state as InstagramMediaMetric["state"])
+        : "error";
+    out[name] = {
+      value: typeof e.value === "number" && Number.isFinite(e.value)
+        ? e.value
+        : null,
+      state,
+      period: typeof e.period === "string" ? e.period : null,
+      unit: typeof e.unit === "string" ? e.unit : null,
+      ...(typeof e.error === "string" ? { error: e.error } : {}),
+    };
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
 
 function toInstagramMediaListItem(
   row: MediaItemRow,
   childCount: number,
 ): InstagramMediaListItem {
+  const metrics = normalizeMetricsBlob(row.metrics);
   return {
     id: row.id,
     externalId: row.externalId,
@@ -291,6 +352,16 @@ function toInstagramMediaListItem(
     linkedBatchId: row.linkedBatchId,
     linkedAt: row.linkedAt ? row.linkedAt.toISOString() : null,
     linkedBy: row.linkedBy,
+    metrics,
+    metricsQueriedAt: row.metricsQueriedAt
+      ? row.metricsQueriedAt.toISOString()
+      : null,
+    metricsApiVersion: row.metricsApiVersion,
+    metricsError: row.metricsError,
+    metricsErroredAt: row.metricsErroredAt
+      ? row.metricsErroredAt.toISOString()
+      : null,
+    metricRatios: computeMetricRatios(metrics),
   };
 }
 
@@ -405,6 +476,121 @@ export async function getTopicInstagramMediaListItem(
   if (!row) return undefined;
   const childCounts = await countChildrenByMedia([row.id]);
   return toInstagramMediaListItem(row, childCounts.get(row.id) ?? 0);
+}
+
+export type InstagramMediaMetricsTarget = {
+  externalId: string;
+  mediaType: string;
+  mediaProductType: string | null;
+};
+
+/**
+ * The topic's most-recent accessible publications for its current account, for
+ * a batch metrics refresh (IG-05). Only the fields needed to pick the metric
+ * set per format. Newest first, capped by `limit`.
+ */
+export async function listInstagramMediaForMetricsRefresh(
+  topicId: string,
+  igUserId: string,
+  limit: number,
+): Promise<InstagramMediaMetricsTarget[]> {
+  const rows = await db
+    .select({
+      externalId: topicInstagramMedia.externalId,
+      mediaType: topicInstagramMedia.mediaType,
+      mediaProductType: topicInstagramMedia.mediaProductType,
+    })
+    .from(topicInstagramMedia)
+    .where(
+      and(
+        eq(topicInstagramMedia.topicId, topicId),
+        eq(topicInstagramMedia.igUserId, igUserId),
+        eq(topicInstagramMedia.accessState, "accessible"),
+      ),
+    )
+    .orderBy(sql`${topicInstagramMedia.publishedAt} desc`)
+    .limit(Math.min(Math.max(limit, 1), 50));
+  return rows;
+}
+
+export type InstagramMediaMetricsWrite =
+  | { ok: Record<string, InstagramMediaMetric>; apiVersion: string }
+  | { error: string };
+
+/**
+ * Persists one publication's metrics refresh (IG-05), scoped to the topic's
+ * current account. On success the blob is **merged** per metric — a metric that
+ * came back keeps its fresh value/state, one that was present before but is
+ * absent now is kept with `state: "error"` (its last good value survives). On a
+ * whole-request failure only `metricsError` / `metricsErroredAt` are written and
+ * the blob is left untouched. Returns the fresh list item, or undefined when no
+ * row matched.
+ */
+export async function saveInstagramMediaMetrics(input: {
+  topicId: string;
+  igUserId: string;
+  externalId: string;
+  result: InstagramMediaMetricsWrite;
+  queriedAt?: Date;
+}): Promise<InstagramMediaListItem | undefined> {
+  const at = input.queriedAt ?? new Date();
+  const where = and(
+    eq(topicInstagramMedia.topicId, input.topicId),
+    eq(topicInstagramMedia.igUserId, input.igUserId),
+    eq(topicInstagramMedia.externalId, input.externalId),
+  );
+
+  let updated: { id: string }[];
+  if ("error" in input.result) {
+    updated = await db
+      .update(topicInstagramMedia)
+      .set({
+        metricsError: input.result.error.slice(0, 500),
+        metricsErroredAt: at,
+        updatedAt: at,
+      })
+      .where(where)
+      .returning({ id: topicInstagramMedia.id });
+  } else {
+    const [existing] = await db
+      .select({ metrics: topicInstagramMedia.metrics })
+      .from(topicInstagramMedia)
+      .where(where)
+      .limit(1);
+    const prior = normalizeMetricsBlob(existing?.metrics) ?? {};
+    const merged: Record<string, InstagramMediaMetric> = { ...prior };
+    for (const [name, metric] of Object.entries(input.result.ok)) {
+      merged[name] = metric;
+    }
+    for (const name of Object.keys(prior)) {
+      if (!(name in input.result.ok)) {
+        merged[name] = {
+          ...prior[name],
+          state: "error",
+          error: prior[name].error ?? "Not returned by the last refresh",
+        };
+      }
+    }
+    updated = await db
+      .update(topicInstagramMedia)
+      .set({
+        metrics: merged,
+        metricsQueriedAt: at,
+        metricsApiVersion: input.result.apiVersion,
+        metricsError: null,
+        metricsErroredAt: null,
+        updatedAt: at,
+      })
+      .where(where)
+      .returning({ id: topicInstagramMedia.id });
+  }
+
+  if (updated.length === 0) return undefined;
+  return getTopicInstagramMediaListItem(
+    input.topicId,
+    input.igUserId,
+    input.externalId,
+  );
 }
 
 export type SetInstagramMediaLink =

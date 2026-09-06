@@ -2736,3 +2736,61 @@
   align-items: center;
   gap: density(2);
 }
+
+/* IG-05 — per-publication metrics */
+.instagramMetrics {
+  display: flex;
+  flex-direction: column;
+  gap: density(2);
+}
+
+.instagramMetricsGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: density(2);
+}
+
+.instagramMetricCell {
+  display: flex;
+  flex-direction: column;
+  gap: space(1);
+}
+
+.instagramMetricLabel {
+  @ds-typo(caption);
+  font-size: 10px;
+  color: palette(tertiary-dark);
+}
+
+.instagramMetricValue {
+  @ds-typo(caption);
+  font-weight: 800;
+  color: palette(primary-dark);
+}
+
+.instagramMetricUnavailable {
+  @ds-typo(caption);
+  font-weight: 800;
+  color: palette(tertiary-main);
+}
+
+.instagramMetricError {
+  @ds-typo(caption);
+  font-weight: 800;
+  color: palette(warning-dark);
+}
+
+.instagramMetricRatios {
+  margin: 0;
+  @ds-typo(caption);
+  font-size: 10px;
+  color: palette(tertiary-dark);
+}
+
+.instagramMetricsHint {
+  margin: 0;
+  @ds-typo(caption);
+  font-size: 10px;
+  line-height: 1.45;
+  color: palette(tertiary-dark);
+}

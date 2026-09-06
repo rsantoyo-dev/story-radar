@@ -30,6 +30,32 @@ type MediaItem = {
   linkedBatchId: string | null;
   linkedAt: string | null;
   linkedBy: string | null;
+  metrics: Record<string, MediaMetric> | null;
+  metricsQueriedAt: string | null;
+  metricsApiVersion: string | null;
+  metricsError: string | null;
+  metricsErroredAt: string | null;
+  metricRatios: {
+    savedPerReach?: number;
+    sharesPerReach?: number;
+    commentsPerReach?: number;
+  } | null;
+};
+
+type MediaMetric = {
+  value: number | null;
+  state: "ok" | "unavailable" | "error";
+  period: string | null;
+  unit: string | null;
+  error?: string;
+};
+
+type MetricsRefreshResult = {
+  refreshed: number;
+  failed: number;
+  error?: string;
+  queriedAt: string;
+  item?: MediaItem;
 };
 
 type ApprovedStoryBrief = {
@@ -434,6 +460,13 @@ export function InstagramGalleryPanel({
                       item={item}
                       onLinked={applyLinked}
                     />
+                    <MediaMetrics
+                      topicId={topicId}
+                      secret={secret}
+                      disabled={disabled}
+                      item={item}
+                      onRefreshed={applyLinked}
+                    />
                   </div>
                 </li>
               ))}
@@ -482,6 +515,189 @@ function linkUrl(topicId: string, query: Record<string, string>): string {
     url.searchParams.set(key, value);
   }
   return url.pathname + url.search;
+}
+
+function metricsUrl(topicId: string): string {
+  return `/api/radar/topics/${encodeURIComponent(topicId)}/meta/media/metrics`;
+}
+
+const METRIC_DISPLAY: { key: string; label: string; always: boolean }[] = [
+  { key: "reach", label: "Reach", always: true },
+  { key: "views", label: "Views", always: true },
+  { key: "likes", label: "Likes", always: true },
+  { key: "comments", label: "Comments", always: true },
+  { key: "saved", label: "Saves", always: true },
+  { key: "shares", label: "Shares", always: true },
+  { key: "total_interactions", label: "Interactions", always: false },
+  { key: "profile_visits", label: "Profile visits", always: false },
+  { key: "follows", label: "Follows", always: false },
+];
+
+function metricPercent(value: number): string {
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function metricRatiosLabel(ratios: NonNullable<MediaItem["metricRatios"]>): string {
+  const parts: string[] = [];
+  if (ratios.savedPerReach != null) {
+    parts.push(`Saves/reach ${metricPercent(ratios.savedPerReach)}`);
+  }
+  if (ratios.sharesPerReach != null) {
+    parts.push(`Shares/reach ${metricPercent(ratios.sharesPerReach)}`);
+  }
+  if (ratios.commentsPerReach != null) {
+    parts.push(`Comments/reach ${metricPercent(ratios.commentsPerReach)}`);
+  }
+  return parts.join(" · ");
+}
+
+function relativeTime(iso: string): string {
+  const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (!Number.isFinite(minutes) || minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
+function MetricValue({ metric }: { metric: MediaMetric | undefined }) {
+  if (!metric || metric.state === "unavailable") {
+    return (
+      <span
+        className={styles.instagramMetricUnavailable}
+        title="Not available for this publication"
+      >
+        —
+      </span>
+    );
+  }
+  if (metric.state === "error") {
+    return (
+      <span
+        className={styles.instagramMetricError}
+        title={metric.error ?? "The last refresh failed"}
+      >
+        {metric.value != null ? metric.value.toLocaleString() : "n/d"}
+      </span>
+    );
+  }
+  return (
+    <span className={styles.instagramMetricValue}>
+      {(metric.value ?? 0).toLocaleString()}
+    </span>
+  );
+}
+
+/**
+ * Per-card metrics block (IG-05). Shows the persisted insights for one
+ * publication with a per-metric state (real value incl. 0 / unavailable /
+ * error keeping the last good value) and a "Refresh" that re-reads just this
+ * one, patched in place. `null` metrics = never fetched (pending).
+ */
+function MediaMetrics({
+  topicId,
+  secret,
+  disabled,
+  item,
+  onRefreshed,
+}: {
+  topicId: string;
+  secret: string;
+  disabled: boolean;
+  item: MediaItem;
+  onRefreshed: (updated: MediaItem) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string>();
+  const inFlight = useRef<AbortController | null>(null);
+
+  const refresh = () => {
+    if (busy) return;
+    inFlight.current?.abort();
+    const controller = new AbortController();
+    inFlight.current = controller;
+    setBusy(true);
+    setErr(undefined);
+    requestJson<MetricsRefreshResult>(metricsUrl(topicId), secret, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ externalId: item.externalId }),
+      signal: controller.signal,
+    })
+      .then((result) => {
+        if (controller.signal.aborted) return;
+        if (result.error === "needs-reconnect") {
+          setErr("Reconnect the account to refresh metrics.");
+        } else if (result.error) {
+          setErr(result.error);
+        } else if (result.item) {
+          onRefreshed(result.item);
+        } else if (result.failed) {
+          setErr("Could not read metrics for this publication.");
+        }
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) setErr(getErrorMessage(error));
+      })
+      .finally(() => setBusy(false));
+  };
+
+  const metrics = item.metrics;
+
+  return (
+    <div className={styles.instagramMetrics}>
+      {metrics === null ? (
+        <p className={styles.instagramMetricsHint}>No metrics fetched yet</p>
+      ) : (
+        <>
+          <div className={styles.instagramMetricsGrid}>
+            {METRIC_DISPLAY.filter(
+              (entry) =>
+                entry.always ||
+                (metrics[entry.key] &&
+                  metrics[entry.key].state !== "unavailable"),
+            ).map((entry) => (
+              <div key={entry.key} className={styles.instagramMetricCell}>
+                <span className={styles.instagramMetricLabel}>
+                  {entry.label}
+                </span>
+                <MetricValue metric={metrics[entry.key]} />
+              </div>
+            ))}
+          </div>
+          {item.metricRatios ? (
+            <p className={styles.instagramMetricRatios}>
+              {metricRatiosLabel(item.metricRatios)}
+            </p>
+          ) : null}
+        </>
+      )}
+      <div className={styles.instagramCardMeta}>
+        <span
+          className={styles.instagramMetricsHint}
+          title={item.metricsError ?? undefined}
+        >
+          {item.metricsQueriedAt
+            ? `Updated ${relativeTime(item.metricsQueriedAt)}`
+            : "Never refreshed"}
+          {item.metricsError ? " · last refresh failed" : ""}
+        </span>
+        <button
+          type="button"
+          className={styles.instagramLink}
+          disabled={disabled || busy}
+          onClick={refresh}
+        >
+          {busy
+            ? "Refreshing…"
+            : metrics === null
+              ? "Fetch metrics"
+              : "Refresh"}
+        </button>
+      </div>
+      {err ? <p className={styles.instagramMetricsHint}>{err}</p> : null}
+    </div>
+  );
 }
 
 /**

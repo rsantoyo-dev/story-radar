@@ -40,6 +40,13 @@ type MediaSyncResult = MediaSyncSummary & {
   syncedAt: string;
 };
 
+type MetricsRefreshResult = {
+  refreshed: number;
+  failed: number;
+  error?: string;
+  queriedAt: string;
+};
+
 type Busy =
   | "connect"
   | "disconnect"
@@ -47,6 +54,7 @@ type Busy =
   | "save-app"
   | "clear-app"
   | "sync"
+  | "metrics"
   | undefined;
 
 /**
@@ -224,6 +232,41 @@ export function MetaConnectionPanel({
     }
   }
 
+  async function handleRefreshMetrics() {
+    if (!authenticated || busy) return;
+    setBusy("metrics");
+    setError(undefined);
+    setNotice(undefined);
+    try {
+      const result = await requestJson<MetricsRefreshResult>(
+        `${metaUrl(topicId)}/media/metrics`,
+        secret,
+        { method: "POST" },
+      );
+      if (result.error === "needs-reconnect") {
+        setError(
+          "The Instagram token was rejected. Reconnect the account and refresh again.",
+        );
+      } else if (result.error) {
+        setError(`Metrics refresh stopped early: ${result.error}.`);
+      } else {
+        setNotice(
+          `${result.refreshed} publications updated` +
+            (result.failed ? ` · ${result.failed} failed` : "") +
+            ` · ${new Date(result.queriedAt).toLocaleString()}`,
+        );
+      }
+      setStatus(
+        await requestJson<MetaConnectionStatus>(metaUrl(topicId), secret),
+      );
+      onConnectionChanged?.();
+    } catch (requestError) {
+      setError(getErrorMessage(requestError));
+    } finally {
+      setBusy(undefined);
+    }
+  }
+
   async function handleSaveApp() {
     if (!authenticated || busy || !appId.trim() || !appSecret.trim()) return;
     setBusy("save-app");
@@ -386,6 +429,23 @@ export function MetaConnectionPanel({
               onClick={() => handleSync(syncCursor)}
             >
               {busy === "sync" ? "Loading…" : "Load older"}
+            </button>
+          ) : null}
+          {status?.connected ? (
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              disabled={
+                controlsDisabled || status.state === "needs-reconnect"
+              }
+              title={
+                status.state === "needs-reconnect"
+                  ? "Reconnect the account before refreshing metrics."
+                  : undefined
+              }
+              onClick={handleRefreshMetrics}
+            >
+              {busy === "metrics" ? "Refreshing…" : "Refresh metrics"}
             </button>
           ) : null}
           {status?.connected ? (

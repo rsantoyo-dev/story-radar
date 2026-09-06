@@ -87,6 +87,29 @@ export const topicInstagramMedia = pgTable(
      */
     linkedAt: timestamp("linked_at", { withTimezone: true, mode: "date" }),
     linkedBy: text("linked_by"),
+    /**
+     * Current Instagram insights for this publication (IG-05). `null` = never
+     * fetched (pending, distinct from a real zero). Shape per metric:
+     * `{ value: number | null, state: "ok" | "unavailable" | "error",
+     *    period: string | null, unit: string | null, error?: string }`.
+     * A per-metric failure keeps that metric's last good value with
+     * `state: "error"`; a whole-request failure sets `metricsError` and leaves
+     * this blob untouched. Validated in code, not the DB.
+     */
+    metrics: jsonb("metrics"),
+    /** When the last (partial or full) successful metrics refresh ran. */
+    metricsQueriedAt: timestamp("metrics_queried_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    /** Graph API version used for the stored metrics (e.g. "v21.0"). */
+    metricsApiVersion: text("metrics_api_version"),
+    /** Message of the last whole-request metrics failure; blob kept intact. */
+    metricsError: text("metrics_error"),
+    metricsErroredAt: timestamp("metrics_errored_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
     /** Snapshot of the Graph node as received, for debugging and future fields. */
     raw: jsonb("raw").notNull(),
     importedAt: timestamp("imported_at", { withTimezone: true, mode: "date" })
@@ -121,6 +144,10 @@ export const topicInstagramMedia = pgTable(
     check(
       "topic_instagram_media_linked_draft_version_check",
       sql`${table.linkedDraftVersion} IS NULL OR ${table.linkedDraftVersion} > 0`,
+    ),
+    check(
+      "topic_instagram_media_metrics_error_length_check",
+      sql`${table.metricsError} IS NULL OR char_length(${table.metricsError}) <= 500`,
     ),
   ],
 );

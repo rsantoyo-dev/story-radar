@@ -16,10 +16,6 @@
 
 ## Por hacer
 
-### IG-05 — Consultar métricas actuales por publicación
-
-  - tags: [ig]
-
 ### IG-06 — Ver resultados desde la historia editorial
 
   - tags: [ig]
@@ -27,6 +23,10 @@
 ## En progreso
 
 ## En revisión / QA
+
+### IG-05 — Consultar métricas actuales por publicación
+
+  - tags: [ig]
 
 ### IG-03 — Explorar la galería de Instagram
 
