@@ -72,9 +72,13 @@ export function MetaConnectionPanel({
   const [appSecret, setAppSecret] = useState("");
   const [syncResult, setSyncResult] = useState<MediaSyncResult>();
   const authenticated = secret.trim().length > 0;
-  const syncCursor = syncResult
-    ? syncResult.nextCursor
-    : status?.lastMediaSyncCursor;
+  // A successful sync's own nextCursor wins; a failed one keeps whatever the
+  // server still has stored (it never clears the cursor on failure), so
+  // "Load older" does not vanish until a manual reload.
+  const syncCursor =
+    syncResult && !syncResult.error
+      ? syncResult.nextCursor
+      : status?.lastMediaSyncCursor;
 
   useEffect(() => {
     if (!authenticated || !topicId) return;

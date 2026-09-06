@@ -1,6 +1,18 @@
 import "server-only";
 
-import { and, count, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import {
+  and,
+  count,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  notInArray,
+  or,
+  sql,
+} from "drizzle-orm";
 
 import { db } from "@/db/client";
 import {
@@ -102,34 +114,68 @@ export async function upsertInstagramMediaPage(
 
     if (node.mediaType === "CAROUSEL_ALBUM" || node.children.length > 0) {
       counts.carousels += 1;
-      // Replace the carousel's elements atomically: delete + insert in one
-      // db.batch (a transaction on Neon). A failed insert can no longer wipe
-      // the previously imported elements, and a concurrent sync of the same
-      // carousel serializes on the row locks instead of colliding.
-      const deleteChildren = db
-        .delete(topicInstagramMediaChildren)
-        .where(eq(topicInstagramMediaChildren.mediaId, saved.id));
-      if (node.children.length > 0) {
-        await db.batch([
-          deleteChildren,
-          db.insert(topicInstagramMediaChildren).values(
-            node.children.map((child, index) => ({
-              mediaId: saved.id,
-              externalId: child.externalId,
-              mediaType: child.mediaType,
-              mediaUrl: child.mediaUrl,
-              thumbnailUrl: child.thumbnailUrl,
-              order: index + 1,
-            })),
-          ),
-        ]);
-      } else {
-        await deleteChildren;
-      }
+      await replaceCarouselChildren(saved.id, node.children);
     }
   }
 
   return counts;
+}
+
+/**
+ * Reconciles a carousel's elements without a delete-all window: each element
+ * is upserted on (media_id, external_id) and any element no longer in the
+ * carousel is removed. Two concurrent syncs of the same carousel converge on
+ * the same rows — the upsert turns what would be a unique-violation into an
+ * update, so no parent-row lock is needed and nothing is lost on failure.
+ */
+async function replaceCarouselChildren(
+  mediaId: string,
+  children: InstagramMediaNode["children"],
+): Promise<void> {
+  if (children.length === 0) {
+    await db
+      .delete(topicInstagramMediaChildren)
+      .where(eq(topicInstagramMediaChildren.mediaId, mediaId));
+    return;
+  }
+
+  for (const [index, child] of children.entries()) {
+    const row = {
+      mediaId,
+      externalId: child.externalId,
+      mediaType: child.mediaType,
+      mediaUrl: child.mediaUrl,
+      thumbnailUrl: child.thumbnailUrl,
+      order: index + 1,
+    };
+    await db
+      .insert(topicInstagramMediaChildren)
+      .values(row)
+      .onConflictDoUpdate({
+        target: [
+          topicInstagramMediaChildren.mediaId,
+          topicInstagramMediaChildren.externalId,
+        ],
+        set: {
+          mediaType: row.mediaType,
+          mediaUrl: row.mediaUrl,
+          thumbnailUrl: row.thumbnailUrl,
+          order: row.order,
+        },
+      });
+  }
+
+  await db
+    .delete(topicInstagramMediaChildren)
+    .where(
+      and(
+        eq(topicInstagramMediaChildren.mediaId, mediaId),
+        notInArray(
+          topicInstagramMediaChildren.externalId,
+          children.map((child) => child.externalId),
+        ),
+      ),
+    );
 }
 
 /**
