@@ -20,14 +20,17 @@ test("accepts a well-formed total_value insights payload", () => {
   );
 });
 
-test("rejects an empty or missing body", () => {
+test("rejects a missing or non-object body", () => {
   for (const bad of [undefined, null, "", "ok", 200, [], {}]) {
     assert.throws(() => assertInstagramInsightsShape(bad), MetaGraphApiError);
   }
 });
 
-test("rejects data that is empty or not an array", () => {
-  assert.throws(() => assertInstagramInsightsShape({ data: [] }), MetaGraphApiError);
+test("accepts an empty data set (metric has no values yet / temporarily unavailable)", () => {
+  assert.doesNotThrow(() => assertInstagramInsightsShape({ data: [] }));
+});
+
+test("rejects data that is present but not an array", () => {
   assert.throws(
     () => assertInstagramInsightsShape({ data: "reach" }),
     MetaGraphApiError,
