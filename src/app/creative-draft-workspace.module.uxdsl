@@ -3077,3 +3077,18 @@
   height: auto;
   object-fit: contain;
 }
+
+.editRequestState {
+  @ds-typo(caption);
+  align-self: flex-start;
+  padding: density(1) density(2);
+  border: border(1, palette(primary-main), solid);
+  border-radius: radius(full);
+  color: palette(primary-main);
+}
+
+.editRequestActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: density(2);
+}

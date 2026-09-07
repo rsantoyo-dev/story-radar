@@ -1,10 +1,14 @@
 "use client";
 
-import { CreativeBrandImageEditor, type BrandImageEditOptions } from "./creative-brand-image-editor";
+import {
+  CreativeBrandImageEditor,
+  type BrandImageEditOptions,
+  type SaveEditRequestPayload,
+} from "./creative-brand-image-editor";
 import Image from "next/image";
 import { CreativeDocumentaryPanel } from "./creative-documentary-panel";
 import { StoryInstagramResults } from "./story-instagram-results";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   CAROUSEL_EDITORIAL_GOAL_OPTIONS,
@@ -24,6 +28,7 @@ import {
   MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS,
   VISUAL_FIDELITY_MODES,
   type CreativeAssetBatchResponse,
+  type CreativeAssetEditRequest,
   type CreativeAspectRatio,
   type CreativeCharacter,
   type CreativeCharacterReferenceImage,
@@ -66,6 +71,7 @@ type BusyAction =
   | "images";
 
 type LoadedAssets = CreativeAssetBatchResponse & { draftId: string };
+type LoadedEditRequests = { draftId: string; requests: CreativeAssetEditRequest[] };
 type ImageQualityChoice = CreativeImageQuality;
 type AssetQualityRequest = {
   draftId: string;
@@ -180,6 +186,7 @@ export function CreativeDraftWorkspace({
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [loadedAssets, setLoadedAssets] = useState<LoadedAssets>();
+  const [editRequests, setEditRequests] = useState<LoadedEditRequests>();
   const [assetsReloadKey, setAssetsReloadKey] = useState(0);
   const [historyDraftId, setHistoryDraftId] = useState<string>();
   const [assetBusy, setAssetBusy] = useState<string>();
@@ -346,6 +353,38 @@ export function CreativeDraftWorkspace({
     viewingHistoricalDraft,
     assetsReloadKey,
   ]);
+
+  useEffect(() => {
+    if (!activeDraftId) return;
+    const controller = new AbortController();
+
+    requestJson<{ requests: CreativeAssetEditRequest[] }>(
+      topicUrl(
+        `/api/radar/creative/drafts/${encodeURIComponent(activeDraftId)}/edit-requests`,
+        topicId,
+      ),
+      secret,
+      { signal: controller.signal },
+    )
+      .then((response) => {
+        setEditRequests({ draftId: activeDraftId, requests: response.requests });
+      })
+      .catch((loadError) => {
+        if (!controller.signal.aborted) setError(getErrorMessage(loadError));
+      });
+
+    return () => controller.abort();
+  }, [activeDraftId, secret, topicId, assetsReloadKey]);
+
+  const editRequestByUnit = useMemo(() => {
+    const map = new Map<number, CreativeAssetEditRequest>();
+    if (editRequests && editRequests.draftId === activeDraftId) {
+      for (const request of editRequests.requests) {
+        map.set(request.unitOrder, request);
+      }
+    }
+    return map;
+  }, [editRequests, activeDraftId]);
 
   const visibleAssets =
     loadedAssets?.draftId === activeDraftId ? loadedAssets : undefined;
@@ -1129,6 +1168,76 @@ export function CreativeDraftWorkspace({
           : "Image approval removed; it can be reviewed or regenerated.",
       );
     });
+  }
+
+  async function handleSaveEditRequest(payload: SaveEditRequestPayload) {
+    if (!activeDraftId) return;
+    if (viewingHistoricalDraft) {
+      setError("Historical images are read-only. Return to the current draft to save an edit.");
+      return;
+    }
+    try {
+      setError(undefined);
+      const response = await requestJson<{ request: CreativeAssetEditRequest }>(
+        topicUrl(
+          `/api/radar/creative/drafts/${encodeURIComponent(activeDraftId)}/edit-requests`,
+          topicId,
+        ),
+        secret,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        },
+      );
+      const draftId = activeDraftId;
+      setEditRequests((current) => {
+        const requests =
+          current?.draftId === draftId ? [...current.requests] : [];
+        const index = requests.findIndex(
+          (request) => request.unitOrder === response.request.unitOrder,
+        );
+        if (index >= 0) requests[index] = response.request;
+        else requests.push(response.request);
+        return { draftId, requests };
+      });
+      setNotice("Cambio guardado. Aplícalo cuando quieras.");
+    } catch (saveError) {
+      setError(getErrorMessage(saveError));
+    }
+  }
+
+  async function handleDiscardEditRequest(unitOrder: number) {
+    if (!activeDraftId || viewingHistoricalDraft) return;
+    try {
+      setError(undefined);
+      await requestJson<{ ok: boolean }>(
+        topicUrl(
+          `/api/radar/creative/drafts/${encodeURIComponent(activeDraftId)}/edit-requests`,
+          topicId,
+        ),
+        secret,
+        {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ unitOrder }),
+        },
+      );
+      const draftId = activeDraftId;
+      setEditRequests((current) =>
+        current?.draftId === draftId
+          ? {
+              draftId,
+              requests: current.requests.filter(
+                (request) => request.unitOrder !== unitOrder,
+              ),
+            }
+          : current,
+      );
+      setNotice("Solicitud de cambio descartada.");
+    } catch (discardError) {
+      setError(getErrorMessage(discardError));
+    }
   }
 
   function chooseFormat(format: CreativeFormat) {
@@ -2108,8 +2217,18 @@ export function CreativeDraftWorkspace({
                             }
                             topicId={topicId}
                             secret={secret}
+                            savedRequest={editRequestByUnit.get(asset.unitOrder)}
+                            savedRequestReadOnly={
+                              viewingHistoricalDraft ||
+                              activeDraft.status !== "approved" ||
+                              currentAssetBatch.status === "stale" ||
+                              currentAssetBatch.draftVersion !== activeDraft.version ||
+                              Boolean(assetBusy)
+                            }
                             onRegenerate={handleRegenerateImage}
                             onApproval={handleImageApproval}
+                            onSaveEditRequest={handleSaveEditRequest}
+                            onDiscardEditRequest={handleDiscardEditRequest}
                           />
                         ))}
                       </div>
@@ -2421,8 +2540,12 @@ function CreativeAssetCard({
   totalSlides,
   busyAction,
   readOnly = false,
+  savedRequest,
+  savedRequestReadOnly = false,
   onRegenerate,
   onApproval,
+  onSaveEditRequest,
+  onDiscardEditRequest,
 }: {
   topicId: string;
   secret: string;
@@ -2433,8 +2556,12 @@ function CreativeAssetCard({
   totalSlides: number;
   busyAction?: string;
   readOnly?: boolean;
+  savedRequest?: CreativeAssetEditRequest;
+  savedRequestReadOnly?: boolean;
   onRegenerate: (assetId: string, prompt: string, edit?: BrandImageEditOptions) => void;
   onApproval: (assetId: string, action: "approve" | "unapprove") => void;
+  onSaveEditRequest: (payload: SaveEditRequestPayload) => void;
+  onDiscardEditRequest: (unitOrder: number) => void;
 }) {
   const [prompt, setPrompt] = useState(asset.prompt);
   const isPending = asset.status === "queued" || asset.status === "generating";
@@ -2487,8 +2614,12 @@ function CreativeAssetCard({
         )}
       </div>
 
-      <CreativeBrandImageEditor key={asset.id} asset={asset} topicId={topicId} secret={secret}
-        disabled={readOnly || isPending || Boolean(busyAction)} onSubmit={edit => onRegenerate(asset.id, prompt, edit)} />
+      <CreativeBrandImageEditor key={`${asset.id}:${savedRequest?.revision ?? 0}`} asset={asset} topicId={topicId} secret={secret}
+        disabled={readOnly || isPending || Boolean(busyAction)} onSubmit={edit => onRegenerate(asset.id, prompt, edit)}
+        savedRequest={savedRequest}
+        savedRequestReadOnly={savedRequestReadOnly || isPending}
+        onSaveRequest={onSaveEditRequest}
+        onDiscardRequest={() => onDiscardEditRequest(asset.unitOrder)} />
       <div className={styles.expectedText}>
         <span>Text requested exactly from the image model</span>
         <p>{asset.expectedText}</p>

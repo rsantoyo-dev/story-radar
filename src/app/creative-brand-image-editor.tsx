@@ -2,24 +2,43 @@
 
 import Image from "next/image";
 import { useEffect, useState } from "react";
-import type { CreativeBrandReference, CreativeGeneratedAsset } from "./modules/stories/creative-content.types";
+import type {
+  CreativeAssetEditRequest,
+  CreativeBrandReference,
+  CreativeGeneratedAsset,
+} from "./modules/stories/creative-content.types";
 import { BrandReferencePreview, TextAreaField } from "./creative-profile-fields";
 import styles from "./creative-draft-workspace.generated.module.css";
 
 export type BrandImageEditOptions = { useImageAsBase?: boolean; brandReferenceIds?: string[]; editInstruction?: string };
 
-export function CreativeBrandImageEditor({ asset, topicId, secret, disabled, onSubmit }: {
+export type SaveEditRequestPayload = {
+  baseAssetId: string;
+  instruction: string;
+  useImageAsBase: boolean;
+  brandReferenceIds?: string[];
+  editType: "generative";
+};
+
+export function CreativeBrandImageEditor({ asset, topicId, secret, disabled, onSubmit, savedRequest, savedRequestReadOnly, onSaveRequest, onDiscardRequest }: {
   asset: CreativeGeneratedAsset; topicId: string; secret: string; disabled: boolean;
   onSubmit: (options: BrandImageEditOptions) => void;
+  savedRequest?: CreativeAssetEditRequest;
+  savedRequestReadOnly?: boolean;
+  onSaveRequest?: (payload: SaveEditRequestPayload) => void;
+  onDiscardRequest?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [library, setLibrary] = useState<CreativeBrandReference[]>();
   const [error, setError] = useState<string>();
-  const [instruction, setInstruction] = useState("");
-  const [useBase, setUseBase] = useState(Boolean(asset.imageUrl));
-  const [changed, setChanged] = useState(false);
   const saved = asset.unitSnapshot.brandReferenceSelection?.selected ?? [];
-  const [selected, setSelected] = useState(saved.map(reference => reference.id));
+  const savedInstruction = savedRequest?.instruction ?? "";
+  const savedUseBase = savedRequest?.useImageAsBase ?? Boolean(asset.imageUrl);
+  const savedIds = savedRequest?.brandReferenceIds ?? null;
+  const [instruction, setInstruction] = useState(savedInstruction);
+  const [useBase, setUseBase] = useState(savedUseBase);
+  const [changed, setChanged] = useState(Boolean(savedIds));
+  const [selected, setSelected] = useState(savedIds ?? saved.map(reference => reference.id));
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();
@@ -32,6 +51,27 @@ export function CreativeBrandImageEditor({ asset, topicId, secret, disabled, onS
     }).catch(reason => { if (!controller.signal.aborted) setError(reason.message); });
     return () => controller.abort();
   }, [open, topicId, secret]);
+
+  const currentIds = changed ? selected : savedIds ?? [];
+  const referencesChanged =
+    changed &&
+    (!savedIds ||
+      savedIds.length !== currentIds.length ||
+      currentIds.some(id => !savedIds.includes(id)) ||
+      savedIds.some(id => !currentIds.includes(id)));
+  const dirty =
+    instruction.trim() !== savedInstruction.trim() ||
+    useBase !== savedUseBase ||
+    referencesChanged;
+  const isApplied = Boolean(asset.editSource) || savedRequest?.status === "applied";
+  const stateLabel = isApplied
+    ? "Aplicado"
+    : dirty
+      ? "Sin guardar"
+      : savedRequest
+        ? "Guardado"
+        : undefined;
+  const canEditRequest = Boolean(onSaveRequest) && !savedRequestReadOnly;
 
   async function download() {
     try {
@@ -47,6 +87,7 @@ export function CreativeBrandImageEditor({ asset, topicId, secret, disabled, onS
   }
   return <div className={styles.brandImageEditor}>
     {asset.editSource ? <p>Edited from image v{asset.editSource.version} · {asset.editInstruction}</p> : null}
+    {stateLabel ? <span className={styles.editRequestState}>{stateLabel}</span> : null}
     <details onToggle={event => setOpen(event.currentTarget.open)}>
       <summary>Brand references and image edits</summary>
       {open && asset.editSource ? <EditBasePreview assetId={asset.id} topicId={topicId} secret={secret} /> : null}
@@ -59,7 +100,7 @@ export function CreativeBrandImageEditor({ asset, topicId, secret, disabled, onS
         {reference.contribution?.avoid ? <small>Avoid: {reference.contribution.avoid}</small> : null}
       </div>)}
       {!saved.length ? <p>No brand images were sent for this version.</p> : null}
-      {!disabled ? <>
+      {!disabled || canEditRequest ? <>
         <label><input type="checkbox" checked={useBase} disabled={!asset.imageUrl} onChange={event => setUseBase(event.target.checked)} /> Use this finished image as the edit base</label>
         <TextAreaField label="Requested change" value={instruction} maxLength={2000} rows={3} onChange={setInstruction} />
         <p>Keep the saved references, or explicitly choose current library versions for this image. Other slides stay unchanged.</p>
@@ -69,9 +110,20 @@ export function CreativeBrandImageEditor({ asset, topicId, secret, disabled, onS
           {reference.name} · v{reference.version}/{reference.configVersion}
         </label>)}
         {library ? <button type="button" className={styles.secondaryButton} onClick={() => setChanged(true)}>Use current library versions of the checked references</button> : null}
-        <button type="button" className={styles.secondaryButton} disabled={!instruction.trim() || (changed && !library)} onClick={() => onSubmit({ useImageAsBase: useBase, editInstruction: instruction, ...(changed ? { brandReferenceIds: selected } : {}) })}>
-          {useBase ? "Edit this image" : "Generate this image with these references"}
-        </button>
+        <div className={styles.editRequestActions}>
+          {canEditRequest ? <button type="button" className={styles.secondaryButton}
+            disabled={!dirty || !instruction.trim() || (changed && !library)}
+            onClick={() => onSaveRequest?.({ baseAssetId: asset.id, instruction: instruction.trim(), useImageAsBase: useBase, ...(changed ? { brandReferenceIds: selected } : {}), editType: "generative" })}>
+            Guardar cambio
+          </button> : null}
+          {canEditRequest && savedRequest?.status === "saved" ? <button type="button" className={styles.secondaryButton}
+            onClick={() => onDiscardRequest?.()}>
+            Descartar
+          </button> : null}
+          {!disabled ? <button type="button" className={styles.secondaryButton} disabled={!instruction.trim() || (changed && !library)} onClick={() => onSubmit({ useImageAsBase: useBase, editInstruction: instruction, ...(changed ? { brandReferenceIds: selected } : {}) })}>
+            {useBase ? "Edit this image" : "Generate this image with these references"}
+          </button> : null}
+        </div>
       </> : null}
     </details>
     {asset.status === "approved" ? <button type="button" className={styles.secondaryButton} disabled={disabled} onClick={download}>Download approved image</button> : null}

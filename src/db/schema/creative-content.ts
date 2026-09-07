@@ -787,6 +787,72 @@ export const creativeAssets = pgTable(
   ],
 );
 
+/**
+ * IMG-01. A saved-but-not-executed image edit request, one pending row per
+ * slide. Persisting one never calls the image provider, never bumps
+ * `creative_drafts.version`, and never touches `creative_asset_batches` or an
+ * asset's approval. IMG-02+ moves `status` through running/applied/failed and
+ * records `applied_asset_id`; the executed history itself lives on the
+ * `creative_assets` chain (`references.base` + `editInstruction`).
+ */
+export const creativeAssetEditRequests = pgTable(
+  "creative_asset_edit_requests",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    topicId: uuid("topic_id")
+      .notNull()
+      .references(() => topics.id, { onDelete: "cascade" }),
+    draftId: uuid("draft_id")
+      .notNull()
+      .references(() => creativeDrafts.id, { onDelete: "cascade" }),
+    unitOrder: integer("unit_order").notNull(),
+    baseAssetId: uuid("base_asset_id").references(() => creativeAssets.id, {
+      onDelete: "set null",
+    }),
+    baseVersion: integer("base_version").notNull(),
+    revision: integer("revision").default(1).notNull(),
+    editType: text("edit_type").default("generative").notNull(),
+    instruction: text("instruction"),
+    useImageAsBase: boolean("use_image_as_base").default(true).notNull(),
+    brandReferenceIds: text("brand_reference_ids")
+      .array()
+      .default(sql`ARRAY[]::text[]`)
+      .notNull(),
+    compositionRecipe: jsonb("composition_recipe"),
+    status: text("status").default("saved").notNull(),
+    appliedAssetId: uuid("applied_asset_id").references(() => creativeAssets.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("creative_asset_edit_requests_draft_unit_unique").on(
+      table.draftId,
+      table.unitOrder,
+    ),
+    index("creative_asset_edit_requests_draft_id_idx").on(table.draftId),
+    index("creative_asset_edit_requests_topic_id_idx").on(table.topicId),
+    check(
+      "creative_asset_edit_requests_values_check",
+      sql`${table.unitOrder} > 0
+        AND ${table.baseVersion} > 0
+        AND ${table.revision} > 0
+        AND ${table.editType} IN ('generative', 'composition')
+        AND ${table.status} IN ('saved', 'running', 'applied', 'failed')
+        AND (${table.instruction} IS NULL OR char_length(${table.instruction}) <= 2000)`,
+    ),
+    check(
+      "creative_asset_edit_requests_dates_check",
+      sql`${table.updatedAt} >= ${table.createdAt}`,
+    ),
+  ],
+);
+
 export const creativeAiRuns = pgTable(
   "creative_ai_runs",
   {

@@ -1,14 +1,14 @@
 ---
 id: IMG-01
 feature: FEAT-IMG-001
-status: todo
+status: review
 board: creative-image-editing.kanban.md
-tags: [img, todo, p0]
+tags: [img, review, p0]
 ---
 
 # IMG-01 — Guardar instrucciones de cambio por imagen
 
-**Estado:** [[status-todo]] · **Feature:** [Edición incremental de imágenes](../features/creative-image-editing.md)
+**Estado:** [[status-review]] · **Feature:** [Edición incremental de imágenes](../features/creative-image-editing.md)
 
 **Como** editor, **quiero** guardar una instrucción junto a cada imagen del draft, **para** retomar ajustes sin perderlos ni ejecutar una generación.
 

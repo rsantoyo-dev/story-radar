@@ -889,6 +889,26 @@ export type CreativeAssetBatch = {
   updatedAt: Date;
 };
 
+/**
+ * IMG-01. A saved-but-not-executed per-slide image edit request. Browser-safe:
+ * carries no topicId and no private object keys. Saving one never calls the
+ * image provider or changes the draft / batch / approvals.
+ */
+export type CreativeAssetEditRequest = {
+  id: string;
+  unitOrder: number;
+  baseAssetId: string | null;
+  baseVersion: number;
+  revision: number;
+  editType: "generative" | "composition";
+  instruction: string | null;
+  useImageAsBase: boolean;
+  brandReferenceIds: string[];
+  status: "saved" | "running" | "applied" | "failed";
+  appliedAssetId: string | null;
+  updatedAt: Date;
+};
+
 export type CreativeAssetConfiguration = {
   provider: string;
   model: string;

@@ -4,11 +4,6 @@
 
 ## Por hacer
 
-### IMG-01 — Guardar instrucciones de cambio por imagen
-
-  - priority: high
-  - tags: [img, p0]
-
 ### IMG-02 — Aplicar un cambio únicamente a la imagen seleccionada
 
   - priority: high
@@ -47,5 +42,10 @@
 ## En progreso
 
 ## En revisión / QA
+
+### IMG-01 — Guardar instrucciones de cambio por imagen
+
+  - priority: high
+  - tags: [img, p0]
 
 ## Hecho

@@ -10,6 +10,7 @@ import { OpenAiEditorialError } from "@/app/modules/stories/openai-structured-re
 import { FalImageConfigurationError } from "@/app/modules/stories/fal-image-generation.config";
 import { FalImageResponseError } from "@/app/modules/stories/fal-image-client";
 import { CreativeAssetValidationError } from "@/app/modules/stories/manage-creative-assets";
+import { CreativeAssetEditRequestValidationError } from "@/app/modules/stories/creative-asset-edit-request-input";
 import {
   CreativeContentConflictError,
   CreativeContentDailyLimitError,
@@ -65,6 +66,7 @@ export function creativeRouteErrorResponse(
     error instanceof CreativeBrandOverlayValidationError ||
     error instanceof CreativeBrandAssetValidationError ||
     error instanceof CreativeAssetValidationError ||
+    error instanceof CreativeAssetEditRequestValidationError ||
     error instanceof CreativeDraftValidationError ||
     error instanceof CreativeCharacterValidationError ||
     error instanceof CreativeCharacterReferenceValidationError ||
