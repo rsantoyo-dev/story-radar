@@ -5,6 +5,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import {
   BrandOverlayEditor,
   BrandPaletteEditor,
+  BrandReferenceLibrary,
   CarouselNumberingEditor,
   ListField,
   TextAreaField,
@@ -487,6 +488,11 @@ export function CreativeProfilePanel({
             uploading={busy === "brand"}
             onChange={updateBrandOverlay}
             onUpload={handleUploadBrandAsset}
+          />
+          <BrandReferenceLibrary
+            topicId={topicId}
+            secret={secret}
+            disabled={disabled || busy === "save"}
           />
         </Group>
 

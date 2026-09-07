@@ -87,6 +87,83 @@ export const creativeBrandAssets = pgTable(
   ],
 );
 
+/**
+ * Per-topic private library of brand visual references (FEAT-BRAND-001 / BRAND-01)
+ * — finished posts, posters, stickers, signage, multi-element sheets the
+ * image-to-image flow can look at for composition/colour/graphic language.
+ * A separate entity from `creativeBrandAssets` (the single overlay logo) and
+ * from `creativeCharacters`. Uploading one never makes it a logo or a character.
+ * References are deactivated, never deleted, so historical draft snapshots keep
+ * the exact bytes that explain a generated image.
+ */
+export const creativeBrandReferences = pgTable(
+  "creative_brand_references",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    topicId: uuid("topic_id")
+      .notNull()
+      .references(() => topics.id, { onDelete: "cascade" }),
+    /** In-place revision counter. BRAND-01 always 1; BRAND-05 bumps on replace. */
+    version: integer("version").default(1).notNull(),
+    /** Private immutable R2 key. Never return this column to the browser. */
+    objectKey: text("object_key").notNull(),
+    sha256: text("sha256").notNull(),
+    /** Stored (normalised) type — always image/webp. */
+    contentType: text("content_type").default("image/webp").notNull(),
+    /** The MIME the editor uploaded — the declared "type" of record. */
+    originalContentType: text("original_content_type").notNull(),
+    fileName: text("file_name").notNull(),
+    fileSize: integer("file_size").notNull(),
+    width: integer("width").notNull(),
+    height: integer("height").notNull(),
+    /** Editor label. */
+    name: text("name").notNull(),
+    kind: text("kind").default("other").notNull(),
+    provenance: text("provenance"),
+    /**
+     * Whether the editor has declared this reference may be transmitted to the
+     * image provider. Defaults false; BRAND-02 gates activation on it.
+     */
+    providerTransmissionAllowed: boolean("provider_transmission_allowed")
+      .default(false)
+      .notNull(),
+    /** Free-text declared conditions for reuse. */
+    usageNote: text("usage_note"),
+    isActive: boolean("is_active").default(true).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("creative_brand_references_object_key_unique").on(
+      table.objectKey,
+    ),
+    index("creative_brand_references_topic_id_idx").on(table.topicId),
+    index("creative_brand_references_topic_active_idx").on(
+      table.topicId,
+      table.isActive,
+    ),
+    check(
+      "creative_brand_references_values_check",
+      sql`${table.contentType} = 'image/webp'
+        AND ${table.sha256} ~ '^[0-9a-f]{64}$'
+        AND ${table.fileSize} BETWEEN 1 AND 15728640
+        AND ${table.width} BETWEEN 64 AND 8192
+        AND ${table.height} BETWEEN 64 AND 8192
+        AND ${table.width} <= ${table.height} * 30
+        AND ${table.height} <= ${table.width} * 30
+        AND ${table.version} > 0
+        AND char_length(${table.name}) BETWEEN 1 AND 120
+        AND ${table.kind} IN ('finished-post', 'poster', 'sticker-sheet', 'signage', 'other')
+        AND (${table.provenance} IS NULL OR char_length(${table.provenance}) <= 500)
+        AND (${table.usageNote} IS NULL OR char_length(${table.usageNote}) <= 1000)`,
+    ),
+  ],
+);
+
 export const creativeProfiles = pgTable(
   "creative_profiles",
   {

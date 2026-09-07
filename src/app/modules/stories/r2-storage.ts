@@ -144,6 +144,45 @@ export function buildCreativeBrandAssetObjectKey({
 }
 
 /**
+ * Canonical private key for a brand visual reference (BRAND-01). `version` is in
+ * the path so a future replace (BRAND-05) writes a distinct immutable object.
+ */
+export function buildCreativeBrandReferenceObjectKey({
+  topicId,
+  referenceId,
+  version,
+  extension,
+}: {
+  topicId: string;
+  referenceId: string;
+  version: number;
+  extension: string;
+}): string {
+  const { objectPrefix } = getR2Client().configuration;
+  const safeExtension = extension.trim().replace(/^\./, "").toLowerCase();
+  if (!/^[a-z0-9]{2,10}$/.test(safeExtension)) {
+    throw new R2StorageValidationError(
+      "The brand reference extension is invalid",
+    );
+  }
+  if (!Number.isInteger(version) || version < 1 || version > 100000) {
+    throw new R2StorageValidationError("The brand reference version is invalid");
+  }
+
+  const key = [
+    objectPrefix,
+    "topics",
+    safeKeySegment(topicId, "topic ID"),
+    "creative",
+    "brand-references",
+    safeKeySegment(referenceId, "brand reference ID"),
+    `v${version}.${safeExtension}`,
+  ].join("/");
+  assertObjectKey(key);
+  return key;
+}
+
+/**
  * Reads a private R2 image into a server-side File for temporary upload to
  * fal storage. This intentionally does not mint or retain a signed R2 URL.
  */

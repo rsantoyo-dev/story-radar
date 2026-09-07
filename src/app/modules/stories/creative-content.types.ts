@@ -153,6 +153,41 @@ export type CreativeBrandAsset = {
   createdAt: Date;
 };
 
+export const CREATIVE_BRAND_REFERENCE_KINDS = [
+  "finished-post",
+  "poster",
+  "sticker-sheet",
+  "signage",
+  "other",
+] as const;
+export type CreativeBrandReferenceKind =
+  (typeof CREATIVE_BRAND_REFERENCE_KINDS)[number];
+
+/**
+ * Browser-safe row of the per-topic brand visual reference library (BRAND-01).
+ * Deliberately excludes topicId, objectKey and sha256.
+ */
+export type CreativeBrandReference = {
+  id: string;
+  name: string;
+  kind: CreativeBrandReferenceKind;
+  provenance: string | null;
+  usageNote: string | null;
+  providerTransmissionAllowed: boolean;
+  /** MIME the editor uploaded (the declared "type"). */
+  originalContentType: string;
+  /** Stored/served MIME — always "image/webp". */
+  contentType: "image/webp";
+  fileName: string;
+  fileSize: number;
+  width: number;
+  height: number;
+  version: number;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 export type CreativeBrandOverlaySettings = {
   enabled: boolean;
   scope: CreativeBrandScope;

@@ -4,11 +4,6 @@
 
 ## Por hacer
 
-### BRAND-01 — Subir referencias visuales de marca
-
-  - priority: high
-  - tags: [brand, p0]
-
 ### BRAND-02 — Definir qué aporta cada referencia
 
   - priority: high
@@ -47,5 +42,10 @@
 ## En progreso
 
 ## En revisión / QA
+
+### BRAND-01 — Subir referencias visuales de marca
+
+  - priority: high
+  - tags: [brand, p0]
 
 ## Hecho

@@ -1,14 +1,14 @@
 ---
 id: BRAND-01
 feature: FEAT-BRAND-001
-status: todo
+status: review
 board: brand-visual-references.kanban.md
-tags: [brand, todo, p0]
+tags: [brand, review, p0]
 ---
 
 # BRAND-01 — Subir referencias visuales de marca
 
-**Estado:** [[status-todo]] · **Feature:** [Referencias visuales de marca](../features/brand-visual-references.md)
+**Estado:** [[status-review]] · **Feature:** [Referencias visuales de marca](../features/brand-visual-references.md)
 
 **Como** editor, **quiero** subir referencias visuales de marca, **para** producir imágenes coherentes con la marca y conservar sus decisiones visuales.
 

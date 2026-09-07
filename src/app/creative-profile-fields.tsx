@@ -6,10 +6,13 @@ import { useEffect, useMemo, useState } from "react";
 import {
   CREATIVE_BRAND_BACKDROP_MODES,
   CREATIVE_BRAND_PLACEMENTS,
+  CREATIVE_BRAND_REFERENCE_KINDS,
   CREATIVE_BRAND_SCOPES,
   CREATIVE_BRAND_UI_ROLES,
   CREATIVE_CAROUSEL_CHROME_STYLES,
   type CreativeBrandPaletteColor,
+  type CreativeBrandReference,
+  type CreativeBrandReferenceKind,
   type CreativeProfile,
 } from "./modules/stories/creative-content.types";
 import { contrastRatio } from "@/design/color/oklch";
@@ -788,6 +791,455 @@ function BrandAssetPreview({
   ) : (
     <div className={styles.brandAssetPlaceholder}>
       {unavailable ? "Preview unavailable" : "Loading preview…"}
+    </div>
+  );
+}
+
+const BRAND_REFERENCE_KIND_LABEL: Record<CreativeBrandReferenceKind, string> = {
+  "finished-post": "Finished post",
+  poster: "Poster",
+  "sticker-sheet": "Sticker sheet",
+  signage: "Signage",
+  other: "Other",
+};
+
+const BRAND_REFERENCES_PATH = "/api/radar/creative/brand-references";
+const MAX_BRAND_REFERENCE_UPLOAD_BYTES = 15 * 1024 * 1024;
+const BRAND_REFERENCE_ACCEPT = "image/png,image/jpeg,image/webp";
+
+async function brandReferenceRequest<T>(
+  input: string,
+  secret: string,
+  init: RequestInit = {},
+): Promise<T> {
+  const headers = new Headers(init.headers);
+  headers.set("Authorization", `Bearer ${secret.trim()}`);
+  const response = await fetch(input, { ...init, cache: "no-store", headers });
+  const payload = (await response.json().catch(() => undefined)) as
+    | { error?: string }
+    | undefined;
+  if (!response.ok) {
+    throw new Error(payload?.error ?? `Request failed (${response.status})`);
+  }
+  return payload as T;
+}
+
+/**
+ * BRAND-01 — the per-topic private library of brand visual references. Manages
+ * its own fetch/upload cycle (like the brand-logo upload), independent of the
+ * creative-profile save.
+ */
+export function BrandReferenceLibrary({
+  topicId,
+  secret,
+  disabled,
+}: {
+  topicId: string;
+  secret: string;
+  disabled: boolean;
+}) {
+  const [references, setReferences] = useState<CreativeBrandReference[]>();
+  const [error, setError] = useState<string>();
+  const [busy, setBusy] = useState<string>();
+  const [pendingFile, setPendingFile] = useState<File>();
+  const [formName, setFormName] = useState("");
+  const [formKind, setFormKind] = useState<CreativeBrandReferenceKind>("other");
+  const [formProvenance, setFormProvenance] = useState("");
+  const [formUsageNote, setFormUsageNote] = useState("");
+  const [formTransmit, setFormTransmit] = useState(false);
+
+  const authenticated = secret.trim().length > 0;
+
+  useEffect(() => {
+    if (!authenticated || !topicId) return;
+    const controller = new AbortController();
+    brandReferenceRequest<CreativeBrandReference[]>(
+      topicUrl(BRAND_REFERENCES_PATH, topicId),
+      secret,
+      { signal: controller.signal },
+    )
+      .then((list) => {
+        if (controller.signal.aborted) return;
+        setReferences(list);
+        setError(undefined);
+      })
+      .catch((requestError: unknown) => {
+        if (!controller.signal.aborted) {
+          setError(
+            requestError instanceof Error
+              ? requestError.message
+              : "The brand references could not be loaded",
+          );
+        }
+      });
+    return () => controller.abort();
+  }, [authenticated, topicId, secret]);
+
+  const loading = !references && !error;
+  const list = references ?? [];
+
+  const resetForm = () => {
+    setPendingFile(undefined);
+    setFormName("");
+    setFormKind("other");
+    setFormProvenance("");
+    setFormUsageNote("");
+    setFormTransmit(false);
+  };
+
+  const pickFile = (file: File | undefined) => {
+    setError(undefined);
+    if (!file) {
+      setPendingFile(undefined);
+      return;
+    }
+    if (!BRAND_REFERENCE_ACCEPT.split(",").includes(file.type)) {
+      setError("Brand references must be PNG, JPEG or WebP.");
+      setPendingFile(undefined);
+      return;
+    }
+    if (file.size > MAX_BRAND_REFERENCE_UPLOAD_BYTES) {
+      setError("The file must be 15 MB or smaller.");
+      setPendingFile(undefined);
+      return;
+    }
+    setPendingFile(file);
+    if (!formName.trim()) setFormName(file.name.replace(/\.[^.]+$/, ""));
+  };
+
+  const upload = () => {
+    if (!pendingFile || !formName.trim() || busy) return;
+    setBusy("upload");
+    setError(undefined);
+    const body = new FormData();
+    body.append("image", pendingFile);
+    body.append("name", formName);
+    body.append("kind", formKind);
+    if (formProvenance.trim()) body.append("provenance", formProvenance);
+    if (formUsageNote.trim()) body.append("usageNote", formUsageNote);
+    body.append("providerTransmissionAllowed", String(formTransmit));
+    brandReferenceRequest<CreativeBrandReference>(
+      topicUrl(BRAND_REFERENCES_PATH, topicId),
+      secret,
+      { method: "POST", body },
+    )
+      .then((created) => {
+        setReferences((prev) => [created, ...(prev ?? [])]);
+        resetForm();
+      })
+      .catch((requestError: unknown) => {
+        setError(
+          requestError instanceof Error
+            ? requestError.message
+            : "The upload failed",
+        );
+      })
+      .finally(() => setBusy(undefined));
+  };
+
+  const patch = (
+    reference: CreativeBrandReference,
+    changes: Record<string, unknown>,
+  ) => {
+    if (busy) return;
+    setBusy(reference.id);
+    setError(undefined);
+    brandReferenceRequest<CreativeBrandReference>(
+      topicUrl(
+        `${BRAND_REFERENCES_PATH}/${encodeURIComponent(reference.id)}`,
+        topicId,
+      ),
+      secret,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(changes),
+      },
+    )
+      .then((updated) => {
+        setReferences((prev) =>
+          (prev ?? []).map((entry) =>
+            entry.id === updated.id ? updated : entry,
+          ),
+        );
+      })
+      .catch((requestError: unknown) => {
+        setError(
+          requestError instanceof Error
+            ? requestError.message
+            : "The change could not be saved",
+        );
+      })
+      .finally(() => setBusy(undefined));
+  };
+
+  return (
+    <section
+      className={styles.brandReferenceLibrary}
+      aria-labelledby="brand-references-title"
+    >
+      <div className={styles.brandOverlayHeader}>
+        <div>
+          <strong id="brand-references-title">Brand references</strong>
+          <p className={styles.brandAssetHint}>
+            {list.length}/60 · Post, poster, sticker and signage examples the
+            generator can look at for composition, density, colour and graphic
+            language.
+          </p>
+        </div>
+      </div>
+
+      <fieldset
+        className={styles.brandReferenceForm}
+        disabled={disabled || busy === "upload"}
+      >
+        <div className={styles.brandReferenceFormGrid}>
+          <label className={styles.field}>
+            <span>Name</span>
+            <input
+              value={formName}
+              onChange={(event) => setFormName(event.target.value)}
+              maxLength={120}
+            />
+          </label>
+          <label className={styles.field}>
+            <span>Kind</span>
+            <select
+              value={formKind}
+              onChange={(event) =>
+                setFormKind(event.target.value as CreativeBrandReferenceKind)
+              }
+            >
+              {CREATIVE_BRAND_REFERENCE_KINDS.map((kind) => (
+                <option key={kind} value={kind}>
+                  {BRAND_REFERENCE_KIND_LABEL[kind]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className={styles.field}>
+            <span>Provenance</span>
+            <input
+              value={formProvenance}
+              onChange={(event) => setFormProvenance(event.target.value)}
+              maxLength={500}
+            />
+          </label>
+          <label className={styles.field}>
+            <span>Usage note</span>
+            <textarea
+              rows={2}
+              value={formUsageNote}
+              onChange={(event) => setFormUsageNote(event.target.value)}
+              maxLength={1000}
+            />
+          </label>
+        </div>
+        <label className={styles.brandEnabledToggle}>
+          <input
+            type="checkbox"
+            checked={formTransmit}
+            onChange={(event) => setFormTransmit(event.target.checked)}
+          />
+          <span>May be sent to the image provider</span>
+        </label>
+        <div className={styles.brandReferenceForm}>
+          <label
+            className={`${styles.brandUpload} ${
+              disabled ? styles.brandUploadDisabled : ""
+            }`}
+          >
+            <input
+              type="file"
+              accept={BRAND_REFERENCE_ACCEPT}
+              onChange={(event) => {
+                pickFile(event.target.files?.[0]);
+                event.currentTarget.value = "";
+              }}
+            />
+            {pendingFile ? `Selected: ${pendingFile.name}` : "Choose a file"}
+          </label>
+          <button
+            type="button"
+            className={styles.secondaryButton}
+            disabled={
+              disabled ||
+              busy === "upload" ||
+              !pendingFile ||
+              !formName.trim()
+            }
+            onClick={upload}
+          >
+            {busy === "upload" ? "Uploading…" : "Add to library"}
+          </button>
+        </div>
+      </fieldset>
+
+      {error ? <p className={styles.brandAssetHint}>{error}</p> : null}
+
+      {loading ? (
+        <p className={styles.brandAssetHint}>Loading brand references…</p>
+      ) : list.length === 0 ? (
+        <p className={styles.brandAssetHint}>
+          No brand references yet. Upload one above.
+        </p>
+      ) : (
+        <div className={styles.brandReferenceGrid}>
+          {list.map((reference) => (
+            <figure
+              key={reference.id}
+              className={`${styles.brandReferenceItem} ${
+                reference.isActive ? "" : styles.brandReferenceInactive
+              }`}
+            >
+              <BrandReferencePreview
+                topicId={topicId}
+                secret={secret}
+                referenceId={reference.id}
+                fileName={reference.fileName}
+              />
+              <figcaption className={styles.brandReferenceMeta}>
+                <label className={styles.field}>
+                  <span>Name</span>
+                  <input
+                    defaultValue={reference.name}
+                    disabled={disabled || Boolean(busy)}
+                    maxLength={120}
+                    onBlur={(event) => {
+                      const value = event.target.value.trim();
+                      if (value && value !== reference.name) {
+                        patch(reference, { name: value });
+                      }
+                    }}
+                  />
+                </label>
+                <select
+                  className={styles.brandReferenceBadge}
+                  value={reference.kind}
+                  disabled={disabled || Boolean(busy)}
+                  onChange={(event) =>
+                    patch(reference, { kind: event.target.value })
+                  }
+                >
+                  {CREATIVE_BRAND_REFERENCE_KINDS.map((kind) => (
+                    <option key={kind} value={kind}>
+                      {BRAND_REFERENCE_KIND_LABEL[kind]}
+                    </option>
+                  ))}
+                </select>
+                <span className={styles.brandAssetHint}>
+                  {reference.width}×{reference.height} ·{" "}
+                  {reference.originalContentType.replace("image/", "")}
+                </span>
+                <label
+                  className={`${styles.brandReferencePill} ${
+                    reference.providerTransmissionAllowed
+                      ? styles.brandReferencePillOn
+                      : ""
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={reference.providerTransmissionAllowed}
+                    disabled={disabled || Boolean(busy)}
+                    onChange={(event) =>
+                      patch(reference, {
+                        providerTransmissionAllowed: event.target.checked,
+                      })
+                    }
+                  />
+                  <span>
+                    Provider:{" "}
+                    {reference.providerTransmissionAllowed
+                      ? "allowed"
+                      : "withheld"}
+                  </span>
+                </label>
+                {reference.isActive ? (
+                  <button
+                    type="button"
+                    className={styles.secondaryButton}
+                    disabled={disabled || Boolean(busy)}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          `Deactivate "${reference.name}"? It stays on file for historical versions.`,
+                        )
+                      ) {
+                        patch(reference, { isActive: false });
+                      }
+                    }}
+                  >
+                    Deactivate
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className={styles.secondaryButton}
+                    disabled={disabled || Boolean(busy)}
+                    onClick={() => patch(reference, { isActive: true })}
+                  >
+                    Reactivate
+                  </button>
+                )}
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function BrandReferencePreview({
+  topicId,
+  secret,
+  referenceId,
+  fileName,
+}: {
+  topicId: string;
+  secret: string;
+  referenceId: string;
+  fileName: string;
+}) {
+  const [source, setSource] = useState<string>();
+  const [unavailable, setUnavailable] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let objectUrl: string | undefined;
+
+    fetch(
+      topicUrl(
+        `/api/radar/creative/brand-references/${encodeURIComponent(referenceId)}`,
+        topicId,
+      ),
+      {
+        cache: "no-store",
+        signal: controller.signal,
+        headers: { Authorization: `Bearer ${secret.trim()}` },
+      },
+    )
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Preview unavailable");
+        objectUrl = URL.createObjectURL(await response.blob());
+        setSource(objectUrl);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setUnavailable(true);
+      });
+
+    return () => {
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [referenceId, secret, topicId]);
+
+  return source ? (
+    <Image src={source} alt={fileName} width={320} height={400} unoptimized />
+  ) : (
+    <div className={styles.referencePreviewPlaceholder}>
+      {unavailable ? "Preview unavailable" : "Loading…"}
     </div>
   );
 }

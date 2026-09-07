@@ -27,6 +27,11 @@ import {
 } from "@/app/modules/stories/creative-characters.repository";
 import { CreativeCharacterReferenceValidationError } from "@/app/modules/stories/manage-creative-characters";
 import { CreativeBrandAssetValidationError } from "@/app/modules/stories/manage-creative-brand-assets";
+import { CreativeBrandReferenceValidationError } from "@/app/modules/stories/creative-brand-reference-metadata";
+import {
+  CreativeBrandReferenceConflictError,
+  CreativeBrandReferenceNotFoundError,
+} from "@/app/modules/stories/creative-brand-references.repository";
 import {
   R2StorageConfigurationError,
   R2StorageObjectError,
@@ -42,7 +47,8 @@ export function creativeRouteErrorResponse(
     error instanceof CreativeContentNotFoundError ||
     error instanceof SelectedStoryContentNotFoundError ||
     error instanceof CreativeCharacterNotFoundError ||
-    error instanceof CreativeBrandAssetNotFoundError
+    error instanceof CreativeBrandAssetNotFoundError ||
+    error instanceof CreativeBrandReferenceNotFoundError
   ) {
     return NextResponse.json({ error: error.message }, { status: 404 });
   }
@@ -59,6 +65,7 @@ export function creativeRouteErrorResponse(
     error instanceof CreativeDraftValidationError ||
     error instanceof CreativeCharacterValidationError ||
     error instanceof CreativeCharacterReferenceValidationError ||
+    error instanceof CreativeBrandReferenceValidationError ||
     error instanceof R2StorageValidationError
   ) {
     return NextResponse.json({ error: error.message }, { status: 400 });
@@ -72,7 +79,10 @@ export function creativeRouteErrorResponse(
     return NextResponse.json({ error: error.message }, { status: 409 });
   }
 
-  if (error instanceof CreativeCharacterConflictError) {
+  if (
+    error instanceof CreativeCharacterConflictError ||
+    error instanceof CreativeBrandReferenceConflictError
+  ) {
     return NextResponse.json({ error: error.message }, { status: 409 });
   }
 

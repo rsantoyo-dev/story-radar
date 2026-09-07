@@ -2862,3 +2862,78 @@
   gap: density(2);
   align-items: center;
 }
+
+/* BRAND-01 — brand reference library */
+.brandReferenceLibrary {
+  @ds-surface(flat light density(3) radius(2));
+  display: grid;
+  gap: density(3);
+  margin-top: density(4);
+}
+
+.brandReferenceForm {
+  display: grid;
+  gap: density(2);
+}
+
+.brandReferenceFormGrid {
+  display: grid;
+  grid-template-columns: xs(1fr) sm(repeat(2, minmax(0, 1fr)));
+  gap: space(4);
+}
+
+.brandReferenceGrid {
+  display: grid;
+  grid-template-columns:
+    xs(repeat(2, minmax(0, 1fr)))
+    sm(repeat(3, minmax(0, 1fr)))
+    md(repeat(4, minmax(0, 1fr)));
+  gap: space(3);
+  margin: 0;
+}
+
+.brandReferenceItem {
+  margin: 0;
+  border: 1px solid palette(surface-light);
+  border-radius: 7px;
+  overflow: hidden;
+  display: grid;
+  background: palette(light-light);
+}
+
+.brandReferenceItem img {
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  object-fit: cover;
+  background: palette(surface-light);
+}
+
+.brandReferenceInactive {
+  opacity: 0.5;
+}
+
+.brandReferenceMeta {
+  padding: density(2);
+  display: grid;
+  gap: space(1);
+}
+
+.brandReferenceBadge {
+  @ds-typo(caption);
+  font-size: 8px;
+  color: palette(primary-main);
+}
+
+.brandReferencePill {
+  display: flex;
+  align-items: center;
+  gap: space(1);
+  @ds-typo(caption);
+  font-size: 8px;
+  color: palette(tertiary-dark);
+}
+
+.brandReferencePillOn {
+  color: palette(primary-dark);
+  font-weight: 750;
+}
