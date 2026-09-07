@@ -1,6 +1,10 @@
 import "server-only";
 
+import { storeEditBase, readEditBase, readGeneratedImage } from "./creative-image-source";
+import { listActivatedBrandReferences } from "./creative-brand-references.repository";
 import { createHash } from "node:crypto";
+import { resolveBrandGenerationReferences, loadBrandGenerationImages, assertBrandReferenceEligibility, assertBrandGenerationBudget } from "./resolve-brand-generation";
+import { brandReferencePrompt, enforceBrandReferencePrompt, type GenerationReferences } from "./creative-brand-generation";
 
 import {
   completeCreativeAsset,
@@ -15,7 +19,7 @@ import {
   findPendingCreativeAssetBatchesForDraft,
   getCreativeAssetBrandOverlaySnapshot,
   getCreativeAssetCarouselChromeSnapshot,
-  getCreativeAssetReferenceSnapshot,
+  getCreativeAssetGenerationReferences,
   insertRegeneratedCreativeAsset,
   refreshCreativeAssetBatchStatus,
   setCreativeAssetApproval,
@@ -37,6 +41,7 @@ import { findCreativeBriefById, findCreativeDraftById } from "./creative-content
 import { resolveEffectiveVisualFidelity } from "./creative-visual-fidelity";
 import {
   DEFAULT_CREATIVE_IMAGE_QUALITY,
+  MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS,
   type CreativeAspectRatio,
   type CreativeAssetBatch,
   type CreativeAssetBatchResponse,
@@ -86,6 +91,7 @@ import {
 } from "./fal-image-client";
 import {
   readPrivateR2ImageFile,
+  deletePrivateR2Object,
   R2StorageConfigurationError,
   R2StorageObjectError,
   R2StorageValidationError,
@@ -128,7 +134,7 @@ export async function getCreativeDraftAssets(
     };
   }
 
-  const brand = await resolveCreativeBrandGeneration(topicId);
+  const brand = await resolveCreativeBrandGeneration(topicId, draft);
 
   let batch = await findCurrentCreativeAssetBatch(draft.id, draft.version, {
     provider: preferredConfiguration.provider,
@@ -219,7 +225,7 @@ export async function generateCreativeDraftAssets(
   );
   const outputAspectRatio = outputAspectRatioForDraft(draft);
   const configuration = getFalImageRuntimeConfig(outputAspectRatio, imageQuality);
-  const brand = await resolveCreativeBrandGeneration(topicId);
+  const brand = await resolveCreativeBrandGeneration(topicId, draft);
 
   let existing = await findCurrentCreativeAssetBatch(draft.id, draft.version, {
     provider: configuration.provider,
@@ -285,6 +291,9 @@ export async function generateCreativeDraftAssets(
     uniqueCharacterSnapshots(characterSnapshotsByUnit),
   );
 
+  const brandReferencesByOrder = new Map(await Promise.all(draft.units.map(async (unit) => [
+    unit.order, await resolveBrandGenerationReferences(topicId, unit.brandReferenceSelection),
+  ] as const)));
   let batch = await createCreativeAssetBatch({
     draftId: draft.id,
     draftVersion: draft.version,
@@ -304,8 +313,14 @@ export async function generateCreativeDraftAssets(
         characterSnapshotsByUnit,
         unit.id,
       );
+      const imagePrompt = buildCreativeImagePrompt({ draft, unit, brief,
+        characters: charactersForImageGeneration(characterSnapshots), campaignCharacters,
+        brandOverlay: brand.overlay, carouselChromeSettings: brand.carouselChrome });
+      const prompt = imagePrompt.prompt + brandReferencePrompt(brandReferencesByOrder.get(unit.order) ?? [],
+        charactersForImageGeneration(characterSnapshots).flatMap(character => character.referenceImages).length);
+      if (prompt.length > MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS) throw new CreativeAssetValidationError("The complete image prompt exceeds 30,000 characters.");
       return {
-        ...assetInputForUnit(characterSnapshots),
+        ...assetInputForUnit(characterSnapshots, brandReferencesByOrder.get(unit.order)),
         ...(brand.snapshot &&
         shouldApplyCreativeBrandOverlay(brand.snapshot, unit.order)
           ? { brandOverlaySnapshot: brand.snapshot }
@@ -316,15 +331,8 @@ export async function generateCreativeDraftAssets(
         unitOrder: unit.order,
         unitRole: unit.role,
         unitSnapshot: unit,
-        ...buildCreativeImagePrompt({
-          draft,
-          unit,
-          brief,
-          characters: charactersForImageGeneration(characterSnapshots),
-          campaignCharacters,
-          brandOverlay: brand.overlay,
-          carouselChromeSettings: brand.carouselChrome,
-        }),
+        ...imagePrompt,
+        prompt,
       };
     }),
   });
@@ -375,7 +383,7 @@ export async function generateNextCreativeDraftAssetVersion(
       "This image batch belongs to an earlier draft version. Generate images for the current approved draft instead.",
     );
   }
-  const brand = await resolveCreativeBrandGeneration(topicId);
+  const brand = await resolveCreativeBrandGeneration(topicId, draft);
   assertCurrentBrandConfiguration(batch, brand.inputHash);
   if (hasPendingAssets(batch)) {
     throw new CreativeContentConflictError(
@@ -432,7 +440,7 @@ export async function regenerateCreativeAsset(
     brief.profileSnapshot.framingStrategy,
   );
   assertCurrentAsset(found.asset, found.batch, draft.version);
-  const brand = await resolveCreativeBrandGeneration(topicId);
+  const brand = await resolveCreativeBrandGeneration(topicId, draft);
   assertCurrentBrandConfiguration(found.batch, brand.inputHash);
   const configuration = runtimeConfigurationForBatch(
     found.batch,
@@ -464,10 +472,50 @@ export async function regenerateCreativeAsset(
     brandPrompt,
     chrome?.promptReservation,
   );
-  const asset = await insertRegeneratedCreativeAsset({
-    previous: found.asset,
-    prompt,
-  });
+  const previousReferences = await getCreativeAssetGenerationReferences(found.asset.id);
+  const references: GenerationReferences = structuredClone(previousReferences);
+  const edit = validateImageEditInput(input);
+  if (edit.brandReferenceIds) {
+    const eligible = await listActivatedBrandReferences(topicId);
+    const selected = edit.brandReferenceIds.map(id => {
+      const row = eligible.find(candidate => candidate.id === id);
+      if (!row) throw new CreativeAssetValidationError("A selected brand reference is unavailable. Refresh the library.");
+      return { id, version: row.version, configVersion: row.configVersion, function: "layout" as const, reason: "Selected for this image" };
+    });
+    references.brand = await resolveBrandGenerationReferences(topicId, { selected, excluded: [], note: null });
+    references.selectionOverride = true;
+  }
+  if (edit.useImageAsBase === false) {
+    delete references.base; delete references.provenanceBrand; delete references.editInstruction;
+  }
+  if (edit.useImageAsBase) {
+    if (!found.asset.imageUrl || !["generated", "approved"].includes(found.asset.status)) throw new CreativeAssetValidationError("Wait for a completed image before editing it.");
+    references.provenanceBrand = [...new Map([...previousReferences.brand, ...(previousReferences.provenanceBrand ?? [])].map(ref => [`${ref.id}:${ref.version}`, ref])).values()];
+    await assertBrandReferenceEligibility(references.provenanceBrand);
+    assertBrandGenerationBudget(references.brand.length, charactersForImageGeneration(references.characters).length + 1);
+    references.base = await storeEditBase(topicId, found.asset.id, found.asset.version, found.asset.imageUrl);
+    references.editInstruction = edit.editInstruction;
+  }
+  // Freeze a per-image override in its unit snapshot; siblings and the draft's defaults stay intact.
+  const unitSnapshot = { ...found.asset.unitSnapshot, brandReferenceSelection: {
+    selected: references.brand.map(({ id, version, configVersion, function: fn, reason, name, sha256, contribution, usageNote, provenance }) =>
+      ({ id, version, configVersion, function: fn, reason, name, sha256, contribution, usageNote, provenance })), excluded: [], note: null,
+  } };
+  const imagePrompt = enforceBrandReferencePrompt(prompt, references.brand,
+    charactersForImageGeneration(references.characters).flatMap(character => character.referenceImages).length);
+  const finalPrompt = imagePrompt.replace(/\n\nIMAGE EDIT v1[\s\S]*?\nEND IMAGE EDIT/g, "") + (references.base
+    ? `\n\nIMAGE EDIT v1\nThe LAST input image is the base image to edit. Preserve its layout, copy and protagonist except for this requested change (data): ${JSON.stringify(references.editInstruction)}\nEND IMAGE EDIT` : edit.editInstruction ? `\nRequested change: ${JSON.stringify(edit.editInstruction)}` : "");
+  if (finalPrompt.length > MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS) throw new CreativeAssetValidationError("The complete image prompt is too long.");
+  // Validate limits and permissions before creating the pending version.
+  await assertBrandReferenceEligibility(references.brand);
+  assertBrandGenerationBudget(references.brand.length, charactersForImageGeneration(references.characters).length + (references.base ? 1 : 0));
+  let asset: CreativeGeneratedAsset;
+  try {
+    asset = await insertRegeneratedCreativeAsset({ previous: found.asset, prompt: finalPrompt, references, unitSnapshot });
+  } catch (error) {
+    if (edit.useImageAsBase && references.base) await deletePrivateR2Object(references.base.objectKey).catch(() => undefined);
+    throw error;
+  }
   await submitStoredAsset(asset, configuration);
   const batch = await refreshCreativeAssetBatchStatus(found.batch.id);
   return { batch, configuration: publicConfigurationForBatch(batch) };
@@ -558,7 +606,8 @@ async function submitStoredAsset(
   configuration: ReturnType<typeof getFalImageRuntimeConfig>,
 ): Promise<void> {
   try {
-    const characters = await getCreativeAssetReferenceSnapshot(asset.id);
+    const references = await getCreativeAssetGenerationReferences(asset.id);
+    const characters = references.characters;
     const referenceImages = await Promise.all(
       charactersForImageGeneration(characters).flatMap(
         (character) => character.referenceImages,
@@ -571,6 +620,12 @@ async function submitStoredAsset(
           }),
       ),
     );
+    await assertBrandReferenceEligibility(references.provenanceBrand ?? []);
+    const brandImages = await loadBrandGenerationImages(references.brand, referenceImages.length + (references.base ? 1 : 0));
+    referenceImages.push(...brandImages);
+    if (references.base) referenceImages.push(await readEditBase(references.base));
+    if (referenceImages.reduce((bytes, image) => bytes + image.size, 0) > 20 * 1024 * 1024) throw new CreativeAssetValidationError("The combined character, brand and base images exceed 20 MB.");
+    await assertBrandReferenceEligibility([...references.brand, ...(references.provenanceBrand ?? [])]);
     const requestId = await submitFalImage({
       apiKey: configuration.apiKey,
       prompt: asset.prompt,
@@ -628,6 +683,7 @@ type ResolvedCreativeBrandGeneration = {
  */
 async function resolveCreativeBrandGeneration(
   topicId: string,
+  draft: CreativeDraft,
 ): Promise<ResolvedCreativeBrandGeneration> {
   const profile = await getCreativeProfile(topicId);
   const overlay = profile.brandOverlay;
@@ -680,7 +736,10 @@ async function resolveCreativeBrandGeneration(
           )
           .digest("hex");
   return {
-    inputHash,
+    inputHash: draft.units.some(unit => unit.brandReferenceSelection?.selected.length)
+      ? createHash("sha256").update(JSON.stringify({ inputHash, contract: "brand-references-v2",
+          selections: draft.units.map(unit => ({ order: unit.order, selected: unit.brandReferenceSelection?.selected ?? [] })) })).digest("hex")
+      : inputHash,
     ...(resolvedOverlay ? { overlay: resolvedOverlay } : {}),
     ...(snapshot ? { snapshot } : {}),
     carouselChrome,
@@ -722,9 +781,9 @@ function enforceBrandPromptContract({
   if (!contract) return prompt;
 
   const integrated = appendCreativeBrandContract(prompt, contract);
-  if (integrated.length > 20_000) {
+  if (integrated.length > MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS) {
     throw new CreativeAssetValidationError(
-      "prompt plus the required brand safe-zone contract must be 20,000 characters or fewer",
+      "prompt plus the required brand safe-zone contract must be 30,000 characters or fewer",
     );
   }
   return integrated;
@@ -735,9 +794,9 @@ function enforceCarouselChromePromptContract(
   contract: string | undefined,
 ): string {
   const integrated = appendCreativeCarouselChromeContract(prompt, contract);
-  if (integrated.length > 20_000) {
+  if (integrated.length > MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS) {
     throw new CreativeAssetValidationError(
-      "prompt plus the required carousel navigation contract must be 20,000 characters or fewer",
+      "prompt plus the required carousel navigation contract must be 30,000 characters or fewer",
     );
   }
   return integrated;
@@ -879,23 +938,17 @@ async function compositeStoredCreativeBrand({
   }
 }
 
-function assetInputForUnit(characters: CreativeCharacterSnapshot[]): {
-  generationMode: CreativeGeneratedAsset["generationMode"];
-  providerEndpoint: FalImageEndpoint;
-  referenceSnapshot: CreativeCharacterSnapshot[];
-  referenceInputHash: string;
-} {
-  const generationMode =
-    characters.length > 0 ? "reference-guided" : "text-to-image";
-
+function assetInputForUnit(characters: CreativeCharacterSnapshot[], brand: GenerationReferences["brand"] = []) {
+  const generationMode = characters.length > 0 || brand.length > 0
+    ? "reference-guided" as const : "text-to-image" as const;
   return {
     generationMode,
-    providerEndpoint:
-      generationMode === "reference-guided"
-        ? FAL_REFERENCE_GUIDED_ENDPOINT
-        : FAL_TEXT_TO_IMAGE_ENDPOINT,
-    referenceSnapshot: characters,
-    referenceInputHash: referenceInputHash(characters),
+    providerEndpoint: generationMode === "reference-guided"
+      ? FAL_REFERENCE_GUIDED_ENDPOINT : FAL_TEXT_TO_IMAGE_ENDPOINT,
+    referenceSnapshot: brand.length ? { schema: 1 as const, characters, brand } : characters,
+    referenceInputHash: brand.length
+      ? createHash("sha256").update(JSON.stringify({ characters, brand })).digest("hex")
+      : referenceInputHash(characters),
   };
 }
 
@@ -949,7 +1002,9 @@ function batchMatchesDraftGenerationModes(
   return draft.units.every((unit) => {
     const asset = assetsByOrder.get(unit.order);
     if (!asset) return false;
-    const shouldUseReferences = (unit.characterIds?.length ?? 0) > 0;
+    if (!asset.hasBrandReferenceOverride && unit.brandReferenceSelection?.selected.length && asset.referenceContextVersion !== 1) return false;
+    const selection = asset.hasBrandReferenceOverride ? asset.unitSnapshot.brandReferenceSelection : unit.brandReferenceSelection;
+    const shouldUseReferences = Boolean(asset.editSource) || (unit.characterIds?.length ?? 0) > 0 || (selection?.selected.length ?? 0) > 0;
     return shouldUseReferences
       ? asset.generationMode === "reference-guided" &&
           asset.providerEndpoint === FAL_REFERENCE_GUIDED_ENDPOINT
@@ -1166,9 +1221,9 @@ function validateRegenerationPrompt(input: unknown, fallback: string): string {
   // character-reference constraints. Current generated prompts can exceed
   // 8k characters and are accepted by the configured Fal endpoint, so the
   // editor must not reject its own persisted prompt during regeneration.
-  if (value.trim().length > 20_000) {
+  if (value.trim().length > MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS) {
     throw new CreativeAssetValidationError(
-      "prompt must be 20,000 characters or fewer",
+      "prompt must be 30,000 characters or fewer",
     );
   }
   return value.trim();
@@ -1274,3 +1329,37 @@ export class CreativeAssetValidationError extends Error {}
 class CreativeBrandPostProcessError extends Error {}
 
 class CreativeCarouselPostProcessError extends Error {}
+
+export type CreativeImageEditInput = { useImageAsBase?: boolean; brandReferenceIds?: string[]; editInstruction?: string };
+function validateImageEditInput(input: unknown): CreativeImageEditInput {
+  const raw = (input ?? {}) as Record<string, unknown>;
+  if (raw.useImageAsBase !== undefined && typeof raw.useImageAsBase !== "boolean") throw new CreativeAssetValidationError("useImageAsBase must be boolean");
+  if (raw.brandReferenceIds !== undefined && (!Array.isArray(raw.brandReferenceIds) || raw.brandReferenceIds.length > 16 || raw.brandReferenceIds.some(id => typeof id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) || new Set(raw.brandReferenceIds).size !== raw.brandReferenceIds.length)) throw new CreativeAssetValidationError("Choose a bounded list of distinct brand references");
+  if (raw.useImageAsBase && (typeof raw.editInstruction !== "string" || !raw.editInstruction.trim() || raw.editInstruction.length > 2000)) throw new CreativeAssetValidationError("Describe the edit in 1–2000 characters");
+  return { useImageAsBase: raw.useImageAsBase as boolean | undefined, brandReferenceIds: raw.brandReferenceIds as string[] | undefined, editInstruction: typeof raw.editInstruction === "string" ? raw.editInstruction.trim() : undefined };
+}
+
+export async function downloadApprovedCreativeImage(topicId: string, assetId: string): Promise<File> {
+  const found = await requireCreativeAsset(assetId);
+  const draft = await requireCreativeDraft(topicId, found.batch.draftId);
+  assertCurrentAsset(found.asset, found.batch, draft.version);
+  if (draft.status !== "approved" || found.asset.status !== "approved" || !found.asset.imageUrl) throw new CreativeContentConflictError("Approve the current image before downloading it as ready.");
+  assertGenerativeImageryAllowed(draft, await getTopicVisualFidelityMode(topicId));
+  const references = await getCreativeAssetGenerationReferences(assetId);
+  await assertBrandReferenceEligibility([...references.brand, ...(references.provenanceBrand ?? [])]);
+  const file = await readGeneratedImage(found.asset.imageUrl);
+  const latest = await requireCreativeAsset(assetId);
+  const latestDraft = await requireCreativeDraft(topicId, latest.batch.draftId);
+  assertCurrentAsset(latest.asset, latest.batch, latestDraft.version);
+  if (latest.asset.status !== "approved" || latestDraft.status !== "approved") throw new CreativeContentConflictError("The approval changed during download.");
+  await assertBrandReferenceEligibility([...references.brand, ...(references.provenanceBrand ?? [])]);
+  return file;
+}
+
+export async function previewCreativeImageBase(topicId: string, assetId: string): Promise<File> {
+  const found = await requireCreativeAsset(assetId);
+  await requireCreativeDraft(topicId, found.batch.draftId);
+  const references = await getCreativeAssetGenerationReferences(assetId);
+  if (!references.base) throw new CreativeContentNotFoundError("This image has no stored edit base.");
+  return readEditBase(references.base);
+}

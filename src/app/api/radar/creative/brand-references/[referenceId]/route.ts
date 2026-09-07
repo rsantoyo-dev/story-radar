@@ -1,3 +1,4 @@
+import { findCreativeBrandReference } from "@/app/modules/stories/creative-brand-references.repository";
 import { authorizeRadarCollector } from "@/app/api/radar/radar-api-auth";
 import {
   creativeRouteErrorResponse,
@@ -9,6 +10,7 @@ import {
   topicRequestErrorResponse,
 } from "@/app/api/radar/radar-topic";
 import {
+  uploadCreativeBrandReference,
   editCreativeBrandReference,
   readCreativeBrandReferenceFile,
 } from "@/app/modules/stories/manage-creative-brand-references";
@@ -33,6 +35,8 @@ export async function GET(request: Request, context: Context) {
     const image = await readCreativeBrandReferenceFile({
       topicId: await requireRequestTopic(request),
       referenceId,
+      version: Number(new URL(request.url).searchParams.get("version")) || undefined,
+      original: new URL(request.url).searchParams.get("original") === "true",
     });
     if (!image) {
       return noStoreJson({ error: "The brand reference was not found" }, 404);
@@ -78,4 +82,24 @@ export async function PATCH(request: Request, context: Context) {
     if (topicError) return topicError;
     return creativeRouteErrorResponse(error, "update the brand reference");
   }
+}
+
+export async function PUT(request: Request, context: Context) {
+  const unauthorized = authorizeRadarCollector(request);
+  if (unauthorized) return unauthorized;
+  try {
+    const { referenceId } = await context.params;
+    if (!UUID_PATTERN.test(referenceId)) return noStoreJson({ error: "Invalid reference ID" }, 400);
+    const bytes = Number(request.headers.get("content-length"));
+    if (!Number.isSafeInteger(bytes) || bytes <= 0 || bytes > 16 * 1024 * 1024) return noStoreJson({ error: "Upload must be 16 MB or smaller" }, 413);
+    const topicId = await requireActiveRequestTopic(request);
+    const previous = await findCreativeBrandReference(topicId, referenceId);
+    if (!previous) return noStoreJson({ error: "Reference not found" }, 404);
+    const form = await request.formData();
+    if (Number(form.get("version")) !== previous.version || Number(form.get("configVersion")) !== previous.configVersion) return noStoreJson({ error: "The reference changed. Reload before replacing it." }, 409);
+    const image = form.get("image");
+    if (!(image instanceof File)) return noStoreJson({ error: "An image is required" }, 400);
+    return noStoreJson(await uploadCreativeBrandReference({ topicId, image, name: previous.name, kind: previous.kind,
+      provenance: previous.provenance, usageNote: previous.usageNote, providerTransmissionAllowed: previous.providerTransmissionAllowed }, previous));
+  } catch (error) { return topicRequestErrorResponse(error) || creativeRouteErrorResponse(error, "replace the brand reference"); }
 }

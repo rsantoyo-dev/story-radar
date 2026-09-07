@@ -351,6 +351,13 @@
       "when": 1788748833192,
       "tag": "0049_clumsy_silver_fox",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1788751739617,
+      "tag": "0050_flimsy_supreme_intelligence",
+      "breakpoints": true
     }
   ]
 }

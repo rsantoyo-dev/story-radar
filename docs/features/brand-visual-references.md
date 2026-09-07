@@ -1,7 +1,7 @@
 # Feature: Referencias visuales de marca para image-to-image
 
 **ID:** FEAT-BRAND-001  
-**Estado:** Propuesta — implementación pendiente  
+**Estado:** Implementación completa — revisión final de entrega
 **Marca piloto:** salut.st.jean  
 **Tablero:** [brand-visual-references.kanban.md](brand-visual-references.kanban.md)
 
@@ -35,6 +35,37 @@ Estos ejemplos no afirman que exista una guía municipal validada ni que la marc
 MVP: biblioteca privada por tema, instrucciones reutilizables, selección automática acotada, integración image-to-image, snapshots y revisión final. La conexión con edición individual usa el alcance de [edición de imágenes](creative-image-editing.md); la biblioteca y generación inicial pueden entregarse antes de esa integración.
 
 No incluye entrenamiento de un modelo, extracción obligatoria de objetos, editor de capas, composición posterior de decoraciones ni reproducción exacta de texto mediante generación. No habilita generación en el recorrido de [fidelidad documental](real-place-visual-fidelity.md) ni publica automáticamente mediante [Instagram](instagram-publishing.md).
+
+## Implementación y operación
+
+- **Biblioteca:** PNG/JPEG/WebP validados por contenido y dimensiones. Desde la migración 0050 se guardan los bytes originales y su hash en R2 privado, además de la copia WebP usada por el proveedor. Sustituir una imagen conserva su ID, crea otra versión de archivo, archiva los metadatos anteriores y desactiva su uso automático hasta activar la nueva versión. Las referencias de biblioteca no se borran destructivamente.
+- **Histórico:** los cambios de configuración guardan revisiones y usan control de concurrencia. Las previews admiten la versión de archivo guardada. Las subidas anteriores a este cambio solo conservan su WebP: la UI lo indica y permite sustituir el archivo para guardar un original real. No se simula haber recuperado bytes perdidos.
+- **Análisis:** comprueba consentimiento antes de leer y nuevamente antes de transmitir. Reserva un intento en un contador PostgreSQL atómico por tema/día UTC, con máximo 30; también cuentan respuestas inválidas y fallos. No reintenta automáticamente; tiene timeout y cancelación. Un resultado desactualizado no sobrescribe otra revisión.
+- **Generación:** las referencias seleccionadas se envían como archivos reales a `openai/gpt-image-2/edit`, después de los protagonistas. El prompt identifica sus funciones. El hash del lote incluye las selecciones guardadas, por lo que un lote anterior que solo recibió protagonistas no se reutiliza como si hubiera usado referencias de marca.
+- **Persistencia:** el draft guarda selección, versión, hash e instrucciones por unidad. El asset conserva un sobre privado versionado en `reference_snapshot`, compatible con las listas históricas de personajes. Guarda el prompt enviado, archivos, condiciones de uso y hash exactos. Las URLs temporales no identifican los originales.
+- **Edición individual:** en “Brand references and image edits” se puede usar la imagen terminada como base, pedir un cambio, conservar sus referencias congeladas o elegir versiones actuales de la biblioteca. El resultado crea una versión de ese asset dentro del draft; las demás unidades conservan sus imágenes y aprobaciones. La imagen base queda copiada en R2 con hash, ID y versión de origen; se envía como última entrada. “Regenerate” sigue disponible para reutilizar el contexto guardado.
+- **Cambios de referencias:** una elección individual se guarda como override en el snapshot de esa imagen; no modifica los defaults ni requiere regenerar todo el carrusel. Guardar cambios generales al guion/defaults continúa creando una versión del draft. Los controles y la bandeja muestran qué referencias y condiciones se usaron realmente, junto con la preview de la imagen base guardada cuando hay una edición.
+- **Concurrencia y aprobación:** las escrituras de edición y aprobación se serializan por draft en PostgreSQL y comprueban vigencia antes de mutar. Una solicitud basada en una imagen antigua o un draft cambiado devuelve conflicto. Las versiones nuevas empiezan pendientes; ninguna aprobación histórica se traslada a ellas. Las respuestas de generación no rehabilitan lotes `stale`.
+- **Revocaciones:** se comprueban disponibilidad, hash y condiciones antes de enviar, aprobar y descargar como material aprobado. La evidencia de las referencias de la imagen base también se conserva aunque se quite una referencia de las entradas nuevas. El histórico permanece, pero una revocación impide su nuevo uso como material listo.
+- **Exportación:** “Download approved image” usa un endpoint autenticado y vuelve a comprobar versión y permisos después de recuperar el archivo. Una URL de origen expirada o no admitida bloquea la edición/exportación con explicación; no se sustituye silenciosamente la imagen.
+
+### Configuración y despliegue
+
+Aplicar `npm run db:migrate` al desplegar. La migración `0050_flimsy_supreme_intelligence.sql` añade originales y revisiones de biblioteca, y el contador de intentos de análisis. La edición reutiliza los snapshots de assets; no añade tablas de imágenes paralelas. Esta entrega no ejecuta migraciones contra producción ni publica contenido.
+
+Se utilizan las credenciales existentes de Fal, Gemini y R2. `BRAND_MAX_REFERENCES_PER_UNIT` vale 2 por defecto y `BRAND_MAX_UNIT_REFERENCE_IMAGES`, 4, sumando protagonistas, marca e imagen base. El conjunto de archivos tiene además un presupuesto de 20 MB por envío. Si no cabe la base junto con las referencias, la UI recibe una explicación para reducir la selección; no se omiten entradas automáticamente. Las rutas de generación/edición declaran 120 segundos y requieren un despliegue compatible.
+
+El build de producción usa Webpack. PostCSS omite el segundo procesamiento UXDSL de los CSS Modules ya generados; los tokens globales siguen compilándose desde su fuente UXDSL.
+
+### Revisión final de entrega
+
+1. Subir y activar una referencia, guardar una nueva versión del draft y generar. Comprobar en cada imagen las referencias, instrucciones y condiciones utilizadas.
+2. En una imagen terminada, abrir “Brand references and image edits”, escribir un cambio y mantener “Use this finished image as the edit base”. Comprobar la nueva versión, el linaje y que los demás slides permanecen iguales.
+3. Elegir otras referencias o quitar alguna y generar esa unidad. Verificar que la selección queda guardada al recargar y que la imagen nueva requiere aprobación.
+4. Sustituir una imagen de biblioteca: comprobar el original descargable, la nueva versión y la conservación de previews anteriores. Activar la versión nueva antes de usarla automáticamente.
+5. Revocar el permiso de una referencia y comprobar el rechazo de análisis, nueva transmisión, aprobación y descarga como material listo.
+
+El usuario confirmó que la generación aplica las referencias de marca en su prueba previa. La edición desde imagen base y sus controles adicionales se entregan ahora para la revisión final; no se afirma haber realizado otra generación real con Fal durante esta implementación.
 
 ## Historias
 
@@ -114,7 +145,7 @@ No incluye entrenamiento de un modelo, extracción obligatoria de objetos, edito
 - Cada unidad guarda un snapshot de referencias seleccionadas: ID, versión, hash, función e instrucciones de uso. Cada ejecución registra además el conjunto efectivamente enviado y lo vincula al asset resultante.
 - Cambiar un archivo o sus instrucciones crea una nueva revisión de biblioteca. Un draft existente no adopta silenciosamente esa revisión ni pierde la referencia que explica su imagen.
 - Las entradas del hash de generación incluyen referencias y sus instrucciones, de modo que cambios reales invaliden la caché correspondiente.
-- Actualizar deliberadamente referencias de un draft crea una nueva versión y deja los resultados afectados pendientes de revisión; no modifica assets históricos ni regenera todas las unidades.
+- Actualizar referencias de una unidad crea una nueva versión de su asset dentro del draft y deja ese resultado pendiente de revisión, conservando las demás unidades. Cambiar los defaults generales mediante guardado crea una nueva versión del draft; ninguno de los recorridos reescribe imágenes históricas.
 - Respuestas tardías se vinculan a la versión que las solicitó y no reemplazan selecciones o aprobaciones más recientes.
 
 ### BRAND-06 — Reutilizar referencias al editar una imagen
@@ -166,9 +197,9 @@ No incluye entrenamiento de un modelo, extracción obligatoria de objetos, edito
 - La validación visual final del piloto compara coherencia de marca e identidad del protagonista en posts y carruseles; registra alteraciones de textos y motivos. Los mocks no sustituyen esta validación con el proveedor configurado.
 - Pasan pruebas relevantes, lint y build; db:check si la implementación requiere migraciones. Bloqueos del entorno y validación pendiente quedan documentados.
 
-## Decisiones técnicas para implementación
+## Decisiones técnicas
 
-- Reutilizar servicios de referencias, R2 privado, proveedores y versionado existentes, manteniendo la entidad de referencia de marca separada de personajes. Elegir persistencia tras revisar el modelo; no prescribir una migración si los snapshots existentes bastan.
+- Referencias de marca separadas de personajes; R2 privado y snapshots de assets reutilizados. La migración de biblioteca añade datos que antes no podían conservarse y un contador atómico independiente de noticias.
 - Mantener credenciales, lecturas privadas y llamadas al proveedor en servidor. Si requiere URLs temporales, limitar su vigencia y no persistirlas como identidad del material.
 - Verificar límites reales del endpoint configurado antes de implementar el reparto entre imagen base, protagonistas y marca. No asumir cantidad ilimitada de imágenes ni soporte idéntico entre proveedores.
 - Versionar tanto las instrucciones explícitas como cualquier análisis usado en selección; cachear por hash y versión del analizador. Acotar tiempo, coste y reintentos.
@@ -176,4 +207,6 @@ No incluye entrenamiento de un modelo, extracción obligatoria de objetos, edito
 
 ## Validación y estado
 
-Documento de alcance: ninguna de estas historias se declara implementada. La aceptación requiere pruebas de integración y revisión visual final con material del piloto. El tablero y las historias individuales deben actualizarse junto con este documento si cambia el alcance.
+Pruebas automáticas con Sharp real, adaptador Fal simulado y PostgreSQL local aislado (PGlite). Cubren originales, consentimiento, contador atómico, orden de archivos enviados, hashes, versiones, selección individual, rechazo de escrituras antiguas, revocaciones y conservación de imágenes aprobadas. Resultado final: **425 pruebas pasan**, lint sin errores, TypeScript y `npm run build` completados, y `npm run db:check` correcto. Las pruebas SQL se ejecutaron sobre PostgreSQL local aislado; no se ejecutó la migración contra producción.
+
+La confirmación visual previa del usuario acredita el uso básico de referencias. La revisión final de los controles nuevos se mantiene como aceptación editorial; las pruebas no certifican fidelidad visual exacta ni simulan esa aceptación. El tablero distingue implementación terminada de QA final.

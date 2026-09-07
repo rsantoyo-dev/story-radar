@@ -13,7 +13,7 @@ import {
   CreativeBrandAnalysisError,
 } from "./brand-reference-analysis";
 import {
-  countBrandReferenceAnalysesToday,
+  reserveBrandAnalysisAttempt,
   findCreativeBrandReference,
   publicBrandReference,
   saveCreativeBrandReferenceAnalysis,
@@ -69,6 +69,9 @@ export async function analyzeBrandReference({
     );
   }
 
+  if (!row.isActive || !row.providerTransmissionAllowed) {
+    throw new CreativeBrandAnalysisError("This reference is not authorized for provider transmission.");
+  }
   const config = getBrandAnalyzerConfig();
   const hash = brandAnalysisCacheHash({
     imageSha256: row.sha256,
@@ -81,8 +84,7 @@ export async function analyzeBrandReference({
   }
 
   if (
-    (await countBrandReferenceAnalysesToday(topicId)) >=
-    MAX_BRAND_ANALYSES_PER_DAY
+    !(await reserveBrandAnalysisAttempt(topicId, MAX_BRAND_ANALYSES_PER_DAY))
   ) {
     throw new CreativeBrandAnalysisLimitError(
       `The daily brand analysis limit (${MAX_BRAND_ANALYSES_PER_DAY}) has been reached for this topic`,
@@ -93,9 +95,12 @@ export async function analyzeBrandReference({
     objectKey: row.objectKey,
     contentType: row.contentType,
     fileName: row.fileName,
+    signal: AbortSignal.timeout(config.timeoutMs),
   });
   const base64 = Buffer.from(await file.arrayBuffer()).toString("base64");
 
+  const current = await findCreativeBrandReference(topicId, referenceId);
+  if (!current?.isActive || !current.providerTransmissionAllowed || current.version !== row.version || current.configVersion !== row.configVersion) throw new CreativeBrandAnalysisError("The reference changed before analysis could start.");
   let text: string;
   try {
     const ai = new GoogleGenAI({ apiKey: config.apiKey });
@@ -112,6 +117,7 @@ export async function analyzeBrandReference({
           },
         ],
         config: {
+          abortSignal: AbortSignal.timeout(config.timeoutMs),
           systemInstruction: SYSTEM_INSTRUCTION,
           maxOutputTokens: config.maxOutputTokens,
           responseMimeType: "application/json",
@@ -141,6 +147,8 @@ export async function analyzeBrandReference({
   const analysis = parseBrandReferenceAnalysis(text);
 
   return saveCreativeBrandReferenceAnalysis(topicId, referenceId, {
+    expectedVersion: row.version,
+    expectedConfigVersion: row.configVersion,
     analysis,
     hash,
     model: config.model,
@@ -149,14 +157,11 @@ export async function analyzeBrandReference({
   });
 }
 
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) =>
-      setTimeout(
-        () => reject(new CreativeBrandAnalysisError("The analyzer timed out")),
-        ms,
-      ),
-    ),
-  ]);
+async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([promise, new Promise<T>((_, reject) => {
+      timer = setTimeout(() => reject(new CreativeBrandAnalysisError("The analyzer timed out")), ms);
+    })]);
+  } finally { clearTimeout(timer); }
 }

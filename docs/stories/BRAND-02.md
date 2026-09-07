@@ -1,14 +1,14 @@
 ---
 id: BRAND-02
 feature: FEAT-BRAND-001
-status: review
+status: done
 board: brand-visual-references.kanban.md
-tags: [brand, review, p0]
+tags: [brand, done, p0]
 ---
 
 # BRAND-02 — Definir qué aporta cada referencia
 
-**Estado:** [[status-review]] · **Feature:** [Referencias visuales de marca](../features/brand-visual-references.md)
+**Estado:** [[status-done]] · **Feature:** [Referencias visuales de marca](../features/brand-visual-references.md)
 
 **Como** editor, **quiero** definir qué aporta cada referencia, **para** producir imágenes coherentes con la marca y conservar sus decisiones visuales.
 
@@ -21,3 +21,7 @@ tags: [brand, review, p0]
 - El análisis visual opcional propone descripciones estructuradas con evidencia y campos desconocidos. No inventa nombres de fuentes tipográficas, identidad de lugares ni reglas oficiales de marca.
 - Los datos de imágenes, OCR y descripciones se tratan como contenido no confiable. No pueden cambiar instrucciones del sistema, permisos ni políticas. La configuración explícita del editor prevalece sobre las sugerencias.
 - Activar una referencia exige condiciones compatibles con su uso y transmisión; el análisis automático no acredita esos permisos. La configuración se realiza antes del recorrido por publicación.
+
+## Entrega
+
+Implementación terminada; operación y validación en la [feature](../features/brand-visual-references.md).

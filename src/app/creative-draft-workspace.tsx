@@ -1,5 +1,6 @@
 "use client";
 
+import { CreativeBrandImageEditor, type BrandImageEditOptions } from "./creative-brand-image-editor";
 import Image from "next/image";
 import { CreativeDocumentaryPanel } from "./creative-documentary-panel";
 import { StoryInstagramResults } from "./story-instagram-results";
@@ -20,6 +21,7 @@ import {
 import { buildCompleteDraftScript } from "./modules/stories/creative-draft-export";
 import {
   CREATIVE_COMPANION_APPROACHES,
+  MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS,
   VISUAL_FIDELITY_MODES,
   type CreativeAssetBatchResponse,
   type CreativeAspectRatio,
@@ -772,7 +774,7 @@ export function CreativeDraftWorkspace({
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(editableDraft),
+          body: JSON.stringify({ ...editableDraft, expectedVersion: activeDraft?.version }),
         },
       );
       await reloadWorkspace(selectedFormat);
@@ -821,6 +823,7 @@ export function CreativeDraftWorkspace({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "approve",
+            expectedVersion: activeDraft?.version,
             ...(humanReviewed ? { humanReviewed: true } : {}),
           }),
         },
@@ -1021,7 +1024,7 @@ export function CreativeDraftWorkspace({
     });
   }
 
-  async function handleRegenerateImage(assetId: string, prompt: string) {
+  async function handleRegenerateImage(assetId: string, prompt: string, edit?: BrandImageEditOptions) {
     if (!activeDraftId || !activeDraft) {
       setError("Select a current creative draft before regenerating an image.");
       return;
@@ -1084,7 +1087,7 @@ export function CreativeDraftWorkspace({
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt }),
+          body: JSON.stringify({ prompt, ...edit }),
         },
       );
       setLoadedAssets({ ...response, draftId: activeDraftId });
@@ -2103,6 +2106,8 @@ export function CreativeDraftWorkspace({
                               currentAssetBatch.status === "stale" ||
                               currentAssetBatch.draftVersion !== activeDraft.version
                             }
+                            topicId={topicId}
+                            secret={secret}
                             onRegenerate={handleRegenerateImage}
                             onApproval={handleImageApproval}
                           />
@@ -2408,6 +2413,7 @@ function CompleteDraftScript({
 }
 
 function CreativeAssetCard({
+  topicId, secret,
   asset,
   format,
   outputWidth,
@@ -2418,6 +2424,8 @@ function CreativeAssetCard({
   onRegenerate,
   onApproval,
 }: {
+  topicId: string;
+  secret: string;
   asset: CreativeGeneratedAsset;
   format: CreativeFormat;
   outputWidth: number;
@@ -2425,7 +2433,7 @@ function CreativeAssetCard({
   totalSlides: number;
   busyAction?: string;
   readOnly?: boolean;
-  onRegenerate: (assetId: string, prompt: string) => void;
+  onRegenerate: (assetId: string, prompt: string, edit?: BrandImageEditOptions) => void;
   onApproval: (assetId: string, action: "approve" | "unapprove") => void;
 }) {
   const [prompt, setPrompt] = useState(asset.prompt);
@@ -2479,6 +2487,8 @@ function CreativeAssetCard({
         )}
       </div>
 
+      <CreativeBrandImageEditor key={asset.id} asset={asset} topicId={topicId} secret={secret}
+        disabled={readOnly || isPending || Boolean(busyAction)} onSubmit={edit => onRegenerate(asset.id, prompt, edit)} />
       <div className={styles.expectedText}>
         <span>Text requested exactly from the image model</span>
         <p>{asset.expectedText}</p>
@@ -2505,15 +2515,16 @@ function CreativeAssetCard({
 
       <details className={styles.assetPrompt}>
         <summary>{readOnly ? "Generation prompt" : "Edit regeneration prompt"}</summary>
+        <BrandSelectionSummary selection={asset.unitSnapshot?.brandReferenceSelection} />
         <textarea
           rows={9}
           value={prompt}
           disabled={readOnly || isPending || isBusy}
-          maxLength={20_000}
+          maxLength={MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS}
           onChange={(event) => setPrompt(event.target.value)}
         />
         {!readOnly ? (
-          <small>{prompt.length.toLocaleString("en-CA")} / 20,000 characters</small>
+          <small>{prompt.length.toLocaleString("en-CA")} / 30,000 characters</small>
         ) : null}
       </details>
 
@@ -3092,8 +3103,9 @@ function BrandSelectionSummary({
         <ul>
           {selection.selected.map((entry) => (
             <li key={entry.id}>
-              {entry.function} · {entry.reason}{" "}
-              <code>{entry.id.slice(0, 8)}</code>
+              {entry.name ? `${entry.name} · ` : ""}{entry.function} · {entry.reason}{" "}
+              <code>{entry.id.slice(0, 8)}</code> · v{entry.version}/{entry.configVersion}
+              {entry.contribution?.guidance ? <small>{entry.contribution.guidance}</small> : null}
             </li>
           ))}
         </ul>

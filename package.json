@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "npm run uxdsl:build && concurrently --kill-others-on-fail \"npm run uxdsl:watch\" \"next dev\"",
     "dev:https": "npm run uxdsl:build && concurrently --kill-others-on-fail \"npm run uxdsl:watch\" \"next dev --experimental-https\"",
-    "build": "npm run uxdsl:build && next build",
+    "build": "npm run uxdsl:build && next build --webpack",
     "start": "next start",
     "test": "tsx --test src/app/modules/stories/*.test.ts src/app/modules/documents/*.test.ts src/app/modules/meta/*.test.ts src/design/*.test.ts src/design/*/*.test.ts",
     "uxdsl:build": "npm run uxdsl:build:theme && npm run uxdsl:build:dashboard && npm run uxdsl:build:creative && npm run uxdsl:build:editorial && npm run uxdsl:build:topic",
@@ -45,6 +45,7 @@
     "sharp": "^0.35.3"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@next/env": "^16.3.0",
     "@tailwindcss/postcss": "^4",
     "@types/jsdom": "^30.0.0",

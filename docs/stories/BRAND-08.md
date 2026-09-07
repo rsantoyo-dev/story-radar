@@ -1,14 +1,14 @@
 ---
 id: BRAND-08
 feature: FEAT-BRAND-001
-status: todo
+status: review
 board: brand-visual-references.kanban.md
-tags: [brand, todo, p0]
+tags: [brand, review, p0]
 ---
 
 # BRAND-08 — Validar referencias de marca y regresiones
 
-**Estado:** [[status-todo]] · **Feature:** [Referencias visuales de marca](../features/brand-visual-references.md)
+**Estado:** [[status-review]] · **Feature:** [Referencias visuales de marca](../features/brand-visual-references.md)
 
 **Como** editor, **quiero** validar referencias de marca y regresiones, **para** producir imágenes coherentes con la marca y conservar sus decisiones visuales.
 
@@ -22,3 +22,7 @@ tags: [brand, todo, p0]
 - Se verifica que fotografía obligatoria nunca invoque el generador a causa de esta biblioteca y que OCR o instrucciones dentro de una imagen no modifiquen las políticas.
 - La validación visual final del piloto compara coherencia de marca e identidad del protagonista en posts y carruseles; registra alteraciones de textos y motivos. Los mocks no sustituyen esta validación con el proveedor configurado.
 - Pasan pruebas relevantes, lint y build; db:check si la implementación requiere migraciones. Bloqueos del entorno y validación pendiente quedan documentados.
+
+## Entrega
+
+425 pruebas, lint, TypeScript, build y db:check verificados, incluyendo pruebas SQL con PostgreSQL local aislado. La generación básica fue confirmada por el usuario; pendiente su revisión final de los nuevos controles de edición desde la imagen base. No se simula una aceptación visual.

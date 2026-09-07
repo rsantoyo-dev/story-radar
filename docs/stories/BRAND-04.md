@@ -1,14 +1,14 @@
 ---
 id: BRAND-04
 feature: FEAT-BRAND-001
-status: todo
+status: done
 board: brand-visual-references.kanban.md
-tags: [brand, todo, p0]
+tags: [brand, done, p0]
 ---
 
 # BRAND-04 — Enviar referencias al recorrido image-to-image
 
-**Estado:** [[status-todo]] · **Feature:** [Referencias visuales de marca](../features/brand-visual-references.md)
+**Estado:** [[status-done]] · **Feature:** [Referencias visuales de marca](../features/brand-visual-references.md)
 
 **Como** editor, **quiero** enviar referencias al recorrido image-to-image, **para** producir imágenes coherentes con la marca y conservar sus decisiones visuales.
 
@@ -21,3 +21,8 @@ tags: [brand, todo, p0]
 - Una lámina de 30 elementos se envía como referencia visual completa dentro de los límites del proveedor; no requiere segmentación, extracción individual ni montaje posterior de stickers.
 - El resultado mantiene el formato configurado, actualmente 4:5 a 1080×1350. Se registran proveedor, endpoint, versión del prompt y referencias efectivamente enviadas, sin exponer URLs temporales o credenciales.
 - Fallos, incompatibilidad o límites del proveedor producen un error o alternativa explícita permitida por la política; no se omiten referencias solicitadas silenciosamente ni se reintenta sin límites.
+
+
+## Entrega
+
+Implementación terminada; operación y validación en la [feature](../features/brand-visual-references.md).

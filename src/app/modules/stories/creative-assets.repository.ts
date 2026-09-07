@@ -1,11 +1,14 @@
 import "server-only";
+import { CreativeBrandReferenceConflictError } from "./creative-brand-references.repository";
+import { decodeGenerationReferences } from "./creative-brand-generation";
 
+import { referenceEnvelopeHash } from "./creative-brand-generation";
 import { randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { creativeAssetBatches, creativeAssets } from "@/db/schema";
+import { creativeAssetBatches, creativeAssets, creativeDrafts } from "@/db/schema";
 
 import {
   DEFAULT_CREATIVE_IMAGE_QUALITY,
@@ -45,7 +48,7 @@ type NewAsset = {
   unitSnapshot: CreativeUnit;
   generationMode: CreativeAssetGenerationMode;
   providerEndpoint: string;
-  referenceSnapshot: CreativeCharacterSnapshot[];
+  referenceSnapshot: CreativeCharacterSnapshot[] | import("./creative-brand-generation").GenerationReferences;
   referenceInputHash: string;
   brandOverlaySnapshot?: CreativeBrandOverlaySnapshot;
   carouselChromeSnapshot?: CreativeCarouselChromeSnapshot;
@@ -321,61 +324,39 @@ export async function createCreativeAssetBatch({
   return saved;
 }
 
-export async function insertRegeneratedCreativeAsset({
-  previous,
-  prompt,
-}: {
+export async function insertRegeneratedCreativeAsset({ previous, prompt, references, unitSnapshot }: {
   previous: CreativeGeneratedAsset;
   prompt: string;
+  references?: import("./creative-brand-generation").GenerationReferences;
+  unitSnapshot?: CreativeUnit;
 }): Promise<CreativeGeneratedAsset> {
-  const now = new Date();
-  const nextVersion = previous.availableVersions + 1;
-  const [previousRow] = await db
-    .select({
-      generationMode: creativeAssets.generationMode,
-      providerEndpoint: creativeAssets.providerEndpoint,
-      referenceSnapshot: creativeAssets.referenceSnapshot,
-      referenceInputHash: creativeAssets.referenceInputHash,
-      brandOverlaySnapshot: creativeAssets.brandOverlaySnapshot,
-      carouselChromeSnapshot: creativeAssets.carouselChromeSnapshot,
-    })
-    .from(creativeAssets)
-    .where(eq(creativeAssets.id, previous.id))
-    .limit(1);
-
-  if (!previousRow) {
-    throw new Error("The previous creative image could not be found");
-  }
-
-  const [row] = await db
-    .insert(creativeAssets)
-    .values({
-      id: randomUUID(),
-      batchId: previous.batchId,
-      unitOrder: previous.unitOrder,
-      unitRole: previous.unitRole,
-      version: nextVersion,
-      status: "queued",
-      provider: previous.provider,
-      model: previous.model,
-      promptVersion: previous.promptVersion,
-      prompt,
-      expectedText: previous.expectedText,
-      unitSnapshot: previous.unitSnapshot,
-      generationMode: previousRow.generationMode,
-      providerEndpoint: previousRow.providerEndpoint,
-      referenceSnapshot: previousRow.referenceSnapshot,
-      referenceInputHash: previousRow.referenceInputHash,
-      brandOverlaySnapshot: previousRow.brandOverlaySnapshot,
-      carouselChromeSnapshot: previousRow.carouselChromeSnapshot,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .returning();
-
-  if (!row) throw new Error("The regenerated creative asset could not be saved");
+  const id = randomUUID();
+  const guided = references ? Boolean(references.base || references.characters.length || references.brand.length) : undefined;
+  const [, inserted] = await db.batch([
+    db.select({ id: creativeAssetBatches.id }).from(creativeAssetBatches)
+      .innerJoin(creativeDrafts, eq(creativeDrafts.id, creativeAssetBatches.draftId))
+      .where(eq(creativeAssetBatches.id, previous.batchId)).for("update", { of: creativeDrafts }),
+    db.execute(sql`
+      INSERT INTO creative_assets (id,batch_id,unit_order,unit_role,version,status,provider,model,prompt_version,
+        prompt,expected_text,unit_snapshot,generation_mode,provider_endpoint,reference_snapshot,reference_input_hash,
+        brand_overlay_snapshot,carousel_chrome_snapshot)
+      SELECT ${id}::uuid,a.batch_id,a.unit_order,a.unit_role,a.version+1,'queued',a.provider,a.model,a.prompt_version,
+        ${prompt},a.expected_text,COALESCE(${unitSnapshot ? JSON.stringify(unitSnapshot) : null}::jsonb,a.unit_snapshot),
+        COALESCE(${guided === undefined ? null : guided ? "reference-guided" : "text-to-image"}::creative_asset_generation_mode,a.generation_mode),
+        COALESCE(${guided === undefined ? null : guided ? "openai/gpt-image-2/edit" : "openai/gpt-image-2"},a.provider_endpoint),
+        COALESCE(${references ? JSON.stringify(references) : null}::jsonb,a.reference_snapshot),
+        COALESCE(${references ? referenceEnvelopeHash(references) : null},a.reference_input_hash),a.brand_overlay_snapshot,a.carousel_chrome_snapshot
+      FROM creative_assets a JOIN creative_asset_batches b ON b.id=a.batch_id JOIN creative_drafts d ON d.id=b.draft_id
+      WHERE a.id=${previous.id}::uuid AND a.status NOT IN ('queued','generating') AND b.status <> 'stale' AND d.status='approved' AND d.version=b.draft_version
+        AND NOT EXISTS (SELECT 1 FROM creative_assets newer WHERE newer.batch_id=a.batch_id AND newer.unit_order=a.unit_order AND newer.version>a.version)
+      RETURNING id
+    `),
+  ]);
+  if (!inserted.rows.length) throw new CreativeBrandReferenceConflictError("The image or draft changed. Reload before editing.");
+  const found = await findCreativeAssetById(id);
+  if (!found) throw new Error("The edited image was not saved");
   await updateBatchStatus(previous.batchId, "generating", null);
-  return mapCreativeAsset(row, nextVersion);
+  return found.asset;
 }
 
 /**
@@ -391,11 +372,13 @@ export async function getCreativeAssetReferenceSnapshot(
     .where(eq(creativeAssets.id, assetId))
     .limit(1);
 
-  if (!row || !Array.isArray(row.referenceSnapshot)) {
-    return [];
-  }
+  return decodeGenerationReferences(row?.referenceSnapshot).characters;
+}
 
-  return row.referenceSnapshot as CreativeCharacterSnapshot[];
+export async function getCreativeAssetGenerationReferences(assetId: string) {
+  const [row] = await db.select({ snapshot: creativeAssets.referenceSnapshot })
+    .from(creativeAssets).where(eq(creativeAssets.id, assetId)).limit(1);
+  return decodeGenerationReferences(row?.snapshot);
 }
 
 /**
@@ -434,7 +417,7 @@ export async function setCreativeAssetRequest(
   await db
     .update(creativeAssets)
     .set({ requestId, status: "queued", error: null, updatedAt: new Date() })
-    .where(eq(creativeAssets.id, assetId));
+    .where(and(eq(creativeAssets.id, assetId), inArray(creativeAssets.status, ["queued", "generating"])));
 }
 
 export async function setCreativeAssetProgress(
@@ -444,7 +427,7 @@ export async function setCreativeAssetProgress(
   await db
     .update(creativeAssets)
     .set({ status, updatedAt: new Date() })
-    .where(eq(creativeAssets.id, assetId));
+    .where(and(eq(creativeAssets.id, assetId), inArray(creativeAssets.status, ["queued", "generating"])));
 }
 
 export async function completeCreativeAsset(
@@ -478,7 +461,7 @@ export async function completeCreativeAsset(
       approvedAt: null,
       updatedAt: now,
     })
-    .where(eq(creativeAssets.id, assetId));
+    .where(and(eq(creativeAssets.id, assetId), inArray(creativeAssets.status, ["queued", "generating"])));
 }
 
 export async function failCreativeAsset(
@@ -495,22 +478,35 @@ export async function failCreativeAsset(
       approvedAt: null,
       updatedAt: now,
     })
-    .where(eq(creativeAssets.id, assetId));
+    .where(and(eq(creativeAssets.id, assetId), inArray(creativeAssets.status, ["queued", "generating"])));
 }
 
-export async function setCreativeAssetApproval(
-  assetId: string,
-  approved: boolean,
-): Promise<void> {
-  const now = new Date();
-  await db
-    .update(creativeAssets)
-    .set({
-      status: approved ? "approved" : "generated",
-      approvedAt: approved ? now : null,
-      updatedAt: now,
-    })
-    .where(eq(creativeAssets.id, assetId));
+/** Lock in the same order as edits, then recheck on a fresh statement snapshot. */
+export async function setCreativeAssetApproval(assetId: string, approved: boolean): Promise<void> {
+  const [,, result] = await db.batch([
+    db.execute(sql`SELECT d.id FROM creative_assets a JOIN creative_asset_batches b ON b.id=a.batch_id
+      JOIN creative_drafts d ON d.id=b.draft_id WHERE a.id=${assetId}::uuid FOR UPDATE OF d`),
+    db.execute(sql`SELECT r.id FROM creative_brand_references r WHERE r.id IN (
+      SELECT (e->>'id')::uuid FROM creative_assets a,
+      jsonb_array_elements(CASE WHEN jsonb_typeof(a.reference_snapshot)='object'
+        THEN COALESCE(a.reference_snapshot->'brand','[]'::jsonb) || COALESCE(a.reference_snapshot->'provenanceBrand','[]'::jsonb)
+        ELSE '[]'::jsonb END) e WHERE a.id=${assetId}::uuid) FOR SHARE OF r`),
+    db.execute(sql`UPDATE creative_assets a SET status=${approved ? "approved" : "generated"}::creative_asset_status,
+      approved_at=${approved ? new Date() : null},updated_at=now()
+      FROM creative_asset_batches b,creative_drafts d
+      WHERE a.id=${assetId}::uuid AND b.id=a.batch_id AND d.id=b.draft_id
+      AND b.status<>'stale' AND d.version=b.draft_version AND d.status='approved'
+      AND a.status=${approved ? "generated" : "approved"}::creative_asset_status
+      AND NOT EXISTS (SELECT 1 FROM creative_assets newer WHERE newer.batch_id=a.batch_id AND newer.unit_order=a.unit_order AND newer.version>a.version)
+      AND (${!approved} OR NOT EXISTS (
+        SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(a.reference_snapshot)='object'
+          THEN COALESCE(a.reference_snapshot->'brand','[]'::jsonb) || COALESCE(a.reference_snapshot->'provenanceBrand','[]'::jsonb)
+          ELSE '[]'::jsonb END) e
+        LEFT JOIN creative_brand_references r ON r.id=(e->>'id')::uuid AND r.topic_id=d.topic_id
+        WHERE r.id IS NULL OR NOT r.is_active OR NOT r.provider_transmission_allowed
+          OR r.version<>(e->>'version')::int OR r.sha256<>e->>'sha256' OR r.usage_note IS DISTINCT FROM e->>'usageNote')) RETURNING a.id`),
+  ]);
+  if (!result.rows.length) throw new CreativeBrandReferenceConflictError("The image, draft or reference permissions changed. Reload before approval.");
 }
 
 export async function refreshCreativeAssetBatchStatus(
@@ -541,7 +537,7 @@ async function updateBatchStatus(
   await db
     .update(creativeAssetBatches)
     .set({ status, completedAt, updatedAt: new Date() })
-    .where(eq(creativeAssetBatches.id, batchId));
+    .where(and(eq(creativeAssetBatches.id, batchId), ne(creativeAssetBatches.status, "stale")));
 }
 
 async function loadCreativeAssetBatch(
@@ -592,7 +588,11 @@ function mapCreativeAsset(
   row: typeof creativeAssets.$inferSelect,
   availableVersions: number,
 ): CreativeGeneratedAsset {
+  const references = decodeGenerationReferences(row.referenceSnapshot);
   return {
+    referenceContextVersion: Array.isArray(row.referenceSnapshot) ? undefined : 1,
+    hasBrandReferenceOverride: Boolean(references.selectionOverride),
+    ...(references.base ? { editSource: { assetId: references.base.assetId, version: references.base.version }, editInstruction: references.editInstruction } : {}),
     id: row.id,
     batchId: row.batchId,
     unitOrder: row.unitOrder,

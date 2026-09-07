@@ -582,6 +582,9 @@ export async function saveCreativeDraft(
     throw new CreativeContentNotFoundError("The creative draft was not found");
   }
 
+  const expectedVersion = (input as { expectedVersion?: unknown })?.expectedVersion;
+  if (expectedVersion !== undefined && expectedVersion !== current.version) throw new CreativeContentConflictError("The draft changed. Reload before saving.");
+
   const brief = await findCreativeBriefById(topicId, current.briefId);
   if (!brief) {
     throw new CreativeContentNotFoundError("The creative brief was not found");
@@ -620,12 +623,15 @@ export async function approveSavedCreativeDraft(
   topicId: string,
   draftId: string,
   humanReviewed = false,
+  expectedVersion?: number,
 ): Promise<CreativeDraft> {
   const current = await findCreativeDraftById(topicId, draftId);
 
   if (!current) {
     throw new CreativeContentNotFoundError("The creative draft was not found");
   }
+
+  if (expectedVersion !== undefined && expectedVersion !== current.version) throw new CreativeContentConflictError("The reviewed draft changed. Reload before approving.");
 
   if (current.provider === "documentary") {
     throw new CreativeContentConflictError("Review the complete documentary publication in its final review panel.");
@@ -699,7 +705,7 @@ export async function approveSavedCreativeDraft(
       { approve: true },
     );
   }
-  return approveCreativeDraft(topicId, current.id);
+  return approveCreativeDraft(topicId, current.id, current.version);
 }
 
 export async function unapproveSavedCreativeDraft(

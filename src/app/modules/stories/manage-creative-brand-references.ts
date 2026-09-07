@@ -13,6 +13,9 @@ import {
 } from "./creative-brand-reference-metadata";
 import {
   createCreativeBrandReference,
+  replaceBrandReferenceFile,
+  type StoredCreativeBrandReference,
+  CreativeBrandReferenceConflictError,
   findCreativeBrandReference,
   updateCreativeBrandReference,
   CreativeBrandReferenceNotFoundError,
@@ -55,6 +58,7 @@ export type UploadCreativeBrandReferenceInput = {
 
 export async function uploadCreativeBrandReference(
   input: UploadCreativeBrandReferenceInput,
+  previous?: StoredCreativeBrandReference,
 ): Promise<CreativeBrandReference> {
   validateBrandReferenceFile(input.image);
   const metadata = parseCreativeBrandReferenceMetadata({
@@ -66,13 +70,16 @@ export async function uploadCreativeBrandReference(
   });
 
   const normalized = await normalizeBrandReferenceImage(input.image);
-  const referenceId = randomUUID();
-  const objectKey = buildCreativeBrandReferenceObjectKey({
+  const originalBytes = new Uint8Array(await input.image.arrayBuffer());
+  const referenceId = previous?.id ?? randomUUID();
+  const version = (previous?.version ?? 0) + 1;
+  const objectKeyBase = buildCreativeBrandReferenceObjectKey({
     topicId: input.topicId,
     referenceId,
-    version: 1,
+    version,
     extension: "webp",
   });
+  const objectKey = `${objectKeyBase}.${randomUUID()}`;
 
   await putPrivateR2Object({
     objectKey,
@@ -80,11 +87,16 @@ export async function uploadCreativeBrandReference(
     contentType: "image/webp",
   });
 
+  const originalSnapshot = { objectKey: `${objectKey}.original`,
+    sha256: createHash("sha256").update(originalBytes).digest("hex"),
+    contentType: input.image.type, fileName: input.image.name, fileSize: originalBytes.byteLength };
   try {
-    return await createCreativeBrandReference({
+    await putPrivateR2Object({ objectKey: originalSnapshot.objectKey, body: originalBytes, contentType: originalSnapshot.contentType });
+    const record = {
+      originalSnapshot,
       id: referenceId,
       topicId: input.topicId,
-      version: 1,
+      version,
       objectKey,
       sha256: createHash("sha256").update(normalized.body).digest("hex"),
       originalContentType: input.image.type,
@@ -97,9 +109,11 @@ export async function uploadCreativeBrandReference(
       provenance: metadata.provenance,
       usageNote: metadata.usageNote,
       providerTransmissionAllowed: metadata.providerTransmissionAllowed,
-    });
+    };
+    return previous ? await replaceBrandReferenceFile(previous, record) : await createCreativeBrandReference(record);
   } catch (error) {
     // The row never existed, so this object is not a historical reference.
+    await deletePrivateR2Object(originalSnapshot.objectKey).catch(() => undefined);
     await deletePrivateR2Object(objectKey).catch((cleanupError) => {
       console.error(
         "Failed to remove an unpersisted brand reference",
@@ -130,8 +144,12 @@ export async function editCreativeBrandReference({
     "providerTransmissionAllowed" in parsed ||
     "contribution" in parsed;
 
+  const row = await findCreativeBrandReference(topicId, referenceId);
+  if (!row) throw new CreativeBrandReferenceNotFoundError("The brand reference was not found");
+  const expected = patch as { expectedVersion?: number; expectedConfigVersion?: number };
+  if ((expected.expectedVersion !== undefined && expected.expectedVersion !== row.version) ||
+      (expected.expectedConfigVersion !== undefined && expected.expectedConfigVersion !== row.configVersion)) throw new CreativeBrandReferenceConflictError("The reference changed. Reload before saving.");
   if (touchesGate) {
-    const row = await findCreativeBrandReference(topicId, referenceId);
     if (!row) {
       throw new CreativeBrandReferenceNotFoundError(
         "The brand reference was not found",
@@ -146,7 +164,9 @@ export async function editCreativeBrandReference({
     const activatedForJourney =
       parsed.activatedForJourney ?? row.activatedForJourney;
 
-    if (activatedForJourney) {
+    if (!providerTransmissionAllowed || !brandContributionIsConfigured(contribution)) {
+      parsed.activatedForJourney = false;
+    } else if (activatedForJourney) {
       assertBrandReferenceActivatable({
         providerTransmissionAllowed,
         contribution,
@@ -161,7 +181,7 @@ export async function editCreativeBrandReference({
     }
   }
 
-  return updateCreativeBrandReference(topicId, referenceId, parsed);
+  return updateCreativeBrandReference(topicId, referenceId, parsed, row);
 }
 
 function readStoredContribution(
@@ -178,12 +198,19 @@ function readStoredContribution(
 export async function readCreativeBrandReferenceFile({
   topicId,
   referenceId,
+  original = false,
+  version,
 }: {
   topicId: string;
   referenceId: string;
+  original?: boolean;
+  version?: number;
 }): Promise<File | undefined> {
-  const row = await findCreativeBrandReference(topicId, referenceId);
+  const current = await findCreativeBrandReference(topicId, referenceId);
+  if (!current) return undefined;
+  const row = version && version !== current.version ? current.revisions.find(revision => revision.version === version) as unknown as StoredCreativeBrandReference | undefined : current;
   if (!row) return undefined;
+  if (original) return row.originalSnapshot ? readPrivateR2ImageFile(row.originalSnapshot) : undefined;
   return readPrivateR2ImageFile({
     objectKey: row.objectKey,
     contentType: row.contentType,
@@ -220,6 +247,8 @@ async function normalizeBrandReferenceImage(
       animated: false,
     }).metadata();
 
+    const expectedFormat = image.type === "image/jpeg" ? "jpeg" : image.type === "image/png" ? "png" : "webp";
+    if (metadata.format !== expectedFormat) throw new CreativeBrandReferenceValidationError("The file content does not match its image type.");
     assertBrandReferenceDimensions(metadata.width, metadata.height);
 
     // Re-encode: bakes EXIF orientation, strips all metadata (incl. GPS), and

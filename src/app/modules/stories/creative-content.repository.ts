@@ -1,4 +1,5 @@
 import "server-only";
+import { CreativeBrandReferenceConflictError } from "./creative-brand-references.repository";
 
 import { randomUUID } from "node:crypto";
 
@@ -438,7 +439,11 @@ export async function replaceCreativeDraft(
   );
   const assignments = unitCharacterAssignments(units, characterSnapshots, now);
 
-  await db.batch([
+  try { await db.batch([
+    db.execute(sql`SELECT 1 / count(*)::int AS version_guard FROM (
+      SELECT id FROM creative_drafts WHERE id=${current.id}::uuid AND topic_id=${topicId}::uuid
+        AND version=${current.version} FOR UPDATE
+    ) locked_draft`),
     db
       .update(creativeDrafts)
       .set({
@@ -472,6 +477,11 @@ export async function replaceCreativeDraft(
       ? [db.insert(creativeUnitCharacters).values(assignments)]
       : []),
   ]);
+  } catch (error) {
+    const failure = error as { code?: string; cause?: { code?: string } };
+    if (failure.code === "22012" || failure.cause?.code === "22012") throw new CreativeBrandReferenceConflictError("The draft changed while saving. Reload before applying your changes.");
+    throw error;
+  }
 
   const saved = await findCreativeDraftById(topicId, current.id);
   if (!saved) {
@@ -487,17 +497,20 @@ export async function replaceCreativeDraft(
 export async function approveCreativeDraft(
   topicId: string,
   draftId: string,
+  expectedVersion?: number,
 ): Promise<CreativeDraft> {
   const now = new Date();
-  await db
+  const updated = await db
     .update(creativeDrafts)
     .set({ status: "approved", approvedAt: now, updatedAt: now })
     .where(
       and(
         eq(creativeDrafts.id, draftId),
         eq(creativeDrafts.topicId, topicId),
+        ...(expectedVersion === undefined ? [] : [eq(creativeDrafts.version, expectedVersion)]),
       ),
-    );
+    ).returning({ id: creativeDrafts.id });
+  if (!updated.length) throw new CreativeBrandReferenceConflictError("The reviewed draft changed. Reload before approving.");
 
   const saved = await findCreativeDraftById(topicId, draftId);
   if (!saved) {

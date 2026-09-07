@@ -3041,3 +3041,39 @@
   font-size: 9px;
   color: palette(tertiary-main);
 }
+
+
+.brandImageEditor {
+  @ds-surface(flat neutral radius(2));
+  @ds-typo(body);
+  padding: density(3);
+  display: flex;
+  flex-direction: column;
+  gap: density(2);
+  color: palette(primary-main);
+}
+
+.brandImageEditor details[open] {
+  display: flex;
+  flex-direction: column;
+  gap: density(2);
+}
+
+.brandImageEditor summary {
+  cursor: pointer;
+}
+
+.brandImageReference {
+  display: flex;
+  flex-direction: column;
+  gap: density(1);
+  padding: density(2);
+  border: border(1, palette(primary-main), solid);
+  border-radius: radius(2);
+}
+
+.brandImageReference img {
+  width: xs(100%) md(50%);
+  height: auto;
+  object-fit: contain;
+}

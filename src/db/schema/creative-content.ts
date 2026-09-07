@@ -96,6 +96,13 @@ export const creativeBrandAssets = pgTable(
  * References are deactivated, never deleted, so historical draft snapshots keep
  * the exact bytes that explain a generated image.
  */
+/** Atomic per-topic UTC-day reservation counter, including failed attempts. */
+export const creativeBrandAnalysisQuota = pgTable("creative_brand_analysis_quota", {
+  id: text("id").primaryKey(),
+  topicId: uuid("topic_id").notNull().references(() => topics.id, { onDelete: "cascade" }),
+  attempts: integer("attempts").notNull().default(0),
+});
+
 export const creativeBrandReferences = pgTable(
   "creative_brand_references",
   {
@@ -107,6 +114,8 @@ export const creativeBrandReferences = pgTable(
     version: integer("version").default(1).notNull(),
     /** Private immutable R2 key. Never return this column to the browser. */
     objectKey: text("object_key").notNull(),
+    originalSnapshot: jsonb("original_snapshot").$type<{ objectKey: string; sha256: string; contentType: string; fileName: string; fileSize: number }>(),
+    revisions: jsonb("revisions").$type<Record<string, unknown>[]>().default(sql`'[]'::jsonb`).notNull(),
     sha256: text("sha256").notNull(),
     /** Stored (normalised) type — always image/webp. */
     contentType: text("content_type").default("image/webp").notNull(),

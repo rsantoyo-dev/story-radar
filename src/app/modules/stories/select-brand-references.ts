@@ -8,6 +8,8 @@
  * policy: when generative imagery is not allowed it selects nothing and says so.
  */
 
+import { parseCreativeBrandContribution } from "./creative-brand-reference-metadata";
+
 import type {
   BrandContributionAspect,
   BrandReferenceFunction,
@@ -245,6 +247,11 @@ function toEntry(
     : "";
   return {
     id: entry.reference.id,
+    name: entry.reference.name,
+    usageNote: entry.reference.usageNote,
+    provenance: entry.reference.provenance,
+    sha256: entry.reference.sha256,
+    ...(entry.reference.contribution ? { contribution: structuredClone(entry.reference.contribution) } : {}),
     version: entry.reference.version,
     configVersion: entry.reference.configVersion,
     function: fn,
@@ -280,6 +287,11 @@ export function normalizeBrandReferenceSelection(
         return [
           {
             id: e.id,
+            ...(typeof e.usageNote === "string" ? { usageNote: e.usageNote } : {}),
+            ...(typeof e.provenance === "string" ? { provenance: e.provenance } : {}),
+            ...(typeof e.sha256 === "string" ? { sha256: e.sha256 } : {}),
+            ...(typeof e.name === "string" ? { name: e.name } : {}),
+            ...(safeContribution(e.contribution) ? { contribution: safeContribution(e.contribution) } : {}),
             version: typeof e.version === "number" ? e.version : 1,
             configVersion:
               typeof e.configVersion === "number" ? e.configVersion : 1,
@@ -309,4 +321,9 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
+}
+
+function safeContribution(value: unknown) {
+  try { return value ? parseCreativeBrandContribution(value) : undefined; }
+  catch { return undefined; }
 }

@@ -1,14 +1,14 @@
 ---
 id: BRAND-06
 feature: FEAT-BRAND-001
-status: todo
+status: done
 board: brand-visual-references.kanban.md
-tags: [brand, todo, p0]
+tags: [brand, done, p0]
 ---
 
 # BRAND-06 — Reutilizar referencias al editar una imagen
 
-**Estado:** [[status-todo]] · **Feature:** [Referencias visuales de marca](../features/brand-visual-references.md)
+**Estado:** [[status-done]] · **Feature:** [Referencias visuales de marca](../features/brand-visual-references.md)
 
 **Como** editor, **quiero** reutilizar referencias al editar una imagen, **para** producir imágenes coherentes con la marca y conservar sus decisiones visuales.
 
@@ -21,3 +21,8 @@ tags: [brand, todo, p0]
 - El cambio crea una nueva versión de la imagen con linaje hacia su base. La aprobación anterior no aprueba el resultado nuevo y las demás imágenes conservan su historial.
 - Si una referencia histórica está desactivada o ya no es elegible para transmisión, el sistema conserva el snapshot pero no la reenvía; explica la limitación sin reemplazarla silenciosamente.
 - No se promete edición localizada perfecta: una solicitud pequeña puede alterar otros detalles en image-to-image y el resultado necesita revisión.
+
+
+## Entrega
+
+Implementación terminada; operación y validación en la [feature](../features/brand-visual-references.md).

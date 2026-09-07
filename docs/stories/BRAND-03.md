@@ -1,14 +1,14 @@
 ---
 id: BRAND-03
 feature: FEAT-BRAND-001
-status: review
+status: done
 board: brand-visual-references.kanban.md
-tags: [brand, review, p0]
+tags: [brand, done, p0]
 ---
 
 # BRAND-03 — Seleccionar referencias automáticamente por unidad
 
-**Estado:** [[status-review]] · **Feature:** [Referencias visuales de marca](../features/brand-visual-references.md)
+**Estado:** [[status-done]] · **Feature:** [Referencias visuales de marca](../features/brand-visual-references.md)
 
 **Como** editor, **quiero** seleccionar referencias automáticamente por unidad, **para** producir imágenes coherentes con la marca y conservar sus decisiones visuales.
 
@@ -21,3 +21,7 @@ tags: [brand, review, p0]
 - El reparto prioriza las referencias necesarias del protagonista y después las de marca pertinentes; un exceso se resuelve de forma determinista y queda explicado. No se envía toda la biblioteca indiscriminadamente.
 - Sin referencias elegibles se conserva el comportamiento permitido por la política vigente y se explica la ausencia. No se cambia silenciosamente una política documental para poder generar.
 - La biblioteca vacía conserva el comportamiento existente de los drafts. Cada slide puede seleccionar referencias distintas manteniendo el contexto visual común.
+
+## Entrega
+
+Implementación terminada; operación y validación en la [feature](../features/brand-visual-references.md).

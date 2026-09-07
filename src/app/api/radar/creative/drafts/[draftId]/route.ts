@@ -61,6 +61,7 @@ export async function PATCH(request: Request, context: Context) {
     const body = (await request.json()) as {
       action?: unknown;
       humanReviewed?: unknown;
+      expectedVersion?: number;
       mode?: unknown;
       reason?: unknown;
       by?: unknown;
@@ -112,6 +113,7 @@ export async function PATCH(request: Request, context: Context) {
             topicId,
             draftId,
             body.humanReviewed === true,
+            body.expectedVersion,
           )
         : body.action === "unapprove"
           ? await unapproveSavedCreativeDraft(topicId, draftId)

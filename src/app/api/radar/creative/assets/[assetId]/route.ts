@@ -4,6 +4,8 @@ import {
   topicRequestErrorResponse,
 } from "@/app/api/radar/radar-topic";
 import {
+  previewCreativeImageBase,
+  downloadApprovedCreativeImage,
   changeCreativeAssetApproval,
   regenerateCreativeAsset,
 } from "@/app/modules/stories/manage-creative-assets";
@@ -13,6 +15,7 @@ import {
 } from "../../../creative-route-error";
 
 export const runtime = "nodejs";
+export const maxDuration = 120;
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -78,4 +81,18 @@ export async function PATCH(request: Request, context: Context) {
 async function parseId(context: Context): Promise<string | undefined> {
   const { assetId } = await context.params;
   return UUID_PATTERN.test(assetId) ? assetId : undefined;
+}
+
+export async function GET(request: Request, context: Context) {
+  const unauthorized = authorizeRadarCollector(request);
+  if (unauthorized) return unauthorized;
+  try {
+    const assetId = await parseId(context);
+    if (!assetId) return noStoreJson({ error: "Invalid asset ID" }, 400);
+    const topicId = await requireActiveRequestTopic(request);
+    const file = new URL(request.url).searchParams.get("source") === "true"
+      ? await previewCreativeImageBase(topicId, assetId)
+      : await downloadApprovedCreativeImage(topicId, assetId);
+    return new Response(file, { headers: { "Content-Type": file.type, "Cache-Control": "private, no-store", "Content-Disposition": `attachment; filename="${assetId}.png"` } });
+  } catch (error) { return topicRequestErrorResponse(error) || creativeRouteErrorResponse(error, "download the approved image"); }
 }

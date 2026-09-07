@@ -956,7 +956,7 @@ export function BrandReferenceLibrary({
       {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(changes),
+        body: JSON.stringify({ ...changes, expectedConfigVersion: reference.configVersion, expectedVersion: reference.version }),
       },
     )
       .then((updated) => {
@@ -974,6 +974,27 @@ export function BrandReferenceLibrary({
         );
       })
       .finally(() => setBusy(undefined));
+  };
+
+  const replaceImage = async (reference: CreativeBrandReference, image: File) => {
+    if (busy) return;
+    if (image.size > MAX_BRAND_REFERENCE_UPLOAD_BYTES) { setError("The reference must be 15 MB or smaller"); return; }
+    setBusy(reference.id); setError(undefined);
+    try {
+      const form = new FormData(); form.set("image", image); form.set("version", String(reference.version)); form.set("configVersion", String(reference.configVersion));
+      const updated = await brandReferenceRequest<CreativeBrandReference>(topicUrl(`${BRAND_REFERENCES_PATH}/${reference.id}`, topicId), secret, { method: "PUT", body: form });
+      setReferences(previous => previous?.map(entry => entry.id === updated.id ? updated : entry));
+    } catch (error) { setError(error instanceof Error ? error.message : "Replacement failed"); }
+    finally { setBusy(undefined); }
+  };
+  const downloadOriginal = async (reference: CreativeBrandReference) => {
+    try {
+      const response = await fetch(topicUrl(`${BRAND_REFERENCES_PATH}/${reference.id}?original=true`, topicId), { headers: { Authorization: `Bearer ${secret.trim()}` }, cache: "no-store" });
+      if (!response.ok) throw new Error("Original unavailable");
+      const url = URL.createObjectURL(await response.blob());
+      const anchor = document.createElement("a"); anchor.href = url; anchor.download = `reference-original.${reference.originalContentType.split("/")[1]}`; anchor.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) { setError(error instanceof Error ? error.message : "Download failed"); }
   };
 
   const analyze = (reference: CreativeBrandReference) => {
@@ -1127,6 +1148,8 @@ export function BrandReferenceLibrary({
               busy={busy}
               onPatch={patch}
               onAnalyze={analyze}
+              onReplace={replaceImage}
+              onDownloadOriginal={downloadOriginal}
             />
           ))}
         </div>
@@ -1136,6 +1159,7 @@ export function BrandReferenceLibrary({
 }
 
 function BrandReferenceCard({
+  onReplace, onDownloadOriginal,
   reference,
   topicId,
   secret,
@@ -1154,6 +1178,8 @@ function BrandReferenceCard({
     changes: Record<string, unknown>,
   ) => void;
   onAnalyze: (reference: CreativeBrandReference) => void;
+  onReplace: (reference: CreativeBrandReference, image: File) => void;
+  onDownloadOriginal: (reference: CreativeBrandReference) => void;
 }) {
   const locked = disabled || Boolean(busy);
   const contribution: CreativeBrandContribution = reference.contribution ?? {
@@ -1213,7 +1239,9 @@ function BrandReferenceCard({
         <span>Edit</span>
       </summary>
       <div className={styles.profileBody}>
-        <BrandReferencePreview
+        <label>Replace image (keeps earlier versions)<input type="file" accept={BRAND_REFERENCE_ACCEPT} disabled={locked} onChange={event => { const file = event.target.files?.[0]; if (file) onReplace(reference, file); event.target.value = ""; }} /></label>
+        {reference.originalAvailable ? <button type="button" className={styles.secondaryButton} onClick={() => onDownloadOriginal(reference)}>Download original</button> : <small>Legacy upload: original bytes were not retained. Replace the image to preserve its original.</small>}
+        <BrandReferencePreview key={`${reference.id}:${reference.version}`}
           topicId={topicId}
           secret={secret}
           referenceId={reference.id}
@@ -1348,7 +1376,7 @@ function BrandReferenceCard({
           <button
             type="button"
             className={styles.secondaryButton}
-            disabled={locked}
+            disabled={locked || !reference.isActive || !reference.providerTransmissionAllowed}
             onClick={() => onAnalyze(reference)}
           >
             {busy === `analysis:${reference.id}`
@@ -1455,16 +1483,18 @@ function BrandReferenceCard({
   );
 }
 
-function BrandReferencePreview({
+export function BrandReferencePreview({
   topicId,
   secret,
   referenceId,
   fileName,
+  version,
 }: {
   topicId: string;
   secret: string;
   referenceId: string;
   fileName: string;
+  version?: number;
 }) {
   const [source, setSource] = useState<string>();
   const [unavailable, setUnavailable] = useState(false);
@@ -1475,7 +1505,7 @@ function BrandReferencePreview({
 
     fetch(
       topicUrl(
-        `/api/radar/creative/brand-references/${encodeURIComponent(referenceId)}`,
+        `/api/radar/creative/brand-references/${encodeURIComponent(referenceId)}${version ? `?version=${version}` : ""}`,
         topicId,
       ),
       {
@@ -1497,7 +1527,7 @@ function BrandReferencePreview({
       controller.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [referenceId, secret, topicId]);
+  }, [referenceId, secret, topicId, version]);
 
   return source ? (
     <Image src={source} alt={fileName} width={320} height={400} unoptimized />

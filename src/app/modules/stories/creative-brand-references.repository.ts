@@ -3,7 +3,7 @@ import "server-only";
 import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { creativeBrandReferences } from "@/db/schema";
+import { creativeBrandReferences, creativeBrandAnalysisQuota } from "@/db/schema";
 
 import {
   brandAnalysisCacheHash,
@@ -29,6 +29,7 @@ export type StoredCreativeBrandReference =
   typeof creativeBrandReferences.$inferSelect;
 
 export type CreateCreativeBrandReferenceInput = {
+  originalSnapshot?: StoredCreativeBrandReference["originalSnapshot"];
   id: string;
   topicId: string;
   version: number;
@@ -115,6 +116,7 @@ export async function createCreativeBrandReference(
       id: input.id,
       topicId: input.topicId,
       version: input.version,
+      originalSnapshot: input.originalSnapshot,
       objectKey: input.objectKey,
       sha256: input.sha256,
       contentType: "image/webp",
@@ -141,14 +143,20 @@ export async function updateCreativeBrandReference(
   topicId: string,
   referenceId: string,
   patch: CreativeBrandReferencePatch,
+  expected?: StoredCreativeBrandReference,
 ): Promise<CreativeBrandReference> {
   const set: Record<string, unknown> = { ...patch, updatedAt: new Date() };
-  if ("contribution" in patch) {
+  if (Object.keys(patch).length) {
     // A changed contribution bumps the config version so BRAND-05 can fold it
     // into the generation hash.
     set.configVersion = sql`${creativeBrandReferences.configVersion} + 1`;
   }
 
+  if (expected) {
+    const { revisions: _revisions, analysis: _analysis, ...revision } = expected;
+    void _revisions; void _analysis;
+    set.revisions = sql`${creativeBrandReferences.revisions} || ${JSON.stringify([revision])}::jsonb`;
+  }
   const [updated] = await db
     .update(creativeBrandReferences)
     .set(set)
@@ -156,11 +164,13 @@ export async function updateCreativeBrandReference(
       and(
         eq(creativeBrandReferences.id, referenceId),
         eq(creativeBrandReferences.topicId, topicId),
+        ...(expected ? [eq(creativeBrandReferences.configVersion, expected.configVersion), eq(creativeBrandReferences.version, expected.version)] : []),
       ),
     )
     .returning();
 
   if (!updated) {
+    if (expected) throw new CreativeBrandReferenceConflictError("The reference changed. Reload before saving.");
     throw new CreativeBrandReferenceNotFoundError(
       "The brand reference was not found",
     );
@@ -173,6 +183,8 @@ export async function saveCreativeBrandReferenceAnalysis(
   topicId: string,
   referenceId: string,
   input: {
+    expectedVersion?: number;
+    expectedConfigVersion?: number;
     analysis: BrandReferenceAnalysis;
     hash: string;
     model: string;
@@ -194,6 +206,9 @@ export async function saveCreativeBrandReferenceAnalysis(
       and(
         eq(creativeBrandReferences.id, referenceId),
         eq(creativeBrandReferences.topicId, topicId),
+        eq(creativeBrandReferences.providerTransmissionAllowed, true),
+        ...(input.expectedVersion === undefined ? [] : [eq(creativeBrandReferences.version, input.expectedVersion)]),
+        ...(input.expectedConfigVersion === undefined ? [] : [eq(creativeBrandReferences.configVersion, input.expectedConfigVersion)]),
       ),
     )
     .returning();
@@ -283,6 +298,8 @@ export function publicBrandReference(
 
   return {
     id: row.id,
+    originalAvailable: Boolean(row.originalSnapshot),
+    sha256: row.sha256,
     name: row.name,
     kind: row.kind as CreativeBrandReferenceKind,
     provenance: row.provenance,
@@ -310,3 +327,29 @@ export function publicBrandReference(
 
 export class CreativeBrandReferenceNotFoundError extends Error {}
 export class CreativeBrandReferenceConflictError extends Error {}
+
+export async function reserveBrandAnalysisAttempt(topicId: string, limit: number): Promise<boolean> {
+  const id = `${topicId}:${new Date().toISOString().slice(0, 10)}`;
+  const rows = await db.insert(creativeBrandAnalysisQuota).values({ id, topicId, attempts: 1 })
+    .onConflictDoUpdate({ target: creativeBrandAnalysisQuota.id,
+      set: { attempts: sql`${creativeBrandAnalysisQuota.attempts} + 1` },
+      setWhere: sql`${creativeBrandAnalysisQuota.attempts} < ${limit}` })
+    .returning({ attempts: creativeBrandAnalysisQuota.attempts });
+  return rows.length === 1;
+}
+
+export async function replaceBrandReferenceFile(previous: StoredCreativeBrandReference, input: CreateCreativeBrandReferenceInput): Promise<CreativeBrandReference> {
+  const { revisions: _revisions, analysis: _analysis, ...revision } = previous;
+  void _revisions; void _analysis;
+  const [row] = await db.update(creativeBrandReferences).set({
+    version: input.version, configVersion: previous.configVersion + 1,
+    objectKey: input.objectKey, sha256: input.sha256, originalSnapshot: input.originalSnapshot,
+    originalContentType: input.originalContentType, fileName: input.fileName, fileSize: input.fileSize,
+    width: input.width, height: input.height, activatedForJourney: false,
+    revisions: sql`${creativeBrandReferences.revisions} || ${JSON.stringify([revision])}::jsonb`, updatedAt: new Date(),
+  }).where(and(eq(creativeBrandReferences.id, previous.id), eq(creativeBrandReferences.topicId, previous.topicId),
+    eq(creativeBrandReferences.version, previous.version), eq(creativeBrandReferences.configVersion, previous.configVersion)))
+    .returning();
+  if (!row) throw new CreativeBrandReferenceConflictError("The reference changed while uploading. Reload and try again.");
+  return publicBrandReference(row);
+}

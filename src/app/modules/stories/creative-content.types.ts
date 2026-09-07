@@ -1,3 +1,5 @@
+export const MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS = 30_000;
+
 import type {
   CarouselEditorialGoal,
   CarouselPlan,
@@ -211,6 +213,8 @@ export type BrandReferenceAnalysis = {
  * analysis hash.
  */
 export type CreativeBrandReference = {
+  originalAvailable?: boolean;
+  sha256?: string;
   id: string;
   name: string;
   kind: CreativeBrandReferenceKind;
@@ -655,6 +659,11 @@ export type BrandReferenceFunction =
   | "signage";
 
 export type BrandReferenceSelectionEntry = {
+  usageNote?: string | null;
+  provenance?: string | null;
+  sha256?: string;
+  name?: string;
+  contribution?: CreativeBrandContribution;
   id: string;
   version: number;
   configVersion: number;
@@ -820,6 +829,10 @@ export type CreativeGenerationResult = {
 };
 
 export type CreativeGeneratedAsset = {
+  referenceContextVersion?: number;
+  hasBrandReferenceOverride?: boolean;
+  editSource?: { assetId: string; version: number };
+  editInstruction?: string;
   id: string;
   batchId: string;
   unitOrder: number;
