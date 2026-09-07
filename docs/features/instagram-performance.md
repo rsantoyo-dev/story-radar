@@ -192,6 +192,8 @@ La resolución directa de borradores incluye los documentales y verifica su pert
 
 ## Orden de implementación
 
+**Prioridad de producto actualizada:** IG-07 e IG-08 quedan aplazadas durante el crecimiento del MVP. La siguiente capacidad propuesta es [publicar desde el SaaS](instagram-publishing.md), conservando los vínculos de IG-04/06. La programación de envíos no depende de la sincronización analítica de IG-07.
+
 1. IG-01 y diseño de persistencia, verificando capacidades con la cuenta conectada.
 2. IG-02, IG-03 e IG-04: publicaciones visibles y vinculables.
 3. IG-05 e IG-06: cerrar el MVP con métricas y trazabilidad desde cada historia.
