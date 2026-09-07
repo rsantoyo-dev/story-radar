@@ -360,6 +360,26 @@ export async function insertRegeneratedCreativeAsset({ previous, prompt, referen
 }
 
 /**
+ * IMG-02: drop a version whose provider submit failed synchronously so the
+ * previous version stays the head and a base-pinned edit request can retry.
+ * Guarded to `failed` — it never deletes a real result.
+ */
+export async function discardFailedCreativeAssetVersion(
+  assetId: string,
+): Promise<void> {
+  const [row] = await db
+    .select({ batchId: creativeAssets.batchId })
+    .from(creativeAssets)
+    .where(and(eq(creativeAssets.id, assetId), eq(creativeAssets.status, "failed")))
+    .limit(1);
+  if (!row) return;
+  await db
+    .delete(creativeAssets)
+    .where(and(eq(creativeAssets.id, assetId), eq(creativeAssets.status, "failed")));
+  await refreshCreativeAssetBatchStatus(row.batchId);
+}
+
+/**
  * Internal-only immutable reference material for a stored asset. The public
  * asset mapper intentionally does not expose private R2 keys to the browser.
  */

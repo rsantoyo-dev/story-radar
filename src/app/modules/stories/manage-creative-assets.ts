@@ -16,6 +16,7 @@ import { brandReferencePrompt, enforceBrandReferencePrompt, type GenerationRefer
 import {
   completeCreativeAsset,
   createCreativeAssetBatch,
+  discardFailedCreativeAssetVersion,
   failCreativeAsset,
   findCreativeAssetById,
   findCreativeAssetBatchById,
@@ -556,8 +557,10 @@ export async function applyCreativeAssetEditRequest(
     // `null` = inherit; an explicit array (including `[]`) = override.
     ...(row.brandReferenceIds !== null ? { brandReferenceIds: row.brandReferenceIds } : {}),
   };
+  let asset: CreativeGeneratedAsset;
+  let batch: CreativeAssetBatch;
   try {
-    const { asset, batch } = await executeCreativeAssetImageEdit({
+    ({ asset, batch } = await executeCreativeAssetImageEdit({
       topicId,
       found,
       draft,
@@ -565,18 +568,33 @@ export async function applyCreativeAssetEditRequest(
       basePrompt: found.asset.prompt,
       edit,
       editRequestRevision: row.revision,
-    });
-    // A concurrent save may have superseded this run; only stamp the outcome
-    // when the row is still our locked revision.
-    await completeCreativeAssetEditRequestRun(row.id, {
-      appliedAssetId: asset.id,
-      revision: row.revision,
-    });
-    return { batch, configuration: publicConfigurationForBatch(batch) };
+    }));
   } catch (error) {
     await failCreativeAssetEditRequest(row.id, errorMessage(error), row.revision);
     throw error;
   }
+
+  if (asset.status === "failed") {
+    // `submitStoredAsset` swallowed a provider/storage error and marked the
+    // asset failed. Roll the dead version back so the base stays current and a
+    // retry works, then mark the request failed — never "applied".
+    const message = asset.error ?? "The image edit could not be generated.";
+    const refs = await getCreativeAssetGenerationReferences(asset.id);
+    await discardFailedCreativeAssetVersion(asset.id);
+    if (refs.base) {
+      await deletePrivateR2Object(refs.base.objectKey).catch(() => undefined);
+    }
+    await failCreativeAssetEditRequest(row.id, message, row.revision);
+    throw new CreativeContentConflictError(message);
+  }
+
+  // A concurrent save may have superseded this run; only stamp the outcome
+  // when the row is still our locked revision.
+  await completeCreativeAssetEditRequestRun(row.id, {
+    appliedAssetId: asset.id,
+    revision: row.revision,
+  });
+  return { batch, configuration: publicConfigurationForBatch(batch) };
 }
 
 /**
@@ -675,7 +693,10 @@ async function executeCreativeAssetImageEdit({
   }
   await submitStoredAsset(asset, configuration);
   const batch = await refreshCreativeAssetBatchStatus(found.batch.id);
-  return { asset, batch };
+  // `submitStoredAsset` swallows provider/storage errors and marks the asset
+  // failed instead of throwing, so report the post-submit status to the caller.
+  const submitted = batch.assets.find((candidate) => candidate.id === asset.id) ?? asset;
+  return { asset: submitted, batch };
 }
 
 export async function changeCreativeAssetApproval(

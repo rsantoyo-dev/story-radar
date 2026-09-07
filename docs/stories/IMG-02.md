@@ -24,4 +24,5 @@ tags: [img, review, p0]
 - Una instrucción de cambio pequeño no garantiza que el proveedor conserve todos los otros detalles; la interfaz permite revisar el resultado antes de seleccionarlo.
 - El resultado permanece como **candidato** (versión pendiente de revisión) hasta incorporarlo al conjunto mediante **IMG-05**; aplicar no aprueba ni publica.
 - Quitar todas las referencias de marca se distingue de heredarlas: lista vacía explícita = "sin referencias", ausencia = hereda las de la imagen base.
-- Concurrencia (parte de IMG-07 adelantada): aplicar bloquea la solicitud (`saved → running`) con compare-and-swap; guardar otra instrucción durante la generación crea una revisión nueva y el trabajo en curso no la marca como aplicada ni fallida.
+- Concurrencia (parte de IMG-07 adelantada): aplicar bloquea la solicitud (`saved | failed → running`) con compare-and-swap; guardar otra instrucción durante la generación crea una revisión nueva y el trabajo en curso no la marca como aplicada ni fallida.
+- Un fallo síncrono del proveedor/almacenamiento al enviar marca la solicitud `failed` (nunca `applied`), descarta la versión muerta para que la base siga vigente, y "Reintentar" vuelve a ejecutar la misma revisión. (Un fallo asíncrono posterior del poller sobre un resultado ya enviado es alcance de IMG-07.)

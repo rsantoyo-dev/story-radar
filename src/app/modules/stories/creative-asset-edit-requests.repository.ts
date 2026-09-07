@@ -209,9 +209,10 @@ export async function findCreativeAssetEditRequest(
 }
 
 /**
- * IMG-02 concurrency guard: compare-and-swap `saved → running`. A second
- * concurrent apply (double click) finds the row no longer `saved` and is
- * rejected instead of starting a duplicate job.
+ * IMG-02 concurrency guard: compare-and-swap `saved | failed → running`. A
+ * second concurrent apply (double click) finds the row already `running`
+ * (or `applied`) and is rejected instead of starting a duplicate job.
+ * Retrying a `failed` request is a legitimate new attempt on the same revision.
  */
 export async function beginCreativeAssetEditRequestRun(
   topicId: string,
@@ -220,13 +221,13 @@ export async function beginCreativeAssetEditRequestRun(
 ): Promise<CreativeAssetEditRequest> {
   const [row] = await db
     .update(creativeAssetEditRequests)
-    .set({ status: "running", updatedAt: new Date() })
+    .set({ status: "running", blockedReason: null, lastError: null, updatedAt: new Date() })
     .where(
       and(
         eq(creativeAssetEditRequests.topicId, topicId),
         eq(creativeAssetEditRequests.draftId, draftId),
         eq(creativeAssetEditRequests.unitOrder, unitOrder),
-        eq(creativeAssetEditRequests.status, "saved"),
+        inArray(creativeAssetEditRequests.status, ["saved", "failed"]),
       ),
     )
     .returning();
