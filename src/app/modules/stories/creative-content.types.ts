@@ -905,7 +905,8 @@ export type CreativeAssetEditRequest = {
   editType: "generative" | "composition";
   instruction: string | null;
   useImageAsBase: boolean;
-  brandReferenceIds: string[];
+  /** `null` = inherit the base asset's brand references; `[]` = explicit none. */
+  brandReferenceIds: string[] | null;
   status: "saved" | "running" | "applied" | "failed";
   appliedAssetId: string | null;
   /** IMG-02: the `revision` value that was actually executed, if any. */

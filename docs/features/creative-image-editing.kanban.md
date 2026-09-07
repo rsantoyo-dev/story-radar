@@ -19,6 +19,12 @@
   - priority: high
   - tags: [img, p0]
 
+### IMG-06 — Respetar la fidelidad documental y los permisos
+
+  - priority: high
+  - tags: [img, p0]
+  - note: bloqueo de generación incompatible + política viva ya implementado con IMG-02; la recomposición determinista de fotos/mapas necesita IMG-03.
+
 ### IMG-07 — Controlar errores, concurrencia y coste por edición
 
   - priority: high
@@ -39,11 +45,6 @@
   - tags: [img, p0]
 
 ### IMG-02 — Aplicar un cambio únicamente a la imagen seleccionada
-
-  - priority: high
-  - tags: [img, p0]
-
-### IMG-06 — Respetar la fidelidad documental y los permisos
 
   - priority: high
   - tags: [img, p0]

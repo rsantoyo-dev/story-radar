@@ -20,7 +20,11 @@ export type CreativeAssetEditRequestInput = {
   baseAssetId: string;
   instruction: string | null;
   useImageAsBase: boolean;
-  brandReferenceIds: string[];
+  /**
+   * `null` = inherit the base asset's brand references; `[]` = an explicit
+   * "use no brand references"; a list = an explicit override.
+   */
+  brandReferenceIds: string[] | null;
   editType: CreativeAssetEditType;
 };
 
@@ -91,8 +95,9 @@ function parseInstruction(value: unknown): string | null {
   return trimmed;
 }
 
-function parseBrandReferenceIds(value: unknown): string[] {
-  if (value === undefined || value === null) return [];
+function parseBrandReferenceIds(value: unknown): string[] | null {
+  // Absent → inherit (null). An explicit array (including `[]`) → override.
+  if (value === undefined || value === null) return null;
   if (!Array.isArray(value)) {
     throw new CreativeAssetEditRequestValidationError(
       "brandReferenceIds must be an array",

@@ -1,7 +1,7 @@
 # Feature: Edición incremental de imágenes dentro del draft
 
 **ID:** FEAT-IMG-001  
-**Estado:** Propuesta — pendiente de implementación  
+**Estado:** En curso — IMG-01 e IMG-02 en revisión / QA; IMG-06 parcial (bloqueo de generación incompatible), a la espera de IMG-03; resto por hacer  
 **Producto:** Press Craftor  
 **Tablero:** [creative-image-editing.kanban.md](creative-image-editing.kanban.md)
 
@@ -33,7 +33,7 @@ Guardar una solicitud, ejecutar una edición, seleccionar un resultado y aprobar
 
 ## Historias y entrega
 
-Todas las historias siguientes forman parte del MVP; sus estados iniciales son “Por hacer”. Los criterios se mantienen en este documento y en sus fichas de `docs/stories`.
+Todas las historias siguientes forman parte del MVP. Los criterios se mantienen en este documento y en sus fichas de `docs/stories`. Estado actual: **IMG-01** y **IMG-02** en revisión / QA; **IMG-06** parcialmente implementada con IMG-02 (bloqueo de generación incompatible + política viva) y bloqueada en su parte de recomposición determinista hasta **IMG-03**; **IMG-03, IMG-04, IMG-05, IMG-07, IMG-08** por hacer. La protección de concurrencia de **IMG-07** (clave por revisión de solicitud, sin trabajos duplicados) se adelantó con IMG-01/IMG-02.
 
 ### IMG-01 — Guardar instrucciones de cambio por imagen
 
@@ -67,6 +67,8 @@ Todas las historias siguientes forman parte del MVP; sus estados iniciales son �
 - Las otras unidades conservan sus imágenes y selecciones. El nuevo resultado queda pendiente de revisión y no reemplaza un archivo histórico.
 - Se mantiene la proporción configurada, actualmente 4:5 a 1080×1350. Si no existe acceso al original o autorización para enviarlo al proveedor, la solicitud termina con un motivo visible.
 - Una instrucción de cambio pequeño no garantiza que el proveedor conserve todos los otros detalles; la interfaz permite revisar el resultado antes de seleccionarlo.
+- El resultado permanece como **candidato** (versión pendiente de revisión) hasta incorporarlo al conjunto mediante **IMG-05**; aplicar no lo aprueba ni lo publica.
+- Concurrencia (parte de IMG-07 adelantada): la ejecución bloquea la solicitud (`saved → running`) con compare-and-swap y sólo escribe su resultado si la fila sigue en la misma revisión; guardar otra instrucción durante la generación crea una revisión nueva y el trabajo en curso no la marca como aplicada.
 
 ### IMG-03 — Editar texto y composición conservando el original
 

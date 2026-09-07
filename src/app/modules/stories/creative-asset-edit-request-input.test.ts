@@ -16,7 +16,7 @@ test("minimal valid body: defaults applied", () => {
     baseAssetId: BASE,
     instruction: null,
     useImageAsBase: true,
-    brandReferenceIds: [],
+    brandReferenceIds: null,
     editType: "generative",
   });
 });
@@ -97,9 +97,16 @@ test("useImageAsBase: default true, respects explicit false, rejects non-boolean
   );
 });
 
-test("brandReferenceIds: missing → [], distinct UUIDs pass", () => {
-  assert.deepEqual(
+test("brandReferenceIds: missing → null (inherit), [] → explicit none, list → override", () => {
+  assert.equal(
     parseCreativeAssetEditRequestInput({ baseAssetId: BASE }).brandReferenceIds,
+    null,
+  );
+  assert.deepEqual(
+    parseCreativeAssetEditRequestInput({
+      baseAssetId: BASE,
+      brandReferenceIds: [],
+    }).brandReferenceIds,
     [],
   );
   assert.deepEqual(

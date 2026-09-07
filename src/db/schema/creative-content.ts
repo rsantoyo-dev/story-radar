@@ -814,10 +814,11 @@ export const creativeAssetEditRequests = pgTable(
     editType: text("edit_type").default("generative").notNull(),
     instruction: text("instruction"),
     useImageAsBase: boolean("use_image_as_base").default(true).notNull(),
-    brandReferenceIds: text("brand_reference_ids")
-      .array()
-      .default(sql`ARRAY[]::text[]`)
-      .notNull(),
+    /**
+     * NULL = inherit the base asset's brand references; `[]` = an explicit
+     * "use no brand references" override; a list = an explicit override.
+     */
+    brandReferenceIds: text("brand_reference_ids").array(),
     compositionRecipe: jsonb("composition_recipe"),
     status: text("status").default("saved").notNull(),
     appliedAssetId: uuid("applied_asset_id").references(() => creativeAssets.id, {

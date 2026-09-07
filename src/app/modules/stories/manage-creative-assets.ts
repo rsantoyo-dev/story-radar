@@ -480,23 +480,30 @@ export async function applyCreativeAssetEditRequest(
   draftId: string,
   unitOrder: number,
 ): Promise<CreativeAssetBatchResponse> {
-  const row = await findCreativeAssetEditRequest(topicId, draftId, unitOrder);
-  if (!row) {
+  const existing = await findCreativeAssetEditRequest(topicId, draftId, unitOrder);
+  if (!existing) {
     throw new CreativeContentNotFoundError("No saved change to apply for this image");
   }
-  if (!row.baseAssetId) {
-    await blockCreativeAssetEditRequest(row.id, "The base image is no longer available. Save the change again.");
-    throw new CreativeContentConflictError("The base image is no longer available. Save the change again.");
-  }
 
-  const found = await requireCreativeAsset(row.baseAssetId);
+  // Lock the row (saved → running) BEFORE reading anything else. A concurrent
+  // apply loses this compare-and-swap and is rejected; a concurrent save after
+  // this point bumps the revision, and every write-back below is guarded on the
+  // locked revision so a superseded run never clobbers the newer request.
+  const row = await beginCreativeAssetEditRequestRun(topicId, draftId, unitOrder);
 
   // Everything that can declare the request incompatible with the CURRENT
-  // policy / permissions / base runs here; a conflict is recorded on the row
-  // as a visible reason and the request is kept pending, never executed.
+  // policy / permissions / base runs here; a conflict is recorded on the row as
+  // a visible reason and the request is released back to pending, never executed.
+  let found: Awaited<ReturnType<typeof requireCreativeAsset>>;
   let draft: CreativeDraft;
   let configuration: ReturnType<typeof runtimeConfigurationForBatch>;
   try {
+    if (!row.baseAssetId) {
+      throw new CreativeContentConflictError(
+        "The base image is no longer available. Save the change again.",
+      );
+    }
+    found = await requireCreativeAsset(row.baseAssetId);
     draft = await requireCreativeDraft(topicId, found.batch.draftId);
     requireApprovedDraft(draft.status);
     const brief = await requireCreativeBrief(topicId, draft.briefId);
@@ -532,20 +539,22 @@ export async function applyCreativeAssetEditRequest(
       );
     }
   } catch (error) {
-    if (
+    await blockCreativeAssetEditRequest(
+      row.id,
       error instanceof CreativeContentConflictError ||
-      error instanceof CreativeAssetValidationError
-    ) {
-      await blockCreativeAssetEditRequest(row.id, error.message);
-    }
+        error instanceof CreativeAssetValidationError
+        ? error.message
+        : "The draft or base image is no longer available.",
+      row.revision,
+    );
     throw error;
   }
 
-  await beginCreativeAssetEditRequestRun(topicId, draftId, unitOrder);
   const edit: CreativeImageEditInput = {
     useImageAsBase: row.useImageAsBase,
     editInstruction: row.instruction ?? undefined,
-    ...(row.brandReferenceIds.length ? { brandReferenceIds: row.brandReferenceIds } : {}),
+    // `null` = inherit; an explicit array (including `[]`) = override.
+    ...(row.brandReferenceIds !== null ? { brandReferenceIds: row.brandReferenceIds } : {}),
   };
   try {
     const { asset, batch } = await executeCreativeAssetImageEdit({
@@ -557,13 +566,15 @@ export async function applyCreativeAssetEditRequest(
       edit,
       editRequestRevision: row.revision,
     });
+    // A concurrent save may have superseded this run; only stamp the outcome
+    // when the row is still our locked revision.
     await completeCreativeAssetEditRequestRun(row.id, {
       appliedAssetId: asset.id,
-      appliedRevision: row.revision,
+      revision: row.revision,
     });
     return { batch, configuration: publicConfigurationForBatch(batch) };
   } catch (error) {
-    await failCreativeAssetEditRequest(row.id, errorMessage(error));
+    await failCreativeAssetEditRequest(row.id, errorMessage(error), row.revision);
     throw error;
   }
 }
@@ -619,7 +630,9 @@ async function executeCreativeAssetImageEdit({
   if (typeof editRequestRevision === "number") {
     references.editRequestRevision = editRequestRevision;
   }
-  if (edit.brandReferenceIds) {
+  // An explicit list — including an empty one — is an override; `undefined`
+  // means inherit the base asset's references.
+  if (edit.brandReferenceIds !== undefined) {
     const eligible = await listActivatedBrandReferences(topicId);
     const selected = edit.brandReferenceIds.map(id => {
       const row = eligible.find(candidate => candidate.id === id);

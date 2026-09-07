@@ -36,7 +36,7 @@ function mapRow(row: EditRequestRow): CreativeAssetEditRequest {
     editType: row.editType as CreativeAssetEditRequest["editType"],
     instruction: row.instruction,
     useImageAsBase: row.useImageAsBase,
-    brandReferenceIds: row.brandReferenceIds ?? [],
+    brandReferenceIds: row.brandReferenceIds ?? null,
     status: row.status as CreativeAssetEditRequest["status"],
     appliedAssetId: row.appliedAssetId,
     appliedRevision: row.appliedRevision,
@@ -244,31 +244,51 @@ export async function beginCreativeAssetEditRequestRun(
   );
 }
 
+/**
+ * IMG-02/07 concurrency guard: an in-flight run only writes its own outcome
+ * back when the row is still the exact `running` revision it locked. If a
+ * concurrent save bumped the revision (a new pending request), the stale run
+ * no-ops instead of marking the newer request applied/failed. Returns whether
+ * the row was actually updated.
+ */
 export async function completeCreativeAssetEditRequestRun(
   id: string,
-  { appliedAssetId, appliedRevision }: { appliedAssetId: string; appliedRevision: number },
-): Promise<void> {
-  await db
+  {
+    appliedAssetId,
+    revision,
+  }: { appliedAssetId: string; revision: number },
+): Promise<boolean> {
+  const updated = await db
     .update(creativeAssetEditRequests)
     .set({
       status: "applied",
       appliedAssetId,
-      appliedRevision,
+      appliedRevision: revision,
       appliedAt: new Date(),
       blockedReason: null,
       lastError: null,
       updatedAt: new Date(),
     })
-    .where(eq(creativeAssetEditRequests.id, id));
+    .where(
+      and(
+        eq(creativeAssetEditRequests.id, id),
+        eq(creativeAssetEditRequests.status, "running"),
+        eq(creativeAssetEditRequests.revision, revision),
+      ),
+    )
+    .returning({ id: creativeAssetEditRequests.id });
+  return updated.length > 0;
 }
 
 /**
  * IMG-06: an incompatible request is kept pending (`saved`) with a visible
  * explanation; it is never executed and the policy is never changed here.
+ * Guarded on the running revision so it never clobbers a newer save.
  */
 export async function blockCreativeAssetEditRequest(
   id: string,
   reason: string,
+  revision?: number,
 ): Promise<void> {
   await db
     .update(creativeAssetEditRequests)
@@ -277,13 +297,22 @@ export async function blockCreativeAssetEditRequest(
       blockedReason: reason.slice(0, 500),
       updatedAt: new Date(),
     })
-    .where(eq(creativeAssetEditRequests.id, id));
+    .where(
+      revision === undefined
+        ? eq(creativeAssetEditRequests.id, id)
+        : and(
+            eq(creativeAssetEditRequests.id, id),
+            eq(creativeAssetEditRequests.status, "running"),
+            eq(creativeAssetEditRequests.revision, revision),
+          ),
+    );
 }
 
 /** IMG-02: a provider/storage failure during apply; retryable via re-apply. */
 export async function failCreativeAssetEditRequest(
   id: string,
   reason: string,
+  revision: number,
 ): Promise<void> {
   await db
     .update(creativeAssetEditRequests)
@@ -292,5 +321,11 @@ export async function failCreativeAssetEditRequest(
       lastError: reason.slice(0, 500),
       updatedAt: new Date(),
     })
-    .where(eq(creativeAssetEditRequests.id, id));
+    .where(
+      and(
+        eq(creativeAssetEditRequests.id, id),
+        eq(creativeAssetEditRequests.status, "running"),
+        eq(creativeAssetEditRequests.revision, revision),
+      ),
+    );
 }
