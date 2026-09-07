@@ -2937,3 +2937,83 @@
   color: palette(primary-dark);
   font-weight: 750;
 }
+
+/* BRAND-02 — contribution + analysis */
+.brandContributionChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: space(2);
+}
+
+.brandContributionChip {
+  @ds-typo(caption);
+  font-size: 9px;
+  font-weight: 750;
+  padding: density(1) density(3);
+  border: 1px solid palette(surface-dark);
+  border-radius: radius(full);
+  background: palette(light-light);
+  color: palette(primary-dark);
+  cursor: pointer;
+  text-transform: capitalize;
+}
+
+.brandContributionChip:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.brandContributionChipOn {
+  border-color: palette(primary-main);
+  background: palette(primary-main);
+  color: palette(primary-contrast);
+}
+
+.brandAnalysis {
+  display: grid;
+  gap: density(2);
+  padding: density(3);
+  border: 1px solid palette(surface-light);
+  border-radius: radius(2);
+  background: palette(light-light);
+}
+
+.brandAnalysisRow {
+  display: grid;
+  grid-template-columns: 84px 1fr auto;
+  gap: space(2);
+  align-items: start;
+  @ds-typo(caption);
+  font-size: 10px;
+}
+
+.brandAnalysisBadge {
+  @ds-typo(caption);
+  font-size: 8px;
+  font-weight: 800;
+  padding: density(1) density(2);
+  border: 1px solid palette(surface-dark);
+  border-radius: radius(full);
+  background: palette(light-light);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.brandAnalysisBadge:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.brandAnalysisBadgeLow {
+  color: palette(tertiary-dark);
+}
+
+.brandAnalysisBadgeMedium {
+  color: palette(warning-dark);
+  border-color: palette(warning-main);
+}
+
+.brandAnalysisBadgeHigh {
+  color: palette(success-dark);
+  border-color: palette(success-main);
+}

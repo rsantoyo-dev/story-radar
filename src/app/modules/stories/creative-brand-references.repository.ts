@@ -1,11 +1,21 @@
 import "server-only";
 
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { creativeBrandReferences } from "@/db/schema";
 
+import {
+  brandAnalysisCacheHash,
+  BRAND_ANALYZER_PROMPT_VERSION,
+} from "./brand-analyzer.config";
+import {
+  parseBrandReferenceAnalysis,
+} from "./brand-reference-analysis";
+import { parseCreativeBrandContribution } from "./creative-brand-reference-metadata";
 import type {
+  BrandReferenceAnalysis,
+  CreativeBrandContribution,
   CreativeBrandReference,
   CreativeBrandReferenceKind,
 } from "./creative-content.types";
@@ -40,6 +50,8 @@ export type CreativeBrandReferencePatch = Partial<{
   usageNote: string | null;
   providerTransmissionAllowed: boolean;
   isActive: boolean;
+  contribution: CreativeBrandContribution;
+  activatedForJourney: boolean;
 }>;
 
 /** Every brand reference for a topic, newest first, active ones before archived. */
@@ -103,9 +115,16 @@ export async function updateCreativeBrandReference(
   referenceId: string,
   patch: CreativeBrandReferencePatch,
 ): Promise<CreativeBrandReference> {
+  const set: Record<string, unknown> = { ...patch, updatedAt: new Date() };
+  if ("contribution" in patch) {
+    // A changed contribution bumps the config version so BRAND-05 can fold it
+    // into the generation hash.
+    set.configVersion = sql`${creativeBrandReferences.configVersion} + 1`;
+  }
+
   const [updated] = await db
     .update(creativeBrandReferences)
-    .set({ ...patch, updatedAt: new Date() })
+    .set(set)
     .where(
       and(
         eq(creativeBrandReferences.id, referenceId),
@@ -120,6 +139,62 @@ export async function updateCreativeBrandReference(
     );
   }
   return publicBrandReference(updated);
+}
+
+/** Persists an AI visual analysis (BRAND-02). */
+export async function saveCreativeBrandReferenceAnalysis(
+  topicId: string,
+  referenceId: string,
+  input: {
+    analysis: BrandReferenceAnalysis;
+    hash: string;
+    model: string;
+    promptVersion: string;
+    runAt: Date;
+  },
+): Promise<CreativeBrandReference> {
+  const [updated] = await db
+    .update(creativeBrandReferences)
+    .set({
+      analysis: input.analysis,
+      analysisHash: input.hash,
+      analysisModel: input.model,
+      analysisPromptVersion: input.promptVersion,
+      analysisRunAt: input.runAt,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(creativeBrandReferences.id, referenceId),
+        eq(creativeBrandReferences.topicId, topicId),
+      ),
+    )
+    .returning();
+
+  if (!updated) {
+    throw new CreativeBrandReferenceNotFoundError(
+      "The brand reference was not found",
+    );
+  }
+  return publicBrandReference(updated);
+}
+
+/** Distinct references analyzed for a topic since the start of the current UTC day. */
+export async function countBrandReferenceAnalysesToday(
+  topicId: string,
+): Promise<number> {
+  const startOfDay = new Date();
+  startOfDay.setUTCHours(0, 0, 0, 0);
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(creativeBrandReferences)
+    .where(
+      and(
+        eq(creativeBrandReferences.topicId, topicId),
+        gte(creativeBrandReferences.analysisRunAt, startOfDay),
+      ),
+    );
+  return count;
 }
 
 /** Resolves a reference only when it belongs to the selected topic. */
@@ -140,10 +215,45 @@ export async function findCreativeBrandReference(
   return row;
 }
 
-/** Browser-safe projection — drops topicId, objectKey and sha256. */
+function readContribution(
+  value: unknown,
+): CreativeBrandContribution | null {
+  if (value == null) return null;
+  try {
+    return parseCreativeBrandContribution(value);
+  } catch {
+    return null;
+  }
+}
+
+function readAnalysis(value: unknown): BrandReferenceAnalysis | null {
+  if (value == null) return null;
+  try {
+    return parseBrandReferenceAnalysis(JSON.stringify(value));
+  } catch {
+    return null;
+  }
+}
+
+/** Browser-safe projection — drops topicId, objectKey, sha256 and the raw hash. */
 export function publicBrandReference(
   row: StoredCreativeBrandReference,
 ): CreativeBrandReference {
+  const analysis = readAnalysis(row.analysis);
+  const currentHash =
+    analysis && row.analysisModel && row.analysisPromptVersion
+      ? brandAnalysisCacheHash({
+          imageSha256: row.sha256,
+          model: row.analysisModel,
+          promptVersion: row.analysisPromptVersion,
+        })
+      : null;
+  const analysisIsStale = Boolean(
+    analysis &&
+      (row.analysisPromptVersion !== BRAND_ANALYZER_PROMPT_VERSION ||
+        row.analysisHash !== currentHash),
+  );
+
   return {
     id: row.id,
     name: row.name,
@@ -159,6 +269,13 @@ export function publicBrandReference(
     height: row.height,
     version: row.version,
     isActive: row.isActive,
+    contribution: readContribution(row.contribution),
+    configVersion: row.configVersion,
+    activatedForJourney: row.activatedForJourney,
+    analysis,
+    analysisRunAt: row.analysisRunAt ? row.analysisRunAt.toISOString() : null,
+    analysisPromptVersion: row.analysisPromptVersion,
+    analysisIsStale,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

@@ -32,6 +32,9 @@ import {
   CreativeBrandReferenceConflictError,
   CreativeBrandReferenceNotFoundError,
 } from "@/app/modules/stories/creative-brand-references.repository";
+import { BrandAnalyzerConfigurationError } from "@/app/modules/stories/brand-analyzer.config";
+import { CreativeBrandAnalysisError } from "@/app/modules/stories/brand-reference-analysis";
+import { CreativeBrandAnalysisLimitError } from "@/app/modules/stories/analyze-brand-reference";
 import {
   R2StorageConfigurationError,
   R2StorageObjectError,
@@ -86,14 +89,18 @@ export function creativeRouteErrorResponse(
     return NextResponse.json({ error: error.message }, { status: 409 });
   }
 
-  if (error instanceof CreativeContentDailyLimitError) {
+  if (
+    error instanceof CreativeContentDailyLimitError ||
+    error instanceof CreativeBrandAnalysisLimitError
+  ) {
     return NextResponse.json({ error: error.message }, { status: 429 });
   }
 
   if (
     error instanceof CreativeContentConfigurationError ||
     error instanceof FalImageConfigurationError ||
-    error instanceof R2StorageConfigurationError
+    error instanceof R2StorageConfigurationError ||
+    error instanceof BrandAnalyzerConfigurationError
   ) {
     return NextResponse.json({ error: error.message }, { status: 503 });
   }
@@ -103,7 +110,8 @@ export function creativeRouteErrorResponse(
     error instanceof CompanionStoryResponseError ||
     error instanceof OpenAiEditorialError ||
     error instanceof FalImageResponseError ||
-    error instanceof R2StorageObjectError
+    error instanceof R2StorageObjectError ||
+    error instanceof CreativeBrandAnalysisError
   ) {
     return NextResponse.json({ error: error.message }, { status: 502 });
   }

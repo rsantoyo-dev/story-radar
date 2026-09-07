@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  assertBrandReferenceActivatable,
+  brandContributionIsConfigured,
   CreativeBrandReferenceValidationError,
+  parseCreativeBrandContribution,
   parseCreativeBrandReferenceMetadata,
   parseCreativeBrandReferencePatch,
 } from "./creative-brand-reference-metadata";
@@ -105,6 +108,97 @@ test("parseCreativeBrandReferencePatch only carries present keys", () => {
   );
   assert.throws(
     () => parseCreativeBrandReferencePatch({ isActive: "no" }),
+    CreativeBrandReferenceValidationError,
+  );
+});
+
+test("parseCreativeBrandContribution dedups aspects and caps text", () => {
+  assert.deepEqual(
+    parseCreativeBrandContribution({
+      aspects: ["color", "color", "mood"],
+      guidance: "  take the palette  ",
+      avoid: "",
+    }),
+    { aspects: ["color", "mood"], guidance: "take the palette", avoid: null },
+  );
+  assert.throws(
+    () => parseCreativeBrandContribution({ aspects: ["typography"] }),
+    CreativeBrandReferenceValidationError,
+  );
+  assert.throws(
+    () => parseCreativeBrandContribution({ guidance: "x".repeat(2001) }),
+    CreativeBrandReferenceValidationError,
+  );
+  assert.deepEqual(parseCreativeBrandContribution({}), {
+    aspects: [],
+    guidance: null,
+    avoid: null,
+  });
+});
+
+test("brandContributionIsConfigured", () => {
+  assert.equal(brandContributionIsConfigured(null), false);
+  assert.equal(
+    brandContributionIsConfigured({ aspects: [], guidance: null, avoid: null }),
+    false,
+  );
+  assert.equal(
+    brandContributionIsConfigured({
+      aspects: ["color"],
+      guidance: null,
+      avoid: null,
+    }),
+    true,
+  );
+  assert.equal(
+    brandContributionIsConfigured({
+      aspects: [],
+      guidance: "keep it civic",
+      avoid: null,
+    }),
+    true,
+  );
+});
+
+test("assertBrandReferenceActivatable is the gate", () => {
+  const contribution = { aspects: ["color" as const], guidance: null, avoid: null };
+  assert.doesNotThrow(() =>
+    assertBrandReferenceActivatable({
+      providerTransmissionAllowed: true,
+      contribution,
+    }),
+  );
+  assert.throws(
+    () =>
+      assertBrandReferenceActivatable({
+        providerTransmissionAllowed: false,
+        contribution,
+      }),
+    CreativeBrandReferenceValidationError,
+  );
+  assert.throws(
+    () =>
+      assertBrandReferenceActivatable({
+        providerTransmissionAllowed: true,
+        contribution: null,
+      }),
+    CreativeBrandReferenceValidationError,
+  );
+});
+
+test("patch parses contribution and activatedForJourney", () => {
+  assert.deepEqual(
+    parseCreativeBrandReferencePatch({
+      contribution: { aspects: ["texture"], guidance: "grain" },
+      activatedForJourney: true,
+    }),
+    {
+      contribution: { aspects: ["texture"], guidance: "grain", avoid: null },
+      activatedForJourney: true,
+    },
+  );
+  assert.throws(
+    () => parseCreativeBrandReferencePatch({ activatedForJourney: "yes" }),
     CreativeBrandReferenceValidationError,
   );
 });

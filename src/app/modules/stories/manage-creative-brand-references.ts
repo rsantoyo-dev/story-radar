@@ -4,6 +4,9 @@ import { createHash, randomUUID } from "node:crypto";
 import sharp from "sharp";
 
 import {
+  assertBrandReferenceActivatable,
+  brandContributionIsConfigured,
+  parseCreativeBrandContribution,
   parseCreativeBrandReferenceMetadata,
   parseCreativeBrandReferencePatch,
   CreativeBrandReferenceValidationError,
@@ -12,8 +15,12 @@ import {
   createCreativeBrandReference,
   findCreativeBrandReference,
   updateCreativeBrandReference,
+  CreativeBrandReferenceNotFoundError,
 } from "./creative-brand-references.repository";
-import type { CreativeBrandReference } from "./creative-content.types";
+import type {
+  CreativeBrandContribution,
+  CreativeBrandReference,
+} from "./creative-content.types";
 import {
   buildCreativeBrandReferenceObjectKey,
   deletePrivateR2Object,
@@ -112,11 +119,60 @@ export async function editCreativeBrandReference({
   referenceId: string;
   patch: unknown;
 }): Promise<CreativeBrandReference> {
-  return updateCreativeBrandReference(
-    topicId,
-    referenceId,
-    parseCreativeBrandReferencePatch(patch),
-  );
+  const parsed = parseCreativeBrandReferencePatch(patch);
+
+  // The activation gate (BRAND-02) needs the merged state (row + patch): a
+  // reference may only be turned on for the journey once provider transmission
+  // is allowed and a contribution is set. And turning either of those off must
+  // not leave an already-activated reference dangling.
+  const touchesGate =
+    "activatedForJourney" in parsed ||
+    "providerTransmissionAllowed" in parsed ||
+    "contribution" in parsed;
+
+  if (touchesGate) {
+    const row = await findCreativeBrandReference(topicId, referenceId);
+    if (!row) {
+      throw new CreativeBrandReferenceNotFoundError(
+        "The brand reference was not found",
+      );
+    }
+    const providerTransmissionAllowed =
+      parsed.providerTransmissionAllowed ?? row.providerTransmissionAllowed;
+    const contribution: CreativeBrandContribution | null =
+      "contribution" in parsed
+        ? (parsed.contribution ?? null)
+        : readStoredContribution(row.contribution);
+    const activatedForJourney =
+      parsed.activatedForJourney ?? row.activatedForJourney;
+
+    if (activatedForJourney) {
+      assertBrandReferenceActivatable({
+        providerTransmissionAllowed,
+        contribution,
+      });
+    } else if (
+      row.activatedForJourney &&
+      (!providerTransmissionAllowed ||
+        !brandContributionIsConfigured(contribution))
+    ) {
+      // Conditions were just removed from an active reference — deactivate it.
+      parsed.activatedForJourney = false;
+    }
+  }
+
+  return updateCreativeBrandReference(topicId, referenceId, parsed);
+}
+
+function readStoredContribution(
+  value: unknown,
+): CreativeBrandContribution | null {
+  if (value == null) return null;
+  try {
+    return parseCreativeBrandContribution(value);
+  } catch {
+    return null;
+  }
 }
 
 export async function readCreativeBrandReferenceFile({

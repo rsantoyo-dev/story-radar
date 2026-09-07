@@ -1,14 +1,14 @@
 ---
 id: BRAND-02
 feature: FEAT-BRAND-001
-status: todo
+status: review
 board: brand-visual-references.kanban.md
-tags: [brand, todo, p0]
+tags: [brand, review, p0]
 ---
 
 # BRAND-02 — Definir qué aporta cada referencia
 
-**Estado:** [[status-todo]] · **Feature:** [Referencias visuales de marca](../features/brand-visual-references.md)
+**Estado:** [[status-review]] · **Feature:** [Referencias visuales de marca](../features/brand-visual-references.md)
 
 **Como** editor, **quiero** definir qué aporta cada referencia, **para** producir imágenes coherentes con la marca y conservar sus decisiones visuales.
 

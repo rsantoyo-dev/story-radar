@@ -4,12 +4,15 @@ import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 
 import {
+  BRAND_CONTRIBUTION_ASPECTS,
   CREATIVE_BRAND_BACKDROP_MODES,
   CREATIVE_BRAND_PLACEMENTS,
   CREATIVE_BRAND_REFERENCE_KINDS,
   CREATIVE_BRAND_SCOPES,
   CREATIVE_BRAND_UI_ROLES,
   CREATIVE_CAROUSEL_CHROME_STYLES,
+  type BrandContributionAspect,
+  type CreativeBrandContribution,
   type CreativeBrandPaletteColor,
   type CreativeBrandReference,
   type CreativeBrandReferenceKind,
@@ -973,6 +976,35 @@ export function BrandReferenceLibrary({
       .finally(() => setBusy(undefined));
   };
 
+  const analyze = (reference: CreativeBrandReference) => {
+    if (busy) return;
+    setBusy(`analysis:${reference.id}`);
+    setError(undefined);
+    brandReferenceRequest<CreativeBrandReference>(
+      topicUrl(
+        `${BRAND_REFERENCES_PATH}/${encodeURIComponent(reference.id)}/analysis`,
+        topicId,
+      ),
+      secret,
+      { method: "POST" },
+    )
+      .then((updated) => {
+        setReferences((prev) =>
+          (prev ?? []).map((entry) =>
+            entry.id === updated.id ? updated : entry,
+          ),
+        );
+      })
+      .catch((requestError: unknown) => {
+        setError(
+          requestError instanceof Error
+            ? requestError.message
+            : "The analysis failed",
+        );
+      })
+      .finally(() => setBusy(undefined));
+  };
+
   return (
     <section
       className={styles.brandReferenceLibrary}
@@ -1086,108 +1118,340 @@ export function BrandReferenceLibrary({
       ) : (
         <div className={styles.brandReferenceGrid}>
           {list.map((reference) => (
-            <figure
+            <BrandReferenceCard
               key={reference.id}
-              className={`${styles.brandReferenceItem} ${
-                reference.isActive ? "" : styles.brandReferenceInactive
-              }`}
-            >
-              <BrandReferencePreview
-                topicId={topicId}
-                secret={secret}
-                referenceId={reference.id}
-                fileName={reference.fileName}
-              />
-              <figcaption className={styles.brandReferenceMeta}>
-                <label className={styles.field}>
-                  <span>Name</span>
-                  <input
-                    defaultValue={reference.name}
-                    disabled={disabled || Boolean(busy)}
-                    maxLength={120}
-                    onBlur={(event) => {
-                      const value = event.target.value.trim();
-                      if (value && value !== reference.name) {
-                        patch(reference, { name: value });
-                      }
-                    }}
-                  />
-                </label>
-                <select
-                  className={styles.brandReferenceBadge}
-                  value={reference.kind}
-                  disabled={disabled || Boolean(busy)}
-                  onChange={(event) =>
-                    patch(reference, { kind: event.target.value })
-                  }
-                >
-                  {CREATIVE_BRAND_REFERENCE_KINDS.map((kind) => (
-                    <option key={kind} value={kind}>
-                      {BRAND_REFERENCE_KIND_LABEL[kind]}
-                    </option>
-                  ))}
-                </select>
-                <span className={styles.brandAssetHint}>
-                  {reference.width}×{reference.height} ·{" "}
-                  {reference.originalContentType.replace("image/", "")}
-                </span>
-                <label
-                  className={`${styles.brandReferencePill} ${
-                    reference.providerTransmissionAllowed
-                      ? styles.brandReferencePillOn
-                      : ""
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={reference.providerTransmissionAllowed}
-                    disabled={disabled || Boolean(busy)}
-                    onChange={(event) =>
-                      patch(reference, {
-                        providerTransmissionAllowed: event.target.checked,
-                      })
-                    }
-                  />
-                  <span>
-                    Provider:{" "}
-                    {reference.providerTransmissionAllowed
-                      ? "allowed"
-                      : "withheld"}
-                  </span>
-                </label>
-                {reference.isActive ? (
-                  <button
-                    type="button"
-                    className={styles.secondaryButton}
-                    disabled={disabled || Boolean(busy)}
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          `Deactivate "${reference.name}"? It stays on file for historical versions.`,
-                        )
-                      ) {
-                        patch(reference, { isActive: false });
-                      }
-                    }}
-                  >
-                    Deactivate
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className={styles.secondaryButton}
-                    disabled={disabled || Boolean(busy)}
-                    onClick={() => patch(reference, { isActive: true })}
-                  >
-                    Reactivate
-                  </button>
-                )}
-              </figcaption>
-            </figure>
+              reference={reference}
+              topicId={topicId}
+              secret={secret}
+              disabled={disabled}
+              busy={busy}
+              onPatch={patch}
+              onAnalyze={analyze}
+            />
           ))}
         </div>
       )}
     </section>
+  );
+}
+
+function BrandReferenceCard({
+  reference,
+  topicId,
+  secret,
+  disabled,
+  busy,
+  onPatch,
+  onAnalyze,
+}: {
+  reference: CreativeBrandReference;
+  topicId: string;
+  secret: string;
+  disabled: boolean;
+  busy: string | undefined;
+  onPatch: (
+    reference: CreativeBrandReference,
+    changes: Record<string, unknown>,
+  ) => void;
+  onAnalyze: (reference: CreativeBrandReference) => void;
+}) {
+  const locked = disabled || Boolean(busy);
+  const contribution: CreativeBrandContribution = reference.contribution ?? {
+    aspects: [],
+    guidance: null,
+    avoid: null,
+  };
+  const contributionSet =
+    contribution.aspects.length > 0 || contribution.guidance || contribution.avoid;
+
+  const commitContribution = (next: CreativeBrandContribution) => {
+    onPatch(reference, { contribution: next });
+  };
+  const toggleAspect = (aspect: BrandContributionAspect) => {
+    const has = contribution.aspects.includes(aspect);
+    commitContribution({
+      ...contribution,
+      aspects: has
+        ? contribution.aspects.filter((entry) => entry !== aspect)
+        : [...contribution.aspects, aspect],
+    });
+  };
+  const addAnalysisAspect = (
+    aspect: BrandContributionAspect,
+    observed: string,
+  ) => {
+    const guidance = [contribution.guidance, `${aspect}: ${observed}`]
+      .filter(Boolean)
+      .join("\n")
+      .slice(0, 2000);
+    commitContribution({
+      ...contribution,
+      aspects: contribution.aspects.includes(aspect)
+        ? contribution.aspects
+        : [...contribution.aspects, aspect],
+      guidance,
+    });
+  };
+
+  const analysis = reference.analysis;
+
+  return (
+    <details
+      className={`${styles.profilePanel} ${
+        reference.isActive ? "" : styles.brandReferenceInactive
+      }`}
+    >
+      <summary>
+        <span>
+          <strong>{reference.name}</strong>
+          <small>
+            {BRAND_REFERENCE_KIND_LABEL[reference.kind]} ·{" "}
+            {reference.width}×{reference.height}
+            {reference.activatedForJourney ? " · in the journey" : ""}
+          </small>
+        </span>
+        <span>Edit</span>
+      </summary>
+      <div className={styles.profileBody}>
+        <BrandReferencePreview
+          topicId={topicId}
+          secret={secret}
+          referenceId={reference.id}
+          fileName={reference.fileName}
+        />
+
+        <label className={styles.field}>
+          <span>Name</span>
+          <input
+            defaultValue={reference.name}
+            disabled={locked}
+            maxLength={120}
+            onBlur={(event) => {
+              const value = event.target.value.trim();
+              if (value && value !== reference.name) {
+                onPatch(reference, { name: value });
+              }
+            }}
+          />
+        </label>
+        <label className={styles.field}>
+          <span>Kind</span>
+          <select
+            value={reference.kind}
+            disabled={locked}
+            onChange={(event) =>
+              onPatch(reference, { kind: event.target.value })
+            }
+          >
+            {CREATIVE_BRAND_REFERENCE_KINDS.map((kind) => (
+              <option key={kind} value={kind}>
+                {BRAND_REFERENCE_KIND_LABEL[kind]}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div className={styles.field}>
+          <span>What the generator should take from this</span>
+          <div className={styles.brandContributionChips}>
+            {BRAND_CONTRIBUTION_ASPECTS.map((aspect) => {
+              const on = contribution.aspects.includes(aspect);
+              return (
+                <button
+                  key={aspect}
+                  type="button"
+                  className={`${styles.brandContributionChip} ${
+                    on ? styles.brandContributionChipOn : ""
+                  }`}
+                  disabled={locked}
+                  onClick={() => toggleAspect(aspect)}
+                >
+                  {aspect}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <label className={styles.field}>
+          <span>Guidance</span>
+          <textarea
+            rows={3}
+            defaultValue={contribution.guidance ?? ""}
+            disabled={locked}
+            maxLength={2000}
+            onBlur={(event) => {
+              const value = event.target.value.trim() || null;
+              if (value !== contribution.guidance) {
+                commitContribution({ ...contribution, guidance: value });
+              }
+            }}
+          />
+        </label>
+        <label className={styles.field}>
+          <span>Avoid copying</span>
+          <textarea
+            rows={2}
+            defaultValue={contribution.avoid ?? ""}
+            disabled={locked}
+            maxLength={2000}
+            onBlur={(event) => {
+              const value = event.target.value.trim() || null;
+              if (value !== contribution.avoid) {
+                commitContribution({ ...contribution, avoid: value });
+              }
+            }}
+          />
+        </label>
+
+        <label
+          className={`${styles.brandReferencePill} ${
+            reference.providerTransmissionAllowed
+              ? styles.brandReferencePillOn
+              : ""
+          }`}
+        >
+          <input
+            type="checkbox"
+            checked={reference.providerTransmissionAllowed}
+            disabled={locked}
+            onChange={(event) =>
+              onPatch(reference, {
+                providerTransmissionAllowed: event.target.checked,
+              })
+            }
+          />
+          <span>May be sent to the image provider</span>
+        </label>
+        <label className={styles.brandReferencePill}>
+          <input
+            type="checkbox"
+            checked={reference.activatedForJourney}
+            disabled={
+              locked ||
+              (!reference.activatedForJourney &&
+                (!reference.providerTransmissionAllowed || !contributionSet))
+            }
+            onChange={(event) =>
+              onPatch(reference, { activatedForJourney: event.target.checked })
+            }
+          />
+          <span>Use in the creative journey</span>
+        </label>
+        {!reference.activatedForJourney &&
+        (!reference.providerTransmissionAllowed || !contributionSet) ? (
+          <p className={styles.brandAssetHint}>
+            Allow provider transmission and set a contribution first.
+          </p>
+        ) : null}
+
+        <div className={styles.brandReferenceForm}>
+          <button
+            type="button"
+            className={styles.secondaryButton}
+            disabled={locked}
+            onClick={() => onAnalyze(reference)}
+          >
+            {busy === `analysis:${reference.id}`
+              ? "Analyzing…"
+              : analysis
+                ? "Re-analyze image"
+                : "Analyze image"}
+          </button>
+          {reference.isActive ? (
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              disabled={locked}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    `Deactivate "${reference.name}"? It stays on file for historical versions.`,
+                  )
+                ) {
+                  onPatch(reference, { isActive: false });
+                }
+              }}
+            >
+              Deactivate
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              disabled={locked}
+              onClick={() => onPatch(reference, { isActive: true })}
+            >
+              Reactivate
+            </button>
+          )}
+        </div>
+
+        {analysis ? (
+          <div className={styles.brandAnalysis}>
+            <p className={styles.brandAssetHint}>{analysis.note}</p>
+            {reference.analysisIsStale ? (
+              <p className={styles.brandAssetHint}>
+                This analysis is for an older image — re-analyze.
+              </p>
+            ) : null}
+            {BRAND_CONTRIBUTION_ASPECTS.map((aspect) => {
+              const entry = analysis.aspects[aspect];
+              return (
+                <div key={aspect} className={styles.brandAnalysisRow}>
+                  <span className={styles.brandReferenceBadge}>{aspect}</span>
+                  <span>
+                    {entry.present ? (
+                      <>
+                        {entry.observed}
+                        <br />
+                        <span className={styles.brandAssetHint}>
+                          {entry.evidence}
+                        </span>
+                      </>
+                    ) : (
+                      <span className={styles.brandAssetHint}>
+                        not determined
+                      </span>
+                    )}
+                  </span>
+                  {entry.present ? (
+                    <button
+                      type="button"
+                      className={`${styles.brandAnalysisBadge} ${
+                        entry.confidence === "high"
+                          ? styles.brandAnalysisBadgeHigh
+                          : entry.confidence === "medium"
+                            ? styles.brandAnalysisBadgeMedium
+                            : styles.brandAnalysisBadgeLow
+                      }`}
+                      disabled={locked}
+                      onClick={() => addAnalysisAspect(aspect, entry.observed)}
+                    >
+                      + add ({entry.confidence})
+                    </button>
+                  ) : null}
+                </div>
+              );
+            })}
+            {analysis.detectedText.length ? (
+              <p className={styles.brandAssetHint}>
+                Text seen: {analysis.detectedText.join(" · ")}
+              </p>
+            ) : null}
+            {analysis.avoid.length ? (
+              <p className={styles.brandAssetHint}>
+                Do not carry over: {analysis.avoid.join(" · ")}
+              </p>
+            ) : null}
+            {analysis.unknowns.length ? (
+              <p className={styles.brandAssetHint}>
+                Could not determine: {analysis.unknowns.join(" · ")}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </details>
   );
 }
 

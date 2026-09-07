@@ -163,9 +163,52 @@ export const CREATIVE_BRAND_REFERENCE_KINDS = [
 export type CreativeBrandReferenceKind =
   (typeof CREATIVE_BRAND_REFERENCE_KINDS)[number];
 
+/** Visual aspects a brand reference can contribute to a generated image (BRAND-02). */
+export const BRAND_CONTRIBUTION_ASPECTS = [
+  "color",
+  "composition",
+  "texture",
+  "shape",
+  "motif",
+  "mood",
+] as const;
+export type BrandContributionAspect =
+  (typeof BRAND_CONTRIBUTION_ASPECTS)[number];
+
+/** The editor's declared "what to take from this reference" config (BRAND-02). */
+export type CreativeBrandContribution = {
+  aspects: BrandContributionAspect[];
+  guidance: string | null;
+  avoid: string | null;
+};
+
+/** One aspect of the optional AI visual analysis (BRAND-02). */
+export type BrandReferenceAnalysisAspect = {
+  /** false = the analyzer could not determine this aspect. */
+  present: boolean;
+  observed: string;
+  /** What in the rendered image supports the observation. */
+  evidence: string;
+  confidence: "high" | "medium" | "low";
+};
+
 /**
- * Browser-safe row of the per-topic brand visual reference library (BRAND-01).
- * Deliberately excludes topicId, objectKey and sha256.
+ * The optional AI visual analysis of a brand reference (BRAND-02). A suggestion
+ * only — never applied automatically; the editor copies fields into
+ * `contribution`. `detectedText` is untrusted, display-only.
+ */
+export type BrandReferenceAnalysis = {
+  aspects: Record<BrandContributionAspect, BrandReferenceAnalysisAspect>;
+  detectedText: string[];
+  avoid: string[];
+  unknowns: string[];
+  note: string;
+};
+
+/**
+ * Browser-safe row of the per-topic brand visual reference library
+ * (BRAND-01/02). Deliberately excludes topicId, objectKey, sha256 and the raw
+ * analysis hash.
  */
 export type CreativeBrandReference = {
   id: string;
@@ -184,6 +227,15 @@ export type CreativeBrandReference = {
   height: number;
   version: number;
   isActive: boolean;
+  /** BRAND-02 — null until the editor configures it. */
+  contribution: CreativeBrandContribution | null;
+  configVersion: number;
+  activatedForJourney: boolean;
+  analysis: BrandReferenceAnalysis | null;
+  analysisRunAt: string | null;
+  analysisPromptVersion: string | null;
+  /** True when a stored analysis was produced for an older image / prompt. */
+  analysisIsStale: boolean;
   createdAt: Date;
   updatedAt: Date;
 };

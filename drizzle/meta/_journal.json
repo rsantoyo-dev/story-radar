@@ -337,6 +337,13 @@
       "when": 1788745627585,
       "tag": "0047_high_turbo",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1788747535652,
+      "tag": "0048_rainy_mimic",
+      "breakpoints": true
     }
   ]
 }

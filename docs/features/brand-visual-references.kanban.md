@@ -4,11 +4,6 @@
 
 ## Por hacer
 
-### BRAND-02 — Definir qué aporta cada referencia
-
-  - priority: high
-  - tags: [brand, p0]
-
 ### BRAND-03 — Seleccionar referencias automáticamente por unidad
 
   - priority: high
@@ -42,6 +37,11 @@
 ## En progreso
 
 ## En revisión / QA
+
+### BRAND-02 — Definir qué aporta cada referencia
+
+  - priority: high
+  - tags: [brand, p0]
 
 ### BRAND-01 — Subir referencias visuales de marca
 

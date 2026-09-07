@@ -130,6 +130,36 @@ export const creativeBrandReferences = pgTable(
     /** Free-text declared conditions for reuse. */
     usageNote: text("usage_note"),
     isActive: boolean("is_active").default(true).notNull(),
+    /**
+     * Editor-declared "what the generator should take from this" (BRAND-02):
+     * `{ aspects: string[], guidance: string|null, avoid: string|null }`.
+     * Validated in code. Null = not configured yet.
+     */
+    contribution: jsonb("contribution"),
+    /** Bumps whenever `contribution` changes; BRAND-05 folds it into the hash. */
+    configVersion: integer("config_version").default(1).notNull(),
+    /**
+     * The editor has turned this reference on for auto-selection (BRAND-02/03).
+     * Only allowed true when `provider_transmission_allowed` is true and a
+     * contribution is set (the "set a contribution" part is enforced in code).
+     */
+    activatedForJourney: boolean("activated_for_journey")
+      .default(false)
+      .notNull(),
+    /**
+     * Optional AI visual analysis (BRAND-02): structured suggestions with
+     * evidence and explicit unknowns. Never applied automatically — the editor
+     * copies fields into `contribution`.
+     */
+    analysis: jsonb("analysis"),
+    /** sha256 of { image sha256, analyzer model, prompt version } — cache key. */
+    analysisHash: text("analysis_hash"),
+    analysisModel: text("analysis_model"),
+    analysisPromptVersion: text("analysis_prompt_version"),
+    analysisRunAt: timestamp("analysis_run_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -156,10 +186,13 @@ export const creativeBrandReferences = pgTable(
         AND ${table.width} <= ${table.height} * 30
         AND ${table.height} <= ${table.width} * 30
         AND ${table.version} > 0
+        AND ${table.configVersion} > 0
         AND char_length(${table.name}) BETWEEN 1 AND 120
         AND ${table.kind} IN ('finished-post', 'poster', 'sticker-sheet', 'signage', 'other')
         AND (${table.provenance} IS NULL OR char_length(${table.provenance}) <= 500)
-        AND (${table.usageNote} IS NULL OR char_length(${table.usageNote}) <= 1000)`,
+        AND (${table.usageNote} IS NULL OR char_length(${table.usageNote}) <= 1000)
+        AND (${table.activatedForJourney} = false OR ${table.providerTransmissionAllowed} = true)
+        AND (${table.analysisPromptVersion} IS NULL OR char_length(${table.analysisPromptVersion}) <= 60)`,
     ),
   ],
 );
