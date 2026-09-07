@@ -1,0 +1,1 @@
+ALTER TABLE "creative_units" ADD COLUMN "brand_reference_selection" jsonb;

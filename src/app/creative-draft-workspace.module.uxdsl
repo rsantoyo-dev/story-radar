@@ -3017,3 +3017,27 @@
   color: palette(success-dark);
   border-color: palette(success-main);
 }
+
+/* BRAND-03 — auto-selected brand references per unit (read-only) */
+.brandUnitSelection {
+  display: grid;
+  gap: space(1);
+  @ds-typo(caption);
+  font-size: 10px;
+  color: palette(tertiary-dark);
+}
+
+.brandUnitSelection > span {
+  font-weight: 750;
+  color: palette(primary-dark);
+}
+
+.brandUnitSelection ul {
+  margin: 0;
+  padding-left: density(4);
+}
+
+.brandUnitSelection code {
+  font-size: 9px;
+  color: palette(tertiary-main);
+}

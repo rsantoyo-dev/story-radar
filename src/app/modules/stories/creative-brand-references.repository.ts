@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { creativeBrandReferences } from "@/db/schema";
@@ -12,7 +12,10 @@ import {
 import {
   parseBrandReferenceAnalysis,
 } from "./brand-reference-analysis";
-import { parseCreativeBrandContribution } from "./creative-brand-reference-metadata";
+import {
+  brandContributionIsConfigured,
+  parseCreativeBrandContribution,
+} from "./creative-brand-reference-metadata";
 import type {
   BrandReferenceAnalysis,
   CreativeBrandContribution,
@@ -53,6 +56,30 @@ export type CreativeBrandReferencePatch = Partial<{
   contribution: CreativeBrandContribution;
   activatedForJourney: boolean;
 }>;
+
+/**
+ * Brand references eligible for the creative journey (BRAND-03): active AND
+ * turned on for the journey AND with a real contribution configured. Oldest
+ * first (an established reference is a stable tiebreak).
+ */
+export async function listActivatedBrandReferences(
+  topicId: string,
+): Promise<CreativeBrandReference[]> {
+  const rows = await db
+    .select()
+    .from(creativeBrandReferences)
+    .where(
+      and(
+        eq(creativeBrandReferences.topicId, topicId),
+        eq(creativeBrandReferences.isActive, true),
+        eq(creativeBrandReferences.activatedForJourney, true),
+      ),
+    )
+    .orderBy(asc(creativeBrandReferences.createdAt));
+  return rows
+    .map(publicBrandReference)
+    .filter((reference) => brandContributionIsConfigured(reference.contribution));
+}
 
 /** Every brand reference for a topic, newest first, active ones before archived. */
 export async function listCreativeBrandReferences(

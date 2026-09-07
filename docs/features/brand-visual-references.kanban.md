@@ -4,11 +4,6 @@
 
 ## Por hacer
 
-### BRAND-03 — Seleccionar referencias automáticamente por unidad
-
-  - priority: high
-  - tags: [brand, p0]
-
 ### BRAND-04 — Enviar referencias al recorrido image-to-image
 
   - priority: high
@@ -37,6 +32,11 @@
 ## En progreso
 
 ## En revisión / QA
+
+### BRAND-03 — Seleccionar referencias automáticamente por unidad
+
+  - priority: high
+  - tags: [brand, p0]
 
 ### BRAND-02 — Definir qué aporta cada referencia
 

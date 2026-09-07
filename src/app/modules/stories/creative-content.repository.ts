@@ -39,8 +39,18 @@ import {
   type GeneratedCreativeBrief,
   type GeneratedCreativeDraft,
   type VisualFidelityMode,
+  type VisualFidelityOverride,
 } from "./creative-content.types";
 import { isCarouselEditorialGoal } from "./carousel-narrative";
+import { listActivatedBrandReferences } from "./creative-brand-references.repository";
+import { resolveEffectiveVisualFidelity } from "./creative-visual-fidelity";
+import { getTopicVisualFidelityMode } from "./creative-profile.repository";
+import {
+  getBrandReferenceSelectionBudget,
+  normalizeBrandReferenceSelection,
+  selectBrandReferencesForDraft,
+  type BrandReferenceSelection,
+} from "./select-brand-references";
 import { parseCreativeBrandOverlayInput } from "./creative-brand-overlay-validation";
 import {
   reviseCreativeDraftVisualPolicy,
@@ -356,7 +366,13 @@ export async function insertCreativeDraft({
 }): Promise<CreativeDraft> {
   const id = randomUUID();
   const now = new Date();
-  const units = draftUnitRows(id, generated.units, now);
+  const brandSelectionByOrder = await computeBrandReferenceSelectionByOrder(
+    topicId,
+    provider,
+    generated.units,
+    null,
+  );
+  const units = draftUnitRows(id, generated.units, now, brandSelectionByOrder);
   const assignments = unitCharacterAssignments(units, characterSnapshots, now);
 
   await db.batch([
@@ -408,7 +424,18 @@ export async function replaceCreativeDraft(
   } = {},
 ): Promise<CreativeDraft> {
   const now = new Date();
-  const units = draftUnitRows(current.id, input.units, now);
+  const brandSelectionByOrder = await computeBrandReferenceSelectionByOrder(
+    topicId,
+    current.provider,
+    input.units,
+    current.visualFidelityOverride ?? null,
+  );
+  const units = draftUnitRows(
+    current.id,
+    input.units,
+    now,
+    brandSelectionByOrder,
+  );
   const assignments = unitCharacterAssignments(units, characterSnapshots, now);
 
   await db.batch([
@@ -731,6 +758,13 @@ function mapCreativeDraft(
     assetRequest: unit.assetRequest,
     aspectRatio: unit.aspectRatio,
     characterIds: characterIdsByUnit.get(unit.id) ?? [],
+    ...(normalizeBrandReferenceSelection(unit.brandReferenceSelection)
+      ? {
+          brandReferenceSelection: normalizeBrandReferenceSelection(
+            unit.brandReferenceSelection,
+          ),
+        }
+      : {}),
   }));
   const qualityReviewIsCurrent = Boolean(
     generated.qualityReview &&
@@ -835,6 +869,7 @@ function draftUnitRows(
   draftId: string,
   units: GeneratedCreativeDraft["units"],
   now: Date,
+  brandSelectionByOrder?: Map<number, BrandReferenceSelection>,
 ) {
   return units.map((unit) => ({
     id: randomUUID(),
@@ -854,10 +889,53 @@ function draftUnitRows(
     factIds: unit.factIds,
     assetRequest: unit.assetRequest,
     aspectRatio: unit.aspectRatio,
+    brandReferenceSelection: brandSelectionByOrder?.get(unit.order) ?? null,
     createdAt: now,
     updatedAt: now,
     characterIds: unit.characterIds ?? [],
   }));
+}
+
+/**
+ * BRAND-03 — deterministic per-unit selection of activated brand references,
+ * recomputed on every draft (re)write. Never for documentary drafts, and it
+ * selects nothing (with an explanatory note) when place fidelity forbids
+ * generative imagery — it never loosens that policy.
+ */
+async function computeBrandReferenceSelectionByOrder(
+  topicId: string,
+  provider: string,
+  units: GeneratedCreativeDraft["units"],
+  visualFidelityOverride: VisualFidelityOverride | null | undefined,
+): Promise<Map<number, BrandReferenceSelection>> {
+  if (provider === "documentary") return new Map();
+
+  const [eligible, inheritedMode] = await Promise.all([
+    listActivatedBrandReferences(topicId),
+    getTopicVisualFidelityMode(topicId),
+  ]);
+  const effective = resolveEffectiveVisualFidelity({
+    inheritedMode,
+    override: visualFidelityOverride?.mode ?? null,
+    overrideReason: visualFidelityOverride?.reason,
+  });
+  const generativeImageryAllowed =
+    effective.mode !== "photo-required" &&
+    effective.mode !== "verified-references";
+
+  return selectBrandReferencesForDraft({
+    units: units.map((unit) => ({
+      order: unit.order,
+      role: unit.role,
+      visualDirection: unit.visualDirection,
+    })),
+    eligible,
+    budget: getBrandReferenceSelectionBudget(),
+    generativeImageryAllowed,
+    characterImageCountByOrder: new Map(
+      units.map((unit) => [unit.order, unit.characterIds?.length ?? 0]),
+    ),
+  });
 }
 
 function unitCharacterAssignments(

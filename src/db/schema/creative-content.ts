@@ -585,6 +585,14 @@ export const creativeUnits = pgTable(
       .default(sql`ARRAY[]::text[]`),
     assetRequest: creativeAssetRequestTypeEnum("asset_request").notNull(),
     aspectRatio: creativeAspectRatioEnum("aspect_ratio").notNull(),
+    /**
+     * Deterministic auto-selection of activated brand visual references for
+     * this unit (BRAND-03): `{ selected: [{ id, version, configVersion,
+     * function, reason }], excluded: [{ id, reason }], note: string|null }`.
+     * Recomputed on every draft save; validated in code. Null when the feature
+     * produced nothing.
+     */
+    brandReferenceSelection: jsonb("brand_reference_selection"),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),

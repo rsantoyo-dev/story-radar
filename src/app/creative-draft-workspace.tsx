@@ -2313,6 +2313,7 @@ function HistoricalDraftDetails({
                 value={unit.visualDirection}
                 rows={5}
               />
+              <BrandSelectionSummary selection={unit.brandReferenceSelection} />
             </article>
           ))}
         </div>
@@ -3065,10 +3066,52 @@ function DraftEditor({
                 </label>
               )) : <p>Add a character with at least one reference image in Creative profile to make it available here.</p>}
             </fieldset>
+            <BrandSelectionSummary selection={unit.brandReferenceSelection} />
           </article>
         ))}
       </div>
       <CompleteDraftScript draft={draft} format={format} />
+    </div>
+  );
+}
+
+/**
+ * Read-only echo of BRAND-03's deterministic per-unit brand-reference
+ * selection. Auto-selected on save; nothing to act on here.
+ */
+function BrandSelectionSummary({
+  selection,
+}: {
+  selection?: CreativeUnit["brandReferenceSelection"];
+}) {
+  if (!selection) return null;
+  return (
+    <div className={styles.brandUnitSelection}>
+      <span>Brand references (auto)</span>
+      {selection.selected.length ? (
+        <ul>
+          {selection.selected.map((entry) => (
+            <li key={entry.id}>
+              {entry.function} · {entry.reason}{" "}
+              <code>{entry.id.slice(0, 8)}</code>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <small>{selection.note ?? "None selected for this slide."}</small>
+      )}
+      {selection.excluded.length ? (
+        <details>
+          <summary>Not used ({selection.excluded.length})</summary>
+          <ul>
+            {selection.excluded.map((entry) => (
+              <li key={entry.id}>
+                <code>{entry.id.slice(0, 8)}</code> — {entry.reason}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
     </div>
   );
 }

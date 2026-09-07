@@ -638,6 +638,37 @@ export type CreativeUnit = {
   characterIds?: string[];
   /** A reserved blank zone for a native Instagram interaction sticker. */
   interactiveOverlay?: CreativeInteractiveOverlay;
+  /**
+   * Deterministic auto-selection of activated brand visual references for this
+   * unit (BRAND-03). Recomputed on every draft save; absent on drafts written
+   * before the feature.
+   */
+  brandReferenceSelection?: BrandReferenceSelection;
+};
+
+export type BrandReferenceFunction =
+  | "layout"
+  | "palette"
+  | "texture"
+  | "motif"
+  | "ambience"
+  | "signage";
+
+export type BrandReferenceSelectionEntry = {
+  id: string;
+  version: number;
+  configVersion: number;
+  function: BrandReferenceFunction;
+  reason: string;
+};
+
+export type BrandReferenceSelectionExclusion = { id: string; reason: string };
+
+/** Per-unit record of which brand references the deterministic selector chose. */
+export type BrandReferenceSelection = {
+  selected: BrandReferenceSelectionEntry[];
+  excluded: BrandReferenceSelectionExclusion[];
+  note: string | null;
 };
 
 export type CreativeQualityScores = {

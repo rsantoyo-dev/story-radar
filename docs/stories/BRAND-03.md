@@ -1,14 +1,14 @@
 ---
 id: BRAND-03
 feature: FEAT-BRAND-001
-status: todo
+status: review
 board: brand-visual-references.kanban.md
-tags: [brand, todo, p0]
+tags: [brand, review, p0]
 ---
 
 # BRAND-03 — Seleccionar referencias automáticamente por unidad
 
-**Estado:** [[status-todo]] · **Feature:** [Referencias visuales de marca](../features/brand-visual-references.md)
+**Estado:** [[status-review]] · **Feature:** [Referencias visuales de marca](../features/brand-visual-references.md)
 
 **Como** editor, **quiero** seleccionar referencias automáticamente por unidad, **para** producir imágenes coherentes con la marca y conservar sus decisiones visuales.
 
