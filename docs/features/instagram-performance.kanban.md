@@ -5,14 +5,17 @@
 ### IG-07 — Sincronización automática (histórico de métricas)
 
   - tags: [ig]
+  - note: post-MVP — no entra en esta fase; retomar cuando el SaaS escale y la sincronización manual (IG-05) deje de bastar.
 
 ### IG-08 — Comparar rendimiento de publicaciones equivalentes
 
   - tags: [ig]
+  - note: post-MVP — depende de las capturas temporales de IG-07.
 
 ### IG-09 — Conectar resultados con decisiones creativas
 
   - tags: [ig]
+  - note: post-MVP — análisis exploratorio; depende de IG-08 y de volumen de posts con versión identificada.
 
 ## Por hacer
 
