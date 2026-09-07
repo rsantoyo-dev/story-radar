@@ -6,16 +6,18 @@ import {
 import { parseCreativeAssetEditRequestInput } from "@/app/modules/stories/creative-asset-edit-request-input";
 import {
   discardCreativeAssetEditRequest,
+  findCreativeAssetEditRequest,
   listCreativeAssetEditRequests,
   saveCreativeAssetEditRequest,
 } from "@/app/modules/stories/creative-asset-edit-requests.repository";
+import { applyCreativeAssetEditRequest } from "@/app/modules/stories/manage-creative-assets";
 import {
   creativeRouteErrorResponse,
   noStoreJson,
 } from "../../../../creative-route-error";
 
 export const runtime = "nodejs";
-export const maxDuration = 15;
+export const maxDuration = 120;
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -65,6 +67,42 @@ export async function PUT(request: Request, context: Context) {
     const topicError = topicRequestErrorResponse(error);
     if (topicError) return topicError;
     return creativeRouteErrorResponse(error, "save the image edit");
+  }
+}
+
+export async function POST(request: Request, context: Context) {
+  const unauthorized = authorizeRadarCollector(request);
+  if (unauthorized) return unauthorized;
+  const draftId = await parseId(context);
+  if (!draftId) {
+    return noStoreJson({ error: "draftId must be a valid UUID" }, 400);
+  }
+
+  try {
+    const body = (await request.json()) as { unitOrder?: unknown };
+    if (
+      typeof body.unitOrder !== "number" ||
+      !Number.isInteger(body.unitOrder) ||
+      body.unitOrder <= 0
+    ) {
+      return noStoreJson({ error: "unitOrder must be a positive integer" }, 400);
+    }
+    const topicId = await requireActiveRequestTopic(request);
+    const result = await applyCreativeAssetEditRequest(
+      topicId,
+      draftId,
+      body.unitOrder,
+    );
+    const requestRow = await findCreativeAssetEditRequest(
+      topicId,
+      draftId,
+      body.unitOrder,
+    );
+    return noStoreJson({ ...result, request: requestRow ?? null }, 202);
+  } catch (error) {
+    const topicError = topicRequestErrorResponse(error);
+    if (topicError) return topicError;
+    return creativeRouteErrorResponse(error, "apply the saved image edit");
   }
 }
 

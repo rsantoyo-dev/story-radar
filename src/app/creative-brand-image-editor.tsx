@@ -20,13 +20,13 @@ export type SaveEditRequestPayload = {
   editType: "generative";
 };
 
-export function CreativeBrandImageEditor({ asset, topicId, secret, disabled, onSubmit, savedRequest, savedRequestReadOnly, onSaveRequest, onDiscardRequest }: {
+export function CreativeBrandImageEditor({ asset, topicId, secret, disabled, savedRequest, savedRequestReadOnly, onSaveRequest, onDiscardRequest, onApply }: {
   asset: CreativeGeneratedAsset; topicId: string; secret: string; disabled: boolean;
-  onSubmit: (options: BrandImageEditOptions) => void;
   savedRequest?: CreativeAssetEditRequest;
   savedRequestReadOnly?: boolean;
   onSaveRequest?: (payload: SaveEditRequestPayload) => void;
   onDiscardRequest?: () => void;
+  onApply?: (payload?: SaveEditRequestPayload) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [library, setLibrary] = useState<CreativeBrandReference[]>();
@@ -63,15 +63,54 @@ export function CreativeBrandImageEditor({ asset, topicId, secret, disabled, onS
     instruction.trim() !== savedInstruction.trim() ||
     useBase !== savedUseBase ||
     referencesChanged;
-  const isApplied = Boolean(asset.editSource) || savedRequest?.status === "applied";
-  const stateLabel = isApplied
-    ? "Aplicado"
+  const running = savedRequest?.status === "running";
+  const failed = savedRequest?.status === "failed";
+  const appliedCurrent =
+    savedRequest?.status === "applied" &&
+    savedRequest.appliedRevision === savedRequest.revision;
+  const stateLabel = running
+    ? "En ejecución"
+    : failed
+      ? "Falló"
+      : dirty
+        ? "Sin guardar"
+        : appliedCurrent
+          ? `Aplicado (rev ${savedRequest?.appliedRevision})`
+          : savedRequest
+            ? "Guardado"
+            : asset.editSource
+              ? "Aplicado"
+              : undefined;
+  const controlsEnabled = Boolean(onSaveRequest) && !savedRequestReadOnly;
+  const applyEnabled = Boolean(onApply) && !savedRequestReadOnly && !running;
+
+  function buildPayload(): SaveEditRequestPayload {
+    return {
+      baseAssetId: asset.id,
+      instruction: instruction.trim(),
+      useImageAsBase: useBase,
+      ...(changed ? { brandReferenceIds: selected } : {}),
+      editType: "generative",
+    };
+  }
+
+  // "Save and apply" when there are unsaved edits, otherwise apply the stored
+  // request. A failed request retries the same way.
+  const primaryDisabled =
+    !applyEnabled ||
+    (changed && !library) ||
+    (dirty ? !instruction.trim() : !savedRequest || appliedCurrent);
+  const primaryLabel = running
+    ? "Aplicando…"
     : dirty
-      ? "Sin guardar"
-      : savedRequest
-        ? "Guardado"
-        : undefined;
-  const canEditRequest = Boolean(onSaveRequest) && !savedRequestReadOnly;
+      ? "Guardar y aplicar"
+      : failed
+        ? "Reintentar"
+        : appliedCurrent
+          ? "Sin cambios que aplicar"
+          : useBase
+            ? "Aplicar el cambio a esta imagen"
+            : "Generar esta imagen con estas referencias";
 
   async function download() {
     try {
@@ -88,6 +127,8 @@ export function CreativeBrandImageEditor({ asset, topicId, secret, disabled, onS
   return <div className={styles.brandImageEditor}>
     {asset.editSource ? <p>Edited from image v{asset.editSource.version} · {asset.editInstruction}</p> : null}
     {stateLabel ? <span className={styles.editRequestState}>{stateLabel}</span> : null}
+    {savedRequest?.blockedReason ? <p role="alert">No se pudo aplicar: {savedRequest.blockedReason}</p> : null}
+    {failed && savedRequest?.lastError ? <p role="alert">Falló la ejecución: {savedRequest.lastError}</p> : null}
     <details onToggle={event => setOpen(event.currentTarget.open)}>
       <summary>Brand references and image edits</summary>
       {open && asset.editSource ? <EditBasePreview assetId={asset.id} topicId={topicId} secret={secret} /> : null}
@@ -100,7 +141,7 @@ export function CreativeBrandImageEditor({ asset, topicId, secret, disabled, onS
         {reference.contribution?.avoid ? <small>Avoid: {reference.contribution.avoid}</small> : null}
       </div>)}
       {!saved.length ? <p>No brand images were sent for this version.</p> : null}
-      {!disabled || canEditRequest ? <>
+      {!disabled || controlsEnabled ? <>
         <label><input type="checkbox" checked={useBase} disabled={!asset.imageUrl} onChange={event => setUseBase(event.target.checked)} /> Use this finished image as the edit base</label>
         <TextAreaField label="Requested change" value={instruction} maxLength={2000} rows={3} onChange={setInstruction} />
         <p>Keep the saved references, or explicitly choose current library versions for this image. Other slides stay unchanged.</p>
@@ -111,17 +152,18 @@ export function CreativeBrandImageEditor({ asset, topicId, secret, disabled, onS
         </label>)}
         {library ? <button type="button" className={styles.secondaryButton} onClick={() => setChanged(true)}>Use current library versions of the checked references</button> : null}
         <div className={styles.editRequestActions}>
-          {canEditRequest ? <button type="button" className={styles.secondaryButton}
+          {controlsEnabled ? <button type="button" className={styles.secondaryButton}
             disabled={!dirty || !instruction.trim() || (changed && !library)}
-            onClick={() => onSaveRequest?.({ baseAssetId: asset.id, instruction: instruction.trim(), useImageAsBase: useBase, ...(changed ? { brandReferenceIds: selected } : {}), editType: "generative" })}>
+            onClick={() => onSaveRequest?.(buildPayload())}>
             Guardar cambio
           </button> : null}
-          {canEditRequest && savedRequest?.status === "saved" ? <button type="button" className={styles.secondaryButton}
+          {controlsEnabled && savedRequest?.status === "saved" ? <button type="button" className={styles.secondaryButton}
             onClick={() => onDiscardRequest?.()}>
             Descartar
           </button> : null}
-          {!disabled ? <button type="button" className={styles.secondaryButton} disabled={!instruction.trim() || (changed && !library)} onClick={() => onSubmit({ useImageAsBase: useBase, editInstruction: instruction, ...(changed ? { brandReferenceIds: selected } : {}) })}>
-            {useBase ? "Edit this image" : "Generate this image with these references"}
+          {onApply ? <button type="button" className={styles.secondaryButton} disabled={primaryDisabled}
+            onClick={() => onApply(dirty ? buildPayload() : undefined)}>
+            {primaryLabel}
           </button> : null}
         </div>
       </> : null}

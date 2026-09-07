@@ -833,6 +833,8 @@ export type CreativeGeneratedAsset = {
   hasBrandReferenceOverride?: boolean;
   editSource?: { assetId: string; version: number };
   editInstruction?: string;
+  /** IMG-02: the edit-request revision that produced this version, if any. */
+  editRevision?: number;
   id: string;
   batchId: string;
   unitOrder: number;
@@ -906,6 +908,13 @@ export type CreativeAssetEditRequest = {
   brandReferenceIds: string[];
   status: "saved" | "running" | "applied" | "failed";
   appliedAssetId: string | null;
+  /** IMG-02: the `revision` value that was actually executed, if any. */
+  appliedRevision: number | null;
+  appliedAt: Date | null;
+  /** IMG-06: why the last apply attempt was refused (policy/permission/base). */
+  blockedReason: string | null;
+  /** IMG-02: provider/storage failure message for `status === "failed"`. */
+  lastError: string | null;
   updatedAt: Date;
 };
 

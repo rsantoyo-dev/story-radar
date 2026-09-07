@@ -823,6 +823,10 @@ export const creativeAssetEditRequests = pgTable(
     appliedAssetId: uuid("applied_asset_id").references(() => creativeAssets.id, {
       onDelete: "set null",
     }),
+    appliedRevision: integer("applied_revision"),
+    appliedAt: timestamp("applied_at", { withTimezone: true, mode: "date" }),
+    blockedReason: text("blocked_reason"),
+    lastError: text("last_error"),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -844,7 +848,8 @@ export const creativeAssetEditRequests = pgTable(
         AND ${table.revision} > 0
         AND ${table.editType} IN ('generative', 'composition')
         AND ${table.status} IN ('saved', 'running', 'applied', 'failed')
-        AND (${table.instruction} IS NULL OR char_length(${table.instruction}) <= 2000)`,
+        AND (${table.instruction} IS NULL OR char_length(${table.instruction}) <= 2000)
+        AND (${table.appliedRevision} IS NULL OR ${table.appliedRevision} > 0)`,
     ),
     check(
       "creative_asset_edit_requests_dates_check",

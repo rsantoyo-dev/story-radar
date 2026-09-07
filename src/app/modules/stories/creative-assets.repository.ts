@@ -593,6 +593,7 @@ function mapCreativeAsset(
     referenceContextVersion: Array.isArray(row.referenceSnapshot) ? undefined : 1,
     hasBrandReferenceOverride: Boolean(references.selectionOverride),
     ...(references.base ? { editSource: { assetId: references.base.assetId, version: references.base.version }, editInstruction: references.editInstruction } : {}),
+    ...(typeof references.editRequestRevision === "number" ? { editRevision: references.editRequestRevision } : {}),
     id: row.id,
     batchId: row.batchId,
     unitOrder: row.unitOrder,

@@ -1170,6 +1170,39 @@ export function CreativeDraftWorkspace({
     });
   }
 
+  function patchEditRequest(draftId: string, request: CreativeAssetEditRequest) {
+    setEditRequests((current) => {
+      const requests =
+        current?.draftId === draftId ? [...current.requests] : [];
+      const index = requests.findIndex(
+        (entry) => entry.unitOrder === request.unitOrder,
+      );
+      if (index >= 0) requests[index] = request;
+      else requests.push(request);
+      return { draftId, requests };
+    });
+  }
+
+  async function saveEditRequest(
+    draftId: string,
+    payload: SaveEditRequestPayload,
+  ): Promise<CreativeAssetEditRequest> {
+    const response = await requestJson<{ request: CreativeAssetEditRequest }>(
+      topicUrl(
+        `/api/radar/creative/drafts/${encodeURIComponent(draftId)}/edit-requests`,
+        topicId,
+      ),
+      secret,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+    );
+    patchEditRequest(draftId, response.request);
+    return response.request;
+  }
+
   async function handleSaveEditRequest(payload: SaveEditRequestPayload) {
     if (!activeDraftId) return;
     if (viewingHistoricalDraft) {
@@ -1178,33 +1211,62 @@ export function CreativeDraftWorkspace({
     }
     try {
       setError(undefined);
-      const response = await requestJson<{ request: CreativeAssetEditRequest }>(
-        topicUrl(
-          `/api/radar/creative/drafts/${encodeURIComponent(activeDraftId)}/edit-requests`,
-          topicId,
-        ),
-        secret,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        },
-      );
-      const draftId = activeDraftId;
-      setEditRequests((current) => {
-        const requests =
-          current?.draftId === draftId ? [...current.requests] : [];
-        const index = requests.findIndex(
-          (request) => request.unitOrder === response.request.unitOrder,
-        );
-        if (index >= 0) requests[index] = response.request;
-        else requests.push(response.request);
-        return { draftId, requests };
-      });
+      await saveEditRequest(activeDraftId, payload);
       setNotice("Cambio guardado. Aplícalo cuando quieras.");
     } catch (saveError) {
       setError(getErrorMessage(saveError));
     }
+  }
+
+  async function handleApplyEditRequest(
+    unitOrder: number,
+    payload?: SaveEditRequestPayload,
+  ) {
+    if (!activeDraftId || !activeDraft) {
+      setError("Select a current creative draft before applying an image edit.");
+      return;
+    }
+    if (assetBusy) {
+      setError("Another image action is still running. Wait for it to finish and try again.");
+      return;
+    }
+    if (viewingHistoricalDraft) {
+      setError("Historical images are read-only. Return to the current draft to apply an edit.");
+      return;
+    }
+    const draftId = activeDraftId;
+    await runAsset(`apply:${unitOrder}`, async () => {
+      try {
+        if (payload) {
+          setNotice("Guardando el cambio…");
+          await saveEditRequest(draftId, payload);
+        }
+        setNotice("Aplicando el cambio a esta imagen…");
+        const response = await requestJson<
+          CreativeAssetBatchResponse & { request: CreativeAssetEditRequest | null }
+        >(
+          topicUrl(
+            `/api/radar/creative/drafts/${encodeURIComponent(draftId)}/edit-requests`,
+            topicId,
+          ),
+          secret,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ unitOrder }),
+          },
+        );
+        const { request, ...batchResponse } = response;
+        setLoadedAssets({ ...batchResponse, draftId });
+        if (request) patchEditRequest(draftId, request);
+        setNotice("Cambio aplicado. Revisa la imagen antes de aprobarla.");
+      } catch (applyError) {
+        // The apply endpoint records the blocked/failed reason on the request
+        // row; re-pull so the card shows it after the transient error message.
+        setAssetsReloadKey((key) => key + 1);
+        throw applyError;
+      }
+    });
   }
 
   async function handleDiscardEditRequest(unitOrder: number) {
@@ -2229,6 +2291,7 @@ export function CreativeDraftWorkspace({
                             onApproval={handleImageApproval}
                             onSaveEditRequest={handleSaveEditRequest}
                             onDiscardEditRequest={handleDiscardEditRequest}
+                            onApplyEditRequest={handleApplyEditRequest}
                           />
                         ))}
                       </div>
@@ -2546,6 +2609,7 @@ function CreativeAssetCard({
   onApproval,
   onSaveEditRequest,
   onDiscardEditRequest,
+  onApplyEditRequest,
 }: {
   topicId: string;
   secret: string;
@@ -2562,6 +2626,7 @@ function CreativeAssetCard({
   onApproval: (assetId: string, action: "approve" | "unapprove") => void;
   onSaveEditRequest: (payload: SaveEditRequestPayload) => void;
   onDiscardEditRequest: (unitOrder: number) => void;
+  onApplyEditRequest: (unitOrder: number, payload?: SaveEditRequestPayload) => void;
 }) {
   const [prompt, setPrompt] = useState(asset.prompt);
   const isPending = asset.status === "queued" || asset.status === "generating";
@@ -2615,11 +2680,12 @@ function CreativeAssetCard({
       </div>
 
       <CreativeBrandImageEditor key={`${asset.id}:${savedRequest?.revision ?? 0}`} asset={asset} topicId={topicId} secret={secret}
-        disabled={readOnly || isPending || Boolean(busyAction)} onSubmit={edit => onRegenerate(asset.id, prompt, edit)}
+        disabled={readOnly || isPending || Boolean(busyAction)}
         savedRequest={savedRequest}
         savedRequestReadOnly={savedRequestReadOnly || isPending}
         onSaveRequest={onSaveEditRequest}
-        onDiscardRequest={() => onDiscardEditRequest(asset.unitOrder)} />
+        onDiscardRequest={() => onDiscardEditRequest(asset.unitOrder)}
+        onApply={(payload) => onApplyEditRequest(asset.unitOrder, payload)} />
       <div className={styles.expectedText}>
         <span>Text requested exactly from the image model</span>
         <p>{asset.expectedText}</p>

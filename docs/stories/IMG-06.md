@@ -1,14 +1,14 @@
 ---
 id: IMG-06
 feature: FEAT-IMG-001
-status: todo
+status: review
 board: creative-image-editing.kanban.md
-tags: [img, todo, p0]
+tags: [img, review, p0]
 ---
 
 # IMG-06 — Respetar la fidelidad documental y los permisos
 
-**Estado:** [[status-todo]] · **Feature:** [Edición incremental de imágenes](../features/creative-image-editing.md)
+**Estado:** [[status-review]] · **Feature:** [Edición incremental de imágenes](../features/creative-image-editing.md)
 
 **Como** editor, **quiero** que las ediciones respeten la política vigente del draft, **para** evitar que un ajuste convierta un lugar real en una representación engañosa.
 

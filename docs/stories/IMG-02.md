@@ -1,14 +1,14 @@
 ---
 id: IMG-02
 feature: FEAT-IMG-001
-status: todo
+status: review
 board: creative-image-editing.kanban.md
-tags: [img, todo, p0]
+tags: [img, review, p0]
 ---
 
 # IMG-02 — Aplicar un cambio únicamente a la imagen seleccionada
 
-**Estado:** [[status-todo]] · **Feature:** [Edición incremental de imágenes](../features/creative-image-editing.md)
+**Estado:** [[status-review]] · **Feature:** [Edición incremental de imágenes](../features/creative-image-editing.md)
 
 **Como** editor, **quiero** aplicar una instrucción guardada sobre una imagen existente, **para** ajustarla sin regenerar el resto del carrusel.
 

@@ -20,6 +20,8 @@ export type GenerationReferences = {
   provenanceBrand?: BrandGenerationReference[];
   base?: { assetId: string; version: number; objectKey: string; sha256: string; contentType: string; fileName: string };
   editInstruction?: string;
+  /** IMG-02: the `creative_asset_edit_requests.revision` that produced this asset. */
+  editRequestRevision?: number;
   selectionOverride?: boolean;
 };
 export function decodeGenerationReferences(value: unknown): GenerationReferences {

@@ -2,6 +2,13 @@ import "server-only";
 
 import { storeEditBase, readEditBase, readGeneratedImage } from "./creative-image-source";
 import { listActivatedBrandReferences } from "./creative-brand-references.repository";
+import {
+  beginCreativeAssetEditRequestRun,
+  blockCreativeAssetEditRequest,
+  completeCreativeAssetEditRequestRun,
+  failCreativeAssetEditRequest,
+  findCreativeAssetEditRequest,
+} from "./creative-asset-edit-requests.repository";
 import { createHash } from "node:crypto";
 import { resolveBrandGenerationReferences, loadBrandGenerationImages, assertBrandReferenceEligibility, assertBrandGenerationBudget } from "./resolve-brand-generation";
 import { brandReferencePrompt, enforceBrandReferencePrompt, type GenerationReferences } from "./creative-brand-generation";
@@ -449,6 +456,141 @@ export async function regenerateCreativeAsset(
   assertRegenerationCompatibility(found.batch, configuration);
 
   const validatedPrompt = validateRegenerationPrompt(input, found.asset.prompt);
+  const { batch } = await executeCreativeAssetImageEdit({
+    topicId,
+    found,
+    draft,
+    configuration,
+    basePrompt: validatedPrompt,
+    edit: validateImageEditInput(input),
+  });
+  return { batch, configuration: publicConfigurationForBatch(batch) };
+}
+
+/**
+ * IMG-02. Execute a saved per-slide edit request (draft + unit + exact base
+ * version + revision) instead of the on-screen values. Reuses the shared
+ * image-edit executor; the request row moves saved → running → applied/failed.
+ * IMG-06: the current effective place-fidelity policy is re-checked here, an
+ * incompatible request is kept pending with a visible reason, and deterministic
+ * composition (`editType === "composition"`) is refused until IMG-03.
+ */
+export async function applyCreativeAssetEditRequest(
+  topicId: string,
+  draftId: string,
+  unitOrder: number,
+): Promise<CreativeAssetBatchResponse> {
+  const row = await findCreativeAssetEditRequest(topicId, draftId, unitOrder);
+  if (!row) {
+    throw new CreativeContentNotFoundError("No saved change to apply for this image");
+  }
+  if (!row.baseAssetId) {
+    await blockCreativeAssetEditRequest(row.id, "The base image is no longer available. Save the change again.");
+    throw new CreativeContentConflictError("The base image is no longer available. Save the change again.");
+  }
+
+  const found = await requireCreativeAsset(row.baseAssetId);
+
+  // Everything that can declare the request incompatible with the CURRENT
+  // policy / permissions / base runs here; a conflict is recorded on the row
+  // as a visible reason and the request is kept pending, never executed.
+  let draft: CreativeDraft;
+  let configuration: ReturnType<typeof runtimeConfigurationForBatch>;
+  try {
+    draft = await requireCreativeDraft(topicId, found.batch.draftId);
+    requireApprovedDraft(draft.status);
+    const brief = await requireCreativeBrief(topicId, draft.briefId);
+    configuration = runtimeConfigurationForBatch(
+      found.batch,
+      outputAspectRatioForDraft(draft),
+    );
+    assertGenerativeImageryAllowed(draft, await getTopicVisualFidelityMode(topicId));
+    if (row.editType === "composition") {
+      throw new CreativeContentConflictError(
+        "Deterministic composition editing arrives with IMG-03.",
+      );
+    }
+    assertCurrentAsset(found.asset, found.batch, draft.version);
+    if (row.baseVersion !== found.asset.version) {
+      throw new CreativeContentConflictError(
+        "The base image changed. Save the change again before applying it.",
+      );
+    }
+    const brand = await resolveCreativeBrandGeneration(topicId, draft);
+    assertCurrentBrandConfiguration(found.batch, brand.inputHash);
+    assertRegenerationCompatibility(found.batch, configuration);
+    requireNarrativeQuality(
+      draft,
+      brief.keyFacts,
+      brief.profileSnapshot.language,
+      brief.profileSnapshot.conversionGoal,
+      brief.profileSnapshot.framingStrategy,
+    );
+    if (row.useImageAsBase && !row.instruction) {
+      throw new CreativeAssetValidationError(
+        "Write the requested change before applying it.",
+      );
+    }
+  } catch (error) {
+    if (
+      error instanceof CreativeContentConflictError ||
+      error instanceof CreativeAssetValidationError
+    ) {
+      await blockCreativeAssetEditRequest(row.id, error.message);
+    }
+    throw error;
+  }
+
+  await beginCreativeAssetEditRequestRun(topicId, draftId, unitOrder);
+  const edit: CreativeImageEditInput = {
+    useImageAsBase: row.useImageAsBase,
+    editInstruction: row.instruction ?? undefined,
+    ...(row.brandReferenceIds.length ? { brandReferenceIds: row.brandReferenceIds } : {}),
+  };
+  try {
+    const { asset, batch } = await executeCreativeAssetImageEdit({
+      topicId,
+      found,
+      draft,
+      configuration,
+      basePrompt: found.asset.prompt,
+      edit,
+      editRequestRevision: row.revision,
+    });
+    await completeCreativeAssetEditRequestRun(row.id, {
+      appliedAssetId: asset.id,
+      appliedRevision: row.revision,
+    });
+    return { batch, configuration: publicConfigurationForBatch(batch) };
+  } catch (error) {
+    await failCreativeAssetEditRequest(row.id, errorMessage(error));
+    throw error;
+  }
+}
+
+/**
+ * Shared tail of the image-edit path: build the edit prompt + reference
+ * envelope from `edit`, insert the next pending asset version, and submit it to
+ * the provider. `editRequestRevision` stamps the originating IMG-01 request
+ * revision onto the immutable per-asset snapshot.
+ */
+async function executeCreativeAssetImageEdit({
+  topicId,
+  found,
+  draft,
+  configuration,
+  basePrompt,
+  edit,
+  editRequestRevision,
+}: {
+  topicId: string;
+  found: { asset: CreativeGeneratedAsset; batch: CreativeAssetBatch };
+  draft: CreativeDraft;
+  configuration: ReturnType<typeof runtimeConfigurationForBatch>;
+  basePrompt: string;
+  edit: CreativeImageEditInput;
+  editRequestRevision?: number;
+}): Promise<{ asset: CreativeGeneratedAsset; batch: CreativeAssetBatch }> {
   const brandSnapshot = await getCreativeAssetBrandOverlaySnapshot(
     found.asset.id,
   );
@@ -459,7 +601,7 @@ export async function regenerateCreativeAsset(
   });
   const brandPrompt = brandSnapshot
     ? enforceBrandPromptContract({
-        prompt: validatedPrompt,
+        prompt: basePrompt,
         snapshot: brandSnapshot,
         unitOrder: found.asset.unitOrder,
         aspectRatio: outputAspectRatioForBatch(
@@ -467,14 +609,16 @@ export async function regenerateCreativeAsset(
           outputAspectRatioForDraft(draft),
         ),
       })
-    : validatedPrompt;
+    : basePrompt;
   const prompt = enforceCarouselChromePromptContract(
     brandPrompt,
     chrome?.promptReservation,
   );
   const previousReferences = await getCreativeAssetGenerationReferences(found.asset.id);
   const references: GenerationReferences = structuredClone(previousReferences);
-  const edit = validateImageEditInput(input);
+  if (typeof editRequestRevision === "number") {
+    references.editRequestRevision = editRequestRevision;
+  }
   if (edit.brandReferenceIds) {
     const eligible = await listActivatedBrandReferences(topicId);
     const selected = edit.brandReferenceIds.map(id => {
@@ -518,7 +662,7 @@ export async function regenerateCreativeAsset(
   }
   await submitStoredAsset(asset, configuration);
   const batch = await refreshCreativeAssetBatchStatus(found.batch.id);
-  return { batch, configuration: publicConfigurationForBatch(batch) };
+  return { asset, batch };
 }
 
 export async function changeCreativeAssetApproval(
