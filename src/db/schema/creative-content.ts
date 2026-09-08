@@ -402,6 +402,7 @@ export const storyCreativeBriefs = pgTable(
     inputHash: text("input_hash").notNull(),
     /** Editor-authored framing; configuration only, never source evidence. */
     editorialDirection: text("editorial_direction"),
+    collectionContext: jsonb("collection_context").$type<import("@/app/modules/editorial-lines/editorial-lines").EditorialCollectionContext & {runId?:string}>(),
     recommendedFormat: creativeFormatEnum("recommended_format").notNull(),
     fallbackFormat: creativeFormatEnum("fallback_format").notNull(),
     formatScores: jsonb("format_scores").notNull(),

@@ -1,3 +1,4 @@
+import { editorialContextInstruction } from "../../editorial-lines/editorial-lines";
 import "server-only";
 
 import { canonicalizeStoryUrl } from "@/app/modules/stories/deduplicate-story-candidates";
@@ -19,7 +20,7 @@ export const MIN_AI_RESEARCH_SCORE = 70;
 export type AiResearchDiscovery = {
   title: string;
   url: string;
-  publishedAt: Date;
+  publishedAt?: Date;
   summary?: string;
   researchScore: number;
   scoreReasons: string[];
@@ -64,9 +65,9 @@ export async function discoverAiResearchStories(
       },
       body: JSON.stringify({
         model: process.env.AI_RESEARCH_OPENAI_MODEL?.trim() || DEFAULT_MODEL,
-        instructions: researchInstructions(),
+        instructions: researchInstructions() + (input.config.collectionContext ? "\n" + editorialContextInstruction(input.config.collectionContext) + " For context and guides, studies and explanatory articles are eligible; do not demand a new event. A previously covered article may support a different angle: explain it without calling it a new story. An absent from date means no age cutoff. Return publishedAt as an empty string when unknown; never substitute retrieval time." : ""),
         input: JSON.stringify(researchInput(input)),
-        tools: [{ type: "web_search" }],
+        tools: [{ type: "web_search", ...(input.config.collectionContext?.domains.length ? {filters:{allowed_domains:input.config.collectionContext.domains}} : {}) }],
         tool_choice: "required",
         max_tool_calls: 8,
         include: ["web_search_call.action.sources"],
@@ -144,13 +145,14 @@ function researchInput({
     },
     researchRequest: {
       instruction: config.instruction,
+      collectionContext: config.collectionContext,
       orientation: config.orientation,
       resultLimit: config.resultLimit,
       language: config.language,
       region: config.region,
       dateRange: {
-        from: from.toISOString(),
-        to: to.toISOString(),
+        from: config.collectionContext ? config.collectionContext.from : from.toISOString(),
+        to: config.collectionContext ? config.collectionContext.to : to.toISOString(),
       },
       alreadyCovered: alreadyCovered
         .slice(0, MAX_ALREADY_COVERED_ITEMS)
@@ -185,7 +187,7 @@ function researchSchema(): Record<string, unknown> {
           properties: {
             title: { type: "string", minLength: 1, maxLength: 500 },
             url: { type: "string", minLength: 1, maxLength: 2_048 },
-            publishedAt: { type: "string", minLength: 1, maxLength: 64 },
+            publishedAt: { type: "string", maxLength: 64 },
             summary: { type: "string", maxLength: MAX_SUMMARY_LENGTH },
             researchScore: { type: "integer", minimum: 0, maximum: 100 },
             scoreReasons: {
@@ -292,7 +294,7 @@ function parseDiscovery(
   const url = typeof value.url === "string" && normalizedHttpUrl(value.url)
     ? normalizeUrl(value.url)
     : undefined;
-  const publishedAt = typeof value.publishedAt === "string"
+  const publishedAt = typeof value.publishedAt === "string" && value.publishedAt
     ? new Date(value.publishedAt)
     : undefined;
   const researchScore = value.researchScore;
@@ -306,8 +308,8 @@ function parseDiscovery(
     !title ||
     !url ||
     !matchesWebSearchSource(url, sourceUrls) ||
-    !publishedAt ||
-    !Number.isFinite(publishedAt.getTime()) ||
+    typeof value.publishedAt !== "string" ||
+    (publishedAt !== undefined && !Number.isFinite(publishedAt.getTime())) ||
     typeof researchScore !== "number" ||
     !Number.isInteger(researchScore) ||
     researchScore < 0 ||

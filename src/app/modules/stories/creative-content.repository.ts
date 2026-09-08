@@ -139,7 +139,7 @@ export async function insertCreativeBrief({
   modelVersion,
   promptVersion,
   inputHash,
-  editorialDirection,
+  editorialDirection, collectionContext,
   generated,
   usage,
 }: {
@@ -152,6 +152,7 @@ export async function insertCreativeBrief({
   promptVersion: string;
   inputHash: string;
   editorialDirection?: string;
+  collectionContext?: CreativeBrief["collectionContext"];
   generated: GeneratedCreativeBrief;
   usage: CreativeAiUsage;
 }): Promise<CreativeBrief> {
@@ -170,6 +171,7 @@ export async function insertCreativeBrief({
       promptVersion,
       inputHash,
       editorialDirection: editorialDirection ?? null,
+      collectionContext: collectionContext ?? null,
       recommendedFormat: generated.recommendedFormat,
       fallbackFormat: generated.fallbackFormat,
       formatScores: generated.formatScores,
@@ -719,6 +721,7 @@ function mapCreativeBrief(
     ...(row.modelVersion ? { modelVersion: row.modelVersion } : {}),
     promptVersion: row.promptVersion,
     inputHash: row.inputHash,
+    ...(row.collectionContext ? {collectionContext:row.collectionContext}:{}),
     ...(row.editorialDirection
       ? { editorialDirection: row.editorialDirection }
       : {}),

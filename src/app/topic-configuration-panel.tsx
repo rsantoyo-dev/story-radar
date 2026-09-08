@@ -1,5 +1,6 @@
 "use client";
 
+import { EditorialLinesPanel } from "./editorial-lines-panel";
 import { type ReactNode, useEffect, useState } from "react";
 
 import {
@@ -507,6 +508,7 @@ export function TopicConfigurationPanel({
       setSourceFormTopicId(undefined);
       setEditingSource(undefined);
       setSourceDraft(EMPTY_SOURCE);
+      window.dispatchEvent(new CustomEvent("editorial-lines-changed", {detail:selectedTopicId}));
       setNotice(editingSource ? "RSS source settings saved." : "RSS source added to this topic.");
     });
   }
@@ -538,6 +540,7 @@ export function TopicConfigurationPanel({
         { method: "DELETE" },
       );
       await reloadSources();
+      window.dispatchEvent(new CustomEvent("editorial-lines-changed", {detail:selectedTopicId}));
       setNotice("The RSS source was removed from this topic. Its reusable feed record was kept.");
     });
   }
@@ -580,6 +583,7 @@ export function TopicConfigurationPanel({
         },
       );
       setAiResearchResult({ topicId: selectedTopicId, source: response.source });
+      window.dispatchEvent(new CustomEvent("editorial-lines-changed", {detail:selectedTopicId}));
       setNotice("AI research settings saved. It will run with the next collection.");
     });
   }
@@ -805,6 +809,7 @@ export function TopicConfigurationPanel({
         </span>
       </div>
 
+      <EditorialLinesPanel key={selectedTopicId} topicId={selectedTopicId} secret={secret} disabled={disabled || Boolean(busy)} manageOnly/>
       <div className={styles.topicRow}>
         <label>
           <span>Active topic</span>

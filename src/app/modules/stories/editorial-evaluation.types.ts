@@ -32,6 +32,7 @@ export type EditorialEvaluationDecision =
   | "shortlist";
 
 export type EditorialEvaluationCandidate = {
+  collectionContexts?: import("../editorial-lines/editorial-lines").EditorialCollectionContext[];
   storyId: string;
   sourceId: string;
   sourceName: string;

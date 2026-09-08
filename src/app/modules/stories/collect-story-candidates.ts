@@ -1,3 +1,4 @@
+import { inEditorialWindow, allowedEditorialUrl, type EditorialCollectionContext } from "../editorial-lines/editorial-lines";
 import "server-only";
 
 import { fetchRssFeed } from "@/app/modules/sources/rss/fetch-rss-feed";
@@ -31,6 +32,7 @@ type FetchRssFeed = typeof fetchRssFeed;
 
 export type CollectStoryCandidatesOptions = {
   now?: Date;
+  editorialContext?: EditorialCollectionContext;
   maxAgeHours?: number;
   sources?: readonly RssSourceConfig[];
   fetchFeed?: FetchRssFeed;
@@ -108,8 +110,9 @@ export async function collectStoryCandidates(
     fetchedItems += feed.items.length;
 
     feed.items.forEach((item) => {
+      if (options.editorialContext && (!inEditorialWindow(item.publishedAt,options.editorialContext) || !allowedEditorialUrl(item.url,options.editorialContext.domains))) return;
       if (
-        item.publishedAt &&
+        !options.editorialContext && item.publishedAt &&
         item.publishedAt.getTime() < oldestPublishedAt.getTime()
       ) {
         return;
@@ -190,7 +193,7 @@ export async function collectStoryCandidates(
     evaluateStoryRelevance(candidate, generatedAt, preferences),
   );
   const exactItems = deduplicateStoryCandidates(evaluatedCandidates);
-  const items = deduplicateSimilarStories(exactItems);
+  const items = options.editorialContext ? exactItems : deduplicateSimilarStories(exactItems);
   const includedItemsBySource = countItemsBySource(items);
   const finalizedSourceDetails = sourceDetails.map((detail) => {
     if (detail.status === "failed") {

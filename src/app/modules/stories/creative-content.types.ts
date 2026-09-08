@@ -596,6 +596,7 @@ export type CreativeBrief = GeneratedCreativeBrief & {
   storyId: string;
   /** Editor-authored framing; it guides composition but is never evidence. */
   editorialDirection?: string;
+  collectionContext?: import("../editorial-lines/editorial-lines").EditorialCollectionContext & {runId?:string};
   profileId: string;
   profileSnapshot: CreativeProfile;
   provider: string;
@@ -802,6 +803,7 @@ export type CreativeDailyUsage = CreativeAiUsage & {
 };
 
 export type CreativeWorkspaceState = {
+  collectionContexts?: {runId:string;context:import("../editorial-lines/editorial-lines").EditorialCollectionContext}[];
   story: {
     storyId: string;
     title: string;

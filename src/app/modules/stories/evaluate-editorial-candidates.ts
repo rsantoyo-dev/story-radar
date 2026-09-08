@@ -243,6 +243,7 @@ function createEditorialInputHash(
     tags: [...candidate.tags].sort(),
     publishedAt: candidate.publishedAt?.toISOString() ?? null,
     researchScore: candidate.researchScore ?? null,
+    ...(candidate.collectionContexts?.length ? {collectionContexts:candidate.collectionContexts}:{}),
     favoredTerms: [...preferences.favoredTerms].sort(),
     unfavoredTerms: [...preferences.unfavoredTerms].sort(),
     editorialProfile: createEditorialProfileFingerprint(editorialProfile),

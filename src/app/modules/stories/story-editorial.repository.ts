@@ -1,3 +1,4 @@
+import { inEditorialEvaluationWindow } from "../editorial-lines/editorial-lines";
 import "server-only";
 
 import {
@@ -16,6 +17,7 @@ import {
 import { db } from "@/db/client";
 import {
   editorialEvaluationRuns,
+  editorialStoryContexts,
   knowledgeDocumentSections,
   knowledgeDocuments,
   knowledgeDocumentVersions,
@@ -246,9 +248,11 @@ export async function findEditorialEvaluationCandidates(
   // freshness window, so the scan must not drop it first. Legacy fallback mode
   // does not resolve owned-content sources at all, so it keeps the plain cutoff
   // and the exemption stays unreachable there by design.
+  const hasLineContext=sql`exists(select 1 from editorial_story_contexts c where c.topic_id=${topicId}::uuid and c.story_id=${topicStories.storyId})`;
   const withinFreshnessWindow = useLegacySourceFallback
-    ? gte(effectiveDate, cutoff)
+    ? or(gte(effectiveDate, cutoff),hasLineContext)
     : or(
+        hasLineContext,
         gte(effectiveDate, cutoff),
         sql`exists (
           select 1 from ${ownedContentEntries}
@@ -297,6 +301,7 @@ export async function findEditorialEvaluationCandidates(
     return [];
   }
 
+  const lineContexts=await db.select({storyId:editorialStoryContexts.storyId,context:editorialStoryContexts.context}).from(editorialStoryContexts).where(and(eq(editorialStoryContexts.topicId,topicId),inArray(editorialStoryContexts.storyId,storyRows.map(s=>s.storyId)))).orderBy(desc(editorialStoryContexts.createdAt));
   const sourceByStoryId = await findCandidateSources(
     topicId,
     storyRows.map((story) => story.storyId),
@@ -314,6 +319,8 @@ export async function findEditorialEvaluationCandidates(
 
   return profileEligibleRows
     .filter((story) => {
+      const contexts=lineContexts.filter(c=>c.storyId===story.storyId);
+      if(contexts.length) return contexts.some(c=>inEditorialEvaluationWindow(story.publishedAt??undefined,c.context,now));
       const source = sourceByStoryId.get(story.storyId);
       const sourceTags = source?.tags ?? [];
       if (isOwnedContentSource(sourceTags)) {
@@ -339,6 +346,7 @@ export async function findEditorialEvaluationCandidates(
 
       return {
         storyId: story.storyId,
+        collectionContexts: lineContexts.filter(c=>c.storyId===story.storyId).slice(0,5).map(c=>c.context),
         sourceId: source?.sourceId ?? "unknown",
         sourceName: source?.sourceName ?? "Unknown source",
         title: story.title,

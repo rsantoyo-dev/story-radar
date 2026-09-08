@@ -1,3 +1,5 @@
+import { storyCollectionContexts, selectedStoryContext } from "../editorial-lines/editorial-lines.repository";
+import { editorialContextInstruction, collectionContextForHash } from "../editorial-lines/editorial-lines";
 import { build511Brief } from "./road-notice-evidence";
 import { locationOnlyRoadFacts } from "./creative-evidence-guardrails";
 import { imageTextNeedsUpdate } from "./creative-image-text-sync";
@@ -106,6 +108,7 @@ export async function getCreativeWorkspaceState(
         configuration,
         shortenContent(story.text.trim(), configuration.maxContentCharacters),
         latestBrief?.editorialDirection,
+        latestBrief?.collectionContext,
       )
     : undefined;
   // A user can switch a profile back to a previous configuration. In that
@@ -181,6 +184,7 @@ export async function getCreativeWorkspaceState(
     characterRoster,
     ...(brief ? { brief } : {}),
     briefIsCurrent,
+    collectionContexts: await storyCollectionContexts(topicId,storyId),
     drafts,
     daily,
     configuration: {
@@ -196,6 +200,7 @@ export async function createCreativeBrief(
   topicId: string,
   storyId: string,
   editorialDirection?: string,
+  editorialRunId?: string,
 ): Promise<CreativeGenerationResult> {
   const configuration = getCreativeContentRuntimeConfig();
   const [topic, story, profile, daily] = await Promise.all([
@@ -205,6 +210,7 @@ export async function createCreativeBrief(
     getCreativeDailyUsage(topicId, configuration.maxRunsPerDay),
   ]);
   const content = requireStoryContent(story, configuration.maxContentCharacters);
+  const collectionContext=await selectedStoryContext(topicId,storyId,editorialRunId);
   const normalizedEditorialDirection = normalizeEditorialDirection(
     editorialDirection,
   );
@@ -215,6 +221,7 @@ export async function createCreativeBrief(
     configuration,
     content,
     normalizedEditorialDirection,
+    collectionContext,
   );
   const cached = await findCachedCreativeBrief(
     topicId,
@@ -226,7 +233,7 @@ export async function createCreativeBrief(
   if (cached) {
     return {
       outcome: "cached",
-      state: await getCreativeWorkspaceState(topicId, storyId),
+      state: { ...(await getCreativeWorkspaceState(topicId, storyId)), brief: cached, briefIsCurrent: true },
     };
   }
 
@@ -235,7 +242,7 @@ export async function createCreativeBrief(
   const structuredBrief = build511Brief(story.url, story.title, content, profile.audience);
   if (structuredBrief) {
     await insertCreativeBrief({ topicId, storyId, profile, provider: "quebec511", model: "structured-notice-v1",
-      promptVersion: configuration.briefPromptVersion, inputHash, editorialDirection: normalizedEditorialDirection,
+      promptVersion: configuration.briefPromptVersion, inputHash, editorialDirection: normalizedEditorialDirection, collectionContext,
       generated: structuredBrief, usage: { promptTokens: 0, outputTokens: 0, thoughtsTokens: 0, totalTokens: 0 } });
     return { outcome: "generated", state: await getCreativeWorkspaceState(topicId, storyId) };
   }
@@ -265,7 +272,7 @@ export async function createCreativeBrief(
       story: storyForGenerator(story, content),
       topic,
       profile,
-      editorialDirection: normalizedEditorialDirection,
+      editorialDirection: collectionContext ? [normalizedEditorialDirection,editorialContextInstruction(collectionContext)].filter(Boolean).join("\n") : normalizedEditorialDirection,
     });
     const brief = await insertCreativeBrief({
       topicId,
@@ -276,7 +283,7 @@ export async function createCreativeBrief(
       modelVersion: result.modelVersion,
       promptVersion: configuration.briefPromptVersion,
       inputHash,
-      editorialDirection: normalizedEditorialDirection,
+      editorialDirection: normalizedEditorialDirection, collectionContext,
       generated: result.brief,
       usage: result.usage,
     });
@@ -335,6 +342,7 @@ export async function createCreativeDraft(
     configuration,
     content,
     brief.editorialDirection,
+    brief.collectionContext,
   );
 
   if (currentBriefHash !== brief.inputHash) {
@@ -876,6 +884,7 @@ export async function refreshCreativeDraftCharacterReferences(
     configuration,
     content,
     brief.editorialDirection,
+    brief.collectionContext,
   );
 
   if (currentBriefHash !== brief.inputHash) {
@@ -973,8 +982,10 @@ function createBriefInputHash(
   },
   normalizedContent: string,
   editorialDirection?: string,
+  collectionContext?: import("./creative-content.types").CreativeBrief["collectionContext"],
 ): string {
   return hash({
+    ...(collectionContext ? {collectionContext:collectionContextForHash(collectionContext)}:{}),
     story: {
       storyId: story.storyId,
       title: story.title,

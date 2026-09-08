@@ -7,6 +7,7 @@ export const AI_RESEARCH_ORIENTATIONS = [
 export type AiResearchOrientation = (typeof AI_RESEARCH_ORIENTATIONS)[number];
 
 export type AiResearchSourceConfig = {
+  collectionContext?: import("../../editorial-lines/editorial-lines").EditorialCollectionContext;
   topicId: string;
   topicName: string;
   topicDescription?: string;

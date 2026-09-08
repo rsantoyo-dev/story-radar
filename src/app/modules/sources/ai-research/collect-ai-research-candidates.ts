@@ -1,3 +1,4 @@
+import { inEditorialWindow, allowedEditorialUrl } from "../../editorial-lines/editorial-lines";
 import "server-only";
 
 import { createHash } from "node:crypto";
@@ -49,19 +50,19 @@ export async function collectAiResearchCandidates({
   const sourceId = aiResearchSourceId(config.topicId);
   const sourceName = "AI research";
   const effectiveLookbackHours = lookbackHours ?? config.lookbackHours;
-  const from = new Date(now.getTime() - effectiveLookbackHours * 60 * 60 * 1_000);
+  const from = config.collectionContext?.from ? new Date(config.collectionContext.from) : new Date(now.getTime() - effectiveLookbackHours * 60 * 60 * 1_000);
   const discoveries = await discover({
     config,
     profile,
     from,
-    to: now,
+    to: config.collectionContext ? new Date(config.collectionContext.to) : now,
     alreadyCovered,
   });
   const items = discoveries
-    .filter((discovery) => isInsideWindow(discovery.publishedAt, from, now))
+    .filter((discovery) => config.collectionContext ? inEditorialWindow(discovery.publishedAt, config.collectionContext) && allowedEditorialUrl(discovery.url,config.collectionContext.domains) : !!discovery.publishedAt && isInsideWindow(discovery.publishedAt, from, now))
     // Second-layer defense: catch a discovery matching an already-covered
     // story even if the model's own alreadyCovered check missed it.
-    .filter((discovery) => !matchesAnyCoveredStory(discovery, alreadyCovered))
+    .filter((discovery) => config.collectionContext?.mode && config.collectionContext.mode !== "news" || !discovery.publishedAt || !matchesAnyCoveredStory({ ...discovery, publishedAt: discovery.publishedAt }, alreadyCovered))
     .map((discovery) => toStoryCandidate(discovery, config, sourceId, now));
 
   return {

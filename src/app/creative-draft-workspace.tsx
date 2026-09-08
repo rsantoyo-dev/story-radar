@@ -10,7 +10,7 @@ import {
 import Image from "next/image";
 import { CreativeDocumentaryPanel } from "./creative-documentary-panel";
 import { StoryInstagramResults } from "./story-instagram-results";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   CAROUSEL_EDITORIAL_GOAL_OPTIONS,
@@ -51,6 +51,7 @@ import { ListField, TextAreaField, TextField } from "./creative-profile-fields";
 import styles from "./creative-draft-workspace.generated.module.css";
 
 type WorkspaceProps = {
+  initialEditorialRunId?: string;
   topicId: string;
   storyId: string;
   storyTitle: string;
@@ -163,7 +164,7 @@ export function CreativeDraftWorkspace({
   secret,
   onClose,
   onInstagramChanged,
-  instagramRefreshToken,
+  instagramRefreshToken, initialEditorialRunId,
 }: WorkspaceProps) {
   const [preparedPublication, setPreparedPublication] = useState<{ topicId: string; storyId: string; assetCount: number }>();
   const [workspace, setWorkspace] = useState<CreativeWorkspaceState>();
@@ -171,6 +172,7 @@ export function CreativeDraftWorkspace({
   // The creative profile is edited in the topic "Creative profile" panel now;
   // the studio only reads it, so it can never be dirty here.
   const profileDirty = false;
+  const [researchRun,setResearchRun]=useState<string>();
   const [editorialDirection, setEditorialDirection] = useState("");
   const [characterSlots, setCharacterSlots] = useState<CharacterSlot[]>(
     emptyCharacterSlots,
@@ -187,6 +189,9 @@ export function CreativeDraftWorkspace({
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState<BusyAction>();
   const [error, setError] = useState<string>();
+  const draftSectionRef=useRef<HTMLElement>(null);
+  const focusDraftAfterRefresh=useRef(false);
+
   const [notice, setNotice] = useState<string>();
   const [loadedAssets, setLoadedAssets] = useState<LoadedAssets>();
   const [editRequests, setEditRequests] = useState<LoadedEditRequests>();
@@ -255,10 +260,11 @@ export function CreativeDraftWorkspace({
   const currentDraft = primaryDrafts.find(
     (draft) => draft.inputIsCurrent !== false,
   );
+  const effectiveResearchRun=researchRun ?? workspace?.brief?.collectionContext?.runId ?? initialEditorialRunId ?? (workspace?.collectionContexts?.length===1?workspace.collectionContexts[0].runId:undefined);
   const editorialDirectionDirty = Boolean(
     workspace?.brief &&
-      normalizeEditorialDirection(editorialDirection) !==
-        (workspace.brief.editorialDirection ?? ""),
+      (normalizeEditorialDirection(editorialDirection) !==
+        (workspace.brief.editorialDirection ?? "") || effectiveResearchRun !== workspace.brief.collectionContext?.runId),
   );
 
   useEffect(() => {
@@ -545,6 +551,14 @@ export function CreativeDraftWorkspace({
     setAssetsReloadKey((current) => current + 1);
   }
 
+  useEffect(()=>{
+    if(!busy && focusDraftAfterRefresh.current && draftSectionRef.current){
+      focusDraftAfterRefresh.current=false;
+      draftSectionRef.current.focus({preventScroll:true});
+      draftSectionRef.current.scrollIntoView({behavior:"smooth",block:"start"});
+    }
+  },[busy,workspace]);
+
   async function handleCreateBrief() {
     if (busy) return;
     if (profileDirty) {
@@ -557,12 +571,13 @@ export function CreativeDraftWorkspace({
         state: CreativeWorkspaceState;
       }>(
         topicUrl(
-          `/api/radar/stories/${encodeURIComponent(storyId)}/creative`,
+          `/api/radar/stories/${encodeURIComponent(storyId)}/creative${effectiveResearchRun?`?editorialRunId=${encodeURIComponent(effectiveResearchRun)}`:""}`,
           topicId,
         ),
         secret,
         creativeBriefRequest(editorialDirection),
       );
+      focusDraftAfterRefresh.current=true;
       setWorkspace(result.state);
       setProfile(result.state.profile);
       setEditorialDirection(result.state.brief?.editorialDirection ?? "");
@@ -607,7 +622,7 @@ export function CreativeDraftWorkspace({
           state: CreativeWorkspaceState;
         }>(
           topicUrl(
-            `/api/radar/stories/${encodeURIComponent(storyId)}/creative`,
+            `/api/radar/stories/${encodeURIComponent(storyId)}/creative${effectiveResearchRun?`?editorialRunId=${encodeURIComponent(effectiveResearchRun)}`:""}`,
             topicId,
           ),
           secret,
@@ -753,7 +768,7 @@ export function CreativeDraftWorkspace({
           state: CreativeWorkspaceState;
         }>(
           topicUrl(
-            `/api/radar/stories/${encodeURIComponent(storyId)}/creative`,
+            `/api/radar/stories/${encodeURIComponent(storyId)}/creative${effectiveResearchRun?`?editorialRunId=${encodeURIComponent(effectiveResearchRun)}`:""}`,
             topicId,
           ),
           secret,
@@ -1773,6 +1788,7 @@ export function CreativeDraftWorkspace({
               ) : null}
 
               <div className={styles.editorialDirectionPanel}>
+                {workspace.collectionContexts?.length ? <label>Research context for a new brief<select value={effectiveResearchRun??""} onChange={e=>setResearchRun(e.target.value||undefined)}><option value="">Choose research context</option>{workspace.collectionContexts.map(c=><option key={c.runId} value={c.runId}>{c.context.name} · {c.context.mode} · {c.context.query||c.context.objective}</option>)}</select><small>Existing drafts retain the context reviewed when they were created.</small></label>:null}
                 <TextAreaField
                   label="Editorial focus for this story (optional)"
                   value={editorialDirection}
@@ -1794,6 +1810,8 @@ export function CreativeDraftWorkspace({
                   <button type="button" className={styles.primaryButton} disabled={Boolean(busy) || !workspace.story.hasContent} onClick={handleCreateBrief}>
                     {busy === "brief" ? "Creating brief…" : workspace.brief ? "Apply focus and refresh brief" : "Create creative brief"}
                   </button>
+                  {busy==="brief"?<p role="status">Preparing your brief. The draft controls will open when it is ready.</p>:null}
+                  {error?<ErrorMessage message={error}/>:null}
                 </div>
               ) : null}
 
@@ -1808,7 +1826,7 @@ export function CreativeDraftWorkspace({
             </section>
 
             {workspace.brief ? (
-              <section className={styles.section}>
+              <section ref={draftSectionRef} tabIndex={-1} aria-label="Draft generation" className={styles.section}>
                 <div className={styles.sectionHeading}>
                   <div>
                     <span>Stage 2</span>

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { EditorialLinesPanel, type EditorialLinesData, type EditorialLineSelection } from "./editorial-lines-panel";
 import { CreativeDraftWorkspace } from "./creative-draft-workspace";
 import { CreativeProfilePanel } from "./creative-profile-panel";
 import { InstagramGalleryPanel } from "./instagram-gallery-panel";
@@ -234,6 +235,7 @@ type EditorialCollectedStory = {
 };
 
 type EditorialTableStory = {
+  lineContexts?: EditorialLinesData["associations"];
   storyId: string;
   sourceId: string;
   sourceName: string;
@@ -433,6 +435,9 @@ export function RadarDashboard({
   const [topics, setTopics] = useState(initialTopics);
   const [selectedTopicId, setSelectedTopicId] = useState(initialTopicId);
   const selectedTopicIdRef = useRef(initialTopicId);
+  const [lineSelection,setLineSelection]=useState<EditorialLineSelection>();
+  const [lineData,setLineData]=useState<EditorialLinesData>();
+  const [lineRefresh,setLineRefresh]=useState(0);
   const [maxAgeHours, setMaxAgeHours] = useState("72");
   const [confirmation, setConfirmation] = useState("");
   const [favoredTerms, setFavoredTerms] = useState(
@@ -451,6 +456,7 @@ export function RadarDashboard({
   const [activeStoryId, setActiveStoryId] = useState<string>();
   const [contentViewer, setContentViewer] = useState<StoryContentResponse>();
   const [creativeStory, setCreativeStory] = useState<{
+    editorialRunId?: string;
     storyId: string;
     title: string;
   }>();
@@ -561,13 +567,13 @@ export function RadarDashboard({
 
     const hours = parseMaxAgeHours(maxAgeHours);
 
-    if (!hours) {
-      showInvalidHours();
+    if (lineSelection?.topicId !== selectedTopicId) {
       return;
     }
 
     await runOperation("collect", async () => {
-      const collection = await collectStories(secret, selectedTopicId, hours);
+      const collection = await collectStories(secret, selectedTopicId, hours || 72, lineSelection?.topicId===selectedTopicId?lineSelection:undefined);
+      setLineRefresh(n=>n+1);
       const nextStats = await fetchDatabaseStats(secret, selectedTopicId);
 
       setStats(nextStats);
@@ -1356,24 +1362,7 @@ export function RadarDashboard({
               </div>
             </div>
 
-            <label className={styles.field}>
-              <span>Story window</span>
-              <div className={styles.inputSuffix}>
-                <input
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={maxAgeHours}
-                  onChange={(event) => setMaxAgeHours(event.target.value)}
-                />
-                <span>hours</span>
-              </div>
-              <small>
-                RSS collection window. Saving an editorial profile updates this
-                to its longest configured news or research window.
-              </small>
-            </label>
-
+            <EditorialLinesPanel key={selectedTopicId} topicId={selectedTopicId} secret={secret} disabled={isBusy} refreshKey={lineRefresh} onSelection={setLineSelection} onLoaded={setLineData}/>
             <div className={styles.buttonRow}>
               <button
                 type="button"
@@ -1387,7 +1376,7 @@ export function RadarDashboard({
                 type="button"
                 className={styles.primaryButton}
                 onClick={handleCollect}
-                disabled={!canAuthenticate || isBusy}
+                disabled={!canAuthenticate || isBusy || lineSelection?.topicId!==selectedTopicId}
               >
                 {activeOperation === "collect"
                   ? "Collecting…"
@@ -1517,6 +1506,7 @@ export function RadarDashboard({
           <EditorialEvaluationPanel
             key={selectedTopicId}
             editorial={stats?.editorial}
+            lineData={lineData?.topicId===selectedTopicId?lineData:undefined}
             canEvaluate={canAuthenticate && !isBusy}
             isEvaluating={activeOperation === "evaluate"}
             onEvaluate={handleEvaluate}
@@ -1548,9 +1538,9 @@ export function RadarDashboard({
               activeOperation === "publication" ? activeStoryId : undefined
             }
             onUpdatePublication={handlePublicationUpdate}
-            onOpenCreativeStory={(storyId, title) => {
+            onOpenCreativeStory={(storyId, title, editorialRunId) => {
               setContentViewer(undefined);
-              setCreativeStory({ storyId, title });
+              setCreativeStory({ storyId, title, editorialRunId });
             }}
           />
         </div>
@@ -1564,6 +1554,8 @@ export function RadarDashboard({
 
         {creativeStory ? (
           <CreativeDraftWorkspace
+            key={`${selectedTopicId}:${creativeStory.storyId}`}
+            initialEditorialRunId={creativeStory.editorialRunId}
             topicId={selectedTopicId}
             storyId={creativeStory.storyId}
             storyTitle={creativeStory.title}
@@ -1728,7 +1720,7 @@ function OptimizationPanel({
 }
 
 function EditorialEvaluationPanel({
-  editorial,
+  editorial, lineData,
   canEvaluate,
   isEvaluating,
   onEvaluate,
@@ -1753,6 +1745,7 @@ function EditorialEvaluationPanel({
   onOpenCreativeStory,
 }: {
   editorial?: EditorialDashboardStats;
+  lineData?: EditorialLinesData;
   canEvaluate: boolean;
   isEvaluating: boolean;
   onEvaluate: (force?: boolean) => void;
@@ -1782,7 +1775,7 @@ function EditorialEvaluationPanel({
     platform: PublicationPlatform,
     status?: PublicationStatus,
   ) => void;
-  onOpenCreativeStory: (storyId: string, title: string) => void;
+  onOpenCreativeStory: (storyId: string, title: string, editorialRunId?: string) => void;
 }) {
   const [activeTab, setActiveTab] = useState<"collected" | "selected">(
     "collected",
@@ -1870,13 +1863,16 @@ function EditorialEvaluationPanel({
     editorial?.configuration.effectiveCandidatePolicy?.localCandidateMinScore ??
     editorial?.configuration.minLocalScore ??
     25;
+  const [lineFilter,setLineFilter]=useState("");
+  const [shortlistOnly,setShortlistOnly]=useState(false);
+  const lineStories=(rows:EditorialTableStory[])=>rows.map(story=>({...story,lineContexts:lineData?.associations.filter(a=>a.storyId===story.storyId && (!lineFilter || lineFilter==="none" || a.context.lineId===lineFilter))??[]})).filter(story=>!lineFilter || (lineFilter==="none"?story.lineContexts.length===0:story.lineContexts.length>0));
   const filteredCollectedStories = filterTableStories(
-    collectedStories,
+    lineStories(collectedStories).filter(story=>!shortlistOnly || (story.reviewable===true && story.evaluationDecision==="shortlist")),
     collectedTableState,
     localCandidateFloor,
   );
   const filteredSelectedStories = filterTableStories(
-    selectedStories,
+    lineStories(selectedStories),
     selectedTableState,
     localCandidateFloor,
   );
@@ -2009,6 +2005,21 @@ function EditorialEvaluationPanel({
             </div>
           </div>
 
+          <div className={styles.buttonRow}>
+            <label className={styles.field}>
+              <span>Filter stories by editorial line</span>
+              <select value={lineFilter} disabled={!lineData} onChange={e=>setLineFilter(e.target.value)}>
+                <option value="">{lineData?"All editorial lines":"Loading editorial lines…"}</option>
+                <option value="none">Without a line (legacy stories)</option>
+                {lineData?.lines.map(line=><option key={line.id} value={line.id}>{line.name}{line.archived?" (archived)":""}</option>)}
+              </select>
+            </label>
+            {activeTab==="collected"?<label className={styles.selectAllControl}>
+              <input type="checkbox" checked={shortlistOnly} onChange={e=>setShortlistOnly(e.target.checked)}/>
+              <span>Shortlist only</span>
+            </label>:null}
+          </div>
+
           <div className={styles.quickViews} aria-label="Quick views">
             {quickViews.map((view) => {
               const currentFilter =
@@ -2089,9 +2100,10 @@ function EditorialEvaluationPanel({
                     minimumGrowthScore,
                   }))
                 }
-                onResetFilters={() =>
-                  setCollectedTableState((current) => resetStoryTableFilters(current))
-                }
+                onResetFilters={() => {
+                  setLineFilter("");setShortlistOnly(false);
+                  setCollectedTableState((current) => resetStoryTableFilters(current));
+                }}
               />
 
               {shortlist.length > 0 ? (
@@ -2232,9 +2244,10 @@ function EditorialEvaluationPanel({
                     publicationPlatform,
                   }))
                 }
-                onResetFilters={() =>
-                  setSelectedTableState((current) => resetStoryTableFilters(current))
-                }
+                onResetFilters={() => {
+                  setLineFilter("");
+                  setSelectedTableState((current) => resetStoryTableFilters(current));
+                }}
               />
 
               <SortableStoriesTable
@@ -2642,7 +2655,7 @@ function SortableStoriesTable({
     platform: PublicationPlatform,
     status?: PublicationStatus,
   ) => void;
-  onOpenCreativeStory?: (storyId: string, title: string) => void;
+  onOpenCreativeStory?: (storyId: string, title: string, editorialRunId?: string) => void;
   canUnselect?: boolean;
   isUnselecting?: boolean;
   onUnselect?: (storyIds: string[]) => void;
@@ -2752,12 +2765,13 @@ function SortableStoriesTable({
                         className={styles.creativeStudioButton}
                         disabled={!canPrepare || !onOpenCreativeStory}
                         title="Open Creative studio to continue or create a draft"
-                        onClick={() => onOpenCreativeStory?.(story.storyId, story.title)}
+                        onClick={() => onOpenCreativeStory?.(story.storyId, story.title, new Set(story.lineContexts?.map(c=>c.context.lineId)).size===1?story.lineContexts?.[0]?.runId:undefined)}
                       >
                         Open draft
                       </button>
                     </div>
                   ) : null}
+                  {story.lineContexts?.map(a=><details key={a.runId}><summary>{a.context.name} · {a.context.mode}</summary><p>{a.context.query || a.context.objective}</p><small>{a.context.from??"No age cutoff"} → {a.context.to}. {story.publishedAt?"Publication date shown; current applicability must be checked.":"Publication date unknown; not confirmed as current news."}</small><p>{a.reasons.join(" · ")}</p></details>)}
                   {story.reason ? <small>{story.reason}</small> : null}
                   {story.riskFlags.length > 0 ? (
                     <div className={styles.tableRiskFlags}>
@@ -3301,11 +3315,12 @@ async function collectStories(
   secret: string,
   topicId: string,
   maxAgeHours: number,
+  selection?: EditorialLineSelection,
 ): Promise<CollectionResponse> {
   return requestJson<CollectionResponse>(
     topicUrl(`/api/radar/collect?maxAgeHours=${maxAgeHours}`, topicId),
     secret,
-    { method: "POST" },
+    { method: "POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(selection?{lineId:selection.lineId,query:selection.query,period:selection.period,requestId:crypto.randomUUID()}: {}) },
   );
 }
 

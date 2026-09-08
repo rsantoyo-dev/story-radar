@@ -108,20 +108,22 @@ export async function persistStoryRadarResult(
   topicId: string,
   result: StoryRadarResult,
   retentionOptions: StoryRadarRetentionOptions = {},
+  onStory?: (storyId: string, candidate: StoryCandidate) => Promise<void>,
 ): Promise<PersistStoryRadarResult> {
   const finishedAt = retentionOptions.now ?? new Date();
   const recentStories = await getRecentStoredStories(topicId, finishedAt);
   const activeCanonicalUrls = new Set<string>();
 
   for (const candidate of result.items) {
-    const canonicalUrl = resolveStoredCanonicalUrl(candidate, recentStories);
+    const canonicalUrl = onStory ? canonicalizeStoryUrl(candidate.url) : resolveStoredCanonicalUrl(candidate, recentStories);
 
-    await upsertStoryCandidate(topicId, candidate, canonicalUrl);
+    const storyId = await upsertStoryCandidate(topicId, candidate, canonicalUrl);
+    if (onStory) await onStory(storyId,candidate);
     updateRecentStoredStories(recentStories, candidate, canonicalUrl);
     activeCanonicalUrls.add(canonicalUrl);
   }
 
-  const markedStoredDuplicates = await markStoredSimilarDuplicates(
+  const markedStoredDuplicates = onStory ? 0 : await markStoredSimilarDuplicates(
     topicId,
     result.items,
     activeCanonicalUrls,
@@ -175,7 +177,7 @@ export async function persistStoryRadarResult(
   // provider outage must not fail the collection run.
   let semanticDuplicatesMarked = 0;
   try {
-    semanticDuplicatesMarked = (
+    if (!onStory) semanticDuplicatesMarked = (
       await detectTopicDuplicates(topicId, { now: finishedAt })
     ).marked;
   } catch (error) {
@@ -222,6 +224,7 @@ export async function pruneStoryRadarData(
           ...DELETABLE_PROCESSING_STATUSES,
         ]),
         lt(topicStories.lastSeenAt, staleStoryCutoff),
+        sql`NOT EXISTS (select 1 from editorial_story_contexts c where c.topic_id=${topicId}::uuid and c.story_id=${topicStories.storyId})`,
       ),
     )
     .returning({ id: topicStories.id });
@@ -558,7 +561,7 @@ async function upsertStoryCandidate(
   topicId: string,
   candidate: StoryCandidate,
   canonicalUrl: string,
-): Promise<void> {
+): Promise<string> {
   const incomingContentText = sql.raw(
     `excluded.${stories.contentText.name}`,
   );
@@ -665,6 +668,7 @@ async function upsertStoryCandidate(
         fetchedAt: candidate.fetchedAt,
       },
     });
+  return storedStory.id;
 }
 
 async function upsertTopicStory(

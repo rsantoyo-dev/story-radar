@@ -1,3 +1,4 @@
+import { attachStoryContext } from "../editorial-lines/editorial-lines.repository";
 import "server-only";
 
 import {
@@ -14,12 +15,13 @@ export type CollectAndPersistStoryCandidatesOptions =
   CollectStoryCandidatesOptions & {
     topicId: string;
     retention?: StoryRadarRetentionOptions;
+    editorialRunId?: string;
   };
 
 export async function collectAndPersistStoryCandidates(
   options: CollectAndPersistStoryCandidatesOptions,
 ) {
-  const { topicId, retention, ...collectionOptions } = options;
+  const { topicId, retention, editorialRunId, ...collectionOptions } = options;
   const now = collectionOptions.now ?? new Date();
   const aiResearch = collectionOptions.aiResearch?.config.enabled
     ? {
@@ -32,7 +34,7 @@ export async function collectAndPersistStoryCandidates(
     now,
     aiResearch,
   });
-  const persistence = await persistStoryRadarResult(topicId, radar, retention);
+  const persistence = await persistStoryRadarResult(topicId, radar, retention, collectionOptions.editorialContext && editorialRunId ? (storyId, candidate) => attachStoryContext(topicId,storyId,editorialRunId,collectionOptions.editorialContext!,candidate.research?.reasons ?? candidate.relevance.reasons) : undefined);
 
   return {
     radar,

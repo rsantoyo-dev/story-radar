@@ -1,3 +1,4 @@
+import { EditorialLineError } from "@/app/modules/editorial-lines/editorial-lines";
 import { authorizeRadarCollector } from "@/app/api/radar/radar-api-auth";
 import {
   requireActiveRequestTopic,
@@ -37,6 +38,7 @@ export async function GET(request: Request, context: Context) {
       ),
     );
   } catch (error) {
+    if(error instanceof EditorialLineError)return noStoreJson({error:error.message},error.status);
     const topicError = topicRequestErrorResponse(error);
     if (topicError) return topicError;
 
@@ -60,9 +62,11 @@ export async function POST(request: Request, context: Context) {
         await requireActiveRequestTopic(request),
         storyId,
         editorialDirection,
+        new URL(request.url).searchParams.get("editorialRunId") || undefined,
       ),
     );
   } catch (error) {
+    if(error instanceof EditorialLineError)return noStoreJson({error:error.message},error.status);
     const topicError = topicRequestErrorResponse(error);
     if (topicError) return topicError;
 
