@@ -32,6 +32,7 @@ import {
   DEFAULT_SIMILAR_TITLE_THRESHOLD,
   DEFAULT_SIMILAR_TITLE_WINDOW_DAYS,
 } from "./deduplicate-similar-stories";
+import { detectTopicDuplicates } from "./story-duplicates.repository";
 import type {
   StoryCandidate,
   StoryRadarResult,
@@ -65,6 +66,7 @@ export type PersistStoryRadarResult = {
   collectionRunId: string;
   persistedStories: number;
   markedStoredDuplicates: number;
+  semanticDuplicatesMarked: number;
   retention: StoryRadarRetentionResult;
 };
 
@@ -169,6 +171,17 @@ export async function persistStoryRadarResult(
     );
   }
 
+  // Semantic (cross-language) "same news event" pass. Best-effort: an embedding
+  // provider outage must not fail the collection run.
+  let semanticDuplicatesMarked = 0;
+  try {
+    semanticDuplicatesMarked = (
+      await detectTopicDuplicates(topicId, { now: finishedAt })
+    ).marked;
+  } catch (error) {
+    console.error("Semantic duplicate detection failed during persist", error);
+  }
+
   const retention = await pruneStoryRadarData(topicId, {
     ...retentionOptions,
     now: finishedAt,
@@ -178,6 +191,7 @@ export async function persistStoryRadarResult(
     collectionRunId: collectionRun.id,
     persistedStories: result.items.length,
     markedStoredDuplicates,
+    semanticDuplicatesMarked,
     retention,
   };
 }

@@ -45,6 +45,11 @@ export type UpsertStorySocialPublicationInput = {
   publishedAt?: Date;
   postUrl?: string;
   note?: string;
+  /**
+   * Allow scheduling/publishing a story flagged as the same news event as an
+   * already-approved/published sibling. Requires an explicit reviewer choice.
+   */
+  overrideDuplicate?: boolean;
 };
 
 export function isSocialPublicationPlatform(

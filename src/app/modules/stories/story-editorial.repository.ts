@@ -111,6 +111,11 @@ export type EditorialCollectedStory = {
   lastSeenAt: Date;
   localScore: number;
   reviewDecision?: StoryReviewDecision;
+  /** Set when this story is the same news event as another (see duplicate detection). */
+  duplicateOfStoryId?: string;
+  duplicateOfTitle?: string;
+  /** The sibling this duplicates is already approved or scheduled/published. */
+  duplicateOfPublished?: boolean;
   reviewable: boolean;
   evaluationDecision?: "reject" | "review" | "shortlist";
   editorialPriority?: number;
@@ -278,6 +283,9 @@ export async function findEditorialEvaluationCandidates(
         ...(useLegacySourceFallback && !includeAutoRejected
           ? []
           : [isNull(topicStories.reviewDecision)]),
+        // A story marked as the same news event as another never spends an AI
+        // evaluation (see detectTopicDuplicates).
+        isNull(topicStories.duplicateOfStoryId),
         gte(topicStories.relevanceScore, minLocalScore),
         withinFreshnessWindow,
       ),
@@ -1026,6 +1034,24 @@ export async function getEditorialDashboardStats(
         lastSeenAt: topicStories.lastSeenAt,
         localScore: topicStories.relevanceScore,
         reviewDecision: topicStories.reviewDecision,
+        duplicateOfStoryId: topicStories.duplicateOfStoryId,
+        duplicateOfTitle: sql<
+          string | null
+        >`(select w.title from stories w where w.id = ${topicStories.duplicateOfStoryId})`,
+        duplicateOfPublished: sql<boolean>`coalesce((
+          select bool_or(
+            sib.review_decision = 'approved'
+            or sib.processing_status in ('selected', 'published')
+            or exists (
+              select 1 from story_social_publications p
+              where p.topic_id = sib.topic_id and p.story_id = sib.story_id
+                and p.status in ('scheduled', 'published')
+            )
+          )
+          from topic_stories sib
+          where sib.story_id = ${topicStories.duplicateOfStoryId}
+            and sib.topic_id = ${topicStories.topicId}
+        ), false)`,
         evaluationDecision: latestEvaluation.decision,
         editorialPriority: latestEvaluation.editorialPriority,
         growthScore: latestEvaluation.growthScore,
@@ -1097,6 +1123,7 @@ export async function getEditorialDashboardStats(
         and(
           eq(latestEvaluation.decision, "shortlist"),
           isNull(topicStories.reviewDecision),
+          isNull(topicStories.duplicateOfStoryId),
         ),
       )
       .orderBy(
@@ -1243,8 +1270,19 @@ export async function getEditorialDashboardStats(
       ...(row.reviewDecision
         ? { reviewDecision: row.reviewDecision }
         : {}),
+      ...(row.duplicateOfStoryId
+        ? {
+            duplicateOfStoryId: row.duplicateOfStoryId,
+            ...(row.duplicateOfTitle
+              ? { duplicateOfTitle: row.duplicateOfTitle }
+              : {}),
+            duplicateOfPublished: Boolean(row.duplicateOfPublished),
+          }
+        : {}),
       reviewable:
-        row.evaluationDecision === "shortlist" && !row.reviewDecision,
+        row.evaluationDecision === "shortlist" &&
+        !row.reviewDecision &&
+        !row.duplicateOfStoryId,
       ...(row.evaluationDecision
         ? { evaluationDecision: row.evaluationDecision }
         : {}),

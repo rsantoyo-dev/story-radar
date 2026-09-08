@@ -16,6 +16,7 @@ import {
   type StorySocialPublication,
   type UpsertStorySocialPublicationInput,
 } from "./social-publications.types";
+import { findPublicationDuplicateConflict } from "./story-duplicates.repository";
 
 const MAX_POST_URL_LENGTH = 2_000;
 const MAX_NOTE_LENGTH = 2_000;
@@ -76,6 +77,19 @@ export async function upsertStorySocialPublication(
 ): Promise<StorySocialPublication> {
   const publication = validateStorySocialPublicationInput(input);
   await requireApprovedTopicStory(topicId, storyId);
+
+  if (
+    (publication.status === "scheduled" || publication.status === "published") &&
+    !publication.overrideDuplicate
+  ) {
+    const conflict = await findPublicationDuplicateConflict(topicId, storyId);
+    if (conflict) {
+      throw new SocialPublicationDuplicateError(
+        `This story is the same news event as "${conflict.title}", which is already approved or published. Confirm to publish it anyway.`,
+        conflict.title,
+      );
+    }
+  }
 
   const now = new Date();
   const [row] = await db
@@ -146,6 +160,15 @@ export function parseStorySocialPublicationInput(
     throw new SocialPublicationValidationError("A publication object is required");
   }
 
+  if (
+    value.overrideDuplicate !== undefined &&
+    typeof value.overrideDuplicate !== "boolean"
+  ) {
+    throw new SocialPublicationValidationError(
+      "overrideDuplicate must be true or false",
+    );
+  }
+
   return validateStorySocialPublicationInput({
     platform: parseSocialPublicationPlatform(value.platform),
     status: parseSocialPublicationStatus(value.status),
@@ -153,6 +176,7 @@ export function parseStorySocialPublicationInput(
     publishedAt: optionalDate(value.publishedAt, "publishedAt"),
     postUrl: optionalUrl(value.postUrl, "postUrl"),
     note: optionalText(value.note, "note", MAX_NOTE_LENGTH),
+    ...(value.overrideDuplicate === true ? { overrideDuplicate: true } : {}),
   });
 }
 
@@ -231,6 +255,7 @@ function validateStorySocialPublicationInput(
     ...(input.note !== undefined
       ? { note: optionalText(input.note, "note", MAX_NOTE_LENGTH) }
       : {}),
+    ...(input.overrideDuplicate ? { overrideDuplicate: true } : {}),
   };
 }
 
@@ -323,3 +348,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export class SocialPublicationValidationError extends Error {}
 
 export class SelectedStoryPublicationNotFoundError extends Error {}
+
+/** Blocks scheduling/publishing a story that is the same news event as an
+ * already-approved or published sibling, unless the reviewer overrides. */
+export class SocialPublicationDuplicateError extends Error {
+  constructor(
+    message: string,
+    readonly conflictTitle: string,
+  ) {
+    super(message);
+  }
+}

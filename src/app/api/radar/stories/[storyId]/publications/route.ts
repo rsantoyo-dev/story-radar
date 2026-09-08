@@ -11,6 +11,7 @@ import {
   parseSocialPublicationPlatform,
   parseStorySocialPublicationInput,
   SelectedStoryPublicationNotFoundError,
+  SocialPublicationDuplicateError,
   SocialPublicationValidationError,
   upsertStorySocialPublication,
 } from "@/app/modules/stories/social-publications.repository";
@@ -29,6 +30,7 @@ const UPSERT_FIELDS = new Set([
   "publishedAt",
   "postUrl",
   "note",
+  "overrideDuplicate",
 ]);
 const DELETE_FIELDS = new Set(["platform"]);
 
@@ -205,6 +207,13 @@ function publicationRouteError(error: unknown, operation: string): NextResponse 
 
   if (error instanceof SelectedStoryPublicationNotFoundError) {
     return noStoreJson({ error: error.message }, 404);
+  }
+
+  if (error instanceof SocialPublicationDuplicateError) {
+    return noStoreJson(
+      { error: error.message, conflictTitle: error.conflictTitle },
+      409,
+    );
   }
 
   console.error(`Failed to ${operation}`, error);

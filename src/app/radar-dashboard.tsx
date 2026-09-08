@@ -213,6 +213,9 @@ type EditorialCollectedStory = {
   lastSeenAt: string;
   localScore: number;
   reviewDecision?: "approved" | "rejected";
+  duplicateOfStoryId?: string;
+  duplicateOfTitle?: string;
+  duplicateOfPublished?: boolean;
   reviewable: boolean;
   evaluationDecision?: "reject" | "review" | "shortlist";
   editorialPriority?: number;
@@ -242,6 +245,9 @@ type EditorialTableStory = {
   lastSeenAt?: string;
   localScore: number;
   reviewDecision?: "approved" | "rejected";
+  duplicateOfStoryId?: string;
+  duplicateOfTitle?: string;
+  duplicateOfPublished?: boolean;
   reviewable?: boolean;
   evaluationDecision?: "reject" | "review" | "shortlist";
   editorialPriority?: number;
@@ -291,6 +297,7 @@ type CollectionResponse = {
   persistence: {
     persistedStories: number;
     markedStoredDuplicates: number;
+    semanticDuplicatesMarked?: number;
   };
 };
 
@@ -813,10 +820,26 @@ export function RadarDashboard({
 
     try {
       if (status) {
-        await upsertStoryPublication(secret, selectedTopicId, storyId, {
-          platform,
-          status,
-        });
+        try {
+          await upsertStoryPublication(secret, selectedTopicId, storyId, {
+            platform,
+            status,
+          });
+        } catch (error) {
+          const message = getErrorMessage(error);
+          if (
+            /same news event/i.test(message) &&
+            window.confirm(`${message}\n\nPublish it anyway?`)
+          ) {
+            await upsertStoryPublication(secret, selectedTopicId, storyId, {
+              platform,
+              status,
+              overrideDuplicate: true,
+            });
+          } else {
+            throw error;
+          }
+        }
       } else {
         await clearStoryPublication(secret, selectedTopicId, storyId, platform);
       }
@@ -2709,6 +2732,32 @@ function SortableStoriesTable({
                       Owned content
                     </span>
                   ) : null}
+                  {story.duplicateOfTitle ? (
+                    <span
+                      className={`${styles.tableBadge} ${
+                        story.duplicateOfPublished
+                          ? styles.tableBadgeNegative
+                          : styles.tableBadgeWarning
+                      }`}
+                      title={`Same news event as: ${story.duplicateOfTitle}`}
+                    >
+                      Mismo evento que «{story.duplicateOfTitle}»
+                      {story.duplicateOfPublished ? " · ya publicado" : ""}
+                    </span>
+                  ) : null}
+                  {mode === "selected" ? (
+                    <div>
+                      <button
+                        type="button"
+                        className={styles.creativeStudioButton}
+                        disabled={!canPrepare || !onOpenCreativeStory}
+                        title="Open Creative studio to continue or create a draft"
+                        onClick={() => onOpenCreativeStory?.(story.storyId, story.title)}
+                      >
+                        Open draft
+                      </button>
+                    </div>
+                  ) : null}
                   {story.reason ? <small>{story.reason}</small> : null}
                   {story.riskFlags.length > 0 ? (
                     <div className={styles.tableRiskFlags}>
@@ -2821,16 +2870,6 @@ function SortableStoriesTable({
                         isUpdating={updatingPublicationStoryId === story.storyId}
                         onUpdate={onUpdatePublication}
                       />
-                      <button
-                        type="button"
-                        className={styles.creativeStudioButton}
-                        disabled={!canPrepare}
-                        onClick={() =>
-                          onOpenCreativeStory?.(story.storyId, story.title)
-                        }
-                      >
-                        Creative studio
-                      </button>
                       {story.contentStatus !== "missing" ? (
                         <button
                           type="button"
@@ -3365,7 +3404,9 @@ async function upsertStoryPublication(
   secret: string,
   topicId: string,
   storyId: string,
-  publication: Pick<StoryPublication, "platform" | "status">,
+  publication: Pick<StoryPublication, "platform" | "status"> & {
+    overrideDuplicate?: boolean;
+  },
 ): Promise<unknown> {
   return requestJson<unknown>(
     topicUrl(
@@ -3453,7 +3494,7 @@ function collectionNotice(
   return {
     tone: "success",
     title,
-    message: `${collection.persistence.persistedStories} stories processed: ${collection.counts.relevance.ready} ready, ${collection.counts.relevance.needsEnrichment} need enrichment, ${collection.counts.relevance.review} need review, and ${collection.counts.relevance.rejected} were rejected. ${collection.counts.duplicatesRemoved} batch duplicates were removed and ${collection.persistence.markedStoredDuplicates} stored duplicates were marked.`,
+    message: `${collection.persistence.persistedStories} stories processed: ${collection.counts.relevance.ready} ready, ${collection.counts.relevance.needsEnrichment} need enrichment, ${collection.counts.relevance.review} need review, and ${collection.counts.relevance.rejected} were rejected. ${collection.counts.duplicatesRemoved} batch duplicates were removed, ${collection.persistence.markedStoredDuplicates} stored duplicates were marked, and ${collection.persistence.semanticDuplicatesMarked ?? 0} same-event duplicates were caught semantically.`,
   };
 }
 

@@ -20,6 +20,7 @@ import type {
 } from "./editorial-evaluation.types";
 import { evaluateStoriesWithFallback } from "./gemini-story-editorial-evaluator";
 import { getStoryKeywordPreferences } from "./story-preferences.repository";
+import { detectTopicDuplicates } from "./story-duplicates.repository";
 import {
   completeEditorialEvaluationRun,
   createEditorialEvaluationRun,
@@ -36,6 +37,13 @@ export async function evaluateEditorialCandidates(
   { force = false }: { force?: boolean } = {},
 ): Promise<EditorialEvaluationRunResult> {
   const configuration = getEditorialEvaluationRuntimeConfig();
+  // Repair the "same news event" backlog before spending AI evaluations, so a
+  // duplicate never reaches the model or the shortlist.
+  try {
+    await detectTopicDuplicates(topicId, { now });
+  } catch (error) {
+    console.error("Semantic duplicate detection failed before evaluation", error);
+  }
   const [topic, preferences, editorialProfile, usageBefore] = await Promise.all([
     requireTopic(topicId, { active: true }),
     getStoryKeywordPreferences(topicId),

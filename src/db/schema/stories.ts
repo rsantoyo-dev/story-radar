@@ -3,6 +3,7 @@ import {
   check,
   index,
   integer,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -60,6 +61,12 @@ export const stories = pgTable(
       withTimezone: true,
       mode: "date",
     }),
+    /**
+     * Semantic vector of title + content excerpt, used for cross-language
+     * "same news event" duplicate detection. Topic-agnostic, computed once.
+     */
+    titleEmbedding: jsonb("title_embedding").$type<number[]>(),
+    titleEmbeddingModel: text("title_embedding_model"),
   },
   (table) => [
     uniqueIndex("stories_canonical_url_unique").on(table.canonicalUrl),

@@ -56,11 +56,30 @@ export const topicStories = pgTable(
     })
       .defaultNow()
       .notNull(),
+    /**
+     * Set when this topic story is the same news event as another story that
+     * ranked higher / was seen earlier / is already selected or published.
+     * It stays visible but is kept out of the shortlist and editorial eval,
+     * and publishing it is blocked while the sibling is approved/published.
+     */
+    duplicateOfStoryId: uuid("duplicate_of_story_id").references(
+      () => stories.id,
+      { onDelete: "set null" },
+    ),
+    duplicateDetectedAt: timestamp("duplicate_detected_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    duplicateSimilarity: integer("duplicate_similarity"),
   },
   (table) => [
     uniqueIndex("topic_stories_topic_story_unique").on(
       table.topicId,
       table.storyId,
+    ),
+    index("topic_stories_topic_duplicate_idx").on(
+      table.topicId,
+      table.duplicateOfStoryId,
     ),
     index("topic_stories_topic_status_idx").on(
       table.topicId,
@@ -82,6 +101,11 @@ export const topicStories = pgTable(
     check(
       "topic_stories_relevance_score_check",
       sql`${table.relevanceScore} BETWEEN 0 AND 100`,
+    ),
+    check(
+      "topic_stories_duplicate_similarity_check",
+      sql`${table.duplicateSimilarity} IS NULL
+        OR ${table.duplicateSimilarity} BETWEEN 0 AND 100`,
     ),
     check(
       "topic_stories_seen_dates_check",
