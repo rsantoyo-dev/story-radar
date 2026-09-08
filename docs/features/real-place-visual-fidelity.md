@@ -5,6 +5,24 @@
 **Marca piloto:** salut.st.jean  
 **Tablero:** [real-place-visual-fidelity.kanban.json](real-place-visual-fidelity.kanban.json)
 
+## Actualización — SaaS geográfico genérico (2026-09-08)
+
+El borrador existente puede preparar sus imágenes mediante `preparePlaceVisuals`: investigación con Luna y búsqueda web, resolución independiente en Wikidata con el ámbito del perfil, fotografía de Commons elegible o mapa de datos abiertos. No se infiere el país por la marca ni se limita el núcleo a Québec. El idioma de búsqueda procede del perfil; las evidencias conservan nombres y aliases multilingües. La cobertura depende de los registros disponibles y de la identidad administrativa comprobable: esto no certifica todos los lugares del mundo.
+
+- Generación y recomposición individual guardan `placeVisual` en el snapshot de cada imagen del mismo borrador: representación, lugar, fuente, atribución, hash, fecha, candidatos de búsqueda y motivos. Las demás imágenes y versiones históricas permanecen. La actualización del texto guardado recompone solo la unidad solicitada; no aprueba automáticamente el resultado.
+- Se activa la composición local cuando el guion pide cartografía/lugares reconocibles o la política es `photo-required`. Cada unidad usa únicamente sus hechos citados; las unidades tipográficas siguen siendo tipográficas. Para noticias de cambios de estado se excluyen fotos de archivo como prueba; el mapa aporta solo localización. Las imágenes sin evidencia suficiente siguen siendo tipográficas con la explicación en la revisión, sin una falsa localización.
+- MapTiler deja de participar en nuevas composiciones. Se consultan geometrías de calles y agua a Overpass y Sharp dibuja el mapa localmente; no se descargan mosaicos de `tile.openstreetmap.org`. Atribución OSM visible en el PNG. No hay clave ni API de mapas de pago obligatoria; IA, almacenamiento e infraestructura mantienen sus costes habituales.
+- `CREATIVE_GEO_OVERPASS_URL` permite configurar otra instancia HTTPS pública o propia accesible con DNS público. Vacío usa `https://overpass-api.de/api/interpreter`. Límite conservador: 8 consultas por día UTC **por proceso**, 1 MB por respuesta, 18 segundos por solicitud, caché de 30 minutos y 16 entradas. No es una cuota distribuida ni un servicio con SLA: antes de escalar, provisionar capacidad y coordinación de cuotas.
+- El renderizador admite localizaciones puntuales y segmentos verificados en ambos hemisferios. Limita la extensión local a 12 km proyectados, excluye polos/antimeridiano y rechaza respuestas incompletas. Es un mapa de contexto con calles, no un mapa de navegación ni una prueba del estado actual.
+- `CREATIVE_GEO_SOURCE_ADAPTERS="quebec511"` habilita el adaptador opcional de la fuente 511/MTMD; vacío lo deshabilita. Su geometría exige coincidencia del aviso, tramo, dirección y fechas. Un fallo del adaptador no convierte el tramo en un marcador del centro municipal. Otros países usan el recorrido general; nuevas fuentes oficiales pueden aportar adaptadores propios.
+- La sección de publicaciones documentales independientes queda plegada como acceso al recorrido anterior. No se migran ni se aprueban publicaciones históricas. El recorrido habitual del borrador conserva sus controles de aprobación; esta integración no unifica todavía esos controles con la revisión atómica del recorrido documental independiente.
+
+**Configuración:** ámbito geográfico del perfil, `OPENAI_API_KEY`, `CREATIVE_GEO_MODEL` y `CREATIVE_GEO_CONTACT` siguen siendo necesarios para investigación y resolución. Las URLs encontradas por Luna son candidatas; no autorizan descargar fotos arbitrarias. Actualmente la ingestión automática general usa la foto vinculada en Wikidata y permisos compatibles de Commons; ampliar a fuentes oficiales y biblioteca persistente común sigue pendiente. Los originales del recorrido documental anterior mantienen su almacenamiento privado; el nuevo recorrido conserva metadatos y la composición, pero aún no unifica esa biblioteca.
+
+**Verificación:** 459 pruebas de la suite pasan, más 26 regresiones focalizadas tras el límite temporal final; lint y build Webpack pasan. Se dejan de iniciar consultas nuevas tras 45 segundos de preparación para acotar el trabajo pendiente. Probado un mapa real de París desde Overpass y renderizado local. Pruebas cubren proyección en París, Tokio, Buenos Aires y Ciudad del Cabo, rechazo de geometría inválida, asignación por hechos de cada slide, caducidad, alternativa sin IA y exclusión de fotos ante cambios de estado. Las pruebas de identidad mundial usan dependencias simuladas; queda pendiente validación editorial de publicaciones reales de varias regiones. No se modificó `.env.local` ni se aprobó o publicó ninguna pieza.
+
+Fuentes operativas: [datos OSM y atribución](https://www.openstreetmap.org/copyright), [política de mosaicos públicos](https://operations.osmfoundation.org/policies/tiles/), [uso de instancias Overpass](https://dev.overpass-api.de/overpass-doc/en/preface/commons.html). Las secciones anteriores de operación con MapTiler, reproducidas más abajo, describen la implementación previa y quedan sustituidas por esta actualización para nuevas composiciones.
+
 ## Problema y resultado esperado
 
 Una noticia sobre una plaza concreta puede producir una imagen artificial de una plaza parecida. Para los vecinos, las diferencias en edificios, monumentos, vegetación o distribución hacen evidente el error y perjudican la credibilidad.
@@ -350,3 +368,19 @@ Tras mover tarjetas: `python3 scripts/foam-sync.py` regenera las notas de histor
 <!-- foam-stories -->
 
 [[GEO-01]] · [[GEO-02]] · [[GEO-03]] · [[GEO-04]] · [[GEO-05]] · [[GEO-06]] · [[GEO-07]] · [[GEO-08]] · [[GEO-09]] · [[GEO-10]] · [[GEO-11]] · [[GEO-12]]
+
+## Protección ante fuentes insuficientes
+
+El [plan de suficiencia editorial y representación documental](editorial-evidence-guardrails.md) describe las protecciones añadidas tras el caso de los tramos de Saint-Sébastien / Saint-Jean: bloqueo de fragmentos sin evento y rechazo de mapas o reconstrucciones explícitas por el generador. Este control no certifica precisión geográfica ni cierra GEO-07.
+
+## Integración MTMD en el draft existente (septiembre 2026)
+
+La composición local de un draft con dirección geográfica consulta el WFS oficial `ms:chantiers_mtmdet` del MTMD antes de usar tipografía. La coincidencia exige el mismo número de ruta, localización, dirección y fechas/horas inicial y final en un único registro completo citado por el brief. Rechaza respuestas incompletas, geometría inválida, duplicados y conflicto entre el ID de la URL individual y el registro. No convierte km en coordenadas inferidas.
+
+La portada puede recibir el trazado LineString oficial sobre MapTiler; conserva geometría, ID, actualización, fuente, fecha de consulta y hash del mapa en `unitSnapshot.roadMapEvidence`. El resto de unidades conserva tipografía y el texto aprobado. La fuente se vuelve a comprobar al aprobar/exportar un mapa. La regeneración de assets de composición y de sus lotes usa el renderizador local, manteniendo versiones sin aprobarlas automáticamente. Las instrucciones generativas sobre un mapa se rechazan con indicación de editar el guion.
+
+Fuente: [Travaux routiers — MTMD](https://www.donneesquebec.ca/recherche/dataset/travaux-routiers), CC BY 4.0, WGS84. El servicio oficial identifica `168598` como el aviso de Saint-Jean-sur-Richelieu hasta el 31 de octubre; el brief guardado de Saint-Sébastien hasta el 9 de octubre coincide con `153974`. Son avisos distintos.
+
+La prueba local devolvió 202 con tres assets en el mismo draft y evidencia del aviso `153974`. No se generó mapa porque faltan `CREATIVE_GEO_MAPTILER_KEY` y `CREATIVE_GEO_MAPTILER_EXPORT_ENABLED=true`; el motivo queda visible bajo la imagen. La habilitación requiere un plan compatible con exportación y almacenamiento. No se cambiaron credenciales. La ficha HTML de 511 rechazó el acceso automatizado con Cloudflare; el WFS oficial sí respondió.
+
+Alcance pendiente: búsqueda fotográfica integrada en este mismo recorrido, interpretación de fichas que no conservan el registro tabular completo, geometrías MultiLineString y validación visual con MapTiler real. Esta entrega no cierra GEO-A a GEO-F ni la aceptación hiperlocal.

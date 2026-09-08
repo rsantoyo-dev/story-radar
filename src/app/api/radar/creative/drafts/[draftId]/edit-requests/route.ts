@@ -10,7 +10,7 @@ import {
   listCreativeAssetEditRequests,
   saveCreativeAssetEditRequest,
 } from "@/app/modules/stories/creative-asset-edit-requests.repository";
-import { applyCreativeAssetEditRequest } from "@/app/modules/stories/manage-creative-assets";
+import { applyCreativeAssetEditRequest, updateCreativeAssetText } from "@/app/modules/stories/manage-creative-assets";
 import {
   creativeRouteErrorResponse,
   noStoreJson,
@@ -79,7 +79,15 @@ export async function POST(request: Request, context: Context) {
   }
 
   try {
-    const body = (await request.json()) as { unitOrder?: unknown };
+    const body = (await request.json()) as { unitOrder?: unknown; action?: unknown; assetId?: unknown; expectedVersion?: unknown };
+    if (body.action === "update-text") {
+      if (typeof body.assetId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.assetId) ||
+        typeof body.expectedVersion !== "number" || !Number.isInteger(body.expectedVersion) || body.expectedVersion < 1) {
+        return noStoreJson({ error: "assetId and expectedVersion are required" }, 400);
+      }
+      const topicId = await requireActiveRequestTopic(request);
+      return noStoreJson(await updateCreativeAssetText(topicId, draftId, body.assetId, body.expectedVersion), 202);
+    }
     if (
       typeof body.unitOrder !== "number" ||
       !Number.isInteger(body.unitOrder) ||
@@ -115,7 +123,7 @@ export async function DELETE(request: Request, context: Context) {
   }
 
   try {
-    const body = (await request.json()) as { unitOrder?: unknown };
+    const body = (await request.json()) as { unitOrder?: unknown; action?: unknown; assetId?: unknown; expectedVersion?: unknown };
     if (
       typeof body.unitOrder !== "number" ||
       !Number.isInteger(body.unitOrder) ||

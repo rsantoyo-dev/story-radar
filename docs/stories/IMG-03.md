@@ -21,3 +21,4 @@ tags: [img, todo, p0]
 - La UI distingue imágenes con composición editable de imágenes aplanadas. No promete editar texto incrustado como una capa inexistente.
 - En imágenes aplanadas se indica la limitación y solo se ofrece edición generativa si la política efectiva la permite.
 - Los cambios de texto editorial respetan las reglas del recorrido de origen; el documental conserva la exigencia de texto sustentado. Atribuciones, licencias y rótulos obligatorios permanecen legibles.
+- Un cambio de título guardado en el draft alimenta la receta de la unidad cuando existe composición reproducible. Se sustituye el texto y se recompone solo esa imagen, conservando el original y sin llamar al proveedor generativo. El texto incrustado en una imagen aplanada sigue las limitaciones de IMG-02/IMG-06.

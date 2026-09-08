@@ -7,9 +7,11 @@ import { documentarySnapshot } from "./modules/stories/creative-documentary";
 import type { CreativeFormat } from "./modules/stories/creative-content.types";
 import styles from "./creative-draft-workspace.generated.module.css";
 
-type Props = { topicId: string; storyId: string; secret: string; format: CreativeFormat; disabled?: boolean };
-export function CreativeDocumentaryPanel({ topicId, storyId, secret, format, disabled }: Props) {
+type Props = { topicId: string; storyId: string; secret: string; format: CreativeFormat; disabled?: boolean; onLoaded?: (value: { topicId: string; storyId: string; assetCount: number }) => void };
+export function CreativeDocumentaryPanel({ topicId, storyId, secret, format, disabled, onLoaded }: Props) {
   const [result, setResult] = useState<DocumentaryResult>();
+  const [loading, setLoading] = useState(true);
+  const [reload, setReload] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [correction, setCorrection] = useState("");
@@ -18,13 +20,15 @@ export function CreativeDocumentaryPanel({ topicId, storyId, secret, format, dis
   const endpoint = `/api/radar/creative/documentary/${encodeURIComponent(storyId)}?topicId=${encodeURIComponent(topicId)}`;
   useEffect(() => {
     const controller = new AbortController();
-    fetch(endpoint, { headers: { Authorization: `Bearer ${secret}` }, signal: controller.signal }).then(async response => {
+    fetch(endpoint, { cache: "no-store", headers: { Authorization: `Bearer ${secret.trim()}` }, signal: controller.signal }).then(async response => {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not load documentary preparation");
+      if (controller.signal.aborted) return;
       setResult(data);
-    }).catch(err => { if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "Could not load preparation"); });
+      onLoaded?.({ topicId, storyId, assetCount: data.batch?.assets?.length ?? 0 });
+    }).catch(err => { if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "Could not load preparation"); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [endpoint, secret]);
+  }, [endpoint, secret, reload, onLoaded, topicId, storyId]);
   async function act(method: "POST" | "PATCH", body: object) {
     setBusy(true); setError("");
     try {
@@ -32,6 +36,7 @@ export function CreativeDocumentaryPanel({ topicId, storyId, secret, format, dis
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Documentary request failed");
       setResult(data); setReviewed(false);
+      onLoaded?.({ topicId, storyId, assetCount: data.batch?.assets?.length ?? 0 });
     } catch (err) { setError(err instanceof Error ? err.message : "Documentary request failed"); }
     finally { setBusy(false); }
   }
@@ -39,14 +44,16 @@ export function CreativeDocumentaryPanel({ topicId, storyId, secret, format, dis
   const batch = result?.batch;
   const blocked = snapshot?.representation === "blocked" || batch?.status !== "completed";
   const approved = batch?.allApproved && !result?.stale;
-  return <section className={styles.documentaryPanel} aria-label="Automatic documentary publication">
+  return <section id={`documentary-review-${storyId}`} tabIndex={-1} className={styles.documentaryPanel} aria-label="Automatic documentary publication">
     <div className={styles.sectionHeading}><h3>Real places · automatic preparation</h3></div>
     <p>Prepare a 1080×1350 publication from the article. Original photo, verified map or source text. Review the complete publication once, at the end.</p>
-    <button type="button" className={styles.approveButton} disabled={busy || disabled} onClick={() => act("POST", { format, retry: Boolean(batch), ...(correction.trim() ? { correction: correction.trim() } : {}) })}>
+    {loading ? <p role="status">Loading your saved publication…</p> : null}
+    {!loading && batch ? <p role="status"><strong>Saved publication · {batch.assets.length} images</strong> — review it below. You do not need to generate another draft.</p> : null}
+    {!batch ? <button type="button" className={styles.approveButton} disabled={loading || Boolean(error) || busy || disabled} onClick={() => act("POST", { format, retry: Boolean(batch), ...(correction.trim() ? { correction: correction.trim() } : {}) })}>
       {busy ? "Preparing…" : batch ? "Prepare a new version" : "Prepare documentary publication"}
-    </button>
+    </button> : null}
     {busy ? <p role="status">Checking the article, place and available material. Preparation continues without further input.</p> : null}
-    {error ? <p role="alert">{error}</p> : null}
+    {error ? <div role="alert"><p>{error}</p><button type="button" className={styles.secondaryButton} disabled={loading || busy} onClick={() => { setLoading(true); setError(""); setReload(value => value + 1); }}>Reload saved publication</button></div> : null}
     {snapshot && batch ? <>
       <h4>{approved ? "Final review approved" : result?.stale ? "Source or policy changed — prepare a new version" : blocked ? "Preparation blocked" : "Final review"}</h4>
       <p><a href={snapshot.story.url} target="_blank" rel="noreferrer">{snapshot.story.title || "Source article"}</a></p>
@@ -86,15 +93,18 @@ export function CreativeDocumentaryPanel({ topicId, storyId, secret, format, dis
         {snapshot.mentions.map((mention, i) => <p key={i}>{mention.name} ({mention.kind}, {mention.role}): “{mention.excerpt}”</p>)}
       </details>
       {snapshot.review ? <p>Last decision: {snapshot.review.decision} · {snapshot.review.actor} · {snapshot.review.at}</p> : null}
+      {approved ? <p role="status">Publication approved. You can download each image using “Download approved image”. This approval does not publish automatically.</p> : null}
       {!result?.stale ? <>
         <label className={styles.field}>Reviewer name<input value={actor} maxLength={120} disabled={busy} onChange={e => setActor(e.target.value)} /></label>
         <label className={styles.documentaryCheck}><input type="checkbox" checked={reviewed} disabled={busy} onChange={e => setReviewed(e.target.checked)} /> I reviewed the complete copy, images, identity, source, usage terms and archive context.</label>
+        {!approved ? <p role="status">{blocked ? "Approval unavailable: preparation is blocked or images are incomplete. Review the reasons above and prepare a new version." : !actor.trim() ? "Enter your reviewer name to enable final approval." : !reviewed ? "Confirm that you reviewed the complete publication to enable approval." : "Ready for your final decision."}</p> : null}
         <div className={styles.documentaryActions}>
-          <button type="button" className={styles.approveButton} disabled={busy || !reviewed || !actor.trim() || (Boolean(approved) || blocked)} onClick={() => act("PATCH", { batchId: batch.id, inputHash: snapshot.inputHash, actor, humanReviewed: true, decision: "approved" })}>Approve complete publication</button>
+          <button type="button" className={styles.approveButton} disabled={busy || !reviewed || !actor.trim() || (Boolean(approved) || blocked)} onClick={() => act("PATCH", { batchId: batch.id, inputHash: snapshot.inputHash, actor, humanReviewed: true, decision: "approved" })}>{approved ? "Publication approved" : "Approve complete publication"}</button>
           <button type="button" className={styles.unapproveButton} disabled={busy || !reviewed || !actor.trim()} onClick={() => act("PATCH", { batchId: batch.id, inputHash: snapshot.inputHash, actor, humanReviewed: true, decision: "rejected" })}>Reject publication</button>
         </div>
       </> : null}
       <label className={styles.field}><span>Replace the opening excerpt (optional, copied exactly from the article)</span><textarea value={correction} onChange={e => setCorrection(e.target.value)} maxLength={450} disabled={busy} /></label>
+      <button type="button" className={styles.secondaryButton} disabled={busy || disabled} onClick={() => act("POST", { format, retry: true, ...(correction.trim() ? { correction: correction.trim() } : {}) })}>Prepare a new version</button>
       <p>To correct the source or geographic scope, update it and prepare a new version. Previous versions remain recorded. Approval never publishes automatically.</p>
     </> : null}
   </section>;

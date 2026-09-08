@@ -1,4 +1,5 @@
 import "server-only";
+import { imageText } from "./creative-image-text-sync";
 import { CreativeBrandReferenceConflictError } from "./creative-brand-references.repository";
 import { decodeGenerationReferences } from "./creative-brand-generation";
 
@@ -324,11 +325,12 @@ export async function createCreativeAssetBatch({
   return saved;
 }
 
-export async function insertRegeneratedCreativeAsset({ previous, prompt, references, unitSnapshot }: {
+export async function insertRegeneratedCreativeAsset({ previous, prompt, references, unitSnapshot, expectedDraftVersion }: {
   previous: CreativeGeneratedAsset;
   prompt: string;
   references?: import("./creative-brand-generation").GenerationReferences;
   unitSnapshot?: CreativeUnit;
+  expectedDraftVersion?: number;
 }): Promise<CreativeGeneratedAsset> {
   const id = randomUUID();
   const guided = references ? Boolean(references.base || references.characters.length || references.brand.length) : undefined;
@@ -341,13 +343,13 @@ export async function insertRegeneratedCreativeAsset({ previous, prompt, referen
         prompt,expected_text,unit_snapshot,generation_mode,provider_endpoint,reference_snapshot,reference_input_hash,
         brand_overlay_snapshot,carousel_chrome_snapshot)
       SELECT ${id}::uuid,a.batch_id,a.unit_order,a.unit_role,a.version+1,'queued',a.provider,a.model,a.prompt_version,
-        ${prompt},a.expected_text,COALESCE(${unitSnapshot ? JSON.stringify(unitSnapshot) : null}::jsonb,a.unit_snapshot),
+        ${prompt},${unitSnapshot ? imageText(unitSnapshot) : previous.expectedText},COALESCE(${unitSnapshot ? JSON.stringify(unitSnapshot) : null}::jsonb,a.unit_snapshot),
         COALESCE(${guided === undefined ? null : guided ? "reference-guided" : "text-to-image"}::creative_asset_generation_mode,a.generation_mode),
         COALESCE(${guided === undefined ? null : guided ? "openai/gpt-image-2/edit" : "openai/gpt-image-2"},a.provider_endpoint),
         COALESCE(${references ? JSON.stringify(references) : null}::jsonb,a.reference_snapshot),
         COALESCE(${references ? referenceEnvelopeHash(references) : null},a.reference_input_hash),a.brand_overlay_snapshot,a.carousel_chrome_snapshot
       FROM creative_assets a JOIN creative_asset_batches b ON b.id=a.batch_id JOIN creative_drafts d ON d.id=b.draft_id
-      WHERE a.id=${previous.id}::uuid AND a.status NOT IN ('queued','generating') AND b.status <> 'stale' AND d.status='approved' AND d.version=b.draft_version
+      WHERE a.id=${previous.id}::uuid AND a.status NOT IN ('queued','generating') AND b.status <> 'stale' AND (d.status='approved' OR ${expectedDraftVersion ?? references?.textSync?.draftVersion ?? null}=d.version) AND d.version=b.draft_version
         AND NOT EXISTS (SELECT 1 FROM creative_assets newer WHERE newer.batch_id=a.batch_id AND newer.unit_order=a.unit_order AND newer.version>a.version)
       RETURNING id
     `),
@@ -612,6 +614,7 @@ function mapCreativeAsset(
   return {
     referenceContextVersion: Array.isArray(row.referenceSnapshot) ? undefined : 1,
     hasBrandReferenceOverride: Boolean(references.selectionOverride),
+    ...(references.carriedFromAssetId ? { carriedFromAssetId: references.carriedFromAssetId } : {}),
     ...(references.base ? { editSource: { assetId: references.base.assetId, version: references.base.version }, editInstruction: references.editInstruction } : {}),
     ...(typeof references.editRequestRevision === "number" ? { editRevision: references.editRequestRevision } : {}),
     id: row.id,

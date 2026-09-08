@@ -1,4 +1,7 @@
 import "server-only";
+import { recover511CarouselPlan } from "./road-notice-evidence";
+import { canCarryImageUnits } from "./creative-image-text-sync";
+import { carryImageBatchStatements } from "./creative-image-carry.repository";
 import { CreativeBrandReferenceConflictError } from "./creative-brand-references.repository";
 
 import { randomUUID } from "node:crypto";
@@ -437,6 +440,13 @@ export async function replaceCreativeDraft(
     now,
     brandSelectionByOrder,
   );
+  units.forEach((row, index) => {
+    const id = input.units[index].id;
+    if (id && current.units.some(unit => unit.id === id)) row.id = id;
+  });
+  const carry = current.provider !== "documentary" && current.outputAspectRatio === input.outputAspectRatio &&
+    canCarryImageUnits(current.units, input.units);
+  if (carry) units.forEach((row, index) => { row.brandReferenceSelection = current.units[index].brandReferenceSelection ?? null; });
   const assignments = unitCharacterAssignments(units, characterSnapshots, now);
 
   try { await db.batch([
@@ -467,10 +477,11 @@ export async function replaceCreativeDraft(
           eq(creativeDrafts.topicId, topicId),
         ),
       ),
+    ...(carry ? carryImageBatchStatements(current.id, current.version, now) : []),
     db
       .update(creativeAssetBatches)
       .set({ status: "stale", updatedAt: now })
-      .where(eq(creativeAssetBatches.draftId, current.id)),
+      .where(and(eq(creativeAssetBatches.draftId, current.id), lt(creativeAssetBatches.draftVersion, current.version + 1))),
     db.delete(creativeUnits).where(eq(creativeUnits.draftId, current.id)),
     db.insert(creativeUnits).values(units),
     ...(assignments.length > 0
@@ -696,6 +707,8 @@ export async function failCreativeAiRun(
 function mapCreativeBrief(
   row: typeof storyCreativeBriefs.$inferSelect,
 ): CreativeBrief {
+  const carouselPlan = row.carouselPlan as CreativeBrief["carouselPlan"] ??
+    recover511CarouselPlan(row.provider, row.model, row.keyFacts as CreativeKeyFact[]);
   return {
     id: row.id,
     storyId: row.storyId,
@@ -727,8 +740,8 @@ function mapCreativeBrief(
     keyFacts: (row.keyFacts as CreativeKeyFact[]).map(
       withCreativeFactClaimGuard,
     ),
-    ...(row.carouselPlan
-      ? { carouselPlan: row.carouselPlan as CreativeBrief["carouselPlan"] }
+    ...(carouselPlan
+      ? { carouselPlan }
       : {}),
     riskFlags: row.riskFlags,
     suggestedConcepts:
@@ -885,7 +898,7 @@ function draftUnitRows(
   brandSelectionByOrder?: Map<number, BrandReferenceSelection>,
 ) {
   return units.map((unit) => ({
-    id: randomUUID(),
+    id: randomUUID() as string,
     draftId,
     order: unit.order,
     type: unit.type,

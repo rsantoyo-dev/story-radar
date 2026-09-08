@@ -1,3 +1,5 @@
+import { select511Notice } from "./road-notice-evidence";
+import { explicitlyInsufficientEvidence, locationOnlyRoadFacts } from "./creative-evidence-guardrails";
 import "server-only";
 import { createHash } from "node:crypto";
 import { getCreativeContentPublicConfig } from "./creative-content.config";
@@ -49,21 +51,32 @@ async function prepare(topicId: string, storyId: string, format: CreativeFormat,
   if (correction && (correction.length > 450 || correction.length < 30 || !(story.text || "").includes(correction))) {
     throw new CreativeContentConflictError("A corrected excerpt must be copied exactly from the article (30–450 characters).");
   }
-  const inputHash = createHash("sha256").update(JSON.stringify({ sourceToken, source, format, correction, discoveryVersion: "web-search-v1", version: DOCUMENTARY_VERSION })).digest("hex");
+  const inputHash = createHash("sha256").update(JSON.stringify({ sourceToken, source, format, correction, discoveryVersion: "web-search-v1", evidencePolicy: "event-evidence-v2-511", version: DOCUMENTARY_VERSION })).digest("hex");
   const previous = await getDocumentaryPreparation(topicId, storyId);
   if (!retry && !previous.stale && previous.snapshot?.inputHash === inputHash && previous.batch && !["queued", "generating"].includes(previous.batch.status)) return previous;
   // Extractive copy remains usable when the model/provider is unavailable; never fabricate facts.
-  const excerpts = [...new Set([...(correction ? [correction] : []), ...sourceExcerpts(story.text || "")])].slice(0, 3);
-  const title = story.title.trim();
-  const blocked = !title || title.length > 240 || excerpts.length === 0;
+  let excerpts = [...new Set([...(correction ? [correction] : []), ...sourceExcerpts(story.text || "")])].slice(0, 3);
+  let title = story.title.trim();
+  const roadNotice = !correction ? select511Notice(story.url, title, story.text || "") : undefined;
+  if (roadNotice) {
+    const lines = roadNotice.split(/\n+/).map(line => line.trim()).filter(Boolean);
+    title = `Route ${lines[0]} — ${lines[1]}`;
+    // Each piece remains a contiguous, verbatim slice of the same source row.
+    const entrave = roadNotice.indexOf("Entrave");
+    const period = roadNotice.indexOf("Du ");
+    excerpts = [roadNotice.slice(0, entrave).trim(), roadNotice.slice(entrave, period).trim(), roadNotice.slice(period).trim()];
+  }
+  const insufficient = explicitlyInsufficientEvidence(source) || locationOnlyRoadFacts(excerpts.map((text, index) => ({ id: String(index), statement: text })));
+  const blocked = !title || title.length > 240 || excerpts.length === 0 || insufficient;
   const reasons: string[] = [];
+  if (insufficient) reasons.push("The source only provides location markers or explicitly lacks event evidence. Retrieve the complete source before preparing this publication.");
   if (blocked) reasons.push("The article does not contain enough bounded source text for a documentary post.");
   let discovery: DocumentarySnapshot["discovery"];
   let extraction: PlaceExtraction = { mentions: [], purpose: "unknown" };
   const audit: DocumentarySnapshot["extraction"] = { model: process.env.CREATIVE_GEO_MODEL?.trim() || "gpt-5.6-luna", attempts: 0, usage: { ...EMPTY_GEO_USAGE }, status: "unavailable" };
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   const daily = await getCreativeDailyUsage(topicId, getCreativeContentPublicConfig().maxRunsPerDay);
-  if (!blocked && apiKey && daily.remainingRuns > 0) {
+  if (!blocked && !roadNotice && apiKey && daily.remainingRuns > 0) {
     for (let attempt = 0; attempt < Math.min(2, daily.remainingRuns); attempt++) {
       const runId = await createCreativeAiRun({ topicId, storyId, task: "brief", provider: "openai", model: audit.model, promptVersion: `${DOCUMENTARY_VERSION}-extraction`, inputHash });
       audit.attempts++;
@@ -82,7 +95,7 @@ async function prepare(topicId: string, storyId: string, format: CreativeFormat,
         reasons.push("Place extraction unavailable; source text retained."); break; // retry structure only, not outages
       }
     }
-  } else if (!blocked) reasons.push("Place extraction not configured or daily budget exhausted.");
+  } else if (!blocked) reasons.push(roadNotice ? "Official 511 notice: route, location, severity, direction and dates retained together. Typography does not reconstruct the road." : "Place extraction not configured or daily budget exhausted.");
   // Even a mistaken model classification cannot treat changed-state reporting as a context photograph.
   if (/\b(rénov|travaux|fermeture|fermé|construction|inaugur|réaménag|demolit|damage|renovat|closure|closed|réfection|cierre|obras|remodel)/iu.test(source)) extraction.purpose = "current-state";
   const snapshot: DocumentarySnapshot = { version: DOCUMENTARY_VERSION, inputHash, sourceToken,
@@ -121,7 +134,7 @@ async function prepare(topicId: string, storyId: string, format: CreativeFormat,
             const map = await providers.map(place);
             if (map) {
               original = map; snapshot.representation = "map";
-              snapshot.map = { attribution: "© MapTiler © OpenStreetMap contributors", termsUrl: "https://www.maptiler.com/terms/", placeId: place.id, sha256: createHash("sha256").update(map).digest("hex") };
+              snapshot.map = { attribution: "© OpenStreetMap contributors · openstreetmap.org/copyright", termsUrl: "https://www.openstreetmap.org/copyright", placeId: place.id, sha256: createHash("sha256").update(map).digest("hex") };
               await putPrivateR2Object({ objectKey: buildDocumentaryObjectKey(topicId, "originals", snapshot.map.sha256), body: map, contentType: "image/png", signal: deadline });
             } else reasons.push("Map unavailable: verified precise coordinates and enabled export plan required.");
           } catch { original = undefined; snapshot.representation = "typography"; delete snapshot.map; reasons.push("Map provider unavailable; using source text."); }

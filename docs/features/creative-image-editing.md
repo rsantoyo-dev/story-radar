@@ -13,10 +13,10 @@ Ejemplo: en un carrusel de tres slides, ajustar el título del segundo conserva 
 
 ## Flujo propuesto
 
-1. Abrir un draft existente y elegir “Editar esta imagen”.
-2. Seleccionar la versión base y escribir la instrucción o ajustar controles de composición disponibles.
-3. “Guardar cambio” conserva la solicitud sin ejecutar ni gastar generación.
-4. “Aplicar a esta imagen” crea una versión de esa unidad.
+1. Abrir el mismo draft y mejorar el título o texto visual de una slide. Como alternativa, elegir “Editar esta imagen” para un ajuste visual manual.
+2. Guardar el draft conserva el texto nuevo y marca únicamente las imágenes afectadas como “Pendiente de actualizar”, sin ejecutar generación. Una instrucción manual se guarda con “Guardar cambio”.
+3. Pulsar “Actualizar esta imagen”: el sistema prepara la instrucción con el texto representado por la imagen base y el nuevo texto guardado, sin exigir escribir un prompt adicional.
+4. La actualización usa la imagen anterior como base, o recompone sobre el original y su receta cuando existen; crea una versión de esa unidad y conserva las demás.
 5. Comparar, continuar editando o incorporar la versión al conjunto.
 6. Revisar y aprobar el conjunto exacto antes de tratarlo como listo para publicación.
 
@@ -30,6 +30,19 @@ Guardar una solicitud, ejecutar una edición, seleccionar un resultado y aprobar
 - Las ilustraciones pueden usar edición generativa sobre la imagen base cuando su política y permisos lo permiten. Una edición generativa no garantiza conservar todos los detalles ajenos a la instrucción.
 - Las fotografías documentales y los mapas conservan las protecciones de [fidelidad de lugares reales](real-place-visual-fidelity.md). No se reconstruye un lugar mediante IA para realizar un ajuste.
 - No incluye edición masiva, un editor gráfico por capas completo, pinceles o máscaras manuales, publicación automática ni modificación de posts remotos de Instagram.
+
+**Actualización selectiva implementada para texto:** en un post o carrusel generativo existente, guardar cambios de título, subtítulo, cuerpo o CTA conserva los archivos en una nueva revisión del mismo draft. Cada imagen compara su snapshot de texto con el texto guardado y muestra “Pendiente de actualizar” cuando difieren. “Actualizar esta imagen” prepara una edición sobre la base anterior sin escribir un prompt ni aprobar previamente el nuevo guion. El resultado requiere revisión; no se aprueba ni publica automáticamente.
+
+**Alcance actual:** se conserva el conjunto cuando las unidades mantienen identidad, orden, formato, personajes y configuración visual. Cambiar su estructura, encuadre o dirección visual mantiene el recorrido de un lote nuevo. La recomposición determinista documental (IMG-03), la selección libre de versiones y la revisión conjunta completa de IMG-04/05 siguen pendientes; esta entrega no cierra todas las historias IMG.
+
+### Persistencia y validación de la actualización de texto
+
+- Guardar no llama al generador. Una transacción versiona el draft y crea registros del conjunto nuevo que apuntan a los mismos archivos, con el mismo número de versión de imagen. Los registros originales y sus aprobaciones permanecen históricos; `carriedFromAssetId` conserva la identidad del resultado reutilizado. Los registros del conjunto nuevo tienen IDs propios y quedan sin aprobar. No se duplica el archivo ni se necesita migración.
+- Se conservan los IDs de las unidades existentes al guardar. Si el título cambia otra vez durante una generación, la nueva revisión conserva la última imagen disponible y el trabajo anterior queda en el lote histórico. Su resultado no actualiza el texto de la nueva revisión.
+- La acción guarda base, instrucción automática, texto anterior y objetivo y versión del draft en el snapshot del resultado. La inserción condicional protege contra duplicados y versiones obsoletas. Los fallos se muestran y permiten reintentar desde la base original.
+- La aprobación del draft comprueba que sus imágenes actuales estén terminadas y correspondan al texto guardado. Aprobar o descargar una imagen como lista vuelve a comprobar la correspondencia y las protecciones existentes de política y permisos. Restaurar el texto anterior elimina el desfase sin generar otra imagen, pero no restaura una aprobación histórica.
+- Cambiar solo el caption o metadatos no visuales conserva las imágenes. Las referencias de marca de las unidades se conservan en las ediciones de texto y sus permisos se vuelven a comprobar al usarlas.
+- Validación automatizada: pruebas de comparación de texto y PostgreSQL aislado para conservación de archivos/versiones, aprobaciones históricas, actualización de una sola unidad en un draft sin aprobar y rechazo de doble ejecución. Pasaron 440 pruebas, lint y build (incluye TypeScript). No hay migración nueva. La generación con Fal y la revisión visual en el entorno del usuario siguen pendientes.
 
 ## Historias y entrega
 
@@ -47,9 +60,13 @@ Todas las historias siguientes forman parte del MVP. Los criterios se mantienen 
 
 - Cada unidad muestra “Editar esta imagen”, la versión base seleccionada y un campo de instrucción separado del prompt original.
 - “Guardar cambio” persiste la instrucción, el draft, la unidad, la versión base y la revisión de la solicitud. Recargar o volver al draft recupera esos datos.
-- Guardar no llama al proveedor, no cambia imágenes ni invalida aprobaciones existentes; la interfaz distingue cambios sin guardar, guardados y aplicados.
+- Guardar una instrucción pendiente no llama al proveedor, no cambia imágenes ni invalida aprobaciones existentes; la interfaz distingue cambios sin guardar, guardados y aplicados.
 - Se puede modificar o descartar una solicitud pendiente sin eliminar instrucciones ya ejecutadas ni su historial.
 - Los drafts existentes permiten guardar instrucciones sin regenerar sus imágenes. La interfaz utiliza UXDSL, la paleta del proyecto y sus breakpoints.
+- El editor puede cambiar el título o texto visual desde los campos de la slide en el mismo draft, sin crear otro draft ni duplicar el contenido en un prompt manual. Guardar crea una revisión del draft y conserva sus imágenes e históricos.
+- Cada imagen conserva el snapshot del texto que representa. Al guardar, se compara con el texto visual vigente de su unidad: solo las unidades afectadas quedan “Pendiente de actualizar”, incluso después de recargar. Cambios de caption u otros campos que no aparecen en la imagen no requieren actualizarla.
+- Guardar una instrucción visual pendiente no altera la aprobación del conjunto. Guardar texto editorial sí crea una revisión pendiente de aprobación, aunque las imágenes anteriores permanezcan visibles; conserva la aprobación histórica, sin transferirla a la nueva revisión.
+
 
 ### IMG-02 — Aplicar un cambio únicamente a la imagen seleccionada
 
@@ -69,6 +86,11 @@ Todas las historias siguientes forman parte del MVP. Los criterios se mantienen 
 - Una instrucción de cambio pequeño no garantiza que el proveedor conserve todos los otros detalles; la interfaz permite revisar el resultado antes de seleccionarlo.
 - El resultado permanece como **candidato** (versión pendiente de revisión) hasta incorporarlo al conjunto mediante **IMG-05**; aplicar no lo aprueba ni lo publica.
 - Concurrencia (parte de IMG-07 adelantada): la ejecución bloquea la solicitud (`saved → running`) con compare-and-swap y sólo escribe su resultado si la fila sigue en la misma revisión; guardar otra instrucción durante la generación crea una revisión nueva y el trabajo en curso no la marca como aplicada.
+- “Actualizar esta imagen” toma el texto guardado del draft y genera automáticamente la instrucción de sustitución a partir del snapshot de texto de la imagen base y del texto nuevo. No requiere un prompt manual ni volver a aprobar el guion antes de preparar el resultado.
+- La actualización se limita a la unidad seleccionada y conserva los archivos, versiones y vínculo al resultado original de las otras imágenes, aunque el draft tenga una revisión nueva; sus registros de pertenencia al conjunto nuevo pueden tener IDs propios. No fuerza regenerar el lote completo.
+- Cada resultado registra la identidad de la unidad, la revisión del draft y los snapshots de texto anterior y nuevo, además de la base e instrucción exactas. La edición generativa usa la imagen existente y pide conservar el resto; no garantiza que el proveedor mantenga cada detalle.
+- El prompt manual sigue disponible para ajustes visuales adicionales. No modifica silenciosamente los campos de texto del draft; una instrucción incompatible con el texto guardado debe corregirse antes de ejecutar.
+
 
 ### IMG-03 — Editar texto y composición conservando el original
 
@@ -85,6 +107,8 @@ Todas las historias siguientes forman parte del MVP. Los criterios se mantienen 
 - La UI distingue imágenes con composición editable de imágenes aplanadas. No promete editar texto incrustado como una capa inexistente.
 - En imágenes aplanadas se indica la limitación y solo se ofrece edición generativa si la política efectiva la permite.
 - Los cambios de texto editorial respetan las reglas del recorrido de origen; el documental conserva la exigencia de texto sustentado. Atribuciones, licencias y rótulos obligatorios permanecen legibles.
+- Un cambio de título guardado en el draft alimenta la receta de la unidad cuando existe composición reproducible. Se sustituye el texto y se recompone solo esa imagen, conservando el original y sin llamar al proveedor generativo. El texto incrustado en una imagen aplanada sigue las limitaciones de IMG-02/IMG-06.
+
 
 ### IMG-04 — Comparar versiones y continuar editando
 
@@ -118,6 +142,10 @@ Todas las historias siguientes forman parte del MVP. Los criterios se mantienen 
 - Exportar como listo o publicar exige aprobación vigente del conjunto seleccionado; una aprobación histórica no aprueba una revisión nueva.
 - Cancelar o rechazar una edición conserva el resultado anterior. No hay publicación ni aprobación automática después de aplicar cambios.
 - Si la publicación ya salió a Instagram, editar el draft no modifica el post remoto ni su vínculo histórico; actualizarlo o republicarlo queda fuera de esta feature.
+- La revisión conjunta vincula el texto vigente de cada unidad con la versión de imagen seleccionada. No permite aprobar, exportar como listo ni publicar una revisión con imágenes pendientes de actualizar respecto de su texto visual.
+- Incorporar una imagen actualizada conserva las versiones de las unidades sin cambios y requiere aprobación final del conjunto exacto. Rechazar el candidato conserva la imagen anterior, pero no elimina el estado pendiente si el texto del draft sigue siendo distinto.
+- Si se restaura el texto representado por la imagen seleccionada, se elimina el desfase sin generar otra imagen; la revisión editorial nueva sigue necesitando aprobación final.
+
 
 ### IMG-06 — Respetar la fidelidad documental y los permisos
 
@@ -153,6 +181,9 @@ Todas las historias siguientes forman parte del MVP. Los criterios se mantienen 
 - Los límites de tiempo, intentos y presupuesto creativo existentes se aplican por ejecución; no se reintenta indefinidamente ni se cambia a un proveedor más caro de forma silenciosa.
 - Autorización, lectura del original, proveedor y almacenamiento se ejecutan en servidor con aislamiento por tema. No se exponen claves privadas ni URLs con credenciales.
 - Un fallo del proveedor o almacenamiento conserva la base y las otras unidades, registra el estado y permite reintento acotado.
+- El snapshot y la clave idempotente de una actualización automática incluyen la identidad de la unidad, base, revisión de solicitud y revisión o hash del texto visual objetivo. Si el título cambia durante la ejecución, el resultado anterior se conserva en historial y no marca como actualizada la nueva versión del texto.
+- La correspondencia usa una identidad estable de unidad, no solo su posición en el carrusel. Reordenar slides no asigna instrucciones o imágenes a otra unidad; eliminar una unidad impide incorporar trabajos tardíos a otra slide.
+
 
 ### IMG-08 — Validar edición incremental y regresiones
 
@@ -170,6 +201,10 @@ Todas las historias siguientes forman parte del MVP. Los criterios se mantienen 
 - La composición documental conserva el original y los rótulos; se comprueba que ninguna rama documental llama al generador, incluso ante un error.
 - Editar un conjunto aprobado exige una nueva aprobación del conjunto modificado y conserva la trazabilidad de exportaciones y publicaciones anteriores.
 - Se valida el flujo en móvil y escritorio con un draft existente y un carrusel aprobado. Pasan pruebas relevantes, lint y build; db:check solo si se requieren migraciones. Se documentan bloqueos reales del entorno.
+- En un carrusel existente y aprobado, cambiar el título de la segunda slide y guardar conserva las tres imágenes sin llamadas al proveedor, marca solo la segunda pendiente y recupera ese estado al recargar. Actualizarla produce una sola versión nueva, usando su imagen anterior y el texto guardado sin prompt manual.
+- Pruebas cubren varios cambios de título antes de aplicar, cambio durante la ejecución, reordenación de slides, restauración del texto anterior y cambios de caption sin efecto visual. Ningún resultado obsoleto elimina el estado pendiente del texto vigente.
+- La aprobación y exportación del conjunto se bloquean mientras texto e imagen estén desfasados; después de incorporar el resultado y revisar el conjunto, las otras unidades conservan sus versiones. Se verifica tanto la edición generativa como la recomposición determinista.
+
 
 ## Orientación técnica
 
@@ -178,3 +213,13 @@ Reutilizar las abstracciones de drafts, unidades, lotes, versiones de assets y a
 Persistir la solicitud pendiente fuera del estado local del navegador. Cada ejecución conserva draft/unidad, versión base, revisión de solicitud, tipo de edición, instrucción o receta exacta, política efectiva, estado, resultado y datos disponibles de uso. No se inventan identidades individuales donde la autenticación existente no las proporciona.
 
 La compatibilidad con assets históricos debe distinguir original accesible, composición reproducible e imagen aplanada. Una limitación impide únicamente la operación afectada y se explica en la misma unidad.
+
+### Integración de tipografía en el draft existente
+
+Cuando el guion solicita reconstrucción geográfica, «Compose images in this draft» compone todas las unidades como tipografía a 1080×1350. Conserva el draft, la versión, los IDs de unidades y el texto guardado; cada imagen requiere su aprobación habitual. El renderizado local usa nombre y paleta de marca, sin generar el lugar ni abrir una publicación documental separada. `providerEndpoint=local/draft-typography-v1` identifica estos assets; se almacenan usando el servicio de archivos Fal existente (retención de 30 días), sin llamar al modelo generador. La descarga conserva las comprobaciones de versión, texto y aprobación.
+
+Esta integración cubre la alternativa tipográfica. La selección automática de originales/mapas dentro del mismo draft y las ediciones generativas de estos assets no están habilitadas por este cambio.
+
+### Integración con lugares reales — 2026-09-08
+
+Las imágenes compuestas de fotografías o mapas abiertos pueden recomponerse individualmente desde el texto guardado del mismo borrador. El snapshot conserva `placeVisual` y la procedencia; una actualización deja la nueva imagen pendiente de revisión y conserva las versiones anteriores. El material geográfico se vuelve a consultar: no se aplica edición generativa que invente detalles del lugar. Ver [recorrido geográfico genérico](real-place-visual-fidelity.md).

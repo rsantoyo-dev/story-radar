@@ -1,3 +1,5 @@
+import * as roadEvidence from "./road-notice-evidence";
+import * as evidenceGuardrails from "./creative-evidence-guardrails";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -19,6 +21,8 @@ function load<T>(file: string, dependencies: Record<string, unknown>, env: Recor
   runInNewContext(code, { exports, Date, Set, Map, Buffer, URL, URLSearchParams, AbortSignal, console, process: { env },
     require: (name: string) => {
       if (name === "server-only") return {};
+      if (name === "./road-notice-evidence") return roadEvidence;
+      if (name === "./creative-evidence-guardrails") return evidenceGuardrails;
       if (!(name in dependencies)) throw new Error(`Unexpected server dependency: ${name}`);
       return dependencies[name];
     },
@@ -268,4 +272,69 @@ test("web search is opt-in and bounded in the actual Responses request", async (
   assert.equal(bodies[1].max_tool_calls, 3);
   assert.equal(bodies[1].tool_choice, "required");
   assert.equal(searched.webSearch?.sources[0].url, "https://city.example/place");
+});
+
+test("location-only road fragments finish blocked without model, map or photo lookup", async () => {
+  const h = harness({ text: "Le repère va du kilomètre 20 au kilomètre 17 à Saint-Sébastien. Le secteur se trouve entre la sortie 39 et la route 104 à Saint-Jean-sur-Richelieu.", material: "map" });
+  const result = await h.service.prepareDocumentary("topic", "story");
+  assert.equal(result.snapshot?.representation, "blocked");
+  assert.equal(h.aiCalls, 0);
+  assert.equal(h.resolutions, 0);
+  assert.equal(h.approvals, 0);
+  assert.ok(result.snapshot?.reasons.some(reason => reason.includes("event evidence")));
+});
+
+test("same-draft typography renders saved copy without geographic generation", async () => {
+  const renderer = load<typeof import("./creative-documentary-render")>("creative-documentary-render.ts", { sharp });
+  const composer = load<typeof import("./creative-draft-typography")>("creative-draft-typography.ts", { sharp, "./creative-documentary-render": renderer });
+  const unit = { order: 1, type: "carousel-slide", role: "cover", headline: "Route 35 : entrave majeure", subheadline: "À Saint-Sébastien", body: "Du 8 septembre au 9 octobre.", continuationCue: "Quelle période?", visualDirection: "Carte routière", factIds: [], assetRequest: "generated-image", aspectRatio: "4:5" } as import("./creative-content.types").CreativeUnit;
+  const before = JSON.stringify(unit);
+  const png = await composer.renderDraftTypography(unit, profile);
+  const metadata = await sharp(png).metadata();
+  assert.equal(metadata.width, 1080); assert.equal(metadata.height, 1350);
+  assert.equal(JSON.stringify(unit), before);
+  assert.equal(composer.DRAFT_TYPOGRAPHY_ENDPOINT, "local/draft-typography-v1");
+});
+
+test("road-map preparation uses open map geometry without a paid key and rejects mismatched notice IDs", async () => {
+  const road = await import("./quebec-road-map");
+  const data = JSON.parse(readFileSync(resolve("src/app/modules/stories/fixtures/quebec-road-35.json"), "utf8"));
+  const facts = [{ id: "fact-1", statement: "Entrave", sourceExcerpt: "35 À Saint-Jean-sur-Richelieu, entre la sortie 39 (R-104) et la R-104 Entrave Majeure Direction Sud et nord Du 21 juin 2026 à 20 h au 31 octobre 2026 à 6 h" }];
+  let calls = 0;
+  const service = load<typeof import("./prepare-road-map")>("prepare-road-map.ts", { "node:crypto": crypto, "./quebec-road-map": road, "./open-map-render": { renderOpenMap: async () => Buffer.from("map") }, "./creative-documentary-providers": { fetchDocumentaryResource: async () => { calls++; return Buffer.from(JSON.stringify(data)); } } });
+  const result = await service.prepareRoadMap("https://www.511.gouv.qc.ca/fr/Diffusion/EtatReseau/DetailsChantier.aspx?idChantier=168598", facts);
+  assert.equal(result.evidence.segment?.id, "168598");
+  assert.match(result.evidence.reason, /Official MTMD/);
+  assert.equal(result.bytes?.toString(), "map");
+  assert.equal(calls, 1);
+  const mismatch = await service.prepareRoadMap("https://www.511.gouv.qc.ca/fr/Diffusion/EtatReseau/DetailsChantier.aspx?idChantier=123", facts);
+  assert.match(mismatch.evidence.reason, /conflicts/);
+  assert.equal(mismatch.evidence.segment, undefined);
+});
+
+test("worldwide preparation resolves source-backed places, maps current-state reports and leaves other slides untouched", async () => {
+  const visual=await import("./creative-place-visual");
+  const geometry=await import("./open-map-geometry");
+  let photoCalls=0,mapCalls=0,resolveCalls=0;
+  const unit={id:"unit",order:1,role:"cover",factIds:["fact-1"],visualDirection:"Map of place",assetRequest:"generate"};
+  const facts=[{id:"fact-1",statement:source,sourceExcerpt:source}];
+  const dependencies={
+    "node:crypto":crypto,"./creative-documentary":policy,"./creative-place-visual":visual,"./open-map-geometry":geometry,
+    "./creative-documentary-providers":{documentaryProviders:()=>({resolve:async()=>{resolveCalls++;return place;},photo:async()=>{photoCalls++;return undefined;}})},
+    "./open-map-render":{renderOpenMap:async()=>{mapCalls++;return Buffer.from("map");}},
+    "./prepare-road-map":{prepareRoadMap:async()=>{throw new Error("Wrong regional adapter");}},
+    "./creative-content.config":{getCreativeContentPublicConfig:()=>({maxRunsPerDay:10})},
+    "./creative-content.repository":{getCreativeDailyUsage:async()=>({remainingRuns:10}),createCreativeAiRun:async()=>"run",completeCreativeAiRun:async()=>{},failCreativeAiRun:async()=>{}},
+    "./openai-structured-response":{generateOpenAiStructuredResponse:async()=>({text:JSON.stringify({purpose:"current-state",mentions:[mention]}),usage:{},model:"test"})},
+  };
+  const service=load<typeof import("./prepare-place-visuals")>("prepare-place-visuals.ts",dependencies,{OPENAI_API_KEY:"test",CREATIVE_GEO_SOURCE_ADAPTERS:""});
+  const draft={units:[unit,{...unit,id:"second",order:2,role:"content",visualDirection:"Typography"}],storyId:"story",briefId:"brief"} as unknown as import("./creative-content.types").CreativeDraft;
+  const result=await service.preparePlaceVisuals("topic",draft,profile,facts,"https://example.org/article");
+  assert.equal(result.get(1)?.evidence.representation,"map");
+  assert.equal(result.get(2)?.evidence.representation,"typography");
+  assert.equal(photoCalls,0);assert.equal(mapCalls,1);assert.equal(resolveCalls,1);
+  const noAi=load<typeof import("./prepare-place-visuals")>("prepare-place-visuals.ts",dependencies);
+  const fallback=await noAi.preparePlaceVisuals("topic",draft,profile,facts,"https://example.org/article");
+  assert.equal(fallback.get(1)?.evidence.representation,"typography");
+  assert.equal(resolveCalls,1);
 });

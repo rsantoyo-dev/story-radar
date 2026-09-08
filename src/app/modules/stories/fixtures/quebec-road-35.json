@@ -1,0 +1,166 @@
+{
+  "type": "FeatureCollection",
+  "numberMatched": 2,
+  "features": [
+    {
+      "type": "Feature",
+      "id": 153974,
+      "properties": {
+        "identifiant": "153974",
+        "identifiantChantier": "284626",
+        "routeAutoroute": "35",
+        "entraveType": "Majeure (semaine et fin de semaine)",
+        "debut": "2026/09/08 07:00:00",
+        "fin": "2026/10/09 17:00:00",
+        "miseAJour": "2026/09/04 13:40:00",
+        "identificationDesTravaux": "Services publics",
+        "urlFrancais": "",
+        "texteUrlFrancais": "",
+        "detoursEtItinerairesFacultatifs": "",
+        "entrave": "Fermeture de 1 voie sur 2 en tout temps\n",
+        "entravesLieesAuxChargesEtDimensions": "",
+        "localisation": "À Saint-Sébastien, entre les km 20 et 17",
+        "direction": "Sud",
+        "descriptionFrancais": "Services publics\nÀ Saint-Sébastien, entre les km 20 et 17\nEn direction SUD\nFermeture de 1 voie sur 2 en tout temps",
+        "descriptionAnglais": "Public services\nIn San Sebastián, between km 20 and 17\nSOUTHBOUND\nClosur of 1 out of 2 lanes at all times",
+        "couleurLigne": "#FF0000",
+        "source": "https://www.quebec511.info"
+      },
+      "bbox": [
+        -73.128407,
+        45.147903,
+        -73.128137,
+        45.173882
+      ],
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -73.128407,
+            45.173882
+          ],
+          [
+            -73.128381,
+            45.171304
+          ],
+          [
+            -73.128354,
+            45.168924
+          ],
+          [
+            -73.128139,
+            45.148076
+          ],
+          [
+            -73.128137,
+            45.147903
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 168598,
+      "properties": {
+        "identifiant": "168598",
+        "identifiantChantier": "318268",
+        "routeAutoroute": "35",
+        "entraveType": "Majeure (semaine et fin de semaine)",
+        "debut": "2026/06/21 20:00:00",
+        "fin": "2026/10/31 06:00:00",
+        "miseAJour": "2026/08/17 04:00:00",
+        "identificationDesTravaux": "Reconstruction de ponceau",
+        "urlFrancais": "",
+        "texteUrlFrancais": "",
+        "detoursEtItinerairesFacultatifs": "",
+        "entrave": "Chaussée fermée en direction SUD, circulation à contresens sur la chaussée opposée en tout temps",
+        "entravesLieesAuxChargesEtDimensions": "",
+        "localisation": "À Saint-Jean-sur-Richelieu, entre la sortie 39 (R-104) et la R-104",
+        "direction": "Sud et nord",
+        "descriptionFrancais": "Reconstruction\nÀ Saint-Jean-sur-Richelieu, entrela sortie 39 (R-104) et la R-104\nDans les deux directions\nChaussée fermée en direction SUD, circulation à contresens sur la chaussée opposée en tout temps",
+        "descriptionAnglais": "Reconstruction\nIn Saint-Jean-sur-Richelieu, between exit 39 (R-104) and R-104\nIn both directions\nRoad closed SOUTHBOUND, contraflow traffic on the opposite direction at all times",
+        "couleurLigne": "#FF0000",
+        "source": "https://www.quebec511.info"
+      },
+      "bbox": [
+        -73.222897,
+        45.31214,
+        -73.222616,
+        45.316473
+      ],
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -73.222897,
+            45.316473
+          ],
+          [
+            -73.222858,
+            45.316361
+          ],
+          [
+            -73.222784,
+            45.316119
+          ],
+          [
+            -73.222743,
+            45.315957
+          ],
+          [
+            -73.222684,
+            45.315634
+          ],
+          [
+            -73.22265,
+            45.315294
+          ],
+          [
+            -73.22264,
+            45.314994
+          ],
+          [
+            -73.222635,
+            45.314192
+          ],
+          [
+            -73.222621,
+            45.313006
+          ],
+          [
+            -73.222622,
+            45.31277
+          ],
+          [
+            -73.222621,
+            45.312673
+          ],
+          [
+            -73.222619,
+            45.312562
+          ],
+          [
+            -73.222618,
+            45.312464
+          ],
+          [
+            -73.222618,
+            45.312382
+          ],
+          [
+            -73.222617,
+            45.31227
+          ],
+          [
+            -73.222616,
+            45.312159
+          ],
+          [
+            -73.222616,
+            45.31214
+          ]
+        ]
+      }
+    }
+  ]
+}

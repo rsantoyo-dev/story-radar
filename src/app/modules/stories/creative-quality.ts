@@ -1,3 +1,4 @@
+import { evidenceQualityIssues } from "./creative-evidence-guardrails";
 import {
   blockingCarouselNarrativeIssues,
   dropTrailingSentenceFragment,
@@ -769,6 +770,7 @@ export function deterministicCreativeQualityIssues(
       }]
     : [];
   return [
+    ...evidenceQualityIssues(draft, keyFacts),
     ...narrativeIssues,
     ...deterministicFactQualityIssues(draft, keyFacts),
     ...editorialPrecisionIssues,
@@ -1356,6 +1358,7 @@ export function assertNoDeterministicCreativeBlockers(
   framingStrategy?: CreativeFramingStrategy,
 ): void {
   const blockers = [
+    ...evidenceQualityIssues(draft, keyFacts).map(issue => issue.message),
     ...(format === "carousel"
       ? blockingCarouselNarrativeIssues(
           draft.units,

@@ -133,7 +133,7 @@ test("editing one image persists its new references and base without replacing s
     const references = { schema: 1, characters: [], brand: [], selectionOverride: true,
       base: { assetId: previous.id, version: 1, objectKey: "private/base", sha256: "hash", contentType: "image/png", fileName: "base.png" }, editInstruction: "lighter" };
     const edit = repo.insertRegeneratedCreativeAsset as unknown as (input: unknown) => Promise<{id: string;version: number;status: string;editSource: {assetId: string}}>;
-    const next = await edit({ previous, prompt: "lighter", references, unitSnapshot: { order: 1, brandReferenceSelection: { selected: [], excluded: [], note: null } } });
+    const next = await edit({ previous, prompt: "lighter", references, unitSnapshot: { order: 1, headline: "New text", brandReferenceSelection: { selected: [], excluded: [], note: null } } });
     assert.equal(next.version, 2);
     assert.equal(next.status, "queued");
     assert.equal(next.editSource.assetId, previous.id);
@@ -146,5 +146,52 @@ test("editing one image persists its new references and base without replacing s
     await client.exec("UPDATE creative_drafts SET version=2");
     const latest = (await find(next.id)).asset;
     await assert.rejects(edit({ previous: latest, prompt: "old draft", references }), /changed/);
+  } finally { await client.close(); }
+});
+
+
+test("a text revision reuses files and versions in a new unapproved batch, preserving historical approvals", async () => {
+  const client = new PGlite();
+  try {
+    await createAssetTables(client);
+    await client.exec(`
+      INSERT INTO creative_drafts(id,topic_id,version,status) VALUES ('00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000009',2,'draft');
+      INSERT INTO creative_asset_batches(id,draft_id,draft_version,status,total_assets) VALUES ('00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000001',1,'completed',3);
+      INSERT INTO creative_assets(id,batch_id,unit_order,unit_role,version,status,prompt,expected_text,unit_snapshot,image_url,approved_at,reference_snapshot)
+      SELECT ('00000000-0000-4000-8000-00000000000' || n)::uuid,'00000000-0000-4000-8000-000000000002',n-2,'content',1,'approved','prompt','old title','{"headline":"old title"}', 'https://fal.media/' || n || '.png',now(),'[]'::jsonb FROM generate_series(3,5) n;
+    `);
+    const db = drizzle(client);
+    const repo = loadRepo("./creative-image-carry.repository.ts", db);
+    const statements = (repo.carryImageBatchStatements as unknown as (id: string, version: number, now: Date) => PromiseLike<unknown>[])("00000000-0000-4000-8000-000000000001",1,new Date());
+    for (const query of statements) await query;
+    const rows = (await client.query<{draft_version: number;status: string;image_url: string;version: number;reference_snapshot: {carriedFromAssetId: string}}>(`SELECT b.draft_version,a.status,a.image_url,a.version,a.reference_snapshot FROM creative_assets a JOIN creative_asset_batches b ON b.id=a.batch_id ORDER BY b.draft_version,a.unit_order`)).rows;
+    assert.equal(rows.length,6);
+    for (let i=0;i<3;i++) {
+      assert.equal(rows[i].status,"approved");
+      assert.equal(rows[i+3].status,"generated");
+      assert.equal(rows[i+3].image_url,rows[i].image_url);
+      assert.equal(rows[i+3].version,rows[i].version);
+      assert.ok(rows[i+3].reference_snapshot.carriedFromAssetId);
+    }
+    const transactionDb = Object.assign(drizzle(client), { batch: async (queries: PromiseLike<unknown>[]) => {
+      await client.exec("BEGIN");
+      try { const result = []; for (const query of queries) result.push(await query); await client.exec("COMMIT"); return result; }
+      catch (error) { await client.exec("ROLLBACK"); throw error; }
+    } });
+    const assetsRepo = loadRepo("./creative-assets.repository.ts", transactionDb);
+    const selected = (await client.query<{id:string}>("SELECT a.id FROM creative_assets a JOIN creative_asset_batches b ON a.batch_id=b.id WHERE b.draft_version=2 AND a.unit_order=2")).rows[0];
+    const find = assetsRepo.findCreativeAssetById as unknown as (id: string) => Promise<{asset: unknown}>;
+    const previous = (await find(selected.id)).asset;
+    const edit = assetsRepo.insertRegeneratedCreativeAsset as unknown as (input: unknown) => Promise<{id:string;expectedText:string}>;
+    await assert.rejects(edit({ previous, prompt: "unapproved free generation", references: {schema:1,characters:[],brand:[]} }), /changed/);
+    const next = await edit({ previous, prompt: "replace the title", unitSnapshot: {headline:"Better title",order:2},
+      references: {schema:1,characters:[],brand:[],textSync:{draftVersion:2,unitId:"slide-2",previousText:"old title",newText:"Better title"}} });
+    assert.equal(next.expectedText,"Better title");
+    assert.equal((await client.query("SELECT id FROM creative_assets WHERE version=2")).rows.length,1);
+    await assert.rejects(edit({ previous, prompt: "duplicate", references:{schema:1,characters:[],brand:[],textSync:{draftVersion:2}} }), /changed/);
+    // The source is a complete set only: a running image prevents carrying it.
+    await client.exec("UPDATE creative_assets SET status='generating' WHERE unit_order=2 AND batch_id='00000000-0000-4000-8000-000000000002'");
+    for (const query of (repo.carryImageBatchStatements as unknown as (id: string, version: number, now: Date) => PromiseLike<unknown>[])("00000000-0000-4000-8000-000000000001",1,new Date())) await query;
+    assert.equal((await client.query("SELECT id FROM creative_asset_batches")).rows.length,2);
   } finally { await client.close(); }
 });

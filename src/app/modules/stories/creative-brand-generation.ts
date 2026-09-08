@@ -15,6 +15,8 @@ export type BrandGenerationReference = BrandReferenceSelectionEntry & {
 };
 export type GenerationReferences = {
   schema: 1;
+  carriedFromAssetId?: string;
+  textSync?: { draftVersion: number; unitId: string; previousText: string; newText: string };
   characters: CreativeCharacterSnapshot[];
   brand: BrandGenerationReference[];
   provenanceBrand?: BrandGenerationReference[];

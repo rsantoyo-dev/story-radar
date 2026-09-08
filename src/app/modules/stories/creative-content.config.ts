@@ -138,7 +138,7 @@ export function getCreativeContentPublicConfig(): CreativeContentPublicConfig {
     provider: primaryProvider === "groq" ? "groq" : "google",
     model: primaryProvider === "groq" ? groqModel : geminiModel,
     primaryProvider,
-    briefPromptVersion: "creative-brief-v24",
+    briefPromptVersion: "creative-brief-v26",
     draftPromptVersions: {
       meme: "meme-draft-v21",
       carousel: "carousel-draft-v37",

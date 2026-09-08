@@ -278,3 +278,12 @@ export type FalImagePollResult =
     };
 
 export class FalImageResponseError extends Error {}
+
+/** Upload a locally composed PNG; no generation endpoint is invoked. */
+export async function uploadComposedImage(apiKey: string, output: Uint8Array, assetId: string): Promise<FalImage> {
+  configureFal(apiKey);
+  await assertFinalPngDimensions(output, 1080, 1350);
+  const fileName = `creative-${assetId}.png`;
+  const url = await fal.storage.upload(new File([Buffer.from(output)], fileName, { type: "image/png" }), { lifecycle: { expiresIn: "30d" } });
+  return { url, fileName, contentType: "image/png", fileSize: output.byteLength, width: 1080, height: 1350 };
+}

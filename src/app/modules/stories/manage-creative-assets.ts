@@ -1,3 +1,12 @@
+import { preparePlaceVisuals } from "./prepare-place-visuals";
+import { visualEvidenceCurrent } from "./creative-place-visual";
+import { roadMapStillCurrent } from "./prepare-road-map";
+import { getSelectedStoryContent } from "./story-content.repository";
+import { renderDraftTypography, DRAFT_TYPOGRAPHY_ENDPOINT } from "./creative-draft-typography";
+import { uploadComposedImage } from "./fal-image-client";
+import { requestsGeographicReconstruction, evidenceQualityIssues } from "./creative-evidence-guardrails";
+import type { CreativeUnit } from "./creative-content.types";
+import { imageText, imageTextNeedsUpdate, imageTextEditInstruction } from "./creative-image-text-sync";
 import "server-only";
 
 import { storeEditBase, readEditBase, readGeneratedImage } from "./creative-image-source";
@@ -144,6 +153,11 @@ export async function getCreativeDraftAssets(
 
   const brand = await resolveCreativeBrandGeneration(topicId, draft);
 
+  const composed = await findLatestCreativeAssetBatch(draft.id, draft.version);
+  if (composed?.brandInputHash === brand.inputHash && composed.status !== "stale" && composed.assets.every(asset => asset.providerEndpoint === DRAFT_TYPOGRAPHY_ENDPOINT) && (requestedImageQuality === undefined || composed.imageQuality === requestedImageQuality)) {
+    return { batch: composed, configuration: publicConfigurationForBatch(composed) };
+  }
+
   let batch = await findCurrentCreativeAssetBatch(draft.id, draft.version, {
     provider: preferredConfiguration.provider,
     model: preferredConfiguration.model,
@@ -220,6 +234,9 @@ export async function generateCreativeDraftAssets(
   const draft = await requireCreativeDraft(topicId, draftId);
   requireApprovedDraft(draft.status);
   const brief = await requireCreativeBrief(topicId, draft.briefId);
+  if (draft.units.some(unit => requestsGeographicReconstruction(unit.visualDirection)) || resolveEffectiveVisualFidelity({ inheritedMode: await getTopicVisualFidelityMode(topicId), override: draft.visualFidelityOverride?.mode ?? null, overrideReason: draft.visualFidelityOverride?.reason }).mode === "photo-required") {
+    return composeDraftPlaceVisuals(topicId, draft, brief, imageQuality);
+  }
   assertGenerativeImageryAllowed(
     draft,
     await getTopicVisualFidelityMode(topicId),
@@ -370,6 +387,12 @@ export async function generateNextCreativeDraftAssetVersion(
   const draft = await requireCreativeDraft(topicId, draftId);
   requireApprovedDraft(draft.status);
   const brief = await requireCreativeBrief(topicId, draft.briefId);
+  const localBatch = await findCreativeAssetBatchById(batchId);
+  if (localBatch?.draftId === draft.id && localBatch.assets.length && localBatch.assets.every(asset => asset.providerEndpoint === DRAFT_TYPOGRAPHY_ENDPOINT)) {
+    for (const asset of localBatch.assets) await recomposePlaceAsset(topicId, { asset, batch: localBatch }, draft, brief);
+    const batch = await refreshCreativeAssetBatchStatus(batchId);
+    return { outcome: "versioned", batch, configuration: publicConfigurationForBatch(batch) };
+  }
   assertGenerativeImageryAllowed(
     draft,
     await getTopicVisualFidelityMode(topicId),
@@ -436,6 +459,11 @@ export async function regenerateCreativeAsset(
   const draft = await requireCreativeDraft(topicId, found.batch.draftId);
   requireApprovedDraft(draft.status);
   const brief = await requireCreativeBrief(topicId, draft.briefId);
+  if (found.asset.providerEndpoint === DRAFT_TYPOGRAPHY_ENDPOINT) {
+    const prompt = validateRegenerationPrompt(input, found.asset.prompt);
+    if (prompt !== found.asset.prompt) throw new CreativeContentConflictError("Edit the saved script to change composed text. A verified map cannot be edited with a generative prompt.");
+    return recomposePlaceAsset(topicId, found, draft, brief);
+  }
   assertGenerativeImageryAllowed(
     draft,
     await getTopicVisualFidelityMode(topicId),
@@ -465,6 +493,40 @@ export async function regenerateCreativeAsset(
     basePrompt: validatedPrompt,
     edit: validateImageEditInput(input),
   });
+  return { batch, configuration: publicConfigurationForBatch(batch) };
+}
+
+/** Update one saved unit's copy without approving the new draft in advance. */
+export async function updateCreativeAssetText(topicId: string, draftId: string, assetId: string, expectedVersion: number): Promise<CreativeAssetBatchResponse> {
+  const draft = await requireCreativeDraft(topicId, draftId);
+  if (draft.version !== expectedVersion) throw new CreativeContentConflictError("The draft changed. Reload before updating this image.");
+  const found = await requireCreativeAsset(assetId);
+  if (found.batch.draftId !== draftId) throw new CreativeContentNotFoundError("The image was not found on this draft.");
+  assertCurrentAsset(found.asset, found.batch, draft.version);
+  const unit = draft.units.find(candidate => candidate.id === found.asset.unitSnapshot.id);
+  if (!unit || unit.order !== found.asset.unitOrder) throw new CreativeContentConflictError("The slide moved or was removed. Reload its images.");
+  const references = await getCreativeAssetGenerationReferences(assetId);
+  const sourceAsset = found.asset.status === "failed" && references.textSync && references.base
+    ? (await requireCreativeAsset(references.base.assetId)).asset : found.asset;
+  if (sourceAsset.batchId !== found.asset.batchId) throw new CreativeContentConflictError("The edit base is no longer available in this revision.");
+  if (!imageTextNeedsUpdate(sourceAsset.unitSnapshot, unit)) throw new CreativeContentConflictError("This image already represents the saved text.");
+  if (found.asset.providerEndpoint === DRAFT_TYPOGRAPHY_ENDPOINT) {
+    return recomposePlaceAsset(topicId, found, draft, await requireCreativeBrief(topicId, draft.briefId));
+  }
+  assertGenerativeImageryAllowed(draft, await getTopicVisualFidelityMode(topicId));
+  const brief = await requireCreativeBrief(topicId, draft.briefId);
+  requireNarrativeQuality(draft, brief.keyFacts, brief.profileSnapshot.language, brief.profileSnapshot.conversionGoal, brief.profileSnapshot.framingStrategy);
+  const brand = await resolveCreativeBrandGeneration(topicId, draft);
+  assertCurrentBrandConfiguration(found.batch, brand.inputHash);
+  const configuration = runtimeConfigurationForBatch(found.batch, outputAspectRatioForDraft(draft));
+  assertRegenerationCompatibility(found.batch, configuration);
+  const prompt = buildCreativeImagePrompt({ draft, unit, brief,
+    characters: charactersForImageGeneration(references.characters),
+    brandOverlay: brand.overlay, carouselChromeSettings: brand.carouselChrome }).prompt;
+  const { asset, batch } = await executeCreativeAssetImageEdit({ topicId, found, draft, configuration,
+    basePrompt: prompt, targetUnit: unit, sourceAsset,
+    edit: { useImageAsBase: true, editInstruction: imageTextEditInstruction(sourceAsset.unitSnapshot, unit) } });
+  if (asset.status === "failed") throw new CreativeContentConflictError(asset.error ?? "The image update failed. You can retry this image.");
   return { batch, configuration: publicConfigurationForBatch(batch) };
 }
 
@@ -611,6 +673,8 @@ async function executeCreativeAssetImageEdit({
   basePrompt,
   edit,
   editRequestRevision,
+  targetUnit,
+  sourceAsset,
 }: {
   topicId: string;
   found: { asset: CreativeGeneratedAsset; batch: CreativeAssetBatch };
@@ -619,7 +683,12 @@ async function executeCreativeAssetImageEdit({
   basePrompt: string;
   edit: CreativeImageEditInput;
   editRequestRevision?: number;
+  targetUnit?: CreativeUnit;
+  sourceAsset?: CreativeGeneratedAsset;
 }): Promise<{ asset: CreativeGeneratedAsset; batch: CreativeAssetBatch }> {
+  if (requestsGeographicReconstruction(edit.editInstruction ?? "") || requestsGeographicReconstruction(basePrompt)) {
+    throw new CreativeContentConflictError("Maps and recognizable real-place edits require documentary preparation, not generative reconstruction.");
+  }
   const brandSnapshot = await getCreativeAssetBrandOverlaySnapshot(
     found.asset.id,
   );
@@ -664,15 +733,20 @@ async function executeCreativeAssetImageEdit({
     delete references.base; delete references.provenanceBrand; delete references.editInstruction;
   }
   if (edit.useImageAsBase) {
-    if (!found.asset.imageUrl || !["generated", "approved"].includes(found.asset.status)) throw new CreativeAssetValidationError("Wait for a completed image before editing it.");
+    if (!(sourceAsset ?? found.asset).imageUrl || !["generated", "approved"].includes((sourceAsset ?? found.asset).status)) throw new CreativeAssetValidationError("Wait for a completed image before editing it.");
     references.provenanceBrand = [...new Map([...previousReferences.brand, ...(previousReferences.provenanceBrand ?? [])].map(ref => [`${ref.id}:${ref.version}`, ref])).values()];
     await assertBrandReferenceEligibility(references.provenanceBrand);
     assertBrandGenerationBudget(references.brand.length, charactersForImageGeneration(references.characters).length + 1);
-    references.base = await storeEditBase(topicId, found.asset.id, found.asset.version, found.asset.imageUrl);
+    const baseAsset = sourceAsset ?? found.asset;
+    references.base = await storeEditBase(topicId, baseAsset.id, baseAsset.version, baseAsset.imageUrl!);
     references.editInstruction = edit.editInstruction;
   }
   // Freeze a per-image override in its unit snapshot; siblings and the draft's defaults stay intact.
-  const unitSnapshot = { ...found.asset.unitSnapshot, brandReferenceSelection: {
+  delete references.carriedFromAssetId;
+  if (targetUnit?.id) references.textSync = { draftVersion: draft.version, unitId: targetUnit.id,
+    previousText: imageText((sourceAsset ?? found.asset).unitSnapshot), newText: imageText(targetUnit) };
+  else delete references.textSync;
+  const unitSnapshot = { ...(targetUnit ?? found.asset.unitSnapshot), brandReferenceSelection: {
     selected: references.brand.map(({ id, version, configVersion, function: fn, reason, name, sha256, contribution, usageNote, provenance }) =>
       ({ id, version, configVersion, function: fn, reason, name, sha256, contribution, usageNote, provenance })), excluded: [], note: null,
   } };
@@ -708,6 +782,10 @@ export async function changeCreativeAssetApproval(
   const draft = await requireCreativeDraft(topicId, found.batch.draftId);
   requireApprovedDraft(draft.status);
   assertCurrentAsset(found.asset, found.batch, draft.version);
+  assertImageTextCurrent(found.asset, draft);
+  if (action === "approve" && !visualEvidenceCurrent(found.asset.unitSnapshot.placeVisual)) throw new CreativeContentConflictError("Visual evidence expired. Recompose and review this image.");
+  await assertEditorialEvidence(topicId, draft);
+  if (action === "approve" && !await roadMapStillCurrent(found.asset.unitSnapshot.placeVisual?.adapterEvidence ?? found.asset.unitSnapshot.roadMapEvidence, (await requireCreativeBrief(topicId, draft.briefId)).keyFacts)) throw new CreativeContentConflictError("The official road notice changed or cannot be checked. Recompose this image before approval.");
 
   if (action === "approve") {
     if (found.asset.status !== "generated") {
@@ -715,7 +793,7 @@ export async function changeCreativeAssetApproval(
         "Only a generated image can be approved.",
       );
     }
-    assertGenerativeImageryAllowed(
+    if (found.asset.providerEndpoint !== DRAFT_TYPOGRAPHY_ENDPOINT) assertGenerativeImageryAllowed(
       draft,
       await getTopicVisualFidelityMode(topicId),
     );
@@ -740,6 +818,7 @@ async function syncCreativeAssetBatch(
   );
 
   await mapWithConcurrency(pending, 3, async (asset) => {
+    if (asset.providerEndpoint === DRAFT_TYPOGRAPHY_ENDPOINT) return;
     if (!asset.requestId) {
       await failCreativeAsset(asset.id, "The fal.ai request ID is missing");
       return;
@@ -1272,9 +1351,12 @@ async function requireCreativeAsset(assetId: string) {
  * re-approving an old draft must not let it generate under a superseded mode.
  */
 function assertGenerativeImageryAllowed(
-  draft: Pick<CreativeDraft, "visualFidelityOverride">,
+  draft: Pick<CreativeDraft, "visualFidelityOverride"> & Partial<Pick<CreativeDraft, "units">>,
   liveInheritedMode: unknown,
 ): void {
+  if (draft.units?.some(unit => requestsGeographicReconstruction(unit.visualDirection))) {
+    throw new CreativeContentConflictError("This script requests a map or recognizable real-place reconstruction. Use documentary preparation with verified photography or provider cartography; generative imagery cannot verify this location.");
+  }
   const effective = resolveEffectiveVisualFidelity({
     inheritedMode: liveInheritedMode,
     override: draft.visualFidelityOverride?.mode ?? null,
@@ -1282,7 +1364,7 @@ function assertGenerativeImageryAllowed(
   });
   if (effective.mode === "photo-required") {
     throw new CreativeContentConflictError(
-      "This topic requires an approved real photograph of the place. Generative image creation is disabled for this draft. Approved-photo composition arrives with GEO-06.",
+      "This topic requires real photography. Use documentary preparation to find eligible material, prepare verified cartography when appropriate, or deliver typography for final review. Generative image creation is disabled.",
     );
   }
   if (effective.mode === "verified-references") {
@@ -1333,6 +1415,17 @@ function requireNarrativeQuality(
         .join(" ")}`,
     );
   }
+}
+
+async function assertEditorialEvidence(topicId: string, draft: CreativeDraft): Promise<void> {
+  const brief = await requireCreativeBrief(topicId, draft.briefId);
+  const issues = evidenceQualityIssues(draft, brief.keyFacts);
+  if (issues.length) throw new CreativeContentConflictError(issues[0].message);
+}
+
+function assertImageTextCurrent(asset: CreativeGeneratedAsset, draft: CreativeDraft): void {
+  const unit = draft.units.find(candidate => candidate.order === asset.unitOrder);
+  if (!unit || imageTextNeedsUpdate(asset.unitSnapshot, unit)) throw new CreativeContentConflictError("Update this image to match the saved draft text before approving or exporting it.");
 }
 
 function assertCurrentAsset(
@@ -1521,14 +1614,19 @@ export async function downloadApprovedCreativeImage(topicId: string, assetId: st
   const found = await requireCreativeAsset(assetId);
   const draft = await requireCreativeDraft(topicId, found.batch.draftId);
   assertCurrentAsset(found.asset, found.batch, draft.version);
+  assertImageTextCurrent(found.asset, draft);
+  if (!visualEvidenceCurrent(found.asset.unitSnapshot.placeVisual)) throw new CreativeContentConflictError("Visual evidence expired. Recompose and review this image.");
+  await assertEditorialEvidence(topicId, draft);
+  if (!await roadMapStillCurrent(found.asset.unitSnapshot.placeVisual?.adapterEvidence ?? found.asset.unitSnapshot.roadMapEvidence, (await requireCreativeBrief(topicId, draft.briefId)).keyFacts)) throw new CreativeContentConflictError("The official road notice changed or cannot be checked. Recompose and review this image before export.");
   if (draft.status !== "approved" || found.asset.status !== "approved" || !found.asset.imageUrl) throw new CreativeContentConflictError("Approve the current image before downloading it as ready.");
-  assertGenerativeImageryAllowed(draft, await getTopicVisualFidelityMode(topicId));
+  if (found.asset.providerEndpoint !== DRAFT_TYPOGRAPHY_ENDPOINT) assertGenerativeImageryAllowed(draft, await getTopicVisualFidelityMode(topicId));
   const references = await getCreativeAssetGenerationReferences(assetId);
   await assertBrandReferenceEligibility([...references.brand, ...(references.provenanceBrand ?? [])]);
   const file = await readGeneratedImage(found.asset.imageUrl);
   const latest = await requireCreativeAsset(assetId);
   const latestDraft = await requireCreativeDraft(topicId, latest.batch.draftId);
   assertCurrentAsset(latest.asset, latest.batch, latestDraft.version);
+  assertImageTextCurrent(latest.asset, latestDraft);
   if (latest.asset.status !== "approved" || latestDraft.status !== "approved") throw new CreativeContentConflictError("The approval changed during download.");
   await assertBrandReferenceEligibility([...references.brand, ...(references.provenanceBrand ?? [])]);
   return file;
@@ -1540,4 +1638,49 @@ export async function previewCreativeImageBase(topicId: string, assetId: string)
   const references = await getCreativeAssetGenerationReferences(assetId);
   if (!references.base) throw new CreativeContentNotFoundError("This image has no stored edit base.");
   return readEditBase(references.base);
+}
+
+async function composeDraftPlaceVisuals(topicId: string, draft: CreativeDraft, brief: Awaited<ReturnType<typeof requireCreativeBrief>>, quality: CreativeImageQuality): Promise<CreativeAssetGenerationResponse> {
+  if (outputAspectRatioForDraft(draft) !== "4:5") throw new CreativeContentConflictError("Typography composition currently requires 4:5.");
+  requireNarrativeQuality(draft, brief.keyFacts, brief.profileSnapshot.language, brief.profileSnapshot.conversionGoal, brief.profileSnapshot.framingStrategy);
+  await assertEditorialEvidence(topicId, draft);
+  const configuration = { ...getFalImageRuntimeConfig("4:5", quality), promptVersion: `${getFalImageRuntimeConfig("4:5", quality).promptVersion}:place-visual-v1` };
+  const brand = await resolveCreativeBrandGeneration(topicId, draft);
+  const existing = await findCurrentCreativeAssetBatch(draft.id, draft.version, { provider: configuration.provider, model: configuration.model, promptVersion: configuration.promptVersion, imageQuality: quality, brandInputHash: brand.inputHash });
+  if (existing && existing.status !== "stale") return { outcome: "existing", batch: existing, configuration: publicConfiguration(configuration) };
+  const profile = await getCreativeProfile(topicId);
+  const story = await getSelectedStoryContent(topicId, draft.storyId);
+  const visuals = await preparePlaceVisuals(topicId, draft, profile, brief.keyFacts, story?.url || "");
+  let batch = await createCreativeAssetBatch({ draftId: draft.id, draftVersion: draft.version, outputAspectRatio: "4:5", imageQuality: quality, width: 1080, height: 1350,
+    identity: { provider: configuration.provider, model: configuration.model, promptVersion: configuration.promptVersion, imageQuality: quality, brandInputHash: brand.inputHash },
+    assets: draft.units.map(unit => ({ unitOrder: unit.order, unitRole: unit.role, unitSnapshot: { ...unit, roadMapEvidence: undefined, placeVisual: visuals.get(unit.order)?.evidence }, prompt: "Deterministic typography preserving saved draft copy; no location generated", expectedText: [unit.headline, unit.subheadline, unit.body, unit.ctaQuestion].filter(Boolean).join("\n"), generationMode: "text-to-image", providerEndpoint: DRAFT_TYPOGRAPHY_ENDPOINT, referenceSnapshot: [], referenceInputHash: brand.inputHash })) });
+  for (const asset of batch.assets) {
+    try {
+      const output = await renderDraftTypography(asset.unitSnapshot, profile, visuals.get(asset.unitOrder)?.bytes);
+      await completeCreativeAsset(asset.id, await uploadComposedImage(configuration.apiKey, output, asset.id));
+    } catch (error) { await failCreativeAsset(asset.id, errorMessage(error)); }
+  }
+  batch = await refreshCreativeAssetBatchStatus(batch.id);
+  return { outcome: "submitted", batch, configuration: publicConfiguration(configuration) };
+}
+
+async function recomposePlaceAsset(topicId: string, found: {asset: CreativeGeneratedAsset; batch: CreativeAssetBatch}, draft: CreativeDraft, brief: Awaited<ReturnType<typeof requireCreativeBrief>>): Promise<CreativeAssetBatchResponse> {
+  assertCurrentAsset(found.asset, found.batch, draft.version);
+  await assertEditorialEvidence(topicId, draft);
+  requireNarrativeQuality(draft, brief.keyFacts, brief.profileSnapshot.language, brief.profileSnapshot.conversionGoal, brief.profileSnapshot.framingStrategy);
+  const brand = await resolveCreativeBrandGeneration(topicId, draft);
+  assertCurrentBrandConfiguration(found.batch, brand.inputHash);
+  const unit = draft.units.find(unit => unit.order === found.asset.unitOrder);
+  if (!unit) throw new CreativeContentConflictError("The slide no longer exists");
+  const story = await getSelectedStoryContent(topicId, draft.storyId);
+  const profile = await getCreativeProfile(topicId);
+  const map = (await preparePlaceVisuals(topicId, { ...draft, units: [unit] }, profile, brief.keyFacts, story?.url || "")).get(unit.order);
+  const asset = await insertRegeneratedCreativeAsset({ previous: found.asset, expectedDraftVersion: draft.version, prompt: found.asset.prompt, unitSnapshot: { ...unit, roadMapEvidence: undefined, placeVisual: map?.evidence } });
+  try {
+    const config = getFalImageRuntimeConfig("4:5", found.batch.imageQuality);
+    const output = await renderDraftTypography(asset.unitSnapshot, await getCreativeProfile(topicId), map?.bytes);
+    await completeCreativeAsset(asset.id, await uploadComposedImage(config.apiKey, output, asset.id));
+  } catch (error) { await failCreativeAsset(asset.id, errorMessage(error)); }
+  const batch = await refreshCreativeAssetBatchStatus(found.batch.id);
+  return { batch, configuration: publicConfigurationForBatch(batch) };
 }

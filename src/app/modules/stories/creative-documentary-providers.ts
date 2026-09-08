@@ -1,4 +1,5 @@
 import "server-only";
+import { renderOpenMap } from "./open-map-render";
 import { request } from "node:https";
 import { createHash } from "node:crypto";
 import sharp from "sharp";
@@ -6,7 +7,7 @@ import { lookupPublicAddress } from "../sources/rss/fetch-rss-feed";
 import type { CreativeGeoScope } from "./creative-content.types";
 import { mentionFitsScope, normalizePlaceName, record, type PlaceMention, type PlaceEvidence, type PhotoEvidence } from "./creative-documentary";
 
-const HOSTS = new Set(["www.wikidata.org", "commons.wikimedia.org", "upload.wikimedia.org", "api.maptiler.com"]);
+const HOSTS = new Set(["ws.mapserver.transports.gouv.qc.ca", "www.wikidata.org", "commons.wikimedia.org", "upload.wikimedia.org"]);
 /** Fixed providers, no redirects, connection-time public DNS validation, bounded body/time. */
 export function fetchDocumentaryResource(url: URL, signal: AbortSignal, maxBytes = 2_000_000): Promise<Buffer> {
   if (url.protocol !== "https:" || !HOSTS.has(url.hostname) || url.port || url.username || url.password || url.hash) throw new Error("Unsupported documentary source");
@@ -45,7 +46,7 @@ export function entityNames(entity: Entity): string[] {
 }
 
 /** The per-run cache bounds API calls and shares hierarchy reads across mentions. */
-export function documentaryProviders(signal: AbortSignal) {
+export function documentaryProviders(signal: AbortSignal, language = "en") {
   let calls = 0;
   const entities = new Map<string, Entity>();
   async function api(host: string, params: Record<string, string>): Promise<Record<string, unknown>> {
@@ -59,7 +60,7 @@ export function documentaryProviders(signal: AbortSignal) {
   async function entity(id: string): Promise<Entity> {
     const cached = entities.get(id); if (cached) return cached;
     if (!/^Q\d+$/.test(id)) throw new Error("Invalid entity ID");
-    const data = await api("www.wikidata.org", { action: "wbgetentities", ids: id, props: "info|labels|aliases|claims", languages: "fr|en|es" });
+    const data = await api("www.wikidata.org", { action: "wbgetentities", ids: id, props: "info|labels|aliases|claims" });
     if (!record(data.entities) || !record(data.entities[id])) throw new Error("Entity missing");
     const result = data.entities[id] as Entity;
     if (result.id !== id || !Number.isInteger(result.lastrevid)) throw new Error("Invalid entity");
@@ -67,7 +68,7 @@ export function documentaryProviders(signal: AbortSignal) {
   }
   async function resolve(mention: PlaceMention, scope: CreativeGeoScope): Promise<PlaceEvidence | undefined> {
     if (!process.env.CREATIVE_GEO_CONTACT || !mentionFitsScope(mention, scope) || mention.kind !== "named") return undefined;
-    const data = await api("www.wikidata.org", { action: "wbsearchentities", search: mention.name, language: "fr", uselang: "fr", type: "item", limit: "6" });
+    const data = await api("www.wikidata.org", { action: "wbsearchentities", search: mention.name, language: providerLanguage(language), uselang: providerLanguage(language), type: "item", limit: "6" });
     if (!Array.isArray(data.search) || data["search-continue"] !== undefined) return undefined; // incomplete results cannot establish uniqueness
     const matches: PlaceEvidence[] = [];
     for (const candidate of data.search) {
@@ -124,12 +125,8 @@ export function documentaryProviders(signal: AbortSignal) {
       retrievedAt: new Date().toISOString(), sha256: createHash("sha256").update(bytes).digest("hex"), width: image.width, height: image.height, contentType: `image/${image.format}` } };
   }
   async function map(place: PlaceEvidence): Promise<Buffer | undefined> {
-    const key = process.env.CREATIVE_GEO_MAPTILER_KEY;
-    if (!key || process.env.CREATIVE_GEO_MAPTILER_EXPORT_ENABLED !== "true" || !place.coordinates) return undefined;
-    const { longitude, latitude } = place.coordinates;
-    const url = new URL(`https://api.maptiler.com/maps/streets-v4/static/${longitude},${latitude},16/1080x640.png`);
-    url.search = new URLSearchParams({ key, markers: `${longitude},${latitude}`, attribution: "bottomright" }).toString();
-    return fetchDocumentaryResource(url, signal, 8_000_000);
+    if (!place.coordinates) return undefined;
+    return renderOpenMap({ kind: "point", name: place.name, points: [[place.coordinates.longitude, place.coordinates.latitude]] });
   }
   return { resolve, photo, map };
 }
@@ -138,4 +135,9 @@ export function validCoordinate(value: Record<string, unknown>): boolean {
     typeof value.longitude === "number" && Number.isFinite(value.longitude) && Math.abs(value.longitude) <= 180 &&
     typeof value.precision === "number" && value.precision > 0 && value.precision <= 0.0001 &&
     value.globe === "http://www.wikidata.org/entity/Q2";
+}
+
+function providerLanguage(value: string): string {
+  const named: Record<string,string>={french:"fr",français:"fr",english:"en",spanish:"es",español:"es",portuguese:"pt",german:"de",japanese:"ja",arabic:"ar"};
+  const text=value.toLowerCase().trim();return named[text] || (/^[a-z]{2,3}(?:-|$)/.test(text)?text.split("-")[0]:"en");
 }

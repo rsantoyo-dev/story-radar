@@ -608,6 +608,8 @@ export type CreativeBrief = GeneratedCreativeBrief & {
 };
 
 export type CreativeUnit = {
+  placeVisual?: import("./creative-place-visual").PlaceVisualEvidence;
+  roadMapEvidence?: { reason: string; source: string; fetchedAt: string; sha256?: string; segment?: import("./quebec-road-map").RoadSegment };
   id?: string;
   order: number;
   type: "meme-frame" | "carousel-slide";
@@ -831,6 +833,8 @@ export type CreativeGenerationResult = {
 export type CreativeGeneratedAsset = {
   referenceContextVersion?: number;
   hasBrandReferenceOverride?: boolean;
+  /** Original result reused in this draft revision, without copying its file. */
+  carriedFromAssetId?: string;
   editSource?: { assetId: string; version: number };
   editInstruction?: string;
   /** IMG-02: the edit-request revision that produced this version, if any. */

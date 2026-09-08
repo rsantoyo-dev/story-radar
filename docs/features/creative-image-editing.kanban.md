@@ -1,5 +1,7 @@
 # Edición incremental de imágenes — FEAT-IMG-001
 
+> Actualización selectiva de texto implementada para unidades sin cambios estructurales, pendiente de QA visual. IMG-03/04/05 y el resto de sus criterios mantienen su estado; consultar el alcance real en la feature.
+
 ## Backlog
 
 ## Por hacer

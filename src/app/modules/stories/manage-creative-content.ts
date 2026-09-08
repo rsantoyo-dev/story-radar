@@ -1,3 +1,7 @@
+import { build511Brief } from "./road-notice-evidence";
+import { locationOnlyRoadFacts } from "./creative-evidence-guardrails";
+import { imageTextNeedsUpdate } from "./creative-image-text-sync";
+import { findLatestCreativeAssetBatch } from "./creative-assets.repository";
 import "server-only";
 
 import { createHash } from "node:crypto";
@@ -226,6 +230,16 @@ export async function createCreativeBrief(
     };
   }
 
+  // Official tabular notices have extractable evidence already. Do not consume
+  // a provider attempt to paraphrase a route number, direction or date.
+  const structuredBrief = build511Brief(story.url, story.title, content, profile.audience);
+  if (structuredBrief) {
+    await insertCreativeBrief({ topicId, storyId, profile, provider: "quebec511", model: "structured-notice-v1",
+      promptVersion: configuration.briefPromptVersion, inputHash, editorialDirection: normalizedEditorialDirection,
+      generated: structuredBrief, usage: { promptTokens: 0, outputTokens: 0, thoughtsTokens: 0, totalTokens: 0 } });
+    return { outcome: "generated", state: await getCreativeWorkspaceState(topicId, storyId) };
+  }
+
   assertCreativeDailyBudget(daily.runs, configuration.maxRunsPerDay);
   const runId = await createCreativeAiRun({
     topicId,
@@ -300,6 +314,10 @@ export async function createCreativeDraft(
 
   if (!brief) {
     throw new CreativeContentNotFoundError("The creative brief was not found");
+  }
+
+  if (brief.contentSufficiency === "insufficient" || locationOnlyRoadFacts(brief.keyFacts)) {
+    throw new CreativeContentConflictError("The brief does not establish an event beyond geographic markers. Retrieve the complete source and refresh the brief before generating a publication.");
   }
 
   const [topic, story, currentProfile, characterRoster, daily] = await Promise.all([
@@ -598,6 +616,11 @@ export async function saveCreativeDraft(
     outputAspectRatioForDraft(current),
     characterRoster.map((character) => character.id),
   );
+  const knownUnitIds = new Set(current.units.map(unit => unit.id));
+  const submittedIds = validated.units.flatMap(unit => unit.id ? [unit.id] : []);
+  if (submittedIds.some(id => !knownUnitIds.has(id)) || new Set(submittedIds).size !== submittedIds.length) {
+    throw new CreativeContentConflictError("The slide identities changed. Reload the draft before saving.");
+  }
   const repaired = {
     ...repairDeterministicCreativeCopy(
       validated,
@@ -642,6 +665,12 @@ export async function approveSavedCreativeDraft(
     throw new CreativeContentNotFoundError("The creative brief was not found");
   }
 
+  const imageBatch = await findLatestCreativeAssetBatch(current.id, current.version);
+  if (imageBatch && imageBatch.status !== "stale" && imageBatch.assets.some(asset => {
+    const unit = current.units.find(candidate => candidate.order === asset.unitOrder);
+    return !unit || imageTextNeedsUpdate(asset.unitSnapshot, unit) || !["generated", "approved"].includes(asset.status);
+  })) throw new CreativeContentConflictError("Update the pending images to match the saved text before approving this draft.");
+
   const characterRoster = await listCreativeCharacterRoster(topicId);
   const validated = validateEditableDraft(
     current,
@@ -660,6 +689,10 @@ export async function approveSavedCreativeDraft(
     ),
     outputAspectRatio: validated.outputAspectRatio,
   };
+  if (imageBatch && imageBatch.status !== "stale" && imageBatch.assets.some(asset => {
+    const unit = repaired.units.find(candidate => candidate.order === asset.unitOrder);
+    return !unit || imageTextNeedsUpdate(asset.unitSnapshot, unit);
+  })) throw new CreativeContentConflictError("Save the corrected text and update its images before approval.");
   const qualityIssues = deterministicCreativeQualityIssues(
     repaired,
     current.format,
@@ -1166,6 +1199,7 @@ function validateEditableDraft(
     }
 
     return {
+      ...(typeof unit.id === "string" ? { id: unit.id } : {}),
       order: index + 1,
       type: format === "meme" ? "meme-frame" : "carousel-slide",
       role,

@@ -1,4 +1,6 @@
 "use client";
+import { requestsGeographicReconstruction } from "./modules/stories/creative-evidence-guardrails";
+import { imageTextNeedsUpdate } from "./modules/stories/creative-image-text-sync";
 
 import {
   CreativeBrandImageEditor,
@@ -163,6 +165,7 @@ export function CreativeDraftWorkspace({
   onInstagramChanged,
   instagramRefreshToken,
 }: WorkspaceProps) {
+  const [preparedPublication, setPreparedPublication] = useState<{ topicId: string; storyId: string; assetCount: number }>();
   const [workspace, setWorkspace] = useState<CreativeWorkspaceState>();
   const [profile, setProfile] = useState<CreativeProfile>();
   // The creative profile is edited in the topic "Creative profile" panel now;
@@ -202,6 +205,8 @@ export function CreativeDraftWorkspace({
   const activeDraft = workspace?.drafts.find(
     (draft) => draft.id === activeDraftId,
   );
+  const geographicSlides = activeDraft?.units.filter(unit => requestsGeographicReconstruction(unit.visualDirection)) ?? [];
+  const requiresPlaceComposition = geographicSlides.length > 0 || (activeDraft?.visualFidelityOverride?.mode ?? workspace?.profile.visualFidelityMode) === "photo-required";
   const primaryDrafts = workspace?.drafts.filter((draft) => !draft.companion) ?? [];
   const companionDrafts = workspace?.drafts.filter((draft) => Boolean(draft.companion)) ?? [];
   const companionParentDraft = activeDraft?.companion
@@ -971,7 +976,7 @@ export function CreativeDraftWorkspace({
     const count = activeDraft.units.length;
     if (
       !window.confirm(
-        `Generate ${count} ${count === 1 ? "image" : "images"} at ${assetDimensions} with GPT Image (${imageQualityLabel(selectedImageQuality)} quality)${activeDraftHasSupportingCharacters ? ". Slides with selected supporting characters will use reference-guided generation." : ""}?`,
+        requiresPlaceComposition ? `Find verified place material and compose ${count} images in this draft, preserving the saved text?` : `Generate ${count} ${count === 1 ? "image" : "images"} at ${assetDimensions} with GPT Image (${imageQualityLabel(selectedImageQuality)} quality)${activeDraftHasSupportingCharacters ? ". Slides with selected supporting characters will use reference-guided generation." : ""}?`,
       )
     ) {
       return;
@@ -1002,7 +1007,7 @@ export function CreativeDraftWorkspace({
       setNotice(
         response.outcome === "existing"
           ? `The ${imageQualityLabel(responseQuality).toLowerCase()} image batch already exists; no duplicate generation was submitted.`
-          : `${count} ${count === 1 ? "image was" : "images were"} submitted to GPT Image at ${imageQualityLabel(responseQuality).toLowerCase()} quality. Progress will update automatically.`,
+          : requiresPlaceComposition ? "Place research and composition completed in this draft. Review each image and its evidence below." : `${count} ${count === 1 ? "image was" : "images were"} submitted to GPT Image at ${imageQualityLabel(responseQuality).toLowerCase()} quality. Progress will update automatically.`,
       );
     });
   }
@@ -1216,6 +1221,19 @@ export function CreativeDraftWorkspace({
     } catch (saveError) {
       setError(getErrorMessage(saveError));
     }
+  }
+
+  async function handleUpdateImageText(assetId: string) {
+    if (!activeDraft || dirty || viewingHistoricalDraft || assetBusy) return;
+    const draftId = activeDraft.id;
+    try { await runAsset(`text:${assetId}`, async () => {
+      const response = await requestJson<CreativeAssetBatchResponse>(
+        topicUrl(`/api/radar/creative/drafts/${encodeURIComponent(draftId)}/edit-requests`, topicId), secret,
+        { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "update-text", assetId, expectedVersion: activeDraft.version }) });
+      setLoadedAssets({ ...response, draftId });
+      setNotice("Actualización enviada. Revisa el texto de la imagen cuando termine.");
+    }); } finally { setAssetsReloadKey(key => key + 1); }
   }
 
   async function handleApplyEditRequest(
@@ -1629,10 +1647,18 @@ export function CreativeDraftWorkspace({
           <div>
             <p>Creative studio · script and images</p>
             <h2 id="creative-studio-title">{storyTitle}</h2>
+          {preparedPublication?.topicId === topicId && preparedPublication.storyId === storyId && preparedPublication.assetCount > 0 ? (
+            <button type="button" className={styles.secondaryButton} onClick={() => {
+              const panel = document.getElementById(`documentary-review-${storyId}`);
+              const history = panel?.closest("details"); if (history) history.open = true;
+              panel?.focus({ preventScroll: true }); panel?.scrollIntoView({ block: "start", behavior: "smooth" });
+            }}>Review saved publication · {preparedPublication.assetCount} images</button>
+          ) : null}
           </div>
           <button type="button" onClick={closeWorkspace} disabled={Boolean(busy) || Boolean(characterBusy)} aria-label="Close">
             ×
           </button>
+
         </header>
 
         {!workspace || !profile ? (
@@ -1655,7 +1681,7 @@ export function CreativeDraftWorkspace({
               </div>
             ) : null}
 
-            <CreativeDocumentaryPanel key={`${topicId}:${storyId}`} topicId={topicId} storyId={storyId} secret={secret} format={selectedFormat} disabled={Boolean(busy) || dirty} />
+            <details><summary>Earlier standalone documentary publications</summary><CreativeDocumentaryPanel key={`${topicId}:${storyId}`} topicId={topicId} storyId={storyId} secret={secret} format={selectedFormat} disabled={Boolean(busy) || dirty} onLoaded={setPreparedPublication} /></details>
 
             <div className={styles.profilePanel}>
               <div className={styles.profileSummaryHead}>
@@ -1954,7 +1980,8 @@ export function CreativeDraftWorkspace({
                           {busy === "references" ? "Refreshing references..." : "Refresh character references"}
                         </button>
                       ) : null}
-                      <button type="button" className={styles.secondaryButton} disabled={Boolean(busy) || !dirty} onClick={handleSaveDraft}>
+                      <button type="button" className={styles.secondaryButton} disabled={Boolean(busy) || !dirty} onClick={handleSaveDraft}
+                        title={!dirty ? "This version is already saved. Edit the script to enable saving a new version." : undefined}>
                         {busy === "save"
                           ? `Saving version ${activeDraft.version + 1}...`
                           : dirty
@@ -1981,6 +2008,18 @@ export function CreativeDraftWorkspace({
                           {busy === "approve" ? "Approving…" : activeDraftRequiresHumanReviewAcknowledgement ? "Approve after review" : "Approve draft"}
                         </button>
                       )}
+                    </div>
+                    <div aria-live="polite">
+                      {!dirty ? <p>Version {activeDraft.version} is already saved. Save becomes available when you edit the script.</p> : null}
+                      {activeApprovalHasDeterministicBlockers ? <>
+                        <strong>Approval and image generation are blocked:</strong>
+                        <ul>{activeDraftApprovalState.blockers.map((issue, index) => (
+                          <li key={`${issue.code}-${index}`}>{issue.unitOrder ? `Slide ${issue.unitOrder}: ` : ""}{issue.message}</li>
+                        ))}</ul>
+                        {activeDraftApprovalState.blockers.some(issue => issue.code === "INSUFFICIENT_EVENT_EVIDENCE") ? <p>
+                          Retrieve the complete article and refresh the creative brief. Editing a title alone does not add supporting facts to the brief.
+                        </p> : null}
+                      </> : null}
                     </div>
                   </div>
                 ) : null}
@@ -2100,6 +2139,7 @@ export function CreativeDraftWorkspace({
                   )}
                 </div>
 
+                {error ? <ErrorMessage message={error} /> : null}
                 {!visibleAssets ? (
                   <div className={styles.assetLoading}>
                     Loading image workspace...
@@ -2108,6 +2148,15 @@ export function CreativeDraftWorkspace({
                   viewingHistoricalDraft ? (
                     <div className={styles.warning}>
                       This saved study does not have a generated image batch.
+                    </div>
+                  ) : geographicSlides.length > 0 ? (
+                    <div className={styles.historyCallout}>
+                      <div>
+                        <strong>This script needs verified geographic material</strong>
+                        <p>Slide {geographicSlides.map(unit => unit.order).join(", ")} requests a map or a recognizable place. Generative images cannot verify its location. Documentary preparation uses eligible photography, verified maps when appropriate, or typography.</p>
+                        <p>Search and resolve the location, use eligible photography or an open-data map, and fall back to typography when evidence is insufficient. Save and approve the script first; review each composed image here afterward.</p>
+                      </div>
+                      <button type="button" className={styles.secondaryButton} disabled={Boolean(busy) || Boolean(assetBusy) || dirty || activeDraft.status !== "approved" || profileDirty} onClick={handleGenerateImages}>Compose images in this draft</button>
                     </div>
                   ) : activeDraft.status !== "approved" || dirty ? (
                     <div className={styles.historyCallout}>
@@ -2264,6 +2313,9 @@ export function CreativeDraftWorkspace({
                           <CreativeAssetCard
                             key={asset.id}
                             asset={asset}
+                            textPending={Boolean(activeDraft.units.find(unit => unit.order === asset.unitOrder && (imageTextNeedsUpdate(asset.unitSnapshot, unit) || (asset.status === "failed" && Boolean(asset.editSource)))))}
+                            canUpdateText={!viewingHistoricalDraft && !dirty && !profileDirty && !assetBusy && currentAssetBatch.status !== "stale" && currentAssetBatch.draftVersion === activeDraft.version}
+                            onUpdateText={handleUpdateImageText}
                             format={activeDraft.format}
                             outputWidth={currentAssetBatch.width}
                             outputHeight={currentAssetBatch.height}
@@ -2597,6 +2649,9 @@ function CompleteDraftScript({
 function CreativeAssetCard({
   topicId, secret,
   asset,
+  textPending,
+  canUpdateText,
+  onUpdateText,
   format,
   outputWidth,
   outputHeight,
@@ -2614,6 +2669,9 @@ function CreativeAssetCard({
   topicId: string;
   secret: string;
   asset: CreativeGeneratedAsset;
+  textPending: boolean;
+  canUpdateText: boolean;
+  onUpdateText: (assetId: string) => void;
   format: CreativeFormat;
   outputWidth: number;
   outputHeight: number;
@@ -2678,6 +2736,26 @@ function CreativeAssetCard({
           </div>
         )}
       </div>
+
+      {asset.unitSnapshot.placeVisual ? <details open className={styles.historyCallout}><summary>Place material · {asset.unitSnapshot.placeVisual.representation}</summary>
+        <div>{asset.unitSnapshot.placeVisual.reasons.map((reason,index)=><p key={index}>{reason}</p>)}
+        {asset.unitSnapshot.placeVisual.sourceUrl ? <a href={asset.unitSnapshot.placeVisual.sourceUrl} target="_blank" rel="noreferrer">Identity evidence</a> : null}
+        <p>{asset.unitSnapshot.placeVisual.attribution}</p>
+        {asset.unitSnapshot.placeVisual.discovery?.sources.map((source,index)=><p key={index}><a href={source.url} target="_blank" rel="noreferrer">{source.title}</a> · Research candidate</p>)}
+        </div></details> : null}
+      {asset.unitSnapshot.roadMapEvidence ? <div className={styles.historyCallout}><div>
+        <strong>{asset.unitSnapshot.roadMapEvidence.sha256 ? "Verified road map" : "Map preparation"}</strong>
+        <p>{asset.unitSnapshot.roadMapEvidence.reason}</p>
+        {asset.unitSnapshot.roadMapEvidence.segment ? <p>Notice {asset.unitSnapshot.roadMapEvidence.segment.id} · {asset.unitSnapshot.roadMapEvidence.segment.location}</p> : null}
+        <a href={asset.unitSnapshot.roadMapEvidence.source} target="_blank" rel="noreferrer">Official MTMD source</a>
+      </div></div> : null}
+      {asset.carriedFromAssetId && !textPending ? <p>Imagen conservada de la revisión anterior.</p> : null}
+      {textPending ? <div className={styles.assetTextWarning}>
+        <strong>Pendiente de actualizar</strong>
+        <p>El texto guardado de esta slide cambió. Actualiza esta imagen conservando las demás.</p>
+        <button type="button" className={styles.secondaryButton} disabled={!canUpdateText || isPending}
+          onClick={() => onUpdateText(asset.id)}>Actualizar esta imagen</button>
+      </div> : null}
 
       <CreativeBrandImageEditor key={`${asset.id}:${savedRequest?.revision ?? 0}`} asset={asset} topicId={topicId} secret={secret}
         disabled={readOnly || isPending || Boolean(busyAction)}

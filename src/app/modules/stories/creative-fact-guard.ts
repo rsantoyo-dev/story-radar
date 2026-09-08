@@ -1,3 +1,4 @@
+import { completeRoadNoticeExcerpt } from "./road-notice-evidence";
 import type {
   CreativeFactClaimGuard,
   GeneratedCreativeBrief,
@@ -612,7 +613,8 @@ export function deterministicBriefFactQualityIssues(
         });
         return;
       }
-      const evidenceNumbers = new Set(extractBriefClaimNumbers(excerpt));
+      if (!sourceText.includes(excerpt)) return fact;
+    const evidenceNumbers = new Set(extractBriefClaimNumbers(excerpt));
       const unsupportedFactNumbers = extractBriefClaimNumbers(
         fact.statement,
       ).filter((number) => !evidenceNumbers.has(number));
@@ -681,7 +683,13 @@ export function repairBriefFactEvidence(
   const repairedIds: string[] = [];
   const keyFacts = brief.keyFacts.map((fact) => {
     const excerpt = fact.sourceExcerpt?.trim();
-    if (!excerpt || excerpt.length > 500 || !sourceText.includes(excerpt)) return fact;
+    if (!excerpt || excerpt.length > 500) return fact;
+    const completeRecord = completeRoadNoticeExcerpt(excerpt, sourceText);
+    if (completeRecord && completeRecord !== excerpt) {
+      repairedIds.push(fact.id);
+      return withCreativeFactClaimGuard({ id: fact.id,
+        statement: completeRecord.replace(/\s+/g, " "), sourceExcerpt: completeRecord });
+    }
     const evidenceNumbers = new Set(extractBriefClaimNumbers(excerpt));
     const exceedsEvidence = extractBriefClaimNumbers(fact.statement).some(
       (number) => !evidenceNumbers.has(number),
