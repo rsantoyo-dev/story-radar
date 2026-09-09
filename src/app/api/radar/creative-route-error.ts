@@ -11,6 +11,12 @@ import { FalImageConfigurationError } from "@/app/modules/stories/fal-image-gene
 import { FalImageResponseError } from "@/app/modules/stories/fal-image-client";
 import { CreativeAssetValidationError } from "@/app/modules/stories/manage-creative-assets";
 import { CreativeAssetEditRequestValidationError } from "@/app/modules/stories/creative-asset-edit-request-input";
+import { PublicationPackageValidationError } from "@/app/modules/meta/instagram-publication-package";
+import { PublicationPackageConflictError } from "@/app/modules/meta/freeze-publication-package.core";
+import {
+  PublicationJobConflictError,
+  PublicationJobStateError,
+} from "@/app/modules/meta/publish-publication-package.core";
 import {
   CreativeContentConflictError,
   CreativeContentDailyLimitError,
@@ -67,6 +73,7 @@ export function creativeRouteErrorResponse(
     error instanceof CreativeBrandAssetValidationError ||
     error instanceof CreativeAssetValidationError ||
     error instanceof CreativeAssetEditRequestValidationError ||
+    error instanceof PublicationPackageValidationError ||
     error instanceof CreativeDraftValidationError ||
     error instanceof CreativeCharacterValidationError ||
     error instanceof CreativeCharacterReferenceValidationError ||
@@ -81,6 +88,20 @@ export function creativeRouteErrorResponse(
   }
 
   if (error instanceof CreativeContentConflictError) {
+    return NextResponse.json({ error: error.message }, { status: 409 });
+  }
+
+  if (error instanceof PublicationPackageConflictError) {
+    return NextResponse.json(
+      { error: error.message, blockers: error.blockers },
+      { status: 409 },
+    );
+  }
+
+  if (
+    error instanceof PublicationJobConflictError ||
+    error instanceof PublicationJobStateError
+  ) {
     return NextResponse.json({ error: error.message }, { status: 409 });
   }
 

@@ -1,3 +1,4 @@
+import type { PublishingAccessState } from "./instagram-publishing-access";
 import type { MetaConnectionState } from "./meta-connection-state";
 
 export type { MetaConnectionState } from "./meta-connection-state";
@@ -20,6 +21,7 @@ export type TopicMetaConnectionStatus = {
   connectedAt?: Date;
   connectedBy?: string;
   hasCustomApp: boolean;
+  publishing?: { state: PublishingAccessState; message: string };
   grantedPermissions?: string[];
   lastVerifiedAt?: Date;
   lastVerificationError?: string;

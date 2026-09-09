@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { InstagramPublicationCandidatePanel } from "./instagram-publication-candidate-panel";
 import { useEffect, useState } from "react";
 import type { DocumentaryResult } from "./modules/stories/manage-creative-documentary";
 import { documentarySnapshot } from "./modules/stories/creative-documentary";
@@ -92,6 +93,7 @@ export function CreativeDocumentaryPanel({ topicId, storyId, secret, format, dis
         <p>Place extraction: {snapshot.extraction.status} · {snapshot.extraction.model} · {snapshot.extraction.attempts} attempts · {snapshot.extraction.usage.totalTokens} tokens.</p>
         {snapshot.mentions.map((mention, i) => <p key={i}>{mention.name} ({mention.kind}, {mention.role}): “{mention.excerpt}”</p>)}
       </details>
+      <InstagramPublicationCandidatePanel key={JSON.stringify([topicId, batch, busy, disabled])} topicId={topicId} draftId={batch.draftId} batchId={batch.id} secret={secret} disabled={busy || disabled || result?.stale} />
       {snapshot.review ? <p>Last decision: {snapshot.review.decision} · {snapshot.review.actor} · {snapshot.review.at}</p> : null}
       {approved ? <p role="status">Publication approved. You can download each image using “Download approved image”. This approval does not publish automatically.</p> : null}
       {!result?.stale ? <>

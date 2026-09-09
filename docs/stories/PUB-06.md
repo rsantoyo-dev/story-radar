@@ -10,6 +10,13 @@ tags: [publishing, todo, p0]
 
 **Estado:** [[status-todo]] · **Feature:** [Publicación desde el SaaS](../features/instagram-publishing.md)
 
+> Registro y vínculo implementados junto con PUB-04; recuperación y preservación
+> corregidas el 9 de septiembre. El upsert añade el paquete de origen y no vuelve
+> a aplicar un vínculo que el editor corrigió o eliminó. Las pruebas con PostgreSQL
+> en memoria cubren sync posterior, deduplicación y recuperación tras error local.
+> Pendiente: revisar el resumen compatible `story_social_publications` y la
+> visualización end-to-end en galería e historia con una publicación real autorizada.
+
 **Como** editor, **quiero** registrar y vincular automáticamente la publicación, **para** entregar contenido aprobado con trazabilidad y control del envío.
 
 **Prioridad:** P0 · **Dependencias:** PUB-04

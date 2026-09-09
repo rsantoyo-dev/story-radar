@@ -2,6 +2,8 @@ export * from "./ai-research-sources";
 export * from "./collection-runs";
 export * from "./creative-content";
 export * from "./editorial-evaluations";
+export * from "./instagram-publication-jobs";
+export * from "./instagram-publication-packages";
 export * from "./knowledge-documents";
 export * from "./owned-content";
 export * from "./topic-editorial-profiles";

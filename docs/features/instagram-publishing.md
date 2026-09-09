@@ -1,7 +1,7 @@
 # Feature: Publicación de Instagram desde el SaaS
 
 **ID:** FEAT-PUB-001  
-**Estado:** Propuesta — pendiente de implementación  
+**Estado:** En revisión local — PUB-01 a PUB-04 y PUB-07 en QA. PUB-04 incluye worker independiente y recuperación del registro; PUB-06 conserva pendientes de compatibilidad y QA, PUB-08 requiere validación real. PUB-05 (programación) sigue pendiente. [Configuración del worker y pruebas](instagram-publishing-worker.md).
 **Producto:** Press Craftor  
 **Tablero:** [instagram-publishing.kanban.md](instagram-publishing.kanban.md)
 
@@ -158,7 +158,7 @@ No incluye reels, Stories, Facebook Pages, edición de publicaciones remotas, bo
 
 **Como** editor, **quiero** evitar duplicados y reconciliar resultados inciertos, **para** entregar contenido aprobado con trazabilidad y control del envío.
 
-**Prioridad:** P0 · **Dependencias:** PUB-03, PUB-07
+**Prioridad:** P0 · **Dependencias:** PUB-03
 
 **Criterios de aceptación**
 
@@ -193,3 +193,7 @@ Reutilizar servicios de Meta, R2 privado, snapshots, versiones y relaciones de I
 No forzar múltiples entregas dentro de la fila única de `story_social_publications`. Definir su proyección de resumen (por ejemplo, última entrega confirmada) manteniendo registros individuales y sin hacer que sincronizar deshaga decisiones manuales. La restricción actual de fechas requiere contemplar “Publicar ahora” sobre una intención previamente programada para más tarde.
 
 Elegir scheduler/cola conforme al despliegue real; verificar política de retrasos, TTL de entrega y acceso de Meta a archivos. No utilizar temporizadores del navegador ni workers en memoria como programación durable. La falta de infraestructura o permisos se refleja como capacidad no disponible.
+
+## Avance de PUB-01 — 9 de septiembre de 2026
+
+Implementada la evaluación de candidaturas en servidor y su panel en ambos recorridos creativos; véase [detalle y límites de PUB-01](../stories/PUB-01.md#implementación--9-de-septiembre-de-2026). La verificación es puntual y no crea una orden de envío. «Lista para publicar» sigue bloqueado por PUB-02; no hay publicación ni programación habilitadas.

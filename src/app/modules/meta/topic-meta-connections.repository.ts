@@ -1,6 +1,7 @@
 import "server-only";
+import { publishingPreflightState, PUBLISHING_ACCESS_MESSAGES } from "./instagram-publishing-access";
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { and, eq } from "drizzle-orm";
 
@@ -35,13 +36,15 @@ export async function getTopicMetaConnectionStatus(
 ): Promise<TopicMetaConnectionStatus> {
   const storedRow = await findRow(topicId);
   if (!storedRow) {
-    return { connected: false, state: "disconnected", hasCustomApp: false };
+    return { connected: false, state: "disconnected", hasCustomApp: false, publishing: { state: "disconnected", message: PUBLISHING_ACCESS_MESSAGES.disconnected } };
   }
 
   const row = await maybeRefreshTopicMetaToken(topicId, storedRow);
   const now = new Date();
+  const publishingState = publishingPreflightState(publicationDestinationFromRow(row));
 
   return {
+    publishing: { state: publishingState, message: PUBLISHING_ACCESS_MESSAGES[publishingState] },
     connected: Boolean(row.igUserId && row.accessTokenEncrypted),
     state: deriveMetaConnectionState(row, now),
     ...(row.igUsername ? { igUsername: row.igUsername } : {}),
@@ -429,4 +432,36 @@ async function findRow(topicId: string) {
 
 function loadEncryptionKey() {
   return loadMetaTokenEncryptionKey(requireMetaTokenEncryptionKeyFromEnv());
+}
+
+/** Read-only destination snapshot. Never refreshes or decrypts tokens. */
+export async function getPublicationDestination(topicId: string) {
+  return publicationDestinationFromRow(await findRow(topicId));
+}
+
+function publicationDestinationFromRow(row: Awaited<ReturnType<typeof findRow>>) {
+  return {
+    igUserId: row?.igUserId ?? null,
+    igUsername: row?.igUsername ?? null,
+    connectionVersion: row?.connectionVersion ?? "",
+    connected: Boolean(row?.igUserId && row.accessTokenEncrypted),
+    expired: Boolean(row?.tokenExpiresAt && row.tokenExpiresAt.getTime() <= Date.now()),
+    grantedPermissionsKnown: Boolean(row?.grantedPermissions.length),
+    hasPublishingPermission: Boolean(row?.grantedPermissions.includes("instagram_business_content_publish")),
+    hasBasicPermission: Boolean(row?.grantedPermissions.includes("instagram_business_basic")),
+    appConfigurationVersion: createHash("sha256").update(JSON.stringify([
+      row?.appId, row?.appSecretEncrypted, row?.appId ? null : getDefaultMetaAppCredentials(),
+    ])).digest("hex"),
+  };
+}
+
+/** Account identity, grants and token come from the same row read. No refresh or writes. */
+export async function getPublicationAccessContext(topicId: string) {
+  const row = await findRow(topicId);
+  const destination = publicationDestinationFromRow(row);
+  const canCheck = publishingPreflightState(destination) === "unverified";
+  return {
+    topicId, destination,
+    ...(canCheck && row?.accessTokenEncrypted ? { accessToken: decryptMetaSecret(row.accessTokenEncrypted, loadEncryptionKey()) } : {}),
+  };
 }

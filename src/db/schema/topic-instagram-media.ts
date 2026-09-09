@@ -12,6 +12,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { creativeAssetBatches, creativeDrafts } from "./creative-content";
+import { instagramPublicationPackages } from "./instagram-publication-packages";
 import { stories } from "./stories";
 import { topics } from "./topics";
 
@@ -78,6 +79,15 @@ export const topicInstagramMedia = pgTable(
     linkedDraftVersion: integer("linked_draft_version"),
     linkedBatchId: uuid("linked_batch_id").references(
       () => creativeAssetBatches.id,
+      { onDelete: "set null" },
+    ),
+    /**
+     * The frozen PUB-03 package this row was published from (PUB-04/PUB-06).
+     * Null for media imported by IG-02 that this app did not send. Set once,
+     * when a publication job confirms; a later IG-02 re-sync keeps it.
+     */
+    publishedPackageId: uuid("published_package_id").references(
+      () => instagramPublicationPackages.id,
       { onDelete: "set null" },
     ),
     /**

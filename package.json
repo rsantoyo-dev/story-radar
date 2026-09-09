@@ -7,6 +7,7 @@
     "dev:https": "npm run uxdsl:build && concurrently --kill-others-on-fail \"npm run uxdsl:watch\" \"next dev --experimental-https\"",
     "build": "npm run uxdsl:build && next build --webpack",
     "start": "next start",
+    "worker:instagram": "node scripts/instagram-publication-worker.mjs",
     "test": "tsx --test src/app/modules/stories/*.test.ts src/app/modules/documents/*.test.ts src/app/modules/meta/*.test.ts src/design/*.test.ts src/design/*/*.test.ts",
     "uxdsl:build": "npm run uxdsl:build:theme && npm run uxdsl:build:dashboard && npm run uxdsl:build:creative && npm run uxdsl:build:editorial && npm run uxdsl:build:topic",
     "uxdsl:build:theme": "uxdsl build --config uxdsl.theme.config.cjs",

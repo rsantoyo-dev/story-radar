@@ -64,3 +64,10 @@ test("a real access_token is never attached to the thrown error when user_id is 
     assert.ok(serialized.includes("[redacted]"));
   }
 });
+
+
+test("preserves granted scope arrays and rejects malformed permission entries", () => {
+  const token = { access_token: "token", user_id: "123" };
+  assert.deepEqual(parseInstagramShortLivedTokenResponse({ ...token, permissions: [" instagram_business_basic ", "instagram_business_content_publish", "instagram_business_basic"] }).grantedPermissions, ["instagram_business_basic", "instagram_business_content_publish"]);
+  assert.deepEqual(parseInstagramShortLivedTokenResponse({ ...token, permissions: [{ permission: "instagram_business_content_publish", status: "declined" }] }).grantedPermissions, []);
+});

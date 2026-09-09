@@ -76,9 +76,7 @@ function extractShortLivedEntry(payload: unknown):
 }
 
 function parsePermissionsField(value: unknown): string[] {
-  if (typeof value !== "string" || !value.trim()) return [];
-  return value
-    .split(",")
-    .map((permission) => permission.trim())
-    .filter(Boolean);
+  const entries = typeof value === "string" ? value.split(",") : value;
+  if (!Array.isArray(entries) || !entries.every((entry) => typeof entry === "string")) return [];
+  return [...new Set(entries.map((permission) => permission.trim()).filter(Boolean))];
 }

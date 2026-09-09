@@ -1,5 +1,7 @@
 "use client";
 
+import { InstagramPublishingAccessPanel } from "./instagram-publishing-access-panel";
+import type { PublishingAccessState } from "./modules/meta/instagram-publishing-access";
 import { useEffect, useState } from "react";
 
 import styles from "./creative-draft-workspace.generated.module.css";
@@ -25,6 +27,7 @@ type MetaConnectionStatus = {
   tokenExpiresAt?: string;
   connectedAt?: string;
   hasCustomApp: boolean;
+  publishing?: { state: PublishingAccessState; message: string };
   grantedPermissions?: string[];
   lastVerifiedAt?: string;
   lastVerificationError?: string;
@@ -397,7 +400,7 @@ export function MetaConnectionPanel({
               disabled={controlsDisabled}
               onClick={handleVerify}
             >
-              {busy === "verify" ? "Verifying…" : "Verify access"}
+              {busy === "verify" ? "Verifying…" : "Verify insights access"}
             </button>
           ) : null}
           {status?.connected ? (
@@ -460,6 +463,12 @@ export function MetaConnectionPanel({
           ) : null}
         </div>
       </div>
+
+      <InstagramPublishingAccessPanel
+        key={JSON.stringify([topicId, secret, status, busy])}
+        topicId={topicId} secret={secret} disabled={controlsDisabled}
+        state={status?.publishing?.state ?? (status?.connected ? "unverified" : "disconnected")}
+      />
 
       <details className={styles.profilePanel}>
         <summary>

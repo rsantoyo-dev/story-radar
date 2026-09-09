@@ -9,6 +9,7 @@ import {
   type SaveEditRequestPayload,
 } from "./creative-brand-image-editor";
 import Image from "next/image";
+import { InstagramPublicationCandidatePanel } from "./instagram-publication-candidate-panel";
 import { CreativeDocumentaryPanel } from "./creative-documentary-panel";
 import { StoryInstagramResults } from "./story-instagram-results";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -2319,7 +2320,7 @@ export function CreativeDraftWorkspace({
                           </strong>
                           <p>
                             {currentAssetBatch.allApproved
-                              ? "This creative is ready for the future publishing step."
+                              ? "All images are approved. Validate the publication candidate below."
                               : "Check the visible text carefully. Edit a prompt and regenerate only the image that needs work."}
                           </p>
                         </div>
@@ -2327,6 +2328,11 @@ export function CreativeDraftWorkspace({
                           {currentAssetBatch.model} · {imageQualityLabel(currentAssetBatch.imageQuality ?? "high")} · {currentAssetBatch.width}×{currentAssetBatch.height}
                         </small>
                       </div>
+                      <InstagramPublicationCandidatePanel
+                        key={JSON.stringify([topicId, activeDraft, currentAssetBatch, dirty, busy, assetBusy, viewingHistoricalDraft])}
+                        topicId={topicId} draftId={activeDraft.id} batchId={currentAssetBatch.id} secret={secret}
+                        disabled={dirty || Boolean(busy) || Boolean(assetBusy) || viewingHistoricalDraft}
+                      />
                       <div className={styles.assetGrid}>
                         {currentAssetBatch.assets.map((asset) => (
                           <CreativeAssetCard

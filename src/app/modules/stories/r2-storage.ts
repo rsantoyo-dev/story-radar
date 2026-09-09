@@ -382,3 +382,27 @@ export function buildDocumentaryObjectKey(topicId: string, kind: "originals" | "
   const { objectPrefix } = getR2Client().configuration;
   return [objectPrefix, "topics", safeKeySegment(topicId, "topic ID"), "creative", "documentary", kind, safeKeySegment(id, "documentary object ID")].join("/");
 }
+
+/**
+ * PUB-03. Private key for a frozen delivery JPEG. Served to Instagram only via
+ * the opaque-token public route, never as a signed URL.
+ */
+export function buildPublicationDeliveryObjectKey({
+  topicId,
+  packageId,
+  unitOrder,
+}: {
+  topicId: string;
+  packageId: string;
+  unitOrder: number;
+}): string {
+  const { objectPrefix } = getR2Client().configuration;
+  return [
+    objectPrefix,
+    "topics",
+    safeKeySegment(topicId, "topic ID"),
+    "publication-delivery",
+    safeKeySegment(packageId, "publication package ID"),
+    `${safeKeySegment(String(unitOrder), "slide order")}.jpg`,
+  ].join("/");
+}

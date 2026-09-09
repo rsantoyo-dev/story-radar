@@ -1,4 +1,5 @@
 import "server-only";
+import { parsePublishingQuota } from "./instagram-publishing-access";
 
 /**
  * Thin wrapper over the "Instagram API with Instagram Login" calls needed to
@@ -222,4 +223,195 @@ async function handleInstagramResponse<T>(response: Response): Promise<T> {
   }
 
   return body as T;
+}
+
+/** Read-only PUB-02 probe. Never creates a container or calls media_publish. */
+export async function fetchInstagramPublishingQuota(igUserId: string, accessToken: string) {
+  if (!/^[0-9]+$/.test(igUserId)) throw new MetaGraphApiError("Invalid Instagram account identity", 400);
+  const url = new URL(`https://graph.instagram.com/${GRAPH_API_VERSION}/${igUserId}/content_publishing_limit`);
+  url.searchParams.set("fields", "quota_usage,config");
+  const response = await fetch(url, {
+    method: "GET", cache: "no-store", redirect: "error",
+    headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(15_000),
+  });
+  return parsePublishingQuota(await handleInstagramResponse<unknown>(response));
+}
+
+// --- PUB-04 publish calls -------------------------------------------------
+// The only writes in this file. Token goes in the Authorization header (like
+// the quota probe), never the query string, so it cannot end up in a redirect
+// Location or a proxy log. Every call is bounded by a timeout and throws
+// MetaGraphApiError (with `.graphError` for classification) on any failure.
+
+const IG_MEDIA_ID = /^[0-9]+$/;
+
+async function instagramGraphPost<T>(
+  path: string,
+  accessToken: string,
+  params: Record<string, string>,
+): Promise<T> {
+  const response = await fetch(
+    `https://graph.instagram.com/${GRAPH_API_VERSION}/${path}`,
+    {
+      method: "POST",
+      cache: "no-store",
+      redirect: "error",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams(params),
+      signal: AbortSignal.timeout(30_000),
+    },
+  );
+  return handleInstagramResponse<T>(response);
+}
+
+async function instagramGraphGet<T>(
+  path: string,
+  accessToken: string,
+  fields: string,
+): Promise<T> {
+  const url = new URL(`https://graph.instagram.com/${GRAPH_API_VERSION}/${path}`);
+  url.searchParams.set("fields", fields);
+  const response = await fetch(url, {
+    method: "GET",
+    cache: "no-store",
+    redirect: "error",
+    headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(20_000),
+  });
+  return handleInstagramResponse<T>(response);
+}
+
+function requireCreationId(payload: { id?: unknown }, what: string): string {
+  if (typeof payload.id !== "string" || !IG_MEDIA_ID.test(payload.id)) {
+    throw new MetaGraphApiError(`Instagram did not return a ${what} id`, 502, payload);
+  }
+  return payload.id;
+}
+
+/**
+ * Creates one media container. For a carousel child pass `isCarouselItem: true`
+ * and no caption; for a single-image post pass the caption here. `imageUrl`
+ * must be a public URL Instagram's servers can fetch (our `/api/deliver/<token>`
+ * route). Returns the container's creation id.
+ */
+export async function createInstagramMediaContainer(
+  igUserId: string,
+  accessToken: string,
+  input: { imageUrl: string; isCarouselItem?: boolean; caption?: string },
+): Promise<string> {
+  if (!IG_MEDIA_ID.test(igUserId)) {
+    throw new MetaGraphApiError("Invalid Instagram account identity", 400);
+  }
+  const params: Record<string, string> = { image_url: input.imageUrl };
+  if (input.isCarouselItem) params.is_carousel_item = "true";
+  if (input.caption !== undefined) params.caption = input.caption;
+  const payload = await instagramGraphPost<{ id?: unknown }>(
+    `${igUserId}/media`,
+    accessToken,
+    params,
+  );
+  return requireCreationId(payload, "media container");
+}
+
+/**
+ * Creates the parent CAROUSEL container from already-created child creation
+ * ids (2–10, in order). The caption belongs on this container.
+ */
+export async function createInstagramCarouselContainer(
+  igUserId: string,
+  accessToken: string,
+  input: { childrenIds: string[]; caption: string },
+): Promise<string> {
+  if (!IG_MEDIA_ID.test(igUserId)) {
+    throw new MetaGraphApiError("Invalid Instagram account identity", 400);
+  }
+  const payload = await instagramGraphPost<{ id?: unknown }>(
+    `${igUserId}/media`,
+    accessToken,
+    {
+      media_type: "CAROUSEL",
+      children: input.childrenIds.join(","),
+      caption: input.caption,
+    },
+  );
+  return requireCreationId(payload, "carousel container");
+}
+
+export type InstagramContainerStatus =
+  | "EXPIRED"
+  | "ERROR"
+  | "FINISHED"
+  | "IN_PROGRESS"
+  | "PUBLISHED";
+
+/** Polls a container's processing state before it can be published. */
+export async function getInstagramContainerStatus(
+  containerId: string,
+  accessToken: string,
+): Promise<InstagramContainerStatus> {
+  if (!IG_MEDIA_ID.test(containerId)) {
+    throw new MetaGraphApiError("Invalid Instagram container id", 400);
+  }
+  const payload = await instagramGraphGet<{ status_code?: unknown }>(
+    containerId,
+    accessToken,
+    "status_code",
+  );
+  const code = payload.status_code;
+  if (
+    code === "EXPIRED" ||
+    code === "ERROR" ||
+    code === "FINISHED" ||
+    code === "IN_PROGRESS" ||
+    code === "PUBLISHED"
+  ) {
+    return code;
+  }
+  throw new MetaGraphApiError(
+    "Instagram returned an unknown container status",
+    502,
+    payload,
+  );
+}
+
+/** Publishes a FINISHED container. Returns the published media id. */
+export async function publishInstagramContainer(
+  igUserId: string,
+  accessToken: string,
+  creationId: string,
+): Promise<string> {
+  if (!IG_MEDIA_ID.test(igUserId)) {
+    throw new MetaGraphApiError("Invalid Instagram account identity", 400);
+  }
+  if (!IG_MEDIA_ID.test(creationId)) {
+    throw new MetaGraphApiError("Invalid Instagram container id", 400);
+  }
+  const payload = await instagramGraphPost<{ id?: unknown }>(
+    `${igUserId}/media_publish`,
+    accessToken,
+    { creation_id: creationId },
+  );
+  return requireCreationId(payload, "published media");
+}
+
+/** Best-effort permalink + timestamp for a freshly published media. */
+export async function fetchInstagramMediaPermalink(
+  mediaId: string,
+  accessToken: string,
+): Promise<{ permalink?: string; timestamp?: string }> {
+  if (!IG_MEDIA_ID.test(mediaId)) {
+    throw new MetaGraphApiError("Invalid Instagram media id", 400);
+  }
+  const payload = await instagramGraphGet<{
+    permalink?: unknown;
+    timestamp?: unknown;
+  }>(mediaId, accessToken, "permalink,timestamp");
+  return {
+    permalink: typeof payload.permalink === "string" ? payload.permalink : undefined,
+    timestamp: typeof payload.timestamp === "string" ? payload.timestamp : undefined,
+  };
 }

@@ -3126,3 +3126,59 @@
 .mapsPreviewMedia img { display: block; width: 100%; height: auto; object-fit: contain; }
 /* Provider-required text treatment; do not restyle the attribution as brand copy. */
 .mapsAttribution { font: 400 14px Arial, sans-serif; color: #1f1f1f; background: #fff; white-space: nowrap; padding: density(1); }
+
+.publicationCandidate {
+  @ds-surface(flat primary radius(3));
+  display: grid;
+  gap: density(2);
+  padding: xs(density(3)) md(density(4));
+  box-shadow: shadow(1);
+  color: palette(primary-main);
+  @ds-typo(body);
+}
+
+.publicationCandidate h4 {
+  @ds-typo(h5);
+  color: palette(primary-main);
+}
+
+.publicationCaption {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.publicationPackage {
+  display: grid;
+  gap: density(2);
+  border-top: border(1, palette(primary-main), solid);
+  padding-top: density(2);
+}
+
+.publicationPackageEntry {
+  display: grid;
+  gap: density(1);
+  padding: density(2);
+  border: border(1, palette(primary-main), solid);
+  border-radius: radius(2);
+}
+
+.publicationPackageSlide {
+  overflow-wrap: anywhere;
+}
+
+.publicationPackageActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: density(2);
+  align-items: center;
+}
+
+.publicationJob {
+  display: grid;
+  gap: density(1);
+  padding: density(2);
+  border: border(1, palette(primary-main), solid);
+  border-radius: radius(2);
+  background: palette(primary-contrast);
+  color: palette(primary-main);
+}
