@@ -1389,3 +1389,28 @@ test("rejects the interchangeable follow fallback while allowing a topic-specifi
   assert.ok(codes("Síguenos para entender qué significa para ti cada novedad del tema.").includes("GENERIC_FOLLOW_CTA"));
   assert.ok(!codes("Síguenos para entender los datos sobre empleo y formación de inmigrantes en Canadá.").includes("GENERIC_FOLLOW_CTA"));
 });
+
+test("cover brevity is advisory and never truncates factual qualifiers", () => {
+  const value=structuredClone(draft);
+  value.units[0].headline="Proposed indoor recreation rules could change which activities open on Saint-Jacques";
+  value.units[0].subheadline="A proposal is under public consultation.";
+  value.units[0].body="The cover currently includes a long list of additional projects and technical details that would be easier to understand on the following slides.";
+  const issues=deterministicCreativeQualityIssues(value,"carousel");
+  assert.ok(issues.some(i=>i.code==="COVER_HOOK_TOO_LONG"&&i.severity==="warning"));
+  assert.ok(issues.some(i=>i.code==="COVER_INTRO_DENSE"&&i.severity==="warning"));
+  assert.match(value.units[0].headline,/could/);
+  value.units[0].headline="Quels loisirs pourraient ouvrir ici ?";
+  value.units[0].subheadline="Un projet pour la rue Saint-Jacques.";
+  value.units[0].body="";
+  assert.ok(!deterministicCreativeQualityIssues(value,"carousel").some(i=>["COVER_HOOK_TOO_LONG","COVER_INTRO_DENSE"].includes(i.code)));
+});
+
+test("saving a closing preserves its explicitly selected verified consultation date",()=>{
+  const event:CreativeKeyFact={id:"meeting",statement:"Une assemblée publique de consultation est à l’horaire le 14 septembre entre 17 et 19 heures à l’hôtel de ville.",sourceExcerpt:"Une assemblée publique de consultation est à l’horaire le 14 septembre entre 17 et 19 heures à l’hôtel de ville."};
+  const value=structuredClone(draft);
+  value.units[1]={...value.units[1],editorialGoal:"conclude",role:"conclusion",headline:"Le 14 septembre, rendez-vous à l’hôtel de ville",body:event.statement,factIds:[event.id],ctaQuestion:undefined};
+  const repaired=repairDeterministicCreativeCopy(value,"carousel",[...facts,event],"French");
+  assert.ok(repaired.units[1].factIds.includes(event.id));
+  assert.match(repaired.units[1].body??"",/14 septembre/);
+  assert.match(repaired.units[1].body??"",/17 et 19/);
+});

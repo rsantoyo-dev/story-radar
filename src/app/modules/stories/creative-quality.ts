@@ -664,6 +664,15 @@ export function deterministicCreativeQualityIssues(
           message: `Slide ${unit.order} uses an absolute promise that its selected evidence does not establish.`,
         }]
       : [];
+    if (format === "carousel" && unitIndex === 0) {
+      const words = (text?: string) => text?.trim().split(/\s+/u).filter(Boolean).length ?? 0;
+      // Advisory only: do not truncate names, qualifiers, or languages without
+      // whitespace segmentation to satisfy an editorial preference.
+      if (words(unit.headline) > 9) issues.push({code: "COVER_HOOK_TOO_LONG", severity: "warning", unitOrder: unit.order,
+        message: "The cover headline is long. Rewrite around one supported question, aiming for 4–7 words; retain essential names, scope and qualifiers."});
+      if (words(unit.subheadline) + words(unit.body) > 24) issues.push({code: "COVER_INTRO_DENSE", severity: "warning", unitOrder: unit.order,
+        message: "The cover carries too much explanation. Keep one short context line and move secondary detail to the next slide without changing the facts."});
+    }
     if (!unit.headline.trim()) {
       issues.push({
         code: "MISSING_HEADLINE",

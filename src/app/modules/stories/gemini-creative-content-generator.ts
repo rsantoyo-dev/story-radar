@@ -1,3 +1,4 @@
+import { requestCreativeGemini, GeminiOutputLimitError, GeminiDeadlineError, failedGeminiUsage } from "./creative-gemini-request";
 import { repairPublicParticipationPlan } from "./creative-project-grounding";
 import "server-only";
 
@@ -131,6 +132,12 @@ const HUMAN_TENSION_POLICY = `Administrative project grounding:
 - Never pair an unidentified demolition request with named housing properties on the same slide. Omit that unidentified request from the carousel until its own subject is evidenced.
 - Prefer separate cards or slides for distinct projects. A summary may name several dossiers only with explicit separate attribution. Maps and recognizable real places require verified documentary material; use abstract icons/address cards otherwise.
 
+Clean cover and earned curiosity:
+- The cover headline opens ONE supported question or tension, not a list of topics. Aim for 4-7 words in space-delimited languages, normally at most 9; necessary qualifiers, a clear subject and accurate names outrank brevity. Adapt naturally to the profile language. Never clip a sentence or remove "could", "proposed", "about" or an essential scope merely to fit.
+- Compare three concise candidates silently, using different evidence-supported curiosity mechanisms. Select for immediate comprehension, one specific reason to swipe, and an answer the next slides actually deliver. Short generic teasers ("Everything changes", "You need to see this") are not strong hooks. Do not claim a guaranteed 10/10 or engagement outcome.
+- Use at most one short context line beneath the headline. Put secondary dossiers, technical identifiers, exhaustive lists and explanation on the next slides. Normally omit cover body when the context line already establishes scope; never render headline, subheadline and a paragraph repeating the same premise. Reserve prominent whitespace and one focal visual; visualDirection must not add extra written labels.
+- During critique and rewrite, treat COVER_HOOK_TOO_LONG and COVER_INTRO_DENSE as requests for a semantic rewrite, not truncation. Preserve the selected facts and framing without promising effects the source does not establish.
+
 Evidence-led human relevance:
 - Before choosing a hook, look for a supported contrast: positive result with a real difficulty, opportunity with a barrier, integration with an obstacle, or progress with a documented personal cost. When both sides are central to the source and compatible with the selected framing strategy, prioritize this tension over a headline that merely repeats a percentage. Explain the chosen evidence pair in the existing rationale; if there is no supported pair, use another evidence-led structure.
 - Preserve the cohort, denominator, time period, and measurement of each statistic. Separate findings may illuminate a contrast but do not prove that the same people experienced both outcomes, that one caused the other, or that the outcomes occurred in sequence. For example, finding a first job quickly and working outside one's field are distinct measures unless the source explicitly links them.
@@ -159,7 +166,7 @@ Before selecting the angle, assess four editorial lenses internally: personal im
 
 Apply the selected creativeProfile.framingStrategy instruction below. It is the single framing rule for the angle, hook, cover, and closing; never apply the requirements of a different strategy.
 
-Create one carouselPlan even when carousel is the fallback format. Choose exactly 3-8 slides based on the story's explanatory needs, not a default minimum. Every keyMessage, angle, hook, suggested concept, editorialGoal, and viewerQuestion must be answerable from the extracted keyFacts. Do not let the requested editorial direction broaden the evidence. If the source only establishes fertilization, approximate duration, and due-date calculation, describe exactly those references; do not call them pregnancy stages or trimesters and do not invent physical changes, emotional changes, practical tips, preparation benefits, or care outcomes. Mark contentSufficiency as limited when the requested educational scope is broader than the available evidence. Assign only the facts needed by each slide, and give every non-closing slide at least one allowedFactId. The hook must cite the fact that supports its promise. Make the hook concrete, immediately understandable outside specialist context, and driven by at least one supported curiosity mechanism: a surprising fact, recognizable consequence, consequential contrast, unresolved tension, or new capability. Follow the selected framing instruction when choosing and ordering that mechanism. Do not use empty clickbait or hide the actual subject. The final slide must be conclude or debate, must reuse previously established facts, and must resolve the opening promise with a concrete answer, implication, decision, or grounded question; it must not introduce a new statistic or unsupported benefit. Consolidate related comparison facts on an earlier compare or impact slide instead of spending the ending on one more data point. The supplied carouselNarrativePolicy provides preferred arcs, but a different valid middle sequence is allowed when carouselPlan.rationale explains why it better fits the evidence. Write carouselPlan.rationale in the creative profile language. Suggested concepts are directions for a later script, not final copy or images.
+Create one carouselPlan even when carousel is the fallback format. Choose exactly 3-8 slides based on the story's explanatory needs, not a default minimum. Every keyMessage, angle, hook, suggested concept, editorialGoal, and viewerQuestion must be answerable from the extracted keyFacts. Do not let the requested editorial direction broaden the evidence. If the source only establishes fertilization, approximate duration, and due-date calculation, describe exactly those references; do not call them pregnancy stages or trimesters and do not invent physical changes, emotional changes, practical tips, preparation benefits, or care outcomes. Mark contentSufficiency as limited when the requested educational scope is broader than the available evidence. Assign only the facts needed by each slide, and give every non-closing slide at least one allowedFactId. The hook must cite the fact that supports its promise. Make the hook concrete, immediately understandable outside specialist context, and driven by at least one supported curiosity mechanism: a surprising fact, recognizable consequence, consequential contrast, unresolved tension, or new capability. Follow the selected framing instruction when choosing and ordering that mechanism. Do not use empty clickbait or hide the actual subject. The final slide must be conclude or debate, must reuse previously established facts (a verified public-consultation date and venue may be introduced in the closing as practical participation information), and must resolve the opening promise with a concrete answer, implication, decision, or grounded question; it must not introduce a new statistic or unsupported benefit. Consolidate related comparison facts on an earlier compare or impact slide instead of spending the ending on one more data point. The supplied carouselNarrativePolicy provides preferred arcs, but a different valid middle sequence is allowed when carouselPlan.rationale explains why it better fits the evidence. Write carouselPlan.rationale in the creative profile language. Suggested concepts are directions for a later script, not final copy or images.
 
 Naturalness of the hook: it must read like a line a person would actually say, not a relevance filter. Do not use a conditional "Si [the reader does X]: [fact]" or "For those who [do X]:" construction to justify why the story matters. State the selected strategy's subject, mechanism, authority, or supported consequence plainly.
 
@@ -526,7 +533,9 @@ export async function generateCreativeDraft({
       id: character.id,
       name: character.name,
     })),
-    story,
+    // The grounded brief contains the selected excerpts; do not repeat the
+    // entire article or invite the script to introduce unselected facts.
+    story: {title: story.title, url: story.url, contentStatus: story.contentStatus, contentSource: story.contentSource},
   };
   let response = await generateJson({
     apiKey,
@@ -1210,21 +1219,24 @@ async function generateJson({
     }
 
     let paidGeminiError: unknown;
-    if (paidGeminiApiKey && paidGeminiApiKey !== apiKey) {
+    let consumedGeminiUsage = failedGeminiUsage(error);
+    const accountForGemini = <T extends {usage: CreativeAiUsage}>(result: T): T => ({...result, usage: sumCreativeAiUsage(consumedGeminiUsage, result.usage)});
+    if (paidGeminiApiKey && paidGeminiApiKey !== apiKey && !(error instanceof GeminiOutputLimitError)) {
       console.warn(
         `Primary Gemini account failed (${providerErrorSummary(error)}); using the secondary Gemini account.`,
       );
       try {
-        return await generateGeminiJson({
+        return accountForGemini(await generateGeminiJson({
           apiKey: paidGeminiApiKey,
           model,
           systemInstruction,
           schema,
           contents,
           maxOutputTokens,
-        });
+        }));
       } catch (fallbackError) {
         paidGeminiError = fallbackError;
+        consumedGeminiUsage = sumCreativeAiUsage(consumedGeminiUsage, failedGeminiUsage(fallbackError));
       }
     }
 
@@ -1237,14 +1249,14 @@ async function generateJson({
         `Gemini creative generation request failed (${providerErrorSummary(paidGeminiError ?? error)}); using Groq fallback.`,
       );
       try {
-        return await generateGroqJson({
+        return accountForGemini(await generateGroqJson({
           apiKey: groqApiKey,
           model: groqModel,
           systemInstruction,
           schema,
           contents,
           maxOutputTokens,
-        });
+        }));
       } catch (fallbackError) {
         groqError = fallbackError;
       }
@@ -1255,7 +1267,7 @@ async function generateJson({
         `Earlier creative providers failed (${providerErrorSummary(groqError ?? paidGeminiError ?? error)}); using Cloudflare Workers AI fallback.`,
       );
       try {
-        return await runCloudflare();
+        return accountForGemini(await runCloudflare());
       } catch (cloudflareError) {
         throw combinedProviderError([
           ["Gemini", error],
@@ -1309,49 +1321,37 @@ async function generateGeminiJson({
   usage: CreativeAiUsage;
 }> {
   const ai = new GoogleGenAI({ apiKey });
-  const response = await retryTransientGeminiRequest(() =>
-    withProviderTimeout(
-      ai.models.generateContent({
-        model,
-        contents: JSON.stringify(contents),
-        config: {
-          systemInstruction,
-          maxOutputTokens,
-          responseMimeType: "application/json",
-          responseJsonSchema: schema,
-        },
-      }),
-      "Gemini",
-    ),
-  );
-  if (
-    response.candidates?.some(
-      (candidate) => candidate.finishReason === "MAX_TOKENS",
-    )
-  ) {
-    throw new GeminiTokenLimitError(
-      "Gemini reached its maximum output-token limit",
-    );
-  }
+  const serializedContents = JSON.stringify(contents);
+  const {response, usage} = await requestCreativeGemini({
+    model,
+    requestedTokens: maxOutputTokens,
+    isTransient: isTransientGeminiError,
+    log: event => console.info("Gemini creative request", {...event, inputCharacters: serializedContents.length, instructionCharacters: systemInstruction.length}),
+    request: (outputBudget, signal) => ai.models.generateContent({
+      model,
+      contents: serializedContents,
+      config: {
+        systemInstruction,
+        maxOutputTokens: outputBudget,
+        httpOptions: {retryOptions: {attempts: 1}},
+        abortSignal: signal,
+        responseMimeType: "application/json",
+        responseJsonSchema: schema,
+      },
+    }),
+  });
   const text = response.text?.trim();
 
   if (!text) {
     throw new CreativeContentResponseError("Gemini returned an empty response");
   }
 
-  const usage = response.usageMetadata;
-
   return {
     text,
     provider: "google",
     model,
     ...(response.modelVersion ? { modelVersion: response.modelVersion } : {}),
-    usage: {
-      promptTokens: usage?.promptTokenCount ?? 0,
-      outputTokens: usage?.candidatesTokenCount ?? 0,
-      thoughtsTokens: usage?.thoughtsTokenCount ?? 0,
-      totalTokens: usage?.totalTokenCount ?? 0,
-    },
+    usage,
   };
 }
 
@@ -3380,8 +3380,6 @@ function briefForPrompt(
     editorialDirection: brief.editorialDirection ?? null,
     recommendedFormat: brief.recommendedFormat,
     fallbackFormat: brief.fallbackFormat,
-    formatScores: brief.formatScores,
-    confidence: brief.confidence,
     targetAudience: brief.targetAudience,
     keyMessage: brief.keyMessage,
     angle: brief.angle,
@@ -3389,7 +3387,6 @@ function briefForPrompt(
     tone: brief.tone,
     contentSufficiency: brief.contentSufficiency,
     keyFacts: brief.keyFacts,
-    carouselPlan: brief.carouselPlan,
     riskFlags: brief.riskFlags,
     suggestedConcepts: brief.suggestedConcepts,
   };
@@ -3764,22 +3761,6 @@ function sumCreativeAiUsage(
   );
 }
 
-async function retryTransientGeminiRequest<T>(
-  request: () => Promise<T>,
-): Promise<T> {
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    try {
-      return await request();
-    } catch (error) {
-      if (attempt === 3 || !isTransientGeminiError(error)) {
-        throw error;
-      }
-      await new Promise((resolve) => setTimeout(resolve, attempt * 750));
-    }
-  }
-  throw new Error("Gemini retry loop ended unexpectedly");
-}
-
 async function withProviderTimeout<T>(
   request: Promise<T>,
   provider: string,
@@ -3811,8 +3792,8 @@ function isTransientGeminiError(error: unknown): boolean {
 
 function isGroqFallbackEligibleGeminiError(error: unknown): boolean {
   if (
-    error instanceof GeminiTokenLimitError ||
-    error instanceof CreativeProviderTimeoutError
+    error instanceof GeminiOutputLimitError ||
+    (error instanceof CreativeProviderTimeoutError || error instanceof GeminiDeadlineError)
   ) {
     return true;
   }
@@ -3821,10 +3802,10 @@ function isGroqFallbackEligibleGeminiError(error: unknown): boolean {
 }
 
 function providerErrorSummary(error: unknown): string {
-  if (error instanceof GeminiTokenLimitError) {
-    return "output token limit reached";
+  if (error instanceof GeminiOutputLimitError) {
+    return "output truncated after bounded Gemini retry";
   }
-  if (error instanceof CreativeProviderTimeoutError) {
+  if (error instanceof CreativeProviderTimeoutError || error instanceof GeminiDeadlineError) {
     return "request timed out";
   }
   if (error instanceof ApiError) {
@@ -3867,7 +3848,7 @@ export class CreativeContentResponseError extends Error {}
 
 class CreativeProviderTimeoutError extends CreativeContentResponseError {}
 
-class GeminiTokenLimitError extends CreativeContentResponseError {}
+
 
 class CreativeProviderFallbackError extends CreativeContentResponseError {}
 

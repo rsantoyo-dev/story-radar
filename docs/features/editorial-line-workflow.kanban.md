@@ -70,3 +70,13 @@ Alcance, tareas y evidencias: [feature](editorial-line-workflow.md).
 
   - priority: high
   - tags: [creative, factuality, completed]
+
+### ELW-13 — Portadas breves y curiosidad sustentada
+
+  - priority: high
+  - tags: [creative, hooks, completed]
+
+### ELW-14 — Acotar truncamiento y coste de solicitudes Gemini
+
+  - priority: high
+  - tags: [creative, providers, completed]

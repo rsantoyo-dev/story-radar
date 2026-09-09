@@ -3207,7 +3207,12 @@ function DraftEditor({
             <ul>
               {qualityReview.issues.map((issue, index) => (
                 <li key={`${issue.code}-${issue.unitOrder ?? 0}-${index}`}>
-                  {issue.severity === "blocker" ? "Blocker: " : "Note: "}
+                  {issue.code === "PROJECT_LOCATION_MISMATCH" &&
+                  !deterministicWarnings.some(current =>
+                    current.code === issue.code && current.severity === "blocker" &&
+                    current.unitOrder === issue.unitOrder,
+                  ) ? "Previous review — not reproduced by current location checks: " :
+                    issue.severity === "blocker" ? "Blocker: " : "Note: "}
                   {issue.message}
                 </li>
               ))}

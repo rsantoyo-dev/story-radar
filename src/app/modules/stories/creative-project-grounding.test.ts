@@ -83,3 +83,27 @@ test("a public participation plan receives the actual event fact without guessin
   assert.equal(repairPublicParticipationPlan(plan,facts),plan);
   assert.equal(repairPublicParticipationPlan(plan,[...facts,event,{...event,id:"another"}]),plan);
 });
+
+test("unlocated demolition and separately attributed zoning do not borrow each other's location",()=>{
+  const evidence=[fact("demolition","La demande vise à autoriser la démolition du bâtiment principal."),fact("parking","Un projet de règlement vise à autoriser un ratio de stationnement inférieur aux normes dans la zone H-1118.")];
+  const value=draft("Démolition demandée, zonage proposé","Une demande vise à autoriser la démolition du bâtiment principal. Séparément, un projet de règlement vise à autoriser des projets intégrés en zone H-1118 et un ratio de stationnement inférieur aux normes en vigueur.",["demolition","parking"]);
+  value.caption="Une demande vise la démolition d’un bâtiment principal, un projet de règlement concerne la zone H-1118 et un projet d’habitation vise deux adresses.";
+  evidence.push(facts.find(f=>f.id==="housing")!);
+  const issues=administrativeProjectIssues(value,evidence);
+  assert.ok(!issues.some(i=>i.severity==="blocker"));
+  assert.ok(issues.some(i=>i.code==="PROJECT_IDENTITY_INCOMPLETE"&&i.unitOrder===1));
+  value.units[0].body="Une demande vise à autoriser la démolition du bâtiment principal en zone H-1118. Séparément, le ratio de stationnement est proposé.";
+  assert.ok(codes(value,evidence).includes("PROJECT_LOCATION_MISMATCH"));
+});
+test("committee attendance is not a demolition claim about a named venue",()=>{
+  const event=fact("event","Le comité de démolition se réunit à l’hôtel de ville, rue Laurier.");
+  const value=draft("Comité de démolition rue Laurier","",["event"]);
+  assert.deepEqual(codes(value,[...facts,event]),[]);
+  value.units[0].headline="Le comité de démolition propose la démolition rue Laurier";
+  assert.ok(codes(value,[...facts,event]).includes("PROJECT_LOCATION_MISMATCH")||codes(value,[...facts,event]).includes("PROJECT_ACTION_UNSUPPORTED"));
+});
+
+test("a demolition title above housing copy still implies an unsupported relationship",()=>{
+  const value=draft("Les bâtiments ciblés par les démolitions","Un projet d’habitation vise le 124 rue Collin et les 117-119 rue Frontenac.",["demolition","housing"]);
+  assert.ok(codes(value).includes("PROJECT_LOCATION_MISMATCH"));
+});

@@ -238,3 +238,44 @@ Programación por línea, mezcla editorial automática, paginación ampliada, re
 Se corrigen falsos positivos al comparar acciones y ubicaciones: las frases y contrastes explícitos se evalúan por separado y los números cívicos de avenidas numeradas se comparan independientemente del orden. Siguen bloqueadas las direcciones trasladadas a otra acción y los números cívicos incompatibles. Un plan nuevo cuya pregunta final pide participación recibe el fact de la convocatoria cuando hay exactamente una consulta fechada con extracto; con varias no se selecciona por inferencia.
 
 El nuevo borrador `74fb0704-ff90-4ab7-9ded-398887bf01c6` quedó guardado en versión 3, pendiente de revisión, con cierre fechado, ratio normativo y dossiers separados. Se conserva el histórico y no se regeneran ni aprueban imágenes. Las revisiones IA históricas pueden quedar obsoletas tras editar; no equivalen a una revisión de la nueva versión.
+
+### ELW-13 — Portadas breves y curiosidad sustentada
+
+**Estado:** Implementada · **Prioridad:** P1
+
+- [x] Comparar tres hooks durante generación/revisión y priorizar una sola pregunta o tensión que el carrusel pueda resolver.
+- [x] Orientar la portada a 4–7 palabras en idiomas separados por espacios, con advertencia por encima de nueve; conservar nombres, alcance y calificadores necesarios.
+- [x] Separar hook y contexto: una línea breve debajo, sin párrafo redundante ni listado de expedientes en la portada. Advertir cuando contexto y cuerpo superen 24 palabras.
+- [x] No truncar automáticamente ni convertir estas preferencias en bloqueos factuales. Una frase corta por sí sola no garantiza curiosidad ni rendimiento.
+- [x] Conservar una convocatoria pública fechada explícitamente seleccionada para el cierre, aunque no se haya utilizado antes; no recuperar facts por mera coincidencia numérica.
+
+Los prompts se versionan para nuevas generaciones. Los borradores e imágenes históricos se conservan. La evaluación del rendimiento real del hook queda para uso editorial; ningún score constituye garantía de engagement.
+
+Validación: 489 pruebas y lint satisfactorios. Consulta autenticada posterior al guardado confirma la versión 4 de `74fb0704-ff90-4ab7-9ded-398887bf01c6`, en draft: portada «Quels loisirs pourraient ouvrir ici ?», sin cuerpo redundante, y cierre con 14 septembre, 17–19 heures y hôtel de ville. No se generaron nuevas imágenes ni se aprobó la publicación.
+
+### ELW-14 — Acotar truncamiento y coste de solicitudes Gemini
+
+**Estado:** Implementada · **Prioridad:** P0
+
+- [x] Gemini 2.5/3 recibe el doble del presupuesto nominal de cada tarea: brief 8.192 y carrusel 12.288 tokens inicialmente. Techo por intento de 24.576; modelos antiguos o personalizados conservan un techo de 8.192.
+- [x] `MAX_TOKENS` descarta el JSON parcial y permite un segundo intento con más salida, hasta el techo. Errores transitorios y truncamiento comparten dos intentos totales y 60 segundos por cuenta. No se multiplican con los reintentos internos del SDK, configurado a un intento.
+- [x] Tras truncamiento persistente se pasa al fallback disponible sin repetir el mismo modelo/límite con otra clave. Un error de cuota sí puede utilizar la cuenta secundaria existente.
+- [x] Sumar el uso conocido de intentos truncados y recuperación, incluso cuando termina en otro proveedor. Registrar modelo, intento, presupuesto, razón de parada, consumo y tamaño de entrada; nunca claves, texto del artículo o salida parcial. Cuando no hay respuesta no se puede determinar el consumo remoto.
+- [x] El prompt de guion mantiene una sola copia del plan y elimina puntuaciones de elección de formato. Recibe los hechos y extractos completos del brief y metadatos de la noticia, sin repetir el artículo completo; la extracción del brief conserva el texto fuente. No se recortan hechos ni se alteran originales almacenados.
+- [x] Verificar recuperación, truncamiento persistente, fallback, cuenta secundaria, uso, deadline y ausencia de datos privados en logs con proveedores simulados.
+
+La cancelación aborta la espera y la solicitud del cliente; no garantiza detener el cómputo o cobro remoto. Aumentar el máximo permite mayor consumo si hace falta. El límite es por cuenta/llamada: la cadena completa de generación, validación y otros proveedores conserva sus límites existentes. No se promete ausencia total de fallos ni se han consumido créditos reales para estas pruebas.
+
+Referencias: [GenerateContent y MAX_TOKENS](https://ai.google.dev/api/generate-content#FinishReason). La configuración de cancelación y reintentos se comprobó también contra los tipos del SDK `@google/genai` instalado.
+
+Validación de ELW-14: 498 pruebas pasan; lint y build satisfactorios. No hubo cambios de esquema, credenciales ni aprobación/publicación de borradores.
+
+### Seguimiento ELW-12 — Demolición sin ubicación y expedientes independientes
+
+La validación ya no hereda para una demolición sin ubicación las direcciones explícitamente asignadas a otro expediente en frases o cláusulas independientes. Se conserva el bloqueo de direcciones locales incompatibles y de etiquetas de dirección sin atribución bajo un título de demolición. Un comité de demolición se distingue de una solicitud de demoler: la sede de la reunión no se trata como el inmueble afectado.
+
+Si el extracto de la solicitud no identifica el inmueble, se muestra `PROJECT_IDENTITY_INCOMPLETE` como advertencia y no se inventa la dirección. La revisión histórica no se modifica ni se convierte en aprobada; la UI identifica un antiguo `PROJECT_LOCATION_MISMATCH` cuando los controles actuales ya no lo reproducen. La aprobación humana y el reconocimiento de la revisión anterior conservan sus reglas.
+
+Reproducción con copia del borrador `af385e63-d904-4d3d-ba44-8f5509f8ea37`, versión 5: cero bloqueos factuales con los controles actualizados. No se cambió texto, versión ni estado del registro local.
+
+Validación del seguimiento: 501 pruebas pasan, lint y build satisfactorios. Incluye regresión del caption y del slide 2, conservación del bloqueo para títulos de demolición sobre viviendas sin separación explícita, y distinción entre comité y acción de demolición.

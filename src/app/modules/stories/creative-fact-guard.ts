@@ -1229,8 +1229,16 @@ function repairNumericFactAssignments(
 ): string[] {
   const isClosingUnit =
     unit.editorialGoal === "conclude" || unit.editorialGoal === "debate";
-  const factIsEligible = (id: string): boolean =>
-    factsById.has(id) && (!isClosingUnit || establishedFactIds.has(id));
+  const factIsEligible = (id: string): boolean => {
+    const fact = factsById.get(id);
+    if (!fact) return false;
+    // Explicitly selected practical meeting information can be introduced at
+    // the end. Do not infer an event assignment from a coincident numeric value.
+    const selectedConsultation = unit.factIds.includes(id) &&
+      /\b(?:consultation publique|assembl[eé]e publique de consultation|public consultation|consulta p[uú]blica)\b/iu.test(fact.sourceExcerpt ?? "") &&
+      /\d/u.test(fact.sourceExcerpt ?? "");
+    return !isClosingUnit || establishedFactIds.has(id) || selectedConsultation;
+  };
   const factIds = unit.factIds.filter(factIsEligible);
   const visibleNumbers = extractAllowedNumbers(
     [unit.headline, unit.subheadline, unit.body, unit.ctaQuestion]

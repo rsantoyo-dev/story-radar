@@ -9,6 +9,9 @@ const actions=[
   {name:"indoor recreation",pattern:/\b(?:jeux? interieur\w*|loisirs? interieur\w*|amusement interieur|guerre interieur|golf interieur|indoor (?:games?|recreation|amusement))\b/iu},
   {name:"housing",pattern:/\b(?:habitation|housing|vivienda|logements?)\b/iu},
 ];
+function actionText(name:string, text:string):string {
+  return name==="demolition"?text.replace(/\b(?:comite de demolition|demolition committee|comite de demolicion)\b/giu,"committee"):text;
+}
 /** Conservative relation checks for administrative proposals. No geocoding:
  * only named anchors present together with the action in a cited excerpt count.
  */
@@ -31,30 +34,45 @@ export function administrativeProjectIssues(draft:GeneratedCreativeDraft,facts:r
   function check(fields:(string|undefined)[],selected:readonly CreativeKeyFact[],unitOrder?:number){
     const sources=selected.map(fact=>({copy:normalized(evidence(fact)),anchors:anchors(evidence(fact))}));
     const allSource=sources.map(s=>s.copy).join(" ");
-    const allAnchors=anchors(fields.filter(Boolean).join(" "));
+
     const add=(code:string,message:string)=>{
       if(!issues.some(issue=>issue.code===code&&issue.unitOrder===unitOrder))issues.push({code,severity:"blocker",...(unitOrder===undefined?{}:{unitOrder}),message});
     };
     // Sentence / explicit contrast boundaries separate independently attributed
     // dossiers. Never split a bare "and": it can assert a false relationship.
-    const clauses=(text:string)=>text.split(/(?<=[.!?;])\s+|,?\s+(?:tandis qu[’']|pendant qu[’']|parallèlement,?\s+)|\s+et\s+(?=à l[’']ouest)/iu).filter(Boolean);
+    const clauses=(text:string)=>text.split(/(?<=[.!?;])\s+|,\s+(?=(?:un|une) (?:autre )?(?:projet|demande)\b)|\s+et\s+(?=un (?:autre )?projet\b)|,?\s+(?:tandis qu[’']|pendant qu[’']|parallèlement,?\s+)|\s+et\s+(?=à l[’']ouest)/iu).filter(Boolean);
     const allClauses=fields.filter((field):field is string=>!!field).flatMap(clauses);
+    const explicitlySeparated=/(?:\b(?:separement|distincts?|distinctes?|independamment|separately)\b|,\s+un (?:autre )?projet\b|\bet un (?:autre )?projet\b)/iu.test(normalized(fields.filter(Boolean).join(" ")));
     for(const field of allClauses){
       if(!field)continue;
       const copy=normalized(field);
       const localAnchors=anchors(field);
       for(const action of actions){
-        if(!action.pattern.test(copy))continue;
-        const relevant=sources.filter(source=>action.pattern.test(source.copy));
+        const claimCopy=actionText(action.name,copy);
+        if(!action.pattern.test(claimCopy))continue;
+        const relevant=sources.filter(source=>action.pattern.test(actionText(action.name,source.copy)));
         if(!relevant.length){add("PROJECT_ACTION_UNSUPPORTED",`The cited excerpts do not support the ${action.name} claim.`);continue;}
         const attributedElsewhere=allClauses.some(clause=>{
-          if(!action.pattern.test(normalized(clause)))return false;
+          if(!action.pattern.test(actionText(action.name,normalized(clause))))return false;
           const named=anchors(clause);
           return named.length>0 && named.every(anchor=>relevant.some(source=>source.anchors.includes(anchor)));
         });
         // An unlocated overview can refer to the explicitly attributed body.
         // An orphan claim still cannot borrow a different project's address.
-        const locations=localAnchors.length?localAnchors:attributedElsewhere?[]:allAnchors;
+        // Do not inherit an address explicitly attached to another action.
+        // Unassigned address labels remain context (e.g. a demolition title
+        // above bare housing addresses), so actual misleading pairings block.
+        const contextAnchors=anchors(allClauses.filter(clause=>{
+          const text=normalized(clause);
+          if(action.pattern.test(actionText(action.name,text)))return true;
+          const otherAction=actions.some(other=>other.name!==action.name&&other.pattern.test(actionText(other.name,text)));
+          const separateZoning=["demolition","housing"].includes(action.name)&&/\bprojet de (?:reglement|zonage)\b/iu.test(text);
+          return !explicitlySeparated||(!otherAction&&!separateZoning);
+        }).join(" "));
+        const locations=localAnchors.length?localAnchors:attributedElsewhere?[]:contextAnchors;
+        if(action.name==="demolition" && relevant.every(source=>source.anchors.length===0) && locations.length===0 && !/\bcomite de demolition\b/iu.test(copy)){
+          if(!issues.some(issue=>issue.code==="PROJECT_IDENTITY_INCOMPLETE"&&issue.unitOrder===unitOrder))issues.push({code:"PROJECT_IDENTITY_INCOMPLETE",severity:"warning",...(unitOrder===undefined?{}:{unitOrder}),message:"The demolition excerpt does not identify the property. Keep it unlocated or recover its source heading before naming or depicting the building."});
+        }
         if(locations.length && !locations.some(anchor=>relevant.some(source=>source.anchors.includes(anchor)))){
           add("PROJECT_LOCATION_MISMATCH",`The ${action.name} claim is not linked to this location in its cited excerpt. Keep separate projects separate; recover the source heading or omit the location.`);
         } else if(localAnchors.some(anchor=>!relevant.some(source=>source.anchors.includes(anchor)))){
@@ -81,7 +99,7 @@ export function administrativeProjectIssues(draft:GeneratedCreativeDraft,facts:r
     // A planned participation question needs the event evidence, not just the
     // zoning facts. Keep this editorial omission distinct from false claims.
     if(unit.role==="conclusion" && /\b(?:consultation|citoyens|participat\w*)\b/iu.test(normalized(unit.viewerQuestion??""))){
-      const eventFacts=facts.filter(fact=> /\b(?:consultation publique|public consultation|consulta publica)\b/iu.test(normalized(evidence(fact))) && /\d/u.test(evidence(fact)));
+      const eventFacts=facts.filter(fact=> /\b(?:consultation publique|assemblee publique de consultation|public consultation|consulta publica)\b/iu.test(normalized(evidence(fact))) && /\d/u.test(evidence(fact)));
       if(eventFacts.length && !selected.some(fact=>eventFacts.includes(fact))){
         issues.push({code:"PUBLIC_PARTICIPATION_CLOSING_MISSING",severity:"warning",unitOrder:unit.order,message:"The closing asks about public participation but omits the dated consultation evidence. Include the supported date and venue and cite the event fact."});
       }
@@ -101,7 +119,7 @@ export function repairPublicParticipationPlan(plan:CarouselPlan,facts:readonly C
   if(!closing || !/\b(?:consultation|citoyens|participat\w*)\b/iu.test(normalized(closing.viewerQuestion)))return plan;
   const events=facts.filter(fact=>{
     const text=fact.sourceExcerpt?.trim();
-    return !!text && /\b(?:consultation publique|public consultation|consulta publica)\b/iu.test(normalized(text)) && /\d/u.test(text);
+    return !!text && /\b(?:consultation publique|assemblee publique de consultation|public consultation|consulta publica)\b/iu.test(normalized(text)) && /\d/u.test(text);
   });
   if(events.length!==1 || closing.allowedFactIds.includes(events[0].id))return plan;
   return {...plan,slides:plan.slides.map((slide,index)=>index===plan.slides.length-1?{...slide,allowedFactIds:[events[0].id]}:slide)};
