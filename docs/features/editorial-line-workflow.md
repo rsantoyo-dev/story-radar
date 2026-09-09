@@ -279,3 +279,32 @@ Si el extracto de la solicitud no identifica el inmueble, se muestra `PROJECT_ID
 Reproducción con copia del borrador `af385e63-d904-4d3d-ba44-8f5509f8ea37`, versión 5: cero bloqueos factuales con los controles actualizados. No se cambió texto, versión ni estado del registro local.
 
 Validación del seguimiento: 501 pruebas pasan, lint y build satisfactorios. Incluye regresión del caption y del slide 2, conservación del bloqueo para títulos de demolición sobre viviendas sin separación explícita, y distinción entre comité y acción de demolición.
+
+### ELW-15 — Reparar bloqueos pendientes antes de entregar el guion
+
+**Estado:** Implementada · **Prioridad:** P0
+
+**Como** editor, **quiero** recibir las correcciones automáticas de los bloqueos detectables antes de abrir el draft, **para** concentrarme en una revisión final.
+
+- [x] Eliminar el ciclo que quitaba un CTA genérico y después insertaba otro CTA genérico bloqueado por el mismo validador. La limpieza es idempotente; el modelo debe aportar un beneficio relacionado con el tema.
+- [x] Tras generación y revisión editorial, ejecutar una última solicitud de corrección solo si quedan bloqueos. Funciona después de la rama OpenAI o de la revisión con los proveedores habituales; no añade llamadas a un borrador sin bloqueos.
+- [x] Pedir parches de texto limitados a las unidades afectadas, o a la publicación cuando el problema es global. Conservar orden, roles, hechos asignados, personajes y formato; no aceptar campos extra, destinos desconocidos ni parches duplicados.
+- [x] Enviar una sola copia de los hechos y sus evidencias, el texto necesario y los errores. No repetir el artículo, el plan ni las referencias privadas de marca/personajes. Presupuesto nominal de salida: 3.072 tokens, adaptado por el cliente Gemini existente. Una solicitud final, con los límites de reintento, tiempo y fallback de los proveedores existentes; sin bucle recursivo.
+- [x] Repetir las validaciones factuales, narrativas y de idioma sobre el resultado completo. Aplicar el parche únicamente si reduce los bloqueos deterministas sin introducir otro tipo de bloqueo. Ante fallo o parche inútil, conservar la copia anterior y explicar el resultado.
+- [x] Enviar al siguiente revisor el error estructural de la corrección rechazada, incluyendo los facts permitidos por slide. Identificar correctamente al proveedor que produjo la respuesta, en lugar de atribuir a Gemini un error de Terra.
+- [x] Registrar el intento final y el consumo devuelto. No inventar puntuaciones nuevas, aprobación humana ni resolución de hallazgos independientes que el validador no pueda comprobar. El texto corregido queda para revisión humana; las puntuaciones anteriores se identifican como previas a esa corrección.
+- [x] Cubrir con pruebas CTA genérico/ausente, estructura inmutable, nuevos datos no sustentados, error de proveedor, JSON inválido, conservación de hallazgos factuales y recorrido Gemini → Terra → Sol → reparación puntual.
+
+No garantiza que cualquier afirmación pueda repararse: cuando falta evidencia o persisten hallazgos no comprobables, la pieza conserva el bloqueo explicado. La reparación automática se integra en nuevas ejecuciones de generación; guardar una edición manual no provoca llamadas adicionales a modelos. No modifica automáticamente los borradores históricos.
+
+Caso local: se corrigió únicamente el CTA del borrador `1adb2bec-4320-4c1c-8849-4c4574d58d54` de «Labour market experiences of recent immigrants, 2019 to 2025», guardándolo como versión 3, en estado draft y con cero bloqueos deterministas. No se aprobaron ni generaron imágenes.
+
+Validación: 508 pruebas de la suite y una prueba adicional del recorrido completo pasan; lint, TypeScript y build satisfactorios. Proveedores simulados en las pruebas; la corrección puntual del registro se guardó mediante la API local autenticada. Sin cambios de esquema ni credenciales.
+
+### Seguimiento ELW-13 — Hook humano en dos frases
+
+La planificación y revisión admiten una portada con situación reconocible en el título y contraste sustentado en el subtítulo. Cuando el contraste depende de dos hallazgos, el plan debe asignar ambas evidencias a la portada y desarrollarlas después; un plan existente no autoriza al generador a importar facts ajenos a su slide. Los porcentajes pueden pasar a la siguiente slide, conservando población, periodo y base de comparación. No se infieren causalidad, secuencia ni experiencias individuales compartidas entre mediciones distintas.
+
+Caso local: «Conseguir trabajo puede ser rápido.» / «Trabajar en lo tuyo es otra historia.». El borrador de inmigración quedó como versión 5 vigente, pendiente de revisión, conservando la versión 4 aprobada. La portada cita rapidez y desajuste del campo de estudios; la segunda slide conserva el 42.5% y la comparación con el 31.3%, y la cuarta desarrolla sobrecalificación y campo de estudios como medidas distintas. No se generaron imágenes.
+
+Validación: cero bloqueos deterministas sobre la copia preparada para guardar y confirmación de la versión mediante la API local. Prueba del recorrido de generación con proveedores simulados, lint y build satisfactorios. La preferencia editorial en el prompt no garantiza un nivel de engagement ni una selección idéntica en cada generación.

@@ -80,3 +80,8 @@ Alcance, tareas y evidencias: [feature](editorial-line-workflow.md).
 
   - priority: high
   - tags: [creative, providers, completed]
+
+### ELW-15 — Reparar bloqueos pendientes antes de entregar el guion
+
+  - priority: high
+  - tags: [creative, factuality, completed]

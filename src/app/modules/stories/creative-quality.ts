@@ -479,30 +479,10 @@ function repairConversionGoalCtas(
   delete repaired.callToAction;
   if (matchingCta) {
     closing.ctaQuestion = matchingCta;
-  } else if (
-    goal === "followers" &&
-    // Only for a language this repair can actually write. Any other profile
-    // language would get an English CTA that no language check would catch.
-    (isSpanishProfileLanguage(language) || isEnglishProfileLanguage(language)) &&
-    !draftLooksLikeSensitiveCoverage(draft) &&
-    (closing.role === "conclusion" ||
-      closing.role === "call-to-action" ||
-      closing.editorialGoal === "conclude" ||
-      closing.editorialGoal === "debate")
-  ) {
-    // The model routinely omits the follow request on routine stories. Insert a
-    // benefit-led default rather than surface a blocker; an editor can refine it.
-    closing.ctaQuestion = defaultFollowCta(language);
   } else {
     delete closing.ctaQuestion;
   }
   return repaired;
-}
-
-function defaultFollowCta(language?: string): string {
-  return isSpanishProfileLanguage(language)
-    ? "Síguenos para entender qué significa para ti cada novedad del tema."
-    : "Follow to see what each update on this topic means for you.";
 }
 
 function localizedDebateQuestion(language?: string): string {

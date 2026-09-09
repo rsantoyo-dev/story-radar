@@ -1,3 +1,4 @@
+import { repairRemainingCreativeBlockers, FINAL_REPAIR_INSTRUCTION, finalRepairSchema } from "./creative-final-repair";
 import { requestCreativeGemini, GeminiOutputLimitError, GeminiDeadlineError, failedGeminiUsage } from "./creative-gemini-request";
 import { repairPublicParticipationPlan } from "./creative-project-grounding";
 import "server-only";
@@ -134,12 +135,15 @@ const HUMAN_TENSION_POLICY = `Administrative project grounding:
 
 Clean cover and earned curiosity:
 - The cover headline opens ONE supported question or tension, not a list of topics. Aim for 4-7 words in space-delimited languages, normally at most 9; necessary qualifiers, a clear subject and accurate names outrank brevity. Adapt naturally to the profile language. Never clip a sentence or remove "could", "proposed", "about" or an essential scope merely to fit.
+- A supported two-part hook may use headline for the recognizable situation and subheadline for the unresolved contrast. Keep each line short; the subheadline need not be a statistical summary. Example ONLY when the source supports both employment speed and professional mismatch: "Finding work can be quick." / "Working in your field is another story." Preserve "can"; do not imply all immigrants find work quickly or that the same people experienced both findings. Localize naturally, and never reuse this employment example for an unrelated story.
 - Compare three concise candidates silently, using different evidence-supported curiosity mechanisms. Select for immediate comprehension, one specific reason to swipe, and an answer the next slides actually deliver. Short generic teasers ("Everything changes", "You need to see this") are not strong hooks. Do not claim a guaranteed 10/10 or engagement outcome.
 - Use at most one short context line beneath the headline. Put secondary dossiers, technical identifiers, exhaustive lists and explanation on the next slides. Normally omit cover body when the context line already establishes scope; never render headline, subheadline and a paragraph repeating the same premise. Reserve prominent whitespace and one focal visual; visualDirection must not add extra written labels.
 - During critique and rewrite, treat COVER_HOOK_TOO_LONG and COVER_INTRO_DENSE as requests for a semantic rewrite, not truncation. Preserve the selected facts and framing without promising effects the source does not establish.
 
 Evidence-led human relevance:
 - Before choosing a hook, look for a supported contrast: positive result with a real difficulty, opportunity with a barrier, integration with an obstacle, or progress with a documented personal cost. When both sides are central to the source and compatible with the selected framing strategy, prioritize this tension over a headline that merely repeats a percentage. Explain the chosen evidence pair in the existing rationale; if there is no supported pair, use another evidence-led structure.
+- At brief-planning time, a contrast hook needs both supporting fact IDs in the cover allowedFactIds (within its two-fact budget), plus later slides that substantiate each side. Do not plan a speed-only cover and then ask the writer to introduce professional mismatch from an unassigned fact. During draft generation/rewrite, respect an existing plan: use a supported hook within its allowed facts instead of importing another fact.
+- Put detailed percentages and their full population/time qualifiers on the first evidence slide when a qualitative cover carries the tension more clearly. Moving a number off the cover must not remove the finding from the carousel or leave a later comparison without its baseline. The closing must resolve the contrast, not simply repeat the cover.
 - Preserve the cohort, denominator, time period, and measurement of each statistic. Separate findings may illuminate a contrast but do not prove that the same people experienced both outcomes, that one caused the other, or that the outcomes occurred in sequence. For example, finding a first job quickly and working outside one's field are distinct measures unless the source explicitly links them.
 - Emotion comes from a recognizable situation, not invented testimony. Never infer frustration, humiliation, sacrifice, regret, or emotional cost from a statistic. Never depict an invented person or the brand character as a real study participant or give them a fabricated personal history.
 - Give each slide a distinct reward: opening tension, evidence of the advance, the documented barrier, a supported implication, then resolution. This is a possible arc, not a required five-slide template. Do not repeat the cover's full statistic on slide 2 or repeat a comparison at the end merely to fill slides. Keep necessary qualifiers visible where the number is used.
@@ -481,7 +485,34 @@ export async function generateCreativeBrief({
   }
 }
 
-export async function generateCreativeDraft({
+export async function generateCreativeDraft(options: GenerateDraftOptions): Promise<GeneratedCreativeDraftResult> {
+  const generated = await generateReviewedCreativeDraft(options);
+  const repaired = await repairRemainingCreativeBlockers(generated.draft, {
+    format: options.format,
+    keyFacts: options.brief.keyFacts,
+    language: options.profile.language,
+    conversionGoal: options.profile.conversionGoal,
+    framingStrategy: options.profile.framingStrategy,
+    topic: options.topic,
+  }, (contents) => generateJson({
+    apiKey: options.apiKey,
+    paidGeminiApiKey: options.paidGeminiApiKey,
+    model: options.model,
+    primaryProvider: options.primaryProvider,
+    groqApiKey: options.groqApiKey,
+    groqModel: options.groqModel,
+    cloudflareAiAccountId: options.cloudflareAiAccountId,
+    cloudflareAiApiToken: options.cloudflareAiApiToken,
+    cloudflareAiModel: options.cloudflareAiModel,
+    systemInstruction: FINAL_REPAIR_INSTRUCTION,
+    schema: finalRepairSchema,
+    contents,
+    maxOutputTokens: 3_072,
+  }));
+  return { ...generated, draft: repaired.draft, usage: sumCreativeAiUsage(generated.usage, repaired.usage) };
+}
+
+async function generateReviewedCreativeDraft({
   apiKey,
   paidGeminiApiKey,
   model,
@@ -1038,6 +1069,16 @@ async function runOpenAiEditorialQualityGate({
       console.warn(
         `OpenAI editorial review-and-rewrite ${model} failed; trying the bounded fallback: ${lastReason}`,
       );
+      if (error instanceof CreativeContentResponseError) {
+        previousFeedback = mergeCreativeQualityIssues([
+          ...previousFeedback,
+          {
+            code: "EDITORIAL_REWRITE_INVALID",
+            severity: "warning",
+            message: `The previous rewrite was discarded: ${lastReason}. Correct this constraint while preserving the supplied slide plan.`,
+          },
+        ]);
+      }
       availabilityIssues.push({
         code: "EDITORIAL_REVIEW_ATTEMPT_FAILED",
         severity: "warning",
@@ -2663,7 +2704,7 @@ function parseCreativeDraft(
         factIds.some((factId) => !plannedSlide.allowedFactIds.includes(factId))
       ) {
         throw new CreativeContentResponseError(
-          `Gemini used an unplanned fact on carousel slide ${index + 1}`,
+          `${provider} used an unplanned fact on carousel slide ${index + 1}; allowed facts: ${plannedSlide.allowedFactIds.join(", ")}`,
         );
       }
 

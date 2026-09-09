@@ -3018,6 +3018,9 @@ function DraftEditor({
         deterministicWarnings,
       ),
   );
+  const hasFinalCopyRepair = qualityReview?.issues.some(
+    (issue) => issue.code === "FINAL_REPAIR_APPLIED",
+  );
 
   function updateUnit(index: number, unit: CreativeUnit) {
     const units = normalizeContinuationCues(
@@ -3158,19 +3161,27 @@ function DraftEditor({
           <strong>
             Automated quality review · {qualityReviewResolvedByCurrentValidation
               ? "current deterministic checks passed"
+              : !qualityReviewIsCurrent
+              ? "needs re-review after edits"
               : qualityReview.status === "needs-review"
-              ? "critic unavailable — needs human review"
-              : qualityReviewIsCurrent
-                ? qualityReview.status === "accepted"
+              ? hasFinalCopyRepair
+                ? "corrected — needs final human review"
+                : "critic unavailable — needs human review"
+              : qualityReview.status === "accepted"
                 ? `${qualityReview.scores.overall}/100 accepted`
-                : qualityReview.status.replaceAll("-", " ")
-                : "needs re-review after edits"}
+                : qualityReview.status.replaceAll("-", " ")}
           </strong>
           {qualityReviewResolvedByCurrentValidation ? (
             <p>
               The saved score was reduced by findings that are no longer
               present in the current factual check. This version can proceed
               to approval.
+            </p>
+          ) : hasFinalCopyRepair ? (
+            <p>
+              A targeted correction was applied after the editorial review.
+              Previous critic scores describe the earlier copy. Check the
+              current draft and the recalculated findings below before approval.
             </p>
           ) : qualityReview.status !== "needs-review" ? (
             <p>
@@ -3195,7 +3206,7 @@ function DraftEditor({
                   : " · repair not attempted"}
             </p>
           ) : null}
-          {!qualityReviewIsCurrent && qualityReview.status === "needs-review" ? (
+          {!qualityReviewIsCurrent && qualityReview.status === "needs-review" && !hasFinalCopyRepair ? (
             <p>
               The critic timed out before scoring the generated copy. Deterministic checks below apply to the current edited version.
             </p>

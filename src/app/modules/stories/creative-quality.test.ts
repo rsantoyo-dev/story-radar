@@ -547,7 +547,7 @@ test("normalizes one carousel CTA to the final slide for every conversion goal",
   });
 });
 
-test("removes a competing/stacked action, and gives a routine followers story a default follow CTA", () => {
+test("removes competing CTAs without manufacturing a generic follow CTA", () => {
   const competing = structuredClone(draft);
   competing.units.at(-1)!.editorialGoal = "conclude";
   competing.units.at(-1)!.ctaQuestion = "Comment with your experience.";
@@ -558,12 +558,8 @@ test("removes a competing/stacked action, and gives a routine followers story a 
     "English",
     "followers",
   );
-  // The comment CTA conflicts with followers; a routine story then gets the
-  // benefit-led follow default instead of being left with no CTA.
-  assert.match(
-    repairedCompeting.units.at(-1)!.ctaQuestion ?? "",
-    /^Follow to see what each update/,
-  );
+  // A model must supply a topic-specific CTA; deterministic repair cannot invent one.
+  assert.equal(repairedCompeting.units.at(-1)!.ctaQuestion, undefined);
 
   // A non-followers goal keeps the old behavior: the conflicting CTA is dropped.
   const stacked = structuredClone(draft);
@@ -589,10 +585,8 @@ test("removes a competing/stacked action, and gives a routine followers story a 
     "English",
     "followers",
   );
-  assert.match(
-    repairedMissing.units.at(-1)!.ctaQuestion ?? "",
-    /^Follow to see what each update/,
-  );
+  assert.equal(repairedMissing.units.at(-1)!.ctaQuestion, undefined);
+  assert.deepEqual(repairDeterministicCreativeCopy(repairedMissing, "carousel", facts, "English", "followers"), repairedMissing);
 
   // Sensitive coverage is left without an invented CTA.
   const sensitiveMissing = structuredClone(missing);
@@ -721,7 +715,7 @@ test("preserves an unrecognized-language CTA for critic review", () => {
   );
 });
 
-test("replaces an unrecognized followers CTA with the benefit-led follow default", () => {
+test("leaves an unrecognized followers CTA for a targeted rewrite rather than adding boilerplate", () => {
   const english = structuredClone(draft);
   english.units.at(-1)!.editorialGoal = "conclude";
   english.units.at(-1)!.ctaQuestion = "Review this information later.";
@@ -732,10 +726,7 @@ test("replaces an unrecognized followers CTA with the benefit-led follow default
     "English",
     "followers",
   );
-  assert.match(
-    repaired.units.at(-1)!.ctaQuestion ?? "",
-    /^Follow to see what each update/,
-  );
+  assert.equal(repaired.units.at(-1)!.ctaQuestion, undefined);
 });
 
 test("never turns a leaked-language conclude CTA into a debate question", () => {
@@ -753,10 +744,9 @@ test("never turns a leaked-language conclude CTA into a debate question", () => 
     "followers",
   );
   const cta = repaired.units.at(-1)!.ctaQuestion ?? "";
-  // The leaked English CTA is dropped; a routine Spanish followers story gets
-  // the Spanish follow default, never a debate question.
+  // Drop the leaked English CTA; a targeted rewrite must supply the follow value.
   assert.doesNotMatch(cta, /\?/u);
-  assert.match(cta, /^Síguenos para/u);
+  assert.equal(cta, "");
 });
 
 test("repairs a malformed concept-derived CTA without leaking structural numbers", () => {
