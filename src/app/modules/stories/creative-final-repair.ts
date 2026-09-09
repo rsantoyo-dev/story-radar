@@ -153,6 +153,7 @@ export async function repairRemainingCreativeBlockers(
       ...candidate,
       qualityReview: {
         ...previousReview,
+        ...(candidate !== original ? { hookSelection: undefined } : {}),
         scores,
         status: blockers(issues).length ? "rejected" : "needs-review",
         repairPasses: (previousReview?.repairPasses ?? 0) + 1,

@@ -1,4 +1,5 @@
 "use client";
+import { HOOK_CHECKS, HOOK_CHECK_LABELS } from "./modules/stories/creative-hook-policy";
 import { requestsGeographicReconstruction } from "./modules/stories/creative-evidence-guardrails";
 import { imageTextNeedsUpdate } from "./modules/stories/creative-image-text-sync";
 
@@ -3170,7 +3171,7 @@ function DraftEditor({
               : qualityReview.status === "needs-review"
               ? hasFinalCopyRepair
                 ? "corrected — needs final human review"
-                : "critic unavailable — needs human review"
+                : qualityReview.critic ? "editorial target needs review" : "critic unavailable — needs human review"
               : qualityReview.status === "accepted"
                 ? `${qualityReview.scores.overall}/100 accepted`
                 : qualityReview.status.replaceAll("-", " ")}
@@ -3197,9 +3198,21 @@ function DraftEditor({
             </p>
           ) : (
             <p>
-              The automated critic did not complete a review. Read the draft and the narrative checks below, then approve it explicitly if it is correct.
+              {qualityReview.critic ? "The editor returned a draft with unresolved editorial findings. Review the opening and the findings below before approving." : "The automated critic did not complete a review. Read the draft and the narrative checks below, then approve it explicitly if it is correct."}
             </p>
           )}
+          {qualityReview.hookSelection ? <details>
+            <summary>Hook comparison · {qualityReviewIsCurrent && !hasFinalCopyRepair ? "this draft" : "previous copy"}</summary>
+            <p>Editorial assessments, not engagement predictions. Alternatives are review notes and are not included in the images.</p>
+            <ol>{qualityReview.hookSelection.candidates.map((candidate, index) => <li key={index}>
+              <strong>{index === qualityReview.hookSelection!.selectedIndex ? "Selected · " : "Alternative · "}{candidate.headline}</strong>
+              {candidate.subheadline ? <p>{candidate.subheadline}</p> : null}
+              <p>{candidate.reason}</p>
+              <p>Reader question: {candidate.readerQuestion} · Answer in {format === "meme" ? "this frame / caption" : `slide ${candidate.payoffUnitOrder}`}.</p>
+              <p>Source support: {candidate.supported ? "passes editorial review" : "insufficient"} · {HOOK_CHECKS.filter(key => candidate.checks[key]).length}/5 checks · Facts: {candidate.factIds.join(", ")}</p>
+              <ul>{HOOK_CHECKS.map(key => <li key={key}>{candidate.checks[key] ? "✓" : "Needs work:"} {HOOK_CHECK_LABELS[key]}</li>)}</ul>
+            </li>)}</ol>
+          </details> : null}
           {qualityReview.critic ? (
             <p>
               Critic: {qualityReview.critic.model}
@@ -3210,7 +3223,7 @@ function DraftEditor({
                   : " · repair not attempted"}
             </p>
           ) : null}
-          {!qualityReviewIsCurrent && qualityReview.status === "needs-review" && !hasFinalCopyRepair ? (
+          {!qualityReviewIsCurrent && qualityReview.status === "needs-review" && !qualityReview.critic && !hasFinalCopyRepair ? (
             <p>
               The critic timed out before scoring the generated copy. Deterministic checks below apply to the current edited version.
             </p>

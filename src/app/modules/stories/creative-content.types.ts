@@ -1,3 +1,4 @@
+import type { CreativeHookSelection } from "./creative-hook-policy";
 export const MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS = 30_000;
 
 import type {
@@ -706,6 +707,8 @@ export type CreativeQualityIssue = {
 };
 
 export type CreativeQualityReview = {
+  /** Evaluated alternatives for this exact draft revision; never approved copy by themselves. */
+  hookSelection?: CreativeHookSelection;
   // "needs-review": the automated critic could not run; the draft awaits
   // explicit human approval instead of being rejected by a service outage.
   status: "accepted" | "needs-repair" | "needs-review" | "rejected";

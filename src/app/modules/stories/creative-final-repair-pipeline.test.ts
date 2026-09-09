@@ -64,7 +64,13 @@ test("Gemini → invalid Terra rewrite → Sol → targeted Gemini repair preser
               issue.message.includes("OpenAI terra-test used an unplanned fact on carousel slide 2; allowed facts: fact-1")));
             revised.units[1].ctaQuestion = draft.units[1].ctaQuestion;
           }
-          return { text: JSON.stringify({ verdict: "revised", scores, issues: [], draft: revised }),
+          return { text: JSON.stringify({ verdict: "revised", scores, issues: [], draft: revised, hookSelection: {
+            selectedIndex: 0, candidates: [revised.units[0].headline, "Tu empleo puede diferir de tu formación", "Empleo y formación no siempre coinciden"].map(headline => ({
+              headline, subheadline: "", factIds: ["fact-1"], supported: true,
+              checks: { clear: true, tension: true, consequence: true, human: true, curiosity: true },
+              readerQuestion: "¿Cómo se relacionan empleo y formación?", payoffUnitOrder: 2, reason: "Una distinción respaldada por la fuente.",
+            })),
+          } }),
             usage: { promptTokens: 5, outputTokens: 5, thoughtsTokens: 0, totalTokens: 10 } };
         },
       };
@@ -87,5 +93,6 @@ test("Gemini → invalid Terra rewrite → Sol → targeted Gemini repair preser
   assert.equal(result.draft.units[1].factIds.join(","), "fact-1");
   assert.equal(result.usage.totalTokens, 80);
   assert.equal(result.draft.qualityReview?.status, "needs-review");
+  assert.equal(result.draft.qualityReview?.hookSelection, undefined, "A final factual/CTA patch invalidates the previous hook assessment");
   assert.ok(!result.draft.qualityReview?.issues.some((issue) => issue.severity === "blocker"));
 });
