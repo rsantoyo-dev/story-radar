@@ -522,10 +522,10 @@ function localizedEvidenceFallback(
 }
 
 const GENERIC_CTA_PATTERN =
-  /^(?:[¿¡\s]*(?:what stands out(?: most)? to you|what do you think|thoughts|what surprised you(?: most)?|qué te sorprendió más(?: de esta información)?|qué opinas|cuál es tu opinión)[?.!¿¡\s]*|where would you apply how\b.*\bfirst\?|how would\b.+\bchange your approach\?|¿cómo cambiaría\b.+\btu enfoque\?)$/iu;
+  /^(?:[¿¡\s]*(?:what stands out(?: most)? to you|what do you think|what does this mean for your career|qué significa esto para tu carrera|thoughts|what surprised you(?: most)?|qué te sorprendió más(?: de esta información)?|qué opinas|cuál es tu opinión)[?.!¿¡\s]*|where would you apply how\b.*\bfirst\?|how would\b.+\bchange your approach\?|¿cómo cambiaría\b.+\btu enfoque\?)$/iu;
 
 const GENERIC_FOLLOW_CTA_PATTERN =
-  /^(?:follow(?: us| this account)? for more(?: content| updates)?|síguenos?(?: en esta cuenta)? para (?:más|más contenido|más información|más novedades))[.!¡\s]*$/iu;
+  /^(?:follow to see what each update on this topic means for you|síguenos para entender qué significa para ti cada novedad del tema|follow(?: us| this account)? for more(?: content| updates)?|síguenos?(?: en esta cuenta)? para (?:más|más contenido|más información|más novedades))[.!¡\s]*$/iu;
 
 function isGenericFollowCallToAction(value: string): boolean {
   return GENERIC_FOLLOW_CTA_PATTERN.test(value.trim());

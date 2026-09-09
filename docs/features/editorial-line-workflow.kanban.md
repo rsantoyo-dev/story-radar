@@ -55,3 +55,18 @@ Alcance, tareas y evidencias: [feature](editorial-line-workflow.md).
 
   - priority: high
   - tags: [editorial-lines, creative, completed]
+
+### ELW-10 — Priorizar tensión sustentada y CTA concreto
+
+  - priority: high
+  - tags: [editorial-lines, creative, completed]
+
+### ELW-11 — Distinguir conteos de listas y proporciones estimadas
+
+  - priority: high
+  - tags: [creative, factuality, completed]
+
+### ELW-12 — Separar expedientes municipales y preservar su estado
+
+  - priority: high
+  - tags: [creative, factuality, completed]

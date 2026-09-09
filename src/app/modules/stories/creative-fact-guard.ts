@@ -1,3 +1,4 @@
+import { administrativeProjectIssues } from "./creative-project-grounding";
 import { completeRoadNoticeExcerpt } from "./road-notice-evidence";
 import type {
   CreativeFactClaimGuard,
@@ -318,7 +319,7 @@ export function deterministicFactQualityIssues(
       return [guarded.id, guarded] as const;
     }),
   );
-  const issues: CreativeQualityIssue[] = [];
+  const issues: CreativeQualityIssue[] = administrativeProjectIssues(draft,keyFacts);
 
   const draftCopy = [
     draft.concept,
@@ -450,7 +451,7 @@ export function deterministicFactQualityIssues(
     if (
       selectedFacts.some(
         (fact) =>
-          factUsesNumberInCopy(fact, visibleCopy) &&
+          factUsesEstimateNumberInCopy(fact, visibleCopy) &&
           factRequiresEstimateQualifier(fact),
       ) && !ESTIMATE_PATTERN.test(visibleCopy)
     ) {
@@ -519,7 +520,7 @@ export function deterministicFactQualityIssues(
       factUsesNumberInCopy(fact, cue),
     );
     if (
-      cueNumberFacts.some(factRequiresEstimateQualifier) &&
+      cueNumberFacts.some(fact=>factRequiresEstimateQualifier(fact) && factUsesEstimateNumberInCopy(fact,cue)) &&
       !ESTIMATE_PATTERN.test(cue)
     ) {
       issues.push({
@@ -1288,7 +1289,7 @@ function repairContinuationCues(
       cue &&
       cueFacts.some(
         (fact) =>
-          factUsesNumberInCopy(fact, cue) &&
+          factUsesEstimateNumberInCopy(fact, cue) &&
           factRequiresEstimateQualifier(fact),
       ) &&
       !ESTIMATE_PATTERN.test(cue)
@@ -2188,6 +2189,17 @@ function factUsesNumberInCopy(fact: CreativeKeyFact, copy: string): boolean {
   return (fact.claimGuard?.allowedNumbers ?? []).some((number) =>
     copyNumbers.has(number),
   );
+}
+
+// A list count is not the numerator of a population ratio. Keep the full
+// copy in unsupported-number validation; only scope this estimate check.
+function factUsesEstimateNumberInCopy(fact:CreativeKeyFact,copy:string):boolean {
+  const ratioQualifier=(fact.requiredQualifiers??[]).some(qualifier=>
+    /\b\d+\s+(?:in|out of|de cada)\s+\d+\b/iu.test(qualifier));
+  if(!ratioQualifier)return factUsesNumberInCopy(fact,copy);
+  const statisticalCopy=copy.replace(
+    /\b(?:[1-9]|10|one|two|three|four|five|six|seven|eight|nine|ten|un[oa]?|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\s+(?:barriers?|barreras?|obstacles?|obstáculos?|factors?|factores?|reasons?|razones?|steps?|pasos?)\b/giu,"");
+  return factUsesNumberInCopy(fact,statisticalCopy);
 }
 
 function factRequiresEstimateQualifier(fact: CreativeKeyFact): boolean {

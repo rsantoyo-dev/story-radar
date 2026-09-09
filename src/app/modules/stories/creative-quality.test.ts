@@ -1377,3 +1377,15 @@ test("headline repair does not promote unsupported numbers or translated source 
   const spanishRepair = repairDeterministicCreativeCopy(spanish, "carousel", facts, "Spanish");
   assert.equal(spanishRepair.units[0]!.headline, "Lo que muestran los datos");
 });
+
+test("flags abstract career questions but preserves a concrete optional experience question", () => {
+  const withCta=(ctaQuestion:string):GeneratedCreativeDraft=>({...draft,units:draft.units.map((unit,index)=>index===draft.units.length-1?{...unit,ctaQuestion}:unit)});
+  const codes=(cta:string)=>deterministicCreativeQualityIssues(withCta(cta),"carousel",facts,"Spanish").map(issue=>issue.code);
+  assert.ok(codes("¿Qué significa esto para tu carrera?").includes("GENERIC_CTA"));
+  assert.ok(!codes("¿Tu primer trabajo en Canadá tenía algo que ver con tu profesión?").includes("GENERIC_CTA"));
+});
+test("rejects the interchangeable follow fallback while allowing a topic-specific benefit", () => {
+  const codes=(ctaQuestion:string)=>deterministicCreativeQualityIssues({...draft,units:draft.units.map((unit,index)=>index===draft.units.length-1?{...unit,ctaQuestion}:unit)},"carousel",facts,"Spanish").map(issue=>issue.code);
+  assert.ok(codes("Síguenos para entender qué significa para ti cada novedad del tema.").includes("GENERIC_FOLLOW_CTA"));
+  assert.ok(!codes("Síguenos para entender los datos sobre empleo y formación de inmigrantes en Canadá.").includes("GENERIC_FOLLOW_CTA"));
+});

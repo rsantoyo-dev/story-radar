@@ -2677,3 +2677,18 @@ function unit(
     characterIds: [],
   };
 }
+
+test("a three-barrier continuation is not the approximate three-in-ten population statistic", () => {
+  const fact:CreativeKeyFact={id:"fact-barriers",statement:"Over 3 in 10 (31.7%) reported difficulties: references, contacts, and foreign experience.",
+    sourceExcerpt:"Over 3 in 10 (31.7%) reported difficulties: references, contacts, and foreign experience.",requiredQualifiers:["over 3 in 10"],attribution:"Statistics Canada"};
+  const make=(cue:string):GeneratedCreativeDraft=>({...draft,units:[
+    {...unit(1,"cover","hook","Encontrar empleo","Más de 3 de cada 10 reportaron dificultades.",[fact.id]),continuationCue:cue},
+    unit(2,"content","explain","Barreras reportadas","Más de 3 de cada 10 reportaron dificultades.",[fact.id])
+  ]});
+  const cueIssues=(cue:string)=>deterministicFactQualityIssues(make(cue),[fact]).filter(issue=>issue.message.includes("continuation cue"));
+  assert.ok(!cueIssues("Qué tres barreras frenan tu primer empleo profesional.").some(issue=>issue.code==="LOST_QUALIFIER"));
+  assert.ok(cueIssues("El 31.7% reportó dificultades.").some(issue=>issue.code==="LOST_QUALIFIER"));
+  assert.ok(cueIssues("3 de cada 10 reportaron dificultades.").some(issue=>issue.code==="LOST_QUALIFIER"));
+  assert.ok(cueIssues("Tres barreras: el 31.7% reportó dificultades.").some(issue=>issue.code==="LOST_QUALIFIER"));
+  assert.ok(cueIssues("Qué cuatro barreras se reportaron.").some(issue=>issue.code==="UNSUPPORTED_NUMBER"));
+});

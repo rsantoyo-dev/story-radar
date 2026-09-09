@@ -170,6 +170,55 @@ Este documento registra como completado el trabajo realizado en esta conversaci�
 
 **Validación:** 475 pruebas pasan. La petición de refresh devolvió cached; el GET posterior al arreglo devuelve briefIsCurrent=true con el mismo ID.
 
+### ELW-10 — Priorizar tensión sustentada y CTA concreto
+
+**Estado:** Completada · **Prioridad:** P0
+
+**Como** editor, **quiero** que el guion conecte con situaciones reconocibles, **para** generar identificación y conversación sin inventar emociones.
+
+- [x] Aplicar una política compartida al brief, generación, auditoría y reescritura.
+- [x] Priorizar avance/barrera cuando ambos estén sustentados y sean compatibles con el encuadre elegido.
+- [x] Separar cohortes, denominadores, periodos y mediciones; no atribuir dos hallazgos a las mismas personas sin evidencia.
+- [x] Evitar testimonios, emociones, causalidad o experiencias personales inventados.
+- [x] Pedir progresión narrativa y resolución sin repetir cifras para completar slides.
+- [x] Preferir preguntas experienciales concretas para el objetivo discussion, sin presuponer una vivencia negativa ni solicitar datos sensibles.
+- [x] Mantener followers/saves/shares como acciones independientes; no cambiar el objetivo ni acumular CTA.
+- [x] Detectar el fallback genérico «Síguenos para entender qué significa para ti cada novedad del tema» y preguntas abstractas de carrera.
+- [x] Versionar los prompts: brief v27, meme v22 y carousel v38. Las versiones históricas se conservan.
+
+**Ejemplo de enfoque:** «Encontrar trabajo en Canadá es un paso. Trabajar en lo tuyo es otro». Para un objetivo de conversación: «¿Tu primer trabajo en Canadá tenía algo que ver con tu profesión?». Estos ejemplos no se imponen a otras regiones o temas.
+
+**Aplicación:** crear una nueva versión de brief/draft. El cambio no reescribe un guion ya guardado ni modifica automáticamente el objetivo de conversión de la marca. La calidad emocional del próximo resultado requiere revisión editorial; las pruebas no certifican una respuesta futura del modelo.
+
+### ELW-11 — Distinguir conteos de listas y proporciones estimadas
+
+**Estado:** Completada · **Prioridad:** P0
+
+- [x] Corregir el falso positivo que asociaba «tres barreras» con «over 3 in 10».
+- [x] Conservar las comprobaciones de cifras sin evidencia y de proporciones sin calificador.
+- [x] Cubrir conteo legítimo, proporción sin calificador, porcentaje sin calificador y conteo no sustentado.
+- [x] Verificar 478 pruebas satisfactorias; no modificar decisiones humanas ni tratar la indisponibilidad del crítico como revisión aprobada.
+
+**Caso observado:** el crítico y la reescritura del draft no se ejecutaron por falta de créditos del proveedor. Es independiente del falso positivo numérico.
+
+### ELW-12 — Separar expedientes municipales y preservar su estado
+
+**Estado:** Implementada · **Prioridad:** P0
+
+- [x] Añadir bloqueos de relaciones acción/ubicación apoyadas en extractos, incluso cuando una slide cita varios fact IDs.
+- [x] Detectar propuestas presentadas como autorizaciones o cambios ejecutados.
+- [x] Distinguir requisitos de estacionamiento de eliminación física de plazas.
+- [x] Detectar impactos actuales, obligaciones y llamadas de inscripción no sustentados en este recorrido.
+- [x] Usar extractos como evidencia: una ampliación del statement no valida una dirección adicional.
+- [x] Reforzar extracción, generación y revisión: conservar encabezado, expediente, estado, lugar y horario; no representar geografía con imágenes inventadas.
+- [x] Verificar 487 pruebas, lint y build.
+
+**Corrección del piloto:** la versión 2 se conserva en el histórico. Tras detectar que la versión 3 repetía el plan anterior, se guardó mediante API autenticada la versión 4 del draft 3842be60-c45f-40ea-ba52-29fde510b502, en estado draft: cuatro unidades, vivienda separada de demolición y cierre con la consulta del 14 de septiembre. Sin aprobación automática. Se omiten localizaciones/horarios que no constan en los extractos del brief; no se completan datos desde otros expedientes.
+
+**Prevención adicional:** los prompts del brief y borrador cambian de versión para invalidar cachés de generación anteriores. La generación debe reservar el cierre para la convocatoria cuando sea central; una advertencia detecta cierres cuya pregunta trata de participación pero cuyos facts omiten la consulta fechada. Esta advertencia no reescribe automáticamente el contenido.
+
+**Límite:** las reglas deterministas reconocen patrones administrativos concretos, con cobertura probada del caso municipal en francés y términos adicionales en inglés/español. No constituyen una comprensión semántica universal ni certifican toda relación posible. Un lugar ausente del extracto debe recuperarse de la fuente o excluirse; no se geocodifica ni se completa por inferencia. Se conserva la revisión editorial.
+
 ## Evidencia de entrega y límites
 
 - Suite de **474 pruebas** satisfactoria tras integrar inicialización de Actualidad, compatibilidad y configuración IA por línea.
@@ -183,3 +232,9 @@ Este documento registra como completado el trabajo realizado en esta conversaci�
 ## Fuera de este cierre
 
 Programación por línea, mezcla editorial automática, paginación ampliada, reconciliación de ejecuciones interrumpidas y validación integral de publicaciones permanecen fuera de esta entrega. El seguimiento del alcance original continúa en el feature base; LINE-08 no se marca como implementada.
+
+### Seguimiento ELW-12 — Expedientes separados y cierre de consulta
+
+Se corrigen falsos positivos al comparar acciones y ubicaciones: las frases y contrastes explícitos se evalúan por separado y los números cívicos de avenidas numeradas se comparan independientemente del orden. Siguen bloqueadas las direcciones trasladadas a otra acción y los números cívicos incompatibles. Un plan nuevo cuya pregunta final pide participación recibe el fact de la convocatoria cuando hay exactamente una consulta fechada con extracto; con varias no se selecciona por inferencia.
+
+El nuevo borrador `74fb0704-ff90-4ab7-9ded-398887bf01c6` quedó guardado en versión 3, pendiente de revisión, con cierre fechado, ratio normativo y dossiers separados. Se conserva el histórico y no se regeneran ni aprueban imágenes. Las revisiones IA históricas pueden quedar obsoletas tras editar; no equivalen a una revisión de la nueva versión.
