@@ -1644,7 +1644,7 @@ async function composeDraftPlaceVisuals(topicId: string, draft: CreativeDraft, b
   if (outputAspectRatioForDraft(draft) !== "4:5") throw new CreativeContentConflictError("Typography composition currently requires 4:5.");
   requireNarrativeQuality(draft, brief.keyFacts, brief.profileSnapshot.language, brief.profileSnapshot.conversionGoal, brief.profileSnapshot.framingStrategy);
   await assertEditorialEvidence(topicId, draft);
-  const configuration = { ...getFalImageRuntimeConfig("4:5", quality), promptVersion: `${getFalImageRuntimeConfig("4:5", quality).promptVersion}:place-visual-v1` };
+  const configuration = { ...getFalImageRuntimeConfig("4:5", quality), promptVersion: `${getFalImageRuntimeConfig("4:5", quality).promptVersion}:place-visual-v2` };
   const brand = await resolveCreativeBrandGeneration(topicId, draft);
   const existing = await findCurrentCreativeAssetBatch(draft.id, draft.version, { provider: configuration.provider, model: configuration.model, promptVersion: configuration.promptVersion, imageQuality: quality, brandInputHash: brand.inputHash });
   if (existing && existing.status !== "stale") return { outcome: "existing", batch: existing, configuration: publicConfiguration(configuration) };
@@ -1653,7 +1653,7 @@ async function composeDraftPlaceVisuals(topicId: string, draft: CreativeDraft, b
   const visuals = await preparePlaceVisuals(topicId, draft, profile, brief.keyFacts, story?.url || "");
   let batch = await createCreativeAssetBatch({ draftId: draft.id, draftVersion: draft.version, outputAspectRatio: "4:5", imageQuality: quality, width: 1080, height: 1350,
     identity: { provider: configuration.provider, model: configuration.model, promptVersion: configuration.promptVersion, imageQuality: quality, brandInputHash: brand.inputHash },
-    assets: draft.units.map(unit => ({ unitOrder: unit.order, unitRole: unit.role, unitSnapshot: { ...unit, roadMapEvidence: undefined, placeVisual: visuals.get(unit.order)?.evidence }, prompt: "Deterministic typography preserving saved draft copy; no location generated", expectedText: [unit.headline, unit.subheadline, unit.body, unit.ctaQuestion].filter(Boolean).join("\n"), generationMode: "text-to-image", providerEndpoint: DRAFT_TYPOGRAPHY_ENDPOINT, referenceSnapshot: [], referenceInputHash: brand.inputHash })) });
+    assets: draft.units.map(unit => ({ unitOrder: unit.order, unitRole: unit.role, unitSnapshot: { ...unit, roadMapEvidence: undefined, placeVisual: visuals.get(unit.order)?.evidence }, prompt: "Deterministic editorial composition preserving saved copy; verified location material or conceptual symbols; no place generated", expectedText: [unit.headline, unit.subheadline, unit.body, unit.ctaQuestion].filter(Boolean).join("\n"), generationMode: "text-to-image", providerEndpoint: DRAFT_TYPOGRAPHY_ENDPOINT, referenceSnapshot: [], referenceInputHash: brand.inputHash })) });
   for (const asset of batch.assets) {
     try {
       const output = await renderDraftTypography(asset.unitSnapshot, profile, visuals.get(asset.unitOrder)?.bytes);

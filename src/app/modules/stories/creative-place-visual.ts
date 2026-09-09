@@ -1,7 +1,8 @@
 import type { PlaceEvidence, PlaceMention, PhotoEvidence, DocumentarySnapshot } from "./creative-documentary";
 import type { CreativeUnit, CreativeKeyFact } from "./creative-content.types";
+import type { SourceLocation } from "./source-location";
 
-export const PLACE_VISUAL_VERSION = "place-visual-v1";
+export const PLACE_VISUAL_VERSION = "place-visual-v2";
 export type PlaceVisualEvidence = {
   version: typeof PLACE_VISUAL_VERSION;
   representation: "photo" | "map" | "typography";
@@ -15,6 +16,7 @@ export type PlaceVisualEvidence = {
   adapter?: string;
   adapterEvidence?: CreativeUnit["roadMapEvidence"];
   sourceUrl?: string;
+  locationAnchor?: SourceLocation & { providerSourceUrl?: string; coordinates?: { latitude: number; longitude: number } };
 };
 export type PreparedPlaceVisual = { evidence: PlaceVisualEvidence; bytes?: Buffer };
 export function unitSource(unit: CreativeUnit, facts: CreativeKeyFact[]): string {

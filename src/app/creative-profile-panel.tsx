@@ -22,6 +22,7 @@ import {
   type CreativeProfile,
 } from "./modules/stories/creative-content.types";
 import styles from "./creative-draft-workspace.generated.module.css";
+import { GoogleMapsPreviewPanel } from "./google-maps-preview-panel";
 
 const FRAMING_STRATEGY_LABELS = {
   auto: "Auto (brief decides)",
@@ -411,6 +412,7 @@ export function CreativeProfilePanel({
             infer these. A validated location is linked later, from place
             identification.
           </p>
+          <GoogleMapsPreviewPanel key={topicId} topicId={topicId} secret={secret} profile={draft} disabled={disabled} />
         </Group>
 
         <Group title="Voice">

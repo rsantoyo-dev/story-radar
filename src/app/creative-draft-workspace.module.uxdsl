@@ -3092,3 +3092,37 @@
   flex-wrap: wrap;
   gap: density(2);
 }
+
+.mapsPreviewPanel {
+  @ds-surface(flat primary radius(2));
+  @ds-typo(body);
+  padding: density(3);
+  border: border(1, palette(primary-main), solid);
+}
+
+.mapsPreviewPanel summary { cursor: pointer; font-weight: 600; }
+.mapsPreviewActions { display: flex; flex-wrap: wrap; gap: density(2); }
+.mapsPreviewActions button { @ds-button(outlined primary density(2) radius(2)); }
+.mapsPreviewActions button:disabled { opacity: 0.5; cursor: not-allowed; }
+.mapsPreviewResults { display: flex; flex-direction: column; gap: density(2); margin-top: density(3); }
+.mapsPreviewGrid { display: grid; grid-template-columns: xs(1fr) lg(repeat(2, minmax(0, 1fr))); gap: density(3); }
+.mapsPreviewComposition {
+  @ds-surface(contained light radius(2));
+  aspect-ratio: 4 / 5;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: density(3);
+  gap: density(2);
+  color: palette(primary-dark);
+  border: border(1, palette(neutral-main), solid);
+}
+.mapsPreviewComposition h3 { @ds-typo(h6); margin: density(1) 0; }
+.mapsPreviewComposition p { @ds-typo(caption); margin: density(1) 0; }
+.mapsPreviewComposition footer { @ds-typo(caption); overflow-wrap: anywhere; }
+/* Reserve the image's own height even when the card's text exceeds its target ratio.
+   A shrinking flex area with percentage image heights can collapse or cover the footer. */
+.mapsPreviewMedia { flex: 0 0 auto; width: 100%; display: grid; place-items: center; }
+.mapsPreviewMedia img { display: block; width: 100%; height: auto; object-fit: contain; }
+/* Provider-required text treatment; do not restyle the attribution as brand copy. */
+.mapsAttribution { font: 400 14px Arial, sans-serif; color: #1f1f1f; background: #fff; white-space: nowrap; padding: density(1); }

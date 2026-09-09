@@ -20,6 +20,24 @@ export async function renderOpenMap(target: MapTarget): Promise<Buffer> {
   const hit = cache.get(key); if (hit && hit.until > Date.now()) return hit.bytes;
   const active = pending.get(key); if (active) return active;
   const work = (async () => {
+    const data = await fetchOpenMapData(query);
+    const bytes = await drawOpenMap(data, target);
+    if (cache.size >= 16) cache.delete(cache.keys().next().value!);
+    cache.set(key,{until:Date.now()+30*60_000,bytes});return bytes;
+  })().finally(()=>pending.delete(key));
+  pending.set(key,work);return work;
+}
+
+const queryCache = new Map<string, { until: number; data: unknown }>();
+const queryPending = new Map<string, Promise<unknown>>();
+/** Shared bounded transport for source-address resolution and map geometry. */
+export async function fetchOpenMapData(query: string): Promise<unknown> {
+  const url = new URL(process.env.CREATIVE_GEO_OVERPASS_URL || "https://overpass-api.de/api/interpreter");
+  if (url.protocol !== "https:" || url.username || url.password || url.hash) throw new Error("Invalid configured map endpoint");
+  const key = createHash("sha256").update(url.toString() + query).digest("hex");
+  const hit = queryCache.get(key); if (hit && hit.until > Date.now()) return hit.data;
+  const active = queryPending.get(key); if (active) return active;
+  const work = (async () => {
     const day = new Date().toISOString().slice(0,10);
     if (quota.day !== day) quota = { day, calls: 0 };
     if (quota.calls >= 8) throw new Error("Open map daily budget exhausted");
@@ -33,12 +51,16 @@ export async function renderOpenMap(target: MapTarget): Promise<Buffer> {
         res.on("error",reject);res.on("end",()=>resolve(Buffer.concat(chunks)));
       });req.on("error",(cause)=>reject(new Error("Open map request failed", {cause})));req.end();
     });
-    const bytes = await drawOpenMap(JSON.parse(body.toString()), target);
-    if (cache.size >= 16) cache.delete(cache.keys().next().value!);
-    cache.set(key,{until:Date.now()+30*60_000,bytes});return bytes;
-  })().finally(()=>pending.delete(key));
-  pending.set(key,work);return work;
+
+    const data: unknown = JSON.parse(body.toString());
+    if (!record(data) || data.remark || !Array.isArray(data.elements) || data.elements.length > 6000) throw new Error("Incomplete map response");
+    if (queryCache.size >= 16) queryCache.delete(queryCache.keys().next().value!);
+    queryCache.set(key, { until: Date.now() + 30 * 60_000, data });
+    return data;
+  })().finally(() => queryPending.delete(key));
+  queryPending.set(key, work); return work;
 }
+
 export async function drawOpenMap(data: unknown, target: MapTarget): Promise<Buffer> {
   if (!record(data) || data.remark || !Array.isArray(data.elements) || data.elements.length > 6000) throw new Error("Incomplete map response");
   const viewport=mapViewport(target);const shapes:string[]=[];const labels:string[]=[];const placed: {x:number;y:number;width:number}[]=[];const names=new Set<string>();

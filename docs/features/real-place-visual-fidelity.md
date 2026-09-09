@@ -5,6 +5,8 @@
 **Marca piloto:** salut.st.jean  
 **Tablero:** [real-place-visual-fidelity.kanban.json](real-place-visual-fidelity.kanban.json)
 
+**Ampliación propuesta:** [Lugares y mapas verificables con Google Maps — FEAT-GMAP-001](google-maps-place-visuals.md). Añade búsqueda/localización Google y modalidades de material sujetas a sus condiciones, integradas en el mismo draft. Su alcance, tareas y validación están pendientes; no sustituye los proveedores actuales ni habilita exportaciones o referencias generativas de contenido Google por sí sola.
+
 ## Actualización — SaaS geográfico genérico (2026-09-08)
 
 El borrador existente puede preparar sus imágenes mediante `preparePlaceVisuals`: investigación con Luna y búsqueda web, resolución independiente en Wikidata con el ámbito del perfil, fotografía de Commons elegible o mapa de datos abiertos. No se infiere el país por la marca ni se limita el núcleo a Québec. El idioma de búsqueda procede del perfil; las evidencias conservan nombres y aliases multilingües. La cobertura depende de los registros disponibles y de la identidad administrativa comprobable: esto no certifica todos los lugares del mundo.
@@ -384,3 +386,5 @@ Fuente: [Travaux routiers — MTMD](https://www.donneesquebec.ca/recherche/datas
 La prueba local devolvió 202 con tres assets en el mismo draft y evidencia del aviso `153974`. No se generó mapa porque faltan `CREATIVE_GEO_MAPTILER_KEY` y `CREATIVE_GEO_MAPTILER_EXPORT_ENABLED=true`; el motivo queda visible bajo la imagen. La habilitación requiere un plan compatible con exportación y almacenamiento. No se cambiaron credenciales. La ficha HTML de 511 rechazó el acceso automatizado con Cloudflare; el WFS oficial sí respondió.
 
 Alcance pendiente: búsqueda fotográfica integrada en este mismo recorrido, interpretación de fichas que no conservan el registro tabular completo, geometrías MultiLineString y validación visual con MapTiler real. Esta entrega no cierra GEO-A a GEO-F ni la aceptación hiperlocal.
+
+**Integración posterior — 9 de septiembre de 2026:** [GMAP-11](google-maps-place-visuals.md#gmap-11--completar-el-piloto-dentro-del-draft-con-evidencia-de-dirección) conecta relaciones explícitas de proximidad de la fuente con un mapa OSM en el mismo draft. El caso de la Fête des récoltes utiliza la dirección de la biblioteca como referencia cercana, sin afirmar que el evento ocurre dentro de ella. Las demás unidades pueden usar símbolos conceptuales deterministas. El preview Google permanece separado de la exportación persistente.

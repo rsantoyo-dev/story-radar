@@ -11,6 +11,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import sharp from "sharp";
 import ts from "typescript";
 import * as policy from "./creative-documentary";
+import * as sourceLocation from "./source-location";
 import type { CreativeAssetBatch, CreativeProfile } from "./creative-content.types";
 import type { DocumentaryResult } from "./manage-creative-documentary";
 
@@ -319,6 +320,8 @@ test("worldwide preparation resolves source-backed places, maps current-state re
   const unit={id:"unit",order:1,role:"cover",factIds:["fact-1"],visualDirection:"Map of place",assetRequest:"generate"};
   const facts=[{id:"fact-1",statement:source,sourceExcerpt:source}];
   const dependencies={
+    "./source-location": sourceLocation,
+    "./prepare-source-location": { prepareSourceLocation: async () => { throw new Error("No address anchor expected"); } },
     "node:crypto":crypto,"./creative-documentary":policy,"./creative-place-visual":visual,"./open-map-geometry":geometry,
     "./creative-documentary-providers":{documentaryProviders:()=>({resolve:async()=>{resolveCalls++;return place;},photo:async()=>{photoCalls++;return undefined;}})},
     "./open-map-render":{renderOpenMap:async()=>{mapCalls++;return Buffer.from("map");}},
@@ -337,4 +340,29 @@ test("worldwide preparation resolves source-backed places, maps current-state re
   const fallback=await noAi.preparePlaceVisuals("topic",draft,profile,facts,"https://example.org/article");
   assert.equal(fallback.get(1)?.evidence.representation,"typography");
   assert.equal(resolveCalls,1);
+});
+
+test("nearby source address maps only its cited slide without AI research or changing the saved carousel", async () => {
+  const visual = await import("./creative-place-visual");
+  const facts = [{ id: "fact-1", statement: "Harvest event", sourceExcerpt: "La fête se déroule à côté de la bibliothèque Saint-Luc (347, boul. Saint-Luc)." }];
+  const units = [1, 2, 3, 4].map(order => ({ id: `unit-${order}`, order, role: order === 1 ? "cover" : "content", headline: order === 4 ? "Rendez-vous près de la bibliothèque Saint-Luc" : "Partagez vos récoltes", body: "", visualDirection: "Pictogrammes de fruits", factIds: ["fact-1"], assetRequest: "generated-image" }));
+  const draft = { units, storyId: "story", briefId: "brief" } as unknown as import("./creative-content.types").CreativeDraft;
+  const before = JSON.stringify(draft);
+  let maps = 0;
+  const service = load<typeof import("./prepare-place-visuals")>("prepare-place-visuals.ts", {
+    "node:crypto": crypto, "./creative-documentary": policy, "./creative-place-visual": visual,
+    "./source-location": sourceLocation, "./open-map-geometry": {}, "./prepare-road-map": {}, "./open-map-render": {},
+    "./prepare-source-location": { prepareSourceLocation: async (anchor: sourceLocation.SourceLocation) => { maps++; return { bytes: Buffer.from("map"), evidence: { representation: "map", locationAnchor: anchor } }; } },
+    "./creative-documentary-providers": { documentaryProviders: () => ({ resolve: () => { throw new Error("Unexpected general place lookup"); } }) },
+    "./creative-content.repository": { getCreativeDailyUsage: async () => ({ remainingRuns: 10 }), createCreativeAiRun: () => { throw new Error("Unexpected model call"); } },
+    "./creative-content.config": { getCreativeContentPublicConfig: () => ({ maxRunsPerDay: 10 }) },
+    "./openai-structured-response": {},
+  }, { OPENAI_API_KEY: "configured" });
+  const result = await service.preparePlaceVisuals("topic", draft, profile, facts, "https://example.org/event");
+  assert.equal(maps, 1);
+  assert.equal(result.size, 4);
+  for (const order of [1, 2, 3]) assert.equal(result.get(order)?.bytes, undefined);
+  assert.equal(result.get(4)?.evidence.locationAnchor?.relation, "nearby");
+  assert.equal(result.get(4)?.bytes?.toString(), "map");
+  assert.equal(JSON.stringify(draft), before);
 });

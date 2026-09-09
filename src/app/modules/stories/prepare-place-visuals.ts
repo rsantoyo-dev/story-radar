@@ -11,6 +11,8 @@ import { getCreativeDailyUsage, createCreativeAiRun, completeCreativeAiRun, fail
 import { getCreativeContentPublicConfig } from "./creative-content.config";
 import { requestsGeographicReconstruction } from "./creative-evidence-guardrails";
 import { prepareRoadMap } from "./prepare-road-map";
+import { sourceLocations, sourceLocationForUnit } from "./source-location";
+import { prepareSourceLocation } from "./prepare-source-location";
 
 const schema = { type: "object", additionalProperties: false, required: ["mentions", "purpose"], properties: {
   purpose: { type: "string", enum: ["location", "current-state", "unknown"] },
@@ -25,10 +27,13 @@ export async function preparePlaceVisuals(topicId: string, draft: CreativeDraft,
   let extraction: PlaceExtraction = {mentions:[],purpose:"unknown"};
   let discovery: DocumentarySnapshot["discovery"];
   const reasons: string[]=[];
+  const anchors = sourceLocations(facts);
+  const anchorUnits = new Map(draft.units.map(unit => [unit.order, sourceLocationForUnit(unit, anchors)]));
+  const needsResearch = draft.units.some(unit => unit.assetRequest !== "typography-only" && !anchorUnits.get(unit.order) && (requestsGeographicReconstruction(unit.visualDirection) || (!anchors.length && unit.role === "cover")));
   const daily = await getCreativeDailyUsage(topicId, getCreativeContentPublicConfig().maxRunsPerDay);
   const model=process.env.CREATIVE_GEO_MODEL?.trim() || "gpt-5.6-luna";
   const key=process.env.OPENAI_API_KEY?.trim();
-  if (key && daily.remainingRuns > 0 && source) {
+  if (needsResearch && key && daily.remainingRuns > 0 && source) {
     const run=await createCreativeAiRun({topicId,storyId:draft.storyId,briefId:draft.briefId,task:"brief",provider:"openai",model,promptVersion:PLACE_VISUAL_VERSION,inputHash:createHash("sha256").update(source+JSON.stringify(profile.geoScope)).digest("hex")});
     try {
       const response=await generateOpenAiStructuredResponse({apiKey:key,model,webSearch:true,timeoutMs:25000,maxOutputTokens:1800,reasoningEffort:"low",schemaName:"publication_places",schema,
@@ -40,7 +45,7 @@ export async function preparePlaceVisuals(topicId: string, draft: CreativeDraft,
       await failCreativeAiRun(topicId,run,"Place research failed or returned unsupported evidence");
       reasons.push("Place research unavailable or evidence invalid; no inferred location used.");
     }
-  } else reasons.push("Place research is not configured or its daily budget is exhausted.");
+  } else if (needsResearch) reasons.push("Place research is not configured or its daily budget is exhausted.");
   if (/\b(rénov|travaux|fermeture|fermé|construction|inaugur|réaménag|demolit|damage|renovat|closure|closed|réfection|cierre|obras|remodel)/iu.test(source)) extraction.purpose = "current-state";
   const providers=documentaryProviders(AbortSignal.timeout(35000), profile.language);
   const enabled=(process.env.CREATIVE_GEO_SOURCE_ADAPTERS ?? "quebec511").split(",");
@@ -50,7 +55,16 @@ export async function preparePlaceVisuals(topicId: string, draft: CreativeDraft,
   for (const unit of draft.units) {
     const result:PreparedPlaceVisual={evidence:{version:PLACE_VISUAL_VERSION,representation:"typography",preparedAt:new Date().toISOString(),reasons:[...reasons],discovery}};
     results.set(unit.order,result);
-    if (unit.assetRequest === "typography-only" || (!requestsGeographicReconstruction(unit.visualDirection) && unit.role !== "cover")) { result.evidence.reasons.push("Text-only unit; no place image assigned.");continue; }
+    const anchor = anchorUnits.get(unit.order);
+    if (anchor && !adapter) {
+      if (Date.now() > stopStartingAt) { result.evidence.reasons.push("Publication research time budget exhausted."); continue; }
+      const key = "source-address:" + anchor.excerpt;
+      const prepared = materialCache.get(key) ?? await prepareSourceLocation(anchor, profile, sourceUrl);
+      materialCache.set(key, prepared); results.set(unit.order, prepared); continue;
+    }
+    if (unit.assetRequest === "typography-only" || (!requestsGeographicReconstruction(unit.visualDirection) && (unit.role !== "cover" || anchors.length > 0))) {
+      result.evidence.reasons.push(unit.assetRequest === "typography-only" ? "Text-only unit; no place image assigned." : "Conceptual illustration; no geographic scene or event photograph represented."); continue;
+    }
     if (Date.now() > stopStartingAt) { result.evidence.reasons.push("Publication research time budget exhausted; source text retained."); continue; }
     if (adapter) {
       const adapterFacts=facts.filter(f=>unit.factIds.includes(f.id));

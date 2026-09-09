@@ -2755,10 +2755,14 @@ function CreativeAssetCard({
         )}
       </div>
 
-      {asset.unitSnapshot.placeVisual ? <details open className={styles.historyCallout}><summary>Place material · {asset.unitSnapshot.placeVisual.representation}</summary>
+      {asset.unitSnapshot.placeVisual ? <details open className={styles.historyCallout}><summary>Place material · {asset.unitSnapshot.placeVisual.version === "place-visual-v2" && asset.unitSnapshot.placeVisual.representation === "typography" && asset.unitSnapshot.assetRequest !== "typography-only" ? "conceptual illustration" : asset.unitSnapshot.placeVisual.representation}</summary>
         <div>{asset.unitSnapshot.placeVisual.reasons.map((reason,index)=><p key={index}>{reason}</p>)}
         {asset.unitSnapshot.placeVisual.sourceUrl ? <a href={asset.unitSnapshot.placeVisual.sourceUrl} target="_blank" rel="noreferrer">Identity evidence</a> : null}
         <p>{asset.unitSnapshot.placeVisual.attribution}</p>
+        {asset.unitSnapshot.placeVisual.locationAnchor ? <p>
+          Source address reference: {asset.unitSnapshot.placeVisual.locationAnchor.name} · {asset.unitSnapshot.placeVisual.locationAnchor.address}. The source places the event nearby.{asset.unitSnapshot.placeVisual.representation === "map" ? " The marker is an address reference, not the exact event site." : " No map was prepared."}
+          {asset.unitSnapshot.placeVisual.locationAnchor.providerSourceUrl ? <> <a href={asset.unitSnapshot.placeVisual.locationAnchor.providerSourceUrl} target="_blank" rel="noreferrer">OpenStreetMap address evidence</a></> : null}
+        </p> : null}
         {asset.unitSnapshot.placeVisual.discovery?.sources.map((source,index)=><p key={index}><a href={source.url} target="_blank" rel="noreferrer">{source.title}</a> · Research candidate</p>)}
         </div></details> : null}
       {asset.unitSnapshot.roadMapEvidence ? <div className={styles.historyCallout}><div>
