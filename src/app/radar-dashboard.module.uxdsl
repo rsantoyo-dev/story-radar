@@ -2595,3 +2595,353 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Topic Overview — FEAT-OVW-001 / OVW-02 ---------------------------------- */
+
+.ovwRoot {
+  display: flex;
+  flex-direction: column;
+  gap: density(4);
+}
+
+.ovwHeader {
+  display: flex;
+  flex-direction: xs(column) md(row);
+  align-items: xs(stretch) md(flex-end);
+  justify-content: space-between;
+  gap: density(4);
+  padding-bottom: density(4);
+  border-bottom: 1px solid palette(dark-main, 0.12);
+}
+
+.ovwHeaderMain {
+  display: flex;
+  flex-direction: column;
+  gap: density(2);
+  min-width: 0;
+}
+
+.ovwTitle {
+  margin: 0;
+  color: palette(primary-main);
+  @ds-typo (h2);
+  letter-spacing: -0.04em;
+}
+
+.ovwDescription {
+  margin: 0;
+  max-width: 46rem;
+  color: palette(dark-main, 0.78);
+  @ds-typo (body);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ovwHeaderMeta {
+  display: flex;
+  flex-direction: column;
+  align-items: xs(flex-start) md(flex-end);
+  gap: density(2);
+  flex: none;
+}
+
+.ovwPeriod {
+  display: inline-flex;
+  gap: space(2);
+}
+
+.ovwPeriodButton {
+  @ds-button(flat neutral 2);
+  @ds-typo (caption);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.ovwPeriodButton:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.ovwPeriodButtonActive {
+  @ds-button(contained primary 2);
+  @ds-typo (caption);
+  font-weight: 650;
+}
+
+.ovwFreshness {
+  margin: 0;
+  color: palette(tertiary-main);
+  @ds-typo (caption);
+}
+
+.ovwHeaderActions {
+  display: inline-flex;
+  gap: density(2);
+  align-items: center;
+}
+
+.ovwRefreshButton {
+  @ds-button(outlined neutral 2);
+  border-radius: radius(pill);
+  @ds-typo (caption);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.ovwRefreshButton:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.ovwConfigLink {
+  color: palette(primary-main);
+  @ds-typo (caption);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.ovwConfigLink:hover {
+  text-decoration: underline;
+}
+
+.ovwMetrics {
+  display: grid;
+  grid-template-columns: xs(1fr) sm(repeat(2, minmax(0, 1fr))) md(repeat(4, minmax(0, 1fr)));
+  gap: density(3);
+}
+
+.ovwMetricCard {
+  @ds-surface(contained surface 3);
+  display: flex;
+  flex-direction: column;
+  gap: density(1);
+  padding: density(4);
+  border: 1px solid palette(dark-main, 0.1);
+  background: palette(light-light, 0.82);
+  box-shadow: shadow(1);
+}
+
+.ovwMetricHeader {
+  display: flex;
+  align-items: center;
+  gap: space(2);
+}
+
+.ovwMetricIcon {
+  display: inline-grid;
+  place-items: center;
+  width: density(5);
+  height: density(5);
+  border-radius: radius(2);
+  background: palette(primary-main, 0.14);
+  color: palette(primary-dark);
+  @ds-typo (caption);
+}
+
+.ovwMetricLabel {
+  color: palette(dark-main, 0.7);
+  @ds-typo (caption);
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.ovwMetricValue {
+  color: palette(dark-main);
+  @ds-typo (h2);
+  letter-spacing: -0.05em;
+}
+
+.ovwMetricScope {
+  color: palette(tertiary-main);
+  @ds-typo (caption);
+}
+
+.ovwMetricLink {
+  color: palette(primary-main);
+  @ds-typo (caption);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.ovwMetricLink:hover {
+  text-decoration: underline;
+}
+
+.ovwMetricBreakdown {
+  margin: space(1) 0 0;
+  color: palette(dark-main, 0.68);
+  @ds-typo (caption);
+}
+
+.ovwSections {
+  display: grid;
+  grid-template-columns: xs(1fr) lg(repeat(2, minmax(0, 1fr)));
+  gap: density(3);
+}
+
+.ovwSection {
+  @ds-surface(contained surface 3);
+  display: flex;
+  flex-direction: column;
+  gap: density(3);
+  padding: density(5);
+  border: 1px solid palette(dark-main, 0.1);
+  background: palette(light-light, 0.82);
+  box-shadow: shadow(1);
+}
+
+.ovwSectionTitle {
+  margin: 0;
+  color: palette(dark-main);
+  @ds-typo (h4);
+  font-weight: 650;
+}
+
+.ovwSectionBody {
+  display: flex;
+  flex-direction: column;
+  gap: density(2);
+}
+
+.ovwSkeleton {
+  display: flex;
+  flex-direction: column;
+  gap: space(3);
+}
+
+.ovwSkeletonLine {
+  height: space(5);
+  border-radius: radius(2);
+  background: linear-gradient(
+    90deg,
+    palette(dark-main, 0.06),
+    palette(dark-main, 0.12),
+    palette(dark-main, 0.06)
+  );
+}
+
+.ovwSkeletonLine:nth-child(2) {
+  width: 72%;
+}
+
+.ovwSkeletonLine:nth-child(3) {
+  width: 54%;
+}
+
+.ovwEmpty {
+  margin: 0;
+  color: palette(tertiary-main);
+  @ds-typo (small);
+}
+
+.ovwError {
+  display: flex;
+  flex-direction: xs(column) sm(row);
+  align-items: xs(flex-start) sm(center);
+  gap: density(2);
+  padding: density(3);
+  border: 1px solid palette(error-main, 0.4);
+  border-radius: radius(2);
+  background: palette(error-light, 0.16);
+  color: palette(error-dark);
+  @ds-typo (small);
+}
+
+.ovwRetryButton {
+  @ds-button(flat primary 1);
+  @ds-typo (caption);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ovwRetryButton:hover {
+  text-decoration: underline;
+}
+
+.ovwList {
+  display: flex;
+  flex-direction: column;
+  gap: density(2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ovwListItem {
+  display: flex;
+  flex-direction: column;
+  gap: space(1);
+  padding-bottom: density(2);
+  border-bottom: 1px solid palette(dark-main, 0.08);
+}
+
+.ovwListItem:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.ovwListPrimary {
+  color: palette(dark-main);
+  @ds-typo (small);
+  font-weight: 600;
+}
+
+.ovwListMeta {
+  color: palette(tertiary-main);
+  @ds-typo (caption);
+}
+
+.ovwListLink {
+  color: palette(primary-main);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.ovwListLink:hover {
+  text-decoration: underline;
+}
+
+.ovwStages {
+  display: grid;
+  grid-template-columns: xs(repeat(2, minmax(0, 1fr))) sm(repeat(5, minmax(0, 1fr)));
+  gap: density(2);
+}
+
+.ovwStage {
+  display: flex;
+  flex-direction: column;
+  gap: space(1);
+  padding: density(2);
+  border-radius: radius(2);
+  background: palette(dark-main, 0.04);
+}
+
+.ovwStageValue {
+  color: palette(dark-main);
+  @ds-typo (h4);
+  font-weight: 640;
+}
+
+.ovwStageLabel {
+  color: palette(tertiary-main);
+  @ds-typo (caption);
+}
+
+.ovwBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: space(1) space(2);
+  border-radius: radius(pill);
+  background: palette(primary-main, 0.14);
+  color: palette(primary-dark);
+  @ds-typo (caption);
+  font-weight: 650;
+}
+
+.ovwBadgeMuted {
+  background: palette(dark-main, 0.08);
+  color: palette(dark-main, 0.7);
+}

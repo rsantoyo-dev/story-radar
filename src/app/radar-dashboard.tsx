@@ -8,6 +8,7 @@ import { CreativeProfilePanel } from "./creative-profile-panel";
 import { InstagramGalleryPanel } from "./instagram-gallery-panel";
 import { MetaConnectionPanel } from "./meta-connection-panel";
 import { EditorialProfilePanel } from "./editorial-profile-panel";
+import { TopicOverviewPanel } from "./topic-overview-panel";
 import styles from "./radar-dashboard.generated.module.css";
 import {
   TopicConfigurationPanel,
@@ -1297,20 +1298,15 @@ export function RadarDashboard({
             aria-label={isTopicLoading ? `Loading ${selectedTopicName}` : undefined}
           >
 
-        <section id="overview" className={`${styles.hero} ${styles.anchorTarget}`}>
-          <div>
-            <p className={styles.kicker}>RSS intelligence pipeline</p>
-            <h2>Operate your radar from one place.</h2>
-            <p>
-              Check system health, collect normalized stories, and review the
-              strongest editorial candidates without touching the database schema.
-            </p>
-          </div>
-          <div className={styles.heroMetric}>
-            <span>Stories</span>
-            <strong>{stats ? formatNumber(stats.stories) : "—"}</strong>
-            <small>{stats ? "stored in Neon" : "load system status"}</small>
-          </div>
+        <section id="overview" className={styles.anchorTarget}>
+          <TopicOverviewPanel
+            key={selectedTopicId}
+            secret={secret}
+            topicId={selectedTopicId}
+            topicName={selectedTopic?.name ?? "this topic"}
+            topicDescription={selectedTopic?.description}
+            disabled={isBusy || isTopicLoading}
+          />
         </section>
 
         <div id="configuration" className={styles.anchorTarget}>
