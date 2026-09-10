@@ -412,6 +412,18 @@ export function CreativeProfilePanel({
             infer these. A validated location is linked later, from place
             identification.
           </p>
+          <label className={styles.field}>
+            <span>Geographic provider contact email</span>
+            <input type="email" maxLength={254} autoComplete="email"
+              value={draft.geoProviderContact ?? ""}
+              onChange={(event) => setDraft(current => current ? { ...current, geoProviderContact: event.target.value } : current)}
+              aria-describedby="geo-contact-help" />
+          </label>
+          <p id="geo-contact-help" className={styles.profileGuideHint}>
+            Identifies this brand’s requests to geographic providers. It is not printed
+            on publications. Leave empty to use the server contact, if configured.
+            Changing it does not revoke editorial approvals.
+          </p>
           <GoogleMapsPreviewPanel key={topicId} topicId={topicId} secret={secret} profile={draft} disabled={disabled} />
         </Group>
 

@@ -388,3 +388,19 @@ La prueba local devolvió 202 con tres assets en el mismo draft y evidencia del 
 Alcance pendiente: búsqueda fotográfica integrada en este mismo recorrido, interpretación de fichas que no conservan el registro tabular completo, geometrías MultiLineString y validación visual con MapTiler real. Esta entrega no cierra GEO-A a GEO-F ni la aceptación hiperlocal.
 
 **Integración posterior — 9 de septiembre de 2026:** [GMAP-11](google-maps-place-visuals.md#gmap-11--completar-el-piloto-dentro-del-draft-con-evidencia-de-dirección) conecta relaciones explícitas de proximidad de la fuente con un mapa OSM en el mismo draft. El caso de la Fête des récoltes utiliza la dirección de la biblioteca como referencia cercana, sin afirmar que el evento ocurre dentro de ella. Las demás unidades pueden usar símbolos conceptuales deterministas. El preview Google permanece separado de la exportación persistente.
+
+## Corrección de preparación documental por escena — 10 de septiembre de 2026
+
+El recorrido `Real places · automatic preparation` resuelve ahora cada extracto por separado. La extracción clasifica también el propósito de cada mención: una sede de evento puede ilustrarse como contexto de archivo, mientras una escena de obras o daños conserva su restricción. La comprobación de cambios físicos se aplica al título y texto visible de la escena, no indiscriminadamente a todo el artículo.
+
+En carruseles se seleccionan hasta tres oraciones completas de la fuente, priorizando sedes distintas cuando son inequívocas. Las slides posteriores ya pueden recibir su propio original verificado o mapa; no heredan la foto de portada. Una escena con varios lugares o sin una mención nominal respaldada conserva texto, sin escoger una sede arbitrariamente.
+
+La búsqueda solicita nombres completos y contexto geográfico. Los resultados visibles se filtran por coincidencia del nombre completo; siguen siendo candidatos informativos, no autorización para descargar o publicar fotos. La adquisición continúa mediante proveedores verificados y biblioteca privada, conservando identidad, licencia, atribución y comprobaciones de descarga. La resolución municipal admite que la ciudad sea la propia entidad buscada, siempre verificando región y país.
+
+La revisión de búsqueda `scene-places-v2` diferencia la nueva preparación de resultados anteriores sin invalidar ni borrar sus snapshots. Para aplicar el cambio a una publicación guardada, usar **Prepare a new version** y realizar su revisión final. No se ha ejecutado una preparación real de la noticia de Journées de la culture durante esta corrección; la disponibilidad de una fotografía elegible depende del proveedor.
+
+### Contacto geográfico por marca
+
+El perfil creativo permite guardar `Geographic provider contact email` junto al ámbito geográfico. El servidor usa ese correo para identificar sus solicitudes; si está vacío utiliza `CREATIVE_GEO_CONTACT`. El contacto no se imprime en las publicaciones ni se incorpora al snapshot editorial de nuevos briefs. Guardar solo el contacto conserva la fecha editorial y no avanza la política visual; los fingerprints documentales excluyen esta columna.
+
+La migración `0060_pink_lady_bullseye.sql` añade `creative_profiles.geo_provider_contact` vacío por defecto. La comparación geográfica normaliza acentos y guiones sin sustituir la comprobación de identidad, jerarquía y país del proveedor. Tras guardar el correo, usar **Prepare a new version** para repetir las búsquedas; cambiar la configuración no ejecuta búsquedas automáticamente.

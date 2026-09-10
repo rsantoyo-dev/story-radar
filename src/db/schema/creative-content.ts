@@ -266,6 +266,7 @@ export const creativeProfiles = pgTable(
       .default(DEFAULT_VISUAL_FIDELITY_MODE)
       .notNull(),
     /** Confirmed municipality/region/country of the covered place. */
+    geoProviderContact: text("geo_provider_contact").default("").notNull(),
     geoScope: jsonb("geo_scope")
       .$type<CreativeGeoScope>()
       .default(DEFAULT_CREATIVE_GEO_SCOPE)

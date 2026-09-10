@@ -164,7 +164,7 @@ export async function insertCreativeBrief({
       topicId,
       storyId,
       profileId: profile.id,
-      profileSnapshot: profile,
+      profileSnapshot: { ...profile, geoProviderContact: undefined },
       provider,
       model,
       modelVersion: modelVersion ?? null,

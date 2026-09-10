@@ -47,7 +47,7 @@ export async function preparePlaceVisuals(topicId: string, draft: CreativeDraft,
     }
   } else if (needsResearch) reasons.push("Place research is not configured or its daily budget is exhausted.");
   if (/\b(rénov|travaux|fermeture|fermé|construction|inaugur|réaménag|demolit|damage|renovat|closure|closed|réfection|cierre|obras|remodel)/iu.test(source)) extraction.purpose = "current-state";
-  const providers=documentaryProviders(AbortSignal.timeout(35000), profile.language);
+  const providers=documentaryProviders(AbortSignal.timeout(35000), profile.language, profile.geoProviderContact);
   const enabled=(process.env.CREATIVE_GEO_SOURCE_ADAPTERS ?? "quebec511").split(",");
   let adapter: typeof adapters[number] | undefined;
   try { const url=new URL(sourceUrl);adapter=adapters.find(a=>enabled.includes(a.id)&&a.supports(url)); } catch { /* no regional source */ }

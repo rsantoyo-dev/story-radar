@@ -85,7 +85,7 @@ function harness(options: { extraction?: unknown; unavailable?: boolean; provide
     "./openai-structured-response": { generateOpenAiStructuredResponse: async (input: { webSearch?: boolean }) => {
       assert.equal(input.webSearch, true);
       aiCalls++; if (options.unavailable) throw new Error("Provider outage");
-      return { text: JSON.stringify(options.extraction ?? { mentions: [mention], purpose: "location" }), model: "test", usage: policy.EMPTY_GEO_USAGE, webSearch: { calls: 1, sources: [{ url: "https://municipality.example/place", title: "Place publique", imageUrl: "https://municipality.example/place.jpg" }] } };
+      return { text: JSON.stringify(options.extraction ?? { mentions: [mention], purpose: "location" }), model: "test", usage: policy.EMPTY_GEO_USAGE, webSearch: { calls: 1, sources: [{ url: "https://municipality.example/place", title: mention.name, imageUrl: "https://municipality.example/place.jpg" }] } };
     } },
     "./creative-documentary-providers": { documentaryProviders: () => ({
       resolve: async () => { resolutions++; if (options.providerFailure) throw new Error("Timeout"); return place; },
@@ -229,7 +229,7 @@ test("web discovery survives generic and changed-state exclusions without approv
     const h = harness({ extraction });
     const result = await h.service.prepareDocumentary("topic", "story");
     assert.equal(result.snapshot?.discovery?.calls, 1);
-    assert.equal(result.snapshot?.discovery?.sources[0].imageUrl, "https://municipality.example/place.jpg");
+    assert.equal(result.snapshot?.discovery?.sources.length, extraction.mentions[0].kind === "generic" ? 0 : 1);
     assert.equal(result.snapshot?.representation, "typography");
     assert.equal(result.snapshot?.photo, undefined);
     assert.equal(h.approvals, 0);
@@ -365,4 +365,57 @@ test("nearby source address maps only its cited slide without AI research or cha
   assert.equal(result.get(4)?.evidence.locationAnchor?.relation, "nearby");
   assert.equal(result.get(4)?.bytes?.toString(), "map");
   assert.equal(JSON.stringify(draft), before);
+});
+
+
+test("cultural programme assigns venues per scene without a global current-state veto", async () => {
+  const a = "Un concert aura lieu au Domaine Trinity pendant les Journées de la culture.";
+  const b = "Une exposition sera présentée au Musée du Haut-Richelieu pendant cette fin de semaine.";
+  const mentions: policy.PlaceMention[] = [
+    { ...mention, name: "Domaine Trinity", excerpt: a, purpose: "location" },
+    { ...mention, name: "Musée du Haut-Richelieu", excerpt: b, purpose: "location" },
+  ];
+  const extraction: policy.PlaceExtraction = { mentions, purpose: "current-state" };
+  const h = harness({ text: `${a} ${b} Des travaux changent un autre bâtiment dans la ville.`, extraction, material: "photo" });
+  const result = await h.service.prepareDocumentary("topic", "story", "carousel");
+  assert.equal(result.batch?.assets.length, 3);
+  assert.equal(h.rendered[0].representation, "photo");
+  assert.equal(h.rendered[1].representation, "photo");
+  assert.equal(h.rendered[2].representation, "typography");
+  assert.equal(h.resolutions, 2);
+  assert.equal(h.approvals, 0);
+});
+
+test("per-scene location selection preserves physical-state and ambiguity guards", () => {
+  const other = { ...mention, name: "Domaine Trinity", purpose: "location" as const };
+  const extraction: policy.PlaceExtraction = { mentions: [{ ...mention, purpose: "location" }, other], purpose: "location" };
+  assert.equal(policy.canUseLocationVisual(policy.documentarySceneExtraction(extraction, "Concert local", source)), true);
+  assert.equal(policy.canUseLocationVisual(policy.documentarySceneExtraction(extraction, "Travaux à la place", source)), false);
+  assert.equal(policy.canUseLocationVisual(policy.documentarySceneExtraction(extraction, "Concert", `Des travaux ferment la ${mention.name}.`)), false);
+  assert.equal(policy.canUseLocationVisual(policy.documentarySceneExtraction(extraction, "Concert", `${source} Le Domaine Trinity participe aussi.`)), false);
+  assert.equal(policy.canUseLocationVisual(policy.documentarySceneExtraction(extraction, "Concert", "Le programme est disponible pour les habitants.")), false);
+  assert.equal(policy.reportsChangedPlaceState("Exposición de obras de arte en el museo."), false);
+  assert.equal(policy.reportsChangedPlaceState("Obras de construcción en el museo."), true);
+});
+
+test("scene selection reaches venue evidence beyond introductory sentences", () => {
+  const intro = "La Ville invite les habitants à participer aux activités culturelles.";
+  const filler = "Le programme complet est disponible pour toutes les familles.";
+  const sentences = [intro, filler, filler + " Gratuit.", source];
+  const selected = policy.selectDocumentaryExcerpts(sentences, { purpose: "location", mentions: [mention] });
+  assert.equal(selected[0], intro);
+  assert.ok(selected.includes(source));
+  assert.equal(selected.length, 3);
+  assert.ok(selected.every(s => sentences.includes(s)));
+});
+
+test("discovery excludes Jean and Cartier name fragments without treating results as photo permission", () => {
+  const discovery = policy.relevantPlaceDiscovery({ calls: 1, sources: [
+    { title: "Jean Dujardin", url: "https://instagram.com/jeandujardin" },
+    { title: "Cartier watches", url: "https://cartier.com" },
+    { title: "Place Jacques-Cartier", url: "https://ville.example/place" },
+  ] }, [mention]);
+  assert.equal(discovery?.calls, 1);
+  assert.equal(discovery?.sources.length, 1);
+  assert.equal(discovery?.sources[0].title, "Place Jacques-Cartier");
 });

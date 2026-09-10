@@ -1,4 +1,5 @@
 import "server-only";
+import { resolveGeoContact } from "./creative-geo-contact";
 import { renderOpenMap } from "./open-map-render";
 import { request } from "node:https";
 import { createHash } from "node:crypto";
@@ -9,11 +10,12 @@ import { mentionFitsScope, normalizePlaceName, record, type PlaceMention, type P
 
 const HOSTS = new Set(["ws.mapserver.transports.gouv.qc.ca", "www.wikidata.org", "commons.wikimedia.org", "upload.wikimedia.org"]);
 /** Fixed providers, no redirects, connection-time public DNS validation, bounded body/time. */
-export function fetchDocumentaryResource(url: URL, signal: AbortSignal, maxBytes = 2_000_000): Promise<Buffer> {
+export function fetchDocumentaryResource(url: URL, signal: AbortSignal, maxBytes = 2_000_000, contact = process.env.CREATIVE_GEO_CONTACT || ""): Promise<Buffer> {
+  if (/[\r\n]/.test(contact)) throw new Error("Invalid geographic provider contact");
   if (url.protocol !== "https:" || !HOSTS.has(url.hostname) || url.port || url.username || url.password || url.hash) throw new Error("Unsupported documentary source");
   return new Promise((resolve, reject) => {
     const req = request(url, { signal, lookup: lookupPublicAddress, headers: {
-      "User-Agent": `PressCraftor/0.1 (${process.env.CREATIVE_GEO_CONTACT || "documentary preparation"})`,
+      "User-Agent": `PressCraftor/0.1 (${contact || "documentary preparation"})`,
       "Accept-Encoding": "identity",
     } }, response => {
       if (response.statusCode !== 200 || Number(response.headers["content-length"] || 0) > maxBytes) {
@@ -46,14 +48,15 @@ export function entityNames(entity: Entity): string[] {
 }
 
 /** The per-run cache bounds API calls and shares hierarchy reads across mentions. */
-export function documentaryProviders(signal: AbortSignal, language = "en") {
+export function documentaryProviders(signal: AbortSignal, language = "en", profileContact?: string) {
+  const contact = resolveGeoContact(profileContact, process.env.CREATIVE_GEO_CONTACT);
   let calls = 0;
   const entities = new Map<string, Entity>();
   async function api(host: string, params: Record<string, string>): Promise<Record<string, unknown>> {
     if (++calls > 36) throw new Error("Geographic lookup budget exhausted");
     const url = new URL(`https://${host}/w/api.php`);
     url.search = new URLSearchParams({ format: "json", maxlag: "5", ...params }).toString();
-    const data: unknown = JSON.parse((await fetchDocumentaryResource(url, signal)).toString("utf8"));
+    const data: unknown = JSON.parse((await fetchDocumentaryResource(url, signal, 2_000_000, contact)).toString("utf8"));
     if (!record(data) || data.error) throw new Error("Geographic lookup unavailable");
     return data;
   }
@@ -67,7 +70,7 @@ export function documentaryProviders(signal: AbortSignal, language = "en") {
     entities.set(id, result); return result;
   }
   async function resolve(mention: PlaceMention, scope: CreativeGeoScope): Promise<PlaceEvidence | undefined> {
-    if (!process.env.CREATIVE_GEO_CONTACT || !mentionFitsScope(mention, scope) || mention.kind !== "named") return undefined;
+    if (!contact || !mentionFitsScope(mention, scope) || mention.kind !== "named") return undefined;
     const data = await api("www.wikidata.org", { action: "wbsearchentities", search: mention.name, language: providerLanguage(language), uselang: providerLanguage(language), type: "item", limit: "6" });
     if (!Array.isArray(data.search) || data["search-continue"] !== undefined) return undefined; // incomplete results cannot establish uniqueness
     const matches: PlaceEvidence[] = [];
@@ -85,7 +88,7 @@ export function documentaryProviders(signal: AbortSignal, language = "en") {
       }
       // All three scope levels must be represented by provider relationships, never a description/score.
       const countries = await Promise.all([...new Set([...ids(place, "P17"), ...hierarchy.flatMap(e => ids(e, "P17"))])].slice(0, 3).map(entity));
-      if (!hierarchy.some(e => entityNames(e).includes(normalizePlaceName(scope.municipality))) ||
+      if (![place, ...hierarchy].some(e => entityNames(e).includes(normalizePlaceName(scope.municipality))) ||
           !hierarchy.some(e => entityNames(e).includes(normalizePlaceName(scope.region))) ||
           countries.length !== 1 || !entityNames(countries[0]).includes(normalizePlaceName(scope.country))) continue;
       const coordinates = values(place, "P625"); const coordinate = coordinates.length === 1 ? coordinates[0] : undefined;
@@ -116,7 +119,7 @@ export function documentaryProviders(signal: AbortSignal, language = "en") {
     if (url.hostname !== "upload.wikimedia.org" || !url.pathname.startsWith("/wikipedia/commons/")) return undefined;
     const pageUrl = new URL(info.descriptionurl);
     if (pageUrl.origin !== "https://commons.wikimedia.org" || !pageUrl.pathname.startsWith("/wiki/File:")) return undefined;
-    const bytes = await fetchDocumentaryResource(url, signal, 15_000_000);
+    const bytes = await fetchDocumentaryResource(url, signal, 15_000_000, contact);
     const image = await sharp(bytes, { limitInputPixels: 40_000_000 }).metadata();
     if (!["jpeg", "png", "webp"].includes(image.format || "") || (image.pages ?? 1) !== 1 || !image.width || !image.height || image.width < 1080 || image.height < 640) return undefined;
     return { bytes, evidence: { placeId: place.id, sourceUrl: pageUrl.toString(), resourceUrl: url.toString(), author, license, licenseUrl,

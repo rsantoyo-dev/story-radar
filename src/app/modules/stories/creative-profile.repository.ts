@@ -1,4 +1,5 @@
 import "server-only";
+import { parseGeoContact } from "./creative-geo-contact";
 
 import { eq, sql } from "drizzle-orm";
 
@@ -159,6 +160,12 @@ export async function saveCreativeProfile(
     (previous.profile.visualFidelityMode !== profileFields.visualFidelityMode ||
       !geoScopeEquals(previous.profile.geoScope, profileFields.geoScope));
 
+  const previousEditable = previous ? validateCreativeProfile(mapCreativeProfile(previous.profile, previous.brandAsset)) : undefined;
+  const editorialEqual = previousEditable && JSON.stringify(
+    { ...profile, ...(options.preserveExistingBrandOverlay ? { brandOverlay: previousEditable.brandOverlay } : {}), geoProviderContact: undefined },
+  ) === JSON.stringify({ ...previousEditable, geoProviderContact: undefined });
+  // Contact-only saves must not invalidate documentary fingerprints or editorial caches.
+  const updatedAt = editorialEqual ? previous!.profile.updatedAt : new Date();
   const brandOverlaySettings = parseCreativeBrandOverlaySettings(brandOverlay);
   const bumpPolicyVersion = policyChanged
     ? {
@@ -169,14 +176,14 @@ export async function saveCreativeProfile(
     ? {
         ...profileFields,
         ...bumpPolicyVersion,
-        updatedAt: new Date(),
+        updatedAt,
       }
     : {
         ...profileFields,
         ...bumpPolicyVersion,
         brandAssetId,
         brandOverlay: brandOverlaySettings,
-        updatedAt: new Date(),
+        updatedAt,
       };
   const [saved] = await db
     .insert(creativeProfiles)
@@ -186,7 +193,7 @@ export async function saveCreativeProfile(
       ...profileFields,
       brandAssetId,
       brandOverlay: brandOverlaySettings,
-      updatedAt: new Date(),
+      updatedAt,
     })
     .onConflictDoUpdate({
       target: creativeProfiles.topicId,
@@ -261,6 +268,7 @@ export function parseCreativeProfileInput(value: unknown): EditableCreativeProfi
     conversionGoal: value.conversionGoal,
     framingStrategy: value.framingStrategy,
     visualFidelityMode: value.visualFidelityMode,
+    geoProviderContact: value.geoProviderContact,
     geoScope: value.geoScope,
     callToActionStyle: value.callToActionStyle,
   } as EditableCreativeProfile);
@@ -299,6 +307,7 @@ function validateCreativeProfile(
     conversionGoal: conversionGoalValue(value.conversionGoal),
     framingStrategy: framingStrategyValue(value.framingStrategy),
     visualFidelityMode: visualFidelityModeValue(value.visualFidelityMode),
+    geoProviderContact: geographicContactValue(value.geoProviderContact),
     geoScope: parseCreativeGeoScopeInput(value.geoScope),
     callToActionStyle: textValue(
       value.callToActionStyle,
@@ -376,6 +385,7 @@ function mapCreativeProfile(
     conversionGoal: conversionGoalValue(profile.conversionGoal),
     framingStrategy: framingStrategyValue(profile.framingStrategy),
     visualFidelityMode: visualFidelityModeValue(profile.visualFidelityMode),
+    geoProviderContact: profile.geoProviderContact ?? "",
     geoScope: parseCreativeGeoScopeInput(profile.geoScope),
     visualPolicyVersion: profile.visualPolicyVersion,
     callToActionStyle: profile.callToActionStyle,
@@ -495,3 +505,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export class CreativeProfileValidationError extends Error {}
+
+function geographicContactValue(value: unknown): string {
+  try { return parseGeoContact(value); }
+  catch { throw new CreativeProfileValidationError("Geographic contact must be a valid email address"); }
+}

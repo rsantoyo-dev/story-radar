@@ -11,6 +11,8 @@ export type PlaceMention = {
   municipality: string;
   region: string;
   country: string;
+  /** Optional on historical snapshots; assessed independently for each venue. */
+  purpose?: PlaceExtraction["purpose"];
 };
 export type PlaceEvidence = {
   id: string;
@@ -59,17 +61,18 @@ export type DocumentarySnapshot = {
 };
 export type PlaceExtraction = { mentions: PlaceMention[]; purpose: "location" | "current-state" | "unknown" };
 export function normalizePlaceName(value: string): string {
-  return value.normalize("NFKC").toLocaleLowerCase().replace(/[’']/gu, "'").replace(/[-‐‑–]/gu, "-").replace(/\s+/gu, " ").trim();
+  return value.normalize("NFKD").replace(/\p{M}/gu, "").toLocaleLowerCase().replace(/[’']/gu, "'").replace(/[-‐‑–]/gu, " ").replace(/\s+/gu, " ").trim();
 }
 export function parsePlaceExtraction(value: unknown, source: string): PlaceExtraction {
   if (!record(value) || !Array.isArray(value.mentions) || value.mentions.length > 6 || !["location", "current-state", "unknown"].includes(String(value.purpose))) throw new Error("Invalid place extraction");
   const mentions = value.mentions.map((item): PlaceMention => {
-    if (!record(item) || Object.keys(item).some(k => !["name", "kind", "role", "excerpt", "municipality", "region", "country"].includes(k))) throw new Error("Unexpected place fields");
+    if (!record(item) || Object.keys(item).some(k => !["name", "kind", "role", "excerpt", "municipality", "region", "country", "purpose"].includes(k))) throw new Error("Unexpected place fields");
     for (const key of ["name", "excerpt", "municipality", "region", "country"]) {
       if (typeof item[key] !== "string" || item[key].length > (key === "excerpt" ? 600 : 120)) throw new Error("Invalid place text");
     }
     if (!item.name || !item.excerpt || !source.includes(item.excerpt as string) || !(item.excerpt as string).includes(item.name as string)) throw new Error("Place evidence must be copied exactly from the article");
     if (!["named", "generic"].includes(String(item.kind)) || !["event", "secondary"].includes(String(item.role))) throw new Error("Invalid place role");
+    if (item.purpose !== undefined && !["location", "current-state", "unknown"].includes(String(item.purpose))) throw new Error("Invalid place purpose");
     return item as PlaceMention;
   });
   return { mentions, purpose: value.purpose as PlaceExtraction["purpose"] };
@@ -97,4 +100,55 @@ export function documentarySnapshot(value: unknown): DocumentarySnapshot | undef
 }
 export function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+
+/** Physical-condition claims in visible copy must not be illustrated with archive imagery. */
+export function reportsChangedPlaceState(text: string): boolean {
+  return /\b(rénov|travaux|fermeture|fermé|construction|inaugur|réaménag|demolit|damage|renovat|closure|closed|réfection|cierre|remodel)/iu.test(text) ||
+    /\bobras\s+(?:de\s+)?(?:construcción|reparación|remodelación)/iu.test(text);
+}
+
+/** Select only an unambiguous venue actually named in this slide's visible copy. */
+export function documentarySceneExtraction(extraction: PlaceExtraction, title: string, excerpt: string): PlaceExtraction {
+  const visible = normalizePlaceName(excerpt);
+  const mentions = extraction.mentions.filter(m => visible.includes(normalizePlaceName(m.name)));
+  const unique = [...new Map(mentions.map(m => [normalizePlaceName(m.name), m])).values()];
+  const purpose = reportsChangedPlaceState(`${title}\n${excerpt}`) ? "current-state"
+    : unique.length === 1 ? unique[0].purpose ?? extraction.purpose : "unknown";
+  return { mentions: unique, purpose };
+}
+
+/** Keep source sentences intact while giving separate venues their own scenes. */
+export function selectDocumentaryExcerpts(sentences: string[], extraction: PlaceExtraction): string[] {
+  const selected = sentences.slice(0, 1);
+  const seen = new Set<string>();
+  for (const sentence of sentences) {
+    const scene = documentarySceneExtraction(extraction, "", sentence);
+    if (!canUseLocationVisual(scene)) continue;
+    const name = normalizePlaceName(scene.mentions[0].name);
+    if (seen.has(name)) continue;
+    seen.add(name);
+    if (!selected.includes(sentence)) selected.push(sentence);
+    if (selected.length === 3) return selected;
+  }
+  for (const sentence of sentences) {
+    if (!selected.includes(sentence)) selected.push(sentence);
+    if (selected.length === 3) break;
+  }
+  return selected;
+}
+
+
+/** Discovery is informational: retain complete place-name matches, never name fragments. */
+export function relevantPlaceDiscovery(discovery: DocumentarySnapshot["discovery"], mentions: PlaceMention[]): DocumentarySnapshot["discovery"] {
+  if (!discovery) return undefined;
+  const searchable = (text: string) => normalizePlaceName(text).normalize("NFD").replace(/\p{M}/gu, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const names = mentions.filter(m => m.kind === "named").map(m => searchable(m.name)).filter(Boolean);
+  return { ...discovery, sources: discovery.sources.filter(item => {
+    let url = item.url;
+    try { url = decodeURIComponent(url); } catch { /* keep original */ }
+    const text = ` ${searchable(`${item.title} ${url}`)} `;
+    return names.some(name => text.includes(` ${name} `));
+  }) };
 }

@@ -507,6 +507,8 @@ export type CreativeProfile = {
   conversionGoal: CreativeConversionGoal;
   framingStrategy: CreativeFramingStrategy;
   visualFidelityMode: VisualFidelityMode;
+  /** Operational contact; excluded from editorial policy and generation hashes. */
+  geoProviderContact?: string;
   geoScope: CreativeGeoScope;
   /**
    * Monotonic marker of the topic's visual representation policy. Advances

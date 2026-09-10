@@ -1,0 +1,1 @@
+ALTER TABLE "creative_profiles" ADD COLUMN "geo_provider_contact" text DEFAULT '' NOT NULL;

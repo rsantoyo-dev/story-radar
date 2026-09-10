@@ -6,6 +6,7 @@ import { EventEmitter } from "node:events";
 import * as crypto from "node:crypto";
 import ts from "typescript";
 import sharp from "sharp";
+import * as contactPolicy from "./creative-geo-contact";
 import * as policy from "./creative-documentary";
 
 type Fixture = (url: URL) => unknown;
@@ -15,7 +16,7 @@ function providers(fixture: Fixture, env: Record<string, string> = { CREATIVE_GE
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
   const exports = {};
   runInNewContext(code, { exports, Buffer, URL, URLSearchParams, Date, Set, Map, process: { env }, require: (name: string) => ({
-    "server-only": {}, "node:crypto": crypto, sharp, "./creative-documentary": policy,
+    "server-only": {}, "./creative-geo-contact": contactPolicy, "node:crypto": crypto, sharp, "./creative-documentary": policy,
     "../sources/rss/fetch-rss-feed": { lookupPublicAddress: () => { throw new Error("No real network in fixtures"); } },
     "node:https": { request: (url: URL, _options: unknown, callback: (response: EventEmitter & { headers: object; statusCode: number; destroy: () => void }) => void) => {
       calls.push(url);
@@ -92,4 +93,28 @@ test("maps require a configured export plan and reject imprecise or non-earth co
   assert.equal(await h.module.documentaryProviders(AbortSignal.timeout(1000)).map({ id: "Q1", name: "Place", scope, hierarchy: [], revision: 1, sourceUrl: "https://www.wikidata.org/wiki/Q1" }), undefined);
   assert.equal(h.module.validCoordinate({ latitude: 45, longitude: -73, precision: 1, globe: "http://www.wikidata.org/entity/Q2" }), false);
   assert.equal(h.module.validCoordinate({ latitude: 45, longitude: -73, precision: 0.00001, globe: "Mars" }), false);
+});
+
+test("the municipality itself resolves with region and country in its ancestors", async () => {
+  const h = providers(url => url.searchParams.get("action") === "wbsearchentities"
+    ? { search: [{ id: "Q2" }] }
+    : fixture(url));
+  const city = await h.module.documentaryProviders(AbortSignal.timeout(5000)).resolve(
+    { ...mention, name: scope.municipality, excerpt: scope.municipality }, scope,
+  );
+  assert.equal(city?.id, "Q2");
+  const wrongRegion = await h.module.documentaryProviders(AbortSignal.timeout(5000)).resolve(
+    { ...mention, name: scope.municipality, excerpt: scope.municipality }, { ...scope, region: "Ontario" },
+  );
+  assert.equal(wrongRegion, undefined);
+});
+
+
+test("profile contact enables geographic lookup without an environment contact", async () => {
+  const h = providers(fixture, {});
+  const result = await h.module.documentaryProviders(AbortSignal.timeout(5000), "fr", "brand@example.org").resolve(
+    { ...mention, municipality: "Saint-Jean-sur-Richelieu", region: "Québec", country: "Canada" },
+    { ...scope, municipality: "Saint jean sur richelieu", region: "quebec", country: "canada" },
+  );
+  assert.equal(result?.id, "Q1");
 });

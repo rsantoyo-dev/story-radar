@@ -421,6 +421,13 @@
       "when": 1789046792131,
       "tag": "0059_ambiguous_rawhide_kid",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1789062150069,
+      "tag": "0060_pink_lady_bullseye",
+      "breakpoints": true
     }
   ]
 }
