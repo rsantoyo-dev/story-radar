@@ -71,6 +71,18 @@ export const topicStories = pgTable(
       mode: "date",
     }),
     duplicateSimilarity: integer("duplicate_similarity"),
+    /**
+     * Set when a human explicitly rejects a duplicate match as a false
+     * positive (e.g. two adjacent sections of one source document sharing a
+     * breadcrumb/heading structure). Detection is deterministic, so without
+     * this the very next detection pass would just re-flag the same pair;
+     * this column makes the override sticky and permanently excludes the
+     * story from future duplicate scans.
+     */
+    duplicateOverriddenAt: timestamp("duplicate_overridden_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
   },
   (table) => [
     uniqueIndex("topic_stories_topic_story_unique").on(

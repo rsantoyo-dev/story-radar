@@ -1,0 +1,1 @@
+ALTER TABLE "topic_stories" ADD COLUMN "duplicate_overridden_at" timestamp with time zone;

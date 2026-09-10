@@ -2041,7 +2041,8 @@
 .prepareTableButton,
 .viewContentButton,
 .creativeStudioButton,
-.promoteStoryButton {
+.promoteStoryButton,
+.clearDuplicateButton {
   @ds-button(contained primary 2);
   min-height: 32px;
   padding: 0 density(2);
@@ -2079,17 +2080,25 @@
   color: palette(info-dark);
 }
 
+.clearDuplicateButton {
+  border: 1px solid palette(neutral-dark);
+  background: palette(light-light);
+  color: palette(neutral-dark);
+}
+
 .prepareTableButton:hover:not(:disabled),
 .viewContentButton:hover:not(:disabled),
 .creativeStudioButton:hover:not(:disabled),
-.promoteStoryButton:hover:not(:disabled) {
+.promoteStoryButton:hover:not(:disabled),
+.clearDuplicateButton:hover:not(:disabled) {
   transform: translateY(-1px);
 }
 
 .prepareTableButton:disabled,
 .viewContentButton:disabled,
 .creativeStudioButton:disabled,
-.promoteStoryButton:disabled {
+.promoteStoryButton:disabled,
+.clearDuplicateButton:disabled {
   cursor: not-allowed;
   opacity: 0.45;
 }

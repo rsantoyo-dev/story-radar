@@ -101,7 +101,7 @@ test("new unsupported claims reject the whole patch while counting provider usag
   ])));
   assert.deepEqual(result.draft.units, draft.units);
   assert.equal(result.draft.qualityReview?.status, "rejected");
-  assert.equal(result.usage.totalTokens, 35);
+  assert.equal(result.usage.totalTokens, 70);
 });
 
 test("unavailable or malformed final repair preserves blockers without recursion", async () => {
@@ -133,4 +133,75 @@ test("fixing a deterministic CTA cannot erase a separate unresolved factual crit
   assert.equal(result.draft.qualityReview?.repairPasses, 3);
   assert.ok(!result.draft.qualityReview?.issues.some((issue) => issue.code === "EDITORIAL_QUALITY_TARGET_NOT_MET"));
   assert.match(result.draft.qualityReview?.issues.find((issue) => issue.code === "QUALITY_CTA_BELOW_THRESHOLD")?.message ?? "", /Previous critic score/);
+});
+
+
+test("partial headline repair gets one follow-up with the remaining CTA blocker", async () => {
+  const draft = fixture();
+  draft.units[1].headline = "";
+  draft.units[1].ctaQuestion = undefined;
+  let calls = 0;
+  const result = await repairRemainingCreativeBlockers(draft, context, async (contents) => {
+    calls++;
+    if (calls === 1) return response(patches([
+      { unitOrder: 2, field: "headline", text: "Empleo y profesión pueden diferir" },
+    ]));
+    assert.ok(!JSON.stringify(contents.blockers).includes("MISSING_HEADLINE"));
+    assert.equal((contents.draft as GeneratedCreativeDraft).units[1].headline, "Empleo y profesión pueden diferir");
+    return response();
+  });
+  assert.equal(calls, 2);
+  assert.equal(result.draft.units[1].ctaQuestion, specificCta);
+  assert.equal(result.usage.totalTokens, usage.totalTokens * 2);
+  assert.equal(result.draft.qualityReview?.repairPasses, 2);
+  assert.ok(!inspect(result.draft).some((issue) => issue.severity === "blocker"));
+  assert.equal(draft.units[1].headline, "");
+});
+
+test("failed follow-up preserves the safe partial repair and remaining blockers", async () => {
+  const draft = fixture();
+  draft.units[1].headline = "";
+  let calls = 0;
+  const result = await repairRemainingCreativeBlockers(draft, context, async () => {
+    if (++calls === 2) throw new Error("provider unavailable");
+    return response(patches([{ unitOrder: 2, field: "headline", text: "Empleo y profesión pueden diferir" }]));
+  });
+  assert.equal(calls, 2);
+  assert.equal(result.draft.units[1].headline, "Empleo y profesión pueden diferir");
+  assert.equal(result.draft.qualityReview?.status, "rejected");
+  assert.ok(result.draft.qualityReview?.issues.some((issue) => issue.code === "FINAL_REPAIR_UNRESOLVED"));
+  assert.ok(!result.draft.qualityReview?.issues.some((issue) => issue.code === "FINAL_REPAIR_APPLIED"));
+});
+
+
+test("rejected first attempt feeds validator findings into a safe second attempt", async () => {
+  const draft = fixture();
+  let calls = 0;
+  const result = await repairRemainingCreativeBlockers(draft, context, async (contents) => {
+    if (++calls === 1) return response(patches([
+      ctaPatch, { unitOrder: 2, field: "body", text: "El 99% de los inmigrantes encontró empleo en 2028." },
+    ]));
+    assert.ok(contents.previousAttempt);
+    const feedback = contents.previousAttempt as { issues: unknown[]; rejectedPatches: string };
+    assert.ok(feedback.issues.length > 0);
+    assert.match(feedback.rejectedPatches, /99%/);
+    assert.equal((contents.draft as GeneratedCreativeDraft).units[1].body, draft.units[1].body);
+    return response();
+  });
+  assert.equal(calls, 2);
+  assert.equal(result.draft.units[1].ctaQuestion, specificCta);
+  assert.equal(result.draft.units[1].body, draft.units[1].body);
+  assert.equal(result.usage.totalTokens, 70);
+  assert.equal(result.draft.qualityReview?.status, "needs-review");
+});
+
+test("empty copy response receives one bounded follow-up without removing blockers", async () => {
+  let calls = 0;
+  const result = await repairRemainingCreativeBlockers(fixture(), context, async (contents) => {
+    if (++calls === 2) assert.ok(contents.previousAttempt);
+    return response(patches([]));
+  });
+  assert.equal(calls, 2);
+  assert.equal(result.draft.qualityReview?.status, "rejected");
+  assert.match(result.draft.qualityReview?.issues.find((i) => i.code === "FINAL_REPAIR_UNRESOLVED")?.message ?? "", /no copy changes/);
 });

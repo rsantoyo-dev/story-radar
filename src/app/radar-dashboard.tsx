@@ -365,6 +365,7 @@ type Operation =
   | "review"
   | "unselect"
   | "promote"
+  | "clear-duplicate"
   | "prepare"
   | "view"
   | "publication"
@@ -738,6 +739,41 @@ export function RadarDashboard({
       setNotice({
         tone: "error",
         title: "Story could not be promoted",
+        message: getErrorMessage(error),
+      });
+    } finally {
+      setActiveOperation(undefined);
+      setActiveStoryId(undefined);
+    }
+  }
+
+  async function handleClearDuplicateFlag(storyId: string, title: string) {
+    if (!canAuthenticate || isBusy) return;
+    if (
+      !window.confirm(
+        `Mark “${title}” as not a duplicate? This permanently excludes it from future duplicate matching for this topic and returns it to the AI evaluation queue.`,
+      )
+    ) {
+      return;
+    }
+
+    setActiveOperation("clear-duplicate");
+    setActiveStoryId(storyId);
+    setNotice(undefined);
+
+    try {
+      await clearDuplicateFlag(secret, selectedTopicId, storyId);
+      const nextStats = await fetchDatabaseStats(secret, selectedTopicId);
+      setStats(nextStats);
+      setNotice({
+        tone: "success",
+        title: "Duplicate flag cleared",
+        message: "The story will be evaluated the next time this topic runs.",
+      });
+    } catch (error) {
+      setNotice({
+        tone: "error",
+        title: "Duplicate flag could not be cleared",
         message: getErrorMessage(error),
       });
     } finally {
@@ -1533,6 +1569,11 @@ export function RadarDashboard({
               activeOperation === "promote" ? activeStoryId : undefined
             }
             onPromote={handlePromoteReviewCandidate}
+            canClearDuplicate={canAuthenticate && !isBusy}
+            clearingDuplicateStoryId={
+              activeOperation === "clear-duplicate" ? activeStoryId : undefined
+            }
+            onClearDuplicate={handleClearDuplicateFlag}
             canTrackPublications={canAuthenticate && !isBusy}
             updatingPublicationStoryId={
               activeOperation === "publication" ? activeStoryId : undefined
@@ -1739,6 +1780,9 @@ function EditorialEvaluationPanel({
   canPromote,
   promotingStoryId,
   onPromote,
+  canClearDuplicate,
+  clearingDuplicateStoryId,
+  onClearDuplicate,
   canTrackPublications,
   updatingPublicationStoryId,
   onUpdatePublication,
@@ -1768,6 +1812,9 @@ function EditorialEvaluationPanel({
     title: string,
     decision: EditorialTableStory["evaluationDecision"],
   ) => void;
+  canClearDuplicate: boolean;
+  clearingDuplicateStoryId?: string;
+  onClearDuplicate: (storyId: string, title: string) => void;
   canTrackPublications: boolean;
   updatingPublicationStoryId?: string;
   onUpdatePublication: (
@@ -2164,6 +2211,9 @@ function EditorialEvaluationPanel({
                 canPromote={canPromote}
                 promotingStoryId={promotingStoryId}
                 onPromote={onPromote}
+                canClearDuplicate={canClearDuplicate}
+                clearingDuplicateStoryId={clearingDuplicateStoryId}
+                onClearDuplicate={onClearDuplicate}
               />
             </div>
           ) : (
@@ -2621,6 +2671,9 @@ function SortableStoriesTable({
   canPromote = false,
   promotingStoryId,
   onPromote,
+  canClearDuplicate = false,
+  clearingDuplicateStoryId,
+  onClearDuplicate,
   canTrackPublications = false,
   updatingPublicationStoryId,
   onUpdatePublication,
@@ -2648,6 +2701,9 @@ function SortableStoriesTable({
     title: string,
     decision: EditorialTableStory["evaluationDecision"],
   ) => void;
+  canClearDuplicate?: boolean;
+  clearingDuplicateStoryId?: string;
+  onClearDuplicate?: (storyId: string, title: string) => void;
   canTrackPublications?: boolean;
   updatingPublicationStoryId?: string;
   onUpdatePublication?: (
@@ -2955,6 +3011,21 @@ function SortableStoriesTable({
                             : story.evaluationDecision === "reject"
                               ? "Override to selected"
                               : "Promote to selected"}
+                        </button>
+                      ) : null}
+                      {story.duplicateOfStoryId ? (
+                        <button
+                          type="button"
+                          className={styles.clearDuplicateButton}
+                          disabled={!canClearDuplicate}
+                          title="Mark this story as covering a distinct topic, not the same news event"
+                          onClick={() =>
+                            onClearDuplicate?.(story.storyId, story.title)
+                          }
+                        >
+                          {clearingDuplicateStoryId === story.storyId
+                            ? "Clearing…"
+                            : "Not a duplicate"}
                         </button>
                       ) : null}
                     </>
@@ -3408,6 +3479,21 @@ async function promoteReviewCandidate(
   return requestJson<{ storyId: string; promoted: true }>(
     topicUrl(
       `/api/radar/stories/${encodeURIComponent(storyId)}/promote`,
+      topicId,
+    ),
+    secret,
+    { method: "POST" },
+  );
+}
+
+async function clearDuplicateFlag(
+  secret: string,
+  topicId: string,
+  storyId: string,
+): Promise<{ storyId: string; cleared: true }> {
+  return requestJson<{ storyId: string; cleared: true }>(
+    topicUrl(
+      `/api/radar/stories/${encodeURIComponent(storyId)}/clear-duplicate`,
       topicId,
     ),
     secret,

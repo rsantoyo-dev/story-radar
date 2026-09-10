@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq, gte, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { stories, storySocialPublications, topicStories } from "@/db/schema";
@@ -35,6 +35,7 @@ type StoryRow = {
   processingStatus: string;
   reviewDecision: string | null;
   duplicateOfStoryId: string | null;
+  duplicateOverriddenAt: Date | null;
   tier: DuplicateTier;
 };
 
@@ -68,6 +69,7 @@ export async function detectTopicDuplicates(
         row.tier === "pending" &&
         row.reviewDecision === null &&
         row.duplicateOfStoryId === null &&
+        row.duplicateOverriddenAt === null &&
         CANDIDATE_STATUSES.has(row.processingStatus),
     )
     .sort(
@@ -120,11 +122,59 @@ export async function detectTopicDuplicates(
           eq(topicStories.id, row.topicStoryId),
           isNull(topicStories.reviewDecision),
           isNull(topicStories.duplicateOfStoryId),
+          isNull(topicStories.duplicateOverriddenAt),
         ),
       );
   }
 
   return { marked: pairs.length, pairs };
+}
+
+export class DuplicateFlagClearConflictError extends Error {}
+
+/**
+ * Human override for a false-positive "same news event" match. Detection
+ * compares title text, so adjacent sections of one source document that
+ * share a breadcrumb/heading structure (e.g. "Pregnancy > ... > Alcohol" vs
+ * "Pregnancy > ... > Tobacco") can score as duplicates even though they cover
+ * distinct topics.
+ *
+ * Detection is deterministic: with the same title/embedding and the same
+ * priors, merely clearing `duplicateOfStoryId` would just have the very next
+ * detection pass re-flag the identical pair before AI evaluation ever runs.
+ * `duplicateOverriddenAt` makes the override sticky by permanently excluding
+ * this story from future duplicate scans (see the candidate filter in
+ * `detectTopicDuplicates`). It cannot undo a story that already has a human
+ * review decision.
+ */
+export async function clearTopicStoryDuplicateFlag(
+  topicId: string,
+  storyId: string,
+  overriddenAt = new Date(),
+): Promise<void> {
+  const [cleared] = await db
+    .update(topicStories)
+    .set({
+      duplicateOfStoryId: null,
+      duplicateDetectedAt: null,
+      duplicateSimilarity: null,
+      duplicateOverriddenAt: overriddenAt,
+    })
+    .where(
+      and(
+        eq(topicStories.topicId, topicId),
+        eq(topicStories.storyId, storyId),
+        isNotNull(topicStories.duplicateOfStoryId),
+        isNull(topicStories.reviewDecision),
+      ),
+    )
+    .returning({ storyId: topicStories.storyId });
+
+  if (!cleared) {
+    throw new DuplicateFlagClearConflictError(
+      "This story is no longer flagged as a duplicate",
+    );
+  }
 }
 
 /**
@@ -195,6 +245,7 @@ async function loadTopicStoryRows(
       processingStatus: topicStories.processingStatus,
       reviewDecision: topicStories.reviewDecision,
       duplicateOfStoryId: topicStories.duplicateOfStoryId,
+      duplicateOverriddenAt: topicStories.duplicateOverriddenAt,
       publicationStatus: storySocialPublications.status,
     })
     .from(topicStories)
@@ -227,6 +278,7 @@ async function loadTopicStoryRows(
     processingStatus: row.processingStatus,
     reviewDecision: row.reviewDecision,
     duplicateOfStoryId: row.duplicateOfStoryId,
+    duplicateOverriddenAt: row.duplicateOverriddenAt,
     tier: resolveTier(row),
   }));
 }
