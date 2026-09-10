@@ -2,6 +2,94 @@
 
 El envío utiliza órdenes persistidas en PostgreSQL y un worker independiente. `after()` y el polling del panel aceleran el progreso; el worker retoma los trabajos aunque el navegador esté cerrado o el servidor haya reiniciado. No programa publicaciones futuras: PUB-05 sigue pendiente.
 
+## Estado de la prueba local
+
+El 9 de septiembre de 2026 el usuario confirmó que la conexión y publicación de Instagram funcionaron usando localhost y ngrok, tras configurar el origen público y el secreto del worker. Es una validación manual reportada por el usuario; el formato y el ID remoto no quedaron registrados en esta nota. El despliegue supervisado y la matriz completa de recuperación siguen pendientes en [PUB-08](../stories/PUB-08.md).
+
+## Ejecutar en localhost con ngrok
+
+Prerequisitos: dependencias instaladas, base de datos y R2 configurados, migraciones de publicación aplicadas y una cuenta de Instagram con permiso de publicación. Ejecutar los comandos desde la raíz del proyecto. No hace falta desplegar para esta prueba; sí mantener la computadora, la app, el túnel y el worker activos.
+
+### 1. Preparar ngrok una sola vez
+
+Instalar ngrok siguiendo su [guía oficial](https://ngrok.com/docs/start) e iniciar sesión en su dashboard. Asociar el agente a la misma cuenta:
+
+```sh
+ngrok config add-authtoken "TU_AUTHTOKEN_DE_NGROK"
+```
+
+El authtoken de ngrok y el secreto de nuestro worker son credenciales distintas. No copiarlos a las historias ni al repositorio.
+
+Si aparece `ERR_NGROK_15013`, solicitar el dominio de desarrollo en [Domains](https://dashboard.ngrok.com/domains) de esa cuenta antes de iniciar el túnel; no usar un dominio inventado.
+
+### 2. Arrancar la app y el túnel
+
+Terminal 1:
+
+```sh
+npm run dev
+```
+
+Este recorrido usa HTTP local en el puerto 3000. Si ya hay otro servidor ocupándolo, detenerlo para que Next y ngrok apunten al mismo puerto. No usar `dev:https` para estos comandos.
+
+Terminal 2:
+
+```sh
+ngrok http 3000
+```
+
+Si hace falta indicar el dominio asignado explícitamente:
+
+```sh
+ngrok http 3000 --url=https://TU-DOMINIO-ASIGNADO
+```
+
+Copiar el origen HTTPS público que muestra ngrok. El túnel entrega las peticiones a `http://localhost:3000`.
+
+### 3. Configurar el entorno y reiniciar
+
+En `.env.local`, sustituir los marcadores por los valores del entorno:
+
+```dotenv
+RADAR_APP_URL="https://TU-DOMINIO-ASIGNADO"
+INSTAGRAM_PUBLISH_WORKER_URL="http://127.0.0.1:3000"
+INSTAGRAM_PUBLISH_WORKER_SECRET="TU_SECRETO_DE_WORKER"
+```
+
+Conservar el secreto existente si ya está configurado. Si falta, generar uno con `openssl rand -hex 32` y guardar el resultado únicamente como `INSTAGRAM_PUBLISH_WORKER_SECRET`. App y worker deben leer el mismo valor.
+
+`RADAR_APP_URL` debe ser público: `https://localhost:3000` no permite a Meta descargar los archivos. La URL interna del worker evita que este dependa del túnel; si se omite `INSTAGRAM_PUBLISH_WORKER_URL`, el script usa `RADAR_APP_URL`, que también sirve con ngrok.
+
+Reiniciar `npm run dev` después de guardar. Si hay que reconectar Instagram, registrar el callback exacto en la configuración de Meta antes de hacerlo:
+
+```text
+https://TU-DOMINIO-ASIGNADO/api/radar/meta/callback
+```
+
+Si cambia el origen del túnel, actualizar entorno y callback, reiniciar y revalidar el paquete para obtener enlaces de entrega del origen vigente.
+
+### 4. Arrancar el worker
+
+Terminal 3:
+
+```sh
+npm run worker:instagram
+```
+
+El script carga `.env.local` automáticamente mediante `@next/env`. El error `Configure INSTAGRAM_PUBLISH_WORKER_SECRET ...` indica que falta el secreto o una URL base; revisar sus nombres y reiniciar ambos procesos tras corregirlos. No hace falta exportar manualmente las variables en la terminal.
+
+El worker puede avanzar órdenes pendientes ya autorizadas. Mantenerlo junto a la app y ngrok mientras dure la prueba.
+
+### 5. Validar y publicar desde la interfaz
+
+1. Abrir la app, verificar la cuenta destino y revalidar el candidato aprobado.
+2. Abrir el `delivery file` vigente: debe servir el JPEG públicamente, sin login ni pantalla intermedia. No compartir ese enlace secreto en logs o historias.
+3. Revisar el contenido y autorizar el envío con **Publish now**. Para un fallo seguro, usar **Retry publishing**; para una suspensión de autorización previa al envío, **Revalidate and retry publishing**, si la UI lo ofrece. No crear una publicación nueva para resolver un resultado incierto.
+4. Comprobar el post en Instagram y el registro/enlace en la app. Un contenedor `FINISHED` no confirma publicación.
+5. Ante HTTP 400, revisar el detalle saneado del proveedor y la accesibilidad del archivo; el código HTTP por sí solo no identifica la causa.
+
+Detener los tres procesos con Ctrl+C al terminar. No depender de localhost/ngrok para horarios futuros: esa capacidad requiere el despliegue permanente de [PUB-11](../stories/PUB-11.md).
+
 ## Configuración
 
 1. Aplicar las migraciones existentes `0057` y `0058` en la base del entorno. Estas correcciones no añaden migraciones. `npm run db:check` comprueba archivos de migración, no demuestra que estén aplicados en una base remota.
@@ -44,7 +132,7 @@ npm run db:check
 
 Las pruebas usan dependencias simuladas y PostgreSQL en memoria. Cubren concurrencia, idempotencia, reintentos explícitos, interrupciones, pérdida/caducidad de lease, cambios de autorización y recuperación tras fallos locales. No contactan Meta ni la base configurada de la aplicación.
 
-## QA real pendiente
+## QA real restante
 
 - En una base y cuenta de pruebas, validar candidato, congelar y abrir la URL pública de entrega sin autenticación. Confirmar el JPEG 1080×1350 y el caption/orden de imágenes.
 - Con autorización explícita para cada publicación, probar una foto y un carrusel, cerrar el navegador después de enviar la orden y comprobar que el worker completa el registro.

@@ -23,3 +23,13 @@ tags: [publishing, todo, p1]
 - Cancelar o reprogramar es atómico frente al worker. Una vez iniciada una solicitud irreversible a Meta, no se promete cancelación hasta confirmar el resultado. No se elimina un post ya publicado.
 - Un retraso del scheduler o del proveedor se registra con hora prevista y real. Se define una tolerancia antes de habilitar programación; pasada ella se suspende en lugar de publicar tarde silenciosamente.
 - No se presenta como sincronización con el calendario de Business Suite. Esa integración solo se añadirá si una API oficial documentada permite el intercambio requerido.
+
+## Ampliación: calendario de Instagram y Facebook
+
+Alcance planificado, todavía no implementado. La habilitación de programación depende de [PUB-11](PUB-11.md); la selección de ambos destinos depende de [PUB-10](PUB-10.md).
+
+- Mostrar un calendario con filtros por plataforma/cuenta y estados, además de una lista de próximas entregas. La zona horaria elegida debe ser visible.
+- Programar Instagram, Facebook o ambos sobre los paquetes aprobados de cada destino. Guardar entregas independientes; cancelar o reprogramar una no modifica una entrega ya publicada en el otro destino.
+- Ofrecer detalle de la pieza, cuenta, fecha/hora y aprobación vigente antes de confirmar. Registrar modificaciones de horario y autor de la acción.
+- Verificar selección de zona, cambios de horario de verano, concurrencia al cancelar/reprogramar, retrasos y fallos parciales de ambos destinos.
+- Press Craftor es la fuente de las órdenes creadas aquí; no se sincroniza automáticamente con el calendario de Meta Business Suite. No incluir sugerencia de mejor hora ni métricas avanzadas en esta entrega.

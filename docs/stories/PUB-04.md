@@ -22,6 +22,15 @@ tags: [publishing, review, p0]
 - La UI distingue preparando, publicando, pendiente de confirmación, publicado y fallido. Un contenedor terminado no equivale a una publicación confirmada.
 - El trabajo persiste y puede continuar aunque el editor cierre el navegador. Ningún endpoint depende de una pestaña abierta ni mantiene un sleep hasta completar el proceso.
 
+
+## Prueba real confirmada con ngrok — 9 de septiembre de 2026
+
+El usuario confirmó en esta sesión que la conexión y la publicación de Instagram funcionaron desde la app local mediante ngrok, después de configurar el origen HTTPS público y el secreto del worker. Evidencia: confirmación manual del usuario («funcionó»); no se adjuntó un ID/permalink ni se identificó si el envío fue foto o carrusel.
+
+El bloqueo de la prueba local queda superado. Esta confirmación no acredita por sí sola todas las pruebas de foto/carrusel, recuperación con navegador cerrado, reinicio del worker, deduplicación, trazabilidad ni operación desplegada. Esos criterios siguen pendientes; no se marca toda la historia como hecha. Las notas anteriores de pausa se conservan como historial, no como estado actual.
+
+Pasos reproducibles: [ejecutar en localhost con ngrok](../features/instagram-publishing-worker.md#ejecutar-en-localhost-con-ngrok).
+
 ## Implementación y correcciones — 9 de septiembre de 2026
 
 - La orden se persiste antes de ejecutar cualquier envío, con clave idempotente por paquete/cuenta/acción. Repetir el POST inicial devuelve la misma orden, incluso si su paquete ya fue consumido. Un reintento exige `retryJobId`, solo acepta un fallo seguro y reactiva esa misma fila con una actualización condicional; conserva los IDs de contenedores anteriores como entradas `retired`.

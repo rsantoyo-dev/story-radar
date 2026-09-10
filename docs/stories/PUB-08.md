@@ -1,14 +1,14 @@
 ---
 id: PUB-08
 feature: FEAT-PUB-001
-status: todo
+status: review
 board: instagram-publishing.kanban.md
-tags: [publishing, todo, p0]
+tags: [publishing, review, p0]
 ---
 
 # PUB-08 — Validar publicación y trazabilidad de extremo a extremo
 
-**Estado:** [[status-todo]] · **Feature:** [Publicación desde el SaaS](../features/instagram-publishing.md)
+**Estado:** [[status-review]] · **Feature:** [Publicación desde el SaaS](../features/instagram-publishing.md)
 
 **Como** editor, **quiero** validar publicación y trazabilidad de extremo a extremo, **para** entregar contenido aprobado con trazabilidad y control del envío.
 
@@ -22,6 +22,15 @@ tags: [publishing, todo, p0]
 - Las pruebas de integración públicas requieren una cuenta de prueba y autorización explícita para cada publicación de validación. La documentación de esta feature no autoriza publicar contenido real.
 - La UI usa UXDSL, la paleta del proyecto y sus breakpoints. Pasan pruebas relevantes, TypeScript, lint, build y db:check si hay cambios de esquema; los bloqueos se documentan.
 - El despliegue de programación requiere scheduler/worker durable y observabilidad comprobados. Mientras falten se deshabilita “Programar”, manteniendo honesto el alcance disponible.
+
+
+## Prueba real confirmada con ngrok — 9 de septiembre de 2026
+
+El usuario confirmó en esta sesión que la conexión y la publicación de Instagram funcionaron desde la app local mediante ngrok, después de configurar el origen HTTPS público y el secreto del worker. Evidencia: confirmación manual del usuario («funcionó»); no se adjuntó un ID/permalink ni se identificó si el envío fue foto o carrusel.
+
+El bloqueo de la prueba local queda superado. Esta confirmación no acredita por sí sola todas las pruebas de foto/carrusel, recuperación con navegador cerrado, reinicio del worker, deduplicación, trazabilidad ni operación desplegada. Esos criterios siguen pendientes; no se marca toda la historia como hecha. Las notas anteriores de pausa se conservan como historial, no como estado actual.
+
+Pasos reproducibles: [ejecutar en localhost con ngrok](../features/instagram-publishing-worker.md#ejecutar-en-localhost-con-ngrok).
 
 ## Validación local — 9 de septiembre de 2026
 

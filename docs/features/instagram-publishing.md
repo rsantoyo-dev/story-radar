@@ -1,7 +1,7 @@
-# Feature: Publicación de Instagram desde el SaaS
+# Feature: Publicación de Instagram y Facebook desde el SaaS
 
 **ID:** FEAT-PUB-001  
-**Estado:** En revisión local — PUB-01 a PUB-04 y PUB-07 en QA. PUB-04 incluye worker independiente y recuperación del registro; PUB-06 conserva pendientes de compatibilidad y QA, PUB-08 requiere validación real. PUB-05 (programación) sigue pendiente. [Configuración del worker y pruebas](instagram-publishing-worker.md).
+**Estado:** Instagram: conexión y publicación local con ngrok confirmadas por el usuario el 9 de septiembre de 2026. PUB-01 a PUB-04, PUB-07 y PUB-08 continúan en QA por los criterios restantes; PUB-06 conserva pendientes. Facebook, calendario y despliegue permanente están planificados, no implementados. [Guía local y worker](instagram-publishing-worker.md).
 **Producto:** Press Craftor  
 **Tablero:** [instagram-publishing.kanban.md](instagram-publishing.kanban.md)
 
@@ -51,7 +51,7 @@ Referencias consultadas el 6 de septiembre de 2026: [publicación y estados de c
 | MVP inmediato | PUB-01 a PUB-04 y PUB-06 a PUB-08 | Publicar foto/carrusel aprobado, con recuperación y vínculo automático. |
 | Programación | PUB-05 y validación correspondiente de PUB-08 | Elegir fecha y hora dentro del SaaS. |
 
-No incluye reels, Stories, Facebook Pages, edición de publicaciones remotas, borrado remoto, anuncios, mejor hora calculada ni sincronización del calendario de Business Suite. No se habilitan credenciales ni se ejecutan publicaciones al redactar esta propuesta.
+El MVP inmediato de Instagram no incluye Facebook Pages; se incorpora como ampliación en PUB-09/PUB-10. La feature no incluye reels, Stories, edición de publicaciones remotas, borrado remoto, anuncios, mejor hora calculada ni sincronización del calendario de Business Suite. No se habilitan credenciales ni se ejecutan publicaciones al redactar esta propuesta.
 
 ## Historias
 
@@ -196,4 +196,24 @@ Elegir scheduler/cola conforme al despliegue real; verificar política de retras
 
 ## Avance de PUB-01 — 9 de septiembre de 2026
 
-Implementada la evaluación de candidaturas en servidor y su panel en ambos recorridos creativos; véase [detalle y límites de PUB-01](../stories/PUB-01.md#implementación--9-de-septiembre-de-2026). La verificación es puntual y no crea una orden de envío. «Lista para publicar» sigue bloqueado por PUB-02; no hay publicación ni programación habilitadas.
+Implementada la evaluación de candidaturas en servidor y su panel en ambos recorridos creativos; véase [detalle y límites de PUB-01](../stories/PUB-01.md#implementación--9-de-septiembre-de-2026). La verificación es puntual y no crea una orden de envío. En esa revisión inicial, «Lista para publicar» seguía bloqueado por PUB-02. Estado posterior: publicación local confirmada con ngrok; programación pendiente.
+
+## Ampliación: gestión conjunta de Instagram y Facebook
+
+Press Craftor será el centro editorial y de las órdenes de publicación creadas en la aplicación: aprobación → destino(s) → publicación inmediata o fecha/hora → seguimiento. Meta Business Suite queda como complemento para gestión nativa, mensajes, comentarios y resultados. No se promete transferencia de borradores ni sincronización de calendarios con Business Suite.
+
+Orden de implementación: conectar Facebook → publicar en uno o ambos destinos → despliegue permanente → calendario/programación → seguimiento unificado. El despliegue puede avanzar en paralelo a la conexión de Facebook. Las métricas avanzadas quedan para una fase posterior; no se duplican las historias de rendimiento de Instagram.
+
+| Historia | Entrega planificada |
+|---|---|
+| [PUB-09](../stories/PUB-09.md) | Conectar y autorizar una página de Facebook sin sustituir Instagram. |
+| [PUB-10](../stories/PUB-10.md) | Publicar en Instagram, Facebook o ambos, con resultados y reintentos independientes. |
+| [PUB-11](../stories/PUB-11.md) | Desplegar app y worker, supervisión y recuperación sin localhost/ngrok. |
+| [PUB-05](../stories/PUB-05.md) | Calendario, zona horaria, programación, cancelación y reprogramación por destino. |
+| [PUB-12](../stories/PUB-12.md) | Vista unificada de estados, enlaces, trazabilidad y fallos parciales. |
+
+Las variantes de texto por plataforma se versionan y aprueban antes del envío. Cada entrega fija su cuenta/página y paquete; un fallo de Facebook no repite Instagram. Una pieza ya publicada en Instagram puede autorizarse después solo para Facebook. Verificar los formatos y requisitos de las APIs durante la implementación, sin asumir equivalencia entre carrusel de Instagram y publicación con varias imágenes en Facebook.
+
+## Evidencia actual y ejecución local
+
+El usuario confirmó conexión y publicación de Instagram funcionando con ngrok después de corregir el origen público y configurar el secreto del worker. No se registró aquí el formato ni el ID del post, por lo que no se cierra toda la QA. Véase [PUB-08](../stories/PUB-08.md#prueba-real-confirmada-con-ngrok--9-de-septiembre-de-2026) para el alcance de la evidencia y [la guía localhost](instagram-publishing-worker.md#ejecutar-en-localhost-con-ngrok) para repetir el recorrido.
