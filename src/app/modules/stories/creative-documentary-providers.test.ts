@@ -22,7 +22,8 @@ function providers(fixture: Fixture, env: Record<string, string> = { CREATIVE_GE
       calls.push(url);
       const req = Object.assign(new EventEmitter(), { setTimeout: () => {}, destroy: () => {}, end: () => queueMicrotask(() => {
         try {
-          const body = Buffer.from(JSON.stringify(fixture(url)));
+          const value = fixture(url);
+          const body = Buffer.isBuffer(value) ? value : Buffer.from(JSON.stringify(value));
           const response = Object.assign(new EventEmitter(), { headers: { "content-length": body.length }, statusCode: 200, destroy: () => {} });
           callback(response); response.emit("data", body); response.emit("end");
         } catch (error) { req.emit("error", error); }
@@ -117,4 +118,50 @@ test("profile contact enables geographic lookup without an environment contact",
     { ...scope, municipality: "Saint jean sur richelieu", region: "quebec", country: "canada" },
   );
   assert.equal(result?.id, "Q1");
+});
+
+
+test("multiple verified image statements are tried instead of rejecting the place's photographs", async () => {
+  const queried: string[] = [];
+  const h = providers(url => {
+    queried.push(url.searchParams.get("titles") ?? "");
+    return { query: { pages: [] } };
+  });
+  const result = await h.module.documentaryProviders(AbortSignal.timeout(5000)).photo({
+    id: "Q1", name: "Place", revision: 1, sourceUrl: "https://www.wikidata.org/wiki/Q1", scope, hierarchy: [],
+    imageTitle: "First.jpg", imageTitles: ["First.jpg", "Second.jpg"],
+  });
+  assert.equal(result, undefined);
+  assert.deepEqual(queried, ["File:First.jpg", "File:Second.jpg"]);
+});
+
+
+test("museum CC BY-SA photo without trailing license slash is downloaded with its attribution", async () => {
+  const bytes = await sharp({ create: { width: 1080, height: 1350, channels: 3, background: "#ddd" } }).jpeg().toBuffer();
+  const h = providers(url => url.hostname === "upload.wikimedia.org" ? bytes : {
+    query: { pages: [{ pageid: 123, imageinfo: [{
+      url: "https://upload.wikimedia.org/wikipedia/commons/a/ab/Museum.jpg",
+      descriptionurl: "https://commons.wikimedia.org/wiki/File:Musée_du_Haut-Richelieu.jpg",
+      width: 1080, height: 1350, size: bytes.length,
+      extmetadata: {
+        LicenseUrl: { value: "https://creativecommons.org/licenses/by-sa/4.0" },
+        Artist: { value: '<a href="/wiki/User:Yource">Yource</a>' },
+        Restrictions: { value: "" },
+      },
+    }] }] },
+  });
+  const place: policy.PlaceEvidence = {
+    id: "Q18414858", name: "Musée du Haut-Richelieu", revision: 1,
+    sourceUrl: "https://www.wikidata.org/wiki/Q18414858", scope, hierarchy: [],
+    imageTitle: "Musée du Haut-Richelieu.jpg",
+  };
+  const result = await h.module.documentaryProviders(AbortSignal.timeout(5000)).photo(place);
+  assert.ok(result);
+  assert.equal(result.evidence.license, "CC BY-SA 4.0");
+  assert.equal(result.evidence.licenseUrl, "https://creativecommons.org/licenses/by-sa/4.0/");
+  assert.equal(result.evidence.author, "Yource");
+  assert.equal(result.evidence.attribution, "Yource · CC BY-SA 4.0");
+  assert.equal(result.evidence.creditUrl, "https://commons.wikimedia.org/?curid=123");
+  assert.ok(result.bytes.equals(bytes));
+  assert.ok(policy.eligiblePhoto(result.evidence, place));
 });

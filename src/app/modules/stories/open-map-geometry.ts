@@ -1,5 +1,5 @@
 export type GeoPoint = [number, number]; // longitude, latitude
-export type MapTarget = { points: GeoPoint[]; kind: "point" | "line"; name: string };
+export type MapTarget = { points: GeoPoint[]; kind: "point" | "line"; name: string; context?: "venue" | "city" };
 export const OSM_ATTRIBUTION = "© OpenStreetMap contributors · openstreetmap.org/copyright";
 const earth = 6378137;
 export function project([lon, lat]: GeoPoint): GeoPoint {
@@ -12,7 +12,7 @@ export function mapViewport(target: MapTarget) {
   const points = target.points.map(project);
   const xs = points.map(p=>p[0]), ys=points.map(p=>p[1]);
   const center: GeoPoint = [(Math.min(...xs)+Math.max(...xs))/2,(Math.min(...ys)+Math.max(...ys))/2];
-  const height = Math.max(1200, Math.max(...ys)-Math.min(...ys)+500, (Math.max(...xs)-Math.min(...xs)+500)*460/944);
+  const height = Math.max(target.kind === "point" && target.context !== "city" ? 400 : 1200, Math.max(...ys)-Math.min(...ys)+(target.kind === "point" ? 150 : 500), (Math.max(...xs)-Math.min(...xs)+(target.kind === "point" ? 150 : 500))*460/944);
   const width = height*944/460;
   if (width > 12000) throw new Error("Place extent exceeds bounded local map coverage");
   const sw = unproject([center[0]-width/2,center[1]-height/2]), ne=unproject([center[0]+width/2,center[1]+height/2]);

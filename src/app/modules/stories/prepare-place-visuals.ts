@@ -20,7 +20,7 @@ const schema = { type: "object", additionalProperties: false, required: ["mentio
 } };
 const adapters = [{ id: "quebec511", supports: (url: URL) => ["www.511.gouv.qc.ca","511.gouv.qc.ca"].includes(url.hostname), prepare: prepareRoadMap }];
 /** General pipeline; regional adapters are optional identity/geometry sources. */
-export async function preparePlaceVisuals(topicId: string, draft: CreativeDraft, profile: CreativeProfile, facts: CreativeKeyFact[], sourceUrl: string): Promise<Map<number, PreparedPlaceVisual>> {
+export async function preparePlaceVisuals(topicId: string, draft: CreativeDraft, profile: CreativeProfile, facts: CreativeKeyFact[], sourceUrl: string, prepared = new Map<number, PreparedPlaceVisual>()): Promise<Map<number, PreparedPlaceVisual>> {
   const stopStartingAt = Date.now() + 45_000;
   const results = new Map<number, PreparedPlaceVisual>();
   const source = [...new Set(facts.map(f=>f.sourceExcerpt || ""))].join("\n").slice(0,18000);
@@ -29,7 +29,7 @@ export async function preparePlaceVisuals(topicId: string, draft: CreativeDraft,
   const reasons: string[]=[];
   const anchors = sourceLocations(facts);
   const anchorUnits = new Map(draft.units.map(unit => [unit.order, sourceLocationForUnit(unit, anchors)]));
-  const needsResearch = draft.units.some(unit => unit.assetRequest !== "typography-only" && !anchorUnits.get(unit.order) && (requestsGeographicReconstruction(unit.visualDirection) || (!anchors.length && unit.role === "cover")));
+  const needsResearch = draft.units.some(unit => !prepared.has(unit.order) && unit.assetRequest !== "typography-only" && !anchorUnits.get(unit.order) && (requestsGeographicReconstruction(unit.visualDirection) || (!anchors.length && unit.role === "cover")));
   const daily = await getCreativeDailyUsage(topicId, getCreativeContentPublicConfig().maxRunsPerDay);
   const model=process.env.CREATIVE_GEO_MODEL?.trim() || "gpt-5.6-luna";
   const key=process.env.OPENAI_API_KEY?.trim();
@@ -53,6 +53,8 @@ export async function preparePlaceVisuals(topicId: string, draft: CreativeDraft,
   try { const url=new URL(sourceUrl);adapter=adapters.find(a=>enabled.includes(a.id)&&a.supports(url)); } catch { /* no regional source */ }
   const materialCache = new Map<string, PreparedPlaceVisual>();
   for (const unit of draft.units) {
+    const reusable = prepared.get(unit.order);
+    if (reusable) { results.set(unit.order, reusable); continue; }
     const result:PreparedPlaceVisual={evidence:{version:PLACE_VISUAL_VERSION,representation:"typography",preparedAt:new Date().toISOString(),reasons:[...reasons],discovery}};
     results.set(unit.order,result);
     const anchor = anchorUnits.get(unit.order);

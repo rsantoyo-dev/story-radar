@@ -45,6 +45,7 @@ export async function renderDraftTypography(unit: CreativeUnit, profile: Creativ
   if (original && evidence?.locationAnchor) await add(french ? "Repère d’adresse · l’événement se tient à proximité" : "Address reference · event takes place nearby", 865, 35, 20, color);
   const context = evidence?.representation === "photo" ? "Archive · " : evidence?.representation === "map" ? "Localisation · " : unit.assetRequest !== "typography-only" ? (french ? "Illustration conceptuelle" : "Conceptual illustration") : "";
   const credit=evidence?.attribution || (original ? "© OpenStreetMap contributors · openstreetmap.org/copyright" : "");
-  await add(context+credit,1240,24,16);
+  const photoUse = evidence?.representation === "photo" ? (french ? " · Photo redimensionnée, non recadrée" : " · Photo resized, not cropped") : "";
+  await add(context+credit+photoUse,1220,80,16);
   return sharp({ create: { width: 1080, height: 1350, channels: 4, background: "#f7faf8" } }).composite(layers).png().toBuffer();
 }

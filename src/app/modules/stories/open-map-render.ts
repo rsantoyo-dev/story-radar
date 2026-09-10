@@ -83,6 +83,6 @@ export async function drawOpenMap(data: unknown, target: MapTarget): Promise<Buf
   if (!shapes.length) throw new Error("No usable map data");
   const points=target.points.map(viewport.pixel);
   const overlay=target.kind === "point" ? `<circle cx="${points[0][0]}" cy="${points[0][1]}" r="9" fill="#c74738" stroke="white" stroke-width="3"/>` : `<polyline points="${points.map(p=>p.join(",")).join(" ")}" fill="none" stroke="#c74738" stroke-width="6"/>`;
-  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="944" height="460"><rect width="944" height="460" fill="#f5f5ed"/>${shapes.join("")}${labels.join("")}${overlay}<rect x="0" y="423" width="944" height="37" fill="white"/><text x="12" y="446" font-family="sans-serif" font-size="14">${OSM_ATTRIBUTION}</text></svg>`;
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="944" height="460"><rect width="944" height="460" fill="#f5f5ed"/>${shapes.join("")}${labels.join("")}${overlay}<rect x="12" y="10" width="920" height="34" rx="4" fill="white"/><text x="24" y="33" font-family="sans-serif" font-size="18" fill="#34463f">${escapeDocumentaryText(target.name.slice(0, 100))}</text><rect x="0" y="423" width="944" height="37" fill="white"/><text x="12" y="446" font-family="sans-serif" font-size="14">${OSM_ATTRIBUTION}</text></svg>`;
   return sharp(Buffer.from(svg)).png().toBuffer();
 }

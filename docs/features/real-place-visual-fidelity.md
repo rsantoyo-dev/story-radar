@@ -404,3 +404,87 @@ La revisión de búsqueda `scene-places-v2` diferencia la nueva preparación de 
 El perfil creativo permite guardar `Geographic provider contact email` junto al ámbito geográfico. El servidor usa ese correo para identificar sus solicitudes; si está vacío utiliza `CREATIVE_GEO_CONTACT`. El contacto no se imprime en las publicaciones ni se incorpora al snapshot editorial de nuevos briefs. Guardar solo el contacto conserva la fecha editorial y no avanza la política visual; los fingerprints documentales excluyen esta columna.
 
 La migración `0060_pink_lady_bullseye.sql` añade `creative_profiles.geo_provider_contact` vacío por defecto. La comparación geográfica normaliza acentos y guiones sin sustituir la comprobación de identidad, jerarquía y país del proveedor. Tras guardar el correo, usar **Prepare a new version** para repetir las búsquedas; cambiar la configuración no ejecuta búsquedas automáticamente.
+
+### Integración con Generate images — originales aprobados
+
+La generación de assets de un Script Draft comprueba ahora si la misma noticia y topic tienen una preparación documental aprobada y vigente. Solo reutiliza originales cuya sede aparece en la evidencia citada por la slide; no asigna una foto por similitud del texto ni por posición en otro carrusel. Verifica hash del archivo privado, vigencia de fuente, aprobación y, para fotos, licencia e incompatibilidad con afirmaciones de cambio físico.
+
+Si hay recursos reutilizables, el carrusel utiliza la composición existente sobre su texto guardado: foto/mapa original más tipografía y elementos gráficos locales. No envía el original al generador para redibujarlo; la salida resultante necesita su propia revisión. Las slides sin asignación continúan por el resolver existente. No se crea otro Script Draft.
+
+Los mapas puntuales de sedes muestran un barrio más cercano y el nombre del lugar; las ciudades y segmentos mantienen un ámbito mayor. Para obtener ese encuadre en un mapa guardado anteriormente, preparar una nueva versión documental. El proveedor evalúa hasta cuatro imágenes declaradas por la entidad verificada, sin descartar todas por existir varias; cada alternativa conserva las comprobaciones de licencia, tamaño, identidad y descarga. No se habilita la reutilización de fotografías arbitrarias encontradas en la web.
+
+
+### Commons photo license compatibility
+
+Documentary preparation and same-draft photo reuse accept CC0, CC BY 4.0,
+and CC BY-SA 4.0. The shared validator canonicalizes HTTP/HTTPS and an optional
+trailing slash only; unknown licenses, other versions, and unrelated hosts remain
+ineligible. Author, source page, canonical license URL and attribution remain in
+the versioned photo evidence and rendered credits.
+
+The photo remains a separate archive image, fitted without cropping or generative
+modification. Rendered credits disclose resizing. CC BY-SA applies to the photo;
+this does not automatically license unrelated editorial copy or brand assets.
+Future photo adaptation must preserve ShareAlike conditions and must not silently
+send these originals through generative editing.
+See [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+
+Regression: Musée du Haut-Richelieu (Q18414858), whose Commons metadata reports
+Yource and CC BY-SA 4.0 without a trailing slash, was previously rejected.
+The provider fixture now exercises download, attribution, and shared eligibility.
+Existing saved versions stay unchanged; use **Prepare a new version** to resolve
+photographs with the updated policy.
+
+
+Composition cache identity now includes the approved documentary originals,
+slide assignments, credits and preparation timestamps. A newly prepared photo
+therefore cannot reuse an older map-only composition when generating a new
+batch. Single-slide regeneration also resolves approved documentary originals.
+Reuse still requires a current approved documentary batch and an unambiguous
+place match in the slide's cited facts; preparation alone is not approval.
+
+The **next image batch version** action also checks approved documentary inputs
+before replaying historical AI requests. If they differ, it creates a composition
+batch while preserving the prior batch; unchanged compositions retain the normal
+per-image version workflow. Regression coverage exercises an existing generative
+batch receiving a newly approved photograph and rejects stale/foreign/pending
+batches. Read-only verification of the Journées de la culture story confirmed
+that slide 3 cites the museum and successfully rendered its approved R2 original
+locally. No publication or paid image generation was triggered during verification.
+
+### Per-slide creative and documentary composition
+
+A verified museum photograph must not turn unrelated slides into generic
+information icons. Composition version `place-visual-v4` selects the render path
+per slide: verified originals use local composition; eligible non-geographic
+slides use the existing creative prompt, immutable character references, brand
+references, brand overlay and carousel chrome. Explicit typography and restrictive
+photo policies retain their documentary fallback. Research is limited to slides
+requiring geographic material, rather than unrelated covers.
+
+Mixed batches retain per-asset endpoints. Retrieval polls pending AI requests,
+while local photo assets are never submitted to the image provider. Whole-batch
+versioning recomposes local assets and regenerates creative assets separately.
+Regression tests cover slides 1/2/4 using creative generation, slide 3 preserving
+the approved original, and photo-required policy disabling generative fallback.
+
+### Opt-in photo reference experiment
+
+Set the server-only environment variable
+`CREATIVE_PLACE_PHOTO_REFERENCE_TEST_DRAFT_ID` to the selected draft UUID to
+enable composition identity `place-visual-v5` for that draft only. Unset it to
+return to pixel-preserving composition. Existing batches remain historical.
+
+For eligible editorial-illustration slides, the approved museum photo is passed
+as the final image to fal's reference-guided endpoint after character, brand and
+optional edit-base references. The private original is read server-side and its
+license freshness and SHA-256 are rechecked before submission. The stored slide
+evidence marks the result as an AI-assisted adaptation, not an unchanged photo.
+The prompt requests architectural fidelity and visible attribution/CC BY-SA
+license credit. Review the generated building and credit text before approval;
+prompt instructions alone do not guarantee either. Photo-required and
+verified-reference restrictions remain in force.
+
+For the experiment, generate a **new image batch version** after enabling the
+variable; regenerating a historical local-composition asset keeps its old render
+path. No schema change or source draft rewrite is needed.

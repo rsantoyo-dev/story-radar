@@ -419,3 +419,26 @@ test("discovery excludes Jean and Cartier name fragments without treating result
   assert.equal(discovery?.sources.length, 1);
   assert.equal(discovery?.sources[0].title, "Place Jacques-Cartier");
 });
+
+
+test("photo license URLs normalize known variants without accepting other rights or hosts", () => {
+  for (const path of ["publicdomain/zero/1.0", "licenses/by/4.0", "licenses/by-sa/4.0"]) {
+    for (const prefix of ["http", "https"]) {
+      for (const slash of ["", "/"]) {
+        assert.equal(policy.documentaryPhotoLicense(`${prefix}://creativecommons.org/${path}${slash}`)?.licenseUrl,
+          `https://creativecommons.org/${path}/`);
+      }
+    }
+  }
+  for (const url of [
+    "https://creativecommons.org.attacker.test/licenses/by-sa/4.0/",
+    "https://creativecommons.org/licenses/by-nc/4.0/",
+    "https://creativecommons.org/licenses/by-sa/3.0/",
+    "https://creativecommons.org/licenses/by-sa/4.0/?other=license",
+    "https://user@creativecommons.org/licenses/by-sa/4.0/",
+  ]) assert.equal(policy.documentaryPhotoLicense(url), undefined);
+  const licensed = { ...photo(), license: "CC BY-SA 4.0" as const, licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0" };
+  assert.ok(policy.eligiblePhoto(licensed, place));
+  assert.equal(policy.eligiblePhoto({ ...licensed, author: "" }, place), false);
+  assert.equal(policy.eligiblePhoto({ ...licensed, license: "CC BY 4.0" }, place), false);
+});

@@ -23,13 +23,14 @@ export type PlaceEvidence = {
   hierarchy: { id: string; name: string; revision: number }[];
   coordinates?: { latitude: number; longitude: number; precision: number };
   imageTitle?: string;
+  imageTitles?: string[];
 };
 export type PhotoEvidence = {
   placeId: string;
   sourceUrl: string;
   resourceUrl: string;
   author: string;
-  license: "CC0" | "CC BY 4.0";
+  license: "CC0" | "CC BY 4.0" | "CC BY-SA 4.0";
   licenseUrl: string;
   attribution: string;
   creditUrl?: string;
@@ -61,7 +62,7 @@ export type DocumentarySnapshot = {
 };
 export type PlaceExtraction = { mentions: PlaceMention[]; purpose: "location" | "current-state" | "unknown" };
 export function normalizePlaceName(value: string): string {
-  return value.normalize("NFKD").replace(/\p{M}/gu, "").toLocaleLowerCase().replace(/[’']/gu, "'").replace(/[-‐‑–]/gu, " ").replace(/\s+/gu, " ").trim();
+  return value.normalize("NFKD").replace(/(\p{Script=Latin})\p{M}+/gu, "$1").normalize("NFC").toLocaleLowerCase().replace(/[’']/gu, "'").replace(/[-‐‑–]/gu, " ").replace(/\s+/gu, " ").trim();
 }
 export function parsePlaceExtraction(value: unknown, source: string): PlaceExtraction {
   if (!record(value) || !Array.isArray(value.mentions) || value.mentions.length > 6 || !["location", "current-state", "unknown"].includes(String(value.purpose))) throw new Error("Invalid place extraction");
@@ -85,12 +86,21 @@ export function mentionFitsScope(mention: PlaceMention, scope: CreativeGeoScope)
 export function canUseLocationVisual(extraction: PlaceExtraction): boolean {
   return extraction.purpose === "location" && extraction.mentions.length === 1 && extraction.mentions[0].role === "event" && extraction.mentions.every(m => m.kind === "named");
 }
+/** Only known licenses; normalize transport and optional trailing slash, not arbitrary paths. */
+export function documentaryPhotoLicense(value: string): { license: PhotoEvidence["license"]; licenseUrl: string } | undefined {
+  const match = /^https?:\/\/creativecommons\.org\/(publicdomain\/zero\/1\.0|licenses\/by\/4\.0|licenses\/by-sa\/4\.0)\/?$/.exec(value.trim());
+  if (!match) return undefined;
+  return {
+    license: match[1] === "publicdomain/zero/1.0" ? "CC0" : match[1] === "licenses/by/4.0" ? "CC BY 4.0" : "CC BY-SA 4.0",
+    licenseUrl: `https://creativecommons.org/${match[1]}/`,
+  };
+}
 export function eligiblePhoto(photo: PhotoEvidence, place: PlaceEvidence, now = Date.now()): boolean {
   const age = now - Date.parse(photo.retrievedAt);
+  const rights = documentaryPhotoLicense(photo.licenseUrl);
   return photo.placeId === place.id && photo.width >= 1080 && photo.height >= 640 &&
     /^[a-f0-9]{64}$/.test(photo.sha256) && age >= 0 && age <= 86400_000 &&
-    ((photo.license === "CC0" && photo.licenseUrl === "https://creativecommons.org/publicdomain/zero/1.0/") ||
-     (photo.license === "CC BY 4.0" && photo.licenseUrl === "https://creativecommons.org/licenses/by/4.0/" && Boolean(photo.author))) &&
+    Boolean(rights && rights.license === photo.license && (photo.license === "CC0" || photo.author.trim())) &&
     Boolean(photo.attribution) && ["image/jpeg", "image/png", "image/webp"].includes(photo.contentType);
 }
 export function documentarySnapshot(value: unknown): DocumentarySnapshot | undefined {

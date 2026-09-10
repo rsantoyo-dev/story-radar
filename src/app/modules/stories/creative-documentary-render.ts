@@ -25,7 +25,7 @@ export async function renderDocumentary(snapshot: DocumentarySnapshot, profile: 
   }
   const fr = /^fr|french|français/i.test(profile.language);
   const context = snapshot.representation === "photo"
-    ? `${fr ? "Photo d’archive · contexte, pas une preuve de l’événement" : "Archive photo · context, not evidence of the event"}\n${snapshot.photo?.attribution || ""} · ${snapshot.photo?.captureDate || (fr ? "Date inconnue" : "Date unknown")}\n${snapshot.photo?.licenseUrl || ""}\n${snapshot.photo?.creditUrl || snapshot.photo?.sourceUrl || ""}`
+    ? `${fr ? "Photo d’archive · contexte, pas une preuve de l’événement" : "Archive photo · context, not evidence of the event"}\n${snapshot.photo?.attribution || ""} · ${snapshot.photo?.captureDate || (fr ? "Date inconnue" : "Date unknown")}\n${fr ? "Photo redimensionnée, non recadrée" : "Photo resized, not cropped"} · ${snapshot.photo?.licenseUrl || ""}\n${snapshot.photo?.creditUrl || snapshot.photo?.sourceUrl || ""}`
     : snapshot.representation === "map" ? `${fr ? "Localisation uniquement" : "Location only"} · ${snapshot.map?.attribution || "© OpenStreetMap contributors · openstreetmap.org/copyright"}`
     : snapshot.representation === "blocked" ? (fr ? "Brouillon bloqué · vérification requise" : "Blocked draft · review required")
     : (fr ? "Information · sans photographie vérifiable" : "Information · no verified photograph");

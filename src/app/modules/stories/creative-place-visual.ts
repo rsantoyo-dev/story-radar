@@ -7,6 +7,8 @@ export type PlaceVisualEvidence = {
   version: typeof PLACE_VISUAL_VERSION;
   representation: "photo" | "map" | "typography";
   preparedAt: string;
+  generationUse?: "ai-reference";
+  referenceTopicId?: string;
   reasons: string[];
   attribution?: string;
   sha256?: string;

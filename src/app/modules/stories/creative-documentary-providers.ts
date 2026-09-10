@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import sharp from "sharp";
 import { lookupPublicAddress } from "../sources/rss/fetch-rss-feed";
 import type { CreativeGeoScope } from "./creative-content.types";
-import { mentionFitsScope, normalizePlaceName, record, type PlaceMention, type PlaceEvidence, type PhotoEvidence } from "./creative-documentary";
+import { documentaryPhotoLicense, mentionFitsScope, normalizePlaceName, record, type PlaceMention, type PlaceEvidence, type PhotoEvidence } from "./creative-documentary";
 
 const HOSTS = new Set(["ws.mapserver.transports.gouv.qc.ca", "www.wikidata.org", "commons.wikimedia.org", "upload.wikimedia.org"]);
 /** Fixed providers, no redirects, connection-time public DNS validation, bounded body/time. */
@@ -96,12 +96,19 @@ export function documentaryProviders(signal: AbortSignal, language = "en", profi
       matches.push({ id: place.id, name: mention.name, sourceUrl: `https://www.wikidata.org/wiki/${place.id}`, revision: place.lastrevid, scope,
         hierarchy: [...hierarchy, ...countries].map(e => ({ id: e.id, name: e.labels?.fr?.value || e.labels?.en?.value || e.id, revision: e.lastrevid })),
         ...(record(coordinate) && validCoordinate(coordinate) ? { coordinates: { latitude: coordinate.latitude as number, longitude: coordinate.longitude as number, precision: coordinate.precision as number } } : {}),
-        ...(images.length === 1 && typeof images[0] === "string" ? { imageTitle: images[0] } : {}),
+        ...((images.filter((image): image is string => typeof image === "string")).length ? { imageTitles: images.filter((image): image is string => typeof image === "string").slice(0, 4), imageTitle: images.find(image => typeof image === "string") as string } : {}),
       });
     }
     return matches.length === 1 ? matches[0] : undefined;
   }
   async function photo(place: PlaceEvidence): Promise<{ evidence: PhotoEvidence; bytes: Buffer } | undefined> {
+    for (const title of [...new Set([...(place.imageTitles ?? []), ...(place.imageTitle ? [place.imageTitle] : [])])].slice(0, 4)) {
+      const candidate = await photoCandidate({ ...place, imageTitle: title });
+      if (candidate) return candidate;
+    }
+    return undefined;
+  }
+  async function photoCandidate(place: PlaceEvidence): Promise<{ evidence: PhotoEvidence; bytes: Buffer } | undefined> {
     if (!place.imageTitle) return undefined;
     const data = await api("commons.wikimedia.org", { action: "query", titles: `File:${place.imageTitle}`, prop: "imageinfo", iiprop: "url|size|mime|extmetadata", formatversion: "2" });
     const query = record(data.query) ? data.query : {};
@@ -110,9 +117,9 @@ export function documentaryProviders(signal: AbortSignal, language = "en", profi
     if (!record(info) || !record(info.extmetadata)) return undefined;
     const meta = info.extmetadata;
     const get = (key: string) => record(meta[key]) && typeof meta[key].value === "string" ? meta[key].value : "";
-    const licenseUrl = get("LicenseUrl").replace(/^http:/, "https:");
-    const license = licenseUrl === "https://creativecommons.org/publicdomain/zero/1.0/" ? "CC0" : licenseUrl === "https://creativecommons.org/licenses/by/4.0/" ? "CC BY 4.0" : undefined;
-    if (!license || get("Restrictions") || get("Permission") || typeof info.url !== "string" || typeof info.descriptionurl !== "string") return undefined;
+    const rights = documentaryPhotoLicense(get("LicenseUrl"));
+    if (!rights || get("Restrictions") || get("Permission") || typeof info.url !== "string" || typeof info.descriptionurl !== "string") return undefined;
+    const { license, licenseUrl } = rights;
     const author = get("Artist").replace(/<[^>]*>/gu, "").trim();
     if (!author || author.length > 160 || Number(info.width) < 1080 || Number(info.height) < 640 || Number(info.size) > 15_000_000) return undefined;
     const url = new URL(info.url);
@@ -129,7 +136,7 @@ export function documentaryProviders(signal: AbortSignal, language = "en", profi
   }
   async function map(place: PlaceEvidence): Promise<Buffer | undefined> {
     if (!place.coordinates) return undefined;
-    return renderOpenMap({ kind: "point", name: place.name, points: [[place.coordinates.longitude, place.coordinates.latitude]] });
+    return renderOpenMap({ kind: "point", name: place.name, context: normalizePlaceName(place.name) === normalizePlaceName(place.scope.municipality) ? "city" : "venue", points: [[place.coordinates.longitude, place.coordinates.latitude]] });
   }
   return { resolve, photo, map };
 }
