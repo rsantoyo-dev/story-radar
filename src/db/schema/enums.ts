@@ -35,7 +35,7 @@ export const storyContentEnrichmentStatusEnum = pgEnum(
 
 export const storyContentEnrichmentMethodEnum = pgEnum(
   "story_content_enrichment_method",
-  ["direct", "reader"],
+  ["direct", "reader", "manual"],
 );
 
 export const collectionRunStatusEnum = pgEnum("collection_run_status", [

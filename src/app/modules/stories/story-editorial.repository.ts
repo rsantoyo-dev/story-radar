@@ -81,7 +81,7 @@ export type EditorialDashboardStory = {
   evaluatedAt: Date;
   reviewedAt?: Date;
   enrichmentStatus?: "pending" | "completed" | "failed" | "blocked";
-  enrichmentMethod?: "direct" | "reader";
+  enrichmentMethod?: "direct" | "reader" | "manual";
   enrichmentWordCount?: number;
   enrichmentAttempts?: number;
   enrichmentError?: string;

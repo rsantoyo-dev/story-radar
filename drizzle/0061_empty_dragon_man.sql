@@ -1,0 +1,1 @@
+ALTER TYPE "public"."story_content_enrichment_method" ADD VALUE 'manual';

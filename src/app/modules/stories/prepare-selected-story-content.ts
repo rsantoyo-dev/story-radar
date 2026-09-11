@@ -1,4 +1,5 @@
 import "server-only";
+import { parseStoryContentRecoveryInput } from "./story-content-recovery-input";
 
 import { createHash } from "node:crypto";
 
@@ -206,4 +207,24 @@ function getPreparationErrorMessage(error: unknown): string {
   }
 
   return "The article content could not be prepared";
+}
+
+
+/** An editor explicitly supplies the same article; the original story URL stays intact. */
+export async function recoverStoryContent(topicId: string, storyId: string, value: unknown): Promise<PrepareSelectedStoryContentResult> {
+  const input = parseStoryContentRecoveryInput(value);
+  const story = await findStoryForEnrichment(topicId, storyId);
+  // Fetch/validate before touching the saved enrichment, so a failed recovery
+  // never destroys previously usable content.
+  const prepared = input.text
+    ? { extracted: extractReaderArticleContent({ markdown: input.text, title: story.title }), resolvedUrl: input.sourceUrl, method: "manual" as const }
+    : await fetchPreparedArticle(input.sourceUrl);
+  await beginStoryContentEnrichment(storyId, story.url);
+  await completeStoryContentEnrichment({
+    storyId, resolvedUrl: prepared.resolvedUrl, articleTitle: prepared.extracted.title,
+    byline: prepared.extracted.byline, contentText: prepared.extracted.text,
+    contentHash: createHash("sha256").update(prepared.extracted.text).digest("hex"),
+    contentStatus: prepared.extracted.status, method: prepared.method, wordCount: prepared.extracted.wordCount,
+  });
+  return { ...(await getStoryContent(topicId, storyId)), outcome: "prepared" };
 }

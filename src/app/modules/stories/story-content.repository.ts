@@ -17,7 +17,7 @@ export type StoryContentEnrichmentStatus =
   | "failed"
   | "blocked";
 
-export type StoryContentEnrichmentMethod = "direct" | "reader";
+export type StoryContentEnrichmentMethod = "direct" | "reader" | "manual";
 
 export type SelectedStoryContentRecord = {
   storyId: string;
