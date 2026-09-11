@@ -31,6 +31,12 @@ type TopicOverviewPanelProps = {
   topicDescription?: string;
   /** A global operation is running; pause the panel's own controls. */
   disabled?: boolean;
+  /**
+   * Opens the creative workspace for a story (the exact-review contract).
+   * `draftId`, when known, opens that specific revision instead of whichever
+   * one the workspace would default to.
+   */
+  onOpenStory?: (storyId: string, title: string, draftId?: string) => void;
 };
 
 function periodStorageKey(topicId: string): string {
@@ -87,12 +93,156 @@ function scopeLabel(scope: "period" | "now"): string {
   return scope === "now" ? "Now" : "In the selected period";
 }
 
+const SEVERITY_LABEL: Record<string, string> = {
+  "uncertain-delivery": "Uncertain delivery",
+  "delivery-failure": "Delivery failure",
+  "draft-blocker": "Blocked",
+  "pending-approval": "Needs approval",
+};
+
+const DELIVERY_STATE_LABEL: Record<string, string> = {
+  confirmed: "Confirmed",
+  "record-pending": "Remote OK · recording",
+  uncertain: "Uncertain",
+  "container-ready": "Container ready",
+  "in-progress": "Sending",
+  failed: "Failed",
+  logged: "Logged manually",
+};
+
+function deliveryBadgeClass(state: string, styleMap: typeof styles): string {
+  if (state === "confirmed") return styleMap.ovwBadge;
+  if (state === "failed" || state === "uncertain") return styleMap.ovwBadgeError;
+  if (state === "logged") return styleMap.ovwBadgeMuted;
+  return styleMap.ovwBadgeWarn;
+}
+
+/** Mirrors deliveryBadgeClass's tiers so the two severity scales in this
+ * panel read consistently: a send problem is the same color whether it
+ * shows up in "Needs your attention" or in "Recent publications". */
+function attentionBadgeClass(severity: string, styleMap: typeof styles): string {
+  if (severity === "uncertain-delivery" || severity === "delivery-failure") {
+    return styleMap.ovwBadgeError;
+  }
+  if (severity === "pending-approval") return styleMap.ovwBadgeMuted;
+  return styleMap.ovwBadgeWarn; // draft-blocker
+}
+
+/**
+ * Phase-1 stand-in for the editorial report (OVW-08): a deterministic sentence
+ * built only from counters already in the DTO. Never a model call, and never
+ * labeled as analysis — each section stays "—" rather than a guess when its
+ * own read failed.
+ */
+function buildOperationalSummary(dto: TopicOverviewDto): string {
+  const parts: string[] = [];
+  const { newStories, inProduction, published } = dto.metrics;
+
+  if (newStories.value !== null) {
+    parts.push(`${newStories.value} new ${newStories.value === 1 ? "story" : "stories"}`);
+  }
+  if (dto.attention.status !== "error") {
+    parts.push(
+      `${dto.attention.data.total} needing attention`,
+    );
+  }
+  if (inProduction.value !== null) {
+    parts.push(`${inProduction.value} in production`);
+  }
+  if (published.value !== null) {
+    parts.push(`${published.value} published`);
+  }
+
+  return parts.length > 0
+    ? `Last ${dto.context.period.days} days: ${parts.join(", ")}.`
+    : "No data available for this period yet.";
+}
+
+type QuickAction = {
+  key: string;
+  label: string;
+  description: string;
+  href: string;
+  onClick?: () => void;
+};
+
+/**
+ * Up to four contextual shortcuts, computed client-side from data already on
+ * screen — no extra fetch. Each declares its real effect; none of them starts
+ * a collection run, generates images, or sends a publication.
+ */
+function buildQuickActions(
+  dto: TopicOverviewDto,
+  onOpenStory:
+    | ((storyId: string, title: string, draftId?: string) => void)
+    | undefined,
+): QuickAction[] {
+  const actions: QuickAction[] = [];
+
+  if (dto.attention.status !== "error" && dto.attention.data.total > 0) {
+    const top = dto.attention.data.items[0];
+    // The top item's own action already knows its real destination (Story
+    // review for a draft, the Instagram section for a publication-job
+    // incident) — reuse it instead of hard-coding one destination for both.
+    actions.push({
+      key: "attention",
+      label: `Review ${dto.attention.data.total} pending ${
+        dto.attention.data.total === 1 ? "item" : "items"
+      }`,
+      description:
+        top?.entity === "publication-job"
+          ? "Opens the Instagram section; nothing is resolved automatically."
+          : "Opens Story review; nothing is resolved automatically.",
+      href: top?.action.href ?? "#stories",
+      ...(top && top.entity === "draft" && onOpenStory
+        ? { onClick: () => onOpenStory(top.storyId, top.title, top.entityId) }
+        : {}),
+    });
+  }
+
+  if (
+    dto.production.status !== "error" &&
+    dto.production.data.draftsInReview > 0
+  ) {
+    actions.push({
+      key: "drafts",
+      label: `Continue ${dto.production.data.draftsInReview} draft${
+        dto.production.data.draftsInReview === 1 ? "" : "s"
+      }`,
+      description: "Opens the creative workspace; it does not generate images.",
+      href: "#stories",
+    });
+  }
+
+  actions.push({
+    key: "collection",
+    label: "Open collection",
+    description: "Opens Topics & sources; it does not start a collection run.",
+    href: "#configuration",
+  });
+  actions.push({
+    key: "source",
+    label: "Add a source",
+    description: "Opens Topics & sources to add a feed.",
+    href: "#configuration",
+  });
+  actions.push({
+    key: "studio",
+    label: "Open studio",
+    description: "Opens the creative workspace; it does not generate images.",
+    href: "#stories",
+  });
+
+  return actions.slice(0, 4);
+}
+
 export function TopicOverviewPanel({
   secret,
   topicId,
   topicName,
   topicDescription,
   disabled = false,
+  onOpenStory,
 }: TopicOverviewPanelProps) {
   const [period, setPeriod] = useState<OverviewPeriodDays>(() =>
     readStoredPeriod(topicId),
@@ -182,6 +332,15 @@ export function TopicOverviewPanel({
   const isLoading = phase === "loading";
   const metrics = data?.metrics;
 
+  const summaryText = useMemo(
+    () => (data ? buildOperationalSummary(data) : null),
+    [data],
+  );
+  const quickActions = useMemo(
+    () => (data ? buildQuickActions(data, onOpenStory) : []),
+    [data, onOpenStory],
+  );
+
   // Each card links to the real section where that list is worked, not a
   // fabricated filtered view. OVW-03/04 replace these with deep links that
   // carry the exact filter.
@@ -228,7 +387,7 @@ export function TopicOverviewPanel({
           {topicDescription ? (
             <p className={styles.ovwDescription}>{topicDescription}</p>
           ) : null}
-          <p className={styles.ovwFreshness}>
+          <p className={styles.ovwFreshness} aria-live="polite">
             {phase === "ready" && data
               ? `Last updated ${formatDateTime(
                   data.context.generatedAt,
@@ -317,7 +476,16 @@ export function TopicOverviewPanel({
         })}
       </div>
 
-      <div className={styles.ovwSections}>
+      {summaryText ? (
+        <div className={styles.ovwSummary}>
+          <p className={styles.ovwSummaryLabel}>
+            Status · calculated from current data, not an AI report
+          </p>
+          <p className={styles.ovwSummaryText}>{summaryText}</p>
+        </div>
+      ) : null}
+
+      <div className={styles.ovwMainRow}>
         <SectionCard
           title="Editorial candidates"
           section={data?.candidates}
@@ -329,19 +497,55 @@ export function TopicOverviewPanel({
           {(candidates) => (
             <ul className={styles.ovwList}>
               {candidates.map((candidate) => (
-                <li key={candidate.storyId} className={styles.ovwListItem}>
-                  <span className={styles.ovwListPrimary}>
-                    {candidate.title}
-                  </span>
-                  <span className={styles.ovwListMeta}>
-                    {(candidate.source ?? "Unknown source") +
-                      ` · ${candidate.ageHours}h old · ` +
-                      (candidate.scoreState === "current" &&
-                      candidate.score !== null
-                        ? `score ${candidate.score}`
-                        : candidate.scoreState === "stale"
-                          ? "score outdated"
-                          : "not evaluated")}
+                <li key={candidate.storyId} className={styles.ovwPieceItem}>
+                  <span
+                    className={styles.ovwPieceThumbEmpty}
+                    aria-hidden="true"
+                  />
+                  <span className={styles.ovwPieceBody}>
+                    <span className={styles.ovwRowHead}>
+                      <span className={styles.ovwListPrimary}>
+                        {candidate.title}
+                      </span>
+                      {candidate.scoreState !== "unevaluated" &&
+                      candidate.score !== null ? (
+                        <span
+                          className={
+                            candidate.scoreState === "stale"
+                              ? styles.ovwBadgeMuted
+                              : styles.ovwBadge
+                          }
+                        >
+                          {candidate.scoreState === "stale"
+                            ? `score ${candidate.score} · outdated`
+                            : `score ${candidate.score}`}
+                        </span>
+                      ) : (
+                        <span className={styles.ovwBadgeMuted}>
+                          Not evaluated
+                        </span>
+                      )}
+                    </span>
+                    <span className={styles.ovwListMeta}>
+                      {`${candidate.source ?? "Unknown source"} · ${
+                        candidate.ageHours
+                      }h old`}
+                    </span>
+                    {onOpenStory ? (
+                      <button
+                        type="button"
+                        className={styles.ovwListLinkButton}
+                        onClick={() =>
+                          onOpenStory(candidate.storyId, candidate.title)
+                        }
+                      >
+                        Review →
+                      </button>
+                    ) : (
+                      <a className={styles.ovwListLink} href="#stories">
+                        Review →
+                      </a>
+                    )}
                   </span>
                 </li>
               ))}
@@ -349,57 +553,201 @@ export function TopicOverviewPanel({
           )}
         </SectionCard>
 
-        <SectionCard
-          title="Needs your attention"
-          section={data?.attention}
-          loading={isLoading}
-          phase={phase}
-          onRetry={load}
-          emptyLabel="Nothing needs attention right now."
-        >
-          {(attention) => (
-            <p className={styles.ovwListPrimary}>
-              {attention.total === 1
-                ? "1 item needs attention"
-                : `${attention.total} items need attention`}
-              <span className={styles.ovwListMeta}>
-                {" "}
-                · open Story review to resolve
-              </span>
-            </p>
-          )}
-        </SectionCard>
+        <div className={styles.ovwSideColumn}>
+          <SectionCard
+            title="Needs your attention"
+            section={data?.attention}
+            loading={isLoading}
+            phase={phase}
+            onRetry={load}
+            emptyLabel="Nothing needs attention right now."
+          >
+            {(attention) => (
+              <>
+                <ul className={styles.ovwList}>
+                  {attention.items.map((item) => (
+                    <li key={item.id} className={styles.ovwListItem}>
+                      <span className={styles.ovwRowHead}>
+                        <span
+                          className={attentionBadgeClass(item.severity, styles)}
+                        >
+                          {SEVERITY_LABEL[item.severity] ?? item.severity}
+                        </span>
+                        <span className={styles.ovwListPrimary}>
+                          {item.title}
+                        </span>
+                      </span>
+                      <span className={styles.ovwListMeta}>
+                        {[
+                          item.pieceType,
+                          item.reason,
+                          item.extraReasons > 0
+                            ? `+${item.extraReasons} more`
+                            : null,
+                          `${item.ageHours}h old`,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </span>
+                      {item.entity === "draft" && onOpenStory ? (
+                        <button
+                          type="button"
+                          className={styles.ovwListLinkButton}
+                          onClick={() =>
+                            onOpenStory(item.storyId, item.title, item.entityId)
+                          }
+                        >
+                          {item.action.label} →
+                        </button>
+                      ) : (
+                        <a
+                          className={styles.ovwListLink}
+                          href={item.action.href}
+                        >
+                          {item.action.label} →
+                        </a>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                {attention.total > attention.items.length ? (
+                  <a className={styles.ovwListLink} href="#stories">
+                    View all {attention.total} →
+                  </a>
+                ) : null}
+              </>
+            )}
+          </SectionCard>
 
-        <SectionCard
-          title="Production"
-          section={data?.production}
+          <section className={styles.ovwSection}>
+            <h3 className={styles.ovwSectionTitle}>Publishing</h3>
+            <div className={styles.ovwSectionBody}>
+              {isLoading || !data ? (
+                <div className={styles.ovwSkeleton} aria-hidden="true">
+                  <span className={styles.ovwSkeletonLine} />
+                  <span className={styles.ovwSkeletonLine} />
+                </div>
+              ) : (
+                <ul className={styles.ovwList}>
+                  <li className={styles.ovwListItem}>
+                    <span className={styles.ovwListPrimary}>
+                      {data.capabilities.instagram.connected
+                        ? `Instagram${
+                            data.capabilities.instagram.username
+                              ? ` · @${data.capabilities.instagram.username}`
+                              : ""
+                          }`
+                        : "Instagram not connected"}
+                    </span>
+                    <span className={styles.ovwListMeta}>
+                      {[
+                        `publish: ${
+                          data.capabilities.instagram.canPublish ? "yes" : "no"
+                        }`,
+                        `insights: ${
+                          data.capabilities.instagram.canReadInsights
+                            ? "yes"
+                            : "no"
+                        }`,
+                      ].join(" · ")}
+                    </span>
+                    <a className={styles.ovwListLink} href="#editorial-meta">
+                      Manage →
+                    </a>
+                  </li>
+                  <li className={styles.ovwListItem}>
+                    <span className={styles.ovwListMeta}>
+                      {data.capabilities.facebook.reason}
+                    </span>
+                  </li>
+                </ul>
+              )}
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <SectionCard
+        title="Production"
+        section={data?.production}
           loading={isLoading}
           phase={phase}
           onRetry={load}
           emptyLabel="Nothing in production yet."
         >
           {(production) => (
-            <div className={styles.ovwStages}>
-              {(
-                [
-                  ["Selected", production.selectedStories],
-                  ["Briefs", production.briefs],
-                  ["Drafts in review", production.draftsInReview],
-                  ["Images to review", production.imagesToReview],
-                  ["Ready / published", production.readyOrPublished],
-                ] as const
-              ).map(([label, value]) => (
-                <div key={label} className={styles.ovwStage}>
-                  <span className={styles.ovwStageValue}>
-                    {NUMBER_FORMAT.format(value)}
-                  </span>
-                  <span className={styles.ovwStageLabel}>{label}</span>
-                </div>
-              ))}
-            </div>
+            <>
+              <div className={styles.ovwStages}>
+                {(
+                  [
+                    ["Selected", production.selectedStories, "stories"],
+                    ["Briefs", production.briefs, "stories"],
+                    ["Drafts in review", production.draftsInReview, "drafts"],
+                    ["Images to review", production.imagesToReview, "images"],
+                    ["Ready / published", production.readyOrPublished, "stories"],
+                  ] as const
+                ).map(([label, value, unit]) => (
+                  <div key={label} className={styles.ovwStage}>
+                    <span className={styles.ovwStageValue}>
+                      {NUMBER_FORMAT.format(value)}
+                    </span>
+                    <span className={styles.ovwStageLabel}>{label}</span>
+                    <span className={styles.ovwStageUnit}>{unit}</span>
+                  </div>
+                ))}
+              </div>
+              {production.continuable.length > 0 ? (
+                <ul className={styles.ovwList}>
+                  {production.continuable.map((piece) => (
+                    <li key={piece.draftId} className={styles.ovwPieceItem}>
+                      {piece.thumbnailUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          className={styles.ovwPieceThumb}
+                          src={piece.thumbnailUrl}
+                          alt=""
+                          loading="lazy"
+                        />
+                      ) : (
+                        <span
+                          className={styles.ovwPieceThumbEmpty}
+                          aria-hidden="true"
+                        />
+                      )}
+                      <span className={styles.ovwPieceBody}>
+                        <span className={styles.ovwListPrimary}>
+                          {piece.title}
+                        </span>
+                        <span className={styles.ovwListMeta}>
+                          {`${piece.format} · v${piece.version} · updated ${formatRelative(
+                            piece.updatedAt,
+                          )} · ${piece.nextStep}`}
+                        </span>
+                        {onOpenStory ? (
+                          <button
+                            type="button"
+                            className={styles.ovwListLinkButton}
+                            onClick={() =>
+                              onOpenStory(piece.storyId, piece.title, piece.draftId)
+                            }
+                          >
+                            Continue →
+                          </button>
+                        ) : (
+                          <a className={styles.ovwListLink} href="#stories">
+                            Continue →
+                          </a>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </>
           )}
-        </SectionCard>
+      </SectionCard>
 
+      <div className={styles.ovwSections}>
         <SectionCard
           title="Recent publications"
           section={data?.publications}
@@ -409,30 +757,93 @@ export function TopicOverviewPanel({
           emptyLabel="No publications recorded for this topic."
         >
           {(publications) => (
+            <>
+              <ul className={styles.ovwList}>
+                {publications.recent.map((delivery) => (
+                  <li key={delivery.id} className={styles.ovwListItem}>
+                    <span className={styles.ovwRowHead}>
+                      <span
+                        className={deliveryBadgeClass(delivery.state, styles)}
+                      >
+                        {DELIVERY_STATE_LABEL[delivery.state] ?? delivery.state}
+                      </span>
+                      <span className={styles.ovwListPrimary}>
+                        {delivery.storyTitle}
+                      </span>
+                    </span>
+                    <span className={styles.ovwListMeta}>
+                      {[
+                        delivery.platform,
+                        delivery.account,
+                        delivery.at ? formatDateTime(delivery.at) : "no date",
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                      {delivery.permalink ? (
+                        <>
+                          {" · "}
+                          <a
+                            className={styles.ovwListLink}
+                            href={delivery.permalink}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            view post
+                          </a>
+                        </>
+                      ) : null}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {publications.total > publications.recent.length ? (
+                <a className={styles.ovwListLink} href="#editorial-instagram">
+                  View all {publications.total} →
+                </a>
+              ) : null}
+            </>
+          )}
+        </SectionCard>
+
+        {/*
+          Titled "Recent updates", not "Activity log": these are entity
+          timestamps (when a story was linked, a draft last changed, a post
+          went out), not a persisted audit trail — no author or history is
+          implied.
+        */}
+        <SectionCard
+          title="Recent updates"
+          section={data?.activity}
+          loading={isLoading}
+          phase={phase}
+          onRetry={load}
+          emptyLabel="No recent updates for this topic."
+        >
+          {(activity) => (
             <ul className={styles.ovwList}>
-              {publications.recent.map((publication, index) => (
-                <li
-                  key={`${publication.storyId}:${publication.platform}:${index}`}
-                  className={styles.ovwListItem}
-                >
-                  <span className={styles.ovwListPrimary}>
-                    {publication.storyTitle}
-                  </span>
+              {activity.map((event) => (
+                <li key={event.id} className={styles.ovwListItem}>
+                  <span className={styles.ovwListPrimary}>{event.label}</span>
                   <span className={styles.ovwListMeta}>
-                    {`${publication.platform} · ${publication.status} · ${
-                      publication.at ? formatDateTime(publication.at) : "no date"
-                    }`}
-                    {publication.permalink ? (
+                    {formatRelative(event.at)}
+                    {event.kind !== "publication" && onOpenStory ? (
                       <>
                         {" · "}
-                        <a
-                          className={styles.ovwListLink}
-                          href={publication.permalink}
-                          target="_blank"
-                          rel="noreferrer"
+                        <button
+                          type="button"
+                          className={styles.ovwListLinkButton}
+                          onClick={() =>
+                            onOpenStory(
+                              event.storyId,
+                              event.title,
+                              event.kind === "draft-updated"
+                                ? event.entityId
+                                : undefined,
+                            )
+                          }
                         >
-                          view post
-                        </a>
+                          Open →
+                        </button>
                       </>
                     ) : null}
                   </span>
@@ -441,7 +852,9 @@ export function TopicOverviewPanel({
             </ul>
           )}
         </SectionCard>
+      </div>
 
+      <div className={styles.ovwSections}>
         <SectionCard
           title="Topic health"
           section={data?.health}
@@ -457,9 +870,21 @@ export function TopicOverviewPanel({
                   {`${health.enabled} of ${health.configured} feeds enabled`}
                 </span>
                 <span className={styles.ovwListMeta}>
-                  {health.aiResearchEnabled
-                    ? "AI research collector enabled"
-                    : "AI research collector off"}
+                  {[
+                    health.disabledOrUnknown > 0
+                      ? `${health.disabledOrUnknown} disabled/unknown`
+                      : null,
+                    health.lastSuccessfulSources !== null
+                      ? `last run: ${health.lastSuccessfulSources} ok / ${
+                          health.lastFailedSources ?? 0
+                        } failed`
+                      : "no collection run yet",
+                    health.aiResearchEnabled
+                      ? "AI research on"
+                      : "AI research off",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
                 </span>
               </li>
               <li className={styles.ovwListItem}>
@@ -467,43 +892,57 @@ export function TopicOverviewPanel({
                   {health.lastCollectionAt
                     ? `Last collection ${formatRelative(
                         health.lastCollectionAt,
-                      )}`
+                      )} · ${health.lastCollectionStatus}`
                     : "No collection run yet"}
                 </span>
                 <span className={styles.ovwListMeta}>
-                  {health.lastCollectionStatus
-                    ? `status: ${health.lastCollectionStatus}` +
-                      (health.lastFailedSources !== null
-                        ? ` · ${health.lastFailedSources} failed sources`
-                        : "")
-                    : "run a collection from Topics & sources"}
+                  <a className={styles.ovwListLink} href="#configuration">
+                    Open Topics &amp; sources →
+                  </a>
                 </span>
               </li>
             </ul>
           )}
         </SectionCard>
 
-        <SectionCard
-          title="Recent activity"
-          section={data?.activity}
-          loading={isLoading}
-          phase={phase}
-          onRetry={load}
-          emptyLabel="No recent activity for this topic."
-        >
-          {(activity) => (
-            <ul className={styles.ovwList}>
-              {activity.map((event) => (
-                <li key={event.id} className={styles.ovwListItem}>
-                  <span className={styles.ovwListPrimary}>{event.label}</span>
-                  <span className={styles.ovwListMeta}>
-                    {formatRelative(event.at)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </SectionCard>
+        <section className={styles.ovwSection}>
+          <h3 className={styles.ovwSectionTitle}>Quick actions</h3>
+          <div className={styles.ovwSectionBody}>
+            {isLoading || !data ? (
+              <div className={styles.ovwSkeleton} aria-hidden="true">
+                <span className={styles.ovwSkeletonLine} />
+                <span className={styles.ovwSkeletonLine} />
+                <span className={styles.ovwSkeletonLine} />
+              </div>
+            ) : (
+              <ul className={styles.ovwQuickActions}>
+                {quickActions.map((action) => (
+                  <li key={action.key} className={styles.ovwQuickAction}>
+                    <span className={styles.ovwQuickActionTitle}>
+                      {action.label}
+                    </span>
+                    <span className={styles.ovwQuickActionDesc}>
+                      {action.description}
+                    </span>
+                    {action.onClick ? (
+                      <button
+                        type="button"
+                        className={styles.ovwListLinkButton}
+                        onClick={action.onClick}
+                      >
+                        Open →
+                      </button>
+                    ) : (
+                      <a className={styles.ovwListLink} href={action.href}>
+                        Open →
+                      </a>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </section>
       </div>
     </div>
   );

@@ -94,6 +94,10 @@
   text-transform: uppercase;
 }
 
+.navLabel:not(:first-child) {
+  margin-top: density(4);
+}
+
 .sidebarNav a {
   display: flex;
   align-items: center;
@@ -115,6 +119,12 @@
   border-color: palette(primary-light, 0.14);
   outline: 0;
   background: palette(primary-light, 0.11);
+  color: palette(light-light);
+}
+
+.sidebarNav a[aria-current="page"] {
+  border-color: palette(primary-light, 0.28);
+  background: palette(primary-light, 0.18);
   color: palette(light-light);
 }
 
@@ -147,7 +157,8 @@
 }
 
 .sidebarNav a.navSubItem:hover,
-.sidebarNav a.navSubItem:focus-visible {
+.sidebarNav a.navSubItem:focus-visible,
+.sidebarNav a.navSubItem[aria-current="page"] {
   border-left-color: palette(secondary-main);
 }
 
@@ -2878,6 +2889,13 @@
   border-bottom: 1px solid palette(dark-main, 0.08);
 }
 
+.ovwRowHead {
+  display: flex;
+  align-items: center;
+  gap: space(2);
+  flex-wrap: wrap;
+}
+
 .ovwListItem:last-child {
   border-bottom: 0;
   padding-bottom: 0;
@@ -2901,6 +2919,21 @@
 }
 
 .ovwListLink:hover {
+  text-decoration: underline;
+}
+
+.ovwListLinkButton {
+  align-self: flex-start;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: palette(primary-main);
+  @ds-typo (caption);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.ovwListLinkButton:hover {
   text-decoration: underline;
 }
 
@@ -2930,18 +2963,155 @@
   @ds-typo (caption);
 }
 
-.ovwBadge {
+.ovwStageUnit {
+  color: palette(tertiary-main);
+  @ds-typo (caption);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.ovwPieceItem {
+  display: flex;
+  gap: density(2);
+  padding-bottom: density(2);
+  border-bottom: 1px solid palette(dark-main, 0.08);
+}
+
+.ovwPieceItem:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.ovwPieceThumb,
+.ovwPieceThumbEmpty {
+  flex: none;
+  width: density(8);
+  height: density(8);
+  border-radius: radius(2);
+  object-fit: cover;
+  background: palette(dark-main, 0.08);
+}
+
+.ovwPieceBody {
+  display: flex;
+  flex-direction: column;
+  gap: space(1);
+  min-width: 0;
+}
+
+.ovwSummary {
+  display: flex;
+  flex-direction: column;
+  gap: space(1);
+  padding: density(3) density(4);
+  border: 1px solid palette(dark-main, 0.1);
+  border-radius: radius(2);
+  background: palette(dark-main, 0.03);
+}
+
+.ovwSummaryLabel {
+  margin: 0;
+  color: palette(tertiary-main);
+  @ds-typo (caption);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.ovwSummaryText {
+  margin: 0;
+  color: palette(dark-main);
+  @ds-typo (body);
+}
+
+.ovwMainRow {
+  display: grid;
+  grid-template-columns: xs(1fr) lg(minmax(0, 2fr) minmax(280px, 1fr));
+  gap: density(3);
+  align-items: start;
+}
+
+.ovwSideColumn {
+  display: flex;
+  flex-direction: column;
+  gap: density(3);
+  min-width: 0;
+}
+
+.ovwQuickActions {
+  display: flex;
+  flex-direction: column;
+  gap: density(2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ovwQuickAction {
+  display: flex;
+  flex-direction: column;
+  gap: space(1);
+  padding: density(2);
+  border-radius: radius(2);
+  background: palette(dark-main, 0.04);
+}
+
+.ovwQuickActionTitle {
+  color: palette(dark-main);
+  @ds-typo (small);
+  font-weight: 650;
+}
+
+.ovwQuickActionDesc {
+  color: palette(tertiary-main);
+  @ds-typo (caption);
+}
+
+.ovwBadge,
+.ovwBadgeMuted,
+.ovwBadgeWarn,
+.ovwBadgeError {
   display: inline-flex;
   align-items: center;
   padding: space(1) space(2);
   border-radius: radius(pill);
-  background: palette(primary-main, 0.14);
-  color: palette(primary-dark);
   @ds-typo (caption);
   font-weight: 650;
+}
+
+.ovwBadge {
+  background: palette(primary-main, 0.14);
+  color: palette(primary-dark);
 }
 
 .ovwBadgeMuted {
   background: palette(dark-main, 0.08);
   color: palette(dark-main, 0.7);
 }
+
+.ovwBadgeWarn {
+  background: palette(warning-main, 0.16);
+  color: palette(warning-dark);
+}
+
+.ovwBadgeError {
+  background: palette(error-main, 0.16);
+  color: palette(error-dark);
+}
+
+
+.contentRecovery {
+  @ds-surface(contained);
+  margin: density(3);
+  padding: density(3);
+  border-radius: radius(2);
+  color: palette(dark-main);
+}
+.contentRecovery > * + * { margin-top: density(2); }
+.contentRecovery label { display: grid; gap: density(1); }
+.contentRecovery input[type="url"],
+.contentRecovery textarea {
+  @ds-input(outlined neutral);
+  width: 100%;
+}
+.contentRecovery button { @ds-button(outlined primary); margin-right: density(2); }
+.contentRecovery p { @ds-typo(body); }

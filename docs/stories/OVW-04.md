@@ -1,14 +1,14 @@
 ---
 id: OVW-04
 feature: FEAT-OVW-001
-status: todo
+status: review
 board: topic-overview.kanban.md
-tags: [overview, todo, p0]
+tags: [overview, review, p0]
 ---
 
 # OVW-04 — Mostrar producción y continuar piezas en contexto
 
-**Estado:** [[status-todo]] · **Feature:** [Topic Overview](../features/topic-overview.md)
+**Estado:** [[status-review]] · **Feature:** [Topic Overview](../features/topic-overview.md)
 
 **Prioridad:** P0 · **Dependencias:** OVW-01, OVW-02
 
@@ -44,3 +44,13 @@ En historias exclusivamente de datos, preservar estos contratos para los compone
 ## Validación y entrega
 
 Registrar pruebas y evidencia visual cuando corresponda; actualizar ficha y tablero al completar los criterios. Esta historia está planificada y no implica implementación ni despliegue.
+
+## Implementación — 11 de septiembre de 2026
+
+`TopicProductionPipeline` implementado (`readProduction`): cinco etapas con unidad declarada (historias, drafts, imágenes) y hasta tres piezas continuables con miniatura real (portada de la última versión aprobada, placeholder neutro si no existe). Siguiente paso derivado solo de estado almacenado, sin llamada a proveedor, respetando el orden real: aprobar el draft → generar imágenes → revisar y aprobar cada imagen → congelar el paquete → publicarlo. Correlacionado por `(draftId, draftVersion)`, no solo por id — una revisión nueva de un draft ya publicado (misma fila, versión incrementada) permanece continuable en vez de darse por terminada. Dentro del lote vigente, solo cuenta la versión más reciente de cada diapositiva (una regeneración exitosa reemplaza al fallo anterior) y se descartan lotes `stale` y paquetes congelados ya vencidos. "Continuar" abre el draft y la versión exactos (`initialDraftId` en `CreativeDraftWorkspace`), no solo la historia.
+
+Cubierto en el test de integración: revisión nueva de un draft publicado, imagen aprobada tras un fallo anterior en el mismo slot, lote `stale` más nuevo que no le gana a uno `completed` más viejo, paquete congelado vencido.
+
+Pendiente: los accesos de los cuatro indicadores del header siguen sin aplicar el filtro/periodo exacto (mismo hueco de contrato de navegación general que OVW-06); sin evidencia visual en navegador.
+
+Verificación: `npx tsc --noEmit`, `npm run lint`, `npm test` (646/646), `npm run build` en verde.

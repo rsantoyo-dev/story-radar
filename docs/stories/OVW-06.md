@@ -1,14 +1,14 @@
 ---
 id: OVW-06
 feature: FEAT-OVW-001
-status: todo
+status: review
 board: topic-overview.kanban.md
-tags: [overview, todo, p0]
+tags: [overview, review, p0]
 ---
 
 # OVW-06 — Añadir actividad reciente y navegación compartida
 
-**Estado:** [[status-todo]] · **Feature:** [Topic Overview](../features/topic-overview.md)
+**Estado:** [[status-review]] · **Feature:** [Topic Overview](../features/topic-overview.md)
 
 **Prioridad:** P0 · **Dependencias:** OVW-01, OVW-02, OVW-03, OVW-04
 
@@ -47,3 +47,13 @@ En historias exclusivamente de datos, preservar estos contratos para los compone
 ## Validación y entrega
 
 Registrar pruebas y evidencia visual cuando corresponda; actualizar ficha y tablero al completar los criterios. Esta historia está planificada y no implica implementación ni despliegue.
+
+## Implementación parcial — 11 de septiembre de 2026
+
+Hecho: sección de actividad titulada "Recent updates" (no "Activity log") — son timestamps de entidades, sin autor ni historial inventado; identidad estable, hasta 8 eventos, abre la historia/draft exacto. Sidebar reagrupado en Workspace / Production / Publishing / Settings reutilizando destinos existentes, con resaltado activo (`aria-current`, sincronizado por `hashchange`, nunca usado para autorización) y drawer móvil que devuelve el foco al botón que lo abrió. Acceso a otros topics sigue usando el selector autorizado existente, sin mezclar datos entre ellos (remount por `key`).
+
+No hecho: no existe un contrato de navegación genérico que codifique topic + entidad + filtro + periodo en una URL compartible/bookmarkeable — hoy es un mosaico de anclas de hash por sección más el callback `onOpenStory` (estado de React, no URL) para abrir una entidad exacta. Sin "Ver más" en Actividad (no hay una vista de historial completo a la que enlazar todavía). El Overview no se refresca automáticamente al volver de una acción hecha en el workspace abierto desde él (aprobar un draft, resolver un bloqueo) — requiere refrescar a mano o cambiar de topic. Sin prueba de vuelta atrás/destino inexistente en navegador real.
+
+Esta historia se deja en revisión con estos pendientes explícitos, no como completada.
+
+Verificación: `npx tsc --noEmit`, `npm run lint`, `npm test` (646/646), `npm run build` en verde.

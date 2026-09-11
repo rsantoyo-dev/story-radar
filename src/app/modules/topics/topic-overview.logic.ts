@@ -129,3 +129,107 @@ export function metricValue(
 ): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
+
+/* Attention queue (OVW-03) --------------------------------------------------- */
+
+export type AttentionSeverity =
+  | "uncertain-delivery"
+  | "delivery-failure"
+  | "draft-blocker"
+  | "pending-approval";
+
+/** Highest priority first. */
+export const ATTENTION_SEVERITY_ORDER: readonly AttentionSeverity[] = [
+  "uncertain-delivery",
+  "delivery-failure",
+  "draft-blocker",
+  "pending-approval",
+];
+
+/**
+ * Orders attention items by severity tier, then oldest first, then a stable
+ * id tiebreak. Pure so the ranking is unit-tested without a database.
+ */
+export function rankAttentionItems<
+  T extends { severity: AttentionSeverity; ageHours: number; id: string },
+>(items: readonly T[]): T[] {
+  const rank = (severity: AttentionSeverity) =>
+    ATTENTION_SEVERITY_ORDER.indexOf(severity);
+
+  return [...items].sort(
+    (a, b) =>
+      rank(a.severity) - rank(b.severity) ||
+      b.ageHours - a.ageHours ||
+      a.id.localeCompare(b.id),
+  );
+}
+
+/**
+ * Maps an Instagram publication job's state to a severity tier and an
+ * editor-facing reason. Field names never surface to the editor.
+ */
+export function describeJobIncident(
+  status: string,
+  failureKind: string | null,
+): { severity: AttentionSeverity; reason: string } {
+  if (failureKind === "uncertain" || status === "pending-confirmation") {
+    return {
+      severity: "uncertain-delivery",
+      reason: "Delivery result is unconfirmed and needs reconciliation",
+    };
+  }
+
+  if (status === "suspended") {
+    return {
+      severity: "delivery-failure",
+      reason:
+        failureKind === "invalidated"
+          ? "Send was suspended: the account, connection or package changed"
+          : "Send was suspended before authorization",
+    };
+  }
+
+  const byKind: Record<string, string> = {
+    permission: "Instagram refused a required permission",
+    "rate-limit": "Instagram rate limit was hit — retry later",
+    "expired-container": "The upload container expired before publishing",
+    invalidated: "The account, connection or package changed before the send",
+    retryable: "A safe delivery failure that can be retried",
+  };
+
+  return {
+    severity: "delivery-failure",
+    reason: byKind[failureKind ?? "retryable"] ?? "The Instagram send failed",
+  };
+}
+
+/* Deliveries (OVW-05) ------------------------------------------------------- */
+
+export type DeliveryState =
+  | "confirmed"
+  | "record-pending"
+  | "uncertain"
+  | "container-ready"
+  | "in-progress"
+  | "failed"
+  | "logged";
+
+/**
+ * How far an Instagram publication job actually got. A remote media id with a
+ * non-final status means the send worked and only the local record is
+ * catching up — never a failure.
+ */
+export function describeDeliveryState(
+  status: string,
+  failureKind: string | null,
+  hasRemoteId: boolean,
+): DeliveryState {
+  if (status === "published") return "confirmed";
+  if (hasRemoteId) return "record-pending";
+  if (status === "pending-confirmation" || failureKind === "uncertain") {
+    return "uncertain";
+  }
+  if (status === "containers-ready") return "container-ready";
+  if (status === "suspended" || status === "failed") return "failed";
+  return "in-progress";
+}

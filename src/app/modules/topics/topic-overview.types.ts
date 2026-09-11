@@ -62,11 +62,91 @@ export type OverviewProductionStages = {
   readyOrPublished: number;
 };
 
-export type OverviewPublication = {
+/** A piece the editor can move forward now (OVW-04). Blocked pieces are left
+ * to the attention queue, not listed here; a piece whose delivery is already
+ * confirmed is dropped entirely. */
+export type OverviewProductionPiece = {
+  draftId: string;
+  storyId: string;
+  title: string;
+  format: string;
+  /** Latest revision number of this draft. */
+  version: number;
+  status: string;
+  /** When this revision last changed. */
+  updatedAt: string;
+  /** Provider image URL for the cover slide, or null when none exists yet. */
+  thumbnailUrl: string | null;
+  /**
+   * The concrete next step, derived from stored state only (no provider call):
+   * generate images → review/approve → freeze package → publish package.
+   */
+  nextStep: string;
+};
+
+export type OverviewProduction = OverviewProductionStages & {
+  continuable: OverviewProductionPiece[];
+};
+
+/**
+ * Priority tiers for the attention queue (OVW-03), highest first:
+ * an uncertain / unrecorded delivery, then a safe delivery failure or a
+ * blocked authorization, then an editorial blocker on a draft, then a
+ * revision waiting for approval.
+ */
+export type OverviewAttentionSeverity =
+  | "uncertain-delivery"
+  | "delivery-failure"
+  | "draft-blocker"
+  | "pending-approval";
+
+export type OverviewAttentionItem = {
+  /** Stable dedup/identity key, e.g. `job:<uuid>` or `draft-blocker:<uuid>`. */
+  id: string;
+  entity: "publication-job" | "draft";
+  entityId: string;
+  storyId: string;
+  /** Piece or story title in plain text. */
+  title: string;
+  /** e.g. "Instagram job" or "Draft v3". */
+  pieceType: string | null;
+  severity: OverviewAttentionSeverity;
+  /** Primary reason, in editor language — never a raw field name. */
+  reason: string;
+  /** How many further reasons the same piece has beyond `reason`. */
+  extraReasons: number;
+  ageHours: number;
+  action: { label: string; href: string };
+};
+
+export type OverviewAttention = {
+  /** Real count of distinct actionable entities, not just what is shown. */
+  total: number;
+  /** At most five, ranked by severity then age. */
+  items: OverviewAttentionItem[];
+};
+
+/**
+ * How far a delivery actually got. A confirmed delivery with no permalink is
+ * NOT a failure; a manually logged entry is NOT a provider-confirmed send.
+ */
+export type OverviewDeliveryState =
+  | "confirmed"
+  | "record-pending"
+  | "uncertain"
+  | "container-ready"
+  | "in-progress"
+  | "failed"
+  | "logged";
+
+export type OverviewDelivery = {
+  id: string;
   storyId: string;
   storyTitle: string;
   platform: string;
-  status: string;
+  /** Destination account (Instagram username or id), when known. */
+  account: string | null;
+  state: OverviewDeliveryState;
   /** Real or scheduled time; null when neither is recorded. */
   at: string | null;
   permalink: string | null;
@@ -79,6 +159,7 @@ export type OverviewSourceHealth = {
   aiResearchEnabled: boolean;
   lastCollectionAt: string | null;
   lastCollectionStatus: "completed" | "partial" | "failed" | null;
+  lastSuccessfulSources: number | null;
   lastFailedSources: number | null;
 };
 
@@ -90,18 +171,32 @@ export type OverviewInstagramCapability = {
   lastActivityAt: string | null;
 };
 
+export type OverviewPlannedCapability = {
+  available: false;
+  /** Why it is unavailable, shown instead of an invented figure. */
+  reason: string;
+};
+
 export type OverviewCapabilities = {
   instagram: OverviewInstagramCapability;
   /** Planned connector — never shown as functional. */
-  facebook: { available: false };
+  facebook: OverviewPlannedCapability;
   /** Depends on durable scheduling (PUB-05). */
-  scheduling: { available: false };
+  scheduling: OverviewPlannedCapability;
 };
 
+/**
+ * Derived from entity timestamps, not a persisted audit log — there is no
+ * author or change history behind these, only "this changed at this time".
+ * The panel labels the section "Recent updates" accordingly.
+ */
 export type OverviewActivityEvent = {
   id: string;
   kind: "story-linked" | "draft-updated" | "publication";
   entityId: string;
+  storyId: string;
+  /** The story's real title — use this to open it, never parsed out of `label`. */
+  title: string;
   label: string;
   at: string;
 };
@@ -125,9 +220,9 @@ export type TopicOverviewDto = {
   context: OverviewContext;
   metrics: OverviewMetrics;
   candidates: OverviewSection<OverviewCandidate[]>;
-  attention: OverviewSection<{ total: number }>;
-  production: OverviewSection<OverviewProductionStages>;
-  publications: OverviewSection<{ total: number; recent: OverviewPublication[] }>;
+  attention: OverviewSection<OverviewAttention>;
+  production: OverviewSection<OverviewProduction>;
+  publications: OverviewSection<{ total: number; recent: OverviewDelivery[] }>;
   health: OverviewSection<OverviewSourceHealth>;
   activity: OverviewSection<OverviewActivityEvent[]>;
   capabilities: OverviewCapabilities;

@@ -1,14 +1,14 @@
 ---
 id: OVW-10
 feature: FEAT-OVW-001
-status: todo
+status: review
 board: topic-overview.kanban.md
-tags: [overview, todo, p0]
+tags: [overview, review, p0]
 ---
 
 # OVW-10 — Validar Overview de extremo a extremo y accesibilidad
 
-**Estado:** [[status-todo]] · **Feature:** [Topic Overview](../features/topic-overview.md)
+**Estado:** [[status-review]] · **Feature:** [Topic Overview](../features/topic-overview.md)
 
 **Prioridad:** P0 · **Dependencias:** OVW-01 a OVW-07; repetir alcance correspondiente al entregar OVW-08/OVW-09
 
@@ -50,3 +50,13 @@ En historias exclusivamente de datos, preservar estos contratos para los compone
 ## Validación y entrega
 
 Registrar pruebas y evidencia visual cuando corresponda; actualizar ficha y tablero al completar los criterios. Esta historia está planificada y no implica implementación ni despliegue.
+
+## Implementación parcial — 11 de septiembre de 2026
+
+Hecho: fixtures reales contra PostgreSQL en memoria (`topic-overview.repository.test.ts`, PGlite con los tipos de columna del esquema real, no mocks) — topic vacío, activo/grande, dos topics aislados en la misma base, drafts bloqueados y aprobados, varias revisiones de una historia (incluida la misma fila de draft publicada y luego revisada), entregas inciertas y dos destinos para una pieza. Contadores verificados contra sus propias listas, no solo contra un número fijo. Verificado por auditoría de código (grep + lectura de imports) que abrir/actualizar el Overview no ejecuta ninguna llamada a Gemini/Groq/fal/Meta Graph/R2. Revisión de accesibilidad por código: jerarquía de encabezados, `aria-label`/`aria-live`, foco nunca suprimido en controles nuevos, cada color acompañado de texto, sin colores hex (paleta dinámica intacta). Grillas responsive con `minmax(0, …)` en los mismos breakpoints existentes (0/640/768/1024/1280).
+
+No hecho: sin evidencia visual real — no se abrió la app en navegador, así que no hay capturas de escritorio/móvil, zoom 200%, ni comparación en vivo contra las referencias A/B con dos paletas de topic alternadas. Presupuesto de consultas/latencia contra un topic grande no medido (sin base de datos en vivo en esta sesión). QA de vuelta atrás/destino inexistente para `onOpenStory` no probado en navegador.
+
+Esta historia se deja en revisión con estos pendientes explícitos, no como completada. Requiere una pasada con la app corriendo (secretos y base de datos configurados) para cerrar los criterios visuales.
+
+Verificación: `npx tsc --noEmit`, `npm run lint`, `npm test` (646/646), `npm run build` en verde. `db:check` no aplica — sin cambios de esquema/migración en esta feature.

@@ -1,14 +1,14 @@
 ---
 id: OVW-02
 feature: FEAT-OVW-001
-status: todo
+status: review
 board: topic-overview.kanban.md
-tags: [overview, todo, p0]
+tags: [overview, review, p0]
 ---
 
 # OVW-02 — Construir cabecera, estructura responsive y estados comunes
 
-**Estado:** [[status-todo]] · **Feature:** [Topic Overview](../features/topic-overview.md)
+**Estado:** [[status-review]] · **Feature:** [Topic Overview](../features/topic-overview.md)
 
 **Prioridad:** P0 · **Dependencias:** OVW-01
 
@@ -49,3 +49,11 @@ En historias exclusivamente de datos, preservar estos contratos para los compone
 ## Validación y entrega
 
 Registrar pruebas y evidencia visual cuando corresponda; actualizar ficha y tablero al completar los criterios. Esta historia está planificada y no implica implementación ni despliegue.
+
+## Implementación — 11 de septiembre de 2026
+
+`section#overview` reemplazado por `TopicOverviewPanel` (`src/app/topic-overview-panel.tsx`): nombre y descripción del topic como identidad principal, selector de periodo 7/30/90 (persistido por topic en sessionStorage), frescura con `aria-live="polite"`, "Actualizar datos" separado de cualquier generación de informe. El montaje solo llama a `/api/radar/overview` (datos propios); sin IA/Meta/fal. Cuatro `OverviewMetricCard` con icono, enlace y desglose cuando aplica; estados de sección (skeleton, vacío, error parcial con reintento) implementados como `SectionCard`. Estilos en UXDSL (`radar-dashboard.module.uxdsl`), paleta dinámica del topic vía el mecanismo de tematización existente, breakpoints `xs/sm/md/lg` con `minmax(0, …)`.
+
+No implementado: el hero editorial ilustrado con visual opcional por topic descrito en la referencia A — la cabecera actual es tipográfica (nombre, descripción, controles), sin ilustración ni fallback de imagen. Foco visible, teclado y semántica (encabezados, `aria-label="Overview"`) verificados por revisión de código; zoom 200% y cambio rápido de topic/periodo no probados en navegador real.
+
+Verificación: `npx tsc --noEmit`, `npm run lint`, `npm test` (646/646), `npm run build` en verde.

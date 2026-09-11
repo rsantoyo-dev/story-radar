@@ -1,14 +1,14 @@
 ---
 id: OVW-03
 feature: FEAT-OVW-001
-status: todo
+status: review
 board: topic-overview.kanban.md
-tags: [overview, todo, p0]
+tags: [overview, review, p0]
 ---
 
 # OVW-03 — Priorizar pendientes y accesos para resolverlos
 
-**Estado:** [[status-todo]] · **Feature:** [Topic Overview](../features/topic-overview.md)
+**Estado:** [[status-review]] · **Feature:** [Topic Overview](../features/topic-overview.md)
 
 **Prioridad:** P0 · **Dependencias:** OVW-01, OVW-02
 
@@ -44,3 +44,13 @@ En historias exclusivamente de datos, preservar estos contratos para los compone
 ## Validación y entrega
 
 Registrar pruebas y evidencia visual cuando corresponda; actualizar ficha y tablero al completar los criterios. Esta historia está planificada y no implica implementación ni despliegue.
+
+## Implementación — 11 de septiembre de 2026
+
+`TopicAttentionQueue` implementado en `readAttention` (`topic-overview.repository.ts`) y el panel: hasta cinco entidades visibles, total real (nunca recortado en silencio), agrupando varios motivos del mismo draft con "+N more". Prioridad por severidad — entrega incierta, fallo seguro de envío, bloqueo editorial, pendiente de aprobar imagen — con desempate por antigüedad e ID (`rankAttentionItems`, con test unitario). Motivo en lenguaje claro, nunca un nombre de campo interno. Badges de color diferenciados por severidad (error/warning/muted) en vez de un solo estilo genérico. Resolver/Revisar abre el draft o la sección de Instagram exactos, incluyendo el `draftId` de la pieza (no solo la historia); nunca envía ni reintenta desde la lectura.
+
+Cubierto en el test de integración: cola con más de cinco pendientes (total real vs. cinco mostrados), bloqueo por imagen fallida que deja de contar tras una regeneración exitosa, entrega incierta vs. fallo seguro.
+
+Pendiente: resolución concurrente de un pendiente desde dos pestañas no probada; retorno de foco tras resolver un elemento no verificado en navegador.
+
+Verificación: `npx tsc --noEmit`, `npm run lint`, `npm test` (646/646), `npm run build` en verde.

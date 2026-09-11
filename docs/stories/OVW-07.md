@@ -1,14 +1,14 @@
 ---
 id: OVW-07
 feature: FEAT-OVW-001
-status: todo
+status: review
 board: topic-overview.kanban.md
-tags: [overview, todo, p0]
+tags: [overview, review, p0]
 ---
 
 # OVW-07 — Integrar el Overview operativo y resumen sin IA
 
-**Estado:** [[status-todo]] · **Feature:** [Topic Overview](../features/topic-overview.md)
+**Estado:** [[status-review]] · **Feature:** [Topic Overview](../features/topic-overview.md)
 
 **Prioridad:** P0 · **Dependencias:** OVW-02, OVW-03, OVW-04, OVW-05, OVW-06
 
@@ -48,3 +48,11 @@ En historias exclusivamente de datos, preservar estos contratos para los compone
 ## Validación y entrega
 
 Registrar pruebas y evidencia visual cuando corresponda; actualizar ficha y tablero al completar los criterios. Esta historia está planificada y no implica implementación ni despliegue.
+
+## Implementación — 11 de septiembre de 2026
+
+Composición ensamblada en `TopicOverviewPanel` siguiendo el orden/proporciones de la feature: hero + 4 indicadores → resumen operativo calculado (etiquetado explícitamente "calculated from current data, not an AI report", nunca presentado como análisis de IA) → candidatos editoriales (2/3) + atención/publicación (1/3) → producción (ancho completo) → publicaciones recientes/actividad → salud de fuentes/acciones rápidas. `TopicQuickActions` (hasta 4) calculadas en cliente a partir de datos ya cargados — sin fetch nuevo — priorizando pendientes reales ("Review N pending", "Continue N drafts") sobre accesos genéricos, cada una declarando su efecto real ("no inicia una ejecución", "no genera imágenes"). Cada sección es una `SectionCard` independiente: un fallo en actividad o salud no bloquea candidatos/atención/producción (comprobado por el `errorSection` de OVW-01 y su cobertura de test).
+
+Pendiente: captura/revisión visual de escritorio y móvil con casos lleno/vacío/error parcial no realizada (requiere navegador); miniatura de candidato es un placeholder neutro (no hay campo de imagen autorizada por historia en el esquema).
+
+Verificación: `npx tsc --noEmit`, `npm run lint`, `npm test` (646/646), `npm run build` en verde.

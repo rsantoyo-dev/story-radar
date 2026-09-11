@@ -130,6 +130,13 @@ function storyReviewHash(view: StoryReviewView): string {
   return `#${STORY_REVIEW_ANCHOR}/selected/${segment}`;
 }
 
+/** The sidebar's top-level destination id for the current URL hash, used only
+ * for the active-link highlight — never for authorization or data scoping. */
+function topLevelHash(): string {
+  if (typeof window === "undefined") return "overview";
+  return window.location.hash.replace(/^#/, "").split("/")[0] || "overview";
+}
+
 function parseStoryReviewHash(hash: string): StoryReviewView | undefined {
   if (hash === `#${STORY_REVIEW_ANCHOR}/collected`) {
     return { tab: "collected" };
@@ -188,7 +195,7 @@ type EditorialDashboardStory = {
   evaluatedAt: string;
   reviewedAt?: string;
   enrichmentStatus?: "pending" | "completed" | "failed" | "blocked";
-  enrichmentMethod?: "direct" | "reader";
+  enrichmentMethod?: "direct" | "reader" | "manual";
   enrichmentWordCount?: number;
   enrichmentAttempts?: number;
   enrichmentError?: string;
@@ -341,7 +348,7 @@ type StoryContentResponse = {
   outcome?: "prepared" | "already-ready";
   enrichment?: {
     status: "pending" | "completed" | "failed" | "blocked";
-    method: "direct" | "reader";
+    method: "direct" | "reader" | "manual";
     wordCount?: number;
     resolvedUrl?: string;
     articleTitle?: string;
@@ -461,9 +468,14 @@ export function RadarDashboard({
     editorialRunId?: string;
     storyId: string;
     title: string;
+    draftId?: string;
   }>();
   const [notice, setNotice] = useState<Notice>();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  // Drives the sidebar's active-link highlight (OVW-06); updated only from the
+  // hashchange listener below, never synchronously in an effect body.
+  const [activeSection, setActiveSection] = useState(() => topLevelHash());
   const [isTopicLoading, setIsTopicLoading] = useState(false);
   const [selectedCreativeProfile, setSelectedCreativeProfile] =
     useState<CreativeProfile>();
@@ -523,8 +535,25 @@ export function RadarDashboard({
     );
   }, []);
 
-  function goToStoryReview(view: StoryReviewView) {
+  // Keeps the sidebar's active-link highlight in sync with in-page navigation
+  // (including the story-review deep links below). Only subscribes here; the
+  // state is never set synchronously in this effect's own body.
+  useEffect(() => {
+    function handleHashChange() {
+      setActiveSection(topLevelHash());
+    }
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
+
+  /** Closes the mobile drawer and returns focus to the button that opened it. */
+  function closeSidebar() {
     setSidebarOpen(false);
+    menuButtonRef.current?.focus();
+  }
+
+  function goToStoryReview(view: StoryReviewView) {
+    closeSidebar();
     if (typeof window !== "undefined") {
       window.location.hash = storyReviewHash(view);
     }
@@ -812,6 +841,7 @@ export function RadarDashboard({
       setStats(
         await fetchDatabaseStats(secret, selectedTopicId).catch(() => stats),
       );
+      setContentViewer(await fetchStoryContent(secret, selectedTopicId, storyId).catch(() => undefined));
       setNotice({
         tone: "error",
         title: "Content could not be prepared",
@@ -1127,7 +1157,7 @@ export function RadarDashboard({
           <button
             type="button"
             className={styles.closeSidebarButton}
-            onClick={() => setSidebarOpen(false)}
+            onClick={closeSidebar}
             aria-label="Close navigation"
           >
             ×
@@ -1136,35 +1166,50 @@ export function RadarDashboard({
 
         <nav className={styles.sidebarNav}>
           <p className={styles.navLabel}>Workspace</p>
-          <a href="#overview" onClick={() => setSidebarOpen(false)}>
+          <a
+            href="#overview"
+            aria-current={activeSection === "overview" ? "page" : undefined}
+            onClick={closeSidebar}
+          >
             <span className={styles.navIcon} aria-hidden="true">⌂</span>
             Overview
           </a>
-          <a href="#configuration" onClick={() => setSidebarOpen(false)}>
+
+          <p className={styles.navLabel}>Production</p>
+          <a
+            href="#configuration"
+            aria-current={
+              activeSection === "configuration" ? "page" : undefined
+            }
+            onClick={closeSidebar}
+          >
             <span className={styles.navIcon} aria-hidden="true">◈</span>
             Topics & sources
           </a>
-          <a href="#editorial" onClick={() => setSidebarOpen(false)}>
+          <a
+            href="#editorial"
+            aria-current={activeSection === "editorial" ? "page" : undefined}
+            onClick={closeSidebar}
+          >
             <span className={styles.navIcon} aria-hidden="true">✦</span>
             Editorial AI
           </a>
           <a
             href="#editorial-creative"
             className={styles.navSubItem}
-            onClick={() => setSidebarOpen(false)}
+            aria-current={
+              activeSection === "editorial-creative" ? "page" : undefined
+            }
+            onClick={closeSidebar}
           >
             <span className={styles.navIcon} aria-hidden="true">▸</span>
             Creative profile
           </a>
           <a
-            href="#editorial-meta"
-            className={styles.navSubItem}
-            onClick={() => setSidebarOpen(false)}
+            href="#stories"
+            aria-current={activeSection === "stories" ? "page" : undefined}
+            onClick={closeSidebar}
           >
-            <span className={styles.navIcon} aria-hidden="true">▸</span>
-            Instagram
-          </a>
-          <a href="#stories" onClick={() => setSidebarOpen(false)}>
             <span className={styles.navIcon} aria-hidden="true">▤</span>
             Story review
           </a>
@@ -1188,11 +1233,35 @@ export function RadarDashboard({
               <span className={styles.navBadge}>{readyToProduceCount}</span>
             ) : null}
           </a>
-          <a href="#optimization" onClick={() => setSidebarOpen(false)}>
+
+          <p className={styles.navLabel}>Publishing</p>
+          <a
+            href="#editorial-meta"
+            aria-current={
+              activeSection === "editorial-meta" ? "page" : undefined
+            }
+            onClick={closeSidebar}
+          >
+            <span className={styles.navIcon} aria-hidden="true">▸</span>
+            Instagram
+          </a>
+
+          <p className={styles.navLabel}>Settings</p>
+          <a
+            href="#optimization"
+            aria-current={
+              activeSection === "optimization" ? "page" : undefined
+            }
+            onClick={closeSidebar}
+          >
             <span className={styles.navIcon} aria-hidden="true">◌</span>
             Optimization
           </a>
-          <a href="#settings" onClick={() => setSidebarOpen(false)}>
+          <a
+            href="#settings"
+            aria-current={activeSection === "settings" ? "page" : undefined}
+            onClick={closeSidebar}
+          >
             <span className={styles.navIcon} aria-hidden="true">⚙</span>
             System settings
           </a>
@@ -1208,7 +1277,7 @@ export function RadarDashboard({
         <button
           type="button"
           className={styles.sidebarBackdrop}
-          onClick={() => setSidebarOpen(false)}
+          onClick={closeSidebar}
           aria-label="Close navigation"
         />
       ) : null}
@@ -1218,6 +1287,7 @@ export function RadarDashboard({
           <div className={styles.topbarLeft}>
             <button
               type="button"
+              ref={menuButtonRef}
               className={styles.menuButton}
               onClick={() => setSidebarOpen(true)}
               aria-label="Open navigation"
@@ -1298,7 +1368,7 @@ export function RadarDashboard({
             aria-label={isTopicLoading ? `Loading ${selectedTopicName}` : undefined}
           >
 
-        <section id="overview" className={styles.anchorTarget}>
+        <section id="overview" className={styles.anchorTarget} aria-label="Overview">
           <TopicOverviewPanel
             key={selectedTopicId}
             secret={secret}
@@ -1306,6 +1376,11 @@ export function RadarDashboard({
             topicName={selectedTopic?.name ?? "this topic"}
             topicDescription={selectedTopic?.description}
             disabled={isBusy || isTopicLoading}
+            onOpenStory={(storyId, title, draftId) => {
+              setSidebarOpen(false);
+              setContentViewer(undefined);
+              setCreativeStory({ storyId, title, draftId });
+            }}
           />
         </section>
 
@@ -1584,7 +1659,14 @@ export function RadarDashboard({
 
         {contentViewer ? (
           <StoryContentViewer
+            key={selectedTopicId + contentViewer.storyId}
             content={contentViewer}
+            secret={secret}
+            topicId={selectedTopicId}
+            onSaved={(content) => {
+              setContentViewer(content);
+              void fetchDatabaseStats(secret, selectedTopicId).then(setStats).catch(() => {});
+            }}
             onClose={() => setContentViewer(undefined)}
           />
         ) : null}
@@ -1593,6 +1675,7 @@ export function RadarDashboard({
           <CreativeDraftWorkspace
             key={`${selectedTopicId}:${creativeStory.storyId}`}
             initialEditorialRunId={creativeStory.editorialRunId}
+            initialDraftId={creativeStory.draftId}
             topicId={selectedTopicId}
             storyId={creativeStory.storyId}
             storyTitle={creativeStory.title}
@@ -2877,7 +2960,7 @@ function SortableStoriesTable({
                       >
                         {formatEnrichmentStatus(story.enrichmentStatus)}
                         {story.enrichmentStatus === "completed" &&
-                        story.enrichmentMethod === "reader"
+                        story.enrichmentMethod === "manual" ? "Manual article" : story.enrichmentMethod === "reader"
                           ? " via Reader"
                           : ""}
                         {story.enrichmentWordCount !== undefined
@@ -3037,12 +3120,41 @@ function SortableStoriesTable({
 }
 
 function StoryContentViewer({
-  content,
-  onClose,
+  content, onClose, secret, topicId, onSaved,
 }: {
   content: StoryContentResponse;
   onClose: () => void;
+  secret: string;
+  topicId: string;
+  onSaved: (content: StoryContentResponse) => void;
 }) {
+  const [sourceUrl, setSourceUrl] = useState(content.enrichment?.resolvedUrl || content.url);
+  const [manualText, setManualText] = useState("");
+  const [confirmed, setConfirmed] = useState(false);
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [recoveryMessage, setRecoveryMessage] = useState("");
+  const [candidates, setCandidates] = useState<{ url: string; title: string; reason: string }[]>([]);
+  async function recover(manual: boolean) {
+    setRecoveryBusy(true); setRecoveryMessage("");
+    try {
+      const result = await requestJson<StoryContentResponse>(topicUrl(`/api/radar/stories/${content.storyId}/content`, topicId), secret, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceUrl, confirmed, ...(manual ? { text: manualText } : {}) }),
+      });
+      onSaved(result); setManualText(""); setConfirmed(false);
+      setRecoveryMessage("Article saved. Re-evaluate the story and review any existing drafts against the new evidence.");
+    } catch (error) { setRecoveryMessage(getErrorMessage(error)); }
+    finally { setRecoveryBusy(false); }
+  }
+  async function searchAlternatives() {
+    setRecoveryBusy(true); setRecoveryMessage("");
+    try {
+      const result = await requestJson<{ candidates: typeof candidates; message: string }>(
+        topicUrl(`/api/radar/stories/${content.storyId}/content`, topicId), secret, { method: "PATCH" });
+      setCandidates(result.candidates); setRecoveryMessage(result.message);
+    } catch (error) { setRecoveryMessage(getErrorMessage(error)); }
+    finally { setRecoveryBusy(false); }
+  }
   const wordCount = content.enrichment?.wordCount ?? countTextWords(content.text);
 
   return (
@@ -3074,7 +3186,8 @@ function StoryContentViewer({
         <div className={styles.contentViewerMeta}>
           <StatusBadge tone={content.source === "article" ? "positive" : "neutral"}>
             {content.source === "article"
-              ? content.enrichment?.method === "reader"
+              ? content.enrichment?.method === "manual" ? "Manually supplied article"
+                : content.enrichment?.method === "reader"
                 ? "Article via Reader"
                 : "Article page"
               : "RSS feed"}
@@ -3102,6 +3215,28 @@ function StoryContentViewer({
           </div>
         ) : null}
 
+        <details className={styles.contentRecovery} open={content.enrichment?.status === "failed" || content.enrichment?.status === "blocked"}>
+          <summary>Recover article · alternative source or manual text</summary>
+          <p>Use a republication of the same article, or paste text you can access. Check its author, date and event. The original story link stays unchanged.</p>
+          <button type="button" disabled={recoveryBusy} onClick={searchAlternatives}>Find alternative sources</button>
+          {candidates.map(candidate => <div key={candidate.url}>
+            <a href={candidate.url} target="_blank" rel="noreferrer">{candidate.title}</a>
+            <p>{candidate.reason}</p>
+            <button type="button" disabled={recoveryBusy} onClick={() => { setSourceUrl(candidate.url); setConfirmed(false); }}>Use this source</button>
+          </div>)}
+          <label>Article source URL
+            <input type="url" value={sourceUrl} disabled={recoveryBusy} onChange={event => { setSourceUrl(event.target.value); setConfirmed(false); }} />
+          </label>
+          <label>Manual article text (optional)
+            <textarea rows={8} maxLength={100000} value={manualText} disabled={recoveryBusy} onChange={event => { setManualText(event.target.value); setConfirmed(false); }} placeholder="Paste article text, not a search summary." />
+          </label>
+          <label><input type="checkbox" checked={confirmed} disabled={recoveryBusy} onChange={event => setConfirmed(event.target.checked)} /> I checked that this source/text corresponds to the same article.</label>
+          <div>
+            <button type="button" disabled={recoveryBusy || !confirmed} onClick={() => recover(false)}>Read source URL</button>
+            <button type="button" disabled={recoveryBusy || !confirmed || !manualText.trim()} onClick={() => recover(true)}>Save pasted article</button>
+          </div>
+          <p role="status">{recoveryBusy ? "Preparing…" : recoveryMessage}</p>
+        </details>
         <div className={styles.contentViewerBody}>
           {content.text ? (
             <p>{content.text}</p>
@@ -3116,6 +3251,7 @@ function StoryContentViewer({
           <a href={content.url} target="_blank" rel="noreferrer">
             Open original story ↗
           </a>
+          {content.enrichment?.resolvedUrl && content.enrichment.resolvedUrl !== content.url ? <a href={content.enrichment.resolvedUrl} target="_blank" rel="noreferrer">Content source ↗</a> : null}
           {content.enrichment?.fetchedAt ? (
             <span>Fetched {formatDate(content.enrichment.fetchedAt)}</span>
           ) : null}

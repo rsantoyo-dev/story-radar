@@ -1,14 +1,14 @@
 ---
 id: OVW-05
 feature: FEAT-OVW-001
-status: todo
+status: review
 board: topic-overview.kanban.md
-tags: [overview, todo, p0]
+tags: [overview, review, p0]
 ---
 
 # OVW-05 — Resumir publicaciones y capacidades operativas
 
-**Estado:** [[status-todo]] · **Feature:** [Topic Overview](../features/topic-overview.md)
+**Estado:** [[status-review]] · **Feature:** [Topic Overview](../features/topic-overview.md)
 
 **Prioridad:** P0 · **Dependencias:** OVW-01, OVW-02
 
@@ -47,3 +47,11 @@ En historias exclusivamente de datos, preservar estos contratos para los compone
 ## Validación y entrega
 
 Registrar pruebas y evidencia visual cuando corresponda; actualizar ficha y tablero al completar los criterios. Esta historia está planificada y no implica implementación ni despliegue.
+
+## Implementación — 11 de septiembre de 2026
+
+`TopicPublicationSummary` y `TopicHealthPanel` implementados (`readPublications`, `readHealth`, `readCapabilities`). Estados de entrega distinguidos: confirmada, éxito remoto con registro pendiente, incierta, contenedor listo, en curso, fallo seguro, y registro manual (no confirmado por proveedor) — nunca se presenta una entrega confirmada sin permalink como fallida. El total de "Ver todos" aplica la misma exclusión que la lista mostrada (sin contar dos veces un job y su registro manual). Salud de fuentes por estados disjuntos incluyendo desconocidas, con el resultado real de la última recolección. Capacidades reales: Instagram muestra conexión/publicar/insights por separado y última actividad conocida sin inventar heartbeat; Facebook y agenda declaran `available: false` con motivo, nunca una cifra falsa. Ninguna llamada a Meta/fal al montar — verificado por auditoría de imports, no solo por diseño.
+
+Pendiente: sin evidencia visual del anillo opcional de salud de fuentes ni de la tarjeta de publicación contra la referencia A en navegador real.
+
+Verificación: `npx tsc --noEmit`, `npm run lint`, `npm test` (646/646), `npm run build` en verde.

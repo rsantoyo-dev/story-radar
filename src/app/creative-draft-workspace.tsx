@@ -54,6 +54,11 @@ import styles from "./creative-draft-workspace.generated.module.css";
 
 type WorkspaceProps = {
   initialEditorialRunId?: string;
+  /** Opens this exact draft instead of the current/latest one, when it still
+   * exists among the story's drafts — e.g. a specific revision continued
+   * from the Topic Overview. Silently falls back to the usual default draft
+   * otherwise. */
+  initialDraftId?: string;
   topicId: string;
   storyId: string;
   storyTitle: string;
@@ -166,7 +171,7 @@ export function CreativeDraftWorkspace({
   secret,
   onClose,
   onInstagramChanged,
-  instagramRefreshToken, initialEditorialRunId,
+  instagramRefreshToken, initialEditorialRunId, initialDraftId,
 }: WorkspaceProps) {
   const [preparedPublication, setPreparedPublication] = useState<{ topicId: string; storyId: string; assetCount: number }>();
   const [workspace, setWorkspace] = useState<CreativeWorkspaceState>();
@@ -296,7 +301,15 @@ export function CreativeDraftWorkspace({
         // current one, open the latest saved study so its copy and images do
         // not appear to vanish after a brief/profile refresh.
         const primaryDrafts = next.drafts.filter((draft) => !draft.companion);
+        // A specific revision continued from elsewhere (e.g. the Topic
+        // Overview) wins when it still exists; otherwise fall back to the
+        // usual current/latest pick. `latestDraft` below already treats a
+        // non-current pick as historical (read-only) via `inputIsCurrent`.
+        const requestedDraft = initialDraftId
+          ? primaryDrafts.find((draft) => draft.id === initialDraftId)
+          : undefined;
         const latestDraft =
+          requestedDraft ??
           primaryDrafts.find((draft) => draft.inputIsCurrent !== false) ??
           primaryDrafts[0];
         const format = latestDraft?.format ?? next.brief?.recommendedFormat ?? "meme";
@@ -331,6 +344,12 @@ export function CreativeDraftWorkspace({
       });
 
     return () => controller.abort();
+    // `initialDraftId`, like `initialEditorialRunId` above, is a mount-time
+    // seed rather than a reactive input — the caller remounts this whole
+    // component (via a `key` keyed on story/topic) when it wants a different
+    // one honored, rather than expecting this effect to react to it changing
+    // in place.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [secret, storyId, topicId]);
 
   useEffect(() => {
