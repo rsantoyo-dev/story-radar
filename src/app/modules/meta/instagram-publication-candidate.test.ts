@@ -21,6 +21,14 @@ async function imageFile() {
   return new File([new Uint8Array(bytes)], "approved.png", { type: "image/png" });
 }
 
+test("sequence uses existing image candidate checks and still requires approval", () => {
+  const input = fixture();
+  input.draft.format = "sequence";
+  assert.deepEqual(editorialCandidateBlockers(input.draft, input.batch, input.sourceToken), []);
+  input.draft.status = "draft";
+  assert.ok(editorialCandidateBlockers(input.draft, input.batch, input.sourceToken).length > 0);
+});
+
 test("approved set is a candidate, not ready from a recorded scope alone; exact copy and file hashes are retained", async () => {
   const input = fixture();
   const result = await validatePublicationCandidate({ load: async () => input, readApprovedImage: imageFile });

@@ -2692,3 +2692,33 @@ test("a three-barrier continuation is not the approximate three-in-ten populatio
   assert.ok(cueIssues("Tres barreras: el 31.7% reportó dificultades.").some(issue=>issue.code==="LOST_QUALIFIER"));
   assert.ok(cueIssues("Qué cuatro barreras se reportaron.").some(issue=>issue.code==="UNSUPPORTED_NUMBER"));
 });
+
+test("mixed fractional cooking hours are not a count of two traditions", () => {
+  const facts: CreativeKeyFact[] = [{ id: "fact-1", statement: "Cocinar aproximadamente 2½–3½ horas.", sourceExcerpt: "Cocinar aproximadamente 2½–3½ horas.", requiredQualifiers: ["aproximadamente"] }];
+  const input = structuredClone(draft);
+  input.units = [{ ...input.units[0], factIds: ["fact-1"], headline: "Dos tradiciones", body: "Dos técnicas para cocinar.", subheadline: undefined, continuationCue: undefined, ctaQuestion: undefined }];
+  assert.equal(deterministicFactQualityIssues(input, facts).some(i => i.code === "LOST_QUALIFIER"), false);
+  input.units[0].body = "Cocinar 2½–3½ horas.";
+  assert.equal(deterministicFactQualityIssues(input, facts).some(i => i.code === "LOST_QUALIFIER"), true);
+});
+
+ test("estimate qualifier applies to cooking hours rather than exact servings", () => {
+ const facts: CreativeKeyFact[] = [{ id: "fact-1", statement: "Para 4 porciones, cocinar aproximadamente 2½–3½ horas.", sourceExcerpt: "Para 4 porciones, cocinar aproximadamente 2½–3½ horas.", requiredQualifiers: ["aproximadamente"] }];
+ const input = structuredClone(draft);
+ input.units = [{ ...input.units[0], factIds: ["fact-1"], headline: "Para 4 porciones", body: undefined, subheadline: undefined, continuationCue: undefined, ctaQuestion: undefined }];
+ assert.equal(deterministicFactQualityIssues(input, facts).some(i => i.code === "LOST_QUALIFIER"), false);
+ input.units[0].body = "Cocinar 2½–3½ horas.";
+ assert.equal(deterministicFactQualityIssues(input, facts).some(i => i.code === "LOST_QUALIFIER"), true);
+ const repaired = repairDeterministicFactCopy(input, facts, "es");
+ assert.doesNotMatch(repaired.units[0].headline, /aproximadamente/i);
+ assert.match(repaired.units[0].body ?? "", /aproximadamente/i);
+ });
+
+ test("estimated at binds to duration and not servings", () => {
+ const facts: CreativeKeyFact[] = [{ id: "fact-1", statement: "Makes 4 servings. Cooking time is estimated at 2.5 hours.", sourceExcerpt: "Makes 4 servings. Cooking time is estimated at 2.5 hours.", requiredQualifiers: ["estimated"] }];
+ const input = structuredClone(draft);
+ input.units = [{ ...input.units[0], factIds: ["fact-1"], headline: "Makes 4 servings", body: undefined, subheadline: undefined, continuationCue: undefined, ctaQuestion: undefined }];
+ assert.equal(deterministicFactQualityIssues(input, facts).some(i => i.code === "LOST_QUALIFIER"), false);
+ input.units[0].body = "Cook for 2.5 hours.";
+ assert.equal(deterministicFactQualityIssues(input, facts).some(i => i.code === "LOST_QUALIFIER"), true);
+ });

@@ -59,9 +59,16 @@ export const editorialEvaluationRunStatusEnum = pgEnum(
   ["running", "completed", "failed"],
 );
 
+/**
+ * "sequence" is ordered, step-based content (a recipe, a how-to, an
+ * assembly guide) — the AI picks it the same way it already picks between
+ * "meme" and "carousel", from the story's own content. The creative profile can prefer hook + steps; any topic can use it
+ * when its source supports a procedure.
+ */
 export const creativeFormatEnum = pgEnum("creative_format", [
   "meme",
   "carousel",
+  "sequence",
 ]);
 
 export const creativeDraftStatusEnum = pgEnum("creative_draft_status", [

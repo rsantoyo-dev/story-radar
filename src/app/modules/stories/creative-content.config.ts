@@ -138,10 +138,11 @@ export function getCreativeContentPublicConfig(): CreativeContentPublicConfig {
     provider: primaryProvider === "groq" ? "groq" : "google",
     model: primaryProvider === "groq" ? groqModel : geminiModel,
     primaryProvider,
-    briefPromptVersion: "creative-brief-v30",
+    briefPromptVersion: "creative-brief-v32",
     draftPromptVersions: {
       meme: "meme-draft-v26",
-      carousel: "carousel-draft-v42",
+      carousel: "carousel-draft-v44",
+      sequence: "sequence-draft-v4",
     },
     maxRunsPerDay: parsePositiveInteger(
       process.env.CREATIVE_MAX_RUNS_PER_DAY,

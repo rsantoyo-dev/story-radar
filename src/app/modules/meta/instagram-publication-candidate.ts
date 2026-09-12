@@ -52,7 +52,7 @@ export function editorialCandidateBlockers(draft: CreativeDraft, batch: Creative
   if (batch.draftId !== draft.id || batch.draftVersion !== draft.version || batch.status === "stale") add("stale-batch", "The image batch belongs to an earlier revision. Review the current images.");
   if (batch.status !== "completed") add("incomplete-batch", "Wait for every image to complete.");
   if (!draft.units.length || batch.assets.length !== draft.units.length || batch.totalAssets !== draft.units.length || new Set(batch.assets.map(a => a.unitOrder)).size !== draft.units.length || batch.assets.some(a => !draft.units.some(u => u.order === a.unitOrder))) add("incomplete-selection", "Select exactly one current image for every script unit.");
-  if (!["meme", "carousel"].includes(draft.format) || draft.outputAspectRatio !== "4:5" || batch.outputAspectRatio !== "4:5") add("unsupported-format", "Publishing candidates require a 4:5 photo or image carousel.");
+  if (!["meme", "carousel", "sequence"].includes(draft.format) || draft.outputAspectRatio !== "4:5" || batch.outputAspectRatio !== "4:5") add("unsupported-format", "Publishing candidates require a 4:5 photo or image carousel.");
   for (const asset of batch.assets) {
     if (asset.status !== "approved" || !asset.approvedAt) add("image-approval", `Approve image ${asset.unitOrder}.`, asset.id);
     if (!asset.imageUrl) add("missing-image", `Image ${asset.unitOrder} has no accessible file.`, asset.id);

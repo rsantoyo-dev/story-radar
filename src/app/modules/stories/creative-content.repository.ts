@@ -172,6 +172,7 @@ export async function insertCreativeBrief({
       inputHash,
       editorialDirection: editorialDirection ?? null,
       collectionContext: collectionContext ?? null,
+      contentTitle: generated.contentTitle ?? null,
       recommendedFormat: generated.recommendedFormat,
       fallbackFormat: generated.fallbackFormat,
       formatScores: generated.formatScores,
@@ -725,6 +726,7 @@ function mapCreativeBrief(
     ...(row.editorialDirection
       ? { editorialDirection: row.editorialDirection }
       : {}),
+    contentTitle: row.contentTitle ?? undefined,
     recommendedFormat: row.recommendedFormat,
     fallbackFormat: row.fallbackFormat,
     formatScores: row.formatScores as CreativeBrief["formatScores"],

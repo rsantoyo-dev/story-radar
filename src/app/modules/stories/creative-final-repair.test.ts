@@ -1,3 +1,4 @@
+import { enforceCoverTitle } from "./creative-cover-title";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { applyFinalCreativePatches, repairRemainingCreativeBlockers } from "./creative-final-repair";
@@ -205,3 +206,16 @@ test("empty copy response receives one bounded follow-up without removing blocke
   assert.equal(result.draft.qualityReview?.status, "rejected");
   assert.match(result.draft.qualityReview?.issues.find((i) => i.code === "FINAL_REPAIR_UNRESOLVED")?.message ?? "", /no copy changes/);
 });
+
+ test("cover title is inspected and a factual correction survives final repair", async () => {
+ const input = enforceCoverTitle(fixture(), true, "El 99% encontró empleo en 2028");
+ let inspected = false;
+ const result = await repairRemainingCreativeBlockers(input, context, async contents => {
+   inspected = true;
+   assert.equal((contents.draft as GeneratedCreativeDraft).units[0].subheadline, "El 99% encontró empleo en 2028");
+   return response(patches([ctaPatch, { unitOrder: 1, field: "subheadline", text: "Empleo y formación de inmigrantes" }]));
+ });
+ assert.equal(inspected, true);
+ assert.equal(result.draft.units[0].subheadline, "Empleo y formación de inmigrantes");
+ assert.doesNotMatch(JSON.stringify(result.draft.units), /99%|2028/);
+ });

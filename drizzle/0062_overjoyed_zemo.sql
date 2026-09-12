@@ -1,0 +1,3 @@
+CREATE TYPE "public"."recipe_source_extraction_method" AS ENUM('direct', 'reader', 'manual');--> statement-breakpoint
+ALTER TABLE "recipe_sources" ADD COLUMN "extraction_method" "recipe_source_extraction_method";--> statement-breakpoint
+ALTER TABLE "recipe_sources" ADD CONSTRAINT "recipe_sources_extraction_method_check" CHECK ("recipe_sources"."kind" = 'imported' OR "recipe_sources"."extraction_method" IS NULL);

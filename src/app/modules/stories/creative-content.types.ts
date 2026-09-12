@@ -6,7 +6,14 @@ import type {
   CarouselPlan,
 } from "./carousel-narrative";
 
-export const CREATIVE_FORMATS = ["meme", "carousel"] as const;
+/**
+ * "sequence" is ordered, step-based content (a recipe, a how-to, an
+ * assembly guide) — the AI picks it the same way it already picks between
+ * "meme" and "carousel", scored from the story's own content. It is
+ * structurally a carousel (same slide/unit generation, token budgets, and
+ * persistence) with different prompt guidance for what each slide says.
+ */
+export const CREATIVE_FORMATS = ["meme", "carousel", "sequence"] as const;
 export type CreativeFormat = (typeof CREATIVE_FORMATS)[number];
 
 export const CREATIVE_ASPECT_RATIOS = ["1:1", "4:5", "9:16", "16:9"] as const;
@@ -506,6 +513,9 @@ export type CreativeProfile = {
   maxEmojis: number;
   conversionGoal: CreativeConversionGoal;
   framingStrategy: CreativeFramingStrategy;
+  /** Presentation preference; never authorizes inventing source steps. */
+  requireCoverTitle?: boolean;
+  storyStructure?: "auto" | "hook-steps";
   visualFidelityMode: VisualFidelityMode;
   /** Operational contact; excluded from editorial policy and generation hashes. */
   geoProviderContact?: string;
@@ -572,6 +582,7 @@ export type CreativeSuggestedConcept = {
 };
 
 export type GeneratedCreativeBrief = {
+  contentTitle?: string;
   recommendedFormat: CreativeFormat;
   fallbackFormat: CreativeFormat;
   formatScores: CreativeFormatScore[];
@@ -946,7 +957,7 @@ export type CreativeAssetBatchResponse = {
 };
 
 export function isCreativeFormat(value: unknown): value is CreativeFormat {
-  return value === "meme" || value === "carousel";
+  return typeof value === "string" && (CREATIVE_FORMATS as readonly string[]).includes(value);
 }
 
 export function isCreativeAspectRatio(

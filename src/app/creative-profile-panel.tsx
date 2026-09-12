@@ -323,6 +323,19 @@ export function CreativeProfilePanel({
               </select>
             </label>
             <label className={styles.field}>
+              <span>Story structure</span>
+              <select value={draft.storyStructure ?? "auto"} onChange={event => updateDraft({ storyStructure: event.target.value as CreativeProfile["storyStructure"] })}>
+                <option value="auto">Automatic — choose from the source</option>
+                <option value="hook-steps">Hook + steps — recipes, guides and tutorials</option>
+              </select>
+              <small>Prefers an ordered sequence when the source provides the steps. Missing instructions are never invented.</small>
+            </label>
+            <label className={styles.field}>
+              <span>Show content name on cover</span>
+              <input type="checkbox" checked={draft.requireCoverTitle ?? false} onChange={event => updateDraft({ requireCoverTitle: event.target.checked })} />
+              <small>Keep the recipe, guide or project name visible alongside the hook. Editable in the cover subtitle.</small>
+            </label>
+            <label className={styles.field}>
               <span>Editorial framing</span>
               <select
                 value={draft.framingStrategy ?? "auto"}

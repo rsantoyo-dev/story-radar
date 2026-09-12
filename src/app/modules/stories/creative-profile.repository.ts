@@ -68,6 +68,8 @@ const DEFAULT_PROFILE: EditableCreativeProfile = {
   maxEmojis: 2,
   conversionGoal: DEFAULT_CREATIVE_CONVERSION_GOAL,
   framingStrategy: DEFAULT_CREATIVE_FRAMING_STRATEGY,
+  requireCoverTitle: false,
+  storyStructure: "auto",
   visualFidelityMode: DEFAULT_VISUAL_FIDELITY_MODE,
   geoScope: { ...DEFAULT_CREATIVE_GEO_SCOPE },
   callToActionStyle:
@@ -267,6 +269,8 @@ export function parseCreativeProfileInput(value: unknown): EditableCreativeProfi
     maxEmojis: value.maxEmojis,
     conversionGoal: value.conversionGoal,
     framingStrategy: value.framingStrategy,
+    requireCoverTitle: value.requireCoverTitle,
+    storyStructure: value.storyStructure,
     visualFidelityMode: value.visualFidelityMode,
     geoProviderContact: value.geoProviderContact,
     geoScope: value.geoScope,
@@ -306,6 +310,8 @@ function validateCreativeProfile(
     maxEmojis: boundedInteger(value.maxEmojis, "maxEmojis", 0, 10),
     conversionGoal: conversionGoalValue(value.conversionGoal),
     framingStrategy: framingStrategyValue(value.framingStrategy),
+    requireCoverTitle: booleanValue(value.requireCoverTitle ?? false, "requireCoverTitle"),
+    storyStructure: storyStructureValue(value.storyStructure),
     visualFidelityMode: visualFidelityModeValue(value.visualFidelityMode),
     geoProviderContact: geographicContactValue(value.geoProviderContact),
     geoScope: parseCreativeGeoScopeInput(value.geoScope),
@@ -384,6 +390,8 @@ function mapCreativeProfile(
     maxEmojis: profile.maxEmojis,
     conversionGoal: conversionGoalValue(profile.conversionGoal),
     framingStrategy: framingStrategyValue(profile.framingStrategy),
+    requireCoverTitle: profile.requireCoverTitle ?? false,
+    storyStructure: storyStructureValue(profile.storyStructure),
     visualFidelityMode: visualFidelityModeValue(profile.visualFidelityMode),
     geoProviderContact: profile.geoProviderContact ?? "",
     geoScope: parseCreativeGeoScopeInput(profile.geoScope),
@@ -509,4 +517,10 @@ export class CreativeProfileValidationError extends Error {}
 function geographicContactValue(value: unknown): string {
   try { return parseGeoContact(value); }
   catch { throw new CreativeProfileValidationError("Geographic contact must be a valid email address"); }
+}
+
+export function storyStructureValue(value: unknown): "auto" | "hook-steps" {
+  if (value === undefined || value === null) return "auto";
+  if (value === "auto" || value === "hook-steps") return value;
+  throw new CreativeProfileValidationError("storyStructure must be auto or hook-steps");
 }

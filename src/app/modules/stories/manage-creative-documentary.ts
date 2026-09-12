@@ -99,7 +99,7 @@ async function prepare(topicId: string, storyId: string, format: CreativeFormat,
   } else if (!blocked) reasons.push(roadNotice ? "Official 511 notice: route, location, severity, direction and dates retained together. Typography does not reconstruct the road." : "Place extraction not configured or daily budget exhausted.");
   discovery = relevantPlaceDiscovery(discovery, extraction.mentions);
   if (!correction && !roadNotice) excerpts = selectDocumentaryExcerpts(sourceExcerpts(story.text || ""), extraction);
-  const chunks = format === "carousel" ? excerpts.slice(0, 3) : excerpts.slice(0, 1);
+  const chunks = (format === "carousel" || format === "sequence") ? excerpts.slice(0, 3) : excerpts.slice(0, 1);
   const copies = chunks.length ? chunks : [""];
   const baseReasons = [...reasons];
   const unitSnapshots: DocumentarySnapshot[] = [];
@@ -159,7 +159,7 @@ async function prepare(topicId: string, storyId: string, format: CreativeFormat,
   }
   const snapshot = unitSnapshots[0];
   reasons.push(...new Set(unitSnapshots.flatMap(item => item.reasons)));
-  const units: CreativeUnit[] = copies.map((excerpt, i) => ({ order: i + 1, type: format === "carousel" ? "carousel-slide" : "meme-frame", role: i === 0 ? "cover" : "content", headline: title || "Source unavailable", body: excerpt, visualDirection: "Deterministic documentary layout", factIds: [`source-${i + 1}`], assetRequest: "typography-only", aspectRatio: "4:5" }));
+  const units: CreativeUnit[] = copies.map((excerpt, i) => ({ order: i + 1, type: (format === "carousel" || format === "sequence") ? "carousel-slide" : "meme-frame", role: i === 0 ? "cover" : "content", headline: title || "Source unavailable", body: excerpt, visualDirection: "Deterministic documentary layout", factIds: [`source-${i + 1}`], assetRequest: "typography-only", aspectRatio: "4:5" }));
   const brief = await insertCreativeBrief({ topicId, storyId, profile, provider: DOCUMENTARY_PROVIDER, model: "extractive-copy", promptVersion: DOCUMENTARY_VERSION, inputHash: `${inputHash}:${snapshot.preparedAt}`, usage: EMPTY_GEO_USAGE,
     generated: { recommendedFormat: format, fallbackFormat: "meme", formatScores: [], confidence: 0, targetAudience: profile.audience, keyMessage: title, angle: "Source-grounded documentary context", hook: title,
       tone: { primary: "informative", energy: 0, humor: 0, reason: "Verbatim source copy" }, contentSufficiency: blocked ? "insufficient" : "limited",

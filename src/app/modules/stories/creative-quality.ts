@@ -122,7 +122,7 @@ export function repairDeterministicCreativeCopy(
       characterIds: [...(unit.characterIds ?? [])],
     })),
   };
-  if (format === "carousel") {
+  if (format === "carousel" || format === "sequence") {
     if (
       repaired.callToAction &&
       isGenericFollowCallToAction(repaired.callToAction)
@@ -320,7 +320,7 @@ export function repairDeterministicCreativeCopy(
     keyFacts,
     language,
   );
-  if (format === "carousel") {
+  if (format === "carousel" || format === "sequence") {
     // Fact repair may add a uniquely matching numeric fact or restore a source
     // statement on an evidence slide. Re-apply presentation constraints last
     // so those useful factual repairs cannot violate the narrative budget or
@@ -409,7 +409,7 @@ function repairMissingOrGenericHeadlines(
 }
 
 const FOLLOW_CTA_PATTERN =
-  /\b(?:follow(?: us| this account)?|síguenos?|sígueme|seguir)\b/iu;
+  /\b(?:follow(?: us| this account)?|s[ií]guenos?|s[ií]gueme|seguir|suivez(?:-nous|-moi)?|abonnez-vous|abonne-toi)\b/iu;
 const SAVE_CTA_PATTERN =
   /\b(?:save this|save it|bookmark|guarda(?: este| esta| esto)?|guárdalo|guardarlo|guardar)\b/iu;
 const SHARE_CTA_PATTERN =
@@ -480,6 +480,16 @@ function repairConversionGoalCtas(
   delete repaired.callToAction;
   if (matchingCta) {
     closing.ctaQuestion = matchingCta;
+  } else if (goal === "followers" && format === "sequence" && !draftLooksLikeSensitiveCoverage(draft)) {
+    // A procedural draft has a concrete recurring value even if a model repair
+    // removed its CTA. Keep the fallback factual and free of outcome promises.
+    closing.ctaQuestion = isSpanishProfileLanguage(language)
+      ? "Síguenos para descubrir más guías paso a paso."
+      : /^(fr|français|francais|french)/i.test(language ?? "")
+        ? "Suivez-nous pour découvrir d’autres guides étape par étape."
+        : isEnglishProfileLanguage(language)
+          ? "Follow us for more step-by-step guides."
+          : undefined;
   } else {
     delete closing.ctaQuestion;
   }
@@ -599,7 +609,7 @@ export function deterministicCreativeQualityIssues(
   framingStrategy?: CreativeFramingStrategy,
 ): CreativeQualityIssue[] {
   const narrativeIssues =
-    format === "carousel"
+    (format === "carousel" || format === "sequence")
       ? evaluateCarouselNarrative(
           draft.units,
           draft.narrativeRationale,
@@ -645,7 +655,7 @@ export function deterministicCreativeQualityIssues(
           message: `Slide ${unit.order} uses an absolute promise that its selected evidence does not establish.`,
         }]
       : [];
-    if (format === "carousel" && unitIndex === 0) {
+    if ((format === "carousel" || format === "sequence") && unitIndex === 0) {
       const words = (text?: string) => text?.trim().split(/\s+/u).filter(Boolean).length ?? 0;
       // Advisory only: do not truncate names, qualifiers, or languages without
       // whitespace segmentation to satisfy an editorial preference.
@@ -694,7 +704,7 @@ export function deterministicCreativeQualityIssues(
   });
   const closing = draft.units.at(-1);
   const ctaSpecificityIssues =
-    format === "carousel" &&
+    (format === "carousel" || format === "sequence") &&
     closing?.ctaQuestion?.trim() &&
     isGenericClosingQuestion(closing.ctaQuestion)
       ? [{
@@ -705,7 +715,7 @@ export function deterministicCreativeQualityIssues(
             "The closing question is generic; connect it to the carousel's central concept.",
         }]
       : [];
-  const followCtaIssues = format === "carousel"
+  const followCtaIssues = (format === "carousel" || format === "sequence")
     ? [
         ...(draft.callToAction?.trim() &&
         isGenericFollowCallToAction(draft.callToAction)
@@ -732,7 +742,7 @@ export function deterministicCreativeQualityIssues(
       )
     : [];
   const captionTableOfContentsIssues =
-    format === "carousel" && isTableOfContentsCaption(draft.caption)
+    (format === "carousel" || format === "sequence") && isTableOfContentsCaption(draft.caption)
       ? [{
           code: "CAPTION_TABLE_OF_CONTENTS",
           severity: "warning" as const,
@@ -741,7 +751,7 @@ export function deterministicCreativeQualityIssues(
         }]
       : [];
   const captionInstitutionRecapIssues =
-    format === "carousel" &&
+    (format === "carousel" || format === "sequence") &&
     framingStrategy === "reader-consequence" &&
     isInstitutionFirstCoverCopy(firstSentenceOf(draft.caption))
       ? [{
@@ -1062,7 +1072,7 @@ export function creativeQualityThresholdFailures(
     resolution: CREATIVE_QUALITY_THRESHOLDS.resolution,
     ...(requireCta ? { cta: CREATIVE_QUALITY_THRESHOLDS.cta } : {}),
     overall: CREATIVE_QUALITY_THRESHOLDS.overall,
-    ...(format === "carousel"
+    ...((format === "carousel" || format === "sequence")
       ? {
           swipeReward: CREATIVE_QUALITY_THRESHOLDS.swipeReward,
           continuity: CREATIVE_QUALITY_THRESHOLDS.continuity,
@@ -1315,7 +1325,7 @@ function calibrateCreativeQualityScores(
   }
 
   const weightedOverall =
-    format === "carousel"
+    (format === "carousel" || format === "sequence")
       ? scores.factuality * 0.22 +
         scores.hook * 0.12 +
         scores.curiosity * 0.12 +
@@ -1349,7 +1359,7 @@ export function assertNoDeterministicCreativeBlockers(
 ): void {
   const blockers = [
     ...evidenceQualityIssues(draft, keyFacts).map(issue => issue.message),
-    ...(format === "carousel"
+    ...((format === "carousel" || format === "sequence")
       ? blockingCarouselNarrativeIssues(
           draft.units,
           draft.narrativeRationale,

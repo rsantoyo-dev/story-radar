@@ -1329,6 +1329,13 @@ function repairContinuationCues(
       }
     }
 
+    // Scope repairs can rephrase the cue after qualifier insertion. Never
+    // persist an optional teaser that still turns an estimate into certainty.
+    if (cue && !ESTIMATE_PATTERN.test(cue) && cueFacts.some(fact =>
+      factRequiresEstimateQualifier(fact) && factUsesEstimateNumberInCopy(fact, cue))) {
+      cue = repairMissingEstimateQualifier(cue, cueFacts, language);
+      if (!ESTIMATE_PATTERN.test(cue)) cue = "";
+    }
     if (!cue || hasUnsupportedInference(cue, sourceCopy)) {
       delete unit.continuationCue;
       return;
@@ -1845,17 +1852,17 @@ function repairMissingEstimateQualifier(
   const allowedApproximateNumbers = new Set(
     facts
       .filter(factRequiresEstimateQualifier)
-      .flatMap((fact) => fact.claimGuard?.allowedNumbers ?? []),
+      .flatMap(approximateFactNumbers),
   );
   const qualifier = facts
     .flatMap((fact) => fact.requiredQualifiers ?? [])
     .map((candidate) => estimatePrefix(candidate, language))
     .find(Boolean) ?? defaultEstimateQualifier(language);
   const inserted = value.replace(
-    /(\b(?:del|al|de|a|el|la|los|las|un|una)\s+)?(~?\d[\d,.]*(?:\s*%|\s*percent)?)/giu,
+    /(\b(?:del|al|de|a|el|la|los|las|un|una)\s+)?(~?\d[\d,.]*[½¼¾]?(?:\s*%|\s*percent)?)/giu,
     (match: string, lead: string | undefined, number: string) => {
       if (
-        !allowedApproximateNumbers.has(normalizeNumber(number)) ||
+        !allowedApproximateNumbers.has(normalizeNumber(normalizeMixedFractions(number))) ||
         ESTIMATE_PATTERN.test(number)
       ) {
         return match;
@@ -2201,10 +2208,34 @@ function factUsesNumberInCopy(fact: CreativeKeyFact, copy: string): boolean {
 
 // A list count is not the numerator of a population ratio. Keep the full
 // copy in unsupported-number validation; only scope this estimate check.
+function normalizeMixedFractions(text: string): string {
+  return text.replace(/(\d+)([½¼¾])/gu, (_, whole: string, fraction: string) =>
+    String(Number(whole) + ({ "½": .5, "¼": .25, "¾": .75 }[fraction] ?? 0)));
+}
+
+function approximateFactNumbers(fact: CreativeKeyFact): string[] {
+  const source = normalizeMixedFractions(`${fact.statement} ${fact.sourceExcerpt ?? ""}`);
+  // Bind an explicit qualifier to its following quantity/range, not every
+  // number in the same fact (e.g. four servings and about 2.5 hours).
+  const qualifier = new RegExp(ESTIMATE_PATTERN.source, "giu");
+  const numbers: string[] = [];
+  for (const match of source.matchAll(qualifier)) {
+    const tail = source.slice(match.index! + match[0].length);
+    const quantity = tail.match(/^\s*(?:(?:el|la|los|las|a|an|the|de|un|una|at|en)\s+)*[$€£+-]?\d[\d.,]*(?:\s*%|\s*percent)?(?:\s*(?:–|—|-|a|to)\s*\d[\d.,]*)?/iu);
+    if (quantity) numbers.push(...extractAllowedNumbers(quantity[0]));
+  }
+  if (numbers.length) return numbers;
+  // Legacy facts may carry the qualifier only in structured metadata.
+  return extractAllowedNumbers(source);
+}
+
 function factUsesEstimateNumberInCopy(fact:CreativeKeyFact,copy:string):boolean {
   const ratioQualifier=(fact.requiredQualifiers??[]).some(qualifier=>
     /\b\d+\s+(?:in|out of|de cada)\s+\d+\b/iu.test(qualifier));
-  if(!ratioQualifier)return factUsesNumberInCopy(fact,copy);
+  if (!ratioQualifier) {
+    const copyNumbers = new Set(extractAllowedNumbers(normalizeMixedFractions(copy)));
+    return approximateFactNumbers(fact).some(number => copyNumbers.has(number));
+  }
   const statisticalCopy=copy.replace(
     /\b(?:[1-9]|10|one|two|three|four|five|six|seven|eight|nine|ten|un[oa]?|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\s+(?:barriers?|barreras?|obstacles?|obstáculos?|factors?|factores?|reasons?|razones?|steps?|pasos?)\b/giu,"");
   return factUsesNumberInCopy(fact,statisticalCopy);

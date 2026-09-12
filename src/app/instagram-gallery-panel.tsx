@@ -494,6 +494,7 @@ export function InstagramGalleryPanel({
 const DRAFT_FORMAT_LABEL: Record<string, string> = {
   meme: "Meme",
   carousel: "Carousel",
+  sequence: "Sequence",
 };
 
 function draftOptionLabel(draft: DraftOption): string {

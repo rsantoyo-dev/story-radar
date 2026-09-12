@@ -1,3 +1,4 @@
+import { preserveEditorCtas } from "./preserve-editor-cta";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -1404,3 +1405,44 @@ test("saving a closing preserves its explicitly selected verified consultation d
   assert.match(repaired.units[1].body??"",/14 septembre/);
   assert.match(repaired.units[1].body??"",/17 et 19/);
 });
+
+
+test("French follow CTA survives sequence repair even when phrased as a question", () => {
+  const input = structuredClone(draft);
+  const cta = "Abonnez-vous pour découvrir nos recettes, ça vous tente ?";
+  input.units.at(-1)!.ctaQuestion = cta;
+  input.units.at(-1)!.editorialGoal = "conclude";
+  const result = repairDeterministicCreativeCopy(input, "sequence", facts, "fr", "followers");
+  assert.equal(result.units.at(-1)?.ctaQuestion, cta);
+  assert.equal(deterministicCreativeQualityIssues(result, "sequence", facts, "fr", "followers")
+    .some(issue => issue.code === "MISSING_CONVERSION_CTA" || issue.code === "CTA_GOAL_MISMATCH"), false);
+});
+
+
+test("unaccented Spanish follow request matches followers without changing editor copy", () => {
+  const input = structuredClone(draft);
+  input.units.at(-1)!.editorialGoal = "conclude";
+  input.units.at(-1)!.ctaQuestion = "SIguenos para mas recetas!";
+  const issues = deterministicCreativeQualityIssues(input, "sequence", facts, "es", "followers");
+  assert.equal(issues.some(issue => issue.code === "CTA_GOAL_MISMATCH"), false);
+});
+
+ test("sequence restores missing followers CTA after repair", () => {
+ const input = structuredClone(draft);
+ input.units.at(-1)!.editorialGoal = "conclude";
+ delete input.units.at(-1)!.ctaQuestion;
+ delete input.callToAction;
+ const repaired = repairDeterministicCreativeCopy(input, "sequence", facts, "es", "followers");
+ assert.match(repaired.units.at(-1)!.ctaQuestion!, /Síguenos/);
+ assert.equal(deterministicCreativeQualityIssues(repaired, "sequence", facts, "es", "followers").some(i => i.code === "MISSING_CONVERSION_CTA"), false);
+ });
+
+ test("save and approval retain editor CTA while review still rejects conflicting goals", () => {
+ const input = structuredClone(draft);
+ input.units.at(-1)!.editorialGoal = "conclude";
+ input.units.at(-1)!.ctaQuestion = "Comenta tu opinión";
+ const repaired = repairDeterministicCreativeCopy(input, "sequence", facts, "es", "followers");
+ repaired.units = preserveEditorCtas(repaired.units, input.units);
+ assert.equal(repaired.units.at(-1)!.ctaQuestion, "Comenta tu opinión");
+ assert.ok(deterministicCreativeQualityIssues(repaired, "sequence", facts, "es", "followers").some(i => i.code === "CTA_GOAL_MISMATCH"));
+ });

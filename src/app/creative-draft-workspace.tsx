@@ -1950,6 +1950,7 @@ export function CreativeDraftWorkspace({
                       !dirty && activeDraft.qualityReviewIsCurrent !== false
                     }
                     keyFacts={workspace.brief.keyFacts}
+                    requireCoverTitle={workspace.brief.profileSnapshot.requireCoverTitle}
                     profileLanguage={workspace.brief.profileSnapshot.language}
                     conversionGoal={workspace.brief.profileSnapshot.conversionGoal}
                     framingStrategy={workspace.brief.profileSnapshot.framingStrategy}
@@ -2716,7 +2717,8 @@ function CreativeAssetCard({
   const isBusy = busyAction?.endsWith(asset.id) ?? false;
   const label = format === "meme" ? "Meme" : `Slide ${asset.unitOrder}`;
   const carouselPaginationText =
-    format === "carousel" && hasCarouselPaginationContract(asset.prompt)
+    (format === "carousel" || format === "sequence") &&
+    hasCarouselPaginationContract(asset.prompt)
       ? carouselPaginationPreview(asset, totalSlides)
       : undefined;
 
@@ -2994,6 +2996,7 @@ function DraftEditor({
   qualityReview,
   qualityReviewIsCurrent,
   keyFacts,
+  requireCoverTitle,
   profileLanguage,
   conversionGoal,
   framingStrategy,
@@ -3006,6 +3009,7 @@ function DraftEditor({
   qualityReview?: CreativeDraft["qualityReview"];
   qualityReviewIsCurrent: boolean;
   keyFacts: CreativeKeyFact[];
+  requireCoverTitle?: boolean;
   profileLanguage: string;
   conversionGoal: CreativeProfile["conversionGoal"];
   framingStrategy: CreativeProfile["framingStrategy"];
@@ -3058,7 +3062,7 @@ function DraftEditor({
   }
 
   function addSlide() {
-    if (format !== "carousel" || draft.units.length >= 8) return;
+    if ((format !== "carousel" && format !== "sequence") || draft.units.length >= 8) return;
     const currentArc = getPreferredCarouselArc(
       draft.units.length,
       conversionGoal,
@@ -3110,7 +3114,7 @@ function DraftEditor({
   }
 
   function removeSlide(index: number) {
-    if (format !== "carousel" || draft.units.length <= 3) return;
+    if ((format !== "carousel" && format !== "sequence") || draft.units.length <= 3) return;
     const currentArc = getPreferredCarouselArc(
       draft.units.length,
       conversionGoal,
@@ -3156,7 +3160,7 @@ function DraftEditor({
         </div>
       </div>
       <TextAreaField label="Accessibility alt text" value={draft.altText} onChange={(altText) => onChange({ ...draft, altText })} rows={2} />
-      {format === "carousel" ? (
+      {(format === "carousel" || format === "sequence") ? (
         <TextAreaField
           label="Narrative rationale (optional)"
           value={draft.narrativeRationale ?? ""}
@@ -3197,7 +3201,7 @@ function DraftEditor({
           ) : qualityReview.status !== "needs-review" ? (
             <p>
               Overall {qualityReview.scores.overall} · Factuality {qualityReview.scores.factuality} · Hook {qualityReview.scores.hook} · Curiosity {qualityReview.scores.curiosity ?? "—"} · Relevance {qualityReview.scores.relevance} · Clarity {qualityReview.scores.clarity} · Resolution {qualityReview.scores.resolution ?? "—"}
-              {format === "carousel"
+              {(format === "carousel" || format === "sequence")
                 ? ` · Swipe reward ${qualityReview.scores.swipeReward} · Continuity ${qualityReview.scores.continuity}`
                 : ""}
               {` · CTA ${qualityReview.scores.cta}`}
@@ -3257,7 +3261,7 @@ function DraftEditor({
 
       <div className={styles.unitsHeading}>
         <div><h4>{format === "meme" ? "Meme frame" : "Carousel slides"}</h4><p>Text and visual directions remain separate for later composition.</p></div>
-        {format === "carousel" ? <button type="button" onClick={addSlide} disabled={draft.units.length >= 8}>+ Add slide</button> : null}
+        {(format === "carousel" || format === "sequence") ? <button type="button" onClick={addSlide} disabled={draft.units.length >= 8}>+ Add slide</button> : null}
       </div>
 
       {deterministicWarnings.length ? (
@@ -3279,11 +3283,11 @@ function DraftEditor({
           <article className={styles.unit} key={`${unit.id ?? "new"}-${index}`}>
             <header>
               <div><span>{format === "meme" ? "Frame" : `Slide ${index + 1}`}</span><strong>{capitalize(unit.role.replaceAll("-", " "))}</strong></div>
-              {format === "carousel" ? <div className={styles.unitActions}><button type="button" onClick={() => moveUnit(index, -1)} disabled={index === 0} aria-label="Move slide up">↑</button><button type="button" onClick={() => moveUnit(index, 1)} disabled={index === draft.units.length - 1} aria-label="Move slide down">↓</button><button type="button" onClick={() => removeSlide(index)} disabled={draft.units.length <= 3} aria-label="Remove slide">×</button></div> : null}
+              {(format === "carousel" || format === "sequence") ? <div className={styles.unitActions}><button type="button" onClick={() => moveUnit(index, -1)} disabled={index === 0} aria-label="Move slide up">↑</button><button type="button" onClick={() => moveUnit(index, 1)} disabled={index === draft.units.length - 1} aria-label="Move slide down">↓</button><button type="button" onClick={() => removeSlide(index)} disabled={draft.units.length <= 3} aria-label="Remove slide">×</button></div> : null}
             </header>
             <div className={styles.fieldGrid}>
               <label className={styles.field}><span>Role</span><select value={unit.role} onChange={(event) => updateUnit(index, { ...unit, role: event.target.value as CreativeUnit["role"] })}><option value="cover">Cover</option><option value="content">Content</option><option value="conclusion">Conclusion</option><option value="call-to-action">Call to action</option></select></label>
-              {format === "carousel" ? (
+              {(format === "carousel" || format === "sequence") ? (
                 <label className={styles.field}>
                   <span>Editorial purpose</span>
                   <select
@@ -3316,7 +3320,7 @@ function DraftEditor({
                 <label className={styles.field}><span>Visual asset</span><select value={unit.assetRequest} onChange={(event) => updateUnit(index, { ...unit, assetRequest: event.target.value as CreativeUnit["assetRequest"] })}><option value="generated-image">Generated image later</option><option value="typography-only">Typography only</option></select></label>
               )}
             </div>
-            {format === "carousel" ? (
+            {(format === "carousel" || format === "sequence") ? (
               <div className={styles.fieldGrid}>
                 <label className={styles.field}><span>Visual asset</span><select value={unit.assetRequest} onChange={(event) => updateUnit(index, { ...unit, assetRequest: event.target.value as CreativeUnit["assetRequest"] })}><option value="generated-image">Generated image later</option><option value="typography-only">Typography only</option></select></label>
                 <TextField
@@ -3330,14 +3334,14 @@ function DraftEditor({
             ) : null}
             <TextField label="On-image headline" value={unit.headline} onChange={(headline) => updateUnit(index, { ...unit, headline })} />
             <TextField
-              label="Subheadline (optional)"
+              label={requireCoverTitle && index === 0 ? "Content name on cover (required)" : "Subheadline (optional)"}
               value={unit.subheadline ?? ""}
               onChange={(subheadline) =>
                 updateUnit(index, { ...unit, subheadline })
               }
             />
             <TextAreaField label="Supporting text (optional)" value={unit.body ?? ""} onChange={(body) => updateUnit(index, { ...unit, body })} rows={2} />
-            {format === "carousel" && index < draft.units.length - 1 ? (
+            {(format === "carousel" || format === "sequence") && index < draft.units.length - 1 ? (
               <TextField
                 label="Continuation cue (optional)"
                 value={unit.continuationCue ?? ""}
@@ -3346,7 +3350,7 @@ function DraftEditor({
                 }
               />
             ) : null}
-            {format === "carousel" &&
+            {(format === "carousel" || format === "sequence") &&
             (index === draft.units.length - 1 || unit.ctaQuestion) ? (
               <TextField
                 label="Visible CTA (optional)"
@@ -3947,7 +3951,7 @@ function normalizeContinuationCues(
   format: CreativeFormat,
 ): CreativeUnit[] {
   return units.map((unit, index) =>
-    format === "carousel" && index < units.length - 1
+    (format === "carousel" || format === "sequence") && index < units.length - 1
       ? unit
       : unit.continuationCue === undefined
         ? unit

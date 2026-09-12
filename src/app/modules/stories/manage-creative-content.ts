@@ -1,3 +1,5 @@
+import { enforceCoverTitle } from "./creative-cover-title";
+import { preserveEditorCtas } from "./preserve-editor-cta";
 import { storyCollectionContexts, selectedStoryContext } from "../editorial-lines/editorial-lines.repository";
 import { editorialContextInstruction, collectionContextForHash } from "../editorial-lines/editorial-lines";
 import { build511Brief } from "./road-notice-evidence";
@@ -639,6 +641,10 @@ export async function saveCreativeDraft(
     ),
     outputAspectRatio: validated.outputAspectRatio,
   };
+  // Manual CTA copy belongs to the editor. Report quality issues at review/
+  // approval instead of silently deleting it during an otherwise valid save.
+  repaired.units = preserveEditorCtas(repaired.units, validated.units);
+  repaired.units = enforceCoverTitle(repaired, brief.profileSnapshot.requireCoverTitle, validated.units[0]?.subheadline || brief.contentTitle || current.units[0]?.subheadline).units;
   // Saving preserves the user's work as a new draft version even when it
   // still needs editorial correction. Approval and image generation remain
   // strict quality gates below; a draft must never be unsaveable merely
@@ -697,6 +703,9 @@ export async function approveSavedCreativeDraft(
     ),
     outputAspectRatio: validated.outputAspectRatio,
   };
+  // Approval must validate the same editor-authored CTA that saving retained.
+  repaired.units = preserveEditorCtas(repaired.units, validated.units);
+  repaired.units = enforceCoverTitle(repaired, brief.profileSnapshot.requireCoverTitle, validated.units[0]?.subheadline || brief.contentTitle || current.units[0]?.subheadline).units;
   if (imageBatch && imageBatch.status !== "stale" && imageBatch.assets.some(asset => {
     const unit = repaired.units.find(candidate => candidate.order === asset.unitOrder);
     return !unit || imageTextNeedsUpdate(asset.unitSnapshot, unit);
@@ -1125,6 +1134,8 @@ function validateEditableDraft(
   outputAspectRatio: CreativeAspectRatio,
   availableCharacterIds: string[],
 ): EditableCreativeDraft {
+  // "sequence" is structurally a carousel — same editing rules apply.
+  const carouselLike = format === "carousel" || format === "sequence";
   const record = recordValue(input, "A draft object is required");
   const selectedOutputAspectRatio = editableDraftOutputAspectRatio(
     record.outputAspectRatio,
@@ -1165,7 +1176,7 @@ function validateEditableDraft(
       throw new CreativeDraftValidationError(`Unit ${index + 1} has an invalid role`);
     }
 
-    if (format === "carousel" && !isCarouselEditorialGoal(editorialGoal)) {
+    if (carouselLike && !isCarouselEditorialGoal(editorialGoal)) {
       throw new CreativeDraftValidationError(
         `Unit ${index + 1} has an invalid editorial goal`,
       );
@@ -1199,7 +1210,7 @@ function validateEditableDraft(
     }
 
     if (
-      format === "carousel" &&
+      carouselLike &&
       index === rawUnits.length - 1 &&
       typeof unit.continuationCue === "string" &&
       unit.continuationCue.trim()
@@ -1214,7 +1225,7 @@ function validateEditableDraft(
       order: index + 1,
       type: format === "meme" ? "meme-frame" : "carousel-slide",
       role,
-      ...(format === "carousel" && isCarouselEditorialGoal(editorialGoal)
+      ...(carouselLike && isCarouselEditorialGoal(editorialGoal)
         ? {
             editorialGoal,
             viewerQuestion: requiredText(
@@ -1228,7 +1239,7 @@ function validateEditableDraft(
       headline: requiredText(unit.headline, `unit ${index + 1} headline`, 240),
       ...optionalText(unit.subheadline, "subheadline", 240),
       ...optionalText(unit.body, "body", 600),
-      ...(format === "carousel"
+      ...(carouselLike
         ? optionalText(unit.continuationCue, "continuationCue", 240)
         : {}),
       visualDirection: requiredText(
@@ -1246,7 +1257,7 @@ function validateEditableDraft(
 
   return {
     concept: requiredText(record.concept, "concept", 1_000),
-    ...(format === "carousel"
+    ...(carouselLike
       ? optionalText(
           record.narrativeRationale,
           "narrativeRationale",
