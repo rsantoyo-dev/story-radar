@@ -2945,3 +2945,65 @@
   background: palette(dark-main, 0.08);
   color: palette(dark-main, 0.7);
 }
+
+.storyMaterials {
+  @ds-surface(flat neutral);
+  border-radius: radius(2);
+  padding: density(3);
+  display: grid;
+  gap: density(2);
+  min-width: 0;
+  color: palette(neutral-main);
+}
+.storyMaterialForm {
+  display: grid;
+  gap: density(3);
+}
+.storyMaterialForm label, .storyPhotoCard label {
+  display: grid;
+  gap: density(1);
+  @ds-typo(body);
+}
+.storyMaterialForm input:not([type="checkbox"]), .storyMaterialForm textarea, .storyPhotoCard select {
+  @ds-input(outlined neutral);
+  padding: density(2);
+  border-radius: radius(2);
+  width: 100%;
+}
+.storyMaterials button, .storyMaterialForm button {
+  @ds-button(outlined primary);
+  padding: density(2);
+  border-radius: radius(2);
+}
+.storyPhotoGrid {
+  display: grid;
+  grid-template-columns: xs(1fr) md(repeat(2, minmax(0, 1fr))) xl(repeat(3, minmax(0, 1fr)));
+  gap: density(2);
+}
+.storyPhotoCard {
+  @ds-surface(contained light);
+  border-radius: radius(2);
+  box-shadow: shadow(1);
+  color: palette(dark-main);
+  padding: density(2);
+  display: grid;
+  align-content: start;
+  gap: density(2);
+  overflow-wrap: anywhere;
+}
+.storyPhotoPreview {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 3 / 2;
+  object-fit: contain;
+  border-radius: radius(2);
+}
+
+.storyMaterialForm :focus-visible, .storyMaterials :focus-visible {
+  outline: border(2, palette(primary-main), solid);
+  outline-offset: space(1);
+}
+.storyMaterials button:disabled, .storyMaterialForm button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

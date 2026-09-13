@@ -16,3 +16,24 @@ test("schematic maps and road reconstructions cannot be delegated to image gener
   for (const direction of ["Montrer une carte schématique neutre reliant la sortie 39 à la route 104", "Illustrer sobrement un segment routier entre les bornes 20 et 17", "A road map of Saint-Jean", "Mostrar la plaza pública"]) assert.ok(requestsGeographicReconstruction(direction),direction);
   assert.equal(requestsGeographicReconstruction("Présenter le titre sur un fond neutre avec une mise en page typographique"),false);
 });
+
+ test("map exclusions do not divert conceptual illustrations into documentary composition", () => {
+ for (const direction of [
+  "Deux cartes-adresses abstraites reliées par une conduite stylisée. Ambiance nocturne, sans carte géographique détaillée.",
+  "Illustrer un robinet, ne pas montrer de carte géographique.",
+  "Un grifo sin mapa geográfico detallado.",
+  "No mostrar un mapa de la ciudad.",
+  "A faucet without a road map.",
+  "Utiliser des formes géométriques plutôt qu’une carte géographique détaillée ou des lieux reconnaissables.",
+  "Use geometric shapes rather than a schematic map.",
+  "Usar formas geométricas en lugar de un mapa geográfico.",
+  "Do not draw a schematic map.",
+ ]) assert.equal(requestsGeographicReconstruction(direction), false, direction);
+ });
+ test("excluding one map does not authorize a separate positive geographic request", () => {
+ for (const direction of [
+  "Sans carte géographique détaillée. Montrer une carte schématique du quartier.",
+  "Without a road map, show a street view.",
+  "No mostrar un mapa de la ciudad; mostrar la plaza pública.",
+ ]) assert.equal(requestsGeographicReconstruction(direction), true, direction);
+ });

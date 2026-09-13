@@ -44,6 +44,8 @@ async function compose(mode = "illustration-editorial", photoTest = false) {
     assertCharacterSnapshotsForDraft: () => {},
     charactersForImageGeneration: () => [],
     uniqueCharacterSnapshots: () => [],
+    resolveStoryReferences: async () => [],
+    storyReferencePrompt: () => "",
     resolveBrandGenerationReferences: async () => ["brand-reference"],
     snapshotsForUnit: () => [],
     buildCreativeImagePrompt: () => ({ prompt: "Creative prompt", expectedText: "Headline" }),

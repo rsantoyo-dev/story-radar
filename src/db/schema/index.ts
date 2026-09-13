@@ -21,3 +21,5 @@ export * from "./topics";
 export * from "./workspaces";
 
 export * from "./editorial-lines";
+
+export * from "./story-materials";

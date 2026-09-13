@@ -665,6 +665,7 @@ export type CreativeUnit = {
    * before the feature.
    */
   brandReferenceSelection?: BrandReferenceSelection;
+  storyReferences?: import("./story-materials.types").StoryReferenceSelection[];
 };
 
 export type BrandReferenceFunction =
@@ -849,6 +850,7 @@ export type CreativeGenerationResult = {
 };
 
 export type CreativeGeneratedAsset = {
+  storyPhotoReferences?: { id: string; name: string; purpose: string }[];
   referenceContextVersion?: number;
   hasBrandReferenceOverride?: boolean;
   /** Original result reused in this draft revision, without copying its file. */

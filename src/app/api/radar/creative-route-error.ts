@@ -1,3 +1,4 @@
+import { StoryMaterialValidationError, StoryMaterialConflictError } from "@/app/modules/stories/story-materials.types";
 import { ApiError } from "@google/genai";
 import { ApiError as FalApiError } from "@fal-ai/client";
 import { APIError as GroqApiError } from "groq-sdk";
@@ -62,6 +63,9 @@ export function creativeRouteErrorResponse(
   ) {
     return NextResponse.json({ error: error.message }, { status: 404 });
   }
+
+  if (error instanceof StoryMaterialConflictError) return NextResponse.json({ error: error.message }, { status: 409 });
+  if (error instanceof StoryMaterialValidationError) return NextResponse.json({ error: error.message }, { status: 400 });
 
   if (error instanceof SyntaxError) {
     return NextResponse.json({ error: "The JSON body is invalid" }, { status: 400 });

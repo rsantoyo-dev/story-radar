@@ -333,7 +333,7 @@ export async function insertRegeneratedCreativeAsset({ previous, prompt, referen
   expectedDraftVersion?: number;
 }): Promise<CreativeGeneratedAsset> {
   const id = randomUUID();
-  const guided = references ? Boolean(references.base || references.characters.length || references.brand.length) : undefined;
+  const guided = references ? Boolean(references.base || references.characters.length || references.brand.length || references.story?.length) : undefined;
   const [, inserted] = await db.batch([
     db.select({ id: creativeAssetBatches.id }).from(creativeAssetBatches)
       .innerJoin(creativeDrafts, eq(creativeDrafts.id, creativeAssetBatches.draftId))
@@ -613,6 +613,7 @@ function mapCreativeAsset(
   const references = decodeGenerationReferences(row.referenceSnapshot);
   return {
     referenceContextVersion: Array.isArray(row.referenceSnapshot) ? undefined : 1,
+    ...(references.story?.length ? { storyPhotoReferences: references.story.map(({ id, name, purpose }) => ({ id, name, purpose })) } : {}),
     hasBrandReferenceOverride: Boolean(references.selectionOverride),
     ...(references.carriedFromAssetId ? { carriedFromAssetId: references.carriedFromAssetId } : {}),
     ...(references.base ? { editSource: { assetId: references.base.assetId, version: references.base.version }, editInstruction: references.editInstruction } : {}),

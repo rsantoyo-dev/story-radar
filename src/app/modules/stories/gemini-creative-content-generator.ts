@@ -76,6 +76,8 @@ type CreativeStoryInput = {
   text: string;
   contentStatus: "excerpt" | "full" | "likely-full";
   contentSource: "rss" | "article";
+  editorialContext?: string;
+  editorialRevision?: number;
 };
 
 export type CreativeTopicContext = {
@@ -577,7 +579,7 @@ async function generateReviewedCreativeDraft({
     })),
     // The grounded brief contains the selected excerpts; do not repeat the
     // entire article or invite the script to introduce unselected facts.
-    story: {title: story.title, url: story.url, contentStatus: story.contentStatus, contentSource: story.contentSource},
+    story: {title: story.title, url: story.url, contentStatus: story.contentStatus, contentSource: story.contentSource, ...(story.editorialContext ? { editorialContext: story.editorialContext, editorialRevision: story.editorialRevision } : {})},
   };
   let response = await generateJson({
     apiKey,

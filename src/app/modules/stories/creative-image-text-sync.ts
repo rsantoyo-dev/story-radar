@@ -17,7 +17,7 @@ export function canCarryImageUnits(before: CreativeUnit[], after: CreativeUnit[]
     if (unit.id !== old.id || unit.order !== old.order) return false;
     const visual = (u: CreativeUnit) => JSON.stringify([
       u.type, u.role, u.visualDirection, u.aspectRatio, u.assetRequest,
-      u.characterIds ?? [], u.interactiveOverlay ?? null, u.continuationCue ?? "",
+      u.storyReferences ?? [], u.characterIds ?? [], u.interactiveOverlay ?? null, u.continuationCue ?? "",
     ]);
     return visual(old) === visual(unit);
   });

@@ -30,5 +30,11 @@ export function evidenceQualityIssues(draft: GeneratedCreativeDraft, facts: read
 
 /** Maps and recognizable road/place reconstructions belong to the documentary path. */
 export function requestsGeographicReconstruction(direction: string): boolean {
-  return /\b(?:carte(?:s)? (?:schematique|routiere|geographique)|cartograph\w*|(?:street|road|location|schematic) map|map of|google maps|street view|mapa(?:s)? (?:esquematico|vial|de)|segment routier|troncon routier|road segment|tramo (?:vial|de carretera)|place publique|public square|plaza publica)\b/.test(normalized(direction));
+  const text = normalized(direction).replace(/\b(qu|d)[’']/g, "$1e ");
+  const geographic = /\b(?:carte(?:s)? (?:schematique|routiere|geographique)|cartograph\w*|(?:street|road|location|schematic) map|map of|google maps|street view|mapa(?:s)? (?:esquematico|geografico|vial|de)|segment routier|troncon routier|road segment|tramo (?:vial|de carretera)|place publique|public square|plaza publica)\b/g;
+  // Scope exclusions to each mention. A later positive map request still
+  // requires documentary handling, even if another map was excluded.
+  const excluded = /(?:\b(?:rather than|instead of|en lugar de|en vez de|plutot que|au lieu de)|\b(?:sans|aucune?|sin|no|without|avoid|eviter|evita|evitar)|\b(?:do not|don't|ne pas|no)\s+(?:draw|show|render|include|use|dessiner|montrer|inclure|utiliser|dibujar|mostrar|incluir|usar))\s+(?:(?:a|an|any|the|une?|de|des|la|le|les|el|los|las|una?|ninguna?)\s+)*$/;
+  return [...text.matchAll(geographic)].some(match =>
+    !excluded.test(text.slice(0, match.index)));
 }

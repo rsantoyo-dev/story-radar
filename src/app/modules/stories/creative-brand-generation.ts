@@ -19,6 +19,7 @@ export type GenerationReferences = {
   textSync?: { draftVersion: number; unitId: string; previousText: string; newText: string };
   characters: CreativeCharacterSnapshot[];
   brand: BrandGenerationReference[];
+  story?: import("./story-reference-generation").StoryGenerationReference[];
   provenanceBrand?: BrandGenerationReference[];
   base?: { assetId: string; version: number; objectKey: string; sha256: string; contentType: string; fileName: string };
   editInstruction?: string;

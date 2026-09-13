@@ -1,3 +1,5 @@
+import { parseStoryReferences } from "./story-materials.types";
+import { resolveStoryReferences } from "./manage-story-photos";
 import { enforceCoverTitle } from "./creative-cover-title";
 import { preserveEditorCtas } from "./preserve-editor-cta";
 import { storyCollectionContexts, selectedStoryContext } from "../editorial-lines/editorial-lines.repository";
@@ -631,6 +633,7 @@ export async function saveCreativeDraft(
   if (submittedIds.some(id => !knownUnitIds.has(id)) || new Set(submittedIds).size !== submittedIds.length) {
     throw new CreativeContentConflictError("The slide identities changed. Reload the draft before saving.");
   }
+  await Promise.all(validated.units.map(unit => resolveStoryReferences(topicId, current.storyId, unit.storyReferences)));
   const repaired = {
     ...repairDeterministicCreativeCopy(
       validated,
@@ -643,7 +646,7 @@ export async function saveCreativeDraft(
   };
   // Manual CTA copy belongs to the editor. Report quality issues at review/
   // approval instead of silently deleting it during an otherwise valid save.
-  repaired.units = preserveEditorCtas(repaired.units, validated.units);
+  repaired.units = preserveEditorCtas(repaired.units, validated.units).map((unit, index) => ({ ...unit, storyReferences: validated.units[index].storyReferences }));
   repaired.units = enforceCoverTitle(repaired, brief.profileSnapshot.requireCoverTitle, validated.units[0]?.subheadline || brief.contentTitle || current.units[0]?.subheadline).units;
   // Saving preserves the user's work as a new draft version even when it
   // still needs editorial correction. Approval and image generation remain
@@ -670,6 +673,7 @@ export async function approveSavedCreativeDraft(
 
   if (expectedVersion !== undefined && expectedVersion !== current.version) throw new CreativeContentConflictError("The reviewed draft changed. Reload before approving.");
 
+  await assertStoryEditionCurrent(topicId, current);
   if (current.provider === "documentary") {
     throw new CreativeContentConflictError("Review the complete documentary publication in its final review panel.");
   }
@@ -693,6 +697,7 @@ export async function approveSavedCreativeDraft(
     outputAspectRatioForDraft(current),
     characterRoster.map((character) => character.id),
   );
+  await Promise.all(validated.units.map(unit => resolveStoryReferences(topicId, current.storyId, unit.storyReferences)));
   const repaired = {
     ...repairDeterministicCreativeCopy(
       validated,
@@ -704,7 +709,7 @@ export async function approveSavedCreativeDraft(
     outputAspectRatio: validated.outputAspectRatio,
   };
   // Approval must validate the same editor-authored CTA that saving retained.
-  repaired.units = preserveEditorCtas(repaired.units, validated.units);
+  repaired.units = preserveEditorCtas(repaired.units, validated.units).map((unit, index) => ({ ...unit, storyReferences: validated.units[index].storyReferences }));
   repaired.units = enforceCoverTitle(repaired, brief.profileSnapshot.requireCoverTitle, validated.units[0]?.subheadline || brief.contentTitle || current.units[0]?.subheadline).units;
   if (imageBatch && imageBatch.status !== "stale" && imageBatch.assets.some(asset => {
     const unit = repaired.units.find(candidate => candidate.order === asset.unitOrder);
@@ -976,6 +981,7 @@ function storyForGenerator(story: SelectedStoryContentRecord, text: string) {
     text,
     contentStatus: story.contentStatus,
     contentSource: story.source,
+    ...(story.editorial ? { editorialContext: "Editor-authored working copy; changes are not statements attributed to the original publisher.", editorialRevision: story.editorial.revision } : {}),
   };
 }
 
@@ -1002,6 +1008,7 @@ function createBriefInputHash(
       text: normalizedContent,
       contentStatus: story.contentStatus,
       source: story.source,
+      ...(story.editorial ? { editorialRevision: story.editorial.revision } : {}),
     },
     profile: {
       name: profile.name,
@@ -1251,6 +1258,7 @@ function validateEditableDraft(
       assetRequest,
       aspectRatio: selectedOutputAspectRatio,
       characterIds,
+      storyReferences: parseStoryReferences(unit.storyReferences),
       ...(interactiveOverlay ? { interactiveOverlay } : {}),
     };
   });
@@ -1386,3 +1394,16 @@ export class CreativeContentInsufficientError extends Error {}
 export class CreativeContentConflictError extends Error {}
 export class CreativeContentDailyLimitError extends Error {}
 export class CreativeDraftValidationError extends Error {}
+
+/** An editorial content edit invalidates old approvals without deleting history. */
+export async function assertStoryEditionCurrent(topicId: string, draft: CreativeDraft): Promise<void> {
+  const story = await getSelectedStoryContent(topicId, draft.storyId);
+  if (!story.editorial) return;
+  const brief = await findCreativeBriefById(topicId, draft.briefId);
+  if (!brief) throw new CreativeContentNotFoundError("The creative brief was not found");
+  const configuration = getCreativeContentPublicConfig();
+  const [profile, topic] = await Promise.all([getCreativeProfile(topicId), requireTopic(topicId, { active: true })]);
+  const expected = createBriefInputHash(story, profile, topic, configuration,
+    requireStoryContent(story, configuration.maxContentCharacters), brief.editorialDirection, brief.collectionContext);
+  if (expected !== brief.inputHash) throw new CreativeContentConflictError("The story was edited. Refresh the brief and draft before approving or generating images.");
+}

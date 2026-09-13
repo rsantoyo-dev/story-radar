@@ -1,4 +1,6 @@
 import "server-only";
+import { latestContentRevision } from "./story-materials.repository";
+import type { StoryContentEdition } from "./story-materials.types";
 
 import { and, eq, sql } from "drizzle-orm";
 
@@ -20,6 +22,7 @@ export type StoryContentEnrichmentStatus =
 export type StoryContentEnrichmentMethod = "direct" | "reader";
 
 export type SelectedStoryContentRecord = {
+  editorial?: StoryContentEdition;
   storyId: string;
   title: string;
   url: string;
@@ -183,12 +186,14 @@ async function getStoryContentRecord(
     Boolean(row.enrichmentText) &&
     row.enrichmentText === row.text;
 
+  const edition = await latestContentRevision(topicId, storyId);
   return {
+    ...(edition ? { editorial: { revision: edition.revision, original: edition.original } } : {}),
     storyId: row.storyId,
-    title: row.title,
+    title: edition?.title ?? row.title,
     url: row.url,
-    ...(row.text ? { text: row.text } : {}),
-    contentStatus: row.contentStatus,
+    ...((edition?.content ?? row.text) ? { text: edition?.content ?? row.text! } : {}),
+    contentStatus: edition ? "likely-full" : row.contentStatus,
     source: isCurrentArticleContent ? "article" : "rss",
     ...(row.enrichmentStatus &&
     row.enrichmentMethod &&

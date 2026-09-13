@@ -1,4 +1,5 @@
 "use client";
+import { StoryPhotoPicker, useStoryPhotos } from "./story-photos-panel";
 import { HOOK_CHECKS, HOOK_CHECK_LABELS } from "./modules/stories/creative-hook-policy";
 import { requestsGeographicReconstruction } from "./modules/stories/creative-evidence-guardrails";
 import { imageTextNeedsUpdate } from "./modules/stories/creative-image-text-sync";
@@ -1942,6 +1943,7 @@ export function CreativeDraftWorkspace({
                   </div>
                 ) : (
                   <DraftEditor
+                    photoScope={{ topicId, storyId, secret }}
                     format={selectedFormat}
                     outputAspectRatio={activeOutputAspectRatio}
                     draft={editableDraft}
@@ -2579,6 +2581,7 @@ function HistoricalDraftDetails({
                 rows={5}
               />
               <BrandSelectionSummary selection={unit.brandReferenceSelection} />
+
             </article>
           ))}
         </div>
@@ -2737,6 +2740,8 @@ function CreativeAssetCard({
           {asset.status === "generating" ? "Generating…" : capitalize(asset.status)}
         </span>
       </header>
+
+      {asset.storyPhotoReferences?.length ? <p>Story photo inputs: {asset.storyPhotoReferences.map(ref => `${ref.name} (${ref.purpose})`).join(" · ")}</p> : null}
 
       <div
         className={styles.assetPreview}
@@ -2990,6 +2995,7 @@ function BriefView({
 }
 
 function DraftEditor({
+  photoScope,
   format,
   outputAspectRatio,
   draft,
@@ -3003,6 +3009,7 @@ function DraftEditor({
   characterRoster,
   onChange,
 }: {
+  photoScope: { topicId: string; storyId: string; secret: string };
   format: CreativeFormat;
   outputAspectRatio: CreativeAspectRatio;
   draft: EditableCreativeDraft;
@@ -3016,6 +3023,7 @@ function DraftEditor({
   characterRoster: CreativeCharacterRosterEntry[];
   onChange: (draft: EditableCreativeDraft) => void;
 }) {
+  const storyPhotos = useStoryPhotos(photoScope);
   const deterministicWarnings = deterministicCreativeQualityIssues(
     draft,
     format,
@@ -3414,6 +3422,8 @@ function DraftEditor({
               )) : <p>Add a character with at least one reference image in Creative profile to make it available here.</p>}
             </fieldset>
             <BrandSelectionSummary selection={unit.brandReferenceSelection} />
+            {storyPhotos.error ? <p role="alert">{storyPhotos.error}</p> : null}
+            <StoryPhotoPicker scope={photoScope} photos={storyPhotos.photos} selected={unit.storyReferences ?? []} onChange={storyReferences => updateUnit(index, { ...unit, storyReferences })} />
           </article>
         ))}
       </div>

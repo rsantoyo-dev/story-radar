@@ -406,3 +406,12 @@ export function buildPublicationDeliveryObjectKey({
     `${safeKeySegment(String(unitOrder), "slide order")}.jpg`,
   ].join("/");
 }
+
+/** Private immutable photo belonging to one story in one topic. */
+export function buildStoryReferenceObjectKey(topicId: string, storyId: string, photoId: string): string {
+  const { objectPrefix } = getR2Client().configuration;
+  const key = [objectPrefix, "topics", safeKeySegment(topicId, "topic ID"), "stories",
+    safeKeySegment(storyId, "story ID"), "references", `${safeKeySegment(photoId, "photo ID")}.webp`].join("/");
+  assertObjectKey(key);
+  return key;
+}

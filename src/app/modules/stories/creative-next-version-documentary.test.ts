@@ -19,6 +19,7 @@ function harness(overrides: Record<string, unknown> = {}) {
   }).outputText, {
     exports,
     requireCreativeDraft: async () => draft,
+    assertStoryEditionCurrent: async () => {},
     requireApprovedDraft: () => {},
     requireCreativeBrief: async () => ({ keyFacts: ["museum"] }),
     findCreativeAssetBatchById: async () => ({ ...batch, ...overrides }),

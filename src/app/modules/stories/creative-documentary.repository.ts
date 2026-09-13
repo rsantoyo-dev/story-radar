@@ -7,12 +7,13 @@ import { DOCUMENTARY_PROVIDER, documentarySnapshot, type DocumentarySnapshot } f
 
 // Fingerprint only source/policy inputs, not unrelated ingestion counters.
 function sourceQuery(topicId: string, storyId: string, lock = false) {
-  return sql`SELECT md5(jsonb_build_array(to_jsonb(p) - 'geo_provider_contact', s.title, s.original_url, s.content_text,
-    e.content_hash, e.content_text, e.status, ts.review_decision)::text) AS token
+  return sql`SELECT md5((jsonb_build_array(to_jsonb(p) - 'geo_provider_contact', s.title, s.original_url, s.content_text,
+    e.content_hash, e.content_text, e.status, ts.review_decision) || CASE WHEN r.revision IS NULL THEN '[]'::jsonb ELSE jsonb_build_array(r.revision) END)::text) AS token
     FROM (SELECT * FROM creative_profiles WHERE topic_id = ${topicId} ${lock ? sql`FOR UPDATE` : sql``}) p
     JOIN (SELECT * FROM topic_stories WHERE topic_id = ${topicId} AND story_id = ${storyId} ${lock ? sql`FOR UPDATE` : sql``}) ts ON ts.topic_id = p.topic_id
     JOIN (SELECT * FROM stories WHERE id = ${storyId} ${lock ? sql`FOR UPDATE` : sql``}) s ON s.id = ts.story_id
     LEFT JOIN (SELECT * FROM story_content_enrichments WHERE story_id = ${storyId} ${lock ? sql`FOR UPDATE` : sql``}) e ON e.story_id = s.id
+    LEFT JOIN LATERAL (SELECT revision FROM story_content_revisions WHERE topic_id = ${topicId} AND story_id = ${storyId} ORDER BY revision DESC LIMIT 1) r ON true
     WHERE p.topic_id = ${topicId} AND s.id = ${storyId}`;
 }
 export async function documentarySourceToken(topicId: string, storyId: string): Promise<string> {

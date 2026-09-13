@@ -789,6 +789,7 @@ function mapCreativeDraft(
     assetRequest: unit.assetRequest,
     aspectRatio: unit.aspectRatio,
     characterIds: characterIdsByUnit.get(unit.id) ?? [],
+    storyReferences: unit.storyReferences ?? [],
     ...(normalizeBrandReferenceSelection(unit.brandReferenceSelection)
       ? {
           brandReferenceSelection: normalizeBrandReferenceSelection(
@@ -891,6 +892,7 @@ function generatedDraftCopyMatches(
       assetRequest: unit.assetRequest,
       aspectRatio: unit.aspectRatio,
       characterIds: unit.characterIds ?? [],
+      storyReferences: unit.storyReferences ?? [],
     })),
   });
   return JSON.stringify(comparable(generated)) === JSON.stringify(comparable(current));
@@ -921,6 +923,7 @@ function draftUnitRows(
     assetRequest: unit.assetRequest,
     aspectRatio: unit.aspectRatio,
     brandReferenceSelection: brandSelectionByOrder?.get(unit.order) ?? null,
+    storyReferences: unit.storyReferences ?? [],
     createdAt: now,
     updatedAt: now,
     characterIds: unit.characterIds ?? [],

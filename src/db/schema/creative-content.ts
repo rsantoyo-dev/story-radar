@@ -607,6 +607,7 @@ export const creativeUnits = pgTable(
      * produced nothing.
      */
     brandReferenceSelection: jsonb("brand_reference_selection"),
+    storyReferences: jsonb("story_references").$type<import("../../app/modules/stories/story-materials.types").StoryReferenceSelection[]>().notNull().default([]),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),

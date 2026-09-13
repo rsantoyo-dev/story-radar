@@ -1,3 +1,5 @@
+import { saveStoryContentRevision, contentRevisionHistory } from "@/app/modules/stories/story-materials.repository";
+import { creativeRouteErrorResponse } from "@/app/api/radar/creative-route-error";
 import {
   prepareStoryContent,
   StoryContentPreparationBlockedError,
@@ -43,6 +45,7 @@ export async function GET(
   }
 
   try {
+    if (new URL(request.url).searchParams.get("history") === "true") return noStoreJson(await contentRevisionHistory(await requireActiveRequestTopic(request), storyId));
     return noStoreJson(
       await getStoryContent(
         await requireActiveRequestTopic(request),
@@ -131,4 +134,19 @@ function noStoreJson(value: unknown): NextResponse {
       "Cache-Control": "no-store",
     },
   });
+}
+
+export async function PUT(request: Request, context: StoryContentRouteContext) {
+  const unauthorized = authorizeRadarCollector(request);
+  if (unauthorized) return unauthorized;
+  const storyId = await parseStoryId(context);
+  if (!storyId) return NextResponse.json({ error: "Invalid story ID" }, { status: 400 });
+  try {
+    const topicId = await requireActiveRequestTopic(request);
+    const current = await getStoryContent(topicId, storyId);
+    await saveStoryContentRevision(topicId, storyId, await request.json(), { title: current.title, text: current.text ?? "" });
+    return noStoreJson(await getStoryContent(topicId, storyId));
+  } catch (error) {
+    return topicRequestErrorResponse(error) ?? creativeRouteErrorResponse(error, "save story content");
+  }
 }

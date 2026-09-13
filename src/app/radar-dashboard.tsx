@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { StoryPhotosPanel } from "./story-photos-panel";
+import type { StoryContentEdition } from "./modules/stories/story-materials.types";
+
 import { EditorialLinesPanel, type EditorialLinesData, type EditorialLineSelection } from "./editorial-lines-panel";
 import { CreativeDraftWorkspace } from "./creative-draft-workspace";
 import { CreativeProfilePanel } from "./creative-profile-panel";
@@ -332,6 +335,7 @@ type StoryReviewResponse = {
 };
 
 type StoryContentResponse = {
+  editorial?: StoryContentEdition;
   storyId: string;
   title: string;
   url: string;
@@ -1584,7 +1588,11 @@ export function RadarDashboard({
 
         {contentViewer ? (
           <StoryContentViewer
+            key={`${selectedTopicId}:${contentViewer.storyId}`}
             content={contentViewer}
+            secret={secret}
+            topicId={selectedTopicId}
+            onSaved={setContentViewer}
             onClose={() => setContentViewer(undefined)}
           />
         ) : null}
@@ -2936,8 +2944,7 @@ function SortableStoriesTable({
                         isUpdating={updatingPublicationStoryId === story.storyId}
                         onUpdate={onUpdatePublication}
                       />
-                      {story.contentStatus !== "missing" ? (
-                        <button
+                      <button
                           type="button"
                           className={styles.viewContentButton}
                           disabled={!canPrepare}
@@ -2945,9 +2952,8 @@ function SortableStoriesTable({
                         >
                           {viewingStoryId === story.storyId
                             ? "Loading…"
-                            : "View content"}
+                            : story.contentStatus === "missing" ? "Add content / photos" : "View content"}
                         </button>
-                      ) : null}
                       {shouldPrepareStory(story) ? (
                         <button
                           type="button"
@@ -2963,8 +2969,7 @@ function SortableStoriesTable({
                     </>
                   ) : (
                     <>
-                      {story.contentStatus !== "missing" ? (
-                        <button
+                      <button
                           type="button"
                           className={styles.viewContentButton}
                           disabled={!canPrepare}
@@ -2972,9 +2977,8 @@ function SortableStoriesTable({
                         >
                           {viewingStoryId === story.storyId
                             ? "Loading…"
-                            : "View content"}
+                            : story.contentStatus === "missing" ? "Add content / photos" : "View content"}
                         </button>
-                      ) : null}
                       {shouldPrepareStory(story) ? (
                         <button
                           type="button"
@@ -3038,12 +3042,40 @@ function SortableStoriesTable({
 
 function StoryContentViewer({
   content,
+  secret, topicId, onSaved,
   onClose,
 }: {
   content: StoryContentResponse;
+  secret: string; topicId: string; onSaved: (content: StoryContentResponse) => void;
   onClose: () => void;
 }) {
-  const wordCount = content.enrichment?.wordCount ?? countTextWords(content.text);
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState(content.title);
+  const [text, setText] = useState(content.text ?? "");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [history, setHistory] = useState<{ revision: number; title: string; text: string; createdAt: string }[]>();
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const wordCount = countTextWords(content.text);
+  async function save() {
+    setBusy(true); setMessage("");
+    try {
+      const saved = await requestJson<StoryContentResponse>(topicUrl(`/api/radar/stories/${content.storyId}/content`, topicId), secret, {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, text, expectedRevision: content.editorial?.revision ?? 0 }),
+      });
+      if (!mounted.current) return;
+      onSaved(saved); setEditing(false); setHistory(undefined);
+      setMessage("Saved. Refresh the creative brief and draft to use this edition. Previous images remain in history.");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Save failed"); }
+    finally { setBusy(false); }
+  }
+  async function loadHistory() {
+    setBusy(true);
+    try { setHistory(await requestJson(topicUrl(`/api/radar/stories/${content.storyId}/content?history=true`, topicId), secret)); }
+    catch (error) { setMessage(error instanceof Error ? error.message : "Could not load history"); }
+    finally { setBusy(false); }
+  }
 
   return (
     <div
@@ -3063,7 +3095,7 @@ function StoryContentViewer({
       >
         <header className={styles.contentViewerHeader}>
           <div>
-            <p>Prepared story content</p>
+            <p>{content.editorial ? `Editorial edition · v${content.editorial.revision}` : "Prepared story content"}</p>
             <h2 id="story-content-title">{content.title}</h2>
           </div>
           <button type="button" onClick={onClose} aria-label="Close content viewer">
@@ -3073,7 +3105,7 @@ function StoryContentViewer({
 
         <div className={styles.contentViewerMeta}>
           <StatusBadge tone={content.source === "article" ? "positive" : "neutral"}>
-            {content.source === "article"
+            {content.editorial ? "Editorial working copy" : content.source === "article"
               ? content.enrichment?.method === "reader"
                 ? "Article via Reader"
                 : "Article page"
@@ -3083,12 +3115,12 @@ function StoryContentViewer({
             {formatContentStatus(content.contentStatus)}
           </StatusBadge>
           <span>{formatNumber(wordCount)} words</span>
-          {content.enrichment?.byline ? (
+          {!content.editorial && content.enrichment?.byline ? (
             <span>By {content.enrichment.byline}</span>
           ) : null}
         </div>
 
-        {content.source === "rss" &&
+        {!content.editorial && content.source === "rss" &&
         (content.enrichment?.status === "failed" ||
           content.enrichment?.status === "blocked") ? (
           <div className={styles.contentViewerWarning} role="status">
@@ -3103,15 +3135,27 @@ function StoryContentViewer({
         ) : null}
 
         <div className={styles.contentViewerBody}>
-          {content.text ? (
+          <div className={styles.storyMaterials}>
+            <button type="button" disabled={busy} onClick={() => { setTitle(content.title); setText(content.text ?? ""); setEditing(!editing); }}>{editing ? "Cancel editing" : "Edit content"}</button>
+            {content.editorial ? <button type="button" disabled={busy} onClick={loadHistory}>Recent versions</button> : null}
+            {message ? <p role="status">{message}</p> : null}
+          </div>
+          {editing ? <div className={styles.storyMaterialForm}>
+            <label>Title<input value={title} maxLength={500} onChange={event => setTitle(event.target.value)} disabled={busy} /></label>
+            <label>Editorial content<textarea rows={16} value={text} maxLength={100000} onChange={event => setText(event.target.value)} disabled={busy} /></label>
+            <button type="button" disabled={busy || !title.trim() || !text.trim()} onClick={save}>{busy ? "Saving…" : "Save edition"}</button>
+            {content.editorial ? <button type="button" disabled={busy} onClick={() => { setTitle(content.editorial!.original.title); setText(content.editorial!.original.text); }}>Use original in editor</button> : null}
+          </div> : content.text ? (
             <p>{content.text}</p>
           ) : (
             <div className={styles.optimizationEmpty}>
               No readable story text is available yet.
             </div>
           )}
-        </div>
 
+        {history ? <details open className={styles.storyMaterials}><summary>Last 20 editorial editions</summary>{history.map(version => <button type="button" disabled={busy} key={version.revision} onClick={() => { setTitle(version.title); setText(version.text); setEditing(true); }}>Edit a copy of v{version.revision} · {formatDate(version.createdAt)}</button>)}</details> : null}
+        <StoryPhotosPanel secret={secret} topicId={topicId} storyId={content.storyId} />
+        </div>
         <footer className={styles.contentViewerFooter}>
           <a href={content.url} target="_blank" rel="noreferrer">
             Open original story ↗
