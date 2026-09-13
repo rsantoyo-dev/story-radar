@@ -2,6 +2,7 @@ import "server-only";
 
 import { ApiError, GoogleGenAI } from "@google/genai";
 import Groq from "groq-sdk";
+import { PLANNER_INSTRUCTION, PLANNER_SCHEMA, parseDailyPlan, type PlannerContext } from "./daily-editorial-planner.types";
 
 import {
   calculateEditorialPriority,
@@ -31,6 +32,7 @@ type EvaluateWithGeminiOptions = {
    * The production workflow always supplies the resolved topic profile.
    */
   editorialProfile?: EditorialProfile;
+  planningContext?: PlannerContext;
 };
 
 type EvaluateWithFallbackOptions = EvaluateWithGeminiOptions & {
@@ -173,8 +175,9 @@ export async function evaluateStoriesWithGemini({
   candidates,
   preferences,
   editorialProfile,
+  planningContext,
 }: EvaluateWithGeminiOptions): Promise<EditorialEvaluatorResult> {
-  if (candidates.length === 0) {
+  if (!planningContext && candidates.length === 0) {
     return {
       evaluations: [],
       usage: {
@@ -194,7 +197,7 @@ export async function evaluateStoriesWithGemini({
       ai.models.generateContent({
         model,
         contents: JSON.stringify(
-          createEvaluationInput(
+          planningContext ?? createEvaluationInput(
             topic,
             candidates,
             preferences,
@@ -202,11 +205,11 @@ export async function evaluateStoriesWithGemini({
           ),
         ),
         config: {
-          systemInstruction: SYSTEM_INSTRUCTION,
+          systemInstruction: planningContext ? PLANNER_INSTRUCTION : SYSTEM_INSTRUCTION,
           temperature: 0.1,
           maxOutputTokens: 4_096,
           responseMimeType: "application/json",
-          responseJsonSchema: createResponseSchema(),
+          responseJsonSchema: planningContext ? PLANNER_SCHEMA : createResponseSchema(),
         },
       }),
       "Gemini",
@@ -221,7 +224,7 @@ export async function evaluateStoriesWithGemini({
     );
   }
 
-  const evaluations = parseEditorialEvaluations(
+  const evaluations = planningContext ? [] : parseEditorialEvaluations(
     responseText,
     candidates,
     profileWeights,
@@ -231,6 +234,7 @@ export async function evaluateStoriesWithGemini({
   return {
     ...(response.modelVersion ? { modelVersion: response.modelVersion } : {}),
     evaluations,
+    ...(planningContext ? { dailyPlan: parseDailyPlan(responseText, planningContext.candidates) } : {}),
     usage: {
       promptTokens: usage?.promptTokenCount ?? 0,
       outputTokens: usage?.candidatesTokenCount ?? 0,
@@ -247,6 +251,7 @@ async function evaluateStoriesWithGroq({
   candidates,
   preferences,
   editorialProfile,
+  planningContext,
 }: EvaluateWithGeminiOptions): Promise<EditorialEvaluatorResult> {
   const response = await withProviderTimeout(
     new Groq({ apiKey, maxRetries: 1 }).chat.completions.create({
@@ -257,12 +262,12 @@ async function evaluateStoriesWithGroq({
       messages: [
         {
           role: "system",
-          content: `${SYSTEM_INSTRUCTION}\n\nReturn only the requested JSON object with no Markdown fences or commentary.`,
+          content: `${planningContext ? PLANNER_INSTRUCTION : SYSTEM_INSTRUCTION}\n\nReturn only the requested JSON object with no Markdown fences or commentary.`,
         },
         {
           role: "user",
           content: JSON.stringify(
-            createEvaluationInput(
+            planningContext ?? createEvaluationInput(
               topic,
               candidates,
               preferences,
@@ -277,7 +282,7 @@ async function evaluateStoriesWithGroq({
         json_schema: {
           name: "editorial_evaluations",
           strict: false,
-          schema: createResponseSchema(),
+          schema: planningContext ? PLANNER_SCHEMA : createResponseSchema(),
         },
       },
     }),
@@ -297,7 +302,8 @@ async function evaluateStoriesWithGroq({
     ...(response.system_fingerprint
       ? { modelVersion: response.system_fingerprint }
       : {}),
-    evaluations: parseEditorialEvaluations(
+    ...(planningContext ? { dailyPlan: parseDailyPlan(responseText, planningContext.candidates) } : {}),
+    evaluations: planningContext ? [] : parseEditorialEvaluations(
       responseText,
       candidates,
       editorialProfile?.weights ?? DEFAULT_EDITORIAL_PROFILE_WEIGHTS,
@@ -320,6 +326,7 @@ async function evaluateStoriesWithCloudflare({
   candidates,
   preferences,
   editorialProfile,
+  planningContext,
 }: Omit<EvaluateWithGeminiOptions, "apiKey"> & {
   accountId: string;
   apiToken: string;
@@ -343,12 +350,12 @@ async function evaluateStoriesWithCloudflare({
           messages: [
             {
               role: "system",
-              content: `${SYSTEM_INSTRUCTION}\n\nReturn only one valid JSON object with no Markdown fences or commentary. It must conform to this JSON Schema:\n${JSON.stringify(createResponseSchema())}`,
+              content: `${planningContext ? PLANNER_INSTRUCTION : SYSTEM_INSTRUCTION}\n\nReturn only one valid JSON object with no Markdown fences or commentary. It must conform to this JSON Schema:\n${JSON.stringify(planningContext ? PLANNER_SCHEMA : createResponseSchema())}`,
             },
             {
               role: "user",
               content: JSON.stringify(
-                createEvaluationInput(
+                planningContext ?? createEvaluationInput(
                   topic,
                   candidates,
                   preferences,
@@ -395,7 +402,8 @@ async function evaluateStoriesWithCloudflare({
   const promptTokens = nonNegativeUsageNumber(usage?.prompt_tokens);
   const outputTokens = nonNegativeUsageNumber(usage?.completion_tokens);
   return {
-    evaluations: parseEditorialEvaluations(
+    ...(planningContext ? { dailyPlan: parseDailyPlan(responseText, planningContext.candidates) } : {}),
+    evaluations: planningContext ? [] : parseEditorialEvaluations(
       responseText,
       candidates,
       editorialProfile?.weights ?? DEFAULT_EDITORIAL_PROFILE_WEIGHTS,

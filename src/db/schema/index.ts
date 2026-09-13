@@ -23,3 +23,4 @@ export * from "./workspaces";
 export * from "./editorial-lines";
 
 export * from "./story-materials";
+export * from "./daily-editorial-plans";

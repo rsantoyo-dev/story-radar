@@ -96,6 +96,7 @@ export type EditorialEvaluationUsage = {
 };
 
 export type EditorialEvaluatorResult = {
+  dailyPlan?: import("./daily-editorial-planner.types").DailyPlan;
   modelVersion?: string;
   evaluations: StoryEditorialEvaluation[];
   usage: EditorialEvaluationUsage;

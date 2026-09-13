@@ -3007,3 +3007,44 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.dailyPlanner {
+  @ds-surface(contained light);
+  padding: density(5);
+  margin-bottom: density(4);
+  border: border(1, palette(neutral-light), solid);
+  border-radius: radius(3);
+  color: palette(neutral-main);
+  display: grid;
+  gap: density(3);
+}
+.dailyPlanner h2 { @ds-typo(h5); color: palette(primary-main); }
+.dailyPlanner h3 { @ds-typo(h6); }
+.dailyPlanner p, .dailyPlanner li { @ds-typo(body); }
+.dailyPlanner small { @ds-typo(caption); }
+.dailyPlannerHeader {
+  display: grid;
+  grid-template-columns: xs(1fr) lg(2fr 1fr);
+  gap: density(4);
+  align-items: start;
+}
+.dailyPlannerControls { display: grid; gap: density(2); }
+.dailyPlannerControls label { display: grid; gap: density(1); @ds-typo(body); }
+.dailyPlannerControls input { @ds-input(outlined neutral); padding: density(2); border-radius: radius(2); width: 100%; }
+.dailyPlannerChoices { display: grid; grid-template-columns: xs(1fr) md(repeat(3, 1fr)); gap: density(3); }
+.dailyPlannerChoice {
+  @ds-surface(flat primary);
+  border: border(1, palette(primary-light), solid);
+  padding: density(3);
+  border-radius: radius(2);
+  display: flex;
+  flex-direction: column;
+  gap: density(2);
+  min-width: 0;
+}
+.dailyPlannerActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: density(2);
+  margin-top: auto;
+}

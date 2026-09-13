@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { DailyEditorialPlannerPanel } from "./daily-editorial-planner-panel";
 import { StoryPhotosPanel } from "./story-photos-panel";
 import type { StoryContentEdition } from "./modules/stories/story-materials.types";
 
@@ -682,6 +683,28 @@ export function RadarDashboard({
         message: `${review.reviewedStories} ${review.reviewedStories === 1 ? "story was" : "stories were"} ${decision}.`,
       };
     });
+  }
+
+  async function handlePlannerSelect(storyId: string, title: string, decision: "review" | "shortlist") {
+    if (!canAuthenticate || isBusy) throw new Error("Another operation is running. Please try again.");
+    setActiveOperation("review");
+    setActiveStoryId(storyId);
+    try {
+      if (decision === "review") {
+        await promoteReviewCandidate(secret, selectedTopicId, storyId);
+      } else {
+        await reviewStories(secret, selectedTopicId, [storyId], "approved");
+      }
+      setSelectedStoryIds(ids => ids.filter(id => id !== storyId));
+      setNotice({ tone: "success", title: "Story approved", message: `Your human approval for “${title}” is recorded.` });
+      // Approval is already saved; a dashboard refresh failure must not report
+      // the approval itself as failed or encourage a duplicate submission.
+      const refreshed = await fetchDatabaseStats(secret, selectedTopicId).catch(() => undefined);
+      if (refreshed) setStats(refreshed);
+    } finally {
+      setActiveOperation(undefined);
+      setActiveStoryId(undefined);
+    }
   }
 
   async function handleUnselectStories(storyIds: string[]) {
@@ -1539,6 +1562,7 @@ export function RadarDashboard({
         </div>
 
         <div id="stories" className={styles.anchorTarget}>
+          <DailyEditorialPlannerPanel key={`planner-${selectedTopicId}`} topicId={selectedTopicId} secret={secret} disabled={!canAuthenticate || isBusy} refreshKey={stats} onViewContent={handleViewContent} onPrepareContent={handlePrepareContent} onSelect={handlePlannerSelect} preparingStoryId={activeOperation === "prepare" ? activeStoryId : undefined} />
           <EditorialEvaluationPanel
             key={selectedTopicId}
             editorial={stats?.editorial}
