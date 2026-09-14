@@ -17,7 +17,7 @@ function load(file:string,mocks:Record<string,unknown>) {
 const topicId="11111111-1111-4111-8111-111111111111";
 const lineId="22222222-2222-4222-8222-222222222222";
 class LimitError extends Error {}
-function workflow({failEvaluate=false,limit=false,cachedCollection=false,draftMode=false,incomplete=false}={}) {
+function workflow({failEvaluate=false,limit=false,cachedCollection=false,draftMode=false,incomplete=false,likelyFull=false}={}) {
   const calls:string[]=[];
   let run={id:lineId,topicId,lineId,timezone:"UTC",status:"running",step:"collect",leaseOwner:"owner",progress:{mode:draftMode?"draft":"day",lineName:"News",evaluated:0,evaluationBatches:0} as Record<string,unknown>,error:null as string|null};
   let evalCalls=0;
@@ -37,7 +37,7 @@ function workflow({failEvaluate=false,limit=false,cachedCollection=false,draftMo
       return {status:"completed",evaluatedStories:2,cachedStories:evalCalls===1?0:2,candidatesScanned:4};
     }},
     "./daily-editorial-planner":{getDailyPlanner:async()=>({running:false}),recommendForToday:async()=>{calls.push("recommend");return {running:false,stale:false,context:{candidates:[{storyId:topicId,title:"Story"}]},saved:{id:"plan",status:"completed",result:{recommendation:{storyId:topicId}}}};}},
-    "./story-content.repository":{getStoryContent:async()=>({contentStatus:incomplete?"summary":"full",text:"Article evidence"})},
+    "./story-content.repository":{getStoryContent:async()=>({contentStatus:incomplete?"summary":likelyFull?"likely-full":"full",text:"Article evidence"})},
     "./prepare-selected-story-content":{prepareStoryContent:async()=>({contentStatus:"summary",text:"Partial"})},
     "./manage-creative-content":{
       createCreativeBrief:async()=>{calls.push("brief");return {state:{brief:{id:"brief",contentSufficiency:"sufficient"}}};},
@@ -103,6 +103,11 @@ test("incomplete content stops for review before spending on brief or draft",asy
   const w=workflow({draftMode:true,incomplete:true});await w.service.drivePreparation(topicId,lineId);
   assert.equal(w.run.status,"needs-review");assert.equal(w.run.step,"content");
   assert.equal(w.calls.includes("brief"),false);assert.equal(w.calls.includes("draft"),false);
+});
+test("substantial likely-full content continues without a redundant extraction",async()=>{
+  const w=workflow({draftMode:true,likelyFull:true});await w.service.drivePreparation(topicId,lineId);
+  assert.equal(w.run.status,"completed");
+  assert.deepEqual(w.calls,["collect","evaluate","evaluate","recommend","brief","draft"]);
 });
 test("draft access is scoped to the job and topic; ordinary generation keeps the human approval gate",async()=>{
   const client=new PGlite();

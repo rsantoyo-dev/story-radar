@@ -86,8 +86,12 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
     } else if(run.step==="content") {
       if(!progress.storyId)throw new PreparationReviewNeeded("Choose a story to prepare.");
       let content=await getStoryContent(topicId,progress.storyId);
-      if(content.contentStatus!=="full" || !content.text?.trim())content=await prepareStoryContent(topicId,progress.storyId);
-      if(content.contentStatus!=="full" || !content.text?.trim())throw new PreparationReviewNeeded("The article content is incomplete. Review or edit the content before continuing.");
+      // `likely-full` is the normal status for a substantial RSS/editorial
+      // copy whose extractor cannot find meaningfully more text. Re-fetching
+      // that content can turn an already usable article into a false failure
+      // when the publisher or Reader fallback blocks the second request.
+      if(!contentLooksComplete(content))content=await prepareStoryContent(topicId,progress.storyId);
+      if(!contentLooksComplete(content))throw new PreparationReviewNeeded("The article content is incomplete. Review or edit the content before continuing.");
       await savePreparation(run,{step:"brief",progress});
     } else if(run.step==="brief") {
       if(!progress.storyId)throw new PreparationReviewNeeded("The recommended story is unavailable.");
@@ -126,4 +130,14 @@ export async function drivePreparation(topicId:string,id:string) {
   for(let steps=0;steps<12 && Date.now()-started<450000;steps++) {
     if(!await advancePreparation(topicId,id))break;
   }
+}
+
+function contentLooksComplete(content: {
+  contentStatus: string;
+  text?: string;
+}): boolean {
+  return (
+    (content.contentStatus === "full" || content.contentStatus === "likely-full") &&
+    Boolean(content.text?.trim())
+  );
 }

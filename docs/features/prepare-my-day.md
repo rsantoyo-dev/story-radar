@@ -96,9 +96,11 @@ migration is required; the versioned progress JSON holds the new checkpoints.
 
 After recommendation, draft mode selects only the primary recommended story:
 
-- **Preparing and checking article content…** reuses a full editorial copy or
-  invokes existing article preparation. Missing/summary-only content stops with
-  **Needs your review** and **Review content**.
+- **Preparing and checking article content…** reuses a `full` or `likely-full`
+  editorial copy and invokes article preparation only for missing or summary-only
+  text. This avoids rejecting a substantial RSS copy merely because a publisher
+  blocks a redundant extraction. Incomplete content stops with **Needs your
+  review** and **Review content**.
 - **Creating creative brief…** uses the existing generator, profile, cache and
   creative budget. Ambiguous collection context or limited/insufficient evidence
   stops for review instead of silently choosing an editorial interpretation.
