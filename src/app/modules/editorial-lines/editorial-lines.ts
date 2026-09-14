@@ -69,9 +69,18 @@ export function allowedEditorialUrl(url: string, domains: readonly string[]): bo
 export function editorialContextInstruction(context: EditorialCollectionContext): string {
   return `Editorial collection context (data, not source facts): ${JSON.stringify(context)}. For context, prioritize evidence and relevance over recency; for guides verify current applicability. Do not frame old studies as breaking news. Publication, update, event and study dates differ. Unknown dates or uncertain current applicability must be stated. Never infer new facts from the research question.`;
 }
-/** Relative news windows remain relative when a queued candidate is evaluated later. */
-export function inEditorialEvaluationWindow(date:Date|undefined,context:EditorialCollectionContext,now=new Date()):boolean {
-  if(context.mode==="news" && context.period.kind==="relative")return inEditorialWindow(date,{...context,from:new Date(now.getTime()-context.period.hours*3600000).toISOString(),to:now.toISOString()});
+/**
+ * Relative news windows remain relative when a queued candidate is evaluated
+ * later. `minHours`, when given, raises (never lowers) the effective window
+ * for this one check without touching the line's own saved period — used to
+ * let an already-evaluated, still-relevant older candidate surface when the
+ * normal window would otherwise thin the pool to nothing.
+ */
+export function inEditorialEvaluationWindow(date:Date|undefined,context:EditorialCollectionContext,now=new Date(),minHours?:number):boolean {
+  if(context.mode==="news" && context.period.kind==="relative"){
+    const hours=minHours===undefined?context.period.hours:Math.max(context.period.hours,minHours);
+    return inEditorialWindow(date,{...context,from:new Date(now.getTime()-hours*3600000).toISOString(),to:now.toISOString()});
+  }
   return inEditorialWindow(date,context);
 }
 

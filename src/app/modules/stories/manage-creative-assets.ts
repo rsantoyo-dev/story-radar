@@ -5,7 +5,7 @@ import { readDocumentaryPhotoReference, documentaryVisualInputHash, reuseDocumen
 import { preparePlaceVisuals } from "./prepare-place-visuals";
 import { visualEvidenceCurrent } from "./creative-place-visual";
 import { roadMapStillCurrent } from "./prepare-road-map";
-import { getSelectedStoryContent } from "./story-content.repository";
+import { getDailyDraftStory } from "./daily-draft-access";
 import { renderDraftTypography, DRAFT_TYPOGRAPHY_ENDPOINT } from "./creative-draft-typography";
 import { uploadComposedImage } from "./fal-image-client";
 import { requestsGeographicReconstruction, evidenceQualityIssues } from "./creative-evidence-guardrails";
@@ -1688,7 +1688,7 @@ async function composeDraftPlaceVisuals(topicId: string, draft: CreativeDraft, b
   const existing = await findCurrentCreativeAssetBatch(draft.id, draft.version, { provider: configuration.provider, model: configuration.model, promptVersion: configuration.promptVersion, imageQuality: quality, brandInputHash: brand.inputHash });
   if (existing && existing.status !== "stale") return { outcome: "existing", batch: existing, configuration: publicConfiguration(configuration) };
   const profile = await getCreativeProfile(topicId);
-  const story = await getSelectedStoryContent(topicId, draft.storyId);
+  const story = await getDailyDraftStory(topicId, draft.storyId, undefined, true);
   const inheritedMode = await getTopicVisualFidelityMode(topicId);
   const mode = resolveEffectiveVisualFidelity({ inheritedMode, override: draft.visualFidelityOverride?.mode ?? null, overrideReason: draft.visualFidelityOverride?.reason }).mode;
   // Research only slides that actually request geographic material. An unrelated
@@ -1759,7 +1759,7 @@ async function recomposePlaceAsset(topicId: string, found: {asset: CreativeGener
   assertCurrentBrandConfiguration(found.batch, brand.inputHash);
   const unit = draft.units.find(unit => unit.order === found.asset.unitOrder);
   if (!unit) throw new CreativeContentConflictError("The slide no longer exists");
-  const story = await getSelectedStoryContent(topicId, draft.storyId);
+  const story = await getDailyDraftStory(topicId, draft.storyId, undefined, true);
   const profile = await getCreativeProfile(topicId);
   const unitDraft = { ...draft, units: [unit] };
   const prepared = await reuseDocumentaryVisuals(topicId, unitDraft, brief.keyFacts);

@@ -37,6 +37,27 @@ const schema = {
 
 class StorageConflict extends Error {}
 
+test("approval of an automatic draft reaches editorial validation without manual story selection", async () => {
+  let reads = 0;
+  const service = load("manage-creative-content.ts", {
+    "./daily-draft-access": { getDailyDraftStory: async (topic: string, story: string, run: unknown, workspace: boolean) => {
+      assert.equal(topic, "topic");
+      assert.equal(story, "story");
+      assert.equal(run, undefined);
+      assert.equal(workspace, true);
+      reads++;
+      return { storyId: story };
+    } },
+    "./story-content.repository": { getSelectedStoryContent: async () => { throw new Error("The selected story was not found"); } },
+    "./creative-content.repository": {
+      findCreativeDraftById: async () => ({ storyId: "story", version: 1, briefId: "brief" }),
+      findCreativeBriefById: async () => undefined,
+    },
+  });
+  await assert.rejects(() => service.approveSavedCreativeDraft("topic", "draft", true, 1), /The creative brief was not found/);
+  assert.equal(reads, 1);
+});
+
 test("clearing required-photo uses the live policy, even when the brief still requires photos", async () => {
   let writes = 0;
   const service = load("manage-creative-content.ts", {

@@ -56,6 +56,7 @@ import styles from "./creative-draft-workspace.generated.module.css";
 type WorkspaceProps = {
   initialEditorialRunId?: string;
   initialDraftId?: string;
+  initialPreparationRunId?: string;
   topicId: string;
   storyId: string;
   storyTitle: string;
@@ -169,6 +170,7 @@ export function CreativeDraftWorkspace({
   onClose,
   onInstagramChanged,
   instagramRefreshToken, initialEditorialRunId, initialDraftId,
+  initialPreparationRunId,
 }: WorkspaceProps) {
   const [preparedPublication, setPreparedPublication] = useState<{ topicId: string; storyId: string; assetCount: number }>();
   const [workspace, setWorkspace] = useState<CreativeWorkspaceState>();
@@ -265,6 +267,10 @@ export function CreativeDraftWorkspace({
     (draft) => draft.inputIsCurrent !== false,
   );
   const effectiveResearchRun=researchRun ?? workspace?.brief?.collectionContext?.runId ?? initialEditorialRunId ?? (workspace?.collectionContexts?.length===1?workspace.collectionContexts[0].runId:undefined);
+  const creativeBriefQuery = new URLSearchParams({
+    ...(effectiveResearchRun ? { editorialRunId: effectiveResearchRun } : {}),
+    ...(initialPreparationRunId ? { preparationRunId: initialPreparationRunId } : {}),
+  }).toString();
   const editorialDirectionDirty = Boolean(
     workspace?.brief &&
       (normalizeEditorialDirection(editorialDirection) !==
@@ -277,7 +283,7 @@ export function CreativeDraftWorkspace({
     Promise.all([
       requestJson<CreativeWorkspaceState>(
         topicUrl(
-          `/api/radar/stories/${encodeURIComponent(storyId)}/creative`,
+          `/api/radar/stories/${encodeURIComponent(storyId)}/creative${initialPreparationRunId ? `?preparationRunId=${encodeURIComponent(initialPreparationRunId)}` : ""}`,
           topicId,
         ),
         secret,
@@ -334,7 +340,7 @@ export function CreativeDraftWorkspace({
       });
 
     return () => controller.abort();
-  }, [secret, storyId, topicId, initialDraftId]);
+  }, [secret, storyId, topicId, initialDraftId, initialPreparationRunId]);
 
   useEffect(() => {
     if (!activeDraftId) return;
@@ -576,7 +582,7 @@ export function CreativeDraftWorkspace({
         state: CreativeWorkspaceState;
       }>(
         topicUrl(
-          `/api/radar/stories/${encodeURIComponent(storyId)}/creative${effectiveResearchRun?`?editorialRunId=${encodeURIComponent(effectiveResearchRun)}`:""}`,
+          `/api/radar/stories/${encodeURIComponent(storyId)}/creative?${creativeBriefQuery}`,
           topicId,
         ),
         secret,
@@ -627,7 +633,7 @@ export function CreativeDraftWorkspace({
           state: CreativeWorkspaceState;
         }>(
           topicUrl(
-            `/api/radar/stories/${encodeURIComponent(storyId)}/creative${effectiveResearchRun?`?editorialRunId=${encodeURIComponent(effectiveResearchRun)}`:""}`,
+            `/api/radar/stories/${encodeURIComponent(storyId)}/creative?${creativeBriefQuery}`,
             topicId,
           ),
           secret,
@@ -650,7 +656,7 @@ export function CreativeDraftWorkspace({
         state: CreativeWorkspaceState;
       }>(
         topicUrl(
-          `/api/radar/creative/briefs/${encodeURIComponent(currentState.brief.id)}/drafts`,
+          `/api/radar/creative/briefs/${encodeURIComponent(currentState.brief.id)}/drafts${initialPreparationRunId ? `?preparationRunId=${encodeURIComponent(initialPreparationRunId)}` : ""}`,
           topicId,
         ),
         secret,
@@ -773,7 +779,7 @@ export function CreativeDraftWorkspace({
           state: CreativeWorkspaceState;
         }>(
           topicUrl(
-            `/api/radar/stories/${encodeURIComponent(storyId)}/creative${effectiveResearchRun?`?editorialRunId=${encodeURIComponent(effectiveResearchRun)}`:""}`,
+            `/api/radar/stories/${encodeURIComponent(storyId)}/creative?${creativeBriefQuery}`,
             topicId,
           ),
           secret,
@@ -794,7 +800,7 @@ export function CreativeDraftWorkspace({
         state: CreativeWorkspaceState;
       }>(
         topicUrl(
-          `/api/radar/creative/briefs/${encodeURIComponent(currentState.brief.id)}/drafts`,
+          `/api/radar/creative/briefs/${encodeURIComponent(currentState.brief.id)}/drafts${initialPreparationRunId ? `?preparationRunId=${encodeURIComponent(initialPreparationRunId)}` : ""}`,
           topicId,
         ),
         secret,

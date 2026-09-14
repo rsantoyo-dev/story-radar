@@ -12,7 +12,13 @@ export async function getDailyDraftStory(topicId:string,storyId:string,runId?:st
       AND r.progress->>'storyId'=${storyId}
       AND ts.review_decision IS DISTINCT FROM 'rejected' AND ts.processing_status NOT IN ('rejected','published')
       AND ts.duplicate_of_story_id IS NULL
-      AND (${runId ?? null}::uuid IS NULL OR (r.id=${runId ?? null}::uuid AND r.status='running')) LIMIT 1`);
+      AND (${runId ?? null}::uuid IS NULL OR (
+        r.id=${runId ?? null}::uuid
+        AND (
+          (${workspace} AND r.status IN ('running','needs-review','completed'))
+          OR (NOT ${workspace} AND r.status='running')
+        )
+      )) LIMIT 1`);
   if(!result.rows.length)return getSelectedStoryContent(topicId,storyId);
   return getStoryContent(topicId,storyId);
 }

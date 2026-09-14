@@ -73,6 +73,7 @@ function harness(options: { extraction?: unknown; unavailable?: boolean; provide
     "node:crypto": crypto,
     "./creative-content.config": { getCreativeContentPublicConfig: () => ({ maxRunsPerDay: 20 }) },
     "./creative-documentary": policy,
+    "./daily-draft-access": { getDailyDraftStory: async (_topic: string, _story: string, _run: string | undefined, workspace: boolean) => { assert.equal(workspace, true); return { storyId: "story" }; } },
     "./creative-profile.repository": { getCreativeProfile: async () => profile },
     "./story-content.repository": { getSelectedStoryContent: async () => ({ storyId: "story", title: "Concert local", text: options.text ?? source, url: "https://news.example/story" }) },
     "./creative-content.repository": {
@@ -209,6 +210,7 @@ test("corrections cannot introduce text absent from the article", async () => {
 
 test("private documentary images cannot be read through another topic", async () => {
   const service = load<typeof import("./manage-creative-documentary")>("manage-creative-documentary.ts", {
+    "./daily-draft-access": {},
     "node:crypto": crypto, "./creative-content.config": {}, "./creative-documentary": policy,
     "./creative-assets.repository": { findCreativeAssetById: async () => ({ asset: {}, batch: { provider: policy.DOCUMENTARY_PROVIDER, draftId: "other-topic-draft" } }) },
     "./creative-content.repository": { findCreativeDraftById: async () => undefined },

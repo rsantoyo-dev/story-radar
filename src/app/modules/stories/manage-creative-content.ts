@@ -88,18 +88,18 @@ import { generateCompanionStoryScript } from "./companion-story-generator";
 import { defaultCreativeInteractiveOverlay } from "./creative-interactive-overlay";
 import { isCreativeInteractiveOverlay } from "./creative-interactive-overlay";
 import {
-  getSelectedStoryContent,
   type SelectedStoryContentRecord,
 } from "./story-content.repository";
 
 export async function getCreativeWorkspaceState(
   topicId: string,
   storyId: string,
+  preparationRunId?: string,
 ): Promise<CreativeWorkspaceState> {
   const configuration = getCreativeContentPublicConfig();
   const [topic, story, profile, characterRoster, latestBrief, daily] = await Promise.all([
     requireTopic(topicId, { active: true }),
-    getDailyDraftStory(topicId, storyId, undefined, true),
+    getDailyDraftStory(topicId, storyId, preparationRunId, true),
     getCreativeProfile(topicId),
     listCreativeCharacterRoster(topicId),
     findLatestCreativeBrief(topicId, storyId),
@@ -207,11 +207,12 @@ export async function createCreativeBrief(
   editorialDirection?: string,
   editorialRunId?: string,
   preparationRunId?: string,
+  workspace = false,
 ): Promise<CreativeGenerationResult> {
   const configuration = getCreativeContentRuntimeConfig();
   const [topic, story, profile, daily] = await Promise.all([
     requireTopic(topicId, { active: true }),
-    getDailyDraftStory(topicId, storyId, preparationRunId),
+    getDailyDraftStory(topicId, storyId, preparationRunId, workspace && Boolean(preparationRunId)),
     getCreativeProfile(topicId),
     getCreativeDailyUsage(topicId, configuration.maxRunsPerDay),
   ]);
@@ -239,7 +240,7 @@ export async function createCreativeBrief(
   if (cached) {
     return {
       outcome: "cached",
-      state: { ...(await getCreativeWorkspaceState(topicId, storyId)), brief: cached, briefIsCurrent: true },
+      state: { ...(await getCreativeWorkspaceState(topicId, storyId, preparationRunId)), brief: cached, briefIsCurrent: true },
     };
   }
 
@@ -250,7 +251,7 @@ export async function createCreativeBrief(
     await insertCreativeBrief({ topicId, storyId, profile, provider: "quebec511", model: "structured-notice-v1",
       promptVersion: configuration.briefPromptVersion, inputHash, editorialDirection: normalizedEditorialDirection, collectionContext,
       generated: structuredBrief, usage: { promptTokens: 0, outputTokens: 0, thoughtsTokens: 0, totalTokens: 0 } });
-    return { outcome: "generated", state: await getCreativeWorkspaceState(topicId, storyId) };
+    return { outcome: "generated", state: await getCreativeWorkspaceState(topicId, storyId, preparationRunId) };
   }
 
   assertCreativeDailyBudget(daily.runs, configuration.maxRunsPerDay);
@@ -303,7 +304,7 @@ export async function createCreativeBrief(
 
     return {
       outcome: "generated",
-      state: await getCreativeWorkspaceState(topicId, storyId),
+      state: await getCreativeWorkspaceState(topicId, storyId, preparationRunId),
     };
   } catch (error) {
     await failRunSafely(topicId, runId, error);
@@ -318,6 +319,7 @@ export async function createCreativeDraft(
   aspectRatio?: CreativeAspectRatio,
   createNewVersion = false,
   preparationRunId?: string,
+  workspace = false,
 ): Promise<CreativeGenerationResult> {
   const configuration = getCreativeContentRuntimeConfig();
   const brief = await findCreativeBriefById(topicId, briefId);
@@ -336,7 +338,7 @@ export async function createCreativeDraft(
 
   const [topic, story, currentProfile, characterRoster, daily] = await Promise.all([
     requireTopic(topicId, { active: true }),
-    getDailyDraftStory(topicId, brief.storyId, preparationRunId),
+    getDailyDraftStory(topicId, brief.storyId, preparationRunId, workspace && Boolean(preparationRunId)),
     getCreativeProfile(topicId),
     listCreativeCharacterRoster(topicId),
     getCreativeDailyUsage(topicId, configuration.maxRunsPerDay),
@@ -381,7 +383,7 @@ export async function createCreativeDraft(
   if (cached && !createNewVersion) {
     return {
       outcome: "cached",
-      state: await getCreativeWorkspaceState(topicId, brief.storyId),
+      state: await getCreativeWorkspaceState(topicId, brief.storyId, preparationRunId),
     };
   }
 
@@ -455,7 +457,7 @@ export async function createCreativeDraft(
 
     return {
       outcome: "generated",
-      state: await getCreativeWorkspaceState(topicId, brief.storyId),
+      state: await getCreativeWorkspaceState(topicId, brief.storyId, preparationRunId),
     };
   } catch (error) {
     await failRunSafely(topicId, runId, error);
@@ -889,7 +891,7 @@ export async function refreshCreativeDraftCharacterReferences(
   const configuration = getCreativeContentPublicConfig();
   const [topic, story, profile, characterRoster] = await Promise.all([
     requireTopic(topicId, { active: true }),
-    getSelectedStoryContent(topicId, current.storyId),
+    getDailyDraftStory(topicId, current.storyId, undefined, true),
     getCreativeProfile(topicId),
     listCreativeCharacterRoster(topicId),
   ]);
@@ -1400,7 +1402,9 @@ export class CreativeDraftValidationError extends Error {}
 
 /** An editorial content edit invalidates old approvals without deleting history. */
 export async function assertStoryEditionCurrent(topicId: string, draft: CreativeDraft): Promise<void> {
-  const story = await getSelectedStoryContent(topicId, draft.storyId);
+  // Read under the same authorization as the workspace. Approving a saved
+  // automatic draft must not require a separate manual story selection.
+  const story = await getDailyDraftStory(topicId, draft.storyId, undefined, true);
   if (!story.editorial) return;
   const brief = await findCreativeBriefById(topicId, draft.briefId);
   if (!brief) throw new CreativeContentNotFoundError("The creative brief was not found");

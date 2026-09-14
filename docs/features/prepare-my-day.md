@@ -2,7 +2,14 @@
 
 ## User flow
 
-In **Overview**, choose an **Editorial line** and click **Prepare my day**.
+In **Overview**, choose an **Editorial line** and click a destination in
+**Collect → Evaluate → Recommend → Content → Brief → Draft**.
+The run executes through that step and stops. Clicking a later step continues
+the same run from its saved checkpoint: Recommend → Brief only prepares content
+and creates the brief. Completed content/creative steps open their results;
+recommendations appear below the sequence. **New run** resets the destination
+selection so the next click starts a fresh collection, preserving the prior run.
+Changing the selected editorial line also starts a new run on the next click.
 The UI displays the active stage, completed stages, collected/evaluated counts,
 partial-result notices and actionable failures, in English:
 
@@ -22,7 +29,8 @@ only items found in this collection. The selected line controls collection.
 A partial collection is labelled. An exhausted evaluation budget advances to the
 planner with **Evaluation incomplete — daily limit reached**; evaluated counts
 never include cached or failed stories. A provider error stops at its stage.
-**Retry this step** resumes the failed stage, retaining completed stages.
+Clicking a failed step retries it; clicking a later destination retries the
+failed step and continues through the chosen destination. Completed stages are retained.
 Nothing is automatically approved, scheduled or published.
 
 ## Execution and persistence
@@ -36,8 +44,9 @@ Authenticated endpoints:
 
 - `GET /api/radar/daily-preparation?topicId=…` returns current status and available
   lines; it may resume an existing authorized job, never create one.
-- `POST` on the same URL accepts `{action:"start",lineId,timezone}` or
-  `{action:"retry",runId}`. Topic and line ownership are checked server-side.
+- `POST` on the same URL accepts `{action:"start",lineId,timezone,targetStep}`
+  or `{action:"continue",runId,targetStep}`. The optional legacy `mode` and
+  `{action:"retry",runId}` remain supported. Topic and line ownership are checked server-side.
 - `POST /api/radar/daily-preparation/resume` kicks pending jobs for the worker.
 
 Next.js `after()` starts server work after responding, so closing the browser
@@ -90,8 +99,10 @@ editor-triggered run; automated validation uses mocked providers.
 
 ## Prepare my draft — extended mode
 
-The second Overview button starts the same job with `progress.mode = "draft"`.
-Existing jobs without a mode continue to behave as **Prepare my day**. No schema
+Choosing Content, Brief or Draft uses `progress.mode = "draft"` and stores the
+destination in `progress.targetStep`; `progress.completedStep` records the last
+finished stage. Existing jobs without a target retain their day/draft destination
+and can be extended after completion. No schema
 migration is required; the versioned progress JSON holds the new checkpoints.
 
 After recommendation, draft mode selects only the primary recommended story:
@@ -107,13 +118,16 @@ After recommendation, draft mode selects only the primary recommended story:
 - **Generating draft…** uses the brief's recommended format and existing draft
   generation and review pipeline. Current cached drafts can be reused. Unresolved
   quality issues retain the saved draft with **Needs your review**.
-- **Your draft is ready** provides **Open draft**, targeting the saved draft ID.
+- **Your draft is ready** provides **Open draft**, targeting the saved draft ID
+  and carrying the exact preparation-run authorization into Creative Studio.
 
 A topic/story-specific authorization tied to the draft-preparation job permits
-brief/draft generation and workspace reading before human story approval. It
-never writes human approvals. Existing story/draft/image/publication approval
-checks remain in place. Approve the story through the recommendation card before
-performing operations that require an approved story.
+brief/draft generation and workspace reading before human story approval. The
+same content access supports reviewing and approving the saved draft, refreshing
+its character references, and composing or regenerating its images. Image
+generation still requires draft approval, and content freshness and evidence
+checks still apply. The job never writes human approvals. Standalone documentary
+creation and publication keep their existing approval requirements.
 
 Retries preserve previous stages. If article/profile inputs change after the
 brief checkpoint, the job stops for review in the creative workspace. A failed

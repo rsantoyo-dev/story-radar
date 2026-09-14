@@ -3057,14 +3057,62 @@
   list-style: none;
 }
 .dailyPreparationSteps li {
-  @ds-surface(flat primary);
-  border: border(1, palette(primary-light), solid);
-  border-radius: radius(2);
-  padding: density(3);
+  display: grid;
+}
+.dailyPreparationStepButton {
+  @ds-button(outlined primary);
+  @ds-typo(body);
   display: grid;
   gap: density(2);
+  padding: density(3);
+  width: 100%;
+  height: 100%;
+  text-align: left;
+  white-space: normal;
+  cursor: pointer;
+  box-shadow: shadow(1);
+  transition: box-shadow 0.15s ease, transform 0.15s ease, background 0.15s ease;
 }
-.dailyPreparationSteps li[aria-current="step"] {
-  border-color: palette(primary-main);
-  box-shadow: shadow(2);
+/* A step in progress still gets the current-step highlight around the card. */
+.dailyPreparationSteps li[aria-current="step"] .dailyPreparationStepButton {
+  box-shadow: shadow(3);
+}
+.dailyPreparationStepButton:hover:not(:disabled) {
+  box-shadow: shadow(3);
+  transform: translateY(-1px);
+}
+.dailyPreparationStepButton:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: shadow(1);
+}
+.dailyPreparationStepButton:disabled {
+  cursor: not-allowed;
+  box-shadow: none;
+  opacity: 0.55;
+}
+/* Color by status — matches the four states daily-preparation-panel.tsx
+   computes (data-step-status): finished with something to review, finished
+   with nothing further to open, actively running, and needing a retry. */
+.dailyPreparationStepButton[data-step-status="done-open"] {
+  border-color: palette(success-main);
+  background: palette(success-light, 0.18);
+  color: palette(success-dark);
+}
+.dailyPreparationStepButton[data-step-status="done"] {
+  border-color: palette(success-light);
+  background: palette(success-light, 0.08);
+  color: palette(success-dark);
+}
+.dailyPreparationStepButton[data-step-status="running"] {
+  border-color: palette(info-main);
+  background: palette(info-light, 0.18);
+  color: palette(info-dark);
+}
+.dailyPreparationStepButton[data-step-status="attention"] {
+  border-color: palette(warning-main);
+  background: palette(warning-light, 0.2);
+  color: palette(warning-dark);
+}
+.dailyPreparationStepButton[data-step-status="todo"] {
+  border-color: palette(primary-light);
 }

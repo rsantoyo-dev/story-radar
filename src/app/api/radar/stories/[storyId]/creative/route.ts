@@ -35,6 +35,7 @@ export async function GET(request: Request, context: Context) {
       await getCreativeWorkspaceState(
         await requireActiveRequestTopic(request),
         storyId,
+        new URL(request.url).searchParams.get("preparationRunId") || undefined,
       ),
     );
   } catch (error) {
@@ -49,6 +50,10 @@ export async function GET(request: Request, context: Context) {
 export async function POST(request: Request, context: Context) {
   const unauthorized = authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
+  const preparationRunId = new URL(request.url).searchParams.get("preparationRunId") || undefined;
+  if (preparationRunId && !UUID_PATTERN.test(preparationRunId)) {
+    return noStoreJson({ error: "preparationRunId must be a valid UUID" }, 400);
+  }
   const storyId = await parseId(context);
 
   if (!storyId) {
@@ -63,6 +68,8 @@ export async function POST(request: Request, context: Context) {
         storyId,
         editorialDirection,
         new URL(request.url).searchParams.get("editorialRunId") || undefined,
+        preparationRunId,
+        Boolean(preparationRunId),
       ),
     );
   } catch (error) {

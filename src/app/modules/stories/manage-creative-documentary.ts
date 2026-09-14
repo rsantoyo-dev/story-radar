@@ -7,6 +7,7 @@ import { createCreativeAssetBatch, completeCreativeAsset, failCreativeAsset, ref
 import { insertCreativeBrief, insertCreativeDraft, findCreativeDraftById, createCreativeAiRun, completeCreativeAiRun, failCreativeAiRun, getCreativeDailyUsage } from "./creative-content.repository";
 import { getCreativeProfile } from "./creative-profile.repository";
 import { getSelectedStoryContent } from "./story-content.repository";
+import { getDailyDraftStory } from "./daily-draft-access";
 import { generateOpenAiStructuredResponse } from "./openai-structured-response";
 import { DOCUMENTARY_PROVIDER, DOCUMENTARY_VERSION, EMPTY_GEO_USAGE, parsePlaceExtraction, relevantPlaceDiscovery, documentarySceneExtraction, selectDocumentaryExcerpts, canUseLocationVisual, eligiblePhoto, documentarySnapshot, type DocumentarySnapshot, type PlaceExtraction } from "./creative-documentary";
 import { documentaryProviders } from "./creative-documentary-providers";
@@ -30,7 +31,7 @@ const extractionSchema = {
 export type DocumentaryResult = { batch?: CreativeAssetBatch; snapshot?: DocumentarySnapshot; stale: boolean };
 const running = new Map<string, Promise<DocumentaryResult>>();
 export async function getDocumentaryPreparation(topicId: string, storyId: string): Promise<DocumentaryResult> {
-  await getSelectedStoryContent(topicId, storyId);
+  await getDailyDraftStory(topicId, storyId, undefined, true);
   const batch = await latestDocumentaryBatch(topicId, storyId);
   const snapshot = documentarySnapshot(batch?.assets[0]?.unitSnapshot);
   const draft = batch ? await findCreativeDraftById(topicId, batch.draftId) : undefined;

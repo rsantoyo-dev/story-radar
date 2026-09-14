@@ -4,7 +4,7 @@ import { db } from "@/db/client";
 import { dailyEditorialPlans } from "@/db/schema";
 import type { EditorialProfile } from "./editorial-profile.types";
 import { inEditorialEvaluationWindow, type EditorialCollectionContext } from "../editorial-lines/editorial-lines";
-import { recentPlannerPublications, type PlannerCandidate, type PlannerContext, type PlannerPublication } from "./daily-editorial-planner.types";
+import { EXTENDED_LOOKBACK_HOURS, MIN_CANDIDATES_BEFORE_TOPUP, recentPlannerPublications, type PlannerCandidate, type PlannerContext, type PlannerPublication } from "./daily-editorial-planner.types";
 
 export async function plannerInputs(topicId: string, profile: EditorialProfile, now: Date) {
   // This exclusion set is ALL known publications/commitments, not merely the last ten.
@@ -64,13 +64,24 @@ export async function plannerInputs(topicId: string, profile: EditorialProfile, 
     `),
   ]);
   type CandidateRow = PlannerCandidate & { owned: boolean; tags: string[]; sourceTags:string[]; contexts: EditorialCollectionContext[]; lastSeenAt: string };
-  const candidates = (candidateRows.rows as CandidateRow[]).filter(c => {
+  const withinWindow = (c: CandidateRow, minHours?: number) => {
     const date = c.publishedAt ? new Date(c.publishedAt) : undefined;
-    if (c.contexts.length) return c.contexts.some(context => inEditorialEvaluationWindow(date,context,now));
+    if (c.contexts.length) return c.contexts.some(context => inEditorialEvaluationWindow(date,context,now,minHours));
     if (c.owned) return true;
     const hours = c.sourceTags.some(tag=>["research","academic","journal"].some(word=>tag.toLowerCase().includes(word))) ? profile.freshness.researchMaxAgeHours : profile.freshness.newsMaxAgeHours;
-    return new Date(c.publishedAt ?? c.lastSeenAt).getTime() >= now.getTime()-hours*3600000;
-  }).slice(0,30).map(c => ({
+    const effectiveHours = minHours===undefined?hours:Math.max(hours,minHours);
+    return new Date(c.publishedAt ?? c.lastSeenAt).getTime() >= now.getTime()-effectiveHours*3600000;
+  };
+  const rows = candidateRows.rows as CandidateRow[];
+  const strict = rows.filter(c => withinWindow(c));
+  // Already-evaluated candidates a narrow window would hide are still real,
+  // AI-vetted options — when the strict pool is thin, widen the window
+  // instead of leaving the planner with almost nothing to recommend from.
+  // The (also widened) planner prompt then judges each on its own merits.
+  const filtered = strict.length < MIN_CANDIDATES_BEFORE_TOPUP
+    ? rows.filter(c => withinWindow(c,EXTENDED_LOOKBACK_HOURS))
+    : strict;
+  const candidates = filtered.slice(0,30).map(c => ({
     storyId:c.storyId,title:c.title,decision:c.decision,selected:!!c.selected,contentPreview:c.contentPreview,publishedAt:c.publishedAt ? new Date(c.publishedAt).toISOString() : null,
     editorialPriority:c.editorialPriority,growthScore:c.growthScore,reason:c.reason,riskFlags:c.riskFlags,
     evaluatedAt:new Date(c.evaluatedAt).toISOString(),revision:c.revision,sourceUrl:c.sourceUrl,sourceName:c.sourceName,collectionContexts:c.contexts,evaluationMayBeStale:c.evaluationMayBeStale,

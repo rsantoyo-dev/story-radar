@@ -32,7 +32,13 @@ async function compose(mode = "illustration-editorial", photoTest = false) {
     resolveCreativeBrandGeneration: async () => ({ inputHash: "brand", snapshot: { brand: true }, carouselChromeSnapshot: { chrome: true } }),
     findCurrentCreativeAssetBatch: async () => undefined,
     getCreativeProfile: async () => ({}),
-    getSelectedStoryContent: async () => ({ url: "https://example.org/story" }),
+    getDailyDraftStory: async (topic: string, story: string, run: unknown, workspace: boolean) => {
+      assert.equal(topic, "topic");
+      assert.equal(story, "story");
+      assert.equal(run, undefined);
+      assert.equal(workspace, true);
+      return { url: "https://example.org/story" };
+    },
     getTopicVisualFidelityMode: async () => mode,
     resolveEffectiveVisualFidelity: () => ({ mode }),
     requestsGeographicReconstruction: () => false,

@@ -25,6 +25,18 @@ test("line windows preserve news freshness and admit older context without inven
   assert.equal(lines.inEditorialWindow(new Date("2027-01-01"),context),false);
   assert.equal(line.period.kind,"relative");assert.equal(context.query,"Loneliness");
 });
+test("minHours widens a relative news window without lowering an already-wider one",()=>{
+  const checkNow=new Date("2026-09-15T00:00:00Z");
+  const news=lines.collectionContext({...line,mode:"news",period:{kind:"relative",hours:72}},[],"",undefined,now);
+  const fourDaysOld=new Date("2026-09-11T00:00:00Z"); // 96h before checkNow: outside 72h, inside 168h
+  const tenDaysOld=new Date("2026-09-05T00:00:00Z"); // 240h before checkNow: outside both
+  assert.equal(lines.inEditorialEvaluationWindow(fourDaysOld,news,checkNow),false);
+  assert.equal(lines.inEditorialEvaluationWindow(fourDaysOld,news,checkNow,168),true);
+  assert.equal(lines.inEditorialEvaluationWindow(tenDaysOld,news,checkNow,168),false);
+  // A line already wider than minHours keeps its own (wider) window.
+  const wideNews=lines.collectionContext({...line,mode:"news",period:{kind:"relative",hours:240}},[],"",undefined,now);
+  assert.equal(lines.inEditorialEvaluationWindow(tenDaysOld,wideNews,checkNow,168),true);
+});
 test("source inheritance cannot enable disabled sources, cross-brand IDs or excluded domains",()=>{
   const sources=[{id:"a",enabled:true},{id:"b",enabled:false},{id:"c",enabled:true}];
   assert.deepEqual(lines.collectionContext({...line,excludedSourceIds:["c"],sourceIds:["b","other-brand"]},sources).sourceIds,["a"]);

@@ -1,4 +1,5 @@
 import "server-only";
+import { BRIEF_EVIDENCE_REVIEW_MESSAGE, DAILY_PREPARATION_STEPS, preparationTarget, type DailyPreparationStep } from "./daily-preparation.types";
 import { prepareStoryContent } from "./prepare-selected-story-content";
 import { getStoryContent } from "./story-content.repository";
 import { createCreativeBrief, createCreativeDraft, getCreativeWorkspaceState } from "./manage-creative-content";
@@ -22,6 +23,13 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
   const run=await claimPreparation(topicId,id);
   if(!run)return false;
   const progress={...run.progress};
+  const target = preparationTarget(progress);
+  async function finish(step: DailyPreparationStep, next?: DailyPreparationStep) {
+    progress.completedStep = step;
+    const done = step === target || !next;
+    await savePreparation(run, { status: done ? "completed" : "running", step: done ? step : next, progress });
+    return !done;
+  }
   try {
     await requireTopic(topicId,{active:true});
     if(run.step==="collect") {
@@ -40,8 +48,7 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
         if(cached.sources?.failed && !cached.sources.successful)throw new Error("All collection sources failed");
         progress.collected=cached.counts?.included ?? 0;
         if(cached.sources?.failed)progress.collectionWarning="Some sources could not be collected. Available stories were retained.";
-        await savePreparation(run,{step:"evaluate",progress});
-        return true;
+        return await finish("collect", "evaluate");
       }
       try {
         const {radar,persistence}=await collectAndPersistStoryCandidates({topicId,now,editorialContext:aiResearch.collectionContext,editorialRunId:collectionId,sources:selected,preferences,aiResearch:{config:aiResearch,profile}});
@@ -50,7 +57,7 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
         progress.collected=radar.counts.included;
         if(radar.sources.failed) progress.collectionWarning="Some sources could not be collected. Available stories were retained.";
         if(!radar.sources.successful && radar.sources.failed)throw new Error("All collection sources failed");
-        await savePreparation(run,{step:"evaluate",progress});
+        return await finish("collect", "evaluate");
       } catch(error) {
         await finishCollection(topicId,collectionId,undefined,"Collection failed; saved partial results remain available");
         throw error;
@@ -62,11 +69,12 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
         progress.evaluationBatches++;
         const remaining=result.candidatesScanned-result.cachedStories-result.evaluatedStories;
         const done=result.status==="no-candidates" || remaining<=0;
-        await savePreparation(run,{step:done?"recommend":"evaluate",progress});
+        if(done) return await finish("evaluate", "recommend");
+        await savePreparation(run,{step:"evaluate",progress});
       } catch(error) {
         if(!(error instanceof EditorialEvaluationDailyLimitError))throw error;
         progress.evaluationWarning="Evaluation incomplete — daily limit reached. Recommendations use the available evaluated stories.";
-        await savePreparation(run,{step:"recommend",progress});
+        return await finish("evaluate", "recommend");
       }
     } else if(run.step==="recommend") {
       const existing=await getDailyPlanner(topicId,run.timezone);
@@ -74,15 +82,16 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
       if(result.running) {await savePreparation(run,{progress});return false;}
       if(result.stale || result.saved?.status!=="completed")throw new Error("Recommendation is not current yet");
       progress.recommendationRunId=result.saved.id;
-      if(progress.mode!=="draft") {
-        await savePreparation(run,{status:"completed",progress});
-        return false;
-      }
       const choice=result.saved.result?.recommendation;
+      if (choice) {
+        progress.storyId=choice.storyId;
+        progress.storyTitle=result.context.candidates.find(c=>c.storyId===choice.storyId)?.title;
+      }
+      if (DAILY_PREPARATION_STEPS.indexOf(target) <= 2) return await finish("recommend", "content");
       if(!choice)throw new PreparationReviewNeeded("No strong recommendation is available. Review the candidates before preparing a draft.");
       progress.storyId=choice.storyId;
       progress.storyTitle=result.context.candidates.find(c=>c.storyId===choice.storyId)?.title;
-      await savePreparation(run,{step:"content",progress});
+      return await finish("recommend", "content");
     } else if(run.step==="content") {
       if(!progress.storyId)throw new PreparationReviewNeeded("Choose a story to prepare.");
       let content=await getStoryContent(topicId,progress.storyId);
@@ -92,7 +101,7 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
       // when the publisher or Reader fallback blocks the second request.
       if(!contentLooksComplete(content))content=await prepareStoryContent(topicId,progress.storyId);
       if(!contentLooksComplete(content))throw new PreparationReviewNeeded("The article content is incomplete. Review or edit the content before continuing.");
-      await savePreparation(run,{step:"brief",progress});
+      return await finish("content", "brief");
     } else if(run.step==="brief") {
       if(!progress.storyId)throw new PreparationReviewNeeded("The recommended story is unavailable.");
       const contexts=await storyCollectionContexts(topicId,progress.storyId);
@@ -102,19 +111,21 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
       const brief=result.state.brief;
       if(!brief)throw new Error("Brief unavailable");
       progress.briefId=brief.id;
-      if(brief.contentSufficiency!=="sufficient")throw new PreparationReviewNeeded("The creative brief needs more evidence. Review the content and brief before continuing.");
-      await savePreparation(run,{step:"draft",progress});
+      // A human can accept this exact brief once from the workspace despite
+      // limited/insufficient evidence (see acknowledgePreparationBrief) — a
+      // later regenerated brief (a new id) needs its own review again.
+      if(brief.contentSufficiency!=="sufficient" && progress.acknowledgedBriefId!==brief.id)throw new PreparationReviewNeeded(BRIEF_EVIDENCE_REVIEW_MESSAGE);
+      return await finish("brief", "draft");
     } else if(run.step==="draft") {
       if(!progress.storyId || !progress.briefId)throw new PreparationReviewNeeded("Review the creative brief before continuing.");
-      const workspace=await getCreativeWorkspaceState(topicId,progress.storyId);
+      const workspace=await getCreativeWorkspaceState(topicId,progress.storyId,run.id);
       if(!workspace.briefIsCurrent || workspace.brief?.id!==progress.briefId)throw new PreparationReviewNeeded("The creative inputs changed. Review or regenerate the brief in the workspace.");
       const result=await createCreativeDraft(topicId,progress.briefId,workspace.brief.recommendedFormat,undefined,false,run.id);
       const draft=result.state.drafts.find(d=>d.briefId===progress.briefId && d.inputIsCurrent && d.format===workspace.brief!.recommendedFormat);
       if(!draft)throw new Error("Draft unavailable");
       progress.draftId=draft.id;
       if(!draft.qualityReview || draft.qualityReview.status!=="accepted" || draft.qualityReview.issues.some(i=>i.severity==="blocker"))throw new PreparationReviewNeeded("The draft is saved and needs editorial review. Open it to review the remaining issues.");
-      await savePreparation(run,{status:"completed",progress});
-      return false;
+      return await finish("draft");
     } else {throw new Error("Unknown preparation stage");}
     return true;
   } catch(error) {

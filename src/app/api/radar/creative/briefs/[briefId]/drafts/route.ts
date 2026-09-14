@@ -21,6 +21,10 @@ type Context = { params: Promise<{ briefId: string }> };
 export async function POST(request: Request, context: Context) {
   const unauthorized = authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
+  const preparationRunId = new URL(request.url).searchParams.get("preparationRunId") || undefined;
+  if (preparationRunId && !UUID_PATTERN.test(preparationRunId)) {
+    return noStoreJson({ error: "preparationRunId must be a valid UUID" }, 400);
+  }
   const { briefId } = await context.params;
 
   if (!UUID_PATTERN.test(briefId)) {
@@ -60,6 +64,8 @@ export async function POST(request: Request, context: Context) {
         body.format,
         body.aspectRatio,
         body.createNewVersion === true,
+        preparationRunId,
+        Boolean(preparationRunId),
       ),
     );
   } catch (error) {

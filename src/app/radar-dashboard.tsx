@@ -466,6 +466,7 @@ export function RadarDashboard({
   const [creativeStory, setCreativeStory] = useState<{
     editorialRunId?: string;
     draftId?: string;
+    preparationRunId?: string;
     storyId: string;
     title: string;
   }>();
@@ -1328,7 +1329,7 @@ export function RadarDashboard({
           >
 
         <section id="overview" className={styles.anchorTarget}>
-          <DailyPreparationPanel onOpenDraft={(storyId,title,draftId)=>{setContentViewer(undefined);setCreativeStory({storyId,title,draftId});}} key={`daily-${selectedTopicId}`} topicId={selectedTopicId} secret={secret} disabled={!canAuthenticate || isBusy || isTopicLoading} refreshKey={stats} onViewContent={handleViewContent} onPrepareContent={handlePrepareContent} onSelect={handlePlannerSelect} preparingStoryId={activeOperation === "prepare" ? activeStoryId : undefined} onCompleted={()=>{void fetchDatabaseStats(secret,selectedTopicId).then(setStats).catch(()=>{});}} />
+          <DailyPreparationPanel onOpenDraft={(storyId,title,draftId,preparationRunId)=>{setContentViewer(undefined);setCreativeStory({storyId,title,draftId,preparationRunId});}} key={`daily-${selectedTopicId}`} topicId={selectedTopicId} secret={secret} disabled={!canAuthenticate || isBusy || isTopicLoading} refreshKey={stats} onViewContent={handleViewContent} onPrepareContent={handlePrepareContent} onSelect={handlePlannerSelect} preparingStoryId={activeOperation === "prepare" ? activeStoryId : undefined} onCompleted={()=>{void fetchDatabaseStats(secret,selectedTopicId).then(setStats).catch(()=>{});}} />
           <TopicOverviewPanel
             key={selectedTopicId}
             secret={secret}
@@ -1629,6 +1630,7 @@ export function RadarDashboard({
             key={`${selectedTopicId}:${creativeStory.storyId}`}
             initialEditorialRunId={creativeStory.editorialRunId}
             initialDraftId={creativeStory.draftId}
+            initialPreparationRunId={creativeStory.preparationRunId}
             topicId={selectedTopicId}
             storyId={creativeStory.storyId}
             storyTitle={creativeStory.title}

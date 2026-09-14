@@ -19,6 +19,7 @@ const lineId="22222222-2222-4222-8222-222222222222";
 class LimitError extends Error {}
 function workflow({failEvaluate=false,limit=false,cachedCollection=false,draftMode=false,incomplete=false,likelyFull=false}={}) {
   const calls:string[]=[];
+  const workspaceCalls:unknown[][]=[];
   let run={id:lineId,topicId,lineId,timezone:"UTC",status:"running",step:"collect",leaseOwner:"owner",progress:{mode:draftMode?"draft":"day",lineName:"News",evaluated:0,evaluationBatches:0} as Record<string,unknown>,error:null as string|null};
   let evalCalls=0;
   const service=load("./daily-preparation.ts",{
@@ -41,7 +42,7 @@ function workflow({failEvaluate=false,limit=false,cachedCollection=false,draftMo
     "./prepare-selected-story-content":{prepareStoryContent:async()=>({contentStatus:"summary",text:"Partial"})},
     "./manage-creative-content":{
       createCreativeBrief:async()=>{calls.push("brief");return {state:{brief:{id:"brief",contentSufficiency:"sufficient"}}};},
-      getCreativeWorkspaceState:async()=>({briefIsCurrent:true,brief:{id:"brief",recommendedFormat:"carousel"}}),
+      getCreativeWorkspaceState:async(...args:unknown[])=>{workspaceCalls.push(args);return {briefIsCurrent:true,brief:{id:"brief",recommendedFormat:"carousel"}};},
       createCreativeDraft:async()=>{calls.push("draft");return {state:{drafts:[{id:"draft",briefId:"brief",inputIsCurrent:true,format:"carousel",status:"draft",qualityReview:{status:"accepted",issues:[]}}]}};},
     },
     "./daily-preparation.repository":{
@@ -50,7 +51,7 @@ function workflow({failEvaluate=false,limit=false,cachedCollection=false,draftMo
       savePreparation:async(_run:unknown,values:Partial<typeof run>)=>{run={...run,...values};},
     },
   });
-  return {service,calls,get run(){return run;},retry(){run.status="running";failEvaluate=false;}};
+  return {service,calls,workspaceCalls,get run(){return run;},retry(){run.status="running";failEvaluate=false;}};
 }
 test("daily workflow checkpoints collection, evaluates uncached batches then recommends",async()=>{
   const w=workflow();await w.service.drivePreparation(topicId,lineId);
@@ -91,13 +92,53 @@ test("database reservations serialize jobs and claims, fence old workers and iso
     const resumed=await repo.claimPreparation(topicId,first.run.id);assert.ok(resumed);
     await repo.savePreparation(claim,{status:"completed"});
     assert.equal((await repo.latestPreparation(topicId) as {status:string}).status,"running");
+    await repo.savePreparation(resumed,{status:"completed",step:"recommend",progress:{mode:"day",lineName:"News",evaluated:4,evaluationBatches:1,completedStep:"recommend",storyId:lineId}});
+    await repo.continuePreparation(lineId,first.run.id,"draft");
+    assert.equal((await repo.latestPreparation(topicId) as {status:string}).status,"completed");
+    await repo.continuePreparation(topicId,first.run.id,"collect");
+    assert.equal((await repo.latestPreparation(topicId) as {status:string}).status,"completed");
+    const extended=await repo.continuePreparation(topicId,first.run.id,"brief") as {status:string;step:string;progress:{targetStep:string;mode:string}};
+    assert.equal(extended.status,"running");assert.equal(extended.step,"content");
+    assert.equal(extended.progress.targetStep,"brief");assert.equal(extended.progress.mode,"draft");
+    await repo.continuePreparation(topicId,first.run.id,"draft");
+    assert.equal((await repo.latestPreparation(topicId) as typeof extended).progress.targetStep,"brief");
   }finally{await client.close();}
 });
 
 test("draft mode extends the same pipeline through content, brief and draft",async()=>{
   const w=workflow({draftMode:true});await w.service.drivePreparation(topicId,lineId);
   assert.deepEqual(w.calls,["collect","evaluate","evaluate","recommend","brief","draft"]);
+  assert.deepEqual(w.workspaceCalls,[[topicId,topicId,lineId]]);
   assert.equal(w.run.progress.draftId,"draft");assert.equal(w.run.status,"completed");
+});
+test("clicking successive targets resumes checkpoints without recollecting or reevaluating", async () => {
+  const w=workflow({draftMode:true});
+  w.run.progress.targetStep="recommend";
+  await w.service.drivePreparation(topicId,lineId);
+  assert.equal(w.run.status,"completed");
+  assert.equal(w.run.progress.completedStep,"recommend");
+  assert.equal(w.run.progress.storyId,topicId);
+  assert.equal(w.calls.includes("brief"),false);
+  w.run.status="running";w.run.step="content";w.run.progress.targetStep="brief";
+  await w.service.drivePreparation(topicId,lineId);
+  assert.equal(w.run.progress.completedStep,"brief");
+  assert.equal(w.calls.includes("draft"),false);
+  w.run.status="running";w.run.step="draft";w.run.progress.targetStep="draft";
+  await w.service.drivePreparation(topicId,lineId);
+  assert.equal(w.run.progress.completedStep,"draft");
+  assert.deepEqual(w.calls,["collect","evaluate","evaluate","recommend","brief","draft"]);
+});
+test("each target stops before the next stage",async()=>{
+  for(const target of ["collect","evaluate","content","brief"]) {
+    const w=workflow({draftMode:true});w.run.progress.targetStep=target;
+    await w.service.drivePreparation(topicId,lineId);
+    assert.equal(w.run.status,"completed");assert.equal(w.run.step,target);
+    assert.equal(w.run.progress.completedStep,target);
+    if(target==="collect")assert.deepEqual(w.calls,["collect"]);
+    if(target==="evaluate")assert.equal(w.calls.includes("recommend"),false);
+    if(target==="content")assert.equal(w.calls.includes("brief"),false);
+    assert.equal(w.calls.includes("draft"),false);
+  }
 });
 test("incomplete content stops for review before spending on brief or draft",async()=>{
   const w=workflow({draftMode:true,incomplete:true});await w.service.drivePreparation(topicId,lineId);
@@ -124,6 +165,14 @@ test("draft access is scoped to the job and topic; ordinary generation keeps the
     await assert.rejects(access.getDailyDraftStory(lineId,lineId,lineId),/Human approval/);
     await client.exec(`UPDATE daily_preparation_runs SET status='completed'`);
     await assert.rejects(access.getDailyDraftStory(topicId,lineId,lineId),/Human approval/);
+    assert.ok(await access.getDailyDraftStory(topicId,lineId,lineId,true));
+    await client.exec(`UPDATE daily_preparation_runs SET status='needs-review' WHERE id='${lineId}' AND topic_id='${topicId}'`);
+    assert.ok(await access.getDailyDraftStory(topicId,lineId,lineId,true));
+    await assert.rejects(access.getDailyDraftStory(topicId,lineId,topicId,true),/Human approval/);
+    await assert.rejects(access.getDailyDraftStory(topicId,lineId,lineId),/Human approval/);
+    await client.exec(`UPDATE daily_preparation_runs SET status='failed' WHERE id='${lineId}' AND topic_id='${topicId}'`);
+    await assert.rejects(access.getDailyDraftStory(topicId,lineId,lineId,true),/Human approval/);
+    await client.exec(`UPDATE daily_preparation_runs SET status='completed' WHERE id='${lineId}' AND topic_id='${topicId}'`);
     assert.ok(await access.getDailyDraftStory(topicId,lineId,undefined,true));
     await client.exec(`UPDATE topic_stories SET review_decision='rejected'`);
     await assert.rejects(access.getDailyDraftStory(topicId,lineId,undefined,true),/Human approval/);
