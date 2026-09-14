@@ -3030,7 +3030,7 @@
 }
 .dailyPlannerControls { display: grid; gap: density(2); }
 .dailyPlannerControls label { display: grid; gap: density(1); @ds-typo(body); }
-.dailyPlannerControls input { @ds-input(outlined neutral); padding: density(2); border-radius: radius(2); width: 100%; }
+.dailyPlannerControls input, .dailyPlannerControls select { @ds-input(outlined neutral); padding: density(2); border-radius: radius(2); width: 100%; }
 .dailyPlannerChoices { display: grid; grid-template-columns: xs(1fr) md(repeat(3, 1fr)); gap: density(3); }
 .dailyPlannerChoice {
   @ds-surface(flat primary);
@@ -3047,4 +3047,24 @@
   flex-wrap: wrap;
   gap: density(2);
   margin-top: auto;
+}
+
+.dailyPreparationSteps {
+  display: grid;
+  grid-template-columns: xs(1fr) md(repeat(3, minmax(0, 1fr)));
+  gap: density(3);
+  padding: density(2);
+  list-style: none;
+}
+.dailyPreparationSteps li {
+  @ds-surface(flat primary);
+  border: border(1, palette(primary-light), solid);
+  border-radius: radius(2);
+  padding: density(3);
+  display: grid;
+  gap: density(2);
+}
+.dailyPreparationSteps li[aria-current="step"] {
+  border-color: palette(primary-main);
+  box-shadow: shadow(2);
 }

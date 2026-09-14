@@ -1,3 +1,4 @@
+import { getDailyDraftStory } from "./daily-draft-access";
 import { parseStoryReferences } from "./story-materials.types";
 import { resolveStoryReferences } from "./manage-story-photos";
 import { enforceCoverTitle } from "./creative-cover-title";
@@ -98,7 +99,7 @@ export async function getCreativeWorkspaceState(
   const configuration = getCreativeContentPublicConfig();
   const [topic, story, profile, characterRoster, latestBrief, daily] = await Promise.all([
     requireTopic(topicId, { active: true }),
-    getSelectedStoryContent(topicId, storyId),
+    getDailyDraftStory(topicId, storyId, undefined, true),
     getCreativeProfile(topicId),
     listCreativeCharacterRoster(topicId),
     findLatestCreativeBrief(topicId, storyId),
@@ -205,11 +206,12 @@ export async function createCreativeBrief(
   storyId: string,
   editorialDirection?: string,
   editorialRunId?: string,
+  preparationRunId?: string,
 ): Promise<CreativeGenerationResult> {
   const configuration = getCreativeContentRuntimeConfig();
   const [topic, story, profile, daily] = await Promise.all([
     requireTopic(topicId, { active: true }),
-    getSelectedStoryContent(topicId, storyId),
+    getDailyDraftStory(topicId, storyId, preparationRunId),
     getCreativeProfile(topicId),
     getCreativeDailyUsage(topicId, configuration.maxRunsPerDay),
   ]);
@@ -315,6 +317,7 @@ export async function createCreativeDraft(
   format: CreativeFormat,
   aspectRatio?: CreativeAspectRatio,
   createNewVersion = false,
+  preparationRunId?: string,
 ): Promise<CreativeGenerationResult> {
   const configuration = getCreativeContentRuntimeConfig();
   const brief = await findCreativeBriefById(topicId, briefId);
@@ -333,7 +336,7 @@ export async function createCreativeDraft(
 
   const [topic, story, currentProfile, characterRoster, daily] = await Promise.all([
     requireTopic(topicId, { active: true }),
-    getSelectedStoryContent(topicId, brief.storyId),
+    getDailyDraftStory(topicId, brief.storyId, preparationRunId),
     getCreativeProfile(topicId),
     listCreativeCharacterRoster(topicId),
     getCreativeDailyUsage(topicId, configuration.maxRunsPerDay),

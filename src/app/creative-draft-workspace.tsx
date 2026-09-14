@@ -55,6 +55,7 @@ import styles from "./creative-draft-workspace.generated.module.css";
 
 type WorkspaceProps = {
   initialEditorialRunId?: string;
+  initialDraftId?: string;
   topicId: string;
   storyId: string;
   storyTitle: string;
@@ -167,7 +168,7 @@ export function CreativeDraftWorkspace({
   secret,
   onClose,
   onInstagramChanged,
-  instagramRefreshToken, initialEditorialRunId,
+  instagramRefreshToken, initialEditorialRunId, initialDraftId,
 }: WorkspaceProps) {
   const [preparedPublication, setPreparedPublication] = useState<{ topicId: string; storyId: string; assetCount: number }>();
   const [workspace, setWorkspace] = useState<CreativeWorkspaceState>();
@@ -298,6 +299,7 @@ export function CreativeDraftWorkspace({
         // not appear to vanish after a brief/profile refresh.
         const primaryDrafts = next.drafts.filter((draft) => !draft.companion);
         const latestDraft =
+          primaryDrafts.find(draft => draft.id === initialDraftId) ??
           primaryDrafts.find((draft) => draft.inputIsCurrent !== false) ??
           primaryDrafts[0];
         const format = latestDraft?.format ?? next.brief?.recommendedFormat ?? "meme";
@@ -332,7 +334,7 @@ export function CreativeDraftWorkspace({
       });
 
     return () => controller.abort();
-  }, [secret, storyId, topicId]);
+  }, [secret, storyId, topicId, initialDraftId]);
 
   useEffect(() => {
     if (!activeDraftId) return;

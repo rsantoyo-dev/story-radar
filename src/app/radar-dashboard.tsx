@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { DailyPreparationPanel } from "./daily-preparation-panel";
 import { DailyEditorialPlannerPanel } from "./daily-editorial-planner-panel";
 import { StoryPhotosPanel } from "./story-photos-panel";
 import type { StoryContentEdition } from "./modules/stories/story-materials.types";
@@ -464,6 +465,7 @@ export function RadarDashboard({
   const [contentViewer, setContentViewer] = useState<StoryContentResponse>();
   const [creativeStory, setCreativeStory] = useState<{
     editorialRunId?: string;
+    draftId?: string;
     storyId: string;
     title: string;
   }>();
@@ -1326,6 +1328,7 @@ export function RadarDashboard({
           >
 
         <section id="overview" className={styles.anchorTarget}>
+          <DailyPreparationPanel onOpenDraft={(storyId,title,draftId)=>{setContentViewer(undefined);setCreativeStory({storyId,title,draftId});}} key={`daily-${selectedTopicId}`} topicId={selectedTopicId} secret={secret} disabled={!canAuthenticate || isBusy || isTopicLoading} refreshKey={stats} onViewContent={handleViewContent} onPrepareContent={handlePrepareContent} onSelect={handlePlannerSelect} preparingStoryId={activeOperation === "prepare" ? activeStoryId : undefined} onCompleted={()=>{void fetchDatabaseStats(secret,selectedTopicId).then(setStats).catch(()=>{});}} />
           <TopicOverviewPanel
             key={selectedTopicId}
             secret={secret}
@@ -1625,6 +1628,7 @@ export function RadarDashboard({
           <CreativeDraftWorkspace
             key={`${selectedTopicId}:${creativeStory.storyId}`}
             initialEditorialRunId={creativeStory.editorialRunId}
+            initialDraftId={creativeStory.draftId}
             topicId={selectedTopicId}
             storyId={creativeStory.storyId}
             storyTitle={creativeStory.title}
