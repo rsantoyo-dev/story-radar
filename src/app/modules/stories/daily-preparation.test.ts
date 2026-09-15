@@ -17,12 +17,14 @@ function load(file:string,mocks:Record<string,unknown>) {
 const topicId="11111111-1111-4111-8111-111111111111";
 const lineId="22222222-2222-4222-8222-222222222222";
 class LimitError extends Error {}
-function workflow({failEvaluate=false,limit=false,cachedCollection=false,draftMode=false,incomplete=false,likelyFull=false}={}) {
+function workflow({failEvaluate=false,limit=false,cachedCollection=false,draftMode=false,incomplete=false,likelyFull=false,failApproval=false,noChoice=false}={}) {
   const calls:string[]=[];
   const workspaceCalls:unknown[][]=[];
+  let approved = false;
   let run={id:lineId,topicId,lineId,timezone:"UTC",status:"running",step:"collect",leaseOwner:"owner",progress:{mode:draftMode?"draft":"day",lineName:"News",evaluated:0,evaluationBatches:0} as Record<string,unknown>,error:null as string|null};
   let evalCalls=0;
   const service=load("./daily-preparation.ts",{
+    "./approve-daily-story":{approveDailyStory:async()=>{if(failApproval)throw new Error("Approval failed");if(!approved){calls.push("approve");approved=true;}}},
     "../topics/topic-context":{requireTopic:async()=>({id:topicId})},
     "../editorial-lines/editorial-lines":{collectionContext:()=>({sourceIds:[lineId]}),resolveLineResearch:()=>({enabled:true,collectionContext:{sourceIds:[lineId]}})},
     "../editorial-lines/editorial-lines.repository":{storyCollectionContexts:async()=>[],getEditorialLine:async()=>({name:"News"}),reserveCollection:async()=>({cached:cachedCollection?{counts:{included:4},sources:{successful:1,failed:0}}:undefined}),finishCollection:async()=>{}},
@@ -37,7 +39,7 @@ function workflow({failEvaluate=false,limit=false,cachedCollection=false,draftMo
       if(limit)throw new LimitError();
       return {status:"completed",evaluatedStories:2,cachedStories:evalCalls===1?0:2,candidatesScanned:4};
     }},
-    "./daily-editorial-planner":{getDailyPlanner:async()=>({running:false}),recommendForToday:async()=>{calls.push("recommend");return {running:false,stale:false,context:{candidates:[{storyId:topicId,title:"Story"}]},saved:{id:"plan",status:"completed",result:{recommendation:{storyId:topicId}}}};}},
+    "./daily-editorial-planner":{getDailyPlanner:async()=>({running:false}),recommendForToday:async()=>{calls.push("recommend");return {running:false,stale:false,context:{candidates:[{storyId:topicId,title:"Story"}]},saved:{id:"plan",status:"completed",result:{recommendation:noChoice?null:{storyId:topicId}}}};}},
     "./story-content.repository":{getStoryContent:async()=>({contentStatus:incomplete?"summary":likelyFull?"likely-full":"full",text:"Article evidence"})},
     "./prepare-selected-story-content":{prepareStoryContent:async()=>({contentStatus:"summary",text:"Partial"})},
     "./manage-creative-content":{
@@ -55,9 +57,9 @@ function workflow({failEvaluate=false,limit=false,cachedCollection=false,draftMo
 }
 test("daily workflow checkpoints collection, evaluates uncached batches then recommends",async()=>{
   const w=workflow();await w.service.drivePreparation(topicId,lineId);
-  assert.deepEqual(w.calls,["collect","evaluate","evaluate","recommend"]);
+  assert.deepEqual(w.calls,["collect","evaluate","evaluate","recommend","approve"]);
   assert.equal(w.run.status,"completed");assert.equal(w.run.progress.collected,4);assert.equal(w.run.progress.evaluated,4);
-  await w.service.drivePreparation(topicId,lineId);assert.equal(w.calls.length,4);
+  await w.service.drivePreparation(topicId,lineId);assert.equal(w.calls.length,5);
 });
 test("evaluation failure retries that step, never recollects and never exposes raw provider errors",async()=>{
   const w=workflow({failEvaluate:true});await w.service.drivePreparation(topicId,lineId);
@@ -67,7 +69,7 @@ test("evaluation failure retries that step, never recollects and never exposes r
 });
 test("quota exhaustion is a visible partial evaluation, not a fabricated success",async()=>{
   const w=workflow({limit:true});await w.service.drivePreparation(topicId,lineId);
-  assert.deepEqual(w.calls,["collect","evaluate","recommend"]);assert.match(String(w.run.progress.evaluationWarning),/daily limit/);assert.equal(w.run.progress.evaluated,0);
+  assert.deepEqual(w.calls,["collect","evaluate","recommend","approve"]);assert.match(String(w.run.progress.evaluationWarning),/daily limit/);assert.equal(w.run.progress.evaluated,0);
 });
 test("recovery reuses a completed collection instead of calling collectors again",async()=>{
   const w=workflow({cachedCollection:true});await w.service.drivePreparation(topicId,lineId);
@@ -107,7 +109,7 @@ test("database reservations serialize jobs and claims, fence old workers and iso
 
 test("draft mode extends the same pipeline through content, brief and draft",async()=>{
   const w=workflow({draftMode:true});await w.service.drivePreparation(topicId,lineId);
-  assert.deepEqual(w.calls,["collect","evaluate","evaluate","recommend","brief","draft"]);
+  assert.deepEqual(w.calls,["collect","evaluate","evaluate","recommend","approve","brief","draft"]);
   assert.deepEqual(w.workspaceCalls,[[topicId,topicId,lineId]]);
   assert.equal(w.run.progress.draftId,"draft");assert.equal(w.run.status,"completed");
 });
@@ -126,7 +128,7 @@ test("clicking successive targets resumes checkpoints without recollecting or re
   w.run.status="running";w.run.step="draft";w.run.progress.targetStep="draft";
   await w.service.drivePreparation(topicId,lineId);
   assert.equal(w.run.progress.completedStep,"draft");
-  assert.deepEqual(w.calls,["collect","evaluate","evaluate","recommend","brief","draft"]);
+  assert.deepEqual(w.calls,["collect","evaluate","evaluate","recommend","approve","brief","draft"]);
 });
 test("each target stops before the next stage",async()=>{
   for(const target of ["collect","evaluate","content","brief"]) {
@@ -148,33 +150,68 @@ test("incomplete content stops for review before spending on brief or draft",asy
 test("substantial likely-full content continues without a redundant extraction",async()=>{
   const w=workflow({draftMode:true,likelyFull:true});await w.service.drivePreparation(topicId,lineId);
   assert.equal(w.run.status,"completed");
-  assert.deepEqual(w.calls,["collect","evaluate","evaluate","recommend","brief","draft"]);
+  assert.deepEqual(w.calls,["collect","evaluate","evaluate","recommend","approve","brief","draft"]);
 });
-test("draft access is scoped to the job and topic; ordinary generation keeps the human approval gate",async()=>{
-  const client=new PGlite();
-  try {
-    await client.exec(`CREATE TABLE daily_preparation_runs(id uuid,topic_id uuid,status text,progress jsonb);
-      CREATE TABLE topic_stories(topic_id uuid,story_id uuid,review_decision text,processing_status text,duplicate_of_story_id uuid);
-      INSERT INTO topic_stories VALUES('${topicId}','${lineId}',NULL,'ready',NULL);
-      INSERT INTO daily_preparation_runs VALUES('${lineId}','${topicId}','running','{"mode":"draft","storyId":"${lineId}"}');`);
-    const access=load("./daily-draft-access.ts",{"@/db/client":{db:drizzle(client)},"./story-content.repository":{
-      getStoryContent:async()=>({text:"Evidence"}),getSelectedStoryContent:async()=>{throw new Error("Human approval required");},
-    }});
-    await assert.rejects(access.getDailyDraftStory(topicId,lineId),/Human approval/);
-    assert.ok(await access.getDailyDraftStory(topicId,lineId,lineId));
-    await assert.rejects(access.getDailyDraftStory(lineId,lineId,lineId),/Human approval/);
-    await client.exec(`UPDATE daily_preparation_runs SET status='completed'`);
-    await assert.rejects(access.getDailyDraftStory(topicId,lineId,lineId),/Human approval/);
-    assert.ok(await access.getDailyDraftStory(topicId,lineId,lineId,true));
-    await client.exec(`UPDATE daily_preparation_runs SET status='needs-review' WHERE id='${lineId}' AND topic_id='${topicId}'`);
-    assert.ok(await access.getDailyDraftStory(topicId,lineId,lineId,true));
-    await assert.rejects(access.getDailyDraftStory(topicId,lineId,topicId,true),/Human approval/);
-    await assert.rejects(access.getDailyDraftStory(topicId,lineId,lineId),/Human approval/);
-    await client.exec(`UPDATE daily_preparation_runs SET status='failed' WHERE id='${lineId}' AND topic_id='${topicId}'`);
-    await assert.rejects(access.getDailyDraftStory(topicId,lineId,lineId,true),/Human approval/);
-    await client.exec(`UPDATE daily_preparation_runs SET status='completed' WHERE id='${lineId}' AND topic_id='${topicId}'`);
-    assert.ok(await access.getDailyDraftStory(topicId,lineId,undefined,true));
-    await client.exec(`UPDATE topic_stories SET review_decision='rejected'`);
-    await assert.rejects(access.getDailyDraftStory(topicId,lineId,undefined,true),/Human approval/);
-  }finally{await client.close();}
+test("approval failure stops before creating any creative output",async()=>{
+  const w=workflow({draftMode:true,failApproval:true});
+  await w.service.drivePreparation(topicId,lineId);
+  assert.equal(w.run.status,"failed");
+  assert.equal(w.run.step,"recommend");
+  assert.equal(w.calls.includes("brief"),false);
+  assert.equal(w.calls.includes("draft"),false);
+});
+test("no strong recommendation never approves a story",async()=>{
+  const w=workflow({draftMode:true,noChoice:true});
+  await w.service.drivePreparation(topicId,lineId);
+  assert.equal(w.run.status,"needs-review");
+  assert.equal(w.calls.includes("approve"),false);
+  assert.equal(w.calls.includes("brief"),false);
+});
+test("automatic approval reuses ordinary actions and rejects unavailable candidates",async()=>{
+  class Missing extends Error {}
+  let approved=false;
+  let decision="shortlist";
+  const calls:unknown[][]=[];
+  const config={model:"test"};
+  const service=load("./approve-daily-story.ts",{
+    "./story-content.repository":{
+      SelectedStoryContentNotFoundError:Missing,
+      getSelectedStoryContent:async()=>{if(!approved)throw new Missing();return {};},
+    },
+    "./editorial-profile.repository":{getEditorialProfile:async()=>({})},
+    "./daily-editorial-planner.repository":{plannerInputs:async()=>({candidates:decision==="missing"?[]:[{storyId:lineId,decision}]})},
+    "./editorial-evaluation.config":{getEditorialEvaluationPublicConfig:()=>config},
+    "./story-editorial.repository":{
+      reviewEditorialShortlist:async(...args:unknown[])=>{calls.push(["shortlist",...args]);approved=true;},
+      promoteEditorialReviewCandidate:async(...args:unknown[])=>{calls.push(["promote",...args]);approved=true;},
+    },
+  });
+  await service.approveDailyStory(topicId,lineId);
+  assert.equal(JSON.stringify(calls),JSON.stringify([["shortlist",topicId,[lineId],"approved",config]]));
+  await service.approveDailyStory(topicId,lineId);
+  assert.equal(calls.length,1);
+  approved=false;decision="review";
+  await service.approveDailyStory(topicId,lineId);
+  assert.deepEqual(calls[1],["promote",topicId,lineId,config]);
+  for(decision of ["missing","reject"]) {
+    approved=false;
+    await assert.rejects(service.approveDailyStory(topicId,lineId),/no longer eligible/);
+  }
+  assert.equal(calls.length,2);
+});
+test("daily runs and workspace access require the ordinary persisted story approval",async()=>{
+  let approved=false;
+  const access=load("./daily-draft-access.ts",{"./story-content.repository":{
+    getSelectedStoryContent:async(topic:string,story:string)=>{
+      assert.equal(topic,topicId);assert.equal(story,lineId);
+      if(!approved)throw new Error("Approval required");
+      return {text:"Evidence"};
+    },
+  }});
+  for(const workspace of [false,true]) {
+    await assert.rejects(access.getDailyDraftStory(topicId,lineId,lineId,workspace),/Approval required/);
+  }
+  approved=true;
+  assert.ok(await access.getDailyDraftStory(topicId,lineId));
+  assert.ok(await access.getDailyDraftStory(topicId,lineId,lineId,true));
 });

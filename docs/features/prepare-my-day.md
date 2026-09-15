@@ -19,7 +19,10 @@ partial-result notices and actionable failures, in English:
    configured provider fallbacks, skips cached inputs, and processes successive
    batches until no pending candidates remain or the daily quota is reached.
 3. **Preparing today’s recommendation…** — invokes the existing daily planner
-   with the browser's timezone, the topic profile and publication history.
+   with the browser's timezone, the topic profile, last ten unique confirmed
+   publications and planned commitments. It automatically approves the primary
+   recommendation using the same shortlist approval or review promotion function
+   as the planner card. Alternatives remain available for manual selection.
 4. **Your daily selection is ready** — shows the planner in Overview, including
    alternatives, uncertainty, **View content**, **Prepare content** and **Approve**.
    If no strong candidate exists, the planner states that explicitly.
@@ -31,7 +34,8 @@ planner with **Evaluation incomplete — daily limit reached**; evaluated counts
 never include cached or failed stories. A provider error stops at its stage.
 Clicking a failed step retries it; clicking a later destination retries the
 failed step and continues through the chosen destination. Completed stages are retained.
-Nothing is automatically approved, scheduled or published.
+The recommended story is automatically approved and appears in Selected.
+Draft/image approval, scheduling and publication keep their existing flows.
 
 ## Execution and persistence
 
@@ -119,15 +123,14 @@ After recommendation, draft mode selects only the primary recommended story:
   generation and review pipeline. Current cached drafts can be reused. Unresolved
   quality issues retain the saved draft with **Needs your review**.
 - **Your draft is ready** provides **Open draft**, targeting the saved draft ID
-  and carrying the exact preparation-run authorization into Creative Studio.
+  and carrying the preparation-run ID into Creative Studio.
 
-A topic/story-specific authorization tied to the draft-preparation job permits
-brief/draft generation and workspace reading before human story approval. The
-same content access supports reviewing and approving the saved draft, refreshing
-its character references, and composing or regenerating its images. Image
-generation still requires draft approval, and content freshness and evidence
-checks still apply. The job never writes human approvals. Standalone documentary
-creation and publication keep their existing approval requirements.
+Brief/draft generation and workspace reading require the same persisted story
+approval as the ordinary workflow. Preparation reuses existing approvals on
+retry and applies the ordinary approval functions when an older run resumes
+without one. Candidates must still be eligible in the planner before automatic
+approval; rejected or unavailable candidates stop the run. Image generation
+still requires draft approval, and content freshness and evidence checks apply.
 
 Retries preserve previous stages. If article/profile inputs change after the
 brief checkpoint, the job stops for review in the creative workspace. A failed

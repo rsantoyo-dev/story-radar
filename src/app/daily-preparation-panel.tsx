@@ -72,7 +72,7 @@ export function DailyPreparationPanel({onCompleted,onOpenDraft,...props}:Props) 
   const blocked=disabled || pending || running || !secret.trim();
   return <section className={styles.dailyPlanner} aria-label="Prepare my day">
     <div className={styles.dailyPlannerHeader}>
-      <div><span className={styles.eyebrow}>Daily editorial workflow</span><h2>Prepare my day</h2><p>Choose how far to go. Completed steps are reused when you continue.</p><small>Today uses {timezone}. Collection uses the editorial line’s period and sources.</small></div>
+      <div><span className={styles.eyebrow}>Daily editorial workflow</span><h2>Prepare my day</h2><p>Choose how far to go. Recommend automatically approves the best story for today. Completed steps are reused when you continue.</p><small>Today uses {timezone}. Collection uses the editorial line’s period and sources.</small></div>
       <div className={styles.dailyPlannerControls}>
         <label>Editorial line<select value={selectedLine} disabled={blocked} onChange={event=>setLineId(event.target.value)}>{!data?.lines.length && <option value="">Loading editorial lines…</option>}{data?.lines.map(line=><option key={line.id} value={line.id}>{line.name}</option>)}</select></label>
         {run && <button type="button" className={styles.secondaryButton} disabled={blocked} onClick={()=>setNewRun(value=>!value)}>{newRun?"Return to current run":"New run"}</button>}

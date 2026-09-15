@@ -1,4 +1,5 @@
 import "server-only";
+import { approveDailyStory } from "./approve-daily-story";
 import { BRIEF_EVIDENCE_REVIEW_MESSAGE, DAILY_PREPARATION_STEPS, preparationTarget, type DailyPreparationStep } from "./daily-preparation.types";
 import { prepareStoryContent } from "./prepare-selected-story-content";
 import { getStoryContent } from "./story-content.repository";
@@ -86,6 +87,7 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
       if (choice) {
         progress.storyId=choice.storyId;
         progress.storyTitle=result.context.candidates.find(c=>c.storyId===choice.storyId)?.title;
+        await approveDailyStory(topicId, choice.storyId);
       }
       if (DAILY_PREPARATION_STEPS.indexOf(target) <= 2) return await finish("recommend", "content");
       if(!choice)throw new PreparationReviewNeeded("No strong recommendation is available. Review the candidates before preparing a draft.");
@@ -94,6 +96,7 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
       return await finish("recommend", "content");
     } else if(run.step==="content") {
       if(!progress.storyId)throw new PreparationReviewNeeded("Choose a story to prepare.");
+      await approveDailyStory(topicId, progress.storyId);
       let content=await getStoryContent(topicId,progress.storyId);
       // `likely-full` is the normal status for a substantial RSS/editorial
       // copy whose extractor cannot find meaningfully more text. Re-fetching
@@ -104,6 +107,7 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
       return await finish("content", "brief");
     } else if(run.step==="brief") {
       if(!progress.storyId)throw new PreparationReviewNeeded("The recommended story is unavailable.");
+      await approveDailyStory(topicId, progress.storyId);
       const contexts=await storyCollectionContexts(topicId,progress.storyId);
       const context=contexts.find(c=>c.runId===progress.collectionRunId) ?? (contexts.length===1?contexts[0]:undefined);
       if(contexts.length>1 && !context)throw new PreparationReviewNeeded("This story has multiple editorial contexts. Choose the intended context in the creative workspace.");
@@ -118,6 +122,7 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
       return await finish("brief", "draft");
     } else if(run.step==="draft") {
       if(!progress.storyId || !progress.briefId)throw new PreparationReviewNeeded("Review the creative brief before continuing.");
+      await approveDailyStory(topicId, progress.storyId);
       const workspace=await getCreativeWorkspaceState(topicId,progress.storyId,run.id);
       if(!workspace.briefIsCurrent || workspace.brief?.id!==progress.briefId)throw new PreparationReviewNeeded("The creative inputs changed. Review or regenerate the brief in the workspace.");
       const result=await createCreativeDraft(topicId,progress.briefId,workspace.brief.recommendedFormat,undefined,false,run.id);
