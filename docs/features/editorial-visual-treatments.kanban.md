@@ -7,13 +7,15 @@
 ### VISUAL-01 — Definir tratamientos y compatibilidad
 
   - priority: high
-  - tags: [creative, visual, p0]
+  - tags: [creative, visual, taxonomy, migration, p0]
+  - note: catálogo y cuotas son configurables por creative profile/topic; character-explainer no presupone Richard
 
 ### VISUAL-02 — Seleccionar tratamiento según historia y cartera
 
   - priority: high
   - tags: [creative, visual, editorial, p0]
   - depends-on: [VISUAL-01, ANGLE-01]
+  - note: usa el ángulo autoritativo del brief; la cuota 40/25/15/10/10 es solo el seed de Tech
 
 ### VISUAL-03 — Actualizar las instrucciones de generación
 

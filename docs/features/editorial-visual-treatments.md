@@ -13,15 +13,15 @@ La solución debe variar la composición y el medio visual sin romper identidad,
 
 ## Resultado esperado
 
-Cada publicación nueva recibe un tratamiento visual principal:
+Cada publicación nueva recibe un tratamiento visual principal desde el catálogo habilitado para su creative profile/topic:
 
 - `hero-graphic` — portada gráfica de alto contraste con un foco visual;
 - `editorial-photo` — fotografía o composición fotográfica editorial con texto integrado;
 - `data-poster` — un dato, contraste o relación visual dominante;
 - `quote-statement` — una declaración, cita o frase atribuida como centro de la pieza;
-- `character-explainer` — Richard u otro personaje aprobado explicando el mecanismo o consecuencia.
+- `character-explainer` — un personaje aprobado de la marca explicando el mecanismo o consecuencia.
 
-Objetivo de cartera para las primeras 20 publicaciones:
+Estos cinco tratamientos son un catálogo inicial agnóstico de industria. Cada brand/topic puede desactivar tratamientos, cambiar sus instrucciones y definir otra distribución. Para el piloto de Tech, el objetivo de cartera para las primeras 20 publicaciones es:
 
 | Tratamiento | Objetivo |
 | --- | ---: |
@@ -36,6 +36,9 @@ La selección ocurre a nivel de publicación/carrusel para que todas sus slides 
 ## Decisiones de diseño
 
 - Los tratamientos son una capa de dirección visual; no sustituyen `CreativeFormat` (`meme`, `carousel`, `sequence`) ni `VisualFidelityMode`.
+- El catálogo y sus objetivos de cartera pertenecen a la configuración del creative profile/topic, no son cuotas globales del SaaS. Un brand puede usar otros tratamientos o habilitar solo una parte del catálogo.
+- La forma propuesta para cada tratamiento es `{ key, label, definition, targetShare, enabled, promptGuide }`; la clave debe ser estable dentro del profile y validarse al cargarla.
+- La configuración persistente puede vivir como JSONB aditivo `visual_treatment_policy` en `creative_profiles`, con fallback para profiles existentes. La selección de una publicación se guarda en el `aiSnapshot` JSONB existente del draft y en el snapshot de cada asset; no se añade una columna específica al brief para esta primera entrega.
 - La primera entrega puede alimentar el tratamiento a `visualDirection` y al snapshot existente. No se debe crear un compositor nuevo para cada tratamiento antes de validar el comportamiento.
 - La paleta, tipografía, logo, proporción y legibilidad siguen siendo parte de la marca. Variar composición no significa variar arbitrariamente la identidad.
 - `editorial-photo` no autoriza inventar una fotografía documental. Para lugares, personas o hechos reales se respetan las políticas de referencia, evidencia, atribución y derechos existentes.
@@ -49,19 +52,19 @@ La selección ocurre a nivel de publicación/carrusel para que todas sus slides 
 
 Esta es una preferencia de decisión, no una matriz rígida:
 
-| Ángulo editorial | Tratamientos preferidos |
+| Tipo de ángulo configurado | Tratamientos preferidos |
 | --- | --- |
-| `everyday-impact` | `editorial-photo`, `hero-graphic` |
-| `wtf-capability` | `hero-graphic`, `character-explainer` |
-| `power-shift` | `editorial-photo`, `quote-statement` |
-| `risk-explainer` | `data-poster`, `hero-graphic` |
-| `industry-deep-dive` | `data-poster`, `hero-graphic` |
+| Lente de impacto cotidiano | `editorial-photo`, `hero-graphic` |
+| Lente de capacidad/sorpresa | `hero-graphic`, `character-explainer` |
+| Lente de poder/cambio | `editorial-photo`, `quote-statement` |
+| Lente de riesgo/explicación | `data-poster`, `hero-graphic` |
+| Lente de explicación especializada | `data-poster`, `hero-graphic` |
 
-El selector debe poder escoger otra opción cuando la evidencia, los recursos disponibles o la fidelidad visual lo exijan.
+La tabla es el mapeo inicial de Tech, no un contrato global. El selector debe usar las relaciones configuradas por el profile y poder escoger otra opción cuando la evidencia, los recursos disponibles o la fidelidad visual lo exijan.
 
 ## Flujo
 
-1. El brief o planner recibe el ángulo editorial y la distribución visual reciente.
+1. El brief produce el ángulo autoritativo y recibe el catálogo visual configurado para el brand/topic.
 2. El sistema recomienda un tratamiento y explica por qué sirve para esa historia.
 3. El editor revisa el tratamiento y puede cambiarlo por uno permitido.
 4. La generación usa una dirección visual específica y reproducible para todo el carrusel.
@@ -74,26 +77,30 @@ El selector debe poder escoger otra opción cuando la evidencia, los recursos di
 
 **Prioridad:** P0 · **Dependencias:** ninguna
 
-- Añadir un tipo cerrado para los cinco tratamientos.
+- Añadir un contrato para tratamientos configurables por creative profile/topic, con claves estables, labels, definición, guía de prompt, `targetShare` y `enabled`.
 - Definir fallback para drafts históricos sin tratamiento.
 - Mantener separados tratamiento visual, formato de publicación, fidelidad documental y referencias de marca.
 - Definir compatibilidades mínimas con `meme`, `carousel`, `sequence` y `photo-required`.
+- No hacer que `character-explainer` presuponga que existe Richard ni ningún personaje concreto.
+- Definir migración/configuración compatible para profiles existentes: `visual_treatment_policy` con catálogo inicial habilitado sin cambiar silenciosamente drafts históricos.
 
 ### VISUAL-02 — Seleccionar tratamiento según historia y cartera
 
 **Prioridad:** P0 · **Dependencias:** VISUAL-01, ANGLE-01
 
-- Crear una selección determinista a partir de ángulo, facts, `visualFidelityMode`, referencias disponibles y tratamientos recientes.
-- Aplicar la distribución 40/25/15/10/10 como preferencia de cartera.
+- Crear una selección determinista a partir del ángulo autoritativo del brief, facts, `visualFidelityMode`, referencias disponibles y tratamientos recientes.
+- Aplicar la distribución configurada por el profile como preferencia de cartera; 40/25/15/10/10 es únicamente el seed de Tech.
 - No seleccionar `data-poster` sin valores representables ni `quote-statement` sin una cita o declaración atribuible.
 - No seleccionar `character-explainer` si no existe un personaje aprobado o si el tratamiento degradaría la claridad.
 - Devolver tratamiento, razón, confianza y fallback.
+- Rechazar claves que pertenezcan a otra brand/topic o que estén deshabilitadas.
 
 ### VISUAL-03 — Actualizar las instrucciones de generación
 
 **Prioridad:** P0 · **Dependencias:** VISUAL-01, VISUAL-02
 
 - Añadir instrucciones específicas para composición, foco, jerarquía, espacio negativo y relación con el hook.
+- Inyectar solo la guía del tratamiento activo y la guía visual del profile, manteniendo la separación entre configuración y contenido no confiable.
 - Mantener una sola dirección de medio para todas las slides del carrusel.
 - Impedir labels, logos, marcas, flechas o texto adicional inventado dentro de `visualDirection`.
 - Mantener 4:5 a 1080×1350 para feed, salvo configuración explícita existente.
@@ -113,6 +120,7 @@ El selector debe poder escoger otra opción cuando la evidencia, los recursos di
 **Prioridad:** P0 · **Dependencias:** VISUAL-03
 
 - Guardar tratamiento, guía efectiva, referencias, política visual y prompt usado por resultado.
+- Guardar el tratamiento seleccionado en el `aiSnapshot` versionado del draft y en el snapshot del asset; no confiar en el profile actual para reconstruir una publicación antigua.
 - Una regeneración con tratamiento distinto crea assets candidatos nuevos y conserva los anteriores.
 - Una edición de texto que no cambia tratamiento puede conservar assets cuando las reglas existentes lo permiten.
 - Una publicación remota permanece vinculada a su snapshot original.
@@ -130,7 +138,8 @@ El selector debe poder escoger otra opción cuando la evidencia, los recursos di
 
 - Un tratamiento inválido o desconocido activa un fallback seguro.
 - El selector respeta el ángulo y puede explicar su decisión.
-- La cuota visual influye en la cartera, pero no fuerza un tratamiento incompatible con la evidencia.
+- Dos profiles pueden tener catálogos, etiquetas, guías y cuotas diferentes sin que el código común clasifique sus industrias.
+- La cuota visual configurada influye en la cartera, pero no fuerza un tratamiento incompatible con la evidencia.
 - `data-poster` rechaza gráficos proporcionales cuando faltan valores exactos.
 - `quote-statement` exige cita o declaración atribuible y conserva sus calificadores.
 - `character-explainer` rechaza personajes no aprobados y no los trata como fuente de evidencia.
@@ -141,7 +150,9 @@ El selector debe poder escoger otra opción cuando la evidencia, los recursos di
 - Un override humano crea una revisión nueva y no muta el draft aprobado anterior.
 - Una regeneración conserva el resultado anterior, su snapshot y su aprobación histórica.
 - Una publicación existente sigue apuntando al tratamiento y asset exactos con los que fue aprobada.
+- El cambio de `visual_treatment_policy` no reescribe `aiSnapshot`, assets ni publicaciones históricas.
 - Los drafts históricos sin tratamiento siguen cargando con el fallback compatible.
+- Un tratamiento desconocido o deshabilitado en un profile no puede usarse para otro profile.
 - El selector no expone claves R2, URLs privadas de larga duración ni credenciales al navegador.
 
 ## Comandos de validación
