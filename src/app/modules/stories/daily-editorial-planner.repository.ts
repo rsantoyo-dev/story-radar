@@ -4,7 +4,8 @@ import { db } from "@/db/client";
 import { dailyEditorialPlans } from "@/db/schema";
 import type { EditorialProfile } from "./editorial-profile.types";
 import { inEditorialEvaluationWindow, type EditorialCollectionContext } from "../editorial-lines/editorial-lines";
-import { EXTENDED_LOOKBACK_HOURS, MIN_CANDIDATES_BEFORE_TOPUP, recentPlannerPublications, type PlannerCandidate, type PlannerContext, type PlannerPublication } from "./daily-editorial-planner.types";
+import { EXTENDED_LOOKBACK_HOURS, MIN_CANDIDATES_BEFORE_TOPUP, MIN_CLASSIFIED_FOR_TARGETS, RECENT_ANGLE_WINDOW, recentPlannerPublications, type PlannerCandidate, type PlannerContext, type PlannerPublication } from "./daily-editorial-planner.types";
+import { getCurrentTopicAcquisitionTaxonomy } from "./topic-acquisition-lenses.repository";
 
 export async function plannerInputs(topicId: string, profile: EditorialProfile, now: Date) {
   // This exclusion set is ALL known publications/commitments, not merely the last ten.
@@ -88,7 +89,61 @@ export async function plannerInputs(topicId: string, profile: EditorialProfile, 
   }));
   const history = (historyRows.rows as PlannerPublication[]).map(p => ({...p,publishedAt:new Date(p.publishedAt).toISOString()}));
   const commitments = (commitmentRows.rows as PlannerContext["commitments"]).map(p => ({...p,scheduledAt:p.scheduledAt ? new Date(p.scheduledAt).toISOString() : null}));
-  return { candidates, recentPublications:recentPlannerPublications(history), commitments };
+  const recentPublications = recentPlannerPublications(history);
+  // The distribution reads a wider window than the repetition history the
+  // planner is shown, so a share is not swung ten points by one publication.
+  const acquisition = await plannerAcquisitionContext(
+    topicId,
+    recentPlannerPublications(history, RECENT_ANGLE_WINDOW),
+  );
+  return { candidates, recentPublications, commitments, ...(acquisition ? { acquisition } : {}) };
+}
+
+/**
+ * The topic's live vocabulary plus how its recent publications actually spread
+ * across it. Angles come from each published story's own brief, so a
+ * publication whose brief predates the taxonomy counts as unclassified rather
+ * than distorting the distribution. Returns undefined — and therefore
+ * suppresses provisional angles entirely — when the topic has no taxonomy.
+ */
+async function plannerAcquisitionContext(
+  topicId: string,
+  recentPublications: readonly PlannerPublication[],
+): Promise<PlannerContext["acquisition"]> {
+  const taxonomy = await getCurrentTopicAcquisitionTaxonomy(topicId).catch(() => undefined);
+  if (!taxonomy) return undefined;
+
+  const storyIds = [...new Set(recentPublications.map(p => p.storyId).filter((id): id is string => !!id))];
+  const angles = storyIds.length
+    ? (await db.execute(sql`
+        SELECT DISTINCT ON (b.story_id) b.story_id AS "storyId", b.editorial_angle->>'angle' AS angle
+        FROM story_creative_briefs b
+        WHERE b.topic_id=${topicId}::uuid AND b.story_id = ANY(${storyIds}::uuid[])
+          AND b.editorial_angle IS NOT NULL
+        ORDER BY b.story_id, b.created_at DESC
+      `)).rows as { storyId: string; angle: string | null }[]
+    : [];
+
+  const byStory = new Map(angles.filter(row => row.angle).map(row => [row.storyId, row.angle!]));
+  const counts = new Map(taxonomy.lenses.filter(lens => lens.enabled).map(lens => [lens.key, 0]));
+  let classified = 0;
+  let unclassified = 0;
+  for (const publication of recentPublications) {
+    const key = publication.storyId ? byStory.get(publication.storyId) : undefined;
+    if (key !== undefined && counts.has(key)) { counts.set(key, counts.get(key)! + 1); classified++; }
+    else unclassified++;
+  }
+
+  return {
+    taxonomyVersion: taxonomy.taxonomyVersion,
+    lenses: taxonomy.lenses.filter(lens => lens.enabled).map(lens => ({
+      key: lens.key, label: lens.label, definition: lens.definition,
+      ...(lens.targetShare !== undefined ? { targetShare: lens.targetShare } : {}),
+    })),
+    recentDistribution: [...counts].map(([key, published]) => ({ key, published })),
+    unclassifiedPublications: unclassified,
+    targetsApply: classified >= MIN_CLASSIFIED_FOR_TARGETS,
+  };
 }
 export async function latestDailyPlan(topicId: string) {
   return (await db.select().from(dailyEditorialPlans).where(eq(dailyEditorialPlans.topicId,topicId)).orderBy(desc(dailyEditorialPlans.startedAt),desc(dailyEditorialPlans.id)).limit(1))[0];

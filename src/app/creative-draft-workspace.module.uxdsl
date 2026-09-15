@@ -1777,6 +1777,52 @@
   border-radius: 10px;
 }
 
+.editorialAngle {
+  @ds-surface(flat light 3);
+  display: grid;
+  gap: density(3);
+  border: 1px solid palette(surface-light);
+}
+
+.editorialAngle header {
+  display: grid;
+  gap: density(1);
+}
+
+.editorialAngle header strong {
+  @ds-typo(h5);
+  color: palette(primary-dark);
+}
+
+.editorialAngle header small,
+.editorialAngle details small {
+  @ds-typo(small);
+  color: palette(tertiary-main);
+}
+
+.editorialAngle [role="status"] {
+  @ds-typo(small);
+  margin: 0;
+  color: palette(warning-dark);
+}
+
+.editorialAngleDefinition {
+  @ds-typo(small);
+  margin: 0;
+  color: palette(tertiary-dark);
+}
+
+.editorialAngle details summary {
+  @ds-typo(small);
+  cursor: pointer;
+  color: palette(primary-main);
+}
+
+.editorialAngle details p {
+  @ds-typo(body);
+  margin: density(2) 0 0;
+}
+
 .carouselPlanSummary {
   display: grid;
   gap: density(3);

@@ -1,6 +1,12 @@
 "use client";
 import { StoryPhotoPicker, useStoryPhotos } from "./story-photos-panel";
 import { HOOK_CHECKS, HOOK_CHECK_LABELS } from "./modules/stories/creative-hook-policy";
+import {
+  describeEditorialAngle,
+  type EditorialAngle,
+  type EditorialAngleStatus,
+  type TopicAcquisitionTaxonomy,
+} from "./modules/stories/acquisition-lenses";
 import { requestsGeographicReconstruction } from "./modules/stories/creative-evidence-guardrails";
 import { imageTextNeedsUpdate } from "./modules/stories/creative-image-text-sync";
 
@@ -2939,6 +2945,10 @@ function BriefView({
         <BriefCopy label="Audience" value={brief.targetAudience} />
         <BriefCopy label="Tone" value={`${capitalize(brief.tone.primary)} · ${brief.tone.reason}`} />
       </div>
+      <EditorialAngleSummary
+        editorialAngle={brief.editorialAngle}
+        taxonomy={workspace.acquisitionTaxonomy}
+      />
       {brief.carouselPlan ? (
         <div className={styles.carouselPlanSummary}>
           <div>
@@ -3492,6 +3502,61 @@ function StatusPill({ status, version }: { status: CreativeDraft["status"]; vers
 
 function BriefCopy({ label, value }: { label: string; value: string }) {
   return <div className={styles.briefCopy}><span>{label}</span><p>{value}</p></div>;
+}
+
+const ANGLE_STATUS_NOTE: Record<EditorialAngleStatus, string> = {
+  current: "",
+  retired: "This lens was retired or renamed after the brief was created. The decision is kept as it was taken.",
+  unknown: "This lens is no longer part of the topic's vocabulary. The decision is kept as it was taken.",
+};
+
+/**
+ * The brief's acquisition decision, for review only. A retired or unknown lens
+ * still renders — historical decisions are never repaired silently — and no
+ * alternative is ever applied from here.
+ */
+function EditorialAngleSummary({
+  editorialAngle,
+  taxonomy,
+}: {
+  editorialAngle?: EditorialAngle;
+  taxonomy?: TopicAcquisitionTaxonomy;
+}) {
+  if (!editorialAngle) return null;
+  const chosen = describeEditorialAngle(editorialAngle, taxonomy);
+  const alternative = editorialAngle.alternative
+    ? describeEditorialAngle(
+        { angle: editorialAngle.alternative.angle, taxonomyVersion: editorialAngle.taxonomyVersion },
+        taxonomy,
+      )
+    : undefined;
+  const note = ANGLE_STATUS_NOTE[chosen.status];
+  return (
+    <section className={styles.editorialAngle} aria-label="Acquisition angle">
+      <header>
+        <span className={styles.eyebrow}>Acquisition angle</span>
+        <strong>{chosen.label}</strong>
+        <small>
+          Taxonomy v{editorialAngle.taxonomyVersion}
+          {chosen.status === "current" ? "" : ` · ${capitalize(chosen.status)}`}
+        </small>
+      </header>
+      {note ? <p role="status">{note}</p> : null}
+      {chosen.definition ? <p className={styles.editorialAngleDefinition}>{chosen.definition}</p> : null}
+      <div className={styles.briefCopyGrid}>
+        <BriefCopy label="Why this lens" value={editorialAngle.reason} />
+        <BriefCopy label="Audience stake" value={editorialAngle.audienceStake} />
+        <BriefCopy label="Reading promise" value={editorialAngle.hookPromise} />
+      </div>
+      {editorialAngle.alternative && alternative ? (
+        <details>
+          <summary>Considered alternative · {alternative.label}</summary>
+          <p>{editorialAngle.alternative.reason}</p>
+          <small>Recorded for review. Choosing it means regenerating the brief.</small>
+        </details>
+      ) : null}
+    </section>
+  );
 }
 
 function VisualFidelityControl({

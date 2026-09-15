@@ -414,6 +414,8 @@ export const storyCreativeBriefs = pgTable(
     contentTitle: text("content_title"),
     keyMessage: text("key_message").notNull(),
     angle: text("angle").notNull(),
+    /** Structured acquisition decision; nullable for briefs created before FEAT-ANGLE-001. */
+    editorialAngle: jsonb("editorial_angle").$type<import("@/app/modules/stories/acquisition-lenses").EditorialAngle>(),
     hook: text("hook").notNull(),
     tonePrimary: creativeToneEnum("tone_primary").notNull(),
     toneEnergy: integer("tone_energy").notNull(),

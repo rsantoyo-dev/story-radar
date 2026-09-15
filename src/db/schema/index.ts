@@ -7,6 +7,7 @@ export * from "./instagram-publication-packages";
 export * from "./knowledge-documents";
 export * from "./owned-content";
 export * from "./topic-editorial-profiles";
+export * from "./topic-acquisition-lenses";
 export * from "./topic-instagram-media";
 export * from "./topic-meta-connections";
 export * from "./enums";

@@ -180,6 +180,7 @@ export async function insertCreativeBrief({
       targetAudience: generated.targetAudience,
       keyMessage: generated.keyMessage,
       angle: generated.angle,
+      editorialAngle: generated.editorialAngle ?? null,
       hook: generated.hook,
       tonePrimary: generated.tone.primary,
       toneEnergy: generated.tone.energy,
@@ -734,6 +735,9 @@ function mapCreativeBrief(
     targetAudience: row.targetAudience,
     keyMessage: row.keyMessage,
     angle: row.angle,
+    ...(row.editorialAngle
+      ? { editorialAngle: row.editorialAngle as CreativeBrief["editorialAngle"] }
+      : {}),
     hook: row.hook,
     tone: {
       primary: row.tonePrimary,

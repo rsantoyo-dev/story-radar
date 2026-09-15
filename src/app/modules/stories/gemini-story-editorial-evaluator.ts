@@ -234,7 +234,7 @@ export async function evaluateStoriesWithGemini({
   return {
     ...(response.modelVersion ? { modelVersion: response.modelVersion } : {}),
     evaluations,
-    ...(planningContext ? { dailyPlan: parseDailyPlan(responseText, planningContext.candidates) } : {}),
+    ...(planningContext ? { dailyPlan: parseDailyPlan(responseText, planningContext.candidates, planningContext.acquisition) } : {}),
     usage: {
       promptTokens: usage?.promptTokenCount ?? 0,
       outputTokens: usage?.candidatesTokenCount ?? 0,
@@ -302,7 +302,7 @@ async function evaluateStoriesWithGroq({
     ...(response.system_fingerprint
       ? { modelVersion: response.system_fingerprint }
       : {}),
-    ...(planningContext ? { dailyPlan: parseDailyPlan(responseText, planningContext.candidates) } : {}),
+    ...(planningContext ? { dailyPlan: parseDailyPlan(responseText, planningContext.candidates, planningContext.acquisition) } : {}),
     evaluations: planningContext ? [] : parseEditorialEvaluations(
       responseText,
       candidates,
@@ -402,7 +402,7 @@ async function evaluateStoriesWithCloudflare({
   const promptTokens = nonNegativeUsageNumber(usage?.prompt_tokens);
   const outputTokens = nonNegativeUsageNumber(usage?.completion_tokens);
   return {
-    ...(planningContext ? { dailyPlan: parseDailyPlan(responseText, planningContext.candidates) } : {}),
+    ...(planningContext ? { dailyPlan: parseDailyPlan(responseText, planningContext.candidates, planningContext.acquisition) } : {}),
     evaluations: planningContext ? [] : parseEditorialEvaluations(
       responseText,
       candidates,

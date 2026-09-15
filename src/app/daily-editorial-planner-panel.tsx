@@ -82,6 +82,10 @@ export function DailyEditorialPlannerPanel({topicId,secret,disabled,refreshKey,o
     return <article key={item.storyId} className={styles.dailyPlannerChoice}>
       <span className={styles.eyebrow}>{label}</span>
       <h3>{candidate?.title ?? "Story"}</h3><p>{item.reason}</p>
+      {item.angle && <small>
+        Provisional angle · {snapshot?.acquisition?.lenses.find(lens => lens.key === item.angle)?.label ?? item.angle}
+        {" — the creative brief reclassifies this from the full article."}
+      </small>}
       {candidate && <small>Editorial priority {candidate.editorialPriority} · Growth {candidate.growthScore ?? "not evaluated"}</small>}
       <div className={styles.dailyPlannerActions}>
         <button type="button" className={styles.secondaryButton} disabled={actionsDisabled} onClick={()=>onViewContent(item.storyId)}>View content</button>

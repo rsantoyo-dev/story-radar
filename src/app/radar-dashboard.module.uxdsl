@@ -3118,3 +3118,111 @@
 .dailyPreparationStepButton[data-step-status="todo"] {
   border-color: palette(primary-light);
 }
+
+.acquisitionLenses {
+  @ds-surface(contained 4);
+  display: grid;
+  gap: density(4);
+  border: 1px solid palette(surface-dark);
+}
+
+.acquisitionLenses header {
+  display: grid;
+  gap: density(1);
+}
+
+.acquisitionLenses header h2 {
+  @ds-typo(h3);
+  margin: 0;
+  color: palette(primary-dark);
+}
+
+.acquisitionLenses header p {
+  @ds-typo(body);
+  margin: 0;
+  color: palette(tertiary-dark);
+}
+
+.acquisitionLenses header small,
+.acquisitionLensSummary {
+  @ds-typo(small);
+  color: palette(tertiary-main);
+}
+
+.acquisitionLenses [role="alert"] {
+  @ds-typo(small);
+  margin: 0;
+  color: palette(error-dark);
+}
+
+.acquisitionLenses [role="status"] {
+  @ds-typo(small);
+  margin: 0;
+  color: palette(success-dark);
+}
+
+.acquisitionLensList {
+  display: grid;
+  gap: density(3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.acquisitionLensList li {
+  @ds-surface(flat light 3);
+  display: grid;
+  gap: density(2);
+  border: 1px solid palette(surface-light);
+}
+
+.acquisitionLensList li[data-enabled="no"] {
+  opacity: 0.6;
+}
+
+.acquisitionLensHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: density(3);
+}
+
+.acquisitionLensHead code {
+  @ds-typo(code);
+  color: palette(primary-main);
+}
+
+.acquisitionLensHead label,
+.acquisitionLensMeta label,
+.acquisitionLensList li > label {
+  @ds-typo(small);
+  display: grid;
+  gap: density(1);
+  color: palette(tertiary-dark);
+}
+
+.acquisitionLensHead label {
+  display: flex;
+  align-items: center;
+  gap: density(1);
+}
+
+.acquisitionLensMeta {
+  display: grid;
+  grid-template-columns: xs(1fr) md(repeat(2, 1fr));
+  gap: density(3);
+}
+
+.acquisitionLensList input,
+.acquisitionLensList textarea,
+.acquisitionLensList select {
+  @ds-input(outlined neutral 2);
+  width: 100%;
+  font: inherit;
+}
+
+.acquisitionLensHead input[type="checkbox"],
+.acquisitionLensHead input[type="radio"] {
+  width: auto;
+  appearance: auto;
+}

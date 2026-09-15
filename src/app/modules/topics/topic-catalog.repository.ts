@@ -14,7 +14,11 @@ import {
 } from "@/design/topic-themes";
 import { db } from "@/db/client";
 import {
+  cloneDefaultTopicAcquisitionLenses,
+} from "@/app/modules/stories/acquisition-lenses";
+import {
   rssSources,
+  topicAcquisitionLenses,
   topicSources,
   topics,
   workspaces,
@@ -153,10 +157,24 @@ export async function createTopic(
   await assertWorkspaceExists(workspaceId);
 
   const topic = normalizeTopicInput(input);
-  const [created] = await db
-    .insert(topics)
-    .values({ workspaceId, ...topic })
-    .returning();
+  const created = await db.transaction(async (transaction) => {
+    const [createdTopic] = await transaction
+      .insert(topics)
+      .values({ workspaceId, ...topic })
+      .returning();
+
+    if (!createdTopic) {
+      throw new Error("Topic could not be created");
+    }
+
+    await transaction.insert(topicAcquisitionLenses).values({
+      topicId: createdTopic.id,
+      taxonomyVersion: 1,
+      lenses: cloneDefaultTopicAcquisitionLenses(),
+    });
+
+    return createdTopic;
+  });
 
   if (!created) {
     throw new Error("Topic could not be created");

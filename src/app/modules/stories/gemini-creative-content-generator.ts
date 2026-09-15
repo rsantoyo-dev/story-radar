@@ -22,6 +22,13 @@ import type {
   GeneratedCreativeBrief,
   GeneratedCreativeDraft,
 } from "./creative-content.types";
+import {
+  AcquisitionLensError,
+  describeEditorialAngle,
+  parseEditorialAngle,
+  type AcquisitionHookBias,
+  type TopicAcquisitionTaxonomy,
+} from "./acquisition-lenses";
 import { CREATIVE_FORMATS, isCreativeFormat, isCreativeTone } from "./creative-content.types";
 import { creativeBriefFramingInstruction } from "./creative-framing-instruction";
 import type { CreativeTextProvider } from "./creative-content.config";
@@ -110,6 +117,12 @@ type GenerateDraftOptions = GeneratorOptions & {
   outputAspectRatio: CreativeAspectRatio;
   /** Metadata only; never include character reference images in Gemini input. */
   characterRoster: CreativeCharacterRosterEntry[];
+  /**
+   * Live vocabulary for the brief's acquisition angle. Read only to steer which
+   * hook treatments the candidates should explore; the lens itself is never
+   * re-decided here, and a missing taxonomy simply drops the steering.
+   */
+  acquisitionTaxonomy?: TopicAcquisitionTaxonomy;
 };
 
 export type GeneratedCreativeBriefResult = {
@@ -375,8 +388,11 @@ export async function generateCreativeBrief({
   story,
   topic,
   profile,
+  acquisitionTaxonomy,
   editorialDirection,
-}: GeneratorOptions): Promise<GeneratedCreativeBriefResult> {
+}: GeneratorOptions & {
+  acquisitionTaxonomy: TopicAcquisitionTaxonomy;
+}): Promise<GeneratedCreativeBriefResult> {
   const requestBrief = (
     extraInstruction = "",
     extraContents = {},
@@ -393,7 +409,7 @@ export async function generateCreativeBrief({
       cloudflareAiModel,
       systemInstruction: `${BRIEF_SYSTEM_INSTRUCTION}\n\n${creativeBriefFramingInstruction(
         profile.framingStrategy,
-      )}${extraInstruction}`,
+      )}\n\n${acquisitionAngleInstruction(acquisitionTaxonomy)}${extraInstruction}`,
       schema: creativeBriefSchema(),
       contents: {
         carouselNarrativePolicy: carouselNarrativePolicyForPrompt(
@@ -401,6 +417,7 @@ export async function generateCreativeBrief({
         ),
         topic: topicForPrompt(topic),
         creativeProfile: profileForPrompt(profile),
+        acquisitionTaxonomy,
         editorialDirection: editorialDirection ?? null,
         story,
         ...extraContents,
@@ -415,6 +432,7 @@ export async function generateCreativeBrief({
         response.text,
         story.text,
         profile.conversionGoal,
+        acquisitionTaxonomy,
       ),
       provider: response.provider,
       model: response.model,
@@ -440,6 +458,7 @@ export async function generateCreativeBrief({
           retryResponse.text,
           story.text,
           profile.conversionGoal,
+          acquisitionTaxonomy,
         ),
         provider: retryResponse.provider,
         model: retryResponse.model,
@@ -474,6 +493,7 @@ export async function generateCreativeBrief({
             fallbackResponse.text,
             story.text,
             profile.conversionGoal,
+            acquisitionTaxonomy,
           ),
           provider: fallbackResponse.provider,
           model: fallbackResponse.model,
@@ -539,6 +559,7 @@ async function generateReviewedCreativeDraft({
   format,
   outputAspectRatio,
   characterRoster,
+  acquisitionTaxonomy,
 }: GenerateDraftOptions): Promise<GeneratedCreativeDraftResult> {
   // "sequence" is structurally a carousel (built from the same carouselPlan)
   // with different prompt guidance for what each slide says.
@@ -591,7 +612,10 @@ async function generateReviewedCreativeDraft({
     cloudflareAiAccountId,
     cloudflareAiApiToken,
     cloudflareAiModel,
-    systemInstruction: DRAFT_SYSTEM_INSTRUCTION,
+    systemInstruction: `${DRAFT_SYSTEM_INSTRUCTION}${acquisitionHookInstruction(
+      brief.editorialAngle,
+      acquisitionTaxonomy,
+    )}`,
     schema: creativeDraftSchema(
       format,
       carouselPlan?.slideCount,
@@ -1883,6 +1907,7 @@ function creativeBriefSchema(): Record<string, unknown> {
       "targetAudience",
       "keyMessage",
       "angle",
+      "editorialAngle",
       "hook",
       "tone",
       "contentSufficiency",
@@ -1914,6 +1939,27 @@ function creativeBriefSchema(): Record<string, unknown> {
       targetAudience: { type: "string" },
       keyMessage: { type: "string" },
       angle: { type: "string" },
+      editorialAngle: {
+        type: "object",
+        additionalProperties: false,
+        required: ["angle", "taxonomyVersion", "reason", "audienceStake", "hookPromise"],
+        properties: {
+          angle: { type: "string" },
+          taxonomyVersion: { type: "integer", minimum: 1 },
+          reason: { type: "string" },
+          audienceStake: { type: "string" },
+          hookPromise: { type: "string" },
+          alternative: {
+            type: "object",
+            additionalProperties: false,
+            required: ["angle", "reason"],
+            properties: {
+              angle: { type: "string" },
+              reason: { type: "string" },
+            },
+          },
+        },
+      },
       hook: { type: "string" },
       tone: {
         type: "object",
@@ -2348,6 +2394,7 @@ function parseCreativeBrief(
   text: string,
   conversionGoal?: CreativeProfile["conversionGoal"],
   provider = "The AI provider",
+  acquisitionTaxonomy?: TopicAcquisitionTaxonomy,
 ): GeneratedCreativeBrief {
   const value = parseJsonObject(text, provider);
   const recommendedFormat = parseFormat(value.recommendedFormat);
@@ -2460,6 +2507,20 @@ function parseCreativeBrief(
     };
   });
 
+  if (!acquisitionTaxonomy) {
+    throw new CreativeContentResponseError("The brief request has no acquisition taxonomy");
+  }
+  let editorialAngle: GeneratedCreativeBrief["editorialAngle"];
+  try {
+    editorialAngle = parseEditorialAngle(value.editorialAngle, acquisitionTaxonomy);
+  } catch (error) {
+    throw new CreativeContentResponseError(
+      error instanceof AcquisitionLensError
+        ? error.message
+        : "The AI provider returned an invalid editorial angle",
+    );
+  }
+
   return {
     recommendedFormat,
     fallbackFormat,
@@ -2469,6 +2530,7 @@ function parseCreativeBrief(
     targetAudience: shortText(value.targetAudience, "targetAudience", 500),
     keyMessage: shortText(value.keyMessage, "keyMessage", 600),
     angle: shortText(value.angle, "angle", 500),
+    editorialAngle,
     hook: shortText(value.hook, "hook", 300),
     tone: {
       primary: tone.primary,
@@ -2488,9 +2550,13 @@ function parseGroundedCreativeBrief(
   text: string,
   sourceText: string,
   conversionGoal?: CreativeProfile["conversionGoal"],
+  acquisitionTaxonomy?: TopicAcquisitionTaxonomy,
 ): GeneratedCreativeBrief {
   const brief = repairDeterministicBriefScope(
-    repairBriefFactEvidence(parseCreativeBrief(text, conversionGoal), sourceText),
+    repairBriefFactEvidence(
+      parseCreativeBrief(text, conversionGoal, "The AI provider", acquisitionTaxonomy),
+      sourceText,
+    ),
   );
   if (brief.carouselPlan) {
     brief.carouselPlan = repairPublicParticipationPlan(brief.carouselPlan, brief.keyFacts);
@@ -3461,6 +3527,45 @@ function topicForPrompt(topic: CreativeTopicContext) {
     name: topic.name,
     description: topic.description ?? null,
   };
+}
+
+/**
+ * How each declared lens bias should shape one of the three hook candidates.
+ * Phrased by treatment, never by vocabulary key, so a topic can name its
+ * lenses anything without this module knowing its industry.
+ */
+const HOOK_BIAS_TREATMENT: Record<AcquisitionHookBias, string> = {
+  capability:
+    "the specific new capability, behaviour or result the source establishes — what can happen now that could not before",
+  stake:
+    "what the audience can decide, do, avoid or prepare for, used only when the facts establish a verifiable stake",
+  contrast:
+    "the supported contrast, limitation or unresolved uncertainty in the evidence",
+};
+
+/**
+ * Steers hook exploration toward the lens the brief already chose. It never
+ * re-decides the lens and never authorizes inventing the treatment it asks
+ * for: an unsupported bias must lose to a supported opening.
+ */
+function acquisitionHookInstruction(
+  editorialAngle: GeneratedCreativeBrief["editorialAngle"],
+  taxonomy?: TopicAcquisitionTaxonomy,
+): string {
+  if (!editorialAngle) return "";
+  const lens = describeEditorialAngle(editorialAngle, taxonomy);
+  const treatment = lens.hookBias ? HOOK_BIAS_TREATMENT[lens.hookBias] : undefined;
+  return `\n\nAcquisition angle already decided for this story: "${lens.label}"${
+    lens.definition ? ` — ${lens.definition}` : ""
+  }. Its reading promise is: ${editorialAngle.hookPromise}. Keep the three hook candidates faithful to that promise, and make sure the selected opening is answered by a later unit.${
+    treatment ? ` At least one candidate must explore ${treatment}.` : ""
+  } Never invent an audience consequence, a capability or a contrast the facts do not establish in order to satisfy this steering; when the evidence does not support that treatment, record it in that candidate's reason and let a supported opening win. Prefer a concrete consequence or capability over an organization name and over generic announcement verbs.`;
+}
+
+function acquisitionAngleInstruction(
+  taxonomy: TopicAcquisitionTaxonomy,
+): string {
+  return `Acquisition-angle decision: select exactly one enabled editorial lens from the supplied acquisitionTaxonomy and return its exact key and taxonomyVersion ${taxonomy.taxonomyVersion} in editorialAngle. The reason, audienceStake, and hookPromise must be supported by the story's extracted facts and preserve material qualifiers. Do not invent personal impact. When no specific lens is supported, use the supplied enabled fallback lens. An alternative is optional and, when present, must be a different enabled lens with a supported reason.`;
 }
 
 function briefForPrompt(

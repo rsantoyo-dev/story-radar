@@ -35,6 +35,7 @@ La cuota es configurable por topic y solo orienta la cartera. Para Tech puede se
 | `hookBias` | Preferencia agnóstica para construir el hook: `capability`, `stake`, `contrast` u omitida para selección automática |
 | `targetShare` | Preferencia de cartera, opcional |
 | `enabled` | Permite retirar un lente sin romper históricos |
+| `isFallback` | Único lente habilitado para el fallback explicativo cuando no hay un stake personal demostrado |
 
 Para una historia individual, la evidencia y la claridad tienen prioridad sobre la cuota. El planner debe poder devolver “sin ángulo fuerte” o recomendar otra historia.
 
@@ -47,6 +48,7 @@ Para una historia individual, la evidencia y la claridad tienen prioridad sobre 
 - La taxonomía vive en una tabla propia del topic, no en `topic_editorial_profiles` ni en una condición del código para Tech. La opción propuesta es `topic_acquisition_lenses`, con snapshots append-only por scope + `taxonomyVersion` y un JSONB de lentes. Así no se altera `isDefault` ni `useLegacySourceFallback`.
 - Decisión de alcance v1: el vocabulario es topic-level. Las líneas editoriales del mismo topic comparten taxonomía de adquisición, aunque puedan tener audiencias, criterios y formatos distintos. Esto es intencional y evita atribuir al topic una taxonomía de una línea concreta.
 - La tabla incluye `line_id` nullable desde la primera migración. En v1 solo se leen snapshots con `line_id = NULL`; el campo queda reservado para overrides por línea futuros sin cambiar el esquema. La resolución por línea no forma parte de esta entrega.
+- Cada taxonomía publicada tiene exactamente un lente habilitado con `isFallback = true`. El fallback es explícito para evitar inferirlo por orden, clave o vocabulario de una industria.
 - El brief es la clasificación autoritativa porque dispone del artículo y los hechos completos. El planner solo puede clasificar provisionalmente porque corre antes del brief.
 - La taxonomía queda fuera de `createBriefInputHash` a propósito. Un cambio de labels, definición o cuota no regenera automáticamente briefs ni altera `inputHash` históricos; `taxonomyVersion` dentro de cada decisión registra con qué vocabulario se clasificó.
 - La UI debe aceptar que una decisión histórica use una lente desactivada o retirada del vocabulario vigente y mostrarla como histórica, sin fallar validación ni intentar repararla silenciosamente.
@@ -73,7 +75,7 @@ Para una historia individual, la evidencia y la claridad tienen prioridad sobre 
 
 **Prioridad:** P0 · **Dependencias:** ninguna
 
-- No añadir un enum global con valores propios de Tech. Añadir un contrato para una taxonomía configurable por topic: claves estables, labels, definición, ejemplos, `hookBias` opcional, `targetShare` y `enabled`.
+- No añadir un enum global con valores propios de Tech. Añadir un contrato para una taxonomía configurable por topic: claves estables, labels, definición, ejemplos, `hookBias` opcional, `targetShare`, `enabled` e `isFallback`.
 - Distinguir explícitamente `angle` textual existente, `editorialAngle` estructurado nuevo y `framingStrategy`.
 - Definir el comportamiento de compatibilidad para briefs históricos sin ángulo.
 - Añadir `editorial_angle` nullable `jsonb` a `story_creative_briefs`, con validación de forma en servidor y sin exigir valor a filas históricas. El objeto usa la propiedad `angle` como clave opaca del topic.

@@ -590,6 +590,8 @@ export type GeneratedCreativeBrief = {
   targetAudience: string;
   keyMessage: string;
   angle: string;
+  /** Optional while historical and pre-angle generator output remains readable. */
+  editorialAngle?: import("./acquisition-lenses").EditorialAngle;
   hook: string;
   tone: {
     primary: CreativeTone;
@@ -832,6 +834,12 @@ export type CreativeWorkspaceState = {
   profile: CreativeProfile;
   /** Active, metadata-only supporting characters available for this topic. */
   characterRoster: CreativeCharacterRosterEntry[];
+  /**
+   * Live acquisition vocabulary, used to render a brief's stored angle key as
+   * a label and to flag a decision taken under a retired lens or an older
+   * taxonomy version. Absent only when the topic has no taxonomy yet.
+   */
+  acquisitionTaxonomy?: import("./acquisition-lenses").TopicAcquisitionTaxonomy;
   brief?: CreativeBrief;
   briefIsCurrent: boolean;
   drafts: CreativeDraft[];

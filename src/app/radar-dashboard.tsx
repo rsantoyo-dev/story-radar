@@ -13,6 +13,7 @@ import { CreativeProfilePanel } from "./creative-profile-panel";
 import { InstagramGalleryPanel } from "./instagram-gallery-panel";
 import { MetaConnectionPanel } from "./meta-connection-panel";
 import { EditorialProfilePanel } from "./editorial-profile-panel";
+import { AcquisitionLensesPanel } from "./acquisition-lenses-panel";
 import { TopicOverviewPanel } from "./topic-overview-panel";
 import styles from "./radar-dashboard.generated.module.css";
 import {
@@ -1381,6 +1382,15 @@ export function RadarDashboard({
                   .catch(() => undefined);
               }
             }}
+          />
+        </div>
+
+        <div id="editorial-lenses" className={styles.anchorTarget}>
+          <AcquisitionLensesPanel
+            key={selectedTopicId}
+            topicId={selectedTopicId}
+            secret={secret}
+            disabled={isBusy}
           />
         </div>
 

@@ -79,7 +79,7 @@ test("real SQL excludes all published/queued/rejected/duplicate stories, preserv
     const pg=drizzle(client);
     // PGlite adapter for Neon's transaction batch contract.
     const db=Object.assign(pg,{batch:async(queries:Promise<unknown>[])=>{const results=[];for(const q of queries)results.push(await q);return results;}});
-    const repository=load("./daily-editorial-planner.repository.ts",{"@/db/client":{db},"@/db/schema":schema,"../editorial-lines/editorial-lines":lines,"./daily-editorial-planner.types":types});
+    const repository=load("./daily-editorial-planner.repository.ts",{"@/db/client":{db},"@/db/schema":schema,"../editorial-lines/editorial-lines":lines,"./daily-editorial-planner.types":types,"./topic-acquisition-lenses.repository":{getCurrentTopicAcquisitionTaxonomy:async()=>{throw new Error("no taxonomy");}}});
     const inputs=await repository.plannerInputs(id,{updatedAt:new Date("2026-01-01"),freshness:{newsMaxAgeHours:72,researchMaxAgeHours:240}},new Date("2026-09-13")) as types.PlannerContext;
     assert.equal(inputs.candidates.length,12);
     assert.ok(inputs.candidates.some(c=>c.title==="Story 10"));
@@ -133,7 +133,7 @@ test("plannerInputs widens the freshness window to surface older evaluated candi
     await client.exec(readFileSync(new URL("../../../../drizzle/0070_woozy_norman_osborn.sql",import.meta.url),"utf8"));
     const pg=drizzle(client);
     const db=Object.assign(pg,{batch:async(queries:Promise<unknown>[])=>{const results=[];for(const q of queries)results.push(await q);return results;}});
-    const repository=load("./daily-editorial-planner.repository.ts",{"@/db/client":{db},"@/db/schema":schema,"../editorial-lines/editorial-lines":lines,"./daily-editorial-planner.types":types});
+    const repository=load("./daily-editorial-planner.repository.ts",{"@/db/client":{db},"@/db/schema":schema,"../editorial-lines/editorial-lines":lines,"./daily-editorial-planner.types":types,"./topic-acquisition-lenses.repository":{getCurrentTopicAcquisitionTaxonomy:async()=>{throw new Error("no taxonomy");}}});
     const now=new Date("2026-09-14T09:00:00Z");
     const profile={updatedAt:new Date("2026-01-01"),freshness:{newsMaxAgeHours:72,researchMaxAgeHours:72}};
     const inputs=await repository.plannerInputs(id,profile,now) as types.PlannerContext;
@@ -316,4 +316,48 @@ test("a thin pool's top-up widens a narrow relative window but leaves a wide or 
   assert.equal(JSON.stringify(overrides[0]),JSON.stringify({kind:"relative",hours:168}));
   assert.equal(overrides[1],undefined);
   assert.equal(overrides[2],undefined);
+});
+
+const lensVocabulary = {
+  taxonomyVersion: 3,
+  lenses: [
+    { key: "practical-impact", label: "Practical impact", definition: "Helps a decision.", examples: [], enabled: true, isFallback: false },
+    { key: "context-and-explainer", label: "Context", definition: "Explains a subject.", examples: [], enabled: true, isFallback: true },
+    { key: "retired-lens", label: "Retired", definition: "No longer used.", examples: [], enabled: false, isFallback: false },
+  ],
+};
+test("a provisional angle is accepted only for a supplied enabled lens, with one taxonomy version per plan",()=>{
+  const acquisition={taxonomyVersion:3,lenses:lensVocabulary.lenses.filter(l=>l.enabled).map(({key,label,definition})=>({key,label,definition}))};
+  const withAngle={...decision,taxonomyVersion:3,recommendation:{storyId:id,reason:"Timely",angle:"practical-impact"}};
+  const parsed=types.parseDailyPlan(JSON.stringify(withAngle),[{storyId:id}],acquisition);
+  assert.equal(parsed.recommendation?.angle,"practical-impact");
+  assert.equal(parsed.taxonomyVersion,3);
+
+  // A key that was never supplied — including a disabled one — is rejected.
+  for (const angle of ["invented-lens","retired-lens"]) {
+    assert.throws(()=>types.parseDailyPlan(JSON.stringify({...withAngle,recommendation:{storyId:id,reason:"Timely",angle}}),[{storyId:id}],acquisition));
+  }
+  // A version that disagrees with the one sent in this run is rejected.
+  assert.throws(()=>types.parseDailyPlan(JSON.stringify({...withAngle,taxonomyVersion:2}),[{storyId:id}],acquisition));
+  // An angle without a plan-level version, and a version without a vocabulary.
+  assert.throws(()=>types.parseDailyPlan(JSON.stringify({...decision,recommendation:{storyId:id,reason:"Timely",angle:"practical-impact"}}),[{storyId:id}],acquisition));
+  assert.throws(()=>types.parseDailyPlan(JSON.stringify(withAngle),[{storyId:id}]));
+});
+test("a topic with no vocabulary keeps working and accepts no angle at all",()=>{
+  // Unchanged legacy behaviour: the plan parses, simply without angles.
+  const plan=types.parseDailyPlan(JSON.stringify(decision),[{storyId:id}]);
+  assert.equal(plan.recommendation?.angle,undefined);
+  assert.equal(plan.taxonomyVersion,undefined);
+  assert.throws(()=>types.parseDailyPlan(JSON.stringify({...decision,recommendation:{storyId:id,reason:"Timely",angle:"practical-impact"}}),[{storyId:id}]));
+});
+
+test("the angle distribution window is wider than the repetition window",()=>{
+  // The repetition history stays at ten; the distribution reads up to thirty,
+  // so one publication cannot swing a share by ten points.
+  assert.equal(types.RECENT_ANGLE_WINDOW,30);
+  assert.ok(types.MIN_CLASSIFIED_FOR_TARGETS <= types.RECENT_ANGLE_WINDOW);
+  const base={storyId:id,title:"Story",caption:"",publishedAt:"2026-09-13T12:00:00.000Z",platform:"instagram",mediaId:null,url:null};
+  const rows=Array.from({length:40},(_,i)=>({...base,storyId:String(i)}));
+  assert.equal(types.recentPlannerPublications(rows).length,10);
+  assert.equal(types.recentPlannerPublications(rows,types.RECENT_ANGLE_WINDOW).length,30);
 });

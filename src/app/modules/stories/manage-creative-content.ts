@@ -85,6 +85,8 @@ import {
 } from "./creative-profile.repository";
 import { resolveCreativeVisualGuidance } from "./creative-visual-guidance";
 import { generateCompanionStoryScript } from "./companion-story-generator";
+import { fallbackEditorialAngle } from "./acquisition-lenses";
+import { getCurrentTopicAcquisitionTaxonomy } from "./topic-acquisition-lenses.repository";
 import { defaultCreativeInteractiveOverlay } from "./creative-interactive-overlay";
 import { isCreativeInteractiveOverlay } from "./creative-interactive-overlay";
 import {
@@ -97,14 +99,18 @@ export async function getCreativeWorkspaceState(
   preparationRunId?: string,
 ): Promise<CreativeWorkspaceState> {
   const configuration = getCreativeContentPublicConfig();
-  const [topic, story, profile, characterRoster, latestBrief, daily] = await Promise.all([
-    requireTopic(topicId, { active: true }),
-    getDailyDraftStory(topicId, storyId, preparationRunId, true),
-    getCreativeProfile(topicId),
-    listCreativeCharacterRoster(topicId),
-    findLatestCreativeBrief(topicId, storyId),
-    getCreativeDailyUsage(topicId, configuration.maxRunsPerDay),
-  ]);
+  const [topic, story, profile, characterRoster, latestBrief, daily, acquisitionTaxonomy] =
+    await Promise.all([
+      requireTopic(topicId, { active: true }),
+      getDailyDraftStory(topicId, storyId, preparationRunId, true),
+      getCreativeProfile(topicId),
+      listCreativeCharacterRoster(topicId),
+      findLatestCreativeBrief(topicId, storyId),
+      getCreativeDailyUsage(topicId, configuration.maxRunsPerDay),
+      // Read-only here: the workspace renders stored angle keys as labels and
+      // flags retired lenses. A topic without a taxonomy simply shows the key.
+      getCurrentTopicAcquisitionTaxonomy(topicId).catch(() => undefined),
+    ]);
   const inputHash = story.text?.trim()
     ? createBriefInputHash(
         story,
@@ -187,6 +193,7 @@ export async function getCreativeWorkspaceState(
     },
     profile,
     characterRoster,
+    ...(acquisitionTaxonomy ? { acquisitionTaxonomy } : {}),
     ...(brief ? { brief } : {}),
     briefIsCurrent,
     collectionContexts: await storyCollectionContexts(topicId,storyId),
@@ -210,11 +217,12 @@ export async function createCreativeBrief(
   workspace = false,
 ): Promise<CreativeGenerationResult> {
   const configuration = getCreativeContentRuntimeConfig();
-  const [topic, story, profile, daily] = await Promise.all([
+  const [topic, story, profile, daily, acquisitionTaxonomy] = await Promise.all([
     requireTopic(topicId, { active: true }),
     getDailyDraftStory(topicId, storyId, preparationRunId, workspace && Boolean(preparationRunId)),
     getCreativeProfile(topicId),
     getCreativeDailyUsage(topicId, configuration.maxRunsPerDay),
+    getCurrentTopicAcquisitionTaxonomy(topicId),
   ]);
   const content = requireStoryContent(story, configuration.maxContentCharacters);
   const collectionContext=await selectedStoryContext(topicId,storyId,editorialRunId);
@@ -248,6 +256,12 @@ export async function createCreativeBrief(
   // a provider attempt to paraphrase a route number, direction or date.
   const structuredBrief = build511Brief(story.url, story.title, content, profile.audience);
   if (structuredBrief) {
+    structuredBrief.editorialAngle = fallbackEditorialAngle(
+      acquisitionTaxonomy,
+      "The official structured notice is best presented as a careful explainer.",
+      "Readers can use the verified notice details to understand the current situation.",
+      "The draft explains the supported notice details and their stated scope.",
+    );
     await insertCreativeBrief({ topicId, storyId, profile, provider: "quebec511", model: "structured-notice-v1",
       promptVersion: configuration.briefPromptVersion, inputHash, editorialDirection: normalizedEditorialDirection, collectionContext,
       generated: structuredBrief, usage: { promptTokens: 0, outputTokens: 0, thoughtsTokens: 0, totalTokens: 0 } });
@@ -279,6 +293,7 @@ export async function createCreativeBrief(
       story: storyForGenerator(story, content),
       topic,
       profile,
+      acquisitionTaxonomy,
       editorialDirection: collectionContext ? [normalizedEditorialDirection,editorialContextInstruction(collectionContext)].filter(Boolean).join("\n") : normalizedEditorialDirection,
     });
     const brief = await insertCreativeBrief({
@@ -336,13 +351,17 @@ export async function createCreativeDraft(
     throw new CreativeContentConflictError("The brief does not establish an event beyond geographic markers. Retrieve the complete source and refresh the brief before generating a publication.");
   }
 
-  const [topic, story, currentProfile, characterRoster, daily] = await Promise.all([
-    requireTopic(topicId, { active: true }),
-    getDailyDraftStory(topicId, brief.storyId, preparationRunId, workspace && Boolean(preparationRunId)),
-    getCreativeProfile(topicId),
-    listCreativeCharacterRoster(topicId),
-    getCreativeDailyUsage(topicId, configuration.maxRunsPerDay),
-  ]);
+  const [topic, story, currentProfile, characterRoster, daily, acquisitionTaxonomy] =
+    await Promise.all([
+      requireTopic(topicId, { active: true }),
+      getDailyDraftStory(topicId, brief.storyId, preparationRunId, workspace && Boolean(preparationRunId)),
+      getCreativeProfile(topicId),
+      listCreativeCharacterRoster(topicId),
+      getCreativeDailyUsage(topicId, configuration.maxRunsPerDay),
+      // Steers hook exploration toward the lens the brief already chose. A
+      // topic without a taxonomy just generates without that steering.
+      getCurrentTopicAcquisitionTaxonomy(topicId).catch(() => undefined),
+    ]);
   const content = requireStoryContent(story, configuration.maxContentCharacters);
   const currentBriefHash = createBriefInputHash(
     story,
@@ -419,6 +438,7 @@ export async function createCreativeDraft(
       format,
       outputAspectRatio,
       characterRoster,
+      ...(acquisitionTaxonomy ? { acquisitionTaxonomy } : {}),
     });
     const characterSnapshots = await snapshotsForCreativeCharacterIds(
       topicId,
