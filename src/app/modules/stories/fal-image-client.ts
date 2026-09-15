@@ -3,7 +3,8 @@ import "server-only";
 import { fal } from "@fal-ai/client";
 import sharp from "sharp";
 
-import type { CreativeImageQuality } from "./creative-content.types";
+import type { CreativeAspectRatio, CreativeImageQuality } from "./creative-content.types";
+import type { CreativeImageModelDescriptor } from "./creative-image-models";
 
 /**
  * Fal exposes reference-guided generation as a distinct queued endpoint. It
@@ -14,9 +15,11 @@ export const FAL_TEXT_TO_IMAGE_ENDPOINT = "openai/gpt-image-2" as const;
 export const FAL_REFERENCE_GUIDED_ENDPOINT =
   "openai/gpt-image-2/edit" as const;
 
-export type FalImageEndpoint =
-  | typeof FAL_TEXT_TO_IMAGE_ENDPOINT
-  | typeof FAL_REFERENCE_GUIDED_ENDPOINT;
+/**
+ * Endpoint ids come from the model catalog (see creative-image-models.ts),
+ * which is the only place allowed to name a fal.ai endpoint.
+ */
+export type FalImageEndpoint = string;
 
 export type FalImagePostProcessInput = Readonly<{
   normalizedPng: Uint8Array;
@@ -39,7 +42,9 @@ export async function submitFalImage({
   prompt,
   width,
   height,
+  aspectRatio,
   imageQuality,
+  model,
   endpoint,
   referenceImages = [],
   retention,
@@ -48,31 +53,36 @@ export async function submitFalImage({
   prompt: string;
   width: number;
   height: number;
+  aspectRatio: CreativeAspectRatio;
   imageQuality: CreativeImageQuality;
+  model: CreativeImageModelDescriptor;
   endpoint: FalImageEndpoint;
   referenceImages?: File[];
   retention: "30d";
 }): Promise<string> {
-  assertEndpointMatchesReferences(endpoint, referenceImages);
+  assertEndpointMatchesReferences(model, endpoint, referenceImages);
   configureFal(apiKey);
   const imageUrls = await Promise.all(
     referenceImages.map((image) =>
       fal.storage.upload(image, { lifecycle: { expiresIn: retention } }),
     ),
   );
+  // Each model family takes a different input shape — exact pixels versus a
+  // ratio plus resolution tier, one reference versus many — so the payload is
+  // built by the model's own adapter rather than assumed here.
+  const input = model.buildInput({
+    prompt,
+    width,
+    height,
+    aspectRatio,
+    imageQuality,
+    imageUrls,
+  });
   const result = await fal.queue.submit(endpoint, {
-    input: {
-      prompt,
-      image_size: { width, height },
-      ...(imageUrls.length > 0
-        ? { image_urls: imageUrls, input_fidelity: "high" as const }
-        : {}),
-      // The installed client endpoint map omits the current `auto` option,
-      // though GPT Image 2 accepts it. Keep that compatibility cast at the
-      // provider boundary; the app-level union is validated before this call.
-      quality: imageQuality as "low" | "medium" | "high",
-      output_format: "png",
-    },
+    // The installed client's endpoint map is narrower than the live API (it
+    // omits GPT Image's `auto` quality, for one). Inputs are validated by the
+    // adapter and the app-level unions before reaching this boundary.
+    input: input as Parameters<typeof fal.queue.submit>[1]["input"],
     storageSettings: { expiresIn: "30d" },
   });
   return result.request_id;
@@ -147,28 +157,23 @@ function configureFal(apiKey: string): void {
 }
 
 function assertEndpointMatchesReferences(
+  model: CreativeImageModelDescriptor,
   endpoint: FalImageEndpoint,
   referenceImages: readonly File[],
 ): void {
-  if (referenceImages.length > 16) {
+  if (referenceImages.length > model.maxReferenceImages) {
     throw new FalImageResponseError(
-      "Fal reference-guided generation accepts at most 16 reference images",
+      `${model.label} accepts at most ${model.maxReferenceImages} reference image(s)`,
     );
   }
 
-  if (
-    endpoint === FAL_REFERENCE_GUIDED_ENDPOINT &&
-    referenceImages.length === 0
-  ) {
+  if (endpoint === model.referenceEndpoint && referenceImages.length === 0) {
     throw new FalImageResponseError(
       "Reference-guided generation needs at least one character reference image",
     );
   }
 
-  if (
-    endpoint === FAL_TEXT_TO_IMAGE_ENDPOINT &&
-    referenceImages.length > 0
-  ) {
+  if (endpoint === model.textToImageEndpoint && referenceImages.length > 0) {
     throw new FalImageResponseError(
       "Character reference images require the Fal reference-guided endpoint",
     );

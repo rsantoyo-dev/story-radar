@@ -111,7 +111,12 @@ test("a story photo alone selects the reference endpoint and freezes its snapsho
   const code = source.slice(source.indexOf("function assetInputForUnit("), source.indexOf("function referenceInputHash(")) + "\nexports.run = assetInputForUnit;";
   const exports: { run?: (...args: unknown[]) => { generationMode: string; providerEndpoint: string; referenceSnapshot: { story: unknown[] } } } = {};
   vm.runInNewContext(ts.transpileModule(code, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, {
-    exports, createHash, FAL_REFERENCE_GUIDED_ENDPOINT: "fal/edit", FAL_TEXT_TO_IMAGE_ENDPOINT: "fal/text", referenceInputHash: () => "characters",
+    exports, createHash, referenceInputHash: () => "characters",
+    // The endpoint pair now comes from the model catalog.
+    resolveDefaultCreativeImageModel: () => "gpt-image",
+    creativeImageModel: () => ({ textToImageEndpoint: "fal/text", referenceEndpoint: "fal/edit" }),
+    creativeImageEndpoint: (model: { textToImageEndpoint: string; referenceEndpoint: string }, mode: string) =>
+      mode === "reference-guided" ? model.referenceEndpoint : model.textToImageEndpoint,
   });
   const result = exports.run!([], [], [ref]);
   assert.equal(result.generationMode, "reference-guided");

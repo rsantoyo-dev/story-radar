@@ -8,6 +8,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import * as schema from "../../../db/schema";
 import * as generation from "./creative-brand-generation";
+import { CREATIVE_IMAGE_MODELS, creativeImageModel } from "./creative-image-models";
 const requireLocal = createRequire(import.meta.url);
 
 function loadRepo(file: string, db: unknown) {
@@ -104,7 +105,7 @@ async function createAssetTables(client: PGlite) {
   await client.exec("CREATE UNIQUE INDEX image_versions ON creative_assets(batch_id,unit_order,version)");
 }
 
-test("editing one image persists its new references and base without replacing siblings; stale edit is rejected", async () => {
+for (const modelKey of CREATIVE_IMAGE_MODELS) test(`editing ${modelKey} preserves its model, references and siblings; stale edit is rejected`, async () => {
   const client = new PGlite();
   try {
     await createAssetTables(client);
@@ -120,6 +121,8 @@ test("editing one image persists its new references and base without replacing s
       try { const results = []; for (const query of queries) results.push(await query); await client.exec("COMMIT"); return results; }
       catch (error) { await client.exec("ROLLBACK"); throw error; }
     } });
+    const model = creativeImageModel(modelKey);
+    await client.query("UPDATE creative_assets SET model=$1,provider_endpoint=$2", [model.providerModel, model.textToImageEndpoint]);
     const repo = loadRepo("./creative-assets.repository.ts", db);
     const find = repo.findCreativeAssetById as unknown as (id: string) => Promise<{asset: {id: string;batchId: string}}>;
     const previous = (await find("00000000-0000-4000-8000-000000000003")).asset;
@@ -136,6 +139,9 @@ test("editing one image persists its new references and base without replacing s
     const next = await edit({ previous, prompt: "lighter", references, unitSnapshot: { order: 1, headline: "New text", brandReferenceSelection: { selected: [], excluded: [], note: null } } });
     assert.equal(next.version, 2);
     assert.equal(next.status, "queued");
+    const savedModel = (await client.query<{model: string;provider_endpoint: string}>("SELECT model,provider_endpoint FROM creative_assets WHERE id=$1", [next.id])).rows[0];
+    assert.equal(savedModel.model, model.providerModel);
+    assert.equal(savedModel.provider_endpoint, model.referenceEndpoint);
     assert.equal(next.editSource.assetId, previous.id);
     await assert.rejects(edit({ previous, prompt: "stale", references }), /changed/);
     const rows = (await client.query<{unit_order: number;version: number;status: string;approved_at: unknown}>("SELECT unit_order,version,status,approved_at FROM creative_assets ORDER BY unit_order,version")).rows;

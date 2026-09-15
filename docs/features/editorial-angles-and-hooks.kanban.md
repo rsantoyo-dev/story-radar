@@ -16,6 +16,17 @@
     ventanas. Falta la muestra manual multi-topic (≥2 historias por vocabulario) y las
     pruebas de integración con respuestas de proveedor simuladas.
 
+## Backlog de fase 2
+
+### ANGLE-08 — Generar hooks por tratamiento factual
+
+  - priority: medium
+  - tags: [editorial, hooks, prompt, p1]
+  - depends-on: [ANGLE-02, ANGLE-03]
+  - note: pendiente. Añadir tratamientos `reader-situation`, `consequence-first`,
+    `time-contrast` e `institutional`, con selección priorizada por stake demostrado,
+    validación de atribución y regresiones contra clickbait.
+
 ## En revisión / QA
 
 ### ANGLE-01 — Definir el contrato de ángulos

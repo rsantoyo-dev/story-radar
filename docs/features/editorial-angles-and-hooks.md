@@ -211,3 +211,76 @@ npm run build
 - La UI permite revisar la decisión sin aplicarla silenciosamente.
 - Pasan todas las pruebas obligatorias, `db:check`, lint y build.
 - Se documenta la muestra manual multi-topic y cualquier caso donde el sistema haya elegido fallback.
+
+## Fase 2 — Hook tension y tratamientos de apertura
+
+La primera fase clasifica la historia y orienta el hook. La fase 2 mejora la
+calidad de las aperturas sin convertirlas en clickbait: el generador debe
+intentar primero la formulación con mayor relevancia humana que los hechos
+permitan y conservar una alternativa factual más sobria cuando esa tensión no
+esté respaldada.
+
+### ANGLE-08 — Generar hooks por tratamiento factual
+
+**Prioridad:** P1 · **Dependencias:** ANGLE-02, ANGLE-03
+
+- Extender el contrato interno de candidatos con un tratamiento de apertura:
+  `reader-situation`, `consequence-first`, `time-contrast` o `institutional`.
+- `reader-situation` requiere que los hechos demuestren una acción, pago,
+  decisión, uso o situación reconocible para la audiencia. No se debe inventar
+  una afectación personal para aumentar la tensión.
+- `consequence-first` debe expresar primero qué cambia y solo después quién lo
+  decidió o anunció.
+- `time-contrast` requiere una fecha, duración o cambio temporal explícito en
+  los hechos permitidos.
+- `institutional` solo puede atribuir la acción a una organización o gobierno
+  cuando la fuente demuestra que esa entidad tomó, mantuvo o modificó la
+  decisión. No inferir agencia a partir de una noticia que solo describe un
+  resultado.
+- Pedir candidatos con tratamientos distintos cuando la evidencia lo permita:
+  una apertura humana, una consecuencia clara y una alternativa factual o
+  temporal. Si un tratamiento no está respaldado, debe omitirse, no rellenarse.
+- Priorizar este orden de selección: relevancia humana demostrada, claridad de
+  la consecuencia, contraste o sorpresa sustentada y, por último, mención de
+  institución.
+- Rechazar preguntas genéricas, preguntas cuya respuesta sea únicamente sí/no
+  y formulaciones que oculten el hecho principal para fabricar curiosidad.
+- Mantener la selección existente de tres candidatos, sus hechos permitidos,
+  checks y `payoffUnitOrder`; el tratamiento explica la estrategia del hook,
+  pero no sustituye las validaciones factuales.
+- Guardar el tratamiento seleccionado en el snapshot del draft para permitir
+  auditoría y preservar drafts históricos. No modificar hooks aprobados en
+  segundo plano.
+- Añadir una versión nueva de prompt y parser, invalidando solo generaciones
+  nuevas incompatibles; no reescribir briefs, drafts ni assets históricos.
+
+### Ejemplo de comportamiento esperado
+
+Para una noticia que demuestra que un impuesto al combustible seguirá pausado
+hasta 2027, el generador puede proponer:
+
+1. `reader-situation`: “¿Vas a cargar gasolina? Este impuesto seguirá en pausa”
+2. `time-contrast`: “Un impuesto sobre el combustible seguirá en pausa hasta 2027”
+3. `institutional`: “Ottawa mantiene en pausa este impuesto al combustible hasta 2027”,
+   únicamente si la fuente atribuye explícitamente esa acción a Ottawa.
+
+El primer hook no debe aparecer si la noticia no demuestra una relación con
+quienes cargan combustible. El tercero no debe aparecer si la fuente solo
+describe que la pausa continúa, sin atribuir la decisión a Ottawa.
+
+### Pruebas obligatorias de ANGLE-08
+
+- Una historia con una consecuencia de uso o pago puede producir un hook
+  `reader-situation` sin agregar hechos.
+- Una historia sin stake personal demostrado no puede producir un hook en
+  segunda persona solo porque el prompt lo solicite.
+- Una fecha o duración respaldada permite `time-contrast`; una fecha ausente no
+  puede ser inventada.
+- Una atribución explícita permite `institutional`; describir un resultado sin
+  sujeto institucional no permite atribuir agencia.
+- El generador rechaza preguntas genéricas y preguntas de sí/no que oculten el
+  resultado.
+- Los tres candidatos siguen siendo distintos, usan hechos permitidos y el
+  seleccionado coincide con la portada.
+- Un cambio de versión conserva drafts y hooks históricos y solo invalida una
+  generación nueva incompatible.

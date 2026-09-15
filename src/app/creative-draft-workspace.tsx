@@ -124,7 +124,7 @@ const IMAGE_QUALITY_OPTIONS = [
   {
     value: "auto",
     label: "Auto · Model decides",
-    detail: "Let GPT Image choose the appropriate quality for this batch.",
+    detail: "Let the model choose the appropriate quality for this batch.",
   },
   {
     value: "low",
@@ -478,6 +478,8 @@ export function CreativeDraftWorkspace({
         visibleAssets.configuration.height,
       )
     : outputAspectRatioLabel(activeOutputAspectRatio);
+  const imageModelLabel = visibleAssets?.configuration.model ?? "the configured image model";
+  const supportsImageQuality = visibleAssets?.configuration.model === "openai/gpt-image-2";
 
   useEffect(() => {
     if (!activeDraftId || !assetsPending) return;
@@ -1008,7 +1010,7 @@ export function CreativeDraftWorkspace({
     const count = activeDraft.units.length;
     if (
       !window.confirm(
-        requiresPlaceComposition ? `Find verified place material and compose ${count} images in this draft, preserving the saved text?` : `Generate ${count} ${count === 1 ? "image" : "images"} at ${assetDimensions} with GPT Image (${imageQualityLabel(selectedImageQuality)} quality)${activeDraftHasSupportingCharacters ? ". Slides with selected supporting characters will use reference-guided generation." : ""}?`,
+        requiresPlaceComposition ? `Find verified place material and compose ${count} images in this draft, preserving the saved text?` : `Generate ${count} ${count === 1 ? "image" : "images"} at ${assetDimensions} with ${imageModelLabel}${supportsImageQuality ? ` (${imageQualityLabel(selectedImageQuality)} quality)` : ""}${activeDraftHasSupportingCharacters ? ". Slides with selected supporting characters will use reference-guided generation." : ""}?`,
       )
     ) {
       return;
@@ -1039,7 +1041,7 @@ export function CreativeDraftWorkspace({
       setNotice(
         response.outcome === "existing"
           ? `The ${imageQualityLabel(responseQuality).toLowerCase()} image batch already exists; no duplicate generation was submitted.`
-          : requiresPlaceComposition ? "Place research and composition completed in this draft. Review each image and its evidence below." : `${count} ${count === 1 ? "image was" : "images were"} submitted to GPT Image at ${imageQualityLabel(responseQuality).toLowerCase()} quality. Progress will update automatically.`,
+          : requiresPlaceComposition ? "Place research and composition completed in this draft. Review each image and its evidence below." : `${count} ${count === 1 ? "image was" : "images were"} submitted to ${response.configuration.model}. Progress will update automatically.`,
       );
     });
   }
@@ -1153,7 +1155,7 @@ export function CreativeDraftWorkspace({
       return;
     }
     await runAsset(`regenerate:${assetId}`, async () => {
-      setNotice("Submitting the edited prompt to GPT Image…");
+      setNotice("Submitting the edited prompt to the image's saved model…");
       const response = await requestJson<CreativeAssetBatchResponse>(
         topicUrl(
           `/api/radar/creative/assets/${encodeURIComponent(assetId)}`,
@@ -2220,10 +2222,10 @@ export function CreativeDraftWorkspace({
                         <strong>
                           {assetBatchIsStaleForCurrentDraft
                             ? "Create a fresh image batch for this saved script"
-                            : `Generate ${imageQualityLabel(selectedImageQuality).toLowerCase()}-quality integrated text graphics with GPT Image`}
+                            : `Generate integrated text graphics with ${imageModelLabel}`}
                         </strong>
                         <p>
-                          GPT Image will create {activeDraft.units.length} {activeDraft.units.length === 1 ? "image" : "images"} in {assetDimensions}. {activeDraftHasSupportingCharacters ? "Slides with selected characters use reference-guided generation; other slides remain text-to-image." : "Every slide will use text-to-image."} Every result still requires human text review.
+                          {imageModelLabel} will create {activeDraft.units.length} {activeDraft.units.length === 1 ? "image" : "images"} in {assetDimensions}. {activeDraftHasSupportingCharacters ? "Slides with selected characters use reference-guided generation; other slides remain text-to-image." : "Every slide will use text-to-image."} Every result still requires human text review.
                         </p>
                         {assetBatchIsStaleForCurrentDraft ? (
                           <p className={styles.assetVariantHint}>
@@ -2286,10 +2288,10 @@ export function CreativeDraftWorkspace({
                     ) : (
                       <div className={styles.imageQualitySetup}>
                         <label className={`${styles.field} ${styles.imageQualityField}`}>
-                          <span>GPT Image quality</span>
+                          <span>Image quality</span>
                           <select
                             value={selectedImageQuality}
-                            disabled={Boolean(busy) || Boolean(assetBusy)}
+                            disabled={!supportsImageQuality || Boolean(busy) || Boolean(assetBusy)}
                             onChange={(event) =>
                               chooseImageQuality(
                                 event.target.value as ImageQualityChoice,
@@ -2304,9 +2306,9 @@ export function CreativeDraftWorkspace({
                           </select>
                         </label>
                         <p>
-                          {imageQualityDetail(selectedImageQuality)} Each quality is
-                          saved as its own batch, so switching never changes an
-                          existing generation.
+                          {supportsImageQuality
+                            ? `${imageQualityDetail(selectedImageQuality)} Each quality is saved as its own batch, so switching never changes an existing generation.`
+                            : "This model uses its own fixed quality settings."}
                         </p>
                         <button
                           type="button"

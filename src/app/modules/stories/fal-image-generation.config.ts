@@ -7,7 +7,33 @@ import {
   type CreativeImageQuality,
 } from "./creative-content.types";
 
-const SUPPORTED_MODEL = "openai/gpt-image-2" as const;
+import {
+  creativeImageModel,
+  isCreativeImageModel,
+  type CreativeImageModel,
+} from "./creative-image-models";
+
+/** Used when FAL_IMAGE_MODEL is unset, preserving the pre-catalog behaviour. */
+const DEFAULT_IMAGE_MODEL: CreativeImageModel = "gpt-image";
+
+/**
+ * Resolves the topic-independent default model. FAL_IMAGE_MODEL now names a
+ * logical model from the catalog ("gpt-image", "flux-pro", "nano-banana");
+ * the previous provider id is still accepted so existing environments keep
+ * working without an edit.
+ */
+export function resolveDefaultCreativeImageModel(): CreativeImageModel {
+  const configured = process.env.FAL_IMAGE_MODEL?.trim();
+  if (!configured) return DEFAULT_IMAGE_MODEL;
+  if (isCreativeImageModel(configured)) return configured;
+  const legacy = (["gpt-image", "flux-pro", "nano-banana"] as const).find(
+    (key) => creativeImageModel(key).providerModel === configured,
+  );
+  if (legacy) return legacy;
+  throw new FalImageConfigurationError(
+    `FAL_IMAGE_MODEL must be one of gpt-image, flux-pro, nano-banana`,
+  );
+}
 
 const ASPECT_RATIO_CONFIGURATIONS = {
   "1:1": {
@@ -63,7 +89,7 @@ export function getFalImagePublicConfig(
 
   return {
     provider: "fal",
-    model: process.env.FAL_IMAGE_MODEL?.trim() || SUPPORTED_MODEL,
+    model: creativeImageModel(resolveDefaultCreativeImageModel()).providerModel,
     width: configuration.width,
     height: configuration.height,
     promptVersion: configuration.promptVersion,
@@ -89,17 +115,13 @@ export function getFalImageRuntimeConfig(
     );
   }
 
-  if (publicConfiguration.model !== SUPPORTED_MODEL) {
-    throw new FalImageConfigurationError(
-      `FAL_IMAGE_MODEL must be ${SUPPORTED_MODEL} for this image workflow`,
-    );
-  }
-
   return {
     ...publicConfiguration,
-    model: SUPPORTED_MODEL,
     generationWidth: configuration.generationWidth,
     generationHeight: configuration.generationHeight,
+    // Models that take a ratio plus a resolution tier, rather than exact
+    // pixels, need the ratio itself at submit time.
+    aspectRatio,
     apiKey,
     retention: "30d" as const,
   };

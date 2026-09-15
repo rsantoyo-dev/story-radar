@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { creativeImageModel } from "./creative-image-models";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import vm from "node:vm";
@@ -71,7 +72,7 @@ test("Fal receives character, brand and edit-base image files in the documented 
       queue: { submit: async (name: string, value: {input: {image_urls: string[]}}) => { endpoint = name; request = value; return { request_id: "test" }; } },
     } },
   });
-  await service.submitFalImage({ apiKey: "test", prompt: "The last input is the edit base", width: 1080, height: 1350, imageQuality: "low",
+  await service.submitFalImage({ apiKey: "test", prompt: "The last input is the edit base", width: 1080, height: 1350, imageQuality: "low", aspectRatio: "4:5", model: creativeImageModel("gpt-image"),
     endpoint: "openai/gpt-image-2/edit", referenceImages: ["character.png", "sheet.png", "base.png"].map(name => new File(["test"], name)), retention: "30d" } as never);
   assert.deepEqual(uploads, ["character.png", "sheet.png", "base.png"]);
   assert.equal(endpoint, "openai/gpt-image-2/edit");

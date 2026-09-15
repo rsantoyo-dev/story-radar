@@ -23,7 +23,11 @@ async function compose(mode = "illustration-editorial", photoTest = false) {
   } }).outputText, {
     exports, Map, Set,
     placeCompositionVersion: () => photoTest ? "place-visual-v5" : "place-visual-v4",
-    FAL_REFERENCE_GUIDED_ENDPOINT: "fal/edit",
+    // The endpoint pair now comes from the model catalog.
+    resolveDefaultCreativeImageModel: () => "gpt-image",
+    creativeImageModel: () => ({ textToImageEndpoint: "fal/text", referenceEndpoint: "fal/edit" }),
+    creativeImageEndpoint: (model: { textToImageEndpoint: string; referenceEndpoint: string }, mode: string) =>
+      mode === "reference-guided" ? model.referenceEndpoint : model.textToImageEndpoint,
     outputAspectRatioForDraft: () => "4:5",
     requireNarrativeQuality: () => {},
     assertEditorialEvidence: async () => {},

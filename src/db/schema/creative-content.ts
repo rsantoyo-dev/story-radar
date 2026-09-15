@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   check,
   index,
@@ -747,7 +748,12 @@ export const creativeAssets = pgTable(
     fileSize: integer("file_size"),
     width: integer("width"),
     height: integer("height"),
-    seed: integer("seed"),
+    /**
+     * Provider seeds are not int32: FLUX and other fal models return values
+     * across the full unsigned 32-bit range, which overflows `integer`. Kept
+     * as a JS number, which is exact well beyond any provider's seed space.
+     */
+    seed: bigint("seed", { mode: "number" }),
     safetyFlag: boolean("safety_flag"),
     error: text("error"),
     completedAt: timestamp("completed_at", {

@@ -1,4 +1,5 @@
 import "server-only";
+import { creativeImageEndpoint, findCreativeImageModelByEndpoint } from "./creative-image-models";
 import { imageText } from "./creative-image-text-sync";
 import { CreativeBrandReferenceConflictError } from "./creative-brand-references.repository";
 import { decodeGenerationReferences } from "./creative-brand-generation";
@@ -334,6 +335,10 @@ export async function insertRegeneratedCreativeAsset({ previous, prompt, referen
 }): Promise<CreativeGeneratedAsset> {
   const id = randomUUID();
   const guided = references ? Boolean(references.base || references.characters.length || references.brand.length || references.story?.length) : undefined;
+  const originalModel = findCreativeImageModelByEndpoint(previous.providerEndpoint);
+  if (!originalModel) throw new CreativeBrandReferenceConflictError("The original image model is unavailable.");
+  const regeneratedEndpoint = guided === undefined ? previous.providerEndpoint
+    : creativeImageEndpoint(originalModel.descriptor, guided ? "reference-guided" : "text-to-image");
   const [, inserted] = await db.batch([
     db.select({ id: creativeAssetBatches.id }).from(creativeAssetBatches)
       .innerJoin(creativeDrafts, eq(creativeDrafts.id, creativeAssetBatches.draftId))
@@ -345,7 +350,7 @@ export async function insertRegeneratedCreativeAsset({ previous, prompt, referen
       SELECT ${id}::uuid,a.batch_id,a.unit_order,a.unit_role,a.version+1,'queued',a.provider,a.model,a.prompt_version,
         ${prompt},${unitSnapshot ? imageText(unitSnapshot) : previous.expectedText},COALESCE(${unitSnapshot ? JSON.stringify(unitSnapshot) : null}::jsonb,a.unit_snapshot),
         COALESCE(${guided === undefined ? null : guided ? "reference-guided" : "text-to-image"}::creative_asset_generation_mode,a.generation_mode),
-        COALESCE(${guided === undefined ? null : guided ? "openai/gpt-image-2/edit" : "openai/gpt-image-2"},a.provider_endpoint),
+        ${regeneratedEndpoint},
         COALESCE(${references ? JSON.stringify(references) : null}::jsonb,a.reference_snapshot),
         COALESCE(${references ? referenceEnvelopeHash(references) : null},a.reference_input_hash),a.brand_overlay_snapshot,a.carousel_chrome_snapshot
       FROM creative_assets a JOIN creative_asset_batches b ON b.id=a.batch_id JOIN creative_drafts d ON d.id=b.draft_id

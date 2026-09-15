@@ -101,10 +101,16 @@ import {
 import {
   getFalImagePublicConfig,
   getFalImageRuntimeConfig,
+  resolveDefaultCreativeImageModel,
 } from "./fal-image-generation.config";
 import {
-  FAL_REFERENCE_GUIDED_ENDPOINT,
-  FAL_TEXT_TO_IMAGE_ENDPOINT,
+  creativeImageEndpoint,
+  assertCreativeImageModelSupports,
+  creativeImageModel,
+  findCreativeImageModelByEndpoint,
+  type CreativeImageModelDescriptor,
+} from "./creative-image-models";
+import {
   pollFalImage,
   submitFalImage,
   type FalImageEndpoint,
@@ -891,6 +897,8 @@ async function submitStoredAsset(
   configuration: ReturnType<typeof getFalImageRuntimeConfig>,
 ): Promise<void> {
   try {
+    const { descriptor, endpoint } = falModelForAsset(asset);
+    assertCreativeImageModelSupports(descriptor, { referenceCount: 0, expectsText: Boolean(asset.expectedText?.trim()) });
     const references = await getCreativeAssetGenerationReferences(asset.id);
     const characters = references.characters;
     const referenceImages = await Promise.all(
@@ -916,13 +924,19 @@ async function submitStoredAsset(
     if (referenceImages.length > 16) throw new CreativeAssetValidationError("The combined references exceed 16 images. Reduce the references on this slide.");
     if (referenceImages.reduce((bytes, image) => bytes + image.size, 0) > 20 * 1024 * 1024) throw new CreativeAssetValidationError("The combined character, brand and base images exceed 20 MB.");
     await assertBrandReferenceEligibility([...references.brand, ...(references.provenanceBrand ?? [])]);
+    // The model is pinned by the endpoint stored on the asset, so every image
+    // in a batch is produced by the same model and a regenerated version keeps
+    // the model it was created with unless it is explicitly changed.
+    assertCreativeImageModelSupports(descriptor, { referenceCount: referenceImages.length, expectsText: Boolean(asset.expectedText?.trim()) });
     const requestId = await submitFalImage({
       apiKey: configuration.apiKey,
       prompt: asset.prompt,
       width: configuration.generationWidth,
       height: configuration.generationHeight,
+      aspectRatio: configuration.aspectRatio,
       imageQuality: configuration.imageQuality,
-      endpoint: falEndpointForAsset(asset),
+      model: descriptor,
+      endpoint,
       referenceImages,
       retention: configuration.retention,
     });
@@ -1228,13 +1242,14 @@ async function compositeStoredCreativeBrand({
   }
 }
 
-function assetInputForUnit(characters: CreativeCharacterSnapshot[], brand: GenerationReferences["brand"] = [], story: NonNullable<GenerationReferences["story"]> = []) {
+function assetInputForUnit(characters: CreativeCharacterSnapshot[], brand: GenerationReferences["brand"] = [], story: NonNullable<GenerationReferences["story"]> = [], model: CreativeImageModelDescriptor = creativeImageModel(resolveDefaultCreativeImageModel())) {
   const generationMode = characters.length > 0 || brand.length > 0 || story.length > 0
     ? "reference-guided" as const : "text-to-image" as const;
+  // Pins the model on the asset row, so the whole batch shares one model and a
+  // later retry reproduces it instead of following a changed default.
   return {
     generationMode,
-    providerEndpoint: generationMode === "reference-guided"
-      ? FAL_REFERENCE_GUIDED_ENDPOINT : FAL_TEXT_TO_IMAGE_ENDPOINT,
+    providerEndpoint: creativeImageEndpoint(model, generationMode),
     referenceSnapshot: brand.length || story.length ? { schema: 1 as const, characters, brand, story } : characters,
     referenceInputHash: brand.length || story.length
       ? createHash("sha256").update(JSON.stringify({ characters, brand, story })).digest("hex")
@@ -1263,22 +1278,27 @@ function referenceInputHash(characters: CreativeCharacterSnapshot[]): string {
     .digest("hex");
 }
 
-function falEndpointForAsset(asset: CreativeGeneratedAsset): FalImageEndpoint {
-  if (asset.generationMode === "reference-guided") {
-    if (asset.providerEndpoint !== FAL_REFERENCE_GUIDED_ENDPOINT) {
-      throw new CreativeContentConflictError(
-        "This reference-guided image does not have a compatible Fal endpoint. Generate a fresh image batch.",
-      );
-    }
-    return FAL_REFERENCE_GUIDED_ENDPOINT;
-  }
-
-  if (asset.providerEndpoint !== FAL_TEXT_TO_IMAGE_ENDPOINT) {
+/**
+ * Recovers the model an asset was created with from its stored endpoint, so a
+ * retry or a new version reproduces the same model rather than drifting to the
+ * current default. Assets written before the catalog existed carry the GPT
+ * Image endpoints and still resolve.
+ */
+function falModelForAsset(asset: CreativeGeneratedAsset): {
+  descriptor: CreativeImageModelDescriptor;
+  endpoint: FalImageEndpoint;
+} {
+  const resolved = findCreativeImageModelByEndpoint(asset.providerEndpoint);
+  if (!resolved || resolved.mode !== asset.generationMode) {
     throw new CreativeContentConflictError(
-      "This text-to-image asset does not have a compatible Fal endpoint. Generate a fresh image batch.",
+      `This ${asset.generationMode} image does not have a compatible Fal endpoint. Generate a fresh image batch.`,
     );
   }
-  return FAL_TEXT_TO_IMAGE_ENDPOINT;
+  return { descriptor: resolved.descriptor, endpoint: asset.providerEndpoint };
+}
+
+function falEndpointForAsset(asset: CreativeGeneratedAsset): FalImageEndpoint {
+  return falModelForAsset(asset).endpoint;
 }
 
 function batchMatchesDraftGenerationModes(
@@ -1296,11 +1316,12 @@ function batchMatchesDraftGenerationModes(
     if (!asset.hasBrandReferenceOverride && unit.brandReferenceSelection?.selected.length && asset.referenceContextVersion !== 1) return false;
     const selection = asset.hasBrandReferenceOverride ? asset.unitSnapshot.brandReferenceSelection : unit.brandReferenceSelection;
     const shouldUseReferences = Boolean(unit.storyReferences?.length) || asset.unitSnapshot.placeVisual?.generationUse === "ai-reference" || Boolean(asset.editSource) || (unit.characterIds?.length ?? 0) > 0 || (selection?.selected.length ?? 0) > 0;
+    // Compare against the asset's own model rather than one fixed provider, so
+    // a batch generated with another catalog model still counts as current.
+    const resolved = findCreativeImageModelByEndpoint(asset.providerEndpoint);
     return shouldUseReferences
-      ? asset.generationMode === "reference-guided" &&
-          asset.providerEndpoint === FAL_REFERENCE_GUIDED_ENDPOINT
-      : asset.generationMode === "text-to-image" &&
-          asset.providerEndpoint === FAL_TEXT_TO_IMAGE_ENDPOINT;
+      ? asset.generationMode === "reference-guided" && resolved?.mode === "reference-guided"
+      : asset.generationMode === "text-to-image" && resolved?.mode === "text-to-image";
   });
 }
 
@@ -1729,7 +1750,7 @@ async function composeDraftPlaceVisuals(topicId: string, draft: CreativeDraft, b
         if (prompt.length > MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS) throw new CreativeAssetValidationError("The complete image prompt exceeds 30,000 characters.");
         return {
           ...assetInputForUnit(characters, refs, storyReferencesByOrder.get(unit.order)),
-          ...(photoVisual ? { generationMode: "reference-guided" as const, providerEndpoint: FAL_REFERENCE_GUIDED_ENDPOINT } : {}),
+          ...(photoVisual ? { generationMode: "reference-guided" as const, providerEndpoint: creativeImageEndpoint(creativeImageModel(resolveDefaultCreativeImageModel()), "reference-guided") } : {}),
           ...(brand.snapshot && shouldApplyCreativeBrandOverlay(brand.snapshot, unit.order) ? { brandOverlaySnapshot: brand.snapshot } : {}),
           ...(brand.carouselChromeSnapshot && unit.type === "carousel-slide" ? { carouselChromeSnapshot: brand.carouselChromeSnapshot } : {}),
           unitOrder: unit.order, unitRole: unit.role, unitSnapshot: { ...unit, placeVisual: photoVisual ? { ...photoVisual, generationUse: "ai-reference" as const, referenceTopicId: topicId, reasons: ["AI-assisted adaptation using the approved archive photo. Review architectural fidelity and attribution before approval."] } : undefined },
