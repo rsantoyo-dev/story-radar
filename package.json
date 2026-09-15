@@ -8,6 +8,7 @@
     "build": "npm run uxdsl:build && next build --webpack",
     "start": "next start",
     "worker:instagram": "node scripts/instagram-publication-worker.mjs",
+    "postinstall": "patch-package",
     "test": "tsx --test src/app/modules/stories/*.test.ts src/app/modules/documents/*.test.ts src/app/modules/meta/*.test.ts src/app/modules/topics/*.test.ts src/design/*.test.ts src/design/*/*.test.ts",
     "uxdsl:build": "npm run uxdsl:build:theme && npm run uxdsl:build:dashboard && npm run uxdsl:build:creative && npm run uxdsl:build:editorial && npm run uxdsl:build:topic",
     "uxdsl:build:theme": "uxdsl build --config uxdsl.theme.config.cjs",
@@ -38,7 +39,7 @@
     "drizzle-orm": "^0.45.2",
     "groq-sdk": "^1.6.0",
     "jsdom": "^27.2.0",
-    "next": "16.3.0",
+    "next": "^16.3.5",
     "openai": "^6.49.0",
     "pdfjs-dist": "^5.4.624",
     "react": "19.2.8",
@@ -56,15 +57,16 @@
     "@types/react-dom": "^19",
     "babel-plugin-react-compiler": "1.0.0",
     "concurrently": "^9.2.4",
-    "drizzle-kit": "^0.31.10",
+    "drizzle-kit": "^0.18.1",
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
-    "postcss-uxdsl": "0.5.0-beta.0",
+    "patch-package": "^8.0.1",
+    "postcss-uxdsl": "^0.5.0-beta.1",
     "tailwindcss": "^4",
     "tsx": "^4.20.6",
     "typescript": "^5",
-    "uxdsl-cli": "0.5.0-beta.0",
-    "uxdsl-core": "0.5.0-beta.0",
-    "vite-plugin-uxdsl": "0.5.0-beta.0"
+    "uxdsl-cli": "^0.5.0-beta.1",
+    "uxdsl-core": "0.5.0-beta.1",
+    "vite-plugin-uxdsl": "0.5.0-beta.1"
   }
 }

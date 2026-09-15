@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 
+const fs = require("node:fs");
 const { breakpoints, theme } = require("./uxdsl.config.js");
 
 module.exports = function createUxdslConfig({ entry, outFile, includeTheme = false }) {
@@ -7,7 +8,14 @@ module.exports = function createUxdslConfig({ entry, outFile, includeTheme = fal
     entry,
     outFile,
     breakpoints,
-    ...(includeTheme ? { theme } : {}),
+    theme,
+    includeTheme,
+    references: {
+      ...(includeTheme
+        ? {}
+        : { css: [fs.readFileSync("src/app/uxdsl.css", "utf8")] }),
+      externalTokens: ["--font-geist-sans", "--font-geist-mono"],
+    },
     watch: [entry],
   };
 };

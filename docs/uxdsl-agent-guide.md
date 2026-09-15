@@ -5,9 +5,15 @@ Read this before creating or modifying UI styles. Where this guide and prior
 UXDSL knowledge disagree, the installed package wins: verify against
 `node_modules/postcss-uxdsl/src/`.
 
-**Installed version: `0.5.0-beta.0`** (`postcss-uxdsl`, `uxdsl-cli`,
+**Installed version: `0.5.0-beta.1`** (`postcss-uxdsl`, `uxdsl-cli`,
 `uxdsl-core`, `vite-plugin-uxdsl`, pinned exactly because the beta's grammar is
 not compatible with `0.3.x`).
+
+`uxdsl-cli` in this beta does not yet forward `includeTheme` or `references`
+from its config file to the PostCSS plugin. The theme entry can validate host
+font fallbacks, but CSS Module entries cannot yet use strict cross-entry
+reference validation through the CLI. Keep module entries on the existing
+theme-omission configuration until the next beta closes this gap.
 
 ---
 
@@ -41,7 +47,7 @@ rebuild.
 Every spacing and radius value resolves through three hops:
 
 ```text
-padding: var(--density-2)  →  --density-2: var(--space-2)  →  --space-2: 0.25rem
+padding: var(--uxdsl__density__2)  →  --uxdsl__density__2: var(--uxdsl__space__2)  →  --uxdsl__space__2: 0.25rem
 ```
 
 Only the theme entry emits the definitions; the module bundles only reference
@@ -144,9 +150,9 @@ defaults apply as-is. A declaration that merely restates a default is noise —
 ```
 
 Configured tags: `h1`–`h6`, `p`, `span`, `body`, `small`, `caption`, `code`,
-`pre`. Sizes come from `uxdsl.config.js` → `theme.typography` (`h1-size`,
-`body-size`, `caption-size`, `code-size`, …). Font families are `ui`, `ui-2`
-and `code`.
+`pre`. Sizes come from `uxdsl.config.js` → `theme.typography_details`
+(`h1.fontSize`, `body.fontSize`, `caption.fontSize`, `code.fontSize`, …).
+Font families are `ui`, `ui-2` and `code`.
 
 Typography emits `var(--<tag>-<property>, <default>)`, so an unconfigured
 property falls back silently rather than breaking. That is intended — do not

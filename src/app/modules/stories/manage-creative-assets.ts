@@ -113,6 +113,7 @@ import {
 import {
   pollFalImage,
   submitFalImage,
+  FalImageResponseError,
   type FalImageEndpoint,
   type FalImagePostProcessor,
 } from "./fal-image-client";
@@ -164,7 +165,14 @@ export async function getCreativeDraftAssets(
   const brand = await resolveCreativeBrandGeneration(topicId, draft);
 
   const composed = await findLatestCreativeAssetBatch(draft.id, draft.version);
-  if (composed?.brandInputHash === brand.inputHash && composed.status !== "stale" && (composed.assets.every(asset => asset.providerEndpoint === DRAFT_TYPOGRAPHY_ENDPOINT) || /:place-visual-v[45]:/.test(composed.promptVersion)) && (requestedImageQuality === undefined || composed.imageQuality === requestedImageQuality)) {
+  const composedUsesRetiredModel = Boolean(
+    composed &&
+      composed.assets.some(
+        (asset) => asset.providerEndpoint !== DRAFT_TYPOGRAPHY_ENDPOINT,
+      ) &&
+      composed.model !== preferredConfiguration.model,
+  );
+  if (composed?.brandInputHash === brand.inputHash && composed.status !== "stale" && !composedUsesRetiredModel && (composed.assets.every(asset => asset.providerEndpoint === DRAFT_TYPOGRAPHY_ENDPOINT) || /:place-visual-v[45]:/.test(composed.promptVersion)) && (requestedImageQuality === undefined || composed.imageQuality === requestedImageQuality)) {
     const current = hasPendingAssets(composed) ? await syncCreativeAssetBatch(composed, runtimeConfigurationForBatch(composed, outputAspectRatio)) : composed;
     return { batch: current, configuration: publicConfigurationForBatch(current) };
   }
@@ -231,9 +239,16 @@ export async function getCreativeDraftAssets(
 
   return {
     ...(batch ? { batch } : {}),
-    configuration: batch
-      ? publicConfigurationForBatch(batch)
-      : preferredConfiguration,
+    // A batch made with a different model is returned only as a history
+    // fallback. Keep the live configuration visible so the Studio can offer a
+    // fresh batch with the configured model instead of attempting to edit the
+    // retired batch in place.
+    configuration:
+      batch &&
+      batch.provider === preferredConfiguration.provider &&
+      batch.model === preferredConfiguration.model
+        ? publicConfigurationForBatch(batch)
+        : preferredConfiguration,
   };
 }
 
@@ -967,8 +982,15 @@ async function syncPendingCreativeAssetBatches(
       // batch. Its provider job remains pending and can be retried next poll.
       console.error(
         `Failed to refresh pending creative asset batch ${pendingBatch.id}`,
-        error,
+        errorMessage(error),
       );
+      if (error instanceof FalImageResponseError) {
+        await Promise.all(
+          pendingBatch.assets
+            .filter((asset) => asset.status === "queued" || asset.status === "generating")
+            .map((asset) => failCreativeAsset(asset.id, error.message)),
+        );
+      }
     }
   });
 }

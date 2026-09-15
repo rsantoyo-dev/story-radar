@@ -19,19 +19,19 @@ const DEFAULT_IMAGE_MODEL: CreativeImageModel = "gpt-image";
 /**
  * Resolves the topic-independent default model. FAL_IMAGE_MODEL now names a
  * logical model from the catalog ("gpt-image", "flux-pro", "nano-banana");
- * the previous provider id is still accepted so existing environments keep
+ * the previous provider ids are still accepted so existing environments keep
  * working without an edit.
  */
 export function resolveDefaultCreativeImageModel(): CreativeImageModel {
   const configured = process.env.FAL_IMAGE_MODEL?.trim();
   if (!configured) return DEFAULT_IMAGE_MODEL;
   if (isCreativeImageModel(configured)) return configured;
-  const legacy = (["gpt-image", "flux-pro", "nano-banana"] as const).find(
+  const legacy = (["gpt-image", "flux-pro", "nano-banana", "ideogram"] as const).find(
     (key) => creativeImageModel(key).providerModel === configured,
   );
   if (legacy) return legacy;
   throw new FalImageConfigurationError(
-    `FAL_IMAGE_MODEL must be one of gpt-image, flux-pro, nano-banana`,
+    `FAL_IMAGE_MODEL must be one of gpt-image, flux-pro, nano-banana, ideogram`,
   );
 }
 

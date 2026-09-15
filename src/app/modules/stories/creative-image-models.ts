@@ -6,7 +6,7 @@ import type { CreativeImageQuality } from "./creative-content.types";
  * asset refer to these, never to a fal.ai endpoint id, so a provider can move
  * or version an endpoint without rewriting stored history.
  */
-export const CREATIVE_IMAGE_MODELS = ["gpt-image", "flux-pro", "nano-banana"] as const;
+export const CREATIVE_IMAGE_MODELS = ["gpt-image", "flux-pro", "nano-banana", "ideogram"] as const;
 export type CreativeImageModel = (typeof CREATIVE_IMAGE_MODELS)[number];
 
 export function isCreativeImageModel(value: unknown): value is CreativeImageModel {
@@ -39,6 +39,10 @@ export type CreativeImageModelDescriptor = {
   referenceEndpoint?: string;
   /** 0 when the model cannot take references at all. */
   maxReferenceImages: number;
+  /** Whether the workspace quality selector changes this model's request. */
+  supportsImageQuality: boolean;
+  /** Optional provider-specific prompt normalization. */
+  preparePrompt?: (prompt: string) => string;
   /**
    * Whether the model renders legible in-image text reliably enough for units
    * that carry `expectedText`. Flux is strong on organic imagery and weak on
@@ -64,6 +68,7 @@ const DESCRIPTORS: Record<CreativeImageModel, CreativeImageModelDescriptor> = {
     textToImageEndpoint: "openai/gpt-image-2",
     referenceEndpoint: "openai/gpt-image-2/edit",
     maxReferenceImages: 16,
+    supportsImageQuality: true,
     rendersText: true,
     buildInput: ({ prompt, width, height, imageQuality, imageUrls }) => ({
       prompt,
@@ -84,6 +89,7 @@ const DESCRIPTORS: Record<CreativeImageModel, CreativeImageModelDescriptor> = {
     // form, so character-heavy units keep needing a multi-reference model.
     referenceEndpoint: "fal-ai/flux-pro/v1.1/redux",
     maxReferenceImages: 1,
+    supportsImageQuality: false,
     rendersText: false,
     buildInput: ({ prompt, width, height, imageUrls }) => ({
       prompt,
@@ -100,6 +106,7 @@ const DESCRIPTORS: Record<CreativeImageModel, CreativeImageModelDescriptor> = {
     textToImageEndpoint: "fal-ai/nano-banana-2",
     referenceEndpoint: "fal-ai/nano-banana-2/edit",
     maxReferenceImages: 16,
+    supportsImageQuality: false,
     rendersText: true,
     buildInput: ({ prompt, aspectRatio, imageUrls }) => ({
       prompt,
@@ -112,7 +119,97 @@ const DESCRIPTORS: Record<CreativeImageModel, CreativeImageModelDescriptor> = {
       ...(imageUrls.length > 0 ? { image_urls: [...imageUrls] } : {}),
     }),
   },
+  ideogram: {
+    key: "ideogram",
+    label: "Ideogram 4",
+    providerModel: "ideogram/v4",
+    textToImageEndpoint: "ideogram/v4",
+    referenceEndpoint: "ideogram/v4/image-to-image",
+    maxReferenceImages: 1,
+    supportsImageQuality: true,
+    rendersText: true,
+    preparePrompt: prepareIdeogramPrompt,
+    buildInput: ({ prompt, width, height, imageQuality, imageUrls }) => ({
+      prompt: prepareIdeogramPrompt(prompt),
+      // Ideogram accepts custom dimensions directly. The shared post-step
+      // still normalizes the result to the requested publication canvas.
+      image_size: { width, height },
+      // Keep the saved prompt authoritative; expansion can alter editorial
+      // wording that must remain grounded in the Intelligent Draft.
+      expansion_model: "None",
+      rendering_speed:
+        imageQuality === "low"
+          ? "TURBO"
+          : imageQuality === "high"
+            ? "QUALITY"
+            : "BALANCED",
+      num_images: 1,
+      output_format: "png",
+      ...(imageUrls.length > 0
+        ? {
+            image_url: imageUrls[0],
+            // Keep the supplied identity/composition instead of letting the
+            // edit endpoint replace most of the reference at its 0.8 default.
+            strength: 0.45,
+          }
+        : {}),
+    }),
+  },
 };
+
+/**
+ * Ideogram is strong at following a compact art brief, but the shared prompt
+ * also contains internal validation contracts for other providers. Passing
+ * those contracts verbatim makes them compete with the actual scene and can
+ * cause the model to depict the instructions themselves. Keep the high-signal
+ * scene, style, character, safety and visible-copy sections only.
+ */
+export function prepareIdeogramPrompt(prompt: string): string {
+  const paragraphs = prompt
+    .split(/\n\s*\n/u)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+  const block = (start: string, end: string): string | undefined => {
+    const begin = prompt.indexOf(start);
+    if (begin < 0) return undefined;
+    const contentStart = begin + start.length;
+    const finish = prompt.indexOf(end, contentStart);
+    return prompt.slice(contentStart, finish < 0 ? undefined : finish).trim() || undefined;
+  };
+  const first = paragraphs[0];
+  const keep = (prefix: string): string | undefined =>
+    paragraphs.find((paragraph) => paragraph.startsWith(prefix));
+  const visibleText = block("<VISIBLE_TEXT>", "</VISIBLE_TEXT>");
+  const campaignGuide = block(
+    "<VISUAL_CAMPAIGN_GUIDE>",
+    "</VISUAL_CAMPAIGN_GUIDE>",
+  );
+  const characterLines = paragraphs.filter((paragraph) =>
+    /^Character .+?:/u.test(paragraph),
+  );
+  const dataLock = paragraphs.find((paragraph) =>
+    paragraph.startsWith("HARD DATA-INTEGRITY LOCK:"),
+  );
+  const parts = [
+    "Create one polished editorial image for social media. Focus on the scene and visual idea; do not depict these instructions as objects or text.",
+    first,
+    keep("Deliverable:"),
+    keep("Overall concept:"),
+    keep("Visual direction:"),
+    keep("Use an intentional typography-led graphic composition") ||
+      keep("Create a strong editorial illustration"),
+    characterLines.length > 0
+      ? `Selected character guidance:\n${characterLines.join("\n")}`
+      : undefined,
+    dataLock,
+    campaignGuide ? `Visual style guide:\n${campaignGuide}` : undefined,
+    "Use a clear focal subject, coherent composition, strong contrast and generous safe margins. Do not add logos, watermarks, UI elements or extra words.",
+    visibleText
+      ? `Render these visible words exactly once, preserving spelling and punctuation:\n${visibleText}`
+      : undefined,
+  ].filter((part): part is string => Boolean(part));
+  return parts.join("\n\n");
+}
 
 export function creativeImageModel(key: CreativeImageModel): CreativeImageModelDescriptor {
   return DESCRIPTORS[key];
@@ -150,6 +247,14 @@ export function findCreativeImageModelByEndpoint(
 
 export function listCreativeImageModels(): CreativeImageModelDescriptor[] {
   return CREATIVE_IMAGE_MODELS.map((key) => DESCRIPTORS[key]);
+}
+
+export function findCreativeImageModelByProviderModel(
+  providerModel: string,
+): CreativeImageModelDescriptor | undefined {
+  return Object.values(DESCRIPTORS).find(
+    (descriptor) => descriptor.providerModel === providerModel,
+  );
 }
 
 /**

@@ -9,6 +9,7 @@ import {
   creativeImageModel,
   findCreativeImageModelByEndpoint,
   isCreativeImageModel,
+  prepareIdeogramPrompt,
 } from "./creative-image-models";
 
 test("every catalog model builds a complete input for both generation modes", () => {
@@ -24,7 +25,11 @@ test("every catalog model builds a complete input for both generation modes", ()
     };
 
     const textToImage = model.buildInput(base);
-    assert.equal(textToImage.prompt, base.prompt, `${key} must forward the prompt`);
+    assert.equal(
+      textToImage.prompt,
+      model.preparePrompt?.(base.prompt) ?? base.prompt,
+      `${key} must forward its prepared prompt`,
+    );
     assert.equal(textToImage.output_format, "png", `${key} must request PNG`);
     // Either exact pixels or a ratio: both are normalized to the target size
     // afterwards, but one of the two must reach the provider.
@@ -69,6 +74,65 @@ test("reference limits are enforced per model instead of one shared ceiling", ()
   );
 });
 
+test("Ideogram 4 uses its text-to-image and image-to-image contracts", () => {
+  const ideogram = creativeImageModel("ideogram");
+  assert.equal(ideogram.providerModel, "ideogram/v4");
+  assert.equal(ideogram.textToImageEndpoint, "ideogram/v4");
+  assert.equal(ideogram.referenceEndpoint, "ideogram/v4/image-to-image");
+  assert.equal(ideogram.maxReferenceImages, 1);
+  assert.equal(ideogram.rendersText, true);
+  assert.equal(ideogram.supportsImageQuality, true);
+  assert.equal(ideogram.preparePrompt, prepareIdeogramPrompt);
+
+  const base = {
+    prompt: "A poster with the exact words: New update",
+    width: 1088,
+    height: 1360,
+    aspectRatio: "4:5" as const,
+    imageQuality: "low" as const,
+    imageUrls: [],
+  };
+  const textToImage = ideogram.buildInput(base);
+  assert.deepEqual(textToImage.image_size, { width: 1088, height: 1360 });
+  assert.equal(textToImage.expansion_model, "None");
+  assert.equal(textToImage.rendering_speed, "TURBO");
+  assert.equal(textToImage.image_url, undefined);
+
+  const prepared = prepareIdeogramPrompt([
+    "Create a finished social-media graphic.",
+    "Overall concept: one clear subject.",
+    "HARD SUBJECT COUNT: do not repeat it.",
+    "Visual direction: a quiet editorial scene.",
+    "<VISIBLE_TEXT>\nExact headline\n</VISIBLE_TEXT>",
+  ].join("\n\n"));
+  assert.match(prepared, /Overall concept: one clear subject/);
+  assert.match(prepared, /Exact headline/);
+  assert.doesNotMatch(prepared, /HARD SUBJECT COUNT/);
+
+  const guided = ideogram.buildInput({
+    ...base,
+    imageQuality: "high",
+    imageUrls: ["https://fal.media/reference.png", "https://fal.media/ignored.png"],
+  });
+  assert.equal(guided.rendering_speed, "QUALITY");
+  assert.equal(guided.image_url, "https://fal.media/reference.png");
+  assert.equal(guided.strength, 0.45);
+  assert.equal(guided.image_urls, undefined);
+
+  assert.equal(
+    ideogram.buildInput({ ...base, imageQuality: "medium" }).rendering_speed,
+    "BALANCED",
+  );
+  assert.equal(
+    ideogram.buildInput({ ...base, imageQuality: "auto" }).rendering_speed,
+    "BALANCED",
+  );
+  assert.throws(
+    () => assertCreativeImageModelSupports(ideogram, { referenceCount: 2, expectsText: false }),
+    CreativeImageModelError,
+  );
+});
+
 test("stored endpoints resolve back to their model and mode, including legacy GPT assets", () => {
   // Assets written before the catalog existed carry these exact endpoints.
   const legacy = findCreativeImageModelByEndpoint("openai/gpt-image-2");
@@ -85,6 +149,7 @@ test("stored endpoints resolve back to their model and mode, including legacy GP
 
 test("only catalog keys are accepted as logical model names", () => {
   assert.ok(isCreativeImageModel("flux-pro"));
+  assert.ok(isCreativeImageModel("ideogram"));
   // A provider id is not a logical name; the catalog owns that mapping.
   assert.equal(isCreativeImageModel("fal-ai/flux-pro/v1.1"), false);
   assert.equal(isCreativeImageModel("nano_banana"), false);

@@ -9,6 +9,7 @@ import {
 } from "./modules/stories/acquisition-lenses";
 import { requestsGeographicReconstruction } from "./modules/stories/creative-evidence-guardrails";
 import { imageTextNeedsUpdate } from "./modules/stories/creative-image-text-sync";
+import { findCreativeImageModelByProviderModel } from "./modules/stories/creative-image-models";
 
 import {
   CreativeBrandImageEditor,
@@ -433,7 +434,8 @@ export function CreativeDraftWorkspace({
     assetBatch &&
       !viewingHistoricalDraft &&
       (assetBatch.status === "stale" ||
-        assetBatch.draftVersion !== activeDraft?.version),
+        assetBatch.draftVersion !== activeDraft?.version ||
+        assetBatch.model !== visibleAssets?.configuration.model),
   );
   const currentAssetBatch = assetBatchIsStaleForCurrentDraft
     ? undefined
@@ -479,7 +481,11 @@ export function CreativeDraftWorkspace({
       )
     : outputAspectRatioLabel(activeOutputAspectRatio);
   const imageModelLabel = visibleAssets?.configuration.model ?? "the configured image model";
-  const supportsImageQuality = visibleAssets?.configuration.model === "openai/gpt-image-2";
+  const supportsImageQuality = Boolean(
+    visibleAssets &&
+      findCreativeImageModelByProviderModel(visibleAssets.configuration.model)
+        ?.supportsImageQuality,
+  );
 
   useEffect(() => {
     if (!activeDraftId || !assetsPending) return;
@@ -4123,7 +4129,7 @@ function imageQualityDetail(imageQuality: ImageQualityChoice): string {
 function imageQualityFromResponse(
   response: CreativeAssetBatchResponse,
 ): ImageQualityChoice {
-  return response.batch
+  return response.batch && response.batch.model === response.configuration.model
     ? response.batch.imageQuality ?? "high"
     : response.configuration.imageQuality ?? DEFAULT_IMAGE_QUALITY;
 }

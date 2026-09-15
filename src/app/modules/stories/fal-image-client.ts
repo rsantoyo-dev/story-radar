@@ -78,14 +78,72 @@ export async function submitFalImage({
     imageQuality,
     imageUrls,
   });
-  const result = await fal.queue.submit(endpoint, {
-    // The installed client's endpoint map is narrower than the live API (it
-    // omits GPT Image's `auto` quality, for one). Inputs are validated by the
-    // adapter and the app-level unions before reaching this boundary.
-    input: input as Parameters<typeof fal.queue.submit>[1]["input"],
-    storageSettings: { expiresIn: "30d" },
-  });
+  let result: Awaited<ReturnType<typeof fal.queue.submit>>;
+  try {
+    result = await fal.queue.submit(endpoint, {
+      // The installed client's endpoint map is narrower than the live API
+      // (it does not yet list the live Ideogram v4 endpoint). Inputs are
+      // validated by the adapter and the app-level unions before reaching
+      // this boundary.
+      input: input as Parameters<typeof fal.queue.submit>[1]["input"],
+      storageSettings: { expiresIn: "30d" },
+    });
+  } catch (error) {
+    if (isFalApiError(error)) {
+      throw new FalImageResponseError(formatFalApiError(error));
+    }
+    throw error;
+  }
   return result.request_id;
+}
+
+/**
+ * Fal returns Pydantic validation details as an array. Preserve only the
+ * field path and provider message so the asset error is actionable without
+ * exposing prompts, URLs, or credentials.
+ */
+type FalApiErrorLike = {
+  name?: unknown;
+  status: number;
+  body?: { detail?: unknown };
+};
+
+/**
+ * Do not rely only on instanceof here. Next can load the SDK through more
+ * than one server bundle, in which case the thrown ApiError and this module's
+ * ApiError constructor are different identities even though the error is
+ * still a fal.ai ValidationError.
+ */
+function isFalApiError(error: unknown): error is FalApiErrorLike {
+  if (!error || typeof error !== "object") return false;
+  const candidate = error as Partial<FalApiErrorLike>;
+  return (
+    (candidate.name === "ApiError" || candidate.name === "ValidationError") &&
+    typeof candidate.status === "number"
+  );
+}
+
+function formatFalApiError(error: FalApiErrorLike): string {
+  const detail = error.body?.detail;
+  if (typeof detail === "string") {
+    return `fal.ai rejected the image request (HTTP ${error.status}): ${detail}`;
+  }
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((entry) => {
+        if (!entry || typeof entry !== "object") return undefined;
+        const item = entry as { loc?: unknown; msg?: unknown };
+        const path = Array.isArray(item.loc)
+          ? item.loc.filter((part): part is string | number => typeof part === "string" || typeof part === "number").join(".")
+          : "input";
+        return typeof item.msg === "string" ? `${path}: ${item.msg}` : undefined;
+      })
+      .filter((message): message is string => Boolean(message));
+    if (messages.length > 0) {
+      return `fal.ai rejected the image request (HTTP ${error.status}): ${messages.join("; ")}`;
+    }
+  }
+  return `fal.ai rejected the image request (HTTP ${error.status})`;
 }
 
 export async function pollFalImage({
@@ -106,10 +164,20 @@ export async function pollFalImage({
   postProcess?: FalImagePostProcessor;
 }): Promise<FalImagePollResult> {
   configureFal(apiKey);
-  const status = await fal.queue.status(endpoint, {
-    requestId,
-    logs: false,
-  });
+  let status: Awaited<ReturnType<typeof fal.queue.status>>;
+  try {
+    status = await fal.queue.status(endpoint, {
+      requestId,
+      logs: false,
+    });
+  } catch (error) {
+    if (isFalApiError(error)) {
+      throw new FalImageResponseError(
+        `Could not read the fal.ai image request status: ${formatFalApiError(error)}`,
+      );
+    }
+    throw error;
+  }
 
   if (status.status === "IN_QUEUE") {
     return { status: "queued" };
@@ -118,7 +186,17 @@ export async function pollFalImage({
     return { status: "generating" };
   }
 
-  const result = await fal.queue.result(endpoint, { requestId });
+  let result: Awaited<ReturnType<typeof fal.queue.result>>;
+  try {
+    result = await fal.queue.result(endpoint, { requestId });
+  } catch (error) {
+    if (isFalApiError(error)) {
+      throw new FalImageResponseError(
+        `Could not read the fal.ai image result: ${formatFalApiError(error)}`,
+      );
+    }
+    throw error;
+  }
   const image = result.data.images[0];
   if (!image?.url) {
     throw new FalImageResponseError(
