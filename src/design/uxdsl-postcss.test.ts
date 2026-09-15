@@ -23,3 +23,20 @@ test("global density tokens do not leak into already-compiled CSS Modules", asyn
   assert.doesNotMatch(compiledModule.css, /:root/);
   assert.match(compiledModule.css, /var\(--density-1\)/);
 });
+
+test("token blocks the UXDSL CLI writes into a compiled CSS Module are stripped, class rules are not", async () => {
+  // Reproduces what `uxdsl build` emits per entry since 0.5.0-beta.0: global
+  // token blocks the theme build already provides, which CSS Modules reject.
+  const compiled = [
+    ":root { --density-1: var(--space-1); }",
+    "@media (min-width: 768px) { :root { --density-1: var(--space-2); } }",
+    "@media (min-width: 768px) { .card { padding: var(--density-2); } }",
+    ".card { padding: var(--surface-flat-padding); }",
+  ].join("\n");
+  const result = await postcss([sourceOnly({})]).process(compiled, { from: "card.generated.module.css" });
+  assert.doesNotMatch(result.css, /:root/);
+  // An @media that only wrapped tokens goes with them; one with real rules stays.
+  assert.equal(result.css.match(/@media/gu)?.length, 1);
+  assert.match(result.css, /\.card \{ padding: var\(--density-2\); \}/);
+  assert.match(result.css, /\.card \{ padding: var\(--surface-flat-padding\); \}/);
+});

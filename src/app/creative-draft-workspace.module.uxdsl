@@ -280,7 +280,9 @@
 }
 
 .carouselChromePanel {
-  @ds-surface(flat neutral density(4) radius(3) shadow(1));
+  @ds-surface(flat neutral 4);
+  border-radius: radius(3);
+  box-shadow: shadow(1);
   display: grid;
   gap: density(4);
   padding: density(4);
@@ -309,7 +311,7 @@
 }
 
 .paletteColor {
-  @ds-surface(flat light density(2) radius(2));
+  @ds-surface(flat light 2);
   display: grid;
   grid-template-columns: density(7) minmax(0, 1fr) auto;
   align-items: center;
@@ -330,14 +332,16 @@
 }
 
 .paletteColor input:not([type="color"]) {
-  @ds-input(outlined neutral density(2) radius(1));
+  @ds-input(outlined neutral 2);
+  border-radius: radius(1);
   min-width: 0;
   padding: density(1) density(2);
   @ds-typo(caption);
 }
 
 .paletteRoleSelect {
-  @ds-input(outlined neutral density(2) radius(1));
+  @ds-input(outlined neutral 2);
+  border-radius: radius(1);
   grid-column: 2 / -1;
   min-width: 0;
   @ds-typo(caption);
@@ -351,7 +355,8 @@
 
 .paletteRemove,
 .paletteAdd {
-  @ds-button(outlined neutral density(2) radius(1));
+  @ds-button(outlined neutral 2);
+  border-radius: radius(1);
   width: max-content;
   min-height: density(6);
   @ds-typo(caption);
@@ -383,12 +388,13 @@
 }
 
 .carouselChromeSelect select {
-  @ds-input(outlined neutral density(2) radius(2));
+  @ds-input(outlined neutral 2);
   min-width: 0;
 }
 
 .carouselChromePreview {
-  @ds-surface(flat light density(3) radius(2));
+  @ds-surface(flat light 3);
+  border-radius: radius(2);
   display: grid;
   gap: density(2);
   justify-items: start;
@@ -559,7 +565,9 @@
 }
 
 .brandOverlayPanel {
-  @ds-surface(flat neutral density(4) radius(3) shadow(1));
+  @ds-surface(flat neutral 4);
+  border-radius: radius(3);
+  box-shadow: shadow(1);
   display: grid;
   gap: density(4);
   padding: density(4);
@@ -593,7 +601,8 @@
 }
 
 .brandEnabledToggle {
-  @ds-surface(flat light density(3) radius(2));
+  @ds-surface(flat light 3);
+  border-radius: radius(2);
   display: inline-flex;
   width: max-content;
   align-items: center;
@@ -701,7 +710,8 @@
 }
 
 .brandAssetCard {
-  @ds-surface(flat light density(3) radius(2));
+  @ds-surface(flat light 3);
+  border-radius: radius(2);
   display: grid;
   min-width: 0;
   gap: density(3);
@@ -774,7 +784,8 @@
 }
 
 .brandUpload {
-  @ds-button(outlined primary density(3) radius(2));
+  @ds-button(outlined primary 3);
+  border-radius: radius(2);
   display: inline-flex;
   width: max-content;
   max-width: 100%;
@@ -841,7 +852,7 @@
 }
 
 .brandOptionButton {
-  @ds-button(outlined neutral density(2) radius(2));
+  @ds-button(outlined neutral 2);
   min-height: density(7);
   justify-content: center;
   padding: 0 density(3);
@@ -852,7 +863,7 @@
 }
 
 .brandOptionSelected {
-  @ds-button(contained primary density(2) radius(2));
+  @ds-button(contained primary 2);
   border: border(1, palette(primary-main), solid);
 }
 
@@ -864,7 +875,7 @@
 }
 
 .brandPlacementButton {
-  @ds-button(outlined neutral density(2) radius(2));
+  @ds-button(outlined neutral 2);
   position: relative;
   min-height: density(7);
   padding: 0;
@@ -912,7 +923,7 @@
 }
 
 .brandPlacementSelected {
-  @ds-button(contained primary density(2) radius(2));
+  @ds-button(contained primary 2);
   border: border(1, palette(primary-main), solid);
 }
 
@@ -938,7 +949,7 @@
 }
 
 .brandColorPicker {
-  @ds-input(outlined neutral density(2) radius(2));
+  @ds-input(outlined neutral 2);
   display: flex;
   min-height: density(7);
   align-items: center;
@@ -1313,7 +1324,8 @@
 }
 
 .editorialDirectionPanel {
-  @ds-surface(flat neutral radius(3));
+  @ds-surface(flat neutral);
+  border-radius: radius(3);
   display: grid;
   gap: density(2);
   padding: density(4);
@@ -1486,7 +1498,7 @@
 }
 
 .historicalRegenerationAction {
-  @ds-surface (contained primary radius(2) shadow(1));
+  @ds-surface (contained primary 2);
   display: flex;
   flex-direction: xs(column) md(row);
   align-items: xs(stretch) md(center);
@@ -1510,7 +1522,8 @@
 }
 
 .historicalRegenerationAction button {
-  @ds-button (contained light density(3) radius(2) shadow(1));
+  @ds-button (contained light 3);
+  border-radius: radius(2);
   flex: 0 0 auto;
 }
 
@@ -1612,7 +1625,9 @@
 }
 
 .completeScript {
-  @ds-surface (flat primary radius(3) shadow(1));
+  @ds-surface (flat primary);
+  border-radius: radius(3);
+  box-shadow: shadow(1);
   overflow: hidden;
 }
 
@@ -1653,7 +1668,8 @@
 }
 
 .completeScript textarea {
-  @ds-input (outlined neutral density(3) radius(2));
+  @ds-input (outlined neutral 3);
+  border-radius: radius(2);
   width: 100%;
   resize: vertical;
   color: palette(dark-main);
@@ -2544,7 +2560,8 @@
 }
 
 .documentaryPanel {
-  @ds-surface(flat primary radius(3));
+  @ds-surface(flat primary);
+  border-radius: radius(3);
   @ds-typo(body);
   display: flex;
   flex-direction: column;
@@ -2576,7 +2593,7 @@
 }
 
 .documentaryPanel button {
-  @ds-button(outlined primary density(2) radius(2));
+  @ds-button(outlined primary 2);
 }
 
 .documentaryPanel a {
@@ -2586,7 +2603,8 @@
 
 /* IG-03 — Instagram publications gallery */
 .instagramGallery {
-  @ds-surface(flat primary radius(3));
+  @ds-surface(flat primary);
+  border-radius: radius(3);
   @ds-typo(body);
   display: flex;
   flex-direction: column;
@@ -2623,7 +2641,8 @@
 }
 
 .instagramCard {
-  @ds-surface(flat light radius(2) shadow(1));
+  @ds-surface(flat light 2);
+  box-shadow: shadow(1);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2717,7 +2736,7 @@
 }
 
 .instagramLinkForm {
-  @ds-surface(flat light radius(2));
+  @ds-surface(flat light 2);
   display: flex;
   flex-direction: xs(column) sm(row);
   flex-wrap: wrap;
@@ -2812,7 +2831,8 @@
 }
 
 .storyInstagramPost {
-  @ds-surface(flat light radius(2) shadow(1));
+  @ds-surface(flat light 2);
+  box-shadow: shadow(1);
   display: grid;
   grid-template-columns: xs(1fr) sm(96px 1fr);
   gap: density(3);
@@ -2849,7 +2869,7 @@
 }
 
 .storyInstagramPicker {
-  @ds-surface(flat light radius(2));
+  @ds-surface(flat light 2);
   display: flex;
   flex-direction: column;
   gap: density(2);
@@ -2865,7 +2885,8 @@
 
 /* BRAND-01 — brand reference library */
 .brandReferenceLibrary {
-  @ds-surface(flat light density(3) radius(2));
+  @ds-surface(flat light 3);
+  border-radius: radius(2);
   display: grid;
   gap: density(3);
   margin-top: density(4);
@@ -3044,7 +3065,7 @@
 
 
 .brandImageEditor {
-  @ds-surface(flat neutral radius(2));
+  @ds-surface(flat neutral 2);
   @ds-typo(body);
   padding: density(3);
   display: flex;
@@ -3094,7 +3115,7 @@
 }
 
 .mapsPreviewPanel {
-  @ds-surface(flat primary radius(2));
+  @ds-surface(flat primary 2);
   @ds-typo(body);
   padding: density(3);
   border: border(1, palette(primary-main), solid);
@@ -3102,12 +3123,12 @@
 
 .mapsPreviewPanel summary { cursor: pointer; font-weight: 600; }
 .mapsPreviewActions { display: flex; flex-wrap: wrap; gap: density(2); }
-.mapsPreviewActions button { @ds-button(outlined primary density(2) radius(2)); }
+.mapsPreviewActions button { @ds-button(outlined primary 2); }
 .mapsPreviewActions button:disabled { opacity: 0.5; cursor: not-allowed; }
 .mapsPreviewResults { display: flex; flex-direction: column; gap: density(2); margin-top: density(3); }
 .mapsPreviewGrid { display: grid; grid-template-columns: xs(1fr) lg(repeat(2, minmax(0, 1fr))); gap: density(3); }
 .mapsPreviewComposition {
-  @ds-surface(contained light radius(2));
+  @ds-surface(contained light 2);
   aspect-ratio: 4 / 5;
   display: flex;
   flex-direction: column;
@@ -3128,7 +3149,8 @@
 .mapsAttribution { font: 400 14px Arial, sans-serif; color: #1f1f1f; background: #fff; white-space: nowrap; padding: density(1); }
 
 .publicationCandidate {
-  @ds-surface(flat primary radius(3));
+  @ds-surface(flat primary);
+  border-radius: radius(3);
   display: grid;
   gap: density(2);
   padding: xs(density(3)) md(density(4));

@@ -175,7 +175,7 @@
   padding: density(2);
 }
 
-.panel textarea { min-height: density(16); resize: vertical; }
+.panel textarea { min-height: density(15); resize: vertical; }
 
 .toggle { display: flex !important; align-items: center; gap: density(1); }
 .toggle input[type="checkbox"] {
@@ -248,7 +248,8 @@
 .documentSections { width: 100%; border-top: border(1, surface-dark, solid); padding-top: density(3); }
 .documentSections > strong { @ds-typo(body); color: palette(dark-main); }
 .dossierBuilder {
-  @ds-surface(flat neutral radius(3));
+  @ds-surface(flat neutral);
+  border-radius: radius(3);
   display: grid;
   grid-template-columns: xs(1fr) md(minmax(0, 1fr) minmax(240px, 1fr) auto);
   align-items: end;
@@ -262,7 +263,7 @@
 .dossierBuilder small { @ds-typo(small); color: palette(tertiary-main); }
 .dossierTitle { display: grid; gap: density(1); }
 .dossierTitle span { @ds-typo(small); color: palette(tertiary-main); }
-.dossierTitle input { @ds-input(outlined neutral density(2) radius(2)); width: 100%; }
+.dossierTitle input { @ds-input(outlined neutral 2); width: 100%; }
 .documentSections ol { display: grid; gap: density(2); margin: space(3) 0 0; padding-left: space(5); }
 .documentSections li { display: flex; align-items: center; justify-content: space-between; gap: density(3); color: palette(dark-main); }
 .documentSections li > div { min-width: 0; }

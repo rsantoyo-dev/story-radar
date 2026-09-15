@@ -1,20 +1,24 @@
+// Keys are bare scale steps: the theme generator emits each one as
+// `--space-<key>`, which `density()`, `radius()` and `space()` then resolve
+// against. Prefixing a key here produces `--space-space-1` and silently
+// breaks every spacing token in the app.
 const spacing = {
-  "space-1": "0.125rem",
-  "space-2": "0.25rem",
-  "space-3": "0.5rem",
-  "space-4": "0.75rem",
-  "space-5": "1rem",
-  "space-6": "1.5rem",
-  "space-7": "2rem",
-  "space-8": "2.5rem",
-  "space-9": "3.125rem",
-  "space-10": "3.875rem",
-  "space-11": "4.875rem",
-  "space-12": "6.125rem",
-  "space-13": "7.75rem",
-  "space-14": "9.75rem",
-  "space-15": "12.25rem",
-  "space-16": "15.375rem",
+  1: "0.125rem",
+  2: "0.25rem",
+  3: "0.5rem",
+  4: "0.75rem",
+  5: "1rem",
+  6: "1.5rem",
+  7: "2rem",
+  8: "2.5rem",
+  9: "3.125rem",
+  10: "3.875rem",
+  11: "4.875rem",
+  12: "6.125rem",
+  13: "7.75rem",
+  14: "9.75rem",
+  15: "12.25rem",
+  16: "15.375rem",
 };
 
 const palette = {

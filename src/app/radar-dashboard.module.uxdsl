@@ -1338,7 +1338,7 @@
 
 .clearSelectedStoriesButton,
 .unselectStoryButton {
-  @ds-button(outlined neutral density(2) radius(2));
+  @ds-button(outlined neutral 2);
   min-height: density(7);
   padding: 0 density(3);
   border-color: palette(secondary-main);
@@ -1814,7 +1814,9 @@
 }
 
 .growthScorePopover {
-  @ds-surface(contained light density(3) radius(2) shadow(3));
+  @ds-surface(contained light 3);
+  border-radius: radius(2);
+  box-shadow: shadow(3);
   position: absolute;
   z-index: 4;
   top: calc(100% + density(1));
