@@ -1,4 +1,7 @@
 import { getDailyDraftStory } from "./daily-draft-access";
+import { getEditorialProfile } from "./editorial-profile.repository";
+import { plannerDay } from "./daily-editorial-planner.types";
+import { EDITORIAL_FOCUS_PROMPT_VERSION } from "./editorial-focus";
 import { parseStoryReferences } from "./story-materials.types";
 import { resolveStoryReferences } from "./manage-story-photos";
 import { enforceCoverTitle } from "./creative-cover-title";
@@ -69,6 +72,7 @@ import {
 } from "./creative-aspect-ratio";
 import {
   generateCreativeBrief,
+  generateEditorialFocus,
   generateCreativeDraft,
   type CreativeTopicContext,
 } from "./gemini-creative-content-generator";
@@ -206,6 +210,57 @@ export async function getCreativeWorkspaceState(
       draftPromptVersions: configuration.draftPromptVersions,
     },
   };
+}
+
+export async function suggestEditorialFocus(
+  topicId: string,
+  storyId: string,
+  editorialDirection?: string,
+  editorialRunId?: string,
+  preparationRunId?: string,
+  timezone = "UTC",
+) {
+  const configuration = getCreativeContentRuntimeConfig();
+  const [topic, story, profile, editorialProfile, daily, acquisitionTaxonomy, collectionContext] = await Promise.all([
+    requireTopic(topicId, { active: true }),
+    getDailyDraftStory(topicId, storyId, preparationRunId, Boolean(preparationRunId)),
+    getCreativeProfile(topicId),
+    getEditorialProfile(topicId),
+    getCreativeDailyUsage(topicId, configuration.maxRunsPerDay),
+    getCurrentTopicAcquisitionTaxonomy(topicId),
+    selectedStoryContext(topicId, storyId, editorialRunId),
+  ]);
+  let temporalContext: ReturnType<typeof plannerDay>;
+  try {
+    temporalContext = plannerDay(collectionContext?.timezone || timezone);
+  } catch {
+    throw new CreativeDraftValidationError("Choose a valid IANA timezone");
+  }
+  const content = requireStoryContent(story, configuration.maxContentCharacters);
+  const normalizedDirection = normalizeEditorialDirection(editorialDirection);
+  const focusContext = { temporalContext, editorialProfile, acquisitionTaxonomy, collectionContext };
+  assertCreativeDailyBudget(daily.runs, configuration.maxRunsPerDay);
+  // Compatibility: focus suggestions are brief-planning runs, distinguished by
+  // prompt version. They do not create or replace a persisted creative brief.
+  const runId = await createCreativeAiRun({
+    topicId, storyId, task: "brief", provider: configuration.provider,
+    model: configuration.model, promptVersion: EDITORIAL_FOCUS_PROMPT_VERSION,
+    inputHash: createHash("sha256").update(JSON.stringify({ story: storyForGenerator(story, content), topic, profile, focusContext, normalizedDirection })).digest("hex"),
+  });
+  try {
+    const result = await generateEditorialFocus({
+      ...configuration, topic, profile, story: storyForGenerator(story, content),
+      editorialDirection: normalizedDirection, focusContext,
+    });
+    await completeCreativeAiRun(topicId, runId, result.usage, {}, { provider: result.provider, model: result.model });
+    return {
+      editorialDirection: result.editorialDirection,
+      daily: await getCreativeDailyUsage(topicId, configuration.maxRunsPerDay),
+    };
+  } catch (error) {
+    await failRunSafely(topicId, runId, error);
+    throw error;
+  }
 }
 
 export async function createCreativeBrief(

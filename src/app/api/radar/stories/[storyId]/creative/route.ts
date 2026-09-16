@@ -6,6 +6,7 @@ import {
 } from "@/app/api/radar/radar-topic";
 import {
   createCreativeBrief,
+  suggestEditorialFocus,
   CreativeDraftValidationError,
   getCreativeWorkspaceState,
 } from "@/app/modules/stories/manage-creative-content";
@@ -62,6 +63,14 @@ export async function POST(request: Request, context: Context) {
 
   try {
     const editorialDirection = await parseEditorialDirection(request);
+    if (new URL(request.url).searchParams.get("action") === "editorial-focus") {
+      const params = new URL(request.url).searchParams;
+      return noStoreJson(await suggestEditorialFocus(
+        await requireActiveRequestTopic(request), storyId, editorialDirection,
+        params.get("editorialRunId") || undefined, preparationRunId,
+        params.get("timezone") || "UTC",
+      ));
+    }
     return noStoreJson(
       await createCreativeBrief(
         await requireActiveRequestTopic(request),

@@ -1,0 +1,32 @@
+ :root {
+  --background: var(--uxdsl__palette__light-main);
+  --foreground: var(--uxdsl__palette__dark-main);
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+input {
+  font: inherit;
+}

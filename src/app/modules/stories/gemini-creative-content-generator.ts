@@ -4,6 +4,7 @@ import { repairRemainingCreativeBlockers, FINAL_REPAIR_INSTRUCTION, finalRepairS
 import { requestCreativeGemini, GeminiOutputLimitError, GeminiDeadlineError, failedGeminiUsage } from "./creative-gemini-request";
 import { repairPublicParticipationPlan } from "./creative-project-grounding";
 import "server-only";
+import { EDITORIAL_FOCUS_INSTRUCTION, parseEditorialFocus } from "./editorial-focus";
 
 import { ApiError, GoogleGenAI } from "@google/genai";
 import Groq from "groq-sdk";
@@ -374,6 +375,34 @@ const CLOUDFLARE_JSON_MODE_MODELS = new Set([
   "@hf/thebloke/deepseek-coder-6.7b-instruct-awq",
   "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
 ]);
+
+export async function generateEditorialFocus(options: GeneratorOptions & {
+  focusContext: Record<string, unknown>;
+}) {
+  const response = await generateJson({
+    ...options,
+    systemInstruction: EDITORIAL_FOCUS_INSTRUCTION,
+    schema: {
+      type: "object",
+      properties: { editorialDirection: { type: "string", maxLength: 1500 } },
+      required: ["editorialDirection"],
+      additionalProperties: false,
+    },
+    contents: {
+      ...options.focusContext,
+      topic: topicForPrompt(options.topic),
+      creativeProfile: profileForPrompt(options.profile),
+      existingFocus: options.editorialDirection ?? null,
+      story: options.story,
+    },
+    maxOutputTokens: 2048,
+  });
+  try {
+    return { ...response, editorialDirection: parseEditorialFocus(response.text) };
+  } catch {
+    throw new CreativeContentResponseError("AI returned an invalid editorial focus. Please try again.");
+  }
+}
 
 export async function generateCreativeBrief({
   apiKey,

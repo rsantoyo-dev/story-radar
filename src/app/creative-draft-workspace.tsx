@@ -74,6 +74,7 @@ type WorkspaceProps = {
 };
 
 type BusyAction =
+  | "editorial-focus"
   | "profile-draft"
   | "brief"
   | "draft"
@@ -187,6 +188,8 @@ export function CreativeDraftWorkspace({
   const profileDirty = false;
   const [researchRun,setResearchRun]=useState<string>();
   const [editorialDirection, setEditorialDirection] = useState("");
+  const [focusSuggestion, setFocusSuggestion] = useState<{ text: string; context: string }>();
+  const [focusError, setFocusError] = useState<string>();
   const [characterSlots, setCharacterSlots] = useState<CharacterSlot[]>(
     emptyCharacterSlots,
   );
@@ -583,6 +586,27 @@ export function CreativeDraftWorkspace({
       draftSectionRef.current.scrollIntoView({behavior:"smooth",block:"start"});
     }
   },[busy,workspace]);
+
+  async function handleSuggestFocus() {
+    if (busy) return;
+    setFocusError(undefined);
+    const context = `${topicId}:${storyId}:${creativeBriefQuery}`;
+    await run("editorial-focus", async () => {
+      try {
+        const query = new URLSearchParams(creativeBriefQuery);
+        query.set("action", "editorial-focus");
+        query.set("timezone", Intl.DateTimeFormat().resolvedOptions().timeZone);
+        const result = await requestJson<{
+          editorialDirection: string;
+          daily: CreativeWorkspaceState["daily"];
+        }>(topicUrl(`/api/radar/stories/${encodeURIComponent(storyId)}/creative?${query}`, topicId), secret, creativeBriefRequest(editorialDirection));
+        setFocusSuggestion({ text: result.editorialDirection, context });
+        setWorkspace(current => current ? { ...current, daily: result.daily } : current);
+      } catch (error) {
+        setFocusError(error instanceof Error ? error.message : "Could not suggest an editorial focus.");
+      }
+    });
+  }
 
   async function handleCreateBrief() {
     if (busy) return;
@@ -1819,10 +1843,28 @@ export function CreativeDraftWorkspace({
                   value={editorialDirection}
                   onChange={setEditorialDirection}
                   rows={4}
+                  maxLength={1500}
                 />
+                <button type="button" className={styles.secondaryButton}
+                  disabled={Boolean(busy) || !workspace.story.hasContent || workspace.daily.remainingRuns <= 0}
+                  onClick={handleSuggestFocus}>
+                  {busy === "editorial-focus" ? "AI · Finding the best focus…" : "AI · Suggest editorial focus"}
+                </button>
+                {busy === "editorial-focus" ? <p role="status">Reviewing the story, relevant dates, audience and channel goals…</p> : null}
+                {focusError ? <ErrorMessage message={focusError} /> : null}
+                {focusSuggestion?.context === `${topicId}:${storyId}:${creativeBriefQuery}` ? (
+                  <div className={styles.briefCallout}>
+                    <div><strong>Suggested editorial focus</strong><p>{focusSuggestion.text}</p></div>
+                    <button type="button" className={styles.secondaryButton} disabled={Boolean(busy)} onClick={() => {
+                      setEditorialDirection(focusSuggestion.text);
+                      setFocusSuggestion(undefined);
+                    }}>Use this focus</button>
+                    <button type="button" className={styles.secondaryButton} disabled={Boolean(busy)} onClick={() => setFocusSuggestion(undefined)}>Dismiss</button>
+                  </div>
+                ) : null}
                 <p>
                   Describe the audience, learning objective, scope, and angle.
-                  This guides the brief but is never treated as source evidence.
+                  This guides the brief but is never treated as source evidence. AI suggestions use one run; review and apply the focus before refreshing the brief.
                 </p>
               </div>
 
