@@ -14,7 +14,6 @@ const config = {
         externalTokens: ["--font-geist-sans", "--font-geist-mono"],
       },
     },
-    "@tailwindcss/postcss": {},
   },
 };
 

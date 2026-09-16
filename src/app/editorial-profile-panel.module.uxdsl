@@ -1,8 +1,8 @@
 .panel {
   @ds-surface(contained surface 4);
   display: grid;
-  gap: space(5);
-  margin-top: space(5);
+  gap: density(5);
+  margin-top: density(5);
   padding: density(4);
   border-color: palette(primary-light, 0.28);
 }
@@ -12,14 +12,21 @@
 .footer,
 .numberField > div {
   display: flex;
+}
+
+.numberField > div {
   align-items: center;
 }
 
 .heading,
 .weightsHeading,
 .footer {
+  /* Was a max-width:820px override; snapped to the project's own md
+   * breakpoint so this reads off the same scale as every other panel. */
+  align-items: xs(flex-start) md(center);
+  flex-direction: xs(column) md(row);
   justify-content: space-between;
-  gap: space(5);
+  gap: density(5);
 }
 
 .heading p {
@@ -43,7 +50,7 @@
 .footer small {
   @ds-typo(small);
   display: block;
-  margin-top: space(2);
+  margin-top: density(2);
   color: palette(info-main);
 }
 
@@ -66,12 +73,15 @@
 .policyGrid,
 .weightsGrid {
   display: grid;
-  gap: space(3);
+  gap: density(3);
 }
 
-.copyGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.policyGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.weightsGrid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+/* Was max-width:520px (-> 1 column) and max-width:820px (-> 2 columns),
+ * snapped to this project's sm/md breakpoints. copyGrid's own column count
+ * never exceeds 2, so it has no distinct value above sm. */
+.copyGrid { grid-template-columns: xs(1fr) sm(repeat(2, minmax(0, 1fr))); }
+.policyGrid { grid-template-columns: xs(1fr) sm(repeat(2, minmax(0, 1fr))) md(repeat(3, minmax(0, 1fr))); }
+.weightsGrid { grid-template-columns: xs(1fr) sm(repeat(2, minmax(0, 1fr))) md(repeat(5, minmax(0, 1fr))); }
 
 .copyGrid label,
 .numberField {
@@ -96,13 +106,13 @@
 
 .numberField > div { position: relative; }
 .numberField input { padding-right: 2.8rem; }
-.numberField small { @ds-typo(caption); position: absolute; right: space(2); color: palette(info-main); }
+.numberField small { @ds-typo(caption); position: absolute; right: density(2); color: palette(info-main); }
 
-.weightsHeading { margin-top: space(2); padding-top: space(5); border-top: border(1, surface-dark, solid); }
+.weightsHeading { margin-top: density(2); padding-top: density(5); border-top: border(1, surface-dark, solid); }
 
 .policyHint {
   @ds-typo(small);
-  margin: calc(space(2) * -1) 0 0;
+  margin: calc(density(2) * -1) 0 0;
   color: palette(info-main);
 }
 
@@ -114,7 +124,7 @@
   color: palette(info-main);
 }
 
-.footer { padding-top: space(2); }
+.footer { padding-top: density(2); }
 .footer small { margin: 0; }
 .footer button {
   @ds-button(contained primary 2);
@@ -138,18 +148,3 @@
 .loading { color: palette(info-main); }
 .notice { background: palette(light-light); color: palette(primary-dark); }
 .error { background: palette(error-light); color: palette(error-main); }
-
-@media (max-width: 820px) {
-  .heading,
-  .weightsHeading,
-  .footer { align-items: flex-start; flex-direction: column; }
-  .copyGrid,
-  .policyGrid,
-  .weightsGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-
-@media (max-width: 520px) {
-  .copyGrid,
-  .policyGrid,
-  .weightsGrid { grid-template-columns: 1fr; }
-}

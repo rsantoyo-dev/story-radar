@@ -5,31 +5,41 @@
 }
 
 .sidebar {
-  position: sticky;
+  /* Was a max-width:960px override; snapped to this project's lg breakpoint. */
+  position: xs(fixed) lg(sticky);
   top: 0;
+  left: xs(0) lg(auto);
   z-index: 20;
   display: flex;
   flex: 0 0 248px;
   width: 248px;
   height: 100svh;
   flex-direction: column;
-  padding: space(6) space(5);
+  padding: density(6) density(5);
   overflow-y: auto;
   background: palette(dark-main);
   color: palette(light-light);
   box-shadow: shadow(3);
+  transform: xs(translateX(-105%)) lg(none);
+  transition: xs(transform 180ms ease) lg(none);
+}
+
+/* Toggled by the mobile menu button; translateX(0) is the identity transform
+ * at every width, so this is safe to leave unconditional above lg too. */
+.sidebarOpen {
+  transform: translateX(0);
 }
 
 .sidebarHeader {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: space(4);
-  padding: 0 space(3);
+  gap: density(4);
+  padding: 0 density(3);
 }
 
 .sidebar .brand {
-  gap: space(4);
+  gap: density(4);
 }
 
 .sidebar .brand h1 {
@@ -63,7 +73,7 @@
 
 .closeSidebarButton,
 .menuButton {
-  display: none;
+  display: xs(block) lg(none);
   border: 0;
   background: transparent;
   color: inherit;
@@ -71,21 +81,43 @@
 }
 
 .closeSidebarButton {
-  padding: 0 space(2);
+  padding: 0 density(2);
   color: palette(primary-light);
   @ds-typo (body);
   font-size: space(6);
   line-height: 1;
 }
 
+.menuButton {
+  /* The shared rule above sets display:block; this one wins for .menuButton
+   * specifically, same as the original max-width:960px override did. */
+  display: xs(grid) lg(none);
+  width: 34px;
+  height: 34px;
+  align-content: center;
+  gap: density(2);
+  padding: density(3);
+  border: 1px solid palette(surface-light);
+  border-radius: 9px;
+  background: palette(light-light);
+}
+
+.menuButton span {
+  display: block;
+  width: 100%;
+  height: 1.5px;
+  border-radius: 999px;
+  background: palette(primary-dark);
+}
+
 .sidebarNav {
   display: grid;
   gap: density(1);
-  margin-top: space(10);
+  margin-top: density(10);
 }
 
 .navLabel {
-  margin: 0 space(3) space(3);
+  margin: 0 density(3) density(3);
   color: palette(primary-main);
   @ds-typo (caption);
   font-size: 0.625rem;
@@ -97,9 +129,9 @@
 .sidebarNav a {
   display: flex;
   align-items: center;
-  gap: space(4);
+  gap: density(4);
   min-height: 2.75rem;
-  padding: 0 space(4);
+  padding: 0 density(4);
   border: 1px solid transparent;
   border-radius: radius(2);
   color: palette(primary-light);
@@ -131,8 +163,8 @@
 
 .sidebarNav a.navSubItem {
   min-height: 2.25rem;
-  margin-left: space(6);
-  padding-left: space(3);
+  margin-left: density(6);
+  padding-left: density(3);
   border-left: 2px solid palette(primary-light, 0.16);
   border-radius: 0 radius(2) radius(2) 0;
   color: palette(primary-light, 0.82);
@@ -168,7 +200,7 @@
 
 .sidebarFooter {
   margin-top: auto;
-  padding: space(5) space(3) 0;
+  padding: density(5) density(3) 0;
   border-top: 1px solid palette(primary-light, 0.14);
 }
 
@@ -179,7 +211,7 @@
 }
 
 .sidebarFooter p {
-  margin: space(4) space(1) 0;
+  margin: density(4) density(1) 0;
   color: palette(primary-main);
   @ds-typo (caption);
   font-size: 0.6875rem;
@@ -187,7 +219,14 @@
 }
 
 .sidebarBackdrop {
-  display: none;
+  display: xs(block) lg(none);
+  position: fixed;
+  inset: 0;
+  z-index: 15;
+  width: 100%;
+  border: 0;
+  background: palette(dark-main, 0.42);
+  cursor: pointer;
 }
 
 .appMain {
@@ -201,10 +240,15 @@
   z-index: 10;
   display: flex;
   min-height: 76px;
-  align-items: center;
+  /* Was a max-width:800px override; snapped to this project's md breakpoint.
+   * (A separate max-width:960px override also existed for padding-right/left,
+   * but padding-inline below already sets the same value on both sides — a
+   * no-op, so it was dropped rather than ported.) */
+  align-items: xs(stretch) md(center);
+  flex-direction: xs(column) md(row);
   justify-content: space-between;
-  gap: space(7);
-  padding-block: space(4);
+  gap: xs(density(4)) md(density(7));
+  padding-block: density(4);
   padding-inline: density(5);
   border-bottom: 1px solid palette(dark-main, 0.09);
   background: palette(light-light, 0.88);
@@ -221,20 +265,25 @@
 
 .topbarLeft {
   min-width: 0;
-  gap: space(5);
+  align-items: xs(flex-start) md(center);
+  gap: xs(density(4)) md(density(5));
+  width: xs(100%) md(auto);
 }
 
 .topbarTools {
   min-width: 0;
-  justify-content: flex-end;
-  gap: space(3);
+  justify-content: xs(flex-start) md(flex-end);
+  gap: density(3);
+  width: xs(100%) md(auto);
 }
 
 .secretControl {
-  display: flex;
+  display: xs(grid) md(flex);
   min-width: 0;
-  align-items: center;
-  gap: space(3);
+  align-items: xs(end) md(center);
+  gap: density(3);
+  width: xs(100%) md(auto);
+  grid-template-columns: minmax(0, 1fr) auto auto;
 }
 
 .secretConnectButton {
@@ -246,10 +295,10 @@
 }
 
 .secretField {
-  display: flex;
+  display: xs(grid) md(flex);
   align-items: center;
-  min-width: 16rem;
-  gap: space(4);
+  min-width: xs(0) md(16rem);
+  gap: xs(density(1)) md(density(4));
 }
 
 .secretField > span {
@@ -266,7 +315,8 @@
   @ds-input(outlined primary 2);
   box-sizing: border-box;
   min-width: 0;
-  flex: 1;
+  flex: xs(none) md(1);
+  width: xs(100%) md(auto);
   min-height: 40px;
   padding: density(1) density(3);
   border-color: palette(surface-dark);
@@ -287,7 +337,13 @@
 }
 
 .currentTopic {
-  gap: space(4);
+  align-items: xs(stretch) md(center);
+  flex-direction: xs(column) md(row);
+  gap: xs(density(1)) md(density(4));
+  min-width: xs(0) md(auto);
+  flex: xs(1) md(0 1 auto);
+  margin-left: xs(density(2)) md(0);
+  width: xs(100%) md(auto);
 }
 
 .topbarLabel {
@@ -302,14 +358,15 @@
 
 .topicSelectWrap {
   position: relative;
-  min-width: min(260px, 42vw);
+  min-width: xs(0) md(min(260px, 42vw));
+  width: xs(100%) md(auto);
 }
 
 .topicSelectWrap::before {
   position: absolute;
   z-index: 1;
   top: 50%;
-  left: space(3);
+  left: density(3);
   width: 8px;
   height: 8px;
   border-radius: radius(5);
@@ -323,7 +380,7 @@
 .topicSelectWrap select {
   @ds-input(outlined primary 2);
   min-height: 40px;
-  padding: 0 space(9) 0 space(7);
+  padding: 0 density(9) 0 density(7);
   border-color: palette(surface-dark);
   background: palette(light-light);
   color: palette(dark-main);
@@ -346,7 +403,7 @@
 .topicSelectWrap > span {
   position: absolute;
   top: 50%;
-  right: space(4);
+  right: density(4);
   color: palette(primary-main);
   @ds-typo (h4);
   font-size: 16px;
@@ -365,8 +422,10 @@
 
 .page {
   min-height: calc(100svh - 76px);
-  padding-block: space(9) space(11);
-  padding-inline: density(5);
+  /* Was a max-width:800px override (a physical `padding` shorthand); ported
+   * in the same logical properties the base already uses. */
+  padding-block: xs(density(5) density(7)) md(density(9) density(11));
+  padding-inline: xs(density(4)) md(density(5));
   color: palette(dark-main);
   background:
     radial-gradient(circle at 8% 0%, palette(primary-light, 0.62), transparent 30rem),
@@ -387,7 +446,7 @@
 }
 
 .anchorTarget {
-  scroll-margin-top: space(10);
+  scroll-margin-top: density(10);
 }
 
 .anchorTarget + .anchorTarget {
@@ -403,11 +462,11 @@
 }
 
 .brand {
-  gap: space(4);
+  gap: density(4);
 }
 
 .brand h1 {
-  margin: space(1) 0 0;
+  margin: density(1) 0 0;
   @ds-typo (h1);
   font-size: space(5);
   line-height: 1;
@@ -470,8 +529,8 @@
 .idle {
   display: inline-flex;
   align-items: center;
-  gap: space(3);
-  padding: space(3) space(4);
+  gap: density(3);
+  padding: density(3) density(4);
   border: 1px solid palette(dark-main, 0.1);
   border-radius: radius(pill);
   background: palette(light-light, 0.58);
@@ -500,15 +559,15 @@
 
 .hero {
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: space(10);
+  grid-template-columns: xs(1fr) md(1fr auto);
+  gap: xs(density(6)) md(density(10));
   align-items: end;
-  margin-bottom: space(7);
+  margin-bottom: density(7);
 }
 
 .hero h2 {
   max-width: 43rem;
-  margin: space(3) 0 space(4);
+  margin: density(3) 0 density(4);
   color: palette(dark-main);
   @ds-typo (h2);
   font-size: clamp(38px, 6vw, 70px);
@@ -528,8 +587,9 @@
 
 .heroMetric {
   min-width: 9.375rem;
-  padding: 0 0 space(3) space(6);
-  border-left: 1px solid palette(dark-main, 0.14);
+  padding: xs(density(4) 0 0) md(0 0 density(3) density(6));
+  border-left: xs(0) md(1px solid palette(dark-main, 0.14));
+  border-top: xs(1px solid palette(dark-main, 0.14)) md(0);
 }
 
 .heroMetric span,
@@ -542,23 +602,25 @@
 
 .heroMetric strong {
   display: block;
-  margin: space(2) 0;
+  margin: density(2) 0;
   @ds-typo (body);
-  font-size: space(8);
+  font-size: xs(34px) md(space(8));
   font-weight: 600;
   letter-spacing: -0.06em;
 }
 
 .mainGrid {
   display: grid;
-  grid-template-columns: minmax(0, 1.08fr) minmax(360px, 0.92fr);
-  gap: density(3);
+  grid-template-columns: xs(1fr) md(minmax(0, 1.08fr) minmax(360px, 0.92fr));
+  gap: xs(density(4)) md(density(3));
 }
 
 .panel {
   @ds-surface(contained surface 3);
   padding: density(6);
   border: 1px solid palette(dark-main, 0.1);
+  /* Was a max-width:520px override of the mixin's own radius(3). */
+  border-radius: xs(17px) sm(radius(3));
   background: palette(light-light, 0.8);
   box-shadow: shadow(4);
   backdrop-filter: blur(18px);
@@ -566,11 +628,11 @@
 
 .panelHeading {
   justify-content: space-between;
-  margin-bottom: space(6);
+  margin-bottom: density(6);
 }
 
 .panel h2 {
-  margin: space(2) 0 0;
+  margin: density(2) 0 0;
   @ds-typo (h2);
   font-size: space(5);
   font-weight: 650;
@@ -579,12 +641,12 @@
 
 .field {
   display: block;
-  margin-top: space(5);
+  margin-top: density(5);
 }
 
 .field > span {
   display: block;
-  margin-bottom: space(3);
+  margin-bottom: density(3);
   color: palette(primary-dark);
   @ds-typo (small);
   font-size: 0.8125rem;
@@ -594,7 +656,7 @@
 .field input {
   @ds-input(outlined primary 2);
   height: 48px;
-  padding: 0 space(4);
+  padding: 0 density(4);
   border-color: palette(surface-dark);
   background: palette(light-light, 0.84);
   color: palette(dark-main);
@@ -608,7 +670,7 @@
 
 .field small {
   display: block;
-  margin-top: space(3);
+  margin-top: density(3);
   color: palette(tertiary-main);
   @ds-typo (caption);
   font-size: 0.6875rem;
@@ -619,13 +681,13 @@
 }
 
 .inputSuffix input {
-  padding-right: space(10);
+  padding-right: density(10);
 }
 
 .inputSuffix > span {
   position: absolute;
   top: 50%;
-  right: space(4);
+  right: density(4);
   color: palette(tertiary-main);
   @ds-typo (caption);
   font-size: 0.75rem;
@@ -633,14 +695,17 @@
 }
 
 .buttonRow {
+  align-items: xs(stretch) sm(center);
+  flex-direction: xs(column) sm(row);
   gap: density(2);
-  margin-top: space(6);
+  margin-top: density(6);
 }
 
 .buttonRow button {
   @ds-button(contained primary 2);
+  width: xs(100%) sm(auto);
   min-height: 45px;
-  padding: 0 space(5);
+  padding: 0 density(5);
   @ds-typo (small);
   font-size: 0.8125rem;
   font-weight: 700;
@@ -675,7 +740,7 @@
 
 .metric {
   @ds-surface(contained light 2);
-  padding: space(5);
+  padding: density(5);
   border: 1px solid palette(dark-main, 0.08);
   background: palette(light-light);
 }
@@ -690,7 +755,7 @@
 
 .metric strong {
   display: block;
-  margin-top: space(3);
+  margin-top: density(3);
   @ds-typo (body);
   font-size: space(6);
   font-weight: 620;
@@ -698,11 +763,11 @@
 }
 
 .statusList {
-  margin-top: space(6);
+  margin-top: density(6);
 }
 
 .statusList > p {
-  margin: 0 0 space(3);
+  margin: 0 0 density(3);
   color: palette(tertiary-main);
   @ds-typo (caption);
   font-size: 0.6875rem;
@@ -714,7 +779,7 @@
 .statusList > div:not(.emptyState) {
   display: flex;
   justify-content: space-between;
-  padding: space(3) space(1);
+  padding: density(3) density(1);
   border-bottom: 1px solid palette(light-light);
   color: palette(primary-dark);
   @ds-typo (small);
@@ -726,7 +791,7 @@
 }
 
 .emptyState {
-  padding: space(5) 0;
+  padding: density(5) 0;
   color: palette(tertiary-main);
   @ds-typo (small);
   font-size: 0.8125rem;
@@ -734,8 +799,8 @@
 
 .lastRun {
   @ds-surface(contained dark 2);
-  margin-top: space(5);
-  padding: space(4) space(5);
+  margin-top: density(5);
+  padding: density(4) density(5);
   color: palette(light-light);
 }
 
@@ -747,7 +812,7 @@
 .lastRun strong,
 .lastRun small {
   display: block;
-  margin-top: space(2);
+  margin-top: density(2);
 }
 
 .lastRun strong {
@@ -762,16 +827,16 @@
 
 .notice {
   @ds-surface(outlined surface 2);
-  gap: space(4);
+  gap: density(4);
   margin-top: density(3);
-  padding: space(5) space(6);
+  padding: density(5) density(6);
 }
 
 .notice > span {
   display: grid;
-  flex: 0 0 space(6);
-  width: space(6);
-  height: space(6);
+  flex: 0 0 density(6);
+  width: density(6);
+  height: density(6);
   place-items: center;
   border-radius: 50%;
   font-weight: 800;
@@ -786,7 +851,7 @@
 }
 
 .notice p {
-  margin-top: space(1);
+  margin-top: density(1);
   opacity: 0.78;
 }
 
@@ -811,7 +876,7 @@
 }
 
 .preferencesPanel {
-  margin-top: density(3);
+  margin-top: xs(density(4)) md(density(3));
 }
 
 .savedBadge,
@@ -839,13 +904,14 @@
 .preferencesIntro,
 .preferencesFooter {
   display: flex;
-  align-items: center;
+  align-items: xs(stretch) sm(center);
+  flex-direction: xs(column) sm(row);
   justify-content: space-between;
-  gap: space(5);
+  gap: density(5);
 }
 
 .preferencesIntro {
-  margin: calc(space(3) * -1) 0 space(5);
+  margin: calc(density(3) * -1) 0 density(5);
 }
 
 .preferencesIntro p {
@@ -859,6 +925,7 @@
 
 .preferencesIntro > span {
   flex: 0 0 auto;
+  align-self: xs(flex-start) sm(auto);
   padding: density(1) density(2);
   border-radius: 8px;
   background: palette(light-light);
@@ -870,8 +937,8 @@
 
 .preferencesGrid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: space(4);
+  grid-template-columns: xs(1fr) md(repeat(2, minmax(0, 1fr)));
+  gap: density(4);
 }
 
 .termField {
@@ -887,7 +954,7 @@
   display: flex;
   align-items: center;
   gap: density(1);
-  margin-bottom: space(3);
+  margin-bottom: density(3);
   color: palette(primary-dark);
   @ds-typo (small);
   font-size: 13px;
@@ -941,14 +1008,14 @@
 
 .termField small {
   display: block;
-  margin-top: space(3);
+  margin-top: density(3);
   color: palette(tertiary-main);
   @ds-typo (caption);
   font-size: 11px;
 }
 
 .preferencesFooter {
-  margin-top: space(5);
+  margin-top: density(5);
 }
 
 .preferencesFooter > small {
@@ -959,6 +1026,7 @@
 
 .savePreferencesButton {
   @ds-button(contained primary 3);
+  width: xs(100%) sm(auto);
   min-height: 43px;
   padding: 0 density(4);
   border: 1px solid palette(primary-dark);
@@ -984,7 +1052,7 @@
 }
 
 .optimizationPanel {
-  margin-top: space(5);
+  margin-top: xs(density(4)) md(density(5));
   overflow: hidden;
 }
 
@@ -1001,8 +1069,8 @@
 
 .optimizationMetrics {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: space(3);
+  grid-template-columns: xs(1fr) sm(repeat(2, 1fr)) md(repeat(4, 1fr));
+  gap: density(3);
 }
 
 .optimizationMetric {
@@ -1023,7 +1091,7 @@
 
 .optimizationMetric strong {
   display: block;
-  margin: space(2) 0 space(2);
+  margin: density(2) 0 density(2);
   color: palette(dark-main);
   @ds-typo (h2);
   font-size: 28px;
@@ -1039,9 +1107,9 @@
 
 .efficiencyGrid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: space(3);
-  margin-top: space(4);
+  grid-template-columns: xs(1fr) md(repeat(2, 1fr));
+  gap: density(3);
+  margin-top: density(4);
 }
 
 .efficiencyItem {
@@ -1055,7 +1123,7 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: space(5);
+  gap: density(5);
 }
 
 .efficiencyItem span {
@@ -1075,7 +1143,7 @@
 
 .efficiencyItem small {
   display: block;
-  margin-top: space(3);
+  margin-top: density(3);
   color: palette(primary-main);
   @ds-typo (caption);
   font-size: 11px;
@@ -1083,7 +1151,7 @@
 
 .progressTrack {
   height: 6px;
-  margin-top: space(4);
+  margin-top: density(4);
   overflow: hidden;
   border-radius: 99px;
   background: palette(light-light, 0.12);
@@ -1101,7 +1169,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: density(1);
-  margin-top: space(4);
+  margin-top: density(4);
 }
 
 .relevanceStrip span {
@@ -1131,7 +1199,7 @@
 }
 
 .editorialPanel {
-  margin-top: space(5);
+  margin-top: xs(density(4)) md(density(5));
 }
 
 .aiBadge {
@@ -1147,10 +1215,11 @@
 
 .editorialIntro {
   display: flex;
-  align-items: center;
+  align-items: xs(stretch) sm(center);
+  flex-direction: xs(column) sm(row);
   justify-content: space-between;
-  gap: space(6);
-  margin: calc(space(3) * -1) 0 space(5);
+  gap: density(6);
+  margin: calc(density(3) * -1) 0 density(5);
 }
 
 .editorialIntro p,
@@ -1164,7 +1233,7 @@
 }
 
 .editorialIntro small {
-  margin-top: space(2);
+  margin-top: density(2);
   color: palette(tertiary-main);
   @ds-typo (caption);
   font-size: 11px;
@@ -1173,6 +1242,7 @@
 .evaluateButton {
   @ds-button(contained primary 3);
   flex: 0 0 auto;
+  width: xs(100%) sm(auto);
   min-height: 44px;
   padding: 0 density(4);
   border: 1px solid palette(info-dark);
@@ -1203,10 +1273,12 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: density(2);
+  width: xs(100%) sm(auto);
 }
 
 .reevaluateButton {
   @ds-button(outlined neutral 3);
+  width: xs(100%) sm(auto);
   min-height: 44px;
   padding: 0 density(4);
   border: border(1, palette(info-dark), solid);
@@ -1225,16 +1297,16 @@
 
 .aiMetrics {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: space(3);
+  grid-template-columns: xs(1fr) sm(repeat(2, 1fr)) md(repeat(4, 1fr));
+  gap: density(3);
 }
 
 .aiRunSummary {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  gap: density(2) space(5);
-  margin-top: space(3);
+  gap: density(2) density(5);
+  margin-top: density(3);
   padding: density(3);
   border: 1px solid palette(surface-light);
   border-radius: 11px;
@@ -1251,9 +1323,10 @@
 
 .reviewToolbar {
   display: flex;
-  align-items: center;
+  align-items: xs(stretch) md(center);
+  flex-wrap: xs(wrap) md(nowrap);
   gap: density(3);
-  margin-bottom: space(3);
+  margin-bottom: density(3);
   padding: density(3);
   border: 1px solid palette(surface-light);
   border-radius: 13px;
@@ -1291,11 +1364,13 @@
 
 .reviewActions {
   gap: density(1);
-  margin-left: auto;
+  margin-left: xs(0) md(auto);
+  width: xs(100%) md(auto);
 }
 
 .reviewActions button {
   @ds-button(contained primary 2);
+  flex: xs(1) md(0 1 auto);
   min-height: 37px;
   padding: 0 density(3);
   border-radius: 9px;
@@ -1332,8 +1407,9 @@
 .selectedTableActions {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: xs(space-between) md(flex-end);
   gap: density(2);
+  width: xs(100%) md(auto);
 }
 
 .clearSelectedStoriesButton,
@@ -1357,14 +1433,15 @@
 .storyWorkspaceHeader,
 .tableViewHeading {
   display: flex;
-  align-items: end;
+  align-items: xs(stretch) md(end);
+  flex-direction: xs(column) md(row);
   justify-content: space-between;
-  gap: space(5);
+  gap: density(5);
 }
 
 .storyWorkspaceHeader {
-  margin-top: space(7);
-  padding-top: space(6);
+  margin-top: density(7);
+  padding-top: density(6);
   border-top: 1px solid palette(surface-light);
 }
 
@@ -1385,7 +1462,7 @@
 
 .storyWorkspaceHeader p,
 .tableViewHeading p {
-  margin-top: space(2);
+  margin-top: density(2);
   color: palette(tertiary-main);
   @ds-typo (caption);
   font-size: 11px;
@@ -1395,6 +1472,10 @@
 .storyTabs {
   display: inline-flex;
   flex: 0 0 auto;
+  /* Was two overrides (max-width:800px align-self, max-width:520px
+   * flex-direction), snapped to md/sm. */
+  align-self: xs(stretch) md(auto);
+  flex-direction: xs(column) sm(row);
   gap: density(1);
   padding: density(1);
   border: 1px solid palette(surface-light);
@@ -1405,6 +1486,8 @@
 .storyTabs button {
   display: inline-flex;
   align-items: center;
+  flex: xs(1) md(0 1 auto);
+  justify-content: xs(center) md(flex-start);
   gap: density(1);
   min-height: 36px;
   padding: 0 density(3);
@@ -1441,7 +1524,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: density(1);
-  margin-top: space(4);
+  margin-top: density(4);
 }
 
 .quickViews button {
@@ -1492,7 +1575,7 @@
 }
 
 .tableViewHeading {
-  margin: space(5) 0 space(3);
+  margin: density(5) 0 density(3);
 }
 
 .tableViewHeading > span {
@@ -1504,10 +1587,10 @@
 
 .storyFilterBar {
   display: flex;
-  align-items: end;
+  align-items: xs(stretch) md(end);
   flex-wrap: wrap;
   gap: density(2);
-  margin-bottom: space(3);
+  margin-bottom: density(3);
   padding: density(3);
   border: 1px solid palette(surface-light);
   border-radius: 13px;
@@ -1515,15 +1598,21 @@
 }
 
 .storyFilterFields {
-  display: flex;
-  flex: 1 1 540px;
+  /* Was two separate overrides (max-width:800px flex-basis, max-width:520px
+   * grid layout); merged using this project's sm/md breakpoints. */
+  display: xs(grid) sm(flex);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: xs(100%) md(540px);
   flex-wrap: wrap;
   gap: density(2);
 }
 
 .storyFilterField {
   display: grid;
-  min-width: 104px;
+  min-width: xs(0) sm(104px);
+  width: xs(100%) sm(auto);
   gap: density(1);
 }
 
@@ -1549,12 +1638,14 @@
 }
 
 .storyFilterField select {
-  min-width: 134px;
+  min-width: xs(0) sm(134px);
+  width: xs(100%) sm(auto);
   padding: 0 density(2);
 }
 
 .storyFilterField input {
-  width: 86px;
+  min-width: xs(0) sm(auto);
+  width: xs(100%) sm(86px);
   padding: 0 density(2);
 }
 
@@ -1569,7 +1660,7 @@
   display: inline-flex;
   align-items: center;
   gap: density(1);
-  min-height: 34px;
+  min-height: xs(38px) sm(34px);
   color: palette(primary-dark);
   @ds-typo (caption);
   font-size: 11px;
@@ -1588,7 +1679,7 @@
 
 .clearStoryFiltersButton {
   @ds-button(outlined primary 2);
-  min-height: 34px;
+  min-height: xs(38px) sm(34px);
   padding: 0 density(2);
   border: 1px solid palette(surface-light);
   border-radius: 8px;
@@ -1728,7 +1819,7 @@
 
 .storyTitleCell > small {
   display: -webkit-box;
-  margin-top: space(2);
+  margin-top: density(2);
   overflow: hidden;
   color: palette(tertiary-main);
   @ds-typo (caption);
@@ -1872,7 +1963,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: density(1);
-  margin-top: space(2);
+  margin-top: density(2);
 }
 
 .tableRiskFlags span {
@@ -1889,7 +1980,7 @@
   max-width: 100%;
   align-items: center;
   gap: density(1);
-  margin-top: space(2);
+  margin-top: density(2);
   color: palette(primary-main);
   @ds-typo (caption);
   font-size: 9px;
@@ -2109,7 +2200,7 @@
   position: fixed;
   z-index: 50;
   display: grid;
-  padding: density(5);
+  padding: xs(density(4)) md(density(5));
   background: palette(dark-main, 0.48);
   inset: 0;
   place-items: center;
@@ -2119,10 +2210,10 @@
 .contentViewer {
   display: flex;
   width: min(820px, 100%);
-  max-height: min(820px, calc(100svh - 48px));
+  max-height: xs(calc(100svh - 24px)) md(min(820px, calc(100svh - 48px)));
   overflow: hidden;
   border: 1px solid palette(light-light, 0.68);
-  border-radius: 20px;
+  border-radius: xs(16px) md(20px);
   background: palette(light-light);
   flex-direction: column;
   box-shadow: 0 30px 90px palette(dark-main, 0.3);
@@ -2132,8 +2223,8 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: space(6);
-  padding: density(5) density(5) density(4);
+  gap: density(6);
+  padding: xs(density(5)) md(density(5) density(5) density(4));
   border-bottom: 1px solid palette(surface-light);
 }
 
@@ -2153,10 +2244,10 @@
 
 .contentViewerHeader h2 {
   max-width: 680px;
-  margin-top: space(2);
+  margin-top: density(2);
   color: palette(dark-main);
   @ds-typo (h2);
-  font-size: 21px;
+  font-size: xs(17px) sm(21px);
   line-height: 1.28;
   letter-spacing: -0.035em;
 }
@@ -2230,9 +2321,10 @@
 
 .contentViewerFooter {
   display: flex;
-  align-items: center;
+  align-items: xs(flex-start) sm(center);
+  flex-direction: xs(column) sm(row);
   justify-content: space-between;
-  gap: space(5);
+  gap: density(5);
   padding: density(4) density(5);
   border-top: 1px solid palette(surface-light);
   background: palette(light-light);
@@ -2259,20 +2351,20 @@
 
 .dangerPanel {
   display: grid;
-  grid-template-columns: 1fr minmax(360px, 0.8fr);
-  gap: space(9);
-  margin-top: space(5);
+  grid-template-columns: xs(1fr) md(1fr minmax(360px, 0.8fr));
+  gap: xs(density(4)) md(density(9));
+  margin-top: xs(density(4)) md(density(5));
   border-color: palette(error-main, 0.2);
   background: palette(light-light, 0.86);
 }
 
 .dangerCopy h2 {
-  margin-top: space(3);
+  margin-top: density(3);
 }
 
 .dangerCopy > p:last-child {
   max-width: 530px;
-  margin: space(3) 0 0;
+  margin: density(3) 0 0;
   color: palette(error-main);
   @ds-typo (small);
   font-size: 13px;
@@ -2296,307 +2388,6 @@
   color: palette(light-light);
 }
 
-@media (max-width: 960px) {
-  .sidebar {
-    position: fixed;
-    left: 0;
-    transform: translateX(-105%);
-    transition: transform 180ms ease;
-  }
-
-  .sidebarOpen {
-    transform: translateX(0);
-  }
-
-  .sidebarBackdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 15;
-    display: block;
-    width: 100%;
-    border: 0;
-    background: palette(dark-main, 0.42);
-    cursor: pointer;
-  }
-
-  .closeSidebarButton,
-  .menuButton {
-    display: block;
-  }
-
-  .menuButton {
-    display: grid;
-    width: 34px;
-    height: 34px;
-    align-content: center;
-    gap: space(2);
-    padding: density(3);
-    border: 1px solid palette(surface-light);
-    border-radius: 9px;
-    background: palette(light-light);
-  }
-
-  .menuButton span {
-    display: block;
-    width: 100%;
-    height: 1.5px;
-    border-radius: 999px;
-    background: palette(primary-dark);
-  }
-
-  .topbar {
-    padding-right: density(5);
-    padding-left: density(5);
-  }
-}
-
-@media (max-width: 800px) {
-  .topbar {
-    align-items: stretch;
-    flex-direction: column;
-    gap: space(4);
-  }
-
-  .topbarLeft,
-  .currentTopic,
-  .topbarTools {
-    width: 100%;
-  }
-
-  .topbarLeft {
-    align-items: flex-start;
-    gap: space(4);
-  }
-
-  .currentTopic {
-    min-width: 0;
-    flex: 1;
-    align-items: stretch;
-    flex-direction: column;
-    gap: density(1);
-    margin-left: space(2);
-  }
-
-  .topicSelectWrap { width: 100%; min-width: 0; }
-
-  .topbarTools { justify-content: flex-start; }
-
-  .secretControl {
-    display: grid;
-    width: 100%;
-    grid-template-columns: minmax(0, 1fr) auto auto;
-    align-items: end;
-  }
-
-  .secretField {
-    min-width: 0;
-    display: grid;
-    gap: density(1);
-  }
-
-  .secretField input { width: 100%; flex: none; }
-
-  .page {
-    padding: density(5) density(4) density(7);
-  }
-
-  .header {
-    margin-bottom: space(7);
-  }
-
-  .hero,
-  .mainGrid,
-  .dangerPanel,
-  .efficiencyGrid,
-  .preferencesGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .reviewToolbar {
-    align-items: stretch;
-    flex-wrap: wrap;
-  }
-
-  .storyFilterBar {
-    align-items: stretch;
-  }
-
-  .storyFilterFields {
-    flex-basis: 100%;
-  }
-
-  .storyWorkspaceHeader,
-  .tableViewHeading {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .selectedTableActions {
-    width: 100%;
-    justify-content: space-between;
-  }
-
-  .storyTabs {
-    align-self: stretch;
-  }
-
-  .storyTabs button {
-    flex: 1;
-    justify-content: center;
-  }
-
-  .reviewActions {
-    width: 100%;
-    margin-left: 0;
-  }
-
-  .reviewActions button {
-    flex: 1;
-  }
-
-  .optimizationMetrics {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .aiMetrics {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .hero {
-    gap: space(6);
-  }
-
-  .heroMetric {
-    padding: density(4) 0 0;
-    border-top: 1px solid palette(dark-main, 0.14);
-    border-left: 0;
-  }
-
-  .heroMetric strong {
-    @ds-typo (h2);
-    font-size: 34px;
-  }
-
-  .mainGrid,
-  .dangerPanel {
-    gap: space(4);
-  }
-
-  .dangerPanel {
-    margin-top: space(4);
-  }
-
-  .optimizationPanel {
-    margin-top: space(4);
-  }
-
-  .preferencesPanel {
-    margin-top: space(4);
-  }
-
-  .editorialPanel {
-    margin-top: space(4);
-  }
-
-  .contentViewerBackdrop {
-    padding: density(4);
-  }
-
-  .contentViewer {
-    max-height: calc(100svh - 24px);
-    border-radius: 16px;
-  }
-
-  .contentViewerHeader,
-  .contentViewerBody {
-    padding: density(5);
-  }
-
-  .contentViewerMeta,
-  .contentViewerFooter {
-    padding-right: density(5);
-    padding-left: density(5);
-  }
-}
-
-@media (max-width: 520px) {
-  .panel {
-    padding: density(6);
-    border-radius: 17px;
-  }
-
-  .buttonRow {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .buttonRow button {
-    width: 100%;
-  }
-
-  .optimizationMetrics {
-    grid-template-columns: 1fr;
-  }
-
-  .preferencesIntro,
-  .preferencesFooter,
-  .editorialIntro {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .preferencesIntro > span {
-    align-self: flex-start;
-  }
-
-  .savePreferencesButton {
-    width: 100%;
-  }
-
-  .evaluateButton {
-    width: 100%;
-  }
-
-  .evaluationActions,
-  .reevaluateButton {
-    width: 100%;
-  }
-
-  .storyTabs {
-    flex-direction: column;
-  }
-
-  .storyFilterFields {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .storyFilterField,
-  .storyFilterField select,
-  .storyFilterField input {
-    width: 100%;
-    min-width: 0;
-  }
-
-  .topicFloorControl,
-  .clearStoryFiltersButton {
-    min-height: 38px;
-  }
-
-  .contentViewerHeader h2 {
-    @ds-typo (h2);
-    font-size: 17px;
-  }
-
-  .contentViewerFooter {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .aiMetrics {
-    grid-template-columns: 1fr;
-  }
-}
 
 /* Topic Overview — FEAT-OVW-001 / OVW-02 ---------------------------------- */
 
@@ -2651,7 +2442,7 @@
 
 .ovwPeriod {
   display: inline-flex;
-  gap: space(2);
+  gap: density(2);
 }
 
 .ovwPeriodButton {
@@ -2728,7 +2519,7 @@
 .ovwMetricHeader {
   display: flex;
   align-items: center;
-  gap: space(2);
+  gap: density(2);
 }
 
 .ovwMetricIcon {
@@ -2773,7 +2564,7 @@
 }
 
 .ovwMetricBreakdown {
-  margin: space(1) 0 0;
+  margin: density(1) 0 0;
   color: palette(dark-main, 0.68);
   @ds-typo (caption);
 }
@@ -2811,11 +2602,11 @@
 .ovwSkeleton {
   display: flex;
   flex-direction: column;
-  gap: space(3);
+  gap: density(3);
 }
 
 .ovwSkeletonLine {
-  height: space(5);
+  height: density(5);
   border-radius: radius(2);
   background: linear-gradient(
     90deg,
@@ -2875,7 +2666,7 @@
 .ovwListItem {
   display: flex;
   flex-direction: column;
-  gap: space(1);
+  gap: density(1);
   padding-bottom: density(2);
   border-bottom: 1px solid palette(dark-main, 0.08);
 }
@@ -2915,7 +2706,7 @@
 .ovwStage {
   display: flex;
   flex-direction: column;
-  gap: space(1);
+  gap: density(1);
   padding: density(2);
   border-radius: radius(2);
   background: palette(dark-main, 0.04);
@@ -2935,7 +2726,7 @@
 .ovwBadge {
   display: inline-flex;
   align-items: center;
-  padding: space(1) space(2);
+  padding: density(1) density(2);
   border-radius: radius(pill);
   background: palette(primary-main, 0.14);
   color: palette(primary-dark);
@@ -3003,7 +2794,7 @@
 
 .storyMaterialForm :focus-visible, .storyMaterials :focus-visible {
   outline: border(2, palette(primary-main), solid);
-  outline-offset: space(1);
+  outline-offset: density(1);
 }
 .storyMaterials button:disabled, .storyMaterialForm button:disabled {
   opacity: 0.5;

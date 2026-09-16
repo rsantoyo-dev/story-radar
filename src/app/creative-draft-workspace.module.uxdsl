@@ -4,7 +4,7 @@
   inset: 0;
   display: grid;
   place-items: center;
-  padding: density(6);
+  padding: xs(density(3)) md(density(6));
   background: palette(dark-main, 0.66);
   backdrop-filter: blur(8px);
 }
@@ -14,9 +14,9 @@
   overflow: hidden;
   flex-direction: column;
   width: min(1180px, 100%);
-  max-height: calc(100svh - 48px);
+  max-height: xs(calc(100svh - 20px)) md(calc(100svh - 48px));
   border: 1px solid palette(surface-light, 0.9);
-  border-radius: 22px;
+  border-radius: xs(16px) md(22px);
   background: palette(light-light);
   box-shadow: 0 28px 90px palette(dark-main, 0.3);
 }
@@ -25,8 +25,8 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: space(6);
-  padding: density(6) density(6);
+  gap: density(6);
+  padding: xs(density(5)) md(density(6));
   border-bottom: 1px solid palette(surface-light);
   background: palette(light-light);
 }
@@ -67,7 +67,7 @@
 
 .body {
   overflow: auto;
-  padding: density(6) density(6) density(6);
+  padding: xs(density(5)) md(density(6));
 }
 
 .loading {
@@ -78,15 +78,16 @@
 
 .progress {
   display: flex;
-  align-items: center;
-  gap: space(3);
-  margin-bottom: space(5);
+  align-items: xs(stretch) sm(center);
+  flex-direction: xs(column) sm(row);
+  gap: density(3);
+  margin-bottom: density(5);
 }
 
 .progressStep {
   display: flex;
   align-items: center;
-  gap: space(3);
+  gap: density(3);
   padding: density(3) density(4);
   border: 1px solid palette(surface-light);
   border-radius: 999px;
@@ -147,7 +148,7 @@
 }
 
 .error p {
-  margin-top: space(1);
+  margin-top: density(1);
 }
 
 .warning {
@@ -157,7 +158,7 @@
 }
 
 .profilePanel {
-  margin-bottom: space(5);
+  margin-bottom: density(5);
   border: 1px solid palette(surface-light);
   border-radius: 15px;
   background: palette(light-light);
@@ -167,7 +168,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: space(5);
+  gap: density(5);
   padding: density(5) density(5);
   color: palette(primary-dark);
   @ds-typo (caption);
@@ -184,7 +185,7 @@
 .profilePanel summary > span:first-child {
   display: flex;
   flex-direction: column;
-  gap: space(1);
+  gap: density(1);
 }
 
 .profilePanel summary small {
@@ -198,14 +199,14 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: space(5);
+  gap: density(5);
   padding: density(5);
 }
 
 .profileSummaryHead > div {
   display: flex;
   flex-direction: column;
-  gap: space(1);
+  gap: density(1);
 }
 
 .profileSummaryHead strong {
@@ -247,14 +248,14 @@
 .profileSummaryGrid {
   display: grid;
   grid-template-columns: xs(1fr) sm(repeat(2, minmax(0, 1fr)));
-  gap: space(3) space(5);
+  gap: density(3) density(5);
   padding: 0 density(5) density(5);
 }
 
 .profileBody {
   display: grid;
   min-width: 0;
-  gap: space(4);
+  gap: density(4);
   margin: 0;
   padding: density(5);
   border: 0;
@@ -265,14 +266,14 @@
 .profileBodyPlain {
   display: grid;
   min-width: 0;
-  gap: space(4);
+  gap: density(4);
   margin: 0;
   padding: 0;
   border: 0;
 }
 
 .profileGuideHint {
-  margin: calc(space(3) * -1) 0 0;
+  margin: calc(density(3) * -1) 0 0;
   color: palette(tertiary-main);
   @ds-typo (caption);
   font-size: 10px;
@@ -984,7 +985,7 @@
 
 .charactersSection {
   display: grid;
-  gap: space(4);
+  gap: density(4);
   padding-top: density(4);
   border-top: 1px solid palette(surface-light);
 }
@@ -996,7 +997,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: space(3);
+  gap: density(3);
 }
 
 .charactersHeading strong,
@@ -1008,7 +1009,7 @@
 
 .charactersHeading p,
 .referenceEmpty {
-  margin: space(1) 0 0;
+  margin: density(1) 0 0;
   color: palette(tertiary-main);
   @ds-typo (caption);
   font-size: 10px;
@@ -1026,13 +1027,13 @@
 .characterGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: space(4);
+  gap: density(4);
 }
 
 .characterSlot {
   display: grid;
   align-content: start;
-  gap: space(3);
+  gap: density(3);
   padding: density(4);
   border: 1px solid palette(surface-light);
   border-radius: 8px;
@@ -1042,7 +1043,7 @@
 .characterSlot > header span,
 .characterReferencesHeading > span {
   display: block;
-  margin-bottom: space(1);
+  margin-bottom: density(1);
   color: palette(tertiary-main);
   @ds-typo (caption);
   font-size: 8px;
@@ -1071,13 +1072,13 @@
 
 .characterReferences {
   display: grid;
-  gap: space(3);
+  gap: density(3);
 }
 
 .referenceGrid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: space(3);
+  gap: density(3);
 }
 
 .referenceItem {
@@ -1104,7 +1105,7 @@
 
 .referenceItem figcaption {
   padding: density(2) density(2);
-  gap: space(2);
+  gap: density(2);
 }
 
 .referenceItem figcaption span {
@@ -1154,14 +1155,14 @@
 
 .fieldGrid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: space(4);
+  grid-template-columns: xs(1fr) md(repeat(2, minmax(0, 1fr)));
+  gap: density(4);
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: space(2);
+  gap: density(2);
 }
 
 .field > span,
@@ -1210,8 +1211,8 @@
 
 .sliders {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: space(4);
+  grid-template-columns: xs(1fr) sm(repeat(2, 1fr)) md(repeat(5, 1fr));
+  gap: density(4);
   padding: density(4);
   border-radius: 11px;
   background: palette(light-light);
@@ -1220,7 +1221,7 @@
 .sliders label {
   display: flex;
   flex-direction: column;
-  gap: space(2);
+  gap: density(2);
   color: palette(primary-main);
   @ds-typo (caption);
   font-size: 9px;
@@ -1239,7 +1240,7 @@
 .emojiRow {
   display: flex;
   align-items: center;
-  gap: space(6);
+  gap: density(6);
   color: palette(primary-dark);
   @ds-typo (caption);
   font-size: 11px;
@@ -1249,7 +1250,7 @@
 .emojiRow label {
   display: flex;
   align-items: center;
-  gap: space(3);
+  gap: density(3);
 }
 
 .emojiRow input[type="number"] {
@@ -1257,7 +1258,7 @@
 }
 
 .section {
-  margin-top: space(5);
+  margin-top: density(5);
   padding: density(5);
   border: 1px solid palette(surface-light);
   border-radius: 17px;
@@ -1266,10 +1267,11 @@
 
 .sectionHeading {
   display: flex;
-  align-items: center;
+  align-items: xs(flex-start) sm(center);
+  flex-direction: xs(column) sm(row);
   justify-content: space-between;
-  gap: space(5);
-  margin-bottom: space(5);
+  gap: density(5);
+  margin-bottom: density(5);
 }
 
 .sectionHeading h3 {
@@ -1298,9 +1300,10 @@
 .briefCallout,
 .generateDraftCard {
   display: flex;
-  align-items: center;
+  align-items: xs(stretch) md(center);
+  flex-direction: xs(column) md(row);
   justify-content: space-between;
-  gap: space(6);
+  gap: density(6);
   padding: density(5);
   border: 1px dashed palette(surface-dark);
   border-radius: 13px;
@@ -1316,7 +1319,7 @@
 
 .briefCallout p,
 .generateDraftCard p {
-  margin: space(2) 0 0;
+  margin: density(2) 0 0;
   color: palette(tertiary-main);
   @ds-typo (caption);
   font-size: 11px;
@@ -1339,7 +1342,7 @@
 }
 
 .historyPanel {
-  margin-top: space(5);
+  margin-top: density(5);
   border: 1px solid palette(surface-light);
   border-radius: 13px;
   background: palette(light-light);
@@ -1349,7 +1352,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: space(5);
+  gap: density(5);
   padding: density(4) density(5);
   color: palette(primary-dark);
   cursor: pointer;
@@ -1365,7 +1368,7 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: space(1);
+  gap: density(1);
 }
 
 .historyPanel summary strong,
@@ -1393,7 +1396,7 @@
 
 .historyList {
   display: grid;
-  gap: space(3);
+  gap: density(3);
   padding: 0 12px 12px;
 }
 
@@ -1402,7 +1405,7 @@
   min-width: 0;
   align-items: center;
   justify-content: space-between;
-  gap: space(4);
+  gap: density(4);
   padding: density(4) density(4);
   border: 1px solid palette(surface-light);
   border-radius: 8px;
@@ -1426,10 +1429,11 @@
 
 .historyCallout {
   display: flex;
-  align-items: center;
+  align-items: xs(stretch) md(center);
+  flex-direction: xs(column) md(row);
   justify-content: space-between;
-  gap: space(5);
-  margin-bottom: space(5);
+  gap: density(5);
+  margin-bottom: density(5);
   padding: density(4) density(5);
   border: 1px solid palette(primary-light);
   border-radius: 12px;
@@ -1443,7 +1447,7 @@
 }
 
 .historyCallout p {
-  margin: space(2) 0 0;
+  margin: density(2) 0 0;
   color: palette(primary-main);
   @ds-typo (caption);
   font-size: 10px;
@@ -1454,13 +1458,18 @@
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: space(3);
+  gap: density(3);
+  width: xs(100%) md(auto);
+}
+
+.historyActions button {
+  flex: xs(1) md(0 0 auto);
 }
 
 .historicalDraftDetails {
   display: grid;
-  gap: space(4);
-  margin-bottom: space(5);
+  gap: density(4);
+  margin-bottom: density(5);
   padding: density(5);
   border: 1px solid palette(surface-light);
   border-radius: 12px;
@@ -1472,7 +1481,7 @@
   flex-direction: xs(column) md(row);
   align-items: xs(stretch) md(flex-start);
   justify-content: space-between;
-  gap: space(5);
+  gap: density(5);
 }
 
 .historicalDraftHeading strong {
@@ -1482,7 +1491,7 @@
 }
 
 .historicalDraftHeading p {
-  margin: space(2) 0 0;
+  margin: density(2) 0 0;
   color: palette(tertiary-main);
   @ds-typo (caption);
   font-size: 10px;
@@ -1543,13 +1552,13 @@
 
 .historicalDraftFields {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: space(4);
+  grid-template-columns: xs(1fr) md(repeat(2, minmax(0, 1fr)));
+  gap: density(4);
 }
 
 .readOnlyDraftField {
   display: grid;
-  gap: space(2);
+  gap: density(2);
 }
 
 .readOnlyDraftField > span {
@@ -1592,13 +1601,13 @@
 
 .historicalUnits > div {
   display: grid;
-  gap: space(4);
+  gap: density(4);
   padding: 0 12px 12px;
 }
 
 .historicalUnits article {
   display: grid;
-  gap: space(3);
+  gap: density(3);
   padding: density(4);
   border: 1px solid palette(surface-light);
   border-radius: 9px;
@@ -1609,7 +1618,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: space(4);
+  gap: density(4);
 }
 
 .historicalUnits article strong {
@@ -1730,14 +1739,14 @@
 
 .brief {
   display: grid;
-  gap: space(5);
-  margin-top: space(5);
+  gap: density(5);
+  margin-top: density(5);
 }
 
 .recommendation {
   display: grid;
-  grid-template-columns: 0.42fr 1fr;
-  gap: space(5);
+  grid-template-columns: xs(1fr) md(0.42fr 1fr);
+  gap: density(5);
   padding: density(5);
   border-radius: 13px;
   background: linear-gradient(135deg, palette(light-light), palette(light-light));
@@ -1767,8 +1776,8 @@
 
 .briefCopyGrid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: space(3);
+  grid-template-columns: xs(1fr) md(repeat(2, 1fr));
+  gap: density(3);
 }
 
 .briefCopy {
@@ -1887,14 +1896,14 @@
 
 .formatOptions {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: space(3);
+  grid-template-columns: xs(1fr) md(repeat(2, 1fr));
+  gap: density(3);
 }
 
 .formatOptions button {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: space(2) space(5);
+  gap: density(2) density(5);
   padding: density(4);
   border: 1px solid palette(surface-light);
   border-radius: 12px;
@@ -1931,9 +1940,10 @@
 
 .draftSetup {
   display: flex;
-  align-items: flex-end;
-  gap: space(5);
-  margin-bottom: space(5);
+  align-items: xs(stretch) md(flex-end);
+  flex-direction: xs(column) md(row);
+  gap: density(5);
+  margin-bottom: density(5);
   padding: density(4) density(4);
   border: 1px solid palette(surface-light);
   border-radius: 12px;
@@ -1955,9 +1965,10 @@
 
 .imageQualitySetup {
   display: flex;
-  align-items: flex-end;
-  gap: space(5);
-  margin-bottom: space(5);
+  align-items: xs(stretch) md(flex-end);
+  flex-direction: xs(column) md(row);
+  gap: density(5);
+  margin-bottom: density(5);
   padding: density(4) density(4);
   border: 1px solid palette(surface-light);
   border-radius: 12px;
@@ -1979,8 +1990,8 @@
 
 .factsAndRisks {
   display: grid;
-  grid-template-columns: 1fr 0.55fr;
-  gap: space(4);
+  grid-template-columns: xs(1fr) md(1fr 0.55fr);
+  gap: density(4);
 }
 
 .factsAndRisks > div {
@@ -1999,7 +2010,7 @@
 
 .factsAndRisks ul {
   display: grid;
-  gap: space(2);
+  gap: density(2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -2024,7 +2035,7 @@
 
 .factsAndRisks li span {
   display: inline-block;
-  margin-right: space(3);
+  margin-right: density(3);
   padding: density(1) density(2);
   border-radius: 4px;
   background: palette(surface-light);
@@ -2036,19 +2047,19 @@
 
 .editor {
   display: grid;
-  gap: space(4);
+  gap: density(4);
 }
 
 .unitsHeading {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: space(5);
-  margin-top: space(2);
+  gap: density(5);
+  margin-top: density(2);
 }
 
 .unitsHeading h4 {
-  margin-bottom: space(1);
+  margin-bottom: density(1);
 }
 
 .unitsHeading p {
@@ -2077,7 +2088,7 @@
 
 .units {
   display: grid;
-  gap: space(4);
+  gap: density(4);
 }
 
 .narrativeReview {
@@ -2108,7 +2119,7 @@
 
 .unit {
   display: grid;
-  gap: space(4);
+  gap: density(4);
   padding: density(5);
   border: 1px solid palette(surface-light);
   border-radius: 13px;
@@ -2119,13 +2130,13 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: space(4);
+  gap: density(4);
 }
 
 .unit > header > div:first-child {
   display: flex;
   align-items: center;
-  gap: space(3);
+  gap: density(3);
 }
 
 .unit > header span {
@@ -2147,7 +2158,7 @@
 
 .unitActions {
   display: flex;
-  gap: space(2);
+  gap: density(2);
 }
 
 .unitActions button {
@@ -2158,7 +2169,7 @@
 .factPicker {
   display: flex;
   flex-wrap: wrap;
-  gap: space(3);
+  gap: density(3);
   margin: 0;
   padding: density(3);
   border: 1px solid palette(surface-light);
@@ -2172,7 +2183,7 @@
 .factPicker label {
   display: flex;
   align-items: center;
-  gap: space(2);
+  gap: density(2);
   padding: density(2) density(3);
   border-radius: 6px;
   background: palette(light-light);
@@ -2189,10 +2200,11 @@
 
 .approvalBar {
   display: flex;
-  align-items: center;
+  align-items: xs(stretch) md(center);
+  flex-direction: xs(column) md(row);
   justify-content: space-between;
-  gap: space(6);
-  margin-top: space(5);
+  gap: density(6);
+  margin-top: density(5);
   padding-top: density(5);
   border-top: 1px solid palette(surface-light);
 }
@@ -2200,7 +2212,7 @@
 .approvalBar > div:first-child {
   display: flex;
   flex-direction: column;
-  gap: space(1);
+  gap: density(1);
 }
 
 .approvalBar strong {
@@ -2219,14 +2231,20 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: space(3);
+  gap: density(3);
+  width: xs(100%) md(auto);
+}
+
+.approvalBar button {
+  flex: xs(1) md(0 0 auto);
 }
 
 .footer {
   display: flex;
-  align-items: center;
+  align-items: xs(stretch) md(center);
+  flex-direction: xs(column) md(row);
   justify-content: space-between;
-  gap: space(5);
+  gap: density(5);
   padding: density(5) density(1) 0;
   color: palette(tertiary-main);
   @ds-typo (caption);
@@ -2259,14 +2277,15 @@
 
 .assetWorkspace {
   display: grid;
-  gap: space(5);
+  gap: density(5);
 }
 
 .assetBatchSummary {
   display: flex;
-  align-items: center;
+  align-items: xs(stretch) md(center);
+  flex-direction: xs(column) md(row);
   justify-content: space-between;
-  gap: space(5);
+  gap: density(5);
   padding: density(4) density(5);
   border-radius: 12px;
   background: palette(light-light);
@@ -2279,7 +2298,7 @@
 }
 
 .assetBatchSummary p {
-  margin: space(1) 0 0;
+  margin: density(1) 0 0;
   color: palette(tertiary-main);
   @ds-typo (caption);
   font-size: 10px;
@@ -2296,14 +2315,14 @@
 
 .assetGrid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: space(5);
+  grid-template-columns: xs(1fr) md(repeat(2, minmax(0, 1fr)));
+  gap: density(5);
 }
 
 .assetCard {
   display: grid;
   align-content: start;
-  gap: space(4);
+  gap: density(4);
   min-width: 0;
   padding: density(4);
   border: 1px solid palette(surface-light);
@@ -2315,13 +2334,13 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: space(4);
+  gap: density(4);
 }
 
 .assetCard > header > div {
   display: flex;
   flex-direction: column;
-  gap: space(1);
+  gap: density(1);
 }
 
 .assetCard > header strong {
@@ -2375,7 +2394,7 @@
   height: 100%;
   place-content: center;
   justify-items: center;
-  gap: space(3);
+  gap: density(3);
   padding: density(6);
   color: palette(tertiary-main);
   text-align: center;
@@ -2425,7 +2444,7 @@
 }
 
 .expectedText p {
-  margin: space(2) 0 0;
+  margin: density(2) 0 0;
   color: palette(dark-main);
   @ds-typo (caption);
   font-size: 11px;
@@ -2488,15 +2507,20 @@
 
 .assetActions {
   display: flex;
-  align-items: center;
+  align-items: xs(stretch) md(center);
+  flex-direction: xs(column) md(row);
   justify-content: space-between;
-  gap: space(4);
+  gap: density(4);
+}
+
+.assetActions > div:last-child button {
+  flex: xs(1) md(0 0 auto);
 }
 
 .assetActions > div {
   display: flex;
   align-items: center;
-  gap: space(3);
+  gap: density(3);
 }
 
 .assetActions a {
@@ -2518,92 +2542,6 @@
   padding: 0 11px;
 }
 
-@media (max-width: 800px) {
-  .backdrop {
-    padding: density(3);
-  }
-
-  .workspace {
-    max-height: calc(100svh - 20px);
-    border-radius: 16px;
-  }
-
-  .header,
-  .body {
-    padding: density(5);
-  }
-
-  .fieldGrid,
-  .briefCopyGrid,
-  .historicalDraftFields,
-  .formatOptions,
-  .factsAndRisks,
-  .recommendation,
-  .assetGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .sliders {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .briefCallout,
-  .generateDraftCard,
-  .historyCallout,
-  .draftSetup,
-  .imageQualitySetup,
-  .approvalBar,
-  .assetBatchSummary,
-  .footer {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .historyActions {
-    width: 100%;
-  }
-
-  .historyActions button {
-    flex: 1;
-  }
-
-  .approvalBar > div:last-child {
-    width: 100%;
-  }
-
-  .approvalBar button {
-    flex: 1;
-  }
-
-  .assetActions {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .assetActions > div:last-child button {
-    flex: 1;
-  }
-}
-
-@media (max-width: 520px) {
-  .progress {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .section {
-    padding: density(5);
-  }
-
-  .sectionHeading {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .sliders {
-    grid-template-columns: 1fr;
-  }
-}
 
 .documentaryPanel {
   @ds-surface(flat primary);
@@ -2818,7 +2756,7 @@
 .instagramMetricCell {
   display: flex;
   flex-direction: column;
-  gap: space(1);
+  gap: density(1);
 }
 
 .instagramMetricLabel {
@@ -2946,7 +2884,7 @@
 .brandReferenceFormGrid {
   display: grid;
   grid-template-columns: xs(1fr) sm(repeat(2, minmax(0, 1fr)));
-  gap: space(4);
+  gap: density(4);
 }
 
 .brandReferenceGrid {
@@ -2955,7 +2893,7 @@
     xs(repeat(2, minmax(0, 1fr)))
     sm(repeat(3, minmax(0, 1fr)))
     md(repeat(4, minmax(0, 1fr)));
-  gap: space(3);
+  gap: density(3);
   margin: 0;
 }
 
@@ -2982,7 +2920,7 @@
 .brandReferenceMeta {
   padding: density(2);
   display: grid;
-  gap: space(1);
+  gap: density(1);
 }
 
 .brandReferenceBadge {
@@ -2994,7 +2932,7 @@
 .brandReferencePill {
   display: flex;
   align-items: center;
-  gap: space(1);
+  gap: density(1);
   @ds-typo(caption);
   font-size: 8px;
   color: palette(tertiary-dark);
@@ -3009,7 +2947,7 @@
 .brandContributionChips {
   display: flex;
   flex-wrap: wrap;
-  gap: space(2);
+  gap: density(2);
 }
 
 .brandContributionChip {
@@ -3048,7 +2986,7 @@
 .brandAnalysisRow {
   display: grid;
   grid-template-columns: 84px 1fr auto;
-  gap: space(2);
+  gap: density(2);
   align-items: start;
   @ds-typo(caption);
   font-size: 10px;
@@ -3088,7 +3026,7 @@
 /* BRAND-03 — auto-selected brand references per unit (read-only) */
 .brandUnitSelection {
   display: grid;
-  gap: space(1);
+  gap: density(1);
   @ds-typo(caption);
   font-size: 10px;
   color: palette(tertiary-dark);

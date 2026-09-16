@@ -14,14 +14,33 @@
 .topicActions,
 .formActions {
   display: flex;
+}
+
+.sourceActions,
+.topicActions,
+.formActions {
   align-items: center;
+}
+
+/* Was a max-width:700px override; snapped to this project's sm breakpoint. */
+.sourceList > li,
+.documentList > li {
+  align-items: xs(stretch) sm(center);
+}
+
+.heading,
+.topicRow,
+.sourcesHeading,
+.knowledgeHeading {
+  align-items: xs(flex-start) sm(center);
+  flex-direction: xs(column) sm(row);
 }
 
 .heading,
 .sourcesHeading,
 .knowledgeHeading {
   justify-content: space-between;
-  gap: space(5);
+  gap: density(5);
 }
 
 .heading p,
@@ -47,7 +66,7 @@
 .knowledgeHeading p {
   @ds-typo(small);
   display: block;
-  margin-top: space(2);
+  margin-top: density(2);
   color: palette(tertiary-main);
 }
 
@@ -91,8 +110,8 @@
 
 .topicRow {
   justify-content: space-between;
-  gap: space(5);
-  margin-top: space(6);
+  gap: density(5);
+  margin-top: density(6);
   padding: density(4);
   border-radius: radius(3);
   background: palette(light-light);
@@ -109,7 +128,7 @@
 }
 
 .topicRow select {
-  min-width: min(22rem, 60vw);
+  min-width: xs(0) sm(min(22rem, 60vw));
 }
 
 .topicActions,
@@ -137,7 +156,7 @@
 .notice,
 .error {
   @ds-typo(body);
-  margin: space(5) 0 0;
+  margin: density(5) 0 0;
   border-radius: radius(2);
   padding: density(3);
 }
@@ -151,19 +170,19 @@
 .topicForm,
 .sourceForm {
   display: grid;
-  gap: space(4);
-  margin-top: space(5);
+  gap: density(4);
+  margin-top: density(5);
   border: border(1, surface-dark, solid);
   border-radius: radius(3);
   background: palette(light-light);
   padding: density(4);
 }
 
-.topicForm { grid-template-columns: minmax(12rem, 1fr) minmax(15rem, 2fr) minmax(10rem, 1fr) auto; align-items: end; }
+.topicForm { grid-template-columns: xs(1fr) sm(minmax(12rem, 1fr) minmax(15rem, 2fr) minmax(10rem, 1fr) auto); align-items: end; }
 .themeField select { @ds-input(outlined primary 2); }
 .sourceForm > p { @ds-typo(small); margin: 0; color: palette(tertiary-main); }
 
-.formGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: space(3); }
+.formGrid { display: grid; grid-template-columns: xs(1fr) sm(repeat(2, minmax(0, 1fr))); gap: density(3); }
 
 .panel input,
 .panel select,
@@ -191,7 +210,7 @@
 }
 
 .sourcesDisclosure {
-  margin-top: space(7);
+  margin-top: density(7);
   border: border(1, surface-dark, solid);
   border-radius: radius(3);
   background: palette(light-light);
@@ -199,9 +218,9 @@
 
 .sourcesDisclosure summary {
   display: flex;
-  align-items: center;
+  align-items: xs(flex-start) sm(center);
   justify-content: space-between;
-  gap: space(4);
+  gap: density(4);
   cursor: pointer;
   list-style: none;
   padding: density(3) density(4);
@@ -227,22 +246,23 @@
 
 .sourcesHeading { margin: 0; }
 .knowledgeHeading {
-  display: flex;
-  align-items: center;
-  margin-top: space(7);
+  /* display/align-items/flex-direction come from the responsive group above;
+   * redeclaring them here used to sit after the old trailing @media block
+   * and silently win over it at every width. */
+  margin-top: density(7);
   border-top: border(1, surface-dark, solid);
   padding-top: density(4);
 }
-.sourceList { display: grid; gap: space(3); margin: space(5) 0 0; padding: 0; list-style: none; }
-.documentList { display: grid; gap: space(3); margin: space(5) 0 0; padding: 0; list-style: none; }
-.sourceList > li { @ds-surface(outlined surface 3); flex-wrap: wrap; justify-content: space-between; gap: space(3); padding: density(3); }
-.documentList > li { @ds-surface(outlined surface 3); flex-wrap: wrap; justify-content: space-between; gap: space(3); padding: density(3); }
+.sourceList { display: grid; gap: density(3); margin: density(5) 0 0; padding: 0; list-style: none; }
+.documentList { display: grid; gap: density(3); margin: density(5) 0 0; padding: 0; list-style: none; }
+.sourceList > li { @ds-surface(outlined surface 3); flex-wrap: wrap; justify-content: space-between; gap: density(3); padding: density(3); }
+.documentList > li { @ds-surface(outlined surface 3); flex-wrap: wrap; justify-content: space-between; gap: density(3); padding: density(3); }
 .sourceCopy { min-width: 0; flex: 1; display: grid; gap: density(1); }
 .sourceCopy > div { display: flex; align-items: center; gap: density(1); }
 .sourceCopy a { @ds-typo(caption); overflow: hidden; color: palette(primary-dark); text-overflow: ellipsis; white-space: nowrap; }
 .sourceCopy small { @ds-typo(small); color: palette(tertiary-main); }
-.preview { @ds-typo(caption); width: 100%; border-top: border(1, surface-dark, solid); padding-top: space(3); color: palette(dark-main); }
-.preview ol { display: grid; gap: density(1); margin: space(2) 0 0; padding-left: space(5); }
+.preview { @ds-typo(caption); width: 100%; border-top: border(1, surface-dark, solid); padding-top: density(3); color: palette(dark-main); }
+.preview ol { display: grid; gap: density(1); margin: density(2) 0 0; padding-left: density(5); }
 .preview a { color: palette(primary-dark); }
 .inlineError { @ds-typo(small); color: palette(error-main); }
 .documentSections { width: 100%; border-top: border(1, surface-dark, solid); padding-top: density(3); }
@@ -264,7 +284,7 @@
 .dossierTitle { display: grid; gap: density(1); }
 .dossierTitle span { @ds-typo(small); color: palette(tertiary-main); }
 .dossierTitle input { @ds-input(outlined neutral 2); width: 100%; }
-.documentSections ol { display: grid; gap: density(2); margin: space(3) 0 0; padding-left: space(5); }
+.documentSections ol { display: grid; gap: density(2); margin: density(3) 0 0; padding-left: density(5); }
 .documentSections li { display: flex; align-items: center; justify-content: space-between; gap: density(3); color: palette(dark-main); }
 .documentSections li > div { min-width: 0; }
 .documentSections li span { @ds-typo(caption); display: block; }
@@ -277,17 +297,4 @@
   color: palette(primary-dark);
   padding: density(1) density(2);
   white-space: nowrap;
-}
-
-@media (max-width: 700px) {
-  .heading,
-  .topicRow,
-  .sourcesHeading { align-items: flex-start; flex-direction: column; }
-  .knowledgeHeading { align-items: flex-start; flex-direction: column; }
-  .sourcesDisclosure summary { align-items: flex-start; }
-  .topicRow select { min-width: 0; }
-  .topicForm,
-  .formGrid { grid-template-columns: 1fr; }
-  .sourceList > li { align-items: stretch; }
-  .documentList > li { align-items: stretch; }
 }
