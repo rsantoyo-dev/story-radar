@@ -141,8 +141,8 @@ export async function evaluateEditorialCandidates(
       apiKey: configuration.apiKey,
       paidGeminiApiKey: configuration.paidGeminiApiKey,
       model: configuration.model,
-      groqApiKey: configuration.groqApiKey,
-      groqModel: configuration.groqModel,
+      openAiApiKey: configuration.openAiApiKey,
+      openAiModel: configuration.openAiModel,
       cloudflareAiAccountId: configuration.cloudflareAiAccountId,
       cloudflareAiApiToken: configuration.cloudflareAiApiToken,
       cloudflareAiModel: configuration.cloudflareAiModel,
@@ -201,8 +201,8 @@ function configuredProviderIdentities(
 ): Array<{ provider: string; model: string }> {
   return [
     { provider: configuration.provider, model: configuration.model },
-    ...(configuration.groqApiKey && configuration.groqModel
-      ? [{ provider: "groq", model: configuration.groqModel }]
+    ...(configuration.openAiApiKey && configuration.openAiModel
+      ? [{ provider: "openai", model: configuration.openAiModel }]
       : []),
     ...(configuration.cloudflareAiAccountId &&
     configuration.cloudflareAiApiToken &&

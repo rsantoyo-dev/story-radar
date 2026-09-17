@@ -1,8 +1,8 @@
 import "server-only";
 
 import { ApiError, GoogleGenAI } from "@google/genai";
-import Groq from "groq-sdk";
 import { PLANNER_INSTRUCTION, PLANNER_SCHEMA, parseDailyPlan, type PlannerContext } from "./daily-editorial-planner.types";
+import { generateOpenAiStructuredResponse } from "./openai-structured-response";
 
 import {
   calculateEditorialPriority,
@@ -37,15 +37,15 @@ type EvaluateWithGeminiOptions = {
 
 type EvaluateWithFallbackOptions = EvaluateWithGeminiOptions & {
   paidGeminiApiKey?: string;
-  groqApiKey?: string;
-  groqModel?: string;
+  openAiApiKey?: string;
+  openAiModel?: string;
   cloudflareAiAccountId?: string;
   cloudflareAiApiToken?: string;
   cloudflareAiModel?: string;
 };
 
 export type EditorialProviderEvaluatorResult = EditorialEvaluatorResult & {
-  provider: "google" | "groq" | "cloudflare";
+  provider: "google" | "openai" | "cloudflare";
   model: string;
 };
 
@@ -91,7 +91,7 @@ Decisions:
 
 Keep both reason and growthReason under 240 characters. Return at most two concise suggested angles and three concise risk flags. Do not invent facts beyond the supplied fields.`;
 
-const GROQ_PROVIDER_TIMEOUT_MS = 60_000;
+const OPENAI_PROVIDER_TIMEOUT_MS = 60_000;
 const GEMINI_PROVIDER_TIMEOUT_MS = 45_000;
 const CLOUDFLARE_PROVIDER_TIMEOUT_MS = 120_000;
 
@@ -129,17 +129,17 @@ export async function evaluateStoriesWithFallback(
     }
   }
 
-  if (options.groqApiKey && options.groqModel) {
+  if (options.openAiApiKey && options.openAiModel) {
     try {
-      const result = await evaluateStoriesWithGroq({
+      const result = await evaluateStoriesWithOpenAi({
         ...options,
-        apiKey: options.groqApiKey,
-        model: options.groqModel,
+        apiKey: options.openAiApiKey,
+        model: options.openAiModel,
       });
-      return { ...result, provider: "groq", model: options.groqModel };
+      return { ...result, provider: "openai", model: options.openAiModel };
     } catch (error) {
-      attempts.push({ provider: "Groq", error: providerErrorSummary(error) });
-      console.warn("Groq editorial evaluation failed; trying configured fallback.");
+      attempts.push({ provider: "Luna", error: providerErrorSummary(error) });
+      console.warn("Luna editorial evaluation failed; trying configured fallback.");
     }
   }
 
@@ -244,7 +244,7 @@ export async function evaluateStoriesWithGemini({
   };
 }
 
-async function evaluateStoriesWithGroq({
+async function evaluateStoriesWithOpenAi({
   apiKey,
   model,
   topic,
@@ -253,55 +253,25 @@ async function evaluateStoriesWithGroq({
   editorialProfile,
   planningContext,
 }: EvaluateWithGeminiOptions): Promise<EditorialEvaluatorResult> {
-  const response = await withProviderTimeout(
-    new Groq({ apiKey, maxRetries: 1 }).chat.completions.create({
-      model,
-      ...(model.startsWith("openai/gpt-oss-")
-        ? { reasoning_effort: "low" as const }
-        : {}),
-      messages: [
-        {
-          role: "system",
-          content: `${planningContext ? PLANNER_INSTRUCTION : SYSTEM_INSTRUCTION}\n\nReturn only the requested JSON object with no Markdown fences or commentary.`,
-        },
-        {
-          role: "user",
-          content: JSON.stringify(
-            planningContext ?? createEvaluationInput(
-              topic,
-              candidates,
-              preferences,
-              editorialProfile,
-            ),
-          ),
-        },
-      ],
-      max_completion_tokens: 4_096,
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: "editorial_evaluations",
-          strict: false,
-          schema: planningContext ? PLANNER_SCHEMA : createResponseSchema(),
-        },
-      },
-    }),
-    "Groq",
-    GROQ_PROVIDER_TIMEOUT_MS,
-  );
-  const responseText = normalizeJsonText(
-    response.choices[0]?.message.content ?? "",
-  );
-  if (!responseText) {
-    throw new EditorialEvaluationResponseError(
-      "Groq returned an empty editorial evaluation",
-    );
-  }
+  const response = await generateOpenAiStructuredResponse({
+    apiKey,
+    model,
+    instructions: planningContext ? PLANNER_INSTRUCTION : SYSTEM_INSTRUCTION,
+    contents: planningContext ?? createEvaluationInput(
+      topic,
+      candidates,
+      preferences,
+      editorialProfile,
+    ),
+    schema: planningContext ? PLANNER_SCHEMA : createResponseSchema(),
+    schemaName: planningContext ? "daily_editorial_plan" : "editorial_evaluations",
+    maxOutputTokens: 4_096,
+    reasoningEffort: "low",
+    timeoutMs: OPENAI_PROVIDER_TIMEOUT_MS,
+  });
+  const responseText = response.text;
 
   return {
-    ...(response.system_fingerprint
-      ? { modelVersion: response.system_fingerprint }
-      : {}),
     ...(planningContext ? { dailyPlan: parseDailyPlan(responseText, planningContext.candidates, planningContext.acquisition) } : {}),
     evaluations: planningContext ? [] : parseEditorialEvaluations(
       responseText,
@@ -309,11 +279,10 @@ async function evaluateStoriesWithGroq({
       editorialProfile?.weights ?? DEFAULT_EDITORIAL_PROFILE_WEIGHTS,
     ),
     usage: {
-      promptTokens: response.usage?.prompt_tokens ?? 0,
-      outputTokens: response.usage?.completion_tokens ?? 0,
-      thoughtsTokens:
-        response.usage?.completion_tokens_details?.reasoning_tokens ?? 0,
-      totalTokens: response.usage?.total_tokens ?? 0,
+      promptTokens: response.usage.promptTokens,
+      outputTokens: response.usage.outputTokens,
+      thoughtsTokens: response.usage.thoughtsTokens,
+      totalTokens: response.usage.totalTokens,
     },
   };
 }

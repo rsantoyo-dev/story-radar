@@ -87,17 +87,36 @@ Compare the candidates jointly using audience fit, evidence, current applicabili
 A candidate that is several days old is not automatically weaker: judge it on whether its facts still hold and its angle is still worth telling today, not on how many days have passed since collection. Do not choose no-strong-candidate merely because every candidate predates today — reserve that outcome for when no candidate clears the bar on evidence, relevance or fit, or when a candidate's specific angle has genuinely expired (a since-concluded campaign or event, a superseded figure or number, a resolved situation) and needs reframing before it could run. When you do recommend an older candidate, say in the reason why it still holds up today.
 When an acquisition vocabulary is supplied, also return a provisional angle for the recommendation and for each alternative, using one of the supplied lens keys exactly and setting taxonomyVersion to the supplied version. This read is provisional: you are seeing an excerpt, not the full article, and the creative brief will reclassify the story authoritatively later. Choose the lens the available evidence best supports; never pick one merely because its share looks low. The recent distribution is only a tie-breaker between candidates that are otherwise comparable on priority, current applicability, evidence and audience fit, and it never overrides any of them. When acquisition.targetsApply is false the configured target shares are statistically meaningless for this topic so far: ignore them completely and use the distribution only to avoid repeating the same lens twice in a row. Deferred candidates need no angle. When no vocabulary is supplied, omit every angle and taxonomyVersion.
 Return one recommendation and up to two alternatives, each with a concise reason, plus up to five deferred candidates with reasons. Use only supplied candidate storyIds, once each across all lists. If nothing merits publication, return outcome no-strong-candidate with null recommendation and no alternatives. Explain why today in summary, and explicitly describe uncertainty. Do not publish, approve or change any story. All explanatory text should follow the topic's audience language when identifiable.`;
-const choiceSchema = { type: "object", additionalProperties: false, required: ["storyId", "reason"], properties: { storyId: { type: "string" }, reason: { type: "string" }, angle: { type: "string" } } };
+const choiceSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["storyId", "reason", "angle"],
+  properties: {
+    storyId: { type: "string" },
+    reason: { type: "string" },
+    angle: { anyOf: [{ type: "string" }, { type: "null" }] },
+  },
+};
 export const PLANNER_SCHEMA = {
-  type: "object", additionalProperties: false,
-  required: ["outcome", "recommendation", "alternatives", "deferred", "summary", "uncertainty"],
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "outcome",
+    "recommendation",
+    "alternatives",
+    "deferred",
+    "summary",
+    "uncertainty",
+    "taxonomyVersion",
+  ],
   properties: {
     outcome: { type: "string", enum: ["recommendation", "no-strong-candidate"] },
     recommendation: { anyOf: [choiceSchema, { type: "null" }] },
     alternatives: { type: "array", maxItems: 2, items: choiceSchema },
     deferred: { type: "array", maxItems: 5, items: choiceSchema },
-    summary: { type: "string" }, uncertainty: { type: "string" },
-    taxonomyVersion: { type: "integer", minimum: 1 },
+    summary: { type: "string" },
+    uncertainty: { type: "string" },
+    taxonomyVersion: { anyOf: [{ type: "integer", minimum: 1 }, { type: "null" }] },
   },
 };
 export function plannerDay(timezone: string, now = new Date()) {

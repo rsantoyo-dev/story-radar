@@ -5,12 +5,12 @@ Read this before creating or modifying UI styles. Where this guide and prior
 UXDSL knowledge disagree, the installed package wins: verify against
 `node_modules/postcss-uxdsl/src/`.
 
-**Installed version: `0.5.0-beta.4`** (`postcss-uxdsl`, `uxdsl-cli`,
+**Installed version: `0.5.0-beta.5`** (`postcss-uxdsl`, `uxdsl-cli`,
 `uxdsl-core`, `vite-plugin-uxdsl`, pinned exactly because the beta's grammar is
 not compatible with `0.3.x`).
 
 **Everything compiles from one config file, in one process.** Since
-`0.5.0-beta.4`, `uxdsl.config.cjs` declares all five entries in a `builds`
+`5`, `uxdsl.config.cjs` declares all five entries in a `builds`
 array; `uxdsl build`/`uxdsl watch` with no flags compiles all of them from a
 single invocation. This replaced five separate per-entry config files and five
 concurrent CLI processes. The build is atomic across the whole array: one

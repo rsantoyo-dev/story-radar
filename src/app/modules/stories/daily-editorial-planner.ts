@@ -131,7 +131,8 @@ export async function recommendForToday(topicId: string, timezone: string, force
       if (!result.dailyPlan) throw new Error("Planner response missing");
       await finishDailyPlan(topicId,id,{status:"completed",result:result.dailyPlan,provider:result.provider,model:result.model,usage:result.usage});
     }
-  } catch {
+  } catch (error) {
+    console.error("Daily planner recommendation failed:", error);
     await finishDailyPlan(topicId,id,{status:"failed",error:"The configured AI providers could not complete the recommendation. You can retry."});
     throw new DailyPlannerError("The daily recommendation could not be completed. Your story evaluations were not changed.",502);
   }

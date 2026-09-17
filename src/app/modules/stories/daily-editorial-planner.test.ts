@@ -147,8 +147,8 @@ test("plannerInputs widens the freshness window to surface older evaluated candi
     assert.ok(!inputs.candidates.some(c=>c.title==="Too stale even widened"));
   } finally {await client.close();}
 });
-test("planner uses configured Gemini schema and rejects bad IDs before Groq fallback; normal evaluations remain separate",async()=>{
-  let geminiCalls=0,groqCalls=0;
+test("planner uses configured Gemini schema and rejects bad IDs before Luna fallback; normal evaluations remain separate",async()=>{
+  let geminiCalls=0,lunaCalls=0;
   const provider=load("./gemini-story-editorial-evaluator.ts",{
     "./daily-editorial-planner.types":types,
     "@google/genai":{ApiError:class extends Error {},GoogleGenAI:class { models={generateContent:async(input:{contents:string;config:{systemInstruction:string;responseJsonSchema:unknown}})=>{
@@ -158,18 +158,18 @@ test("planner uses configured Gemini schema and rejects bad IDs before Groq fall
       assert.equal(input.config.responseJsonSchema,types.PLANNER_SCHEMA);
       return {text:JSON.stringify({...decision,recommendation:{storyId:other,reason:"unknown"}})};
     }};}},
-    "groq-sdk":class {chat={completions:{create:async(input:{messages:{content:string}[]})=>{
-      groqCalls++;assert.match(input.messages[0].content,/daily editorial planner/);
-      return {choices:[{message:{content:JSON.stringify(decision)}}],usage:{total_tokens:42}};
-    }}};},
+    "./openai-structured-response":{generateOpenAiStructuredResponse:async(input:{instructions:string;contents:{localDate:string}})=>{
+      lunaCalls++;assert.match(input.instructions,/daily editorial planner/);assert.equal(input.contents.localDate,"2026-09-13");
+      return {text:JSON.stringify(decision),provider:"openai",model:"configured-luna",usage:{promptTokens:20,outputTokens:22,thoughtsTokens:0,totalTokens:42}};
+    }},
   });
   const options={apiKey:"test",model:"configured-model",topic:{name:"Test"},candidates:[],preferences:{favoredTerms:[],unfavoredTerms:[]}};
   const empty=await provider.evaluateStoriesWithGemini(options) as {evaluations:unknown[];dailyPlan?:unknown};
   assert.equal(empty.evaluations.length,0);assert.equal(empty.dailyPlan,undefined);assert.equal(geminiCalls,0);
-  const result=await provider.evaluateStoriesWithFallback({...options,groqApiKey:"test",groqModel:"configured-fallback",planningContext:{localDate:"2026-09-13",candidates:[{storyId:id}]}}) as {provider:string;model:string;dailyPlan:types.DailyPlan;evaluations:unknown[]};
-  assert.equal(result.provider,"groq");assert.equal(result.model,"configured-fallback");
+  const result=await provider.evaluateStoriesWithFallback({...options,openAiApiKey:"test",openAiModel:"configured-luna",planningContext:{localDate:"2026-09-13",candidates:[{storyId:id}]}}) as {provider:string;model:string;dailyPlan:types.DailyPlan;evaluations:unknown[]};
+  assert.equal(result.provider,"openai");assert.equal(result.model,"configured-luna");
   assert.equal(result.dailyPlan.recommendation?.storyId,id);assert.equal(result.evaluations.length,0);
-  assert.equal(geminiCalls,1);assert.equal(groqCalls,1);
+  assert.equal(geminiCalls,1);assert.equal(lunaCalls,1);
 });
 test("planner service rechecks publication changes after generation without persisting evaluations",async()=>{
   let reads=0,providerCalls=0;

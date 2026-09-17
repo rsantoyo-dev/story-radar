@@ -34,8 +34,8 @@ export type EditorialEvaluationRuntimeConfig =
   EditorialEvaluationPublicConfig & {
     apiKey: string;
     paidGeminiApiKey?: string;
-    groqApiKey?: string;
-    groqModel?: string;
+    openAiApiKey?: string;
+    openAiModel?: string;
     cloudflareAiAccountId?: string;
     cloudflareAiApiToken?: string;
     cloudflareAiModel?: string;
@@ -78,7 +78,7 @@ export function getEditorialEvaluationPublicConfig(): EditorialEvaluationPublicC
 export function getEditorialEvaluationRuntimeConfig(): EditorialEvaluationRuntimeConfig {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   const paidGeminiApiKey = process.env.GEMINI_PAID_API_KEY?.trim();
-  const groqApiKey = process.env.GROQ_API_KEY?.trim();
+  const openAiApiKey = process.env.OPENAI_API_KEY?.trim();
   const cloudflareAiAccountId = process.env.CLOUDFLARE_AI_ACCOUNT_ID?.trim();
   const cloudflareAiApiToken = process.env.CLOUDFLARE_AI_API_TOKEN?.trim();
 
@@ -100,13 +100,13 @@ export function getEditorialEvaluationRuntimeConfig(): EditorialEvaluationRuntim
     ...(paidGeminiApiKey && paidGeminiApiKey !== apiKey
       ? { paidGeminiApiKey }
       : {}),
-    ...(groqApiKey
+    ...(openAiApiKey
       ? {
-          groqApiKey,
-          groqModel:
-            process.env.EDITORIAL_GROQ_MODEL?.trim() ||
-            process.env.CREATIVE_GROQ_MODEL?.trim() ||
-            "openai/gpt-oss-20b",
+          openAiApiKey,
+          openAiModel:
+            process.env.EDITORIAL_OPENAI_MODEL?.trim() ||
+            process.env.CREATIVE_MINOR_REPAIR_MODEL?.trim() ||
+            "gpt-5.6-luna",
         }
       : {}),
     ...(cloudflareAiAccountId && cloudflareAiApiToken
