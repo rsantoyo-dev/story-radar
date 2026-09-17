@@ -20,27 +20,43 @@ export function DailyPreparationPanel({onCompleted,onOpenDraft,...props}:Props) 
   const completionCallback=useRef(onCompleted);
   const posting=useRef(false);
   const generation=useRef(0);
+  const dataRef=useRef<State|undefined>(undefined);
+  const rescheduleRef=useRef<()=>void>(()=>{});
+  // Shared by the poller and every POST handler below: keep dataRef in sync
+  // so the poller always sees the freshest status, and re-arm its timer
+  // immediately (fast while running, slow once idle) instead of waiting out
+  // whatever delay was already in flight.
+  function apply(value:State){dataRef.current=value;setData(value);rescheduleRef.current();}
   useEffect(()=>{completionCallback.current=onCompleted;},[onCompleted]);
   useEffect(()=>{
     if(!secret.trim())return;
     let disposed=false;
     let controller:AbortController|undefined;
+    let timer:ReturnType<typeof setTimeout>|undefined;
+    // The GET route only reads the database unless it finds a run stuck in
+    // "running" with an expired lease (see route.ts) — so polling has no
+    // provider cost either way, but there's no reason to hammer it once a
+    // run is idle/terminal. Stay tight (4s) while something is actually in
+    // flight, back off (60s) otherwise.
+    function delay(){return posting.current || dataRef.current?.run?.status==="running"?4000:60000;}
+    function schedule(){if(timer)clearTimeout(timer);if(!disposed)timer=setTimeout(()=>void read(),delay());}
+    rescheduleRef.current=schedule;
     async function read(){
-      if(posting.current)return;
+      if(posting.current){schedule();return;}
       const requestGeneration=generation.current;
       controller?.abort();controller=new AbortController();
       try {
         const response=await fetch(`/api/radar/daily-preparation?topicId=${encodeURIComponent(topicId)}`,{headers:{Authorization:`Bearer ${secret.trim()}`},signal:controller.signal,cache:"no-store"});
         const value=await response.json();if(!response.ok)throw new Error(value.error);
         if(disposed || posting.current || requestGeneration!==generation.current)return;
-        setData(value);setError("");
+        dataRef.current=value;setData(value);setError("");
         const completionKey=value.run ? `${value.run.id}:${value.run.updatedAt}` : "";
         if(value.run?.status==="completed" && completed.current!==completionKey){completed.current=completionKey;completionCallback.current();}
       }catch(error){if(!disposed && !controller.signal.aborted)setError(error instanceof Error?error.message:"Unable to load preparation");}
+      finally{if(!disposed)schedule();}
     }
     void read();
-    const interval=setInterval(()=>void read(),4000);
-    return()=>{disposed=true;controller?.abort();clearInterval(interval);};
+    return()=>{disposed=true;controller?.abort();if(timer)clearTimeout(timer);rescheduleRef.current=()=>{};};
   },[topicId,secret]);
   const run=data?.run;
   const selectedLine=lineId || run?.lineId || data?.lines[0]?.id || "";
@@ -51,7 +67,7 @@ export function DailyPreparationPanel({onCompleted,onOpenDraft,...props}:Props) 
     try {
       const response=await fetch(`/api/radar/daily-preparation?topicId=${encodeURIComponent(topicId)}`,{method:"POST",headers:{Authorization:`Bearer ${secret.trim()}`,"Content-Type":"application/json"},body:JSON.stringify(fresh?{action:"start",lineId:selectedLine,timezone,targetStep}:{action:"continue",runId:run.id,targetStep})});
       const value=await response.json();if(!response.ok)throw new Error(value.error);
-      setData(value);setNewRun(false);
+      apply(value);setNewRun(false);
     }catch(error){setError(error instanceof Error?error.message:"Unable to start preparation");}
     finally{posting.current=false;setPending(false);}
   }
@@ -61,7 +77,7 @@ export function DailyPreparationPanel({onCompleted,onOpenDraft,...props}:Props) 
     try {
       const response=await fetch(`/api/radar/daily-preparation?topicId=${encodeURIComponent(topicId)}`,{method:"POST",headers:{Authorization:`Bearer ${secret.trim()}`,"Content-Type":"application/json"},body:JSON.stringify({action:"acknowledge-brief",runId:run.id})});
       const value=await response.json();if(!response.ok)throw new Error(value.error);
-      setData(value);
+      apply(value);
     }catch(error){setError(error instanceof Error?error.message:"Unable to accept the brief");}
     finally{posting.current=false;setPending(false);}
   }

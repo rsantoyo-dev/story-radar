@@ -118,7 +118,7 @@ async function plannerAcquisitionContext(
     ? (await db.execute(sql`
         SELECT DISTINCT ON (b.story_id) b.story_id AS "storyId", b.editorial_angle->>'angle' AS angle
         FROM story_creative_briefs b
-        WHERE b.topic_id=${topicId}::uuid AND b.story_id = ANY(${storyIds}::uuid[])
+        WHERE b.topic_id=${topicId}::uuid AND b.story_id = ANY(ARRAY[${sql.join(storyIds.map(id => sql`${id}::uuid`), sql`,`)}])
           AND b.editorial_angle IS NOT NULL
         ORDER BY b.story_id, b.created_at DESC
       `)).rows as { storyId: string; angle: string | null }[]

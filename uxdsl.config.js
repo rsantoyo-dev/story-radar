@@ -91,14 +91,18 @@ const palette = {
 };
 
 module.exports = {
-  breakpoints: {
-    xs: 0,
-    sm: 640,
-    md: 768,
-    lg: 1024,
-    xl: 1280,
-  },
   theme: {
+    // Lives inside `theme`, not as a sibling: the plugin only reads
+    // `theme.breakpoints` when `opts.breakpoints` is completely absent —
+    // any top-level `breakpoints` (e.g. on the CLI's own config) shadows
+    // this entirely rather than merging with it.
+    breakpoints: {
+      xs: 0,
+      sm: 640,
+      md: 768,
+      lg: 1024,
+      xl: 1280,
+    },
     fonts: {
       families: {
         ui: "var(--font-geist-sans, Arial, sans-serif)",

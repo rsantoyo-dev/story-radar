@@ -804,7 +804,7 @@ deprecation notices.
 Before creating or modifying UI styles:
 
 - read `docs/uxdsl-agent-guide.md`
-- inspect the theme in `uxdsl.config.js` and the per-entry `uxdsl.*.config.cjs`
+- inspect the tokens in `uxdsl.config.js` and the build orchestration in `uxdsl.config.cjs`/`uxdsl.theme.config.cjs`
 - use the installed UXDSL version as the implementation reference, verifying
   against `node_modules/postcss-uxdsl/src/` when the guide is unclear
 
