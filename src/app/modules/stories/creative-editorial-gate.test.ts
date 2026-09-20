@@ -287,3 +287,24 @@ test("an uncorrected missing headline cannot become publication ready",async()=>
  assert.ok(result.criticUnavailable);
  assert.ok(h.calls.length<=2);
 });
+
+
+test("malformed final audit recovers once without replacing final copy", async () => {
+  const h = harness((_model, index) => index === 0
+    ? {verdict:"invalid"}
+    : {verdict:"accepted", scores:strong, issues:[], hookSelection:selection(), draft:{...draft, caption:"Do not apply this rewrite"}});
+  const result = await h.review(options({readOnly:true}));
+  assert.deepEqual(h.calls, ["terra-test", "sol-test"]);
+  assert.equal(result.draft.caption, draft.caption);
+  assert.equal(result.draft.qualityReview?.status, "accepted");
+  assert.ok(result.draft.qualityReview?.issues.some(issue => issue.code === "EDITORIAL_REVIEW_RECOVERED"));
+});
+
+test("unavailable final audit stops after two calls and never authorizes automation", async () => {
+  const h = harness(() => new Error("Provider unavailable"));
+  const result = await h.review(options({readOnly:true}));
+  assert.deepEqual(h.calls, ["terra-test", "sol-test"]);
+  assert.ok(result.criticUnavailable);
+  assert.deepEqual(result.draft, draft);
+  assert.equal(isCreativeDraftReadyForAutomation(result.draft, "meme", true), false);
+});

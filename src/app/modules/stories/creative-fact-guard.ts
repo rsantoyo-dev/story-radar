@@ -1,3 +1,4 @@
+import type { CarouselPlan } from "./carousel-narrative";
 import { administrativeProjectIssues } from "./creative-project-grounding";
 import { completeRoadNoticeExcerpt } from "./road-notice-evidence";
 import type {
@@ -850,6 +851,7 @@ export function repairDeterministicFactCopy(
   draft: GeneratedCreativeDraft,
   keyFacts: readonly CreativeKeyFact[],
   language?: string,
+  carouselPlan?: CarouselPlan,
 ): GeneratedCreativeDraft {
   if (keyFacts.length === 0) return draft;
   const factsById = new Map(
@@ -892,18 +894,25 @@ export function repairDeterministicFactCopy(
             allFacts,
           ) || undefined,
         }),
-    units: draft.units.map((unit) => {
+    units: draft.units.map((unit, index) => {
+      // A repair may recover evidence only within this slide's approved scope.
+      // Otherwise a valid brief-level fact can invalidate the final carousel.
+      const allowed = carouselPlan?.slides[index]?.allowedFactIds;
+      const unitFactsById = allowed
+        ? new Map([...factsById].filter(([id]) => allowed.includes(id)))
+        : factsById;
+      const unitFacts = [...unitFactsById.values()];
       const isClosingUnit =
         unit.editorialGoal === "conclude" ||
         unit.editorialGoal === "debate";
       const numericFactIds = repairNumericFactAssignments(
         unit,
-        factsById,
+        unitFactsById,
         establishedFactIds,
       );
       const laborContrastFactIds = uniqueLaborContrastFactIds(
         unitVisibleCopy(unit),
-        allFacts,
+        unitFacts,
       );
       const narrowedUnsupportedClosingLaborContrast = Boolean(
         laborContrastFactIds &&
@@ -913,22 +922,22 @@ export function repairDeterministicFactCopy(
       const contrastFactIds = repairLaborContrastFactAssignment(
         unit,
         numericFactIds,
-        allFacts,
+        unitFacts,
         establishedFactIds,
       );
       const selectedContrastFacts = contrastFactIds.flatMap((id) => {
-        const fact = factsById.get(id);
+        const fact = unitFactsById.get(id);
         return fact ? [fact] : [];
       });
       const sectorMovementFactId = uniqueMissingSectorMovementFactId(
         unitVisibleCopy(unit),
         selectedContrastFacts,
-        allFacts,
+        unitFacts,
       );
       const factIds = repairSectorMovementFactAssignment(
         unit,
         contrastFactIds,
-        factsById,
+        unitFactsById,
       );
       const prioritizedClosingLaborContrast = Boolean(
         laborContrastFactIds &&
@@ -941,7 +950,7 @@ export function repairDeterministicFactCopy(
           !contrastFactIds.includes(sectorMovementFactId),
       );
       const selectedFacts = factIds.flatMap((id) => {
-        const fact = factsById.get(id);
+        const fact = unitFactsById.get(id);
         return fact ? [fact] : [];
       });
       const sourceCopy = selectedFacts
@@ -1027,23 +1036,23 @@ export function repairDeterministicFactCopy(
         const repairedHeadline = removeUnsupportedNumericClauses(
           headline,
           selectedFacts,
-          allFacts,
+          unitFacts,
         );
         const repairedBody = body
-          ? removeUnsupportedNumericClauses(body, selectedFacts, allFacts)
+          ? removeUnsupportedNumericClauses(body, selectedFacts, unitFacts)
           : undefined;
         const repairedSubheadline = subheadline
           ? removeUnsupportedNumericClauses(
               subheadline,
               selectedFacts,
-              allFacts,
+              unitFacts,
             )
           : undefined;
         const repairedCta = ctaQuestion
           ? removeUnsupportedNumericClauses(
               ctaQuestion,
               selectedFacts,
-              allFacts,
+              unitFacts,
             )
           : undefined;
         // Do not replace a removed claim with an analysis label that the

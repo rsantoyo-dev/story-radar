@@ -1,3 +1,4 @@
+import { CreativeTextBudgetError, CreativeTextPricingError } from "@/app/modules/stories/creative-text-cost";
 import { StoryMaterialValidationError, StoryMaterialConflictError } from "@/app/modules/stories/story-materials.types";
 import { ApiError } from "@google/genai";
 import { ApiError as FalApiError } from "@fal-ai/client";
@@ -54,6 +55,8 @@ export function creativeRouteErrorResponse(
   error: unknown,
   operation: string,
 ): NextResponse {
+  if(error instanceof CreativeTextBudgetError)return NextResponse.json({error:error.message,code:"STORY_TEXT_BUDGET"},{status:429});
+  if(error instanceof CreativeTextPricingError)return NextResponse.json({error:error.message,code:"TEXT_PRICING_REQUIRED"},{status:503});
   if (
     error instanceof CreativeContentNotFoundError ||
     error instanceof SelectedStoryContentNotFoundError ||

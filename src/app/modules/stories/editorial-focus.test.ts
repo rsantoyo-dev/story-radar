@@ -44,7 +44,7 @@ function harness({ runs = 0, content = "Verified source material", providerFails
   };
   const exports: { suggestEditorialFocus?: (...args: unknown[]) => Promise<unknown> } = {};
   const code = ts.transpileModule(readFileSync(new URL("./manage-creative-content.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(code, { exports, Date, Intl, console, require: (name: string) => mocks[name] ?? {} });
+  vm.runInNewContext(code, { exports, Date, Intl, console, require: (name: string) => mocks[name] ?? (name === "./creative-text-meter" ? { withCreativeTextBudget: (_context: unknown, work: () => Promise<unknown>) => work() } : {}) });
   return { call: () => exports.suggestEditorialFocus!("topic", "story", "Existing preference", "research", "preparation", "UTC"), events, input: () => input };
 }
 

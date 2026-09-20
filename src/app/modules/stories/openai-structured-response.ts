@@ -1,3 +1,4 @@
+import { meterCreativeText } from "./creative-text-meter";
 import "server-only";
 import { randomUUID } from "node:crypto";
 
@@ -24,6 +25,7 @@ export type OpenAiStructuredResponse = {
   provider: "openai";
   model: string;
   usage: CreativeAiUsage;
+  cachedInputTokens?: number;
   webSearch?: { calls: number; sources: { url: string; title: string; imageUrl?: string }[] };
 };
 
@@ -32,7 +34,13 @@ const OPENAI_TIMEOUT_MS = 120_000;
 
 export type OpenAiUsageContext = { runId: string; topicId: string; storyId: string };
 
-export async function generateOpenAiStructuredResponse({
+export async function generateOpenAiStructuredResponse(options: Parameters<typeof requestOpenAiStructuredResponse>[0]): Promise<OpenAiStructuredResponse> {
+  return meterCreativeText({provider:"openai",model:options.model,operation:options.schemaName,
+    payload:{instructions:options.instructions,contents:options.contents,schema:options.schema},maxOutputTokens:options.maxOutputTokens},
+    () => requestOpenAiStructuredResponse(options), result => result.usage.totalTokens > 0 ? {...result.usage,cachedInputTokens:result.cachedInputTokens} : undefined);
+}
+
+async function requestOpenAiStructuredResponse({
   apiKey,
   model,
   instructions,
@@ -131,9 +139,9 @@ export async function generateOpenAiStructuredResponse({
     webSearchCalls: webSearch ? extractWebSearchSources(payload.output).calls : 0,
   });
   if (!response.ok) {
-    throw new OpenAiEditorialError(
+    throw Object.assign(new OpenAiEditorialError(
       `OpenAI ${model} failed (HTTP ${response.status}: ${responseError(payload)})`,
-    );
+    ), { status: response.status });
   }
 
   const text = extractOpenAiOutputText(payload);
@@ -150,6 +158,7 @@ export async function generateOpenAiStructuredResponse({
     provider: "openai",
     model,
     usage: openAiUsage(payload.usage),
+    cachedInputTokens: usageNumber(rawUsage?.input_tokens_details?.cached_tokens),
     ...(webSearch ? { webSearch: extractWebSearchSources(payload.output) } : {}),
   };
 }

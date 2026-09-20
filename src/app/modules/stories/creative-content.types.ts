@@ -725,6 +725,7 @@ export type CreativeQualityIssue = {
 export type CreativeQualityReview = {
   /** Evaluated alternatives for this exact draft revision; never approved copy by themselves. */
   hookSelection?: CreativeHookSelection;
+  carouselCraft?: import("./carousel-craft").CarouselCraftAssessment;
   // "needs-review": validation is incomplete or quality targets remain unmet.
   // This status never authorizes unattended continuation or publication.
   status: "accepted" | "needs-repair" | "needs-review" | "rejected";
@@ -745,6 +746,11 @@ export type CreativeQualityReview = {
 };
 
 export type GeneratedCreativeDraft = {
+  narrativeRevision?: import("./creative-narrative-plan").NarrativeRevision;
+  editorialRepair?: import("./creative-editorial-loop").EditorialRepairProgress;
+  recoveryId?: string;
+  /** Initial writer alternatives; historical context, never an approval verdict. */
+  openingExploration?: CreativeHookSelection;
   concept: string;
   /** Explains a deliberate departure from the preferred carousel arc. */
   narrativeRationale?: string;
@@ -844,6 +850,8 @@ export type CreativeWorkspaceState = {
   brief?: CreativeBrief;
   briefIsCurrent: boolean;
   drafts: CreativeDraft[];
+  recovery?: {id:string;draftId:string;draftVersion:number;status:string;error:string|null;stage:string|null};
+  textSpend?: import("./creative-text-cost").CreativeTextSpend;
   daily: CreativeDailyUsage;
   configuration: {
     provider: string;

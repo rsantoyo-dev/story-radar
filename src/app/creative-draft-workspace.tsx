@@ -74,6 +74,7 @@ type WorkspaceProps = {
 };
 
 type BusyAction =
+  | "recover"
   | "editorial-focus"
   | "profile-draft"
   | "brief"
@@ -652,6 +653,20 @@ export function CreativeDraftWorkspace({
     });
   }
 
+  async function handleRecoverDraft() {
+    if (!activeDraft || busy || dirty || profileDirty || viewingHistoricalDraft) return;
+    await run("recover", async () => {
+      const existing=workspace?.recovery;
+      const requestId=existing?.draftId===activeDraft.id && existing.draftVersion===activeDraft.version ? existing.id : crypto.randomUUID();
+      try {
+        await requestJson(topicUrl(`/api/radar/creative/drafts/${encodeURIComponent(activeDraft.id)}/recover`,topicId),secret,{
+          method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({requestId,expectedVersion:activeDraft.version}),
+        });
+        setNotice("Saved draft repaired and reviewed. Check the findings before approving.");
+      } finally { await reloadWorkspace(); }
+    });
+  }
+
   async function handleGenerateDraft() {
     if (!workspace?.brief || busy) return;
     if (profileDirty) {
@@ -704,7 +719,7 @@ export function CreativeDraftWorkspace({
           body: JSON.stringify({
             format: selectedFormat,
             aspectRatio: selectedAspectRatio,
-            createNewVersion: true,
+            createNewVersion: false,
           }),
         },
       );
@@ -1491,6 +1506,10 @@ export function CreativeDraftWorkspace({
     try {
       await task();
     } catch (operationError) {
+      // Generation may have persisted a useful draft before its review failed.
+      if (action === "draft" || action === "profile-draft") {
+        await reloadWorkspace().catch(() => undefined);
+      }
       setError(getErrorMessage(operationError));
     } finally {
       setBusy(undefined);
@@ -2028,6 +2047,29 @@ export function CreativeDraftWorkspace({
                   />
                 )}
 
+                {activeDraft?.narrativeRevision ? (
+                  <details className={styles.generateDraftCard}>
+                    <summary>Narrative plan · revised version {activeDraft.narrativeRevision.version}</summary>
+                    <p>{activeDraft.narrativeRevision.reason}</p>
+                    <p>Current angle: {activeDraft.narrativeRevision.angle}</p>
+                    <ol>{activeDraft.narrativeRevision.plan.slides.map((slide,index)=>(
+                      <li key={index}>Slide {index+1}: {slide.viewerQuestion} · {slide.allowedFactIds.join(", ")}</li>
+                    ))}</ol>
+                    <small>The original brief and prior script are retained. This revision still requires editorial review and human approval.</small>
+                  </details>
+                ) : null}
+                {workspace.textSpend ? (
+                  <div className={styles.generateDraftCard}>
+                    <div>
+                      <strong>Story text budget: ${workspace.textSpend.estimatedUsd.toFixed(3)} estimated / ${workspace.textSpend.limitUsd.toFixed(2)}</strong>
+                      <p>${workspace.textSpend.reservedUsd.toFixed(3)} reserved or uncertain · ${workspace.textSpend.availableUsd.toFixed(3)} available · {workspace.textSpend.calls} provider calls. Images excluded.</p>
+                      <p>{workspace.textSpend.topic.acceptedCarousels} accepted carousels in this Topic · estimated text cost per accepted carousel: {workspace.textSpend.topic.costPerAcceptedCarouselUsd === null ? "Not available yet" : `$${workspace.textSpend.topic.costPerAcceptedCarouselUsd.toFixed(3)}`}.</p>
+                      {workspace.textSpend.legacyRuns > 0 ? <small>{workspace.textSpend.legacyRuns} earlier or unmetered runs are excluded; this is not a historical billing total.</small> : null}
+                      {workspace.recovery && workspace.recovery.draftId === activeDraft?.id ? <p>Recovery: {workspace.recovery.status}{workspace.recovery.error ? ` — ${workspace.recovery.error}` : ""}</p> : null}
+                    </div>
+                  </div>
+                ) : null}
+
                 {activeDraft && editableDraft && !viewingHistoricalDraft ? (
                   <div className={styles.approvalBar}>
                     <div>
@@ -2043,6 +2085,10 @@ export function CreativeDraftWorkspace({
                           : "Editing and saving creates a new draft version. The earlier image batch remains in Saved studies."}</small>
                     </div>
                     <div>
+                      {activeDraft.status !== "approved" && !activeDraft.companion ? <button type="button" className={styles.primaryButton}
+                        disabled={Boolean(busy) || Boolean(assetBusy) || dirty || profileDirty} onClick={handleRecoverDraft}>
+                        {busy === "recover" ? "Repairing and reviewing…" : "Repair and review saved draft"}
+                      </button> : null}
                       <button
                         type="button"
                         className={styles.secondaryButton}
@@ -3004,6 +3050,7 @@ function BriefView({
           <div>
             <h4>Planned carousel · {brief.carouselPlan.slideCount} slides</h4>
             <p>{brief.carouselPlan.rationale}</p>
+            {brief.carouselPlan.review ? <small>Plan review: {brief.carouselPlan.review.decision} · {brief.carouselPlan.review.reason}</small> : null}
           </div>
           <ol>
             {brief.carouselPlan.slides.map((slide, index) => (

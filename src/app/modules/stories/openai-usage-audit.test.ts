@@ -1,3 +1,4 @@
+import * as textMeter from "./creative-text-meter";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
@@ -16,7 +17,7 @@ test("OpenAI receipts identify charges and uncertain requests without exposing c
     vm.runInNewContext(compiled, {
       exports, Date, Error, AbortController, setTimeout, clearTimeout,
       console: { info: (_label: string, json: string) => logs.push(JSON.parse(json)) },
-      require: (name: string) => name === "node:crypto" ? crypto : {},
+      require: (name: string) => name === "node:crypto" ? crypto : name === "./creative-text-meter" ? textMeter : {},
       fetch: async () => {
         if (outcome === "transport") throw new Error("private transport context");
         return {

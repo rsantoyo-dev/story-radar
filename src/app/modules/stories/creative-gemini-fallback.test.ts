@@ -9,19 +9,25 @@ type Params={contents:string;config:{maxOutputTokens:number;httpOptions:{retryOp
 function load(request:(key:string,params:Params)=>Promise<unknown>) {
   const calls:string[]=[];const logs:unknown[]=[];
   const exports={} as {
+    generateCreativeDraft:(input:unknown)=>Promise<unknown>;
     generateCreativeBrief:(input:unknown)=>Promise<unknown>;
     testParseDraft:(...args:unknown[])=>{units:{headline:string}[]};
     testDraftSchema:(format:string)=>{properties:{units:{items:{properties:{headline:{minLength:number;pattern:string};subheadline:{minLength?:number}}}}}};
     testCompact:(input:unknown,limit:number)=>unknown;
     testSchema:(taxonomy:unknown)=>{properties:{editorialAngle:{properties:{taxonomyVersion:{enum:number[]};angle:{enum:string[]}}}}};
     testGenerateJson:(input:unknown)=>Promise<{provider:string;fallbackReason?:string;usage:{totalTokens:number}}>;
+    testStrictSchema:(schema:Record<string,unknown>)=>Record<string,unknown>;
     testBriefForPrompt:(input:unknown)=>{keyFacts:unknown;riskFlags:unknown;carouselPlan?:unknown;formatScores?:unknown};
   };
-  const source=readFileSync(new URL("./gemini-creative-content-generator.ts",import.meta.url),"utf8")+"\nexports.testGenerateJson=generateJson; exports.testBriefForPrompt=briefForPrompt; exports.testCompact=compactGroqContents; exports.testSchema=creativeBriefSchema; exports.testParseDraft=parseCreativeDraft; exports.testDraftSchema=creativeDraftSchema;";
+  const source=readFileSync(new URL("./gemini-creative-content-generator.ts",import.meta.url),"utf8")+"\nexports.testStrictSchema=strictCreativeSchema; exports.testGenerateJson=generateJson; exports.testBriefForPrompt=briefForPrompt; exports.testCompact=compactGroqContents; exports.testSchema=creativeBriefSchema; exports.testParseDraft=parseCreativeDraft; exports.testDraftSchema=creativeDraftSchema;";
   const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
   class ApiError extends Error {constructor(public status:number){super("HTTP error");}}
   vm.runInNewContext(code,{exports,AbortController,AbortSignal,Buffer,Date,Map,Set,JSON,setTimeout,clearTimeout,console:{info:(...a:unknown[])=>logs.push(a),warn:(...a:unknown[])=>logs.push(a),error:(...a:unknown[])=>logs.push(a)},require:(id:string)=>{
-    if(id==="server-only"||id==="./openai-structured-response")return {};
+    if(id==="server-only")return {};
+    if(id==="./openai-structured-response")return {generateOpenAiStructuredResponse:async(input:{schema:Record<string,unknown>;model:string;contents:unknown})=>{
+      calls.push("luna");
+      return {text:"{}",provider:"openai",model:input.model,usage:{promptTokens:10,outputTokens:5,thoughtsTokens:0,totalTokens:15}};
+    }};
     if(id==="@google/genai")return {ApiError,GoogleGenAI:class {models;constructor({apiKey}:{apiKey:string}){this.models={generateContent:async(params:Params)=>{calls.push(apiKey);return request(apiKey,params);}}}}};
     if(id==="groq-sdk")return class {chat={completions:{create:async()=>{calls.push("groq");return {choices:[{message:{content:"{}"}}],usage:{prompt_tokens:10,completion_tokens:5,total_tokens:15}};}}};};
     return localRequire(id);
@@ -153,4 +159,71 @@ test("missing initial headlines reach repair while strict editorial parsing stil
  assert.equal(properties.headline.minLength,1);
  assert.equal(new RegExp(properties.headline.pattern).test("   "),false);
  assert.equal(properties.subheadline.minLength,undefined);
+});
+
+
+test("brief fallback uses Luna after both Google accounts and resumes it on validation retry", async () => {
+  const service = load(async (key) => { throw new service.ApiError(key === "primary-secret" ? 429 : 402); });
+  const options = { ...input, openAiApiKey: "openai-secret", openAiModel: "gpt-5.6-luna" };
+  const result = await service.exports.testGenerateJson(options);
+  assert.equal(result.provider, "openai");
+  assert.equal(service.calls.at(-1), "luna");
+  assert.ok(service.calls.includes("secondary-secret"));
+  assert.ok(!service.calls.includes("groq"));
+  assert.match(result.fallbackReason ?? "", /Gemini primary: HTTP 429/);
+  assert.match(result.fallbackReason ?? "", /Gemini secondary: HTTP 402/);
+  assert.equal(result.usage.totalTokens, 15);
+  service.calls.length = 0;
+  await service.exports.testGenerateJson({ ...options, startAt: "openai" });
+  assert.deepEqual(service.calls, ["luna"]);
+});
+
+
+test("Luna brief schema makes optional fields nullable without mutating Gemini schema", () => {
+  const service = load(async () => ({}));
+  const original = service.exports.testSchema({taxonomyVersion: 1, lenses: [{key: "general", enabled: true}]});
+  const strict = service.exports.testStrictSchema(original) as {required:string[];properties:{editorialAngle:{required:string[];properties:{alternative:{anyOf:unknown[]}}}}};
+  assert.ok(strict.required.includes("contentTitle"));
+  assert.ok(strict.properties.editorialAngle.required.includes("alternative"));
+  assert.deepEqual(JSON.parse(JSON.stringify(strict.properties.editorialAngle.properties.alternative.anyOf[1])), {type:"null"});
+  assert.ok(!(original as unknown as {required:string[]}).required.includes("contentTitle"));
+});
+
+
+test("carousel authors try Luna third and validation retries stay on Luna", async () => {
+  const service = load(async (key) => { throw new service.ApiError(key === "primary-secret" ? 429 : 402); });
+  await assert.rejects(service.exports.generateCreativeDraft({
+    ...input, openAiApiKey: "openai-secret", format: "carousel", outputAspectRatio: "4:5", characterRoster: [],
+    story: {title:"Source", url:"https://example.com", contentStatus:"full", contentSource:"article"},
+    topic: {name:"Topic"}, profile: {framingStrategy:"auto", brandOverlay:{enabled:false}},
+    brief: {keyFacts:[{id:"fact-1", statement:"Complete evidence.", sourceExcerpt:"Complete evidence."}], carouselPlan:{slideCount:3, slides:[]}},
+  }));
+  const firstLuna = service.calls.indexOf("luna");
+  assert.ok(firstLuna > service.calls.indexOf("secondary-secret"));
+  assert.deepEqual(service.calls.slice(firstLuna), ["luna", "luna"]);
+  assert.ok(!service.calls.includes("groq"));
+});
+
+test("carousel writer schema requests three openings and validates the selected copy and payoff", () => {
+  const service=load(async()=>({}));
+  const schema=service.exports.testDraftSchema("carousel") as unknown as {required:string[]};
+  assert.ok(schema.required.includes("openingExploration"));
+  const units=["cover","content","conclusion"].map((role,index)=>({
+    role,editorialGoal:index===0?"hook":index===1?"explain":"conclude",viewerQuestion:"What can the agent do?",
+    headline:index===0?"The agent can fill forms":"Form filling is a reported capability",body:"The company says its agent fills forms.",
+    visualDirection:"A conceptual form illustration",factIds:["fact-1"],characterIds:[],assetRequest:"generated-image",
+  }));
+  const openingExploration={selectedIndex:0,candidates:[units[0].headline,"An agent for filling forms","What can this agent fill?"].map(headline=>({
+    headline,subheadline:"",factIds:["fact-1"],readerQuestion:"What can the agent do?",payoffUnitOrder:2,supported:true,
+    checks:{clear:true,tension:false,consequence:true,human:true,curiosity:true},reason:"A reported capability with evidence on the next slide.",
+  }))};
+  const value={concept:"Agent capabilities",caption:"The company says its agent fills forms.",altText:"A form.",hashtags:[],narrativeRationale:"Explain a capability.",units,openingExploration};
+  const brief={keyFacts:[{id:"fact-1"}]};
+  const parse=(input:unknown)=>service.exports.testParseDraft(JSON.stringify(input),"carousel",brief,"4:5",[],undefined,false);
+  const parsed=parse(value) as unknown as {openingExploration:{selectedIndex:number}};
+  assert.equal(parsed.openingExploration.selectedIndex,0);
+  assert.throws(()=>parse({...value,openingExploration:{...openingExploration,selectedIndex:1}}),/match the returned opening/);
+  const invalid=structuredClone(value);invalid.openingExploration.candidates[0].payoffUnitOrder=1;
+  assert.throws(()=>parse(invalid),/subsequent slide/);
+  assert.doesNotThrow(()=>parse({...value,openingExploration:undefined}),"Historical drafts remain readable");
 });

@@ -1,3 +1,7 @@
+import { resolveNarrativeBrief } from "./creative-narrative-plan";
+import { claimRecovery, getRecovery, latestRecovery, checkpointRecovery, finishRecovery } from "./creative-recovery.repository";
+import { withCreativeTextBudget } from "./creative-text-meter";
+import { getCreativeTextSpend, recordTextOutcome } from "./creative-text-accounting.repository";
 import { getDailyDraftStory } from "./daily-draft-access";
 import { CreativeContentConflictError, CreativeContentDailyLimitError } from "./creative-run-errors";
 export { CreativeContentConflictError, CreativeContentDailyLimitError } from "./creative-run-errors";
@@ -73,6 +77,7 @@ import {
   resolveCreativeOutputAspectRatio,
 } from "./creative-aspect-ratio";
 import {
+  recoverCreativeDraft,
   generateCreativeBrief,
   generateEditorialFocus,
   generateCreativeDraft,
@@ -205,6 +210,8 @@ export async function getCreativeWorkspaceState(
     collectionContexts: await storyCollectionContexts(topicId,storyId),
     drafts,
     daily,
+    textSpend: await getCreativeTextSpend(topicId, storyId),
+    recovery: await latestRecovery(topicId, storyId),
     configuration: {
       provider: configuration.provider,
       model: configuration.model,
@@ -250,10 +257,10 @@ export async function suggestEditorialFocus(
     inputHash: createHash("sha256").update(JSON.stringify({ story: storyForGenerator(story, content), topic, profile, focusContext, normalizedDirection })).digest("hex"),
   });
   try {
-    const result = await generateEditorialFocus({
+    const result = await withCreativeTextBudget({topicId, storyId: storyId, runId}, () => generateEditorialFocus({
       ...configuration, topic, profile, story: storyForGenerator(story, content),
       editorialDirection: normalizedDirection, focusContext,
-    });
+    }));
     await completeCreativeAiRun(topicId, runId, result.usage, {}, {
       provider: result.provider,
       model: result.model,
@@ -341,9 +348,12 @@ export async function createCreativeBrief(
   });
 
   try {
-    const result = await generateCreativeBrief({
+    const result = await withCreativeTextBudget({topicId, storyId: storyId, runId}, () => generateCreativeBrief({
       apiKey: configuration.apiKey,
       paidGeminiApiKey: configuration.paidGeminiApiKey,
+      openAiApiKey: configuration.openAiApiKey,
+      openAiEditorialModels: configuration.openAiEditorialModels,
+      openAiAuditContext: { runId, topicId, storyId },
       model: configuration.model,
       primaryProvider: configuration.primaryProvider,
       groqApiKey: configuration.groqApiKey,
@@ -356,7 +366,7 @@ export async function createCreativeBrief(
       profile,
       acquisitionTaxonomy,
       editorialDirection: collectionContext ? [normalizedEditorialDirection,editorialContextInstruction(collectionContext)].filter(Boolean).join("\n") : normalizedEditorialDirection,
-    });
+    }));
     const brief = await insertCreativeBrief({
       topicId,
       storyId,
@@ -483,8 +493,16 @@ export async function createCreativeDraft(
     inputHash,
   });
 
+  let checkpointDraft: CreativeDraft | undefined;
   try {
-    const result = await generateCreativeDraft({
+    const result = await withCreativeTextBudget({topicId, storyId: brief.storyId, runId}, () => generateCreativeDraft({
+      onDraftCheckpoint: !cached ? async partial => {
+        const characterSnapshots=await snapshotsForCreativeCharacterIds(topicId,partial.draft.units.flatMap(unit=>unit.characterIds??[]));
+        checkpointDraft=checkpointDraft
+          ? await replaceCreativeDraft(topicId,checkpointDraft,{...partial.draft,outputAspectRatio},characterSnapshots,{inputHash,aiSnapshot:partial.draft})
+          : await insertCreativeDraft({topicId,storyId:brief.storyId,briefId:brief.id,format,outputAspectRatio,
+            provider:partial.provider,model:partial.model,promptVersion,inputHash,generated:partial.draft,usage:partial.usage,characterSnapshots});
+      } : undefined,
       apiKey: configuration.apiKey,
       paidGeminiApiKey: configuration.paidGeminiApiKey,
       model: configuration.model,
@@ -505,15 +523,16 @@ export async function createCreativeDraft(
       outputAspectRatio,
       characterRoster,
       ...(acquisitionTaxonomy ? { acquisitionTaxonomy } : {}),
-    });
+    }));
     const characterSnapshots = await snapshotsForCreativeCharacterIds(
       topicId,
       result.draft.units.flatMap((unit) => unit.characterIds ?? []),
     );
-    const draft = cached
+    const draftToReplace = checkpointDraft ?? cached;
+    const draft = draftToReplace
       ? await replaceCreativeDraft(
           topicId,
-          cached,
+          draftToReplace,
           { ...result.draft, outputAspectRatio },
           characterSnapshots,
           { inputHash, aiSnapshot: result.draft },
@@ -533,6 +552,7 @@ export async function createCreativeDraft(
           usage: result.usage,
           characterSnapshots,
         });
+    await recordTextOutcome(topicId, draft);
     await completeCreativeAiRun(
       topicId,
       runId,
@@ -547,6 +567,48 @@ export async function createCreativeDraft(
     };
   } catch (error) {
     await failRunSafely(topicId, runId, error);
+    throw error;
+  }
+}
+
+export async function recoverSavedCreativeDraft(topicId:string,draftId:string,expectedVersion:number,requestId:string):Promise<CreativeDraft> {
+  await requireTopic(topicId,{active:true});
+  const current=await findCreativeDraftById(topicId,draftId);
+  if(!current)throw new CreativeContentNotFoundError("Draft not found");
+  const existing=await getRecovery(topicId,requestId);
+  if(existing?.draft_id===draftId && (existing.status==='completed' || current.recoveryId===requestId)) {
+    await recordTextOutcome(topicId,current);
+    await finishRecovery(topicId,requestId,existing.lease_token); return current;
+  }
+  if(current.version!==expectedVersion)throw new CreativeContentConflictError("The draft changed. Reload before recovering it.");
+  if(current.status==='approved'||current.companion)throw new CreativeContentConflictError("Recovery is available for unapproved primary drafts only.");
+  const brief=await findCreativeBriefById(topicId,current.briefId);
+  if(!brief)throw new CreativeContentNotFoundError("Brief not found");
+  const configuration=getCreativeContentRuntimeConfig();
+  const topic=await requireTopic(topicId,{active:true});
+  const characterRoster=await listCreativeCharacterRoster(topicId);
+  const job=await claimRecovery(topicId,requestId,current,brief);
+  try {
+    const result=job.result?.stage==='reviewed' ? job.result : await withCreativeTextBudget({topicId,storyId:current.storyId,runId:requestId},()=>recoverCreativeDraft({
+      ...configuration,currentReviewIsCurrent:job.input.draft.qualityReviewIsCurrent===true,currentDraft:{...job.input.draft,
+        ...(job.input.draft.qualityReviewIsCurrent===false && job.input.draft.editorialRepair ? {editorialRepair:{...job.input.draft.editorialRepair,pendingVerification:false,verifiedFallback:undefined}} : {})},brief:job.input.brief,profile:job.input.brief.profileSnapshot,topic,
+      story:{title:job.input.draft.concept,url:"",text:"",contentStatus:"full",contentSource:"article"},
+      format:current.format,outputAspectRatio:current.outputAspectRatio,characterRoster,
+      openAiAuditContext:{topicId,storyId:current.storyId,runId:requestId},checkpoint:job.result??undefined,
+      onCheckpoint:value=>checkpointRecovery(topicId,requestId,value,job.lease_token),
+    }));
+    const generated={...result.draft,recoveryId:requestId,units:result.draft.units.map((unit,index)=>({...unit,
+      id:current.units[index]?.id,storyReferences:result.draft.narrativeRevision && JSON.stringify(unit.factIds)!==JSON.stringify(current.units[index]?.factIds) ? undefined : current.units[index]?.storyReferences,
+      brandReferenceSelection:current.units[index]?.brandReferenceSelection}))};
+    const snapshots=await snapshotsForCreativeCharacterIds(topicId,generated.units.flatMap(unit=>unit.characterIds??[]));
+    const saved=await replaceCreativeDraft(topicId,current,{...generated,outputAspectRatio:current.outputAspectRatio},snapshots,{aiSnapshot:generated});
+    await recordTextOutcome(topicId,saved);
+    await finishRecovery(topicId,requestId,job.lease_token);
+    return saved;
+  }catch(error){
+    // A ready result remains resumable without another provider call.
+    const checkpoint=await getRecovery(topicId,requestId).catch(()=>undefined);
+    if(checkpoint?.result?.stage!=='reviewed')await finishRecovery(topicId,requestId,job.lease_token,error instanceof Error?error.message.slice(0,500):"Recovery failed").catch(()=>{});
     throw error;
   }
 }
@@ -641,7 +703,7 @@ export async function createCompanionStory(
   });
 
   try {
-    const result = await generateCompanionStoryScript({
+    const result = await withCreativeTextBudget({topicId,storyId:parent.storyId,runId},async()=>generateCompanionStoryScript({
       apiKey: configuration.apiKey,
       lunaModel: configuration.lunaModel,
       terraModel: configuration.terraModel,
@@ -659,7 +721,7 @@ export async function createCompanionStory(
             ),
           }
         : {}),
-    });
+    }));
     const draft = await insertCreativeDraft({
       topicId,
       storyId: parent.storyId,
@@ -732,6 +794,7 @@ export async function saveCreativeDraft(
       brief.keyFacts,
       brief.profileSnapshot.language,
       brief.profileSnapshot.conversionGoal,
+      resolveNarrativeBrief(brief,current).carouselPlan,
     ),
     outputAspectRatio: validated.outputAspectRatio,
   };
@@ -796,6 +859,7 @@ export async function approveSavedCreativeDraft(
       brief.keyFacts,
       brief.profileSnapshot.language,
       brief.profileSnapshot.conversionGoal,
+      resolveNarrativeBrief(brief,current).carouselPlan,
     ),
     outputAspectRatio: validated.outputAspectRatio,
   };
@@ -843,15 +907,19 @@ export async function approveSavedCreativeDraft(
     // Persist the deterministic repair and approval in the same Neon batch.
     // A transient transport failure must not leave the repaired version in
     // draft state between two otherwise dependent database mutations.
-    return replaceCreativeDraft(
+    const approved = await replaceCreativeDraft(
       topicId,
       current,
       repaired,
       characterSnapshots,
       { approve: true },
     );
+    await recordTextOutcome(topicId,approved);
+    return approved;
   }
-  return approveCreativeDraft(topicId, current.id, current.version);
+  const approved = await approveCreativeDraft(topicId, current.id, current.version);
+  await recordTextOutcome(topicId,approved);
+  return approved;
 }
 
 export async function unapproveSavedCreativeDraft(

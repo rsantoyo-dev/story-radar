@@ -20,9 +20,9 @@ import {
   visibleDraftLanguageIssues,
 } from "./creative-quality";
 
-test("sets an attainable automated editorial target with stricter factuality", () => {
-  assert.equal(CREATIVE_QUALITY_THRESHOLDS.overall, 90);
-  assert.equal(CREATIVE_QUALITY_THRESHOLDS.factuality, 96);
+test("requires a premium editorial target with stricter factuality", () => {
+  assert.equal(CREATIVE_QUALITY_THRESHOLDS.overall, 95);
+  assert.equal(CREATIVE_QUALITY_THRESHOLDS.factuality, 98);
 });
 
 const facts: CreativeKeyFact[] = [

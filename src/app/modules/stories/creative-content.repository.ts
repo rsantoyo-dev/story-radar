@@ -1,3 +1,4 @@
+import { describeEditorialRepairStop } from "./creative-editorial-loop";
 import "server-only";
 import { getCreativeContentPublicConfig } from "./creative-content.config";
 import { CreativeContentConflictError, CreativeContentDailyLimitError } from "./creative-run-errors";
@@ -841,11 +842,17 @@ function mapCreativeDraft(
       : {}),
     caption: row.caption,
     ...(row.callToAction ? { callToAction: row.callToAction } : {}),
+    ...(generated.narrativeRevision ? { narrativeRevision: generated.narrativeRevision } : {}),
+    ...(generated.editorialRepair ? { editorialRepair: generated.editorialRepair } : {}),
+    ...(generated.recoveryId ? { recoveryId: generated.recoveryId } : {}),
+    ...(generated.openingExploration ? { openingExploration: generated.openingExploration } : {}),
     ...(generated.characterPlan ? { characterPlan: generated.characterPlan } : {}),
     ...(generated.companion ? { companion: generated.companion } : {}),
     ...(generated.qualityReview
       ? {
-          qualityReview: generated.qualityReview,
+          qualityReview: {...generated.qualityReview,issues:generated.qualityReview.issues.map(issue =>
+            issue.code === "EDITORIAL_REPAIR_STOPPED" && issue.message === "The editorial target remains unmet after the bounded Terra/Sol repair attempts."
+              ? {...issue,message:describeEditorialRepairStop(generated)} : issue)},
           qualityReviewIsCurrent,
         }
       : {}),

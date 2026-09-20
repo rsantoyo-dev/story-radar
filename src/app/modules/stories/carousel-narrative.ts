@@ -29,6 +29,8 @@ export type CarouselPlanSlide = {
 };
 
 export type CarouselPlan = {
+  questionRepairs?: { slide: number; original: string; replacement: string }[];
+  review?: import("./creative-narrative-plan").NarrativePlanReview;
   slideCount: CarouselSlideCount;
   rationale: string;
   slides: CarouselPlanSlide[];
@@ -323,6 +325,25 @@ export function repairCarouselPlanEvidence(
   return { plan: { ...plan, slides }, repaired };
 }
 
+/** Narrow internal planning questions only; never rewrite visible copy or evidence.
+ * Keep the first complete question as the primary job. The normal factual and
+ * editorial gates still decide whether that job is useful and supported.
+ */
+export function repairCarouselPlanQuestions(plan: CarouselPlan): CarouselPlan {
+  const repairs = [...(plan.questionRepairs ?? [])];
+  const slides = plan.slides.map((slide, index) => {
+    if (slide.editorialGoal === "hook" || questionIntentCount(slide.viewerQuestion) <= 1) return slide;
+    const original = slide.viewerQuestion;
+    const first = original.split(/\?\s*|(?:,?\s+\b(?:and|or|also|y|e|o|además)\s+|[;,]\s*)(?=(?:what|why|how|when|where|which|who|qué|por\s+qué|cómo|cuándo|dónde|cuál|quién)(?:\s|[¿?]))/iu)[0]?.trim().replace(/[,;:]$/u, "");
+    if (!first || !/^[¿\s]*(?:what|why|how|when|where|which|who|qué|por\s+qué|cómo|cuándo|dónde|cuál|quién)\s/iu.test(first) || first.split(/\s/u).length < 4) return slide;
+    const replacement = `${first.replace(/[,;:](?=[”"’']$)/u, "")}?`;
+    if (questionIntentCount(replacement) !== 1) return slide;
+    repairs.push({ slide: index + 1, original, replacement });
+    return { ...slide, viewerQuestion: replacement };
+  });
+  return repairs.length ? { ...plan, slides, questionRepairs: repairs } : plan;
+}
+
 /** Hard plan invariants. Arc deviations remain valid when rationale explains them. */
 export function validateCarouselPlan(
   plan: CarouselPlan,
@@ -344,7 +365,7 @@ export function validateCarouselPlan(
       questionIntentCount(slide.viewerQuestion) > 1
     ) {
       errors.push(
-        `carouselPlan slide ${index + 1} asks multiple editorial questions; give the slide one job`,
+        `carouselPlan slide ${index + 1} asks multiple editorial questions; give the slide one job. Keep one primary question and move the other to another slide: ${JSON.stringify(slide.viewerQuestion)}`,
       );
     }
     if (slide.allowedFactIds.some((factId) => !knownFactIds.has(factId))) {
@@ -1299,10 +1320,13 @@ function visibleCopyOverlapRatio(
 }
 
 function questionIntentCount(value: string): number {
-  const interrogatives = value.match(
-    /\b(?:what|why|how|when|where|which|who|qué|por qué|cómo|cuándo|dónde|cuál|quién)\b/giu,
+  // Embedded interrogatives do not create a second job: "What changed in
+  // how files are shared?" is one question. Count explicit questions and
+  // coordinated question clauses instead of every interrogative word.
+  const coordinated = value.match(
+    /(?:\b(?:and|or|also|y|e|o|además)\s+|[;,]\s*)(?:what|why|how|when|where|which|who|qué|por\s+qué|cómo|cuándo|dónde|cuál|quién)(?=\s|[¿?])/giu,
   );
-  return Math.max(value.match(/\?/gu)?.length ?? 0, interrogatives?.length ?? 0);
+  return Math.max(value.match(/\?+/gu)?.length ?? 0, 1 + (coordinated?.length ?? 0));
 }
 
 function numericTokens(value?: string): string[] {

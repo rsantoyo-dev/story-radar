@@ -519,6 +519,13 @@
       "when": 1789760000000,
       "tag": "0074_creative_ai_fallback_reason",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1789902513440,
+      "tag": "0075_chemical_swarm",
+      "breakpoints": true
     }
   ]
 }

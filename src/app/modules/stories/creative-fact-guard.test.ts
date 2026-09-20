@@ -2740,3 +2740,20 @@ test("mixed fractional cooking hours are not a count of two traditions", () => {
  input.units[0].body = "Cook for 2.5 hours.";
  assert.equal(deterministicFactQualityIssues(input, facts).some(i => i.code === "LOST_QUALIFIER"), true);
  });
+
+
+test("planned slide repairs cannot import a numeric fact assigned to another slide", () => {
+  const facts: CreativeKeyFact[] = [
+    {id:"fact-count", statement:"OpenAI disclosed 6 incidents.", sourceExcerpt:"OpenAI disclosed 6 incidents."},
+    {id:"fact-framework", statement:"OpenAI introduced a tracking framework.", sourceExcerpt:"OpenAI introduced a tracking framework."},
+  ];
+  const input: GeneratedCreativeDraft = {...draft, units:[unit(1, "content", "explain", "OpenAI disclosed 6 incidents", "OpenAI introduced a tracking framework.", ["fact-framework"])]};
+  const snapshot = structuredClone(input);
+  const plan = {slideCount:3 as const, rationale:"Test scoped repair", slides:[{order:1, editorialGoal:"explain" as const, viewerQuestion:"What changed?", allowedFactIds:["fact-framework"]}]};
+  const legacy = repairDeterministicFactCopy(input, facts, "English");
+  assert.ok(legacy.units[0].factIds.includes("fact-count"));
+  const repaired = repairDeterministicCreativeCopy(input, "carousel", facts, "English", undefined, plan);
+  assert.ok(!repaired.units[0].factIds.includes("fact-count"));
+  assert.deepEqual(input, snapshot);
+  assert.ok(!repaired.units[0].headline.includes("6"), "Unsupported count is repaired rather than silently adding its evidence");
+});

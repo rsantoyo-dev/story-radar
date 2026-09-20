@@ -1,3 +1,5 @@
+import { narrativeRepetitionIssues } from "./creative-narrative-diagnostics";
+import type { CarouselPlan } from "./carousel-narrative";
 import { COVER_HOOK_MAX_WORDS, COVER_HOOK_TARGET, COVER_CONTEXT_MAX_WORDS, hookSelectionMatches, hookSelectionIssues } from "./creative-hook-policy";
 import { evidenceQualityIssues } from "./creative-evidence-guardrails";
 import {
@@ -34,16 +36,16 @@ import {
 } from "./creative-issue-reconciliation";
 
 export const CREATIVE_QUALITY_THRESHOLDS = {
-  factuality: 96,
-  hook: 90,
-  curiosity: 88,
-  swipeReward: 80,
-  continuity: 80,
-  relevance: 80,
-  clarity: 80,
-  resolution: 88,
-  cta: 75,
-  overall: 90,
+  factuality: 98,
+  hook: 96,
+  curiosity: 95,
+  swipeReward: 95,
+  continuity: 95,
+  relevance: 95,
+  clarity: 95,
+  resolution: 95,
+  cta: 95,
+  overall: 95,
 } as const satisfies CreativeQualityScores;
 
 export const MAX_CREATIVE_EDITORIAL_REPAIRS = 1;
@@ -123,6 +125,7 @@ export function repairDeterministicCreativeCopy(
   keyFacts: readonly CreativeKeyFact[] = [],
   language?: string,
   conversionGoal?: CreativeConversionGoal,
+  carouselPlan?: CarouselPlan,
 ): GeneratedCreativeDraft {
   const cleanText = (value: string) =>
     collapseStackedEstimateQualifiers(repairMalformedGroupedNumbers(value));
@@ -349,6 +352,7 @@ export function repairDeterministicCreativeCopy(
     repaired,
     keyFacts,
     language,
+    carouselPlan,
   );
   if (format === "carousel" || format === "sequence") {
     // Fact repair may add a uniquely matching numeric fact or restore a source
@@ -872,6 +876,7 @@ export function deterministicCreativeQualityIssues(
   return [
     ...evidenceQualityIssues(draft, keyFacts),
     ...narrativeIssues,
+    ...(format === "carousel" ? narrativeRepetitionIssues(draft) : []),
     ...deterministicFactQualityIssues(draft, keyFacts),
     ...editorialPrecisionIssues,
     ...ctaSpecificityIssues,
@@ -1349,6 +1354,13 @@ function calibrateCreativeQualityScores(
   ) {
     scores.factuality = Math.min(scores.factuality, 94);
   }
+  if (hasCode("CAROUSEL_CRAFT_REVIEW_MISSING")) {
+    scores.hook = Math.min(scores.hook, 89);
+    scores.swipeReward = Math.min(scores.swipeReward, 79);
+    scores.resolution = Math.min(scores.resolution, 87);
+  }
+  if (hasCode("PLAN_REPEATED_SUPPORT")) scores.swipeReward = Math.min(scores.swipeReward, 80);
+  if (hasCode("PLAN_REPETITIVE_CLOSING")) scores.resolution = Math.min(scores.resolution, 80);
   if (hasCode("WEAK_HOOK", "BURIED_HOOK")) {
     scores.hook = Math.min(scores.hook, 81);
   }
@@ -1373,6 +1385,7 @@ function calibrateCreativeQualityScores(
     hasCode(
       "VIEWER_QUESTION_MISMATCH",
       "WEAK_SWIPE_REWARD",
+      "SEMANTIC_REPETITION",
       "CUE_ECHOES_NEXT_HEADLINE",
     )
   ) {
@@ -1443,6 +1456,10 @@ function calibrateCreativeQualityScores(
         scores.resolution * 0.08 +
         scores.cta * 0.06;
   scores.overall = Math.min(scores.overall, Math.round(weightedOverall), 98);
+  if ((format === "carousel" || format === "sequence") && hasCode(
+    "CAROUSEL_CRAFT_REVIEW_MISSING", "WEAK_HOOK", "BURIED_HOOK", "LOW_HUMAN_CURIOSITY",
+    "VIEWER_QUESTION_MISMATCH", "SEMANTIC_REPETITION", "WEAK_SWIPE_REWARD", "WEAK_RESOLUTION", "HOOK_RESOLUTION_GAP",
+  )) scores.overall = Math.min(scores.overall, 89);
   if (issues.some((issue) => issue.severity === "blocker")) {
     scores.overall = Math.min(scores.overall, 87);
   }

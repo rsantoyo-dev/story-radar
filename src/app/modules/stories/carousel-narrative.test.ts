@@ -11,12 +11,42 @@ import {
   isInstitutionFirstCoverCopy,
   maximumFactsForGoal,
   repairCarouselPlanEvidence,
+  repairCarouselPlanQuestions,
   stripRecapLabelPrefix,
   type CarouselPlan,
   validateCarouselPlan,
 } from "./carousel-narrative";
 import { repairDeterministicCreativeCopy } from "./creative-quality";
 import type { GeneratedCreativeDraft } from "./creative-content.types";
+
+test("compound plan questions are narrowed before validation without changing facts or losing repair provenance", () => {
+  const original = 'What does OpenAI call “misalignment,” and what will its framework track?';
+  const plan: CarouselPlan = { slideCount: 3, rationale: "Explain the framework", slides: [slide("hook", ["fact-1"]), { ...slide("explain", ["fact-2"]), viewerQuestion: original }, slide("conclude", ["fact-1"])] };
+  const repaired = repairCarouselPlanQuestions(plan);
+  assert.equal(repaired.slides[1].viewerQuestion, 'What does OpenAI call “misalignment”?');
+  assert.deepEqual(repaired.slides.map(s => s.allowedFactIds), plan.slides.map(s => s.allowedFactIds));
+  assert.equal(plan.slides[1].viewerQuestion, original);
+  assert.equal(repaired.questionRepairs?.[0].original, original);
+  assert.deepEqual(repairCarouselPlanQuestions(repaired), repaired);
+  assert.equal(validateCarouselPlan(repaired, new Set(["fact-1", "fact-2"])).length, 0);
+});
+
+test("plan question validation distinguishes embedded questions from separate editorial jobs", () => {
+  for (const [question, multiple] of [
+    ["What changed in how files are shared?", false],
+    ["¿Qué cambió en cómo se comparten los archivos?", false],
+    ["Why does it matter who can access the file?", false],
+    ["What changed and why does it matter?", true],
+    ["¿Qué cambió y cómo afecta a los usuarios?", true],
+    ["What changed? Who is affected?", true],
+  ] as const) {
+    const plan: CarouselPlan = {
+      slideCount: 3, rationale: "One job per slide",
+      slides: [slide("hook", ["fact-1"]), { ...slide("explain", ["fact-2"]), viewerQuestion: question }, slide("conclude", ["fact-2"])],
+    };
+    assert.equal(validateCarouselPlan(plan, new Set(["fact-1", "fact-2"])).some(error => error.includes("multiple editorial questions")), multiple, question);
+  }
+});
 
 test("rejects a carousel plan that spends its final slide on another impact fact", () => {
   const plan: CarouselPlan = {
