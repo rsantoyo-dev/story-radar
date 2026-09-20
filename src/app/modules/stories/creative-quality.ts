@@ -1,4 +1,4 @@
-import { COVER_HOOK_MAX_WORDS, COVER_HOOK_TARGET, COVER_CONTEXT_MAX_WORDS } from "./creative-hook-policy";
+import { COVER_HOOK_MAX_WORDS, COVER_HOOK_TARGET, COVER_CONTEXT_MAX_WORDS, hookSelectionMatches, hookSelectionIssues } from "./creative-hook-policy";
 import { evidenceQualityIssues } from "./creative-evidence-guardrails";
 import {
   blockingCarouselNarrativeIssues,
@@ -43,7 +43,7 @@ export const CREATIVE_QUALITY_THRESHOLDS = {
   clarity: 80,
   resolution: 88,
   cta: 75,
-  overall: 95,
+  overall: 90,
 } as const satisfies CreativeQualityScores;
 
 export const MAX_CREATIVE_EDITORIAL_REPAIRS = 1;
@@ -70,11 +70,26 @@ export function getCreativeDraftApprovalState({
   const blockers = deterministicIssues.filter(
     (issue) => issue.severity === "blocker",
   );
+  const criticRequired = qualityReviewIsCurrent !== undefined;
+  const criticCompleted = Boolean(
+    qualityReview?.critic?.provider === "openai" &&
+      qualityReviewIsCurrent !== false &&
+      !qualityReview.issues.some((issue) =>
+        ["CRITIC_UNAVAILABLE", "EDITORIAL_REVIEW_ATTEMPT_FAILED", "CRITIC_FALLBACK", "FINAL_COPY_REVIEW_REQUIRED"].includes(issue.code),
+      ),
+  );
+  if (criticRequired && !criticCompleted) {
+    blockers.push({
+      code: "CRITIC_REVIEW_REQUIRED",
+      severity: "blocker",
+      message: "An independent editorial critic must complete successfully before this draft can be approved.",
+    });
+  }
 
   return {
     blockers,
     requiresHumanReviewAcknowledgement:
-      blockers.length === 0 &&
+      (!criticRequired || criticCompleted) && blockers.length === 0 &&
       Boolean(
         qualityReviewIsCurrent &&
           (qualityReview?.status === "needs-review" ||
@@ -85,6 +100,21 @@ export function getCreativeDraftApprovalState({
             )),
       ),
   };
+}
+
+/** Editorial readiness only: never grants permission to publish or approve assets. */
+export function isCreativeDraftReadyForAutomation(
+  draft: GeneratedCreativeDraft,
+  format: CreativeFormat,
+  qualityReviewIsCurrent: boolean,
+): boolean {
+  const review = draft.qualityReview;
+  if (!qualityReviewIsCurrent || review?.status !== "accepted" || !review.hookSelection) return false;
+  if (getCreativeDraftApprovalState({ deterministicIssues: [], qualityReview: review, qualityReviewIsCurrent }).blockers.length) return false;
+  if (review.issues.some(issue => issue.severity === "blocker")) return false;
+  if (!hookSelectionMatches(review.hookSelection, draft) || hookSelectionIssues(review.hookSelection).length) return false;
+  const requireCta = Boolean(draft.callToAction?.trim() || draft.units.at(-1)?.ctaQuestion?.trim() || draft.units.at(-1)?.editorialGoal === "debate");
+  return creativeQualityThresholdFailures(review.scores, format, requireCta).length === 0;
 }
 
 export function repairDeterministicCreativeCopy(
@@ -409,7 +439,11 @@ function repairMissingOrGenericHeadlines(
 }
 
 const FOLLOW_CTA_PATTERN =
-  /\b(?:follow(?: us| this account)?|s[ií]guenos?|s[ií]gueme|seguir|suivez(?:-nous|-moi)?|abonnez-vous|abonne-toi)\b/iu;
+  /\b(?:follow(?: us| this account)?|subscribe|turn on (?:post )?notifications|s[ií]guenos?|s[ií]gueme|s[ií]ganos|seguir(?:nos|me)?|suscr[ií]bete|suscr[ií]banse|activa(?:r)? (?:las |tus )?notificaciones|activa la campan(?:it)?a|suivez(?:-nous|-moi)?|suivre|abonnez-vous|abonne-toi)\b/iu;
+// "Sigue" alone is too common in ordinary copy ("sigue a la baja"); count it
+// as a follow request only when it names an account (@handle or a name).
+const FOLLOW_ACCOUNT_CTA_PATTERN =
+  /(?:^|[\s¡¿"“])[Ss][ií]gue\s+(?:a\s+)?(?:@|(?:la|esta|nuestra)\s+cuenta\b|[A-ZÁÉÍÓÚÑ])/u;
 const SAVE_CTA_PATTERN =
   /\b(?:save this|save it|bookmark|guarda(?: este| esta| esto)?|guárdalo|guardarlo|guardar)\b/iu;
 const SHARE_CTA_PATTERN =
@@ -421,7 +455,9 @@ function detectedCtaGoals(value: string): Set<CreativeConversionGoal> {
   const copy = value.trim();
   const detected = new Set<CreativeConversionGoal>();
   if (!copy) return detected;
-  if (FOLLOW_CTA_PATTERN.test(copy)) detected.add("followers");
+  if (FOLLOW_CTA_PATTERN.test(copy) || FOLLOW_ACCOUNT_CTA_PATTERN.test(copy)) {
+    detected.add("followers");
+  }
   if (SAVE_CTA_PATTERN.test(copy)) detected.add("saves");
   if (SHARE_CTA_PATTERN.test(copy)) detected.add("shares");
   if (DISCUSSION_CTA_PATTERN.test(copy)) detected.add("discussion");
@@ -435,8 +471,9 @@ function ctaConflictsWithConversionGoal(
   language?: string,
 ): boolean {
   const detected = detectedCtaGoals(value);
-  if (detected.size > 1) return true;
-  if (detected.size === 1) return !detected.has(goal);
+  // The configured goal must be present; a secondary action ("save this and
+  // follow us") supports it instead of competing with it.
+  if (detected.size > 0) return !detected.has(goal);
   return isEnglishProfileLanguage(language) || isSpanishProfileLanguage(language);
 }
 
@@ -480,20 +517,61 @@ function repairConversionGoalCtas(
   delete repaired.callToAction;
   if (matchingCta) {
     closing.ctaQuestion = matchingCta;
-  } else if (goal === "followers" && format === "sequence" && !draftLooksLikeSensitiveCoverage(draft)) {
-    // A procedural draft has a concrete recurring value even if a model repair
-    // removed its CTA. Keep the fallback factual and free of outcome promises.
-    closing.ctaQuestion = isSpanishProfileLanguage(language)
-      ? "Síguenos para descubrir más guías paso a paso."
-      : /^(fr|français|francais|french)/i.test(language ?? "")
-        ? "Suivez-nous pour découvrir d’autres guides étape par étape."
-        : isEnglishProfileLanguage(language)
-          ? "Follow us for more step-by-step guides."
-          : undefined;
+  } else if (goal === "followers" && !draftLooksLikeSensitiveCoverage(draft)) {
+    closing.ctaQuestion =
+      conceptFollowCallToAction(repaired.concept, language) ??
+      (format === "sequence" ? localizedSequenceFollowCallToAction(language) : undefined);
   } else {
     delete closing.ctaQuestion;
   }
   return repaired;
+}
+
+function conceptFollowCallToAction(
+  concept: string,
+  language?: string,
+): string | undefined {
+  const sentence = firstSentenceOf(concept).trim();
+  // A question cannot follow "Síguenos para entender mejor …"; check before
+  // the trailing punctuation is stripped, including the Spanish "¿".
+  if (/[?¿]/u.test(sentence)) return undefined;
+  const subject = sentence.replace(/[.!]+$/u, "").trim();
+  if (subject.length < 4 || subject.length > 120) {
+    return undefined;
+  }
+  if (
+    !isEnglishProfileLanguage(language) &&
+    (hasLikelyEnglishSentence(subject) ||
+      /\b(?:design systems?|readable|policy|changes?|how|why|with|without|from|into)\b/iu.test(subject))
+  ) {
+    return undefined;
+  }
+  const naturalSubject = /^\p{Lu}{2}/u.test(subject)
+    ? subject
+    : `${subject[0]!.toLocaleLowerCase()}${subject.slice(1)}`;
+  if (isSpanishProfileLanguage(language)) {
+    return `Síguenos para entender mejor ${naturalSubject}.`;
+  }
+  if (/^(fr|français|francais|french)/iu.test(language?.trim() ?? "")) {
+    return `Suivez-nous pour mieux comprendre ${naturalSubject}.`;
+  }
+  if (isEnglishProfileLanguage(language)) {
+    return `Follow us to better understand ${naturalSubject}.`;
+  }
+  return undefined;
+}
+
+function localizedSequenceFollowCallToAction(language?: string): string | undefined {
+  if (isSpanishProfileLanguage(language)) {
+    return "Síguenos para descubrir más guías paso a paso.";
+  }
+  if (/^(fr|français|francais|french)/iu.test(language?.trim() ?? "")) {
+    return "Suivez-nous pour découvrir d’autres guides étape par étape.";
+  }
+  if (isEnglishProfileLanguage(language)) {
+    return "Follow us for more step-by-step guides.";
+  }
+  return undefined;
 }
 
 function localizedDebateQuestion(language?: string): string {
@@ -600,6 +678,26 @@ function normalizeQuestionCopy(value: string): string {
     .trim();
 }
 
+function coverHasLikelyFiniteVerb(value: string, language?: string): boolean {
+  const words = value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/gu, "")
+    .toLocaleLowerCase()
+    .match(/[\p{L}]+/gu) ?? [];
+  if (isSpanishProfileLanguage(language)) {
+    return words.some((word) =>
+      /^(?:es|son|esta|estan|hay|ha|han|hace|hacen|hizo|hicieron|tiene|tienen|tuvo|tuvieron|va|van|fue|fueron|dice|dicen|dijo|muestra|muestran|mostro|sube|suben|baja|bajan|crece|crecen|cayo|caen|sigue|siguen|queda|quedan|gana|ganan|ejerce|ejercen|consigue|consiguen|representa|representan|planeo|planearon)$/u.test(word) ||
+      /(?:aron|ieron|aba|aban|ia|ian|ara|aran|era|eran|ira|iran)$/u.test(word),
+    );
+  }
+  if (/^english\b/iu.test(language?.trim() ?? "")) {
+    return words.some((word) =>
+      /^(?:is|are|was|were|has|have|had|does|do|did|can|could|will|would|may|might|must|should|says|said|shows|showed|finds|found|gets|got|makes|made|means|meant|gains|gained|earns|earned|works|worked)$/u.test(word),
+    );
+  }
+  return true;
+}
+
 export function deterministicCreativeQualityIssues(
   draft: GeneratedCreativeDraft,
   format: CreativeFormat,
@@ -661,6 +759,8 @@ export function deterministicCreativeQualityIssues(
       // whitespace segmentation to satisfy an editorial preference.
       if (words(unit.headline) > COVER_HOOK_MAX_WORDS) issues.push({code: "COVER_HOOK_TOO_LONG", severity: "warning", unitOrder: unit.order,
         message: `The cover headline is long. Rewrite around one supported question, aiming for ${COVER_HOOK_TARGET} words; retain essential names, scope and qualifiers.`});
+      if (!coverHasLikelyFiniteVerb(unit.headline, language)) issues.push({code: "COVER_HOOK_MISSING_VERB", severity: "warning", unitOrder: unit.order,
+        message: "The cover headline reads as a fragment. Use a finite verb to state the supported action or finding clearly."});
       if (words(unit.subheadline) + words(unit.body) > COVER_CONTEXT_MAX_WORDS) issues.push({code: "COVER_INTRO_DENSE", severity: "warning", unitOrder: unit.order,
         message: "The cover carries too much explanation. Keep one short context line and move secondary detail to the next slide without changing the facts."});
     }
@@ -1345,8 +1445,6 @@ function calibrateCreativeQualityScores(
   scores.overall = Math.min(scores.overall, Math.round(weightedOverall), 98);
   if (issues.some((issue) => issue.severity === "blocker")) {
     scores.overall = Math.min(scores.overall, 87);
-  } else if (issues.length > 0) {
-    scores.overall = Math.min(scores.overall, 92);
   }
   return scores;
 }

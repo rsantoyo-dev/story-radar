@@ -65,8 +65,18 @@ test("final repair fixes the immigrant carousel CTA once without rewriting slide
   assert.equal(result.draft.qualityReview?.scores.overall, 0, "Do not invent a critic score");
 });
 
-test("deterministic CTA cleanup is idempotent and the final layer supplies the missing specific CTA", async () => {
+test("deterministic CTA cleanup replaces a generic follow CTA from the concept without a provider call", async () => {
   const clean = repairDeterministicCreativeCopy(fixture(), "carousel", facts, "Spanish", "followers");
+  assert.equal(clean.units[1].ctaQuestion, "Síguenos para entender mejor el empleo y la formación de inmigrantes en Canadá.");
+  assert.deepEqual(repairDeterministicCreativeCopy(clean, "carousel", facts, "Spanish", "followers"), clean);
+  const result = await repairRemainingCreativeBlockers(clean, context, async () => { throw new Error("must not call"); });
+  assert.equal(result.draft.units[1].ctaQuestion, clean.units[1].ctaQuestion);
+});
+
+test("the final layer supplies the CTA when the concept cannot seed one", async () => {
+  const input = fixture();
+  input.concept = "¿Coinciden el empleo y la formación de inmigrantes en Canadá?";
+  const clean = repairDeterministicCreativeCopy(input, "carousel", facts, "Spanish", "followers");
   assert.equal(clean.units[1].ctaQuestion, undefined);
   assert.deepEqual(repairDeterministicCreativeCopy(clean, "carousel", facts, "Spanish", "followers"), clean);
   const result = await repairRemainingCreativeBlockers(clean, context, async () => response());
@@ -207,15 +217,17 @@ test("empty copy response receives one bounded follow-up without removing blocke
   assert.match(result.draft.qualityReview?.issues.find((i) => i.code === "FINAL_REPAIR_UNRESOLVED")?.message ?? "", /no copy changes/);
 });
 
- test("cover title is inspected and a factual correction survives final repair", async () => {
+ test("cover copy is inspected but remains immutable during final repair", async () => {
  const input = enforceCoverTitle(fixture(), true, "El 99% encontró empleo en 2028");
  let inspected = false;
  const result = await repairRemainingCreativeBlockers(input, context, async contents => {
    inspected = true;
    assert.equal((contents.draft as GeneratedCreativeDraft).units[0].subheadline, "El 99% encontró empleo en 2028");
-   return response(patches([ctaPatch, { unitOrder: 1, field: "subheadline", text: "Empleo y formación de inmigrantes" }]));
+   assert.deepEqual(contents.editableScopes, [2]);
+   return response(patches([ctaPatch]));
  });
  assert.equal(inspected, true);
- assert.equal(result.draft.units[0].subheadline, "Empleo y formación de inmigrantes");
- assert.doesNotMatch(JSON.stringify(result.draft.units), /99%|2028/);
+ assert.equal(result.draft.units[0].subheadline, "El 99% encontró empleo en 2028");
+ assert.equal(result.draft.qualityReview?.status, "rejected");
+ assert.ok(result.draft.qualityReview?.issues.some((issue) => issue.unitOrder === 1 && issue.severity === "blocker"));
  });

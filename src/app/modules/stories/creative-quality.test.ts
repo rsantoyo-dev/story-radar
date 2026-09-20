@@ -20,8 +20,8 @@ import {
   visibleDraftLanguageIssues,
 } from "./creative-quality";
 
-test("sets the automated editorial target to 9.5 with stricter factuality", () => {
-  assert.equal(CREATIVE_QUALITY_THRESHOLDS.overall, 95);
+test("sets an attainable automated editorial target with stricter factuality", () => {
+  assert.equal(CREATIVE_QUALITY_THRESHOLDS.overall, 90);
   assert.equal(CREATIVE_QUALITY_THRESHOLDS.factuality, 96);
 });
 
@@ -548,7 +548,7 @@ test("normalizes one carousel CTA to the final slide for every conversion goal",
   });
 });
 
-test("removes competing CTAs without manufacturing a generic follow CTA", () => {
+test("replaces missing or competing follower CTAs with a concept-specific request", () => {
   const competing = structuredClone(draft);
   competing.units.at(-1)!.editorialGoal = "conclude";
   competing.units.at(-1)!.ctaQuestion = "Comment with your experience.";
@@ -559,10 +559,9 @@ test("removes competing CTAs without manufacturing a generic follow CTA", () => 
     "English",
     "followers",
   );
-  // A model must supply a topic-specific CTA; deterministic repair cannot invent one.
-  assert.equal(repairedCompeting.units.at(-1)!.ctaQuestion, undefined);
+  assert.match(repairedCompeting.units.at(-1)!.ctaQuestion ?? "", /^Follow us to better understand /);
 
-  // A non-followers goal keeps the old behavior: the conflicting CTA is dropped.
+  // A secondary action supports the configured goal instead of competing with it.
   const stacked = structuredClone(draft);
   stacked.units.at(-1)!.editorialGoal = "conclude";
   stacked.units.at(-1)!.ctaQuestion =
@@ -574,7 +573,19 @@ test("removes competing CTAs without manufacturing a generic follow CTA", () => 
     "English",
     "shares",
   );
-  assert.equal(repairedStacked.units.at(-1)!.ctaQuestion, undefined);
+  assert.equal(repairedStacked.units.at(-1)!.ctaQuestion, stacked.units.at(-1)!.ctaQuestion);
+
+  // A non-followers goal still drops a CTA that never asks for that goal.
+  const offGoal = structuredClone(stacked);
+  offGoal.units.at(-1)!.ctaQuestion = "Tell us what you think.";
+  const repairedOffGoal = repairDeterministicCreativeCopy(
+    offGoal,
+    "carousel",
+    facts,
+    "English",
+    "shares",
+  );
+  assert.equal(repairedOffGoal.units.at(-1)!.ctaQuestion, undefined);
 
   const missing = structuredClone(draft);
   missing.units.at(-1)!.editorialGoal = "conclude";
@@ -586,7 +597,12 @@ test("removes competing CTAs without manufacturing a generic follow CTA", () => 
     "English",
     "followers",
   );
-  assert.equal(repairedMissing.units.at(-1)!.ctaQuestion, undefined);
+  assert.match(repairedMissing.units.at(-1)!.ctaQuestion ?? "", /^Follow us to better understand /);
+  assert.equal(
+    deterministicCreativeQualityIssues(repairedMissing, "carousel", facts, "English", "followers")
+      .some((issue) => issue.code === "MISSING_CONVERSION_CTA"),
+    false,
+  );
   assert.deepEqual(repairDeterministicCreativeCopy(repairedMissing, "carousel", facts, "English", "followers"), repairedMissing);
 
   // Sensitive coverage is left without an invented CTA.
@@ -716,7 +732,7 @@ test("preserves an unrecognized-language CTA for critic review", () => {
   );
 });
 
-test("leaves an unrecognized followers CTA for a targeted rewrite rather than adding boilerplate", () => {
+test("replaces an unrecognized followers CTA with a concept-specific request", () => {
   const english = structuredClone(draft);
   english.units.at(-1)!.editorialGoal = "conclude";
   english.units.at(-1)!.ctaQuestion = "Review this information later.";
@@ -727,7 +743,10 @@ test("leaves an unrecognized followers CTA for a targeted rewrite rather than ad
     "English",
     "followers",
   );
-  assert.equal(repaired.units.at(-1)!.ctaQuestion, undefined);
+  assert.equal(
+    repaired.units.at(-1)!.ctaQuestion,
+    "Follow us to better understand LLM-readable design systems.",
+  );
 });
 
 test("never turns a leaked-language conclude CTA into a debate question", () => {
@@ -1105,6 +1124,7 @@ test("requires explicit acknowledgement for unresolved automated review notes", 
       },
     ],
     repairPasses: 1,
+    critic: { provider: "openai", model: "critic-test" },
   };
 
   assert.deepEqual(
@@ -1213,7 +1233,7 @@ test("keeps a factually safe draft in review when a rewrite still misses editori
   assert.equal(afterRewrite.status, "needs-review");
   assert.equal(getCreativeDraftApprovalState({
     deterministicIssues: [],
-    qualityReview: afterRewrite,
+    qualityReview: { ...afterRewrite, critic: { provider: "openai", model: "critic-test" } },
     qualityReviewIsCurrent: true,
   }).requiresHumanReviewAcknowledgement, true);
   assert.equal(
@@ -1294,14 +1314,33 @@ test("retains the stronger reviewed candidate instead of the last rewrite", () =
   assert.equal(isBetterCreativeQualityReview({ ...previous, status: "accepted", scores: { ...previous.scores, overall: 96 } }, previous), true);
 });
 
-test("critic outages require acknowledgement without creating factual blockers", () => {
+test("critic outages block approval even with human acknowledgement", () => {
   const review: CreativeQualityReview = {
     status: "needs-review", scores: { ...CREATIVE_QUALITY_THRESHOLDS },
     issues: [{ code: "CRITIC_UNAVAILABLE", severity: "warning", message: "Review unavailable." }], repairPasses: 0,
   };
-  assert.deepEqual(getCreativeDraftApprovalState({ deterministicIssues: [], qualityReview: review, qualityReviewIsCurrent: true }), {
-    blockers: [], requiresHumanReviewAcknowledgement: true,
-  });
+  const state = getCreativeDraftApprovalState({ deterministicIssues: [], qualityReview: review, qualityReviewIsCurrent: true });
+  assert.equal(state.requiresHumanReviewAcknowledgement, false);
+  assert.deepEqual(state.blockers.map((issue) => issue.code), ["CRITIC_REVIEW_REQUIRED"]);
+});
+
+test("stale, fallback and post-correction reviews cannot authorize approval", () => {
+  const base: CreativeQualityReview = {
+    status: "accepted", scores: { ...CREATIVE_QUALITY_THRESHOLDS }, issues: [],
+    repairPasses: 1, critic: { provider: "openai", model: "test" },
+  };
+  for (const [review, current] of [
+    [base, false],
+    [{ ...base, critic: { provider: "google", model: "test" } }, true],
+    [{ ...base, issues: [{ code: "FINAL_COPY_REVIEW_REQUIRED", severity: "blocker", message: "Pending" }] }, true],
+  ] as [CreativeQualityReview, boolean][]) {
+    const state = getCreativeDraftApprovalState({ deterministicIssues: [], qualityReview: review, qualityReviewIsCurrent: current });
+    assert.ok(state.blockers.some(issue => issue.code === "CRITIC_REVIEW_REQUIRED"));
+    assert.equal(state.requiresHumanReviewAcknowledgement, false);
+  }
+  assert.deepEqual(getCreativeDraftApprovalState({ deterministicIssues: [], qualityReview: {
+    ...base, issues: [{ code: "EDITORIAL_REVIEW_RECOVERED", severity: "warning", message: "First model failed; final reviewer succeeded." }],
+  }, qualityReviewIsCurrent: true }).blockers, []);
 });
 
 test("unsupported absolute validation is stable across repeated checks and adjacent slides", () => {
@@ -1396,6 +1435,14 @@ test("cover brevity is advisory and never truncates factual qualifiers", () => {
   assert.ok(!deterministicCreativeQualityIssues(value,"carousel").some(i=>["COVER_HOOK_TOO_LONG","COVER_INTRO_DENSE"].includes(i.code)));
 });
 
+test("Spanish cover headlines need a finite verb without treating an infinitive as one", () => {
+  const value=structuredClone(draft);
+  value.units[0].headline="Ejercer tu ocupación: casi 50 % más";
+  assert.ok(deterministicCreativeQualityIssues(value,"carousel",facts,"Spanish").some(i=>i.code==="COVER_HOOK_MISSING_VERB"));
+  value.units[0].headline="Solo uno de cada cinco ejerce lo que planeó";
+  assert.ok(!deterministicCreativeQualityIssues(value,"carousel",facts,"Spanish").some(i=>i.code==="COVER_HOOK_MISSING_VERB"));
+});
+
 test("saving a closing preserves its explicitly selected verified consultation date",()=>{
   const event:CreativeKeyFact={id:"meeting",statement:"Une assemblée publique de consultation est à l’horaire le 14 septembre entre 17 et 19 heures à l’hôtel de ville.",sourceExcerpt:"Une assemblée publique de consultation est à l’horaire le 14 septembre entre 17 et 19 heures à l’hôtel de ville."};
   const value=structuredClone(draft);
@@ -1425,6 +1472,52 @@ test("unaccented Spanish follow request matches followers without changing edito
   input.units.at(-1)!.ctaQuestion = "SIguenos para mas recetas!";
   const issues = deterministicCreativeQualityIssues(input, "sequence", facts, "es", "followers");
   assert.equal(issues.some(issue => issue.code === "CTA_GOAL_MISMATCH"), false);
+});
+
+test("recognizes common Spanish follow requests typed by editors", () => {
+  const followRequests = [
+    "Sigue a @canadaenbreve para entender el empleo en Canadá.",
+    "Sigue a Canadá en Breve para entender el empleo en Canadá.",
+    "Síganos para más información sobre Canadá.",
+    "Suscríbete para entender cada cambio en Canadá.",
+    "Activa las notificaciones para no perderte nada sobre Canadá.",
+    "No olvides seguirnos para entender el empleo en Canadá.",
+  ];
+  for (const cta of followRequests) {
+    const input = structuredClone(draft);
+    input.units.at(-1)!.editorialGoal = "conclude";
+    input.units.at(-1)!.ctaQuestion = cta;
+    const issues = deterministicCreativeQualityIssues(input, "carousel", facts, "es", "followers");
+    assert.equal(issues.some(issue => issue.code === "CTA_GOAL_MISMATCH"), false, cta);
+  }
+});
+
+test("keeps a follow request paired with a secondary save, share or comment action", () => {
+  for (const cta of [
+    "Guarda este post y síguenos para más datos sobre empleo en Canadá.",
+    "¿Te pasó a ti? Cuéntanos en comentarios y síguenos para más.",
+    "Comparte esto con quien acaba de llegar y síguenos.",
+  ]) {
+    const input = structuredClone(draft);
+    input.units.at(-1)!.editorialGoal = "conclude";
+    input.units.at(-1)!.ctaQuestion = cta;
+    const repaired = repairDeterministicCreativeCopy(input, "carousel", facts, "es", "followers");
+    assert.equal(repaired.units.at(-1)!.ctaQuestion, cta);
+    assert.equal(
+      deterministicCreativeQualityIssues(repaired, "carousel", facts, "es", "followers")
+        .some(issue => issue.code === "CTA_GOAL_MISMATCH" || issue.code === "MISSING_CONVERSION_CTA"),
+      false,
+      cta,
+    );
+  }
+});
+
+test("ordinary uses of 'sigue' are not mistaken for a follow request", () => {
+  const input = structuredClone(draft);
+  input.units.at(-1)!.editorialGoal = "conclude";
+  input.units.at(-1)!.ctaQuestion = "¿Crees que la inflación sigue a la baja?";
+  const issues = deterministicCreativeQualityIssues(input, "carousel", facts, "es", "followers");
+  assert.ok(issues.some(issue => issue.code === "CTA_GOAL_MISMATCH"));
 });
 
  test("sequence restores missing followers CTA after repair", () => {

@@ -1,4 +1,6 @@
 import "server-only";
+import { getCreativeContentPublicConfig } from "./creative-content.config";
+import { CreativeContentConflictError, CreativeContentDailyLimitError } from "./creative-run-errors";
 import { recover511CarouselPlan } from "./road-notice-evidence";
 import { canCarryImageUnits } from "./creative-image-text-sync";
 import { carryImageBatchStatements } from "./creative-image-carry.repository";
@@ -603,10 +605,8 @@ export async function getCreativeDailyUsage(
     .where(
       and(
         eq(creativeAiRuns.topicId, topicId),
-        // A provider error must not spend the topic's daily creative budget.
-        // Keep in-flight runs in the count to prevent concurrent requests from
-        // bypassing the limit, and retain completed runs for cost control.
-        inArray(creativeAiRuns.status, ["running", "completed"]),
+        // Failed or interrupted attempts can already have incurred provider
+        // charges. Every reserved attempt consumes the daily call budget.
         gte(creativeAiRuns.startedAt, start),
         lt(creativeAiRuns.startedAt, end),
       ),
@@ -642,24 +642,33 @@ export async function createCreativeAiRun({
   promptVersion: string;
   inputHash: string;
 }): Promise<string> {
-  const [run] = await db
-    .insert(creativeAiRuns)
-    .values({
-      topicId,
-      storyId,
-      briefId: briefId ?? null,
-      task,
-      provider,
-      model,
-      promptVersion,
-      inputHash,
-    })
-    .returning({ id: creativeAiRuns.id });
-
-  if (!run) {
-    throw new Error("The creative AI run could not be created");
+  const maxRuns = getCreativeContentPublicConfig().maxRunsPerDay;
+  // Neon executes batch statements in one transaction. Serialize reservations
+  // per Topic before checking quota and in-flight identity; a preflight count
+  // in the service alone cannot protect concurrent workers or browser tabs.
+  const [, inserted, state] = await db.batch([
+    db.execute(sql`SELECT id FROM topics WHERE id=${topicId}::uuid FOR UPDATE`),
+    db.execute(sql`INSERT INTO creative_ai_runs
+      (topic_id,story_id,brief_id,task,provider,model,prompt_version,input_hash)
+      SELECT ${topicId}::uuid,${storyId}::uuid,${briefId ?? null}::uuid,
+        ${task}::creative_ai_task,${provider},${model},${promptVersion},${inputHash}
+      WHERE (SELECT count(*) FROM creative_ai_runs WHERE topic_id=${topicId}::uuid
+        AND started_at >= date_trunc('day',now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+        AND started_at < (date_trunc('day',now() AT TIME ZONE 'UTC') + interval '1 day') AT TIME ZONE 'UTC') < ${maxRuns}
+      AND NOT EXISTS (SELECT 1 FROM creative_ai_runs WHERE topic_id=${topicId}::uuid
+        AND task=${task}::creative_ai_task AND input_hash=${inputHash} AND status='running')
+      RETURNING id`),
+    db.execute(sql`SELECT count(*)::int AS attempts FROM creative_ai_runs
+      WHERE topic_id=${topicId}::uuid
+      AND started_at >= date_trunc('day',now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+      AND started_at < (date_trunc('day',now() AT TIME ZONE 'UTC') + interval '1 day') AT TIME ZONE 'UTC'`),
+  ]);
+  const id = inserted.rows[0]?.id;
+  if (typeof id === "string") return id;
+  if (Number(state.rows[0]?.attempts) >= maxRuns) {
+    throw new CreativeContentDailyLimitError(`Daily creative AI run limit reached (${maxRuns})`);
   }
-  return run.id;
+  throw new CreativeContentConflictError("An identical creative generation is already running or awaiting recovery. Reuse its result before starting another paid attempt.");
 }
 
 export async function completeCreativeAiRun(
@@ -667,7 +676,7 @@ export async function completeCreativeAiRun(
   runId: string,
   usage: CreativeAiUsage,
   ids: { briefId?: string; draftId?: string },
-  provider?: { provider: string; model: string },
+  provider?: { provider: string; model: string; fallbackReason?: string },
 ): Promise<void> {
   await db
     .update(creativeAiRuns)

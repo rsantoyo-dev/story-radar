@@ -4,6 +4,13 @@ function normalized(text: string): string {
   return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
+/** Do not pay writers/critics to reconstruct a packet of unfinished excerpts. */
+export function onlyTruncatedCreativeFacts(facts: readonly CreativeKeyFact[]): boolean {
+  const truncated = (value: string) => /(?:…|\.{3})\s*["'”’]?\s*$/u.test(value);
+  return facts.length > 0 && facts.every(fact =>
+    truncated(fact.statement) && truncated(fact.sourceExcerpt ?? fact.statement));
+}
+
 /** Conservative rejection signals, not a factual-accuracy certification. */
 export function explicitlyInsufficientEvidence(text: string): boolean {
   const value = normalized(text);

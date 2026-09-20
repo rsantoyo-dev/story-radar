@@ -21,7 +21,7 @@ const SIGNAL_PATTERN =
 const ESTIMATE_PATTERN =
   /~|\b(?:about|approximately|estimated|estimate|nearly|roughly|around|more than|aproximadamente|estimad[oa]s?|casi|alrededor de|cerca de|unos?|en promedio|más de)\b|(?<![-‐‑‒–—])\bover\b(?![-‐‑‒–—])/iu;
 const PROJECTION_PATTERN = /\b(?:projected|forecast|expected to|could reach)\b/iu;
-const ASSOCIATION_PATTERN = /\b(?:associated with|correlat(?:ed|ion)|linked to)\b/iu;
+const ASSOCIATION_PATTERN = /\b(?:associated with|correlat(?:ed|ion)|linked to|asociad[oa]s? con|correlacionad[oa]s?|vinculad[oa]s? con)\b/iu;
 const REPORTED_PATTERN = /\b(?:according to|reported|report says|study says)\b/iu;
 
 /**
@@ -54,6 +54,14 @@ const UNSUPPORTED_INFERENCE_PATTERNS: Array<{
   {
     pattern: /\b(?:causes?|caused|causing|leads? to|leading to|led to|drives?|driving)\b/iu,
     sourceSupport: /\b(?:cause|caused|lead(?:s|ing)? to|led to|drive|driving)\b/iu,
+  },
+  {
+    pattern: /\b(?:you(?:'d| would)? (?:earn|gain|get|make)|ganar[ií]as|obtendr[ií]as|recibir[ií]as|tendr[ií]as)\b/iu,
+    sourceSupport: /\b(?:you(?:'d| would)? (?:earn|gain|get|make)|ganar[ií]as|obtendr[ií]as|recibir[ií]as|tendr[ií]as)\b/iu,
+  },
+  {
+    pattern: /\b(?:cuts?|reduces?|penalizes?|recorta|reduce|penaliza)\b[^.!?]{0,60}\b(?:income|earnings|ingresos?)\b[^.!?]{0,30}(?:half|mitad|(?:casi\s+un\s+|nearly\s+)?50\s*%)/iu,
+    sourceSupport: /\b(?:cuts?|reduces?|penalizes?|recorta|reduce|penaliza)\b[^.!?]{0,60}\b(?:income|earnings|ingresos?)\b[^.!?]{0,30}(?:half|mitad|(?:casi\s+un\s+|nearly\s+)?50\s*%)/iu,
   },
   {
     pattern:

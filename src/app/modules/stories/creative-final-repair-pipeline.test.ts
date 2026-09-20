@@ -17,7 +17,9 @@ const facts = [
   { id: "fact-2", statement: "Workers can find jobs through personal connections.", sourceExcerpt: "Workers can find jobs through personal connections." },
 ];
 const draft = {
-  concept: "El empleo y la formación de inmigrantes en Canadá",
+  // A question concept cannot seed the deterministic follow CTA, so the
+  // missing CTA must still reach the targeted provider patch below.
+  concept: "¿Coinciden el empleo y la formación de inmigrantes en Canadá?",
   caption: "El empleo de inmigrantes recientes puede no estar relacionado con su formación.",
   altText: "Dos tarjetas sobre empleo y formación.", hashtags: [],
   units: [
@@ -34,7 +36,8 @@ const draft = {
 const scores = { factuality: 98, hook: 98, curiosity: 98, swipeReward: 98, continuity: 98,
   relevance: 98, clarity: 98, resolution: 98, cta: 98, overall: 98 };
 
-test("Gemini → invalid Terra rewrite → Sol → targeted Gemini repair preserves the plan and sums usage", async () => {
+for (const finalAvailable of [true, false]) {
+test(`final corrected copy is independently checked; final reviewer available: ${finalAvailable}`, async () => {
   const calls: string[] = [];
   const exports = {} as { generateCreativeDraft: (options: unknown) => Promise<GeneratedCreativeDraftResult> };
   class OpenAiEditorialError extends Error {}
@@ -47,24 +50,30 @@ test("Gemini → invalid Terra rewrite → Sol → targeted Gemini repair preser
         models = { generateContent: async (params: { contents: string }) => {
           const input = JSON.parse(params.contents);
           calls.push(input.blockers ? "gemini-patch" : "gemini-draft");
-          const text = input.blockers ? JSON.stringify({ patches: [{ unitOrder: 2, field: "ctaQuestion", text: cta }] }) : JSON.stringify(draft);
+          if (input.blockers) assert.deepEqual(input.editableScopes, [2]);
+          const text = input.blockers
+            ? JSON.stringify({ patches: [{ unitOrder: 2, field: "ctaQuestion", text: cta }] })
+            : JSON.stringify(draft);
           return { text, candidates: [{ finishReason: "STOP" }], usageMetadata: { totalTokenCount: 30 } };
         } };
       } };
       if (id === "./openai-structured-response") return {
         OpenAiEditorialError,
-        generateOpenAiStructuredResponse: async (params: { model: string; contents: {
+        generateOpenAiStructuredResponse: async (params: { model: string; schema: { properties: { draft?: unknown } }; contents: {
           draft: typeof draft; previousFeedback: { message: string }[];
         } }) => {
           calls.push(params.model);
           const revised = structuredClone(params.contents.draft);
-          if (params.model === "terra-test") revised.units[1].factIds = ["fact-2"];
+          if (!params.schema.properties.draft) {
+            if (!finalAvailable) throw new OpenAiEditorialError("Final reviewer unavailable");
+            assert.equal(revised.units[1].ctaQuestion, cta);
+          } else if (params.model === "terra-test") revised.units[1].factIds = ["fact-2"];
           else {
             assert.ok(params.contents.previousFeedback.some((issue) =>
               issue.message.includes("OpenAI terra-test used an unplanned fact on carousel slide 2; allowed facts: fact-1")));
             revised.units[1].ctaQuestion = draft.units[1].ctaQuestion;
           }
-          return { text: JSON.stringify({ verdict: "revised", scores, issues: [], draft: revised, hookSelection: {
+          return { text: JSON.stringify({ verdict: params.schema.properties.draft ? "revised" : "accepted", scores, issues: [], draft: revised, hookSelection: {
             selectedIndex: 0, candidates: [revised.units[0].headline, "Tu empleo puede diferir de tu formación", "Empleo y formación no siempre coinciden"].map(headline => ({
               headline, subheadline: "", factIds: ["fact-1"], supported: true,
               checks: { clear: true, tension: true, consequence: true, human: true, curiosity: true },
@@ -88,11 +97,22 @@ test("Gemini → invalid Terra rewrite → Sol → targeted Gemini repair preser
       slides: draft.units.map((unit) => ({ editorialGoal: unit.editorialGoal, viewerQuestion: unit.viewerQuestion, allowedFactIds: ["fact-1"] })) } },
     format: "carousel", outputAspectRatio: "4:5", characterRoster: [],
   });
-  assert.deepEqual(calls, ["gemini-draft", "terra-test", "sol-test", "gemini-patch"]);
+  assert.deepEqual(calls, ["gemini-draft", "terra-test", "sol-test", "gemini-patch", "terra-test"]);
+  assert.equal(result.draft.units[0].headline, draft.units[0].headline);
   assert.equal(result.draft.units[1].ctaQuestion, cta);
   assert.equal(result.draft.units[1].factIds.join(","), "fact-1");
-  assert.equal(result.usage.totalTokens, 80);
-  assert.equal(result.draft.qualityReview?.status, "needs-review");
-  assert.equal(result.draft.qualityReview?.hookSelection, undefined, "A final factual/CTA patch invalidates the previous hook assessment");
-  assert.ok(!result.draft.qualityReview?.issues.some((issue) => issue.severity === "blocker"));
+  assert.equal(result.usage.totalTokens, finalAvailable ? 90 : 80);
+  assert.equal(result.draft.qualityReview?.status, "needs-review", "Fixing a CTA must not conceal a redundant closing");
+  if (finalAvailable) {
+    assert.ok(result.draft.qualityReview?.issues.some(issue => issue.code === "QUALITY_RESOLUTION_BELOW_THRESHOLD"));
+    assert.ok(!result.draft.qualityReview?.issues.some(issue => issue.code === "FINAL_COPY_REVIEW_REQUIRED"));
+    assert.ok(result.draft.qualityReview?.hookSelection, "Final verification reassesses the corrected copy and its hook payoff");
+    assert.ok(!result.draft.qualityReview?.issues.some((issue) => issue.severity === "blocker"));
+  } else {
+    assert.ok(result.draft.qualityReview?.issues.some(issue => issue.code === "FINAL_COPY_REVIEW_REQUIRED"));
+    assert.ok(result.draft.qualityReview?.issues.some(issue => issue.code === "FINAL_REVIEW_UNAVAILABLE"));
+    assert.equal(result.draft.qualityReview?.hookSelection, undefined);
+  }
 });
+
+}

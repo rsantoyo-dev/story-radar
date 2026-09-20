@@ -1,4 +1,6 @@
 import { getDailyDraftStory } from "./daily-draft-access";
+import { CreativeContentConflictError, CreativeContentDailyLimitError } from "./creative-run-errors";
+export { CreativeContentConflictError, CreativeContentDailyLimitError } from "./creative-run-errors";
 import { getEditorialProfile } from "./editorial-profile.repository";
 import { plannerDay } from "./daily-editorial-planner.types";
 import { EDITORIAL_FOCUS_PROMPT_VERSION } from "./editorial-focus";
@@ -9,7 +11,7 @@ import { preserveEditorCtas } from "./preserve-editor-cta";
 import { storyCollectionContexts, selectedStoryContext } from "../editorial-lines/editorial-lines.repository";
 import { editorialContextInstruction, collectionContextForHash } from "../editorial-lines/editorial-lines";
 import { build511Brief } from "./road-notice-evidence";
-import { locationOnlyRoadFacts } from "./creative-evidence-guardrails";
+import { locationOnlyRoadFacts, onlyTruncatedCreativeFacts } from "./creative-evidence-guardrails";
 import { imageTextNeedsUpdate } from "./creative-image-text-sync";
 import { findLatestCreativeAssetBatch } from "./creative-assets.repository";
 import "server-only";
@@ -252,7 +254,11 @@ export async function suggestEditorialFocus(
       ...configuration, topic, profile, story: storyForGenerator(story, content),
       editorialDirection: normalizedDirection, focusContext,
     });
-    await completeCreativeAiRun(topicId, runId, result.usage, {}, { provider: result.provider, model: result.model });
+    await completeCreativeAiRun(topicId, runId, result.usage, {}, {
+      provider: result.provider,
+      model: result.model,
+      fallbackReason: result.fallbackReason,
+    });
     return {
       editorialDirection: result.editorialDirection,
       daily: await getCreativeDailyUsage(topicId, configuration.maxRunsPerDay),
@@ -369,7 +375,7 @@ export async function createCreativeBrief(
       runId,
       result.usage,
       { briefId: brief.id },
-      { provider: result.provider, model: result.model },
+      { provider: result.provider, model: result.model, fallbackReason: result.fallbackReason },
     );
 
     return {
@@ -400,6 +406,10 @@ export async function createCreativeDraft(
 
   if (!brief) {
     throw new CreativeContentNotFoundError("The creative brief was not found");
+  }
+
+  if (onlyTruncatedCreativeFacts(brief.keyFacts)) {
+    throw new CreativeContentInsufficientError("The brief contains only unfinished source excerpts. Retrieve complete evidence and refresh the brief before spending credits on draft generation.");
   }
 
   if (brief.contentSufficiency === "insufficient" || locationOnlyRoadFacts(brief.keyFacts)) {
@@ -486,6 +496,7 @@ export async function createCreativeDraft(
       cloudflareAiModel: configuration.cloudflareAiModel,
       openAiApiKey: configuration.openAiApiKey,
       openAiEditorialModels: configuration.openAiEditorialModels,
+      openAiAuditContext: { runId, topicId, storyId: brief.storyId },
       story: storyForGenerator(story, content),
       topic,
       profile: brief.profileSnapshot,
@@ -527,7 +538,7 @@ export async function createCreativeDraft(
       runId,
       result.usage,
       { draftId: draft.id },
-      { provider: result.provider, model: result.model },
+      { provider: result.provider, model: result.model, fallbackReason: result.fallbackReason },
     );
 
     return {
@@ -1471,8 +1482,6 @@ async function failRunSafely(
 
 export class CreativeContentNotFoundError extends Error {}
 export class CreativeContentInsufficientError extends Error {}
-export class CreativeContentConflictError extends Error {}
-export class CreativeContentDailyLimitError extends Error {}
 export class CreativeDraftValidationError extends Error {}
 
 /** An editorial content edit invalidates old approvals without deleting history. */

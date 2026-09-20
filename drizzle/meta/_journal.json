@@ -512,6 +512,13 @@
       "when": 1789492260676,
       "tag": "0073_creative_asset_seed_bigint",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1789760000000,
+      "tag": "0074_creative_ai_fallback_reason",
+      "breakpoints": true
     }
   ]
 }

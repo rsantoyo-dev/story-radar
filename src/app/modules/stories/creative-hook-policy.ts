@@ -1,7 +1,7 @@
 import type { CreativeQualityIssue, GeneratedCreativeDraft } from "./creative-content.types";
 
-export const COVER_HOOK_TARGET = "4–7";
-export const COVER_HOOK_MAX_WORDS = 9;
+export const COVER_HOOK_TARGET = "6–10";
+export const COVER_HOOK_MAX_WORDS = 10;
 export const COVER_CONTEXT_MAX_WORDS = 24;
 export const HOOK_CHECKS = ["clear", "tension", "consequence", "human", "curiosity"] as const;
 export const HOOK_CHECK_LABELS: Record<typeof HOOK_CHECKS[number], string> = {
@@ -66,18 +66,34 @@ export function hookSelectionMatches(selection: CreativeHookSelection, draft: Pi
   return !!chosen && !!cover && copy(chosen.headline) === copy(cover.headline) && copy(chosen.subheadline) === copy(cover.subheadline)
     && chosen.factIds.every(id => cover.factIds.includes(id)) && chosen.factIds.length === new Set(cover.factIds).size;
 }
+/** A hook verdict stays valid while the cover and its payoff slide keep their copy and evidence; edits elsewhere (for example a repaired closing CTA) do not reopen it. */
+export function hookCopyUnchanged(
+  before: Pick<GeneratedCreativeDraft, "units">,
+  after: Pick<GeneratedCreativeDraft, "units">,
+  selection: CreativeHookSelection,
+): boolean {
+  const payoff = selection.candidates[selection.selectedIndex]?.payoffUnitOrder;
+  const orders = new Set([before.units[0]?.order, payoff]);
+  const relevant = (draft: Pick<GeneratedCreativeDraft, "units">) => draft.units
+    .filter((unit) => orders.has(unit.order))
+    .map((unit) => [unit.order, copy(unit.headline), copy(unit.subheadline), copy(unit.body), unit.factIds.join(",")]);
+  return before.units.length === after.units.length && JSON.stringify(relevant(before)) === JSON.stringify(relevant(after));
+}
 /** Checks structure, planned evidence IDs and exact selected copy; semantics remain subject to factual validators and final review. */
 export function parseHookSelection(value: unknown, draft: Pick<GeneratedCreativeDraft, "units">, allowedFactIds: readonly string[]): CreativeHookSelection {
   if (!object(value) || !Array.isArray(value.candidates) || value.candidates.length !== 3 || !Number.isInteger(value.selectedIndex) || Number(value.selectedIndex) < 0 || Number(value.selectedIndex) > 2) throw new HookSelectionValidationError("The editorial response needs three hook candidates and a valid selection");
-  const candidates = value.candidates.map((item): CreativeHookCandidate => {
+  const parseCandidate = (item: unknown): CreativeHookCandidate => {
     if (!object(item) || !object(item.checks) || HOOK_CHECKS.some(key => typeof (item.checks as Record<string, unknown>)[key] !== "boolean") || typeof item.supported !== "boolean") throw new HookSelectionValidationError("Invalid hook checklist");
     if (!Array.isArray(item.factIds) || item.factIds.length < 1 || item.factIds.length > 6 || item.factIds.some(id => typeof id !== "string" || !allowedFactIds.includes(id)) || new Set(item.factIds).size !== item.factIds.length) throw new HookSelectionValidationError("Hook candidates must use the cover's planned fact IDs");
     if (!Number.isInteger(item.payoffUnitOrder) || Number(item.payoffUnitOrder) < (draft.units.length > 1 ? 2 : 1) || Number(item.payoffUnitOrder) > draft.units.length) throw new HookSelectionValidationError("Hook payoff must identify a subsequent slide, or the single meme");
     return { headline: text(item.headline, 240), subheadline: text(item.subheadline, 240, true), factIds: item.factIds as string[],
       readerQuestion: text(item.readerQuestion, 200), payoffUnitOrder: Number(item.payoffUnitOrder), supported: item.supported,
       checks: Object.fromEntries(HOOK_CHECKS.map(key => [key, (item.checks as Record<string, boolean>)[key]])) as CreativeHookCandidate["checks"], reason: text(item.reason, 240) };
-  });
-  if (new Set(candidates.map(c => copy(c.headline) + "\n" + copy(c.subheadline))).size !== 3) throw new HookSelectionValidationError("Hook alternatives must be distinct");
+  };
+  const candidates = value.candidates.map(parseCandidate);
+  if (new Set(candidates.map((candidate) => copy(candidate.headline) + "\n" + copy(candidate.subheadline))).size !== 3) {
+    throw new HookSelectionValidationError("Hook alternatives must be distinct");
+  }
   const selection = { candidates, selectedIndex: Number(value.selectedIndex) };
   if (!hookSelectionMatches(selection, draft)) throw new HookSelectionValidationError("The chosen hook and its fact IDs must match the returned opening exactly");
   return selection;

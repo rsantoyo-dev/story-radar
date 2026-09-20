@@ -65,6 +65,24 @@ const keyFacts: CreativeKeyFact[] = [
   },
 ];
 
+test("brief prose cannot turn an average association into a personal promise or invert its comparison", () => {
+  const base = {
+    keyFacts: [{
+      id: "income",
+      statement: "En promedio, quienes ejercen la ocupación que planearon ganan casi 50 % más que quienes no la ejercen.",
+      sourceExcerpt: "En promedio, quienes ejercen la ocupación que planearon ganan casi 50 % más que quienes no la ejercen.",
+      claimGuard: { certainty: "association", requiredPhrases: ["en promedio"], forbiddenPhrases: [], scopePhrases: [], allowedNumbers: ["50%"] },
+    }],
+    angle: "Explicar la asociación promedio sin prometer un resultado individual.",
+    hook: "Solo cerca de 1 de cada 5 ejerce lo que planeó.",
+    suggestedConcepts: [],
+  } as unknown as GeneratedCreativeBrief;
+  const personal = { ...base, keyMessage: "¿Ejerces tu profesión en Canadá? Ganarías casi 50 % más." };
+  assert.ok(deterministicBriefFactQualityIssues(personal).some((issue) => issue.code === "UNSUPPORTED_BRIEF_SCOPE"));
+  const inverted = { ...base, keyMessage: "No ejercer tu profesión penaliza tus ingresos en casi un 50 %." };
+  assert.ok(deterministicBriefFactQualityIssues(inverted).some((issue) => issue.code === "UNSUPPORTED_BRIEF_SCOPE"));
+});
+
 const draft: GeneratedCreativeDraft = {
   concept: "AI authorship on the web",
   caption: "More than 33% of new web pages are AI-generated.",

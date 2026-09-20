@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { evidenceQualityIssues, locationOnlyRoadFacts, requestsGeographicReconstruction } from "./creative-evidence-guardrails";
+import { evidenceQualityIssues, onlyTruncatedCreativeFacts, locationOnlyRoadFacts, requestsGeographicReconstruction } from "./creative-evidence-guardrails";
 import type { GeneratedCreativeDraft } from "./creative-content.types";
 const draft: GeneratedCreativeDraft = {concept:"Repères",caption:"Les seules informations disponibles sont des repères géographiques à Saint-Sébastien et à Saint-Jean-sur-Richelieu. Sans précision sur la nature de la situation routière ou ses effets.",hashtags:[],altText:"",units:[]};
 test("the reported road-marker carousel is blocked, not converted into a cautious non-news post", () => {
@@ -37,3 +37,10 @@ test("schematic maps and road reconstructions cannot be delegated to image gener
   "No mostrar un mapa de la ciudad; mostrar la plaza pública.",
  ]) assert.equal(requestsGeographicReconstruction(direction), true, direction);
  });
+
+test("truncated-only facts are rejected without confusing a complete statement with a shortened quote", () => {
+  assert.equal(onlyTruncatedCreativeFacts([{id:"1", statement:"Worked in their…",sourceExcerpt:"Worked in their…"}]),true);
+  assert.equal(onlyTruncatedCreativeFacts([{id:"1", statement:"Worked in their...",sourceExcerpt:"Worked in their..."}]),true);
+  assert.equal(onlyTruncatedCreativeFacts([{id:"1", statement:"One in five worked in their intended occupation.",sourceExcerpt:"One in five worked…"}]),false);
+  assert.equal(onlyTruncatedCreativeFacts([{id:"1", statement:"Worked in their…"},{id:"2",statement:"The survey covered recent immigrants."}]),false);
+});

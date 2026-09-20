@@ -1,4 +1,5 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
 
 import type { CreativeAiUsage } from "./creative-content.types";
 
@@ -29,6 +30,8 @@ export type OpenAiStructuredResponse = {
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const OPENAI_TIMEOUT_MS = 120_000;
 
+export type OpenAiUsageContext = { runId: string; topicId: string; storyId: string };
+
 export async function generateOpenAiStructuredResponse({
   apiKey,
   model,
@@ -40,6 +43,7 @@ export async function generateOpenAiStructuredResponse({
   reasoningEffort = "high",
   timeoutMs = OPENAI_TIMEOUT_MS,
   webSearch = false,
+  auditContext,
 }: {
   apiKey: string;
   model: string;
@@ -51,7 +55,16 @@ export async function generateOpenAiStructuredResponse({
   reasoningEffort?: OpenAiReasoningEffort;
   timeoutMs?: number;
   webSearch?: boolean;
+  auditContext?: OpenAiUsageContext;
 }): Promise<OpenAiStructuredResponse> {
+  const auditId = randomUUID();
+  const startedAt = Date.now();
+  // Safe per-call receipts: never log credentials, prompts or generated text.
+  const receipt = (details: Record<string, unknown>) => console.info("[openai-usage]", JSON.stringify({
+    auditId, at: new Date().toISOString(), model, operation: schemaName,
+    reasoningEffort, maxOutputTokens, webSearch, ...(auditContext ? { context: auditContext } : {}), ...details,
+  }));
+  receipt({ event: "started" });
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;
@@ -88,6 +101,7 @@ export async function generateOpenAiStructuredResponse({
     });
     rawText = await response.text();
   } catch (error) {
+    receipt({ event: "transport-error", elapsedMs: Date.now() - startedAt, usageKnown: false });
     if (error instanceof Error && error.name === "AbortError") {
       throw new OpenAiEditorialError(
         `OpenAI ${model} did not respond within ${timeoutMs / 1_000} seconds`,
@@ -100,7 +114,22 @@ export async function generateOpenAiStructuredResponse({
     clearTimeout(timeout);
   }
 
-  const payload = parsePayload(rawText);
+  let payload: OpenAiResponsesPayload;
+  try {
+    payload = parsePayload(rawText);
+  } catch (error) {
+    receipt({ event: "invalid-response", httpStatus: response.status, elapsedMs: Date.now() - startedAt, usageKnown: false });
+    throw error;
+  }
+  const rawUsage = payload.usage as { input_tokens_details?: { cached_tokens?: unknown } } | undefined;
+  receipt({
+    event: response.ok ? "response-received" : "http-error",
+    requestId: response.headers?.get?.("x-request-id") ?? undefined,
+    httpStatus: response.status, elapsedMs: Date.now() - startedAt,
+    usageKnown: Boolean(payload.usage), usage: openAiUsage(payload.usage),
+    cachedInputTokens: usageNumber(rawUsage?.input_tokens_details?.cached_tokens),
+    webSearchCalls: webSearch ? extractWebSearchSources(payload.output).calls : 0,
+  });
   if (!response.ok) {
     throw new OpenAiEditorialError(
       `OpenAI ${model} failed (HTTP ${response.status}: ${responseError(payload)})`,

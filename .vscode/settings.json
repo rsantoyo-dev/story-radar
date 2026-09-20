@@ -1,3 +1,17 @@
 {
-  "//": "Project board is per-feature markdown: docs/features/<feature>.kanban.md, edited with the Markdown Kanban extension (holooooo.markdown-kanban v2). Open a .kanban.md file, right-click it and choose Kanban (or run Open Kanban Board from the palette); the toolbar board-picker switches between features. After moving cards run: python3 scripts/foam-sync.py"
+  "//": "Project board is per-feature markdown: docs/features/<feature>.kanban.md, edited with the Markdown Kanban extension (holooooo.markdown-kanban v2). Open a .kanban.md file, right-click it and choose Kanban (or run Open Kanban Board from the palette); the toolbar board-picker switches between features. After moving cards run: python3 scripts/foam-sync.py",
+  "chat.tools.terminal.autoApprove": {
+    "/^node --import tsx --test src/app/modules/stories/creative-hook-policy\\.test\\.ts$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^node --import tsx --test src/app/modules/stories/creative-hook-policy\\.test\\.ts src/app/modules/stories/creative-quality\\.test\\.ts$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^node --import tsx --test src/app/modules/stories/creative-fact-guard\\.test\\.ts$/": {
+      "approve": true,
+      "matchCommandLine": true
+    }
+  }
 }

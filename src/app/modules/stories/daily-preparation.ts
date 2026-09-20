@@ -1,4 +1,5 @@
 import "server-only";
+import { isCreativeDraftReadyForAutomation } from "./creative-quality";
 import { approveDailyStory } from "./approve-daily-story";
 import { BRIEF_EVIDENCE_REVIEW_MESSAGE, DAILY_PREPARATION_STEPS, preparationTarget, type DailyPreparationStep } from "./daily-preparation.types";
 import { prepareStoryContent } from "./prepare-selected-story-content";
@@ -129,7 +130,7 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
       const draft=result.state.drafts.find(d=>d.briefId===progress.briefId && d.inputIsCurrent && d.format===workspace.brief!.recommendedFormat);
       if(!draft)throw new Error("Draft unavailable");
       progress.draftId=draft.id;
-      if(!draft.qualityReview || draft.qualityReview.status!=="accepted" || draft.qualityReview.issues.some(i=>i.severity==="blocker"))throw new PreparationReviewNeeded("The draft is saved and needs editorial review. Open it to review the remaining issues.");
+      if(!isCreativeDraftReadyForAutomation(draft,draft.format,draft.qualityReviewIsCurrent === true))throw new PreparationReviewNeeded("The draft is saved, but automated editorial validation has not passed for this exact version. Its findings and evidence were preserved; it cannot advance as publication-ready.");
       return await finish("draft");
     } else {throw new Error("Unknown preparation stage");}
     return true;

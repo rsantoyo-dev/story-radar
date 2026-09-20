@@ -17,13 +17,14 @@ function load(file:string,mocks:Record<string,unknown>) {
 const topicId="11111111-1111-4111-8111-111111111111";
 const lineId="22222222-2222-4222-8222-222222222222";
 class LimitError extends Error {}
-function workflow({failEvaluate=false,limit=false,cachedCollection=false,draftMode=false,incomplete=false,likelyFull=false,failApproval=false,noChoice=false}={}) {
+function workflow({failEvaluate=false,limit=false,cachedCollection=false,draftMode=false,incomplete=false,likelyFull=false,failApproval=false,noChoice=false,editorialReady=true}={}) {
   const calls:string[]=[];
   const workspaceCalls:unknown[][]=[];
   let approved = false;
   let run={id:lineId,topicId,lineId,timezone:"UTC",status:"running",step:"collect",leaseOwner:"owner",progress:{mode:draftMode?"draft":"day",lineName:"News",evaluated:0,evaluationBatches:0} as Record<string,unknown>,error:null as string|null};
   let evalCalls=0;
   const service=load("./daily-preparation.ts",{
+    "./creative-quality":{isCreativeDraftReadyForAutomation:()=>editorialReady},
     "./approve-daily-story":{approveDailyStory:async()=>{if(failApproval)throw new Error("Approval failed");if(!approved){calls.push("approve");approved=true;}}},
     "../topics/topic-context":{requireTopic:async()=>({id:topicId})},
     "../editorial-lines/editorial-lines":{collectionContext:()=>({sourceIds:[lineId]}),resolveLineResearch:()=>({enabled:true,collectionContext:{sourceIds:[lineId]}})},
@@ -214,4 +215,12 @@ test("daily runs and workspace access require the ordinary persisted story appro
   approved=true;
   assert.ok(await access.getDailyDraftStory(topicId,lineId));
   assert.ok(await access.getDailyDraftStory(topicId,lineId,lineId,true));
+});
+
+test("daily draft progression stops when exact-version automated readiness fails",async()=>{
+  const w=workflow({draftMode:true,editorialReady:false});
+  await w.service.drivePreparation(topicId,lineId);
+  assert.equal(w.run.status,"needs-review");
+  assert.equal(w.run.progress.draftId,"draft");
+  assert.match(w.run.error ?? "",/exact version/);
 });

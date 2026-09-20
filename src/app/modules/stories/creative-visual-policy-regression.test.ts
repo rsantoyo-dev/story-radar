@@ -7,6 +7,7 @@ import * as orm from "drizzle-orm";
 import { integer, jsonb, pgTable, PgDialect, text, uuid } from "drizzle-orm/pg-core";
 import ts from "typescript";
 import * as fidelity from "./creative-visual-fidelity";
+import * as runErrors from "./creative-run-errors";
 
 // Execute the real server functions with isolated storage; never load DATABASE_URL.
 function load(file: string, dependencies: Record<string, unknown>) {
@@ -17,7 +18,7 @@ function load(file: string, dependencies: Record<string, unknown>) {
   const exports: Record<string, (...args: unknown[]) => Promise<unknown>> = {};
   runInNewContext(code, {
     exports, Date, Set, console,
-    require: (name: string) => dependencies[name] ?? {},
+    require: (name: string) => name === "./creative-run-errors" ? runErrors : dependencies[name] ?? {},
   });
   return exports;
 }

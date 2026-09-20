@@ -22,6 +22,7 @@ function load<T>(file: string, dependencies: Record<string, unknown>, env: Recor
   runInNewContext(code, { exports, Date, Set, Map, Buffer, URL, URLSearchParams, AbortSignal, console, process: { env },
     require: (name: string) => {
       if (name === "server-only") return {};
+      if (name === "node:crypto") return crypto;
       if (name === "./road-notice-evidence") return roadEvidence;
       if (name === "./creative-evidence-guardrails") return evidenceGuardrails;
       if (!(name in dependencies)) throw new Error(`Unexpected server dependency: ${name}`);
@@ -261,7 +262,7 @@ test("web search is opt-in and bounded in the actual Responses request", async (
   const source = readFileSync(resolve("src/app/modules/stories/openai-structured-response.ts"), "utf8");
   runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, {
     exports, URL, Set, AbortController, setTimeout, clearTimeout,
-    require: () => ({}),
+    require: (name: string) => name === "node:crypto" ? crypto : {},
     fetch: async (_url: string, input: { body: string }) => {
       bodies.push(JSON.parse(input.body));
       return { ok: true, text: async () => JSON.stringify({ output_text: '{"mentions":[]}', output: [{ type: "web_search_call", status: "completed", action: { sources: [{ url: "https://city.example/place" }] } }] }) };

@@ -35,11 +35,14 @@ test("four checks can pass without manufactured tension, but clarity and support
 test("selection validates distinct alternatives, exact returned copy, planned facts and actual payoff slide", () => {
   for (const mutate of [
     (s: CreativeHookSelection) => { s.candidates[0].headline = "Agents can book flights on their own"; },
-    (s: CreativeHookSelection) => { s.candidates[1].factIds = ["unplanned"]; },
-    (s: CreativeHookSelection) => { s.candidates[1] = s.candidates[0]; },
     (s: CreativeHookSelection) => { s.selectedIndex = 3; },
-    (s: CreativeHookSelection) => { s.candidates[1].payoffUnitOrder = 2; },
   ]) { const input = selection(); mutate(input); assert.throws(() => parseHookSelection(input, draft, ["fact-1"])); }
+  const invalidAlternative = selection(); invalidAlternative.candidates[1].factIds = ["unplanned"];
+  assert.throws(() => parseHookSelection(invalidAlternative, draft, ["fact-1"]));
+  const duplicateAlternative = selection(); duplicateAlternative.candidates[1] = duplicateAlternative.candidates[0];
+  assert.throws(() => parseHookSelection(duplicateAlternative, draft, ["fact-1"]));
+  const invalidPayoff = selection(); invalidPayoff.candidates[1].payoffUnitOrder = 2;
+  assert.throws(() => parseHookSelection(invalidPayoff, draft, ["fact-1"]));
   assert.throws(() => parseHookSelection({ ...selection(), candidates: selection().candidates.slice(0, 2) }, draft, ["fact-1"]));
   assert.throws(() => parseHookSelection({ ...selection(), candidates: selection().candidates.map(c => ({ ...c, checks: { clear: "true" } })) }, draft, ["fact-1"]));
   const carousel = { units: [draft.units[0], { ...draft.units[0], order: 2 }] };
@@ -90,10 +93,10 @@ const options = {
 test("a 99 score cannot override a failed checklist; the existing bounded editor fallback fixes it and persists the comparison", async () => {
   const h = harness(index => { const s = selection(); if (!index) { s.candidates[0].checks.human = false; } return s; });
   const result = await h.api.review(options);
-  assert.deepEqual(h.calls, ["terra-test", "sol-test"]);
+  assert.deepEqual(h.calls, ["terra-test", "terra-test"]);
   assert.equal(result.draft.qualityReview?.status, "accepted");
   assert.equal(result.draft.qualityReview?.hookSelection?.candidates.length, 3);
-  assert.equal(result.draft.qualityReview?.critic?.model, "sol-test");
+  assert.equal(result.draft.qualityReview?.critic?.model, "terra-test");
 });
 
 test("an unresolved clarity failure cannot become accepted even at four of five checks", async () => {

@@ -84,13 +84,19 @@ async function repairCreativeBlockersOnce(
   const before = inspect(original);
   const previousReview = original.qualityReview;
   const findings = [...new Map([...before, ...(previousReview?.issues ?? [])]
-    .filter((issue) => issue.severity === "blocker").map((issue) => [key(issue), issue])).values()];
+    .filter((issue) => issue.severity === "blocker" && issue.code !== "FINAL_COPY_REVIEW_REQUIRED").map((issue) => [key(issue), issue])).values()];
   if (!findings.length) return { draft: original, usage: zeroUsage() };
 
+  const coverOrder = original.units[0]?.order;
+  const repairableFindings = findings.filter(
+    (issue) => issue.unitOrder === undefined || issue.unitOrder !== coverOrder,
+  );
+  if (!repairableFindings.length) return { draft: original, usage: zeroUsage() };
+
   // A global issue can involve several slides (caption/scope/continuity).
-  const scopes = findings.some((issue) => !issue.unitOrder)
-    ? [0, ...original.units.map((unit) => unit.order)]
-    : [...new Set(findings.map((issue) => issue.unitOrder!))];
+  const scopes = repairableFindings.some((issue) => !issue.unitOrder)
+    ? [0, ...original.units.slice(1).map((unit) => unit.order)]
+    : [...new Set(repairableFindings.map((issue) => issue.unitOrder!))];
   let usage = zeroUsage();
   let candidate = original;
   let feedback: RepairFeedback | undefined;
@@ -100,7 +106,7 @@ async function repairCreativeBlockersOnce(
       language: context.language,
       conversionGoal: context.conversionGoal,
       topic: context.topic,
-      blockers: findings,
+      blockers: repairableFindings,
       editableScopes: scopes,
       // One copy of the evidence; no whole article, profile assets or duplicated plan.
       facts: context.keyFacts,
@@ -125,7 +131,7 @@ async function repairCreativeBlockersOnce(
     if (blockers(after).length < blockers(before).length &&
         blockers(after).every((issue) => priorKeys.has(key(issue)))) {
       candidate = patched;
-      outcome = `Targeted copy correction by ${result.provider}/${result.model}; current deterministic checks rerun. Previous critic scores describe the copy before this correction; final human review is required.`;
+      outcome = `Targeted copy correction by ${result.provider}/${result.model}; current deterministic checks rerun. Previous critic scores describe the copy before this correction; independent validation of the final copy is required.`;
     } else {
       const changed = JSON.stringify(patched) !== JSON.stringify(original);
       const introduced = blockers(after).filter((issue) => !priorKeys.has(key(issue)));

@@ -4,7 +4,7 @@ import { parseGeoContact } from "./creative-geo-contact";
 import { eq, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { creativeBrandAssets, creativeProfiles } from "@/db/schema";
+import { creativeBrandAssets, creativeProfiles, topics } from "@/db/schema";
 
 import {
   CREATIVE_CONVERSION_GOALS,
@@ -85,9 +85,18 @@ export async function getCreativeProfile(
     return mapCreativeProfile(existing.profile, existing.brandAsset);
   }
 
+  const [topic] = await db
+    .select({ name: topics.name })
+    .from(topics)
+    .where(eq(topics.id, topicId))
+    .limit(1);
+  if (!topic) {
+    throw new Error("The Topic was not found while initializing its creative profile");
+  }
+
   const [created] = await db
     .insert(creativeProfiles)
-    .values({ id: profileId(topicId), topicId, ...DEFAULT_PROFILE })
+    .values({ id: profileId(topicId), topicId, ...DEFAULT_PROFILE, name: topic.name })
     .onConflictDoNothing()
     .returning();
 

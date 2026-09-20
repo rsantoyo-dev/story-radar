@@ -899,6 +899,7 @@ export const creativeAiRuns = pgTable(
     outputTokens: integer("output_tokens").default(0).notNull(),
     thoughtsTokens: integer("thoughts_tokens").default(0).notNull(),
     totalTokens: integer("total_tokens").default(0).notNull(),
+    fallbackReason: text("fallback_reason"),
     error: text("error"),
     startedAt: timestamp("started_at", { withTimezone: true, mode: "date" })
       .defaultNow()

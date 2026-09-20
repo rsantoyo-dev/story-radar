@@ -725,15 +725,16 @@ export type CreativeQualityIssue = {
 export type CreativeQualityReview = {
   /** Evaluated alternatives for this exact draft revision; never approved copy by themselves. */
   hookSelection?: CreativeHookSelection;
-  // "needs-review": the automated critic could not run; the draft awaits
-  // explicit human approval instead of being rejected by a service outage.
+  // "needs-review": validation is incomplete or quality targets remain unmet.
+  // This status never authorizes unattended continuation or publication.
   status: "accepted" | "needs-repair" | "needs-review" | "rejected";
   scores: CreativeQualityScores;
   issues: CreativeQualityIssue[];
   repairPasses: number;
   /** Traceability for the independent editorial quality gate. */
   critic?: {
-    provider: "openai";
+    /** "openai" is the independent critic; other providers mark the fallback audit. */
+    provider: "openai" | "google" | "groq" | "cloudflare";
     model: string;
   };
   repair?: {

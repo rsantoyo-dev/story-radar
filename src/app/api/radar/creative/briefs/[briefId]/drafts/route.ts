@@ -12,6 +12,9 @@ import {
 } from "../../../../creative-route-error";
 
 export const runtime = "nodejs";
+// Brief/draft generation chains several model calls and a bounded editorial
+// review; the generator enforces its own time budget inside this limit.
+export const maxDuration = 600;
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
