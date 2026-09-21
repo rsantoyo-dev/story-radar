@@ -1090,7 +1090,19 @@ export function trailingSentenceFragment(body?: string): string | undefined {
   // High-precision truncation signals \u2014 a period straight after a word that
   // cannot close a sentence, or a hanging comma-clause. These read as cut-off
   // even when the fragment is the only sentence present.
-  if (DANGLING_TAIL_WORD.test(words[words.length - 1]!)) return last;
+  //
+  // "but" is only in this list as the English conjunction. It is also the
+  // ordinary French noun for "goal/net" ("gardien de but"), and the sentence
+  // "... sept gardiens de but." is a complete French sentence, not a
+  // dangling "but" as in "we improved, but.". This list carries no other
+  // French words, so the collision only needs excluding right here: "de but"
+  // is an unambiguous, complete French idiom in any language this runs on.
+  const lastWord = words[words.length - 1]!;
+  const isFrenchDeBut =
+    lastWord.toLowerCase() === "but" &&
+    words.length >= 2 &&
+    words[words.length - 2]!.toLowerCase() === "de";
+  if (!isFrenchDeBut && DANGLING_TAIL_WORD.test(lastWord)) return last;
   {
     let copulaIndex = words.length - 1;
     if (copulaIndex >= 1 && TRAILING_ADVERB.test(words[copulaIndex]!)) {

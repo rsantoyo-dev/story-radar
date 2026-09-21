@@ -1423,7 +1423,12 @@ function validateEditableDraft(
   });
 
   return {
-    concept: requiredText(record.concept, "concept", 1_000),
+    // Unlike caption/altText, concept is internal briefing text, not
+    // reader-facing copy: repairDeterministicCreativeCopy below always backs
+    // a blank one with a safe fallback before persisting, so this boundary
+    // must not hard-reject an edit that carries it through empty (for
+    // example, a draft whose concept the automated repair already cleared).
+    concept: optionalText(record.concept, "concept", 1_000).concept ?? "",
     ...(carouselLike
       ? optionalText(
           record.narrativeRationale,

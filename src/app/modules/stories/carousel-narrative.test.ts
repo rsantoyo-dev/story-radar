@@ -13,6 +13,7 @@ import {
   repairCarouselPlanEvidence,
   repairCarouselPlanQuestions,
   stripRecapLabelPrefix,
+  trailingSentenceFragment,
   type CarouselPlan,
   validateCarouselPlan,
 } from "./carousel-narrative";
@@ -567,6 +568,24 @@ test("flags supporting copy that ends on a dangling connector, any length", () =
         issue.message.includes("Slide 4"),
     ),
   );
+});
+
+test("does not mistake the French noun 'but' (goal/net) for the English dangling conjunction", () => {
+  const issues = evaluateCarouselNarrative([
+    { ...unit("cover", "hook", ["fact-1"]), headline: "Deux séances locales sont prévues lundi" },
+    { ...unit("content", "explain", ["fact-2"]), headline: "Le prochain repère confirmé arrive mercredi" },
+    {
+      ...unit("content", "prove", ["fact-3"]),
+      headline: "La formation rassemble trois groupes de joueurs",
+      body: "La formation du camp d’entraînement compte 31 attaquants, 19 défenseurs et sept gardiens de but.",
+    },
+    { ...unit("conclusion", "conclude", ["fact-1"]), headline: "Le camp se poursuit jusqu’au 26 septembre" },
+  ]);
+  assert.ok(
+    !issues.some((issue) => issue.code === "truncated-supporting-copy"),
+  );
+  // A genuinely dangling English "but" is still caught elsewhere in the deck.
+  assert.equal(trailingSentenceFragment("The outage spread quickly, but."), "The outage spread quickly, but.");
 });
 
 test("does not flag a short final supporting sentence that carries a verb", () => {

@@ -1,4 +1,4 @@
-import type { CarouselPlan } from "./carousel-narrative";
+import { CAROUSEL_EDITORIAL_GOALS, type CarouselPlan } from "./carousel-narrative";
 import { administrativeProjectIssues } from "./creative-project-grounding";
 import { completeRoadNoticeExcerpt } from "./road-notice-evidence";
 import type {
@@ -318,6 +318,23 @@ export function inferCreativeFactClaimGuard(
   };
 }
 
+const QUOTED_EDITORIAL_GOAL_LABEL = new RegExp(
+  `[«"“”']\\s*(?:${CAROUSEL_EDITORIAL_GOALS.join("|")})\\s*[»"“”']`,
+  "giu",
+);
+
+/**
+ * narrativeRationale is expected to name editorialGoal values as quoted
+ * labels when explaining an arc deviation (for example, referencing "prove"
+ * or "impact"). Several of those labels are also ordinary English words the
+ * unsupported-inference patterns watch for ("prove", "watch"); quoting them
+ * as a label is not asserting them as a claim, so they must not reach that
+ * check as prose.
+ */
+function stripQuotedEditorialGoalLabels(value?: string): string | undefined {
+  return value?.replace(QUOTED_EDITORIAL_GOAL_LABEL, " ");
+}
+
 export function deterministicFactQualityIssues(
   draft: GeneratedCreativeDraft,
   keyFacts: readonly CreativeKeyFact[],
@@ -333,7 +350,12 @@ export function deterministicFactQualityIssues(
 
   const draftCopy = [
     draft.concept,
-    draft.narrativeRationale,
+    // narrativeRationale legitimately names editorialGoal values ("prove",
+    // "impact", ...) as quoted labels when explaining an arc deviation, per
+    // the same policy that asks for that explanation. Strip only that quoted
+    // reference so the word itself never reaches the inference-pattern
+    // check below; the surrounding sentence is still fully checked.
+    stripQuotedEditorialGoalLabels(draft.narrativeRationale),
     draft.caption,
     draft.callToAction,
     draft.altText,
@@ -903,8 +925,40 @@ export function repairDeterministicFactCopy(
   // established evidence.
   const establishedFactIds = new Set<string>();
   const factScopes = carouselPlan && planFactScopes(draft.units, carouselPlan);
+  // A closing slide generated with no citation at all has nothing any later
+  // step can recover from: no free repair can write it a fact-grounded
+  // headline, and asking the paid critic to invent one for an evidence-free
+  // slide is what produces an invalid-headline failure instead of a review.
+  // Narrative policy already allows the closing slide to reuse the cover's
+  // thesis fact, so borrow it here, and only here — never for a slide that
+  // already cites something, however thin.
+  const coverFactId = draft.units[0]?.factIds[0];
+  const units = coverFactId
+    ? draft.units.map((unit, index) =>
+        index > 0 &&
+        unit.factIds.length === 0 &&
+        (unit.editorialGoal === "conclude" || unit.editorialGoal === "debate")
+          ? { ...unit, factIds: [coverFactId] }
+          : unit,
+      )
+    : draft.units;
   const repaired: GeneratedCreativeDraft = {
     ...draft,
+    // concept is internal briefing text (it seeds every slide's image prompt)
+    // rather than reader-facing copy, so it is not run through the same
+    // sentence-level rewrite as caption/altText: that would also strip
+    // legitimate thematic framing that does not literally restate a fact
+    // (for example, naming a story as sensitive coverage). An unsupported
+    // NUMBER is unambiguous either way, so only that is removed here; an
+    // unsupported inference in concept remains a detected blocker for the
+    // critic to judge in context, not something this free pass rewrites.
+    // concept is still a required field downstream (image generation seeds
+    // its prompt from it, and save/approve validation rejects a blank one),
+    // so a strip that empties it out falls back to the same generic summary
+    // caption/altText use below rather than leaving a dead end.
+    concept:
+      removeUnsupportedNumericClauses(draft.concept, allFacts, allFacts) ||
+      localizedFallback(language, "summary"),
     caption: repairPublishingCopy(
       draft.caption,
       allSourceCopy,
@@ -930,7 +984,7 @@ export function repairDeterministicFactCopy(
             allFacts,
           ) || undefined,
         }),
-    units: draft.units.map((unit, index) => {
+    units: units.map((unit, index) => {
       // A repair may recover evidence only within this slide's approved scope.
       // Otherwise a valid brief-level fact can invalidate the final carousel.
       const allowed = factScopes?.[index];
@@ -1111,13 +1165,15 @@ export function repairDeterministicFactCopy(
           : undefined;
         // Do not replace a removed claim with an analysis label that the
         // narrative validator rejects. Every slide requires a non-empty
-        // headline, and no free repair runs after this point, so an emptied
-        // headline is otherwise a dead-end blocker. Recovering the cited
-        // fact's own statement keeps it non-empty and factually safe; a paid
+        // headline, and no free repair runs after this point, so an empty
+        // headline is otherwise a dead-end blocker whether this pass just
+        // emptied it or it arrived that way (a unit generated with no
+        // citation at all, for example). Recovering the cited fact's own
+        // statement keeps it non-empty and factually safe either way; a paid
         // repair pass can still sharpen its wording afterward.
         headline = repairedHeadline.trim()
           ? repairedHeadline
-          : unit.headline.trim() && selectedFacts[0]
+          : selectedFacts[0]
             ? safeConclusionForFact(selectedFacts[0], language)
             : repairedHeadline;
         subheadline = repairedSubheadline || undefined;
@@ -2227,6 +2283,11 @@ const MODEL_VERSION_PATTERN =
 const SHORT_MODEL_VERSION_PATTERN = /\bo\d+(?:-(?:mini|preview|pro))?\b/giu;
 const GENERIC_VERSION_PATTERN =
   /\b(?:v|version|versi[oó]n|ver\.?)\s*\d+(?:\.\d+)+\b/giu;
+// A short numeric hotline/service name ("Québec 511" for road conditions,
+// like "911" or "411") names the source, not a quantity it reports. Scoped
+// to the specific "Québec 511" service rather than bare digits, so an
+// unrelated real count of 511 is still checked normally.
+const NAMED_SERVICE_NUMBER_PATTERN = /\b(?:qu[eé]bec)\s+511\b/giu;
 
 function extractBriefClaimNumbers(value: string): string[] {
   // Slide/page/part numbers describe document structure, not factual claims.
@@ -2245,7 +2306,8 @@ function extractBriefClaimNumbers(value: string): string[] {
     )
     .replace(MODEL_VERSION_PATTERN, " ")
     .replace(SHORT_MODEL_VERSION_PATTERN, " ")
-    .replace(GENERIC_VERSION_PATTERN, " ");
+    .replace(GENERIC_VERSION_PATTERN, " ")
+    .replace(NAMED_SERVICE_NUMBER_PATTERN, " ");
   const numbers = extractNumericLiterals(factualCopy);
   if (/\bone[- ]third\b/iu.test(factualCopy)) numbers.push("33%");
   if (/\btwo[- ]thirds\b/iu.test(factualCopy)) numbers.push("67%");

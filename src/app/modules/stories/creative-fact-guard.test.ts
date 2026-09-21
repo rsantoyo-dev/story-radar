@@ -111,6 +111,46 @@ test("detects certainty, scope, inference, and empty-conclusion blockers", () =>
   assert.ok(codes.has("EMPTY_CONCLUSION"));
 });
 
+test("a quoted editorialGoal label in narrativeRationale is not read as an unsupported claim", () => {
+  const facts: CreativeKeyFact[] = [
+    {
+      id: "fact-1",
+      statement: "The training camp roster has 31 forwards, 19 defensemen and seven goalies.",
+    },
+  ];
+  // narrativeRationale is expected to name editorialGoal values when
+  // explaining an arc deviation; quoting "prove" as a label is not the
+  // English verb "prove" asserting an unsupported claim.
+  const draftWithLabel: GeneratedCreativeDraft = {
+    concept: "Training camp roster",
+    narrativeRationale:
+      'The arc swaps "impact" for "prove" because the sources establish roster size, not its consequence for fans.',
+    caption: "cap",
+    hashtags: [],
+    altText: "alt",
+    units: [
+      unit(1, "cover", "hook", "Roster update", undefined, ["fact-1"]),
+    ],
+  };
+  assert.ok(
+    !deterministicFactQualityIssues(draftWithLabel, facts).some(
+      (issue) => issue.code === "UNSUPPORTED_INFERENCE",
+    ),
+  );
+
+  // An actual unsupported claim in narrativeRationale is still caught.
+  const draftWithRealClaim: GeneratedCreativeDraft = {
+    ...draftWithLabel,
+    narrativeRationale:
+      "The larger roster proves the team is favored to win the season.",
+  };
+  assert.ok(
+    deterministicFactQualityIssues(draftWithRealClaim, facts).some(
+      (issue) => issue.code === "UNSUPPORTED_INFERENCE",
+    ),
+  );
+});
+
 test("removes unsupported numeric publishing copy before editorial review", () => {
   const supportedFacts: CreativeKeyFact[] = [
     {
@@ -2851,4 +2891,103 @@ test("plan scoping never strands a slide whose only citations fall outside its a
   const repaired = repairDeterministicFactCopy(draft, facts, "español", carouselPlan);
   assert.deepEqual(repaired.units[1]?.factIds, ["fact-a"]);
   assert.equal(repaired.units[1]?.body, "Llega a 40 municipios este año.");
+});
+
+test("strips an unsupported number from concept without rewriting its thematic framing", () => {
+  const facts: CreativeKeyFact[] = [
+    { id: "fact-1", statement: "L'équipe B joue à 10 h 30 et l'équipe C à 11 h 30 au Complexe sportif CN." },
+  ];
+  const draft: GeneratedCreativeDraft = {
+    concept: "Les deux séances du lundi 21 septembre concernent les équipes B et C.",
+    caption: "cap",
+    hashtags: [],
+    altText: "alt",
+    units: [
+      unit(1, "cover", "hook", "Deux séances prévues", undefined, ["fact-1"]),
+    ],
+  };
+  const repaired = repairDeterministicFactCopy(draft, facts, "français");
+  assert.ok(!repaired.concept.includes("21"));
+  // A concept whose only content was the unsupported date has nothing safe
+  // left to keep. concept is still required downstream (it seeds image
+  // generation and save/approve validation rejects a blank draft), so it
+  // falls back to the same generic summary caption/altText use rather than
+  // being left empty.
+  assert.equal(repaired.concept, "A summary of information supported by the source.");
+});
+
+test("a closing slide generated with zero citations borrows the cover's thesis fact instead of blocking", () => {
+  const facts: CreativeKeyFact[] = [
+    { id: "fact-1", statement: "El programa continúa hasta el sábado, antes del primer partido de la temporada." },
+    { id: "fact-2", statement: "El equipo B entrena a las 10:30 y el equipo C a las 11:30, en el complejo deportivo." },
+  ];
+  const draft: GeneratedCreativeDraft = {
+    concept: "c",
+    caption: "cap",
+    hashtags: [],
+    altText: "alt",
+    units: [
+      unit(1, "cover", "hook", "Dos sesiones locales previstas", undefined, ["fact-2"]),
+      // Closing slide generated with no citation at all, mirroring a real
+      // production draft where the model left factIds empty for the close.
+      { ...unit(4, "conclusion", "conclude", "", undefined, []), body: undefined },
+    ],
+  };
+  const repaired = repairDeterministicFactCopy(draft, facts, "español");
+  const closing = repaired.units[1]!;
+  assert.deepEqual(closing.factIds, ["fact-2"]);
+  assert.ok(closing.headline.trim().length > 0);
+  assert.ok(
+    !deterministicFactQualityIssues(repaired, facts).some(
+      (issue) => issue.code === "MISSING_HEADLINE",
+    ),
+  );
+
+  // A closing slide that already cites something of its own is left alone:
+  // the borrow only fills a slide generated with zero citations.
+  const alreadyCiting: GeneratedCreativeDraft = {
+    ...draft,
+    units: [
+      draft.units[0]!,
+      { ...draft.units[1]!, headline: "Cierre", factIds: ["fact-2"] },
+    ],
+  };
+  const repairedCiting = repairDeterministicFactCopy(alreadyCiting, facts, "español");
+  assert.deepEqual(repairedCiting.units[1]!.factIds, ["fact-2"]);
+});
+
+test("a named 511-style service (Québec 511) is not read as an unsupported number", () => {
+  const facts: CreativeKeyFact[] = [
+    {
+      id: "fact-1",
+      statement: "Du 19 au 27 septembre, congestion à prévoir sur la Rive-Sud dans le cadre des Championnats du monde 2026.",
+    },
+  ];
+  const draft: GeneratedCreativeDraft = {
+    concept: "",
+    narrativeRationale:
+      "Le carrousel ouvre sur l’avis de congestion et précise le corridor cité par Québec 511.",
+    caption: "Sur la Rive-Sud, de la congestion est à prévoir du 19 au 27 septembre 2026.",
+    hashtags: [],
+    altText: "alt",
+    units: [
+      unit(1, "cover", "hook", "Congestion à prévoir", undefined, ["fact-1"]),
+    ],
+  };
+  assert.ok(
+    !deterministicFactQualityIssues(draft, facts).some(
+      (issue) => issue.code === "UNSUPPORTED_NUMBER",
+    ),
+  );
+
+  // An unrelated, genuinely unsupported number is still caught.
+  const withRealNumber: GeneratedCreativeDraft = {
+    ...draft,
+    narrativeRationale: "Le carrousel ouvre sur les 511 personnes touchées.",
+  };
+  assert.ok(
+    deterministicFactQualityIssues(withRealNumber, facts).some(
+      (issue) => issue.code === "UNSUPPORTED_NUMBER",
+    ),
+  );
 });
