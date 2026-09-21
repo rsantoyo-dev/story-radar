@@ -1273,3 +1273,11 @@ function fullUnit(
     characterIds: [],
   };
 }
+
+test("rejects a premature conclusion during planning rather than waiting for script role validation", () => {
+  const plan: CarouselPlan = {slideCount: 4, rationale: "Explain and conclude", slides: [slide("hook", ["fact-1"]), slide("explain", ["fact-2"]), slide("conclude", ["fact-1"]), slide("conclude", ["fact-2"])]};
+  const ids = new Set(["fact-1", "fact-2", "fact-3"]);
+  assert.ok(validateCarouselPlan(plan, ids).some(error => error.includes("slide 3 closes the story before the final slide")));
+  const corrected = {...plan, slides: [plan.slides[0], plan.slides[1], slide("impact", ["fact-3"]), plan.slides[3]]};
+  assert.deepEqual(validateCarouselPlan(corrected, ids), []);
+});

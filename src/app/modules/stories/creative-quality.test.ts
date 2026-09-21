@@ -1539,3 +1539,137 @@ test("ordinary uses of 'sigue' are not mistaken for a follow request", () => {
  assert.equal(repaired.units.at(-1)!.ctaQuestion, "Comenta tu opinión");
  assert.ok(deterministicCreativeQualityIssues(repaired, "sequence", facts, "es", "followers").some(i => i.code === "CTA_GOAL_MISMATCH"));
  });
+
+test("reconciles slide role with narrative goal so validation cannot dead-end", () => {
+  const facts: CreativeKeyFact[] = [
+    { id: "fact-1", statement: "El programa llega a 40 municipios." },
+  ];
+  const slide = (
+    order: number,
+    role: GeneratedCreativeDraft["units"][number]["role"],
+    editorialGoal: NonNullable<
+      GeneratedCreativeDraft["units"][number]["editorialGoal"]
+    >,
+  ) => ({
+    order,
+    type: "carousel-slide" as const,
+    role,
+    editorialGoal,
+    viewerQuestion: `¿Pregunta ${order}?`,
+    headline: `Titular ${order}`,
+    body: "El programa llega a 40 municipios.",
+    visualDirection: "Infografía editorial.",
+    factIds: ["fact-1"],
+    assetRequest: "generated-image" as const,
+    aspectRatio: "4:5" as const,
+    characterIds: [],
+  });
+  const repair = (units: GeneratedCreativeDraft["units"]) =>
+    repairDeterministicCreativeCopy(
+      { concept: "c", caption: "cap", hashtags: [], altText: "alt", units },
+      "carousel",
+      facts,
+      "español",
+    ).units.map((unit) => `${unit.role}/${unit.editorialGoal}`);
+
+  // A closing goal is carried by the conclusion role, not the content role.
+  assert.deepEqual(
+    repair([
+      slide(1, "cover", "hook"),
+      slide(2, "content", "explain"),
+      slide(3, "content", "conclude"),
+    ]),
+    ["cover/hook", "content/explain", "conclusion/conclude"],
+  );
+  // A middle slide can hold neither role while it claims to close the story.
+  assert.deepEqual(
+    repair([
+      slide(1, "cover", "hook"),
+      slide(2, "content", "conclude"),
+      slide(3, "conclusion", "debate"),
+    ]),
+    ["cover/hook", "content/impact", "conclusion/debate"],
+  );
+  // A middle slide keeps its goal and only gives up the mismatched role.
+  assert.deepEqual(
+    repair([
+      slide(1, "cover", "hook"),
+      slide(2, "conclusion", "explain"),
+      slide(3, "conclusion", "debate"),
+    ]),
+    ["cover/hook", "content/explain", "conclusion/debate"],
+  );
+});
+
+test("falls back to the cited fact instead of leaving a middle slide's body empty", () => {
+  const facts: CreativeKeyFact[] = [
+    { id: "fact-1", statement: "El programa llega a 40 municipios de la región." },
+  ];
+  const slide = (
+    order: number,
+    role: GeneratedCreativeDraft["units"][number]["role"],
+    editorialGoal: NonNullable<
+      GeneratedCreativeDraft["units"][number]["editorialGoal"]
+    >,
+    body: string,
+    factIds: string[],
+  ) => ({
+    order,
+    type: "carousel-slide" as const,
+    role,
+    editorialGoal,
+    viewerQuestion: `¿Pregunta ${order}?`,
+    headline: `Titular ${order}`,
+    body,
+    visualDirection: "Infografía editorial.",
+    factIds,
+    assetRequest: "generated-image" as const,
+    aspectRatio: "4:5" as const,
+    characterIds: [],
+  });
+  // The middle slide's body is entirely an unsupported inference the
+  // deterministic guard strips; it cites the fact, so recovery is safe.
+  const repaired = repairDeterministicCreativeCopy(
+    {
+      concept: "c",
+      caption: "cap",
+      hashtags: [],
+      altText: "alt",
+      units: [
+        slide(1, "cover", "hook", "", ["fact-1"]),
+        slide(
+          2,
+          "content",
+          "explain",
+          "Con esto ganarías mucho más cada mes.",
+          ["fact-1"],
+        ),
+        slide(3, "conclusion", "conclude", "Resumen final.", ["fact-1"]),
+      ],
+    },
+    "carousel",
+    facts,
+    "español",
+  );
+  assert.equal(repaired.units[1]?.body, facts[0]!.statement);
+
+  // With no fact cited at all, there is nothing safe to recover from: the
+  // field must stay empty so the missing-evidence blocker still surfaces.
+  const unresolved = repairDeterministicCreativeCopy(
+    {
+      concept: "c",
+      caption: "cap",
+      hashtags: [],
+      altText: "alt",
+      units: [
+        slide(1, "cover", "hook", "", ["fact-1"]),
+        slide(2, "content", "explain", "Con esto ganarías mucho más cada mes.", []),
+        slide(3, "conclusion", "conclude", "Resumen final.", ["fact-1"]),
+      ],
+    },
+    "carousel",
+    facts,
+    "español",
+  );
+  assert.equal(unresolved.units[1]?.body, undefined);
+});

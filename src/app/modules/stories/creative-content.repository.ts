@@ -846,6 +846,7 @@ function mapCreativeDraft(
     ...(generated.editorialRepair ? { editorialRepair: generated.editorialRepair } : {}),
     ...(generated.recoveryId ? { recoveryId: generated.recoveryId } : {}),
     ...(generated.openingExploration ? { openingExploration: generated.openingExploration } : {}),
+    ...(generated.openingExplorationError ? { openingExplorationError: generated.openingExplorationError } : {}),
     ...(generated.characterPlan ? { characterPlan: generated.characterPlan } : {}),
     ...(generated.companion ? { companion: generated.companion } : {}),
     ...(generated.qualityReview

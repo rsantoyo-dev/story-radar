@@ -3,6 +3,7 @@ import { administrativeProjectIssues } from "./creative-project-grounding";
 import { completeRoadNoticeExcerpt } from "./road-notice-evidence";
 import type {
   CreativeFactClaimGuard,
+  CreativeUnit,
   GeneratedCreativeBrief,
   CreativeKeyFact,
   CreativeQualityIssue,
@@ -623,8 +624,10 @@ export function deterministicBriefFactQualityIssues(
         });
         return;
       }
-      if (!sourceText.includes(excerpt)) return fact;
-    const evidenceNumbers = new Set(extractBriefClaimNumbers(excerpt));
+      // Whitespace-normalized provenance still requires the same claim checks.
+      // Otherwise an excerpt with collapsed line breaks bypasses numerical
+      // validation here, then fails later when the planner rechecks it verbatim.
+      const evidenceNumbers = new Set(extractBriefClaimNumbers(excerpt));
       const unsupportedFactNumbers = extractBriefClaimNumbers(
         fact.statement,
       ).filter((number) => !evidenceNumbers.has(number));
@@ -847,6 +850,38 @@ function appendUnsupportedCopyIssues(
   }
 }
 
+/**
+ * Resolve each unit's approved evidence scope. An editor may reorder, delete or
+ * insert slides after the plan was written, so a unit is matched by the
+ * planning question it carries instead of by array position. A slide with no
+ * matching plan entry keeps only the evidence it already cites: widening it to
+ * the whole brief would let a repair pull in a fact that slide never approved.
+ */
+function planFactScopes(
+  units: readonly CreativeUnit[],
+  plan: CarouselPlan,
+): (readonly string[])[] {
+  const unclaimed = new Map<string, number[]>();
+  plan.slides.forEach((slide, index) => {
+    const key = slide.viewerQuestion.trim().toLowerCase();
+    unclaimed.set(key, [...(unclaimed.get(key) ?? []), index]);
+  });
+  return units.map((unit, index) => {
+    const key = unit.viewerQuestion?.trim().toLowerCase();
+    // A draft written before viewerQuestion existed keeps positional scoping.
+    const matched = key ? unclaimed.get(key)?.shift() : index;
+    const slide = matched === undefined ? undefined : plan.slides[matched];
+    if (slide) return slide.allowedFactIds;
+    // No planned slide answers this question, so the slide keeps the evidence
+    // it already cites. Falling back to its position when it cites none keeps
+    // a narrowed scope from leaving a repair with nothing to work from, which
+    // would strip the supporting copy the slide still needs.
+    return unit.factIds.length
+      ? unit.factIds
+      : (plan.slides[index]?.allowedFactIds ?? unit.factIds);
+  });
+}
+
 export function repairDeterministicFactCopy(
   draft: GeneratedCreativeDraft,
   keyFacts: readonly CreativeKeyFact[],
@@ -867,6 +902,7 @@ export function repairDeterministicFactCopy(
   // earlier slide, while never treating its original broken assignment as
   // established evidence.
   const establishedFactIds = new Set<string>();
+  const factScopes = carouselPlan && planFactScopes(draft.units, carouselPlan);
   const repaired: GeneratedCreativeDraft = {
     ...draft,
     caption: repairPublishingCopy(
@@ -897,7 +933,7 @@ export function repairDeterministicFactCopy(
     units: draft.units.map((unit, index) => {
       // A repair may recover evidence only within this slide's approved scope.
       // Otherwise a valid brief-level fact can invalidate the final carousel.
-      const allowed = carouselPlan?.slides[index]?.allowedFactIds;
+      const allowed = factScopes?.[index];
       const unitFactsById = allowed
         ? new Map([...factsById].filter(([id]) => allowed.includes(id)))
         : factsById;
@@ -1155,6 +1191,23 @@ export function repairDeterministicFactCopy(
           unit.editorialGoal === "debate" && ctaQuestion?.trim()
             ? undefined
             : safeConclusionForFact(closingFact, language);
+      }
+      // A middle slide must carry supporting copy; narrative validation blocks
+      // one that does not. When stripping unsupported inference from the
+      // model's body leaves nothing behind, fall back to the cited fact's own
+      // statement rather than shipping an empty field no free repair can fill
+      // and validation cannot pass. Restoring the original text is not an
+      // option: it would reintroduce the claim the strip removed because it
+      // was not supported.
+      if (
+        !body &&
+        unit.body?.trim() &&
+        index > 0 &&
+        index < draft.units.length - 1 &&
+        unit.role === "content" &&
+        selectedFacts[0]
+      ) {
+        body = safeConclusionForFact(selectedFacts[0], language);
       }
       const visualDirection = prioritizedClosingLaborContrast
         ? removeSectorMovementSentences(unit.visualDirection) ??

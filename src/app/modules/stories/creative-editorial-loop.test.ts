@@ -108,3 +108,16 @@ test("invalid structural proposals use remaining repair slots without falling ba
     assert.equal(replans,4);assert.equal(patches,0);assert.equal(result.draft.editorialRepair?.terraAttempts,2);
     await run(result.draft);assert.equal(replans,4);
 });
+
+test("economical mode makes one correction per tier even when scores improve gradually", async () => {
+    const calls: string[] = [];
+    let score = 80;
+    const result = await runEditorialRepairLoop({draft: makeDraft(), oneCorrectionPerTier: true, canContinue: () => true, checkpoint: async () => {},
+        patch: async (draft, tier) => {calls.push(tier); return {draft: {...draft, caption: draft.caption + " corrected"}, usage};},
+        verify: async draft => {calls.push("verify"); score += 4; return {draft: {...makeDraft(score), caption: draft.caption}, usage};},
+    });
+    assert.deepEqual(calls, ["terra", "verify", "sol", "verify"]);
+    assert.equal(result.draft.editorialRepair?.terraAttempts, 1);
+    assert.equal(result.draft.editorialRepair?.solAttempts, 1);
+    await runEditorialRepairLoop({draft: result.draft, oneCorrectionPerTier: true, canContinue: () => true, checkpoint: async () => {}, patch: async () => assert.fail("Resume must not reopen stopped tiers"), verify: async () => assert.fail()});
+});

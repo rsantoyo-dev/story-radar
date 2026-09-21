@@ -1,5 +1,5 @@
 import type { GeneratedCreativeDraft, CreativeQualityIssue } from "./creative-content.types";
-const structuralCodes = new Set(["BURIED_HOOK", "HOOK_RESOLUTION_GAP", "SEMANTIC_REPETITION", "WEAK_RESOLUTION", "WEAK_SWIPE_REWARD", "VIEWER_QUESTION_MISMATCH", "UNSUPPORTED_SYNTHESIS_AND_UNANSWERED_CONCLUSION", "PLAN_REPETITIVE_CLOSING", "PLAN_REPEATED_SUPPORT"]);
+const structuralCodes = new Set(["ROLE_GOAL_MISMATCH", "FACT_OVERUSE", "NEW_CLOSING_FACT", "FACT_BUDGET", "EVIDENCE_WITHOUT_FACTS", "BURIED_HOOK", "HOOK_RESOLUTION_GAP", "SEMANTIC_REPETITION", "WEAK_RESOLUTION", "WEAK_SWIPE_REWARD", "VIEWER_QUESTION_MISMATCH", "UNSUPPORTED_SYNTHESIS_AND_UNANSWERED_CONCLUSION", "PLAN_REPETITIVE_CLOSING", "PLAN_REPEATED_SUPPORT"]);
 export function structuralNarrativeIssues(draft: GeneratedCreativeDraft): CreativeQualityIssue[] {
     return (draft.qualityReview?.issues ?? []).filter(i => structuralCodes.has(i.code));
 }

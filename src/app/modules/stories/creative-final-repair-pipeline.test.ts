@@ -46,6 +46,8 @@ test(`final corrected copy is independently checked; final reviewer available: $
     console: { info() {}, warn() {}, error() {} },
     require: (id: string) => {
       if (id === "server-only") return {};
+      // This test isolates copy repair; structural routing is covered separately.
+      if (id === "./creative-narrative-diagnostics") return {...localRequire(id), structuralNarrativeIssues: () => []};
       if (id === "@google/genai") return { ApiError, GoogleGenAI: class {
         models = { generateContent: async (params: { contents: string }) => {
           const input = JSON.parse(params.contents);
@@ -64,7 +66,7 @@ test(`final corrected copy is independently checked; final reviewer available: $
         } }) => {
           if ('patches' in params.schema.properties) {
             calls.push(params.model+'-patch');
-            return {text:JSON.stringify({patches:[]}),usage:{promptTokens:5,outputTokens:5,thoughtsTokens:0,totalTokens:10}};
+            return {text:JSON.stringify({patches:[{unitOrder:2,field:"ctaQuestion",text:cta}]}),usage:{promptTokens:5,outputTokens:5,thoughtsTokens:0,totalTokens:10}};
           }
           calls.push(params.model);
           const revised = structuredClone(params.contents.draft);
@@ -93,11 +95,11 @@ test(`final corrected copy is independently checked; final reviewer available: $
       slides: draft.units.map((unit) => ({ editorialGoal: unit.editorialGoal, viewerQuestion: unit.viewerQuestion, allowedFactIds: ["fact-1"] })) } },
     format: "carousel", outputAspectRatio: "4:5", characterRoster: [],
   });
-  assert.deepEqual(calls, ["gemini-draft", "terra-test", "gemini-patch", "terra-test", ...(finalAvailable ? ["terra-test-patch", "sol-test-patch"] : ["sol-test"])]);
+  assert.deepEqual(calls, ["gemini-draft", "terra-test", "terra-test-patch", "terra-test", ...(finalAvailable ? ["sol-test-patch"] : [])]);
   assert.equal(result.draft.units[0].headline, draft.units[0].headline);
   assert.equal(result.draft.units[1].ctaQuestion, cta);
   assert.equal(result.draft.units[1].factIds.join(","), "fact-1");
-  assert.equal(result.usage.totalTokens, finalAvailable ? 100 : 70);
+  assert.equal(result.usage.totalTokens, finalAvailable ? 70 : 50);
   assert.equal(result.draft.qualityReview?.status, "needs-review", "Fixing a CTA must not conceal a redundant closing");
   if (finalAvailable) {
     assert.ok(result.draft.qualityReview?.issues.some(issue => issue.code === "QUALITY_RESOLUTION_BELOW_THRESHOLD"));
@@ -106,7 +108,7 @@ test(`final corrected copy is independently checked; final reviewer available: $
     assert.ok(result.draft.qualityReview?.issues.some(issue=>issue.code === "EDITORIAL_REPAIR_STOPPED"));
   } else {
     assert.ok(result.draft.qualityReview?.issues.some(issue => issue.code === "FINAL_COPY_REVIEW_REQUIRED"));
-    assert.ok(result.draft.qualityReview?.issues.some(issue => issue.code === "FINAL_REVIEW_UNAVAILABLE"));
+    assert.equal(result.draft.editorialRepair?.pendingVerification, true);
     assert.equal(result.draft.qualityReview?.hookSelection, undefined);
   }
 });

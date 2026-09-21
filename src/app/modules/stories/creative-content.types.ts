@@ -751,6 +751,7 @@ export type GeneratedCreativeDraft = {
   recoveryId?: string;
   /** Initial writer alternatives; historical context, never an approval verdict. */
   openingExploration?: CreativeHookSelection;
+  openingExplorationError?: string;
   concept: string;
   /** Explains a deliberate departure from the preferred carousel arc. */
   narrativeRationale?: string;

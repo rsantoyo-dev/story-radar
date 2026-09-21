@@ -13,8 +13,17 @@ export async function reserveTextCall(input: TextSpendContext & {
     reserved: number;
     limit: number;
 }) {
-    const [, inserted, balance] = await db.batch([
+    const [, , inserted, balance] = await db.batch([
         db.execute(sql `SELECT id FROM topics WHERE id=${input.topicId}::uuid FOR UPDATE`),
+        // An unconfirmed call already finished, so it is never still in flight.
+        // Charge it at its own estimate rather than holding the reservation
+        // open forever: the provider most likely billed it, and a story whose
+        // budget is consumed by limbo rows can never be resumed or completed.
+        // The status stays 'uncertain' so the ledger keeps saying it was
+        // presumed, not measured.
+        db.execute(sql `UPDATE creative_text_calls SET charged_micros=reserved_micros
+    WHERE topic_id=${input.topicId}::uuid AND story_id=${input.storyId}::uuid AND status='uncertain'
+      AND charged_micros IS NULL AND finished_at < now() - interval '15 minutes'`),
         db.execute(sql `INSERT INTO creative_text_calls(id,topic_id,story_id,run_id,provider,model,operation,reserved_micros,pricing)
     SELECT ${input.id}::uuid,${input.topicId}::uuid,${input.storyId}::uuid,${input.runId}::uuid,${input.provider},${input.model},${input.operation},${input.reserved},${JSON.stringify(input.rate)}::jsonb
     WHERE coalesce((SELECT sum(coalesce(charged_micros,reserved_micros)) FROM creative_text_calls

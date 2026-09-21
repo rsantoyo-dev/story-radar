@@ -18,7 +18,10 @@ import {
   repairDeterministicCreativeCopy,
   visibleDraftLanguageIssues,
 } from "./creative-quality";
-import { blockingCarouselNarrativeIssues } from "./carousel-narrative";
+import {
+  blockingCarouselNarrativeIssues,
+  type CarouselPlan,
+} from "./carousel-narrative";
 
 const keyFacts: CreativeKeyFact[] = [
   {
@@ -2756,4 +2759,63 @@ test("planned slide repairs cannot import a numeric fact assigned to another sli
   assert.ok(!repaired.units[0].factIds.includes("fact-count"));
   assert.deepEqual(input, snapshot);
   assert.ok(!repaired.units[0].headline.includes("6"), "Unsupported count is repaired rather than silently adding its evidence");
+});
+
+test("normalized source matching never bypasses per-excerpt numeric checks", () => {
+  const source = "Projet de règlement 2455\n\nLe conseil municipal a adopté\nle second projet de règlement.";
+  const excerpt = "Le conseil municipal a adopté le second projet de règlement.";
+  const brief = {keyMessage: "", angle: "", hook: "", suggestedConcepts: [], keyFacts: [{id: "fact-1", statement: "Le conseil municipal a adopté le second projet de règlement 2455.", sourceExcerpt: excerpt}]} as unknown as GeneratedCreativeBrief;
+  for (const text of [source, source.replace(/\n/g, " ")]) {
+    assert.ok(deterministicBriefFactQualityIssues(brief, text).some(issue => issue.code === "FACT_NUMBER_NOT_IN_EVIDENCE" && issue.message.includes("2455")));
+  }
+  const supported = {...brief, keyFacts: [{...brief.keyFacts[0], sourceExcerpt: "Projet de règlement 2455 Le conseil municipal a adopté le second projet de règlement."}]};
+  assert.equal(deterministicBriefFactQualityIssues(supported, source).length, 0);
+});
+
+test("scopes slide evidence by its planning question after an editor reorders or inserts slides", () => {
+  const facts: CreativeKeyFact[] = [
+    { id: "fact-a", statement: "El programa llega a 40 municipios de la región." },
+    { id: "fact-b", statement: "La tarifa subió 12 por ciento durante el año." },
+    { id: "fact-c", statement: "El plazo de inscripción vence en 30 días." },
+  ];
+  const planned = (
+    order: number,
+    editorialGoal: NonNullable<CreativeUnit["editorialGoal"]>,
+    viewerQuestion: string,
+    headline: string,
+  ): CreativeUnit => ({
+    ...unit(order, order === 1 ? "cover" : "content", editorialGoal, headline, undefined, []),
+    viewerQuestion,
+  });
+  const carouselPlan: CarouselPlan = {
+    slideCount: 3,
+    rationale: "Alcance, costo y plazo.",
+    slides: [
+      { editorialGoal: "hook", viewerQuestion: "¿A cuántos municipios llega?", allowedFactIds: ["fact-a"] },
+      { editorialGoal: "explain", viewerQuestion: "¿Cuánto subió la tarifa?", allowedFactIds: ["fact-b"] },
+      { editorialGoal: "prove", viewerQuestion: "¿Cuánto falta para el cierre?", allowedFactIds: ["fact-c"] },
+    ],
+  };
+  // The editor moved the explain slide to the cover and appended a new one.
+  const edited: GeneratedCreativeDraft = {
+    concept: "Alcance del programa",
+    caption: "Resumen del programa.",
+    hashtags: [],
+    altText: "Carrusel sobre el alcance del programa.",
+    units: [
+      planned(1, "explain", "¿Cuánto subió la tarifa?", "La tarifa subió 12 por ciento"),
+      planned(2, "hook", "¿A cuántos municipios llega?", "Llega a 40 municipios"),
+      planned(3, "prove", "¿Cuánto falta para el cierre?", "El plazo vence en 30 días"),
+      planned(4, "explain", "¿Y qué sigue después?", "Otro dato: 12 por ciento"),
+    ],
+  };
+
+  const repaired = repairDeterministicFactCopy(edited, facts, "español", carouselPlan);
+
+  // Scope follows the slide's own question, not its position in the array.
+  assert.deepEqual(repaired.units[0]?.factIds, ["fact-b"]);
+  assert.deepEqual(repaired.units[1]?.factIds, ["fact-a"]);
+  assert.deepEqual(repaired.units[2]?.factIds, ["fact-c"]);
+  // A slide the plan never approved recovers nothing from the wider brief.
+  assert.deepEqual(repaired.units[3]?.factIds, []);
 });

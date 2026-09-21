@@ -108,6 +108,20 @@ export async function evaluateStoriesWithFallback(
     console.warn("Gemini editorial evaluation failed; trying configured fallback.");
   }
 
+  if (options.openAiApiKey && options.openAiModel) {
+    try {
+      const result = await evaluateStoriesWithOpenAi({
+        ...options,
+        apiKey: options.openAiApiKey,
+        model: options.openAiModel,
+      });
+      return { ...result, provider: "openai", model: options.openAiModel };
+    } catch (error) {
+      attempts.push({ provider: "Luna", error: providerErrorSummary(error) });
+      console.warn("Luna editorial evaluation failed; trying configured fallback.");
+    }
+  }
+
   if (
     options.paidGeminiApiKey &&
     options.paidGeminiApiKey !== options.apiKey
@@ -126,20 +140,6 @@ export async function evaluateStoriesWithFallback(
       console.warn(
         "Secondary Gemini editorial evaluation failed; trying configured fallback.",
       );
-    }
-  }
-
-  if (options.openAiApiKey && options.openAiModel) {
-    try {
-      const result = await evaluateStoriesWithOpenAi({
-        ...options,
-        apiKey: options.openAiApiKey,
-        model: options.openAiModel,
-      });
-      return { ...result, provider: "openai", model: options.openAiModel };
-    } catch (error) {
-      attempts.push({ provider: "Luna", error: providerErrorSummary(error) });
-      console.warn("Luna editorial evaluation failed; trying configured fallback.");
     }
   }
 

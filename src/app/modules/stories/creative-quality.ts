@@ -119,6 +119,15 @@ export function isCreativeDraftReadyForAutomation(
   return creativeQualityThresholdFailures(review.scores, format, requireCta).length === 0;
 }
 
+/** Goals narrative validation accepts on a conclusion or call-to-action slide. */
+const CLOSING_ROLE_EDITORIAL_GOALS = new Set([
+  "impact",
+  "opportunity",
+  "watch",
+  "conclude",
+  "debate",
+]);
+
 export function repairDeterministicCreativeCopy(
   draft: GeneratedCreativeDraft,
   format: CreativeFormat,
@@ -169,7 +178,35 @@ export function repairDeterministicCreativeCopy(
     if (repaired.narrativeRationale && !deviatesFromPreferredArc(repaired, conversionGoal)) {
       delete repaired.narrativeRationale;
     }
+    const lastUnitIndex = repaired.units.length - 1;
     repaired.units.forEach((unit, unitIndex) => {
+      // role is presentation metadata that narrative validation ties to both
+      // position and goal, and the two rules together can describe a slide no
+      // repair pass is able to satisfy. Reconcile them here, for free, instead
+      // of spending paid attempts on a labelling slip.
+      if (unitIndex > 0 && unitIndex < lastUnitIndex) {
+        // The plan reserves conclude and debate for the final slide, so a
+        // middle slide carrying one contradicts the arc it belongs to: it can
+        // hold neither the content role its position requires nor the
+        // conclusion role its goal implies. State the significance it actually
+        // delivers instead of closing a story that continues after it.
+        if (
+          unit.editorialGoal === "conclude" ||
+          unit.editorialGoal === "debate"
+        ) {
+          unit.editorialGoal = "impact";
+        }
+        unit.role = "content";
+      } else if (
+        unitIndex === lastUnitIndex &&
+        unitIndex > 0 &&
+        unit.role === "content" &&
+        CLOSING_ROLE_EDITORIAL_GOALS.has(unit.editorialGoal ?? "")
+      ) {
+        // A closing goal is carried by the conclusion role; the content role
+        // is what makes it read as a conflict.
+        unit.role = "conclusion";
+      }
       if (unit.editorialGoal) {
         unit.factIds = unit.factIds.slice(
           0,
@@ -1037,12 +1074,13 @@ const AUTOMATICALLY_REPAIRABLE_REVIEW_CODES = new Set([
   "GENERIC_FOLLOW_CTA",
   "CTA_GOAL_MISMATCH",
   "CTA_LOCATION",
-  "UNSUPPORTED_INFERENCE",
   // Numeric support is recalculated from the current copy and current facts.
   // Do not keep approval locked on a stale critic finding after deterministic
   // normalization (for example, Spanish decimal commas) proves it supported.
+  // Only mechanically decidable factual codes belong here: an unsupported
+  // inference or absolute is a semantic judgement the local patterns cannot
+  // reproduce, so clearing it on their silence would approve the claim unread.
   "UNSUPPORTED_NUMBER",
-  "UNSUPPORTED_ABSOLUTE",
   "CLOSING_QUESTION_COUNT",
   "MISSING_DEBATE_QUESTION",
 ]);

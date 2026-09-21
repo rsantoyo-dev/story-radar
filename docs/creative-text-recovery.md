@@ -1,5 +1,7 @@
 # Creative text recovery and spending
 
+Current draft execution uses the **Unified correction path** described below: one correction per tier, with no intermediate Luna copy-repair loop when an independent reviewer is configured. Two-attempt counters described in historical policy sections remain safety ceilings, not a requirement to execute every slot.
+
 Creative Studio now keeps a cumulative USD text budget for each Topic + Story. It does not reset when a user regenerates a brief or draft, changes format, retries a failed request, or starts a new day. `CREATIVE_STORY_TEXT_BUDGET_USD` defaults to `1`; changing it changes the ceiling, without erasing spend. The existing daily run limit still applies to generation. Editorial correction is bounded to two Terra patch attempts followed, when needed, by two Sol patch attempts. Each changed copy receives a separate read-only Terra audit. Initial reviewer availability can fall back to Sol. The same cumulative budget and request deadline can stop the process before all attempts are used.
 
 Apply migration `0075_chemical_swarm.sql` using `npm run db:migrate` before deploying this code. It adds three tables; existing drafts, briefs, assets and approval history are retained. To roll back application code, retain these tables and their accounting history.
@@ -71,3 +73,15 @@ The configured author and reasoning effort are unchanged. This implementation do
 ## Avoiding repeated work
 
 A current independent review of unchanged saved copy is reused on recovery. A stale review, a deterministic copy change, or a reviewer outage requires a new review; pending corrections still require verification. Regressions pass the rejected critic findings to the next model while restoring the better copy. Local final-copy patches start on the author transport that already succeeded instead of restarting a failed provider chain. Structural/factual brief retries and malformed draft retries include the previous response, not just an error string. None of these changes raises the Story budget or weakens publication approval.
+
+Immutable fact packets are validated before any narrative-planning request. A missing number or unsupported inference in a fact's own excerpt must be handled by the upstream evidence stage; planners cannot repair those fields. Matching an excerpt after whitespace normalization never bypasses its numeric or inference checks. A number elsewhere in the source is not automatically evidence for the fact's selected excerpt.
+
+Invalid writer `openingExploration` is discarded with a saved `openingExplorationError` diagnostic, rather than forcing a full-script regeneration. Actual slide fact assignments remain strict. The independent critic must still return a valid hook comparison and verify the final cover; writer alternatives never constitute approval.
+
+## Unified correction path
+
+When an independent OpenAI reviewer is configured, draft production now runs the configured author, deterministic normalization (including required cover titles), one independent audit, and a single targeted Terra correction plus verification when needed. Sol receives at most one further correction opportunity when actionable findings remain. The legacy two-call Luna final-copy repair loop is not entered on this path. Each tier is marked stopped after its correction response, including invalid responses, so recovery cannot silently repeat it. Existing two-attempt counters remain hard historical ceilings, and preflight planning attempts still count against them. This policy limits correction calls, not the total number of author, planning and audit calls.
+
+An unavailable independent reviewer preserves the saved draft and stops. No secondary non-independent grounding/rewriting loop is run merely to end in an unapprovable draft. Legacy workflows without an independent reviewer retain their compatibility path and cannot gain independent approval from it.
+
+Structural routing includes role/goal conflicts, fact overuse, missing assigned evidence, fact-budget violations and new closing facts. A preflight revision does not count as a successful script replan: a later script defect may use one remaining correction slot for a plan-and-script revision. Historical attempt counts, saved versions, independent final verification and the cumulative spending limit remain intact. Timing improvements must be measured on future runs; mocked tests establish call order and ceilings, not production latency or quality scores.

@@ -175,3 +175,10 @@ for (const current of [true, false]) test(`recovery reuses only a confirmed curr
     assert.equal(calls.length, 0);
     assert.equal(result.draft.units[0].headline, saved.units[0].headline);
 });
+
+test("immutable evidence defects stop before spending any narrative correction attempt", async () => {
+    const invalid = {...brief, keyFacts: [{id: "fact-1", statement: "The council adopted draft bylaw 2455.", sourceExcerpt: "The council adopted the draft bylaw."}]};
+    const {api, calls} = harness(() => assert.fail("A planner cannot edit the fact packet"));
+    await assert.rejects(api.preflight(invalid, options), /no planning calls were made[\s\S]*2455/);
+    assert.equal(calls.length, 0);
+});

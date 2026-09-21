@@ -668,7 +668,11 @@ export function CreativeDraftWorkspace({
   }
 
   async function handleGenerateDraft() {
-    if (!workspace?.brief || busy) return;
+    if (busy) return;
+    if (!workspace?.brief) {
+      setError("Generate a creative brief before creating the draft.");
+      return;
+    }
     if (profileDirty) {
       setError("Save the creative profile before generating a draft.");
       return;
@@ -1506,11 +1510,11 @@ export function CreativeDraftWorkspace({
     try {
       await task();
     } catch (operationError) {
+      setError(getErrorMessage(operationError));
       // Generation may have persisted a useful draft before its review failed.
       if (action === "draft" || action === "profile-draft") {
         await reloadWorkspace().catch(() => undefined);
       }
-      setError(getErrorMessage(operationError));
     } finally {
       setBusy(undefined);
     }
@@ -2023,6 +2027,10 @@ export function CreativeDraftWorkspace({
                     <button type="button" className={styles.primaryButton} disabled={Boolean(busy) || !workspace.story.hasContent} onClick={handleGenerateDraft}>
                       {busy === "draft" ? "Generating draft…" : `Generate ${selectedFormat} draft`}
                     </button>
+                    {error ? <ErrorMessage message={error} /> : busy === "draft" ? (
+                      <p role="status" aria-live="polite">Generating and reviewing your draft. This can take several minutes; keep this workspace open.</p>
+                    ) : null}
+                    {!workspace.story.hasContent ? <p>Prepare the story content before generating a draft.</p> : null}
                   </div>
                 ) : (
                   <DraftEditor

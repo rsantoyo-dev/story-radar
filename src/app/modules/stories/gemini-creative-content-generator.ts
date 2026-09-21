@@ -236,7 +236,7 @@ Optimize for earned human curiosity, not engagement bait. The cover must reveal 
 
 creativeProfile.conversionGoal is authoritative for that response, while callToActionStyle controls only its voice. Use exactly one primary action—never stack follow, comment, save, or share requests. In a carousel, put that one visible action in the final ctaQuestion field and leave callToAction empty; despite its legacy name, ctaQuestion may hold a concise imperative for a non-discussion goal. In a meme, use callToAction instead. The ctaQuestion field itself must contain the actual visible words of that request — a visualDirection note describing a follow button, a follow-us graphic, or any other on-image design element never substitutes for it and does not satisfy this requirement. For "followers", write one natural follow request that states the recurring topic benefit people will receive (for example "Síguenos para entender cada decisión de tasas en Canadá") as the literal text of ctaQuestion — in a carousel the closing slide's ctaQuestion must be non-empty, in a meme the callToAction. Leaving it empty is allowed only when the story is sensitive coverage such as tragedy, crisis, medical, legal, or safety; a routine economic or policy story is not sensitive. For "discussion", ask one specific evidence-grounded question. For "saves", give one concrete future-use reason to save. For "shares", name one relevant person or situation for sharing. Omit a CTA when the story makes the requested action insensitive or inappropriate; never replace it with a different conversion action.
 
-For a meme return exactly one unit. For a carousel, carouselPlan is authoritative: return exactly its slideCount, preserve each slide's order and editorialGoal, copy its viewerQuestion, and use only that slide's allowedFactIds. carouselPlan already records any deliberate arc deviation, so copy its rationale into narrativeRationale. role describes presentation; editorialGoal describes narrative purpose. viewerQuestion is internal planning metadata and must never be repeated as visible copy. ctaQuestion is optional visible copy for the final slide. subheadline, continuationCue, body, callToAction, ctaQuestion, and narrativeRationale may be empty strings when not needed. continuationCue must be empty on a meme and on the final carousel slide.
+For a meme return exactly one unit. For a carousel, carouselPlan is authoritative: return exactly its slideCount, preserve each slide's order and editorialGoal, copy its viewerQuestion, and use only that slide's allowedFactIds. carouselPlan already records any deliberate arc deviation, so copy its rationale into narrativeRationale. role describes presentation; editorialGoal describes narrative purpose. viewerQuestion is internal planning metadata and must never be repeated as visible copy. ctaQuestion is optional visible copy for the final slide. subheadline, continuationCue, body, callToAction, ctaQuestion, and narrativeRationale may be empty strings when not needed, with one exception: on a carousel every slide between the cover and the final slide must carry non-empty body copy that answers its viewerQuestion from its own allowedFactIds. Only the cover and the final slide may leave body empty. role follows position and never contradicts editorialGoal: the first slide is cover, the final slide is conclusion or call-to-action, and every slide between them is content. A content slide can never carry the conclude or debate purpose, so those two goals belong only to the final slide. continuationCue must be empty on a meme and on the final carousel slide.
 
   Preserve every key fact's requiredQualifiers and attribution. Translate qualifiers idiomatically into the creative profile language; never leak an English claimGuard word such as "about" into otherwise Spanish copy. Never turn "show signs", estimates, associations, projections, or reported claims into certainty. Never introduce trends through words such as "rising", "surge", "growing", or "reshaping" unless an allowed fact explicitly establishes change over time. Do not invent a named period or unit conversion: for example, about 40 weeks or roughly 9 months must never become a "gestational year" or "año gestacional". Match the concept and headlines to what the supplied facts actually explain; if the facts cover duration and due-date calculation, do not promise pregnancy stages, trimesters, physical changes, emotional needs, care benefits, or practical outcomes that they do not establish. Do not convert an income, age, or ownership comparison into claims about wealth, home equity, savings, down payments, accumulated advantage, or prior assets unless a supplied fact explicitly establishes that interpretation. For Canadian money amounts, identify the currency as CAD in visible copy when the source's dollar sign could otherwise be ambiguous, while preserving the source number exactly. A closing slide may summarize established facts or ask one grounded question, but it must not invent benefits such as anticipating needs, improving care, building trust, or making better decisions. Interpretations must be framed as a possibility or question, not as a sourced fact. Keep each slide's supporting text to 40 words and never above 45; split or cut detail rather than exceed it. Never open a closing headline or subheadline with a summary label such as "La conclusión", "La clave", "El punto", "En resumen", or "The takeaway"; state the answer or decision itself. Use one visible question on the closing slide; do not repeat the CTA in headline, subheadline, body, and ctaQuestion. Choose one rendering medium and art direction for the complete carousel, then describe every slide in that same medium even when the recurring character is absent. A visual direction may request a quantitative bar, line, or proportional chart only when the selected facts provide exact values for every depicted category. When facts establish only direction or rank, request a clearly conceptual, non-proportional comparison with no axis, numeric scale, or invented bar height. Visual direction must describe composition and mood without requesting extra rendered words, labels, or numbers beyond headline, subheadline, body, and ctaQuestion. continuationCue is composited later by the deterministic carousel renderer, so never request it—or any progress, swipe, arrow, button, or navigation element—inside visualDirection. Choose typography-only when imagery is unnecessary. Write visualDirection as a specific, reproducible art-direction paragraph, not a one-line label, because the image model regenerates the slide from this same text and an editor may ask for that exact result again: name the concrete composition (what sits where on the canvas, and how it relates to the text block), the specific motif or icon rather than its category ("a single upward-curving line ending in a rounded document icon with three horizontal bars and a small checkmark badge", not "a timeline and a document icon"), and the specific colors to use by name or role rather than a vague pair ("a deep violet background fading to near-black, with a lime-green accent on the line and the icon outline", not "purple and lime accents"). Only pair an adjective such as "clean", "modern", or "bold" with the concrete choice that makes it true; never leave it standalone.
 
@@ -407,6 +407,8 @@ export async function generateEditorialFocus(options: GeneratorOptions & {
 }) {
   const response = await generateJson({
     ...options,
+    openAiModel: options.openAiEditorialModels?.minorRepairModel,
+    openAiSchemaName: "editorial_focus",
     systemInstruction: EDITORIAL_FOCUS_INSTRUCTION,
     schema: {
       type: "object",
@@ -450,6 +452,15 @@ function parseStrictNarrativePlan(value:unknown,brief:GeneratedCreativeBrief,goa
 async function reviewNarrativePlan(brief: GeneratedCreativeBrief, options: GeneratorOptions): Promise<{brief: GeneratedCreativeBrief; usage: CreativeAiUsage}> {
   const models = options.openAiEditorialModels;
   if (!brief.carouselPlan || brief.carouselPlan.review || !options.openAiApiKey || !models || brief.recommendedFormat !== "carousel") return {brief, usage: emptyCreativeAiUsage()};
+  // Planning cannot alter evidence. Reject an invalid fact packet before any
+  // paid planning call rather than asking four editors to fix immutable facts.
+  const evidenceErrors = deterministicBriefFactQualityIssues(
+    {...brief, keyMessage: "", angle: "", hook: "", suggestedConcepts: [], carouselPlan: undefined},
+    brief.keyFacts.map(fact => fact.sourceExcerpt ?? "").join("\n"),
+  ).filter(issue => issue.severity === "blocker");
+  if (evidenceErrors.length) throw new CreativeContentResponseError(
+    "Evidence validation failed before narrative planning; no planning calls were made. Repair the fact statements or their source excerpts first. " + evidenceErrors.map(issue => issue.message).join("\n"),
+  );
   const originalPlan = brief.carouselPlan;
   const knownIds = new Set(brief.keyFacts.map(fact => fact.id));
   const originalErrors = validateCarouselPlan(originalPlan, knownIds, options.profile.conversionGoal);
@@ -464,8 +475,8 @@ async function reviewNarrativePlan(brief: GeneratedCreativeBrief, options: Gener
     const tier = index < 2 ? "terra" : "sol";
     const response = await generateOpenAiStructuredResponse({
       apiKey: options.openAiApiKey, model,
-      instructions: NARRATIVE_PLAN_POLICY + " Review the plan before script writing. The supplied carouselNarrativePolicy is the same contract used by local validation. If questionRepairs is present, inspect the original questions and cover essential omitted topics elsewhere. Return keep only for a valid, sound original plan; otherwise revise. On a retry, correct the rejected proposal using ALL validation findings. Preserve the brief's evidence and sound decisions. You may reduce slide count within 3–8 when evidence cannot sustain distinct slides; do not force filler or repeat evidence to meet a preferred count. This is planning, not publication approval.",
-      schema: {type: "object", additionalProperties: false, required: ["decision", "reason", "angle", "hook", "plan"], properties: {decision: {type: "string", enum: ["keep", "revise"]}, reason: {type: "string"}, angle: {type: "string"}, hook: {type: "string"}, plan: narrativePlanSchema}},
+      instructions: NARRATIVE_PLAN_POLICY + " Review the plan before script writing. The supplied carouselNarrativePolicy is the same contract used by local validation. If questionRepairs is present, inspect the original questions and cover essential omitted topics elsewhere. Return keep only for a valid, sound original plan; otherwise revise. A keep decision reuses the supplied plan, angle and hook verbatim, so return null for all three instead of restating them; supply them only with revise. On a retry, correct the rejected proposal using ALL validation findings. Preserve the brief's evidence and sound decisions. You may reduce slide count within 3–8 when evidence cannot sustain distinct slides; do not force filler or repeat evidence to meet a preferred count. This is planning, not publication approval.",
+      schema: {type: "object", additionalProperties: false, required: ["decision", "reason", "angle", "hook", "plan"], properties: {decision: {type: "string", enum: ["keep", "revise"]}, reason: {type: "string"}, angle: {anyOf: [{type: "string"}, {type: "null"}]}, hook: {anyOf: [{type: "string"}, {type: "null"}]}, plan: {anyOf: [narrativePlanSchema, {type: "null"}]}}},
       schemaName: "creative_narrative_plan_review", reasoningEffort: "medium", maxOutputTokens: 3072, timeoutMs: 60000, auditContext: options.openAiAuditContext,
       contents: {facts: brief.keyFacts, angle: brief.angle, hook: brief.hook, plan: originalPlan, editorialAngle: brief.editorialAngle, editorialDirection: options.editorialDirection, profile: profileForPrompt(options.profile), topic: topicForPrompt(options.topic),
         carouselNarrativePolicy: carouselNarrativePolicyForPrompt(options.profile.conversionGoal), originalValidationErrors: originalErrors,
@@ -598,12 +609,17 @@ async function generateUnreviewedCreativeBrief({
     // Every attempt is a paid call, so accumulate usage even when the attempt
     // that produced it went on to fail validation.
     let spentUsage = response.usage;
+    // The last attempt is the most expensive place to start blind. Carry the
+    // newest rejected brief forward so it corrects that text instead of
+    // rewriting from scratch against a single error it cannot place.
+    let rejectedBrief = response.text;
     try {
       const retryResponse = await requestBrief(
         `\n\n${BRIEF_RETRY_INSTRUCTION}`,
         { previousValidationError: error.message, previousBrief: response.text },
       );
       spentUsage = sumCreativeAiUsage(spentUsage, retryResponse.usage);
+      rejectedBrief = retryResponse.text;
       return {
         brief: parseGroundedCreativeBrief(
           retryResponse.text,
@@ -638,7 +654,10 @@ async function generateUnreviewedCreativeBrief({
       try {
         const fallbackResponse = await requestBrief(
           `\n\n${BRIEF_RETRY_INSTRUCTION}\n\n${BRIEF_FRAMING_FALLBACK_INSTRUCTION}`,
-          { previousValidationError: retryError.message },
+          {
+            previousValidationError: `${error.message}\n${retryError.message}`,
+            previousBrief: rejectedBrief,
+          },
         );
         spentUsage = sumCreativeAiUsage(spentUsage, fallbackResponse.usage);
         return {
@@ -708,6 +727,14 @@ export async function generateCreativeDraft(options: GenerateDraftOptions): Prom
   }
   const deadline = options.deadline ?? Date.now() + CREATIVE_DRAFT_TIME_BUDGET_MS;
   const generated = await generateReviewedCreativeDraft({ ...options, deadline });
+  if (options.openAiApiKey && options.openAiEditorialModels) {
+    // One owner for all corrections. Do not run the legacy Luna repair loop
+    // between the initial independent audit and the targeted editorial repair.
+    const editorial = await repairAndVerifyEditorialDraft(generated.draft, options, deadline, async (draft, extra) => {
+      await options.onDraftCheckpoint?.({...generated, draft, usage: sumCreativeAiUsage(generated.usage, extra)});
+    });
+    return {...generated, draft: editorial.draft, usage: sumCreativeAiUsage(generated.usage, editorial.usage)};
+  }
   const repaired = await repairRemainingCreativeBlockers(enforceCoverTitle(generated.draft, options.profile.requireCoverTitle, options.brief.contentTitle ?? options.story.title), {
     format: options.format,
     keyFacts: options.brief.keyFacts,
@@ -794,9 +821,12 @@ async function repairAndVerifyEditorialDraft(
 ) {
   const apiKey=options.openAiApiKey, models=options.openAiEditorialModels;
   if(!apiKey || !models)return {draft,usage:emptyCreativeAiUsage()};
+  if (draft.qualityReview?.issues.some(issue => issue.code === "FINAL_COPY_REVIEW_REQUIRED") && !draft.editorialRepair?.pendingVerification) {
+    draft = {...draft, editorialRepair: {terraAttempts: 0, solAttempts: 0, ...draft.editorialRepair, pendingVerification: true}};
+  }
   // Availability failures need a reviewer retry, not four speculative rewrites.
   if(!draft.editorialRepair?.pendingVerification && (!draft.qualityReview?.critic || draft.qualityReview.critic.provider!=='openai' || draft.qualityReview.issues.some(issue=>/^(?:CRITIC_UNAVAILABLE|CRITIC_FALLBACK|FINAL_REVIEW_UNAVAILABLE)$/.test(issue.code))))return {draft,usage:emptyCreativeAiUsage()};
-  return runEditorialRepairLoop({draft,checkpoint,canContinue:()=>withinDeadline(deadline,120_000),canVerify:()=>withinDeadline(deadline,60_000),
+  return runEditorialRepairLoop({draft,checkpoint,oneCorrectionPerTier:true,canContinue:()=>withinDeadline(deadline,120_000),canVerify:()=>withinDeadline(deadline,60_000),
     ...(options.format==='carousel' && options.brief.carouselPlan ? {replan:async(current:GeneratedCreativeDraft,issues:CreativeQualityIssue[],tier:"terra"|"sol")=>{
       const brief=resolveNarrativeBrief(options.brief,current);
       const model=tier==='terra'?models.structuralRepairModel:models.severeRepairModel;
@@ -1013,18 +1043,19 @@ async function generateReviewedCreativeDraft({
     profile.conversionGoal,
     brief.carouselPlan,
   );
+  currentDraft = enforceCoverTitle(currentDraft, profile.requireCoverTitle, brief.contentTitle ?? story.title);
   const planReview = brief.carouselPlan?.review;
   if (planReview) currentDraft = {...currentDraft, editorialRepair: {
     terraAttempts: planReview.repairAttempts?.terra ?? (planReview.decision === "revise" ? 1 : 0),
     solAttempts: planReview.repairAttempts?.sol ?? 0, pendingVerification: false,
-    narrativeReplanAttempted: planReview.decision === "revise",
+    narrativeReplanAttempted: false,
   }};
   await onDraftCheckpoint?.({draft:currentDraft,provider:response.provider,model:response.model,usage:generationUsage});
   let totalUsage = generationUsage;
   // Set when OpenAI was configured but could not review (credits, outage):
   // the Gemini grounding audit below then reviews the draft instead, marked
   // as a non-independent fallback that cannot authorize continuation.
-  let fallbackCriticIssues: CreativeQualityIssue[] | undefined;
+  const fallbackCriticIssues: CreativeQualityIssue[] | undefined = undefined;
   if (openAiApiKey && openAiEditorialModels) {
     const editorial = await runOpenAiEditorialQualityGate({
       apiKey: openAiApiKey,
@@ -1050,19 +1081,11 @@ async function generateReviewedCreativeDraft({
         usage: sumCreativeAiUsage(generationUsage, editorial.usage),
       };
     }
-    console.warn(
-      `OpenAI editorial review unavailable (${editorial.criticUnavailable.reason}); using the Gemini grounding audit as fallback.`,
-    );
-    totalUsage = sumCreativeAiUsage(totalUsage, editorial.usage);
-    currentDraft = editorial.draft;
-    fallbackCriticIssues = [
-      ...editorial.criticUnavailable.issues.filter((issue) => issue.code !== "EDITORIAL_REVIEW_ATTEMPT_FAILED"),
-      {
-        code: "CRITIC_FALLBACK",
-        severity: "warning",
-        message: `The OpenAI editorial critic was unavailable (${editorial.criticUnavailable.reason}). The fallback grounding audit cannot replace independent validation; approval remains pending.`,
-      },
-    ];
+    // A secondary non-independent audit cannot authorize this draft. Preserve
+    // the checkpoint and resume independent verification when available.
+    return {...response, draft: {...editorial.draft,
+      qualityReview: unavailableCreativeQualityReview(editorial.criticUnavailable.reason, 0, editorial.draft, format, brief.keyFacts, profile.language, profile.conversionGoal, profile.framingStrategy),
+    }, usage: sumCreativeAiUsage(generationUsage, editorial.usage)};
   }
   let repairPasses = 0;
   let previousFeedback: CreativeQualityIssue[] = [];
@@ -1083,6 +1106,9 @@ async function generateReviewedCreativeDraft({
     criticPass <= MAX_CREATIVE_EDITORIAL_REPAIRS;
     criticPass += 1
   ) {
+    // This pass has no repair budget left behind it, so its findings can only
+    // be reported. Ask it to judge, not to rewrite copy nothing will read.
+    const verdictOnly = criticPass >= MAX_CREATIVE_EDITORIAL_REPAIRS;
     if (criticPass > 0 && !withinDeadline(deadline, 2 * CREATIVE_PROVIDER_TIMEOUT_MS + FINAL_REPAIR_CALL_RESERVE_MS)) {
       // No room for another audit and rewrite: preserve the current copy and
       // its pending findings without overrunning the route limit.
@@ -1121,7 +1147,7 @@ async function generateReviewedCreativeDraft({
         cloudflareAiApiToken,
         cloudflareAiModel,
         systemInstruction: GROUNDING_AUDIT_SYSTEM_INSTRUCTION,
-        schema: creativeGroundingAuditSchema(),
+        schema: creativeGroundingAuditSchema(verdictOnly),
         contents: {
           requestedFormat: format,
           topic: topicForPrompt(topic),
@@ -1158,6 +1184,8 @@ async function generateReviewedCreativeDraft({
         outputAspectRatio,
         characterRoster,
         carouselPlan,
+        undefined,
+        verdictOnly,
       );
       audited = {
         ...audited,
@@ -1853,9 +1881,22 @@ async function generateJson({
       throw error;
     }
 
-    let paidGeminiError: unknown;
     let consumedGeminiUsage = failedGeminiUsage(error);
     const accountForGemini = <T extends {usage: CreativeAiUsage}>(result: T): T => ({...result, usage: sumCreativeAiUsage(consumedGeminiUsage, result.usage)});
+
+    let lunaError: unknown;
+    if (openAiApiKey && openAiModel) {
+      try {
+        return withFallbackReason(accountForGemini(await runLuna()), [
+          ["Gemini primary", error],
+        ]);
+      } catch (fallbackError) {
+        lunaError = fallbackError;
+      }
+    }
+    const lunaAttempts: Array<[string, unknown]> = lunaError ? [["Luna", lunaError]] : [];
+
+    let paidGeminiError: unknown;
     if (paidGeminiApiKey && paidGeminiApiKey !== apiKey && !(error instanceof GeminiOutputLimitError)) {
       console.warn(
         `Primary Gemini account failed (${providerErrorSummary(error)}); using the secondary Gemini account.`,
@@ -1868,25 +1909,15 @@ async function generateJson({
           schema,
           contents,
           maxOutputTokens,
-        })), [["Gemini primary", error]]);
+        })), [
+          ["Gemini primary", error],
+          ...lunaAttempts,
+        ]);
       } catch (fallbackError) {
         paidGeminiError = fallbackError;
         consumedGeminiUsage = sumCreativeAiUsage(consumedGeminiUsage, failedGeminiUsage(fallbackError));
       }
     }
-
-    let lunaError: unknown;
-    if (openAiApiKey && openAiModel) {
-      try {
-        return withFallbackReason(accountForGemini(await runLuna()), [
-          ["Gemini primary", error],
-          ...(paidGeminiError ? [["Gemini secondary", paidGeminiError] as [string, unknown]] : []),
-        ]);
-      } catch (fallbackError) {
-        lunaError = fallbackError;
-      }
-    }
-    const lunaAttempts: Array<[string, unknown]> = lunaError ? [["Luna", lunaError]] : [];
     let groqError: unknown;
     if (groqApiKey && groqModel) {
       // A request rejected by Gemini can still be valid for Groq (for example,
@@ -2807,7 +2838,20 @@ function creativeDraftSchema(
   };
 }
 
-function creativeGroundingAuditSchema(): Record<string, unknown> {
+/**
+ * The final critic pass cannot spend its findings: the caller returns the
+ * unchanged draft for human review either way. Asking that pass for
+ * replacement copy buys output tokens nothing reads, so it requests a verdict.
+ */
+function creativeGroundingAuditSchema(verdictOnly = false): Record<string, unknown> {
+  const repairFields = {
+    replacementText: { type: "string" },
+    replacementFactIds: {
+      type: "array",
+      maxItems: 6,
+      items: { type: "string" },
+    },
+  };
   return {
     type: "object",
     additionalProperties: false,
@@ -2859,8 +2903,7 @@ function creativeGroundingAuditSchema(): Record<string, unknown> {
             "category",
             "severity",
             "reason",
-            "replacementText",
-            "replacementFactIds",
+            ...(verdictOnly ? [] : ["replacementText", "replacementFactIds"]),
           ],
           properties: {
             unitOrder: { type: "integer", minimum: 0, maximum: 8 },
@@ -2879,12 +2922,7 @@ function creativeGroundingAuditSchema(): Record<string, unknown> {
               enum: ["blocker", "warning"],
             },
             reason: { type: "string" },
-            replacementText: { type: "string" },
-            replacementFactIds: {
-              type: "array",
-              maxItems: 6,
-              items: { type: "string" },
-            },
+            ...(verdictOnly ? {} : repairFields),
           },
         },
       },
@@ -3470,7 +3508,15 @@ function parseCreativeDraft(
   };
   // Older saved drafts have no writer exploration; new provider schemas require it.
   if (carouselLike && value.openingExploration != null) {
-    draft.openingExploration = parseEditorialHookSelection(value.openingExploration, draft, brief, carouselPlan, provider);
+    try {
+      draft.openingExploration = parseEditorialHookSelection(value.openingExploration, draft, brief, carouselPlan, provider);
+    } catch (error) {
+      if (!(error instanceof CreativeContentResponseError)) throw error;
+      // Writer brainstorming is not publication copy or an independent verdict.
+      // Preserve the parsed script and let the critic make a fresh, strictly
+      // validated comparison rather than paying to regenerate the entire script.
+      draft.openingExplorationError = error.message;
+    }
   }
   if (validateCopy) validateGeneratedDraftCopy(draft, format);
   return draft;
@@ -3541,6 +3587,7 @@ function parseCreativeGroundingAudit(
   characterRoster: CreativeCharacterRosterEntry[],
   carouselPlan?: CarouselPlan,
   provider = "The AI provider",
+  verdictOnly = false,
 ): {
   draft: GeneratedCreativeDraft;
   issueCount: number;
@@ -3592,24 +3639,25 @@ function parseCreativeGroundingAudit(
         );
       }
       const reason = shortText(issue.reason, "grounding issue reason", 600);
-      if (typeof issue.replacementText !== "string") {
-        throw new CreativeContentResponseError(
-          "Grounding audit returned an invalid text replacement",
+      if (!verdictOnly) {
+        if (typeof issue.replacementText !== "string") {
+          throw new CreativeContentResponseError(
+            "Grounding audit returned an invalid text replacement",
+          );
+        }
+        applyGroundingAuditIssue(
+          correctedDraft,
+          issue.unitOrder as number,
+          issue.field,
+          issue.replacementText,
+          shortTextArray(
+            issue.replacementFactIds,
+            "grounding replacementFactIds",
+            6,
+            30,
+          ),
         );
       }
-      const replacementFactIds = shortTextArray(
-        issue.replacementFactIds,
-        "grounding replacementFactIds",
-        6,
-        30,
-      );
-      applyGroundingAuditIssue(
-        correctedDraft,
-        issue.unitOrder as number,
-        issue.field,
-        issue.replacementText,
-        replacementFactIds,
-      );
       criticIssues.push({
         code: String(issue.category).toUpperCase().replaceAll("-", "_"),
         severity: issue.severity,
@@ -4644,7 +4692,11 @@ function isGroqFallbackEligibleGeminiError(error: unknown): boolean {
     return true;
   }
   if (!(error instanceof ApiError)) return false;
-  return [400, 401, 403, 413, 429, 500, 502, 503, 504].includes(error.status);
+  // Only failures another provider can actually survive: overload, rate limit
+  // and oversized payloads. A rejected request or a bad credential fails the
+  // same way everywhere, so cascading it just buys the same error four times
+  // and hides a configuration fault behind a weaker model's output.
+  return [413, 429, 500, 502, 503, 504].includes(error.status);
 }
 
 function providerErrorSummary(error: unknown): string {

@@ -1,5 +1,6 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq } from "drizzle-orm";
 
 import type {
@@ -157,24 +158,18 @@ export async function createTopic(
   await assertWorkspaceExists(workspaceId);
 
   const topic = normalizeTopicInput(input);
-  const created = await db.transaction(async (transaction) => {
-    const [createdTopic] = await transaction
-      .insert(topics)
-      .values({ workspaceId, ...topic })
-      .returning();
-
-    if (!createdTopic) {
-      throw new Error("Topic could not be created");
-    }
-
-    await transaction.insert(topicAcquisitionLenses).values({
-      topicId: createdTopic.id,
+  const topicId = randomUUID();
+  const [createdTopics] = await db.batch([
+    db.insert(topics)
+      .values({ id: topicId, workspaceId, ...topic })
+      .returning(),
+    db.insert(topicAcquisitionLenses).values({
+      topicId,
       taxonomyVersion: 1,
       lenses: cloneDefaultTopicAcquisitionLenses(),
-    });
-
-    return createdTopic;
-  });
+    }),
+  ]);
+  const [created] = createdTopics;
 
   if (!created) {
     throw new Error("Topic could not be created");

@@ -357,6 +357,9 @@ export function validateCarouselPlan(
 
   const establishedFacts = new Set<string>();
   plan.slides.forEach((slide, index) => {
+    if (index < plan.slides.length - 1 && ["conclude", "debate"].includes(slide.editorialGoal)) {
+      errors.push(`carouselPlan slide ${index + 1} closes the story before the final slide. Reserve conclude/debate for the last slide; give this slide a supported content goal and matching viewerQuestion, or shorten the plan.`);
+    }
     if (!slide.viewerQuestion.trim()) {
       errors.push(`carouselPlan slide ${index + 1} needs a viewerQuestion`);
     }
@@ -466,6 +469,7 @@ export function carouselNarrativePolicyForPrompt(
       "Every visible sentence must be grammatically complete. Never leave a clause hanging on a connector ('…, as.', '…, with some outlets.') or a bare noun phrase ('Some tech outlets.'). If a source clause only offers unsupported speculation you cannot state, omit that clause entirely rather than truncating it.",
       "Each slide needs its own distinct headline that states that slide's specific point. Do not reuse a headline across slides, and never use a generic analysis label ('What the data shows', 'Key findings', 'Lo que muestran los datos') — least of all on the final slide, whose headline must state the actual conclusion.",
       "The final slide must use conclude or debate. This terminal narrative job is required even when the earlier arc deviates from the preferred sequence.",
+      "Only the final slide may use conclude or debate. Earlier slides must have a content goal and a matching question; never place an extra conclusion before the final slide.",
       ...(preferredClosingGoal
         ? [
             `Use ${preferredClosingGoal} as the final editorialGoal for the configured conversion goal.`,

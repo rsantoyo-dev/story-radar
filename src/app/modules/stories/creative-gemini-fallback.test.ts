@@ -11,6 +11,7 @@ function load(request:(key:string,params:Params)=>Promise<unknown>) {
   const exports={} as {
     generateCreativeDraft:(input:unknown)=>Promise<unknown>;
     generateCreativeBrief:(input:unknown)=>Promise<unknown>;
+    generateEditorialFocus:(input:unknown)=>Promise<{editorialDirection:string;provider:string;model:string}>;
     testParseDraft:(...args:unknown[])=>{units:{headline:string}[]};
     testDraftSchema:(format:string)=>{properties:{units:{items:{properties:{headline:{minLength:number;pattern:string};subheadline:{minLength?:number}}}}}};
     testCompact:(input:unknown,limit:number)=>unknown;
@@ -26,7 +27,11 @@ function load(request:(key:string,params:Params)=>Promise<unknown>) {
     if(id==="server-only")return {};
     if(id==="./openai-structured-response")return {generateOpenAiStructuredResponse:async(input:{schema:Record<string,unknown>;model:string;contents:unknown})=>{
       calls.push("luna");
-      return {text:"{}",provider:"openai",model:input.model,usage:{promptTokens:10,outputTokens:5,thoughtsTokens:0,totalTokens:15}};
+      const properties = input.schema.properties as Record<string, unknown> | undefined;
+      const text = properties?.editorialDirection
+        ? JSON.stringify({editorialDirection:"Lead with the verified deadline."})
+        : "{}";
+      return {text,provider:"openai",model:input.model,usage:{promptTokens:10,outputTokens:5,thoughtsTokens:0,totalTokens:15}};
     }};
     if(id==="@google/genai")return {ApiError,GoogleGenAI:class {models;constructor({apiKey}:{apiKey:string}){this.models={generateContent:async(params:Params)=>{calls.push(apiKey);return request(apiKey,params);}}}}};
     if(id==="groq-sdk")return class {chat={completions:{create:async()=>{calls.push("groq");return {choices:[{message:{content:"{}"}}],usage:{prompt_tokens:10,completion_tokens:5,total_tokens:15}};}}};};
@@ -162,20 +167,37 @@ test("missing initial headlines reach repair while strict editorial parsing stil
 });
 
 
-test("brief fallback uses Luna after both Google accounts and resumes it on validation retry", async () => {
+test("brief fallback uses Luna immediately after primary Gemini and resumes it on validation retry", async () => {
   const service = load(async (key) => { throw new service.ApiError(key === "primary-secret" ? 429 : 402); });
   const options = { ...input, openAiApiKey: "openai-secret", openAiModel: "gpt-5.6-luna" };
   const result = await service.exports.testGenerateJson(options);
   assert.equal(result.provider, "openai");
   assert.equal(service.calls.at(-1), "luna");
-  assert.ok(service.calls.includes("secondary-secret"));
+  assert.deepEqual(service.calls, ["primary-secret", "primary-secret", "luna"]);
+  assert.ok(!service.calls.includes("secondary-secret"));
   assert.ok(!service.calls.includes("groq"));
   assert.match(result.fallbackReason ?? "", /Gemini primary: HTTP 429/);
-  assert.match(result.fallbackReason ?? "", /Gemini secondary: HTTP 402/);
   assert.equal(result.usage.totalTokens, 15);
   service.calls.length = 0;
   await service.exports.testGenerateJson({ ...options, startAt: "openai" });
   assert.deepEqual(service.calls, ["luna"]);
+});
+
+test("editorial focus derives the Luna model from creative editorial configuration", async () => {
+  const service = load(async () => { throw new service.ApiError(429); });
+  const result = await service.exports.generateEditorialFocus({
+    ...input,
+    openAiApiKey: "openai-secret",
+    openAiEditorialModels: { minorRepairModel: "configured-luna" },
+    story: { title: "Source", url: "https://example.com", text: "Verified evidence.", contentStatus: "full", contentSource: "article" },
+    topic: { name: "Topic" },
+    profile: { framingStrategy: "auto", brandOverlay: { enabled: false } },
+    focusContext: {},
+  });
+  assert.deepEqual(service.calls, ["primary-secret", "primary-secret", "luna"]);
+  assert.equal(result.provider, "openai");
+  assert.equal(result.model, "configured-luna");
+  assert.equal(result.editorialDirection, "Lead with the verified deadline.");
 });
 
 
@@ -190,7 +212,7 @@ test("Luna brief schema makes optional fields nullable without mutating Gemini s
 });
 
 
-test("carousel authors try Luna third and validation retries stay on Luna", async () => {
+test("carousel authors try Luna after primary Gemini and validation retries stay on Luna", async () => {
   const service = load(async (key) => { throw new service.ApiError(key === "primary-secret" ? 429 : 402); });
   await assert.rejects(service.exports.generateCreativeDraft({
     ...input, openAiApiKey: "openai-secret", format: "carousel", outputAspectRatio: "4:5", characterRoster: [],
@@ -199,7 +221,8 @@ test("carousel authors try Luna third and validation retries stay on Luna", asyn
     brief: {keyFacts:[{id:"fact-1", statement:"Complete evidence.", sourceExcerpt:"Complete evidence."}], carouselPlan:{slideCount:3, slides:[]}},
   }));
   const firstLuna = service.calls.indexOf("luna");
-  assert.ok(firstLuna > service.calls.indexOf("secondary-secret"));
+  assert.ok(firstLuna > service.calls.indexOf("primary-secret"));
+  assert.equal(service.calls.indexOf("secondary-secret"), -1);
   assert.deepEqual(service.calls.slice(firstLuna), ["luna", "luna"]);
   assert.ok(!service.calls.includes("groq"));
 });
@@ -222,8 +245,30 @@ test("carousel writer schema requests three openings and validates the selected 
   const parse=(input:unknown)=>service.exports.testParseDraft(JSON.stringify(input),"carousel",brief,"4:5",[],undefined,false);
   const parsed=parse(value) as unknown as {openingExploration:{selectedIndex:number}};
   assert.equal(parsed.openingExploration.selectedIndex,0);
-  assert.throws(()=>parse({...value,openingExploration:{...openingExploration,selectedIndex:1}}),/match the returned opening/);
+  const mismatch = parse({...value,openingExploration:{...openingExploration,selectedIndex:1}}) as unknown as {openingExploration?: unknown; openingExplorationError?: string};
+  assert.equal(mismatch.openingExploration, undefined);
+  assert.match(mismatch.openingExplorationError ?? "", /match the returned opening/);
   const invalid=structuredClone(value);invalid.openingExploration.candidates[0].payoffUnitOrder=1;
-  assert.throws(()=>parse(invalid),/subsequent slide/);
+  assert.match((parse(invalid) as unknown as {openingExplorationError?: string}).openingExplorationError ?? "", /subsequent slide/);
   assert.doesNotThrow(()=>parse({...value,openingExploration:undefined}),"Historical drafts remain readable");
+});
+
+test("invalid writer hook alternatives preserve the script but never relax actual cover evidence", () => {
+  const service = load(async () => ({}));
+  const plan = {slideCount: 3, rationale: "Distinct evidence and conclusion", slides: [
+    {editorialGoal: "hook", viewerQuestion: "What changed?", allowedFactIds: ["fact-1"]},
+    {editorialGoal: "explain", viewerQuestion: "What is the context?", allowedFactIds: ["fact-2"]},
+    {editorialGoal: "conclude", viewerQuestion: "What is the takeaway?", allowedFactIds: ["fact-1"]},
+  ]};
+  const raw = {concept: "A change", caption: "The company announced a change.", altText: "Three slides", hashtags: [],
+    units: plan.slides.map((slide, i) => ({role: i === 0 ? "cover" : i === 2 ? "conclusion" : "content", ...slide, headline: `Point ${i+1}`, body: "The company announced a change.", visualDirection: "An abstract illustration", factIds: slide.allowedFactIds, assetRequest: "generated-image", characterIds: []})),
+    openingExploration: {selectedIndex: 0, candidates: Array.from({length: 3}, (_, i) => ({headline: `Alternative ${i}`, subheadline: "", factIds: ["fact-2"], readerQuestion: "What changed?", payoffUnitOrder: 2, supported: true, checks: {clear: true, tension: true, consequence: true, human: true, curiosity: true}, reason: "A specific opening"}))},
+  };
+  const parse = (value: unknown) => service.exports.testParseDraft(JSON.stringify(value), "carousel", {keyFacts: [{id: "fact-1"}, {id: "fact-2"}]}, "4:5", [], plan, false);
+  const result = parse(raw) as ReturnType<typeof parse> & {openingExploration?: unknown; openingExplorationError?: string};
+  assert.equal(result.units[0].headline, "Point 1");
+  assert.equal(result.openingExploration, undefined);
+  assert.match(result.openingExplorationError ?? "", /cover's planned fact IDs/);
+  assert.throws(() => parse({...raw, units: raw.units.map((unit, i) => i === 0 ? {...unit, factIds: ["fact-2"]} : unit)}), /unplanned fact/);
+  assert.equal(service.calls.length, 0);
 });

@@ -53,6 +53,8 @@ export async function runEditorialRepairLoop(input: {
     draft: GeneratedCreativeDraft;
     canContinue: () => boolean;
     canVerify?: () => boolean;
+    /** One targeted correction per tier; persisted counters remain hard caps. */
+    oneCorrectionPerTier?: boolean;
     checkpoint: (draft: GeneratedCreativeDraft, usage: CreativeAiUsage) => Promise<void>;
     replan?: (draft: GeneratedCreativeDraft, issues: CreativeQualityIssue[], tier: "terra" | "sol") => Promise<{draft:GeneratedCreativeDraft;usage:CreativeAiUsage;rejectionReason?:string}>;
     patch: (draft: GeneratedCreativeDraft, tier: "terra" | "sol", issues: CreativeQualityIssue[]) => Promise<{
@@ -149,6 +151,10 @@ export async function runEditorialRepairLoop(input: {
             return stop(error instanceof Error ? error.message : 'Targeted correction failed.');
         }
         add(patched.usage);
+        if (input.oneCorrectionPerTier) {
+            if (tier === "terra") progress.terraStopped = true;
+            else progress.solStopped = true;
+        }
         if (patched.rejectionReason) {
             progress.lastPatchRejection = {tier, reason: patched.rejectionReason, kind: replan ? "plan" : "copy"};
             await save();
@@ -164,7 +170,7 @@ export async function runEditorialRepairLoop(input: {
             await save();
             continue;
         }
-        draft = { ...patched.draft, qualityReview: patched.draft.qualityReview ? { ...patched.draft.qualityReview, status: 'needs-review', issues: [...patched.draft.qualityReview.issues, { code: 'FINAL_COPY_REVIEW_REQUIRED', severity: 'blocker', message: 'The corrected copy requires independent verification.' }] } : undefined };
+        draft = { ...patched.draft, qualityReview: patched.draft.qualityReview ? { ...patched.draft.qualityReview, hookSelection: undefined, status: 'needs-review', issues: [...patched.draft.qualityReview.issues, { code: 'FINAL_COPY_REVIEW_REQUIRED', severity: 'blocker', message: 'The corrected copy requires independent verification.' }] } : undefined };
         const { editorialRepair: _progress, ...verifiedFallback } = before;
         void _progress;
         progress.verifiedFallback = verifiedFallback;

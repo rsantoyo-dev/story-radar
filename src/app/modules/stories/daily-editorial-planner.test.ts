@@ -147,7 +147,7 @@ test("plannerInputs widens the freshness window to surface older evaluated candi
     assert.ok(!inputs.candidates.some(c=>c.title==="Too stale even widened"));
   } finally {await client.close();}
 });
-test("planner uses configured Gemini schema and rejects bad IDs before Luna fallback; normal evaluations remain separate",async()=>{
+test("planner falls back from primary Gemini directly to Luna; normal evaluations remain separate",async()=>{
   let geminiCalls=0,lunaCalls=0;
   const provider=load("./gemini-story-editorial-evaluator.ts",{
     "./daily-editorial-planner.types":types,
@@ -166,7 +166,7 @@ test("planner uses configured Gemini schema and rejects bad IDs before Luna fall
   const options={apiKey:"test",model:"configured-model",topic:{name:"Test"},candidates:[],preferences:{favoredTerms:[],unfavoredTerms:[]}};
   const empty=await provider.evaluateStoriesWithGemini(options) as {evaluations:unknown[];dailyPlan?:unknown};
   assert.equal(empty.evaluations.length,0);assert.equal(empty.dailyPlan,undefined);assert.equal(geminiCalls,0);
-  const result=await provider.evaluateStoriesWithFallback({...options,openAiApiKey:"test",openAiModel:"configured-luna",planningContext:{localDate:"2026-09-13",candidates:[{storyId:id}]}}) as {provider:string;model:string;dailyPlan:types.DailyPlan;evaluations:unknown[]};
+  const result=await provider.evaluateStoriesWithFallback({...options,paidGeminiApiKey:"secondary-test",openAiApiKey:"test",openAiModel:"configured-luna",planningContext:{localDate:"2026-09-13",candidates:[{storyId:id}]}}) as {provider:string;model:string;dailyPlan:types.DailyPlan;evaluations:unknown[]};
   assert.equal(result.provider,"openai");assert.equal(result.model,"configured-luna");
   assert.equal(result.dailyPlan.recommendation?.storyId,id);assert.equal(result.evaluations.length,0);
   assert.equal(geminiCalls,1);assert.equal(lunaCalls,1);

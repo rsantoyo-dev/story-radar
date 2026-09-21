@@ -1998,8 +1998,8 @@ function EditorialEvaluationPanel({
         <div>
           <p>
             Editorial AI ranks eligible candidates against this topic’s
-            profile, using Gemini first and configured Groq and Cloudflare
-            fallbacks, with a maximum of {editorial?.configuration.maxContentCharacters ?? 500} characters per story.
+            profile, using Gemini first, then Luna and Cloudflare fallbacks,
+            with a maximum of {editorial?.configuration.maxContentCharacters ?? 500} characters per story.
           </p>
           <small>
             AI floor {editorial?.configuration.effectiveCandidatePolicy?.localCandidateMinScore ?? editorial?.configuration.minLocalScore ?? 25} · news {editorial?.configuration.effectiveCandidatePolicy?.freshness.newsMaxAgeHours ?? editorial?.configuration.maxAgeHours ?? 72} h · research {editorial?.configuration.effectiveCandidatePolicy?.freshness.researchMaxAgeHours ?? editorial?.configuration.maxAgeHours ?? 72} h · daily reset at 00:00 UTC

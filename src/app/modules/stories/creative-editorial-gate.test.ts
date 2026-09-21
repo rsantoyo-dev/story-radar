@@ -112,7 +112,7 @@ test("when every editor is unavailable the gate hands the draft back for the fal
 });
 
 for (const invalidAudits of [0, 1, 2]) {
-test(`OpenAI outage preserves the gate and retries ${invalidAudits} invalid grounding audits within the call ceiling`, async () => {
+test(`OpenAI outage stops without invoking grounding fallback variant ${invalidAudits}`, async () => {
   const calls: string[] = [];
   let auditCount = 0;
   const exports = {} as { generateCreativeDraft: (options: unknown) => Promise<{ draft: GeneratedCreativeDraft }> };
@@ -171,19 +171,13 @@ test(`OpenAI outage preserves the gate and retries ${invalidAudits} invalid grou
       slides: carouselDraft.units.map(unit => ({ editorialGoal: unit.editorialGoal, viewerQuestion: unit.viewerQuestion, allowedFactIds: ["fact-1"] })) } },
     format: "carousel", outputAspectRatio: "4:5", characterRoster: [],
   });
-  assert.deepEqual(calls.slice(0, 4), ["gemini-draft", "terra-test", "sol-test", "gemini-audit"]);
+  assert.deepEqual(calls, ["gemini-draft", "terra-test", "sol-test"]);
+  assert.equal(auditCount, 0, "An outage must not start a non-independent audit loop");
   const review = result.draft.qualityReview!;
   assert.notEqual(review.status, "accepted");
-  assert.ok(auditCount <= 2);
-  if (invalidAudits) assert.equal(auditCount, 2);
-  if (invalidAudits === 2) {
-    assert.ok(review.issues.some(issue => issue.code === "CRITIC_UNAVAILABLE"));
-  } else {
-    assert.equal(review.critic?.provider, "google");
-    assert.ok(!review.issues.some(issue => issue.code === "CRITIC_UNAVAILABLE"));
-  }
-  assert.ok(review.issues.some(issue => issue.code === "CRITIC_FALLBACK" && /no credits remaining/.test(issue.message)));
-  assert.ok(!review.issues.some(issue => issue.code === "EDITORIAL_REVIEW_ATTEMPT_FAILED"));
+  assert.ok(review.issues.some(issue => issue.code === "CRITIC_UNAVAILABLE"));
+  assert.equal(isCreativeDraftReadyForAutomation(result.draft, "carousel", true), false);
+
 });
 
 }
