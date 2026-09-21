@@ -15,7 +15,7 @@ const MAX_REASON_LENGTH = 400;
 /** Bounds prompt size; recency-ordered, so this keeps the most relevant items. */
 const MAX_ALREADY_COVERED_ITEMS = 60;
 /** Only keep discoveries that clear the strict collector-quality floor. */
-export const MIN_AI_RESEARCH_SCORE = 70;
+export const MIN_AI_RESEARCH_SCORE = 55;
 
 export type AiResearchDiscovery = {
   title: string;
@@ -65,7 +65,7 @@ export async function discoverAiResearchStories(
       },
       body: JSON.stringify({
         model: process.env.AI_RESEARCH_OPENAI_MODEL?.trim() || DEFAULT_MODEL,
-        instructions: researchInstructions() + (input.config.collectionContext ? "\n" + editorialContextInstruction(input.config.collectionContext) + " For context and guides, studies and explanatory articles are eligible; do not demand a new event. A previously covered article may support a different angle: explain it without calling it a new story. An absent from date means no age cutoff. Return publishedAt as an empty string when unknown; never substitute retrieval time." : ""),
+        instructions: researchInstructions(input.profile.minResearchScore) + (input.config.collectionContext ? "\n" + editorialContextInstruction(input.config.collectionContext) + " For context and guides, studies and explanatory articles are eligible; do not demand a new event. A previously covered article may support a different angle: explain it without calling it a new story. An absent from date means no age cutoff. Return publishedAt as an empty string when unknown; never substitute retrieval time." : ""),
         input: JSON.stringify(researchInput(input)),
         tools: [{ type: "web_search", ...(input.config.collectionContext?.domains.length ? {filters:{allowed_domains:input.config.collectionContext.domains}} : {}) }],
         tool_choice: "required",
@@ -101,7 +101,7 @@ export async function discoverAiResearchStories(
       );
     }
 
-    return parseDiscoveries(extractOutputText(payload), sourceUrls, input.config.resultLimit);
+    return parseDiscoveries(extractOutputText(payload), sourceUrls, input.config.resultLimit, input.profile.minResearchScore);
   } catch (error) {
     if (error instanceof AiResearchProviderError) throw error;
     if (error instanceof Error && error.name === "AbortError") {
@@ -117,12 +117,12 @@ export async function discoverAiResearchStories(
   }
 }
 
-function researchInstructions(): string {
+function researchInstructions(minResearchScore: number): string {
   return `You are a news research collector for an editorial system. You must use web search before returning results.
 
 Return only independently published, real news or reporting items. Every item must use the original publisher URL found through web search; never use a search-result, social-media, home-page, tracking, or invented URL. Include only articles published inside the requested date range. Do not claim full article text: summary is a concise, factual excerpt grounded in the cited publisher page.
 
-researchScore is a strict source-selection confidence, not a popularity score. Score direct adherence to the configured topic, free-text instruction, requested date range, orientation, language/region, publisher credibility, and concrete evidence in the reporting. Scores of 90–100 require a direct match and a credible original publisher; below 70 is not eligible. Return fewer items rather than weak, tangential, unsupported, or speculative items. In scoreReasons, state the specific matching evidence briefly.
+researchScore is a strict source-selection confidence, not a popularity score. Score direct adherence to the configured topic, free-text instruction, requested date range, orientation, language/region, publisher credibility, and concrete evidence in the reporting. Scores of 90–100 require a direct match and a credible original publisher; below ${minResearchScore} is not eligible. A routine but concrete, resident-facing local item (a schedule change, a council agenda, a service notice) can still score just above that floor when its facts and publisher are solid; reserve the lowest scores for weak, tangential, unsupported, or speculative items. Return fewer items rather than pad the count. In scoreReasons, state the specific matching evidence briefly.
 
 researchRequest.alreadyCovered lists stories this topic has already collected, queued, or published recently. Treat a candidate as the same story as an alreadyCovered item when it reports the same underlying event, announcement, decision, or development — judge by the actual news event, not by shared keywords or a similar headline shape. Never return such a candidate, even when it comes from a different publisher or uses noticeably different wording. A genuine follow-up is only acceptable when it reports materially new, independently newsworthy information beyond every alreadyCovered item it relates to; state that new information in its scoreReasons.`;
 }
@@ -261,6 +261,7 @@ function parseDiscoveries(
   outputText: string,
   sourceUrls: ReadonlySet<string>,
   limit: number,
+  minResearchScore: number,
 ): AiResearchDiscovery[] {
   let parsed: unknown;
   try {
@@ -275,7 +276,7 @@ function parseDiscoveries(
   const discoveries: AiResearchDiscovery[] = [];
   const seenUrls = new Set<string>();
   parsed.items.forEach((item) => {
-    const discovery = parseDiscovery(item, sourceUrls);
+    const discovery = parseDiscovery(item, sourceUrls, minResearchScore);
     if (!discovery) return;
     const key = normalizeUrl(discovery.url);
     if (seenUrls.has(key) || discoveries.length >= limit) return;
@@ -288,6 +289,7 @@ function parseDiscoveries(
 function parseDiscovery(
   value: unknown,
   sourceUrls: ReadonlySet<string>,
+  minResearchScore: number,
 ): AiResearchDiscovery | undefined {
   if (!isRecord(value)) return undefined;
   const title = boundedText(value.title, 500);
@@ -314,7 +316,7 @@ function parseDiscovery(
     !Number.isInteger(researchScore) ||
     researchScore < 0 ||
     researchScore > 100 ||
-    researchScore < MIN_AI_RESEARCH_SCORE ||
+    researchScore < minResearchScore ||
     scoreReasons.length === 0
   ) {
     return undefined;

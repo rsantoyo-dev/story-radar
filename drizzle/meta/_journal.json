@@ -526,6 +526,13 @@
       "when": 1789902513440,
       "tag": "0075_chemical_swarm",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1789991642546,
+      "tag": "0076_left_carlie_cooper",
+      "breakpoints": true
     }
   ]
 }

@@ -1,7 +1,7 @@
 import "server-only";
 import sharp from "sharp";
 import { escapeDocumentaryText } from "./creative-documentary-render";
-import { googleMapsConfig, googleMapsProvider, MapsPreviewError, type GoogleMapsConfig, type GoogleTransport } from "./google-maps-provider";
+import { googleMapsConfig, googleMapsProvider, selectMatchingGooglePlace, MapsPreviewError, type GoogleMapsConfig, type GoogleTransport } from "./google-maps-provider";
 import type { CreativeProfile } from "./creative-content.types";
 import type { MapsPreviewCard, MapsPreviewInput, MapsPreviewResult } from "./google-maps-preview.types";
 
@@ -68,19 +68,16 @@ export async function prepareGoogleMapsPreview(
     const { candidates, incomplete } = await provider.search(input);
     result.candidates = candidates.map(({ name, address, sourceUrl, matchesScope, attributions, exclusions }) => ({ name, address, sourceUrl, matchesScope, attributions, exclusions }));
     result.requests = provider.requests;
-    const localPoints = candidates.filter(place => place.matchesScope && place.pointSuitable);
-    const matches = localPoints.filter(place => place.exactName);
     // Previewing one named local search result is not verifying its identity.
     // Only this ephemeral test allows it; production documentary policy is unchanged.
-    const place = matches.length === 1 ? matches[0]
-      : matches.length === 0 && localPoints.length === 1 && localPoints[0].namedPoint ? localPoints[0] : undefined;
-    if (!place || incomplete) {
+    const place = selectMatchingGooglePlace(candidates, incomplete);
+    if (!place) {
       result.status = candidates.length ? "ambiguous" : "not-found";
       if (incomplete) result.reasons.push("Google returned an incomplete result set; a unique match cannot be established.");
       else if (!candidates.length) result.reasons.push("Google returned no places for this query.");
       else if (!candidates.some(place => place.matchesScope)) result.reasons.push("No result confirms the requested geographic scope. See the specific municipality, region or country mismatch below.");
       else if (!candidates.some(place => place.matchesScope && place.exactName)) result.reasons.push("The geographic scope matches, but Google did not confirm the requested place name. A matching address does not establish the identity of a school, business or event.");
-      else if (!matches.length) result.reasons.push("The matching result is not suitable for a precise point marker. Road segments and areas require a geometry workflow.");
+      else if (!candidates.some(place => place.matchesScope && place.exactName && place.pointSuitable)) result.reasons.push("The matching result is not suitable for a precise point marker. Road segments and areas require a geometry workflow.");
       else result.reasons.push("More than one place matches the name and scope; no unique location was selected.");
       result.reasons.push("No marker or photo was selected. Review the candidate details below; do not substitute a nearby place for the subject of the news.");
       return result;

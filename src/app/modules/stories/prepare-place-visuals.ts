@@ -13,6 +13,7 @@ import { requestsGeographicReconstruction } from "./creative-evidence-guardrails
 import { prepareRoadMap } from "./prepare-road-map";
 import { sourceLocations, sourceLocationForUnit } from "./source-location";
 import { prepareSourceLocation } from "./prepare-source-location";
+import { resolveGooglePlaceMap } from "./resolve-google-place-map";
 
 const schema = { type: "object", additionalProperties: false, required: ["mentions", "purpose"], properties: {
   purpose: { type: "string", enum: ["location", "current-state", "unknown"] },
@@ -48,6 +49,7 @@ export async function preparePlaceVisuals(topicId: string, draft: CreativeDraft,
   } else if (needsResearch) reasons.push("Place research is not configured or its daily budget is exhausted.");
   if (/\b(rénov|travaux|fermeture|fermé|construction|inaugur|réaménag|demolit|damage|renovat|closure|closed|réfection|cierre|obras|remodel)/iu.test(source)) extraction.purpose = "current-state";
   const providers=documentaryProviders(AbortSignal.timeout(35000), profile.language, profile.geoProviderContact);
+  const googleSignal=AbortSignal.timeout(35000);
   const enabled=(process.env.CREATIVE_GEO_SOURCE_ADAPTERS ?? "quebec511").split(",");
   let adapter: typeof adapters[number] | undefined;
   try { const url=new URL(sourceUrl);adapter=adapters.find(a=>enabled.includes(a.id)&&a.supports(url)); } catch { /* no regional source */ }
@@ -84,6 +86,17 @@ export async function preparePlaceVisuals(topicId: string, draft: CreativeDraft,
     const mention=mentions[0];
     const cacheKey=mention.name+extraction.purpose;
     const cached=materialCache.get(cacheKey);if(cached){results.set(unit.order,cached);continue;}
+    // Try a real, Google-verified static map first; it only ever returns a
+    // result for a name- and scope-confirmed place, so any success here is at
+    // least as trustworthy as the Wikidata path below. Any failure (no key,
+    // no budget, ambiguous, provider error) falls through unchanged.
+    const google=await resolveGooglePlaceMap(mention.name,profile.geoScope,profile.language,googleSignal).catch(()=>undefined);
+    if(google){
+      result.bytes=google.bytes;result.evidence.representation="map";result.evidence.adapter=google.evidence.adapter;
+      result.evidence.sourceUrl=google.evidence.sourceUrl;result.evidence.attribution=google.evidence.attribution;
+      result.evidence.sha256=google.evidence.sha256;result.evidence.reasons.push(...google.evidence.reasons);
+      materialCache.set(cacheKey,result);continue;
+    }
     try {
       const place=await providers.resolve(mention,profile.geoScope);
       if(!place){result.evidence.reasons.push("Identity could not be established from provider records and geographic scope.");continue;}

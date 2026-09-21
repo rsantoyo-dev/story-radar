@@ -334,6 +334,7 @@ test("worldwide preparation resolves source-backed places, maps current-state re
     "./creative-content.config":{getCreativeContentPublicConfig:()=>({maxRunsPerDay:10})},
     "./creative-content.repository":{getCreativeDailyUsage:async()=>({remainingRuns:10}),createCreativeAiRun:async()=>"run",completeCreativeAiRun:async()=>{},failCreativeAiRun:async()=>{}},
     "./openai-structured-response":{generateOpenAiStructuredResponse:async()=>({text:JSON.stringify({purpose:"current-state",mentions:[mention]}),usage:{},model:"test"})},
+    "./resolve-google-place-map":{resolveGooglePlaceMap:async()=>undefined},
   };
   const service=load<typeof import("./prepare-place-visuals")>("prepare-place-visuals.ts",dependencies,{OPENAI_API_KEY:"test",CREATIVE_GEO_SOURCE_ADAPTERS:""});
   const draft={units:[unit,{...unit,id:"second",order:2,role:"content",visualDirection:"Typography"}],storyId:"story",briefId:"brief"} as unknown as import("./creative-content.types").CreativeDraft;
@@ -362,6 +363,7 @@ test("nearby source address maps only its cited slide without AI research or cha
     "./creative-content.repository": { getCreativeDailyUsage: async () => ({ remainingRuns: 10 }), createCreativeAiRun: () => { throw new Error("Unexpected model call"); } },
     "./creative-content.config": { getCreativeContentPublicConfig: () => ({ maxRunsPerDay: 10 }) },
     "./openai-structured-response": {},
+    "./resolve-google-place-map": { resolveGooglePlaceMap: async () => undefined },
   }, { OPENAI_API_KEY: "configured" });
   const result = await service.preparePlaceVisuals("topic", draft, profile, facts, "https://example.org/event");
   assert.equal(maps, 1);

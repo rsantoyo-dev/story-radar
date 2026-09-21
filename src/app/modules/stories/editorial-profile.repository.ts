@@ -10,6 +10,7 @@ import {
 } from "@/db/schema";
 
 import { getEditorialEvaluationPublicConfig } from "./editorial-evaluation.config";
+import { MIN_AI_RESEARCH_SCORE } from "@/app/modules/sources/ai-research/openai-ai-research";
 import { reactivateAutoRejectedStories } from "./reactivate-auto-rejected-stories";
 import {
   DEFAULT_EDITORIAL_PROFILE_FRESHNESS,
@@ -172,6 +173,7 @@ export function parseEditorialProfileInput(
     freshness: value.freshness,
     weights: value.weights,
     localCandidateMinScore: value.localCandidateMinScore,
+    minResearchScore: value.minResearchScore,
   } as EditableEditorialProfile);
 }
 
@@ -203,6 +205,7 @@ export function createDefaultEditorialProfile(input: {
     },
     weights: { ...DEFAULT_EDITORIAL_PROFILE_WEIGHTS },
     localCandidateMinScore: legacyConfig.minLocalScore,
+    minResearchScore: MIN_AI_RESEARCH_SCORE,
     profileVersion: 1,
     updatedAt: input.updatedAt,
     isDefault: true,
@@ -228,6 +231,7 @@ function mapStoredProfile(profile: TopicEditorialProfile): EditorialProfile {
       socialPotential: profile.socialPotentialWeight,
     },
     localCandidateMinScore: profile.localCandidateMinScore,
+    minResearchScore: profile.minResearchScore,
     profileVersion: profile.profileVersion,
     updatedAt: profile.updatedAt,
     isDefault: false,
@@ -248,6 +252,7 @@ function toDatabaseValues(profile: EditableEditorialProfile) {
     audienceValueWeight: profile.weights.audienceValue,
     socialPotentialWeight: profile.weights.socialPotential,
     localCandidateMinScore: profile.localCandidateMinScore,
+    minResearchScore: profile.minResearchScore,
   };
 }
 
@@ -285,6 +290,12 @@ function validateEditorialProfile(
     localCandidateMinScore: boundedInteger(
       value.localCandidateMinScore,
       "localCandidateMinScore",
+      0,
+      100,
+    ),
+    minResearchScore: boundedInteger(
+      value.minResearchScore,
+      "minResearchScore",
       0,
       100,
     ),

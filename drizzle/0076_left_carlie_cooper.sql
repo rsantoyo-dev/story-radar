@@ -1,0 +1,2 @@
+ALTER TABLE "topic_editorial_profiles" ADD COLUMN "min_research_score" integer DEFAULT 55 NOT NULL;--> statement-breakpoint
+ALTER TABLE "topic_editorial_profiles" ADD CONSTRAINT "topic_editorial_profiles_min_research_score_check" CHECK ("topic_editorial_profiles"."min_research_score" BETWEEN 0 AND 100);

@@ -285,13 +285,25 @@ export function EditorialProfilePanel({
           disabled={disabled || busy}
           onChange={(value) => updateDraft({ localCandidateMinScore: value })}
         />
+        <NumberField
+          label="AI research floor"
+          value={draft.minResearchScore}
+          suffix="/ 100"
+          min={0}
+          max={100}
+          disabled={disabled || busy}
+          onChange={(value) => updateDraft({ minResearchScore: value })}
+        />
       </div>
       <p className={styles.policyHint}>
         The research window applies to RSS sources tagged <code>research</code>,
         <code>academic</code>, or <code>journal</code>. Other sources use the
         news window. Lowering the AI candidate floor restores eligible automatic
         score rejections to New; human, hard, and duplicate rejections remain
-        final.
+        final. The AI research floor is the self-reported confidence the
+        web-search collector must clear before a discovery becomes a Story at
+        all &mdash; lowering it surfaces smaller, more routine local items;
+        raising it keeps only strong, well-sourced matches.
       </p>
 
       <div className={styles.weightsHeading}>
@@ -395,6 +407,7 @@ function toDraft(profile: TopicEditorialProfile): EditorialProfileDraft {
     freshness: { ...profile.freshness },
     weights: { ...profile.weights },
     localCandidateMinScore: profile.localCandidateMinScore,
+    minResearchScore: profile.minResearchScore,
   };
 }
 

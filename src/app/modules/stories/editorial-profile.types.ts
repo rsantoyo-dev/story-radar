@@ -24,6 +24,7 @@ export type EditableEditorialProfile = {
   freshness: EditorialProfileFreshnessPolicy;
   weights: EditorialProfileWeights;
   localCandidateMinScore: number;
+  minResearchScore: number;
 };
 
 export type EditorialProfile = EditableEditorialProfile & {

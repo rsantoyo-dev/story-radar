@@ -17,6 +17,17 @@ test("schematic maps and road reconstructions cannot be delegated to image gener
   assert.equal(requestsGeographicReconstruction("Présenter le titre sur un fond neutre avec une mise en page typographique"),false);
 });
 
+test("an interactive map or navigation-app mockup is not a harmless UI motif", () => {
+  for (const direction of [
+    "A tablet on a car dashboard displaying an interactive map with highlighted street closures and glowing route lines.",
+    "Une carte interactive affichant les rues fermées et les heures prévues.",
+    "A smartphone showing a map app with highlighted zones and location pins near a street.",
+    "Carte interactive des fermetures de rues à Brossard.",
+    "An editorial illustration of a navigation app interface with route markers.",
+    "Mostrar un mapa interactivo con los cierres de calles.",
+  ]) assert.ok(requestsGeographicReconstruction(direction), direction);
+});
+
  test("map exclusions do not divert conceptual illustrations into documentary composition", () => {
  for (const direction of [
   "Deux cartes-adresses abstraites reliées par une conduite stylisée. Ambiance nocturne, sans carte géographique détaillée.",
@@ -43,4 +54,16 @@ test("truncated-only facts are rejected without confusing a complete statement w
   assert.equal(onlyTruncatedCreativeFacts([{id:"1", statement:"Worked in their...",sourceExcerpt:"Worked in their..."}]),true);
   assert.equal(onlyTruncatedCreativeFacts([{id:"1", statement:"One in five worked in their intended occupation.",sourceExcerpt:"One in five worked…"}]),false);
   assert.equal(onlyTruncatedCreativeFacts([{id:"1", statement:"Worked in their…"},{id:"2",statement:"The survey covered recent immigrants."}]),false);
+});
+
+test("an 'abstract, unreadable' map or interface is the same fabrication risk as a literal one", () => {
+  for (const direction of [
+    "Photographie réaliste d’une tablette affichant une carte abstraite non lisible, posée sur le capot d’une voiture.",
+    "Placer le headline dans un bloc crème à droite ... montrer une interface abstraite non lisible sur le téléphone.",
+    "Deux repères violets reliés par une ligne rose sur une carte abstraite non lisible.",
+    "A phone screen showing an illegible interface with abstract UI elements.",
+    "An unreadable map on a dashboard tablet.",
+  ]) assert.ok(requestsGeographicReconstruction(direction), direction);
+  // Editorial illustrations with no device or map language stay exempt.
+  assert.equal(requestsGeographicReconstruction("Une illustration éditoriale avec un livre ouvert et un stylo, palette chaude."), false);
 });

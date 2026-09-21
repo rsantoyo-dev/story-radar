@@ -54,6 +54,11 @@ export const topicEditorialProfiles = pgTable(
     localCandidateMinScore: integer("local_candidate_min_score")
       .default(25)
       .notNull(),
+    // AI-research self-reported confidence floor. Distinct from
+    // localCandidateMinScore: this filters a discovery before any Story row
+    // exists, while localCandidateMinScore filters already-created candidates
+    // by their general relevance score.
+    minResearchScore: integer("min_research_score").default(55).notNull(),
     // This is a monotonically increasing revision used by consumers to
     // invalidate profile-dependent caches after a saved edit.
     profileVersion: integer("profile_version").default(1).notNull(),
@@ -96,6 +101,10 @@ export const topicEditorialProfiles = pgTable(
     check(
       "topic_editorial_profiles_local_candidate_min_score_check",
       sql`${table.localCandidateMinScore} BETWEEN 0 AND 100`,
+    ),
+    check(
+      "topic_editorial_profiles_min_research_score_check",
+      sql`${table.minResearchScore} BETWEEN 0 AND 100`,
     ),
     check(
       "topic_editorial_profiles_profile_version_check",

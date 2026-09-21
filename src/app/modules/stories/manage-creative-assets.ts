@@ -1723,7 +1723,7 @@ export async function previewCreativeImageBase(topicId: string, assetId: string)
 }
 
 /** Never name or reconstruct the specific place; only conceptual research failed, not the slide's theme. */
-const GEOGRAPHIC_FALLBACK_VISUAL_DIRECTION = "No verified photograph or map could be confirmed for the specific place this slide describes. Render a conceptual, symbolic editorial illustration evoking the slide's theme instead: do not depict a specific real street, building, map, road sign, storefront or landmark, and do not imply geographic or documentary accuracy for any particular location.";
+const GEOGRAPHIC_FALLBACK_VISUAL_DIRECTION = "No verified photograph or map could be confirmed for the specific place this slide describes. Render a single, oversized flat-iconographic motif instead — a location pin, a stylized road or path icon, or a clock/calendar if the slide is about timing — in bold, editorial color on a clean background. Never depict a phone, tablet, computer, screen, app, dashboard, or any interface: a rendered screen implies specific map or app content this slide cannot verify, and text or icons inside a small rendered screen usually come out illegible or garbled. Do not depict a specific real street, building, map, road sign, storefront or landmark, and do not imply geographic or documentary accuracy for any particular location.";
 
 function placeCompositionVersion(draftId: string): string {
   return process.env.CREATIVE_PLACE_PHOTO_REFERENCE_TEST_DRAFT_ID === draftId ? "place-visual-v5" : "place-visual-v4";

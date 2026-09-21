@@ -178,6 +178,25 @@ export function parseGooglePlaces(value: unknown, input: MapsPreviewInput): { ca
   return { candidates, incomplete };
 }
 
+/**
+ * The single scope-matched, name-confirmed candidate, or the single named,
+ * scope-matched point when no exact name confirms it. Any other outcome
+ * (zero matches, several, an incomplete result set) is not a verified place;
+ * callers must not guess. Shared by the preview panel and real generation so
+ * neither path can drift toward looser matching than the other.
+ */
+export function selectMatchingGooglePlace(
+  candidates: readonly GooglePlaceCandidate[],
+  incomplete: boolean,
+): GooglePlaceCandidate | undefined {
+  if (incomplete) return undefined;
+  const localPoints = candidates.filter((place) => place.matchesScope && place.pointSuitable);
+  const matches = localPoints.filter((place) => place.exactName);
+  if (matches.length === 1) return matches[0];
+  if (matches.length === 0 && localPoints.length === 1 && localPoints[0]!.namedPoint) return localPoints[0];
+  return undefined;
+}
+
 export function staticGoogleMapUrl(place: GooglePlaceCandidate, config: GoogleMapsConfig): URL {
   const url = new URL("https://maps.googleapis.com/maps/api/staticmap");
   const point = `${place.latitude},${place.longitude}`;

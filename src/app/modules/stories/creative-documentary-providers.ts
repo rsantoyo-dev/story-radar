@@ -147,7 +147,7 @@ export function validCoordinate(value: Record<string, unknown>): boolean {
     value.globe === "http://www.wikidata.org/entity/Q2";
 }
 
-function providerLanguage(value: string): string {
+export function providerLanguage(value: string): string {
   const named: Record<string,string>={french:"fr",français:"fr",english:"en",spanish:"es",español:"es",portuguese:"pt",german:"de",japanese:"ja",arabic:"ar"};
   const text=value.toLowerCase().trim();return named[text] || (/^[a-z]{2,3}(?:-|$)/.test(text)?text.split("-")[0]:"en");
 }

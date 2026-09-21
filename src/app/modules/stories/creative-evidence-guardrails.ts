@@ -38,7 +38,13 @@ export function evidenceQualityIssues(draft: GeneratedCreativeDraft, facts: read
 /** Maps and recognizable road/place reconstructions belong to the documentary path. */
 export function requestsGeographicReconstruction(direction: string): boolean {
   const text = normalized(direction).replace(/\b(qu|d)[’']/g, "$1e ");
-  const geographic = /\b(?:carte(?:s)? (?:schematique|routiere|geographique)|cartograph\w*|(?:street|road|location|schematic) map|map of|google maps|street view|mapa(?:s)? (?:esquematico|geografico|vial|de)|segment routier|troncon routier|road segment|tramo (?:vial|de carretera)|place publique|public square|plaza publica)\b/g;
+  // An "interactive map" or "map/navigation app" request reads as harmless UI
+  // chrome, but it renders the same fabricated routes, pins and closures as a
+  // literal reconstruction would; route it through the same evidence path.
+  // A "carte abstraite" ("abstract map") is the same risk under a hedge word:
+  // the generated image still renders as a plausible navigation UI regardless
+  // of how the direction qualifies it, so the qualifier does not exempt it.
+  const geographic = /\b(?:(?:carte|interface)(?:s)? (?:schematique|routiere|geographique|interactive|abstraite?|(?:non |il)?lisible|(?:des? )?fermetures?)|cartograph\w*|(?:street|road|location|schematic|interactive|closure|navigation|route|abstract|unreadable|illegible) map|(?:map(?:ping)?|navigation) (?:app|application|interface|ui)|(?:abstract|illegible) interface|application (?:de )?carte|map of|google maps|street view|mapa(?:s)? (?:esquematico|geografico|vial|de|interactivo|abstracto)|segment routier|troncon routier|road segment|tramo (?:vial|de carretera)|place publique|public square|plaza publica)\b/g;
   // Scope exclusions to each mention. A later positive map request still
   // requires documentary handling, even if another map was excluded.
   const excluded = /(?:\b(?:rather than|instead of|en lugar de|en vez de|plutot que|au lieu de)|\b(?:sans|aucune?|sin|no|without|avoid|eviter|evita|evitar)|\b(?:do not|don't|ne pas|no)\s+(?:draw|show|render|include|use|dessiner|montrer|inclure|utiliser|dibujar|mostrar|incluir|usar))\s+(?:(?:a|an|any|the|une?|de|des|la|le|les|el|los|las|una?|ninguna?)\s+)*$/;
