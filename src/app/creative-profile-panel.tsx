@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import {
   BrandOverlayEditor,
@@ -8,6 +8,7 @@ import {
   BrandReferenceLibrary,
   CarouselNumberingEditor,
   ListField,
+  SupportingCharactersEditor,
   TextAreaField,
   TextField,
   capitalize,
@@ -292,7 +293,7 @@ export function CreativeProfilePanel({
       ) : null}
 
       <fieldset className={styles.profileBodyPlain} disabled={controlsDisabled}>
-        <Group title="Identity" defaultOpen>
+        <Group title="Identity" id="creative-profile-identity" defaultOpen>
           <div className={styles.fieldGrid}>
             <TextField label="Profile name" value={draft.name} onChange={(name) => updateDraft({ name })} />
             <TextField label="Platform" value={draft.platform} onChange={(platform) => updateDraft({ platform })} />
@@ -302,7 +303,7 @@ export function CreativeProfilePanel({
           <TextAreaField label="Audience" value={draft.audience} onChange={(audience) => updateDraft({ audience })} rows={2} />
         </Group>
 
-        <Group title="Strategy">
+        <Group title="Strategy" id="creative-profile-strategy">
           <div className={styles.fieldGrid}>
             <label className={styles.field}>
               <span>Primary conversion goal</span>
@@ -374,7 +375,7 @@ export function CreativeProfilePanel({
           </p>
         </Group>
 
-        <Group title="Place fidelity">
+        <Group title="Place fidelity" id="creative-profile-place-fidelity">
           <label className={styles.field}>
             <span>How real places are represented</span>
             <select
@@ -440,7 +441,7 @@ export function CreativeProfilePanel({
           <GoogleMapsPreviewPanel key={topicId} topicId={topicId} secret={secret} profile={draft} disabled={disabled} />
         </Group>
 
-        <Group title="Voice">
+        <Group title="Voice" id="creative-profile-voice">
           <ListField
             key={draft.brandPersonality.join("|")}
             label="Brand personality (comma-separated)"
@@ -487,7 +488,7 @@ export function CreativeProfilePanel({
           </div>
         </Group>
 
-        <Group title="Brand & visual">
+        <Group title="Brand & visual" id="creative-profile-brand">
           <TextAreaField
             label="Visual campaign guide"
             value={draft.visualGuidance ?? ""}
@@ -523,7 +524,15 @@ export function CreativeProfilePanel({
           />
         </Group>
 
-        <Group title="Carousel numbering">
+        <Group title="Supporting characters" id="creative-profile-characters">
+          <SupportingCharactersEditor
+            topicId={topicId}
+            secret={secret}
+            disabled={controlsDisabled}
+          />
+        </Group>
+
+        <Group title="Carousel numbering" id="creative-profile-carousel">
           <CarouselNumberingEditor
             chrome={draft.carouselChrome}
             palette={draft.brandPalette}
@@ -547,10 +556,12 @@ export function CreativeProfilePanel({
 
 function Group({
   title,
+  id,
   defaultOpen = false,
   children,
 }: {
   title: string;
+  id?: string;
   defaultOpen?: boolean;
   children: ReactNode;
 }) {
@@ -558,8 +569,30 @@ function Group({
   // reconcile `open` back to its default and snap the section the user is
   // editing shut.
   const [open, setOpen] = useState(defaultOpen);
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+
+  // A sidebar link to this group's id should open it even when collapsed,
+  // not just scroll to its (possibly hidden) content.
+  useEffect(() => {
+    if (!id) return;
+    const openIfTargeted = () => {
+      if (window.location.hash !== `#${id}`) return;
+      setOpen(true);
+      // The browser's native anchor jump may have already run against the
+      // collapsed height; re-scroll once the section's real height lands.
+      requestAnimationFrame(() => {
+        detailsRef.current?.scrollIntoView({ block: "start" });
+      });
+    };
+    openIfTargeted();
+    window.addEventListener("hashchange", openIfTargeted);
+    return () => window.removeEventListener("hashchange", openIfTargeted);
+  }, [id]);
+
   return (
     <details
+      ref={detailsRef}
+      id={id}
       className={styles.profilePanel}
       open={open}
       onToggle={(event) => setOpen(event.currentTarget.open)}

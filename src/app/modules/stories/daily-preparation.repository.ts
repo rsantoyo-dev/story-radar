@@ -25,7 +25,7 @@ export async function continuePreparation(topicId:string,id:string,targetStep:Da
   let step=run.step;
   if(run.status==="completed")step=DAILY_PREPARATION_STEPS[DAILY_PREPARATION_STEPS.indexOf(completed!)+1];
   // Older day-only runs did not store the chosen story. Resolve their recommendation once.
-  if(step==="content" && !run.progress.storyId)step="recommend";
+  if((step==="content" || step==="approve") && !run.progress.storyId)step="recommend";
   if(DAILY_PREPARATION_STEPS.indexOf(targetStep)<DAILY_PREPARATION_STEPS.indexOf(step as DailyPreparationStep))return run;
   const progress={...run.progress,targetStep,mode:DAILY_PREPARATION_STEPS.indexOf(targetStep)>2?"draft" as const:run.progress.mode};
   if(step==="collect")delete progress.collectionRunId;

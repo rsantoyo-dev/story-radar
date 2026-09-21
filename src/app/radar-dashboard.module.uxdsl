@@ -198,6 +198,50 @@
   font-weight: 750;
 }
 
+.navGroup {
+  display: grid;
+  gap: density(1);
+}
+
+.navGroupSummary {
+  display: flex;
+  align-items: center;
+  /* The link only takes its own content width (not flex:1), so the rest of
+   * this row is plain <summary> background: clicking it still toggles the
+   * native <details>, giving the collapse action a wide, reliable target
+   * instead of the single glyph the ::after chevron alone would offer. */
+  justify-content: space-between;
+  border-radius: radius(2);
+  cursor: pointer;
+  list-style: none;
+  transition: background 150ms ease;
+}
+
+.navGroupSummary::-webkit-details-marker {
+  display: none;
+}
+
+.navGroupSummary:hover,
+.navGroupSummary:focus-visible {
+  background: palette(primary-light, 0.06);
+}
+
+.navGroupSummary a {
+  min-width: 0;
+}
+
+.navGroupSummary::after {
+  padding: density(2) density(4);
+  color: palette(primary-light, 0.55);
+  @ds-typo (caption);
+  font-size: space(4);
+  content: "⌄";
+}
+
+.navGroup[open] > .navGroupSummary::after {
+  content: "⌃";
+}
+
 .sidebarFooter {
   margin-top: auto;
   padding: density(5) density(3) 0;
@@ -2842,41 +2886,55 @@
   margin-top: auto;
 }
 
+/* Compact chip row: 10 steps need to read as one clear sequence, not a wall
+   of large cards. Each chip is a single line (number/check + short title);
+   the full running status lives in .dailyPreparationStatusLine below. */
 .dailyPreparationSteps {
-  display: grid;
-  grid-template-columns: xs(1fr) md(repeat(3, minmax(0, 1fr)));
-  gap: density(3);
-  padding: density(2);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: density(2);
+  padding: density(1) 0;
   list-style: none;
 }
 .dailyPreparationSteps li {
-  display: grid;
+  display: contents;
 }
 .dailyPreparationStepButton {
   @ds-button(outlined primary);
-  @ds-typo(body);
-  display: grid;
+  @ds-typo(caption);
+  display: inline-flex;
+  align-items: center;
   gap: density(2);
-  padding: density(3);
-  width: 100%;
-  height: 100%;
-  text-align: left;
-  white-space: normal;
+  padding: density(2) density(3);
+  border-radius: radius(full);
+  font-weight: 650;
+  white-space: nowrap;
   cursor: pointer;
-  box-shadow: shadow(1);
+  box-shadow: none;
   transition: box-shadow 0.15s ease, transform 0.15s ease, background 0.15s ease;
 }
-/* A step in progress still gets the current-step highlight around the card. */
+.dailyPreparationStepButton span {
+  display: inline-grid;
+  min-width: 16px;
+  height: 16px;
+  place-items: center;
+  border-radius: radius(full);
+  background: palette(primary-light, 0.16);
+  font-size: 10px;
+  line-height: 1;
+}
+/* A step in progress still gets the current-step highlight around the chip. */
 .dailyPreparationSteps li[aria-current="step"] .dailyPreparationStepButton {
-  box-shadow: shadow(3);
+  box-shadow: shadow(2);
 }
 .dailyPreparationStepButton:hover:not(:disabled) {
-  box-shadow: shadow(3);
+  box-shadow: shadow(2);
   transform: translateY(-1px);
 }
 .dailyPreparationStepButton:active:not(:disabled) {
   transform: translateY(0);
-  box-shadow: shadow(1);
+  box-shadow: none;
 }
 .dailyPreparationStepButton:disabled {
   cursor: not-allowed;
@@ -2908,6 +2966,33 @@
 }
 .dailyPreparationStepButton[data-step-status="todo"] {
   border-color: palette(primary-light);
+}
+
+/* The one place that always spells out exactly what's happening right now —
+   compact chips above trade their old subtitle line for this. */
+.dailyPreparationStatusLine {
+  @ds-typo(body);
+  padding: density(3) density(4);
+  border-radius: radius(2);
+  font-weight: 650;
+  border: border(1, palette(info-light), solid);
+  background: palette(info-light, 0.12);
+  color: palette(info-dark);
+}
+.dailyPreparationStatusLine[data-run-status="completed"] {
+  border-color: palette(success-light);
+  background: palette(success-light, 0.14);
+  color: palette(success-dark);
+}
+.dailyPreparationStatusLine[data-run-status="needs-review"] {
+  border-color: palette(warning-main);
+  background: palette(warning-light, 0.2);
+  color: palette(warning-dark);
+}
+.dailyPreparationStatusLine[data-run-status="failed"] {
+  border-color: palette(error-main);
+  background: palette(error-light, 0.16);
+  color: palette(error-dark);
 }
 
 .acquisitionLenses {

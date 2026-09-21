@@ -99,24 +99,26 @@ export function DailyPreparationPanel({onCompleted,onOpenDraft,...props}:Props) 
     <ol className={styles.dailyPreparationSteps}>{steps.map((step,index)=>{
       const done=index<=completedIndex;
       const active=!fresh && run?.step===step && !done;
-      const canOpen=done && ((step==="content" && run?.progress.storyId) || ((step==="brief" || step==="draft") && run?.progress.briefId));
+      const opensDraft=step==="brief" || step==="draft" || step==="approve-draft" || step==="images";
+      const canOpen=done && ((step==="content" && run?.progress.storyId) || (opensDraft && run?.progress.briefId));
       // Drives the color coding in radar-dashboard.module.uxdsl — keep in
       // sync with the [data-step-status="..."] rules there.
       const stepStatus=done?(canOpen?"done-open":"done"):active?(running?"running":"attention"):"todo";
+      const statusDetail=done?(canOpen?"Completed · Open":"Completed"):active?(running?"Running": "Needs attention · Retry"):"Run to here";
       return <li key={step} aria-current={active && running?"step":undefined}>
         <button type="button" className={styles.dailyPreparationStepButton} data-step-status={stepStatus} disabled={blocked || !selectedLine || (done && !canOpen)} onClick={()=>{
           if(done && run?.progress.storyId) {
             if(step==="content")props.onViewContent(run.progress.storyId);
-            else onOpenDraft(run.progress.storyId,run.progress.storyTitle ?? "Creative draft",step==="draft"?run.progress.draftId:undefined,run.id);
+            else onOpenDraft(run.progress.storyId,run.progress.storyTitle ?? "Creative draft",step==="draft"||step==="approve-draft"||step==="images"?run.progress.draftId:undefined,run.id);
           } else void start(step);
-        }} aria-label={done?`Open ${DAILY_PREPARATION_TITLES[step]}`:`Run through ${DAILY_PREPARATION_TITLES[step]}`}>
-          <strong>{done?"✓":index+1} · {DAILY_PREPARATION_TITLES[step]}</strong>
-          <span>{done?(canOpen?"Completed · Open":"Completed"):active?(running?"Running": "Needs attention · Retry"):"Run to here"}</span>
+        }} title={statusDetail} aria-label={`${DAILY_PREPARATION_TITLES[step]} · ${statusDetail}`}>
+          <span aria-hidden="true">{done?"✓":index+1}</span>
+          {DAILY_PREPARATION_TITLES[step]}
         </button>
       </li>;
     })}</ol>
     {run && <>
-      <p role="status" aria-live="polite">{running?`${DAILY_PREPARATION_LABELS[run.step]} · Step ${steps.indexOf(run.step as DailyPreparationStep)+1} of ${steps.indexOf(preparationTarget(run.progress))+1}`:run.status==="completed"?`${DAILY_PREPARATION_TITLES[completedStep!]} ready`:(run.status==="needs-review"?"Needs your review":`Stopped: ${DAILY_PREPARATION_LABELS[run.step]}`)} · {run.progress.lineName}</p>
+      <p className={styles.dailyPreparationStatusLine} data-run-status={run.status} role="status" aria-live="polite">{running?`${DAILY_PREPARATION_LABELS[run.step]} · Step ${steps.indexOf(run.step as DailyPreparationStep)+1} of ${steps.indexOf(preparationTarget(run.progress))+1}`:run.status==="completed"?`${DAILY_PREPARATION_TITLES[completedStep!]} ready`:(run.status==="needs-review"?"Needs your review":`Stopped: ${DAILY_PREPARATION_LABELS[run.step]}`)} · {run.progress.lineName}</p>
       <p>{run.progress.collected ?? 0} stories collected · {run.progress.evaluated} evaluated{run.progress.recommendationRunId?" · Recommendation ready":""}</p>
       {run.progress.collectionWarning && <p role="status">{run.progress.collectionWarning}</p>}
       {run.progress.evaluationWarning && <p role="status">{run.progress.evaluationWarning}</p>}

@@ -16,6 +16,8 @@ import {
   type CreativeBrandPaletteColor,
   type CreativeBrandReference,
   type CreativeBrandReferenceKind,
+  type CreativeCharacter,
+  type CreativeCharacterReferenceImage,
   type CreativeProfile,
 } from "./modules/stories/creative-content.types";
 import { contrastRatio } from "@/design/color/oklch";
@@ -1535,5 +1537,449 @@ export function BrandReferencePreview({
     <div className={styles.referencePreviewPlaceholder}>
       {unavailable ? "Preview unavailable" : "Loading…"}
     </div>
+  );
+}
+
+const CHARACTERS_PATH = "/api/radar/creative/characters";
+
+type CharacterSlot = {
+  slot: 1 | 2;
+  id?: string;
+  name: string;
+  description: string;
+  referenceImages: CreativeCharacterReferenceImage[];
+};
+
+function emptyCharacterSlot(slot: 1 | 2): CharacterSlot {
+  return { slot, name: "", description: "", referenceImages: [] };
+}
+
+function emptyCharacterSlots(): CharacterSlot[] {
+  return [emptyCharacterSlot(1), emptyCharacterSlot(2)];
+}
+
+function characterSlotFromCharacter(character: CreativeCharacter): CharacterSlot {
+  return {
+    slot: character.slot,
+    id: character.id,
+    name: character.name,
+    description: character.description,
+    referenceImages: character.referenceImages,
+  };
+}
+
+function characterSlotsFromCharacters(
+  characters: CreativeCharacter[],
+): CharacterSlot[] {
+  return ([1, 2] as const).map((slot) => {
+    const character = characters.find((candidate) => candidate.slot === slot);
+    return character ? characterSlotFromCharacter(character) : emptyCharacterSlot(slot);
+  });
+}
+
+/**
+ * Topic-scoped roster of up to 2 recurring supporting characters used to
+ * reference-guide AI image generation. Manages its own fetch/save cycle,
+ * independent of the creative-profile save, like BrandReferenceLibrary above.
+ */
+export function SupportingCharactersEditor({
+  topicId,
+  secret,
+  disabled,
+}: {
+  topicId: string;
+  secret: string;
+  disabled: boolean;
+}) {
+  const [characterSlots, setCharacterSlots] = useState<CharacterSlot[]>();
+  const [error, setError] = useState<string>();
+  const [busy, setBusy] = useState<string>();
+
+  const authenticated = secret.trim().length > 0;
+
+  useEffect(() => {
+    if (!authenticated || !topicId) return;
+    const controller = new AbortController();
+    brandReferenceRequest<CreativeCharacter[]>(
+      topicUrl(CHARACTERS_PATH, topicId),
+      secret,
+      { signal: controller.signal },
+    )
+      .then((characters) => {
+        if (controller.signal.aborted) return;
+        setCharacterSlots(characterSlotsFromCharacters(characters));
+        setError(undefined);
+      })
+      .catch((requestError: unknown) => {
+        if (!controller.signal.aborted) {
+          setError(
+            requestError instanceof Error
+              ? requestError.message
+              : "The supporting characters could not be loaded",
+          );
+        }
+      });
+    return () => controller.abort();
+  }, [authenticated, topicId, secret]);
+
+  async function run(action: string, task: () => Promise<void>) {
+    setBusy(action);
+    setError(undefined);
+    try {
+      await task();
+    } catch (taskError) {
+      setError(
+        taskError instanceof Error ? taskError.message : "The request failed",
+      );
+    } finally {
+      setBusy(undefined);
+    }
+  }
+
+  function updateCharacterSlot(
+    slot: 1 | 2,
+    values: Partial<Pick<CharacterSlot, "name" | "description">>,
+  ) {
+    setCharacterSlots((current) =>
+      current?.map((character) =>
+        character.slot === slot ? { ...character, ...values } : character,
+      ),
+    );
+  }
+
+  function replaceCharacterSlot(character: CreativeCharacter) {
+    setCharacterSlots((current) =>
+      current?.map((slot) =>
+        slot.slot === character.slot ? characterSlotFromCharacter(character) : slot,
+      ),
+    );
+  }
+
+  async function handleSaveCharacter(slot: 1 | 2) {
+    const character = characterSlots?.find((candidate) => candidate.slot === slot);
+    if (!character || !character.name.trim() || !character.description.trim()) {
+      setError("A supporting character needs both a name and a description.");
+      return;
+    }
+
+    await run(`save:${slot}`, async () => {
+      const saved = await brandReferenceRequest<CreativeCharacter>(
+        topicUrl(
+          character.id
+            ? `${CHARACTERS_PATH}/${encodeURIComponent(character.id)}`
+            : CHARACTERS_PATH,
+          topicId,
+        ),
+        secret,
+        {
+          method: character.id ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: character.name,
+            description: character.description,
+          }),
+        },
+      );
+      replaceCharacterSlot(saved);
+    });
+  }
+
+  async function handleArchiveCharacter(slot: 1 | 2) {
+    const character = characterSlots?.find((candidate) => candidate.slot === slot);
+    if (!character?.id || !window.confirm(`Remove ${character.name} from this creative profile?`)) {
+      return;
+    }
+    const characterId = character.id;
+
+    await run(`archive:${characterId}`, async () => {
+      await brandReferenceRequest(
+        topicUrl(
+          `${CHARACTERS_PATH}/${encodeURIComponent(characterId)}`,
+          topicId,
+        ),
+        secret,
+        { method: "DELETE" },
+      );
+      setCharacterSlots((current) =>
+        current?.map((candidate) =>
+          candidate.slot === slot ? emptyCharacterSlot(slot) : candidate,
+        ),
+      );
+    });
+  }
+
+  async function handleUploadCharacterReferences(slot: 1 | 2, files: File[]) {
+    const character = characterSlots?.find((candidate) => candidate.slot === slot);
+    if (!character?.id || files.length === 0) return;
+    const available = Math.max(0, 5 - character.referenceImages.length);
+    if (available === 0) {
+      setError("A supporting character can have at most five reference images.");
+      return;
+    }
+
+    await run(`upload:${character.id}`, async () => {
+      const uploaded: CreativeCharacterReferenceImage[] = [];
+      for (const file of files.slice(0, available)) {
+        const body = new FormData();
+        body.append("image", file);
+        uploaded.push(
+          await brandReferenceRequest<CreativeCharacterReferenceImage>(
+            topicUrl(
+              `${CHARACTERS_PATH}/${encodeURIComponent(character.id!)}/references`,
+              topicId,
+            ),
+            secret,
+            { method: "POST", body },
+          ),
+        );
+      }
+      setCharacterSlots((current) =>
+        current?.map((candidate) =>
+          candidate.id === character.id
+            ? {
+                ...candidate,
+                referenceImages: [...candidate.referenceImages, ...uploaded].sort(
+                  (left, right) => left.order - right.order,
+                ),
+              }
+            : candidate,
+        ),
+      );
+    });
+  }
+
+  async function handleRemoveCharacterReference(slot: 1 | 2, referenceId: string) {
+    const character = characterSlots?.find((candidate) => candidate.slot === slot);
+    if (!character?.id) return;
+
+    await run(`reference:${referenceId}`, async () => {
+      await brandReferenceRequest(
+        topicUrl(
+          `${CHARACTERS_PATH}/${encodeURIComponent(character.id!)}/references/${encodeURIComponent(referenceId)}`,
+          topicId,
+        ),
+        secret,
+        { method: "DELETE" },
+      );
+      setCharacterSlots((current) =>
+        current?.map((candidate) =>
+          candidate.id === character.id
+            ? {
+                ...candidate,
+                referenceImages: candidate.referenceImages.filter(
+                  (reference) => reference.id !== referenceId,
+                ),
+              }
+            : candidate,
+        ),
+      );
+    });
+  }
+
+  if (!authenticated) return null;
+
+  const slots = characterSlots ?? emptyCharacterSlots();
+  const loading = !characterSlots && !error;
+
+  return (
+    <section className={styles.charactersSection}>
+      <div className={styles.charactersHeading}>
+        <div>
+          <strong>Supporting characters</strong>
+          <p>Optional fictional visual narrators for new story drafts.</p>
+        </div>
+        <small>Up to 2 characters · 5 references each</small>
+      </div>
+      {error ? <p className={styles.brandAssetHint}>{error}</p> : null}
+      {loading ? (
+        <p className={styles.brandAssetHint}>Loading supporting characters…</p>
+      ) : (
+        <div className={styles.characterGrid}>
+          {slots.map((character) => {
+            const isSaved = Boolean(character.id);
+            const isBusy = disabled || Boolean(busy);
+            const isSaving = busy === `save:${character.slot}`;
+            const isUploading = character.id
+              ? busy === `upload:${character.id}`
+              : false;
+
+            return (
+              <article className={styles.characterSlot} key={character.slot}>
+                <header>
+                  <div>
+                    <span>Character {character.slot}</span>
+                    <strong>{isSaved ? character.name : "Available slot"}</strong>
+                  </div>
+                  {isSaved ? (
+                    <button
+                      type="button"
+                      className={styles.characterRemoveButton}
+                      disabled={isBusy}
+                      onClick={() => handleArchiveCharacter(character.slot)}
+                    >
+                      Remove
+                    </button>
+                  ) : null}
+                </header>
+                <label className={styles.field}>
+                  <span>Name</span>
+                  <input
+                    value={character.name}
+                    disabled={isBusy}
+                    onChange={(event) =>
+                      updateCharacterSlot(character.slot, { name: event.target.value })
+                    }
+                  />
+                </label>
+                <label className={styles.field}>
+                  <span>Description</span>
+                  <textarea
+                    rows={3}
+                    value={character.description}
+                    disabled={isBusy}
+                    onChange={(event) =>
+                      updateCharacterSlot(character.slot, {
+                        description: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <div className={styles.characterReferences}>
+                  <div className={styles.characterReferencesHeading}>
+                    <span>Reference images</span>
+                    <small>{character.referenceImages.length}/5</small>
+                  </div>
+                  {isSaved ? (
+                    <>
+                      {character.referenceImages.length ? (
+                        <div className={styles.referenceGrid}>
+                          {character.referenceImages.map((reference) => (
+                            <figure key={reference.id} className={styles.referenceItem}>
+                              <CharacterReferencePreview
+                                topicId={topicId}
+                                secret={secret}
+                                characterId={character.id!}
+                                reference={reference}
+                              />
+                              <figcaption title={reference.fileName}>
+                                <span>{reference.fileName}</span>
+                                <button
+                                  type="button"
+                                  disabled={isBusy}
+                                  onClick={() =>
+                                    handleRemoveCharacterReference(
+                                      character.slot,
+                                      reference.id,
+                                    )
+                                  }
+                                >
+                                  Remove
+                                </button>
+                              </figcaption>
+                            </figure>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className={styles.referenceEmpty}>
+                          Add at least one image before this character is available to AI.
+                        </p>
+                      )}
+                      <label
+                        className={`${styles.referenceUpload} ${
+                          character.referenceImages.length >= 5 ? styles.referenceUploadDisabled : ""
+                        }`}
+                      >
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          multiple
+                          disabled={isBusy || character.referenceImages.length >= 5}
+                          onChange={(event) => {
+                            const files = Array.from(event.target.files ?? []);
+                            event.currentTarget.value = "";
+                            handleUploadCharacterReferences(character.slot, files);
+                          }}
+                        />
+                        {isUploading ? "Uploading references..." : "Add reference images"}
+                      </label>
+                    </>
+                  ) : (
+                    <p className={styles.referenceEmpty}>
+                      Save name and description to add JPEG, PNG, or WebP references.
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className={styles.secondaryButton}
+                  disabled={
+                    isBusy || !character.name.trim() || !character.description.trim()
+                  }
+                  onClick={() => handleSaveCharacter(character.slot)}
+                >
+                  {isSaving ? "Saving character..." : isSaved ? "Save character" : "Create character"}
+                </button>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function CharacterReferencePreview({
+  topicId,
+  secret,
+  characterId,
+  reference,
+}: {
+  topicId: string;
+  secret: string;
+  characterId: string;
+  reference: CreativeCharacterReferenceImage;
+}) {
+  const [source, setSource] = useState<string>();
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let objectUrl: string | undefined;
+
+    fetch(
+      topicUrl(
+        `${CHARACTERS_PATH}/${encodeURIComponent(characterId)}/references/${encodeURIComponent(reference.id)}`,
+        topicId,
+      ),
+      {
+        cache: "no-store",
+        signal: controller.signal,
+        headers: { Authorization: `Bearer ${secret.trim()}` },
+      },
+    )
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Reference preview unavailable");
+        objectUrl = URL.createObjectURL(await response.blob());
+        setSource(objectUrl);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setSource(undefined);
+      });
+
+    return () => {
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [characterId, reference.id, secret, topicId]);
+
+  return source ? (
+    <Image
+      src={source}
+      alt={reference.fileName}
+      width={160}
+      height={160}
+      unoptimized
+    />
+  ) : (
+    <div className={styles.referencePreviewPlaceholder}>Loading</div>
   );
 }

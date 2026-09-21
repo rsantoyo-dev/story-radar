@@ -1,6 +1,16 @@
-export type DailyPreparationStep = "collect" | "evaluate" | "recommend" | "content" | "brief" | "draft";
-export const DAILY_PREPARATION_STEPS: DailyPreparationStep[] = ["collect", "evaluate", "recommend", "content", "brief", "draft"];
-export const DAILY_PREPARATION_TITLES: Record<DailyPreparationStep, string> = { collect: "Collect", evaluate: "Evaluate", recommend: "Recommend", content: "Content", brief: "Brief", draft: "Draft" };
+export type DailyPreparationStep =
+  | "collect" | "evaluate" | "recommend" | "approve" | "content"
+  | "focus" | "brief" | "draft" | "approve-draft" | "images";
+export const DAILY_PREPARATION_STEPS: DailyPreparationStep[] =
+  ["collect", "evaluate", "recommend", "approve", "content", "focus", "brief", "draft", "approve-draft", "images"];
+// "recommend"/"brief"/"draft" keep their original ids — only their display
+// titles changed (Select/Draft/Carrousel) — so an in-flight or historical run
+// row saved under the old 6-step sequence still resolves to the same step.
+export const DAILY_PREPARATION_TITLES: Record<DailyPreparationStep, string> = {
+  collect: "Collect", evaluate: "Evaluate", recommend: "Select", approve: "Approve",
+  content: "Content", focus: "Focus", brief: "Draft", draft: "Carrousel",
+  "approve-draft": "Approve draft", images: "Images",
+};
 export function preparationTarget(progress: DailyPreparationProgress): DailyPreparationStep {
   return progress.targetStep ?? (progress.mode === "draft" ? "draft" : "recommend");
 }
@@ -14,6 +24,10 @@ export type DailyPreparationProgress = {
    * brief (see BRIEF_EVIDENCE_REVIEW_MESSAGE) — scoped to that exact briefId,
    * so a later regenerated brief still needs its own review. */
   acknowledgedBriefId?: string;
+  /** The focus step's suggested editorial angle, fed into the brief step. */
+  editorialDirection?: string;
+  /** The images step's created asset batch, for the panel to link into. */
+  assetBatchId?: string;
 };
 /** The brief step's contentSufficiency checkpoint message — a human already
  * reviewing it in the workspace can override it once for this exact brief;
@@ -24,4 +38,10 @@ export type DailyPreparationRun = {
   id:string;topicId:string;lineId:string;timezone:string;status:string;step:string;
   progress:DailyPreparationProgress;error:string|null;startedAt:string;updatedAt:string;
 };
-export const DAILY_PREPARATION_LABELS:Record<string,string>={collect:"Collecting stories…",evaluate:"Evaluating stories with AI…",recommend:"Preparing today’s recommendation…",content:"Preparing and checking article content…",brief:"Creating creative brief…",draft:"Generating draft…"};
+export const DAILY_PREPARATION_LABELS:Record<string,string>={
+  collect:"Collecting stories…", evaluate:"Evaluating stories with AI…",
+  recommend:"Selecting today’s story…", approve:"Approving the selected story…",
+  content:"Preparing and checking article content…", focus:"Suggesting an editorial focus…",
+  brief:"Creating the draft (creative brief)…", draft:"Generating the carrousel…",
+  "approve-draft":"Approving the draft…", images:"Generating images…",
+};

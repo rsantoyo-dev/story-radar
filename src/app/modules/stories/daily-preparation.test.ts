@@ -20,7 +20,9 @@ class LimitError extends Error {}
 function workflow({failEvaluate=false,limit=false,cachedCollection=false,draftMode=false,incomplete=false,likelyFull=false,failApproval=false,noChoice=false,editorialReady=true}={}) {
   const calls:string[]=[];
   const workspaceCalls:unknown[][]=[];
+  const briefCalls:unknown[][]=[];
   let approved = false;
+  let draftApproved = false;
   let run={id:lineId,topicId,lineId,timezone:"UTC",status:"running",step:"collect",leaseOwner:"owner",progress:{mode:draftMode?"draft":"day",lineName:"News",evaluated:0,evaluationBatches:0} as Record<string,unknown>,error:null as string|null};
   let evalCalls=0;
   const service=load("./daily-preparation.ts",{
@@ -44,9 +46,14 @@ function workflow({failEvaluate=false,limit=false,cachedCollection=false,draftMo
     "./story-content.repository":{getStoryContent:async()=>({contentStatus:incomplete?"summary":likelyFull?"likely-full":"full",text:"Article evidence"})},
     "./prepare-selected-story-content":{prepareStoryContent:async()=>({contentStatus:"summary",text:"Partial"})},
     "./manage-creative-content":{
-      createCreativeBrief:async()=>{calls.push("brief");return {state:{brief:{id:"brief",contentSufficiency:"sufficient"}}};},
-      getCreativeWorkspaceState:async(...args:unknown[])=>{workspaceCalls.push(args);return {briefIsCurrent:true,brief:{id:"brief",recommendedFormat:"carousel"}};},
+      suggestEditorialFocus:async()=>{calls.push("focus");return {editorialDirection:"a sharper focus",daily:{}};},
+      createCreativeBrief:async(...args:unknown[])=>{calls.push("brief");briefCalls.push(args);return {state:{brief:{id:"brief",contentSufficiency:"sufficient"}}};},
+      getCreativeWorkspaceState:async(...args:unknown[])=>{workspaceCalls.push(args);return {briefIsCurrent:true,brief:{id:"brief",recommendedFormat:"carousel"},drafts:[{id:"draft",status:draftApproved?"approved":"draft",version:1}]};},
       createCreativeDraft:async()=>{calls.push("draft");return {state:{drafts:[{id:"draft",briefId:"brief",inputIsCurrent:true,format:"carousel",status:"draft",qualityReview:{status:"accepted",issues:[]}}]}};},
+      approveSavedCreativeDraft:async()=>{calls.push("approve-draft");draftApproved=true;},
+    },
+    "./manage-creative-assets":{
+      generateCreativeDraftAssets:async()=>{calls.push("images");return {batch:{id:"batch"},configuration:{},outcome:"submitted"};},
     },
     "./daily-preparation.repository":{
       claimPreparation:async()=>run.status==="running"?structuredClone(run):undefined,
@@ -54,13 +61,15 @@ function workflow({failEvaluate=false,limit=false,cachedCollection=false,draftMo
       savePreparation:async(_run:unknown,values:Partial<typeof run>)=>{run={...run,...values};},
     },
   });
-  return {service,calls,workspaceCalls,get run(){return run;},retry(){run.status="running";failEvaluate=false;}};
+  return {service,calls,workspaceCalls,briefCalls,get run(){return run;},retry(){run.status="running";failEvaluate=false;}};
 }
 test("daily workflow checkpoints collection, evaluates uncached batches then recommends",async()=>{
   const w=workflow();await w.service.drivePreparation(topicId,lineId);
-  assert.deepEqual(w.calls,["collect","evaluate","evaluate","recommend","approve"]);
+  // Default target is "recommend" (select) itself — approval is now a
+  // separate step, so it must not run yet.
+  assert.deepEqual(w.calls,["collect","evaluate","evaluate","recommend"]);
   assert.equal(w.run.status,"completed");assert.equal(w.run.progress.collected,4);assert.equal(w.run.progress.evaluated,4);
-  await w.service.drivePreparation(topicId,lineId);assert.equal(w.calls.length,5);
+  await w.service.drivePreparation(topicId,lineId);assert.equal(w.calls.length,4);
 });
 test("evaluation failure retries that step, never recollects and never exposes raw provider errors",async()=>{
   const w=workflow({failEvaluate:true});await w.service.drivePreparation(topicId,lineId);
@@ -70,7 +79,7 @@ test("evaluation failure retries that step, never recollects and never exposes r
 });
 test("quota exhaustion is a visible partial evaluation, not a fabricated success",async()=>{
   const w=workflow({limit:true});await w.service.drivePreparation(topicId,lineId);
-  assert.deepEqual(w.calls,["collect","evaluate","recommend","approve"]);assert.match(String(w.run.progress.evaluationWarning),/daily limit/);assert.equal(w.run.progress.evaluated,0);
+  assert.deepEqual(w.calls,["collect","evaluate","recommend"]);assert.match(String(w.run.progress.evaluationWarning),/daily limit/);assert.equal(w.run.progress.evaluated,0);
 });
 test("recovery reuses a completed collection instead of calling collectors again",async()=>{
   const w=workflow({cachedCollection:true});await w.service.drivePreparation(topicId,lineId);
@@ -101,7 +110,9 @@ test("database reservations serialize jobs and claims, fence old workers and iso
     await repo.continuePreparation(topicId,first.run.id,"collect");
     assert.equal((await repo.latestPreparation(topicId) as {status:string}).status,"completed");
     const extended=await repo.continuePreparation(topicId,first.run.id,"brief") as {status:string;step:string;progress:{targetStep:string;mode:string}};
-    assert.equal(extended.status,"running");assert.equal(extended.step,"content");
+    // "recommend" now hands off to the dedicated "approve" step next, not
+    // straight to "content".
+    assert.equal(extended.status,"running");assert.equal(extended.step,"approve");
     assert.equal(extended.progress.targetStep,"brief");assert.equal(extended.progress.mode,"draft");
     await repo.continuePreparation(topicId,first.run.id,"draft");
     assert.equal((await repo.latestPreparation(topicId) as typeof extended).progress.targetStep,"brief");
@@ -110,7 +121,7 @@ test("database reservations serialize jobs and claims, fence old workers and iso
 
 test("draft mode extends the same pipeline through content, brief and draft",async()=>{
   const w=workflow({draftMode:true});await w.service.drivePreparation(topicId,lineId);
-  assert.deepEqual(w.calls,["collect","evaluate","evaluate","recommend","approve","brief","draft"]);
+  assert.deepEqual(w.calls,["collect","evaluate","evaluate","recommend","approve","focus","brief","draft"]);
   assert.deepEqual(w.workspaceCalls,[[topicId,topicId,lineId]]);
   assert.equal(w.run.progress.draftId,"draft");assert.equal(w.run.status,"completed");
 });
@@ -129,7 +140,7 @@ test("clicking successive targets resumes checkpoints without recollecting or re
   w.run.status="running";w.run.step="draft";w.run.progress.targetStep="draft";
   await w.service.drivePreparation(topicId,lineId);
   assert.equal(w.run.progress.completedStep,"draft");
-  assert.deepEqual(w.calls,["collect","evaluate","evaluate","recommend","approve","brief","draft"]);
+  assert.deepEqual(w.calls,["collect","evaluate","evaluate","recommend","approve","focus","brief","draft"]);
 });
 test("each target stops before the next stage",async()=>{
   for(const target of ["collect","evaluate","content","brief"]) {
@@ -151,13 +162,15 @@ test("incomplete content stops for review before spending on brief or draft",asy
 test("substantial likely-full content continues without a redundant extraction",async()=>{
   const w=workflow({draftMode:true,likelyFull:true});await w.service.drivePreparation(topicId,lineId);
   assert.equal(w.run.status,"completed");
-  assert.deepEqual(w.calls,["collect","evaluate","evaluate","recommend","approve","brief","draft"]);
+  assert.deepEqual(w.calls,["collect","evaluate","evaluate","recommend","approve","focus","brief","draft"]);
 });
 test("approval failure stops before creating any creative output",async()=>{
   const w=workflow({draftMode:true,failApproval:true});
   await w.service.drivePreparation(topicId,lineId);
   assert.equal(w.run.status,"failed");
-  assert.equal(w.run.step,"recommend");
+  // Selecting the story (recommend) now succeeds on its own; the dedicated
+  // approve step is what fails.
+  assert.equal(w.run.step,"approve");
   assert.equal(w.calls.includes("brief"),false);
   assert.equal(w.calls.includes("draft"),false);
 });
@@ -223,4 +236,28 @@ test("daily draft progression stops when exact-version automated readiness fails
   assert.equal(w.run.status,"needs-review");
   assert.equal(w.run.progress.draftId,"draft");
   assert.match(w.run.error ?? "",/exact version/);
+});
+
+test("the extended pipeline carries the suggested focus into the brief, then approves the carrousel and submits images",async()=>{
+  const w=workflow({draftMode:true});
+  w.run.progress.targetStep="images";
+  await w.service.drivePreparation(topicId,lineId);
+  assert.equal(w.run.status,"completed");
+  assert.deepEqual(w.calls,["collect","evaluate","evaluate","recommend","approve","focus","brief","draft","approve-draft","images"]);
+  // The focus step's suggestion is what the brief step actually used.
+  assert.equal(w.briefCalls[0]?.[2],"a sharper focus");
+  assert.equal(w.run.progress.assetBatchId,"batch");
+});
+
+test("approve-draft does not re-approve a carrousel that is already approved",async()=>{
+  const w=workflow({draftMode:true});
+  w.run.progress.targetStep="approve-draft";
+  await w.service.drivePreparation(topicId,lineId);
+  assert.equal(w.run.status,"completed");
+  assert.equal(w.calls.filter(c=>c==="approve-draft").length,1);
+  // Re-running the same step now finds the draft already approved (the mock's
+  // getCreativeWorkspaceState reflects it) and must not approve it again.
+  w.run.status="running";w.run.step="approve-draft";
+  await w.service.drivePreparation(topicId,lineId);
+  assert.equal(w.calls.filter(c=>c==="approve-draft").length,1);
 });

@@ -4,7 +4,8 @@ import { approveDailyStory } from "./approve-daily-story";
 import { BRIEF_EVIDENCE_REVIEW_MESSAGE, DAILY_PREPARATION_STEPS, preparationTarget, type DailyPreparationStep } from "./daily-preparation.types";
 import { prepareStoryContent } from "./prepare-selected-story-content";
 import { getStoryContent } from "./story-content.repository";
-import { createCreativeBrief, createCreativeDraft, getCreativeWorkspaceState } from "./manage-creative-content";
+import { approveSavedCreativeDraft, createCreativeBrief, createCreativeDraft, getCreativeWorkspaceState, suggestEditorialFocus } from "./manage-creative-content";
+import { generateCreativeDraftAssets } from "./manage-creative-assets";
 import { storyCollectionContexts } from "../editorial-lines/editorial-lines.repository";
 class PreparationReviewNeeded extends Error {}
 import { randomUUID } from "node:crypto";
@@ -88,13 +89,14 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
       if (choice) {
         progress.storyId=choice.storyId;
         progress.storyTitle=result.context.candidates.find(c=>c.storyId===choice.storyId)?.title;
-        await approveDailyStory(topicId, choice.storyId);
       }
-      if (DAILY_PREPARATION_STEPS.indexOf(target) <= 2) return await finish("recommend", "content");
+      if (DAILY_PREPARATION_STEPS.indexOf(target) <= 2) return await finish("recommend");
       if(!choice)throw new PreparationReviewNeeded("No strong recommendation is available. Review the candidates before preparing a draft.");
-      progress.storyId=choice.storyId;
-      progress.storyTitle=result.context.candidates.find(c=>c.storyId===choice.storyId)?.title;
-      return await finish("recommend", "content");
+      return await finish("recommend", "approve");
+    } else if(run.step==="approve") {
+      if(!progress.storyId)throw new PreparationReviewNeeded("Choose a story to approve.");
+      await approveDailyStory(topicId, progress.storyId);
+      return await finish("approve", "content");
     } else if(run.step==="content") {
       if(!progress.storyId)throw new PreparationReviewNeeded("Choose a story to prepare.");
       await approveDailyStory(topicId, progress.storyId);
@@ -105,14 +107,21 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
       // when the publisher or Reader fallback blocks the second request.
       if(!contentLooksComplete(content))content=await prepareStoryContent(topicId,progress.storyId);
       if(!contentLooksComplete(content))throw new PreparationReviewNeeded("The article content is incomplete. Review or edit the content before continuing.");
-      return await finish("content", "brief");
+      return await finish("content", "focus");
+    } else if(run.step==="focus") {
+      if(!progress.storyId)throw new PreparationReviewNeeded("Choose a story before suggesting a focus.");
+      const contexts=await storyCollectionContexts(topicId,progress.storyId);
+      const context=contexts.find(c=>c.runId===progress.collectionRunId) ?? (contexts.length===1?contexts[0]:undefined);
+      const result=await suggestEditorialFocus(topicId,progress.storyId,undefined,context?.runId,run.id,run.timezone);
+      progress.editorialDirection=result.editorialDirection;
+      return await finish("focus", "brief");
     } else if(run.step==="brief") {
       if(!progress.storyId)throw new PreparationReviewNeeded("The recommended story is unavailable.");
       await approveDailyStory(topicId, progress.storyId);
       const contexts=await storyCollectionContexts(topicId,progress.storyId);
       const context=contexts.find(c=>c.runId===progress.collectionRunId) ?? (contexts.length===1?contexts[0]:undefined);
       if(contexts.length>1 && !context)throw new PreparationReviewNeeded("This story has multiple editorial contexts. Choose the intended context in the creative workspace.");
-      const result=await createCreativeBrief(topicId,progress.storyId,undefined,context?.runId,run.id);
+      const result=await createCreativeBrief(topicId,progress.storyId,progress.editorialDirection,context?.runId,run.id);
       const brief=result.state.brief;
       if(!brief)throw new Error("Brief unavailable");
       progress.briefId=brief.id;
@@ -131,12 +140,25 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
       if(!draft)throw new Error("Draft unavailable");
       progress.draftId=draft.id;
       if(!isCreativeDraftReadyForAutomation(draft,draft.format,draft.qualityReviewIsCurrent === true))throw new PreparationReviewNeeded("The draft is saved, but automated editorial validation has not passed for this exact version. Its findings and evidence were preserved; it cannot advance as publication-ready.");
-      return await finish("draft");
+      return await finish("draft", "approve-draft");
+    } else if(run.step==="approve-draft") {
+      if(!progress.storyId || !progress.draftId)throw new PreparationReviewNeeded("Review the carrousel before approving it.");
+      const workspace=await getCreativeWorkspaceState(topicId,progress.storyId,run.id);
+      const draft=workspace.drafts.find(d=>d.id===progress.draftId);
+      if(!draft)throw new PreparationReviewNeeded("The draft is no longer available. Review it in the workspace.");
+      if(draft.status!=="approved")await approveSavedCreativeDraft(topicId, draft.id, true, draft.version);
+      return await finish("approve-draft", "images");
+    } else if(run.step==="images") {
+      if(!progress.draftId)throw new PreparationReviewNeeded("Approve the draft before generating images.");
+      const result=await generateCreativeDraftAssets(topicId, progress.draftId);
+      if(!result.batch)throw new Error("Image batch unavailable");
+      progress.assetBatchId=result.batch.id;
+      return await finish("images");
     } else {throw new Error("Unknown preparation stage");}
     return true;
   } catch(error) {
     if(error instanceof PreparationReviewNeeded){await savePreparation(run,{status:"needs-review",progress,error:error.message});return false;}
-    const errors:Record<string,string>={collect:"Collection could not finish. Check the editorial line, sources and collection budget, then retry this step.",evaluate:"AI evaluation could not finish. Check provider availability, then retry this step.",content:"Article preparation failed. Review the content or retry this step.",brief:"Creative brief generation failed. Check the content and creative AI budget, then retry.",draft:"Draft generation failed. Check the brief and creative AI budget, then retry.",recommend:"Today's recommendation could not finish. Check the planner status and daily budget, then retry this step."};
+    const errors:Record<string,string>={collect:"Collection could not finish. Check the editorial line, sources and collection budget, then retry this step.",evaluate:"AI evaluation could not finish. Check provider availability, then retry this step.",content:"Article preparation failed. Review the content or retry this step.",brief:"Creative brief generation failed. Check the content and creative AI budget, then retry.",draft:"Draft generation failed. Check the brief and creative AI budget, then retry.",recommend:"Today's recommendation could not finish. Check the planner status and daily budget, then retry this step.",approve:"The story could not be approved. Check its current status, then retry this step.",focus:"The editorial focus could not be suggested. Check provider availability, then retry this step.","approve-draft":"The carrousel could not be approved. Review it in the creative workspace, then retry this step.",images:"Image generation could not be submitted. Check the approved draft and image budget, then retry this step."};
     await savePreparation(run,{status:"failed",progress,error:errors[run.step] ?? "Preparation failed."});
     return false;
   }

@@ -1175,50 +1175,105 @@ export function RadarDashboard({
             <span className={styles.navIcon} aria-hidden="true">◈</span>
             Topics & sources
           </a>
-          <a href="#editorial" onClick={() => setSidebarOpen(false)}>
-            <span className={styles.navIcon} aria-hidden="true">✦</span>
-            Editorial AI
-          </a>
-          <a
-            href="#editorial-creative"
-            className={styles.navSubItem}
-            onClick={() => setSidebarOpen(false)}
-          >
-            <span className={styles.navIcon} aria-hidden="true">▸</span>
-            Creative profile
-          </a>
-          <a
-            href="#editorial-meta"
-            className={styles.navSubItem}
-            onClick={() => setSidebarOpen(false)}
-          >
-            <span className={styles.navIcon} aria-hidden="true">▸</span>
-            Instagram
-          </a>
-          <a href="#stories" onClick={() => setSidebarOpen(false)}>
-            <span className={styles.navIcon} aria-hidden="true">▤</span>
-            Story review
-          </a>
-          <a
-            href={storyReviewHash({
-              tab: "selected",
-              publicationFilter: "not-published-anywhere",
-            })}
-            className={styles.navSubItem}
-            onClick={(event) => {
-              event.preventDefault();
-              goToStoryReview({
+          <details className={styles.navGroup} open>
+            <summary className={styles.navGroupSummary}>
+              <a
+                href="#editorial"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setSidebarOpen(false);
+                }}
+              >
+                <span className={styles.navIcon} aria-hidden="true">✦</span>
+                Editorial AI
+              </a>
+            </summary>
+            <a
+              href="#editorial-meta"
+              className={styles.navSubItem}
+              onClick={() => setSidebarOpen(false)}
+            >
+              <span className={styles.navIcon} aria-hidden="true">▸</span>
+              Instagram
+            </a>
+          </details>
+          <details className={styles.navGroup} open>
+            <summary className={styles.navGroupSummary}>
+              <a
+                href="#editorial-creative"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setSidebarOpen(false);
+                }}
+              >
+                <span className={styles.navIcon} aria-hidden="true">❖</span>
+                Creative profile
+              </a>
+            </summary>
+            <a href="#creative-profile-identity" className={styles.navSubItem} onClick={() => setSidebarOpen(false)}>
+              <span className={styles.navIcon} aria-hidden="true">▸</span>
+              Identity
+            </a>
+            <a href="#creative-profile-strategy" className={styles.navSubItem} onClick={() => setSidebarOpen(false)}>
+              <span className={styles.navIcon} aria-hidden="true">▸</span>
+              Strategy
+            </a>
+            <a href="#creative-profile-place-fidelity" className={styles.navSubItem} onClick={() => setSidebarOpen(false)}>
+              <span className={styles.navIcon} aria-hidden="true">▸</span>
+              Place fidelity
+            </a>
+            <a href="#creative-profile-voice" className={styles.navSubItem} onClick={() => setSidebarOpen(false)}>
+              <span className={styles.navIcon} aria-hidden="true">▸</span>
+              Voice
+            </a>
+            <a href="#creative-profile-brand" className={styles.navSubItem} onClick={() => setSidebarOpen(false)}>
+              <span className={styles.navIcon} aria-hidden="true">▸</span>
+              Brand & visual
+            </a>
+            <a href="#creative-profile-characters" className={styles.navSubItem} onClick={() => setSidebarOpen(false)}>
+              <span className={styles.navIcon} aria-hidden="true">▸</span>
+              Supporting characters
+            </a>
+            <a href="#creative-profile-carousel" className={styles.navSubItem} onClick={() => setSidebarOpen(false)}>
+              <span className={styles.navIcon} aria-hidden="true">▸</span>
+              Carousel numbering
+            </a>
+          </details>
+          <details className={styles.navGroup} open>
+            <summary className={styles.navGroupSummary}>
+              <a
+                href="#stories"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setSidebarOpen(false);
+                }}
+              >
+                <span className={styles.navIcon} aria-hidden="true">▤</span>
+                Story review
+              </a>
+            </summary>
+            <a
+              href={storyReviewHash({
                 tab: "selected",
                 publicationFilter: "not-published-anywhere",
-              });
-            }}
-          >
-            <span className={styles.navIcon} aria-hidden="true">▸</span>
-            Ready to produce
-            {readyToProduceCount > 0 ? (
-              <span className={styles.navBadge}>{readyToProduceCount}</span>
-            ) : null}
-          </a>
+              })}
+              className={styles.navSubItem}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                goToStoryReview({
+                  tab: "selected",
+                  publicationFilter: "not-published-anywhere",
+                });
+              }}
+            >
+              <span className={styles.navIcon} aria-hidden="true">▸</span>
+              Ready to produce
+              {readyToProduceCount > 0 ? (
+                <span className={styles.navBadge}>{readyToProduceCount}</span>
+              ) : null}
+            </a>
+          </details>
           <a href="#optimization" onClick={() => setSidebarOpen(false)}>
             <span className={styles.navIcon} aria-hidden="true">◌</span>
             Optimization

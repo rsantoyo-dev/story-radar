@@ -42,8 +42,6 @@ import {
   type CreativeAssetBatchResponse,
   type CreativeAssetEditRequest,
   type CreativeAspectRatio,
-  type CreativeCharacter,
-  type CreativeCharacterReferenceImage,
   type CreativeCharacterRosterEntry,
   type CreativeCompanionApproach,
   type CreativeDraft,
@@ -93,14 +91,6 @@ type ImageQualityChoice = CreativeImageQuality;
 type AssetQualityRequest = {
   draftId: string;
   quality: ImageQualityChoice;
-};
-
-type CharacterSlot = {
-  slot: 1 | 2;
-  id?: string;
-  name: string;
-  description: string;
-  referenceImages: CreativeCharacterReferenceImage[];
 };
 
 const DEFAULT_OUTPUT_ASPECT_RATIO: CreativeAspectRatio = "4:5";
@@ -191,9 +181,6 @@ export function CreativeDraftWorkspace({
   const [editorialDirection, setEditorialDirection] = useState("");
   const [focusSuggestion, setFocusSuggestion] = useState<{ text: string; context: string }>();
   const [focusError, setFocusError] = useState<string>();
-  const [characterSlots, setCharacterSlots] = useState<CharacterSlot[]>(
-    emptyCharacterSlots,
-  );
   const [selectedFormat, setSelectedFormat] = useState<CreativeFormat>("meme");
   const [selectedAspectRatio, setSelectedAspectRatio] =
     useState<CreativeAspectRatio>(DEFAULT_OUTPUT_ASPECT_RATIO);
@@ -215,7 +202,6 @@ export function CreativeDraftWorkspace({
   const [assetsReloadKey, setAssetsReloadKey] = useState(0);
   const [historyDraftId, setHistoryDraftId] = useState<string>();
   const [assetBusy, setAssetBusy] = useState<string>();
-  const [characterBusy, setCharacterBusy] = useState<string>();
   const [companionAngle, setCompanionAngle] = useState("");
   const [companionApproach, setCompanionApproach] =
     useState<CreativeCompanionApproach>("expectation-vs-reality");
@@ -291,26 +277,18 @@ export function CreativeDraftWorkspace({
   useEffect(() => {
     const controller = new AbortController();
 
-    Promise.all([
-      requestJson<CreativeWorkspaceState>(
-        topicUrl(
-          `/api/radar/stories/${encodeURIComponent(storyId)}/creative${initialPreparationRunId ? `?preparationRunId=${encodeURIComponent(initialPreparationRunId)}` : ""}`,
-          topicId,
-        ),
-        secret,
-        { signal: controller.signal },
+    requestJson<CreativeWorkspaceState>(
+      topicUrl(
+        `/api/radar/stories/${encodeURIComponent(storyId)}/creative${initialPreparationRunId ? `?preparationRunId=${encodeURIComponent(initialPreparationRunId)}` : ""}`,
+        topicId,
       ),
-      requestJson<CreativeCharacter[]>(
-        topicUrl("/api/radar/creative/characters", topicId),
-        secret,
-        { signal: controller.signal },
-      ),
-    ])
-      .then(([next, characters]) => {
+      secret,
+      { signal: controller.signal },
+    )
+      .then((next) => {
         setWorkspace(next);
         setProfile(next.profile);
         setEditorialDirection(next.brief?.editorialDirection ?? "");
-        setCharacterSlots(characterSlotsFromCharacters(characters));
         // Prefer the editable draft for the current profile. If there is no
         // current one, open the latest saved study so its copy and images do
         // not appear to vanish after a brief/profile refresh.
@@ -1015,7 +993,6 @@ export function CreativeDraftWorkspace({
       !activeDraftId ||
       dirty ||
       busy ||
-      characterBusy ||
       viewingHistoricalDraft
     ) {
       return;
@@ -1533,175 +1510,6 @@ export function CreativeDraftWorkspace({
     }
   }
 
-  async function runCharacter(action: string, task: () => Promise<void>) {
-    setCharacterBusy(action);
-    setError(undefined);
-    setNotice(undefined);
-    try {
-      await task();
-    } catch (operationError) {
-      setError(getErrorMessage(operationError));
-    } finally {
-      setCharacterBusy(undefined);
-    }
-  }
-
-  function updateCharacterSlot(
-    slot: 1 | 2,
-    values: Partial<Pick<CharacterSlot, "name" | "description">>,
-  ) {
-    setCharacterSlots((current) =>
-      current.map((character) =>
-        character.slot === slot ? { ...character, ...values } : character,
-      ),
-    );
-  }
-
-  function replaceCharacterSlot(character: CreativeCharacter) {
-    setCharacterSlots((current) =>
-      current.map((slot) =>
-        slot.slot === character.slot ? characterSlotFromCharacter(character) : slot,
-      ),
-    );
-  }
-
-  async function handleSaveCharacter(slot: 1 | 2) {
-    const character = characterSlots.find((candidate) => candidate.slot === slot);
-    if (!character || !character.name.trim() || !character.description.trim()) {
-      setError("A supporting character needs both a name and a description.");
-      return;
-    }
-
-    await runCharacter(`save:${slot}`, async () => {
-      const saved = await requestJson<CreativeCharacter>(
-        topicUrl(
-          character.id
-            ? `/api/radar/creative/characters/${encodeURIComponent(character.id)}`
-            : "/api/radar/creative/characters",
-          topicId,
-        ),
-        secret,
-        {
-          method: character.id ? "PATCH" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: character.name,
-            description: character.description,
-          }),
-        },
-      );
-      replaceCharacterSlot(saved);
-      await reloadWorkspace();
-      setNotice(
-        "Supporting character saved. The Studio rechecked affected drafts before the next image generation.",
-      );
-    });
-  }
-
-  async function handleArchiveCharacter(slot: 1 | 2) {
-    const character = characterSlots.find((candidate) => candidate.slot === slot);
-    if (!character?.id || !window.confirm(`Remove ${character.name} from this creative profile?`)) {
-      return;
-    }
-    const characterId = character.id;
-
-    await runCharacter(`archive:${characterId}`, async () => {
-      await requestJson(
-        topicUrl(
-          `/api/radar/creative/characters/${encodeURIComponent(characterId)}`,
-          topicId,
-        ),
-        secret,
-        { method: "DELETE" },
-      );
-      setCharacterSlots((current) =>
-        current.map((candidate) =>
-          candidate.slot === slot ? emptyCharacterSlot(slot) : candidate,
-        ),
-      );
-      await reloadWorkspace();
-      setNotice(
-        "Supporting character removed. The Studio rechecked affected drafts before the next image generation.",
-      );
-    });
-  }
-
-  async function handleUploadCharacterReferences(slot: 1 | 2, files: File[]) {
-    const character = characterSlots.find((candidate) => candidate.slot === slot);
-    if (!character?.id || files.length === 0) return;
-    const available = Math.max(0, 5 - character.referenceImages.length);
-    if (available === 0) {
-      setError("A supporting character can have at most five reference images.");
-      return;
-    }
-
-    await runCharacter(`upload:${character.id}`, async () => {
-      const uploaded: CreativeCharacterReferenceImage[] = [];
-      for (const file of files.slice(0, available)) {
-        const body = new FormData();
-        body.append("image", file);
-        uploaded.push(
-          await requestJson<CreativeCharacterReferenceImage>(
-            topicUrl(
-              `/api/radar/creative/characters/${encodeURIComponent(character.id!)}/references`,
-              topicId,
-            ),
-            secret,
-            { method: "POST", body },
-          ),
-        );
-      }
-      setCharacterSlots((current) =>
-        current.map((candidate) =>
-          candidate.id === character.id
-            ? {
-                ...candidate,
-                referenceImages: [...candidate.referenceImages, ...uploaded].sort(
-                  (left, right) => left.order - right.order,
-                ),
-              }
-            : candidate,
-        ),
-      );
-      await reloadWorkspace();
-      setNotice(
-        `${uploaded.length} reference ${uploaded.length === 1 ? "image was" : "images were"} added to ${character.name}. The Studio rechecked affected drafts.`,
-      );
-    });
-  }
-
-  async function handleRemoveCharacterReference(slot: 1 | 2, referenceId: string) {
-    const character = characterSlots.find((candidate) => candidate.slot === slot);
-    if (!character?.id) return;
-
-    await runCharacter(`reference:${referenceId}`, async () => {
-      await requestJson(
-        topicUrl(
-          `/api/radar/creative/characters/${encodeURIComponent(character.id!)}/references/${encodeURIComponent(referenceId)}`,
-          topicId,
-        ),
-        secret,
-        { method: "DELETE" },
-      );
-      setCharacterSlots((current) =>
-        current.map((candidate) =>
-          candidate.id === character.id
-            ? {
-                ...candidate,
-                referenceImages: candidate.referenceImages.filter(
-                  (reference) => reference.id !== referenceId,
-                ),
-              }
-            : candidate,
-        ),
-      );
-      await reloadWorkspace();
-      setNotice(
-        "Reference image removed. The Studio rechecked affected drafts before the next image generation.",
-      );
-    });
-  }
-
   function closeWorkspace() {
     if (
       dirty &&
@@ -1719,7 +1527,7 @@ export function CreativeDraftWorkspace({
       className={styles.backdrop}
       role="presentation"
           onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !busy && !characterBusy) {
+        if (event.target === event.currentTarget && !busy) {
           closeWorkspace();
         }
       }}
@@ -1742,7 +1550,7 @@ export function CreativeDraftWorkspace({
             }}>Review saved publication · {preparedPublication.assetCount} images</button>
           ) : null}
           </div>
-          <button type="button" onClick={closeWorkspace} disabled={Boolean(busy) || Boolean(characterBusy)} aria-label="Close">
+          <button type="button" onClick={closeWorkspace} disabled={Boolean(busy)} aria-label="Close">
             ×
           </button>
 
@@ -1815,32 +1623,6 @@ export function CreativeDraftWorkspace({
                 you refresh it.
               </p>
             </div>
-
-            <details className={styles.profilePanel}>
-              <summary>
-                <span>
-                  <strong>Supporting characters</strong>
-                  <small>Optional recurring narrators for this topic</small>
-                </span>
-                <span>Manage</span>
-              </summary>
-              <fieldset
-                className={styles.profileBody}
-                disabled={Boolean(busy) || Boolean(characterBusy)}
-              >
-                <SupportingCharactersEditor
-                  slots={characterSlots}
-                  topicId={topicId}
-                  secret={secret}
-                  busyAction={characterBusy}
-                  onChange={updateCharacterSlot}
-                  onSave={handleSaveCharacter}
-                  onArchive={handleArchiveCharacter}
-                  onUpload={handleUploadCharacterReferences}
-                  onRemoveReference={handleRemoveCharacterReference}
-                />
-              </fieldset>
-            </details>
 
             <section className={styles.section}>
               <div className={styles.sectionHeading}>
@@ -2047,7 +1829,7 @@ export function CreativeDraftWorkspace({
                     profileLanguage={workspace.brief.profileSnapshot.language}
                     conversionGoal={workspace.brief.profileSnapshot.conversionGoal}
                     framingStrategy={workspace.brief.profileSnapshot.framingStrategy}
-                    characterRoster={characterRosterFromSlots(characterSlots)}
+                    characterRoster={workspace.characterRoster}
                     onChange={(next) => {
                       setEditableDraft(next);
                       setDirty(true);
@@ -2102,7 +1884,6 @@ export function CreativeDraftWorkspace({
                         className={styles.secondaryButton}
                         disabled={
                           Boolean(busy) ||
-                          Boolean(characterBusy) ||
                           !workspace.story.hasContent
                         }
                         onClick={handleRefreshDraftFromProfile}
@@ -2115,7 +1896,7 @@ export function CreativeDraftWorkspace({
                         <button
                           type="button"
                           className={styles.secondaryButton}
-                          disabled={Boolean(busy) || Boolean(characterBusy) || dirty}
+                          disabled={Boolean(busy) || dirty}
                           onClick={handleRefreshCharacterReferences}
                         >
                           {busy === "references" ? "Refreshing references..." : "Refresh character references"}
@@ -3816,228 +3597,6 @@ function VisualFidelityControl({
   );
 }
 
-function SupportingCharactersEditor({
-  slots,
-  topicId,
-  secret,
-  busyAction,
-  onChange,
-  onSave,
-  onArchive,
-  onUpload,
-  onRemoveReference,
-}: {
-  slots: CharacterSlot[];
-  topicId: string;
-  secret: string;
-  busyAction?: string;
-  onChange: (
-    slot: 1 | 2,
-    values: Partial<Pick<CharacterSlot, "name" | "description">>,
-  ) => void;
-  onSave: (slot: 1 | 2) => void;
-  onArchive: (slot: 1 | 2) => void;
-  onUpload: (slot: 1 | 2, files: File[]) => void;
-  onRemoveReference: (slot: 1 | 2, referenceId: string) => void;
-}) {
-  return (
-    <section className={styles.charactersSection}>
-      <div className={styles.charactersHeading}>
-        <div>
-          <strong>Supporting characters</strong>
-          <p>Optional fictional visual narrators for new story drafts.</p>
-        </div>
-        <small>Up to 2 characters · 5 references each</small>
-      </div>
-      <div className={styles.characterGrid}>
-        {slots.map((character) => {
-          const isSaved = Boolean(character.id);
-          const isBusy = Boolean(busyAction);
-          const isSaving = busyAction === `save:${character.slot}`;
-          const isUploading = character.id
-            ? busyAction === `upload:${character.id}`
-            : false;
-
-          return (
-            <article className={styles.characterSlot} key={character.slot}>
-              <header>
-                <div>
-                  <span>Character {character.slot}</span>
-                  <strong>{isSaved ? character.name : "Available slot"}</strong>
-                </div>
-                {isSaved ? (
-                  <button
-                    type="button"
-                    className={styles.characterRemoveButton}
-                    disabled={isBusy}
-                    onClick={() => onArchive(character.slot)}
-                  >
-                    Remove
-                  </button>
-                ) : null}
-              </header>
-              <label className={styles.field}>
-                <span>Name</span>
-                <input
-                  value={character.name}
-                  disabled={isBusy}
-                  onChange={(event) =>
-                    onChange(character.slot, { name: event.target.value })
-                  }
-                />
-              </label>
-              <label className={styles.field}>
-                <span>Description</span>
-                <textarea
-                  rows={3}
-                  value={character.description}
-                  disabled={isBusy}
-                  onChange={(event) =>
-                    onChange(character.slot, {
-                      description: event.target.value,
-                    })
-                  }
-                />
-              </label>
-              <div className={styles.characterReferences}>
-                <div className={styles.characterReferencesHeading}>
-                  <span>Reference images</span>
-                  <small>{character.referenceImages.length}/5</small>
-                </div>
-                {isSaved ? (
-                  <>
-                    {character.referenceImages.length ? (
-                      <div className={styles.referenceGrid}>
-                        {character.referenceImages.map((reference) => (
-                          <figure key={reference.id} className={styles.referenceItem}>
-                            <CharacterReferencePreview
-                              topicId={topicId}
-                              secret={secret}
-                              characterId={character.id!}
-                              reference={reference}
-                            />
-                            <figcaption title={reference.fileName}>
-                              <span>{reference.fileName}</span>
-                              <button
-                                type="button"
-                                disabled={isBusy}
-                                onClick={() =>
-                                  onRemoveReference(
-                                    character.slot,
-                                    reference.id,
-                                  )
-                                }
-                              >
-                                Remove
-                              </button>
-                            </figcaption>
-                          </figure>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className={styles.referenceEmpty}>
-                        Add at least one image before this character is available to AI.
-                      </p>
-                    )}
-                    <label
-                      className={`${styles.referenceUpload} ${
-                        character.referenceImages.length >= 5 ? styles.referenceUploadDisabled : ""
-                      }`}
-                    >
-                      <input
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp"
-                        multiple
-                        disabled={isBusy || character.referenceImages.length >= 5}
-                        onChange={(event) => {
-                          const files = Array.from(event.target.files ?? []);
-                          event.currentTarget.value = "";
-                          onUpload(character.slot, files);
-                        }}
-                      />
-                      {isUploading ? "Uploading references..." : "Add reference images"}
-                    </label>
-                  </>
-                ) : (
-                  <p className={styles.referenceEmpty}>
-                    Save name and description to add JPEG, PNG, or WebP references.
-                  </p>
-                )}
-              </div>
-              <button
-                type="button"
-                className={styles.secondaryButton}
-                disabled={
-                  isBusy || !character.name.trim() || !character.description.trim()
-                }
-                onClick={() => onSave(character.slot)}
-              >
-                {isSaving ? "Saving character..." : isSaved ? "Save character" : "Create character"}
-              </button>
-            </article>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-function CharacterReferencePreview({
-  topicId,
-  secret,
-  characterId,
-  reference,
-}: {
-  topicId: string;
-  secret: string;
-  characterId: string;
-  reference: CreativeCharacterReferenceImage;
-}) {
-  const [source, setSource] = useState<string>();
-
-  useEffect(() => {
-    const controller = new AbortController();
-    let objectUrl: string | undefined;
-
-    fetch(
-      topicUrl(
-        `/api/radar/creative/characters/${encodeURIComponent(characterId)}/references/${encodeURIComponent(reference.id)}`,
-        topicId,
-      ),
-      {
-        cache: "no-store",
-        signal: controller.signal,
-        headers: { Authorization: `Bearer ${secret.trim()}` },
-      },
-    )
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Reference preview unavailable");
-        objectUrl = URL.createObjectURL(await response.blob());
-        setSource(objectUrl);
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setSource(undefined);
-      });
-
-    return () => {
-      controller.abort();
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [characterId, reference.id, secret, topicId]);
-
-  return source ? (
-    <Image
-      src={source}
-      alt={reference.fileName}
-      width={160}
-      height={160}
-      unoptimized
-    />
-  ) : (
-    <div className={styles.referencePreviewPlaceholder}>Loading</div>
-  );
-}
-
 function ErrorMessage({ message }: { message: string }) {
   return <div className={styles.error} role="alert"><strong>Creative studio error</strong><p>{message}</p></div>;
 }
@@ -4066,49 +3625,6 @@ function selectDraft(
   setId(found.id);
   setDraft(
     found.inputIsCurrent === false ? undefined : editableFromDraft(found),
-  );
-}
-
-function emptyCharacterSlots(): CharacterSlot[] {
-  return [emptyCharacterSlot(1), emptyCharacterSlot(2)];
-}
-
-function emptyCharacterSlot(slot: 1 | 2): CharacterSlot {
-  return { slot, name: "", description: "", referenceImages: [] };
-}
-
-function characterSlotFromCharacter(character: CreativeCharacter): CharacterSlot {
-  return {
-    slot: character.slot,
-    id: character.id,
-    name: character.name,
-    description: character.description,
-    referenceImages: character.referenceImages,
-  };
-}
-
-function characterSlotsFromCharacters(
-  characters: CreativeCharacter[],
-): CharacterSlot[] {
-  return ([1, 2] as const).map((slot) => {
-    const character = characters.find((candidate) => candidate.slot === slot);
-    return character ? characterSlotFromCharacter(character) : emptyCharacterSlot(slot);
-  });
-}
-
-function characterRosterFromSlots(
-  slots: CharacterSlot[],
-): CreativeCharacterRosterEntry[] {
-  return slots.flatMap((character) =>
-    character.id && character.referenceImages.length > 0
-      ? [
-          {
-            id: character.id,
-            name: character.name,
-            description: character.description,
-          },
-        ]
-      : [],
   );
 }
 
