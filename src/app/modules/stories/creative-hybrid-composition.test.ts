@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 
-async function compose(mode = "illustration-editorial", photoTest = false) {
+async function compose(mode = "illustration-editorial", photoTest = false, includeUnresolvedGeoUnit = false) {
   const source = readFileSync("src/app/modules/stories/manage-creative-assets.ts", "utf8");
   const start = source.indexOf("async function composeDraftPlaceVisuals(");
   const end = source.indexOf("async function recomposePlaceAsset(", start);
@@ -16,7 +16,9 @@ async function compose(mode = "illustration-editorial", photoTest = false) {
   const prepared = new Map([[3, { bytes: photo, evidence: { representation: "photo", place: { name: "Museum" }, photo: { author: "Yource", license: "CC BY-SA 4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0/" } } }]]);
   const draft = { id: "draft", version: 3, storyId: "story",
     units: [1, 2, 3, 4].map(order => ({ id: String(order), order, role: order === 1 ? "cover" : "content",
-      type: "carousel-slide", assetRequest: "generated-image", headline: "Headline", visualDirection: "Editorial illustration" })) };
+      type: "carousel-slide", assetRequest: "generated-image", headline: "Headline", visualDirection: "Editorial illustration" }))
+      .concat(includeUnresolvedGeoUnit ? [{ id: "5", order: 5, role: "content", type: "carousel-slide",
+        assetRequest: "generated-image", headline: "Headline", visualDirection: "Public square rally" }] : [])};
   const exports: { run?: (...args: unknown[]) => Promise<unknown> } = {};
   runInNewContext(ts.transpileModule(code, { compilerOptions: {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
@@ -45,7 +47,8 @@ async function compose(mode = "illustration-editorial", photoTest = false) {
     },
     getTopicVisualFidelityMode: async () => mode,
     resolveEffectiveVisualFidelity: () => ({ mode }),
-    requestsGeographicReconstruction: () => false,
+    requestsGeographicReconstruction: (direction: string) => direction === "Public square rally",
+    GEOGRAPHIC_FALLBACK_VISUAL_DIRECTION: "Conceptual fallback, no verified place",
     preparePlaceVisuals: async (_topic: string, selected: typeof draft) => {
       researched = selected.units.map(u => u.order); return prepared;
     },
@@ -58,7 +61,7 @@ async function compose(mode = "illustration-editorial", photoTest = false) {
     storyReferencePrompt: () => "",
     resolveBrandGenerationReferences: async () => ["brand-reference"],
     snapshotsForUnit: () => [],
-    buildCreativeImagePrompt: () => ({ prompt: "Creative prompt", expectedText: "Headline" }),
+    buildCreativeImagePrompt: (input: { unit: { visualDirection: string } }) => ({ prompt: `Creative prompt [${input.unit.visualDirection}]`, expectedText: "Headline" }),
     brandReferencePrompt: () => " with brand",
     MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS: 30000,
     assetInputForUnit: (_characters: unknown, refs: unknown) => ({
@@ -91,7 +94,7 @@ test("museum photo is composed only on its slide; other slides use creative prom
   assert.deepEqual(result.rendered, [3]);
   assert.deepEqual(Array.from(result.researched), [3]);
   for (const asset of result.assets.filter(a => a.unitOrder !== 3)) {
-    assert.equal(asset.prompt, "Creative prompt with brand");
+    assert.equal(asset.prompt, "Creative prompt [Editorial illustration] with brand");
     assert.equal(asset.providerEndpoint, "fal/edit");
     assert.equal((asset.referenceSnapshot as string[])[0], "brand-reference");
     assert.ok(asset.brandOverlaySnapshot);
@@ -120,4 +123,24 @@ test("opt-in experiment sends the museum slide through creative generation with 
   assert.match(String(museum.prompt), /Yource/);
   const strict = await compose("photo-required", true);
   assert.deepEqual(strict.submitted, []);
+});
+
+test("a slide requesting a real place with no verified evidence generates a conceptual illustration instead of failing or rendering text-only", async () => {
+  const result = await compose("illustration-editorial", false, true);
+  // Slide 5 asked for a real place (a public square) but preparePlaceVisuals
+  // found nothing for it; it must reach normal generation, not the local
+  // typography renderer, and assertGenerativeImageryAllowed must not block it.
+  assert.deepEqual(result.submitted, [1, 2, 4, 5]);
+  assert.deepEqual(result.rendered, [3]);
+  const fallback = result.assets.find(a => a.unitOrder === 5)!;
+  // The prompt never repeats the unverified "public square" request; it uses
+  // the neutral, conceptual direction instead.
+  assert.match(String(fallback.prompt), /Conceptual fallback, no verified place/);
+  assert.doesNotMatch(String(fallback.prompt), /Public square rally/);
+});
+
+test("a strict photo-required topic still refuses a real-place slide with no verified evidence", async () => {
+  const result = await compose("photo-required", false, true);
+  assert.deepEqual(result.submitted, []);
+  assert.deepEqual(result.rendered, [1, 2, 3, 4, 5]);
 });

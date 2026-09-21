@@ -1387,12 +1387,21 @@ test("numeric headline repair uses surviving copy instead of injecting an analys
   assert.equal(deterministicCreativeQualityIssues(repaired, "meme", sourceFacts).some((issue) => ["UNSUPPORTED_NUMBER", "MISSING_HEADLINE", "GENERIC_ANALYSIS_HEADLINE"].includes(issue.code)), false);
 });
 
-test("an unsupported headline with no surviving copy remains blocked without invented text", () => {
+test("an unsupported headline with no surviving copy recovers the cited fact instead of blocking", () => {
   const broken = structuredClone(draft);
   broken.units = [{ ...broken.units[0]!, headline: "Employment increased 99%", body: undefined }];
   const repaired = repairDeterministicCreativeCopy(broken, "meme", facts, "English");
-  assert.equal(repaired.units[0]!.headline, "");
-  assert.ok(deterministicCreativeQualityIssues(repaired, "meme", facts).some((issue) => issue.code === "MISSING_HEADLINE" && issue.severity === "blocker"));
+  // The unsupported "99%" claim is gone, but the slide keeps the fact it
+  // cited instead of an empty, unresolvable headline.
+  assert.equal(repaired.units[0]!.headline, facts[0]!.statement);
+  assert.ok(!deterministicCreativeQualityIssues(repaired, "meme", facts).some((issue) => issue.code === "MISSING_HEADLINE"));
+
+  // With no cited fact to fall back to, the headline still cannot invent text.
+  const unsupported = structuredClone(draft);
+  unsupported.units = [{ ...unsupported.units[0]!, headline: "Employment increased 99%", body: undefined, factIds: [] }];
+  const stillBlocked = repairDeterministicCreativeCopy(unsupported, "meme", facts, "English");
+  assert.equal(stillBlocked.units[0]!.headline, "");
+  assert.ok(deterministicCreativeQualityIssues(stillBlocked, "meme", facts).some((issue) => issue.code === "MISSING_HEADLINE" && issue.severity === "blocker"));
 });
 
 test("headline repair does not promote unsupported numbers or translated source fallbacks", () => {

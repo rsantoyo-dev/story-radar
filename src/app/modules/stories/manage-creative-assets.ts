@@ -1431,9 +1431,13 @@ function assertGenerativeImageryAllowed(
   draft: Pick<CreativeDraft, "visualFidelityOverride"> & Partial<Pick<CreativeDraft, "units">>,
   liveInheritedMode: unknown,
 ): void {
-  if (draft.units?.some(unit => requestsGeographicReconstruction(unit.visualDirection))) {
-    throw new CreativeContentConflictError("This script requests a map or recognizable real-place reconstruction. Use documentary preparation with verified photography or provider cartography; generative imagery cannot verify this location.");
-  }
+  // A unit that requests a map or real-place reconstruction always routes
+  // through composeDraftPlaceVisuals first (see generateCreativeDraftAssets),
+  // which resolves real evidence when it exists and otherwise falls back to a
+  // conceptual illustration that never claims documentary accuracy. That
+  // fallback is a deliberate, recorded outcome of place research, not an
+  // unrouted attempt to hand unverified location text to generative imagery,
+  // so unit text alone must not re-block it here.
   const effective = resolveEffectiveVisualFidelity({
     inheritedMode: liveInheritedMode,
     override: draft.visualFidelityOverride?.mode ?? null,
@@ -1718,6 +1722,9 @@ export async function previewCreativeImageBase(topicId: string, assetId: string)
   return readEditBase(references.base);
 }
 
+/** Never name or reconstruct the specific place; only conceptual research failed, not the slide's theme. */
+const GEOGRAPHIC_FALLBACK_VISUAL_DIRECTION = "No verified photograph or map could be confirmed for the specific place this slide describes. Render a conceptual, symbolic editorial illustration evoking the slide's theme instead: do not depict a specific real street, building, map, road sign, storefront or landmark, and do not imply geographic or documentary accuracy for any particular location.";
+
 function placeCompositionVersion(draftId: string): string {
   return process.env.CREATIVE_PLACE_PHOTO_REFERENCE_TEST_DRAFT_ID === draftId ? "place-visual-v5" : "place-visual-v4";
 }
@@ -1743,8 +1750,13 @@ async function composeDraftPlaceVisuals(topicId: string, draft: CreativeDraft, b
     ? await preparePlaceVisuals(topicId, geographicDraft, profile, brief.keyFacts, story?.url || "", prepared)
     : new Map<number, import("./creative-place-visual").PreparedPlaceVisual>();
   const photoReferenceTest = placeCompositionVersion(draft.id) === "place-visual-v5";
+  // A slide that asks for a real place still generates a real image when no
+  // verified photo or map exists: it falls back to the same conceptual AI
+  // composition as any other slide (never claiming documentary accuracy)
+  // instead of the local typography renderer, so a missing place is a quieter
+  // illustration, not a failed asset or a text-only card.
   const creativeUnits = draft.units.filter(unit => (!visuals.get(unit.order)?.bytes || (photoReferenceTest && visuals.get(unit.order)?.evidence.photo)) &&
-    unit.assetRequest !== "typography-only" && !requestsGeographicReconstruction(unit.visualDirection) &&
+    unit.assetRequest !== "typography-only" &&
     mode !== "photo-required" && mode !== "verified-references");
   if (creativeUnits.length) assertGenerativeImageryAllowed({ ...draft, units: creativeUnits }, inheritedMode);
   const creativeOrders = new Set(creativeUnits.map(unit => unit.order));
@@ -1762,7 +1774,14 @@ async function composeDraftPlaceVisuals(topicId: string, draft: CreativeDraft, b
       if (creativeOrders.has(unit.order)) {
         const characters = snapshotsForUnit(snapshots, unit.id);
         const refs = brandReferences.get(unit.order) ?? [];
-        const imagePrompt = buildCreativeImagePrompt({ draft, unit, brief,
+        const placeEvidence = visuals.get(unit.order)?.evidence;
+        // This slide asked for a real place but no verified photo or map was
+        // found; generate the same conceptual illustration a non-geographic
+        // slide would get instead of naming or reconstructing the specific,
+        // unverified location.
+        const unresolvedGeoRequest = requestsGeographicReconstruction(unit.visualDirection) && !photoReferenceTest;
+        const promptUnit = unresolvedGeoRequest ? { ...unit, visualDirection: GEOGRAPHIC_FALLBACK_VISUAL_DIRECTION } : unit;
+        const imagePrompt = buildCreativeImagePrompt({ draft, unit: promptUnit, brief,
           characters: charactersForImageGeneration(characters), campaignCharacters,
           brandOverlay: brand.overlay, carouselChromeSettings: brand.carouselChrome });
         const photoVisual = photoReferenceTest && visuals.get(unit.order)?.evidence.photo ? visuals.get(unit.order)!.evidence : undefined;
@@ -1775,7 +1794,12 @@ async function composeDraftPlaceVisuals(topicId: string, draft: CreativeDraft, b
           ...(photoVisual ? { generationMode: "reference-guided" as const, providerEndpoint: creativeImageEndpoint(creativeImageModel(resolveDefaultCreativeImageModel()), "reference-guided") } : {}),
           ...(brand.snapshot && shouldApplyCreativeBrandOverlay(brand.snapshot, unit.order) ? { brandOverlaySnapshot: brand.snapshot } : {}),
           ...(brand.carouselChromeSnapshot && unit.type === "carousel-slide" ? { carouselChromeSnapshot: brand.carouselChromeSnapshot } : {}),
-          unitOrder: unit.order, unitRole: unit.role, unitSnapshot: { ...unit, placeVisual: photoVisual ? { ...photoVisual, generationUse: "ai-reference" as const, referenceTopicId: topicId, reasons: ["AI-assisted adaptation using the approved archive photo. Review architectural fidelity and attribution before approval."] } : undefined },
+          unitOrder: unit.order, unitRole: unit.role, unitSnapshot: {
+            ...unit,
+            placeVisual: photoVisual
+              ? { ...photoVisual, generationUse: "ai-reference" as const, referenceTopicId: topicId, reasons: ["AI-assisted adaptation using the approved archive photo. Review architectural fidelity and attribution before approval."] }
+              : unresolvedGeoRequest ? placeEvidence : undefined,
+          },
           ...imagePrompt, prompt,
         };
       }

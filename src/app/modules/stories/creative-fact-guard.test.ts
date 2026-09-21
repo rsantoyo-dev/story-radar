@@ -2819,3 +2819,36 @@ test("scopes slide evidence by its planning question after an editor reorders or
   // A slide the plan never approved recovers nothing from the wider brief.
   assert.deepEqual(repaired.units[3]?.factIds, []);
 });
+
+test("plan scoping never strands a slide whose only citations fall outside its approved scope", () => {
+  const facts: CreativeKeyFact[] = [
+    { id: "fact-a", statement: "El programa llega a 40 municipios de la región." },
+    { id: "fact-b", statement: "La tarifa subió 12 por ciento durante el año." },
+  ];
+  const carouselPlan: CarouselPlan = {
+    slideCount: 3,
+    rationale: "Alcance, costo y cierre.",
+    slides: [
+      { editorialGoal: "hook", viewerQuestion: "¿Qué pasó?", allowedFactIds: ["fact-a"] },
+      { editorialGoal: "explain", viewerQuestion: "¿Cuánto subió?", allowedFactIds: ["fact-b"] },
+      { editorialGoal: "conclude", viewerQuestion: "¿Y ahora?", allowedFactIds: ["fact-a"] },
+    ],
+  };
+  // Slide 2 cites fact-a although its plan slide only approves fact-b. Narrowing
+  // to the approved scope alone would leave it with no evidence and a body
+  // stripped for lacking support: two blockers no free repair can clear.
+  const draft: GeneratedCreativeDraft = {
+    concept: "Alcance del programa",
+    caption: "Resumen del programa.",
+    hashtags: [],
+    altText: "Carrusel sobre el alcance del programa.",
+    units: [
+      { ...unit(1, "cover", "hook", "Llega a 40 municipios", undefined, ["fact-a"]), viewerQuestion: "¿Qué pasó?" },
+      { ...unit(2, "content", "explain", "Alcance regional", "Llega a 40 municipios este año.", ["fact-a"]), viewerQuestion: "¿Cuánto subió?" },
+      { ...unit(3, "conclusion", "conclude", "Cierre", "Resumen final.", ["fact-a"]), viewerQuestion: "¿Y ahora?" },
+    ],
+  };
+  const repaired = repairDeterministicFactCopy(draft, facts, "español", carouselPlan);
+  assert.deepEqual(repaired.units[1]?.factIds, ["fact-a"]);
+  assert.equal(repaired.units[1]?.body, "Llega a 40 municipios este año.");
+});

@@ -934,9 +934,24 @@ export function repairDeterministicFactCopy(
       // A repair may recover evidence only within this slide's approved scope.
       // Otherwise a valid brief-level fact can invalidate the final carousel.
       const allowed = factScopes?.[index];
-      const unitFactsById = allowed
+      const scoped = allowed
         ? new Map([...factsById].filter(([id]) => allowed.includes(id)))
         : factsById;
+      // The plan narrows a slide's evidence; it must never strand it. When none
+      // of the facts this slide cites survive the narrowing, keep its own
+      // citations alongside the approved scope: they are real brief facts, and
+      // a slide left with no evidence at all is blocked twice over (no facts,
+      // then a body stripped for lacking support) with no free repair.
+      const unitFactsById =
+        allowed &&
+        !unit.factIds.some((id) => scoped.has(id)) &&
+        unit.factIds.some((id) => factsById.has(id))
+          ? new Map(
+              [...factsById].filter(
+                ([id]) => allowed.includes(id) || unit.factIds.includes(id),
+              ),
+            )
+          : scoped;
       const unitFacts = [...unitFactsById.values()];
       const isClosingUnit =
         unit.editorialGoal === "conclude" ||
@@ -1060,7 +1075,10 @@ export function repairDeterministicFactCopy(
         wordCount(body) <= 2 &&
         selectedFacts[0]
       ) {
-        body = selectedFacts[0].statement;
+        // Prefer evidence no earlier slide has used, so two adjacent slides
+        // recovering the same numbered fact do not read as repetition.
+        const fresh = selectedFacts.find((fact) => !establishedFactIds.has(fact.id));
+        body = (fresh ?? selectedFacts[0]).statement;
       }
       let visibleCopy = [headline, subheadline, body, ctaQuestion]
         .filter(Boolean)
@@ -1092,9 +1110,16 @@ export function repairDeterministicFactCopy(
             )
           : undefined;
         // Do not replace a removed claim with an analysis label that the
-        // narrative validator rejects. Presentation repair can promote this
-        // slide's surviving copy; otherwise the editor must write a headline.
-        headline = repairedHeadline;
+        // narrative validator rejects. Every slide requires a non-empty
+        // headline, and no free repair runs after this point, so an emptied
+        // headline is otherwise a dead-end blocker. Recovering the cited
+        // fact's own statement keeps it non-empty and factually safe; a paid
+        // repair pass can still sharpen its wording afterward.
+        headline = repairedHeadline.trim()
+          ? repairedHeadline
+          : unit.headline.trim() && selectedFacts[0]
+            ? safeConclusionForFact(selectedFacts[0], language)
+            : repairedHeadline;
         subheadline = repairedSubheadline || undefined;
         body = repairedBody || undefined;
         ctaQuestion =
@@ -1207,7 +1232,10 @@ export function repairDeterministicFactCopy(
         unit.role === "content" &&
         selectedFacts[0]
       ) {
-        body = safeConclusionForFact(selectedFacts[0], language);
+        // Adjacent slides that both recover the same numbered fact read as
+        // semantic repetition, so prefer evidence no earlier slide has used.
+        const fresh = selectedFacts.find((fact) => !establishedFactIds.has(fact.id));
+        body = safeConclusionForFact(fresh ?? selectedFacts[0], language);
       }
       const visualDirection = prioritizedClosingLaborContrast
         ? removeSectorMovementSentences(unit.visualDirection) ??
