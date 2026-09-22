@@ -139,7 +139,9 @@ test("repairs missing hook evidence and reuses established evidence at closing",
 
   assert.equal(repaired, true);
   assert.deepEqual(plan.slides[0]?.allowedFactIds, ["fact-1"]);
-  assert.deepEqual(plan.slides[2]?.allowedFactIds, ["fact-1"]);
+  // The closing reuses established evidence and combines the arc rather than
+  // carrying one figure: the middle slide's fact leads, the cover's follows.
+  assert.deepEqual(plan.slides[2]?.allowedFactIds, ["fact-2", "fact-1"]);
   assert.deepEqual(
     validateCarouselPlan(
       plan,
@@ -1299,4 +1301,70 @@ test("rejects a premature conclusion during planning rather than waiting for scr
   assert.ok(validateCarouselPlan(plan, ids).some(error => error.includes("slide 3 closes the story before the final slide")));
   const corrected = {...plan, slides: [plan.slides[0], plan.slides[1], slide("impact", ["fact-3"]), plan.slides[3]]};
   assert.deepEqual(validateCarouselPlan(corrected, ids), []);
+});
+
+test("a closing planned on the cover's evidence alone is given something to synthesize", () => {
+  const known = new Set(["fact-1", "fact-2", "fact-3"]);
+  // Exactly the plan that produced the repeated ending live: the cover and the
+  // conclusion both carry fact-1, so the closing can only restate the opening.
+  const plan: CarouselPlan = {
+    slideCount: 3,
+    rationale: "Cover the rise, show the range, close on the takeaway.",
+    slides: [
+      { editorialGoal: "hook" as const, viewerQuestion: "How much more does a fill cost?", allowedFactIds: ["fact-1"] },
+      { editorialGoal: "impact" as const, viewerQuestion: "How did the price move?", allowedFactIds: ["fact-2", "fact-3"] },
+      { editorialGoal: "conclude" as const, viewerQuestion: "What should I remember?", allowedFactIds: ["fact-1"] },
+    ],
+  };
+  const { plan: repaired, repaired: changed } = repairCarouselPlanEvidence(plan, known);
+  assert.equal(changed, true);
+  const closing = repaired.slides[2].allowedFactIds;
+  assert.ok(
+    closing.some((id) => !plan.slides[0].allowedFactIds.includes(id)),
+    "the closing now carries evidence the cover did not",
+  );
+  for (const id of closing) {
+    assert.ok(["fact-1", "fact-2", "fact-3"].includes(id), "no invented evidence");
+  }
+  // Everything it cites was already shown to the reader earlier in the arc.
+  const establishedBeforeClosing = new Set([...plan.slides[0].allowedFactIds, ...plan.slides[1].allowedFactIds]);
+  for (const id of closing) assert.ok(establishedBeforeClosing.has(id), `${id} was established earlier`);
+});
+
+test("a closing echoing only the previous slide is widened to span the arc", () => {
+  const known = new Set(["fact-1", "fact-2"]);
+  const plan: CarouselPlan = {
+    slideCount: 3,
+    rationale: "Sound arc.",
+    slides: [
+      { editorialGoal: "hook" as const, viewerQuestion: "What changed?", allowedFactIds: ["fact-1"] },
+      { editorialGoal: "explain" as const, viewerQuestion: "Why?", allowedFactIds: ["fact-2"] },
+      { editorialGoal: "conclude" as const, viewerQuestion: "So what?", allowedFactIds: ["fact-2"] },
+    ],
+  };
+  const { plan: out } = repairCarouselPlanEvidence(plan, known);
+  assert.deepEqual(out.slides[2].allowedFactIds, ["fact-2", "fact-1"], "the ending combines both beats");
+});
+
+test("a middle slide repeating the slide before it spends unused evidence instead", () => {
+  // Exactly the live plan that produced REPEATED_EVIDENCE_NO_NEW_REWARD: the
+  // explain slide restated the cover while fact-3 was never used at all.
+  const known = new Set(["fact-1", "fact-2", "fact-3"]);
+  const plan: CarouselPlan = {
+    slideCount: 4,
+    rationale: "Cover, explain, impact, conclude.",
+    slides: [
+      { editorialGoal: "hook" as const, viewerQuestion: "How much more?", allowedFactIds: ["fact-1"] },
+      { editorialGoal: "explain" as const, viewerQuestion: "How did it move?", allowedFactIds: ["fact-1"] },
+      { editorialGoal: "impact" as const, viewerQuestion: "What were the extremes?", allowedFactIds: ["fact-2"] },
+      { editorialGoal: "conclude" as const, viewerQuestion: "What should I take away?", allowedFactIds: ["fact-2"] },
+    ],
+  };
+  const { plan: out, repaired } = repairCarouselPlanEvidence(plan, known);
+  assert.equal(repaired, true);
+  assert.notDeepEqual(out.slides[1].allowedFactIds, ["fact-1"], "the explain slide no longer echoes the cover");
+  assert.ok(out.slides[1].allowedFactIds.every((id) => known.has(id)), "no invented evidence");
+  const closing = out.slides[3].allowedFactIds;
+  assert.ok(closing.length >= 2, "the closing synthesizes rather than echoing slide 3");
+  assert.notDeepEqual(closing, out.slides[2].allowedFactIds);
 });

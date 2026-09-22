@@ -1,6 +1,7 @@
 import { CAROUSEL_EDITORIAL_GOALS, type CarouselPlan } from "./carousel-narrative";
 import { administrativeProjectIssues } from "./creative-project-grounding";
 import { completeRoadNoticeExcerpt } from "./road-notice-evidence";
+import { localizedTextOrDefault, resolveProfileLanguage } from "./creative-language";
 import type {
   CreativeFactClaimGuard,
   CreativeUnit,
@@ -1742,33 +1743,23 @@ function isSupportedLaborIndicatorClause(value: string): boolean {
 }
 
 function localizedLaborContrastQuestion(language?: string): string {
-  return isSpanishLanguage(language)
-    ? "¿Qué indicador refleja mejor lo que observas: ingresos o empleo?"
-    : "Which indicator better reflects what you see: earnings or employment?";
+  return localizedTextOrDefault(language, "labor.contrast.question");
 }
 
 function localizedLaborContrastVisualDirection(language?: string): string {
-  return isSpanishLanguage(language)
-    ? "Contraste editorial entre ingresos promedio y empleo de nómina."
-    : "Editorial contrast between average earnings and payroll employment.";
+  return localizedTextOrDefault(language, "labor.contrast.visual");
 }
 
 function localizedNarrowedClosingHeadline(language?: string): string {
-  return isSpanishLanguage(language)
-    ? "Una pregunta para cerrar"
-    : "One question before you go";
+  return localizedTextOrDefault(language, "closing.narrowed.headline");
 }
 
 function localizedNarrowedClosingQuestion(language?: string): string {
-  return isSpanishLanguage(language)
-    ? "¿Qué observas en tu sector?"
-    : "What are you seeing in your field?";
+  return localizedTextOrDefault(language, "closing.narrowed.question");
 }
 
 function localizedNarrowedClosingVisualDirection(language?: string): string {
-  return isSpanishLanguage(language)
-    ? "Cierre editorial tipográfico sin cifras ni comparaciones nuevas."
-    : "Typographic editorial closing without new numbers or comparisons.";
+  return localizedTextOrDefault(language, "closing.narrowed.visual");
 }
 
 function removeClosingSectorAltTextClause(
@@ -2056,13 +2047,15 @@ function estimatePrefix(
 ): string | undefined {
   const normalized = normalizeText(value);
   if (normalized.includes("more than") || normalized.startsWith("over ")) {
-    return isSpanishLanguage(language) ? "más de" : "more than";
+    return localizedTextOrDefault(language, "estimate.moreThan");
   }
   const prefix = normalized.match(
     /\b(?:about|approximately|estimated|nearly|roughly|around)\b/iu,
   )?.[0];
-  if (!prefix || !isSpanishLanguage(language)) return prefix;
-  return prefix === "nearly" ? "casi" : "aproximadamente";
+  if (!prefix) return prefix;
+  const resolved = resolveProfileLanguage(language);
+  if (resolved === "en" || resolved === "other") return prefix;
+  return localizedTextOrDefault(language, prefix === "nearly" ? "estimate.nearly" : "estimate.about");
 }
 
 function repairMissingPublishingScope(
@@ -2144,18 +2137,18 @@ function safeConclusionForFact(
   fact: CreativeKeyFact,
   language?: string,
 ): string {
-  if (fact.claimGuard?.certainty === "detected-signal") {
-    const event = fact.statement.match(
-      /pages?\s+published\s+after\s+(.+?)(?=\s+(?:show|were|had|display)|[,.;]|$)/iu,
-    )?.[1];
-    if (isSpanishLanguage(language)) {
-      return event
-        ? `Para las páginas publicadas después de ${event}, estos resultados describen señales de autoría con IA, no certeza sobre cómo se escribió cada página.`
-        : "Estos resultados describen señales de autoría con IA, no certeza sobre cómo se escribió cada página.";
-    }
-    return event
-      ? `For pages published after ${event}, these findings describe AI-authorship signals—not certainty about how every page was written.`
-      : "These findings describe AI-authorship signals—not certainty about how every page was written.";
+  // This template exists for one story shape only — an AI-authorship study of
+  // published pages. "detected-signal" alone is not that shape (a counterfeit
+  // notice about a bill's security features is also a detected signal), so it
+  // applies only when the statement literally is about pages published after a
+  // date. Every other fact recovers with its own statement, in its own language.
+  const event = fact.claimGuard?.certainty === "detected-signal"
+    ? fact.statement.match(/pages?\s+published\s+after\s+(.+?)(?=\s+(?:show|were|had|display)|[,.;]|$)/iu)?.[1]
+    : undefined;
+  if (event) {
+    return isSpanishLanguage(language)
+      ? `Para las páginas publicadas después de ${event}, estos resultados describen señales de autoría con IA, no certeza sobre cómo se escribió cada página.`
+      : `For pages published after ${event}, these findings describe AI-authorship signals—not certainty about how every page was written.`;
   }
   return fact.statement;
 }
@@ -2164,7 +2157,17 @@ function localizeEstimateQualifiers(
   value: string,
   language?: string,
 ): string {
-  if (!isSpanishLanguage(language)) return value;
+  const resolved = resolveProfileLanguage(language);
+  if (resolved === "fr") {
+    // English claimGuard qualifiers are the factual surface; leaving "about 40"
+    // inside French copy is both a language leak and an unlocalized qualifier.
+    return value
+      .replace(/\b(?:about|approximately|roughly|around)\s+(?=~?\d)/giu, "environ ")
+      .replace(/\bnearly\s+(?=~?\d)/giu, "près de ")
+      .replace(/\bmore than\s+(?=~?\d)/giu, "plus de ")
+      .replace(/([$€£])\s*environ\s+([+-]?\d)/giu, "environ $1$2");
+  }
+  if (resolved !== "es") return value;
   return value
     .replace(
       /\bpoco más de\s+(?:about|approximately|roughly|around)\s+(?=~?\d)/giu,
@@ -2185,21 +2188,14 @@ function localizeEstimateQualifiers(
 }
 
 function defaultEstimateQualifier(language?: string): string {
-  return isSpanishLanguage(language) ? "aproximadamente" : "about";
+  return localizedTextOrDefault(language, "estimate.about");
 }
 
 function localizedFallback(
   language: string | undefined,
   kind: "summary" | "alt-text",
 ): string {
-  if (isSpanishLanguage(language)) {
-    return kind === "summary"
-      ? "Resumen de la información respaldada por la fuente."
-      : "Carrusel que explica información respaldada por la fuente.";
-  }
-  return kind === "summary"
-    ? "A summary of information supported by the source."
-    : "A carousel explaining information supported by the source.";
+  return localizedTextOrDefault(language, kind === "summary" ? "fallback.summary" : "fallback.altText");
 }
 
 function isSpanishLanguage(language: string | undefined): boolean {

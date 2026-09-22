@@ -605,7 +605,27 @@ export type GeneratedCreativeBrief = {
   carouselPlan?: CarouselPlan;
   riskFlags: string[];
   suggestedConcepts: CreativeSuggestedConcept[];
+  /**
+   * The lens this brief actually applied. The reader-consequence instruction
+   * lets a brief fall back to explainer when no keyFact establishes a
+   * consequence, but validation used to judge every draft by the Topic's
+   * configured strategy, so a correct fallback was still failed for not
+   * being reader-framed. Absent on briefs written before this was recorded;
+   * callers fall back to the profile's strategy.
+   */
+  appliedFramingStrategy?: CreativeFramingStrategy;
 };
+
+/**
+ * The strategy a draft should actually be judged against: what the brief
+ * applied, or the Topic's configuration when the brief did not say.
+ */
+export function effectiveFramingStrategy(
+  profileStrategy: CreativeFramingStrategy,
+  brief?: Pick<GeneratedCreativeBrief, "appliedFramingStrategy">,
+): CreativeFramingStrategy {
+  return brief?.appliedFramingStrategy ?? profileStrategy;
+}
 
 export type CreativeBrief = GeneratedCreativeBrief & {
   id: string;
@@ -668,6 +688,13 @@ export type CreativeUnit = {
    */
   brandReferenceSelection?: BrandReferenceSelection;
   storyReferences?: import("./story-materials.types").StoryReferenceSelection[];
+  /**
+   * Declares the kind of visual this slide needs. Currently informational
+   * only — routing it into prepare-place-visuals.ts / build-creative-image-prompt.ts
+   * is separate follow-up work; this field is populated and persisted ahead
+   * of that wiring.
+   */
+  visualNeed?: "verified-map" | "real-photo" | "character-reference" | "generic-illustration" | "typography";
 };
 
 export type BrandReferenceFunction =
@@ -720,6 +747,10 @@ export type CreativeQualityIssue = {
   severity: "blocker" | "warning";
   message: string;
   unitOrder?: number;
+  /** Set by the single-shot audit's structured findings; unused on the legacy path. */
+  field?: string;
+  evidence?: string;
+  requiredChange?: string;
 };
 
 export type CreativeQualityReview = {
@@ -766,6 +797,21 @@ export type GeneratedCreativeDraft = {
   /** Present only for a post-approval Story derived from another draft. */
   companion?: CreativeCompanionMetadata;
   units: CreativeUnit[];
+  /** Progress of the single-shot generate/audit/repair/verify pipeline (feature-flagged). */
+  singleShotRun?: {
+    stage: "generated" | "audited" | "repairing" | "verifying" | "done";
+    callsUsed: number;
+    verdict?: "accepted" | "correctable" | "blocked_source";
+    findings?: CreativeQualityIssue[];
+    stopReason?: string;
+  };
+  /**
+   * Set when the independent auditor (or a deterministic grounding check)
+   * concludes the source cannot support what was requested. A saved,
+   * reviewable terminal state, not an exception — see
+   * CreativeContentInsufficientError for the separate, pre-flight case.
+   */
+  blockedSource?: { reason: string; missingEvidence: string[] };
 };
 
 export type CreativeDraft = GeneratedCreativeDraft & {

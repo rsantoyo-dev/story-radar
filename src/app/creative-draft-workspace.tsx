@@ -1778,7 +1778,7 @@ export function CreativeDraftWorkspace({
                       <p>
                         {!workspace.briefIsCurrent
                           ? "The creative profile or story changed. Create a fresh brief and draft to apply the new guidance."
-                          : "The supporting-character roster or its reference images changed. Create a fresh draft so Gemini can use the current roster."}
+                          : "This draft was generated with earlier settings. Create a fresh draft to use the current ones; supporting characters can be toggled per slide without regenerating."}
                         {" "}The existing draft and images are preserved as history.
                       </p>
                     </div>

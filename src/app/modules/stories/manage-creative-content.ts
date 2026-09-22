@@ -25,10 +25,12 @@ import { createHash } from "node:crypto";
 import { requireTopic } from "@/app/modules/topics/topic-context";
 
 import {
+  creativeSingleShotConfig,
   getCreativeContentPublicConfig,
   getCreativeCompanionRuntimeConfig,
   getCreativeContentRuntimeConfig,
 } from "./creative-content.config";
+import { runSingleShotCreativePipeline } from "./creative-single-shot-editorial";
 import {
   approveCreativeDraft,
   completeCreativeAiRun,
@@ -54,6 +56,8 @@ import {
 } from "./creative-characters.repository";
 import type {
   CreativeAspectRatio,
+  CreativeBrief,
+  GeneratedCreativeDraft,
   CreativeCharacterRosterEntry,
   CreativeCharacterSnapshot,
   CreativeCompanionApproach,
@@ -81,6 +85,7 @@ import {
   generateCreativeBrief,
   generateEditorialFocus,
   generateCreativeDraft,
+  CREATIVE_DRAFT_TIME_BUDGET_MS,
   type CreativeTopicContext,
 } from "./gemini-creative-content-generator";
 import { isCarouselEditorialGoal } from "./carousel-narrative";
@@ -147,24 +152,18 @@ export async function getCreativeWorkspaceState(
   const brief = cachedCurrentBrief ?? latestBrief;
   const briefIsCurrent = Boolean(brief && inputHash === brief.inputHash);
   const draftsForStory = await findCreativeDraftsForStory(topicId, storyId);
-  const isCurrentPrimaryDraft = (draft: CreativeDraft) =>
-    Boolean(
-      briefIsCurrent &&
-        brief?.id === draft.briefId &&
-        draft.inputHash ===
-          createDraftInputHash(
-            brief.id,
-            brief.inputHash,
-            draft.format,
-            draft.outputAspectRatio,
-            characterRoster,
-            {
-              provider: configuration.provider,
-              model: configuration.model,
-              promptVersion: configuration.draftPromptVersions[draft.format],
-            },
-          ),
+  const isCurrentPrimaryDraft = (draft: CreativeDraft) => {
+    if (!briefIsCurrent || brief?.id !== draft.briefId) return false;
+    const generation = {
+      provider: configuration.provider,
+      model: configuration.model,
+      promptVersion: configuration.draftPromptVersions[draft.format],
+    };
+    return (
+      draft.inputHash === createDraftInputHash(brief.id, brief.inputHash, draft.format, draft.outputAspectRatio, generation) ||
+      draft.inputHash === createLegacyDraftInputHash(brief.id, brief.inputHash, draft.format, draft.outputAspectRatio, characterRoster, generation)
     );
+  };
   const currentApprovedParentIds = new Set(
     draftsForStory
       .filter(
@@ -336,6 +335,13 @@ export async function createCreativeBrief(
     return { outcome: "generated", state: await getCreativeWorkspaceState(topicId, storyId, preparationRunId) };
   }
 
+  if (creativeSingleShotConfig().enabled) {
+    return createCreativeBriefAndDraftSingleShot({
+      topicId, storyId, story, content, topic, profile, daily, acquisitionTaxonomy,
+      configuration, inputHash, normalizedEditorialDirection, collectionContext, preparationRunId,
+    });
+  }
+
   assertCreativeDailyBudget(daily.runs, configuration.maxRunsPerDay);
   const runId = await createCreativeAiRun({
     topicId,
@@ -388,6 +394,153 @@ export async function createCreativeBrief(
       { provider: result.provider, model: result.model, fallbackReason: result.fallbackReason },
     );
 
+    return {
+      outcome: "generated",
+      state: await getCreativeWorkspaceState(topicId, storyId, preparationRunId),
+    };
+  } catch (error) {
+    await failRunSafely(topicId, runId, error);
+    throw error;
+  }
+}
+
+/**
+ * The single-shot pipeline (generate -> audit -> optional repair -> verify)
+ * produces one response covering both the brief and the draft; it is split
+ * here into the same two persisted rows createCreativeBrief/createCreativeDraft
+ * already use, via the same insertCreativeBrief/insertCreativeDraft/
+ * replaceCreativeDraft repository functions, so every downstream reader keeps
+ * working unchanged. Always targets carousel: the format the rest of this
+ * system defaults to. A user who then asks for a different format from the
+ * UI falls through to createCreativeDraft's existing (legacy) path for that
+ * format, since a single-shot response for it does not exist yet.
+ */
+async function createCreativeBriefAndDraftSingleShot({
+  topicId,
+  storyId,
+  story,
+  content,
+  topic,
+  profile,
+  daily,
+  acquisitionTaxonomy,
+  configuration,
+  inputHash,
+  normalizedEditorialDirection,
+  collectionContext,
+  preparationRunId,
+}: {
+  topicId: string;
+  storyId: string;
+  story: Awaited<ReturnType<typeof getDailyDraftStory>>;
+  content: string;
+  topic: Awaited<ReturnType<typeof requireTopic>>;
+  profile: CreativeProfile;
+  daily: Awaited<ReturnType<typeof getCreativeDailyUsage>>;
+  acquisitionTaxonomy: Awaited<ReturnType<typeof getCurrentTopicAcquisitionTaxonomy>>;
+  configuration: ReturnType<typeof getCreativeContentRuntimeConfig>;
+  inputHash: string;
+  normalizedEditorialDirection: string | undefined;
+  collectionContext: Awaited<ReturnType<typeof selectedStoryContext>>;
+  preparationRunId?: string;
+}): Promise<CreativeGenerationResult> {
+  const format: CreativeFormat = "carousel";
+  const outputAspectRatio = resolveCreativeOutputAspectRatio(format, undefined);
+  const draftPromptVersion = configuration.draftPromptVersions[format];
+
+  assertCreativeDailyBudget(daily.runs, configuration.maxRunsPerDay);
+  const runId = await createCreativeAiRun({
+    topicId,
+    storyId,
+    task: "brief",
+    provider: configuration.provider,
+    model: configuration.model,
+    promptVersion: configuration.briefPromptVersion,
+    inputHash,
+  });
+
+  let briefRow: CreativeBrief | undefined;
+  let draftRow: CreativeDraft | undefined;
+  try {
+    const characterRoster = await listCreativeCharacterRoster(topicId);
+    const result = await withCreativeTextBudget({ topicId, storyId, runId }, () =>
+      runSingleShotCreativePipeline({
+        apiKey: configuration.apiKey,
+        paidGeminiApiKey: configuration.paidGeminiApiKey,
+        model: configuration.model,
+        primaryProvider: configuration.primaryProvider,
+        story: storyForGenerator(story, content),
+        topic,
+        profile,
+        editorialDirection: collectionContext
+          ? [normalizedEditorialDirection, editorialContextInstruction(collectionContext)].filter(Boolean).join("\n")
+          : normalizedEditorialDirection,
+        format,
+        outputAspectRatio,
+        characterRoster,
+        acquisitionTaxonomy,
+        openAiApiKey: configuration.openAiApiKey,
+        openAiEditorialModels: configuration.openAiEditorialModels,
+        openAiAuditContext: { runId, topicId, storyId },
+        deadline: Date.now() + CREATIVE_DRAFT_TIME_BUDGET_MS,
+        checkpoint: async ({ brief, draft, usage }) => {
+          if (!briefRow) {
+            briefRow = await insertCreativeBrief({
+              topicId,
+              storyId,
+              profile,
+              provider: "google",
+              model: configuration.model,
+              promptVersion: configuration.briefPromptVersion,
+              inputHash,
+              editorialDirection: normalizedEditorialDirection,
+              collectionContext,
+              generated: brief,
+              usage,
+            });
+          }
+          const draftInputHash = createDraftInputHash(briefRow.id, briefRow.inputHash, format, outputAspectRatio, {
+            provider: configuration.provider,
+            model: configuration.model,
+            promptVersion: draftPromptVersion,
+          });
+          const characterSnapshots = await snapshotsForCreativeCharacterIds(
+            topicId,
+            draft.units.flatMap((unit) => unit.characterIds ?? []),
+          );
+          draftRow = draftRow
+            ? await replaceCreativeDraft(
+                topicId,
+                draftRow,
+                { ...draft, outputAspectRatio },
+                characterSnapshots,
+                { inputHash: draftInputHash, aiSnapshot: draft },
+              )
+            : await insertCreativeDraft({
+                topicId,
+                storyId,
+                briefId: briefRow.id,
+                format,
+                outputAspectRatio,
+                provider: "google",
+                model: configuration.model,
+                promptVersion: draftPromptVersion,
+                inputHash: draftInputHash,
+                generated: draft,
+                usage,
+                characterSnapshots,
+              });
+        },
+      }),
+    );
+    if (draftRow) await recordTextOutcome(topicId, draftRow);
+    await completeCreativeAiRun(
+      topicId,
+      runId,
+      result.usage,
+      { briefId: briefRow?.id, draftId: draftRow?.id },
+      { provider: "google", model: configuration.model },
+    );
     return {
       outcome: "generated",
       state: await getCreativeWorkspaceState(topicId, storyId, preparationRunId),
@@ -460,7 +613,6 @@ export async function createCreativeDraft(
     brief.inputHash,
     format,
     outputAspectRatio,
-    characterRoster,
     {
       provider: configuration.provider,
       model: configuration.model,
@@ -494,8 +646,77 @@ export async function createCreativeDraft(
   });
 
   let checkpointDraft: CreativeDraft | undefined;
+
+  // Regenerating a draft must not silently drop back onto the legacy
+  // multi-tier pipeline while the flag is on: the editor clicks the same
+  // button either way and would get a different engine, different cost and a
+  // different verdict shape with no indication why. The brief the editor
+  // already reviewed is kept — only the script is written again.
+  if (creativeSingleShotConfig().enabled) {
+    try {
+      const characterSnapshotsFor = (draft: GeneratedCreativeDraft) =>
+        snapshotsForCreativeCharacterIds(topicId, draft.units.flatMap((unit) => unit.characterIds ?? []));
+      const result = await withCreativeTextBudget({ topicId, storyId: brief.storyId, runId }, () =>
+        runSingleShotCreativePipeline({
+          apiKey: configuration.apiKey,
+          paidGeminiApiKey: configuration.paidGeminiApiKey,
+          model: configuration.model,
+          primaryProvider: configuration.primaryProvider,
+          story: storyForGenerator(story, content),
+          topic,
+          profile: brief.profileSnapshot,
+          existingBrief: brief,
+          format,
+          outputAspectRatio,
+          characterRoster,
+          ...(acquisitionTaxonomy ? { acquisitionTaxonomy } : {}),
+          openAiApiKey: configuration.openAiApiKey,
+          openAiEditorialModels: configuration.openAiEditorialModels,
+          openAiAuditContext: { runId, topicId, storyId: brief.storyId },
+          deadline: Date.now() + CREATIVE_DRAFT_TIME_BUDGET_MS,
+          checkpoint: async ({ draft: partial, usage }) => {
+            const characterSnapshots = await characterSnapshotsFor(partial);
+            checkpointDraft = checkpointDraft
+              ? await replaceCreativeDraft(topicId, checkpointDraft, { ...partial, outputAspectRatio }, characterSnapshots, {
+                  inputHash,
+                  aiSnapshot: partial,
+                })
+              : await insertCreativeDraft({
+                  topicId, storyId: brief.storyId, briefId: brief.id, format, outputAspectRatio,
+                  provider: "google", model: configuration.model, promptVersion, inputHash,
+                  generated: partial, usage, characterSnapshots,
+                });
+          },
+        }),
+      );
+      const draft = checkpointDraft
+        ? await replaceCreativeDraft(
+            topicId, checkpointDraft, { ...result.draft, outputAspectRatio },
+            await characterSnapshotsFor(result.draft), { inputHash, aiSnapshot: result.draft },
+          )
+        : await insertCreativeDraft({
+            topicId, storyId: brief.storyId, briefId: brief.id, format, outputAspectRatio,
+            provider: "google", model: configuration.model, promptVersion, inputHash,
+            generated: result.draft, usage: result.usage,
+            characterSnapshots: await characterSnapshotsFor(result.draft),
+          });
+      await recordTextOutcome(topicId, draft);
+      await completeCreativeAiRun(topicId, runId, result.usage, { draftId: draft.id }, {
+        provider: "google", model: configuration.model,
+      });
+      return {
+        outcome: "generated",
+        state: await getCreativeWorkspaceState(topicId, brief.storyId, preparationRunId),
+      };
+    } catch (error) {
+      await failRunSafely(topicId, runId, error);
+      throw error;
+    }
+  }
+
   try {
     const result = await withCreativeTextBudget({topicId, storyId: brief.storyId, runId}, () => generateCreativeDraft({
+      carouselWriterModel: configuration.carouselWriterModel,
       onDraftCheckpoint: !cached ? async partial => {
         const characterSnapshots=await snapshotsForCreativeCharacterIds(topicId,partial.draft.units.flatMap(unit=>unit.characterIds??[]));
         checkpointDraft=checkpointDraft
@@ -1092,7 +1313,6 @@ export async function refreshCreativeDraftCharacterReferences(
     brief.inputHash,
     current.format,
     outputAspectRatioForDraft(current),
-    characterRoster,
     {
       provider: configuration.provider,
       model: configuration.model,
@@ -1230,7 +1450,31 @@ function normalizeEditorialDirection(value: string | undefined): string | undefi
   return normalized || undefined;
 }
 
+/**
+ * The supporting-character roster is deliberately not part of this hash:
+ * a character is a per-slide production option (which reference images feed
+ * the image model), not a generation input. Adding a character or one of its
+ * photos must not turn every saved draft into a stale one; the per-unit
+ * character snapshots and "Refresh character references" keep images current.
+ */
 function createDraftInputHash(
+  briefId: string,
+  briefInputHash: string,
+  format: CreativeFormat,
+  outputAspectRatio: CreativeAspectRatio,
+  configuration: { provider: string; model: string; promptVersion: string },
+): string {
+  return hash({
+    briefId,
+    briefInputHash,
+    format,
+    outputAspectRatio,
+    ...configuration,
+  });
+}
+
+/** Drafts saved before the roster left the hash still carry it; accept them as current. */
+function createLegacyDraftInputHash(
   briefId: string,
   briefInputHash: string,
   format: CreativeFormat,

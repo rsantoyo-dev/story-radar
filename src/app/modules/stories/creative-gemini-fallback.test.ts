@@ -6,7 +6,7 @@ import vm from "node:vm";
 import ts from "typescript";
 const localRequire=createRequire(import.meta.url);
 type Params={contents:string;config:{maxOutputTokens:number;httpOptions:{retryOptions:{attempts:number}};responseJsonSchema:{type:string}}};
-function load(request:(key:string,params:Params)=>Promise<unknown>) {
+function load(request:(key:string,params:Params)=>Promise<unknown>, expectedWriter?: string) {
   const calls:string[]=[];const logs:unknown[]=[];
   const exports={} as {
     generateCreativeDraft:(input:unknown)=>Promise<unknown>;
@@ -26,6 +26,7 @@ function load(request:(key:string,params:Params)=>Promise<unknown>) {
   vm.runInNewContext(code,{exports,AbortController,AbortSignal,Buffer,Date,Map,Set,JSON,setTimeout,clearTimeout,console:{info:(...a:unknown[])=>logs.push(a),warn:(...a:unknown[])=>logs.push(a),error:(...a:unknown[])=>logs.push(a)},require:(id:string)=>{
     if(id==="server-only")return {};
     if(id==="./openai-structured-response")return {generateOpenAiStructuredResponse:async(input:{schema:Record<string,unknown>;model:string;contents:unknown})=>{
+      if (expectedWriter) assert.equal(input.model, expectedWriter);
       calls.push("luna");
       const properties = input.schema.properties as Record<string, unknown> | undefined;
       const text = properties?.editorialDirection
@@ -40,6 +41,15 @@ function load(request:(key:string,params:Params)=>Promise<unknown>) {
   return {exports,calls,logs,ApiError};
 }
 const input={apiKey:"primary-secret",paidGeminiApiKey:"secondary-secret",primaryProvider:"google",model:"gemini-3.6-flash",groqApiKey:"groq-secret",groqModel:"test",systemInstruction:"write JSON",schema:{type:"object"},contents:{privateText:"never logged"},maxOutputTokens:4096};
+test("Sol-first carousel uses Sol for initial generation and validation retry without Gemini",async()=>{
+  const service=load(async()=>{throw new Error("Gemini must not run");},"gpt-5.6-sol");
+  await assert.rejects(service.exports.generateCreativeDraft({...input,
+    carouselWriterModel:"gpt-5.6-sol",openAiApiKey:"test",format:"carousel",outputAspectRatio:"4:5",characterRoster:[],
+    topic:{name:"Test"},story:{title:"Test"},profile:{brandOverlay:{enabled:false}},
+    brief:{keyFacts:[{id:"fact-1",statement:"A complete fact.",sourceExcerpt:"A complete fact."}],carouselPlan:{slideCount:3,slides:[]}},
+  }));
+  assert.deepEqual(service.calls,["luna","luna"],"mock labels OpenAI calls luna; model assertions above enforce Sol");
+});
 test("Gemini recovers truncation before switching providers, preserving schema and input",async()=>{
   const budgets:number[]=[];
   const service=load(async(_,params)=>{

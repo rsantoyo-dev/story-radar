@@ -1,0 +1,102 @@
+{
+  "schemaVersion": "1.0",
+  "title": "Create Carousel Draft: arquitectura observada",
+  "snapshot": {"date": "2026-09-21", "baseCommit": "fcca4da", "includesUncommittedChanges": true, "modelConfiguration": "code defaults; environment overrides not inspected"},
+  "scope": {"produces": ["versioned draft", "slide scripts", "caption", "hashtags", "alt text", "visual directions", "editorial review", "repair checkpoints"], "downstreamOperations": ["draft approval", "asset generation", "asset approval", "publication"]},
+  "api": {
+    "method": "POST",
+    "path": "/api/radar/creative/briefs/{briefId}/drafts",
+    "runtime": "nodejs",
+    "maxDurationSeconds": 600,
+    "authentication": "authorizeRadarCollector",
+    "topicResolution": "requireActiveRequestTopic",
+    "pathParameters": {"briefId": "UUID"},
+    "optionalQueryParameters": {"preparationRunId": "UUID"},
+    "exampleRequest": {"format": "carousel", "aspectRatio": "4:5", "createNewVersion": false},
+    "response": {"outcome": ["cached", "generated"], "state": "Creative workspace state"}
+  },
+  "components": [
+    {"id": "api", "source": "src/app/api/radar/creative/briefs/[briefId]/drafts/route.ts"},
+    {"id": "service", "source": "src/app/modules/stories/manage-creative-content.ts", "function": "createCreativeDraft"},
+    {"id": "generator", "source": "src/app/modules/stories/gemini-creative-content-generator.ts", "function": "generateCreativeDraft"},
+    {"id": "router", "source": "src/app/modules/stories/gemini-creative-content-generator.ts", "function": "generateJson"},
+    {"id": "repair", "source": "src/app/modules/stories/creative-editorial-loop.ts", "function": "runEditorialRepairLoop"},
+    {"id": "quality", "source": "src/app/modules/stories/creative-quality.ts"},
+    {"id": "meter", "source": "src/app/modules/stories/creative-text-meter.ts"},
+    {"id": "repository", "source": "src/app/modules/stories/creative-content.repository.ts"}
+  ],
+  "graph": {
+    "nodes": ["request", "validate", "cache", "reserve", "budget", "generate", "localChecks", "checkpoint", "audit", "repair", "verify", "rollback", "pending", "persist", "response"],
+    "edges": [
+      {"from": "request", "to": "validate"},
+      {"from": "validate", "to": "cache", "when": "evidence sufficient and brief current"},
+      {"from": "cache", "to": "response", "when": "cache hit and createNewVersion false"},
+      {"from": "cache", "to": "reserve", "when": "generation required"},
+      {"from": "reserve", "to": "budget"},
+      {"from": "budget", "to": "generate"},
+      {"from": "generate", "to": "localChecks"},
+      {"from": "localChecks", "to": "checkpoint"},
+      {"from": "checkpoint", "to": "audit", "when": "independent critic configured"},
+      {"from": "audit", "to": "persist", "when": "accepted"},
+      {"from": "audit", "to": "pending", "when": "critic unavailable"},
+      {"from": "audit", "to": "repair", "when": "actionable findings and remaining allowance"},
+      {"from": "repair", "to": "verify", "when": "valid changed copy; checkpoint pending verification"},
+      {"from": "repair", "to": "pending", "when": "limits exhausted"},
+      {"from": "verify", "to": "persist", "when": "accepted"},
+      {"from": "verify", "to": "repair", "when": "improved but not accepted; allowance remains"},
+      {"from": "verify", "to": "rollback", "when": "no verified improvement"},
+      {"from": "verify", "to": "pending", "when": "verification unavailable"},
+      {"from": "rollback", "to": "pending"},
+      {"from": "pending", "to": "persist"},
+      {"from": "persist", "to": "response"}
+    ],
+    "note": "Main path with OpenAI configured. Rejected patches may advance to another eligible tier; the graph groups terminal branches. Without OpenAI, compatibility auditing cannot replace independent approval checks."
+  },
+  "providers": {
+    "geminiPrimaryFallbackOrder": ["Gemini primary", "OpenAI configured Luna", "Gemini secondary if eligible", "Groq", "Cloudflare"],
+    "groqPrimaryFallbackOrder": ["Groq", "Cloudflare"],
+    "skipUnconfiguredProviders": true,
+    "retryRouting": "startAt resumes the responding provider; branch-specific fallback behavior",
+    "defaultModels": {"critic": "gpt-5.6-terra", "minorRepair": "gpt-5.6-luna", "structuralRepair": "gpt-5.6-terra", "severeRepair": "gpt-5.6-sol"},
+    "criticMode": "read-only initial audit and separate verification after correction"
+  },
+  "quality": {
+    "scale": "1-100; zero represents unavailable assessment",
+    "target": {"factuality": 98, "hook": 96, "curiosity": 95, "swipeReward": 95, "continuity": 95, "relevance": 95, "clarity": 95, "resolution": 95, "cta": 95, "overall": 95},
+    "publishableMinimum": {"factuality": 96, "hook": 85, "curiosity": 80, "swipeReward": 80, "continuity": 80, "relevance": 80, "clarity": 80, "resolution": 80, "cta": 80, "overall": 85},
+    "additionalRequirements": ["current independent review", "no unresolved blockers", "valid hook assessment", "supported facts and qualifiers", "applicable dimension thresholds"],
+    "automaticPublicationAuthorizedByAcceptance": false
+  },
+  "limits": {
+    "generatorDeadlineMs": 480000,
+    "verificationWindowMs": 150000,
+    "targetedPatchMaxOutputTokens": 4096,
+    "narrativeReplanMaxOutputTokens": 8192,
+    "auditMaxOutputTokens": 4096,
+    "slimAuditWithReusableHookMaxOutputTokens": 2560,
+    "persistedRepairAttemptCeilingPerTier": 2,
+    "currentAdapterOneCorrectionPerTier": true,
+    "severeEscalationCondition": "remaining findings classified severe",
+    "storyTextBudgetDefaultUsd": 1,
+    "storyTextBudgetEnvironmentVariable": "CREATIVE_STORY_TEXT_BUDGET_USD",
+    "fixedTotalProviderCallCount": null
+  },
+  "persistence": {
+    "reservation": "atomic per Topic; daily quota and identical in-flight task/input hash protection",
+    "failedAttemptsCountTowardDailyQuota": true,
+    "initialCheckpointCondition": "no cached draft exists",
+    "snapshots": ["AI draft", "character references", "brief creative profile", "narrative revision when replanned"],
+    "repairProgress": ["terraAttempts", "solAttempts", "pendingVerification", "verificationAttempts", "verifiedFallback", "stopReason"],
+    "unknownTransportCost": "retain reservation"
+  },
+  "recovery": {
+    "function": "recoverSavedCreativeDraft",
+    "inputs": ["topicId", "draftId", "expectedVersion", "requestId"],
+    "rejects": ["stale draft version", "approved draft", "companion draft"],
+    "usesLeaseAndCheckpoints": true,
+    "reusesPersistedReviewedResult": true,
+    "resetsRepairCounters": false
+  },
+  "states": {"execution": ["running", "completed", "failed"], "editorialReview": ["accepted", "needs-review", "rejected"], "approval": "separate operation"},
+  "limitations": ["Local changes are not a deployed release guarantee", "Older readiness documentation contains previous thresholds and limits", "No paid model evaluation performed for this documentation", "Deadline is a continuation budget, not a proven global cancellation guarantee", "Cached-draft regeneration does not receive the same initial checkpoint callback"]
+}

@@ -95,11 +95,13 @@ test(`final corrected copy is independently checked; final reviewer available: $
       slides: draft.units.map((unit) => ({ editorialGoal: unit.editorialGoal, viewerQuestion: unit.viewerQuestion, allowedFactIds: ["fact-1"] })) } },
     format: "carousel", outputAspectRatio: "4:5", characterRoster: [],
   });
-  assert.deepEqual(calls, ["gemini-draft", "terra-test", "terra-test-patch", "terra-test", ...(finalAvailable ? ["sol-test-patch"] : [])]);
+  // A remaining editorial (non-factual) shortfall never buys a Sol round: the loop ends after Terra's verified correction.
+  assert.deepEqual(calls, ["gemini-draft", "terra-test", "terra-test-patch", "terra-test"]);
   assert.equal(result.draft.units[0].headline, draft.units[0].headline);
   assert.equal(result.draft.units[1].ctaQuestion, cta);
   assert.equal(result.draft.units[1].factIds.join(","), "fact-1");
-  assert.equal(result.usage.totalTokens, finalAvailable ? 70 : 50);
+  // An unavailable final reviewer records no usage for the abandoned verify call.
+  assert.equal(result.usage.totalTokens, finalAvailable ? 60 : 50);
   assert.equal(result.draft.qualityReview?.status, "needs-review", "Fixing a CTA must not conceal a redundant closing");
   if (finalAvailable) {
     assert.ok(result.draft.qualityReview?.issues.some(issue => issue.code === "QUALITY_RESOLUTION_BELOW_THRESHOLD"));

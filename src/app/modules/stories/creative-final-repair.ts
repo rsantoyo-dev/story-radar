@@ -19,7 +19,7 @@ const unitFields = {
   ctaQuestion: 500,
   visualDirection: 1_000,
 };
-const publicationFields = { concept: 1_000, caption: 3_000, altText: 1_000, callToAction: 500 };
+const publicationFields = { concept: 1_000, caption: 3_000, altText: 1_000, callToAction: 500, hashtags: 300 };
 const requiredFields = new Set(["headline", "visualDirection", "concept", "caption", "altText"]);
 const zeroUsage = (): CreativeAiUsage => ({ promptTokens: 0, outputTokens: 0, thoughtsTokens: 0, totalTokens: 0 });
 const key = (issue: CreativeQualityIssue) => `${issue.code}:${issue.unitOrder ?? 0}`;
@@ -247,7 +247,17 @@ export function applyFinalCreativePatches(
     }
     seen.add(identity);
     // Fields above are an explicit copy-only allowlist. No model-supplied paths.
-    Object.assign(target, { [patch.field]: replacement || undefined });
+    if (patch.field === "hashtags") {
+      const tags = (replacement as string)
+        .split(/[\s,]+/u)
+        .map((tag: string) => tag.replace(/^#+/, "").trim())
+        .filter(Boolean)
+        .slice(0, 8)
+        .map((tag: string) => `#${tag}`);
+      Object.assign(target, { hashtags: tags });
+    } else {
+      Object.assign(target, { [patch.field]: replacement || undefined });
+    }
   }
   return patched;
 }

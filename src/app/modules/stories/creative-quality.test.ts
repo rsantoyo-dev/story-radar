@@ -10,6 +10,7 @@ import type {
 } from "./creative-content.types";
 import {
   buildCreativeQualityReview,
+  CREATIVE_PUBLISHABLE_THRESHOLDS,
   CREATIVE_QUALITY_THRESHOLDS,
   creativeQualityReviewHasUnresolvedBlockers,
   creativeQualityThresholdFailures,
@@ -1279,9 +1280,10 @@ test("does not block on a low factuality score without a concrete factual issue"
 
 test("a high overall score cannot hide any weak applicable dimension after repair", () => {
   const safeDraft = repairDeterministicCreativeCopy(draft, "carousel", facts, "English");
-  for (const dimension of Object.keys(CREATIVE_QUALITY_THRESHOLDS) as Array<keyof typeof CREATIVE_QUALITY_THRESHOLDS>) {
+  // One point under the publishable floor on any dimension is not accepted, whatever overall says.
+  for (const dimension of Object.keys(CREATIVE_PUBLISHABLE_THRESHOLDS) as Array<keyof typeof CREATIVE_PUBLISHABLE_THRESHOLDS>) {
     const scores: CreativeQualityScores = { ...CREATIVE_QUALITY_THRESHOLDS, overall: 100, factuality: 100 };
-    scores[dimension] = CREATIVE_QUALITY_THRESHOLDS[dimension] - 1;
+    scores[dimension] = CREATIVE_PUBLISHABLE_THRESHOLDS[dimension] - 1;
     const review = buildCreativeQualityReview({
       draft: safeDraft, format: "carousel", scores, criticIssues: [], repairPasses: 2, keyFacts: facts,
     });
@@ -1681,4 +1683,24 @@ test("falls back to the cited fact instead of leaving a middle slide's body empt
     "español",
   );
   assert.equal(unresolved.units[1]?.body, undefined);
+});
+
+test("a draft is judged by the lens its brief applied, not the Topic's configured one", async () => {
+  const { effectiveFramingStrategy } = await import("./creative-content.types");
+  // The reader-consequence instruction explicitly permits falling back to
+  // explainer when no keyFact establishes a consequence. Judging that draft as
+  // reader-consequence anyway failed a correct fallback for not being
+  // reader-framed — observed repeatedly on price-observation stories.
+  assert.equal(
+    effectiveFramingStrategy("reader-consequence", { appliedFramingStrategy: "explainer" }),
+    "explainer",
+  );
+  // Briefs written before the fallback was recorded keep the configured lens.
+  assert.equal(effectiveFramingStrategy("reader-consequence", {}), "reader-consequence");
+  assert.equal(effectiveFramingStrategy("reader-consequence", undefined), "reader-consequence");
+  // A brief that applied the configured lens is unaffected.
+  assert.equal(
+    effectiveFramingStrategy("reader-consequence", { appliedFramingStrategy: "reader-consequence" }),
+    "reader-consequence",
+  );
 });

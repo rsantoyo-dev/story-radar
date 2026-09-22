@@ -1,11 +1,13 @@
 import { structuralNarrativeIssues } from "./creative-narrative-diagnostics";
 import type { CreativeAiUsage, GeneratedCreativeDraft, CreativeQualityIssue } from "./creative-content.types";
-import { CREATIVE_QUALITY_THRESHOLDS } from "./creative-quality";
+import { CREATIVE_PUBLISHABLE_THRESHOLDS } from "./creative-quality";
 export type EditorialRepairProgress = {
     narrativeReplanAttempted?: boolean;
     terraAttempts: number;
     solAttempts: number;
     pendingVerification: boolean;
+    /** Verify calls made for the current pending correction; reset once it is verified or rolled back. */
+    verificationAttempts?: number;
     terraStopped?: boolean;
     solStopped?: boolean;
     lastTier?: "terra" | "sol";
@@ -14,7 +16,7 @@ export type EditorialRepairProgress = {
     lastPatchRejection?: { tier: "terra" | "sol"; reason: string; kind?: "plan" | "copy" };
 };
 const emptyUsage = (): CreativeAiUsage => ({ promptTokens: 0, outputTokens: 0, thoughtsTokens: 0, totalTokens: 0 });
-const operational = /^(?:CRITIC_|EDITORIAL_REVIEW_|EDITORIAL_TIME_BUDGET|EDITORIAL_REPAIR_|FINAL_(?:COPY_REVIEW_REQUIRED|REVIEW_UNAVAILABLE))/u;
+const operational = /^(?:CRITIC_|EDITORIAL_REVIEW_|EDITORIAL_TIME_BUDGET|EDITORIAL_REPAIR_|FINAL_(?:COPY_REVIEW_REQUIRED|REVIEW_UNAVAILABLE)|HOOK_REVIEW_INVALID$)/u;
 export function actionableEditorialIssues(draft: GeneratedCreativeDraft): CreativeQualityIssue[] {
     return (draft.qualityReview?.issues ?? []).filter(issue => !operational.test(issue.code));
 }
@@ -22,9 +24,9 @@ function deficit(draft: GeneratedCreativeDraft): number {
     const scores = draft.qualityReview?.scores;
     if (!scores)
         return Infinity;
-    return Object.entries(CREATIVE_QUALITY_THRESHOLDS).reduce((sum, [key, minimum]) => sum + Math.max(0, minimum - scores[key as keyof typeof scores]), 0);
+    return Object.entries(CREATIVE_PUBLISHABLE_THRESHOLDS).reduce((sum, [key, minimum]) => sum + Math.max(0, minimum - scores[key as keyof typeof scores]), 0);
 }
-function improved(before: GeneratedCreativeDraft, after: GeneratedCreativeDraft): boolean {
+export function improved(before: GeneratedCreativeDraft, after: GeneratedCreativeDraft): boolean {
     const issues = (draft: GeneratedCreativeDraft) => actionableEditorialIssues(draft);
     const blockers = (draft: GeneratedCreativeDraft) => issues(draft).filter(issue => issue.severity === 'blocker').length;
     if (blockers(after) > blockers(before))
@@ -38,8 +40,8 @@ function improved(before: GeneratedCreativeDraft, after: GeneratedCreativeDraft)
 export function describeEditorialRepairStop(draft: Pick<GeneratedCreativeDraft, "qualityReview" | "editorialRepair">): string {
     const progress = draft.editorialRepair;
     const defects = (draft.qualityReview?.issues ?? []).filter(issue => issue.severity === "blocker" && !operational.test(issue.code)).slice(0, 3);
-    const deficits = Object.entries(CREATIVE_QUALITY_THRESHOLDS).flatMap(([key, minimum]) => {
-        const score = draft.qualityReview?.scores[key as keyof typeof CREATIVE_QUALITY_THRESHOLDS];
+    const deficits = Object.entries(CREATIVE_PUBLISHABLE_THRESHOLDS).flatMap(([key, minimum]) => {
+        const score = draft.qualityReview?.scores[key as keyof typeof CREATIVE_PUBLISHABLE_THRESHOLDS];
         return typeof score === "number" && score < minimum ? [`${key} ${score}/${minimum}`] : [];
     });
     return `Editorial repair stopped: Terra ${progress?.terraAttempts ?? 0}/2 attempts; Sol ${progress?.solAttempts ?? 0}/2 attempts. ` +
@@ -55,6 +57,8 @@ export async function runEditorialRepairLoop(input: {
     canVerify?: () => boolean;
     /** One targeted correction per tier; persisted counters remain hard caps. */
     oneCorrectionPerTier?: boolean;
+    /** Whether the stronger (Sol) tier is warranted once Terra is exhausted; omit to always escalate. */
+    escalate?: (draft: GeneratedCreativeDraft) => boolean;
     checkpoint: (draft: GeneratedCreativeDraft, usage: CreativeAiUsage) => Promise<void>;
     replan?: (draft: GeneratedCreativeDraft, issues: CreativeQualityIssue[], tier: "terra" | "sol") => Promise<{draft:GeneratedCreativeDraft;usage:CreativeAiUsage;rejectionReason?:string}>;
     patch: (draft: GeneratedCreativeDraft, tier: "terra" | "sol", issues: CreativeQualityIssue[]) => Promise<{
@@ -66,6 +70,8 @@ export async function runEditorialRepairLoop(input: {
         draft: GeneratedCreativeDraft;
         usage: CreativeAiUsage;
         unavailable?: boolean;
+        /** Why the reviewer could not complete; persisted in the stop reason so an outage is never opaque. */
+        unavailableReason?: string;
     }>;
 }): Promise<{
     draft: GeneratedCreativeDraft;
@@ -94,6 +100,8 @@ export async function runEditorialRepairLoop(input: {
         if (progress.pendingVerification) {
             if (!(input.canVerify ?? input.canContinue)())
                 return stop('The saved correction still needs independent verification; time or budget must be available to resume.');
+            progress.verificationAttempts = (progress.verificationAttempts ?? 0) + 1;
+            await save();
             let verified: Awaited<ReturnType<typeof input.verify>>;
             try {
                 verified = await input.verify(draft);
@@ -102,8 +110,22 @@ export async function runEditorialRepairLoop(input: {
                 return stop(error instanceof Error ? error.message : 'Independent verification failed.');
             }
             add(verified.usage);
-            if (verified.unavailable)
-                return stop('Independent verification is unavailable. The correction is saved and cannot be approved.');
+            if (verified.unavailable) {
+                const reviewed = progress.verifiedFallback;
+                if ((progress.verificationAttempts ?? 0) < 2 || !reviewed)
+                    return stop(`Independent verification is unavailable${verified.unavailableReason ? ` (${verified.unavailableReason})` : ''}. The correction is saved and cannot be approved.`);
+                // A second outage must not leave the draft stuck forever, and an
+                // unverified patch must never become the baseline: restore the
+                // last copy the critic actually reviewed and burn the tier that
+                // produced the patch. A human can still approve that copy.
+                progress.lastPatchRejection = { tier: progress.lastTier ?? 'terra', kind: 'copy', reason: 'Independent verification was unavailable twice; the correction was rolled back to the last reviewed copy.' };
+                if (progress.lastTier === 'terra') progress.terraStopped = true; else progress.solStopped = true;
+                delete progress.verifiedFallback;
+                delete progress.verificationAttempts;
+                progress.pendingVerification = false;
+                draft = { ...reviewed, qualityReview: reviewed.qualityReview ? { ...reviewed.qualityReview, issues: [...reviewed.qualityReview.issues.filter(issue => issue.code !== 'FINAL_COPY_REVIEW_REQUIRED'), { code: 'EDITORIAL_REPAIR_ROLLED_BACK', severity: 'warning', message: 'The last correction could not be independently verified twice and was rolled back; this is the previously reviewed copy.' }] } : undefined };
+                return stop('The last correction could not be independently verified twice and was rolled back to the previously reviewed copy.');
+            }
             const before = progress.verifiedFallback;
             if (!before || verified.draft.qualityReview?.status === 'accepted' || improved(before, verified.draft))
                 draft = verified.draft;
@@ -119,6 +141,7 @@ export async function runEditorialRepairLoop(input: {
                     progress.solStopped = true;
             }
             delete progress.verifiedFallback;
+            delete progress.verificationAttempts;
             progress.pendingVerification = false;
             await save();
         }
@@ -129,6 +152,10 @@ export async function runEditorialRepairLoop(input: {
             return stop('No actionable independent findings are available; another rewrite would not fix a reviewer outage.');
         if ((progress.terraAttempts >= 2 || progress.terraStopped) && (progress.solAttempts >= 2 || progress.solStopped))
             return stop(describeEditorialRepairStop({...draft,editorialRepair:progress}));
+        // The stronger tier costs several times more per call; spend it only
+        // when the caller says the remaining defects warrant it.
+        if ((progress.terraAttempts >= 2 || progress.terraStopped) && input.escalate && !input.escalate(draft))
+            return stop(describeEditorialRepairStop({...draft,editorialRepair:progress}) + ' The stronger editor was not used: no factual defect requires it.');
         if (!input.canContinue())
             return stop('The editorial time limit was reached. Saved copy and attempt counts are retained.');
         const tier = progress.terraAttempts < 2 && !progress.terraStopped ? 'terra' : 'sol';

@@ -59,7 +59,9 @@ for (const malicious of [false, true])
         assert.equal(result.draft.units[0].factIds.join(','), 'fact-1');
         assert.equal(result.draft.units[0].visualDirection, draft.units[0].visualDirection);
         if (malicious) {
-            assert.deepEqual(calls, ['terra-test', 'sol-test']);
+            // A structural (non-factual) finding never buys a Sol round: the rejected Terra patch stops the loop.
+            assert.deepEqual(calls, ['terra-test']);
+            assert.match(result.draft.editorialRepair?.stopReason ?? '', /stronger editor was not used/);
             assert.match(result.draft.editorialRepair?.lastPatchRejection?.reason ?? '', /field|patch/i);
             assert.equal(result.draft.units[0].headline, draft.units[0].headline);
             assert.notEqual(result.draft.qualityReview?.status, 'accepted');

@@ -27,7 +27,25 @@ export type CarouselCraftAssessment = {
 };
 const record = (x:unknown):x is Record<string,unknown> => !!x && typeof x === "object" && !Array.isArray(x);
 const shortText = (x:unknown):x is string => typeof x === "string" && x.trim().length > 0 && x.length <= 500;
-const normalized = (x:string) => x.trim().replace(/\s+/gu," ");
+// Models quote copy with curly quotes, ellipses, dashes and casing that differ
+// from the stored text; those are not fabricated evidence, so compare on a
+// punctuation-free, case-folded form.
+const normalized = (x:string) => x.normalize("NFKC").replace(/[‘’‚‛‹›]/gu,"'").replace(/[“”„‟«»]/gu,'"')
+  .replace(/…/gu,"...").replace(/[‐-―]/gu,"-").replace(/[^\p{L}\p{N}\s]/gu," ").replace(/\s+/gu," ").trim().toLowerCase();
+const MIN_QUOTE_RUN_WORDS = 6;
+/** Exact (normalized) containment, or a run of at least six consecutive quoted words that appears in one visible field. */
+function quoteIsVisible(quote:string, visible:string[]):boolean {
+  const target = normalized(quote);
+  if (!target) return false;
+  const fields = visible.map(normalized);
+  if (fields.some(field=>field.includes(target))) return true;
+  const words = target.split(" ");
+  for (let start=0; start+MIN_QUOTE_RUN_WORDS<=words.length; start++) {
+    const run = words.slice(start,start+MIN_QUOTE_RUN_WORDS).join(" ");
+    if (fields.some(field=>field.includes(run))) return true;
+  }
+  return false;
+}
 
 /** Missing/ungrounded assessment preserves copy and requests a bounded editorial repair. */
 export function assessCarouselCraft(value:unknown, draft:GeneratedCreativeDraft): {assessment?:CarouselCraftAssessment; issues:CreativeQualityIssue[]} {
@@ -35,19 +53,25 @@ export function assessCarouselCraft(value:unknown, draft:GeneratedCreativeDraft)
     message:"The carousel needs a complete craft review with exact visible evidence for every slide before it can earn publication-ready scores."}]});
   if (!record(value) || !["strongestDetailVisible","specificReasonToContinue","resolvesPromise","closingAddsSynthesis"].every(k=>typeof value[k] === "boolean") ||
       !["openingReason","closingReason"].every(k=>shortText(value[k])) || !Array.isArray(value.slides) || value.slides.length !== draft.units.length) return invalid();
+  const unmatched = new Set<number>();
   for (const [index, entry] of value.slides.entries()) {
     const unit = draft.units[index];
     if (!record(entry) || entry.order !== unit.order || typeof entry.answersQuestion !== "boolean" || typeof entry.addsNewValue !== "boolean" ||
         !shortText(entry.visibleQuote) || !shortText(entry.contribution)) return invalid();
     const visible = [unit.headline,unit.subheadline,unit.body,unit.continuationCue,unit.ctaQuestion].filter((s):s is string=>!!s);
-    if (!visible.some(s=>normalized(s).includes(normalized(entry.visibleQuote as string)))) return invalid();
+    // A quote that is not in the slide's copy is ungrounded evidence for that
+    // slide only: keep the rest of the assessment instead of discarding the
+    // whole paid review, and skip that slide's verdicts rather than trust them.
+    if (!quoteIsVisible(entry.visibleQuote as string, visible)) unmatched.add(unit.order);
   }
   const assessment = value as unknown as CarouselCraftAssessment;
   const issues:CreativeQualityIssue[]=[];
   const add = (code:string,message:string,unitOrder?:number) => issues.push({code,message,severity:"warning",...(unitOrder ? {unitOrder} : {})});
+  for (const order of unmatched) add("CAROUSEL_CRAFT_EVIDENCE_UNMATCHED",`The craft review's quoted evidence for slide ${order} does not appear in that slide's visible copy; its per-slide verdict was not used.`,order);
   if (!assessment.strongestDetailVisible) add("BURIED_HOOK",assessment.openingReason,1);
   if (!assessment.specificReasonToContinue) add("LOW_HUMAN_CURIOSITY",assessment.openingReason,1);
   for (const slide of assessment.slides) {
+    if (unmatched.has(slide.order)) continue;
     if (!slide.answersQuestion) add("VIEWER_QUESTION_MISMATCH",slide.contribution,slide.order);
     if (!slide.addsNewValue && slide.order > 1 && slide.order < draft.units.length) add("SEMANTIC_REPETITION",slide.contribution,slide.order);
   }

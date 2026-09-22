@@ -105,6 +105,23 @@ test("patches cannot change facts, characters, roles, order or unrequested scope
   assert.throws(() => applyFinalCreativePatches(meme, patches([{ ...ctaPatch, unitOrder: 1 }]), [1]));
 });
 
+test("a hashtags patch normalizes free text into a deduplicated tag array", () => {
+  const draft = fixture();
+  const patched = applyFinalCreativePatches(
+    draft,
+    patches([{ unitOrder: 0, field: "hashtags", text: "#Laval, Marketplace  #Prévention Sécurité" }]),
+    [0],
+  );
+  assert.deepEqual(patched.hashtags, ["#Laval", "#Marketplace", "#Prévention", "#Sécurité"]);
+  assert.deepEqual(draft.hashtags, [], "the original draft is not mutated");
+});
+
+test("an empty hashtags patch clears the tag array rather than throwing", () => {
+  const draft = { ...fixture(), hashtags: ["#Old"] };
+  const patched = applyFinalCreativePatches(draft, patches([{ unitOrder: 0, field: "hashtags", text: "" }]), [0]);
+  assert.deepEqual(patched.hashtags, []);
+});
+
 test("new unsupported claims reject the whole patch while counting provider usage", async () => {
   const draft = fixture();
   const result = await repairRemainingCreativeBlockers(draft, context, async () => response(patches([

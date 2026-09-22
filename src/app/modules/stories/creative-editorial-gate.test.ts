@@ -30,16 +30,18 @@ function selection(factIds = ["fact-1"]): CreativeHookSelection {
 }
 
 type ReviewResult = { draft: GeneratedCreativeDraft; criticUnavailable?: { reason: string; issues: CreativeQualityIssue[] } };
+type CapturedRequest = { model: string; schema: { required: string[]; properties: Record<string, unknown> }; maxOutputTokens: number; reasoningEffort: string; timeoutMs?: number; instructions: string };
 function harness(reply: (model: string, index: number) => unknown) {
   const calls: string[] = [];
+  const requests: CapturedRequest[] = [];
   const exports = {} as { useGenerated: (value: unknown) => void; review: (options: unknown) => Promise<ReviewResult>; generateCreativeDraft: (options: unknown) => Promise<unknown> };
   class OpenAiEditorialError extends Error {}
   vm.runInNewContext(compiled, { exports, Error, AbortController, AbortSignal, Buffer, Date, Map, Set, JSON, setTimeout, clearTimeout,
     console: { info() {}, warn() {}, error() {} },
     require: (id: string) => {
       if (id === "server-only") return {};
-      if (id === "./openai-structured-response") return { OpenAiEditorialError, generateOpenAiStructuredResponse: async (params: { model: string }) => {
-        const index = calls.length; calls.push(params.model);
+      if (id === "./openai-structured-response") return { OpenAiEditorialError, generateOpenAiStructuredResponse: async (params: CapturedRequest) => {
+        const index = calls.length; calls.push(params.model); requests.push(params);
         const body = reply(params.model, index);
         if (body instanceof Error) throw new OpenAiEditorialError(body.message);
         return { text: JSON.stringify(body), usage: { promptTokens: 5, outputTokens: 5, thoughtsTokens: 0, totalTokens: 10 } };
@@ -47,7 +49,7 @@ function harness(reply: (model: string, index: number) => unknown) {
       return localRequire(id);
     },
   });
-  return { review: exports.review, generate: exports.generateCreativeDraft, useGenerated: exports.useGenerated, calls };
+  return { review: exports.review, generate: exports.generateCreativeDraft, useGenerated: exports.useGenerated, calls, requests };
 }
 const options = (extra: Record<string, unknown> = {}) => ({
   apiKey: "test", models: { criticModel: "terra-test", severeRepairModel: "sol-test" }, currentDraft: draft, format: "meme",
@@ -72,7 +74,8 @@ test("a hook verdict survives edits outside the cover and its payoff slide", () 
 });
 
 test("minor findings stay on Terra instead of spending a Sol escalation", async () => {
-  const h = harness((_model, index) => ({ verdict: "accepted", scores: index ? strong : { ...strong, overall: 85 }, issues: [], draft, hookSelection: selection() }));
+  // 84 misses the publishable band (overall >= 85) by one point: still a minor finding, still Terra.
+  const h = harness((_model, index) => ({ verdict: "accepted", scores: index ? strong : { ...strong, overall: 84 }, issues: [], draft, hookSelection: selection() }));
   const result = await h.review(options());
   assert.deepEqual(h.calls, ["terra-test", "terra-test"]);
   assert.equal(result.draft.qualityReview?.status, "accepted");
@@ -100,7 +103,9 @@ test("an invalid selected hook keeps the paid review and asks for a manual openi
   assert.equal(result.criticUnavailable, undefined);
   assert.equal(result.draft.qualityReview?.critic?.model, "terra-test");
   assert.equal(result.draft.qualityReview?.hookSelection, undefined);
-  assert.ok(result.draft.qualityReview?.issues.some(issue => issue.code === "WEAK_HOOK" && /hook comparison was invalid/.test(issue.message)));
+  assert.ok(result.draft.qualityReview?.issues.some(issue => issue.code === "HOOK_REVIEW_INVALID" && /hook comparison was invalid/.test(issue.message)));
+  // A review defect is not evidence the opening is weak: the hook score is not capped for it.
+  assert.equal(result.draft.qualityReview?.scores.hook, strong.hook);
 });
 
 test("when every editor is unavailable the gate hands the draft back for the fallback reviewer", async () => {
@@ -196,6 +201,28 @@ test("read-only final review cannot replace copy with a provider rewrite and run
   assert.deepEqual(h.calls, ["terra-test"]);
   assert.equal(result.draft.caption, draft.caption);
   assert.equal(result.draft.qualityReview?.status, "accepted");
+  // The initial gate keeps the full audit contract.
+  assert.ok(h.requests[0].schema.required.includes("hookSelection"));
+  assert.equal(h.requests[0].maxOutputTokens, 4_096);
+  assert.equal(h.requests[0].reasoningEffort, "medium");
+});
+
+test("a slim verify pass reuses the verified hook comparison, asks for less, and keeps the verify window", async () => {
+  const reused = selection();
+  const h = harness(() => ({ verdict: "accepted", scores: strong, issues: [] }));
+  const deadline = Date.now() + 150_000;
+  const result = await h.review(options({ readOnly: true, slim: true, reuseHookSelection: reused, deadline }));
+  assert.deepEqual(h.calls, ["terra-test"]);
+  const request = h.requests[0];
+  assert.ok(!request.schema.required.includes("hookSelection"));
+  assert.equal(request.schema.properties.hookSelection, undefined);
+  assert.equal(request.maxOutputTokens, 2_560);
+  assert.equal(request.reasoningEffort, "low");
+  assert.match(request.instructions, /verification pass/);
+  assert.ok((request.timeoutMs ?? 0) >= 120_000, `verify must not be capped at 60s (got ${request.timeoutMs})`);
+  assert.equal(result.draft.qualityReview?.status, "accepted");
+  assert.deepEqual(result.draft.qualityReview?.hookSelection, reused);
+  assert.equal(isCreativeDraftReadyForAutomation(result.draft, "meme", true), true);
 });
 
 test("invalid hook comparison never earns automated acceptance even with perfect scores", async () => {

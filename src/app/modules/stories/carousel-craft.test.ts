@@ -23,7 +23,6 @@ test("craft review requires exact visible evidence for every slide, not invented
   assert.deepEqual(assessCarouselCraft(assessment(),draft).issues,[]);
   for (const corrupt of [
     (a:CarouselCraftAssessment)=>{a.slides.pop();},
-    (a:CarouselCraftAssessment)=>{a.slides[1].visibleQuote="Invented impressive copy";},
     (a:CarouselCraftAssessment)=>{a.slides[1].order=1;},
     (a:CarouselCraftAssessment)=>{a.closingReason="";},
   ]) {
@@ -31,6 +30,14 @@ test("craft review requires exact visible evidence for every slide, not invented
     assert.equal(assessCarouselCraft(a,draft).issues[0].code,"CAROUSEL_CRAFT_REVIEW_MISSING");
   }
   assert.equal(assessCarouselCraft(undefined,draft).issues[0].code,"CAROUSEL_CRAFT_REVIEW_MISSING");
+  // An ungrounded quote invalidates only that slide's verdict, never the whole paid review.
+  const ungrounded=assessment();ungrounded.slides[1].visibleQuote="Invented impressive copy";ungrounded.slides[1].answersQuestion=false;
+  const partial=assessCarouselCraft(ungrounded,draft);
+  assert.ok(partial.assessment);
+  assert.deepEqual(partial.issues.map(i=>`${i.code}@${i.unitOrder}`),["CAROUSEL_CRAFT_EVIDENCE_UNMATCHED@2"]);
+  // Curly quotes, ellipses and casing are how models quote copy, not fabricated evidence.
+  const styled=assessment();styled.slides[0].visibleQuote="“an agent needed a source… It uploaded a file”";
+  assert.deepEqual(assessCarouselCraft(styled,draft).issues,[]);
 });
 
 test("perfect self-scores cannot hide a buried hook, repeated middle or unanswered ending",()=>{
@@ -53,4 +60,18 @@ test("missing craft evidence triggers repair without inventing factual failure o
   assert.ok(review.scores.overall<90);
   assert.notEqual(review.status,"accepted");
   assert.ok(!craft.issues.some(i=>i.severity==="blocker"));
+});
+
+test("a strong draft inside the publishable band is accepted; a factual shortfall is not",()=>{
+  const publishable:CreativeQualityScores={factuality:97,hook:86,curiosity:82,swipeReward:81,continuity:83,relevance:84,clarity:85,resolution:82,cta:81,overall:86};
+  const accepted=buildCreativeQualityReview({draft,format:"carousel",scores:publishable,criticIssues:[],repairPasses:0});
+  assert.equal(accepted.status,"accepted");
+  assert.ok(!accepted.issues.some(i=>i.code.startsWith("QUALITY_")));
+  const weakFacts=buildCreativeQualityReview({draft,format:"carousel",scores:{...publishable,factuality:95},criticIssues:[],repairPasses:0});
+  assert.notEqual(weakFacts.status,"accepted");
+  assert.ok(weakFacts.issues.some(i=>i.code==="QUALITY_FACTUALITY_BELOW_THRESHOLD"));
+  // An ungrounded craft quote no longer caps scores; a genuinely buried hook still does.
+  const unmatched=buildCreativeQualityReview({draft,format:"carousel",scores:publishable,criticIssues:[{code:"CAROUSEL_CRAFT_EVIDENCE_UNMATCHED",severity:"warning",unitOrder:2,message:"quote not visible"}],repairPasses:0});
+  assert.equal(unmatched.scores.hook,publishable.hook);
+  assert.equal(unmatched.status,"accepted");
 });

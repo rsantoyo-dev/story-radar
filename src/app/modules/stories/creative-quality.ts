@@ -2,6 +2,7 @@ import { narrativeRepetitionIssues } from "./creative-narrative-diagnostics";
 import type { CarouselPlan } from "./carousel-narrative";
 import { COVER_HOOK_MAX_WORDS, COVER_HOOK_TARGET, COVER_CONTEXT_MAX_WORDS, hookSelectionMatches, hookSelectionIssues } from "./creative-hook-policy";
 import { evidenceQualityIssues } from "./creative-evidence-guardrails";
+import { foreignSentenceLanguage, localizedTextOrDefault, profileLanguageLabel, resolveProfileLanguage } from "./creative-language";
 import {
   blockingCarouselNarrativeIssues,
   dropTrailingSentenceFragment,
@@ -46,6 +47,27 @@ export const CREATIVE_QUALITY_THRESHOLDS = {
   resolution: 95,
   cta: 95,
   overall: 95,
+} as const satisfies CreativeQualityScores;
+
+/**
+ * Publishable band. CREATIVE_QUALITY_THRESHOLDS above stays the stretch
+ * target the models are asked to reach and the UI shows; this is what
+ * acceptance and the repair loop are measured against. Facts stay strict
+ * (96 matches the "severe" repair boundary); editorial dimensions use a floor
+ * a strong draft can actually clear, so a one-point miss no longer forces a
+ * paid repair round that historically almost never converged.
+ */
+export const CREATIVE_PUBLISHABLE_THRESHOLDS = {
+  factuality: 96,
+  hook: 85,
+  curiosity: 80,
+  swipeReward: 80,
+  continuity: 80,
+  relevance: 80,
+  clarity: 80,
+  resolution: 80,
+  cta: 80,
+  overall: 85,
 } as const satisfies CreativeQualityScores;
 
 export const MAX_CREATIVE_EDITORIAL_REPAIRS = 1;
@@ -375,7 +397,7 @@ export function repairDeterministicCreativeCopy(
           const replacement = withoutQuestionSentences(closing[field]);
           if (field === "headline") {
             closing.headline =
-              replacement || closingHeadlineFallback(closing.editorialGoal);
+              replacement || closingHeadlineFallback(closing.editorialGoal, language);
           } else if (replacement) {
             closing[field] = replacement;
           } else {
@@ -403,7 +425,10 @@ export function repairDeterministicCreativeCopy(
           maximumFactsForGoal(unit.editorialGoal),
         );
       }
-      if (!isSpanishProfileLanguage(language)) return;
+      // The same English-leak cleanup for every covered non-English profile:
+      // the fallbacks it inserts are localized, so French gets French copy.
+      const resolvedLanguage = resolveProfileLanguage(language);
+      if (resolvedLanguage === "en" || resolvedLanguage === "other") return;
       if (
         unit.body &&
         hasLikelyEnglishSentence(unit.body) &&
@@ -616,9 +641,7 @@ function localizedSequenceFollowCallToAction(language?: string): string | undefi
 }
 
 function localizedDebateQuestion(language?: string): string {
-  return isSpanishProfileLanguage(language)
-    ? "¿Qué te sorprendió más de esta información?"
-    : "What stands out most to you?";
+  return localizedTextOrDefault(language, "closing.question.debate");
 }
 
 function localizedEvidenceFallback(
@@ -626,9 +649,7 @@ function localizedEvidenceFallback(
   language?: string,
 ): string | undefined {
   if (goal === "conclude" || goal === "debate") return undefined;
-  return isSpanishProfileLanguage(language)
-    ? "Este es el dato clave señalado por la fuente."
-    : "This is the key point established by the source.";
+  return localizedTextOrDefault(language, "evidence.fallback");
 }
 
 const GENERIC_CTA_PATTERN =
@@ -1112,31 +1133,32 @@ export function visibleDraftLanguageIssues(
   draft: GeneratedCreativeDraft,
   language?: string,
 ): CreativeQualityIssue[] {
-  if (!isSpanishProfileLanguage(language)) return [];
+  const own = resolveProfileLanguage(language);
+  if (own === "other") return [];
+  // Short English editorial labels ("The takeaway") carry too few words for
+  // the marker test, and a Spanish profile keeps its topic-specific English
+  // detector; both only matter when the profile language is not English.
+  const foreign = (value?: string) =>
+    foreignSentenceLanguage(language, value) ??
+    (own !== "en" && hasLikelyEnglishSentence(value) ? ("en" as const) : undefined);
+  const requires = profileLanguageLabel(own);
   const issues: CreativeQualityIssue[] = [];
-  const publishingFields = [draft.concept, draft.caption, draft.callToAction, draft.altText];
-  if (publishingFields.some(hasLikelyEnglishSentence)) {
+  const publishing = [draft.concept, draft.caption, draft.callToAction, draft.altText].map(foreign).find(Boolean);
+  if (publishing) {
     issues.push({
       code: "MIXED_LANGUAGE",
       severity: "blocker",
-      message: "The publishing copy contains English sentences, but the creative profile requires Spanish.",
+      message: `The publishing copy contains ${profileLanguageLabel(publishing)} sentences, but the creative profile requires ${requires}.`,
     });
   }
   draft.units.forEach((unit) => {
-    if (
-      [
-        unit.headline,
-        unit.subheadline,
-        unit.body,
-        unit.continuationCue,
-        unit.ctaQuestion,
-      ].some(hasLikelyEnglishSentence)
-    ) {
+    const detected = [unit.headline, unit.subheadline, unit.body, unit.continuationCue, unit.ctaQuestion].map(foreign).find(Boolean);
+    if (detected) {
       issues.push({
         code: "MIXED_LANGUAGE",
         severity: "blocker",
         unitOrder: unit.order,
-        message: `Slide ${unit.order} contains English copy, but the creative profile requires Spanish.`,
+        message: `Slide ${unit.order} contains ${profileLanguageLabel(detected)} copy, but the creative profile requires ${requires}.`,
       });
     }
   });
@@ -1194,9 +1216,7 @@ function repairUnverifiedQuantitativeVisual(
   ) {
     return value;
   }
-  const constraint = isSpanishProfileLanguage(language)
-    ? "Representa la comparación de forma conceptual y no proporcional, sin escala, ejes, barras cuantitativas ni valores inventados."
-    : "Show the comparison conceptually and non-proportionally, with no scale, axes, quantitative bars, or invented values.";
+  const constraint = localizedTextOrDefault(language, "visual.conceptualComparison");
   return `${value.replace(/\s+$/u, "")} ${constraint}`;
 }
 
@@ -1207,18 +1227,18 @@ export function creativeQualityThresholdFailures(
 ): CreativeQualityIssue[] {
   const failures: CreativeQualityIssue[] = [];
   const required = {
-    factuality: CREATIVE_QUALITY_THRESHOLDS.factuality,
-    hook: CREATIVE_QUALITY_THRESHOLDS.hook,
-    curiosity: CREATIVE_QUALITY_THRESHOLDS.curiosity,
-    relevance: CREATIVE_QUALITY_THRESHOLDS.relevance,
-    clarity: CREATIVE_QUALITY_THRESHOLDS.clarity,
-    resolution: CREATIVE_QUALITY_THRESHOLDS.resolution,
-    ...(requireCta ? { cta: CREATIVE_QUALITY_THRESHOLDS.cta } : {}),
-    overall: CREATIVE_QUALITY_THRESHOLDS.overall,
+    factuality: CREATIVE_PUBLISHABLE_THRESHOLDS.factuality,
+    hook: CREATIVE_PUBLISHABLE_THRESHOLDS.hook,
+    curiosity: CREATIVE_PUBLISHABLE_THRESHOLDS.curiosity,
+    relevance: CREATIVE_PUBLISHABLE_THRESHOLDS.relevance,
+    clarity: CREATIVE_PUBLISHABLE_THRESHOLDS.clarity,
+    resolution: CREATIVE_PUBLISHABLE_THRESHOLDS.resolution,
+    ...(requireCta ? { cta: CREATIVE_PUBLISHABLE_THRESHOLDS.cta } : {}),
+    overall: CREATIVE_PUBLISHABLE_THRESHOLDS.overall,
     ...((format === "carousel" || format === "sequence")
       ? {
-          swipeReward: CREATIVE_QUALITY_THRESHOLDS.swipeReward,
-          continuity: CREATIVE_QUALITY_THRESHOLDS.continuity,
+          swipeReward: CREATIVE_PUBLISHABLE_THRESHOLDS.swipeReward,
+          continuity: CREATIVE_PUBLISHABLE_THRESHOLDS.continuity,
         }
       : {}),
   } satisfies Partial<CreativeQualityScores>;
@@ -1392,13 +1412,16 @@ function calibrateCreativeQualityScores(
   ) {
     scores.factuality = Math.min(scores.factuality, 94);
   }
+  // Every cap below marks a concrete defect, so it must land under the
+  // publishable floor (CREATIVE_PUBLISHABLE_THRESHOLDS: hook 85, others 80);
+  // a cap at or above the floor would silently pass the defect.
   if (hasCode("CAROUSEL_CRAFT_REVIEW_MISSING")) {
-    scores.hook = Math.min(scores.hook, 89);
+    scores.hook = Math.min(scores.hook, 84);
     scores.swipeReward = Math.min(scores.swipeReward, 79);
-    scores.resolution = Math.min(scores.resolution, 87);
+    scores.resolution = Math.min(scores.resolution, 79);
   }
-  if (hasCode("PLAN_REPEATED_SUPPORT")) scores.swipeReward = Math.min(scores.swipeReward, 80);
-  if (hasCode("PLAN_REPETITIVE_CLOSING")) scores.resolution = Math.min(scores.resolution, 80);
+  if (hasCode("PLAN_REPEATED_SUPPORT")) scores.swipeReward = Math.min(scores.swipeReward, 79);
+  if (hasCode("PLAN_REPETITIVE_CLOSING")) scores.resolution = Math.min(scores.resolution, 79);
   if (hasCode("WEAK_HOOK", "BURIED_HOOK")) {
     scores.hook = Math.min(scores.hook, 81);
   }
@@ -1411,7 +1434,7 @@ function calibrateCreativeQualityScores(
       "COVER_SUPPORTING_RESTATES_HOLD",
     )
   ) {
-    scores.curiosity = Math.min(scores.curiosity, 81);
+    scores.curiosity = Math.min(scores.curiosity, 79);
   }
   if (hasCode("COVER_NOT_READER_FRAMED")) {
     scores.hook = Math.min(scores.hook, 81);
@@ -1456,7 +1479,7 @@ function calibrateCreativeQualityScores(
     scores.cta = Math.min(scores.cta, 74);
   }
   if (hasCode("CLOSING_QUESTION_COUNT", "FACT_BUDGET")) {
-    scores.clarity = Math.min(scores.clarity, 84);
+    scores.clarity = Math.min(scores.clarity, 79);
   }
   if (hasCode("EMPTY_CONCLUSION")) {
     scores.clarity = Math.min(scores.clarity, 79);
@@ -1472,7 +1495,7 @@ function calibrateCreativeQualityScores(
       "CLOSING_NOT_READER_RESOLVED",
     )
   ) {
-    scores.resolution = Math.min(scores.resolution, 81);
+    scores.resolution = Math.min(scores.resolution, 79);
   }
 
   const weightedOverall =
@@ -1563,8 +1586,9 @@ function withoutQuestionSentences(value?: string): string {
 
 function closingHeadlineFallback(
   goal: GeneratedCreativeDraft["units"][number]["editorialGoal"],
+  language?: string,
 ): string {
-  return goal === "debate" ? "The debate" : "The takeaway";
+  return localizedTextOrDefault(language, goal === "debate" ? "closing.headline.debate" : "closing.headline.takeaway");
 }
 
 export class CreativeQualityGateError extends Error {}

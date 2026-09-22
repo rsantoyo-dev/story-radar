@@ -9,6 +9,7 @@ export type CreativeContentPublicConfig = {
   provider: "google" | "groq";
   model: string;
   primaryProvider: CreativeTextProvider;
+  carouselWriterModel?: string;
   briefPromptVersion: string;
   draftPromptVersions: Record<CreativeFormat, string>;
   maxRunsPerDay: number;
@@ -68,6 +69,9 @@ export function getCreativeContentRuntimeConfig(): CreativeContentRuntimeConfig 
       process.env.CREATIVE_SEVERE_REPAIR_MODEL?.trim() || "gpt-5.6-sol",
   };
   const publicConfig = getCreativeContentPublicConfig();
+  if (publicConfig.carouselWriterModel && !openAiApiKey) {
+    throw new CreativeContentConfigurationError("OPENAI_API_KEY is required for CREATIVE_CAROUSEL_WRITER_MODEL");
+  }
   if (Boolean(cloudflareAiAccountId) !== Boolean(cloudflareAiApiToken)) {
     throw new CreativeContentConfigurationError(
       "CLOUDFLARE_AI_ACCOUNT_ID and CLOUDFLARE_AI_API_TOKEN must be configured together",
@@ -126,6 +130,7 @@ export function getCreativeContentRuntimeConfig(): CreativeContentRuntimeConfig 
 }
 
 export function getCreativeContentPublicConfig(): CreativeContentPublicConfig {
+  const carouselWriterModel = process.env.CREATIVE_CAROUSEL_WRITER_MODEL?.trim() || undefined;
   const primaryProvider = creativeTextProvider();
   const geminiModel =
     process.env.CREATIVE_GEMINI_MODEL?.trim() ||
@@ -138,10 +143,11 @@ export function getCreativeContentPublicConfig(): CreativeContentPublicConfig {
     provider: primaryProvider === "groq" ? "groq" : "google",
     model: primaryProvider === "groq" ? groqModel : geminiModel,
     primaryProvider,
+    ...(carouselWriterModel ? { carouselWriterModel } : {}),
     briefPromptVersion: "creative-brief-v35",
     draftPromptVersions: {
       meme: "meme-draft-v27",
-      carousel: "carousel-draft-v47",
+      carousel: carouselWriterModel ? `carousel-draft-v48-writer-${carouselWriterModel}` : "carousel-draft-v47",
       sequence: "sequence-draft-v6",
     },
     maxRunsPerDay: parsePositiveInteger(
@@ -180,6 +186,16 @@ function creativeTextProvider(): CreativeTextProvider {
   return process.env.CREATIVE_TEXT_PROVIDER?.trim().toLowerCase() === "groq"
     ? "groq"
     : "gemini";
+}
+
+/**
+ * Single-shot script pipeline (generate → audit → optional repair → verify,
+ * capped at 4 physical text calls) replacing the brief+draft+multi-tier
+ * repair loop. Off by default; the legacy pipeline keeps working unchanged
+ * either way.
+ */
+export function creativeSingleShotConfig(): { enabled: boolean } {
+  return { enabled: process.env.CREATIVE_SINGLE_SHOT_ENABLED?.trim() === "true" };
 }
 
 function parsePositiveInteger(

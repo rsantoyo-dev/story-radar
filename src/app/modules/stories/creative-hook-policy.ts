@@ -63,8 +63,10 @@ function text(value: unknown, max: number, empty = false): string {
 const copy = (value?: string) => (value || "").trim().replace(/\s+/gu, " ");
 export function hookSelectionMatches(selection: CreativeHookSelection, draft: Pick<GeneratedCreativeDraft, "units">): boolean {
   const chosen = selection.candidates[selection.selectedIndex], cover = draft.units[0];
+  // The chosen hook must cite only facts the cover actually carries; citing a
+  // subset of them is still the same opening, not a different one.
   return !!chosen && !!cover && copy(chosen.headline) === copy(cover.headline) && copy(chosen.subheadline) === copy(cover.subheadline)
-    && chosen.factIds.every(id => cover.factIds.includes(id)) && chosen.factIds.length === new Set(cover.factIds).size;
+    && chosen.factIds.every(id => cover.factIds.includes(id));
 }
 /** A hook verdict stays valid while the cover and its payoff slide keep their copy and evidence; edits elsewhere (for example a repaired closing CTA) do not reopen it. */
 export function hookCopyUnchanged(
@@ -80,17 +82,22 @@ export function hookCopyUnchanged(
   return before.units.length === after.units.length && JSON.stringify(relevant(before)) === JSON.stringify(relevant(after));
 }
 /** Checks structure, planned evidence IDs and exact selected copy; semantics remain subject to factual validators and final review. */
-export function parseHookSelection(value: unknown, draft: Pick<GeneratedCreativeDraft, "units">, allowedFactIds: readonly string[]): CreativeHookSelection {
+export function parseHookSelection(value: unknown, draft: Pick<GeneratedCreativeDraft, "units">, allowedFactIds: readonly string[], knownFactIds: readonly string[] = allowedFactIds): CreativeHookSelection {
   if (!object(value) || !Array.isArray(value.candidates) || value.candidates.length !== 3 || !Number.isInteger(value.selectedIndex) || Number(value.selectedIndex) < 0 || Number(value.selectedIndex) > 2) throw new HookSelectionValidationError("The editorial response needs three hook candidates and a valid selection");
-  const parseCandidate = (item: unknown): CreativeHookCandidate => {
+  // Only the selected hook becomes the cover, so only it must stay on the
+  // cover's planned facts. An alternative may point at a stronger detail
+  // elsewhere in the brief; that is exactly the planning limitation the
+  // editor is asked to surface, not a reason to discard the whole comparison.
+  const parseCandidate = (item: unknown, selected: boolean): CreativeHookCandidate => {
     if (!object(item) || !object(item.checks) || HOOK_CHECKS.some(key => typeof (item.checks as Record<string, unknown>)[key] !== "boolean") || typeof item.supported !== "boolean") throw new HookSelectionValidationError("Invalid hook checklist");
-    if (!Array.isArray(item.factIds) || item.factIds.length < 1 || item.factIds.length > 6 || item.factIds.some(id => typeof id !== "string" || !allowedFactIds.includes(id)) || new Set(item.factIds).size !== item.factIds.length) throw new HookSelectionValidationError("Hook candidates must use the cover's planned fact IDs");
+    const permitted = selected ? allowedFactIds : knownFactIds;
+    if (!Array.isArray(item.factIds) || item.factIds.length < 1 || item.factIds.length > 6 || item.factIds.some(id => typeof id !== "string" || !permitted.includes(id)) || new Set(item.factIds).size !== item.factIds.length) throw new HookSelectionValidationError(selected ? "Hook candidates must use the cover's planned fact IDs" : "Hook alternatives must cite facts from the brief");
     if (!Number.isInteger(item.payoffUnitOrder) || Number(item.payoffUnitOrder) < (draft.units.length > 1 ? 2 : 1) || Number(item.payoffUnitOrder) > draft.units.length) throw new HookSelectionValidationError("Hook payoff must identify a subsequent slide, or the single meme");
     return { headline: text(item.headline, 240), subheadline: text(item.subheadline, 240, true), factIds: item.factIds as string[],
       readerQuestion: text(item.readerQuestion, 200), payoffUnitOrder: Number(item.payoffUnitOrder), supported: item.supported,
       checks: Object.fromEntries(HOOK_CHECKS.map(key => [key, (item.checks as Record<string, boolean>)[key]])) as CreativeHookCandidate["checks"], reason: text(item.reason, 240) };
   };
-  const candidates = value.candidates.map(parseCandidate);
+  const candidates = value.candidates.map((item, index) => parseCandidate(item, index === Number(value.selectedIndex)));
   if (new Set(candidates.map((candidate) => copy(candidate.headline) + "\n" + copy(candidate.subheadline))).size !== 3) {
     throw new HookSelectionValidationError("Hook alternatives must be distinct");
   }

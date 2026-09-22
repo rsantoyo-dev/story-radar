@@ -283,9 +283,11 @@ export function repairCarouselPlanEvidence(
 ): { plan: CarouselPlan; repaired: boolean } {
   const availableFactIds = [...knownFactIds];
   const establishedFacts = new Set<string>();
+  let coverFactIds = new Set<string>();
+  let previousFactIds = new Set<string>();
   let repaired = false;
 
-  const slides = plan.slides.map((slide) => {
+  const slides = plan.slides.map((slide, index) => {
     let allowedFactIds = [
       ...new Set(
         slide.allowedFactIds.filter((factId) => knownFactIds.has(factId)),
@@ -301,9 +303,43 @@ export function repairCarouselPlanEvidence(
       );
       if (reusableFacts.length !== allowedFactIds.length) repaired = true;
       allowedFactIds = reusableFacts;
-      if (allowedFactIds.length === 0 && establishedFacts.size > 0) {
-        allowedFactIds = [[...establishedFacts][0]!];
-        repaired = true;
+      // A closing drawn from a single slide can only echo it: the cover's facts
+      // produce REDUNDANT_CLOSING, the previous slide's produce
+      // CLOSING_REPEATS_PRIOR_SLIDE. A closing that already spans the arc is
+      // left exactly as planned.
+      const echoesOneSlide =
+        allowedFactIds.length === 0 ||
+        allowedFactIds.every((factId) => coverFactIds.has(factId)) ||
+        allowedFactIds.every((factId) => previousFactIds.has(factId));
+      // One figure cannot resolve an arc the reader was walked through, which
+      // is what CLOSING_DOES_NOT_SYNTHESIZE_EVIDENCE reports. The conclude
+      // budget is three facts precisely so the ending can combine them.
+      const needsSynthesis = allowedFactIds.length < Math.min(2, establishedFacts.size);
+      if (establishedFacts.size > 0 && (echoesOneSlide || needsSynthesis)) {
+        // Rank established evidence so the ending combines the arc: what the
+        // cover did not carry first, then what the slide before did not.
+        // Nothing new is introduced — every candidate was already proven and
+        // already shown to the reader.
+        const rank = (factId: string) =>
+          (coverFactIds.has(factId) ? 2 : 0) + (previousFactIds.has(factId) ? 1 : 0);
+        const ordered = [...new Set([...allowedFactIds, ...establishedFacts])].sort(
+          (left, right) => rank(left) - rank(right),
+        );
+        const synthesis = ordered.slice(
+          0,
+          Math.min(
+            maximumFactsForGoal(slide.editorialGoal),
+            Math.max(2, allowedFactIds.length),
+            ordered.length,
+          ),
+        );
+        if (
+          synthesis.length !== allowedFactIds.length ||
+          synthesis.some((factId) => !allowedFactIds.includes(factId))
+        ) {
+          repaired = true;
+        }
+        allowedFactIds = synthesis;
       }
     } else if (allowedFactIds.length === 0 && availableFactIds.length > 0) {
       allowedFactIds = [
@@ -311,6 +347,19 @@ export function repairCarouselPlanEvidence(
           availableFactIds[0]!,
       ];
       repaired = true;
+    } else if (
+      index > 0 &&
+      allowedFactIds.length > 0 &&
+      allowedFactIds.every((factId) => previousFactIds.has(factId))
+    ) {
+      // Repeating the previous slide's evidence gives the reader no reason to
+      // swipe (REPEATED_EVIDENCE_NO_NEW_REWARD). Spend evidence the arc has not
+      // shown yet rather than restating what is already on screen.
+      const unused = availableFactIds.find((factId) => !establishedFacts.has(factId));
+      if (unused) {
+        allowedFactIds = [unused];
+        repaired = true;
+      }
     }
 
     const budget = maximumFactsForGoal(slide.editorialGoal);
@@ -318,6 +367,8 @@ export function repairCarouselPlanEvidence(
       allowedFactIds = allowedFactIds.slice(0, budget);
       repaired = true;
     }
+    if (index === 0) coverFactIds = new Set(allowedFactIds);
+    previousFactIds = new Set(allowedFactIds);
     allowedFactIds.forEach((factId) => establishedFacts.add(factId));
     return { ...slide, allowedFactIds };
   });

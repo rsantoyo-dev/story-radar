@@ -72,3 +72,61 @@ test("creative reservations serialize identical inputs, enforce quota under conc
     await client.close();
   }
 });
+
+test("a run abandoned mid-flight stops blocking its story once it goes stale", async () => {
+  const client = new PGlite();
+  try {
+    await client.exec(`
+      CREATE TABLE topics(id uuid PRIMARY KEY);
+      INSERT INTO topics VALUES ('${topic}');
+      CREATE TYPE creative_ai_task AS ENUM ('brief','draft');
+      CREATE TABLE creative_ai_runs (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(), topic_id uuid REFERENCES topics(id),
+        story_id uuid, brief_id uuid, task creative_ai_task, provider text, model text,
+        prompt_version text, input_hash text, status text DEFAULT 'running',
+        started_at timestamptz DEFAULT now()
+      );
+    `);
+    const dialect = new PgDialect();
+    const db = {
+      execute: (query: SQL) => query,
+      batch: (queries: SQL[]) => client.transaction(async (tx) => {
+        const result = [];
+        for (const query of queries) {
+          const compiled = dialect.sqlToQuery(query);
+          result.push(await tx.query(compiled.sql, compiled.params));
+        }
+        return result;
+      }),
+    };
+    const exports = {} as { createCreativeAiRun: (input: Record<string, unknown>) => Promise<string> };
+    const source = readFileSync(new URL("./creative-content.repository.ts", import.meta.url), "utf8");
+    vm.runInNewContext(ts.transpileModule(source, { compilerOptions: {
+      module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
+    } }).outputText, {
+      exports, Date, Number, Error, console,
+      require: (name: string) => {
+        if (name === "drizzle-orm" || name === "node:crypto") return localRequire(name);
+        if (name === "@/db/client") return { db };
+        if (name === "./creative-content.config") return { getCreativeContentPublicConfig: () => ({ maxRunsPerDay: 40 }) };
+        if (name === "./creative-run-errors") return errors;
+        return {};
+      },
+    });
+    const input = { topicId: topic, storyId: other, task: "brief", provider: "google", model: "test", promptVersion: "test", inputHash: "same" };
+
+    // A run still plausibly in flight keeps its story reserved.
+    await exports.createCreativeAiRun(input);
+    await assert.rejects(exports.createCreativeAiRun(input), errors.CreativeContentConflictError);
+
+    // The same row, abandoned (crash, deploy, or hot reload mid-request), must
+    // not hold the story hostage forever: nothing else ever reconciles it.
+    await client.exec("UPDATE creative_ai_runs SET started_at = now() - interval '20 minutes'");
+    assert.ok(await exports.createCreativeAiRun(input), "a stale running row no longer blocks a retry");
+
+    // The newly created row is fresh, so it reserves the story again.
+    await assert.rejects(exports.createCreativeAiRun(input), errors.CreativeContentConflictError);
+  } finally {
+    await client.close();
+  }
+});

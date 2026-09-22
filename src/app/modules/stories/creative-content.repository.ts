@@ -72,6 +72,18 @@ import { withCreativeFactClaimGuard } from "./creative-fact-guard";
 
 type CreativeRunTask = "brief" | "draft";
 
+/**
+ * How long a `running` row keeps reserving its story. A row is only left
+ * running forever when its request died without finishing — a crash, a deploy,
+ * or a dev-server hot reload mid-request — and nothing ever reconciles it, so
+ * without this window it blocks that story's task permanently. The generation
+ * deadline is 8 minutes (CREATIVE_DRAFT_TIME_BUDGET_MS), so a genuinely
+ * in-flight run is always well inside it. Matches reserveTextCall's own
+ * 15-minute reclaim. Inlined as a literal rather than a module-level sql``
+ * tag so importing this module never needs a live drizzle binding.
+ */
+const STALE_RUN_RECLAIM_INTERVAL = "15 minutes";
+
 export async function findLatestCreativeBrief(
   topicId: string,
   storyId: string,
@@ -657,7 +669,8 @@ export async function createCreativeAiRun({
         AND started_at >= date_trunc('day',now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
         AND started_at < (date_trunc('day',now() AT TIME ZONE 'UTC') + interval '1 day') AT TIME ZONE 'UTC') < ${maxRuns}
       AND NOT EXISTS (SELECT 1 FROM creative_ai_runs WHERE topic_id=${topicId}::uuid
-        AND task=${task}::creative_ai_task AND input_hash=${inputHash} AND status='running')
+        AND task=${task}::creative_ai_task AND input_hash=${inputHash} AND status='running'
+        AND started_at > now() - ${STALE_RUN_RECLAIM_INTERVAL}::interval)
       RETURNING id`),
     db.execute(sql`SELECT count(*)::int AS attempts FROM creative_ai_runs
       WHERE topic_id=${topicId}::uuid
@@ -912,8 +925,9 @@ function generatedDraftCopyMatches(
       factIds: unit.factIds,
       assetRequest: unit.assetRequest,
       aspectRatio: unit.aspectRatio,
-      characterIds: unit.characterIds ?? [],
-      storyReferences: unit.storyReferences ?? [],
+      // characterIds and storyReferences choose which reference images feed
+      // the image model; the editorial critic never reviews them, so toggling
+      // a supporting character or a story photo must not stale its verdict.
     })),
   });
   return JSON.stringify(comparable(generated)) === JSON.stringify(comparable(current));

@@ -2913,7 +2913,7 @@ test("strips an unsupported number from concept without rewriting its thematic f
   // generation and save/approve validation rejects a blank draft), so it
   // falls back to the same generic summary caption/altText use rather than
   // being left empty.
-  assert.equal(repaired.concept, "A summary of information supported by the source.");
+  assert.equal(repaired.concept, "Résumé de l’information appuyée par la source.");
 });
 
 test("a closing slide generated with zero citations borrows the cover's thesis fact instead of blocking", () => {

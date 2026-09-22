@@ -50,6 +50,12 @@ test("selection validates distinct alternatives, exact returned copy, planned fa
   const input = selection(); input.candidates.forEach(c => { c.payoffUnitOrder = 2; });
   assert.equal(parseHookSelection(input, carousel, ["fact-1"]).candidates[0].payoffUnitOrder, 2);
   assert.equal(hookSelectionMatches(selection(), { units: [{ ...draft.units[0], subheadline: "A changed promise" }] }), false);
+  // An alternative may point at a stronger detail elsewhere in the brief; only the selected hook must stay on the cover's planned facts.
+  const strongerElsewhere = selection(); strongerElsewhere.candidates[1].factIds = ["fact-9"];
+  assert.equal(parseHookSelection(strongerElsewhere, draft, ["fact-1"], ["fact-1", "fact-9"]).candidates[1].factIds[0], "fact-9");
+  assert.throws(() => parseHookSelection(strongerElsewhere, draft, ["fact-1"]), /alternatives must cite facts from the brief/);
+  const selectedUnplanned = selection(); selectedUnplanned.candidates[0].factIds = ["fact-9"];
+  assert.throws(() => parseHookSelection(selectedUnplanned, draft, ["fact-1"], ["fact-1", "fact-9"]), /cover's planned fact IDs/);
 });
 
 const localRequire = createRequire(import.meta.url);
