@@ -29,7 +29,7 @@ import { generateOpenAiStructuredResponse } from "./openai-structured-response";
 import { creativeBriefFramingInstruction, creativeScriptFramingInstruction } from "./creative-framing-instruction";
 import { CREATIVE_PUBLISHABLE_THRESHOLDS } from "./creative-quality";
 import { effectiveFramingStrategy } from "./creative-content.types";
-import { carouselNarrativePolicyForPrompt, unspentPlanFactIds } from "./carousel-narrative";
+import { carouselNarrativePolicyForPrompt, templatePlanQuestions, unspentPlanFactIds } from "./carousel-narrative";
 import { deterministicCreativeQualityIssues, repairDeterministicCreativeCopy } from "./creative-quality";
 import { unsupportedFactNames } from "./creative-fact-guard";
 import { enforceCoverTitle } from "./creative-cover-title";
@@ -114,7 +114,7 @@ const BRIEF_OUTPUT_TOKENS = 12_288;
  * against the same brief, with the reviewed script and every finding in
  * hand, can; and it costs the same single call.
  */
-const REVISION_INSTRUCTION = `\n\nREVISION: this is a rewrite of a script an independent editor has reviewed, not a first draft. previousScript is the reviewed copy and reviewFindings are the editor's findings. Each finding's message is its acceptance condition and every one must be resolved, whatever its severity: each holds a scored dimension below qualityThresholds (compare currentScores). You may restructure any slide a finding names — re-lead the cover with the configured framing, rewrite the closing so it resolves the opening, remove an explanatory or causal link the cited facts do not state, cut over-length copy to 40 words or fewer. Keep every slide no finding names exactly as it is, word for word, including its factIds and visual direction. Use only the brief's facts and each slide's allowed fact IDs, as before.`;
+const REVISION_INSTRUCTION = `\n\nREVISION: this is a rewrite of a script an independent editor has reviewed, not a first draft. previousScript is the reviewed copy and reviewFindings are the editor's findings. Each finding's message is its acceptance condition and every one must be resolved, whatever its severity: each holds a scored dimension below qualityThresholds (compare currentScores). You may restructure any slide a finding names — re-lead the cover with the configured framing, rewrite the closing so it resolves the opening, remove an explanatory or causal link the cited facts do not state, cut over-length copy to 40 words or fewer. Never introduce a number that is not written in one of the slide's allowed facts — no computed difference, total, percentage, or conversion; when a finding asks for a contrast, place the two figures exactly as the facts state them. Keep every slide no finding names exactly as it is, word for word, including its factIds and visual direction. Use only the brief's facts and each slide's allowed fact IDs, as before.`;
 
 const BRIEF_RETRY = `\n\nYour previous response failed validation; the error is supplied as previousValidationError. Correct exactly that problem and return a complete brief, keeping everything that was already correct.`;
 
@@ -354,7 +354,8 @@ export async function generateSingleShotCreativeScript(
     // sent back once, before that narrowing, with the facts and names listed:
     // the model can widen the excerpt and keep them. The retry is narrowed.
     if (strict) {
-      const raw = parseJsonObject(text) as { keyFacts?: unknown };
+      const raw = parseJsonObject(text) as { keyFacts?: unknown; carouselPlan?: { slides?: unknown } };
+      const problems: string[] = [];
       const leaks = (Array.isArray(raw.keyFacts) ? raw.keyFacts : []).flatMap((item) => {
         const fact = item as { id?: unknown; statement?: unknown; sourceExcerpt?: unknown };
         if (typeof fact.statement !== "string" || typeof fact.sourceExcerpt !== "string") return [];
@@ -362,10 +363,26 @@ export async function generateSingleShotCreativeScript(
         return names.length ? [`${typeof fact.id === "string" ? fact.id : "a fact"} (${names.join("; ")})`] : [];
       });
       if (leaks.length) {
-        throw new CreativeContentResponseError(
+        problems.push(
           `Facts ${leaks.join(", ")} name people, places or organizations that their cited sourceExcerpt does not. Widen each sourceExcerpt to one contiguous passage of the story that names them, or remove those names from the statement; keep every statement in the source language. Numbers, dates and names must all come from the cited excerpt.`,
         );
       }
+      // A template question is not a plan for this story: "How is this
+      // happening?" over a comparison of two groups made the writer invent
+      // a cause the facts never stated.
+      const rawSlides = Array.isArray(raw.carouselPlan?.slides) ? raw.carouselPlan.slides : [];
+      const templated = templatePlanQuestions({
+        slides: rawSlides.map((slide) => {
+          const question = (slide as { viewerQuestion?: unknown }).viewerQuestion;
+          return { viewerQuestion: typeof question === "string" ? question : "" };
+        }),
+      });
+      if (templated.length) {
+        problems.push(
+          `carouselPlan slides ${templated.map((entry) => entry.slide).join(", ")} use generic template questions (${templated.map((entry) => JSON.stringify(entry.question)).join(", ")}). Write each viewerQuestion in ${profile.language}, about this story: name the specific thing the reader wants to know from that slide's allowed facts, and ask why or how only when an allowed fact states the mechanism.`,
+        );
+      }
+      if (problems.length) throw new CreativeContentResponseError(problems.join(" "));
     }
     const parsed = parseGroundedCreativeBrief(text, story.text, profile.conversionGoal, acquisitionTaxonomy, false);
     // A fact no slide before the closing may use can reach the carousel

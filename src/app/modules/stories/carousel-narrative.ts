@@ -122,6 +122,27 @@ export const PREFERRED_CAROUSEL_ARCS = {
   readonly CarouselEditorialGoal[]
 >;
 
+/**
+ * What each goal's slide does, for the planning prompt. Deliberately not a
+ * question: shown a canonical question per goal, the model copied all of
+ * them verbatim — in English, into a Spanish plan — and "How is this
+ * happening?" over a comparison of two groups made the writer invent a cause.
+ * The question is the model's to write, for this story, from the slide's own
+ * facts.
+ */
+const EDITORIAL_GOAL_JOBS: Record<CarouselEditorialGoal, string> = {
+  hook: "Opens with the strongest supported reason to continue; its question is what the reader wants to know from the cover's own facts.",
+  explain: "Gives the clearest account of what its allowed facts show. Ask how or why only when an allowed fact states the mechanism or cause; otherwise the question is what the data shows.",
+  prove: "Presents the evidence for a specific claim an earlier slide made; its question names that claim.",
+  compare: "Sets two supported figures or options side by side; its question names what is compared.",
+  impact: "States the supported significance for the audience without repeating figures; its question names the consequence a fact establishes.",
+  problem: "Names the risk or problem an allowed fact establishes.",
+  opportunity: "Names what an allowed fact says could improve.",
+  watch: "Names the next supported date, decision, or signal to watch.",
+  conclude: "Resolves the cover's promise with evidence the reader has already seen.",
+  debate: "Poses one grounded question the evidence leaves open.",
+};
+
 const MAX_FACTS_BY_GOAL: Record<CarouselEditorialGoal, number> = {
   hook: 2,
   explain: 2,
@@ -239,14 +260,12 @@ export function alignCarouselPlanWithConversionGoal(
     repaired: true,
     plan: {
       ...plan,
+      // Only the goal changes. The question the model wrote for this story
+      // stays: swapping it for the goal's template put "What is the essential
+      // takeaway?" — in English — at the end of a Spanish plan, and a template
+      // question is one the writer cannot answer from the facts.
       slides: plan.slides.map((slide, index) =>
-        index === closingIndex
-          ? {
-              ...slide,
-              editorialGoal: expectedClosingGoal,
-              viewerQuestion: getDefaultViewerQuestion(expectedClosingGoal),
-            }
-          : slide,
+        index === closingIndex ? { ...slide, editorialGoal: expectedClosingGoal } : slide,
       ),
     },
   };
@@ -418,6 +437,26 @@ export function unspentPlanFactIds(plan: CarouselPlan, knownFactIds: Iterable<st
   return [...knownFactIds].filter((factId) => !spent.has(factId));
 }
 
+const TEMPLATE_QUESTIONS = new Set(
+  CAROUSEL_EDITORIAL_GOAL_OPTIONS.map((option) => normalizedVisibleCopy(option.viewerQuestion)),
+);
+
+/**
+ * Plan slides whose viewerQuestion is one of the goal templates rather than a
+ * question about this story. The planning prompt used to show those templates
+ * as each goal's definition and a plan came back with all five verbatim; the
+ * generator now sends such a plan back once with the slides named.
+ */
+export function templatePlanQuestions(
+  plan: { slides: readonly { viewerQuestion: string }[] },
+): { slide: number; question: string }[] {
+  return plan.slides.flatMap((slide, index) =>
+    TEMPLATE_QUESTIONS.has(normalizedVisibleCopy(slide.viewerQuestion))
+      ? [{ slide: index + 1, question: slide.viewerQuestion }]
+      : [],
+  );
+}
+
 /** Narrow internal planning questions only; never rewrite visible copy or evidence.
  * Keep the first complete question as the primary job. The normal factual and
  * editorial gates still decide whether that job is useful and supported.
@@ -547,13 +586,19 @@ export function carouselNarrativePolicyForPrompt(
           getPreferredCarouselArc(Number(slideCount), conversionGoal) ?? goals,
       }),
     ),
-    editorialGoals: CAROUSEL_EDITORIAL_GOAL_OPTIONS,
+    // Each goal's job, never its template question — see EDITORIAL_GOAL_JOBS.
+    editorialGoals: CAROUSEL_EDITORIAL_GOAL_OPTIONS.map((option) => ({
+      value: option.value,
+      label: option.label,
+      job: EDITORIAL_GOAL_JOBS[option.value],
+    })),
     factBudgets: Object.entries(MAX_FACTS_BY_GOAL).map(
       ([goal, maximumFacts]) => ({ goal, maximumFacts }),
     ),
     rules: [
       "Use only facts necessary to advance the story; do not use every available fact simply because it exists.",
       "viewerQuestion describes the mental question answered by that slide and is not visible slide copy.",
+      "Write every viewerQuestion in the creative profile language and about this story: it names the specific thing the reader wants to know from that slide's allowedFactIds. Never use a generic template question (a bare 'why does this matter', 'how is this happening', 'what is the takeaway'). Ask why or how only when an allowed fact states the mechanism or cause; otherwise ask what the facts show.",
       "ctaQuestion is optional visible copy and belongs only on the final conclusion or call-to-action slide.",
       `subheadline is optional visible hierarchy copy. Use it only when it adds a distinct clarifying layer below the headline, and keep it to ${CAROUSEL_SUBHEADLINE_MAX_WORDS} words or fewer.`,
       `continuationCue is optional visible semantic reward copy for non-final slides. The cover should normally include one concrete reason to continue, in ${CAROUSEL_CONTINUATION_CUE_MAX_WORDS} words or fewer. Do not put a continuationCue on the final slide.`,

@@ -448,6 +448,35 @@ test("a name still unsupported after the rewrite is cut back to the excerpt and 
   assert.ok(!JSON.stringify(h.calls[2]).includes("Brochet"), "and it is absent from the script call");
 });
 
+/** The fixture's plan with its questions replaced by the goal templates (the live defect) or kept story-specific. */
+function templatedPlanResponse(templated: boolean) {
+  const plan = validResponse().carouselPlan as { slides: { viewerQuestion: string }[] };
+  const templates = ["What happened, and why should I care?", "How is this happening?", "What is the essential takeaway?"];
+  return validResponse({
+    carouselPlan: {
+      ...plan,
+      slides: plan.slides.map((slide, index) => ({ ...slide, viewerQuestion: templated ? templates[index]! : slide.viewerQuestion })),
+    },
+  });
+}
+
+test("a plan whose questions are the goal templates is sent back once with the slides named", async () => {
+  const h = harness((attempt) => templatedPlanResponse(attempt === 0));
+  await h.generate(options());
+  assert.equal(h.calls.length, 3, "brief, one brief rewrite, then the script");
+  const retry = h.calls[1] as { previousValidationError?: string };
+  assert.match(retry.previousValidationError ?? "", /template questions/);
+  assert.match(retry.previousValidationError ?? "", /slides 1, 2, 3/);
+  assert.match(retry.previousValidationError ?? "", /in English/, "the rewrite is told the profile language");
+});
+
+test("template questions that survive the rewrite are accepted and left to the independent review", async () => {
+  const h = harness(() => templatedPlanResponse(true));
+  const result = await h.generate(options());
+  assert.equal(h.calls.length, 3);
+  assert.equal(result.draft.units.length, 3);
+});
+
 test("the script call states the framing the brief applied, in the writer's own terms", async () => {
   const h = harness(() => validResponse());
   await h.generate(options({

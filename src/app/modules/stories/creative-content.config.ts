@@ -148,9 +148,11 @@ export function getCreativeContentPublicConfig(): CreativeContentPublicConfig {
     // guidance. v37: the closing may not copy any single earlier slide and
     // every fact must be seated before the closing; the plan repair changed
     // with it. v38: a statement may not name people, places or organizations
-    // its excerpt does not (grounding narrows it, after one rewrite). Bumped
-    // so briefs whose facts carry such names are not reused.
-    briefPromptVersion: "creative-brief-v38",
+    // its excerpt does not (grounding narrows it, after one rewrite). v39: the
+    // planning prompt describes each goal's job instead of showing a template
+    // question, and arc alignment keeps the model's closing question. Bumped
+    // so plans built on template questions are not reused.
+    briefPromptVersion: "creative-brief-v39",
     draftPromptVersions: {
       meme: "meme-draft-v27",
       // v49/v48: the script call now states the applied framing in the

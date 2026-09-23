@@ -91,10 +91,9 @@ test("aligns the preferred arc and parsed-plan shape with the conversion goal", 
   const aligned = alignCarouselPlanWithConversionGoal(plan, "followers");
   assert.equal(aligned.repaired, true);
   assert.equal(aligned.plan.slides.at(-1)?.editorialGoal, "conclude");
-  assert.equal(
-    aligned.plan.slides.at(-1)?.viewerQuestion,
-    "What is the essential takeaway?",
-  );
+  // The model's question for this story survives the goal change; it is not
+  // swapped for the goal's (English) template.
+  assert.equal(aligned.plan.slides.at(-1)?.viewerQuestion, plan.slides.at(-1)?.viewerQuestion);
   assert.ok(
     validateCarouselPlan(
       aligned.plan,
