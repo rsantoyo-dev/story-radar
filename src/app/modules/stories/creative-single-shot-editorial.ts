@@ -1,16 +1,13 @@
 import "server-only";
 
 import { actionableEditorialIssues, improved } from "./creative-editorial-loop";
-import { applyFinalCreativePatches, finalRepairSchema, FINAL_REPAIR_INSTRUCTION } from "./creative-final-repair";
-import { generateOpenAiStructuredResponse } from "./openai-structured-response";
 import {
-  assertVisibleDraftLanguage,
   isConcreteFactualQualityIssue,
   runOpenAiEditorialQualityGate,
   sumCreativeAiUsage,
 } from "./gemini-creative-content-generator";
 import { generateSingleShotCreativeScript } from "./creative-single-shot-generator";
-import { deterministicCreativeQualityIssues } from "./creative-quality";
+import { CREATIVE_PUBLISHABLE_THRESHOLDS, deterministicCreativeQualityIssues } from "./creative-quality";
 import type { CreativeEditorialModelConfig } from "./creative-editorial-router";
 import { effectiveFramingStrategy } from "./creative-content.types";
 import type {
@@ -68,7 +65,15 @@ export async function runSingleShotCreativePipeline(
 ): Promise<SingleShotPipelineResult> {
   const { openAiApiKey, openAiEditorialModels, openAiAuditContext, deadline, checkpoint, ...generatorOptions } = options;
 
-  const generated = await generateSingleShotCreativeScript({ ...generatorOptions, maxAttempts: GENERATION_CALL_CAP });
+  // A configured carouselWriterModel writes the script on OpenAI, so the
+  // generator needs the same credential and usage context the audit uses. Both
+  // are destructured out above; put them back rather than widening the rest.
+  const generated = await generateSingleShotCreativeScript({
+    ...generatorOptions,
+    ...(openAiApiKey ? { openAiApiKey } : {}),
+    ...(openAiAuditContext ? { openAiAuditContext } : {}),
+    maxAttempts: GENERATION_CALL_CAP,
+  });
   let usage = generated.usage;
   let callsUsed = generated.attempts;
   const brief = generated.brief;
@@ -182,36 +187,31 @@ export async function runSingleShotCreativePipeline(
   }
 
   callsUsed += 1;
-  const scopes = actionable.some((issue) => !issue.unitOrder)
-    ? [0, ...auditedDraft.units.map((unit) => unit.order)]
-    : [...new Set(actionable.map((issue) => issue.unitOrder!))];
+  // Repair by rewriting, not patching. Two live runs showed what a targeted
+  // patch cannot do: re-lead a cover with the configured framing, rewrite a
+  // closing so it resolves the opening, or remove a causal link the facts do
+  // not state. The writer gets the reviewed script and every finding and
+  // writes the script again against the same brief — one call, the same
+  // price. It is held to the same gates as before: one attempt, local
+  // validation, an independent verify, and improved() deciding what is kept.
   let repaired: GeneratedCreativeDraft | undefined;
   let repairRejectionReason: string | undefined;
   try {
-    const response = await generateOpenAiStructuredResponse({
-      apiKey: openAiApiKey,
-      model: openAiEditorialModels.severeRepairModel,
-      schema: finalRepairSchema,
-      schemaName: "creative_single_shot_repair",
-      reasoningEffort: "medium",
-      maxOutputTokens: 4_096,
-      timeoutMs: Math.min(60_000, deadline - Date.now()),
-      auditContext: openAiAuditContext,
-      instructions: `${FINAL_REPAIR_INSTRUCTION}\nCorrect the supplied editorial findings. Preserve sound slides. Do not award scores or change evidence.`,
-      contents: {
-        draft: auditedDraft,
-        blockers: actionable,
-        editableScopes: scopes,
-        facts: brief.keyFacts,
-        carouselPlan: brief.carouselPlan,
-        topic: generatorOptions.topic,
-        language: generatorOptions.profile.language,
-        conversionGoal: generatorOptions.profile.conversionGoal,
+    const revision = await generateSingleShotCreativeScript({
+      ...generatorOptions,
+      ...(openAiApiKey ? { openAiApiKey } : {}),
+      ...(openAiAuditContext ? { openAiAuditContext } : {}),
+      existingBrief: brief,
+      maxAttempts: 1,
+      revision: {
+        previousDraft: auditedDraft,
+        findings: actionable,
+        ...(auditedDraft.qualityReview?.scores ? { scores: auditedDraft.qualityReview.scores } : {}),
+        thresholds: CREATIVE_PUBLISHABLE_THRESHOLDS,
       },
     });
-    usage = sumCreativeAiUsage(usage, response.usage);
-    const candidate = applyFinalCreativePatches(auditedDraft, response.text, scopes);
-    assertVisibleDraftLanguage(candidate, generatorOptions.profile.language);
+    usage = sumCreativeAiUsage(usage, revision.usage);
+    const candidate = revision.draft;
     const inspect = (value: GeneratedCreativeDraft) =>
       deterministicCreativeQualityIssues(
         value,
@@ -242,6 +242,7 @@ export async function runSingleShotCreativePipeline(
         callsUsed,
         verdict: "correctable",
         findings: actionable,
+        repairAttempted: true,
         stopReason: repairRejectionReason ?? "The repair made no usable change.",
       },
     };
@@ -250,7 +251,7 @@ export async function runSingleShotCreativePipeline(
   }
   await checkpoint({
     brief,
-    draft: { ...repaired, singleShotRun: { stage: "repairing", callsUsed } },
+    draft: { ...repaired, singleShotRun: { stage: "repairing", callsUsed, repairAttempted: true } },
     usage,
     callsUsed,
   });
@@ -283,6 +284,7 @@ export async function runSingleShotCreativePipeline(
         callsUsed,
         verdict: "correctable",
         findings: actionable,
+        repairAttempted: true,
         stopReason: `Verification unavailable: ${verify.criticUnavailable.reason}. The correction was not promoted.`,
       },
     };
@@ -307,14 +309,14 @@ export async function runSingleShotCreativePipeline(
   // Same rule as the first gate: the auditor's verdict decides, not the
   // absence of blocker-severity findings.
   if (finalDraft.qualityReview?.status === "accepted") {
-    draft = { ...finalDraft, singleShotRun: { stage: "done", callsUsed, verdict: "accepted" } };
+    draft = { ...finalDraft, singleShotRun: { stage: "done", callsUsed, verdict: "accepted", repairAttempted: true } };
   } else if (evidenceBlocked) {
     // A wording correction cannot supply missing evidence: this is the
     // outcome AGENTS.md's factual-safety rules call for when that stays true
     // even after one verified repair attempt.
     draft = {
       ...finalDraft,
-      singleShotRun: { stage: "done", callsUsed, verdict: "blocked_source" },
+      singleShotRun: { stage: "done", callsUsed, verdict: "blocked_source", repairAttempted: true },
       blockedSource: {
         reason: "Independent review still finds the request unsupported by the available evidence after one verified correction.",
         missingEvidence: finalBlockers.filter(isConcreteFactualQualityIssue).map((issue) => issue.message),
@@ -328,6 +330,7 @@ export async function runSingleShotCreativePipeline(
         callsUsed,
         verdict: "correctable",
         findings: finalActionable,
+        repairAttempted: true,
         stopReason: "The corrected copy is still below the publishable bar after one verified repair; kept as the best available version for human review.",
       },
     };

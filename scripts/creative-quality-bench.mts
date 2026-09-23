@@ -13,7 +13,9 @@
  *   npx tsx --env-file=.env.local scripts/creative-quality-bench.mts --confirm  # execute
  *
  * Options: --runs=N (default 3), --stories=id,id (default: the fixtures below),
- *          --json=path to write raw per-run results.
+ *          --json=path to write raw per-run results,
+ *          --writer=<model> to write the script with an OpenAI model instead of
+ *          Gemini (overrides CREATIVE_CAROUSEL_WRITER_MODEL for this run).
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import Module, { createRequire } from "node:module";
@@ -187,6 +189,10 @@ async function main() {
           format: "carousel",
           outputAspectRatio: "4:5",
           characterRoster: [],
+          // Set CREATIVE_CAROUSEL_WRITER_MODEL to hand the script to an OpenAI
+          // writer instead of Gemini; --writer=<model> overrides it per run so
+          // the two can be compared without editing .env.local.
+          carouselWriterModel: args.get("writer") ?? process.env.CREATIVE_CAROUSEL_WRITER_MODEL,
           openAiApiKey: process.env.OPENAI_API_KEY,
           openAiEditorialModels: {
             criticModel: process.env.CREATIVE_CRITIC_MODEL ?? "gpt-5.6-terra",

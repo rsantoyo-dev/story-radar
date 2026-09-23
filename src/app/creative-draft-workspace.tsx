@@ -808,6 +808,7 @@ export function CreativeDraftWorkspace({
 
     await run("profile-draft", async () => {
       let currentState = workspace;
+      let briefOutcome: "generated" | "cached" | undefined;
       if (refreshBrief) {
         const refreshedBrief = await requestJson<{
           outcome: "generated" | "cached";
@@ -821,6 +822,7 @@ export function CreativeDraftWorkspace({
           creativeBriefRequest(editorialDirection),
         );
         currentState = refreshedBrief.state;
+        briefOutcome = refreshedBrief.outcome;
         setEditorialDirection(currentState.brief?.editorialDirection ?? "");
       }
 
@@ -828,6 +830,29 @@ export function CreativeDraftWorkspace({
         throw new Error(
           "The current creative profile could not be resolved into a fresh brief.",
         );
+      }
+
+      // The single-shot engine writes and audits the script inside the brief
+      // request, so a brief generated just now may already carry this format's
+      // draft. Asking for another version on top of it would pay for the whole
+      // generation and audit a second time. A brief that never produced a
+      // draft (the legacy engine, or a cached brief) still needs the request.
+      const newBriefId = currentState.brief.id;
+      const bundledDraft =
+        briefOutcome === "generated"
+          ? currentState.drafts.find((draft) => draft.briefId === newBriefId && draft.format === selectedFormat)
+          : undefined;
+      if (bundledDraft) {
+        setWorkspace(currentState);
+        setProfile(currentState.profile);
+        setHistoryDraftId(undefined);
+        resetAssetWorkspace();
+        selectDraft(currentState, selectedFormat, selectedAspectRatio, setActiveDraftId, setEditableDraft);
+        setDirty(false);
+        setNotice(
+          `New ${selectedFormat} draft generated together with the refreshed brief. Previous generated images remain in history.`,
+        );
+        return;
       }
 
       const refreshedDraft = await requestJson<{
@@ -1821,6 +1846,7 @@ export function CreativeDraftWorkspace({
                     outputAspectRatio={activeOutputAspectRatio}
                     draft={editableDraft}
                     qualityReview={activeDraft.qualityReview}
+                    singleShotRun={activeDraft.singleShotRun}
                     qualityReviewIsCurrent={
                       !dirty && activeDraft.qualityReviewIsCurrent !== false
                     }
@@ -2904,6 +2930,7 @@ function DraftEditor({
   outputAspectRatio,
   draft,
   qualityReview,
+  singleShotRun,
   qualityReviewIsCurrent,
   keyFacts,
   requireCoverTitle,
@@ -2918,6 +2945,7 @@ function DraftEditor({
   outputAspectRatio: CreativeAspectRatio;
   draft: EditableCreativeDraft;
   qualityReview?: CreativeDraft["qualityReview"];
+  singleShotRun?: CreativeDraft["singleShotRun"];
   qualityReviewIsCurrent: boolean;
   keyFacts: CreativeKeyFact[];
   requireCoverTitle?: boolean;
@@ -3142,7 +3170,14 @@ function DraftEditor({
                 ? ` · ${qualityReview.repair.severity} repair: ${qualityReview.repair.model}`
                 : qualityReview.status === "accepted"
                   ? " · no repair needed"
-                  : " · repair not attempted"}
+                  // The single-shot pipeline repairs through its own call and
+                  // never fills qualityReview.repair, so that field alone would
+                  // report "not attempted" for a repair that actually ran. Its
+                  // own stopReason already states what happened, including for
+                  // drafts saved before repairAttempted existed.
+                  : singleShotRun
+                    ? ` · ${singleShotRun.callsUsed} calls · ${singleShotRun.stopReason ?? (singleShotRun.repairAttempted ? "repair ran, still below the bar" : "repair not attempted")}`
+                    : " · repair not attempted"}
             </p>
           ) : null}
           {!qualityReviewIsCurrent && qualityReview.status === "needs-review" && !qualityReview.critic && !hasFinalCopyRepair ? (

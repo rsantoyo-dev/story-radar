@@ -177,6 +177,7 @@ export type CarouselNarrativeWarning = {
     | "subheadline-too-long"
     | "redundant-subheadline"
     | "body-too-long"
+    | "slide-restates-itself"
     | "missing-cover-continuation-cue"
     | "generic-continuation-cue"
     | "continuation-cue-too-long"
@@ -285,6 +286,8 @@ export function repairCarouselPlanEvidence(
   const establishedFacts = new Set<string>();
   let coverFactIds = new Set<string>();
   let previousFactIds = new Set<string>();
+  /** Each earlier slide's allowed facts, so a closing can be checked against every one of them. */
+  const slideFactSets: Set<string>[] = [];
   let repaired = false;
 
   const slides = plan.slides.map((slide, index) => {
@@ -305,34 +308,56 @@ export function repairCarouselPlanEvidence(
       allowedFactIds = reusableFacts;
       // A closing drawn from a single slide can only echo it: the cover's facts
       // produce REDUNDANT_CLOSING, the previous slide's produce
-      // CLOSING_REPEATS_PRIOR_SLIDE. A closing that already spans the arc is
-      // left exactly as planned.
-      const echoesOneSlide =
-        allowedFactIds.length === 0 ||
-        allowedFactIds.every((factId) => coverFactIds.has(factId)) ||
-        allowedFactIds.every((factId) => previousFactIds.has(factId));
+      // CLOSING_REPEATS_PRIOR_SLIDE — and a middle slide's produce the same
+      // repeat with no diagnostic at all: a closing planned as an exact copy
+      // of slide 2 passed a check that only looked at the cover and the slide
+      // before, and the ending restated slide 2 word for word. Any single
+      // earlier slide counts. A closing that already spans the arc is left
+      // exactly as planned.
+      const echoedSlide =
+        allowedFactIds.length === 0
+          ? undefined
+          : slideFactSets.find((facts) => allowedFactIds.every((factId) => facts.has(factId)));
+      const echoesOneSlide = allowedFactIds.length === 0 || echoedSlide !== undefined;
       // One figure cannot resolve an arc the reader was walked through, which
       // is what CLOSING_DOES_NOT_SYNTHESIZE_EVIDENCE reports. The conclude
       // budget is three facts precisely so the ending can combine them.
       const needsSynthesis = allowedFactIds.length < Math.min(2, establishedFacts.size);
       if (establishedFacts.size > 0 && (echoesOneSlide || needsSynthesis)) {
         // Rank established evidence so the ending combines the arc: what the
-        // cover did not carry first, then what the slide before did not.
-        // Nothing new is introduced — every candidate was already proven and
-        // already shown to the reader.
+        // cover did not carry first, then what the slide before did not. The
+        // echoed slide's facts only lose ties — the cover's number must still
+        // come last, or the ending opens by restating the opening. Nothing new
+        // is introduced — every candidate was already proven and shown.
         const rank = (factId: string) =>
-          (coverFactIds.has(factId) ? 2 : 0) + (previousFactIds.has(factId) ? 1 : 0);
+          (coverFactIds.has(factId) ? 2 : 0) +
+          (previousFactIds.has(factId) ? 1 : 0) +
+          (echoedSlide?.has(factId) ? 0.5 : 0);
         const ordered = [...new Set([...allowedFactIds, ...establishedFacts])].sort(
           (left, right) => rank(left) - rank(right),
         );
-        const synthesis = ordered.slice(
-          0,
-          Math.min(
-            maximumFactsForGoal(slide.editorialGoal),
-            Math.max(2, allowedFactIds.length),
-            ordered.length,
-          ),
+        const budget = Math.min(
+          maximumFactsForGoal(slide.editorialGoal),
+          Math.max(2, allowedFactIds.length),
+          ordered.length,
         );
+        // Seat the best fact from each distinct earlier slide first, so the
+        // ending combines slides instead of trading one slide's echo for
+        // another's; then fill any remaining budget in rank order.
+        const firstSlideOf = (factId: string) => slideFactSets.findIndex((facts) => facts.has(factId));
+        const synthesis: string[] = [];
+        const representedSlides = new Set<number>();
+        for (const factId of ordered) {
+          if (synthesis.length >= budget) break;
+          const origin = firstSlideOf(factId);
+          if (representedSlides.has(origin)) continue;
+          representedSlides.add(origin);
+          synthesis.push(factId);
+        }
+        for (const factId of ordered) {
+          if (synthesis.length >= budget) break;
+          if (!synthesis.includes(factId)) synthesis.push(factId);
+        }
         if (
           synthesis.length !== allowedFactIds.length ||
           synthesis.some((factId) => !allowedFactIds.includes(factId))
@@ -369,11 +394,28 @@ export function repairCarouselPlanEvidence(
     }
     if (index === 0) coverFactIds = new Set(allowedFactIds);
     previousFactIds = new Set(allowedFactIds);
+    slideFactSets.push(new Set(allowedFactIds));
     allowedFactIds.forEach((factId) => establishedFacts.add(factId));
     return { ...slide, allowedFactIds };
   });
 
   return { plan: { ...plan, slides }, repaired };
+}
+
+/**
+ * Facts the plan never lets a slide before the closing use. A closing may only
+ * reuse evidence the reader has already seen, so such a fact can reach the
+ * carousel nowhere: a listings story's "free, schedules at …" fact was left
+ * this way while the ending repeated a middle slide instead of resolving with
+ * it. The generator sends the plan back once with these named.
+ */
+export function unspentPlanFactIds(plan: CarouselPlan, knownFactIds: Iterable<string>): string[] {
+  const spent = new Set<string>();
+  for (const slide of plan.slides) {
+    if (slide.editorialGoal === "conclude" || slide.editorialGoal === "debate") continue;
+    for (const factId of slide.allowedFactIds) spent.add(factId);
+  }
+  return [...knownFactIds].filter((factId) => !spent.has(factId));
 }
 
 /** Narrow internal planning questions only; never rewrite visible copy or evidence.
@@ -677,6 +719,26 @@ export function evaluateCarouselNarrative(
         code: "redundant-subheadline",
         unitIndex,
         message: `Slide ${slide} repeats its headline as the subheadline; use the second line only when it adds useful hierarchy.`,
+      });
+    }
+    // The existing redundant-subheadline check only catches an exact copy. The
+    // defect the critic keeps reporting is subtler: headline, subheadline and
+    // body all carry the same figure while the reader is given nothing new for
+    // the swipe. Judge by informational content — numbers and named entities —
+    // rather than wording, and only when the body actually has some, so a
+    // purely prose supporting line is never flagged.
+    const headlineTokens = informationTokens(`${unit.headline ?? ""} ${unit.subheadline ?? ""}`);
+    const bodyTokens = informationTokens(unit.body);
+    if (
+      bodyTokens.length > 0 &&
+      headlineTokens.length > 0 &&
+      bodyTokens.every((token) => headlineTokens.includes(token))
+    ) {
+      warnings.push({
+        severity: "warning",
+        code: "slide-restates-itself",
+        unitIndex,
+        message: `Slide ${slide} repeats the same information in its headline and supporting text (${bodyTokens.join(", ")}) without adding anything new. Give the supporting text a different supported detail from this slide's evidence, or drop it and let the headline stand alone.`,
       });
     }
     if (wordCount(unit.body) > 45) {
@@ -1066,6 +1128,17 @@ export function blockingCarouselNarrativeIssues(
     conversionGoal,
     framingStrategy,
   ).filter((issue) => issue.severity === "blocker");
+}
+
+/**
+ * Numbers and named entities: what a reader actually gains from a line. Used
+ * to tell a supporting line that advances the slide from one that restates it.
+ */
+function informationTokens(value?: string): string[] {
+  if (!value?.trim()) return [];
+  const numbers = value.match(/\d[\d.,\u202f\s]*\d|\d/gu) ?? [];
+  const entities = value.match(/\p{Lu}[\p{L}'\u2019-]{2,}/gu) ?? [];
+  return [...new Set([...numbers.map((n) => n.replace(/[\s\u202f]/gu, "")), ...entities])];
 }
 
 function wordCount(value?: string): number {

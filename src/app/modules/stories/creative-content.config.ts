@@ -144,10 +144,18 @@ export function getCreativeContentPublicConfig(): CreativeContentPublicConfig {
     model: primaryProvider === "groq" ? groqModel : geminiModel,
     primaryProvider,
     ...(carouselWriterModel ? { carouselWriterModel } : {}),
-    briefPromptVersion: "creative-brief-v35",
+    // v36: keyFacts ceiling 6 -> 15 and "extract every load-bearing fact"
+    // guidance. v37: the closing may not copy any single earlier slide and
+    // every fact must be seated before the closing; the plan repair changed
+    // with it. v38: a statement may not name people, places or organizations
+    // its excerpt does not (grounding narrows it, after one rewrite). Bumped
+    // so briefs whose facts carry such names are not reused.
+    briefPromptVersion: "creative-brief-v38",
     draftPromptVersions: {
       meme: "meme-draft-v27",
-      carousel: carouselWriterModel ? `carousel-draft-v48-writer-${carouselWriterModel}` : "carousel-draft-v47",
+      // v49/v48: the script call now states the applied framing in the
+      // writer's terms, and a repair is a rewrite with the review in hand.
+      carousel: carouselWriterModel ? `carousel-draft-v49-writer-${carouselWriterModel}` : "carousel-draft-v48",
       sequence: "sequence-draft-v6",
     },
     maxRunsPerDay: parsePositiveInteger(

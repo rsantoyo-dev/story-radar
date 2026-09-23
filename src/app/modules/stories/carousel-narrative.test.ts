@@ -183,6 +183,37 @@ test("allows a conclude slide to synthesize three facts established earlier", ()
   );
 });
 
+test("a closing that copies any single middle slide is re-spread across the arc", () => {
+  // A live plan gave the closing exactly slide 2's facts. The check only
+  // compared the closing with the cover and the slide before it, so the copy
+  // passed and the ending restated slide 2 word for word (Resolution 66).
+  const original: CarouselPlan = {
+    slideCount: 5,
+    rationale: "Hook, venues, outdoor works, gallery, conclusion.",
+    slides: [
+      slide("hook", ["fact-1"]),
+      slide("explain", ["fact-2", "fact-7"]),
+      slide("prove", ["fact-3", "fact-5"]),
+      slide("impact", ["fact-4", "fact-6"]),
+      slide("conclude", ["fact-2", "fact-7"]),
+    ],
+  };
+  const known = new Set(["fact-1", "fact-2", "fact-3", "fact-4", "fact-5", "fact-6", "fact-7", "fact-8"]);
+
+  const { plan, repaired } = repairCarouselPlanEvidence(original, known);
+
+  assert.equal(repaired, true);
+  const closing = plan.slides[4]!.allowedFactIds;
+  const slideTwo = new Set(["fact-2", "fact-7"]);
+  assert.ok(!closing.every((id) => slideTwo.has(id)), `the closing still copies slide 2: ${closing.join(", ")}`);
+  const origins = new Set(closing.map((id) => original.slides.findIndex((s) => s.allowedFactIds.includes(id))));
+  assert.ok(origins.size >= 2, `the closing should combine at least two slides, got ${closing.join(", ")}`);
+  for (let index = 0; index < 4; index += 1) {
+    assert.deepEqual(plan.slides[index]!.allowedFactIds, original.slides[index]!.allowedFactIds, "middle slides are left as planned");
+  }
+  assert.deepEqual(validateCarouselPlan(plan, known), []);
+});
+
 test("still rejects a new fact introduced among three conclude facts", () => {
   const plan: CarouselPlan = {
     slideCount: 4,
@@ -1367,4 +1398,47 @@ test("a middle slide repeating the slide before it spends unused evidence instea
   const closing = out.slides[3].allowedFactIds;
   assert.ok(closing.length >= 2, "the closing synthesizes rather than echoing slide 3");
   assert.notDeepEqual(closing, out.slides[2].allowedFactIds);
+});
+
+test("a slide whose supporting text only restates its headline's figure is flagged", () => {
+  // Observed live: headline "La moyenne observée : 182,8 ¢/L", body "La moyenne
+  // observée s'établit à 182,8 ¢/L." Three fields, one fact, nothing earned by
+  // the swipe. The critic reported it as SWIPE_REWARD_REPETITION and it held
+  // swipeReward at 78 against a bar of 80.
+  const issues = evaluateCarouselNarrative(
+    [
+      { role: "cover", editorialGoal: "hook", viewerQuestion: "Combien?",
+        headline: "Votre plein coûte 9,5 ¢ de plus le litre", body: "Le dernier relevé s'établit à 184,2 ¢/L.",
+        continuationCue: "Comment les prix ont oscillé.", factIds: ["fact-1"] },
+      { role: "content", editorialGoal: "impact", viewerQuestion: "Où se situe la moyenne?",
+        headline: "La moyenne observée : 182,8 ¢/L", subheadline: "Le repère établi par les relevés.",
+        body: "La moyenne observée s'établit à 182,8 ¢/L.",
+        continuationCue: "Et pour votre budget?", factIds: ["fact-2"] },
+      { role: "conclusion", editorialGoal: "conclude", viewerQuestion: "Que retenir?",
+        headline: "Surveillez la pompe avant vos déplacements",
+        body: "Au dernier relevé, chaque litre coûte 9,5 ¢ de plus, à 184,2 ¢/L contre une moyenne de 182,8 ¢/L.",
+        ctaQuestion: "Abonnez-vous à Salut St-Jean.", factIds: ["fact-1", "fact-2"] },
+    ],
+    undefined, "followers", "reader-consequence",
+  );
+  const restating = issues.filter((issue) => issue.code === "slide-restates-itself");
+  assert.equal(restating.length, 1, "only the slide that adds nothing is flagged");
+  assert.equal(restating[0]?.unitIndex, 1, "slide 2 is the one repeating its own figure");
+  assert.match(restating[0]?.message ?? "", /182,8/, "the repeated figure is named so a patch can aim at it");
+});
+
+test("supporting text that advances the slide is not flagged as restatement", () => {
+  const issues = evaluateCarouselNarrative(
+    [
+      { role: "cover", editorialGoal: "hook", viewerQuestion: "Combien?",
+        headline: "Un creux fin août, un sommet mi-septembre",
+        body: "Du 25 août au 22 septembre 2026, sur 29 relevés, le régulier a oscillé entre 173,2 ¢/L et 187,8 ¢/L.",
+        continuationCue: "Et la moyenne?", factIds: ["fact-1"] },
+      { role: "conclusion", editorialGoal: "conclude", viewerQuestion: "Que retenir?",
+        headline: "Surveillez la pompe", body: "Le prix reste au-dessus de la moyenne récente.",
+        ctaQuestion: "Abonnez-vous.", factIds: ["fact-1"] },
+    ],
+    undefined, "followers", "reader-consequence",
+  );
+  assert.equal(issues.filter((issue) => issue.code === "slide-restates-itself").length, 0);
 });

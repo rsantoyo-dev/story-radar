@@ -1,5 +1,33 @@
 import type { CreativeFramingStrategy } from "./creative-content.types";
 
+/**
+ * The writer's version of the framing rules. The brief call has always had an
+ * explicit framing instruction; the script call only had the strategy as one
+ * field among many and the rules buried in a long system prompt, and a live
+ * reader-consequence cover led with the closure's duration instead of the
+ * reader's trip. This states, for the script specifically, what the cover
+ * must open with and what the closing must resolve.
+ */
+export function creativeScriptFramingInstruction(
+  framingStrategy: CreativeFramingStrategy,
+): string {
+  switch (framingStrategy) {
+    case "reader-consequence":
+      return `FRAMING FOR THE SCRIPT: reader-consequence
+The cover headline must open with the concrete change a keyFact establishes for the reader — what changes in what they pay, owe, do, drive, or decide — before any duration, figure, organization, or place name; a closure's length or a detour belongs after the stake, not in front of it. Carry every hedge from the facts and never add a causal or explanatory link that the cited excerpts do not state, even between facts from the same document. The closing slide must say what this means for the reader's next decision or action; it must not enumerate figures, and may carry at most one line of secondary figures.`;
+    case "explainer":
+      return `FRAMING FOR THE SCRIPT: explainer
+Lead the cover with the mechanism or the clearest account of the development; do not force second person or a reader consequence. The closing resolves the mechanism or the practical implication the facts established.`;
+    case "authority":
+      return `FRAMING FOR THE SCRIPT: authority
+Lead the cover with the supported organization, decision, or expert; do not force second person. The closing resolves the decision or the accountable next step the facts support.`;
+    case "auto":
+    default:
+      return `FRAMING FOR THE SCRIPT: auto
+Follow the lens the brief applied and the hook it chose. Prefer a concrete reader consequence on the cover when a fact establishes one; never manufacture one.`;
+  }
+}
+
 export function creativeBriefFramingInstruction(
   framingStrategy: CreativeFramingStrategy,
 ): string {

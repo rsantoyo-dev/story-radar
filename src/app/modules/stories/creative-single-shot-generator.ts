@@ -17,6 +17,7 @@ import {
   parseJsonObject,
   profileForPrompt,
   providerLabel,
+  strictCreativeSchema,
   sumCreativeAiUsage,
   topicForPrompt,
   type CreativeStoryInput,
@@ -24,9 +25,13 @@ import {
   type GeneratorOptions,
 } from "./gemini-creative-content-generator";
 import { failedGeminiUsage } from "./creative-gemini-request";
-import { creativeBriefFramingInstruction } from "./creative-framing-instruction";
-import { carouselNarrativePolicyForPrompt } from "./carousel-narrative";
-import { repairDeterministicCreativeCopy } from "./creative-quality";
+import { generateOpenAiStructuredResponse } from "./openai-structured-response";
+import { creativeBriefFramingInstruction, creativeScriptFramingInstruction } from "./creative-framing-instruction";
+import { CREATIVE_PUBLISHABLE_THRESHOLDS } from "./creative-quality";
+import { effectiveFramingStrategy } from "./creative-content.types";
+import { carouselNarrativePolicyForPrompt, unspentPlanFactIds } from "./carousel-narrative";
+import { deterministicCreativeQualityIssues, repairDeterministicCreativeCopy } from "./creative-quality";
+import { unsupportedFactNames } from "./creative-fact-guard";
 import { enforceCoverTitle } from "./creative-cover-title";
 import type { TopicAcquisitionTaxonomy } from "./acquisition-lenses";
 import type {
@@ -34,6 +39,7 @@ import type {
   CreativeAspectRatio,
   CreativeCharacterRosterEntry,
   CreativeFormat,
+  CreativeQualityIssue,
   GeneratedCreativeBrief,
   GeneratedCreativeDraft,
 } from "./creative-content.types";
@@ -94,9 +100,25 @@ export function creativeSingleShotDraftSchema(
 
 const VISUAL_NEED_INSTRUCTION = `\n\nFor every unit, also return visualNeed, exactly one of "verified-map", "real-photo", "character-reference", "generic-illustration" or "typography", describing what that slide's visualDirection actually requires: "verified-map" only when the slide depicts a specific real place, route or geographic extent precisely enough that it must come from verified map data; "real-photo" when the slide needs documentary photographic evidence rather than an illustrated scene; "character-reference" when the visualDirection calls for one of the topic's configured recurring characters; "typography" when assetRequest is typography-only; otherwise "generic-illustration". Return no other value. This field does not change what the image pipeline renders yet — it only records the slide's visual intent for later use.`;
 
+/**
+ * Output cap for the brief call. Sized so MAX_BRIEF_KEY_FACTS facts with claim
+ * guards fit without truncating; a cap, so an ordinary brief costs no more.
+ */
+const BRIEF_OUTPUT_TOKENS = 12_288;
+
+/**
+ * Appended when the script call is a rewrite after an independent review.
+ * A targeted patch cannot re-lead a cover, rewrite a closing so it resolves
+ * the opening, or remove a causal link the facts do not state — two live runs
+ * showed exactly those findings surviving a patch. A rewrite by the writer,
+ * against the same brief, with the reviewed script and every finding in
+ * hand, can; and it costs the same single call.
+ */
+const REVISION_INSTRUCTION = `\n\nREVISION: this is a rewrite of a script an independent editor has reviewed, not a first draft. previousScript is the reviewed copy and reviewFindings are the editor's findings. Each finding's message is its acceptance condition and every one must be resolved, whatever its severity: each holds a scored dimension below qualityThresholds (compare currentScores). You may restructure any slide a finding names — re-lead the cover with the configured framing, rewrite the closing so it resolves the opening, remove an explanatory or causal link the cited facts do not state, cut over-length copy to 40 words or fewer. Keep every slide no finding names exactly as it is, word for word, including its factIds and visual direction. Use only the brief's facts and each slide's allowed fact IDs, as before.`;
+
 const BRIEF_RETRY = `\n\nYour previous response failed validation; the error is supplied as previousValidationError. Correct exactly that problem and return a complete brief, keeping everything that was already correct.`;
 
-const DRAFT_RETRY = `\n\nYour previous response failed validation; the error is supplied as previousValidationError. Correct exactly that problem and return a complete script, keeping everything that was already correct. Return exactly the planned slide count, in the planned order, using only each slide's allowed fact IDs.`;
+const DRAFT_RETRY = `\n\nYour previous response failed validation; the error is supplied as previousValidationError. Correct exactly that problem and return a complete script, keeping everything that was already correct. Return exactly the planned slide count, in the planned order, using only each slide's allowed fact IDs. When a slide's supporting text is over the limit, cut it to 40 words or fewer — word counts drift upward, so leave a margin below 45.`;
 
 /** Merge the raw response's per-unit visualNeed onto the parsed draft; parseCreativeDraft does not know this field. */
 function attachVisualNeeds(draft: GeneratedCreativeDraft, text: string): GeneratedCreativeDraft {
@@ -120,11 +142,12 @@ function attachVisualNeeds(draft: GeneratedCreativeDraft, text: string): Generat
 export type SingleShotScriptResult = {
   brief: GeneratedCreativeBrief;
   draft: GeneratedCreativeDraft;
-  provider: "google";
+  /** The provider that wrote the visible script. The brief is always Gemini's. */
+  provider: "google" | "openai";
   model: string;
   modelVersion?: string;
   usage: CreativeAiUsage;
-  /** Physical Gemini calls spent (2 nominally, more when a validation retry was needed). Count this against the caller's call budget. */
+  /** Physical calls spent (2 nominally, more when a validation retry was needed). Count this against the caller's call budget. */
   attempts: number;
 };
 
@@ -173,6 +196,18 @@ export async function generateSingleShotCreativeScript(
      * the visible copy is written again — one Gemini call instead of two.
      */
     existingBrief?: GeneratedCreativeBrief;
+    /**
+     * Rewrite a reviewed script instead of writing a first one: the previous
+     * copy and the independent review's findings go to the writer, which
+     * writes the whole script again against existingBrief. The orchestrator's
+     * repair step; one attempt, then the verify decides.
+     */
+    revision?: {
+      previousDraft: GeneratedCreativeDraft;
+      findings: CreativeQualityIssue[];
+      scores?: NonNullable<GeneratedCreativeDraft["qualityReview"]>["scores"];
+      thresholds: typeof CREATIVE_PUBLISHABLE_THRESHOLDS;
+    };
   },
 ): Promise<SingleShotScriptResult> {
   const {
@@ -189,7 +224,11 @@ export async function generateSingleShotCreativeScript(
     acquisitionTaxonomy,
     maxAttempts,
     existingBrief,
+    revision,
   } = options;
+  if (revision && !existingBrief) {
+    throw new CreativeContentResponseError("A revision rewrites against the reviewed brief; supply existingBrief.");
+  }
   const sharedContents = {
     carouselNarrativePolicy: carouselNarrativePolicyForPrompt(profile.conversionGoal),
     topic: topicForPrompt(topic as CreativeTopicContext),
@@ -244,6 +283,55 @@ export async function generateSingleShotCreativeScript(
     throw lastError;
   };
 
+  // A Topic may hand the script to an OpenAI writer, the same knob the legacy
+  // pipeline exposes as carouselWriterModel. Only the visible copy moves: the
+  // brief stays on Gemini, so evidence selection and the writing that spends it
+  // are still two different vendors' work. The later audit does then share a
+  // vendor family with the writer — an accepted tradeoff for a stronger first
+  // draft, not an oversight. Leave it unset to keep everything on Gemini.
+  const writerModel = format === "carousel" ? options.carouselWriterModel : undefined;
+  const draftProvider = writerModel ? ("openai" as const) : ("google" as const);
+  if (writerModel && !options.openAiApiKey) {
+    throw new CreativeContentResponseError(
+      "The configured carousel writer requires an OpenAI API key.",
+    );
+  }
+
+  const callWriter = async (
+    systemInstruction: string,
+    schema: Record<string, unknown>,
+    contents: Record<string, unknown>,
+    maxOutputTokens: number,
+  ) => {
+    if (maxAttempts !== undefined && attempts >= maxAttempts) {
+      throw new CreativeContentResponseError(
+        `Generation reached its ${maxAttempts}-call limit before producing a usable script. The remaining budget is reserved for the independent review.`,
+      );
+    }
+    attempts += 1;
+    // No fallback to Gemini on failure: a half-configured writer should surface
+    // as a resumable failure, not silently produce a draft from another model
+    // than the Topic asked for.
+    const response = await generateOpenAiStructuredResponse({
+      apiKey: options.openAiApiKey!,
+      model: writerModel!,
+      instructions: systemInstruction,
+      contents,
+      schema: strictCreativeSchema(schema),
+      schemaName: "creative_draft",
+      maxOutputTokens: Math.max(maxOutputTokens, 8_192),
+      // The legacy writer path hardcodes "low", tuned for Luna as a cheap
+      // fallback. Here the writer is chosen for quality, and the script
+      // decides hook, structure and fact allocation — the calls where extra
+      // reasoning pays. Its cost is bounded by maxOutputTokens either way.
+      reasoningEffort: "medium",
+      auditContext: options.openAiAuditContext,
+    });
+    usage = sumCreativeAiUsage(usage, response.usage);
+    lastModel = response.model;
+    return response;
+  };
+
   // Step 1: facts, angle and narrative plan.
   const briefInstruction = acquisitionTaxonomy
     ? `${BRIEF_SYSTEM_INSTRUCTION}\n\n${creativeBriefFramingInstruction(
@@ -259,8 +347,42 @@ export async function generateSingleShotCreativeScript(
     // Only this call sees the article: it is the one extracting evidence.
     story: fullStory,
   };
-  const parseBrief = (text: string) =>
-    parseGroundedCreativeBrief(text, story.text, profile.conversionGoal, acquisitionTaxonomy, false);
+  const parseBrief = (text: string, strict: boolean) => {
+    // Grounding narrows a statement to its excerpt when the statement names
+    // people, places or organizations the excerpt does not — which is safe
+    // but loses names the article may well carry. So the first response is
+    // sent back once, before that narrowing, with the facts and names listed:
+    // the model can widen the excerpt and keep them. The retry is narrowed.
+    if (strict) {
+      const raw = parseJsonObject(text) as { keyFacts?: unknown };
+      const leaks = (Array.isArray(raw.keyFacts) ? raw.keyFacts : []).flatMap((item) => {
+        const fact = item as { id?: unknown; statement?: unknown; sourceExcerpt?: unknown };
+        if (typeof fact.statement !== "string" || typeof fact.sourceExcerpt !== "string") return [];
+        const names = unsupportedFactNames(fact.statement, fact.sourceExcerpt);
+        return names.length ? [`${typeof fact.id === "string" ? fact.id : "a fact"} (${names.join("; ")})`] : [];
+      });
+      if (leaks.length) {
+        throw new CreativeContentResponseError(
+          `Facts ${leaks.join(", ")} name people, places or organizations that their cited sourceExcerpt does not. Widen each sourceExcerpt to one contiguous passage of the story that names them, or remove those names from the statement; keep every statement in the source language. Numbers, dates and names must all come from the cited excerpt.`,
+        );
+      }
+    }
+    const parsed = parseGroundedCreativeBrief(text, story.text, profile.conversionGoal, acquisitionTaxonomy, false);
+    // A fact no slide before the closing may use can reach the carousel
+    // nowhere, because the closing only reuses what the reader has seen. The
+    // first response is sent back once with those facts named, so the plan
+    // can seat them or drop them; the retry is accepted as planned rather than
+    // failing the run over allocation.
+    if (strict && parsed.carouselPlan) {
+      const unspent = unspentPlanFactIds(parsed.carouselPlan, parsed.keyFacts.map((fact) => fact.id));
+      if (unspent.length) {
+        throw new CreativeContentResponseError(
+          `Facts ${unspent.join(", ")} are extracted but no slide before the closing is allowed to use them, so the ending cannot resolve the opening with them (a closing may only reuse evidence the reader has seen). Assign each to the slide that answers its question, add slides (up to 8) if the arc needs them, or drop it from keyFacts and renumber if it is not load-bearing.`,
+        );
+      }
+    }
+    return parsed;
+  };
 
   let brief: GeneratedCreativeBrief;
   if (existingBrief) {
@@ -270,9 +392,9 @@ export async function generateSingleShotCreativeScript(
       "Extracting a brief needs the Topic's acquisition taxonomy; supply existingBrief to rewrite a script without it.",
     );
   } else {
-    const briefResponse = await call(briefInstruction, briefSchema, briefContents, 4_096);
+    const briefResponse = await call(briefInstruction, briefSchema, briefContents, BRIEF_OUTPUT_TOKENS);
     try {
-      brief = parseBrief(briefResponse.text);
+      brief = parseBrief(briefResponse.text, true);
     } catch (error) {
       if (!(error instanceof CreativeContentResponseError)) throw withBilledUsage(error, briefResponse.usage);
       console.warn(`Single-shot brief failed validation: ${error.message} Retrying once with the error as feedback.`);
@@ -280,9 +402,9 @@ export async function generateSingleShotCreativeScript(
         briefInstruction + BRIEF_RETRY,
         briefSchema,
         { ...briefContents, previousValidationError: error.message, previousBrief: briefResponse.text },
-        4_096,
+        BRIEF_OUTPUT_TOKENS,
       );
-      brief = parseBrief(retry.text);
+      brief = parseBrief(retry.text, false);
     }
   }
 
@@ -297,13 +419,48 @@ export async function generateSingleShotCreativeScript(
   // The chosen acquisition lens steers how the opening is written and requires
   // the cover's promise to be paid off by a later slide. Without it the model
   // gets the hook text but none of the reasoning that shaped it.
+  // The framing the brief actually applied (it may have fallen back from the
+  // profile's), stated for the script in its own terms: what the cover opens
+  // with and what the closing resolves. The brief call always had this; the
+  // script call did not, and a reader-consequence cover led with a duration.
   const draftInstruction = `${DRAFT_SYSTEM_INSTRUCTION}${acquisitionHookInstruction(
     brief.editorialAngle,
     acquisitionTaxonomy,
-  )}${VISUAL_NEED_INSTRUCTION}`;
+  )}${VISUAL_NEED_INSTRUCTION}\n\n${creativeScriptFramingInstruction(
+    effectiveFramingStrategy(
+      profile.framingStrategy as Parameters<typeof creativeScriptFramingInstruction>[0],
+      brief,
+    ),
+  )}${revision ? REVISION_INSTRUCTION : ""}`;
   const draftContents = {
     ...sharedContents,
     requestedFormat: format,
+    ...(revision
+      ? {
+          previousScript: {
+            concept: revision.previousDraft.concept,
+            caption: revision.previousDraft.caption,
+            hashtags: revision.previousDraft.hashtags,
+            units: revision.previousDraft.units.map((unit) => ({
+              order: unit.order,
+              role: unit.role,
+              editorialGoal: unit.editorialGoal,
+              viewerQuestion: unit.viewerQuestion,
+              headline: unit.headline,
+              subheadline: unit.subheadline,
+              body: unit.body,
+              continuationCue: unit.continuationCue,
+              ctaQuestion: unit.ctaQuestion,
+              factIds: unit.factIds,
+              visualDirection: unit.visualDirection,
+            })),
+          },
+          reviewFindings: revision.findings,
+          slidesToRevise: [...new Set(revision.findings.flatMap((issue) => (issue.unitOrder ? [issue.unitOrder] : [])))],
+          qualityThresholds: revision.thresholds,
+          ...(revision.scores ? { currentScores: revision.scores } : {}),
+        }
+      : {}),
     ...(profile.requireCoverTitle
       ? {
           coverTitle: brief.contentTitle ?? story.title,
@@ -335,7 +492,7 @@ export async function generateSingleShotCreativeScript(
         : {}),
     },
   };
-  const parseDraft = (text: string) => {
+  const parseDraft = (text: string, strictCopy: boolean) => {
     let value = parseCreativeDraft(
       text,
       format,
@@ -345,7 +502,7 @@ export async function generateSingleShotCreativeScript(
       brief.carouselPlan,
       false,
       true,
-      providerLabel("google"),
+      providerLabel(draftProvider),
       true,
     );
     assertVisibleDraftLanguage(value, profile.language);
@@ -358,29 +515,51 @@ export async function generateSingleShotCreativeScript(
       profile.conversionGoal,
       brief.carouselPlan,
     );
-    return enforceCoverTitle(value, profile.requireCoverTitle, brief.contentTitle ?? story.title);
+    value = enforceCoverTitle(value, profile.requireCoverTitle, brief.contentTitle ?? story.title);
+    // Over-length supporting text is deterministic and cheap to fix here,
+    // expensive to fix later: left in, it reaches the audit as a finding and
+    // can cost a whole repair-and-verify round. The first response is held to
+    // it and rewritten once with the exact slides named; the retry is accepted
+    // as is, so a stubborn 47-word slide cannot sink the generation.
+    if (strictCopy) {
+      const overLength = deterministicCreativeQualityIssues(
+        value,
+        format,
+        brief.keyFacts,
+        profile.language,
+        profile.conversionGoal,
+        profile.framingStrategy,
+      ).filter((issue) => /body[-_]too[-_]long/i.test(issue.code));
+      if (overLength.length) {
+        throw new CreativeContentResponseError(overLength.map((issue) => issue.message).join(" "));
+      }
+    }
+    return value;
   };
 
   let draft: GeneratedCreativeDraft;
-  const draftResponse = await call(draftInstruction, draftSchema, draftContents, format === "meme" ? 3_072 : 6_144);
+  const writeScript = writerModel ? callWriter : call;
+  const draftResponse = await writeScript(draftInstruction, draftSchema, draftContents, format === "meme" ? 3_072 : 6_144);
   try {
-    draft = parseDraft(draftResponse.text);
+    // A revision is already the second look at this copy; holding it to the
+    // local length rewrite would spend the one attempt it has.
+    draft = parseDraft(draftResponse.text, !revision);
   } catch (error) {
     if (!(error instanceof CreativeContentResponseError)) throw withBilledUsage(error, draftResponse.usage);
     console.warn(`Single-shot script failed validation: ${error.message} Retrying once with the error as feedback.`);
-    const retry = await call(
+    const retry = await writeScript(
       draftInstruction + DRAFT_RETRY,
       draftSchema,
       { ...draftContents, previousValidationError: error.message, previousDraft: draftResponse.text },
       format === "meme" ? 3_072 : 6_144,
     );
-    draft = parseDraft(retry.text);
+    draft = parseDraft(retry.text, false);
   }
 
   return {
     brief,
     draft,
-    provider: "google",
+    provider: draftProvider,
     model: lastModel,
     ...(lastModelVersion ? { modelVersion: lastModelVersion } : {}),
     usage,

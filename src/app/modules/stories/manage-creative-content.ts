@@ -479,6 +479,7 @@ async function createCreativeBriefAndDraftSingleShot({
         outputAspectRatio,
         characterRoster,
         acquisitionTaxonomy,
+        carouselWriterModel: configuration.carouselWriterModel,
         openAiApiKey: configuration.openAiApiKey,
         openAiEditorialModels: configuration.openAiEditorialModels,
         openAiAuditContext: { runId, topicId, storyId },
@@ -645,7 +646,12 @@ export async function createCreativeDraft(
     inputHash,
   });
 
-  let checkpointDraft: CreativeDraft | undefined;
+  // A regenerate (createNewVersion) reaches here with the cached row still in
+  // place, and (briefId, format, inputHash) is unique. Insert would violate
+  // that constraint, so the existing row is what the first checkpoint
+  // replaces — which is also what preserves its history and bumps its version,
+  // exactly as the legacy path does with `draftToReplace`.
+  let checkpointDraft: CreativeDraft | undefined = cached;
 
   // Regenerating a draft must not silently drop back onto the legacy
   // multi-tier pipeline while the flag is on: the editor clicks the same
@@ -670,6 +676,7 @@ export async function createCreativeDraft(
           outputAspectRatio,
           characterRoster,
           ...(acquisitionTaxonomy ? { acquisitionTaxonomy } : {}),
+          carouselWriterModel: configuration.carouselWriterModel,
           openAiApiKey: configuration.openAiApiKey,
           openAiEditorialModels: configuration.openAiEditorialModels,
           openAiAuditContext: { runId, topicId, storyId: brief.storyId },

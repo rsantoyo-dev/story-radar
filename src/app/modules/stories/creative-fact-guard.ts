@@ -618,6 +618,55 @@ export function deterministicFactQualityIssues(
   return deduplicateIssues(issues);
 }
 
+const NAME_CONNECTORS = new Set(["de", "du", "des", "la", "le", "les", "of", "the", "van", "von", "der", "da", "di", "del", "à", "au", "aux", "d", "l"]);
+const CAPITALIZED_TOKEN = /^\p{Lu}[\p{L}'’-]{2,}$/u;
+/** A token that reads as a name even at the start of a sentence: hyphenated, or carrying an accented letter. */
+const NAME_LIKE_TOKEN = /[-À-ɏ]/u;
+
+/**
+ * Multi-word proper names in a statement (people, venues, organizations)
+ * that its cited excerpt does not carry. Numbers and dates already had a
+ * guard; names did not, and a statement that added three artists' names to
+ * an excerpt naming none of them reached the writer as verified evidence.
+ *
+ * Single capitalized words are ignored on purpose: statements are often
+ * written in another language than the excerpt ("September", "Library"), and
+ * a sentence-initial word is capitalized regardless of what it is. A
+ * sentence-initial word joins a name only when it reads as one. A run is
+ * supported when any of its capitalized words appears in the excerpt, so a
+ * translated institution ("Georgette-Lepage Library" for "bibliothèque
+ * Georgette-Lepage") passes on its proper-name part.
+ */
+export function unsupportedFactNames(statement: string, excerpt: string): string[] {
+  const excerptWords = ` ${normalizeText(excerpt)} `;
+  const supported = (token: string) => {
+    const normalized = normalizeText(token);
+    return normalized.length >= 3 && excerptWords.includes(` ${normalized} `);
+  };
+  const runs: string[][] = [];
+  let run: string[] = [];
+  const closeRun = () => {
+    if (run.filter((token) => CAPITALIZED_TOKEN.test(token)).length >= 2) runs.push(run);
+    run = [];
+  };
+  let sentenceStart = true;
+  for (const raw of statement.split(/\s+/u).filter(Boolean)) {
+    const word = raw.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}'’-]+$/gu, "");
+    const isCapitalized = CAPITALIZED_TOKEN.test(word);
+    const isConnector = NAME_CONNECTORS.has(word.toLowerCase().replace(/[’']$/u, ""));
+    if (isCapitalized && (!sentenceStart || NAME_LIKE_TOKEN.test(word))) run.push(word);
+    else if (isConnector && run.length > 0) run.push(word);
+    else closeRun();
+    // A comma or clause end separates one name from the next ("A, B, and C").
+    if (/[,;:.!?]$/u.test(raw)) closeRun();
+    sentenceStart = /[.!?]$/u.test(raw);
+  }
+  closeRun();
+  return runs
+    .filter((tokens) => !tokens.some((token) => CAPITALIZED_TOKEN.test(token) && supported(token)))
+    .map((tokens) => tokens.join(" "));
+}
+
 export function deterministicBriefFactQualityIssues(
   brief: GeneratedCreativeBrief,
   sourceText?: string,
@@ -659,6 +708,14 @@ export function deterministicBriefFactQualityIssues(
           code: "FACT_NUMBER_NOT_IN_EVIDENCE",
           severity: "blocker",
           message: `${fact.id} uses ${unsupportedFactNumbers.join(", ")} outside its cited source excerpt.`,
+        });
+      }
+      const unsupportedNames = unsupportedFactNames(fact.statement, excerpt);
+      if (unsupportedNames.length > 0) {
+        issues.push({
+          code: "FACT_NAME_NOT_IN_EVIDENCE",
+          severity: "blocker",
+          message: `${fact.id} names ${unsupportedNames.join(", ")}, which its cited source excerpt does not.`,
         });
       }
       if (hasUnsupportedInference(fact.statement, excerpt)) {
@@ -729,7 +786,11 @@ export function repairBriefFactEvidence(
     const evidenceNumbers = new Set(extractBriefClaimNumbers(excerpt));
     const exceedsEvidence = extractBriefClaimNumbers(fact.statement).some(
       (number) => !evidenceNumbers.has(number),
-    ) || hasUnsupportedInference(fact.statement, excerpt);
+    ) || hasUnsupportedInference(fact.statement, excerpt)
+      // Same fallback for a name the excerpt does not carry: the excerpt is
+      // what the source proves, and a name the writer cannot verify must not
+      // reach it as established fact.
+      || unsupportedFactNames(fact.statement, excerpt).length > 0;
     if (!exceedsEvidence) return fact;
 
     repairedIds.push(fact.id);
@@ -751,7 +812,7 @@ export function repairBriefFactEvidence(
     keyFacts,
     contentSufficiency: brief.contentSufficiency === "insufficient" ? "insufficient" : "limited",
     riskFlags: [
-      `Source-evidence repair narrowed ${repairedIds.join(", ")} to their verified excerpts; unsupported dates, numbers, or interpretations were removed.`,
+      `Source-evidence repair narrowed ${repairedIds.join(", ")} to their verified excerpts; unsupported dates, numbers, names, or interpretations were removed.`,
       ...brief.riskFlags,
     ].slice(0, 5),
   };

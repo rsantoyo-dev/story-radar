@@ -804,6 +804,13 @@ export type GeneratedCreativeDraft = {
     verdict?: "accepted" | "correctable" | "blocked_source";
     findings?: CreativeQualityIssue[];
     stopReason?: string;
+    /**
+     * Whether a repair call was actually spent. The single-shot path does not
+     * populate qualityReview.repair (that field belongs to the legacy
+     * multi-tier loop), so without this the workspace cannot tell a repair that
+     * was never attempted from one that ran and was rejected.
+     */
+    repairAttempted?: boolean;
   };
   /**
    * Set when the independent auditor (or a deterministic grounding check)

@@ -862,6 +862,10 @@ function mapCreativeDraft(
     ...(generated.openingExplorationError ? { openingExplorationError: generated.openingExplorationError } : {}),
     ...(generated.characterPlan ? { characterPlan: generated.characterPlan } : {}),
     ...(generated.companion ? { companion: generated.companion } : {}),
+    // The single-shot run's own record: without it the workspace cannot tell
+    // a repair that ran from one that was never attempted.
+    ...(generated.singleShotRun ? { singleShotRun: generated.singleShotRun } : {}),
+    ...(generated.blockedSource ? { blockedSource: generated.blockedSource } : {}),
     ...(generated.qualityReview
       ? {
           qualityReview: {...generated.qualityReview,issues:generated.qualityReview.issues.map(issue =>

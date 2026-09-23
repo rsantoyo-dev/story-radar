@@ -244,6 +244,26 @@ test("sufficient source, accepted on the first audit: exactly 3 physical calls",
   assert.ok(checkpoints.some((c) => c.draft.singleShotRun?.stage === "generated"));
 });
 
+test("a configured carousel writer reaches the generator with its OpenAI credential", async () => {
+  const h = harness(
+    () => validResponse(),
+    (call) =>
+      call.schemaName === "creative_draft"
+        ? validResponse()
+        : { verdict: "accepted", scores: strongScores, issues: [], draft: undefined, hookSelection, carouselCraft },
+  );
+  const result = await h.run(options({ carouselWriterModel: "sol-test" }));
+  // The orchestrator destructures openAiApiKey out of the options it forwards;
+  // when it failed to put it back, the writer threw "requires an OpenAI API
+  // key" on every run with the knob set.
+  assert.equal(h.geminiCalls.length, 1, "only the brief stays on Gemini");
+  assert.equal(h.openAiCalls[0].schemaName, "creative_draft", "the script is written by the configured writer");
+  assert.equal(h.openAiCalls[0].model, "sol-test");
+  assert.equal(h.openAiCalls[1].schemaName, "creative_editorial_final_audit", "the audit still runs after it");
+  assert.equal(result.callsUsed, 3, "the writer's call counts against the same budget");
+  assert.equal(result.draft.singleShotRun?.verdict, "accepted");
+});
+
 test("one correctable defect: repaired and verified within the call budget", async () => {
   const h = harness(
     () => validResponse(),
@@ -254,19 +274,22 @@ test("one correctable defect: repaired and verified within the call budget", asy
           { unitOrder: 1, code: "WEAK_HEADLINE", severity: "blocker", message: "The cover headline is generic." },
         ], draft: undefined, hookSelection };
       }
-      if (index === 1) {
-        // repair call: no textual patches needed to satisfy this fixture; return an empty patch set
-        return { patches: [] };
-      }
       // verify: accepted now
       return { verdict: "accepted", scores: strongScores, issues: [], draft: undefined, hookSelection };
     },
   );
   const result = await h.run(options());
-  assert.equal(h.geminiCalls.length, 2, "brief and script");
-  assert.equal(h.openAiCalls.length, 3, "audit + repair + verify");
+  // The repair is a rewrite by the writer (Gemini here), not an OpenAI patch:
+  // it gets the reviewed script and the findings and writes the script again.
+  assert.equal(h.geminiCalls.length, 3, "brief, script, and the rewrite");
+  assert.equal(h.openAiCalls.length, 2, "audit + verify");
   assert.equal(result.callsUsed, 5);
-  assert.equal(h.openAiCalls[0].schemaName !== h.openAiCalls[1].schemaName, true, "the repair call uses its own schema, not the audit's");
+  const rewrite = h.geminiCalls[2] as { reviewFindings?: { code: string }[]; previousScript?: unknown; story?: { text?: string } };
+  // Deterministic findings ride along with the audit's, so the audit's is
+  // among them rather than necessarily first.
+  assert.ok(rewrite.reviewFindings?.some((f) => f.code === "WEAK_HEADLINE"), "the rewrite is handed the audit's findings");
+  assert.ok(rewrite.previousScript, "and the reviewed script to revise");
+  assert.equal(rewrite.story?.text, undefined, "and still never the article");
 });
 
 test("a warning-only review below the bar is repaired, not called accepted", async () => {
@@ -284,15 +307,14 @@ test("a warning-only review below the bar is repaired, not called accepted", asy
           { unitOrder: 1, code: "FRAMING_STRATEGY_NOT_FOLLOWED", severity: "warning", message: "The cover opens with the commodity, not the reader's cost." },
         ], draft: undefined, hookSelection, carouselCraft };
       }
-      if (index === 1) return { patches: [] };
       return { verdict: "accepted", scores: strongScores, issues: [], draft: undefined, hookSelection, carouselCraft };
     },
   );
   const result = await h.run(options());
-  assert.equal(h.openAiCalls.length, 3, "audit, then the repair those warnings called for, then verify");
-  assert.equal(h.openAiCalls[1].schemaName, "creative_single_shot_repair");
-  const sentToRepair = h.openAiCalls[1].contents as { blockers?: { code: string }[] };
-  const codes = sentToRepair.blockers?.map((b) => b.code) ?? [];
+  assert.equal(h.openAiCalls.length, 2, "audit, then the verify of the rewrite those warnings called for");
+  assert.equal(h.geminiCalls.length, 3, "the rewrite is the writer's third call");
+  const sentToRewrite = h.geminiCalls[2] as { reviewFindings?: { code: string }[] };
+  const codes = sentToRewrite.reviewFindings?.map((b) => b.code) ?? [];
   for (const code of ["REDUNDANT_CLOSING", "FRAMING_STRATEGY_NOT_FOLLOWED"]) {
     assert.ok(codes.includes(code), `the repair is asked to fix ${code}`);
   }
@@ -325,21 +347,23 @@ test("an unavailable audit checkpoints the generated script for recovery, withou
   assert.ok(!result.draft.qualityReview, "no unverified quality verdict is attached");
 });
 
-test("a repair that introduces a new blocker is rejected; the pre-repair audited draft stays current", async () => {
+test("a rewrite that fails validation is rejected; the pre-repair audited draft stays current", async () => {
   const h = harness(
-    () => validResponse(),
+    // The rewrite (the writer's third call) comes back with the wrong slide
+    // count, so it fails local validation; with one attempt it is rejected.
+    (attempt) => (attempt === 2 ? validResponse({ units: validUnits().slice(0, 2) }) : validResponse()),
     (call, index) => {
       if (index === 0) {
         return { verdict: "revised", scores: { ...strongScores, overall: 70 }, issues: [
           { unitOrder: 1, code: "WEAK_HEADLINE", severity: "blocker", message: "The cover headline is generic." },
         ], draft: undefined, hookSelection };
       }
-      // repair call: patch an invalid target field to force applyFinalCreativePatches to throw
-      return { patches: [{ unitOrder: 1, field: "factIds", text: "invented-fact" }] };
+      return { verdict: "accepted", scores: strongScores, issues: [], draft: undefined, hookSelection };
     },
   );
   const result = await h.run(options());
-  assert.equal(h.openAiCalls.length, 2, "audit + one rejected repair attempt; no verify is spent on a rejected patch");
+  assert.equal(h.geminiCalls.length, 3, "brief, script, and exactly one rejected rewrite — no second attempt");
+  assert.equal(h.openAiCalls.length, 1, "audit only; no verify is spent on a rejected rewrite");
   assert.equal(result.callsUsed, 4);
   assert.equal(result.draft.singleShotRun?.stage, "audited");
   assert.equal(result.draft.singleShotRun?.verdict, "correctable");

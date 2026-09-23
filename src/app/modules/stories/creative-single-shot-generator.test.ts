@@ -26,11 +26,19 @@ const singleShotCompiled = ts.transpileModule(
 ).outputText;
 
 type GeminiParams = { contents: string; config?: { maxOutputTokens?: number; systemInstruction?: string } };
-type GeminiExports = { CreativeContentResponseError: new (message: string) => Error };
+type GeminiExports = {
+  CreativeContentResponseError: new (message: string) => Error;
+  MAX_BRIEF_KEY_FACTS: number;
+  creativeBriefSchema: (taxonomy: unknown) => { properties: { keyFacts: { maxItems: number } } };
+  parseGroundedCreativeBrief: (
+    text: string, sourceText: string, conversionGoal: string, taxonomy: unknown, strict: boolean,
+  ) => { keyFacts: { id: string }[] };
+};
 type SingleShotExports = {
   generateSingleShotCreativeScript: (options: unknown) => Promise<{
-    brief: { keyFacts: { id: string }[] };
-    draft: { units: { visualNeed?: string }[] };
+    brief: { keyFacts: { id: string; statement?: string }[]; carouselPlan?: { slides: { allowedFactIds: string[] }[] } };
+    draft: { units: { visualNeed?: string; body?: string }[] };
+    provider: string;
     attempts: number;
     usage: { totalTokens: number };
   }>;
@@ -42,10 +50,16 @@ type SingleShotExports = {
 
 function harness(
   reply: (attempt: number, contents: Record<string, unknown>) => unknown,
-  accountBehaviour: { onKey?: (key: string) => void; failFirstAccountWith?: number } = {},
+  accountBehaviour: {
+    onKey?: (key: string) => void;
+    failFirstAccountWith?: number;
+    /** Set when the test configures carouselWriterModel; otherwise any OpenAI call is a failure. */
+    allowOpenAiWriter?: boolean;
+  } = {},
 ) {
   const calls: Record<string, unknown>[] = [];
   const instructions: string[] = [];
+  const openAiCalls: { model: string; contents: Record<string, unknown>; schema: Record<string, unknown> }[] = [];
   // One stable class identity: isTransientGeminiError does `instanceof ApiError`
   // against whatever this shim returns, so it must not be re-created per require.
   class ApiError extends Error {
@@ -84,7 +98,17 @@ function harness(
       };
     }
     if (id === "./openai-structured-response") {
-      return { generateOpenAiStructuredResponse: async () => { throw new Error("single-shot must not call OpenAI to generate"); } };
+      return {
+        generateOpenAiStructuredResponse: async (params: { model: string; contents: Record<string, unknown>; schema: Record<string, unknown> }) => {
+          if (!accountBehaviour.allowOpenAiWriter) throw new Error("single-shot must not call OpenAI to generate");
+          openAiCalls.push({ model: params.model, contents: params.contents, schema: params.schema });
+          return {
+            text: JSON.stringify(reply(calls.length + openAiCalls.length - 1, params.contents)),
+            provider: "openai", model: params.model,
+            usage: { promptTokens: 100, outputTokens: 200, thoughtsTokens: 0, totalTokens: 300 },
+          };
+        },
+      };
     }
     if (id === "groq-sdk") {
       return class { chat = { completions: { create: async () => { throw new Error("single-shot must not call Groq to generate"); } } }; };
@@ -109,10 +133,38 @@ function harness(
     generate: singleShotExports.generateSingleShotCreativeScript,
     schema: singleShotExports.testSingleShotSchema,
     calls,
+    openAiCalls,
     instructions,
     ResponseError: geminiExports.CreativeContentResponseError,
+    briefSchema: geminiExports.creativeBriefSchema,
+    maxFacts: geminiExports.MAX_BRIEF_KEY_FACTS,
+    parseBrief: geminiExports.parseGroundedCreativeBrief,
   };
 }
+
+/** N distinct, grounded facts (no numbers, distinct names) plus the source text that carries every excerpt. */
+function manyFacts(count: number) {
+  const artists = ["Alice Moreau", "Benoît Tremblay", "Camille Roy", "Daniel Gagnon", "Élise Fortin", "Félix Côté", "Gabrielle Lavoie", "Hugo Bouchard", "Inès Gauthier", "Julien Morin", "Karine Lévesque", "Louis Pelletier", "Marie Bergeron", "Nadia Simard", "Olivier Girard", "Pascale Nadeau"];
+  const facts = Array.from({ length: count }, (_, i) => {
+    const sentence = `${artists[i]} presents new work at the library gallery this season.`;
+    return { id: `fact-${i + 1}`, statement: sentence, sourceExcerpt: sentence, requiredQualifiers: [], attribution: "the city" };
+  });
+  return { facts, sourceText: facts.map((fact) => fact.sourceExcerpt).join(" ") };
+}
+
+/**
+ * A 57-word passage used verbatim as source excerpt, fact statement and slide
+ * body. It has to be fully grounded: the deterministic fact guard replaces an
+ * unsupported body with the fact's statement, which would hide the length
+ * check under test.
+ */
+const LONG_PASSAGE =
+  "The SPL says it is looking for people connected to counterfeit-bill transactions reported at several businesses over the past few weeks, and it is asking merchants to check the paper, the print quality, the raised ink and the transparent window before accepting a bill, and to refuse the bill and contact the police if something looks unusual.";
+const longStory = {
+  title: "Counterfeit bills", url: "https://example.com/laval", contentStatus: "full", contentSource: "article",
+  text: `${LONG_PASSAGE} Anyone with information should call 450 662-4636 or 911.`,
+};
+const longFact = { id: "fact-1", statement: LONG_PASSAGE, sourceExcerpt: LONG_PASSAGE, requiredQualifiers: [], attribution: "SPL" };
 
 const taxonomy = { taxonomyVersion: 17, lenses: [{ key: "general", enabled: true, isFallback: true }] };
 const sourceText =
@@ -247,6 +299,212 @@ test("the script call never receives the raw article text", async () => {
   assert.ok(briefStory?.text?.includes("counterfeit"), "the brief call extracts evidence, so it gets the article");
   assert.equal(scriptStory?.text, undefined, "the writer works from selected excerpts only (AGENTS.md §20)");
   assert.ok(!JSON.stringify(h.calls[1]).includes(sourceText), "no copy of the article reaches the writing call by another route");
+});
+
+test("a configured carousel writer writes the script while the brief stays on Gemini", async () => {
+  const h = harness(() => validResponse(), { allowOpenAiWriter: true });
+  const result = await h.generate(options({ carouselWriterModel: "gpt-5.6-sol", openAiApiKey: "openai-key" }));
+  assert.equal(h.calls.length, 1, "only the brief stays on Gemini");
+  assert.equal(h.openAiCalls.length, 1, "the script moves to the configured writer");
+  assert.equal(h.openAiCalls[0].model, "gpt-5.6-sol");
+  assert.equal(result.provider, "openai", "the result names who actually wrote the script");
+  assert.equal(result.attempts, 2, "both providers' calls count against the same budget");
+  assert.equal(result.usage.totalTokens, 600, "both calls are billed");
+  assert.equal(result.draft.units.length, 3);
+  // OpenAI strict mode rejects a schema with optional properties, so the
+  // Gemini schema has to go through strictCreativeSchema on the way out.
+  const schema = h.openAiCalls[0].schema as { additionalProperties?: boolean; required?: string[]; properties?: Record<string, unknown> };
+  assert.equal(schema.additionalProperties, false);
+  assert.deepEqual([...(schema.required ?? [])], Object.keys(schema.properties ?? {}));
+});
+
+test("the configured writer is held to the same no-article-text rule as Gemini", async () => {
+  const h = harness(() => validResponse(), { allowOpenAiWriter: true });
+  await h.generate(options({ carouselWriterModel: "gpt-5.6-sol", openAiApiKey: "openai-key" }));
+  const contents = h.openAiCalls[0].contents as { story?: { text?: string }; creativeBrief?: { keyFacts: unknown[] } };
+  assert.equal(contents.story?.text, undefined, "AGENTS.md §20 holds on both writer routes");
+  assert.ok(!JSON.stringify(contents).includes(sourceText));
+  assert.ok(contents.creativeBrief?.keyFacts.length, "it writes from the brief's selected evidence");
+});
+
+test("a configured writer without an OpenAI key fails before spending anything", async () => {
+  const h = harness(() => validResponse());
+  await assert.rejects(
+    () => h.generate(options({ carouselWriterModel: "gpt-5.6-sol" })),
+    (error: Error) => error instanceof h.ResponseError && /OpenAI API key/.test(error.message),
+  );
+  assert.equal(h.calls.length, 0, "the misconfiguration surfaces before the brief call is billed");
+});
+
+test("formats other than carousel ignore the carousel writer", async () => {
+  const h = harness(() => validResponse());
+  const result = await h.generate(options({ format: "sequence", carouselWriterModel: "gpt-5.6-sol", openAiApiKey: "openai-key" }));
+  assert.equal(h.calls.length, 2, "other formats stay entirely on Gemini, as in the legacy pipeline");
+  assert.equal(h.openAiCalls.length, 0);
+  assert.equal(result.provider, "google");
+});
+
+test("the brief may carry as many facts as the story warrants, and the instruction says so", () => {
+  const h = harness(() => ({}));
+  // 6 was a hard ceiling: the writer never sees the article, so a 13-item
+  // programme capped at 6 facts could never pay off "which one to start with?".
+  // The upper end is set by Gemini's schema validator, not by us — see the
+  // constant's comment and scripts/creative-schema-check.mts before raising it.
+  assert.ok(h.maxFacts >= 12, `expected a generous ceiling, got ${h.maxFacts}`);
+  assert.equal(h.briefSchema(taxonomy).properties.keyFacts.maxItems, h.maxFacts);
+});
+
+test("the parser accepts every fact count the schema allows, and rejects one past it", () => {
+  const h = harness(() => ({}));
+  // The schema ceiling was raised while the parser kept a hardcoded 6, so a
+  // response the provider was allowed to produce was thrown away as "invalid
+  // keyFacts" — twice, live, at the cost of the call and its retry.
+  const atCeiling = manyFacts(h.maxFacts);
+  const parsed = h.parseBrief(
+    JSON.stringify(validResponse({ keyFacts: atCeiling.facts })), atCeiling.sourceText, "followers", taxonomy, false,
+  );
+  assert.equal(parsed.keyFacts.length, h.maxFacts);
+  const pastCeiling = manyFacts(h.maxFacts + 1);
+  assert.throws(
+    () => h.parseBrief(JSON.stringify(validResponse({ keyFacts: pastCeiling.facts })), pastCeiling.sourceText, "followers", taxonomy, false),
+    /keyFacts/,
+  );
+});
+
+/**
+ * Three grounded facts where the practical one (whom to call) is extracted
+ * but, in the first plan, seated on no slide before the closing — the shape a
+ * live listings story took: "free, schedules at …" left unused while the
+ * ending repeated a middle slide.
+ */
+const threeFactSource = `${sourceText} The service reminds merchants to check each bill.`;
+const threeFactStory = { title: "Counterfeit bills", url: "https://example.com/laval", text: threeFactSource, contentStatus: "full", contentSource: "article" };
+const threeFacts = [
+  { id: "fact-1", statement: "The SPL is looking for people connected to counterfeit-bill transactions.", sourceExcerpt: "The Service de police de Laval says it is looking for people connected to counterfeit-bill transactions.", requiredQualifiers: [], attribution: "SPL" },
+  { id: "fact-2", statement: "Anyone with information should call 450 662-4636 or 911.", sourceExcerpt: "Anyone with information should call 450 662-4636 or 911.", requiredQualifiers: [], attribution: "SPL" },
+  { id: "fact-3", statement: "The service reminds merchants to check each bill.", sourceExcerpt: "The service reminds merchants to check each bill.", requiredQualifiers: [], attribution: "SPL" },
+];
+function unseatedFactResponse(seatFactTwo = false) {
+  return validResponse({
+    keyFacts: threeFacts,
+    carouselPlan: {
+      slideCount: 3, rationale: "Appeal, what to check, what to do.",
+      slides: [
+        { editorialGoal: "hook", viewerQuestion: "What is the SPL looking into?", allowedFactIds: ["fact-1"] },
+        { editorialGoal: "explain", viewerQuestion: "What should you check before accepting cash?", allowedFactIds: seatFactTwo ? ["fact-3", "fact-2"] : ["fact-3"] },
+        { editorialGoal: "conclude", viewerQuestion: "Who should you call?", allowedFactIds: ["fact-1", "fact-3"] },
+      ],
+    },
+    units: validUnits([
+      { factIds: ["fact-1"] },
+      { factIds: ["fact-3"], body: "The service reminds merchants to check each bill." },
+      { factIds: ["fact-1", "fact-3"], body: "The service reminds merchants to check each bill." },
+    ]),
+  });
+}
+
+test("a brief that seats a fact on no slide before the closing is sent back once with the fact named", async () => {
+  const h = harness((attempt) => (attempt === 0 ? unseatedFactResponse() : unseatedFactResponse(true)));
+  const result = await h.generate(options({ story: threeFactStory }));
+  assert.equal(h.calls.length, 3, "brief, one brief rewrite, then the script");
+  const retry = h.calls[1] as { previousValidationError?: string };
+  assert.match(retry.previousValidationError ?? "", /fact-2/, "the rewrite is told which fact has no seat");
+  assert.equal(result.brief.keyFacts.length, 3);
+  assert.ok(result.brief.carouselPlan?.slides[1]?.allowedFactIds.includes("fact-2"), "the rewritten plan seats it before the closing");
+});
+
+test("a fact still unseated after the rewrite is accepted, not fatal", async () => {
+  const h = harness(() => unseatedFactResponse());
+  const result = await h.generate(options({ story: threeFactStory }));
+  assert.equal(h.calls.length, 3, "one rewrite, then generation proceeds with the plan as returned");
+  assert.equal(result.brief.keyFacts.length, 3, "the evidence is kept for the independent review to weigh");
+});
+
+/** The fixture's fact with a person added to the statement that its excerpt never names. */
+function namedFactResponse(leak: boolean) {
+  const fact = (validResponse().keyFacts as Record<string, unknown>[])[0]!;
+  return validResponse({
+    keyFacts: [{
+      ...fact,
+      ...(leak ? { statement: "The SPL is looking for people connected to counterfeit-bill transactions, according to Chief Pierre Brochet." } : {}),
+    }],
+  });
+}
+
+test("a fact whose statement names someone its excerpt does not is sent back once with the name", async () => {
+  const h = harness((attempt) => namedFactResponse(attempt === 0));
+  const result = await h.generate(options());
+  assert.equal(h.calls.length, 3, "brief, one brief rewrite, then the script");
+  const retry = h.calls[1] as { previousValidationError?: string };
+  assert.match(retry.previousValidationError ?? "", /Pierre Brochet/, "the rewrite is told which name lacks evidence");
+  assert.match(result.brief.keyFacts[0]?.statement ?? "", /^The SPL is looking/, "the corrected statement is kept whole");
+});
+
+test("a name still unsupported after the rewrite is cut back to the excerpt and never reaches the writer", async () => {
+  const h = harness(() => namedFactResponse(true));
+  const result = await h.generate(options());
+  assert.equal(h.calls.length, 3, "one rewrite, then generation proceeds");
+  assert.ok(!/Brochet/.test(result.brief.keyFacts[0]?.statement ?? ""), "the ungrounded name is gone from the fact");
+  assert.ok(!JSON.stringify(h.calls[2]).includes("Brochet"), "and it is absent from the script call");
+});
+
+test("the script call states the framing the brief applied, in the writer's own terms", async () => {
+  const h = harness(() => validResponse());
+  await h.generate(options({
+    profile: { language: "English", conversionGoal: "followers", framingStrategy: "reader-consequence", brandPersonality: [], brandOverlay: { enabled: false } },
+  }));
+  // The brief call always carried a framing instruction; the script call only
+  // had the strategy as one JSON field, and a live reader-consequence cover
+  // led with a closure's duration instead of the reader's trip.
+  assert.ok(h.instructions[1]?.includes("FRAMING FOR THE SCRIPT: reader-consequence"));
+  assert.ok(!h.instructions[1]?.includes("REVISION:"), "a first draft is not a revision");
+});
+
+test("a revision rewrites the script against the same brief with the review in hand, in exactly one call", async () => {
+  const h = harness(() => validResponse());
+  const first = await h.generate(options());
+  const findings = [{ code: "WEAK_HEADLINE", severity: "blocker", message: "The cover headline is generic.", unitOrder: 1 }];
+  const revised = await h.generate(options({
+    existingBrief: first.brief, maxAttempts: 1,
+    revision: { previousDraft: first.draft, findings, scores: { overall: 70 }, thresholds: { overall: 85 } },
+  }));
+  assert.equal(h.calls.length, 3, "brief, script, and one rewrite — no brief call for the revision");
+  assert.equal(revised.attempts, 1);
+  const rewrite = h.calls[2] as { previousScript?: { units: unknown[] }; reviewFindings?: { code: string }[]; slidesToRevise?: number[]; story?: { text?: string } };
+  assert.equal(rewrite.previousScript?.units.length, 3, "the reviewed script goes with it");
+  assert.equal(rewrite.reviewFindings?.[0]?.code, "WEAK_HEADLINE");
+  assert.deepEqual([...(rewrite.slidesToRevise ?? [])], [1]);
+  assert.equal(rewrite.story?.text, undefined, "a revision never sees the article either");
+  assert.ok(h.instructions[2]?.includes("REVISION:"));
+});
+
+test("the brief instruction asks for every load-bearing fact, not a fixed handful", async () => {
+  const h = harness(() => validResponse());
+  await h.generate(options());
+  const briefInstruction = h.instructions[0] ?? "";
+  assert.ok(!/\b1-6\b/.test(briefInstruction), "the old '1-6' guidance must be gone");
+  assert.ok(briefInstruction.includes(`up to ${h.maxFacts}`));
+  assert.ok(/one fact per item/i.test(briefInstruction), "enumerated lists must be extracted item by item");
+});
+
+test("an over-length slide body is rewritten once locally, before the audit ever sees it", async () => {
+  const h = harness((attempt) =>
+    attempt === 1
+      ? validResponse({ keyFacts: [longFact], units: validUnits([{}, { body: LONG_PASSAGE }]) })
+      : validResponse({ keyFacts: [longFact] }),
+  );
+  const result = await h.generate(options({ story: longStory }));
+  assert.equal(h.calls.length, 3, "brief, script, and exactly one rewrite");
+  const retry = h.calls[2] as { previousValidationError?: string };
+  assert.match(retry.previousValidationError ?? "", /45/, "the rewrite is told the limit and the slide");
+  assert.ok(result.draft.units[1].body!.split(/\s+/).length <= 45, "the rewrite is the draft that goes forward");
+});
+
+test("an over-length body that survives the rewrite is accepted, not fatal", async () => {
+  const h = harness(() => validResponse({ keyFacts: [longFact], units: validUnits([{}, { body: LONG_PASSAGE }]) }));
+  const result = await h.generate(options({ story: longStory }));
+  assert.equal(h.calls.length, 3, "one rewrite, then the audit decides");
+  assert.ok(result.draft.units[1].body!.split(/\s+/).length > 45, "the stubborn copy reaches the independent review instead of sinking the run");
 });
 
 test("the script call carries the brief's full projection, including evidence reach", async () => {
