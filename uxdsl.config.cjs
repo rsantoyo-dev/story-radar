@@ -5,7 +5,7 @@ const path = require("node:path");
 /**
  * Single orchestration file for all five UXDSL entries. Neither `theme` nor
  * `breakpoints` is declared here — both are deliberately absent:
- * uxdsl-cli 0.5.0-beta.5 auto-discovers `uxdsl.theme.config.cjs` next to
+ * uxdsl-cli 0.5.0-beta.6 auto-discovers `uxdsl.theme.config.cjs` next to
  * this file and shares its `theme` (which nests `breakpoints` inside it)
  * across every build below. Setting `breakpoints` at this top level would
  * shadow the theme file's entirely rather than merge with it — see

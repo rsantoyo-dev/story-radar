@@ -110,37 +110,37 @@ test("brand palette roles theme the topic UI while keeping brand hues", () => {
   // The primary role still reads as teal, the secondary still as coral.
   assert.ok(
     hueGap(
-      hexToOklch(style["--ds__palette__primary-main"]).h,
+      hexToOklch(style["--uxdsl__palette__primary-main"]).h,
       hexToOklch("#2F777B").h,
     ) < 18,
   );
   assert.ok(
     hueGap(
-      hexToOklch(style["--ds__palette__secondary-main"]).h,
+      hexToOklch(style["--uxdsl__palette__secondary-main"]).h,
       hexToOklch("#EF644B").h,
     ) < 22,
   );
 
   // Working surface stays near-white regardless of the cream seed's warmth.
-  assert.ok(hexToOklch(style["--ds__palette__surface-main"]).L > 0.9);
+  assert.ok(hexToOklch(style["--uxdsl__palette__surface-main"]).L > 0.9);
 
   // Contrast floors the engine promises.
   assert.ok(
     contrastRatio(
-      style["--ds__palette__surface-contrast"],
-      style["--ds__palette__surface-main"],
+      style["--uxdsl__palette__surface-contrast"],
+      style["--uxdsl__palette__surface-main"],
     ) >= 7,
   );
   assert.ok(
     contrastRatio(
-      style["--ds__palette__primary-contrast"],
-      style["--ds__palette__primary-main"],
+      style["--uxdsl__palette__primary-contrast"],
+      style["--uxdsl__palette__primary-main"],
     ) >= 4.5,
   );
   assert.ok(
     contrastRatio(
-      style["--ds__palette__dark-contrast"],
-      style["--ds__palette__dark-main"],
+      style["--uxdsl__palette__dark-contrast"],
+      style["--uxdsl__palette__dark-main"],
     ) >= 4.5,
   );
 });
@@ -163,21 +163,21 @@ test("carousel colours seed sensible UI roles for legacy palettes", () => {
   // hue drives secondary.
   assert.ok(
     hueGap(
-      hexToOklch(style["--ds__palette__primary-main"]).h,
+      hexToOklch(style["--uxdsl__palette__primary-main"]).h,
       hexToOklch("#102A43").h,
     ) < 20,
   );
   assert.ok(
     hueGap(
-      hexToOklch(style["--ds__palette__secondary-main"]).h,
+      hexToOklch(style["--uxdsl__palette__secondary-main"]).h,
       hexToOklch("#E8A83E").h,
     ) < 20,
   );
-  assert.ok(hexToOklch(style["--ds__palette__surface-main"]).L > 0.9);
+  assert.ok(hexToOklch(style["--uxdsl__palette__surface-main"]).L > 0.9);
   assert.ok(
     contrastRatio(
-      style["--ds__palette__surface-contrast"],
-      style["--ds__palette__surface-main"],
+      style["--uxdsl__palette__surface-contrast"],
+      style["--uxdsl__palette__surface-main"],
     ) >= 7,
   );
 });

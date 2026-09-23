@@ -5,7 +5,7 @@ Read this before creating or modifying UI styles. Where this guide and prior
 UXDSL knowledge disagree, the installed package wins: verify against
 `node_modules/postcss-uxdsl/src/`.
 
-**Installed version: `0.5.0-beta.5`** (`postcss-uxdsl`, `uxdsl-cli`,
+**Installed version: `0.5.0-beta.6`** (`postcss-uxdsl`, `uxdsl-cli`,
 `uxdsl-core`, `vite-plugin-uxdsl`, pinned exactly because the beta's grammar is
 not compatible with `0.3.x`).
 

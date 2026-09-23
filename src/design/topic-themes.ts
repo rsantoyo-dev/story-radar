@@ -76,12 +76,21 @@ export function getTopicTheme(themeKey?: string): TopicTheme {
 }
 
 type TopicThemeStyle = CSSProperties &
-  Record<`--ds__palette__${PaletteRole}-${PaletteTone}`, string>;
+  Record<`--uxdsl__palette__${PaletteRole}-${PaletteTone}`, string>;
 
 /**
  * UXDSL resolves palette() to CSS variables. Overriding those tokens on the
  * dashboard root switches only the selected topic's palette — either a
  * predefined theme or one derived from the topic's brand colours.
+ *
+ * The prefix is `--uxdsl__…`, hardcoded by postcss-uxdsl itself (verified
+ * against `node_modules/postcss-uxdsl/dist/foundations.js`, not configurable
+ * project-side). This module originally wrote `--ds__…`: a different, older
+ * prefix convention that never matched what any installed version actually
+ * compiled `palette()` into, so every override here was a no-op from this
+ * module's first commit — nothing in the compiled CSS ever read that
+ * variable. Silent because the existing tests check the derived color
+ * values, never the wire-format key a real stylesheet would need.
  */
 export function topicThemeStyle(
   themeKey?: string,
@@ -95,7 +104,7 @@ export function topicThemeStyle(
 
   for (const role of PALETTE_ROLES) {
     for (const tone of PALETTE_TONES) {
-      style[`--ds__palette__${role}-${tone}`] = palette[role][tone];
+      style[`--uxdsl__palette__${role}-${tone}`] = palette[role][tone];
     }
   }
 
@@ -165,12 +174,18 @@ const ROLE_SPEC: Record<
     maxChroma: 0.05,
     contrastTarget: 4.5,
   },
-  // Sidebar / nav shell.
+  // Sidebar / nav shell — the most visually prominent, always-on-screen
+  // surface, so the one place a subtle brand hue matters most for the app
+  // to actually read as "this Topic". Raised from 0.045: irrelevant on its
+  // own, since toneScale takes Math.min(seed.C, maxChroma) and the seed
+  // below (SHELL_HUE_CHROMA) was capped at 0.03 — every Topic's sidebar
+  // measured at C≈0.03 regardless of brand hue, is what actually needed
+  // raising. 0.045 was never the real limit.
   dark: {
     mainRange: [0.14, 0.22],
     lightL: 0.32,
     darkL: 0.12,
-    maxChroma: 0.045,
+    maxChroma: 0.1,
     contrastTarget: 4.5,
   },
   // Borders, dividers, muted fills.
@@ -246,6 +261,42 @@ function hasMeaningfulBrandAdjustment(seed: string, derived: string): boolean {
   return Math.abs(output.L - source.L) > 0.06 || Math.abs(output.C - source.C) > 0.025;
 }
 
+/**
+ * Chroma of the hue-only seed handed to the sidebar (`dark`) and border
+ * (`neutral`) roles. Originally fixed at 0.03, which made ROLE_SPEC.dark's
+ * own maxChroma irrelevant (toneScale takes Math.min(seed.C, maxChroma), so
+ * every Topic's sidebar measured C≈0.03 regardless of brand hue or of that
+ * ceiling). Raised together with ROLE_SPEC.dark.maxChroma so the sidebar
+ * actually carries the brand hue; `neutral`'s own low ceiling (0.012) keeps
+ * borders quiet either way.
+ */
+const SHELL_HUE_CHROMA = 0.1;
+
+// Below this OKLCH chroma a color reads as a near-neutral background/paper
+// tone (a cream, a near-white, a near-black), not a brand hue — its own hue
+// angle is close to meaningless (small L/C changes swing it wildly). Measured
+// against this project's real Topics: carousel background creams sit at
+// C≈0.017; every genuine brand color observed, including dark navys, sits at
+// C≥0.055. 0.03 sits cleanly between the two with margin either side.
+const MIN_SEED_CHROMA = 0.03;
+
+function hasDistinctHue(hex: string): boolean {
+  return hexToOklch(hex).C >= MIN_SEED_CHROMA;
+}
+
+/** The palette entry with the strongest hue — a fallback for when the caller's
+ * suggested seed (typically a carousel chrome color) turns out to be a
+ * near-neutral background tone rather than a real brand color. */
+function mostSaturated(candidates: readonly string[]): string | undefined {
+  return candidates.reduce<{ hex: string; chroma: number } | undefined>(
+    (best, hex) => {
+      const chroma = hexToOklch(hex).C;
+      return !best || chroma > best.chroma ? { hex, chroma } : best;
+    },
+    undefined,
+  )?.hex;
+}
+
 function pickSeeds(
   colors: readonly { color: string; role?: string }[],
   chrome: BrandPaletteThemeInput["carouselChrome"],
@@ -258,10 +309,22 @@ function pickSeeds(
   };
   const byRole = (role: string): string | undefined =>
     colors.find((entry) => entry.role === role)?.color.toUpperCase();
+  // Only trust a chrome color as a brand seed when it actually carries a
+  // hue: a Topic whose carousel background is a pale cream (chosen for
+  // legibility, not as a brand statement) was picking that cream as its
+  // whole UI's primary color, then getting a washed-out result once
+  // toneScale clamped its lightness back into a usable button range —
+  // while a genuinely distinctive color already sat unused elsewhere in the
+  // same brand palette.
+  const distinctChromeSeed = (value: string): string | undefined => {
+    const seed = inPalette(value);
+    return seed && hasDistinctHue(seed) ? seed : undefined;
+  };
 
   const primary =
     byRole("primary") ??
-    inPalette(chrome.backgroundColor) ??
+    distinctChromeSeed(chrome.backgroundColor) ??
+    mostSaturated(normalized) ??
     normalized[0]!;
 
   const distinctSecondary = normalized.find(
@@ -271,7 +334,7 @@ function pickSeeds(
   );
   const secondary =
     byRole("secondary") ??
-    inPalette(chrome.accentColor) ??
+    distinctChromeSeed(chrome.accentColor) ??
     distinctSecondary ??
     // Nothing distinct on hand: swing to the complementary hue of primary.
     oklchToHex({ ...hexToOklch(primary), h: (hexToOklch(primary).h + 180) % 360 });
@@ -319,7 +382,10 @@ export function deriveBrandUiPalette(
     );
   }
 
-  const primaryHueHex = oklchToHex({ L: 0.5, C: 0.03, h: primarySeed.h });
+  // Feeds both `dark` (sidebar) and `neutral` (borders). `neutral`'s own
+  // maxChroma (0.012) still clamps it quiet regardless of this value —
+  // only `dark`'s higher ceiling (0.1) actually benefits from raising it.
+  const primaryHueHex = oklchToHex({ L: 0.5, C: SHELL_HUE_CHROMA, h: primarySeed.h });
   const surfaceSeedHex = oklchToHex({
     L: 0.99,
     C: 0.01,

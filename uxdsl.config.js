@@ -21,75 +21,6 @@ const spacing = {
   16: "15.375rem",
 };
 
-const palette = {
-  primary: {
-    main: "#246b4a",
-    light: "#4a936b",
-    dark: "#17422f",
-    contrast: "#ffffff",
-  },
-  secondary: {
-    main: "#c25b3f",
-    light: "#dc8068",
-    dark: "#7f3827",
-    contrast: "#ffffff",
-  },
-  surface: {
-    main: "#ffffff",
-    light: "#f7faf8",
-    dark: "#dbe5df",
-    contrast: "#18392d",
-  },
-  tertiary: {
-    main: "#7b9086",
-    light: "#aabbb3",
-    dark: "#50665c",
-    contrast: "#ffffff",
-  },
-  success: {
-    main: "#2f855a",
-    light: "#68b68b",
-    dark: "#1f5b3e",
-    contrast: "#ffffff",
-  },
-  info: {
-    main: "#28728a",
-    light: "#65a9bb",
-    dark: "#1b4d5d",
-    contrast: "#ffffff",
-  },
-  warning: {
-    main: "#b7791f",
-    light: "#d9a441",
-    dark: "#744b13",
-    contrast: "#ffffff",
-  },
-  error: {
-    main: "#b84935",
-    light: "#d87862",
-    dark: "#762e22",
-    contrast: "#ffffff",
-  },
-  dark: {
-    main: "#18392d",
-    light: "#315746",
-    dark: "#0d2119",
-    contrast: "#ffffff",
-  },
-  neutral: {
-    main: "#6b8077",
-    light: "#aabbb3",
-    dark: "#40564c",
-    contrast: "#ffffff",
-  },
-  light: {
-    main: "#f1f6f3",
-    light: "#ffffff",
-    dark: "#dbe5df",
-    contrast: "#18392d",
-  },
-};
-
 module.exports = {
   theme: {
     // Lives inside `theme`, not as a sibling: the plugin only reads
@@ -109,8 +40,26 @@ module.exports = {
         "ui-2": "var(--font-geist-sans, Arial, sans-serif)",
         code: "var(--font-geist-mono, ui-monospace, monospace)",
       },
+      // postcss-uxdsl 0.5.0-beta.6 made DEFAULT_THEME the full base theme,
+      // which now ships `fonts.google: ["Inter:wght@400;500;600;700"]` unless
+      // a project's own theme sets `fonts.google` itself (see that package's
+      // CHANGELOG, "0.5.0-beta.6" / MIG-B6-16). This app only uses the Geist
+      // fonts Next's own `next/font` already loads locally (the `ui`/`code`
+      // vars above; `externalTokens` in uxdsl.theme.config.cjs). Left unset,
+      // the default silently emitted an unrequested
+      // `@import url('https://fonts.googleapis.com/css2?family=Inter...')`
+      // into uxdsl.css, after the `:root` block — not just an unwanted
+      // network fetch, but a real CSS spec violation (`@import` must precede
+      // every other rule). An explicit empty array replaces the default's
+      // array whole (deepMergeTheme's array semantics; arrays are never
+      // merged/concatenated) and emits no import at all.
+      google: [],
     },
-    palette,
+    // No custom palette: we are the only people using this app right now, so
+    // it stays on postcss-uxdsl's own stock palette (and stock light/dark
+    // modes, which are designed to match each other) instead of our own
+    // brand colors. Bring the green/terracotta palette back — see git
+    // history for its last values — once this UI has real visitors.
     spacing,
     typography_details: {
       h1: { fontSize: "clamp(var(--uxdsl__space__7), 4vw, var(--uxdsl__space__10))" },
