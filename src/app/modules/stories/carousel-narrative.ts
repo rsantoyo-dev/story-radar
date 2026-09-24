@@ -473,6 +473,15 @@ export function templatePlanQuestions(
   );
 }
 
+// Spanish questions often front a preposition before the question word
+// itself ("¿A quiénes...?", "¿De qué...?"); a bare word-list anchor missed
+// those, so a two-question slide phrased that way silently skipped repair
+// and reached hard validation instead of being narrowed to one job.
+const QUESTION_PREPOSITIONS = "a|de|en|con|para|por|sobre|to|for";
+const QUESTION_WORDS =
+  "what|why|how|when|where|which|who|whom|qué|por\\s+qué|cómo|cuándo|dónde|cuál|cuáles|quién|quiénes";
+const QUESTION_WORD_WITH_PREPOSITION = `(?:(?:${QUESTION_PREPOSITIONS})\\s+)?(?:${QUESTION_WORDS})`;
+
 /** Narrow internal planning questions only; never rewrite visible copy or evidence.
  * Keep the first complete question as the primary job. The normal factual and
  * editorial gates still decide whether that job is useful and supported.
@@ -482,8 +491,21 @@ export function repairCarouselPlanQuestions(plan: CarouselPlan): CarouselPlan {
   const slides = plan.slides.map((slide, index) => {
     if (slide.editorialGoal === "hook" || questionIntentCount(slide.viewerQuestion) <= 1) return slide;
     const original = slide.viewerQuestion;
-    const first = original.split(/\?\s*|(?:,?\s+\b(?:and|or|also|y|e|o|además)\s+|[;,]\s*)(?=(?:what|why|how|when|where|which|who|qué|por\s+qué|cómo|cuándo|dónde|cuál|quién)(?:\s|[¿?]))/iu)[0]?.trim().replace(/[,;:]$/u, "");
-    if (!first || !/^[¿\s]*(?:what|why|how|when|where|which|who|qué|por\s+qué|cómo|cuándo|dónde|cuál|quién)\s/iu.test(first) || first.split(/\s/u).length < 4) return slide;
+    const first = original
+      .split(
+        new RegExp(
+          `\\?\\s*|(?:,?\\s+\\b(?:and|or|also|y|e|o|además)\\s+|[;,]\\s*)(?=${QUESTION_WORD_WITH_PREPOSITION}(?:\\s|[¿?]))`,
+          "iu",
+        ),
+      )[0]
+      ?.trim()
+      .replace(/[,;:]$/u, "");
+    if (
+      !first ||
+      !new RegExp(`^[¿\\s]*${QUESTION_WORD_WITH_PREPOSITION}\\s`, "iu").test(first) ||
+      first.split(/\s/u).length < 4
+    )
+      return slide;
     const replacement = `${first.replace(/[,;:](?=[”"’']$)/u, "")}?`;
     if (questionIntentCount(replacement) !== 1) return slide;
     repairs.push({ slide: index + 1, original, replacement });
@@ -1525,7 +1547,10 @@ function questionIntentCount(value: string): number {
   // how files are shared?" is one question. Count explicit questions and
   // coordinated question clauses instead of every interrogative word.
   const coordinated = value.match(
-    /(?:\b(?:and|or|also|y|e|o|además)\s+|[;,]\s*)(?:what|why|how|when|where|which|who|qué|por\s+qué|cómo|cuándo|dónde|cuál|quién)(?=\s|[¿?])/giu,
+    new RegExp(
+      `(?:\\b(?:and|or|also|y|e|o|además)\\s+|[;,]\\s*)${QUESTION_WORD_WITH_PREPOSITION}(?=\\s|[¿?])`,
+      "giu",
+    ),
   );
   return Math.max(value.match(/\?+/gu)?.length ?? 0, 1 + (coordinated?.length ?? 0));
 }

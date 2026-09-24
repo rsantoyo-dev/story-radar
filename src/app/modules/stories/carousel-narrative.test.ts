@@ -32,6 +32,20 @@ test("compound plan questions are narrowed before validation without changing fa
   assert.equal(validateCarouselPlan(repaired, new Set(["fact-1", "fact-2"])).length, 0);
 });
 
+test("narrows a Spanish question whose second clause fronts a preposition before the question word", () => {
+  // Live production failure: "¿A quiénes involucra esta nueva autenticación
+  // y cuál es su objetivo de seguridad?" hard-failed carouselPlan validation
+  // because the repair's start-of-clause check only recognized a bare
+  // question word ("quién"), not one preceded by a preposition ("a quiénes"),
+  // so the whole brief generation aborted with no fallback.
+  const original = "¿A quiénes involucra esta nueva autenticación y cuál es su objetivo de seguridad?";
+  const plan: CarouselPlan = { slideCount: 3, rationale: "Explain who is affected", slides: [slide("hook", ["fact-1"]), { ...slide("explain", ["fact-2"]), viewerQuestion: original }, slide("conclude", ["fact-1"])] };
+  const repaired = repairCarouselPlanQuestions(plan);
+  assert.equal(repaired.slides[1].viewerQuestion, "¿A quiénes involucra esta nueva autenticación?");
+  assert.equal(repaired.questionRepairs?.[0].original, original);
+  assert.equal(validateCarouselPlan(repaired, new Set(["fact-1", "fact-2"])).length, 0);
+});
+
 test("plan question validation distinguishes embedded questions from separate editorial jobs", () => {
   for (const [question, multiple] of [
     ["What changed in how files are shared?", false],
