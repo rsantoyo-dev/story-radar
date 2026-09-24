@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 
-async function compose(mode = "illustration-editorial", photoTest = false, includeUnresolvedGeoUnit = false, mapMode?: "ai" | "local") {
+async function compose(mode = "illustration-editorial", photoTest = false, includeUnresolvedGeoUnit = false, mapMode?: "ai" | "local", includeUnresolvedRealPhotoUnit = false, includeIdentityPhotoUnit = false) {
   const source = readFileSync("src/app/modules/stories/manage-creative-assets.ts", "utf8");
   const start = source.indexOf("async function composeDraftPlaceVisuals(");
   const end = source.indexOf("async function recomposePlaceAsset(", start);
@@ -14,13 +14,27 @@ async function compose(mode = "illustration-editorial", photoTest = false, inclu
   let assets: Record<string, unknown>[] = [];
   const photo = Buffer.from("verified-photo");
   const map = Buffer.from("verified-map");
-  const prepared = new Map<number, unknown>([[3, { bytes: photo, evidence: { representation: "photo", place: { name: "Museum" }, photo: { author: "Yource", license: "CC BY-SA 4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0/" } } }]]);
+  const identityPhotoBytes = Buffer.from("commons-photo");
+  const storedPhotos: string[] = [];
+  const prepared = new Map<number, unknown>([[3, { bytes: photo, evidence: { representation: "photo", reasons: ["Archive photograph from an eligible source; not evidence of the event."], place: { name: "Museum" }, photo: { author: "Yource", license: "CC BY-SA 4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0/" } } }]]);
   if (mapMode) prepared.set(2, { bytes: map, evidence: { representation: "map", adapter: "quebec511", sha256: "map-sha", attribution: "MTMD · CC BY 4.0 · © OpenStreetMap contributors", reasons: ["Official MTMD segment rendered as location context"], adapterEvidence: { reason: "matched", segment: { id: "172650", chantier: "319446" } } } });
+  // A visualNeed-declared slide whose own direction never mentions a map, so
+  // only the declaration — not requestsGeographicReconstruction — routes it;
+  // research found nothing, matching a failed Wikidata/Commons resolution.
+  if (includeUnresolvedRealPhotoUnit) prepared.set(6, { evidence: { representation: "typography", reasons: ["Identity could not be established from provider records and geographic scope."] } });
+  // real-photo on a closure: identity resolved, no map precise enough, but an
+  // eligible CC-licensed archive photo grounds the place's identity only.
+  if (includeIdentityPhotoUnit) prepared.set(7, { bytes: identityPhotoBytes, evidence: { representation: "photo", generationUse: "ai-reference", reasons: ["Archive photograph from an eligible source, used only to ground the place's identity in an AI-assisted adaptation; not evidence of current conditions."], place: { name: "pont Gouin" }, photo: { author: "Pierre cb", license: "CC0", licenseUrl: "https://creativecommons.org/publicdomain/zero/1.0/", contentType: "image/jpeg" } } });
+  type TestUnit = { id: string; order: number; role: string; type: string; assetRequest: string; headline: string; visualDirection: string; visualNeed?: string };
   const draft = { id: "draft", version: 3, storyId: "story",
-    units: [1, 2, 3, 4].map(order => ({ id: String(order), order, role: order === 1 ? "cover" : "content",
-      type: "carousel-slide", assetRequest: "generated-image", headline: "Headline", visualDirection: "Editorial illustration" }))
+    units: ([1, 2, 3, 4].map(order => ({ id: String(order), order, role: order === 1 ? "cover" : "content",
+      type: "carousel-slide", assetRequest: "generated-image", headline: "Headline", visualDirection: "Editorial illustration" })) as TestUnit[])
       .concat(includeUnresolvedGeoUnit ? [{ id: "5", order: 5, role: "content", type: "carousel-slide",
-        assetRequest: "generated-image", headline: "Headline", visualDirection: "Public square rally" }] : [])};
+        assetRequest: "generated-image", headline: "Headline", visualDirection: "Public square rally" }] : [])
+      .concat(includeUnresolvedRealPhotoUnit ? [{ id: "6", order: 6, role: "content", type: "carousel-slide",
+        assetRequest: "generated-image", headline: "Headline", visualNeed: "real-photo", visualDirection: "Abstract paper-collage motif, no bridge drawn" }] : [])
+      .concat(includeIdentityPhotoUnit ? [{ id: "7", order: 7, role: "content", type: "carousel-slide",
+        assetRequest: "generated-image", headline: "Headline", visualNeed: "real-photo", visualDirection: "Abstract paper-collage motif, no bridge drawn" }] : [])};
   const exports: { run?: (...args: unknown[]) => Promise<unknown> } = {};
   runInNewContext(ts.transpileModule(code, { compilerOptions: {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
@@ -30,6 +44,7 @@ async function compose(mode = "illustration-editorial", photoTest = false, inclu
     mapReferenceMode: () => mapMode ?? "local",
     MAP_REFERENCE_VISUAL_DIRECTION: "Composition around the provided official map panel",
     storeDocumentaryMapReference: async (topic: string, bytes: Buffer) => { assert.equal(topic, "topic"); assert.equal(bytes, map); storedMaps.push("map-sha"); return "map-sha"; },
+    storeDocumentaryPhotoReference: async (topic: string, bytes: Buffer, contentType: string) => { assert.equal(topic, "topic"); assert.equal(bytes, identityPhotoBytes); assert.equal(contentType, "image/jpeg"); storedPhotos.push("photo-sha"); return "photo-sha"; },
     CreativeAssetValidationError: Error,
     // The endpoint pair now comes from the model catalog.
     resolveDefaultCreativeImageModel: () => "gpt-image",
@@ -54,7 +69,7 @@ async function compose(mode = "illustration-editorial", photoTest = false, inclu
     getTopicVisualFidelityMode: async () => mode,
     resolveEffectiveVisualFidelity: () => ({ mode }),
     requestsGeographicReconstruction: (direction: string) => direction === "Public square rally",
-    requiresVerifiedGeography: (unit: { visualDirection: string; visualNeed?: string }) => unit.visualNeed === "verified-map" || unit.visualDirection === "Public square rally",
+    requiresVerifiedGeography: (unit: { visualDirection: string; visualNeed?: string }) => unit.visualNeed === "verified-map" || unit.visualNeed === "real-photo" || unit.visualDirection === "Public square rally",
     GEOGRAPHIC_FALLBACK_VISUAL_DIRECTION: "Conceptual fallback, no verified place",
     preparePlaceVisuals: async (_topic: string, selected: typeof draft) => {
       researched = selected.units.map(u => u.order); return prepared;
@@ -92,7 +107,7 @@ async function compose(mode = "illustration-editorial", photoTest = false, inclu
     publicConfiguration: () => ({}),
   });
   await exports.run!("topic", draft, { keyFacts: [], profileSnapshot: {} }, "high", prepared);
-  return { submitted, rendered, researched, assets, storedMaps };
+  return { submitted, rendered, researched, assets, storedMaps, storedPhotos };
 }
 
 test("a verified map slide is generated with the stored map as its last reference, and composed locally when the mode says so", async () => {
@@ -159,6 +174,34 @@ test("opt-in experiment sends the museum slide through creative generation with 
   assert.deepEqual(strict.submitted, []);
 });
 
+test("a real-photo slide on a closure story is composed from an identity-only archive photo, stored, credited and marked never as evidence of the event — governed by the same map-reference dial, no photoReferenceTest flag needed", async () => {
+  // Shares mapReferenceMode with the verified-map feature: one operator dial
+  // for every kind of geo material composed as an AI reference vs. locally.
+  const result = await compose("illustration-editorial", false, false, "ai", false, true);
+  // mapMode left undefined (not "local"): passing any truthy mode would also
+  // add slide 2's unrelated map fixture, which this test does not want.
+  const local = await compose("illustration-editorial", false, false, undefined, false, true);
+  assert.deepEqual(local.submitted, [1, 2, 4]);
+  assert.deepEqual(local.rendered, [3, 7]);
+  assert.deepEqual(local.storedPhotos, []);
+  assert.deepEqual(result.submitted, [1, 2, 4, 7]);
+  assert.deepEqual(result.rendered, [3]);
+  assert.deepEqual(result.storedPhotos, ["photo-sha"]);
+  const bridge = result.assets.find(a => a.unitOrder === 7)!;
+  assert.equal(bridge.generationMode, "reference-guided");
+  assert.equal(bridge.providerEndpoint, "fal/edit");
+  assert.match(String(bridge.prompt), /LAST input image is the verified archive photograph of pont Gouin/);
+  assert.match(String(bridge.prompt), /Pierre cb/);
+  assert.match(String(bridge.prompt), /not evidence of current conditions/);
+  assert.match(String(bridge.prompt), /Do not invent event attendance, damage, closures, barriers, detour signage or changes/);
+  const snapshot = bridge.unitSnapshot as { placeVisual: { generationUse: string; referenceTopicId: string; reasons: string[]; photo: { license: string } } };
+  assert.equal(snapshot.placeVisual.generationUse, "ai-reference");
+  assert.equal(snapshot.placeVisual.referenceTopicId, "topic");
+  assert.equal(snapshot.placeVisual.photo.license, "CC0");
+  assert.match(snapshot.placeVisual.reasons.join(" "), /used only to ground the place's identity/);
+  assert.match(snapshot.placeVisual.reasons.join(" "), /not evidence of current conditions/);
+});
+
 test("a slide requesting a real place with no verified evidence generates a conceptual illustration instead of failing or rendering text-only", async () => {
   const result = await compose("illustration-editorial", false, true);
   // Slide 5 asked for a real place (a public square) but preparePlaceVisuals
@@ -177,4 +220,20 @@ test("a strict photo-required topic still refuses a real-place slide with no ver
   const result = await compose("photo-required", false, true);
   assert.deepEqual(result.submitted, []);
   assert.deepEqual(result.rendered, [1, 2, 3, 4, 5]);
+});
+
+test("a real-photo slide with no map language in its own direction still keeps its research reasons when nothing resolves, and its own (already-safe) direction is never overridden", async () => {
+  const result = await compose("illustration-editorial", false, false, undefined, true);
+  assert.deepEqual(result.submitted, [1, 2, 4, 6]);
+  assert.deepEqual(result.rendered, [3]);
+  const unresolved = result.assets.find(a => a.unitOrder === 6)!;
+  // Before the fix, only a direction matching requestsGeographicReconstruction
+  // kept its placeVisual; a visualNeed-only trigger silently dropped it.
+  const snapshot = unresolved.unitSnapshot as { placeVisual?: { reasons: string[] } };
+  assert.ok(snapshot.placeVisual, "the research reasons must survive on the persisted asset");
+  assert.match(snapshot.placeVisual!.reasons.join(" "), /Identity could not be established/);
+  // The writer's own direction is already the safe fallback for a
+  // visualNeed-triggered slide; it must reach the prompt unchanged.
+  assert.match(String(unresolved.prompt), /Abstract paper-collage motif, no bridge drawn/);
+  assert.doesNotMatch(String(unresolved.prompt), /Conceptual fallback, no verified place/);
 });

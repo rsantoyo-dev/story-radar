@@ -63,19 +63,23 @@ const NANO_BANANA_RATIO: Record<CreativeAspectRatio, string> = {
 const DESCRIPTORS: Record<CreativeImageModel, CreativeImageModelDescriptor> = {
   "gpt-image": {
     key: "gpt-image",
-    label: "GPT Image 2",
-    providerModel: "openai/gpt-image-2",
-    textToImageEndpoint: "openai/gpt-image-2",
-    referenceEndpoint: "openai/gpt-image-2/edit",
+    label: "GPT Image 2.5 Sunburst",
+    providerModel: "openai/gpt-image-2.5/sunburst/text-to-image",
+    textToImageEndpoint: "openai/gpt-image-2.5/sunburst/text-to-image",
+    referenceEndpoint: "openai/gpt-image-2.5/sunburst/edit",
     maxReferenceImages: 16,
     supportsImageQuality: true,
     rendersText: true,
+    // Flare and Sunburst are two tunings of the identical API/schema (same
+    // price at every quality tier); Sunburst spends longer per image for
+    // fidelity that survives being printed, enlarged or cropped into —
+    // verified against fal's own comparison, not just marketing copy.
+    // 2.5's edit schema has no input_fidelity field (verified against fal's
+    // published request schema); the prior gpt-image-2 build included it.
     buildInput: ({ prompt, width, height, imageQuality, imageUrls }) => ({
       prompt,
       image_size: { width, height },
-      ...(imageUrls.length > 0
-        ? { image_urls: [...imageUrls], input_fidelity: "high" as const }
-        : {}),
+      ...(imageUrls.length > 0 ? { image_urls: [...imageUrls] } : {}),
       quality: imageQuality,
       output_format: "png",
     }),
@@ -231,6 +235,26 @@ export function creativeImageEndpoint(
 }
 
 /**
+ * Endpoints a catalog entry used before its provider build moved on. A
+ * regeneration reuses the literal endpoint stored on the asset, never this
+ * map's current `textToImageEndpoint`/`referenceEndpoint` — that is what lets
+ * "gpt-image" repoint to a newer build while a historical asset keeps
+ * resolving, and keeps producing, against the exact model it was created
+ * with (`falModelForAsset` in manage-creative-assets.ts).
+ */
+const LEGACY_ENDPOINTS: Record<string, { key: CreativeImageModel; mode: CreativeImageGenerationMode }> = {
+  "openai/gpt-image-2": { key: "gpt-image", mode: "text-to-image" },
+  "openai/gpt-image-2/edit": { key: "gpt-image", mode: "reference-guided" },
+  "openai/gpt-image-2.5/flare/text-to-image": { key: "gpt-image", mode: "text-to-image" },
+  "openai/gpt-image-2.5/flare/edit": { key: "gpt-image", mode: "reference-guided" },
+};
+/** Provider model ids a catalog entry's `providerModel` used to carry, for the same reason as {@link LEGACY_ENDPOINTS}. */
+const LEGACY_PROVIDER_MODELS: Record<string, CreativeImageModel> = {
+  "openai/gpt-image-2": "gpt-image",
+  "openai/gpt-image-2.5/flare/text-to-image": "gpt-image",
+};
+
+/**
  * Resolves a persisted `provider_endpoint` back to its model and mode. Assets
  * generated before more than one model existed carry the GPT Image endpoints,
  * so they keep resolving here instead of being rejected as incompatible.
@@ -242,7 +266,8 @@ export function findCreativeImageModelByEndpoint(
     if (descriptor.textToImageEndpoint === endpoint) return { descriptor, mode: "text-to-image" };
     if (descriptor.referenceEndpoint === endpoint) return { descriptor, mode: "reference-guided" };
   }
-  return undefined;
+  const legacy = LEGACY_ENDPOINTS[endpoint];
+  return legacy ? { descriptor: DESCRIPTORS[legacy.key], mode: legacy.mode } : undefined;
 }
 
 export function listCreativeImageModels(): CreativeImageModelDescriptor[] {
@@ -252,8 +277,9 @@ export function listCreativeImageModels(): CreativeImageModelDescriptor[] {
 export function findCreativeImageModelByProviderModel(
   providerModel: string,
 ): CreativeImageModelDescriptor | undefined {
-  return Object.values(DESCRIPTORS).find(
-    (descriptor) => descriptor.providerModel === providerModel,
+  return (
+    Object.values(DESCRIPTORS).find((descriptor) => descriptor.providerModel === providerModel) ??
+    (LEGACY_PROVIDER_MODELS[providerModel] ? DESCRIPTORS[LEGACY_PROVIDER_MODELS[providerModel]] : undefined)
   );
 }
 

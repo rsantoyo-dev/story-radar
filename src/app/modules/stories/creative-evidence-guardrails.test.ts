@@ -58,6 +58,15 @@ test("a slide declared verified-map takes the documentary path even when its dir
   assert.equal(requiresVerifiedGeography({ visualDirection: "Carte des fermetures à Brossard", visualNeed: "generic-illustration" }), true);
 });
 
+test("a slide declared real-photo also takes the documentary path, for a named landmark its direction never draws", () => {
+  const direction = "Illustration éditoriale 2D sur papier crème, un pictogramme abstrait de pont, sans reproduire de pont identifiable";
+  assert.equal(requestsGeographicReconstruction(direction), false);
+  assert.equal(requiresVerifiedGeography({ visualDirection: direction, visualNeed: "real-photo" }), true);
+  assert.equal(requiresVerifiedGeography({ visualDirection: direction, visualNeed: "generic-illustration" }), false);
+  assert.equal(requiresVerifiedGeography({ visualDirection: direction, visualNeed: "character-reference" }), false);
+  assert.equal(requiresVerifiedGeography({ visualDirection: direction, visualNeed: "typography" }), false);
+});
+
 test("truncated-only facts are rejected without confusing a complete statement with a shortened quote", () => {
   assert.equal(onlyTruncatedCreativeFacts([{id:"1", statement:"Worked in their…",sourceExcerpt:"Worked in their…"}]),true);
   assert.equal(onlyTruncatedCreativeFacts([{id:"1", statement:"Worked in their...",sourceExcerpt:"Worked in their..."}]),true);

@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node --env-file=.env.local -e ' *)",
+      "Bash(echo \"grep-exit=$?\")",
+      "Bash(node -e 'const r=JSON.parse\\(require\\(\"fs\"\\).readFileSync\\(\"/tmp/gen-status.json\",\"utf8\"\\)\\);console.log\\(\"batch\",r.batch.id,r.batch.status,r.batch.promptVersion\\);for\\(const a of r.batch.assets\\){const s=a.unitSnapshot||{};const pv=s.placeVisual;console.log\\(\"\\\\nslide\",a.unitOrder,a.status,a.generationMode,a.providerEndpoint,\"img:\",Boolean\\(a.imageUrl\\)\\);if\\(pv\\)console.log\\(\"  placeVisual:\",JSON.stringify\\({representation:pv.representation,adapter:pv.adapter,attribution:pv.attribution,reasons:pv.reasons,place:pv.place&&{name:pv.place.name,sourceUrl:pv.place.sourceUrl}}\\)\\);else console.log\\(\"  placeVisual: \\(none\\)\"\\);}')",
+      "Bash(python3 -c ' *)",
+      "Bash(grep -n 'representation: \"photo\", place: { name: \"Museum\"' src/app/modules/stories/creative-hybrid-composition.test.ts)",
+      "Bash(grep -n \"return { submitted, rendered, researched, assets\" src/app/modules/stories/creative-hybrid-composition.test.ts)",
+      "Bash(node -e 'const r=JSON.parse\\(require\\(\"fs\"\\).readFileSync\\(\"/tmp/gen2-status.json\",\"utf8\"\\)\\);console.log\\(\"batch\",r.batch.id,r.batch.status,r.batch.promptVersion\\);for\\(const a of r.batch.assets\\){const s=a.unitSnapshot||{};const pv=s.placeVisual;console.log\\(\"\\\\nslide\",a.unitOrder,a.status,a.generationMode,a.providerEndpoint,\"img:\",Boolean\\(a.imageUrl\\)\\);if\\(pv\\)console.log\\(\"  placeVisual:\",JSON.stringify\\({representation:pv.representation,generationUse:pv.generationUse,attribution:pv.attribution,reasons:pv.reasons,photo:pv.photo&&{author:pv.photo.author,license:pv.photo.license}}\\)\\);else console.log\\(\"  placeVisual: \\(none\\)\"\\);}')",
+      "Bash(curl -sS --max-time 20 \"https://www.wikidata.org/w/api.php?format=json&maxlag=5&action=wbsearchentities&search=pont%20Gouin&language=fr&uselang=fr&type=item&limit=6\")",
+      "Bash(curl -sS --max-time 15 \"https://www.wikidata.org/w/api.php?format=json&maxlag=5&action=wbsearchentities&search=pont%20Gouin&language=fr&uselang=fr&type=item&limit=1\")"
+    ]
+  }
+}

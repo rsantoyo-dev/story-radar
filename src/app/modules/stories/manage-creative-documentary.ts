@@ -75,7 +75,7 @@ async function prepare(topicId: string, storyId: string, format: CreativeFormat,
   if (blocked) reasons.push("The article does not contain enough bounded source text for a documentary post.");
   let discovery: DocumentarySnapshot["discovery"];
   let extraction: PlaceExtraction = { mentions: [], purpose: "unknown" };
-  const audit: DocumentarySnapshot["extraction"] = { model: process.env.CREATIVE_GEO_MODEL?.trim() || "gpt-5.6-luna", attempts: 0, usage: { ...EMPTY_GEO_USAGE }, status: "unavailable" };
+  const audit: DocumentarySnapshot["extraction"] = { model: process.env.CREATIVE_GEO_MODEL?.trim() || "gpt-6-sol", attempts: 0, usage: { ...EMPTY_GEO_USAGE }, status: "unavailable" };
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   const daily = await getCreativeDailyUsage(topicId, getCreativeContentPublicConfig().maxRunsPerDay);
   if (!blocked && !roadNotice && apiKey && daily.remainingRuns > 0) {

@@ -382,6 +382,76 @@ test("a quebec.ca source selects the MTMD adapter, which receives the slide's fa
   assert.equal(result.get(2)?.evidence.representation, "typography");
 });
 
+test("a slide declared real-photo, with no map language in its direction, still reaches identity resolution — and when no eligible photo exists, a closure fact still falls to a map, never using the archive photo as proof", async () => {
+  const visual = await import("./creative-place-visual");
+  const geometry = await import("./open-map-geometry");
+  let photoCalls = 0, mapCalls = 0, resolveCalls = 0;
+  // The writer's own direction is a flat, non-map illustration — exactly what
+  // it should write for a landmark it cannot itself confirm evidence for.
+  // Only visualNeed carries the routing signal.
+  const unit = { id: "unit", order: 1, role: "cover", factIds: ["fact-1"], visualDirection: "Illustration éditoriale 2D sur papier crème, pictogramme abstrait, sans pont identifiable", visualNeed: "real-photo", assetRequest: "generated-image" };
+  const bridgeSource = "Le pont Gouin sera complètement fermé le 28 septembre pour une inspection.";
+  const bridgeMention: policy.PlaceMention = { name: "pont Gouin", kind: "named", role: "event", excerpt: bridgeSource, municipality: "", region: "", country: "" };
+  const facts = [{ id: "fact-1", statement: bridgeSource, sourceExcerpt: bridgeSource }];
+  const dependencies = {
+    "./source-location": sourceLocation,
+    "./prepare-source-location": { prepareSourceLocation: async () => { throw new Error("No address anchor expected"); } },
+    "node:crypto": crypto, "./creative-documentary": policy, "./creative-place-visual": visual, "./open-map-geometry": geometry,
+    "./creative-documentary-providers": { documentaryProviders: () => ({ resolve: async () => { resolveCalls++; return place; }, photo: async () => { photoCalls++; return undefined; } }) },
+    "./open-map-render": { renderOpenMap: async () => { mapCalls++; return Buffer.from("map"); } },
+    "./prepare-road-map": { prepareRoadMap: async () => { throw new Error("Wrong regional adapter"); } },
+    "./quebec-road-map": await import("./quebec-road-map"),
+    "./creative-content.config": { getCreativeContentPublicConfig: () => ({ maxRunsPerDay: 10 }) },
+    "./creative-content.repository": { getCreativeDailyUsage: async () => ({ remainingRuns: 10 }), createCreativeAiRun: async () => "run", completeCreativeAiRun: async () => {}, failCreativeAiRun: async () => {} },
+    // Facts naming a "fermé" closure force purpose to current-state; real-photo
+    // still tries an eligible archive photo as an identity-only reference (not
+    // as proof), and falls to a map when the provider has none eligible.
+    "./openai-structured-response": { generateOpenAiStructuredResponse: async () => ({ text: JSON.stringify({ purpose: "unknown", mentions: [bridgeMention] }), usage: {}, model: "test" }) },
+    "./resolve-google-place-map": { resolveGooglePlaceMap: async () => undefined },
+  };
+  const service = load<typeof import("./prepare-place-visuals")>("prepare-place-visuals.ts", dependencies, { OPENAI_API_KEY: "test", CREATIVE_GEO_SOURCE_ADAPTERS: "" });
+  const draft = { units: [unit], storyId: "story", briefId: "brief" } as unknown as import("./creative-content.types").CreativeDraft;
+  const result = await service.preparePlaceVisuals("topic", draft, profile, facts, "https://sjsr.ca/actualites/28-septembre-inspection-mensuelle-du-pont-gouin");
+  assert.equal(resolveCalls, 1, "real-photo alone must still trigger identity resolution");
+  assert.equal(photoCalls, 1, "real-photo tries an identity-only archive photo even for a closure, unlike a plain map-request slide");
+  assert.equal(mapCalls, 1, "no eligible photo exists, so it falls to a verified location map instead");
+  assert.equal(result.get(1)?.evidence.representation, "map");
+  assert.ok(result.get(1)?.evidence.reasons.some(reason => reason.includes("not evidence of current conditions")));
+});
+
+test("a real-photo slide on a closure story uses an eligible archive photo as an identity-only reference, marked ai-reference, without rendering a map", async () => {
+  const visual = await import("./creative-place-visual");
+  const geometry = await import("./open-map-geometry");
+  let photoCalls = 0, mapCalls = 0;
+  const unit = { id: "unit", order: 1, role: "cover", factIds: ["fact-1"], visualDirection: "Illustration éditoriale 2D sur papier crème, pictogramme abstrait, sans pont identifiable", visualNeed: "real-photo", assetRequest: "generated-image" };
+  const bridgeSource = "Le pont Gouin sera complètement fermé le 28 septembre pour une inspection.";
+  const bridgeMention: policy.PlaceMention = { name: "pont Gouin", kind: "named", role: "event", excerpt: bridgeSource, municipality: "", region: "", country: "" };
+  const facts = [{ id: "fact-1", statement: bridgeSource, sourceExcerpt: bridgeSource }];
+  const dependencies = {
+    "./source-location": sourceLocation,
+    "./prepare-source-location": { prepareSourceLocation: async () => { throw new Error("No address anchor expected"); } },
+    "node:crypto": crypto, "./creative-documentary": policy, "./creative-place-visual": visual, "./open-map-geometry": geometry,
+    "./creative-documentary-providers": { documentaryProviders: () => ({ resolve: async () => place, photo: async () => { photoCalls++; return { bytes: Buffer.from("commons-photo"), evidence: photo() }; } }) },
+    "./open-map-render": { renderOpenMap: async () => { mapCalls++; return Buffer.from("map"); } },
+    "./prepare-road-map": { prepareRoadMap: async () => { throw new Error("Wrong regional adapter"); } },
+    "./quebec-road-map": await import("./quebec-road-map"),
+    "./creative-content.config": { getCreativeContentPublicConfig: () => ({ maxRunsPerDay: 10 }) },
+    "./creative-content.repository": { getCreativeDailyUsage: async () => ({ remainingRuns: 10 }), createCreativeAiRun: async () => "run", completeCreativeAiRun: async () => {}, failCreativeAiRun: async () => {} },
+    "./openai-structured-response": { generateOpenAiStructuredResponse: async () => ({ text: JSON.stringify({ purpose: "unknown", mentions: [bridgeMention] }), usage: {}, model: "test" }) },
+    "./resolve-google-place-map": { resolveGooglePlaceMap: async () => undefined },
+  };
+  const service = load<typeof import("./prepare-place-visuals")>("prepare-place-visuals.ts", dependencies, { OPENAI_API_KEY: "test", CREATIVE_GEO_SOURCE_ADAPTERS: "" });
+  const draft = { units: [unit], storyId: "story", briefId: "brief" } as unknown as import("./creative-content.types").CreativeDraft;
+  const result = await service.preparePlaceVisuals("topic", draft, profile, facts, "https://sjsr.ca/actualites/28-septembre-inspection-mensuelle-du-pont-gouin");
+  assert.equal(photoCalls, 1);
+  assert.equal(mapCalls, 0, "an eligible photo is used before a map is even attempted");
+  const evidence = result.get(1)?.evidence;
+  assert.equal(evidence?.representation, "photo");
+  assert.equal(evidence?.generationUse, "ai-reference", "never composed as direct evidence of the event");
+  assert.ok(evidence?.reasons.some(reason => reason.includes("not evidence of current conditions")));
+  assert.equal(evidence?.photo?.license, "CC0");
+});
+
 test("worldwide preparation resolves source-backed places, maps current-state reports and leaves other slides untouched", async () => {
   const visual=await import("./creative-place-visual");
   const geometry=await import("./open-map-geometry");

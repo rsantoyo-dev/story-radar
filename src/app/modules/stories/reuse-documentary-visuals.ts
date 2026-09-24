@@ -69,6 +69,19 @@ export async function storeDocumentaryMapReference(topicId: string, bytes: Buffe
   return sha256;
 }
 
+/**
+ * An identity-only archive photo (Wikidata/Commons) is fetched fresh inside
+ * preparePlaceVisuals and held only in memory; storing it here, under the
+ * same hash the resolver already computed from the identical bytes, is what
+ * lets readDocumentaryPhotoReference find it again at submission time — the
+ * same reason storeDocumentaryMapReference exists for a rendered map.
+ */
+export async function storeDocumentaryPhotoReference(topicId: string, bytes: Buffer, contentType: string): Promise<string> {
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  await putPrivateR2Object({ objectKey: buildDocumentaryObjectKey(topicId, "originals", sha256), body: bytes, contentType });
+  return sha256;
+}
+
 /** The stored verified map, byte-identical to what the adapter rendered, for the reference-guided composition. */
 export async function readDocumentaryMapReference(evidence: PreparedPlaceVisual["evidence"]): Promise<File> {
   const { referenceTopicId, sha256 } = evidence;

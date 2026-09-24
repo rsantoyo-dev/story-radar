@@ -40,7 +40,7 @@ export async function preparePlaceVisuals(topicId: string, draft: CreativeDraft,
   try { const url=new URL(sourceUrl);adapter=adapters.find(a=>enabled.includes(a.id)&&a.supports(url)); } catch { /* no regional source */ }
   const needsResearch = !adapter && draft.units.some(unit => !prepared.has(unit.order) && unit.assetRequest !== "typography-only" && !anchorUnits.get(unit.order) && (requiresVerifiedGeography(unit) || (!anchors.length && unit.role === "cover")));
   const daily = await getCreativeDailyUsage(topicId, getCreativeContentPublicConfig().maxRunsPerDay);
-  const model=process.env.CREATIVE_GEO_MODEL?.trim() || "gpt-5.6-luna";
+  const model=process.env.CREATIVE_GEO_MODEL?.trim() || "gpt-6-sol";
   const key=process.env.OPENAI_API_KEY?.trim();
   if (needsResearch && key && daily.remainingRuns > 0 && source) {
     const run=await createCreativeAiRun({topicId,storyId:draft.storyId,briefId:draft.briefId,task:"brief",provider:"openai",model,promptVersion:PLACE_VISUAL_VERSION,inputHash:createHash("sha256").update(source+JSON.stringify(profile.geoScope)).digest("hex")});
@@ -106,10 +106,24 @@ export async function preparePlaceVisuals(topicId: string, draft: CreativeDraft,
       const place=await providers.resolve(mention,profile.geoScope);
       if(!place){result.evidence.reasons.push("Identity could not be established from provider records and geographic scope.");continue;}
       result.evidence.place=place;result.evidence.sourceUrl=place.sourceUrl;
-      // Search cannot establish current conditions or grant reuse rights.
-      if(extraction.purpose==="location") {
+      // Search cannot establish current conditions or grant reuse rights. A
+      // current-state slide (works, closures, changes) never uses an archive
+      // photo as evidence of today's conditions — but when the writer
+      // explicitly declared real-photo (it named a specific, recognizable
+      // landmark, not a generic scene), an eligible archive photo can still
+      // ground an honest AI-assisted adaptation of that identity, composed in
+      // the carousel's own style, never depicting the event itself. This is
+      // a distinct evidentiary use, marked below, from the direct-evidence
+      // use `purpose: "location"` already makes.
+      const identityOnly = extraction.purpose!=="location" && unit.visualNeed==="real-photo";
+      if(extraction.purpose==="location" || identityOnly) {
         const photo=await providers.photo(place).catch(()=>undefined);
-        if(photo && eligiblePhoto(photo.evidence,place)){result.bytes=photo.bytes;result.evidence.representation="photo";result.evidence.photo=photo.evidence;result.evidence.sha256=photo.evidence.sha256;result.evidence.attribution=`${photo.evidence.attribution} · ${photo.evidence.licenseUrl} · ${photo.evidence.creditUrl || photo.evidence.sourceUrl}`;result.evidence.reasons.push("Archive photograph from an eligible source; not evidence of the event.");}
+        if(photo && eligiblePhoto(photo.evidence,place)){
+          result.bytes=photo.bytes;result.evidence.representation="photo";result.evidence.photo=photo.evidence;result.evidence.sha256=photo.evidence.sha256;
+          result.evidence.attribution=`${photo.evidence.attribution} · ${photo.evidence.licenseUrl} · ${photo.evidence.creditUrl || photo.evidence.sourceUrl}`;
+          if (identityOnly) { result.evidence.generationUse="ai-reference"; result.evidence.reasons.push("Archive photograph from an eligible source, used only to ground the place's identity in an AI-assisted adaptation; not evidence of current conditions."); }
+          else result.evidence.reasons.push("Archive photograph from an eligible source; not evidence of the event.");
+        }
       }
       if(!result.bytes && place.coordinates){
         result.bytes=await renderOpenMap({kind:"point",name:place.name,points:[[place.coordinates.longitude,place.coordinates.latitude]]});

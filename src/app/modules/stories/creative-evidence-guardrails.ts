@@ -54,11 +54,18 @@ export function requestsGeographicReconstruction(direction: string): boolean {
 
 /**
  * A slide takes the documentary (verified place) path when the writer declared
- * it needs verified map data, or when its visual direction reads as a map or
- * recognizable place reconstruction. The declaration lets a slide whose
- * direction never says "carte" still get official geometry instead of an
- * illustrated street.
+ * it needs verified map data or a real photograph of a named place, or when
+ * its visual direction reads as a map or recognizable place reconstruction.
+ * The declaration lets a slide whose direction never says "carte" — including
+ * one about a named landmark the writer correctly did not try to draw itself
+ * — still reach `preparePlaceVisuals` instead of an unverifiable illustration.
+ * That path already carries its own discipline once reached: an archive photo
+ * is only used for identity/location context (`purpose: "location"`), never
+ * as evidence of a current closure, works or change (`purpose: "current-state"`,
+ * which a fact naming a closure/travaux/fermeture forces); a map or the
+ * existing conceptual fallback is used instead when nothing verifiable
+ * resolves. Declaring "real-photo" never fabricates a photo of the place.
  */
 export function requiresVerifiedGeography(unit: Pick<CreativeUnit, "visualDirection" | "visualNeed">): boolean {
-  return unit.visualNeed === "verified-map" || requestsGeographicReconstruction(unit.visualDirection);
+  return unit.visualNeed === "verified-map" || unit.visualNeed === "real-photo" || requestsGeographicReconstruction(unit.visualDirection);
 }

@@ -20,10 +20,15 @@ export function textRate(provider: string, model: string, inputTokens: number, o
             rate = { ...configured, version: "configured" };
     }
     if (!rate && provider === "openai") {
-        const rates: Record<string, number[]> = { "gpt-5.6-luna": [.2, 1.2, .02], "gpt-5.6-terra": [2, 12, .2], "gpt-5.6-sol": [4, 20, .4] };
+        // gpt-5.6-* kept for any call still recorded under the retired
+        // generation (rates are snapshotted per call; nothing re-reads this
+        // after settlement). gpt-6-* checked September 24, 2026, no stated
+        // promotional end date; re-verify by the same date below regardless.
+        const rates: Record<string, number[]> = { "gpt-5.6-luna": [.2, 1.2, .02], "gpt-5.6-terra": [2, 12, .2], "gpt-5.6-sol": [4, 20, .4], "gpt-6-luna": [.1, .5, .01], "gpt-6-sol": [2, 10, .2] };
+        const expiry: Record<string, string> = { "gpt-5.6-luna": "2026-11-22", "gpt-5.6-terra": "2026-11-22", "gpt-5.6-sol": "2026-11-22", "gpt-6-luna": "2026-11-24", "gpt-6-sol": "2026-11-24" };
         const r = rates[model];
-        if (r && now < Date.parse("2026-11-22"))
-            rate = { input: r[0], output: r[1], cached: r[2], version: "2026-09-20" };
+        if (r && now < Date.parse(expiry[model]))
+            rate = { input: r[0], output: r[1], cached: r[2], version: "2026-09-24" };
         if (rate && inputTokens > 272000)
             rate = { ...rate, input: rate.input * 2, cached: rate.cached * 2, output: rate.output * 1.5 };
     }

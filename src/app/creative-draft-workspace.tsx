@@ -2713,6 +2713,9 @@ function CreativeAssetCard({
         </p> : null}
         {asset.unitSnapshot.placeVisual.discovery?.sources.map((source,index)=><p key={index}><a href={source.url} target="_blank" rel="noreferrer">{source.title}</a> · Research candidate</p>)}
         </div></details> : null}
+      {asset.unitSnapshot.placeVisual?.representation === "typography" ? <p className={styles.assetTextWarning}>
+        I did not find a real or recent image{asset.unitSnapshot.placeVisual.place?.name ? ` of ${asset.unitSnapshot.placeVisual.place.name}` : " for this slide"}. If you have one, <a href={`#unit-photos-${asset.unitOrder}`}>please upload it</a> and recompose this image — otherwise a generic illustration is used, as shown here.
+      </p> : null}
       {asset.unitSnapshot.roadMapEvidence ? <div className={styles.historyCallout}><div>
         <strong>{asset.unitSnapshot.roadMapEvidence.sha256 ? "Verified road map" : "Map preparation"}</strong>
         <p>{asset.unitSnapshot.roadMapEvidence.reason}</p>
@@ -3236,7 +3239,7 @@ function DraftEditor({
 
       <div className={styles.units}>
         {draft.units.map((unit, index) => (
-          <article className={styles.unit} key={`${unit.id ?? "new"}-${index}`}>
+          <article className={styles.unit} key={`${unit.id ?? "new"}-${index}`} id={`unit-photos-${unit.order}`}>
             <header>
               <div><span>{format === "meme" ? "Frame" : `Slide ${index + 1}`}</span><strong>{capitalize(unit.role.replaceAll("-", " "))}</strong></div>
               {(format === "carousel" || format === "sequence") ? <div className={styles.unitActions}><button type="button" onClick={() => moveUnit(index, -1)} disabled={index === 0} aria-label="Move slide up">↑</button><button type="button" onClick={() => moveUnit(index, 1)} disabled={index === draft.units.length - 1} aria-label="Move slide down">↓</button><button type="button" onClick={() => removeSlide(index)} disabled={draft.units.length <= 3} aria-label="Remove slide">×</button></div> : null}

@@ -58,15 +58,25 @@ export function getCreativeContentRuntimeConfig(): CreativeContentRuntimeConfig 
     process.env.CLOUDFLARE_AI_MODEL?.trim() ||
     "@cf/zai-org/glm-4.7-flash";
   const openAiApiKey = process.env.OPENAI_API_KEY?.trim();
+  // 2026-09-24: GPT-6 Sol/Luna launched at roughly half GPT-5.6's per-token
+  // price (docs/creative-text-recovery.md has the checked rates). Luna/Terra
+  // roles move up to Sol's old tier at the new generation's price; the severe
+  // tier — the last-resort escalation after minor/structural repair already
+  // failed — moves up again to Astra was considered and rejected as 2.5x
+  // Sol's price with no material capability gain for this role; GPT-6 Luna
+  // (40x cheaper than 5.6 Sol) took its place instead, since a repair tier
+  // reached only after two lighter tiers have already failed benefits more
+  // from headroom than from raw model size. The carousel writer is deliberately
+  // exempted from this last step — see CREATIVE_CAROUSEL_WRITER_MODEL in .env.local.
   const openAiEditorialModels: CreativeEditorialModelConfig = {
     criticModel:
-      process.env.CREATIVE_CRITIC_MODEL?.trim() || "gpt-5.6-terra",
+      process.env.CREATIVE_CRITIC_MODEL?.trim() || "gpt-6-sol",
     minorRepairModel:
-      process.env.CREATIVE_MINOR_REPAIR_MODEL?.trim() || "gpt-5.6-luna",
+      process.env.CREATIVE_MINOR_REPAIR_MODEL?.trim() || "gpt-6-sol",
     structuralRepairModel:
-      process.env.CREATIVE_STRUCTURAL_REPAIR_MODEL?.trim() || "gpt-5.6-terra",
+      process.env.CREATIVE_STRUCTURAL_REPAIR_MODEL?.trim() || "gpt-6-sol",
     severeRepairModel:
-      process.env.CREATIVE_SEVERE_REPAIR_MODEL?.trim() || "gpt-5.6-sol",
+      process.env.CREATIVE_SEVERE_REPAIR_MODEL?.trim() || "gpt-6-luna",
   };
   const publicConfig = getCreativeContentPublicConfig();
   if (publicConfig.carouselWriterModel && !openAiApiKey) {
@@ -159,7 +169,12 @@ export function getCreativeContentPublicConfig(): CreativeContentPublicConfig {
       // writer's terms, and a repair is a rewrite with the review in hand.
       // v50/v49: the writer is told to declare verified-map on the locating
       // slide of a closure/works/venue story; the pipeline now reads it.
-      carousel: carouselWriterModel ? `carousel-draft-v50-writer-${carouselWriterModel}` : "carousel-draft-v49",
+      // v51: the writer is also told to declare real-photo for a slide about
+      // a specific named landmark, even one it cannot itself confirm evidence
+      // for — requiresVerifiedGeography now routes that value too, into the
+      // same photo/map/fallback chain (never an archive photo as proof of a
+      // current closure/works/change).
+      carousel: carouselWriterModel ? `carousel-draft-v51-writer-${carouselWriterModel}` : "carousel-draft-v51",
       sequence: "sequence-draft-v6",
     },
     maxRunsPerDay: parsePositiveInteger(
@@ -185,11 +200,11 @@ export function getCreativeCompanionRuntimeConfig(): CreativeCompanionRuntimeCon
   return {
     apiKey,
     lunaModel:
-      process.env.CREATIVE_COMPANION_LUNA_MODEL?.trim() || "gpt-5.6-luna",
+      process.env.CREATIVE_COMPANION_LUNA_MODEL?.trim() || "gpt-6-sol",
     terraModel:
       process.env.CREATIVE_COMPANION_TERRA_MODEL?.trim() ||
       process.env.CREATIVE_CRITIC_MODEL?.trim() ||
-      "gpt-5.6-terra",
+      "gpt-6-sol",
     promptVersion: "companion-story-v2-interaction",
   };
 }

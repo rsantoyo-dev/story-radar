@@ -9,7 +9,7 @@ import type { AiResearchSourceConfig } from "./ai-research.types";
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const OPENAI_TIMEOUT_MS = 90_000;
-const DEFAULT_MODEL = "gpt-5.6-luna";
+const DEFAULT_MODEL = "gpt-6-sol";
 const MAX_SUMMARY_LENGTH = 2_000;
 const MAX_REASON_LENGTH = 400;
 /** Bounds prompt size; recency-ordered, so this keeps the most relevant items. */

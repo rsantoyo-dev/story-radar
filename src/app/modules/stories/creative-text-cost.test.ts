@@ -36,6 +36,13 @@ test("story budget defaults to one dollar and validates configuration", () => {
     }
 });
 
+test("GPT-6 Sol and Luna price at roughly half their GPT-5.6 namesake, and the retired 5.6 rates still resolve unchanged", () => {
+    assert.equal(textCostMicros(textRate("openai", "gpt-6-sol", 1000, undefined, date), usage), 12000);
+    assert.equal(textCostMicros(textRate("openai", "gpt-6-luna", 1000, undefined, date), usage), 600);
+    assert.equal(textCostMicros(textRate("openai", "gpt-5.6-sol", 1000, undefined, date), usage), 24000);
+    assert.throws(() => textRate("openai", "gpt-6-sol", 1000, undefined, Date.parse("2026-12-01")), CreativeTextPricingError);
+});
+
 test("all configured Flash generations use verified rates, including the January price change", () => {
  for (const model of ["gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash"]) {
   assert.equal(textRate("google", model, 1000, undefined, date).output, 3.75);

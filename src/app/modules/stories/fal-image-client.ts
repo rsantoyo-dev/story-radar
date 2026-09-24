@@ -11,9 +11,10 @@ import type { CreativeImageModelDescriptor } from "./creative-image-models";
  * is not enough to add `image_urls` to the text-to-image endpoint: the edit
  * endpoint must be used for those inputs and again for status/result calls.
  */
-export const FAL_TEXT_TO_IMAGE_ENDPOINT = "openai/gpt-image-2" as const;
+export const FAL_TEXT_TO_IMAGE_ENDPOINT =
+  "openai/gpt-image-2.5/sunburst/text-to-image" as const;
 export const FAL_REFERENCE_GUIDED_ENDPOINT =
-  "openai/gpt-image-2/edit" as const;
+  "openai/gpt-image-2.5/sunburst/edit" as const;
 
 /**
  * Endpoint ids come from the model catalog (see creative-image-models.ts),

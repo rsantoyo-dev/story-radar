@@ -8,6 +8,7 @@ import {
   creativeImageEndpoint,
   creativeImageModel,
   findCreativeImageModelByEndpoint,
+  findCreativeImageModelByProviderModel,
   isCreativeImageModel,
   prepareIdeogramPrompt,
 } from "./creative-image-models";
@@ -133,13 +134,35 @@ test("Ideogram 4 uses its text-to-image and image-to-image contracts", () => {
   );
 });
 
-test("stored endpoints resolve back to their model and mode, including legacy GPT assets", () => {
-  // Assets written before the catalog existed carry these exact endpoints.
-  const legacy = findCreativeImageModelByEndpoint("openai/gpt-image-2");
-  assert.equal(legacy?.descriptor.key, "gpt-image");
-  assert.equal(legacy?.mode, "text-to-image");
-  assert.equal(findCreativeImageModelByEndpoint("openai/gpt-image-2/edit")?.mode, "reference-guided");
+test("GPT Image defaults to 2.5 Sunburst, with no input_fidelity field on its edit schema", () => {
+  const model = creativeImageModel("gpt-image");
+  assert.equal(model.providerModel, "openai/gpt-image-2.5/sunburst/text-to-image");
+  assert.equal(model.textToImageEndpoint, "openai/gpt-image-2.5/sunburst/text-to-image");
+  assert.equal(model.referenceEndpoint, "openai/gpt-image-2.5/sunburst/edit");
+  const guided = model.buildInput({ prompt: "x", width: 1088, height: 1360, aspectRatio: "4:5", imageQuality: "high", imageUrls: ["https://fal.media/a.png"] });
+  assert.deepEqual(guided.image_urls, ["https://fal.media/a.png"]);
+  assert.equal(guided.input_fidelity, undefined);
+});
+
+test("stored endpoints resolve back to their model and mode; two retired GPT Image tiers (2, then 2.5 Flare) keep resolving to gpt-image for regeneration", () => {
+  // The catalog's live default is 2.5 Sunburst, resolved from its own endpoints...
+  const sunburst = findCreativeImageModelByEndpoint("openai/gpt-image-2.5/sunburst/text-to-image");
+  assert.equal(sunburst?.descriptor.key, "gpt-image");
+  assert.equal(sunburst?.mode, "text-to-image");
+  assert.equal(findCreativeImageModelByEndpoint("openai/gpt-image-2.5/sunburst/edit")?.mode, "reference-guided");
+  // ...but an asset generated while "gpt-image" meant an earlier build still
+  // resolves, by its exact retired endpoint, to the same key and correct mode
+  // — never to Sunburst's endpoint — so a regeneration keeps hitting the
+  // model it was created with, for every tier this key has ever named.
+  for (const [textToImage, edit] of [["openai/gpt-image-2", "openai/gpt-image-2/edit"], ["openai/gpt-image-2.5/flare/text-to-image", "openai/gpt-image-2.5/flare/edit"]]) {
+    const legacy = findCreativeImageModelByEndpoint(textToImage);
+    assert.equal(legacy?.descriptor.key, "gpt-image", textToImage);
+    assert.equal(legacy?.mode, "text-to-image", textToImage);
+    assert.equal(findCreativeImageModelByEndpoint(edit)?.mode, "reference-guided", edit);
+    assert.equal(findCreativeImageModelByProviderModel(textToImage)?.key, "gpt-image", textToImage);
+  }
   assert.equal(findCreativeImageModelByEndpoint("some/unknown-endpoint"), undefined);
+  assert.equal(findCreativeImageModelByProviderModel("some/unknown-model"), undefined);
 
   for (const key of CREATIVE_IMAGE_MODELS) {
     const model = creativeImageModel(key);
