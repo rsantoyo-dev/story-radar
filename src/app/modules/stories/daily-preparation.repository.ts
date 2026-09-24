@@ -7,7 +7,7 @@ import { dailyPreparationRuns as runs } from "@/db/schema";
 export async function latestPreparation(topicId:string) {
   return (await db.select().from(runs).where(eq(runs.topicId,topicId)).orderBy(desc(runs.startedAt)).limit(1))[0];
 }
-export async function startPreparation(topicId:string,lineId:string,lineName:string,timezone:string,mode:"day"|"draft"="day",targetStep:DailyPreparationStep=mode==="draft"?"draft":"recommend") {
+export async function startPreparation(topicId:string,lineId:string,lineName:string,timezone:string,mode:"day"|"draft"="day",targetStep:DailyPreparationStep=mode==="draft"?"brief":"recommend") {
   const [,inserted]=await db.batch([
     db.execute(sql`SELECT id FROM topics WHERE id=${topicId}::uuid FOR UPDATE`),
     db.execute(sql`INSERT INTO daily_preparation_runs(topic_id,line_id,timezone,progress)

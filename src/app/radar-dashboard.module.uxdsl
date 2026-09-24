@@ -2943,16 +2943,24 @@
 }
 /* Color by status — matches the four states daily-preparation-panel.tsx
    computes (data-step-status): finished with something to review, finished
-   with nothing further to open, actively running, and needing a retry. */
+   with nothing further to open, actively running, and needing a retry.
+   "done"/"done-open" deliberately use palette(primary-*), the active Topic's
+   brand color (see src/design/topic-themes.ts), instead of the universal
+   success-green most design systems use for a checkmark — an explicit choice
+   to have completed steps read as "this Topic's work", not a generic done
+   state. Trade-off, on the record: for any Topic whose own primary is
+   itself blue/teal (several are, per today's live palette check), "done"
+   and "running" (palette(info-*), always blue) can look close to each other
+   at a glance — accepted knowingly, not missed. */
 .dailyPreparationStepButton[data-step-status="done-open"] {
-  border-color: palette(success-main);
-  background: palette(success-light, 0.18);
-  color: palette(success-dark);
+  border-color: palette(primary-main);
+  background: palette(primary-light, 0.18);
+  color: palette(primary-dark);
 }
 .dailyPreparationStepButton[data-step-status="done"] {
-  border-color: palette(success-light);
-  background: palette(success-light, 0.08);
-  color: palette(success-dark);
+  border-color: palette(primary-light);
+  background: palette(primary-light, 0.08);
+  color: palette(primary-dark);
 }
 .dailyPreparationStepButton[data-step-status="running"] {
   border-color: palette(info-main);

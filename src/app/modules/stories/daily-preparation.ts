@@ -116,21 +116,39 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
       progress.editorialDirection=result.editorialDirection;
       return await finish("focus", "brief");
     } else if(run.step==="brief") {
+      // Covers what used to be two daily-preparation steps ("brief" then
+      // "draft"): the single-shot pipeline already writes the intelligent
+      // draft and its carrousel script together, so treating them as two
+      // separate checkpoints here no longer matched what actually happens.
+      // createCreativeDraft still runs either way — under single-shot its
+      // cache hit returns the draft createCreativeBrief already produced, at
+      // no extra cost; the legacy (flag-off) path still pays for it here,
+      // exactly as it did as its own step before.
       if(!progress.storyId)throw new PreparationReviewNeeded("The recommended story is unavailable.");
       await approveDailyStory(topicId, progress.storyId);
       const contexts=await storyCollectionContexts(topicId,progress.storyId);
       const context=contexts.find(c=>c.runId===progress.collectionRunId) ?? (contexts.length===1?contexts[0]:undefined);
       if(contexts.length>1 && !context)throw new PreparationReviewNeeded("This story has multiple editorial contexts. Choose the intended context in the creative workspace.");
-      const result=await createCreativeBrief(topicId,progress.storyId,progress.editorialDirection,context?.runId,run.id);
-      const brief=result.state.brief;
+      const briefResult=await createCreativeBrief(topicId,progress.storyId,progress.editorialDirection,context?.runId,run.id);
+      const brief=briefResult.state.brief;
       if(!brief)throw new Error("Brief unavailable");
       progress.briefId=brief.id;
       // A human can accept this exact brief once from the workspace despite
       // limited/insufficient evidence (see acknowledgePreparationBrief) — a
       // later regenerated brief (a new id) needs its own review again.
       if(brief.contentSufficiency!=="sufficient" && progress.acknowledgedBriefId!==brief.id)throw new PreparationReviewNeeded(BRIEF_EVIDENCE_REVIEW_MESSAGE);
-      return await finish("brief", "draft");
+      const workspace=await getCreativeWorkspaceState(topicId,progress.storyId,run.id);
+      if(!workspace.briefIsCurrent || workspace.brief?.id!==progress.briefId)throw new PreparationReviewNeeded("The creative inputs changed. Review or regenerate the brief in the workspace.");
+      const draftResult=await createCreativeDraft(topicId,progress.briefId,workspace.brief.recommendedFormat,undefined,false,run.id);
+      const draft=draftResult.state.drafts.find(d=>d.briefId===progress.briefId && d.inputIsCurrent && d.format===workspace.brief!.recommendedFormat);
+      if(!draft)throw new Error("Draft unavailable");
+      progress.draftId=draft.id;
+      if(!isCreativeDraftReadyForAutomation(draft,draft.format,draft.qualityReviewIsCurrent === true))throw new PreparationReviewNeeded("The draft is saved, but automated editorial validation has not passed for this exact version. Its findings and evidence were preserved; it cannot advance as publication-ready.");
+      return await finish("brief", "approve-draft");
     } else if(run.step==="draft") {
+      // Legacy only: no new run ever reaches this step ("brief" above now
+      // does its work too), but a run already sitting here from before this
+      // change must still resolve instead of erroring after deploy.
       if(!progress.storyId || !progress.briefId)throw new PreparationReviewNeeded("Review the creative brief before continuing.");
       await approveDailyStory(topicId, progress.storyId);
       const workspace=await getCreativeWorkspaceState(topicId,progress.storyId,run.id);

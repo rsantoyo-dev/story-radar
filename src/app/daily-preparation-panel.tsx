@@ -1,8 +1,24 @@
 "use client";
 import { useEffect, useRef, useState, useSyncExternalStore, type ComponentProps } from "react";
 import { DailyEditorialPlannerPanel } from "./daily-editorial-planner-panel";
-import { BRIEF_EVIDENCE_REVIEW_MESSAGE, DAILY_PREPARATION_LABELS, DAILY_PREPARATION_STEPS, DAILY_PREPARATION_TITLES, preparationTarget, type DailyPreparationStep, type DailyPreparationRun } from "./modules/stories/daily-preparation.types";
+import { BRIEF_EVIDENCE_REVIEW_MESSAGE, DAILY_PREPARATION_LABELS, DAILY_PREPARATION_STEPS, DAILY_PREPARATION_TITLES, preparationTarget, type DailyPreparationStep, type DailyPreparationRun, type DailyPreparationProgress } from "./modules/stories/daily-preparation.types";
 import styles from "./radar-dashboard.generated.module.css";
+/** What actually happened at a completed step — shown on hover so a glance
+ * answers "which story", "what focus", "is the carrousel ready" without
+ * opening anything. Undefined when the run predates a field (e.g. an older
+ * completed step whose progress never recorded it). */
+function stepDetail(step: DailyPreparationStep, progress: DailyPreparationProgress): string | undefined {
+  switch (step) {
+    case "recommend": return progress.storyTitle && `Story: ${progress.storyTitle}`;
+    case "approve": return progress.storyTitle && `Approved: ${progress.storyTitle}`;
+    case "content": return progress.storyTitle && `Content ready: ${progress.storyTitle}`;
+    case "focus": return progress.editorialDirection && `Focus: ${progress.editorialDirection.length > 80 ? `${progress.editorialDirection.slice(0, 80)}…` : progress.editorialDirection}`;
+    case "brief": return progress.draftId ? "Draft and carrousel script ready" : progress.briefId ? "Brief ready" : undefined;
+    case "approve-draft": return progress.draftId && "Carrousel approved";
+    case "images": return progress.assetBatchId && "Image batch generated";
+    default: return undefined;
+  }
+}
 const subscribe=()=>()=>{};
 const browserZone=()=>Intl.DateTimeFormat().resolvedOptions().timeZone;
 const serverZone=()=>"UTC";
@@ -88,7 +104,7 @@ export function DailyPreparationPanel({onCompleted,onOpenDraft,...props}:Props) 
   const blocked=disabled || pending || running || !secret.trim();
   return <section className={styles.dailyPlanner} aria-label="Prepare my day">
     <div className={styles.dailyPlannerHeader}>
-      <div><span className={styles.eyebrow}>Daily editorial workflow</span><h2>Prepare my day</h2><p>Choose how far to go. Recommend automatically approves the best story for today. Completed steps are reused when you continue.</p><small>Today uses {timezone}. Collection uses the editorial line’s period and sources.</small></div>
+      <div><span className={styles.eyebrow}>Daily editorial workflow</span><h2>Prepare my day</h2><p>Choose how far to go — picking a step runs everything up to it. Pick “Images” to run the whole day unattended: it drafts, and once the draft clears review with no blockers it approves and generates images on its own; anything that needs a decision stops there for you instead. Completed steps are reused when you continue.</p><small>Today uses {timezone}. Collection uses the editorial line’s period and sources.</small></div>
       <div className={styles.dailyPlannerControls}>
         <label>Editorial line<select value={selectedLine} disabled={blocked} onChange={event=>setLineId(event.target.value)}>{!data?.lines.length && <option value="">Loading editorial lines…</option>}{data?.lines.map(line=><option key={line.id} value={line.id}>{line.name}</option>)}</select></label>
         {run && <button type="button" className={styles.secondaryButton} disabled={blocked} onClick={()=>setNewRun(value=>!value)}>{newRun?"Return to current run":"New run"}</button>}
@@ -99,17 +115,18 @@ export function DailyPreparationPanel({onCompleted,onOpenDraft,...props}:Props) 
     <ol className={styles.dailyPreparationSteps}>{steps.map((step,index)=>{
       const done=index<=completedIndex;
       const active=!fresh && run?.step===step && !done;
-      const opensDraft=step==="brief" || step==="draft" || step==="approve-draft" || step==="images";
+      const opensDraft=step==="brief" || step==="approve-draft" || step==="images";
       const canOpen=done && ((step==="content" && run?.progress.storyId) || (opensDraft && run?.progress.briefId));
       // Drives the color coding in radar-dashboard.module.uxdsl — keep in
       // sync with the [data-step-status="..."] rules there.
       const stepStatus=done?(canOpen?"done-open":"done"):active?(running?"running":"attention"):"todo";
-      const statusDetail=done?(canOpen?"Completed · Open":"Completed"):active?(running?"Running": "Needs attention · Retry"):"Run to here";
+      const detail=done && run ? stepDetail(step, run.progress) : undefined;
+      const statusDetail=(done?(canOpen?"Completed · Open":"Completed"):active?(running?"Running": "Needs attention · Retry"):"Run to here")+(detail?` · ${detail}`:"");
       return <li key={step} aria-current={active && running?"step":undefined}>
         <button type="button" className={styles.dailyPreparationStepButton} data-step-status={stepStatus} disabled={blocked || !selectedLine || (done && !canOpen)} onClick={()=>{
           if(done && run?.progress.storyId) {
             if(step==="content")props.onViewContent(run.progress.storyId);
-            else onOpenDraft(run.progress.storyId,run.progress.storyTitle ?? "Creative draft",step==="draft"||step==="approve-draft"||step==="images"?run.progress.draftId:undefined,run.id);
+            else onOpenDraft(run.progress.storyId,run.progress.storyTitle ?? "Creative draft",opensDraft?run.progress.draftId:undefined,run.id);
           } else void start(step);
         }} title={statusDetail} aria-label={`${DAILY_PREPARATION_TITLES[step]} · ${statusDetail}`}>
           <span aria-hidden="true">{done?"✓":index+1}</span>

@@ -136,23 +136,41 @@ test("clicking successive targets resumes checkpoints without recollecting or re
   w.run.status="running";w.run.step="content";w.run.progress.targetStep="brief";
   await w.service.drivePreparation(topicId,lineId);
   assert.equal(w.run.progress.completedStep,"brief");
-  assert.equal(w.calls.includes("draft"),false);
-  w.run.status="running";w.run.step="draft";w.run.progress.targetStep="draft";
-  await w.service.drivePreparation(topicId,lineId);
-  assert.equal(w.run.progress.completedStep,"draft");
+  // "brief" is now the merged step: reaching it produces the draft and its
+  // carrousel script together, not as a separate stop.
+  assert.equal(w.calls.includes("draft"),true);
   assert.deepEqual(w.calls,["collect","evaluate","evaluate","recommend","approve","focus","brief","draft"]);
 });
+test("a run still sitting at the legacy 'draft' step from before the brief/draft merge keeps resolving", async () => {
+  // No new run ever reaches step="draft" (the "brief" test above proves
+  // that), but a run persisted there before this change must not hit
+  // "Unknown preparation stage" after a deploy — it has to keep resuming
+  // through its own dedicated legacy branch in daily-preparation.ts.
+  const w=workflow({draftMode:true});
+  w.run.progress.storyId=topicId;w.run.progress.briefId="brief";w.run.progress.targetStep="images";
+  w.run.status="running";w.run.step="draft";
+  await w.service.drivePreparation(topicId,lineId);
+  assert.equal(w.run.status,"completed");
+  assert.deepEqual(w.calls,["approve","draft","approve-draft","images"]);
+  assert.equal(w.run.progress.draftId,"draft");
+});
 test("each target stops before the next stage",async()=>{
-  for(const target of ["collect","evaluate","content","brief"]) {
+  for(const target of ["collect","evaluate","content"]) {
     const w=workflow({draftMode:true});w.run.progress.targetStep=target;
     await w.service.drivePreparation(topicId,lineId);
     assert.equal(w.run.status,"completed");assert.equal(w.run.step,target);
     assert.equal(w.run.progress.completedStep,target);
     if(target==="collect")assert.deepEqual(w.calls,["collect"]);
     if(target==="evaluate")assert.equal(w.calls.includes("recommend"),false);
-    if(target==="content")assert.equal(w.calls.includes("brief"),false);
-    assert.equal(w.calls.includes("draft"),false);
+    assert.equal(w.calls.includes("brief"),false);
   }
+  // "brief" reached as a target now produces both the brief and the
+  // draft/carrousel in the same stop.
+  const w=workflow({draftMode:true});w.run.progress.targetStep="brief";
+  await w.service.drivePreparation(topicId,lineId);
+  assert.equal(w.run.status,"completed");assert.equal(w.run.step,"brief");
+  assert.equal(w.run.progress.completedStep,"brief");
+  assert.deepEqual(w.calls,["collect","evaluate","evaluate","recommend","approve","focus","brief","draft"]);
 });
 test("incomplete content stops for review before spending on brief or draft",async()=>{
   const w=workflow({draftMode:true,incomplete:true});await w.service.drivePreparation(topicId,lineId);
