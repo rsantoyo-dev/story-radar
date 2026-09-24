@@ -10,6 +10,7 @@ import { mapViewport } from "./open-map-geometry";
 import type { CreativeDraft, CreativeKeyFact } from "./creative-content.types";
 
 const original = Buffer.from("original verified map");
+const stored: { objectKey: string; body: Uint8Array; contentType: string }[] = [];
 function harness(options: { approved?: boolean; token?: string; corrupt?: boolean; photo?: boolean } = {}) {
   const snapshot = { version: policy.DOCUMENTARY_VERSION, inputHash: "hash", sourceToken: options.token ?? "current", reasons: [],
     review: { decision: "approved" }, preparedAt: new Date().toISOString(),
@@ -30,8 +31,9 @@ function harness(options: { approved?: boolean; token?: string; corrupt?: boolea
         return { allApproved: options.approved ?? true, status: "completed", assets: [{ unitSnapshot: { documentary: snapshot } }] };
       }, documentarySourceToken: async () => "current",
     },
-    "./r2-storage": { buildDocumentaryObjectKey: (topic: string) => { assert.equal(topic, "topic"); return "private"; },
-      readPrivateR2ImageFile: async () => new File([options.corrupt ? Buffer.from("changed") : original], "map.png") },
+    "./r2-storage": { buildDocumentaryObjectKey: (topic: string, kind: string, id: string) => { assert.equal(topic, "topic"); return `private/${kind}/${id}`; },
+      readPrivateR2ImageFile: async () => new File([options.corrupt ? Buffer.from("changed") : original], "map.png"),
+      putPrivateR2Object: async (input: { objectKey: string; body: Uint8Array; contentType: string }) => { stored.push(input); return { objectKey: input.objectKey, contentType: input.contentType, size: input.body.length }; } },
   };
   const exports = {};
   runInNewContext(ts.transpileModule(readFileSync("src/app/modules/stories/reuse-documentary-visuals.ts", "utf8"), {
@@ -91,6 +93,20 @@ test("approved CC BY-SA original is passed to composition with photo credits", a
   assert.deepEqual(result.get(1)?.bytes, original);
   assert.match(result.get(1)!.evidence.attribution!, /Yource.*CC BY-SA 4.0/);
   assert.match(result.get(1)!.evidence.attribution!, /creativecommons.org/);
+});
+
+test("a verified map is stored as a private original by hash and read back byte-identical for the generator", async () => {
+  const api = harness();
+  stored.length = 0;
+  const sha256 = await api.storeDocumentaryMapReference("topic", original);
+  assert.equal(sha256, crypto.createHash("sha256").update(original).digest("hex"));
+  assert.deepEqual(stored.map(s => [s.objectKey, s.contentType, Buffer.from(s.body).equals(original)]), [[`private/originals/${sha256}`, "image/png", true]]);
+  const evidence: visuals.PlaceVisualEvidence = { version: visuals.PLACE_VISUAL_VERSION, representation: "map", preparedAt: new Date().toISOString(), reasons: [], sha256, generationUse: "ai-reference", referenceTopicId: "topic" };
+  assert.deepEqual(Buffer.from(await (await api.readDocumentaryMapReference(evidence)).arrayBuffer()), original);
+  await assert.rejects(harness({ corrupt: true }).readDocumentaryMapReference(evidence), /integrity/);
+  await assert.rejects(api.readDocumentaryMapReference({ ...evidence, representation: "photo" }), /missing/);
+  await assert.rejects(api.readDocumentaryMapReference({ ...evidence, generationUse: undefined }), /missing/);
+  await assert.rejects(api.readDocumentaryMapReference({ ...evidence, sha256: undefined }), /missing/);
 });
 
 test("AI reference loader returns approved original bytes and rejects corrupted or expired photos", async () => {

@@ -22,6 +22,29 @@ test("a text-incompatible model fails before reading references or submitting a 
   assert.match(failure, /text-capable model/);
 });
 
+test("a verified map reference is read by the map loader, never the photo loader, and goes last", async () => {
+  const source = readFileSync("src/app/modules/stories/manage-creative-assets.ts", "utf8");
+  const code = source.slice(source.indexOf("async function submitStoredAsset("), source.indexOf("async function syncPendingCreativeAssetBatches(")) + "\nexports.run = submitStoredAsset;";
+  const brand = new File(["brand"], "brand.png");
+  const map = new File(["map"], "map.png");
+  const evidence = { generationUse: "ai-reference", representation: "map" };
+  let submitted = false;
+  const exports: { run?: (...args: unknown[]) => Promise<void> } = {};
+  runInNewContext(ts.transpileModule(code, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, {
+    exports, assertCreativeImageModelSupports,
+    getCreativeAssetGenerationReferences: async () => ({ characters: [], brand: [], story: [] }),
+    charactersForImageGeneration: () => [], readPrivateR2ImageFile: async () => assert.fail("no character images"),
+    assertBrandReferenceEligibility: async () => {}, loadStoryReferenceImages: async () => [], loadBrandGenerationImages: async () => [brand],
+    readDocumentaryPhotoReference: async () => assert.fail("A map must not be read as a photo"),
+    readDocumentaryMapReference: async (value: unknown) => { assert.equal(value, evidence); return map; },
+    falModelForAsset: () => ({ descriptor: creativeImageModel("gpt-image"), endpoint: "openai/gpt-image-2/edit" }),
+    submitFalImage: async (input: { referenceImages: File[] }) => { assert.deepEqual(Array.from(input.referenceImages), [brand, map]); submitted = true; return "request"; },
+    setCreativeAssetRequest: async () => {}, failCreativeAsset: async (_id: string, message: string) => assert.fail(message), errorMessage: String,
+  });
+  await exports.run!({ id: "asset", prompt: "Use the map", unitSnapshot: { placeVisual: evidence } }, {});
+  assert.ok(submitted);
+});
+
 for (const withStoryPhoto of [false, true]) test(`fal receives character, brand, ${withStoryPhoto ? "story photo, " : ""}documentary files in prompt order`, async () => {
   const source = readFileSync("src/app/modules/stories/manage-creative-assets.ts", "utf8");
   const code = source.slice(source.indexOf("async function submitStoredAsset("),

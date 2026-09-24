@@ -43,6 +43,7 @@ import type {
   GeneratedCreativeBrief,
   GeneratedCreativeDraft,
 } from "./creative-content.types";
+import { CREATIVE_VISUAL_NEEDS } from "./creative-visual-need";
 
 export type CreativeVisualNeed =
   | "verified-map"
@@ -51,13 +52,7 @@ export type CreativeVisualNeed =
   | "generic-illustration"
   | "typography";
 
-const VISUAL_NEEDS = new Set<string>([
-  "verified-map",
-  "real-photo",
-  "character-reference",
-  "generic-illustration",
-  "typography",
-]);
+const VISUAL_NEEDS = CREATIVE_VISUAL_NEEDS;
 
 /**
  * The draft schema plus a per-unit visualNeed.
@@ -98,7 +93,7 @@ export function creativeSingleShotDraftSchema(
   };
 }
 
-const VISUAL_NEED_INSTRUCTION = `\n\nFor every unit, also return visualNeed, exactly one of "verified-map", "real-photo", "character-reference", "generic-illustration" or "typography", describing what that slide's visualDirection actually requires: "verified-map" only when the slide depicts a specific real place, route or geographic extent precisely enough that it must come from verified map data; "real-photo" when the slide needs documentary photographic evidence rather than an illustrated scene; "character-reference" when the visualDirection calls for one of the topic's configured recurring characters; "typography" when assetRequest is typography-only; otherwise "generic-illustration". Return no other value. A "verified-map" slide is composed from official or provider-verified map data when the story's source supports it; when no geometry can be verified it falls back to a conceptual illustration, never a drawn map. The other values only record the slide's visual intent.`;
+const VISUAL_NEED_INSTRUCTION = `\n\nFor every unit, also return visualNeed, exactly one of "verified-map", "real-photo", "character-reference", "generic-illustration" or "typography". Return no other value. Set "verified-map" on the slide whose job is to locate something the facts name precisely — a road segment closed between two named points, a route, a detour, an address, a venue — typically the cover of a closure or works story, or its "where" slide. That slide is then composed by the pipeline from official or provider-verified map data (a real street map with the verified segment or place marked and the official wording as legend); your visualDirection for it is only the conceptual fallback used when no geometry can be verified, so write it as an abstract composition and never describe a drawn map, streets, pins or routes. Use "real-photo" when the slide needs documentary photographic evidence rather than an illustrated scene; "character-reference" when the visualDirection calls for one of the topic's configured recurring characters; "typography" when assetRequest is typography-only; otherwise "generic-illustration". Declaring "verified-map" never invents geography: without verified data the slide simply renders its fallback.`;
 
 /**
  * Output cap for the brief call. Sized so MAX_BRIEF_KEY_FACTS facts with claim

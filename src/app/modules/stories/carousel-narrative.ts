@@ -404,6 +404,22 @@ export function repairCarouselPlanEvidence(
         allowedFactIds = [unused];
         repaired = true;
       }
+    } else if (
+      index >= 2 &&
+      index < plan.slides.length - 1 &&
+      !isClosing &&
+      allowedFactIds.some((factId) => previousFactIds.has(factId))
+    ) {
+      // Consecutive middle slides may not share evidence (the validator's
+      // "reuse evidence in consecutive middle slides"): keep this slide's own
+      // facts and drop the ones the slide before already carries. Narrowing
+      // never invents evidence; a thin story whose slide has nothing of its
+      // own still fails validation, which is the right outcome.
+      const own = allowedFactIds.filter((factId) => !previousFactIds.has(factId));
+      if (own.length > 0) {
+        allowedFactIds = own;
+        repaired = true;
+      }
     }
 
     const budget = maximumFactsForGoal(slide.editorialGoal);

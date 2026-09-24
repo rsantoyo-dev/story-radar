@@ -368,10 +368,11 @@ test("a quebec.ca source selects the MTMD adapter, which receives the slide's fa
     "./quebec-road-map": await import("./quebec-road-map"),
     "./open-map-render": {}, "./openai-structured-response": {},
     "./creative-documentary-providers": { documentaryProviders: () => ({ resolve: () => { throw new Error("Unexpected general place lookup"); } }) },
-    "./creative-content.repository": { getCreativeDailyUsage: async () => ({ remainingRuns: 0 }) },
+    // Budget and key are available: the official adapter must still skip the paid place research it would never read.
+    "./creative-content.repository": { getCreativeDailyUsage: async () => ({ remainingRuns: 10 }), createCreativeAiRun: async () => { throw new Error("Place research must not run for an official road source"); } },
     "./creative-content.config": { getCreativeContentPublicConfig: () => ({ maxRunsPerDay: 10 }) },
     "./resolve-google-place-map": { resolveGooglePlaceMap: async () => { throw new Error("Google must not run for a road segment"); } },
-  }, { CREATIVE_GEO_SOURCE_ADAPTERS: "quebec511" });
+  }, { CREATIVE_GEO_SOURCE_ADAPTERS: "quebec511", OPENAI_API_KEY: "configured" });
   const draft = { units, storyId: "story", briefId: "brief" } as unknown as import("./creative-content.types").CreativeDraft;
   const result = await service.preparePlaceVisuals("topic", draft, profile, facts, "https://www.quebec.ca/nouvelles/actualites/details/fermetures-72523");
   assert.deepEqual(calls, [{ url: "https://www.quebec.ca/nouvelles/actualites/details/fermetures-72523", unit: ["fact-1"], brief: ["fact-1", "fact-2"] }]);

@@ -33,7 +33,12 @@ export async function preparePlaceVisuals(topicId: string, draft: CreativeDraft,
   const reasons: string[]=[];
   const anchors = sourceLocations(facts);
   const anchorUnits = new Map(draft.units.map(unit => [unit.order, sourceLocationForUnit(unit, anchors)]));
-  const needsResearch = draft.units.some(unit => !prepared.has(unit.order) && unit.assetRequest !== "typography-only" && !anchorUnits.get(unit.order) && (requiresVerifiedGeography(unit) || (!anchors.length && unit.role === "cover")));
+  // An official regional source resolves every geographic slide through its
+  // adapter, so the paid place research would be spent and never read.
+  const enabled=(process.env.CREATIVE_GEO_SOURCE_ADAPTERS ?? "quebec511").split(",");
+  let adapter: typeof adapters[number] | undefined;
+  try { const url=new URL(sourceUrl);adapter=adapters.find(a=>enabled.includes(a.id)&&a.supports(url)); } catch { /* no regional source */ }
+  const needsResearch = !adapter && draft.units.some(unit => !prepared.has(unit.order) && unit.assetRequest !== "typography-only" && !anchorUnits.get(unit.order) && (requiresVerifiedGeography(unit) || (!anchors.length && unit.role === "cover")));
   const daily = await getCreativeDailyUsage(topicId, getCreativeContentPublicConfig().maxRunsPerDay);
   const model=process.env.CREATIVE_GEO_MODEL?.trim() || "gpt-5.6-luna";
   const key=process.env.OPENAI_API_KEY?.trim();
@@ -53,9 +58,6 @@ export async function preparePlaceVisuals(topicId: string, draft: CreativeDraft,
   if (/\b(rénov|travaux|fermeture|fermé|construction|inaugur|réaménag|demolit|damage|renovat|closure|closed|réfection|cierre|obras|remodel)/iu.test(source)) extraction.purpose = "current-state";
   const providers=documentaryProviders(AbortSignal.timeout(35000), profile.language, profile.geoProviderContact);
   const googleSignal=AbortSignal.timeout(35000);
-  const enabled=(process.env.CREATIVE_GEO_SOURCE_ADAPTERS ?? "quebec511").split(",");
-  let adapter: typeof adapters[number] | undefined;
-  try { const url=new URL(sourceUrl);adapter=adapters.find(a=>enabled.includes(a.id)&&a.supports(url)); } catch { /* no regional source */ }
   const materialCache = new Map<string, PreparedPlaceVisual>();
   for (const unit of draft.units) {
     const reusable = prepared.get(unit.order);

@@ -157,7 +157,9 @@ export function getCreativeContentPublicConfig(): CreativeContentPublicConfig {
       meme: "meme-draft-v27",
       // v49/v48: the script call now states the applied framing in the
       // writer's terms, and a repair is a rewrite with the review in hand.
-      carousel: carouselWriterModel ? `carousel-draft-v49-writer-${carouselWriterModel}` : "carousel-draft-v48",
+      // v50/v49: the writer is told to declare verified-map on the locating
+      // slide of a closure/works/venue story; the pipeline now reads it.
+      carousel: carouselWriterModel ? `carousel-draft-v50-writer-${carouselWriterModel}` : "carousel-draft-v49",
       sequence: "sequence-draft-v6",
     },
     maxRunsPerDay: parsePositiveInteger(

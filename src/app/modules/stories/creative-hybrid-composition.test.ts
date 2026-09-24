@@ -4,16 +4,18 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 
-async function compose(mode = "illustration-editorial", photoTest = false, includeUnresolvedGeoUnit = false) {
+async function compose(mode = "illustration-editorial", photoTest = false, includeUnresolvedGeoUnit = false, mapMode?: "ai" | "local") {
   const source = readFileSync("src/app/modules/stories/manage-creative-assets.ts", "utf8");
   const start = source.indexOf("async function composeDraftPlaceVisuals(");
   const end = source.indexOf("async function recomposePlaceAsset(", start);
   const code = source.slice(start, end) + "\nexports.run = composeDraftPlaceVisuals;";
-  const submitted: number[] = [], rendered: number[] = [];
+  const submitted: number[] = [], rendered: number[] = [], storedMaps: string[] = [];
   let researched: number[] = [];
   let assets: Record<string, unknown>[] = [];
   const photo = Buffer.from("verified-photo");
-  const prepared = new Map([[3, { bytes: photo, evidence: { representation: "photo", place: { name: "Museum" }, photo: { author: "Yource", license: "CC BY-SA 4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0/" } } }]]);
+  const map = Buffer.from("verified-map");
+  const prepared = new Map<number, unknown>([[3, { bytes: photo, evidence: { representation: "photo", place: { name: "Museum" }, photo: { author: "Yource", license: "CC BY-SA 4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0/" } } }]]);
+  if (mapMode) prepared.set(2, { bytes: map, evidence: { representation: "map", adapter: "quebec511", sha256: "map-sha", attribution: "MTMD · CC BY 4.0 · © OpenStreetMap contributors", reasons: ["Official MTMD segment rendered as location context"], adapterEvidence: { reason: "matched", segment: { id: "172650", chantier: "319446" } } } });
   const draft = { id: "draft", version: 3, storyId: "story",
     units: [1, 2, 3, 4].map(order => ({ id: String(order), order, role: order === 1 ? "cover" : "content",
       type: "carousel-slide", assetRequest: "generated-image", headline: "Headline", visualDirection: "Editorial illustration" }))
@@ -25,6 +27,10 @@ async function compose(mode = "illustration-editorial", photoTest = false, inclu
   } }).outputText, {
     exports, Map, Set,
     placeCompositionVersion: () => photoTest ? "place-visual-v5" : "place-visual-v4",
+    mapReferenceMode: () => mapMode ?? "local",
+    MAP_REFERENCE_VISUAL_DIRECTION: "Composition around the provided official map panel",
+    storeDocumentaryMapReference: async (topic: string, bytes: Buffer) => { assert.equal(topic, "topic"); assert.equal(bytes, map); storedMaps.push("map-sha"); return "map-sha"; },
+    CreativeAssetValidationError: Error,
     // The endpoint pair now comes from the model catalog.
     resolveDefaultCreativeImageModel: () => "gpt-image",
     creativeImageModel: () => ({ textToImageEndpoint: "fal/text", referenceEndpoint: "fal/edit" }),
@@ -86,8 +92,35 @@ async function compose(mode = "illustration-editorial", photoTest = false, inclu
     publicConfiguration: () => ({}),
   });
   await exports.run!("topic", draft, { keyFacts: [], profileSnapshot: {} }, "high", prepared);
-  return { submitted, rendered, researched, assets };
+  return { submitted, rendered, researched, assets, storedMaps };
 }
+
+test("a verified map slide is generated with the stored map as its last reference, and composed locally when the mode says so", async () => {
+  const ai = await compose("illustration-editorial", false, false, "ai");
+  assert.deepEqual(ai.submitted, [1, 2, 4]);
+  assert.deepEqual(ai.rendered, [3]);
+  assert.deepEqual(ai.storedMaps, ["map-sha"]);
+  const slide = ai.assets.find(a => a.unitOrder === 2)!;
+  assert.equal(slide.generationMode, "reference-guided");
+  assert.equal(slide.providerEndpoint, "fal/edit");
+  assert.match(String(slide.prompt), /LAST input image is the verified official road map/);
+  assert.match(String(slide.prompt), /MTMD · CC BY 4\.0/);
+  const evidence = (slide.unitSnapshot as { placeVisual: { generationUse: string; representation: string; referenceTopicId: string; sha256: string; reasons: string[]; adapterEvidence: { segment: { id: string } } } }).placeVisual;
+  assert.equal(evidence.generationUse, "ai-reference");
+  assert.equal(evidence.representation, "map");
+  assert.equal(evidence.referenceTopicId, "topic");
+  assert.equal(evidence.sha256, "map-sha");
+  assert.equal(evidence.adapterEvidence.segment.id, "172650");
+  assert.match(evidence.reasons.join(" "), /compare the map panel with the original/);
+  const local = await compose("illustration-editorial", false, false, "local");
+  assert.deepEqual(local.submitted, [1, 4]);
+  assert.deepEqual(local.rendered, [2, 3]);
+  assert.deepEqual(local.storedMaps, []);
+  // A strict topic never sends the map to a generator, whatever the mode says.
+  const strict = await compose("photo-required", false, false, "ai");
+  assert.deepEqual(strict.submitted, []);
+  assert.deepEqual(strict.storedMaps, []);
+});
 
 test("museum photo is composed only on its slide; other slides use creative prompts and brand references", async () => {
   const result = await compose();

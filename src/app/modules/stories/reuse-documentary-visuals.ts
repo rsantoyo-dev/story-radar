@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import type { CreativeDraft, CreativeKeyFact } from "./creative-content.types";
 import { documentarySnapshot, eligiblePhoto, normalizePlaceName, reportsChangedPlaceState } from "./creative-documentary";
 import { documentarySourceToken, latestDocumentaryBatch } from "./creative-documentary.repository";
-import { buildDocumentaryObjectKey, readPrivateR2ImageFile } from "./r2-storage";
+import { buildDocumentaryObjectKey, putPrivateR2Object, readPrivateR2ImageFile } from "./r2-storage";
 import { PLACE_VISUAL_VERSION, unitSource, type PreparedPlaceVisual } from "./creative-place-visual";
 
 /** Reuse only current, human-approved originals from this story and topic. */
@@ -57,6 +57,30 @@ export function documentaryVisualInputHash(prepared?: Map<number, PreparedPlaceV
   return createHash("sha256").update(JSON.stringify(inputs)).digest("hex").slice(0, 24);
 }
 
+
+/**
+ * A verified map is rendered on demand, so nothing persists it by itself.
+ * Storing the exact PNG as a private original lets the generator receive it
+ * unchanged and lets a reviewer compare the AI composition against it.
+ */
+export async function storeDocumentaryMapReference(topicId: string, bytes: Buffer): Promise<string> {
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  await putPrivateR2Object({ objectKey: buildDocumentaryObjectKey(topicId, "originals", sha256), body: bytes, contentType: "image/png" });
+  return sha256;
+}
+
+/** The stored verified map, byte-identical to what the adapter rendered, for the reference-guided composition. */
+export async function readDocumentaryMapReference(evidence: PreparedPlaceVisual["evidence"]): Promise<File> {
+  const { referenceTopicId, sha256 } = evidence;
+  if (evidence.generationUse !== "ai-reference" || !referenceTopicId || evidence.representation !== "map" || !sha256) {
+    throw new Error("The verified map reference is missing. Generate the images again.");
+  }
+  const file = await readPrivateR2ImageFile({ objectKey: buildDocumentaryObjectKey(referenceTopicId, "originals", sha256), contentType: "image/png" });
+  if (createHash("sha256").update(Buffer.from(await file.arrayBuffer())).digest("hex") !== sha256) {
+    throw new Error("The verified map reference failed its integrity check.");
+  }
+  return file;
+}
 
 /** Private approved original for the explicitly enabled reference-guided experiment. */
 export async function readDocumentaryPhotoReference(evidence: PreparedPlaceVisual["evidence"]): Promise<File> {

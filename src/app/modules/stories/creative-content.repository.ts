@@ -4,6 +4,7 @@ import { getCreativeContentPublicConfig } from "./creative-content.config";
 import { CreativeContentConflictError, CreativeContentDailyLimitError } from "./creative-run-errors";
 import { recover511CarouselPlan } from "./road-notice-evidence";
 import { canCarryImageUnits } from "./creative-image-text-sync";
+import { visualNeedsByOrder } from "./creative-visual-need";
 import { carryImageBatchStatements } from "./creative-image-carry.repository";
 import { CreativeBrandReferenceConflictError } from "./creative-brand-references.repository";
 
@@ -789,11 +790,13 @@ function mapCreativeDraft(
   characterIdsByUnit: Map<string, string[]>,
 ): CreativeDraft {
   const generated = row.aiSnapshot as Partial<GeneratedCreativeDraft>;
+  const visualNeeds = visualNeedsByOrder(generated);
   const mappedUnits: CreativeDraft["units"] = units.map((unit) => ({
     id: unit.id,
     order: unit.order,
     type: unit.type,
     role: unit.role,
+    ...(visualNeeds.has(unit.order) ? { visualNeed: visualNeeds.get(unit.order) } : {}),
     ...(isCarouselEditorialGoal(unit.editorialGoal)
       ? { editorialGoal: unit.editorialGoal }
       : {}),

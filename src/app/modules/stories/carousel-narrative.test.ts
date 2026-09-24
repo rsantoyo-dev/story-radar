@@ -150,6 +150,28 @@ test("repairs missing hook evidence and reuses established evidence at closing",
   );
 });
 
+test("narrows a middle slide that shares evidence with the slide before to its own facts, without inventing any", () => {
+  const known = new Set(["fact-1", "fact-2", "fact-3", "fact-4"]);
+  // Partial overlap: slide 3 keeps fact-3 and drops fact-2, which slide 2 already carries.
+  const overlap: CarouselPlan = {
+    slideCount: 4,
+    rationale: "Closure, works, detour, conclusion.",
+    slides: [slide("hook", ["fact-1"]), slide("explain", ["fact-2"]), slide("impact", ["fact-2", "fact-3"]), slide("conclude", ["fact-1", "fact-3"])],
+  };
+  const narrowed = repairCarouselPlanEvidence(overlap, known);
+  assert.equal(narrowed.repaired, true);
+  assert.deepEqual(narrowed.plan.slides[2]?.allowedFactIds, ["fact-3"]);
+  assert.deepEqual(validateCarouselPlan(narrowed.plan, known), []);
+  // Full repetition with nothing unspent left cannot be repaired: the validator still refuses it.
+  const thin: CarouselPlan = {
+    ...overlap,
+    slides: [slide("hook", ["fact-1"]), slide("explain", ["fact-2", "fact-3"]), slide("impact", ["fact-2"]), slide("conclude", ["fact-1", "fact-3"])],
+  };
+  const stuck = repairCarouselPlanEvidence(thin, new Set(["fact-1", "fact-2", "fact-3"]));
+  assert.deepEqual(stuck.plan.slides[2]?.allowedFactIds, ["fact-2"]);
+  assert.match(validateCarouselPlan(stuck.plan, new Set(["fact-1", "fact-2", "fact-3"])).join("\n"), /slides 2 and 3 reuse evidence/);
+});
+
 test("allows a conclude slide to synthesize three facts established earlier", () => {
   assert.equal(maximumFactsForGoal("conclude"), 3);
   assert.equal(maximumFactsForGoal("debate"), 2);

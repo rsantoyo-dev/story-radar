@@ -44,15 +44,20 @@ const p = feature.properties;
 const months = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
 const parse = (value) => { const m = /^(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2})/.exec(value); return { year: m[1], month: months[Number(m[2]) - 1], day: Number(m[3]), time: `${Number(m[4])} h${Number(m[5]) ? ` ${m[5]}` : ""}` }; };
 const start = parse(p.debut), end = parse(p.fin), updated = parse(p.miseAJour);
-const when = start.day === end.day && start.month === end.month
+const days = Math.round((Date.parse(p.fin.slice(0, 10).replace(/\//g, "-")) - Date.parse(p.debut.slice(0, 10).replace(/\//g, "-"))) / 86_400_000);
+const when = days === 0
   ? `le ${start.day} ${start.month} ${start.year}, de ${start.time} à ${end.time}`
-  : `dans la nuit du ${start.day}${start.month === end.month ? "" : ` ${start.month}`} au ${end.day} ${end.month} ${end.year}, de ${start.time} à ${end.time}`;
+  : days === 1
+  ? `dans la nuit du ${start.day}${start.month === end.month ? "" : ` ${start.month}`} au ${end.day} ${end.month} ${end.year}, de ${start.time} à ${end.time}`
+  // A multi-day row carries its nightly schedule in the closure wording itself.
+  : `du ${start.day}${start.month === end.month ? "" : ` ${start.month}`} au ${end.day} ${end.month} ${end.year} (à partir de ${start.time} le premier jour, jusqu'à ${end.time} le dernier)`;
 const direction = p.direction.toLowerCase();
 const localisation = p.localisation.replace(/^À\s+/u, "à ").trim();
 const closure = p.entrave.replace(/\s+/g, " ").trim();
 const detour = (p.detoursEtItinerairesFacultatifs || "").replace(/\s+/g, " ").trim();
 
-const title = `[TEST] ${closure} : autoroute ${p.routeAutoroute}, en direction ${direction}, ${localisation}, ${when.replace(/, de .*$/, "")}`;
+// The closure wording may carry a multi-line schedule; the title keeps its first clause.
+const title = `[TEST] ${closure.split(/\s+-\s+/)[0]} : autoroute ${p.routeAutoroute}, en direction ${direction}, ${localisation}, ${when.replace(/[,(] (?:de|à partir de) .*$/, "")}`;
 const contentText = [
   `Le ministère des Transports et de la Mobilité durable signale une entrave sur l'autoroute ${p.routeAutoroute}, en direction ${direction}, ${localisation}, ${when}.`,
   `Nature des travaux : ${p.identificationDesTravaux || "non précisée"}. Entrave : ${closure}.`,

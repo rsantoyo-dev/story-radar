@@ -91,9 +91,21 @@ export type RoadNoticeSignals = {
   routes: [string, string][];
   /** ISO date window (YYYY-MM-DD) the notice announces. */
   window?: { start: string; end: string };
-  closure?: "complete" | "partial";
+  closure?: RoadClosureKind;
   text: string;
 };
+export type RoadClosureKind = "complete" | "ramp" | "partial";
+/**
+ * Mainline closure, ramp/exit/access closure, or lane reduction — one reading
+ * for facts and feed rows, so a "Sortie fermée" row at the same anchor never
+ * competes with the "Autoroute fermée" notice it belongs to.
+ */
+export function closureKind(text: string): RoadClosureKind | undefined {
+  const t = normalized(text);
+  if (/\b(?:fermetures? completes?|completement fermee?s?|(?:route|autoroute|chaussee|voie de desserte) fermee|full closure|completely closed|closed completely)\b/.test(t)) return "complete";
+  if (/\b(?:sortie|acces|entree|bretelle)s? fermee?s?\b|\b(?:exit|ramp|access) closed\b|fermeture de (?:la |l')?(?:sortie|bretelle|entree|acces)\b/.test(t)) return "ramp";
+  if (/\bvoies? sur\b|fermeture de \d+ voies?|voie fermee|alternance|lane closure|lanes? closed/.test(t)) return "partial";
+}
 const DIRECTION = "(sud|nord|est|ouest)";
 const MONTH = `(${months.join("|")}|${MONTHS_EN.join("|")})`;
 function monthIndex(name: string): number {
@@ -133,14 +145,10 @@ export function roadNoticeSignals(facts: readonly CreativeKeyFact[]): RoadNotice
     const date = single && year !== undefined ? isoDate(year, monthIndex(single[2]), Number(single[1])) : undefined;
     if (date) window = { start: date, end: date };
   }
-  const closure = /\b(?:fermetures? complete|completement ferme|route fermee|autoroute fermee|full closure|completely closed|closed completely)/.test(text) ? "complete" as const
-    : /\b(?:fermeture de \d+ voies?|\d+ voies? sur \d+|voie fermee|lane closure|lanes? closed)/.test(text) ? "partial" as const : undefined;
-  return { routes, window, closure, text };
+  return { routes, window, closure: closureKind(text), text };
 }
-function featureClosure(p: Record<string, unknown>): "complete" | "partial" | undefined {
-  const text = normalized(`${p.entrave ?? ""} ${p.entraveType ?? ""}`);
-  if (/\b(?:route|autoroute|bretelle|voie de desserte) fermee|fermeture complete|\bfermee?\b(?![^]*\bvoie)/.test(text) && !/\bvoies? sur\b/.test(text)) return "complete";
-  if (/\bvoies? sur\b|fermeture de \d+ voie|voie fermee|alternance/.test(text)) return "partial";
+function featureClosure(p: Record<string, unknown>): RoadClosureKind | undefined {
+  return closureKind(`${p.entrave ?? ""} ${p.entraveType ?? ""}`);
 }
 /** "À Brossard, entre le pont X et le boulevard Y" → municipality + the named anchors. */
 export function localisationParts(localisation: string): { municipality?: string; anchors: string[] } {

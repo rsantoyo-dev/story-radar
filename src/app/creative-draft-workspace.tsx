@@ -1061,7 +1061,7 @@ export function CreativeDraftWorkspace({
     const count = activeDraft.units.length;
     if (
       !window.confirm(
-        requiresPlaceComposition ? `Find verified place material and compose ${count} images in this draft, preserving the saved text?` : `Generate ${count} ${count === 1 ? "image" : "images"} at ${assetDimensions} with ${imageModelLabel}${supportsImageQuality ? ` (${imageQualityLabel(selectedImageQuality)} quality)` : ""}${activeDraftHasSupportingCharacters ? ". Slides with selected supporting characters will use reference-guided generation." : ""}?`,
+        requiresPlaceComposition ? `Resolve verified place material and generate ${count} images in this draft, preserving the saved text?` : `Generate ${count} ${count === 1 ? "image" : "images"} at ${assetDimensions} with ${imageModelLabel}${supportsImageQuality ? ` (${imageQualityLabel(selectedImageQuality)} quality)` : ""}${activeDraftHasSupportingCharacters ? ". Slides with selected supporting characters will use reference-guided generation." : ""}?`,
       )
     ) {
       return;
@@ -1089,10 +1089,15 @@ export function CreativeDraftWorkspace({
         draftId: activeDraftId,
         quality: responseQuality,
       });
+      const stillGenerating = response.batch?.assets.some(asset => asset.status === "queued" || asset.status === "generating") ?? false;
       setNotice(
         response.outcome === "existing"
           ? `The ${imageQualityLabel(responseQuality).toLowerCase()} image batch already exists; no duplicate generation was submitted.`
-          : requiresPlaceComposition ? "Place research and composition completed in this draft. Review each image and its evidence below." : `${count} ${count === 1 ? "image was" : "images were"} submitted to ${response.configuration.model}. Progress will update automatically.`,
+          : requiresPlaceComposition
+            ? stillGenerating
+              ? `Verified place material resolved; ${count} ${count === 1 ? "image was" : "images were"} submitted to ${response.configuration.model}. Progress will update automatically — check each map slide against its original before approving.`
+              : "Verified place material resolved and composed in this draft. Review each image and its evidence below."
+            : `${count} ${count === 1 ? "image was" : "images were"} submitted to ${response.configuration.model}. Progress will update automatically.`,
       );
     });
   }
@@ -2100,11 +2105,11 @@ export function CreativeDraftWorkspace({
                   ) : geographicSlides.length > 0 ? (
                     <div className={styles.historyCallout}>
                       <div>
-                        <strong>This script needs verified geographic material</strong>
-                        <p>Slide {geographicSlides.map(unit => unit.order).join(", ")} requests a map or a recognizable place. Generative images cannot verify its location. Documentary preparation uses eligible photography, verified maps when appropriate, or typography.</p>
-                        <p>Search and resolve the location, use eligible photography or an open-data map, and fall back to typography when evidence is insufficient. Save and approve the script first; review each composed image here afterward.</p>
+                        <strong>This script has verified-place slides</strong>
+                        <p>Slide {geographicSlides.map(unit => unit.order).join(", ")} locates a real place or road segment. Its map or photo is resolved from official and open data first — never drawn by the image model — and the slide is then composed with that material (handed to the image model as a reference, or composed locally). When nothing can be verified, the slide falls back to a conceptual illustration.</p>
+                        <p>Save and approve the script first; each image shows its place evidence below once generated, and a map slide must be compared with its original before approval.</p>
                       </div>
-                      <button type="button" className={styles.secondaryButton} disabled={Boolean(busy) || Boolean(assetBusy) || dirty || activeDraft.status !== "approved" || profileDirty} onClick={handleGenerateImages}>Compose images in this draft</button>
+                      <button type="button" className={styles.secondaryButton} disabled={Boolean(busy) || Boolean(assetBusy) || dirty || activeDraft.status !== "approved" || profileDirty} onClick={handleGenerateImages}>Generate images with verified places</button>
                     </div>
                   ) : activeDraft.status !== "approved" || dirty ? (
                     <div className={styles.historyCallout}>
@@ -2696,7 +2701,11 @@ function CreativeAssetCard({
 
       {asset.unitSnapshot.placeVisual ? <details open className={styles.historyCallout}><summary>Place material · {asset.unitSnapshot.placeVisual.version === "place-visual-v2" && asset.unitSnapshot.placeVisual.representation === "typography" && asset.unitSnapshot.assetRequest !== "typography-only" ? "conceptual illustration" : asset.unitSnapshot.placeVisual.representation}</summary>
         <div>{asset.unitSnapshot.placeVisual.reasons.map((reason,index)=><p key={index}>{reason}</p>)}
-        {asset.unitSnapshot.placeVisual.sourceUrl ? <a href={asset.unitSnapshot.placeVisual.sourceUrl} target="_blank" rel="noreferrer">Identity evidence</a> : null}
+        {asset.unitSnapshot.placeVisual.adapterEvidence?.segment ? <p>
+          Official notice {asset.unitSnapshot.placeVisual.adapterEvidence.segment.id}{asset.unitSnapshot.placeVisual.adapterEvidence.segment.chantier ? ` · Work site ${asset.unitSnapshot.placeVisual.adapterEvidence.segment.chantier}` : ""} · {asset.unitSnapshot.placeVisual.adapterEvidence.segment.location} · {asset.unitSnapshot.placeVisual.adapterEvidence.segment.direction}
+          {asset.unitSnapshot.placeVisual.adapterEvidence.segment.entrave ? ` · ${asset.unitSnapshot.placeVisual.adapterEvidence.segment.entrave}` : ""}{asset.unitSnapshot.placeVisual.adapterEvidence.segment.detour ? ` · Détour : ${asset.unitSnapshot.placeVisual.adapterEvidence.segment.detour}` : ""}
+        </p> : null}
+        {asset.unitSnapshot.placeVisual.sourceUrl ? <a href={asset.unitSnapshot.placeVisual.sourceUrl} target="_blank" rel="noreferrer">{asset.unitSnapshot.placeVisual.adapter === "quebec511" ? "Official MTMD source" : "Identity evidence"}</a> : null}
         <p>{asset.unitSnapshot.placeVisual.attribution}</p>
         {asset.unitSnapshot.placeVisual.locationAnchor ? <p>
           Source address reference: {asset.unitSnapshot.placeVisual.locationAnchor.name} · {asset.unitSnapshot.placeVisual.locationAnchor.address}. The source places the event nearby.{asset.unitSnapshot.placeVisual.representation === "map" ? " The marker is an address reference, not the exact event site." : " No map was prepared."}

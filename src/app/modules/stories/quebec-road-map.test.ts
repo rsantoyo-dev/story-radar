@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import data from "./fixtures/quebec-road-35.json";
 import brossard from "./fixtures/quebec-road-brossard-15.json";
-import { hasRoadNoticeRecord, isOfficialRoadNoticeSource, localisationParts, matchRoadSegment, roadNoticeSignals, sameRoadSegment, selectRoadSegment } from "./quebec-road-map";
+import { closureKind, hasRoadNoticeRecord, isOfficialRoadNoticeSource, localisationParts, matchRoadSegment, roadNoticeSignals, sameRoadSegment, selectRoadSegment } from "./quebec-road-map";
 const fact = { id: "fact-1", statement: "Entrave majeure", sourceExcerpt: "35\nÀ Saint-Jean-sur-Richelieu, entre la sortie 39 (R-104) et la R-104\nEntrave\nMajeure\nDirection\nSud et nord\nDu 21 juin 2026 à 20 h au 31 octobre 2026 à 6 h" };
 test("matches the actual 168598 notice without borrowing Saint-Sebastien dates", () => {
  const segment = selectRoadSegment(data, [fact]);
@@ -60,6 +60,14 @@ test("once the feed publishes a night in the window, exactly one work site match
   // 172780 (Marie-Victorin, 1 voie sur 2) and 172721 (Sud et nord) share the
   // route, municipality and night; closure type and direction keep them out.
   assert.equal(matchRoadSegment(brossardOn28, pressFacts.map(f => ({ ...f, statement: f.statement.replace("Fermetures complètes", "Fermetures"), sourceExcerpt: f.sourceExcerpt.replace(/fermetures? compl[eè]tes?/gi, "fermetures") }))).reason, "2 official work sites match the cited route, location and dates; the notice is ambiguous");
+});
+
+test("an exit or access closure at the same anchor never competes with the mainline closure it belongs to", () => {
+  const first = brossardOn28.features.find(f => f.properties.identifiant === "172650")!;
+  const exit = { ...first, properties: { ...first.properties, identifiant: "172699", identifiantChantier: "888888", localisation: "À Brossard, sortie 8 (pont Samuel-De Champlain)", entrave: "Sortie fermée", detoursEtItinerairesFacultatifs: "" } };
+  const withExit = { ...brossardOn28, numberMatched: brossardOn28.features.length + 1, features: [...brossardOn28.features, exit] };
+  assert.equal(matchRoadSegment(withExit, pressFacts).segment?.id, "172650");
+  for (const [text, kind] of [["Autoroute fermée\n- Jeudi entre 20 h 30 et 5 h", "complete"], ["fermetures complètes de la voie de desserte", "complete"], ["Chaussée fermée en direction SUD, circulation à contresens", "complete"], ["Sortie fermée", "ramp"], ["Accès fermé", "ramp"], ["Fermeture de 1 voie sur 3", "partial"], ["Circulation en alternance en tout temps", "partial"], ["Majeure (semaine)", undefined]] as const) assert.equal(closureKind(text), kind, text);
 });
 
 test("nightly rows of one work site stay one match; a second work site or a missing year yields nothing", () => {
