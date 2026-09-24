@@ -7,7 +7,7 @@ import {
   type EditorialAngleStatus,
   type TopicAcquisitionTaxonomy,
 } from "./modules/stories/acquisition-lenses";
-import { requestsGeographicReconstruction } from "./modules/stories/creative-evidence-guardrails";
+import { requiresVerifiedGeography } from "./modules/stories/creative-evidence-guardrails";
 import { imageTextNeedsUpdate } from "./modules/stories/creative-image-text-sync";
 import { findCreativeImageModelByProviderModel } from "./modules/stories/creative-image-models";
 
@@ -213,7 +213,7 @@ export function CreativeDraftWorkspace({
   const activeDraft = workspace?.drafts.find(
     (draft) => draft.id === activeDraftId,
   );
-  const geographicSlides = activeDraft?.units.filter(unit => requestsGeographicReconstruction(unit.visualDirection)) ?? [];
+  const geographicSlides = activeDraft?.units.filter(requiresVerifiedGeography) ?? [];
   const requiresPlaceComposition = geographicSlides.length > 0 || (activeDraft?.visualFidelityOverride?.mode ?? workspace?.profile.visualFidelityMode) === "photo-required";
   const primaryDrafts = workspace?.drafts.filter((draft) => !draft.companion) ?? [];
   const companionDrafts = workspace?.drafts.filter((draft) => Boolean(draft.companion)) ?? [];
@@ -2707,7 +2707,7 @@ function CreativeAssetCard({
       {asset.unitSnapshot.roadMapEvidence ? <div className={styles.historyCallout}><div>
         <strong>{asset.unitSnapshot.roadMapEvidence.sha256 ? "Verified road map" : "Map preparation"}</strong>
         <p>{asset.unitSnapshot.roadMapEvidence.reason}</p>
-        {asset.unitSnapshot.roadMapEvidence.segment ? <p>Notice {asset.unitSnapshot.roadMapEvidence.segment.id} · {asset.unitSnapshot.roadMapEvidence.segment.location}</p> : null}
+        {asset.unitSnapshot.roadMapEvidence.segment ? <p>Notice {asset.unitSnapshot.roadMapEvidence.segment.id}{asset.unitSnapshot.roadMapEvidence.segment.chantier ? ` · Work site ${asset.unitSnapshot.roadMapEvidence.segment.chantier}` : ""} · {asset.unitSnapshot.roadMapEvidence.segment.location}{asset.unitSnapshot.roadMapEvidence.segment.detour ? ` · Détour : ${asset.unitSnapshot.roadMapEvidence.segment.detour}` : ""}</p> : null}
         <a href={asset.unitSnapshot.roadMapEvidence.source} target="_blank" rel="noreferrer">Official MTMD source</a>
       </div></div> : null}
       {asset.carriedFromAssetId && !textPending ? <p>Imagen conservada de la revisión anterior.</p> : null}

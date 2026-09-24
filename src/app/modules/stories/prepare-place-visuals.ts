@@ -9,8 +9,9 @@ import { OSM_ATTRIBUTION } from "./open-map-geometry";
 import { generateOpenAiStructuredResponse } from "./openai-structured-response";
 import { getCreativeDailyUsage, createCreativeAiRun, completeCreativeAiRun, failCreativeAiRun } from "./creative-content.repository";
 import { getCreativeContentPublicConfig } from "./creative-content.config";
-import { requestsGeographicReconstruction } from "./creative-evidence-guardrails";
+import { requiresVerifiedGeography } from "./creative-evidence-guardrails";
 import { prepareRoadMap } from "./prepare-road-map";
+import { isOfficialRoadNoticeSource } from "./quebec-road-map";
 import { sourceLocations, sourceLocationForUnit } from "./source-location";
 import { prepareSourceLocation } from "./prepare-source-location";
 import { resolveGooglePlaceMap } from "./resolve-google-place-map";
@@ -19,7 +20,9 @@ const schema = { type: "object", additionalProperties: false, required: ["mentio
   purpose: { type: "string", enum: ["location", "current-state", "unknown"] },
   mentions: {type:"array",maxItems:6,items:{type:"object",additionalProperties:false,required:["name","kind","role","excerpt","municipality","region","country"],properties:{name:{type:"string"},kind:{type:"string",enum:["named","generic"]},role:{type:"string",enum:["event","secondary"]},excerpt:{type:"string"},municipality:{type:"string"},region:{type:"string"},country:{type:"string"}}}}
 } };
-const adapters = [{ id: "quebec511", supports: (url: URL) => ["www.511.gouv.qc.ca","511.gouv.qc.ca"].includes(url.hostname), prepare: prepareRoadMap }];
+// The MTMD adapter covers 511 notice pages and the ministry's own press
+// releases; either way the geometry is the official WFS record, never the page.
+const adapters = [{ id: "quebec511", supports: isOfficialRoadNoticeSource, prepare: prepareRoadMap }];
 /** General pipeline; regional adapters are optional identity/geometry sources. */
 export async function preparePlaceVisuals(topicId: string, draft: CreativeDraft, profile: CreativeProfile, facts: CreativeKeyFact[], sourceUrl: string, prepared = new Map<number, PreparedPlaceVisual>()): Promise<Map<number, PreparedPlaceVisual>> {
   const stopStartingAt = Date.now() + 45_000;
@@ -30,7 +33,7 @@ export async function preparePlaceVisuals(topicId: string, draft: CreativeDraft,
   const reasons: string[]=[];
   const anchors = sourceLocations(facts);
   const anchorUnits = new Map(draft.units.map(unit => [unit.order, sourceLocationForUnit(unit, anchors)]));
-  const needsResearch = draft.units.some(unit => !prepared.has(unit.order) && unit.assetRequest !== "typography-only" && !anchorUnits.get(unit.order) && (requestsGeographicReconstruction(unit.visualDirection) || (!anchors.length && unit.role === "cover")));
+  const needsResearch = draft.units.some(unit => !prepared.has(unit.order) && unit.assetRequest !== "typography-only" && !anchorUnits.get(unit.order) && (requiresVerifiedGeography(unit) || (!anchors.length && unit.role === "cover")));
   const daily = await getCreativeDailyUsage(topicId, getCreativeContentPublicConfig().maxRunsPerDay);
   const model=process.env.CREATIVE_GEO_MODEL?.trim() || "gpt-5.6-luna";
   const key=process.env.OPENAI_API_KEY?.trim();
@@ -66,7 +69,7 @@ export async function preparePlaceVisuals(topicId: string, draft: CreativeDraft,
       const prepared = materialCache.get(key) ?? await prepareSourceLocation(anchor, profile, sourceUrl);
       materialCache.set(key, prepared); results.set(unit.order, prepared); continue;
     }
-    if (unit.assetRequest === "typography-only" || (!requestsGeographicReconstruction(unit.visualDirection) && (unit.role !== "cover" || anchors.length > 0))) {
+    if (unit.assetRequest === "typography-only" || (!requiresVerifiedGeography(unit) && (unit.role !== "cover" || anchors.length > 0))) {
       result.evidence.reasons.push(unit.assetRequest === "typography-only" ? "Text-only unit; no place image assigned." : "Conceptual illustration; no geographic scene or event photograph represented."); continue;
     }
     if (Date.now() > stopStartingAt) { result.evidence.reasons.push("Publication research time budget exhausted; source text retained."); continue; }
@@ -74,7 +77,7 @@ export async function preparePlaceVisuals(topicId: string, draft: CreativeDraft,
       const adapterFacts=facts.filter(f=>unit.factIds.includes(f.id));
       const cacheKey=adapter.id+JSON.stringify(adapterFacts);
       const cached=materialCache.get(cacheKey);if(cached){results.set(unit.order,cached);continue;}
-      const regional=await adapter.prepare(sourceUrl,adapterFacts);
+      const regional=await adapter.prepare(sourceUrl,adapterFacts,facts);
       result.evidence.adapter=adapter.id;result.evidence.adapterEvidence=regional.evidence;result.evidence.sourceUrl=regional.evidence.source;result.evidence.reasons.push(regional.evidence.reason);
       if(regional.bytes){result.bytes=regional.bytes;result.evidence.representation="map";result.evidence.sha256=regional.evidence.sha256;result.evidence.attribution=`MTMD · CC BY 4.0 · ${OSM_ATTRIBUTION}`;}
       materialCache.set(cacheKey,result);

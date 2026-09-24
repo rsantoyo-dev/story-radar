@@ -48,6 +48,7 @@ async function compose(mode = "illustration-editorial", photoTest = false, inclu
     getTopicVisualFidelityMode: async () => mode,
     resolveEffectiveVisualFidelity: () => ({ mode }),
     requestsGeographicReconstruction: (direction: string) => direction === "Public square rally",
+    requiresVerifiedGeography: (unit: { visualDirection: string; visualNeed?: string }) => unit.visualNeed === "verified-map" || unit.visualDirection === "Public square rally",
     GEOGRAPHIC_FALLBACK_VISUAL_DIRECTION: "Conceptual fallback, no verified place",
     preparePlaceVisuals: async (_topic: string, selected: typeof draft) => {
       researched = selected.units.map(u => u.order); return prepared;

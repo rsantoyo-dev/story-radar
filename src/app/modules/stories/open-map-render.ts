@@ -47,7 +47,8 @@ export async function fetchOpenMapData(query: string): Promise<unknown> {
       const req = request(url, { signal: AbortSignal.timeout(18_000), lookup: lookupPublicAddress, headers: { "User-Agent": `PressCraftor/0.1 (${process.env.CREATIVE_GEO_CONTACT || "local map composition"})`, "Accept-Encoding": "identity" } }, res => {
         if (res.statusCode !== 200) {res.destroy(); reject(new Error("Open map provider unavailable"));return;}
         let size=0; const chunks: Buffer[]=[];
-        res.on("data", (chunk:Buffer)=>{size+=chunk.length;if(size>1_000_000)res.destroy(new Error("Open map data too large"));else chunks.push(chunk);});
+        // A 16 km line frame with major roads only measured ~0.95 MB pretty-printed; 2 MB keeps that within bounds without admitting bulk extracts.
+        res.on("data", (chunk:Buffer)=>{size+=chunk.length;if(size>2_000_000)res.destroy(new Error("Open map data too large"));else chunks.push(chunk);});
         res.on("error",reject);res.on("end",()=>resolve(Buffer.concat(chunks)));
       });req.on("error",(cause)=>reject(new Error("Open map request failed", {cause})));req.end();
     });
@@ -66,11 +67,19 @@ export async function drawOpenMap(data: unknown, target: MapTarget): Promise<Buf
   const viewport=mapViewport(target);const shapes:string[]=[];const labels:string[]=[];const placed: {x:number;y:number;width:number}[]=[];const names=new Set<string>();
   for (const element of data.elements) {
     if (!record(element) || element.type !== "way" || !Array.isArray(element.geometry) || !record(element.tags)) continue;
-    const points = element.geometry.map(p => {if (!record(p) || typeof p.lon !== "number" || typeof p.lat !== "number") throw new Error("Invalid map geometry");return viewport.pixel([p.lon,p.lat]);});
-    if (points.length<2 || points.length>2000) continue;
-    const path=points.map(p=>`${p[0].toFixed(2)},${p[1].toFixed(2)}`).join(" ");
+    // Geometry clipped to the frame marks each node outside it as null; a way
+    // that leaves and re-enters is drawn as separate runs, never bridged.
+    const runs: [number, number][][] = [[]];
+    for (const p of element.geometry) {
+      if (p === null) { if (runs[runs.length-1].length) runs.push([]); continue; }
+      if (!record(p) || typeof p.lon !== "number" || typeof p.lat !== "number") throw new Error("Invalid map geometry");
+      runs[runs.length-1].push(viewport.pixel([p.lon,p.lat]));
+    }
+    const drawn = runs.filter(run => run.length>=2 && run.length<=2000);
+    if (!drawn.length) continue;
     const water=Boolean(element.tags.waterway || element.tags.natural === "water");
-    shapes.push(`<polyline points="${path}" fill="none" stroke="${water?"#9acbd9":"#c7c9c5"}" stroke-width="${water?3:5}" stroke-linejoin="round"/>`);
+    for (const run of drawn) shapes.push(`<polyline points="${run.map(p=>`${p[0].toFixed(2)},${p[1].toFixed(2)}`).join(" ")}" fill="none" stroke="${water?"#9acbd9":"#c7c9c5"}" stroke-width="${water?3:5}" stroke-linejoin="round"/>`);
+    const points=drawn.reduce((longest,run)=>run.length>longest.length?run:longest);
     const p=points[Math.floor(points.length/2)];
     if (labels.length<14 && typeof element.tags.name === "string" && p[0]>30 && p[1]>55 && p[1]<390 && element.tags.name.length<65) {
       const name=element.tags.name, width=name.length*8;
@@ -83,6 +92,8 @@ export async function drawOpenMap(data: unknown, target: MapTarget): Promise<Buf
   if (!shapes.length) throw new Error("No usable map data");
   const points=target.points.map(viewport.pixel);
   const overlay=target.kind === "point" ? `<circle cx="${points[0][0]}" cy="${points[0][1]}" r="9" fill="#c74738" stroke="white" stroke-width="3"/>` : `<polyline points="${points.map(p=>p.join(",")).join(" ")}" fill="none" stroke="#c74738" stroke-width="6"/>`;
-  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="944" height="460"><rect width="944" height="460" fill="#f5f5ed"/>${shapes.join("")}${labels.join("")}${overlay}<rect x="12" y="10" width="920" height="34" rx="4" fill="white"/><text x="24" y="33" font-family="sans-serif" font-size="18" fill="#34463f">${escapeDocumentaryText(target.name.slice(0, 100))}</text><rect x="0" y="423" width="944" height="37" fill="white"/><text x="12" y="446" font-family="sans-serif" font-size="14">${OSM_ATTRIBUTION}</text></svg>`;
+  // Street labels stop at y<390, so the legend band never covers one.
+  const legend=target.legend?.trim() ? `<rect x="0" y="386" width="944" height="37" fill="white"/><text x="12" y="408" font-family="sans-serif" font-size="15" fill="#34463f">${escapeDocumentaryText(target.legend.trim().slice(0, 110))}</text>` : "";
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="944" height="460"><rect width="944" height="460" fill="#f5f5ed"/>${shapes.join("")}${labels.join("")}${overlay}<rect x="12" y="10" width="920" height="34" rx="4" fill="white"/><text x="24" y="33" font-family="sans-serif" font-size="18" fill="#34463f">${escapeDocumentaryText(target.name.slice(0, 100))}</text>${legend}<rect x="0" y="423" width="944" height="37" fill="white"/><text x="12" y="446" font-family="sans-serif" font-size="14">${OSM_ATTRIBUTION}</text></svg>`;
   return sharp(Buffer.from(svg)).png().toBuffer();
 }

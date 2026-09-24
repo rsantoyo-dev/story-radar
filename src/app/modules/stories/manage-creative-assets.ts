@@ -8,7 +8,7 @@ import { roadMapStillCurrent } from "./prepare-road-map";
 import { getDailyDraftStory } from "./daily-draft-access";
 import { renderDraftTypography, DRAFT_TYPOGRAPHY_ENDPOINT } from "./creative-draft-typography";
 import { uploadComposedImage } from "./fal-image-client";
-import { requestsGeographicReconstruction, evidenceQualityIssues } from "./creative-evidence-guardrails";
+import { requestsGeographicReconstruction, requiresVerifiedGeography, evidenceQualityIssues } from "./creative-evidence-guardrails";
 import type { CreativeUnit } from "./creative-content.types";
 import { imageText, imageTextNeedsUpdate, imageTextEditInstruction } from "./creative-image-text-sync";
 import "server-only";
@@ -263,7 +263,7 @@ export async function generateCreativeDraftAssets(
   const brief = await requireCreativeBrief(topicId, draft.briefId);
   const documentaryVisuals = await reuseDocumentaryVisuals(topicId, draft, brief.keyFacts);
   if (documentaryVisuals.size) return composeDraftPlaceVisuals(topicId, draft, brief, imageQuality, documentaryVisuals);
-  if (draft.units.some(unit => requestsGeographicReconstruction(unit.visualDirection)) || resolveEffectiveVisualFidelity({ inheritedMode: await getTopicVisualFidelityMode(topicId), override: draft.visualFidelityOverride?.mode ?? null, overrideReason: draft.visualFidelityOverride?.reason }).mode === "photo-required") {
+  if (draft.units.some(requiresVerifiedGeography) || resolveEffectiveVisualFidelity({ inheritedMode: await getTopicVisualFidelityMode(topicId), override: draft.visualFidelityOverride?.mode ?? null, overrideReason: draft.visualFidelityOverride?.reason }).mode === "photo-required") {
     return composeDraftPlaceVisuals(topicId, draft, brief, imageQuality);
   }
   assertGenerativeImageryAllowed(
@@ -1744,7 +1744,7 @@ async function composeDraftPlaceVisuals(topicId: string, draft: CreativeDraft, b
   // Research only slides that actually request geographic material. An unrelated
   // creative cover must not become a placeholder because another slide has a photo.
   const geographicDraft = { ...draft, units: draft.units.filter(unit =>
-    prepared?.has(unit.order) || requestsGeographicReconstruction(unit.visualDirection) ||
+    prepared?.has(unit.order) || requiresVerifiedGeography(unit) ||
     mode === "photo-required" || mode === "verified-references") };
   const visuals = geographicDraft.units.length
     ? await preparePlaceVisuals(topicId, geographicDraft, profile, brief.keyFacts, story?.url || "", prepared)

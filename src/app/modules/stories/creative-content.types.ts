@@ -689,10 +689,10 @@ export type CreativeUnit = {
   brandReferenceSelection?: BrandReferenceSelection;
   storyReferences?: import("./story-materials.types").StoryReferenceSelection[];
   /**
-   * Declares the kind of visual this slide needs. Currently informational
-   * only — routing it into prepare-place-visuals.ts / build-creative-image-prompt.ts
-   * is separate follow-up work; this field is populated and persisted ahead
-   * of that wiring.
+   * Declares the kind of visual this slide needs. `verified-map` routes the
+   * slide through the documentary place path (`requiresVerifiedGeography`),
+   * where only official or provider-verified geometry can produce a map; the
+   * other values are recorded but do not change routing yet.
    */
   visualNeed?: "verified-map" | "real-photo" | "character-reference" | "generic-illustration" | "typography";
 };

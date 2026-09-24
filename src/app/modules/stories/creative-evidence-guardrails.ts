@@ -1,4 +1,4 @@
-import type { CreativeKeyFact, CreativeQualityIssue, GeneratedCreativeDraft } from "./creative-content.types";
+import type { CreativeKeyFact, CreativeQualityIssue, CreativeUnit, GeneratedCreativeDraft } from "./creative-content.types";
 
 function normalized(text: string): string {
   return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -50,4 +50,15 @@ export function requestsGeographicReconstruction(direction: string): boolean {
   const excluded = /(?:\b(?:rather than|instead of|en lugar de|en vez de|plutot que|au lieu de)|\b(?:sans|aucune?|sin|no|without|avoid|eviter|evita|evitar)|\b(?:do not|don't|ne pas|no)\s+(?:draw|show|render|include|use|dessiner|montrer|inclure|utiliser|dibujar|mostrar|incluir|usar))\s+(?:(?:a|an|any|the|une?|de|des|la|le|les|el|los|las|una?|ninguna?)\s+)*$/;
   return [...text.matchAll(geographic)].some(match =>
     !excluded.test(text.slice(0, match.index)));
+}
+
+/**
+ * A slide takes the documentary (verified place) path when the writer declared
+ * it needs verified map data, or when its visual direction reads as a map or
+ * recognizable place reconstruction. The declaration lets a slide whose
+ * direction never says "carte" still get official geometry instead of an
+ * illustrated street.
+ */
+export function requiresVerifiedGeography(unit: Pick<CreativeUnit, "visualDirection" | "visualNeed">): boolean {
+  return unit.visualNeed === "verified-map" || requestsGeographicReconstruction(unit.visualDirection);
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { evidenceQualityIssues, onlyTruncatedCreativeFacts, locationOnlyRoadFacts, requestsGeographicReconstruction } from "./creative-evidence-guardrails";
+import { evidenceQualityIssues, onlyTruncatedCreativeFacts, locationOnlyRoadFacts, requestsGeographicReconstruction, requiresVerifiedGeography } from "./creative-evidence-guardrails";
 import type { GeneratedCreativeDraft } from "./creative-content.types";
 const draft: GeneratedCreativeDraft = {concept:"Repères",caption:"Les seules informations disponibles sont des repères géographiques à Saint-Sébastien et à Saint-Jean-sur-Richelieu. Sans précision sur la nature de la situation routière ou ses effets.",hashtags:[],altText:"",units:[]};
 test("the reported road-marker carousel is blocked, not converted into a cautious non-news post", () => {
@@ -48,6 +48,15 @@ test("an interactive map or navigation-app mockup is not a harmless UI motif", (
   "No mostrar un mapa de la ciudad; mostrar la plaza pública.",
  ]) assert.equal(requestsGeographicReconstruction(direction), true, direction);
  });
+
+test("a slide declared verified-map takes the documentary path even when its direction never says map", () => {
+  const direction = "Le tronçon concerné en rouge sur fond neutre, avec le nom du boulevard";
+  assert.equal(requestsGeographicReconstruction(direction), false);
+  assert.equal(requiresVerifiedGeography({ visualDirection: direction, visualNeed: "verified-map" }), true);
+  assert.equal(requiresVerifiedGeography({ visualDirection: direction, visualNeed: "generic-illustration" }), false);
+  assert.equal(requiresVerifiedGeography({ visualDirection: direction }), false);
+  assert.equal(requiresVerifiedGeography({ visualDirection: "Carte des fermetures à Brossard", visualNeed: "generic-illustration" }), true);
+});
 
 test("truncated-only facts are rejected without confusing a complete statement with a shortened quote", () => {
   assert.equal(onlyTruncatedCreativeFacts([{id:"1", statement:"Worked in their…",sourceExcerpt:"Worked in their…"}]),true);

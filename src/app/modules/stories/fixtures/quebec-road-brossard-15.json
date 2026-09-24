@@ -1,0 +1,1826 @@
+{
+ "type": "FeatureCollection",
+ "numberMatched": 8,
+ "features": [
+  {
+   "type": "Feature",
+   "id": 153974,
+   "properties": {
+    "identifiant": "153974",
+    "identifiantChantier": "284626",
+    "routeAutoroute": "35",
+    "entraveType": "Majeure (semaine et fin de semaine)",
+    "debut": "2026/09/08 07:00:00",
+    "fin": "2026/10/09 17:00:00",
+    "miseAJour": "2026/09/04 13:40:00",
+    "identificationDesTravaux": "Services publics",
+    "urlFrancais": "",
+    "texteUrlFrancais": "",
+    "detoursEtItinerairesFacultatifs": "",
+    "entrave": "Fermeture de 1 voie sur 2 en tout temps\n",
+    "entravesLieesAuxChargesEtDimensions": "",
+    "localisation": "À Saint-Sébastien, entre les km 20 et 17",
+    "direction": "Sud",
+    "descriptionFrancais": "Services publics\nÀ Saint-Sébastien, entre les km 20 et 17\nEn direction SUD\nFermeture de 1 voie sur 2 en tout temps",
+    "descriptionAnglais": "Public services\nIn San Sebastián, between km 20 and 17\nSOUTHBOUND\nClosur of 1 out of 2 lanes at all times",
+    "couleurLigne": "#FF0000",
+    "source": "https://www.quebec511.info"
+   },
+   "bbox": [
+    -73.128407,
+    45.147903,
+    -73.128137,
+    45.173882
+   ],
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -73.128407,
+      45.173882
+     ],
+     [
+      -73.128381,
+      45.171304
+     ],
+     [
+      -73.128354,
+      45.168924
+     ],
+     [
+      -73.128139,
+      45.148076
+     ],
+     [
+      -73.128137,
+      45.147903
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": 162197,
+   "properties": {
+    "identifiant": "162197",
+    "identifiantChantier": "310486",
+    "routeAutoroute": "132",
+    "entraveType": "Mineure (semaine et fin de semaine)",
+    "debut": "2026/07/22 06:00:00",
+    "fin": "2026/12/15 22:00:00",
+    "miseAJour": "2026/08/25 12:36:00",
+    "identificationDesTravaux": "Réfection de structure",
+    "urlFrancais": "",
+    "texteUrlFrancais": "",
+    "detoursEtItinerairesFacultatifs": "",
+    "entrave": "Circulation en alternance en tout temps",
+    "entravesLieesAuxChargesEtDimensions": "",
+    "localisation": "À Sorel-Tracy, route Marie-Victorin, sur le pont Turcotte",
+    "direction": "Ouest et est",
+    "descriptionFrancais": "Réfection de structure\nÀ Sorel-Tracy, route Marie-Victorin, sur le pont Turcotte\nDans les deux directions\nCirculation en alternance en tout temps",
+    "descriptionAnglais": "Structural repair\nIn Sorel-Tracy, Marie-Victorin Road, on the Turcotte Bridge\nIn both directions\nAlternating traffic at all times",
+    "couleurLigne": "#FF6A33",
+    "source": "https://www.quebec511.info"
+   },
+   "bbox": [
+    -73.121339,
+    46.040275,
+    -73.115229,
+    46.041992
+   ],
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -73.121339,
+      46.040275
+     ],
+     [
+      -73.121138,
+      46.040328
+     ],
+     [
+      -73.120324,
+      46.04054
+     ],
+     [
+      -73.119701,
+      46.040725
+     ],
+     [
+      -73.11877,
+      46.041034
+     ],
+     [
+      -73.118704,
+      46.041056
+     ],
+     [
+      -73.117969,
+      46.041305
+     ],
+     [
+      -73.117877,
+      46.041336
+     ],
+     [
+      -73.117138,
+      46.041591
+     ],
+     [
+      -73.116435,
+      46.041826
+     ],
+     [
+      -73.116374,
+      46.04184
+     ],
+     [
+      -73.116198,
+      46.041881
+     ],
+     [
+      -73.115711,
+      46.041948
+     ],
+     [
+      -73.115269,
+      46.041989
+     ],
+     [
+      -73.115229,
+      46.041992
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": 172662,
+   "properties": {
+    "identifiant": "172662",
+    "identifiantChantier": "322624",
+    "routeAutoroute": "30",
+    "entraveType": "Majeure (semaine)",
+    "debut": "2026/09/23 21:30:00",
+    "fin": "2026/09/24 05:30:00",
+    "miseAJour": "2026/09/23 10:38:00",
+    "identificationDesTravaux": "Réfection de la chaussée",
+    "urlFrancais": "",
+    "texteUrlFrancais": "",
+    "detoursEtItinerairesFacultatifs": "Sortie 67, voie de desserte, boulevards de Rome, du Quartier",
+    "entrave": "Autoroute fermée",
+    "entravesLieesAuxChargesEtDimensions": "",
+    "localisation": "À Brossard, entre l'A-10 et le boulevard Matte",
+    "direction": "Ouest",
+    "descriptionFrancais": "Réfection de la chaussée\nÀ Brossard, entre l'A-10 et le boulevard Matte\nEn direction OUEST\nAutoroute fermée\nDétour Sortie 67, voie de desserte, boulevards de Rome, du Quartier",
+    "descriptionAnglais": "Road resurfacing\nIn Brossard, between Highway 10 and Matte Boulevard\nWESTBOUND\nHighway closed\nDetour Exit 67, service road, Rome boulevards, Quartier",
+    "couleurLigne": "#FF0000",
+    "source": "https://www.quebec511.info"
+   },
+   "bbox": [
+    -73.451624,
+    45.418945,
+    -73.428126,
+    45.444558
+   ],
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -73.428126,
+      45.444558
+     ],
+     [
+      -73.428223,
+      45.444492
+     ],
+     [
+      -73.428499,
+      45.444302
+     ],
+     [
+      -73.428698,
+      45.444165
+     ],
+     [
+      -73.428859,
+      45.444054
+     ],
+     [
+      -73.429209,
+      45.443814
+     ],
+     [
+      -73.429408,
+      45.443676
+     ],
+     [
+      -73.429663,
+      45.443499
+     ],
+     [
+      -73.4299,
+      45.443333
+     ],
+     [
+      -73.430145,
+      45.443163
+     ],
+     [
+      -73.430404,
+      45.442986
+     ],
+     [
+      -73.430628,
+      45.442832
+     ],
+     [
+      -73.430872,
+      45.442664
+     ],
+     [
+      -73.431051,
+      45.442541
+     ],
+     [
+      -73.431371,
+      45.442322
+     ],
+     [
+      -73.431603,
+      45.44216
+     ],
+     [
+      -73.431855,
+      45.441988
+     ],
+     [
+      -73.432087,
+      45.441829
+     ],
+     [
+      -73.432342,
+      45.441652
+     ],
+     [
+      -73.432593,
+      45.441479
+     ],
+     [
+      -73.432825,
+      45.44132
+     ],
+     [
+      -73.433023,
+      45.441181
+     ],
+     [
+      -73.433262,
+      45.441018
+     ],
+     [
+      -73.433501,
+      45.440854
+     ],
+     [
+      -73.433849,
+      45.440615
+     ],
+     [
+      -73.434114,
+      45.440433
+     ],
+     [
+      -73.434335,
+      45.440281
+     ],
+     [
+      -73.434604,
+      45.440095
+     ],
+     [
+      -73.43485,
+      45.439925
+     ],
+     [
+      -73.435109,
+      45.439746
+     ],
+     [
+      -73.43535,
+      45.439582
+     ],
+     [
+      -73.435579,
+      45.439424
+     ],
+     [
+      -73.435788,
+      45.43928
+     ],
+     [
+      -73.435924,
+      45.439187
+     ],
+     [
+      -73.436027,
+      45.439116
+     ],
+     [
+      -73.436274,
+      45.438945
+     ],
+     [
+      -73.436519,
+      45.438777
+     ],
+     [
+      -73.436737,
+      45.438626
+     ],
+     [
+      -73.436984,
+      45.438457
+     ],
+     [
+      -73.437251,
+      45.438274
+     ],
+     [
+      -73.437579,
+      45.438047
+     ],
+     [
+      -73.437884,
+      45.437837
+     ],
+     [
+      -73.43813,
+      45.437668
+     ],
+     [
+      -73.438453,
+      45.437445
+     ],
+     [
+      -73.438584,
+      45.437354
+     ],
+     [
+      -73.438696,
+      45.437276
+     ],
+     [
+      -73.438933,
+      45.437112
+     ],
+     [
+      -73.439185,
+      45.436939
+     ],
+     [
+      -73.439441,
+      45.436762
+     ],
+     [
+      -73.439684,
+      45.436595
+     ],
+     [
+      -73.439917,
+      45.436437
+     ],
+     [
+      -73.440164,
+      45.436268
+     ],
+     [
+      -73.440404,
+      45.436104
+     ],
+     [
+      -73.440654,
+      45.435932
+     ],
+     [
+      -73.440897,
+      45.435758
+     ],
+     [
+      -73.441118,
+      45.435586
+     ],
+     [
+      -73.441283,
+      45.435455
+     ],
+     [
+      -73.441507,
+      45.435278
+     ],
+     [
+      -73.441644,
+      45.435161
+     ],
+     [
+      -73.441785,
+      45.43503
+     ],
+     [
+      -73.441924,
+      45.434896
+     ],
+     [
+      -73.442062,
+      45.434761
+     ],
+     [
+      -73.442193,
+      45.434632
+     ],
+     [
+      -73.442322,
+      45.434497
+     ],
+     [
+      -73.44245,
+      45.434362
+     ],
+     [
+      -73.442569,
+      45.434227
+     ],
+     [
+      -73.442688,
+      45.434084
+     ],
+     [
+      -73.442837,
+      45.433897
+     ],
+     [
+      -73.44296,
+      45.433738
+     ],
+     [
+      -73.443119,
+      45.43353
+     ],
+     [
+      -73.443218,
+      45.433389
+     ],
+     [
+      -73.443319,
+      45.433239
+     ],
+     [
+      -73.443411,
+      45.433092
+     ],
+     [
+      -73.443538,
+      45.432878
+     ],
+     [
+      -73.443633,
+      45.43271
+     ],
+     [
+      -73.443699,
+      45.432585
+     ],
+     [
+      -73.443776,
+      45.43243
+     ],
+     [
+      -73.443859,
+      45.432251
+     ],
+     [
+      -73.443955,
+      45.432039
+     ],
+     [
+      -73.444028,
+      45.431874
+     ],
+     [
+      -73.44413,
+      45.431641
+     ],
+     [
+      -73.444292,
+      45.431279
+     ],
+     [
+      -73.44456,
+      45.430672
+     ],
+     [
+      -73.44457,
+      45.430649
+     ],
+     [
+      -73.444845,
+      45.430076
+     ],
+     [
+      -73.445171,
+      45.429432
+     ],
+     [
+      -73.445253,
+      45.429274
+     ],
+     [
+      -73.445368,
+      45.42905
+     ],
+     [
+      -73.445482,
+      45.428836
+     ],
+     [
+      -73.445609,
+      45.428604
+     ],
+     [
+      -73.445726,
+      45.42839
+     ],
+     [
+      -73.445851,
+      45.428165
+     ],
+     [
+      -73.445994,
+      45.427916
+     ],
+     [
+      -73.446114,
+      45.427709
+     ],
+     [
+      -73.446239,
+      45.427501
+     ],
+     [
+      -73.446372,
+      45.427279
+     ],
+     [
+      -73.446508,
+      45.427055
+     ],
+     [
+      -73.446637,
+      45.426843
+     ],
+     [
+      -73.446777,
+      45.426621
+     ],
+     [
+      -73.446907,
+      45.426413
+     ],
+     [
+      -73.447041,
+      45.426199
+     ],
+     [
+      -73.44717,
+      45.42599
+     ],
+     [
+      -73.447307,
+      45.42577
+     ],
+     [
+      -73.447442,
+      45.425555
+     ],
+     [
+      -73.447576,
+      45.425344
+     ],
+     [
+      -73.447696,
+      45.425157
+     ],
+     [
+      -73.447832,
+      45.424946
+     ],
+     [
+      -73.447971,
+      45.424725
+     ],
+     [
+      -73.448104,
+      45.424513
+     ],
+     [
+      -73.448202,
+      45.424357
+     ],
+     [
+      -73.448246,
+      45.424288
+     ],
+     [
+      -73.448379,
+      45.424079
+     ],
+     [
+      -73.448514,
+      45.423864
+     ],
+     [
+      -73.448621,
+      45.423693
+     ],
+     [
+      -73.448656,
+      45.423638
+     ],
+     [
+      -73.448794,
+      45.423419
+     ],
+     [
+      -73.448896,
+      45.423255
+     ],
+     [
+      -73.449067,
+      45.42298
+     ],
+     [
+      -73.449215,
+      45.422744
+     ],
+     [
+      -73.449351,
+      45.422528
+     ],
+     [
+      -73.449493,
+      45.422305
+     ],
+     [
+      -73.449647,
+      45.422068
+     ],
+     [
+      -73.451019,
+      45.419901
+     ],
+     [
+      -73.451146,
+      45.419701
+     ],
+     [
+      -73.451624,
+      45.418945
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": 172650,
+   "properties": {
+    "identifiant": "172650",
+    "identifiantChantier": "319446",
+    "routeAutoroute": "15",
+    "entraveType": "Majeure (semaine)",
+    "debut": "2026/09/23 23:00:00",
+    "fin": "2026/09/24 05:00:00",
+    "miseAJour": "2026/09/23 10:51:00",
+    "identificationDesTravaux": "Réfection de la chaussée",
+    "urlFrancais": "",
+    "texteUrlFrancais": "",
+    "detoursEtItinerairesFacultatifs": "Sortie 75, boulevard Marie-Victorin",
+    "entrave": "Route fermée",
+    "entravesLieesAuxChargesEtDimensions": "",
+    "localisation": "À Brossard, entre le pont Samuel-De Champlain et le boulevard Matte",
+    "direction": "Sud",
+    "descriptionFrancais": "Réfection de la chaussée\nÀ Brossard, entre le pont Samuel-De Champlain et le boulevard Matte\nEn direction SUD\nRoute fermée\nDétour : sortie 75, boulevard Marie-Victorin",
+    "descriptionAnglais": "Road resurfacing\nIn Brossard, between the Samuel-De Champlain Bridge and Matte Boulevard\nSOUTHBOUND\nRoad closed\nDetour: Exit 75, Marie-Victorin Boulevard",
+    "couleurLigne": "#FF0000",
+    "source": "https://www.quebec511.info"
+   },
+   "bbox": [
+    -73.494404,
+    45.429629,
+    -73.490688,
+    45.466437
+   ],
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -73.494404,
+      45.466437
+     ],
+     [
+      -73.493605,
+      45.464118
+     ],
+     [
+      -73.493493,
+      45.4638
+     ],
+     [
+      -73.493399,
+      45.463527
+     ],
+     [
+      -73.493347,
+      45.463367
+     ],
+     [
+      -73.493301,
+      45.463223
+     ],
+     [
+      -73.493257,
+      45.463064
+     ],
+     [
+      -73.493213,
+      45.462895
+     ],
+     [
+      -73.493188,
+      45.462779
+     ],
+     [
+      -73.493156,
+      45.462618
+     ],
+     [
+      -73.493134,
+      45.462471
+     ],
+     [
+      -73.493103,
+      45.462254
+     ],
+     [
+      -73.493062,
+      45.461816
+     ],
+     [
+      -73.493039,
+      45.461486
+     ],
+     [
+      -73.492998,
+      45.460972
+     ],
+     [
+      -73.492952,
+      45.460372
+     ],
+     [
+      -73.492888,
+      45.459528
+     ],
+     [
+      -73.492823,
+      45.458725
+     ],
+     [
+      -73.492792,
+      45.45833
+     ],
+     [
+      -73.492762,
+      45.457943
+     ],
+     [
+      -73.492714,
+      45.457326
+     ],
+     [
+      -73.492671,
+      45.456782
+     ],
+     [
+      -73.492575,
+      45.45553
+     ],
+     [
+      -73.492502,
+      45.454619
+     ],
+     [
+      -73.492456,
+      45.45405
+     ],
+     [
+      -73.492439,
+      45.453813
+     ],
+     [
+      -73.492415,
+      45.453382
+     ],
+     [
+      -73.492397,
+      45.452943
+     ],
+     [
+      -73.492395,
+      45.452722
+     ],
+     [
+      -73.492398,
+      45.452495
+     ],
+     [
+      -73.492404,
+      45.452321
+     ],
+     [
+      -73.492419,
+      45.452063
+     ],
+     [
+      -73.492437,
+      45.451826
+     ],
+     [
+      -73.492735,
+      45.448518
+     ],
+     [
+      -73.492824,
+      45.447532
+     ],
+     [
+      -73.492851,
+      45.447229
+     ],
+     [
+      -73.492881,
+      45.446905
+     ],
+     [
+      -73.492922,
+      45.446442
+     ],
+     [
+      -73.492953,
+      45.446121
+     ],
+     [
+      -73.492975,
+      45.445855
+     ],
+     [
+      -73.492996,
+      45.445643
+     ],
+     [
+      -73.493032,
+      45.445242
+     ],
+     [
+      -73.493249,
+      45.442845
+     ],
+     [
+      -73.493267,
+      45.442627
+     ],
+     [
+      -73.493272,
+      45.44255
+     ],
+     [
+      -73.493285,
+      45.442365
+     ],
+     [
+      -73.493292,
+      45.44215
+     ],
+     [
+      -73.493295,
+      45.442053
+     ],
+     [
+      -73.493291,
+      45.44191
+     ],
+     [
+      -73.493267,
+      45.441566
+     ],
+     [
+      -73.49325,
+      45.441422
+     ],
+     [
+      -73.493236,
+      45.441309
+     ],
+     [
+      -73.493214,
+      45.44117
+     ],
+     [
+      -73.493174,
+      45.440956
+     ],
+     [
+      -73.493116,
+      45.4407
+     ],
+     [
+      -73.493032,
+      45.440404
+     ],
+     [
+      -73.492981,
+      45.440245
+     ],
+     [
+      -73.492896,
+      45.440011
+     ],
+     [
+      -73.4928,
+      45.439778
+     ],
+     [
+      -73.492747,
+      45.439666
+     ],
+     [
+      -73.492654,
+      45.439466
+     ],
+     [
+      -73.492421,
+      45.438987
+     ],
+     [
+      -73.492243,
+      45.438623
+     ],
+     [
+      -73.492147,
+      45.438409
+     ],
+     [
+      -73.492038,
+      45.43816
+     ],
+     [
+      -73.492004,
+      45.438073
+     ],
+     [
+      -73.491865,
+      45.437692
+     ],
+     [
+      -73.491788,
+      45.437453
+     ],
+     [
+      -73.491723,
+      45.437218
+     ],
+     [
+      -73.491662,
+      45.436982
+     ],
+     [
+      -73.491621,
+      45.436782
+     ],
+     [
+      -73.491571,
+      45.436509
+     ],
+     [
+      -73.491517,
+      45.436139
+     ],
+     [
+      -73.491504,
+      45.436048
+     ],
+     [
+      -73.49143,
+      45.435522
+     ],
+     [
+      -73.491392,
+      45.435244
+     ],
+     [
+      -73.491354,
+      45.434983
+     ],
+     [
+      -73.491231,
+      45.434114
+     ],
+     [
+      -73.491041,
+      45.432786
+     ],
+     [
+      -73.490947,
+      45.432139
+     ],
+     [
+      -73.490893,
+      45.431783
+     ],
+     [
+      -73.490882,
+      45.43171
+     ],
+     [
+      -73.49087,
+      45.431635
+     ],
+     [
+      -73.490858,
+      45.431545
+     ],
+     [
+      -73.490856,
+      45.431531
+     ],
+     [
+      -73.490848,
+      45.431484
+     ],
+     [
+      -73.490837,
+      45.431404
+     ],
+     [
+      -73.490822,
+      45.431289
+     ],
+     [
+      -73.490811,
+      45.431219
+     ],
+     [
+      -73.490799,
+      45.431138
+     ],
+     [
+      -73.490781,
+      45.431026
+     ],
+     [
+      -73.490775,
+      45.43098
+     ],
+     [
+      -73.490767,
+      45.430927
+     ],
+     [
+      -73.490752,
+      45.430811
+     ],
+     [
+      -73.490736,
+      45.430708
+     ],
+     [
+      -73.490728,
+      45.430656
+     ],
+     [
+      -73.490716,
+      45.430556
+     ],
+     [
+      -73.490709,
+      45.430492
+     ],
+     [
+      -73.490704,
+      45.430418
+     ],
+     [
+      -73.490695,
+      45.43029
+     ],
+     [
+      -73.490689,
+      45.430217
+     ],
+     [
+      -73.490689,
+      45.430193
+     ],
+     [
+      -73.490688,
+      45.430116
+     ],
+     [
+      -73.490688,
+      45.43003
+     ],
+     [
+      -73.490688,
+      45.429916
+     ],
+     [
+      -73.490688,
+      45.429862
+     ],
+     [
+      -73.490689,
+      45.429825
+     ],
+     [
+      -73.49069,
+      45.429785
+     ],
+     [
+      -73.490691,
+      45.429752
+     ],
+     [
+      -73.490691,
+      45.429724
+     ],
+     [
+      -73.490696,
+      45.42967
+     ],
+     [
+      -73.490699,
+      45.429629
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": 172720,
+   "properties": {
+    "identifiant": "172720",
+    "identifiantChantier": "323278",
+    "routeAutoroute": "10",
+    "entraveType": "Mineure (semaine)",
+    "debut": "2026/09/23 21:00:00",
+    "fin": "2026/09/24 05:00:00",
+    "miseAJour": "2026/09/23 10:55:00",
+    "identificationDesTravaux": "Entretien électrique",
+    "urlFrancais": "",
+    "texteUrlFrancais": "",
+    "detoursEtItinerairesFacultatifs": "",
+    "entrave": "Fermeture de 1 voie sur 2",
+    "entravesLieesAuxChargesEtDimensions": "",
+    "localisation": "À Brossard, dans l'échangeur de l'A-30",
+    "direction": "Ouest et est",
+    "descriptionFrancais": "Entretien électrique\nÀ Brossard, dans l'échangeur de l'A-30\nDans les deux directions\nFermeture de 1 voie sur 2",
+    "descriptionAnglais": "Electrical maintenance\nIn Brossard, at the A-30 interchange\nIn both directions\nClosure of 1 out of 2 lanes",
+    "couleurLigne": "#FF6A33",
+    "source": "https://www.quebec511.info"
+   },
+   "bbox": [
+    -73.429933,
+    45.440486,
+    -73.423572,
+    45.444505
+   ],
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -73.429933,
+      45.444505
+     ],
+     [
+      -73.428758,
+      45.443851
+     ],
+     [
+      -73.42838,
+      45.443641
+     ],
+     [
+      -73.428306,
+      45.443599
+     ],
+     [
+      -73.427667,
+      45.443242
+     ],
+     [
+      -73.427457,
+      45.443121
+     ],
+     [
+      -73.427295,
+      45.443026
+     ],
+     [
+      -73.427147,
+      45.442939
+     ],
+     [
+      -73.42682,
+      45.442741
+     ],
+     [
+      -73.426569,
+      45.442585
+     ],
+     [
+      -73.426311,
+      45.442421
+     ],
+     [
+      -73.42616,
+      45.442324
+     ],
+     [
+      -73.425971,
+      45.442198
+     ],
+     [
+      -73.425748,
+      45.442048
+     ],
+     [
+      -73.425633,
+      45.44197
+     ],
+     [
+      -73.42541,
+      45.441814
+     ],
+     [
+      -73.425169,
+      45.441643
+     ],
+     [
+      -73.424348,
+      45.441048
+     ],
+     [
+      -73.424084,
+      45.440856
+     ],
+     [
+      -73.423702,
+      45.440581
+     ],
+     [
+      -73.423572,
+      45.440486
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": 172721,
+   "properties": {
+    "identifiant": "172721",
+    "identifiantChantier": "319446",
+    "routeAutoroute": "15",
+    "entraveType": "Mineure (semaine)",
+    "debut": "2026/09/23 20:00:00",
+    "fin": "2026/09/24 08:00:00",
+    "miseAJour": "2026/09/23 16:33:00",
+    "identificationDesTravaux": "Réfection de la chaussée",
+    "urlFrancais": "",
+    "texteUrlFrancais": "",
+    "detoursEtItinerairesFacultatifs": "",
+    "entrave": "Fermeture de 1 voie sur 3",
+    "entravesLieesAuxChargesEtDimensions": "",
+    "localisation": "À Brossard, entre le pont Samuel-De Champlain et le boulevard Matte",
+    "direction": "Sud et nord",
+    "descriptionFrancais": "Réfection de la chaussée\nÀ Brossard, entre le pont Samuel-De Champlain et le boulevard Matte\nDans les deux directions\nFermeture de 1 voie sur 3",
+    "descriptionAnglais": "Road resurfacing\nIn Brossard, between the Samuel-De Champlain Bridge and Matte Boulevard\nIn both directions\nClosure of 1 out of 3 lanes",
+    "couleurLigne": "#FF6A33",
+    "source": "https://www.quebec511.info"
+   },
+   "bbox": [
+    -73.493546,
+    45.436387,
+    -73.491553,
+    45.463949
+   ],
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -73.493546,
+      45.463949
+     ],
+     [
+      -73.493493,
+      45.4638
+     ],
+     [
+      -73.493399,
+      45.463527
+     ],
+     [
+      -73.493347,
+      45.463367
+     ],
+     [
+      -73.493301,
+      45.463223
+     ],
+     [
+      -73.493257,
+      45.463064
+     ],
+     [
+      -73.493213,
+      45.462895
+     ],
+     [
+      -73.493188,
+      45.462779
+     ],
+     [
+      -73.493156,
+      45.462618
+     ],
+     [
+      -73.493134,
+      45.462471
+     ],
+     [
+      -73.493103,
+      45.462254
+     ],
+     [
+      -73.493062,
+      45.461816
+     ],
+     [
+      -73.493039,
+      45.461486
+     ],
+     [
+      -73.492998,
+      45.460972
+     ],
+     [
+      -73.492952,
+      45.460372
+     ],
+     [
+      -73.492888,
+      45.459528
+     ],
+     [
+      -73.492823,
+      45.458725
+     ],
+     [
+      -73.492792,
+      45.45833
+     ],
+     [
+      -73.492762,
+      45.457943
+     ],
+     [
+      -73.492714,
+      45.457326
+     ],
+     [
+      -73.492671,
+      45.456782
+     ],
+     [
+      -73.492575,
+      45.45553
+     ],
+     [
+      -73.492502,
+      45.454619
+     ],
+     [
+      -73.492456,
+      45.45405
+     ],
+     [
+      -73.492439,
+      45.453813
+     ],
+     [
+      -73.492415,
+      45.453382
+     ],
+     [
+      -73.492397,
+      45.452943
+     ],
+     [
+      -73.492395,
+      45.452722
+     ],
+     [
+      -73.492398,
+      45.452495
+     ],
+     [
+      -73.492404,
+      45.452321
+     ],
+     [
+      -73.492419,
+      45.452063
+     ],
+     [
+      -73.492437,
+      45.451826
+     ],
+     [
+      -73.492735,
+      45.448518
+     ],
+     [
+      -73.492824,
+      45.447532
+     ],
+     [
+      -73.492851,
+      45.447229
+     ],
+     [
+      -73.492881,
+      45.446905
+     ],
+     [
+      -73.492922,
+      45.446442
+     ],
+     [
+      -73.492953,
+      45.446121
+     ],
+     [
+      -73.492975,
+      45.445855
+     ],
+     [
+      -73.492996,
+      45.445643
+     ],
+     [
+      -73.493032,
+      45.445242
+     ],
+     [
+      -73.493249,
+      45.442845
+     ],
+     [
+      -73.493267,
+      45.442627
+     ],
+     [
+      -73.493272,
+      45.44255
+     ],
+     [
+      -73.493285,
+      45.442365
+     ],
+     [
+      -73.493292,
+      45.44215
+     ],
+     [
+      -73.493295,
+      45.442053
+     ],
+     [
+      -73.493291,
+      45.44191
+     ],
+     [
+      -73.493267,
+      45.441566
+     ],
+     [
+      -73.49325,
+      45.441422
+     ],
+     [
+      -73.493236,
+      45.441309
+     ],
+     [
+      -73.493214,
+      45.44117
+     ],
+     [
+      -73.493174,
+      45.440956
+     ],
+     [
+      -73.493116,
+      45.4407
+     ],
+     [
+      -73.493032,
+      45.440404
+     ],
+     [
+      -73.492981,
+      45.440245
+     ],
+     [
+      -73.492896,
+      45.440011
+     ],
+     [
+      -73.4928,
+      45.439778
+     ],
+     [
+      -73.492747,
+      45.439666
+     ],
+     [
+      -73.492654,
+      45.439466
+     ],
+     [
+      -73.492421,
+      45.438987
+     ],
+     [
+      -73.492243,
+      45.438623
+     ],
+     [
+      -73.492147,
+      45.438409
+     ],
+     [
+      -73.492038,
+      45.43816
+     ],
+     [
+      -73.492004,
+      45.438073
+     ],
+     [
+      -73.491865,
+      45.437692
+     ],
+     [
+      -73.491788,
+      45.437453
+     ],
+     [
+      -73.491723,
+      45.437218
+     ],
+     [
+      -73.491662,
+      45.436982
+     ],
+     [
+      -73.491621,
+      45.436782
+     ],
+     [
+      -73.491571,
+      45.436509
+     ],
+     [
+      -73.491553,
+      45.436387
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": 168913,
+   "properties": {
+    "identifiant": "168913",
+    "identifiantChantier": "318646",
+    "routeAutoroute": "132",
+    "entraveType": "Mineure (semaine et fin de semaine)",
+    "debut": "2026/06/26 05:00:00",
+    "fin": "2026/10/02 05:00:00",
+    "miseAJour": "2026/07/02 04:10:00",
+    "identificationDesTravaux": "Réfection de structure",
+    "urlFrancais": "",
+    "texteUrlFrancais": "",
+    "detoursEtItinerairesFacultatifs": "",
+    "entrave": "Fermeture de 1 voie sur 3",
+    "entravesLieesAuxChargesEtDimensions": "",
+    "localisation": "À Boucherville entre la sortie 136 ( boulevard Marie-Victorin) et l'accès du boulevard Marie-Victorin",
+    "direction": "Ouest et est",
+    "descriptionFrancais": "Réparation de colonne\nÀ Boucherville entre la sortie 136 (boulevard Marie-Victorin) et l'accès du boulevard Marie-Victorin \nEn direction EST\nFermeture de 1 voie sur 3",
+    "descriptionAnglais": "Column repair\nIn Boucherville, between the exit 136 (Marie-Victorin Boulevard) and the access from Marie-Victorin Boulevard\nEASTBOUND\nClosure of 1 out of 3 lanes",
+    "couleurLigne": "#FF6A33",
+    "source": "https://www.quebec511.info"
+   },
+   "bbox": [
+    -73.463415,
+    45.591163,
+    -73.459369,
+    45.594338
+   ],
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -73.463415,
+      45.591163
+     ],
+     [
+      -73.463285,
+      45.591275
+     ],
+     [
+      -73.463139,
+      45.591399
+     ],
+     [
+      -73.462942,
+      45.591565
+     ],
+     [
+      -73.462788,
+      45.591696
+     ],
+     [
+      -73.462673,
+      45.591793
+     ],
+     [
+      -73.462617,
+      45.591838
+     ],
+     [
+      -73.462483,
+      45.591952
+     ],
+     [
+      -73.462341,
+      45.59207
+     ],
+     [
+      -73.46227,
+      45.59213
+     ],
+     [
+      -73.462145,
+      45.592235
+     ],
+     [
+      -73.461962,
+      45.592389
+     ],
+     [
+      -73.461805,
+      45.592518
+     ],
+     [
+      -73.46164,
+      45.59266
+     ],
+     [
+      -73.461514,
+      45.592764
+     ],
+     [
+      -73.46138,
+      45.592876
+     ],
+     [
+      -73.461259,
+      45.592977
+     ],
+     [
+      -73.461136,
+      45.593079
+     ],
+     [
+      -73.461003,
+      45.593188
+     ],
+     [
+      -73.460868,
+      45.593294
+     ],
+     [
+      -73.460759,
+      45.59338
+     ],
+     [
+      -73.460689,
+      45.593437
+     ],
+     [
+      -73.460577,
+      45.59352
+     ],
+     [
+      -73.460402,
+      45.593648
+     ],
+     [
+      -73.460244,
+      45.593762
+     ],
+     [
+      -73.460037,
+      45.593906
+     ],
+     [
+      -73.459829,
+      45.594046
+     ],
+     [
+      -73.459676,
+      45.594144
+     ],
+     [
+      -73.459555,
+      45.594221
+     ],
+     [
+      -73.4594,
+      45.594319
+     ],
+     [
+      -73.459369,
+      45.594338
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": 172780,
+   "properties": {
+    "identifiant": "172780",
+    "identifiantChantier": "323366",
+    "routeAutoroute": "15",
+    "entraveType": "Mineure (semaine)",
+    "debut": "2026/09/23 19:00:00",
+    "fin": "2026/09/24 05:00:00",
+    "miseAJour": "2026/09/23 10:59:00",
+    "identificationDesTravaux": "Entretien électrique",
+    "urlFrancais": "",
+    "texteUrlFrancais": "",
+    "detoursEtItinerairesFacultatifs": "",
+    "entrave": "Fermeture de 1 voie sur 2",
+    "entravesLieesAuxChargesEtDimensions": "",
+    "localisation": "À Brossard, sur le boulevard Marie-Victorin, entre le boulevard Matte et la rue des Roselières",
+    "direction": "Sud",
+    "descriptionFrancais": "Entretien électrique\nÀ Brossard, sur le boulevard Marie-Victorin, entre le boulevard Matte et la rue des Roselières\nEn direction SUD\nFermeture de 1 voie sur 2",
+    "descriptionAnglais": "Electrical maintenance\nIn Brossard, on Marie-Victorin Boulevard, between Matte Boulevard and Des Roselières Street\nSOUTHBOUND\nClosure of 1 out of 2 lanes",
+    "couleurLigne": "#FF6A33",
+    "source": "https://www.quebec511.info"
+   },
+   "bbox": [
+    -73.491616,
+    45.433966,
+    -73.491513,
+    45.434656
+   ],
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -73.491616,
+      45.434656
+     ],
+     [
+      -73.491513,
+      45.433966
+     ]
+    ]
+   }
+  }
+ ]
+}

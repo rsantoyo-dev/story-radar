@@ -318,6 +318,69 @@ test("road-map preparation uses open map geometry without a paid key and rejects
   assert.equal(mismatch.evidence.segment, undefined);
 });
 
+test("a ministry press release is matched to its official work site from the brief's facts, with the official legend, and survives the nightly row rotation", async () => {
+  const road = await import("./quebec-road-map");
+  const feed = JSON.parse(readFileSync(resolve("src/app/modules/stories/fixtures/quebec-road-brossard-15.json"), "utf8"));
+  const press = "Le ministère des Transports et de la Mobilité durable procédera à des fermetures complètes de la voie de desserte de l'autoroute 15 (boulevard Marie-Victorin), en direction sud, à Brossard, au cours des nuits du 28 septembre au 7 octobre 2026. Les travaux comprennent des interventions sur le boulevard Marie-Victorin entre le secteur du pont Samuel-De Champlain et la rue Tessier.";
+  const briefFacts = [
+    { id: "fact-1", statement: "Fermetures complètes de la voie de desserte de l'autoroute 15, en direction sud, à Brossard, les nuits du 28 septembre au 7 octobre 2026.", sourceExcerpt: press.slice(0, 250) },
+    { id: "fact-2", statement: "Les travaux couvrent le boulevard Marie-Victorin entre le secteur du pont Samuel-De Champlain et la rue Tessier.", sourceExcerpt: press.slice(250) },
+  ];
+  let data = feed;
+  const legends: (string | undefined)[] = [];
+  const service = load<typeof import("./prepare-road-map")>("prepare-road-map.ts", { "node:crypto": crypto, "./quebec-road-map": road, "./open-map-render": { renderOpenMap: async (target: { legend?: string }) => { legends.push(target.legend); return Buffer.from("map"); } }, "./creative-documentary-providers": { fetchDocumentaryResource: async () => Buffer.from(JSON.stringify(data)) } });
+  const url = "https://www.quebec.ca/nouvelles/actualites/details/fermetures-du-boulevard-marie-victorin-72523";
+  // Before the announced nights are in the feed: the work site is named, no map.
+  const early = await service.prepareRoadMap(url, [briefFacts[1]], briefFacts);
+  assert.equal(early.bytes, undefined);
+  assert.match(early.evidence.reason, /work site 319446 .* do not cover 2026-09-28 to 2026-10-07/);
+  // The night the feed publishes the window: the slide cites only the works
+  // fact (no dates), so the brief's whole fact set resolves the closure.
+  data = { ...feed, features: feed.features.map((f: { properties: Record<string, string> }) => f.properties.identifiantChantier === "319446" ? { ...f, properties: { ...f.properties, debut: f.properties.debut.replace("09/23", "09/28"), fin: f.properties.fin.replace("09/24", "09/29") } } : f) };
+  const result = await service.prepareRoadMap(url, [briefFacts[1]], briefFacts);
+  assert.equal(result.evidence.segment?.id, "172650");
+  assert.equal(result.evidence.segment?.chantier, "319446");
+  assert.equal(result.bytes?.toString(), "map");
+  assert.deepEqual(legends, ["Route fermée · Détour : Sortie 75, boulevard Marie-Victorin"]);
+  assert.ok(result.evidence.sha256);
+  // Next night the feed rotates the row id and hours; the saved map is still current.
+  data = { ...data, features: data.features.map((f: { properties: Record<string, string> }) => f.properties.identifiant === "172650" ? { ...f, properties: { ...f.properties, identifiant: "172651", debut: "2026/09/29 23:00:00", fin: "2026/09/30 05:00:00", miseAJour: "2026/09/29 12:00:00" } } : f) };
+  assert.equal(await service.roadMapStillCurrent(result.evidence, briefFacts), true);
+  data = { ...data, features: data.features.map((f: { properties: Record<string, string> }) => f.properties.identifiant === "172651" ? { ...f, properties: { ...f.properties, detoursEtItinerairesFacultatifs: "Sortie 67, boulevard Matte" } } : f) };
+  assert.equal(await service.roadMapStillCurrent(result.evidence, briefFacts), false);
+  // The CNW mirror of the same release is not an official source.
+  assert.equal((await service.prepareRoadMap("https://www.newswire.ca/fr/releases/archive/September2026/22/c1541.html", briefFacts, briefFacts)).evidence.reason, "No official road source");
+});
+
+test("a quebec.ca source selects the MTMD adapter, which receives the slide's facts and the brief's facts; verified-map routes a slide whose direction never says map", async () => {
+  const visual = await import("./creative-place-visual");
+  const geometry = await import("./open-map-geometry");
+  const calls: { url: string; unit: string[]; brief: string[] }[] = [];
+  const facts = [{ id: "fact-1", statement: "Fermeture", sourceExcerpt: "Fermeture de l'autoroute 15 en direction sud à Brossard." }, { id: "fact-2", statement: "Dates", sourceExcerpt: "Nuits du 28 septembre au 7 octobre 2026." }];
+  const units = [
+    { id: "u1", order: 1, role: "cover", factIds: ["fact-1"], visualDirection: "Le tronçon concerné en rouge sur fond neutre", visualNeed: "verified-map", assetRequest: "generated-image" },
+    { id: "u2", order: 2, role: "content", factIds: ["fact-2"], visualDirection: "Pictogramme d'horloge", visualNeed: "generic-illustration", assetRequest: "generated-image" },
+  ];
+  const service = load<typeof import("./prepare-place-visuals")>("prepare-place-visuals.ts", {
+    "node:crypto": crypto, "./creative-documentary": policy, "./creative-place-visual": visual, "./open-map-geometry": geometry, "./source-location": sourceLocation,
+    "./prepare-source-location": { prepareSourceLocation: async () => { throw new Error("No address anchor expected"); } },
+    "./prepare-road-map": { prepareRoadMap: async (url: string, unit: { id: string }[], brief: { id: string }[]) => { calls.push({ url, unit: unit.map(f => f.id), brief: brief.map(f => f.id) }); return { bytes: Buffer.from("map"), evidence: { reason: "Official MTMD segment rendered as location context", source: "wfs", fetchedAt: "now", sha256: "hash", segment: { id: "172650" } } }; } },
+    "./quebec-road-map": await import("./quebec-road-map"),
+    "./open-map-render": {}, "./openai-structured-response": {},
+    "./creative-documentary-providers": { documentaryProviders: () => ({ resolve: () => { throw new Error("Unexpected general place lookup"); } }) },
+    "./creative-content.repository": { getCreativeDailyUsage: async () => ({ remainingRuns: 0 }) },
+    "./creative-content.config": { getCreativeContentPublicConfig: () => ({ maxRunsPerDay: 10 }) },
+    "./resolve-google-place-map": { resolveGooglePlaceMap: async () => { throw new Error("Google must not run for a road segment"); } },
+  }, { CREATIVE_GEO_SOURCE_ADAPTERS: "quebec511" });
+  const draft = { units, storyId: "story", briefId: "brief" } as unknown as import("./creative-content.types").CreativeDraft;
+  const result = await service.preparePlaceVisuals("topic", draft, profile, facts, "https://www.quebec.ca/nouvelles/actualites/details/fermetures-72523");
+  assert.deepEqual(calls, [{ url: "https://www.quebec.ca/nouvelles/actualites/details/fermetures-72523", unit: ["fact-1"], brief: ["fact-1", "fact-2"] }]);
+  assert.equal(result.get(1)?.evidence.representation, "map");
+  assert.equal(result.get(1)?.evidence.adapter, "quebec511");
+  assert.match(result.get(1)?.evidence.attribution ?? "", /MTMD · CC BY 4.0/);
+  assert.equal(result.get(2)?.evidence.representation, "typography");
+});
+
 test("worldwide preparation resolves source-backed places, maps current-state reports and leaves other slides untouched", async () => {
   const visual=await import("./creative-place-visual");
   const geometry=await import("./open-map-geometry");
@@ -331,6 +394,7 @@ test("worldwide preparation resolves source-backed places, maps current-state re
     "./creative-documentary-providers":{documentaryProviders:()=>({resolve:async()=>{resolveCalls++;return place;},photo:async()=>{photoCalls++;return undefined;}})},
     "./open-map-render":{renderOpenMap:async()=>{mapCalls++;return Buffer.from("map");}},
     "./prepare-road-map":{prepareRoadMap:async()=>{throw new Error("Wrong regional adapter");}},
+    "./quebec-road-map":await import("./quebec-road-map"),
     "./creative-content.config":{getCreativeContentPublicConfig:()=>({maxRunsPerDay:10})},
     "./creative-content.repository":{getCreativeDailyUsage:async()=>({remainingRuns:10}),createCreativeAiRun:async()=>"run",completeCreativeAiRun:async()=>{},failCreativeAiRun:async()=>{}},
     "./openai-structured-response":{generateOpenAiStructuredResponse:async()=>({text:JSON.stringify({purpose:"current-state",mentions:[mention]}),usage:{},model:"test"})},
@@ -357,7 +421,7 @@ test("nearby source address maps only its cited slide without AI research or cha
   let maps = 0;
   const service = load<typeof import("./prepare-place-visuals")>("prepare-place-visuals.ts", {
     "node:crypto": crypto, "./creative-documentary": policy, "./creative-place-visual": visual,
-    "./source-location": sourceLocation, "./open-map-geometry": {}, "./prepare-road-map": {}, "./open-map-render": {},
+    "./source-location": sourceLocation, "./open-map-geometry": {}, "./prepare-road-map": {}, "./open-map-render": {}, "./quebec-road-map": await import("./quebec-road-map"),
     "./prepare-source-location": { prepareSourceLocation: async (anchor: sourceLocation.SourceLocation) => { maps++; return { bytes: Buffer.from("map"), evidence: { representation: "map", locationAnchor: anchor } }; } },
     "./creative-documentary-providers": { documentaryProviders: () => ({ resolve: () => { throw new Error("Unexpected general place lookup"); } }) },
     "./creative-content.repository": { getCreativeDailyUsage: async () => ({ remainingRuns: 10 }), createCreativeAiRun: () => { throw new Error("Unexpected model call"); } },
