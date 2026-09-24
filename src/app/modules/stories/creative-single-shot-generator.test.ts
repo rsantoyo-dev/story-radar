@@ -557,6 +557,16 @@ test("the chosen acquisition lens steers the hook in the script instruction", as
   assert.match(instruction, /answered by a later unit/, "the cover's promise must be paid off later in the carousel");
 });
 
+test("the script instruction tells the writer what a publish-ready caption looks like, without reopening the single-CTA rule", async () => {
+  const h = harness(() => validResponse());
+  await h.generate(options());
+  const instruction = h.instructions[1] ?? "";
+  assert.match(instruction, /copy someone would paste straight into a post/, "caption must read as social copy, not a formal recap");
+  assert.match(instruction, /its own short line or clause/, "distinct practical consequences get their own line, generically — not a hardcoded example");
+  assert.match(instruction, /never add a second, different action such as a save or share nudge/, "the single-CTA rule is reinforced, not loosened, for caption");
+  assert.doesNotMatch(instruction, /🚧|Pont Gouin|Saint-Jean/i, "the guidance names no topic, place or emoji — domain-agnostic per AGENTS.md");
+});
+
 test("an invalid script gets exactly one bounded retry with the validation error as feedback", async () => {
   // call 0 = brief (valid), call 1 = script with too few units, call 2 = retry.
   const h = harness((attempt) =>

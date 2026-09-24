@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildCompleteDraftScript } from "./creative-draft-export";
+import { buildCompleteDraftScript, buildCaptionForPosting } from "./creative-draft-export";
 
 test("exports the complete carousel as one paste-ready script", () => {
   const output = buildCompleteDraftScript(
@@ -97,4 +97,13 @@ test("exports the editor-facing native interaction without putting it in image c
   assert.match(output, /Type: poll/);
   assert.match(output, /Options: Yes \| Not yet/);
   assert.match(output, /Why this works:/);
+});
+
+test("caption for posting is just caption and hashtags, with no field labels — unlike the internal script", () => {
+  const draft = { caption: "Le pont Gouin sera fermé lundi.", hashtags: ["PontGouin", "#SaintJeanSurRichelieu"] };
+  const posting = buildCaptionForPosting(draft);
+  assert.equal(posting, "Le pont Gouin sera fermé lundi.\n\n#PontGouin #SaintJeanSurRichelieu");
+  assert.doesNotMatch(posting, /CAPTION:|HASHTAGS:|FULL CREATIVE SCRIPT/);
+  // No hashtags: caption stands alone, still with no trailing blank section.
+  assert.equal(buildCaptionForPosting({ caption: " Trimmed. ", hashtags: [] }), "Trimmed.");
 });

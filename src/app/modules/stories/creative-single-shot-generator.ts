@@ -102,6 +102,15 @@ Set "real-photo" on the slide whose job is to show a specific, named, real-world
 Use "character-reference" when the visualDirection calls for one of the topic's configured recurring characters; "typography" when assetRequest is typography-only; otherwise "generic-illustration" — including for a named place with no landmark the facts describe concretely enough to picture. Declaring "verified-map" or "real-photo" never invents evidence: without verified data the slide simply renders its fallback.`;
 
 /**
+ * Nothing else in this pipeline tells the writer what a publish-ready social
+ * caption reads like; without it, caption drifts toward a formal recap of
+ * the units instead of copy someone would actually post. Deliberately
+ * platform- and topic-agnostic: no emoji, phrasing or structure is
+ * prescribed, only the shape a caption needs regardless of Editorial Line.
+ */
+const CAPTION_STYLE_INSTRUCTION = `\n\nWrite caption as copy someone would paste straight into a post, not a formal recap of the units: open with a short, concrete line naming the subject and its concrete stake for the reader, in creativeProfile's configured tone — an emoji may lead it only when the profile's tone supports that register; never use one to replace a word a screen reader needs. When the facts establish more than one distinct practical consequence or affected group, give each its own short line or clause instead of folding them into one dense paragraph; do not invent a segment, group or consequence the facts do not state. Every fact, qualifier, name, organization or account named in caption must come from the same evidence already grounding the units — caption is not a place to reintroduce something the units omitted or to state a fact more strongly than its unit does. caption and hashtags are concatenated for posting with nothing in between: never include a "caption" or "hashtags" heading, a colon-prefixed label, or placeholder brackets in either field, and never repeat the hashtags inside caption's own text. caption carries the exact same single conversionGoal action as the closing unit's ctaQuestion/callToAction, stated at most once, in the same words or a close paraphrase — never add a second, different action such as a save or share nudge alongside it, even a brief one; when ctaQuestion/callToAction is empty because the story is sensitive, caption asks for no action either.`;
+
+/**
  * Output cap for the brief call. Sized so MAX_BRIEF_KEY_FACTS facts with claim
  * guards fit without truncating; a cap, so an ordinary brief costs no more.
  */
@@ -444,7 +453,7 @@ export async function generateSingleShotCreativeScript(
   const draftInstruction = `${DRAFT_SYSTEM_INSTRUCTION}${acquisitionHookInstruction(
     brief.editorialAngle,
     acquisitionTaxonomy,
-  )}${VISUAL_NEED_INSTRUCTION}\n\n${creativeScriptFramingInstruction(
+  )}${VISUAL_NEED_INSTRUCTION}${CAPTION_STYLE_INSTRUCTION}\n\n${creativeScriptFramingInstruction(
     effectiveFramingStrategy(
       profile.framingStrategy as Parameters<typeof creativeScriptFramingInstruction>[0],
       brief,

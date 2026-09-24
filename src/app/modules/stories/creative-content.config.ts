@@ -163,8 +163,15 @@ export function getCreativeContentPublicConfig(): CreativeContentPublicConfig {
     // question, and arc alignment keeps the model's closing question. Bumped
     // so plans built on template questions are not reused.
     briefPromptVersion: "creative-brief-v39",
+    // v28/v52/v7: the writer now has explicit guidance for what a
+    // publish-ready caption reads like — a concrete opening stake, one line
+    // per distinct practical consequence the facts support, and caption
+    // sharing the closing unit's single conversionGoal action rather than
+    // adding a second one (a save/share nudge alongside it is still a
+    // second action). Applies uniformly across formats, since caption/
+    // hashtags exist on all three.
     draftPromptVersions: {
-      meme: "meme-draft-v27",
+      meme: "meme-draft-v28",
       // v49/v48: the script call now states the applied framing in the
       // writer's terms, and a repair is a rewrite with the review in hand.
       // v50/v49: the writer is told to declare verified-map on the locating
@@ -174,8 +181,8 @@ export function getCreativeContentPublicConfig(): CreativeContentPublicConfig {
       // for — requiresVerifiedGeography now routes that value too, into the
       // same photo/map/fallback chain (never an archive photo as proof of a
       // current closure/works/change).
-      carousel: carouselWriterModel ? `carousel-draft-v51-writer-${carouselWriterModel}` : "carousel-draft-v51",
-      sequence: "sequence-draft-v6",
+      carousel: carouselWriterModel ? `carousel-draft-v52-writer-${carouselWriterModel}` : "carousel-draft-v52",
+      sequence: "sequence-draft-v7",
     },
     maxRunsPerDay: parsePositiveInteger(
       process.env.CREATIVE_MAX_RUNS_PER_DAY,

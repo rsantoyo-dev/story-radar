@@ -14,6 +14,21 @@ type DraftScriptSource = Pick<
   | "units"
 >;
 
+/**
+ * Caption and hashtags only, exactly as they post — no field labels, no
+ * other section. Distinct from buildCompleteDraftScript, which is an
+ * internal editorial reference document (every slide, internal viewer
+ * questions, fact IDs) that is never meant to be pasted onto a platform.
+ */
+export function buildCaptionForPosting(
+  draft: Pick<DraftScriptSource, "caption" | "hashtags">,
+): string {
+  const hashtags = draft.hashtags
+    .map((tag) => (tag.startsWith("#") ? tag : `#${tag}`))
+    .join(" ");
+  return [draft.caption.trim(), hashtags].filter(isText).join("\n\n");
+}
+
 /** Builds one paste-ready representation of the complete editable script. */
 export function buildCompleteDraftScript(
   draft: DraftScriptSource,

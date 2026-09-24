@@ -34,7 +34,7 @@ import {
   getCreativeDraftApprovalState,
   repairDeterministicCreativeCopy,
 } from "./modules/stories/creative-quality";
-import { buildCompleteDraftScript } from "./modules/stories/creative-draft-export";
+import { buildCompleteDraftScript, buildCaptionForPosting } from "./modules/stories/creative-draft-export";
 import {
   CREATIVE_COMPANION_APPROACHES,
   MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS,
@@ -2605,6 +2605,63 @@ function CompleteDraftScript({
   );
 }
 
+function CaptionForPosting({
+  draft,
+}: {
+  draft: Pick<EditableCreativeDraft, "caption" | "hashtags">;
+}) {
+  const [copyResult, setCopyResult] = useState<{
+    text: string;
+    status: "copied" | "failed";
+  }>();
+  const text = buildCaptionForPosting(draft);
+  const copyState = copyResult?.text === text ? copyResult.status : "idle";
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyResult({ text, status: "copied" });
+    } catch {
+      setCopyResult({ text, status: "failed" });
+    }
+  }
+
+  return (
+    <details className={styles.completeScript}>
+      <summary>Caption for posting · one copyable output</summary>
+      <div className={styles.completeScriptBody}>
+        <div className={styles.completeScriptHeading}>
+          <div>
+            <strong>Ready to paste</strong>
+            <p>
+              Caption and hashtags only, exactly as they will post — no field
+              labels, no other section.
+            </p>
+          </div>
+          <button
+            type="button"
+            className={styles.secondaryButton}
+            onClick={copy}
+          >
+            {copyState === "copied" ? "Copied" : "Copy for posting"}
+          </button>
+        </div>
+        <textarea
+          readOnly
+          value={text}
+          rows={8}
+          aria-label="Caption ready for posting"
+        />
+        {copyState === "failed" ? (
+          <small role="alert">
+            Clipboard access was unavailable. Select and copy the text manually.
+          </small>
+        ) : null}
+      </div>
+    </details>
+  );
+}
+
 function CreativeAssetCard({
   topicId, secret,
   asset,
@@ -3111,6 +3168,7 @@ function DraftEditor({
           <ListField key={draft.hashtags.join("|")} label="Hashtags (comma-separated)" values={draft.hashtags} onChange={(hashtags) => onChange({ ...draft, hashtags })} />
         </div>
       </div>
+      <CaptionForPosting draft={draft} />
       <TextAreaField label="Accessibility alt text" value={draft.altText} onChange={(altText) => onChange({ ...draft, altText })} rows={2} />
       {(format === "carousel" || format === "sequence") ? (
         <TextAreaField
