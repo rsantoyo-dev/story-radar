@@ -6,18 +6,17 @@
 // fields — route, direction, localisation, dates, works, closure wording and
 // detour — never invented, and the source is the ministry's Québec 511 host.
 //
-// Usage: node scripts/seed-test-road-story.mjs <topicSlugOrIdOrName> [wfsRowId]
-//        node scripts/seed-test-road-story.mjs                      # lists topics
+// Usage: node --env-file=.env.local scripts/seed-test-road-story.mjs <topicSlugOrIdOrName> [wfsRowId]
+//        node --env-file=.env.local scripts/seed-test-road-story.mjs          # lists topics
 // Default row: 172662 (A-30 ouest, Brossard). Pick another active LineString
 // row with `npx tsx scripts/road-map-check.mts --row <id>`.
-import nextEnv from "@next/env";
+// (--env-file rather than @next/env: the latter expands `$` inside the
+// connection string and hands neon() an invalid URL.)
 import { neon } from "@neondatabase/serverless";
 import { randomUUID } from "node:crypto";
 
-nextEnv.loadEnvConfig(process.cwd());
-
 const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) throw new Error("DATABASE_URL is not configured");
+if (!databaseUrl) throw new Error("DATABASE_URL is not configured (run with --env-file=.env.local)");
 const sql = neon(databaseUrl);
 
 const arg = process.argv[2]?.trim();

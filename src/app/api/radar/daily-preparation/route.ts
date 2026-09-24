@@ -9,7 +9,7 @@ import { listEditorialLines, getEditorialLine, validId } from "@/app/modules/edi
 import { EditorialLineError } from "@/app/modules/editorial-lines/editorial-lines";
 import { plannerDay } from "@/app/modules/stories/daily-editorial-planner.types";
 export const runtime="nodejs";
-export const maxDuration=600;
+export const maxDuration=300;
 export async function GET(request:Request){return handle(request,false);}
 export async function POST(request:Request){return handle(request,true);}
 async function handle(request:Request,write:boolean) {
