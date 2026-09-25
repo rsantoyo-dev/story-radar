@@ -1477,3 +1477,62 @@ test("supporting text that advances the slide is not flagged as restatement", ()
   );
   assert.equal(issues.filter((issue) => issue.code === "slide-restates-itself").length, 0);
 });
+
+test("a hook-list structure replaces the preferred arcs with a list arc in the prompt policy", () => {
+  const list = carouselNarrativePolicyForPrompt("saves", "hook-list");
+  assert.match(list.flexibility, /one slide per enumerated item in source order/);
+  assert.match(list.listArc ?? "", /establishes the count/);
+  assert.match(list.listArc ?? "", /choose, plan, save or share/);
+  assert.equal(list.preferredClosingGoal, "conclude");
+
+  const narrative = carouselNarrativePolicyForPrompt("saves");
+  assert.equal(narrative.listArc, undefined);
+  assert.match(narrative.flexibility, /preferred arc/);
+  assert.deepEqual(carouselNarrativePolicyForPrompt("saves", "auto").listArc, undefined);
+});
+
+test("a hook-list cover is its count promise, so the reader-consequence cover and closing rules stand down", () => {
+  // A "5 things to do this weekend" carousel in a reader-consequence Topic:
+  // the cover names the list, the closing helps the reader choose. Judged as a
+  // consequence story, both would be rejected for exactly that shape.
+  const units = [
+    {
+      ...unit("cover", "hook", ["fact-1"]),
+      headline: "5 choses à faire à Saint-Jean ce week-end",
+      body: "Du 26 au 27 septembre, cinq sorties confirmées par la Ville.",
+    },
+    unit("content", "explain", ["fact-2"]),
+    {
+      ...unit("conclusion", "conclude", ["fact-1", "fact-2"]),
+      headline: "Laquelle choisirez-vous?",
+      body: "Samedi 26 : 9 h, 13 h et 19 h. Dimanche 27 : 10 h et 14 h.",
+    },
+  ];
+  const asConsequence = evaluateCarouselNarrative(units, undefined, "saves", "reader-consequence");
+  const asList = evaluateCarouselNarrative(units, undefined, "saves", "reader-consequence", "hook-list");
+  const readerRules = ["cover-not-reader-framed", "closing-not-reader-resolved", "cover-supporting-restates-hold"];
+  assert.ok(!asList.some((issue) => readerRules.includes(issue.code)), JSON.stringify(asList));
+  // Everything else still applies to a list: the hook-list flag only stands
+  // the reader-consequence rules down, it does not blank the evaluation.
+  assert.deepEqual(
+    asList.map((issue) => issue.code),
+    asConsequence.map((issue) => issue.code).filter((code) => !readerRules.includes(code)),
+  );
+
+  const institutionCover = [
+    { ...unit("cover", "hook", ["fact-1"]), headline: "El Banco de Canadá mantuvo su tasa en 2,25%" },
+    unit("content", "explain", ["fact-2"]),
+    unit("conclusion", "conclude", ["fact-1"]),
+  ];
+  assert.ok(
+    evaluateCarouselNarrative(institutionCover, undefined, undefined, "reader-consequence").some(
+      (issue) => issue.code === "cover-not-reader-framed",
+    ),
+    "the reader-consequence cover rule itself is untouched for narrative carousels",
+  );
+  assert.ok(
+    !evaluateCarouselNarrative(institutionCover, undefined, undefined, "reader-consequence", "hook-list").some(
+      (issue) => issue.code === "cover-not-reader-framed",
+    ),
+  );
+});

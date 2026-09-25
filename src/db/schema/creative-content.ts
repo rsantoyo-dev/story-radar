@@ -254,7 +254,7 @@ export const creativeProfiles = pgTable(
       .default(DEFAULT_CREATIVE_CONVERSION_GOAL)
       .notNull(),
     requireCoverTitle: boolean("require_cover_title").default(false).notNull(),
-    storyStructure: text("story_structure").$type<"auto" | "hook-steps">().default("auto").notNull(),
+    storyStructure: text("story_structure").$type<"auto" | "hook-steps" | "hook-list">().default("auto").notNull(),
     framingStrategy: text("framing_strategy")
       .$type<CreativeFramingStrategy>()
       .default(DEFAULT_CREATIVE_FRAMING_STRATEGY)

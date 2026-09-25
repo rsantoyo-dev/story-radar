@@ -220,6 +220,7 @@ export async function runSingleShotCreativePipeline(
         judgedProfile.language,
         judgedProfile.conversionGoal,
         judgedProfile.framingStrategy,
+        judgedProfile.storyStructure,
       )
         .filter((issue) => issue.severity === "blocker")
         .map((issue) => `${issue.code}:${issue.unitOrder ?? 0}`);

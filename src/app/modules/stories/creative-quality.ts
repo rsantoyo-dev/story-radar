@@ -22,6 +22,7 @@ import type {
   CreativeQualityIssue,
   CreativeQualityReview,
   CreativeQualityScores,
+  CreativeStoryStructure,
   GeneratedCreativeDraft,
 } from "./creative-content.types";
 import {
@@ -767,6 +768,7 @@ export function deterministicCreativeQualityIssues(
   language?: string,
   conversionGoal?: CreativeConversionGoal,
   framingStrategy?: CreativeFramingStrategy,
+  storyStructure?: CreativeStoryStructure,
 ): CreativeQualityIssue[] {
   const narrativeIssues =
     (format === "carousel" || format === "sequence")
@@ -775,6 +777,7 @@ export function deterministicCreativeQualityIssues(
           draft.narrativeRationale,
           conversionGoal,
           framingStrategy,
+          storyStructure,
         ).map((issue) => ({
           code: issue.code.toUpperCase().replaceAll("-", "_"),
           severity: issue.severity === "blocker" ? "blocker" as const : "warning" as const,
@@ -915,6 +918,7 @@ export function deterministicCreativeQualityIssues(
   const captionInstitutionRecapIssues =
     (format === "carousel" || format === "sequence") &&
     framingStrategy === "reader-consequence" &&
+    storyStructure !== "hook-list" &&
     isInstitutionFirstCoverCopy(firstSentenceOf(draft.caption))
       ? [{
           code: "CAPTION_INSTITUTION_RECAP",
@@ -1268,6 +1272,7 @@ export function buildCreativeQualityReview({
   keyFacts = [],
   conversionGoal,
   framingStrategy,
+  storyStructure,
   language,
 }: {
   draft: GeneratedCreativeDraft;
@@ -1278,6 +1283,7 @@ export function buildCreativeQualityReview({
   keyFacts?: readonly CreativeKeyFact[];
   conversionGoal?: CreativeConversionGoal;
   framingStrategy?: CreativeFramingStrategy;
+  storyStructure?: CreativeStoryStructure;
   language?: string;
 }): CreativeQualityReview {
   const deterministicIssues = deterministicCreativeQualityIssues(
@@ -1287,6 +1293,7 @@ export function buildCreativeQualityReview({
     language,
     conversionGoal,
     framingStrategy,
+    storyStructure,
   );
   const reconciledCriticIssues =
     reconcileCriticIssuesWithDeterministicValidation(

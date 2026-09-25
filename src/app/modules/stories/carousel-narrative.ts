@@ -2,6 +2,7 @@ import { extractCreativeNumericLiterals } from "./creative-number-normalization"
 import type {
   CreativeConversionGoal,
   CreativeFramingStrategy,
+  CreativeStoryStructure,
 } from "./creative-content.types";
 
 export const CAROUSEL_EDITORIAL_GOALS = [
@@ -607,13 +608,22 @@ export function validateCarouselPlan(
  */
 export function carouselNarrativePolicyForPrompt(
   conversionGoal?: CreativeConversionGoal,
+  storyStructure?: CreativeStoryStructure,
 ) {
   const preferredClosingGoal = conversionGoal
     ? getPreferredCarouselClosingGoal(conversionGoal)
     : undefined;
+  const listStructure = storyStructure === "hook-list";
   return {
-    flexibility:
-      "Use the preferred arc for the selected slide count unless the story requires another sequence. It already reflects preferredClosingGoal. Explain other deviations in narrativeRationale.",
+    flexibility: listStructure
+      ? "This story is an enumerated list: plan hook, then one slide per enumerated item in source order, then the preferred closing goal. The preferred arcs below do not apply to it; never merge or drop items to fit one."
+      : "Use the preferred arc for the selected slide count unless the story requires another sequence. It already reflects preferredClosingGoal. Explain other deviations in narrativeRationale.",
+    ...(listStructure
+      ? {
+          listArc:
+            "hook (its allowedFactIds include the fact that establishes the count) → one explain or opportunity slide per item, each citing only that item's facts → conclude (reuses two or more items' facts to help the reader choose, plan, save or share)",
+        }
+      : {}),
     ...(preferredClosingGoal ? { preferredClosingGoal } : {}),
     roleSemantics:
       "role controls presentation and layout; editorialGoal controls the narrative job of the slide.",
@@ -669,16 +679,22 @@ export function evaluateCarouselNarrative(
   narrativeRationale?: string,
   conversionGoal?: CreativeConversionGoal,
   framingStrategy?: CreativeFramingStrategy,
+  storyStructure?: CreativeStoryStructure,
 ): CarouselNarrativeWarning[] {
   const warnings: CarouselNarrativeWarning[] = [];
   const preferredArc = getPreferredCarouselArc(
     units.length,
     conversionGoal,
   );
+  // A list's cover is its count-and-subject promise and its closing helps the
+  // reader act on the items; the reader-consequence cover and closing rules
+  // would reject exactly that shape, so the framing applies to wording only.
+  const readerFraming =
+    framingStrategy === "reader-consequence" && storyStructure !== "hook-list";
 
   const coverUnit = units[0];
   if (
-    framingStrategy === "reader-consequence" &&
+    readerFraming &&
     coverUnit &&
     coverUnit.role === "cover" &&
     (isInstitutionFirstCoverCopy(coverUnit.headline) ||
@@ -947,7 +963,7 @@ export function evaluateCarouselNarrative(
     });
   }
   if (
-    framingStrategy === "reader-consequence" &&
+    readerFraming &&
     first?.role === "cover" &&
     first.body?.trim() &&
     isInstitutionFirstCoverCopy(firstSentenceOfCopy(first.body))
@@ -1075,7 +1091,7 @@ export function evaluateCarouselNarrative(
       });
     }
 
-    if (framingStrategy === "reader-consequence") {
+    if (readerFraming) {
       const closingCopy = [last.headline, last.body]
         .filter((value): value is string => Boolean(value?.trim()))
         .join(" ");
@@ -1204,12 +1220,14 @@ export function blockingCarouselNarrativeIssues(
   narrativeRationale?: string,
   conversionGoal?: CreativeConversionGoal,
   framingStrategy?: CreativeFramingStrategy,
+  storyStructure?: CreativeStoryStructure,
 ): CarouselNarrativeWarning[] {
   return evaluateCarouselNarrative(
     units,
     narrativeRationale,
     conversionGoal,
     framingStrategy,
+    storyStructure,
   ).filter((issue) => issue.severity === "blocker");
 }
 

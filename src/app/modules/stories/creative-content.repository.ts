@@ -30,12 +30,14 @@ import {
   DEFAULT_VISUAL_FIDELITY_MODE,
   isCreativeConversionGoal,
   isCreativeFramingStrategy,
+  isCreativeStoryStructure,
   isVisualFidelityMode,
   type CreativeBrandAsset,
   type CreativeBrandOverlay,
   type CreativeAspectRatio,
   type CreativeAiUsage,
   type CreativeBrief,
+  type CreativeBriefOverrides,
   type CreativeCharacterSnapshot,
   type CreativeDailyUsage,
   type CreativeDraft,
@@ -156,6 +158,7 @@ export async function insertCreativeBrief({
   promptVersion,
   inputHash,
   editorialDirection, collectionContext,
+  overrides,
   generated,
   usage,
 }: {
@@ -169,6 +172,8 @@ export async function insertCreativeBrief({
   inputHash: string;
   editorialDirection?: string;
   collectionContext?: CreativeBrief["collectionContext"];
+  /** Already applied to `profile`; stored so a later hash check can re-apply them. */
+  overrides?: CreativeBriefOverrides;
   generated: GeneratedCreativeBrief;
   usage: CreativeAiUsage;
 }): Promise<CreativeBrief> {
@@ -180,7 +185,13 @@ export async function insertCreativeBrief({
       topicId,
       storyId,
       profileId: profile.id,
-      profileSnapshot: { ...profile, geoProviderContact: undefined },
+      // The snapshot column is the one place the brief keeps its configuration;
+      // the overrides ride inside it rather than in a new column.
+      profileSnapshot: {
+        ...profile,
+        geoProviderContact: undefined,
+        ...(overrides ? { briefOverrides: overrides } : {}),
+      },
       provider,
       model,
       modelVersion: modelVersion ?? null,
@@ -732,16 +743,30 @@ export async function failCreativeAiRun(
     );
 }
 
+function storedBriefOverrides(value: unknown): CreativeBriefOverrides | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const overrides: CreativeBriefOverrides = {
+    ...(isCreativeStoryStructure(record.storyStructure) ? { storyStructure: record.storyStructure } : {}),
+    ...(isCreativeFramingStrategy(record.framingStrategy) ? { framingStrategy: record.framingStrategy } : {}),
+    ...(isCreativeConversionGoal(record.conversionGoal) ? { conversionGoal: record.conversionGoal } : {}),
+  };
+  return Object.keys(overrides).length ? overrides : undefined;
+}
+
 function mapCreativeBrief(
   row: typeof storyCreativeBriefs.$inferSelect,
 ): CreativeBrief {
   const carouselPlan = row.carouselPlan as CreativeBrief["carouselPlan"] ??
     recover511CarouselPlan(row.provider, row.model, row.keyFacts as CreativeKeyFact[]);
+  const { briefOverrides, ...snapshot } = (row.profileSnapshot ?? {}) as { briefOverrides?: unknown } & Record<string, unknown>;
+  const overrides = storedBriefOverrides(briefOverrides);
   return {
     id: row.id,
     storyId: row.storyId,
     profileId: row.profileId,
-    profileSnapshot: mapProfileSnapshot(row.profileSnapshot),
+    profileSnapshot: mapProfileSnapshot(snapshot),
+    ...(overrides ? { overrides } : {}),
     provider: row.provider,
     model: row.model,
     ...(row.modelVersion ? { modelVersion: row.modelVersion } : {}),

@@ -60,6 +60,7 @@ type Context = {
   language: string;
   conversionGoal: CreativeProfile["conversionGoal"];
   framingStrategy: CreativeProfile["framingStrategy"];
+  storyStructure?: CreativeProfile["storyStructure"];
   topic: { name: string; description?: string | null };
 };
 
@@ -78,7 +79,7 @@ async function repairCreativeBlockersOnce(
 ): Promise<{ draft: GeneratedCreativeDraft; usage: CreativeAiUsage; feedback?: RepairFeedback }> {
   const inspect = (draft: GeneratedCreativeDraft) => [
     ...deterministicCreativeQualityIssues(draft, context.format, context.keyFacts,
-      context.language, context.conversionGoal, context.framingStrategy),
+      context.language, context.conversionGoal, context.framingStrategy, context.storyStructure),
     ...visibleDraftLanguageIssues(draft, context.language),
   ];
   const before = inspect(original);
@@ -207,7 +208,7 @@ export async function repairRemainingCreativeBlockers(
     if (!progressed && !feedback) break;
     const remaining = [
       ...deterministicCreativeQualityIssues(draft, context.format, context.keyFacts,
-        context.language, context.conversionGoal, context.framingStrategy),
+        context.language, context.conversionGoal, context.framingStrategy, context.storyStructure),
       ...visibleDraftLanguageIssues(draft, context.language),
     ];
     if (!blockers(remaining).length) break;

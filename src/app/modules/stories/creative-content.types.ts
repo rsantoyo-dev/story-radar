@@ -80,6 +80,54 @@ export function isCreativeFramingStrategy(
   );
 }
 
+export const CREATIVE_STORY_STRUCTURES = ["auto", "hook-steps", "hook-list"] as const;
+export type CreativeStoryStructure = (typeof CREATIVE_STORY_STRUCTURES)[number];
+/**
+ * How a carousel is shaped. "auto" lets the source decide; "hook-steps" is an
+ * ordered procedure (recipe, setup guide); "hook-list" is an enumerated list
+ * of parallel items ("5 things to do this weekend"), one item per slide.
+ * Presentation preferences only: none authorizes inventing a step or an item
+ * the source does not state.
+ */
+export const DEFAULT_CREATIVE_STORY_STRUCTURE: CreativeStoryStructure = "auto";
+
+export function isCreativeStoryStructure(value: unknown): value is CreativeStoryStructure {
+  return CREATIVE_STORY_STRUCTURES.includes(value as CreativeStoryStructure);
+}
+
+/**
+ * Per-brief overrides of the three profile settings one story may need to
+ * depart from: a listicle in a reader-consequence Topic, a saves goal for one
+ * evergreen guide. Applied at brief creation, recorded on the brief, and
+ * re-applied whenever its input hash is recomputed, so the Topic profile never
+ * has to change for a single story.
+ */
+export type CreativeBriefOverrides = {
+  storyStructure?: CreativeStoryStructure;
+  framingStrategy?: CreativeFramingStrategy;
+  conversionGoal?: CreativeConversionGoal;
+};
+
+export function normalizeCreativeBriefOverrides(
+  overrides?: CreativeBriefOverrides,
+): CreativeBriefOverrides | undefined {
+  if (!overrides) return undefined;
+  const normalized: CreativeBriefOverrides = {
+    ...(overrides.storyStructure ? { storyStructure: overrides.storyStructure } : {}),
+    ...(overrides.framingStrategy ? { framingStrategy: overrides.framingStrategy } : {}),
+    ...(overrides.conversionGoal ? { conversionGoal: overrides.conversionGoal } : {}),
+  };
+  return Object.keys(normalized).length ? normalized : undefined;
+}
+
+export function applyCreativeBriefOverrides(
+  profile: CreativeProfile,
+  overrides?: CreativeBriefOverrides,
+): CreativeProfile {
+  const normalized = normalizeCreativeBriefOverrides(overrides);
+  return normalized ? { ...profile, ...normalized } : profile;
+}
+
 export const VISUAL_FIDELITY_MODES = [
   "illustration-editorial",
   "verified-references",
@@ -515,7 +563,7 @@ export type CreativeProfile = {
   framingStrategy: CreativeFramingStrategy;
   /** Presentation preference; never authorizes inventing source steps. */
   requireCoverTitle?: boolean;
-  storyStructure?: "auto" | "hook-steps";
+  storyStructure?: CreativeStoryStructure;
   visualFidelityMode: VisualFidelityMode;
   /** Operational contact; excluded from editorial policy and generation hashes. */
   geoProviderContact?: string;
@@ -632,6 +680,8 @@ export type CreativeBrief = GeneratedCreativeBrief & {
   storyId: string;
   /** Editor-authored framing; it guides composition but is never evidence. */
   editorialDirection?: string;
+  /** Profile settings this brief departed from; profileSnapshot already has them applied. */
+  overrides?: CreativeBriefOverrides;
   collectionContext?: import("../editorial-lines/editorial-lines").EditorialCollectionContext & {runId?:string};
   profileId: string;
   profileSnapshot: CreativeProfile;

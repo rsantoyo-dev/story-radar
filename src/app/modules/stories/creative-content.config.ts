@@ -161,8 +161,11 @@ export function getCreativeContentPublicConfig(): CreativeContentPublicConfig {
     // its excerpt does not (grounding narrows it, after one rewrite). v39: the
     // planning prompt describes each goal's job instead of showing a template
     // question, and arc alignment keeps the model's closing question. Bumped
-    // so plans built on template questions are not reused.
-    briefPromptVersion: "creative-brief-v39",
+    // so plans built on template questions are not reused. v40: the
+    // "hook-list" story structure (one enumerated item per slide, a
+    // count-and-subject cover, a closing that helps the reader act on the
+    // list) and its list arc in the narrative policy.
+    briefPromptVersion: "creative-brief-v40",
     // v28/v52/v7: the writer now has explicit guidance for what a
     // publish-ready caption reads like — a concrete opening stake, one line
     // per distinct practical consequence the facts support, and caption
@@ -181,8 +184,12 @@ export function getCreativeContentPublicConfig(): CreativeContentPublicConfig {
       // for — requiresVerifiedGeography now routes that value too, into the
       // same photo/map/fallback chain (never an archive photo as proof of a
       // current closure/works/change).
-      carousel: carouselWriterModel ? `carousel-draft-v52-writer-${carouselWriterModel}` : "carousel-draft-v52",
-      sequence: "sequence-draft-v7",
+      // v53/v8: the script call states the story structure in the writer's
+      // terms (hook-list items, or hook-steps for a procedure drafted as a
+      // carousel), and the critic is told a count-and-subject cover is the
+      // list's reason to continue.
+      carousel: carouselWriterModel ? `carousel-draft-v53-writer-${carouselWriterModel}` : "carousel-draft-v53",
+      sequence: "sequence-draft-v8",
     },
     maxRunsPerDay: parsePositiveInteger(
       process.env.CREATIVE_MAX_RUNS_PER_DAY,

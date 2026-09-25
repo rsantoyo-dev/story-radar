@@ -4,7 +4,11 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
 import * as errors from "./creative-run-errors";
-import type { CreativeDraft } from "./creative-content.types";
+import {
+  applyCreativeBriefOverrides,
+  normalizeCreativeBriefOverrides,
+  type CreativeDraft,
+} from "./creative-content.types";
 
 // createCreativeDraft is loaded in a vm with only its persistence and provider
 // edges stubbed, so the branch under test is the real one.
@@ -41,7 +45,9 @@ function harness({ singleShot, cached }: { singleShot: boolean; cached: boolean 
     "../editorial-lines/editorial-lines": { editorialContextInstruction: () => "", collectionContextForHash: () => "" },
     "./story-content.repository": { getStoryContent: async () => ({ text: "source text" }) },
     "./creative-visual-guidance": { resolveCreativeVisualGuidance: () => undefined },
-    "./creative-content.types": { isCreativeCompanionApproach: () => false },
+    // The override helpers are pure; the real ones keep this stub honest about
+    // how createCreativeDraft re-applies a brief's overrides to the live profile.
+    "./creative-content.types": { isCreativeCompanionApproach: () => false, applyCreativeBriefOverrides, normalizeCreativeBriefOverrides },
     "./acquisition-lenses": { fallbackEditorialAngle: () => undefined },
     "./creative-aspect-ratio": { resolveCreativeOutputAspectRatio: () => "4:5" },
     "./creative-profile.repository": { getCreativeProfile: async () => ({ language: "French" }) },

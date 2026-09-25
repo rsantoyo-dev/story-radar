@@ -37,7 +37,7 @@ type GeminiExports = {
 type SingleShotExports = {
   generateSingleShotCreativeScript: (options: unknown) => Promise<{
     brief: { keyFacts: { id: string; statement?: string }[]; carouselPlan?: { slides: { allowedFactIds: string[] }[] } };
-    draft: { units: { visualNeed?: string; body?: string }[] };
+    draft: { units: { visualNeed?: string; body?: string; assetRequest?: string }[] };
     provider: string;
     attempts: number;
     usage: { totalTokens: number };
@@ -657,4 +657,40 @@ test("a non-transient Gemini failure is not re-sent to the second account", asyn
   });
   await assert.rejects(h.generate(options({ paidGeminiApiKey: "paid-key" })));
   assert.deepEqual(keys, ["test-key"], "no pointless second charge for a request the API refuses");
+});
+
+test("a hook-list profile reaches both single-shot calls as a structure instruction and a list arc", async () => {
+  // Before this, the single-shot pipeline never read storyStructure at all:
+  // it always drafted a carousel and the preference silently did nothing.
+  const h = harness(() => validResponse());
+  await h.generate(options({
+    profile: { language: "English", conversionGoal: "saves", framingStrategy: "reader-consequence", storyStructure: "hook-list", brandPersonality: [], brandOverlay: { enabled: false } },
+  }));
+  assert.ok(h.instructions[0]?.includes("STORY STRUCTURE: hook-list"), "the brief call states the list rules");
+  assert.ok(h.instructions[1]?.includes("STRUCTURE FOR THE SCRIPT: hook-list"), "the script call states them in the writer's terms");
+  const briefCall = h.calls[0] as { carouselNarrativePolicy?: { listArc?: string } };
+  assert.match(briefCall.carouselNarrativePolicy?.listArc ?? "", /establishes the count/);
+});
+
+test("a hook-steps profile whose brief recommended a plain carousel is not told to write steps", async () => {
+  const h = harness(() => validResponse());
+  await h.generate(options({
+    profile: { language: "English", conversionGoal: "followers", framingStrategy: "auto", storyStructure: "hook-steps", brandPersonality: [], brandOverlay: { enabled: false } },
+  }));
+  assert.ok(!h.instructions[1]?.includes("STRUCTURE FOR THE SCRIPT: hook-steps"), "no source-backed procedure means no steps instruction");
+  assert.ok(!h.instructions[0]?.includes("STORY STRUCTURE: hook-list"));
+});
+
+test("a carousel cover the writer marked typography-only is coerced to a generated image; a middle slide keeps its choice", async () => {
+  const h = harness(() => validResponse({
+    units: validUnits([
+      { assetRequest: "typography-only", visualNeed: "typography" },
+      { assetRequest: "typography-only", visualNeed: "typography" },
+    ]),
+  }));
+  const result = await h.generate(options());
+  assert.equal(result.draft.units[0]?.assetRequest, "generated-image");
+  assert.equal(result.draft.units[0]?.visualNeed, "generic-illustration");
+  assert.equal(result.draft.units[1]?.assetRequest, "typography-only");
+  assert.equal(result.draft.units[1]?.visualNeed, "typography");
 });

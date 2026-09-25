@@ -37,9 +37,14 @@ import {
 import { buildCompleteDraftScript, buildCaptionForPosting } from "./modules/stories/creative-draft-export";
 import {
   CREATIVE_COMPANION_APPROACHES,
+  CREATIVE_CONVERSION_GOALS,
+  CREATIVE_FRAMING_STRATEGIES,
+  CREATIVE_STORY_STRUCTURES,
   MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS,
   VISUAL_FIDELITY_MODES,
+  normalizeCreativeBriefOverrides,
   type CreativeAssetBatchResponse,
+  type CreativeBriefOverrides,
   type CreativeAssetEditRequest,
   type CreativeAspectRatio,
   type CreativeCharacterRosterEntry,
@@ -155,6 +160,19 @@ const FRAMING_STRATEGY_LABELS = {
   authority: "Authority",
 } as const satisfies Record<CreativeProfile["framingStrategy"], string>;
 
+const STORY_STRUCTURE_LABELS = {
+  auto: "Automatic (from the source)",
+  "hook-steps": "Hook + steps",
+  "hook-list": "Hook + list (“N things to…”)",
+} as const satisfies Record<NonNullable<CreativeProfile["storyStructure"]>, string>;
+
+const CONVERSION_GOAL_LABELS = {
+  followers: "Followers",
+  discussion: "Discussion",
+  saves: "Saves",
+  shares: "Shares",
+} as const satisfies Record<CreativeProfile["conversionGoal"], string>;
+
 const VISUAL_FIDELITY_MODE_LABELS = {
   "illustration-editorial": "Editorial illustration",
   "verified-references": "Verified references",
@@ -179,6 +197,7 @@ export function CreativeDraftWorkspace({
   const profileDirty = false;
   const [researchRun,setResearchRun]=useState<string>();
   const [editorialDirection, setEditorialDirection] = useState("");
+  const [briefOverrides, setBriefOverrides] = useState<CreativeBriefOverrides>({});
   const [focusSuggestion, setFocusSuggestion] = useState<{ text: string; context: string }>();
   const [focusError, setFocusError] = useState<string>();
   const [selectedFormat, setSelectedFormat] = useState<CreativeFormat>("meme");
@@ -242,6 +261,7 @@ export function CreativeDraftWorkspace({
         workspace.brief.profileSnapshot.language,
         workspace.brief.profileSnapshot.conversionGoal,
         workspace.brief.profileSnapshot.framingStrategy,
+        workspace.brief.profileSnapshot.storyStructure,
       )
       : [];
   const activeDraftApprovalState = getCreativeDraftApprovalState({
@@ -271,7 +291,9 @@ export function CreativeDraftWorkspace({
   const editorialDirectionDirty = Boolean(
     workspace?.brief &&
       (normalizeEditorialDirection(editorialDirection) !==
-        (workspace.brief.editorialDirection ?? "") || effectiveResearchRun !== workspace.brief.collectionContext?.runId),
+        (workspace.brief.editorialDirection ?? "") || effectiveResearchRun !== workspace.brief.collectionContext?.runId ||
+        JSON.stringify(normalizeCreativeBriefOverrides(briefOverrides) ?? {}) !==
+          JSON.stringify(normalizeCreativeBriefOverrides(workspace.brief.overrides) ?? {})),
   );
 
   useEffect(() => {
@@ -289,6 +311,7 @@ export function CreativeDraftWorkspace({
         setWorkspace(next);
         setProfile(next.profile);
         setEditorialDirection(next.brief?.editorialDirection ?? "");
+        setBriefOverrides(next.brief?.overrides ?? {});
         // Prefer the editable draft for the current profile. If there is no
         // current one, open the latest saved study so its copy and images do
         // not appear to vanish after a brief/profile refresh.
@@ -578,7 +601,7 @@ export function CreativeDraftWorkspace({
         const result = await requestJson<{
           editorialDirection: string;
           daily: CreativeWorkspaceState["daily"];
-        }>(topicUrl(`/api/radar/stories/${encodeURIComponent(storyId)}/creative?${query}`, topicId), secret, creativeBriefRequest(editorialDirection));
+        }>(topicUrl(`/api/radar/stories/${encodeURIComponent(storyId)}/creative?${query}`, topicId), secret, creativeBriefRequest(editorialDirection, briefOverrides));
         setFocusSuggestion({ text: result.editorialDirection, context });
         setWorkspace(current => current ? { ...current, daily: result.daily } : current);
       } catch (error) {
@@ -603,12 +626,13 @@ export function CreativeDraftWorkspace({
           topicId,
         ),
         secret,
-        creativeBriefRequest(editorialDirection),
+        creativeBriefRequest(editorialDirection, briefOverrides),
       );
       focusDraftAfterRefresh.current=true;
       setWorkspace(result.state);
       setProfile(result.state.profile);
       setEditorialDirection(result.state.brief?.editorialDirection ?? "");
+      setBriefOverrides(result.state.brief?.overrides ?? {});
       const format = result.state.brief?.recommendedFormat ?? "meme";
       const aspectRatio = resolveDraftAspectRatio(result.state, format);
       setSelectedFormat(format);
@@ -672,12 +696,13 @@ export function CreativeDraftWorkspace({
             topicId,
           ),
           secret,
-          creativeBriefRequest(editorialDirection),
+          creativeBriefRequest(editorialDirection, briefOverrides),
         );
         currentState = refreshedBrief.state;
         setWorkspace(currentState);
         setProfile(currentState.profile);
         setEditorialDirection(currentState.brief?.editorialDirection ?? "");
+        setBriefOverrides(currentState.brief?.overrides ?? {});
       }
 
       if (!currentState.brief || !currentState.briefIsCurrent) {
@@ -819,11 +844,12 @@ export function CreativeDraftWorkspace({
             topicId,
           ),
           secret,
-          creativeBriefRequest(editorialDirection),
+          creativeBriefRequest(editorialDirection, briefOverrides),
         );
         currentState = refreshedBrief.state;
         briefOutcome = refreshedBrief.outcome;
         setEditorialDirection(currentState.brief?.editorialDirection ?? "");
+        setBriefOverrides(currentState.brief?.overrides ?? {});
       }
 
       if (!currentState.brief || !currentState.briefIsCurrent) {
@@ -916,6 +942,7 @@ export function CreativeDraftWorkspace({
             workspace.brief.profileSnapshot.language,
             workspace.brief.profileSnapshot.conversionGoal,
             workspace.brief.profileSnapshot.framingStrategy,
+            workspace.brief.profileSnapshot.storyStructure,
           ).filter((issue) => issue.severity === "blocker")
         : [];
       setNotice(
@@ -1673,6 +1700,53 @@ export function CreativeDraftWorkspace({
 
               <div className={styles.editorialDirectionPanel}>
                 {workspace.collectionContexts?.length ? <label>Research context for a new brief<select value={effectiveResearchRun??""} onChange={e=>setResearchRun(e.target.value||undefined)}><option value="">Choose research context</option>{workspace.collectionContexts.map(c=><option key={c.runId} value={c.runId}>{c.context.name} · {c.context.mode} · {c.context.query||c.context.objective}</option>)}</select><small>Existing drafts retain the context reviewed when they were created.</small></label>:null}
+                <div className={styles.profileSummaryGrid}>
+                  <label>
+                    Structure for this brief
+                    <select
+                      value={briefOverrides.storyStructure ?? ""}
+                      onChange={(event) => setBriefOverrides((current) => ({
+                        ...current,
+                        storyStructure: (event.target.value || undefined) as CreativeBriefOverrides["storyStructure"],
+                      }))}
+                    >
+                      <option value="">Topic profile — {STORY_STRUCTURE_LABELS[profile.storyStructure ?? "auto"]}</option>
+                      {CREATIVE_STORY_STRUCTURES.map((value) => (
+                        <option key={value} value={value}>{STORY_STRUCTURE_LABELS[value]}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Framing for this brief
+                    <select
+                      value={briefOverrides.framingStrategy ?? ""}
+                      onChange={(event) => setBriefOverrides((current) => ({
+                        ...current,
+                        framingStrategy: (event.target.value || undefined) as CreativeBriefOverrides["framingStrategy"],
+                      }))}
+                    >
+                      <option value="">Topic profile — {FRAMING_STRATEGY_LABELS[profile.framingStrategy ?? "auto"]}</option>
+                      {CREATIVE_FRAMING_STRATEGIES.map((value) => (
+                        <option key={value} value={value}>{FRAMING_STRATEGY_LABELS[value]}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Conversion goal for this brief
+                    <select
+                      value={briefOverrides.conversionGoal ?? ""}
+                      onChange={(event) => setBriefOverrides((current) => ({
+                        ...current,
+                        conversionGoal: (event.target.value || undefined) as CreativeBriefOverrides["conversionGoal"],
+                      }))}
+                    >
+                      <option value="">Topic profile — {CONVERSION_GOAL_LABELS[profile.conversionGoal]}</option>
+                      {CREATIVE_CONVERSION_GOALS.map((value) => (
+                        <option key={value} value={value}>{CONVERSION_GOAL_LABELS[value]}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
                 <TextAreaField
                   label="Editorial focus for this story (optional)"
                   value={editorialDirection}
@@ -1860,6 +1934,7 @@ export function CreativeDraftWorkspace({
                     profileLanguage={workspace.brief.profileSnapshot.language}
                     conversionGoal={workspace.brief.profileSnapshot.conversionGoal}
                     framingStrategy={workspace.brief.profileSnapshot.framingStrategy}
+                    storyStructure={workspace.brief.profileSnapshot.storyStructure}
                     characterRoster={workspace.characterRoster}
                     onChange={(next) => {
                       setEditableDraft(next);
@@ -3006,6 +3081,7 @@ function DraftEditor({
   profileLanguage,
   conversionGoal,
   framingStrategy,
+  storyStructure,
   characterRoster,
   onChange,
 }: {
@@ -3021,6 +3097,7 @@ function DraftEditor({
   profileLanguage: string;
   conversionGoal: CreativeProfile["conversionGoal"];
   framingStrategy: CreativeProfile["framingStrategy"];
+  storyStructure?: CreativeProfile["storyStructure"];
   characterRoster: CreativeCharacterRosterEntry[];
   onChange: (draft: EditableCreativeDraft) => void;
 }) {
@@ -3032,6 +3109,7 @@ function DraftEditor({
     profileLanguage,
     conversionGoal,
     framingStrategy,
+    storyStructure,
   );
   const qualityReviewResolvedByCurrentValidation = Boolean(
     qualityReviewIsCurrent &&
@@ -3873,12 +3951,16 @@ function topicUrl(path: string, topicId: string): string {
   return `${path}${separator}topicId=${encodeURIComponent(topicId)}`;
 }
 
-function creativeBriefRequest(editorialDirection: string): RequestInit {
+function creativeBriefRequest(
+  editorialDirection: string,
+  overrides?: CreativeBriefOverrides,
+): RequestInit {
   return {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       editorialDirection: normalizeEditorialDirection(editorialDirection),
+      ...(normalizeCreativeBriefOverrides(overrides) ? { overrides: normalizeCreativeBriefOverrides(overrides) } : {}),
     }),
   };
 }

@@ -18,6 +18,33 @@ El flujo sigue siendo **Story Review → Creative Brief → Draft → aprobació
 - Sin instrucciones suficientes: carrusel explicativo y motivo en riskFlags. No fabricar materiales, cantidades, tiempos ni pasos.
 - Para aplicar la preferencia a trabajo existente: guardar perfil y crear un brief nuevo; no reescribir drafts históricos automáticamente.
 
+## Hook + lista y overrides por brief (2026-09-24)
+
+Una tercera estructura, `storyStructure: hook-list`, cubre las enumeraciones sin
+orden ("5 choses à faire ce week-end", "N consejos", "N cambios"): portada =
+cantidad + tema (la cantidad debe estar respaldada por un keyFact propio),
+un ítem por slide en el orden de la fuente con sus datos prácticos (cuándo,
+dónde, precio, inscripción), cierre = acción sobre la lista (elegir, planear,
+guardar, compartir). Se implementa dentro del formato carrusel — no es un
+formato nuevo ni requiere migración — con su propia instrucción en el brief y en
+el guion (`creative-framing-instruction.ts`), un arco de lista en la política
+narrativa, y sin las reglas de portada/cierre de "consecuencia para el lector",
+que rechazarían justo esa forma. Máximo 8 slides: hook + hasta 6 ítems + cierre;
+los ítems sobrantes se nombran en `riskFlags`, nunca se fusionan ni se inventan.
+
+Un brief puede apartarse del perfil del topic en tres ajustes — estructura,
+enfoque (`framingStrategy`) y objetivo de conversión — desde Creative Studio,
+junto a la dirección editorial. Los overrides entran al hash del brief (un
+cambio los regenera), se guardan dentro de `profile_snapshot` como
+`briefOverrides`, y se vuelven a aplicar al perfil vivo cada vez que se
+comprueba si el brief sigue vigente. El perfil del topic no cambia.
+
+Antes de esto el pipeline single-shot (`CREATIVE_SINGLE_SHOT_ENABLED`) ignoraba
+`storyStructure` por completo: siempre redacta un carrusel y no leía la
+preferencia. Ahora recibe la instrucción de estructura en ambas llamadas; un
+brief `hook-steps` que sí encontró un procedimiento se redacta como pasos
+dentro del carrusel, ya que ese pipeline no produce el formato `sequence`.
+
 ## Composición del draft
 
 | Parte | Resultado esperado |

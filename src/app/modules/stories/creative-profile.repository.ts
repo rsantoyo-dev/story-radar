@@ -20,10 +20,12 @@ import {
   VISUAL_FIDELITY_MODES,
   isCreativeConversionGoal,
   isCreativeFramingStrategy,
+  isCreativeStoryStructure,
   isVisualFidelityMode,
   type CreativeConversionGoal,
   type CreativeFramingStrategy,
   type CreativeGeoScope,
+  type CreativeStoryStructure,
   type CreativeProfile,
   type EditableCreativeProfile,
   type VisualFidelityMode,
@@ -528,8 +530,8 @@ function geographicContactValue(value: unknown): string {
   catch { throw new CreativeProfileValidationError("Geographic contact must be a valid email address"); }
 }
 
-export function storyStructureValue(value: unknown): "auto" | "hook-steps" {
+export function storyStructureValue(value: unknown): CreativeStoryStructure {
   if (value === undefined || value === null) return "auto";
-  if (value === "auto" || value === "hook-steps") return value;
-  throw new CreativeProfileValidationError("storyStructure must be auto or hook-steps");
+  if (isCreativeStoryStructure(value)) return value;
+  throw new CreativeProfileValidationError("storyStructure must be auto, hook-steps or hook-list");
 }

@@ -1704,3 +1704,22 @@ test("a draft is judged by the lens its brief applied, not the Topic's configure
     "reader-consequence",
   );
 });
+
+test("a hook-list caption may open with the list itself under reader-consequence framing", () => {
+  const recapDraft = structuredClone(draft);
+  recapDraft.caption =
+    "El Banco de Canadá mantuvo su tasa de referencia en 2,25%. La gasolina mantiene la inflación cerca del 3%.";
+  const codes = (storyStructure?: "auto" | "hook-steps" | "hook-list") =>
+    deterministicCreativeQualityIssues(
+      recapDraft,
+      "carousel",
+      facts,
+      "Spanish",
+      "followers",
+      "reader-consequence",
+      storyStructure,
+    ).map((issue) => issue.code);
+  assert.ok(codes().includes("CAPTION_INSTITUTION_RECAP"));
+  assert.ok(codes("auto").includes("CAPTION_INSTITUTION_RECAP"));
+  assert.ok(!codes("hook-list").includes("CAPTION_INSTITUTION_RECAP"));
+});

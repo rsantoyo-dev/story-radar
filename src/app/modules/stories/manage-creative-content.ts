@@ -31,6 +31,7 @@ import {
   getCreativeContentRuntimeConfig,
 } from "./creative-content.config";
 import { runSingleShotCreativePipeline } from "./creative-single-shot-editorial";
+import { applyCreativeBriefOverrides, normalizeCreativeBriefOverrides } from "./creative-content.types";
 import {
   approveCreativeDraft,
   completeCreativeAiRun,
@@ -57,6 +58,7 @@ import {
 import type {
   CreativeAspectRatio,
   CreativeBrief,
+  CreativeBriefOverrides,
   GeneratedCreativeDraft,
   CreativeCharacterRosterEntry,
   CreativeCharacterSnapshot,
@@ -127,10 +129,12 @@ export async function getCreativeWorkspaceState(
       // flags retired lenses. A topic without a taxonomy simply shows the key.
       getCurrentTopicAcquisitionTaxonomy(topicId).catch(() => undefined),
     ]);
+  // Asks whether the latest brief is still current, so it is hashed the way
+  // it was created: with its own direction, research context and overrides.
   const inputHash = story.text?.trim()
     ? createBriefInputHash(
         story,
-        profile,
+        applyCreativeBriefOverrides(profile, latestBrief?.overrides),
         topic,
         configuration,
         shortenContent(story.text.trim(), configuration.maxContentCharacters),
@@ -282,15 +286,20 @@ export async function createCreativeBrief(
   editorialRunId?: string,
   preparationRunId?: string,
   workspace = false,
+  overrides?: CreativeBriefOverrides,
 ): Promise<CreativeGenerationResult> {
   const configuration = getCreativeContentRuntimeConfig();
-  const [topic, story, profile, daily, acquisitionTaxonomy] = await Promise.all([
+  const [topic, story, topicProfile, daily, acquisitionTaxonomy] = await Promise.all([
     requireTopic(topicId, { active: true }),
     getDailyDraftStory(topicId, storyId, preparationRunId, workspace && Boolean(preparationRunId)),
     getCreativeProfile(topicId),
     getCreativeDailyUsage(topicId, configuration.maxRunsPerDay),
     getCurrentTopicAcquisitionTaxonomy(topicId),
   ]);
+  // Everything below — hash, prompts, snapshot — sees the profile as this
+  // brief departs from it; the Topic's own profile is never changed.
+  const briefOverrides = normalizeCreativeBriefOverrides(overrides);
+  const profile = applyCreativeBriefOverrides(topicProfile, briefOverrides);
   const content = requireStoryContent(story, configuration.maxContentCharacters);
   const collectionContext=await selectedStoryContext(topicId,storyId,editorialRunId);
   const normalizedEditorialDirection = normalizeEditorialDirection(
@@ -331,6 +340,7 @@ export async function createCreativeBrief(
     );
     await insertCreativeBrief({ topicId, storyId, profile, provider: "quebec511", model: "structured-notice-v1",
       promptVersion: configuration.briefPromptVersion, inputHash, editorialDirection: normalizedEditorialDirection, collectionContext,
+      overrides: briefOverrides,
       generated: structuredBrief, usage: { promptTokens: 0, outputTokens: 0, thoughtsTokens: 0, totalTokens: 0 } });
     return { outcome: "generated", state: await getCreativeWorkspaceState(topicId, storyId, preparationRunId) };
   }
@@ -339,6 +349,7 @@ export async function createCreativeBrief(
     return createCreativeBriefAndDraftSingleShot({
       topicId, storyId, story, content, topic, profile, daily, acquisitionTaxonomy,
       configuration, inputHash, normalizedEditorialDirection, collectionContext, preparationRunId,
+      overrides: briefOverrides,
     });
   }
 
@@ -383,6 +394,7 @@ export async function createCreativeBrief(
       promptVersion: configuration.briefPromptVersion,
       inputHash,
       editorialDirection: normalizedEditorialDirection, collectionContext,
+      overrides: briefOverrides,
       generated: result.brief,
       usage: result.usage,
     });
@@ -429,6 +441,7 @@ async function createCreativeBriefAndDraftSingleShot({
   normalizedEditorialDirection,
   collectionContext,
   preparationRunId,
+  overrides,
 }: {
   topicId: string;
   storyId: string;
@@ -443,6 +456,7 @@ async function createCreativeBriefAndDraftSingleShot({
   normalizedEditorialDirection: string | undefined;
   collectionContext: Awaited<ReturnType<typeof selectedStoryContext>>;
   preparationRunId?: string;
+  overrides?: CreativeBriefOverrides;
 }): Promise<CreativeGenerationResult> {
   const format: CreativeFormat = "carousel";
   const outputAspectRatio = resolveCreativeOutputAspectRatio(format, undefined);
@@ -496,6 +510,7 @@ async function createCreativeBriefAndDraftSingleShot({
               inputHash,
               editorialDirection: normalizedEditorialDirection,
               collectionContext,
+              overrides,
               generated: brief,
               usage,
             });
@@ -592,9 +607,11 @@ export async function createCreativeDraft(
       getCurrentTopicAcquisitionTaxonomy(topicId).catch(() => undefined),
     ]);
   const content = requireStoryContent(story, configuration.maxContentCharacters);
+  // The brief was hashed against the profile as it departed from it, so the
+  // staleness check re-applies the same departures to the live profile.
   const currentBriefHash = createBriefInputHash(
     story,
-    currentProfile,
+    applyCreativeBriefOverrides(currentProfile, brief.overrides),
     topic,
     configuration,
     content,
@@ -1105,6 +1122,7 @@ export async function approveSavedCreativeDraft(
     brief.profileSnapshot.language,
     brief.profileSnapshot.conversionGoal,
     brief.profileSnapshot.framingStrategy,
+    brief.profileSnapshot.storyStructure,
   );
   const approvalState = getCreativeDraftApprovalState({
     deterministicIssues: qualityIssues,
@@ -1280,7 +1298,7 @@ export async function refreshCreativeDraftCharacterReferences(
   const content = requireStoryContent(story, configuration.maxContentCharacters);
   const currentBriefHash = createBriefInputHash(
     story,
-    profile,
+    applyCreativeBriefOverrides(profile, brief.overrides),
     topic,
     configuration,
     content,
@@ -1412,6 +1430,12 @@ function createBriefInputHash(
       maxEmojis: profile.maxEmojis,
       conversionGoal: profile.conversionGoal,
       framingStrategy: profile.framingStrategy ?? "auto",
+      // Only a non-default structure enters the hash, so every existing
+      // "auto" brief keeps its hash; a structure change (profile or per-brief
+      // override) must not resurrect a plan shaped for the old one.
+      ...(profile.storyStructure && profile.storyStructure !== "auto"
+        ? { storyStructure: profile.storyStructure }
+        : {}),
       // GEO-01: a place-fidelity policy change must bust the brief cache so a
       // refresh cannot resurrect a snapshot from the previous policy. Added
       // only once the policy has actually moved (version > 1) so pre-GEO
@@ -1818,7 +1842,7 @@ export async function assertStoryEditionCurrent(topicId: string, draft: Creative
   if (!brief) throw new CreativeContentNotFoundError("The creative brief was not found");
   const configuration = getCreativeContentPublicConfig();
   const [profile, topic] = await Promise.all([getCreativeProfile(topicId), requireTopic(topicId, { active: true })]);
-  const expected = createBriefInputHash(story, profile, topic, configuration,
+  const expected = createBriefInputHash(story, applyCreativeBriefOverrides(profile, brief.overrides), topic, configuration,
     requireStoryContent(story, configuration.maxContentCharacters), brief.editorialDirection, brief.collectionContext);
   if (expected !== brief.inputHash) throw new CreativeContentConflictError("The story was edited. Refresh the brief and draft before approving or generating images.");
 }

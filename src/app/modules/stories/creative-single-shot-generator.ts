@@ -26,7 +26,12 @@ import {
 } from "./gemini-creative-content-generator";
 import { failedGeminiUsage } from "./creative-gemini-request";
 import { generateOpenAiStructuredResponse } from "./openai-structured-response";
-import { creativeBriefFramingInstruction, creativeScriptFramingInstruction } from "./creative-framing-instruction";
+import {
+  creativeBriefFramingInstruction,
+  creativeBriefStructureInstruction,
+  creativeScriptFramingInstruction,
+  creativeScriptStructureInstruction,
+} from "./creative-framing-instruction";
 import { CREATIVE_PUBLISHABLE_THRESHOLDS } from "./creative-quality";
 import { effectiveFramingStrategy } from "./creative-content.types";
 import { carouselNarrativePolicyForPrompt, templatePlanQuestions, unspentPlanFactIds } from "./carousel-narrative";
@@ -99,7 +104,7 @@ Set "verified-map" on the slide whose job is to locate something the facts name 
 
 Set "real-photo" on the slide whose job is to show a specific, named, real-world landmark a local reader would recognize by name — a bridge, a building, a monument, a park, a venue — whenever the facts name one, even when you do not know whether a usable photo exists for it and even when the story is about a closure or works affecting it. That slide is then composed by the pipeline from a verified provider photo or map of the exact named place when one resolves, or from a location map when the story reports a current closure/works/change (an old photograph is never used as evidence that a change is happening now); your visualDirection for it is only the conceptual fallback used when nothing verifiable resolves, so write it as an abstract composition and never claim, describe or imply what that specific place looks like — no invented facade, structure, color or setting that could be mistaken for a documentary depiction of it.
 
-Use "character-reference" when the visualDirection calls for one of the topic's configured recurring characters; "typography" when assetRequest is typography-only; otherwise "generic-illustration" — including for a named place with no landmark the facts describe concretely enough to picture. Declaring "verified-map" or "real-photo" never invents evidence: without verified data the slide simply renders its fallback.`;
+Use "character-reference" when the visualDirection calls for one of the topic's configured recurring characters; "typography" when assetRequest is typography-only (never on a carousel cover: a cover is always generated-image); otherwise "generic-illustration" — including for a named place with no landmark the facts describe concretely enough to picture. Declaring "verified-map" or "real-photo" never invents evidence: without verified data the slide simply renders its fallback.`;
 
 /**
  * Nothing else in this pipeline tells the writer what a publish-ready social
@@ -144,7 +149,11 @@ function attachVisualNeeds(draft: GeneratedCreativeDraft, text: string): Generat
         typeof rawVisualNeed === "string" && VISUAL_NEEDS.has(rawVisualNeed)
           ? (rawVisualNeed as CreativeVisualNeed)
           : "generic-illustration";
-      return { ...unit, visualNeed };
+      // parseCreativeDraft already made the cover a generated image; a
+      // "typography" need would still route it to the local text card.
+      const coverTypography =
+        unit.type === "carousel-slide" && unit.role === "cover" && visualNeed === "typography";
+      return { ...unit, visualNeed: coverTypography ? "generic-illustration" : visualNeed };
     }),
   };
 }
@@ -240,7 +249,7 @@ export async function generateSingleShotCreativeScript(
     throw new CreativeContentResponseError("A revision rewrites against the reviewed brief; supply existingBrief.");
   }
   const sharedContents = {
-    carouselNarrativePolicy: carouselNarrativePolicyForPrompt(profile.conversionGoal),
+    carouselNarrativePolicy: carouselNarrativePolicyForPrompt(profile.conversionGoal, profile.storyStructure),
     topic: topicForPrompt(topic as CreativeTopicContext),
     creativeProfile: profileForPrompt(profile),
   };
@@ -346,7 +355,7 @@ export async function generateSingleShotCreativeScript(
   const briefInstruction = acquisitionTaxonomy
     ? `${BRIEF_SYSTEM_INSTRUCTION}\n\n${creativeBriefFramingInstruction(
         profile.framingStrategy as Parameters<typeof creativeBriefFramingInstruction>[0],
-      )}\n\n${acquisitionAngleInstruction(acquisitionTaxonomy)}`
+      )}\n\n${acquisitionAngleInstruction(acquisitionTaxonomy)}${creativeBriefStructureInstruction(profile.storyStructure)}`
     : "";
   const briefSchema = acquisitionTaxonomy ? creativeBriefSchema(acquisitionTaxonomy) : {};
   const briefContents = {
@@ -458,6 +467,11 @@ export async function generateSingleShotCreativeScript(
       profile.framingStrategy as Parameters<typeof creativeScriptFramingInstruction>[0],
       brief,
     ),
+  )}${creativeScriptStructureInstruction(
+    // This pipeline always drafts a carousel, so a hook-steps brief that found
+    // a real procedure is written as steps here rather than as a sequence.
+    profile.storyStructure,
+    brief.recommendedFormat === "sequence",
   )}${revision ? REVISION_INSTRUCTION : ""}`;
   const draftContents = {
     ...sharedContents,
@@ -556,6 +570,7 @@ export async function generateSingleShotCreativeScript(
         profile.language,
         profile.conversionGoal,
         profile.framingStrategy,
+        profile.storyStructure,
       ).filter((issue) => /body[-_]too[-_]long/i.test(issue.code));
       if (overLength.length) {
         throw new CreativeContentResponseError(overLength.map((issue) => issue.message).join(" "));

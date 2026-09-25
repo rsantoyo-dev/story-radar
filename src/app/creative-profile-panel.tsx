@@ -328,8 +328,9 @@ export function CreativeProfilePanel({
               <select value={draft.storyStructure ?? "auto"} onChange={event => updateDraft({ storyStructure: event.target.value as CreativeProfile["storyStructure"] })}>
                 <option value="auto">Automatic — choose from the source</option>
                 <option value="hook-steps">Hook + steps — recipes, guides and tutorials</option>
+                <option value="hook-list">Hook + list — “N things to…” with one item per slide</option>
               </select>
-              <small>Prefers an ordered sequence when the source provides the steps. Missing instructions are never invented.</small>
+              <small>Steps prefer an ordered sequence when the source provides them; a list gives each enumerated item its own slide. Missing steps or items are never invented. A single brief can override this in Creative Studio.</small>
             </label>
             <label className={styles.field}>
               <span>Show content name on cover</span>

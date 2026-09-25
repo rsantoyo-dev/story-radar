@@ -11,6 +11,15 @@ import {
   getCreativeWorkspaceState,
 } from "@/app/modules/stories/manage-creative-content";
 import {
+  CREATIVE_CONVERSION_GOALS,
+  CREATIVE_FRAMING_STRATEGIES,
+  CREATIVE_STORY_STRUCTURES,
+  isCreativeConversionGoal,
+  isCreativeFramingStrategy,
+  isCreativeStoryStructure,
+  type CreativeBriefOverrides,
+} from "@/app/modules/stories/creative-content.types";
+import {
   creativeRouteErrorResponse,
   noStoreJson,
 } from "../../../creative-route-error";
@@ -65,7 +74,7 @@ export async function POST(request: Request, context: Context) {
   }
 
   try {
-    const editorialDirection = await parseEditorialDirection(request);
+    const { editorialDirection, overrides } = await parseCreativeBriefRequest(request);
     if (new URL(request.url).searchParams.get("action") === "editorial-focus") {
       const params = new URL(request.url).searchParams;
       return noStoreJson(await suggestEditorialFocus(
@@ -82,6 +91,7 @@ export async function POST(request: Request, context: Context) {
         new URL(request.url).searchParams.get("editorialRunId") || undefined,
         preparationRunId,
         Boolean(preparationRunId),
+        overrides,
       ),
     );
   } catch (error) {
@@ -93,23 +103,55 @@ export async function POST(request: Request, context: Context) {
   }
 }
 
-async function parseEditorialDirection(
+async function parseCreativeBriefRequest(
   request: Request,
-): Promise<string | undefined> {
+): Promise<{ editorialDirection?: string; overrides?: CreativeBriefOverrides }> {
   const text = await request.text();
-  if (!text.trim()) return undefined;
+  if (!text.trim()) return {};
   const body = JSON.parse(text) as unknown;
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     throw new CreativeDraftValidationError("A JSON object is required");
   }
-  const value = (body as Record<string, unknown>).editorialDirection;
-  if (value === undefined || value === null || value === "") return undefined;
-  if (typeof value !== "string") {
+  const record = body as Record<string, unknown>;
+  const value = record.editorialDirection;
+  if (value !== undefined && value !== null && value !== "" && typeof value !== "string") {
     throw new CreativeDraftValidationError(
       "editorialDirection must be text",
     );
   }
-  return value;
+  return {
+    ...(typeof value === "string" && value !== "" ? { editorialDirection: value } : {}),
+    ...(record.overrides !== undefined ? { overrides: parseBriefOverrides(record.overrides) } : {}),
+  };
+}
+
+function parseBriefOverrides(value: unknown): CreativeBriefOverrides | undefined {
+  if (value === null) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new CreativeDraftValidationError("overrides must be an object");
+  }
+  const record = value as Record<string, unknown>;
+  const overrides: CreativeBriefOverrides = {};
+  const present = (field: unknown) => field !== undefined && field !== null && field !== "";
+  if (present(record.storyStructure)) {
+    if (!isCreativeStoryStructure(record.storyStructure)) {
+      throw new CreativeDraftValidationError(`overrides.storyStructure must be one of: ${CREATIVE_STORY_STRUCTURES.join(", ")}`);
+    }
+    overrides.storyStructure = record.storyStructure;
+  }
+  if (present(record.framingStrategy)) {
+    if (!isCreativeFramingStrategy(record.framingStrategy)) {
+      throw new CreativeDraftValidationError(`overrides.framingStrategy must be one of: ${CREATIVE_FRAMING_STRATEGIES.join(", ")}`);
+    }
+    overrides.framingStrategy = record.framingStrategy;
+  }
+  if (present(record.conversionGoal)) {
+    if (!isCreativeConversionGoal(record.conversionGoal)) {
+      throw new CreativeDraftValidationError(`overrides.conversionGoal must be one of: ${CREATIVE_CONVERSION_GOALS.join(", ")}`);
+    }
+    overrides.conversionGoal = record.conversionGoal;
+  }
+  return Object.keys(overrides).length ? overrides : undefined;
 }
 
 async function parseId(context: Context): Promise<string | undefined> {

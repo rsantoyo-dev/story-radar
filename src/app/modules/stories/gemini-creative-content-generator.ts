@@ -45,7 +45,11 @@ import {
   isCreativeFramingStrategy,
   isCreativeTone,
 } from "./creative-content.types";
-import { creativeBriefFramingInstruction } from "./creative-framing-instruction";
+import {
+  creativeBriefFramingInstruction,
+  creativeBriefStructureInstruction,
+  creativeScriptStructureInstruction,
+} from "./creative-framing-instruction";
 import type { CreativeTextProvider } from "./creative-content.config";
 import {
   classifyCreativeRepairSeverity,
@@ -216,7 +220,7 @@ The topic establishes the editorial subject and scope. The creative profile esta
 
 When creativeProfile.requireCoverTitle is true, return contentTitle: a concise source-supported name of the recipe, guide or project in the profile language, not a clickbait hook or the full RSS headline. Keep its distinguishing ingredients or subject.
 
-creativeProfile.storyStructure is a presentation preference. When it is "hook-steps", prefer sequence for a supported procedure: lead with a specific hook promising the result, then necessary ingredients/materials/prerequisites, ordered actionable steps, and a closing payoff/CTA. This applies to recipes, assembly, software setup and any source-backed procedure. If the source lacks the instructions, choose an explanatory carousel and identify the missing procedure in riskFlags; never fabricate steps to satisfy the preference. "auto" preserves the source-driven format choice.
+creativeProfile.storyStructure is a presentation preference. When it is "hook-steps", prefer sequence for a supported procedure: lead with a specific hook promising the result, then necessary ingredients/materials/prerequisites, ordered actionable steps, and a closing payoff/CTA. This applies to recipes, assembly, software setup and any source-backed procedure. If the source lacks the instructions, choose an explanatory carousel and identify the missing procedure in riskFlags; never fabricate steps to satisfy the preference. When it is "hook-list", the story is an enumerated list ("N things to do", "N tips", "N changes"): keep the carousel format and follow the STORY STRUCTURE instruction that accompanies this one. "auto" preserves the source-driven format choice.
 
 The optional editorialDirection is trusted editor-authored configuration. Use it to choose the audience, learning objective, scope, and angle when the source supports them. It is not evidence: never turn a requested framing into a factual claim or fill gaps with invented facts.
 
@@ -260,7 +264,7 @@ creativeProfile.conversionGoal is authoritative for that response, while callToA
 
 For a meme return exactly one unit. For a carousel, carouselPlan is authoritative: return exactly its slideCount, preserve each slide's order and editorialGoal, copy its viewerQuestion, and use only that slide's allowedFactIds. carouselPlan already records any deliberate arc deviation, so copy its rationale into narrativeRationale. role describes presentation; editorialGoal describes narrative purpose. viewerQuestion is internal planning metadata and must never be repeated as visible copy. ctaQuestion is optional visible copy for the final slide. subheadline, continuationCue, body, callToAction, ctaQuestion, and narrativeRationale may be empty strings when not needed, with one exception: on a carousel every slide between the cover and the final slide must carry non-empty body copy that answers its viewerQuestion from its own allowedFactIds. Only the cover and the final slide may leave body empty. role follows position and never contradicts editorialGoal: the first slide is cover, the final slide is conclusion or call-to-action, and every slide between them is content. A content slide can never carry the conclude or debate purpose, so those two goals belong only to the final slide. continuationCue must be empty on a meme and on the final carousel slide.
 
-  Preserve every key fact's requiredQualifiers and attribution. Translate qualifiers idiomatically into the creative profile language; never leak an English claimGuard word such as "about" into otherwise Spanish copy. Never turn "show signs", estimates, associations, projections, or reported claims into certainty. Never introduce trends through words such as "rising", "surge", "growing", or "reshaping" unless an allowed fact explicitly establishes change over time. Do not invent a named period or unit conversion: for example, about 40 weeks or roughly 9 months must never become a "gestational year" or "año gestacional". Match the concept and headlines to what the supplied facts actually explain; if the facts cover duration and due-date calculation, do not promise pregnancy stages, trimesters, physical changes, emotional needs, care benefits, or practical outcomes that they do not establish. Do not convert an income, age, or ownership comparison into claims about wealth, home equity, savings, down payments, accumulated advantage, or prior assets unless a supplied fact explicitly establishes that interpretation. For Canadian money amounts, identify the currency as CAD in visible copy when the source's dollar sign could otherwise be ambiguous, while preserving the source number exactly. A closing slide may summarize established facts or ask one grounded question, but it must not invent benefits such as anticipating needs, improving care, building trust, or making better decisions. Interpretations must be framed as a possibility or question, not as a sourced fact. Keep each slide's supporting text to 40 words and never above 45; split or cut detail rather than exceed it. Never open a closing headline or subheadline with a summary label such as "La conclusión", "La clave", "El punto", "En resumen", or "The takeaway"; state the answer or decision itself. Use one visible question on the closing slide; do not repeat the CTA in headline, subheadline, body, and ctaQuestion. Choose one rendering medium and art direction for the complete carousel, then describe every slide in that same medium even when the recurring character is absent. A visual direction may request a quantitative bar, line, or proportional chart only when the selected facts provide exact values for every depicted category. When facts establish only direction or rank, request a clearly conceptual, non-proportional comparison with no axis, numeric scale, or invented bar height. Never request a map, navigation app, or GPS-style interface depicting specific streets, routes, pins, highlighted zones, or closures as if it were a real, functioning map — that renders fabricated geographic information a reader could mistake for verified cartography. Never request a phone, tablet, computer, or other screen showing a map, app, or dashboard: a rendered screen implies specific content this slide cannot verify, and small on-screen text or icons usually render illegible or garbled anyway. Represent a location, route, or closure only as a single oversized flat-iconographic motif (a location pin, a generic road icon, a compass) with no invented street layout, place name, path, or device around it, unless the unit's visualDirection already carries real prepared place evidence. The same rule covers a specific named real building, venue, or landmark (a named sports complex, a named library, a named store): never request a "realistic" or "photorealistic" view of it by name, since nothing here confirms what it actually looks like. Name the activity or subject instead of the building, and represent the setting with a generic, unnamed version of that kind of space (a generic rink, a generic gymnasium) or an abstract icon. Visual direction must describe composition and mood without requesting extra rendered words, labels, or numbers beyond headline, subheadline, body, and ctaQuestion. continuationCue is composited later by the deterministic carousel renderer, so never request it—or any progress, swipe, arrow, button, or navigation element—inside visualDirection. Choose typography-only when imagery is unnecessary. Write visualDirection as a specific, reproducible art-direction paragraph, not a one-line label, because the image model regenerates the slide from this same text and an editor may ask for that exact result again: name the concrete composition (what sits where on the canvas, and how it relates to the text block), the specific motif or icon rather than its category ("a single upward-curving line ending in a rounded document icon with three horizontal bars and a small checkmark badge", not "a timeline and a document icon"), and the specific colors to use by name or role rather than a vague pair ("a deep violet background fading to near-black, with a lime-green accent on the line and the icon outline", not "purple and lime accents"). Only pair an adjective such as "clean", "modern", or "bold" with the concrete choice that makes it true; never leave it standalone.
+  Preserve every key fact's requiredQualifiers and attribution. Translate qualifiers idiomatically into the creative profile language; never leak an English claimGuard word such as "about" into otherwise Spanish copy. Never turn "show signs", estimates, associations, projections, or reported claims into certainty. Never introduce trends through words such as "rising", "surge", "growing", or "reshaping" unless an allowed fact explicitly establishes change over time. Do not invent a named period or unit conversion: for example, about 40 weeks or roughly 9 months must never become a "gestational year" or "año gestacional". Match the concept and headlines to what the supplied facts actually explain; if the facts cover duration and due-date calculation, do not promise pregnancy stages, trimesters, physical changes, emotional needs, care benefits, or practical outcomes that they do not establish. Do not convert an income, age, or ownership comparison into claims about wealth, home equity, savings, down payments, accumulated advantage, or prior assets unless a supplied fact explicitly establishes that interpretation. For Canadian money amounts, identify the currency as CAD in visible copy when the source's dollar sign could otherwise be ambiguous, while preserving the source number exactly. A closing slide may summarize established facts or ask one grounded question, but it must not invent benefits such as anticipating needs, improving care, building trust, or making better decisions. Interpretations must be framed as a possibility or question, not as a sourced fact. Keep each slide's supporting text to 40 words and never above 45; split or cut detail rather than exceed it. Never open a closing headline or subheadline with a summary label such as "La conclusión", "La clave", "El punto", "En resumen", or "The takeaway"; state the answer or decision itself. Use one visible question on the closing slide; do not repeat the CTA in headline, subheadline, body, and ctaQuestion. Choose one rendering medium and art direction for the complete carousel, then describe every slide in that same medium even when the recurring character is absent. A visual direction may request a quantitative bar, line, or proportional chart only when the selected facts provide exact values for every depicted category. When facts establish only direction or rank, request a clearly conceptual, non-proportional comparison with no axis, numeric scale, or invented bar height. Never request a map, navigation app, or GPS-style interface depicting specific streets, routes, pins, highlighted zones, or closures as if it were a real, functioning map — that renders fabricated geographic information a reader could mistake for verified cartography. Never request a phone, tablet, computer, or other screen showing a map, app, or dashboard: a rendered screen implies specific content this slide cannot verify, and small on-screen text or icons usually render illegible or garbled anyway. Represent a location, route, or closure only as a single oversized flat-iconographic motif (a location pin, a generic road icon, a compass) with no invented street layout, place name, path, or device around it, unless the unit's visualDirection already carries real prepared place evidence. The same rule covers a specific named real building, venue, or landmark (a named sports complex, a named library, a named store): never request a "realistic" or "photorealistic" view of it by name, since nothing here confirms what it actually looks like. Name the activity or subject instead of the building, and represent the setting with a generic, unnamed version of that kind of space (a generic rink, a generic gymnasium) or an abstract icon. Visual direction must describe composition and mood without requesting extra rendered words, labels, or numbers beyond headline, subheadline, body, and ctaQuestion. continuationCue is composited later by the deterministic carousel renderer, so never request it—or any progress, swipe, arrow, button, or navigation element—inside visualDirection. Choose typography-only only for a middle or closing slide when imagery is unnecessary; a carousel cover is always generated-image, because a text-only card cannot carry the opening promise. Write visualDirection as a specific, reproducible art-direction paragraph, not a one-line label, because the image model regenerates the slide from this same text and an editor may ask for that exact result again: name the concrete composition (what sits where on the canvas, and how it relates to the text block), the specific motif or icon rather than its category ("a single upward-curving line ending in a rounded document icon with three horizontal bars and a small checkmark badge", not "a timeline and a document icon"), and the specific colors to use by name or role rather than a vague pair ("a deep violet background fading to near-black, with a lime-green accent on the line and the icon outline", not "purple and lime accents"). Only pair an adjective such as "clean", "modern", or "bold" with the concrete choice that makes it true; never leave it standalone.
 
 ${HUMAN_TENSION_POLICY}`;
 
@@ -270,7 +274,7 @@ Return scores, hookSelection, and material issues with their replacement values;
 
 Correct unsupported claims, mismatched fact citations, lost or untranslated qualifiers, mixed-language copy, overstatement, invented terminology or unit conversions, invented trends, duplicated calls to action, visual directions that request extra words or numbers, and quantitative charts whose selected facts do not provide exact values for every depicted category. Audit subheadline and continuationCue as visible factual copy. Keep subheadline concise and distinct from headline. continuationCue may appear only on non-final carousel slides, should make a concrete promise grounded in facts assigned to that slide or the immediately following slide, and must never be a bare “Desliza/Swipe” label or contain an invented claim or number. Verify that the following slide fulfills the promised reward. creativeProfile.conversionGoal controls the one primary CTA and callToActionStyle controls its voice: "followers" requires a benefit-led recurring-value follow request, "discussion" one grounded question, "saves" one concrete future-use reason to save, and "shares" one relevant recipient or sharing situation. For a carousel, keep that action only in the final ctaQuestion field (which may be an imperative) and leave callToAction empty; for a meme use callToAction. Remove mismatched or stacked follow/comment/save/share requests; a CTA remains optional when the requested action would be inappropriate. Reject labels such as "gestational year" or "año gestacional" unless a key fact uses them. Reject wealth, home-equity, savings, down-payment, or accumulated-advantage interpretations when the evidence establishes only income, age, or ownership differences. Also detect a concept that promises broader coverage than the facts, a cover that exceeds the shared hook-length target without necessary names, scope or qualifiers, a weak or buried hook, low story relevance, a viewerQuestion not answered by its slide, weak swipe reward, semantic repetition, poor continuity, visual-medium drift between slides, vague consequence, a weak resolution, a hook-resolution gap, and a generic or conflicting CTA. A claim is not supported merely because its slide lists a fact ID: its meaning must match that fact. On a slide that cites more than one fact, flag a fact-split: the headline and subheadline develop one cited fact while the body only develops a different one. The slide must develop one coherent fact set — repair the headline or body to match, or drop the fact ID that no visible field actually uses. Do not treat implications such as authenticity, trust, business impact, bot traffic, social change, improved care, anticipating needs, physical needs, or emotional needs as established unless a fact explicitly supports them; frame a useful inference as a possibility or question instead.
 
-Score the CURRENT draft from 0 to 100 for factuality, hook, curiosity, swipeReward, continuity, relevance, clarity, resolution, cta, and overall. Curiosity measures earned human interest: immediate comprehensibility, specific tension or surprise, recognizable stakes, and likelihood of sharing—not sensational wording. A curiosity score of 88+ requires the opening to offer a concrete supported reason to continue; a topic label, company announcement, or unexplained jargon is insufficient. Resolution measures whether the ending clearly pays off the cover's promise with a supported answer, consequence, decision, or specific grounded question. A resolution score of 88+ requires more than a recap or “the takeaway” label. Penalize second-person claims whose personal impact is not established. When multiple tools, actors, steps, or systems interact, prefer a visualDirection that explains the relationship as a readable workflow rather than decorative technology imagery. For a meme, score swipeReward and continuity as 100 because they are not applicable. Score CTA as 100 when neither the plan nor the current draft calls for a CTA. Be conservative: 92 means publication-ready, not merely acceptable. Every material problem that lowers an applicable dimension below the supplied qualityThresholds must have a targeted issue and replacement. Preserve valid copy, tone, structure, character IDs, and visual intent. For carousel drafts, preserve the exact carouselPlan slide count, order, editorialGoal, and allowedFactIds; you may remove an irrelevant selected fact or repair viewerQuestion when it does not match the evidence, but never add a fact outside that slide's allowedFactIds. Use only one visible closing question. Return only the requested JSON.
+Score the CURRENT draft from 0 to 100 for factuality, hook, curiosity, swipeReward, continuity, relevance, clarity, resolution, cta, and overall. Curiosity measures earned human interest: immediate comprehensibility, specific tension or surprise, recognizable stakes, and likelihood of sharing—not sensational wording. A curiosity score of 88+ requires the opening to offer a concrete supported reason to continue; a topic label, company announcement, or unexplained jargon is insufficient. When a structureInstruction for hook-list is supplied, the cover's promise of a specific count of concrete items is itself that concrete reason: judge curiosity by how specific and useful the promised items are, and judge resolution by whether the closing helps the reader act on the list (choose, plan, save, share) rather than by narrative synthesis. Resolution measures whether the ending clearly pays off the cover's promise with a supported answer, consequence, decision, or specific grounded question. A resolution score of 88+ requires more than a recap or “the takeaway” label. Penalize second-person claims whose personal impact is not established. When multiple tools, actors, steps, or systems interact, prefer a visualDirection that explains the relationship as a readable workflow rather than decorative technology imagery. For a meme, score swipeReward and continuity as 100 because they are not applicable. Score CTA as 100 when neither the plan nor the current draft calls for a CTA. Be conservative: 92 means publication-ready, not merely acceptable. Every material problem that lowers an applicable dimension below the supplied qualityThresholds must have a targeted issue and replacement. Preserve valid copy, tone, structure, character IDs, and visual intent. For carousel drafts, preserve the exact carouselPlan slide count, order, editorialGoal, and allowedFactIds; you may remove an irrelevant selected fact or repair viewerQuestion when it does not match the evidence, but never add a fact outside that slide's allowedFactIds. Use only one visible closing question. Return only the requested JSON.
 
 ${HUMAN_TENSION_POLICY}`;
 
@@ -505,7 +509,7 @@ async function reviewNarrativePlan(brief: GeneratedCreativeBrief, options: Gener
       schema: {type: "object", additionalProperties: false, required: ["decision", "reason", "angle", "hook", "plan"], properties: {decision: {type: "string", enum: ["keep", "revise"]}, reason: {type: "string"}, angle: {anyOf: [{type: "string"}, {type: "null"}]}, hook: {anyOf: [{type: "string"}, {type: "null"}]}, plan: {anyOf: [narrativePlanSchema, {type: "null"}]}}},
       schemaName: "creative_narrative_plan_review", reasoningEffort: "medium", maxOutputTokens: 3072, timeoutMs: 60000, auditContext: options.openAiAuditContext,
       contents: {facts: brief.keyFacts, angle: brief.angle, hook: brief.hook, plan: originalPlan, editorialAngle: brief.editorialAngle, editorialDirection: options.editorialDirection, profile: profileForPrompt(options.profile), topic: topicForPrompt(options.topic),
-        carouselNarrativePolicy: carouselNarrativePolicyForPrompt(options.profile.conversionGoal), originalValidationErrors: originalErrors,
+        carouselNarrativePolicy: carouselNarrativePolicyForPrompt(options.profile.conversionGoal, options.profile.storyStructure), originalValidationErrors: originalErrors,
         ...(previousResponse ? {previousResponse, validationFeedback: rejectedAttempts} : {})},
     });
     usage = sumCreativeAiUsage(usage, response.usage);
@@ -586,11 +590,14 @@ async function generateUnreviewedCreativeBrief({
       cloudflareAiModel,
       systemInstruction: `${BRIEF_SYSTEM_INSTRUCTION}\n\n${creativeBriefFramingInstruction(
         profile.framingStrategy,
-      )}\n\n${acquisitionAngleInstruction(acquisitionTaxonomy)}${extraInstruction}`,
+      )}\n\n${acquisitionAngleInstruction(acquisitionTaxonomy)}${creativeBriefStructureInstruction(
+        profile.storyStructure,
+      )}${extraInstruction}`,
       schema: creativeBriefSchema(acquisitionTaxonomy),
       contents: {
         carouselNarrativePolicy: carouselNarrativePolicyForPrompt(
           profile.conversionGoal,
+          profile.storyStructure,
         ),
         topic: topicForPrompt(topic),
         creativeProfile: profileForPrompt(profile),
@@ -769,6 +776,7 @@ export async function generateCreativeDraft(options: GenerateDraftOptions): Prom
     language: options.profile.language,
     conversionGoal: options.profile.conversionGoal,
     framingStrategy: options.profile.framingStrategy,
+    storyStructure: options.profile.storyStructure,
     topic: options.topic,
   }, async (contents) => {
     // A patch that cannot finish in time must not push the request past its
@@ -864,7 +872,7 @@ async function repairAndVerifyEditorialDraft(
         instructions:NARRATIVE_PLAN_POLICY+" Fix the diagnosed structural failures with one revised plan and the corresponding script. Keep exactly the existing slide count. Preserve sound wording when possible. You may reassign known facts and slide goals, but cannot change the evidence, format, character identities or brand. Return only the requested structured data. "+DRAFT_SYSTEM_INSTRUCTION+" For this authorized replan, your returned plan replaces the supplied old plan. Align every returned slide and hook candidate with the returned plan, using only the original fact IDs.",
         schema:{type:'object',additionalProperties:false,required:['reason','angle','hook','plan','draft'],properties:{reason:{type:'string'},angle:{type:'string'},hook:{type:'string'},plan:narrativePlanSchema,draft:creativeDraftSchema('carousel',current.units.length,options.characterRoster.length>0)}},
         schemaName:'creative_narrative_replan',reasoningEffort:'medium',maxOutputTokens:8192,timeoutMs:60000,auditContext:options.openAiAuditContext,
-        contents:{draft:current,findings:issues,previousAttempt:current.editorialRepair?.lastPatchRejection,carouselNarrativePolicy:carouselNarrativePolicyForPrompt(options.profile.conversionGoal),facts:brief.keyFacts,plan:brief.carouselPlan,editorialAngle:brief.editorialAngle,editorialDirection:options.editorialDirection,profile:profileForPrompt(options.profile),topic:topicForPrompt(options.topic),outputAspectRatio:options.outputAspectRatio},
+        contents:{draft:current,findings:issues,previousAttempt:current.editorialRepair?.lastPatchRejection,carouselNarrativePolicy:carouselNarrativePolicyForPrompt(options.profile.conversionGoal,options.profile.storyStructure),facts:brief.keyFacts,plan:brief.carouselPlan,editorialAngle:brief.editorialAngle,editorialDirection:options.editorialDirection,profile:profileForPrompt(options.profile),topic:topicForPrompt(options.topic),outputAspectRatio:options.outputAspectRatio},
       });
       try {
         const value=parseJsonObject(response.text,'Narrative replanner');
@@ -902,7 +910,7 @@ async function repairAndVerifyEditorialDraft(
       try {
         const candidate=applyFinalCreativePatches(current,response.text,scopes);
         assertVisibleDraftLanguage(candidate,options.profile.language);
-        const inspect=(value:GeneratedCreativeDraft)=>deterministicCreativeQualityIssues(value,options.format,options.brief.keyFacts,options.profile.language,options.profile.conversionGoal,options.profile.framingStrategy).filter(issue=>issue.severity==='blocker').map(issue=>issue.code+':'+(issue.unitOrder??0));
+        const inspect=(value:GeneratedCreativeDraft)=>deterministicCreativeQualityIssues(value,options.format,options.brief.keyFacts,options.profile.language,options.profile.conversionGoal,options.profile.framingStrategy,options.profile.storyStructure).filter(issue=>issue.severity==='blocker').map(issue=>issue.code+':'+(issue.unitOrder??0));
         const before=new Set(inspect(current));
         const introduced=inspect(candidate).filter(key=>!before.has(key));
         if(introduced.length)return {draft:current,usage:response.usage,rejectionReason:"Correction introduces validation blockers: "+introduced.join(", ")};
@@ -976,6 +984,7 @@ async function generateReviewedCreativeDraft({
       ? {
           carouselNarrativePolicy: carouselNarrativePolicyForPrompt(
             profile.conversionGoal,
+            profile.storyStructure,
           ),
           carouselPlan,
         }
@@ -1013,6 +1022,11 @@ async function generateReviewedCreativeDraft({
     systemInstruction: `${DRAFT_SYSTEM_INSTRUCTION}${acquisitionHookInstruction(
       brief.editorialAngle,
       acquisitionTaxonomy,
+    )}${creativeScriptStructureInstruction(
+      // A sequence already carries sequencePolicy in its contents; the steps
+      // instruction is for a procedure the editor chose to draft as a carousel.
+      profile.storyStructure,
+      format === "carousel" && brief.recommendedFormat === "sequence",
     )}`,
     schema: creativeDraftSchema(
       format,
@@ -1129,7 +1143,7 @@ async function generateReviewedCreativeDraft({
     // A secondary non-independent audit cannot authorize this draft. Preserve
     // the checkpoint and resume independent verification when available.
     return {...response, draft: {...editorial.draft,
-      qualityReview: unavailableCreativeQualityReview(editorial.criticUnavailable.reason, 0, editorial.draft, format, brief.keyFacts, profile.language, profile.conversionGoal, profile.framingStrategy),
+      qualityReview: unavailableCreativeQualityReview(editorial.criticUnavailable.reason, 0, editorial.draft, format, brief.keyFacts, profile.language, profile.conversionGoal, profile.framingStrategy, profile.storyStructure),
     }, usage: sumCreativeAiUsage(generationUsage, editorial.usage)};
   }
   let repairPasses = 0;
@@ -1169,6 +1183,7 @@ async function generateReviewedCreativeDraft({
             profile.language,
             profile.conversionGoal,
             profile.framingStrategy,
+            profile.storyStructure,
           )),
         },
         provider: response.provider,
@@ -1213,6 +1228,7 @@ async function generateReviewedCreativeDraft({
               profile.language,
               profile.conversionGoal,
               profile.framingStrategy,
+              profile.storyStructure,
             ),
             ...previousFeedback,
           ]),
@@ -1278,6 +1294,7 @@ async function generateReviewedCreativeDraft({
             profile.language,
             profile.conversionGoal,
             profile.framingStrategy,
+            profile.storyStructure,
           )),
         },
         provider: response.provider,
@@ -1298,6 +1315,7 @@ async function generateReviewedCreativeDraft({
       keyFacts: brief.keyFacts,
       conversionGoal: profile.conversionGoal,
       framingStrategy: profile.framingStrategy,
+      storyStructure: profile.storyStructure,
       language: profile.language,
     }), ...(JSON.stringify(currentDraft.units) === JSON.stringify(audited.draft.units) ? { hookSelection: audited.hookSelection } : {}) };
     if (audited.issueCount > 0 || qualityReview.status !== "accepted") {
@@ -1443,6 +1461,7 @@ export async function runOpenAiEditorialQualityGate({
     profile.language,
     profile.conversionGoal,
     profile.framingStrategy,
+    profile.storyStructure,
   );
   const availabilityIssues: CreativeQualityIssue[] = [];
   let lastReason = "All configured editorial models were unavailable.";
@@ -1533,6 +1552,7 @@ export async function runOpenAiEditorialQualityGate({
         profile.language,
         profile.conversionGoal,
         profile.framingStrategy,
+        profile.storyStructure,
       );
       const reviewedCopyChanged = !readOnly &&
         JSON.stringify({ ...result.draft, qualityReview: undefined }) !==
@@ -1584,6 +1604,7 @@ export async function runOpenAiEditorialQualityGate({
         keyFacts: brief.keyFacts,
         conversionGoal: profile.conversionGoal,
         framingStrategy: profile.framingStrategy,
+        storyStructure: profile.storyStructure,
         language: profile.language,
       });
       // Acceptance must use the calibrated review and every applicable
@@ -1755,6 +1776,7 @@ export async function runOpenAiEditorialQualityGate({
     profile.language,
     profile.conversionGoal,
     profile.framingStrategy,
+    profile.storyStructure,
   );
   const finalIssues = mergeCreativeQualityIssues([
     ...unavailable.issues,
@@ -3575,6 +3597,16 @@ export function parseCreativeDraft(
         );
       }
 
+      // A text-only cover is the local typography card, not an image: it can
+      // never open a carousel, whatever the writer chose.
+      const coverAskedForTypography =
+        carouselLike && role === "cover" && assetRequest === "typography-only";
+      if (coverAskedForTypography) {
+        console.warn(
+          "Creative draft cover asked for typography-only; a carousel cover is always a generated image.",
+        );
+      }
+
       return {
         order: index + 1,
         type: format === "meme" ? "meme-frame" : "carousel-slide",
@@ -3601,7 +3633,7 @@ export function parseCreativeDraft(
           1_000,
         ),
         factIds,
-        assetRequest,
+        assetRequest: coverAskedForTypography ? "generated-image" : assetRequest,
         aspectRatio: outputAspectRatio,
         characterIds,
       };
@@ -4052,6 +4084,7 @@ function unavailableCreativeQualityReview(
   language?: string,
   conversionGoal?: CreativeProfile["conversionGoal"],
   framingStrategy?: CreativeProfile["framingStrategy"],
+  storyStructure?: CreativeProfile["storyStructure"],
 ): CreativeQualityReview {
   const deterministicIssues = deterministicCreativeQualityIssues(
     draft,
@@ -4060,6 +4093,7 @@ function unavailableCreativeQualityReview(
     language,
     conversionGoal,
     framingStrategy,
+    storyStructure,
   );
   const hasBlocker = deterministicIssues.some(
     (issue) => issue.severity === "blocker",
@@ -4433,6 +4467,9 @@ export function compactEditorialReviewContents({
     contentSufficiency: brief.contentSufficiency,
     qualityTarget: CREATIVE_QUALITY_THRESHOLDS,
     framingInstruction: creativeBriefFramingInstruction(profile.framingStrategy),
+    ...(creativeBriefStructureInstruction(profile.storyStructure)
+      ? { structureInstruction: creativeBriefStructureInstruction(profile.storyStructure).trim() }
+      : {}),
     openingPromise: {
       keyMessage: brief.keyMessage,
       hook: brief.hook,
