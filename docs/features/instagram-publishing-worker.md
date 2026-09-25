@@ -141,3 +141,23 @@ Las pruebas usan dependencias simuladas y PostgreSQL en memoria. Cubren concurre
 - Comprobar el acceso público de entrega, las migraciones aplicadas, el presupuesto de ejecución del hosting y la supervisión/reinicio del worker antes de considerar el MVP listo.
 
 Un mensaje de autorización guardado en una orden antigua no se borra al validar el candidato. Cuando la suspensión ocurrió antes de cualquier operación de proveedor, el panel ofrece **Revalidate and retry publishing**. Ese clic autoriza el reintento sobre la misma orden y vuelve a comprobar la identidad, el paquete, los permisos y las aprobaciones actuales. Suspensiones con actividad de proveedor o resultados inciertos no usan esta excepción.
+
+## Despliegue en Vercel (alfa) — 25 de septiembre de 2026
+
+Diagnóstico del despliegue `https://story-radar.vercel.app`: la app respondía, `RADAR_COLLECTOR_SECRET` e `INSTAGRAM_PUBLISH_WORKER_SECRET` estaban configurados, pero `RADAR_APP_URL` en producción seguía apuntando al túnel de ngrok de la prueba local (visible en la redirección de fallo de `/api/radar/meta/callback`). Con ese valor, Instagram devolvía el navegador al túnel, Meta intentaba descargar las imágenes desde el túnel y los enlaces de entrega se firmaban con ese origen. Por eso una conexión que funcionaba en local no funcionaba en línea.
+
+Desde esta fecha la aplicación se autodiagnostica: `GET /api/radar/meta/health` (autorizado como el resto de rutas) compara `RADAR_APP_URL` con el origen que sirvió la petición y lista los problemas; el panel de Instagram los muestra en la sección **Environment** y la acción de conectar se niega a arrancar cuando el origen no coincide fuera de localhost.
+
+### Lista de comprobación
+
+1. En Vercel → Settings → Environment Variables (Production): `RADAR_APP_URL=https://story-radar.vercel.app` (sin barra final). Quitar `INSTAGRAM_PUBLISH_WORKER_URL` o darle el mismo valor. Redesplegar: los cambios de variables no se aplican al despliegue existente.
+2. En el panel de Meta para desarrolladores → app → Instagram → «API setup with Instagram business login» → Business login settings → OAuth redirect URIs: añadir `https://story-radar.vercel.app/api/radar/meta/callback`. Puede convivir con la URI del túnel local.
+3. Abrir la app en producción, pegar el `RADAR_COLLECTOR_SECRET` de producción y comprobar que la sección Environment del panel de Instagram no muestra errores. Reconectar la cuenta de Instagram del topic: los tokens cifrados con la clave de un entorno no se comparten con otro.
+4. Publicación sin worker local: en Vercel, cada orden avanza un paso con `after()` y el panel reanuda pasos pendientes mientras está abierto. Para que avance con el navegador cerrado, activar el flujo `.github/workflows/instagram-publication-worker.yml` creando en GitHub la variable `INSTAGRAM_PUBLISH_WORKER_URL` y el secreto `INSTAGRAM_PUBLISH_WORKER_SECRET` (el mismo de Vercel). Vercel Cron no sirve en el plan Hobby porque solo admite una ejecución diaria.
+5. Vista previa de Vercel: cada despliegue tiene una URL distinta y no puede registrarse en Meta; la conexión se prueba en local y en producción.
+
+### Quién puede conectar su cuenta
+
+Mientras la app de Meta esté en modo desarrollo, solo pueden autorizar las personas con rol en la app o añadidas como probadoras de Instagram (App roles → Instagram testers; la persona acepta la invitación desde la configuración de su cuenta de Instagram). Para que cualquier usuario del SaaS conecte su cuenta hay que pasar la app a modo activo y obtener acceso avanzado mediante revisión de app para `instagram_business_basic`, `instagram_business_content_publish` e `instagram_business_manage_insights`, lo que suele exigir verificación del negocio y un vídeo del flujo. La app usa una sola app de Meta para todos los usuarios; la opción «Advanced» por topic sigue disponible para casos especiales.
+
+Facebook Pages no forma parte de este flujo: sigue planificado en PUB-09 y PUB-10.

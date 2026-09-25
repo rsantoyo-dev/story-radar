@@ -1,5 +1,11 @@
 import "server-only";
 
+import {
+  deriveMetaIntegrationHealth,
+  requestOriginFromHeaders,
+  type MetaIntegrationHealth,
+} from "./meta-integration-health";
+
 export class MetaIntegrationConfigError extends Error {}
 
 /**
@@ -68,4 +74,24 @@ function requireRadarAppUrl(): string {
     throw new MetaIntegrationConfigError("RADAR_APP_URL is not configured");
   }
   return appUrl.replace(/\/+$/u, "");
+}
+
+/**
+ * Environment self-check for the request's deployment: compares RADAR_APP_URL
+ * with the origin that actually served this request and reports which
+ * server-side settings are present (never their values).
+ */
+export function getMetaIntegrationHealth(request: Request): MetaIntegrationHealth {
+  return deriveMetaIntegrationHealth({
+    configuredAppUrl: process.env.RADAR_APP_URL,
+    requestOrigin: requestOriginFromHeaders(request.headers, request.url),
+    sharedAppConfigured: getDefaultMetaAppCredentials() !== undefined,
+    stateSecretConfigured: Boolean(process.env.META_STATE_SECRET?.trim()),
+    tokenEncryptionKeyConfigured: Boolean(
+      process.env.META_TOKEN_ENCRYPTION_KEY?.trim(),
+    ),
+    publicationWorkerSecretConfigured: Boolean(
+      process.env.INSTAGRAM_PUBLISH_WORKER_SECRET?.trim(),
+    ),
+  });
 }

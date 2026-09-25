@@ -1,0 +1,53 @@
+# Serverless stand-in for `npm run worker:instagram` (PUB-11, alpha).
+#
+# Vercel Hobby cron jobs run at most once per day, which is useless for a
+# publication worker, so this schedule resumes pending, already-authorized
+# Instagram orders every five minutes. It never creates orders and never
+# publishes anything an editor did not authorize: it only calls the same
+# internal route the local worker calls.
+#
+# Configure in the repository settings:
+#   Variables → INSTAGRAM_PUBLISH_WORKER_URL   e.g. https://story-radar.vercel.app
+#   Secrets   → INSTAGRAM_PUBLISH_WORKER_SECRET same value as on Vercel
+# Until both exist the job exits early without failing.
+name: Instagram publication worker
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: instagram-publication-worker
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  resume:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Resume pending publication orders
+        env:
+          APP_URL: ${{ vars.INSTAGRAM_PUBLISH_WORKER_URL }}
+          WORKER_SECRET: ${{ secrets.INSTAGRAM_PUBLISH_WORKER_SECRET }}
+        run: |
+          if [ -z "$APP_URL" ] || [ -z "$WORKER_SECRET" ]; then
+            echo "::notice::INSTAGRAM_PUBLISH_WORKER_URL (variable) or INSTAGRAM_PUBLISH_WORKER_SECRET (secret) is not set; nothing to do."
+            exit 0
+          fi
+          case "$APP_URL" in
+            https://*) ;;
+            *) echo "::error::INSTAGRAM_PUBLISH_WORKER_URL must start with https://"; exit 1 ;;
+          esac
+          code=$(curl -sS -o /tmp/body -w '%{http_code}' -X POST --max-time 125 \
+            -H "Authorization: Bearer $WORKER_SECRET" \
+            "${APP_URL%/}/api/internal/instagram-publications/resume") || code=000
+          echo "HTTP $code"
+          if [ "$code" = "200" ]; then
+            cat /tmp/body; echo
+          else
+            echo "::error::Worker pass failed with HTTP $code (check the secret, the URL and the deployment logs)."
+            exit 1
+          fi

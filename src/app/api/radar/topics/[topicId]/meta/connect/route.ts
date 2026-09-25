@@ -1,6 +1,7 @@
 import { authorizeRadarCollector } from "@/app/api/radar/radar-api-auth";
 import { noStoreJson } from "@/app/api/radar/topics/topic-route-utils";
 import {
+  getMetaIntegrationHealth,
   getMetaOAuthRedirectUri,
   MetaIntegrationConfigError,
   requireMetaStateSecretFromEnv,
@@ -34,6 +35,16 @@ export async function POST(request: Request, context: Context) {
 
   try {
     const topicId = await topicIdFromContext(context);
+    // Refuse to send the editor to a login dialog that would return them to
+    // another host (a stale tunnel URL in a hosted deployment): the callback
+    // would land where nothing is listening. Browsing on localhost against a
+    // tunnel is the documented dev setup and is not a mismatch here.
+    const mismatch = getMetaIntegrationHealth(request).problems.find(
+      (problem) => problem.code === "app-url-mismatch",
+    );
+    if (mismatch) {
+      return noStoreJson({ error: mismatch.message, code: mismatch.code }, 400);
+    }
     const { appId } = await getEffectiveMetaAppCredentials(topicId);
     const state = signMetaOAuthState(topicId, requireMetaStateSecretFromEnv());
 

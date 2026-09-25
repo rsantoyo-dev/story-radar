@@ -43,6 +43,22 @@ type MediaSyncResult = MediaSyncSummary & {
   syncedAt: string;
 };
 
+type IntegrationProblem = {
+  code: string;
+  severity: "error" | "warning" | "info";
+  message: string;
+};
+
+type IntegrationHealth = {
+  ok: boolean;
+  requestOrigin?: string;
+  configuredAppUrl?: string;
+  redirectUri?: string;
+  appUrlMatchesRequest?: boolean;
+  problems: IntegrationProblem[];
+  deployment?: { vercelEnv?: string; productionHost?: string };
+};
+
 type MetricsRefreshResult = {
   refreshed: number;
   failed: number;
@@ -85,7 +101,11 @@ export function MetaConnectionPanel({
   const [appId, setAppId] = useState("");
   const [appSecret, setAppSecret] = useState("");
   const [syncResult, setSyncResult] = useState<MediaSyncResult>();
+  const [health, setHealth] = useState<IntegrationHealth>();
   const authenticated = secret.trim().length > 0;
+  const blockingProblem = health?.problems.find(
+    (problem) => problem.severity === "error",
+  );
   // A successful sync's own nextCursor wins; a failed one keeps whatever the
   // server still has stored (it never clears the cursor on failure), so
   // "Load older" does not vanish until a manual reload.
@@ -112,6 +132,25 @@ export function MetaConnectionPanel({
 
     return () => controller.abort();
   }, [authenticated, secret, topicId]);
+
+  useEffect(() => {
+    if (!authenticated) return;
+    const controller = new AbortController();
+
+    // Deployment self-check: surfaces a RADAR_APP_URL that points at another
+    // host (the usual reason a connection that worked locally fails online).
+    requestJson<IntegrationHealth>("/api/radar/meta/health", secret, {
+      signal: controller.signal,
+    })
+      .then((next) => {
+        if (!controller.signal.aborted) setHealth(next);
+      })
+      .catch(() => {
+        // Older servers do not expose the check; the panel keeps working.
+      });
+
+    return () => controller.abort();
+  }, [authenticated, secret]);
 
   async function handleConnect() {
     if (!authenticated || busy) return;
@@ -341,6 +380,16 @@ export function MetaConnectionPanel({
 
       {error ? <p className={styles.brandAssetHint}>{error}</p> : null}
       {notice ? <p className={styles.brandAssetHint}>{notice}</p> : null}
+      {health?.problems
+        .filter((problem) => problem.severity !== "info")
+        .map((problem) => (
+          <p key={problem.code} className={styles.brandAssetHint} role="alert">
+            <strong>
+              {problem.severity === "error" ? "Configuration error: " : "Heads up: "}
+            </strong>
+            {problem.message}
+          </p>
+        ))}
       {!error && status?.lastVerificationError ? (
         <p className={styles.brandAssetHint}>{status.lastVerificationError}</p>
       ) : null}
@@ -384,7 +433,8 @@ export function MetaConnectionPanel({
           <button
             type="button"
             className={styles.secondaryButton}
-            disabled={controlsDisabled}
+            disabled={controlsDisabled || Boolean(blockingProblem)}
+            title={blockingProblem?.message}
             onClick={handleConnect}
           >
             {busy === "connect"
@@ -469,6 +519,59 @@ export function MetaConnectionPanel({
         topicId={topicId} secret={secret} disabled={controlsDisabled}
         state={status?.publishing?.state ?? (status?.connected ? "unverified" : "disconnected")}
       />
+
+      {health ? (
+        <details className={styles.profilePanel}>
+          <summary>
+            <span>
+              <span>Environment</span>
+              <small>
+                {health.ok
+                  ? "Public URL and Meta settings look consistent"
+                  : "This deployment needs attention before connecting"}
+              </small>
+            </span>
+          </summary>
+          <div className={styles.profileBody}>
+            <dl className={styles.metaConnectionDetails}>
+              <div>
+                <dt>Served from</dt>
+                <dd>{health.requestOrigin ?? "—"}</dd>
+              </div>
+              <div>
+                <dt>Public app URL (RADAR_APP_URL)</dt>
+                <dd>{health.configuredAppUrl ?? "not configured"}</dd>
+              </div>
+              <div>
+                <dt>OAuth redirect URI to register in Meta</dt>
+                <dd>{health.redirectUri ?? "—"}</dd>
+              </div>
+              {health.deployment?.vercelEnv ? (
+                <div>
+                  <dt>Deployment</dt>
+                  <dd>
+                    Vercel {health.deployment.vercelEnv}
+                    {health.deployment.productionHost
+                      ? ` · ${health.deployment.productionHost}`
+                      : ""}
+                  </dd>
+                </div>
+              ) : null}
+            </dl>
+            {health.problems
+              .filter((problem) => problem.severity === "info")
+              .map((problem) => (
+                <p key={problem.code} className={styles.brandAssetHint}>
+                  {problem.message}
+                </p>
+              ))}
+            <p className={styles.brandAssetHint}>
+              Secrets are never shown here. Changing environment variables on
+              Vercel requires a redeploy before they take effect.
+            </p>
+          </div>
+        </details>
+      ) : null}
 
       <details className={styles.profilePanel}>
         <summary>
