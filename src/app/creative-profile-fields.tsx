@@ -130,6 +130,29 @@ export function BrandPaletteEditor({
         entryIndex === index ? { ...entry, name } : entry,
       ),
     );
+  const updatePaletteUsage = (index: number, usage: string) =>
+    onChange(
+      palette.map((entry, entryIndex) => {
+        if (entryIndex !== index) return entry;
+        const rest: CreativeBrandPaletteColor = { ...entry };
+        delete rest.usage;
+        return usage.trim() ? { ...rest, usage } : rest;
+      }),
+    );
+  const updatePaletteShare = (index: number, raw: string) =>
+    onChange(
+      palette.map((entry, entryIndex) => {
+        if (entryIndex !== index) return entry;
+        const rest: CreativeBrandPaletteColor = { ...entry };
+        delete rest.share;
+        const share = Number.parseInt(raw, 10);
+        return Number.isInteger(share) && share >= 1
+          ? { ...rest, share: Math.min(100, share) }
+          : rest;
+      }),
+    );
+  const totalShare = palette.reduce((sum, entry) => sum + (entry.share ?? 0), 0);
+  const hasShares = palette.some((entry) => entry.share !== undefined);
   const updatePaletteRole = (
     index: number,
     role: CreativeBrandPaletteColor["role"],
@@ -155,6 +178,8 @@ export function BrandPaletteEditor({
             of the visual campaign guide sent to image generation. Assign
             Primary, Secondary, and Surface to theme this topic&rsquo;s UI;
             readable shades and text contrast are generated automatically.
+            Usage and share are optional: when set, they tell image generation
+            where each colour lives and how much of the composition it takes.
           </p>
         </div>
       </header>
@@ -195,6 +220,29 @@ export function BrandPaletteEditor({
                   </option>
                 ))}
               </select>
+              <div className={styles.paletteUsageRow}>
+                <input
+                  aria-label={`Usage of ${entry.name}`}
+                  value={entry.usage ?? ""}
+                  maxLength={120}
+                  placeholder="Used for… (optional)"
+                  onChange={(event) => updatePaletteUsage(index, event.target.value)}
+                />
+                <label className={styles.paletteShareField}>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={100}
+                    step={1}
+                    aria-label={`Share of ${entry.name} in percent`}
+                    value={entry.share ?? ""}
+                    placeholder="—"
+                    onChange={(event) => updatePaletteShare(index, event.target.value)}
+                  />
+                  <span aria-hidden="true">%</span>
+                </label>
+              </div>
               <code>{entry.color}</code>
               <button
                 type="button"
@@ -224,6 +272,38 @@ export function BrandPaletteEditor({
             </button>
           ) : null}
         </div>
+        {hasShares ? (
+          <div className={styles.paletteShareSummary}>
+            <div
+              className={styles.paletteShareBar}
+              role="img"
+              aria-label={`Usage split: ${palette
+                .filter((entry) => entry.share !== undefined)
+                .map((entry) => `${entry.share}% ${entry.name}`)
+                .join(", ")}`}
+            >
+              {palette
+                .filter((entry) => entry.share !== undefined)
+                .map((entry) => (
+                  <span
+                    key={entry.color}
+                    style={{ flexGrow: entry.share, background: entry.color }}
+                    title={`${entry.name} · ${entry.share}%`}
+                  />
+                ))}
+              {totalShare < 100 ? (
+                <span style={{ flexGrow: 100 - totalShare }} className={styles.paletteShareFree} />
+              ) : null}
+            </div>
+            <small className={totalShare > 100 ? styles.paletteShareOver : undefined}>
+              {totalShare > 100
+                ? `Shares add up to ${totalShare}%; keep the total at 100% or less to save.`
+                : totalShare < 100
+                  ? `${totalShare}% assigned · ${100 - totalShare}% free for the other colours`
+                  : "100% assigned"}
+            </small>
+          </div>
+        ) : null}
       </fieldset>
 
       <BrandUiPreview palette={palette} carouselChrome={carouselChrome} />

@@ -3188,3 +3188,173 @@
   background: palette(primary-contrast);
   color: palette(primary-main);
 }
+
+/* ---------------------------------------------------------------------------
+ * Brand palette assistant (creative profile › Identity).
+ * Reuses .brandOverlayHeader, .field, .secondaryButton, .paletteAdd, .warning
+ * and .brandAssetHint; these classes add the block layout and the swatches.
+ * ------------------------------------------------------------------------- */
+
+.paletteAssistant {
+  @ds-surface(flat neutral 4);
+  display: grid;
+  gap: density(4);
+  padding: density(4);
+  border: 1px solid palette(surface-dark);
+  border-radius: radius(3);
+  background: palette(surface-light);
+  box-shadow: shadow(1);
+}
+
+.paletteAssistantForm {
+  display: grid;
+  gap: density(3);
+}
+
+.paletteAssistantForm textarea {
+  @ds-input(outlined neutral 2);
+  width: 100%;
+  min-height: density(12);
+  padding: density(3);
+  resize: vertical;
+  line-height: 1.5;
+  background: palette(light-light);
+  color: palette(dark-main);
+}
+
+.paletteAssistantForm textarea:focus {
+  border-color: palette(primary-main);
+  box-shadow: 0 0 0 4px palette(primary-main, 0.12);
+  outline: none;
+}
+
+.paletteAssistantActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: density(2);
+}
+
+.paletteAssistantResult {
+  display: grid;
+  gap: density(3);
+}
+
+.paletteAssistantSwatches {
+  display: grid;
+  grid-template-columns: xs(1fr) sm(repeat(2, minmax(0, 1fr))) lg(repeat(3, minmax(0, 1fr)));
+  gap: density(2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.paletteAssistantSwatch {
+  @ds-surface(flat light 2);
+  display: grid;
+  grid-template-columns: density(7) minmax(0, 1fr);
+  align-items: center;
+  gap: density(2);
+  padding: density(2);
+  border: 1px solid palette(surface-dark);
+  border-radius: radius(2);
+  background: palette(light-light);
+}
+
+.paletteAssistantSwatch i {
+  display: block;
+  width: density(7);
+  height: density(7);
+  border: 1px solid palette(dark-main, 0.12);
+  border-radius: radius(1);
+}
+
+.paletteAssistantSwatch span {
+  display: grid;
+  min-width: 0;
+}
+
+.paletteAssistantSwatch strong {
+  overflow: hidden;
+  color: palette(dark-main);
+  @ds-typo(caption);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.paletteAssistantSwatch small {
+  color: palette(tertiary-dark);
+  @ds-typo(caption);
+  font-size: 10px;
+}
+
+/* Brand palette: optional usage intent and share per colour. */
+
+.paletteUsageRow {
+  display: grid;
+  grid-column: 2 / -1;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: density(2);
+  min-width: 0;
+}
+
+.paletteUsageRow input {
+  @ds-input(outlined neutral 2);
+  border-radius: radius(1);
+  min-width: 0;
+  padding: density(1) density(2);
+  @ds-typo(caption);
+}
+
+.paletteShareField {
+  display: inline-flex;
+  align-items: center;
+  gap: density(1);
+  color: palette(tertiary-dark);
+  @ds-typo(caption);
+}
+
+.paletteShareField input {
+  width: 4.5rem;
+  text-align: right;
+}
+
+.paletteShareSummary {
+  display: grid;
+  gap: density(2);
+}
+
+.paletteShareSummary small {
+  color: palette(tertiary-dark);
+  @ds-typo(caption);
+}
+
+.paletteShareOver {
+  color: palette(error-dark);
+}
+
+.paletteShareBar {
+  display: flex;
+  height: density(4);
+  overflow: hidden;
+  border: 1px solid palette(surface-dark);
+  border-radius: radius(1);
+  background: palette(light-light);
+}
+
+.paletteShareBar span {
+  display: block;
+  min-width: 2px;
+  height: 100%;
+  flex-basis: 0;
+}
+
+.paletteShareFree {
+  background: repeating-linear-gradient(
+    135deg,
+    palette(surface-dark, 0.35) 0 4px,
+    transparent 4px 8px
+  );
+}

@@ -1,4 +1,5 @@
 import {
+  CREATIVE_BRAND_PALETTE_USAGE_MAX_LENGTH,
   CREATIVE_CAROUSEL_CHROME_STYLES,
   DEFAULT_CREATIVE_BRAND_PALETTE,
   DEFAULT_CREATIVE_CAROUSEL_CHROME_SETTINGS,
@@ -41,8 +42,26 @@ export function parseCreativeBrandPaletteInput(
         `brandPalette[${index}].role must be primary, secondary, or surface`,
       );
     }
-    return { name, color, ...(role ? { role } : {}) };
+    const usage = optionalText(
+      entry.usage,
+      `brandPalette[${index}].usage`,
+      CREATIVE_BRAND_PALETTE_USAGE_MAX_LENGTH,
+    );
+    const share = optionalShare(entry.share, `brandPalette[${index}].share`);
+    return {
+      name,
+      color,
+      ...(role ? { role } : {}),
+      ...(usage ? { usage } : {}),
+      ...(share !== undefined ? { share } : {}),
+    };
   });
+  const totalShare = colors.reduce((sum, color) => sum + (color.share ?? 0), 0);
+  if (totalShare > 100) {
+    throw new CreativeCarouselChromeValidationError(
+      `brandPalette shares add up to ${totalShare}%; keep the total at 100% or less`,
+    );
+  }
   if (new Set(colors.map((color) => color.color)).size !== colors.length) {
     throw new CreativeCarouselChromeValidationError(
       "brandPalette colours must be unique",
@@ -126,6 +145,28 @@ function text(value: unknown, field: string, max: number): string {
     throw new CreativeCarouselChromeValidationError(`${field} is required`);
   }
   return value.replace(/\s+/gu, " ").trim().slice(0, max);
+}
+
+/** Empty, null or undefined means "not set"; anything else must be text. */
+function optionalText(value: unknown, field: string, max: number): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string") {
+    throw new CreativeCarouselChromeValidationError(`${field} must be text`);
+  }
+  const trimmed = value.replace(/\s+/gu, " ").trim();
+  return trimmed ? trimmed.slice(0, max) : undefined;
+}
+
+/** Integer percentage 1–100; empty, null or undefined means "not set". */
+function optionalShare(value: unknown, field: string): number | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  const number = typeof value === "string" ? Number(value.trim()) : value;
+  if (typeof number !== "number" || !Number.isInteger(number) || number < 1 || number > 100) {
+    throw new CreativeCarouselChromeValidationError(
+      `${field} must be a whole percentage between 1 and 100`,
+    );
+  }
+  return number;
 }
 
 function hex(value: unknown, field: string): string {

@@ -9,6 +9,7 @@ import {
 } from "@aws-sdk/client-s3";
 
 const MAX_REFERENCE_IMAGE_BYTES = 20 * 1024 * 1024;
+const MAX_DOCUMENT_BYTES = 40_000_000;
 
 type R2Configuration = {
   bucket: string;
@@ -61,6 +62,33 @@ export async function putPrivateR2Object({
   }
 
   return { objectKey, contentType: resolvedContentType, size: body.byteLength };
+}
+
+export function buildKnowledgeDocumentObjectKey(contentHash: string): string {
+  if (!/^[a-f0-9]{64}$/.test(contentHash)) {
+    throw new R2StorageValidationError("The document hash is invalid");
+  }
+  const { objectPrefix } = getR2Client().configuration;
+  const key = `${objectPrefix}/documents/${contentHash}.pdf`;
+  assertObjectKey(key);
+  return key;
+}
+
+export async function readPrivateR2Document(objectKey: string): Promise<Uint8Array> {
+  assertObjectKey(objectKey);
+  const { client, configuration } = getR2Client();
+  let object: GetObjectCommandOutput;
+  try {
+    object = await client.send(new GetObjectCommand({ Bucket: configuration.bucket, Key: objectKey }));
+  } catch (error) {
+    throw new R2StorageObjectError(`The private document could not be read from R2: ${errorMessage(error)}`, { retryable: isRetryableR2Error(error) });
+  }
+  if (!object.Body || (object.ContentLength ?? 0) > MAX_DOCUMENT_BYTES) {
+    throw new R2StorageValidationError("The private document is missing or exceeds 40 MB");
+  }
+  const bytes = await object.Body.transformToByteArray();
+  if (bytes.byteLength > MAX_DOCUMENT_BYTES) throw new R2StorageValidationError("The private document exceeds 40 MB");
+  return bytes;
 }
 
 /** Removes a private object after its database record has been cleaned up. */

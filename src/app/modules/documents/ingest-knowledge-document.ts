@@ -4,10 +4,12 @@ import { createHash } from "node:crypto";
 
 import { extractPdfDocument } from "./extract-pdf-document";
 import { fetchPublicPdf, normalizeKnowledgeDocumentUrl } from "./fetch-public-pdf";
+import { readPrivateR2Document } from "@/app/modules/stories/r2-storage";
 import {
   completeKnowledgeDocumentIngestion,
   createKnowledgeIngestionRun,
   createOrAttachKnowledgeDocument,
+  createOrAttachUploadedKnowledgeDocument,
   failKnowledgeDocumentIngestion,
   getKnowledgeDocumentForIngestion,
   updateKnowledgeIngestionProgress,
@@ -29,11 +31,22 @@ export async function enqueueKnowledgeDocument(
   return { ...attached, runId };
 }
 
+export async function enqueueUploadedKnowledgeDocument(
+  topicId: string,
+  input: { canonicalUrl: string; objectKey: string; name: string },
+): Promise<{ documentId: string; topicDocumentId: string; runId: string }> {
+  const attached = await createOrAttachUploadedKnowledgeDocument(topicId, input);
+  const runId = await createKnowledgeIngestionRun(attached.documentId);
+  return { ...attached, runId };
+}
+
 export async function processKnowledgeDocumentIngestion(runId: string): Promise<void> {
   try {
     const document = await getKnowledgeDocumentForIngestion(runId);
     await updateKnowledgeIngestionProgress(runId, { stage: "fetching" });
-    const fetched = await fetchPublicPdf(document.sourceUrl);
+    const fetched = document.objectKey
+      ? { bytes: await readPrivateR2Document(document.objectKey), resolvedUrl: document.canonicalUrl, lastModified: undefined }
+      : await fetchPublicPdf(document.sourceUrl);
     // Extraction behavior is part of the immutable version identity. This
     // allows a retry to preserve the old version while rebuilding sections
     // when hierarchy/page-label handling improves for the same PDF bytes.
@@ -46,7 +59,7 @@ export async function processKnowledgeDocumentIngestion(runId: string): Promise<
     await updateKnowledgeIngestionProgress(runId, { stage: "extracting" });
     const extracted = await extractPdfDocument(
       fetched.bytes,
-      fallbackTitle(document.canonicalUrl),
+      document.originalFilename?.replace(/\.pdf$/i, "") ?? fallbackTitle(document.canonicalUrl),
       (pagesProcessed, pagesTotal) => updateKnowledgeIngestionProgress(runId, {
         stage: "extracting",
         pagesProcessed,

@@ -35,6 +35,7 @@ import {
 import { detectTopicDuplicates } from "./story-duplicates.repository";
 import type {
   StoryCandidate,
+  StoryCandidateInput,
   StoryRadarResult,
 } from "./story-candidate.types";
 
@@ -103,6 +104,22 @@ export type ClearStoryRadarResult = {
   deletedCreativeBriefs: number;
   deletedSocialPublications: number;
 };
+
+/** Adds a source contribution to the shared Story store without inventing an evaluation. */
+export async function persistUnscoredStoryContribution(
+  topicId: string,
+  input: StoryCandidateInput,
+): Promise<string> {
+  const candidate: StoryCandidate = {
+    ...input,
+    relevance: {
+      score: 0,
+      decision: "new",
+      reasons: ["source contribution: awaiting editorial evaluation"],
+    },
+  };
+  return upsertStoryCandidate(topicId, candidate, canonicalizeStoryUrl(candidate.url));
+}
 
 export async function persistStoryRadarResult(
   topicId: string,
@@ -697,13 +714,14 @@ async function upsertTopicStory(
     .onConflictDoUpdate({
       target: [topicStories.topicId, topicStories.storyId],
       set: {
-        relevanceScore: candidate.relevance.score,
-        relevanceReasons: candidate.relevance.reasons,
+        relevanceScore: candidate.relevance.score === 0 ? sql`${topicStories.relevanceScore}` : candidate.relevance.score,
+        relevanceReasons: candidate.relevance.score === 0 ? sql`${topicStories.relevanceReasons}` : candidate.relevance.reasons,
         lastSeenAt: sql`GREATEST(
           ${topicStories.lastSeenAt},
           ${incomingLastSeenAt}
         )`,
         processingStatus: sql`CASE
+          WHEN ${candidate.relevance.score} = 0 THEN ${topicStories.processingStatus}
           WHEN ${topicStories.processingStatus} IN ('selected', 'published')
             THEN ${topicStories.processingStatus}
           WHEN ${topicStories.reviewDecision} = 'rejected'

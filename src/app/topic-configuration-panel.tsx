@@ -7,6 +7,7 @@ import {
   DEFAULT_TOPIC_THEME_KEY,
   TOPIC_THEMES,
 } from "@/design/topic-themes";
+import type { WorkspaceSourceCatalog } from "@/app/modules/sources/workspace-source-catalog.repository";
 
 import styles from "./topic-configuration-panel.generated.module.css";
 
@@ -17,6 +18,36 @@ export type DashboardTopic = {
   description?: string;
   themeKey: string;
   isActive: boolean;
+};
+
+export type TopicConfigurationView = "topics" | "rss" | "ai" | "documents" | "manual";
+
+const VIEW_HEADING: Record<TopicConfigurationView, { eyebrow: string; title: string; description: string }> = {
+  topics: {
+    eyebrow: "Workspace",
+    title: "Topics",
+    description: "Manage publications and their editorial lines.",
+  },
+  rss: {
+    eyebrow: "Sources",
+    title: "RSS feeds",
+    description: "Manage feeds connected to the selected topic.",
+  },
+  ai: {
+    eyebrow: "Sources",
+    title: "AI research",
+    description: "Configure web-grounded discovery for the selected topic.",
+  },
+  documents: {
+    eyebrow: "Sources",
+    title: "Documents",
+    description: "Manage page-linked knowledge documents for the selected topic.",
+  },
+  manual: {
+    eyebrow: "Sources",
+    title: "Manual stories",
+    description: "Create and review stories supplied by your team.",
+  },
 };
 
 type TopicSource = {
@@ -63,6 +94,8 @@ type KnowledgeDocument = {
   topicDocumentId: string;
   documentId: string;
   canonicalUrl: string;
+  uploaded?: boolean;
+  originalFilename?: string;
   documentType: "guideline" | "report" | "study" | "manual" | "other";
   language: string;
   publisher?: string;
@@ -97,36 +130,6 @@ type KnowledgeDocumentDraft = {
   priority: string;
 };
 
-type OwnedContentEntry = {
-  id: string;
-  storyId: string;
-  title: string;
-  content: string;
-  contentType:
-    | "campaign"
-    | "launch"
-    | "promotion"
-    | "product"
-    | "announcement"
-    | "educational";
-  language: string;
-  region: string;
-  sourceUrl?: string;
-  publishedAt: string;
-  createdAt: string;
-  updatedAt: string;
-};
-
-type OwnedContentDraft = {
-  title: string;
-  content: string;
-  contentType: OwnedContentEntry["contentType"];
-  language: string;
-  region: string;
-  sourceUrl: string;
-  publishedAt: string;
-};
-
 const EMPTY_DOCUMENT: KnowledgeDocumentDraft = {
   url: "",
   documentType: "guideline",
@@ -148,19 +151,8 @@ const EMPTY_SOURCE: SourceDraft = {
   enabled: true,
 };
 
-function emptyOwnedContentDraft(): OwnedContentDraft {
-  return {
-    title: "",
-    content: "",
-    contentType: "campaign",
-    language: "en",
-    region: "global",
-    sourceUrl: "",
-    publishedAt: new Date().toISOString().slice(0, 10),
-  };
-}
-
 export function TopicConfigurationPanel({
+  view,
   topics,
   selectedTopicId,
   secret,
@@ -168,7 +160,12 @@ export function TopicConfigurationPanel({
   onTopicsChange,
   onTopicChange,
   onCandidateCreated,
+  onNewStory,
+  onOpenStory,
+  catalog,
+  catalogError,
 }: {
+  view: TopicConfigurationView;
   topics: DashboardTopic[];
   selectedTopicId: string;
   secret: string;
@@ -176,6 +173,10 @@ export function TopicConfigurationPanel({
   onTopicsChange: (topics: DashboardTopic[]) => void;
   onTopicChange: (topicId: string) => void;
   onCandidateCreated?: () => void;
+  onNewStory?: () => void;
+  onOpenStory?: (topicId: string, storyId: string) => void;
+  catalog?: WorkspaceSourceCatalog;
+  catalogError?: string;
 }) {
   const [sourceResult, setSourceResult] = useState<{
     topicId: string;
@@ -193,22 +194,19 @@ export function TopicConfigurationPanel({
   const [topicDescription, setTopicDescription] = useState("");
   const [topicThemeKey, setTopicThemeKey] = useState<string>(DEFAULT_TOPIC_THEME_KEY);
   const [editingTopic, setEditingTopic] = useState(false);
-  const [showSources, setShowSources] = useState(false);
   const [showSourceForm, setShowSourceForm] = useState(false);
   const [sourceFormTopicId, setSourceFormTopicId] = useState<string>();
   const [editingSource, setEditingSource] = useState<TopicSource>();
   const [sourceDraft, setSourceDraft] = useState<SourceDraft>(EMPTY_SOURCE);
+  const [feedTopicIds, setFeedTopicIds] = useState<string[]>([selectedTopicId]);
+  const [documentTopicIds, setDocumentTopicIds] = useState<string[]>([selectedTopicId]);
+  const [catalogRefresh, setCatalogRefresh] = useState(0);
+  const [filterTopicId, setFilterTopicId] = useState("");
+  const [feedStatusFilter, setFeedStatusFilter] = useState("all");
   const [documentResult, setDocumentResult] = useState<{
     topicId: string;
     documents: KnowledgeDocument[];
   }>();
-  const [ownedContentResult, setOwnedContentResult] = useState<{
-    topicId: string;
-    entries: OwnedContentEntry[];
-  }>();
-  const [showOwnedContentForm, setShowOwnedContentForm] = useState(false);
-  const [ownedContentDraft, setOwnedContentDraft] =
-    useState<OwnedContentDraft>(emptyOwnedContentDraft);
   const [showDocumentForm, setShowDocumentForm] = useState(false);
   const [documentDraft, setDocumentDraft] = useState<KnowledgeDocumentDraft>(EMPTY_DOCUMENT);
   const [selectedKnowledgeChapterIds, setSelectedKnowledgeChapterIds] = useState<string[]>([]);
@@ -247,12 +245,14 @@ export function TopicConfigurationPanel({
   const documents = documentResult?.topicId === selectedTopicId
     ? documentResult.documents
     : undefined;
-  const ownedContent = ownedContentResult?.topicId === selectedTopicId
-    ? ownedContentResult.entries
-    : undefined;
+  useEffect(() => {
+    const refresh = () => setCatalogRefresh((current) => current + 1);
+    window.addEventListener("workspace-sources-changed", refresh);
+    return () => window.removeEventListener("workspace-sources-changed", refresh);
+  }, []);
 
   useEffect(() => {
-    if (!canUseApi || !selectedTopicId || !showSources) {
+    if (!canUseApi || !selectedTopicId || view !== "rss") {
       return;
     }
 
@@ -273,31 +273,10 @@ export function TopicConfigurationPanel({
       });
 
     return () => controller.abort();
-  }, [canUseApi, secret, selectedTopicId, showSources]);
+  }, [canUseApi, secret, selectedTopicId, view, catalogRefresh]);
 
   useEffect(() => {
-    if (!canUseApi || !selectedTopicId || !showSources) return;
-    const controller = new AbortController();
-
-    requestJson<{ entries: OwnedContentEntry[] }>(
-      `/api/radar/topics/${encodeURIComponent(selectedTopicId)}/owned-content`,
-      secret,
-      { signal: controller.signal },
-    )
-      .then((response) => {
-        if (!controller.signal.aborted) {
-          setOwnedContentResult({ topicId: selectedTopicId, entries: response.entries });
-        }
-      })
-      .catch((loadError) => {
-        if (!controller.signal.aborted) setError(errorMessage(loadError));
-      });
-
-    return () => controller.abort();
-  }, [canUseApi, secret, selectedTopicId, showSources]);
-
-  useEffect(() => {
-    if (!canUseApi || !selectedTopicId || !showSources) return;
+    if (!canUseApi || !selectedTopicId || view !== "ai") return;
     const controller = new AbortController();
 
     requestJson<{ source: AiResearchSource }>(
@@ -315,10 +294,10 @@ export function TopicConfigurationPanel({
       });
 
     return () => controller.abort();
-  }, [canUseApi, secret, selectedTopicId, showSources]);
+  }, [canUseApi, secret, selectedTopicId, view, catalogRefresh]);
 
   useEffect(() => {
-    if (!canUseApi || !selectedTopicId || !showSources) return;
+    if (!canUseApi || !selectedTopicId || view !== "documents") return;
     const controller = new AbortController();
 
     requestJson<{ documents: KnowledgeDocument[] }>(
@@ -336,7 +315,7 @@ export function TopicConfigurationPanel({
       });
 
     return () => controller.abort();
-  }, [canUseApi, secret, selectedTopicId, showSources]);
+  }, [canUseApi, secret, selectedTopicId, view, catalogRefresh]);
 
   useEffect(() => {
     const hasActiveIngestion = documents?.some(
@@ -384,6 +363,7 @@ export function TopicConfigurationPanel({
         left.name.localeCompare(right.name),
       );
       onTopicsChange(nextTopics);
+      notifyCatalogChanged();
       setTopicName("");
       setTopicDescription("");
       setTopicThemeKey(DEFAULT_TOPIC_THEME_KEY);
@@ -418,6 +398,7 @@ export function TopicConfigurationPanel({
           topic.id === response.topic.id ? response.topic : topic,
         ),
       );
+      notifyCatalogChanged();
       setEditingTopic(false);
       setNotice("Topic details saved.");
     });
@@ -433,16 +414,15 @@ export function TopicConfigurationPanel({
   }
 
   function openNewSource() {
-    setShowSources(true);
     setEditingSource(undefined);
     setSourceDraft(EMPTY_SOURCE);
+    setFeedTopicIds([selectedTopicId]);
     setSourceFormTopicId(selectedTopicId);
     setShowSourceForm(true);
     setPreview(undefined);
   }
 
   function openSourceEdit(source: TopicSource) {
-    setShowSources(true);
     setEditingSource(source);
     setSourceDraft({
       name: source.name,
@@ -493,17 +473,18 @@ export function TopicConfigurationPanel({
         );
       } else {
         await requestJson(
-          `/api/radar/topics/${encodeURIComponent(selectedTopicId)}/sources`,
+          "/api/radar/sources/rss",
           secret,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ source, link }),
+            body: JSON.stringify({ source, link, topicIds: feedTopicIds }),
           },
         );
       }
 
       await reloadSources();
+      notifyCatalogChanged();
       setShowSourceForm(false);
       setSourceFormTopicId(undefined);
       setEditingSource(undefined);
@@ -525,6 +506,7 @@ export function TopicConfigurationPanel({
         },
       );
       await reloadSources();
+      notifyCatalogChanged();
     });
   }
 
@@ -540,6 +522,7 @@ export function TopicConfigurationPanel({
         { method: "DELETE" },
       );
       await reloadSources();
+      notifyCatalogChanged();
       window.dispatchEvent(new CustomEvent("editorial-lines-changed", {detail:selectedTopicId}));
       setNotice("The RSS source was removed from this topic. Its reusable feed record was kept.");
     });
@@ -583,6 +566,7 @@ export function TopicConfigurationPanel({
         },
       );
       setAiResearchResult({ topicId: selectedTopicId, source: response.source });
+      notifyCatalogChanged();
       window.dispatchEvent(new CustomEvent("editorial-lines-changed", {detail:selectedTopicId}));
       setNotice("AI research settings saved. It will run with the next collection.");
     });
@@ -595,7 +579,7 @@ export function TopicConfigurationPanel({
     }
 
     await run("add-document", async () => {
-      await requestJson(
+      const queued = await requestJson<{ queued: { documentId: string } }>(
         `/api/radar/topics/${encodeURIComponent(selectedTopicId)}/documents`,
         secret,
         {
@@ -611,37 +595,92 @@ export function TopicConfigurationPanel({
           }),
         },
       );
+      for (const topicId of documentTopicIds.filter((id) => id !== selectedTopicId)) {
+          await requestJson(`/api/radar/sources/documents/${encodeURIComponent(queued.queued.documentId)}/topics`, secret, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ topicId }),
+          });
+      }
       await reloadDocuments();
+      notifyCatalogChanged();
       setDocumentDraft(EMPTY_DOCUMENT);
       setShowDocumentForm(false);
       setNotice("PDF queued. Extraction continues in the background.");
     });
   }
 
-  async function addOwnedContent() {
-    if (!ownedContentDraft.title.trim() || !ownedContentDraft.content.trim()) {
-      setError("A title and content are required.");
-      return;
-    }
+  async function toggleTopicFeed(feed: NonNullable<typeof catalog>["rss"][number]) {
+    const link = feed.topics.find((item) => item.topicId === selectedTopicId);
+    await run(`topic-feed:${feed.id}`, async () => {
+      if (link) {
+        await requestJson(`/api/radar/topics/${encodeURIComponent(selectedTopicId)}/sources/${encodeURIComponent(link.topicSourceId)}`, secret, { method: "DELETE" });
+      } else {
+        await requestJson(`/api/radar/topics/${encodeURIComponent(selectedTopicId)}/sources`, secret, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sourceId: feed.id }),
+        });
+      }
+      notifyCatalogChanged();
+      setNotice(link ? "Feed unlinked from this topic." : "Feed linked to this topic.");
+    });
+  }
 
-    await run("add-owned-content", async () => {
-      const response = await requestJson<{ entry: OwnedContentEntry }>(
-        `/api/radar/topics/${encodeURIComponent(selectedTopicId)}/owned-content`,
-        secret,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...ownedContentDraft,
-            sourceUrl: ownedContentDraft.sourceUrl || undefined,
-          }),
-        },
-      );
-      await reloadOwnedContent();
-      setOwnedContentDraft(emptyOwnedContentDraft());
-      setShowOwnedContentForm(false);
-      onCandidateCreated?.();
-      setNotice(`“${response.entry.title}” was added to Stories and is ready for AI evaluation.`);
+  async function toggleTopicDocument(document: NonNullable<typeof catalog>["documents"][number]) {
+    const attached = document.topics.some((item) => item.topicId === selectedTopicId);
+    await run(`topic-document:${document.id}`, async () => {
+      await requestJson(`/api/radar/sources/documents/${encodeURIComponent(document.id)}/topics`, secret, {
+        method: attached ? "DELETE" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topicId: selectedTopicId }),
+      });
+      notifyCatalogChanged();
+      setNotice(attached ? "Document unlinked from this topic." : "Document linked to this topic.");
+    });
+  }
+
+  async function unlinkWorkspaceFeed(topicId: string, topicSourceId: string) {
+    await run(`unlink-feed:${topicSourceId}`, async () => {
+      await requestJson(`/api/radar/topics/${encodeURIComponent(topicId)}/sources/${encodeURIComponent(topicSourceId)}`, secret, { method: "DELETE" });
+      notifyCatalogChanged();
+      setNotice("Feed unlinked. Its workspace record was kept.");
+    });
+  }
+
+  async function linkWorkspaceFeed(sourceId: string) {
+    await run(`link-feed:${sourceId}`, async () => {
+      await requestJson(`/api/radar/topics/${encodeURIComponent(selectedTopicId)}/sources`, secret, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceId }),
+      });
+      notifyCatalogChanged();
+      setNotice("Existing feed linked to this topic.");
+    });
+  }
+
+  async function deleteWorkspaceFeed(sourceId: string) {
+    if (!window.confirm("Delete this unlinked feed from the workspace?")) return;
+    await run(`delete-feed:${sourceId}`, async () => {
+      await requestJson(`/api/radar/sources/rss/${encodeURIComponent(sourceId)}`, secret, { method: "DELETE" });
+      notifyCatalogChanged();
+      setNotice("Feed deleted.");
+    });
+  }
+
+  async function unlinkWorkspaceDocument(topicId: string, documentId: string) {
+    await run(`unlink-document:${documentId}:${topicId}`, async () => {
+      await requestJson(`/api/radar/sources/documents/${encodeURIComponent(documentId)}/topics`, secret, {
+        method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ topicId }),
+      });
+      notifyCatalogChanged();
+      setNotice("Document unlinked. Its workspace record and extracted versions were kept.");
+    });
+  }
+
+  async function retryWorkspaceDocument(topicId: string, topicDocumentId: string) {
+    await run(`retry-workspace-document:${topicDocumentId}`, async () => {
+      await requestJson(`/api/radar/topics/${encodeURIComponent(topicId)}/documents/${encodeURIComponent(topicDocumentId)}/ingest`, secret, { method: "POST" });
+      notifyCatalogChanged();
+      setNotice("Document ingestion queued again.");
     });
   }
 
@@ -653,6 +692,7 @@ export function TopicConfigurationPanel({
         { method: "POST" },
       );
       await reloadDocuments();
+      notifyCatalogChanged();
       setNotice("PDF ingestion queued again.");
     });
   }
@@ -705,14 +745,6 @@ export function TopicConfigurationPanel({
       secret,
     );
     setDocumentResult({ topicId: selectedTopicId, documents: response.documents });
-  }
-
-  async function reloadOwnedContent() {
-    const response = await requestJson<{ entries: OwnedContentEntry[] }>(
-      `/api/radar/topics/${encodeURIComponent(selectedTopicId)}/owned-content`,
-      secret,
-    );
-    setOwnedContentResult({ topicId: selectedTopicId, entries: response.entries });
   }
 
   async function createKnowledgeCandidate(
@@ -795,20 +827,24 @@ export function TopicConfigurationPanel({
   }
 
   return (
-    <section className={styles.panel} aria-labelledby="topic-configuration-title">
+    <section className={styles.panel} aria-labelledby={`configuration-${view}-title`}>
       <div className={styles.heading}>
         <div>
-          <p>Topic configuration</p>
-          <h2 id="topic-configuration-title">Separate your editorial streams</h2>
-          <small>Feeds, tags, preferences, reviews, AI usage, and creative work stay scoped to the selected topic.</small>
+          <p>{VIEW_HEADING[view].eyebrow}</p>
+          <h2 id={`configuration-${view}-title`}>{VIEW_HEADING[view].title}</h2>
+          <small>{VIEW_HEADING[view].description}</small>
         </div>
-        <span className={styles.count}>
-          {sources || documents || aiResearch || ownedContent
-            ? `${sources?.filter((source) => source.enabled).length ?? 0} feeds · ${aiResearch?.enabled ? "AI research" : "no AI research"} · ${documents?.filter((document) => document.enabled).length ?? 0} documents · ${ownedContent?.length ?? 0} owned`
-            : "Source setup"}
-        </span>
+        {view !== "topics" ? <span className={styles.count}>{selectedTopic?.name ?? "Select a topic"}</span> : null}
       </div>
 
+      {!canUseApi ? (
+        <p className={styles.locked}>Enter the collector secret below to manage topics and sources.</p>
+      ) : null}
+      {error ? <p className={styles.error} role="alert">{error}</p> : null}
+      {catalogError ? <p className={styles.error} role="alert">{catalogError}</p> : null}
+      {notice ? <p className={styles.notice} role="status">{notice}</p> : null}
+
+      {view === "topics" ? <>
       <EditorialLinesPanel key={selectedTopicId} topicId={selectedTopicId} secret={secret} disabled={disabled || Boolean(busy)} manageOnly/>
       <div className={styles.topicRow}>
         <label>
@@ -834,12 +870,6 @@ export function TopicConfigurationPanel({
           </button>
         </div>
       </div>
-
-      {!canUseApi ? (
-        <p className={styles.locked}>Enter the collector secret below to manage topics and sources.</p>
-      ) : null}
-      {error ? <p className={styles.error} role="alert">{error}</p> : null}
-      {notice ? <p className={styles.notice} role="status">{notice}</p> : null}
 
       {showTopicForm || editingTopic ? (
         <form
@@ -872,27 +902,91 @@ export function TopicConfigurationPanel({
         </form>
       ) : null}
 
-      <details
-        className={styles.sourcesDisclosure}
-        open={showSources}
-        onToggle={(event) => setShowSources(event.currentTarget.open)}
-      >
-        <summary>
-          <span>
-            <strong>Sources</strong>
-            <small>Manage feed connections for {selectedTopic?.name ?? "this topic"}.</small>
-          </span>
-          <span className={styles.disclosureState}>{showSources ? "Hide" : "Manage"}</span>
-        </summary>
+      <div className={styles.linkedSources}>
+        <div>
+          <h3>Linked RSS feeds</h3>
+          <a href="#sources/rss">Manage RSS feeds ↗</a>
+          {!catalog ? <p className={styles.loading}>Loading feeds…</p> : catalog.rss.length === 0 ? (
+            <p className={styles.empty}>No workspace feeds yet.</p>
+          ) : catalog.rss.map((feed) => (
+            <label key={feed.id} className={styles.linkChoice}>
+              <input type="checkbox" checked={feed.topics.some((item) => item.topicId === selectedTopicId)} onChange={() => void toggleTopicFeed(feed)} disabled={!canUseApi || disabled || Boolean(busy)} />
+              <span>{feed.name}</span>
+            </label>
+          ))}
+        </div>
+        <div>
+          <h3>Linked documents</h3>
+          <a href="#sources/documents">Manage documents ↗</a>
+          {!catalog ? <p className={styles.loading}>Loading documents…</p> : catalog.documents.length === 0 ? (
+            <p className={styles.empty}>No workspace documents yet.</p>
+          ) : catalog.documents.map((document) => (
+            <label key={document.id} className={styles.linkChoice}>
+              <input type="checkbox" checked={document.topics.some((item) => item.topicId === selectedTopicId)} onChange={() => void toggleTopicDocument(document)} disabled={!canUseApi || disabled || Boolean(busy)} />
+              <span>{document.latestVersion?.title ?? document.originalFilename ?? document.canonicalUrl}</span>
+            </label>
+          ))}
+        </div>
+        <div>
+          <h3>AI research</h3>
+          <p>Research instructions belong to each topic.</p>
+          <a href="#sources/ai">Configure this topic ↗</a>
+        </div>
+      </div>
 
-        <div className={styles.sourcesContent}>
+      </> : null}
+
+      {view === "rss" ? <div className={styles.sourcesContent}>
+          <div className={styles.catalogFilters}>
+            <label>Topic
+              <select value={filterTopicId} onChange={(event) => setFilterTopicId(event.target.value)}>
+                <option value="">All topics</option>
+                {topics.map((topic) => <option key={topic.id} value={topic.id}>{topic.name}</option>)}
+              </select>
+            </label>
+            <label>Status
+              <select value={feedStatusFilter} onChange={(event) => setFeedStatusFilter(event.target.value)}>
+                <option value="all">All feeds</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="unlinked">Unlinked</option>
+              </select>
+            </label>
+          </div>
+          {!catalog ? <p className={styles.loading}>Loading workspace feeds…</p> : (
+            <ul className={styles.catalogList}>
+              {catalog.rss.filter((feed) =>
+                (!filterTopicId || feed.topics.some((link) => link.topicId === filterTopicId)) &&
+                (feedStatusFilter === "all" ||
+                  (feedStatusFilter === "active" && feed.isActive) ||
+                  (feedStatusFilter === "inactive" && !feed.isActive) ||
+                  (feedStatusFilter === "unlinked" && feed.topics.length === 0)),
+              ).map((feed) => (
+                <li key={feed.id}>
+                  <strong>{feed.name}</strong>
+                  <a href={feed.url} target="_blank" rel="noreferrer">{feed.url}</a>
+                  <small>{feed.isActive ? "Active" : "Inactive"} · Last recorded poll: {feed.lastPoll ? `${new Date(feed.lastPoll.at).toLocaleString()} (${feed.lastPoll.status})` : "None"}</small>
+                  <div className={styles.catalogLinks}>
+                    {feed.topics.length ? feed.topics.map((link) => (
+                      <span key={link.topicSourceId}>
+                        {link.topicName} · priority {link.priority} · {link.enabled ? "enabled" : "disabled"}
+                        <button type="button" onClick={() => void unlinkWorkspaceFeed(link.topicId, link.topicSourceId)} disabled={disabled || Boolean(busy)} aria-label={`Unlink ${feed.name} from ${link.topicName}`}>Unlink</button>
+                      </span>
+                    )) : <span>Not linked to a topic</span>}
+                  </div>
+                  {!feed.topics.some((link) => link.topicId === selectedTopicId) ? <button type="button" onClick={() => void linkWorkspaceFeed(feed.id)} disabled={disabled || Boolean(busy)}>Link to {selectedTopic?.name ?? "selected topic"}</button> : null}
+                  {feed.topics.length === 0 ? <button type="button" onClick={() => void deleteWorkspaceFeed(feed.id)} disabled={disabled || Boolean(busy)}>Delete feed</button> : null}
+                </li>
+              ))}
+            </ul>
+          )}
           <div className={styles.sourcesHeading}>
             <div>
-              <h3>RSS sources</h3>
-              <p>Adding a source here attaches it only to {selectedTopic?.name ?? "this topic"}.</p>
+              <h3>Feed settings for {selectedTopic?.name ?? "this topic"}</h3>
+              <p>Add a feed to one or more topics, or edit this topic&apos;s links below.</p>
             </div>
             <button type="button" onClick={openNewSource} disabled={!canUseApi || disabled || Boolean(busy)}>
-              Add RSS source
+              Add feed
             </button>
           </div>
 
@@ -915,7 +1009,18 @@ export function TopicConfigurationPanel({
             <Field label="Topic tags"><input value={sourceDraft.tags} onChange={(event) => setSourceDraft({ ...sourceDraft, tags: event.target.value })} placeholder="psychology, wellbeing" /></Field>
             <Field label="Priority (0–100)"><input type="number" min="0" max="100" value={sourceDraft.priority} onChange={(event) => setSourceDraft({ ...sourceDraft, priority: event.target.value })} /></Field>
           </div>
-          <label className={styles.toggle}><input type="checkbox" checked={sourceDraft.enabled} onChange={(event) => setSourceDraft({ ...sourceDraft, enabled: event.target.checked })} /> Enable this source for the topic</label>
+          <label className={styles.toggle}><input type="checkbox" checked={sourceDraft.enabled} onChange={(event) => setSourceDraft({ ...sourceDraft, enabled: event.target.checked })} /> Enable this source for linked topics</label>
+          {!editingSource ? (
+            <fieldset className={styles.topicChoices}>
+              <legend>Link to topics</legend>
+              {topics.filter((topic) => topic.isActive).map((topic) => (
+                <label key={topic.id}>
+                  <input type="checkbox" checked={feedTopicIds.includes(topic.id)} onChange={(event) => setFeedTopicIds((current) => event.target.checked ? [...current, topic.id] : current.filter((id) => id !== topic.id))} />
+                  {topic.name}
+                </label>
+              ))}
+            </fieldset>
+          ) : null}
           <p>Connection fields are shared when the same feed is attached to another topic; tags, priority, and enabled state are topic-specific.</p>
           <div className={styles.formActions}>
             <button type="submit" disabled={Boolean(busy)}>{editingSource ? "Save source" : "Add source"}</button>
@@ -951,11 +1056,26 @@ export function TopicConfigurationPanel({
           ))}
         </ul>
           )}
+      </div> : null}
 
+      {view === "ai" ? <div className={styles.sourcesContent}>
+          <p>AI research is configured separately for each topic. It is not a shared feed.</p>
+          {!catalog ? <p className={styles.loading}>Loading topic research…</p> : (
+            <ul className={styles.catalogList}>
+              {catalog.aiResearch.map((source) => (
+                <li key={source.topicId}>
+                  <strong>{source.topicName}</strong>
+                  <small>{source.enabled ? "Active" : "Inactive"} · Model: {source.model} · Last recorded run: {source.latestRun ? `${new Date(source.latestRun.at).toLocaleString()} (${source.latestRun.status})` : "None"}</small>
+                  <p>{source.instruction ? `${source.instruction.slice(0, 180)}${source.instruction.length > 180 ? "…" : ""}` : "No instructions configured."}</p>
+                  <button type="button" onClick={() => onTopicChange(source.topicId)} disabled={disabled || Boolean(busy) || source.topicId === selectedTopicId}>Edit settings</button>
+                </li>
+              ))}
+            </ul>
+          )}
           <div className={styles.knowledgeHeading}>
             <div>
-              <h3>AI research</h3>
-              <p>Use Luna web search to discover cited, recent stories for this topic.</p>
+              <h3>Settings for {selectedTopic?.name ?? "this topic"}</h3>
+              <p>Use web search to discover cited stories for this topic.</p>
             </div>
           </div>
 
@@ -1023,150 +1143,70 @@ export function TopicConfigurationPanel({
               </div>
             </form>
           )}
+      </div> : null}
 
-          <div className={styles.knowledgeHeading}>
-            <div>
-              <h3>Owned content</h3>
-              <p>Create a campaign, product update, promotion, or announcement as a source story for this topic.</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowOwnedContentForm(true)}
-              disabled={!canUseApi || disabled || Boolean(busy)}
-            >
-              Add custom story
-            </button>
+      {view === "manual" ? <div className={styles.sourcesContent}>
+        <div className={styles.sourcesHeading}>
+          <div>
+            <h3>Stories supplied by your team</h3>
+            <p>These stories enter the same editorial review as collected material.</p>
           </div>
+          <button type="button" onClick={onNewStory} disabled={!canUseApi || disabled || Boolean(busy)}>New story</button>
+        </div>
+        <div className={styles.catalogFilters}>
+          <label>Topic
+            <select value={filterTopicId} onChange={(event) => setFilterTopicId(event.target.value)}>
+              <option value="">All topics</option>
+              {topics.map((topic) => <option key={topic.id} value={topic.id}>{topic.name}</option>)}
+            </select>
+          </label>
+        </div>
+        {!catalog ? <p className={styles.loading}>Loading manual stories…</p> : catalog.manual.length === 0 ? (
+          <p className={styles.empty}>No manual stories yet.</p>
+        ) : (
+          <ul className={styles.catalogList}>
+            {catalog.manual.filter((entry) => !filterTopicId || entry.topicId === filterTopicId).map((entry) => (
+              <li key={entry.id}>
+                <strong>{entry.title}</strong>
+                <small>{entry.topicName} · {entry.contentType} · {new Date(entry.publishedAt).toLocaleDateString()}</small>
+                <button type="button" onClick={() => onOpenStory?.(entry.topicId, entry.storyId)} disabled={!canUseApi || disabled || Boolean(busy)}>Open story</button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div> : null}
 
-          {showOwnedContentForm ? (
-            <form
-              className={styles.sourceForm}
-              onSubmit={(event) => {
-                event.preventDefault();
-                void addOwnedContent();
-              }}
-            >
-              <strong>New owned-content story</strong>
-              <div className={styles.formGrid}>
-                <Field label="Title">
-                  <input
-                    value={ownedContentDraft.title}
-                    onChange={(event) => setOwnedContentDraft({ ...ownedContentDraft, title: event.target.value })}
-                    maxLength={240}
-                    placeholder="New spicy empanada launch"
-                  />
-                </Field>
-                <Field label="Content type">
-                  <select
-                    value={ownedContentDraft.contentType}
-                    onChange={(event) => setOwnedContentDraft({
-                      ...ownedContentDraft,
-                      contentType: event.target.value as OwnedContentDraft["contentType"],
-                    })}
-                  >
-                    <option value="campaign">Campaign</option>
-                    <option value="launch">Launch</option>
-                    <option value="promotion">Promotion</option>
-                    <option value="product">Product</option>
-                    <option value="announcement">Announcement</option>
-                    <option value="educational">Educational</option>
-                  </select>
-                </Field>
-                <Field label="Language">
-                  <input
-                    value={ownedContentDraft.language}
-                    onChange={(event) => setOwnedContentDraft({ ...ownedContentDraft, language: event.target.value })}
-                    maxLength={32}
-                  />
-                </Field>
-                <Field label="Region">
-                  <input
-                    value={ownedContentDraft.region}
-                    onChange={(event) => setOwnedContentDraft({ ...ownedContentDraft, region: event.target.value })}
-                    maxLength={80}
-                  />
-                </Field>
-                <Field label="Publish date">
-                  <input
-                    type="date"
-                    value={ownedContentDraft.publishedAt}
-                    onChange={(event) => setOwnedContentDraft({ ...ownedContentDraft, publishedAt: event.target.value })}
-                  />
-                </Field>
-                <Field label="Source URL (optional)">
-                  <input
-                    type="url"
-                    value={ownedContentDraft.sourceUrl}
-                    onChange={(event) => setOwnedContentDraft({ ...ownedContentDraft, sourceUrl: event.target.value })}
-                    placeholder="https://yourbrand.com/campaign"
-                  />
-                </Field>
-              </div>
-              <Field label="Your story or campaign context">
-                <textarea
-                  value={ownedContentDraft.content}
-                  onChange={(event) => setOwnedContentDraft({ ...ownedContentDraft, content: event.target.value })}
-                  maxLength={12_000}
-                  rows={8}
-                  placeholder="Write the approved context, product details, campaign conditions, dates, and claims that the editorial workflow can use."
-                />
-              </Field>
-              <p>This becomes a full source story immediately. It is ready for normal editorial and AI evaluation; it is not published automatically.</p>
-              <div className={styles.formActions}>
-                <button type="submit" disabled={Boolean(busy)}>Add to Stories</button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowOwnedContentForm(false);
-                    setOwnedContentDraft(emptyOwnedContentDraft());
-                  }}
-                  disabled={Boolean(busy)}
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          ) : null}
-
-          {!canUseApi ? null : !ownedContent ? (
-            <p className={styles.loading}>Loading owned content…</p>
-          ) : ownedContent.length === 0 ? (
-            <div className={styles.empty}>
-              <strong>No custom stories yet.</strong>
-              <span>Add a campaign or product update to send it through the normal editorial workflow.</span>
-            </div>
-          ) : (
-            <ul className={styles.documentList}>
-              {ownedContent.map((entry) => (
-                <li key={entry.id}>
-                  <div className={styles.sourceCopy}>
-                    <div>
-                      <strong>{entry.title}</strong>
-                      <span className={styles.enabled}>Owned content</span>
-                    </div>
-                    <small>
-                      {entry.contentType} · {entry.language} · {entry.region} · {new Date(entry.publishedAt).toLocaleDateString()}
-                    </small>
-                    <p>{entry.content}</p>
+      {view === "documents" ? <div className={styles.sourcesContent}>
+          {!catalog ? <p className={styles.loading}>Loading workspace documents…</p> : (
+            <ul className={styles.catalogList}>
+              {catalog.documents.map((document) => (
+                <li key={document.id}>
+                  <strong>{document.latestVersion?.title ?? document.originalFilename ?? document.canonicalUrl}</strong>
+                  {document.uploaded ? <small>Uploaded PDF</small> : <a href={document.canonicalUrl} target="_blank" rel="noreferrer">{document.canonicalUrl}</a>}
+                  <small>{document.documentType} · {document.latestRun ? `${document.latestRun.status} (${new Date(document.latestRun.at).toLocaleString()})` : "Not ingested"}{document.latestVersion ? ` · ${document.latestVersion.pageCount} pages` : ""}</small>
+                  <div className={styles.catalogLinks}>
+                    {document.topics.length ? document.topics.map((link) => (
+                      <span key={link.topicDocumentId}>
+                        {link.topicName} · priority {link.priority}
+                        <button type="button" onClick={() => { onTopicChange(link.topicId); }} disabled={disabled || Boolean(busy)}>View in topic</button>
+                        <button type="button" onClick={() => void unlinkWorkspaceDocument(link.topicId, document.id)} disabled={disabled || Boolean(busy)} aria-label={`Unlink document from ${link.topicName}`}>Unlink</button>
+                        {document.latestRun?.status === "failed" ? <button type="button" onClick={() => void retryWorkspaceDocument(link.topicId, link.topicDocumentId)} disabled={disabled || Boolean(busy)}>Retry</button> : null}
+                      </span>
+                    )) : <span>Not linked to a topic</span>}
                   </div>
-                  {entry.sourceUrl ? (
-                    <div className={styles.sourceActions}>
-                      <a href={entry.sourceUrl} target="_blank" rel="noreferrer">Open source ↗</a>
-                    </div>
-                  ) : null}
+                  {!document.topics.some((link) => link.topicId === selectedTopicId) ? <button type="button" onClick={() => void toggleTopicDocument(document)} disabled={disabled || Boolean(busy)}>Link to {selectedTopic?.name ?? "selected topic"}</button> : null}
                 </li>
               ))}
             </ul>
           )}
-
           <div className={styles.knowledgeHeading}>
             <div>
-              <h3>Knowledge documents</h3>
+              <h3>Documents for {selectedTopic?.name ?? "this topic"}</h3>
               <p>Guidelines, reports, studies, and manuals are extracted into page-linked sections.</p>
             </div>
             <button
               type="button"
-              onClick={() => setShowDocumentForm(true)}
+              onClick={() => { setDocumentTopicIds([selectedTopicId]); setShowDocumentForm(true); }}
               disabled={!canUseApi || disabled || Boolean(busy)}
             >
               Add PDF
@@ -1219,6 +1259,15 @@ export function TopicConfigurationPanel({
                   <input type="number" min="0" max="100" value={documentDraft.priority} onChange={(event) => setDocumentDraft({ ...documentDraft, priority: event.target.value })} />
                 </Field>
               </div>
+              <fieldset className={styles.topicChoices}>
+                <legend>Link to topics</legend>
+                {topics.filter((topic) => topic.isActive).map((topic) => (
+                  <label key={topic.id}>
+                    <input type="checkbox" checked={documentTopicIds.includes(topic.id)} disabled={topic.id === selectedTopicId} onChange={(event) => setDocumentTopicIds((current) => event.target.checked ? [...current, topic.id] : current.filter((id) => id !== topic.id))} />
+                    {topic.name}
+                  </label>
+                ))}
+              </fieldset>
               <p>The source must be a public PDF under 40 MB. Page numbers are preserved for editorial citations.</p>
               <div className={styles.formActions}>
                 <button type="submit" disabled={Boolean(busy)}>Add and extract</button>
@@ -1248,12 +1297,12 @@ export function TopicConfigurationPanel({
                   <li key={document.topicDocumentId}>
                     <div className={styles.sourceCopy}>
                       <div>
-                        <strong>{document.latestVersion?.title ?? "PDF awaiting extraction"}</strong>
+                        <strong>{document.latestVersion?.title ?? document.originalFilename ?? "PDF awaiting extraction"}</strong>
                         <span className={run?.status === "failed" ? styles.failed : run?.status === "completed" ? styles.enabled : styles.processing}>
                           {knowledgeRunLabel(run)}
                         </span>
                       </div>
-                      <a href={document.canonicalUrl} target="_blank" rel="noreferrer">{document.canonicalUrl}</a>
+                      {document.uploaded ? <small>Uploaded PDF</small> : <a href={document.canonicalUrl} target="_blank" rel="noreferrer">{document.canonicalUrl}</a>}
                       <small>
                         {document.documentType} · {document.language}
                         {document.publisher ? ` · ${document.publisher}` : ""}
@@ -1345,13 +1394,17 @@ export function TopicConfigurationPanel({
             </ul>
           )}
         </div>
-      </details>
+      : null}
     </section>
   );
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return <label><span>{label}</span>{children}</label>;
+}
+
+function notifyCatalogChanged() {
+  window.dispatchEvent(new Event("workspace-sources-changed"));
 }
 
 async function requestJson<T>(url: string, secret: string, init: RequestInit = {}): Promise<T> {

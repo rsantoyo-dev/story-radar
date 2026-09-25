@@ -15,13 +15,17 @@ import { MetaConnectionPanel } from "./meta-connection-panel";
 import { EditorialProfilePanel } from "./editorial-profile-panel";
 import { AcquisitionLensesPanel } from "./acquisition-lenses-panel";
 import { TopicOverviewPanel } from "./topic-overview-panel";
+import { NewStoryDialog, type CreatedStory } from "./new-story-dialog";
+import { AddSourceDialog, type AddedSource } from "./add-source-dialog";
 import styles from "./radar-dashboard.generated.module.css";
 import {
   TopicConfigurationPanel,
   type DashboardTopic,
+  type TopicConfigurationView,
 } from "./topic-configuration-panel";
 import { topicThemeStyle } from "@/design/topic-themes";
 import type { CreativeProfile } from "./modules/stories/creative-content.types";
+import type { WorkspaceSourceCatalog } from "./modules/sources/workspace-source-catalog.repository";
 
 type DatabaseStats = {
   stories: number;
@@ -128,6 +132,11 @@ type StoryReviewView = {
 };
 
 const STORY_REVIEW_ANCHOR = "stories";
+
+function navigationHash(hash: string): string {
+  if (hash.startsWith("#stories/")) return "#stories";
+  return hash || "#overview";
+}
 
 function storyReviewHash(view: StoryReviewView): string {
   if (view.tab === "collected") return `#${STORY_REVIEW_ANCHOR}/collected`;
@@ -473,6 +482,12 @@ export function RadarDashboard({
   }>();
   const [notice, setNotice] = useState<Notice>();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [activeNavHash, setActiveNavHash] = useState("#overview");
+  const [sourceCatalog, setSourceCatalog] = useState<WorkspaceSourceCatalog>();
+  const [sourceCatalogError, setSourceCatalogError] = useState<string>();
+  const [sourceCatalogRefresh, setSourceCatalogRefresh] = useState(0);
+  const [newStoryOpen, setNewStoryOpen] = useState(false);
+  const [addSourceOpen, setAddSourceOpen] = useState(false);
   const [isTopicLoading, setIsTopicLoading] = useState(false);
   const [selectedCreativeProfile, setSelectedCreativeProfile] =
     useState<CreativeProfile>();
@@ -488,6 +503,49 @@ export function RadarDashboard({
   const readyToProduceCount = countUnpublishedSelected(
     stats?.editorial?.selectedStories ?? [],
   );
+
+  useEffect(() => {
+    const refresh = () => setSourceCatalogRefresh((current) => current + 1);
+    window.addEventListener("workspace-sources-changed", refresh);
+    return () => window.removeEventListener("workspace-sources-changed", refresh);
+  }, []);
+
+  useEffect(() => {
+    if (!canAuthenticate) return;
+    const controller = new AbortController();
+    fetch("/api/radar/sources", {
+      cache: "no-store",
+      signal: controller.signal,
+      headers: { Authorization: `Bearer ${secret}` },
+    }).then(async (response) => {
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Unable to load sources");
+      return result as WorkspaceSourceCatalog;
+    }).then((result) => {
+      if (!controller.signal.aborted) {
+        setSourceCatalog(result);
+        setSourceCatalogError(undefined);
+      }
+    }).catch((error) => {
+      if (!controller.signal.aborted) setSourceCatalogError(getErrorMessage(error));
+    });
+    return () => controller.abort();
+  }, [canAuthenticate, secret, sourceCatalogRefresh]);
+
+  useEffect(() => {
+    function syncNavigation() {
+      if (window.location.hash === "#configuration") {
+        const url = new URL(window.location.href);
+        url.hash = "topics";
+        window.history.replaceState(null, "", url.toString());
+        requestAnimationFrame(() => document.getElementById("topics")?.scrollIntoView());
+      }
+      setActiveNavHash(navigationHash(window.location.hash));
+    }
+    syncNavigation();
+    window.addEventListener("hashchange", syncNavigation);
+    return () => window.removeEventListener("hashchange", syncNavigation);
+  }, []);
 
   // The Meta OAuth callback (/api/radar/meta/callback) is a full-page
   // redirect, so it reports its outcome via query params rather than a fetch
@@ -544,6 +602,55 @@ export function RadarDashboard({
     );
   }
 
+  /**
+   * The global "New story" action creates a manual (owned-content) story. It
+   * then behaves like any other candidate: stats refresh, the inbox of the
+   * chosen topic is shown, and the editor decides what happens next.
+   */
+  function handleStoryCreated(story: CreatedStory) {
+    setNewStoryOpen(false);
+    window.dispatchEvent(new Event("workspace-sources-changed"));
+    if (story.topicId !== selectedTopicId) {
+      handleTopicChange(story.topicId);
+    } else {
+      void fetchDatabaseStats(secret, story.topicId)
+        .then(setStats)
+        .catch(() => undefined);
+    }
+    setNotice({
+      tone: "success",
+      title: "Story created",
+      message: `“${story.title}” was added to Stories and is ready for editorial and AI evaluation.`,
+    });
+    goToStoryReview({ tab: "collected" });
+  }
+
+  function handleSourceAdded(source: AddedSource) {
+    setAddSourceOpen(false);
+    window.dispatchEvent(new Event("workspace-sources-changed"));
+    const targetTopicId = source.topicIds.includes(selectedTopicId) ? selectedTopicId : source.topicIds[0];
+    if (targetTopicId && targetTopicId !== selectedTopicId) handleTopicChange(targetTopicId);
+    if (source.sourceType === "article") {
+      void fetchDatabaseStats(secret, targetTopicId ?? selectedTopicId).then((nextStats) => {
+        if (selectedTopicIdRef.current === (targetTopicId ?? selectedTopicId)) setStats(nextStats);
+      }).catch(() => undefined);
+    }
+    if (source.sourceType === "article") {
+      goToStoryReview({ tab: "collected" });
+    } else {
+      window.location.hash = source.sourceType === "rss" ? "sources/rss" : "sources/documents";
+    }
+    setNotice({
+      tone: "success",
+      title: "Source added",
+      message: source.sourceType === "article"
+        ? "The article was added to Stories for editorial evaluation."
+        : source.sourceType === "document"
+          ? "The PDF was linked and queued for extraction."
+          : "The feed was linked to the selected topics.",
+    });
+  }
+
   async function handleLoadStatus() {
     await runOperation("status", async () => {
       const [nextStats, preferences] = await Promise.all([
@@ -568,6 +675,13 @@ export function RadarDashboard({
   async function handleConnect() {
     if (!canAuthenticate || isBusy) return;
     await handleLoadStatus();
+  }
+
+  /** Forgets the collector secret (memory and sessionStorage) and returns the bar to its disconnected state. */
+  function handleDisconnect() {
+    if (isBusy) return;
+    setSecret("");
+    setStats(undefined);
   }
 
   async function handleCollect() {
@@ -879,6 +993,22 @@ export function RadarDashboard({
     }
   }
 
+  async function handleOpenManualStory(topicId: string, storyId: string) {
+    if (!canAuthenticate || isBusy) return;
+    if (topicId !== selectedTopicId && !handleTopicChange(topicId)) return;
+    setActiveOperation("view");
+    setActiveStoryId(storyId);
+    setNotice(undefined);
+    try {
+      setContentViewer(await fetchStoryContent(secret, topicId, storyId));
+    } catch (error) {
+      setNotice({ tone: "error", title: "Content could not be loaded", message: getErrorMessage(error) });
+    } finally {
+      setActiveOperation(undefined);
+      setActiveStoryId(undefined);
+    }
+  }
+
   async function handlePublicationUpdate(
     storyId: string,
     platform: PublicationPlatform,
@@ -1041,7 +1171,7 @@ export function RadarDashboard({
 
   function handleTopicChange(topicId: string) {
     if (topicId === selectedTopicId) {
-      return;
+      return true;
     }
 
     if (
@@ -1050,7 +1180,7 @@ export function RadarDashboard({
         "You have unsaved preferences for this topic. Switch topics without saving them?",
       )
     ) {
-      return;
+      return false;
     }
 
     selectedTopicIdRef.current = topicId;
@@ -1071,10 +1201,10 @@ export function RadarDashboard({
       title: "Topic changed",
       message: "Loading this topic's independent radar data and preferences.",
     });
-
     if (canAuthenticate) {
       void loadSelectedTopic(topicId);
     }
+    return true;
   }
 
   async function loadSelectedTopic(topicId: string) {
@@ -1167,18 +1297,55 @@ export function RadarDashboard({
 
         <nav className={styles.sidebarNav}>
           <p className={styles.navLabel}>Workspace</p>
-          <a href="#overview" onClick={() => setSidebarOpen(false)}>
+          <a href="#overview" className={activeNavHash === "#overview" ? styles.navActive : undefined} aria-current={activeNavHash === "#overview" ? "location" : undefined} onClick={() => setSidebarOpen(false)}>
             <span className={styles.navIcon} aria-hidden="true">⌂</span>
             Overview
           </a>
-          <a href="#configuration" onClick={() => setSidebarOpen(false)}>
-            <span className={styles.navIcon} aria-hidden="true">◈</span>
-            Topics & sources
+          <a href="#stories" className={activeNavHash === "#stories" ? styles.navActive : undefined} aria-current={activeNavHash === "#stories" ? "location" : undefined} onClick={() => setSidebarOpen(false)}>
+            <span className={styles.navIcon} aria-hidden="true">▤</span>
+            Stories
           </a>
+          <details className={styles.navGroup} open>
+            <summary className={styles.navGroupSummary}>
+              <span className={styles.navGroupTitle}>
+                <span className={styles.navIcon} aria-hidden="true">◫</span>
+                Sources
+              </span>
+            </summary>
+            {([
+              ["rss", "RSS feeds"],
+              ["ai", "AI research"],
+              ["documents", "Documents"],
+              ["manual", "Manual stories"],
+            ] as const).map(([view, label]) => {
+              const hash = `#sources/${view}`;
+              const active = activeNavHash === hash;
+              return (
+                <a
+                  key={view}
+                  href={hash}
+                  className={`${styles.navSubItem} ${active ? styles.navActive : ""}`}
+                  aria-current={active ? "location" : undefined}
+                  onClick={() => setSidebarOpen(false)}
+                >
+                  <span className={styles.navIcon} aria-hidden="true">▸</span>
+                  {label}
+                </a>
+              );
+            })}
+          </details>
+          <a href="#topics" className={activeNavHash === "#topics" ? styles.navActive : undefined} aria-current={activeNavHash === "#topics" ? "location" : undefined} onClick={() => setSidebarOpen(false)}>
+            <span className={styles.navIcon} aria-hidden="true">◈</span>
+            Topics
+          </a>
+
+          <p className={styles.navLabel}>Production</p>
           <details className={styles.navGroup} open>
             <summary className={styles.navGroupSummary}>
               <a
                 href="#editorial"
+                className={activeNavHash === "#editorial" ? styles.navActive : undefined}
+                aria-current={activeNavHash === "#editorial" ? "location" : undefined}
                 onClick={(event) => {
                   event.stopPropagation();
                   setSidebarOpen(false);
@@ -1188,19 +1355,13 @@ export function RadarDashboard({
                 Editorial AI
               </a>
             </summary>
-            <a
-              href="#editorial-meta"
-              className={styles.navSubItem}
-              onClick={() => setSidebarOpen(false)}
-            >
-              <span className={styles.navIcon} aria-hidden="true">▸</span>
-              Instagram
-            </a>
           </details>
           <details className={styles.navGroup} open>
             <summary className={styles.navGroupSummary}>
               <a
                 href="#editorial-creative"
+                className={activeNavHash === "#editorial-creative" ? styles.navActive : undefined}
+                aria-current={activeNavHash === "#editorial-creative" ? "location" : undefined}
                 onClick={(event) => {
                   event.stopPropagation();
                   setSidebarOpen(false);
@@ -1210,75 +1371,53 @@ export function RadarDashboard({
                 Creative profile
               </a>
             </summary>
-            <a href="#creative-profile-identity" className={styles.navSubItem} onClick={() => setSidebarOpen(false)}>
+            <a href="#creative-profile-identity" className={`${styles.navSubItem} ${activeNavHash === "#creative-profile-identity" ? styles.navActive : ""}`} aria-current={activeNavHash === "#creative-profile-identity" ? "location" : undefined} onClick={() => setSidebarOpen(false)}>
               <span className={styles.navIcon} aria-hidden="true">▸</span>
               Identity
             </a>
-            <a href="#creative-profile-strategy" className={styles.navSubItem} onClick={() => setSidebarOpen(false)}>
+            <a href="#creative-profile-strategy" className={`${styles.navSubItem} ${activeNavHash === "#creative-profile-strategy" ? styles.navActive : ""}`} aria-current={activeNavHash === "#creative-profile-strategy" ? "location" : undefined} onClick={() => setSidebarOpen(false)}>
               <span className={styles.navIcon} aria-hidden="true">▸</span>
               Strategy
             </a>
-            <a href="#creative-profile-place-fidelity" className={styles.navSubItem} onClick={() => setSidebarOpen(false)}>
+            <a href="#creative-profile-place-fidelity" className={`${styles.navSubItem} ${activeNavHash === "#creative-profile-place-fidelity" ? styles.navActive : ""}`} aria-current={activeNavHash === "#creative-profile-place-fidelity" ? "location" : undefined} onClick={() => setSidebarOpen(false)}>
               <span className={styles.navIcon} aria-hidden="true">▸</span>
               Place fidelity
             </a>
-            <a href="#creative-profile-voice" className={styles.navSubItem} onClick={() => setSidebarOpen(false)}>
+            <a href="#creative-profile-voice" className={`${styles.navSubItem} ${activeNavHash === "#creative-profile-voice" ? styles.navActive : ""}`} aria-current={activeNavHash === "#creative-profile-voice" ? "location" : undefined} onClick={() => setSidebarOpen(false)}>
               <span className={styles.navIcon} aria-hidden="true">▸</span>
               Voice
             </a>
-            <a href="#creative-profile-brand" className={styles.navSubItem} onClick={() => setSidebarOpen(false)}>
+            <a href="#creative-profile-brand" className={`${styles.navSubItem} ${activeNavHash === "#creative-profile-brand" ? styles.navActive : ""}`} aria-current={activeNavHash === "#creative-profile-brand" ? "location" : undefined} onClick={() => setSidebarOpen(false)}>
               <span className={styles.navIcon} aria-hidden="true">▸</span>
               Brand & visual
             </a>
-            <a href="#creative-profile-characters" className={styles.navSubItem} onClick={() => setSidebarOpen(false)}>
+            <a href="#creative-profile-characters" className={`${styles.navSubItem} ${activeNavHash === "#creative-profile-characters" ? styles.navActive : ""}`} aria-current={activeNavHash === "#creative-profile-characters" ? "location" : undefined} onClick={() => setSidebarOpen(false)}>
               <span className={styles.navIcon} aria-hidden="true">▸</span>
               Supporting characters
             </a>
-            <a href="#creative-profile-carousel" className={styles.navSubItem} onClick={() => setSidebarOpen(false)}>
+            <a href="#creative-profile-carousel" className={`${styles.navSubItem} ${activeNavHash === "#creative-profile-carousel" ? styles.navActive : ""}`} aria-current={activeNavHash === "#creative-profile-carousel" ? "location" : undefined} onClick={() => setSidebarOpen(false)}>
               <span className={styles.navIcon} aria-hidden="true">▸</span>
               Carousel numbering
             </a>
           </details>
-          <details className={styles.navGroup} open>
-            <summary className={styles.navGroupSummary}>
-              <a
-                href="#stories"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setSidebarOpen(false);
-                }}
-              >
-                <span className={styles.navIcon} aria-hidden="true">▤</span>
-                Story review
-              </a>
-            </summary>
-            <a
-              href={storyReviewHash({
-                tab: "selected",
-                publicationFilter: "not-published-anywhere",
-              })}
-              className={styles.navSubItem}
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                goToStoryReview({
-                  tab: "selected",
-                  publicationFilter: "not-published-anywhere",
-                });
-              }}
-            >
-              <span className={styles.navIcon} aria-hidden="true">▸</span>
-              Ready to produce
-              {readyToProduceCount > 0 ? (
-                <span className={styles.navBadge}>{readyToProduceCount}</span>
-              ) : null}
-            </a>
-          </details>
-          <a href="#optimization" onClick={() => setSidebarOpen(false)}>
+          <a href={storyReviewHash({ tab: "selected", publicationFilter: "not-published-anywhere" })} className={styles.navSubItem} onClick={(event) => { event.preventDefault(); goToStoryReview({ tab: "selected", publicationFilter: "not-published-anywhere" }); }}>
+            <span className={styles.navIcon} aria-hidden="true">▸</span>
+            Ready to produce
+            {readyToProduceCount > 0 ? <span className={styles.navBadge}>{readyToProduceCount}</span> : null}
+          </a>
+
+          <p className={styles.navLabel}>Publishing</p>
+          <a href="#editorial-meta" className={activeNavHash === "#editorial-meta" ? styles.navActive : undefined} aria-current={activeNavHash === "#editorial-meta" ? "location" : undefined} onClick={() => setSidebarOpen(false)}>
+            <span className={styles.navIcon} aria-hidden="true">▸</span>
+            Instagram
+          </a>
+          <a href="#optimization" className={activeNavHash === "#optimization" ? styles.navActive : undefined} aria-current={activeNavHash === "#optimization" ? "location" : undefined} onClick={() => setSidebarOpen(false)}>
             <span className={styles.navIcon} aria-hidden="true">◌</span>
             Optimization
           </a>
-          <a href="#settings" onClick={() => setSidebarOpen(false)}>
+
+          <p className={styles.navLabel}>Configuration</p>
+          <a href="#settings" className={activeNavHash === "#settings" ? styles.navActive : undefined} aria-current={activeNavHash === "#settings" ? "location" : undefined} onClick={() => setSidebarOpen(false)}>
             <span className={styles.navIcon} aria-hidden="true">⚙</span>
             System settings
           </a>
@@ -1299,57 +1438,101 @@ export function RadarDashboard({
         />
       ) : null}
 
+      {newStoryOpen ? (
+        <NewStoryDialog
+          topics={topics}
+          initialTopicId={selectedTopicId}
+          secret={secret}
+          onClose={() => setNewStoryOpen(false)}
+          onCreated={handleStoryCreated}
+        />
+      ) : null}
+
+      {addSourceOpen ? (
+        <AddSourceDialog
+          topics={topics}
+          initialTopicId={selectedTopicId}
+          secret={secret}
+          onClose={() => setAddSourceOpen(false)}
+          onCreated={handleSourceAdded}
+        />
+      ) : null}
+
       <div className={styles.appMain}>
         <header className={styles.topbar}>
-          <div className={styles.topbarLeft}>
-            <button
-              type="button"
-              className={styles.menuButton}
-              onClick={() => setSidebarOpen(true)}
-              aria-label="Open navigation"
-              aria-expanded={sidebarOpen}
-            >
-              <span />
-              <span />
-              <span />
-            </button>
-            <div className={styles.currentTopic}>
-              <span className={styles.topbarLabel}>Current topic</span>
-              <div className={styles.topicSelectWrap}>
-                <select
-                  value={selectedTopicId}
-                  onChange={(event) => handleTopicChange(event.target.value)}
-                  disabled={isBusy || isTopicLoading}
-                  aria-label="Current topic"
-                >
-                  {topics.map((topic) => (
-                    <option key={topic.id} value={topic.id}>
-                      {topic.name}
-                    </option>
-                  ))}
-                </select>
-                <span
-                  className={isTopicLoading ? styles.topicLoadingIndicator : undefined}
-                  aria-hidden="true"
-                >
-                  {isTopicLoading ? "◌" : "⌄"}
-                </span>
+          <div className={styles.topbarPrimary}>
+            <div className={styles.topbarLeft}>
+              <button
+                type="button"
+                className={styles.menuButton}
+                onClick={() => setSidebarOpen(true)}
+                aria-label="Open navigation"
+                aria-expanded={sidebarOpen}
+              >
+                <span />
+                <span />
+                <span />
+              </button>
+              <div className={styles.currentTopic}>
+                <span className={styles.topbarLabel}>Current topic</span>
+                <div className={styles.topicSelectWrap}>
+                  <select
+                    value={selectedTopicId}
+                    onChange={(event) => handleTopicChange(event.target.value)}
+                    disabled={isBusy || isTopicLoading}
+                    aria-label="Current topic"
+                  >
+                    {topics.map((topic) => (
+                      <option key={topic.id} value={topic.id}>
+                        {topic.name}
+                      </option>
+                    ))}
+                  </select>
+                  <span
+                    className={isTopicLoading ? styles.topicLoadingIndicator : undefined}
+                    aria-hidden="true"
+                  >
+                    {isTopicLoading ? "◌" : "⌄"}
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className={styles.topbarTools}>
-            <form
-              className={styles.secretControl}
-              onSubmit={(event) => {
-                event.preventDefault();
-                void handleConnect();
-              }}
-            >
-              <label className={styles.secretField}>
-                <span>Collector secret</span>
+            {stats ? (
+              <div className={styles.topbarSession}>
+                <span
+                  className={`${styles.topbarStatus} ${styles.online}`}
+                  role="status"
+                  aria-label="Connected"
+                  title="Connected"
+                />
+                <button
+                  type="button"
+                  className={styles.disconnectButton}
+                  onClick={handleDisconnect}
+                  disabled={isBusy}
+                  aria-label="Disconnect"
+                  title="Disconnect"
+                >
+                  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+                    <path d="M6 2.5H3.5A1.5 1.5 0 0 0 2 4v8a1.5 1.5 0 0 0 1.5 1.5H6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                    <path d="M10 5l3 3-3 3M13 8H6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+              </div>
+            ) : (
+              <form
+                className={styles.secretControl}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handleConnect();
+                }}
+              >
+                <label className={styles.secretField}>
+                  <span>Collector secret</span>
                 <input
                   type="password"
+                  aria-label="Collector secret"
                   value={secret}
                   onChange={(event) => {
                     setSecret(event.target.value);
@@ -1359,22 +1542,52 @@ export function RadarDashboard({
                   autoComplete="off"
                   spellCheck={false}
                 />
-              </label>
-              <button
-                type="submit"
-                className={styles.secretConnectButton}
-                disabled={!canAuthenticate || isBusy}
-              >
-                {activeOperation === "status" ? "Connecting…" : "Connect"}
-              </button>
-              <span
-                className={`${styles.topbarStatus} ${stats ? styles.online : styles.idle}`}
-                aria-live="polite"
-              >
-                {stats ? "Connected" : "Not checked"}
-              </span>
-            </form>
+                </label>
+                <button
+                  type="submit"
+                  className={styles.secretConnectButton}
+                  disabled={!canAuthenticate || isBusy}
+                >
+                  {activeOperation === "status" ? "Connecting…" : "Connect"}
+                </button>
+                <span
+                  className={`${styles.topbarStatus} ${styles.idle}`}
+                  role="status"
+                  aria-label="Not connected"
+                  title="Not connected"
+                />
+              </form>
+            )}
           </div>
+
+          {stats ? (
+          <div className={styles.topbarUtility}>
+            <div className={styles.topbarActions}>
+              <button
+                type="button"
+                className={`${styles.newStoryButton} ${styles.addSourceButton}`}
+                onClick={() => setAddSourceOpen(true)}
+                disabled={!canAuthenticate || isTopicLoading || topics.length === 0}
+                title={canAuthenticate ? "Detect and add a feed, article or PDF" : "Connect with the collector secret first"}
+              >
+                <span aria-hidden="true">＋</span> Add source
+              </button>
+              <button
+                type="button"
+                className={styles.newStoryButton}
+                onClick={() => setNewStoryOpen(true)}
+                disabled={!canAuthenticate || isTopicLoading || topics.length === 0}
+                title={
+                  canAuthenticate
+                    ? "Create a manual story in any topic"
+                    : "Connect with the collector secret first"
+                }
+              >
+                <span aria-hidden="true">＋</span> New story
+              </button>
+            </div>
+          </div>
+          ) : null}
         </header>
 
         <div className={styles.page}>
@@ -1396,8 +1609,11 @@ export function RadarDashboard({
           />
         </section>
 
-        <div id="configuration" className={styles.anchorTarget}>
+        <div id="topics" className={styles.anchorTarget}>
           <TopicConfigurationPanel
+            view="topics"
+            catalog={sourceCatalog}
+            catalogError={sourceCatalogError}
             topics={topics}
             selectedTopicId={selectedTopicId}
             secret={secret}
@@ -1411,6 +1627,29 @@ export function RadarDashboard({
             }}
           />
         </div>
+
+        {(["rss", "ai", "documents", "manual"] as const satisfies readonly TopicConfigurationView[]).map((view) => (
+          <div id={`sources/${view}`} className={styles.anchorTarget} key={view}>
+            <TopicConfigurationPanel
+              view={view}
+              catalog={sourceCatalog}
+              catalogError={sourceCatalogError}
+              topics={topics}
+              selectedTopicId={selectedTopicId}
+              secret={secret}
+              disabled={isBusy}
+              onTopicsChange={setTopics}
+              onTopicChange={handleTopicChange}
+              onNewStory={() => setNewStoryOpen(true)}
+              onOpenStory={(topicId, storyId) => { void handleOpenManualStory(topicId, storyId); }}
+              onCandidateCreated={() => {
+                void fetchDatabaseStats(secret, selectedTopicId)
+                  .then(setStats)
+                  .catch(() => undefined);
+              }}
+            />
+          </div>
+        ))}
 
         <div id="editorial" className={styles.anchorTarget}>
           <EditorialProfilePanel
@@ -2897,7 +3136,7 @@ function SortableStoriesTable({
                   ) : null}
                   {isOwnedContentStory ? (
                     <span className={`${styles.tableBadge} ${styles.tableBadgePositive}`}>
-                      Owned content
+                      Manual story
                     </span>
                   ) : null}
                   {story.duplicateOfTitle ? (
@@ -2956,7 +3195,7 @@ function SortableStoriesTable({
                     ) : null}
                     {isOwnedContentStory ? (
                       <span className={`${styles.tableBadge} ${styles.tableBadgePositive}`}>
-                        Owned content
+                        Manual story
                       </span>
                     ) : null}
                   </div>

@@ -117,7 +117,7 @@
 }
 
 .navLabel {
-  margin: 0 density(3) density(3);
+  margin: density(5) density(3) density(3);
   color: palette(primary-main);
   @ds-typo (caption);
   font-size: 0.625rem;
@@ -125,6 +125,8 @@
   letter-spacing: 0.13em;
   text-transform: uppercase;
 }
+
+.navLabel:first-child { margin-top: 0; }
 
 .sidebarNav a {
   display: flex;
@@ -183,6 +185,17 @@
   border-left-color: palette(secondary-main);
 }
 
+.sidebarNav a.navActive,
+.sidebarNav a.navSubItem.navActive {
+  border-color: palette(secondary-main, 0.42);
+  background: palette(primary-light, 0.14);
+  color: palette(light-light);
+}
+
+.sidebarNav a.navSubItem.navActive {
+  border-left-color: palette(secondary-main);
+}
+
 .navBadge {
   margin-left: auto;
   display: inline-grid;
@@ -226,8 +239,21 @@
   background: palette(primary-light, 0.06);
 }
 
-.navGroupSummary a {
+.navGroupSummary a,
+.navGroupTitle {
   min-width: 0;
+}
+
+.navGroupTitle {
+  display: flex;
+  align-items: center;
+  gap: density(4);
+  min-height: 2.75rem;
+  padding: 0 density(4);
+  color: palette(primary-light);
+  @ds-typo(small);
+  font-size: 0.8125rem;
+  font-weight: 620;
 }
 
 .navGroupSummary::after {
@@ -282,70 +308,127 @@
   position: sticky;
   top: 0;
   z-index: 10;
-  display: flex;
-  min-height: 76px;
-  /* Was a max-width:800px override; snapped to this project's md breakpoint.
-   * (A separate max-width:960px override also existed for padding-right/left,
-   * but padding-inline below already sets the same value on both sides — a
-   * no-op, so it was dropped rather than ported.) */
-  align-items: xs(stretch) md(center);
-  flex-direction: xs(column) md(row);
-  justify-content: space-between;
-  gap: xs(density(4)) md(density(7));
-  padding-block: density(4);
-  padding-inline: density(5);
-  border-bottom: 1px solid palette(dark-main, 0.09);
-  background: palette(light-light, 0.88);
+  display: grid;
+  gap: density(1);
+  padding: xs(density(2) density(4)) md(density(2) density(5));
+  border-bottom: 1px solid palette(dark-main, 0.08);
+  background: palette(light-light, 0.9);
   backdrop-filter: blur(18px);
+}
+
+.topbarPrimary {
+  display: grid;
+  align-items: center;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: xs(density(2)) sm(density(3));
 }
 
 .topbarLeft,
 .currentTopic,
-.topicSelectWrap,
-.topbarTools {
+.topicSelectWrap {
   display: flex;
   align-items: center;
 }
 
 .topbarLeft {
   min-width: 0;
-  align-items: xs(flex-start) md(center);
-  gap: xs(density(4)) md(density(5));
-  width: xs(100%) md(auto);
+  gap: density(3);
 }
 
-.topbarTools {
+.topbarActions {
+  display: grid;
+  grid-template-columns: xs(repeat(2, minmax(0, 1fr))) sm(auto auto);
+  gap: density(2);
+  width: xs(100%) sm(max-content);
+  justify-self: end;
+}
+
+.topbarUtility {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
   min-width: 0;
-  justify-content: xs(flex-start) md(flex-end);
-  gap: density(3);
-  width: xs(100%) md(auto);
+  padding-top: density(2);
+  border-top: 1px solid palette(dark-main, 0.06);
 }
 
 .secretControl {
-  display: xs(grid) md(flex);
+  display: grid;
   min-width: 0;
-  align-items: xs(end) md(center);
-  gap: density(3);
-  width: xs(100%) md(auto);
+  align-items: center;
+  gap: density(2);
+  width: xs(100%) sm(auto);
+  grid-column: xs(1 / -1) sm(auto);
   grid-template-columns: minmax(0, 1fr) auto auto;
+  justify-self: end;
+}
+
+.topbarSession {
+  display: inline-flex;
+  align-items: center;
+  gap: density(2);
+  justify-self: end;
+}
+
+.disconnectButton {
+  @ds-button(outlined primary 2);
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-color: palette(dark-main, 0.12);
+  background: transparent;
+  color: palette(primary-dark);
+  cursor: pointer;
+  place-items: center;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.disconnectButton:hover:not(:disabled) {
+  border-color: palette(error-main, 0.45);
+  background: palette(error-main, 0.08);
+  color: palette(error-dark);
+}
+
+.disconnectButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .secretConnectButton {
-  @ds-button(contained primary 2);
-  flex: none;
-  min-height: 40px;
-  box-shadow: shadow(1);
+  @ds-button(outlined primary 2);
+  min-height: 30px;
+  padding: 0 density(3);
+  border-color: palette(primary-main, 0.45);
+  background: transparent;
+  color: palette(primary-dark);
+  @ds-typo(caption);
+  font-size: 0.6875rem;
+  font-weight: 700;
   white-space: nowrap;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease, opacity 150ms ease;
+}
+
+.secretConnectButton:hover:not(:disabled) {
+  border-color: palette(primary-main);
+  background: palette(primary-main, 0.08);
+}
+
+.secretConnectButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .secretField {
-  display: xs(grid) md(flex);
+  display: flex;
   align-items: center;
-  min-width: xs(0) md(16rem);
-  gap: xs(density(1)) md(density(4));
+  min-width: 0;
+  gap: density(3);
 }
 
 .secretField > span {
+  display: xs(none) sm(inline);
   color: palette(tertiary-main);
   @ds-typo(caption);
   font-size: 0.625rem;
@@ -359,14 +442,15 @@
   @ds-input(outlined primary 2);
   box-sizing: border-box;
   min-width: 0;
-  flex: xs(none) md(1);
-  width: xs(100%) md(auto);
-  min-height: 40px;
-  padding: density(1) density(3);
-  border-color: palette(surface-dark);
+  flex: 1;
+  width: xs(100%) sm(200px);
+  min-height: 30px;
+  padding: 0 density(3);
+  border-color: palette(dark-main, 0.12);
   background: palette(light-light);
   color: palette(dark-main);
   @ds-typo(caption);
+  font-size: 0.75rem;
 }
 
 .secretField input:focus-visible {
@@ -376,21 +460,19 @@
 
 .topbarStatus {
   flex: none;
-  padding: density(1) density(2);
   white-space: nowrap;
 }
 
 .currentTopic {
-  align-items: xs(stretch) md(center);
-  flex-direction: xs(column) md(row);
-  gap: xs(density(1)) md(density(4));
-  min-width: xs(0) md(auto);
-  flex: xs(1) md(0 1 auto);
-  margin-left: xs(density(2)) md(0);
-  width: xs(100%) md(auto);
+  align-items: center;
+  flex-direction: row;
+  gap: density(3);
+  min-width: 0;
+  flex: 1;
 }
 
 .topbarLabel {
+  display: xs(none) md(inline);
   color: palette(tertiary-main);
   @ds-typo (caption);
   font-size: 0.625rem;
@@ -402,8 +484,9 @@
 
 .topicSelectWrap {
   position: relative;
-  min-width: xs(0) md(min(260px, 42vw));
-  width: xs(100%) md(auto);
+  min-width: 0;
+  width: xs(100%) md(220px);
+  max-width: xs(none) md(220px);
 }
 
 .topicSelectWrap::before {
@@ -423,14 +506,16 @@
 
 .topicSelectWrap select {
   @ds-input(outlined primary 2);
-  min-height: 40px;
+  appearance: none;
+  width: 100%;
+  min-height: 32px;
   padding: 0 density(9) 0 density(7);
-  border-color: palette(surface-dark);
+  border-color: palette(dark-main, 0.12);
   background: palette(light-light);
   color: palette(dark-main);
   @ds-typo (small);
-  font-size: 0.8125rem;
-  font-weight: 700;
+  font-size: 0.75rem;
+  font-weight: 650;
   cursor: pointer;
 }
 
@@ -599,6 +684,35 @@
 .idle::before {
   background: palette(surface-dark);
   box-shadow: none;
+}
+
+.topbarStatus.online,
+.topbarStatus.idle {
+  box-sizing: border-box;
+  display: block;
+  width: 10px;
+  height: 10px;
+  min-height: 0;
+  margin-inline: density(1);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  backdrop-filter: none;
+}
+
+.topbarStatus.online::before,
+.topbarStatus.idle::before {
+  content: none;
+}
+
+.topbarStatus.online {
+  background: palette(success-main);
+  box-shadow: 0 0 0 3px palette(success-main, 0.2);
+}
+
+.topbarStatus.idle {
+  background: palette(error-main);
+  box-shadow: 0 0 0 3px palette(error-main, 0.18);
 }
 
 .hero {
@@ -3110,3 +3224,197 @@
   width: auto;
   appearance: auto;
 }
+
+/* ---------------------------------------------------------------------------
+ * Global "New story" entry point (FEAT-SRC-001, SRC-01).
+ * The dialog reuses .contentViewerBackdrop / .contentViewer / .contentViewerHeader
+ * and .field; these classes only add the form layout and the top-bar button.
+ * ------------------------------------------------------------------------- */
+
+.newStoryButton {
+  @ds-button(outlined primary 2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: density(1);
+  width: 100%;
+  min-height: 32px;
+  padding: 0 density(3);
+  border-color: palette(primary-main, 0.28);
+  background: palette(primary-main, 0.1);
+  color: palette(primary-dark);
+  @ds-typo (caption);
+  font-size: 0.75rem;
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease, opacity 150ms ease;
+}
+
+.newStoryButton:hover:not(:disabled) {
+  border-color: palette(primary-main, 0.5);
+  background: palette(primary-main, 0.16);
+}
+
+.addSourceButton {
+  border-color: palette(dark-main, 0.12);
+  background: transparent;
+}
+
+.addSourceButton:hover:not(:disabled) {
+  border-color: palette(dark-main, 0.2);
+  background: palette(dark-main, 0.04);
+}
+
+.newStoryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.newStoryButton > span {
+  @ds-typo (caption);
+  font-size: 0.875rem;
+  line-height: 1;
+  opacity: 0.8;
+}
+
+.newStoryForm {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: density(4);
+  padding: xs(density(4)) md(density(5));
+  overflow: auto;
+}
+
+.newStoryHint,
+.newStoryError {
+  margin: 0;
+  @ds-typo (small);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.newStoryHint {
+  color: palette(tertiary-main);
+}
+
+.newStoryError {
+  padding: density(3) density(4);
+  border: 1px solid palette(error-main, 0.35);
+  border-radius: radius(2);
+  background: palette(error-light);
+  color: palette(error-dark);
+}
+
+.newStoryGrid {
+  display: grid;
+  grid-template-columns: xs(minmax(0, 1fr)) md(repeat(2, minmax(0, 1fr)));
+  gap: xs(density(3)) md(density(4));
+}
+
+.newStoryGrid .field {
+  margin-top: 0;
+  min-width: 0;
+}
+
+.newStoryWide {
+  grid-column: xs(auto) md(1 / -1);
+}
+
+.newStoryGrid select,
+.newStoryGrid textarea {
+  @ds-input(outlined primary 2);
+  width: 100%;
+  border-color: palette(surface-dark);
+  background: palette(light-light, 0.84);
+  color: palette(dark-main);
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.newStoryGrid select {
+  height: 48px;
+  padding: 0 density(4);
+}
+
+.newStoryGrid textarea {
+  min-height: 180px;
+  padding: density(3) density(4);
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.newStoryGrid select:focus,
+.newStoryGrid textarea:focus {
+  border-color: palette(primary-main);
+  box-shadow: 0 0 0 4px palette(primary-main, 0.12);
+  outline: none;
+}
+
+.newStoryFooter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: density(3);
+  margin-top: density(2);
+  padding-top: density(4);
+  border-top: 1px solid palette(surface-light);
+}
+
+.newStoryFooter button {
+  min-height: 45px;
+  padding: 0 density(5);
+  @ds-typo (small);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.newStoryFooter .primaryButton {
+  flex: 0 0 auto;
+}
+
+.newStoryFooter button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.sourceDropZone {
+  @ds-typo(small);
+  display: grid;
+  gap: density(2);
+  border: border(1, surface-dark, dashed);
+  border-radius: radius(3);
+  background: palette(light-light);
+  padding: density(4);
+  color: palette(dark-main);
+}
+
+.sourceDropZone input { @ds-input(outlined primary 2); width: 100%; }
+
+.sourceTopicChoices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: density(3);
+  border: border(1, surface-dark, solid);
+  border-radius: radius(3);
+  padding: density(3);
+}
+
+.sourceTopicChoices legend { @ds-typo(caption); color: palette(tertiary-main); }
+.sourceTopicChoices label { @ds-typo(small); display: flex; align-items: center; gap: density(2); color: palette(dark-main); }
+.sourceTopicChoices input[type="checkbox"] { accent-color: palette(primary-main); }
+
+.sourcePreview {
+  @ds-surface(outlined surface 3);
+  display: grid;
+  gap: density(2);
+  padding: density(4);
+}
+
+.sourcePreview strong { @ds-typo(body); color: palette(dark-main); }
+.sourcePreview span,
+.sourcePreview p,
+.sourcePreview small { @ds-typo(small); margin: 0; overflow-wrap: anywhere; color: palette(tertiary-main); }

@@ -30,6 +30,9 @@ export const knowledgeDocuments = pgTable(
       .references(() => workspaces.id, { onDelete: "cascade" }),
     canonicalUrl: text("canonical_url").notNull(),
     sourceUrl: text("source_url").notNull(),
+    /** Private R2 original for an uploaded PDF. Public URL documents leave this null. */
+    objectKey: text("object_key"),
+    originalFilename: text("original_filename"),
     documentType: text("document_type").default("guideline").notNull(),
     mimeType: text("mime_type").default("application/pdf").notNull(),
     language: text("language").default("unknown").notNull(),

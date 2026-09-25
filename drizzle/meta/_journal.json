@@ -540,6 +540,20 @@
       "when": 1790346393319,
       "tag": "0077_auth_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1790361969665,
+      "tag": "0078_lush_night_thrasher",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1790362048350,
+      "tag": "0079_acoustic_sage",
+      "breakpoints": true
     }
   ]
 }

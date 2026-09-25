@@ -209,49 +209,112 @@
   cursor: pointer;
 }
 
-.sourcesDisclosure {
-  margin-top: density(7);
-  border: border(1, surface-dark, solid);
-  border-radius: radius(3);
-  background: palette(light-light);
-}
-
-.sourcesDisclosure summary {
-  display: flex;
-  align-items: xs(flex-start) sm(center);
-  justify-content: space-between;
-  gap: density(4);
-  cursor: pointer;
-  list-style: none;
-  padding: density(3) density(4);
-}
-
-.sourcesDisclosure summary::-webkit-details-marker { display: none; }
-.sourcesDisclosure summary > span:first-child { display: grid; gap: density(1); }
-.sourcesDisclosure summary strong { @ds-typo(body); color: palette(dark-main); }
-.sourcesDisclosure summary small { @ds-typo(small); color: palette(tertiary-main); }
-
-.disclosureState {
-  @ds-typo(caption);
-  border-radius: radius(5);
-  background: palette(surface-light);
-  color: palette(primary-dark);
-  padding: density(1) density(2);
-}
-
 .sourcesContent {
-  border-top: border(1, surface-dark, solid);
+  margin-top: density(5);
+}
+
+.linkedSources {
+  display: grid;
+  grid-template-columns: xs(1fr) md(repeat(3, minmax(0, 1fr)));
+  gap: density(4);
+  margin-top: density(6);
+}
+
+.linkedSources > div,
+.catalogList > li {
+  @ds-surface(outlined surface 3);
+  display: grid;
+  align-content: start;
+  gap: density(2);
+  min-width: 0;
   padding: density(4);
+}
+
+.linkedSources h3 { @ds-typo(h5); margin: 0; color: palette(dark-main); }
+.linkedSources p { @ds-typo(small); margin: 0; color: palette(tertiary-main); }
+.linkedSources a,
+.catalogList a { @ds-typo(small); overflow-wrap: anywhere; color: palette(primary-dark); }
+
+.linkChoice,
+.topicChoices label {
+  @ds-typo(small);
+  display: flex;
+  align-items: flex-start;
+  gap: density(2);
+  min-width: 0;
+  color: palette(dark-main);
+}
+
+.panel .linkChoice input[type="checkbox"],
+.panel .topicChoices input[type="checkbox"] {
+  appearance: auto;
+  flex: none;
+  width: density(3);
+  height: density(3);
+  min-height: 0;
+  padding: 0;
+  accent-color: palette(primary-main);
+}
+
+.topicChoices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: density(3);
+  border: border(1, surface-dark, solid);
+  border-radius: radius(2);
+  padding: density(3);
+}
+
+.topicChoices legend { @ds-typo(caption); color: palette(tertiary-main); }
+
+.catalogFilters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: density(3);
+  margin-bottom: density(4);
+}
+
+.catalogFilters label {
+  @ds-typo(caption);
+  display: grid;
+  gap: density(1);
+  min-width: xs(100%) sm(12rem);
+  color: palette(dark-main);
+}
+
+.catalogList {
+  display: grid;
+  gap: density(3);
+  margin: 0 0 density(6);
+  padding: 0;
+  list-style: none;
+}
+
+.catalogList strong { @ds-typo(body); color: palette(dark-main); }
+.catalogList small,
+.catalogList p { @ds-typo(small); margin: 0; color: palette(tertiary-main); }
+
+.catalogLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: density(2);
+}
+
+.catalogLinks > span {
+  @ds-typo(caption);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: density(2);
+  border-radius: radius(2);
+  background: palette(surface-light);
+  padding: density(2);
+  color: palette(primary-dark);
 }
 
 .sourcesHeading { margin: 0; }
 .knowledgeHeading {
-  /* display/align-items/flex-direction come from the responsive group above;
-   * redeclaring them here used to sit after the old trailing @media block
-   * and silently win over it at every width. */
-  margin-top: density(7);
-  border-top: border(1, surface-dark, solid);
-  padding-top: density(4);
+  margin: 0;
 }
 .sourceList { display: grid; gap: density(3); margin: density(5) 0 0; padding: 0; list-style: none; }
 .documentList { display: grid; gap: density(3); margin: density(5) 0 0; padding: 0; list-style: none; }

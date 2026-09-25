@@ -181,3 +181,46 @@ test("carousel colours seed sensible UI roles for legacy palettes", () => {
     ) >= 7,
   );
 });
+
+test("palette usage and share are optional, normalized and bounded", () => {
+  const palette = parseCreativeBrandPaletteInput([
+    { name: "Cream", color: "#FAF5E6", role: "surface", usage: "  page   backgrounds ", share: 60 },
+    { name: "Teal", color: "#2F777B", role: "primary", usage: "", share: "20" },
+    { name: "Coral", color: "#EF644B", usage: null, share: null },
+  ]);
+  assert.deepEqual(palette, [
+    { name: "Cream", color: "#FAF5E6", role: "surface", usage: "page backgrounds", share: 60 },
+    { name: "Teal", color: "#2F777B", role: "primary", share: 20 },
+    { name: "Coral", color: "#EF644B" },
+  ]);
+  for (const share of [0, 101, 12.5, "lots", true]) {
+    assert.throws(
+      () =>
+        parseCreativeBrandPaletteInput([
+          { name: "Cream", color: "#FAF5E6", share },
+          { name: "Teal", color: "#2F777B" },
+          { name: "Coral", color: "#EF644B" },
+        ]),
+      CreativeCarouselChromeValidationError,
+      `share ${String(share)} should be rejected`,
+    );
+  }
+  assert.throws(
+    () =>
+      parseCreativeBrandPaletteInput([
+        { name: "Cream", color: "#FAF5E6", share: 60 },
+        { name: "Teal", color: "#2F777B", share: 50 },
+        { name: "Coral", color: "#EF644B" },
+      ]),
+    /add up to 110%/,
+  );
+  assert.throws(
+    () =>
+      parseCreativeBrandPaletteInput([
+        { name: "Cream", color: "#FAF5E6", usage: 42 },
+        { name: "Teal", color: "#2F777B" },
+        { name: "Coral", color: "#EF644B" },
+      ]),
+    CreativeCarouselChromeValidationError,
+  );
+});

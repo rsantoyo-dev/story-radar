@@ -41,8 +41,30 @@ export function resolveCreativeVisualGuidance(
       : raw;
   const palette = normalizePalette(profile.brandPalette);
   return `${guidance}\n\nApproved brand palette: ${palette
-    .map((entry) => `${entry.role ? `${entry.role}: ` : ""}${entry.name} ${entry.color}`)
-    .join("; ")}. Use these colours as the visual system unless the brief explicitly requires a factual chart colour.`;
+    .map((entry) => `${entry.role ? `${entry.role}: ` : ""}${entry.name} ${entry.color}${describeUsage(entry)}`)
+    .join("; ")}. Use these colours as the visual system unless the brief explicitly requires a factual chart colour.${describeUsageSplit(palette)}`;
+}
+
+/** " (10%, titles and accents)" — only for colours the editor annotated. */
+function describeUsage(entry: CreativeBrandPaletteColor): string {
+  const parts = [
+    ...(entry.share !== undefined ? [`${entry.share}%`] : []),
+    ...(entry.usage ? [entry.usage] : []),
+  ];
+  return parts.length ? ` (${parts.join(", ")})` : "";
+}
+
+/** One sentence with the intended proportions, dominant first; empty without shares. */
+function describeUsageSplit(palette: CreativeBrandPaletteColor[]): string {
+  const shared = palette
+    .filter((entry): entry is CreativeBrandPaletteColor & { share: number } => entry.share !== undefined)
+    .sort((a, b) => b.share - a.share);
+  if (shared.length === 0) return "";
+  const total = shared.reduce((sum, entry) => sum + entry.share, 0);
+  const rest = 100 - total;
+  return ` Intended usage split: ${shared
+    .map((entry) => `${entry.share}% ${entry.name}`)
+    .join(", ")}${rest > 0 ? `; the remaining ${rest}% is free for the other approved colours` : ""}.`;
 }
 
 function normalizePalette(value: unknown): CreativeBrandPaletteColor[] {
@@ -58,10 +80,16 @@ function normalizePalette(value: unknown): CreativeBrandPaletteColor[] {
       return [];
     }
     const role = (entry as { role?: unknown }).role;
+    const usage = (entry as { usage?: unknown }).usage;
+    const share = (entry as { share?: unknown }).share;
     return [{
       name: (entry as { name: string }).name.trim(),
       color: (entry as { color: string }).color.toUpperCase(),
       ...(isCreativeBrandUiRole(role) ? { role } : {}),
+      ...(typeof usage === "string" && usage.trim() ? { usage: usage.trim() } : {}),
+      ...(typeof share === "number" && Number.isInteger(share) && share >= 1 && share <= 100
+        ? { share }
+        : {}),
     }];
   });
   return palette.length >= 3 ? palette : DEFAULT_CREATIVE_BRAND_PALETTE.map((entry) => ({ ...entry }));

@@ -1,7 +1,7 @@
 import "server-only";
 
-import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { createHash, randomUUID } from "node:crypto";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 
 import type {
   RssContentMode,
@@ -350,6 +350,21 @@ export async function deleteRssSource(
   }
 }
 
+/** Deleting an orphan feed must never cascade away topic attachments. */
+export async function deleteUnlinkedRssSource(
+  sourceId: string,
+  workspaceId = DEFAULT_WORKSPACE_ID,
+): Promise<boolean> {
+  const deleted = await db.delete(rssSources)
+    .where(and(
+      eq(rssSources.id, sourceId),
+      eq(rssSources.workspaceId, workspaceId),
+      sql`NOT EXISTS (SELECT 1 FROM ${topicSources} WHERE ${topicSources.rssSourceId} = ${sourceId})`,
+    ))
+    .returning({ id: rssSources.id });
+  return deleted.length > 0;
+}
+
 /**
  * Returns source configurations in the shape used by the current collector.
  * Tags and enabled state come from the topic-source relationship; connection
@@ -595,11 +610,13 @@ function themeKeyValue(value: unknown): TopicThemeKey {
 
 function normalizeRssSourceInput(input: CreateRssSourceInput) {
   const name = textValue(input.name, "name", 160);
+  const url = rssUrlValue(input.url);
+  const defaultSlug = `${name.slice(0, 90)}-${createHash("sha256").update(url).digest("hex").slice(0, 12)}`;
 
   return {
     name,
-    slug: slugValue(input.slug ?? name, "slug"),
-    url: rssUrlValue(input.url),
+    slug: slugValue(input.slug ?? defaultSlug, "slug"),
+    url,
     language: textValue(input.language, "language", 32),
     region: textValue(input.region, "region", 80),
     contentMode: contentModeValue(input.contentMode ?? "auto"),

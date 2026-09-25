@@ -9,7 +9,7 @@
     "start": "next start",
     "worker:instagram": "node scripts/instagram-publication-worker.mjs",
     "postinstall": "patch-package",
-    "test": "tsx --test src/app/modules/stories/*.test.ts src/app/modules/documents/*.test.ts src/app/modules/meta/*.test.ts src/app/modules/topics/*.test.ts src/design/*.test.ts src/design/*/*.test.ts",
+    "test": "node --import tsx --test src/app/modules/stories/*.test.ts src/app/modules/documents/*.test.ts src/app/modules/meta/*.test.ts src/app/modules/topics/*.test.ts src/app/modules/sources/*.test.ts src/design/*.test.ts src/design/*/*.test.ts",
     "uxdsl:build": "uxdsl build",
     "uxdsl:watch": "uxdsl watch",
     "lint": "eslint",

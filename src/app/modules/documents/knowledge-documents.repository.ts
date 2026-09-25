@@ -79,6 +79,78 @@ export async function createOrAttachKnowledgeDocument(
   return { documentId, topicDocumentId: attached.id };
 }
 
+export async function createOrAttachUploadedKnowledgeDocument(
+  topicId: string,
+  input: { canonicalUrl: string; objectKey: string; name: string },
+): Promise<{ documentId: string; topicDocumentId: string }> {
+  const [created] = await db.insert(knowledgeDocuments).values({
+    workspaceId: DEFAULT_WORKSPACE_ID,
+    canonicalUrl: input.canonicalUrl,
+    sourceUrl: input.canonicalUrl,
+    objectKey: input.objectKey,
+    originalFilename: input.name,
+    documentType: "other",
+    language: "unknown",
+  }).onConflictDoNothing({
+    target: [knowledgeDocuments.workspaceId, knowledgeDocuments.canonicalUrl],
+  }).returning({ id: knowledgeDocuments.id });
+  const [existing] = created ? [] : await db.select({
+    id: knowledgeDocuments.id,
+    objectKey: knowledgeDocuments.objectKey,
+  }).from(knowledgeDocuments).where(and(
+    eq(knowledgeDocuments.workspaceId, DEFAULT_WORKSPACE_ID),
+    eq(knowledgeDocuments.canonicalUrl, input.canonicalUrl),
+  )).limit(1);
+  if (existing && existing.objectKey !== input.objectKey) {
+    throw new KnowledgeDocumentValidationError("The uploaded document identity conflicts with another source");
+  }
+  const documentId = created?.id ?? existing?.id;
+  if (!documentId) throw new Error("The uploaded document could not be found");
+  const [attached] = await db.insert(topicKnowledgeDocuments).values({
+    workspaceId: DEFAULT_WORKSPACE_ID,
+    topicId,
+    documentId,
+    enabled: true,
+  }).onConflictDoUpdate({
+    target: [topicKnowledgeDocuments.topicId, topicKnowledgeDocuments.documentId],
+    set: { enabled: true, updatedAt: new Date() },
+  }).returning({ id: topicKnowledgeDocuments.id });
+  if (!attached) throw new Error("The uploaded document could not be attached");
+  return { documentId, topicDocumentId: attached.id };
+}
+
+export async function attachExistingKnowledgeDocument(
+  topicId: string,
+  documentId: string,
+): Promise<void> {
+  const [document] = await db.select({ id: knowledgeDocuments.id })
+    .from(knowledgeDocuments)
+    .where(and(eq(knowledgeDocuments.id, documentId), eq(knowledgeDocuments.workspaceId, DEFAULT_WORKSPACE_ID)))
+    .limit(1);
+  if (!document) throw new KnowledgeDocumentNotFoundError("Document not found");
+  await db.insert(topicKnowledgeDocuments).values({
+    workspaceId: DEFAULT_WORKSPACE_ID,
+    topicId,
+    documentId,
+    enabled: true,
+  }).onConflictDoUpdate({
+    target: [topicKnowledgeDocuments.topicId, topicKnowledgeDocuments.documentId],
+    set: { enabled: true, updatedAt: new Date() },
+  });
+}
+
+export async function detachKnowledgeDocument(
+  topicId: string,
+  documentId: string,
+): Promise<void> {
+  await db.delete(topicKnowledgeDocuments)
+    .where(and(
+      eq(topicKnowledgeDocuments.topicId, topicId),
+      eq(topicKnowledgeDocuments.documentId, documentId),
+      eq(topicKnowledgeDocuments.workspaceId, DEFAULT_WORKSPACE_ID),
+    ));
+}
+
 export async function createKnowledgeIngestionRun(documentId: string): Promise<string> {
   const [run] = await db
     .insert(knowledgeDocumentIngestionRuns)
@@ -108,12 +180,16 @@ export async function getKnowledgeDocumentForIngestion(runId: string): Promise<{
   documentId: string;
   sourceUrl: string;
   canonicalUrl: string;
+  objectKey: string | null;
+  originalFilename: string | null;
 }> {
   const [row] = await db
     .select({
       documentId: knowledgeDocuments.id,
       sourceUrl: knowledgeDocuments.sourceUrl,
       canonicalUrl: knowledgeDocuments.canonicalUrl,
+      objectKey: knowledgeDocuments.objectKey,
+      originalFilename: knowledgeDocuments.originalFilename,
     })
     .from(knowledgeDocumentIngestionRuns)
     .innerJoin(
@@ -249,6 +325,8 @@ export async function listTopicKnowledgeDocuments(
       topicDocumentId: topicKnowledgeDocuments.id,
       documentId: knowledgeDocuments.id,
       canonicalUrl: knowledgeDocuments.canonicalUrl,
+      uploaded: knowledgeDocuments.objectKey,
+      originalFilename: knowledgeDocuments.originalFilename,
       documentType: knowledgeDocuments.documentType,
       language: knowledgeDocuments.language,
       publisher: knowledgeDocuments.publisher,
@@ -279,6 +357,8 @@ export async function listTopicKnowledgeDocuments(
       topicDocumentId: row.topicDocumentId,
       documentId: row.documentId,
       canonicalUrl: row.canonicalUrl,
+      uploaded: Boolean(row.uploaded),
+      ...(row.originalFilename ? { originalFilename: row.originalFilename } : {}),
       documentType: row.documentType as KnowledgeDocumentType,
       language: row.language,
       ...(row.publisher ? { publisher: row.publisher } : {}),

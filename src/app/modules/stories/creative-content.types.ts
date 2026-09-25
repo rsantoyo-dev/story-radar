@@ -499,12 +499,25 @@ export function isCreativeBrandUiRole(
   return CREATIVE_BRAND_UI_ROLES.includes(value as CreativeBrandUiRole);
 }
 
+export const CREATIVE_BRAND_PALETTE_USAGE_MAX_LENGTH = 120;
+
 /** A named, approved brand colour that can be reused by deterministic visuals. */
 export type CreativeBrandPaletteColor = {
   name: string;
   color: string;
   /** Optional semantic role used to theme the selected topic's application UI. */
   role?: CreativeBrandUiRole;
+  /**
+   * Optional intent in the brand, e.g. "titles and accents". Free text; it
+   * reaches image prompts only when set.
+   */
+  usage?: string;
+  /**
+   * Optional approximate share of the visual system, an integer from 1 to
+   * 100. Shares across the palette add up to at most 100. Reaches image
+   * prompts only when set.
+   */
+  share?: number;
 };
 
 /**

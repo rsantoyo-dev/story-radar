@@ -66,6 +66,8 @@ export type KnowledgeDocumentSummary = {
   topicDocumentId: string;
   documentId: string;
   canonicalUrl: string;
+  uploaded?: boolean;
+  originalFilename?: string;
   documentType: KnowledgeDocumentType;
   language: string;
   publisher?: string;

@@ -22,6 +22,7 @@ import {
   type CreativeBrandPaletteColor,
   type CreativeProfile,
 } from "./modules/stories/creative-content.types";
+import { BrandPaletteAssistant } from "./creative-palette-assistant";
 import styles from "./creative-draft-workspace.generated.module.css";
 import { GoogleMapsPreviewPanel } from "./google-maps-preview-panel";
 
@@ -503,6 +504,13 @@ export function CreativeProfilePanel({
             apply directly to the next image batch and do not require
             regenerating the script.
           </p>
+          <BrandPaletteAssistant
+            topicId={topicId}
+            secret={secret}
+            disabled={controlsDisabled}
+            palette={draft.brandPalette}
+            onApply={updateBrandPalette}
+          />
           <BrandPaletteEditor
             palette={draft.brandPalette}
             carouselChrome={draft.carouselChrome}
