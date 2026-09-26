@@ -456,6 +456,14 @@ export async function replaceCreativeDraft(
     inputHash?: string;
     aiSnapshot?: GeneratedCreativeDraft;
     approve?: boolean;
+    /**
+     * Overrides the stored provider/model — needed when the visible script
+     * was written by a different model than the one that created this draft
+     * row (e.g. a Topic's CREATIVE_CAROUSEL_WRITER_MODEL). Omit to keep
+     * `current`'s existing provider/model unchanged.
+     */
+    provider?: string;
+    model?: string;
   } = {},
 ): Promise<CreativeDraft> {
   const now = new Date();
@@ -497,6 +505,8 @@ export async function replaceCreativeDraft(
         outputAspectRatio: input.outputAspectRatio,
         ...(options.inputHash ? { inputHash: options.inputHash } : {}),
         ...(options.aiSnapshot ? { aiSnapshot: options.aiSnapshot } : {}),
+        ...(options.provider ? { provider: options.provider } : {}),
+        ...(options.model ? { model: options.model } : {}),
         status: options.approve ? "approved" : "draft",
         approvedAt: options.approve ? now : null,
         version: current.version + 1,

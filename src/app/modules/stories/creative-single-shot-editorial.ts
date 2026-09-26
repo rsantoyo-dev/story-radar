@@ -43,6 +43,16 @@ export type SingleShotCheckpoint = {
   draft: GeneratedCreativeDraft;
   usage: CreativeAiUsage;
   callsUsed: number;
+  /**
+   * Whoever actually wrote the visible script this run — "openai" when a
+   * Topic hands the carousel writer to an OpenAI model (see
+   * CREATIVE_CAROUSEL_WRITER_MODEL), "google" otherwise. Every checkpoint in
+   * one run shares this: the writer model is fixed for the run's lifetime.
+   * Callers must persist this instead of assuming "google", or a
+   * Sol-written draft is silently mislabeled as Gemini's.
+   */
+  provider: "google" | "openai";
+  model: string;
 };
 
 export type SingleShotPipelineResult = SingleShotCheckpoint;
@@ -77,11 +87,15 @@ export async function runSingleShotCreativePipeline(
   let usage = generated.usage;
   let callsUsed = generated.attempts;
   const brief = generated.brief;
+  // Fixed for the whole run: a repair rewrites the script with the same
+  // configured writer, never a different one.
+  const provider = generated.provider;
+  const model = generated.model;
   let draft: GeneratedCreativeDraft = {
     ...generated.draft,
     singleShotRun: { stage: "generated", callsUsed },
   };
-  await checkpoint({ brief, draft, usage, callsUsed });
+  await checkpoint({ brief, draft, usage, callsUsed, provider, model });
 
   // Judge the draft by the lens the brief actually applied. A brief that
   // correctly fell back to explainer — because no fact established a reader
@@ -96,8 +110,8 @@ export async function runSingleShotCreativePipeline(
       ...draft,
       singleShotRun: { stage: "generated", callsUsed, stopReason: "No independent auditor is configured." },
     };
-    await checkpoint({ brief, draft, usage, callsUsed });
-    return { brief, draft, usage, callsUsed };
+    await checkpoint({ brief, draft, usage, callsUsed, provider, model });
+    return { brief, draft, usage, callsUsed, provider, model };
   }
 
   // One audit attempt, no same-step model fallback: deduping criticModel and
@@ -136,8 +150,8 @@ export async function runSingleShotCreativePipeline(
         stopReason: `Independent audit unavailable: ${audit.criticUnavailable.reason}`,
       },
     };
-    await checkpoint({ brief, draft, usage, callsUsed });
-    return { brief, draft, usage, callsUsed };
+    await checkpoint({ brief, draft, usage, callsUsed, provider, model });
+    return { brief, draft, usage, callsUsed, provider, model };
   }
 
   draft = audit.draft;
@@ -152,8 +166,8 @@ export async function runSingleShotCreativePipeline(
   // for. Treating "no blockers" as acceptance silently discarded the audit.
   if (draft.qualityReview?.status === "accepted") {
     draft = { ...draft, singleShotRun: { stage: "done", callsUsed, verdict: "accepted" } };
-    await checkpoint({ brief, draft, usage, callsUsed });
-    return { brief, draft, usage, callsUsed };
+    await checkpoint({ brief, draft, usage, callsUsed, provider, model });
+    return { brief, draft, usage, callsUsed, provider, model };
   }
 
   // Below the bar, but with nothing a targeted patch could act on.
@@ -167,8 +181,8 @@ export async function runSingleShotCreativePipeline(
         stopReason: "The draft is below the publishable bar but the review left no actionable finding to correct.",
       },
     };
-    await checkpoint({ brief, draft, usage, callsUsed });
-    return { brief, draft, usage, callsUsed };
+    await checkpoint({ brief, draft, usage, callsUsed, provider, model });
+    return { brief, draft, usage, callsUsed, provider, model };
   }
 
   if (callsUsed + 2 > SINGLE_SHOT_CALL_BUDGET) {
@@ -182,8 +196,8 @@ export async function runSingleShotCreativePipeline(
         stopReason: "No call budget remains for a repair-and-verify round; kept as the best available version for human review.",
       },
     };
-    await checkpoint({ brief, draft, usage, callsUsed });
-    return { brief, draft, usage, callsUsed };
+    await checkpoint({ brief, draft, usage, callsUsed, provider, model });
+    return { brief, draft, usage, callsUsed, provider, model };
   }
 
   callsUsed += 1;
@@ -247,14 +261,16 @@ export async function runSingleShotCreativePipeline(
         stopReason: repairRejectionReason ?? "The repair made no usable change.",
       },
     };
-    await checkpoint({ brief, draft, usage, callsUsed });
-    return { brief, draft, usage, callsUsed };
+    await checkpoint({ brief, draft, usage, callsUsed, provider, model });
+    return { brief, draft, usage, callsUsed, provider, model };
   }
   await checkpoint({
     brief,
     draft: { ...repaired, singleShotRun: { stage: "repairing", callsUsed, repairAttempted: true } },
     usage,
     callsUsed,
+    provider,
+    model,
   });
 
   callsUsed += 1;
@@ -289,8 +305,8 @@ export async function runSingleShotCreativePipeline(
         stopReason: `Verification unavailable: ${verify.criticUnavailable.reason}. The correction was not promoted.`,
       },
     };
-    await checkpoint({ brief, draft, usage, callsUsed });
-    return { brief, draft, usage, callsUsed };
+    await checkpoint({ brief, draft, usage, callsUsed, provider, model });
+    return { brief, draft, usage, callsUsed, provider, model };
   }
 
   const verified = verify.draft;
@@ -336,6 +352,6 @@ export async function runSingleShotCreativePipeline(
       },
     };
   }
-  await checkpoint({ brief, draft, usage, callsUsed });
-  return { brief, draft, usage, callsUsed };
+  await checkpoint({ brief, draft, usage, callsUsed, provider, model });
+  return { brief, draft, usage, callsUsed, provider, model };
 }

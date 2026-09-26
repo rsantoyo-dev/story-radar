@@ -498,12 +498,16 @@ async function createCreativeBriefAndDraftSingleShot({
         openAiEditorialModels: configuration.openAiEditorialModels,
         openAiAuditContext: { runId, topicId, storyId },
         deadline: Date.now() + CREATIVE_DRAFT_TIME_BUDGET_MS,
-        checkpoint: async ({ brief, draft, usage }) => {
+        checkpoint: async ({ brief, draft, usage, provider, model }) => {
           if (!briefRow) {
             briefRow = await insertCreativeBrief({
               topicId,
               storyId,
               profile,
+              // The brief-extraction call is always Gemini in this pipeline
+              // (generateSingleShotCreativeScript never routes it through
+              // carouselWriterModel) — unlike the draft below, "google" here
+              // is not an assumption.
               provider: "google",
               model: configuration.model,
               promptVersion: configuration.briefPromptVersion,
@@ -516,8 +520,8 @@ async function createCreativeBriefAndDraftSingleShot({
             });
           }
           const draftInputHash = createDraftInputHash(briefRow.id, briefRow.inputHash, format, outputAspectRatio, {
-            provider: configuration.provider,
-            model: configuration.model,
+            provider,
+            model,
             promptVersion: draftPromptVersion,
           });
           const characterSnapshots = await snapshotsForCreativeCharacterIds(
@@ -530,7 +534,7 @@ async function createCreativeBriefAndDraftSingleShot({
                 draftRow,
                 { ...draft, outputAspectRatio },
                 characterSnapshots,
-                { inputHash: draftInputHash, aiSnapshot: draft },
+                { inputHash: draftInputHash, aiSnapshot: draft, provider, model },
               )
             : await insertCreativeDraft({
                 topicId,
@@ -538,8 +542,8 @@ async function createCreativeBriefAndDraftSingleShot({
                 briefId: briefRow.id,
                 format,
                 outputAspectRatio,
-                provider: "google",
-                model: configuration.model,
+                provider,
+                model,
                 promptVersion: draftPromptVersion,
                 inputHash: draftInputHash,
                 generated: draft,
@@ -555,7 +559,10 @@ async function createCreativeBriefAndDraftSingleShot({
       runId,
       result.usage,
       { briefId: briefRow?.id, draftId: draftRow?.id },
-      { provider: "google", model: configuration.model },
+      // The run's headline provider/model reflects the draft actually
+      // shipped to the reader, which may be an OpenAI carousel writer even
+      // though the brief extraction above always ran on Gemini.
+      { provider: result.provider, model: result.model },
     );
     return {
       outcome: "generated",
@@ -698,16 +705,18 @@ export async function createCreativeDraft(
           openAiEditorialModels: configuration.openAiEditorialModels,
           openAiAuditContext: { runId, topicId, storyId: brief.storyId },
           deadline: Date.now() + CREATIVE_DRAFT_TIME_BUDGET_MS,
-          checkpoint: async ({ draft: partial, usage }) => {
+          checkpoint: async ({ draft: partial, usage, provider, model }) => {
             const characterSnapshots = await characterSnapshotsFor(partial);
             checkpointDraft = checkpointDraft
               ? await replaceCreativeDraft(topicId, checkpointDraft, { ...partial, outputAspectRatio }, characterSnapshots, {
                   inputHash,
                   aiSnapshot: partial,
+                  provider,
+                  model,
                 })
               : await insertCreativeDraft({
                   topicId, storyId: brief.storyId, briefId: brief.id, format, outputAspectRatio,
-                  provider: "google", model: configuration.model, promptVersion, inputHash,
+                  provider, model, promptVersion, inputHash,
                   generated: partial, usage, characterSnapshots,
                 });
           },
@@ -716,17 +725,21 @@ export async function createCreativeDraft(
       const draft = checkpointDraft
         ? await replaceCreativeDraft(
             topicId, checkpointDraft, { ...result.draft, outputAspectRatio },
-            await characterSnapshotsFor(result.draft), { inputHash, aiSnapshot: result.draft },
+            await characterSnapshotsFor(result.draft),
+            { inputHash, aiSnapshot: result.draft, provider: result.provider, model: result.model },
           )
         : await insertCreativeDraft({
             topicId, storyId: brief.storyId, briefId: brief.id, format, outputAspectRatio,
-            provider: "google", model: configuration.model, promptVersion, inputHash,
+            provider: result.provider, model: result.model, promptVersion, inputHash,
             generated: result.draft, usage: result.usage,
             characterSnapshots: await characterSnapshotsFor(result.draft),
           });
       await recordTextOutcome(topicId, draft);
+      // The draft's own provider/model (which may be an OpenAI carousel
+      // writer) — not configuration.model, which is only ever the Topic's
+      // default Gemini model and would mislabel a Sol-written draft.
       await completeCreativeAiRun(topicId, runId, result.usage, { draftId: draft.id }, {
-        provider: "google", model: configuration.model,
+        provider: result.provider, model: result.model,
       });
       return {
         outcome: "generated",
