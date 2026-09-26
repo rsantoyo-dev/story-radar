@@ -1,7 +1,11 @@
 import "server-only";
 import sharp, { type OverlayOptions } from "sharp";
-import type { CreativeUnit, CreativeProfile } from "./creative-content.types";
+import type { CreativeCarouselChromeSettings, CreativeUnit, CreativeProfile } from "./creative-content.types";
 import { escapeDocumentaryText } from "./creative-documentary-render";
+import {
+  buildCreativeCarouselChrome,
+  compositeCreativeCarouselChrome,
+} from "./creative-carousel-chrome";
 
 // Historical endpoint is preserved so old assets remain readable and regenerable.
 export const DRAFT_TYPOGRAPHY_ENDPOINT = "local/draft-typography-v1";
@@ -19,7 +23,24 @@ function editorialGraphic(unit: CreativeUnit, color: string): Buffer {
     : `<circle cx="472" cy="210" r="122" fill="${color}"/><circle cx="472" cy="145" r="14" fill="#f7faf8"/><path d="M472 190V280" stroke="#f7faf8" stroke-width="25" stroke-linecap="round"/>`;
   return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="944" height="410"><rect width="944" height="410" rx="32" fill="#eaf1ed"/><circle cx="742" cy="96" r="46" fill="#d69a47" opacity=".28"/><circle cx="187" cy="290" r="62" fill="${color}" opacity=".08"/>${shapes}</svg>`);
 }
-export async function renderDraftTypography(unit: CreativeUnit, profile: CreativeProfile, original?: Buffer): Promise<Buffer> {
+/**
+ * The deterministic local card used for a "typography-only" slide (no
+ * verified photo or map, or a non-cover slide the geo pipeline never sends
+ * to the image model). It builds its own PNG directly with Sharp instead of
+ * going through submitStoredAsset/creativePostProcessorForAsset, so without
+ * this it would silently skip the carousel's numbering badge — a real place
+ * story is exactly where these cards are most common. `totalSlides` and
+ * `carouselChromeSettings` are optional only so existing callers/tests that
+ * pre-date this keep compiling; omitting them just means no badge, matching
+ * the previous behavior for a non-carousel or single-image draft.
+ */
+export async function renderDraftTypography(
+  unit: CreativeUnit,
+  profile: CreativeProfile,
+  original?: Buffer,
+  totalSlides?: number,
+  carouselChromeSettings?: CreativeCarouselChromeSettings,
+): Promise<Buffer> {
   const color = profile.brandPalette.find(c => /^#[0-9a-f]{6}$/i.test(c.color))?.color || "#246b4a";
   const layers: OverlayOptions[] = [];
   const background = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350"><rect width="1080" height="1350" fill="#f7faf8"/><rect width="16" height="1350" fill="${color}"/><rect x="68" y="119" width="944" height="3" fill="${color}"/><rect x="68" y="1210" width="944" height="2" fill="${color}"/></svg>`;
@@ -47,5 +68,14 @@ export async function renderDraftTypography(unit: CreativeUnit, profile: Creativ
   const credit=evidence?.attribution || (original ? "© OpenStreetMap contributors · openstreetmap.org/copyright" : "");
   const photoUse = evidence?.representation === "photo" ? (french ? " · Photo redimensionnée, non recadrée" : " · Photo resized, not cropped") : "";
   await add(context+credit+photoUse,1220,80,16);
-  return sharp({ create: { width: 1080, height: 1350, channels: 4, background: "#f7faf8" } }).composite(layers).png().toBuffer();
+  const png = await sharp({ create: { width: 1080, height: 1350, channels: 4, background: "#f7faf8" } }).composite(layers).png().toBuffer();
+  if (unit.type !== "carousel-slide" || !totalSlides) return png;
+  const chrome = buildCreativeCarouselChrome({
+    aspectRatio: "4:5",
+    unitOrder: unit.order,
+    totalSlides,
+    continuationCue: unit.continuationCue,
+    settings: carouselChromeSettings,
+  });
+  return compositeCreativeCarouselChrome({ image: png, chrome });
 }

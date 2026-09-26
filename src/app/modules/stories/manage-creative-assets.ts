@@ -1884,7 +1884,7 @@ async function composeDraftPlaceVisuals(topicId: string, draft: CreativeDraft, b
       continue;
     }
     try {
-      const output = await renderDraftTypography(asset.unitSnapshot, profile, visuals.get(asset.unitOrder)?.bytes);
+      const output = await renderDraftTypography(asset.unitSnapshot, profile, visuals.get(asset.unitOrder)?.bytes, draft.units.length, brand.carouselChrome);
       await completeCreativeAsset(asset.id, await uploadComposedImage(configuration.apiKey, output, asset.id));
     } catch (error) { await failCreativeAsset(asset.id, errorMessage(error)); }
   }
@@ -1908,7 +1908,7 @@ async function recomposePlaceAsset(topicId: string, found: {asset: CreativeGener
   const asset = await insertRegeneratedCreativeAsset({ previous: found.asset, expectedDraftVersion: draft.version, prompt: found.asset.prompt, unitSnapshot: { ...unit, roadMapEvidence: undefined, placeVisual: map?.evidence } });
   try {
     const config = getFalImageRuntimeConfig("4:5", found.batch.imageQuality);
-    const output = await renderDraftTypography(asset.unitSnapshot, await getCreativeProfile(topicId), map?.bytes);
+    const output = await renderDraftTypography(asset.unitSnapshot, await getCreativeProfile(topicId), map?.bytes, draft.units.length, brand.carouselChrome);
     await completeCreativeAsset(asset.id, await uploadComposedImage(config.apiKey, output, asset.id));
   } catch (error) { await failCreativeAsset(asset.id, errorMessage(error)); }
   const batch = await refreshCreativeAssetBatchStatus(found.batch.id);

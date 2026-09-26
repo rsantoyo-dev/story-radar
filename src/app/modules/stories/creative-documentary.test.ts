@@ -292,7 +292,16 @@ test("location-only road fragments finish blocked without model, map or photo lo
 
 test("same-draft typography renders saved copy without geographic generation", async () => {
   const renderer = load<typeof import("./creative-documentary-render")>("creative-documentary-render.ts", { sharp });
-  const composer = load<typeof import("./creative-draft-typography")>("creative-draft-typography.ts", { sharp, "./creative-documentary-render": renderer });
+  const composer = load<typeof import("./creative-draft-typography")>("creative-draft-typography.ts", {
+    sharp,
+    "./creative-documentary-render": renderer,
+    // Unused here: this test never passes totalSlides, so renderDraftTypography
+    // returns before calling either of these (see creative-draft-typography.ts).
+    "./creative-carousel-chrome": {
+      buildCreativeCarouselChrome: () => { throw new Error("not exercised by this test"); },
+      compositeCreativeCarouselChrome: async () => { throw new Error("not exercised by this test"); },
+    },
+  });
   const unit = { order: 1, type: "carousel-slide", role: "cover", headline: "Route 35 : entrave majeure", subheadline: "À Saint-Sébastien", body: "Du 8 septembre au 9 octobre.", continuationCue: "Quelle période?", visualDirection: "Carte routière", factIds: [], assetRequest: "generated-image", aspectRatio: "4:5" } as import("./creative-content.types").CreativeUnit;
   const before = JSON.stringify(unit);
   const png = await composer.renderDraftTypography(unit, profile);
@@ -300,6 +309,55 @@ test("same-draft typography renders saved copy without geographic generation", a
   assert.equal(metadata.width, 1080); assert.equal(metadata.height, 1350);
   assert.equal(JSON.stringify(unit), before);
   assert.equal(composer.DRAFT_TYPOGRAPHY_ENDPOINT, "local/draft-typography-v1");
+});
+
+test("a typography-only carousel slide gets the numbering badge; a non-carousel unit and an omitted totalSlides do not", async () => {
+  // The real compositor, not a stub: this is the exact regression the badge
+  // silently missing on a "no verified place" slide would reintroduce.
+  const chrome = load<typeof import("./creative-carousel-chrome")>("creative-carousel-chrome.ts", {
+    sharp,
+    "./creative-brand-overlay": { creativeCanvasDimensions: () => ({ width: 1080, height: 1350 }) },
+    "./creative-content.types": {
+      DEFAULT_CREATIVE_CAROUSEL_CHROME_SETTINGS: {
+        enabled: true, style: "pill", backgroundColor: "#102A43", textColor: "#F6F0E4", accentColor: "#E8A83E",
+      },
+    },
+  });
+  const renderer = load<typeof import("./creative-documentary-render")>("creative-documentary-render.ts", { sharp });
+  const composer = load<typeof import("./creative-draft-typography")>("creative-draft-typography.ts", {
+    sharp,
+    "./creative-documentary-render": renderer,
+    "./creative-carousel-chrome": chrome,
+  });
+  const unit = {
+    order: 3, type: "carousel-slide", role: "content",
+    headline: "Route 35 : entrave majeure", subheadline: "Direction sud",
+    body: "Du 25 au 26 septembre.", continuationCue: "Quel détour ?",
+    visualDirection: "Carte routière", factIds: [], assetRequest: "typography-only", aspectRatio: "4:5",
+  } as import("./creative-content.types").CreativeUnit;
+  const chromeSettings = { enabled: true, style: "pill" as const, backgroundColor: "#102A43", textColor: "#F6F0E4", accentColor: "#E8A83E" };
+
+  const withoutTotalSlides = await composer.renderDraftTypography(unit, profile);
+  const withBadge = await composer.renderDraftTypography(unit, profile, undefined, 5, chromeSettings);
+  // Same call again, one slide later in the same deck: distinct output, so
+  // this is genuinely reading unitOrder/totalSlides, not a static overlay.
+  const nextSlide = await composer.renderDraftTypography({ ...unit, order: 4 }, profile, undefined, 5, chromeSettings);
+
+  assert.notEqual(Buffer.compare(withoutTotalSlides, withBadge), 0, "omitting totalSlides must skip the badge entirely");
+  assert.notEqual(Buffer.compare(withBadge, nextSlide), 0, "slide 3/5 and 4/5 must render different progress text");
+  for (const png of [withoutTotalSlides, withBadge, nextSlide]) {
+    const metadata = await sharp(png).metadata();
+    assert.equal(metadata.width, 1080);
+    assert.equal(metadata.height, 1350);
+    assert.equal(metadata.format, "png");
+  }
+
+  // A non-carousel unit (e.g. a single owned-content image) never gets a
+  // pagination badge, even if a caller passed totalSlides by mistake.
+  const singleImage = { ...unit, type: "meme-frame" } as import("./creative-content.types").CreativeUnit;
+  const withoutBadgeByType = await composer.renderDraftTypography(singleImage, profile, undefined, 5, chromeSettings);
+  const withoutTotalSlidesEither = await composer.renderDraftTypography(singleImage, profile);
+  assert.equal(Buffer.compare(withoutBadgeByType, withoutTotalSlidesEither), 0, "a non-carousel unit type must never render the badge");
 });
 
 test("road-map preparation uses open map geometry without a paid key and rejects mismatched notice IDs", async () => {
