@@ -1296,50 +1296,16 @@ export function RadarDashboard({
         </div>
 
         <nav className={styles.sidebarNav}>
-          <p className={styles.navLabel}>Workspace</p>
           <a href="#overview" className={activeNavHash === "#overview" ? styles.navActive : undefined} aria-current={activeNavHash === "#overview" ? "location" : undefined} onClick={() => setSidebarOpen(false)}>
             <span className={styles.navIcon} aria-hidden="true">⌂</span>
             Overview
           </a>
-          <a href="#stories" className={activeNavHash === "#stories" ? styles.navActive : undefined} aria-current={activeNavHash === "#stories" ? "location" : undefined} onClick={() => setSidebarOpen(false)}>
-            <span className={styles.navIcon} aria-hidden="true">▤</span>
-            Stories
-          </a>
-          <details className={styles.navGroup} open>
-            <summary className={styles.navGroupSummary}>
-              <span className={styles.navGroupTitle}>
-                <span className={styles.navIcon} aria-hidden="true">◫</span>
-                Sources
-              </span>
-            </summary>
-            {([
-              ["rss", "RSS feeds"],
-              ["ai", "AI research"],
-              ["documents", "Documents"],
-              ["manual", "Manual stories"],
-            ] as const).map(([view, label]) => {
-              const hash = `#sources/${view}`;
-              const active = activeNavHash === hash;
-              return (
-                <a
-                  key={view}
-                  href={hash}
-                  className={`${styles.navSubItem} ${active ? styles.navActive : ""}`}
-                  aria-current={active ? "location" : undefined}
-                  onClick={() => setSidebarOpen(false)}
-                >
-                  <span className={styles.navIcon} aria-hidden="true">▸</span>
-                  {label}
-                </a>
-              );
-            })}
-          </details>
+
+          <p className={styles.navLabel}>Topic</p>
           <a href="#topics" className={activeNavHash === "#topics" ? styles.navActive : undefined} aria-current={activeNavHash === "#topics" ? "location" : undefined} onClick={() => setSidebarOpen(false)}>
             <span className={styles.navIcon} aria-hidden="true">◈</span>
             Topics
           </a>
-
-          <p className={styles.navLabel}>Production</p>
           <details className={styles.navGroup} open>
             <summary className={styles.navGroupSummary}>
               <a
@@ -1355,6 +1321,14 @@ export function RadarDashboard({
                 Editorial AI
               </a>
             </summary>
+            <a href="#editorial-lenses" className={`${styles.navSubItem} ${activeNavHash === "#editorial-lenses" ? styles.navActive : ""}`} aria-current={activeNavHash === "#editorial-lenses" ? "location" : undefined} onClick={() => setSidebarOpen(false)}>
+              <span className={styles.navIcon} aria-hidden="true">▸</span>
+              Acquisition lenses
+            </a>
+            <a href="#preferences" className={`${styles.navSubItem} ${activeNavHash === "#preferences" ? styles.navActive : ""}`} aria-current={activeNavHash === "#preferences" ? "location" : undefined} onClick={() => setSidebarOpen(false)}>
+              <span className={styles.navIcon} aria-hidden="true">▸</span>
+              Editorial preferences
+            </a>
           </details>
           <details className={styles.navGroup} open>
             <summary className={styles.navGroupSummary}>
@@ -1400,16 +1374,87 @@ export function RadarDashboard({
               Carousel numbering
             </a>
           </details>
-          <a href={storyReviewHash({ tab: "selected", publicationFilter: "not-published-anywhere" })} className={styles.navSubItem} onClick={(event) => { event.preventDefault(); goToStoryReview({ tab: "selected", publicationFilter: "not-published-anywhere" }); }}>
-            <span className={styles.navIcon} aria-hidden="true">▸</span>
-            Ready to produce
-            {readyToProduceCount > 0 ? <span className={styles.navBadge}>{readyToProduceCount}</span> : null}
+          <details className={styles.navGroup} open>
+            <summary className={styles.navGroupSummary}>
+              <span className={styles.navGroupTitle}>
+                <span className={styles.navIcon} aria-hidden="true">◫</span>
+                Sources
+              </span>
+            </summary>
+            {([
+              ["rss", "RSS feeds"],
+              ["ai", "AI research"],
+              ["documents", "Documents"],
+              ["manual", "Manual stories"],
+            ] as const).map(([view, label]) => {
+              const hash = `#sources/${view}`;
+              const active = activeNavHash === hash;
+              return (
+                <a
+                  key={view}
+                  href={hash}
+                  className={`${styles.navSubItem} ${active ? styles.navActive : ""}`}
+                  aria-current={active ? "location" : undefined}
+                  onClick={() => setSidebarOpen(false)}
+                >
+                  <span className={styles.navIcon} aria-hidden="true">▸</span>
+                  {label}
+                </a>
+              );
+            })}
+          </details>
+
+          <p className={styles.navLabel}>Production</p>
+          <a href="#collect" className={activeNavHash === "#collect" ? styles.navActive : undefined} aria-current={activeNavHash === "#collect" ? "location" : undefined} onClick={() => setSidebarOpen(false)}>
+            <span className={styles.navIcon} aria-hidden="true">▼</span>
+            Collect
+          </a>
+          <a
+            href={storyReviewHash({ tab: "collected" })}
+            onClick={(event) => {
+              event.preventDefault();
+              goToStoryReview({ tab: "collected" });
+            }}
+          >
+            <span className={styles.navIcon} aria-hidden="true">◎</span>
+            Evaluate
+          </a>
+          <a
+            href={storyReviewHash({ tab: "selected" })}
+            onClick={(event) => {
+              event.preventDefault();
+              goToStoryReview({ tab: "selected" });
+            }}
+          >
+            <span className={styles.navIcon} aria-hidden="true">◆</span>
+            Select
+          </a>
+          <a
+            href={storyReviewHash({ tab: "selected", publicationFilter: "not-published-anywhere" })}
+            className={styles.navItemWithCaption}
+            onClick={(event) => {
+              event.preventDefault();
+              goToStoryReview({ tab: "selected", publicationFilter: "not-published-anywhere" });
+            }}
+          >
+            <span className={styles.navIcon} aria-hidden="true">▶</span>
+            <span className={styles.navItemBody}>
+              <span className={styles.navItemLabel}>
+                Ready to produce
+                {readyToProduceCount > 0 ? <span className={styles.navBadge}>{readyToProduceCount}</span> : null}
+              </span>
+              <small className={styles.navItemCaption}>Content → Images</small>
+            </span>
           </a>
 
           <p className={styles.navLabel}>Publishing</p>
           <a href="#editorial-meta" className={activeNavHash === "#editorial-meta" ? styles.navActive : undefined} aria-current={activeNavHash === "#editorial-meta" ? "location" : undefined} onClick={() => setSidebarOpen(false)}>
             <span className={styles.navIcon} aria-hidden="true">▸</span>
             Instagram
+          </a>
+          <a href="#editorial-instagram" className={`${styles.navSubItem} ${activeNavHash === "#editorial-instagram" ? styles.navActive : ""}`} aria-current={activeNavHash === "#editorial-instagram" ? "location" : undefined} onClick={() => setSidebarOpen(false)}>
+            <span className={styles.navIcon} aria-hidden="true">▸</span>
+            Published
           </a>
           <a href="#optimization" className={activeNavHash === "#optimization" ? styles.navActive : undefined} aria-current={activeNavHash === "#optimization" ? "location" : undefined} onClick={() => setSidebarOpen(false)}>
             <span className={styles.navIcon} aria-hidden="true">◌</span>
@@ -1720,12 +1765,12 @@ export function RadarDashboard({
           />
         </div>
 
-        <div id="settings" className={`${styles.mainGrid} ${styles.anchorTarget}`}>
+        <div id="collect" className={styles.anchorTarget}>
           <section className={styles.panel}>
             <div className={styles.panelHeading}>
               <div>
                 <p className={styles.sectionNumber}>01</p>
-                <h2>Collection</h2>
+                <h2>Collect</h2>
               </div>
             </div>
 
@@ -1751,11 +1796,13 @@ export function RadarDashboard({
               </button>
             </div>
           </section>
+        </div>
 
+        <div id="settings" className={styles.anchorTarget}>
           <section className={styles.panel}>
             <div className={styles.panelHeading}>
               <div>
-                <p className={styles.sectionNumber}>02</p>
+                <p className={styles.sectionNumber}>01</p>
                 <h2>Database status</h2>
               </div>
             </div>
@@ -1795,10 +1842,10 @@ export function RadarDashboard({
           </section>
         </div>
 
-        <section className={`${styles.panel} ${styles.preferencesPanel}`}>
+        <section id="preferences" className={`${styles.panel} ${styles.preferencesPanel} ${styles.anchorTarget}`}>
           <div className={styles.panelHeading}>
             <div>
-              <p className={styles.sectionNumber}>03</p>
+              <p className={styles.sectionNumber}>01</p>
               <h2>Editorial preferences</h2>
             </div>
             <span className={preferencesDirty ? styles.unsavedBadge : styles.savedBadge}>

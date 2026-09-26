@@ -17,6 +17,12 @@ import {
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
+/**
+ * POST prepares content by fetching the article (12 s budget) and, when
+ * allowed, the Reader fallback (30 s). Declare the budget explicitly so a
+ * hosting default shorter than that does not cut the request mid-fetch.
+ */
+export const maxDuration = 60;
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

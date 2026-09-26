@@ -268,6 +268,46 @@
   content: "⌃";
 }
 
+/* Production nav items that show their pipeline stages as a caption
+ * (Stories, Ready to produce) — same row as a normal item, but the label
+ * and caption stack so the icon stays aligned with every other entry. */
+.navItemWithCaption {
+  align-items: flex-start;
+  min-height: auto;
+  padding-block: density(3);
+}
+
+.navItemWithCaption .navIcon {
+  margin-top: 2px;
+}
+
+.navItemBody {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.navItemLabel {
+  display: flex;
+  align-items: center;
+  gap: density(2);
+}
+
+.navItemCaption {
+  overflow: hidden;
+  color: palette(primary-light, 0.55);
+  @ds-typo (caption);
+  font-size: 0.625rem;
+  font-weight: 560;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebarNav a.navItemWithCaption:hover .navItemCaption,
+.sidebarNav a.navItemWithCaption.navActive .navItemCaption {
+  color: palette(light-light, 0.72);
+}
+
 .sidebarFooter {
   margin-top: auto;
   padding: density(5) density(3) 0;
