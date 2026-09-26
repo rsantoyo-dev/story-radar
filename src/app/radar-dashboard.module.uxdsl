@@ -377,10 +377,14 @@
 
 .topbarActions {
   display: grid;
-  grid-template-columns: xs(repeat(2, minmax(0, 1fr))) sm(auto auto);
+  grid-template-columns: xs(repeat(2, minmax(0, 1fr))) sm(repeat(3, auto));
   gap: density(2);
   width: xs(100%) sm(max-content);
   justify-self: end;
+}
+
+.prepareTodayButton {
+  grid-column: xs(1 / -1) sm(auto);
 }
 
 .topbarUtility {

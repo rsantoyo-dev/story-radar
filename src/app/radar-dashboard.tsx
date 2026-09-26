@@ -25,6 +25,7 @@ import {
 } from "./topic-configuration-panel";
 import { topicThemeStyle } from "@/design/topic-themes";
 import type { CreativeProfile } from "./modules/stories/creative-content.types";
+import type { DailyPreparationRun } from "./modules/stories/daily-preparation.types";
 import type { WorkspaceSourceCatalog } from "./modules/sources/workspace-source-catalog.repository";
 
 type DatabaseStats = {
@@ -488,6 +489,8 @@ export function RadarDashboard({
   const [sourceCatalogRefresh, setSourceCatalogRefresh] = useState(0);
   const [newStoryOpen, setNewStoryOpen] = useState(false);
   const [addSourceOpen, setAddSourceOpen] = useState(false);
+  const [dailyPrepNonce, setDailyPrepNonce] = useState(0);
+  const [runningToday, setRunningToday] = useState(false);
   const [isTopicLoading, setIsTopicLoading] = useState(false);
   const [selectedCreativeProfile, setSelectedCreativeProfile] =
     useState<CreativeProfile>();
@@ -623,6 +626,64 @@ export function RadarDashboard({
       message: `“${story.title}” was added to Stories and is ready for editorial and AI evaluation.`,
     });
     goToStoryReview({ tab: "collected" });
+  }
+
+  /**
+   * The header's "Prepare today" shortcut for the most frequent loop:
+   * collect, evaluate, and pick today's story in one click. It starts the
+   * same "Prepare my day" run the Overview panel already drives and polls —
+   * starting is idempotent (it never duplicates an already-running
+   * preparation) — then bumps the panel's key so it remounts and polls right
+   * away instead of waiting out its own idle backoff. Progress and outcome
+   * are shown there, not here, so this stays a thin trigger.
+   */
+  async function handleRunTodayPipeline() {
+    if (!canAuthenticate || runningToday || isTopicLoading) return;
+    setRunningToday(true);
+    setNotice(undefined);
+    try {
+      const current = await requestJson<{
+        run: DailyPreparationRun | null;
+        lines: { id: string; name: string; timezone: string }[];
+      }>(topicUrl("/api/radar/daily-preparation", selectedTopicId), secret);
+      const lineId = current.run?.lineId || current.lines[0]?.id;
+      if (!lineId) {
+        setNotice({
+          tone: "error",
+          title: "No editorial line configured",
+          message: "Set up an editorial line for this topic first, in Sources › Collect.",
+        });
+        return;
+      }
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+      const started = await requestJson<{ run: DailyPreparationRun }>(
+        topicUrl("/api/radar/daily-preparation", selectedTopicId),
+        secret,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "start", lineId, timezone, targetStep: "recommend" }),
+        },
+      );
+      setDailyPrepNonce((nonce) => nonce + 1);
+      setNotice({
+        tone: "success",
+        title: "Preparing today's story",
+        message: `Collecting, evaluating, and selecting today's story for ${started.run.progress.lineName}. Track live progress in Overview.`,
+      });
+      if (typeof window !== "undefined") window.location.hash = "#overview";
+      requestAnimationFrame(() =>
+        document.getElementById("overview")?.scrollIntoView({ behavior: "smooth", block: "start" }),
+      );
+    } catch (error) {
+      setNotice({
+        tone: "error",
+        title: "Could not start today's pipeline",
+        message: getErrorMessage(error),
+      });
+    } finally {
+      setRunningToday(false);
+    }
   }
 
   function handleSourceAdded(source: AddedSource) {
@@ -1630,6 +1691,20 @@ export function RadarDashboard({
               >
                 <span aria-hidden="true">＋</span> New story
               </button>
+              <button
+                type="button"
+                className={`${styles.newStoryButton} ${styles.prepareTodayButton}`}
+                onClick={handleRunTodayPipeline}
+                disabled={!canAuthenticate || isTopicLoading || runningToday || topics.length === 0}
+                title={
+                  canAuthenticate
+                    ? "Collect, evaluate, and select today's story in one run"
+                    : "Connect with the collector secret first"
+                }
+              >
+                <span aria-hidden="true">{runningToday ? "◌" : "▶"}</span>{" "}
+                {runningToday ? "Starting…" : "Prepare today"}
+              </button>
             </div>
           </div>
           ) : null}
@@ -1643,7 +1718,7 @@ export function RadarDashboard({
           >
 
         <section id="overview" className={styles.anchorTarget}>
-          <DailyPreparationPanel onOpenDraft={(storyId,title,draftId,preparationRunId)=>{setContentViewer(undefined);setCreativeStory({storyId,title,draftId,preparationRunId});}} key={`daily-${selectedTopicId}`} topicId={selectedTopicId} secret={secret} disabled={!canAuthenticate || isBusy || isTopicLoading} refreshKey={stats} onViewContent={handleViewContent} onPrepareContent={handlePrepareContent} onSelect={handlePlannerSelect} preparingStoryId={activeOperation === "prepare" ? activeStoryId : undefined} onCompleted={()=>{void fetchDatabaseStats(secret,selectedTopicId).then(setStats).catch(()=>{});}} />
+          <DailyPreparationPanel onOpenDraft={(storyId,title,draftId,preparationRunId)=>{setContentViewer(undefined);setCreativeStory({storyId,title,draftId,preparationRunId});}} key={`daily-${selectedTopicId}-${dailyPrepNonce}`} topicId={selectedTopicId} secret={secret} disabled={!canAuthenticate || isBusy || isTopicLoading} refreshKey={stats} onViewContent={handleViewContent} onPrepareContent={handlePrepareContent} onSelect={handlePlannerSelect} preparingStoryId={activeOperation === "prepare" ? activeStoryId : undefined} onCompleted={()=>{void fetchDatabaseStats(secret,selectedTopicId).then(setStats).catch(()=>{});}} />
           <TopicOverviewPanel
             key={selectedTopicId}
             secret={secret}
