@@ -4,12 +4,13 @@ import { readFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { getTableConfig, PgDialect } from "drizzle-orm/pg-core";
-import { SQL, desc, eq } from "drizzle-orm";
+import { SQL, and, desc, eq, gt } from "drizzle-orm";
 import ts from "typescript";
 import vm from "node:vm";
 import { sessions, users, workspaceMembers, workspaces } from "@/db/schema";
 import * as ids from "./personal-workspace";
 import type * as service from "./personal-workspace.repository";
+import type * as sessionService from "./session-context";
 
 test("personal workspace creation is idempotent, repairs missing membership and preserves default ownership", async () => {
   const client = new PGlite();
@@ -59,6 +60,29 @@ test("personal workspace creation is idempotent, repairs missing membership and 
       expiresAt: new Date(Date.now() + 86_400_000), activeWorkspaceId: first });
     assert.equal(await repo.lastActiveWorkspace("person-1"), first);
     assert.equal(await repo.chooseActiveWorkspace("person-1", await repo.lastActiveWorkspace("person-1")), first);
+    const sessionExports = {};
+    const sessionCode = ts.transpileModule(readFileSync(new URL("./session-context.ts", import.meta.url), "utf8"),
+      { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+    vm.runInNewContext(sessionCode, { exports: sessionExports, require: (path: string) => ({
+      "server-only": {}, "react": { cache: (fn: unknown) => fn },
+      "next/headers": { headers: async () => new Headers() },
+      "next/navigation": { redirect: () => { throw new Error("redirect"); } },
+      "drizzle-orm": { and, eq, gt },
+      "@/db/client": { db: database }, "@/db/schema": { sessions },
+      "./auth": { getAuth: () => ({ api: { getSession: async () => null } }) },
+      "./personal-workspace.repository": repo,
+    } as Record<string, unknown>)[path] });
+    const context = sessionExports as typeof sessionService;
+    const snapshot = { user: { id: "person-1" }, session: { id: "session-1" } } as Parameters<typeof context.workspaceContextForSession>[0];
+    assert.equal((await context.workspaceContextForSession(snapshot)).workspaceId, first);
+    await assert.rejects(context.workspaceContextForSession(null), { status: 401 });
+    await assert.rejects(context.workspaceContextForSession({ ...snapshot!, user: { ...snapshot!.user, id: "another" } }), { status: 401 });
+    await database.update(sessions).set({ expiresAt: new Date(Date.now() - 1000) }).where(eq(sessions.id, "session-1"));
+    await assert.rejects(context.workspaceContextForSession(snapshot), { status: 401 });
+    await database.update(sessions).set({ expiresAt: new Date(Date.now() + 86_400_000), activeWorkspaceId: "revoked-workspace" })
+      .where(eq(sessions.id, "session-1"));
+    assert.equal((await context.workspaceContextForSession(snapshot)).workspaceId, "default");
+    assert.equal((await database.select().from(sessions))[0].activeWorkspaceId, "default");
     await database.delete(users);
     assert.equal((await database.select().from(workspaceMembers)).length, 0);
   } finally { await client.close(); }

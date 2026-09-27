@@ -10,19 +10,16 @@ const UUID_PATTERN =
 
 export class TopicContextError extends Error {}
 
-/**
- * Until authentication is introduced, every server request is constrained to
- * the seeded default workspace. The browser never supplies a workspace id.
- */
+/** The caller supplies its authorized workspace; legacy service callers use the seeded workspace. */
 export async function requireTopic(
   topicId: string | null | undefined,
-  options: { active?: boolean } = {},
+  options: { active?: boolean; workspaceId?: string } = {},
 ): Promise<Topic> {
   if (!topicId || !UUID_PATTERN.test(topicId)) {
     throw new TopicContextError("topicId must be a valid UUID");
   }
 
-  const topic = await getTopicById(topicId);
+  const topic = await getTopicById(topicId, options.workspaceId);
 
   if (!topic) {
     throw new TopicContextError("Topic was not found");

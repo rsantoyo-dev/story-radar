@@ -1,14 +1,14 @@
 ---
 id: AUTH-04
 feature: FEAT-AUTH-001
-status: todo
+status: in-progress
 board: authentication.kanban.md
-tags: [auth, todo, p0]
+tags: [auth, in-progress, p0]
 ---
 
 # AUTH-04 — Crear la capa de acceso a datos y la autorización de rutas
 
-**Estado:** [[status-todo]] · **Feature:** [Autenticación y cuentas](../features/authentication.md)
+**Estado:** [[status-in-progress]] · **Feature:** [Autenticación y cuentas](../features/authentication.md)
 
 **Prioridad:** P0 · **Dependencias:** [[AUTH-02]]
 
@@ -30,3 +30,10 @@ Seguir el patrón de `meta-oauth-state.ts`: la lógica de decisión no importa `
 ## Validación y entrega
 
 Salida de las pruebas y revisión de que ninguna función nueva expone el token de sesión ni el secreto en errores o logs.
+
+## Avance de implementación
+
+- `getSession`, `requireSession` y `requireWorkspaceContext` comprueban sesión persistida y membresía. Una sesión caducada o asociada a otro usuario se rechaza; un workspace activo revocado vuelve a uno al que el usuario pertenece. La reparación perezosa de AUTH-02 se ejecuta desde este contexto.
+- `authorizeRadarRequest` acepta sesión o Bearer del servidor, devuelve actor y workspace, comprueba `Origin` o `Sec-Fetch-Site: same-origin` para mutaciones con cookie y no exige el secreto del collector cuando existe sesión. El helper anterior sigue disponible para los handlers hasta AUTH-05.
+- `requireTopic` acepta `workspaceId` y responde como topic inexistente cuando pertenece a otro. AUTH-06 lo pasará desde el contexto autorizado en cada ruta y servicio.
+- Pruebas de decisión pura y PGlite para sesión caducada, usuario distinto, reparación de workspace y membresía. Pendientes: integración de los handlers en AUTH-05/06 y prueba con Google en un entorno configurado.

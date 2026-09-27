@@ -12,12 +12,6 @@ Estado: AUTH-01 implementado y en revisión (falta la prueba manual con credenci
   - tags: [auth, p0, ui]
   - ficha: [AUTH-03](../stories/AUTH-03.md)
 
-### AUTH-04 — Crear la capa de acceso a datos y la autorización de rutas
-
-  - priority: high
-  - tags: [auth, p0]
-  - ficha: [AUTH-04](../stories/AUTH-04.md)
-
 ### AUTH-05 — Retirar el secreto del navegador y proteger la aplicación
 
   - priority: high
@@ -57,6 +51,13 @@ Estado: AUTH-01 implementado y en revisión (falta la prueba manual con credenci
   - ficha: [AUTH-10](../stories/AUTH-10.md)
 
 ## En progreso
+
+### AUTH-04 — Crear la capa de acceso a datos y la autorización de rutas
+
+  - priority: high
+  - tags: [auth, p0]
+  - ficha: [AUTH-04](../stories/AUTH-04.md)
+  - nota: contexto de sesión, membresía y decisión de autorización implementados; handlers todavía usan el helper anterior hasta AUTH-05/06.
 
 ### AUTH-02 — Crear el workspace personal y la membresía en el primer inicio de sesión
 
