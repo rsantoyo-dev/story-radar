@@ -14,12 +14,6 @@
 
 ## Por hacer
 
-### PUB-09 — Conectar Meta y elegir Facebook e Instagram
-
-  - priority: high
-  - tags: [publishing, todo, p0, meta]
-  - nota: PUB-13 y AUTH-04/05/06; conserva Instagram directo y verifica capacidades por destino.
-
 ### PUB-14 — Mostrar el preview de publicación al terminar el draft
 
   - priority: high
@@ -75,6 +69,12 @@
   - nota: paridad de seguimiento básico; capacidades por API sin duplicar la feature de analítica avanzada.
 
 ## En progreso
+
+### PUB-09 — Conectar Meta y elegir Facebook e Instagram
+
+  - priority: high
+  - tags: [publishing, in-progress, p0, meta]
+  - nota: descubrimiento seguro de Páginas y selección por ID iniciados; faltan OAuth ligado a sesión, persistencia, UI y QA real.
 
 ### PUB-13 — Compartir el contrato de publicación entre Facebook e Instagram
 

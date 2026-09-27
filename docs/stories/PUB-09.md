@@ -1,14 +1,14 @@
 ---
 id: PUB-09
 feature: FEAT-PUB-001
-status: todo
+status: in-progress
 board: instagram-publishing.kanban.md
-tags: [publishing, todo, p0]
+tags: [publishing, in-progress, p0]
 ---
 
 # PUB-09 — Conectar Meta y elegir Facebook e Instagram
 
-**Estado:** [[status-todo]] · **Feature:** [Publicación desde el SaaS](../features/instagram-publishing.md)
+**Estado:** [[status-in-progress]] · **Feature:** [Publicación desde el SaaS](../features/instagram-publishing.md)
 
 **Como** editor, **quiero** conectar Meta y elegir mi Página de Facebook y mi cuenta de Instagram, **para** gestionar ambos destinos desde el Topic.
 
@@ -40,3 +40,9 @@ Cubrir cuenta sin páginas, página sin Instagram, permisos parciales, páginas 
 Entregar una matriz de capacidades/scopes por adaptador y versión, requisitos de App Review/Advanced Access para clientes y diagnóstico de callback HTTPS. Verificar los nombres y requisitos vigentes al implementar; los permisos opcionales de métricas no bloquean publicación.
 
 Referencia: [Instagram mediante Facebook Login, colección oficial de Meta](https://www.postman.com/meta/instagram/folder/u4g5a2a/instagram-api-with-facebook-login). Esta modalidad exige vincular el Instagram profesional a una Página. Las dependencias AUTH bloquean la habilitación para clientes; las pruebas de adaptadores pueden avanzar con datos simulados.
+
+## Avance de implementación
+
+- `facebook-page-discovery.ts` prepara la consulta de solo lectura `/me/accounts` con paginación por cursor y token de usuario enviado en cabecera. `facebook-page-selection.ts` valida respuesta, conserva los IDs aun cuando dos Páginas tengan el mismo nombre, exige tarea de creación y elimina tokens antes de formar la respuesta pública. Una selección de ID arbitrario o token ausente falla sin publicar.
+- La fuente para campos `id,name,access_token,tasks` y cursores es la [colección Facebook API publicada por Meta](https://www.postman.com/meta/facebook/request/bqfxwbp/get-access-tokens-of-pages-you-manage); [la colección Instagram de Meta](https://www.postman.com/meta/instagram/request/lpx8lul/get-access-tokens-of-pages-you-manage) añade `instagram_business_account`. La [colección Instagram con Facebook Login](https://www.postman.com/meta/instagram/folder/u4g5a2a/instagram-api-with-facebook-login) enumera `pages_show_list`, `instagram_basic`, `instagram_content_publish` y `pages_read_engagement` para el recorrido vinculado. La tarea `CREATE_CONTENT` se comprueba para la Página; los permisos de publicación y métricas se verifican aparte antes de habilitar la entrega.
+- Pendientes: intento OAuth persistido y ligado a sesión, selección posterior al callback, verificación efectiva del Page token y del Instagram vinculado, conexión guardada por destino, UI y QA real con una Página de prueba. La interfaz todavía no ofrece Facebook a clientes.
