@@ -62,12 +62,6 @@ export const storySocialPublications = pgTable(
     ),
     index("story_social_publications_story_id_idx").on(table.storyId),
     check(
-      "story_social_publications_dates_check",
-      sql`${table.publishedAt} IS NULL
-        OR ${table.scheduledAt} IS NULL
-        OR ${table.publishedAt} >= ${table.scheduledAt}`,
-    ),
-    check(
       "story_social_publications_post_url_check",
       sql`${table.postUrl} IS NULL OR ${table.postUrl} ~* '^https?://'`,
     ),

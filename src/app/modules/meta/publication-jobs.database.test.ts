@@ -23,7 +23,11 @@ async function setup() {
   const client = new PGlite();
   const db = drizzle(client);
   const dialect = new PgDialect();
-  for (const table of [schema.instagramPublicationJobs, schema.instagramPublicationPackages, schema.instagramDeliveryFiles, schema.topicInstagramMedia]) {
+  await client.exec(`CREATE TABLE topics (id uuid PRIMARY KEY, workspace_id text NOT NULL);
+    INSERT INTO topics (id, workspace_id) VALUES ('${ids.topic}', 'default');`);
+  for (const table of [schema.instagramPublicationJobs, schema.instagramPublicationPackages,
+    schema.instagramDeliveryFiles, schema.topicInstagramMedia, schema.metaPublicationOrders,
+    schema.metaPublicationDeliveries, schema.metaPublicationConfirmations]) {
     const config = getTableConfig(table);
     const columns = config.columns.map(column => {
       const value = column.default instanceof SQL ? dialect.sqlToQuery(column.default).sql
@@ -36,7 +40,11 @@ async function setup() {
     }
   }
   await client.exec(`CREATE UNIQUE INDEX job_key ON instagram_publication_jobs(idempotency_key);
-    CREATE UNIQUE INDEX media_key ON topic_instagram_media(topic_id, external_id);`);
+    CREATE UNIQUE INDEX media_key ON topic_instagram_media(topic_id, external_id);
+    CREATE UNIQUE INDEX order_key ON meta_publication_orders(idempotency_key);
+    CREATE UNIQUE INDEX delivery_job_key ON meta_publication_deliveries(legacy_instagram_job_id);
+    CREATE UNIQUE INDEX confirmation_delivery_key ON meta_publication_confirmations(delivery_id);
+    CREATE UNIQUE INDEX confirmation_remote_key ON meta_publication_confirmations(platform, account_id, remote_id);`);
   await db.insert(schema.instagramPublicationPackages).values({ id: ids.pkg, topicId: ids.topic, draftId: ids.draft,
     batchId: ids.batch, storyId: ids.story, draftVersion: 1, candidateSnapshotHash: "snapshot", packageHash: "package",
     mediaType: "image", caption: "Approved caption", igUserId: "1789", connectionVersion: "conn-1",
@@ -104,6 +112,16 @@ test("concurrent publish requests and independent workers converge on one order 
     const [media] = await h.db.select().from(schema.topicInstagramMedia);
     assert.equal(media.linkedStoryId, ids.story);
     assert.equal(media.publishedPackageId, ids.pkg);
+    const orders = await h.db.select().from(schema.metaPublicationOrders);
+    const deliveries = await h.db.select().from(schema.metaPublicationDeliveries);
+    const confirmations = await h.db.select().from(schema.metaPublicationConfirmations);
+    assert.equal(orders.length, 1);
+    assert.deepEqual(orders[0].authorizedDestinations, [{ platform: "instagram", accountId: "1789" }]);
+    assert.equal(deliveries.length, 1);
+    assert.equal(deliveries[0].id, jobs[0].id);
+    assert.equal(deliveries[0].status, "published");
+    assert.equal(confirmations.length, 1);
+    assert.equal(confirmations[0].remoteId, "5001");
   } finally { await h.client.close(); }
 });
 
@@ -138,6 +156,7 @@ test("a DB failure after remote success is repaired after reconnection without a
     assert.equal((await h.row()).status, "pending-confirmation");
     assert.equal((await h.row()).publishedMediaId, "5001");
     assert.equal(h.calls.publish, 1);
+    assert.equal((await h.db.select().from(schema.metaPublicationConfirmations)).length, 1);
     h.control.connection = "conn-reconnected";
     await h.client.exec("DROP TRIGGER reject_media ON topic_instagram_media");
     await h.step();
@@ -146,6 +165,7 @@ test("a DB failure after remote success is repaired after reconnection without a
     assert.equal(media.igUserId, "1789");
     assert.equal(media.externalId, "5001");
     assert.equal(h.calls.publish, 1);
+    assert.equal((await h.db.select().from(schema.metaPublicationConfirmations)).length, 1);
   } finally { await h.client.close(); }
 });
 
@@ -201,5 +221,44 @@ test("a legacy preflight suspension remains inert until an explicit retry passes
     assert.equal((await h.row()).id, job.id);
     assert.equal((await h.row()).status, "published");
     assert.equal(h.calls.publish, 1);
+  } finally { await h.client.close(); }
+});
+
+test("the additive migration imports published and in-flight Instagram jobs without another send", async () => {
+  const h = await setup();
+  try {
+    const first = await h.repo.requestPublishNow(ids.topic, ids.draft, ids.pkg);
+    await h.finish();
+    const secondPackageId = "00000000-0000-4000-8000-000000000006";
+    const secondDraftId = "00000000-0000-4000-8000-000000000007";
+    await h.db.insert(schema.instagramPublicationPackages).values({
+      id: secondPackageId, topicId: ids.topic, draftId: secondDraftId,
+      batchId: ids.batch, storyId: ids.story, draftVersion: 1,
+      candidateSnapshotHash: "snapshot", packageHash: "another-package",
+      mediaType: "image", caption: "Another approved caption", igUserId: "1789",
+      connectionVersion: "conn-1", scriptSnapshot: {}, transforms: [],
+      expiresAt: new Date(Date.now() + 86_400_000),
+    });
+    const second = await h.repo.requestPublishNow(ids.topic, secondDraftId, secondPackageId);
+    await h.db.delete(schema.metaPublicationConfirmations);
+    await h.db.delete(schema.metaPublicationDeliveries);
+    await h.db.delete(schema.metaPublicationOrders);
+
+    const migration = readFileSync(new URL("../../../../drizzle/0080_overjoyed_black_tom.sql", import.meta.url), "utf8");
+    for (const statement of migration.split("--> statement-breakpoint").filter(part =>
+      part.includes('INSERT INTO "meta_publication_'))) {
+      await h.client.exec(statement);
+    }
+    const orders = await h.db.select().from(schema.metaPublicationOrders);
+    const deliveries = await h.db.select().from(schema.metaPublicationDeliveries);
+    const confirmations = await h.db.select().from(schema.metaPublicationConfirmations);
+    assert.deepEqual(new Set(orders.map(row => row.id)), new Set([first.id, second.id]));
+    assert.equal(deliveries.find(row => row.id === first.id)?.status, "published");
+    assert.equal(deliveries.find(row => row.id === second.id)?.status, "queued");
+    assert.equal(confirmations.length, 1);
+    assert.equal(confirmations[0].remoteId, "5001");
+    await h.repo.requestPublishNow(ids.topic, ids.draft, ids.pkg);
+    assert.equal(h.calls.publish, 1);
+    assert.equal((await h.db.select().from(schema.metaPublicationConfirmations)).length, 1);
   } finally { await h.client.close(); }
 });

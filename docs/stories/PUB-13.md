@@ -1,14 +1,14 @@
 ---
 id: PUB-13
 feature: FEAT-PUB-001
-status: todo
+status: in-progress
 board: instagram-publishing.kanban.md
-tags: [publishing, todo, p0, meta]
+tags: [publishing, in-progress, p0, meta]
 ---
 
 # PUB-13 — Compartir el contrato de publicación entre Facebook e Instagram
 
-**Estado:** [[status-todo]] · **Feature:** [Publicación en Meta](../features/instagram-publishing.md)
+**Estado:** [[status-in-progress]] · **Feature:** [Publicación en Meta](../features/instagram-publishing.md)
 
 **Prioridad:** P0 · **Dependencias:** [PUB-03](PUB-03.md), [PUB-07](PUB-07.md)
 
@@ -35,3 +35,11 @@ Los estados propuestos y el significado de «Story publicada» están definidos 
 ## Validación y entrega
 
 Pruebas de doble clic, dos workers, coexistencia de conexiones, varias publicaciones de una Story, aislamiento de Topic, conservación de históricos y reparación tras éxito remoto. La migración se prueba con jobs en curso y publicados; ejecutar `npm run db:check` si cambia el esquema.
+
+## Implementación en rama `feat/meta-publishing` — 26 de septiembre de 2026
+
+- `meta_publication_orders` conserva la autorización y destinos originales; `meta_publication_deliveries` permite varias entregas históricas por Story y destino; `meta_publication_confirmations` fija el ID remoto por plataforma y cuenta. La migración `0080` incorpora los jobs de Instagram publicados y pendientes conservando sus IDs.
+- El servicio actual de Instagram sincroniza su job con la orden y la entrega. Una respuesta con ID remoto persiste primero la confirmación; la proyección en `topic_instagram_media` se repara desde el mismo job sin otra llamada `media_publish`. La nueva escritura falla cerrada si la identidad histórica no coincide.
+- `story_social_publications` admite fecha efectiva anterior a la planificada para la futura acción «Publicar ahora». Sigue siendo un resumen compatible, no un historial.
+- Pruebas con PostgreSQL en memoria cubren dos requests/workers, retries, vínculo manual, fallo local tras respuesta remota y migración con un job publicado y otro pendiente. `lint`, `build` y `db:check` pasan.
+- Pendiente de PUB-09/PUB-10: adaptadores y capacidades de Facebook Pages/Instagram por Facebook Login, creación de órdenes con dos destinos y pruebas de fallos parciales. La migración requiere aplicación en el entorno antes de desplegar el código del worker; no se ejecutó contra producción.

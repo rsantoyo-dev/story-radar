@@ -10,7 +10,11 @@ import {
   instagramDeliveryFiles,
   instagramPublicationJobs,
   instagramPublicationPackages,
+  metaPublicationConfirmations,
+  metaPublicationDeliveries,
+  metaPublicationOrders,
   topicInstagramMedia,
+  topics,
 } from "@/db/schema";
 
 import {
@@ -117,6 +121,80 @@ function idempotencyKey(packageHash: string, igUserId: string): string {
 
 type JobDbRow = typeof instagramPublicationJobs.$inferSelect;
 
+/** Mirror legacy Instagram jobs into the shared contract without changing their IDs or replaying sends.
+ * Repeating this after a crash repairs a missing local confirmation before the gallery projection.
+ */
+async function syncInstagramDelivery(job: JobDbRow): Promise<void> {
+  const [pkg] = await db.select().from(instagramPublicationPackages)
+    .where(eq(instagramPublicationPackages.id, job.packageId)).limit(1);
+  const [topic] = await db.select({ workspaceId: topics.workspaceId }).from(topics)
+    .where(eq(topics.id, job.topicId)).limit(1);
+  if (!pkg || !topic || pkg.topicId !== job.topicId || pkg.storyId !== job.storyId) {
+    throw new PublicationJobConflictError("Publication order identity cannot be reconstructed.");
+  }
+  const accountId = job.igUserId ?? pkg.igUserId ?? `unknown:${job.id}`;
+  await db.insert(metaPublicationOrders).values({
+    id: job.id, workspaceId: topic.workspaceId, topicId: job.topicId, storyId: job.storyId,
+    idempotencyKey: job.idempotencyKey, action: "publish-now",
+    authorizedDestinations: [{ platform: "instagram", accountId }],
+    authorization: { source: "legacy-instagram-explicit-order", jobId: job.id },
+    createdAt: job.createdAt,
+  }).onConflictDoNothing({ target: metaPublicationOrders.id });
+  const [order] = await db.select().from(metaPublicationOrders)
+    .where(eq(metaPublicationOrders.id, job.id)).limit(1);
+  if (!order || order.workspaceId !== topic.workspaceId || order.topicId !== job.topicId ||
+      order.storyId !== job.storyId || order.idempotencyKey !== job.idempotencyKey ||
+      order.authorizedDestinations.length !== 1 ||
+      order.authorizedDestinations[0].platform !== "instagram" ||
+      order.authorizedDestinations[0].accountId !== accountId) {
+    throw new PublicationJobConflictError("A publication order cannot change its authorized destinations.");
+  }
+  await db.insert(metaPublicationDeliveries).values({
+    id: job.id, orderId: job.id, workspaceId: topic.workspaceId,
+    topicId: job.topicId, storyId: job.storyId, platform: "instagram", accountId,
+    connectionVersion: job.connectionVersion, packageId: pkg.id, packageHash: pkg.packageHash,
+    packageSnapshot: { source: "legacy-instagram", draftId: pkg.draftId,
+      draftVersion: pkg.draftVersion, batchId: pkg.batchId, caption: pkg.caption,
+      hashtags: pkg.hashtags, script: pkg.scriptSnapshot, policy: pkg.policySnapshot,
+      transforms: pkg.transforms, candidateSnapshotHash: pkg.candidateSnapshotHash },
+    legacyInstagramJobId: job.id, status: job.status, attempts: job.attempts,
+    createdAt: job.createdAt, updatedAt: job.updatedAt,
+  }).onConflictDoNothing({ target: metaPublicationDeliveries.id });
+
+  const [delivery] = await db.select().from(metaPublicationDeliveries)
+    .where(eq(metaPublicationDeliveries.id, job.id)).limit(1);
+  if (!delivery || delivery.legacyInstagramJobId !== job.id || delivery.accountId !== accountId ||
+      delivery.connectionVersion !== job.connectionVersion || delivery.packageId !== pkg.id ||
+      delivery.workspaceId !== topic.workspaceId) {
+    throw new PublicationJobConflictError("A publication delivery cannot change its authorized account or package.");
+  }
+  if (job.publishedMediaId) {
+    await db.insert(metaPublicationConfirmations).values({
+      deliveryId: delivery.id, platform: "instagram", accountId,
+      remoteId: job.publishedMediaId, permalink: job.permalink,
+      confirmedAt: job.finishedAt ?? job.updatedAt,
+    }).onConflictDoNothing({ target: metaPublicationConfirmations.deliveryId });
+    const [confirmation] = await db.select().from(metaPublicationConfirmations)
+      .where(eq(metaPublicationConfirmations.deliveryId, delivery.id)).limit(1);
+    if (!confirmation || confirmation.remoteId !== job.publishedMediaId || confirmation.accountId !== accountId) {
+      throw new PublicationJobConflictError("This delivery already confirms another remote publication.");
+    }
+    if (job.permalink && !confirmation.permalink) {
+      await db.update(metaPublicationConfirmations)
+        .set({ permalink: job.permalink })
+        .where(eq(metaPublicationConfirmations.deliveryId, delivery.id));
+    }
+  }
+  // Read the current legacy row again: a concurrent worker may have advanced it since this call began.
+  const [current] = await db.select().from(instagramPublicationJobs)
+    .where(eq(instagramPublicationJobs.id, job.id)).limit(1);
+  if (current) await db.update(metaPublicationDeliveries).set({
+    status: current.status, attempts: current.attempts,
+    confirmedAt: current.publishedMediaId ? current.finishedAt ?? current.updatedAt : null,
+    updatedAt: new Date(),
+  }).where(eq(metaPublicationDeliveries.id, delivery.id));
+}
+
 function mapJobRow(row: JobDbRow): PublicationJobRow {
   const children = Array.isArray(row.childContainers)
     ? (row.childContainers as ChildContainer[])
@@ -213,7 +291,10 @@ export async function requestPublishNow(
     throw new PublicationJobConflictError("This exact package already has a publication order in another draft.");
   }
   // A replay of the original request remains read-only, including consumed packages.
-  if (existing && !retryJobId) return toPublicationJobView(mapJobRow(existing), maxAttempts());
+  if (existing && !retryJobId) {
+    await syncInstagramDelivery(existing);
+    return toPublicationJobView(mapJobRow(existing), maxAttempts());
+  }
   if (retryJobId && (!existing || existing.id !== retryJobId || existing.packageId !== packageId)) {
     throw new PublicationJobConflictError("The retry does not match this publication order.");
   }
@@ -233,7 +314,7 @@ export async function requestPublishNow(
       .where(and(eq(instagramPublicationJobs.id, existing.id), eq(instagramPublicationJobs.status, existing.status),
         eq(instagramPublicationJobs.attempts, existing.attempts)))
       .returning();
-    if (retried) after(() => advancePublicationJob(retried.id));
+    if (retried) { await syncInstagramDelivery(retried); after(() => advancePublicationJob(retried.id)); }
     return toPublicationJobView(mapJobRow(retried ?? await loadJobRow(existing.id)), maxAttempts());
   }
   const now = new Date();
@@ -273,6 +354,8 @@ export async function requestPublishNow(
     throw new PublicationJobConflictError("This exact package already has a publication order in another draft.");
   }
 
+  await syncInstagramDelivery(job);
+
   if (job.status !== "published" && job.status !== "suspended") {
     after(() => advancePublicationJob(job.id));
   }
@@ -288,6 +371,7 @@ export async function advancePublicationJob(jobId: string): Promise<void> {
     .returning({ id: instagramPublicationJobs.id });
   if (!claimed) return;
   try {
+    await syncInstagramDelivery(await loadJobRow(jobId));
     await runPublishPublicationJob(await buildDependencies(jobId, owner));
   } catch {
     // Provider/DB exceptions may contain credentials. Keep only the operational job id.
@@ -404,6 +488,7 @@ async function buildDependencies(
           ),
         )
         .returning();
+      if (updated) await syncInstagramDelivery(updated);
       return updated ? mapJobRow(updated) : null;
     },
     markPackageConsumed: async () => {
@@ -420,6 +505,7 @@ async function buildDependencies(
     },
     recordPublishedMedia: async (input) => {
       await assertLease();
+      await syncInstagramDelivery(await loadJobRow(jobId));
       const publishedAt = input.publishedAt;
       await db
         .insert(topicInstagramMedia)

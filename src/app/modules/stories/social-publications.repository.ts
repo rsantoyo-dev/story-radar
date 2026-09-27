@@ -238,12 +238,6 @@ function validateStorySocialPublicationInput(
     optionalDate(input.publishedAt, "publishedAt") ??
     (status === "published" ? new Date() : undefined);
 
-  if (scheduledAt && publishedAt && publishedAt < scheduledAt) {
-    throw new SocialPublicationValidationError(
-      "publishedAt cannot be earlier than scheduledAt",
-    );
-  }
-
   return {
     platform: parseSocialPublicationPlatform(input.platform),
     status,

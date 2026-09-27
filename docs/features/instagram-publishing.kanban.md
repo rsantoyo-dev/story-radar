@@ -14,12 +14,6 @@
 
 ## Por hacer
 
-### PUB-13 — Compartir el contrato de publicación entre Facebook e Instagram
-
-  - priority: high
-  - tags: [publishing, todo, p0, meta]
-  - nota: primer paso; reutiliza paquetes/jobs de Instagram y conserva sus históricos.
-
 ### PUB-09 — Conectar Meta y elegir Facebook e Instagram
 
   - priority: high
@@ -81,6 +75,12 @@
   - nota: paridad de seguimiento básico; capacidades por API sin duplicar la feature de analítica avanzada.
 
 ## En progreso
+
+### PUB-13 — Compartir el contrato de publicación entre Facebook e Instagram
+
+  - priority: high
+  - tags: [publishing, in-progress, p0, meta]
+  - nota: esquema y migración aditivos, sincronización de jobs Instagram y confirmaciones remotas implementados; faltan adaptadores Facebook y cierre de QA por destino.
 
 ## En revisión / QA
 
