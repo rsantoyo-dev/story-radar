@@ -1,0 +1,83 @@
+.authShell {
+  display: grid;
+  min-height: 100svh;
+  place-items: center;
+  padding: density(6);
+  background: palette(light-light);
+  color: palette(dark-main);
+  font-family: var(--font-geist-sans, Arial, sans-serif);
+}
+
+.authCard {
+  @ds-surface(contained light 5);
+  width: 100%;
+  max-width: 29rem;
+  display: grid;
+  gap: density(5);
+  padding: density(7);
+}
+
+.authCard h1 {
+  @ds-typo(h2);
+  margin: 0;
+}
+
+.authCard p {
+  @ds-typo(body);
+  margin: 0;
+  color: palette(dark-light);
+}
+
+.eyebrow {
+  @ds-typo(caption);
+  color: palette(primary-dark);
+  font-weight: 700;
+  letter-spacing: .08em;
+}
+
+.googleButton, .signOutButton {
+  @ds-button(outlined neutral 4);
+  display: flex;
+  min-height: 3rem;
+  align-items: center;
+  justify-content: center;
+  gap: density(3);
+  background: palette(light-light);
+  color: palette(dark-main);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.googleButton:hover, .signOutButton:hover { background: palette(surface-light); }
+.googleButton:focus-visible, .signOutButton:focus-visible, .userMenu summary:focus-visible {
+  outline: 3px solid palette(info-main);
+  outline-offset: 3px;
+}
+.googleButton:disabled, .signOutButton:disabled { opacity: .55; cursor: wait; }
+.authCard .hint { @ds-typo(small); }
+.authCard .error { @ds-typo(small); color: palette(error-dark); }
+
+.userMenu { position: relative; }
+.userMenu summary {
+  @ds-button(outlined neutral 2);
+  display: flex;
+  align-items: center;
+  gap: density(2);
+  max-width: 15rem;
+  font: inherit;
+  cursor: pointer;
+}
+.userMenu summary span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.userMenu summary img { width: 1.5rem; height: 1.5rem; border-radius: radius(circle); }
+.userMenuPanel {
+  @ds-surface(contained light 3);
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  display: grid;
+  min-width: 12rem;
+  gap: density(3);
+}
+.userMenuPanel .signOutButton { width: 100%; }

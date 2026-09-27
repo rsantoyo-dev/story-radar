@@ -16,7 +16,10 @@ export class WorkspaceAccessError extends Error {
   }
 }
 
-export const getSession = cache(async () => getAuth().api.getSession({ headers: await headers() }));
+export const getSession = cache(async () => {
+  const requestHeaders = await headers();
+  return getAuth().api.getSession({ headers: requestHeaders });
+});
 
 export async function requireSession() {
   const session = await getSession();

@@ -1,14 +1,14 @@
 ---
 id: AUTH-03
 feature: FEAT-AUTH-001
-status: todo
+status: in-progress
 board: authentication.kanban.md
-tags: [auth, todo, p0, ui]
+tags: [auth, in-progress, p0, ui]
 ---
 
 # AUTH-03 — Construir la página de acceso con Google, menú de usuario y cierre de sesión
 
-**Estado:** [[status-todo]] · **Feature:** [Autenticación y cuentas](../features/authentication.md)
+**Estado:** [[status-in-progress]] · **Feature:** [Autenticación y cuentas](../features/authentication.md)
 
 **Prioridad:** P0 · **Dependencias:** [[AUTH-01]]
 
@@ -30,3 +30,8 @@ Leer `docs/uxdsl-agent-guide.md` y `uxdsl.config.js` antes de estilizar. El logo
 ## Validación y entrega
 
 Capturas de la página en móvil y escritorio y prueba manual del ciclo completo con una cuenta de prueba de Google en local.
+
+## Avance de implementación
+
+- Pantallas `/login` y `/no-access`, layout sin dashboard, botón Google con estados de carga/error y retorno restringido a rutas locales; menú de usuario y cierre de sesión integrados al dashboard. Los estilos provienen de UXDSL.
+- Pendientes para QA: capturas responsive y ciclo real con una cuenta de prueba Google. El dashboard aún depende del secreto del collector hasta la migración AUTH-05.

@@ -3,7 +3,7 @@
 const path = require("node:path");
 
 /**
- * Single orchestration file for all five UXDSL entries. Neither `theme` nor
+ * Single orchestration file for UXDSL entries. Neither `theme` nor
  * `breakpoints` is declared here — both are deliberately absent:
  * uxdsl-cli 0.5.0-beta.6 auto-discovers `uxdsl.theme.config.cjs` next to
  * this file and shares its `theme` (which nests `breakpoints` inside it)
@@ -63,6 +63,11 @@ module.exports = {
         __dirname,
         "src/app/topic-configuration-panel.generated.module.css",
       ),
+      includeTheme: false,
+    },
+    {
+      entry: path.join(__dirname, "src/app/(auth)/auth.module.uxdsl"),
+      outFile: path.join(__dirname, "src/app/(auth)/auth.generated.module.css"),
       includeTheme: false,
     },
   ],

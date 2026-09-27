@@ -17,6 +17,7 @@ import { AcquisitionLensesPanel } from "./acquisition-lenses-panel";
 import { TopicOverviewPanel } from "./topic-overview-panel";
 import { NewStoryDialog, type CreatedStory } from "./new-story-dialog";
 import { AddSourceDialog, type AddedSource } from "./add-source-dialog";
+import { UserMenu } from "./(auth)/user-menu";
 import styles from "./radar-dashboard.generated.module.css";
 import {
   TopicConfigurationPanel,
@@ -1603,6 +1604,8 @@ export function RadarDashboard({
                 </div>
               </div>
             </div>
+
+            <UserMenu />
 
             {stats ? (
               <div className={styles.topbarSession}>

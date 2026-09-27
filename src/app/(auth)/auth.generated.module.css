@@ -1,0 +1,115 @@
+.authShell {
+  display: grid;
+  min-height: 100svh;
+  place-items: center;
+  padding: var(--uxdsl__density__6);
+  background: var(--uxdsl__palette__light-light);
+  color: var(--uxdsl__palette__dark-main);
+  font-family: var(--font-geist-sans, Arial, sans-serif);
+}
+
+.authCard {
+  padding: var(--uxdsl__density__5);
+  border-radius: var(--uxdsl__radius__5);
+  background: var(--uxdsl__palette__light-main);
+  color: var(--uxdsl__palette__light-contrast);
+  border: var(--uxdsl__surface__contained-border);
+  box-shadow: var(--uxdsl__surface__contained-shadow);
+  width: 100%;
+  max-width: 29rem;
+  display: grid;
+  gap: var(--uxdsl__density__5);
+  padding: var(--uxdsl__density__7);
+}
+
+.authCard h1 {
+  font-family: var(--uxdsl__typography__h2-font-family);
+  font-size: var(--uxdsl__typography__h2-size);
+  line-height: var(--uxdsl__typography__h2-line);
+  font-weight: var(--uxdsl__typography__h2-weight);
+  letter-spacing: var(--uxdsl__typography__h2-spacing);
+  margin-block-start: var(--uxdsl__typography__h2-margin-block-start);
+  margin-block-end: var(--uxdsl__typography__h2-margin-block-end);
+  margin: 0;
+}
+
+.authCard p {
+  font-family: var(--uxdsl__typography__body-font-family);
+  font-size: var(--uxdsl__typography__body-size);
+  line-height: var(--uxdsl__typography__body-line);
+  font-weight: var(--uxdsl__typography__body-weight);
+  letter-spacing: var(--uxdsl__typography__body-spacing);
+  margin-block-start: var(--uxdsl__typography__body-margin-block-start);
+  margin-block-end: var(--uxdsl__typography__body-margin-block-end);
+  margin: 0;
+  color: var(--uxdsl__palette__dark-light);
+}
+
+.eyebrow {
+  font-family: var(--uxdsl__typography__caption-font-family);
+  font-size: var(--uxdsl__typography__caption-size);
+  line-height: var(--uxdsl__typography__caption-line);
+  font-weight: var(--uxdsl__typography__caption-weight);
+  letter-spacing: var(--uxdsl__typography__caption-spacing);
+  margin-block-start: var(--uxdsl__typography__caption-margin-block-start);
+  margin-block-end: var(--uxdsl__typography__caption-margin-block-end);
+  color: var(--uxdsl__palette__primary-dark);
+  font-weight: 700;
+  letter-spacing: .08em;
+}
+
+.googleButton, .signOutButton { padding: var(--uxdsl__density__4); border-radius: var(--uxdsl__radius__4); background: transparent; color: var(--uxdsl__palette__neutral-main); border: 1px solid var(--uxdsl__palette__neutral-main); box-shadow: var(--uxdsl__surface__outlined-shadow); --uxdsl__button__tone-main: var(--uxdsl__palette__neutral-main); --uxdsl__button__tone-dark: var(--uxdsl__palette__neutral-dark); --uxdsl__button__tone-contrast: var(--uxdsl__palette__neutral-contrast);
+  display: flex;
+  min-height: 3rem;
+  align-items: center;
+  justify-content: center;
+  gap: var(--uxdsl__density__3);
+  background: var(--uxdsl__palette__light-light);
+  color: var(--uxdsl__palette__dark-main);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.googleButton:hover, .signOutButton:hover { color: var(--uxdsl__button__outlined-tone-neutral-hover-color, var(--uxdsl__button__outlined-hover-color)); border: var(--uxdsl__button__outlined-tone-neutral-hover-border, var(--uxdsl__button__outlined-hover-border)); }
+
+.googleButton.is-selected, .googleButton[aria-pressed="true"], .googleButton[aria-selected="true"], .signOutButton.is-selected, .signOutButton[aria-pressed="true"], .signOutButton[aria-selected="true"] { background: var(--uxdsl__button__outlined-tone-neutral-selected-bg, var(--uxdsl__button__outlined-selected-bg)); color: var(--uxdsl__button__outlined-tone-neutral-selected-color, var(--uxdsl__button__outlined-selected-color)); border: var(--uxdsl__button__outlined-tone-neutral-selected-border, var(--uxdsl__button__outlined-selected-border)); }
+
+.googleButton:hover, .signOutButton:hover { background: var(--uxdsl__palette__surface-light); }
+.googleButton:focus-visible, .signOutButton:focus-visible, .userMenu summary:focus-visible {
+  outline: 3px solid var(--uxdsl__palette__info-main);
+  outline-offset: 3px;
+}
+.googleButton:disabled, .signOutButton:disabled { opacity: .55; cursor: wait; }
+.authCard .hint { font-family: var(--uxdsl__typography__small-font-family); font-size: var(--uxdsl__typography__small-size); line-height: var(--uxdsl__typography__small-line); font-weight: var(--uxdsl__typography__small-weight); letter-spacing: var(--uxdsl__typography__small-spacing); margin-block-start: var(--uxdsl__typography__small-margin-block-start); margin-block-end: var(--uxdsl__typography__small-margin-block-end); }
+.authCard .error { font-family: var(--uxdsl__typography__small-font-family); font-size: var(--uxdsl__typography__small-size); line-height: var(--uxdsl__typography__small-line); font-weight: var(--uxdsl__typography__small-weight); letter-spacing: var(--uxdsl__typography__small-spacing); margin-block-start: var(--uxdsl__typography__small-margin-block-start); margin-block-end: var(--uxdsl__typography__small-margin-block-end); color: var(--uxdsl__palette__error-dark); }
+
+.userMenu { position: relative; }
+.userMenu summary { padding: var(--uxdsl__density__2); border-radius: var(--uxdsl__radius__2); background: transparent; color: var(--uxdsl__palette__neutral-main); border: 1px solid var(--uxdsl__palette__neutral-main); box-shadow: var(--uxdsl__surface__outlined-shadow); --uxdsl__button__tone-main: var(--uxdsl__palette__neutral-main); --uxdsl__button__tone-dark: var(--uxdsl__palette__neutral-dark); --uxdsl__button__tone-contrast: var(--uxdsl__palette__neutral-contrast);
+  display: flex;
+  align-items: center;
+  gap: var(--uxdsl__density__2);
+  max-width: 15rem;
+  font: inherit;
+  cursor: pointer;
+}
+.userMenu summary:hover { color: var(--uxdsl__button__outlined-tone-neutral-hover-color, var(--uxdsl__button__outlined-hover-color)); border: var(--uxdsl__button__outlined-tone-neutral-hover-border, var(--uxdsl__button__outlined-hover-border)); }
+.userMenu summary.is-selected, .userMenu summary[aria-pressed="true"], .userMenu summary[aria-selected="true"] { background: var(--uxdsl__button__outlined-tone-neutral-selected-bg, var(--uxdsl__button__outlined-selected-bg)); color: var(--uxdsl__button__outlined-tone-neutral-selected-color, var(--uxdsl__button__outlined-selected-color)); border: var(--uxdsl__button__outlined-tone-neutral-selected-border, var(--uxdsl__button__outlined-selected-border)); }
+.userMenu summary span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.userMenu summary img { width: 1.5rem; height: 1.5rem; border-radius: 50%; }
+.userMenuPanel {
+  padding: var(--uxdsl__density__3);
+  border-radius: var(--uxdsl__radius__3);
+  background: var(--uxdsl__palette__light-main);
+  color: var(--uxdsl__palette__light-contrast);
+  border: var(--uxdsl__surface__contained-border);
+  box-shadow: var(--uxdsl__surface__contained-shadow);
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  display: grid;
+  min-width: 12rem;
+  gap: var(--uxdsl__density__3);
+}
+.userMenuPanel .signOutButton { width: 100%; }

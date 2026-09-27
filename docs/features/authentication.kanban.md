@@ -6,12 +6,6 @@ Estado: AUTH-01 implementado y en revisión (falta la prueba manual con credenci
 
 ## Por hacer
 
-### AUTH-03 — Construir la página de acceso con Google, menú de usuario y cierre de sesión
-
-  - priority: high
-  - tags: [auth, p0, ui]
-  - ficha: [AUTH-03](../stories/AUTH-03.md)
-
 ### AUTH-05 — Retirar el secreto del navegador y proteger la aplicación
 
   - priority: high
@@ -51,6 +45,13 @@ Estado: AUTH-01 implementado y en revisión (falta la prueba manual con credenci
   - ficha: [AUTH-10](../stories/AUTH-10.md)
 
 ## En progreso
+
+### AUTH-03 — Construir la página de acceso con Google, menú de usuario y cierre de sesión
+
+  - priority: high
+  - tags: [auth, p0, ui]
+  - ficha: [AUTH-03](../stories/AUTH-03.md)
+  - nota: páginas y menú implementados; pruebas visuales y ciclo Google real pendientes.
 
 ### AUTH-04 — Crear la capa de acceso a datos y la autorización de rutas
 
