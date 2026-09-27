@@ -1333,7 +1333,10 @@ test("stale, fallback and post-correction reviews cannot authorize approval", ()
   };
   for (const [review, current] of [
     [base, false],
-    [{ ...base, critic: { provider: "google", model: "test" } }, true],
+    // Groq/Cloudflare are unmetered fallback text providers, never a genuine
+    // independent judgment — unlike "google", which is the single-shot
+    // pipeline's actual independent critic (see runGeminiEditorialQualityGate).
+    [{ ...base, critic: { provider: "groq", model: "test" } }, true],
     [{ ...base, issues: [{ code: "FINAL_COPY_REVIEW_REQUIRED", severity: "blocker", message: "Pending" }] }, true],
   ] as [CreativeQualityReview, boolean][]) {
     const state = getCreativeDraftApprovalState({ deterministicIssues: [], qualityReview: review, qualityReviewIsCurrent: current });
@@ -1343,6 +1346,15 @@ test("stale, fallback and post-correction reviews cannot authorize approval", ()
   assert.deepEqual(getCreativeDraftApprovalState({ deterministicIssues: [], qualityReview: {
     ...base, issues: [{ code: "EDITORIAL_REVIEW_RECOVERED", severity: "warning", message: "First model failed; final reviewer succeeded." }],
   }, qualityReviewIsCurrent: true }).blockers, []);
+});
+
+test("a completed Gemini critic (single-shot) authorizes approval same as OpenAI's", () => {
+  const review: CreativeQualityReview = {
+    status: "accepted", scores: { ...CREATIVE_QUALITY_THRESHOLDS }, issues: [],
+    repairPasses: 0, critic: { provider: "google", model: "gemini-test" },
+  };
+  const state = getCreativeDraftApprovalState({ deterministicIssues: [], qualityReview: review, qualityReviewIsCurrent: true });
+  assert.deepEqual(state.blockers, []);
 });
 
 test("unsupported absolute validation is stable across repeated checks and adjacent slides", () => {

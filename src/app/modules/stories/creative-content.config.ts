@@ -10,6 +10,8 @@ export type CreativeContentPublicConfig = {
   model: string;
   primaryProvider: CreativeTextProvider;
   carouselWriterModel?: string;
+  /** Single-shot only: rewrites the script during the repair loop. Falls back to carouselWriterModel when unset. */
+  repairWriterModel?: string;
   briefPromptVersion: string;
   draftPromptVersions: Record<CreativeFormat, string>;
   maxRunsPerDay: number;
@@ -141,6 +143,7 @@ export function getCreativeContentRuntimeConfig(): CreativeContentRuntimeConfig 
 
 export function getCreativeContentPublicConfig(): CreativeContentPublicConfig {
   const carouselWriterModel = process.env.CREATIVE_CAROUSEL_WRITER_MODEL?.trim() || undefined;
+  const repairWriterModel = process.env.CREATIVE_SINGLE_SHOT_REPAIR_MODEL?.trim() || undefined;
   const primaryProvider = creativeTextProvider();
   const geminiModel =
     process.env.CREATIVE_GEMINI_MODEL?.trim() ||
@@ -154,6 +157,7 @@ export function getCreativeContentPublicConfig(): CreativeContentPublicConfig {
     model: primaryProvider === "groq" ? groqModel : geminiModel,
     primaryProvider,
     ...(carouselWriterModel ? { carouselWriterModel } : {}),
+    ...(repairWriterModel ? { repairWriterModel } : {}),
     // v36: keyFacts ceiling 6 -> 15 and "extract every load-bearing fact"
     // guidance. v37: the closing may not copy any single earlier slide and
     // every fact must be seated before the closing; the plan repair changed

@@ -828,7 +828,7 @@ export type CreativeQualityReview = {
   repairPasses: number;
   /** Traceability for the independent editorial quality gate. */
   critic?: {
-    /** "openai" is the independent critic; other providers mark the fallback audit. */
+    /** The provider/model that actually produced this review. Must differ from the writer to be a genuine second opinion. */
     provider: "openai" | "google" | "groq" | "cloudflare";
     model: string;
   };
@@ -874,6 +874,8 @@ export type GeneratedCreativeDraft = {
      * was never attempted from one that ran and was rejected.
      */
     repairAttempted?: boolean;
+    /** How many repair rounds actually improved on the previous best draft (see MAX_SINGLE_SHOT_REPAIR_ROUNDS). */
+    repairRounds?: number;
   };
   /**
    * Set when the independent auditor (or a deterministic grounding check)

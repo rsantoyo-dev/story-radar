@@ -96,8 +96,13 @@ export function getCreativeDraftApprovalState({
     (issue) => issue.severity === "blocker",
   );
   const criticRequired = qualityReviewIsCurrent !== undefined;
+  // "openai" is the legacy pipeline's independent critic; "google" is the
+  // single-shot pipeline's (see runGeminiEditorialQualityGate) — a different
+  // vendor from whichever configured model wrote the script either way.
+  // Groq/Cloudflare are unmetered fallback text providers, never a genuine
+  // editorial judgment, so they still do not count.
   const criticCompleted = Boolean(
-    qualityReview?.critic?.provider === "openai" &&
+    (qualityReview?.critic?.provider === "openai" || qualityReview?.critic?.provider === "google") &&
       qualityReviewIsCurrent !== false &&
       !qualityReview.issues.some((issue) =>
         ["CRITIC_UNAVAILABLE", "EDITORIAL_REVIEW_ATTEMPT_FAILED", "CRITIC_FALLBACK", "FINAL_COPY_REVIEW_REQUIRED"].includes(issue.code),

@@ -110,10 +110,12 @@ Use "character-reference" when the visualDirection calls for one of the topic's 
  * Nothing else in this pipeline tells the writer what a publish-ready social
  * caption reads like; without it, caption drifts toward a formal recap of
  * the units instead of copy someone would actually post. Deliberately
- * platform- and topic-agnostic: no emoji, phrasing or structure is
- * prescribed, only the shape a caption needs regardless of Editorial Line.
+ * platform- and topic-agnostic: phrasing and structure are not prescribed,
+ * only the shape a caption needs regardless of Editorial Line — emoji volume
+ * follows creativeProfile.emojiPolicy so each Topic's own configured density
+ * applies, instead of a single hardcoded cap.
  */
-const CAPTION_STYLE_INSTRUCTION = `\n\nWrite caption as copy someone would paste straight into a post, not a formal recap of the units: open with a short, concrete line naming the subject and its concrete stake for the reader, in creativeProfile's configured tone — an emoji may lead it only when the profile's tone supports that register; never use one to replace a word a screen reader needs. When the facts establish more than one distinct practical consequence or affected group, give each its own short line or clause instead of folding them into one dense paragraph; do not invent a segment, group or consequence the facts do not state. Every fact, qualifier, name, organization or account named in caption must come from the same evidence already grounding the units — caption is not a place to reintroduce something the units omitted or to state a fact more strongly than its unit does. caption and hashtags are concatenated for posting with nothing in between: never include a "caption" or "hashtags" heading, a colon-prefixed label, or placeholder brackets in either field, and never repeat the hashtags inside caption's own text. caption carries the exact same single conversionGoal action as the closing unit's ctaQuestion/callToAction, stated at most once, in the same words or a close paraphrase — never add a second, different action such as a save or share nudge alongside it, even a brief one; when ctaQuestion/callToAction is empty because the story is sensitive, caption asks for no action either.`;
+const CAPTION_STYLE_INSTRUCTION = `\n\nWrite caption as copy someone would paste straight into a post, not a formal recap of the units: open with a short, concrete line naming the subject and its concrete stake for the reader, in creativeProfile's configured tone. When creativeProfile.emojiPolicy.allowed is true, caption may use up to emojiPolicy.maximum emoji total, placed to open the caption or to mark a distinct practical-info line (address, hours, date, contact) — always beside the word a screen reader needs, never replacing it; when allowed is false or the tone does not support it, use none. When the facts establish more than one distinct practical consequence or affected group, give each its own short line or clause instead of folding them into one dense paragraph; do not invent a segment, group or consequence the facts do not state. Every fact, qualifier, name, organization or account named in caption must come from the same evidence already grounding the units — caption is not a place to reintroduce something the units omitted or to state a fact more strongly than its unit does. When the facts establish that a specific organization, institution or public body is a real actor in the story — an organizer, partner or official source — caption may name it in plain text so readers can find it themselves; never format a name as an @handle or present it as that entity's verified account, since that is never confirmed here. caption and hashtags are concatenated for posting with nothing in between: never include a "caption" or "hashtags" heading, a colon-prefixed label, or placeholder brackets in either field, and never repeat the hashtags inside caption's own text. caption carries the exact same single conversionGoal action as the closing unit's ctaQuestion/callToAction, stated at most once, in the same words or a close paraphrase — never add a second, different action such as a save or share nudge alongside it, even a brief one; when ctaQuestion/callToAction is empty because the story is sensitive, caption asks for no action either.`;
 
 /**
  * Output cap for the brief call. Sized so MAX_BRIEF_KEY_FACTS facts with claim
@@ -305,9 +307,10 @@ export async function generateSingleShotCreativeScript(
   // A Topic may hand the script to an OpenAI writer, the same knob the legacy
   // pipeline exposes as carouselWriterModel. Only the visible copy moves: the
   // brief stays on Gemini, so evidence selection and the writing that spends it
-  // are still two different vendors' work. The later audit does then share a
-  // vendor family with the writer — an accepted tradeoff for a stronger first
-  // draft, not an oversight. Leave it unset to keep everything on Gemini.
+  // are still two different vendors' work. The later audit (see
+  // runGeminiEditorialQualityGate) always runs on Gemini regardless of which
+  // vendor wrote the script, so it is never the writer grading its own draft.
+  // Leave carouselWriterModel unset to keep everything on Gemini.
   const writerModel = format === "carousel" ? options.carouselWriterModel : undefined;
   const draftProvider = writerModel ? ("openai" as const) : ("google" as const);
   if (writerModel && !options.openAiApiKey) {

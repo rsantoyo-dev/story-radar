@@ -240,7 +240,10 @@ test("automated readiness requires current independent scores, supported hook an
   assert.equal(isCreativeDraftReadyForAutomation(accepted, "meme", true), true);
   assert.equal(isCreativeDraftReadyForAutomation(accepted, "meme", false), false);
   for (const change of [
-    (d: GeneratedCreativeDraft) => { d.qualityReview!.critic!.provider = "google"; },
+    // "google" is now the single-shot pipeline's own independent critic (see
+    // runGeminiEditorialQualityGate), so it no longer disqualifies readiness;
+    // groq/cloudflare remain unmetered fallback providers that still do.
+    (d: GeneratedCreativeDraft) => { d.qualityReview!.critic!.provider = "groq"; },
     (d: GeneratedCreativeDraft) => { d.qualityReview!.scores.curiosity = 70; },
     (d: GeneratedCreativeDraft) => { d.qualityReview!.hookSelection = undefined; },
     (d: GeneratedCreativeDraft) => { d.units[0].headline = "A different unreviewed opening"; },
@@ -250,6 +253,9 @@ test("automated readiness requires current independent scores, supported hook an
     change(candidate);
     assert.equal(isCreativeDraftReadyForAutomation(candidate, "meme", true), false);
   }
+  const geminiCritic = structuredClone(accepted);
+  geminiCritic.qualityReview!.critic!.provider = "google";
+  assert.equal(isCreativeDraftReadyForAutomation(geminiCritic, "meme", true), true);
 });
 
 test("a packet of truncated source fragments stops before any paid generation", async () => {
