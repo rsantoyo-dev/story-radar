@@ -1,14 +1,14 @@
 ---
 id: AUTH-02
 feature: FEAT-AUTH-001
-status: todo
+status: in-progress
 board: authentication.kanban.md
-tags: [auth, todo, p0, tenancy]
+tags: [auth, in-progress, p0, tenancy]
 ---
 
 # AUTH-02 — Crear el workspace personal y la membresía en el primer inicio de sesión
 
-**Estado:** [[status-todo]] · **Feature:** [Autenticación y cuentas](../features/authentication.md)
+**Estado:** [[status-in-progress]] · **Feature:** [Autenticación y cuentas](../features/authentication.md)
 
 **Prioridad:** P0 · **Dependencias:** [[AUTH-01]]
 
@@ -32,3 +32,11 @@ tags: [auth, todo, p0, tenancy]
 ## Validación y entrega
 
 Registrar la salida del script contra la base local y el resultado de las pruebas. Esta historia no cambia todavía qué ve cada usuario en la interfaz.
+
+## Avance en `feat/meta-publishing` — 26 de septiembre de 2026
+
+- Migración `0081`: `workspace_members` y `sessions.active_workspace_id`. Los IDs y slugs personales son deterministas; cada paso admite repetición tras una escritura parcial.
+- Better Auth ejecuta la creación tras insertar un usuario y selecciona el último workspace válido al abrir sesión, prefiriendo el `default` si corresponde.
+- `ensureMembershipForUser` permite la reparación perezosa; AUTH-04 la conectará con `requireWorkspaceContext`. El asiento inicial se implementará en AUTH-08.
+- Script `scripts/seed-workspace-owner.mts` recibe el email de un usuario existente; nunca crea usuarios. No se ejecutó contra una base de datos del usuario.
+- Prueba con PGlite: alta concurrente, reparación, selección del workspace activo y cascada de membresía. Lint, build y db:check pasan. Falta comprobar login real con Google y ejecutar el seed en el entorno autorizado.

@@ -62,6 +62,8 @@ export const sessions = pgTable(
     expiresAt: timestampColumn("expires_at").notNull(),
     ipAddress: text("ip_address"),
     userAgent: text("user_agent"),
+    /** Validated against workspace_members on every authorized request. */
+    activeWorkspaceId: text("active_workspace_id"),
     ...auditTimestamps,
   },
   (table) => [

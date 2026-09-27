@@ -6,6 +6,7 @@ import { nextCookies } from "better-auth/next-js";
 
 import { db } from "@/db/client";
 import { accounts, sessions, users, verifications } from "@/db/schema";
+import { chooseActiveWorkspace, ensurePersonalWorkspace, lastActiveWorkspace } from "./personal-workspace.repository";
 
 /**
  * Better Auth server configuration (FEAT-AUTH-001, AUTH-01).
@@ -106,6 +107,9 @@ function createAuth() {
         }
       : {}),
     session: {
+      additionalFields: {
+        activeWorkspaceId: { type: "string", required: false, input: false, returned: false },
+      },
       expiresIn: SESSION_MAX_AGE_SECONDS,
       updateAge: SESSION_REFRESH_AGE_SECONDS,
       cookieCache: {
@@ -113,6 +117,15 @@ function createAuth() {
         maxAge: SESSION_COOKIE_CACHE_SECONDS,
         strategy: "compact",
       },
+    },
+    databaseHooks: {
+      user: { create: { after: async (user) => {
+        await ensurePersonalWorkspace(user.id, user.email);
+      } } },
+      session: { create: { before: async (session) => ({
+        data: { ...session, activeWorkspaceId: await chooseActiveWorkspace(session.userId,
+          await lastActiveWorkspace(session.userId)) },
+      }) } },
     },
     advanced: {
       cookiePrefix: COOKIE_PREFIX,

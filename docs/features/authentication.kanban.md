@@ -6,12 +6,6 @@ Estado: AUTH-01 implementado y en revisión (falta la prueba manual con credenci
 
 ## Por hacer
 
-### AUTH-02 — Crear el workspace personal y la membresía en el primer inicio de sesión
-
-  - priority: high
-  - tags: [auth, p0, tenancy]
-  - ficha: [AUTH-02](../stories/AUTH-02.md)
-
 ### AUTH-03 — Construir la página de acceso con Google, menú de usuario y cierre de sesión
 
   - priority: high
@@ -63,6 +57,13 @@ Estado: AUTH-01 implementado y en revisión (falta la prueba manual con credenci
   - ficha: [AUTH-10](../stories/AUTH-10.md)
 
 ## En progreso
+
+### AUTH-02 — Crear el workspace personal y la membresía en el primer inicio de sesión
+
+  - priority: high
+  - tags: [auth, p0, tenancy]
+  - ficha: [AUTH-02](../stories/AUTH-02.md)
+  - nota: esquema, creación idempotente, hooks y script implementados; prueba real del login y reparación desde AUTH-04 pendientes.
 
 ## En revisión / QA
 
