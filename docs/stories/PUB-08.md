@@ -24,6 +24,31 @@ tags: [publishing, review, p0]
 - El despliegue de programación requiere scheduler/worker durable y observabilidad comprobados. Mientras falten se deshabilita “Programar”, manteniendo honesto el alcance disponible.
 
 
+## Matriz de QA Meta — ampliación del 26 de septiembre de 2026
+
+Alcance nuevo por implementar y validar. Las pruebas y confirmaciones anteriores se conservan como evidencia de Instagram, sin extender su resultado a Facebook ni a automatización.
+
+| Recorrido | Resultado verificable | Historias |
+|---|---|---|
+| Conectar Meta o solo Instagram | Activos correctos, permisos por capacidad, callback de un uso y aislamiento entre workspaces | PUB-09, PUB-13, AUTH-04/05/06 |
+| Finalizar draft y abrir preview | Texto/assets de la revisión exacta; faltantes visibles; cero envíos al generar | PUB-14, PUB-16 |
+| Publicar foto/varias imágenes | Facebook, Instagram directo e Instagram mediante Facebook producen la representación aprobada | PUB-10 |
+| Publicar en ambos, uno falla | Un post por destino exitoso; reintento únicamente del fallo seguro | PUB-07, PUB-10, PUB-13 |
+| Timeout después del envío | Pendiente de confirmación; reconciliación por identidad; sin reenvío por similitud | PUB-07, PUB-10 |
+| Meta confirma y falla la base local | Reparar post, vínculo y resumen desde el ID persistido sin otra publicación | PUB-06, PUB-13 |
+| Consultar la Story publicada | Marca y filtro automáticos por Topic; éxito parcial visible; snapshot anterior conservado tras editar | PUB-06, PUB-12 |
+| Sincronizar y vincular históricos | Una fila por identidad; manual link/unlink conservado; versión desconocida explícita | PUB-15 |
+| Programar, adelantar, reprogramar y cancelar | UTC/zona/DST correctos; contienda con worker controlada; fecha prevista y real separadas | PUB-05 |
+| Programar más allá del TTL actual | Snapshot/archivos retenidos; entrega temporal preparada cerca del envío | PUB-03, PUB-05, PUB-11 |
+| Cerrar navegador o reiniciar servicio | Trabajo durable y recuperación dentro de la política de retrasos | PUB-11 |
+| Automatización supervisada | Preview automático, aprobación final explícita y continuación sin otros clics | PUB-16 |
+| Autonomía opcional | Default deshabilitado, autorización acotada, gates, cuotas, pausa y simulación | PUB-17 |
+| Métricas por plataforma | Cero distinto de no disponible; observaciones atribuibles; publicación permanece confirmada | PUB-18 |
+
+Registrar por cada recorrido entorno, versión de API, formato, cuenta de prueba, IDs/permalinks cuando proceda y resultado. La validación de cada fase exige sus propias historias, sin bloquear el MVP manual por funciones opcionales aún deshabilitadas.
+
+Pruebas automáticas de dominio y base de datos usan fixtures de proveedor; QA visual verifica UXDSL, teclado y móvil. Durante la implementación ejecutar lint/build, pruebas afectadas y db:check cuando cambie esquema. La presente entrega de documentación se valida por coherencia, enlaces y dependencias; no equivale a ejecutar esta matriz.
+
 ## Prueba real confirmada con ngrok — 9 de septiembre de 2026
 
 El usuario confirmó en esta sesión que la conexión y la publicación de Instagram funcionaron desde la app local mediante ngrok, después de configurar el origen HTTPS público y el secreto del worker. Evidencia: confirmación manual del usuario («funcionó»); no se adjuntó un ID/permalink ni se identificó si el envío fue foto o carrusel.

@@ -8,6 +8,8 @@ tags: [publishing, review, p0]
 
 # PUB-07 — Evitar duplicados y reconciliar resultados inciertos
 
+> La extensión de estos controles a Facebook y a Instagram mediante Facebook Login se entrega con [PUB-13](PUB-13.md) y [PUB-10](PUB-10.md). La evidencia de Instagram existente no acredita automáticamente esos adaptadores.
+
 **Estado:** [[status-review]] · **Feature:** [Publicación desde el SaaS](../features/instagram-publishing.md)
 
 > Implementado junto con PUB-04 y corregido el 9 de septiembre: clave idempotente,
