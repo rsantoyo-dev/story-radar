@@ -53,6 +53,26 @@ export function requestsGeographicReconstruction(direction: string): boolean {
 }
 
 /**
+ * Whether an image edit asks for a map or real-place reconstruction. Only the
+ * edit instruction and the lines the editor added to the saved prompt count:
+ * text already in that prompt (e.g. a Topic's visual guide that mentions
+ * "Maps/Street View" as a verification aid) was accepted when the image was
+ * generated, so it must not block a plain regeneration of the same slide.
+ */
+export function imageEditRequestsGeographicReconstruction(input: {
+  savedPrompt: string;
+  editedPrompt: string;
+  editInstruction?: string;
+}): boolean {
+  const savedLines = new Set(input.savedPrompt.split("\n").map((line) => line.trim()));
+  const addedText = input.editedPrompt
+    .split("\n")
+    .filter((line) => !savedLines.has(line.trim()))
+    .join("\n");
+  return requestsGeographicReconstruction(input.editInstruction ?? "") || requestsGeographicReconstruction(addedText);
+}
+
+/**
  * A slide takes the documentary (verified place) path when the writer declared
  * it needs verified map data or a real photograph of a named place, or when
  * its visual direction reads as a map or recognizable place reconstruction.

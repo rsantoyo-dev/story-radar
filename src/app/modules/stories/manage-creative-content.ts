@@ -165,7 +165,14 @@ export async function getCreativeWorkspaceState(
     };
     return (
       draft.inputHash === createDraftInputHash(brief.id, brief.inputHash, draft.format, draft.outputAspectRatio, generation) ||
-      draft.inputHash === createLegacyDraftInputHash(brief.id, brief.inputHash, draft.format, draft.outputAspectRatio, characterRoster, generation)
+      draft.inputHash === createLegacyDraftInputHash(brief.id, brief.inputHash, draft.format, draft.outputAspectRatio, characterRoster, generation) ||
+      // Single-shot drafts saved with a brief between 5d8b576 and its fix
+      // hashed the real writer instead of the configuration; still current.
+      draft.inputHash === createDraftInputHash(brief.id, brief.inputHash, draft.format, draft.outputAspectRatio, {
+        provider: draft.provider,
+        model: draft.model,
+        promptVersion: generation.promptVersion,
+      })
     );
   };
   const currentApprovedParentIds = new Set(
@@ -520,9 +527,13 @@ async function createCreativeBriefAndDraftSingleShot({
               usage,
             });
           }
+          // The hash identifies the generation configuration, exactly as
+          // createCreativeDraft and the workspace currency check compute it.
+          // The real writer (possibly an OpenAI carousel or repair model) is
+          // recorded in the row's provider/model columns instead.
           const draftInputHash = createDraftInputHash(briefRow.id, briefRow.inputHash, format, outputAspectRatio, {
-            provider,
-            model,
+            provider: configuration.provider,
+            model: configuration.model,
             promptVersion: draftPromptVersion,
           });
           const characterSnapshots = await snapshotsForCreativeCharacterIds(

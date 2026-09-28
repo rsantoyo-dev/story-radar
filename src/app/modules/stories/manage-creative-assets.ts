@@ -8,7 +8,7 @@ import { roadMapStillCurrent } from "./prepare-road-map";
 import { getDailyDraftStory } from "./daily-draft-access";
 import { renderDraftTypography, DRAFT_TYPOGRAPHY_ENDPOINT } from "./creative-draft-typography";
 import { uploadComposedImage } from "./fal-image-client";
-import { requestsGeographicReconstruction, requiresVerifiedGeography, evidenceQualityIssues } from "./creative-evidence-guardrails";
+import { imageEditRequestsGeographicReconstruction, requestsGeographicReconstruction, requiresVerifiedGeography, evidenceQualityIssues } from "./creative-evidence-guardrails";
 import type { CreativeUnit } from "./creative-content.types";
 import { imageText, imageTextNeedsUpdate, imageTextEditInstruction } from "./creative-image-text-sync";
 import "server-only";
@@ -735,7 +735,7 @@ async function executeCreativeAssetImageEdit({
   targetUnit?: CreativeUnit;
   sourceAsset?: CreativeGeneratedAsset;
 }): Promise<{ asset: CreativeGeneratedAsset; batch: CreativeAssetBatch }> {
-  if (requestsGeographicReconstruction(edit.editInstruction ?? "") || requestsGeographicReconstruction(basePrompt)) {
+  if (imageEditRequestsGeographicReconstruction({ savedPrompt: found.asset.prompt, editedPrompt: basePrompt, editInstruction: edit.editInstruction })) {
     throw new CreativeContentConflictError("Maps and recognizable real-place edits require documentary preparation, not generative reconstruction.");
   }
   const brandSnapshot = await getCreativeAssetBrandOverlaySnapshot(

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { evidenceQualityIssues, onlyTruncatedCreativeFacts, locationOnlyRoadFacts, requestsGeographicReconstruction, requiresVerifiedGeography } from "./creative-evidence-guardrails";
+import { evidenceQualityIssues, imageEditRequestsGeographicReconstruction, onlyTruncatedCreativeFacts, locationOnlyRoadFacts, requestsGeographicReconstruction, requiresVerifiedGeography } from "./creative-evidence-guardrails";
 import type { GeneratedCreativeDraft } from "./creative-content.types";
 const draft: GeneratedCreativeDraft = {concept:"Repères",caption:"Les seules informations disponibles sont des repères géographiques à Saint-Sébastien et à Saint-Jean-sur-Richelieu. Sans précision sur la nature de la situation routière ou ses effets.",hashtags:[],altText:"",units:[]};
 test("the reported road-marker carousel is blocked, not converted into a cautious non-news post", () => {
@@ -84,4 +84,17 @@ test("an 'abstract, unreadable' map or interface is the same fabrication risk as
   ]) assert.ok(requestsGeographicReconstruction(direction), direction);
   // Editorial illustrations with no device or map language stay exempt.
   assert.equal(requestsGeographicReconstruction("Une illustration éditoriale avec un livre ouvert et un stylo, palette chaude."), false);
+});
+
+test("a brand guide that mentions Street View does not block regenerating the same slide", () => {
+  const savedPrompt = "Editorial collage, three abstract shapes.\nMaps/Street View may help verify geometry, buildings and spatial relationships where appropriate.\nFix: five fingers per hand.";
+  assert.ok(requestsGeographicReconstruction(savedPrompt), "the brand line alone matches the detector");
+  assert.equal(imageEditRequestsGeographicReconstruction({ savedPrompt, editedPrompt: savedPrompt }), false);
+  assert.equal(imageEditRequestsGeographicReconstruction({ savedPrompt, editedPrompt: `${savedPrompt}\nMake sure each hand has exactly five fingers.` }), false);
+});
+
+test("an image edit that adds a map request is still sent to documentary preparation", () => {
+  const savedPrompt = "Editorial collage, three abstract shapes.";
+  assert.ok(imageEditRequestsGeographicReconstruction({ savedPrompt, editedPrompt: `${savedPrompt}\nAdd a road map of Saint-Jean in the background.` }));
+  assert.ok(imageEditRequestsGeographicReconstruction({ savedPrompt, editedPrompt: savedPrompt, editInstruction: "Replace the shapes with a Google Maps screenshot" }));
 });

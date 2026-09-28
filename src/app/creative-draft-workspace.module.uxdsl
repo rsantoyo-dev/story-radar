@@ -2338,13 +2338,22 @@
 }
 .assetGrid > div { min-width: 0; max-width: 780px; }
 .assetSelection { display: flex; gap: density(3); overflow-x: auto; padding: density(2); }
-.assetSelection button { display: grid; flex: 0 0 112px; gap: density(2); padding: density(2); border: 1px solid palette(surface-light); border-radius: radius(2); background: palette(light-light); color: palette(dark-main); text-align: left; cursor: pointer; }
-.assetSelection button[aria-pressed="true"] { border: 2px solid palette(primary-main); box-shadow: shadow(1); }
-.assetSelection button:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 2px; }
-.assetSelection button > span:not(.assetSelectionImage):not(.assetSelectionPlaceholder) { @ds-typo(caption); font-size: 0.6875rem; font-weight: 700; }
-.assetSelection button small { color: palette(tertiary-main); @ds-typo(caption); font-size: 0.625rem; }
+.assetSelectionItem { position: relative; flex: 0 0 112px; }
+.assetSelectionThumb { display: grid; width: 100%; gap: density(2); padding: density(2); border: 1px solid palette(surface-light); border-radius: radius(2); background: palette(light-light); color: palette(dark-main); text-align: left; cursor: pointer; }
+.assetSelectionThumb[aria-pressed="true"] { border: 2px solid palette(primary-main); box-shadow: shadow(1); }
+.assetSelectionThumb:focus-visible, .assetSelectionApprove:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 2px; }
+.assetSelectionThumb > span:not(.assetSelectionImage):not(.assetSelectionPlaceholder) { @ds-typo(caption); font-size: 0.6875rem; font-weight: 700; }
+.assetSelectionThumb small { color: palette(tertiary-main); @ds-typo(caption); font-size: 0.625rem; }
+.assetSelectionApprove { position: absolute; top: density(3); right: density(3); display: grid; width: 28px; height: 28px; padding: 0; place-items: center; border: 2px solid palette(light-light); border-radius: radius(circle); background: palette(dark-main, 0.55); color: palette(light-light); @ds-typo(small); font-size: 0.875rem; font-weight: 800; line-height: 1; cursor: pointer; box-shadow: shadow(1); }
+.assetSelectionApprove:hover:not(:disabled) { background: palette(success-dark); }
+.assetSelectionApproved { background: palette(success-main); border-color: palette(light-light); color: palette(success-contrast); }
+.assetSelectionApprove:disabled { opacity: 0.55; cursor: not-allowed; }
+@media (pointer: coarse) { .assetSelectionApprove { width: 36px; height: 36px; } }
 .assetSelectionImage, .assetSelectionPlaceholder { position: relative; display: grid; width: 100%; aspect-ratio: 4 / 5; place-items: center; overflow: hidden; border-radius: radius(1); background: palette(surface-light); }
 .assetSelectionImage img { object-fit: cover; }
+
+.assetActionFeedback { margin: 0; padding: density(2) density(3); border: 1px solid palette(success-main); border-radius: radius(2); background: color-mix(in srgb, palette(success-main) 10%, palette(light-light)); color: palette(dark-main); @ds-typo(small); }
+.assetActionFeedbackError { border-color: palette(error-main); background: color-mix(in srgb, palette(error-main) 10%, palette(light-light)); font-weight: 650; }
 
 .assetCard {
   display: grid;

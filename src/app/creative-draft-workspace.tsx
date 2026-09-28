@@ -462,6 +462,16 @@ export function CreativeDraftWorkspace({
   const currentAssetBatch = assetBatchIsStaleForCurrentDraft
     ? undefined
     : assetBatch;
+  // Image approve/regenerate controls (card and thumbnail strip) share one rule.
+  const assetsReadOnly = Boolean(
+    viewingHistoricalDraft ||
+      activeDraft?.status !== "approved" ||
+      profileDirty ||
+      dirty ||
+      !currentAssetBatch ||
+      currentAssetBatch.status === "stale" ||
+      currentAssetBatch.draftVersion !== activeDraft?.version,
+  );
   const selectedAssetOrder = currentAssetBatch?.assets.some((asset) => asset.unitOrder === selectedUnitOrder)
     ? selectedUnitOrder
     : currentAssetBatch?.assets[0]?.unitOrder;
@@ -2420,11 +2430,27 @@ export function CreativeDraftWorkspace({
                         </small>
                       </div>
                       <div className={styles.assetSelection} role="group" aria-label="Choose an image to review">
-                        {currentAssetBatch.assets.map((asset) => <button key={asset.id} type="button" aria-pressed={selectedAssetOrder === asset.unitOrder} onClick={() => setSelectedUnitOrder(asset.unitOrder)} aria-label={`Review ${activeDraft.format === "meme" ? "frame" : `slide ${asset.unitOrder}`}, image version ${asset.version}, ${asset.status}`}>
-                          {asset.imageUrl ? <span className={styles.assetSelectionImage}><Image src={asset.imageUrl} alt="" fill sizes="80px" unoptimized /></span> : <span className={styles.assetSelectionPlaceholder} aria-hidden="true">{asset.unitOrder}</span>}
-                          <span>{activeDraft.format === "meme" ? "Frame" : `Slide ${asset.unitOrder}`} · v{asset.version}</span>
-                          <small>{asset.status === "generating" ? "Generating" : capitalize(asset.status)}</small>
-                        </button>)}
+                        {currentAssetBatch.assets.map((asset) => {
+                          const slideLabel = activeDraft.format === "meme" ? "frame" : `slide ${asset.unitOrder}`;
+                          const approved = asset.status === "approved";
+                          const canToggleApproval = !assetsReadOnly && (approved || (asset.status === "generated" && !asset.safetyFlag));
+                          return <div key={asset.id} className={styles.assetSelectionItem}>
+                            <button type="button" className={styles.assetSelectionThumb} aria-pressed={selectedAssetOrder === asset.unitOrder} onClick={() => setSelectedUnitOrder(asset.unitOrder)} aria-label={`Review ${slideLabel}, image version ${asset.version}, ${asset.status}`}>
+                              {asset.imageUrl ? <span className={styles.assetSelectionImage}><Image src={asset.imageUrl} alt="" fill sizes="80px" unoptimized /></span> : <span className={styles.assetSelectionPlaceholder} aria-hidden="true">{asset.unitOrder}</span>}
+                              <span>{activeDraft.format === "meme" ? "Frame" : `Slide ${asset.unitOrder}`} · v{asset.version}</span>
+                              <small>{asset.status === "generating" ? "Generating" : capitalize(asset.status)}</small>
+                            </button>
+                            {canToggleApproval ? <button
+                              type="button"
+                              className={`${styles.assetSelectionApprove} ${approved ? styles.assetSelectionApproved : ""}`}
+                              aria-pressed={approved}
+                              aria-label={approved ? `Unapprove ${slideLabel} image` : `Approve ${slideLabel} image`}
+                              title={approved ? "Approved — click to unapprove" : "Approve this image"}
+                              disabled={Boolean(assetBusy)}
+                              onClick={() => void handleImageApproval(asset.id, approved ? "unapprove" : "approve")}
+                            >✓</button> : null}
+                          </div>;
+                        })}
                       </div>
                       <div className={styles.assetGrid}>
                         {currentAssetBatch.assets.map((asset) => <div key={asset.id} hidden={selectedAssetOrder !== asset.unitOrder}>
@@ -2439,14 +2465,10 @@ export function CreativeDraftWorkspace({
                             outputHeight={currentAssetBatch.height}
                             totalSlides={currentAssetBatch.totalAssets}
                             busyAction={assetBusy}
-                            readOnly={
-                              viewingHistoricalDraft ||
-                              activeDraft.status !== "approved" ||
-                              profileDirty ||
-                              dirty ||
-                              currentAssetBatch.status === "stale" ||
-                              currentAssetBatch.draftVersion !== activeDraft.version
-                            }
+                            readOnly={assetsReadOnly}
+                            // Card-local echo of the panel's message: the Regenerate
+                            // and Approve buttons sit far below the panel banner.
+                            feedback={selectedAssetOrder === asset.unitOrder ? (error ? { tone: "error", message: error } : notice ? { tone: "success", message: notice } : undefined) : undefined}
                             topicId={topicId}
                             secret={secret}
                             savedRequest={editRequestByUnit.get(asset.unitOrder)}
@@ -2846,6 +2868,7 @@ function CreativeAssetCard({
   savedRequestReadOnly = false,
   onRegenerate,
   onApproval,
+  feedback,
   onSaveEditRequest,
   onDiscardEditRequest,
   onApplyEditRequest,
@@ -2867,6 +2890,7 @@ function CreativeAssetCard({
   savedRequestReadOnly?: boolean;
   onRegenerate: (assetId: string, prompt: string, edit?: BrandImageEditOptions) => void;
   onApproval: (assetId: string, action: "approve" | "unapprove") => void;
+  feedback?: { tone: "error" | "success"; message: string };
   onSaveEditRequest: (payload: SaveEditRequestPayload) => void;
   onDiscardEditRequest: (unitOrder: number) => void;
   onApplyEditRequest: (unitOrder: number, payload?: SaveEditRequestPayload) => void;
@@ -3005,6 +3029,12 @@ function CreativeAssetCard({
           <small>{prompt.length.toLocaleString("en-CA")} / 30,000 characters</small>
         ) : null}
       </details>
+
+      {feedback ? (
+        <p className={`${styles.assetActionFeedback} ${feedback.tone === "error" ? styles.assetActionFeedbackError : ""}`} role={feedback.tone === "error" ? "alert" : "status"}>
+          {feedback.message}
+        </p>
+      ) : null}
 
       <footer className={styles.assetActions}>
         <div>
