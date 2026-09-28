@@ -7,18 +7,21 @@ import { connection } from "next/server";
 
 import { RadarDashboard } from "./radar-dashboard";
 
-export default async function Home() {
+export default async function Home({ searchParams }: { searchParams: Promise<{ topicId?: string | string[]; metaTopicId?: string | string[] }> }) {
   await connection();
 
-  const [defaultTopic, topics] = await Promise.all([
+  const [defaultTopic, topics, query] = await Promise.all([
     getDefaultTopic(),
     listTopics(),
+    searchParams,
   ]);
-  const preferences = await getStoryKeywordPreferences(defaultTopic.id);
+  const requestedTopicId = typeof query.metaTopicId === "string" ? query.metaTopicId : typeof query.topicId === "string" ? query.topicId : undefined;
+  const selectedTopic = topics.find((topic) => topic.id === requestedTopicId && topic.isActive) ?? defaultTopic;
+  const preferences = await getStoryKeywordPreferences(selectedTopic.id);
 
   return (
     <RadarDashboard
-      initialTopicId={defaultTopic.id}
+      initialTopicId={selectedTopic.id}
       initialTopics={topics.map((topic) => ({
         id: topic.id,
         name: topic.name,

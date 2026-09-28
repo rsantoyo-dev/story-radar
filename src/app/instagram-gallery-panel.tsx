@@ -102,10 +102,10 @@ type Filters = {
 const EMPTY_FILTERS: Filters = { format: "", linked: "", from: "", to: "" };
 
 const FORMAT_LABEL: Record<MediaFormat, string> = {
-  image: "Foto",
-  carousel: "Carrusel",
+  image: "Photo",
+  carousel: "Carousel",
   reel: "Reel",
-  video: "Vídeo",
+  video: "Video",
 };
 
 /**

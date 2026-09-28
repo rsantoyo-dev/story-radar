@@ -18,6 +18,7 @@ import {
 } from "./creative-brand-image-editor";
 import Image from "next/image";
 import { InstagramPublicationCandidatePanel } from "./instagram-publication-candidate-panel";
+import { useRouter } from "next/navigation";
 import { CreativeDocumentaryPanel } from "./creative-documentary-panel";
 import { StoryInstagramResults } from "./story-instagram-results";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -74,7 +75,12 @@ type WorkspaceProps = {
   onClose: () => void;
   onInstagramChanged?: () => void;
   instagramRefreshToken?: number;
+  mode?: "dialog" | "page";
+  initialTab?: WorkspaceTab;
+  onOpenContent?: () => void;
 };
+
+export type WorkspaceTab = "content" | "focus" | "script" | "visuals" | "publication";
 
 type BusyAction =
   | "recover"
@@ -188,7 +194,10 @@ export function CreativeDraftWorkspace({
   onInstagramChanged,
   instagramRefreshToken, initialEditorialRunId, initialDraftId,
   initialPreparationRunId,
+  mode = "dialog", initialTab = "focus", onOpenContent,
 }: WorkspaceProps) {
+  const router = useRouter();
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>(initialTab);
   const [preparedPublication, setPreparedPublication] = useState<{ topicId: string; storyId: string; assetCount: number }>();
   const [workspace, setWorkspace] = useState<CreativeWorkspaceState>();
   const [profile, setProfile] = useState<CreativeProfile>();
@@ -629,6 +638,7 @@ export function CreativeDraftWorkspace({
         creativeBriefRequest(editorialDirection, briefOverrides),
       );
       focusDraftAfterRefresh.current=true;
+      setActiveTab("script");
       setWorkspace(result.state);
       setProfile(result.state.profile);
       setEditorialDirection(result.state.brief?.editorialDirection ?? "");
@@ -1334,7 +1344,7 @@ export function CreativeDraftWorkspace({
     try {
       setError(undefined);
       await saveEditRequest(activeDraftId, payload);
-      setNotice("Cambio guardado. Aplícalo cuando quieras.");
+      setNotice("Changes saved. Apply them when you’re ready.");
     } catch (saveError) {
       setError(getErrorMessage(saveError));
     }
@@ -1349,7 +1359,7 @@ export function CreativeDraftWorkspace({
         { method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "update-text", assetId, expectedVersion: activeDraft.version }) });
       setLoadedAssets({ ...response, draftId });
-      setNotice("Actualización enviada. Revisa el texto de la imagen cuando termine.");
+      setNotice("Update submitted. Review the image text when it finishes.");
     }); } finally { setAssetsReloadKey(key => key + 1); }
   }
 
@@ -1373,10 +1383,10 @@ export function CreativeDraftWorkspace({
     await runAsset(`apply:${unitOrder}`, async () => {
       try {
         if (payload) {
-          setNotice("Guardando el cambio…");
+          setNotice("Saving changes…");
           await saveEditRequest(draftId, payload);
         }
-        setNotice("Aplicando el cambio a esta imagen…");
+        setNotice("Applying changes to this image…");
         const response = await requestJson<
           CreativeAssetBatchResponse & { request: CreativeAssetEditRequest | null }
         >(
@@ -1394,7 +1404,7 @@ export function CreativeDraftWorkspace({
         const { request, ...batchResponse } = response;
         setLoadedAssets({ ...batchResponse, draftId });
         if (request) patchEditRequest(draftId, request);
-        setNotice("Cambio aplicado. Revisa la imagen antes de aprobarla.");
+        setNotice("Changes applied. Review the image before approving it.");
       } catch (applyError) {
         // The apply endpoint records the blocked/failed reason on the request
         // row; re-pull so the card shows it after the transient error message.
@@ -1431,7 +1441,7 @@ export function CreativeDraftWorkspace({
             }
           : current,
       );
-      setNotice("Solicitud de cambio descartada.");
+      setNotice("Change request discarded.");
     } catch (discardError) {
       setError(getErrorMessage(discardError));
     }
@@ -1579,25 +1589,34 @@ export function CreativeDraftWorkspace({
     onClose();
   }
 
+  function selectTab(tab: WorkspaceTab) {
+    setActiveTab(tab);
+    if (mode === "page") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", tab);
+      window.history.replaceState(null, "", url.toString());
+    }
+  }
+
   return (
     <div
-      className={styles.backdrop}
+      className={mode === "page" ? styles.pageRoot : styles.backdrop}
       role="presentation"
           onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !busy) {
+        if (mode === "dialog" && event.target === event.currentTarget && !busy) {
           closeWorkspace();
         }
       }}
     >
       <section
-        className={styles.workspace}
-        role="dialog"
-        aria-modal="true"
+        className={mode === "page" ? `${styles.workspace} ${styles.pageWorkspace}` : styles.workspace}
+        role={mode === "dialog" ? "dialog" : undefined}
+        aria-modal={mode === "dialog" ? "true" : undefined}
         aria-labelledby="creative-studio-title"
       >
         <header className={styles.header}>
           <div>
-            <p>Creative studio · script and images</p>
+            <p>Story studio · {mode === "page" ? "editorial production" : "script and images"}</p>
             <h2 id="creative-studio-title">{storyTitle}</h2>
           {preparedPublication?.topicId === topicId && preparedPublication.storyId === storyId && preparedPublication.assetCount > 0 ? (
             <button type="button" className={styles.secondaryButton} onClick={() => {
@@ -1607,8 +1626,8 @@ export function CreativeDraftWorkspace({
             }}>Review saved publication · {preparedPublication.assetCount} images</button>
           ) : null}
           </div>
-          <button type="button" onClick={closeWorkspace} disabled={Boolean(busy)} aria-label="Close">
-            ×
+          <button type="button" onClick={closeWorkspace} disabled={Boolean(busy)} aria-label={mode === "page" ? "Back to list" : "Close"}>
+            {mode === "page" ? "←" : "×"}
           </button>
 
         </header>
@@ -1619,6 +1638,19 @@ export function CreativeDraftWorkspace({
           </div>
         ) : (
           <div className={styles.body}>
+            <nav className={styles.workspaceTabs} aria-label="Story stages">
+              {([
+                ["content", "Content", workspace.story.hasContent],
+                ["focus", "Focus", Boolean(workspace.brief)],
+                ["script", "Script", Boolean(activeDraft)],
+                ["visuals", "Visuals", Boolean(currentAssetBatch?.allApproved)],
+                ["publication", "Publication", false],
+              ] as const).map(([tab, label, complete]) => (
+                <button key={tab} type="button" className={activeTab === tab ? styles.workspaceTabActive : undefined} aria-current={activeTab === tab ? "step" : undefined} onClick={() => selectTab(tab)}>
+                  {complete ? <span aria-hidden="true">✓</span> : null}{label}
+                </button>
+              ))}
+            </nav>
             <div className={styles.progress} aria-label="Creative workflow">
               <ProgressStep number="1" label="Brief" active={!workspace.brief} complete={Boolean(workspace.brief)} />
               <ProgressStep number="2" label="Draft" active={Boolean(workspace.brief && !activeDraft)} complete={Boolean(activeDraft)} />
@@ -1633,9 +1665,18 @@ export function CreativeDraftWorkspace({
               </div>
             ) : null}
 
-            <details><summary>Earlier standalone documentary publications</summary><CreativeDocumentaryPanel key={`${topicId}:${storyId}`} topicId={topicId} storyId={storyId} secret={secret} format={selectedFormat} disabled={Boolean(busy) || dirty} onLoaded={setPreparedPublication} /></details>
+            <section className={styles.contentStage} hidden={activeTab !== "content"}>
+              <p className={styles.stageEyebrow}>Source material</p>
+              <h3>Content and evidence</h3>
+              <p>{workspace.story.hasContent ? "Content is ready to review. Saved revisions remain linked to their sources." : "This story needs content before you can generate a focus or script."}</p>
+              <span>{workspace.story.contentStatus === "missing" ? "Content pending" : `Status: ${workspace.story.contentStatus}`}</span>
+              {onOpenContent ? <button type="button" className={styles.secondaryButton} onClick={onOpenContent}>Review and edit content</button> : null}
+              {workspace.story.url ? <a href={workspace.story.url} target="_blank" rel="noreferrer">Open original source ↗</a> : null}
+            </section>
 
-            <div className={styles.profilePanel}>
+            <div hidden={activeTab !== "publication"}><details><summary>Earlier standalone documentary publications</summary><CreativeDocumentaryPanel key={`${topicId}:${storyId}`} topicId={topicId} storyId={storyId} secret={secret} format={selectedFormat} disabled={Boolean(busy) || dirty} onLoaded={setPreparedPublication} /></details></div>
+
+            <div className={styles.profilePanel} hidden={activeTab !== "focus"}>
               <div className={styles.profileSummaryHead}>
                 <div>
                   <strong>Creative profile</strong>
@@ -1654,8 +1695,8 @@ export function CreativeDraftWorkspace({
                     ) {
                       return;
                     }
-                    onClose();
-                    window.location.hash = "editorial-creative";
+                    if (mode === "page") router.push(`/?topicId=${encodeURIComponent(topicId)}#identity`);
+                    else { onClose(); window.location.hash = "editorial-creative"; }
                   }}
                 >
                   Edit in Topic voice →
@@ -1681,7 +1722,7 @@ export function CreativeDraftWorkspace({
               </p>
             </div>
 
-            <section className={styles.section}>
+            <section className={styles.section} hidden={activeTab !== "focus"}>
               <div className={styles.sectionHeading}>
                 <div>
                   <span>Stage 1</span>
@@ -1801,8 +1842,9 @@ export function CreativeDraftWorkspace({
               ) : null}
             </section>
 
+            {activeTab === "script" && !workspace.brief ? <section className={styles.contentStage}><h3>Define the focus first</h3><p>The script is generated from the brief and this story’s reviewed source material.</p><button type="button" className={styles.secondaryButton} onClick={() => selectTab("focus")}>Go to Focus</button></section> : null}
             {workspace.brief ? (
-              <section ref={draftSectionRef} tabIndex={-1} aria-label="Draft generation" className={styles.section}>
+              <section ref={draftSectionRef} tabIndex={-1} aria-label="Draft generation" className={styles.section} hidden={activeTab !== "script"}>
                 <div className={styles.sectionHeading}>
                   <div>
                     <span>Stage 2</span>
@@ -1810,6 +1852,13 @@ export function CreativeDraftWorkspace({
                   </div>
                   {activeDraft ? <StatusPill status={activeDraft.status} version={activeDraft.version} /> : null}
                 </div>
+
+                {activeDraft ? <details className={styles.textPreview} open>
+                  <summary>Script preview · {activeDraft.units.length} {activeDraft.units.length === 1 ? "piece" : "pieces"}</summary>
+                  <div className={styles.textPreviewGrid}>{activeDraft.units.map((unit) => (
+                    <article key={`${activeDraft.id}:${unit.order}`}><span>{unit.order} / {activeDraft.units.length}</span><strong>{unit.headline}</strong>{unit.subheadline ? <p>{unit.subheadline}</p> : null}{unit.body ? <p>{unit.body}</p> : null}<small>Text preview · image pending</small></article>
+                  ))}</div>
+                </details> : null}
 
                 <div className={styles.draftSetup}>
                   <div className={styles.fixedCanvas}>
@@ -2072,7 +2121,7 @@ export function CreativeDraftWorkspace({
             activeDraft.status === "approved" &&
             !dirty &&
             !viewingHistoricalDraft ? (
-              <section className={styles.section}>
+              <section className={styles.section} hidden={activeTab !== "script"}>
                 <div className={styles.sectionHeading}>
                   <div>
                     <span>After approval</span>
@@ -2149,8 +2198,9 @@ export function CreativeDraftWorkspace({
               </section>
             ) : null}
 
+            {activeTab === "visuals" && !activeDraft ? <section className={styles.contentStage}><h3>Prepare the script first</h3><p>Images are generated from an approved script revision.</p><button type="button" className={styles.secondaryButton} onClick={() => selectTab("script")}>Go to Script</button></section> : null}
             {activeDraft ? (
-              <section className={styles.section}>
+              <section className={styles.section} hidden={activeTab !== "visuals"}>
                 <div className={styles.sectionHeading}>
                   <div>
                     <span>Stage 4</span>
@@ -2336,11 +2386,6 @@ export function CreativeDraftWorkspace({
                           {currentAssetBatch.model} · {imageQualityLabel(currentAssetBatch.imageQuality ?? "high")} · {currentAssetBatch.width}×{currentAssetBatch.height}
                         </small>
                       </div>
-                      <InstagramPublicationCandidatePanel
-                        key={JSON.stringify([topicId, activeDraft, currentAssetBatch, dirty, busy, assetBusy, viewingHistoricalDraft])}
-                        topicId={topicId} draftId={activeDraft.id} batchId={currentAssetBatch.id} secret={secret}
-                        disabled={dirty || Boolean(busy) || Boolean(assetBusy) || viewingHistoricalDraft}
-                      />
                       <div className={styles.assetGrid}>
                         {currentAssetBatch.assets.map((asset) => (
                           <CreativeAssetCard
@@ -2386,7 +2431,13 @@ export function CreativeDraftWorkspace({
               </section>
             ) : null}
 
-            <section className={styles.section}>
+            <section className={styles.section} hidden={activeTab !== "publication"}>
+              <div className={styles.sectionHeading}><div><span>Stage 5</span><h3>Publication</h3></div></div>
+              {activeDraft && currentAssetBatch ? <InstagramPublicationCandidatePanel
+                key={JSON.stringify([topicId, activeDraft, currentAssetBatch, dirty, busy, assetBusy, viewingHistoricalDraft])}
+                topicId={topicId} draftId={activeDraft.id} batchId={currentAssetBatch.id} secret={secret}
+                disabled={dirty || Boolean(busy) || Boolean(assetBusy) || viewingHistoricalDraft}
+              /> : <p className={styles.warning}>Approve the script and images to prepare an Instagram publication.</p>}
               <StoryInstagramResults
                 topicId={topicId}
                 storyId={storyId}
@@ -2403,8 +2454,8 @@ export function CreativeDraftWorkspace({
                   ) {
                     return;
                   }
-                  onClose();
-                  window.location.hash = "editorial-meta";
+                  if (mode === "page") router.push(`/?topicId=${encodeURIComponent(topicId)}#channels`);
+                  else { onClose(); window.location.hash = "editorial-meta"; }
                 }}
               />
             </section>
@@ -2835,7 +2886,7 @@ function CreativeAssetCard({
         <div>{asset.unitSnapshot.placeVisual.reasons.map((reason,index)=><p key={index}>{reason}</p>)}
         {asset.unitSnapshot.placeVisual.adapterEvidence?.segment ? <p>
           Official notice {asset.unitSnapshot.placeVisual.adapterEvidence.segment.id}{asset.unitSnapshot.placeVisual.adapterEvidence.segment.chantier ? ` · Work site ${asset.unitSnapshot.placeVisual.adapterEvidence.segment.chantier}` : ""} · {asset.unitSnapshot.placeVisual.adapterEvidence.segment.location} · {asset.unitSnapshot.placeVisual.adapterEvidence.segment.direction}
-          {asset.unitSnapshot.placeVisual.adapterEvidence.segment.entrave ? ` · ${asset.unitSnapshot.placeVisual.adapterEvidence.segment.entrave}` : ""}{asset.unitSnapshot.placeVisual.adapterEvidence.segment.detour ? ` · Détour : ${asset.unitSnapshot.placeVisual.adapterEvidence.segment.detour}` : ""}
+          {asset.unitSnapshot.placeVisual.adapterEvidence.segment.entrave ? ` · ${asset.unitSnapshot.placeVisual.adapterEvidence.segment.entrave}` : ""}{asset.unitSnapshot.placeVisual.adapterEvidence.segment.detour ? ` · Detour: ${asset.unitSnapshot.placeVisual.adapterEvidence.segment.detour}` : ""}
         </p> : null}
         {asset.unitSnapshot.placeVisual.sourceUrl ? <a href={asset.unitSnapshot.placeVisual.sourceUrl} target="_blank" rel="noreferrer">{asset.unitSnapshot.placeVisual.adapter === "quebec511" ? "Official MTMD source" : "Identity evidence"}</a> : null}
         <p>{asset.unitSnapshot.placeVisual.attribution}</p>
@@ -2851,15 +2902,15 @@ function CreativeAssetCard({
       {asset.unitSnapshot.roadMapEvidence ? <div className={styles.historyCallout}><div>
         <strong>{asset.unitSnapshot.roadMapEvidence.sha256 ? "Verified road map" : "Map preparation"}</strong>
         <p>{asset.unitSnapshot.roadMapEvidence.reason}</p>
-        {asset.unitSnapshot.roadMapEvidence.segment ? <p>Notice {asset.unitSnapshot.roadMapEvidence.segment.id}{asset.unitSnapshot.roadMapEvidence.segment.chantier ? ` · Work site ${asset.unitSnapshot.roadMapEvidence.segment.chantier}` : ""} · {asset.unitSnapshot.roadMapEvidence.segment.location}{asset.unitSnapshot.roadMapEvidence.segment.detour ? ` · Détour : ${asset.unitSnapshot.roadMapEvidence.segment.detour}` : ""}</p> : null}
+        {asset.unitSnapshot.roadMapEvidence.segment ? <p>Notice {asset.unitSnapshot.roadMapEvidence.segment.id}{asset.unitSnapshot.roadMapEvidence.segment.chantier ? ` · Work site ${asset.unitSnapshot.roadMapEvidence.segment.chantier}` : ""} · {asset.unitSnapshot.roadMapEvidence.segment.location}{asset.unitSnapshot.roadMapEvidence.segment.detour ? ` · Detour: ${asset.unitSnapshot.roadMapEvidence.segment.detour}` : ""}</p> : null}
         <a href={asset.unitSnapshot.roadMapEvidence.source} target="_blank" rel="noreferrer">Official MTMD source</a>
       </div></div> : null}
-      {asset.carriedFromAssetId && !textPending ? <p>Imagen conservada de la revisión anterior.</p> : null}
+      {asset.carriedFromAssetId && !textPending ? <p>Image kept from the previous revision.</p> : null}
       {textPending ? <div className={styles.assetTextWarning}>
-        <strong>Pendiente de actualizar</strong>
-        <p>El texto guardado de esta slide cambió. Actualiza esta imagen conservando las demás.</p>
+        <strong>Update pending</strong>
+        <p>The saved text for this slide changed. Update this image while keeping the others.</p>
         <button type="button" className={styles.secondaryButton} disabled={!canUpdateText || isPending}
-          onClick={() => onUpdateText(asset.id)}>Actualizar esta imagen</button>
+          onClick={() => onUpdateText(asset.id)}>Update this image</button>
       </div> : null}
 
       <CreativeBrandImageEditor key={`${asset.id}:${savedRequest?.revision ?? 0}`} asset={asset} topicId={topicId} secret={secret}

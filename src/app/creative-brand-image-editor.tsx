@@ -69,17 +69,17 @@ export function CreativeBrandImageEditor({ asset, topicId, secret, disabled, sav
     savedRequest?.status === "applied" &&
     savedRequest.appliedRevision === savedRequest.revision;
   const stateLabel = running
-    ? "En ejecución"
+    ? "Running"
     : failed
-      ? "Falló"
+      ? "Failed"
       : dirty
-        ? "Sin guardar"
+        ? "Unsaved"
         : appliedCurrent
-          ? `Aplicado (rev ${savedRequest?.appliedRevision})`
+          ? `Applied (rev ${savedRequest?.appliedRevision})`
           : savedRequest
-            ? "Guardado"
+            ? "Saved"
             : asset.editSource
-              ? "Aplicado"
+              ? "Applied"
               : undefined;
   const controlsEnabled = Boolean(onSaveRequest) && !savedRequestReadOnly;
   const applyEnabled = Boolean(onApply) && !savedRequestReadOnly && !running;
@@ -101,16 +101,16 @@ export function CreativeBrandImageEditor({ asset, topicId, secret, disabled, sav
     (changed && !library) ||
     (dirty ? !instruction.trim() : !savedRequest || appliedCurrent);
   const primaryLabel = running
-    ? "Aplicando…"
+    ? "Applying…"
     : dirty
-      ? "Guardar y aplicar"
+      ? "Save and apply"
       : failed
-        ? "Reintentar"
+        ? "Retry"
         : appliedCurrent
-          ? "Sin cambios que aplicar"
+          ? "No changes to apply"
           : useBase
-            ? "Aplicar el cambio a esta imagen"
-            : "Generar esta imagen con estas referencias";
+            ? "Apply changes to this image"
+            : "Generate this image with these references";
 
   async function download() {
     try {
@@ -127,8 +127,8 @@ export function CreativeBrandImageEditor({ asset, topicId, secret, disabled, sav
   return <div className={styles.brandImageEditor}>
     {asset.editSource ? <p>Edited from image v{asset.editSource.version} · {asset.editInstruction}</p> : null}
     {stateLabel ? <span className={styles.editRequestState}>{stateLabel}</span> : null}
-    {savedRequest?.blockedReason ? <p role="alert">No se pudo aplicar: {savedRequest.blockedReason}</p> : null}
-    {failed && savedRequest?.lastError ? <p role="alert">Falló la ejecución: {savedRequest.lastError}</p> : null}
+    {savedRequest?.blockedReason ? <p role="alert">Could not apply: {savedRequest.blockedReason}</p> : null}
+    {failed && savedRequest?.lastError ? <p role="alert">Generation failed: {savedRequest.lastError}</p> : null}
     <details onToggle={event => setOpen(event.currentTarget.open)}>
       <summary>Brand references and image edits</summary>
       {open && asset.editSource ? <EditBasePreview assetId={asset.id} topicId={topicId} secret={secret} /> : null}
@@ -155,7 +155,7 @@ export function CreativeBrandImageEditor({ asset, topicId, secret, disabled, sav
           {controlsEnabled ? <button type="button" className={styles.secondaryButton}
             disabled={!dirty || !instruction.trim() || (changed && !library)}
             onClick={() => onSaveRequest?.(buildPayload())}>
-            Guardar cambio
+            Save change
           </button> : null}
           {controlsEnabled && savedRequest?.status === "saved" ? <button type="button" className={styles.secondaryButton}
             onClick={() => onDiscardRequest?.()}>

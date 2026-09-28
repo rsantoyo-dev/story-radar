@@ -3049,6 +3049,7 @@ export function creativeDraftSchema(
         : {}),
       hashtags: {
         type: "array",
+        minItems: 5,
         maxItems: 8,
         items: { type: "string" },
       },

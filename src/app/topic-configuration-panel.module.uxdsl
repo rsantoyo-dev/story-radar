@@ -361,3 +361,16 @@
   padding: density(1) density(2);
   white-space: nowrap;
 }
+
+.topicCards { display: grid; grid-template-columns: xs(1fr) sm(repeat(2, minmax(0, 1fr))) xl(repeat(3, minmax(0, 1fr))); gap: density(4); margin-block: density(6); }
+.topicCard { display: grid; overflow: hidden; min-width: 0; padding: 0; border: 1px solid palette(dark-main, 0.12); border-radius: radius(3); background: palette(light-light); color: palette(dark-main); text-align: left; cursor: pointer; }
+.topicCard:hover:not(:disabled), .topicCard:focus-visible { border-color: palette(primary-main, 0.65); box-shadow: shadow(2); }
+.topicCard.topicCardActive { border-color: palette(primary-main); box-shadow: 0 0 0 2px palette(primary-main, 0.16); }
+.topicCard:disabled { cursor: not-allowed; opacity: 0.65; }
+.topicCardPreview { display: grid; height: 90px; place-items: center; background: linear-gradient(135deg, palette(primary-main), palette(secondary-main)); color: palette(primary-contrast); @ds-typo(h1); font-size: 2.5rem; font-weight: 750; }
+.topicCardCopy { display: grid; gap: density(2); padding: density(4); }
+.topicCardCopy strong { color: palette(dark-main); @ds-typo(h3); font-size: 1rem; }
+.topicCardCopy small { overflow: hidden; color: palette(tertiary-main); @ds-typo(small); font-size: 0.75rem; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+.topicCardCopy > span { color: palette(primary-dark); @ds-typo(caption); font-size: 0.6875rem; font-weight: 700; }
+.topicAdvanced { margin-top: density(6); border-top: 1px solid palette(surface-light); }
+.topicAdvanced > summary { min-height: 44px; padding-block: density(4); color: palette(primary-dark); @ds-typo(small); font-weight: 700; cursor: pointer; }

@@ -50,7 +50,6 @@ function workflow({failEvaluate=false,limit=false,cachedCollection=false,draftMo
       createCreativeBrief:async(...args:unknown[])=>{calls.push("brief");briefCalls.push(args);return {state:{brief:{id:"brief",contentSufficiency:"sufficient"}}};},
       getCreativeWorkspaceState:async(...args:unknown[])=>{workspaceCalls.push(args);return {briefIsCurrent:true,brief:{id:"brief",recommendedFormat:"carousel"},drafts:[{id:"draft",status:draftApproved?"approved":"draft",version:1}]};},
       createCreativeDraft:async()=>{calls.push("draft");return {state:{drafts:[{id:"draft",briefId:"brief",inputIsCurrent:true,format:"carousel",status:"draft",qualityReview:{status:"accepted",issues:[]}}]}};},
-      approveSavedCreativeDraft:async()=>{calls.push("approve-draft");draftApproved=true;},
     },
     "./manage-creative-assets":{
       generateCreativeDraftAssets:async()=>{calls.push("images");return {batch:{id:"batch"},configuration:{},outcome:"submitted"};},
@@ -61,7 +60,7 @@ function workflow({failEvaluate=false,limit=false,cachedCollection=false,draftMo
       savePreparation:async(_run:unknown,values:Partial<typeof run>)=>{run={...run,...values};},
     },
   });
-  return {service,calls,workspaceCalls,briefCalls,get run(){return run;},retry(){run.status="running";failEvaluate=false;}};
+  return {service,calls,workspaceCalls,briefCalls,get run(){return run;},approveDraft(){draftApproved=true;},retry(){run.status="running";failEvaluate=false;}};
 }
 test("daily workflow checkpoints collection, evaluates uncached batches then recommends",async()=>{
   const w=workflow();await w.service.drivePreparation(topicId,lineId);
@@ -150,8 +149,12 @@ test("a run still sitting at the legacy 'draft' step from before the brief/draft
   w.run.progress.storyId=topicId;w.run.progress.briefId="brief";w.run.progress.targetStep="images";
   w.run.status="running";w.run.step="draft";
   await w.service.drivePreparation(topicId,lineId);
+  assert.equal(w.run.status,"needs-review");
+  assert.equal(w.run.step,"approve-draft");
+  w.approveDraft();w.retry();
+  await w.service.drivePreparation(topicId,lineId);
   assert.equal(w.run.status,"completed");
-  assert.deepEqual(w.calls,["approve","draft","approve-draft","images"]);
+  assert.deepEqual(w.calls,["approve","draft","images"]);
   assert.equal(w.run.progress.draftId,"draft");
 });
 test("each target stops before the next stage",async()=>{
@@ -256,26 +259,33 @@ test("daily draft progression stops when exact-version automated readiness fails
   assert.match(w.run.error ?? "",/exact version/);
 });
 
-test("the extended pipeline carries the suggested focus into the brief, then approves the carrousel and submits images",async()=>{
+test("the extended pipeline pauses for human draft approval before images",async()=>{
   const w=workflow({draftMode:true});
   w.run.progress.targetStep="images";
   await w.service.drivePreparation(topicId,lineId);
+  assert.equal(w.run.status,"needs-review");
+  assert.equal(w.run.step,"approve-draft");
+  assert.match(w.run.error ?? "",/human approval/);
+  assert.equal(w.calls.includes("images"),false);
+  w.approveDraft();w.retry();
+  await w.service.drivePreparation(topicId,lineId);
   assert.equal(w.run.status,"completed");
-  assert.deepEqual(w.calls,["collect","evaluate","evaluate","recommend","approve","focus","brief","draft","approve-draft","images"]);
+  assert.deepEqual(w.calls,["collect","evaluate","evaluate","recommend","approve","focus","brief","draft","images"]);
   // The focus step's suggestion is what the brief step actually used.
   assert.equal(w.briefCalls[0]?.[2],"a sharper focus");
   assert.equal(w.run.progress.assetBatchId,"batch");
 });
 
-test("approve-draft does not re-approve a carrousel that is already approved",async()=>{
+test("approve-draft requires the existing human approval and never creates it",async()=>{
   const w=workflow({draftMode:true});
   w.run.progress.targetStep="approve-draft";
   await w.service.drivePreparation(topicId,lineId);
+  assert.equal(w.run.status,"needs-review");
+  w.approveDraft();w.retry();
+  await w.service.drivePreparation(topicId,lineId);
   assert.equal(w.run.status,"completed");
-  assert.equal(w.calls.filter(c=>c==="approve-draft").length,1);
-  // Re-running the same step now finds the draft already approved (the mock's
-  // getCreativeWorkspaceState reflects it) and must not approve it again.
+  assert.equal(w.calls.includes("approve-draft"),false);
   w.run.status="running";w.run.step="approve-draft";
   await w.service.drivePreparation(topicId,lineId);
-  assert.equal(w.calls.filter(c=>c==="approve-draft").length,1);
+  assert.equal(w.calls.includes("approve-draft"),false);
 });

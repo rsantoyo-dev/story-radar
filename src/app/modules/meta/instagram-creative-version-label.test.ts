@@ -3,14 +3,14 @@ import { test } from "node:test";
 
 import { instagramCreativeVersionLabel } from "./instagram-creative-version-label";
 
-test("instagramCreativeVersionLabel builds format · vN · aprobado", () => {
+test("instagramCreativeVersionLabel builds format · vN · approved", () => {
   assert.equal(
     instagramCreativeVersionLabel({
       format: "carousel",
       status: "approved",
       version: 3,
     }),
-    "Carrusel · v3 · aprobado",
+    "Carousel · v3 · approved",
   );
   assert.equal(
     instagramCreativeVersionLabel({
@@ -27,7 +27,7 @@ test("instagramCreativeVersionLabel builds format · vN · aprobado", () => {
       status: "draft",
       version: null,
     }),
-    "Carrusel",
+    "Carousel",
   );
   // Unknown format passes through verbatim.
   assert.equal(
@@ -36,6 +36,6 @@ test("instagramCreativeVersionLabel builds format · vN · aprobado", () => {
       status: "approved",
       version: 0,
     }),
-    "story · aprobado",
+    "story · approved",
   );
 });

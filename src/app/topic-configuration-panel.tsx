@@ -1,6 +1,7 @@
 "use client";
 
 import { EditorialLinesPanel } from "./editorial-lines-panel";
+import { topicThemeStyle } from "@/design/topic-themes";
 import { type ReactNode, useEffect, useState } from "react";
 
 import {
@@ -153,6 +154,7 @@ const EMPTY_SOURCE: SourceDraft = {
 
 export function TopicConfigurationPanel({
   view,
+  initialCreateTopic = false,
   topics,
   selectedTopicId,
   secret,
@@ -166,6 +168,7 @@ export function TopicConfigurationPanel({
   catalogError,
 }: {
   view: TopicConfigurationView;
+  initialCreateTopic?: boolean;
   topics: DashboardTopic[];
   selectedTopicId: string;
   secret: string;
@@ -189,7 +192,7 @@ export function TopicConfigurationPanel({
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [busy, setBusy] = useState<string>();
-  const [showTopicForm, setShowTopicForm] = useState(false);
+  const [showTopicForm, setShowTopicForm] = useState(initialCreateTopic);
   const [topicName, setTopicName] = useState("");
   const [topicDescription, setTopicDescription] = useState("");
   const [topicThemeKey, setTopicThemeKey] = useState<string>(DEFAULT_TOPIC_THEME_KEY);
@@ -845,7 +848,16 @@ export function TopicConfigurationPanel({
       {notice ? <p className={styles.notice} role="status">{notice}</p> : null}
 
       {view === "topics" ? <>
-      <EditorialLinesPanel key={selectedTopicId} topicId={selectedTopicId} secret={secret} disabled={disabled || Boolean(busy)} manageOnly/>
+      <div className={styles.topicCards} aria-label="Topics disponibles">
+        {topics.map((topic) => {
+          const linkedCount = (catalog?.rss.filter((feed) => feed.topics.some((link) => link.topicId === topic.id)).length ?? 0) +
+            (catalog?.documents.filter((document) => document.topics.some((link) => link.topicId === topic.id)).length ?? 0);
+          return <button key={topic.id} type="button" className={selectedTopicId === topic.id ? `${styles.topicCard} ${styles.topicCardActive}` : styles.topicCard} style={topicThemeStyle(topic.themeKey)} onClick={() => changeTopic(topic.id)} disabled={!topic.isActive || disabled || Boolean(busy)} aria-current={selectedTopicId === topic.id ? "true" : undefined}>
+            <span className={styles.topicCardPreview} aria-hidden="true">{topic.name.slice(0, 1).toUpperCase()}</span>
+            <span className={styles.topicCardCopy}><strong>{topic.name}</strong><small>{topic.description || "No editorial description"}</small><span>{topic.isActive ? `${linkedCount} linked sources` : "Inactive"}</span></span>
+          </button>;
+        })}
+      </div>
       <div className={styles.topicRow}>
         <label>
           <span>Active topic</span>
@@ -902,6 +914,9 @@ export function TopicConfigurationPanel({
         </form>
       ) : null}
 
+      <details className={styles.topicAdvanced}>
+        <summary>Links and settings for the selected Topic</summary>
+        <EditorialLinesPanel key={selectedTopicId} topicId={selectedTopicId} secret={secret} disabled={disabled || Boolean(busy)} manageOnly/>
       <div className={styles.linkedSources}>
         <div>
           <h3>Linked RSS feeds</h3>
@@ -933,6 +948,7 @@ export function TopicConfigurationPanel({
           <a href="#sources/ai">Configure this topic ↗</a>
         </div>
       </div>
+      </details>
 
       </> : null}
 

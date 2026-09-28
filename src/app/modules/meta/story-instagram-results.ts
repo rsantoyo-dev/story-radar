@@ -23,7 +23,7 @@ export type StoryInstagramCreativeVersion = {
 };
 
 export type StoryInstagramPost = InstagramMediaListItem & {
-  /** null → "Versión no identificada" (no linked draft, or it was deleted). */
+  /** null means the creative version is unknown (no linked draft, or it was deleted). */
   creativeVersion: StoryInstagramCreativeVersion | null;
 };
 

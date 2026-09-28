@@ -4,7 +4,7 @@ import { approveDailyStory } from "./approve-daily-story";
 import { BRIEF_EVIDENCE_REVIEW_MESSAGE, DAILY_PREPARATION_STEPS, preparationTarget, type DailyPreparationStep } from "./daily-preparation.types";
 import { prepareStoryContent } from "./prepare-selected-story-content";
 import { getStoryContent } from "./story-content.repository";
-import { approveSavedCreativeDraft, createCreativeBrief, createCreativeDraft, getCreativeWorkspaceState, suggestEditorialFocus } from "./manage-creative-content";
+import { createCreativeBrief, createCreativeDraft, getCreativeWorkspaceState, suggestEditorialFocus } from "./manage-creative-content";
 import { generateCreativeDraftAssets } from "./manage-creative-assets";
 import { storyCollectionContexts } from "../editorial-lines/editorial-lines.repository";
 class PreparationReviewNeeded extends Error {}
@@ -164,7 +164,7 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
       const workspace=await getCreativeWorkspaceState(topicId,progress.storyId,run.id);
       const draft=workspace.drafts.find(d=>d.id===progress.draftId);
       if(!draft)throw new PreparationReviewNeeded("The draft is no longer available. Review it in the workspace.");
-      if(draft.status!=="approved")await approveSavedCreativeDraft(topicId, draft.id, true, draft.version);
+      if(draft.status!=="approved" || draft.inputIsCurrent===false)throw new PreparationReviewNeeded("The exact draft version needs human approval in the story workspace before images can be generated.");
       return await finish("approve-draft", "images");
     } else if(run.step==="images") {
       if(!progress.draftId)throw new PreparationReviewNeeded("Approve the draft before generating images.");

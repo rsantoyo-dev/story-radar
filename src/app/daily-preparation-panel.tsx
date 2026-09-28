@@ -29,6 +29,7 @@ export function DailyPreparationPanel({onCompleted,onOpenDraft,...props}:Props) 
   const timezone=useSyncExternalStore(subscribe,browserZone,serverZone);
   const [data,setData]=useState<State>();
   const [lineId,setLineId]=useState("");
+  const [targetSelection,setTargetSelection]=useState<DailyPreparationStep>();
   const [pending,setPending]=useState(false);
   const [newRun,setNewRun]=useState(false);
   const [error,setError]=useState("");
@@ -76,6 +77,7 @@ export function DailyPreparationPanel({onCompleted,onOpenDraft,...props}:Props) 
   },[topicId,secret]);
   const run=data?.run;
   const selectedLine=lineId || run?.lineId || data?.lines[0]?.id || "";
+  const selectedTarget=targetSelection ?? (run ? preparationTarget(run.progress) : "recommend");
   const fresh=newRun || !run || selectedLine!==run.lineId;
   async function start(targetStep:DailyPreparationStep){
     if(posting.current)return;
@@ -104,14 +106,16 @@ export function DailyPreparationPanel({onCompleted,onOpenDraft,...props}:Props) 
   const blocked=disabled || pending || running || !secret.trim();
   return <section className={styles.dailyPlanner} aria-label="Prepare my day">
     <div className={styles.dailyPlannerHeader}>
-      <div><span className={styles.eyebrow}>Daily editorial workflow</span><h2>Prepare my day</h2><p>Choose how far to go — picking a step runs everything up to it. Pick “Images” to run the whole day unattended: it drafts, and once the draft clears review with no blockers it approves and generates images on its own; anything that needs a decision stops there for you instead. Completed steps are reused when you continue.</p><small>Today uses {timezone}. Collection uses the editorial line’s period and sources.</small></div>
+      <div><span className={styles.eyebrow}>Daily editorial workflow</span><h2>Prepare my day</h2><p>Choose an editorial line and how far to prepare. Completed steps are reused when you continue. Before generating images, review and approve the exact script in the studio.</p><small>Time zone: {timezone}. Search uses the editorial line’s time period and sources.</small></div>
       <div className={styles.dailyPlannerControls}>
-        <label>Editorial line<select value={selectedLine} disabled={blocked} onChange={event=>setLineId(event.target.value)}>{!data?.lines.length && <option value="">Loading editorial lines…</option>}{data?.lines.map(line=><option key={line.id} value={line.id}>{line.name}</option>)}</select></label>
+        <label>Editorial line<select value={selectedLine} disabled={blocked} onChange={event=>setLineId(event.target.value)}>{!data?.lines.length && <option value="">Loading lines…</option>}{data?.lines.map(line=><option key={line.id} value={line.id}>{line.name}</option>)}</select></label>
+        <label>Prepare through<select value={selectedTarget} disabled={blocked} onChange={event=>setTargetSelection(event.target.value as DailyPreparationStep)}>{steps.map(step=><option key={step} value={step}>{DAILY_PREPARATION_TITLES[step]}</option>)}</select></label>
+        <button type="button" className={styles.primaryButton} disabled={blocked || !selectedLine} onClick={()=>void start(selectedTarget)}>{pending?"Starting…":fresh?"Prepare through this step":"Continue through this step"}</button>
         {run && <button type="button" className={styles.secondaryButton} disabled={blocked} onClick={()=>setNewRun(value=>!value)}>{newRun?"Return to current run":"New run"}</button>}
       </div>
     </div>
     {error && <p role="alert">{error}</p>}
-    {fresh && <p role="status">Choose a step to start a new run.</p>}
+    {fresh && <p role="status">Select a step, then choose “Prepare through this step.”</p>}
     <ol className={styles.dailyPreparationSteps}>{steps.map((step,index)=>{
       const done=index<=completedIndex;
       const active=!fresh && run?.step===step && !done;
@@ -121,13 +125,13 @@ export function DailyPreparationPanel({onCompleted,onOpenDraft,...props}:Props) 
       // sync with the [data-step-status="..."] rules there.
       const stepStatus=done?(canOpen?"done-open":"done"):active?(running?"running":"attention"):"todo";
       const detail=done && run ? stepDetail(step, run.progress) : undefined;
-      const statusDetail=(done?(canOpen?"Completed · Open":"Completed"):active?(running?"Running": "Needs attention · Retry"):"Run to here")+(detail?` · ${detail}`:"");
+      const statusDetail=(done?(canOpen?"Completed · Open":"Completed"):active?(running?"In progress": "Needs review"):"Pending")+(detail?` · ${detail}`:"");
       return <li key={step} aria-current={active && running?"step":undefined}>
-        <button type="button" className={styles.dailyPreparationStepButton} data-step-status={stepStatus} disabled={blocked || !selectedLine || (done && !canOpen)} onClick={()=>{
+        <button type="button" className={styles.dailyPreparationStepButton} data-step-status={stepStatus} disabled={blocked || !selectedLine || !canOpen} onClick={()=>{
           if(done && run?.progress.storyId) {
             if(step==="content")props.onViewContent(run.progress.storyId);
             else onOpenDraft(run.progress.storyId,run.progress.storyTitle ?? "Creative draft",opensDraft?run.progress.draftId:undefined,run.id);
-          } else void start(step);
+          }
         }} title={statusDetail} aria-label={`${DAILY_PREPARATION_TITLES[step]} · ${statusDetail}`}>
           <span aria-hidden="true">{done?"✓":index+1}</span>
           {DAILY_PREPARATION_TITLES[step]}

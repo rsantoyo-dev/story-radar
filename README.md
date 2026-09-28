@@ -80,6 +80,10 @@ npm run dev:https
 
 ## Provider configuration
 
+For Vercel Production models and options, use `.env.vercel` and
+`npm run env:vercel:sync`. `npm run deploy:vercel` syncs before deploying.
+See [Vercel environment setup](docs/vercel-environment.md) for setup and checks.
+
 The complete configuration and defaults are documented inline in
 `.env.example`. Configure only the capabilities needed by the environment:
 

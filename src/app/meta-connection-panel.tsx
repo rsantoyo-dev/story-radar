@@ -588,7 +588,7 @@ export function MetaConnectionPanel({
           </p>
           <p className={styles.brandAssetHint}>
             From the Meta App Dashboard&rsquo;s Instagram product settings —
-            &ldquo;Identificador/Clave secreta de la app de Instagram&rdquo; —
+            &ldquo;Instagram App ID / Instagram App Secret&rdquo; —
             not the parent Meta App&rsquo;s own App ID.
           </p>
           <div className={styles.metaAppFields}>
