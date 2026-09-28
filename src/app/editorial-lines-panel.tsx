@@ -9,15 +9,16 @@ export type EditorialLinesData={topicId:string;researchDefaults:LineResearchSett
 const empty:EditorialLineConfig={name:"",objective:"",themes:[],mode:"context",period:{kind:"relative",hours:8760},timezone:"UTC",sourceMode:"inherit",sourceIds:[],excludedSourceIds:[],domains:[],researchEnabled:true};
 export function EditorialLinesPanel({topicId,secret,disabled=false,manageOnly=false,refreshKey=0,onSelection,onLoaded}:{topicId:string;secret:string;disabled?:boolean;manageOnly?:boolean;refreshKey?:number;onSelection?:(s:EditorialLineSelection|undefined)=>void;onLoaded?:(data:EditorialLinesData)=>void}){
   const [data,setData]=useState<EditorialLinesData>();const [error,setError]=useState("");const [busy,setBusy]=useState(false);const [revision,setRevision]=useState(0);
-  const [choice,setChoice]=useState("");const [query,setQuery]=useState("");
+  const [choice,setChoice]=useState("");const [query,setQuery]=useState("");const [periodOverride,setPeriodOverride]=useState<EditorialPeriod>();
   const [editing,setEditing]=useState<EditorialLine>();const [config,setConfig]=useState<EditorialLineConfig>(empty);
+  const researchHelpId=useId();
   const dirty=manageOnly && JSON.stringify(config)!==JSON.stringify(editing??empty);
   const currentPeriodError=periodError(config.period);
   const timeZoneError=isValidTimeZone(config.timezone)?"":"Choose a valid IANA time zone, such as America/Toronto.";
   useUnsavedBeforeUnload(dirty);
   const current=data?.topicId===topicId?data:undefined;
   useEffect(()=>{if(!secret.trim()||!topicId)return;const controller=new AbortController();
-    fetch(`/api/radar/topics/${topicId}/editorial-lines`,{headers:{Authorization:`Bearer ${secret.trim()}`},signal:controller.signal,cache:"no-store"}).then(async r=>{const value=await r.json();if(!r.ok)throw new Error(value.error);return {...value,topicId} as EditorialLinesData;}).then(value=>{if(controller.signal.aborted)return;setData(value);setError("");onLoaded?.(value);if(!manageOnly && !value.lines.some(line=>line.id===choice&&!line.archived)){const active=value.lines.filter(line=>!line.archived);const next=active.length===1?active[0]:undefined;setChoice(next?.id??"");setQuery("");onSelection?.(next?{topicId,lineId:next.id,query:""}:undefined);}}).catch(e=>{if(!controller.signal.aborted)setError(e.message);});return()=>controller.abort();
+    fetch(`/api/radar/topics/${topicId}/editorial-lines`,{headers:{Authorization:`Bearer ${secret.trim()}`},signal:controller.signal,cache:"no-store"}).then(async r=>{const value=await r.json();if(!r.ok)throw new Error(value.error);return {...value,topicId} as EditorialLinesData;}).then(value=>{if(controller.signal.aborted)return;setData(value);setError("");onLoaded?.(value);if(!manageOnly && !value.lines.some(line=>line.id===choice&&!line.archived)){const active=value.lines.filter(line=>!line.archived);const next=active.length===1?active[0]:undefined;setChoice(next?.id??"");setQuery("");setPeriodOverride(undefined);onSelection?.(next?{topicId,lineId:next.id,query:""}:undefined);}}).catch(e=>{if(!controller.signal.aborted)setError(e.message);});return()=>controller.abort();
   },[topicId,secret,revision,refreshKey,onLoaded,choice,onSelection,manageOnly]);
   useEffect(()=>{
     const changed=(event:Event)=>{if((event as CustomEvent<string>).detail===topicId)setRevision(n=>n+1);};
@@ -25,7 +26,8 @@ export function EditorialLinesPanel({topicId,secret,disabled=false,manageOnly=fa
     return()=>window.removeEventListener("editorial-lines-changed",changed);
   },[topicId]);
   const selected=current?.lines.find(l=>l.id===choice&&!l.archived);
-  const updateSelection=(id:string,q:string,p?:EditorialPeriod)=>{setChoice(id);setQuery(q);onSelection?.(id?{topicId,lineId:id,query:q,period:p}:undefined);};
+  const aiResearchEnabled=selected?researchEnabled(selected,current?.researchDefaults):false;
+  const updateSelection=(id:string,q:string,p?:EditorialPeriod)=>{setChoice(id);setQuery(q);setPeriodOverride(p);onSelection?.(id?{topicId,lineId:id,query:q,period:p}:undefined);};
   function chooseEditor(line?:EditorialLine){
     if(dirty && !window.confirm("Discard unsaved editorial-line changes?"))return;
     setEditing(line);setConfig(line??empty);setError("");
@@ -42,14 +44,22 @@ export function EditorialLinesPanel({topicId,secret,disabled=false,manageOnly=fa
   return <div>
     {error?<p role="alert">{error}</p>:null}
     {!manageOnly?<>
-      <label className={styles.field}><span>Editorial line</span><select value={selected?.id??""} disabled={disabled||busy} onChange={e=>updateSelection(e.target.value,"",undefined)}><option value="" disabled>Choose an editorial line</option>{current?.lines.filter(l=>!l.archived).map(l=><option key={l.id} value={l.id}>{l.name} · {l.mode}</option>)}</select></label>
-      <p>Choose a saved line and collect using its feeds, AI search and period. <a href="#strategy/lines">Configure lines in Editorial strategy</a>.</p>
-      {selected?<><p>{selected.objective}</p><small>Period: {periodLabel(selected.period)} · {selected.timezone}. Feeds: {current?.sources.filter(s=>s.enabled&&(selected.sourceMode==="inherit"||selected.sourceIds.includes(s.id))&&!selected.excludedSourceIds.includes(s.id)).map(s=>s.name).join(", ")||"No RSS sources"}. AI search: {researchLabel(selected,current?.researchDefaults)}.</small>
-        <label className={styles.field}><span>Research today (optional)</span><textarea value={query} maxLength={2000} disabled={disabled} onChange={e=>updateSelection(choice,e.target.value)} /></label></>:null}
-      <details><summary>Recent collection results</summary>{current?.runs.map(run=><p key={run.id}>{run.context?.name??"Brand collection"} · {run.status} {run.result?.persistence?`· ${run.result.persistence.persistedStories} candidates`:""}{run.error?` · ${run.error}`:""}{run.result?.sources?.details?.filter(s=>s.error).map(s=><small key={s.sourceId}> {s.sourceName}: {s.error}</small>)}{run.result?.coverage?<small> {run.result.coverage}</small>:null}</p>)}</details>
+      <div className={`${styles.discoverSearchFields} ${aiResearchEnabled?"":styles.discoverSearchFieldsSingle}`}>
+        <label className={styles.field}><span>Editorial line</span><select value={selected?.id??""} disabled={disabled||busy} onChange={e=>updateSelection(e.target.value,"",undefined)}><option value="" disabled>Choose an editorial line</option>{current?.lines.filter(l=>!l.archived).map(l=><option key={l.id} value={l.id}>{l.name} · {l.mode}</option>)}</select></label>
+        {aiResearchEnabled?<label className={styles.field}><span>AI research question <small>(optional)</small></span><input value={query} maxLength={2000} disabled={disabled} aria-describedby={researchHelpId} onChange={e=>updateSelection(choice,e.target.value,periodOverride)} placeholder="e.g. What changed in local recycling rules this week?" /><small id={researchHelpId}>Leave blank for the line&apos;s usual research. A question guides AI research for this search; RSS feeds are unchanged.</small></label>:null}
+      </div>
+      {selected?<>
+        <p className={styles.discoverSearchScope}>{selected.objective} · {current?.sources.filter(s=>s.enabled&&(selected.sourceMode==="inherit"||selected.sourceIds.includes(s.id))&&!selected.excludedSourceIds.includes(s.id)).map(s=>s.name).join(", ")||"No RSS feeds"} · AI research: {researchLabel(selected,current?.researchDefaults)}.</p>
+        <details className={styles.discoverSearchOptions}><summary>Period: {periodLabel(periodOverride??selected.period)} · {selected.timezone}{periodOverride?" · Override for this search":" · From editorial line"}</summary>
+          <label className={styles.discoverPeriodToggle}><input type="checkbox" checked={periodOverride!==undefined} disabled={disabled} onChange={e=>updateSelection(choice,query,e.target.checked?selected.period:undefined)} />Override for this search only</label>
+          {periodOverride?<PeriodEditor value={periodOverride} onChange={period=>updateSelection(choice,query,period)}/>:null}
+          <p>Changing this period does not change the editorial line. <a href="#strategy/lines">Edit the line default</a>.</p>
+        </details>
+      </>:<p className={styles.discoverSearchScope}>Choose an editorial line to use its saved period, feeds, and AI research settings. <a href="#strategy/lines">Configure lines in Editorial strategy</a>.</p>}
+      {current?.runs.length?<details className={styles.discoverSearchOptions}><summary>Recent searches</summary>{current.runs.map(run=><p key={run.id}>{run.context?.name??"Brand collection"} · {run.status} {run.result?.persistence?`· ${run.result.persistence.persistedStories} candidates`:""}{run.error?` · ${run.error}`:""}{run.result?.sources?.details?.filter(s=>s.error).map(s=><small key={s.sourceId}> {s.sourceName}: {s.error}</small>)}{run.result?.coverage?<small> {run.result.coverage}</small>:null}</p>)}</details>:null}
     </>:null}
     {manageOnly?<details open><summary>Manage editorial lines</summary>
-      <p>Configure each line here, then choose it in Collection. Combine feeds and AI search, or use either independently.</p>
+      <p>Configure each line here, then choose it in Discover. Combine feeds and AI research, or use either independently.</p>
       <div className={styles.buttonRow}>{current?.lines.map(line=><button key={line.id} type="button" className={styles.secondaryButton} disabled={busy||disabled} aria-pressed={editing?.id===line.id} onClick={()=>chooseEditor(line)}>{line.name}{line.isDefault?" (default)":""}{line.archived?" (archived)":""}</button>)}<button type="button" className={styles.secondaryButton} disabled={busy||disabled} onClick={()=>chooseEditor()}>New line</button></div>
       <fieldset disabled={busy||disabled||!secret.trim()}>
         <label className={styles.field}>Name<input value={config.name} maxLength={100} onChange={e=>setConfig({...config,name:e.target.value})}/></label>
@@ -91,6 +101,10 @@ function PeriodEditor({value,onChange}:{value:EditorialPeriod;onChange:(p:Editor
 function researchLabel(line:EditorialLineConfig,defaults?:LineResearchSettings & {enabled:boolean}){
   const mode=line.research?.mode??(line.researchEnabled?"inherit":"disabled");
   return mode==="disabled"?"off":mode==="custom"?"custom settings for this line":defaults?.enabled?"brand defaults":"brand defaults (currently disabled)";
+}
+function researchEnabled(line:EditorialLineConfig,defaults?:LineResearchSettings & {enabled:boolean}){
+  const mode=line.research?.mode??(line.researchEnabled?"inherit":"disabled");
+  return mode==="custom" || (mode==="inherit" && defaults?.enabled===true);
 }
 function ResearchEditor({config,defaults,onChange}:{config:EditorialLineConfig;defaults?:LineResearchSettings & {enabled:boolean};onChange:(config:EditorialLineConfig)=>void}){
   const mode=config.research?.mode??(config.researchEnabled?"inherit":"disabled");

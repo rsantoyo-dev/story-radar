@@ -8,6 +8,7 @@ import {
   eq,
   gte,
   inArray,
+  isNotNull,
   isNull,
   lt,
   or,
@@ -22,6 +23,7 @@ import {
   knowledgeDocuments,
   knowledgeDocumentVersions,
   ownedContentEntries,
+  instagramPublicationJobs,
   stories,
   storyContentEnrichments,
   storyEditorialEvaluations,
@@ -30,6 +32,7 @@ import {
   topicKnowledgeDocuments,
   topicSources,
   topicStories,
+  topicInstagramMedia,
 } from "@/db/schema";
 
 import type { EditorialEvaluationPublicConfig } from "./editorial-evaluation.config";
@@ -92,6 +95,13 @@ export type EditorialDashboardStory = {
    * platform and still be prepared for another.
    */
   publications: StorySocialPublication[];
+  /** Confirmed Instagram posts, including app sends and linked imported posts. */
+  confirmedPublications: {
+    platform: "instagram";
+    publishedAt: Date;
+    postUrl?: string;
+    externalId: string;
+  }[];
 };
 
 export type EditorialCollectedStory = {
@@ -1204,16 +1214,66 @@ export async function getEditorialDashboardStats(
     getEditorialDailyUsage(topicId, now),
   ]);
 
+  const selectedStoryIds = selectedRows.map((row) => row.storyId);
   const publicationsByStoryId = new Map<string, StorySocialPublication[]>();
-  const selectedPublications = await listStoryPublications(
-    topicId,
-    selectedRows.map((row) => row.storyId),
-  );
+  const [selectedPublications, linkedInstagramMedia, publishedInstagramJobs] =
+    await Promise.all([
+      listStoryPublications(topicId, selectedStoryIds),
+      selectedStoryIds.length
+        ? db.select({
+            storyId: topicInstagramMedia.linkedStoryId,
+            externalId: topicInstagramMedia.externalId,
+            publishedAt: topicInstagramMedia.publishedAt,
+            postUrl: topicInstagramMedia.permalink,
+          }).from(topicInstagramMedia).where(and(
+            eq(topicInstagramMedia.topicId, topicId),
+            inArray(topicInstagramMedia.linkedStoryId, selectedStoryIds),
+          ))
+        : Promise.resolve([]),
+      selectedStoryIds.length
+        ? db.select({
+            storyId: instagramPublicationJobs.storyId,
+            externalId: instagramPublicationJobs.publishedMediaId,
+            publishedAt: instagramPublicationJobs.finishedAt,
+            updatedAt: instagramPublicationJobs.updatedAt,
+            postUrl: instagramPublicationJobs.permalink,
+          }).from(instagramPublicationJobs).where(and(
+            eq(instagramPublicationJobs.topicId, topicId),
+            inArray(instagramPublicationJobs.storyId, selectedStoryIds),
+            eq(instagramPublicationJobs.status, "published"),
+            isNotNull(instagramPublicationJobs.publishedMediaId),
+          ))
+        : Promise.resolve([]),
+    ]);
 
   for (const publication of selectedPublications) {
     const publications = publicationsByStoryId.get(publication.storyId) ?? [];
     publications.push(publication);
     publicationsByStoryId.set(publication.storyId, publications);
+  }
+
+  const confirmedByStoryId = new Map<string, Map<string, EditorialDashboardStory["confirmedPublications"][number]>>();
+  for (const job of publishedInstagramJobs) {
+    if (!job.externalId) continue;
+    const posts = confirmedByStoryId.get(job.storyId) ?? new Map();
+    posts.set(job.externalId, {
+      platform: "instagram",
+      externalId: job.externalId,
+      publishedAt: job.publishedAt ?? job.updatedAt,
+      ...(job.postUrl ? { postUrl: job.postUrl } : {}),
+    });
+    confirmedByStoryId.set(job.storyId, posts);
+  }
+  for (const media of linkedInstagramMedia) {
+    if (!media.storyId) continue;
+    const posts = confirmedByStoryId.get(media.storyId) ?? new Map();
+    posts.set(media.externalId, {
+      platform: "instagram",
+      externalId: media.externalId,
+      publishedAt: media.publishedAt,
+      ...(media.postUrl ? { postUrl: media.postUrl } : {}),
+    });
+    confirmedByStoryId.set(media.storyId, posts);
   }
 
   return {
@@ -1340,6 +1400,7 @@ export async function getEditorialDashboardStats(
       riskFlags: row.riskFlags,
       evaluatedAt: row.evaluatedAt,
       publications: [],
+      confirmedPublications: [],
     })),
     selectedStories: selectedRows.map((row) => ({
       storyId: row.storyId,
@@ -1382,6 +1443,7 @@ export async function getEditorialDashboardStats(
         : {}),
       ...(row.enrichedAt ? { enrichedAt: row.enrichedAt } : {}),
       publications: publicationsByStoryId.get(row.storyId) ?? [],
+      confirmedPublications: [...(confirmedByStoryId.get(row.storyId)?.values() ?? [])],
     })),
   };
 }

@@ -17,7 +17,12 @@
       "Bash(node -e 'const w=JSON.parse\\(require\\(\"fs\"\\).readFileSync\\(\"/tmp/assets.json\",\"utf8\"\\)\\); const b=w.batch||w; console.log\\(\"outcome:\",w.outcome,\"| batch:\",b?.id?.slice\\(0,8\\),\"status:\",b?.status,\"promptVersion:\",b?.promptVersion,\"| stale?:\",w.stale ?? w.isStale ?? \"\\(no flag\\)\"\\); console.log\\(\"keys:\",Object.keys\\(w\\).join\\(\",\"\\)\\);')",
       "Bash(node -e 'const w=JSON.parse\\(require\\(\"fs\"\\).readFileSync\\(\"/tmp/assets.json\",\"utf8\"\\)\\); console.log\\(JSON.stringify\\(w.configuration\\).slice\\(0,300\\)\\);')",
       "Bash(curl -sS http://localhost:3000/api/radar/creative/drafts/c401e041-f6fe-4437-aba6-8a1cd3a9aa79/assets?topicId=9d59c7ff-fdbf-4a51-8242-1b38eae1d5ee -H 'authorization: Bearer __CMDSUB_OUTPUT__' --max-time 60)",
-      "Bash(node -e 'let s=\"\";process.stdin.on\\(\"data\",d=>s+=d\\).on\\(\"end\",\\(\\)=>{const w=JSON.parse\\(s\\);console.log\\(\"configuration.promptVersion now:\",w.configuration?.promptVersion\\);console.log\\(\"batch.promptVersion:\",w.batch?.promptVersion,\"draftVersion:\",w.batch?.draftVersion,\"status:\",w.batch?.status\\);}\\);')"
+      "Bash(node -e 'let s=\"\";process.stdin.on\\(\"data\",d=>s+=d\\).on\\(\"end\",\\(\\)=>{const w=JSON.parse\\(s\\);console.log\\(\"configuration.promptVersion now:\",w.configuration?.promptVersion\\);console.log\\(\"batch.promptVersion:\",w.batch?.promptVersion,\"draftVersion:\",w.batch?.draftVersion,\"status:\",w.batch?.status\\);}\\);')",
+      "Bash(npm run *)",
+      "Bash(node ./_tmp_pending.mjs)",
+      "Bash(node ./_tmp_verify.mjs)",
+      "Bash(npx drizzle-kit *)",
+      "Bash(echo \"exit=$?\")"
     ]
   }
 }

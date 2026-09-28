@@ -4,6 +4,7 @@ import { topicThemeStyle, TOPIC_THEMES } from "@/design/topic-themes";
 import { ActionRow, Button, EmptyState, FormField, IconButton, InlineNotice, LoadingState, SectionHeader, StatusBadge, Surface, Tabs } from "@/app/ui/primitives";
 import styles from "@/app/ui/primitives.generated.module.css";
 import { ModalFixture } from "./modal-fixture";
+import { HeaderCreationFixture } from "./header-creation-fixture";
 import { UX_FIXTURES } from "./fixtures";
 
 export default function UiShowcasePage() {
@@ -19,6 +20,7 @@ export default function UiShowcasePage() {
         <ActionRow><Button variant="primary">Primary</Button><Button>Secondary</Button><Button variant="quiet">Quiet</Button><Button variant="destructive">Delete</Button></ActionRow>
         <ActionRow><Button size="compact" variant="primary">Compact</Button><Button size="compact">Hover me</Button><Button size="compact" variant="quiet">Tab to focus</Button><IconButton size="compact" aria-label="More options">⋯</IconButton></ActionRow>
         <ActionRow><Button disabled>Disabled</Button><Button busy>Saving…</Button><Button variant="primary">A much longer action label that should wrap safely</Button></ActionRow>
+        <HeaderCreationFixture />
       </Surface>
       <Surface id={`${theme.key}-fields`} className={styles.showcaseStack}>
         <SectionHeader title="Fields and status" level={3} />

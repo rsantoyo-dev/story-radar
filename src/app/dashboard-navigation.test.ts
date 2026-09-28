@@ -6,6 +6,7 @@ import { dashboardViewFromHash } from "./dashboard-navigation";
 test("daily and brand destinations resolve to the intended view", () => {
   assert.equal(dashboardViewFromHash("#today"), "today");
   assert.equal(dashboardViewFromHash("#discover"), "discover");
+  assert.equal(dashboardViewFromHash("#discover/search"), "discover");
   assert.equal(dashboardViewFromHash("#production"), "production");
   assert.equal(dashboardViewFromHash("#publications/history"), "publications");
   assert.equal(dashboardViewFromHash("#results"), "results");
@@ -20,6 +21,7 @@ test("old bookmarks keep their editorial destination", () => {
   assert.equal(dashboardViewFromHash("#overview"), "today");
   assert.equal(dashboardViewFromHash("#configuration"), "topics");
   assert.equal(dashboardViewFromHash("#stories/collected"), "discover");
+  assert.equal(dashboardViewFromHash("#collect"), "discover");
   assert.equal(dashboardViewFromHash("#stories/selected/unpublished"), "production");
   assert.equal(dashboardViewFromHash("#editorial-creative"), "identity");
   assert.equal(dashboardViewFromHash("#creative-profile-voice"), "identity");

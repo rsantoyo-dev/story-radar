@@ -11,6 +11,7 @@ import { StoryPhotosPanel } from "./story-photos-panel";
 import type { StoryContentEdition } from "./modules/stories/story-materials.types";
 
 import { EditorialLinesPanel, type EditorialLinesData, type EditorialLineSelection } from "./editorial-lines-panel";
+import { periodError } from "./editorial-period-controls";
 import { CreativeProfilePanel } from "./creative-profile-panel";
 import { InstagramGalleryPanel } from "./instagram-gallery-panel";
 import { FacebookConnectionPanel } from "./facebook-connection-panel";
@@ -22,6 +23,7 @@ import { NewStoryDialog, type CreatedStory } from "./new-story-dialog";
 import { AddSourceDialog, type AddedSource } from "./add-source-dialog";
 import { ActionRow, Button } from "./ui/primitives";
 import { ModalLayer } from "./ui/modal-layer";
+import { DisclosureActionMenu } from "./ui/disclosure-action-menu";
 import { useUnsavedBeforeUnload } from "./ui/use-unsaved-before-unload";
 import styles from "./radar-dashboard.generated.module.css";
 import {
@@ -31,6 +33,7 @@ import {
 } from "./topic-configuration-panel";
 import { topicThemeStyle } from "@/design/topic-themes";
 import { dashboardViewFromHash, DASHBOARD_VIEW_TITLES } from "./dashboard-navigation";
+import { storyPublicationStage } from "./story-publication-stage";
 import type { CreativeProfile } from "./modules/stories/creative-content.types";
 import type { WorkspaceSourceCatalog } from "./modules/sources/workspace-source-catalog.repository";
 
@@ -128,6 +131,7 @@ type PublicationPlatform = (typeof PUBLICATION_PLATFORMS)[number];
 type PublicationStatus = "draft" | "scheduled" | "published";
 type PublicationFilter =
   | "all"
+  | "active-selected"
   | "not-published-anywhere"
   | "scheduled-on-platform"
   | "published-on-platform";
@@ -158,39 +162,38 @@ function NavGlyph({ name }: { name: NavigationGlyph }) {
 }
 
 const STORY_REVIEW_ANCHOR = "stories";
+const CANDIDATE_RESET_EVENT = "press-craftor:candidate-view-reset";
 
 function navigationHash(hash: string): string {
   return hash || "#today";
 }
 
 function storyReviewHash(view: StoryReviewView): string {
-  if (view.tab === "collected") return `#${STORY_REVIEW_ANCHOR}/collected`;
+  if (view.tab === "collected") return "#discover";
   const segment =
+    view.publicationFilter === "active-selected" ? "active" :
     view.publicationFilter === "not-published-anywhere" ? "unpublished" : "all";
   return `#${STORY_REVIEW_ANCHOR}/selected/${segment}`;
 }
 
 function parseStoryReviewHash(hash: string): StoryReviewView | undefined {
-  if (hash === `#${STORY_REVIEW_ANCHOR}/collected`) {
+  if (hash === "#discover" || hash === "#stories" || hash === `#${STORY_REVIEW_ANCHOR}/collected`) {
     return { tab: "collected" };
   }
-  const match = /^#stories\/selected\/(all|unpublished)$/.exec(hash);
+  const match = /^#stories\/selected\/(all|active|unpublished)$/.exec(hash);
   if (!match) return undefined;
   return {
     tab: "selected",
-    publicationFilter:
+    publicationFilter: match[1] === "active" ? "active-selected" :
       match[1] === "unpublished" ? "not-published-anywhere" : "all",
   };
 }
 
-function countUnpublishedSelected(
-  stories: readonly { publications?: readonly { status: PublicationStatus }[] }[],
+function countActiveSelected(
+  stories: readonly EditorialDashboardStory[],
 ): number {
   return stories.filter(
-    (story) =>
-      !(story.publications ?? []).some(
-        (publication) => publication.status === "published",
-      ),
+    (story) => storyPublicationStage(story).active,
   ).length;
 }
 
@@ -234,6 +237,12 @@ type EditorialDashboardStory = {
   enrichmentError?: string;
   enrichedAt?: string;
   publications?: StoryPublication[];
+  confirmedPublications?: {
+    platform: "instagram";
+    publishedAt: string;
+    postUrl?: string;
+    externalId: string;
+  }[];
 };
 
 type EditorialCollectedStory = {
@@ -313,6 +322,7 @@ type EditorialTableStory = {
   enrichmentError?: string;
   enrichedAt?: string;
   publications?: StoryPublication[];
+  confirmedPublications?: EditorialDashboardStory["confirmedPublications"];
 };
 
 type EditorialGrowthSignals = {
@@ -559,21 +569,26 @@ export function RadarDashboard({
   const selectedTopicName = selectedTopic?.name ?? "this topic";
   const activeView = dashboardViewFromHash(activeNavHash);
   const selectedStoryCount = stats?.editorial?.selectedStories.length ?? 0;
-  const pendingInstagramStories = (stats?.editorial?.selectedStories ?? []).filter(
-    (story) => !(story.publications ?? []).some(
-      (publication) => publication.platform === "instagram" && publication.status === "published",
-    ),
-  );
-  const productionStories = (stats?.editorial?.selectedStories ?? []).filter(
-    (story) => activeNavHash !== "#stories/selected/unpublished" ||
-      !(story.publications ?? []).some((publication) => publication.status === "published"),
+  const selectedStories = stats?.editorial?.selectedStories ?? [];
+  const productionStories = selectedStories.filter((story) => storyPublicationStage(story).active);
+  const publishedStories = selectedStories
+    .filter((story) => storyPublicationStage(story).publishedDestinations.length > 0)
+    .sort((a, b) => {
+      const latest = (story: EditorialDashboardStory) => {
+        const publishedAt = storyPublicationStage(story).publishedDestinations[0]?.publishedAt;
+        return publishedAt ? new Date(publishedAt).getTime() : 0;
+      };
+      return latest(b) - latest(a);
+    });
+  const pendingInstagramStories = selectedStories.filter((story) =>
+    !storyPublicationStage(story).publishedDestinations.some((publication) => publication.platform === "instagram"),
   );
   const contextTabs: readonly [string, string][] =
-    activeView === "discover" ? [["#discover", "Candidates"], ["#collect", "Search"], ["#optimization", "Diagnostics"]] :
+    activeView === "discover" ? [["#discover", "Candidates"], ["#discover/search", "Search"], ["#optimization", "Diagnostics"]] :
     activeView === "strategy" ? [["#strategy", "Criteria"], ["#strategy/lines", "Lines"], ["#editorial-lenses", "Angles"], ["#preferences", "Preferences"]] :
     activeView === "identity" ? [["#creative-profile-identity", "Profile"], ["#creative-profile-voice", "Voice"], ["#creative-profile-brand", "Visual"], ["#creative-profile-characters", "Assets"]] :
     activeView === "sources" ? [["#sources/rss", "RSS"], ["#sources/ai", "AI research"], ["#sources/documents", "Documents"], ["#sources/manual", "Original content"]] :
-    activeView === "publications" ? [["#publications", "To publish"], ["#publications/history", "History"]] :
+    activeView === "publications" ? [["#publications", "To publish"], ["#publications/published", "Published"], ["#publications/history", "Instagram history"]] :
     [];
 
   useEffect(() => {
@@ -715,6 +730,7 @@ export function RadarDashboard({
   function goToStoryReview(view: StoryReviewView) {
     setSidebarOpen(false);
     if (typeof window !== "undefined") {
+      if (view.tab === "collected") window.dispatchEvent(new Event(CANDIDATE_RESET_EVENT));
       window.location.hash = storyReviewHash(view);
     }
   }
@@ -829,7 +845,7 @@ export function RadarDashboard({
 
     const hours = parseMaxAgeHours(maxAgeHours);
 
-    if (lineSelection?.topicId !== selectedTopicId) {
+    if (lineSelection?.topicId !== selectedTopicId || (lineSelection.period && periodError(lineSelection.period))) {
       return;
     }
 
@@ -840,6 +856,7 @@ export function RadarDashboard({
 
       setStats(nextStats);
       setSelectedStoryIds([]);
+      goToStoryReview({ tab: "collected" });
       return collectionNotice(collection, "Collection completed");
     });
   }
@@ -1268,7 +1285,7 @@ export function RadarDashboard({
       },
       () =>
         databaseWasCleared
-          ? "The data was cleared, but the new collection failed. Use ‘Collect and save’ to try again."
+          ? "The data was cleared, but the new collection failed. Use ‘Search candidates’ to try again."
           : undefined,
     );
   }
@@ -1454,7 +1471,7 @@ export function RadarDashboard({
               <a key={hash} href={hash} className={activeView === view ? styles.navActive : undefined} aria-current={activeView === view ? "page" : undefined} aria-label={label} title={sidebarCollapsed ? label : undefined} onClick={() => setSidebarOpen(false)}>
                 <span className={styles.navIcon} aria-hidden="true"><NavGlyph name={icon} /></span>
                 <span>{label}</span>
-                {view === "production" && selectedStoryCount > 0 ? <span className={styles.navBadge} aria-label={`${selectedStoryCount} selected stories`}>{selectedStoryCount}</span> : null}
+                {view === "production" && productionStories.length > 0 ? <span className={styles.navBadge} aria-label={`${productionStories.length} active selected stories`}>{productionStories.length}</span> : null}
               </a>
             );
           })}
@@ -1536,16 +1553,13 @@ export function RadarDashboard({
             <div className={styles.topbarGlobalActions}>
               {stats ? (
                 <>
-                  <div className={styles.splitAction}>
+                  <div className={styles.splitAction} role="group" aria-label="Create content">
                     <button type="button" className={styles.newStoryButton} onClick={() => setNewStoryOpen(true)} disabled={!canAuthenticate || isTopicLoading || topics.length === 0}>＋ New story</button>
-                    <details className={styles.actionMenu} onKeyDown={(event) => { if (event.key === "Escape") { event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); } }}>
-                      <summary aria-label="More creation actions" title="More creation actions">⌄</summary>
-                      <div className={styles.actionMenuItems} onClick={(event) => { const menu = event.currentTarget.closest("details"); if (menu) menu.open = false; }}>
-                        <button type="button" onClick={() => setAddSourceOpen(true)}>Add source</button>
-                        <button type="button" onClick={() => { setNewTopicNonce((current) => current + 1); window.location.hash = "#topics"; }}>New Topic</button>
-                        <a href="#topics">Manage Topics</a>
-                      </div>
-                    </details>
+                    <DisclosureActionMenu label="More creation actions" className={styles.actionMenu} panelClassName={styles.actionMenuItems} iconClassName={styles.actionMenuChevron}>
+                      <button type="button" onClick={() => setAddSourceOpen(true)}>Add source</button>
+                      <button type="button" onClick={() => { setNewTopicNonce((current) => current + 1); window.location.hash = "#topics"; }}>New Topic</button>
+                      <a href="#topics">Manage Topics</a>
+                    </DisclosureActionMenu>
                   </div>
                   <a className={styles.topbarActionLink} href="#today">Today</a>
                   <div className={styles.topbarSession}>
@@ -1571,12 +1585,13 @@ export function RadarDashboard({
             </div>
             {contextTabs.length > 0 ? <nav className={styles.contextTabs} aria-label={`${DASHBOARD_VIEW_TITLES[activeView]} options`}>
               {contextTabs.map(([hash, label]) => {
-                const current = activeNavHash === hash || (hash === "#discover" && ["#stories", "#stories/collected"].includes(activeNavHash)) || (hash === "#strategy" && activeNavHash === "#editorial") || (hash === "#creative-profile-identity" && ["#identity", "#editorial-creative"].includes(activeNavHash)) || (hash === "#sources/rss" && activeNavHash === "#sources") || (hash === "#publications/history" && activeNavHash === "#editorial-instagram");
+                const current = activeNavHash === hash || (hash === "#discover" && ["#stories", "#stories/collected"].includes(activeNavHash)) || (hash === "#discover/search" && activeNavHash === "#collect") || (hash === "#strategy" && activeNavHash === "#editorial") || (hash === "#creative-profile-identity" && ["#identity", "#editorial-creative"].includes(activeNavHash)) || (hash === "#sources/rss" && activeNavHash === "#sources") || (hash === "#publications/history" && activeNavHash === "#editorial-instagram");
                 return <a key={hash} href={hash} className={current ? styles.contextTabActive : undefined} aria-current={current ? "page" : undefined}>{label}</a>;
               })}
             </nav> : null}
             <div className={styles.contextActions}>
               {activeView === "today" && stats ? <button type="button" className={styles.contextPrimaryAction} onClick={() => document.getElementById("overview")?.scrollIntoView({ behavior: "smooth", block: "start" })} disabled={!canAuthenticate || isTopicLoading || topics.length === 0}>Prepare my day</button> : null}
+              {activeView === "discover" && stats ? <a className={styles.contextSelectedLink} href="#production" aria-label={`Open ${productionStories.length} active selected stories in Production`}>Selected <span>{productionStories.length}</span> →</a> : null}
               {activeView === "sources" && stats ? <button type="button" className={styles.contextPrimaryAction} onClick={() => setAddSourceOpen(true)} disabled={!canAuthenticate || isTopicLoading}>＋ Add source</button> : null}
             </div>
           </div>
@@ -1730,37 +1745,26 @@ export function RadarDashboard({
           />
         </div>
 
-        <div id="collect" className={styles.anchorTarget} hidden={activeView !== "discover" || activeNavHash !== "#collect"}>
-          <section className={styles.panel}>
-            <div className={styles.panelHeading}>
-              <div>
-                <p className={styles.sectionNumber}>01</p>
-                <h2>Collect</h2>
-              </div>
+        <div id="collect" className={styles.anchorTarget} hidden={activeView !== "discover" || !["#discover/search", "#collect"].includes(activeNavHash)}>
+          <form className={`${styles.panel} ${styles.discoverSearchPanel}`} role="search" aria-labelledby="discover-search-heading" onSubmit={(event) => { event.preventDefault(); void handleCollect(); }}>
+            <div className={styles.discoverSearchHeading}>
+              <div><h2 id="discover-search-heading">Search</h2><p>Find new candidates for this Topic.</p></div>
+              <a href="#discover">View {stats?.editorial?.collectedStories.length ?? 0} candidates →</a>
             </div>
 
             <EditorialLinesPanel key={selectedTopicId} topicId={selectedTopicId} secret={secret} disabled={isBusy} refreshKey={lineRefresh} onSelection={setLineSelection} onLoaded={setLineData}/>
             <div className={styles.buttonRow}>
               <button
-                type="button"
-                className={styles.secondaryButton}
-                onClick={handleLoadStatus}
-                disabled={!canAuthenticate || isBusy}
-              >
-                {activeOperation === "status" ? "Checking…" : "Check status"}
-              </button>
-              <button
-                type="button"
+                type="submit"
                 className={styles.primaryButton}
-                onClick={handleCollect}
-                disabled={!canAuthenticate || isBusy || lineSelection?.topicId!==selectedTopicId}
+                disabled={!canAuthenticate || isBusy || lineSelection?.topicId!==selectedTopicId || Boolean(lineSelection?.period && periodError(lineSelection.period))}
               >
                 {activeOperation === "collect"
-                  ? "Collecting…"
-                  : "Collect and save"}
+                  ? "Searching…"
+                  : "Search candidates"}
               </button>
             </div>
-          </section>
+          </form>
         </div>
 
         <div id="settings" className={styles.anchorTarget} hidden={activeView !== "admin"}>
@@ -1883,25 +1887,29 @@ export function RadarDashboard({
 
         <section className={styles.workQueue} hidden={activeView !== "production"} aria-label="Stories in production">
           <div className={styles.queueHeading}>
-            <div><p className={styles.kicker}>Selected stories</p><h2>Continue production</h2></div>
+            <div><p className={styles.kicker}>Production</p><h2>Selected · ready to work</h2></div>
             <span>{productionStories.length} stories</span>
           </div>
+          <p className={styles.queueIntro}>Approved stories stay here until their recorded destinations are published. Publishing on one channel keeps a Story here when another channel is pending.</p>
           {productionStories.length ? (
             <div className={styles.queueList}>
-              {productionStories.map((story) => (
-                <article className={styles.queueItem} key={story.storyId}>
-                  <div><span className={styles.queueMeta}>{story.sourceName} · {story.contentStatus === "missing" ? "Content pending" : "Content available"}</span><h3>{story.title}</h3><p>{story.reason}</p></div>
+              {productionStories.map((story) => {
+                const associations = lineData?.topicId === selectedTopicId ? lineData.associations : [];
+                const lineNames = [...new Set(associations.filter((item) => item.storyId === story.storyId).map((item) => item.context.name))];
+                const publicationStage = storyPublicationStage(story);
+                return <article className={styles.queueItem} key={story.storyId}>
+                  <div><span className={styles.queueMeta}>{lineNames.length ? `${lineNames.join(", ")} · ` : ""}{story.sourceName} · {story.contentStatus === "missing" ? "Content missing" : story.contentStatus === "excerpt" ? "Excerpt only" : "Content available"}</span><h3>{story.title}</h3><p>{story.reason}</p>{publicationStage.pendingPlatforms.length ? <p className={styles.queueProgress}>Pending: {publicationStage.pendingPlatforms.map((platform) => formatPublicationPlatform(platform as PublicationPlatform)).join(", ")}{publicationStage.publishedDestinations.length ? ` · Published: ${publicationStage.publishedDestinations.map((publication) => formatPublicationPlatform(publication.platform as PublicationPlatform)).join(", ")}` : ""}</p> : null}</div>
                   <div className={styles.queueActions}>
                     <Button size="compact" onClick={() => { void handleViewContent(story.storyId); }} disabled={!canAuthenticate || isBusy}>Content</Button>
-                    <Button size="compact" variant="primary" onClick={() => openCreativeStory(story.storyId, { tab: "script" })} disabled={!canAuthenticate || isBusy}>Open studio</Button>
+                    <Button size="compact" variant="primary" onClick={() => openCreativeStory(story.storyId, { tab: "script" })} disabled={!canAuthenticate || isBusy}>Open draft workspace</Button>
                   </div>
-                </article>
-              ))}
+                </article>;
+              })}
             </div>
-          ) : <div className={styles.queueEmpty}><strong>No stories selected yet.</strong><p>Evaluate and approve a candidate to start production.</p><a href="#discover">Go to Discover →</a></div>}
+          ) : <div className={styles.queueEmpty}><strong>No active selected stories.</strong><p>{publishedStories.length ? "Completed stories are in Published. Select another candidate to start a new draft." : "Evaluate and approve a candidate to start production."}</p><a href={publishedStories.length ? "#publications/published" : "#discover"}>{publishedStories.length ? "View Published →" : "Go to Discover →"}</a></div>}
         </section>
 
-        <div id="stories" className={styles.anchorTarget} hidden={!(activeView === "production" || (activeView === "discover" && !["#collect", "#optimization"].includes(activeNavHash)))}>
+        <div id="stories" className={styles.anchorTarget} hidden={!(activeView === "production" || (activeView === "discover" && !["#optimization", "#discover/search", "#collect"].includes(activeNavHash)))}>
           <StoryReviewDisclosure production={activeView === "production"} selectedCount={selectedStoryCount}>
           <EditorialEvaluationPanel
             key={`${selectedTopicId}:${activeView}`}
@@ -1963,7 +1971,30 @@ export function RadarDashboard({
                 <Button size="compact" variant="primary" onClick={() => openCreativeStory(story.storyId, { tab: "publication" })} disabled={!canAuthenticate || isBusy}>Review publication</Button>
               </article>
             ))}
-          </div> : <div className={styles.queueEmpty}><strong>No selected stories pending.</strong><p>Confirmed publications appear in History.</p><a href="#publications/history">View history →</a></div>}
+          </div> : <div className={styles.queueEmpty}><strong>No selected stories pending for Instagram.</strong><p>Linked and tracked publications appear in Published.</p><a href="#publications/published">View Published →</a></div>}
+        </section>
+
+        <section className={styles.workQueue} hidden={activeView !== "publications" || activeNavHash !== "#publications/published"} aria-label="Published stories">
+          <div className={styles.queueHeading}><div><p className={styles.kicker}>Publications</p><h2>Published stories</h2></div><span>{publishedStories.length} stories</span></div>
+          <p className={styles.queueIntro}>Stories with a confirmed Instagram post or a platform marked published in manual tracking. Editorial approval and draft history remain available.</p>
+          {publishedStories.length ? <div className={styles.queueList}>
+            {publishedStories.map((story) => {
+              const stage = storyPublicationStage(story);
+              return <article className={styles.queueItem} key={story.storyId}>
+                <div>
+                  <span className={styles.queueMeta}>{story.sourceName}{stage.active ? " · Still in Production for another destination" : ""}</span>
+                  <h3>{story.title}</h3>
+                  <div className={styles.queuePublishedDestinations} aria-label="Published destinations">
+                    {stage.publishedDestinations.map((publication) => {
+                      const label = `${formatPublicationPlatform(publication.platform as PublicationPlatform)} · ${publication.source === "manual" ? "Marked published" : "Confirmed"}${publication.publishedAt ? ` · ${formatTableDate(String(publication.publishedAt))}` : ""}`;
+                      return publication.postUrl ? <a key={publication.platform} href={publication.postUrl} target="_blank" rel="noopener noreferrer" aria-label={`View ${label} post in a new tab`}>{label} ↗</a> : <span key={publication.platform}>{label}</span>;
+                    })}
+                  </div>
+                </div>
+                <Button size="compact" onClick={() => openCreativeStory(story.storyId, { tab: "publication" })} disabled={!canAuthenticate || isBusy}>Open Story</Button>
+              </article>;
+            })}
+          </div> : <div className={styles.queueEmpty}><strong>No published stories yet.</strong><p>When a selected Story is published and linked, it will appear here.</p><a href="#publications">Review publications →</a></div>}
         </section>
 
         {contentViewer ? (
@@ -2125,7 +2156,7 @@ function OptimizationPanel({
         </>
       ) : (
         <div className={styles.optimizationEmpty}>
-          Check status to load metrics from the latest collection.
+          Search candidates to see collection metrics here.
         </div>
       )}
     </section>
@@ -2219,7 +2250,10 @@ function EditorialEvaluationPanel({
   const [selectedTableState, setSelectedTableState] =
     useState<StoryTableViewState>(() => createStoryTableViewState("selected"));
   const [lineFilter,setLineFilter]=useState("");
-  const [shortlistOnly,setShortlistOnly]=useState(false);
+  const [candidateView, setCandidateView] = useState<CandidateView>("all");
+  const [candidateSearch, setCandidateSearch] = useState("");
+  const [candidateVisibleCount, setCandidateVisibleCount] = useState(25);
+  const [detailedTableOpen, setDetailedTableOpen] = useState(false);
   const [viewRestored, setViewRestored] = useState(false);
 
   useEffect(() => {
@@ -2240,7 +2274,14 @@ function EditorialEvaluationPanel({
           setCollectedTableState(collected);
           setSelectedTableState(selected);
           setLineFilter(typeof state.lineFilter === "string" ? state.lineFilter : "");
-          setShortlistOnly(state.shortlistOnly === true);
+          const savedView = state.candidateView;
+          setCandidateView(
+            savedView === "all" || savedView === "unevaluated" || savedView === "shortlist" || savedView === "evaluated"
+              ? savedView
+              : state.shortlistOnly === true ? "shortlist" : state.evaluatedOnly === true ? "evaluated" : "all",
+          );
+          setCandidateSearch(typeof state.candidateSearch === "string" ? state.candidateSearch : "");
+          setCandidateVisibleCount(25);
         }
       } catch { /* Private browsing or an obsolete stored view uses defaults. */ }
       setViewRestored(true);
@@ -2255,10 +2296,23 @@ function EditorialEvaluationPanel({
         collected: collectedTableState,
         selected: selectedTableState,
         lineFilter,
-        shortlistOnly,
+        candidateView,
+        candidateSearch,
       }));
     } catch { /* Filtering still works when storage is unavailable. */ }
-  }, [topicId, viewRestored, collectedTableState, selectedTableState, lineFilter, shortlistOnly]);
+  }, [topicId, viewRestored, collectedTableState, selectedTableState, lineFilter, candidateView, candidateSearch]);
+
+  useEffect(() => {
+    const resetCandidates = () => {
+      setCandidateView("all");
+      setCandidateSearch("");
+      setCandidateVisibleCount(25);
+      setLineFilter("");
+      setCollectedTableState((current) => resetStoryTableFilters(current));
+    };
+    window.addEventListener(CANDIDATE_RESET_EVENT, resetCandidates);
+    return () => window.removeEventListener(CANDIDATE_RESET_EVENT, resetCandidates);
+  }, []);
 
   // A deep link (#stories/selected/unpublished) or the sidebar shortcut drives
   // the tab + publication filter. Bare #stories keeps whatever the user last had.
@@ -2284,51 +2338,38 @@ function EditorialEvaluationPanel({
     return () => { window.removeEventListener("hashchange", applyHash); window.removeEventListener("popstate", applyHash); };
   }, []);
 
-  function goToView(
-    tab: "collected" | "selected",
-    publicationFilter: PublicationFilter,
-  ) {
-    setActiveTab(tab);
-    const setter =
-      tab === "selected" ? setSelectedTableState : setCollectedTableState;
-    setter((current) => ({ ...current, publicationFilter }));
+  function goToSelectedView(publicationFilter: PublicationFilter) {
+    setActiveTab("selected");
+    setSelectedTableState((current) => ({ ...current, publicationFilter }));
     if (typeof window !== "undefined") {
-      window.history.pushState(null, "", storyReviewHash({ tab, publicationFilter }));
+      window.history.pushState(null, "", storyReviewHash({ tab: "selected", publicationFilter }));
       window.dispatchEvent(new HashChangeEvent("hashchange"));
     }
   }
 
-  const shortlist = editorial?.shortlist ?? [];
   const collectedStories = editorial?.collectedStories ?? [];
   const selectedStories = editorial?.selectedStories ?? [];
-  const selectedUnpublishedCount = countUnpublishedSelected(selectedStories);
+  const publishedStoryCount = selectedStories.filter((story) => storyPublicationStage(story).publishedDestinations.length > 0).length;
+  const evaluatedCount = collectedStories.filter((story) => story.evaluationDecision !== undefined).length;
+  const unevaluatedCount = collectedStories.length - evaluatedCount;
+  const shortlistCount = collectedStories.filter((story) => story.reviewable && story.evaluationDecision === "shortlist").length;
+  const activeSelectedCount = countActiveSelected(selectedStories);
   const selectedStoryIdsForClear = selectedStories.map((story) => story.storyId);
-  // Deliberately no "Published" chip: the only "published" filter value is
-  // scoped to a single platform, so a "published anywhere" count would not
-  // match the rows it shows. Use the publication filter in the toolbar for
-  // per-platform published views.
+  // Published has its own Publications view. This quick filter matches the
+  // active Production queue, including Stories pending on another platform.
   const quickViews: {
     label: string;
     count: number;
-    tab: "collected" | "selected";
     publicationFilter: PublicationFilter;
   }[] = [
     {
-      label: "Unpublished",
-      count: selectedUnpublishedCount,
-      tab: "selected",
-      publicationFilter: "not-published-anywhere",
+      label: "Active",
+      count: activeSelectedCount,
+      publicationFilter: "active-selected",
     },
     {
       label: "All selected",
       count: selectedStories.length,
-      tab: "selected",
-      publicationFilter: "all",
-    },
-    {
-      label: "Collected",
-      count: collectedStories.length,
-      tab: "collected",
       publicationFilter: "all",
     },
   ];
@@ -2337,17 +2378,27 @@ function EditorialEvaluationPanel({
     editorial?.configuration.minLocalScore ??
     25;
   const lineStories=(rows:EditorialTableStory[])=>rows.map(story=>({...story,lineContexts:lineData?.associations.filter(a=>a.storyId===story.storyId && (!lineFilter || lineFilter==="none" || a.context.lineId===lineFilter))??[]})).filter(story=>!lineFilter || (lineFilter==="none"?story.lineContexts.length===0:story.lineContexts.length>0));
+  const normalizedCandidateSearch = candidateSearch.trim().toLocaleLowerCase();
   const filteredCollectedStories = filterTableStories(
-    lineStories(collectedStories).filter(story=>!shortlistOnly || (story.reviewable===true && story.evaluationDecision==="shortlist")),
+    lineStories(collectedStories).filter((story) => {
+      if (candidateView === "unevaluated" && story.evaluationDecision !== undefined) return false;
+      if (candidateView === "shortlist" && !(story.reviewable && story.evaluationDecision === "shortlist")) return false;
+      if (candidateView === "evaluated" && story.evaluationDecision === undefined) return false;
+      return !normalizedCandidateSearch || `${story.title} ${story.sourceName}`.toLocaleLowerCase().includes(normalizedCandidateSearch);
+    }),
     collectedTableState,
     localCandidateFloor,
   );
+  const sortedCollectedStories = [...filteredCollectedStories].sort((left, right) =>
+    rankTableStories(left, right, collectedTableState.primaryRank, collectedTableState.secondaryRank),
+  );
+  const visibleCollectedStories = sortedCollectedStories.slice(0, candidateVisibleCount);
   const filteredSelectedStories = filterTableStories(
     lineStories(selectedStories),
     selectedTableState,
     localCandidateFloor,
   );
-  const visibleShortlistIds = filteredCollectedStories
+  const visibleShortlistIds = visibleCollectedStories
     .filter(
       (story) =>
         story.reviewable === true && story.evaluationDecision === "shortlist",
@@ -2361,53 +2412,65 @@ function EditorialEvaluationPanel({
   ).length;
   const canSubmitReview =
     canReview && selectedStoryIds.length > 0 && !isReviewing;
+  const candidateViews: readonly { value: CandidateView; label: string; count: number }[] = [
+    { value: "all", label: "All", count: collectedStories.length },
+    { value: "unevaluated", label: "Needs evaluation", count: unevaluatedCount },
+    { value: "shortlist", label: "Ready to select", count: shortlistCount },
+    { value: "evaluated", label: "Evaluated", count: evaluatedCount },
+  ];
+  const candidateAdvancedCount = [
+    lineFilter !== "",
+    collectedTableState.publishedWithinDays !== undefined,
+    collectedTableState.hideBelowTopicFloor,
+    collectedTableState.minimumEditorialPriority !== undefined,
+    collectedTableState.minimumGrowthScore !== undefined,
+  ].filter(Boolean).length;
+  const candidateFilterSummary = [
+    lineFilter ? (lineFilter === "none" ? "No editorial line" : `Line: ${lineData?.lines.find((line) => line.id === lineFilter)?.name ?? "Selected line"}`) : undefined,
+    collectedTableState.publishedWithinDays !== undefined ? `Last ${collectedTableState.publishedWithinDays === 1 ? "24 hours" : `${collectedTableState.publishedWithinDays} days`}` : undefined,
+    collectedTableState.minimumEditorialPriority !== undefined ? `AI priority ≥ ${collectedTableState.minimumEditorialPriority}` : undefined,
+    collectedTableState.minimumGrowthScore !== undefined ? `Growth ≥ ${collectedTableState.minimumGrowthScore}` : undefined,
+    collectedTableState.hideBelowTopicFloor ? `Local score ≥ ${localCandidateFloor}` : undefined,
+  ].filter((label): label is string => Boolean(label));
+
+  function clearCandidateFilters() {
+    setCandidateView("all");
+    setCandidateSearch("");
+    setCandidateVisibleCount(25);
+    setLineFilter("");
+    setCollectedTableState((current) => resetStoryTableFilters(current));
+  }
 
   return (
-    <section className={`${styles.panel} ${styles.editorialPanel}`}>
-      <div className={styles.panelHeading}>
-        <div>
-          <p className={styles.sectionNumber}>05</p>
-          <h2>AI editorial evaluation</h2>
+    <section className={`${styles.panel} ${styles.editorialPanel} ${initialTab === "collected" ? styles.candidateWorkspace : ""}`}>
+      {initialTab === "collected" ? <>
+        <div className={styles.candidateHero}>
+          <div>
+            <p className={styles.kicker}>Discover / Candidates</p>
+            <h2>Collected candidates</h2>
+            <p>Scan what was found, evaluate new Stories, and move strong candidates into Production.</p>
+          </div>
+          <div className={styles.candidateHeroActions}>
+            <a href="#discover/search">＋ Search for stories</a>
+            <button type="button" className={styles.evaluateButton} onClick={() => onEvaluate(false)} disabled={!canEvaluate}>
+              {isEvaluating ? "Evaluating…" : "Evaluate with AI"}
+            </button>
+          </div>
         </div>
-        <span className={styles.aiBadge}>
-          {editorial?.configuration.model ?? "Gemini"}
-        </span>
-      </div>
-
-      <div className={styles.editorialIntro}>
-        <div>
-          <p>
-            Editorial AI ranks eligible candidates against this topic’s
-            profile, using Gemini first, then Luna and Cloudflare fallbacks,
-            with a maximum of {editorial?.configuration.maxContentCharacters ?? 500} characters per story.
-          </p>
-          <small>
-            AI floor {editorial?.configuration.effectiveCandidatePolicy?.localCandidateMinScore ?? editorial?.configuration.minLocalScore ?? 25} · news {editorial?.configuration.effectiveCandidatePolicy?.freshness.newsMaxAgeHours ?? editorial?.configuration.maxAgeHours ?? 72} h · research {editorial?.configuration.effectiveCandidatePolicy?.freshness.researchMaxAgeHours ?? editorial?.configuration.maxAgeHours ?? 72} h · daily reset at 00:00 UTC
-          </small>
-        </div>
-        <div className={styles.evaluationActions}>
-          <button
-            type="button"
-            className={styles.reevaluateButton}
-            onClick={() => onEvaluate(true)}
-            disabled={!canEvaluate}
-          >
-            Re-evaluate with current settings
-          </button>
-          <button
-            type="button"
-            className={styles.evaluateButton}
-            onClick={() => onEvaluate(false)}
-            disabled={!canEvaluate}
-          >
-            {isEvaluating ? "Evaluating…" : "Evaluate with AI"}
-          </button>
-        </div>
-      </div>
+        {editorial ? <div className={styles.candidateStageLinks}>
+          <span>{collectedStories.length} collected</span>
+          <a href="#production">{activeSelectedCount} selected →</a>
+          <a href="#publications/published">{publishedStoryCount} published →</a>
+        </div> : null}
+      </> : <div className={styles.panelHeading}><div><h2>Selected records</h2></div></div>}
 
       {editorial ? (
         <>
-          <div className={styles.aiMetrics}>
+          {initialTab === "collected" ? <details className={styles.candidateAiDetails}>
+            <summary>AI evaluation activity <span>{editorial.today.remainingRuns} runs available today</span></summary>
+            <p>Editorial AI ranks eligible candidates against this Topic’s criteria. Filters and scores below do not change the saved evaluation.</p>
+            <p>Candidate floor {localCandidateFloor} · news window {editorial.configuration.effectiveCandidatePolicy?.freshness.newsMaxAgeHours ?? editorial.configuration.maxAgeHours} h · research window {editorial.configuration.effectiveCandidatePolicy?.freshness.researchMaxAgeHours ?? editorial.configuration.maxAgeHours} h · daily reset 00:00 UTC</p>
+            <div className={styles.aiMetrics}>
             <OptimizationMetric
               label="Runs today"
               value={editorial.today.runs}
@@ -2428,7 +2491,7 @@ function EditorialEvaluationPanel({
               value={editorial.shortlist.length}
               detail={`${formatNumber(editorial.totalEvaluations)} stored evaluations`}
             />
-          </div>
+            </div>
 
           {editorial.latestRun ? (
             <div className={styles.aiRunSummary}>
@@ -2443,141 +2506,92 @@ function EditorialEvaluationPanel({
               </span>
             </div>
           ) : null}
+            <button type="button" className={styles.reevaluateButton} onClick={() => onEvaluate(true)} disabled={!canEvaluate}>
+              Re-evaluate with current settings
+            </button>
+          </details> : null}
 
-          <div className={styles.storyWorkspaceHeader}>
-            <div>
-              <h3>Editorial workspace</h3>
-              <p>
-                Combine filters, then rank top stories by a first and second
-                criterion.
-              </p>
+          {initialTab === "collected" ? <div className={styles.candidateQueueControls}>
+            <div className={styles.candidateViewButtons} role="group" aria-label="Candidate views">
+              {candidateViews.map((view) => <button key={view.value} type="button" aria-pressed={candidateView === view.value} className={candidateView === view.value ? styles.candidateViewActive : undefined} onClick={() => { setCandidateView(view.value); setCandidateVisibleCount(25); }}>
+                {view.label}<span>{view.count}</span>
+              </button>)}
             </div>
-            <div className={styles.storyTabs} role="tablist" aria-label="Story views">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeTab === "collected"}
-                className={activeTab === "collected" ? styles.activeStoryTab : ""}
-                onClick={() => setActiveTab("collected")}
-              >
-                Collected stories
-                <span>{editorial.collectedStories.length}</span>
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeTab === "selected"}
-                className={activeTab === "selected" ? styles.activeStoryTab : ""}
-                onClick={() => setActiveTab("selected")}
-              >
-                Selected stories
-                <span>{editorial.selectedStories.length}</span>
-              </button>
+            <div className={styles.candidateToolbar}>
+              <div className={styles.candidateToolbarTop}>
+                <label className={styles.candidateSearchField}>
+                  <span>Find in candidates</span>
+                  <input type="search" value={candidateSearch} onChange={(event) => { setCandidateSearch(event.currentTarget.value); setCandidateVisibleCount(25); }} placeholder="Search title or source" autoComplete="off" />
+                </label>
+                <label className={styles.candidateSortField}>
+                  <span>Sort by</span>
+                  <select value={collectedTableState.primaryRank} onChange={(event) => { setCollectedTableState((current) => ({ ...current, primaryRank: event.currentTarget.value as StoryRankKey })); setCandidateVisibleCount(25); }}>
+                    <option value="publishedAt">Newest</option>
+                    <option value="editorialPriority">AI priority</option>
+                    <option value="growthScore">Growth potential</option>
+                    <option value="localScore">Local score</option>
+                  </select>
+                </label>
+                {(candidateView !== "all" || candidateSearch || candidateAdvancedCount > 0) ? <button type="button" className={styles.clearStoryFiltersButton} onClick={clearCandidateFilters}>Clear filters</button> : null}
+              </div>
+              <details className={styles.candidateFilterDetails}>
+                <summary>More filters {candidateAdvancedCount > 0 ? <span>{candidateAdvancedCount} active</span> : null}</summary>
+                <div className={styles.candidateFilterGrid}>
+                  <label><span>Editorial line</span><select value={lineFilter} disabled={!lineData} onChange={(event) => { setLineFilter(event.currentTarget.value); setCandidateVisibleCount(25); }}>
+                    <option value="">{lineData ? "All editorial lines" : "Loading editorial lines…"}</option>
+                    <option value="none">Without a line</option>
+                    {lineData?.lines.map((line) => <option key={line.id} value={line.id}>{line.name}{line.archived ? " (archived)" : ""}</option>)}
+                  </select></label>
+                  <label><span>Story date</span><select value={collectedTableState.publishedWithinDays ?? ""} onChange={(event) => { setCollectedTableState((current) => ({ ...current, publishedWithinDays: parsePublishedWithinDays(event.currentTarget.value) })); setCandidateVisibleCount(25); }}>
+                    <option value="">Any time</option><option value="1">24 hours</option><option value="3">3 days</option><option value="7">7 days</option><option value="14">14 days</option><option value="30">30 days</option><option value="90">90 days</option>
+                  </select></label>
+                  <label><span>AI priority at least</span><input type="number" min="0" max="100" inputMode="numeric" value={collectedTableState.minimumEditorialPriority ?? ""} onChange={(event) => { setCollectedTableState((current) => ({ ...current, minimumEditorialPriority: parseStoryScoreThreshold(event.currentTarget.value) })); setCandidateVisibleCount(25); }} placeholder="Any" /></label>
+                  <label><span>Growth potential at least</span><input type="number" min="0" max="100" inputMode="numeric" value={collectedTableState.minimumGrowthScore ?? ""} onChange={(event) => { setCollectedTableState((current) => ({ ...current, minimumGrowthScore: parseStoryScoreThreshold(event.currentTarget.value) })); setCandidateVisibleCount(25); }} placeholder="Any" /></label>
+                  <label><span>Then sort by</span><select value={collectedTableState.secondaryRank} onChange={(event) => { setCollectedTableState((current) => ({ ...current, secondaryRank: event.currentTarget.value as StoryRankKey })); setCandidateVisibleCount(25); }}>
+                    <option value="publishedAt">Newest</option><option value="editorialPriority">AI priority</option><option value="growthScore">Growth potential</option><option value="localScore">Local score</option>
+                  </select></label>
+                  <label className={styles.candidateFloorControl}><input type="checkbox" checked={collectedTableState.hideBelowTopicFloor} onChange={(event) => { setCollectedTableState((current) => ({ ...current, hideBelowTopicFloor: event.currentTarget.checked })); setCandidateVisibleCount(25); }} /><span>Hide below local floor ({localCandidateFloor})</span></label>
+                </div>
+                <p>Score minimums hide Stories without an evaluation. The story date uses the source publication date when available.</p>
+              </details>
+              {candidateFilterSummary.length ? <div className={styles.candidateActiveFilters} aria-label="Active advanced filters">
+                {candidateFilterSummary.map((label) => <span key={label}>{label}</span>)}
+              </div> : null}
             </div>
-          </div>
+          </div> : <>
+            <div className={styles.storyWorkspaceHeader}><div><h3>Selected records</h3><p>Approved Stories and their publication records.</p></div></div>
+            <div className={styles.buttonRow}><label className={styles.field}><span>Filter stories by editorial line</span><select value={lineFilter} disabled={!lineData} onChange={(event) => setLineFilter(event.target.value)}>
+              <option value="">{lineData ? "All editorial lines" : "Loading editorial lines…"}</option><option value="none">Without a line (legacy stories)</option>
+              {lineData?.lines.map((line) => <option key={line.id} value={line.id}>{line.name}{line.archived ? " (archived)" : ""}</option>)}
+            </select></label></div>
+          </>}
 
-          <div className={styles.buttonRow}>
-            <label className={styles.field}>
-              <span>Filter stories by editorial line</span>
-              <select value={lineFilter} disabled={!lineData} onChange={e=>setLineFilter(e.target.value)}>
-                <option value="">{lineData?"All editorial lines":"Loading editorial lines…"}</option>
-                <option value="none">Without a line (legacy stories)</option>
-                {lineData?.lines.map(line=><option key={line.id} value={line.id}>{line.name}{line.archived?" (archived)":""}</option>)}
-              </select>
-            </label>
-            {activeTab==="collected"?<label className={styles.selectAllControl}>
-              <input type="checkbox" checked={shortlistOnly} onChange={e=>setShortlistOnly(e.target.checked)}/>
-              <span>Shortlist only</span>
-            </label>:null}
-          </div>
-
-          <div className={styles.quickViews} aria-label="Quick views">
+          {initialTab === "selected" ? <div className={styles.quickViews} aria-label="Quick views">
             {quickViews.map((view) => {
-              const currentFilter =
-                view.tab === "selected"
-                  ? selectedTableState.publicationFilter
-                  : collectedTableState.publicationFilter;
-              const isActive =
-                activeTab === view.tab &&
-                (view.tab === "collected" ||
-                  currentFilter === view.publicationFilter);
+              const isActive = selectedTableState.publicationFilter === view.publicationFilter;
               return (
                 <button
                   key={view.label}
                   type="button"
                   aria-pressed={isActive}
                   className={isActive ? styles.quickViewActive : ""}
-                  onClick={() =>
-                    goToView(view.tab, view.publicationFilter)
-                  }
+                  onClick={() => goToSelectedView(view.publicationFilter)}
                 >
                   {view.label}
                   <span>{view.count}</span>
                 </button>
               );
             })}
-          </div>
+          </div> : null}
 
           {activeTab === "collected" ? (
-            <div role="tabpanel">
-              <div className={styles.tableViewHeading}>
-                <div>
-                  <h3>Collected stories</h3>
-                  <p>
-                    All persisted stories. AI shortlist rows can be approved or rejected.
-                  </p>
-                </div>
-                <span>
-                  {filteredCollectedStories.length} of {collectedStories.length} shown
-                </span>
+            <div>
+              <div className={styles.candidateResultsHeading}>
+                <div><h3>{candidateView === "all" ? "All candidates" : candidateView === "unevaluated" ? "Awaiting evaluation" : candidateView === "shortlist" ? "Ready to select" : "Evaluated candidates"}</h3><p>Only unapproved AI shortlist Stories can be approved directly. Other evaluated Stories can be promoted after review.</p></div>
+                <span aria-live="polite">{filteredCollectedStories.length} match · {visibleCollectedStories.length} displayed</span>
               </div>
 
-              <StoryListControls
-                state={collectedTableState}
-                totalCount={collectedStories.length}
-                shownCount={filteredCollectedStories.length}
-                localCandidateFloor={localCandidateFloor}
-                onPrimaryRankChange={(primaryRank) =>
-                  setCollectedTableState((current) =>
-                    ({ ...current, primaryRank }),
-                  )
-                }
-                onSecondaryRankChange={(secondaryRank) =>
-                  setCollectedTableState((current) =>
-                    ({ ...current, secondaryRank }),
-                  )
-                }
-                onPublishedWithinDaysChange={(publishedWithinDays) =>
-                  setCollectedTableState((current) => ({
-                    ...current,
-                    publishedWithinDays,
-                  }))
-                }
-                onHideBelowTopicFloorChange={(hideBelowTopicFloor) =>
-                  setCollectedTableState((current) => ({
-                    ...current,
-                    hideBelowTopicFloor,
-                  }))
-                }
-                onMinimumEditorialPriorityChange={(minimumEditorialPriority) =>
-                  setCollectedTableState((current) => ({
-                    ...current,
-                    minimumEditorialPriority,
-                  }))
-                }
-                onMinimumGrowthScoreChange={(minimumGrowthScore) =>
-                  setCollectedTableState((current) => ({
-                    ...current,
-                    minimumGrowthScore,
-                  }))
-                }
-                onResetFilters={() => {
-                  setLineFilter("");setShortlistOnly(false);
-                  setCollectedTableState((current) => resetStoryTableFilters(current));
-                }}
-              />
-
-              {shortlist.length > 0 ? (
+              {visibleShortlistIds.length > 0 || selectedStoryIds.length > 0 ? (
               <div className={styles.reviewToolbar}>
                 <label className={styles.selectAllControl}>
                   <input
@@ -2595,7 +2609,7 @@ function EditorialEvaluationPanel({
                 <span className={styles.selectionCount}>
                   {selectedStoryIds.length} selected
                   {hiddenSelectedCount > 0
-                    ? ` · ${hiddenSelectedCount} hidden by filters`
+                    ? ` · ${hiddenSelectedCount} outside this page`
                     : ""}
                 </span>
                 <div className={styles.reviewActions}>
@@ -2619,7 +2633,31 @@ function EditorialEvaluationPanel({
               </div>
               ) : null}
 
-              <SortableStoriesTable
+              <CandidateCards
+                stories={visibleCollectedStories}
+                totalStoryCount={collectedStories.length}
+                primaryRank={collectedTableState.primaryRank}
+                secondaryRank={collectedTableState.secondaryRank}
+                selectedStoryIds={selectedStoryIds}
+                onToggleStory={onToggleStory}
+                canPrepare={canPrepare}
+                preparingStoryId={preparingStoryId}
+                viewingStoryId={viewingStoryId}
+                onPrepareContent={onPrepareContent}
+                onViewContent={onViewContent}
+                canPromote={canPromote}
+                promotingStoryId={promotingStoryId}
+                onPromote={onPromote}
+                canClearDuplicate={canClearDuplicate}
+                clearingDuplicateStoryId={clearingDuplicateStoryId}
+                onClearDuplicate={onClearDuplicate}
+              />
+              {visibleCollectedStories.length < filteredCollectedStories.length ? <button type="button" className={styles.candidateShowMore} onClick={() => setCandidateVisibleCount((current) => current + 25)}>
+                Show {Math.min(25, filteredCollectedStories.length - visibleCollectedStories.length)} more <span>{filteredCollectedStories.length - visibleCollectedStories.length} remaining</span>
+              </button> : null}
+              <details className={styles.candidateDetailedTable} onToggle={(event) => setDetailedTableOpen(event.currentTarget.open)}>
+                <summary>Detailed table <span>All signals and source details</span></summary>
+                {detailedTableOpen ? <SortableStoriesTable
                 stories={filteredCollectedStories}
                 totalStoryCount={collectedStories.length}
                 mode="collected"
@@ -2638,10 +2676,11 @@ function EditorialEvaluationPanel({
                 canClearDuplicate={canClearDuplicate}
                 clearingDuplicateStoryId={clearingDuplicateStoryId}
                 onClearDuplicate={onClearDuplicate}
-              />
+              /> : null}
+              </details>
             </div>
           ) : (
-            <div role="tabpanel">
+            <div>
               <div className={styles.tableViewHeading}>
                 <div>
                   <h3>Selected stories</h3>
@@ -2748,7 +2787,7 @@ function EditorialEvaluationPanel({
         </>
       ) : (
         <div className={styles.optimizationEmpty}>
-          Check status to load the AI budget and editorial evaluations.
+          Connect to view the AI budget and editorial evaluations.
         </div>
       )}
     </section>
@@ -2756,6 +2795,7 @@ function EditorialEvaluationPanel({
 }
 
 type StoryTableMode = "collected" | "selected";
+type CandidateView = "all" | "unevaluated" | "shortlist" | "evaluated";
 type StoryRankKey =
   | "publishedAt"
   | "editorialPriority"
@@ -2789,7 +2829,7 @@ function sanitizeStoryTableViewState(value: unknown, mode: StoryTableMode): Stor
   if (!value || typeof value !== "object") return defaults;
   const saved = value as Partial<Record<keyof StoryTableViewState, unknown>>;
   const rankKeys: readonly StoryRankKey[] = ["publishedAt", "editorialPriority", "growthScore", "localScore"];
-  const publicationFilters: readonly PublicationFilter[] = ["all", "not-published-anywhere", "scheduled-on-platform", "published-on-platform"];
+  const publicationFilters: readonly PublicationFilter[] = ["all", "active-selected", "not-published-anywhere", "scheduled-on-platform", "published-on-platform"];
   const boundedNumber = (candidate: unknown, max: number) =>
     typeof candidate === "number" && Number.isInteger(candidate) && candidate >= 1 && candidate <= max
       ? candidate : undefined;
@@ -2874,23 +2914,19 @@ function storyMatchesPublicationFilter(
   }
 
   const publications = story.publications ?? [];
+  const stage = storyPublicationStage(story);
 
+  if (filters.publicationFilter === "active-selected") {
+    return stage.active;
+  }
   if (filters.publicationFilter === "not-published-anywhere") {
-    return !publications.some(
-      (publication) => publication.status === "published",
-    );
+    return stage.publishedDestinations.length === 0;
   }
 
-  const expectedStatus =
-    filters.publicationFilter === "scheduled-on-platform"
-      ? "scheduled"
-      : "published";
-
-  return publications.some(
-    (publication) =>
-      publication.platform === filters.publicationPlatform &&
-      publication.status === expectedStatus,
-  );
+  if (filters.publicationFilter === "published-on-platform") {
+    return stage.publishedDestinations.some((publication) => publication.platform === filters.publicationPlatform);
+  }
+  return publications.some((publication) => publication.platform === filters.publicationPlatform && publication.status === "scheduled");
 }
 
 function StoryListControls({
@@ -2932,7 +2968,7 @@ function StoryListControls({
     state.publicationFilter !== "all";
 
   return (
-    <div className={styles.storyFilterBar} aria-label="News list controls">
+    <div className={styles.storyFilterBar} aria-label="Story list controls">
       <div className={styles.storyFilterFields}>
         <label className={styles.storyFilterField}>
           <span>Top results: first</span>
@@ -3035,6 +3071,7 @@ function StoryListControls({
                 }
               >
                 <option value="all">All</option>
+                <option value="active-selected">Active in Production</option>
                 <option value="not-published-anywhere">
                   Not published anywhere
                 </option>
@@ -3098,6 +3135,111 @@ function StoryListControls({
       </small>
     </div>
   );
+}
+
+function CandidateCards({
+  stories,
+  totalStoryCount,
+  primaryRank,
+  secondaryRank,
+  selectedStoryIds,
+  onToggleStory,
+  canPrepare,
+  preparingStoryId,
+  viewingStoryId,
+  onPrepareContent,
+  onViewContent,
+  canPromote,
+  promotingStoryId,
+  onPromote,
+  canClearDuplicate,
+  clearingDuplicateStoryId,
+  onClearDuplicate,
+}: {
+  stories: readonly EditorialTableStory[];
+  totalStoryCount: number;
+  primaryRank: StoryRankKey;
+  secondaryRank: StoryRankKey;
+  selectedStoryIds: readonly string[];
+  onToggleStory: (storyId: string) => void;
+  canPrepare: boolean;
+  preparingStoryId?: string;
+  viewingStoryId?: string;
+  onPrepareContent: (storyId: string) => void;
+  onViewContent: (storyId: string) => void;
+  canPromote: boolean;
+  promotingStoryId?: string;
+  onPromote: (storyId: string, title: string, decision: EditorialTableStory["evaluationDecision"]) => void;
+  canClearDuplicate: boolean;
+  clearingDuplicateStoryId?: string;
+  onClearDuplicate: (storyId: string, title: string) => void;
+}) {
+  if (stories.length === 0) {
+    return <div className={styles.candidateEmpty}>
+      <strong>{totalStoryCount ? "No candidates match this view" : "No candidates collected yet"}</strong>
+      <p>{totalStoryCount ? "Try another view or clear the filters to see more Stories." : "Search an Editorial Line to bring Stories into this workspace."}</p>
+      {!totalStoryCount ? <a href="#discover/search">Search for stories →</a> : null}
+    </div>;
+  }
+
+  return <div className={styles.candidateCardList} aria-label="Collected candidates">
+    {[...stories].sort((left, right) => rankTableStories(left, right, primaryRank, secondaryRank)).map((story) => {
+      const selected = selectedStoryIds.includes(story.storyId);
+      const storyDate = story.publishedAt ?? story.lastSeenAt;
+      const decisionLabel = story.reviewDecision === "approved" ? "Selected" :
+        story.reviewDecision === "rejected" ? "Rejected by editor" :
+        story.reviewable ? "Ready to select" :
+        story.evaluationDecision === "review" ? "AI review" :
+        story.evaluationDecision === "reject" ? "AI did not shortlist" :
+        story.evaluationDecision === "shortlist" ? "Shortlisted" : "Needs evaluation";
+      const decisionTone = story.reviewDecision === "approved" || story.reviewable ? "positive" :
+        story.reviewDecision === "rejected" || story.evaluationDecision === "reject" ? "negative" :
+        story.evaluationDecision === "review" ? "warning" : "neutral";
+
+      return <article className={`${styles.candidateCard} ${selected ? styles.candidateCardSelected : ""}`} key={story.storyId}>
+        <div className={styles.candidateCardMain}>
+          {story.reviewable ? <label className={styles.candidateCardSelect}>
+            <input type="checkbox" checked={selected} onChange={() => onToggleStory(story.storyId)} aria-label={`Select ${story.title} for approval`} />
+          </label> : <span className={styles.candidateCardSelectPlaceholder} aria-hidden="true" />}
+          <div className={styles.candidateCardContent}>
+            <div className={styles.candidateCardMeta}>
+              <span>{story.sourceName}</span>
+              {storyDate ? <time dateTime={storyDate}>{formatTableDate(storyDate)}</time> : <span>Date unavailable</span>}
+              {story.lineContexts?.[0] ? <span>{story.lineContexts[0].context.name}</span> : null}
+            </div>
+            <h3><a href={story.url} target="_blank" rel="noopener noreferrer">{story.title}<span aria-hidden="true"> ↗</span></a></h3>
+            <div className={styles.candidateCardBadges}>
+              <StatusBadge tone={decisionTone}>{decisionLabel}</StatusBadge>
+              <span>{formatContentStatus(story.contentStatus)}</span>
+              {story.sourceId.startsWith("ai-research:") ? <span>AI research</span> : null}
+              {story.sourceId.startsWith("owned-content:") ? <span>Original content</span> : null}
+            </div>
+            {story.reason ? <p className={styles.candidateCardReason}>{story.reason}</p> : null}
+            {story.duplicateOfTitle ? <p className={styles.candidateCardWarning}>Possible duplicate: {story.duplicateOfTitle}</p> : null}
+            {story.riskFlags.length ? <p className={styles.candidateCardWarning}>{story.riskFlags.slice(0, 2).join(" · ")}{story.riskFlags.length > 2 ? ` · +${story.riskFlags.length - 2} more` : ""}</p> : null}
+          </div>
+        </div>
+        <div className={styles.candidateCardSignals} aria-label="Evaluation signals">
+          <CandidateSignal label="AI priority" value={story.editorialPriority ?? story.editorialScore} />
+          <CandidateSignal label="Growth potential" value={story.growthScore} />
+        </div>
+        <div className={styles.candidateCardActions}>
+          <button type="button" onClick={() => onViewContent(story.storyId)} disabled={!canPrepare}>{viewingStoryId === story.storyId ? "Loading…" : story.contentStatus === "missing" ? "Add content" : "View content"}</button>
+          {shouldPrepareStory(story) ? <button type="button" onClick={() => onPrepareContent(story.storyId)} disabled={!canPrepare}>{preparingStoryId === story.storyId ? "Preparing…" : prepareContentLabel(story)}</button> : null}
+          {(story.evaluationDecision === "review" || story.evaluationDecision === "reject") && !story.reviewDecision ? <button type="button" onClick={() => onPromote(story.storyId, story.title, story.evaluationDecision)} disabled={!canPromote}>{promotingStoryId === story.storyId ? "Promoting…" : "Promote to selected"}</button> : null}
+          {story.duplicateOfStoryId ? <button type="button" onClick={() => onClearDuplicate(story.storyId, story.title)} disabled={!canClearDuplicate}>{clearingDuplicateStoryId === story.storyId ? "Clearing…" : "Not a duplicate"}</button> : null}
+        </div>
+      </article>;
+    })}
+  </div>;
+}
+
+function CandidateSignal({ label, value }: { label: string; value?: number }) {
+  const scored = typeof value === "number" && value > 0;
+  return <div className={styles.candidateSignal}>
+    <div><span>{label}</span><strong>{scored ? value : "—"}</strong></div>
+    <div className={styles.candidateSignalTrack} aria-hidden="true"><span style={{ width: scored ? `${Math.min(100, value)}%` : "0%" }} /></div>
+  </div>;
 }
 
 function SortableStoriesTable({
@@ -3238,7 +3380,7 @@ function SortableStoriesTable({
                   </a>
                   {isAiResearchStory ? (
                     <span className={`${styles.tableBadge} ${styles.aiResearchStoryBadge}`}>
-                      Encontrada por IA
+                      Found by AI
                     </span>
                   ) : null}
                   {isOwnedContentStory ? (
@@ -3255,8 +3397,8 @@ function SortableStoriesTable({
                       }`}
                       title={`Same news event as: ${story.duplicateOfTitle}`}
                     >
-                      Mismo evento que «{story.duplicateOfTitle}»
-                      {story.duplicateOfPublished ? " · ya publicado" : ""}
+                      Same event as “{story.duplicateOfTitle}”
+                      {story.duplicateOfPublished ? " · already published" : ""}
                     </span>
                   ) : null}
                   {mode === "selected" ? (
@@ -3356,7 +3498,7 @@ function SortableStoriesTable({
                 <td>
                   <StatusBadge tone={mode === "selected" ? "positive" : "neutral"}>
                     {mode === "selected"
-                      ? "Selected"
+                      ? (storyPublicationStage(story).active ? "Selected" : "Published")
                       : formatProcessingStatus(story.processingStatus)}
                   </StatusBadge>
                 </td>
@@ -3364,6 +3506,7 @@ function SortableStoriesTable({
                   <td className={styles.publicationStatusCell}>
                     <PublicationStatusChips
                       publications={story.publications}
+                      confirmedPublications={story.confirmedPublications}
                     />
                   </td>
                 ) : null}
@@ -3727,15 +3870,18 @@ function StatusBadge({
 
 function PublicationStatusChips({
   publications = [],
+  confirmedPublications = [],
 }: {
   publications?: readonly StoryPublication[];
+  confirmedPublications?: readonly NonNullable<EditorialDashboardStory["confirmedPublications"]>[number][];
 }) {
-  if (publications.length === 0) {
+  if (publications.length === 0 && confirmedPublications.length === 0) {
     return <span className={styles.publicationNotTracked}>No manual tracking</span>;
   }
 
   return (
     <div className={styles.publicationStatusChips}>
+      {confirmedPublications.length > 0 ? <StatusBadge tone="positive">{`Instagram · ${confirmedPublications.length} confirmed ${confirmedPublications.length === 1 ? "post" : "posts"}`}</StatusBadge> : null}
       {publications.map((publication) => (
         <StatusBadge
           key={`${publication.platform}-${publication.status}-${publication.publishedAt ?? publication.scheduledAt ?? "current"}`}
