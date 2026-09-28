@@ -17,6 +17,30 @@ export type PublicationDestination = {
   hasBasicPermission?: boolean;
   appConfigurationVersion?: string;
 };
+
+/**
+ * PUB-13 groundwork: one destination contract that both the direct Instagram
+ * connection and a Facebook Page connection (PUB-09) can populate, so PUB-10
+ * can resolve a delivery against either without reshaping the Instagram
+ * pipeline. The existing publish path keeps using PublicationDestination
+ * (the Instagram-direct shape) unchanged; nothing publishes to Facebook yet.
+ */
+export type InstagramDirectDestination = { platform: "instagram-direct" } & PublicationDestination;
+export type FacebookPageDestination = {
+  platform: "facebook-page";
+  pageId: string | null;
+  pageName: string | null;
+  /** Set when the Page has a linked Instagram Business Account. */
+  linkedIgUserId: string | null;
+  connectionVersion: string;
+  connected: boolean;
+  expired: boolean;
+  /** Page tasks include CREATE_CONTENT or MANAGE — granted, not live-verified. */
+  hasPublishingTask: boolean;
+  appConfigurationVersion?: string;
+};
+export type ChannelDestination = InstagramDirectDestination | FacebookPageDestination;
+
 export type PublicationCandidate = {
   state: "not-candidate" | "candidate" | "ready";
   checkedAt: string;

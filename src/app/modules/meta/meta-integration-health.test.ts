@@ -17,6 +17,7 @@ function input(
     configuredAppUrl: PROD,
     requestOrigin: PROD,
     sharedAppConfigured: true,
+    facebookAppConfigured: true,
     stateSecretConfigured: true,
     tokenEncryptionKeyConfigured: true,
     publicationWorkerSecretConfigured: true,
@@ -33,6 +34,7 @@ test("a matching production setup is healthy and exposes the redirect URI", () =
   assert.equal(health.ok, true);
   assert.deepEqual(codes(health), []);
   assert.equal(health.redirectUri, `${PROD}/api/radar/meta/callback`);
+  assert.equal(health.facebookRedirectUri, `${PROD}/api/radar/meta/facebook/callback`);
   assert.equal(health.appUrlMatchesRequest, true);
 });
 
@@ -77,6 +79,7 @@ test("missing secrets are reported with the right severity", () => {
   const health = deriveMetaIntegrationHealth(
     input({
       sharedAppConfigured: false,
+      facebookAppConfigured: false,
       stateSecretConfigured: false,
       tokenEncryptionKeyConfigured: false,
       publicationWorkerSecretConfigured: false,
@@ -85,14 +88,22 @@ test("missing secrets are reported with the right severity", () => {
   assert.equal(health.ok, false);
   assert.deepEqual(codes(health), [
     "shared-app-missing",
+    "shared-facebook-app-missing",
     "state-secret-missing",
     "token-key-missing",
     "worker-secret-missing",
   ]);
   assert.deepEqual(
     health.problems.map((problem) => problem.severity),
-    ["warning", "error", "error", "warning"],
+    ["warning", "warning", "error", "error", "warning"],
   );
+});
+
+test("a missing Facebook App configuration alone is reported without blocking Instagram", () => {
+  const health = deriveMetaIntegrationHealth(input({ facebookAppConfigured: false }));
+  assert.equal(health.ok, true);
+  assert.deepEqual(codes(health), ["shared-facebook-app-missing"]);
+  assert.equal(health.problems[0].severity, "warning");
 });
 
 test("request origin prefers forwarded headers and ignores extra hops", () => {

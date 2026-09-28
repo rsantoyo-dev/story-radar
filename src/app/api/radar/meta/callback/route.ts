@@ -14,6 +14,7 @@ import {
 } from "@/app/modules/meta/meta-graph-client";
 import { classifyMetaGraphError, describeMetaVerificationError } from "@/app/modules/meta/meta-verification";
 import { verifyMetaOAuthState } from "@/app/modules/meta/meta-oauth-state";
+import { consumeMetaOAuthAttempt } from "@/app/modules/meta/meta-oauth-attempts.repository";
 import {
   getEffectiveMetaAppCredentials,
   recordMetaVerificationFailure,
@@ -41,12 +42,26 @@ export async function GET(request: Request) {
 
   let topicId: string | undefined;
   try {
-    topicId = state
+    const payload = state
       ? verifyMetaOAuthState(state, requireMetaStateSecretFromEnv())
       : undefined;
-    if (!topicId) {
+    if (!payload || payload.mechanism !== "instagram") {
       return NextResponse.redirect(
         genericFailureRedirect("The connection request expired or was invalid; try connecting again."),
+      );
+    }
+    topicId = payload.topicId;
+    const consumed = await consumeMetaOAuthAttempt({
+      nonce: payload.nonce,
+      topicId,
+      mechanism: "instagram",
+      now: new Date(),
+    });
+    if (!consumed) {
+      return NextResponse.redirect(
+        metaConnectReturnUrl(topicId, {
+          error: "This connection attempt already completed or expired; try connecting again.",
+        }),
       );
     }
     if (dialogError) {

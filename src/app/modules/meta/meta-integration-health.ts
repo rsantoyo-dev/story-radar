@@ -12,6 +12,8 @@
  */
 
 export const META_OAUTH_CALLBACK_PATH = "/api/radar/meta/callback";
+/** The Facebook Login for Business product's own callback — a separate path, registered separately in the Meta console (PUB-09). */
+export const META_FACEBOOK_OAUTH_CALLBACK_PATH = "/api/radar/meta/facebook/callback";
 
 export type MetaIntegrationProblemCode =
   | "app-url-missing"
@@ -20,6 +22,7 @@ export type MetaIntegrationProblemCode =
   | "app-url-mismatch"
   | "app-url-tunnel"
   | "shared-app-missing"
+  | "shared-facebook-app-missing"
   | "state-secret-missing"
   | "token-key-missing"
   | "worker-secret-missing";
@@ -36,6 +39,7 @@ export type MetaIntegrationHealthInput = {
   /** Origin the current request was served from, if it could be derived. */
   requestOrigin: string | undefined;
   sharedAppConfigured: boolean;
+  facebookAppConfigured: boolean;
   stateSecretConfigured: boolean;
   tokenEncryptionKeyConfigured: boolean;
   publicationWorkerSecretConfigured: boolean;
@@ -47,6 +51,8 @@ export type MetaIntegrationHealth = {
   configuredAppUrl?: string;
   /** Exact value to register as a valid OAuth redirect URI in the Meta App Dashboard. */
   redirectUri?: string;
+  /** Exact value to register as the Facebook Login for Business product's own redirect URI. */
+  facebookRedirectUri?: string;
   appUrlMatchesRequest?: boolean;
   problems: MetaIntegrationProblem[];
 };
@@ -157,6 +163,14 @@ export function deriveMetaIntegrationHealth(
         "META_APP_ID / META_APP_SECRET are not configured. Only topics with their own Instagram App (Advanced) can connect.",
     });
   }
+  if (!input.facebookAppConfigured) {
+    problems.push({
+      code: "shared-facebook-app-missing",
+      severity: "warning",
+      message:
+        "META_FACEBOOK_APP_ID / META_FACEBOOK_APP_SECRET are not configured. Facebook Page connections (PUB-09) are unavailable until the Facebook Login for Business product's credentials are set.",
+    });
+  }
   if (!input.stateSecretConfigured) {
     problems.push({
       code: "state-secret-missing",
@@ -186,6 +200,9 @@ export function deriveMetaIntegrationHealth(
     ...(configuredOrigin ? { configuredAppUrl: configuredOrigin } : {}),
     ...(configuredOrigin
       ? { redirectUri: `${configuredOrigin}${META_OAUTH_CALLBACK_PATH}` }
+      : {}),
+    ...(configuredOrigin
+      ? { facebookRedirectUri: `${configuredOrigin}${META_FACEBOOK_OAUTH_CALLBACK_PATH}` }
       : {}),
     ...(requestOrigin && configuredOrigin
       ? { appUrlMatchesRequest: requestOrigin === configuredOrigin }

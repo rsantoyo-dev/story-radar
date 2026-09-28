@@ -56,6 +56,26 @@
 .tabs a { display: inline-flex; align-items: center; min-height: 40px; padding: density(2) density(3); border-bottom: 2px solid transparent; color: palette(tertiary-dark); @ds-typo(small); font-weight: 650; text-decoration: none; }
 .tabs a:hover { color: palette(primary-dark); background: palette(primary-light); }
 .tabs .tabCurrent { color: palette(primary-dark); border-bottom-color: palette(primary-main); }
+.dialogBackdrop { position: fixed; z-index: 50; display: grid; place-items: center; inset: 0; padding: xs(density(4)) md(density(5)); background: palette(dark-main, 0.48); backdrop-filter: blur(6px); }
+.dialog { display: flex; flex-direction: column; width: min(640px, 100%); max-height: xs(calc(100svh - 24px)) md(min(820px, calc(100svh - 48px))); overflow: hidden; border: 1px solid palette(surface-dark); border-radius: radius(3); background: palette(light-light); color: palette(dark-main); box-shadow: 0 30px 90px palette(dark-main, 0.3); }
+.dialogHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: density(4); padding: density(5) density(5) density(4); border-bottom: 1px solid palette(surface-dark); }
+.dialogHeader h2 { margin: 0; @ds-typo(h3); font-size: 1.125rem; line-height: 1.3; }
+.dialogBody { display: grid; gap: density(3); overflow: auto; padding: density(5); @ds-typo(small); }
+.dialogFooter { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: density(2); padding: density(4) density(5); border-top: 1px solid palette(surface-dark); }
+.channelCard { display: grid; gap: density(3); min-width: 0; @ds-surface(contained surface 4); border-color: color-mix(in srgb, palette(dark-main) 16%, transparent); }
+.channelCardHeader { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: density(3); }
+.channelCardHeader h3 { margin: 0; color: palette(dark-main); @ds-typo(h3); font-size: 1.125rem; line-height: 1.3; }
+.channelCardHeader p { margin: density(1) 0 0; color: palette(tertiary-dark); @ds-typo(small); overflow-wrap: anywhere; }
+.channelCardDetails { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: density(3); margin: 0; }
+.channelCardDetails dt { color: palette(tertiary-dark); @ds-typo(caption); font-weight: 700; }
+.channelCardDetails dd { margin: 0; color: palette(dark-main); @ds-typo(small); overflow-wrap: anywhere; }
+.choiceList { display: grid; gap: density(2); margin: 0; padding: 0; border: 0; }
+.choice { display: flex; align-items: flex-start; gap: density(3); padding: density(3); border: 1px solid palette(surface-dark); border-radius: radius(2); cursor: pointer; }
+.choice:has(input:checked) { border-color: palette(primary-main); background: color-mix(in srgb, palette(primary-main) 8%, palette(light-light)); }
+.choice input { margin-top: 3px; accent-color: palette(primary-main); }
+.choice span { display: grid; gap: density(1); min-width: 0; }
+.choice strong { color: palette(dark-main); @ds-typo(small); font-weight: 700; }
+.choice small { color: palette(tertiary-dark); @ds-typo(caption); overflow-wrap: anywhere; }
 .showcase { display: grid; min-width: 0; gap: density(5); min-height: 100svh; padding: density(6); background: palette(light-light); color: palette(dark-main); }
 .showcaseTitle { margin: 0; padding: density(4) density(6); background: palette(dark-main); color: palette(dark-contrast); @ds-typo(h3); }
 .showcaseGrid { display: grid; grid-template-columns: minmax(0, 1fr); gap: density(4); }

@@ -7,11 +7,13 @@ import {
   requireMetaStateSecretFromEnv,
 } from "@/app/modules/meta/meta-integration.config";
 import { signMetaOAuthState } from "@/app/modules/meta/meta-oauth-state";
+import { recordMetaOAuthAttempt } from "@/app/modules/meta/meta-oauth-attempts.repository";
 import {
   getEffectiveMetaAppCredentials,
   TopicMetaConnectionError,
 } from "@/app/modules/meta/topic-meta-connections.repository";
 import { requireTopic, TopicContextError } from "@/app/modules/topics/topic-context";
+import type { Topic } from "@/db/schema";
 
 type Context = { params: Promise<{ topicId: string }> };
 
@@ -34,7 +36,7 @@ export async function POST(request: Request, context: Context) {
   if (unauthorized) return unauthorized;
 
   try {
-    const topicId = await topicIdFromContext(context);
+    const topic = await topicFromContext(context);
     // Refuse to send the editor to a login dialog that would return them to
     // another host (a stale tunnel URL in a hosted deployment): the callback
     // would land where nothing is listening. Browsing on localhost against a
@@ -45,13 +47,24 @@ export async function POST(request: Request, context: Context) {
     if (mismatch) {
       return noStoreJson({ error: mismatch.message, code: mismatch.code }, 400);
     }
-    const { appId } = await getEffectiveMetaAppCredentials(topicId);
-    const state = signMetaOAuthState(topicId, requireMetaStateSecretFromEnv());
+    const { appId } = await getEffectiveMetaAppCredentials(topic.id);
+    const signed = signMetaOAuthState(
+      { topicId: topic.id, mechanism: "instagram" },
+      requireMetaStateSecretFromEnv(),
+    );
+    await recordMetaOAuthAttempt({
+      nonce: signed.nonce,
+      topicId: topic.id,
+      workspaceId: topic.workspaceId,
+      mechanism: "instagram",
+      issuedAt: signed.issuedAt,
+      expiresAt: signed.expiresAt,
+    });
 
     const url = new URL("https://www.instagram.com/oauth/authorize");
     url.searchParams.set("client_id", appId);
     url.searchParams.set("redirect_uri", getMetaOAuthRedirectUri());
-    url.searchParams.set("state", state);
+    url.searchParams.set("state", signed.state);
     url.searchParams.set("scope", INSTAGRAM_OAUTH_SCOPES);
     url.searchParams.set("response_type", "code");
 
@@ -61,9 +74,9 @@ export async function POST(request: Request, context: Context) {
   }
 }
 
-async function topicIdFromContext(context: Context): Promise<string> {
+async function topicFromContext(context: Context): Promise<Topic> {
   const { topicId } = await context.params;
-  return (await requireTopic(topicId, { active: true })).id;
+  return requireTopic(topicId, { active: true });
 }
 
 function metaConnectRouteError(error: unknown) {

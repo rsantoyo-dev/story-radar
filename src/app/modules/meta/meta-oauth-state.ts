@@ -8,14 +8,32 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
  * place to bind the callback back to the topic that started it and to prove
  * it was not forged. No "server-only" import: the signing/verification logic
  * is pure and unit-tested; only the env-var read lives in server-only code.
+ *
+ * `mechanism` distinguishes which OAuth product this state belongs to —
+ * Instagram Login (topic-meta-connections.ts) or Facebook Login for Business
+ * (topic-facebook-connections.ts, PUB-09) — so a state minted for one can
+ * never be accepted by the other's callback, even though both are signed with
+ * the same secret. The nonce itself only proves the state was not forged or
+ * replayed past its TTL; single-use enforcement is the caller's job (see
+ * meta-oauth-attempts.repository.ts), since that requires a database.
  */
 
 const STATE_TTL_MS = 10 * 60 * 1_000;
 
+export type MetaOAuthMechanism = "instagram" | "facebook";
+
 export type MetaOAuthStatePayload = {
   topicId: string;
+  mechanism: MetaOAuthMechanism;
   nonce: string;
   issuedAt: number;
+};
+
+export type SignedMetaOAuthState = {
+  state: string;
+  nonce: string;
+  issuedAt: Date;
+  expiresAt: Date;
 };
 
 export class MetaOAuthStateConfigError extends Error {}
@@ -29,31 +47,41 @@ export function requireMetaStateSecret(rawSecret: string | undefined): string {
 }
 
 export function signMetaOAuthState(
-  topicId: string,
+  input: { topicId: string; mechanism: MetaOAuthMechanism },
   secret: string,
   now = Date.now(),
-): string {
+): SignedMetaOAuthState {
+  const nonce = randomBytes(9).toString("base64url");
   const payload: MetaOAuthStatePayload = {
-    topicId,
-    nonce: randomBytes(9).toString("base64url"),
+    topicId: input.topicId,
+    mechanism: input.mechanism,
+    nonce,
     issuedAt: now,
   };
   const encodedPayload = Buffer.from(JSON.stringify(payload), "utf8").toString(
     "base64url",
   );
   const signature = signState(encodedPayload, secret);
-  return `${encodedPayload}.${signature}`;
+  return {
+    state: `${encodedPayload}.${signature}`,
+    nonce,
+    issuedAt: new Date(now),
+    expiresAt: new Date(now + STATE_TTL_MS),
+  };
 }
 
 /**
- * Returns the topicId when `state` carries a valid, unexpired signature for
- * the configured secret; undefined for anything forged, stale, or malformed.
+ * Returns the full payload when `state` carries a valid, unexpired signature
+ * for the configured secret; undefined for anything forged, stale, or
+ * malformed. Callers must still check `mechanism` matches the callback they
+ * are running, and consume `nonce` via meta-oauth-attempts.repository.ts
+ * before trusting this result — this function alone does not enforce either.
  */
 export function verifyMetaOAuthState(
   state: string,
   secret: string,
   now = Date.now(),
-): string | undefined {
+): MetaOAuthStatePayload | undefined {
   const [encodedPayload, signature] = state.split(".");
   if (!encodedPayload || !signature) return undefined;
 
@@ -70,14 +98,16 @@ export function verifyMetaOAuthState(
   }
   if (
     typeof payload.topicId !== "string" ||
-    typeof payload.issuedAt !== "number"
+    typeof payload.issuedAt !== "number" ||
+    typeof payload.nonce !== "string" ||
+    (payload.mechanism !== "instagram" && payload.mechanism !== "facebook")
   ) {
     return undefined;
   }
   if (now - payload.issuedAt > STATE_TTL_MS || payload.issuedAt > now) {
     return undefined;
   }
-  return payload.topicId;
+  return payload;
 }
 
 function signState(encodedPayload: string, secret: string): string {

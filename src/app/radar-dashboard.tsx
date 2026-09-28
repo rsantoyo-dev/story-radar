@@ -13,6 +13,7 @@ import type { StoryContentEdition } from "./modules/stories/story-materials.type
 import { EditorialLinesPanel, type EditorialLinesData, type EditorialLineSelection } from "./editorial-lines-panel";
 import { CreativeProfilePanel } from "./creative-profile-panel";
 import { InstagramGalleryPanel } from "./instagram-gallery-panel";
+import { FacebookConnectionPanel } from "./facebook-connection-panel";
 import { MetaConnectionPanel } from "./meta-connection-panel";
 import { EditorialProfilePanel } from "./editorial-profile-panel";
 import { AcquisitionLensesPanel } from "./acquisition-lenses-panel";
@@ -524,6 +525,8 @@ export function RadarDashboard({
   // Bumped by the Instagram connection panel (sync / disconnect / verify) so
   // the gallery below it refetches.
   const [metaRefreshToken, setMetaRefreshToken] = useState(0);
+  const [facebookSelection, setFacebookSelection] = useState<{ topicId: string; selectionId: string }>();
+  const clearFacebookSelection = useCallback(() => setFacebookSelection(undefined), []);
 
   // Returning from the standalone studio remounts the dashboard. Restore its
   // read-only data when this tab already has a collector connection, so the
@@ -684,21 +687,29 @@ export function RadarDashboard({
     const metaTopicId = params.get("metaTopicId");
     const metaConnected = params.get("metaConnected");
     const metaError = params.get("metaError");
+    const facebookSelectionId = params.get("metaFacebookSelectionId");
+    const channel = params.get("metaChannel") === "facebook" ? "Facebook" : "Instagram";
     if (!metaTopicId && !metaConnected && !metaError) return;
 
-    // page.tsx selects metaTopicId on the server before hydration.
-    const outcome: Notice = metaError
-      ? { tone: "error", title: "Instagram connection failed", message: metaError }
-      : { tone: "success", title: "Instagram connected", message: "This topic can now publish to its connected Instagram account." };
+    // page.tsx selects metaTopicId on the server before hydration. A Facebook
+    // return with a selection id is not finished yet: the Facebook panel opens
+    // its Page picker instead of announcing a connection.
+    const outcome: Notice | undefined = metaError
+      ? { tone: "error", title: `${channel} connection failed`, message: metaError }
+      : facebookSelectionId
+        ? undefined
+        : { tone: "success", title: "Instagram connected", message: "This topic can now publish to its connected Instagram account." };
 
     const url = new URL(window.location.href);
-    url.searchParams.delete("metaTopicId");
-    url.searchParams.delete("metaConnected");
-    url.searchParams.delete("metaError");
+    for (const key of ["metaTopicId", "metaConnected", "metaError", "metaChannel", "metaFacebookSelectionId"]) url.searchParams.delete(key);
     if (metaTopicId && topics.some((topic) => topic.id === metaTopicId)) url.searchParams.set("topicId", metaTopicId);
     url.hash = "channels";
     window.history.replaceState(null, "", url.toString());
-    queueMicrotask(() => { setNotice(outcome); setActiveNavHash("#channels"); });
+    queueMicrotask(() => {
+      if (outcome) setNotice(outcome);
+      if (metaTopicId && facebookSelectionId && !metaError) setFacebookSelection({ topicId: metaTopicId, selectionId: facebookSelectionId });
+      setActiveNavHash("#channels");
+    });
   }, [topics]);
 
   function goToStoryReview(view: StoryReviewView) {
@@ -1694,6 +1705,17 @@ export function RadarDashboard({
             secret={secret}
             disabled={isBusy}
             onConnectionChanged={() => setMetaRefreshToken((n) => n + 1)}
+          />
+        </div>
+
+        <div id="editorial-facebook" className={styles.anchorTarget} hidden={activeView !== "channels"}>
+          <FacebookConnectionPanel
+            key={`facebook-${selectedTopicId}`}
+            topicId={selectedTopicId}
+            secret={secret}
+            disabled={isBusy}
+            selectionId={facebookSelection?.topicId === selectedTopicId ? facebookSelection.selectionId : undefined}
+            onSelectionHandled={clearFacebookSelection}
           />
         </div>
 

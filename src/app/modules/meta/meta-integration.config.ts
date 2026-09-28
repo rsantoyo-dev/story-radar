@@ -33,6 +33,30 @@ export function getMetaOAuthRedirectUri(): string {
   return `${requireRadarAppUrl()}/api/radar/meta/callback`;
 }
 
+/**
+ * The Facebook Login for Business product's own App ID/Secret — a separate
+ * product from the Instagram one above, registered on the same or a
+ * different Meta App, never sharing META_APP_ID/META_APP_SECRET's slot (see
+ * PUB-09).
+ */
+export function getDefaultMetaFacebookAppCredentials():
+  | { appId: string; appSecret: string }
+  | undefined {
+  const appId = process.env.META_FACEBOOK_APP_ID?.trim();
+  const appSecret = process.env.META_FACEBOOK_APP_SECRET?.trim();
+  if (!appId || !appSecret) return undefined;
+  return { appId, appSecret };
+}
+
+/** Optional: a Facebook Login for Business "Login Configuration" id, if the console requires one instead of a raw scope list. */
+export function getMetaFacebookLoginConfigId(): string | undefined {
+  return process.env.META_FACEBOOK_LOGIN_CONFIG_ID?.trim() || undefined;
+}
+
+export function getMetaFacebookOAuthRedirectUri(): string {
+  return `${requireRadarAppUrl()}/api/radar/meta/facebook/callback`;
+}
+
 /** Where the browser lands after the OAuth dialog completes or fails. */
 export function metaConnectReturnUrl(
   topicId: string,
@@ -42,6 +66,28 @@ export function metaConnectReturnUrl(
   url.searchParams.set("metaTopicId", topicId);
   if ("connected" in outcome) {
     url.searchParams.set("metaConnected", "1");
+  } else {
+    url.searchParams.set("metaError", outcome.error);
+  }
+  return url.toString();
+}
+
+/**
+ * Where the browser lands after the Facebook Login for Business dialog
+ * completes. A successful connect does not mean "done" the way Instagram's
+ * does — the editor still has to pick a Page — so this hands back an opaque
+ * selectionId (never a token) the dashboard uses to open the picker, instead
+ * of a bare "connected" flag.
+ */
+export function metaFacebookConnectReturnUrl(
+  topicId: string,
+  outcome: { selectionId: string } | { error: string },
+): string {
+  const url = new URL(requireRadarAppUrl());
+  url.searchParams.set("metaTopicId", topicId);
+  url.searchParams.set("metaChannel", "facebook");
+  if ("selectionId" in outcome) {
+    url.searchParams.set("metaFacebookSelectionId", outcome.selectionId);
   } else {
     url.searchParams.set("metaError", outcome.error);
   }
@@ -86,6 +132,7 @@ export function getMetaIntegrationHealth(request: Request): MetaIntegrationHealt
     configuredAppUrl: process.env.RADAR_APP_URL,
     requestOrigin: requestOriginFromHeaders(request.headers, request.url),
     sharedAppConfigured: getDefaultMetaAppCredentials() !== undefined,
+    facebookAppConfigured: getDefaultMetaFacebookAppCredentials() !== undefined,
     stateSecretConfigured: Boolean(process.env.META_STATE_SECRET?.trim()),
     tokenEncryptionKeyConfigured: Boolean(
       process.env.META_TOKEN_ENCRYPTION_KEY?.trim(),

@@ -1,5 +1,7 @@
 import { cloneElement, isValidElement, useId, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from "react";
 
+import type { CapabilityState, ChannelCapabilities } from "../modules/meta/channel-capabilities";
+import { ModalLayer } from "./modal-layer";
 import styles from "./primitives.generated.module.css";
 
 export type ButtonVariant = "primary" | "secondary" | "quiet" | "destructive";
@@ -99,4 +101,88 @@ export function Tabs({ label, items, className }: { label: string; items: readon
 
 export function ActionRow({ children, className }: { children: ReactNode; className?: string }) {
   return <div className={classes(styles.actionRow, className)}>{children}</div>;
+}
+
+/**
+ * Modal dialog chrome over ModalLayer's focus trap and portal: eyebrow +
+ * title header, scrollable body, optional footer. Backdrop clicks and Escape
+ * close it unless `canClose` is false (e.g. while a request is in flight).
+ */
+export function Dialog({ eyebrow, title, onClose, canClose = true, footer, children, className }: {
+  eyebrow?: string; title: string; onClose: () => void; canClose?: boolean; footer?: ReactNode; children: ReactNode; className?: string;
+}) {
+  const headingId = useId();
+  return <ModalLayer onClose={onClose} canClose={canClose}>
+    <div className={styles.dialogBackdrop} role="presentation" onMouseDown={(event) => {
+      if (event.target === event.currentTarget && canClose) onClose();
+    }}>
+      <section className={classes(styles.dialog, className)} role="dialog" aria-modal="true" aria-labelledby={headingId}>
+        <header className={styles.dialogHeader}>
+          <div>{eyebrow && <p className={styles.eyebrow}>{eyebrow}</p>}<h2 id={headingId}>{title}</h2></div>
+          <IconButton aria-label={`Close ${title}`} variant="quiet" size="compact" onClick={onClose} disabled={!canClose}>×</IconButton>
+        </header>
+        <div className={styles.dialogBody}>{children}</div>
+        {footer && <footer className={styles.dialogFooter}>{footer}</footer>}
+      </section>
+    </div>
+  </ModalLayer>;
+}
+
+const capabilityTones: Record<CapabilityState, StatusTone> = {
+  available: "success", "needs-attention": "warning", unavailable: "neutral", unknown: "neutral",
+};
+const capabilityLabels: Record<CapabilityState, string> = {
+  available: "available", "needs-attention": "needs attention", unavailable: "not available", unknown: "not checked",
+};
+
+/**
+ * One publishing channel (a platform connection) at a glance: who it is
+ * connected as, the four capability states, details, and its next actions.
+ */
+export function ChannelCard({ platform, account, capabilities, details, actions, children, className }: {
+  platform: string;
+  account?: string;
+  capabilities?: ChannelCapabilities;
+  details?: readonly { label: string; value: ReactNode }[];
+  actions?: ReactNode;
+  children?: ReactNode;
+  className?: string;
+}) {
+  return <article className={classes(styles.channelCard, className)}>
+    <header className={styles.channelCardHeader}>
+      <div><h3>{platform}</h3>{account && <p>{account}</p>}</div>
+      <StatusBadge tone={!capabilities ? "neutral" : capabilities.connected ? "success" : "neutral"}>
+        {!capabilities ? "Checking…" : capabilities.connected ? "Connected" : "Not connected"}
+      </StatusBadge>
+    </header>
+    {capabilities && <ActionRow>
+      {([["Publish", capabilities.canPublish], ["Sync", capabilities.canSync], ["Metrics", capabilities.metricsAvailable]] as const).map(([label, state]) => (
+        <StatusBadge key={label} tone={capabilityTones[state]}>{label}: {capabilityLabels[state]}</StatusBadge>
+      ))}
+    </ActionRow>}
+    {details && details.length > 0 && <dl className={styles.channelCardDetails}>
+      {details.map((detail) => <div key={detail.label}><dt>{detail.label}</dt><dd>{detail.value}</dd></div>)}
+    </dl>}
+    {children}
+    {actions && <ActionRow>{actions}</ActionRow>}
+  </article>;
+}
+
+/** A single-choice list of rich options (radio semantics), e.g. picking one account or Page. */
+export function ChoiceList<T extends string>({ legend, name, options, value, onChange, disabled, className }: {
+  legend: string;
+  name: string;
+  options: readonly { value: T; label: string; description?: ReactNode }[];
+  value: T | undefined;
+  onChange: (value: T) => void;
+  disabled?: boolean;
+  className?: string;
+}) {
+  return <fieldset className={classes(styles.choiceList, className)}>
+    <legend className={styles.eyebrow}>{legend}</legend>
+    {options.map((option, index) => <label key={option.value} className={styles.choice}>
+      <input type="radio" name={name} value={option.value} checked={value === option.value} onChange={() => onChange(option.value)} disabled={disabled} data-initial-focus={index === 0 ? "" : undefined} />
+      <span><strong>{option.label}</strong>{option.description && <small>{option.description}</small>}</span>
+    </label>)}
+  </fieldset>;
 }
