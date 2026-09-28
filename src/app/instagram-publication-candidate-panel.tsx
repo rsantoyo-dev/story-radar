@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import type { PublicationCandidate } from "./modules/meta/instagram-publication-candidate";
 import type { FrozenPackage } from "./modules/meta/freeze-publication-package.core";
@@ -38,6 +39,9 @@ export function InstagramPublicationCandidatePanel({ topicId, draftId, batchId, 
   const [packageBusy, setPackageBusy] = useState(false);
   const [packageError, setPackageError] = useState("");
   const [job, setJob] = useState<PublicationJobView>();
+  const [jobBusy, setJobBusy] = useState(false);
+  const [confirmPackageId, setConfirmPackageId] = useState("");
+  const publishing = useRef(false);
   const [jobPackageId, setJobPackageId] = useState("");
   const [jobError, setJobError] = useState("");
   const request = useRef<AbortController | null>(null);
@@ -148,6 +152,17 @@ export function InstagramPublicationCandidatePanel({ topicId, draftId, batchId, 
   }
 
   async function publish(packageId: string, retryJobId?: string) {
+    if (publishing.current || jobActive || packageBusy) return;
+    if (!retryJobId) {
+      const selectedPackage = packages.find((item) => item.id === packageId);
+      if (!selectedPackage || selectedPackage.status !== "frozen" || selectedPackage.publishingAccessPending || Date.parse(selectedPackage.expiresAt) <= Date.now()) {
+        setConfirmPackageId("");
+        setJobError("This publication review is no longer ready. Check readiness and prepare a new review.");
+        return;
+      }
+    }
+    publishing.current = true;
+    setJobBusy(true);
     setJobError(""); setJobPackageId(packageId);
     try {
       const response = await fetch(jobUrl, {
@@ -156,9 +171,10 @@ export function InstagramPublicationCandidatePanel({ topicId, draftId, batchId, 
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "Could not start publishing");
       setJob(body.job);
+      setConfirmPackageId("");
     } catch (err) {
       setJobError(err instanceof Error ? err.message : "Could not start publishing");
-    }
+    } finally { publishing.current = false; setJobBusy(false); }
   }
 
   // Poll the job while it is running; the effect only mounts a timer while a
@@ -185,9 +201,9 @@ export function InstagramPublicationCandidatePanel({ topicId, draftId, batchId, 
   }, [jobId, jobStatus, draftId, topicId, secret]);
 
   return <section className={styles.publicationCandidate} aria-label="Instagram publication readiness">
-    <h4>Instagram publication</h4>
-    <p>Validate the saved script and selected images against their approvals, evidence, usage permissions and destination.</p>
-    <button type="button" className={styles.secondaryButton} disabled={disabled || busy} onClick={validate}>{busy ? "Validating approved files…" : "Validate publication candidate"}</button>
+    <h4>Review Instagram publication</h4>
+    <p>Check the saved script, selected visuals, permissions, and destination. Preparing the review does not publish.</p>
+    <button type="button" className={styles.secondaryButton} disabled={disabled || busy} onClick={validate}>{busy ? "Checking publication readiness…" : "Check publication readiness"}</button>
     {disabled ? <p>Finish editing and save the current version before validating.</p> : null}
     {error ? <p role="alert">{error}</p> : null}
     {result && !disabled ? <div aria-live="polite">
@@ -214,7 +230,7 @@ export function InstagramPublicationCandidatePanel({ topicId, draftId, batchId, 
         const canFreeze = result.state === "ready" || (result.state === "candidate" && onlyAccessBlockers);
         return canFreeze ? <>
           <button type="button" className={styles.secondaryButton} disabled={packageBusy} onClick={freeze}>
-            {packageBusy ? "Freezing approved files…" : "Freeze publication package"}
+            {packageBusy ? "Preparing exact review…" : "Prepare exact publication review"}
           </button>
           {result.state !== "ready" ? <p><small>The approved set is complete, but publishing access is still pending. You can prepare the package now; it cannot be published until access is verified.</small></p> : null}
         </> : null;
@@ -224,31 +240,42 @@ export function InstagramPublicationCandidatePanel({ topicId, draftId, batchId, 
 
     {packageError ? <p role="alert">{packageError}</p> : null}
     {!disabled && packages.length > 0 ? <div className={styles.publicationPackage}>
-      <strong>Frozen packages</strong>
-      <p>Freezing prepares the exact caption and re-encoded images for delivery to Instagram. It does not publish or schedule.</p>
+      <strong>Prepared publication reviews</strong>
+      <p>Review the exact account, caption, and ordered media. Preparation does not publish or schedule.</p>
       {packages.map((pkg) => <article key={pkg.id} className={styles.publicationPackageEntry}>
         <p>
-          <strong>{pkg.status === "frozen" ? "Frozen" : pkg.status === "stale" ? "Stale — the approved set changed" : "Consumed"}</strong>
-          {" · "}{pkg.mediaType}{" · "}<code>{pkg.packageHash.slice(0, 12)}</code>
-          {" · expires "}{new Date(pkg.expiresAt).toLocaleString()}
+          <strong>{pkg.status === "frozen" ? "Ready for final review" : pkg.status === "stale" ? "Stale — the approved set changed" : job?.packageId === pkg.id && job.status === "published" ? "Published" : "Publication attempt recorded"}</strong>
+          {" · "}{pkg.mediaType === "carousel" ? "Carousel" : "Single image"}
+          {pkg.draftVersion ? ` · Script v${pkg.draftVersion}` : ""}
         </p>
-        {pkg.publishingAccessPending ? <p><small>Publishing access was not verified when this was frozen — it will be re-checked before publishing.</small></p> : null}
+        <p>Account: <strong>{pkg.destination.igUsername ? `@${pkg.destination.igUsername}` : pkg.destination.igUserId ?? "Unavailable"}</strong> · Review expires {new Date(pkg.expiresAt).toLocaleString()} (local time)</p>
+        {pkg.publishingAccessPending ? <p><small>Publishing access was not verified when this review was prepared. Verify access in Channels before publishing.</small></p> : null}
         <p className={styles.publicationCaption}>{pkg.caption}</p>
         {pkg.hashtags.length ? <p>{pkg.hashtags.join(" ")}</p> : null}
-        <ol>{pkg.slides.map((slide) => <li key={slide.unitOrder} className={styles.publicationPackageSlide}>
-          Image {slide.unitOrder} · v{slide.assetVersion} · {slide.width}×{slide.height} · {(slide.byteSize / 1024).toFixed(0)} KB · file <code>{slide.sha256.slice(0, 10)}</code>
-          {" · "}<a href={slide.deliveryUrl} target="_blank" rel="noreferrer">delivery file</a>
+        <ol className={styles.publicationPreviewList}>{pkg.slides.map((slide) => <li key={slide.unitOrder} className={styles.publicationPackageSlide}>
+          <Image unoptimized src={slide.deliveryUrl} width={108} height={135} alt={`Publication image ${slide.unitOrder} of ${pkg.slides.length}`} />
+          <span>Image {slide.unitOrder} · version {slide.assetVersion}</span>
         </li>)}</ol>
-        <details><summary>Transforms applied</summary>
-          <ul>{pkg.slides.map((slide) => <li key={slide.unitOrder}>Image {slide.unitOrder}: {slide.transform}</li>)}</ul>
+        <details><summary>Technical delivery details</summary>
+          <p>Package hash: <code>{pkg.packageHash}</code></p>
+          <ul>{pkg.slides.map((slide) => <li key={slide.unitOrder}>Image {slide.unitOrder}: {slide.width}×{slide.height} · {(slide.byteSize / 1024).toFixed(0)} KB · SHA-256 <code>{slide.sha256}</code> · {slide.transform} · <a href={slide.deliveryUrl} target="_blank" rel="noreferrer">delivery file</a></li>)}</ul>
         </details>
         <div className={styles.publicationPackageActions}>
-          {pkg.status === "frozen" && !pkg.publishingAccessPending ? <button type="button" className={styles.secondaryButton} disabled={jobActive} onClick={() => publish(pkg.id)}>
-            {jobActive && jobPackageId === pkg.id ? "Publishing…" : "Publish now"}
+          {pkg.status === "frozen" && !pkg.publishingAccessPending ? <button type="button" className={styles.secondaryButton} disabled={jobActive || jobBusy || Date.parse(pkg.expiresAt) <= Date.now()} onClick={() => setConfirmPackageId(pkg.id)}>
+            {jobActive && jobPackageId === pkg.id ? "Publishing…" : "Review and publish"}
           </button> : null}
+          {pkg.status === "frozen" && Date.parse(pkg.expiresAt) <= Date.now() ? <small>This review expired. Check readiness and prepare a new review.</small> : null}
           {pkg.status === "frozen" && pkg.publishingAccessPending ? <small>Verify publishing access before this can be published.</small> : null}
-          {pkg.status !== "consumed" ? <button type="button" className={styles.secondaryButton} disabled={packageBusy || (jobActive && jobPackageId === pkg.id)} onClick={() => discard(pkg.id)}>Discard package</button> : null}
+          {pkg.status !== "consumed" ? <button type="button" className={styles.secondaryButton} disabled={packageBusy || jobBusy || (jobActive && jobPackageId === pkg.id)} onClick={() => discard(pkg.id)}>Discard package</button> : null}
         </div>
+        {confirmPackageId === pkg.id && pkg.status === "frozen" && !pkg.publishingAccessPending && Date.parse(pkg.expiresAt) > Date.now() ? <div className={styles.publicationConfirm} role="group" aria-label="Confirm Instagram publication">
+          <strong>Publish this exact review to {pkg.destination.igUsername ? `@${pkg.destination.igUsername}` : pkg.destination.igUserId} now?</strong>
+          <p>This sends {pkg.slides.length} {pkg.slides.length === 1 ? "image" : "images"} and the caption above. Scheduling is not enabled.</p>
+          <div className={styles.publicationPackageActions}>
+            <button type="button" className={styles.primaryButton} disabled={jobBusy || jobActive || packageBusy} onClick={() => void publish(pkg.id)}>{jobBusy ? "Starting publication…" : "Confirm publish now"}</button>
+            <button type="button" className={styles.secondaryButton} disabled={jobBusy} onClick={() => setConfirmPackageId("")}>Keep reviewing</button>
+          </div>
+        </div> : null}
       </article>)}
       {jobError ? <p role="alert">{jobError}</p> : null}
       {job ? <div className={styles.publicationJob} aria-live="polite">
@@ -256,7 +283,7 @@ export function InstagramPublicationCandidatePanel({ topicId, draftId, batchId, 
         {job.status === "pending-confirmation" ? null : job.lastError ? <p><small>{job.lastError}</small></p> : null}
         {job.status === "published" && job.permalink ? <p><a href={job.permalink} target="_blank" rel="noreferrer">View the published post</a></p> : null}
         {job.status === "published" && !job.permalink ? <p><small>Published and recorded. The permalink is not available yet.</small></p> : null}
-        {job.canRetry ? <button type="button" className={styles.secondaryButton} disabled={!jobPackageId} onClick={() => publish(jobPackageId, job.id)}>{job.status === "suspended" ? "Revalidate and retry publishing" : "Retry publishing"}</button> : null}
+        {job.canRetry ? <button type="button" className={styles.secondaryButton} disabled={!jobPackageId || jobBusy || packageBusy} onClick={() => void publish(jobPackageId, job.id)}>{jobBusy ? "Starting retry…" : job.status === "suspended" ? "Revalidate and retry publishing" : "Retry publishing"}</button> : null}
         {job.status === "suspended" && !job.canRetry && job.failureKind !== "uncertain" ? <p><small>Review the recorded reason before creating another publication order.</small></p> : null}
         <p><small>A finished container is not a confirmed publication. A carousel posts as one.</small></p>
       </div> : null}

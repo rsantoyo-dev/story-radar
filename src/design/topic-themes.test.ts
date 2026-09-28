@@ -5,6 +5,7 @@ import { contrastRatio, hexToOklch } from "./color/oklch";
 import {
   deriveBrandUiPalette,
   getTopicTheme,
+  topicThemeStyle,
   type BrandUiPalette,
 } from "./topic-themes";
 
@@ -30,6 +31,13 @@ const chrome = {
   textColor: "#FAF5E6",
   accentColor: "#E8A83E",
 };
+
+test("uses the Topic palette when a creative profile is unavailable", () => {
+  const fallback = getTopicTheme("signal-blue").palette;
+  const style = topicThemeStyle("signal-blue");
+  assert.equal(style["--uxdsl__palette__primary-main"], fallback.primary.main);
+  assert.equal(style["--uxdsl__palette__dark-main"], fallback.dark.main);
+});
 
 function assertUsable(palette: BrandUiPalette) {
   for (const role of ROLES) {

@@ -41,31 +41,38 @@ export function StoryPhotosPanel(scope: Scope) {
   const { photos, error, refresh } = useStoryPhotos(scope);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [messageIsError, setMessageIsError] = useState(false);
   async function upload(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
-    setBusy(true); setMessage("");
+    const file = new FormData(form).get("image");
+    if (!(file instanceof File) || !["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 15 * 1024 * 1024 || file.size === 0) {
+      setMessageIsError(true);
+      setMessage("Choose a JPG, PNG, or WebP photo under 15 MB.");
+      return;
+    }
+    setBusy(true); setMessage(""); setMessageIsError(false);
     try {
       const response = await fetch(photoUrl(scope), { method: "POST", headers: { Authorization: `Bearer ${scope.secret.trim()}` }, body: new FormData(form) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Upload failed");
       form.reset(); refresh(); setMessage("Photo saved. Select it on the relevant draft slides before generating images.");
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Upload failed"); }
+    } catch (error) { setMessageIsError(true); setMessage(error instanceof Error ? error.message : "Upload failed"); }
     finally { setBusy(false); }
   }
   async function revoke(id: string) {
-    setBusy(true); setMessage("");
+    setBusy(true); setMessage(""); setMessageIsError(false);
     try {
       const response = await fetch(photoUrl(scope, id), { method: "DELETE", headers: { Authorization: `Bearer ${scope.secret.trim()}` } });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Could not remove photo");
       refresh();
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Could not remove photo"); }
+    } catch (error) { setMessageIsError(true); setMessage(error instanceof Error ? error.message : "Could not remove photo"); }
     finally { setBusy(false); }
   }
   return <section className={styles.storyMaterials}>
     <h3>Story reference photos</h3>
-    <p>Attach photos for this story. Choose their use on each draft slide before image generation.</p>
+    <p>Story evidence photos stay with this Story. They are separate from Topic brand references and fictional characters. Choose their use on each draft slide before image generation.</p>
     {error ? <p role="alert">{error}</p> : null}
     <div className={styles.storyPhotoGrid}>{photos.map(photo => <article className={styles.storyPhotoCard} key={photo.id}>
       <PhotoPreview scope={scope} photo={photo} />
@@ -80,7 +87,7 @@ export function StoryPhotosPanel(scope: Scope) {
       <label><input name="providerTransmissionAllowed" type="checkbox" value="true" required disabled={busy} /> I have permission to use this photo and send it to the image-generation provider.</label>
       <button type="submit" disabled={busy}>{busy ? "Saving…" : "Add photo"}</button>
     </form>
-    {message ? <p role="status">{message}</p> : null}
+    {message ? <p role={messageIsError ? "alert" : "status"}>{message}</p> : null}
   </section>;
 }
 export function StoryPhotoPicker({ scope, photos, selected, onChange }: {
@@ -93,7 +100,7 @@ export function StoryPhotoPicker({ scope, photos, selected, onChange }: {
       const reference = selected.find(ref => ref.id === photo.id);
       return <article className={styles.storyPhotoCard} key={photo.id}>
         <PhotoPreview scope={scope} photo={photo} />
-        <label><input type="checkbox" checked={Boolean(reference)} disabled={!reference && (!photo.active || !photo.providerTransmissionAllowed || selected.length >= 3)} onChange={event => onChange(event.target.checked ? [...selected, { id: photo.id, purpose: "subject" }] : selected.filter(ref => ref.id !== photo.id))} /> {photo.name}{!photo.active ? " · removed" : ""}</label>
+        <label><input type="checkbox" checked={Boolean(reference)} disabled={!reference && (!photo.active || !photo.providerTransmissionAllowed || selected.length >= 3)} onChange={event => onChange(event.target.checked ? [...selected, { id: photo.id, purpose: "subject" }] : selected.filter(ref => ref.id !== photo.id))} /> {photo.name}{reference ? " · selected" : !photo.active ? " · removed" : !photo.providerTransmissionAllowed ? " · provider permission required" : selected.length >= 3 ? " · limit of 3 reached" : ""}</label>
         {reference ? <label>Use as<select value={reference.purpose} onChange={event => onChange(selected.map(ref => ref.id === photo.id ? { ...ref, purpose: event.target.value as StoryReferenceSelection["purpose"] } : ref))}>{STORY_REFERENCE_PURPOSES.map(purpose => <option value={purpose} key={purpose}>{purpose}</option>)}</select></label> : null}
       </article>;
     })}</div>

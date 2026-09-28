@@ -62,6 +62,8 @@ import {
 } from "./modules/stories/creative-content.types";
 import { resolveEffectiveVisualFidelity } from "./modules/stories/creative-visual-fidelity";
 import { ListField, TextAreaField, TextField } from "./creative-profile-fields";
+import { Button } from "./ui/primitives";
+import type { StoryContentResponse } from "./radar-dashboard";
 import styles from "./creative-draft-workspace.generated.module.css";
 
 type WorkspaceProps = {
@@ -78,6 +80,8 @@ type WorkspaceProps = {
   mode?: "dialog" | "page";
   initialTab?: WorkspaceTab;
   onOpenContent?: () => void;
+  contentSummary?: StoryContentResponse;
+  onDraftDirtyChange?: (dirty: boolean) => void;
 };
 
 export type WorkspaceTab = "content" | "focus" | "script" | "visuals" | "publication";
@@ -195,6 +199,7 @@ export function CreativeDraftWorkspace({
   instagramRefreshToken, initialEditorialRunId, initialDraftId,
   initialPreparationRunId,
   mode = "dialog", initialTab = "focus", onOpenContent,
+  contentSummary, onDraftDirtyChange,
 }: WorkspaceProps) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<WorkspaceTab>(initialTab);
@@ -219,6 +224,7 @@ export function CreativeDraftWorkspace({
   const [editableDraft, setEditableDraft] = useState<EditableCreativeDraft>();
   const [activeDraftId, setActiveDraftId] = useState<string>();
   const [dirty, setDirty] = useState(false);
+  const [selectedUnitOrder, setSelectedUnitOrder] = useState(1);
   const [busy, setBusy] = useState<BusyAction>();
   const [error, setError] = useState<string>();
   const draftSectionRef=useRef<HTMLElement>(null);
@@ -234,6 +240,7 @@ export function CreativeDraftWorkspace({
   const [companionApproach, setCompanionApproach] =
     useState<CreativeCompanionApproach>("expectation-vs-reality");
   const [reserveInteractiveSpace, setReserveInteractiveSpace] = useState(true);
+  useEffect(() => { onDraftDirtyChange?.(dirty); }, [dirty, onDraftDirtyChange]);
   const requestedImageQuality =
     assetQualityRequest && assetQualityRequest.draftId === activeDraftId
       ? assetQualityRequest.quality
@@ -241,6 +248,7 @@ export function CreativeDraftWorkspace({
   const activeDraft = workspace?.drafts.find(
     (draft) => draft.id === activeDraftId,
   );
+  const selectedPreviewOrder = Math.min(selectedUnitOrder, activeDraft?.units.length ?? 1);
   const geographicSlides = activeDraft?.units.filter(requiresVerifiedGeography) ?? [];
   const requiresPlaceComposition = geographicSlides.length > 0 || (activeDraft?.visualFidelityOverride?.mode ?? workspace?.profile.visualFidelityMode) === "photo-required";
   const primaryDrafts = workspace?.drafts.filter((draft) => !draft.companion) ?? [];
@@ -454,6 +462,9 @@ export function CreativeDraftWorkspace({
   const currentAssetBatch = assetBatchIsStaleForCurrentDraft
     ? undefined
     : assetBatch;
+  const selectedAssetOrder = currentAssetBatch?.assets.some((asset) => asset.unitOrder === selectedUnitOrder)
+    ? selectedUnitOrder
+    : currentAssetBatch?.assets[0]?.unitOrder;
   const hasMismatchedAssetBatch = Boolean(
     returnedAssetBatch &&
       requestedImageQuality &&
@@ -1670,8 +1681,21 @@ export function CreativeDraftWorkspace({
               <h3>Content and evidence</h3>
               <p>{workspace.story.hasContent ? "Content is ready to review. Saved revisions remain linked to their sources." : "This story needs content before you can generate a focus or script."}</p>
               <span>{workspace.story.contentStatus === "missing" ? "Content pending" : `Status: ${workspace.story.contentStatus}`}</span>
+              {contentSummary ? <div className={styles.contentSummary}>
+                <strong>{contentSummary.editorial ? `Editorial working copy · revision ${contentSummary.editorial.revision}` : "Prepared source content"}</strong>
+                <h4>{contentSummary.title}</h4>
+                {contentSummary.text ? <details>
+                  <summary>Read current content</summary>
+                  <p>{contentSummary.text}</p>
+                </details> : <p>No readable content is available yet. Review the source or add an editorial working copy.</p>}
+                {contentSummary.editorial ? <details>
+                  <summary>Original source snapshot</summary>
+                  <strong>{contentSummary.editorial.original.title}</strong>
+                  <p>{contentSummary.editorial.original.text}</p>
+                </details> : null}
+              </div> : null}
               {onOpenContent ? <button type="button" className={styles.secondaryButton} onClick={onOpenContent}>Review and edit content</button> : null}
-              {workspace.story.url ? <a href={workspace.story.url} target="_blank" rel="noreferrer">Open original source ↗</a> : null}
+              {workspace.story.url && /^https?:\/\//i.test(workspace.story.url) ? <a href={workspace.story.url} target="_blank" rel="noreferrer">Open original source ↗</a> : null}
             </section>
 
             <div hidden={activeTab !== "publication"}><details><summary>Earlier standalone documentary publications</summary><CreativeDocumentaryPanel key={`${topicId}:${storyId}`} topicId={topicId} storyId={storyId} secret={secret} format={selectedFormat} disabled={Boolean(busy) || dirty} onLoaded={setPreparedPublication} /></details></div>
@@ -1824,9 +1848,9 @@ export function CreativeDraftWorkspace({
                     <strong>{workspace.brief ? "The brief is out of date" : "No creative brief yet"}</strong>
                     <p>{workspace.brief ? "Story content, profile settings, or editorial focus changed. Refresh before generating another draft." : "AI will use the source and your optional focus to recommend a meme or carousel."}</p>
                   </div>
-                  <button type="button" className={styles.primaryButton} disabled={Boolean(busy) || !workspace.story.hasContent} onClick={handleCreateBrief}>
+                  <Button variant="primary" disabled={Boolean(busy) || !workspace.story.hasContent} onClick={handleCreateBrief}>
                     {busy === "brief" ? "Creating brief…" : workspace.brief ? "Apply focus and refresh brief" : "Create creative brief"}
-                  </button>
+                  </Button>
                   {busy==="brief"?<p role="status">Preparing your brief. The draft controls will open when it is ready.</p>:null}
                   {error?<ErrorMessage message={error}/>:null}
                 </div>
@@ -1854,10 +1878,17 @@ export function CreativeDraftWorkspace({
                 </div>
 
                 {activeDraft ? <details className={styles.textPreview} open>
-                  <summary>Script preview · {activeDraft.units.length} {activeDraft.units.length === 1 ? "piece" : "pieces"}</summary>
-                  <div className={styles.textPreviewGrid}>{activeDraft.units.map((unit) => (
-                    <article key={`${activeDraft.id}:${unit.order}`}><span>{unit.order} / {activeDraft.units.length}</span><strong>{unit.headline}</strong>{unit.subheadline ? <p>{unit.subheadline}</p> : null}{unit.body ? <p>{unit.body}</p> : null}<small>Text preview · image pending</small></article>
-                  ))}</div>
+                  <summary>Script preview · {activeDraft.units.length} {activeDraft.units.length === 1 ? "piece" : "pieces"}{dirty ? " · unsaved edits" : ""}</summary>
+                  <div className={styles.textPreviewGrid}>{(editableDraft?.units ?? activeDraft.units).map((unit) => {
+                    const image = !dirty && currentAssetBatch?.draftVersion === activeDraft.version
+                      ? currentAssetBatch.assets.find((asset) => asset.unitOrder === unit.order && asset.imageUrl && asset.status !== "failed")
+                      : undefined;
+                    return <button type="button" className={`${styles.textPreviewPiece} ${selectedPreviewOrder === unit.order ? styles.textPreviewPieceSelected : ""}`} key={`${activeDraft.id}:${unit.order}`} onClick={() => setSelectedUnitOrder(unit.order)} aria-pressed={selectedPreviewOrder === unit.order} aria-label={`Select ${activeDraft.format === "meme" ? "frame" : "slide"} ${unit.order}: ${unit.headline}`}>
+                      {image?.imageUrl ? <span className={styles.textPreviewImage}><Image src={image.imageUrl} alt={`Generated slide ${unit.order}, version ${image.version}`} fill sizes="190px" unoptimized /></span> : null}
+                      <span>{unit.order} / {activeDraft.units.length}</span><strong>{unit.headline}</strong>{unit.subheadline ? <p>{unit.subheadline}</p> : null}{unit.body ? <p>{unit.body}</p> : null}
+                      <small>{image ? `Generated image · v${image.version}` : dirty ? "Current text · media preview after saving" : "Text preview · no current image"}</small>
+                    </button>;
+                  })}</div>
                 </details> : null}
 
                 <div className={styles.draftSetup}>
@@ -1871,7 +1902,7 @@ export function CreativeDraftWorkspace({
                 {activeDraft?.companion && companionParentDraft ? (
                   <div className={styles.historyCallout}>
                     <div>
-                      <strong>Companion Story</strong>
+                      <strong>Companion social Story</strong>
                       <p>
                         This 1080x1920 script uses only the facts cited by its approved parent draft.
                       </p>
@@ -1891,7 +1922,7 @@ export function CreativeDraftWorkspace({
                   <>
                     <div className={styles.historyCallout}>
                       <div>
-                        <strong>Viewing a saved study</strong>
+                        <strong>Viewing a historical draft</strong>
                         <p>
                           Its posting copy, question, hashtags, prompts, and
                           generated images remain available here. This saved
@@ -1985,6 +2016,8 @@ export function CreativeDraftWorkspace({
                     framingStrategy={workspace.brief.profileSnapshot.framingStrategy}
                     storyStructure={workspace.brief.profileSnapshot.storyStructure}
                     characterRoster={workspace.characterRoster}
+                    selectedUnitOrder={selectedPreviewOrder}
+                    onSelectUnit={setSelectedUnitOrder}
                     onChange={(next) => {
                       setEditableDraft(next);
                       setDirty(true);
@@ -2027,7 +2060,7 @@ export function CreativeDraftWorkspace({
                           ? "Resolve the deterministic editorial blockers shown below before approval and image generation."
                           : !dirty && activeDraftRequiresHumanReviewAcknowledgement
                             ? "Review the automated quality notes below. You can then explicitly confirm approval for this version."
-                          : "Editing and saving creates a new draft version. The earlier image batch remains in Saved studies."}</small>
+                          : "Editing and saving creates a new draft version. The earlier image batch remains in draft history."}</small>
                     </div>
                     <div>
                       {activeDraft.status !== "approved" && !activeDraft.companion ? <button type="button" className={styles.primaryButton}
@@ -2125,7 +2158,7 @@ export function CreativeDraftWorkspace({
                 <div className={styles.sectionHeading}>
                   <div>
                     <span>After approval</span>
-                    <h3>Create companion Story</h3>
+                    <h3>Create companion social Story</h3>
                   </div>
                 </div>
                 <div className={styles.generateDraftCard}>
@@ -2225,7 +2258,7 @@ export function CreativeDraftWorkspace({
                 ) : !currentAssetBatch ? (
                   viewingHistoricalDraft ? (
                     <div className={styles.warning}>
-                      This saved study does not have a generated image batch.
+                      This historical draft does not have a generated image batch.
                     </div>
                   ) : geographicSlides.length > 0 ? (
                     <div className={styles.historyCallout}>
@@ -2269,7 +2302,7 @@ export function CreativeDraftWorkspace({
                         {assetBatchIsStaleForCurrentDraft ? (
                           <p className={styles.assetVariantHint}>
                             This script changed after its earlier images were
-                            generated. Those images remain in Saved studies;
+                            generated. Those images remain in draft history;
                             this button creates a separate batch for the
                             current approved version.
                           </p>
@@ -2386,8 +2419,15 @@ export function CreativeDraftWorkspace({
                           {currentAssetBatch.model} · {imageQualityLabel(currentAssetBatch.imageQuality ?? "high")} · {currentAssetBatch.width}×{currentAssetBatch.height}
                         </small>
                       </div>
+                      <div className={styles.assetSelection} role="group" aria-label="Choose an image to review">
+                        {currentAssetBatch.assets.map((asset) => <button key={asset.id} type="button" aria-pressed={selectedAssetOrder === asset.unitOrder} onClick={() => setSelectedUnitOrder(asset.unitOrder)} aria-label={`Review ${activeDraft.format === "meme" ? "frame" : `slide ${asset.unitOrder}`}, image version ${asset.version}, ${asset.status}`}>
+                          {asset.imageUrl ? <span className={styles.assetSelectionImage}><Image src={asset.imageUrl} alt="" fill sizes="80px" unoptimized /></span> : <span className={styles.assetSelectionPlaceholder} aria-hidden="true">{asset.unitOrder}</span>}
+                          <span>{activeDraft.format === "meme" ? "Frame" : `Slide ${asset.unitOrder}`} · v{asset.version}</span>
+                          <small>{asset.status === "generating" ? "Generating" : capitalize(asset.status)}</small>
+                        </button>)}
+                      </div>
                       <div className={styles.assetGrid}>
-                        {currentAssetBatch.assets.map((asset) => (
+                        {currentAssetBatch.assets.map((asset) => <div key={asset.id} hidden={selectedAssetOrder !== asset.unitOrder}>
                           <CreativeAssetCard
                             key={asset.id}
                             asset={asset}
@@ -2410,6 +2450,7 @@ export function CreativeDraftWorkspace({
                             topicId={topicId}
                             secret={secret}
                             savedRequest={editRequestByUnit.get(asset.unitOrder)}
+                            onOpenScriptUnit={() => { setSelectedUnitOrder(asset.unitOrder); selectTab("script"); }}
                             savedRequestReadOnly={
                               viewingHistoricalDraft ||
                               activeDraft.status !== "approved" ||
@@ -2423,7 +2464,7 @@ export function CreativeDraftWorkspace({
                             onDiscardEditRequest={handleDiscardEditRequest}
                             onApplyEditRequest={handleApplyEditRequest}
                           />
-                        ))}
+                        </div>)}
                       </div>
                     </div>
                   </>
@@ -2484,7 +2525,7 @@ function CreativeDraftHistory({
     <details className={styles.historyPanel}>
       <summary>
         <span>
-          <strong>Saved studies</strong>
+          <strong>Draft history</strong>
           <small>
             {drafts.length} earlier {drafts.length === 1 ? "draft" : "drafts"} for this story
           </small>
@@ -2544,7 +2585,7 @@ function HistoricalDraftDetails({
     <div className={styles.historicalDraftDetails}>
       <div className={styles.historicalDraftHeading}>
         <div>
-          <strong>Posting copy from this saved study</strong>
+          <strong>Posting copy from this historical draft</strong>
           <p>Select and copy any field below for publishing.</p>
         </div>
         <small>
@@ -2801,6 +2842,7 @@ function CreativeAssetCard({
   busyAction,
   readOnly = false,
   savedRequest,
+  onOpenScriptUnit,
   savedRequestReadOnly = false,
   onRegenerate,
   onApproval,
@@ -2821,6 +2863,7 @@ function CreativeAssetCard({
   busyAction?: string;
   readOnly?: boolean;
   savedRequest?: CreativeAssetEditRequest;
+  onOpenScriptUnit: () => void;
   savedRequestReadOnly?: boolean;
   onRegenerate: (assetId: string, prompt: string, edit?: BrandImageEditOptions) => void;
   onApproval: (assetId: string, action: "approve" | "unapprove") => void;
@@ -2829,6 +2872,7 @@ function CreativeAssetCard({
   onApplyEditRequest: (unitOrder: number, payload?: SaveEditRequestPayload) => void;
 }) {
   const [prompt, setPrompt] = useState(asset.prompt);
+  const [zoomActual, setZoomActual] = useState(false);
   const isPending = asset.status === "queued" || asset.status === "generating";
   const isBusy = busyAction?.endsWith(asset.id) ?? false;
   const label = format === "meme" ? "Meme" : `Slide ${asset.unitOrder}`;
@@ -2856,18 +2900,21 @@ function CreativeAssetCard({
 
       {asset.storyPhotoReferences?.length ? <p>Story photo inputs: {asset.storyPhotoReferences.map(ref => `${ref.name} (${ref.purpose})`).join(" · ")}</p> : null}
 
+      {asset.imageUrl ? <button type="button" className={styles.secondaryButton} aria-pressed={zoomActual} onClick={() => setZoomActual((current) => !current)}>
+        {zoomActual ? "Fit image to panel" : "Inspect image at actual size"}
+      </button> : null}
       <div
-        className={styles.assetPreview}
+        className={`${styles.assetPreview} ${zoomActual ? styles.assetPreviewActual : ""}`}
         style={{ aspectRatio: `${outputWidth} / ${outputHeight}` }}
       >
         {asset.imageUrl ? (
-          <Image
+          <span className={styles.assetPreviewCanvas} style={zoomActual ? { width: outputWidth, height: outputHeight } : undefined}><Image
             src={asset.imageUrl}
             alt={`Generated ${label.toLowerCase()} version ${asset.version}`}
             fill
             sizes="(max-width: 800px) 100vw, 480px"
             unoptimized
-          />
+          /></span>
         ) : isPending ? (
           <div className={styles.assetPlaceholder}>
             <span className={styles.assetSpinner} />
@@ -2897,7 +2944,7 @@ function CreativeAssetCard({
         {asset.unitSnapshot.placeVisual.discovery?.sources.map((source,index)=><p key={index}><a href={source.url} target="_blank" rel="noreferrer">{source.title}</a> · Research candidate</p>)}
         </div></details> : null}
       {asset.unitSnapshot.placeVisual?.representation === "typography" ? <p className={styles.assetTextWarning}>
-        I did not find a real or recent image{asset.unitSnapshot.placeVisual.place?.name ? ` of ${asset.unitSnapshot.placeVisual.place.name}` : " for this slide"}. If you have one, <a href={`#unit-photos-${asset.unitOrder}`}>please upload it</a> and recompose this image — otherwise a generic illustration is used, as shown here.
+        I did not find a real or recent image{asset.unitSnapshot.placeVisual.place?.name ? ` of ${asset.unitSnapshot.placeVisual.place.name}` : " for this slide"}. If you have one, <button type="button" className={styles.inlineLink} onClick={onOpenScriptUnit}>add it to this slide</button> and recompose this image — otherwise a generic illustration is used, as shown here.
       </p> : null}
       {asset.unitSnapshot.roadMapEvidence ? <div className={styles.historyCallout}><div>
         <strong>{asset.unitSnapshot.roadMapEvidence.sha256 ? "Verified road map" : "Map preparation"}</strong>
@@ -3134,6 +3181,8 @@ function DraftEditor({
   framingStrategy,
   storyStructure,
   characterRoster,
+  selectedUnitOrder,
+  onSelectUnit,
   onChange,
 }: {
   photoScope: { topicId: string; storyId: string; secret: string };
@@ -3150,6 +3199,8 @@ function DraftEditor({
   framingStrategy: CreativeProfile["framingStrategy"];
   storyStructure?: CreativeProfile["storyStructure"];
   characterRoster: CreativeCharacterRosterEntry[];
+  selectedUnitOrder: number;
+  onSelectUnit: (order: number) => void;
   onChange: (draft: EditableCreativeDraft) => void;
 }) {
   const storyPhotos = useStoryPhotos(photoScope);
@@ -3197,6 +3248,7 @@ function DraftEditor({
         format,
       ),
     });
+    onSelectUnit(destination + 1);
   }
 
   function addSlide() {
@@ -3249,6 +3301,7 @@ function DraftEditor({
         format,
       ),
     });
+    onSelectUnit(insertionIndex + 1);
   }
 
   function removeSlide(index: number) {
@@ -3283,6 +3336,7 @@ function DraftEditor({
         format,
       ),
     });
+    onSelectUnit(Math.min(index + 1, draft.units.length - 1));
   }
 
   return (
@@ -3410,6 +3464,12 @@ function DraftEditor({
         {(format === "carousel" || format === "sequence") ? <button type="button" onClick={addSlide} disabled={draft.units.length >= 8}>+ Add slide</button> : null}
       </div>
 
+      {draft.units.length > 1 ? <div className={styles.pieceSelector} role="group" aria-label="Choose a slide to edit">
+        {draft.units.map((unit, index) => <button type="button" key={unit.id ?? index} aria-pressed={selectedUnitOrder === index + 1} onClick={() => onSelectUnit(index + 1)}>
+          <span>Slide {index + 1}</span><strong>{unit.headline || "Untitled"}</strong>
+        </button>)}
+      </div> : null}
+
       {deterministicWarnings.length ? (
         <div className={styles.narrativeReview} role="status">
           <strong>Deterministic editorial review</strong>
@@ -3425,11 +3485,11 @@ function DraftEditor({
       ) : null}
 
       <div className={styles.units}>
-        {draft.units.map((unit, index) => (
+        {draft.units.map((unit, index) => (draft.units.length === 1 || index + 1 === Math.min(selectedUnitOrder, draft.units.length)) && (
           <article className={styles.unit} key={`${unit.id ?? "new"}-${index}`} id={`unit-photos-${unit.order}`}>
             <header>
               <div><span>{format === "meme" ? "Frame" : `Slide ${index + 1}`}</span><strong>{capitalize(unit.role.replaceAll("-", " "))}</strong></div>
-              {(format === "carousel" || format === "sequence") ? <div className={styles.unitActions}><button type="button" onClick={() => moveUnit(index, -1)} disabled={index === 0} aria-label="Move slide up">↑</button><button type="button" onClick={() => moveUnit(index, 1)} disabled={index === draft.units.length - 1} aria-label="Move slide down">↓</button><button type="button" onClick={() => removeSlide(index)} disabled={draft.units.length <= 3} aria-label="Remove slide">×</button></div> : null}
+              {(format === "carousel" || format === "sequence") ? <div className={styles.unitActions}><button type="button" onClick={() => moveUnit(index, -1)} disabled={index === 0} aria-label={`Move slide ${index + 1} earlier`}>↑</button><button type="button" onClick={() => moveUnit(index, 1)} disabled={index === draft.units.length - 1} aria-label={`Move slide ${index + 1} later`}>↓</button><button type="button" onClick={() => removeSlide(index)} disabled={draft.units.length <= 3} aria-label={`Remove slide ${index + 1}`}>×</button></div> : null}
             </header>
             <div className={styles.fieldGrid}>
               <label className={styles.field}><span>Role</span><select value={unit.role} onChange={(event) => updateUnit(index, { ...unit, role: event.target.value as CreativeUnit["role"] })}><option value="cover">Cover</option><option value="content">Content</option><option value="conclusion">Conclusion</option><option value="call-to-action">Call to action</option></select></label>

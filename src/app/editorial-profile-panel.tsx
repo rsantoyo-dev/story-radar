@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import type {
   EditorialProfileWeights,
@@ -12,6 +12,8 @@ import {
   MAX_EDITORIAL_PROFILE_LIST_ITEM_LENGTH,
 } from "./modules/stories/editorial-profile.types";
 import styles from "./editorial-profile-panel.generated.module.css";
+import { ActionRow, Button } from "./ui/primitives";
+import { useUnsavedBeforeUnload } from "./ui/use-unsaved-before-unload";
 
 type EditorialProfileDraft = UpdateTopicEditorialProfileInput;
 type SaveEditorialProfileResponse = TopicEditorialProfile & {
@@ -40,6 +42,10 @@ export function EditorialProfilePanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
+  const [invalidNumbers, setInvalidNumbers] = useState<Set<string>>(() => new Set());
+  const [editVersion, setEditVersion] = useState(0);
+  useUnsavedBeforeUnload(dirty);
+  const panelRef = useRef<HTMLElement>(null);
   const authenticated = secret.trim().length > 0;
   const weightTotal = useMemo(
     () => totalWeights(draft?.weights),
@@ -69,6 +75,8 @@ export function EditorialProfilePanel({
         setContentPillarsText(nextProfile.contentPillars.join("\n"));
         setExclusionsText(nextProfile.exclusions.join("\n"));
         setDirty(false);
+        setInvalidNumbers(new Set());
+        setEditVersion((current) => current + 1);
       })
       .catch((loadError) => {
         if (!controller.signal.aborted) {
@@ -95,15 +103,44 @@ export function EditorialProfilePanel({
     setNotice(undefined);
   }
 
+  function markNumberValidity(label: string, valid: boolean) {
+    setInvalidNumbers((current) => {
+      const next = new Set(current);
+      if (valid) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+  }
+
+  function discardChanges() {
+    if (!profile || busy) return;
+    setDraft(toDraft(profile));
+    setContentPillarsText(profile.contentPillars.join("\n"));
+    setExclusionsText(profile.exclusions.join("\n"));
+    setInvalidNumbers(new Set());
+    setEditVersion((current) => current + 1);
+    setDirty(false);
+    setError(undefined);
+    setNotice("Unsaved editorial profile changes discarded.");
+  }
+
   async function save() {
     if (!draft || !authenticated || disabled || busy) return;
 
+    if (invalidNumbers.size > 0) {
+      setError("Correct the highlighted number before saving.");
+      panelRef.current?.querySelector<HTMLInputElement>('[aria-invalid="true"]')?.focus();
+      return;
+    }
+
     if (weightTotal !== 100) {
       setError("The five priority weights must add up to 100.");
+      panelRef.current?.querySelector<HTMLInputElement>("[data-weight-input]")?.focus();
       return;
     }
     if (listValidationError) {
       setError(listValidationError);
+      panelRef.current?.querySelector<HTMLTextAreaElement>(listValidationError.startsWith("Content pillars") ? '[data-profile-list="pillars"]' : '[data-profile-list="exclusions"]')?.focus();
       return;
     }
 
@@ -128,6 +165,7 @@ export function EditorialProfilePanel({
       setContentPillarsText(saved.contentPillars.join("\n"));
       setExclusionsText(saved.exclusions.join("\n"));
       setDirty(false);
+      setEditVersion((current) => current + 1);
       onProfileSaved?.(saved, reactivatedStories);
       setNotice(
         reactivatedStories > 0
@@ -173,7 +211,7 @@ export function EditorialProfilePanel({
   }
 
   return (
-    <section className={styles.panel}>
+    <section ref={panelRef} className={styles.panel}>
       <div className={styles.heading}>
         <div>
           <p>Editorial AI</p>
@@ -202,6 +240,7 @@ export function EditorialProfilePanel({
         <label>
           <span>Editorial mission</span>
           <textarea
+            data-profile-list="pillars"
             value={draft.mission}
             maxLength={1_000}
             onChange={(event) => updateDraft({ mission: event.target.value })}
@@ -216,6 +255,7 @@ export function EditorialProfilePanel({
         <label>
           <span>Content pillars</span>
           <textarea
+            data-profile-list="exclusions"
             value={contentPillarsText}
             onChange={(event) => {
               setContentPillarsText(event.target.value);
@@ -249,7 +289,7 @@ export function EditorialProfilePanel({
         </label>
       </div>
 
-      <div className={styles.policyGrid}>
+      <div key={`policy-${editVersion}`} className={styles.policyGrid}>
         <NumberField
           label="News window"
           value={draft.freshness.newsMaxAgeHours}
@@ -257,6 +297,7 @@ export function EditorialProfilePanel({
           min={1}
           max={8_760}
           disabled={disabled || busy}
+          onValidityChange={markNumberValidity}
           onChange={(value) =>
             updateDraft({
               freshness: { ...draft.freshness, newsMaxAgeHours: value },
@@ -270,6 +311,7 @@ export function EditorialProfilePanel({
           min={1}
           max={8_760}
           disabled={disabled || busy}
+          onValidityChange={markNumberValidity}
           onChange={(value) =>
             updateDraft({
               freshness: { ...draft.freshness, researchMaxAgeHours: value },
@@ -283,6 +325,7 @@ export function EditorialProfilePanel({
           min={0}
           max={100}
           disabled={disabled || busy}
+          onValidityChange={markNumberValidity}
           onChange={(value) => updateDraft({ localCandidateMinScore: value })}
         />
         <NumberField
@@ -292,6 +335,7 @@ export function EditorialProfilePanel({
           min={0}
           max={100}
           disabled={disabled || busy}
+          onValidityChange={markNumberValidity}
           onChange={(value) => updateDraft({ minResearchScore: value })}
         />
       </div>
@@ -315,17 +359,19 @@ export function EditorialProfilePanel({
           {weightTotal} / 100
         </strong>
       </div>
-      <div className={styles.weightsGrid}>
-        <NumberField label="Topic fit" value={draft.weights.topicFit} min={0} max={100} disabled={disabled || busy} onChange={(value) => updateWeights({ topicFit: value })} />
-        <NumberField label="Evidence & depth" value={draft.weights.evidenceDepth} min={0} max={100} disabled={disabled || busy} onChange={(value) => updateWeights({ evidenceDepth: value })} />
-        <NumberField label="Novelty & trend" value={draft.weights.noveltyTimeliness} min={0} max={100} disabled={disabled || busy} onChange={(value) => updateWeights({ noveltyTimeliness: value })} />
-        <NumberField label="Audience value" value={draft.weights.audienceValue} min={0} max={100} disabled={disabled || busy} onChange={(value) => updateWeights({ audienceValue: value })} />
-        <NumberField label="Social potential" value={draft.weights.socialPotential} min={0} max={100} disabled={disabled || busy} onChange={(value) => updateWeights({ socialPotential: value })} />
+      <div key={`weights-${editVersion}`} className={styles.weightsGrid}>
+        <NumberField label="Topic fit" value={draft.weights.topicFit} min={0} max={100} disabled={disabled || busy} onValidityChange={markNumberValidity} onChange={(value) => updateWeights({ topicFit: value })} />
+        <NumberField label="Evidence & depth" value={draft.weights.evidenceDepth} min={0} max={100} disabled={disabled || busy} onValidityChange={markNumberValidity} onChange={(value) => updateWeights({ evidenceDepth: value })} />
+        <NumberField label="Novelty & trend" value={draft.weights.noveltyTimeliness} min={0} max={100} disabled={disabled || busy} onValidityChange={markNumberValidity} onChange={(value) => updateWeights({ noveltyTimeliness: value })} />
+        <NumberField label="Audience value" value={draft.weights.audienceValue} min={0} max={100} disabled={disabled || busy} onValidityChange={markNumberValidity} onChange={(value) => updateWeights({ audienceValue: value })} />
+        <NumberField label="Social potential" value={draft.weights.socialPotential} min={0} max={100} disabled={disabled || busy} onValidityChange={markNumberValidity} onChange={(value) => updateWeights({ socialPotential: value })} />
       </div>
 
       <div className={styles.footer}>
         <small>
-          {listValidationError
+          {invalidNumbers.size > 0
+            ? "Correct the highlighted number before saving."
+            : listValidationError
             ? listValidationError
             : disabled
               ? "Finish the current dashboard operation before saving this profile."
@@ -337,20 +383,12 @@ export function EditorialProfilePanel({
                     : `Last saved ${formatDate(profile.updatedAt)}.`
                   : "Changes are ready to save."}
         </small>
-        <button
-          type="button"
-          onClick={save}
-          disabled={
-            !dirty ||
-            disabled ||
-            busy ||
-            weightTotal !== 100 ||
-            Boolean(listValidationError)
-          }
-          title={listValidationError}
-        >
-          {busy ? "Saving…" : "Save editorial profile"}
-        </button>
+        <ActionRow>
+          <Button variant="primary" onClick={save} disabled={!dirty || disabled || busy} busy={busy}>
+            {busy ? "Saving…" : "Save editorial profile"}
+          </Button>
+          <Button variant="quiet" onClick={discardChanges} disabled={!dirty || busy}>Cancel changes</Button>
+        </ActionRow>
       </div>
 
       {notice ? <p className={styles.notice} role="status">{notice}</p> : null}
@@ -367,6 +405,7 @@ function NumberField({
   suffix,
   disabled,
   onChange,
+  onValidityChange,
 }: {
   label: string;
   value: number;
@@ -375,25 +414,38 @@ function NumberField({
   suffix?: string;
   disabled: boolean;
   onChange: (value: number) => void;
+  onValidityChange: (label: string, valid: boolean) => void;
 }) {
+  const [text, setText] = useState(String(value));
+  const hintId = useId();
+  const parsed = /^\d+$/.test(text) ? Number(text) : NaN;
+  const valid = Number.isInteger(parsed) && parsed >= min && parsed <= max;
   return (
     <label className={styles.numberField}>
       <span>{label}</span>
       <div>
         <input
           type="number"
-          value={value}
+          value={text}
           min={min}
           max={max}
           step="1"
           disabled={disabled}
+          data-weight-input={suffix ? undefined : ""}
+          aria-invalid={!valid || undefined}
+          aria-describedby={!valid ? hintId : undefined}
           onChange={(event) => {
-            const next = Number(event.target.value);
-            if (Number.isInteger(next)) onChange(next);
+            const raw = event.target.value;
+            const next = /^\d+$/.test(raw) ? Number(raw) : NaN;
+            const nextValid = Number.isInteger(next) && next >= min && next <= max;
+            setText(raw);
+            onValidityChange(label, nextValid);
+            if (nextValid) onChange(next);
           }}
         />
         {suffix ? <small>{suffix}</small> : null}
       </div>
+      {!valid ? <small id={hintId} role="alert">Enter a whole number from {min} to {max}.</small> : null}
     </label>
   );
 }

@@ -25,6 +25,8 @@ import {
 import { BrandPaletteAssistant } from "./creative-palette-assistant";
 import styles from "./creative-draft-workspace.generated.module.css";
 import { GoogleMapsPreviewPanel } from "./google-maps-preview-panel";
+import { ActionRow, Button } from "./ui/primitives";
+import { useUnsavedBeforeUnload } from "./ui/use-unsaved-before-unload";
 
 const FRAMING_STRATEGY_LABELS = {
   auto: "Auto (brief decides)",
@@ -70,11 +72,14 @@ export function CreativeProfilePanel({
   onProfileSaved?: (profile: CreativeProfile) => void;
 }) {
   const [draft, setDraft] = useState<CreativeProfile>();
+  const [savedProfile, setSavedProfile] = useState<CreativeProfile>();
+  const [editVersion, setEditVersion] = useState(0);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState<Busy>();
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const authenticated = secret.trim().length > 0;
+  useUnsavedBeforeUnload(dirty);
 
   useEffect(() => {
     if (!authenticated || !topicId) return;
@@ -88,6 +93,8 @@ export function CreativeProfilePanel({
         setError(undefined);
         setNotice(undefined);
         setDraft(profile);
+        setSavedProfile(profile);
+        setEditVersion((current) => current + 1);
         setDirty(false);
         onProfileLoaded?.(profile);
       })
@@ -207,6 +214,8 @@ export function CreativeProfilePanel({
           body: JSON.stringify(draft),
         });
       setDraft(saved);
+      setSavedProfile(saved);
+      setEditVersion((current) => current + 1);
       setDirty(false);
       onProfileSaved?.(saved);
       setNotice(
@@ -263,6 +272,15 @@ export function CreativeProfilePanel({
 
   const controlsDisabled = disabled || busy === "save";
 
+  function discardChanges() {
+    if (!savedProfile || busy) return;
+    setDraft(savedProfile);
+    setEditVersion((current) => current + 1);
+    setDirty(false);
+    setError(undefined);
+    setNotice("Unsaved creative profile changes discarded. Separately saved assets remain in the library.");
+  }
+
   return (
     <section className={styles.section} id="creative-profile">
       <div className={styles.sectionHeading}>
@@ -293,7 +311,7 @@ export function CreativeProfilePanel({
         </div>
       ) : null}
 
-      <fieldset className={styles.profileBodyPlain} disabled={controlsDisabled}>
+      <fieldset key={editVersion} className={styles.profileBodyPlain} disabled={controlsDisabled}>
         <Group title="Identity" id="creative-profile-identity" defaultOpen>
           <div className={styles.fieldGrid}>
             <TextField label="Profile name" value={draft.name} onChange={(name) => updateDraft({ name })} />
@@ -550,14 +568,15 @@ export function CreativeProfilePanel({
           />
         </Group>
 
-        <button
-          className={styles.primaryButton}
-          type="button"
-          disabled={disabled || Boolean(busy) || !dirty}
-          onClick={save}
-        >
-          {busy === "save" ? "Saving profile…" : "Save creative profile"}
-        </button>
+        <ActionRow className={styles.profileSaveBar}>
+          <Button variant="primary" disabled={disabled || Boolean(busy) || !dirty} busy={busy === "save"} onClick={save}>
+            {busy === "save" ? "Saving profile…" : "Save creative profile"}
+          </Button>
+          <Button variant="quiet" disabled={!dirty || Boolean(busy)} onClick={discardChanges}>Cancel changes</Button>
+          <span className={styles.profileGuideHint} role="status">
+            {disabled ? "Finish the current dashboard operation before saving." : dirty ? "Unsaved profile changes" : `Saved ${new Date(draft.updatedAt).toLocaleString()}`}
+          </span>
+        </ActionRow>
       </fieldset>
     </section>
   );

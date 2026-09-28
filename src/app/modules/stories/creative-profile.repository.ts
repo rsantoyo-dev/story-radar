@@ -115,6 +115,14 @@ export async function getCreativeProfile(
   return mapCreativeProfile(concurrent.profile, concurrent.brandAsset);
 }
 
+/** UI theme reads must not initialize a creative profile as a side effect. */
+export async function readStoredCreativeProfile(
+  topicId: string,
+): Promise<CreativeProfile | undefined> {
+  const existing = await findStoredCreativeProfile(topicId);
+  return existing ? mapCreativeProfile(existing.profile, existing.brandAsset) : undefined;
+}
+
 export type VisualPolicyChangeResult = {
   policyVersion: number;
   draftsRetired: number;

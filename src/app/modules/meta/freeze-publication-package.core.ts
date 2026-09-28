@@ -45,6 +45,8 @@ export type FrozenPackageSlide = {
 
 export type FrozenPackage = {
   id: string;
+  /** Exact saved script revision captured when this package was prepared. */
+  draftVersion?: number;
   status: "frozen" | "stale" | "consumed";
   packageHash: string;
   mediaType: PublicationMediaType;
@@ -276,6 +278,7 @@ export async function runFreezePublicationPackage(
 
   return {
     id: packageId,
+    draftVersion: candidate.draftVersion,
     status: "frozen",
     packageHash,
     mediaType,

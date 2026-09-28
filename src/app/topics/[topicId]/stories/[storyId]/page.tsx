@@ -1,4 +1,5 @@
 import { getTopicById } from "@/app/modules/topics/topic-catalog.repository";
+import { resolveTopicUiTheme } from "@/app/modules/topics/topic-ui-theme";
 import { connection } from "next/server";
 import { notFound } from "next/navigation";
 
@@ -22,13 +23,15 @@ export default async function StoryPage({
   const [{ topicId, storyId }, query] = await Promise.all([params, searchParams]);
   const topic = await getTopicById(topicId);
   if (!topic) notFound();
+  const themeStyle = await resolveTopicUiTheme(topicId, topic.themeKey);
 
   return <StoryWorkspacePageClient
     topicId={topicId}
     topicName={topic.name}
-    topicThemeKey={topic.themeKey}
+    themeStyle={themeStyle}
     storyId={storyId}
     from={single(query.from)}
+    returnContext={single(query.returnContext)}
     initialTab={single(query.tab)}
     initialDraftId={single(query.draftId)}
     initialEditorialRunId={single(query.editorialRunId)}

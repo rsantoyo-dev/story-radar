@@ -106,7 +106,9 @@
 
 .numberField > div { position: relative; }
 .numberField input { padding-right: 2.8rem; }
-.numberField small { @ds-typo(caption); position: absolute; right: density(2); color: palette(info-main); }
+.numberField > div small { @ds-typo(caption); position: absolute; right: density(2); color: palette(info-main); }
+.numberField > small { @ds-typo(caption); color: palette(error-main); }
+.numberField input[aria-invalid="true"] { border-color: palette(error-main); }
 
 .weightsHeading { margin-top: density(2); padding-top: density(5); border-top: border(1, surface-dark, solid); }
 
@@ -126,14 +128,6 @@
 
 .footer { padding-top: density(2); }
 .footer small { margin: 0; }
-.footer button {
-  @ds-button(contained primary 2);
-  @ds-typo(caption);
-  cursor: pointer;
-  font: inherit;
-  padding: density(2) density(3);
-}
-.footer button:disabled { cursor: not-allowed; opacity: 0.5; }
 
 .locked,
 .loading,

@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useState } from "react";
 
 import styles from "./radar-dashboard.generated.module.css";
+import { ModalLayer } from "./ui/modal-layer";
 
 type TopicOption = { id: string; name: string; isActive?: boolean };
 type Preview = {
@@ -32,17 +33,13 @@ export function AddSourceDialog({ topics, initialTopicId, secret, onClose, onCre
   const [preview, setPreview] = useState<Preview>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  const urlInput = useRef<HTMLInputElement>(null);
   const headingId = useId();
 
-  useEffect(() => {
-    urlInput.current?.focus();
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !busy) onClose();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [busy, onClose]);
+  function close() {
+    if (busy) return;
+    if ((url.trim() || file || preview) && !window.confirm("Discard this source setup?")) return;
+    onClose();
+  }
 
   async function submit(confirm: boolean) {
     if (!confirm && !url.trim() && !file) {
@@ -88,6 +85,7 @@ export function AddSourceDialog({ topics, initialTopicId, secret, onClose, onCre
   }
 
   function chooseFile(next?: File) {
+    if (busy) return;
     setFile(next);
     if (next) setUrl("");
     setPreview(undefined);
@@ -95,22 +93,24 @@ export function AddSourceDialog({ topics, initialTopicId, secret, onClose, onCre
   }
 
   return (
+    <ModalLayer onClose={close} canClose={!busy}>
     <div className={styles.contentViewerBackdrop} role="presentation" onMouseDown={(event) => {
-      if (event.target === event.currentTarget && !busy) onClose();
+      if (event.target === event.currentTarget) close();
     }}>
       <section className={styles.contentViewer} role="dialog" aria-modal="true" aria-labelledby={headingId}>
         <header className={styles.contentViewerHeader}>
           <div><p>Sources</p><h2 id={headingId}>Add source</h2></div>
-          <button type="button" onClick={onClose} disabled={busy} aria-label="Close add source">×</button>
+          <button type="button" onClick={close} disabled={busy} aria-label="Close add source">×</button>
         </header>
         <div className={styles.newStoryForm}>
           <p className={styles.newStoryHint}>Paste a public feed, article or PDF URL, or choose a PDF file. Review the detected type before anything is added.</p>
           <label className={styles.field}>
             <span>Source URL</span>
-            <input ref={urlInput} type="url" value={url} onChange={(event) => { setUrl(event.target.value); setFile(undefined); setPreview(undefined); }} placeholder="https://example.org/source" disabled={busy} />
+            <input data-initial-focus type="url" value={url} onChange={(event) => { setUrl(event.target.value); setFile(undefined); setPreview(undefined); }} placeholder="https://example.org/source" disabled={busy} />
           </label>
           <label className={styles.sourceDropZone} onDragOver={(event) => event.preventDefault()} onDrop={(event) => {
             event.preventDefault();
+            if (busy) return;
             chooseFile(event.dataTransfer.files[0]);
           }}>
             <span>{file ? file.name : "Drop a PDF here or choose a file"}</span>
@@ -135,7 +135,7 @@ export function AddSourceDialog({ topics, initialTopicId, secret, onClose, onCre
           ) : null}
           {error ? <p className={styles.newStoryError} role="alert">{error}</p> : null}
           <div className={styles.newStoryFooter}>
-            <button type="button" onClick={onClose} disabled={busy}>Cancel</button>
+            <button type="button" onClick={close} disabled={busy}>Cancel</button>
             {!preview ? (
               <button type="button" className={styles.primaryButton} onClick={() => void submit(false)} disabled={busy || (!file && !url.trim())}>{busy ? "Detecting…" : "Detect source"}</button>
             ) : (
@@ -145,5 +145,6 @@ export function AddSourceDialog({ topics, initialTopicId, secret, onClose, onCre
         </div>
       </section>
     </div>
+    </ModalLayer>
   );
 }

@@ -12,7 +12,7 @@
     "deploy:vercel": "node scripts/vercel-env.mjs deploy",
     "worker:instagram": "node scripts/instagram-publication-worker.mjs",
     "postinstall": "patch-package",
-    "test": "node --import tsx --test scripts/vercel-env.test.mjs src/app/modules/stories/*.test.ts src/app/modules/documents/*.test.ts src/app/modules/meta/*.test.ts src/app/modules/topics/*.test.ts src/app/modules/sources/*.test.ts src/design/*.test.ts src/design/*/*.test.ts",
+    "test": "node --import tsx --test scripts/vercel-env.test.mjs src/app/*.test.ts src/app/ui/*.test.tsx src/app/modules/stories/*.test.ts src/app/modules/documents/*.test.ts src/app/modules/meta/*.test.ts src/app/modules/topics/*.test.ts src/app/modules/sources/*.test.ts src/design/*.test.ts src/design/*/*.test.ts",
     "uxdsl:build": "uxdsl build",
     "uxdsl:watch": "uxdsl watch",
     "lint": "eslint",

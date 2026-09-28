@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useState } from "react";
 
 import styles from "./radar-dashboard.generated.module.css";
+import { ModalLayer } from "./ui/modal-layer";
 
 /**
  * Global "New story" entry point (FEAT-SRC-001, SRC-01).
@@ -44,14 +45,14 @@ export type CreatedStory = {
 
 type TopicOption = { id: string; name: string; isActive?: boolean };
 
-function emptyDraft(topicId: string): Draft {
+function emptyDraft(topicId: string, language = "en", region = "global"): Draft {
   return {
     topicId,
     title: "",
     content: "",
     contentType: "campaign",
-    language: "en",
-    region: "global",
+    language,
+    region,
     sourceUrl: "",
     publishedAt: new Date().toISOString().slice(0, 10),
   };
@@ -60,31 +61,32 @@ function emptyDraft(topicId: string): Draft {
 export function NewStoryDialog({
   topics,
   initialTopicId,
+  defaultLanguage = "en",
+  defaultRegion = "global",
   secret,
   onClose,
   onCreated,
 }: {
   topics: TopicOption[];
   initialTopicId: string;
+  defaultLanguage?: string;
+  defaultRegion?: string;
   secret: string;
   onClose: () => void;
   onCreated: (story: CreatedStory) => void;
 }) {
-  const [draft, setDraft] = useState<Draft>(() => emptyDraft(initialTopicId));
+  const [draft, setDraft] = useState<Draft>(() => emptyDraft(initialTopicId, defaultLanguage, defaultRegion));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  const titleInput = useRef<HTMLInputElement>(null);
   const headingId = useId();
   const activeTopics = topics.filter((topic) => topic.isActive !== false);
 
-  useEffect(() => {
-    titleInput.current?.focus();
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !busy) onClose();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [busy, onClose]);
+  function close() {
+    if (busy) return;
+    const changed = draft.title.trim() || draft.content.trim() || draft.sourceUrl.trim();
+    if (changed && !window.confirm("Discard this new story draft?")) return;
+    onClose();
+  }
 
   const canSubmit =
     !busy &&
@@ -146,11 +148,12 @@ export function NewStoryDialog({
   }
 
   return (
+    <ModalLayer onClose={close} canClose={!busy}>
     <div
       className={styles.contentViewerBackdrop}
       role="presentation"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !busy) onClose();
+        if (event.target === event.currentTarget) close();
       }}
     >
       <section
@@ -166,7 +169,7 @@ export function NewStoryDialog({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={close}
             disabled={busy}
             aria-label="Close new story"
           >
@@ -192,7 +195,12 @@ export function NewStoryDialog({
               <span>Topic</span>
               <select
                 value={draft.topicId}
-                onChange={(event) => update("topicId", event.target.value)}
+                onChange={(event) => setDraft((current) => ({
+                  ...current,
+                  topicId: event.target.value,
+                  language: event.target.value === initialTopicId ? defaultLanguage : "en",
+                  region: event.target.value === initialTopicId ? defaultRegion : "global",
+                }))}
                 disabled={busy}
                 required
               >
@@ -203,69 +211,16 @@ export function NewStoryDialog({
                 ))}
               </select>
             </label>
-            <label className={styles.field}>
-              <span>Content type</span>
-              <select
-                value={draft.contentType}
-                onChange={(event) =>
-                  update("contentType", event.target.value as ContentType)
-                }
-                disabled={busy}
-              >
-                {CONTENT_TYPES.map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
             <label className={`${styles.field} ${styles.newStoryWide}`}>
               <span>Title</span>
               <input
-                ref={titleInput}
+                data-initial-focus
                 value={draft.title}
                 onChange={(event) => update("title", event.target.value)}
                 maxLength={240}
                 placeholder="What is this story about?"
                 disabled={busy}
                 required
-              />
-            </label>
-            <label className={styles.field}>
-              <span>Language</span>
-              <input
-                value={draft.language}
-                onChange={(event) => update("language", event.target.value)}
-                maxLength={32}
-                disabled={busy}
-              />
-            </label>
-            <label className={styles.field}>
-              <span>Region</span>
-              <input
-                value={draft.region}
-                onChange={(event) => update("region", event.target.value)}
-                maxLength={80}
-                disabled={busy}
-              />
-            </label>
-            <label className={styles.field}>
-              <span>Publish date</span>
-              <input
-                type="date"
-                value={draft.publishedAt}
-                onChange={(event) => update("publishedAt", event.target.value)}
-                disabled={busy}
-              />
-            </label>
-            <label className={styles.field}>
-              <span>Source URL (optional)</span>
-              <input
-                type="url"
-                value={draft.sourceUrl}
-                onChange={(event) => update("sourceUrl", event.target.value)}
-                placeholder="https://"
-                disabled={busy}
               />
             </label>
             <label className={`${styles.field} ${styles.newStoryWide}`}>
@@ -280,6 +235,34 @@ export function NewStoryDialog({
                 required
               />
             </label>
+            <details className={`${styles.newStoryWide} ${styles.newStoryOptional}`}>
+              <summary>Content type, language, and source details</summary>
+              <div className={styles.newStoryGrid}>
+                <label className={styles.field}>
+                  <span>Content type</span>
+                  <select value={draft.contentType} onChange={(event) => update("contentType", event.target.value as ContentType)} disabled={busy}>
+                    {CONTENT_TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  </select>
+                </label>
+                <label className={styles.field}>
+                  <span>Content language</span>
+                  <input value={draft.language} onChange={(event) => update("language", event.target.value)} maxLength={32} disabled={busy} />
+                </label>
+                <label className={styles.field}>
+                  <span>Region</span>
+                  <input value={draft.region} onChange={(event) => update("region", event.target.value)} maxLength={80} disabled={busy} />
+                </label>
+                <label className={styles.field}>
+                  <span>Material date</span>
+                  <input type="date" value={draft.publishedAt} onChange={(event) => update("publishedAt", event.target.value)} disabled={busy} />
+                  <small>This dates the source material. It does not schedule social publication.</small>
+                </label>
+                <label className={`${styles.field} ${styles.newStoryWide}`}>
+                  <span>Source URL (optional)</span>
+                  <input type="url" value={draft.sourceUrl} onChange={(event) => update("sourceUrl", event.target.value)} placeholder="https://" disabled={busy} />
+                </label>
+              </div>
+            </details>
           </div>
 
           {error ? (
@@ -292,7 +275,7 @@ export function NewStoryDialog({
             <button
               type="button"
               className={styles.secondaryButton}
-              onClick={onClose}
+              onClick={close}
               disabled={busy}
             >
               Cancel
@@ -308,5 +291,6 @@ export function NewStoryDialog({
         </form>
       </section>
     </div>
+    </ModalLayer>
   );
 }

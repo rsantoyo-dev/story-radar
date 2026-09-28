@@ -3,6 +3,7 @@
 import { InstagramPublishingAccessPanel } from "./instagram-publishing-access-panel";
 import type { PublishingAccessState } from "./modules/meta/instagram-publishing-access";
 import { useEffect, useState } from "react";
+import { ActionRow, InlineNotice, StatusBadge } from "./ui/primitives";
 
 import styles from "./creative-draft-workspace.generated.module.css";
 
@@ -175,7 +176,7 @@ export function MetaConnectionPanel({
     if (!authenticated || busy) return;
     if (
       !window.confirm(
-        "Disconnect this topic's Instagram account? You can reconnect it anytime.",
+        "Disconnect this topic's Instagram account? Existing publication history remains, but syncing and new publishing stop until you reconnect.",
       )
     ) {
       return;
@@ -378,8 +379,8 @@ export function MetaConnectionPanel({
         ) : null}
       </header>
 
-      {error ? <p className={styles.brandAssetHint}>{error}</p> : null}
-      {notice ? <p className={styles.brandAssetHint}>{notice}</p> : null}
+      {error ? <InlineNotice tone="error" title="Instagram action failed">{error}</InlineNotice> : null}
+      {notice ? <InlineNotice tone="success">{notice}</InlineNotice> : null}
       {health?.problems
         .filter((problem) => problem.severity !== "info")
         .map((problem) => (
@@ -390,9 +391,14 @@ export function MetaConnectionPanel({
             {problem.message}
           </p>
         ))}
-      {!error && status?.lastVerificationError ? (
-        <p className={styles.brandAssetHint}>{status.lastVerificationError}</p>
-      ) : null}
+      {!error && status?.lastVerificationError ? <InlineNotice tone="warning" title="Insights need attention">{status.lastVerificationError}</InlineNotice> : null}
+
+      <ActionRow>
+        <StatusBadge tone={status?.connected ? "success" : "neutral"}>{!status ? "Checking connection…" : status.connected ? "Connected" : "Not connected"}</StatusBadge>
+        <StatusBadge tone={status?.publishing?.state === "enabled" ? "success" : "warning"}>Publishing: {status?.publishing?.state === "enabled" ? "verified" : status?.publishing?.state ?? "not checked"}</StatusBadge>
+        <StatusBadge tone={status?.connected && status.state !== "needs-reconnect" ? "info" : "warning"}>Sync: {status?.connected ? status.state === "needs-reconnect" ? "reconnect required" : "available to run" : "connect first"}</StatusBadge>
+        <StatusBadge tone={status?.state === "operational" ? "success" : "warning"}>Insights: {status?.state === "operational" ? "available" : "not verified"}</StatusBadge>
+      </ActionRow>
 
       <div className={styles.metaConnectionBody}>
         {status?.connected ? (
@@ -512,6 +518,8 @@ export function MetaConnectionPanel({
             </button>
           ) : null}
         </div>
+        {blockingProblem ? <InlineNotice tone="error" title="Connection blocked">{blockingProblem.message} Correct the Environment settings below, then try Connect again.</InlineNotice> : null}
+        {status?.state === "needs-reconnect" ? <InlineNotice tone="warning" title="Reconnect required">Reconnect this account before syncing publications or refreshing metrics. Existing publication history remains available.</InlineNotice> : null}
       </div>
 
       <InstagramPublishingAccessPanel

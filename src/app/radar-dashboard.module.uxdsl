@@ -869,6 +869,12 @@
   border-color: palette(primary-main);
   box-shadow: 0 0 0 4px palette(primary-main, 0.12);
 }
+.field input[aria-invalid="true"] { border-color: palette(error-main); }
+.rangeEndpoint { display: flex; flex-wrap: wrap; gap: density(3); margin-top: density(4); }
+.rangeEndpoint label { display: grid; flex: 1 1 180px; gap: density(2); min-width: 0; color: palette(primary-dark); @ds-typo(small); font-weight: 650; }
+.rangeEndpoint input { @ds-input(outlined primary 2); width: 100%; min-height: 44px; padding-inline: density(3); border-color: palette(surface-dark); background: palette(light-light); color: palette(dark-main); }
+.rangeEndpoint input[aria-invalid="true"] { border-color: palette(error-main); }
+.rangeEndpoint input:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 2px; }
 
 .field small {
   display: block;
@@ -2259,9 +2265,12 @@
 
 .publicationQuickControl {
   display: grid;
-  width: 126px;
+  width: 180px;
+  min-width: 160px;
   gap: density(1);
 }
+
+.publicationQuickControl strong { color: palette(dark-main); @ds-typo(small); }
 
 .publicationQuickControl label {
   display: grid;
@@ -2272,22 +2281,22 @@
 .publicationQuickControl small {
   color: palette(tertiary-main);
   @ds-typo (caption);
-  font-size: 9px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .publicationQuickControl select {
   @ds-input(outlined primary 2);
   width: 100%;
-  min-height: 32px;
+  min-height: 40px;
   padding: 0 density(2);
   border: 1px solid palette(surface-light);
   border-radius: 8px;
   background: palette(light-light);
   color: palette(primary-dark);
   font: inherit;
-  @ds-typo (caption);
-  font-size: 10px;
+  @ds-typo (small);
+  font-size: 14px;
   font-weight: 700;
   cursor: pointer;
 }
@@ -2301,6 +2310,10 @@
 .publicationQuickControl select:disabled {
   cursor: not-allowed;
   opacity: 0.52;
+}
+
+@media (max-width: 639px), (pointer: coarse) {
+  .publicationQuickControl select { min-height: 44px; }
 }
 
 .contentStatusCell,
@@ -3367,6 +3380,19 @@
   grid-column: xs(auto) md(1 / -1);
 }
 
+.newStoryOptional {
+  border-top: 1px solid palette(surface-dark);
+  padding-top: density(3);
+}
+
+.newStoryOptional summary {
+  color: palette(primary-dark);
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.newStoryOptional > .newStoryGrid { margin-top: density(3); }
+
 .newStoryGrid select,
 .newStoryGrid textarea {
   @ds-input(outlined primary 2);
@@ -3534,11 +3560,15 @@
 .queueItem h3 { margin: density(1) 0; color: palette(dark-main); @ds-typo(h3); font-size: 1rem; line-height: 1.35; }
 .queueItem p { margin: 0; color: palette(tertiary-main); @ds-typo(small); font-size: 0.8125rem; }
 .queueActions { display: flex; gap: density(2); }
-.queueActions button, .queueItem > button { flex: none; min-height: 36px; padding-inline: density(4); @ds-typo(caption); font-size: 0.75rem; }
 .queueEmpty { padding: density(7); border: 1px dashed palette(dark-main, 0.2); border-radius: radius(3); background: palette(light-light, 0.7); }
 .queueEmpty strong { @ds-typo(h3); font-size: 1rem; }
 .queueEmpty p { margin: density(2) 0; color: palette(tertiary-main); @ds-typo(small); }
 .queueEmpty a { color: palette(primary-dark); @ds-typo(small); font-weight: 700; }
+.productionReviewDetails { margin-top: density(5); border: 1px solid palette(dark-main, 0.12); border-radius: radius(3); background: palette(light-light); }
+.productionReviewDetails > summary { display: flex; min-height: 44px; align-items: center; padding: density(3) density(5); color: palette(primary-dark); @ds-typo(small); font-weight: 700; cursor: pointer; }
+.productionReviewDetails > summary:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 2px; }
+.productionReviewDetails > p { margin: 0; padding: 0 density(5) density(3); color: palette(tertiary-main); @ds-typo(small); }
+.productionReviewDetails > section { border: 0; box-shadow: none; }
 
 @media (max-width: 767px) {
   .topbar { padding-inline: density(3); }

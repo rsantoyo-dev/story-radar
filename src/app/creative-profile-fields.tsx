@@ -100,8 +100,13 @@ export function ListField({
       <span>{label}</span>
       <input
         value={text}
-        onChange={(event) => setText(event.target.value)}
-        onBlur={() => onChange(parseList(text))}
+        onChange={(event) => {
+          const next = event.target.value;
+          setText(next);
+          // Keep the parent draft current even when Save is activated while
+          // this field still has focus (or from a keyboard shortcut).
+          onChange(parseList(next));
+        }}
       />
     </label>
   );

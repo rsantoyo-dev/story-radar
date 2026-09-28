@@ -10,6 +10,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import * as schema from "../../../db/schema";
 import * as lines from "../editorial-lines/editorial-lines";
+import * as periodControls from "../../editorial-period-controls";
 const requireLocal=createRequire(import.meta.url);
 const config:lines.EditorialLineConfig={name:"Integration",objective:"Loneliness among immigrants",themes:["belonging"],mode:"context",timezone:"America/Toronto",period:{kind:"relative",hours:8760},sourceMode:"inherit",sourceIds:[],excludedSourceIds:[],domains:[],researchEnabled:true};
 const line:lines.EditorialLine={...config,id:"00000000-0000-4000-8000-000000000011",topicId:"00000000-0000-4000-8000-000000000001",revision:1,archived:false};
@@ -162,12 +163,12 @@ test("custom research settings reject invalid options before persistence",()=>{
 
 test("Collection only selects a saved line while Topics owns configuration",()=>{
   const {EditorialLinesPanel}=load<{EditorialLinesPanel:(props:{topicId:string;secret:string;manageOnly?:boolean})=>import("react").ReactElement}>(
-    "src/app/editorial-lines-panel.tsx",{"./radar-dashboard.generated.module.css":{}});
+    "src/app/editorial-lines-panel.tsx",{"./radar-dashboard.generated.module.css":{},"./ui/use-unsaved-before-unload":{useUnsavedBeforeUnload:()=>{}},"./editorial-period-controls":periodControls});
   const collection=renderToStaticMarkup(createElement(EditorialLinesPanel,{topicId:line.topicId,secret:""}));
   assert.match(collection,/Choose an editorial line/);
   assert.doesNotMatch(collection,/Existing brand collection/);
   assert.doesNotMatch(collection,/Manage editorial lines|Save line|Search instruction|Period for this collection only/);
-  assert.match(collection,/#configuration/);
+  assert.match(collection,/#strategy\/lines/);
   const management=renderToStaticMarkup(createElement(EditorialLinesPanel,{topicId:line.topicId,secret:"",manageOnly:true}));
   assert.match(management,/Manage editorial lines/);
   assert.match(management,/Custom AI search for this line/);

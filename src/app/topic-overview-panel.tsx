@@ -192,29 +192,29 @@ export function TopicOverviewPanel({
           key: "newStories",
           label: "New stories",
           icon: "✦",
-          href: "#stories",
-          linkLabel: "Open story review",
+          href: "#discover",
+          linkLabel: "Open Discover",
         },
         {
           key: "needsAttention",
           label: "Needs attention",
           icon: "!",
-          href: "#stories",
-          linkLabel: "Review in stories",
+          href: "#production",
+          linkLabel: "Open Production",
         },
         {
           key: "inProduction",
           label: "In production",
           icon: "▤",
-          href: "#stories",
-          linkLabel: "Open story review",
+          href: "#production",
+          linkLabel: "Open Production",
         },
         {
           key: "published",
           label: "Published",
           icon: "➤",
-          href: "#editorial-instagram",
-          linkLabel: "Open Instagram",
+          href: "#publications/history",
+          linkLabel: "Open publication history",
         },
       ] as const,
     [],
@@ -278,7 +278,7 @@ export function TopicOverviewPanel({
             >
               {isLoading ? "Refreshing…" : "Refresh data"}
             </button>
-            <a className={styles.ovwConfigLink} href="#configuration">
+            <a className={styles.ovwConfigLink} href="#topics">
               Configure topic
             </a>
           </div>
@@ -536,7 +536,7 @@ function SectionCard<TData>({
           phase === "idle" ? (
             <p className={styles.ovwEmpty}>Waiting for connection.</p>
           ) : phase === "error" ? (
-            <div className={styles.ovwError} role="status">
+            <div className={styles.ovwError} role="alert">
               <span>This section could not be loaded.</span>
               <button
                 type="button"
@@ -556,7 +556,7 @@ function SectionCard<TData>({
         ) : !section ? (
           <p className={styles.ovwEmpty}>{emptyLabel}</p>
         ) : section.status === "error" || section.status === "unavailable" ? (
-          <div className={styles.ovwError} role="status">
+          <div className={styles.ovwError} role={section.status === "error" ? "alert" : "status"}>
             <span>{section.reason ?? "This section is unavailable."}</span>
             <button
               type="button"

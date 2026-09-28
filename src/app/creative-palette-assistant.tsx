@@ -36,6 +36,7 @@ export function BrandPaletteAssistant({
   const [error, setError] = useState<string>();
   const [suggestion, setSuggestion] = useState<Suggestion>();
   const [previousPalette, setPreviousPalette] = useState<CreativeBrandPaletteColor[]>();
+  const canUndoSuggestion = Boolean(previousPalette && suggestion && JSON.stringify(palette) === JSON.stringify(suggestion.palette));
   const canSubmit = !disabled && !busy && prompt.trim().length >= 8;
 
   async function suggest() {
@@ -79,7 +80,7 @@ export function BrandPaletteAssistant({
   }
 
   function undo() {
-    if (!previousPalette) return;
+    if (!previousPalette || !canUndoSuggestion) return;
     onApply(previousPalette);
     setPreviousPalette(undefined);
     setSuggestion(undefined);
@@ -122,7 +123,7 @@ export function BrandPaletteAssistant({
           <button type="submit" className={styles.secondaryButton} disabled={!canSubmit}>
             {busy ? "Asking Luna…" : "Suggest palette with Luna"}
           </button>
-          {previousPalette ? (
+          {canUndoSuggestion ? (
             <button type="button" className={styles.paletteAdd} onClick={undo} disabled={busy}>
               Undo suggestion
             </button>
@@ -158,6 +159,7 @@ export function BrandPaletteAssistant({
           <p className={styles.brandAssetHint}>
             Applied to the Brand palette in Brand &amp; visual. Adjust any colour there, then save the profile.
           </p>
+          {previousPalette && !canUndoSuggestion ? <p className={styles.brandAssetHint}>The palette has been edited since this suggestion. Save your changes or use Cancel in the profile to discard them.</p> : null}
         </div>
       ) : null}
     </section>

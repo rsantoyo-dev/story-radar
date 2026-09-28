@@ -117,7 +117,6 @@
   background: palette(light-light);
 }
 
-.topicRow label,
 .topicForm label,
 .formGrid label,
 .sourceForm > label {
@@ -127,9 +126,15 @@
   color: palette(dark-main);
 }
 
-.topicRow select {
-  min-width: xs(0) sm(min(22rem, 60vw));
-}
+.topicRowContext { margin: 0; color: palette(tertiary-dark); @ds-typo(small); }
+.topicRowContext strong { color: palette(dark-main); }
+.topicSetupGuide { display: grid; gap: density(3); margin-top: density(5); padding: density(4); border: 1px solid palette(surface-dark); border-radius: radius(3); background: palette(light-light); }
+.topicSetupGuide h3 { margin: 0; color: palette(dark-main); @ds-typo(h3); font-size: 1.125rem; }
+.topicSetupGuide > p { margin: 0; color: palette(tertiary-dark); @ds-typo(small); }
+.topicSetupGuide ol { display: grid; grid-template-columns: xs(minmax(0, 1fr)) md(repeat(2, minmax(0, 1fr))); gap: density(2); margin: 0; padding: 0; list-style: none; }
+.topicSetupGuide a { display: grid; min-height: 44px; gap: density(1); padding: density(3); border: 1px solid palette(surface-dark); border-radius: radius(2); color: palette(primary-dark); text-decoration: none; font-weight: 700; }
+.topicSetupGuide a:hover, .topicSetupGuide a:focus-visible { border-color: palette(primary-main); background: palette(primary-light); }
+.topicSetupGuide a span { color: palette(tertiary-dark); @ds-typo(caption); font-weight: 400; }
 
 .topicActions,
 .sourceActions,
@@ -138,7 +143,7 @@
   gap: density(1);
 }
 
-.panel button {
+.panel button:not([data-ui-button]) {
   @ds-button(outlined primary 2);
   @ds-typo(caption);
   cursor: pointer;
@@ -146,8 +151,8 @@
   padding: density(2) density(3);
 }
 
-.panel button:hover:not(:disabled) { background: palette(light-light); }
-.panel button:disabled { cursor: not-allowed; opacity: 0.55; }
+.panel button:not([data-ui-button]):hover:not(:disabled) { background: palette(light-light); }
+.panel button:not([data-ui-button]):disabled { cursor: not-allowed; opacity: 0.55; }
 .panel .remove { border-color: palette(error-light); color: palette(error-main); }
 
 .locked,

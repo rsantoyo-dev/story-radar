@@ -4,7 +4,7 @@ import { DailyEditorialPlannerPanel } from "./daily-editorial-planner-panel";
 import { BRIEF_EVIDENCE_REVIEW_MESSAGE, DAILY_PREPARATION_LABELS, DAILY_PREPARATION_STEPS, DAILY_PREPARATION_TITLES, preparationTarget, type DailyPreparationStep, type DailyPreparationRun, type DailyPreparationProgress } from "./modules/stories/daily-preparation.types";
 import styles from "./radar-dashboard.generated.module.css";
 /** What actually happened at a completed step — shown on hover so a glance
- * answers "which story", "what focus", "is the carrousel ready" without
+ * answers "which story", "what focus", "is the carousel ready" without
  * opening anything. Undefined when the run predates a field (e.g. an older
  * completed step whose progress never recorded it). */
 function stepDetail(step: DailyPreparationStep, progress: DailyPreparationProgress): string | undefined {
@@ -13,8 +13,8 @@ function stepDetail(step: DailyPreparationStep, progress: DailyPreparationProgre
     case "approve": return progress.storyTitle && `Approved: ${progress.storyTitle}`;
     case "content": return progress.storyTitle && `Content ready: ${progress.storyTitle}`;
     case "focus": return progress.editorialDirection && `Focus: ${progress.editorialDirection.length > 80 ? `${progress.editorialDirection.slice(0, 80)}…` : progress.editorialDirection}`;
-    case "brief": return progress.draftId ? "Draft and carrousel script ready" : progress.briefId ? "Brief ready" : undefined;
-    case "approve-draft": return progress.draftId && "Carrousel approved";
+    case "brief": return progress.draftId ? "Carousel script ready" : progress.briefId ? "Brief ready" : undefined;
+    case "approve-draft": return progress.draftId && "Script approved";
     case "images": return progress.assetBatchId && "Image batch generated";
     default: return undefined;
   }
@@ -150,7 +150,6 @@ export function DailyPreparationPanel({onCompleted,onOpenDraft,...props}:Props) 
         {run.status==="needs-review" && run.step==="brief" && run.error===BRIEF_EVIDENCE_REVIEW_MESSAGE && run.progress.briefId && <button type="button" className={styles.secondaryButton} disabled={disabled || pending} onClick={()=>void acknowledgeBrief()}>Accept brief and continue</button>}
       </div>}
       {run.status==="needs-review" && run.step==="brief" && run.error===BRIEF_EVIDENCE_REVIEW_MESSAGE && <p role="status">Retrying regenerates the same brief from the same source and will keep saying this when the gap is inherent to the source (for example, a small local sample) rather than a fluke. Open the brief above to judge it yourself, then use “Accept brief and continue” instead of retrying.</p>}
-      {run.progress.recommendationRunId && !running && <DailyEditorialPlannerPanel {...props} refreshKey={run.updatedAt} />}
     </>}
   </section>;
 }

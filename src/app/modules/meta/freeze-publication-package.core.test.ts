@@ -94,6 +94,7 @@ test("freeze re-encodes each slide in order, uploads once per slide, and never l
   const frozen = await runFreezePublicationPackage("t", "draft", deps);
 
   assert.equal(frozen.mediaType, "carousel");
+  assert.equal(frozen.draftVersion, 3);
   assert.equal(frozen.slides.length, 2);
   assert.deepEqual(frozen.slides.map((s) => s.unitOrder), [1, 2]);
   assert.deepEqual(frozen.slides.map((s) => s.assetVersion), [5, 4]);

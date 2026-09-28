@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
@@ -18,6 +19,9 @@ import { AcquisitionLensesPanel } from "./acquisition-lenses-panel";
 import { TopicOverviewPanel } from "./topic-overview-panel";
 import { NewStoryDialog, type CreatedStory } from "./new-story-dialog";
 import { AddSourceDialog, type AddedSource } from "./add-source-dialog";
+import { ActionRow, Button } from "./ui/primitives";
+import { ModalLayer } from "./ui/modal-layer";
+import { useUnsavedBeforeUnload } from "./ui/use-unsaved-before-unload";
 import styles from "./radar-dashboard.generated.module.css";
 import {
   TopicConfigurationPanel,
@@ -344,6 +348,8 @@ type ClearResponse = {
     deletedStories: number;
     deletedCollectionRuns: number;
     deletedEditorialEvaluationRuns: number;
+    deletedCreativeAiRuns: number;
+    deletedCreativeBriefs: number;
     deletedSocialPublications: number;
   };
   stats: DatabaseStats;
@@ -458,10 +464,12 @@ function writeStoredSecret(secret: string): void {
 
 export function RadarDashboard({
   initialTopicId,
+  initialThemeStyle,
   initialTopics,
   initialPreferences,
 }: {
   initialTopicId: string;
+  initialThemeStyle: CSSProperties;
   initialTopics: DashboardTopic[];
   initialPreferences: KeywordPreferences;
 }) {
@@ -509,9 +517,37 @@ export function RadarDashboard({
   const [isTopicLoading, setIsTopicLoading] = useState(false);
   const [selectedCreativeProfile, setSelectedCreativeProfile] =
     useState<CreativeProfile>();
+  const acceptSelectedCreativeProfile = useCallback((profile: CreativeProfile) => {
+    // A request from a previous Topic can finish after the selector changes.
+    if (selectedTopicIdRef.current === selectedTopicId) setSelectedCreativeProfile(profile);
+  }, [selectedTopicId]);
   // Bumped by the Instagram connection panel (sync / disconnect / verify) so
   // the gallery below it refetches.
   const [metaRefreshToken, setMetaRefreshToken] = useState(0);
+
+  // Returning from the standalone studio remounts the dashboard. Restore its
+  // read-only data when this tab already has a collector connection, so the
+  // editor does not have to reconnect just to find the same Story.
+  useEffect(() => {
+    const stored = readStoredSecret();
+    if (!stored) return;
+    let cancelled = false;
+    const topicId = initialTopicId;
+    Promise.all([
+      fetchDatabaseStats(stored, topicId),
+      fetchKeywordPreferences(stored, topicId),
+    ]).then(([nextStats, preferences]) => {
+      if (cancelled || selectedTopicIdRef.current !== topicId) return;
+      setStats(nextStats);
+      setFavoredTerms(preferences.favoredTerms.join("\n"));
+      setUnfavoredTerms(preferences.unfavoredTerms.join("\n"));
+      setPreferencesUpdatedAt(preferences.updatedAt);
+    }).catch((error) => {
+      if (cancelled || selectedTopicIdRef.current !== topicId) return;
+      setNotice({ tone: "error", title: "Topic data could not be loaded", message: getErrorMessage(error) });
+    });
+    return () => { cancelled = true; };
+  }, [initialTopicId]);
 
   const isBusy = activeOperation !== undefined;
   const canAuthenticate = secret.trim().length > 0;
@@ -589,6 +625,29 @@ export function RadarDashboard({
   }, []);
 
   useEffect(() => {
+    if (!stats) return;
+    const url = new URL(window.location.href);
+    const returnContext = url.searchParams.get("returnContext");
+    if (!returnContext) return;
+    let scrollY: number | undefined;
+    try {
+      const saved = window.sessionStorage.getItem(`press-craftor:return:${returnContext}`);
+      const context = saved ? JSON.parse(saved) as Record<string, unknown> : undefined;
+      if (context?.topicId === selectedTopicId &&
+          typeof context.scrollY === "number" && Number.isFinite(context.scrollY) && context.scrollY >= 0 &&
+          typeof context.createdAt === "number" && Date.now() - context.createdAt < 15 * 60 * 1000) {
+        scrollY = context.scrollY;
+      }
+      window.sessionStorage.removeItem(`press-craftor:return:${returnContext}`);
+    } catch { /* Keep the current position when storage cannot be read. */ }
+    url.searchParams.delete("returnContext");
+    window.history.replaceState(window.history.state, "", url.toString());
+    if (scrollY === undefined) return;
+    const frame = requestAnimationFrame(() => window.scrollTo({ top: scrollY, behavior: "instant" }));
+    return () => cancelAnimationFrame(frame);
+  }, [selectedTopicId, stats]);
+
+  useEffect(() => {
     if (!sidebarOpen) return;
     const sidebar = sidebarRef.current;
     const menuButton = menuButtonRef.current;
@@ -652,6 +711,16 @@ export function RadarDashboard({
   function openCreativeStory(storyId: string, options?: { editorialRunId?: string; draftId?: string; preparationRunId?: string; tab?: string }) {
     const url = new URL(`/topics/${encodeURIComponent(selectedTopicId)}/stories/${encodeURIComponent(storyId)}`, window.location.origin);
     url.searchParams.set("from", window.location.hash || "#production");
+    try {
+      const returnContext = crypto.randomUUID();
+      window.sessionStorage.setItem(`press-craftor:return:${returnContext}`, JSON.stringify({
+        topicId: selectedTopicId,
+        storyId,
+        scrollY: window.scrollY,
+        createdAt: Date.now(),
+      }));
+      url.searchParams.set("returnContext", returnContext);
+    } catch { /* The section link still works without session storage. */ }
     if (options?.editorialRunId) url.searchParams.set("editorialRunId", options.editorialRunId);
     if (options?.draftId) url.searchParams.set("draftId", options.draftId);
     if (options?.preparationRunId) url.searchParams.set("preparationRunId", options.preparationRunId);
@@ -695,7 +764,7 @@ export function RadarDashboard({
     if (source.sourceType === "article") {
       goToStoryReview({ tab: "collected" });
     } else {
-      window.location.hash = source.sourceType === "rss" ? "sources/rss" : "sources/documents";
+      window.location.assign(source.sourceType === "rss" ? "#sources/rss" : "#sources/documents");
     }
     setNotice({
       tone: "success",
@@ -765,6 +834,7 @@ export function RadarDashboard({
   }
 
   async function handleClear() {
+    if (!window.confirm(`Clear ${selectedTopic?.name ?? "this Topic"}'s editorial work? This removes its Story selections, creative briefs and drafts, generated asset records, evaluation and collection runs, and manual publication marks. Topic settings, source catalogs, and canonical Story records remain.`)) return;
     await runOperation("clear", async () => {
       const result = await clearDatabase(secret, selectedTopicId);
 
@@ -774,7 +844,7 @@ export function RadarDashboard({
       return {
         tone: "success",
         title: "Data cleared",
-        message: `${result.deleted.deletedStories} stories, ${result.deleted.deletedCollectionRuns} collection runs, ${result.deleted.deletedEditorialEvaluationRuns} AI runs, and ${result.deleted.deletedSocialPublications} publication marks were removed. The schema remains intact.`,
+        message: `${result.deleted.deletedStories} Topic Story selections, ${result.deleted.deletedCreativeBriefs} creative briefs and their versions, ${result.deleted.deletedCollectionRuns} collection runs, ${result.deleted.deletedEditorialEvaluationRuns + result.deleted.deletedCreativeAiRuns} AI runs, and ${result.deleted.deletedSocialPublications} manual publication marks were removed. Topic settings and source catalogs remain.`,
       };
     });
   }
@@ -1167,6 +1237,8 @@ export function RadarDashboard({
       return;
     }
 
+    if (!window.confirm(`Clear ${selectedTopic?.name ?? "this Topic"}'s editorial work and collect again? Existing creative briefs, drafts, generated asset records, and manual publication marks will be removed. Collection may fail after the clear.`)) return;
+
     let databaseWasCleared = false;
 
     await runOperation(
@@ -1325,10 +1397,11 @@ export function RadarDashboard({
   return (
     <main
       className={styles.appShell}
-      style={topicThemeStyle(
-        selectedTopic?.themeKey,
-        selectedCreativeProfile,
-      )}
+      style={selectedCreativeProfile
+        ? topicThemeStyle(selectedTopic?.themeKey, selectedCreativeProfile)
+        : selectedTopicId === initialTopicId
+          ? initialThemeStyle
+          : topicThemeStyle(selectedTopic?.themeKey)}
     >
       <aside
         ref={sidebarRef}
@@ -1413,6 +1486,8 @@ export function RadarDashboard({
         <NewStoryDialog
           topics={topics}
           initialTopicId={selectedTopicId}
+          defaultLanguage={selectedCreativeProfile?.language}
+          defaultRegion={selectedCreativeProfile?.region}
           secret={secret}
           onClose={() => setNewStoryOpen(false)}
           onCreated={handleStoryCreated}
@@ -1461,7 +1536,7 @@ export function RadarDashboard({
                       </div>
                     </details>
                   </div>
-                  <a className={styles.topbarActionLink} href="#today">Processes</a>
+                  <a className={styles.topbarActionLink} href="#today">Today</a>
                   <div className={styles.topbarSession}>
                     <span className={`${styles.topbarStatus} ${styles.online}`} role="status" aria-label="Connected" title="Connected" />
                     <button type="button" className={styles.disconnectButton} onClick={handleDisconnect} disabled={isBusy} aria-label="Disconnect" title="Disconnect">
@@ -1505,6 +1580,7 @@ export function RadarDashboard({
 
         <section id="overview" className={styles.anchorTarget} hidden={activeView !== "today"}>
           <DailyPreparationPanel onOpenDraft={(storyId,_title,draftId,preparationRunId)=>openCreativeStory(storyId,{draftId,preparationRunId,tab:"script"})} key={`daily-${selectedTopicId}`} topicId={selectedTopicId} secret={secret} disabled={!canAuthenticate || isBusy || isTopicLoading} refreshKey={stats} onViewContent={handleViewContent} onPrepareContent={handlePrepareContent} onSelect={handlePlannerSelect} preparingStoryId={activeOperation === "prepare" ? activeStoryId : undefined} onCompleted={()=>{void fetchDatabaseStats(secret,selectedTopicId).then(setStats).catch(()=>{});}} />
+          <DailyEditorialPlannerPanel key={`planner-${selectedTopicId}`} topicId={selectedTopicId} secret={secret} disabled={!canAuthenticate || isBusy} refreshKey={stats} onViewContent={handleViewContent} onPrepareContent={handlePrepareContent} onSelect={handlePlannerSelect} preparingStoryId={activeOperation === "prepare" ? activeStoryId : undefined} />
           <TopicOverviewPanel
             key={selectedTopicId}
             secret={secret}
@@ -1597,7 +1673,7 @@ export function RadarDashboard({
         </div>
 
         <div id="editorial-lines" className={styles.anchorTarget} hidden={activeView !== "strategy" || activeNavHash !== "#strategy/lines"}>
-          <EditorialLinesPanel key={`strategy-${selectedTopicId}`} topicId={selectedTopicId} secret={secret} disabled={isBusy} refreshKey={lineRefresh} onSelection={setLineSelection} onLoaded={setLineData} />
+          <EditorialLinesPanel key={`strategy-${selectedTopicId}`} topicId={selectedTopicId} secret={secret} disabled={isBusy} manageOnly refreshKey={lineRefresh} onLoaded={setLineData} />
         </div>
 
         <div id="editorial-creative" className={styles.anchorTarget} hidden={activeView !== "identity"}>
@@ -1606,8 +1682,8 @@ export function RadarDashboard({
             topicId={selectedTopicId}
             secret={secret}
             disabled={isBusy}
-            onProfileLoaded={setSelectedCreativeProfile}
-            onProfileSaved={setSelectedCreativeProfile}
+            onProfileLoaded={acceptSelectedCreativeProfile}
+            onProfileSaved={acceptSelectedCreativeProfile}
           />
         </div>
 
@@ -1763,7 +1839,7 @@ export function RadarDashboard({
           <div className={styles.preferencesFooter}>
             <small>
               {preferencesUpdatedAt
-                ? `Saved in Neon · ${formatUtcDate(preferencesUpdatedAt)}`
+                ? `Preferences saved · ${formatUtcDate(preferencesUpdatedAt)}`
                 : "They remain available when story data is cleared."}
             </small>
             <button
@@ -1788,15 +1864,14 @@ export function RadarDashboard({
             <div><p className={styles.kicker}>Selected stories</p><h2>Continue production</h2></div>
             <span>{productionStories.length} stories</span>
           </div>
-          <DailyEditorialPlannerPanel key={`production-${selectedTopicId}`} topicId={selectedTopicId} secret={secret} disabled={!canAuthenticate || isBusy} refreshKey={stats} onViewContent={handleViewContent} onPrepareContent={handlePrepareContent} onSelect={handlePlannerSelect} preparingStoryId={activeOperation === "prepare" ? activeStoryId : undefined} />
           {productionStories.length ? (
             <div className={styles.queueList}>
               {productionStories.map((story) => (
                 <article className={styles.queueItem} key={story.storyId}>
                   <div><span className={styles.queueMeta}>{story.sourceName} · {story.contentStatus === "missing" ? "Content pending" : "Content available"}</span><h3>{story.title}</h3><p>{story.reason}</p></div>
                   <div className={styles.queueActions}>
-                    <button type="button" className={styles.secondaryButton} onClick={() => { void handleViewContent(story.storyId); }} disabled={!canAuthenticate || isBusy}>Content</button>
-                    <button type="button" className={styles.primaryButton} onClick={() => openCreativeStory(story.storyId, { tab: "script" })} disabled={!canAuthenticate || isBusy}>Open studio</button>
+                    <Button size="compact" onClick={() => { void handleViewContent(story.storyId); }} disabled={!canAuthenticate || isBusy}>Content</Button>
+                    <Button size="compact" variant="primary" onClick={() => openCreativeStory(story.storyId, { tab: "script" })} disabled={!canAuthenticate || isBusy}>Open studio</Button>
                   </div>
                 </article>
               ))}
@@ -1805,8 +1880,10 @@ export function RadarDashboard({
         </section>
 
         <div id="stories" className={styles.anchorTarget} hidden={!(activeView === "production" || (activeView === "discover" && !["#collect", "#optimization"].includes(activeNavHash)))}>
+          <StoryReviewDisclosure production={activeView === "production"} selectedCount={selectedStoryCount}>
           <EditorialEvaluationPanel
             key={`${selectedTopicId}:${activeView}`}
+            topicId={selectedTopicId}
             initialTab={activeView === "production" ? "selected" : "collected"}
             editorial={stats?.editorial}
             lineData={lineData?.topicId===selectedTopicId?lineData:undefined}
@@ -1851,6 +1928,7 @@ export function RadarDashboard({
               openCreativeStory(storyId, { editorialRunId, tab: "focus" });
             }}
           />
+          </StoryReviewDisclosure>
         </div>
 
         <section className={styles.workQueue} hidden={activeView !== "publications" || activeNavHash !== "#publications"} aria-label="Pending publications">
@@ -1860,7 +1938,7 @@ export function RadarDashboard({
             {pendingInstagramStories.map((story) => (
               <article className={styles.queueItem} key={story.storyId}>
                 <div><span className={styles.queueMeta}>{story.sourceName}</span><h3>{story.title}</h3></div>
-                <button type="button" className={styles.primaryButton} onClick={() => openCreativeStory(story.storyId, { tab: "publication" })} disabled={!canAuthenticate || isBusy}>Review publication</button>
+                <Button size="compact" variant="primary" onClick={() => openCreativeStory(story.storyId, { tab: "publication" })} disabled={!canAuthenticate || isBusy}>Review publication</Button>
               </article>
             ))}
           </div> : <div className={styles.queueEmpty}><strong>No selected stories pending.</strong><p>Confirmed publications appear in History.</p><a href="#publications/history">View history →</a></div>}
@@ -1882,7 +1960,7 @@ export function RadarDashboard({
             className={`${styles.notice} ${
               notice.tone === "success" ? styles.noticeSuccess : styles.noticeError
             }`}
-            role="status"
+            role={notice.tone === "error" ? "alert" : "status"}
           >
             <span aria-hidden="true">{notice.tone === "success" ? "✓" : "!"}</span>
             <div>
@@ -1897,9 +1975,11 @@ export function RadarDashboard({
             <p className={styles.sectionNumber}>06 · Danger zone</p>
             <h2>Clear or regenerate data</h2>
             <p>
-              This removes stories, sources, publication tracking, and execution
-              history. Tables, indexes, migrations, and editorial preferences
-              remain intact.
+              This clears the selected Topic&rsquo;s Story selections, creative
+              briefs and draft versions, generated asset records, collection
+              and evaluation runs, and manual publication marks. Topic settings,
+              source catalogs, canonical Story records, and database structure
+              remain. A new collection can fail after the clear.
             </p>
           </div>
 
@@ -2030,8 +2110,21 @@ function OptimizationPanel({
   );
 }
 
+function StoryReviewDisclosure({ production, selectedCount, children }: {
+  production: boolean;
+  selectedCount: number;
+  children: React.ReactNode;
+}) {
+  if (!production) return <>{children}</>;
+  return <details className={styles.productionReviewDetails}>
+    <summary>Advanced review · {selectedCount} selected {selectedCount === 1 ? "Story" : "Stories"}</summary>
+    <p>The detailed evaluation table, filters, and bulk selection actions are here when you need them.</p>
+    {children}
+  </details>;
+}
+
 function EditorialEvaluationPanel({
-  editorial, lineData, initialTab,
+  topicId, editorial, lineData, initialTab,
   canEvaluate,
   isEvaluating,
   onEvaluate,
@@ -2058,6 +2151,7 @@ function EditorialEvaluationPanel({
   onUpdatePublication,
   onOpenCreativeStory,
 }: {
+  topicId: string;
   editorial?: EditorialDashboardStats;
   initialTab: "collected" | "selected";
   lineData?: EditorialLinesData;
@@ -2102,6 +2196,47 @@ function EditorialEvaluationPanel({
     useState<StoryTableViewState>(() => createStoryTableViewState("collected"));
   const [selectedTableState, setSelectedTableState] =
     useState<StoryTableViewState>(() => createStoryTableViewState("selected"));
+  const [lineFilter,setLineFilter]=useState("");
+  const [shortlistOnly,setShortlistOnly]=useState(false);
+  const [viewRestored, setViewRestored] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      try {
+        const saved = window.sessionStorage.getItem(`press-craftor:review:${topicId}`);
+        if (saved) {
+          const state = JSON.parse(saved) as Record<string, unknown>;
+          const collected = sanitizeStoryTableViewState(state.collected, "collected");
+          const selected = sanitizeStoryTableViewState(state.selected, "selected");
+          const deepLink = parseStoryReviewHash(window.location.hash);
+          if (deepLink?.publicationFilter) {
+            const target = deepLink.tab === "selected" ? selected : collected;
+            target.publicationFilter = deepLink.publicationFilter;
+          }
+          setCollectedTableState(collected);
+          setSelectedTableState(selected);
+          setLineFilter(typeof state.lineFilter === "string" ? state.lineFilter : "");
+          setShortlistOnly(state.shortlistOnly === true);
+        }
+      } catch { /* Private browsing or an obsolete stored view uses defaults. */ }
+      setViewRestored(true);
+    });
+    return () => { cancelled = true; };
+  }, [topicId]);
+
+  useEffect(() => {
+    if (!viewRestored) return;
+    try {
+      window.sessionStorage.setItem(`press-craftor:review:${topicId}`, JSON.stringify({
+        collected: collectedTableState,
+        selected: selectedTableState,
+        lineFilter,
+        shortlistOnly,
+      }));
+    } catch { /* Filtering still works when storage is unavailable. */ }
+  }, [topicId, viewRestored, collectedTableState, selectedTableState, lineFilter, shortlistOnly]);
 
   // A deep link (#stories/selected/unpublished) or the sidebar shortcut drives
   // the tab + publication filter. Bare #stories keeps whatever the user last had.
@@ -2179,8 +2314,6 @@ function EditorialEvaluationPanel({
     editorial?.configuration.effectiveCandidatePolicy?.localCandidateMinScore ??
     editorial?.configuration.minLocalScore ??
     25;
-  const [lineFilter,setLineFilter]=useState("");
-  const [shortlistOnly,setShortlistOnly]=useState(false);
   const lineStories=(rows:EditorialTableStory[])=>rows.map(story=>({...story,lineContexts:lineData?.associations.filter(a=>a.storyId===story.storyId && (!lineFilter || lineFilter==="none" || a.context.lineId===lineFilter))??[]})).filter(story=>!lineFilter || (lineFilter==="none"?story.lineContexts.length===0:story.lineContexts.length>0));
   const filteredCollectedStories = filterTableStories(
     lineStories(collectedStories).filter(story=>!shortlistOnly || (story.reviewable===true && story.evaluationDecision==="shortlist")),
@@ -2626,6 +2759,27 @@ function createStoryTableViewState(
     hideBelowTopicFloor: false,
     publicationFilter: "all",
     publicationPlatform: "instagram",
+  };
+}
+
+function sanitizeStoryTableViewState(value: unknown, mode: StoryTableMode): StoryTableViewState {
+  const defaults = createStoryTableViewState(mode);
+  if (!value || typeof value !== "object") return defaults;
+  const saved = value as Partial<Record<keyof StoryTableViewState, unknown>>;
+  const rankKeys: readonly StoryRankKey[] = ["publishedAt", "editorialPriority", "growthScore", "localScore"];
+  const publicationFilters: readonly PublicationFilter[] = ["all", "not-published-anywhere", "scheduled-on-platform", "published-on-platform"];
+  const boundedNumber = (candidate: unknown, max: number) =>
+    typeof candidate === "number" && Number.isInteger(candidate) && candidate >= 1 && candidate <= max
+      ? candidate : undefined;
+  return {
+    primaryRank: rankKeys.includes(saved.primaryRank as StoryRankKey) ? saved.primaryRank as StoryRankKey : defaults.primaryRank,
+    secondaryRank: rankKeys.includes(saved.secondaryRank as StoryRankKey) ? saved.secondaryRank as StoryRankKey : defaults.secondaryRank,
+    publishedWithinDays: boundedNumber(saved.publishedWithinDays, 3650),
+    hideBelowTopicFloor: saved.hideBelowTopicFloor === true,
+    minimumEditorialPriority: boundedNumber(saved.minimumEditorialPriority, 100),
+    minimumGrowthScore: boundedNumber(saved.minimumGrowthScore, 100),
+    publicationFilter: publicationFilters.includes(saved.publicationFilter as PublicationFilter) ? saved.publicationFilter as PublicationFilter : defaults.publicationFilter,
+    publicationPlatform: PUBLICATION_PLATFORMS.includes(saved.publicationPlatform as PublicationPlatform) ? saved.publicationPlatform as PublicationPlatform : defaults.publicationPlatform,
   };
 }
 
@@ -3319,11 +3473,28 @@ export function StoryContentViewer({
   const [text, setText] = useState(content.text ?? "");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [pendingExit, setPendingExit] = useState<"close" | "cancel">();
   const [history, setHistory] = useState<{ revision: number; title: string; text: string; createdAt: string }[]>();
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const editingDirty = editing && (title !== content.title || text !== (content.text ?? ""));
+  useUnsavedBeforeUnload(editingDirty);
   const wordCount = countTextWords(content.text);
-  async function save() {
+  function requestClose() {
+    if (busy) return;
+    if (editingDirty) setPendingExit("close");
+    else onClose();
+  }
+  function cancelEditing() {
+    if (busy) return;
+    if (editingDirty) setPendingExit("cancel");
+    else { setTitle(content.title); setText(content.text ?? ""); setEditing(false); }
+  }
+  function discardAndExit() {
+    if (pendingExit === "close") onClose();
+    else { setTitle(content.title); setText(content.text ?? ""); setEditing(false); setPendingExit(undefined); }
+  }
+  async function save(closeAfter = false) {
     setBusy(true); setMessage("");
     try {
       const saved = await requestJson<StoryContentResponse>(topicUrl(`/api/radar/stories/${content.storyId}/content`, topicId), secret, {
@@ -3331,7 +3502,9 @@ export function StoryContentViewer({
       });
       if (!mounted.current) return;
       onSaved(saved); setEditing(false); setHistory(undefined);
+      setPendingExit(undefined);
       setMessage("Saved. Refresh the creative brief and draft to use this edition. Previous images remain in history.");
+      if (closeAfter) onClose();
     } catch (error) { setMessage(error instanceof Error ? error.message : "Save failed"); }
     finally { setBusy(false); }
   }
@@ -3343,12 +3516,13 @@ export function StoryContentViewer({
   }
 
   return (
+    <ModalLayer onClose={requestClose} canClose={!busy}>
     <div
       className={styles.contentViewerBackdrop}
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
-          onClose();
+          requestClose();
         }
       }}
     >
@@ -3363,7 +3537,7 @@ export function StoryContentViewer({
             <p>{content.editorial ? `Editorial edition · v${content.editorial.revision}` : "Prepared story content"}</p>
             <h2 id="story-content-title">{content.title}</h2>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close content viewer">
+          <button type="button" onClick={requestClose} disabled={busy} aria-label="Close content viewer">
             ×
           </button>
         </header>
@@ -3400,15 +3574,24 @@ export function StoryContentViewer({
         ) : null}
 
         <div className={styles.contentViewerBody}>
+          {pendingExit ? <div className={styles.contentViewerWarning} role="alert">
+            <strong>Unsaved content changes</strong>
+            <span>Save this edition or discard your edits before {pendingExit === "close" ? "closing" : "leaving edit mode"}.</span>
+            <ActionRow>
+              <Button variant="primary" disabled={busy || !title.trim() || !text.trim()} busy={busy} onClick={() => void save(pendingExit === "close")}>Save {pendingExit === "close" ? "and close" : "edition"}</Button>
+              <Button variant="destructive" disabled={busy} onClick={discardAndExit}>Discard changes</Button>
+              <Button variant="quiet" onClick={() => setPendingExit(undefined)}>Keep editing</Button>
+            </ActionRow>
+          </div> : null}
           <div className={styles.storyMaterials}>
-            <button type="button" disabled={busy} onClick={() => { setTitle(content.title); setText(content.text ?? ""); setEditing(!editing); }}>{editing ? "Cancel editing" : "Edit content"}</button>
+            <button type="button" data-initial-focus disabled={busy} onClick={() => { if (editing) cancelEditing(); else setEditing(true); }}>{editing ? "Cancel editing" : "Edit content"}</button>
             {content.editorial ? <button type="button" disabled={busy} onClick={loadHistory}>Recent versions</button> : null}
             {message ? <p role="status">{message}</p> : null}
           </div>
           {editing ? <div className={styles.storyMaterialForm}>
             <label>Title<input value={title} maxLength={500} onChange={event => setTitle(event.target.value)} disabled={busy} /></label>
             <label>Editorial content<textarea rows={16} value={text} maxLength={100000} onChange={event => setText(event.target.value)} disabled={busy} /></label>
-            <button type="button" disabled={busy || !title.trim() || !text.trim()} onClick={save}>{busy ? "Saving…" : "Save edition"}</button>
+            <button type="button" disabled={busy || !title.trim() || !text.trim()} onClick={() => void save()}>{busy ? "Saving…" : "Save edition"}</button>
             {content.editorial ? <button type="button" disabled={busy} onClick={() => { setTitle(content.editorial!.original.title); setText(content.editorial!.original.text); }}>Use original in editor</button> : null}
           </div> : content.text ? (
             <p>{content.text}</p>
@@ -3422,21 +3605,20 @@ export function StoryContentViewer({
         <StoryPhotosPanel secret={secret} topicId={topicId} storyId={content.storyId} />
         </div>
         <footer className={styles.contentViewerFooter}>
-          <a href={content.url} target="_blank" rel="noreferrer">
-            Open original story ↗
-          </a>
+          {/^https?:\/\//i.test(content.url) ? <a href={content.url} target="_blank" rel="noreferrer">Open original source ↗</a> : <span>Created in Press Craftor · no public source URL</span>}
           {content.enrichment?.fetchedAt ? (
             <span>Fetched {formatDate(content.enrichment.fetchedAt)}</span>
           ) : null}
         </footer>
       </section>
     </div>
+    </ModalLayer>
   );
 }
 
 function TableHeader({ label, numeric = false }: { label: string; numeric?: boolean }) {
   return (
-    <th className={numeric ? styles.numericColumn : undefined}>
+    <th scope="col" className={numeric ? styles.numericColumn : undefined}>
       <span className={styles.tableHeaderLabel}>{label}</span>
     </th>
   );
@@ -3451,7 +3633,7 @@ function ScoreCell({
 }) {
   return (
     <td className={`${styles.scoreCell} ${accent ? styles.accentScoreCell : ""}`}>
-      {value ?? "—"}
+      {value !== undefined && value >= 1 ? value : <span title="Not scored yet">—</span>}
     </td>
   );
 }
@@ -3468,11 +3650,12 @@ function GrowthScoreCell({
   const signalEntries = growthSignalEntries(signals);
   const hasBreakdown = Boolean(reason || signalEntries.length > 0);
   const tooltip = growthScoreTooltip(reason, signalEntries);
-  const displayValue = value ?? "—";
+  const scoredValue = value !== undefined && value >= 1 ? value : undefined;
+  const displayValue = scoredValue ?? "—";
 
   return (
     <td className={`${styles.scoreCell} ${styles.growthScoreCell}`}>
-      {value !== undefined || hasBreakdown ? (
+      {scoredValue !== undefined || hasBreakdown ? (
         <div className={styles.growthScoreSummary}>
           <strong title={tooltip}>{displayValue}</strong>
           {hasBreakdown ? (
@@ -3526,7 +3709,7 @@ function PublicationStatusChips({
   publications?: readonly StoryPublication[];
 }) {
   if (publications.length === 0) {
-    return <span className={styles.publicationNotTracked}>Not tracked</span>;
+    return <span className={styles.publicationNotTracked}>No manual tracking</span>;
   }
 
   return (
@@ -3536,7 +3719,7 @@ function PublicationStatusChips({
           key={`${publication.platform}-${publication.status}-${publication.publishedAt ?? publication.scheduledAt ?? "current"}`}
           tone={publicationStatusTone(publication.status)}
         >
-          {`${formatPublicationPlatform(publication.platform)} · ${formatPublicationStatus(publication.status)}`}
+          {`Manual · ${formatPublicationPlatform(publication.platform)} · ${formatPublicationStatus(publication.status)}`}
         </StatusBadge>
       ))}
     </div>
@@ -3561,21 +3744,24 @@ function PublicationQuickControl({
   ) => void;
 }) {
   const [platform, setPlatform] = useState<PublicationPlatform>("instagram");
+  const [draftStatus, setDraftStatus] = useState<PublicationStatus | "" | undefined>();
   const publication = publications?.find(
     (candidate) => candidate.platform === platform,
   );
+  const savedStatus = publication?.status ?? "";
+  const selectedStatus = draftStatus ?? savedStatus;
 
   return (
     <div className={styles.publicationQuickControl}>
+      <strong>Manual tracking</strong>
+      <small>This records an editorial note. It does not send or schedule a post.</small>
       <label>
         <span>Platform</span>
         <select
           value={platform}
           disabled={disabled || isUpdating || !onUpdate}
           aria-label={`Choose a publication platform for ${storyId}`}
-          onChange={(event) =>
-            setPlatform(event.currentTarget.value as PublicationPlatform)
-          }
+          onChange={(event) => { setPlatform(event.currentTarget.value as PublicationPlatform); setDraftStatus(undefined); }}
         >
           {PUBLICATION_PLATFORMS.map((candidate) => (
             <option key={candidate} value={candidate}>
@@ -3587,18 +3773,10 @@ function PublicationQuickControl({
       <label>
         <span>Status</span>
         <select
-          value={publication?.status ?? ""}
+          value={selectedStatus}
           disabled={disabled || isUpdating || !onUpdate}
-          aria-label={`Update ${formatPublicationPlatform(platform)} tracking for ${storyId}`}
-          onChange={(event) => {
-            const value = event.currentTarget.value;
-
-            onUpdate?.(
-              storyId,
-              platform,
-              value === "" ? undefined : (value as PublicationStatus),
-            );
-          }}
+          aria-label={`Choose manual ${formatPublicationPlatform(platform)} tracking status for ${storyId}`}
+          onChange={(event) => setDraftStatus(event.currentTarget.value as PublicationStatus | "")}
         >
           <option value="">Not tracked</option>
           <option value="draft">Draft</option>
@@ -3606,7 +3784,9 @@ function PublicationQuickControl({
           <option value="published">Published</option>
         </select>
       </label>
-      {isUpdating ? <small>Saving…</small> : null}
+      <Button size="compact" variant="secondary" disabled={disabled || isUpdating || !onUpdate || selectedStatus === savedStatus} busy={isUpdating} onClick={() => onUpdate?.(storyId, platform, selectedStatus || undefined)}>
+        {isUpdating ? "Saving…" : "Save manual status"}
+      </Button>
     </div>
   );
 }

@@ -193,7 +193,7 @@ In Today, choose an editorial line and preparation target. Show which steps will
 
 Distinguish **Story approval**, **script approval**, **image approval**, and **publication authorization**. Show the version and actor for each. Mark automated validation as automated.
 
-An existing policy mismatch needs resolution before presenting automation as fully approved: the daily flow can call `approveSavedCreativeDraft(..., true, ...)` for `approve-draft`, while `AGENTS.md` currently requires human approval. The UI also suggests automatic preparation through images. The interface must show what happened and align with the approval policy; a system transition must never appear as human review. This document does not authorize autonomous publishing.
+The current daily preparation flow checks that the exact saved draft is approved and current before advancing from `approve-draft` to images. Preserve that human approval checkpoint and make it explicit in the interface. A system transition must never appear as human review. This document does not authorize autonomous publishing.
 
 ## 8. Story studio
 
@@ -303,6 +303,7 @@ The design is ready when a user can identify the current Topic and view immediat
 
 ## 14. References
 
+- [Component-by-component UI/UX audit](ui-ux-component-audit.md) and [implementation stories UX-01–UX-22](features/ui-ux-consistency.md) extend this specification to internal panels, controls, and workflow states.
 - [Dashboard and navigation](../src/app/radar-dashboard.tsx); [Topic and source configuration](../src/app/topic-configuration-panel.tsx).
 - [Creative profile](../src/app/creative-profile-panel.tsx), [editorial profile](../src/app/editorial-profile-panel.tsx), and [editorial lines](../src/app/editorial-lines-panel.tsx).
 - [Overview](../src/app/topic-overview-panel.tsx), [daily preparation UI](../src/app/daily-preparation-panel.tsx), [step contract](../src/app/modules/stories/daily-preparation.types.ts), and [execution](../src/app/modules/stories/daily-preparation.ts).

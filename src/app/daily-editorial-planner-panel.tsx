@@ -67,7 +67,7 @@ export function DailyEditorialPlannerPanel({topicId,secret,disabled,refreshKey,o
     setApprovalMessage(undefined);
     try {
       await onSelect(item.storyId,current.title,current.decision);
-      setApprovalMessage({storyId:item.storyId,text:"Approved. The story is ready for the creative workflow.",failed:false});
+      setApprovalMessage({storyId:item.storyId,text:"Story approved for production. You can now open its creative workflow.",failed:false});
       await load();
     } catch (error) {
       setApprovalMessage({storyId:item.storyId,text:error instanceof Error ? error.message : "Approval failed. Please try again.",failed:true});
@@ -90,7 +90,7 @@ export function DailyEditorialPlannerPanel({topicId,secret,disabled,refreshKey,o
       <div className={styles.dailyPlannerActions}>
         <button type="button" className={styles.secondaryButton} disabled={actionsDisabled} onClick={()=>onViewContent(item.storyId)}>View content</button>
         <button type="button" className={styles.secondaryButton} disabled={actionsDisabled} onClick={()=>onPrepareContent(item.storyId)}>{preparingStoryId===item.storyId ? "Preparing…" : "Prepare content"}</button>
-        <button type="button" className={styles.primaryButton} disabled={actionsDisabled || approved || !current?.decision} onClick={()=>void approve(item)}>{approvingId===item.storyId ? "Approving…" : approved ? "Approved" : "Approve"}</button>
+        <button type="button" className={styles.primaryButton} disabled={actionsDisabled || approved || !current?.decision} onClick={()=>void approve(item)}>{approvingId===item.storyId ? "Approving Story…" : approved ? "Story approved" : "Approve Story for production"}</button>
       </div>
       {approvalMessage?.storyId===item.storyId && <p role={approvalMessage.failed ? "alert" : "status"}>{approvalMessage.text}</p>}
     </article>;

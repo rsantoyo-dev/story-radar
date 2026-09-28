@@ -4,6 +4,7 @@ import {
   listTopics,
 } from "@/app/modules/topics/topic-catalog.repository";
 import { connection } from "next/server";
+import { resolveTopicUiTheme } from "@/app/modules/topics/topic-ui-theme";
 
 import { RadarDashboard } from "./radar-dashboard";
 
@@ -18,10 +19,12 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ t
   const requestedTopicId = typeof query.metaTopicId === "string" ? query.metaTopicId : typeof query.topicId === "string" ? query.topicId : undefined;
   const selectedTopic = topics.find((topic) => topic.id === requestedTopicId && topic.isActive) ?? defaultTopic;
   const preferences = await getStoryKeywordPreferences(selectedTopic.id);
+  const initialThemeStyle = await resolveTopicUiTheme(selectedTopic.id, selectedTopic.themeKey);
 
   return (
     <RadarDashboard
       initialTopicId={selectedTopic.id}
+      initialThemeStyle={initialThemeStyle}
       initialTopics={topics.map((topic) => ({
         id: topic.id,
         name: topic.name,

@@ -246,6 +246,7 @@ function mapFrozenPackage(
     : [];
   return {
     id: row.id,
+    draftVersion: row.draftVersion,
     status: row.status as FrozenPackage["status"],
     packageHash: row.packageHash,
     mediaType: row.mediaType as PublicationMediaType,

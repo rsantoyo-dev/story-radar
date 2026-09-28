@@ -10,11 +10,11 @@ UXDSL knowledge disagree, the installed package wins: verify against
 not compatible with `0.3.x`).
 
 **Everything compiles from one config file, in one process.** Since
-`5`, `uxdsl.config.cjs` declares all five entries in a `builds`
+`5`, `uxdsl.config.cjs` declares all six entries in a `builds`
 array; `uxdsl build`/`uxdsl watch` with no flags compiles all of them from a
 single invocation. This replaced five separate per-entry config files and five
 concurrent CLI processes. The build is atomic across the whole array: one
-entry failing writes none of the five outputs, rather than leaving some fresh
+entry failing writes none of the six outputs, rather than leaving some fresh
 and some stale.
 
 **Theme data lives in its own file, auto-discovered by the CLI.**
@@ -31,7 +31,7 @@ CLI reserves it and will try to read whatever's there as theme data.
 CLI-built entry silently got `includeTheme: true` regardless of what the
 config said, duplicating the full global token set into every CSS Module. Now
 it's forwarded correctly: only the theme entry (`includeTheme: true` in
-`uxdsl.config.cjs`'s `builds` array) emits `:root`; the four panel entries
+`uxdsl.config.cjs`'s `builds` array) emits `:root`; the five module entries
 default to `false` and stay clean. Verified empirically on this project: the
 panel bundles shrank 19–78% and dropped to zero `:root` blocks the moment the
 flag started working.
@@ -54,10 +54,10 @@ instead.
 | --- | --- |
 | `uxdsl.config.js` | Raw data: breakpoints, palette, spacing, typography, fonts. Single source of truth for design tokens. |
 | `uxdsl.theme.config.cjs` | `{ theme, references }`, sourced from `uxdsl.config.js`. Auto-discovered by `uxdsl-cli` — **do not** repurpose this exact filename for anything else. |
-| `uxdsl.config.cjs` | The one build/watch orchestration file: `breakpoints`, a `builds` array (all five entries), and `watch` globs. No `theme` here — that's the file above. |
+| `uxdsl.config.cjs` | The one build/watch orchestration file: `breakpoints`, a `builds` array (all six entries), and `watch` globs. No `theme` here — that's the file above. |
 | `postcss-uxdsl-source.cjs` | PostCSS guard applied to already-compiled output for the separate Next.js-level pass (see §3). |
 
-Entries and their outputs (all five declared in `uxdsl.config.cjs`'s `builds`
+Entries and their outputs (all six declared in `uxdsl.config.cjs`'s `builds`
 array, in this order):
 
 | Source | Output | Kind |
@@ -67,9 +67,10 @@ array, in this order):
 | `src/app/creative-draft-workspace.module.uxdsl` | `creative-draft-workspace.generated.module.css` | CSS Module |
 | `src/app/editorial-profile-panel.module.uxdsl` | `editorial-profile-panel.generated.module.css` | CSS Module |
 | `src/app/topic-configuration-panel.module.uxdsl` | `topic-configuration-panel.generated.module.css` | CSS Module |
+| `src/app/ui/primitives.module.uxdsl` | `ui/primitives.generated.module.css` | CSS Module |
 
 Never edit a `*.generated.module.css` by hand. Edit the `.uxdsl` source and
-rebuild. Adding a sixth entry means adding one object to the `builds` array —
+rebuild. Adding a seventh entry means adding one object to the `builds` array —
 no new config file, no new npm script.
 
 ---
@@ -256,7 +257,7 @@ while `npm run dev` is running does trigger a rebuild).
 ## 8. Commands
 
 ```bash
-npm run uxdsl:build     # all five entries, one process, atomic
+npm run uxdsl:build     # all six entries, one process, atomic
 npm run uxdsl:watch     # same, then rebuild on change (used by npm run dev)
 ```
 

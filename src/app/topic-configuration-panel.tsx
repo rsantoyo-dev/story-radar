@@ -1,6 +1,7 @@
 "use client";
 
 import { EditorialLinesPanel } from "./editorial-lines-panel";
+import { ActionRow, Button } from "./ui/primitives";
 import { topicThemeStyle } from "@/design/topic-themes";
 import { type ReactNode, useEffect, useState } from "react";
 
@@ -213,6 +214,7 @@ export function TopicConfigurationPanel({
   const [showDocumentForm, setShowDocumentForm] = useState(false);
   const [documentDraft, setDocumentDraft] = useState<KnowledgeDocumentDraft>(EMPTY_DOCUMENT);
   const [selectedKnowledgeChapterIds, setSelectedKnowledgeChapterIds] = useState<string[]>([]);
+  const [selectionDocumentKey, setSelectionDocumentKey] = useState("");
   const [knowledgeDossierTitle, setKnowledgeDossierTitle] = useState("");
   const [documentDetails, setDocumentDetails] = useState<{
     topicId: string;
@@ -711,8 +713,6 @@ export function TopicConfigurationPanel({
         !forceReload
       ) {
         setDocumentDetails(undefined);
-        setSelectedKnowledgeChapterIds([]);
-        setKnowledgeDossierTitle("");
         return;
       }
       const response = await requestJson<{
@@ -737,8 +737,12 @@ export function TopicConfigurationPanel({
         topicDocumentId: document.topicDocumentId,
         chapters: response.chapters,
       });
-      setSelectedKnowledgeChapterIds([]);
-      setKnowledgeDossierTitle("");
+      const documentKey = `${selectedTopicId}:${document.topicDocumentId}`;
+      if (selectionDocumentKey !== documentKey) {
+        setSelectedKnowledgeChapterIds([]);
+        setKnowledgeDossierTitle("");
+        setSelectionDocumentKey(documentKey);
+      }
     });
   }
 
@@ -848,7 +852,7 @@ export function TopicConfigurationPanel({
       {notice ? <p className={styles.notice} role="status">{notice}</p> : null}
 
       {view === "topics" ? <>
-      <div className={styles.topicCards} aria-label="Topics disponibles">
+      <div className={styles.topicCards} aria-label="Available Topics">
         {topics.map((topic) => {
           const linkedCount = (catalog?.rss.filter((feed) => feed.topics.some((link) => link.topicId === topic.id)).length ?? 0) +
             (catalog?.documents.filter((document) => document.topics.some((link) => link.topicId === topic.id)).length ?? 0);
@@ -859,20 +863,7 @@ export function TopicConfigurationPanel({
         })}
       </div>
       <div className={styles.topicRow}>
-        <label>
-          <span>Active topic</span>
-          <select
-            value={selectedTopicId}
-            onChange={(event) => changeTopic(event.target.value)}
-            disabled={disabled || Boolean(busy)}
-          >
-            {topics.map((topic) => (
-              <option key={topic.id} value={topic.id} disabled={!topic.isActive}>
-                {topic.name}{topic.isActive ? "" : " · inactive"}
-              </option>
-            ))}
-          </select>
-        </label>
+        <p className={styles.topicRowContext}>Editing <strong>{selectedTopic?.name ?? "a Topic"}</strong>. Use the Topic selector in the top bar to switch.</p>
         <div className={styles.topicActions}>
           <button type="button" onClick={() => setShowTopicForm(true)} disabled={!canUseApi || disabled || Boolean(busy)}>
             New topic
@@ -882,6 +873,17 @@ export function TopicConfigurationPanel({
           </button>
         </div>
       </div>
+
+      {selectedTopic ? <nav className={styles.topicSetupGuide} aria-label={`Set up ${selectedTopic.name}`}>
+        <h3>Continue setting up {selectedTopic.name}</h3>
+        <p>Each step opens its own workspace. Channels are needed when you are ready to publish.</p>
+        <ol>
+          <li><a href="#identity">1. Identity <span>Review the Topic’s visual identity</span></a></li>
+          <li><a href="#strategy/lines">2. Strategy <span>Review editorial lines</span></a></li>
+          <li><a href="#sources/rss">3. Sources <span>{catalog ? `${catalog.rss.filter((feed) => feed.topics.some((link) => link.topicId === selectedTopicId)).length + catalog.documents.filter((document) => document.topics.some((link) => link.topicId === selectedTopicId)).length} linked feeds and documents` : "Loading linked records…"}</span></a></li>
+          <li><a href="#channels">4. Channels <span>Check connection before publishing</span></a></li>
+        </ol>
+      </nav> : null}
 
       {showTopicForm || editingTopic ? (
         <form
@@ -907,10 +909,10 @@ export function TopicConfigurationPanel({
               ))}
             </select>
           </label>
-          <div>
-            <button type="submit" disabled={Boolean(busy)}>{editingTopic ? "Save topic" : "Create topic"}</button>
-            <button type="button" onClick={() => { setShowTopicForm(false); setEditingTopic(false); }} disabled={Boolean(busy)}>Cancel</button>
-          </div>
+          <ActionRow>
+            <Button type="submit" variant="primary" disabled={Boolean(busy)}>{editingTopic ? "Save topic" : "Create topic"}</Button>
+            <Button variant="quiet" onClick={() => { setShowTopicForm(false); setEditingTopic(false); }} disabled={Boolean(busy)}>Cancel</Button>
+          </ActionRow>
         </form>
       ) : null}
 
@@ -1330,7 +1332,7 @@ export function TopicConfigurationPanel({
                     <div className={styles.sourceActions}>
                       {document.latestVersion ? (
                         <button type="button" onClick={() => void showKnowledgeDocumentSections(document)} disabled={Boolean(busy)}>
-                          {detailsVisible ? "Hide chapters" : "View chapters"}
+                          {detailsVisible ? "Close evidence workspace" : "Inspect chapters"}
                         </button>
                       ) : null}
                       {run?.status === "failed" ? (
@@ -1347,6 +1349,7 @@ export function TopicConfigurationPanel({
                               Select related chapters to create one evidence dossier before AI evaluation.
                               Chapters already used in another story remain reusable here.
                             </small>
+                            <small role="status">{selectedKnowledgeChapterIds.length} chapters selected{selectedKnowledgeChapterIds.length ? ` · ${documentDetails.chapters.filter((chapter) => selectedKnowledgeChapterIds.includes(chapter.id)).map((chapter) => chapter.heading).join("; ")}` : " · select at least two"}</small>
                           </div>
                           <label className={styles.dossierTitle}>
                             <span>Working title (optional)</span>
@@ -1362,7 +1365,7 @@ export function TopicConfigurationPanel({
                             onClick={() => void createKnowledgeDossier(document)}
                             disabled={Boolean(busy) || selectedKnowledgeChapterIds.length < 2}
                           >
-                            Create dossier from {selectedKnowledgeChapterIds.length} chapters
+                            Create Story from {selectedKnowledgeChapterIds.length} chapters
                           </button>
                         </div>
                         <ol>
