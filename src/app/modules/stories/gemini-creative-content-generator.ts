@@ -731,19 +731,29 @@ export async function recoverCreativeDraft(options: GenerateDraftOptions & {
   checkpoint?: RecoveryCheckpoint;
   onCheckpoint: (value: RecoveryCheckpoint) => Promise<void>;
 }): Promise<{draft:GeneratedCreativeDraft;usage:CreativeAiUsage}> {
-  if (!options.openAiApiKey || !options.openAiEditorialModels) throw new CreativeContentResponseError("An independent reviewer must be configured to recover this draft.");
-  let usage = options.checkpoint?.usage ?? emptyCreativeAiUsage();
   const savedDraft=options.checkpoint?.draft ?? options.currentDraft;
+  // A draft the single-shot pipeline's Gemini critic reviewed is re-reviewed by
+  // that same critic; legacy drafts keep the OpenAI reviewer and repair loop.
+  const geminiCritic = options.currentDraft.qualityReview?.critic?.provider === "google";
+  if (!geminiCritic && (!options.openAiApiKey || !options.openAiEditorialModels)) throw new CreativeContentResponseError("An independent reviewer must be configured to recover this draft.");
+  let usage = options.checkpoint?.usage ?? emptyCreativeAiUsage();
   const resolvedBrief=resolveNarrativeBrief(options.brief,savedDraft);
-  let draft = options.checkpoint?.draft ?? repairDeterministicCreativeCopy(options.currentDraft,options.format,resolvedBrief.keyFacts,options.profile.language,options.profile.conversionGoal,resolvedBrief.carouselPlan);
+  // Re-applied on resume as well: the repair is deterministic and idempotent,
+  // and a checkpoint saved before a repair-rule fix would otherwise replay
+  // that defect into every retry of the independent review.
+  let draft = repairDeterministicCreativeCopy(options.checkpoint?.draft ?? options.currentDraft,options.format,resolvedBrief.keyFacts,options.profile.language,options.profile.conversionGoal,resolvedBrief.carouselPlan);
   const deadline=options.deadline ?? Date.now()+CREATIVE_DRAFT_TIME_BUDGET_MS;
   if (!options.checkpoint) await options.onCheckpoint({stage:"patched",draft,usage});
   const copyKey = (value: GeneratedCreativeDraft) => JSON.stringify({...value, qualityReview: undefined, editorialRepair: undefined});
   const reuseReview = options.currentReviewIsCurrent === true && copyKey(draft) === copyKey(savedDraft) &&
-    draft.qualityReview?.critic?.provider === "openai" &&
+    (draft.qualityReview?.critic?.provider === "openai" || draft.qualityReview?.critic?.provider === "google") &&
     !draft.qualityReview.issues.some(issue => /^(?:CRITIC_|EDITORIAL_REVIEW_|FINAL_(?:REVIEW_UNAVAILABLE|COPY_REVIEW_REQUIRED))/.test(issue.code));
   if (!draft.editorialRepair?.pendingVerification && !reuseReview) {
-  const review=await runOpenAiEditorialQualityGate({apiKey:options.openAiApiKey,models:options.openAiEditorialModels,currentDraft:draft,
+  const review=geminiCritic
+    ? await runGeminiEditorialQualityGate({apiKey:options.apiKey,paidApiKey:options.paidGeminiApiKey,model:options.model,currentDraft:draft,
+        format:options.format,brief:resolvedBrief,topic:options.topic,profile:options.profile,outputAspectRatio:options.outputAspectRatio,
+        characterRoster:options.characterRoster})
+    : await runOpenAiEditorialQualityGate({apiKey:options.openAiApiKey!,models:options.openAiEditorialModels!,currentDraft:draft,
     format:options.format,brief:resolvedBrief,topic:options.topic,profile:options.profile,outputAspectRatio:options.outputAspectRatio,
     characterRoster:options.characterRoster,readOnly:true,deadline,auditContext:options.openAiAuditContext});
   usage=sumCreativeAiUsage(usage,review.usage);

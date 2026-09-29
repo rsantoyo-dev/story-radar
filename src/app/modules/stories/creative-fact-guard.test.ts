@@ -2956,6 +2956,51 @@ test("a closing slide generated with zero citations borrows the cover's thesis f
   assert.deepEqual(repairedCiting.units[1]!.factIds, ["fact-2"]);
 });
 
+test("the closing-slide borrow stays inside the carousel plan, and heals an out-of-plan borrow", () => {
+  const facts: CreativeKeyFact[] = [
+    { id: "fact-1", statement: "Le conseil a autorisé jusqu'à 810 logements près de la station du REM." },
+    { id: "fact-2", statement: "Les résidents pourront commenter le projet lors d'une consultation publique." },
+    { id: "fact-5", statement: "Le projet doit encore obtenir les approbations finales de la Ville." },
+  ];
+  const carouselPlan = {
+    slideCount: 2,
+    rationale: "Décision et suite.",
+    slides: [
+      { editorialGoal: "hook", viewerQuestion: "Qu'est-ce qui a été voté?", allowedFactIds: ["fact-1", "fact-2"] },
+      { editorialGoal: "conclude", viewerQuestion: "Et maintenant?", allowedFactIds: ["fact-2", "fact-5"] },
+    ],
+  } as unknown as CarouselPlan; // Two slides keep the fixture minimal; the repair does not check the count.
+  const draft: GeneratedCreativeDraft = {
+    concept: "Décision municipale",
+    caption: "cap",
+    hashtags: [],
+    altText: "alt",
+    units: [
+      // As in the production draft, the cover establishes both facts; a closing
+      // slide may only cite evidence an earlier slide already established.
+      { ...unit(1, "cover", "hook", "Jusqu'à 810 logements", undefined, ["fact-1", "fact-2"]), viewerQuestion: "Qu'est-ce qui a été voté?" },
+      { ...unit(2, "conclusion", "conclude", "Une consultation publique", "Les résidents pourront commenter le projet lors d'une consultation publique.", []), viewerQuestion: "Et maintenant?" },
+    ],
+  };
+  // The final validation rejects fact-1 on this slide ("unplanned fact"), so the
+  // borrow takes the slide's own planned evidence instead of the cover fact.
+  assert.deepEqual(repairDeterministicFactCopy(draft, facts, "français", carouselPlan).units[1]!.factIds, ["fact-2"]);
+
+  // A draft saved while the borrow ignored the plan carries the stranded cover
+  // fact; repairing it again moves the slide back inside its plan.
+  const saved: GeneratedCreativeDraft = { ...draft, units: [draft.units[0]!, { ...draft.units[1]!, factIds: ["fact-1"] }] };
+  assert.deepEqual(repairDeterministicFactCopy(saved, facts, "français", carouselPlan).units[1]!.factIds, ["fact-2"]);
+
+  // Whatever the copy supports, the repair never leaves an out-of-plan fact.
+  const unsupported: GeneratedCreativeDraft = { ...saved, units: [draft.units[0]!, { ...saved.units[1]!, headline: "La suite", body: undefined }] };
+  const unsupportedFacts = repairDeterministicFactCopy(unsupported, facts, "français", carouselPlan).units[1]!.factIds;
+  assert.ok(unsupportedFacts.every((id) => ["fact-2", "fact-5"].includes(id)), unsupportedFacts.join(","));
+
+  // Without a plan the borrow is unchanged: the cover fact.
+  const noCopy: GeneratedCreativeDraft = { ...draft, units: [draft.units[0]!, { ...draft.units[1]!, headline: "", body: undefined }] };
+  assert.deepEqual(repairDeterministicFactCopy(noCopy, facts, "français").units[1]!.factIds, ["fact-1"]);
+});
+
 test("a named 511-style service (Québec 511) is not read as an unsupported number", () => {
   const facts: CreativeKeyFact[] = [
     {

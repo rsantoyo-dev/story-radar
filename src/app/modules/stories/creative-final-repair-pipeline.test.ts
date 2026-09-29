@@ -153,3 +153,33 @@ test("saved-draft recovery does not speculate with rewrites when independent rev
  assert.equal(calls.filter(call=>call==='creative_saved_draft_patch').length,0);
  assert.equal(currentDraft.units[1].ctaQuestion,draft.units[1].ctaQuestion,'original input remains unchanged');
 });
+
+test("recovering a draft the Gemini critic reviewed re-reviews it with Gemini, never the OpenAI reviewer",async()=>{
+ const calls:string[]=[],checkpoints:import('./creative-recovery.repository').RecoveryCheckpoint[]=[];
+ const exports={} as {recoverCreativeDraft:(options:unknown)=>Promise<unknown>};
+ class OpenAiEditorialError extends Error {}
+ vm.runInNewContext(code,{exports,AbortController,AbortSignal,Buffer,Date,Map,Set,JSON,setTimeout,clearTimeout,
+  console:{info(){},warn(){},error(){}},
+  require:(id:string)=>{
+   if(id==='server-only')return {};
+   // Any Gemini response is enough to prove routing; an unparseable verdict is a recoverable review failure.
+   if(id==='@google/genai')return {ApiError:class extends Error {},GoogleGenAI:class {
+    models={generateContent:async()=>{calls.push('gemini-review');return {text:'{}',candidates:[{finishReason:'STOP'}],usageMetadata:{totalTokenCount:3}};}};
+   }};
+   if(id==='./openai-structured-response')return {OpenAiEditorialError,generateOpenAiStructuredResponse:async()=>{calls.push('openai');throw new OpenAiEditorialError('must not be called');}};
+   return localRequire(id);
+  },
+ });
+ const currentDraft={...structuredClone(draft),units:draft.units.map((unit,index)=>({...unit,order:index+1,type:'carousel-slide'})),
+  qualityReview:{status:'accepted',scores,issues:[],critic:{provider:'google',model:'gemini-test'}}};
+ const options={apiKey:'test',model:'gemini-test',primaryProvider:'google',currentDraft,currentReviewIsCurrent:false,
+  story:{title:'Saved story'},topic:{name:'Canada en Breve'},
+  profile:{name:'Canada en Breve',language:'Spanish',conversionGoal:'followers',framingStrategy:'reader-consequence',brandPersonality:[],brandOverlay:{enabled:false},visualGuidance:'Editorial cards'},
+  brief:{keyFacts:facts,riskFlags:[],carouselPlan:{slideCount:2,rationale:'A finding and consequence',slides:draft.units.map(unit=>({editorialGoal:unit.editorialGoal,viewerQuestion:unit.viewerQuestion,allowedFactIds:['fact-1']}))}},
+  format:'carousel',outputAspectRatio:'4:5',characterRoster:[],onCheckpoint:async(value:import('./creative-recovery.repository').RecoveryCheckpoint)=>{checkpoints.push(value);},
+ };
+ await exports.recoverCreativeDraft(options).catch(()=>undefined);
+ assert.ok(calls.includes('gemini-review'),'the Gemini critic re-reviews the saved copy');
+ assert.equal(calls.filter(call=>call==='openai').length,0,'no OpenAI key is required or used');
+ assert.equal(checkpoints[0]?.stage,'patched','the deterministic repair is checkpointed before the review');
+});

@@ -6,7 +6,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import { narrativeEvidenceKey, resolveNarrativeBrief } from "./creative-narrative-plan";
 import { narrativeRepetitionIssues } from "./creative-narrative-diagnostics";
-import { CREATIVE_QUALITY_THRESHOLDS } from "./creative-quality";
+import { CREATIVE_QUALITY_THRESHOLDS, repairDeterministicCreativeCopy } from "./creative-quality";
 import type { GeneratedCreativeBrief, GeneratedCreativeDraft, CreativeAiUsage } from "./creative-content.types";
 import type { CarouselPlan } from "./carousel-narrative";
 const requireLocal = createRequire(import.meta.url);
@@ -165,7 +165,10 @@ test("only an explicit preflight boundary defers structural errors; keep still c
 });
 
 for (const current of [true, false]) test(`recovery reuses only a confirmed current independent review; current=${current}`, async () => {
-    const saved = {...draft, editorialRepair: {terraAttempts: 2, solAttempts: 2, pendingVerification: false}};
+    // A saved draft has already been through the deterministic repair (saving
+    // applies it), and recovery re-applies it on resume; start from that state.
+    const saved = {...repairDeterministicCreativeCopy(draft, "carousel", brief.keyFacts, "English", "followers", oldPlan),
+        editorialRepair: {terraAttempts: 2, solAttempts: 2, pendingVerification: false}};
     const {api, calls} = harness(() => assert.fail("Exhausted drafts must not be rewritten"));
     let audits = 0;
     api.setReviewer(async ({currentDraft}) => { audits++; return {draft: currentDraft, usage}; });

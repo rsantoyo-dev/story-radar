@@ -994,16 +994,26 @@ export function repairDeterministicFactCopy(
   // Narrative policy already allows the closing slide to reuse the cover's
   // thesis fact, so borrow it here, and only here — never for a slide that
   // already cites something, however thin.
+  //
+  // The carousel plan still bounds that borrow: the final validation rejects
+  // any fact outside a slide's planned scope, so a cover fact the plan does
+  // not allow on the closing slide is replaced by the slide's own first
+  // planned fact. The same applies to a closing slide whose only citation is
+  // an out-of-scope cover fact borrowed before this rule respected the plan;
+  // otherwise that saved draft could never pass review again.
   const coverFactId = draft.units[0]?.factIds[0];
-  const units = coverFactId
-    ? draft.units.map((unit, index) =>
-        index > 0 &&
-        unit.factIds.length === 0 &&
-        (unit.editorialGoal === "conclude" || unit.editorialGoal === "debate")
-          ? { ...unit, factIds: [coverFactId] }
-          : unit,
-      )
-    : draft.units;
+  const units = draft.units.map((unit, index) => {
+    if (index === 0 || (unit.editorialGoal !== "conclude" && unit.editorialGoal !== "debate")) return unit;
+    const allowed = factScopes?.[index];
+    const borrowed = !allowed || (coverFactId && allowed.includes(coverFactId))
+      ? coverFactId
+      : allowed.find((id) => factsById.has(id));
+    if (unit.factIds.length === 0) return borrowed ? { ...unit, factIds: [borrowed] } : unit;
+    const strandedCoverBorrow =
+      allowed && coverFactId && borrowed && borrowed !== coverFactId &&
+      unit.factIds.length === 1 && unit.factIds[0] === coverFactId;
+    return strandedCoverBorrow ? { ...unit, factIds: [borrowed] } : unit;
+  });
   const repaired: GeneratedCreativeDraft = {
     ...draft,
     // concept is internal briefing text (it seeds every slide's image prompt)
