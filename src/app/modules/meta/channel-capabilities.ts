@@ -85,13 +85,13 @@ function metricsCapability(state: MetaConnectionState): CapabilityState {
 }
 
 /**
- * No live publish preflight exists for Facebook Pages yet (that is PUB-10),
- * so canPublish never reports "available" here even when the Page's granted
- * tasks include CREATE_CONTENT/MANAGE — it is capped at "needs-attention"
- * ("permission granted, not yet live-verified"). A Page connected with
- * neither task present is a real, known gap, not just unverified, so that
- * case reports "unavailable" instead. canSync and metricsAvailable are
- * always "unavailable" this pass: neither feature is built for Facebook yet.
+ * canPublish is "available" only when the Page's tasks include
+ * CREATE_CONTENT/MANAGE and the last live verification of the Page token
+ * succeeded; granted-but-unverified stays "needs-attention". A Page with
+ * neither task is a real, known gap, so that reports "unavailable". Each
+ * publication still re-checks access live (PUB-10); this is a summary.
+ * canSync and metricsAvailable stay "unavailable": neither is built for
+ * Facebook yet.
  */
 const FACEBOOK_PUBLISH_TASKS = new Set(["CREATE_CONTENT", "MANAGE"]);
 
@@ -99,13 +99,15 @@ export function deriveFacebookChannelCapabilities(input: {
   connected: boolean;
   tokenExpired: boolean;
   pageTasks: string[];
+  /** The last live Page verification succeeded. */
+  verified?: boolean;
 }): ChannelCapabilities {
   const canPublish: CapabilityState = !input.connected
     ? "unavailable"
     : input.tokenExpired
       ? "needs-attention"
       : input.pageTasks.some((task) => FACEBOOK_PUBLISH_TASKS.has(task))
-        ? "needs-attention"
+        ? input.verified ? "available" : "needs-attention"
         : "unavailable";
   return {
     connected: input.connected,

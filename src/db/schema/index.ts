@@ -23,6 +23,7 @@ export * from "./story-sources";
 export * from "./topic-stories";
 export * from "./topics";
 export * from "./workspaces";
+export * from "./workspace-credit-entries";
 
 export * from "./editorial-lines";
 

@@ -11,6 +11,7 @@ import { getTableConfig, PgDialect } from "drizzle-orm/pg-core";
 import * as schema from "../../../db/schema";
 import * as core from "./publish-publication-package.core";
 import * as access from "./instagram-publishing-access";
+import * as channelModule from "./publication-channel";
 import { MetaGraphApiError } from "./meta-token-response";
 import type * as service from "./publish-publication-package";
 import type * as mediaRepo from "./topic-instagram-media.repository";
@@ -19,11 +20,15 @@ const requireLocal = createRequire(import.meta.url);
 const ids = { topic: "00000000-0000-4000-8000-000000000001", draft: "00000000-0000-4000-8000-000000000002",
   batch: "00000000-0000-4000-8000-000000000003", story: "00000000-0000-4000-8000-000000000004", pkg: "00000000-0000-4000-8000-000000000005" };
 
-async function setup() {
+async function setup(options: { channel?: "facebook-page" } = {}) {
+  const facebook = options.channel === "facebook-page";
   const client = new PGlite();
   const db = drizzle(client);
   const dialect = new PgDialect();
-  for (const table of [schema.instagramPublicationJobs, schema.instagramPublicationPackages, schema.instagramDeliveryFiles, schema.topicInstagramMedia]) {
+  for (const pgEnum of [schema.socialPublicationPlatformEnum, schema.socialPublicationStatusEnum]) {
+    await client.exec(`CREATE TYPE "${pgEnum.enumName}" AS ENUM (${pgEnum.enumValues.map(value => `'${value}'`).join(",")})`);
+  }
+  for (const table of [schema.instagramPublicationJobs, schema.instagramPublicationPackages, schema.instagramDeliveryFiles, schema.topicInstagramMedia, schema.storySocialPublications]) {
     const config = getTableConfig(table);
     const columns = config.columns.map(column => {
       const value = column.default instanceof SQL ? dialect.sqlToQuery(column.default).sql
@@ -36,17 +41,23 @@ async function setup() {
     }
   }
   await client.exec(`CREATE UNIQUE INDEX job_key ON instagram_publication_jobs(idempotency_key);
-    CREATE UNIQUE INDEX media_key ON topic_instagram_media(topic_id, external_id);`);
+    CREATE UNIQUE INDEX media_key ON topic_instagram_media(topic_id, external_id);
+    CREATE UNIQUE INDEX social_key ON story_social_publications(topic_id, story_id, platform);`);
   await db.insert(schema.instagramPublicationPackages).values({ id: ids.pkg, topicId: ids.topic, draftId: ids.draft,
     batchId: ids.batch, storyId: ids.story, draftVersion: 1, candidateSnapshotHash: "snapshot", packageHash: "package",
-    mediaType: "image", caption: "Approved caption", igUserId: "1789", connectionVersion: "conn-1",
+    mediaType: facebook ? "carousel" : "image", caption: "Approved caption", connectionVersion: "conn-1",
+    ...(facebook ? { channel: "facebook-page", pageId: "555", igUserId: null } : { igUserId: "1789" }),
     scriptSnapshot: {}, transforms: [], expiresAt: new Date(Date.now() + 86_400_000) });
-  await db.insert(schema.instagramDeliveryFiles).values({ packageId: ids.pkg, unitOrder: 1, assetVersion: 1,
-    token: "opaque-token", objectKey: "private-key", contentType: "image/jpeg", byteSize: 123,
-    sha256: "hash", sourceSha256: "source-hash", width: 1080, height: 1350, expiresAt: new Date(Date.now() + 86_400_000) });
-  const calls = { publish: 0, create: 0, after: 0 };
-  const control = { rejectPublish: false, connection: "conn-1", containerStatus: "FINISHED" };
-  const destination = () => ({ connected: true, expired: false, igUserId: "1789", connectionVersion: control.connection, appConfigurationVersion: "app-1" });
+  for (const unitOrder of facebook ? [1, 2] : [1]) {
+    await db.insert(schema.instagramDeliveryFiles).values({ packageId: ids.pkg, unitOrder, assetVersion: 1,
+      token: `opaque-token-${unitOrder}`, objectKey: `private-key-${unitOrder}`, contentType: "image/jpeg", byteSize: 123,
+      sha256: "hash", sourceSha256: "source-hash", width: 1080, height: 1350, expiresAt: new Date(Date.now() + 86_400_000) });
+  }
+  const calls = { publish: 0, create: 0, after: 0, upload: 0, feed: 0, feedPhotoIds: [] as string[], feedMessage: "", uploadedUrls: [] as string[] };
+  const control = { rejectPublish: false, connection: "conn-1", containerStatus: "FINISHED", feedTimesOut: false };
+  const destination = () => facebook
+    ? { channel: "facebook-page", pageId: "555", igUserId: null, connected: true, expired: false, connectionVersion: control.connection, appConfigurationVersion: "app-1" }
+    : { connected: true, expired: false, igUserId: "1789", connectionVersion: control.connection, appConfigurationVersion: "app-1" };
   const deps: Record<string, unknown> = {
     "server-only": {}, "@/db/client": { db }, "@/db/schema": schema,
     "next/server": { after: () => { calls.after++; } }, // Deliberately never runs: only the worker advances jobs.
@@ -59,6 +70,28 @@ async function setup() {
       checkedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 240_000).toISOString(), quota: { remaining: 100 } }) },
     "./topic-meta-connections.repository": { getPublicationDestination: async () => destination(),
       getDecryptedTopicMetaAccessToken: async () => ({ accessToken: "private-token", igUserId: "1789", connectionVersion: control.connection }) },
+    // PUB-10: the shell resolves every connection through the channel module; these
+    // jobs are instagram-direct, so it delegates to the same destination and token.
+    "./publication-channel": channelModule,
+    "./publication-channel-connections": {
+      instagramGraphHostFor: () => "graph.instagram.com",
+      getChannelPublicationDestination: async () => destination(),
+      getChannelSendCredentials: async () => ({ accessToken: "private-token", accountId: facebook ? "555" : "1789", connectionVersion: control.connection }),
+      checkChannelPublishingAccess: async () => ({ state: "enabled", message: "ok",
+        identity: access.publishingIdentity(ids.topic, destination() as never), apiVersion: "v21.0",
+        checkedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 240_000).toISOString(),
+        // The real Page stand-in: it is persisted in the int4 quota_remaining column.
+        quota: facebook ? access.UNMETERED_PAGE_QUOTA : { remaining: 100 } }),
+    },
+    "./meta-facebook-graph-client": {
+      uploadUnpublishedPagePhoto: async (_pageId: string, _token: string, url: string) => { calls.upload++; calls.uploadedUrls.push(url); return String(7000 + calls.upload); },
+      publishPagePhotoPost: async (_pageId: string, _token: string, input: { message: string; photoIds: string[] }) => {
+        calls.feed++; calls.feedPhotoIds = input.photoIds; calls.feedMessage = input.message;
+        if (control.feedTimesOut) throw Object.assign(new Error("timeout"), { name: "TimeoutError" });
+        return "555_9999";
+      },
+      fetchPagePostPermalink: async () => ({ permalink: "https://www.facebook.com/555/posts/9999" }),
+    },
     "./meta-graph-client": { GRAPH_API_VERSION: "v21.0",
       createInstagramMediaContainer: async () => { calls.create++; return String(1000 + calls.create); },
       createInstagramCarouselContainer: async () => "9001",
@@ -201,5 +234,45 @@ test("a legacy preflight suspension remains inert until an explicit retry passes
     assert.equal((await h.row()).id, job.id);
     assert.equal((await h.row()).status, "published");
     assert.equal(h.calls.publish, 1);
+  } finally { await h.client.close(); }
+});
+
+test("a Facebook Page carousel uploads unpublished photos and creates exactly one post", async () => {
+  const h = await setup({ channel: "facebook-page" });
+  try {
+    const jobs = await Promise.all([h.repo.requestPublishNow(ids.topic, ids.draft, ids.pkg), h.repo.requestPublishNow(ids.topic, ids.draft, ids.pkg)]);
+    assert.equal(jobs[0].id, jobs[1].id);
+    await h.finish();
+    const row = await h.row();
+    assert.equal(row.status, "published");
+    assert.equal(row.channel, "facebook-page");
+    assert.equal(row.publishedMediaId, "555_9999");
+    assert.equal(h.calls.upload, 2, "one unpublished upload per slide");
+    assert.deepEqual(h.calls.uploadedUrls, ["https://app.example/api/deliver/opaque-token-1", "https://app.example/api/deliver/opaque-token-2"]);
+    assert.equal(h.calls.feed, 1, "one feed post, never per-photo posts");
+    assert.deepEqual(Array.from(h.calls.feedPhotoIds), ["7001", "7002"], "photos attached in slide order");
+    assert.equal(h.calls.feedMessage, "Approved caption");
+    assert.equal(h.calls.create + h.calls.publish, 0, "no Instagram call for a Page job");
+    const [social] = await h.db.select().from(schema.storySocialPublications);
+    assert.equal(social.platform, "facebook");
+    assert.equal(social.status, "published");
+    assert.equal(social.postUrl, "https://www.facebook.com/555/posts/9999");
+    assert.equal((await h.db.select().from(schema.topicInstagramMedia)).length, 0);
+    for (let i = 0; i < 3; i++) await h.step();
+    assert.equal(h.calls.feed, 1, "a published Page job is not re-run");
+  } finally { await h.client.close(); }
+});
+
+test("a Facebook post whose outcome is unknown is never re-posted", async () => {
+  const h = await setup({ channel: "facebook-page" });
+  try {
+    h.control.feedTimesOut = true;
+    await h.repo.requestPublishNow(ids.topic, ids.draft, ids.pkg);
+    for (let i = 0; i < 12; i++) await h.step();
+    const row = await h.row();
+    assert.equal(h.calls.feed, 1);
+    assert.equal(row.status, "pending-confirmation");
+    assert.equal(row.failureKind, "uncertain");
+    assert.match(row.lastError ?? "", /Facebook/);
   } finally { await h.client.close(); }
 });

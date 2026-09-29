@@ -151,7 +151,7 @@ test("status reports honest capabilities, and disconnect clears the Page", async
     assert.equal(status.pageName, "Salut Saint Jean");
     assert.equal(status.linkedIgUsername, "salut.st.jean");
     assert.ok(status.lastVerifiedAt);
-    assert.equal(status.capabilities.canPublish, "needs-attention", "never 'available' before PUB-10");
+    assert.equal(status.capabilities.canPublish, "available", "publish tasks plus a successful live verification");
     assert.ok(!JSON.stringify(status).includes("token-a"));
 
     await h.connections.disconnectTopicFacebook(topicId);
@@ -159,5 +159,38 @@ test("status reports honest capabilities, and disconnect clears the Page", async
     assert.equal(cleared.connected, false);
     assert.equal(cleared.pageId, undefined);
     assert.equal(await h.connections.getDecryptedTopicFacebookAccessToken(topicId), undefined);
+  } finally { await h.client.close(); }
+});
+
+test("PUB-10 channel destinations publish as the linked Instagram account or as the Page", async () => {
+  const h = await setup();
+  try {
+    await h.connections.saveTopicFacebookConnection(topicId, {
+      pageId: "1001", pageName: "Salut Saint Jean", pageAccessToken: "token-a", tasks: ["MANAGE", "CREATE_CONTENT"],
+      linkedIgUserId: "179", linkedIgUsername: "salut.st.jean",
+    });
+    const instagram = await h.connections.getFacebookChannelDestination(topicId, "instagram-page");
+    assert.equal(instagram.channel, "instagram-page");
+    assert.equal(instagram.igUserId, "179");
+    assert.equal(instagram.pageId, "1001");
+    assert.equal(instagram.connected, true);
+    assert.equal(instagram.grantedPermissionsKnown, false, "unknown grants leave the decision to the live preflight");
+    const page = await h.connections.getFacebookChannelDestination(topicId, "facebook-page");
+    assert.equal(page.channel, "facebook-page");
+    assert.equal(page.igUserId, null);
+    assert.equal(page.pageId, "1001");
+    assert.equal(page.hasPublishingPermission, true);
+    const credentials = await h.connections.getFacebookChannelSendCredentials(topicId, "instagram-page");
+    assert.equal(credentials?.accountId, "179");
+    assert.equal((await h.connections.getFacebookChannelSendCredentials(topicId, "facebook-page"))?.accountId, "1001");
+    assert.ok(!JSON.stringify([instagram, page]).includes("token-a"));
+
+    await h.connections.saveTopicFacebookConnection(topicId, {
+      pageId: "1001", pageName: "Salut Saint Jean", pageAccessToken: "token-b", tasks: ["ANALYZE"],
+    });
+    const unlinked = await h.connections.getFacebookChannelDestination(topicId, "instagram-page");
+    assert.equal(unlinked.igUserId, null, "no linked Instagram account means no Instagram-via-Page destination");
+    assert.equal(await h.connections.getFacebookChannelSendCredentials(topicId, "instagram-page"), undefined);
+    assert.equal((await h.connections.getFacebookChannelDestination(topicId, "facebook-page")).hasPublishingPermission, false, "an analyze-only Page task cannot publish");
   } finally { await h.client.close(); }
 });

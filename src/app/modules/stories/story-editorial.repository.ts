@@ -95,9 +95,9 @@ export type EditorialDashboardStory = {
    * platform and still be prepared for another.
    */
   publications: StorySocialPublication[];
-  /** Confirmed Instagram posts, including app sends and linked imported posts. */
+  /** Confirmed app sends and linked imported Instagram posts. */
   confirmedPublications: {
-    platform: "instagram";
+    platform: "instagram" | "facebook";
     publishedAt: Date;
     postUrl?: string;
     externalId: string;
@@ -1234,6 +1234,7 @@ export async function getEditorialDashboardStats(
         ? db.select({
             storyId: instagramPublicationJobs.storyId,
             externalId: instagramPublicationJobs.publishedMediaId,
+            channel: instagramPublicationJobs.channel,
             publishedAt: instagramPublicationJobs.finishedAt,
             updatedAt: instagramPublicationJobs.updatedAt,
             postUrl: instagramPublicationJobs.permalink,
@@ -1256,8 +1257,9 @@ export async function getEditorialDashboardStats(
   for (const job of publishedInstagramJobs) {
     if (!job.externalId) continue;
     const posts = confirmedByStoryId.get(job.storyId) ?? new Map();
-    posts.set(job.externalId, {
-      platform: "instagram",
+    const platform = job.channel === "facebook-page" ? "facebook" : "instagram";
+    posts.set(`${platform}:${job.externalId}`, {
+      platform,
       externalId: job.externalId,
       publishedAt: job.publishedAt ?? job.updatedAt,
       ...(job.postUrl ? { postUrl: job.postUrl } : {}),
@@ -1267,7 +1269,7 @@ export async function getEditorialDashboardStats(
   for (const media of linkedInstagramMedia) {
     if (!media.storyId) continue;
     const posts = confirmedByStoryId.get(media.storyId) ?? new Map();
-    posts.set(media.externalId, {
+    posts.set(`instagram:${media.externalId}`, {
       platform: "instagram",
       externalId: media.externalId,
       publishedAt: media.publishedAt,

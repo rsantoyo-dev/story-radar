@@ -7,6 +7,7 @@ import {
 } from "./instagram-publishing-access";
 import type { CreativeAssetBatch, CreativeDraft } from "../stories/creative-content.types";
 import {
+  candidateDestinationSummary,
   destinationBlockers,
   editorialCandidateBlockers,
   publicationSnapshotHash,
@@ -115,7 +116,7 @@ export async function validatePublicationCandidate(deps: CandidateDependencies):
     snapshotHash: publicationSnapshotHash({ input, files }),
     draftId: draft.id, draftVersion: draft.version, batchId: batch.id,
     caption: draft.caption, hashtags: [...draft.hashtags],
-    destination: { igUserId: destination.igUserId, igUsername: destination.igUsername },
+    destination: candidateDestinationSummary(destination),
     assets: [...batch.assets].sort((a, b) => a.unitOrder - b.unitOrder).map(a => ({ id: a.id, version: a.version, order: a.unitOrder, ...(files[a.id] ? { sha256: files[a.id] } : {}) })),
     blockers,
   };

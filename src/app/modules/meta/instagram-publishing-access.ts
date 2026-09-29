@@ -1,4 +1,5 @@
 import type { PublicationDestination } from "./instagram-publication-candidate";
+import { destinationAccountId } from "./publication-channel";
 import { MetaGraphApiError } from "./meta-token-response";
 import { classifyMetaGraphError } from "./meta-verification";
 
@@ -6,7 +7,28 @@ export const INSTAGRAM_PUBLISHING_SCOPE = "instagram_business_content_publish";
 export const PUBLISHING_ACCESS_TTL_MS = 5 * 60 * 1_000;
 export type PublishingAccessState = "disconnected" | "needs-reconnect" | "missing-permission" | "unverified" | "enabled" | "quota-exhausted" | "rate-limited" | "unavailable" | "connection-changed";
 export type PublishingQuota = { used: number; total: number; durationSeconds: number; remaining: number };
-export type PublishingIdentity = { topicId: string; igUserId: string | null; connectionVersion: string; appConfigurationVersion?: string };
+
+/**
+ * PUB-10: Facebook Pages have no content_publishing_limit. The Page preflight
+ * still proves the token works; this stands in for the quota the shared gate
+ * requires. It must fit the jobs' int4 quota_remaining column — a larger
+ * value makes the job's own state update fail.
+ */
+export const UNMETERED_PAGE_QUOTA: PublishingQuota = {
+  used: 0,
+  total: 2_147_483_647,
+  durationSeconds: 86_400,
+  remaining: 2_147_483_647,
+};
+export type PublishingIdentity = {
+  topicId: string;
+  igUserId: string | null;
+  connectionVersion: string;
+  appConfigurationVersion?: string;
+  /** PUB-10. Absent for direct Instagram, so existing identities compare unchanged. */
+  channel?: PublicationDestination["channel"];
+  pageId?: string | null;
+};
 /** Safe response. This is evidence of a read-only preflight, never an authorization to send. */
 export type PublishingAccess = {
   state: PublishingAccessState;
@@ -24,13 +46,17 @@ export type PublishingAccessContext = {
 };
 
 export function publishingIdentity(topicId: string, destination: PublicationDestination): PublishingIdentity {
-  return { topicId, igUserId: destination.igUserId, connectionVersion: destination.connectionVersion, appConfigurationVersion: destination.appConfigurationVersion };
+  return {
+    topicId, igUserId: destination.igUserId, connectionVersion: destination.connectionVersion, appConfigurationVersion: destination.appConfigurationVersion,
+    ...(destination.channel ? { channel: destination.channel, pageId: destination.pageId ?? null } : {}),
+  };
 }
 export function samePublishingIdentity(a: PublishingIdentity, b: PublishingIdentity): boolean {
-  return a.topicId === b.topicId && a.igUserId === b.igUserId && a.connectionVersion === b.connectionVersion && a.appConfigurationVersion === b.appConfigurationVersion;
+  return a.topicId === b.topicId && a.igUserId === b.igUserId && a.connectionVersion === b.connectionVersion && a.appConfigurationVersion === b.appConfigurationVersion &&
+    (a.channel ?? null) === (b.channel ?? null) && (a.pageId ?? null) === (b.pageId ?? null);
 }
 export function publishingPreflightState(destination: PublicationDestination): PublishingAccessState {
-  if (!destination.connected || !destination.igUserId) return "disconnected";
+  if (!destination.connected || !destinationAccountId(destination)) return "disconnected";
   if (destination.expired) return "needs-reconnect";
   // An omitted OAuth permissions field is unknown, not an explicit denial.
   if (destination.grantedPermissionsKnown === false) return "unverified";
@@ -89,7 +115,7 @@ export async function verifyPublishingAccess(deps: {
   if (state === "unverified") {
     try {
       if (!initial.accessToken) throw new Error("Token unavailable");
-      quota = await deps.probe(initial.destination.igUserId!, initial.accessToken);
+      quota = await deps.probe(destinationAccountId(initial.destination)!, initial.accessToken);
       state = quota.remaining > 0 ? "enabled" : "quota-exhausted";
     } catch (error) { state = publishingFailureState(error); }
   }

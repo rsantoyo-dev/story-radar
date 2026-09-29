@@ -55,6 +55,9 @@ export const instagramPublicationJobs = pgTable(
     status: text("status").default("queued").notNull(),
     mediaType: text("media_type"),
     igUserId: text("ig_user_id"),
+    /** PUB-10: copied from the package. See instagram_publication_packages.channel. */
+    channel: text("channel").default("instagram-direct").notNull(),
+    pageId: text("page_id"),
     connectionVersion: text("connection_version").notNull(),
     apiVersion: text("api_version").notNull(),
     appConfigurationVersion: text("app_configuration_version"),
@@ -123,6 +126,11 @@ export const instagramPublicationJobs = pgTable(
         ${table.status} NOT IN ('failed', 'suspended')
         OR ${table.lastError} IS NOT NULL
       )`,
+    ),
+    check(
+      "instagram_publication_jobs_channel_check",
+      sql`${table.channel} IN ('instagram-direct', 'instagram-page', 'facebook-page')
+        AND (${table.channel} = 'instagram-direct' OR ${table.pageId} IS NOT NULL)`,
     ),
     check(
       "instagram_publication_jobs_dates_check",

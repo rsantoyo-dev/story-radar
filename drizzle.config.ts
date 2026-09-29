@@ -1,7 +1,9 @@
 import { loadEnvConfig } from "@next/env";
 import { defineConfig } from "drizzle-kit";
 
-loadEnvConfig(process.cwd());
+// CLI commands have no NODE_ENV by default. Treat them as development so a
+// placeholder .env.production.local cannot shadow the real local database.
+loadEnvConfig(process.cwd(), process.env.NODE_ENV !== "production");
 
 const databaseUrl = process.env.DATABASE_URL_DIRECT;
 

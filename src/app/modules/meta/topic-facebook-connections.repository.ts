@@ -8,7 +8,8 @@ import { db } from "@/db/client";
 import { topicFacebookConnections } from "@/db/schema";
 
 import { deriveFacebookChannelCapabilities } from "./channel-capabilities";
-import type { FacebookPageDestination } from "./instagram-publication-candidate";
+import type { FacebookPageDestination, PublicationDestination } from "./instagram-publication-candidate";
+import { publishingPreflightState, type PublishingAccessContext } from "./instagram-publishing-access";
 import type { TopicFacebookConnectionStatus } from "./meta-connection.types";
 import {
   getDefaultMetaFacebookAppCredentials,
@@ -64,7 +65,10 @@ export function statusFromRow(
     ...(connected && row?.lastVerificationError
       ? { lastVerificationError: row.lastVerificationError }
       : {}),
-    capabilities: deriveFacebookChannelCapabilities({ connected, tokenExpired, pageTasks }),
+    capabilities: deriveFacebookChannelCapabilities({
+      connected, tokenExpired, pageTasks,
+      verified: Boolean(connected && row?.lastVerifiedAt && !row.lastVerificationError),
+    }),
   };
 }
 
@@ -230,10 +234,94 @@ export async function getFacebookPublicationDestination(
     connected: status.connected,
     expired: status.needsReconnect,
     hasPublishingTask: status.pageTasks.some((task) => task === "CREATE_CONTENT" || task === "MANAGE"),
-    appConfigurationVersion: createHash("sha256")
-      .update(JSON.stringify([row?.appId ?? null, row?.appSecretEncrypted ?? null, getDefaultMetaFacebookAppCredentials()?.appId ?? null]))
-      .digest("hex"),
+    appConfigurationVersion: facebookAppConfigurationVersion(row),
   };
+}
+
+export type FacebookPublicationChannel = "instagram-page" | "facebook-page";
+
+/**
+ * PUB-10: the publishing destination for one of the Page channels, in the
+ * shared PublicationDestination shape the candidate/package/job pipeline uses.
+ * `instagram-page` publishes as the Page's linked Instagram account; it is
+ * disconnected until the Page has one. Facebook does not persist granted
+ * scopes for this connection, so grantedPermissionsKnown stays false and the
+ * live preflight — not a stored scope — decides.
+ */
+export async function getFacebookChannelDestination(
+  topicId: string,
+  channel: FacebookPublicationChannel,
+  now = new Date(),
+): Promise<PublicationDestination> {
+  return channelDestinationFromRow(await findRow(topicId), channel, now);
+}
+
+/** Destination and (only when the preflight may run) the decrypted Page token, from one row read. */
+export async function getFacebookChannelAccessContext(
+  topicId: string,
+  channel: FacebookPublicationChannel,
+): Promise<PublishingAccessContext> {
+  const row = await findRow(topicId);
+  const destination = channelDestinationFromRow(row, channel, new Date());
+  const canCheck = publishingPreflightState(destination) === "unverified";
+  return {
+    topicId,
+    destination,
+    ...(canCheck && row?.pageAccessTokenEncrypted
+      ? { accessToken: decryptMetaSecret(row.pageAccessTokenEncrypted, loadEncryptionKey()) }
+      : {}),
+  };
+}
+
+/** The Page token plus the account a send acts as. Decrypted only immediately before a provider call. */
+export async function getFacebookChannelSendCredentials(
+  topicId: string,
+  channel: FacebookPublicationChannel,
+): Promise<{ accessToken: string; accountId: string; pageId: string; connectionVersion: string } | undefined> {
+  const row = await findRow(topicId);
+  if (!row?.pageAccessTokenEncrypted || !row.pageId) return undefined;
+  const accountId = channel === "facebook-page" ? row.pageId : row.linkedIgUserId;
+  if (!accountId) return undefined;
+  return {
+    accessToken: decryptMetaSecret(row.pageAccessTokenEncrypted, loadEncryptionKey()),
+    accountId,
+    pageId: row.pageId,
+    connectionVersion: row.connectionVersion,
+  };
+}
+
+function channelDestinationFromRow(
+  row: FacebookRow | undefined,
+  channel: FacebookPublicationChannel,
+  now: Date,
+): PublicationDestination {
+  const status = statusFromRow(row, now);
+  const grants = status.grantedPermissions;
+  const grantsKnown = grants.length > 0;
+  const hasPublishingTask = status.pageTasks.some((task) => task === "CREATE_CONTENT" || task === "MANAGE");
+  const instagram = channel === "instagram-page";
+  return {
+    channel,
+    pageId: status.pageId ?? null,
+    pageName: status.pageName ?? null,
+    igUserId: instagram ? (status.linkedIgUserId ?? null) : null,
+    igUsername: instagram ? (status.linkedIgUsername ?? null) : null,
+    connectionVersion: row?.connectionVersion ?? "",
+    connected: status.connected,
+    expired: status.needsReconnect,
+    grantedPermissionsKnown: grantsKnown,
+    hasPublishingPermission: instagram
+      ? grants.includes("instagram_content_publish")
+      : hasPublishingTask && (!grantsKnown || grants.includes("pages_manage_posts")),
+    hasBasicPermission: instagram ? grants.includes("instagram_basic") : true,
+    appConfigurationVersion: facebookAppConfigurationVersion(row),
+  };
+}
+
+function facebookAppConfigurationVersion(row: FacebookRow | undefined): string {
+  return createHash("sha256")
+    .update(JSON.stringify([row?.appId ?? null, row?.appSecretEncrypted ?? null, getDefaultMetaFacebookAppCredentials()?.appId ?? null]))
+    .digest("hex");
 }
 
 function guard(topicId: string, connectionVersion: string) {

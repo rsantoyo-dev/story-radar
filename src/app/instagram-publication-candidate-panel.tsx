@@ -2,7 +2,13 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
-import type { PublicationCandidate } from "./modules/meta/instagram-publication-candidate";
+import type { CandidateDestinationSummary, PublicationCandidate } from "./modules/meta/instagram-publication-candidate";
+import {
+  DEFAULT_PUBLICATION_CHANNEL,
+  PUBLICATION_CHANNEL_LABELS,
+  publicationPlatformLabel,
+  type PublicationChannel,
+} from "./modules/meta/publication-channel";
 import type { FrozenPackage } from "./modules/meta/freeze-publication-package.core";
 import type {
   PublicationJobView,
@@ -16,22 +22,41 @@ const TERMINAL_JOB_STATUS: PublicationJobStatus[] = [
   "suspended",
 ];
 
-const JOB_STATUS_TEXT: Record<PublicationJobStatus, string> = {
-  queued: "Queued…",
-  preparing: "Re-checking access and approvals…",
-  "creating-containers": "Uploading images to Instagram…",
-  "containers-ready": "Waiting for Instagram to process the media…",
-  publishing: "Publishing…",
-  "pending-confirmation":
-    "Pending confirmation — verifying with Instagram, not resending.",
-  published: "Published",
-  failed: "Failed",
-  suspended: "Suspended",
+function jobStatusText(status: PublicationJobStatus, platform: string): string {
+  switch (status) {
+    case "queued": return "Queued…";
+    case "preparing": return "Re-checking access and approvals…";
+    case "creating-containers": return `Uploading images to ${platform}…`;
+    case "containers-ready": return `Waiting for ${platform} to process the media…`;
+    case "publishing": return "Publishing…";
+    case "pending-confirmation": return `Pending confirmation — verifying with ${platform}, not resending.`;
+    case "published": return "Published";
+    case "failed": return "Failed";
+    case "suspended": return "Suspended";
+  }
+}
+
+/** The account a channel publishes as, for display. Never a token or internal id when a name exists. */
+function destinationLabel(destination: CandidateDestinationSummary, channel: PublicationChannel, fallback?: string): string {
+  if (channel === "facebook-page") return destination.pageName ?? fallback ?? (destination.pageId ? `Page ${destination.pageId}` : "Not connected");
+  const account = destination.igUsername ? `@${destination.igUsername}` : destination.igUserId ?? fallback ?? "Not connected";
+  return channel === "instagram-page" ? `${account} (through the Facebook Page)` : account;
+}
+
+type Props = {
+  topicId: string;
+  draftId: string;
+  batchId: string;
+  secret: string;
+  disabled?: boolean;
+  /** PUB-10 delivery channel. Defaults to the direct Instagram connection. */
+  channel?: PublicationChannel;
+  /** Display name of the connected account/Page when a package does not carry one. */
+  accountHint?: string;
 };
 
-type Props = { topicId: string; draftId: string; batchId: string; secret: string; disabled?: boolean };
-
-export function InstagramPublicationCandidatePanel({ topicId, draftId, batchId, secret, disabled }: Props) {
+export function InstagramPublicationCandidatePanel({ topicId, draftId, batchId, secret, disabled, channel = DEFAULT_PUBLICATION_CHANNEL, accountHint }: Props) {
+  const platform = publicationPlatformLabel(channel);
   const [result, setResult] = useState<PublicationCandidate>();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -45,8 +70,8 @@ export function InstagramPublicationCandidatePanel({ topicId, draftId, batchId, 
   const [jobPackageId, setJobPackageId] = useState("");
   const [jobError, setJobError] = useState("");
   const request = useRef<AbortController | null>(null);
-  const packageUrl = `/api/radar/creative/drafts/${encodeURIComponent(draftId)}/publication-package?topicId=${encodeURIComponent(topicId)}`;
-  const jobUrl = `/api/radar/creative/drafts/${encodeURIComponent(draftId)}/publication-job?topicId=${encodeURIComponent(topicId)}`;
+  const packageUrl = `/api/radar/creative/drafts/${encodeURIComponent(draftId)}/publication-package?topicId=${encodeURIComponent(topicId)}&channel=${channel}`;
+  const jobUrl = `/api/radar/creative/drafts/${encodeURIComponent(draftId)}/publication-job?topicId=${encodeURIComponent(topicId)}&channel=${channel}`;
   const authHeader = () => ({ Authorization: `Bearer ${secret.trim()}` });
   const jobActive = Boolean(job && !TERMINAL_JOB_STATUS.includes(job.status));
 
@@ -107,7 +132,7 @@ export function InstagramPublicationCandidatePanel({ topicId, draftId, batchId, 
     request.current = controller;
     setBusy(true); setResult(undefined); setError("");
     try {
-      const query = new URLSearchParams({ topicId, batchId });
+      const query = new URLSearchParams({ topicId, batchId, channel });
       const response = await fetch(`/api/radar/creative/drafts/${encodeURIComponent(draftId)}/publication-candidate?${query}`, {
         cache: "no-store", headers: authHeader(), signal: controller.signal,
       });
@@ -123,7 +148,7 @@ export function InstagramPublicationCandidatePanel({ topicId, draftId, batchId, 
     setPackageBusy(true); setPackageError("");
     try {
       const response = await fetch(packageUrl, {
-        method: "POST", headers: { ...authHeader(), "Content-Type": "application/json" }, body: JSON.stringify({ batchId }),
+        method: "POST", headers: { ...authHeader(), "Content-Type": "application/json" }, body: JSON.stringify({ batchId, channel }),
       });
       const body = await response.json();
       if (!response.ok) {
@@ -200,18 +225,18 @@ export function InstagramPublicationCandidatePanel({ topicId, draftId, batchId, 
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [jobId, jobStatus, draftId, topicId, secret]);
 
-  return <section className={styles.publicationCandidate} aria-label="Instagram publication readiness">
-    <h4>Review Instagram publication</h4>
+  return <section className={styles.publicationCandidate} aria-label={`${PUBLICATION_CHANNEL_LABELS[channel]} publication readiness`}>
+    <h4>Review {PUBLICATION_CHANNEL_LABELS[channel]} publication</h4>
     <p>Check the saved script, selected visuals, permissions, and destination. Preparing the review does not publish.</p>
     <button type="button" className={styles.secondaryButton} disabled={disabled || busy} onClick={validate}>{busy ? "Checking publication readiness…" : "Check publication readiness"}</button>
     {disabled ? <p>Finish editing and save the current version before validating.</p> : null}
     {error ? <p role="alert">{error}</p> : null}
     {result && !disabled ? <div aria-live="polite">
       <strong>{result.state === "ready" ? "Ready to publish" : result.state === "candidate" ? "Candidate · delivery checks pending" : "Not yet a candidate"}</strong>
-      <p>Account: {result.destination.igUsername ? `@${result.destination.igUsername}` : result.destination.igUserId || "Not connected"}</p>
+      <p>{channel === "facebook-page" ? "Page" : "Account"}: {destinationLabel(result.destination, channel, accountHint)}</p>
       {result.publishingAccess ? <p>
         Publishing access: <strong>{result.publishingAccess.state}</strong>
-        {result.publishingAccess.quota ? ` · ${result.publishingAccess.quota.remaining}/${result.publishingAccess.quota.total} posts left in the current window` : ""}
+        {result.publishingAccess.quota && channel !== "facebook-page" ? ` · ${result.publishingAccess.quota.remaining}/${result.publishingAccess.quota.total} posts left in the current window` : ""}
         <br /><small>{result.publishingAccess.message}</small>
       </p> : null}
       {(() => {
@@ -248,7 +273,7 @@ export function InstagramPublicationCandidatePanel({ topicId, draftId, batchId, 
           {" · "}{pkg.mediaType === "carousel" ? "Carousel" : "Single image"}
           {pkg.draftVersion ? ` · Script v${pkg.draftVersion}` : ""}
         </p>
-        <p>Account: <strong>{pkg.destination.igUsername ? `@${pkg.destination.igUsername}` : pkg.destination.igUserId ?? "Unavailable"}</strong> · Review expires {new Date(pkg.expiresAt).toLocaleString()} (local time)</p>
+        <p>{channel === "facebook-page" ? "Page" : "Account"}: <strong>{destinationLabel(pkg.destination, channel, accountHint)}</strong> · Review expires {new Date(pkg.expiresAt).toLocaleString()} (local time)</p>
         {pkg.publishingAccessPending ? <p><small>Publishing access was not verified when this review was prepared. Verify access in Channels before publishing.</small></p> : null}
         <p className={styles.publicationCaption}>{pkg.caption}</p>
         {pkg.hashtags.length ? <p>{pkg.hashtags.join(" ")}</p> : null}
@@ -268,9 +293,9 @@ export function InstagramPublicationCandidatePanel({ topicId, draftId, batchId, 
           {pkg.status === "frozen" && pkg.publishingAccessPending ? <small>Verify publishing access before this can be published.</small> : null}
           {pkg.status !== "consumed" ? <button type="button" className={styles.secondaryButton} disabled={packageBusy || jobBusy || (jobActive && jobPackageId === pkg.id)} onClick={() => discard(pkg.id)}>Discard package</button> : null}
         </div>
-        {confirmPackageId === pkg.id && pkg.status === "frozen" && !pkg.publishingAccessPending && Date.parse(pkg.expiresAt) > Date.now() ? <div className={styles.publicationConfirm} role="group" aria-label="Confirm Instagram publication">
-          <strong>Publish this exact review to {pkg.destination.igUsername ? `@${pkg.destination.igUsername}` : pkg.destination.igUserId} now?</strong>
-          <p>This sends {pkg.slides.length} {pkg.slides.length === 1 ? "image" : "images"} and the caption above. Scheduling is not enabled.</p>
+        {confirmPackageId === pkg.id && pkg.status === "frozen" && !pkg.publishingAccessPending && Date.parse(pkg.expiresAt) > Date.now() ? <div className={styles.publicationConfirm} role="group" aria-label={`Confirm ${platform} publication`}>
+          <strong>Publish this exact review to {destinationLabel(pkg.destination, channel, accountHint)} on {platform} now?</strong>
+          <p>This sends {pkg.slides.length} {pkg.slides.length === 1 ? "image" : "images"} and the caption above{channel === "facebook-page" ? " as one Page post" : ""}. Scheduling is not enabled.</p>
           <div className={styles.publicationPackageActions}>
             <button type="button" className={styles.primaryButton} disabled={jobBusy || jobActive || packageBusy} onClick={() => void publish(pkg.id)}>{jobBusy ? "Starting publication…" : "Confirm publish now"}</button>
             <button type="button" className={styles.secondaryButton} disabled={jobBusy} onClick={() => setConfirmPackageId("")}>Keep reviewing</button>
@@ -279,13 +304,13 @@ export function InstagramPublicationCandidatePanel({ topicId, draftId, batchId, 
       </article>)}
       {jobError ? <p role="alert">{jobError}</p> : null}
       {job ? <div className={styles.publicationJob} aria-live="polite">
-        <strong>{job.status === "pending-confirmation" && job.publishedMediaId ? "Instagram confirmed publication — saving its record…" : JOB_STATUS_TEXT[job.status]}</strong>
+        <strong>{job.status === "pending-confirmation" && job.publishedMediaId ? `${platform} confirmed publication — saving its record…` : jobStatusText(job.status, platform)}</strong>
         {job.status === "pending-confirmation" ? null : job.lastError ? <p><small>{job.lastError}</small></p> : null}
         {job.status === "published" && job.permalink ? <p><a href={job.permalink} target="_blank" rel="noreferrer">View the published post</a></p> : null}
         {job.status === "published" && !job.permalink ? <p><small>Published and recorded. The permalink is not available yet.</small></p> : null}
         {job.canRetry ? <button type="button" className={styles.secondaryButton} disabled={!jobPackageId || jobBusy || packageBusy} onClick={() => void publish(jobPackageId, job.id)}>{jobBusy ? "Starting retry…" : job.status === "suspended" ? "Revalidate and retry publishing" : "Retry publishing"}</button> : null}
         {job.status === "suspended" && !job.canRetry && job.failureKind !== "uncertain" ? <p><small>Review the recorded reason before creating another publication order.</small></p> : null}
-        <p><small>A finished container is not a confirmed publication. A carousel posts as one.</small></p>
+        <p><small>{channel === "facebook-page" ? "Images are uploaded unpublished and appear only as one post." : "A finished container is not a confirmed publication. A carousel posts as one."}</small></p>
       </div> : null}
     </div> : null}
   </section>;

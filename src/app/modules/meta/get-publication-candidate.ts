@@ -1,5 +1,4 @@
 import "server-only";
-import { checkInstagramPublishingAccess } from "./check-instagram-publishing-access";
 import { publishingIdentity } from "./instagram-publishing-access";
 import { GRAPH_API_VERSION } from "./meta-graph-client";
 import { findCreativeDraftById } from "../stories/creative-content.repository";
@@ -10,13 +9,14 @@ import { DOCUMENTARY_PROVIDER } from "../stories/creative-documentary";
 import { documentaryImage } from "../stories/manage-creative-documentary";
 import { downloadApprovedCreativeImage } from "../stories/manage-creative-assets";
 import { CreativeContentConflictError, CreativeContentNotFoundError, getCreativeWorkspaceState } from "../stories/manage-creative-content";
-import { getPublicationDestination } from "./topic-meta-connections.repository";
+import { checkChannelPublishingAccess, getChannelPublicationDestination } from "./publication-channel-connections";
+import { DEFAULT_PUBLICATION_CHANNEL, type PublicationChannel } from "./publication-channel";
 import { validatePublicationCandidate } from "./validate-publication-candidate";
 
-export async function getPublicationCandidate(topicId: string, draftId: string, batchId: string) {
+export async function getPublicationCandidate(topicId: string, draftId: string, batchId: string, channel: PublicationChannel = DEFAULT_PUBLICATION_CHANNEL) {
   return validatePublicationCandidate({
     apiVersion: GRAPH_API_VERSION,
-    checkDestination: (input) => checkInstagramPublishingAccess(topicId, publishingIdentity(topicId, input.destination)),
+    checkDestination: (input) => checkChannelPublishingAccess(topicId, channel, publishingIdentity(topicId, input.destination)),
     load: async () => {
       let draft = await findCreativeDraftById(topicId, draftId);
       if (!draft) throw new CreativeContentNotFoundError("Draft not found");
@@ -30,7 +30,7 @@ export async function getPublicationCandidate(topicId: string, draftId: string, 
         if (!current) throw new CreativeContentNotFoundError("Draft not found");
         draft = current;
       }
-      const [sourceToken, destination] = await Promise.all([documentarySourceToken(topicId, draft.storyId), getPublicationDestination(topicId)]);
+      const [sourceToken, destination] = await Promise.all([documentarySourceToken(topicId, draft.storyId), getChannelPublicationDestination(topicId, channel)]);
       return { topicId, draft, batch, sourceToken, destination };
     },
     readApprovedImage: (input, assetId) => input.batch.provider === DOCUMENTARY_PROVIDER

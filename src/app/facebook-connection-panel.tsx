@@ -190,7 +190,7 @@ export function FacebookConnectionPanel({
       {error ? <InlineNotice tone="error" title="Facebook action failed">{error}</InlineNotice> : null}
       {notice ? <InlineNotice tone="success">{notice}</InlineNotice> : null}
       {status?.needsReconnect ? <InlineNotice tone="warning" title="Reconnect required">Facebook rejected the stored Page token. Connect again to refresh it.</InlineNotice> : null}
-      {status?.connected ? <InlineNotice tone="info">Publishing to Facebook is not built yet; this connection is ready for it.</InlineNotice> : null}
+      {status?.connected ? <InlineNotice tone="info">Publish to this Page{status.linkedIgUsername ? ` and to @${status.linkedIgUsername}` : ""} from a story&rsquo;s Publication tab. Each post is re-checked before it is sent.</InlineNotice> : null}
     </ChannelCard>
 
     {selection ? <Dialog

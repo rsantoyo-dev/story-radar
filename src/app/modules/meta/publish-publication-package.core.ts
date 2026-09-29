@@ -15,6 +15,7 @@
 
 import { classifyMetaGraphError } from "./meta-verification";
 import { MetaGraphApiError } from "./meta-token-response";
+import type { PublicationChannel } from "./publication-channel";
 import {
   publishingAccessIsCurrent,
   type PublishingAccess,
@@ -64,6 +65,9 @@ export type PublicationJobRow = {
   status: PublicationJobStatus;
   mediaType: "image" | "carousel" | null;
   igUserId: string | null;
+  /** PUB-10 delivery channel; the job's Facebook Page for the Page channels. */
+  channel: PublicationChannel;
+  pageId: string | null;
   connectionVersion: string;
   appConfigurationVersion?: string;
   apiVersion: string;
@@ -104,7 +108,7 @@ export type FrozenPackageForPublish = {
   caption: string;
   candidateSnapshotHash: string;
   expiresAt: Date;
-  destination: { igUserId: string | null; igUsername: string | null };
+  destination: { igUserId: string | null; igUsername: string | null; pageId?: string | null };
   slides: { unitOrder: number; deliveryUrl: string }[];
 };
 
@@ -162,6 +166,8 @@ export type PublishJobDependencies = {
   now: () => Date;
   maxJobAgeMs?: number;
   maxAttempts?: number;
+  /** Names the provider in stored, user-visible errors. Defaults to Instagram. */
+  platformLabel?: "Instagram" | "Facebook";
 };
 
 export class PublicationJobConflictError extends Error {}
@@ -231,7 +237,7 @@ export async function runPublishPublicationJob(deps: PublishJobDependencies): Pr
     }
     if (row.status === "published") {
       return toPublicationJobView(await suspend(deps, row, "uncertain",
-        "Instagram publication was reported without a media id. Resolve manually; do not resend."));
+        `${label(deps)} publication was reported without a media id. Resolve manually; do not resend.`));
     }
     if (!row.startedAt && row.status !== "queued") row = await move(deps, row.status, { startedAt: deps.now() });
     const uncertain = row.status === "publishing" || row.status === "pending-confirmation";
@@ -261,11 +267,11 @@ export async function runPublishPublicationJob(deps: PublishJobDependencies): Pr
       if (status === "IN_PROGRESS") return toPublicationJobView(row);
       if (status === "PUBLISHED") {
         return toPublicationJobView(await suspend(deps, row, "uncertain",
-          "Instagram reports this container was published, but its media id is missing. Resolve manually; do not resend."));
+          `${label(deps)} reports this container was published, but its media id is missing. Resolve manually; do not resend.`));
       }
       if (status === "ERROR" || status === "EXPIRED") {
         return toPublicationJobView(await fail(deps, row, status === "EXPIRED" ? "expired-container" : "retryable",
-          "Instagram could not process this container. An explicit retry is required."));
+          `${label(deps)} could not process this container. An explicit retry is required.`));
       }
       // Revalidate the approved snapshot and original identity immediately before sending.
       const blocker = await checkPreparation(deps, row, pkg);
@@ -283,7 +289,7 @@ export async function runPublishPublicationJob(deps: PublishJobDependencies): Pr
       await deps.transition(current.status, { status: "pending-confirmation", failureKind: "uncertain",
         lastError: "The send outcome is uncertain. Checking without resending." });
     } else {
-      const verdict = classifyPublishError(error);
+      const verdict = classifyPublishError(error, label(deps));
       await deps.transition(current.status, { status: verdict.terminal, failureKind: verdict.kind,
         lastError: verdict.message, finishedAt: deps.now() });
     }
@@ -300,6 +306,7 @@ async function move(deps: PublishJobDependencies, from: PublicationJobStatus, pa
 type Blocker = { kind: PublicationJobFailureKind; message: string };
 async function checkPreparation(deps: PublishJobDependencies, row: PublicationJobRow, pkg: FrozenPackageForPublish): Promise<Blocker | { quotaRemaining: number }> {
   if (row.igUserId !== pkg.destination.igUserId || row.igUserId !== deps.expectedIdentity.igUserId ||
+      (row.pageId ?? null) !== (pkg.destination.pageId ?? null) || (row.pageId ?? null) !== (deps.expectedIdentity.pageId ?? null) ||
       row.connectionVersion !== deps.expectedIdentity.connectionVersion ||
       row.appConfigurationVersion !== deps.expectedIdentity.appConfigurationVersion || row.apiVersion !== deps.apiVersion) {
     return { kind: "invalidated", message: "The account or connection changed. This order cannot be redirected." };
@@ -388,11 +395,11 @@ async function doPublish(
         status: "pending-confirmation",
         failureKind: "uncertain",
         lastError:
-          "The publish request did not return a confirmation. We will check with Instagram before any retry.",
+          `The publish request did not return a confirmation. We will check with ${label(deps)} before any retry.`,
       });
       return moved ?? (await deps.loadJob());
     }
-    const verdict = classifyPublishError(error);
+    const verdict = classifyPublishError(error, label(deps));
     const moved = await deps.transition("publishing", {
       status: verdict.terminal,
       failureKind: verdict.kind,
@@ -410,7 +417,7 @@ async function reconcilePending(deps: PublishJobDependencies, row: PublicationJo
   catch { return row; } // Bounded by the persisted startedAt window, never by a browser timer.
   if (status === "PUBLISHED") {
     // The container id is NOT the media id. No supported mapping is assumed.
-    return suspend(deps, row, "uncertain", "Instagram confirms the container was published, but the media id was not received. Resolve manually; do not resend.");
+    return suspend(deps, row, "uncertain", `${label(deps)} confirms the container was published, but the media id was not received. Resolve manually; do not resend.`);
   }
   if (status === "EXPIRED" || status === "ERROR") {
     return suspend(deps, row, "uncertain", "The container is no longer available and the send outcome is uncertain. Resolve manually; do not resend.");
@@ -510,7 +517,11 @@ function isUncertainError(error: unknown): boolean {
   return true;
 }
 
-function classifyPublishError(error: unknown): {
+function label(deps: PublishJobDependencies): string {
+  return deps.platformLabel ?? "Instagram";
+}
+
+function classifyPublishError(error: unknown, platform = "Instagram"): {
   kind: PublicationJobFailureKind;
   terminal: "failed" | "suspended";
   message: string;
@@ -525,7 +536,7 @@ function classifyPublishError(error: unknown): {
         kind: "permission",
         terminal: "suspended",
         message:
-          "Instagram rejected the request: the account authorization is no longer valid. Reconnect and verify again.",
+          `${platform} rejected the request: the account authorization is no longer valid. Reconnect and verify again.`,
       };
     }
     if (kind === "permission" || error.status === 403) {
@@ -533,20 +544,20 @@ function classifyPublishError(error: unknown): {
         kind: "permission",
         terminal: "suspended",
         message:
-          "Instagram rejected the request for lack of publishing permission.",
+          `${platform} rejected the request for lack of publishing permission.`,
       };
     }
     if (error.status === 429) {
       return {
         kind: "rate-limit",
         terminal: "suspended",
-        message: "Instagram rate-limited this account. Try again later.",
+        message: `${platform} rate-limited this account. Try again later.`,
       };
     }
     return {
       kind: "retryable",
       terminal: "failed",
-      message: `Instagram rejected the request (HTTP ${error.status}).`,
+      message: `${platform} rejected the request (HTTP ${error.status}).`,
     };
   }
   return {

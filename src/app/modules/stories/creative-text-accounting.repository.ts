@@ -4,6 +4,8 @@ import { db } from "@/db/client";
 import { CreativeTextBudgetError, textBudgetMicros, type TextRate, type CreativeTextSpend } from "./creative-text-cost";
 import type { TextSpendContext } from "./creative-text-meter";
 import type { CreativeAiUsage, CreativeDraft } from "./creative-content.types";
+import { demoMarkupBasisPoints } from "../credits/demo-credit-policy";
+import { syncDemoCredits } from "../credits/demo-credit.repository";
 export async function reserveTextCall(input: TextSpendContext & {
     id: string;
     provider: string;
@@ -25,7 +27,7 @@ export async function reserveTextCall(input: TextSpendContext & {
     WHERE topic_id=${input.topicId}::uuid AND story_id=${input.storyId}::uuid AND status='uncertain'
       AND charged_micros IS NULL AND finished_at < now() - interval '15 minutes'`),
         db.execute(sql `INSERT INTO creative_text_calls(id,topic_id,story_id,run_id,provider,model,operation,reserved_micros,pricing)
-    SELECT ${input.id}::uuid,${input.topicId}::uuid,${input.storyId}::uuid,${input.runId}::uuid,${input.provider},${input.model},${input.operation},${input.reserved},${JSON.stringify(input.rate)}::jsonb
+    SELECT ${input.id}::uuid,${input.topicId}::uuid,${input.storyId}::uuid,${input.runId}::uuid,${input.provider},${input.model},${input.operation},${input.reserved},${JSON.stringify({ ...input.rate, demoMarkupBasisPoints: demoMarkupBasisPoints() })}::jsonb
     WHERE coalesce((SELECT sum(coalesce(charged_micros,reserved_micros)) FROM creative_text_calls
       WHERE topic_id=${input.topicId}::uuid AND story_id=${input.storyId}::uuid),0)+${input.reserved} <= ${input.limit}
     RETURNING id`),
@@ -43,6 +45,12 @@ export async function reserveTextCall(input: TextSpendContext & {
 export async function finishTextCall(id: string, context: TextSpendContext, cost: number | null, usage?: CreativeAiUsage) {
     await db.execute(sql `UPDATE creative_text_calls SET status=${cost === null ? "uncertain" : "settled"},charged_micros=${cost},usage=${usage ? JSON.stringify(usage) : null}::jsonb,finished_at=now()
   WHERE id=${id}::uuid AND topic_id=${context.topicId}::uuid AND story_id=${context.storyId}::uuid AND status='reserved'`);
+    // A provider has already answered. A credit-ledger outage must not make
+    // the caller repeat that paid request; the read path reconciles this receipt.
+    if (cost !== null && cost > 0) {
+        try { await syncDemoCredits(); }
+        catch (error) { console.error("Demo credit reconciliation deferred", error); }
+    }
 }
 export async function recordTextOutcome(topicId: string, draft: CreativeDraft) {
     if (draft.format !== "carousel" || draft.companion)

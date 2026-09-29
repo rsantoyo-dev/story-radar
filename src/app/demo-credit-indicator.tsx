@@ -1,0 +1,100 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import type { DemoCreditAccount, DemoCreditEntry } from "./modules/credits/demo-credit.repository";
+import styles from "./radar-dashboard.generated.module.css";
+
+function credits(micros: number, detail = false): string {
+  if (micros !== 0 && Math.abs(micros) < 100 && !detail) return "<0.01";
+  return (micros / 10_000).toLocaleString("en-US", {
+    minimumFractionDigits: detail ? 4 : 2,
+    maximumFractionDigits: detail ? 4 : 2,
+  });
+}
+
+function entryLabel(entry: DemoCreditEntry): string {
+  switch (entry.kind) {
+    case "demo_grant": return "Opening demo balance";
+    case "demo_reset": return "Demo balance reset";
+    case "signup_grant": return "Signup grant";
+    case "refund": return "Refund";
+    case "usage_debit": return entry.operation || "Creative Studio text";
+  }
+}
+
+async function loadDemoCredits(secret: string, signal?: AbortSignal): Promise<DemoCreditAccount> {
+  const response = await fetch("/api/radar/credits", {
+    cache: "no-store",
+    headers: { Authorization: `Bearer ${secret}` },
+    signal,
+  });
+  if (!response.ok) throw new Error("Could not load demo credits");
+  return await response.json() as DemoCreditAccount;
+}
+
+export function DemoCreditIndicator({ secret }: { secret: string }) {
+  const [account, setAccount] = useState<DemoCreditAccount>();
+  const [error, setError] = useState(false);
+  const refresh = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const result = await loadDemoCredits(secret, signal);
+      if (!signal?.aborted) { setAccount(result); setError(false); }
+    } catch {
+      if (!signal?.aborted) { setAccount(undefined); setError(true); }
+    }
+  }, [secret]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const load = () => {
+      void loadDemoCredits(secret, controller.signal).then((result) => {
+        if (!controller.signal.aborted) { setAccount(result); setError(false); }
+      }).catch(() => {
+        if (!controller.signal.aborted) { setAccount(undefined); setError(true); }
+      });
+    };
+    load();
+    const onFocus = () => { load(); };
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") load();
+    }, 60_000);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      controller.abort();
+      window.clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [secret]);
+
+  return <details className={styles.demoCredits}>
+    <summary aria-label={account ? `${credits(account.availableMicros)} demo credits available; view activity` : "Demo credits; view activity"}>
+      <span>Demo credits</span>
+      <strong aria-live="polite">{account ? credits(account.availableMicros) : error ? "Unavailable" : "Loading…"}</strong>
+    </summary>
+    <div className={styles.demoCreditsPanel}>
+      <h2>Demo credit activity</h2>
+      {error ? <p>Balance is unavailable. Check the credit migration, then try again.</p> : !account ? <p>Loading activity…</p> : <>
+        <p>1,000 credits represent US$10 of reference value. Creative Studio text is currently metered; images, research, evaluation, and other providers are not included yet. Credits do not block work in this demo.</p>
+        <dl className={styles.demoCreditsTotals}>
+          <div><dt>Available</dt><dd>{credits(account.availableMicros)}</dd></div>
+          <div><dt>Pending or uncertain</dt><dd>{credits(account.pendingMicros)}</dd></div>
+          <div><dt>Spent on text</dt><dd>{credits(account.spentMicros)}</dd></div>
+          {account.overdrawnMicros > 0 ? <div><dt>Overdrawn</dt><dd>{credits(account.overdrawnMicros)}</dd></div> : null}
+        </dl>
+        <h3>Recent activity</h3>
+        {account.entries.length ? <ul className={styles.demoCreditsHistory}>
+          {account.entries.map((entry) => <li key={entry.id}>
+            <span>
+              <strong>{entryLabel(entry)}</strong>
+              <small>{new Date(entry.createdAt).toLocaleString("en-US")} {entry.model ? `· ${entry.provider}/${entry.model}` : ""}{entry.kind === "demo_reset" && entry.reason ? ` · ${entry.reason}` : ""}</small>
+              {entry.kind === "usage_debit" && entry.referenceCostMicros !== null && entry.markupBasisPoints !== null ?
+                <small>Provider estimate US${(entry.referenceCostMicros / 1_000_000).toFixed(4)} · +{entry.markupBasisPoints / 100}%</small> : null}
+            </span>
+            <b>{entry.amountMicros < 0 ? "−" : "+"}{credits(Math.abs(entry.amountMicros), true)}</b>
+          </li>)}
+        </ul> : <p>No metered activity yet.</p>}
+      </>}
+      <button type="button" className={styles.demoCreditsRefresh} onClick={() => void refresh()}>Refresh balance</button>
+    </div>
+  </details>;
+}

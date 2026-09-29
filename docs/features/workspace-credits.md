@@ -1,7 +1,7 @@
 # Workspace credits and metered usage
 
 **ID:** FEAT-BILL-001  
-**Status:** Architecture proposed; no wallet, deductions, or payment flow implemented  
+**Status:** Demo ledger and Creative Studio text metering implemented; other paid paths and enforcement pending
 **Date:** September 28, 2026  
 **Product:** Press Craftor
 
@@ -33,6 +33,16 @@ When authentication and workspace isolation arrive, the same ledger belongs to t
 The provider-cost calculator uses a versioned, server-side price catalog for the actual provider, model, processing tier, and billable unit. Text pricing distinguishes input, cached input, output, and provider-specific reasoning rules; image, search, map, and storage requests may use per-request or other units. A free or zero-priced operation must have an explicit zero rate. An unknown rate cannot silently become zero or consume guessed credits. Snapshot the rate and markup policy on each usage event so later changes do not rewrite history. Provider invoice totals may differ from metered reference costs; keep those figures distinct.
 
 The 25% uplift gives a **20% gross margin on the simulated charge before other costs**, not a guarantee that hosting, storage, support, taxes, or failed work are covered. Measure those costs before setting a real commercial price.
+
+## Implemented demo slice
+
+- Migration `0081` creates the append-only ledger and grants the existing `default` workspace 1,000 credits once. A new metered Creative Studio text call snapshots the configured markup in its `creative_text_calls.pricing`; only a settled call with a positive reference cost posts a debit. Earlier calls lack that snapshot and are not charged retroactively. Reconciliation is idempotent, runs after settlement, and runs again when the account is read after an interrupted write.
+- `GET /api/radar/credits` uses the current collector credential and returns the default workspace balance, pending or uncertain text estimates, and 25 recent postings. The header shows demo credits and this activity. It says which paid paths remain outside the ledger.
+- `DEMO_CREDIT_MARKUP_BPS` defaults to `2500` (25%). A markup change applies only to new reservations. The current money unit is integer USD microdollars, with `10,000 micros = 1 credit`.
+- A local operator can run `npm run credits:reset -- --reason "Demo restart"` to restore the posted balance to 1,000 credits. The script generates an idempotency key; pass `--key demo_reset:some-stable-id` to safely retry one reset. A reset refuses pending or uncertain metered calls and leaves past activity in the ledger. It has no browser endpoint.
+- This release is **observe mode**. It shows a simulated posted balance and pending estimate, but does not reserve workspace credits atomically or refuse work for low balance. The existing per-Story text budget still applies. There is no payment or real-money entitlement.
+
+The remaining architecture below describes the next slices. In particular, generic `credit_operations`, provider usage events, paid-action estimates, refunds, and coverage of image, research, evaluation, and other providers have not been implemented. Do not use this partial ledger as a global spend limit.
 
 ## Domain records
 
@@ -108,4 +118,4 @@ Implementation sequence: (1) shared ledger and demo grant/reset; (2) price catal
 6. A coverage audit names every paid route, worker, fallback, and retry before a **global** balance gate is enabled. UI language reflects partial coverage while the audit is incomplete.
 7. Workspace scoping and operator-only reset are verified after authentication lands. No balance or reset mutation is trusted from the client.
 
-Documentation-only architecture in this change: no credits are granted or deducted, no pricing policy is deployed, and no publication behavior changes.
+The acceptance gates above apply to the complete feature. The current demo slice satisfies the opening grant, idempotent text debits, reset history, and honest partial-coverage UI; the generic operation and enforcement gates remain open.

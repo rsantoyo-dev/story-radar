@@ -103,11 +103,17 @@ test("a disconnected Facebook Page reports every capability unavailable", () => 
   });
 });
 
-test("a connected Facebook Page with publish tasks is capped at needs-attention, never available", () => {
+test("a connected Facebook Page with publish tasks needs a live verification before it is available", () => {
   const result = deriveFacebookChannelCapabilities({
     connected: true, tokenExpired: false, pageTasks: ["MANAGE", "CREATE_CONTENT"],
   });
   assert.equal(result.canPublish, "needs-attention");
+  assert.equal(deriveFacebookChannelCapabilities({
+    connected: true, tokenExpired: false, pageTasks: ["MANAGE", "CREATE_CONTENT"], verified: true,
+  }).canPublish, "available");
+  assert.equal(deriveFacebookChannelCapabilities({
+    connected: true, tokenExpired: false, pageTasks: ["ANALYZE"], verified: true,
+  }).canPublish, "unavailable", "verification never grants a missing task");
   assert.equal(result.canSync, "unavailable");
   assert.equal(result.metricsAvailable, "unavailable");
 });

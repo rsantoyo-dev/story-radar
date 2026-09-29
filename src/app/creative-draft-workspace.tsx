@@ -17,7 +17,7 @@ import {
   type SaveEditRequestPayload,
 } from "./creative-brand-image-editor";
 import Image from "next/image";
-import { InstagramPublicationCandidatePanel } from "./instagram-publication-candidate-panel";
+import { PublicationChannelsPanel } from "./publication-channels-panel";
 import { useRouter } from "next/navigation";
 import { CreativeDocumentaryPanel } from "./creative-documentary-panel";
 import { StoryInstagramResults } from "./story-instagram-results";
@@ -2496,7 +2496,7 @@ export function CreativeDraftWorkspace({
 
             <section className={styles.section} hidden={activeTab !== "publication"}>
               <div className={styles.sectionHeading}><div><span>Stage 5</span><h3>Publication</h3></div></div>
-              {activeDraft && currentAssetBatch ? <InstagramPublicationCandidatePanel
+              {activeDraft && currentAssetBatch ? <PublicationChannelsPanel
                 key={JSON.stringify([topicId, activeDraft, currentAssetBatch, dirty, busy, assetBusy, viewingHistoricalDraft])}
                 topicId={topicId} draftId={activeDraft.id} batchId={currentAssetBatch.id} secret={secret}
                 disabled={dirty || Boolean(busy) || Boolean(assetBusy) || viewingHistoricalDraft}

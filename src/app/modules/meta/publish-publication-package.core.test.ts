@@ -63,6 +63,8 @@ function initialRow(over: Partial<PublicationJobRow> = {}): PublicationJobRow {
     status: "queued",
     mediaType: null,
     igUserId: "1789",
+    channel: "instagram-direct",
+    pageId: null,
     connectionVersion: "conn-1",
     appConfigurationVersion: "app-1",
     apiVersion: "v21.0",

@@ -81,6 +81,9 @@ export function computePackageHash(input: {
   orderedSlideSha256: readonly string[];
   igUserId: string | null;
   connectionVersion: string;
+  /** PUB-10. Omitted for instagram-direct so its hashes are unchanged. */
+  channel?: "instagram-page" | "facebook-page";
+  pageId?: string | null;
 }): string {
   return createHash("sha256")
     .update(
@@ -91,6 +94,7 @@ export function computePackageHash(input: {
         slides: [...input.orderedSlideSha256],
         igUserId: input.igUserId,
         connectionVersion: input.connectionVersion,
+        ...(input.channel ? { channel: input.channel, pageId: input.pageId ?? null } : {}),
       }),
     )
     .digest("hex");

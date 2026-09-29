@@ -10,6 +10,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import * as cost from "./creative-text-cost";
 import * as errors from "./creative-run-errors";
+import * as demoPolicy from "../credits/demo-credit-policy";
 import type { CreativeDraft, CreativeBrief } from "./creative-content.types";
 const localRequire = createRequire(import.meta.url);
 const topic = randomUUID(), story = randomUUID(), draftId = randomUUID();
@@ -43,6 +44,10 @@ async function fixture() {
                     return cost;
                 if (name === "./creative-run-errors")
                     return errors;
+                if (name === "../credits/demo-credit-policy")
+                    return demoPolicy;
+                if (name === "../credits/demo-credit.repository")
+                    return { syncDemoCredits: async () => {} };
                 return {};
             },
         });

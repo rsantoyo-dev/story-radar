@@ -8,8 +8,8 @@ import "server-only";
  * graph.facebook.com instead of graph.instagram.com — this is a genuinely
  * separate product in the Meta console with its own App credentials (see
  * meta-integration.config.ts), never a reuse of the Instagram Login flow's
- * client_id/secret. No publish calls live here: that is PUB-10, not this
- * pass.
+ * client_id/secret. The PUB-10 Page publish calls are at the end of this
+ * file.
  */
 
 export const FACEBOOK_GRAPH_VERSION = "v21.0";
@@ -171,6 +171,90 @@ export async function verifyFacebookPageAccess(
     throw new MetaGraphApiError("Facebook returned a different Page for this token", 502, payload);
   }
   return typeof payload.name === "string" ? { pageName: payload.name } : {};
+}
+
+// --- PUB-10 Facebook Page publish calls -----------------------------------
+// A multi-image Page post is built from photos uploaded with published=false,
+// then attached to ONE feed post. Nothing appears on the Page until that post
+// is created, so an interrupted run never leaves loose photos published.
+
+const FACEBOOK_NUMERIC_ID = /^[0-9]+$/;
+/** Page post ids are "<pageId>_<postId>"; a bare numeric id is also accepted. */
+const FACEBOOK_POST_ID = /^[0-9]+(?:_[0-9]+)?$/;
+
+function requireFacebookId(payload: { id?: unknown }, pattern: RegExp, what: string): string {
+  if (typeof payload.id !== "string" || !pattern.test(payload.id)) {
+    throw new MetaGraphApiError(`Facebook did not return a ${what} id`, 502, payload);
+  }
+  return payload.id;
+}
+
+/** Uploads one image to the Page without publishing it. Returns the photo id. */
+export async function uploadUnpublishedPagePhoto(
+  pageId: string,
+  pageAccessToken: string,
+  imageUrl: string,
+): Promise<string> {
+  if (!FACEBOOK_NUMERIC_ID.test(pageId)) throw new MetaGraphApiError("Invalid Facebook Page identity", 400);
+  const payload = await facebookGraphPost<{ id?: unknown }>(`${pageId}/photos`, pageAccessToken, {
+    url: imageUrl,
+    published: "false",
+  });
+  return requireFacebookId(payload, FACEBOOK_NUMERIC_ID, "photo");
+}
+
+/** Creates the single Page feed post carrying the already-uploaded photos, in order. */
+export async function publishPagePhotoPost(
+  pageId: string,
+  pageAccessToken: string,
+  input: { message: string; photoIds: string[] },
+): Promise<string> {
+  if (!FACEBOOK_NUMERIC_ID.test(pageId)) throw new MetaGraphApiError("Invalid Facebook Page identity", 400);
+  if (!input.photoIds.length || input.photoIds.some((id) => !FACEBOOK_NUMERIC_ID.test(id))) {
+    throw new MetaGraphApiError("Invalid Facebook photo ids", 400);
+  }
+  const params: Record<string, string> = { message: input.message };
+  input.photoIds.forEach((id, index) => {
+    params[`attached_media[${index}]`] = JSON.stringify({ media_fbid: id });
+  });
+  const payload = await facebookGraphPost<{ id?: unknown }>(`${pageId}/feed`, pageAccessToken, params);
+  return requireFacebookId(payload, FACEBOOK_POST_ID, "post");
+}
+
+/** Best-effort permalink + creation time for a freshly published Page post. */
+export async function fetchPagePostPermalink(
+  postId: string,
+  pageAccessToken: string,
+): Promise<{ permalink?: string; timestamp?: string }> {
+  if (!FACEBOOK_POST_ID.test(postId)) throw new MetaGraphApiError("Invalid Facebook post id", 400);
+  const payload = await facebookGraphGet<{ permalink_url?: unknown; created_time?: unknown }>(
+    postId,
+    pageAccessToken,
+    "permalink_url,created_time",
+  );
+  return {
+    permalink: typeof payload.permalink_url === "string" ? payload.permalink_url : undefined,
+    timestamp: typeof payload.created_time === "string" ? payload.created_time : undefined,
+  };
+}
+
+async function facebookGraphPost<T>(
+  path: string,
+  accessToken: string,
+  params: Record<string, string>,
+): Promise<T> {
+  const response = await fetch(`https://graph.facebook.com/${FACEBOOK_GRAPH_VERSION}/${path}`, {
+    method: "POST",
+    cache: "no-store",
+    redirect: "error",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams(params),
+    signal: AbortSignal.timeout(30_000),
+  });
+  return handleFacebookResponse<T>(response);
 }
 
 async function facebookGet<T>(url: URL): Promise<T> {

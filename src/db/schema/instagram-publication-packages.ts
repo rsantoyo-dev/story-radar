@@ -52,6 +52,14 @@ export const instagramPublicationPackages = pgTable(
       .default(sql`ARRAY[]::text[]`),
     igUserId: text("ig_user_id"),
     igUsername: text("ig_username"),
+    /**
+     * PUB-10 delivery channel: instagram-direct (Instagram Login), or through
+     * the topic's Facebook Page — instagram-page (its linked Instagram account)
+     * or facebook-page (a Page post). Existing rows are instagram-direct.
+     */
+    channel: text("channel").default("instagram-direct").notNull(),
+    /** The Facebook Page the Page channels deliver through; null for instagram-direct. */
+    pageId: text("page_id"),
     connectionVersion: text("connection_version").notNull(),
     scriptSnapshot: jsonb("script_snapshot").notNull(),
     policySnapshot: jsonb("policy_snapshot"),
@@ -92,6 +100,11 @@ export const instagramPublicationPackages = pgTable(
       sql`${table.draftVersion} > 0
         AND ${table.mediaType} IN ('image', 'carousel')
         AND ${table.status} IN ('frozen', 'stale', 'consumed')`,
+    ),
+    check(
+      "instagram_publication_packages_channel_check",
+      sql`${table.channel} IN ('instagram-direct', 'instagram-page', 'facebook-page')
+        AND (${table.channel} = 'instagram-direct' OR ${table.pageId} IS NOT NULL)`,
     ),
     check(
       "instagram_publication_packages_dates_check",

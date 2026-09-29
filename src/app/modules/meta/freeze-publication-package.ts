@@ -24,7 +24,8 @@ import {
 } from "../stories/r2-storage";
 
 import { getPublicationCandidate } from "./get-publication-candidate";
-import { getPublicationDestination } from "./topic-meta-connections.repository";
+import { getChannelPublicationDestination } from "./publication-channel-connections";
+import { DEFAULT_PUBLICATION_CHANNEL, parsePublicationChannel, type PublicationChannel } from "./publication-channel";
 import {
   runFreezePublicationPackage,
   type FrozenPackage,
@@ -53,16 +54,17 @@ export async function freezePublicationPackage(
   topicId: string,
   draftId: string,
   batchId: string,
+  channel: PublicationChannel = DEFAULT_PUBLICATION_CHANNEL,
 ): Promise<FrozenPackage> {
   return runFreezePublicationPackage(topicId, draftId, {
     deliveryBaseUrl: deliveryBaseUrl(),
-    loadCandidate: () => getPublicationCandidate(topicId, draftId, batchId),
+    loadCandidate: () => getPublicationCandidate(topicId, draftId, batchId, channel),
     loadContext: async () => {
       const draft = await findCreativeDraftById(topicId, draftId);
       if (!draft) throw new CreativeContentNotFoundError("Draft not found");
       const [batch, destination] = await Promise.all([
         findCreativeAssetBatchById(batchId),
-        getPublicationDestination(topicId),
+        getChannelPublicationDestination(topicId, channel),
       ]);
       if (!batch || batch.draftId !== draft.id) {
         throw new CreativeContentNotFoundError("Image batch not found for this draft");
@@ -71,6 +73,8 @@ export async function freezePublicationPackage(
         storyId: draft.storyId,
         provider: batch.provider,
         connectionVersion: destination.connectionVersion,
+        channel,
+        pageId: channel === "instagram-direct" ? null : (destination.pageId ?? null),
         scriptSnapshot: {
           draftId: draft.id,
           version: draft.version,
@@ -131,6 +135,7 @@ export async function freezePublicationPackage(
 export async function listPublicationPackages(
   topicId: string,
   draftId: string,
+  channel?: PublicationChannel,
 ): Promise<FrozenPackage[]> {
   const rows = await db
     .select()
@@ -139,6 +144,7 @@ export async function listPublicationPackages(
       and(
         eq(instagramPublicationPackages.topicId, topicId),
         eq(instagramPublicationPackages.draftId, draftId),
+        ...(channel ? [eq(instagramPublicationPackages.channel, channel)] : []),
       ),
     );
   if (rows.length === 0) return [];
@@ -252,7 +258,12 @@ function mapFrozenPackage(
     mediaType: row.mediaType as PublicationMediaType,
     caption: row.caption,
     hashtags: row.hashtags ?? [],
-    destination: { igUserId: row.igUserId, igUsername: row.igUsername },
+    destination: {
+      igUserId: row.igUserId,
+      igUsername: row.igUsername,
+      ...(row.channel !== "instagram-direct" ? { channel: row.channel as "instagram-page" | "facebook-page", pageId: row.pageId } : {}),
+    },
+    channel: parsePublicationChannel(row.channel) ?? DEFAULT_PUBLICATION_CHANNEL,
     publishingAccessPending: row.publishingAccessPending,
     expiresAt: row.expiresAt.toISOString(),
     createdAt: row.createdAt.toISOString(),

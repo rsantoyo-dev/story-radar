@@ -8,6 +8,7 @@ import {
   listPublicationJobs,
   requestPublishNow,
 } from "@/app/modules/meta/publish-publication-package";
+import { parsePublicationChannel } from "@/app/modules/meta/publication-channel";
 import {
   creativeRouteErrorResponse,
   noStoreJson,
@@ -68,7 +69,10 @@ export async function GET(request: Request, context: Context) {
       }
       return noStoreJson({ job: await getPublicationJob(topicId, jobId, draftId) });
     }
-    return noStoreJson({ jobs: await listPublicationJobs(topicId, draftId) });
+    const raw = new URL(request.url).searchParams.get("channel");
+    const channel = raw === null ? undefined : parsePublicationChannel(raw);
+    if (raw !== null && !channel) return noStoreJson({ error: "Unknown publication channel" }, 400);
+    return noStoreJson({ jobs: await listPublicationJobs(topicId, draftId, channel) });
   } catch (error) {
     return (
       topicRequestErrorResponse(error) ??

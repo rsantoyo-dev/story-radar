@@ -10,6 +10,7 @@ import {
   instagramDeliveryFiles,
   instagramPublicationJobs,
   instagramPublicationPackages,
+  storySocialPublications,
   topicInstagramMedia,
 } from "@/db/schema";
 
@@ -19,8 +20,12 @@ import {
 } from "../stories/manage-creative-content";
 import { PublicationJobConflictError } from "./publish-publication-package.core";
 
-import { checkInstagramPublishingAccess } from "./check-instagram-publishing-access";
 import { getPublicationCandidate } from "./get-publication-candidate";
+import {
+  fetchPagePostPermalink,
+  publishPagePhotoPost,
+  uploadUnpublishedPagePhoto,
+} from "./meta-facebook-graph-client";
 import {
   createInstagramCarouselContainer,
   createInstagramMediaContainer,
@@ -31,9 +36,18 @@ import {
 } from "./meta-graph-client";
 import { publishingIdentity, samePublishingIdentity } from "./instagram-publishing-access";
 import {
-  getDecryptedTopicMetaAccessToken,
-  getPublicationDestination,
-} from "./topic-meta-connections.repository";
+  checkChannelPublishingAccess,
+  getChannelPublicationDestination,
+  getChannelSendCredentials,
+  instagramGraphHostFor,
+} from "./publication-channel-connections";
+import {
+  DEFAULT_PUBLICATION_CHANNEL,
+  destinationAccountId,
+  parsePublicationChannel,
+  publicationPlatformLabel,
+  type PublicationChannel,
+} from "./publication-channel";
 import {
   isTerminalPublicationJobStatus,
   publicationRetryPatch,
@@ -82,7 +96,9 @@ function runnableJob() {
     inArray(instagramPublicationJobs.status, NON_TERMINAL),
     and(eq(instagramPublicationJobs.status, "published"), or(
       isNull(instagramPublicationJobs.publishedMediaId),
-      sql`NOT EXISTS (SELECT 1 FROM ${topicInstagramMedia} WHERE
+      // A Facebook post is recorded in story_social_publications, not the
+      // Instagram media table; only Instagram jobs are checked against it.
+      sql`${instagramPublicationJobs.channel} <> 'facebook-page' AND NOT EXISTS (SELECT 1 FROM ${topicInstagramMedia} WHERE
         ${topicInstagramMedia.topicId} = ${instagramPublicationJobs.topicId}
         AND ${topicInstagramMedia.igUserId} = ${instagramPublicationJobs.igUserId}
         AND ${topicInstagramMedia.externalId} = ${instagramPublicationJobs.publishedMediaId}
@@ -109,10 +125,25 @@ function deliveryBaseUrl(): string {
   return url;
 }
 
-function idempotencyKey(packageHash: string, igUserId: string): string {
+/** The direct channel keeps its original key format, so existing orders still converge. */
+function idempotencyKey(packageHash: string, accountId: string, channel: PublicationChannel): string {
   return createHash("sha256")
-    .update(`${packageHash}|${igUserId}|publish-now`)
+    .update(channel === "instagram-direct"
+      ? `${packageHash}|${accountId}|publish-now`
+      : `${packageHash}|${channel}|${accountId}|publish-now`)
     .digest("hex");
+}
+
+/**
+ * Facebook has no carousel container: the "children" are unpublished Page
+ * photos, and the parent is this local marker listing them in order. It never
+ * leaves the server; publishContainer turns it into ONE feed post.
+ */
+const FACEBOOK_ATTACHMENT_PREFIX = "attach:";
+function facebookPhotoIds(parentContainerId: string): string[] {
+  return parentContainerId.startsWith(FACEBOOK_ATTACHMENT_PREFIX)
+    ? parentContainerId.slice(FACEBOOK_ATTACHMENT_PREFIX.length).split(",").filter(Boolean)
+    : [parentContainerId];
 }
 
 type JobDbRow = typeof instagramPublicationJobs.$inferSelect;
@@ -128,6 +159,8 @@ function mapJobRow(row: JobDbRow): PublicationJobRow {
     status: row.status as PublicationJobStatus,
     mediaType: (row.mediaType as "image" | "carousel" | null) ?? null,
     igUserId: row.igUserId,
+    channel: parsePublicationChannel(row.channel) ?? DEFAULT_PUBLICATION_CHANNEL,
+    pageId: row.pageId,
     connectionVersion: row.connectionVersion,
     appConfigurationVersion: row.appConfigurationVersion ?? undefined,
     apiVersion: row.apiVersion,
@@ -205,8 +238,10 @@ export async function requestPublishNow(
     )
     .limit(1);
   if (!pkg) throw new CreativeContentNotFoundError("Publication package not found");
-  if (!pkg.igUserId) throw new PublicationJobConflictError("The frozen package has no Instagram destination.");
-  const key = idempotencyKey(pkg.packageHash, pkg.igUserId);
+  const channel = parsePublicationChannel(pkg.channel) ?? DEFAULT_PUBLICATION_CHANNEL;
+  const accountId = destinationAccountId({ channel, pageId: pkg.pageId, igUserId: pkg.igUserId });
+  if (!accountId) throw new PublicationJobConflictError(`The frozen package has no ${publicationPlatformLabel(channel)} destination.`);
+  const key = idempotencyKey(pkg.packageHash, accountId, channel);
   const [existing] = await db.select().from(instagramPublicationJobs)
     .where(eq(instagramPublicationJobs.idempotencyKey, key)).limit(1);
   if (existing && (existing.topicId !== topicId || existing.draftId !== draftId)) {
@@ -220,8 +255,9 @@ export async function requestPublishNow(
   if (pkg.status !== "frozen" || pkg.expiresAt.getTime() <= Date.now()) {
     throw new PublicationJobConflictError("The package is stale, consumed or expired. Validate and freeze again.");
   }
-  const destination = await getPublicationDestination(topicId);
-  if (destination.igUserId !== pkg.igUserId || destination.connectionVersion !== pkg.connectionVersion) {
+  const destination = await getChannelPublicationDestination(topicId, channel);
+  if (destination.igUserId !== pkg.igUserId || (destination.pageId ?? null) !== (channel === "instagram-direct" ? null : pkg.pageId) ||
+      destination.connectionVersion !== pkg.connectionVersion) {
     throw new PublicationJobConflictError("The frozen account or connection changed. Validate and freeze again.");
   }
   if (existing) {
@@ -250,6 +286,8 @@ export async function requestPublishNow(
       startedAt: now,
       mediaType: pkg.mediaType,
       igUserId: destination.igUserId,
+      channel,
+      pageId: channel === "instagram-direct" ? null : pkg.pageId,
       connectionVersion: destination.connectionVersion,
       apiVersion: GRAPH_API_VERSION,
       appConfigurationVersion: destination.appConfigurationVersion,
@@ -326,8 +364,12 @@ async function buildDependencies(
     .from(instagramDeliveryFiles)
     .where(eq(instagramDeliveryFiles.packageId, job.packageId));
 
+  const channel = parsePublicationChannel(job.channel) ?? DEFAULT_PUBLICATION_CHANNEL;
+  const host = instagramGraphHostFor(channel);
   const expectedIdentity = { topicId: job.topicId, igUserId: job.igUserId,
-    connectionVersion: job.connectionVersion, appConfigurationVersion: job.appConfigurationVersion ?? undefined };
+    connectionVersion: job.connectionVersion, appConfigurationVersion: job.appConfigurationVersion ?? undefined,
+    ...(channel !== "instagram-direct" ? { channel, pageId: job.pageId } : {}) };
+  const jobAccountId = destinationAccountId({ channel, pageId: job.pageId, igUserId: job.igUserId });
 
   async function assertLease() {
     const current = await loadJobRow(jobId);
@@ -337,10 +379,10 @@ async function buildDependencies(
   }
   async function currentToken(sending = false) {
     await assertLease();
-    const destination = await getPublicationDestination(job.topicId);
-    const token = await getDecryptedTopicMetaAccessToken(job.topicId);
+    const destination = await getChannelPublicationDestination(job.topicId, channel);
+    const token = await getChannelSendCredentials(job.topicId, channel);
     if (!samePublishingIdentity(expectedIdentity, publishingIdentity(job.topicId, destination)) ||
-        !token || token.igUserId !== job.igUserId || token.connectionVersion !== job.connectionVersion ||
+        !token || !jobAccountId || token.accountId !== jobAccountId || token.connectionVersion !== job.connectionVersion ||
         job.apiVersion !== GRAPH_API_VERSION) throw new PublicationIdentityChangedError();
     if (sending) {
       const [current] = await db.select().from(instagramPublicationPackages)
@@ -356,7 +398,7 @@ async function buildDependencies(
     caption: pkgRow.caption,
     candidateSnapshotHash: pkgRow.candidateSnapshotHash,
     expiresAt: pkgRow.expiresAt,
-    destination: { igUserId: pkgRow.igUserId, igUsername: pkgRow.igUsername },
+    destination: { igUserId: pkgRow.igUserId, igUsername: pkgRow.igUsername, pageId: pkgRow.pageId },
     slides: [...files]
       .sort((a, b) => a.unitOrder - b.unitOrder)
       .map((file) => ({
@@ -365,32 +407,59 @@ async function buildDependencies(
       })),
   };
 
+  // Instagram (direct or through the Page) and Facebook differ only in these
+  // provider calls; the job state machine, leases and checks are shared.
+  const provider: Pick<PublishJobDependencies,
+    "createImageContainer" | "createCarouselContainer" | "getContainerStatus" | "publishContainer" | "fetchPermalink"> =
+    channel === "facebook-page"
+      ? {
+          // Never published on upload: the Page shows nothing until the one feed post exists.
+          createImageContainer: async (input) => {
+            const token = await currentToken(true);
+            return uploadUnpublishedPagePhoto(token.accountId, token.accessToken, `${deliveryBaseUrl()}${input.imageUrl}`);
+          },
+          createCarouselContainer: async (input) => `${FACEBOOK_ATTACHMENT_PREFIX}${input.childrenIds.join(",")}`,
+          // Uploaded photos are ready immediately; there is no container to poll.
+          getContainerStatus: async () => "FINISHED",
+          publishContainer: async (parentContainerId) => {
+            const token = await currentToken(true);
+            return publishPagePhotoPost(token.accountId, token.accessToken, {
+              message: pkgRow.caption,
+              photoIds: facebookPhotoIds(parentContainerId),
+            });
+          },
+          fetchPermalink: async (postId) => fetchPagePostPermalink(postId, (await currentToken()).accessToken),
+        }
+      : {
+          createImageContainer: async (input) => {
+            const token = await currentToken(true);
+            return createInstagramMediaContainer(token.accountId, token.accessToken,
+              { ...input, imageUrl: `${deliveryBaseUrl()}${input.imageUrl}` }, host);
+          },
+          createCarouselContainer: async (input) => {
+            const token = await currentToken(true);
+            return createInstagramCarouselContainer(token.accountId, token.accessToken, input, host);
+          },
+          getContainerStatus: async (containerId) => getInstagramContainerStatus(containerId, (await currentToken()).accessToken, host),
+          publishContainer: async (creationId) => {
+            const token = await currentToken(true);
+            return publishInstagramContainer(token.accountId, token.accessToken, creationId, host);
+          },
+          fetchPermalink: async (mediaId) => fetchInstagramMediaPermalink(mediaId, (await currentToken()).accessToken, host),
+        };
+
   return {
     loadJob: async () => mapJobRow(await loadJobRow(jobId)),
     loadPackage: async () => frozen,
-    reverifyAccess: () =>
-      checkInstagramPublishingAccess(job.topicId, expectedIdentity),
+    reverifyAccess: () => checkChannelPublishingAccess(job.topicId, channel, expectedIdentity),
     expectedIdentity,
     apiVersion: GRAPH_API_VERSION,
+    platformLabel: publicationPlatformLabel(channel),
     currentCandidateSnapshotHash: async () => {
-      const candidate = await getPublicationCandidate(job.topicId, job.draftId, job.batchId);
+      const candidate = await getPublicationCandidate(job.topicId, job.draftId, job.batchId, channel);
       return candidate.state === "ready" ? candidate.snapshotHash : "not-ready";
     },
-    createImageContainer: async (input) => {
-      const token = await currentToken(true);
-      return createInstagramMediaContainer(token.igUserId, token.accessToken,
-        { ...input, imageUrl: `${deliveryBaseUrl()}${input.imageUrl}` });
-    },
-    createCarouselContainer: async (input) => {
-      const token = await currentToken(true);
-      return createInstagramCarouselContainer(token.igUserId, token.accessToken, input);
-    },
-    getContainerStatus: async (containerId) => getInstagramContainerStatus(containerId, (await currentToken()).accessToken),
-    publishContainer: async (creationId) => {
-      const token = await currentToken(true);
-      return publishInstagramContainer(token.igUserId, token.accessToken, creationId);
-    },
-    fetchPermalink: async (mediaId) => fetchInstagramMediaPermalink(mediaId, (await currentToken()).accessToken),
+    ...provider,
     transition: async (from, patch) => {
       const [updated] = await db
         .update(instagramPublicationJobs)
@@ -421,6 +490,32 @@ async function buildDependencies(
     recordPublishedMedia: async (input) => {
       await assertLease();
       const publishedAt = input.publishedAt;
+      if (channel === "facebook-page") {
+        // Page posts are tracked per Story/platform; the job keeps the post id.
+        await db
+          .insert(storySocialPublications)
+          .values({
+            topicId: job.topicId,
+            storyId: job.storyId,
+            platform: "facebook",
+            status: "published",
+            publishedAt,
+            postUrl: input.permalink ?? null,
+            note: `Published by Press Craftor (post ${input.externalId}).`,
+            updatedAt: new Date(),
+          } satisfies typeof storySocialPublications.$inferInsert)
+          .onConflictDoUpdate({
+            target: [storySocialPublications.topicId, storySocialPublications.storyId, storySocialPublications.platform],
+            set: {
+              status: "published",
+              publishedAt,
+              postUrl: sql`COALESCE(excluded.post_url, ${storySocialPublications.postUrl})`,
+              note: sql`excluded.note`,
+              updatedAt: new Date(),
+            },
+          });
+        return;
+      }
       await db
         .insert(topicInstagramMedia)
         .values({
@@ -499,6 +594,7 @@ export async function getPublicationJob(
 export async function listPublicationJobs(
   topicId: string,
   draftId: string,
+  channel?: PublicationChannel,
 ): Promise<PublicationJobView[]> {
   const rows = await db
     .select()
@@ -507,6 +603,7 @@ export async function listPublicationJobs(
       and(
         eq(instagramPublicationJobs.topicId, topicId),
         eq(instagramPublicationJobs.draftId, draftId),
+        ...(channel ? [eq(instagramPublicationJobs.channel, channel)] : []),
       ),
     )
     .orderBy(instagramPublicationJobs.createdAt);

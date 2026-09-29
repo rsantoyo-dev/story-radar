@@ -9,7 +9,8 @@ import { createHash, randomUUID } from "node:crypto";
 
 import sharp from "sharp";
 
-import type { PublicationBlocker, PublicationCandidate } from "./instagram-publication-candidate";
+import type { CandidateDestinationSummary, PublicationBlocker, PublicationCandidate } from "./instagram-publication-candidate";
+import type { PublicationChannel } from "./publication-channel";
 import {
   assertPublishableImage,
   computePackageHash,
@@ -52,7 +53,9 @@ export type FrozenPackage = {
   mediaType: PublicationMediaType;
   caption: string;
   hashtags: string[];
-  destination: { igUserId: string | null; igUsername: string | null };
+  destination: CandidateDestinationSummary;
+  /** PUB-10 delivery channel this package was frozen for. */
+  channel: PublicationChannel;
   /** Frozen before the live publishing-access check passed; PUB-04 re-verifies. */
   publishingAccessPending: boolean;
   expiresAt: string;
@@ -74,6 +77,8 @@ export type PersistPackage = {
   hashtags: string[];
   igUserId: string | null;
   igUsername: string | null;
+  channel: PublicationChannel;
+  pageId: string | null;
   connectionVersion: string;
   scriptSnapshot: unknown;
   policySnapshot: unknown;
@@ -107,6 +112,8 @@ export type FreezeDependencies = {
     storyId: string;
     provider: string;
     connectionVersion: string;
+    channel: PublicationChannel;
+    pageId: string | null;
     scriptSnapshot: unknown;
     policySnapshot: unknown;
   }>;
@@ -219,6 +226,7 @@ export async function runFreezePublicationPackage(
     orderedSlideSha256: deliverySlides.map((slide) => slide.sha256),
     igUserId: candidate.destination.igUserId,
     connectionVersion: context.connectionVersion,
+    ...(context.channel !== "instagram-direct" ? { channel: context.channel, pageId: context.pageId } : {}),
   });
 
   const stored: string[] = [];
@@ -242,6 +250,8 @@ export async function runFreezePublicationPackage(
         hashtags: [...candidate.hashtags],
         igUserId: candidate.destination.igUserId,
         igUsername: candidate.destination.igUsername,
+        channel: context.channel,
+        pageId: context.pageId,
         connectionVersion: context.connectionVersion,
         scriptSnapshot: context.scriptSnapshot,
         policySnapshot: context.policySnapshot,
@@ -284,10 +294,8 @@ export async function runFreezePublicationPackage(
     mediaType,
     caption: candidate.caption,
     hashtags: [...candidate.hashtags],
-    destination: {
-      igUserId: candidate.destination.igUserId,
-      igUsername: candidate.destination.igUsername,
-    },
+    destination: candidate.destination,
+    channel: context.channel,
     publishingAccessPending: pendingPublishingAccess,
     expiresAt: expiresAt.toISOString(),
     createdAt: timestamp.toISOString(),

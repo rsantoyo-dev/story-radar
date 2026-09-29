@@ -8,6 +8,7 @@ import {
   freezePublicationPackage,
   listPublicationPackages,
 } from "@/app/modules/meta/freeze-publication-package";
+import { DEFAULT_PUBLICATION_CHANNEL, parsePublicationChannel } from "@/app/modules/meta/publication-channel";
 import {
   creativeRouteErrorResponse,
   noStoreJson,
@@ -33,8 +34,11 @@ export async function GET(request: Request, context: Context) {
   if (!draftId) return noStoreJson({ error: "draftId must be a valid UUID" }, 400);
 
   try {
+    const raw = new URL(request.url).searchParams.get("channel");
+    const channel = raw === null ? undefined : parsePublicationChannel(raw);
+    if (raw !== null && !channel) return noStoreJson({ error: "Unknown publication channel" }, 400);
     const topicId = await requireActiveRequestTopic(request);
-    return noStoreJson({ packages: await listPublicationPackages(topicId, draftId) });
+    return noStoreJson({ packages: await listPublicationPackages(topicId, draftId, channel) });
   } catch (error) {
     return (
       topicRequestErrorResponse(error) ??
@@ -50,13 +54,15 @@ export async function POST(request: Request, context: Context) {
   if (!draftId) return noStoreJson({ error: "draftId must be a valid UUID" }, 400);
 
   try {
-    const body = (await request.json()) as { batchId?: unknown };
+    const body = (await request.json()) as { batchId?: unknown; channel?: unknown };
     if (typeof body.batchId !== "string" || !UUID_PATTERN.test(body.batchId)) {
       return noStoreJson({ error: "batchId must be a valid UUID" }, 400);
     }
+    const channel = body.channel === undefined ? DEFAULT_PUBLICATION_CHANNEL : parsePublicationChannel(body.channel);
+    if (!channel) return noStoreJson({ error: "Unknown publication channel" }, 400);
     const topicId = await requireActiveRequestTopic(request);
     return noStoreJson(
-      { package: await freezePublicationPackage(topicId, draftId, body.batchId) },
+      { package: await freezePublicationPackage(topicId, draftId, body.batchId, channel) },
       201,
     );
   } catch (error) {

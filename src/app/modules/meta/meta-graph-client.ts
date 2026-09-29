@@ -12,6 +12,14 @@ import { parsePublishingQuota } from "./instagram-publishing-access";
 
 export const GRAPH_API_VERSION = "v21.0";
 
+/**
+ * PUB-10: the Instagram content publishing calls are the same API on both
+ * hosts. graph.instagram.com serves an Instagram Login token; graph.facebook.com
+ * serves a Facebook Page token acting on the Page's linked Instagram account.
+ */
+export type InstagramGraphHost = "graph.instagram.com" | "graph.facebook.com";
+const DEFAULT_INSTAGRAM_GRAPH_HOST: InstagramGraphHost = "graph.instagram.com";
+
 export {
   MetaGraphApiError,
   parseInstagramShortLivedTokenResponse,
@@ -226,9 +234,9 @@ async function handleInstagramResponse<T>(response: Response): Promise<T> {
 }
 
 /** Read-only PUB-02 probe. Never creates a container or calls media_publish. */
-export async function fetchInstagramPublishingQuota(igUserId: string, accessToken: string) {
+export async function fetchInstagramPublishingQuota(igUserId: string, accessToken: string, host: InstagramGraphHost = DEFAULT_INSTAGRAM_GRAPH_HOST) {
   if (!/^[0-9]+$/.test(igUserId)) throw new MetaGraphApiError("Invalid Instagram account identity", 400);
-  const url = new URL(`https://graph.instagram.com/${GRAPH_API_VERSION}/${igUserId}/content_publishing_limit`);
+  const url = new URL(`https://${host}/${GRAPH_API_VERSION}/${igUserId}/content_publishing_limit`);
   url.searchParams.set("fields", "quota_usage,config");
   const response = await fetch(url, {
     method: "GET", cache: "no-store", redirect: "error",
@@ -250,9 +258,10 @@ async function instagramGraphPost<T>(
   path: string,
   accessToken: string,
   params: Record<string, string>,
+  host: InstagramGraphHost,
 ): Promise<T> {
   const response = await fetch(
-    `https://graph.instagram.com/${GRAPH_API_VERSION}/${path}`,
+    `https://${host}/${GRAPH_API_VERSION}/${path}`,
     {
       method: "POST",
       cache: "no-store",
@@ -272,8 +281,9 @@ async function instagramGraphGet<T>(
   path: string,
   accessToken: string,
   fields: string,
+  host: InstagramGraphHost,
 ): Promise<T> {
-  const url = new URL(`https://graph.instagram.com/${GRAPH_API_VERSION}/${path}`);
+  const url = new URL(`https://${host}/${GRAPH_API_VERSION}/${path}`);
   url.searchParams.set("fields", fields);
   const response = await fetch(url, {
     method: "GET",
@@ -302,6 +312,7 @@ export async function createInstagramMediaContainer(
   igUserId: string,
   accessToken: string,
   input: { imageUrl: string; isCarouselItem?: boolean; caption?: string },
+  host: InstagramGraphHost = DEFAULT_INSTAGRAM_GRAPH_HOST,
 ): Promise<string> {
   if (!IG_MEDIA_ID.test(igUserId)) {
     throw new MetaGraphApiError("Invalid Instagram account identity", 400);
@@ -313,6 +324,7 @@ export async function createInstagramMediaContainer(
     `${igUserId}/media`,
     accessToken,
     params,
+    host,
   );
   return requireCreationId(payload, "media container");
 }
@@ -325,6 +337,7 @@ export async function createInstagramCarouselContainer(
   igUserId: string,
   accessToken: string,
   input: { childrenIds: string[]; caption: string },
+  host: InstagramGraphHost = DEFAULT_INSTAGRAM_GRAPH_HOST,
 ): Promise<string> {
   if (!IG_MEDIA_ID.test(igUserId)) {
     throw new MetaGraphApiError("Invalid Instagram account identity", 400);
@@ -337,6 +350,7 @@ export async function createInstagramCarouselContainer(
       children: input.childrenIds.join(","),
       caption: input.caption,
     },
+    host,
   );
   return requireCreationId(payload, "carousel container");
 }
@@ -352,6 +366,7 @@ export type InstagramContainerStatus =
 export async function getInstagramContainerStatus(
   containerId: string,
   accessToken: string,
+  host: InstagramGraphHost = DEFAULT_INSTAGRAM_GRAPH_HOST,
 ): Promise<InstagramContainerStatus> {
   if (!IG_MEDIA_ID.test(containerId)) {
     throw new MetaGraphApiError("Invalid Instagram container id", 400);
@@ -360,6 +375,7 @@ export async function getInstagramContainerStatus(
     containerId,
     accessToken,
     "status_code",
+    host,
   );
   const code = payload.status_code;
   if (
@@ -383,6 +399,7 @@ export async function publishInstagramContainer(
   igUserId: string,
   accessToken: string,
   creationId: string,
+  host: InstagramGraphHost = DEFAULT_INSTAGRAM_GRAPH_HOST,
 ): Promise<string> {
   if (!IG_MEDIA_ID.test(igUserId)) {
     throw new MetaGraphApiError("Invalid Instagram account identity", 400);
@@ -394,6 +411,7 @@ export async function publishInstagramContainer(
     `${igUserId}/media_publish`,
     accessToken,
     { creation_id: creationId },
+    host,
   );
   return requireCreationId(payload, "published media");
 }
@@ -402,6 +420,7 @@ export async function publishInstagramContainer(
 export async function fetchInstagramMediaPermalink(
   mediaId: string,
   accessToken: string,
+  host: InstagramGraphHost = DEFAULT_INSTAGRAM_GRAPH_HOST,
 ): Promise<{ permalink?: string; timestamp?: string }> {
   if (!IG_MEDIA_ID.test(mediaId)) {
     throw new MetaGraphApiError("Invalid Instagram media id", 400);
@@ -409,7 +428,7 @@ export async function fetchInstagramMediaPermalink(
   const payload = await instagramGraphGet<{
     permalink?: unknown;
     timestamp?: unknown;
-  }>(mediaId, accessToken, "permalink,timestamp");
+  }>(mediaId, accessToken, "permalink,timestamp", host);
   return {
     permalink: typeof payload.permalink === "string" ? payload.permalink : undefined,
     timestamp: typeof payload.timestamp === "string" ? payload.timestamp : undefined,

@@ -24,6 +24,7 @@ import { AddSourceDialog, type AddedSource } from "./add-source-dialog";
 import { ActionRow, Button } from "./ui/primitives";
 import { ModalLayer } from "./ui/modal-layer";
 import { DisclosureActionMenu } from "./ui/disclosure-action-menu";
+import { DemoCreditIndicator } from "./demo-credit-indicator";
 import { useUnsavedBeforeUnload } from "./ui/use-unsaved-before-unload";
 import styles from "./radar-dashboard.generated.module.css";
 import {
@@ -238,7 +239,7 @@ type EditorialDashboardStory = {
   enrichedAt?: string;
   publications?: StoryPublication[];
   confirmedPublications?: {
-    platform: "instagram";
+    platform: "instagram" | "facebook";
     publishedAt: string;
     postUrl?: string;
     externalId: string;
@@ -568,7 +569,6 @@ export function RadarDashboard({
   const selectedTopic = topics.find((topic) => topic.id === selectedTopicId);
   const selectedTopicName = selectedTopic?.name ?? "this topic";
   const activeView = dashboardViewFromHash(activeNavHash);
-  const selectedStoryCount = stats?.editorial?.selectedStories.length ?? 0;
   const selectedStories = stats?.editorial?.selectedStories ?? [];
   const productionStories = selectedStories.filter((story) => storyPublicationStage(story).active);
   const publishedStories = selectedStories
@@ -1204,13 +1204,21 @@ export function RadarDashboard({
       }
 
       const nextStats = await fetchDatabaseStats(secret, selectedTopicId);
+      const updatedStory = nextStats.editorial.selectedStories.find((story) => story.storyId === storyId);
+      const updatedStage = updatedStory ? storyPublicationStage(updatedStory) : undefined;
 
       setStats(nextStats);
       setNotice({
         tone: "success",
         title: `${formatPublicationPlatform(platform)} tracking updated`,
-        message: status
-          ? `${formatPublicationPlatform(platform)} is now marked ${formatPublicationStatus(status).toLowerCase()} for this story.`
+        message: status === "published" && updatedStage
+          ? updatedStage.active
+            ? updatedStage.pendingPlatforms.length
+              ? `${formatPublicationPlatform(platform)} is marked published. This Story stays in Production while ${updatedStage.pendingPlatforms.map((item) => formatPublicationPlatform(item as PublicationPlatform)).join(", ")} is pending.`
+              : `${formatPublicationPlatform(platform)} is marked published. Check its publication records if it still appears in Production.`
+            : `${formatPublicationPlatform(platform)} is marked published. This Story moved to Published.`
+          : status
+            ? `${formatPublicationPlatform(platform)} is now marked ${formatPublicationStatus(status).toLowerCase()} for this story.`
           : `This story is no longer tracked on ${formatPublicationPlatform(platform)}.`,
       });
     } catch (error) {
@@ -1562,6 +1570,7 @@ export function RadarDashboard({
                     </DisclosureActionMenu>
                   </div>
                   <a className={styles.topbarActionLink} href="#today">Today</a>
+                  <DemoCreditIndicator secret={secret} />
                   <div className={styles.topbarSession}>
                     <span className={`${styles.topbarStatus} ${styles.online}`} role="status" aria-label="Connected" title="Connected" />
                     <button type="button" className={styles.disconnectButton} onClick={handleDisconnect} disabled={isBusy} aria-label="Disconnect" title="Disconnect">
@@ -1890,7 +1899,7 @@ export function RadarDashboard({
             <div><p className={styles.kicker}>Production</p><h2>Selected · ready to work</h2></div>
             <span>{productionStories.length} stories</span>
           </div>
-          <p className={styles.queueIntro}>Approved stories stay here until their recorded destinations are published. Publishing on one channel keeps a Story here when another channel is pending.</p>
+          <p className={styles.queueIntro}>Approved stories stay here until their recorded destinations are published. If you posted outside Press Craftor, mark that destination as published below. A Story stays here while another destination is pending.</p>
           {productionStories.length ? (
             <div className={styles.queueList}>
               {productionStories.map((story) => {
@@ -1902,6 +1911,17 @@ export function RadarDashboard({
                   <div className={styles.queueActions}>
                     <Button size="compact" onClick={() => { void handleViewContent(story.storyId); }} disabled={!canAuthenticate || isBusy}>Content</Button>
                     <Button size="compact" variant="primary" onClick={() => openCreativeStory(story.storyId, { tab: "script" })} disabled={!canAuthenticate || isBusy}>Open draft workspace</Button>
+                    <details className={styles.queuePublicationDetails}>
+                      <summary>Mark as published</summary>
+                      <PublicationQuickControl
+                        storyId={story.storyId}
+                        publications={story.publications}
+                        defaultStatus="published"
+                        disabled={!canAuthenticate || isBusy}
+                        isUpdating={activeOperation === "publication" && activeStoryId === story.storyId}
+                        onUpdate={handlePublicationUpdate}
+                      />
+                    </details>
                   </div>
                 </article>;
               })}
@@ -1910,7 +1930,7 @@ export function RadarDashboard({
         </section>
 
         <div id="stories" className={styles.anchorTarget} hidden={!(activeView === "production" || (activeView === "discover" && !["#optimization", "#discover/search", "#collect"].includes(activeNavHash)))}>
-          <StoryReviewDisclosure production={activeView === "production"} selectedCount={selectedStoryCount}>
+          <StoryReviewDisclosure production={activeView === "production"} selectedCount={productionStories.length}>
           <EditorialEvaluationPanel
             key={`${selectedTopicId}:${activeView}`}
             topicId={selectedTopicId}
@@ -2270,6 +2290,8 @@ function EditorialEvaluationPanel({
           if (deepLink?.publicationFilter) {
             const target = deepLink.tab === "selected" ? selected : collected;
             target.publicationFilter = deepLink.publicationFilter;
+          } else if (window.location.hash === "#production") {
+            selected.publicationFilter = "active-selected";
           }
           setCollectedTableState(collected);
           setSelectedTableState(selected);
@@ -2318,6 +2340,12 @@ function EditorialEvaluationPanel({
   // the tab + publication filter. Bare #stories keeps whatever the user last had.
   useEffect(() => {
     function applyHash() {
+      if (window.location.hash === "#production") {
+        setActiveTab("selected");
+        setSelectedTableState((current) => current.publicationFilter === "active-selected"
+          ? current : { ...current, publicationFilter: "active-selected" });
+        return;
+      }
       const view = parseStoryReviewHash(window.location.hash);
       if (!view) return;
       setActiveTab(view.tab);
@@ -2368,7 +2396,7 @@ function EditorialEvaluationPanel({
       publicationFilter: "active-selected",
     },
     {
-      label: "All selected",
+      label: "All records",
       count: selectedStories.length,
       publicationFilter: "all",
     },
@@ -2819,7 +2847,7 @@ function createStoryTableViewState(
     primaryRank: mode === "selected" ? "editorialPriority" : "publishedAt",
     secondaryRank: mode === "selected" ? "publishedAt" : "editorialPriority",
     hideBelowTopicFloor: false,
-    publicationFilter: "all",
+    publicationFilter: mode === "selected" ? "active-selected" : "all",
     publicationPlatform: "instagram",
   };
 }
@@ -3881,7 +3909,10 @@ function PublicationStatusChips({
 
   return (
     <div className={styles.publicationStatusChips}>
-      {confirmedPublications.length > 0 ? <StatusBadge tone="positive">{`Instagram · ${confirmedPublications.length} confirmed ${confirmedPublications.length === 1 ? "post" : "posts"}`}</StatusBadge> : null}
+      {(["instagram", "facebook"] as const).map((platform) => {
+        const count = confirmedPublications.filter((publication) => publication.platform === platform).length;
+        return count ? <StatusBadge key={platform} tone="positive">{`${formatPublicationPlatform(platform)} · ${count} confirmed ${count === 1 ? "post" : "posts"}`}</StatusBadge> : null;
+      })}
       {publications.map((publication) => (
         <StatusBadge
           key={`${publication.platform}-${publication.status}-${publication.publishedAt ?? publication.scheduledAt ?? "current"}`}
@@ -3897,12 +3928,14 @@ function PublicationStatusChips({
 function PublicationQuickControl({
   storyId,
   publications,
+  defaultStatus,
   disabled,
   isUpdating,
   onUpdate,
 }: {
   storyId: string;
   publications?: readonly StoryPublication[];
+  defaultStatus?: PublicationStatus;
   disabled: boolean;
   isUpdating: boolean;
   onUpdate?: (
@@ -3917,12 +3950,12 @@ function PublicationQuickControl({
     (candidate) => candidate.platform === platform,
   );
   const savedStatus = publication?.status ?? "";
-  const selectedStatus = draftStatus ?? savedStatus;
+  const selectedStatus = draftStatus ?? defaultStatus ?? savedStatus;
 
   return (
     <div className={styles.publicationQuickControl}>
       <strong>Manual tracking</strong>
-      <small>This records an editorial note. It does not send or schedule a post.</small>
+      <small>{defaultStatus === "published" ? "Record a post already live outside Press Craftor. This does not publish anything." : "This records an editorial note. It does not send or schedule a post."}</small>
       <label>
         <span>Platform</span>
         <select
@@ -3953,7 +3986,7 @@ function PublicationQuickControl({
         </select>
       </label>
       <Button size="compact" variant="secondary" disabled={disabled || isUpdating || !onUpdate || selectedStatus === savedStatus} busy={isUpdating} onClick={() => onUpdate?.(storyId, platform, selectedStatus || undefined)}>
-        {isUpdating ? "Saving…" : "Save manual status"}
+        {isUpdating ? "Saving…" : defaultStatus === "published" && selectedStatus === "published" ? "Confirm published" : "Save manual status"}
       </Button>
     </div>
   );

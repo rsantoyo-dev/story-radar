@@ -1,4 +1,7 @@
 import type { PublishingAccess } from "./instagram-publishing-access";
+import { destinationAccountId, publicationPlatformLabel, type PublicationChannel } from "./publication-channel";
+
+export { destinationAccountId };
 import { createHash } from "node:crypto";
 import type { CreativeAssetBatch, CreativeDraft } from "../stories/creative-content.types";
 import { documentarySnapshot, DOCUMENTARY_PROVIDER, eligiblePhoto } from "../stories/creative-documentary";
@@ -16,6 +19,15 @@ export type PublicationDestination = {
   hasPublishingPermission: boolean;
   hasBasicPermission?: boolean;
   appConfigurationVersion?: string;
+  /**
+   * PUB-10. Absent on the direct Instagram connection, so its snapshot hashes
+   * and identities stay exactly as they were before channels existed. Set for
+   * the Facebook Page channels; `igUserId` is then the Page's linked Instagram
+   * account (instagram-page) or null (facebook-page).
+   */
+  channel?: Exclude<PublicationChannel, "instagram-direct">;
+  pageId?: string | null;
+  pageName?: string | null;
 };
 
 /**
@@ -50,12 +62,29 @@ export type PublicationCandidate = {
   batchId: string;
   caption: string;
   hashtags: string[];
-  destination: { igUserId: string | null; igUsername: string | null };
+  destination: CandidateDestinationSummary;
   assets: { id: string; version: number; order: number; sha256?: string }[];
   blockers: PublicationBlocker[];
   /** PUB-02: the live publishing-access preflight, present when it was run. */
   publishingAccess?: PublishingAccess;
 };
+
+/** Browser-safe destination summary. The channel fields are absent for direct Instagram. */
+export type CandidateDestinationSummary = {
+  igUserId: string | null;
+  igUsername: string | null;
+  channel?: Exclude<PublicationChannel, "instagram-direct">;
+  pageId?: string | null;
+  pageName?: string | null;
+};
+
+export function candidateDestinationSummary(destination: PublicationDestination): CandidateDestinationSummary {
+  return {
+    igUserId: destination.igUserId,
+    igUsername: destination.igUsername,
+    ...(destination.channel ? { channel: destination.channel, pageId: destination.pageId ?? null, pageName: destination.pageName ?? null } : {}),
+  };
+}
 
 /** Stable identities include full server snapshots, never serialized secrets. */
 export function publicationSnapshotHash(value: unknown): string {
@@ -93,11 +122,16 @@ export function editorialCandidateBlockers(draft: CreativeDraft, batch: Creative
 }
 
 export function destinationBlockers(destination: PublicationDestination): PublicationBlocker[] {
-  if (!destination.connected || !destination.igUserId) return [{ code: "destination-disconnected", message: "Connect an Instagram account for this topic." }];
-  if (destination.expired) return [{ code: "destination-reconnect", message: "Reconnect the Instagram account before publishing." }];
+  if (destination.channel === "instagram-page" && destination.connected && !destination.igUserId) {
+    return [{ code: "destination-disconnected", message: "The connected Facebook Page has no linked Instagram account. Link one in Meta, then verify the Page again." }];
+  }
+  if (!destination.connected || !destinationAccountId(destination)) {
+    return [{ code: "destination-disconnected", message: destination.channel ? "Connect a Facebook Page for this topic." : "Connect an Instagram account for this topic." }];
+  }
+  if (destination.expired) return [{ code: "destination-reconnect", message: destination.channel ? "Reconnect the Facebook Page before publishing." : "Reconnect the Instagram account before publishing." }];
   if (destination.grantedPermissionsKnown !== false && !destination.hasPublishingPermission) return [{ code: "publishing-permission", message: "The connection has no recorded publishing permission. Insights access does not authorize publishing." }];
   // A stored scope alone is insufficient; the server performs the live check.
-  return [{ code: "publishing-capability-unverified", message: "Verify publishing access for the connected Instagram account." }];
+  return [{ code: "publishing-capability-unverified", message: `Verify publishing access for the connected ${destination.channel ? publicationPlatformLabel(destination.channel) : "Instagram"} account.` }];
 }
 
 /**

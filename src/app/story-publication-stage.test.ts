@@ -19,6 +19,14 @@ test("confirmed Instagram sends leave the active queue", () => {
   assert.equal(stage.publishedDestinations[0]?.platform, "instagram");
 });
 
+test("a confirmed Facebook Page send leaves the queue without marking Instagram published", () => {
+  const stage = storyPublicationStage({
+    confirmedPublications: [{ platform: "facebook", publishedAt: "2026-09-27T12:00:00Z" }],
+  });
+  assert.equal(stage.active, false);
+  assert.deepEqual(stage.publishedDestinations.map((destination) => destination.platform), ["facebook"]);
+});
+
 test("another pending destination keeps a published Story active", () => {
   const stage = storyPublicationStage({
     publications: [{ platform: "facebook", status: "scheduled" }],
