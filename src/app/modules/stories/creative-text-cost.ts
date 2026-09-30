@@ -24,11 +24,13 @@ export function textRate(provider: string, model: string, inputTokens: number, o
         // generation (rates are snapshotted per call; nothing re-reads this
         // after settlement). gpt-6-* checked September 24, 2026, no stated
         // promotional end date; re-verify by the same date below regardless.
-        const rates: Record<string, number[]> = { "gpt-5.6-luna": [.2, 1.2, .02], "gpt-5.6-terra": [2, 12, .2], "gpt-5.6-sol": [4, 20, .4], "gpt-6-luna": [.1, .5, .01], "gpt-6-sol": [2, 10, .2] };
-        const expiry: Record<string, string> = { "gpt-5.6-luna": "2026-11-22", "gpt-5.6-terra": "2026-11-22", "gpt-5.6-sol": "2026-11-22", "gpt-6-luna": "2026-11-24", "gpt-6-sol": "2026-11-24" };
+        // gpt-6.1-sol checked September 29, 2026 (cached input is 5% of input).
+        const rates: Record<string, number[]> = { "gpt-5.6-luna": [.2, 1.2, .02], "gpt-5.6-terra": [2, 12, .2], "gpt-5.6-sol": [4, 20, .4], "gpt-6-luna": [.1, .5, .01], "gpt-6-sol": [2, 10, .2], "gpt-6.1-sol": [2, 10, .1] };
+        const expiry: Record<string, string> = { "gpt-5.6-luna": "2026-11-22", "gpt-5.6-terra": "2026-11-22", "gpt-5.6-sol": "2026-11-22", "gpt-6-luna": "2026-11-24", "gpt-6-sol": "2026-11-24", "gpt-6.1-sol": "2026-11-29" };
+        const checked: Record<string, string> = { "gpt-6.1-sol": "2026-09-29" };
         const r = rates[model];
         if (r && now < Date.parse(expiry[model]))
-            rate = { input: r[0], output: r[1], cached: r[2], version: "2026-09-24" };
+            rate = { input: r[0], output: r[1], cached: r[2], version: checked[model] ?? "2026-09-24" };
         if (rate && inputTokens > 272000)
             rate = { ...rate, input: rate.input * 2, cached: rate.cached * 2, output: rate.output * 1.5 };
     }

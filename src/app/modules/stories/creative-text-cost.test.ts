@@ -43,6 +43,12 @@ test("GPT-6 Sol and Luna price at roughly half their GPT-5.6 namesake, and the r
     assert.throws(() => textRate("openai", "gpt-6-sol", 1000, undefined, Date.parse("2026-12-01")), CreativeTextPricingError);
 });
 
+test("GPT-6.1 Sol keeps Sol's input/output rate with cached input at 5%", () => {
+    const rate = textRate("openai", "gpt-6.1-sol", 1000, undefined, date);
+    assert.deepEqual([rate.input, rate.output, rate.cached, rate.version], [2, 10, .1, "2026-09-29"]);
+    assert.throws(() => textRate("openai", "gpt-6.1-sol", 1000, undefined, Date.parse("2026-12-01")), CreativeTextPricingError);
+});
+
 test("all configured Flash generations use verified rates, including the January price change", () => {
  for (const model of ["gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash"]) {
   assert.equal(textRate("google", model, 1000, undefined, date).output, 3.75);

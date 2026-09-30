@@ -72,11 +72,11 @@ export function getCreativeContentRuntimeConfig(): CreativeContentRuntimeConfig 
   // exempted from this last step — see CREATIVE_CAROUSEL_WRITER_MODEL in .env.local.
   const openAiEditorialModels: CreativeEditorialModelConfig = {
     criticModel:
-      process.env.CREATIVE_CRITIC_MODEL?.trim() || "gpt-6-sol",
+      process.env.CREATIVE_CRITIC_MODEL?.trim() || "gpt-6.1-sol",
     minorRepairModel:
-      process.env.CREATIVE_MINOR_REPAIR_MODEL?.trim() || "gpt-6-sol",
+      process.env.CREATIVE_MINOR_REPAIR_MODEL?.trim() || "gpt-6.1-sol",
     structuralRepairModel:
-      process.env.CREATIVE_STRUCTURAL_REPAIR_MODEL?.trim() || "gpt-6-sol",
+      process.env.CREATIVE_STRUCTURAL_REPAIR_MODEL?.trim() || "gpt-6.1-sol",
     severeRepairModel:
       process.env.CREATIVE_SEVERE_REPAIR_MODEL?.trim() || "gpt-6-luna",
   };
@@ -218,11 +218,11 @@ export function getCreativeCompanionRuntimeConfig(): CreativeCompanionRuntimeCon
   return {
     apiKey,
     lunaModel:
-      process.env.CREATIVE_COMPANION_LUNA_MODEL?.trim() || "gpt-6-sol",
+      process.env.CREATIVE_COMPANION_LUNA_MODEL?.trim() || "gpt-6.1-sol",
     terraModel:
       process.env.CREATIVE_COMPANION_TERRA_MODEL?.trim() ||
       process.env.CREATIVE_CRITIC_MODEL?.trim() ||
-      "gpt-6-sol",
+      "gpt-6.1-sol",
     promptVersion: "companion-story-v2-interaction",
   };
 }

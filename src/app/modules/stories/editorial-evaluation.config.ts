@@ -106,7 +106,7 @@ export function getEditorialEvaluationRuntimeConfig(): EditorialEvaluationRuntim
           openAiModel:
             process.env.EDITORIAL_OPENAI_MODEL?.trim() ||
             process.env.CREATIVE_MINOR_REPAIR_MODEL?.trim() ||
-            "gpt-6-sol",
+            "gpt-6.1-sol",
         }
       : {}),
     ...(cloudflareAiAccountId && cloudflareAiApiToken

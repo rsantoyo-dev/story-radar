@@ -40,7 +40,7 @@ export async function preparePlaceVisuals(topicId: string, draft: CreativeDraft,
   try { const url=new URL(sourceUrl);adapter=adapters.find(a=>enabled.includes(a.id)&&a.supports(url)); } catch { /* no regional source */ }
   const needsResearch = !adapter && draft.units.some(unit => !prepared.has(unit.order) && unit.assetRequest !== "typography-only" && !anchorUnits.get(unit.order) && (requiresVerifiedGeography(unit) || (!anchors.length && unit.role === "cover")));
   const daily = await getCreativeDailyUsage(topicId, getCreativeContentPublicConfig().maxRunsPerDay);
-  const model=process.env.CREATIVE_GEO_MODEL?.trim() || "gpt-6-sol";
+  const model=process.env.CREATIVE_GEO_MODEL?.trim() || "gpt-6.1-sol";
   const key=process.env.OPENAI_API_KEY?.trim();
   if (needsResearch && key && daily.remainingRuns > 0 && source) {
     const run=await createCreativeAiRun({topicId,storyId:draft.storyId,briefId:draft.briefId,task:"brief",provider:"openai",model,promptVersion:PLACE_VISUAL_VERSION,inputHash:createHash("sha256").update(source+JSON.stringify(profile.geoScope)).digest("hex")});

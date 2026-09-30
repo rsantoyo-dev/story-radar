@@ -63,7 +63,7 @@ export async function listWorkspaceSourceCatalog(workspaceId = DEFAULT_WORKSPACE
       ]);
       return {
         ...config,
-        model: process.env.AI_RESEARCH_OPENAI_MODEL?.trim() || "gpt-6-sol",
+        model: process.env.AI_RESEARCH_OPENAI_MODEL?.trim() || "gpt-6.1-sol",
         latestRun: latestRun[0] ? {
           status: latestRun[0].status,
           at: latestRun[0].createdAt,
