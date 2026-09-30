@@ -5,6 +5,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   instagramDeliveryFiles,
+  instagramPublicationJobs,
   instagramPublicationPackages,
 } from "@/db/schema";
 
@@ -188,6 +189,18 @@ export async function discardPublicationPackage(
   if (row.status === "consumed") {
     throw new CreativeContentConflictError(
       "This package was used for a publication and is kept as history.",
+    );
+  }
+  // Its order keeps the package as history (and an identical new package
+  // would resolve to that same order), so the way forward is the order's retry.
+  const [order] = await db
+    .select({ id: instagramPublicationJobs.id })
+    .from(instagramPublicationJobs)
+    .where(eq(instagramPublicationJobs.packageId, packageId))
+    .limit(1);
+  if (order) {
+    throw new CreativeContentConflictError(
+      "This package already has a publication order. Use \"Revalidate and retry publishing\" on that order instead.",
     );
   }
   const files = await db

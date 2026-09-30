@@ -208,8 +208,10 @@ export function toPublicationJobView(row: PublicationJobRow, maxAttempts = MAX_A
 export function canRetryPublicationJob(row: PublicationJobRow, maxAttempts = MAX_ATTEMPTS): boolean {
   if (row.publishedMediaId || row.attempts >= maxAttempts) return false;
   if (row.status === "failed") return ["retryable", "expired-container"].includes(row.failureKind ?? "");
-  return row.status === "suspended" && row.failureKind === "invalidated" && row.attempts === 0 &&
-    row.parentContainerId === null && row.childContainers.length === 0;
+  // Every `invalidated` suspension is recorded before the publish call (an
+  // interrupted send is always `uncertain`), so unpublished containers are
+  // retired and rebuilt, exactly like a retryable failure.
+  return row.status === "suspended" && row.failureKind === "invalidated";
 }
 
 /** An explicit retry reuses the order; uncertain outcomes can never be retried here. */

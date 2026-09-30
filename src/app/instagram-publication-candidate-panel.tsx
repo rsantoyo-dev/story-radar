@@ -291,7 +291,7 @@ export function InstagramPublicationCandidatePanel({ topicId, draftId, batchId, 
           </button> : null}
           {pkg.status === "frozen" && Date.parse(pkg.expiresAt) <= Date.now() ? <small>This review expired. Check readiness and prepare a new review.</small> : null}
           {pkg.status === "frozen" && pkg.publishingAccessPending ? <small>Verify publishing access before this can be published.</small> : null}
-          {pkg.status !== "consumed" ? <button type="button" className={styles.secondaryButton} disabled={packageBusy || jobBusy || (jobActive && jobPackageId === pkg.id)} onClick={() => discard(pkg.id)}>Discard package</button> : null}
+          {pkg.status !== "consumed" && job?.packageId !== pkg.id ? <button type="button" className={styles.secondaryButton} disabled={packageBusy || jobBusy || (jobActive && jobPackageId === pkg.id)} onClick={() => discard(pkg.id)}>Discard package</button> : null}
         </div>
         {confirmPackageId === pkg.id && pkg.status === "frozen" && !pkg.publishingAccessPending && Date.parse(pkg.expiresAt) > Date.now() ? <div className={styles.publicationConfirm} role="group" aria-label={`Confirm ${platform} publication`}>
           <strong>Publish this exact review to {destinationLabel(pkg.destination, channel, accountHint)} on {platform} now?</strong>

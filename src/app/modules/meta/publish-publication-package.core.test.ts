@@ -7,6 +7,7 @@ import type {
   PublishingIdentity,
 } from "./instagram-publishing-access";
 import {
+  MAX_ATTEMPTS,
   runPublishPublicationJob,
   publicationRetryPatch,
   isTerminalPublicationJobStatus,
@@ -433,12 +434,22 @@ test("a preflight-only invalidated suspension can be explicitly revalidated on t
   assert.equal(h.calls.publishContainer, 1);
 });
 
-test("a suspension with any provider history or uncertain result cannot be reactivated", () => {
+test("a suspension with a media id, an uncertain result or no attempts left cannot be reactivated", () => {
   for (const extra of [
-    { attempts: 1 }, { parentContainerId: "123" },
-    { childContainers: [{ unitOrder: 1, creationId: "123" }] },
-    { publishedMediaId: "5001" }, { failureKind: "uncertain" as const },
+    { publishedMediaId: "5001" }, { failureKind: "uncertain" as const }, { attempts: MAX_ATTEMPTS },
   ]) assert.throws(() => publicationRetryPatch(initialRow({ status: "suspended", failureKind: "invalidated", ...extra })), /cannot be retried safely/);
+});
+
+test("a delivery window that expired with unpublished containers retires them and rebuilds on retry", async () => {
+  const h = harness({ row: { status: "suspended", failureKind: "invalidated", attempts: 1, parentContainerId: "900",
+    childContainers: [{ unitOrder: 1, creationId: "101", status: "FINISHED" }] } });
+  assert.equal((await runPublishPublicationJob(h.deps)).canRetry, true);
+  const patch = publicationRetryPatch(h.row());
+  assert.equal(patch.parentContainerId, null);
+  assert.ok(patch.childContainers?.every((child) => child.status === "retired"), "old containers are kept only as history");
+  Object.assign(h.row(), patch);
+  assert.equal((await finish(h.deps)).status, "published");
+  assert.equal(h.calls.publishContainer, 1);
 });
 
 test("access checked after an asynchronous probe is compared with the current time", async () => {
