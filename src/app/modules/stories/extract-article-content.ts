@@ -1,7 +1,9 @@
 import "server-only";
 
 import { Readability } from "@mozilla/readability";
-import { JSDOM } from "jsdom";
+// linkedom, not jsdom: jsdom's cssstyle chain requires an ESM-only package,
+// which Vercel's serverless loader rejects (ERR_REQUIRE_ESM).
+import { parseHTML } from "linkedom";
 
 import type { StoryContentStatus } from "./story-candidate.types";
 
@@ -26,23 +28,20 @@ export function extractArticleContent(
   html: string,
   resolvedUrl: string,
 ): ExtractedArticleContent {
-  const dom = new JSDOM(html, { url: resolvedUrl });
+  // Only the text is kept, so relative links need no resolution against the URL.
+  void resolvedUrl;
+  const { document } = parseHTML(html);
+  const article = new Readability(document as unknown as Document, {
+    charThreshold: MIN_ARTICLE_CHARACTERS,
+    keepClasses: false,
+    maxElemsToParse: 50_000,
+  }).parse();
 
-  try {
-    const article = new Readability(dom.window.document, {
-      charThreshold: MIN_ARTICLE_CHARACTERS,
-      keepClasses: false,
-      maxElemsToParse: 50_000,
-    }).parse();
-
-    return finalizeExtractedArticleContent(article?.textContent, {
-      title: article?.title,
-      byline: article?.byline,
-      excerpt: article?.excerpt,
-    });
-  } finally {
-    dom.window.close();
-  }
+  return finalizeExtractedArticleContent(article?.textContent, {
+    title: article?.title,
+    byline: article?.byline,
+    excerpt: article?.excerpt,
+  });
 }
 
 export function extractReaderArticleContent(input: {

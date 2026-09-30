@@ -22,7 +22,8 @@
       "Bash(node ./_tmp_pending.mjs)",
       "Bash(node ./_tmp_verify.mjs)",
       "Bash(npx drizzle-kit *)",
-      "Bash(echo \"exit=$?\")"
+      "Bash(echo \"exit=$?\")",
+      "Bash(node ./.ext-check.mjs)"
     ]
   }
 }
