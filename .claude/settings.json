@@ -23,7 +23,16 @@
       "Bash(node ./_tmp_verify.mjs)",
       "Bash(npx drizzle-kit *)",
       "Bash(echo \"exit=$?\")",
-      "Bash(node ./.ext-check.mjs)"
+      "Bash(node ./.ext-check.mjs)",
+      "Bash(grep -E \"^\\(pg|@neondatabase|postgres\\)$\")",
+      "Bash(awk '/^export type CreativeDraft = /,/^};/' src/app/modules/stories/creative-content.types.ts)",
+      "Bash(npx -y vercel@60.0.0 env ls production)",
+      "Bash(gh release *)",
+      "Bash(tar xzf *)",
+      "Bash(curl -sSL -o lib.tar.gz https://github.com/liberationfonts/liberation-fonts/files/7261482/liberation-fonts-ttf-2.1.5.tar.gz)",
+      "Bash(shasum -a 256 liberation-fonts-ttf-2.1.5/LiberationSans-Regular.ttf)",
+      "Bash(node -e ' *)",
+      "Bash(docker info *)"
     ]
   }
 }
