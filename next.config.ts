@@ -6,6 +6,9 @@ const nextConfig: NextConfig = {
   // dev assets and HMR; without it the page never hydrates over the tunnel.
   allowedDevOrigins: ["*.ngrok-free.dev"],
   serverExternalPackages: ["pdfjs-dist"],
+  // Serverless functions ship no system fonts; text drawn into images
+  // (carousel numbering, credits, maps) uses these (see src/server-fonts.ts).
+  outputFileTracingIncludes: { "/**": ["./fonts/**/*"] },
   images: {
     remotePatterns: [
       {
