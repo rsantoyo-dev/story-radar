@@ -2,6 +2,8 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { STORY_REFERENCE_PURPOSES, type StoryReferencePhoto, type StoryReferenceSelection } from "./modules/stories/story-materials.types";
+import type { CommonsPersonCandidate } from "./modules/stories/commons-person-photos";
+import { Button, FormField, InlineNotice, LoadingState } from "./ui/primitives";
 import styles from "./radar-dashboard.generated.module.css";
 
 type Scope = { topicId: string; storyId: string; secret: string };
@@ -72,36 +74,108 @@ export function StoryPhotosPanel(scope: Scope) {
   }
   return <section className={styles.storyMaterials}>
     <h3>Story reference photos</h3>
-    <p>Story evidence photos stay with this Story. They are separate from Topic brand references and fictional characters. Choose their use on each draft slide before image generation.</p>
+    <p>Story evidence photos stay with this Story. They are separate from Topic brand references and fictional characters. Choose their use on each draft slide before image generation. For reused photos, record the photographer, file page, license and any changes in the source field.</p>
     {error ? <p role="alert">{error}</p> : null}
     <div className={styles.storyPhotoGrid}>{photos.map(photo => <article className={styles.storyPhotoCard} key={photo.id}>
       <PhotoPreview scope={scope} photo={photo} />
       <strong>{photo.name}</strong><p>{photo.description}</p><small>{photo.provenance}</small>
       {photo.active ? <button type="button" disabled={busy} onClick={() => revoke(photo.id)}>Remove from future generation</button> : <span>Removed · history preserved</span>}
     </article>)}</div>
+    <CommonsPersonSearch scope={scope} disabled={busy} onImported={refresh} />
     <form className={styles.storyMaterialForm} onSubmit={upload}>
       <label>Photo (JPG, PNG, WebP · up to 15 MB)<input name="image" type="file" accept="image/jpeg,image/png,image/webp" required disabled={busy} /></label>
       <label>Name<input name="name" maxLength={150} required disabled={busy} /></label>
       <label>What does this photo show?<textarea name="description" maxLength={1000} required rows={2} disabled={busy} /></label>
-      <label>Source and permission to use<textarea name="provenance" maxLength={1000} required rows={2} disabled={busy} /></label>
+      <label>Source, photographer, license and permission to use<textarea name="provenance" maxLength={1000} required rows={2} disabled={busy} placeholder="Photographer · license and license URL · original file URL · resized for this carousel" /></label>
       <label><input name="providerTransmissionAllowed" type="checkbox" value="true" required disabled={busy} /> I have permission to use this photo and send it to the image-generation provider.</label>
       <button type="submit" disabled={busy}>{busy ? "Saving…" : "Add photo"}</button>
     </form>
     {message ? <p role={messageIsError ? "alert" : "status"}>{message}</p> : null}
   </section>;
 }
+/**
+ * Real people from Wikimedia Commons. The editor chooses the right person; the
+ * photo is imported unmodified with its credit and can only be used as a
+ * documentary portrait (never sent to the image model).
+ */
+function CommonsPersonSearch({ scope, disabled, onImported }: { scope: Scope; disabled: boolean; onImported: () => void }) {
+  const [query, setQuery] = useState("");
+  const [kind, setKind] = useState<"person" | "place">("person");
+  const [people, setPeople] = useState<CommonsPersonCandidate[]>();
+  const [busy, setBusy] = useState<"search" | string>();
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const url = `/api/radar/stories/${encodeURIComponent(scope.storyId)}/photos/commons?topicId=${encodeURIComponent(scope.topicId)}`;
+  async function call<T>(input: string, init?: RequestInit): Promise<T> {
+    const response = await fetch(input, { ...init, cache: "no-store", headers: { ...(init?.headers ?? {}), Authorization: `Bearer ${scope.secret.trim()}` } });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error ?? "Wikimedia Commons request failed");
+    return result as T;
+  }
+  async function search(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!query.trim() || busy) return;
+    setBusy("search"); setError(""); setNotice(""); setPeople(undefined);
+    try { setPeople((await call<{ people: CommonsPersonCandidate[] }>(`${url}&kind=${kind}&q=${encodeURIComponent(query.trim())}`)).people); }
+    catch (err) { setError(err instanceof Error ? err.message : "Search failed"); }
+    finally { setBusy(undefined); }
+  }
+  async function importPerson(person: CommonsPersonCandidate) {
+    if (busy) return;
+    setBusy(person.entityId); setError(""); setNotice("");
+    try {
+      await call(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ entityId: person.entityId, kind }) });
+      setNotice(`${person.name} added. On its slide, select this photo — it is kept unmodified with its credit, and the AI designs the slide around it.`);
+      onImported();
+    } catch (err) { setError(err instanceof Error ? err.message : "Import failed"); }
+    finally { setBusy(undefined); }
+  }
+  return <div className={styles.storyMaterialForm}>
+    <strong>Real person or place from Wikimedia Commons</strong>
+    <p>Only openly licensed photos appear. The photo is kept unmodified with its credit and is never redrawn by AI. Check it shows the right person or place before approving.</p>
+    <form onSubmit={search}>
+      <fieldset disabled={disabled || Boolean(busy)}>
+        <legend>Search for</legend>
+        <label><input type="radio" name="commons-kind" checked={kind === "person"} onChange={() => { setKind("person"); setPeople(undefined); }} /> A person (exact full name)</label>
+        <label><input type="radio" name="commons-kind" checked={kind === "place"} onChange={() => { setKind("place"); setPeople(undefined); }} /> A place (park, mountain, canal, building…)</label>
+      </fieldset>
+      <FormField label={kind === "person" ? "Full name" : "Place name"}>
+        <input value={query} maxLength={120} placeholder={kind === "person" ? "Jacques Villeneuve" : "Canal de Chambly"} disabled={disabled || Boolean(busy)} onChange={event => setQuery(event.target.value)} />
+      </FormField>
+      <Button type="submit" variant="secondary" disabled={disabled || Boolean(busy) || query.trim().length < 3} busy={busy === "search"}>{busy === "search" ? "Searching…" : "Search Commons"}</Button>
+    </form>
+    {busy === "search" ? <LoadingState>Searching Wikidata and Wikimedia Commons…</LoadingState> : null}
+    {error ? <InlineNotice tone="error">{error}</InlineNotice> : null}
+    {notice ? <InlineNotice tone="success">{notice}</InlineNotice> : null}
+    {people && !people.length ? <InlineNotice tone="warning">{kind === "person" ? "No person with that exact name has a reusable Commons photo." : "No place with that name has a reusable Commons photo. Try the larger place it belongs to (e.g. the mountain or park)."} Check the spelling, or upload a photo you have rights to.</InlineNotice> : null}
+    {people?.length ? <div className={styles.storyPhotoGrid}>{people.map(person => <article className={styles.storyPhotoCard} key={person.entityId}>
+      <Image className={styles.storyPhotoPreview} src={person.thumbnailUrl} alt={`Wikimedia Commons photo of ${person.name}`} width={240} height={160} unoptimized />
+      <strong>{person.name}{kind === "person" && person.birthYear ? ` (${person.birthYear})` : ""}</strong>
+      {person.description ? <p>{person.description}</p> : null}
+      <small>Photo: {person.author} · {person.license} · <a href={person.commonsUrl} target="_blank" rel="noreferrer">Commons ↗</a> · <a href={`https://www.wikidata.org/wiki/${person.entityId}`} target="_blank" rel="noreferrer">{person.entityId} ↗</a></small>
+      <Button size="compact" disabled={disabled || Boolean(busy)} busy={busy === person.entityId} onClick={() => void importPerson(person)}>{busy === person.entityId ? "Importing…" : kind === "person" ? "Use this person" : "Use this place"}</Button>
+    </article>)}</div> : null}
+  </div>;
+}
+
 export function StoryPhotoPicker({ scope, photos, selected, onChange }: {
   scope: Scope; photos: StoryReferencePhoto[]; selected: StoryReferenceSelection[];
   onChange: (selected: StoryReferenceSelection[]) => void;
 }) {
   return <fieldset className={styles.storyMaterials}><legend>Story photos for this slide · up to 3</legend>
-    <p>These photos will be sent to the image model. Add photos in View content.</p>
+    <p>Add photos in View content. Reference uses send the image to the model. Documentary portrait keeps one photo in a local composition, without AI redrawing the face; verify identity, source and reuse terms before approving.</p>
     <div className={styles.storyPhotoGrid}>{photos.filter(photo => photo.active || selected.some(ref => ref.id === photo.id)).map(photo => {
       const reference = selected.find(ref => ref.id === photo.id);
       return <article className={styles.storyPhotoCard} key={photo.id}>
         <PhotoPreview scope={scope} photo={photo} />
-        <label><input type="checkbox" checked={Boolean(reference)} disabled={!reference && (!photo.active || !photo.providerTransmissionAllowed || selected.length >= 3)} onChange={event => onChange(event.target.checked ? [...selected, { id: photo.id, purpose: "subject" }] : selected.filter(ref => ref.id !== photo.id))} /> {photo.name}{reference ? " · selected" : !photo.active ? " · removed" : !photo.providerTransmissionAllowed ? " · provider permission required" : selected.length >= 3 ? " · limit of 3 reached" : ""}</label>
-        {reference ? <label>Use as<select value={reference.purpose} onChange={event => onChange(selected.map(ref => ref.id === photo.id ? { ...ref, purpose: event.target.value as StoryReferenceSelection["purpose"] } : ref))}>{STORY_REFERENCE_PURPOSES.map(purpose => <option value={purpose} key={purpose}>{purpose}</option>)}</select></label> : null}
+        <small>{photo.provenance}</small>
+        <label><input type="checkbox" checked={Boolean(reference)} disabled={!reference && (!photo.active || (photo.providerTransmissionAllowed && (selected.length >= 3 || selected.some(ref => ref.purpose === "documentary-portrait"))))} onChange={event => onChange(!event.target.checked ? selected.filter(ref => ref.id !== photo.id)
+          // A photo that may not be sent to the model is only ever a documentary portrait (exclusive on its slide).
+          : photo.providerTransmissionAllowed ? [...selected, { id: photo.id, purpose: "subject" }] : [{ id: photo.id, purpose: "documentary-portrait" }])} /> {photo.name}{reference ? " · selected" : !photo.active ? " · removed" : !photo.providerTransmissionAllowed ? " · documentary portrait only" : selected.some(ref => ref.purpose === "documentary-portrait") ? " · exact portrait selected" : selected.length >= 3 ? " · limit of 3 reached" : ""}</label>
+        {reference ? <label>Use as<select value={reference.purpose} onChange={event => {
+          const purpose = event.target.value as StoryReferenceSelection["purpose"];
+          onChange(purpose === "documentary-portrait" ? [{ id: photo.id, purpose }] : selected.map(ref => ref.id === photo.id ? { ...ref, purpose } : ref));
+        }}>{STORY_REFERENCE_PURPOSES.map(purpose => <option value={purpose} key={purpose} disabled={!photo.providerTransmissionAllowed && purpose !== "documentary-portrait"}>{purpose === "documentary-portrait" ? "Documentary photo · keep original (never redrawn)" : purpose}</option>)}</select></label> : null}
       </article>;
     })}</div>
     {selected.filter(ref => !photos.some(photo => photo.id === ref.id)).map(ref => <p key={ref.id}>Unavailable photo <button type="button" onClick={() => onChange(selected.filter(item => item.id !== ref.id))}>Remove selection</button></p>)}

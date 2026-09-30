@@ -221,7 +221,9 @@ const CARDINAL_NUMBER_PATTERNS: ReadonlyArray<{
   },
   {
     number: "5",
-    pattern: /(?<![\p{L}\p{N}_])(?:five|cinco)(?![\p{L}\p{N}_])/iu,
+    // A standalone French "cinq" is the same count as 5; a hyphenated
+    // compound such as "vingt-cinq" must not be mistaken for five.
+    pattern: /(?<![\p{L}\p{N}_-])(?:five|cinco|cinq)(?![\p{L}\p{N}_-])/iu,
   },
   {
     number: "6",
@@ -332,8 +334,13 @@ const QUOTED_EDITORIAL_GOAL_LABEL = new RegExp(
  * as a label is not asserting them as a claim, so they must not reach that
  * check as prose.
  */
-function stripQuotedEditorialGoalLabels(value?: string): string | undefined {
-  return value?.replace(QUOTED_EDITORIAL_GOAL_LABEL, " ");
+function stripNarrativePlanningLabels(value?: string): string | undefined {
+  return value
+    ?.replace(QUOTED_EDITORIAL_GOAL_LABEL, " ")
+    // The rationale describes the carousel plan, so “7 diapositives” and
+    // “slide 7” count its own units. They are not claims about the Story.
+    // Leave every other number here for the factual guard to check.
+    .replace(/\b\d{1,2}\s*(?:[-‑–—]\s*)?(?:diapositives?|slides?|frames?)\b|\b(?:diapositives?|slides?|frames?)\s*(?:n[º°o]?\s*)?\d{1,2}\b/giu, " ");
 }
 
 export function deterministicFactQualityIssues(
@@ -351,12 +358,9 @@ export function deterministicFactQualityIssues(
 
   const draftCopy = [
     draft.concept,
-    // narrativeRationale legitimately names editorialGoal values ("prove",
-    // "impact", ...) as quoted labels when explaining an arc deviation, per
-    // the same policy that asks for that explanation. Strip only that quoted
-    // reference so the word itself never reaches the inference-pattern
-    // check below; the surrounding sentence is still fully checked.
-    stripQuotedEditorialGoalLabels(draft.narrativeRationale),
+    // Planning labels and slide counts describe this draft's structure. The
+    // remaining rationale still receives the same factual checks.
+    stripNarrativePlanningLabels(draft.narrativeRationale),
     draft.caption,
     draft.callToAction,
     draft.altText,
@@ -1463,7 +1467,10 @@ function repairNumericFactAssignments(
     const selectedConsultation = unit.factIds.includes(id) &&
       /\b(?:consultation publique|assembl[eé]e publique de consultation|public consultation|consulta p[uú]blica)\b/iu.test(fact.sourceExcerpt ?? "") &&
       /\d/u.test(fact.sourceExcerpt ?? "");
-    return !isClosingUnit || establishedFactIds.has(id) || selectedConsultation;
+    // An editor fact is human-vouched evidence the editor attached on purpose;
+    // a closing slide may cite it even though no earlier slide did.
+    const selectedEditorFact = unit.factIds.includes(id) && fact.provenance === "editor";
+    return !isClosingUnit || establishedFactIds.has(id) || selectedConsultation || selectedEditorFact;
   };
   const factIds = unit.factIds.filter(factIsEligible);
   const visibleNumbers = extractAllowedNumbers(

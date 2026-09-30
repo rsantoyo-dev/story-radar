@@ -575,6 +575,13 @@
       "when": 1790641266994,
       "tag": "0082_mean_shinobi_shaw",
       "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1790698038518,
+      "tag": "0083_married_goblin_queen",
+      "breakpoints": true
     }
   ]
 }

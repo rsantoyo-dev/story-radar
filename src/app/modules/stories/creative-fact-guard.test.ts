@@ -68,6 +68,38 @@ const keyFacts: CreativeKeyFact[] = [
   },
 ];
 
+test("French written counts support equivalent digits while a different count remains blocked", () => {
+  const facts: CreativeKeyFact[] = [
+    { id: "places", statement: "Cinq endroits sont à considérer pour marcher cet automne." },
+    { id: "mountain", statement: "Le sommet atteint 251 mètres." },
+  ];
+  assert.ok(withCreativeFactClaimGuard(facts[0]).claimGuard?.allowedNumbers.includes("5"));
+  assert.ok(withCreativeFactClaimGuard(facts[1]).claimGuard?.allowedNumbers.includes("251"));
+  assert.equal(
+    withCreativeFactClaimGuard({ id: "compound", statement: "Vingt-cinq kilomètres de sentiers." })
+      .claimGuard?.allowedNumbers.includes("5"),
+    false,
+  );
+
+  const supported: GeneratedCreativeDraft = {
+    concept: "5 endroits pour marcher cet automne",
+    caption: "Voici 5 endroits à considérer.",
+    hashtags: [],
+    altText: "Couverture annonçant 5 endroits pour marcher.",
+    units: [unit(1, "cover", "hook", "5 endroits à considérer", undefined, ["places"])],
+  };
+  assert.equal(
+    deterministicFactQualityIssues(supported, facts).some((issue) => issue.code === "UNSUPPORTED_NUMBER"),
+    false,
+  );
+  assert.ok(
+    deterministicFactQualityIssues(
+      { ...supported, caption: "Voici 6 endroits à considérer." },
+      facts,
+    ).some((issue) => issue.code === "UNSUPPORTED_NUMBER"),
+  );
+});
+
 test("brief prose cannot turn an average association into a personal promise or invert its comparison", () => {
   const base = {
     keyFacts: [{
@@ -149,6 +181,24 @@ test("a quoted editorialGoal label in narrativeRationale is not read as an unsup
       (issue) => issue.code === "UNSUPPORTED_INFERENCE",
     ),
   );
+});
+
+test("carousel slide counts in the internal rationale are not unsupported Story numbers", () => {
+  const facts: CreativeKeyFact[] = [{ id: "fact-1", statement: "The guide lists five parks.", sourceExcerpt: "The guide lists five parks." }];
+  const planned: GeneratedCreativeDraft = {
+    concept: "Five parks",
+    narrativeRationale: "Ce plan utilise 7 diapositives : une ouverture, cinq lieux et une conclusion. La diapositive 7 clôt le parcours.",
+    caption: "Five parks to explore.", hashtags: [], altText: "Parks carousel.",
+    units: Array.from({ length: 7 }, (_, index) => unit(index + 1,
+      index === 0 ? "cover" : index === 6 ? "conclusion" : "content",
+      index === 0 ? "hook" : index === 6 ? "conclude" : "explain",
+      "Five parks", undefined, ["fact-1"])),
+  };
+  assert.ok(!deterministicFactQualityIssues(planned, facts).some((issue) => issue.code === "UNSUPPORTED_NUMBER"));
+  assert.ok(deterministicFactQualityIssues({
+    ...planned,
+    narrativeRationale: "Ce plan prétend que 7 personnes ont visité ces parcs.",
+  }, facts).some((issue) => issue.code === "UNSUPPORTED_NUMBER"));
 });
 
 test("removes unsupported numeric publishing copy before editorial review", () => {

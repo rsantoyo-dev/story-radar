@@ -10,8 +10,6 @@ import { plannerDay } from "./daily-editorial-planner.types";
 import { EDITORIAL_FOCUS_PROMPT_VERSION } from "./editorial-focus";
 import { parseStoryReferences } from "./story-materials.types";
 import { resolveStoryReferences } from "./manage-story-photos";
-import { enforceCoverTitle } from "./creative-cover-title";
-import { preserveEditorCtas } from "./preserve-editor-cta";
 import { storyCollectionContexts, selectedStoryContext } from "../editorial-lines/editorial-lines.repository";
 import { editorialContextInstruction, collectionContextForHash } from "../editorial-lines/editorial-lines";
 import { build511Brief } from "./road-notice-evidence";
@@ -103,6 +101,7 @@ import {
 } from "./creative-profile.repository";
 import { resolveCreativeVisualGuidance } from "./creative-visual-guidance";
 import { generateCompanionStoryScript } from "./companion-story-generator";
+import { companionVerifiedFacts } from "./companion-facts";
 import { fallbackEditorialAngle } from "./acquisition-lenses";
 import { getCurrentTopicAcquisitionTaxonomy } from "./topic-acquisition-lenses.repository";
 import { defaultCreativeInteractiveOverlay } from "./creative-interactive-overlay";
@@ -913,10 +912,7 @@ export async function createCompanionStory(
     throw new CreativeContentNotFoundError("The creative brief was not found");
   }
 
-  const verifiedFactIds = new Set(
-    parent.units.flatMap((unit) => unit.factIds),
-  );
-  const verifiedFacts = brief.keyFacts.filter((fact) => verifiedFactIds.has(fact.id));
+  const verifiedFacts = companionVerifiedFacts(parent, brief.keyFacts);
   if (verifiedFacts.length === 0) {
     throw new CreativeContentConflictError(
       "The approved parent draft does not cite any verified facts for a companion Story.",
@@ -1058,30 +1054,26 @@ export async function saveCreativeDraft(
     throw new CreativeContentConflictError("The slide identities changed. Reload the draft before saving.");
   }
   await Promise.all(validated.units.map(unit => resolveStoryReferences(topicId, current.storyId, unit.storyReferences)));
-  const repaired = {
-    ...repairDeterministicCreativeCopy(
+  // Preserve the editor's wording after input normalization. Deterministic repair is for generated
+  // copy: applying it here can silently remove a newly written claim before
+  // the editor sees the evidence blocker. A blank internal concept still needs
+  // the established safe fallback for later image generation.
+  const saved = {
+    ...validated,
+    concept: validated.concept || repairDeterministicCreativeCopy(
       validated,
       current.format,
       brief.keyFacts,
       brief.profileSnapshot.language,
       brief.profileSnapshot.conversionGoal,
-      resolveNarrativeBrief(brief,current).carouselPlan,
-    ),
-    outputAspectRatio: validated.outputAspectRatio,
+      resolveNarrativeBrief(brief, current).carouselPlan,
+    ).concept,
   };
-  // Manual CTA copy belongs to the editor. Report quality issues at review/
-  // approval instead of silently deleting it during an otherwise valid save.
-  repaired.units = preserveEditorCtas(repaired.units, validated.units).map((unit, index) => ({ ...unit, storyReferences: validated.units[index].storyReferences }));
-  repaired.units = enforceCoverTitle(repaired, brief.profileSnapshot.requireCoverTitle, validated.units[0]?.subheadline || brief.contentTitle || current.units[0]?.subheadline).units;
-  // Saving preserves the user's work as a new draft version even when it
-  // still needs editorial correction. Approval and image generation remain
-  // strict quality gates below; a draft must never be unsaveable merely
-  // because it is unfinished.
   const characterSnapshots = await snapshotsForCreativeCharacterIds(
     topicId,
-    repaired.units.flatMap((unit) => unit.characterIds ?? []),
+    saved.units.flatMap((unit) => unit.characterIds ?? []),
   );
-  return replaceCreativeDraft(topicId, current, repaired, characterSnapshots);
+  return replaceCreativeDraft(topicId, current, saved, characterSnapshots);
 }
 
 export async function approveSavedCreativeDraft(
@@ -1123,26 +1115,11 @@ export async function approveSavedCreativeDraft(
     characterRoster.map((character) => character.id),
   );
   await Promise.all(validated.units.map(unit => resolveStoryReferences(topicId, current.storyId, unit.storyReferences)));
-  const repaired = {
-    ...repairDeterministicCreativeCopy(
-      validated,
-      current.format,
-      brief.keyFacts,
-      brief.profileSnapshot.language,
-      brief.profileSnapshot.conversionGoal,
-      resolveNarrativeBrief(brief,current).carouselPlan,
-    ),
-    outputAspectRatio: validated.outputAspectRatio,
-  };
-  // Approval must validate the same editor-authored CTA that saving retained.
-  repaired.units = preserveEditorCtas(repaired.units, validated.units).map((unit, index) => ({ ...unit, storyReferences: validated.units[index].storyReferences }));
-  repaired.units = enforceCoverTitle(repaired, brief.profileSnapshot.requireCoverTitle, validated.units[0]?.subheadline || brief.contentTitle || current.units[0]?.subheadline).units;
-  if (imageBatch && imageBatch.status !== "stale" && imageBatch.assets.some(asset => {
-    const unit = repaired.units.find(candidate => candidate.order === asset.unitOrder);
-    return !unit || imageTextNeedsUpdate(asset.unitSnapshot, unit);
-  })) throw new CreativeContentConflictError("Save the corrected text and update its images before approval.");
+  // Approval is a decision about the saved version, not another copy-editing
+  // pass. Check its actual text so a factual blocker cannot disappear in a
+  // repaired copy that the editor never reviewed.
   const qualityIssues = deterministicCreativeQualityIssues(
-    repaired,
+    validated,
     current.format,
     brief.keyFacts,
     brief.profileSnapshot.language,
@@ -1154,6 +1131,7 @@ export async function approveSavedCreativeDraft(
     deterministicIssues: qualityIssues,
     qualityReview: current.qualityReview,
     qualityReviewIsCurrent: current.qualityReviewIsCurrent,
+    editorAuthoredFields: current.editorAuthoredFields,
   });
   const { blockers } = approvalState;
   if (blockers.length > 0) {
@@ -1171,25 +1149,12 @@ export async function approveSavedCreativeDraft(
       "Review the automated quality findings and explicitly confirm human approval before approving this draft.",
     );
   }
-  if (JSON.stringify(repaired) !== JSON.stringify(validated)) {
-    const characterSnapshots = await snapshotsForCreativeCharacterIds(
-      topicId,
-      repaired.units.flatMap((unit) => unit.characterIds ?? []),
-    );
-    // Persist the deterministic repair and approval in the same Neon batch.
-    // A transient transport failure must not leave the repaired version in
-    // draft state between two otherwise dependent database mutations.
-    const approved = await replaceCreativeDraft(
-      topicId,
-      current,
-      repaired,
-      characterSnapshots,
-      { approve: true },
-    );
-    await recordTextOutcome(topicId,approved);
-    return approved;
-  }
-  const approved = await approveCreativeDraft(topicId, current.id, current.version);
+  // The explicit human acceptance is part of the approval record.
+  const acknowledgedCodes = [...new Set(approvalState.acknowledgements.map((issue) => issue.code))];
+  const approved = await approveCreativeDraft(topicId, current.id, current.version,
+    approvalState.requiresHumanReviewAcknowledgement
+      ? { acknowledgedAt: new Date().toISOString(), codes: acknowledgedCodes.length ? acknowledgedCodes : ["AUTOMATED_REVIEW_FINDINGS"] }
+      : undefined);
   await recordTextOutcome(topicId,approved);
   return approved;
 }

@@ -27,6 +27,8 @@ function harness(overrides: Record<string, unknown> = {}) {
     placeCompositionVersion: () => "place-visual-v4",
     documentaryVisualInputHash: () => "photo-hash",
     hasPendingAssets: (b: { status: string }) => b.status === "generating",
+    storyReferenceSelectionsChanged: () => false,
+    storyReferenceBatchTag: () => "",
     CreativeContentConflictError: Error,
     composeDraftPlaceVisuals: async (topic: string, d: unknown, brief: unknown, quality: string, originals: unknown) => {
       assert.equal(topic, "topic"); assert.equal(d, draft);

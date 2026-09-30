@@ -1,4 +1,4 @@
-export const STORY_REFERENCE_PURPOSES = ["subject", "result", "step", "place", "style"] as const;
+export const STORY_REFERENCE_PURPOSES = ["subject", "result", "step", "place", "style", "documentary-portrait"] as const;
 export type StoryReferencePurpose = typeof STORY_REFERENCE_PURPOSES[number];
 export type StoryReferenceSelection = { id: string; purpose: StoryReferencePurpose };
 export type StoryReferencePhoto = {
@@ -25,9 +25,13 @@ export function parseStoryReferences(value: unknown): StoryReferenceSelection[] 
   if (value === undefined) return [];
   if (!Array.isArray(value) || value.length > 3) throw new StoryMaterialValidationError("Select at most three story photos per slide.");
   const seen = new Set<string>();
-  return value.map(item => {
+  const selected = value.map(item => {
     if (!item || typeof item.id !== "string" || !STORY_UUID.test(item.id) || seen.has(item.id) || !STORY_REFERENCE_PURPOSES.includes(item.purpose)) throw new StoryMaterialValidationError("Invalid or duplicate story photo selection.");
     seen.add(item.id);
     return { id: item.id, purpose: item.purpose };
   });
+  if (selected.some(item => item.purpose === "documentary-portrait") && selected.length !== 1) {
+    throw new StoryMaterialValidationError("An exact documentary portrait must be the only story photo selected for its slide.");
+  }
+  return selected;
 }

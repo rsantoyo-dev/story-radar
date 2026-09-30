@@ -441,10 +441,10 @@ test("an unavailable audit checkpoints the generated script for recovery, withou
   assert.ok(!result.draft.qualityReview, "no unverified quality verdict is attached");
 });
 
-test("a rewrite that fails validation is rejected; the pre-repair audited draft stays current", async () => {
+test("a rewrite that fails validation gets one feedback retry before verification", async () => {
   const h = harness(
-    // The rewrite (the writer's third call) comes back with the wrong slide
-    // count, so it fails local validation; with one attempt it is rejected.
+    // The first rewrite has the wrong slide count; the writer uses the
+    // validation error on its second call to return a usable script.
     (attempt) => (attempt === 2 ? validResponse({ units: validUnits().slice(0, 2) }) : validResponse()),
     (call, index) => {
       if (index === 0) {
@@ -456,9 +456,25 @@ test("a rewrite that fails validation is rejected; the pre-repair audited draft 
     },
   );
   const result = await h.run(options());
-  assert.equal(h.geminiCalls.length, 3, "brief, script, and exactly one rejected rewrite — no second attempt");
-  assert.equal(h.auditCalls.length, 1, "audit only; no verify is spent on a rejected rewrite");
-  assert.equal(result.callsUsed, 4);
+  assert.equal(h.geminiCalls.length, 4, "brief, script, invalid rewrite, and feedback retry");
+  assert.equal(h.auditCalls.length, 2, "only the usable retry is independently verified");
+  assert.equal(result.callsUsed, 6);
+  assert.equal(result.draft.singleShotRun?.stage, "done");
+  assert.equal(result.draft.singleShotRun?.verdict, "accepted");
+  assert.ok(h.geminiCalls[3]?.previousValidationError, "the retry receives the concrete error");
+});
+
+test("two invalid rewrites keep the last independently audited draft", async () => {
+  const h = harness(
+    (attempt) => attempt >= 2 ? validResponse({ units: validUnits().slice(0, 2) }) : validResponse(),
+    () => ({ verdict: "revised", scores: { ...strongScores, overall: 70 }, issues: [
+      { unitOrder: 1, code: "WEAK_HEADLINE", severity: "blocker", message: "The cover headline is generic." },
+    ], draft: undefined, hookSelection }),
+  );
+  const result = await h.run(options());
+  assert.equal(h.geminiCalls.length, 4, "the rewrite has at most two calls");
+  assert.equal(h.auditCalls.length, 1, "an invalid rewrite is never verified or promoted");
+  assert.equal(result.callsUsed, 5);
   assert.equal(result.draft.singleShotRun?.stage, "audited");
   assert.equal(result.draft.singleShotRun?.verdict, "correctable");
 });

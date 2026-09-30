@@ -76,7 +76,23 @@ export const MAX_CREATIVE_EDITORIAL_REPAIRS = 1;
 export type CreativeDraftApprovalState = {
   blockers: CreativeQualityIssue[];
   requiresHumanReviewAcknowledgement: boolean;
+  /**
+   * What the human accepts by approving: human text the sources do not
+   * support, or copy edited after the automated review. Never a hard block —
+   * the SaaS suggests, the editor decides — but always explicit and recorded.
+   */
+  acknowledgements: CreativeQualityIssue[];
 };
+
+/** Visible text fields a human may write; see CreativeDraft.editorAuthoredFields. */
+export const EDITOR_TEXT_FIELDS = ["headline", "subheadline", "body", "continuationCue", "ctaQuestion"] as const;
+export const EDITOR_CLAIM_UNVERIFIED = "EDITOR_CLAIM_UNVERIFIED";
+export const REVIEW_PREDATES_EDITS = "REVIEW_PREDATES_EDITS";
+
+function editorAuthoredOrders(fields: readonly string[] | undefined): Set<number> {
+  return new Set((fields ?? []).map((field) => Number(field.split(":")[0])).filter(Number.isInteger));
+}
+
 
 /**
  * Keeps deterministic validation separate from the automated critic's
@@ -87,14 +103,32 @@ export function getCreativeDraftApprovalState({
   deterministicIssues,
   qualityReview,
   qualityReviewIsCurrent,
+  editorAuthoredFields,
 }: {
   deterministicIssues: readonly CreativeQualityIssue[];
   qualityReview?: CreativeQualityReview;
   qualityReviewIsCurrent?: boolean;
+  /** CreativeDraft.editorAuthoredFields: text a human wrote. */
+  editorAuthoredFields?: readonly string[];
 }): CreativeDraftApprovalState {
-  const blockers = deterministicIssues.filter(
-    (issue) => issue.severity === "blocker",
-  );
+  const humanOrders = editorAuthoredOrders(editorAuthoredFields);
+  const acknowledgements: CreativeQualityIssue[] = [];
+  const blockers = deterministicIssues.filter((issue) => {
+    if (issue.severity !== "blocker") return false;
+    // An unsupported claim in text a human wrote is the editor's call: it
+    // needs an explicit acknowledgement (or an editor fact), not a hard block.
+    const onHumanText = issue.unitOrder !== undefined ? humanOrders.has(issue.unitOrder) : humanOrders.has(0);
+    if (onHumanText && issue.code.startsWith("UNSUPPORTED_")) {
+      acknowledgements.push({
+        code: EDITOR_CLAIM_UNVERIFIED,
+        severity: "warning",
+        ...(issue.unitOrder !== undefined ? { unitOrder: issue.unitOrder } : {}),
+        message: `${issue.unitOrder !== undefined ? `Slide ${issue.unitOrder}` : "The caption"} contains text you wrote that the sources do not support (${issue.message.replace(/\.$/, "")}). Add it as an editor fact, or approve taking responsibility for it.`,
+      });
+      return false;
+    }
+    return true;
+  });
   const criticRequired = qualityReviewIsCurrent !== undefined;
   // "openai" is the legacy pipeline's independent critic; "google" is the
   // single-shot pipeline's (see runGeminiEditorialQualityGate) — a different
@@ -108,7 +142,21 @@ export function getCreativeDraftApprovalState({
         ["CRITIC_UNAVAILABLE", "EDITORIAL_REVIEW_ATTEMPT_FAILED", "CRITIC_FALLBACK", "FINAL_COPY_REVIEW_REQUIRED"].includes(issue.code),
       ),
   );
-  if (criticRequired && !criticCompleted) {
+  // A review that completed on an earlier text is still a real review; the
+  // copy simply changed afterwards (a human edit or a deterministic repair).
+  // The human decides whether to approve those changes or re-run the review.
+  const reviewPredatesEdits = criticRequired && !criticCompleted && qualityReviewIsCurrent === false &&
+    (qualityReview?.critic?.provider === "openai" || qualityReview?.critic?.provider === "google") &&
+    !qualityReview.issues.some((issue) =>
+      ["CRITIC_UNAVAILABLE", "EDITORIAL_REVIEW_ATTEMPT_FAILED", "CRITIC_FALLBACK", "FINAL_COPY_REVIEW_REQUIRED"].includes(issue.code),
+    );
+  if (reviewPredatesEdits) {
+    acknowledgements.push({
+      code: REVIEW_PREDATES_EDITS,
+      severity: "warning",
+      message: "The text changed after the automated review. Approve these changes yourself, or run the review again.",
+    });
+  } else if (criticRequired && !criticCompleted) {
     blockers.push({
       code: "CRITIC_REVIEW_REQUIRED",
       severity: "blocker",
@@ -118,17 +166,21 @@ export function getCreativeDraftApprovalState({
 
   return {
     blockers,
+    acknowledgements,
     requiresHumanReviewAcknowledgement:
-      (!criticRequired || criticCompleted) && blockers.length === 0 &&
-      Boolean(
-        qualityReviewIsCurrent &&
-          (qualityReview?.status === "needs-review" ||
-            qualityReview?.status === "needs-repair" ||
-            creativeQualityReviewHasUnresolvedBlockers(
-              qualityReview,
-              deterministicIssues,
-            )),
-      ),
+      blockers.length === 0 &&
+      (acknowledgements.length > 0 ||
+        ((!criticRequired || criticCompleted) &&
+          Boolean(
+            qualityReviewIsCurrent &&
+              (qualityReview?.status === "rejected" ||
+                qualityReview?.status === "needs-review" ||
+                qualityReview?.status === "needs-repair" ||
+                creativeQualityReviewHasUnresolvedBlockers(
+                  qualityReview,
+                  deterministicIssues,
+                )),
+          ))),
   };
 }
 

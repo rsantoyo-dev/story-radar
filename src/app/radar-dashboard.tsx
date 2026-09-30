@@ -21,7 +21,7 @@ import { AcquisitionLensesPanel } from "./acquisition-lenses-panel";
 import { TopicOverviewPanel } from "./topic-overview-panel";
 import { NewStoryDialog, type CreatedStory } from "./new-story-dialog";
 import { AddSourceDialog, type AddedSource } from "./add-source-dialog";
-import { ActionRow, Button } from "./ui/primitives";
+import { ActionRow, Button, Dialog } from "./ui/primitives";
 import { ModalLayer } from "./ui/modal-layer";
 import { DisclosureActionMenu } from "./ui/disclosure-action-menu";
 import { DemoCreditIndicator } from "./demo-credit-indicator";
@@ -211,25 +211,26 @@ type EditorialDashboardStory = {
   storyId: string;
   sourceId: string;
   sourceName: string;
+  isOwnedContent?: boolean;
   title: string;
   url: string;
   contentStatus: "excerpt" | "full" | "likely-full" | "missing";
   publishedAt?: string;
   localScore: number;
-  evaluationDecision: "reject" | "review" | "shortlist";
+  evaluationDecision?: "reject" | "review" | "shortlist";
   editorialPriority?: number;
   growthScore?: number;
   growthReason?: string;
   growthSignals?: EditorialGrowthSignals;
-  editorialScore: number;
-  canadaRelevance: number;
-  aiRelevance: number;
-  socialPotential: number;
-  novelty: number;
+  editorialScore?: number;
+  canadaRelevance?: number;
+  aiRelevance?: number;
+  socialPotential?: number;
+  novelty?: number;
   reason: string;
   suggestedAngles: string[];
   riskFlags: string[];
-  evaluatedAt: string;
+  evaluatedAt?: string;
   reviewedAt?: string;
   enrichmentStatus?: "pending" | "completed" | "failed" | "blocked";
   enrichmentMethod?: "direct" | "reader";
@@ -250,6 +251,7 @@ type EditorialCollectedStory = {
   storyId: string;
   sourceId: string;
   sourceName: string;
+  isOwnedContent: boolean;
   title: string;
   url: string;
   contentStatus: "excerpt" | "full" | "likely-full" | "missing";
@@ -290,6 +292,7 @@ type EditorialTableStory = {
   storyId: string;
   sourceId: string;
   sourceName: string;
+  isOwnedContent?: boolean;
   title: string;
   url: string;
   contentStatus: EditorialDashboardStory["contentStatus"];
@@ -434,6 +437,16 @@ type Notice = {
   message: string;
 };
 
+type PendingPromotion = {
+  topicId: string;
+  storyId: string;
+  title: string;
+  isOriginalContent: boolean;
+  duplicateStoryId: string | null;
+  duplicateTitle?: string;
+  aiDecision: "reject" | "review" | "shortlist" | undefined;
+};
+
 const STATUS_LABELS: Record<string, string> = {
   new: "New",
   "needs-enrichment": "Needs enrichment",
@@ -515,6 +528,7 @@ export function RadarDashboard({
   const [activeStoryId, setActiveStoryId] = useState<string>();
   const [contentViewer, setContentViewer] = useState<StoryContentResponse>();
   const [notice, setNotice] = useState<Notice>();
+  const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion>();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
@@ -1006,36 +1020,56 @@ export function RadarDashboard({
     });
   }
 
-  async function handlePromoteReviewCandidate(
+  function handlePromoteReviewCandidate(
     storyId: string,
     title: string,
     decision?: "reject" | "review" | "shortlist",
   ) {
     if (!canAuthenticate || isBusy) return;
-    const aiDecisionLabel = decision === "reject" ? "Reject" : "Review";
-    if (
-      !window.confirm(
-        `${
-          decision === "reject" ? "Override" : "Promote"
-        } “${title}” to Selected? This records a human approval while preserving the AI decision as ${aiDecisionLabel}.`,
-      )
-    ) {
-      return;
-    }
+    const candidate = stats?.editorial?.collectedStories.find((story) => story.storyId === storyId);
+    if (!candidate) return;
+    setPendingPromotion({
+      topicId: selectedTopicId,
+      storyId,
+      title,
+      isOriginalContent: candidate.isOwnedContent,
+      duplicateStoryId: candidate.duplicateOfStoryId ?? null,
+      duplicateTitle: candidate.duplicateOfTitle,
+      aiDecision: decision,
+    });
+  }
+
+  async function confirmPromotion() {
+    const pending = pendingPromotion;
+    if (!pending || !canAuthenticate || isBusy || selectedTopicIdRef.current !== pending.topicId) return;
+    const aiDecisionLabel = pending.aiDecision === "reject" ? "Reject" : "Review";
 
     setActiveOperation("promote");
-    setActiveStoryId(storyId);
+    setActiveStoryId(pending.storyId);
     setNotice(undefined);
 
     try {
-      await promoteReviewCandidate(secret, selectedTopicId, storyId);
-      const nextStats = await fetchDatabaseStats(secret, selectedTopicId);
-      setStats(nextStats);
+      if (pending.isOriginalContent) {
+        await selectOriginalContent(secret, pending.topicId, pending.storyId, pending.duplicateStoryId);
+      } else {
+        await promoteReviewCandidate(secret, pending.topicId, pending.storyId);
+      }
+      let refreshFailed = false;
+      try {
+        const nextStats = await fetchDatabaseStats(secret, pending.topicId);
+        if (selectedTopicIdRef.current === pending.topicId) setStats(nextStats);
+      } catch {
+        refreshFailed = true;
+      }
       setNotice({
         tone: "success",
         title: "Story promoted to Selected",
-        message: `Your human approval is recorded. The original AI decision remains ${aiDecisionLabel} for context.`,
+        message: (pending.isOriginalContent
+          ? `Your approval is recorded.${pending.duplicateStoryId ? " The duplicate flag was cleared." : ""} This Story is ready for Production.`
+          : `Your human approval is recorded. The original AI decision remains ${aiDecisionLabel} for context.`) +
+          (refreshFailed ? " The list could not refresh; reload the page to see the update." : ""),
       });
+      setPendingPromotion(undefined);
     } catch (error) {
       setNotice({
         tone: "error",
@@ -1349,6 +1383,7 @@ export function RadarDashboard({
     }
 
     selectedTopicIdRef.current = topicId;
+    setPendingPromotion(undefined);
     setSelectedTopicId(topicId);
     const nextUrl = new URL(window.location.href);
     nextUrl.searchParams.set("topicId", topicId);
@@ -1538,6 +1573,26 @@ export function RadarDashboard({
           onClose={() => setAddSourceOpen(false)}
           onCreated={handleSourceAdded}
         />
+      ) : null}
+
+      {pendingPromotion ? (
+        <Dialog
+          eyebrow="Editorial decision"
+          title={pendingPromotion.isOriginalContent ? "Select original content" : "Promote to Selected"}
+          onClose={() => setPendingPromotion(undefined)}
+          canClose={activeOperation !== "promote"}
+          footer={<ActionRow>
+            <Button variant="secondary" data-initial-focus="" onClick={() => setPendingPromotion(undefined)} disabled={activeOperation === "promote"}>Cancel</Button>
+            <Button variant="primary" onClick={() => void confirmPromotion()} busy={activeOperation === "promote"}>Select story</Button>
+          </ActionRow>}
+        >
+          <p><strong>{pendingPromotion.title}</strong></p>
+          <p>{pendingPromotion.isOriginalContent
+            ? `The AI marked this original Story for ${pendingPromotion.aiDecision === "reject" ? "rejection" : pendingPromotion.aiDecision === "review" ? "review" : "editorial review"}, so it was not selected automatically. Your approval will move it to Production.`
+            : `Your approval will move this Story to Selected. The AI ${pendingPromotion.aiDecision === "reject" ? "Reject" : "Review"} decision remains in its history.`}</p>
+          {pendingPromotion.duplicateStoryId ? <p>Possible duplicate: {pendingPromotion.duplicateTitle ?? "another Story"}. Select only if these are distinct Stories; this clears the duplicate flag.</p> : null}
+          {notice?.tone === "error" ? <p role="alert">{notice.message}</p> : null}
+        </Dialog>
       ) : null}
 
       <div className={styles.appMain}>
@@ -2380,7 +2435,7 @@ function EditorialEvaluationPanel({
   const publishedStoryCount = selectedStories.filter((story) => storyPublicationStage(story).publishedDestinations.length > 0).length;
   const evaluatedCount = collectedStories.filter((story) => story.evaluationDecision !== undefined).length;
   const unevaluatedCount = collectedStories.length - evaluatedCount;
-  const shortlistCount = collectedStories.filter((story) => story.reviewable && story.evaluationDecision === "shortlist").length;
+  const readyToSelectCount = collectedStories.filter(isReadyToSelectCandidate).length;
   const activeSelectedCount = countActiveSelected(selectedStories);
   const selectedStoryIdsForClear = selectedStories.map((story) => story.storyId);
   // Published has its own Publications view. This quick filter matches the
@@ -2410,7 +2465,7 @@ function EditorialEvaluationPanel({
   const filteredCollectedStories = filterTableStories(
     lineStories(collectedStories).filter((story) => {
       if (candidateView === "unevaluated" && story.evaluationDecision !== undefined) return false;
-      if (candidateView === "shortlist" && !(story.reviewable && story.evaluationDecision === "shortlist")) return false;
+      if (candidateView === "shortlist" && !isReadyToSelectCandidate(story)) return false;
       if (candidateView === "evaluated" && story.evaluationDecision === undefined) return false;
       return !normalizedCandidateSearch || `${story.title} ${story.sourceName}`.toLocaleLowerCase().includes(normalizedCandidateSearch);
     }),
@@ -2443,7 +2498,7 @@ function EditorialEvaluationPanel({
   const candidateViews: readonly { value: CandidateView; label: string; count: number }[] = [
     { value: "all", label: "All", count: collectedStories.length },
     { value: "unevaluated", label: "Needs evaluation", count: unevaluatedCount },
-    { value: "shortlist", label: "Ready to select", count: shortlistCount },
+    { value: "shortlist", label: "Ready to select", count: readyToSelectCount },
     { value: "evaluated", label: "Evaluated", count: evaluatedCount },
   ];
   const candidateAdvancedCount = [
@@ -2615,7 +2670,7 @@ function EditorialEvaluationPanel({
           {activeTab === "collected" ? (
             <div>
               <div className={styles.candidateResultsHeading}>
-                <div><h3>{candidateView === "all" ? "All candidates" : candidateView === "unevaluated" ? "Awaiting evaluation" : candidateView === "shortlist" ? "Ready to select" : "Evaluated candidates"}</h3><p>Only unapproved AI shortlist Stories can be approved directly. Other evaluated Stories can be promoted after review.</p></div>
+                <div><h3>{candidateView === "all" ? "All candidates" : candidateView === "unevaluated" ? "Awaiting evaluation" : candidateView === "shortlist" ? "Ready to select" : "Evaluated candidates"}</h3><p>Approve AI shortlist Stories in a batch, or select original content individually after review. Other evaluated Stories can be promoted after review.</p></div>
                 <span aria-live="polite">{filteredCollectedStories.length} match · {visibleCollectedStories.length} displayed</span>
               </div>
 
@@ -2933,6 +2988,11 @@ function filterTableStories(
   });
 }
 
+function isReadyToSelectCandidate(story: EditorialTableStory): boolean {
+  return (story.reviewable === true && story.evaluationDecision === "shortlist") ||
+    (story.isOwnedContent === true && story.processingStatus === "ready" && !story.reviewDecision);
+}
+
 function storyMatchesPublicationFilter(
   story: EditorialTableStory,
   filters: StoryTableViewState,
@@ -3216,11 +3276,11 @@ function CandidateCards({
       const storyDate = story.publishedAt ?? story.lastSeenAt;
       const decisionLabel = story.reviewDecision === "approved" ? "Selected" :
         story.reviewDecision === "rejected" ? "Rejected by editor" :
-        story.reviewable ? "Ready to select" :
+        isReadyToSelectCandidate(story) ? "Ready to select" :
         story.evaluationDecision === "review" ? "AI review" :
         story.evaluationDecision === "reject" ? "AI did not shortlist" :
         story.evaluationDecision === "shortlist" ? "Shortlisted" : "Needs evaluation";
-      const decisionTone = story.reviewDecision === "approved" || story.reviewable ? "positive" :
+      const decisionTone = story.reviewDecision === "approved" || isReadyToSelectCandidate(story) ? "positive" :
         story.reviewDecision === "rejected" || story.evaluationDecision === "reject" ? "negative" :
         story.evaluationDecision === "review" ? "warning" : "neutral";
 
@@ -3235,12 +3295,15 @@ function CandidateCards({
               {storyDate ? <time dateTime={storyDate}>{formatTableDate(storyDate)}</time> : <span>Date unavailable</span>}
               {story.lineContexts?.[0] ? <span>{story.lineContexts[0].context.name}</span> : null}
             </div>
-            <h3><a href={story.url} target="_blank" rel="noopener noreferrer">{story.title}<span aria-hidden="true"> ↗</span></a></h3>
+            <h3>{story.isOwnedContent
+              ? <button type="button" onClick={() => onViewContent(story.storyId)} disabled={!canPrepare}>{story.title}</button>
+              : <a href={story.url} target="_blank" rel="noopener noreferrer">{story.title}<span aria-hidden="true"> ↗</span></a>}</h3>
             <div className={styles.candidateCardBadges}>
               <StatusBadge tone={decisionTone}>{decisionLabel}</StatusBadge>
               <span>{formatContentStatus(story.contentStatus)}</span>
               {story.sourceId.startsWith("ai-research:") ? <span>AI research</span> : null}
-              {story.sourceId.startsWith("owned-content:") ? <span>Original content</span> : null}
+              {story.isOwnedContent ? <span>Original content</span> : null}
+              {story.isOwnedContent && story.evaluationDecision ? <span>AI: {story.evaluationDecision === "review" ? "Review" : story.evaluationDecision === "reject" ? "Reject" : "Shortlist"}</span> : null}
             </div>
             {story.reason ? <p className={styles.candidateCardReason}>{story.reason}</p> : null}
             {story.duplicateOfTitle ? <p className={styles.candidateCardWarning}>Possible duplicate: {story.duplicateOfTitle}</p> : null}
@@ -3254,8 +3317,8 @@ function CandidateCards({
         <div className={styles.candidateCardActions}>
           <button type="button" onClick={() => onViewContent(story.storyId)} disabled={!canPrepare}>{viewingStoryId === story.storyId ? "Loading…" : story.contentStatus === "missing" ? "Add content" : "View content"}</button>
           {shouldPrepareStory(story) ? <button type="button" onClick={() => onPrepareContent(story.storyId)} disabled={!canPrepare}>{preparingStoryId === story.storyId ? "Preparing…" : prepareContentLabel(story)}</button> : null}
-          {(story.evaluationDecision === "review" || story.evaluationDecision === "reject") && !story.reviewDecision ? <button type="button" onClick={() => onPromote(story.storyId, story.title, story.evaluationDecision)} disabled={!canPromote}>{promotingStoryId === story.storyId ? "Promoting…" : "Promote to selected"}</button> : null}
-          {story.duplicateOfStoryId ? <button type="button" onClick={() => onClearDuplicate(story.storyId, story.title)} disabled={!canClearDuplicate}>{clearingDuplicateStoryId === story.storyId ? "Clearing…" : "Not a duplicate"}</button> : null}
+          {(story.isOwnedContent ? story.processingStatus === "ready" : story.evaluationDecision === "review" || story.evaluationDecision === "reject") && !story.reviewDecision ? <button type="button" onClick={() => onPromote(story.storyId, story.title, story.evaluationDecision)} disabled={!canPromote}>{promotingStoryId === story.storyId ? "Selecting…" : story.isOwnedContent ? "Select original content" : "Promote to selected"}</button> : null}
+          {story.duplicateOfStoryId ? <button type="button" onClick={() => onClearDuplicate(story.storyId, story.title)} disabled={!canClearDuplicate} title="Clear the duplicate flag and send this Story to AI evaluation">{clearingDuplicateStoryId === story.storyId ? "Clearing…" : "Not a duplicate"}</button> : null}
         </div>
       </article>;
     })}
@@ -3373,7 +3436,7 @@ function SortableStoriesTable({
             const selected = selectedStoryIds.includes(story.storyId);
             const effectiveDate = story.publishedAt ?? story.lastSeenAt;
             const isAiResearchStory = story.sourceId.startsWith("ai-research:");
-            const isOwnedContentStory = story.sourceId.startsWith("owned-content:");
+            const isOwnedContentStory = story.isOwnedContent === true;
 
             return (
               <tr
@@ -3403,9 +3466,11 @@ function SortableStoriesTable({
                   )}
                 </td>
                 <td className={styles.storyTitleCell}>
-                  <a href={story.url} target="_blank" rel="noreferrer">
-                    {story.title}
-                  </a>
+                  {isOwnedContentStory ? (
+                    <button type="button" onClick={() => onViewContent?.(story.storyId)} disabled={!canPrepare}>{story.title}</button>
+                  ) : (
+                    <a href={story.url} target="_blank" rel="noreferrer">{story.title}</a>
+                  )}
                   {isAiResearchStory ? (
                     <span className={`${styles.tableBadge} ${styles.aiResearchStoryBadge}`}>
                       Found by AI
@@ -3503,8 +3568,6 @@ function SortableStoriesTable({
                           ? ` · ${formatNumber(story.enrichmentWordCount)} words`
                           : ""}
                       </small>
-                    ) : mode === "selected" ? (
-                      <small>RSS only</small>
                     ) : null}
                   </div>
                 </td>
@@ -3603,8 +3666,9 @@ function SortableStoriesTable({
                             : prepareContentLabel(story)}
                         </button>
                       ) : null}
-                      {(story.evaluationDecision === "review" ||
-                        story.evaluationDecision === "reject") &&
+                      {(isOwnedContentStory
+                        ? story.processingStatus === "ready"
+                        : story.evaluationDecision === "review" || story.evaluationDecision === "reject") &&
                       !story.reviewDecision ? (
                         <button
                           type="button"
@@ -3619,8 +3683,10 @@ function SortableStoriesTable({
                           }
                         >
                           {promotingStoryId === story.storyId
-                            ? "Promoting…"
-                            : story.evaluationDecision === "reject"
+                            ? "Selecting…"
+                            : isOwnedContentStory
+                              ? "Select original content"
+                              : story.evaluationDecision === "reject"
                               ? "Override to selected"
                               : "Promote to selected"}
                         </button>
@@ -3630,7 +3696,7 @@ function SortableStoriesTable({
                           type="button"
                           className={styles.clearDuplicateButton}
                           disabled={!canClearDuplicate}
-                          title="Mark this story as covering a distinct topic, not the same news event"
+                          title="Clear the duplicate flag and send this Story to AI evaluation"
                           onClick={() =>
                             onClearDuplicate?.(story.storyId, story.title)
                           }
@@ -4169,6 +4235,23 @@ async function promoteReviewCandidate(
     ),
     secret,
     { method: "POST" },
+  );
+}
+
+async function selectOriginalContent(
+  secret: string,
+  topicId: string,
+  storyId: string,
+  expectedDuplicateStoryId: string | null,
+): Promise<{ storyId: string; selected: true; duplicateOverridden: boolean }> {
+  return requestJson<{ storyId: string; selected: true; duplicateOverridden: boolean }>(
+    topicUrl(`/api/radar/stories/${encodeURIComponent(storyId)}/select-owned`, topicId),
+    secret,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirmSelection: true, expectedDuplicateStoryId }),
+    },
   );
 }
 

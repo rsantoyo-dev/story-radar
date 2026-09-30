@@ -1,6 +1,7 @@
 import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import sharp from "sharp";
+import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { storyReferencePhotos } from "@/db/schema";
 import { buildStoryReferenceObjectKey, deletePrivateR2Object, putPrivateR2Object, readPrivateR2ImageFile } from "./r2-storage";
@@ -35,16 +36,32 @@ export async function uploadStoryPhoto(topicId: string, storyId: string, form: F
 export async function resolveStoryReferences(topicId: string, storyId: string, input: unknown): Promise<StoryGenerationReference[]> {
   return Promise.all(parseStoryReferences(input).map(async selection => {
     const row = await findStoryPhoto(topicId, storyId, selection.id);
-    if (!row || !row.active || !row.providerTransmissionAllowed) throw new StoryMaterialValidationError("A selected story photo is unavailable or its permission was revoked. Update the slide references.");
+    if (!row || !row.active) throw new StoryMaterialValidationError("A selected story photo is unavailable or its permission was revoked. Update the slide references.");
+    // A photo that may not be sent to the image provider (e.g. a Wikimedia
+    // Commons portrait of a real person) is only usable as a documentary
+    // portrait, which is composed locally and never reaches the model.
+    if (!row.providerTransmissionAllowed && selection.purpose !== "documentary-portrait") throw new StoryMaterialValidationError(`“${row.name}” can only be used as a documentary portrait: it may not be sent to the image model.`);
     return { ...publicStoryPhoto(row), topicId, storyId, purpose: selection.purpose, objectKey: row.objectKey, sha256: row.sha256, contentType: row.contentType, fileName: row.fileName };
   }));
 }
 export async function loadStoryReferenceImages(references: StoryGenerationReference[]) {
   return Promise.all(references.map(async reference => {
     const row = await findStoryPhoto(reference.topicId, reference.storyId, reference.id);
-    if (!row?.active || !row.providerTransmissionAllowed || row.sha256 !== reference.sha256 || row.objectKey !== reference.objectKey) throw new StoryMaterialValidationError("A story photo's permission or identity changed. Update the slide references.");
+    if (!row?.active || (!row.providerTransmissionAllowed && reference.purpose !== "documentary-portrait") || row.sha256 !== reference.sha256 || row.objectKey !== reference.objectKey) throw new StoryMaterialValidationError("A story photo's permission or identity changed. Update the slide references.");
     const image = await readPrivateR2ImageFile(reference);
     if (createHash("sha256").update(Buffer.from(await image.arrayBuffer())).digest("hex") !== reference.sha256) throw new StoryMaterialValidationError("The story photo does not match its saved snapshot.");
     return image;
   }));
+}
+/**
+ * The exact bytes of a documentary portrait for local compositing after an
+ * AI-designed slide is generated. The photo must still be active and match
+ * the snapshot hash recorded on the asset; it is never sent to a provider.
+ */
+export async function loadDocumentaryPortraitPhoto(photoId: string, sha256: string): Promise<Buffer> {
+  const [row] = await db.select().from(storyReferencePhotos).where(eq(storyReferencePhotos.id, photoId)).limit(1);
+  if (!row?.active || row.sha256 !== sha256) throw new StoryMaterialValidationError("The documentary portrait changed or was removed. Choose it again and generate this slide again.");
+  const bytes = Buffer.from(await (await readPrivateR2ImageFile({ objectKey: row.objectKey, contentType: row.contentType, fileName: row.fileName })).arrayBuffer());
+  if (createHash("sha256").update(bytes).digest("hex") !== sha256) throw new StoryMaterialValidationError("The documentary portrait does not match its saved snapshot.");
+  return bytes;
 }

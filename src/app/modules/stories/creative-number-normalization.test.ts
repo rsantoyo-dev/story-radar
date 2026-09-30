@@ -83,6 +83,15 @@ test("extracts scaled and localized values through the same contract", () => {
   );
 });
 
+test("keeps French measurements distinct from million abbreviations", () => {
+  assert.deepEqual(
+    extractCreativeNumericLiterals("Un sommet de 251 mètres et 25 kilomètres de sentiers"),
+    ["251", "25"],
+  );
+  assert.deepEqual(extractCreativeNumericLiterals("5m de vues"), ["5000000"]);
+  assert.deepEqual(extractCreativeNumericLiterals("5 m de hauteur"), ["5"]);
+});
+
 test("deduplicates locale variants and excludes calendar years", () => {
   assert.deepEqual(
     substantiveCreativeNumericLiterals([

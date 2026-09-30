@@ -18,6 +18,7 @@ import {
 } from "./creative-brand-image-editor";
 import Image from "next/image";
 import { PublicationChannelsPanel } from "./publication-channels-panel";
+import { EditorFactsPanel } from "./editor-facts-panel";
 import { useRouter } from "next/navigation";
 import { CreativeDocumentaryPanel } from "./creative-documentary-panel";
 import { StoryInstagramResults } from "./story-instagram-results";
@@ -32,8 +33,8 @@ import {
 import {
   creativeQualityReviewHasUnresolvedBlockers,
   deterministicCreativeQualityIssues,
+  EDITOR_TEXT_FIELDS,
   getCreativeDraftApprovalState,
-  repairDeterministicCreativeCopy,
 } from "./modules/stories/creative-quality";
 import { buildCompleteDraftScript, buildCaptionForPosting } from "./modules/stories/creative-draft-export";
 import {
@@ -59,6 +60,7 @@ import {
   type CreativeUnit,
   type CreativeWorkspaceState,
   type EditableCreativeDraft,
+  type GeneratedCreativeDraft,
 } from "./modules/stories/creative-content.types";
 import { resolveEffectiveVisualFidelity } from "./modules/stories/creative-visual-fidelity";
 import { ListField, TextAreaField, TextField } from "./creative-profile-fields";
@@ -266,13 +268,7 @@ export function CreativeDraftWorkspace({
   const activeApprovalDeterministicIssues =
     editableDraft && workspace?.brief
       ? deterministicCreativeQualityIssues(
-        repairDeterministicCreativeCopy(
-          editableDraft,
-          activeDraft?.format ?? selectedFormat,
-          workspace.brief.keyFacts,
-          workspace.brief.profileSnapshot.language,
-          workspace.brief.profileSnapshot.conversionGoal,
-        ),
+        editableDraft,
         activeDraft?.format ?? selectedFormat,
         workspace.brief.keyFacts,
         workspace.brief.profileSnapshot.language,
@@ -285,6 +281,12 @@ export function CreativeDraftWorkspace({
     deterministicIssues: activeApprovalDeterministicIssues,
     qualityReview: activeDraft?.qualityReview,
     qualityReviewIsCurrent: activeDraft?.qualityReviewIsCurrent,
+    // Saved human edits, plus anything typed since the last save: unsaved
+    // text is the editor's own too, so it is judged the same way.
+    editorAuthoredFields: [
+      ...(activeDraft?.editorAuthoredFields ?? []),
+      ...(dirty && editableDraft && activeDraft ? unsavedEditorFields(editableDraft, activeDraft) : []),
+    ],
   });
   const activeApprovalHasDeterministicBlockers =
     activeDraftApprovalState.blockers.length > 0;
@@ -2066,6 +2068,8 @@ export function CreativeDraftWorkspace({
                         ? activeDraftHasSupportingCharacters
                           ? "Refresh character references before generating if their description or images changed."
                           : "Generate and review each integrated text image below."
+                        : dirty
+                          ? "Save your edits as a new version before approving this draft."
                         : !dirty && activeApprovalHasDeterministicBlockers
                           ? "Resolve the deterministic editorial blockers shown below before approval and image generation."
                           : !dirty && activeDraftRequiresHumanReviewAcknowledgement
@@ -2122,7 +2126,7 @@ export function CreativeDraftWorkspace({
                           type="button"
                           className={styles.approveButton}
                           disabled={Boolean(busy) || dirty || activeApprovalHasDeterministicBlockers}
-                          title={activeApprovalHasDeterministicBlockers ? "Resolve the deterministic editorial blockers shown below before approval." : activeDraftRequiresHumanReviewAcknowledgement ? "Review the automated quality notes before approving." : undefined}
+                          title={dirty ? "Save your edits before approval." : activeApprovalHasDeterministicBlockers ? "Resolve the deterministic editorial blockers shown below before approval." : activeDraftRequiresHumanReviewAcknowledgement ? "Review the automated quality notes before approving." : undefined}
                           onClick={handleApproveDraft}
                         >
                           {busy === "approve" ? "Approving…" : activeDraftRequiresHumanReviewAcknowledgement ? "Approve after review" : "Approve draft"}
@@ -2139,9 +2143,28 @@ export function CreativeDraftWorkspace({
                         {activeDraftApprovalState.blockers.some(issue => issue.code === "INSUFFICIENT_EVENT_EVIDENCE") ? <p>
                           Retrieve the complete article and refresh the creative brief. Editing a title alone does not add supporting facts to the brief.
                         </p> : null}
+                        {activeDraftApprovalState.blockers.some(issue => issue.code === "UNSUPPORTED_NUMBER") ? <p>
+                          A number in the script is missing from this brief&apos;s selected facts. Add it under Editor facts below and tick it on that slide, or prepare a new brief and draft that include the source evidence.
+                        </p> : null}
+                      </> : null}
+                      {!activeApprovalHasDeterministicBlockers && !dirty && activeDraftApprovalState.acknowledgements.length ? <>
+                        <strong>Approving confirms, on your responsibility:</strong>
+                        <ul>{activeDraftApprovalState.acknowledgements.map((issue, index) => (
+                          <li key={`${issue.code}-${index}`}>{issue.message}</li>
+                        ))}</ul>
                       </> : null}
                     </div>
                   </div>
+                ) : null}
+
+                {workspace?.brief && !viewingHistoricalDraft ? (
+                  <EditorFactsPanel
+                    topicId={topicId}
+                    storyId={storyId}
+                    secret={secret}
+                    disabled={Boolean(busy)}
+                    onChanged={() => void reloadWorkspace()}
+                  />
                 ) : null}
 
                 {activeDraft && !viewingHistoricalDraft ? (
@@ -2392,6 +2415,9 @@ export function CreativeDraftWorkspace({
                             ? `${imageQualityDetail(selectedImageQuality)} Each quality is saved as its own batch, so switching never changes an existing generation.`
                             : "This model uses its own fixed quality settings."}
                         </p>
+                        {activeDraft.units.some(unit => unit.storyReferences?.some(ref => ref.purpose === "documentary-portrait")) ? (
+                          <p>Portrait slides: the AI designs the slide around a reserved area, then the saved photo is pasted in unchanged with its credit. The photo is never sent to the AI.</p>
+                        ) : null}
                         <button
                           type="button"
                           className={styles.primaryButton}
@@ -2424,6 +2450,9 @@ export function CreativeDraftWorkspace({
                               ? "All images are approved. Validate the publication candidate below."
                               : "Check the visible text carefully. Edit a prompt and regenerate only the image that needs work."}
                           </p>
+                          {activeDraft.status !== "approved" ? <p>
+                            <strong>Approve the script first</strong> (Script tab) — this saved version is not approved yet, so images cannot be approved or regenerated.
+                          </p> : null}
                         </div>
                         <small>
                           {currentAssetBatch.model} · {imageQualityLabel(currentAssetBatch.imageQuality ?? "high")} · {currentAssetBatch.width}×{currentAssetBatch.height}
@@ -2433,20 +2462,26 @@ export function CreativeDraftWorkspace({
                         {currentAssetBatch.assets.map((asset) => {
                           const slideLabel = activeDraft.format === "meme" ? "frame" : `slide ${asset.unitOrder}`;
                           const approved = asset.status === "approved";
-                          const canToggleApproval = !assetsReadOnly && (approved || (asset.status === "generated" && !asset.safetyFlag));
+                          const approvable = approved || (asset.status === "generated" && !asset.safetyFlag);
+                          // Shown whenever the image itself could be approved, and disabled
+                          // with the reason when the draft is not ready, instead of vanishing.
+                          const approvalLockReason = activeDraft.status !== "approved"
+                            ? "Approve the script first. Saving an edit creates a new version that needs approval."
+                            : dirty ? "Save or discard your script edits first."
+                            : assetsReadOnly ? "These images cannot be approved in this state." : undefined;
                           return <div key={asset.id} className={styles.assetSelectionItem}>
                             <button type="button" className={styles.assetSelectionThumb} aria-pressed={selectedAssetOrder === asset.unitOrder} onClick={() => setSelectedUnitOrder(asset.unitOrder)} aria-label={`Review ${slideLabel}, image version ${asset.version}, ${asset.status}`}>
                               {asset.imageUrl ? <span className={styles.assetSelectionImage}><Image src={asset.imageUrl} alt="" fill sizes="80px" unoptimized /></span> : <span className={styles.assetSelectionPlaceholder} aria-hidden="true">{asset.unitOrder}</span>}
                               <span>{activeDraft.format === "meme" ? "Frame" : `Slide ${asset.unitOrder}`} · v{asset.version}</span>
                               <small>{asset.status === "generating" ? "Generating" : capitalize(asset.status)}</small>
                             </button>
-                            {canToggleApproval ? <button
+                            {approvable && !viewingHistoricalDraft ? <button
                               type="button"
                               className={`${styles.assetSelectionApprove} ${approved ? styles.assetSelectionApproved : ""}`}
                               aria-pressed={approved}
                               aria-label={approved ? `Unapprove ${slideLabel} image` : `Approve ${slideLabel} image`}
-                              title={approved ? "Approved — click to unapprove" : "Approve this image"}
-                              disabled={Boolean(assetBusy)}
+                              title={approvalLockReason ?? (approved ? "Approved — click to unapprove" : "Approve this image")}
+                              disabled={Boolean(assetBusy) || Boolean(approvalLockReason)}
                               onClick={() => void handleImageApproval(asset.id, approved ? "unapprove" : "approve")}
                             >✓</button> : null}
                           </div>;
@@ -2953,6 +2988,12 @@ function CreativeAssetCard({
         )}
       </div>
 
+      {asset.unitSnapshot.documentaryPortrait ? <details open className={styles.historyCallout}>
+        <summary>Documentary portrait · {asset.unitSnapshot.documentaryPortrait.name}</summary>
+        <p>{asset.unitSnapshot.documentaryPortrait.description}</p>
+        <p>Source and reuse terms: {asset.unitSnapshot.documentaryPortrait.provenance}</p>
+        <p>The uploaded photo was resized into this slide without AI redrawing. Compare the person and credit with the original in Story reference photos before approving.</p>
+      </details> : null}
       {asset.unitSnapshot.placeVisual ? <details open className={styles.historyCallout}><summary>Place material · {asset.unitSnapshot.placeVisual.version === "place-visual-v2" && asset.unitSnapshot.placeVisual.representation === "typography" && asset.unitSnapshot.assetRequest !== "typography-only" ? "conceptual illustration" : asset.unitSnapshot.placeVisual.representation}</summary>
         <div>{asset.unitSnapshot.placeVisual.reasons.map((reason,index)=><p key={index}>{reason}</p>)}
         {asset.unitSnapshot.placeVisual.adapterEvidence?.segment ? <p>
@@ -3016,16 +3057,16 @@ function CreativeAssetCard({
       ) : null}
 
       <details className={styles.assetPrompt}>
-        <summary>{readOnly ? "Generation prompt" : "Edit regeneration prompt"}</summary>
+        <summary>{asset.unitSnapshot.documentaryPortrait ? "Composition details" : readOnly ? "Generation prompt" : "Edit regeneration prompt"}</summary>
         <BrandSelectionSummary selection={asset.unitSnapshot?.brandReferenceSelection} />
         <textarea
           rows={9}
           value={prompt}
-          disabled={readOnly || isPending || isBusy}
+          disabled={readOnly || isPending || isBusy || Boolean(asset.unitSnapshot.documentaryPortrait)}
           maxLength={MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS}
           onChange={(event) => setPrompt(event.target.value)}
         />
-        {!readOnly ? (
+        {!readOnly && !asset.unitSnapshot.documentaryPortrait ? (
           <small>{prompt.length.toLocaleString("en-CA")} / 30,000 characters</small>
         ) : null}
       </details>
@@ -3048,7 +3089,7 @@ function CreativeAssetCard({
           ) : null}
         </div>
         <div>
-          {!readOnly && !isPending ? (
+          {!readOnly && !isPending && !asset.unitSnapshot.documentaryPortrait ? (
             <button
               type="button"
               className={styles.secondaryButton}
@@ -3398,7 +3439,7 @@ function DraftEditor({
         <div className={styles.narrativeReview} role="status">
           <strong>
             Automated quality review · {qualityReviewResolvedByCurrentValidation
-              ? "current deterministic checks passed"
+              ? "automated blocker not reproduced"
               : !qualityReviewIsCurrent
               ? "needs re-review after edits"
               : qualityReview.status === "needs-review"
@@ -3410,11 +3451,12 @@ function DraftEditor({
                 : qualityReview.status.replaceAll("-", " ")}
           </strong>
           {qualityReviewResolvedByCurrentValidation ? (
-            <p>
-              The saved score was reduced by findings that are no longer
-              present in the current factual check. This version can proceed
-              to approval.
-            </p>
+            <>
+              <p>The automated review reported a blocker that current validation does not confirm. Its score includes that finding. Review the copy and the remaining editorial notes, then approve this version if it is correct.</p>
+              {qualityReview.issues.some((issue) => issue.severity === "warning" && !issue.code.startsWith("QUALITY_") && issue.code !== "EDITORIAL_QUALITY_TARGET_NOT_MET") ? <ul>
+                {qualityReview.issues.filter((issue) => issue.severity === "warning" && !issue.code.startsWith("QUALITY_") && issue.code !== "EDITORIAL_QUALITY_TARGET_NOT_MET").map((issue, index) => <li key={`${issue.code}-${index}`}>{issue.message}</li>)}
+              </ul> : null}
+            </>
           ) : hasFinalCopyRepair ? (
             <p>
               A targeted correction was applied after the editorial review.
@@ -3458,6 +3500,8 @@ function DraftEditor({
                   // report "not attempted" for a repair that actually ran. Its
                   // own stopReason already states what happened, including for
                   // drafts saved before repairAttempted existed.
+                  : qualityReviewResolvedByCurrentValidation
+                    ? " · current factual checks found no blocker"
                   : singleShotRun
                     ? ` · ${singleShotRun.callsUsed} calls · ${singleShotRun.stopReason ?? (singleShotRun.repairAttempted ? "repair ran, still below the bar" : "repair not attempted")}`
                     : " · repair not attempted"}
@@ -4084,6 +4128,21 @@ function creativeAssetBatchUrl(
   const path = `/api/radar/creative/drafts/${encodeURIComponent(draftId)}/assets${query}`;
 
   return topicUrl(path, topicId);
+}
+
+/** Visible text fields changed in the editor since the last save, as "order:field". */
+function unsavedEditorFields(
+  edited: Pick<GeneratedCreativeDraft, "caption" | "units">,
+  saved: Pick<GeneratedCreativeDraft, "caption" | "units">,
+): string[] {
+  const fields = edited.caption !== saved.caption ? ["0:caption"] : [];
+  for (const unit of edited.units) {
+    const before = saved.units.find((candidate) => candidate.order === unit.order);
+    for (const field of EDITOR_TEXT_FIELDS) {
+      if ((before?.[field] ?? "") !== (unit[field] ?? "")) fields.push(`${unit.order}:${field}`);
+    }
+  }
+  return fields;
 }
 
 function topicUrl(path: string, topicId: string): string {

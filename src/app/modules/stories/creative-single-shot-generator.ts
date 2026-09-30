@@ -102,9 +102,9 @@ const VISUAL_NEED_INSTRUCTION = `\n\nFor every unit, also return visualNeed, exa
 
 Set "verified-map" on the slide whose job is to locate something the facts name precisely — a road segment closed between two named points, a route, a detour, an address — typically the cover of a closure or works story, or its "where" slide. That slide is then composed by the pipeline from official or provider-verified map data (a real street map with the verified segment or place marked and the official wording as legend); your visualDirection for it is only the conceptual fallback used when no geometry can be verified, so write it as an abstract composition and never describe a drawn map, streets, pins or routes.
 
-Set "real-photo" on the slide whose job is to show a specific, named, real-world landmark a local reader would recognize by name — a bridge, a building, a monument, a park, a venue — whenever the facts name one, even when you do not know whether a usable photo exists for it and even when the story is about a closure or works affecting it. That slide is then composed by the pipeline from a verified provider photo or map of the exact named place when one resolves, or from a location map when the story reports a current closure/works/change (an old photograph is never used as evidence that a change is happening now); your visualDirection for it is only the conceptual fallback used when nothing verifiable resolves, so write it as an abstract composition and never claim, describe or imply what that specific place looks like — no invented facade, structure, color or setting that could be mistaken for a documentary depiction of it.
+Set "real-photo" on every slide whose job is to show one specific, named, real-world place a local reader would recognize by name — a bridge, a building, a monument, a venue, a park, a mountain, a nature reserve, a canal, a lake, a trail — whenever the facts name one. In a list of places (for example "five places to visit"), that means each slide devoted to one named place gets "real-photo", one place per slide; even when you do not know whether a usable photo exists for it and even when the story is about a closure or works affecting it. That slide is then composed by the pipeline from a verified provider photo or map of the exact named place when one resolves, or from a location map when the story reports a current closure/works/change (an old photograph is never used as evidence that a change is happening now); your visualDirection for it is only the conceptual fallback used when nothing verifiable resolves, so write it as an abstract composition and never claim, describe or imply what that specific place looks like — no invented facade, structure, color or setting that could be mistaken for a documentary depiction of it.
 
-Use "character-reference" when the visualDirection calls for one of the topic's configured recurring characters; "typography" when assetRequest is typography-only (never on a carousel cover: a cover is always generated-image); otherwise "generic-illustration" — including for a named place with no landmark the facts describe concretely enough to picture. Declaring "verified-map" or "real-photo" never invents evidence: without verified data the slide simply renders its fallback.`;
+Use "character-reference" when the visualDirection calls for one of the topic's configured recurring characters; "typography" when assetRequest is typography-only (never on a carousel cover: a cover is always generated-image); otherwise "generic-illustration" — for example a cover or summary slide that covers several places at once, or a slide that only mentions a place in passing. Declaring "verified-map" or "real-photo" never invents evidence: without verified data the slide simply renders its fallback.`;
 
 /**
  * Nothing else in this pipeline tells the writer what a publish-ready social
@@ -560,13 +560,12 @@ export async function generateSingleShotCreativeScript(
       brief.carouselPlan,
     );
     value = enforceCoverTitle(value, profile.requireCoverTitle, brief.contentTitle ?? story.title);
-    // Over-length supporting text is deterministic and cheap to fix here,
-    // expensive to fix later: left in, it reaches the audit as a finding and
-    // can cost a whole repair-and-verify round. The first response is held to
-    // it and rewritten once with the exact slides named; the retry is accepted
-    // as is, so a stubborn 47-word slide cannot sink the generation.
+    // Validate the first response while the writer can still use a bounded
+    // retry with the exact error as feedback. A revision must not introduce a
+    // new factual or structural blocker that its previous script did not have.
+    // The orchestrator checks the final retry again before verification.
     if (strictCopy) {
-      const overLength = deterministicCreativeQualityIssues(
+      const currentIssues = deterministicCreativeQualityIssues(
         value,
         format,
         brief.keyFacts,
@@ -574,9 +573,28 @@ export async function generateSingleShotCreativeScript(
         profile.conversionGoal,
         profile.framingStrategy,
         profile.storyStructure,
-      ).filter((issue) => /body[-_]too[-_]long/i.test(issue.code));
+      );
+      const overLength = currentIssues.filter((issue) => /body[-_]too[-_]long/i.test(issue.code));
       if (overLength.length) {
         throw new CreativeContentResponseError(overLength.map((issue) => issue.message).join(" "));
+      }
+      if (revision) {
+        const priorBlockers = new Set(deterministicCreativeQualityIssues(
+          revision.previousDraft,
+          format,
+          brief.keyFacts,
+          profile.language,
+          profile.conversionGoal,
+          profile.framingStrategy,
+          profile.storyStructure,
+        ).filter((issue) => issue.severity === "blocker").map((issue) => `${issue.code}:${issue.unitOrder ?? 0}`));
+        const introduced = currentIssues.filter((issue) =>
+          issue.severity === "blocker" && !priorBlockers.has(`${issue.code}:${issue.unitOrder ?? 0}`));
+        if (introduced.length) {
+          throw new CreativeContentResponseError(
+            `The rewrite introduced validation blockers: ${introduced.map((issue) => issue.message).join(" ")}`,
+          );
+        }
       }
     }
     return value;
@@ -586,9 +604,7 @@ export async function generateSingleShotCreativeScript(
   const writeScript = writerModel ? callWriter : call;
   const draftResponse = await writeScript(draftInstruction, draftSchema, draftContents, format === "meme" ? 3_072 : 6_144);
   try {
-    // A revision is already the second look at this copy; holding it to the
-    // local length rewrite would spend the one attempt it has.
-    draft = parseDraft(draftResponse.text, !revision);
+    draft = parseDraft(draftResponse.text, true);
   } catch (error) {
     if (!(error instanceof CreativeContentResponseError)) throw withBilledUsage(error, draftResponse.usage);
     console.warn(`Single-shot script failed validation: ${error.message} Retrying once with the error as feedback.`);

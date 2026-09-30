@@ -62,26 +62,27 @@ export type EditorialDashboardStory = {
   storyId: string;
   sourceId: string;
   sourceName: string;
+  isOwnedContent?: boolean;
   title: string;
   url: string;
   contentStatus: StoryContentStatus;
   publishedAt?: Date;
   localScore: number;
-  evaluationDecision: "reject" | "review" | "shortlist";
+  evaluationDecision?: "reject" | "review" | "shortlist";
   editorialPriority?: number;
   /** Independent acquisition potential; absent for pre-growth evaluations. */
   growthScore?: number;
   growthSignals?: GrowthPotentialSignals;
   growthReason?: string;
-  editorialScore: number;
-  canadaRelevance: number;
-  aiRelevance: number;
-  socialPotential: number;
-  novelty: number;
+  editorialScore?: number;
+  canadaRelevance?: number;
+  aiRelevance?: number;
+  socialPotential?: number;
+  novelty?: number;
   reason: string;
   suggestedAngles: string[];
   riskFlags: string[];
-  evaluatedAt: Date;
+  evaluatedAt?: Date;
   reviewedAt?: Date;
   enrichmentStatus?: "pending" | "completed" | "failed" | "blocked";
   enrichmentMethod?: "direct" | "reader";
@@ -108,6 +109,7 @@ export type EditorialCollectedStory = {
   storyId: string;
   sourceId: string;
   sourceName: string;
+  isOwnedContent: boolean;
   title: string;
   url: string;
   contentStatus: StoryContentStatus;
@@ -1048,6 +1050,11 @@ export async function getEditorialDashboardStats(
         url: stories.originalUrl,
         contentStatus: stories.contentStatus,
         processingStatus: topicStories.processingStatus,
+        isOwnedContent: sql<boolean>`exists (
+          select 1 from ${ownedContentEntries}
+          where ${ownedContentEntries.topicId} = ${topicStories.topicId}
+            and ${ownedContentEntries.storyId} = ${topicStories.storyId}
+        )`,
         publishedAt: stories.publishedAt,
         lastSeenAt: topicStories.lastSeenAt,
         localScore: topicStories.relevanceScore,
@@ -1152,11 +1159,17 @@ export async function getEditorialDashboardStats(
         desc(latestEvaluation.editorialScore),
         desc(latestEvaluation.evaluatedAt),
       ),
+    // An editor may select original content before any AI evaluation exists.
     db
       .select({
         storyId: topicStories.storyId,
         sourceId: latestSource.sourceId,
         sourceName: latestSource.sourceName,
+        isOwnedContent: sql<boolean>`exists (
+          select 1 from ${ownedContentEntries}
+          where ${ownedContentEntries.topicId} = ${topicStories.topicId}
+            and ${ownedContentEntries.storyId} = ${topicStories.storyId}
+        )`,
         title: stories.title,
         url: stories.originalUrl,
         contentStatus: stories.contentStatus,
@@ -1188,21 +1201,15 @@ export async function getEditorialDashboardStats(
         enrichmentError: storyContentEnrichments.error,
         enrichedAt: storyContentEnrichments.fetchedAt,
       })
-      .from(latestStoredEvaluation)
-      .innerJoin(
-        topicStories,
-        and(
-          eq(topicStories.storyId, latestStoredEvaluation.storyId),
-          eq(topicStories.topicId, topicId),
-        ),
-      )
-      .innerJoin(stories, eq(stories.id, latestStoredEvaluation.storyId))
+      .from(topicStories)
+      .innerJoin(stories, eq(stories.id, topicStories.storyId))
       .leftJoin(latestSource, eq(latestSource.storyId, stories.id))
+      .leftJoin(latestStoredEvaluation, eq(latestStoredEvaluation.storyId, stories.id))
       .leftJoin(
         storyContentEnrichments,
         eq(storyContentEnrichments.storyId, stories.id),
       )
-      .where(eq(topicStories.reviewDecision, "approved"))
+      .where(and(eq(topicStories.topicId, topicId), eq(topicStories.reviewDecision, "approved")))
       .orderBy(
         desc(
           sql<number>`coalesce(${latestStoredEvaluation.editorialPriority}, ${latestStoredEvaluation.editorialScore})`,
@@ -1330,6 +1337,7 @@ export async function getEditorialDashboardStats(
       storyId: row.storyId,
       sourceId: row.sourceId ?? "unknown",
       sourceName: row.sourceName ?? "Unknown source",
+      isOwnedContent: row.isOwnedContent,
       title: row.title,
       url: row.url,
       contentStatus: row.contentStatus,
@@ -1408,25 +1416,26 @@ export async function getEditorialDashboardStats(
       storyId: row.storyId,
       sourceId: row.sourceId ?? "unknown",
       sourceName: row.sourceName ?? "Unknown source",
+      isOwnedContent: row.isOwnedContent,
       title: row.title,
       url: row.url,
       contentStatus: row.contentStatus,
       ...(row.publishedAt ? { publishedAt: row.publishedAt } : {}),
       localScore: row.localScore,
-      evaluationDecision: row.evaluationDecision,
+      ...(row.evaluationDecision ? { evaluationDecision: row.evaluationDecision } : {}),
       ...(row.editorialPriority !== null
         ? { editorialPriority: row.editorialPriority }
         : {}),
       ...growthFieldsFromRow(row),
-      editorialScore: row.editorialScore,
-      canadaRelevance: row.canadaRelevance,
-      aiRelevance: row.aiRelevance,
-      socialPotential: row.socialPotential,
-      novelty: row.novelty,
-      reason: row.reason,
-      suggestedAngles: row.suggestedAngles,
-      riskFlags: row.riskFlags,
-      evaluatedAt: row.evaluatedAt,
+      ...(row.editorialScore !== null ? { editorialScore: row.editorialScore } : {}),
+      ...(row.canadaRelevance !== null ? { canadaRelevance: row.canadaRelevance } : {}),
+      ...(row.aiRelevance !== null ? { aiRelevance: row.aiRelevance } : {}),
+      ...(row.socialPotential !== null ? { socialPotential: row.socialPotential } : {}),
+      ...(row.novelty !== null ? { novelty: row.novelty } : {}),
+      reason: row.reason ?? "Selected by an editor without AI evaluation.",
+      suggestedAngles: row.suggestedAngles ?? [],
+      riskFlags: row.riskFlags ?? [],
+      ...(row.evaluatedAt ? { evaluatedAt: row.evaluatedAt } : {}),
       ...(row.reviewedAt ? { reviewedAt: row.reviewedAt } : {}),
       ...(row.enrichmentStatus
         ? { enrichmentStatus: row.enrichmentStatus }

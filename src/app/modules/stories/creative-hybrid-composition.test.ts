@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 
-async function compose(mode = "illustration-editorial", photoTest = false, includeUnresolvedGeoUnit = false, mapMode?: "ai" | "local", includeUnresolvedRealPhotoUnit = false, includeIdentityPhotoUnit = false, coverTypographyOnly = false) {
+async function compose(mode = "illustration-editorial", photoTest = false, includeUnresolvedGeoUnit = false, mapMode?: "ai" | "local", includeUnresolvedRealPhotoUnit = false, includeIdentityPhotoUnit = false, coverTypographyOnly = false, includeDocumentaryPortraitUnit = false) {
   const source = readFileSync("src/app/modules/stories/manage-creative-assets.ts", "utf8");
   const start = source.indexOf("async function composeDraftPlaceVisuals(");
   const end = source.indexOf("async function recomposePlaceAsset(", start);
@@ -25,7 +25,7 @@ async function compose(mode = "illustration-editorial", photoTest = false, inclu
   // real-photo on a closure: identity resolved, no map precise enough, but an
   // eligible CC-licensed archive photo grounds the place's identity only.
   if (includeIdentityPhotoUnit) prepared.set(7, { bytes: identityPhotoBytes, evidence: { representation: "photo", generationUse: "ai-reference", reasons: ["Archive photograph from an eligible source, used only to ground the place's identity in an AI-assisted adaptation; not evidence of current conditions."], place: { name: "pont Gouin" }, photo: { author: "Pierre cb", license: "CC0", licenseUrl: "https://creativecommons.org/publicdomain/zero/1.0/", contentType: "image/jpeg" } } });
-  type TestUnit = { id: string; order: number; role: string; type: string; assetRequest: string; headline: string; visualDirection: string; visualNeed?: string };
+  type TestUnit = { id: string; order: number; role: string; type: string; assetRequest: string; headline: string; visualDirection: string; visualNeed?: string; storyReferences?: { id: string; purpose: string }[] };
   const draft = { id: "draft", version: 3, storyId: "story",
     units: ([1, 2, 3, 4].map(order => ({ id: String(order), order, role: order === 1 ? "cover" : "content",
       type: "carousel-slide", assetRequest: coverTypographyOnly && order === 1 ? "typography-only" : "generated-image", headline: "Headline", visualDirection: "Editorial illustration" })) as TestUnit[])
@@ -34,13 +34,16 @@ async function compose(mode = "illustration-editorial", photoTest = false, inclu
       .concat(includeUnresolvedRealPhotoUnit ? [{ id: "6", order: 6, role: "content", type: "carousel-slide",
         assetRequest: "generated-image", headline: "Headline", visualNeed: "real-photo", visualDirection: "Abstract paper-collage motif, no bridge drawn" }] : [])
       .concat(includeIdentityPhotoUnit ? [{ id: "7", order: 7, role: "content", type: "carousel-slide",
-        assetRequest: "generated-image", headline: "Headline", visualNeed: "real-photo", visualDirection: "Abstract paper-collage motif, no bridge drawn" }] : [])};
+        assetRequest: "generated-image", headline: "Headline", visualNeed: "real-photo", visualDirection: "Abstract paper-collage motif, no bridge drawn" }] : [])
+      .concat(includeDocumentaryPortraitUnit ? [{ id: "8", order: 8, role: "content", type: "carousel-slide",
+        assetRequest: "generated-image", headline: "Person", visualDirection: "Photograph of the person", storyReferences: [{ id: "photo-id", purpose: "documentary-portrait" }] }] : [])};
   const exports: { run?: (...args: unknown[]) => Promise<unknown> } = {};
   runInNewContext(ts.transpileModule(code, { compilerOptions: {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
   } }).outputText, {
-    exports, Map, Set,
+    exports, Map, Set, Buffer,
     placeCompositionVersion: () => photoTest ? "place-visual-v5" : "place-visual-v4",
+    documentaryPortraitIdentity: () => "portrait-hash",
     mapReferenceMode: () => mapMode ?? "local",
     MAP_REFERENCE_VISUAL_DIRECTION: "Composition around the provided official map panel",
     storeDocumentaryMapReference: async (topic: string, bytes: Buffer) => { assert.equal(topic, "topic"); assert.equal(bytes, map); storedMaps.push("map-sha"); return "map-sha"; },
@@ -79,16 +82,21 @@ async function compose(mode = "illustration-editorial", photoTest = false, inclu
     assertCharacterSnapshotsForDraft: () => {},
     charactersForImageGeneration: () => [],
     uniqueCharacterSnapshots: () => [],
-    resolveStoryReferences: async () => [],
+    resolveStoryReferences: async (_topic: string, _story: string, selections?: { purpose: string }[]) => selections?.some(ref => ref.purpose === "documentary-portrait") ? [{ id: "photo-id", purpose: "documentary-portrait", sha256: "photo-sha", name: "Person", description: "Verified portrait", provenance: "Author · CC BY 4.0 · source", objectKey: "private/key" }] : [],
+    loadStoryReferenceImages: async () => [new File([Buffer.from("portrait-bytes")], "portrait.webp", { type: "image/webp" })],
     storyReferencePrompt: () => "",
     resolveBrandGenerationReferences: async () => ["brand-reference"],
     snapshotsForUnit: () => [],
     buildCreativeImagePrompt: (input: { unit: { visualDirection: string } }) => ({ prompt: `Creative prompt [${input.unit.visualDirection}]`, expectedText: "Headline" }),
     brandReferencePrompt: () => " with brand",
     MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS: 30000,
-    assetInputForUnit: (_characters: unknown, refs: unknown) => ({
+    assetInputForUnit: (characters: unknown[], refs: unknown, story: unknown[] = []) => ({
       providerEndpoint: "fal/edit", generationMode: "reference-guided", referenceSnapshot: refs,
+      characterInputs: characters, storyInputs: story,
     }),
+    PORTRAIT_ZONE_PROMPT: "\n<DOCUMENTARY_PHOTO_ZONE>reserved</DOCUMENTARY_PHOTO_ZONE>",
+    storyReferenceBatchTag: () => ":story-refs-v3-refs-hash",
+    photoLedVisualDirection: (direction: string) => direction,
     shouldApplyCreativeBrandOverlay: () => true,
     DRAFT_TYPOGRAPHY_ENDPOINT: "local/composition",
     createCreativeAssetBatch: async (input: { assets: Record<string, unknown>[] }) => {
@@ -98,6 +106,7 @@ async function compose(mode = "illustration-editorial", photoTest = false, inclu
     submitStoredAsset: async (asset: { unitOrder: number }) => { submitted.push(asset.unitOrder); },
     renderDraftTypography: async (unit: { order: number }, _profile: unknown, bytes: unknown) => {
       if (unit.order === 3) assert.equal(bytes, photo);
+      if (unit.order === 8) assert.equal((bytes as Buffer).toString(), "portrait-bytes");
       rendered.push(unit.order); return Buffer.from("render");
     },
     uploadComposedImage: async () => ({}),
@@ -135,6 +144,68 @@ test("a verified map slide is generated with the stored map as its last referenc
   const strict = await compose("photo-required", false, false, "ai");
   assert.deepEqual(strict.submitted, []);
   assert.deepEqual(strict.storedMaps, []);
+});
+
+test("a documentary portrait slide is designed by the AI around a reserved zone, and the photo is never an input", async () => {
+  const result = await compose("illustration-editorial", false, false, undefined, false, false, false, true);
+  assert.deepEqual(result.submitted, [1, 2, 4, 8]);
+  assert.deepEqual(result.rendered, [3]);
+  assert.deepEqual(result.researched, [3], "a portrait slide is never place research");
+  const portrait = result.assets.find(asset => asset.unitOrder === 8)!;
+  assert.notEqual(portrait.providerEndpoint, "local/composition");
+  assert.match(String(portrait.prompt), /DOCUMENTARY_PHOTO_ZONE/);
+  assert.equal((portrait.storyInputs as unknown[]).length, 0, "the photo is not a model reference");
+  assert.equal((portrait.characterInputs as unknown[]).length, 0, "no fictional character joins a real person's slide");
+  assert.doesNotMatch(JSON.stringify(portrait.referenceSnapshot), /photo-id|photo-sha/);
+  // Recorded so the post-processor pastes these exact, verified pixels.
+  assert.equal((portrait.unitSnapshot as { documentaryPortrait: { sha256: string } }).documentaryPortrait.sha256, "photo-sha");
+  assert.doesNotMatch(JSON.stringify(portrait.unitSnapshot), /private\/key/);
+});
+
+test("under a strict photo policy a documentary portrait stays a local composition with no model request", async () => {
+  const result = await compose("photo-required", false, false, undefined, false, false, false, true);
+  assert.ok(!result.submitted.includes(8));
+  assert.ok(result.rendered.includes(8));
+  const portrait = result.assets.find(asset => asset.unitOrder === 8)!;
+  assert.equal(portrait.providerEndpoint, "local/composition");
+  assert.match(String(portrait.prompt), /no image-model request/);
+});
+
+test("recomposing a documentary portrait keeps its saved photo and does not replace it with place imagery", async () => {
+  const source = readFileSync("src/app/modules/stories/manage-creative-assets.ts", "utf8");
+  const start = source.indexOf("async function recomposePlaceAsset(");
+  const code = source.slice(start) + "\nexports.run = recomposePlaceAsset;";
+  const exports: { run?: (...args: unknown[]) => Promise<unknown> } = {};
+  const portrait = { photoId: "photo-id", sha256: "photo-sha", name: "Person", description: "Verified portrait", provenance: "Author · CC BY 4.0 · source" };
+  let rendered = false;
+  runInNewContext(ts.transpileModule(code, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, {
+    exports, Buffer,
+    assertCurrentAsset: () => {}, assertEditorialEvidence: async () => {}, requireNarrativeQuality: () => {},
+    resolveCreativeBrandGeneration: async () => ({ inputHash: "brand", carouselChrome: {} }),
+    assertCurrentBrandConfiguration: () => {},
+    CreativeContentConflictError: Error,
+    resolveStoryReferences: async () => [{ id: "photo-id", purpose: "documentary-portrait", sha256: "photo-sha" }],
+    getDailyDraftStory: async () => assert.fail("Portrait recompose must not research a place"),
+    getCreativeProfile: async () => ({}),
+    reuseDocumentaryVisuals: async () => assert.fail("Portrait recompose must not reuse place imagery"),
+    preparePlaceVisuals: async () => assert.fail("Portrait recompose must not prepare place imagery"),
+    insertRegeneratedCreativeAsset: async ({ unitSnapshot }: { unitSnapshot: Record<string, unknown> }) => ({ id: "new-asset", unitSnapshot }),
+    getFalImageRuntimeConfig: () => ({ apiKey: "fixture" }),
+    loadStoryReferenceImages: async () => [new File([Buffer.from("same-portrait")], "portrait.webp", { type: "image/webp" })],
+    renderDraftTypography: async (unit: { documentaryPortrait: typeof portrait }, _profile: unknown, bytes: Buffer) => {
+      assert.deepEqual(unit.documentaryPortrait, portrait);
+      assert.equal(bytes.toString(), "same-portrait");
+      rendered = true;
+      return Buffer.from("composed");
+    },
+    uploadComposedImage: async () => ({ url: "https://example.org/composed.png" }),
+    completeCreativeAsset: async () => {}, failCreativeAsset: async () => assert.fail("Unexpected composition failure"),
+    refreshCreativeAssetBatchStatus: async () => ({ id: "batch" }), publicConfigurationForBatch: () => ({}),
+  });
+  await exports.run!("topic", { asset: { id: "asset", prompt: "local", unitOrder: 2, unitSnapshot: { documentaryPortrait: portrait } }, batch: { id: "batch", imageQuality: "high" } },
+    { id: "draft", version: 2, storyId: "story", units: [{ order: 2, storyReferences: [{ id: "photo-id", purpose: "documentary-portrait" }] }] },
+    { keyFacts: [], profileSnapshot: {} });
+  assert.equal(rendered, true);
 });
 
 test("museum photo is composed only on its slide; other slides use creative prompts and brand references", async () => {
@@ -250,4 +321,41 @@ test("a real-photo slide with no map language in its own direction still keeps i
   // visualNeed-triggered slide; it must reach the prompt unchanged.
   assert.match(String(unresolved.prompt), /Abstract paper-collage motif, no bridge drawn/);
   assert.doesNotMatch(String(unresolved.prompt), /Conceptual fallback, no verified place/);
+});
+
+test("a changed story-photo use makes the next image version rebuild instead of replaying old references", () => {
+  const source = readFileSync("src/app/modules/stories/manage-creative-assets.ts", "utf8");
+  const start = source.indexOf("export function storyReferenceSelectionsChanged(");
+  const code = source.slice(start, source.indexOf("function batchMatchesDraftGenerationModes(", start)).replace("export function", "function") + "\nexports.run = storyReferenceSelectionsChanged;";
+  const exports: { run?: (draft: unknown, batch: unknown) => boolean } = {};
+  runInNewContext(ts.transpileModule(code, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { exports, JSON });
+  const changed = exports.run!;
+  const portraitAsset = { unitOrder: 4, version: 1, unitSnapshot: { documentaryPortrait: { photoId: "mont" } } };
+  const plainAsset = { unitOrder: 1, version: 1, unitSnapshot: {} };
+  const batch = { assets: [plainAsset, portraitAsset] };
+  // Unchanged: the documentary photo is still the slide's only selection.
+  assert.equal(changed({ units: [{ order: 1 }, { order: 4, storyReferences: [{ id: "mont", purpose: "documentary-portrait" }] }] }, batch), false);
+  // Documentary photo → AI-adapted place: the stored prompt no longer matches.
+  assert.equal(changed({ units: [{ order: 1 }, { order: 4, storyReferences: [{ id: "mont", purpose: "place" }] }] }, batch), true);
+  // A photo newly added to a slide that had none.
+  assert.equal(changed({ units: [{ order: 1, storyReferences: [{ id: "canal", purpose: "place" }] }, { order: 4, storyReferences: [{ id: "mont", purpose: "documentary-portrait" }] }] }, batch), true);
+  // Same references reported by a reference-guided asset.
+  const guided = { assets: [{ unitOrder: 1, version: 2, unitSnapshot: {}, storyPhotoReferences: [{ id: "canal", purpose: "place" }] }] };
+  assert.equal(changed({ units: [{ order: 1, storyReferences: [{ id: "canal", purpose: "place" }] }] }, guided), false);
+});
+
+test("only transient network/provider failures are retried when submitting an image", () => {
+  const source = readFileSync("src/app/modules/stories/manage-creative-assets.ts", "utf8");
+  const start = source.indexOf("export function isTransientFalSubmitError(");
+  const end = source.indexOf("\n}\n", start) + 3;
+  const exports: { run?: (error: unknown) => boolean } = {};
+  runInNewContext(ts.transpileModule(source.slice(start, end).replace("export function", "function") + "\nexports.run = isTransientFalSubmitError;",
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { exports, Error, String });
+  const transient = exports.run!;
+  for (const message of ["fetch failed", "HTTP 408: Request Timeout", "HTTP 429: Too Many Requests", "HTTP 503: Service Unavailable", "The operation timed out", "socket hang up"]) {
+    assert.equal(transient(new Error(message)), true, message);
+  }
+  for (const message of ["HTTP 400: Bad Request", "HTTP 422: content policy violation", "The combined references exceed 16 images."]) {
+    assert.equal(transient(new Error(message)), false, message);
+  }
 });

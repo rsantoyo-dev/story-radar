@@ -28,6 +28,8 @@ test("photo selection is bounded, purpose-validated and rejects duplicate IDs", 
   assert.throws(() => input.parseStoryReferences([{ id, purpose: "unknown" }]), /Invalid/);
   assert.throws(() => input.parseStoryReferences([{ id, purpose: "result" }, { id, purpose: "step" }]), /duplicate/);
   assert.throws(() => input.parseStoryReferences(Array(4).fill({ id, purpose: "result" })), /three/);
+  assert.deepEqual(input.parseStoryReferences([{ id, purpose: "documentary-portrait" }]), [{ id, purpose: "documentary-portrait" }]);
+  assert.throws(() => input.parseStoryReferences([{ id, purpose: "documentary-portrait" }, { id: other, purpose: "style" }]), /only story photo/);
 });
 test("selected photo order follows characters and brand; retry replaces old guidance", () => {
   const prompt = storyReferencePrompt([ref], 3);
@@ -38,6 +40,7 @@ test("selected photo order follows characters and brand; retry replaces old guid
   assert.equal(replaced.split("STORY PHOTO REFERENCES v1").length, 2);
   assert.match(replaced, /"image":2/);
   assert.doesNotMatch(replaced, /"purpose":"result"/);
+  assert.throws(() => storyReferencePrompt([{ ...ref, purpose: "documentary-portrait" }], 0), /never sent to the image model/);
 });
 test("changing a photo or its use invalidates image carry, a copy edit does not", () => {
   const unit: CreativeUnit = { id, order: 1, type: "carousel-slide", role: "cover", headline: "Dish", visualDirection: "Food", factIds: [], assetRequest: "generated-image", aspectRatio: "4:5", storyReferences: [{ id, purpose: "result" }] };
@@ -104,6 +107,26 @@ test("photo loading rejects cross-story IDs, revoked consent and mismatched byte
   await assert.rejects(service.loadStoryReferenceImages([reference]), /snapshot/);
   bytes = "photo";
   assert.equal((await service.loadStoryReferenceImages([reference]) as File[]).length, 1);
+});
+
+test("a photo that may not be sent to the model (e.g. a Commons portrait) is usable only as a documentary portrait", async () => {
+  const bytes = "portrait";
+  let reads = 0;
+  const reference = { ...ref, sha256: createHash("sha256").update(bytes).digest("hex") };
+  const service = load("./manage-story-photos.ts", {
+    "@/db/client": {}, "@/db/schema": schema, "./story-materials.types": input,
+    "./story-materials.repository": {
+      findStoryPhoto: async () => ({ ...reference, active: true, providerTransmissionAllowed: false }),
+      publicStoryPhoto: (row: unknown) => row,
+    },
+    "./r2-storage": { readPrivateR2ImageFile: async () => { reads++; return new File([bytes], "photo.webp"); } },
+  });
+  await assert.rejects(service.resolveStoryReferences(id, id, [{ id, purpose: "subject" }]), /only be used as a documentary portrait/);
+  const [portrait] = await service.resolveStoryReferences(id, id, [{ id, purpose: "documentary-portrait" }]) as { purpose: string }[];
+  assert.equal(portrait.purpose, "documentary-portrait");
+  await assert.rejects(service.loadStoryReferenceImages([{ ...reference, purpose: "subject" }]), /permission/);
+  assert.equal(reads, 0, "a model reference never even reads the bytes");
+  assert.equal((await service.loadStoryReferenceImages([{ ...reference, purpose: "documentary-portrait" }]) as File[]).length, 1);
 });
 
 test("a story photo alone selects the reference endpoint and freezes its snapshot", () => {

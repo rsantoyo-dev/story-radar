@@ -30,7 +30,8 @@ export type PhotoEvidence = {
   sourceUrl: string;
   resourceUrl: string;
   author: string;
-  license: "CC0" | "CC BY 4.0" | "CC BY-SA 4.0";
+  /** A reusable Commons license; see commonsPhotoRights. */
+  license: string;
   licenseUrl: string;
   attribution: string;
   creditUrl?: string;
@@ -95,12 +96,45 @@ export function documentaryPhotoLicense(value: string): { license: PhotoEvidence
     licenseUrl: `https://creativecommons.org/${match[1]}/`,
   };
 }
+/**
+ * Licenses that allow reuse with credit. Wider than the place-photo rule (4.0
+ * only) because most Commons portraits are CC BY / BY-SA 2.0–3.0. Share-alike
+ * licenses stay allowed as they are for places; the credit line names it.
+ */
+export function portraitPhotoLicense(value: string): { license: string; licenseUrl: string } | undefined {
+  const match = /^https?:\/\/creativecommons\.org\/(publicdomain\/zero\/1\.0|publicdomain\/mark\/1\.0|licenses\/(by|by-sa)\/(2\.0|2\.5|3\.0|4\.0))\/?(?:deed\.[a-z-]+)?$/i.exec(value.trim());
+  if (!match) return undefined;
+  const path = match[1].toLowerCase();
+  const license = path === "publicdomain/zero/1.0" ? "CC0"
+    : path === "publicdomain/mark/1.0" ? "Public domain"
+    : `CC ${match[2]!.toUpperCase()} ${match[3]}`;
+  return { license, licenseUrl: `https://creativecommons.org/${path}/` };
+}
+
+/**
+ * Rights of a Commons file from its extmetadata: CC0, public domain (tagged or
+ * via the Public Domain Mark) and CC BY / BY-SA 2.0–4.0 — all reusable with
+ * credit. A public-domain file without a license URL gets the canonical Public
+ * Domain Mark URL so the evidence stays re-checkable by eligiblePhoto.
+ */
+export function commonsPhotoRights(meta: { licenseUrl: string; license: string; licenseShortName: string }): { license: string; licenseUrl: string } | undefined {
+  const parsed = portraitPhotoLicense(meta.licenseUrl);
+  if (parsed) return parsed;
+  const publicDomain = /^pd\b|^public domain$/i.test(meta.license.trim()) || /^public domain$/i.test(meta.licenseShortName.trim());
+  return publicDomain && !meta.licenseUrl.trim()
+    ? { license: "Public domain", licenseUrl: "https://creativecommons.org/publicdomain/mark/1.0/" }
+    : undefined;
+}
+/** Credit is owed for every license except CC0 and the public domain. */
+export function photoNeedsAuthor(license: string): boolean {
+  return license !== "CC0" && license !== "Public domain";
+}
 export function eligiblePhoto(photo: PhotoEvidence, place: PlaceEvidence, now = Date.now()): boolean {
   const age = now - Date.parse(photo.retrievedAt);
-  const rights = documentaryPhotoLicense(photo.licenseUrl);
+  const rights = portraitPhotoLicense(photo.licenseUrl);
   return photo.placeId === place.id && photo.width >= 1080 && photo.height >= 640 &&
     /^[a-f0-9]{64}$/.test(photo.sha256) && age >= 0 && age <= 86400_000 &&
-    Boolean(rights && rights.license === photo.license && (photo.license === "CC0" || photo.author.trim())) &&
+    Boolean(rights && rights.license === photo.license && (!photoNeedsAuthor(photo.license) || photo.author.trim())) &&
     Boolean(photo.attribution) && ["image/jpeg", "image/png", "image/webp"].includes(photo.contentType);
 }
 export function documentarySnapshot(value: unknown): DocumentarySnapshot | undefined {

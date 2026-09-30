@@ -634,6 +634,13 @@ export type CreativeKeyFact = {
   attribution?: string;
   /** Deterministic guard metadata; inferred on load for historical briefs. */
   claimGuard?: CreativeFactClaimGuard;
+  /**
+   * "editor": a human added this fact to the story (story_editor_facts). It is
+   * evidence like a source fact, allowed on any slide, and never part of the
+   * narrative evidence key. Absent for facts extracted from sources.
+   */
+  provenance?: "editor";
+  sourceUrl?: string;
 };
 
 export type CreativeSuggestedConcept = {
@@ -751,6 +758,8 @@ export type CreativeUnit = {
    */
   brandReferenceSelection?: BrandReferenceSelection;
   storyReferences?: import("./story-materials.types").StoryReferenceSelection[];
+  /** Immutable, browser-safe provenance of an exact photo in an asset snapshot. */
+  documentaryPortrait?: { photoId: string; sha256: string; name: string; description: string; provenance: string };
   /**
    * Declares the kind of visual this slide needs. `verified-map` routes the
    * slide through the documentary place path (`requiresVerifiedGeography`),
@@ -910,8 +919,22 @@ export type CreativeDraft = GeneratedCreativeDraft & {
    */
   visualFidelityOverride?: VisualFidelityOverride;
   approvedAt?: Date;
+  /** Recorded when approval required an explicit human acknowledgement. */
+  approvalAcknowledgement?: CreativeApprovalAcknowledgement;
+  /**
+   * Visible text a human changed from the AI's last output, as "order:field"
+   * ("0:caption" for the caption). Guards never silently delete that text;
+   * they warn instead and approval asks the human to acknowledge it.
+   */
+  editorAuthoredFields?: string[];
   createdAt: Date;
   updatedAt: Date;
+};
+
+export type CreativeApprovalAcknowledgement = {
+  acknowledgedAt: string;
+  /** Issue codes the human accepted, e.g. REVIEW_PREDATES_EDITS, EDITOR_CLAIM_UNVERIFIED. */
+  codes: string[];
 };
 
 export type VisualFidelityOverride = {

@@ -40,6 +40,7 @@ import {
   type CreativeBriefOverrides,
   type CreativeCharacterSnapshot,
   type CreativeDailyUsage,
+  type CreativeApprovalAcknowledgement,
   type CreativeDraft,
   type CreativeFormat,
   type CreativeInteractiveOverlay,
@@ -72,6 +73,9 @@ import {
   parseCreativeCarouselChromeInput,
 } from "./creative-carousel-chrome-validation";
 import { withCreativeFactClaimGuard } from "./creative-fact-guard";
+import { EDITOR_TEXT_FIELDS } from "./creative-quality";
+import { allowEditorFactsInPlan } from "./creative-narrative-plan";
+import { editorFactToKeyFact, listActiveEditorFacts } from "./story-editor-facts.repository";
 
 type CreativeRunTask = "brief" | "draft";
 
@@ -104,7 +108,7 @@ export async function findLatestCreativeBrief(
     .orderBy(desc(storyCreativeBriefs.createdAt))
     .limit(1);
 
-  return row ? mapCreativeBrief(row) : undefined;
+  return row ? withEditorFacts(mapCreativeBrief(row), row.topicId) : undefined;
 }
 
 export async function findCreativeBriefById(
@@ -122,7 +126,7 @@ export async function findCreativeBriefById(
     )
     .limit(1);
 
-  return row ? mapCreativeBrief(row) : undefined;
+  return row ? withEditorFacts(mapCreativeBrief(row), row.topicId) : undefined;
 }
 
 export async function findCachedCreativeBrief(
@@ -145,7 +149,7 @@ export async function findCachedCreativeBrief(
     .orderBy(desc(storyCreativeBriefs.createdAt))
     .limit(1);
 
-  return row ? mapCreativeBrief(row) : undefined;
+  return row ? withEditorFacts(mapCreativeBrief(row), row.topicId) : undefined;
 }
 
 export async function insertCreativeBrief({
@@ -226,7 +230,7 @@ export async function insertCreativeBrief({
     throw new Error("The creative brief could not be saved");
   }
 
-  return mapCreativeBrief(row);
+  return withEditorFacts(mapCreativeBrief(row), row.topicId);
 }
 
 export async function findCreativeDrafts(
@@ -550,11 +554,12 @@ export async function approveCreativeDraft(
   topicId: string,
   draftId: string,
   expectedVersion?: number,
+  acknowledgement?: CreativeApprovalAcknowledgement,
 ): Promise<CreativeDraft> {
   const now = new Date();
   const updated = await db
     .update(creativeDrafts)
-    .set({ status: "approved", approvedAt: now, updatedAt: now })
+    .set({ status: "approved", approvedAt: now, approvalAcknowledgement: acknowledgement ?? null, updatedAt: now })
     .where(
       and(
         eq(creativeDrafts.id, draftId),
@@ -578,7 +583,7 @@ export async function unapproveCreativeDraft(
   const now = new Date();
   await db
     .update(creativeDrafts)
-    .set({ status: "draft", approvedAt: null, updatedAt: now })
+    .set({ status: "draft", approvedAt: null, approvalAcknowledgement: null, updatedAt: now })
     .where(
       and(
         eq(creativeDrafts.id, draftId),
@@ -819,6 +824,22 @@ function mapCreativeBrief(
   };
 }
 
+/**
+ * Joins the story's active editor facts to a loaded brief, and allows them on
+ * every planned slide. The stored brief row is never rewritten: editor facts
+ * live in story_editor_facts and apply to every brief of the story.
+ */
+async function withEditorFacts(brief: CreativeBrief, topicId: string): Promise<CreativeBrief> {
+  const rows = await listActiveEditorFacts(topicId, brief.storyId);
+  if (!rows.length) return brief;
+  const known = new Set(brief.keyFacts.map((fact) => fact.id));
+  const editorFacts = rows
+    .map(editorFactToKeyFact)
+    .filter((fact) => !known.has(fact.id))
+    .map(withCreativeFactClaimGuard);
+  return allowEditorFactsInPlan({ ...brief, keyFacts: [...brief.keyFacts, ...editorFacts] });
+}
+
 function mapCreativeDraft(
   row: typeof creativeDrafts.$inferSelect,
   units: (typeof creativeUnits.$inferSelect)[],
@@ -935,9 +956,38 @@ function mapCreativeDraft(
         }
       : {}),
     ...(row.approvedAt ? { approvedAt: row.approvedAt } : {}),
+    ...(row.approvalAcknowledgement
+      ? { approvalAcknowledgement: row.approvalAcknowledgement as CreativeDraft["approvalAcknowledgement"] }
+      : {}),
+    ...(() => {
+      const fields = editorAuthoredFields(generated, { caption: row.caption, units: mappedUnits });
+      return fields.length ? { editorAuthoredFields: fields } : {};
+    })(),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+/**
+ * Visible text fields that differ from the AI's last output (ai_snapshot),
+ * i.e. text a human wrote, as "order:field" ("0:caption" for the caption).
+ * Empty for rows without a comparable snapshot: nothing is assumed human.
+ */
+export function editorAuthoredFields(
+  generated: Partial<GeneratedCreativeDraft>,
+  current: Pick<GeneratedCreativeDraft, "caption" | "units">,
+): string[] {
+  if (!generated.units?.length) return [];
+  const fields: string[] = [];
+  if (typeof generated.caption === "string" && generated.caption !== current.caption) fields.push("0:caption");
+  for (const unit of current.units) {
+    const ai = generated.units.find((candidate) => candidate.order === unit.order);
+    if (!ai) continue;
+    for (const field of EDITOR_TEXT_FIELDS) {
+      if ((ai[field] ?? "") !== (unit[field] ?? "")) fields.push(`${unit.order}:${field}`);
+    }
+  }
+  return fields;
 }
 
 function generatedDraftCopyMatches(

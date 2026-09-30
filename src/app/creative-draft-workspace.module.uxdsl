@@ -2355,6 +2355,14 @@
 .assetActionFeedback { margin: 0; padding: density(2) density(3); border: 1px solid palette(success-main); border-radius: radius(2); background: color-mix(in srgb, palette(success-main) 10%, palette(light-light)); color: palette(dark-main); @ds-typo(small); }
 .assetActionFeedbackError { border-color: palette(error-main); background: color-mix(in srgb, palette(error-main) 10%, palette(light-light)); font-weight: 650; }
 
+.editorFacts { display: grid; gap: density(3); margin-top: density(4); }
+.editorFactList { display: grid; gap: density(2); margin: 0; padding: 0; list-style: none; }
+.editorFactList li { display: flex; align-items: flex-start; justify-content: space-between; gap: density(3); padding: density(3); border: 1px solid palette(surface-dark); border-radius: radius(2); background: palette(light-light); }
+.editorFactList li > div { display: grid; gap: density(1); min-width: 0; }
+.editorFactList strong { color: palette(primary-dark); @ds-typo(caption); font-weight: 750; }
+.editorFactList p { margin: 0; color: palette(dark-main); @ds-typo(small); overflow-wrap: anywhere; }
+.editorFactList a { color: palette(primary-dark); @ds-typo(caption); font-weight: 650; }
+
 .assetCard {
   display: grid;
   align-content: start;

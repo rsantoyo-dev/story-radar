@@ -27,15 +27,16 @@ const GENERATION_CALL_CAP = 4;
  * Audit, repair and verify. Reserved rather than "whatever generation left
  * over": a run that spent everything writing and then skipped its own quality
  * gate is the failure mode this split exists to prevent. One audit call, plus
- * up to MAX_SINGLE_SHOT_REPAIR_ROUNDS rounds of (repair + verify).
+ * up to MAX_SINGLE_SHOT_REPAIR_ROUNDS rounds of (repair, an optional
+ * validation retry, and verify).
  */
-const EDITORIAL_CALL_RESERVE = 7;
+const EDITORIAL_CALL_RESERVE = 10;
 
 /**
  * Physical text-provider calls allowed per logical run, including retries.
  * Typical run is 3 (brief, script, audit) since most drafts clear the bar on
- * the first audit or a single cheap repair round; worst case is 11 when every
- * repair round is spent without reaching accepted.
+ * the first audit. The cap reserves one audit plus three rounds of at most two
+ * rewrite calls and one verification call, even if generation spent 4 calls.
  */
 const SINGLE_SHOT_CALL_BUDGET = GENERATION_CALL_CAP + EDITORIAL_CALL_RESERVE;
 
@@ -70,8 +71,9 @@ export type SingleShotPipelineResult = SingleShotCheckpoint;
 /**
  * generate (1 Gemini call, possibly +1 bounded validation retry) -> audit (1
  * Gemini call, read-only, full schema) -> up to MAX_SINGLE_SHOT_REPAIR_ROUNDS
- * rounds of [repair (1 Luna call, or whichever repairWriterModel is
- * configured) -> verify (1 Gemini call, read-only, slim)], stopping the
+ * rounds of [repair (up to 2 Luna calls, or whichever repairWriterModel is
+ * configured, when validation asks for a retry) -> verify (1 Gemini call,
+ * read-only, slim)], stopping the
  * moment a round is accepted or fails to improve on the last kept draft. The
  * critic is always Gemini — a different model family from any configured
  * OpenAI writer, so it is never the writer grading its own draft. Never
@@ -266,12 +268,11 @@ export async function runSingleShotCreativePipeline(
   };
 
   for (let attempt = 1; attempt <= MAX_SINGLE_SHOT_REPAIR_ROUNDS; attempt++) {
-    if (callsUsed + 2 > SINGLE_SHOT_CALL_BUDGET) {
+    if (callsUsed + 3 > SINGLE_SHOT_CALL_BUDGET) {
       return stopIncomplete("No call budget remains for another repair-and-verify round; kept as the best available version for human review.");
     }
 
     repairAttempted = true;
-    callsUsed += 1;
     let repaired: GeneratedCreativeDraft | undefined;
     let repairedProvider = provider;
     let repairedModel = model;
@@ -286,7 +287,7 @@ export async function runSingleShotCreativePipeline(
         // to the same writer that wrote the script when unset.
         carouselWriterModel: generatorOptions.repairWriterModel ?? generatorOptions.carouselWriterModel,
         existingBrief: brief,
-        maxAttempts: 1,
+        maxAttempts: 2,
         revision: {
           previousDraft: bestDraft,
           findings: actionable,
@@ -294,6 +295,7 @@ export async function runSingleShotCreativePipeline(
           thresholds: CREATIVE_PUBLISHABLE_THRESHOLDS,
         },
       });
+      callsUsed += revision.attempts;
       usage = sumCreativeAiUsage(usage, revision.usage);
       const candidate = revision.draft;
       const inspect = (value: GeneratedCreativeDraft) =>
@@ -318,6 +320,9 @@ export async function runSingleShotCreativePipeline(
         repairedModel = revision.model;
       }
     } catch (error) {
+      // The failed rewrite may have spent either call. Reserve both so a
+      // later round cannot consume the independent verifier's budget.
+      callsUsed += 2;
       repairRejectionReason = error instanceof Error ? error.message : "Correction failed local validation";
     }
 

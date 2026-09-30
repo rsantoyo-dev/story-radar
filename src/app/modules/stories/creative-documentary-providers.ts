@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import sharp from "sharp";
 import { lookupPublicAddress } from "../sources/rss/fetch-rss-feed";
 import type { CreativeGeoScope } from "./creative-content.types";
-import { documentaryPhotoLicense, mentionFitsScope, normalizePlaceName, record, type PlaceMention, type PlaceEvidence, type PhotoEvidence } from "./creative-documentary";
+import { commonsPhotoRights, photoNeedsAuthor, mentionFitsScope, normalizePlaceName, record, type PlaceMention, type PlaceEvidence, type PhotoEvidence } from "./creative-documentary";
 
 const HOSTS = new Set(["ws.mapserver.transports.gouv.qc.ca", "www.wikidata.org", "commons.wikimedia.org", "upload.wikimedia.org"]);
 /** Fixed providers, no redirects, connection-time public DNS validation, bounded body/time. */
@@ -54,9 +54,20 @@ export function documentaryProviders(signal: AbortSignal, language = "en", profi
   const entities = new Map<string, Entity>();
   async function api(host: string, params: Record<string, string>): Promise<Record<string, unknown>> {
     if (++calls > 36) throw new Error("Geographic lookup budget exhausted");
-    const url = new URL(`https://${host}/w/api.php`);
-    url.search = new URLSearchParams({ format: "json", maxlag: "5", ...params }).toString();
-    const data: unknown = JSON.parse((await fetchDocumentaryResource(url, signal, 2_000_000, contact)).toString("utf8"));
+    const request = async (maxlag: boolean) => {
+      const url = new URL(`https://${host}/w/api.php`);
+      url.search = new URLSearchParams({ format: "json", ...(maxlag ? { maxlag: "5" } : {}), ...params }).toString();
+      return JSON.parse((await fetchDocumentaryResource(url, signal, 2_000_000, contact)).toString("utf8")) as unknown;
+    };
+    let data = await request(true);
+    // A lagged Wikidata replica rejects maxlag requests. Wait briefly, then ask
+    // once without it: one bounded request, instead of silently dropping the
+    // slide's verified photo to a fallback illustration.
+    if (record(data) && record(data.error) && data.error.code === "maxlag") {
+      if (++calls > 36) throw new Error("Geographic lookup budget exhausted");
+      await new Promise(resolve => setTimeout(resolve, 2_000));
+      data = await request(false);
+    }
     if (!record(data) || data.error) throw new Error("Geographic lookup unavailable");
     return data;
   }
@@ -117,10 +128,11 @@ export function documentaryProviders(signal: AbortSignal, language = "en", profi
     if (!record(info) || !record(info.extmetadata)) return undefined;
     const meta = info.extmetadata;
     const get = (key: string) => record(meta[key]) && typeof meta[key].value === "string" ? meta[key].value : "";
-    const rights = documentaryPhotoLicense(get("LicenseUrl"));
+    const rights = commonsPhotoRights({ licenseUrl: get("LicenseUrl"), license: get("License"), licenseShortName: get("LicenseShortName") });
     if (!rights || get("Restrictions") || get("Permission") || typeof info.url !== "string" || typeof info.descriptionurl !== "string") return undefined;
     const { license, licenseUrl } = rights;
-    const author = get("Artist").replace(/<[^>]*>/gu, "").trim();
+    const artist = get("Artist").replace(/<[^>]*>/gu, "").trim();
+    const author = /no machine-readable author/i.test(artist) || !artist ? (photoNeedsAuthor(license) ? "" : "Unknown author") : artist;
     if (!author || author.length > 160 || Number(info.width) < 1080 || Number(info.height) < 640 || Number(info.size) > 15_000_000) return undefined;
     const url = new URL(info.url);
     if (url.hostname !== "upload.wikimedia.org" || !url.pathname.startsWith("/wikipedia/commons/")) return undefined;

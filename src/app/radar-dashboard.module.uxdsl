@@ -1495,9 +1495,11 @@
 .candidateCardMeta, .candidateCardBadges { display: flex; flex-wrap: wrap; align-items: center; gap: density(1) density(2); }
 .candidateCardMeta { color: palette(tertiary-main); @ds-typo(caption); }
 .candidateCardContent h3 { margin: density(2) 0; color: palette(dark-main); @ds-typo(h3); font-size: 1.05rem; line-height: 1.35; }
-.candidateCardContent h3 a { color: inherit; text-decoration: none; }
-.candidateCardContent h3 a:hover { color: palette(primary-dark); text-decoration: underline; }
-.candidateCardContent h3 a:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 2px; }
+.candidateCardContent h3 a, .candidateCardContent h3 button { color: inherit; text-decoration: none; }
+.candidateCardContent h3 button { padding: 0; border: 0; background: transparent; font: inherit; text-align: left; cursor: pointer; }
+.candidateCardContent h3 a:hover, .candidateCardContent h3 button:not(:disabled):hover { color: palette(primary-dark); text-decoration: underline; }
+.candidateCardContent h3 a:focus-visible, .candidateCardContent h3 button:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 2px; }
+.candidateCardContent h3 button:disabled { cursor: default; opacity: 0.6; }
 .candidateCardContent h3 a span { color: palette(tertiary-main); font-size: 0.875rem; }
 .candidateCardBadges > span:not(.tableBadge) { padding: density(1) density(2); border-radius: radius(full); background: palette(surface-main); color: palette(tertiary-main); @ds-typo(caption); }
 .candidateCardReason { margin: density(2) 0 0; color: palette(tertiary-main); @ds-typo(small); }
@@ -2068,7 +2070,7 @@
   max-width: 390px !important;
 }
 
-.storyTitleCell > a {
+.storyTitleCell > a, .storyTitleCell > button {
   display: block;
   color: palette(dark-main);
   @ds-typo (caption);
@@ -2078,10 +2080,13 @@
   text-decoration: none;
 }
 
-.storyTitleCell > a:hover {
+.storyTitleCell > button { padding: 0; border: 0; background: transparent; text-align: left; cursor: pointer; }
+.storyTitleCell > a:hover, .storyTitleCell > button:not(:disabled):hover {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+.storyTitleCell > button:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 2px; }
+.storyTitleCell > button:disabled { cursor: default; opacity: 0.6; }
 
 .aiResearchStoryBadge {
   margin-top: density(1);

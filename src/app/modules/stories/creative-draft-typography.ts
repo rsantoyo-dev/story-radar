@@ -41,9 +41,10 @@ export async function renderDraftTypography(
   totalSlides?: number,
   carouselChromeSettings?: CreativeCarouselChromeSettings,
 ): Promise<Buffer> {
+  const documentaryPortrait = original && unit.documentaryPortrait;
   const color = profile.brandPalette.find(c => /^#[0-9a-f]{6}$/i.test(c.color))?.color || "#246b4a";
   const layers: OverlayOptions[] = [];
-  const background = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350"><rect width="1080" height="1350" fill="#f7faf8"/><rect width="16" height="1350" fill="${color}"/><rect x="68" y="119" width="944" height="3" fill="${color}"/><rect x="68" y="1210" width="944" height="2" fill="${color}"/></svg>`;
+  const background = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350"><rect width="1080" height="1350" fill="#f7faf8"/><rect width="16" height="1350" fill="${color}"/><rect x="68" y="119" width="944" height="3" fill="${color}"/><rect x="68" y="${documentaryPortrait ? 1264 : 1210}" width="944" height="2" fill="${color}"/></svg>`;
   layers.push({input:Buffer.from(background),left:0,top:0});
   const add = async (value: string, top: number, height: number, size: number, foreground = "#18392d") => {
     if (!value.trim()) return;
@@ -53,21 +54,22 @@ export async function renderDraftTypography(
   await add(profile.name, 48, 48, 26,color);
   await add(unit.headline, 150, 210, 48);
   if (original) {
-    const input = await sharp(original, { limitInputPixels: 40_000_000 }).rotate().resize(944, 460, { fit: "contain", background:"#f7faf8", withoutEnlargement:true }).png().toBuffer();
-    layers.push({ input, left: 68, top: 390 });
+    const photoHeight = documentaryPortrait ? 610 : 460;
+    const input = await sharp(original, { limitInputPixels: 40_000_000 }).rotate().resize(944, photoHeight, { fit: "contain", background:"#f7faf8", withoutEnlargement:true }).png().toBuffer();
+    layers.push({ input, left: 68, top: documentaryPortrait ? 360 : 390 });
   } else if (unit.assetRequest !== "typography-only") {
     layers.push({ input: editorialGraphic(unit, color), left: 68, top: 400 });
   }
   const graphic = original || unit.assetRequest !== "typography-only";
-  await add([unit.subheadline, unit.body].filter(Boolean).join("\n\n"), graphic ? 910 : 490, graphic ? 150 : 390, 30);
-  await add([unit.continuationCue, unit.ctaQuestion].filter(Boolean).join("\n"), graphic ? 1080 : 970, 110, 25,color);
+  await add([unit.subheadline, unit.body].filter(Boolean).join("\n\n"), documentaryPortrait ? 990 : graphic ? 910 : 490, documentaryPortrait ? 100 : graphic ? 150 : 390, 30);
+  await add([unit.continuationCue, unit.ctaQuestion].filter(Boolean).join("\n"), documentaryPortrait ? 1095 : graphic ? 1080 : 970, documentaryPortrait ? 75 : 110, 25,color);
   const evidence=unit.placeVisual;
   const french = /^(fr|french|français)/iu.test(profile.language);
-  if (original && evidence?.locationAnchor) await add(french ? "Repère d’adresse · l’événement se tient à proximité" : "Address reference · event takes place nearby", 865, 35, 20, color);
-  const context = evidence?.representation === "photo" ? "Archive · " : evidence?.representation === "map" ? "Localisation · " : unit.assetRequest !== "typography-only" ? (french ? "Illustration conceptuelle" : "Conceptual illustration") : "";
-  const credit=evidence?.attribution || (original ? "© OpenStreetMap contributors · openstreetmap.org/copyright" : "");
+  if (original && evidence?.locationAnchor && !documentaryPortrait) await add(french ? "Repère d’adresse · l’événement se tient à proximité" : "Address reference · event takes place nearby", 865, 35, 20, color);
+  const context = documentaryPortrait ? (french ? "Photographie documentaire · " : "Documentary photograph · ") : evidence?.representation === "photo" ? "Archive · " : evidence?.representation === "map" ? "Localisation · " : unit.assetRequest !== "typography-only" ? (french ? "Illustration conceptuelle" : "Conceptual illustration") : "";
+  const credit=unit.documentaryPortrait?.provenance || evidence?.attribution || (original ? "© OpenStreetMap contributors · openstreetmap.org/copyright" : "");
   const photoUse = evidence?.representation === "photo" ? (french ? " · Photo redimensionnée, non recadrée" : " · Photo resized, not cropped") : "";
-  await add(context+credit+photoUse,1220,80,16);
+  await add(context+credit+photoUse,documentaryPortrait ? 1180 : 1220,80,16);
   const png = await sharp({ create: { width: 1080, height: 1350, channels: 4, background: "#f7faf8" } }).composite(layers).png().toBuffer();
   if (unit.type !== "carousel-slide" || !totalSlides) return png;
   const chrome = buildCreativeCarouselChrome({

@@ -36,3 +36,25 @@ export const storyReferencePhotos = pgTable("story_reference_photos", {
   foreignKey({ columns: [table.topicId, table.storyId], foreignColumns: [topicStories.topicId, topicStories.storyId] }).onDelete("cascade"),
   uniqueIndex("story_reference_object_unique").on(table.objectKey),
 ]);
+
+/**
+ * Editor-provided evidence for one story: a fact the sources lack but a human
+ * vouches for (e.g. a local peak season). It joins the brief's facts with
+ * provenance "editor" so guards, the critic and regenerations treat it as
+ * evidence instead of stripping copy that relies on it. Never edited in place:
+ * retracting sets active=false and keeps the row for history.
+ */
+export const storyEditorFacts = pgTable("story_editor_facts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  topicId: uuid("topic_id").notNull(),
+  storyId: uuid("story_id").notNull(),
+  statement: text("statement").notNull(),
+  sourceUrl: text("source_url"),
+  note: text("note"),
+  createdBy: text("created_by"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  retractedAt: timestamp("retracted_at", { withTimezone: true }),
+}, table => [
+  foreignKey({ columns: [table.topicId, table.storyId], foreignColumns: [topicStories.topicId, topicStories.storyId] }).onDelete("cascade"),
+]);

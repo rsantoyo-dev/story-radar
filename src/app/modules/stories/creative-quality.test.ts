@@ -4,6 +4,7 @@ import test from "node:test";
 
 import type {
   CreativeKeyFact,
+  CreativeQualityIssue,
   CreativeQualityReview,
   CreativeQualityScores,
   GeneratedCreativeDraft,
@@ -15,7 +16,9 @@ import {
   creativeQualityReviewHasUnresolvedBlockers,
   creativeQualityThresholdFailures,
   deterministicCreativeQualityIssues,
+  EDITOR_CLAIM_UNVERIFIED,
   getCreativeDraftApprovalState,
+  REVIEW_PREDATES_EDITS,
   isBetterCreativeQualityReview,
   repairDeterministicCreativeCopy,
   visibleDraftLanguageIssues,
@@ -1137,6 +1140,7 @@ test("requires explicit acknowledgement for unresolved automated review notes", 
     {
       blockers: [],
       requiresHumanReviewAcknowledgement: true,
+      acknowledgements: [],
     },
   );
   assert.deepEqual(
@@ -1160,6 +1164,7 @@ test("requires explicit acknowledgement for unresolved automated review notes", 
         },
       ],
       requiresHumanReviewAcknowledgement: false,
+      acknowledgements: [],
     },
   );
 });
@@ -1332,7 +1337,6 @@ test("stale, fallback and post-correction reviews cannot authorize approval", ()
     repairPasses: 1, critic: { provider: "openai", model: "test" },
   };
   for (const [review, current] of [
-    [base, false],
     // Groq/Cloudflare are unmetered fallback text providers, never a genuine
     // independent judgment — unlike "google", which is the single-shot
     // pipeline's actual independent critic (see runGeminiEditorialQualityGate).
@@ -1346,6 +1350,44 @@ test("stale, fallback and post-correction reviews cannot authorize approval", ()
   assert.deepEqual(getCreativeDraftApprovalState({ deterministicIssues: [], qualityReview: {
     ...base, issues: [{ code: "EDITORIAL_REVIEW_RECOVERED", severity: "warning", message: "First model failed; final reviewer succeeded." }],
   }, qualityReviewIsCurrent: true }).blockers, []);
+  // A real review that completed on an earlier text is not a missing review:
+  // the human decides whether to approve the later changes (or re-run it).
+  for (const provider of ["openai", "google"] as const) {
+    const stale = getCreativeDraftApprovalState({ deterministicIssues: [], qualityReview: { ...base, critic: { provider, model: "test" } }, qualityReviewIsCurrent: false });
+    assert.deepEqual(stale.blockers, []);
+    assert.equal(stale.requiresHumanReviewAcknowledgement, true);
+    assert.deepEqual(stale.acknowledgements.map(issue => issue.code), [REVIEW_PREDATES_EDITS]);
+  }
+  // …but a stale fallback or unfinished review still cannot authorize anything.
+  const staleFallback = getCreativeDraftApprovalState({ deterministicIssues: [], qualityReview: { ...base, critic: { provider: "groq", model: "test" } }, qualityReviewIsCurrent: false });
+  assert.ok(staleFallback.blockers.some(issue => issue.code === "CRITIC_REVIEW_REQUIRED"));
+});
+
+test("an unsupported claim in text a human wrote needs acknowledgement, not a hard block", () => {
+  const review: CreativeQualityReview = {
+    status: "accepted", scores: { ...CREATIVE_QUALITY_THRESHOLDS }, issues: [],
+    repairPasses: 0, critic: { provider: "google", model: "gemini-test" },
+  };
+  const unsupported: CreativeQualityIssue = { code: "UNSUPPORTED_NUMBER", severity: "blocker", unitOrder: 1, message: "Slide 1 uses 3 without support." };
+  const human = getCreativeDraftApprovalState({
+    deterministicIssues: [unsupported], qualityReview: review, qualityReviewIsCurrent: false, editorAuthoredFields: ["1:body"],
+  });
+  assert.deepEqual(human.blockers, []);
+  assert.equal(human.requiresHumanReviewAcknowledgement, true);
+  assert.deepEqual(human.acknowledgements.map(issue => issue.code).sort(), [EDITOR_CLAIM_UNVERIFIED, REVIEW_PREDATES_EDITS].sort());
+  assert.match(human.acknowledgements.find(issue => issue.code === EDITOR_CLAIM_UNVERIFIED)!.message, /Slide 1 .*editor fact/);
+
+  // The same claim in AI-written text (or on another slide) stays a hard block.
+  for (const editorAuthoredFields of [undefined, ["2:headline"]]) {
+    const ai = getCreativeDraftApprovalState({ deterministicIssues: [unsupported], qualityReview: review, qualityReviewIsCurrent: true, editorAuthoredFields });
+    assert.ok(ai.blockers.some(issue => issue.code === "UNSUPPORTED_NUMBER"));
+  }
+  // Other deterministic blockers on human text are never waived.
+  const structural = getCreativeDraftApprovalState({
+    deterministicIssues: [{ code: "MISSING_HEADLINE", severity: "blocker", unitOrder: 1, message: "No headline." }],
+    qualityReview: review, qualityReviewIsCurrent: true, editorAuthoredFields: ["1:headline"],
+  });
+  assert.ok(structural.blockers.some(issue => issue.code === "MISSING_HEADLINE"));
 });
 
 test("a completed Gemini critic (single-shot) authorizes approval same as OpenAI's", () => {
@@ -1355,6 +1397,17 @@ test("a completed Gemini critic (single-shot) authorizes approval same as OpenAI
   };
   const state = getCreativeDraftApprovalState({ deterministicIssues: [], qualityReview: review, qualityReviewIsCurrent: true });
   assert.deepEqual(state.blockers, []);
+});
+
+test("a rejected review with a disconfirmed numeric finding asks for human review without blocking", () => {
+  const review: CreativeQualityReview = {
+    status: "rejected", scores: { ...CREATIVE_QUALITY_THRESHOLDS, factuality: 92 },
+    issues: [{ code: "UNSUPPORTED_NUMBER", severity: "blocker", message: "The draft uses 7 without support." }],
+    repairPasses: 0, critic: { provider: "google", model: "gemini-test" },
+  };
+  const state = getCreativeDraftApprovalState({ deterministicIssues: [], qualityReview: review, qualityReviewIsCurrent: true });
+  assert.deepEqual(state.blockers, []);
+  assert.equal(state.requiresHumanReviewAcknowledgement, true);
 });
 
 test("unsupported absolute validation is stable across repeated checks and adjacent slides", () => {

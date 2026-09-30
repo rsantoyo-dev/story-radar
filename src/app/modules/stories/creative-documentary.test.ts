@@ -311,6 +311,24 @@ test("same-draft typography renders saved copy without geographic generation", a
   assert.equal(composer.DRAFT_TYPOGRAPHY_ENDPOINT, "local/draft-typography-v1");
 });
 
+test("documentary portrait composition keeps the uploaded face pixels in a 4:5 slide", async () => {
+  const renderer = load<typeof import("./creative-documentary-render")>("creative-documentary-render.ts", { sharp });
+  const composer = load<typeof import("./creative-draft-typography")>("creative-draft-typography.ts", {
+    sharp,
+    "./creative-documentary-render": renderer,
+    "./creative-carousel-chrome": {
+      buildCreativeCarouselChrome: () => { throw new Error("not exercised by this test"); },
+      compositeCreativeCarouselChrome: async () => { throw new Error("not exercised by this test"); },
+    },
+  });
+  const original = await sharp({ create: { width: 600, height: 900, channels: 3, background: "#d94235" } }).png().toBuffer();
+  const unit = { order: 2, type: "carousel-slide", role: "content", headline: "Verified person", visualDirection: "Portrait", factIds: [], assetRequest: "generated-image", aspectRatio: "4:5", documentaryPortrait: { photoId: "photo", sha256: "hash", name: "Person", description: "Original photo", provenance: "Photographer · CC BY 4.0 · source" } } as import("./creative-content.types").CreativeUnit;
+  const png = await composer.renderDraftTypography(unit, profile, original);
+  const pixel = await sharp(png).extract({ left: 540, top: 650, width: 1, height: 1 }).removeAlpha().raw().toBuffer();
+  assert.deepEqual([...pixel], [217, 66, 53]);
+  assert.equal((await sharp(png).metadata()).height, 1350);
+});
+
 test("a typography-only carousel slide gets the numbering badge; a non-carousel unit and an omitted totalSlides do not", async () => {
   // The real compositor, not a stub: this is the exact regression the badge
   // silently missing on a "no verified place" slide would reintroduce.

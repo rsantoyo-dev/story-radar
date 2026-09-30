@@ -530,6 +530,12 @@ export const creativeDrafts = pgTable(
       withTimezone: true,
       mode: "date",
     }),
+    /**
+     * What a human explicitly accepted when approving: copy edited after the
+     * automated review, or editor text the sources do not support. Null when
+     * nothing needed acknowledgement. Cleared on unapprove.
+     */
+    approvalAcknowledgement: jsonb("approval_acknowledgement"),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
