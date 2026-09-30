@@ -162,7 +162,22 @@ export async function getCreativeWorkspaceState(
       model: configuration.model,
       promptVersion: configuration.draftPromptVersions[draft.format],
     };
+    // The writer model is part of the carousel prompt version (so the cache
+    // regenerates with the new writer), but swapping the writer alone does
+    // not change the source, brief or policy: the draft stays current.
+    const withoutWriter = (version: string) => version.replace(/-writer-.+$/u, "");
+    const writerOnlyChange =
+      draft.promptVersion !== generation.promptVersion &&
+      withoutWriter(draft.promptVersion) === withoutWriter(generation.promptVersion);
     return (
+      (writerOnlyChange &&
+        [generation, { provider: draft.provider, model: draft.model }].some((writer) =>
+          draft.inputHash === createDraftInputHash(brief.id, brief.inputHash, draft.format, draft.outputAspectRatio, {
+            provider: writer.provider,
+            model: writer.model,
+            promptVersion: draft.promptVersion,
+          }),
+        )) ||
       draft.inputHash === createDraftInputHash(brief.id, brief.inputHash, draft.format, draft.outputAspectRatio, generation) ||
       draft.inputHash === createLegacyDraftInputHash(brief.id, brief.inputHash, draft.format, draft.outputAspectRatio, characterRoster, generation) ||
       // Single-shot drafts saved with a brief between 5d8b576 and its fix
