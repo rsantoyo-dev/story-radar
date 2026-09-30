@@ -131,6 +131,7 @@ import {
 } from "./manage-creative-content";
 import {
   deterministicCreativeQualityIssues,
+  isCreativeDraftReadyForAutomation,
   repairDeterministicCreativeCopy,
 } from "./creative-quality";
 
@@ -257,10 +258,21 @@ export async function generateCreativeDraftAssets(
   topicId: string,
   draftId: string,
   imageQuality: CreativeImageQuality = DEFAULT_CREATIVE_IMAGE_QUALITY,
+  options: { provisional?: boolean } = {},
 ): Promise<CreativeAssetGenerationResponse> {
   const draft = await requireCreativeDraft(topicId, draftId);
   await assertStoryEditionCurrent(topicId, draft);
-  requireApprovedDraft(draft.status);
+  // Provisional images (a prepared scoop) may precede the human's script
+  // approval, but only for a draft the independent critic accepted for this
+  // exact version. The script stays unapproved; images cannot be approved or
+  // published until it is, and an edit regenerates only the changed slides.
+  if (options.provisional && draft.status !== "approved") {
+    if (!isCreativeDraftReadyForAutomation(draft, draft.format, draft.qualityReviewIsCurrent === true)) {
+      throw new CreativeContentConflictError("Provisional images need a draft the automated editorial review accepted for this exact version.");
+    }
+  } else {
+    requireApprovedDraft(draft.status);
+  }
   const brief = await requireCreativeBrief(topicId, draft.briefId);
   const documentaryVisuals = await reuseDocumentaryVisuals(topicId, draft, brief.keyFacts);
   if (documentaryVisuals.size || draft.units.some(unit => unit.storyReferences?.some(ref => ref.purpose === "documentary-portrait"))) return composeDraftPlaceVisuals(topicId, draft, brief, imageQuality, documentaryVisuals);

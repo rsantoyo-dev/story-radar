@@ -35,6 +35,12 @@ export type DailyPreparationProgress = {
   editorialDirection?: string;
   /** The images step's created asset batch, for the panel to link into. */
   assetBatchId?: string;
+  /** Who started the run: an editor, the scheduled reader, or a detected scoop. */
+  trigger?: "manual" | "auto" | "scoop";
+  /** The topic_scoops row a scoop run prepares. */
+  scoopId?: string;
+  /** Images were generated before the script's human approval (a scoop). */
+  provisionalImages?: boolean;
 };
 /** The brief step's contentSufficiency checkpoint message — a human already
  * reviewing it in the workspace can override it once for this exact brief;

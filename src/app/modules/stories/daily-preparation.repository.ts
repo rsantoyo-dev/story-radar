@@ -7,14 +7,34 @@ import { dailyPreparationRuns as runs } from "@/db/schema";
 export async function latestPreparation(topicId:string) {
   return (await db.select().from(runs).where(eq(runs.topicId,topicId)).orderBy(desc(runs.startedAt)).limit(1))[0];
 }
-export async function startPreparation(topicId:string,lineId:string,lineName:string,timezone:string,mode:"day"|"draft"="day",targetStep:DailyPreparationStep=mode==="draft"?"brief":"recommend") {
+export async function startPreparation(topicId:string,lineId:string,lineName:string,timezone:string,mode:"day"|"draft"="day",targetStep:DailyPreparationStep=mode==="draft"?"brief":"recommend",trigger:"manual"|"auto"="manual") {
   const [,inserted]=await db.batch([
     db.execute(sql`SELECT id FROM topics WHERE id=${topicId}::uuid FOR UPDATE`),
     db.execute(sql`INSERT INTO daily_preparation_runs(topic_id,line_id,timezone,progress)
-      SELECT ${topicId}::uuid,${lineId}::uuid,${timezone},${JSON.stringify({lineName,mode:DAILY_PREPARATION_STEPS.indexOf(targetStep)>2?"draft":mode,targetStep,evaluated:0,evaluationBatches:0})}::jsonb
+      SELECT ${topicId}::uuid,${lineId}::uuid,${timezone},${JSON.stringify({lineName,mode:DAILY_PREPARATION_STEPS.indexOf(targetStep)>2?"draft":mode,targetStep,evaluated:0,evaluationBatches:0,trigger})}::jsonb
       WHERE NOT EXISTS(SELECT 1 FROM daily_preparation_runs WHERE topic_id=${topicId}::uuid AND status='running') RETURNING id`),
   ]);
   return {run:await latestPreparation(topicId),created:!!inserted.rows.length};
+}
+/**
+ * A scoop run starts from its story (Approve → Content → Focus → Script),
+ * skipping collection and selection, which already happened. It never
+ * approves the script itself. Like every run,
+ * it waits while another run of the Topic is active.
+ */
+export async function startScoopPreparation(input:{topicId:string;lineId:string;lineName:string;timezone:string;storyId:string;storyTitle?:string;scoopId:string;collectionRunId?:string;targetStep?:DailyPreparationStep}) {
+  // Stops at the critic-reviewed draft by default. Passing targetStep "images"
+  // would also generate provisional images (supported, not enabled).
+  const progress={lineName:input.lineName,mode:"draft",targetStep:input.targetStep??"brief",evaluated:0,evaluationBatches:0,trigger:"scoop",
+    scoopId:input.scoopId,storyId:input.storyId,...(input.storyTitle?{storyTitle:input.storyTitle}:{}),...(input.collectionRunId?{collectionRunId:input.collectionRunId}:{})};
+  const [,inserted]=await db.batch([
+    db.execute(sql`SELECT id FROM topics WHERE id=${input.topicId}::uuid FOR UPDATE`),
+    db.execute(sql`INSERT INTO daily_preparation_runs(topic_id,line_id,timezone,step,progress)
+      SELECT ${input.topicId}::uuid,${input.lineId}::uuid,${input.timezone},'approve',${JSON.stringify(progress)}::jsonb
+      WHERE NOT EXISTS(SELECT 1 FROM daily_preparation_runs WHERE topic_id=${input.topicId}::uuid AND status='running') RETURNING id`),
+  ]);
+  const id=(inserted.rows[0] as {id?:string}|undefined)?.id;
+  return id ? (await db.select().from(runs).where(eq(runs.id,id)).limit(1))[0] : undefined;
 }
 /** Extend only the latest stopped run; never overwrite a worker's active lease. */
 export async function continuePreparation(topicId:string,id:string,targetStep:DailyPreparationStep) {

@@ -1,0 +1,51 @@
+# Scheduled reader (per-Topic automatic collection and scoop preparation).
+#
+# Every 15 minutes this calls one bounded worker pass. The app decides which
+# Topics are due (their own interval and active hours), flags scoops and
+# prepares them ahead. It never approves a script or publishes anything.
+#
+# Configure in the repository settings:
+#   Variables → AUTO_COLLECTION_WORKER_URL     e.g. https://story-radar.vercel.app
+#   Secrets   → AUTO_COLLECTION_WORKER_SECRET  same value as on Vercel
+# Until both exist the job exits early without failing.
+name: Auto collection worker
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: auto-collection-worker
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Run one auto collection pass
+        env:
+          APP_URL: ${{ vars.AUTO_COLLECTION_WORKER_URL }}
+          WORKER_SECRET: ${{ secrets.AUTO_COLLECTION_WORKER_SECRET }}
+        run: |
+          if [ -z "$APP_URL" ] || [ -z "$WORKER_SECRET" ]; then
+            echo "::notice::AUTO_COLLECTION_WORKER_URL (variable) or AUTO_COLLECTION_WORKER_SECRET (secret) is not set; nothing to do."
+            exit 0
+          fi
+          case "$APP_URL" in
+            https://*) ;;
+            *) echo "::error::AUTO_COLLECTION_WORKER_URL must start with https://"; exit 1 ;;
+          esac
+          code=$(curl -sS -o /tmp/body -w '%{http_code}' -X POST --max-time 300 \
+            -H "Authorization: Bearer $WORKER_SECRET" \
+            "${APP_URL%/}/api/internal/auto-collection/tick") || code=000
+          echo "HTTP $code"
+          if [ "$code" = "200" ]; then
+            cat /tmp/body; echo
+          else
+            echo "::error::Auto collection pass failed with HTTP $code (check the secret, the URL and the deployment logs)."
+            exit 1
+          fi

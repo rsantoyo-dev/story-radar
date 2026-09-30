@@ -582,6 +582,13 @@
       "when": 1790698038518,
       "tag": "0083_married_goblin_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1790732532104,
+      "tag": "0084_lame_wild_pack",
+      "breakpoints": true
     }
   ]
 }

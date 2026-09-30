@@ -33,3 +33,4 @@ export * from "./daily-preparation-runs";
 export * from "./creative-text-accounting";
 
 export * from "./auth";
+export * from "./topic-auto-collection";

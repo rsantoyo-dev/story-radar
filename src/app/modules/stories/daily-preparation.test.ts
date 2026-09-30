@@ -17,7 +17,7 @@ function load(file:string,mocks:Record<string,unknown>) {
 const topicId="11111111-1111-4111-8111-111111111111";
 const lineId="22222222-2222-4222-8222-222222222222";
 class LimitError extends Error {}
-function workflow({failEvaluate=false,limit=false,cachedCollection=false,draftMode=false,incomplete=false,likelyFull=false,failApproval=false,noChoice=false,editorialReady=true}={}) {
+function workflow({failEvaluate=false,limit=false,cachedCollection=false,draftMode=false,incomplete=false,likelyFull=false,failApproval=false,noChoice=false,editorialReady=true,scoop=false}={}) {
   const calls:string[]=[];
   const workspaceCalls:unknown[][]=[];
   const briefCalls:unknown[][]=[];
@@ -52,7 +52,7 @@ function workflow({failEvaluate=false,limit=false,cachedCollection=false,draftMo
       createCreativeDraft:async()=>{calls.push("draft");return {state:{drafts:[{id:"draft",briefId:"brief",inputIsCurrent:true,format:"carousel",status:"draft",qualityReview:{status:"accepted",issues:[]}}]}};},
     },
     "./manage-creative-assets":{
-      generateCreativeDraftAssets:async()=>{calls.push("images");return {batch:{id:"batch"},configuration:{},outcome:"submitted"};},
+      generateCreativeDraftAssets:async(_topic:unknown,_draft:unknown,_quality:unknown,options?:{provisional?:boolean})=>{calls.push(options?.provisional?"images:provisional":"images");return {batch:{id:"batch"},configuration:{},outcome:"submitted"};},
     },
     "./daily-preparation.repository":{
       claimPreparation:async()=>run.status==="running"?structuredClone(run):undefined,
@@ -60,6 +60,7 @@ function workflow({failEvaluate=false,limit=false,cachedCollection=false,draftMo
       savePreparation:async(_run:unknown,values:Partial<typeof run>)=>{run={...run,...values};},
     },
   });
+  if(scoop)run.progress.trigger="scoop";
   return {service,calls,workspaceCalls,briefCalls,get run(){return run;},approveDraft(){draftApproved=true;},retry(){run.status="running";failEvaluate=false;}};
 }
 test("daily workflow checkpoints collection, evaluates uncached batches then recommends",async()=>{
@@ -288,4 +289,23 @@ test("approve-draft requires the existing human approval and never creates it",a
   w.run.status="running";w.run.step="approve-draft";
   await w.service.drivePreparation(topicId,lineId);
   assert.equal(w.calls.includes("approve-draft"),false);
+});
+
+test("a scoop whose draft the critic accepted reaches provisional images without approving the script",async()=>{
+  const w=workflow({draftMode:true,scoop:true});
+  w.run.progress.targetStep="images";
+  await w.service.drivePreparation(topicId,lineId);
+  assert.equal(w.run.status,"completed");
+  assert.equal(w.run.progress.provisionalImages,true);
+  assert.equal(w.calls.at(-1),"images:provisional","images are generated as provisional");
+  assert.equal(w.calls.includes("approve-draft"),false,"the script is never approved automatically");
+});
+
+test("a scoop whose draft failed automated review stops before spending on images",async()=>{
+  const w=workflow({draftMode:true,scoop:true,editorialReady:false});
+  w.run.progress.targetStep="images";
+  await w.service.drivePreparation(topicId,lineId);
+  assert.equal(w.run.status,"needs-review");
+  assert.equal(w.calls.some(call=>call.startsWith("images")),false);
+  assert.equal(w.run.progress.provisionalImages,undefined);
 });

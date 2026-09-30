@@ -164,11 +164,18 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
       const workspace=await getCreativeWorkspaceState(topicId,progress.storyId,run.id);
       const draft=workspace.drafts.find(d=>d.id===progress.draftId);
       if(!draft)throw new PreparationReviewNeeded("The draft is no longer available. Review it in the workspace.");
-      if(draft.status!=="approved" || draft.inputIsCurrent===false)throw new PreparationReviewNeeded("The exact draft version needs human approval in the story workspace before images can be generated.");
+      if(draft.inputIsCurrent===false)throw new PreparationReviewNeeded("The draft changed. Review the current version in the story workspace.");
+      if(draft.status!=="approved") {
+        // A scoop moves ahead to provisional images when the independent
+        // critic accepted this exact version; the script stays unapproved.
+        const readyForAutomation=isCreativeDraftReadyForAutomation(draft,draft.format,draft.qualityReviewIsCurrent===true);
+        if(progress.trigger!=="scoop" || !readyForAutomation)throw new PreparationReviewNeeded("The exact draft version needs human approval in the story workspace before images can be generated.");
+        progress.provisionalImages=true;
+      }
       return await finish("approve-draft", "images");
     } else if(run.step==="images") {
       if(!progress.draftId)throw new PreparationReviewNeeded("Approve the draft before generating images.");
-      const result=await generateCreativeDraftAssets(topicId, progress.draftId);
+      const result=await generateCreativeDraftAssets(topicId, progress.draftId, undefined, {provisional:progress.provisionalImages===true});
       if(!result.batch)throw new Error("Image batch unavailable");
       progress.assetBatchId=result.batch.id;
       return await finish("images");
@@ -182,9 +189,9 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
   }
 }
 /** after() is a fast kick; the optional worker provides recovery after process loss. */
-export async function drivePreparation(topicId:string,id:string) {
+export async function drivePreparation(topicId:string,id:string,budgetMs=450000) {
   const started=Date.now();
-  for(let steps=0;steps<12 && Date.now()-started<450000;steps++) {
+  for(let steps=0;steps<12 && Date.now()-started<budgetMs;steps++) {
     if(!await advancePreparation(topicId,id))break;
   }
 }
