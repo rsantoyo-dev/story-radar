@@ -27,6 +27,7 @@ test("a changed brand reference offers the reference refresh", () => {
 test("approval and image order messages open the right tab", () => {
   assert.deepEqual(workspaceErrorAction("Approve the current script before generating or reviewing images."), { kind: "tab", tab: "script", label: "Go to Script" });
   assert.equal(workspaceErrorAction("Update the pending images to match the saved text before approving this draft.")?.kind, "tab");
+  assert.deepEqual(workspaceErrorAction("Place fidelity for this draft requires real photography, so AI image generation is off. To generate images, unapprove the draft and change Place fidelity on the Script tab, with a reason."), { kind: "tab", tab: "script", label: "Go to Script" });
 });
 
 test("an unrelated failure offers no action", () => {

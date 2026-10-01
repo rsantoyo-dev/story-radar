@@ -828,7 +828,10 @@ async function executeCreativeAssetImageEdit({
   if (targetUnit?.id) references.textSync = { draftVersion: draft.version, unitId: targetUnit.id,
     previousText: imageText((sourceAsset ?? found.asset).unitSnapshot), newText: imageText(targetUnit) };
   else delete references.textSync;
-  const unitSnapshot = { ...(targetUnit ?? found.asset.unitSnapshot), brandReferenceSelection: {
+  // Place evidence is valid for a day: a regeneration after that re-prepares
+  // the photo or map instead of carrying evidence that can never be approved.
+  const placeVisual = targetUnit ? undefined : await currentPlaceVisual(topicId, draft, found.asset);
+  const unitSnapshot = { ...(targetUnit ?? found.asset.unitSnapshot), ...(placeVisual ? { placeVisual } : {}), brandReferenceSelection: {
     selected: references.brand.map(({ id, version, configVersion, function: fn, reason, name, sha256, contribution, usageNote, provenance }) =>
       ({ id, version, configVersion, function: fn, reason, name, sha256, contribution, usageNote, provenance })), excluded: [], note: null,
   } };
@@ -865,9 +868,9 @@ export async function changeCreativeAssetApproval(
   requireApprovedDraft(draft.status);
   assertCurrentAsset(found.asset, found.batch, draft.version);
   assertImageTextCurrent(found.asset, draft);
-  if (action === "approve" && !visualEvidenceCurrent(found.asset.unitSnapshot.placeVisual)) throw new CreativeContentConflictError("Visual evidence expired. Recompose and review this image.");
+  if (action === "approve" && !visualEvidenceCurrent(found.asset.unitSnapshot.placeVisual)) throw new CreativeContentConflictError("The place photo or map evidence for this image expired. Regenerate this image to refresh it, then review it.");
   await assertEditorialEvidence(topicId, draft);
-  if (action === "approve" && !await roadMapStillCurrent(found.asset.unitSnapshot.placeVisual?.adapterEvidence ?? found.asset.unitSnapshot.roadMapEvidence, (await requireCreativeBrief(topicId, draft.briefId)).keyFacts)) throw new CreativeContentConflictError("The official road notice changed or cannot be checked. Recompose this image before approval.");
+  if (action === "approve" && !await roadMapStillCurrent(found.asset.unitSnapshot.placeVisual?.adapterEvidence ?? found.asset.unitSnapshot.roadMapEvidence, (await requireCreativeBrief(topicId, draft.briefId)).keyFacts)) throw new CreativeContentConflictError("The official road notice changed or cannot be checked. Regenerate this image to refresh it before approval.");
 
   if (action === "approve") {
     if (found.asset.status !== "generated") {
@@ -1547,12 +1550,12 @@ function assertGenerativeImageryAllowed(
   });
   if (effective.mode === "photo-required") {
     throw new CreativeContentConflictError(
-      "This topic requires real photography. Use documentary preparation to find eligible material, prepare verified cartography when appropriate, or deliver typography for final review. Generative image creation is disabled.",
+      "Place fidelity for this draft requires real photography, so AI image generation is off. To generate images, unapprove the draft and change Place fidelity on the Script tab, with a reason.",
     );
   }
   if (effective.mode === "verified-references") {
     throw new CreativeContentConflictError(
-      "This draft's place fidelity is set to verified references, which generates only from approved place references. That flow is not available yet (GEO-09 / GEO-10).",
+      "Place fidelity for this draft is set to verified references, which cannot generate images yet. Unapprove the draft and change Place fidelity on the Script tab.",
     );
   }
 }
@@ -1799,9 +1802,9 @@ export async function downloadApprovedCreativeImage(topicId: string, assetId: st
   const draft = await requireCreativeDraft(topicId, found.batch.draftId);
   assertCurrentAsset(found.asset, found.batch, draft.version);
   assertImageTextCurrent(found.asset, draft);
-  if (!visualEvidenceCurrent(found.asset.unitSnapshot.placeVisual)) throw new CreativeContentConflictError("Visual evidence expired. Recompose and review this image.");
+  if (!visualEvidenceCurrent(found.asset.unitSnapshot.placeVisual)) throw new CreativeContentConflictError("The place photo or map evidence for this image expired. Regenerate this image to refresh it, then review it.");
   await assertEditorialEvidence(topicId, draft);
-  if (!await roadMapStillCurrent(found.asset.unitSnapshot.placeVisual?.adapterEvidence ?? found.asset.unitSnapshot.roadMapEvidence, (await requireCreativeBrief(topicId, draft.briefId)).keyFacts)) throw new CreativeContentConflictError("The official road notice changed or cannot be checked. Recompose and review this image before export.");
+  if (!await roadMapStillCurrent(found.asset.unitSnapshot.placeVisual?.adapterEvidence ?? found.asset.unitSnapshot.roadMapEvidence, (await requireCreativeBrief(topicId, draft.briefId)).keyFacts)) throw new CreativeContentConflictError("The official road notice changed or cannot be checked. Regenerate this image to refresh it before export.");
   if (draft.status !== "approved" || found.asset.status !== "approved" || !found.asset.imageUrl) throw new CreativeContentConflictError("Approve the current image before downloading it as ready.");
   if (found.asset.providerEndpoint !== DRAFT_TYPOGRAPHY_ENDPOINT) assertGenerativeImageryAllowed(draft, await getTopicVisualFidelityMode(topicId));
   const references = await getCreativeAssetGenerationReferences(assetId);
@@ -2022,6 +2025,22 @@ async function composeDraftPlaceVisuals(topicId: string, draft: CreativeDraft, b
   }
   batch = await refreshCreativeAssetBatchStatus(batch.id);
   return { outcome: "submitted", batch, configuration: publicConfiguration(configuration) };
+}
+
+/** The asset's place evidence, re-prepared for its slide when it expired or its road notice changed. */
+async function currentPlaceVisual(topicId: string, draft: CreativeDraft, asset: CreativeGeneratedAsset) {
+  const previous = asset.unitSnapshot.placeVisual;
+  if (!previous) return undefined;
+  const brief = await requireCreativeBrief(topicId, draft.briefId);
+  if (visualEvidenceCurrent(previous) && await roadMapStillCurrent(previous.adapterEvidence, brief.keyFacts)) return previous;
+  const unit = draft.units.find(candidate => candidate.order === asset.unitOrder);
+  if (!unit) throw new CreativeContentConflictError("The slide no longer exists");
+  const [story, profile] = await Promise.all([getDailyDraftStory(topicId, draft.storyId, undefined, true), getCreativeProfile(topicId)]);
+  const unitDraft = { ...draft, units: [unit] };
+  const prepared = await reuseDocumentaryVisuals(topicId, unitDraft, brief.keyFacts);
+  const fresh = (await preparePlaceVisuals(topicId, unitDraft, profile, brief.keyFacts, story?.url || "", prepared)).get(unit.order)?.evidence;
+  if (!fresh) throw new CreativeContentConflictError("The place photo or map for this slide could not be refreshed. Try again later, or remove the place reference from the slide.");
+  return fresh;
 }
 
 async function recomposePlaceAsset(topicId: string, found: {asset: CreativeGeneratedAsset; batch: CreativeAssetBatch}, draft: CreativeDraft, brief: Awaited<ReturnType<typeof requireCreativeBrief>>): Promise<CreativeAssetBatchResponse> {

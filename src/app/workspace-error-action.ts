@@ -12,7 +12,7 @@ const RULES: { pattern: RegExp; action: WorkspaceErrorAction }[] = [
   { pattern: /brand reference changed|brand reference is disabled|Refresh references/i, action: { kind: "refresh-references", label: "Refresh references" } },
   { pattern: /Reload before|changed\. Reload|still running\. Reload/i, action: { kind: "reload", label: "Reload" } },
   { pattern: /Refresh the (creative )?brief|story was edited|story content or creative profile changed/i, action: { kind: "tab", tab: "focus", label: "Go to Focus to refresh the brief" } },
-  { pattern: /Approve the current script/i, action: { kind: "tab", tab: "script", label: "Go to Script" } },
+  { pattern: /Approve the current script|change Place fidelity on the Script tab/i, action: { kind: "tab", tab: "script", label: "Go to Script" } },
   { pattern: /Update the pending images|images to match the saved text/i, action: { kind: "tab", tab: "visuals", label: "Go to Visuals" } },
 ];
 
