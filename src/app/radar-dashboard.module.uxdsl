@@ -3109,6 +3109,9 @@
 .dailyPlannerControls { display: grid; gap: density(2); }
 .dailyPlannerControls label { display: grid; gap: density(1); @ds-typo(body); }
 .dailyPlannerControls input, .dailyPlannerControls select { @ds-input(outlined neutral); padding: density(2); border-radius: radius(2); width: 100%; }
+/* The auto-approve opt-in is a checkbox row, not a full-width field. */
+.dailyPlannerControls .dailyPreparationAutoApprove { display: flex; align-items: flex-start; gap: density(2); @ds-typo(caption); color: palette(dark-main); }
+.dailyPlannerControls .dailyPreparationAutoApprove input { width: auto; flex: none; margin: 2px 0 0; padding: 0; border: 0; box-shadow: none; accent-color: palette(primary-main); }
 .dailyPlannerChoices { display: grid; grid-template-columns: xs(1fr) md(repeat(3, 1fr)); gap: density(3); }
 .dailyPlannerChoice {
   @ds-surface(flat primary);
@@ -3219,6 +3222,24 @@
 
 /* The one place that always spells out exactly what's happening right now —
    compact chips above trade their old subtitle line for this. */
+/* Live view of a preparation run: a timeline beside the story it is building. */
+.runStory { display: grid; grid-template-columns: xs(1fr) md(minmax(0, 1fr) minmax(0, 1fr)); gap: density(4); align-items: start; }
+.runStory h3 { margin: 0 0 density(2); @ds-typo(caption); font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: palette(dark-main, 0.7); }
+.runTimeline { display: grid; gap: density(1); margin: 0; padding: 0; list-style: none; }
+.runTimeline li { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: density(2); @ds-typo(caption); color: palette(dark-main); }
+.runTimeline time { color: palette(dark-main, 0.55); font-variant-numeric: tabular-nums; }
+.runTimeline li[data-kind="skip"] span { color: palette(warning-dark); }
+.runTimeline li[data-kind="auto"] span { color: palette(primary-dark); font-weight: 650; }
+.runTimeline li[data-kind="now"] span { color: palette(info-dark); font-weight: 650; }
+.runCard { @ds-surface(flat primary); display: grid; gap: density(1); padding: density(3); border: border(1, palette(primary-light), solid); border-radius: radius(2); color: palette(dark-main); min-width: 0; }
+.runCard p { margin: 0; @ds-typo(caption); overflow-wrap: anywhere; }
+.runImages { display: grid; gap: density(1); margin-top: density(1); }
+.runImages ol { display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: density(1); margin: 0; padding: 0; list-style: none; }
+.runImages li { aspect-ratio: 4 / 5; border-radius: radius(1); overflow: hidden; background: palette(neutral-light, 0.4); display: grid; place-items: center; }
+.runImages li[data-status="failed"] { outline: 2px solid palette(error-main); }
+.runImages img { width: 100%; height: 100%; object-fit: cover; }
+.runImages span { @ds-typo(caption); color: palette(dark-main, 0.6); }
+
 .dailyPreparationStatusLine {
   @ds-typo(body);
   padding: density(3) density(4);

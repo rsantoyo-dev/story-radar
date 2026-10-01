@@ -24,7 +24,7 @@ async function handle(request:Request,write:boolean) {
       if(input.action==="continue") {
         if(!run || run.id!==validId(input.runId))return noStoreJson({error:"This is no longer the latest preparation"},409);
         if(!input.targetStep)return noStoreJson({error:"Choose a target step"},400);
-        run=await continuePreparation(topicId,run.id,input.targetStep as DailyPreparationStep);
+        run=await continuePreparation(topicId,run.id,input.targetStep as DailyPreparationStep,typeof input.autoApprove==="boolean"?input.autoApprove:undefined);
       } else
       if(input.action==="retry") {
         if(!run || run.id!==validId(input.runId))return noStoreJson({error:"This is no longer the latest preparation"},409);
@@ -38,7 +38,7 @@ async function handle(request:Request,write:boolean) {
         if(line.archived)return noStoreJson({error:"Choose an active editorial line"},400);
         let timezone:string;
         try{timezone=plannerDay(input.timezone).timezone;}catch{return noStoreJson({error:"Choose a valid timezone"},400);}
-        run=(await startPreparation(topicId,line.id,line.name,timezone,input.mode ?? "day",input.targetStep)).run;
+        run=(await startPreparation(topicId,line.id,line.name,timezone,input.mode ?? "day",input.targetStep,"manual",input.autoApprove===true)).run;
       } else return noStoreJson({error:"Choose start, continue, retry or acknowledge-brief"},400);
     }
     // Reconcile an already-authorized job; GET never creates a new job.

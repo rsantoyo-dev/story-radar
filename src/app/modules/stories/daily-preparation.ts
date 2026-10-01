@@ -1,13 +1,20 @@
 import "server-only";
 import { isCreativeDraftReadyForAutomation } from "./creative-quality";
-import { approveDailyStory } from "./approve-daily-story";
+import { approveDailyStory, DailyStoryNotEligibleError } from "./approve-daily-story";
+import { sameEventStories, storyAlreadyPublished } from "./story-duplicates.repository";
 import { BRIEF_EVIDENCE_REVIEW_MESSAGE, DAILY_PREPARATION_STEPS, preparationTarget, type DailyPreparationStep } from "./daily-preparation.types";
 import { prepareStoryContent } from "./prepare-selected-story-content";
 import { getStoryContent } from "./story-content.repository";
-import { createCreativeBrief, createCreativeDraft, getCreativeWorkspaceState, suggestEditorialFocus } from "./manage-creative-content";
-import { generateCreativeDraftAssets } from "./manage-creative-assets";
+import { approveSavedCreativeDraft, createCreativeBrief, createCreativeDraft, getCreativeWorkspaceState, suggestEditorialFocus } from "./manage-creative-content";
+import { changeCreativeAssetApproval, generateCreativeDraftAssets, getCreativeDraftAssets } from "./manage-creative-assets";
 import { storyCollectionContexts } from "../editorial-lines/editorial-lines.repository";
 class PreparationReviewNeeded extends Error {}
+const messageOf=(error:unknown,fallback:string)=>typeof (error as {message?:unknown})?.message==="string" ? (error as {message:string}).message : fallback;
+/** Stories whose article turned out incomplete before the run asks a human. */
+export const MAX_CONTENT_ATTEMPTS = 3;
+const ALREADY_PUBLISHED = "Already published in this topic";
+/** Steps before any creative spend, where a published story is still swapped for the next one. */
+const PRE_CREATIVE_STEPS = new Set(["approve", "content", "focus", "brief"]);
 import { randomUUID } from "node:crypto";
 import { requireTopic } from "../topics/topic-context";
 import { collectionContext, resolveLineResearch } from "../editorial-lines/editorial-lines";
@@ -27,14 +34,43 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
   if(!run)return false;
   const progress={...run.progress};
   const target = preparationTarget(progress);
+  /** One line in the run's visible timeline; bounded so a long run never bloats the row. */
+  function note(text:string,kind?:"skip"|"auto") {
+    progress.activity=[...(progress.activity ?? []),{at:new Date().toISOString(),text,...(kind?{kind}:{})}].slice(-40);
+  }
   async function finish(step: DailyPreparationStep, next?: DailyPreparationStep) {
     progress.completedStep = step;
+    progress.stepTimes = { ...progress.stepTimes, [step]: new Date().toISOString() };
     const done = step === target || !next;
     await savePreparation(run, { status: done ? "completed" : "running", step: done ? step : next, progress });
     return !done;
   }
+  // Move to the next fallback story, recording why; a human decides only when none is left.
+  async function skip(reason:string,countsAsAttempt:boolean) {
+    const skipped=[...(progress.skippedStories ?? []),{storyId:progress.storyId!,title:progress.storyTitle,reason}];
+    progress.skippedStories=skipped;
+    note(`Skipped "${progress.storyTitle ?? "story"}": ${reason}`,"skip");
+    const attempts=skipped.filter(s=>s.reason.startsWith("Incomplete")).length;
+    const tried=new Set(skipped.map(s=>s.storyId));
+    const next=(progress.candidates ?? []).find(c=>!tried.has(c.storyId));
+    if(!next || (countsAsAttempt && attempts>=MAX_CONTENT_ATTEMPTS)) {
+      if(reason===ALREADY_PUBLISHED && skipped.length===1)throw new PreparationReviewNeeded("This story was already published in this topic. Start a new run to select from today's stories.");
+      throw new PreparationReviewNeeded(skipped.length>1
+        ? `None of the ${skipped.length} stories tried could be prepared${attempts>=MAX_CONTENT_ATTEMPTS ? " with complete content" : ""}. Review a story's content or start a new run.`
+        : "The article content is incomplete. Review or edit the content before continuing.");
+    }
+    progress.storyId=next.storyId;
+    progress.storyTitle=next.title;
+    note(`Trying "${next.title ?? "the next story"}"${next.via==="same-event"?" (same event, another source)":""}`);
+    // Everything prepared so far belonged to the previous story.
+    for(const key of ["editorialDirection","briefId","draftId","assetBatchId","acknowledgedBriefId","provisionalImages"] as const)delete progress[key];
+    await savePreparation(run,{step:"content",progress});
+    return true;
+  }
   try {
     await requireTopic(topicId,{active:true});
+    // A resumed or older run may still hold a story published since; never prepare it twice.
+    if(progress.storyId && PRE_CREATIVE_STEPS.has(run.step) && await storyAlreadyPublished(topicId,progress.storyId))return await skip(ALREADY_PUBLISHED,false);
     if(run.step==="collect") {
       const [line,sources,research,profile,preferences]=await Promise.all([getEditorialLine(topicId,run.lineId),listTopicRssSourceConfigs(topicId),getAiResearchSourceConfig(topicId),getEditorialProfile(topicId),getStoryKeywordPreferences(topicId)]);
       const now=new Date();
@@ -51,6 +87,7 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
         if(cached.sources?.failed && !cached.sources.successful)throw new Error("All collection sources failed");
         progress.collected=cached.counts?.included ?? 0;
         if(cached.sources?.failed)progress.collectionWarning="Some sources could not be collected. Available stories were retained.";
+        note(`Reused today's collection: ${progress.collected} stories`);
         return await finish("collect", "evaluate");
       }
       try {
@@ -60,6 +97,7 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
         progress.collected=radar.counts.included;
         if(radar.sources.failed) progress.collectionWarning="Some sources could not be collected. Available stories were retained.";
         if(!radar.sources.successful && radar.sources.failed)throw new Error("All collection sources failed");
+        note(`Collected ${progress.collected} stories from ${radar.sources.successful} ${radar.sources.successful===1?"source":"sources"}${radar.sources.failed?` (${radar.sources.failed} failed)`:""}`);
         return await finish("collect", "evaluate");
       } catch(error) {
         await finishCollection(topicId,collectionId,undefined,"Collection failed; saved partial results remain available");
@@ -72,11 +110,12 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
         progress.evaluationBatches++;
         const remaining=result.candidatesScanned-result.cachedStories-result.evaluatedStories;
         const done=result.status==="no-candidates" || remaining<=0;
-        if(done) return await finish("evaluate", "recommend");
+        if(done) { note(`Evaluated ${progress.evaluated} stories`); return await finish("evaluate", "recommend"); }
         await savePreparation(run,{step:"evaluate",progress});
       } catch(error) {
         if(!(error instanceof EditorialEvaluationDailyLimitError))throw error;
         progress.evaluationWarning="Evaluation incomplete — daily limit reached. Recommendations use the available evaluated stories.";
+        note(`Evaluated ${progress.evaluated} stories before the daily evaluation limit`);
         return await finish("evaluate", "recommend");
       }
     } else if(run.step==="recommend") {
@@ -89,6 +128,22 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
       if (choice) {
         progress.storyId=choice.storyId;
         progress.storyTitle=result.context.candidates.find(c=>c.storyId===choice.storyId)?.title;
+        // Fallbacks in order: each pick, then other sources of the same event.
+        const titleOf=(storyId:string)=>result.context.candidates.find(c=>c.storyId===storyId)?.title;
+        const picks=[{storyId:choice.storyId,via:"recommended" as const},...(result.saved.result?.alternatives ?? []).map(a=>({storyId:a.storyId,via:"alternative" as const}))];
+        const queue:NonNullable<typeof progress.candidates>=[];
+        for(const pick of picks) {
+          if(!queue.some(c=>c.storyId===pick.storyId))queue.push({...pick,title:titleOf(pick.storyId)});
+          for(const same of await sameEventStories(topicId,pick.storyId).catch(()=>[])) {
+            if(!queue.some(c=>c.storyId===same.storyId))queue.push({storyId:same.storyId,title:same.title,via:"same-event"});
+          }
+        }
+        progress.candidates=queue;
+        const plan=result.saved.result;
+        progress.selection={reason:choice.reason,summary:plan?.summary,alternatives:(plan?.alternatives ?? []).map(a=>titleOf(a.storyId) ?? "Untitled story")};
+        note(`Selected "${progress.storyTitle ?? "the recommended story"}"${progress.selection.alternatives.length?` over ${progress.selection.alternatives.length} ${progress.selection.alternatives.length===1?"alternative":"alternatives"}`:""}`);
+      } else {
+        note("No strong recommendation today");
       }
       if (DAILY_PREPARATION_STEPS.indexOf(target) <= 2) return await finish("recommend");
       if(!choice)throw new PreparationReviewNeeded("No strong recommendation is available. Review the candidates before preparing a draft.");
@@ -99,14 +154,20 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
       return await finish("approve", "content");
     } else if(run.step==="content") {
       if(!progress.storyId)throw new PreparationReviewNeeded("Choose a story to prepare.");
-      await approveDailyStory(topicId, progress.storyId);
+      try { await approveDailyStory(topicId, progress.storyId); }
+      catch(error) {
+        if(error instanceof DailyStoryNotEligibleError && progress.skippedStories?.length)return await skip("Not eligible for approval",false);
+        throw error;
+      }
       let content=await getStoryContent(topicId,progress.storyId);
       // `likely-full` is the normal status for a substantial RSS/editorial
       // copy whose extractor cannot find meaningfully more text. Re-fetching
       // that content can turn an already usable article into a false failure
       // when the publisher or Reader fallback blocks the second request.
       if(!contentLooksComplete(content))content=await prepareStoryContent(topicId,progress.storyId);
-      if(!contentLooksComplete(content))throw new PreparationReviewNeeded("The article content is incomplete. Review or edit the content before continuing.");
+      if(!contentLooksComplete(content))return await skip("Incomplete article content (paywall or excerpt only)",true);
+      const words=content.text?.trim().split(/\s+/).length ?? 0;
+      note(`Article ready: ${words ? `${words.toLocaleString("en-CA")} words` : "full text"}`);
       return await finish("content", "focus");
     } else if(run.step==="focus") {
       if(!progress.storyId)throw new PreparationReviewNeeded("Choose a story before suggesting a focus.");
@@ -114,6 +175,7 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
       const context=contexts.find(c=>c.runId===progress.collectionRunId) ?? (contexts.length===1?contexts[0]:undefined);
       const result=await suggestEditorialFocus(topicId,progress.storyId,undefined,context?.runId,run.id,run.timezone);
       progress.editorialDirection=result.editorialDirection;
+      note("Editorial focus suggested");
       return await finish("focus", "brief");
     } else if(run.step==="brief") {
       // Covers what used to be two daily-preparation steps ("brief" then
@@ -143,6 +205,8 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
       const draft=draftResult.state.drafts.find(d=>d.briefId===progress.briefId && d.inputIsCurrent && d.format===workspace.brief!.recommendedFormat);
       if(!draft)throw new Error("Draft unavailable");
       progress.draftId=draft.id;
+      progress.draftSummary={format:draft.format,slides:draft.units?.length ?? 0,hook:draft.units?.[0]?.headline};
+      note(`Script written: ${draft.format}${draft.units?.length?`, ${draft.units.length} slides`:""}`);
       if(!isCreativeDraftReadyForAutomation(draft,draft.format,draft.qualityReviewIsCurrent === true))throw new PreparationReviewNeeded("The draft is saved, but automated editorial validation has not passed for this exact version. Its findings and evidence were preserved; it cannot advance as publication-ready.");
       return await finish("brief", "approve-draft");
     } else if(run.step==="draft") {
@@ -166,18 +230,55 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
       if(!draft)throw new PreparationReviewNeeded("The draft is no longer available. Review it in the workspace.");
       if(draft.inputIsCurrent===false)throw new PreparationReviewNeeded("The draft changed. Review the current version in the story workspace.");
       if(draft.status!=="approved") {
-        // A scoop moves ahead to provisional images when the independent
-        // critic accepted this exact version; the script stays unapproved.
         const readyForAutomation=isCreativeDraftReadyForAutomation(draft,draft.format,draft.qualityReviewIsCurrent===true);
-        if(progress.trigger!=="scoop" || !readyForAutomation)throw new PreparationReviewNeeded("The exact draft version needs human approval in the story workspace before images can be generated.");
-        progress.provisionalImages=true;
+        if(progress.autoApprove && readyForAutomation) {
+          // Explicitly chosen for this run: the critic accepted this exact
+          // version, so the system approves it through the ordinary checks.
+          try { await approveSavedCreativeDraft(topicId,draft.id,false,draft.version); }
+          catch(error) { throw new PreparationReviewNeeded(`Automatic script approval stopped: ${messageOf(error,"approval failed")}`); }
+          progress.autoApproved={...progress.autoApproved,draftId:draft.id,draftApprovedAt:new Date().toISOString()};
+          note("Script approved automatically: the critic accepted this exact version","auto");
+        } else {
+          // A scoop moves ahead to provisional images when the independent
+          // critic accepted this exact version; the script stays unapproved.
+          if(progress.trigger!=="scoop" || !readyForAutomation)throw new PreparationReviewNeeded(progress.autoApprove
+            ? "The automated review has not accepted this exact script version, so it was not approved automatically. Review it in the story workspace."
+            : "The exact draft version needs human approval in the story workspace before images can be generated.");
+          progress.provisionalImages=true;
+        }
       }
+      if(draft.status==="approved" && !progress.autoApproved?.draftApprovedAt)note("Script approved by an editor");
       return await finish("approve-draft", "images");
     } else if(run.step==="images") {
       if(!progress.draftId)throw new PreparationReviewNeeded("Approve the draft before generating images.");
-      const result=await generateCreativeDraftAssets(topicId, progress.draftId, undefined, {provisional:progress.provisionalImages===true});
-      if(!result.batch)throw new Error("Image batch unavailable");
-      progress.assetBatchId=result.batch.id;
+      const autoImages=progress.autoApprove===true && progress.provisionalImages!==true;
+      if(!progress.assetBatchId) {
+        const result=await generateCreativeDraftAssets(topicId, progress.draftId, undefined, {provisional:progress.provisionalImages===true});
+        if(!result.batch)throw new Error("Image batch unavailable");
+        progress.assetBatchId=result.batch.id;
+        note(`Image generation started${progress.provisionalImages?" (provisional)":""}`);
+        if(!autoImages)return await finish("images");
+        await savePreparation(run,{step:"images",progress});
+        return false; // The next poll checks whether the images finished.
+      }
+      if(!autoImages)return await finish("images");
+      const {batch}=await getCreativeDraftAssets(topicId, progress.draftId);
+      if(!batch)throw new PreparationReviewNeeded("The image batch is no longer available. Review the images in the story workspace.");
+      if(batch.assets.some(a=>a.status==="queued" || a.status==="generating")) {
+        await savePreparation(run,{step:"images",progress});
+        return false;
+      }
+      const failed=batch.assets.filter(a=>a.status==="failed").map(a=>a.unitOrder);
+      if(failed.length)throw new PreparationReviewNeeded(`Image ${failed.join(", ")} failed to generate. Regenerate it in Visuals, then continue.`);
+      const flagged=batch.assets.filter(a=>a.safetyFlag).map(a=>a.unitOrder);
+      if(flagged.length)throw new PreparationReviewNeeded(`The safety checker flagged image ${flagged.join(", ")}. Regenerate it in Visuals, then continue.`);
+      const approvedIds:string[]=[];
+      for(const asset of batch.assets.filter(a=>a.status==="generated")) {
+        try { await changeCreativeAssetApproval(topicId,asset.id,"approve"); approvedIds.push(asset.id); }
+        catch(error) { throw new PreparationReviewNeeded(`Image ${asset.unitOrder} could not be approved automatically: ${messageOf(error,"approval failed")}`); }
+      }
+      progress.autoApproved={...progress.autoApproved,assetIds:approvedIds,imagesApprovedAt:new Date().toISOString()};
+      note(`${approvedIds.length} images approved automatically`,"auto");
       return await finish("images");
     } else {throw new Error("Unknown preparation stage");}
     return true;

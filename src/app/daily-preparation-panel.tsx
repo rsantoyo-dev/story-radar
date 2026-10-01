@@ -2,7 +2,44 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ComponentProps } from "react";
 import { DailyEditorialPlannerPanel } from "./daily-editorial-planner-panel";
 import { BRIEF_EVIDENCE_REVIEW_MESSAGE, DAILY_PREPARATION_LABELS, DAILY_PREPARATION_STEPS, DAILY_PREPARATION_TITLES, preparationTarget, type DailyPreparationStep, type DailyPreparationRun, type DailyPreparationProgress } from "./modules/stories/daily-preparation.types";
+import Image from "next/image";
 import styles from "./radar-dashboard.generated.module.css";
+
+type RunImage = { id: string; unitOrder: number; status: string; imageUrl?: string | null };
+const PENDING_IMAGE = new Set(["queued", "generating"]);
+
+/** The run's images as they generate; polls only while some are still pending. */
+function RunImages({ topicId, draftId, secret }: { topicId: string; draftId: string; secret: string }) {
+  const [images, setImages] = useState<RunImage[]>();
+  useEffect(() => {
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    async function read() {
+      try {
+        const response = await fetch(`/api/radar/creative/drafts/${encodeURIComponent(draftId)}/assets?topicId=${encodeURIComponent(topicId)}`, { headers: { Authorization: `Bearer ${secret.trim()}` }, cache: "no-store" });
+        const body = await response.json() as { batch?: { assets?: RunImage[] } };
+        if (disposed || !response.ok) return;
+        const assets = [...(body.batch?.assets ?? [])].sort((a, b) => a.unitOrder - b.unitOrder);
+        setImages(assets);
+        if (assets.some((asset) => PENDING_IMAGE.has(asset.status))) timer = setTimeout(() => void read(), 5000);
+      } catch { /* the draft workspace shows the full state */ }
+    }
+    void read();
+    return () => { disposed = true; if (timer) clearTimeout(timer); };
+  }, [topicId, draftId, secret]);
+  if (!images?.length) return null;
+  const done = images.filter((image) => !PENDING_IMAGE.has(image.status)).length;
+  return <div className={styles.runImages}>
+    <small>{done === images.length ? `${images.length} images` : `Generating images · ${done} of ${images.length} ready`}</small>
+    <ol>{images.map((image) => <li key={image.id} data-status={image.status}>
+      {image.imageUrl && !PENDING_IMAGE.has(image.status)
+        ? <Image unoptimized src={image.imageUrl} width={64} height={80} alt={`Image ${image.unitOrder}`} />
+        : <span aria-label={`Image ${image.unitOrder} ${image.status}`}>{image.unitOrder}</span>}
+    </li>)}</ol>
+  </div>;
+}
+
+const clock = (iso?: string) => iso ? new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) : "";
 /** What actually happened at a completed step — shown on hover so a glance
  * answers "which story", "what focus", "is the carousel ready" without
  * opening anything. Undefined when the run predates a field (e.g. an older
@@ -30,8 +67,13 @@ export function DailyPreparationPanel({onCompleted,onOpenDraft,...props}:Props) 
   const [data,setData]=useState<State>();
   const [lineId,setLineId]=useState("");
   const [targetSelection,setTargetSelection]=useState<DailyPreparationStep>();
+  const [autoApproveSelection,setAutoApproveSelection]=useState<boolean>();
   const [pending,setPending]=useState(false);
   const [newRun,setNewRun]=useState(false);
+  /** The editor chose to keep working on a run from an earlier day. */
+  const [resumeOld,setResumeOld]=useState(false);
+  /** When the latest run state arrived; dates an older run without reading the clock during render. */
+  const [loadedAt,setLoadedAt]=useState<number>();
   const [error,setError]=useState("");
   const completed=useRef("");
   const completionCallback=useRef(onCompleted);
@@ -66,7 +108,7 @@ export function DailyPreparationPanel({onCompleted,onOpenDraft,...props}:Props) 
         const response=await fetch(`/api/radar/daily-preparation?topicId=${encodeURIComponent(topicId)}`,{headers:{Authorization:`Bearer ${secret.trim()}`},signal:controller.signal,cache:"no-store"});
         const value=await response.json();if(!response.ok)throw new Error(value.error);
         if(disposed || posting.current || requestGeneration!==generation.current)return;
-        dataRef.current=value;setData(value);setError("");
+        dataRef.current=value;setData(value);setError("");setLoadedAt(Date.now());
         const completionKey=value.run ? `${value.run.id}:${value.run.updatedAt}` : "";
         if(value.run?.status==="completed" && completed.current!==completionKey){completed.current=completionKey;completionCallback.current();}
       }catch(error){if(!disposed && !controller.signal.aborted)setError(error instanceof Error?error.message:"Unable to load preparation");}
@@ -78,14 +120,17 @@ export function DailyPreparationPanel({onCompleted,onOpenDraft,...props}:Props) 
   const run=data?.run;
   const selectedLine=lineId || run?.lineId || data?.lines[0]?.id || "";
   const selectedTarget=targetSelection ?? (run ? preparationTarget(run.progress) : "recommend");
-  const fresh=newRun || !run || selectedLine!==run.lineId;
+  // A run from an earlier day picked from that day's stories, some since published: start fresh by default.
+  const runIsOld=Boolean(run && run.status!=="running" && loadedAt && loadedAt-Date.parse(run.startedAt)>18*3_600_000);
+  const fresh=newRun || !run || selectedLine!==run.lineId || (runIsOld && !resumeOld);
+  const autoApprove=autoApproveSelection ?? (fresh ? false : run?.progress.autoApprove === true);
   async function start(targetStep:DailyPreparationStep){
     if(posting.current)return;
     ++generation.current;posting.current=true;setPending(true);setError("");
     try {
-      const response=await fetch(`/api/radar/daily-preparation?topicId=${encodeURIComponent(topicId)}`,{method:"POST",headers:{Authorization:`Bearer ${secret.trim()}`,"Content-Type":"application/json"},body:JSON.stringify(fresh?{action:"start",lineId:selectedLine,timezone,targetStep}:{action:"continue",runId:run.id,targetStep})});
+      const response=await fetch(`/api/radar/daily-preparation?topicId=${encodeURIComponent(topicId)}`,{method:"POST",headers:{Authorization:`Bearer ${secret.trim()}`,"Content-Type":"application/json"},body:JSON.stringify(fresh?{action:"start",lineId:selectedLine,timezone,targetStep,autoApprove}:{action:"continue",runId:run.id,targetStep,autoApprove})});
       const value=await response.json();if(!response.ok)throw new Error(value.error);
-      apply(value);setNewRun(false);
+      apply(value);setNewRun(false);setResumeOld(false);
     }catch(error){setError(error instanceof Error?error.message:"Unable to start preparation");}
     finally{posting.current=false;setPending(false);}
   }
@@ -106,15 +151,19 @@ export function DailyPreparationPanel({onCompleted,onOpenDraft,...props}:Props) 
   const blocked=disabled || pending || running || !secret.trim();
   return <section className={styles.dailyPlanner} aria-label="Prepare my day">
     <div className={styles.dailyPlannerHeader}>
-      <div><span className={styles.eyebrow}>Daily editorial workflow</span><h2>Prepare my day</h2><p>Choose an editorial line and how far to prepare. Completed steps are reused when you continue. Before generating images, review and approve the exact script in the studio.</p><small>Time zone: {timezone}. Search uses the editorial line’s time period and sources.</small></div>
+      <div><span className={styles.eyebrow}>Daily editorial workflow</span><h2>Prepare my day</h2><p>Choose an editorial line and how far to prepare. Completed steps are reused when you continue. Before generating images, approve the exact script in the studio, or let the system approve it when its automated review passes.</p><small>Time zone: {timezone}. Search uses the editorial line’s time period and sources.</small></div>
       <div className={styles.dailyPlannerControls}>
         <label>Editorial line<select value={selectedLine} disabled={blocked} onChange={event=>setLineId(event.target.value)}>{!data?.lines.length && <option value="">Loading lines…</option>}{data?.lines.map(line=><option key={line.id} value={line.id}>{line.name}</option>)}</select></label>
         <label>Prepare through<select value={selectedTarget} disabled={blocked} onChange={event=>setTargetSelection(event.target.value as DailyPreparationStep)}>{steps.map(step=><option key={step} value={step}>{DAILY_PREPARATION_TITLES[step]}</option>)}</select></label>
         <button type="button" className={styles.primaryButton} disabled={blocked || !selectedLine} onClick={()=>void start(selectedTarget)}>{pending?"Starting…":fresh?"Prepare through this step":"Continue through this step"}</button>
-        {run && <button type="button" className={styles.secondaryButton} disabled={blocked} onClick={()=>setNewRun(value=>!value)}>{newRun?"Return to current run":"New run"}</button>}
+        {run && (runIsOld && !resumeOld && !newRun
+          ? <button type="button" className={styles.secondaryButton} disabled={blocked} onClick={()=>setResumeOld(true)}>Continue the {new Date(run.startedAt).toLocaleDateString(undefined,{month:"short",day:"numeric"})} run</button>
+          : <button type="button" className={styles.secondaryButton} disabled={blocked} onClick={()=>{if(newRun){setNewRun(false);setResumeOld(true);}else setNewRun(true);}}>{newRun?"Return to current run":"New run"}</button>)}
+        <label className={styles.dailyPreparationAutoApprove}><input type="checkbox" id="daily-preparation-auto-approve" checked={autoApprove} disabled={blocked} onChange={event=>setAutoApproveSelection(event.target.checked)} />Approve the script and images automatically when their checks pass. Publishing stays manual.</label>
       </div>
     </div>
     {error && <p role="alert">{error}</p>}
+    {fresh && runIsOld && !resumeOld && !newRun && run ? <p role="status">The last run is from {new Date(run.startedAt).toLocaleDateString(undefined,{month:"long",day:"numeric"})}. A new run selects from today’s stories, so it will not repeat a story published since.</p> : null}
     {fresh && <p role="status">Select a step, then choose “Prepare through this step.”</p>}
     <ol className={styles.dailyPreparationSteps}>{steps.map((step,index)=>{
       const done=index<=completedIndex;
@@ -140,9 +189,30 @@ export function DailyPreparationPanel({onCompleted,onOpenDraft,...props}:Props) 
     })}</ol>
     {run && <>
       <p className={styles.dailyPreparationStatusLine} data-run-status={run.status} role="status" aria-live="polite">{running?`${DAILY_PREPARATION_LABELS[run.step]} · Step ${steps.indexOf(run.step as DailyPreparationStep)+1} of ${steps.indexOf(preparationTarget(run.progress))+1}`:run.status==="completed"?`${DAILY_PREPARATION_TITLES[completedStep!]} ready`:(run.status==="needs-review"?"Needs your review":`Stopped: ${DAILY_PREPARATION_LABELS[run.step]}`)} · {run.progress.lineName}</p>
-      <p>{run.progress.collected ?? 0} stories collected · {run.progress.evaluated} evaluated{run.progress.recommendationRunId?" · Recommendation ready":""}</p>
+      <p>{run.progress.collected ?? 0} stories collected · {run.progress.evaluated} evaluated{run.progress.recommendationRunId?" · Recommendation ready":""} · Started {new Date(run.startedAt).toLocaleString(undefined,{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</p>
+      {(run.progress.activity?.length || run.progress.storyTitle) ? <div className={styles.runStory}>
+        <section aria-label="What happened">
+          <h3>What happened</h3>
+          <ol className={styles.runTimeline}>
+            {(run.progress.activity ?? []).map((entry,index)=><li key={`${entry.at}:${index}`} data-kind={entry.kind ?? "info"}><time dateTime={entry.at}>{clock(entry.at)}</time><span>{entry.text}</span></li>)}
+            {running ? <li data-kind="now"><time>now</time><span>{DAILY_PREPARATION_LABELS[run.step]}</span></li> : null}
+          </ol>
+          {!run.progress.activity?.length ? <p><small>This run started before the timeline existed.</small></p> : null}
+        </section>
+        {run.progress.storyTitle ? <section aria-label="The story" className={styles.runCard}>
+          <h3>The story</h3>
+          <strong>{run.progress.storyTitle}</strong>
+          {run.progress.selection?.reason ? <p>Why: {run.progress.selection.reason}</p> : null}
+          {run.progress.selection?.alternatives.length ? <p><small>Also considered: {run.progress.selection.alternatives.join(" · ")}</small></p> : null}
+          {run.progress.editorialDirection ? <p><small>Focus: {run.progress.editorialDirection}</small></p> : null}
+          {run.progress.draftSummary ? <p><small>Script: {run.progress.draftSummary.format}, {run.progress.draftSummary.slides} slides{run.progress.draftSummary.hook ? ` · “${run.progress.draftSummary.hook}”` : ""}</small></p> : null}
+          {run.progress.draftId && run.progress.assetBatchId ? <RunImages key={run.progress.assetBatchId} topicId={topicId} draftId={run.progress.draftId} secret={secret} /> : null}
+        </section> : null}
+      </div> : null}
       {run.progress.collectionWarning && <p role="status">{run.progress.collectionWarning}</p>}
       {run.progress.evaluationWarning && <p role="status">{run.progress.evaluationWarning}</p>}
+      {run.progress.skippedStories?.length ? <div role="status"><p>Skipped {run.progress.skippedStories.length === 1 ? "1 story" : `${run.progress.skippedStories.length} stories`} and moved to the next one:</p><ul>{run.progress.skippedStories.map(story=><li key={story.storyId}>{story.title || "Untitled story"}: {story.reason}</li>)}</ul></div> : null}
+      {run.progress.autoApproved ? <p role="status">Approved automatically:{run.progress.autoApproved.draftApprovedAt ? " script" : ""}{run.progress.autoApproved.assetIds?.length ? `${run.progress.autoApproved.draftApprovedAt ? " and" : ""} ${run.progress.autoApproved.assetIds.length} images` : ""}. Review them in the draft before publishing.</p> : null}
       {run.error && <p role="alert">{run.error}</p>}
       {run.progress.storyId && run.status!=="running" && <div className={styles.dailyPlannerActions}>
         <button type="button" className={styles.secondaryButton} disabled={disabled} onClick={()=>props.onViewContent(run.progress.storyId!)}>Review content</button>

@@ -41,6 +41,25 @@ export type DailyPreparationProgress = {
   scoopId?: string;
   /** Images were generated before the script's human approval (a scoop). */
   provisionalImages?: boolean;
+  /** Ordered fallback stories: the recommendation, its alternatives, and other sources of the same event. */
+  candidates?: { storyId: string; title?: string; via: "recommended" | "alternative" | "same-event" }[];
+  /** Stories the run moved past, with why — never silently dropped. */
+  skippedStories?: { storyId: string; title?: string; reason: string }[];
+  /**
+   * Explicitly chosen for this run: the system approves the script and the
+   * images when their automated checks pass. Publishing stays manual.
+   */
+  autoApprove?: boolean;
+  /** When each step finished, for the panel's timeline. */
+  stepTimes?: Partial<Record<DailyPreparationStep, string>>;
+  /** Plain-language log of what happened, newest last (bounded). */
+  activity?: { at: string; text: string; kind?: "skip" | "auto" }[];
+  /** Why the planner chose this story, and what else it considered. */
+  selection?: { reason?: string; summary?: string; alternatives: string[] };
+  /** The script the run produced, at a glance. */
+  draftSummary?: { format: string; slides: number; hook?: string };
+  /** What the system approved on its own, for the audit trail. */
+  autoApproved?: { draftId?: string; draftApprovedAt?: string; assetIds?: string[]; imagesApprovedAt?: string };
 };
 /** The brief step's contentSufficiency checkpoint message — a human already
  * reviewing it in the workspace can override it once for this exact brief;

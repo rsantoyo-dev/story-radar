@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq, gte, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { stories, storySocialPublications, topicStories } from "@/db/schema";
@@ -370,4 +370,51 @@ export async function ensureStoryEmbeddings(
         .where(eq(stories.id, item.storyId));
     }),
   );
+}
+
+/**
+ * Other stories in this Topic that describe the same event (linked by
+ * duplicate detection, in either direction), for trying another source when
+ * one article is incomplete. Excludes matches a human rejected.
+ */
+export async function sameEventStories(
+  topicId: string,
+  storyId: string,
+): Promise<{ storyId: string; title: string }[]> {
+  const [row] = await db
+    .select({ duplicateOfStoryId: topicStories.duplicateOfStoryId })
+    .from(topicStories)
+    .where(and(eq(topicStories.topicId, topicId), eq(topicStories.storyId, storyId)))
+    .limit(1);
+  const root = row?.duplicateOfStoryId ?? storyId;
+  const rows = await db
+    .select({ storyId: topicStories.storyId, title: stories.title })
+    .from(topicStories)
+    .innerJoin(stories, eq(stories.id, topicStories.storyId))
+    .where(
+      and(
+        eq(topicStories.topicId, topicId),
+        sql`(${topicStories.storyId} = ${root}::uuid OR ${topicStories.duplicateOfStoryId} = ${root}::uuid)`,
+        sql`${topicStories.storyId} <> ${storyId}::uuid`,
+        sql`${topicStories.duplicateOverriddenAt} IS NULL`,
+      ),
+    )
+    .limit(5);
+  return rows.map((entry) => ({ storyId: entry.storyId, title: entry.title ?? "" }));
+}
+
+/** Whether this exact story was already published (or scheduled) in the Topic. */
+export async function storyAlreadyPublished(topicId: string, storyId: string): Promise<boolean> {
+  const rows = await db
+    .select({ storyId: storySocialPublications.storyId })
+    .from(storySocialPublications)
+    .where(
+      and(
+        eq(storySocialPublications.topicId, topicId),
+        eq(storySocialPublications.storyId, storyId),
+        inArray(storySocialPublications.status, ["scheduled", "published"]),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
 }

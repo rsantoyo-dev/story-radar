@@ -5,6 +5,9 @@ import { plannerInputs } from "./daily-editorial-planner.repository";
 import { getEditorialEvaluationPublicConfig } from "./editorial-evaluation.config";
 import { promoteEditorialReviewCandidate, reviewEditorialShortlist } from "./story-editorial.repository";
 
+/** The story is no longer a planner candidate (rejected, duplicate, aged out). */
+export class DailyStoryNotEligibleError extends Error {}
+
 /** Reuse the planner card's approval actions; retries keep an existing approval. */
 export async function approveDailyStory(topicId: string, storyId: string) {
   try {
@@ -15,13 +18,13 @@ export async function approveDailyStory(topicId: string, storyId: string) {
   }
   const { candidates } = await plannerInputs(topicId, await getEditorialProfile(topicId), new Date());
   const candidate = candidates.find(candidate => candidate.storyId === storyId);
-  if (!candidate) throw new Error("The recommended story is no longer eligible for approval");
+  if (!candidate) throw new DailyStoryNotEligibleError("The recommended story is no longer eligible for approval");
   const configuration = getEditorialEvaluationPublicConfig();
   if (candidate.decision === "shortlist") {
     await reviewEditorialShortlist(topicId, [storyId], "approved", configuration);
   } else if (candidate.decision === "review") {
     await promoteEditorialReviewCandidate(topicId, storyId, configuration);
   } else {
-    throw new Error("The recommended story is no longer eligible for approval");
+    throw new DailyStoryNotEligibleError("The recommended story is no longer eligible for approval");
   }
 }

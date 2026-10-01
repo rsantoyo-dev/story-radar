@@ -7,11 +7,11 @@ import { dailyPreparationRuns as runs } from "@/db/schema";
 export async function latestPreparation(topicId:string) {
   return (await db.select().from(runs).where(eq(runs.topicId,topicId)).orderBy(desc(runs.startedAt)).limit(1))[0];
 }
-export async function startPreparation(topicId:string,lineId:string,lineName:string,timezone:string,mode:"day"|"draft"="day",targetStep:DailyPreparationStep=mode==="draft"?"brief":"recommend",trigger:"manual"|"auto"="manual") {
+export async function startPreparation(topicId:string,lineId:string,lineName:string,timezone:string,mode:"day"|"draft"="day",targetStep:DailyPreparationStep=mode==="draft"?"brief":"recommend",trigger:"manual"|"auto"="manual",autoApprove=false) {
   const [,inserted]=await db.batch([
     db.execute(sql`SELECT id FROM topics WHERE id=${topicId}::uuid FOR UPDATE`),
     db.execute(sql`INSERT INTO daily_preparation_runs(topic_id,line_id,timezone,progress)
-      SELECT ${topicId}::uuid,${lineId}::uuid,${timezone},${JSON.stringify({lineName,mode:DAILY_PREPARATION_STEPS.indexOf(targetStep)>2?"draft":mode,targetStep,evaluated:0,evaluationBatches:0,trigger})}::jsonb
+      SELECT ${topicId}::uuid,${lineId}::uuid,${timezone},${JSON.stringify({lineName,mode:DAILY_PREPARATION_STEPS.indexOf(targetStep)>2?"draft":mode,targetStep,evaluated:0,evaluationBatches:0,trigger,...(autoApprove?{autoApprove:true}:{})})}::jsonb
       WHERE NOT EXISTS(SELECT 1 FROM daily_preparation_runs WHERE topic_id=${topicId}::uuid AND status='running') RETURNING id`),
   ]);
   return {run:await latestPreparation(topicId),created:!!inserted.rows.length};
@@ -37,7 +37,7 @@ export async function startScoopPreparation(input:{topicId:string;lineId:string;
   return id ? (await db.select().from(runs).where(eq(runs.id,id)).limit(1))[0] : undefined;
 }
 /** Extend only the latest stopped run; never overwrite a worker's active lease. */
-export async function continuePreparation(topicId:string,id:string,targetStep:DailyPreparationStep) {
+export async function continuePreparation(topicId:string,id:string,targetStep:DailyPreparationStep,autoApprove?:boolean) {
   const run=await latestPreparation(topicId);
   if(!run || run.id!==id || run.status==="running")return run;
   const completed=run.progress.completedStep ?? (run.status==="completed" ? run.step as DailyPreparationStep : undefined);
@@ -48,6 +48,7 @@ export async function continuePreparation(topicId:string,id:string,targetStep:Da
   if((step==="content" || step==="approve") && !run.progress.storyId)step="recommend";
   if(DAILY_PREPARATION_STEPS.indexOf(targetStep)<DAILY_PREPARATION_STEPS.indexOf(step as DailyPreparationStep))return run;
   const progress={...run.progress,targetStep,mode:DAILY_PREPARATION_STEPS.indexOf(targetStep)>2?"draft" as const:run.progress.mode};
+  if(autoApprove!==undefined)progress.autoApprove=autoApprove;
   if(step==="collect")delete progress.collectionRunId;
   await db.batch([
     db.execute(sql`SELECT id FROM topics WHERE id=${topicId}::uuid FOR UPDATE`),
