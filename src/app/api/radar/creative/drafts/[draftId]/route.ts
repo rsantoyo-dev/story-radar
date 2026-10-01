@@ -5,7 +5,7 @@ import {
 } from "@/app/api/radar/radar-topic";
 import {
   approveSavedCreativeDraft,
-  refreshCreativeDraftCharacterReferences,
+  refreshCreativeDraftReferences,
   saveCreativeDraft,
   setSavedCreativeDraftVisualFidelity,
   unapproveSavedCreativeDraft,
@@ -69,13 +69,14 @@ export async function PATCH(request: Request, context: Context) {
     if (
       body.action !== "approve" &&
       body.action !== "unapprove" &&
+      body.action !== "refresh-references" &&
       body.action !== "refresh-character-references" &&
       body.action !== "set-visual-fidelity"
     ) {
       return noStoreJson(
         {
           error:
-            "action must be approve, unapprove, refresh-character-references, or set-visual-fidelity",
+            "action must be approve, unapprove, refresh-references, or set-visual-fidelity",
         },
         400,
       );
@@ -117,7 +118,7 @@ export async function PATCH(request: Request, context: Context) {
           )
         : body.action === "unapprove"
           ? await unapproveSavedCreativeDraft(topicId, draftId)
-          : await refreshCreativeDraftCharacterReferences(topicId, draftId),
+          : await refreshCreativeDraftReferences(topicId, draftId),
     );
   } catch (error) {
     const topicError = topicRequestErrorResponse(error);

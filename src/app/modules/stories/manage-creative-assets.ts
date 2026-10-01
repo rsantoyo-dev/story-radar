@@ -1486,7 +1486,7 @@ function assertCharacterSnapshotsForDraft(
 
   if (incompleteUnit) {
     throw new CreativeContentConflictError(
-      `Slide ${incompleteUnit.order} has supporting-character selections without a current reference snapshot. Refresh character references, approve the draft, and try again.`,
+      `Slide ${incompleteUnit.order} has supporting-character selections without a current reference snapshot. Use "Refresh references", approve the draft, and try again.`,
     );
   }
 }

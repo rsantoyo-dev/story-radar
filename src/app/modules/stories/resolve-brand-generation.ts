@@ -12,7 +12,7 @@ export async function resolveBrandGenerationReferences(topicId: string, selectio
     const row = await findCreativeBrandReference(topicId, entry.id);
     if (!row || !row.isActive || !row.activatedForJourney || !row.providerTransmissionAllowed ||
         row.version !== entry.version || row.configVersion !== entry.configVersion) {
-      throw new Error("A selected brand reference changed or cannot be sent. Save a new draft version to refresh its references.");
+      throw new Error("A selected brand reference changed or cannot be sent. Use 'Refresh references' on the draft to pick up the current brand library.");
     }
     const contribution = parseCreativeBrandContribution(row.contribution);
     if (!brandContributionIsConfigured(contribution)) throw new Error("Brand reference guidance is missing.");

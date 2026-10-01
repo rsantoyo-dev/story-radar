@@ -468,6 +468,8 @@ export async function replaceCreativeDraft(
      */
     provider?: string;
     model?: string;
+    /** Re-select brand references from the current library instead of carrying the old selection. */
+    refreshBrandReferences?: boolean;
   } = {},
 ): Promise<CreativeDraft> {
   const now = new Date();
@@ -488,7 +490,7 @@ export async function replaceCreativeDraft(
     if (id && current.units.some(unit => unit.id === id)) row.id = id;
   });
   const carry = current.provider !== "documentary" && current.outputAspectRatio === input.outputAspectRatio &&
-    canCarryImageUnits(current.units, input.units);
+    canCarryImageUnits(current.units, input.units) && !options.refreshBrandReferences;
   if (carry) units.forEach((row, index) => { row.brandReferenceSelection = current.units[index].brandReferenceSelection ?? null; });
   const assignments = unitCharacterAssignments(units, characterSnapshots, now);
 
