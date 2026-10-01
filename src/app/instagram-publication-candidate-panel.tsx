@@ -181,6 +181,16 @@ export function InstagramPublicationCandidatePanel({ topicId, draftId, batchId, 
     } finally { setPackageBusy(false); }
   }
 
+  /** The newest unexpired review of the order's exact content; re-freezing makes a stale package current. */
+  function retryPackageId(orderPackageId: string): string {
+    const order = packages.find((item) => item.id === orderPackageId);
+    if (!order) return orderPackageId;
+    const newest = packages
+      .filter((item) => item.status === "frozen" && item.packageHash === order.packageHash && Date.parse(item.expiresAt) > Date.now())
+      .sort((a, b) => Date.parse(b.expiresAt) - Date.parse(a.expiresAt))[0];
+    return newest?.id ?? orderPackageId;
+  }
+
   async function publish(packageId: string, retryJobId?: string) {
     if (publishing.current || jobActive || packageBusy) return;
     if (!retryJobId) {
@@ -319,7 +329,7 @@ export function InstagramPublicationCandidatePanel({ topicId, draftId, batchId, 
         {job.status === "pending-confirmation" ? null : job.lastError ? <p><small>{job.lastError}</small></p> : null}
         {job.status === "published" && job.permalink ? <p><a href={job.permalink} target="_blank" rel="noreferrer">View the published post</a></p> : null}
         {job.status === "published" && !job.permalink ? <p><small>Published and recorded. The permalink is not available yet.</small></p> : null}
-        {job.canRetry ? <button type="button" className={styles.secondaryButton} disabled={!jobPackageId || jobBusy || packageBusy} onClick={() => void publish(jobPackageId, job.id)}>{jobBusy ? "Starting retry…" : job.status === "suspended" ? "Revalidate and retry publishing" : "Retry publishing"}</button> : null}
+        {job.canRetry ? <button type="button" className={styles.secondaryButton} disabled={!jobPackageId || jobBusy || packageBusy} onClick={() => void publish(retryPackageId(jobPackageId), job.id)}>{jobBusy ? "Starting retry…" : job.status === "suspended" ? "Revalidate and retry publishing" : "Retry publishing"}</button> : null}
         {job.status === "suspended" && !job.canRetry && job.failureKind !== "uncertain" ? <p><small>Review the recorded reason before creating another publication order.</small></p> : null}
         <p><small>{channel === "facebook-page" ? "Images are uploaded unpublished and appear only as one post." : "A finished container is not a confirmed publication. A carousel posts as one."}</small></p>
       </div> : null}

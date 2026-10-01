@@ -237,6 +237,38 @@ test("a legacy preflight suspension remains inert until an explicit retry passes
   } finally { await h.client.close(); }
 });
 
+test("a retry moves a stale order to a newer frozen package of the same content", async () => {
+  const h = await setup({ channel: "facebook-page" });
+  const newer = "00000000-0000-4000-8000-000000000006";
+  try {
+    // The order's package went stale (an image was re-approved after freezing)...
+    await h.db.update(schema.instagramPublicationPackages).set({ candidateSnapshotHash: "old-snapshot" });
+    const job = await h.repo.requestPublishNow(ids.topic, ids.draft, ids.pkg);
+    await h.finish();
+    assert.equal((await h.row()).status, "suspended");
+    assert.equal(h.calls.feed, 0);
+    // ...and the editor re-froze the same content as a current package.
+    await h.db.insert(schema.instagramPublicationPackages).values({ id: newer, topicId: ids.topic, draftId: ids.draft,
+      batchId: ids.batch, storyId: ids.story, draftVersion: 1, candidateSnapshotHash: "snapshot", packageHash: "package",
+      mediaType: "carousel", caption: "Approved caption", connectionVersion: "conn-1", channel: "facebook-page", pageId: "555", igUserId: null,
+      scriptSnapshot: {}, transforms: [], expiresAt: new Date(Date.now() + 86_400_000) });
+    for (const unitOrder of [1, 2]) {
+      await h.db.insert(schema.instagramDeliveryFiles).values({ packageId: newer, unitOrder, assetVersion: 1,
+        token: `newer-token-${unitOrder}`, objectKey: `newer-key-${unitOrder}`, contentType: "image/jpeg", byteSize: 123,
+        sha256: "hash", sourceSha256: "source-hash", width: 1080, height: 1350, expiresAt: new Date(Date.now() + 86_400_000) });
+    }
+    // Without naming the order, the newer package resolves to it read-only.
+    assert.equal((await h.repo.requestPublishNow(ids.topic, ids.draft, newer)).id, job.id);
+    await h.repo.requestPublishNow(ids.topic, ids.draft, newer, job.id);
+    await h.finish();
+    const row = await h.row();
+    assert.equal(row.id, job.id);
+    assert.equal(row.packageId, newer);
+    assert.equal(row.status, "published");
+    assert.equal(h.calls.feed, 1);
+  } finally { await h.client.close(); }
+});
+
 test("a Facebook Page carousel uploads unpublished photos and creates exactly one post", async () => {
   const h = await setup({ channel: "facebook-page" });
   try {

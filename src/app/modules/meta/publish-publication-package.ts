@@ -249,7 +249,10 @@ export async function requestPublishNow(
   }
   // A replay of the original request remains read-only, including consumed packages.
   if (existing && !retryJobId) return toPublicationJobView(mapJobRow(existing), maxAttempts());
-  if (retryJobId && (!existing || existing.id !== retryJobId || existing.packageId !== packageId)) {
+  // The idempotency key fixes the content and destination, so a retry may move
+  // the order to a newer frozen package of that same content (re-freezing after
+  // an approval change is how a stale package becomes current again).
+  if (retryJobId && (!existing || existing.id !== retryJobId)) {
     throw new PublicationJobConflictError("The retry does not match this publication order.");
   }
   if (pkg.status !== "frozen" || pkg.expiresAt.getTime() <= Date.now()) {
@@ -265,7 +268,7 @@ export async function requestPublishNow(
     if (existing.status !== "failed" && existing.status !== "suspended") return toPublicationJobView(mapJobRow(existing), maxAttempts());
     const patch = publicationRetryPatch(mapJobRow(existing), maxAttempts());
     const [retried] = await db.update(instagramPublicationJobs)
-      .set({ ...patchToColumns(patch), startedAt: new Date(), leaseOwner: null, leaseUntil: null })
+      .set({ ...patchToColumns(patch), packageId: pkg.id, batchId: pkg.batchId, startedAt: new Date(), leaseOwner: null, leaseUntil: null })
       .where(and(eq(instagramPublicationJobs.id, existing.id), eq(instagramPublicationJobs.status, existing.status),
         eq(instagramPublicationJobs.attempts, existing.attempts)))
       .returning();
