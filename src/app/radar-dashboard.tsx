@@ -1608,7 +1608,11 @@ export function RadarDashboard({
                   <select value={selectedTopicId} onChange={(event) => handleTopicChange(event.target.value)} disabled={isBusy || isTopicLoading} aria-label="Current Topic">
                     {topics.map((topic) => <option key={topic.id} value={topic.id}>{topic.name}</option>)}
                   </select>
-                  <span className={isTopicLoading ? styles.topicLoadingIndicator : undefined} aria-hidden="true">{isTopicLoading ? "◌" : "⌄"}</span>
+                  <span className={isTopicLoading ? styles.topicLoadingIndicator : undefined} aria-hidden="true">
+                    <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" focusable="false">
+                      {isTopicLoading ? <path d="M10 3a7 7 0 1 1-7 7" /> : <path d="m5 7.5 5 5 5-5" />}
+                    </svg>
+                  </span>
                 </div>
                 <a href="#topics" className={styles.topicManage} aria-label="Manage Topics" title="Manage Topics">Manage</a>
               </div>

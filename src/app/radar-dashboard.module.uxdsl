@@ -573,24 +573,25 @@
   opacity: 0.58;
 }
 
+/* An SVG chevron centred by flex: a text glyph sits on its baseline and
+ * drifts low however its box is nudged. */
 .topicSelectWrap > span {
   position: absolute;
-  top: 50%;
+  inset-block: 0;
   right: density(4);
+  display: flex;
+  align-items: center;
   color: palette(primary-main);
-  @ds-typo (h4);
-  font-size: 16px;
   pointer-events: none;
-  transform: translateY(-55%);
 }
 
-.topicLoadingIndicator {
+.topicLoadingIndicator svg {
   animation: topic-spin 700ms linear infinite;
 }
 
 @keyframes topic-spin {
-  from { transform: translateY(-55%) rotate(0deg); }
-  to { transform: translateY(-55%) rotate(360deg); }
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .page {
