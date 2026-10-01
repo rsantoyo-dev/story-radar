@@ -3196,6 +3196,21 @@
   color: palette(primary-main);
 }
 
+/* Inline "go to where this is fixed" action beside a publication blocker. */
+.blockerAction {
+  @ds-button(flat primary 1);
+  @ds-typo(caption);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.blockerAction:focus-visible {
+  outline: 2px solid palette(primary-main);
+  outline-offset: 2px;
+}
+
 .publicationCaption {
   white-space: pre-wrap;
   overflow-wrap: anywhere;

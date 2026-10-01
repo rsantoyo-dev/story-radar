@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { InstagramPublicationCandidatePanel } from "./instagram-publication-candidate-panel";
+import { InstagramPublicationCandidatePanel, type BlockerTarget } from "./instagram-publication-candidate-panel";
 import type { PublicationChannel } from "./modules/meta/publication-channel";
 import { InlineNotice, LoadingState } from "./ui/primitives";
 
@@ -17,12 +17,13 @@ type ChannelOption = { channel: PublicationChannel; accountHint?: string };
  * connection is offered only when it is not that same Instagram account, so
  * one account is never offered twice.
  */
-export function PublicationChannelsPanel({ topicId, draftId, batchId, secret, disabled }: {
+export function PublicationChannelsPanel({ topicId, draftId, batchId, secret, disabled, onGoToBlocker }: {
   topicId: string;
   draftId: string;
   batchId: string;
   secret: string;
   disabled?: boolean;
+  onGoToBlocker?: (target: BlockerTarget) => void;
 }) {
   const [options, setOptions] = useState<ChannelOption[]>();
   const [error, setError] = useState<string>();
@@ -53,7 +54,7 @@ export function PublicationChannelsPanel({ topicId, draftId, batchId, secret, di
     {options.map((option) => <InstagramPublicationCandidatePanel
       key={option.channel}
       topicId={topicId} draftId={draftId} batchId={batchId} secret={secret} disabled={disabled}
-      channel={option.channel} accountHint={option.accountHint}
+      channel={option.channel} accountHint={option.accountHint} onGoToBlocker={onGoToBlocker}
     />)}
   </>;
 }

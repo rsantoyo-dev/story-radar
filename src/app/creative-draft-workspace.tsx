@@ -18,6 +18,7 @@ import {
 } from "./creative-brand-image-editor";
 import Image from "next/image";
 import { PublicationChannelsPanel } from "./publication-channels-panel";
+import type { BlockerTarget } from "./instagram-publication-candidate-panel";
 import { EditorFactsPanel } from "./editor-facts-panel";
 import { useRouter } from "next/navigation";
 import { CreativeDocumentaryPanel } from "./creative-documentary-panel";
@@ -502,8 +503,9 @@ export function CreativeDraftWorkspace({
       (!workspace.briefIsCurrent ||
         (!currentDraftForSelection && staleDraftForSelection)),
   );
-  const activeDraftHasSupportingCharacters = Boolean(
-    activeDraft?.units.some((unit) => (unit.characterIds?.length ?? 0) > 0),
+  const activeDraftHasReferences = Boolean(
+    activeDraft?.units.some((unit) =>
+      (unit.characterIds?.length ?? 0) > 0 || (unit.brandReferenceSelection?.selected.length ?? 0) > 0),
   );
   const activeOutputAspectRatio = activeDraft
     ? outputAspectRatioForDraft(activeDraft)
@@ -1084,7 +1086,7 @@ export function CreativeDraftWorkspace({
     }
     if (
       !window.confirm(
-        "Use the current supporting-character description and reference images for this draft? This will unapprove the draft and retire its existing image batch.",
+        "Use the current supporting characters and brand references for this draft? This will unapprove the draft and retire its existing image batch.",
       )
     ) {
       return;
@@ -1100,12 +1102,12 @@ export function CreativeDraftWorkspace({
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "refresh-character-references" }),
+          body: JSON.stringify({ action: "refresh-references" }),
         },
       );
       await reloadWorkspace(selectedFormat);
       setNotice(
-        "Character references refreshed. Approve the draft, then generate a new image batch to use them.",
+        "References refreshed. Approve the draft, then generate a new image batch to use them.",
       );
     });
   }
@@ -1121,7 +1123,7 @@ export function CreativeDraftWorkspace({
     const count = activeDraft.units.length;
     if (
       !window.confirm(
-        requiresPlaceComposition ? `Resolve verified place material and generate ${count} images in this draft, preserving the saved text?` : `Generate ${count} ${count === 1 ? "image" : "images"} at ${assetDimensions} with ${imageModelLabel}${supportsImageQuality ? ` (${imageQualityLabel(selectedImageQuality)} quality)` : ""}${activeDraftHasSupportingCharacters ? ". Slides with selected supporting characters will use reference-guided generation." : ""}?`,
+        requiresPlaceComposition ? `Resolve verified place material and generate ${count} images in this draft, preserving the saved text?` : `Generate ${count} ${count === 1 ? "image" : "images"} at ${assetDimensions} with ${imageModelLabel}${supportsImageQuality ? ` (${imageQualityLabel(selectedImageQuality)} quality)` : ""}${activeDraftHasReferences ? ". Slides with selected supporting characters will use reference-guided generation." : ""}?`,
       )
     ) {
       return;
@@ -1612,6 +1614,26 @@ export function CreativeDraftWorkspace({
     onClose();
   }
 
+  /** Opens the tab that resolves a publication blocker and, for one image, brings its card into view. */
+  function goToBlocker(target: BlockerTarget) {
+    selectTab(target.tab);
+    if (!target.assetId) {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+    let frames = 0;
+    const reveal = () => {
+      const card = document.getElementById(`asset-${target.assetId}`);
+      if (card) {
+        card.scrollIntoView({ behavior: "smooth", block: "center" });
+        card.focus({ preventScroll: true });
+      } else if (++frames < 30) {
+        requestAnimationFrame(reveal); // The Visuals tab renders on the next commit.
+      }
+    };
+    requestAnimationFrame(reveal);
+  }
+
   function selectTab(tab: WorkspaceTab) {
     setActiveTab(tab);
     if (mode === "page") {
@@ -2065,8 +2087,8 @@ export function CreativeDraftWorkspace({
                     <div>
                       <strong>{activeDraft.status === "approved" && !dirty ? "Ready for asset generation" : dirty ? "Unsaved draft changes" : activeApprovalHasDeterministicBlockers ? "Draft needs fixes before approval" : activeDraftRequiresHumanReviewAcknowledgement ? "Automated review needs acknowledgement" : "Ready for human approval"}</strong>
                       <small>{activeDraft.status === "approved" && !dirty
-                        ? activeDraftHasSupportingCharacters
-                          ? "Refresh character references before generating if their description or images changed."
+                        ? activeDraftHasReferences
+                          ? "Refresh references before generating if a character or brand reference changed."
                           : "Generate and review each integrated text image below."
                         : dirty
                           ? "Save your edits as a new version before approving this draft."
@@ -2094,14 +2116,14 @@ export function CreativeDraftWorkspace({
                           ? "Generating new AI draft…"
                           : "Generate new AI draft"}
                       </button>
-                      {activeDraftHasSupportingCharacters ? (
+                      {activeDraftHasReferences ? (
                         <button
                           type="button"
                           className={styles.secondaryButton}
                           disabled={Boolean(busy) || dirty}
                           onClick={handleRefreshCharacterReferences}
                         >
-                          {busy === "references" ? "Refreshing references..." : "Refresh character references"}
+                          {busy === "references" ? "Refreshing references..." : "Refresh references"}
                         </button>
                       ) : null}
                       <button type="button" className={styles.secondaryButton} disabled={Boolean(busy) || !dirty} onClick={handleSaveDraft}
@@ -2330,7 +2352,7 @@ export function CreativeDraftWorkspace({
                             : `Generate integrated text graphics with ${imageModelLabel}`}
                         </strong>
                         <p>
-                          {imageModelLabel} will create {activeDraft.units.length} {activeDraft.units.length === 1 ? "image" : "images"} in {assetDimensions}. {activeDraftHasSupportingCharacters ? "Slides with selected characters use reference-guided generation; other slides remain text-to-image." : "Every slide will use text-to-image."} Every result still requires human text review.
+                          {imageModelLabel} will create {activeDraft.units.length} {activeDraft.units.length === 1 ? "image" : "images"} in {assetDimensions}. {activeDraftHasReferences ? "Slides with selected characters use reference-guided generation; other slides remain text-to-image." : "Every slide will use text-to-image."} Every result still requires human text review.
                         </p>
                         {assetBatchIsStaleForCurrentDraft ? (
                           <p className={styles.assetVariantHint}>
@@ -2535,6 +2557,7 @@ export function CreativeDraftWorkspace({
                 key={JSON.stringify([topicId, activeDraft, currentAssetBatch, dirty, busy, assetBusy, viewingHistoricalDraft])}
                 topicId={topicId} draftId={activeDraft.id} batchId={currentAssetBatch.id} secret={secret}
                 disabled={dirty || Boolean(busy) || Boolean(assetBusy) || viewingHistoricalDraft}
+                onGoToBlocker={goToBlocker}
               /> : <p className={styles.warning}>Approve the script and images to prepare an Instagram publication.</p>}
               <StoryInstagramResults
                 topicId={topicId}
@@ -2942,7 +2965,7 @@ function CreativeAssetCard({
       : undefined;
 
   return (
-    <article className={styles.assetCard}>
+    <article className={styles.assetCard} id={`asset-${asset.id}`} tabIndex={-1}>
       <header>
         <div>
           <strong>{label}</strong>

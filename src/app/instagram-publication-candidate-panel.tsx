@@ -15,6 +15,9 @@ import type {
   PublicationJobStatus,
 } from "./modules/meta/publish-publication-package.core";
 import styles from "./creative-draft-workspace.generated.module.css";
+import { publicationBlockerTarget, type BlockerTarget } from "./publication-blocker-target";
+
+export type { BlockerTarget };
 
 const TERMINAL_JOB_STATUS: PublicationJobStatus[] = [
   "published",
@@ -53,9 +56,11 @@ type Props = {
   channel?: PublicationChannel;
   /** Display name of the connected account/Page when a package does not carry one. */
   accountHint?: string;
+  /** Takes the editor to where a blocker is resolved (script tab or one image). */
+  onGoToBlocker?: (target: BlockerTarget) => void;
 };
 
-export function InstagramPublicationCandidatePanel({ topicId, draftId, batchId, secret, disabled, channel = DEFAULT_PUBLICATION_CHANNEL, accountHint }: Props) {
+export function InstagramPublicationCandidatePanel({ topicId, draftId, batchId, secret, disabled, channel = DEFAULT_PUBLICATION_CHANNEL, accountHint, onGoToBlocker }: Props) {
   const platform = publicationPlatformLabel(channel);
   const [result, setResult] = useState<PublicationCandidate>();
   const [error, setError] = useState("");
@@ -242,7 +247,13 @@ export function InstagramPublicationCandidatePanel({ topicId, draftId, batchId, 
       {(() => {
         // Access/destination reasons are already shown in the line above.
         const rest = result.blockers.filter((b) => !/^(publishing-|destination-)/.test(b.code));
-        return rest.length ? <ul>{rest.map((blocker, index) => <li key={`${blocker.code}:${blocker.assetId || index}`}>{blocker.message}</li>)}</ul> : null;
+        return rest.length ? <ul>{rest.map((blocker, index) => {
+          const target = onGoToBlocker ? publicationBlockerTarget(blocker) : undefined;
+          return <li key={`${blocker.code}:${blocker.assetId || index}`}>
+            {blocker.message}
+            {target ? <>{" "}<button type="button" className={styles.blockerAction} onClick={() => onGoToBlocker?.(target)}>{target.label}</button></> : null}
+          </li>;
+        })}</ul> : null;
       })()}
       <details><summary>Validated copy and image selection</summary>
         <p className={styles.publicationCaption}>{result.caption}</p>
