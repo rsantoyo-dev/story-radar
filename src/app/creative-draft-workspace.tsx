@@ -19,6 +19,7 @@ import {
 import Image from "next/image";
 import { PublicationChannelsPanel } from "./publication-channels-panel";
 import type { BlockerTarget } from "./instagram-publication-candidate-panel";
+import { workspaceErrorAction, type WorkspaceErrorAction } from "./workspace-error-action";
 import { EditorFactsPanel } from "./editor-facts-panel";
 import { useRouter } from "next/navigation";
 import { CreativeDocumentaryPanel } from "./creative-documentary-panel";
@@ -1614,6 +1615,19 @@ export function CreativeDraftWorkspace({
     onClose();
   }
 
+  /** Runs the one action that resolves a workspace conflict shown in the error box. */
+  function resolveError(action: WorkspaceErrorAction) {
+    setError(undefined);
+    if (action.kind === "reload") {
+      void reloadWorkspace().catch((reloadError: unknown) => setError(getErrorMessage(reloadError)));
+    } else if (action.kind === "tab") {
+      selectTab(action.tab);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } else {
+      void handleRefreshCharacterReferences();
+    }
+  }
+
   /** Opens the tab that resolves a publication blocker and, for one image, brings its card into view. */
   function goToBlocker(target: BlockerTarget) {
     selectTab(target.tab);
@@ -1703,7 +1717,7 @@ export function CreativeDraftWorkspace({
               <ProgressStep number="4" label="Images" active={Boolean(activeDraft?.status === "approved" && !currentAssetBatch?.allApproved)} complete={Boolean(currentAssetBatch?.allApproved)} />
             </div>
 
-            {error ? <ErrorMessage message={error} /> : null}
+            {error ? <ErrorMessage message={error} onResolve={resolveError} /> : null}
             {notice ? (
               <div className={styles.notice} role="status" aria-live="polite">
                 {notice}
@@ -2305,7 +2319,7 @@ export function CreativeDraftWorkspace({
                   )}
                 </div>
 
-                {error ? <ErrorMessage message={error} /> : null}
+                {error ? <ErrorMessage message={error} onResolve={resolveError} /> : null}
                 {!visibleAssets ? (
                   <div className={styles.assetLoading}>
                     Loading image workspace...
@@ -3988,8 +4002,13 @@ function VisualFidelityControl({
   );
 }
 
-function ErrorMessage({ message }: { message: string }) {
-  return <div className={styles.error} role="alert"><strong>Creative studio error</strong><p>{message}</p></div>;
+function ErrorMessage({ message, onResolve }: { message: string; onResolve?: (action: WorkspaceErrorAction) => void }) {
+  const action = onResolve ? workspaceErrorAction(message) : undefined;
+  return <div className={styles.error} role="alert">
+    <strong>Creative studio error</strong>
+    <p>{message}</p>
+    {action ? <button type="button" className={styles.secondaryButton} onClick={() => onResolve?.(action)}>{action.label}</button> : null}
+  </div>;
 }
 
 function selectDraft(
