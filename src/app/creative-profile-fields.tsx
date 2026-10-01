@@ -1084,6 +1084,22 @@ export function BrandReferenceLibrary({
     } catch (error) { setError(error instanceof Error ? error.message : "Download failed"); }
   };
 
+  const remove = (reference: CreativeBrandReference) => {
+    if (busy) return;
+    setBusy(reference.id);
+    setError(undefined);
+    brandReferenceRequest<{ ok: true }>(
+      topicUrl(`${BRAND_REFERENCES_PATH}/${encodeURIComponent(reference.id)}`, topicId),
+      secret,
+      { method: "DELETE" },
+    )
+      .then(() => setReferences((prev) => (prev ?? []).filter((entry) => entry.id !== reference.id)))
+      .catch((requestError: unknown) => {
+        setError(requestError instanceof Error ? requestError.message : "The reference could not be deleted");
+      })
+      .finally(() => setBusy(undefined));
+  };
+
   const analyze = (reference: CreativeBrandReference) => {
     if (busy) return;
     setBusy(`analysis:${reference.id}`);
@@ -1237,6 +1253,7 @@ export function BrandReferenceLibrary({
               onAnalyze={analyze}
               onReplace={replaceImage}
               onDownloadOriginal={downloadOriginal}
+              onDelete={remove}
             />
           ))}
         </div>
@@ -1246,7 +1263,7 @@ export function BrandReferenceLibrary({
 }
 
 function BrandReferenceCard({
-  onReplace, onDownloadOriginal,
+  onReplace, onDownloadOriginal, onDelete,
   reference,
   topicId,
   secret,
@@ -1267,6 +1284,7 @@ function BrandReferenceCard({
   onAnalyze: (reference: CreativeBrandReference) => void;
   onReplace: (reference: CreativeBrandReference, image: File) => void;
   onDownloadOriginal: (reference: CreativeBrandReference) => void;
+  onDelete: (reference: CreativeBrandReference) => void;
 }) {
   const locked = disabled || Boolean(busy);
   const contribution: CreativeBrandContribution = reference.contribution ?? {
@@ -1499,6 +1517,22 @@ function BrandReferenceCard({
               Reactivate
             </button>
           )}
+          <button
+            type="button"
+            className={styles.secondaryButton}
+            disabled={locked}
+            onClick={() => {
+              if (
+                window.confirm(
+                  `Delete "${reference.name}" from the brand library? It will no longer guide new images. Images already made with it keep their history.`,
+                )
+              ) {
+                onDelete(reference);
+              }
+            }}
+          >
+            Delete
+          </button>
         </div>
 
         {analysis ? (

@@ -176,6 +176,11 @@ export const creativeBrandReferences = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
+    /**
+     * Removed from the library by the editor. The row and its R2 bytes stay so
+     * drafts and images that used it keep their history; it is never sent again.
+     */
+    deletedAt: timestamp("deleted_at", { withTimezone: true, mode: "date" }),
   },
   (table) => [
     uniqueIndex("creative_brand_references_object_key_unique").on(

@@ -1,4 +1,4 @@
-import { findCreativeBrandReference } from "@/app/modules/stories/creative-brand-references.repository";
+import { deleteCreativeBrandReference, findCreativeBrandReference } from "@/app/modules/stories/creative-brand-references.repository";
 import { authorizeRadarCollector } from "@/app/api/radar/radar-api-auth";
 import {
   creativeRouteErrorResponse,
@@ -70,9 +70,13 @@ export async function PATCH(request: Request, context: Context) {
   }
 
   try {
+    const topicId = await requireActiveRequestTopic(request);
+    if ((await findCreativeBrandReference(topicId, referenceId))?.deletedAt) {
+      return noStoreJson({ error: "The brand reference was deleted" }, 404);
+    }
     return noStoreJson(
       await editCreativeBrandReference({
-        topicId: await requireActiveRequestTopic(request),
+        topicId,
         referenceId,
         patch: await request.json(),
       }),
@@ -102,4 +106,24 @@ export async function PUT(request: Request, context: Context) {
     return noStoreJson(await uploadCreativeBrandReference({ topicId, image, name: previous.name, kind: previous.kind,
       provenance: previous.provenance, usageNote: previous.usageNote, providerTransmissionAllowed: previous.providerTransmissionAllowed }, previous));
   } catch (error) { return topicRequestErrorResponse(error) || creativeRouteErrorResponse(error, "replace the brand reference"); }
+}
+
+/**
+ * Removes the reference from the library (soft delete): it is never sent to
+ * the image model again, while drafts and images that used it keep history.
+ */
+export async function DELETE(request: Request, context: Context) {
+  const unauthorized = authorizeRadarCollector(request);
+  if (unauthorized) return unauthorized;
+  const { referenceId } = await context.params;
+  if (!UUID_PATTERN.test(referenceId)) {
+    return noStoreJson({ error: "referenceId must be a valid UUID" }, 400);
+  }
+  try {
+    const deleted = await deleteCreativeBrandReference(await requireActiveRequestTopic(request), referenceId);
+    if (!deleted) return noStoreJson({ error: "The brand reference was not found" }, 404);
+    return noStoreJson({ ok: true });
+  } catch (error) {
+    return topicRequestErrorResponse(error) ?? creativeRouteErrorResponse(error, "delete the brand reference");
+  }
 }

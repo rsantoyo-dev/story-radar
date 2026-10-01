@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNull, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { creativeBrandReferences, creativeBrandAnalysisQuota } from "@/db/schema";
@@ -74,6 +74,7 @@ export async function listActivatedBrandReferences(
         eq(creativeBrandReferences.topicId, topicId),
         eq(creativeBrandReferences.isActive, true),
         eq(creativeBrandReferences.activatedForJourney, true),
+        isNull(creativeBrandReferences.deletedAt),
       ),
     )
     .orderBy(asc(creativeBrandReferences.createdAt));
@@ -89,7 +90,7 @@ export async function listCreativeBrandReferences(
   const rows = await db
     .select()
     .from(creativeBrandReferences)
-    .where(eq(creativeBrandReferences.topicId, topicId))
+    .where(and(eq(creativeBrandReferences.topicId, topicId), isNull(creativeBrandReferences.deletedAt)))
     .orderBy(
       desc(creativeBrandReferences.isActive),
       desc(creativeBrandReferences.createdAt),
@@ -237,6 +238,22 @@ export async function countBrandReferenceAnalysesToday(
       ),
     );
   return count;
+}
+
+/**
+ * Removes a reference from the library. It is deactivated and taken out of
+ * the journey, so drafts that selected it must save a new version before
+ * generating again; the row and bytes stay for history. Returns false when
+ * the reference does not belong to the topic.
+ */
+export async function deleteCreativeBrandReference(topicId: string, referenceId: string): Promise<boolean> {
+  const now = new Date();
+  const [row] = await db
+    .update(creativeBrandReferences)
+    .set({ deletedAt: sql`coalesce(${creativeBrandReferences.deletedAt}, ${now.toISOString()}::timestamptz)`, isActive: false, activatedForJourney: false, updatedAt: now })
+    .where(and(eq(creativeBrandReferences.id, referenceId), eq(creativeBrandReferences.topicId, topicId)))
+    .returning({ id: creativeBrandReferences.id });
+  return Boolean(row);
 }
 
 /** Resolves a reference only when it belongs to the selected topic. */
