@@ -98,6 +98,7 @@ type BusyAction =
   | "draft"
   | "save"
   | "references"
+  | "visual-directions"
   | "approve"
   | "unapprove"
   | "visual-fidelity"
@@ -1110,6 +1111,27 @@ export function CreativeDraftWorkspace({
       setNotice(
         "References refreshed. Approve the draft, then generate a new image batch to use them.",
       );
+    });
+  }
+
+  async function handleRewriteVisualDirections() {
+    if (!activeDraftId || !activeDraft || busy || viewingHistoricalDraft || dirty) return;
+    if (!window.confirm(
+      "Rewrite each slide's visual direction under the current creative identity? The approved text stays exactly as it is; the current images are kept in history and you generate a fresh batch afterwards.",
+    )) return;
+
+    await run("visual-directions", async () => {
+      await requestJson(
+        topicUrl(`/api/radar/creative/drafts/${encodeURIComponent(activeDraftId)}`, topicId),
+        secret,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "rewrite-visual-directions", expectedVersion: activeDraft.version }),
+        },
+      );
+      await reloadWorkspace(selectedFormat);
+      setNotice("Visual directions rewritten under the current creative identity. Generate a fresh image batch to see the new layouts.");
     });
   }
 
@@ -2320,6 +2342,26 @@ export function CreativeDraftWorkspace({
                 </div>
 
                 {error ? <ErrorMessage message={error} onResolve={resolveError} /> : null}
+                {activeDraft.visualDirectionsOutdated && !viewingHistoricalDraft ? (
+                  <div className={styles.historyCallout}>
+                    <div>
+                      <strong>The visual directions were written under an earlier visual guide</strong>
+                      <p>
+                        Each slide&apos;s layout comes from its visual direction in the script, so regenerating
+                        images keeps the old layout. Rewrite the directions under the current creative identity;
+                        the approved text does not change.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className={styles.secondaryButton}
+                      disabled={Boolean(busy) || Boolean(assetBusy) || dirty || profileDirty}
+                      onClick={handleRewriteVisualDirections}
+                    >
+                      {busy === "visual-directions" ? "Rewriting visual directions…" : "Rewrite visual directions"}
+                    </button>
+                  </div>
+                ) : null}
                 {!visibleAssets ? (
                   <div className={styles.assetLoading}>
                     Loading image workspace...
@@ -2452,7 +2494,7 @@ export function CreativeDraftWorkspace({
                             : "This model uses its own fixed quality settings."}
                         </p>
                         {activeDraft.units.some(unit => unit.storyReferences?.some(ref => ref.purpose === "documentary-portrait")) ? (
-                          <p>Portrait slides: the AI designs the slide around a reserved area, then the saved photo is pasted in unchanged with its credit. The photo is never sent to the AI.</p>
+                          <p>Portrait slides: the AI designs the slide around a reserved area, then the saved photo fills it as a borderless crop. Its credit goes in the post caption. The photo is never sent to the AI.</p>
                         ) : null}
                         <button
                           type="button"

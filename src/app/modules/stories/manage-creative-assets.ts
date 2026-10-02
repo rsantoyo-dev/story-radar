@@ -1,5 +1,5 @@
 import { resolveStoryReferences, loadStoryReferenceImages, loadDocumentaryPortraitPhoto } from "./manage-story-photos";
-import { adaptationCreditLine, compositeAdaptationCredit, compositeDocumentaryPortrait, PORTRAIT_ZONE_PROMPT } from "./creative-portrait-composite";
+import { compositeDocumentaryPortrait, PORTRAIT_ZONE_PROMPT } from "./creative-portrait-composite";
 import { storyReferencePrompt, enforceStoryReferencePrompt, photoLedVisualDirection, type StoryGenerationReference } from "./story-reference-generation";
 import { assertStoryEditionCurrent } from "./manage-creative-content";
 import { readDocumentaryPhotoReference, readDocumentaryMapReference, storeDocumentaryMapReference, storeDocumentaryPhotoReference, documentaryVisualInputHash, reuseDocumentaryVisuals } from "./reuse-documentary-visuals";
@@ -1137,7 +1137,7 @@ async function resolveCreativeBrandGeneration(
     ...(snapshot ? { snapshot } : {}),
     carouselChrome,
     ...(carouselChromeSnapshot ? { carouselChromeSnapshot } : {}),
-    visual: { name: profile.name, visualGuidance: profile.visualGuidance, brandPalette: profile.brandPalette },
+    visual: { name: profile.name, visualGuidance: profile.visualGuidance, creativeIdentity: profile.creativeIdentity, brandPalette: profile.brandPalette },
   };
 }
 
@@ -1259,22 +1259,14 @@ async function creativePostProcessorForAsset({
   // An AI-designed slide that reserved a zone for a documentary portrait: the
   // untouched photo goes in first, then navigation and brand on top.
   const portrait = asset.providerEndpoint !== DRAFT_TYPOGRAPHY_ENDPOINT ? asset.unitSnapshot.documentaryPortrait : undefined;
-  // A slide the AI adapted from a licensed Commons photo owes its author credit.
-  const adaptationCredits = asset.providerEndpoint !== DRAFT_TYPOGRAPHY_ENDPOINT
-    ? ((await getCreativeAssetGenerationReferences(asset.id)).story ?? [])
-      .filter((reference) => reference.purpose !== "documentary-portrait" && reference.purpose !== "style" && /via Wikimedia Commons/.test(reference.provenance))
-      .map((reference) => adaptationCreditLine(reference.provenance))
-    : [];
-  if (!brandSnapshot && !chrome?.overlay && !portrait && !adaptationCredits.length) return undefined;
+  // Photo credits (portrait and adapted Commons photos) go in the caption.
+  if (!brandSnapshot && !chrome?.overlay && !portrait) return undefined;
 
   return async ({ normalizedPng }) => {
     let processed: Uint8Array = normalizedPng;
     if (portrait) {
       const photo = await loadDocumentaryPortraitPhoto(portrait.photoId, portrait.sha256);
-      processed = await compositeDocumentaryPortrait({ image: processed, photo, provenance: portrait.provenance });
-    }
-    if (adaptationCredits.length) {
-      processed = await compositeAdaptationCredit({ image: processed, credits: adaptationCredits });
+      processed = await compositeDocumentaryPortrait({ image: processed, photo });
     }
     if (chrome?.overlay) {
       try {

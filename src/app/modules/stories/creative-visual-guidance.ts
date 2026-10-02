@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import {
   DEFAULT_CREATIVE_BRAND_PALETTE,
   DEFAULT_CREATIVE_VISUAL_GUIDANCE,
@@ -5,6 +7,7 @@ import {
   type CreativeBrandPaletteColor,
   type CreativeProfile,
 } from "./creative-content.types";
+import { creativeIdentityIsEmpty, parseCreativeIdentityInput, renderCreativeIdentity, type CreativeIdentity } from "./creative-identity";
 
 /**
  * Cap for the visual guide when it feeds an *editorial text* prompt (brief and
@@ -27,12 +30,16 @@ export const CREATIVE_VISUAL_GUIDANCE_TEXT_PROMPT_MAX_CHARS = 1_400;
 export function resolveCreativeVisualGuidance(
   profile: Pick<CreativeProfile, "name"> & {
     visualGuidance?: unknown;
+    creativeIdentity?: unknown;
     brandPalette?: unknown;
   },
   options: { maxChars?: number } = {},
 ): string {
-  const raw =
-    typeof profile.visualGuidance === "string" && profile.visualGuidance.trim()
+  // Once organized, the identity's fixed branches replace the long free-text guide.
+  const identity = organizedIdentity(profile.creativeIdentity);
+  const raw = identity
+    ? renderCreativeIdentity(identity, profile.name)
+    : typeof profile.visualGuidance === "string" && profile.visualGuidance.trim()
     ? profile.visualGuidance.trim()
     : DEFAULT_CREATIVE_VISUAL_GUIDANCE;
   const guidance =
@@ -43,6 +50,26 @@ export function resolveCreativeVisualGuidance(
   return `${guidance}\n\nApproved brand palette: ${palette
     .map((entry) => `${entry.role ? `${entry.role}: ` : ""}${entry.name} ${entry.color}${describeUsage(entry)}`)
     .join("; ")}. Use these colours as the visual system unless the brief explicitly requires a factual chart colour.${describeUsageSplit(palette)}`;
+}
+
+/**
+ * Identifies the visual guide a script's visual directions were written
+ * under, so a later identity or palette change can be shown as outdated.
+ */
+export function visualGuideFingerprint(
+  profile: Parameters<typeof resolveCreativeVisualGuidance>[0],
+): string {
+  return createHash("sha256").update(resolveCreativeVisualGuidance(profile)).digest("hex").slice(0, 16);
+}
+
+function organizedIdentity(value: unknown): CreativeIdentity | undefined {
+  if (!value) return undefined;
+  try {
+    const identity = parseCreativeIdentityInput(value);
+    return creativeIdentityIsEmpty(identity) ? undefined : identity;
+  } catch {
+    return undefined;
+  }
 }
 
 /** " (10%, titles and accents)" — only for colours the editor annotated. */
@@ -96,7 +123,7 @@ function normalizePalette(value: unknown): CreativeBrandPaletteColor[] {
 }
 
 /** The Topic's current visual identity; it overrides the brief's profile snapshot for images. */
-export type ProfileVisualIdentity = { name: string; visualGuidance?: string; brandPalette?: unknown };
+export type ProfileVisualIdentity = { name: string; visualGuidance?: string; creativeIdentity?: unknown; brandPalette?: unknown };
 
 const VISUAL_GUIDE_BLOCK = /<VISUAL_CAMPAIGN_GUIDE>\n[\s\S]*?\n<\/VISUAL_CAMPAIGN_GUIDE>/;
 

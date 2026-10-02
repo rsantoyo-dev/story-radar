@@ -7,6 +7,7 @@ import { NextResponse } from "next/server";
 
 import { CreativeContentConfigurationError } from "@/app/modules/stories/creative-content.config";
 import { CreativeContentResponseError } from "@/app/modules/stories/gemini-creative-content-generator";
+import { CreativeVisualDirectionsResponseError } from "@/app/modules/stories/creative-visual-directions";
 import { CompanionStoryResponseError } from "@/app/modules/stories/companion-story-generator";
 import { OpenAiEditorialError } from "@/app/modules/stories/openai-structured-response";
 import { FalImageConfigurationError } from "@/app/modules/stories/fal-image-generation.config";
@@ -137,6 +138,7 @@ export function creativeRouteErrorResponse(
 
   if (
     error instanceof CreativeContentResponseError ||
+    error instanceof CreativeVisualDirectionsResponseError ||
     error instanceof CompanionStoryResponseError ||
     error instanceof OpenAiEditorialError ||
     error instanceof FalImageResponseError ||

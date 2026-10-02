@@ -4,7 +4,7 @@ import { requireActiveRequestTopic, topicRequestErrorResponse } from "../radar-t
 import { noStoreJson } from "../creative-route-error";
 import { listStoryTextCallsSince } from "@/app/modules/stories/creative-text-accounting.repository";
 import { findCreativeDraftById } from "@/app/modules/stories/creative-content.repository";
-import { latestPreparation, startStoryPreparation, startPreparation, retryPreparation, continuePreparation, acknowledgePreparationBrief, stopPreparation } from "@/app/modules/stories/daily-preparation.repository";
+import { listStoriesInProgress, latestPreparation, startStoryPreparation, startPreparation, retryPreparation, continuePreparation, acknowledgePreparationBrief, stopPreparation } from "@/app/modules/stories/daily-preparation.repository";
 import { DAILY_PREPARATION_STEPS, type DailyPreparationStep } from "@/app/modules/stories/daily-preparation.types";
 import { drivePreparation } from "@/app/modules/stories/daily-preparation";
 import { listEditorialLines, getEditorialLine, validId } from "@/app/modules/editorial-lines/editorial-lines.repository";
@@ -63,10 +63,12 @@ async function handle(request:Request,write:boolean) {
     const lines=(await listEditorialLines(topicId)).filter(l=>!l.archived).map(l=>({id:l.id,name:l.name,timezone:l.timezone}));
     // The AI calls behind this run's story, with credits, so the panel shows its sub-steps live.
     const calls=run?.progress.storyId ? await listStoryTextCallsSince(topicId,run.progress.storyId,new Date(run.startedAt)).catch(()=>[]) : [];
+    // Stories worked on by hand, so the panel can pick one up where it was left.
+    const inProgress=await listStoriesInProgress(topicId).catch(()=>[]);
     // The current script as slides (read live, so edits in the studio show here too).
     const draft=run?.progress.draftId ? await findCreativeDraftById(topicId,run.progress.draftId).catch(()=>undefined) : undefined;
     const slides=draft ? {version:draft.version,status:draft.status,units:draft.units.map(u=>({order:u.order,role:u.role,headline:u.headline,subheadline:u.subheadline ?? null}))} : null;
-    return noStoreJson({run:run?{id:run.id,topicId:run.topicId,lineId:run.lineId,timezone:run.timezone,status:run.status,step:run.step,progress:run.progress,error:run.error,startedAt:run.startedAt,updatedAt:run.updatedAt}:null,lines,calls,slides});
+    return noStoreJson({run:run?{id:run.id,topicId:run.topicId,lineId:run.lineId,timezone:run.timezone,status:run.status,step:run.step,progress:run.progress,error:run.error,startedAt:run.startedAt,updatedAt:run.updatedAt}:null,lines,calls,slides,inProgress});
   } catch(error) {
     const topicError=topicRequestErrorResponse(error);if(topicError)return topicError;
     if(error instanceof EditorialLineError)return noStoreJson({error:error.message},error.status);

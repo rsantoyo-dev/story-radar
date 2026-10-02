@@ -1773,6 +1773,7 @@ export function RadarDashboard({
         <div id="editorial-creative" className={styles.anchorTarget} hidden={activeView !== "identity"}>
           <CreativeProfilePanel
             key={selectedTopicId}
+            section={activeNavHash === "#creative-profile-voice" ? "voice" : ["#creative-profile-brand", "#creative-profile-carousel"].includes(activeNavHash) ? "visual" : activeNavHash === "#creative-profile-characters" ? "assets" : "profile"}
             topicId={selectedTopicId}
             secret={secret}
             disabled={isBusy}

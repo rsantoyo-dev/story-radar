@@ -86,6 +86,16 @@ export function candidateDestinationSummary(destination: PublicationDestination)
   };
 }
 
+/**
+ * Photo credits live in the caption, never drawn on the images: one line per
+ * distinct credit, skipped when the editor already wrote it in the caption.
+ */
+export function captionWithPhotoCredits(caption: string, credits: readonly string[]): string {
+  const lines = [...new Set(credits.map((credit) => credit.trim()).filter(Boolean))]
+    .filter((credit) => !caption.includes(credit));
+  return lines.length ? `${caption.trimEnd()}\n\n${lines.join("\n")}` : caption;
+}
+
 /** Stable identities include full server snapshots, never serialized secrets. */
 export function publicationSnapshotHash(value: unknown): string {
   function canonical(input: unknown): unknown {

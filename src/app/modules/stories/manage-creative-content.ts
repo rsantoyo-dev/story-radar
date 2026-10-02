@@ -23,6 +23,7 @@ import { createHash } from "node:crypto";
 import { requireTopic } from "@/app/modules/topics/topic-context";
 
 import {
+  CreativeContentConfigurationError,
   creativeSingleShotConfig,
   getCreativeContentPublicConfig,
   getCreativeCompanionRuntimeConfig,
@@ -38,6 +39,7 @@ import {
   findCachedCreativeBrief,
   findCachedCreativeDraft,
   findCreativeBriefById,
+  findCreativeDraftAiSnapshot,
   findCreativeDraftById,
   findCreativeDraftsForStory,
   findLatestCreativeBrief,
@@ -99,7 +101,15 @@ import {
   getCreativeProfile,
   getTopicVisualFidelityMode,
 } from "./creative-profile.repository";
-import { resolveCreativeVisualGuidance } from "./creative-visual-guidance";
+import { resolveCreativeVisualGuidance, visualGuideFingerprint } from "./creative-visual-guidance";
+import {
+  buildVisualDirectionsContents,
+  buildVisualDirectionsInstructions,
+  CREATIVE_VISUAL_DIRECTIONS_PROMPT_VERSION,
+  CREATIVE_VISUAL_DIRECTIONS_SCHEMA,
+  parseVisualDirectionsResponse,
+} from "./creative-visual-directions";
+import { generateOpenAiStructuredResponse } from "./openai-structured-response";
 import { generateCompanionStoryScript } from "./companion-story-generator";
 import { companionVerifiedFacts } from "./companion-facts";
 import { fallbackEditorialAngle } from "./acquisition-lenses";
@@ -202,9 +212,11 @@ export async function getCreativeWorkspaceState(
       )
       .map((draft) => draft.id),
   );
+  const currentGuide = visualGuideFingerprint(profile);
   const drafts = draftsForStory
     .map((draft) => ({
       ...draft,
+      visualDirectionsOutdated: visualDirectionsOutdated(draft, brief, currentGuide),
       // Historical drafts remain in the workspace response for a future
       // read-only history view. A companion has its own provenance hash, so it
       // inherits freshness from its still-approved current parent draft.
@@ -1369,6 +1381,97 @@ export async function refreshCreativeDraftReferences(
   });
 }
 
+/**
+ * A script's visual directions follow the guide of the brief it was written
+ * from, or of their last rewrite. Documentary drafts are composed from
+ * verified material and companions follow their parent.
+ */
+function visualDirectionsOutdated(draft: CreativeDraft, brief: CreativeBrief | undefined, currentGuide: string): boolean {
+  if (draft.companion || draft.provider === "documentary" || !brief || brief.id !== draft.briefId) return false;
+  const writtenUnder = draft.visualDirectionsRewrite?.guideHash ?? (brief.profileSnapshot ? visualGuideFingerprint(brief.profileSnapshot) : undefined);
+  return writtenUnder !== undefined && writtenUnder !== currentGuide;
+}
+
+const DEFAULT_VISUAL_DIRECTIONS_MODEL = "gpt-6.1-sol";
+
+/**
+ * Rewrites only each slide's visual direction under the current creative
+ * identity. The visible text, facts and slide structure are unchanged, so an
+ * approved script stays approved; its images go stale and are regenerated.
+ */
+export async function rewriteCreativeDraftVisualDirections(
+  topicId: string,
+  draftId: string,
+  expectedVersion?: number,
+): Promise<CreativeDraft> {
+  const current = await findCreativeDraftById(topicId, draftId);
+  if (!current) throw new CreativeContentNotFoundError("The creative draft was not found");
+  if (expectedVersion !== undefined && expectedVersion !== current.version) {
+    throw new CreativeContentConflictError("The draft changed. Reload before rewriting its visual directions.");
+  }
+  if (current.provider === "documentary" || current.companion) {
+    throw new CreativeContentConflictError("This draft's visuals come from verified material; its visual directions are not rewritten.");
+  }
+  await assertStoryEditionCurrent(topicId, current);
+  const brief = await findCreativeBriefById(topicId, current.briefId);
+  if (!brief) throw new CreativeContentNotFoundError("The creative brief was not found");
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  if (!apiKey) throw new CreativeContentConfigurationError("OPENAI_API_KEY is not configured; visual directions cannot be rewritten");
+
+  const [profile, characterRoster] = await Promise.all([getCreativeProfile(topicId), listCreativeCharacterRoster(topicId)]);
+  const model = process.env.CREATIVE_VISUAL_DIRECTIONS_MODEL?.trim() || DEFAULT_VISUAL_DIRECTIONS_MODEL;
+  const runId = createHash("sha256").update(`${current.id}:${current.version}:${Date.now()}`).digest("hex").slice(0, 32);
+  const response = await withCreativeTextBudget({ topicId, storyId: current.storyId, runId }, () => generateOpenAiStructuredResponse({
+    apiKey,
+    model,
+    instructions: buildVisualDirectionsInstructions(),
+    contents: buildVisualDirectionsContents({
+      identity: resolveCreativeVisualGuidance(profile),
+      format: current.format,
+      language: profile.language,
+      concept: current.concept,
+      units: current.units,
+    }),
+    schema: CREATIVE_VISUAL_DIRECTIONS_SCHEMA as unknown as Record<string, unknown>,
+    schemaName: "visual_directions",
+    maxOutputTokens: 6_000,
+    reasoningEffort: "low",
+    timeoutMs: 120_000,
+    auditContext: { runId, topicId, storyId: current.storyId },
+  }));
+  const directions = parseVisualDirectionsResponse(response.text, current.units);
+
+  const rewritten = validateEditableDraft(
+    { ...current, units: current.units.map((unit) => ({ ...unit, visualDirection: directions.get(unit.order) ?? unit.visualDirection })) },
+    current.format,
+    brief.keyFacts.map((fact) => fact.id),
+    outputAspectRatioForDraft(current),
+    characterRoster.map((character) => character.id),
+  );
+  const characterSnapshots = await snapshotsForCreativeCharacterIds(topicId, rewritten.units.flatMap((unit) => unit.characterIds ?? []));
+  const stored = await findCreativeDraftAiSnapshot(topicId, current.id);
+  // The editorial review judged the copy; a direction-only change keeps it
+  // current, but only when it was current before this rewrite.
+  const aiSnapshot = stored && {
+    ...stored,
+    ...(current.qualityReviewIsCurrent
+      ? { units: stored.units.map((unit) => ({ ...unit, visualDirection: directions.get(unit.order) ?? unit.visualDirection })) }
+      : {}),
+    visualDirectionsRewrite: {
+      guideHash: visualGuideFingerprint(profile),
+      at: new Date().toISOString(),
+      model: response.model,
+      promptVersion: CREATIVE_VISUAL_DIRECTIONS_PROMPT_VERSION,
+      previous: current.units.map((unit) => ({ order: unit.order, visualDirection: unit.visualDirection })),
+    },
+  };
+  return replaceCreativeDraft(topicId, current, rewritten, characterSnapshots, {
+    ...(aiSnapshot ? { aiSnapshot } : {}),
+    approve: current.status === "approved",
+    refreshBrandReferences: true,
+  });
+}
+
 function requireStoryContent(
   story: SelectedStoryContentRecord,
   maximumCharacters: number,
@@ -1422,7 +1525,7 @@ function briefHashMatches(
   if (hashFor(profile) === brief.inputHash) return true;
   const saved = brief.profileSnapshot;
   if (!saved) return false;
-  return hashFor({ ...profile, visualGuidance: saved.visualGuidance, brandPalette: saved.brandPalette }) === brief.inputHash;
+  return hashFor({ ...profile, visualGuidance: saved.visualGuidance, creativeIdentity: saved.creativeIdentity ?? null, brandPalette: saved.brandPalette }) === brief.inputHash;
 }
 
 function createBriefInputHash(

@@ -44,7 +44,7 @@ function harness({ singleShot, cached }: { singleShot: boolean; cached: boolean 
     "../editorial-lines/editorial-lines.repository": { storyCollectionContexts: async () => [], selectedStoryContext: () => undefined },
     "../editorial-lines/editorial-lines": { editorialContextInstruction: () => "", collectionContextForHash: () => "" },
     "./story-content.repository": { getStoryContent: async () => ({ text: "source text" }) },
-    "./creative-visual-guidance": { resolveCreativeVisualGuidance: () => undefined },
+    "./creative-visual-guidance": { resolveCreativeVisualGuidance: () => undefined, visualGuideFingerprint: () => "guide" },
     // The override helpers are pure; the real ones keep this stub honest about
     // how createCreativeDraft re-applies a brief's overrides to the live profile.
     "./creative-content.types": { isCreativeCompanionApproach: () => false, applyCreativeBriefOverrides, normalizeCreativeBriefOverrides },

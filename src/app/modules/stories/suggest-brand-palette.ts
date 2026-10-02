@@ -23,7 +23,8 @@ import {
  * design (it is not a story operation).
  */
 
-const DEFAULT_MODEL = "gpt-5.6-luna";
+// The current Luna generation: cheaper than 5.6, and its rate does not expire on Nov 22.
+const DEFAULT_MODEL = "gpt-6-luna";
 const MAX_OUTPUT_TOKENS = 900;
 const TIMEOUT_MS = 45_000;
 /** Per-topic cap per UTC day for this server process; protects the key, not the budget. */

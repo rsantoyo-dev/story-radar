@@ -38,7 +38,7 @@ export const DEFAULT_CREATIVE_VISUAL_GUIDANCE =
  * prompt-budget cap (~3k tokens at the ceiling). The server truncates to this;
  * the editor sees a live counter and a matching maxLength on the textarea.
  */
-export const CREATIVE_VISUAL_GUIDANCE_MAX_LENGTH = 12_000;
+export const CREATIVE_VISUAL_GUIDANCE_MAX_LENGTH = 20_000;
 
 export const CREATIVE_CONVERSION_GOALS = [
   "followers",
@@ -561,6 +561,8 @@ export type CreativeProfile = {
   platform: string;
   audience: string;
   visualGuidance: string;
+  /** The guide organized into fixed branches (format, style, typography, avoid); null until organized. */
+  creativeIdentity: import("./creative-identity").CreativeIdentity | null;
   brandPalette: CreativeBrandPaletteColor[];
   carouselChrome: CreativeCarouselChromeSettings;
   brandOverlay: CreativeBrandOverlay;
@@ -866,6 +868,8 @@ export type GeneratedCreativeDraft = {
   characterPlan?: CreativeCharacterPlan;
   /** Review of the exact generated copy. Manual edits make this review stale. */
   qualityReview?: CreativeQualityReview;
+  /** Last rewrite of the visual directions under a newer creative identity. */
+  visualDirectionsRewrite?: import("./creative-visual-directions").CreativeVisualDirectionsRewrite;
   /** Present only for a post-approval Story derived from another draft. */
   companion?: CreativeCompanionMetadata;
   units: CreativeUnit[];
@@ -911,6 +915,8 @@ export type CreativeDraft = GeneratedCreativeDraft & {
   usage: CreativeAiUsage;
   /** Derived when loading a workspace; historical rows intentionally omit it. */
   inputIsCurrent?: boolean;
+  /** The visual directions were written under an earlier creative identity or palette. */
+  visualDirectionsOutdated?: boolean;
   /** False when saved copy no longer matches the AI-reviewed snapshot. */
   qualityReviewIsCurrent?: boolean;
   /**

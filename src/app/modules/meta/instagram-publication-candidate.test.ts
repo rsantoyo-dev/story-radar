@@ -3,7 +3,7 @@ import test from "node:test";
 import sharp from "sharp";
 import type { CreativeDraft, CreativeAssetBatch } from "../stories/creative-content.types";
 import { DOCUMENTARY_PROVIDER, DOCUMENTARY_VERSION } from "../stories/creative-documentary";
-import { destinationBlockers, editorialCandidateBlockers, publicationSnapshotHash } from "./instagram-publication-candidate";
+import { captionWithPhotoCredits, destinationBlockers, editorialCandidateBlockers, publicationSnapshotHash } from "./instagram-publication-candidate";
 import { validatePublicationCandidate, type CandidateInputs } from "./validate-publication-candidate";
 
 function fixture(): CandidateInputs {
@@ -165,4 +165,11 @@ test("repeated validation preserves identity and original approval state", async
   const deps = { load: async () => structuredClone(input), readApprovedImage: imageFile };
   assert.equal((await validatePublicationCandidate(deps)).snapshotHash, (await validatePublicationCandidate(deps)).snapshotHash);
   assert.deepEqual(input, original);
+});
+
+test("photo credits are published in the caption, once each, unless the editor already wrote them", () => {
+  const credit = "Photo: Kevin Paul · CC BY 4.0 · via Wikimedia Commons";
+  assert.equal(captionWithPhotoCredits("Une légende.\n", [credit, credit, " "]), `Une légende.\n\n${credit}`);
+  assert.equal(captionWithPhotoCredits(`Une légende. ${credit}`, [credit]), `Une légende. ${credit}`);
+  assert.equal(captionWithPhotoCredits("Une légende.", []), "Une légende.");
 });

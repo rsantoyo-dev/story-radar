@@ -57,6 +57,8 @@ export async function getDemoCreditAccount(): Promise<DemoCreditAccount> {
         FROM creative_text_calls c JOIN topics t ON t.id = c.topic_id
         WHERE t.workspace_id = 'default' AND
           ((c.status = 'reserved' AND c.charged_micros IS NULL) OR c.status = 'uncertain')
+          -- An unresolved call holds credits for a day at most, so a lost response never hides the balance.
+          AND c.created_at > now() - interval '24 hours'
           AND c.pricing ? 'demoMarkupBasisPoints'
           AND (c.pricing->>'demoMarkupBasisPoints') ~ '^[0-9]+$'
           AND (c.pricing->>'demoMarkupBasisPoints')::integer BETWEEN 0 AND 50000), 0)::int AS pending

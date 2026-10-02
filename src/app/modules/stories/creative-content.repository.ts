@@ -308,6 +308,20 @@ async function loadCreativeDrafts(
   );
 }
 
+/** The AI's last output as stored, for updates that must keep it comparable. */
+export async function findCreativeDraftAiSnapshot(
+  topicId: string,
+  draftId: string,
+): Promise<GeneratedCreativeDraft | undefined> {
+  const [row] = await db
+    .select({ aiSnapshot: creativeDrafts.aiSnapshot })
+    .from(creativeDrafts)
+    .where(and(eq(creativeDrafts.id, draftId), eq(creativeDrafts.topicId, topicId)))
+    .limit(1);
+  const snapshot = row?.aiSnapshot as GeneratedCreativeDraft | null | undefined;
+  return snapshot && Array.isArray(snapshot.units) ? snapshot : undefined;
+}
+
 export async function findCreativeDraftById(
   topicId: string,
   draftId: string,
@@ -927,6 +941,7 @@ function mapCreativeDraft(
     // a repair that ran from one that was never attempted.
     ...(generated.singleShotRun ? { singleShotRun: generated.singleShotRun } : {}),
     ...(generated.blockedSource ? { blockedSource: generated.blockedSource } : {}),
+    ...(generated.visualDirectionsRewrite ? { visualDirectionsRewrite: generated.visualDirectionsRewrite } : {}),
     ...(generated.qualityReview
       ? {
           qualityReview: {...generated.qualityReview,issues:generated.qualityReview.issues.map(issue =>

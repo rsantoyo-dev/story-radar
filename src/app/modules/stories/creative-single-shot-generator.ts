@@ -295,11 +295,36 @@ export async function generateSingleShotCreativeScript(
       } catch (error) {
         usage = sumCreativeAiUsage(usage, failedGeminiUsage(error));
         lastError = error;
-        if (!isTransientGeminiError(error) || index === accounts.length - 1) throw error;
+        // The last account (or a failure another account cannot fix) leaves the
+        // loop, so the OpenAI fallback below gets its turn instead of throwing here.
+        if (!isTransientGeminiError(error) || index === accounts.length - 1) break;
         console.warn(
           `A Gemini account was unavailable (${error instanceof Error ? error.message : "unknown"}); retrying on the other account.`,
         );
       }
+    }
+    // Every Gemini account failed for a provider reason (quota, credits,
+    // timeout, overload): the brief falls back to OpenAI rather than blocking
+    // every script. A content validation failure would fail the same way, so
+    // it is rethrown. The independent review still runs separately afterwards.
+    if (options.openAiApiKey && !(lastError instanceof CreativeContentResponseError)) {
+      if (maxAttempts !== undefined && attempts >= maxAttempts) throw lastError;
+      attempts += 1;
+      console.warn(`Gemini could not write the brief (${lastError instanceof Error ? lastError.message : "unknown"}); using the OpenAI fallback.`);
+      const response = await generateOpenAiStructuredResponse({
+        apiKey: options.openAiApiKey,
+        model: process.env.CREATIVE_BRIEF_FALLBACK_MODEL?.trim() || "gpt-6.1-sol",
+        instructions: systemInstruction,
+        contents,
+        schema: strictCreativeSchema(schema),
+        schemaName: "creative_brief",
+        maxOutputTokens: Math.max(maxOutputTokens, 8_192),
+        reasoningEffort: "medium",
+        auditContext: options.openAiAuditContext,
+      });
+      usage = sumCreativeAiUsage(usage, response.usage);
+      lastModel = response.model;
+      return response;
     }
     throw lastError;
   };

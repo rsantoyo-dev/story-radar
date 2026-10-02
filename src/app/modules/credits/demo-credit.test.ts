@@ -60,7 +60,8 @@ test("demo ledger charges each new settled text call once and resets without los
         story_id uuid NOT NULL REFERENCES stories(id), operation text NOT NULL,
         provider text NOT NULL, model text NOT NULL, status text NOT NULL,
         reserved_micros integer NOT NULL, charged_micros integer,
-        pricing jsonb NOT NULL, finished_at timestamptz
+        pricing jsonb NOT NULL, finished_at timestamptz,
+        created_at timestamptz NOT NULL DEFAULT now()
       );
     `);
     await client.query("INSERT INTO workspaces VALUES ('default')");

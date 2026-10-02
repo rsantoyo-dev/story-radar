@@ -1,4 +1,5 @@
 import "server-only";
+import { creativeIdentityIsEmpty, CreativeIdentityValidationError, parseCreativeIdentityInput, type CreativeIdentity } from "./creative-identity";
 import { parseGeoContact } from "./creative-geo-contact";
 
 import { eq, sql } from "drizzle-orm";
@@ -57,6 +58,7 @@ const DEFAULT_PROFILE: EditableCreativeProfile = {
   audience:
     "Professionals, creators, and small businesses interested in the selected topic",
   visualGuidance: DEFAULT_CREATIVE_VISUAL_GUIDANCE,
+  creativeIdentity: null,
   brandPalette: cloneDefaultPalette(),
   carouselChrome: { ...DEFAULT_CREATIVE_CAROUSEL_CHROME_SETTINGS },
   brandOverlay: { ...DEFAULT_CREATIVE_BRAND_OVERLAY_SETTINGS },
@@ -275,6 +277,7 @@ export function parseCreativeProfileInput(value: unknown): EditableCreativeProfi
     platform: value.platform,
     audience: value.audience,
     visualGuidance: value.visualGuidance,
+    creativeIdentity: value.creativeIdentity,
     brandPalette: value.brandPalette,
     carouselChrome: value.carouselChrome,
     brandOverlay: value.brandOverlay,
@@ -308,6 +311,7 @@ function validateCreativeProfile(
     platform: textValue(value.platform, "platform", 80),
     audience: textValue(value.audience, "audience", 500),
     visualGuidance: visualGuidanceValue(value.visualGuidance),
+    creativeIdentity: creativeIdentityValue(value.creativeIdentity),
     brandPalette,
     carouselChrome: parseCreativeCarouselChromeInput(
       value.carouselChrome,
@@ -388,6 +392,7 @@ function mapCreativeProfile(
     platform: profile.platform,
     audience: profile.audience,
     visualGuidance: profile.visualGuidance,
+    creativeIdentity: profile.creativeIdentity ? parseCreativeIdentityInput(profile.creativeIdentity) : null,
     brandPalette,
     carouselChrome,
     brandOverlay: {
@@ -418,6 +423,17 @@ function mapCreativeProfile(
     callToActionStyle: profile.callToActionStyle,
     updatedAt: profile.updatedAt,
   };
+}
+
+/** An empty identity is stored as null, so "not organized yet" stays distinguishable. */
+function creativeIdentityValue(value: unknown): CreativeIdentity | null {
+  try {
+    const identity = parseCreativeIdentityInput(value);
+    return creativeIdentityIsEmpty(identity) ? null : identity;
+  } catch (error) {
+    if (error instanceof CreativeIdentityValidationError) throw new CreativeProfileValidationError(error.message);
+    throw error;
+  }
 }
 
 function visualGuidanceValue(value: unknown): string {

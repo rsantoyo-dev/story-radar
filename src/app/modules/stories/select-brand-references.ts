@@ -63,7 +63,9 @@ const KIND_ROLE_SCORE: Record<
   BrandReferenceKind,
   Partial<Record<CreativeUnitRole, number>>
 > = {
-  "finished-post": { cover: 3, content: 1, conclusion: 1 },
+  // A finished post handed to every slide made the whole carousel copy its
+  // layout; it now guides the cover's look, and other slides only by aspect.
+  "finished-post": { cover: 3 },
   poster: { content: 2, cover: 1, conclusion: 1 },
   "sticker-sheet": { content: 2, "call-to-action": 1 },
   signage: { cover: 1, content: 1, conclusion: 1, "call-to-action": 1 },
@@ -89,7 +91,7 @@ const ASPECT_FUNCTION: Record<BrandContributionAspect, BrandReferenceFunction> =
 };
 
 const KIND_FUNCTION: Record<BrandReferenceKind, BrandReferenceFunction> = {
-  "finished-post": "layout",
+  "finished-post": "ambience",
   poster: "layout",
   "sticker-sheet": "motif",
   signage: "signage",
@@ -239,7 +241,10 @@ function toEntry(
   role: CreativeUnitRole,
 ): BrandReferenceSelectionEntry {
   const dominant = entry.matchedAspects[0];
-  const fn = dominant
+  // A complete post is a style example, never a layout template.
+  const fn = entry.reference.kind === "finished-post"
+    ? "ambience"
+    : dominant
     ? ASPECT_FUNCTION[dominant]
     : KIND_FUNCTION[entry.reference.kind];
   const aspectPart = entry.matchedAspects.length

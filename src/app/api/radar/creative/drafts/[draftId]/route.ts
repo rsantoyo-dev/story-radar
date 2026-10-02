@@ -6,6 +6,7 @@ import {
 import {
   approveSavedCreativeDraft,
   refreshCreativeDraftReferences,
+  rewriteCreativeDraftVisualDirections,
   saveCreativeDraft,
   setSavedCreativeDraftVisualFidelity,
   unapproveSavedCreativeDraft,
@@ -71,12 +72,13 @@ export async function PATCH(request: Request, context: Context) {
       body.action !== "unapprove" &&
       body.action !== "refresh-references" &&
       body.action !== "refresh-character-references" &&
+      body.action !== "rewrite-visual-directions" &&
       body.action !== "set-visual-fidelity"
     ) {
       return noStoreJson(
         {
           error:
-            "action must be approve, unapprove, refresh-references, or set-visual-fidelity",
+            "action must be approve, unapprove, refresh-references, rewrite-visual-directions, or set-visual-fidelity",
         },
         400,
       );
@@ -88,6 +90,10 @@ export async function PATCH(request: Request, context: Context) {
       return noStoreJson({ error: "humanReviewed must be true or false" }, 400);
     }
     const topicId = await requireActiveRequestTopic(request);
+
+    if (body.action === "rewrite-visual-directions") {
+      return noStoreJson(await rewriteCreativeDraftVisualDirections(topicId, draftId, body.expectedVersion));
+    }
 
     if (body.action === "set-visual-fidelity") {
       const override = parseVisualFidelityBody(body);

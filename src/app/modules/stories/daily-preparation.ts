@@ -171,6 +171,14 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
       return await finish("content", "focus");
     } else if(run.step==="focus") {
       if(!progress.storyId)throw new PreparationReviewNeeded("Choose a story before suggesting a focus.");
+      // Work done by hand in the studio is the starting point: a current brief keeps its focus.
+      const prepared=await getCreativeWorkspaceState(topicId,progress.storyId,run.id);
+      if(prepared.briefIsCurrent && prepared.brief) {
+        progress.briefId=prepared.brief.id;
+        if(prepared.brief.editorialDirection)progress.editorialDirection=prepared.brief.editorialDirection;
+        note("Reused the brief already prepared for this story");
+        return await finish("focus", "brief");
+      }
       const contexts=await storyCollectionContexts(topicId,progress.storyId);
       const context=contexts.find(c=>c.runId===progress.collectionRunId) ?? (contexts.length===1?contexts[0]:undefined);
       const result=await suggestEditorialFocus(topicId,progress.storyId,undefined,context?.runId,run.id,run.timezone);
@@ -191,8 +199,9 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
       const contexts=await storyCollectionContexts(topicId,progress.storyId);
       const context=contexts.find(c=>c.runId===progress.collectionRunId) ?? (contexts.length===1?contexts[0]:undefined);
       if(contexts.length>1 && !context)throw new PreparationReviewNeeded("This story has multiple editorial contexts. Choose the intended context in the creative workspace.");
-      const briefResult=await createCreativeBrief(topicId,progress.storyId,progress.editorialDirection,context?.runId,run.id);
-      const brief=briefResult.state.brief;
+      const prepared=progress.briefId ? await getCreativeWorkspaceState(topicId,progress.storyId,run.id) : undefined;
+      const reusedBrief=prepared?.briefIsCurrent && prepared.brief?.id===progress.briefId ? prepared.brief : undefined;
+      const brief=reusedBrief ?? (await createCreativeBrief(topicId,progress.storyId,progress.editorialDirection,context?.runId,run.id)).state.brief;
       if(!brief)throw new Error("Brief unavailable");
       progress.briefId=brief.id;
       // A human can accept this exact brief once from the workspace despite
@@ -201,12 +210,19 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
       if(brief.contentSufficiency!=="sufficient" && progress.acknowledgedBriefId!==brief.id)throw new PreparationReviewNeeded(BRIEF_EVIDENCE_REVIEW_MESSAGE);
       const workspace=await getCreativeWorkspaceState(topicId,progress.storyId,run.id);
       if(!workspace.briefIsCurrent || workspace.brief?.id!==progress.briefId)throw new PreparationReviewNeeded("The creative inputs changed. Review or regenerate the brief in the workspace.");
-      const draftResult=await createCreativeDraft(topicId,progress.briefId,workspace.brief.recommendedFormat,undefined,false,run.id);
-      const draft=draftResult.state.drafts.find(d=>d.briefId===progress.briefId && d.inputIsCurrent && d.format===workspace.brief!.recommendedFormat);
+      // A script already written (and maybe approved, or edited) for this brief is adopted, not rewritten.
+      const existingDrafts=workspace.drafts.filter(d=>d.briefId===progress.briefId && d.inputIsCurrent!==false && !d.companion);
+      const adopted=existingDrafts.find(d=>d.status==="approved") ?? [...existingDrafts].sort((a,b)=>b.version-a.version)[0];
+      const draft=adopted ?? (await createCreativeDraft(topicId,progress.briefId,workspace.brief.recommendedFormat,undefined,false,run.id)).state.drafts
+        .find(d=>d.briefId===progress.briefId && d.inputIsCurrent && d.format===workspace.brief!.recommendedFormat);
       if(!draft)throw new Error("Draft unavailable");
       progress.draftId=draft.id;
       progress.draftSummary={format:draft.format,slides:draft.units?.length ?? 0,hook:draft.units?.[0]?.headline};
-      note(`Script written: ${draft.format}${draft.units?.length?`, ${draft.units.length} slides`:""}`);
+      note(adopted
+        ? `Reused script v${draft.version}${draft.status==="approved"?", already approved":""}`
+        : `Script written: ${draft.format}${draft.units?.length?`, ${draft.units.length} slides`:""}`);
+      // An editor's approval already answers for this exact version.
+      if(adopted?.status==="approved")return await finish("brief", "approve-draft");
       if(!isCreativeDraftReadyForAutomation(draft,draft.format,draft.qualityReviewIsCurrent === true))throw new PreparationReviewNeeded("The draft is saved, but automated editorial validation has not passed for this exact version. Its findings and evidence were preserved; it cannot advance as publication-ready.");
       return await finish("brief", "approve-draft");
     } else if(run.step==="draft") {
@@ -253,13 +269,21 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
       if(!progress.draftId)throw new PreparationReviewNeeded("Approve the draft before generating images.");
       const autoImages=progress.autoApprove===true && progress.provisionalImages!==true;
       if(!progress.assetBatchId) {
-        const result=await generateCreativeDraftAssets(topicId, progress.draftId, undefined, {provisional:progress.provisionalImages===true});
-        if(!result.batch)throw new Error("Image batch unavailable");
-        progress.assetBatchId=result.batch.id;
-        note(`Image generation started${progress.provisionalImages?" (provisional)":""}`);
-        if(!autoImages)return await finish("images");
-        await savePreparation(run,{step:"images",progress});
-        return false; // The next poll checks whether the images finished.
+        // Images already made for this script version (by hand or an earlier run) are adopted, not regenerated.
+        const existing=progress.provisionalImages ? undefined : (await getCreativeDraftAssets(topicId, progress.draftId).catch(()=>undefined))?.batch;
+        if(existing && existing.status!=="stale" && existing.assets?.length) {
+          progress.assetBatchId=existing.id;
+          note(`Reused the ${existing.assets.length} images already generated for this script`);
+          if(!autoImages)return await finish("images");
+        } else {
+          const result=await generateCreativeDraftAssets(topicId, progress.draftId, undefined, {provisional:progress.provisionalImages===true});
+          if(!result.batch)throw new Error("Image batch unavailable");
+          progress.assetBatchId=result.batch.id;
+          note(`Image generation started${progress.provisionalImages?" (provisional)":""}`);
+          if(!autoImages)return await finish("images");
+          await savePreparation(run,{step:"images",progress});
+          return false; // The next poll checks whether the images finished.
+        }
       }
       if(!autoImages)return await finish("images");
       const {batch}=await getCreativeDraftAssets(topicId, progress.draftId);

@@ -20,9 +20,13 @@ class LimitError extends Error {}
 class NotEligibleError extends Error {}
 type Asset={id:string;unitOrder:number;status:string;safetyFlag?:boolean};
 function workflow({failEvaluate=false,limit=false,cachedCollection=false,draftMode=false,incomplete=false,likelyFull=false,failApproval=false,noChoice=false,editorialReady=true,scoop=false,
-  alternatives=[] as string[],sameEvent={} as Record<string,string[]>,published=[] as string[],incompleteFor=[] as string[],notEligible=[] as string[],autoApprove=false,failAutoApprove=false,
+  alternatives=[] as string[],sameEvent={} as Record<string,string[]>,published=[] as string[],
+  prepared=undefined as undefined | {draftStatus?:string;draftVersion?:number;images?:boolean},incompleteFor=[] as string[],notEligible=[] as string[],autoApprove=false,failAutoApprove=false,
   images=[[{id:"a1",unitOrder:1,status:"generated"},{id:"a2",unitOrder:2,status:"generated"}]] as Asset[][]}={}) {
   let imagePolls=0;
+  // Work done by hand in the studio before the run, if any; otherwise the run creates it.
+  let briefReady=Boolean(prepared);
+  let imagesGenerated=Boolean(prepared?.images);
   const contentCalls:string[]=[];
   const calls:string[]=[];
   const workspaceCalls:unknown[][]=[];
@@ -55,13 +59,14 @@ function workflow({failEvaluate=false,limit=false,cachedCollection=false,draftMo
     "./manage-creative-content":{
       approveSavedCreativeDraft:async()=>{if(failAutoApprove)throw new Error("Resolve the narrative blockers first.");calls.push("auto-approve-draft");draftApproved=true;},
       suggestEditorialFocus:async()=>{calls.push("focus");return {editorialDirection:"a sharper focus",daily:{}};},
-      createCreativeBrief:async(...args:unknown[])=>{calls.push("brief");briefCalls.push(args);return {state:{brief:{id:"brief",contentSufficiency:"sufficient"}}};},
-      getCreativeWorkspaceState:async(...args:unknown[])=>{workspaceCalls.push(args);return {briefIsCurrent:true,brief:{id:"brief",recommendedFormat:"carousel"},drafts:[{id:"draft",status:draftApproved?"approved":"draft",version:1}]};},
+      createCreativeBrief:async(...args:unknown[])=>{calls.push("brief");briefCalls.push(args);briefReady=true;return {state:{brief:{id:"brief",contentSufficiency:"sufficient"}}};},
+      getCreativeWorkspaceState:async(...args:unknown[])=>{workspaceCalls.push(args);return {briefIsCurrent:briefReady,brief:briefReady?{id:"brief",recommendedFormat:"carousel",contentSufficiency:"sufficient",editorialDirection:prepared?"the editor's focus":undefined}:undefined,
+        drafts:prepared?.draftStatus?[{id:"manual-draft",briefId:"brief",format:"carousel",status:prepared.draftStatus,version:prepared.draftVersion ?? 3,inputIsCurrent:true,units:[{headline:"Hand-edited hook"}]}]:[{id:"draft",status:draftApproved?"approved":"draft",version:1}]};},
       createCreativeDraft:async()=>{calls.push("draft");return {state:{drafts:[{id:"draft",briefId:"brief",inputIsCurrent:true,format:"carousel",status:"draft",qualityReview:{status:"accepted",issues:[]}}]}};},
     },
     "./manage-creative-assets":{
-      generateCreativeDraftAssets:async(_topic:unknown,_draft:unknown,_quality:unknown,options?:{provisional?:boolean})=>{calls.push(options?.provisional?"images:provisional":"images");return {batch:{id:"batch"},configuration:{},outcome:"submitted"};},
-      getCreativeDraftAssets:async()=>({batch:{id:"batch",assets:images[Math.min(imagePolls++,images.length-1)]}}),
+      generateCreativeDraftAssets:async(_topic:unknown,_draft:unknown,_quality:unknown,options?:{provisional?:boolean})=>{calls.push(options?.provisional?"images:provisional":"images");imagesGenerated=true;return {batch:{id:"batch"},configuration:{},outcome:"submitted"};},
+      getCreativeDraftAssets:async()=>imagesGenerated?{batch:{id:"batch",status:"completed",assets:images[Math.min(imagePolls++,images.length-1)]}}:{},
       changeCreativeAssetApproval:async(_topic:unknown,assetId:string)=>{calls.push(`approve-image:${assetId}`);},
     },
     "./daily-preparation.repository":{
@@ -133,7 +138,8 @@ test("database reservations serialize jobs and claims, fence old workers and iso
 test("draft mode extends the same pipeline through content, brief and draft",async()=>{
   const w=workflow({draftMode:true});await w.service.drivePreparation(topicId,lineId);
   assert.deepEqual(w.calls,["collect","evaluate","evaluate","recommend","approve","focus","brief","draft"]);
-  assert.deepEqual(w.workspaceCalls,[[topicId,topicId,lineId]]);
+  // Focus first checks for a brief prepared by hand, then the brief step reads the one it created.
+  assert.deepEqual(w.workspaceCalls,[[topicId,topicId,lineId],[topicId,topicId,lineId]]);
   assert.equal(w.run.progress.draftId,"draft");assert.equal(w.run.status,"completed");
 });
 test("clicking successive targets resumes checkpoints without recollecting or reevaluating", async () => {
@@ -157,7 +163,7 @@ test("a run still sitting at the legacy 'draft' step from before the brief/draft
   // that), but a run persisted there before this change must not hit
   // "Unknown preparation stage" after a deploy — it has to keep resuming
   // through its own dedicated legacy branch in daily-preparation.ts.
-  const w=workflow({draftMode:true});
+  const w=workflow({draftMode:true,prepared:{}});
   w.run.progress.storyId=topicId;w.run.progress.briefId="brief";w.run.progress.targetStep="images";
   w.run.status="running";w.run.step="draft";
   await w.service.drivePreparation(topicId,lineId);
@@ -463,4 +469,28 @@ test("a story chosen by an editor starts at Approve and prepares that story with
   assert.deepEqual(w.contentCalls,[altA]);
   assert.equal(w.calls.some(c=>c==="collect"||c==="evaluate"||c==="recommend"),false);
   assert.ok(w.calls.includes("brief"));
+});
+
+test("a story worked by hand resumes from its brief, approved script and images without regenerating any of them",async()=>{
+  const w=workflow({draftMode:true,prepared:{draftStatus:"approved",draftVersion:3,images:true}});
+  Object.assign(w.run,{step:"approve",progress:{...w.run.progress,targetStep:"images",storyId:altA,storyTitle:"Hand-made",candidates:[{storyId:altA,title:"Hand-made",via:"recommended"}]}});
+  await drain(w);
+  assert.equal(w.run.status,"completed");
+  assert.equal(w.calls.some(c=>c==="focus"||c==="brief"||c==="draft"||c==="images"||c==="auto-approve-draft"),false,"nothing is regenerated");
+  assert.equal(w.run.progress.draftId,"manual-draft");
+  assert.equal(w.run.progress.editorialDirection,"the editor's focus");
+  assert.equal(w.run.progress.assetBatchId,"batch");
+  const activity=Array.from(w.run.progress.activity as {text:string}[]).map(a=>a.text);
+  assert.ok(activity.includes("Reused the brief already prepared for this story"),activity.join(" | "));
+  assert.ok(activity.includes("Reused script v3, already approved"),activity.join(" | "));
+  assert.ok(activity.some(t=>/^Reused the 2 images already generated/.test(t)),activity.join(" | "));
+});
+
+test("an unapproved hand-written script is adopted but still needs its review before images",async()=>{
+  const w=workflow({draftMode:true,prepared:{draftStatus:"draft",draftVersion:2},editorialReady:false});
+  Object.assign(w.run,{step:"approve",progress:{...w.run.progress,targetStep:"images",storyId:altA,storyTitle:"Hand-made",candidates:[{storyId:altA,title:"Hand-made",via:"recommended"}]}});
+  await drain(w);
+  assert.equal(w.run.status,"needs-review");
+  assert.equal(w.run.progress.draftId,"manual-draft");
+  assert.equal(w.calls.includes("draft"),false,"the hand-written script is not rewritten");
 });

@@ -1,0 +1,1 @@
+ALTER TABLE "creative_profiles" ADD COLUMN "creative_identity" jsonb;

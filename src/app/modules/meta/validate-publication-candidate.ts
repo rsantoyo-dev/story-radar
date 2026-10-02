@@ -8,6 +8,7 @@ import {
 import type { CreativeAssetBatch, CreativeDraft } from "../stories/creative-content.types";
 import {
   candidateDestinationSummary,
+  captionWithPhotoCredits,
   destinationBlockers,
   editorialCandidateBlockers,
   publicationSnapshotHash,
@@ -22,6 +23,8 @@ export type CandidateInputs = {
   batch: CreativeAssetBatch;
   sourceToken: string;
   destination: PublicationDestination;
+  /** Author credits for real or adapted photos in the batch, published in the caption. */
+  photoCredits?: string[];
 };
 export type CandidateDependencies = {
   load: () => Promise<CandidateInputs>;
@@ -115,7 +118,7 @@ export async function validatePublicationCandidate(deps: CandidateDependencies):
     ...(publishingAccess ? { publishingAccess } : {}),
     snapshotHash: publicationSnapshotHash({ input, files }),
     draftId: draft.id, draftVersion: draft.version, batchId: batch.id,
-    caption: draft.caption, hashtags: [...draft.hashtags],
+    caption: captionWithPhotoCredits(draft.caption, input.photoCredits ?? []), hashtags: [...draft.hashtags],
     destination: candidateDestinationSummary(destination),
     assets: [...batch.assets].sort((a, b) => a.unitOrder - b.unitOrder).map(a => ({ id: a.id, version: a.version, order: a.unitOrder, ...(files[a.id] ? { sha256: files[a.id] } : {}) })),
     blockers,

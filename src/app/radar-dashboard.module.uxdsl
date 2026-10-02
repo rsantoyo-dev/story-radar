@@ -3240,6 +3240,11 @@
 .runStory section[aria-label="AI calls"] h3 { margin-top: density(3); }
 .runCard { @ds-surface(flat primary); display: grid; gap: density(1); padding: density(3); border: border(1, palette(primary-light), solid); border-radius: radius(2); color: palette(dark-main); min-width: 0; }
 .runCard p { margin: 0; @ds-typo(caption); overflow-wrap: anywhere; }
+/* While another story is previewed, the latest run shrinks to one line so its actions cannot be mistaken for this story's. */
+.previousRunLine { margin: 0; @ds-typo(caption); color: palette(dark-main, 0.6); }
+.storyProgress { display: grid; gap: density(1); margin: 0; padding: 0; list-style: none; @ds-typo(caption); }
+.storyProgress li[data-done="true"] { color: palette(success-dark); font-weight: 650; }
+.storyProgress li[data-done="false"] { color: palette(warning-dark); }
 .runImages { display: grid; gap: density(1); margin-top: density(1); }
 /* Full width of the panel: up to four per row, two on small screens. */
 .runImages ol { display: grid; grid-template-columns: xs(repeat(2, minmax(0, 1fr))) md(repeat(4, minmax(0, 1fr))); gap: density(1); margin: 0; padding: 0; list-style: none; }

@@ -2,7 +2,9 @@ import "server-only";
 import { publishingIdentity } from "./instagram-publishing-access";
 import { GRAPH_API_VERSION } from "./meta-graph-client";
 import { findCreativeDraftById } from "../stories/creative-content.repository";
-import { findCreativeAssetBatchById } from "../stories/creative-assets.repository";
+import { findCreativeAssetBatchById, getCreativeAssetGenerationReferences } from "../stories/creative-assets.repository";
+import { adaptationCreditLine, portraitCreditLine } from "../stories/creative-portrait-composite";
+import type { CreativeAssetBatch } from "../stories/creative-content.types";
 import { getSelectedStoryContent } from "../stories/story-content.repository";
 import { documentarySourceToken, latestDocumentaryBatch } from "../stories/creative-documentary.repository";
 import { DOCUMENTARY_PROVIDER } from "../stories/creative-documentary";
@@ -31,10 +33,27 @@ export async function getPublicationCandidate(topicId: string, draftId: string, 
         draft = current;
       }
       const [sourceToken, destination] = await Promise.all([documentarySourceToken(topicId, draft.storyId), getChannelPublicationDestination(topicId, channel)]);
-      return { topicId, draft, batch, sourceToken, destination };
+      const photoCredits = batch.provider === DOCUMENTARY_PROVIDER ? [] : await batchPhotoCredits(batch);
+      return { topicId, draft, batch, sourceToken, destination, photoCredits };
     },
     readApprovedImage: (input, assetId) => input.batch.provider === DOCUMENTARY_PROVIDER
       ? documentaryImage(topicId, input.draft.storyId, assetId, false, true)
       : downloadApprovedCreativeImage(topicId, assetId),
   });
+}
+
+/** Credits owed by the batch's pasted portraits and AI adaptations of licensed photos. */
+async function batchPhotoCredits(batch: CreativeAssetBatch): Promise<string[]> {
+  const credits: string[] = [];
+  for (const asset of [...batch.assets].sort((a, b) => a.unitOrder - b.unitOrder)) {
+    const portrait = asset.unitSnapshot.documentaryPortrait;
+    if (portrait?.provenance) credits.push(portraitCreditLine(portrait.provenance));
+    const references = (await getCreativeAssetGenerationReferences(asset.id)).story ?? [];
+    for (const reference of references) {
+      if (reference.purpose !== "documentary-portrait" && reference.purpose !== "style" && /via Wikimedia Commons/.test(reference.provenance)) {
+        credits.push(adaptationCreditLine(reference.provenance));
+      }
+    }
+  }
+  return credits;
 }

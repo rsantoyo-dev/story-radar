@@ -52,7 +52,7 @@ function taxonomyErrorResponse(error: unknown, action: string) {
     return noStoreJson({ error: error.message }, 404);
   }
   if (error instanceof AcquisitionLensError || error instanceof SyntaxError) {
-    return noStoreJson({ error: error instanceof SyntaxError ? "The JSON body is invalid" : error.message }, 400);
+    return noStoreJson({ error: error instanceof AcquisitionLensError ? error.message : "The JSON body is invalid" }, 400);
   }
   if (error instanceof TopicAcquisitionTaxonomyConflictError) {
     return noStoreJson({ error: error.message }, 409);

@@ -3283,6 +3283,35 @@
   gap: density(3);
 }
 
+/* Creative identity: one fieldset per branch, each with its own AI rewrite row. */
+/* Content sits at the top: a shorter field must not stretch its rows to match its neighbour. */
+.identityFields { display: grid; grid-template-columns: xs(1fr) lg(repeat(2, minmax(0, 1fr))); gap: density(4); align-items: start; }
+.identityField { display: grid; align-content: start; gap: density(2); min-width: 0; margin: 0; padding: density(3); border: 1px solid palette(surface-dark); border-radius: radius(2); background: palette(light-light); }
+.identityField legend { padding: 0 density(1); @ds-typo(caption); font-weight: 800; color: palette(primary-dark); }
+.identityField textarea, .identityField select, .paletteAssistantForm input, .identityFieldAssistant input { @ds-input(outlined neutral 2); width: 100%; }
+.identityField small { @ds-typo(caption); color: palette(dark-main, 0.6); }
+/* Folded per-field AI rewrite: a small, clearly attached disclosure under its field. */
+.profilePanel .identityFieldAssistant { display: grid; gap: density(2); padding: density(1) density(2); border: 0; border-radius: radius(2); background: palette(primary-light, 0.12); box-shadow: none; }
+.profilePanel .identityFieldAssistant summary { display: block; min-height: 0; padding: density(1) 0; @ds-typo(caption); font-weight: 700; color: palette(primary-dark); cursor: pointer; }
+.profilePanel .identityFieldAssistant[open] { padding-bottom: density(2); }
+.identityFieldAssistant button { justify-self: start; }
+.identityAvoidAdd { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: density(2); align-items: center; }
+.identityAvoidAdd input { @ds-input(outlined neutral 2); width: 100%; }
+/* A branch that needs the full row (priority, avoid groups). */
+.identityFieldWide { grid-column: 1 / -1; }
+.identityField > input { @ds-input(outlined neutral 2); width: 100%; }
+.identityAvoidGroups { display: grid; grid-template-columns: xs(1fr) lg(repeat(2, minmax(0, 1fr))); gap: density(3); align-items: start; }
+.identityAvoidGroups > small, .identityAvoidGroups > button { grid-column: 1 / -1; }
+.identityAvoidGroup { display: grid; gap: density(2); padding: density(2); border: 1px solid palette(warning-main, 0.35); border-radius: radius(2); }
+.identityAvoidGroupHeader { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: density(2); align-items: center; }
+.identityAvoidGroupHeader input { @ds-input(outlined neutral 2); width: 100%; font-weight: 700; }
+.identityField select { min-height: 42px; padding-block: 0; line-height: 1.2; }
+.identityField textarea::placeholder, .identityField input::placeholder, .paletteAssistantForm input::placeholder { color: palette(dark-main, 0.45); }
+.identityAvoidList { display: flex; flex-wrap: wrap; gap: density(1); margin: 0; padding: 0; list-style: none; }
+.identityAvoidList li { display: inline-flex; align-items: center; gap: density(1); padding: density(1) density(2); border: 1px solid palette(warning-main, 0.5); border-radius: 999px; background: palette(warning-light, 0.4); @ds-typo(caption); color: palette(dark-main); }
+.identityAvoidList button { border: 0; background: none; cursor: pointer; font-weight: 800; color: palette(warning-dark); }
+.identityAvoidList button:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 1px; }
+
 .paletteAssistantForm textarea {
   @ds-input(outlined neutral 2);
   width: 100%;

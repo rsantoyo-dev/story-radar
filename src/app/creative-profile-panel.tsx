@@ -23,6 +23,7 @@ import {
   type CreativeProfile,
 } from "./modules/stories/creative-content.types";
 import { BrandPaletteAssistant } from "./creative-palette-assistant";
+import { CreativeIdentityEditor } from "./creative-identity-editor";
 import styles from "./creative-draft-workspace.generated.module.css";
 import { GoogleMapsPreviewPanel } from "./google-maps-preview-panel";
 import { ActionRow, Button } from "./ui/primitives";
@@ -58,16 +59,21 @@ const DIMENSIONS = [
 
 type Busy = "save" | "brand" | undefined;
 
+export type CreativeProfileSection = "profile" | "voice" | "visual" | "assets";
+
 export function CreativeProfilePanel({
   topicId,
   secret,
   disabled,
   onProfileLoaded,
   onProfileSaved,
+  section = "profile",
 }: {
   topicId: string;
   secret: string;
   disabled: boolean;
+  /** The Profile / Voice / Visual / Assets tab; only that tab's groups are shown. */
+  section?: CreativeProfileSection;
   onProfileLoaded?: (profile: CreativeProfile) => void;
   onProfileSaved?: (profile: CreativeProfile) => void;
 }) {
@@ -78,6 +84,7 @@ export function CreativeProfilePanel({
   const [busy, setBusy] = useState<Busy>();
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
+  const [restoredAt, setRestoredAt] = useState<number>();
   const authenticated = secret.trim().length > 0;
   useUnsavedBeforeUnload(dirty);
 
@@ -92,10 +99,12 @@ export function CreativeProfilePanel({
         if (controller.signal.aborted) return;
         setError(undefined);
         setNotice(undefined);
-        setDraft(profile);
+        const unsaved = readUnsavedDraft(topicId, String(profile.updatedAt));
+        setDraft(unsaved?.draft ?? profile);
         setSavedProfile(profile);
         setEditVersion((current) => current + 1);
-        setDirty(false);
+        setDirty(Boolean(unsaved));
+        setRestoredAt(unsaved?.savedAt);
         onProfileLoaded?.(profile);
       })
       .catch((loadError) => {
@@ -104,6 +113,14 @@ export function CreativeProfilePanel({
 
     return () => controller.abort();
   }, [authenticated, onProfileLoaded, secret, topicId]);
+
+  // Leaving the page through an in-app link does not fire beforeunload, so an
+  // unsaved draft is kept in this browser and restored on the next visit.
+  useEffect(() => {
+    if (!dirty || !draft || !savedProfile) return;
+    const timer = window.setTimeout(() => writeUnsavedDraft(topicId, String(savedProfile.updatedAt), draft), 400);
+    return () => window.clearTimeout(timer);
+  }, [dirty, draft, savedProfile, topicId]);
 
   function updateDraft(values: Partial<CreativeProfile>) {
     setDraft((current) => (current ? { ...current, ...values } : current));
@@ -213,6 +230,8 @@ export function CreativeProfilePanel({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(draft),
         });
+      clearUnsavedDraft(topicId);
+      setRestoredAt(undefined);
       setDraft(saved);
       setSavedProfile(saved);
       setEditVersion((current) => current + 1);
@@ -274,6 +293,8 @@ export function CreativeProfilePanel({
 
   function discardChanges() {
     if (!savedProfile || busy) return;
+    clearUnsavedDraft(topicId);
+    setRestoredAt(undefined);
     setDraft(savedProfile);
     setEditVersion((current) => current + 1);
     setDirty(false);
@@ -305,6 +326,11 @@ export function CreativeProfilePanel({
           <p>{error}</p>
         </div>
       ) : null}
+      {restoredAt && dirty ? (
+        <div className={styles.notice} role="status" aria-live="polite">
+          Restored your unsaved changes from {new Date(restoredAt).toLocaleString()}. Save the profile to keep them, or cancel changes to discard them.
+        </div>
+      ) : null}
       {notice ? (
         <div className={styles.notice} role="status" aria-live="polite">
           {notice}
@@ -312,7 +338,7 @@ export function CreativeProfilePanel({
       ) : null}
 
       <fieldset key={editVersion} className={styles.profileBodyPlain} disabled={controlsDisabled}>
-        <Group title="Identity" id="creative-profile-identity" defaultOpen>
+        <Group section={section} tab="profile" title="Identity" id="creative-profile-identity" defaultOpen>
           <div className={styles.fieldGrid}>
             <TextField label="Profile name" value={draft.name} onChange={(name) => updateDraft({ name })} />
             <TextField label="Platform" value={draft.platform} onChange={(platform) => updateDraft({ platform })} />
@@ -322,7 +348,7 @@ export function CreativeProfilePanel({
           <TextAreaField label="Audience" value={draft.audience} onChange={(audience) => updateDraft({ audience })} rows={2} />
         </Group>
 
-        <Group title="Strategy" id="creative-profile-strategy">
+        <Group section={section} tab="profile" title="Strategy" id="creative-profile-strategy">
           <div className={styles.fieldGrid}>
             <label className={styles.field}>
               <span>Primary conversion goal</span>
@@ -395,7 +421,7 @@ export function CreativeProfilePanel({
           </p>
         </Group>
 
-        <Group title="Place fidelity" id="creative-profile-place-fidelity">
+        <Group section={section} tab="profile" title="Place fidelity" id="creative-profile-place-fidelity">
           <label className={styles.field}>
             <span>How real places are represented</span>
             <select
@@ -461,7 +487,7 @@ export function CreativeProfilePanel({
           <GoogleMapsPreviewPanel key={topicId} topicId={topicId} secret={secret} profile={draft} disabled={disabled} />
         </Group>
 
-        <Group title="Voice" id="creative-profile-voice">
+        <Group section={section} tab="voice" title="Voice" id="creative-profile-voice" defaultOpen>
           <ListField
             key={draft.brandPersonality.join("|")}
             label="Brand personality (comma-separated)"
@@ -508,7 +534,7 @@ export function CreativeProfilePanel({
           </div>
         </Group>
 
-        <Group title="Brand & visual" id="creative-profile-brand">
+        <Group section={section} tab="visual" title="Brand & visual" id="creative-profile-brand" defaultOpen>
           <TextAreaField
             label="Visual campaign guide"
             value={draft.visualGuidance ?? ""}
@@ -517,11 +543,22 @@ export function CreativeProfilePanel({
             maxLength={CREATIVE_VISUAL_GUIDANCE_MAX_LENGTH}
           />
           <p className={styles.profileGuideHint}>
-            Add the complete visual direction for this topic: palette,
-            typography, motifs, safe margins, and what to avoid. Logo settings
-            apply directly to the next image batch and do not require
-            regenerating the script.
+            Write the complete visual direction for this topic (up to 20,000
+            characters): palette, typography, motifs, safe margins, and what to
+            avoid. Then organize it into the creative identity below. Visual
+            changes and logo settings apply to the next image version without
+            rewriting the script.
           </p>
+          <CreativeIdentityEditor
+            topicId={topicId}
+            secret={secret}
+            disabled={controlsDisabled}
+            guide={draft.visualGuidance ?? ""}
+            identity={draft.creativeIdentity ?? null}
+            palette={draft.brandPalette}
+            onIdentity={(creativeIdentity) => updateDraft({ creativeIdentity })}
+            onPalette={updateBrandPalette}
+          />
           <BrandPaletteAssistant
             topicId={topicId}
             secret={secret}
@@ -551,7 +588,7 @@ export function CreativeProfilePanel({
           />
         </Group>
 
-        <Group title="Supporting characters" id="creative-profile-characters">
+        <Group section={section} tab="assets" title="Supporting characters" id="creative-profile-characters" defaultOpen>
           <SupportingCharactersEditor
             topicId={topicId}
             secret={secret}
@@ -559,7 +596,7 @@ export function CreativeProfilePanel({
           />
         </Group>
 
-        <Group title="Carousel numbering" id="creative-profile-carousel">
+        <Group section={section} tab="visual" title="Carousel numbering" id="creative-profile-carousel">
           <CarouselNumberingEditor
             chrome={draft.carouselChrome}
             palette={draft.brandPalette}
@@ -586,11 +623,16 @@ function Group({
   title,
   id,
   defaultOpen = false,
+  section,
+  tab,
   children,
 }: {
   title: string;
   id?: string;
   defaultOpen?: boolean;
+  /** The active tab and the tab this group belongs to; other tabs' groups stay mounted but hidden, keeping unsaved edits. */
+  section?: CreativeProfileSection;
+  tab?: CreativeProfileSection;
   children: ReactNode;
 }) {
   // Local state so a parent re-render (every keystroke sets dirty) does not
@@ -621,6 +663,7 @@ function Group({
     <details
       ref={detailsRef}
       id={id}
+      hidden={Boolean(section && tab && section !== tab)}
       className={styles.profilePanel}
       open={open}
       onToggle={(event) => setOpen(event.currentTarget.open)}
@@ -661,4 +704,40 @@ async function requestJson<T>(
   }
 
   return payload as T;
+}
+
+type UnsavedDraft = { base: string; savedAt: number; draft: CreativeProfile };
+
+function unsavedDraftKey(topicId: string): string {
+  return `press-craftor:creative-profile-draft:${topicId}`;
+}
+
+/** The stored draft only applies to the profile version it was edited from. */
+function readUnsavedDraft(topicId: string, base: string): UnsavedDraft | undefined {
+  try {
+    const raw = window.localStorage.getItem(unsavedDraftKey(topicId));
+    if (!raw) return undefined;
+    const stored = JSON.parse(raw) as UnsavedDraft;
+    if (stored?.base === base && stored.draft) return stored;
+    window.localStorage.removeItem(unsavedDraftKey(topicId));
+  } catch {
+    // Storage can be unavailable (private mode, blocked site data).
+  }
+  return undefined;
+}
+
+function writeUnsavedDraft(topicId: string, base: string, draft: CreativeProfile) {
+  try {
+    window.localStorage.setItem(unsavedDraftKey(topicId), JSON.stringify({ base, savedAt: Date.now(), draft }));
+  } catch {
+    // Best effort; the beforeunload warning still applies.
+  }
+}
+
+function clearUnsavedDraft(topicId: string) {
+  try {
+    window.localStorage.removeItem(unsavedDraftKey(topicId));
+  } catch {
+    // Nothing to clear.
+  }
 }

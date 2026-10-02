@@ -59,8 +59,9 @@ test("finished-post scores high on cover, low on content; signage is neutral", (
     budget,
     generativeImageryAllowed: true,
   });
-  // content: finished-post=1, signage=1 → tie broken by createdAt then id
-  assert.equal(content.selected.length, 2);
+  // content: a finished post is not a layout template for every slide
+  assert.deepEqual(content.selected.map((entry) => entry.id), ["b"]);
+  assert.equal(cover.selected[0].function, "ambience");
 });
 
 test("contribution aspects in visualDirection add score; cover credits color+mood", () => {

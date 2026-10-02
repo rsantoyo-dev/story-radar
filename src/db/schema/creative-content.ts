@@ -227,6 +227,8 @@ export const creativeProfiles = pgTable(
     visualGuidance: text("visual_guidance")
       .notNull()
       .default(DEFAULT_CREATIVE_VISUAL_GUIDANCE),
+    /** The Visual campaign guide organized into format, style, typography and avoid. */
+    creativeIdentity: jsonb("creative_identity").$type<import("@/app/modules/stories/creative-identity").CreativeIdentity>(),
     brandPalette: jsonb("brand_palette")
       .$type<CreativeBrandPaletteColor[]>()
       .default(DEFAULT_CREATIVE_BRAND_PALETTE.map((entry) => ({ ...entry })))

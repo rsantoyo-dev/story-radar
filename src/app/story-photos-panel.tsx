@@ -125,14 +125,14 @@ function CommonsPersonSearch({ scope, disabled, onImported }: { scope: Scope; di
     setBusy(person.entityId); setError(""); setNotice("");
     try {
       await call(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ entityId: person.entityId, kind }) });
-      setNotice(`${person.name} added. On its slide, select this photo — it is kept unmodified with its credit, and the AI designs the slide around it.`);
+      setNotice(`${person.name} added. On its slide, select this photo — it is kept unmodified, the AI designs the slide around it, and its credit goes in the post caption.`);
       onImported();
     } catch (err) { setError(err instanceof Error ? err.message : "Import failed"); }
     finally { setBusy(undefined); }
   }
   return <div className={styles.storyMaterialForm}>
     <strong>Real person or place from Wikimedia Commons</strong>
-    <p>Only openly licensed photos appear. The photo is kept unmodified with its credit and is never redrawn by AI. Check it shows the right person or place before approving.</p>
+    <p>Only openly licensed photos appear. The photo is kept unmodified and is never redrawn by AI; its credit is added to the post caption. Check it shows the right person or place before approving.</p>
     <form onSubmit={search}>
       <fieldset disabled={disabled || Boolean(busy)}>
         <legend>Search for</legend>

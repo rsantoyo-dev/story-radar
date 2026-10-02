@@ -53,6 +53,8 @@ function harness(
   accountBehaviour: {
     onKey?: (key: string) => void;
     failFirstAccountWith?: number;
+    /** Every Gemini account fails with this status (an outage or exhausted credits). */
+    failAllAccountsWith?: number;
     /** Set when the test configures carouselWriterModel; otherwise any OpenAI call is a failure. */
     allowOpenAiWriter?: boolean;
   } = {},
@@ -83,6 +85,7 @@ function harness(
               if (accountBehaviour.failFirstAccountWith && this.key === "test-key") {
                 throw new ApiError(accountBehaviour.failFirstAccountWith);
               }
+              if (accountBehaviour.failAllAccountsWith) throw new ApiError(accountBehaviour.failAllAccountsWith);
               const contents = JSON.parse(params.contents) as Record<string, unknown>;
               const attempt = calls.length;
               calls.push(contents);
@@ -127,6 +130,8 @@ function harness(
     exports: singleShotExports,
     Error, AbortController, AbortSignal, Buffer, Date, Map, Set, JSON, setTimeout, clearTimeout,
     console: { info() {}, warn() {}, error() {} },
+    // The fallback model is read from the environment; an empty env keeps the default.
+    process: { env: {} },
     require: (id: string) => (id === "./gemini-creative-content-generator" ? geminiExports : sharedRequire(id)),
   });
   return {
@@ -646,6 +651,23 @@ test("an overloaded Gemini account retries on the second Gemini account, not ano
   assert.deepEqual(keys, ["test-key", "paid-key", "paid-key"], "brief retries on the paid account, then the script uses it too");
   assert.equal(result.attempts, 3, "the failed attempt counts against the call budget");
   assert.equal(result.draft.units.length, 3);
+});
+
+test("when every Gemini account is down, the brief falls back to OpenAI with the full article", async () => {
+  const keys: string[] = [];
+  const h = harness(() => validResponse(), { onKey: (key) => keys.push(key), failAllAccountsWith: 503, allowOpenAiWriter: true });
+  const result = await h.generate(options({ paidGeminiApiKey: "paid-key", openAiApiKey: "openai-key", carouselWriterModel: "gpt-6.1-sol" }));
+  assert.deepEqual(keys, ["test-key", "paid-key"], "both Gemini accounts are tried first");
+  assert.equal(h.openAiCalls.length, 2, "the brief and the script both come from OpenAI");
+  assert.ok(JSON.stringify(h.openAiCalls[0].contents).includes("counterfeit"), "the fallback brief call extracts evidence from the article");
+  assert.equal(h.openAiCalls[0].model, "gpt-6.1-sol");
+  assert.equal(result.brief.keyFacts[0].id, "fact-1");
+  assert.equal(result.draft.units.length, 3);
+});
+
+test("without an OpenAI key a Gemini outage still fails instead of hanging", async () => {
+  const h = harness(() => validResponse(), { failAllAccountsWith: 503 });
+  await assert.rejects(h.generate(options({ paidGeminiApiKey: "paid-key" })));
 });
 
 test("a non-transient Gemini failure is not re-sent to the second account", async () => {

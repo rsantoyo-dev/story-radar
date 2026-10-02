@@ -139,3 +139,19 @@ export async function stopPreparation(topicId:string,id:string) {
     .where(and(eq(runs.id,id),eq(runs.topicId,topicId),eq(runs.status,"running")));
   return latestPreparation(topicId);
 }
+
+/**
+ * Stories an editor has been working on (a script saved in the last three
+ * weeks) that are not published or scheduled yet: the ones a run can pick up
+ * and continue, most recently touched first.
+ */
+export async function listStoriesInProgress(topicId:string) {
+  const result=await db.execute(sql`SELECT * FROM (
+      SELECT DISTINCT ON (d.story_id) d.story_id, s.title, d.version, d.status, d.updated_at
+      FROM creative_drafts d JOIN stories s ON s.id=d.story_id
+      WHERE d.topic_id=${topicId}::uuid AND d.updated_at > now() - interval '21 days'
+        AND NOT EXISTS (SELECT 1 FROM story_social_publications p WHERE p.topic_id=d.topic_id AND p.story_id=d.story_id AND p.status IN ('published','scheduled'))
+      ORDER BY d.story_id, d.updated_at DESC
+    ) latest ORDER BY updated_at DESC LIMIT 15`);
+  return result.rows.map(row=>({storyId:String(row.story_id),title:String(row.title ?? ""),version:Number(row.version),status:String(row.status),updatedAt:new Date(String(row.updated_at)).toISOString()}));
+}
