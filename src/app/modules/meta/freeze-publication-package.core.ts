@@ -121,6 +121,11 @@ export type FreezeDependencies = {
     draftId: string,
     candidateSnapshotHash: string,
   ) => Promise<FrozenPackage | undefined>;
+  /** A non-frozen package of this exact set (already published, or gone stale), checked before any rendering. */
+  findUsed?: (
+    draftId: string,
+    candidateSnapshotHash: string,
+  ) => Promise<{ status: string } | undefined>;
   readApprovedImage: (assetId: string, storyId: string, provider: string) => Promise<File>;
   buildObjectKey: (packageId: string, unitOrder: number) => string;
   putObject: (objectKey: string, bytes: Uint8Array, contentType: string) => Promise<void>;
@@ -168,6 +173,13 @@ export async function runFreezePublicationPackage(
 
   const existing = await deps.findExisting(draftId, candidate.snapshotHash);
   if (existing) return existing;
+  // One package per exact approved set: a used one can never be frozen again.
+  const used = await deps.findUsed?.(draftId, candidate.snapshotHash);
+  if (used) {
+    throw new PublicationPackageConflictError(used.status === "consumed"
+      ? "This exact post was already published on this channel. Change the script or an image to publish a new version."
+      : "This exact approved set was already prepared and is no longer current. Check publication readiness again.");
+  }
 
   const context = await deps.loadContext();
   const orderedAssets = [...candidate.assets].sort((a, b) => a.order - b.order);

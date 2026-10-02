@@ -91,6 +91,14 @@ export async function freezePublicationPackage(
         },
       };
     },
+    findUsed: async (draft, hash) => {
+      const [row] = await db
+        .select({ status: instagramPublicationPackages.status })
+        .from(instagramPublicationPackages)
+        .where(and(eq(instagramPublicationPackages.draftId, draft), eq(instagramPublicationPackages.candidateSnapshotHash, hash)))
+        .limit(1);
+      return row && row.status !== "frozen" ? row : undefined;
+    },
     findExisting: async (draft, hash) => {
       const [row] = await db
         .select()

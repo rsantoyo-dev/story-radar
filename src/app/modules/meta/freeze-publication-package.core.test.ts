@@ -203,3 +203,13 @@ test("if persist fails, every uploaded object is removed and the error propagate
   assert.equal(puts.length, 2);
   assert.deepEqual(removed.sort(), puts.sort());
 });
+
+test("an approved set that was already published is refused at once, before any image is processed", async () => {
+  let reads = 0;
+  const { deps, puts } = baseDeps({ findUsed: async () => ({ status: "consumed" }) });
+  const read = deps.readApprovedImage;
+  deps.readApprovedImage = async (...args) => { reads++; return read(...args); };
+  await assert.rejects(runFreezePublicationPackage("t", "draft", deps), /already published on this channel/);
+  assert.equal(reads, 0);
+  assert.equal(puts.length, 0);
+});
