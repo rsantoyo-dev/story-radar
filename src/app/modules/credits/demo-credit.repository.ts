@@ -15,7 +15,18 @@ export type DemoCreditEntry = {
   operation: string | null;
   provider: string | null;
   model: string | null;
+  /** image | text | search | map | embedding | reader; null for creative text calls and grants. */
+  usageKind: string | null;
   createdAt: string;
+};
+
+/** Daily spend and pace, to see how long the balance lasts. */
+export type DemoCreditHistory = {
+  days: { day: string; micros: number }[];
+  byKind: { kind: string; micros: number }[];
+  last7DaysMicros: number;
+  /** Spend recorded without a configured rate (counted, not charged). */
+  unpricedCount: number;
 };
 
 export type DemoCreditAccount = {
@@ -25,8 +36,9 @@ export type DemoCreditAccount = {
   overdrawnMicros: number;
   pendingMicros: number;
   spentMicros: number;
-  scope: "creative-studio-text";
+  scope: "all-metered-spend";
   entries: DemoCreditEntry[];
+  history: DemoCreditHistory;
 };
 
 /** Reconcile a saved provider receipt after settlement or a process crash. */
@@ -50,9 +62,11 @@ export async function getDemoCreditAccount(): Promise<DemoCreditAccount> {
           AND (c.pricing->>'demoMarkupBasisPoints')::integer BETWEEN 0 AND 50000), 0)::int AS pending
       FROM workspace_credit_entries e WHERE e.workspace_id = 'default'`),
     db.execute(sql`SELECT e.id, e.kind, e.amount_micros, e.reference_cost_micros, e.reason,
-      e.markup_basis_points, e.created_at, c.operation, c.provider, c.model
+      e.markup_basis_points, e.created_at, coalesce(c.operation, u.operation) AS operation,
+      coalesce(c.provider, u.provider) AS provider, coalesce(c.model, u.model) AS model, u.kind AS usage_kind
       FROM workspace_credit_entries e
       LEFT JOIN creative_text_calls c ON c.id = e.source_text_call_id
+      LEFT JOIN ai_usage_charges u ON u.id = e.source_usage_charge_id
       WHERE e.workspace_id = 'default'
       ORDER BY e.created_at DESC, e.id DESC LIMIT 25`),
   ]);
@@ -65,7 +79,8 @@ export async function getDemoCreditAccount(): Promise<DemoCreditAccount> {
     overdrawnMicros: Math.max(0, pendingMicros - balanceMicros),
     pendingMicros,
     spentMicros: Number(summary.rows[0]?.spent ?? 0),
-    scope: "creative-studio-text",
+    scope: "all-metered-spend",
+    history: await getDemoCreditHistory(),
     entries: activity.rows.map((row) => ({
       id: String(row.id),
       kind: row.kind as DemoCreditEntry["kind"],
@@ -76,7 +91,36 @@ export async function getDemoCreditAccount(): Promise<DemoCreditAccount> {
       operation: row.operation === null ? null : String(row.operation),
       provider: row.provider === null ? null : String(row.provider),
       model: row.model === null ? null : String(row.model),
+      usageKind: row.usage_kind === null || row.usage_kind === undefined ? null : String(row.usage_kind),
       createdAt: new Date(String(row.created_at)).toISOString(),
     })),
+  };
+}
+
+/** The last 30 days of debits by UTC day and by kind (creative text counts as "text"). */
+export async function getDemoCreditHistory(): Promise<DemoCreditHistory> {
+  const [daily, kinds, unpriced] = await Promise.all([
+    db.execute(sql`SELECT to_char(date_trunc('day', e.created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS day,
+        -sum(e.amount_micros)::float8 AS micros
+      FROM workspace_credit_entries e
+      WHERE e.workspace_id = 'default' AND e.kind = 'usage_debit' AND e.created_at > now() - interval '30 days'
+      GROUP BY 1 ORDER BY 1`),
+    db.execute(sql`SELECT coalesce(u.kind, 'text') AS kind, -sum(e.amount_micros)::float8 AS micros
+      FROM workspace_credit_entries e LEFT JOIN ai_usage_charges u ON u.id = e.source_usage_charge_id
+      WHERE e.workspace_id = 'default' AND e.kind = 'usage_debit' AND e.created_at > now() - interval '30 days'
+      GROUP BY 1 ORDER BY 2 DESC`),
+    db.execute(sql`SELECT count(*)::int AS n FROM ai_usage_charges WHERE cost_micros IS NULL AND created_at > now() - interval '30 days'`),
+  ]);
+  const byDay = new Map(daily.rows.map((row) => [String(row.day), Number(row.micros)]));
+  const days: DemoCreditHistory["days"] = [];
+  for (let offset = 29; offset >= 0; offset--) {
+    const day = new Date(Date.now() - offset * 86_400_000).toISOString().slice(0, 10);
+    days.push({ day, micros: byDay.get(day) ?? 0 });
+  }
+  return {
+    days,
+    byKind: kinds.rows.map((row) => ({ kind: String(row.kind), micros: Number(row.micros) })),
+    last7DaysMicros: days.slice(-7).reduce((sum, entry) => sum + entry.micros, 0),
+    unpricedCount: Number(unpriced.rows[0]?.n ?? 0),
   };
 }

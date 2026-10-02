@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { DemoCreditAccount, DemoCreditEntry } from "./modules/credits/demo-credit.repository";
+import type { DemoCreditAccount, DemoCreditEntry, DemoCreditHistory } from "./modules/credits/demo-credit.repository";
 import styles from "./radar-dashboard.generated.module.css";
 
 function credits(micros: number, detail = false): string {
@@ -18,8 +18,34 @@ function entryLabel(entry: DemoCreditEntry): string {
     case "demo_reset": return "Demo balance reset";
     case "signup_grant": return "Signup grant";
     case "refund": return "Refund";
-    case "usage_debit": return entry.operation || "Creative Studio text";
+    case "usage_debit": return entry.usageKind && entry.usageKind !== "text" ? KIND_LABELS[entry.usageKind] ?? entry.usageKind : entry.operation || "Creative Studio text";
   }
+}
+
+const KIND_LABELS: Record<string, string> = { text: "Text", image: "Image", search: "Web search", map: "Maps", embedding: "Embeddings", reader: "Article reader" };
+
+/** Daily spend for the last 30 days, the 7-day pace and how long the balance lasts at it. */
+function SpendHistory({ history, availableMicros }: { history: DemoCreditHistory; availableMicros: number }) {
+  const max = Math.max(...history.days.map((day) => day.micros), 0);
+  const perDay = history.last7DaysMicros / 7;
+  const lastsDays = perDay > 0 ? Math.floor(availableMicros / perDay) : undefined;
+  return <>
+    <h3>Last 30 days</h3>
+    <p>{perDay > 0
+      ? <>Pace: <strong>{credits(perDay)} credits/day</strong> over the last 7 days{lastsDays !== undefined ? <> · the balance lasts about <strong>{lastsDays} {lastsDays === 1 ? "day" : "days"}</strong> at this pace</> : null}.</>
+      : "No spending in the last 7 days."}</p>
+    {max > 0 ? <figure className={styles.demoCreditsChart} aria-label="Credits spent per day, last 30 days">
+      <small>{credits(max)} max/day</small>
+      <ol>{history.days.map((day) => <li key={day.day} title={`${day.day}: ${credits(day.micros)} credits`} aria-label={`${day.day}: ${credits(day.micros)} credits`}>
+        <span style={{ height: `${day.micros > 0 ? Math.max(4, Math.round((day.micros / max) * 100)) : 0}%` }} />
+      </li>)}</ol>
+      <figcaption><span>{history.days[0]?.day}</span><span>{history.days.at(-1)?.day} (UTC)</span></figcaption>
+    </figure> : null}
+    {history.byKind.length ? <dl className={styles.demoCreditsKinds}>{history.byKind.map((entry) => <div key={entry.kind}>
+      <dt>{KIND_LABELS[entry.kind] ?? entry.kind}</dt><dd>{credits(entry.micros)}</dd>
+    </div>)}</dl> : null}
+    {history.unpricedCount ? <p><small>{history.unpricedCount} {history.unpricedCount === 1 ? "request has" : "requests have"} no configured price yet and {history.unpricedCount === 1 ? "was" : "were"} not charged.</small></p> : null}
+  </>;
 }
 
 async function loadDemoCredits(secret: string, signal?: AbortSignal): Promise<DemoCreditAccount> {
@@ -74,13 +100,14 @@ export function DemoCreditIndicator({ secret }: { secret: string }) {
     <div className={styles.demoCreditsPanel}>
       <h2>Demo credit activity</h2>
       {error ? <p>Balance is unavailable. Check the credit migration, then try again.</p> : !account ? <p>Loading activity…</p> : <>
-        <p>1,000 credits represent US$10 of reference value. Creative Studio text is currently metered; images, research, evaluation, and other providers are not included yet. Credits do not block work in this demo.</p>
+        <p>1,000 credits represent US$10 of reference value, including the configured markup. Creative text and images are metered (image cost is estimated from fal&rsquo;s published rates); evaluation, research and maps are being added. Credits do not block work in this demo.</p>
         <dl className={styles.demoCreditsTotals}>
           <div><dt>Available</dt><dd>{credits(account.availableMicros)}</dd></div>
           <div><dt>Pending or uncertain</dt><dd>{credits(account.pendingMicros)}</dd></div>
-          <div><dt>Spent on text</dt><dd>{credits(account.spentMicros)}</dd></div>
+          <div><dt>Spent</dt><dd>{credits(account.spentMicros)}</dd></div>
           {account.overdrawnMicros > 0 ? <div><dt>Overdrawn</dt><dd>{credits(account.overdrawnMicros)}</dd></div> : null}
         </dl>
+        {account.history ? <SpendHistory history={account.history} availableMicros={account.availableMicros} /> : null}
         <h3>Recent activity</h3>
         {account.entries.length ? <ul className={styles.demoCreditsHistory}>
           {account.entries.map((entry) => <li key={entry.id}>

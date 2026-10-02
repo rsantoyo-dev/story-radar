@@ -10,6 +10,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+import { aiUsageCharges } from "./ai-usage-charges";
 import { creativeTextCalls } from "./creative-text-accounting";
 import { workspaces } from "./workspaces";
 
@@ -30,6 +31,11 @@ export const workspaceCreditEntries = pgTable(
       () => creativeTextCalls.id,
       { onDelete: "restrict" },
     ),
+    /** The non-text spend this debit settles (images, searches, maps…). */
+    sourceUsageChargeId: uuid("source_usage_charge_id").references(
+      () => aiUsageCharges.id,
+      { onDelete: "restrict" },
+    ),
     referenceCostMicros: integer("reference_cost_micros"),
     markupBasisPoints: integer("markup_basis_points"),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -42,6 +48,9 @@ export const workspaceCreditEntries = pgTable(
     ),
     uniqueIndex("workspace_credit_entries_text_call_idx").on(
       table.sourceTextCallId,
+    ),
+    uniqueIndex("workspace_credit_entries_usage_charge_idx").on(
+      table.sourceUsageChargeId,
     ),
     index("workspace_credit_entries_workspace_time_idx").on(
       table.workspaceId,
@@ -59,8 +68,8 @@ export const workspaceCreditEntries = pgTable(
     ),
     check(
       "workspace_credit_entries_source_check",
-      sql`(${table.kind} = 'usage_debit' AND ${table.sourceTextCallId} IS NOT NULL AND ${table.referenceCostMicros} IS NOT NULL AND ${table.referenceCostMicros} > 0 AND ${table.markupBasisPoints} IS NOT NULL AND ${table.markupBasisPoints} >= 0)
-        OR (${table.kind} <> 'usage_debit' AND ${table.sourceTextCallId} IS NULL AND ${table.referenceCostMicros} IS NULL AND ${table.markupBasisPoints} IS NULL)`,
+      sql`(${table.kind} = 'usage_debit' AND ((${table.sourceTextCallId} IS NOT NULL) <> (${table.sourceUsageChargeId} IS NOT NULL)) AND ${table.referenceCostMicros} IS NOT NULL AND ${table.referenceCostMicros} > 0 AND ${table.markupBasisPoints} IS NOT NULL AND ${table.markupBasisPoints} >= 0)
+        OR (${table.kind} <> 'usage_debit' AND ${table.sourceTextCallId} IS NULL AND ${table.sourceUsageChargeId} IS NULL AND ${table.referenceCostMicros} IS NULL AND ${table.markupBasisPoints} IS NULL)`,
     ),
   ],
 );
