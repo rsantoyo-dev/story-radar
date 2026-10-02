@@ -8,26 +8,12 @@ import { InlineNotice, LoadingState } from "./ui/primitives";
 
 type InstagramStatus = { connected: boolean; igUsername?: string };
 type FacebookStatus = { connected: boolean; pageName?: string; linkedIgUserId?: string; linkedIgUsername?: string };
-type ChannelOption = { channel: PublicationChannel; accountHint?: string };
+export type ChannelOption = { channel: PublicationChannel; accountHint?: string };
 
-/**
- * PUB-10: one publication review per connected Meta channel. With a connected
- * Facebook Page, the topic publishes through Meta — the Page and its linked
- * Instagram account — as independent deliveries. The direct Instagram
- * connection is offered only when it is not that same Instagram account, so
- * one account is never offered twice.
- */
-export function PublicationChannelsPanel({ topicId, draftId, batchId, secret, disabled, onGoToBlocker }: {
-  topicId: string;
-  draftId: string;
-  batchId: string;
-  secret: string;
-  disabled?: boolean;
-  onGoToBlocker?: (target: BlockerTarget) => void;
-}) {
+/** The Topic's connected publishing channels (Page, its Instagram, direct Instagram). */
+export function useConnectedPublicationChannels(topicId: string, secret: string) {
   const [options, setOptions] = useState<ChannelOption[]>();
   const [error, setError] = useState<string>();
-
   useEffect(() => {
     const controller = new AbortController();
     const headers = { Authorization: `Bearer ${secret.trim()}` };
@@ -44,6 +30,25 @@ export function PublicationChannelsPanel({ topicId, draftId, batchId, secret, di
       .catch(() => { if (!controller.signal.aborted) setError("The connected channels could not be loaded. Reload to try again."); });
     return () => controller.abort();
   }, [topicId, secret]);
+  return { options, error };
+}
+
+/**
+ * PUB-10: one publication review per connected Meta channel. With a connected
+ * Facebook Page, the topic publishes through Meta — the Page and its linked
+ * Instagram account — as independent deliveries. The direct Instagram
+ * connection is offered only when it is not that same Instagram account, so
+ * one account is never offered twice.
+ */
+export function PublicationChannelsPanel({ topicId, draftId, batchId, secret, disabled, onGoToBlocker }: {
+  topicId: string;
+  draftId: string;
+  batchId: string;
+  secret: string;
+  disabled?: boolean;
+  onGoToBlocker?: (target: BlockerTarget) => void;
+}) {
+  const { options, error } = useConnectedPublicationChannels(topicId, secret);
 
   if (error) return <InlineNotice tone="error">{error}</InlineNotice>;
   if (!options) return <LoadingState>Checking connected channels…</LoadingState>;

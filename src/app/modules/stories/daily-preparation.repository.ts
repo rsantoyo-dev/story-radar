@@ -103,3 +103,14 @@ export async function checkpointPreparation(run:typeof runs.$inferSelect,progres
   const updated=await db.update(runs).set({progress,updatedAt:new Date()}).where(and(eq(runs.id,run.id),eq(runs.topicId,run.topicId),eq(runs.leaseOwner,run.leaseOwner!))).returning({id:runs.id});
   if(!updated.length)throw new Error("Preparation lease lost");
 }
+
+/**
+ * An editor stops a running run. It becomes resumable (needs-review) and its
+ * lease is released, so a step still in flight cannot save over the stop.
+ */
+export const PREPARATION_STOPPED_MESSAGE = "Stopped by an editor. Continue this run to resume it, or start a new run.";
+export async function stopPreparation(topicId:string,id:string) {
+  await db.update(runs).set({status:"needs-review",error:PREPARATION_STOPPED_MESSAGE,leaseOwner:null,leaseUntil:null,updatedAt:new Date()})
+    .where(and(eq(runs.id,id),eq(runs.topicId,topicId),eq(runs.status,"running")));
+  return latestPreparation(topicId);
+}

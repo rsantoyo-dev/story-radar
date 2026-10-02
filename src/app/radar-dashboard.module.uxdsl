@@ -3226,18 +3226,45 @@
 .runStory { display: grid; grid-template-columns: xs(1fr) md(minmax(0, 1fr) minmax(0, 1fr)); gap: density(4); align-items: start; }
 .runStory h3 { margin: 0 0 density(2); @ds-typo(caption); font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: palette(dark-main, 0.7); }
 .runTimeline { display: grid; gap: density(1); margin: 0; padding: 0; list-style: none; }
-.runTimeline li { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: density(2); @ds-typo(caption); color: palette(dark-main); }
-.runTimeline time { color: palette(dark-main, 0.55); font-variant-numeric: tabular-nums; }
+.runTimeline li { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: density(2); @ds-typo(caption); color: palette(dark-main); }
+.runTimeline time { color: palette(dark-main, 0.55); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .runTimeline li[data-kind="skip"] span { color: palette(warning-dark); }
 .runTimeline li[data-kind="auto"] span { color: palette(primary-dark); font-weight: 650; }
 .runTimeline li[data-kind="now"] span { color: palette(info-dark); font-weight: 650; }
+.runCalls { display: grid; gap: density(1); margin: 0 0 density(3); padding: 0; list-style: none; }
+.runCalls li { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: density(2); @ds-typo(caption); color: palette(dark-main); }
+.runCalls li > span:first-child { color: palette(dark-main, 0.55); font-variant-numeric: tabular-nums; }
+.runCalls small { display: block; color: palette(dark-main, 0.6); font-variant-numeric: tabular-nums; }
+.runCalls li[data-status="reserved"] small { color: palette(info-dark); font-weight: 650; }
+.runCalls li[data-status="uncertain"] small, .runCalls li[data-status="failed"] small { color: palette(warning-dark); }
+.runStory section[aria-label="AI calls"] h3 { margin-top: density(3); }
 .runCard { @ds-surface(flat primary); display: grid; gap: density(1); padding: density(3); border: border(1, palette(primary-light), solid); border-radius: radius(2); color: palette(dark-main); min-width: 0; }
 .runCard p { margin: 0; @ds-typo(caption); overflow-wrap: anywhere; }
 .runImages { display: grid; gap: density(1); margin-top: density(1); }
-.runImages ol { display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: density(1); margin: 0; padding: 0; list-style: none; }
+/* Full width of the panel: up to four per row, two on small screens. */
+.runImages ol { display: grid; grid-template-columns: xs(repeat(2, minmax(0, 1fr))) md(repeat(4, minmax(0, 1fr))); gap: density(1); margin: 0; padding: 0; list-style: none; }
 .runImages li { aspect-ratio: 4 / 5; border-radius: radius(1); overflow: hidden; background: palette(neutral-light, 0.4); display: grid; place-items: center; }
 .runImages li[data-status="failed"] { outline: 2px solid palette(error-main); }
 .runImages img { width: 100%; height: 100%; object-fit: cover; }
+.runImages li { position: relative; }
+/* Same approve checkmark as the draft's thumbnails. */
+.runImageApproval { position: absolute; top: density(1); right: density(1); width: 30px; height: 30px; border-radius: 999px; border: 2px solid palette(light-light); background: palette(dark-main, 0.45); color: palette(light-light); font-weight: 800; cursor: pointer; }
+.runImageApproval[data-approved="true"] { background: palette(success-main); }
+.runImageApproval:disabled { cursor: not-allowed; opacity: 0.5; }
+.runImageApproval:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 2px; }
+.runPublish { display: grid; gap: density(2); margin-top: density(3); padding-top: density(3); border-top: border(1, palette(neutral-light), solid); }
+.runPublish h3 { margin: 0; @ds-typo(caption); font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: palette(dark-main, 0.7); }
+.runPublishConfirm { display: grid; gap: density(2); padding: density(3); border: border(1, palette(primary-main), solid); border-radius: radius(2); background: palette(primary-light, 0.15); color: palette(dark-main); }
+.runPublishConfirm p { margin: 0; @ds-typo(caption); overflow-wrap: anywhere; }
+.runPublishError { white-space: pre-line; }
+.runPublishResults { display: grid; gap: density(1); margin: 0; padding: 0; list-style: none; @ds-typo(caption); color: palette(dark-main); }
+.runPublishResults li[data-status="published"] strong { color: palette(success-dark); }
+.runPublishResults li[data-status="failed"], .runPublishResults li[data-status="suspended"] { color: palette(warning-dark); }
+/* Text-only slide cards: the script's shape before images exist. */
+.runImages .runSlides { display: grid; grid-template-columns: xs(repeat(2, minmax(0, 1fr))) md(repeat(4, minmax(0, 1fr))); gap: density(2); margin: 0; padding: 0; list-style: none; }
+.runImages .runSlides li { aspect-ratio: 4 / 5; display: grid; grid-template-rows: auto 1fr; place-items: start stretch; align-content: start; gap: density(1); padding: density(2); border: border(1, palette(primary-light), solid); border-radius: radius(1); background: palette(light-light); overflow: hidden; }
+.runImages .runSlides li > span { @ds-typo(caption); font-weight: 700; color: palette(primary-main); font-variant-numeric: tabular-nums; }
+.runImages .runSlides strong { @ds-typo(caption); font-size: 0.85rem; line-height: 1.3; font-weight: 700; color: palette(dark-main); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
 .runImages span { @ds-typo(caption); color: palette(dark-main, 0.6); }
 
 .dailyPreparationStatusLine {

@@ -2,7 +2,9 @@ import { after } from "next/server";
 import { authorizeRadarCollector } from "../radar-api-auth";
 import { requireActiveRequestTopic, topicRequestErrorResponse } from "../radar-topic";
 import { noStoreJson } from "../creative-route-error";
-import { latestPreparation, startPreparation, retryPreparation, continuePreparation, acknowledgePreparationBrief } from "@/app/modules/stories/daily-preparation.repository";
+import { listStoryTextCallsSince } from "@/app/modules/stories/creative-text-accounting.repository";
+import { findCreativeDraftById } from "@/app/modules/stories/creative-content.repository";
+import { latestPreparation, startPreparation, retryPreparation, continuePreparation, acknowledgePreparationBrief, stopPreparation } from "@/app/modules/stories/daily-preparation.repository";
 import { DAILY_PREPARATION_STEPS, type DailyPreparationStep } from "@/app/modules/stories/daily-preparation.types";
 import { drivePreparation } from "@/app/modules/stories/daily-preparation";
 import { listEditorialLines, getEditorialLine, validId } from "@/app/modules/editorial-lines/editorial-lines.repository";
@@ -21,7 +23,10 @@ async function handle(request:Request,write:boolean) {
       const input=await request.json().catch(()=>null);
       if(!input || typeof input!=="object" || Array.isArray(input))return noStoreJson({error:"Invalid preparation request"},400);
       if(input.targetStep!==undefined && !DAILY_PREPARATION_STEPS.includes(input.targetStep))return noStoreJson({error:"Choose a valid target step"},400);
-      if(input.action==="continue") {
+      if(input.action==="stop") {
+        if(!run || run.id!==validId(input.runId))return noStoreJson({error:"This is no longer the latest preparation"},409);
+        run=await stopPreparation(topicId,run.id);
+      } else if(input.action==="continue") {
         if(!run || run.id!==validId(input.runId))return noStoreJson({error:"This is no longer the latest preparation"},409);
         if(!input.targetStep)return noStoreJson({error:"Choose a target step"},400);
         run=await continuePreparation(topicId,run.id,input.targetStep as DailyPreparationStep,typeof input.autoApprove==="boolean"?input.autoApprove:undefined);
@@ -39,7 +44,7 @@ async function handle(request:Request,write:boolean) {
         let timezone:string;
         try{timezone=plannerDay(input.timezone).timezone;}catch{return noStoreJson({error:"Choose a valid timezone"},400);}
         run=(await startPreparation(topicId,line.id,line.name,timezone,input.mode ?? "day",input.targetStep,"manual",input.autoApprove===true)).run;
-      } else return noStoreJson({error:"Choose start, continue, retry or acknowledge-brief"},400);
+      } else return noStoreJson({error:"Choose start, continue, retry, stop or acknowledge-brief"},400);
     }
     // Reconcile an already-authorized job; GET never creates a new job.
     if(run?.status==="running" && (!run.leaseUntil || run.leaseUntil.getTime()<Date.now())) {
@@ -47,7 +52,12 @@ async function handle(request:Request,write:boolean) {
       after(()=>drivePreparation(topicId,id));
     }
     const lines=(await listEditorialLines(topicId)).filter(l=>!l.archived).map(l=>({id:l.id,name:l.name,timezone:l.timezone}));
-    return noStoreJson({run:run?{id:run.id,topicId:run.topicId,lineId:run.lineId,timezone:run.timezone,status:run.status,step:run.step,progress:run.progress,error:run.error,startedAt:run.startedAt,updatedAt:run.updatedAt}:null,lines});
+    // The AI calls behind this run's story, with credits, so the panel shows its sub-steps live.
+    const calls=run?.progress.storyId ? await listStoryTextCallsSince(topicId,run.progress.storyId,new Date(run.startedAt)).catch(()=>[]) : [];
+    // The current script as slides (read live, so edits in the studio show here too).
+    const draft=run?.progress.draftId ? await findCreativeDraftById(topicId,run.progress.draftId).catch(()=>undefined) : undefined;
+    const slides=draft ? {version:draft.version,status:draft.status,units:draft.units.map(u=>({order:u.order,role:u.role,headline:u.headline,subheadline:u.subheadline ?? null}))} : null;
+    return noStoreJson({run:run?{id:run.id,topicId:run.topicId,lineId:run.lineId,timezone:run.timezone,status:run.status,step:run.step,progress:run.progress,error:run.error,startedAt:run.startedAt,updatedAt:run.updatedAt}:null,lines,calls,slides});
   } catch(error) {
     const topicError=topicRequestErrorResponse(error);if(topicError)return topicError;
     if(error instanceof EditorialLineError)return noStoreJson({error:error.message},error.status);

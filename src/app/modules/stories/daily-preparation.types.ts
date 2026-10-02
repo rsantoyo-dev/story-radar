@@ -77,3 +77,29 @@ export const DAILY_PREPARATION_LABELS:Record<string,string>={
   brief:"Creating the script and carousel…", draft:"Generating the carousel…",
   "approve-draft":"Approving the script…", images:"Generating visuals…",
 };
+
+/** Mirrors StoryTextCall (creative-text-accounting.repository) for the client. */
+export type PreparationTextCall = {
+  id: string; operation: string; provider: string; model: string; status: string;
+  startedAt: string; finishedAt: string | null; creditMicros: number | null;
+};
+const CALL_LABELS: Record<string, string> = {
+  editorial_focus: "Editorial focus", creative_brief: "Brief", creative_critic: "Critic review",
+  creative_draft_repair: "Script repair", creative_grounding_audit: "Fact audit",
+  creative_editorial_final_audit: "Final editorial audit", creative_editorial_targeted_patch: "Targeted fix",
+  creative_narrative_replan: "Narrative replan", companion_instagram_story: "Companion story",
+  companion_story_terra_critic: "Companion review",
+};
+/** A readable name for one AI call; the first full script is "Script", later ones are rewrites. */
+export function preparationCallLabel(call: PreparationTextCall, earlier: PreparationTextCall[]): string {
+  if (call.operation === "creative_draft") return earlier.some(c => c.operation === "creative_draft") ? "Script rewrite" : "Script";
+  // Untagged JSON calls: Gemini's brief or critic before calls carried their purpose, or a fallback provider.
+  if (call.operation === "creative_json") return call.provider === "google" ? "Brief or critic review" : "AI step (fallback provider)";
+  return CALL_LABELS[call.operation] ?? call.operation.replace(/_/g, " ");
+}
+/** "gpt-6.1-sol" → "GPT-6.1 Sol", "gemini-3.8-flash" → "Gemini 3.8 Flash". */
+export function preparationModelLabel(model: string): string {
+  return model.split("/").pop()!.split("-").map((part, index) =>
+    index === 0 && /^gpt$/i.test(part) ? "GPT" : /^\d/.test(part) ? part : part.charAt(0).toUpperCase() + part.slice(1),
+  ).join(" ").replace(/^GPT (\S+)/, "GPT-$1");
+}

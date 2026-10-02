@@ -432,3 +432,24 @@ test("the run records a readable timeline, the selection's reason and the script
   assert.equal((w.run.progress.draftSummary as {format:string}).format,"carousel");
   assert.ok((w.run.progress.stepTimes as Record<string,string>).collect);
 });
+
+test("an editor can stop a running run; a step still in flight cannot save over it, and it resumes or yields to a new run",async()=>{
+  const client=new PGlite();
+  try {
+    await client.exec(`CREATE TABLE topics(id uuid PRIMARY KEY); INSERT INTO topics VALUES('${topicId}');`);
+    await client.exec(readFileSync(new URL("../../../../drizzle/0071_woozy_captain_universe.sql",import.meta.url),"utf8"));
+    const pg=drizzle(client);
+    const db=Object.assign(pg,{batch:async(queries:Promise<unknown>[])=>{const results=[];for(const q of queries)results.push(await q);return results;}});
+    const repo=load("./daily-preparation.repository.ts",{"@/db/client":{db},"@/db/schema":schema});
+    const {run}=await repo.startPreparation(topicId,lineId,"News","UTC") as {run:{id:string}};
+    const inFlight=await repo.claimPreparation(topicId,run.id);assert.ok(inFlight);
+    const stopped=await repo.stopPreparation(topicId,run.id) as {status:string;error:string};
+    assert.equal(stopped.status,"needs-review");
+    assert.match(stopped.error,/Stopped by an editor/);
+    await repo.savePreparation(inFlight,{status:"running",step:"evaluate"});
+    assert.equal((await repo.latestPreparation(topicId) as {status:string}).status,"needs-review");
+    assert.equal(await repo.claimPreparation(topicId,run.id),undefined);
+    const fresh=await repo.startPreparation(topicId,lineId,"News","UTC") as {created:boolean};
+    assert.equal(fresh.created,true);
+  }finally{await client.close();}
+});
