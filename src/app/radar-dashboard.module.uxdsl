@@ -3672,6 +3672,18 @@
 .demoCreditsTotals > div { padding: density(2); border-radius: radius(2); background: palette(primary-light, 0.16); }
 .demoCreditsTotals dt { color: palette(tertiary-main); @ds-typo(caption); font-size: 0.66rem; }
 .demoCreditsTotals dd { margin: density(1) 0 0; @ds-typo(small); font-weight: 750; }
+/* Daily spend: one series, so one color and no legend; each bar carries its own tooltip. */
+.demoCreditsChart { display: grid; gap: density(1); margin: 0 0 density(3); }
+.demoCreditsChart > small, .demoCreditsChart figcaption { @ds-typo(caption); color: palette(tertiary-main); font-variant-numeric: tabular-nums; }
+.demoCreditsChart ol { display: grid; grid-template-columns: repeat(30, minmax(0, 1fr)); gap: 2px; align-items: end; height: 72px; margin: 0; padding: 0; list-style: none; border-bottom: 1px solid palette(neutral-light); }
+.demoCreditsChart li { height: 100%; display: flex; align-items: flex-end; }
+.demoCreditsChart li span { display: block; width: 100%; border-radius: 4px 4px 0 0; background: palette(primary-main); }
+.demoCreditsChart li:hover span { background: palette(primary-dark); }
+.demoCreditsChart figcaption { display: flex; justify-content: space-between; }
+.demoCreditsKinds { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: density(2); margin: 0 0 density(3); }
+.demoCreditsKinds > div { padding: density(2); border-radius: radius(2); background: palette(neutral-light, 0.3); }
+.demoCreditsKinds dt { @ds-typo(caption); color: palette(tertiary-main); }
+.demoCreditsKinds dd { margin: density(1) 0 0; @ds-typo(small); font-weight: 700; font-variant-numeric: tabular-nums; }
 .demoCreditsHistory { display: grid; gap: 0; max-height: 230px; overflow-y: auto; margin: 0 0 density(3); padding: 0; list-style: none; }
 .demoCreditsHistory li { display: flex; justify-content: space-between; gap: density(3); padding-block: density(2); border-top: 1px solid palette(dark-main, 0.08); @ds-typo(small); font-size: 0.75rem; }
 .demoCreditsHistory li > span { display: grid; min-width: 0; gap: density(1); }

@@ -140,6 +140,20 @@ export function DailyPreparationPanel({onCompleted,onOpenDraft,...props}:Props) 
   const [lineId,setLineId]=useState("");
   const [targetSelection,setTargetSelection]=useState<DailyPreparationStep>();
   const [autoApproveSelection,setAutoApproveSelection]=useState<boolean>();
+  /** A story the editor picks instead of the planner's recommendation ("" = the recommendation). */
+  const [storyChoice,setStoryChoice]=useState("");
+  const [choices,setChoices]=useState<{storyId:string;title:string;editorialPriority:number;growthScore:number|null}[]>([]);
+  useEffect(()=>{
+    if(!secret.trim())return;
+    const controller=new AbortController();
+    fetch(`/api/radar/daily-planner?topicId=${encodeURIComponent(topicId)}&timezone=${encodeURIComponent(timezone)}`,{headers:{Authorization:`Bearer ${secret.trim()}`},cache:"no-store",signal:controller.signal})
+      .then(response=>response.ok?response.json():undefined)
+      .then((body:{context?:{candidates?:{storyId:string;title:string;editorialPriority:number;growthScore:number|null}[]}}|undefined)=>{
+        if(!controller.signal.aborted)setChoices([...(body?.context?.candidates ?? [])].sort((a,b)=>b.editorialPriority-a.editorialPriority));
+      })
+      .catch(()=>{});
+    return ()=>controller.abort();
+  },[topicId,secret,timezone]);
   const [pending,setPending]=useState(false);
   const [newRun,setNewRun]=useState(false);
   /** The editor chose to keep working on a run from an earlier day. */
@@ -200,9 +214,9 @@ export function DailyPreparationPanel({onCompleted,onOpenDraft,...props}:Props) 
     if(posting.current)return;
     ++generation.current;posting.current=true;setPending(true);setError("");
     try {
-      const response=await fetch(`/api/radar/daily-preparation?topicId=${encodeURIComponent(topicId)}`,{method:"POST",headers:{Authorization:`Bearer ${secret.trim()}`,"Content-Type":"application/json"},body:JSON.stringify(fresh?{action:"start",lineId:selectedLine,timezone,targetStep,autoApprove}:{action:"continue",runId:run.id,targetStep,autoApprove})});
+      const response=await fetch(`/api/radar/daily-preparation?topicId=${encodeURIComponent(topicId)}`,{method:"POST",headers:{Authorization:`Bearer ${secret.trim()}`,"Content-Type":"application/json"},body:JSON.stringify(fresh?(storyChoice?{action:"start-story",storyId:storyChoice,lineId:selectedLine,timezone,targetStep,autoApprove}:{action:"start",lineId:selectedLine,timezone,targetStep,autoApprove}):{action:"continue",runId:run.id,targetStep,autoApprove})});
       const value=await response.json();if(!response.ok)throw new Error(value.error);
-      apply(value);setNewRun(false);setResumeOld(false);
+      apply(value);setNewRun(false);setResumeOld(false);setStoryChoice("");
     }catch(error){setError(error instanceof Error?error.message:"Unable to start preparation");}
     finally{posting.current=false;setPending(false);}
   }
@@ -236,6 +250,10 @@ export function DailyPreparationPanel({onCompleted,onOpenDraft,...props}:Props) 
       <div><span className={styles.eyebrow}>Daily editorial workflow</span><h2>Prepare my day</h2><p>Choose an editorial line and how far to prepare. Completed steps are reused when you continue. Before generating images, approve the exact script in the studio, or let the system approve it when its automated review passes.</p><small>Time zone: {timezone}. Search uses the editorial line’s time period and sources.</small></div>
       <div className={styles.dailyPlannerControls}>
         <label>Editorial line<select value={selectedLine} disabled={blocked} onChange={event=>setLineId(event.target.value)}>{!data?.lines.length && <option value="">Loading lines…</option>}{data?.lines.map(line=><option key={line.id} value={line.id}>{line.name}</option>)}</select></label>
+        {fresh && choices.length ? <label>Story<select value={storyChoice} disabled={blocked} onChange={event=>setStoryChoice(event.target.value)}>
+          <option value="">Today’s recommendation (the planner chooses)</option>
+          {choices.map(choice=><option key={choice.storyId} value={choice.storyId}>{choice.title.length>90?`${choice.title.slice(0,90)}…`:choice.title} · editorial {Math.round(choice.editorialPriority)}{choice.growthScore!==null?` · growth ${Math.round(choice.growthScore)}`:""}</option>)}
+        </select></label> : null}
         <label>Prepare through<select value={selectedTarget} disabled={blocked} onChange={event=>setTargetSelection(event.target.value as DailyPreparationStep)}>{steps.map(step=><option key={step} value={step}>{DAILY_PREPARATION_TITLES[step]}</option>)}</select></label>
         <button type="button" className={styles.primaryButton} disabled={blocked || !selectedLine} onClick={()=>void start(selectedTarget)}>{pending?"Starting…":fresh?(run?"Start a new run":"Prepare through this step"):"Continue this run"}</button>
         {running && <button type="button" className={styles.secondaryButton} disabled={disabled || pending || !secret.trim()} onClick={()=>void stopRun()}>{pending?"Stopping…":"Stop this run"}</button>}

@@ -3,7 +3,7 @@ import { DAILY_PREPARATION_STEPS, type DailyPreparationStep } from "./daily-prep
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { dailyPreparationRuns as runs } from "@/db/schema";
+import { dailyPreparationRuns as runs, stories, topicStories } from "@/db/schema";
 export async function latestPreparation(topicId:string) {
   return (await db.select().from(runs).where(eq(runs.topicId,topicId)).orderBy(desc(runs.startedAt)).limit(1))[0];
 }
@@ -35,6 +35,31 @@ export async function startScoopPreparation(input:{topicId:string;lineId:string;
   ]);
   const id=(inserted.rows[0] as {id?:string}|undefined)?.id;
   return id ? (await db.select().from(runs).where(eq(runs.id,id)).limit(1))[0] : undefined;
+}
+/**
+ * An editor picks the story instead of the planner: the run starts at
+ * Approve with that story, skipping collection and selection. Everything
+ * after it (content checks, the published-story guard, approvals) is the
+ * ordinary pipeline.
+ */
+export async function startStoryPreparation(input:{topicId:string;lineId:string;lineName:string;timezone:string;storyId:string;targetStep:DailyPreparationStep;autoApprove?:boolean}) {
+  const [story]=await db.select({title:stories.title}).from(topicStories).innerJoin(stories,eq(stories.id,topicStories.storyId))
+    .where(and(eq(topicStories.topicId,input.topicId),eq(topicStories.storyId,input.storyId))).limit(1);
+  if(!story)return {run:await latestPreparation(input.topicId),created:false};
+  const at=new Date().toISOString();
+  const targetStep=DAILY_PREPARATION_STEPS.indexOf(input.targetStep)>DAILY_PREPARATION_STEPS.indexOf("approve")?input.targetStep:"brief";
+  const progress={lineName:input.lineName,mode:"draft",targetStep,evaluated:0,evaluationBatches:0,trigger:"manual",
+    storyId:input.storyId,storyTitle:story.title,...(input.autoApprove?{autoApprove:true}:{}),
+    candidates:[{storyId:input.storyId,title:story.title,via:"recommended"}],
+    selection:{reason:"Chosen by an editor",alternatives:[]},
+    activity:[{at,text:`Chosen by an editor: "${story.title}"`}]};
+  const [,inserted]=await db.batch([
+    db.execute(sql`SELECT id FROM topics WHERE id=${input.topicId}::uuid FOR UPDATE`),
+    db.execute(sql`INSERT INTO daily_preparation_runs(topic_id,line_id,timezone,step,progress)
+      SELECT ${input.topicId}::uuid,${input.lineId}::uuid,${input.timezone},'approve',${JSON.stringify(progress)}::jsonb
+      WHERE NOT EXISTS(SELECT 1 FROM daily_preparation_runs WHERE topic_id=${input.topicId}::uuid AND status='running') RETURNING id`),
+  ]);
+  return {run:await latestPreparation(input.topicId),created:inserted.rows.length>0};
 }
 /** Extend only the latest stopped run; never overwrite a worker's active lease. */
 export async function continuePreparation(topicId:string,id:string,targetStep:DailyPreparationStep,autoApprove?:boolean) {

@@ -4,7 +4,7 @@ import { requireActiveRequestTopic, topicRequestErrorResponse } from "../radar-t
 import { noStoreJson } from "../creative-route-error";
 import { listStoryTextCallsSince } from "@/app/modules/stories/creative-text-accounting.repository";
 import { findCreativeDraftById } from "@/app/modules/stories/creative-content.repository";
-import { latestPreparation, startPreparation, retryPreparation, continuePreparation, acknowledgePreparationBrief, stopPreparation } from "@/app/modules/stories/daily-preparation.repository";
+import { latestPreparation, startStoryPreparation, startPreparation, retryPreparation, continuePreparation, acknowledgePreparationBrief, stopPreparation } from "@/app/modules/stories/daily-preparation.repository";
 import { DAILY_PREPARATION_STEPS, type DailyPreparationStep } from "@/app/modules/stories/daily-preparation.types";
 import { drivePreparation } from "@/app/modules/stories/daily-preparation";
 import { listEditorialLines, getEditorialLine, validId } from "@/app/modules/editorial-lines/editorial-lines.repository";
@@ -23,7 +23,16 @@ async function handle(request:Request,write:boolean) {
       const input=await request.json().catch(()=>null);
       if(!input || typeof input!=="object" || Array.isArray(input))return noStoreJson({error:"Invalid preparation request"},400);
       if(input.targetStep!==undefined && !DAILY_PREPARATION_STEPS.includes(input.targetStep))return noStoreJson({error:"Choose a valid target step"},400);
-      if(input.action==="stop") {
+      if(input.action==="start-story") {
+        const line=await getEditorialLine(topicId,validId(input.lineId));
+        if(line.archived)return noStoreJson({error:"Choose an active editorial line"},400);
+        let timezone:string;
+        try{timezone=plannerDay(input.timezone).timezone;}catch{return noStoreJson({error:"Choose a valid timezone"},400);}
+        const result=await startStoryPreparation({topicId,lineId:line.id,lineName:line.name,timezone,storyId:validId(input.storyId),
+          targetStep:(input.targetStep ?? "brief") as DailyPreparationStep,autoApprove:input.autoApprove===true});
+        if(!result.created)return noStoreJson({error:"That story is not in this topic, or another run is still in progress. Stop it first."},409);
+        run=result.run;
+      } else if(input.action==="stop") {
         if(!run || run.id!==validId(input.runId))return noStoreJson({error:"This is no longer the latest preparation"},409);
         run=await stopPreparation(topicId,run.id);
       } else if(input.action==="continue") {
@@ -44,7 +53,7 @@ async function handle(request:Request,write:boolean) {
         let timezone:string;
         try{timezone=plannerDay(input.timezone).timezone;}catch{return noStoreJson({error:"Choose a valid timezone"},400);}
         run=(await startPreparation(topicId,line.id,line.name,timezone,input.mode ?? "day",input.targetStep,"manual",input.autoApprove===true)).run;
-      } else return noStoreJson({error:"Choose start, continue, retry, stop or acknowledge-brief"},400);
+      } else return noStoreJson({error:"Choose start, start-story, continue, retry, stop or acknowledge-brief"},400);
     }
     // Reconcile an already-authorized job; GET never creates a new job.
     if(run?.status==="running" && (!run.leaseUntil || run.leaseUntil.getTime()<Date.now())) {

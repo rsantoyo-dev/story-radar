@@ -453,3 +453,14 @@ test("an editor can stop a running run; a step still in flight cannot save over 
     assert.equal(fresh.created,true);
   }finally{await client.close();}
 });
+
+test("a story chosen by an editor starts at Approve and prepares that story without collecting or selecting",async()=>{
+  const w=workflow({draftMode:true});
+  Object.assign(w.run,{step:"approve",progress:{...w.run.progress,targetStep:"brief",storyId:altA,storyTitle:"Chosen",candidates:[{storyId:altA,title:"Chosen",via:"recommended"}]}});
+  await drain(w);
+  assert.equal(w.run.status,"completed");
+  assert.equal(w.run.progress.storyId,altA);
+  assert.deepEqual(w.contentCalls,[altA]);
+  assert.equal(w.calls.some(c=>c==="collect"||c==="evaluate"||c==="recommend"),false);
+  assert.ok(w.calls.includes("brief"));
+});
