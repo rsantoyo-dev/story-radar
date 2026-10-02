@@ -767,10 +767,10 @@ async function executeCreativeAssetImageEdit({
   sourceAsset?: CreativeGeneratedAsset;
 }): Promise<{ asset: CreativeGeneratedAsset; batch: CreativeAssetBatch }> {
   // An image edit sends the finished slide to the model as its base; on a
-  // documentary-portrait slide that would include the real person's face.
-  if (found.asset.unitSnapshot.documentaryPortrait) {
-    throw new CreativeContentConflictError("This slide contains a real person's documentary photo, which is never sent to the image model. Regenerate the slide instead: the original photo is pasted in again.");
-  }
+  // documentary-portrait slide that would include the real person's face. The
+  // slide is regenerated from its prompt plus the instruction instead, and the
+  // original photo is pasted in again afterwards.
+  if (found.asset.unitSnapshot.documentaryPortrait) edit = { ...edit, useImageAsBase: false };
   if (imageEditRequestsGeographicReconstruction({ savedPrompt: found.asset.prompt, editedPrompt: basePrompt, editInstruction: edit.editInstruction })) {
     throw new CreativeContentConflictError("Maps and recognizable real-place edits require documentary preparation, not generative reconstruction.");
   }
@@ -1466,7 +1466,9 @@ function batchMatchesDraftGenerationModes(
     if (asset.providerEndpoint === DRAFT_TYPOGRAPHY_ENDPOINT) return true;
     if (!asset.hasBrandReferenceOverride && unit.brandReferenceSelection?.selected.length && asset.referenceContextVersion !== 1) return false;
     const selection = asset.hasBrandReferenceOverride ? asset.unitSnapshot.brandReferenceSelection : unit.brandReferenceSelection;
-    const shouldUseReferences = Boolean(unit.storyReferences?.length) || asset.unitSnapshot.placeVisual?.generationUse === "ai-reference" || Boolean(asset.editSource) || (unit.characterIds?.length ?? 0) > 0 || (selection?.selected.length ?? 0) > 0;
+    // A documentary portrait is pasted after generation, never sent as a model reference.
+    const modelStoryReferences = unit.storyReferences?.filter((reference) => reference.purpose !== "documentary-portrait") ?? [];
+    const shouldUseReferences = modelStoryReferences.length > 0 || asset.unitSnapshot.placeVisual?.generationUse === "ai-reference" || Boolean(asset.editSource) || (unit.characterIds?.length ?? 0) > 0 || (selection?.selected.length ?? 0) > 0;
     // Compare against the asset's own model rather than one fixed provider, so
     // a batch generated with another catalog model still counts as current.
     const resolved = findCreativeImageModelByEndpoint(asset.providerEndpoint);

@@ -1350,6 +1350,30 @@ export function CreativeDraftWorkspace({
     });
   }
 
+  /**
+   * Approves every generated image one by one through the same endpoint, so
+   * each keeps its own server checks; stops at the first that cannot be approved.
+   */
+  async function handleApproveAllImages(assetIds: string[]) {
+    if (!activeDraftId || assetBusy || viewingHistoricalDraft || !assetIds.length) return;
+    if (!window.confirm(`Approve ${assetIds.length} ${assetIds.length === 1 ? "image" : "images"}? Check the visible text of every slide first.`)) return;
+    await runAsset("approve:all", async () => {
+      let approved = 0;
+      for (const assetId of assetIds) {
+        const response = await requestJson<CreativeAssetBatchResponse>(
+          topicUrl(`/api/radar/creative/assets/${encodeURIComponent(assetId)}`, topicId),
+          secret,
+          { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "approve" }) },
+        ).catch((reason) => {
+          throw new Error(`${approved} of ${assetIds.length} approved. ${getErrorMessage(reason)}`);
+        });
+        approved += 1;
+        setLoadedAssets({ ...response, draftId: activeDraftId });
+      }
+      setNotice(`${approved} ${approved === 1 ? "image" : "images"} approved for this creative.`);
+    });
+  }
+
   function patchEditRequest(draftId: string, request: CreativeAssetEditRequest) {
     setEditRequests((current) => {
       const requests =
@@ -2531,6 +2555,13 @@ export function CreativeDraftWorkspace({
                           {activeDraft.status !== "approved" ? <p>
                             <strong>Approve the script first</strong> (Script tab) — this saved version is not approved yet, so images cannot be approved or regenerated.
                           </p> : null}
+                          {(() => {
+                            const pendingApproval = currentAssetBatch.assets.filter(asset => asset.status === "generated" && !asset.safetyFlag).map(asset => asset.id);
+                            return pendingApproval.length && !assetsReadOnly && !assetsPending ? <button type="button" className={styles.secondaryButton}
+                              disabled={Boolean(assetBusy)} onClick={() => void handleApproveAllImages(pendingApproval)}>
+                              {assetBusy === "approve:all" ? "Approving images…" : `Approve all ${pendingApproval.length} images`}
+                            </button> : null;
+                          })()}
                         </div>
                         <small>
                           {currentAssetBatch.model} · {imageQualityLabel(currentAssetBatch.imageQuality ?? "high")} · {currentAssetBatch.width}×{currentAssetBatch.height}
@@ -3168,7 +3199,8 @@ function CreativeAssetCard({
           ) : null}
         </div>
         <div>
-          {!readOnly && !isPending && !asset.unitSnapshot.documentaryPortrait ? (
+          {/* A portrait slide regenerates its design from the saved prompt; the photo is placed again. */}
+          {!readOnly && !isPending ? (
             <button
               type="button"
               className={styles.secondaryButton}

@@ -28,7 +28,10 @@ export function CreativeBrandImageEditor({ asset, topicId, secret, disabled, sav
   onDiscardRequest?: () => void;
   onApply?: (payload?: SaveEditRequestPayload) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  // A failed or saved change stays visible, so its Retry/Apply is not hidden
+  // in a folded panel, until the editor folds it themselves.
+  const [openChoice, setOpen] = useState<boolean>();
+  const open = openChoice ?? (savedRequest?.status === "failed" || savedRequest?.status === "saved");
   const [library, setLibrary] = useState<CreativeBrandReference[]>();
   const [error, setError] = useState<string>();
   const saved = asset.unitSnapshot.brandReferenceSelection?.selected ?? [];
@@ -129,7 +132,7 @@ export function CreativeBrandImageEditor({ asset, topicId, secret, disabled, sav
     {stateLabel ? <span className={styles.editRequestState}>{stateLabel}</span> : null}
     {savedRequest?.blockedReason ? <p role="alert">Could not apply: {savedRequest.blockedReason}</p> : null}
     {failed && savedRequest?.lastError ? <p role="alert">Generation failed: {savedRequest.lastError}</p> : null}
-    <details onToggle={event => setOpen(event.currentTarget.open)}>
+    <details open={open} onToggle={event => setOpen(event.currentTarget.open)}>
       <summary>Brand references and image edits</summary>
       {open && asset.editSource ? <EditBasePreview assetId={asset.id} topicId={topicId} secret={secret} /> : null}
       {saved.map(reference => <div key={reference.id} className={styles.brandImageReference}>
@@ -142,7 +145,9 @@ export function CreativeBrandImageEditor({ asset, topicId, secret, disabled, sav
       </div>)}
       {!saved.length ? <p>No brand images were sent for this version.</p> : null}
       {!disabled || controlsEnabled ? <>
-        <label><input type="checkbox" checked={useBase} disabled={!asset.imageUrl} onChange={event => setUseBase(event.target.checked)} /> Use this finished image as the edit base</label>
+        {asset.unitSnapshot.documentaryPortrait
+          ? <p>This slide has a real person&apos;s photo, which is never sent to the image model: the slide is regenerated with your instruction and the original photo is placed again.</p>
+          : <label><input type="checkbox" checked={useBase} disabled={!asset.imageUrl} onChange={event => setUseBase(event.target.checked)} /> Use this finished image as the edit base</label>}
         <TextAreaField label="Requested change" value={instruction} maxLength={2000} rows={3} onChange={setInstruction} />
         <p>Keep the saved references, or explicitly choose current library versions for this image. Other slides stay unchanged.</p>
         {library?.map(reference => <label key={reference.id}>

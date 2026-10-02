@@ -359,3 +359,19 @@ test("only transient network/provider failures are retried when submitting an im
     assert.equal(transient(new Error(message)), false, message);
   }
 });
+
+test("a documentary-portrait slide generated text-to-image still matches its batch: the portrait is never a model reference", () => {
+  const source = readFileSync("src/app/modules/stories/manage-creative-assets.ts", "utf8");
+  const start = source.indexOf("function batchMatchesDraftGenerationModes(");
+  const end = source.indexOf("\n}\n", start) + 3;
+  const exports: { run?: (batch: unknown, draft: unknown) => boolean } = {};
+  const models: Record<string, { mode: string }> = { "edit": { mode: "reference-guided" }, "t2i": { mode: "text-to-image" } };
+  runInNewContext(ts.transpileModule(source.slice(start, end) + "\nexports.run = batchMatchesDraftGenerationModes;", { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText,
+    { exports, Map, Boolean, DRAFT_TYPOGRAPHY_ENDPOINT: "typography", findCreativeImageModelByEndpoint: (endpoint: string) => models[endpoint] });
+  const matches = exports.run!;
+  const portraitUnit = { order: 3, storyReferences: [{ id: "p", purpose: "documentary-portrait" }] };
+  const asset = (generationMode: string, providerEndpoint: string) => ({ unitOrder: 3, generationMode, providerEndpoint, unitSnapshot: {} });
+  assert.equal(matches({ assets: [asset("text-to-image", "t2i")] }, { units: [portraitUnit] }), true);
+  // A photo the model adapts is a real reference and needs reference-guided generation.
+  assert.equal(matches({ assets: [asset("text-to-image", "t2i")] }, { units: [{ order: 3, storyReferences: [{ id: "p", purpose: "place" }] }] }), false);
+});
