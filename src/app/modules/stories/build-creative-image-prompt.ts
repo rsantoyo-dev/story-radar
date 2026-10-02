@@ -28,6 +28,9 @@ import {
 } from "./creative-brand-overlay";
 import { buildCreativeInteractiveOverlayPrompt } from "./creative-interactive-overlay";
 
+export { withCurrentVisualGuide, type ProfileVisualIdentity } from "./creative-visual-guidance";
+import type { ProfileVisualIdentity } from "./creative-visual-guidance";
+
 export function buildCreativeImagePrompt({
   draft,
   unit,
@@ -36,6 +39,7 @@ export function buildCreativeImagePrompt({
   campaignCharacters = characters,
   brandOverlay,
   carouselChromeSettings,
+  profileVisual,
 }: {
   draft: CreativeDraft;
   unit: CreativeUnit;
@@ -44,8 +48,11 @@ export function buildCreativeImagePrompt({
   campaignCharacters?: CreativeCharacterSnapshot[];
   brandOverlay?: CreativeBrandOverlay;
   carouselChromeSettings?: CreativeCarouselChromeSettings;
+  /** The profile's current visual identity; defaults to the brief's snapshot. */
+  profileVisual?: ProfileVisualIdentity;
 }): { prompt: string; expectedText: string } {
-  const lettering = brandLettering(brief.profileSnapshot.visualGuidance ?? "", unit.order, draft.units.length, (brandOverlay ?? brief.profileSnapshot.brandOverlay)?.enabled);
+  const visualProfile = profileVisual ? { ...brief.profileSnapshot, ...profileVisual } : brief.profileSnapshot;
+  const lettering = brandLettering(visualProfile.visualGuidance ?? "", unit.order, draft.units.length, (brandOverlay ?? brief.profileSnapshot.brandOverlay)?.enabled);
   const expectedText = [creativeImageModelVisibleText(unit), ...lettering].filter(Boolean).join("\n");
   const position =
     draft.format === "meme" ? "single meme frame" : `carousel slide ${unit.order}`;
@@ -85,7 +92,7 @@ export function buildCreativeImagePrompt({
         : "Use an intentional typography-led graphic composition; do not use a photographic subject."
       : "Create a strong editorial illustration or photorealistic scene that supports the message.";
   const platform = brief.profileSnapshot.platform.trim() || "social media";
-  const visualGuidance = resolveCreativeVisualGuidance(brief.profileSnapshot);
+  const visualGuidance = resolveCreativeVisualGuidance(visualProfile);
   const referenceImageCount = characters.flatMap(
     (character) => character.referenceImages,
   ).length;

@@ -153,7 +153,10 @@ export async function getCreativeWorkspaceState(
         )
       : undefined;
   const brief = cachedCurrentBrief ?? latestBrief;
-  const briefIsCurrent = Boolean(brief && inputHash === brief.inputHash);
+  const briefIsCurrent = Boolean(brief && (inputHash === brief.inputHash || (
+    !cachedCurrentBrief && story.text?.trim() && briefHashMatches(brief, profile, (candidate) => createBriefInputHash(
+      story, applyCreativeBriefOverrides(candidate, brief.overrides), topic, configuration,
+      shortenContent(story.text!.trim(), configuration.maxContentCharacters), brief.editorialDirection, brief.collectionContext)))));
   const draftsForStory = await findCreativeDraftsForStory(topicId, storyId);
   const isCurrentPrimaryDraft = (draft: CreativeDraft) => {
     if (!briefIsCurrent || brief?.id !== draft.briefId) return false;
@@ -652,7 +655,8 @@ export async function createCreativeDraft(
     brief.collectionContext,
   );
 
-  if (currentBriefHash !== brief.inputHash) {
+  if (currentBriefHash !== brief.inputHash && !briefHashMatches(brief, currentProfile, (candidate) => createBriefInputHash(
+    story, applyCreativeBriefOverrides(candidate, brief.overrides), topic, configuration, content, brief.editorialDirection, brief.collectionContext))) {
     throw new CreativeContentConflictError(
       "The story content or creative profile changed. Refresh the creative brief before generating a draft.",
     );
@@ -1317,7 +1321,8 @@ export async function refreshCreativeDraftReferences(
     brief.collectionContext,
   );
 
-  if (currentBriefHash !== brief.inputHash) {
+  if (currentBriefHash !== brief.inputHash && !briefHashMatches(brief, profile, (candidate) => createBriefInputHash(
+    story, applyCreativeBriefOverrides(candidate, brief.overrides), topic, configuration, content, brief.editorialDirection, brief.collectionContext))) {
     throw new CreativeContentConflictError(
       "The story content or creative profile changed. Refresh the creative brief and create a current draft before refreshing references.",
     );
@@ -1402,6 +1407,22 @@ function storyForGenerator(story: SelectedStoryContentRecord, text: string) {
     contentSource: story.source,
     ...(story.editorial ? { editorialContext: "Editor-authored working copy; changes are not statements attributed to the original publisher.", editorialRevision: story.editorial.revision } : {}),
   };
+}
+
+/**
+ * The visual identity (campaign guide, palette) reaches images live from the
+ * profile, so changing it must not stale the editorial brief. A brief is
+ * still current when its hash matches with its own saved visual identity.
+ */
+function briefHashMatches(
+  brief: Pick<CreativeBrief, "inputHash" | "profileSnapshot">,
+  profile: CreativeProfile,
+  hashFor: (profile: CreativeProfile) => string,
+): boolean {
+  if (hashFor(profile) === brief.inputHash) return true;
+  const saved = brief.profileSnapshot;
+  if (!saved) return false;
+  return hashFor({ ...profile, visualGuidance: saved.visualGuidance, brandPalette: saved.brandPalette }) === brief.inputHash;
 }
 
 function createBriefInputHash(
@@ -1859,5 +1880,6 @@ export async function assertStoryEditionCurrent(topicId: string, draft: Creative
   const [profile, topic] = await Promise.all([getCreativeProfile(topicId), requireTopic(topicId, { active: true })]);
   const expected = createBriefInputHash(story, applyCreativeBriefOverrides(profile, brief.overrides), topic, configuration,
     requireStoryContent(story, configuration.maxContentCharacters), brief.editorialDirection, brief.collectionContext);
-  if (expected !== brief.inputHash) throw new CreativeContentConflictError("The story was edited. Refresh the brief and draft before approving or generating images.");
+  if (expected !== brief.inputHash && !briefHashMatches(brief, profile, (candidate) => createBriefInputHash(story, applyCreativeBriefOverrides(candidate, brief.overrides), topic, configuration,
+    requireStoryContent(story, configuration.maxContentCharacters), brief.editorialDirection, brief.collectionContext))) throw new CreativeContentConflictError("The story was edited. Refresh the brief and draft before approving or generating images.");
 }

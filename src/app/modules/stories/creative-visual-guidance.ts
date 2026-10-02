@@ -94,3 +94,20 @@ function normalizePalette(value: unknown): CreativeBrandPaletteColor[] {
   });
   return palette.length >= 3 ? palette : DEFAULT_CREATIVE_BRAND_PALETTE.map((entry) => ({ ...entry }));
 }
+
+/** The Topic's current visual identity; it overrides the brief's profile snapshot for images. */
+export type ProfileVisualIdentity = { name: string; visualGuidance?: string; brandPalette?: unknown };
+
+const VISUAL_GUIDE_BLOCK = /<VISUAL_CAMPAIGN_GUIDE>\n[\s\S]*?\n<\/VISUAL_CAMPAIGN_GUIDE>/;
+
+/**
+ * A saved image prompt carries the campaign guide in force when it was built.
+ * New versions and regenerations swap that block for the profile's current
+ * guide, so a changed visual identity reaches the images; the rest of the
+ * prompt (slide text, references, edits) is untouched.
+ */
+export function withCurrentVisualGuide(prompt: string, visual: ProfileVisualIdentity | undefined): string {
+  if (!visual || !VISUAL_GUIDE_BLOCK.test(prompt)) return prompt;
+  const guide = resolveCreativeVisualGuidance(visual);
+  return prompt.replace(VISUAL_GUIDE_BLOCK, () => `<VISUAL_CAMPAIGN_GUIDE>\n${guide}\n</VISUAL_CAMPAIGN_GUIDE>`);
+}
