@@ -761,7 +761,13 @@ export type CreativeUnit = {
   brandReferenceSelection?: BrandReferenceSelection;
   storyReferences?: import("./story-materials.types").StoryReferenceSelection[];
   /** Immutable, browser-safe provenance of an exact photo in an asset snapshot. */
-  documentaryPortrait?: { photoId: string; sha256: string; name: string; description: string; provenance: string };
+  documentaryPortrait?: {
+    photoId: string; sha256: string; name: string; description: string; provenance: string;
+    /** Placement treatment (creative-portrait-composite); absent on assets made before layouts rotated. */
+    layout?: import("./creative-portrait-composite").PortraitLayoutId;
+    /** Brand colour of the layout's colour block. */
+    accent?: string;
+  };
   /**
    * Declares the kind of visual this slide needs. `verified-map` routes the
    * slide through the documentary place path (`requiresVerifiedGeography`),

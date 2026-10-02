@@ -59,7 +59,7 @@ async function compose(mode = "illustration-editorial", photoTest = false, inclu
     assertEditorialEvidence: async () => {},
     getFalImageRuntimeConfig: () => ({ promptVersion: "base", provider: "fal", model: "image", apiKey: "fixture" }),
     documentaryVisualInputHash: () => "photo-hash",
-    resolveCreativeBrandGeneration: async () => ({ inputHash: "brand", snapshot: { brand: true }, carouselChromeSnapshot: { chrome: true } }),
+    resolveCreativeBrandGeneration: async () => ({ inputHash: "brand", snapshot: { brand: true }, carouselChromeSnapshot: { chrome: true }, visual: { name: "Brand", brandPalette: [] } }),
     findCurrentCreativeAssetBatch: async () => undefined,
     getCreativeProfile: async () => ({}),
     getDailyDraftStory: async (topic: string, story: string, run: unknown, workspace: boolean) => {
@@ -95,6 +95,10 @@ async function compose(mode = "illustration-editorial", photoTest = false, inclu
       characterInputs: characters, storyInputs: story,
     }),
     PORTRAIT_ZONE_PROMPT: "\n<DOCUMENTARY_PHOTO_ZONE>reserved</DOCUMENTARY_PHOTO_ZONE>",
+    portraitLayoutForSlide: (order: number) => `layout-${order}`,
+    portraitZonePrompt: (layout: string) => `\n<DOCUMENTARY_PHOTO_ZONE>${layout}</DOCUMENTARY_PHOTO_ZONE>`,
+    portraitAccent: () => "#168C91",
+    normalizePalette: () => [],
     storyReferenceBatchTag: () => ":story-refs-v3-refs-hash",
     photoLedVisualDirection: (direction: string) => direction,
     shouldApplyCreativeBrandOverlay: () => true,
@@ -159,6 +163,9 @@ test("a documentary portrait slide is designed by the AI around a reserved zone,
   assert.doesNotMatch(JSON.stringify(portrait.referenceSnapshot), /photo-id|photo-sha/);
   // Recorded so the post-processor pastes these exact, verified pixels.
   assert.equal((portrait.unitSnapshot as { documentaryPortrait: { sha256: string } }).documentaryPortrait.sha256, "photo-sha");
+  // The slide's layout is chosen once, sent to the model and kept for every later paste.
+  assert.match(String(portrait.prompt), /<DOCUMENTARY_PHOTO_ZONE>layout-8</);
+  assert.equal((portrait.unitSnapshot as { documentaryPortrait: { layout: string } }).documentaryPortrait.layout, "layout-8");
   assert.doesNotMatch(JSON.stringify(portrait.unitSnapshot), /private\/key/);
 });
 

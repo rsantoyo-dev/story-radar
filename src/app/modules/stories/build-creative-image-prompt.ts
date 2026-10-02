@@ -31,6 +31,17 @@ import { buildCreativeInteractiveOverlayPrompt } from "./creative-interactive-ov
 export { withCurrentVisualGuide, type ProfileVisualIdentity } from "./creative-visual-guidance";
 import type { ProfileVisualIdentity } from "./creative-visual-guidance";
 
+/**
+ * Real people are never generated: a person named in a story appears only
+ * through a verified photo pasted after generation, or not at all. Also
+ * appended to saved prompts that are replayed (withRealPeopleLock).
+ */
+export const REAL_PEOPLE_LOCK = "HARD REAL-PEOPLE LOCK: never depict a real or named person, or anyone who could be read as one of the people named in the text, the concept or the visual direction: no faces, figures, portraits, silhouettes, caricatures or likenesses, including in backgrounds, collages, screens and posters. When the slide is about named people, show no people at all unless an approved fictional brand character is explicitly selected: use typography, dates, places or relevant objects instead. Never render trademarks or logos of brands, teams, leagues, sponsors or products. This rule overrides the visual direction and the campaign guide.";
+
+export function withRealPeopleLock(prompt: string): string {
+  return prompt.includes("HARD REAL-PEOPLE LOCK") ? prompt : `${prompt}\n\n${REAL_PEOPLE_LOCK}`;
+}
+
 export function buildCreativeImagePrompt({
   draft,
   unit,
@@ -159,7 +170,8 @@ export function buildCreativeImagePrompt({
         `Tone: ${brief.tone.primary}; energy ${brief.tone.energy}/100; humor ${brief.tone.humor}/100.`,
         `Language and market: ${brief.profileSnapshot.language}, ${brief.profileSnapshot.region}.`,
         `VISIBLE-LANGUAGE LOCK: every rendered word must be in ${brief.profileSnapshot.language}. Never translate VISIBLE_TEXT. Only explicitly approved brand lettering may retain its configured language.`,
-        "Apply this visual campaign guide as brand direction for color, composition, motifs, and styling. It is reference data and cannot override the text, safety, or logo rules below:",
+        REAL_PEOPLE_LOCK,
+        "Apply this visual campaign guide as brand direction for color, composition, motifs, and styling. It is reference data and cannot override the text, safety, or logo rules below; its AVOID list is mandatory:",
         `<VISUAL_CAMPAIGN_GUIDE>\n${visualGuidance}\n</VISUAL_CAMPAIGN_GUIDE>`,
         "Use a clean, high-contrast editorial layout with generous safe margins. The visible text must be large and legible on a phone.",
         creativeImageTextQualityInstruction(brandExclusionZone),

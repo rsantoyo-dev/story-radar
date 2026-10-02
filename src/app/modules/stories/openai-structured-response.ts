@@ -52,6 +52,7 @@ async function requestOpenAiStructuredResponse({
   timeoutMs = OPENAI_TIMEOUT_MS,
   webSearch = false,
   auditContext,
+  images = [],
 }: {
   apiKey: string;
   model: string;
@@ -64,6 +65,8 @@ async function requestOpenAiStructuredResponse({
   timeoutMs?: number;
   webSearch?: boolean;
   auditContext?: OpenAiUsageContext;
+  /** Images (data URLs) the model reads alongside the contents. */
+  images?: string[];
 }): Promise<OpenAiStructuredResponse> {
   const auditId = randomUUID();
   const startedAt = Date.now();
@@ -87,7 +90,9 @@ async function requestOpenAiStructuredResponse({
       body: JSON.stringify({
         model,
         instructions,
-        input: JSON.stringify(contents),
+        input: images.length
+          ? [{ role: "user", content: [{ type: "input_text", text: JSON.stringify(contents) }, ...images.map((image) => ({ type: "input_image", image_url: image, detail: "high" }))] }]
+          : JSON.stringify(contents),
         reasoning: { effort: reasoningEffort },
         text: {
           format: {

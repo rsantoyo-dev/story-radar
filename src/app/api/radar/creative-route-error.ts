@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 import { CreativeContentConfigurationError } from "@/app/modules/stories/creative-content.config";
 import { CreativeContentResponseError } from "@/app/modules/stories/gemini-creative-content-generator";
 import { CreativeVisualDirectionsResponseError } from "@/app/modules/stories/creative-visual-directions";
+import { CreativeImageReviewUnavailableError } from "@/app/modules/stories/review-creative-image";
 import { CompanionStoryResponseError } from "@/app/modules/stories/companion-story-generator";
 import { OpenAiEditorialError } from "@/app/modules/stories/openai-structured-response";
 import { FalImageConfigurationError } from "@/app/modules/stories/fal-image-generation.config";
@@ -131,7 +132,8 @@ export function creativeRouteErrorResponse(
     error instanceof CreativeContentConfigurationError ||
     error instanceof FalImageConfigurationError ||
     error instanceof R2StorageConfigurationError ||
-    error instanceof BrandAnalyzerConfigurationError
+    error instanceof BrandAnalyzerConfigurationError ||
+    error instanceof CreativeImageReviewUnavailableError
   ) {
     return NextResponse.json({ error: error.message }, { status: 503 });
   }

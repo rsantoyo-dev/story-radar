@@ -94,7 +94,7 @@ function describeUsageSplit(palette: CreativeBrandPaletteColor[]): string {
     .join(", ")}${rest > 0 ? `; the remaining ${rest}% is free for the other approved colours` : ""}.`;
 }
 
-function normalizePalette(value: unknown): CreativeBrandPaletteColor[] {
+export function normalizePalette(value: unknown): CreativeBrandPaletteColor[] {
   if (!Array.isArray(value)) return DEFAULT_CREATIVE_BRAND_PALETTE.map((entry) => ({ ...entry }));
   const palette = value.flatMap((entry) => {
     if (
