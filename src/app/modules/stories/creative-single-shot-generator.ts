@@ -286,7 +286,7 @@ export async function generateSingleShotCreativeScript(
       }
       attempts += 1;
       try {
-        const response = await generateGeminiJson({ apiKey: key, model, systemInstruction, schema, contents, maxOutputTokens });
+        const response = await generateGeminiJson({ apiKey: key, model, systemInstruction, schema, contents, maxOutputTokens, operation: "creative_brief" });
         usage = sumCreativeAiUsage(usage, response.usage);
         lastModel = response.model;
         lastModelVersion = response.modelVersion ?? lastModelVersion;

@@ -79,3 +79,29 @@ export async function getCreativeTextSpend(topicId: string, storyId: string): Pr
         acceptedCarousels: n("accepted"), costPerAcceptedCarouselUsd: n("accepted") ? n("spent") / 1e6 / n("accepted") : null, legacyRuns: n("legacy"),
         topic: { estimatedUsd: n("topic_spent") / 1e6, reservedUsd: n("topic_reserved") / 1e6, acceptedCarousels: n("topic_accepted"), costPerAcceptedCarouselUsd: n("topic_accepted") ? n("topic_spent") / 1e6 / n("topic_accepted") : null } };
 }
+
+/** One AI text call for a story, as the preparation timeline shows it. */
+export type StoryTextCall = {
+    id: string; operation: string; provider: string; model: string; status: string;
+    startedAt: string; finishedAt: string | null; creditMicros: number | null;
+};
+
+/**
+ * The story's AI text calls since a moment (a preparation run's start), with
+ * the credits debited for each. Instant zero-cost settlements are failed
+ * account attempts that were retried elsewhere, so they are left out.
+ */
+export async function listStoryTextCallsSince(topicId: string, storyId: string, since: Date): Promise<StoryTextCall[]> {
+    const result = await db.execute(sql `SELECT c.id, c.operation, c.provider, c.model, c.status, c.created_at, c.finished_at,
+  (SELECT sum(-e.amount_micros) FROM workspace_credit_entries e WHERE e.source_text_call_id=c.id AND e.kind='usage_debit')::float8 AS credit_micros
+  FROM creative_text_calls c
+  WHERE c.topic_id=${topicId}::uuid AND c.story_id=${storyId}::uuid AND c.created_at >= ${since.toISOString()}::timestamptz
+    AND NOT (c.status='settled' AND coalesce(c.charged_micros,0)=0 AND c.finished_at - c.created_at < interval '3 seconds')
+  ORDER BY c.created_at LIMIT 40`);
+    return result.rows.map(row => ({
+        id: String(row.id), operation: String(row.operation), provider: String(row.provider), model: String(row.model), status: String(row.status),
+        startedAt: new Date(String(row.created_at)).toISOString(),
+        finishedAt: row.finished_at ? new Date(String(row.finished_at)).toISOString() : null,
+        creditMicros: row.credit_micros === null || row.credit_micros === undefined ? null : Math.abs(Number(row.credit_micros)),
+    }));
+}
