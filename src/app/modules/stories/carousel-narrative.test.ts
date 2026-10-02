@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  CAROUSEL_BODY_MAX_WORDS,
+  CAROUSEL_BODY_TARGET_WORDS,
   CAROUSEL_CONTINUATION_CUE_MAX_WORDS,
+  CAROUSEL_HEADLINE_MAX_WORDS,
+  CAROUSEL_INNER_SUBHEADLINE_MAX_WORDS,
+  CAROUSEL_SLIDE_MAX_WORDS,
   CAROUSEL_SUBHEADLINE_MAX_WORDS,
   alignCarouselPlanWithConversionGoal,
   carouselNarrativePolicyForPrompt,
@@ -1535,4 +1540,40 @@ test("a hook-list cover is its count promise, so the reader-consequence cover an
       (issue) => issue.code === "cover-not-reader-framed",
     ),
   );
+});
+
+test("one idea per slide: supporting text above the limit and long inner headlines are flagged", () => {
+  const words = (count: number) => Array.from({ length: count }, (_, index) => `mot${index}`).join(" ") + ".";
+  const evaluate = (body: string, headline = "Editorial headline") => evaluateCarouselNarrative([
+    unit("cover", "hook", ["fact-1"]),
+    { ...unit("content", "explain", ["fact-2"]), headline, body },
+    unit("conclusion", "conclude", ["fact-1", "fact-2"]),
+  ]);
+  assert.ok(!evaluate(words(CAROUSEL_BODY_MAX_WORDS)).some((issue) => issue.code === "body-too-long"));
+  const dense = evaluate(words(CAROUSEL_BODY_MAX_WORDS + 1)).find((issue) => issue.code === "body-too-long");
+  assert.equal(dense?.unitIndex, 1);
+  assert.match(dense!.message, new RegExp(`about ${CAROUSEL_BODY_TARGET_WORDS} and never above ${CAROUSEL_BODY_MAX_WORDS}`));
+  assert.ok(evaluate("Court.", words(CAROUSEL_HEADLINE_MAX_WORDS + 1)).some((issue) => issue.code === "headline-too-long" && issue.unitIndex === 1));
+});
+
+test("the writer and planner are told to prefer more slides with less text", () => {
+  const rules = carouselNarrativePolicyForPrompt().rules.join("\n");
+  assert.match(rules, /One idea per slide/);
+  assert.match(rules, /Prefer more slides with less text/);
+  assert.match(rules, new RegExp(`never above ${CAROUSEL_BODY_MAX_WORDS}`));
+});
+
+test("after the cover a subheadline is a short label and the slide stays light", () => {
+  const words = (count: number) => Array.from({ length: count }, (_, index) => `mot${index}`).join(" ");
+  const evaluate = (inner: { headline?: string; subheadline?: string; body?: string }, cover: { subheadline?: string } = {}) => evaluateCarouselNarrative([
+    { ...unit("cover", "hook", ["fact-1"]), ...cover },
+    { ...unit("content", "explain", ["fact-2"]), ...inner },
+    unit("conclusion", "conclude", ["fact-1", "fact-2"]),
+  ]);
+  // The cover keeps its longer context line.
+  assert.ok(!evaluate({}, { subheadline: words(CAROUSEL_INNER_SUBHEADLINE_MAX_WORDS + 3) }).some((issue) => issue.code === "subheadline-too-long"));
+  assert.ok(evaluate({ subheadline: words(CAROUSEL_INNER_SUBHEADLINE_MAX_WORDS + 1) }).some((issue) => issue.code === "subheadline-too-long" && issue.unitIndex === 1));
+  const dense = evaluate({ headline: words(10), subheadline: words(10), body: words(CAROUSEL_SLIDE_MAX_WORDS - 19) + "." });
+  assert.equal(dense.find((issue) => issue.code === "slide-too-dense")?.unitIndex, 1);
+  assert.ok(!evaluate({ headline: words(10), body: words(CAROUSEL_SLIDE_MAX_WORDS - 10) + "." }).some((issue) => issue.code === "slide-too-dense"));
 });

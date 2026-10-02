@@ -34,7 +34,7 @@ import {
 } from "./creative-framing-instruction";
 import { CREATIVE_PUBLISHABLE_THRESHOLDS } from "./creative-quality";
 import { effectiveFramingStrategy } from "./creative-content.types";
-import { carouselNarrativePolicyForPrompt, templatePlanQuestions, unspentPlanFactIds } from "./carousel-narrative";
+import { CAROUSEL_BODY_MAX_WORDS, CAROUSEL_BODY_TARGET_WORDS, carouselNarrativePolicyForPrompt, templatePlanQuestions, unspentPlanFactIds } from "./carousel-narrative";
 import { deterministicCreativeQualityIssues, repairDeterministicCreativeCopy } from "./creative-quality";
 import { unsupportedFactNames } from "./creative-fact-guard";
 import { enforceCoverTitle } from "./creative-cover-title";
@@ -131,11 +131,11 @@ const BRIEF_OUTPUT_TOKENS = 12_288;
  * against the same brief, with the reviewed script and every finding in
  * hand, can; and it costs the same single call.
  */
-const REVISION_INSTRUCTION = `\n\nREVISION: this is a rewrite of a script an independent editor has reviewed, not a first draft. previousScript is the reviewed copy and reviewFindings are the editor's findings. Each finding's message is its acceptance condition and every one must be resolved, whatever its severity: each holds a scored dimension below qualityThresholds (compare currentScores). You may restructure any slide a finding names — re-lead the cover with the configured framing, rewrite the closing so it resolves the opening, remove an explanatory or causal link the cited facts do not state, cut over-length copy to 40 words or fewer. Never introduce a number that is not written in one of the slide's allowed facts — no computed difference, total, percentage, or conversion; when a finding asks for a contrast, place the two figures exactly as the facts state them. Keep every slide no finding names exactly as it is, word for word, including its factIds and visual direction. Use only the brief's facts and each slide's allowed fact IDs, as before.`;
+const REVISION_INSTRUCTION = `\n\nREVISION: this is a rewrite of a script an independent editor has reviewed, not a first draft. previousScript is the reviewed copy and reviewFindings are the editor's findings. Each finding's message is its acceptance condition and every one must be resolved, whatever its severity: each holds a scored dimension below qualityThresholds (compare currentScores). You may restructure any slide a finding names — re-lead the cover with the configured framing, rewrite the closing so it resolves the opening, remove an explanatory or causal link the cited facts do not state, cut over-length supporting text to about ${CAROUSEL_BODY_TARGET_WORDS} words. Never introduce a number that is not written in one of the slide's allowed facts — no computed difference, total, percentage, or conversion; when a finding asks for a contrast, place the two figures exactly as the facts state them. Keep every slide no finding names exactly as it is, word for word, including its factIds and visual direction. Use only the brief's facts and each slide's allowed fact IDs, as before.`;
 
 const BRIEF_RETRY = `\n\nYour previous response failed validation; the error is supplied as previousValidationError. Correct exactly that problem and return a complete brief, keeping everything that was already correct.`;
 
-const DRAFT_RETRY = `\n\nYour previous response failed validation; the error is supplied as previousValidationError. Correct exactly that problem and return a complete script, keeping everything that was already correct. Return exactly the planned slide count, in the planned order, using only each slide's allowed fact IDs. When a slide's supporting text is over the limit, cut it to 40 words or fewer — word counts drift upward, so leave a margin below 45.`;
+const DRAFT_RETRY = `\n\nYour previous response failed validation; the error is supplied as previousValidationError. Correct exactly that problem and return a complete script, keeping everything that was already correct. Return exactly the planned slide count, in the planned order, using only each slide's allowed fact IDs. When a slide is too dense, drop its subheadline first. When a slide's supporting text is over the limit, cut it to about ${CAROUSEL_BODY_TARGET_WORDS} words — word counts drift upward, so stay well below ${CAROUSEL_BODY_MAX_WORDS}. Move an extra fact to its own slide's wording or drop secondary detail, never a qualifier or attribution.`;
 
 /** Merge the raw response's per-unit visualNeed onto the parsed draft; parseCreativeDraft does not know this field. */
 function attachVisualNeeds(draft: GeneratedCreativeDraft, text: string): GeneratedCreativeDraft {
@@ -599,7 +599,15 @@ export async function generateSingleShotCreativeScript(
         profile.framingStrategy,
         profile.storyStructure,
       );
-      const overLength = currentIssues.filter((issue) => /body[-_]too[-_]long/i.test(issue.code));
+      // A revision only answers for the slides it rewrote: copy left exactly as
+      // it was (written under an older, looser limit) is not retried.
+      const unchangedCopy = (order?: number) => {
+        if (!revision || order === undefined) return false;
+        const before = revision.previousDraft.units.find((unit) => unit.order === order);
+        const after = value.units.find((unit) => unit.order === order);
+        return Boolean(before && after && before.headline === after.headline && before.subheadline === after.subheadline && before.body === after.body);
+      };
+      const overLength = currentIssues.filter((issue) => /^(body[-_]too[-_]long|slide[-_]too[-_]dense)$/i.test(issue.code) && !unchangedCopy(issue.unitOrder));
       if (overLength.length) {
         throw new CreativeContentResponseError(overLength.map((issue) => issue.message).join(" "));
       }

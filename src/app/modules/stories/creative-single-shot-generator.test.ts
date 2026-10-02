@@ -530,8 +530,8 @@ test("an over-length slide body is rewritten once locally, before the audit ever
   const result = await h.generate(options({ story: longStory }));
   assert.equal(h.calls.length, 3, "brief, script, and exactly one rewrite");
   const retry = h.calls[2] as { previousValidationError?: string };
-  assert.match(retry.previousValidationError ?? "", /45/, "the rewrite is told the limit and the slide");
-  assert.ok(result.draft.units[1].body!.split(/\s+/).length <= 45, "the rewrite is the draft that goes forward");
+  assert.match(retry.previousValidationError ?? "", /never above 28/, "the rewrite is told the limit and the slide");
+  assert.ok(result.draft.units[1].body!.split(/\s+/).length <= 28, "the rewrite is the draft that goes forward");
 });
 
 test("an over-length body that survives the rewrite is accepted, not fatal", async () => {
@@ -715,4 +715,21 @@ test("a carousel cover the writer marked typography-only is coerced to a generat
   assert.equal(result.draft.units[0]?.visualNeed, "generic-illustration");
   assert.equal(result.draft.units[1]?.assetRequest, "typography-only");
   assert.equal(result.draft.units[1]?.visualNeed, "typography");
+});
+
+test("a slide whose headline, subheadline and supporting text pile up is rewritten once, subheadline first", async () => {
+  const dense = {
+    subheadline: "The service says counterfeit bills have circulated in several local businesses lately",
+    body: "The SPL recommends checking a bill's security features, such as the watermark and the hologram, before accepting cash at the counter.",
+  };
+  const h = harness((attempt) =>
+    attempt === 1
+      ? validResponse({ keyFacts: [longFact], units: validUnits([{}, dense]) })
+      : validResponse({ keyFacts: [longFact] }),
+  );
+  const result = await h.generate(options({ story: longStory }));
+  assert.equal(h.calls.length, 3, "brief, script, and exactly one rewrite");
+  const retry = h.calls[2] as { previousValidationError?: string };
+  assert.match(retry.previousValidationError ?? "", /visible words/, "the rewrite is told the slide is too dense");
+  assert.equal((result.draft.units[1] as { subheadline?: string }).subheadline ?? "", "", "the rewrite is the draft that goes forward");
 });

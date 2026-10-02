@@ -159,6 +159,18 @@ const MAX_FACTS_BY_GOAL: Record<CarouselEditorialGoal, number> = {
 
 export const CAROUSEL_SUBHEADLINE_MAX_WORDS = 18;
 export const CAROUSEL_CONTINUATION_CUE_MAX_WORDS = 10;
+/**
+ * One idea per slide, read in a few seconds on a phone: more slides with less
+ * text rather than fewer dense ones. The writer aims for the target; the
+ * maximum is the validation limit a script is retried against.
+ */
+export const CAROUSEL_BODY_TARGET_WORDS = 20;
+export const CAROUSEL_BODY_MAX_WORDS = 28;
+export const CAROUSEL_HEADLINE_MAX_WORDS = 12;
+/** After the cover a subheadline is a short label, not a second paragraph. */
+export const CAROUSEL_INNER_SUBHEADLINE_MAX_WORDS = 10;
+/** Headline, subheadline and supporting text together on a slide after the cover. */
+export const CAROUSEL_SLIDE_MAX_WORDS = 36;
 
 export type CarouselNarrativeUnit = {
   role: string;
@@ -199,6 +211,7 @@ export type CarouselNarrativeWarning = {
     | "subheadline-too-long"
     | "redundant-subheadline"
     | "body-too-long"
+    | "slide-too-dense"
     | "slide-restates-itself"
     | "missing-cover-continuation-cue"
     | "generic-continuation-cue"
@@ -644,11 +657,12 @@ export function carouselNarrativePolicyForPrompt(
       ([goal, maximumFacts]) => ({ goal, maximumFacts }),
     ),
     rules: [
+      `One idea per slide: a short headline (at most ${CAROUSEL_HEADLINE_MAX_WORDS} words after the cover) and supporting text of about ${CAROUSEL_BODY_TARGET_WORDS} words, never above ${CAROUSEL_BODY_MAX_WORDS}. Prefer more slides with less text over fewer dense slides: when a slide would need more, give the extra fact its own slide (up to 8) or cut secondary detail, never a qualifier or attribution.`,
       "Use only facts necessary to advance the story; do not use every available fact simply because it exists.",
       "viewerQuestion describes the mental question answered by that slide and is not visible slide copy.",
       "Write every viewerQuestion in the creative profile language and about this story: it names the specific thing the reader wants to know from that slide's allowedFactIds. Never use a generic template question (a bare 'why does this matter', 'how is this happening', 'what is the takeaway'). Ask why or how only when an allowed fact states the mechanism or cause; otherwise ask what the facts show.",
       "ctaQuestion is optional visible copy and belongs only on the final conclusion or call-to-action slide.",
-      `subheadline is optional visible hierarchy copy. Use it only when it adds a distinct clarifying layer below the headline, and keep it to ${CAROUSEL_SUBHEADLINE_MAX_WORDS} words or fewer.`,
+      `subheadline is optional visible hierarchy copy. Use it only when it adds a distinct clarifying layer below the headline: at most ${CAROUSEL_SUBHEADLINE_MAX_WORDS} words on the cover and ${CAROUSEL_INNER_SUBHEADLINE_MAX_WORDS} after it. After the cover, headline, subheadline and supporting text together stay within ${CAROUSEL_SLIDE_MAX_WORDS} words, so most slides need no subheadline.`,
       `continuationCue is optional visible semantic reward copy for non-final slides. The cover should normally include one concrete reason to continue, in ${CAROUSEL_CONTINUATION_CUE_MAX_WORDS} words or fewer. Do not put a continuationCue on the final slide.`,
       "Never use a bare navigation label such as Desliza, Swipe, Next, or Siguiente as continuationCue. The renderer supplies navigation chrome; continuationCue must name the specific idea the next slide will resolve.",
       "Treat subheadline and continuationCue as factual visible copy: do not add claims or numbers that the supplied evidence does not support.",
@@ -777,7 +791,7 @@ export function evaluateCarouselNarrative(
     const isTwoClauseCover =
       unit.role === "cover" && /[;—–]|\s-\s/u.test(unit.headline ?? "");
     const headlineTarget =
-      unit.role === "cover" ? (isTwoClauseCover ? 16 : 12) : 14;
+      unit.role === "cover" ? (isTwoClauseCover ? 16 : 12) : CAROUSEL_HEADLINE_MAX_WORDS;
     if (wordCount(unit.headline) > headlineTarget) {
       warnings.push({
         severity: "warning",
@@ -800,12 +814,22 @@ export function evaluateCarouselNarrative(
           : `Slide ${slide} uses a generic analysis label ("${unit.headline.trim()}") instead of stating its specific point.`,
       });
     }
-    if (wordCount(unit.subheadline) > CAROUSEL_SUBHEADLINE_MAX_WORDS) {
+    const subheadlineLimit = unit.role === "cover" ? CAROUSEL_SUBHEADLINE_MAX_WORDS : CAROUSEL_INNER_SUBHEADLINE_MAX_WORDS;
+    if (wordCount(unit.subheadline) > subheadlineLimit) {
       warnings.push({
         severity: "warning",
         code: "subheadline-too-long",
         unitIndex,
-        message: `Slide ${slide} subheadline uses ${wordCount(unit.subheadline)} words; aim for ${CAROUSEL_SUBHEADLINE_MAX_WORDS} or fewer.`,
+        message: `Slide ${slide} subheadline uses ${wordCount(unit.subheadline)} words; aim for ${subheadlineLimit} or fewer${unit.role === "cover" ? "" : ", or drop it and let the supporting text carry the detail"}.`,
+      });
+    }
+    const slideWords = wordCount(unit.headline) + wordCount(unit.subheadline) + wordCount(unit.body);
+    if (unit.role !== "cover" && slideWords > CAROUSEL_SLIDE_MAX_WORDS) {
+      warnings.push({
+        severity: "warning",
+        code: "slide-too-dense",
+        unitIndex,
+        message: `Slide ${slide} carries ${slideWords} visible words across headline, subheadline and supporting text; keep it to ${CAROUSEL_SLIDE_MAX_WORDS} or fewer. Drop the subheadline first, then cut secondary detail, never a qualifier or attribution.`,
       });
     }
     if (
@@ -840,12 +864,12 @@ export function evaluateCarouselNarrative(
         message: `Slide ${slide} repeats the same information in its headline and supporting text (${bodyTokens.join(", ")}) without adding anything new. Give the supporting text a different supported detail from this slide's evidence, or drop it and let the headline stand alone.`,
       });
     }
-    if (wordCount(unit.body) > 45) {
+    if (wordCount(unit.body) > CAROUSEL_BODY_MAX_WORDS) {
       warnings.push({
         severity: "warning",
         code: "body-too-long",
         unitIndex,
-        message: `Slide ${slide} supporting text uses ${wordCount(unit.body)} words; aim for 45 or fewer.`,
+        message: `Slide ${slide} supporting text uses ${wordCount(unit.body)} words; keep it to about ${CAROUSEL_BODY_TARGET_WORDS} and never above ${CAROUSEL_BODY_MAX_WORDS}. Move an extra fact to its own slide or cut secondary detail, never a qualifier or attribution.`,
       });
     }
     const trailingFragment = trailingSentenceFragment(unit.body);
