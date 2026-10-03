@@ -11,9 +11,12 @@ import { CREATIVE_PUBLISHABLE_THRESHOLDS, deterministicCreativeQualityIssues } f
 import { effectiveFramingStrategy } from "./creative-content.types";
 import type {
   CreativeAiUsage,
+  CreativeQualityIssue,
   GeneratedCreativeBrief,
   GeneratedCreativeDraft,
 } from "./creative-content.types";
+import { keepTournamentCover, type CreativeHookTournament, type HookTasteExample } from "./creative-hook-tournament";
+import { creativeHookTournamentEnabled, HOOK_TOURNAMENT_CALLS, runCreativeHookTournament } from "./run-creative-hook-tournament";
 
 /**
  * Generation gets its own cap so it can never eat the editorial steps' budget.
@@ -38,7 +41,20 @@ const EDITORIAL_CALL_RESERVE = 10;
  * the first audit. The cap reserves one audit plus three rounds of at most two
  * rewrite calls and one verification call, even if generation spent 4 calls.
  */
-const SINGLE_SHOT_CALL_BUDGET = GENERATION_CALL_CAP + EDITORIAL_CALL_RESERVE;
+/**
+ * Wall time a run may use before the host function's limit, and what the
+ * cover tournament needs on top of the audit that follows it. A tournament
+ * that cannot finish in time runs one round, or is skipped and left to the
+ * on-demand "stronger cover" action, rather than cutting the run off.
+ */
+const DEFAULT_FUNCTION_BUDGET_MS = 280_000;
+const AUDIT_RESERVE_MS = 60_000;
+const HOOK_FULL_MS = 150_000;
+const HOOK_ONE_ROUND_MS = 90_000;
+
+/** The cover tournament: write, judge, polish the finalists, judge again. */
+const HOOK_STAGE_CALLS = HOOK_TOURNAMENT_CALLS;
+const SINGLE_SHOT_CALL_BUDGET = GENERATION_CALL_CAP + HOOK_STAGE_CALLS + EDITORIAL_CALL_RESERVE;
 
 /**
  * Luna is cheap enough that several attempts cost less than one Sol/Terra
@@ -87,9 +103,14 @@ export async function runSingleShotCreativePipeline(
     /** Unused now that both editorial gates run on Gemini (no per-call timeout param); kept optional so existing callers need not change. */
     deadline?: number;
     checkpoint: (value: SingleShotCheckpoint) => Promise<void>;
+    /** The Topic's recent cover picks, for the tournament judge. */
+    hookHouseTaste?: readonly HookTasteExample[];
   },
 ): Promise<SingleShotPipelineResult> {
-  const { openAiApiKey, openAiAuditContext, checkpoint, ...generatorOptions } = options;
+  const { openAiApiKey, openAiAuditContext, checkpoint, hookHouseTaste, ...generatorOptions } = options;
+  // The whole run must fit the serverless function that hosts it.
+  const startedAt = Date.now();
+  const functionBudgetMs = Number(process.env.CREATIVE_FUNCTION_TIME_BUDGET_MS) || DEFAULT_FUNCTION_BUDGET_MS;
 
   // A configured carouselWriterModel writes the script on OpenAI, so the
   // generator needs the same credential and usage context the audit uses. Both
@@ -113,6 +134,50 @@ export async function runSingleShotCreativePipeline(
     singleShotRun: { stage: "generated", callsUsed },
   };
   await checkpoint({ brief, draft, usage, callsUsed, provider, model });
+
+  // The cover decides whether anyone reads the rest, so the strongest writer
+  // chooses it, knowing what the finished interior already pays off. Without
+  // an OpenAI credential, or when it fails, the writer's cover is kept.
+  let tournament: CreativeHookTournament | undefined;
+  let tournamentError: string | undefined;
+  const carouselLikeFormat = generatorOptions.format === "carousel" || generatorOptions.format === "sequence";
+  const timeLeft = startedAt + functionBudgetMs - AUDIT_RESERVE_MS - Date.now();
+  if (carouselLikeFormat && openAiApiKey && creativeHookTournamentEnabled() && timeLeft < HOOK_ONE_ROUND_MS) {
+    tournamentError = "Skipped: not enough time left in this run. Use \"Find a stronger cover\" on the script.";
+    draft = { ...draft, hookTournamentError: tournamentError };
+  } else if (carouselLikeFormat && openAiApiKey && creativeHookTournamentEnabled()) {
+    try {
+      const hook = await runCreativeHookTournament({
+        rounds: timeLeft >= HOOK_FULL_MS ? 2 : 1,
+        ...(hookHouseTaste?.length ? { houseTaste: hookHouseTaste } : {}),
+        apiKey: openAiApiKey,
+        ...(openAiAuditContext ? { auditContext: openAiAuditContext } : {}),
+        profile: generatorOptions.profile,
+        brief,
+        draft,
+        format: generatorOptions.format,
+      });
+      tournament = hook.tournament;
+      callsUsed += hook.calls;
+      usage = sumCreativeAiUsage(usage, hook.usage);
+      draft = hook.draft;
+    } catch (error) {
+      callsUsed += HOOK_STAGE_CALLS;
+      tournamentError = (error instanceof Error ? error.message : "The cover tournament failed").slice(0, 300);
+      draft = { ...draft, hookTournamentError: tournamentError };
+    }
+    await checkpoint({ brief, draft, usage, callsUsed, provider, model });
+  }
+  // Every later pass rebuilds the draft: keep the tournament's record, and its
+  // cover unless a factual finding names it.
+  const coverBlockers = (value: GeneratedCreativeDraft) => deterministicCreativeQualityIssues(
+    value, generatorOptions.format, brief.keyFacts, generatorOptions.profile.language, generatorOptions.profile.conversionGoal,
+    generatorOptions.profile.framingStrategy, generatorOptions.profile.storyStructure,
+  ).filter((issue) => issue.severity === "blocker" && issue.unitOrder === value.units[0]?.order).length;
+  const withHook = (value: GeneratedCreativeDraft, findings: readonly CreativeQualityIssue[]): GeneratedCreativeDraft => ({
+    ...(tournament ? { ...keepTournamentCover(value, tournament, findings, isConcreteFactualQualityIssue, coverBlockers), hookTournament: tournament } : value),
+    ...(tournamentError ? { hookTournamentError: tournamentError } : {}),
+  });
 
   // Judge the draft by the lens the brief actually applied. A brief that
   // correctly fell back to explainer — because no fact established a reader
@@ -157,7 +222,7 @@ export async function runSingleShotCreativePipeline(
     return { brief, draft, usage, callsUsed, provider, model };
   }
 
-  draft = audit.draft;
+  draft = withHook(audit.draft, actionableEditorialIssues(audit.draft));
   let actionable = actionableEditorialIssues(draft);
 
   // Only the auditor's own verdict means accepted. buildCreativeQualityReview
@@ -297,7 +362,7 @@ export async function runSingleShotCreativePipeline(
       });
       callsUsed += revision.attempts;
       usage = sumCreativeAiUsage(usage, revision.usage);
-      const candidate = revision.draft;
+      const candidate = withHook(revision.draft, actionable);
       const inspect = (value: GeneratedCreativeDraft) =>
         deterministicCreativeQualityIssues(
           value,
@@ -361,7 +426,7 @@ export async function runSingleShotCreativePipeline(
       return stopIncomplete(`Verification unavailable: ${verify.criticUnavailable.reason}. The correction was not promoted.`);
     }
 
-    const verified = verify.draft;
+    const verified = withHook(verify.draft, actionableEditorialIssues(verify.draft));
     if (!improved(bestDraft, verified)) {
       // A completed, independently verified cycle — just not a better one.
       // Classify the last kept draft rather than discarding it as incomplete.

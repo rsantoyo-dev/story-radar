@@ -69,6 +69,7 @@ import { ListField, TextAreaField, TextField } from "./creative-profile-fields";
 import { Button } from "./ui/primitives";
 import type { StoryContentResponse } from "./radar-dashboard";
 import styles from "./creative-draft-workspace.generated.module.css";
+import { CreativeHookTournamentPanel } from "./creative-hook-tournament-panel";
 
 type WorkspaceProps = {
   initialEditorialRunId?: string;
@@ -99,6 +100,7 @@ type BusyAction =
   | "save"
   | "references"
   | "visual-directions"
+  | "hook"
   | "approve"
   | "unapprove"
   | "visual-fidelity"
@@ -1132,6 +1134,36 @@ export function CreativeDraftWorkspace({
       );
       await reloadWorkspace(selectedFormat);
       setNotice("Visual directions rewritten under the current creative identity. Generate a fresh image batch to see the new layouts.");
+    });
+  }
+
+  async function handleImproveHook() {
+    if (!activeDraftId || !activeDraft || busy || viewingHistoricalDraft || dirty) return;
+    await run("hook", async () => {
+      const saved = await requestJson<{ version: number; hookTournament?: { replaced: boolean; candidates: unknown[] } }>(
+        topicUrl(`/api/radar/creative/drafts/${encodeURIComponent(activeDraftId)}`, topicId),
+        secret,
+        { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "improve-hook", expectedVersion: activeDraft.version }) },
+      );
+      await reloadWorkspace(selectedFormat);
+      setNotice(saved.version !== activeDraft.version
+        ? "A stronger cover was found and saved as a new version. Review it, approve the script, then update the cover image."
+        : `The current cover held up against ${Math.max(0, (saved.hookTournament?.candidates.length ?? 1) - 1)} alternatives.`);
+    });
+  }
+
+  async function handleUseHook(candidateIndex: number) {
+    if (!activeDraftId || !activeDraft || busy || viewingHistoricalDraft || dirty) return;
+    await run("hook", async () => {
+      const saved = await requestJson<{ version: number }>(
+        topicUrl(`/api/radar/creative/drafts/${encodeURIComponent(activeDraftId)}`, topicId),
+        secret,
+        { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "use-hook", candidateIndex, expectedVersion: activeDraft.version }) },
+      );
+      await reloadWorkspace(selectedFormat);
+      setNotice(saved.version !== activeDraft.version
+        ? "Cover changed as a new version. Approve the script, then update the cover image."
+        : "Your choice was recorded.");
     });
   }
 
@@ -2237,6 +2269,19 @@ export function CreativeDraftWorkspace({
                       </> : null}
                     </div>
                   </div>
+                ) : null}
+
+                {activeDraft && !viewingHistoricalDraft && !activeDraft.companion && activeDraft.provider !== "documentary" &&
+                  (activeDraft.format === "carousel" || activeDraft.format === "sequence") ? (
+                  <CreativeHookTournamentPanel
+                    tournament={activeDraft.hookTournament}
+                    error={activeDraft.hookTournamentError}
+                    currentHeadline={activeDraft.units[0]?.headline ?? ""}
+                    disabled={Boolean(busy) || Boolean(assetBusy) || dirty}
+                    busy={busy === "hook"}
+                    onImprove={() => void handleImproveHook()}
+                    onUse={(index) => void handleUseHook(index)}
+                  />
                 ) : null}
 
                 {workspace?.brief && !viewingHistoricalDraft ? (

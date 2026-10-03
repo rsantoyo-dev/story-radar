@@ -5,7 +5,9 @@ import {
 } from "@/app/api/radar/radar-topic";
 import {
   approveSavedCreativeDraft,
+  improveCreativeDraftHook,
   refreshCreativeDraftReferences,
+  chooseCreativeDraftHookCandidate,
   rewriteCreativeDraftVisualDirections,
   saveCreativeDraft,
   setSavedCreativeDraftVisualFidelity,
@@ -63,6 +65,7 @@ export async function PATCH(request: Request, context: Context) {
       action?: unknown;
       humanReviewed?: unknown;
       expectedVersion?: number;
+      candidateIndex?: unknown;
       mode?: unknown;
       reason?: unknown;
       by?: unknown;
@@ -73,12 +76,14 @@ export async function PATCH(request: Request, context: Context) {
       body.action !== "refresh-references" &&
       body.action !== "refresh-character-references" &&
       body.action !== "rewrite-visual-directions" &&
+      body.action !== "improve-hook" &&
+      body.action !== "use-hook" &&
       body.action !== "set-visual-fidelity"
     ) {
       return noStoreJson(
         {
           error:
-            "action must be approve, unapprove, refresh-references, rewrite-visual-directions, or set-visual-fidelity",
+            "action must be approve, unapprove, refresh-references, rewrite-visual-directions, improve-hook, use-hook, or set-visual-fidelity",
         },
         400,
       );
@@ -90,6 +95,15 @@ export async function PATCH(request: Request, context: Context) {
       return noStoreJson({ error: "humanReviewed must be true or false" }, 400);
     }
     const topicId = await requireActiveRequestTopic(request);
+
+    if (body.action === "use-hook") {
+      if (typeof body.candidateIndex !== "number") return noStoreJson({ error: "candidateIndex must be a number" }, 400);
+      return noStoreJson(await chooseCreativeDraftHookCandidate(topicId, draftId, body.candidateIndex, body.expectedVersion));
+    }
+
+    if (body.action === "improve-hook") {
+      return noStoreJson(await improveCreativeDraftHook(topicId, draftId, body.expectedVersion));
+    }
 
     if (body.action === "rewrite-visual-directions") {
       return noStoreJson(await rewriteCreativeDraftVisualDirections(topicId, draftId, body.expectedVersion));

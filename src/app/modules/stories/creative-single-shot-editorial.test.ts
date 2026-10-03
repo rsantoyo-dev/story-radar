@@ -44,6 +44,10 @@ type EditorialExports = {
  * carouselWriterModel or repairWriterModel; it throws by default so a test
  * that doesn't expect an OpenAI call fails loudly if one happens anyway.
  */
+/** The cover tournament is off unless a test turns it on and scripts its result. */
+type HookStageInput = { draft: { units: Record<string, unknown>[] } };
+let hookStage: { enabled: boolean; run?: (input: HookStageInput) => unknown } = { enabled: false };
+
 function harness(
   geminiReply: (attempt: number, contents: Record<string, unknown>) => unknown,
   auditReply: (contents: Record<string, unknown>, index: number) => unknown,
@@ -82,6 +86,16 @@ function harness(
         },
       };
     }
+    if (id === "./run-creative-hook-tournament") {
+      return {
+        creativeHookTournamentEnabled: () => hookStage.enabled,
+        HOOK_TOURNAMENT_CALLS: 4,
+        runCreativeHookTournament: async (input: HookStageInput) => {
+          if (!hookStage.run) throw new Error("must not run the hook tournament in this test");
+          return hookStage.run(input);
+        },
+      };
+    }
     if (id === "groq-sdk") {
       return class { chat = { completions: { create: async () => { throw new Error("must not call Groq"); } } }; };
     }
@@ -102,6 +116,7 @@ function harness(
   const sandboxGlobals = {
     Error, AbortController, AbortSignal, Buffer, Date, Map, Set, JSON, setTimeout, clearTimeout,
     console: { info() {}, warn() {}, error() {} },
+    process: { env: {} },
   };
   const geminiExports = {} as GeminiExports;
   vm.runInNewContext(geminiCompiled, { exports: geminiExports, ...sandboxGlobals, require: sharedRequire });
@@ -477,4 +492,46 @@ test("two invalid rewrites keep the last independently audited draft", async () 
   assert.equal(result.callsUsed, 5);
   assert.equal(result.draft.singleShotRun?.stage, "audited");
   assert.equal(result.draft.singleShotRun?.verdict, "correctable");
+});
+
+test("the cover tournament runs before the audit, and a style-only rewrite cannot undo its cover", async () => {
+  const tournament = {
+    promptVersion: "test", model: "sol-test", judgeModel: "sol-test", at: "2026-10-02T00:00:00.000Z",
+    candidates: [
+      { headline: "The SPL is looking for people tied to counterfeit-bill transactions", subheadline: "", mechanism: "incumbent", segment: "", factIds: ["fact-1"], payoffUnitOrder: 2 },
+      { headline: "Paid with cash this week in Laval?", subheadline: "The SPL is looking for people tied to counterfeit bills.", mechanism: "recognition", segment: "shoppers", factIds: ["fact-1"], payoffUnitOrder: 2 },
+    ],
+    selectedIndex: 1,
+    replaced: true,
+  };
+  hookStage = {
+    enabled: true,
+    run: ({ draft }) => ({
+      draft: { ...draft, units: draft.units.map((unit, index) => index === 0 ? { ...unit, headline: tournament.candidates[1].headline, subheadline: tournament.candidates[1].subheadline } : unit), hookTournament: tournament },
+      tournament,
+      usage: { promptTokens: 10, outputTokens: 10, thoughtsTokens: 0, totalTokens: 20 },
+      calls: 2,
+    }),
+  };
+  try {
+    const h = harness(
+      () => validResponse(),
+      (call, index) => index === 0
+        ? { verdict: "revised", scores: { ...strongScores, overall: 70 }, issues: [
+            { unitOrder: 1, code: "WEAK_HEADLINE", severity: "blocker", message: "The cover headline could be punchier." },
+          ], draft: undefined, hookSelection }
+        : { verdict: "accepted", scores: strongScores, issues: [], draft: undefined, hookSelection },
+    );
+    const result = await h.run(options({ openAiApiKey: "openai-test" }));
+    assert.ok(JSON.stringify(h.auditCalls[0]).includes("Paid with cash this week in Laval?"), "the audit reviews the tournament's cover");
+    // The rewrite answered a style finding by going back to the writer's cover; the tournament's cover stands.
+    assert.equal((result.draft.units[0] as { headline: string }).headline, "Paid with cash this week in Laval?");
+    assert.equal((result.draft as { hookTournament?: { replaced: boolean } }).hookTournament?.replaced, true);
+    // The mocked critic's hook evaluation describes the writer's cover, so it
+    // never accepts; what matters is that the tournament's calls were counted
+    // and the run stayed inside its budget.
+    assert.ok(result.callsUsed >= 7 && result.callsUsed <= 16, `calls used: ${result.callsUsed}`);
+  } finally {
+    hookStage = { enabled: false };
+  }
 });

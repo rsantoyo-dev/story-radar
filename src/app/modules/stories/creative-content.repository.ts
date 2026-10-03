@@ -308,6 +308,42 @@ async function loadCreativeDrafts(
   );
 }
 
+/**
+ * Records a cover tournament that kept the writer's cover. The visible copy
+ * does not change, so the draft keeps its version and approval.
+ */
+export async function recordCreativeDraftHookTournament(
+  topicId: string,
+  draftId: string,
+  version: number,
+  tournament: import("./creative-hook-tournament").CreativeHookTournament,
+): Promise<void> {
+  const updated = await db
+    .update(creativeDrafts)
+    .set({ aiSnapshot: sql`jsonb_set(coalesce(${creativeDrafts.aiSnapshot}, '{}'::jsonb), '{hookTournament}', ${JSON.stringify(tournament)}::jsonb)` })
+    .where(and(eq(creativeDrafts.id, draftId), eq(creativeDrafts.topicId, topicId), eq(creativeDrafts.version, version)))
+    .returning({ id: creativeDrafts.id });
+  if (!updated.length) throw new CreativeBrandReferenceConflictError("The draft changed while its cover was being reviewed. Reload and try again.");
+}
+
+/** The Topic's most recent cover picks, oldest decisions dropped first: the judge's house taste. */
+export async function listRecentHookTaste(
+  topicId: string,
+  limit = 8,
+): Promise<import("./creative-hook-tournament").HookTasteExample[]> {
+  const { hookTasteExample } = await import("./creative-hook-tournament");
+  const rows = await db
+    .select({ tournament: sql<unknown>`${creativeDrafts.aiSnapshot} -> 'hookTournament'` })
+    .from(creativeDrafts)
+    .where(and(eq(creativeDrafts.topicId, topicId), sql`${creativeDrafts.aiSnapshot} -> 'hookTournament' -> 'editorChoice' is not null`))
+    .orderBy(desc(creativeDrafts.updatedAt))
+    .limit(limit);
+  return rows.flatMap((row) => {
+    const example = row.tournament ? hookTasteExample(row.tournament as import("./creative-hook-tournament").CreativeHookTournament) : undefined;
+    return example ? [example] : [];
+  });
+}
+
 /** The AI's last output as stored, for updates that must keep it comparable. */
 export async function findCreativeDraftAiSnapshot(
   topicId: string,
@@ -942,6 +978,8 @@ function mapCreativeDraft(
     ...(generated.singleShotRun ? { singleShotRun: generated.singleShotRun } : {}),
     ...(generated.blockedSource ? { blockedSource: generated.blockedSource } : {}),
     ...(generated.visualDirectionsRewrite ? { visualDirectionsRewrite: generated.visualDirectionsRewrite } : {}),
+    ...(generated.hookTournament ? { hookTournament: generated.hookTournament } : {}),
+    ...(generated.hookTournamentError ? { hookTournamentError: generated.hookTournamentError } : {}),
     ...(generated.qualityReview
       ? {
           qualityReview: {...generated.qualityReview,issues:generated.qualityReview.issues.map(issue =>

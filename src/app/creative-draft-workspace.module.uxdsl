@@ -3520,3 +3520,23 @@
 .helpContent li, .helpContent p { color: palette(tertiary-main); @ds-typo(body); line-height: 1.6; }
 .helpContent li strong { color: palette(dark-main); }
 .helpContent a { color: palette(primary-dark); font-weight: 700; }
+
+.hookPanel { display: grid; gap: density(3); margin-bottom: density(5); padding: density(4) density(5); border: 1px solid palette(primary-light); border-radius: 12px; background: palette(light-light); }
+.hookPanelHeader { display: flex; flex-direction: xs(column) md(row); align-items: xs(stretch) md(center); justify-content: space-between; gap: density(3); }
+.hookPanelHeader strong { color: palette(primary-dark); @ds-typo(caption); font-size: 12px; }
+.hookPanelHeader p, .hookPanelNote { margin: density(1) 0 0; color: palette(primary-main); @ds-typo(caption); font-size: 11px; }
+.hookOptions { display: grid; gap: density(2); margin: 0; padding: 0; list-style: none; }
+.hookOption { display: grid; grid-template-columns: xs(1fr) md(minmax(0, 1fr) auto); gap: density(2) density(3); align-items: center; padding: density(3); border: 1px solid palette(primary-light); border-radius: radius(2); background: palette(light-light); }
+.hookOptionChosen { border-color: palette(primary-main); box-shadow: inset 3px 0 0 palette(primary-main); }
+.hookOptionText { display: grid; gap: density(1); min-width: 0; }
+.hookOptionText strong { @ds-typo(body); font-weight: 700; color: palette(dark-main); }
+.hookOptionText span { @ds-typo(caption); color: palette(dark-main, 0.72); }
+.hookOptionAction { display: flex; justify-content: xs(flex-start) md(flex-end); }
+.hookOptionMeta { display: flex; flex-wrap: wrap; gap: density(1); grid-column: 1 / -1; }
+.hookOptionMeta span { padding: 2px density(2); border-radius: 999px; background: palette(primary-light, 0.45); @ds-typo(caption); font-size: 10px; color: palette(primary-dark); }
+.hookScores { grid-column: 1 / -1; margin: 0; @ds-typo(caption); font-size: 11px; color: palette(dark-main, 0.72); }
+.hookScores b { margin-right: density(1); font-size: 13px; color: palette(primary-dark); }
+.hookScores em { font-style: normal; color: palette(dark-main, 0.6); }
+.hookCurrent { @ds-typo(caption); font-weight: 700; color: palette(success-dark); }
+.hookAll summary { cursor: pointer; @ds-typo(caption); color: palette(primary-main); }
+.hookAll[open] summary { margin-bottom: density(2); }

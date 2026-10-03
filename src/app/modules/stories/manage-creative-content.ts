@@ -41,6 +41,8 @@ import {
   findCreativeBriefById,
   findCreativeDraftAiSnapshot,
   findCreativeDraftById,
+  listRecentHookTaste,
+  recordCreativeDraftHookTournament,
   findCreativeDraftsForStory,
   findLatestCreativeBrief,
   getCreativeDailyUsage,
@@ -110,6 +112,8 @@ import {
   parseVisualDirectionsResponse,
 } from "./creative-visual-directions";
 import { generateOpenAiStructuredResponse } from "./openai-structured-response";
+import { runCreativeHookTournament } from "./run-creative-hook-tournament";
+import { applyHookToDraft } from "./creative-hook-tournament";
 import { generateCompanionStoryScript } from "./companion-story-generator";
 import { companionVerifiedFacts } from "./companion-facts";
 import { fallbackEditorialAngle } from "./acquisition-lenses";
@@ -513,6 +517,7 @@ async function createCreativeBriefAndDraftSingleShot({
   let draftRow: CreativeDraft | undefined;
   try {
     const characterRoster = await listCreativeCharacterRoster(topicId);
+    const hookHouseTaste = await listRecentHookTaste(topicId);
     const result = await withCreativeTextBudget({ topicId, storyId, runId }, () =>
       runSingleShotCreativePipeline({
         apiKey: configuration.apiKey,
@@ -535,6 +540,7 @@ async function createCreativeBriefAndDraftSingleShot({
         openAiEditorialModels: configuration.openAiEditorialModels,
         openAiAuditContext: { runId, topicId, storyId },
         deadline: Date.now() + CREATIVE_DRAFT_TIME_BUDGET_MS,
+        hookHouseTaste,
         checkpoint: async ({ brief, draft, usage, provider, model }) => {
           if (!briefRow) {
             briefRow = await insertCreativeBrief({
@@ -728,6 +734,7 @@ export async function createCreativeDraft(
     try {
       const characterSnapshotsFor = (draft: GeneratedCreativeDraft) =>
         snapshotsForCreativeCharacterIds(topicId, draft.units.flatMap((unit) => unit.characterIds ?? []));
+      const hookHouseTaste = await listRecentHookTaste(topicId);
       const result = await withCreativeTextBudget({ topicId, storyId: brief.storyId, runId }, () =>
         runSingleShotCreativePipeline({
           apiKey: configuration.apiKey,
@@ -748,6 +755,7 @@ export async function createCreativeDraft(
           openAiEditorialModels: configuration.openAiEditorialModels,
           openAiAuditContext: { runId, topicId, storyId: brief.storyId },
           deadline: Date.now() + CREATIVE_DRAFT_TIME_BUDGET_MS,
+          hookHouseTaste,
           checkpoint: async ({ draft: partial, usage, provider, model }) => {
             const characterSnapshots = await characterSnapshotsFor(partial);
             checkpointDraft = checkpointDraft
@@ -1472,6 +1480,117 @@ export async function rewriteCreativeDraftVisualDirections(
   });
 }
 
+/**
+ * Runs the cover tournament on a saved carousel script. A better cover is saved
+ * as a new version that needs approval again, because the automated review
+ * never saw it; when the writer's cover wins, only the record is kept.
+ */
+export async function improveCreativeDraftHook(
+  topicId: string,
+  draftId: string,
+  expectedVersion?: number,
+): Promise<CreativeDraft> {
+  const current = await findCreativeDraftById(topicId, draftId);
+  if (!current) throw new CreativeContentNotFoundError("The creative draft was not found");
+  if (expectedVersion !== undefined && expectedVersion !== current.version) {
+    throw new CreativeContentConflictError("The draft changed. Reload before looking for a stronger cover.");
+  }
+  if (current.provider === "documentary" || current.companion || (current.format !== "carousel" && current.format !== "sequence")) {
+    throw new CreativeContentConflictError("Only carousel scripts have a cover tournament.");
+  }
+  await assertStoryEditionCurrent(topicId, current);
+  const brief = await findCreativeBriefById(topicId, current.briefId);
+  if (!brief) throw new CreativeContentNotFoundError("The creative brief was not found");
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  if (!apiKey) throw new CreativeContentConfigurationError("OPENAI_API_KEY is not configured; the cover tournament is unavailable");
+
+  const [profile, characterRoster] = await Promise.all([getCreativeProfile(topicId), listCreativeCharacterRoster(topicId)]);
+  const runId = createHash("sha256").update(`hook:${current.id}:${current.version}:${Date.now()}`).digest("hex").slice(0, 32);
+  const houseTaste = await listRecentHookTaste(topicId);
+  const result = await withCreativeTextBudget({ topicId, storyId: current.storyId, runId }, () => runCreativeHookTournament({
+    apiKey,
+    auditContext: { runId, topicId, storyId: current.storyId },
+    profile,
+    brief,
+    draft: current,
+    format: current.format,
+    ...(houseTaste.length ? { houseTaste } : {}),
+  }));
+  if (!result.tournament.replaced) {
+    await recordCreativeDraftHookTournament(topicId, current.id, current.version, result.tournament);
+    return (await findCreativeDraftById(topicId, current.id))!;
+  }
+  const edited = validateEditableDraft(
+    { ...current, units: result.draft.units },
+    current.format,
+    brief.keyFacts.map((fact) => fact.id),
+    outputAspectRatioForDraft(current),
+    characterRoster.map((character) => character.id),
+  );
+  const characterSnapshots = await snapshotsForCreativeCharacterIds(topicId, edited.units.flatMap((unit) => unit.characterIds ?? []));
+  // The stored AI snapshot keeps the reviewed copy, so the new cover reads as
+  // changed after the automated review and its approval stays explicit.
+  const stored = await findCreativeDraftAiSnapshot(topicId, current.id);
+  return replaceCreativeDraft(topicId, current, edited, characterSnapshots, {
+    ...(stored ? { aiSnapshot: { ...stored, hookTournament: result.tournament } } : {}),
+  });
+}
+
+/**
+ * The editor picks a cover from the draft's tournament. A different cover is
+ * saved as a new version that needs approval; picking the current cover only
+ * records the choice. Either way the pick teaches later judgings this
+ * Topic's taste.
+ */
+export async function chooseCreativeDraftHookCandidate(
+  topicId: string,
+  draftId: string,
+  candidateIndex: number,
+  expectedVersion?: number,
+): Promise<CreativeDraft> {
+  const current = await findCreativeDraftById(topicId, draftId);
+  if (!current) throw new CreativeContentNotFoundError("The creative draft was not found");
+  if (expectedVersion !== undefined && expectedVersion !== current.version) {
+    throw new CreativeContentConflictError("The draft changed. Reload before choosing a cover.");
+  }
+  const tournament = current.hookTournament;
+  const candidate = Number.isInteger(candidateIndex) ? tournament?.candidates[candidateIndex] : undefined;
+  if (!tournament || !candidate) throw new CreativeDraftValidationError("That cover is not part of this draft's tournament.");
+  if (candidate.rejected) throw new CreativeDraftValidationError(`That cover was rejected: ${candidate.rejected}`);
+  await assertStoryEditionCurrent(topicId, current);
+  const chosen = { ...tournament, selectedIndex: candidateIndex, replaced: candidateIndex !== 0, editorChoice: { index: candidateIndex, at: new Date().toISOString() } };
+  const cover = current.units[0];
+  if (cover && cover.headline === candidate.headline && (cover.subheadline ?? "") === candidate.subheadline) {
+    await recordCreativeDraftHookTournament(topicId, current.id, current.version, chosen);
+    return (await findCreativeDraftById(topicId, current.id))!;
+  }
+  const brief = await findCreativeBriefById(topicId, current.briefId);
+  if (!brief) throw new CreativeContentNotFoundError("The creative brief was not found");
+  const profile = brief.profileSnapshot;
+  const blockers = (value: GeneratedCreativeDraft) => new Set(deterministicCreativeQualityIssues(
+    value, current.format, brief.keyFacts, profile.language, profile.conversionGoal, profile.framingStrategy, profile.storyStructure,
+  ).filter((issue) => issue.severity === "blocker").map((issue) => `${issue.code}:${issue.unitOrder ?? 0}`));
+  const before = blockers(current);
+  const withCover = applyHookToDraft(current, candidate);
+  const introduced = [...blockers(withCover)].filter((key) => !before.has(key));
+  if (introduced.length) {
+    throw new CreativeDraftValidationError(`That cover no longer fits this script: ${introduced.join(", ")}. Run the cover tournament again.`);
+  }
+  const characterRoster = await listCreativeCharacterRoster(topicId);
+  const edited = validateEditableDraft(
+    { ...current, units: withCover.units },
+    current.format,
+    brief.keyFacts.map((fact) => fact.id),
+    outputAspectRatioForDraft(current),
+    characterRoster.map((character) => character.id),
+  );
+  const characterSnapshots = await snapshotsForCreativeCharacterIds(topicId, edited.units.flatMap((unit) => unit.characterIds ?? []));
+  const stored = await findCreativeDraftAiSnapshot(topicId, current.id);
+  return replaceCreativeDraft(topicId, current, edited, characterSnapshots, {
+    ...(stored ? { aiSnapshot: { ...stored, hookTournament: chosen } } : {}),
+  });
+}
+
 function requireStoryContent(
   story: SelectedStoryContentRecord,
   maximumCharacters: number,
@@ -1514,8 +1633,9 @@ function storyForGenerator(story: SelectedStoryContentRecord, text: string) {
 
 /**
  * The visual identity (campaign guide, palette) reaches images live from the
- * profile, so changing it must not stale the editorial brief. A brief is
- * still current when its hash matches with its own saved visual identity.
+ * profile, and the audience reaches the cover tournament live, so changing
+ * them must not stale the editorial brief or retire approved scripts. A brief
+ * is still current when its hash matches with its own saved values for them.
  */
 function briefHashMatches(
   brief: Pick<CreativeBrief, "inputHash" | "profileSnapshot">,
@@ -1525,7 +1645,7 @@ function briefHashMatches(
   if (hashFor(profile) === brief.inputHash) return true;
   const saved = brief.profileSnapshot;
   if (!saved) return false;
-  return hashFor({ ...profile, visualGuidance: saved.visualGuidance, creativeIdentity: saved.creativeIdentity ?? null, brandPalette: saved.brandPalette }) === brief.inputHash;
+  return hashFor({ ...profile, visualGuidance: saved.visualGuidance, creativeIdentity: saved.creativeIdentity ?? null, brandPalette: saved.brandPalette, audience: saved.audience }) === brief.inputHash;
 }
 
 function createBriefInputHash(

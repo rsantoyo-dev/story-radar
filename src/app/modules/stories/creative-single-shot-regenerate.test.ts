@@ -71,6 +71,7 @@ function harness({ singleShot, cached }: { singleShot: boolean; cached: boolean 
       snapshotsForCreativeCharacterIds: async () => new Map(),
     },
     "./creative-content.repository": {
+      listRecentHookTaste: async () => [],
       findCreativeBriefById: async () => ({
         id: "brief", storyId: "story", inputHash: "HASH", profileSnapshot: { language: "French" },
         keyFacts: [{ id: "fact-1", statement: "A real claim.", sourceExcerpt: "A real claim." }],

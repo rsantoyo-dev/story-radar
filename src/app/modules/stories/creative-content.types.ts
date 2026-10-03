@@ -876,6 +876,10 @@ export type GeneratedCreativeDraft = {
   qualityReview?: CreativeQualityReview;
   /** Last rewrite of the visual directions under a newer creative identity. */
   visualDirectionsRewrite?: import("./creative-visual-directions").CreativeVisualDirectionsRewrite;
+  /** The cover tournament that chose (or kept) this draft's cover. */
+  hookTournament?: import("./creative-hook-tournament").CreativeHookTournament;
+  /** Why the cover tournament could not run; the writer's cover was kept. */
+  hookTournamentError?: string;
   /** Present only for a post-approval Story derived from another draft. */
   companion?: CreativeCompanionMetadata;
   units: CreativeUnit[];

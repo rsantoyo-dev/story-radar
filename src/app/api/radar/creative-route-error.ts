@@ -9,6 +9,7 @@ import { CreativeContentConfigurationError } from "@/app/modules/stories/creativ
 import { CreativeContentResponseError } from "@/app/modules/stories/gemini-creative-content-generator";
 import { CreativeVisualDirectionsResponseError } from "@/app/modules/stories/creative-visual-directions";
 import { CreativeImageReviewUnavailableError } from "@/app/modules/stories/review-creative-image";
+import { CreativeHookTournamentResponseError } from "@/app/modules/stories/creative-hook-tournament";
 import { CompanionStoryResponseError } from "@/app/modules/stories/companion-story-generator";
 import { OpenAiEditorialError } from "@/app/modules/stories/openai-structured-response";
 import { FalImageConfigurationError } from "@/app/modules/stories/fal-image-generation.config";
@@ -141,6 +142,7 @@ export function creativeRouteErrorResponse(
   if (
     error instanceof CreativeContentResponseError ||
     error instanceof CreativeVisualDirectionsResponseError ||
+    error instanceof CreativeHookTournamentResponseError ||
     error instanceof CompanionStoryResponseError ||
     error instanceof OpenAiEditorialError ||
     error instanceof FalImageResponseError ||
