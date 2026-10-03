@@ -113,7 +113,7 @@ import {
 } from "./creative-visual-directions";
 import { generateOpenAiStructuredResponse } from "./openai-structured-response";
 import { runCreativeHookTournament } from "./run-creative-hook-tournament";
-import { applyHookToDraft, normalizeCoverPunctuation, sameCoverText } from "./creative-hook-tournament";
+import { applyHookToDraft, checkHookOpening, hookOpeningForDraft, normalizeCoverPunctuation, openingOnDraft } from "./creative-hook-tournament";
 import { generateCompanionStoryScript } from "./companion-story-generator";
 import { companionVerifiedFacts } from "./companion-facts";
 import { fallbackEditorialAngle } from "./acquisition-lenses";
@@ -1537,9 +1537,10 @@ export async function improveCreativeDraftHook(
 }
 
 /**
- * The editor picks a cover from the draft's tournament. A different cover is
- * saved as a new version that needs approval; picking the current cover only
- * records the choice. Either way the pick teaches later judgings this
+ * The editor picks a cover from the draft's tournament, with the slide 2
+ * headline written for it while slide 2 is still the tournament's. A different
+ * opening is saved as a new version that needs approval; picking the current
+ * one only records the choice. Either way the pick teaches later judgings this
  * Topic's taste.
  */
 export async function chooseCreativeDraftHookCandidate(
@@ -1554,32 +1555,36 @@ export async function chooseCreativeDraftHookCandidate(
     throw new CreativeContentConflictError("The draft changed. Reload before choosing a cover.");
   }
   const tournament = current.hookTournament;
-  const candidate = Number.isInteger(candidateIndex) ? tournament?.candidates[candidateIndex] : undefined;
-  if (!tournament || !candidate) throw new CreativeDraftValidationError("That cover is not part of this draft's tournament.");
-  if (candidate.rejected) throw new CreativeDraftValidationError(`That cover was rejected: ${candidate.rejected}`);
+  const picked = Number.isInteger(candidateIndex) ? tournament?.candidates[candidateIndex] : undefined;
+  if (!tournament || !picked) throw new CreativeDraftValidationError("That cover is not part of this draft's tournament.");
+  if (picked.rejected) throw new CreativeDraftValidationError(`That cover was rejected: ${picked.rejected}`);
   await assertStoryEditionCurrent(topicId, current);
   const chosen = { ...tournament, selectedIndex: candidateIndex, replaced: candidateIndex !== 0, editorChoice: { index: candidateIndex, at: new Date().toISOString() } };
-  const cover = current.units[0];
-  if (cover && sameCoverText(cover.headline, candidate.headline) && sameCoverText(cover.subheadline ?? "", candidate.subheadline)) {
+  const recordOnly = async () => {
     await recordCreativeDraftHookTournament(topicId, current.id, current.version, chosen);
     return (await findCreativeDraftById(topicId, current.id))!;
-  }
+  };
+  const candidate = hookOpeningForDraft(tournament, current.units, picked);
+  if (openingOnDraft(current.units, candidate)) return recordOnly();
   const brief = await findCreativeBriefById(topicId, current.briefId);
   if (!brief) throw new CreativeContentNotFoundError("The creative brief was not found");
   const profile = brief.profileSnapshot;
-  const blockers = (value: GeneratedCreativeDraft) => new Set(deterministicCreativeQualityIssues(
-    value, current.format, brief.keyFacts, profile.language, profile.conversionGoal, profile.framingStrategy, profile.storyStructure,
-  ).filter((issue) => issue.severity === "blocker").map((issue) => `${issue.code}:${issue.unitOrder ?? 0}`));
-  const before = blockers(current);
-  const withCover = applyHookToDraft(current, {
+  const tidy = (value?: string) => normalizeCoverPunctuation(value ?? "", profile.language);
+  // The script may have changed since the tournament: the rules decide again.
+  const checked = checkHookOpening(current, {
     ...candidate,
-    headline: normalizeCoverPunctuation(candidate.headline, profile.language),
-    subheadline: normalizeCoverPunctuation(candidate.subheadline, profile.language),
-  });
-  const introduced = [...blockers(withCover)].filter((key) => !before.has(key));
-  if (introduced.length) {
-    throw new CreativeDraftValidationError(`That cover no longer fits this script: ${introduced.join(", ")}. Run the cover tournament again.`);
+    headline: tidy(candidate.headline),
+    subheadline: tidy(candidate.subheadline),
+    secondHeadline: tidy(candidate.secondHeadline),
+    secondSubheadline: tidy(candidate.secondSubheadline),
+  }, (value) => deterministicCreativeQualityIssues(
+    value, current.format, brief.keyFacts, profile.language, profile.conversionGoal, profile.framingStrategy, profile.storyStructure,
+  ));
+  if (checked.blockers.length) {
+    throw new CreativeDraftValidationError(`That cover no longer fits this script: ${checked.blockers.join(", ")}. Run the cover tournament again.`);
   }
+  if (openingOnDraft(current.units, checked.candidate)) return recordOnly();
+  const withCover = applyHookToDraft(current, checked.candidate);
   const characterRoster = await listCreativeCharacterRoster(topicId);
   const edited = validateEditableDraft(
     { ...current, units: withCover.units },

@@ -1,6 +1,12 @@
 "use client";
 
-import { sameCoverText, type CreativeHookTournament, type HookMechanism } from "./modules/stories/creative-hook-tournament";
+import {
+  hookOpeningForDraft,
+  openingOnDraft,
+  tournamentOwnsSecondSlide,
+  type CreativeHookTournament,
+  type HookMechanism,
+} from "./modules/stories/creative-hook-tournament";
 import styles from "./creative-draft-workspace.generated.module.css";
 
 const MECHANISM_LABELS: Record<HookMechanism | "incumbent", string> = {
@@ -30,6 +36,11 @@ function CoverOption({ candidate, index, chosen, onCover, disabled, onUse }: {
       <div className={styles.hookOptionText}>
         <strong>{candidate.headline}</strong>
         {candidate.subheadline ? <span>{candidate.subheadline}</span> : null}
+        {candidate.secondHeadline ? (
+          <span className={styles.hookSecond}>
+            Slide 2: {candidate.secondHeadline}{candidate.secondSubheadline ? ` — ${candidate.secondSubheadline}` : ""}
+          </span>
+        ) : candidate.secondDropped ? <span className={styles.hookSecond} title={candidate.secondDropped}>Slide 2: unchanged</span> : null}
       </div>
       <div className={styles.hookOptionAction}>
         {onCover
@@ -45,6 +56,7 @@ function CoverOption({ candidate, index, chosen, onCover, disabled, onUse }: {
         <p className={styles.hookScores} title={score.reason}>
           <b>{candidate.total}</b>
           Recognition {score.recognition} · Clarity {score.clarity} · Pull {score.pull} · Fidelity {score.fidelity} · Payoff {score.payoff} · Natural {score.naturalness}
+          {score.slide2 !== undefined && candidate.secondHeadline ? ` · Slide 2 ${score.slide2}` : ""}
           {score.reason ? <em> — {score.reason}</em> : null}
         </p>
       ) : candidate.rejected ? <p className={styles.hookScores}>Rejected: {candidate.rejected}</p> : null}
@@ -52,15 +64,18 @@ function CoverOption({ candidate, index, chosen, onCover, disabled, onUse }: {
   );
 }
 
+type OpeningUnit = { headline: string; subheadline?: string };
+
 /**
- * The script's cover tournament: the finalists with their scores, the cover in
- * use, and the editor's choice. Picking a cover saves it as a new version and
- * teaches the judge this publication's taste.
+ * The script's cover tournament: the finalists with their scores, the opening
+ * in use, and the editor's choice. Picking a cover saves it, with its slide 2
+ * headline, as a new version and teaches the judge this publication's taste.
  */
-export function CreativeHookTournamentPanel({ tournament, error, currentHeadline, disabled, busy, onImprove, onUse }: {
+export function CreativeHookTournamentPanel({ tournament, error, currentUnits, disabled, busy, onImprove, onUse }: {
   tournament?: CreativeHookTournament;
   error?: string;
-  currentHeadline: string;
+  /** The draft's cover and slide 2 as they are now. */
+  currentUnits: readonly OpeningUnit[];
   disabled: boolean;
   busy: boolean;
   onImprove: () => void;
@@ -75,8 +90,11 @@ export function CreativeHookTournamentPanel({ tournament, error, currentHeadline
   if (selected && !finalists.includes(selected)) finalists.push(selected);
   const others = (tournament?.candidates ?? []).map((candidate, index) => ({ candidate, index }))
     .filter((entry) => !finalists.some((finalist) => finalist.index === entry.index));
+  const onDraft = (candidate: Candidate) => Boolean(tournament) && openingOnDraft(currentUnits, hookOpeningForDraft(tournament!, currentUnits, candidate));
+  // A slide 2 changed after the tournament is kept when a cover is chosen.
+  const secondKept = Boolean(tournament?.candidates.some((candidate) => candidate.secondHeadline)) && !tournamentOwnsSecondSlide(tournament!, currentUnits);
   const summary = !tournament
-    ? "GPT-6.1 Sol writes about ten covers for this audience, a blind judge ranks them, the best are polished and judged again. Facts and qualifiers never change."
+    ? "GPT-6.1 Sol writes six covers for this audience, each with the slide 2 headline that pays it off; a blind judge ranks them, and the two best are polished and judged again. Facts and qualifiers never change."
     : tournament.replaced
     ? `Chosen from ${tournament.candidates.length} covers${tournament.editorChoice ? " by you" : ""}.`
     : `The writer's cover held up against ${tournament.candidates.length - 1} alternatives${tournament.editorChoice ? "; you kept it" : ""}.`;
@@ -89,7 +107,7 @@ export function CreativeHookTournamentPanel({ tournament, error, currentHeadline
           <p>{summary}</p>
         </div>
         <button type="button" className={styles.secondaryButton} disabled={disabled} onClick={onImprove}>
-          {busy ? "Writing and judging covers… about 2–3 minutes" : tournament ? "Run the cover tournament again" : "Find a stronger cover"}
+          {busy ? "Writing and judging covers… about 1–2 minutes" : tournament ? "Run the cover tournament again" : "Find a stronger cover"}
         </button>
       </div>
       {error && !tournament ? <p className={styles.hookPanelNote}>{error}</p> : null}
@@ -97,7 +115,7 @@ export function CreativeHookTournamentPanel({ tournament, error, currentHeadline
         <ul className={styles.hookOptions}>
           {finalists.map(({ candidate, index }) => (
             <CoverOption key={index} candidate={candidate} index={index} chosen={index === tournament?.selectedIndex}
-              onCover={sameCoverText(candidate.headline, currentHeadline)} disabled={disabled} onUse={onUse} />
+              onCover={onDraft(candidate)} disabled={disabled} onUse={onUse} />
           ))}
         </ul>
       ) : null}
@@ -107,12 +125,17 @@ export function CreativeHookTournamentPanel({ tournament, error, currentHeadline
           <ul className={styles.hookOptions}>
             {others.map(({ candidate, index }) => (
               <CoverOption key={index} candidate={candidate} index={index} chosen={index === tournament?.selectedIndex}
-                onCover={sameCoverText(candidate.headline, currentHeadline)} disabled={disabled} onUse={onUse} />
+                onCover={onDraft(candidate)} disabled={disabled} onUse={onUse} />
             ))}
           </ul>
         </details>
       ) : null}
-      {tournament ? <p className={styles.hookPanelNote}>Choosing a cover saves a new version to approve and teaches the judge your taste for this publication.</p> : null}
+      {tournament ? (
+        <p className={styles.hookPanelNote}>
+          Choosing a cover saves a new version to approve and teaches the judge your taste for this publication.
+          {secondKept ? " Slide 2 changed after this tournament, so choosing a cover keeps the current slide 2." : ""}
+        </p>
+      ) : null}
     </section>
   );
 }

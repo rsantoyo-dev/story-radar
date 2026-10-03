@@ -1140,30 +1140,34 @@ export function CreativeDraftWorkspace({
   async function handleImproveHook() {
     if (!activeDraftId || !activeDraft || busy || viewingHistoricalDraft || dirty) return;
     await run("hook", async () => {
-      const saved = await requestJson<{ version: number; hookTournament?: { replaced: boolean; candidates: unknown[] } }>(
+      const saved = await requestJson<{ version: number; units?: { headline: string }[]; hookTournament?: { replaced: boolean; candidates: unknown[] } }>(
         topicUrl(`/api/radar/creative/drafts/${encodeURIComponent(activeDraftId)}`, topicId),
         secret,
         { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "improve-hook", expectedVersion: activeDraft.version }) },
       );
       await reloadWorkspace(selectedFormat);
-      setNotice(saved.version !== activeDraft.version
-        ? "A stronger cover was found and saved as a new version. Review it, approve the script, then update the cover image."
-        : `The current cover held up against ${Math.max(0, (saved.hookTournament?.candidates.length ?? 1) - 1)} alternatives.`);
+      setNotice(saved.version === activeDraft.version
+        ? `The current cover held up against ${Math.max(0, (saved.hookTournament?.candidates.length ?? 1) - 1)} alternatives.`
+        : saved.units?.[1]?.headline !== activeDraft.units[1]?.headline
+        ? "A stronger cover and slide 2 headline were found and saved as a new version. Review them, approve the script, then update the cover and slide 2 images."
+        : "A stronger cover was found and saved as a new version. Review it, approve the script, then update the cover image.");
     });
   }
 
   async function handleUseHook(candidateIndex: number) {
     if (!activeDraftId || !activeDraft || busy || viewingHistoricalDraft || dirty) return;
     await run("hook", async () => {
-      const saved = await requestJson<{ version: number }>(
+      const saved = await requestJson<{ version: number; units?: { headline: string }[] }>(
         topicUrl(`/api/radar/creative/drafts/${encodeURIComponent(activeDraftId)}`, topicId),
         secret,
         { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "use-hook", candidateIndex, expectedVersion: activeDraft.version }) },
       );
       await reloadWorkspace(selectedFormat);
-      setNotice(saved.version !== activeDraft.version
-        ? "Cover changed as a new version. Approve the script, then update the cover image."
-        : "Your choice was recorded.");
+      setNotice(saved.version === activeDraft.version
+        ? "Your choice was recorded."
+        : saved.units?.[1]?.headline !== activeDraft.units[1]?.headline
+        ? "Cover and slide 2 headline changed as a new version. Approve the script, then update the cover and slide 2 images."
+        : "Cover changed as a new version. Approve the script, then update the cover image.");
     });
   }
 
@@ -2276,7 +2280,7 @@ export function CreativeDraftWorkspace({
                   <CreativeHookTournamentPanel
                     tournament={activeDraft.hookTournament}
                     error={activeDraft.hookTournamentError}
-                    currentHeadline={activeDraft.units[0]?.headline ?? ""}
+                    currentUnits={activeDraft.units.slice(0, 2)}
                     disabled={Boolean(busy) || Boolean(assetBusy) || dirty}
                     busy={busy === "hook"}
                     onImprove={() => void handleImproveHook()}

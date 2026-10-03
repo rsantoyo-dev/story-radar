@@ -45,12 +45,13 @@ const EDITORIAL_CALL_RESERVE = 10;
  * Wall time a run may use before the host function's limit, and what the
  * cover tournament needs on top of the audit that follows it. A tournament
  * that cannot finish in time runs one round, or is skipped and left to the
- * on-demand "stronger cover" action, rather than cutting the run off.
+ * on-demand "stronger cover" action, rather than cutting the run off. Both
+ * rounds measured 50–85 s at the tournament's default reasoning.
  */
 const DEFAULT_FUNCTION_BUDGET_MS = 280_000;
 const AUDIT_RESERVE_MS = 60_000;
-const HOOK_FULL_MS = 150_000;
-const HOOK_ONE_ROUND_MS = 90_000;
+const HOOK_FULL_MS = 120_000;
+const HOOK_ONE_ROUND_MS = 75_000;
 
 /** The cover tournament: write, judge, polish the finalists, judge again. */
 const HOOK_STAGE_CALLS = HOOK_TOURNAMENT_CALLS;
@@ -169,13 +170,16 @@ export async function runSingleShotCreativePipeline(
     await checkpoint({ brief, draft, usage, callsUsed, provider, model });
   }
   // Every later pass rebuilds the draft: keep the tournament's record, and its
-  // cover unless a factual finding names it.
-  const coverBlockers = (value: GeneratedCreativeDraft) => deterministicCreativeQualityIssues(
-    value, generatorOptions.format, brief.keyFacts, generatorOptions.profile.language, generatorOptions.profile.conversionGoal,
-    generatorOptions.profile.framingStrategy, generatorOptions.profile.storyStructure,
-  ).filter((issue) => issue.severity === "blocker" && issue.unitOrder === value.units[0]?.order).length;
+  // cover and slide 2 headline unless a factual finding names that slide.
+  const openingBlockers = (value: GeneratedCreativeDraft) => {
+    const opening = new Set(value.units.slice(0, 2).map((unit) => unit.order));
+    return deterministicCreativeQualityIssues(
+      value, generatorOptions.format, brief.keyFacts, generatorOptions.profile.language, generatorOptions.profile.conversionGoal,
+      generatorOptions.profile.framingStrategy, generatorOptions.profile.storyStructure,
+    ).filter((issue) => issue.severity === "blocker" && issue.unitOrder !== undefined && opening.has(issue.unitOrder)).length;
+  };
   const withHook = (value: GeneratedCreativeDraft, findings: readonly CreativeQualityIssue[]): GeneratedCreativeDraft => ({
-    ...(tournament ? { ...keepTournamentCover(value, tournament, findings, isConcreteFactualQualityIssue, coverBlockers), hookTournament: tournament } : value),
+    ...(tournament ? { ...keepTournamentCover(value, tournament, findings, isConcreteFactualQualityIssue, openingBlockers), hookTournament: tournament } : value),
     ...(tournamentError ? { hookTournamentError: tournamentError } : {}),
   });
 

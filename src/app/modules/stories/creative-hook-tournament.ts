@@ -9,13 +9,16 @@ import type { CreativeKeyFact, CreativeQualityIssue, GeneratedCreativeBrief, Gen
  * interior slides are never touched: the cover is written knowing what they
  * already pay off.
  */
-export const CREATIVE_HOOK_TOURNAMENT_PROMPT_VERSION = "hook-tournament-v4";
-export const HOOK_TOURNAMENT_CANDIDATES = 8;
+export const CREATIVE_HOOK_TOURNAMENT_PROMPT_VERSION = "hook-tournament-v5";
+export const HOOK_TOURNAMENT_CANDIDATES = 6;
 const HOOK_MAX_CANDIDATES = 10;
 const HOOK_HEADLINE_MAX_WORDS = 12;
 const HOOK_SUBHEADLINE_MAX_WORDS = 24;
 /** Covers taken into the polishing round. */
-export const HOOK_FINALISTS = 3;
+export const HOOK_FINALISTS = 2;
+/** Slide 2 is the first thing after the swipe: a short headline and, rarely, a label. */
+const SECOND_HEADLINE_MAX_WORDS = 12;
+const SECOND_SUBHEADLINE_MAX_WORDS = 10;
 
 export const HOOK_MECHANISMS = ["recognition", "place", "pride", "human-scale", "consequence", "curiosity", "contrast"] as const;
 export type HookMechanism = (typeof HOOK_MECHANISMS)[number];
@@ -33,6 +36,9 @@ const HOOK_MECHANISM_GUIDE: Record<HookMechanism, string> = {
 export type HookCandidate = {
   headline: string;
   subheadline: string;
+  /** Slide 2's headline, written to pay off this cover; empty keeps slide 2 as it is. Absent in tournaments before v5. */
+  secondHeadline?: string;
+  secondSubheadline?: string;
   /** "incumbent" is the writer's own cover, which competes like any other. */
   mechanism: HookMechanism | "incumbent";
   segment: string;
@@ -47,6 +53,9 @@ export type HookScore = {
   fidelity: number;
   payoff: number;
   naturalness: number;
+  /** Slide 2's headline as this cover's payoff, and its fidelity; absent before v5. */
+  slide2?: number;
+  slide2Fidelity?: number;
   reason: string;
 };
 
@@ -56,7 +65,8 @@ export type CreativeHookTournament = {
   judgeModel: string;
   at: string;
   /** Round 1 is the open field, round 2 the polished finalists; scores are from the last judging each cover took part in. */
-  candidates: (HookCandidate & { score?: HookScore; total?: number; rejected?: string; round?: 1 | 2 })[];
+  /** secondDropped names the rules a dropped slide 2 suggestion broke; the cover still competed. */
+  candidates: (HookCandidate & { score?: HookScore; total?: number; rejected?: string; secondDropped?: string; round?: 1 | 2 })[];
   /** Index into candidates; 0 is the incumbent. */
   selectedIndex: number;
   replaced: boolean;
@@ -87,6 +97,8 @@ export class CreativeHookTournamentResponseError extends Error {}
 /** Selection weights: being seen and wanting to swipe matter most; fidelity is also a gate. */
 const HOOK_WEIGHTS = { recognition: 0.25, pull: 0.2, clarity: 0.2, fidelity: 0.15, payoff: 0.1, naturalness: 0.1 } as const;
 const HOOK_GATES = { fidelity: 90, clarity: 80, payoff: 70 } as const;
+/** A slide 2 headline replaces the current one only when it is faithful and pays the cover off. */
+const SECOND_GATES = { fidelity: 90, payoff: 80 } as const;
 /** A new cover must beat an eligible incumbent by this much, so noise never swaps it. */
 const HOOK_MIN_GAIN = 2;
 
@@ -103,10 +115,12 @@ export const HOOK_CANDIDATES_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["headline", "subheadline", "mechanism", "segment", "factIds", "payoffUnitOrder"],
+        required: ["headline", "subheadline", "secondHeadline", "secondSubheadline", "mechanism", "segment", "factIds", "payoffUnitOrder"],
         properties: {
           headline: stringField,
           subheadline: stringField,
+          secondHeadline: stringField,
+          secondSubheadline: stringField,
           mechanism: { type: "string", enum: [...HOOK_MECHANISMS] },
           segment: stringField,
           factIds: { type: "array", items: stringField },
@@ -128,7 +142,7 @@ export const HOOK_SCORES_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["option", "recognition", "clarity", "pull", "fidelity", "payoff", "naturalness", "reason"],
+        required: ["option", "recognition", "clarity", "pull", "fidelity", "payoff", "naturalness", "slide2", "slide2Fidelity", "reason"],
         properties: {
           option: { type: "integer" },
           recognition: scoreField,
@@ -137,6 +151,8 @@ export const HOOK_SCORES_SCHEMA = {
           fidelity: scoreField,
           payoff: scoreField,
           naturalness: scoreField,
+          slide2: scoreField,
+          slide2Fidelity: scoreField,
           reason: stringField,
         },
       },
@@ -163,6 +179,7 @@ function slidesForPrompt(draft: GeneratedCreativeDraft) {
     headline: unit.headline,
     ...(unit.subheadline ? { subheadline: unit.subheadline } : {}),
     ...(unit.body ? { body: unit.body } : {}),
+    factIds: unit.factIds,
   }));
 }
 
@@ -181,7 +198,7 @@ export function coverAllowedFactIds(brief: Pick<GeneratedCreativeBrief, "carouse
 
 export function buildHookGeneratorInstructions(): string {
   return [
-    "You are the cover editor of a local media brand. The interior slides of this carousel are final and good; your only job is the cover — the headline and one short context line — that makes this audience stop scrolling, see themselves in the story, and swipe.",
+    "You are the cover editor of a local media brand. The interior slides of this carousel are final and good; your job is the opening: the cover — the headline and one short context line — that makes this audience stop scrolling, see themselves in the story and swipe, and the headline of slide 2, the first thing they see after the swipe.",
     `Write ${HOOK_TOURNAMENT_CANDIDATES} genuinely different covers in the publication language. Spread them across the mechanisms in mechanismGuide and across the reader segments named in the audience; use a mechanism only where the facts support it.`,
     "Every cover must be true to the facts listed for the cover: keep each fact's mustKeep wording or its exact meaning and its attribution, never raise its certainty (reported, estimated, projected or attributed claims stay so), and never invent consequences, causes, numbers, comparisons, places, people, quotes, feelings or reader behaviour. A question may invite the reader in, but must not rest on a premise the facts do not establish.",
     "Aggressive hook, conservative facts: intensify the presentation, never the facts. Be bold in form: lead with the most striking supported element in the whole deck — a record, a big figure, a surprising contrast, a familiar place, a moment the reader lived — rather than a neutral summary.",
@@ -192,7 +209,8 @@ export function buildHookGeneratorInstructions(): string {
     "Headline: 6 to 10 words, never more than 12, natural spoken language of a local journalist. Context line: optional, at most 24 words, the place for attribution or scope. No clickbait formulas, no emojis, no all-caps words, no exclamation marks.",
     "Prefer concrete local anchors the facts name — places, moments, numbers — over generic wording. Do not repeat the current cover; you may improve on it.",
     "At least three covers should be ones a bold, ambitious editor would fight for, while staying exactly true to the facts.",
-    "Return the covers as candidates, each with the mechanism used, the reader segment it speaks to, the factIds it relies on (only from coverFacts) and payoffUnitOrder.",
+    `For every cover, write the headline of slide 2, the first thing the reader sees after the swipe (secondHeadline, at most ${SECOND_HEADLINE_MAX_WORDS} words), and only if it adds something a slide 2 subheadline (secondSubheadline, at most ${SECOND_SUBHEADLINE_MAX_WORDS} words, otherwise empty); together they fit slide2WordBudget words, and shorter is better. Slide 2 must pay off the cover's promise at once and make the reader want the next slide; it moves the story forward, never restating the cover's claim, figure or place. It keeps its supporting text and its factIds, so its headline must be supported by those facts and agree with that text, and must state nothing more certainly than they do: a projected, estimated, reported or attributed figure keeps its hedge in the headline itself. Leave both empty to keep slide 2 as it is.`,
+    "Return the covers as candidates, each with its slide 2 headline, the mechanism used, the reader segment it speaks to, the factIds the cover relies on (only from coverFacts) and payoffUnitOrder.",
   ].join("\n");
 }
 
@@ -204,6 +222,8 @@ export function buildHookGeneratorContents(input: {
   brief: Pick<GeneratedCreativeBrief, "keyFacts" | "angle" | "keyMessage" | "editorialAngle" | "appliedFramingStrategy">;
   draft: GeneratedCreativeDraft;
   allowedFactIds: readonly string[];
+  /** Words slide 2's headline and subheadline may use so the slide stays light. */
+  secondSlideWordBudget?: number;
 }): string {
   const allowed = new Set(input.allowedFactIds);
   return JSON.stringify({
@@ -218,15 +238,17 @@ export function buildHookGeneratorContents(input: {
     coverFacts: hookFacts(input.brief.keyFacts.filter((fact) => allowed.has(fact.id))),
     otherFacts: hookFacts(input.brief.keyFacts.filter((fact) => !allowed.has(fact.id))).map(({ id, statement }) => ({ id, statement })),
     currentCover: { headline: input.draft.units[0]?.headline ?? "", subheadline: input.draft.units[0]?.subheadline ?? "" },
+    ...(input.secondSlideWordBudget ? { slide2WordBudget: input.secondSlideWordBudget } : {}),
     slides: slidesForPrompt(input.draft),
   });
 }
 
 export function buildHookRefineInstructions(): string {
   return [
-    "You are the final cover editor. These are the best covers so far for this carousel; make each one as strong as it can be. For every cover, write two sharpened versions: tighter rhythm, the most concrete words, a stronger verb, the hook in the first three words, nothing a reader has to decode.",
+    "You are the final cover editor. These are the best openings so far for this carousel: a cover and the slide 2 headline that follows it. Make each one as strong as it can be: write one sharpened version of every opening — tighter rhythm, the most concrete words, a stronger verb, the hook in the first three words, nothing a reader has to decode — with a slide 2 headline that pays the cover off at once.",
     "Keep each cover's idea, mechanism and factIds; you may also cite the writer's cover facts. Stay exactly true to the facts: keep hedges and attribution in their shortest faithful form, never raise certainty, never add a number, place, person, cause or consequence the facts do not state.",
-    "Headline: at most 12 words and ideally 6 to 9; it must work on its own. Context line: optional, at most 24 words, naming the source once. Write as a native speaker of the publication language from its region; no clickbait formulas, emojis, all-caps words or exclamation marks.",
+    `Headline: at most 12 words and ideally 6 to 9; it must work on its own. Context line: optional, at most 24 words, naming the source once. Slide 2 headline: at most ${SECOND_HEADLINE_MAX_WORDS} words, supported by slide 2's own facts and supporting text; its subheadline at most ${SECOND_SUBHEADLINE_MAX_WORDS} words or empty; together within slide2WordBudget words.`,
+    "Write as a native speaker of the publication language from its region; no clickbait formulas, emojis, all-caps words or exclamation marks.",
     "Return the sharpened versions as candidates.",
   ].join("\n");
 }
@@ -239,6 +261,7 @@ export function buildHookRefineContents(input: {
   facts: readonly CreativeKeyFact[];
   draft: GeneratedCreativeDraft;
   covers: readonly HookCandidate[];
+  secondSlideWordBudget?: number;
 }): string {
   return JSON.stringify({
     publication: input.publication,
@@ -246,23 +269,28 @@ export function buildHookRefineContents(input: {
     region: input.region,
     audience: input.audience,
     facts: hookFacts(input.facts),
+    ...(input.secondSlideWordBudget ? { slide2WordBudget: input.secondSlideWordBudget } : {}),
     slides: slidesForPrompt(input.draft),
-    covers: input.covers.map(({ headline, subheadline, mechanism, segment, factIds, payoffUnitOrder }) => ({ headline, subheadline, mechanism, segment, factIds, payoffUnitOrder })),
+    covers: input.covers.map(({ headline, subheadline, secondHeadline, secondSubheadline, mechanism, segment, factIds, payoffUnitOrder }) => ({
+      headline, subheadline, secondHeadline: secondHeadline ?? "", secondSubheadline: secondSubheadline ?? "", mechanism, segment, factIds, payoffUnitOrder,
+    })),
   });
 }
 
 export function buildHookJudgeInstructions(): string {
   return [
-    "You judge cover options for a local media brand twice over: as an exacting editor and as a member of its audience scrolling a feed. Score every option from 1 to 100 on each dimension, independently, in the order given.",
+    "You judge cover options for a local media brand twice over: as an exacting editor and as a member of its audience scrolling a feed. Each option is a cover — a headline and a context line — and the slide 2 headline written to follow it; slide 2's supporting text is in slides. Score every option from 1 to 100 on each dimension, independently, in the order given. The first six dimensions judge the cover alone.",
     "recognition: would a reader in the audience see themselves — their place, routine or community — in this cover within one second?",
     "clarity: understood at a glance; the subject is obvious without the slides.",
     "pull: would you stop scrolling? A specific, grounded reason to swipe now; curiosity the slides satisfy, not bait. A cover that only restates numbers without a reason to care scores below 75.",
-    "fidelity: every claim is supported by the facts with their qualifiers and attribution. 100 only when nothing is strengthened or implied beyond them; below 70 when it states as fact what the facts only report, estimate, project or attribute, or rests on a premise the facts do not support.",
+    "fidelity: every claim on the cover is supported by the facts with their qualifiers and attribution. 100 only when nothing is strengthened or implied beyond them; below 70 when it states as fact what the facts only report, estimate, project or attribute, or rests on a premise the facts do not support.",
     "payoff: the named slide actually delivers what the cover promises.",
     "naturalness: idiomatic, sounds like a person from here, no clickbait, no ad copy.",
-    "Be strict and comparative: 95 or more means a top editor would publish it unchanged; the options compete, so do not give them all the same score. Give a reason of at most 25 words.",
+    "slide2: read with slide 2's supporting text, does this option's slide 2 headline pay the cover off at once and make the reader want slide 3? It must tell the reader something the cover did not: a slide 2 that restates the cover's claim, figure or place scores below 70. Short and concrete beats complete.",
+    "slide2Fidelity: the slide 2 headline, read with its supporting text, is true to the facts; below 90 when the headline states as certain what the facts only project, estimate, report or attribute.",
+    "Be strict and comparative: 95 or more means a top editor would publish it unchanged; the options compete, so do not give them all the same score. Give a reason of at most 12 words.",
     "houseTaste, when present, lists past decisions of this publication's editor: the cover they kept over strong alternatives. Learn what they value and let it guide your scores and ranking; never let it override fidelity.",
-    "Then rank every option from the one you would publish to the one you would cut: ranking lists each option number exactly once, best first. Rank by what would make this audience stop and swipe while staying true to the facts; an option that fails fidelity ranks last.",
+    "Then rank every option by its cover alone, from the one you would publish to the one you would cut: ranking lists each option number exactly once, best first. Rank by what would make this audience stop and swipe while staying true to the facts; slide 2 does not change the ranking. An option whose cover fails fidelity ranks last.",
   ].join("\n");
 }
 
@@ -281,12 +309,15 @@ export function buildHookJudgeContents(input: {
     audience: input.audience,
     ...(input.houseTaste?.length ? { houseTaste: input.houseTaste } : {}),
     facts: hookFacts(input.facts),
-    slides: slidesForPrompt(input.draft).slice(1),
+    // Each option brings its own slide 2 headline; slide 2 keeps its text and facts.
+    slides: slidesForPrompt(input.draft).slice(1).map(({ headline, subheadline, ...slide }, index) => (index === 0 ? slide : { ...slide, headline, ...(subheadline ? { subheadline } : {}) })),
     // Blind: no mechanism, no hint which option the writer produced.
     options: input.options.map((option, index) => ({
       option: index + 1,
       headline: option.headline,
       subheadline: option.subheadline,
+      slide2Headline: option.secondHeadline || input.draft.units[1]?.headline || "",
+      slide2Subheadline: (option.secondHeadline ? option.secondSubheadline : input.draft.units[1]?.subheadline) ?? "",
       factIds: option.factIds,
       payoffUnitOrder: option.payoffUnitOrder,
     })),
@@ -332,6 +363,13 @@ export function parseHookCandidates(text: string, input: { allowedFactIds: reado
     const tidy = (field: unknown) => (typeof field === "string" ? normalizeCoverPunctuation(field.trim(), input.language ?? "") : "");
     const headline = tidy(value.headline);
     const subheadline = tidy(value.subheadline);
+    // An overlong slide 2 suggestion is dropped; the cover itself still competes.
+    let secondHeadline = tidy(value.secondHeadline);
+    let secondSubheadline = tidy(value.secondSubheadline);
+    if (!secondHeadline || words(secondHeadline) > SECOND_HEADLINE_MAX_WORDS || words(secondSubheadline) > SECOND_SUBHEADLINE_MAX_WORDS) {
+      secondHeadline = "";
+      secondSubheadline = "";
+    }
     const mechanism = HOOK_MECHANISMS.find((item) => item === value.mechanism);
     const factIds = Array.isArray(value.factIds) ? [...new Set(value.factIds.filter((id): id is string => typeof id === "string" && allowed.has(id)))] : [];
     const payoff = typeof value.payoffUnitOrder === "number" && Number.isInteger(value.payoffUnitOrder) ? value.payoffUnitOrder : 0;
@@ -341,7 +379,7 @@ export function parseHookCandidates(text: string, input: { allowedFactIds: reado
     const key = normalized(headline);
     if (seen.has(key)) continue;
     seen.add(key);
-    candidates.push({ headline, subheadline, mechanism, segment: typeof value.segment === "string" ? value.segment.trim().slice(0, 120) : "", factIds, payoffUnitOrder: payoff });
+    candidates.push({ headline, subheadline, secondHeadline, secondSubheadline, mechanism, segment: typeof value.segment === "string" ? value.segment.trim().slice(0, 120) : "", factIds, payoffUnitOrder: payoff });
     if (candidates.length === HOOK_MAX_CANDIDATES) break;
   }
   if (!candidates.length) throw new CreativeHookTournamentResponseError("No usable hook candidate was returned");
@@ -366,7 +404,13 @@ export function parseHookScores(text: string, optionCount: number): HookScore[] 
     const dimensions = (["recognition", "clarity", "pull", "fidelity", "payoff", "naturalness"] as const).map((key) => clamp(value[key]));
     if (option < 1 || option > optionCount || dimensions.some((score) => score === undefined)) continue;
     const [recognition, clarity, pull, fidelity, payoff, naturalness] = dimensions as number[];
-    byOption.set(option, { recognition, clarity, pull, fidelity, payoff, naturalness, reason: typeof value.reason === "string" ? value.reason.trim().slice(0, 240) : "" });
+    const slide2 = clamp(value.slide2);
+    const slide2Fidelity = clamp(value.slide2Fidelity);
+    byOption.set(option, {
+      recognition, clarity, pull, fidelity, payoff, naturalness,
+      ...(slide2 !== undefined && slide2Fidelity !== undefined ? { slide2, slide2Fidelity } : {}),
+      reason: typeof value.reason === "string" ? value.reason.trim().slice(0, 240) : "",
+    });
   }
   if (byOption.size !== optionCount) throw new CreativeHookTournamentResponseError("The hook judge did not score every option");
   return Array.from({ length: optionCount }, (_, index) => byOption.get(index + 1)!);
@@ -392,6 +436,11 @@ export function hookTotal(score: HookScore): number {
 /** Fidelity, clarity and payoff are gates: a cover below them never wins. */
 export function hookPassesGates(score: HookScore): boolean {
   return score.fidelity >= HOOK_GATES.fidelity && score.clarity >= HOOK_GATES.clarity && score.payoff >= HOOK_GATES.payoff;
+}
+
+/** A judged slide 2 headline is used only when it is faithful and pays the cover off; otherwise slide 2 stays as it is. */
+export function secondPassesGates(score: HookScore): boolean {
+  return (score.slide2Fidelity ?? 0) >= SECOND_GATES.fidelity && (score.slide2 ?? 0) >= SECOND_GATES.payoff;
 }
 
 /**
@@ -428,37 +477,121 @@ export function selectHook(
   return { selectedIndex: best.index, replaced: true };
 }
 
-/** The cover rewritten with a candidate; every other slide is unchanged. */
+/** The cover and, when the candidate has one, slide 2's headline rewritten; every other field and slide is unchanged. */
 export function applyHookToDraft(draft: GeneratedCreativeDraft, candidate: HookCandidate): GeneratedCreativeDraft {
   return {
     ...draft,
     units: draft.units.map((unit, index) => index === 0
       ? { ...unit, headline: candidate.headline, subheadline: candidate.subheadline || undefined, factIds: candidate.factIds }
+      : index === 1 && candidate.secondHeadline
+      ? { ...unit, headline: candidate.secondHeadline, subheadline: candidate.secondSubheadline || undefined }
       : unit),
   };
 }
 
+const issueKey = (issue: CreativeQualityIssue) => `${issue.code}:${issue.unitOrder ?? 0}`;
+
 /**
- * Later editorial passes keep the tournament's cover when they only changed
- * it for style: an audit or repair rewriting the cover would otherwise
- * silently undo the selection. A change that answers a factual finding on the
- * cover, or that clears deterministic blockers the tournament cover has, is
- * kept: rules and facts outrank taste.
+ * The deterministic rules applied to an opening. A cover that adds a blocker
+ * the draft does not have is refused. Slide 2's headline is a suggestion: when
+ * it adds any issue, blocker or warning, beyond the cover's own, it is dropped
+ * and slide 2 stays as it is.
+ */
+export function checkHookOpening<T extends HookCandidate>(
+  draft: GeneratedCreativeDraft,
+  candidate: T,
+  issues: (value: GeneratedCreativeDraft) => readonly CreativeQualityIssue[],
+): { candidate: T; blockers: string[]; secondDropped?: string[] } {
+  const before = new Set(issues(draft).filter((issue) => issue.severity === "blocker").map(issueKey));
+  const coverOnly: T = { ...candidate, secondHeadline: "", secondSubheadline: "" };
+  const coverIssues = issues(applyHookToDraft(draft, coverOnly));
+  const blockers = [...new Set(coverIssues.filter((issue) => issue.severity === "blocker").map(issueKey))].filter((key) => !before.has(key));
+  if (blockers.length || !candidate.secondHeadline) return { candidate, blockers };
+  const known = new Set(coverIssues.map(issueKey));
+  const added = [...new Set(issues(applyHookToDraft(draft, candidate)).map(issueKey))].filter((key) => !known.has(key));
+  return added.length ? { candidate: coverOnly, blockers, secondDropped: added } : { candidate, blockers };
+}
+
+/**
+ * The facts a new cover cites, then the rules. A cover cites its own facts;
+ * the writer's cover facts are added only when it needs them — a place name
+ * or figure it inherits — and only as far as the cover's fact budget allows.
+ * Returns the first fact set that adds no blocker, or the one with fewest.
+ */
+export function admitHookCandidate<T extends HookCandidate>(
+  draft: GeneratedCreativeDraft,
+  candidate: T,
+  issues: (value: GeneratedCreativeDraft) => readonly CreativeQualityIssue[],
+): ReturnType<typeof checkHookOpening<T>> {
+  const own = candidate.factIds;
+  const inherited = (draft.units[0]?.factIds ?? []).filter((id) => !own.includes(id));
+  const factSets = [own, ...inherited.map((id) => [...own, id]), ...(inherited.length > 1 ? [[...own, ...inherited]] : [])];
+  let best: ReturnType<typeof checkHookOpening<T>> | undefined;
+  for (const factIds of factSets) {
+    const attempt = checkHookOpening(draft, { ...candidate, factIds }, issues);
+    if (!attempt.blockers.length) return attempt;
+    if (!best || attempt.blockers.length < best.blockers.length) best = attempt;
+  }
+  return best!;
+}
+
+type OpeningUnit = { headline: string; subheadline?: string };
+
+/**
+ * Slide 2 belongs to the tournament only while it still shows a slide 2 the
+ * tournament wrote or saw. A slide 2 an editor changed, or a later pass fixed
+ * for facts, is never overwritten by a cover choice.
+ */
+export function tournamentOwnsSecondSlide(tournament: CreativeHookTournament, units: readonly OpeningUnit[]): boolean {
+  const second = units[1];
+  return Boolean(second) && tournament.candidates.some((candidate) => candidate.secondHeadline &&
+    sameCoverText(candidate.secondHeadline, second.headline) && sameCoverText(candidate.secondSubheadline ?? "", second.subheadline ?? ""));
+}
+
+/** The candidate as choosing it would apply now: without its slide 2 headline once slide 2 is no longer the tournament's. */
+export function hookOpeningForDraft<T extends HookCandidate>(tournament: CreativeHookTournament, units: readonly OpeningUnit[], candidate: T): T {
+  return candidate.secondHeadline && !tournamentOwnsSecondSlide(tournament, units) ? { ...candidate, secondHeadline: "", secondSubheadline: "" } : candidate;
+}
+
+/** Whether the draft already shows this opening: its cover and, when it has one, its slide 2. */
+export function openingOnDraft(units: readonly OpeningUnit[], candidate: HookCandidate): boolean {
+  const [cover, second] = units;
+  if (!cover || !sameCoverText(cover.headline, candidate.headline) || !sameCoverText(cover.subheadline ?? "", candidate.subheadline)) return false;
+  return !candidate.secondHeadline || Boolean(second && sameCoverText(second.headline, candidate.secondHeadline) &&
+    sameCoverText(second.subheadline ?? "", candidate.secondSubheadline ?? ""));
+}
+
+/**
+ * Later editorial passes keep the tournament's opening — its cover and slide 2
+ * headline — when they only changed it for style: an audit or repair
+ * rewriting them would otherwise silently undo the selection. A change that
+ * answers a factual finding on that slide, or that clears deterministic
+ * blockers the tournament's opening has, is kept: rules and facts outrank
+ * taste.
  */
 export function keepTournamentCover(
   next: GeneratedCreativeDraft,
   tournament: CreativeHookTournament | undefined,
   findings: readonly CreativeQualityIssue[],
   isFactual: (issue: CreativeQualityIssue) => boolean,
-  coverBlockers: (draft: GeneratedCreativeDraft) => number = () => 0,
+  openingBlockers: (draft: GeneratedCreativeDraft) => number = () => 0,
 ): GeneratedCreativeDraft {
   const chosen = tournament?.candidates[tournament.selectedIndex];
-  const cover = next.units[0];
+  const [cover, second] = next.units;
   if (!tournament?.replaced || !chosen || !cover) return next;
-  if (sameCoverText(cover.headline, chosen.headline) && sameCoverText(cover.subheadline ?? "", chosen.subheadline)) return next;
-  // Only a factual finding on the cover itself may change it; deck-level
-  // findings (fact reuse, arc, caption) are about other copy.
-  if (findings.some((issue) => issue.unitOrder === cover.order && isFactual(issue))) return next;
-  const restored = applyHookToDraft(next, chosen);
-  return coverBlockers(restored) > coverBlockers(next) ? next : restored;
+  // Only a factual finding on the slide itself may change what the tournament
+  // chose for it; deck-level findings (fact reuse, arc, caption) are about
+  // other copy.
+  const factualOn = (order: number) => findings.some((issue) => issue.unitOrder === order && isFactual(issue));
+  const keepCover = factualOn(cover.order) ||
+    (sameCoverText(cover.headline, chosen.headline) && sameCoverText(cover.subheadline ?? "", chosen.subheadline));
+  const keepSecond = !chosen.secondHeadline || !second || factualOn(second.order) ||
+    (sameCoverText(second.headline, chosen.secondHeadline) && sameCoverText(second.subheadline ?? "", chosen.secondSubheadline ?? ""));
+  if (keepCover && keepSecond) return next;
+  const restored = applyHookToDraft(next, {
+    ...chosen,
+    ...(keepCover ? { headline: cover.headline, subheadline: cover.subheadline ?? "", factIds: cover.factIds } : {}),
+    ...(keepSecond ? { secondHeadline: "", secondSubheadline: "" } : {}),
+  });
+  return openingBlockers(restored) > openingBlockers(next) ? next : restored;
 }

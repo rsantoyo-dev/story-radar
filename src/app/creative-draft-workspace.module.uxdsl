@@ -3531,6 +3531,7 @@
 .hookOptionText { display: grid; gap: density(1); min-width: 0; }
 .hookOptionText strong { @ds-typo(body); font-weight: 700; color: palette(dark-main); }
 .hookOptionText span { @ds-typo(caption); color: palette(dark-main, 0.72); }
+.hookSecond { padding-left: density(2); border-left: 2px solid palette(primary-light); }
 .hookOptionAction { display: flex; justify-content: xs(flex-start) md(flex-end); }
 .hookOptionMeta { display: flex; flex-wrap: wrap; gap: density(1); grid-column: 1 / -1; }
 .hookOptionMeta span { padding: 2px density(2); border-radius: 999px; background: palette(primary-light, 0.45); @ds-typo(caption); font-size: 10px; color: palette(primary-dark); }
