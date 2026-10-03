@@ -129,7 +129,7 @@ export async function runCreativeHookTournament(input: {
   // Round 1: the open field.
   const written = await call(buildHookGeneratorInstructions(), buildHookGeneratorContents({ ...context, brief, draft, allowedFactIds }), "hook_candidates", HOOK_CANDIDATES_SCHEMA, writingEffort(), model, 20_000);
   let usage = written.usage;
-  const field = admit(parseHookCandidates(written.text, { allowedFactIds, slideCount: draft.units.length, incumbentHeadline: cover.headline }), 1);
+  const field = admit(parseHookCandidates(written.text, { allowedFactIds, slideCount: draft.units.length, incumbentHeadline: cover.headline, language: profile.language }), 1);
   const firstOptions = [incumbent, ...field.filter((entry) => !entry.rejected)];
   const first = await judge(firstOptions);
   usage = addUsage(usage, first.response.usage);
@@ -152,7 +152,7 @@ export async function runCreativeHookTournament(input: {
     calls += 1;
     const known = new Set([incumbent, ...field].map((entry) => entry.headline.trim().toLocaleLowerCase()));
     try {
-      polished.push(...admit(parseHookCandidates(refined.text, { allowedFactIds, slideCount: draft.units.length, incumbentHeadline: cover.headline }), 2)
+      polished.push(...admit(parseHookCandidates(refined.text, { allowedFactIds, slideCount: draft.units.length, incumbentHeadline: cover.headline, language: profile.language }), 2)
         .filter((entry) => !known.has(entry.headline.trim().toLocaleLowerCase())));
     } catch {
       // A polishing round with nothing usable leaves the first judging in place.

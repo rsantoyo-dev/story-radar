@@ -1,6 +1,6 @@
 "use client";
 
-import type { CreativeHookTournament, HookMechanism } from "./modules/stories/creative-hook-tournament";
+import { sameCoverText, type CreativeHookTournament, type HookMechanism } from "./modules/stories/creative-hook-tournament";
 import styles from "./creative-draft-workspace.generated.module.css";
 
 const MECHANISM_LABELS: Record<HookMechanism | "incumbent", string> = {
@@ -97,7 +97,7 @@ export function CreativeHookTournamentPanel({ tournament, error, currentHeadline
         <ul className={styles.hookOptions}>
           {finalists.map(({ candidate, index }) => (
             <CoverOption key={index} candidate={candidate} index={index} chosen={index === tournament?.selectedIndex}
-              onCover={candidate.headline === currentHeadline} disabled={disabled} onUse={onUse} />
+              onCover={sameCoverText(candidate.headline, currentHeadline)} disabled={disabled} onUse={onUse} />
           ))}
         </ul>
       ) : null}
@@ -107,7 +107,7 @@ export function CreativeHookTournamentPanel({ tournament, error, currentHeadline
           <ul className={styles.hookOptions}>
             {others.map(({ candidate, index }) => (
               <CoverOption key={index} candidate={candidate} index={index} chosen={index === tournament?.selectedIndex}
-                onCover={candidate.headline === currentHeadline} disabled={disabled} onUse={onUse} />
+                onCover={sameCoverText(candidate.headline, currentHeadline)} disabled={disabled} onUse={onUse} />
             ))}
           </ul>
         </details>

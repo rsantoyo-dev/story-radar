@@ -113,7 +113,7 @@ import {
 } from "./creative-visual-directions";
 import { generateOpenAiStructuredResponse } from "./openai-structured-response";
 import { runCreativeHookTournament } from "./run-creative-hook-tournament";
-import { applyHookToDraft } from "./creative-hook-tournament";
+import { applyHookToDraft, normalizeCoverPunctuation, sameCoverText } from "./creative-hook-tournament";
 import { generateCompanionStoryScript } from "./companion-story-generator";
 import { companionVerifiedFacts } from "./companion-facts";
 import { fallbackEditorialAngle } from "./acquisition-lenses";
@@ -1560,7 +1560,7 @@ export async function chooseCreativeDraftHookCandidate(
   await assertStoryEditionCurrent(topicId, current);
   const chosen = { ...tournament, selectedIndex: candidateIndex, replaced: candidateIndex !== 0, editorChoice: { index: candidateIndex, at: new Date().toISOString() } };
   const cover = current.units[0];
-  if (cover && cover.headline === candidate.headline && (cover.subheadline ?? "") === candidate.subheadline) {
+  if (cover && sameCoverText(cover.headline, candidate.headline) && sameCoverText(cover.subheadline ?? "", candidate.subheadline)) {
     await recordCreativeDraftHookTournament(topicId, current.id, current.version, chosen);
     return (await findCreativeDraftById(topicId, current.id))!;
   }
@@ -1571,7 +1571,11 @@ export async function chooseCreativeDraftHookCandidate(
     value, current.format, brief.keyFacts, profile.language, profile.conversionGoal, profile.framingStrategy, profile.storyStructure,
   ).filter((issue) => issue.severity === "blocker").map((issue) => `${issue.code}:${issue.unitOrder ?? 0}`));
   const before = blockers(current);
-  const withCover = applyHookToDraft(current, candidate);
+  const withCover = applyHookToDraft(current, {
+    ...candidate,
+    headline: normalizeCoverPunctuation(candidate.headline, profile.language),
+    subheadline: normalizeCoverPunctuation(candidate.subheadline, profile.language),
+  });
   const introduced = [...blockers(withCover)].filter((key) => !before.has(key));
   if (introduced.length) {
     throw new CreativeDraftValidationError(`That cover no longer fits this script: ${introduced.join(", ")}. Run the cover tournament again.`);

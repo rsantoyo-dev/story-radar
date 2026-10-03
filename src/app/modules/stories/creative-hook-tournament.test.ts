@@ -9,6 +9,8 @@ import {
   hookTasteExample,
   hookTotal,
   keepTournamentCover,
+  normalizeCoverPunctuation,
+  sameCoverText,
   parseHookCandidates,
   parseHookRanking,
   parseHookScores,
@@ -125,4 +127,13 @@ test("an editor's pick becomes a taste example: the chosen cover over the best a
   };
   assert.deepEqual(hookTasteExample(tournament), { chosen: "Picked — Context", over: ["Best scored", "Writer cover"] });
   assert.equal(hookTasteExample({ ...tournament, editorChoice: undefined }), undefined);
+});
+
+test("French covers get the space before ? ! ; and :, without touching times", () => {
+  assert.equal(normalizeCoverPunctuation("Vous y étiez dimanche? Et les retombées!", "French"), "Vous y étiez dimanche ? Et les retombées !");
+  assert.equal(normalizeCoverPunctuation("DIX30: départ à 16:30", "fr"), "DIX30 : départ à 16:30");
+  assert.equal(normalizeCoverPunctuation("Vraiment?!", "French"), "Vraiment ?!");
+  assert.equal(normalizeCoverPunctuation("Were you there?", "English"), "Were you there?");
+  assert.ok(sameCoverText("Vous y étiez dimanche?", "Vous y étiez dimanche ?"));
+  assert.ok(!sameCoverText("Vous y étiez dimanche ?", "Vous y étiez samedi ?"));
 });

@@ -294,10 +294,28 @@ export function buildHookJudgeContents(input: {
 }
 
 const words = (value: string) => (value.trim() ? value.trim().split(/\s+/u).length : 0);
+
+/**
+ * French puts a space before ? ! ; and a colon; models often drop it. Times
+ * and ratios (16:30) and runs such as "?!" are left alone.
+ */
+export function normalizeCoverPunctuation(text: string, language: string): string {
+  if (!/^(fr|french|fran[cç]ais)/iu.test(language.trim())) return text;
+  return text
+    .replace(/([^\s?!;:(«])([?!;])/gu, "$1 $2")
+    // A label colon is followed by a space or the end; a time (16:30) is not.
+    .replace(/([^\s:(«])\s*:(?=\s|$)/gu, "$1 :");
+}
+
+/** Two cover texts are the same when they differ only in spacing around punctuation. */
+export function sameCoverText(left: string, right: string): boolean {
+  const key = (value: string) => value.replace(/\s+(?=[?!;:])/gu, "").replace(/\s+/gu, " ").trim();
+  return key(left) === key(right);
+}
 const normalized = (value: string) => value.normalize("NFKD").replace(/[̀-ͯ]/gu, "").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 
 /** Only well-formed, distinct covers that cite the cover's facts survive. */
-export function parseHookCandidates(text: string, input: { allowedFactIds: readonly string[]; slideCount: number; incumbentHeadline: string }): HookCandidate[] {
+export function parseHookCandidates(text: string, input: { allowedFactIds: readonly string[]; slideCount: number; incumbentHeadline: string; language?: string }): HookCandidate[] {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -311,8 +329,9 @@ export function parseHookCandidates(text: string, input: { allowedFactIds: reado
   const candidates: HookCandidate[] = [];
   for (const entry of entries) {
     const value = entry as Partial<Record<keyof HookCandidate, unknown>>;
-    const headline = typeof value.headline === "string" ? value.headline.trim() : "";
-    const subheadline = typeof value.subheadline === "string" ? value.subheadline.trim() : "";
+    const tidy = (field: unknown) => (typeof field === "string" ? normalizeCoverPunctuation(field.trim(), input.language ?? "") : "");
+    const headline = tidy(value.headline);
+    const subheadline = tidy(value.subheadline);
     const mechanism = HOOK_MECHANISMS.find((item) => item === value.mechanism);
     const factIds = Array.isArray(value.factIds) ? [...new Set(value.factIds.filter((id): id is string => typeof id === "string" && allowed.has(id)))] : [];
     const payoff = typeof value.payoffUnitOrder === "number" && Number.isInteger(value.payoffUnitOrder) ? value.payoffUnitOrder : 0;
@@ -436,7 +455,7 @@ export function keepTournamentCover(
   const chosen = tournament?.candidates[tournament.selectedIndex];
   const cover = next.units[0];
   if (!tournament?.replaced || !chosen || !cover) return next;
-  if (cover.headline === chosen.headline && (cover.subheadline ?? "") === chosen.subheadline) return next;
+  if (sameCoverText(cover.headline, chosen.headline) && sameCoverText(cover.subheadline ?? "", chosen.subheadline)) return next;
   // Only a factual finding on the cover itself may change it; deck-level
   // findings (fact reuse, arc, caption) are about other copy.
   if (findings.some((issue) => issue.unitOrder === cover.order && isFactual(issue))) return next;
