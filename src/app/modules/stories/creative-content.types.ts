@@ -482,9 +482,37 @@ export type CreativeAssetStatus =
   | "approved"
   | "stale";
 
-export const CREATIVE_CAROUSEL_CHROME_STYLES = ["pill", "minimal"] as const;
+/**
+ * Visual treatments for the carousel counter. Every style paints inside the
+ * same reserved bottom badge area, so prompt reservation and logo avoidance
+ * do not depend on the style (dots only widen the badge for many slides).
+ * Append new values; never rename or remove one, because saved profiles and
+ * immutable asset snapshots reference them.
+ */
+export const CREATIVE_CAROUSEL_CHROME_STYLES = [
+  "pill",
+  "minimal",
+  "outline",
+  "tag",
+  "underline",
+  "dots",
+  "progress-bar",
+] as const;
 export type CreativeCarouselChromeStyle =
   (typeof CREATIVE_CAROUSEL_CHROME_STYLES)[number];
+
+export const CREATIVE_CAROUSEL_CHROME_STYLE_LABELS: Record<
+  CreativeCarouselChromeStyle,
+  { label: string; description: string }
+> = {
+  pill: { label: "Pill badge", description: "Rounded badge with an accent border" },
+  minimal: { label: "Minimal", description: "Soft translucent square" },
+  outline: { label: "Outline", description: "Accent outline, no fill" },
+  tag: { label: "Editorial tag", description: "Solid square block with an accent stripe" },
+  underline: { label: "Underline", description: "Counter text over an accent rule" },
+  dots: { label: "Dots", description: "One dot per slide, current slide highlighted" },
+  "progress-bar": { label: "Progress bar", description: "Counter with a filling bar" },
+};
 
 export const CREATIVE_BRAND_UI_ROLES = [
   "primary",

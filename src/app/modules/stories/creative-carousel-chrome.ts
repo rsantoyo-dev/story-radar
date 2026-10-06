@@ -1,12 +1,28 @@
 import sharp from "sharp";
 
 import {
+  CREATIVE_CAROUSEL_CHROME_STYLES,
   DEFAULT_CREATIVE_CAROUSEL_CHROME_SETTINGS,
   type CreativeAspectRatio,
   type CreativeCarouselChromeSettings,
   type CreativeCarouselChromeStyle,
 } from "./creative-content.types";
 import { creativeCanvasDimensions } from "./creative-brand-overlay";
+import {
+  creativeCarouselChromeContentUnits,
+  renderCreativeCarouselChromeMarkup,
+  type CreativeCarouselChromeColors,
+  type CreativeCarouselChromeCopy,
+  type CreativeCarouselChromeText,
+  type CreativeCarouselPixelRect,
+} from "./creative-carousel-chrome-svg";
+
+export type {
+  CreativeCarouselChromeColors,
+  CreativeCarouselChromeCopy,
+  CreativeCarouselChromeText,
+  CreativeCarouselPixelRect,
+};
 
 const BADGE_HEIGHT_PERCENT = 5.2;
 const BADGE_BOTTOM_INSET_PERCENT = 2.2;
@@ -23,32 +39,6 @@ export const DEFAULT_CREATIVE_CAROUSEL_CHROME_COLORS = {
   /** Editorial gold for progress and directional emphasis. */
   accent: "#E8A83E",
 } as const satisfies CreativeCarouselChromeColors;
-
-export type CreativeCarouselChromeColors = {
-  background: string;
-  text: string;
-  accent: string;
-};
-
-export type CreativeCarouselPixelRect = {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-};
-
-export type CreativeCarouselChromeCopy = {
-  progress: string;
-  continuationCue?: string;
-  /** Exact deterministic copy rendered by the compositor. */
-  visibleText: string;
-};
-
-export type CreativeCarouselChromeText = {
-  centerX: number;
-  centerY: number;
-  fontSize: number;
-};
 
 type CreativeCarouselChromeCanvas = { width: number; height: number };
 
@@ -132,6 +122,7 @@ export function buildCreativeCarouselChrome(
   let geometry = computeCreativeCarouselChromeGeometry({
     aspectRatio: input.aspectRatio,
     copy,
+    style: settings.style,
     logoExclusionZone: input.logoExclusionZone,
   });
 
@@ -142,6 +133,7 @@ export function buildCreativeCarouselChrome(
     geometry = computeCreativeCarouselChromeGeometry({
       aspectRatio: input.aspectRatio,
       copy,
+      style: settings.style,
       logoExclusionZone: input.logoExclusionZone,
     });
   }
@@ -197,12 +189,16 @@ export function buildCreativeCarouselChromeCopy({
 export function computeCreativeCarouselChromeGeometry({
   aspectRatio,
   copy,
+  style = "pill",
   logoExclusionZone,
 }: {
   aspectRatio: CreativeAspectRatio;
   copy: CreativeCarouselChromeCopy;
+  /** Styles that replace numerals (dots) need a different content width. */
+  style?: CreativeCarouselChromeStyle;
   logoExclusionZone?: CreativeCarouselPixelRect;
 }): CreativeCarouselChromeGeometry {
+  const contentUnits = creativeCarouselChromeContentUnits(copy, style);
   const canvas = creativeCanvasDimensions(aspectRatio);
   const shortEdge = Math.min(canvas.width, canvas.height);
   const badgeHeight = Math.max(
@@ -221,7 +217,7 @@ export function computeCreativeCarouselChromeGeometry({
   const horizontalTextPadding = edgeInset;
   const requestedWidth = Math.max(
     Math.round(shortEdge * (BADGE_MIN_WIDTH_PERCENT / 100)),
-    Math.ceil(estimatedTextUnits(copy.visibleText) * preferredFontSize) +
+    Math.ceil(contentUnits * preferredFontSize) +
       horizontalTextPadding * 2,
   );
   const maximumWidth = Math.min(
@@ -254,7 +250,7 @@ export function computeCreativeCarouselChromeGeometry({
     height: placement.rect.height,
   };
   const fontSize = fitSingleLineFont(
-    copy.visibleText,
+    contentUnits,
     textRegion.width,
     preferredFontSize,
     Math.round(shortEdge * 0.021),
@@ -331,15 +327,16 @@ export function renderCreativeCarouselChromeSvg({
     );
   }
 
-  const badge = geometry.badge;
-  const badgeRect =
-    style === "pill"
-      ? `<rect x="${badge.left}" y="${badge.top}" width="${badge.width}" height="${badge.height}" rx="${Math.round(badge.height / 2)}" fill="${colors.background}" fill-opacity="0.88" stroke="${colors.accent}" stroke-width="2"/>`
-      : `<rect x="${badge.left}" y="${badge.top}" width="${badge.width}" height="${badge.height}" rx="${Math.round(badge.height / 4)}" fill="${colors.background}" fill-opacity="0.38"/>`;
-  const text = renderChromeText(geometry.text, copy, colors, style);
+  const markup = renderCreativeCarouselChromeMarkup({
+    badge: geometry.badge,
+    text: geometry.text,
+    copy,
+    colors,
+    style,
+  });
 
   return Buffer.from(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${geometry.canvas.width}" height="${geometry.canvas.height}" viewBox="0 0 ${geometry.canvas.width} ${geometry.canvas.height}" xml:space="preserve">${badgeRect}${text}</svg>`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${geometry.canvas.width}" height="${geometry.canvas.height}" viewBox="0 0 ${geometry.canvas.width} ${geometry.canvas.height}" xml:space="preserve">${markup}</svg>`,
   );
 }
 
@@ -370,47 +367,14 @@ export async function compositeCreativeCarouselChrome({
     .toBuffer();
 }
 
-function renderChromeText(
-  text: CreativeCarouselChromeText,
-  copy: CreativeCarouselChromeCopy,
-  colors: CreativeCarouselChromeColors,
-  style: CreativeCarouselChromeStyle,
-): string {
-  const shared = `x="${text.centerX}" y="${text.centerY}" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Helvetica, sans-serif" font-size="${text.fontSize}"`;
-  if (!copy.continuationCue) {
-    return `<text ${shared} font-weight="700" fill="${style === "minimal" ? colors.text : colors.accent}">${escapeXml(copy.progress)}</text>`;
-  }
-
-  return [
-    `<text ${shared} font-weight="600">`,
-    `<tspan fill="${colors.accent}">${escapeXml(copy.progress)}</tspan>`,
-    `<tspan fill="${colors.text}" font-weight="500"> · ${escapeXml(copy.continuationCue)} </tspan>`,
-    `<tspan fill="${colors.accent}">→</tspan>`,
-    "</text>",
-  ].join("");
-}
-
 function fitSingleLineFont(
-  text: string,
+  units: number,
   width: number,
   preferredSize: number,
   minimumSize: number,
 ): number | undefined {
-  const units = estimatedTextUnits(text);
   const fitted = Math.min(preferredSize, Math.floor(width / units));
   return fitted >= minimumSize ? fitted : undefined;
-}
-
-function estimatedTextUnits(text: string): number {
-  let units = 0;
-  for (const character of [...text]) {
-    if (/\s/u.test(character)) units += 0.32;
-    else if (/[.,:;'!|ilI1·]/u.test(character)) units += 0.28;
-    else if (/[MW@#%]/u.test(character)) units += 0.82;
-    else if (/\p{Extended_Pictographic}/u.test(character)) units += 1;
-    else units += 0.56;
-  }
-  return Math.max(units, 1);
 }
 
 function skippedGeometry(
@@ -568,8 +532,10 @@ function normalizeSettings(
   if (typeof value.enabled !== "boolean") {
     throw new CreativeCarouselChromeError("Carousel chrome enabled must be a boolean.");
   }
-  if (value.style !== "pill" && value.style !== "minimal") {
-    throw new CreativeCarouselChromeError("Carousel chrome style must be pill or minimal.");
+  if (!CREATIVE_CAROUSEL_CHROME_STYLES.includes(value.style)) {
+    throw new CreativeCarouselChromeError(
+      `Carousel chrome style must be one of: ${CREATIVE_CAROUSEL_CHROME_STYLES.join(", ")}.`,
+    );
   }
   return value;
 }
@@ -593,15 +559,6 @@ function assertPositiveInteger(value: number, label: string): void {
   if (!Number.isInteger(value) || value < 1) {
     throw new CreativeCarouselChromeError(`${label} must be a positive integer.`);
   }
-}
-
-function escapeXml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&apos;");
 }
 
 export class CreativeCarouselChromeError extends Error {}

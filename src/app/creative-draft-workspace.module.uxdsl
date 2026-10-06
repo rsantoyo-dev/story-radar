@@ -429,19 +429,46 @@
   @ds-typo(caption);
 }
 
-.carouselChromePreviewBadge {
-  display: inline-flex;
-  align-items: center;
-  min-height: density(7);
-  padding: density(1) density(3);
-  border: border(1, palette(surface-dark), solid);
-  border-radius: radius(full);
-  @ds-typo(caption);
-  font-weight: 600;
+.carouselChromePreviewImage {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: radius(1);
 }
 
-.carouselChromePreviewMinimal {
-  border-radius: radius(1);
+.carouselChromeStyleGrid {
+  display: grid;
+  grid-template-columns: xs(repeat(2, minmax(0, 1fr))) md(repeat(4, minmax(0, 1fr)));
+  gap: density(2);
+}
+
+.carouselChromeStyleOption {
+  display: grid;
+  gap: density(1);
+  justify-items: center;
+  min-width: 0;
+  padding: density(2);
+  border: border(1, palette(surface-dark), solid);
+  border-radius: radius(2);
+  background: palette(light-light);
+  color: palette(primary-dark);
+  @ds-typo(caption);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.carouselChromeStyleOption:hover {
+  border-color: palette(primary-main);
+}
+
+.carouselChromeStyleOption:focus-visible {
+  outline: border(2, palette(primary-main), solid);
+  outline-offset: 2px;
+}
+
+.carouselChromeStyleSelected {
+  border: border(2, palette(primary-main), solid);
+  background: palette(primary-light);
 }
 
 .brandUiPreview {
