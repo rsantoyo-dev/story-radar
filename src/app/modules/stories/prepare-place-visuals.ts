@@ -1,4 +1,5 @@
 import "server-only";
+import { withUsageAttribution } from "../credits/usage-attribution";
 import { createHash } from "node:crypto";
 import type { CreativeDraft, CreativeKeyFact, CreativeProfile } from "./creative-content.types";
 import { documentaryProviders } from "./creative-documentary-providers";
@@ -25,7 +26,11 @@ const schema = { type: "object", additionalProperties: false, required: ["mentio
 // releases; either way the geometry is the official WFS record, never the page.
 const adapters = [{ id: "quebec511", supports: isOfficialRoadNoticeSource, prepare: prepareRoadMap }];
 /** General pipeline; regional adapters are optional identity/geometry sources. */
+/** Places, maps and photos looked up here are spent for this draft's Story. */
 export async function preparePlaceVisuals(topicId: string, draft: CreativeDraft, profile: CreativeProfile, facts: CreativeKeyFact[], sourceUrl: string, prepared = new Map<number, PreparedPlaceVisual>()): Promise<Map<number, PreparedPlaceVisual>> {
+  return withUsageAttribution({ topicId, storyId: draft.storyId }, () => preparePlaceVisualsFor(topicId, draft, profile, facts, sourceUrl, prepared));
+}
+async function preparePlaceVisualsFor(topicId: string, draft: CreativeDraft, profile: CreativeProfile, facts: CreativeKeyFact[], sourceUrl: string, prepared: Map<number, PreparedPlaceVisual>): Promise<Map<number, PreparedPlaceVisual>> {
   const stopStartingAt = Date.now() + 45_000;
   const results = new Map<number, PreparedPlaceVisual>();
   const source = [...new Set(facts.map(f=>f.sourceExcerpt || ""))].join("\n").slice(0,18000);

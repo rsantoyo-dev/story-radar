@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import type { DemoCreditAccount, DemoCreditEntry, DemoCreditHistory } from "./modules/credits/demo-credit.repository";
 import styles from "./radar-dashboard.generated.module.css";
 
@@ -58,9 +59,27 @@ async function loadDemoCredits(secret: string, signal?: AbortSignal): Promise<De
   return await response.json() as DemoCreditAccount;
 }
 
+/**
+ * Restores 1,000 demo credits. One key per click: a retried request returns the
+ * same reset instead of posting a second one. Past activity is kept.
+ */
+export async function resetDemoCreditBalance(secret: string): Promise<void> {
+  const response = await fetch("/api/radar/credits/reset", {
+    method: "POST",
+    cache: "no-store",
+    headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ key: `demo_reset:${crypto.randomUUID()}`, reason: "Reset from the dashboard" }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({})) as { error?: string };
+    throw new Error(body.error ?? "The demo balance could not be reset.");
+  }
+}
+
 export function DemoCreditIndicator({ secret }: { secret: string }) {
   const [account, setAccount] = useState<DemoCreditAccount>();
   const [error, setError] = useState(false);
+  const [resetState, setResetState] = useState<{ busy?: boolean; message?: string }>({});
   const refresh = useCallback(async (signal?: AbortSignal) => {
     try {
       const result = await loadDemoCredits(secret, signal);
@@ -100,11 +119,11 @@ export function DemoCreditIndicator({ secret }: { secret: string }) {
     <div className={styles.demoCreditsPanel}>
       <h2>Demo credit activity</h2>
       {error ? <p>Balance is unavailable. Check the credit migration, then try again.</p> : !account ? <p>Loading activity…</p> : <>
-        <p>1,000 credits represent US$10 of reference value, including the configured markup. Creative text and images are metered (image cost is estimated from fal&rsquo;s published rates); evaluation, research and maps are being added. Credits do not block work in this demo.</p>
+        <p>1,000 credits represent US$10 of reference value, including the configured markup. Every AI, search and maps call is metered at the provider&rsquo;s list price; image and maps costs are estimates. Credits do not block work in this demo.</p>
         <dl className={styles.demoCreditsTotals}>
           <div><dt>Available</dt><dd>{credits(account.availableMicros)}</dd></div>
           <div><dt>Pending or uncertain</dt><dd>{credits(account.pendingMicros)}</dd></div>
-          <div><dt>Spent</dt><dd>{credits(account.spentMicros)}</dd></div>
+          <div><dt>{account.periodStart ? "Spent since reset" : "Spent"}</dt><dd>{credits(account.spentMicros)}</dd></div>
           {account.overdrawnMicros > 0 ? <div><dt>Overdrawn</dt><dd>{credits(account.overdrawnMicros)}</dd></div> : null}
         </dl>
         {account.history ? <SpendHistory history={account.history} availableMicros={account.availableMicros} /> : null}
@@ -121,7 +140,18 @@ export function DemoCreditIndicator({ secret }: { secret: string }) {
           </li>)}
         </ul> : <p>No metered activity yet.</p>}
       </>}
-      <button type="button" className={styles.demoCreditsRefresh} onClick={() => void refresh()}>Refresh balance</button>
+      {resetState.message ? <p role="status">{resetState.message}</p> : null}
+      <div className={styles.demoCreditsActions}>
+        <Link href="/spending" className={styles.demoCreditsLink}>Spending &amp; history</Link>
+        <button type="button" className={styles.demoCreditsRefresh} onClick={() => void refresh()}>Refresh balance</button>
+        <button type="button" className={styles.demoCreditsRefresh} disabled={resetState.busy} onClick={() => {
+          if (!window.confirm("Reset the demo balance to 1,000 credits? Past activity stays in the history; spending restarts from now.")) return;
+          setResetState({ busy: true });
+          void resetDemoCreditBalance(secret)
+            .then(() => { setResetState({ message: "Balance reset to 1,000 credits." }); return refresh(); })
+            .catch((cause: unknown) => setResetState({ message: cause instanceof Error ? cause.message : "The demo balance could not be reset." }));
+        }}>{resetState.busy ? "Resetting…" : "Reset to 1,000"}</button>
+      </div>
     </div>
   </details>;
 }

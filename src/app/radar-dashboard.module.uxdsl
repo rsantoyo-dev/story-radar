@@ -3728,6 +3728,61 @@
 .demoCreditsHistory li b { flex: none; font-variant-numeric: tabular-nums; }
 .demoCreditsRefresh { min-height: 36px; padding: density(2) density(3); border: 1px solid palette(primary-main, 0.3); border-radius: radius(2); background: palette(light-light); color: palette(primary-dark); @ds-typo(caption); font-size: 0.75rem; font-weight: 700; cursor: pointer; }
 .demoCreditsRefresh:hover { background: palette(primary-light, 0.25); }
+.demoCreditsRefresh:disabled { cursor: progress; opacity: 0.6; }
+.demoCreditsActions { display: flex; flex-wrap: wrap; align-items: center; gap: density(2); }
+.demoCreditsLink { display: inline-flex; align-items: center; min-height: 36px; padding: density(2) density(3); border-radius: radius(2); background: palette(primary-main); color: palette(light-light); @ds-typo(caption); font-size: 0.75rem; font-weight: 700; text-decoration: none; }
+.demoCreditsLink:hover { background: palette(primary-dark); }
+.demoCreditsLink:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 2px; }
+
+/* Spending page: prepaid balance, products sold, and who they were sold for. */
+.spendingPage { display: grid; gap: density(6); max-width: 1180px; min-height: 100dvh; margin: 0 auto; padding: density(6) density(5) density(11); background: palette(light-main); color: palette(dark-main); }
+.spendingHeader { display: grid; gap: density(3); }
+.spendingHeader h1 { margin: 0; @ds-typo(h2); font-size: clamp(1.5rem, 2.4vw, 2rem); letter-spacing: -0.04em; }
+.spendingHeader p { max-width: 720px; margin: density(2) 0 0; color: palette(tertiary-main); @ds-typo(small); font-size: 0.875rem; line-height: 1.5; }
+.spendingBack { justify-self: start; color: palette(primary-dark); @ds-typo(small); font-weight: 700; text-decoration: none; }
+.spendingBack:hover { text-decoration: underline; }
+.spendingError { padding: density(5); border: 1px solid palette(error-main, 0.35); border-radius: radius(3); background: palette(error-light, 0.15); }
+.spendingError p { margin: density(2) 0; @ds-typo(small); }
+.spendingError a { color: palette(primary-dark); @ds-typo(small); font-weight: 700; }
+.spendingControls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: density(4); }
+.spendingPeriods { display: flex; flex-wrap: wrap; gap: density(1); padding: density(1); border-radius: radius(3); background: palette(neutral-light, 0.45); }
+.spendingPeriods button { min-height: 36px; padding: density(2) density(3); border: 0; border-radius: radius(2); background: transparent; color: palette(tertiary-main); @ds-typo(caption); font-size: 0.78rem; font-weight: 700; cursor: pointer; }
+.spendingPeriods button[aria-pressed="true"] { background: palette(light-light); color: palette(primary-dark); box-shadow: shadow(1); }
+.spendingPeriods button:focus-visible, .spendingTopic select:focus-visible, .spendingReset:focus-visible, .spendingMore:focus-visible, .spendingTable a:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 2px; }
+.spendingTopic { display: grid; gap: density(1); color: palette(tertiary-main); @ds-typo(caption); font-size: 0.72rem; font-weight: 700; }
+.spendingTopic select { min-height: 38px; min-width: 200px; padding: density(1) density(3); border: 1px solid palette(dark-main, 0.18); border-radius: radius(2); background: palette(light-light); color: palette(dark-main); @ds-typo(small); }
+.spendingReset { margin-left: auto; @ds-button(outlined primary 2); min-height: 38px; padding-inline: density(4); @ds-typo(caption); font-size: 0.78rem; font-weight: 700; }
+.spendingReset:disabled { cursor: progress; opacity: 0.6; }
+.spendingNotice, .spendingLoading, .spendingNote { margin: 0; color: palette(tertiary-main); @ds-typo(small); font-size: 0.82rem; line-height: 1.5; }
+.spendingNotice { padding: density(3) density(4); border-radius: radius(2); background: palette(primary-light, 0.2); color: palette(primary-dark); font-weight: 650; }
+.spendingSummary { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: density(3); margin: 0; }
+.spendingSummary > div { display: grid; gap: density(1); padding: density(4); border: 1px solid palette(dark-main, 0.08); border-radius: radius(3); background: palette(light-light); }
+.spendingSummary dt { color: palette(tertiary-main); @ds-typo(caption); font-size: 0.72rem; font-weight: 700; }
+.spendingSummary dd { margin: 0; @ds-typo(h3); font-size: 1.15rem; font-weight: 750; font-variant-numeric: tabular-nums; }
+.spendingSummary small { display: block; color: palette(tertiary-main); @ds-typo(caption); font-size: 0.7rem; font-weight: 600; }
+.spendingSection { display: grid; gap: density(3); }
+.spendingSection h2 { margin: 0; @ds-typo(h3); font-size: 1.05rem; }
+.spendingTableWrap { overflow-x: auto; border: 1px solid palette(dark-main, 0.08); border-radius: radius(3); background: palette(light-light); }
+.spendingTable { width: 100%; border-collapse: collapse; @ds-typo(small); font-size: 0.82rem; font-variant-numeric: tabular-nums; }
+.spendingTable th, .spendingTable td { padding: density(2) density(3); border-bottom: 1px solid palette(dark-main, 0.06); text-align: right; white-space: nowrap; }
+.spendingTable thead th { color: palette(tertiary-main); @ds-typo(caption); font-size: 0.7rem; font-weight: 700; }
+.spendingTable th[scope="row"], .spendingTable thead th:first-child { max-width: 360px; overflow: hidden; text-align: left; text-overflow: ellipsis; font-weight: 650; }
+.spendingTable td:nth-child(2) { text-align: left; color: palette(tertiary-main); }
+.spendingTable tbody tr:last-child th, .spendingTable tbody tr:last-child td { border-bottom: 0; }
+.spendingTable a { color: palette(primary-dark); text-decoration: none; }
+.spendingTable a:hover { text-decoration: underline; }
+.spendingHistory { display: grid; margin: 0; padding: 0; border: 1px solid palette(dark-main, 0.08); border-radius: radius(3); background: palette(light-light); list-style: none; }
+.spendingHistory li { display: flex; justify-content: space-between; gap: density(4); padding: density(3) density(4); border-top: 1px solid palette(dark-main, 0.06); @ds-typo(small); font-size: 0.8rem; }
+.spendingHistory li:first-child { border-top: 0; }
+.spendingHistory li > span { display: grid; min-width: 0; gap: density(1); }
+.spendingHistory small { overflow-wrap: anywhere; color: palette(tertiary-main); font-size: 0.72rem; }
+.spendingHistory b { flex: none; font-variant-numeric: tabular-nums; }
+.spendingMore { justify-self: start; @ds-button(outlined primary 2); min-height: 36px; padding-inline: density(4); @ds-typo(caption); font-size: 0.78rem; font-weight: 700; }
+@media (max-width: 639px) {
+  .spendingPage { padding-inline: density(4); }
+  .spendingReset { margin-left: 0; }
+  .spendingTopic, .spendingTopic select { width: 100%; }
+}
 .topbarSession { padding-left: density(2); border-left: 1px solid palette(dark-main, 0.12); }
 .contextBar { display: flex; align-items: center; gap: density(6); min-height: 48px; border-top: 1px solid palette(dark-main, 0.08); }
 .contextHeading { display: grid; flex: none; gap: 1px; min-width: xs(0) md(155px); }

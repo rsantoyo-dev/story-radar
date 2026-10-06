@@ -1,4 +1,5 @@
 import "server-only";
+import { withUsageAttribution } from "../credits/usage-attribution";
 
 import { randomUUID } from "node:crypto";
 
@@ -59,6 +60,13 @@ export type BrandPaletteSuggestionResult = BrandPaletteSuggestion & {
 };
 
 export async function suggestBrandPalette(input: {
+  topicId: string;
+  prompt: unknown;
+}): Promise<BrandPaletteSuggestionResult> {
+  return withUsageAttribution({ topicId: input.topicId }, () => suggestBrandPaletteFor(input));
+}
+
+async function suggestBrandPaletteFor(input: {
   topicId: string;
   prompt: unknown;
 }): Promise<BrandPaletteSuggestionResult> {

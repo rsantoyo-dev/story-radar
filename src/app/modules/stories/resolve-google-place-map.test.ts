@@ -6,6 +6,7 @@ import * as crypto from "node:crypto";
 import ts from "typescript";
 import sharp from "sharp";
 import * as policy from "./creative-documentary";
+import * as providerPrices from "../credits/provider-prices";
 import { PLACE_VISUAL_VERSION } from "./creative-place-visual";
 import type { GoogleTransport } from "./google-maps-provider";
 
@@ -18,11 +19,14 @@ function load(file: string, imports: Record<string, unknown>) {
     require: (name: string) => { if (!(name in imports)) throw new Error(`Unexpected dependency: ${name}`); return imports[name]; } });
   return exports;
 }
+const recordedUsage: unknown[] = [];
 function harness() {
   const provider = load("src/app/modules/stories/google-maps-provider.ts", {
     "server-only": {}, "node:crypto": crypto, "./creative-documentary": policy,
     "node:https": { request: () => { throw new Error("No real network in tests"); } },
     "../sources/rss/fetch-rss-feed": { lookupPublicAddress: () => {} },
+    "../credits/provider-prices": providerPrices,
+    "../credits/usage-recorder": { recordAttributedUsage: async (charge: unknown) => { recordedUsage.push(charge); } },
   }) as typeof import("./google-maps-provider");
   const resolver = load("src/app/modules/stories/resolve-google-place-map.ts", {
     "server-only": {}, sharp, "node:crypto": crypto, "./google-maps-provider": provider,

@@ -35,7 +35,11 @@ export type DemoCreditAccount = {
   availableMicros: number;
   overdrawnMicros: number;
   pendingMicros: number;
+  /** Credits used since the current period began (the last reset, or the opening grant). */
   spentMicros: number;
+  spentAllTimeMicros: number;
+  /** When the current period began; null before the opening grant exists. */
+  periodStart: string | null;
   scope: "all-metered-spend";
   entries: DemoCreditEntry[];
   history: DemoCreditHistory;
@@ -52,6 +56,10 @@ export async function getDemoCreditAccount(): Promise<DemoCreditAccount> {
     db.execute(sql`SELECT
       coalesce(sum(e.amount_micros), 0)::int AS balance,
       coalesce(-sum(e.amount_micros) FILTER (WHERE e.kind = 'usage_debit'), 0)::int AS spent,
+      max(e.created_at) FILTER (WHERE e.kind IN ('demo_reset', 'demo_grant')) AS period_start,
+      coalesce(-sum(e.amount_micros) FILTER (WHERE e.kind = 'usage_debit' AND e.created_at >= (
+        SELECT max(p.created_at) FROM workspace_credit_entries p
+        WHERE p.workspace_id = 'default' AND p.kind IN ('demo_reset', 'demo_grant'))), 0)::int AS spent_period,
       coalesce((SELECT sum(ceil(coalesce(c.charged_micros, c.reserved_micros)::numeric *
         (10000 + (c.pricing->>'demoMarkupBasisPoints')::integer) / 10000))::int
         FROM creative_text_calls c JOIN topics t ON t.id = c.topic_id
@@ -80,7 +88,9 @@ export async function getDemoCreditAccount(): Promise<DemoCreditAccount> {
     availableMicros: Math.max(0, balanceMicros - pendingMicros),
     overdrawnMicros: Math.max(0, pendingMicros - balanceMicros),
     pendingMicros,
-    spentMicros: Number(summary.rows[0]?.spent ?? 0),
+    spentMicros: Number(summary.rows[0]?.spent_period ?? 0),
+    spentAllTimeMicros: Number(summary.rows[0]?.spent ?? 0),
+    periodStart: summary.rows[0]?.period_start ? new Date(String(summary.rows[0].period_start)).toISOString() : null,
     scope: "all-metered-spend",
     history: await getDemoCreditHistory(),
     entries: activity.rows.map((row) => ({

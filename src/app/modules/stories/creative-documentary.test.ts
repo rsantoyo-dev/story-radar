@@ -13,6 +13,8 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import sharp from "sharp";
 import ts from "typescript";
 import * as policy from "./creative-documentary";
+import * as usageAttribution from "../credits/usage-attribution";
+import * as providerPrices from "../credits/provider-prices";
 import * as sourceLocation from "./source-location";
 import type { CreativeAssetBatch, CreativeProfile } from "./creative-content.types";
 import type { DocumentaryResult } from "./manage-creative-documentary";
@@ -29,6 +31,9 @@ function load<T>(file: string, dependencies: Record<string, unknown>, env: Recor
       if (name === "./road-notice-evidence") return roadEvidence;
       if (name === "./creative-evidence-guardrails") return evidenceGuardrails;
       if (name === "./creative-map-panel") return mapPanel;
+      if (name === "../credits/usage-attribution") return usageAttribution;
+      if (name === "../credits/usage-recorder") return { recordAttributedUsage: async () => {} };
+      if (name === "../credits/provider-prices") return providerPrices;
       if (!(name in dependencies)) throw new Error(`Unexpected server dependency: ${name}`);
       return dependencies[name];
     },
@@ -262,11 +267,14 @@ test("discovery accepts tool results only, deduplicates and rejects unsafe links
 
 test("web search is opt-in and bounded in the actual Responses request", async () => {
   const bodies: Record<string, unknown>[] = [];
+  const searchCharges: { units: { calls: number }; costMicros: number | null; operation: string }[] = [];
   const exports: Partial<typeof import("./openai-structured-response")> = {};
   const source = readFileSync(resolve("src/app/modules/stories/openai-structured-response.ts"), "utf8");
   runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, {
     exports, URL, Set, AbortController, setTimeout, clearTimeout,
-    require: (name: string) => name === "node:crypto" ? crypto : name === "./creative-text-meter" ? textMeter : {},
+    require: (name: string) => name === "node:crypto" ? crypto : name === "./creative-text-meter" ? textMeter
+      : name === "../credits/provider-prices" ? providerPrices
+      : name === "../credits/usage-recorder" ? { recordAttributedUsage: async (charge: typeof searchCharges[number]) => { searchCharges.push(charge); } } : {},
     fetch: async (_url: string, input: { body: string }) => {
       bodies.push(JSON.parse(input.body));
       return { ok: true, text: async () => JSON.stringify({ output_text: '{"mentions":[]}', output: [{ type: "web_search_call", status: "completed", action: { sources: [{ url: "https://city.example/place" }] } }] }) };
@@ -280,6 +288,8 @@ test("web search is opt-in and bounded in the actual Responses request", async (
   assert.equal(bodies[1].max_tool_calls, 3);
   assert.equal(bodies[1].tool_choice, "required");
   assert.equal(searched.webSearch?.sources[0].url, "https://city.example/place");
+  // Only the searched call pays the per-call search fee, once per tool call.
+  assert.deepEqual(searchCharges.map((charge) => [charge.operation, charge.units.calls, charge.costMicros]), [["test:web_search", 1, 10_000]]);
 });
 
 test("location-only road fragments finish blocked without model, map or photo lookup", async () => {

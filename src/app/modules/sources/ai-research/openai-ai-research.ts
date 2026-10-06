@@ -1,11 +1,15 @@
 import { editorialContextInstruction } from "../../editorial-lines/editorial-lines";
 import "server-only";
+import { randomUUID } from "node:crypto";
 
 import { canonicalizeStoryUrl } from "@/app/modules/stories/deduplicate-story-candidates";
 import type { TitledDatedItem } from "@/app/modules/stories/deduplicate-similar-stories";
 import type { EditorialProfile } from "@/app/modules/stories/editorial-profile.types";
 
 import type { AiResearchSourceConfig } from "./ai-research.types";
+import { recordUsageCharge } from "@/app/modules/credits/usage-charges.repository";
+import { unitCostMicros, unitPrice } from "@/app/modules/credits/provider-prices";
+import { textCostMicros, textRate } from "@/app/modules/stories/creative-text-cost";
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const OPENAI_TIMEOUT_MS = 90_000;
@@ -39,6 +43,7 @@ type OpenAiResponsesPayload = {
   output?: unknown;
   error?: unknown;
   incomplete_details?: unknown;
+  usage?: unknown;
 };
 
 /**
@@ -56,6 +61,8 @@ export async function discoverAiResearchStories(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), OPENAI_TIMEOUT_MS);
 
+  const model = process.env.AI_RESEARCH_OPENAI_MODEL?.trim() || DEFAULT_MODEL;
+
   try {
     const response = await fetch(OPENAI_RESPONSES_URL, {
       method: "POST",
@@ -64,7 +71,7 @@ export async function discoverAiResearchStories(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: process.env.AI_RESEARCH_OPENAI_MODEL?.trim() || DEFAULT_MODEL,
+        model,
         instructions: researchInstructions(input.profile.minResearchScore) + (input.config.collectionContext ? "\n" + editorialContextInstruction(input.config.collectionContext) + " For context and guides, studies and explanatory articles are eligible; do not demand a new event. A previously covered article may support a different angle: explain it without calling it a new story. An absent from date means no age cutoff. Return publishedAt as an empty string when unknown; never substitute retrieval time." : ""),
         input: JSON.stringify(researchInput(input)),
         tools: [{ type: "web_search", ...(input.config.collectionContext?.domains.length ? {filters:{allowed_domains:input.config.collectionContext.domains}} : {}) }],
@@ -94,6 +101,8 @@ export async function discoverAiResearchStories(
       );
     }
 
+    // A successful response was billed, whatever its content turns out to be.
+    await recordResearchUsage(input.config.topicId, model, payload);
     const sourceUrls = webSearchSourceUrls(payload.output);
     if (sourceUrls.size === 0) {
       throw new AiResearchProviderError(
@@ -233,6 +242,36 @@ function extractOutputText(payload: OpenAiResponsesPayload): string {
     .trim();
   if (!text) throw new AiResearchProviderError("OpenAI returned no AI research output");
   return text;
+}
+
+/** Tokens at the model's text rate plus each web search call, attributed to the Topic. */
+async function recordResearchUsage(topicId: string, model: string, payload: OpenAiResponsesPayload): Promise<void> {
+  const usage = isRecord(payload.usage) ? payload.usage : {};
+  const count = (value: unknown) => typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+  const details = (key: string) => isRecord(usage[key]) ? usage[key] as Record<string, unknown> : {};
+  const promptTokens = count(usage.input_tokens);
+  const outputTokens = count(usage.output_tokens);
+  const thoughtsTokens = count(details("output_tokens_details").reasoning_tokens);
+  const cachedTokens = count(details("input_tokens_details").cached_tokens);
+  const calls = Array.isArray(payload.output) ? payload.output.filter((item) => isRecord(item) && item.type === "web_search_call").length : 0;
+  const key = `research:${randomUUID()}`;
+  let tokenCost: number | null = null;
+  let rate: Record<string, unknown> = { unpriced: true };
+  try {
+    const resolved = textRate("openai", model, promptTokens);
+    tokenCost = textCostMicros(resolved, { promptTokens, outputTokens, thoughtsTokens, totalTokens: promptTokens + outputTokens }, cachedTokens);
+    rate = { ...resolved };
+  } catch { /* an unknown model is recorded unpriced */ }
+  await recordUsageCharge({
+    topicId, kind: "text", provider: "openai", model, operation: "ai_research",
+    units: { promptTokens, outputTokens, thoughtsTokens, cachedTokens }, costMicros: tokenCost, estimated: false, rate, idempotencyKey: `${key}:text`,
+  });
+  const price = unitPrice("openai/web_search_call");
+  if (calls > 0) await recordUsageCharge({
+    topicId, kind: "search", provider: "openai", model: "web_search", operation: "ai_research:web_search",
+    units: { calls }, costMicros: price ? unitCostMicros(price, calls) : null, estimated: true,
+    rate: price ? { ...price } : { unpriced: true }, idempotencyKey: `${key}:search`,
+  });
 }
 
 function webSearchSourceUrls(output: unknown): Set<string> {

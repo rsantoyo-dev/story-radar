@@ -79,6 +79,7 @@ export async function suggestCreativeIdentity(input: {
 
   const runId = randomUUID();
   const response = await generateOpenAiStructuredResponse({
+    selfMetered: true,
     apiKey,
     model,
     instructions: buildCreativeIdentityOrganizerInstructions(fields),

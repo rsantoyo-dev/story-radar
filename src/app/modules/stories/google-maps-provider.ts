@@ -1,10 +1,12 @@
 import "server-only";
 import { request } from "node:https";
-import { createHmac } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { lookupPublicAddress } from "../sources/rss/fetch-rss-feed";
 import { normalizePlaceName, record } from "./creative-documentary";
 import type { MapsPreviewInput, MapsPreviewAttribution } from "./google-maps-preview.types";
 import type { MapPalette } from "./creative-map-panel";
+import { unitCostMicros, unitPrice, type ProviderUnit } from "../credits/provider-prices";
+import { recordAttributedUsage } from "../credits/usage-recorder";
 
 export class MapsPreviewError extends Error {
   constructor(message: string, public readonly status = 502) { super(message); }
@@ -241,6 +243,16 @@ export function staticGoogleMapUrl(place: GooglePlaceCandidate, config: GoogleMa
   return url;
 }
 
+/** Each billable Google request is attributed to the Topic (and Story) of the current workflow. */
+async function recordGoogleRequest(unit: Extract<ProviderUnit, `google/${string}`>, operation: string): Promise<void> {
+  const price = unitPrice(unit);
+  await recordAttributedUsage({
+    kind: "map", provider: "google", model: unit.slice("google/".length), operation,
+    units: { requests: 1 }, costMicros: price ? unitCostMicros(price, 1) : null, estimated: true,
+    rate: price ? { ...price } : { unpriced: true }, idempotencyKey: `google:${unit}:${randomUUID()}`,
+  });
+}
+
 export function googleMapsProvider(config: GoogleMapsConfig, signal: AbortSignal, transport: GoogleTransport = fetchGoogleResource) {
   let requests = 0;
   async function fetch(url: URL, maxBytes: number, options: Partial<GoogleResourceRequest> = {}) {
@@ -260,13 +272,19 @@ export function googleMapsProvider(config: GoogleMapsConfig, signal: AbortSignal
           "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.addressComponents,places.location,places.types,places.photos,places.attributions,nextPageToken" },
         body: JSON.stringify({ textQuery: [input.name, input.municipality, input.region, input.country].filter(Boolean).join(", "), pageSize: 5, languageCode: input.languageCode || "en" }),
       });
+      await recordGoogleRequest("google/places_text_search", "place_search");
       return parseGooglePlaces(response, input);
     },
-    map(place: GooglePlaceCandidate, palette?: MapPalette) { return fetch(staticGoogleMapUrl(place, config, palette), 5_000_000); },
+    async map(place: GooglePlaceCandidate, palette?: MapPalette) {
+      const image = await fetch(staticGoogleMapUrl(place, config, palette), 5_000_000);
+      await recordGoogleRequest("google/static_map", "static_map");
+      return image;
+    },
     async photo(photo: Photo) {
       const url = new URL(`https://places.googleapis.com/v1/${photo.name}/media`);
       url.search = new URLSearchParams({ maxWidthPx: "1080", maxHeightPx: "800", skipHttpRedirect: "true" }).toString();
       const metadata = await json(url, { headers: { "X-Goog-Api-Key": config.apiKey } });
+      await recordGoogleRequest("google/places_photo", "place_photo");
       if (!record(metadata) || typeof metadata.photoUri !== "string") throw new MapsPreviewError("Google returned an invalid photo reference.");
       let imageUrl: URL;
       try { imageUrl = new URL(metadata.photoUri); } catch { throw new MapsPreviewError("Google returned an invalid photo destination."); }

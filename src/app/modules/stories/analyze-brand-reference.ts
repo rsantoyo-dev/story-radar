@@ -1,4 +1,8 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
+import { withUsageAttribution } from "../credits/usage-attribution";
+import { recordAttributedUsage } from "../credits/usage-recorder";
+import { textCostMicros, textRate, type TextRate } from "./creative-text-cost";
 
 import { GoogleGenAI } from "@google/genai";
 
@@ -126,6 +130,7 @@ export async function analyzeBrandReference({
       }),
       config.timeoutMs,
     );
+    await withUsageAttribution({ topicId }, () => recordBrandAnalysisUsage(config.model, response.usageMetadata));
     const output = response.text?.trim();
     if (!output) {
       throw new CreativeBrandAnalysisError(
@@ -164,4 +169,25 @@ async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
       timer = setTimeout(() => reject(new CreativeBrandAnalysisError("The analyzer timed out")), ms);
     })]);
   } finally { clearTimeout(timer); }
+}
+
+/** Gemini vision tokens for one brand reference analysis. */
+async function recordBrandAnalysisUsage(
+  model: string,
+  usage: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number; totalTokenCount?: number } | undefined,
+): Promise<void> {
+  const tokens = {
+    promptTokens: usage?.promptTokenCount ?? 0,
+    outputTokens: usage?.candidatesTokenCount ?? 0,
+    thoughtsTokens: usage?.thoughtsTokenCount ?? 0,
+    totalTokens: usage?.totalTokenCount ?? 0,
+  };
+  let rate: TextRate | undefined;
+  try { rate = textRate("google", model, tokens.promptTokens); } catch { /* unpriced */ }
+  await recordAttributedUsage({
+    kind: "text", provider: "google", model, operation: "brand_reference_analysis",
+    units: { promptTokens: tokens.promptTokens, outputTokens: tokens.outputTokens, thoughtsTokens: tokens.thoughtsTokens },
+    costMicros: rate ? textCostMicros(rate, tokens) : null, estimated: false,
+    rate: rate ? { ...rate } : { unpriced: true }, idempotencyKey: `brand-analysis:${randomUUID()}`,
+  });
 }

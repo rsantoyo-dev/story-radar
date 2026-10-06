@@ -3,6 +3,9 @@ import "server-only";
 import { ApiError, GoogleGenAI } from "@google/genai";
 import { PLANNER_INSTRUCTION, PLANNER_SCHEMA, parseDailyPlan, type PlannerContext } from "./daily-editorial-planner.types";
 import { generateOpenAiStructuredResponse } from "./openai-structured-response";
+import { randomUUID } from "node:crypto";
+import { recordAttributedUsage } from "../credits/usage-recorder";
+import { textCostMicros, textRate, type TextRate } from "./creative-text-cost";
 
 import {
   calculateEditorialPriority,
@@ -102,6 +105,7 @@ export async function evaluateStoriesWithFallback(
 
   try {
     const result = await evaluateStoriesWithGemini(options);
+    await recordEvaluationUsage("google", options.model, result.usage, options);
     return { ...result, provider: "google", model: options.model };
   } catch (error) {
     attempts.push({ provider: "Gemini", error: providerErrorSummary(error) });
@@ -131,6 +135,7 @@ export async function evaluateStoriesWithFallback(
         ...options,
         apiKey: options.paidGeminiApiKey,
       });
+      await recordEvaluationUsage("google", options.model, result.usage, options);
       return { ...result, provider: "google", model: options.model };
     } catch (error) {
       attempts.push({
@@ -155,6 +160,7 @@ export async function evaluateStoriesWithFallback(
         apiToken: options.cloudflareAiApiToken,
         model: options.cloudflareAiModel,
       });
+      await recordEvaluationUsage("cloudflare", options.cloudflareAiModel, result.usage, options);
       return { ...result, provider: "cloudflare", model: options.cloudflareAiModel };
     } catch (error) {
       attempts.push({
@@ -166,6 +172,26 @@ export async function evaluateStoriesWithFallback(
 
   console.error("All configured editorial evaluation providers failed", attempts);
   throw new EditorialProviderFallbackError(attempts);
+}
+
+/**
+ * Gemini and Cloudflare usage for the Topic being evaluated (the OpenAI path is
+ * recorded by the text meter). An unpriced model is recorded, not charged.
+ */
+async function recordEvaluationUsage(
+  provider: "google" | "cloudflare",
+  model: string,
+  usage: { promptTokens: number; outputTokens: number; thoughtsTokens: number; totalTokens: number },
+  options: { planningContext?: unknown },
+): Promise<void> {
+  let rate: TextRate | undefined;
+  try { rate = textRate(provider, model, usage.promptTokens); } catch { /* unpriced */ }
+  await recordAttributedUsage({
+    kind: "text", provider, model, operation: options.planningContext ? "daily_planner" : "editorial_evaluation",
+    units: { promptTokens: usage.promptTokens, outputTokens: usage.outputTokens, thoughtsTokens: usage.thoughtsTokens },
+    costMicros: rate ? textCostMicros(rate, usage) : null, estimated: false,
+    rate: rate ? { ...rate } : { unpriced: true }, idempotencyKey: `evaluation:${randomUUID()}`,
+  });
 }
 
 export async function evaluateStoriesWithGemini({

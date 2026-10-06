@@ -1,4 +1,5 @@
 import "server-only";
+import { withUsageAttribution } from "../credits/usage-attribution";
 
 import { createHash } from "node:crypto";
 
@@ -137,7 +138,7 @@ export async function evaluateEditorialCandidates(
   });
 
   try {
-    const result = await evaluateStoriesWithFallback({
+    const result = await withUsageAttribution({ topicId }, () => evaluateStoriesWithFallback({
       apiKey: configuration.apiKey,
       paidGeminiApiKey: configuration.paidGeminiApiKey,
       model: configuration.model,
@@ -153,7 +154,7 @@ export async function evaluateEditorialCandidates(
       candidates: selectedCandidates,
       preferences,
       editorialProfile,
-    });
+    }));
 
     await completeEditorialEvaluationRun({
       topicId,

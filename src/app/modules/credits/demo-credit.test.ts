@@ -53,8 +53,8 @@ test("demo ledger charges each new settled text call once and resets without los
   try {
     await client.exec(`
       CREATE TABLE workspaces (id text PRIMARY KEY);
-      CREATE TABLE topics (id uuid PRIMARY KEY, workspace_id text NOT NULL REFERENCES workspaces(id));
-      CREATE TABLE stories (id uuid PRIMARY KEY);
+      CREATE TABLE topics (id uuid PRIMARY KEY, workspace_id text NOT NULL REFERENCES workspaces(id), name text NOT NULL DEFAULT 'Brand', is_active boolean NOT NULL DEFAULT true);
+      CREATE TABLE stories (id uuid PRIMARY KEY, title text);
       CREATE TABLE creative_text_calls (
         id uuid PRIMARY KEY, topic_id uuid NOT NULL REFERENCES topics(id),
         story_id uuid NOT NULL REFERENCES stories(id), operation text NOT NULL,
@@ -69,6 +69,7 @@ test("demo ledger charges each new settled text call once and resets without los
     await client.query("INSERT INTO stories VALUES ($1)", [storyId]);
     await client.exec(readFileSync(new URL("../../../../drizzle/0081_spicy_giant_man.sql", import.meta.url), "utf8"));
     await client.exec(readFileSync(new URL("../../../../drizzle/0086_polite_skrulls.sql", import.meta.url), "utf8"));
+    await client.exec(readFileSync(new URL("../../../../drizzle/0090_demo_credit_reset_in_flight.sql", import.meta.url), "utf8"));
 
     const balance = async () => Number((await client.query<{ balance: string }>(
       "SELECT sum(amount_micros)::text AS balance FROM workspace_credit_entries WHERE workspace_id='default'",
@@ -124,12 +125,17 @@ test("demo ledger charges each new settled text call once and resets without los
     const pendingAccount = await loadRepository(client).getDemoCreditAccount();
     assert.equal(pendingAccount.pendingMicros, 62_500);
     assert.equal(pendingAccount.availableMicros, 9_785_500);
+    // A call that is still running blocks a reset; one left unresolved for days does not.
     await assert.rejects(client.query(
       "SELECT reset_demo_credits('demo_reset:first', 'test', 'restore demo balance')",
-    ), /pending metered text calls/);
-    await client.query("UPDATE creative_text_calls SET status='settled', charged_micros=0 WHERE id=$1", [pendingId]);
+    ), /demo_reset_running: Wait for 1 running AI text calls/);
+    await client.query("UPDATE creative_text_calls SET status='uncertain', created_at=now() - interval '2 days' WHERE id=$1", [pendingId]);
     await client.query("SELECT reset_demo_credits('demo_reset:first', 'test', 'restore demo balance')");
     assert.equal(await balance(), 10_000_000);
+    const afterReset = await loadRepository(client).getDemoCreditAccount();
+    assert.equal(afterReset.availableMicros, 10_000_000);
+    assert.equal(afterReset.spentMicros, 0, "spending restarts at the reset");
+    assert.equal(afterReset.spentAllTimeMicros, 152_000, "past debits stay in the ledger");
     await client.query("SELECT reset_demo_credits('demo_reset:first', 'test', 'restore demo balance')");
     assert.equal((await client.query("SELECT id FROM workspace_credit_entries WHERE kind='demo_reset'")).rows.length, 1);
     assert.equal((await client.query("SELECT id FROM workspace_credit_entries WHERE kind='usage_debit'")).rows.length, 2);
@@ -137,3 +143,86 @@ test("demo ledger charges each new settled text call once and resets without los
     await client.close();
   }
 });
+
+function loadSpending(client: PGlite) {
+  const dialect = new PgDialect();
+  const db = { execute: (query: SQL) => {
+    const built = dialect.sqlToQuery(query);
+    return client.query(built.sql, built.params);
+  } };
+  const demoRepository = loadRepository(client);
+  const exports = {};
+  vm.runInNewContext(ts.transpileModule(readFileSync(new URL("./spending.repository.ts", import.meta.url), "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText, {
+    exports, Date, Number, Math, Map, console,
+    require: (name: string) => {
+      if (name === "drizzle-orm") return localRequire(name);
+      if (name === "@/db/client") return { db };
+      if (name === "./demo-credit.repository") return demoRepository;
+      if (name === "./demo-credit-policy") return policy;
+      if (name === "./spending-products") return localRequire("./spending-products.ts");
+      return {};
+    },
+  });
+  return exports as typeof import("./spending.repository");
+}
+
+test("spending since a reset separates our provider cost, the charge and the margin per product and story", async () => {
+  const client = new PGlite();
+  const topicId = randomUUID();
+  const storyId = randomUUID();
+  try {
+    await client.exec(`
+      CREATE TABLE workspaces (id text PRIMARY KEY);
+      CREATE TABLE topics (id uuid PRIMARY KEY, workspace_id text NOT NULL REFERENCES workspaces(id), name text NOT NULL, is_active boolean NOT NULL DEFAULT true);
+      CREATE TABLE stories (id uuid PRIMARY KEY, title text);
+      CREATE TABLE creative_text_calls (
+        id uuid PRIMARY KEY, topic_id uuid NOT NULL REFERENCES topics(id),
+        story_id uuid NOT NULL REFERENCES stories(id), operation text NOT NULL,
+        provider text NOT NULL, model text NOT NULL, status text NOT NULL,
+        reserved_micros integer NOT NULL, charged_micros integer,
+        pricing jsonb NOT NULL, finished_at timestamptz,
+        created_at timestamptz NOT NULL DEFAULT now()
+      );
+    `);
+    await client.query("INSERT INTO workspaces VALUES ('default')");
+    await client.query("INSERT INTO topics VALUES ($1, 'default', 'Salut Brossard')", [topicId]);
+    await client.query("INSERT INTO stories VALUES ($1, '21 toiles')", [storyId]);
+    for (const migration of ["0081_spicy_giant_man", "0086_polite_skrulls", "0090_demo_credit_reset_in_flight"]) {
+      await client.exec(readFileSync(new URL(`../../../../drizzle/${migration}.sql`, import.meta.url), "utf8"));
+    }
+    // Before the reset: one charged image that must not count in the new period.
+    await client.query(`INSERT INTO ai_usage_charges (topic_id, story_id, kind, provider, model, operation, cost_micros, pricing, idempotency_key, created_at)
+      VALUES ($1, $2, 'image', 'fal', 'gpt-image', 'creative_image', 40000, '{"demoMarkupBasisPoints":2500}', 'image:before', now() - interval '1 hour')`, [topicId, storyId]);
+    const spending = loadSpending(client);
+    await spending.resetDemoCredits("demo_reset:spending-test", "Start the test period");
+
+    await client.query(`INSERT INTO ai_usage_charges (topic_id, story_id, kind, provider, model, operation, cost_micros, pricing, idempotency_key)
+      VALUES ($1, $2, 'image', 'fal', 'gpt-image', 'creative_image', 40000, '{"demoMarkupBasisPoints":2500}', 'image:after'),
+             ($1, NULL, 'map', 'google', 'static_map', 'static_map', 2000, '{"demoMarkupBasisPoints":2500}', 'map:after'),
+             ($1, NULL, 'text', 'cloudflare', 'unknown', 'editorial_evaluation', NULL, '{"unpriced":true,"demoMarkupBasisPoints":2500}', 'evaluation:after')`, [topicId, storyId]);
+    await client.query(`INSERT INTO creative_text_calls (id, topic_id, story_id, operation, provider, model, status, reserved_micros, charged_micros, pricing, finished_at)
+      VALUES ($1, $2, $3, 'creative_draft', 'openai', 'gpt', 'settled', 100000, 80000, '{"demoMarkupBasisPoints":2500}', now())`, [randomUUID(), topicId, storyId]);
+
+    const report = await spending.getSpendingReport({ period: "reset" });
+    assert.equal(report.totals.count, 4);
+    assert.equal(report.totals.chargedMicros, 50_000 + 2_500 + 100_000);
+    assert.equal(report.totals.chargedCostMicros, 40_000 + 2_000 + 80_000);
+    assert.equal(report.totals.unpricedCount, 1);
+    assert.equal(report.totals.stories, 1);
+    assert.deepEqual(JSON.parse(JSON.stringify(report.products.map((line) => [line.label, line.group, line.count, line.chargedMicros]))), [
+      ["Draft writing", "Writing", 1, 100_000],
+      ["Slide image", "Images", 1, 50_000],
+      ["Map", "Places & maps", 1, 2_500],
+      ["Story evaluation", "Discovery", 1, 0],
+    ]);
+    assert.deepEqual(JSON.parse(JSON.stringify(report.stories.map((line) => [line.title, line.topicName, line.count, line.chargedMicros]))), [["21 toiles", "Salut Brossard", 2, 150_000]]);
+    assert.deepEqual(JSON.parse(JSON.stringify(report.entries.map((entry) => entry.status).sort())), ["charged", "charged", "charged", "unpriced"]);
+    const allTime = await spending.getSpendingReport({ period: "all" });
+    assert.equal(allTime.totals.count, 5, "the earlier image stays in the history");
+  } finally {
+    await client.close();
+  }
+});
+

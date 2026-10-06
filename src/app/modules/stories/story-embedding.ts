@@ -1,4 +1,7 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
+import { unitCostMicros, unitPrice } from "../credits/provider-prices";
+import { recordAttributedUsage } from "../credits/usage-recorder";
 
 import {
   getStoryEmbeddingRuntimeConfig,
@@ -87,6 +90,7 @@ async function embedBatch(
           : `HTTP ${response.status}`;
       throw new StoryEmbeddingProviderError(`OpenAI embeddings failed (${message})`);
     }
+    await recordEmbeddingUsage(model, isRecord(payload) && isRecord(payload.usage) ? payload.usage.total_tokens : undefined);
     const data = isRecord(payload) ? payload.data : undefined;
     if (!Array.isArray(data) || data.length !== input.length) {
       throw new StoryEmbeddingProviderError(
@@ -123,4 +127,17 @@ async function embedBatch(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Embedding tokens for the Topic whose duplicates are being checked. */
+async function recordEmbeddingUsage(model: string, totalTokens: unknown): Promise<void> {
+  const tokens = typeof totalTokens === "number" && Number.isFinite(totalTokens) && totalTokens > 0 ? Math.floor(totalTokens) : 0;
+  if (!tokens) return;
+  const key = `openai/${model}`;
+  const price = key === "openai/text-embedding-3-small" || key === "openai/text-embedding-3-large" ? unitPrice(key) : undefined;
+  await recordAttributedUsage({
+    kind: "embedding", provider: "openai", model, operation: "story_duplicates",
+    units: { tokens }, costMicros: price ? unitCostMicros(price, tokens) : null, estimated: false,
+    rate: price ? { ...price } : { unpriced: true }, idempotencyKey: `embedding:${randomUUID()}`,
+  });
 }

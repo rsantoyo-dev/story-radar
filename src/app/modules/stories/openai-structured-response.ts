@@ -1,4 +1,6 @@
 import { meterCreativeText } from "./creative-text-meter";
+import { unitCostMicros, unitPrice } from "../credits/provider-prices";
+import { recordAttributedUsage } from "../credits/usage-recorder";
 import "server-only";
 import { randomUUID } from "node:crypto";
 
@@ -34,10 +36,26 @@ const OPENAI_TIMEOUT_MS = 120_000;
 
 export type OpenAiUsageContext = { runId: string; topicId: string; storyId: string };
 
-export async function generateOpenAiStructuredResponse(options: Parameters<typeof requestOpenAiStructuredResponse>[0]): Promise<OpenAiStructuredResponse> {
-  return meterCreativeText({provider:"openai",model:options.model,operation:options.schemaName,
-    payload:{instructions:options.instructions,contents:options.contents,schema:options.schema},maxOutputTokens:options.maxOutputTokens},
-    () => requestOpenAiStructuredResponse(options), result => result.usage.totalTokens > 0 ? {...result.usage,cachedInputTokens:result.cachedInputTokens} : undefined);
+export async function generateOpenAiStructuredResponse(options: Parameters<typeof requestOpenAiStructuredResponse>[0] & {
+  /** The caller records this call's usage charge itself. */
+  selfMetered?: boolean;
+}): Promise<OpenAiStructuredResponse> {
+  const { selfMetered, ...request } = options;
+  const result = await meterCreativeText({provider:"openai",model:request.model,operation:request.schemaName,
+    payload:{instructions:request.instructions,contents:request.contents,schema:request.schema},maxOutputTokens:request.maxOutputTokens,selfMetered},
+    () => requestOpenAiStructuredResponse(request), value => value.usage.totalTokens > 0 ? {...value.usage,cachedInputTokens:value.cachedInputTokens} : undefined);
+  // Web search is billed per tool call on top of the tokens the text meter priced.
+  if (result.webSearch?.calls) await recordWebSearchCalls(request.schemaName, result.webSearch.calls);
+  return result;
+}
+
+async function recordWebSearchCalls(operation: string, calls: number): Promise<void> {
+  const price = unitPrice("openai/web_search_call");
+  await recordAttributedUsage({
+    kind: "search", provider: "openai", model: "web_search", operation: `${operation}:web_search`,
+    units: { calls }, costMicros: price ? unitCostMicros(price, calls) : null,
+    estimated: true, rate: price ? { ...price } : { unpriced: true }, idempotencyKey: `web-search:${randomUUID()}`,
+  });
 }
 
 async function requestOpenAiStructuredResponse({

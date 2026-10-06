@@ -1,6 +1,7 @@
 import { select511Notice } from "./road-notice-evidence";
 import { explicitlyInsufficientEvidence, locationOnlyRoadFacts } from "./creative-evidence-guardrails";
 import "server-only";
+import { withUsageAttribution } from "../credits/usage-attribution";
 import { createHash } from "node:crypto";
 import { getCreativeContentPublicConfig } from "./creative-content.config";
 import { createCreativeAssetBatch, completeCreativeAsset, failCreativeAsset, refreshCreativeAssetBatchStatus, findCreativeAssetById } from "./creative-assets.repository";
@@ -31,6 +32,10 @@ const extractionSchema = {
 export type DocumentaryResult = { batch?: CreativeAssetBatch; snapshot?: DocumentarySnapshot; stale: boolean };
 const running = new Map<string, Promise<DocumentaryResult>>();
 export async function getDocumentaryPreparation(topicId: string, storyId: string): Promise<DocumentaryResult> {
+  return withUsageAttribution({ topicId, storyId }, () => prepareDocumentaryFor(topicId, storyId));
+}
+
+async function prepareDocumentaryFor(topicId: string, storyId: string): Promise<DocumentaryResult> {
   await getDailyDraftStory(topicId, storyId, undefined, true);
   const batch = await latestDocumentaryBatch(topicId, storyId);
   const snapshot = documentarySnapshot(batch?.assets[0]?.unitSnapshot);

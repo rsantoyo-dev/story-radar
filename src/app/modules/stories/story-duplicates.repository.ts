@@ -1,4 +1,5 @@
 import "server-only";
+import { withUsageAttribution } from "../credits/usage-attribution";
 
 import { and, desc, eq, gte, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 
@@ -61,7 +62,7 @@ export async function detectTopicDuplicates(
   const rows = await loadTopicStoryRows(topicId, cutoff);
   if (rows.length === 0) return { marked: 0, pairs: [] };
 
-  await ensureStoryEmbeddings(rows, config);
+  await withUsageAttribution({ topicId }, () => ensureStoryEmbeddings(rows, config));
 
   const candidates = rows
     .filter(

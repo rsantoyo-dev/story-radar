@@ -45,6 +45,7 @@ export async function reviewCreativeImage(input: CreativeImageReviewInput & {
   let response: Awaited<ReturnType<typeof generateOpenAiStructuredResponse>>;
   try {
     response = await generateOpenAiStructuredResponse({
+      selfMetered: true,
       apiKey,
       model,
       instructions: buildImageReviewInstructions(),

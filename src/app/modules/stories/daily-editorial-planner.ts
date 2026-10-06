@@ -1,4 +1,5 @@
 import "server-only";
+import { withUsageAttribution } from "../credits/usage-attribution";
 import { createHash, randomUUID } from "node:crypto";
 import { requireTopic } from "../topics/topic-context";
 import { getEditorialProfile } from "./editorial-profile.repository";
@@ -127,7 +128,7 @@ export async function recommendForToday(topicId: string, timezone: string, force
     if (!context.candidates.length) {
       await finishDailyPlan(topicId,id,{status:"completed",result:{outcome:"no-strong-candidate",recommendation:null,alternatives:[],deferred:[],summary:"No eligible evaluated stories are available. Collect or evaluate more stories first.",uncertainty:"Published, scheduled, in-flight, rejected, duplicate, future-dated and out-of-window stories are excluded."}});
     } else {
-      const result=await evaluateStoriesWithFallback({...config,topic:context.topic,editorialProfile:profile,preferences,candidates:[],planningContext:context});
+      const result=await withUsageAttribution({topicId},()=>evaluateStoriesWithFallback({...config,topic:context.topic,editorialProfile:profile,preferences,candidates:[],planningContext:context}));
       if (!result.dailyPlan) throw new Error("Planner response missing");
       await finishDailyPlan(topicId,id,{status:"completed",result:result.dailyPlan,provider:result.provider,model:result.model,usage:result.usage});
     }

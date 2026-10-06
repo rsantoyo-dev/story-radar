@@ -1,4 +1,5 @@
 import "server-only";
+import { withUsageAttribution } from "../credits/usage-attribution";
 import sharp from "sharp";
 import { escapeDocumentaryText } from "./creative-documentary-render";
 import { googleMapsConfig, googleMapsProvider, selectMatchingGooglePlace, MapsPreviewError, type GoogleMapsConfig, type GoogleTransport } from "./google-maps-provider";
@@ -43,6 +44,15 @@ export async function prepareGoogleMapsPreview(
   input: MapsPreviewInput,
   profile: Pick<CreativeProfile, "name" | "brandPalette">,
   options: { config?: GoogleMapsConfig; transport?: GoogleTransport; signal?: AbortSignal } = {},
+): Promise<MapsPreviewResult> {
+  return withUsageAttribution({ topicId }, () => prepareGoogleMapsPreviewFor(topicId, input, profile, options));
+}
+
+async function prepareGoogleMapsPreviewFor(
+  topicId: string,
+  input: MapsPreviewInput,
+  profile: Pick<CreativeProfile, "name" | "brandPalette">,
+  options: { config?: GoogleMapsConfig; transport?: GoogleTransport; signal?: AbortSignal },
 ): Promise<MapsPreviewResult> {
   const config = options.config ?? googleMapsConfig();
   if (input.mode === "google" && (!config.enabled || !config.apiKey)) {

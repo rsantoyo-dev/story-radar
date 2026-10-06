@@ -5,17 +5,22 @@ import { createRequire } from "node:module";
 import vm from "node:vm";
 import ts from "typescript";
 import * as cost from "./creative-text-cost";
+import * as usageAttribution from "../credits/usage-attribution";
 const requireLocal = createRequire(import.meta.url);
 function fixture(rejectReservation = false) {
     const calls: {
         reserved: number;
         limit: number;
-    }[] = [], settlements: (number | null)[] = [];
+    }[] = [], settlements: (number | null)[] = [], recorded: { costMicros: number | null; operation: string }[] = [];
     const exports = {} as typeof import("./creative-text-meter");
     vm.runInNewContext(ts.transpileModule(readFileSync(new URL('./creative-text-meter.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, {
         exports, Buffer, Date, Error, require: (name: string) => {
             if (name.startsWith('node:'))
                 return requireLocal(name);
+            if (name === '../credits/usage-attribution')
+                return usageAttribution;
+            if (name === '../credits/usage-recorder')
+                return { recordAttributedUsage: async (charge: { costMicros: number | null; operation: string }) => { recorded.push(charge); } };
             if (name === './creative-text-cost')
                 return { ...cost, textRate: () => ({ input: 1, output: 2, cached: 0, version: 'test' }) };
             if (name === './creative-text-accounting.repository')
@@ -30,7 +35,7 @@ function fixture(rejectReservation = false) {
             throw new Error(name);
         },
     });
-    return { api: exports, calls, settlements };
+    return { api: exports, calls, settlements, recorded };
 }
 const context = { topicId: 'topic', storyId: 'story', runId: 'run' };
 const input = { provider: 'openai', model: 'test', operation: 'test', payload: { text: 'private' }, maxOutputTokens: 100 };
@@ -63,4 +68,20 @@ test('timeouts and missing usage retain reservations; explicit rejection release
     const { api, settlements } = fixture();
     await api.withCreativeTextBudget(context, () => api.meterCreativeText(input, async () => 42, () => undefined));
     assert.deepEqual(settlements, [null]);
+});
+test('outside Creative Studio, a finished call is recorded once as attributed usage; a self-metered call is not', async () => {
+    const { api, calls, recorded } = fixture();
+    await usageAttribution.withUsageAttribution({ topicId: 'topic' }, async () => {
+        await api.meterCreativeText(input, async () => 1, () => usage);
+        await api.meterCreativeText({ ...input, selfMetered: true }, async () => 2, () => usage);
+        await api.meterCreativeText(input, async () => 3, () => undefined);
+    });
+    assert.equal(calls.length, 0, 'no Story budget is reserved outside the studio');
+    // 100 input tokens at 1 + 50 output tokens at 2 micros each; reasoning is not extra for this rate.
+    assert.deepEqual(recorded.map((charge) => [charge.operation, charge.costMicros]), [['test', 200]]);
+});
+test('the Creative Studio scope also attributes non-text spend to its Topic and Story', async () => {
+    const { api } = fixture();
+    const seen = await api.withCreativeTextBudget(context, async () => usageAttribution.currentUsageAttribution());
+    assert.deepEqual({ ...seen }, { topicId: 'topic', storyId: 'story' });
 });
