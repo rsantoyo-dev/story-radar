@@ -59,6 +59,20 @@ export function collectionContext(line: EditorialLine, sources: readonly {id:str
   return {lineId:line.id,revision:line.revision,name:line.name,objective:line.objective,themes:line.themes,mode:line.mode,query:boundedText(query,"query",2000,true),period,timezone:line.timezone,from,to,domains:line.domains,
     sourceIds:sources.filter(s=>s.enabled && (line.sourceMode === "inherit" || line.sourceIds.includes(s.id)) && !line.excludedSourceIds.includes(s.id)).map(s=>s.id)};
 }
+/**
+ * The research context a new brief follows when the editor has not chosen
+ * one, from a story's contexts newest first. Runs of one strategy — the same
+ * line, question and period — differ only in when they ran, so the latest is
+ * used; runs of different lines or questions are a real choice for the
+ * editor, and none is returned.
+ */
+export function defaultStoryContext<T extends { runId: string; context: EditorialCollectionContext }>(choices: readonly T[]): T | undefined {
+  const [latest] = choices;
+  if (!latest) return undefined;
+  const strategy = ({ lineId, query, period }: EditorialCollectionContext) =>
+    JSON.stringify([lineId, query.trim().toLocaleLowerCase(), JSON.stringify(period, Object.keys(period).sort())]);
+  return choices.every((choice) => strategy(choice.context) === strategy(latest.context)) ? latest : undefined;
+}
 export function inEditorialWindow(date: Date | undefined, context: EditorialCollectionContext): boolean {
   if (!date) return context.from === null && context.mode !== "news";
   const time=date.getTime();return Number.isFinite(time) && time<=Date.parse(context.to) && (context.from===null || time>=Date.parse(context.from));

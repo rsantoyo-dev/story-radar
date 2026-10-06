@@ -4,6 +4,7 @@ import { createHmac } from "node:crypto";
 import { lookupPublicAddress } from "../sources/rss/fetch-rss-feed";
 import { normalizePlaceName, record } from "./creative-documentary";
 import type { MapsPreviewInput, MapsPreviewAttribution } from "./google-maps-preview.types";
+import type { MapPalette } from "./creative-map-panel";
 
 export class MapsPreviewError extends Error {
   constructor(message: string, public readonly status = 502) { super(message); }
@@ -197,10 +198,42 @@ export function selectMatchingGooglePlace(
   return undefined;
 }
 
-export function staticGoogleMapUrl(place: GooglePlaceCandidate, config: GoogleMapsConfig): URL {
+const googleHex = (hex: string) => `0x${hex.slice(1).toUpperCase()}`;
+/** `amount` of `from` blended into `to`. */
+function mix(from: string, to: string, amount: number): string {
+  const channel = (hex: string, i: number) => parseInt(hex.slice(i, i + 2), 16);
+  return `#${[1, 3, 5].map((i) => Math.round(channel(from, i) * amount + channel(to, i) * (1 - amount)).toString(16).padStart(2, "0")).join("")}`;
+}
+
+/**
+ * Google's own map styling in the brand's colours: the page colour as land,
+ * quiet tints for parks, water and roads, brand-coloured labels, and no
+ * points of interest or icons, so the pin is the only marked place.
+ */
+export function brandedStaticMapStyles(palette: MapPalette): string[] {
+  const { surface, primary, accent, water, park } = palette;
+  return [
+    `element:geometry|color:${googleHex(mix(primary, surface, 0.06))}`,
+    "feature:poi|visibility:off",
+    "feature:transit|visibility:off",
+    "feature:administrative|element:geometry|visibility:off",
+    "element:labels.icon|visibility:off",
+    `feature:poi.park|element:geometry|visibility:on|color:${googleHex(park ? mix(park, surface, 0.28) : mix(primary, surface, 0.12))}`,
+    `feature:water|element:geometry|color:${googleHex(water ? mix(water, surface, 0.6) : mix(primary, surface, 0.22))}`,
+    "feature:road|element:geometry.fill|color:0xFFFFFF",
+    "feature:road|element:geometry.stroke|visibility:off",
+    `feature:road.highway|element:geometry.fill|color:${googleHex(mix(accent, surface, 0.35))}`,
+    `element:labels.text.fill|color:${googleHex(primary)}`,
+    `element:labels.text.stroke|color:${googleHex(surface)}`,
+  ];
+}
+
+export function staticGoogleMapUrl(place: GooglePlaceCandidate, config: GoogleMapsConfig, palette?: MapPalette): URL {
   const url = new URL("https://maps.googleapis.com/maps/api/staticmap");
   const point = `${place.latitude},${place.longitude}`;
-  url.search = new URLSearchParams({ center: point, zoom: "16", size: "540x340", scale: "2", maptype: "roadmap", format: "png", markers: `color:red|${point}`, key: config.apiKey }).toString();
+  const params = new URLSearchParams({ center: point, zoom: "16", size: "540x340", scale: "2", maptype: "roadmap", format: "png", markers: `color:${palette ? googleHex(palette.accent) : "red"}|${point}`, key: config.apiKey });
+  for (const style of palette ? brandedStaticMapStyles(palette) : []) params.append("style", style);
+  url.search = params.toString();
   if (config.signingSecret) {
     const signature = createHmac("sha1", Buffer.from(config.signingSecret, "base64url")).update(url.pathname + url.search).digest("base64url");
     url.searchParams.set("signature", signature);
@@ -229,7 +262,7 @@ export function googleMapsProvider(config: GoogleMapsConfig, signal: AbortSignal
       });
       return parseGooglePlaces(response, input);
     },
-    map(place: GooglePlaceCandidate) { return fetch(staticGoogleMapUrl(place, config), 5_000_000); },
+    map(place: GooglePlaceCandidate, palette?: MapPalette) { return fetch(staticGoogleMapUrl(place, config, palette), 5_000_000); },
     async photo(photo: Photo) {
       const url = new URL(`https://places.googleapis.com/v1/${photo.name}/media`);
       url.search = new URLSearchParams({ maxWidthPx: "1080", maxHeightPx: "800", skipHttpRedirect: "true" }).toString();

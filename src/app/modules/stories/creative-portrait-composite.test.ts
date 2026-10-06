@@ -3,7 +3,8 @@ import test from "node:test";
 
 import sharp from "sharp";
 
-import { adaptationCreditLine, compositeDocumentaryPortrait, PORTRAIT_LAYOUTS, PORTRAIT_PHOTO, PORTRAIT_ZONE, portraitAccent, portraitCreditLine, portraitLayoutForSlide, portraitZonePrompt } from "./creative-portrait-composite";
+import { adaptationCreditLine, compositeDocumentaryPortrait, focalCrop, PORTRAIT_LAYOUTS, PORTRAIT_PHOTO, PORTRAIT_ZONE, portraitAccent, portraitCreditLine, portraitLayoutForSlide, portraitZonePrompt } from "./creative-portrait-composite";
+import { parsePhotoFocus } from "./story-materials.types";
 
 async function pixel(image: Buffer, x: number, y: number): Promise<number[]> {
   const { data } = await sharp(image).extract({ left: x, top: y, width: 1, height: 1 }).raw().toBuffer({ resolveWithObject: true });
@@ -80,4 +81,37 @@ test("each layout shows the photo in its place, its shape and its brand block, l
     }
     if (layout.id !== "top-bleed") assert.deepEqual(await pixel(output, 20, 20), [246, 240, 228], `${layout.id} design kept`);
   }
+});
+
+test("the crop window keeps the editor's focal point, as central as the photo allows", () => {
+  // A phone photo (9:16) in the 4:5 frame: full width, a window of the frame's shape.
+  const phone = { width: 941, height: 1672 };
+  const frame = { width: 510, height: 640 };
+  assert.deepEqual(focalCrop(phone, frame, { x: 0.5, y: 0.75 }), { left: 0, top: 491, width: 941, height: 1181 }, "people at the bottom: the window goes as low as the photo allows");
+  assert.deepEqual(focalCrop(phone, frame, { x: 0.5, y: 0.5 }), { left: 0, top: 246, width: 941, height: 1181 });
+  assert.deepEqual(focalCrop(phone, frame, { x: 0.5, y: 0.1 }).top, 0, "clamped at the top");
+  // A landscape photo in the circle: full height, the window slides sideways.
+  assert.deepEqual(focalCrop({ width: 1600, height: 900 }, { width: 520, height: 520 }, { x: 0.9, y: 0.5 }), { left: 700, top: 0, width: 900, height: 900 });
+});
+
+test("with a focal point the pasted photo keeps the subject where the automatic crop would not", async () => {
+  const design = await sharp({ create: { width: 1080, height: 1350, channels: 3, background: { r: 246, g: 240, b: 228 } } }).png().toBuffer();
+  // Bright foliage on top, the people in the bottom fifth of a tall photo.
+  const foliage = await sharp({ create: { width: 900, height: 1300, channels: 3, background: { r: 240, g: 200, b: 20 } } }).png().toBuffer();
+  const photo = await sharp({ create: { width: 900, height: 1600, channels: 3, background: { r: 20, g: 60, b: 160 } } })
+    .composite([{ input: foliage, left: 0, top: 0 }]).png().toBuffer();
+  const layout = PORTRAIT_LAYOUTS.find((candidate) => candidate.id === "offset-block-right")!;
+  const output = await compositeDocumentaryPortrait({ image: design, photo, layout: layout.id, focus: { x: 0.5, y: 0.9 } });
+  const bottom = await pixel(output, layout.photo.left + layout.photo.width / 2, layout.photo.top + layout.photo.height - 10);
+  assert.ok(bottom[2] > 140 && bottom[0] < 40, `the people stay in the frame: ${bottom.join(",")}`);
+  const top = await pixel(output, layout.photo.left + layout.photo.width / 2, layout.photo.top + 10);
+  assert.ok(top[0] > 200, `the foliage above is what gets cut: ${top.join(",")}`);
+});
+
+test("a focal point from the browser must be two fractions; null clears it", () => {
+  assert.deepEqual(parsePhotoFocus({ x: 0.12345, y: 1 }), { x: 0.123, y: 1 });
+  assert.equal(parsePhotoFocus(null), null);
+  assert.throws(() => parsePhotoFocus({ x: 1.2, y: 0.5 }), /between 0 and 1/);
+  assert.throws(() => parsePhotoFocus({ x: "0.5", y: 0.5 }), /between 0 and 1/);
+  assert.throws(() => parsePhotoFocus(undefined), /between 0 and 1/);
 });

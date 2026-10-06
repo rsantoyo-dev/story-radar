@@ -85,7 +85,7 @@ export async function storeDocumentaryPhotoReference(topicId: string, bytes: Buf
 /** The stored verified map, byte-identical to what the adapter rendered, for the reference-guided composition. */
 export async function readDocumentaryMapReference(evidence: PreparedPlaceVisual["evidence"]): Promise<File> {
   const { referenceTopicId, sha256 } = evidence;
-  if (evidence.generationUse !== "ai-reference" || !referenceTopicId || evidence.representation !== "map" || !sha256) {
+  if (!evidence.generationUse || !referenceTopicId || evidence.representation !== "map" || !sha256) {
     throw new Error("The verified map reference is missing. Generate the images again.");
   }
   const file = await readPrivateR2ImageFile({ objectKey: buildDocumentaryObjectKey(referenceTopicId, "originals", sha256), contentType: "image/png" });

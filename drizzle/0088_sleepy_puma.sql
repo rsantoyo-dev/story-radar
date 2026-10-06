@@ -1,0 +1,3 @@
+ALTER TABLE "story_reference_photos" ADD COLUMN "focus_x" real;--> statement-breakpoint
+ALTER TABLE "story_reference_photos" ADD COLUMN "focus_y" real;--> statement-breakpoint
+ALTER TABLE "story_reference_photos" ADD CONSTRAINT "story_reference_photo_focus_check" CHECK (("story_reference_photos"."focus_x" IS NULL AND "story_reference_photos"."focus_y" IS NULL) OR ("story_reference_photos"."focus_x" BETWEEN 0 AND 1 AND "story_reference_photos"."focus_y" BETWEEN 0 AND 1));

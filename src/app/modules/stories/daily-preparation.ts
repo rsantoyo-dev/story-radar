@@ -9,6 +9,7 @@ import { approveSavedCreativeDraft, createCreativeBrief, createCreativeDraft, ge
 import { changeCreativeAssetApproval, generateCreativeDraftAssets, getCreativeDraftAssets } from "./manage-creative-assets";
 import { storyCollectionContexts } from "../editorial-lines/editorial-lines.repository";
 class PreparationReviewNeeded extends Error {}
+const MULTIPLE_CONTEXTS_MESSAGE="This story was found by different editorial lines or research questions. Choose the intended context in the creative workspace.";
 const messageOf=(error:unknown,fallback:string)=>typeof (error as {message?:unknown})?.message==="string" ? (error as {message:string}).message : fallback;
 /** Stories whose article turned out incomplete before the run asks a human. */
 export const MAX_CONTENT_ATTEMPTS = 3;
@@ -17,7 +18,7 @@ const ALREADY_PUBLISHED = "Already published in this topic";
 const PRE_CREATIVE_STEPS = new Set(["approve", "content", "focus", "brief"]);
 import { randomUUID } from "node:crypto";
 import { requireTopic } from "../topics/topic-context";
-import { collectionContext, resolveLineResearch } from "../editorial-lines/editorial-lines";
+import { collectionContext, defaultStoryContext, resolveLineResearch } from "../editorial-lines/editorial-lines";
 import { getEditorialLine, reserveCollection, finishCollection } from "../editorial-lines/editorial-lines.repository";
 import { listTopicRssSourceConfigs } from "../topics/topic-catalog.repository";
 import { getAiResearchSourceConfig } from "../sources/ai-research/ai-research.repository";
@@ -180,7 +181,8 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
         return await finish("focus", "brief");
       }
       const contexts=await storyCollectionContexts(topicId,progress.storyId);
-      const context=contexts.find(c=>c.runId===progress.collectionRunId) ?? (contexts.length===1?contexts[0]:undefined);
+      const context=contexts.find(c=>c.runId===progress.collectionRunId) ?? defaultStoryContext(contexts);
+      if(contexts.length>1 && !context)throw new PreparationReviewNeeded(MULTIPLE_CONTEXTS_MESSAGE);
       const result=await suggestEditorialFocus(topicId,progress.storyId,undefined,context?.runId,run.id,run.timezone);
       progress.editorialDirection=result.editorialDirection;
       note("Editorial focus suggested");
@@ -197,8 +199,8 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
       if(!progress.storyId)throw new PreparationReviewNeeded("The recommended story is unavailable.");
       await approveDailyStory(topicId, progress.storyId);
       const contexts=await storyCollectionContexts(topicId,progress.storyId);
-      const context=contexts.find(c=>c.runId===progress.collectionRunId) ?? (contexts.length===1?contexts[0]:undefined);
-      if(contexts.length>1 && !context)throw new PreparationReviewNeeded("This story has multiple editorial contexts. Choose the intended context in the creative workspace.");
+      const context=contexts.find(c=>c.runId===progress.collectionRunId) ?? defaultStoryContext(contexts);
+      if(contexts.length>1 && !context)throw new PreparationReviewNeeded(MULTIPLE_CONTEXTS_MESSAGE);
       const prepared=progress.briefId ? await getCreativeWorkspaceState(topicId,progress.storyId,run.id) : undefined;
       const reusedBrief=prepared?.briefIsCurrent && prepared.brief?.id===progress.briefId ? prepared.brief : undefined;
       const brief=reusedBrief ?? (await createCreativeBrief(topicId,progress.storyId,progress.editorialDirection,context?.runId,run.id)).state.brief;

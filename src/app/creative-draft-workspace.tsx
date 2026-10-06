@@ -65,6 +65,7 @@ import {
   type GeneratedCreativeDraft,
 } from "./modules/stories/creative-content.types";
 import { resolveEffectiveVisualFidelity } from "./modules/stories/creative-visual-fidelity";
+import { defaultStoryContext } from "./modules/editorial-lines/editorial-lines";
 import { ListField, TextAreaField, TextField } from "./creative-profile-fields";
 import { Button } from "./ui/primitives";
 import type { StoryContentResponse } from "./radar-dashboard";
@@ -307,7 +308,9 @@ export function CreativeDraftWorkspace({
   const currentDraft = primaryDrafts.find(
     (draft) => draft.inputIsCurrent !== false,
   );
-  const effectiveResearchRun=researchRun ?? workspace?.brief?.collectionContext?.runId ?? initialEditorialRunId ?? (workspace?.collectionContexts?.length===1?workspace.collectionContexts[0].runId:undefined);
+  // Runs of one strategy default to the latest; different lines or questions wait for the editor's choice.
+  const effectiveResearchRun=researchRun ?? workspace?.brief?.collectionContext?.runId ?? initialEditorialRunId ?? defaultStoryContext(workspace?.collectionContexts ?? [])?.runId;
+  const researchChoiceNeeded=Boolean(workspace?.collectionContexts && workspace.collectionContexts.length>1 && !effectiveResearchRun);
   const creativeBriefQuery = new URLSearchParams({
     ...(effectiveResearchRun ? { editorialRunId: effectiveResearchRun } : {}),
     ...(initialPreparationRunId ? { preparationRunId: initialPreparationRunId } : {}),
@@ -1894,7 +1897,7 @@ export function CreativeDraftWorkspace({
               ) : null}
 
               <div className={styles.editorialDirectionPanel}>
-                {workspace.collectionContexts?.length ? <label>Research context for a new brief<select value={effectiveResearchRun??""} onChange={e=>setResearchRun(e.target.value||undefined)}><option value="">Choose research context</option>{workspace.collectionContexts.map(c=><option key={c.runId} value={c.runId}>{c.context.name} · {c.context.mode} · {c.context.query||c.context.objective}</option>)}</select><small>Existing drafts retain the context reviewed when they were created.</small></label>:null}
+                {workspace.collectionContexts?.length ? <label>Research context for a new brief<select value={effectiveResearchRun??""} onChange={e=>setResearchRun(e.target.value||undefined)}><option value="">Choose research context</option>{workspace.collectionContexts.map(c=><option key={c.runId} value={c.runId}>{c.context.name} · {c.context.mode} · {c.context.query||c.context.objective}{c.foundAt ? ` · found ${new Date(c.foundAt).toLocaleDateString()}` : ""}</option>)}</select><small>{researchChoiceNeeded ? "Different editorial lines or research questions found this story. Choose the one this brief follows." : "Existing drafts retain the context reviewed when they were created."}</small></label>:null}
                 <div className={styles.profileSummaryGrid}>
                   <label>
                     Structure for this brief
@@ -1950,7 +1953,7 @@ export function CreativeDraftWorkspace({
                   maxLength={1500}
                 />
                 <button type="button" className={styles.secondaryButton}
-                  disabled={Boolean(busy) || !workspace.story.hasContent || workspace.daily.remainingRuns <= 0}
+                  disabled={Boolean(busy) || !workspace.story.hasContent || workspace.daily.remainingRuns <= 0 || researchChoiceNeeded}
                   onClick={handleSuggestFocus}>
                   {busy === "editorial-focus" ? "AI · Finding the best focus…" : "AI · Suggest editorial focus"}
                 </button>
@@ -1978,7 +1981,7 @@ export function CreativeDraftWorkspace({
                     <strong>{workspace.brief ? "The brief is out of date" : "No creative brief yet"}</strong>
                     <p>{workspace.brief ? "Story content, profile settings, or editorial focus changed. Refresh before generating another draft." : "AI will use the source and your optional focus to recommend a meme or carousel."}</p>
                   </div>
-                  <Button variant="primary" disabled={Boolean(busy) || !workspace.story.hasContent} onClick={handleCreateBrief}>
+                  <Button variant="primary" disabled={Boolean(busy) || !workspace.story.hasContent || researchChoiceNeeded} onClick={handleCreateBrief}>
                     {busy === "brief" ? "Creating brief…" : workspace.brief ? "Apply focus and refresh brief" : "Create creative brief"}
                   </Button>
                   {busy==="brief"?<p role="status">Preparing your brief. The draft controls will open when it is ready.</p>:null}
@@ -3855,7 +3858,7 @@ function DraftEditor({
             </fieldset>
             <BrandSelectionSummary selection={unit.brandReferenceSelection} />
             {storyPhotos.error ? <p role="alert">{storyPhotos.error}</p> : null}
-            <StoryPhotoPicker scope={photoScope} photos={storyPhotos.photos} selected={unit.storyReferences ?? []} onChange={storyReferences => updateUnit(index, { ...unit, storyReferences })} />
+            <StoryPhotoPicker scope={photoScope} photos={storyPhotos.photos} selected={unit.storyReferences ?? []} onChange={storyReferences => updateUnit(index, { ...unit, storyReferences })} onPhotosChanged={storyPhotos.refresh} />
           </article>
         ))}
       </div>

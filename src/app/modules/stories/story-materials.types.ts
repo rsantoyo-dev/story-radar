@@ -1,10 +1,22 @@
 export const STORY_REFERENCE_PURPOSES = ["subject", "result", "step", "place", "style", "documentary-portrait"] as const;
 export type StoryReferencePurpose = typeof STORY_REFERENCE_PURPOSES[number];
 export type StoryReferenceSelection = { id: string; purpose: StoryReferencePurpose };
+/** A point in a photo as fractions of its width and height, from the top left. */
+export type PhotoFocus = { x: number; y: number };
 export type StoryReferencePhoto = {
   id: string; name: string; description: string; provenance: string;
   providerTransmissionAllowed: boolean; active: boolean;
+  /** Where the subject is; crops keep this point. Absent: automatic framing. */
+  focus?: PhotoFocus;
 };
+/** A focal point from untrusted input, rounded; null clears it. */
+export function parsePhotoFocus(value: unknown): PhotoFocus | null {
+  if (value === null) return null;
+  const point = value as { x?: unknown; y?: unknown } | undefined;
+  const valid = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 1;
+  if (!point || typeof point !== "object" || !valid(point.x) || !valid(point.y)) throw new StoryMaterialValidationError("The focal point must be two numbers between 0 and 1.");
+  return { x: Math.round(point.x * 1000) / 1000, y: Math.round(point.y * 1000) / 1000 };
+}
 export type StoryContentEdition = {
   revision: number;
   original: { title: string; text: string };

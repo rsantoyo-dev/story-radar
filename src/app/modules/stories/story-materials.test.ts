@@ -192,3 +192,26 @@ test("photo identity takes priority over generic scene styling, while style-only
   assert.doesNotMatch(style, /PHOTO-LED COMPOSITION/);
   assert.match(style, /Do not copy their subjects/);
 });
+
+test("a photo's focal point is framing only: set, cleared and range-checked, its bytes untouched", async () => {
+  const client = new PGlite();
+  try {
+    await client.exec(`CREATE TABLE topic_stories (id uuid, topic_id uuid, story_id uuid, review_decision text DEFAULT 'approved', UNIQUE(topic_id,story_id)); CREATE TABLE creative_units(id uuid); INSERT INTO topic_stories(id,topic_id,story_id) VALUES ('${id}','${id}','${id}');`);
+    await client.exec(readFileSync(new URL("../../../../drizzle/0069_wet_lake.sql", import.meta.url), "utf8"));
+    await client.exec(readFileSync(new URL("../../../../drizzle/0088_sleepy_puma.sql", import.meta.url), "utf8"));
+    await client.exec(`INSERT INTO story_reference_photos(id,topic_id,story_id,name,description,provenance,object_key,sha256,file_name,file_size) VALUES ('${id}','${id}','${id}','Jo','Jo and the dog','Own photo','private/jo','abc','jo.webp',10);`);
+    const repository = load("./story-materials.repository.ts", { "@/db/client": { db: drizzle(client) }, "@/db/schema": schema, "./story-materials.types": input });
+    const framed = await repository.setStoryPhotoFocus(id, id, id, { x: 0.4, y: 0.72 }) as input.StoryReferencePhoto;
+    assert.equal(framed.focus?.x, 0.4);
+    assert.equal(framed.focus?.y, 0.72);
+    const row = await repository.findStoryPhoto(id, id, id) as { sha256: string; objectKey: string };
+    assert.equal(row.sha256, "abc");
+    assert.equal(row.objectKey, "private/jo");
+    assert.equal((await repository.setStoryPhotoFocus(id, id, id, null) as input.StoryReferencePhoto).focus, undefined, "automatic framing again");
+    await assert.rejects(repository.setStoryPhotoFocus(other, id, id, { x: 0.5, y: 0.5 }), /not found/);
+    await assert.rejects(client.exec(`UPDATE story_reference_photos SET focus_x = 1.5, focus_y = 0.5`), /story_reference_photo_focus_check/);
+    // The check lets a half-set point through (NULL is not false); it reads as automatic framing.
+    await client.exec(`UPDATE story_reference_photos SET focus_x = 0.5, focus_y = NULL`);
+    assert.equal((repository.publicStoryPhoto(await repository.findStoryPhoto(id, id, id)) as unknown as input.StoryReferencePhoto).focus, undefined);
+  } finally { await client.close(); }
+});

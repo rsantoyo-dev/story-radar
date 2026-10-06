@@ -5,7 +5,7 @@ import { db } from "@/db/client";
 import { editorialLines, editorialCollectionRuns, editorialStoryContexts, topics } from "@/db/schema";
 import { listTopicRssSourceConfigs } from "../topics/topic-catalog.repository";
 import { getAiResearchSourceConfig } from "../sources/ai-research/ai-research.repository";
-import { EditorialLineError, parseLineConfig, type EditorialLine, type EditorialCollectionContext } from "./editorial-lines";
+import { defaultStoryContext, EditorialLineError, parseLineConfig, type EditorialLine, type EditorialCollectionContext } from "./editorial-lines";
 
 const asLine = (row: typeof editorialLines.$inferSelect): EditorialLine => ({...row.config,id:row.id,topicId:row.topicId,revision:row.revision,archived:row.archived,isDefault:row.id===defaultEditorialLineId(row.topicId)});
 export async function listEditorialLines(topicId:string) { await ensureDefaultEditorialLine(topicId); return (await db.select().from(editorialLines).where(eq(editorialLines.topicId,topicId)).orderBy(desc(editorialLines.updatedAt))).map(asLine); }
@@ -73,14 +73,16 @@ export async function listStoryContexts(topicId:string) {
 export async function recentLineRuns(topicId:string) {return db.select().from(editorialCollectionRuns).where(eq(editorialCollectionRuns.topicId,topicId)).orderBy(desc(editorialCollectionRuns.startedAt)).limit(20);}
 
 function identity(context:EditorialCollectionContext|null){if(!context)return null;return [context.lineId,context.revision,context.query,JSON.stringify(context.period,Object.keys(context.period).sort())];}
+/** Newest first. */
 export async function storyCollectionContexts(topicId:string,storyId:string) {
-  return db.select({runId:editorialStoryContexts.runId,context:editorialStoryContexts.context}).from(editorialStoryContexts).where(and(eq(editorialStoryContexts.topicId,topicId),eq(editorialStoryContexts.storyId,storyId))).orderBy(desc(editorialStoryContexts.createdAt)).limit(30);
+  return db.select({runId:editorialStoryContexts.runId,context:editorialStoryContexts.context,createdAt:editorialStoryContexts.createdAt}).from(editorialStoryContexts).where(and(eq(editorialStoryContexts.topicId,topicId),eq(editorialStoryContexts.storyId,storyId))).orderBy(desc(editorialStoryContexts.createdAt)).limit(30);
 }
 export async function selectedStoryContext(topicId:string,storyId:string,runId?:string) {
   const choices=await storyCollectionContexts(topicId,storyId);
   if(runId){validId(runId);const chosen=choices.find(c=>c.runId===runId);if(!chosen)throw new EditorialLineError("Research context not found on this story",404);return {...chosen.context,runId};}
-  if(choices.length>1)throw new EditorialLineError("Choose the research context for this new brief",409);
-  return choices[0]?{...choices[0].context,runId:choices[0].runId}:undefined;
+  const chosen=defaultStoryContext(choices);
+  if(choices.length>1 && !chosen)throw new EditorialLineError("Choose the research context for this new brief",409);
+  return chosen?{...chosen.context,runId:chosen.runId}:undefined;
 }
 
 // Stable per-brand identity makes concurrent initialization idempotent, including brands

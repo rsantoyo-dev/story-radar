@@ -767,6 +767,8 @@ export type CreativeUnit = {
     layout?: import("./creative-portrait-composite").PortraitLayoutId;
     /** Brand colour of the layout's colour block. */
     accent?: string;
+    /** The photo's focal point when this image was made; absent, the crop was automatic. */
+    focus?: import("./story-materials.types").PhotoFocus;
   };
   /**
    * Declares the kind of visual this slide needs. `verified-map` routes the
@@ -987,7 +989,8 @@ export type CreativeDailyUsage = CreativeAiUsage & {
 };
 
 export type CreativeWorkspaceState = {
-  collectionContexts?: {runId:string;context:import("../editorial-lines/editorial-lines").EditorialCollectionContext}[];
+  /** Newest first; foundAt is when that research run found the story. */
+  collectionContexts?: {runId:string;context:import("../editorial-lines/editorial-lines").EditorialCollectionContext;foundAt?:string}[];
   story: {
     storyId: string;
     title: string;

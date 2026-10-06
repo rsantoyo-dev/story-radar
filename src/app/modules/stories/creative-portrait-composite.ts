@@ -168,26 +168,55 @@ function shapeSvg(layout: PortraitLayout, fill: string, opacity = 1): Buffer {
   return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">${body}</svg>`);
 }
 
+/**
+ * The largest window of the frame's shape that keeps the focal point as
+ * central as the photo allows, in the photo's pixels.
+ */
+export function focalCrop(photo: { width: number; height: number }, frame: { width: number; height: number }, focus: { x: number; y: number }) {
+  const aspect = frame.width / frame.height;
+  const width = Math.min(photo.width, Math.round(photo.height * aspect));
+  const height = Math.min(photo.height, Math.round(photo.width / aspect));
+  const clamp = (value: number, max: number) => Math.min(Math.max(0, Math.round(value)), max);
+  return {
+    left: clamp(focus.x * photo.width - width / 2, photo.width - width),
+    top: clamp(focus.y * photo.height - height / 2, photo.height - height),
+    width,
+    height,
+  };
+}
+
+async function framedPhoto(photo: Uint8Array, frame: { width: number; height: number }, focus?: { x: number; y: number }): Promise<Buffer> {
+  const oriented = sharp(photo, { limitInputPixels: 40_000_000 }).rotate();
+  // Without the editor's focal point the crop keeps the most salient part,
+  // which in a bright landscape can be the trees rather than the people.
+  if (!focus) return oriented.resize({ ...frame, fit: "cover", position: sharp.strategy.attention }).ensureAlpha().png().toBuffer();
+  const { data, info } = await oriented.toBuffer({ resolveWithObject: true });
+  return sharp(data, { limitInputPixels: 40_000_000 })
+    .extract(focalCrop(info, frame, focus))
+    .resize({ ...frame, fit: "fill" })
+    .ensureAlpha()
+    .png()
+    .toBuffer();
+}
+
 export async function compositeDocumentaryPortrait({
   image,
   photo,
   layout: layoutId,
   accent,
+  focus,
 }: {
   image: Uint8Array;
   photo: Uint8Array;
   layout?: string;
   accent?: string;
+  /** The editor's focal point on the photo; absent, the crop is automatic. */
+  focus?: { x: number; y: number };
 }): Promise<Buffer> {
   const layout = layoutById(layoutId);
   const { left, top, width, height } = layout.photo;
-  // Cropped to the shape; the crop keeps the most salient part (faces).
-  const cropped = await sharp(photo, { limitInputPixels: 40_000_000 })
-    .rotate()
-    .resize({ width, height, fit: "cover", position: sharp.strategy.attention })
-    .ensureAlpha()
-    .png()
-    .toBuffer();
+  // Cropped to the shape around the editor's focal point when there is one.
+  const cropped = await framedPhoto(photo, { width, height }, focus);
   const shaped = layout.shape === "rect"
     ? cropped
     : await sharp(cropped).composite([{ input: shapeSvg(layout, "#000"), blend: "dest-in" }]).png().toBuffer();

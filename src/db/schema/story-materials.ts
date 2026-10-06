@@ -1,4 +1,5 @@
-import { boolean, foreignKey, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { boolean, check, foreignKey, integer, jsonb, pgTable, real, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { topicStories } from "./topic-stories";
 
 /** Append-only editorial copies; never overwrite the publisher's shared story. */
@@ -31,10 +32,19 @@ export const storyReferencePhotos = pgTable("story_reference_photos", {
   fileName: text("file_name").notNull(),
   contentType: text("content_type").notNull().default("image/webp"),
   fileSize: integer("file_size").notNull(),
+  /**
+   * Where the photo's subject is, as fractions of its width and height, set
+   * by the editor. Crops keep this point; null leaves framing automatic. It
+   * changes framing only, never the bytes. The repository writes both or
+   * neither, and a row with only one reads as automatic framing.
+   */
+  focusX: real("focus_x"),
+  focusY: real("focus_y"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, table => [
   foreignKey({ columns: [table.topicId, table.storyId], foreignColumns: [topicStories.topicId, topicStories.storyId] }).onDelete("cascade"),
   uniqueIndex("story_reference_object_unique").on(table.objectKey),
+  check("story_reference_photo_focus_check", sql`(${table.focusX} IS NULL AND ${table.focusY} IS NULL) OR (${table.focusX} BETWEEN 0 AND 1 AND ${table.focusY} BETWEEN 0 AND 1)`),
 ]);
 
 /**

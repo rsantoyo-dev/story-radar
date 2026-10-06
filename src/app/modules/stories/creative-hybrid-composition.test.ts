@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 
-async function compose(mode = "illustration-editorial", photoTest = false, includeUnresolvedGeoUnit = false, mapMode?: "ai" | "local", includeUnresolvedRealPhotoUnit = false, includeIdentityPhotoUnit = false, coverTypographyOnly = false, includeDocumentaryPortraitUnit = false) {
+async function compose(mode = "illustration-editorial", photoTest = false, includeUnresolvedGeoUnit = false, mapMode?: "ai" | "local", includeUnresolvedRealPhotoUnit = false, includeIdentityPhotoUnit = false, coverTypographyOnly = false, includeDocumentaryPortraitUnit = false, mapAdapter = "quebec511", closingTypographyOnly = false) {
   const source = readFileSync("src/app/modules/stories/manage-creative-assets.ts", "utf8");
   const start = source.indexOf("async function composeDraftPlaceVisuals(");
   const end = source.indexOf("async function recomposePlaceAsset(", start);
@@ -17,7 +17,7 @@ async function compose(mode = "illustration-editorial", photoTest = false, inclu
   const identityPhotoBytes = Buffer.from("commons-photo");
   const storedPhotos: string[] = [];
   const prepared = new Map<number, unknown>([[3, { bytes: photo, evidence: { representation: "photo", reasons: ["Archive photograph from an eligible source; not evidence of the event."], place: { name: "Museum" }, photo: { author: "Yource", license: "CC BY-SA 4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0/" } } }]]);
-  if (mapMode) prepared.set(2, { bytes: map, evidence: { representation: "map", adapter: "quebec511", sha256: "map-sha", attribution: "MTMD · CC BY 4.0 · © OpenStreetMap contributors", reasons: ["Official MTMD segment rendered as location context"], adapterEvidence: { reason: "matched", segment: { id: "172650", chantier: "319446" } } } });
+  if (mapMode) prepared.set(2, { bytes: map, evidence: { representation: "map", adapter: mapAdapter, sha256: "map-sha", attribution: "MTMD · CC BY 4.0 · © OpenStreetMap contributors", reasons: ["Official MTMD segment rendered as location context"], adapterEvidence: { reason: "matched", segment: { id: "172650", chantier: "319446" } } } });
   // A visualNeed-declared slide whose own direction never mentions a map, so
   // only the declaration — not requestsGeographicReconstruction — routes it;
   // research found nothing, matching a failed Wikidata/Commons resolution.
@@ -28,7 +28,7 @@ async function compose(mode = "illustration-editorial", photoTest = false, inclu
   type TestUnit = { id: string; order: number; role: string; type: string; assetRequest: string; headline: string; visualDirection: string; visualNeed?: string; storyReferences?: { id: string; purpose: string }[] };
   const draft = { id: "draft", version: 3, storyId: "story",
     units: ([1, 2, 3, 4].map(order => ({ id: String(order), order, role: order === 1 ? "cover" : "content",
-      type: "carousel-slide", assetRequest: coverTypographyOnly && order === 1 ? "typography-only" : "generated-image", headline: "Headline", visualDirection: "Editorial illustration" })) as TestUnit[])
+      type: "carousel-slide", assetRequest: (coverTypographyOnly && order === 1) || (closingTypographyOnly && order === 4) ? "typography-only" : "generated-image", headline: "Headline", visualDirection: "Editorial illustration" })) as TestUnit[])
       .concat(includeUnresolvedGeoUnit ? [{ id: "5", order: 5, role: "content", type: "carousel-slide",
         assetRequest: "generated-image", headline: "Headline", visualDirection: "Public square rally" }] : [])
       .concat(includeUnresolvedRealPhotoUnit ? [{ id: "6", order: 6, role: "content", type: "carousel-slide",
@@ -99,6 +99,9 @@ async function compose(mode = "illustration-editorial", photoTest = false, inclu
     portraitZonePrompt: (layout: string) => `\n<DOCUMENTARY_PHOTO_ZONE>${layout}</DOCUMENTARY_PHOTO_ZONE>`,
     portraitAccent: () => "#168C91",
     normalizePalette: () => [],
+    mapPaletteFromBrand: () => ({ surface: "#FFF9F0", primary: "#173F43", accent: "#B94F24" }),
+    MAP_PANEL_VISUAL_DIRECTION: "Calm layout around the pasted map",
+    mapPanelZonePrompt: () => "\n<VERIFIED_MAP_ZONE>reserved</VERIFIED_MAP_ZONE>",
     storyReferenceBatchTag: () => ":story-refs-v3-refs-hash",
     photoLedVisualDirection: (direction: string) => direction,
     shouldApplyCreativeBrandOverlay: () => true,
@@ -148,6 +151,22 @@ test("a verified map slide is generated with the stored map as its last referenc
   const strict = await compose("photo-required", false, false, "ai");
   assert.deepEqual(strict.submitted, []);
   assert.deepEqual(strict.storedMaps, []);
+});
+
+test("a Google map is never sent to the model: the slide reserves a band and the stored map is pasted there", async () => {
+  const result = await compose("illustration-editorial", false, false, "ai", false, false, false, false, "google-maps");
+  assert.deepEqual(result.submitted, [1, 2, 4]);
+  assert.deepEqual(result.storedMaps, ["map-sha"], "the exact map is stored for the paste");
+  const slide = result.assets.find(a => a.unitOrder === 2)!;
+  assert.doesNotMatch(String(slide.prompt), /LAST input image/, "no reference instruction");
+  assert.match(String(slide.prompt), /VERIFIED_MAP_ZONE/);
+  assert.match(String(slide.prompt), /\[Calm layout around the pasted map\]/, "the slide's own direction gives way to the panel");
+  const evidence = (slide.unitSnapshot as { placeVisual: { generationUse: string; panelColor: string; referenceTopicId: string; sha256: string; reasons: string[] } }).placeVisual;
+  assert.equal(evidence.generationUse, "panel");
+  assert.equal(evidence.panelColor, "#173F43");
+  assert.equal(evidence.referenceTopicId, "topic");
+  assert.equal(evidence.sha256, "map-sha");
+  assert.match(evidence.reasons.join(" "), /pasted unaltered/);
 });
 
 test("a documentary portrait slide is designed by the AI around a reserved zone, and the photo is never an input", async () => {
@@ -298,6 +317,14 @@ test("a strict photo-required topic still refuses a real-place slide with no ver
   const result = await compose("photo-required", false, true);
   assert.deepEqual(result.submitted, []);
   assert.deepEqual(result.rendered, [1, 2, 3, 4, 5]);
+});
+
+test("a typography-only slide after the cover is designed by the image model too, never the bare local text card", async () => {
+  const result = await compose("illustration-editorial", false, false, undefined, false, false, false, false, "quebec511", true);
+  assert.ok(result.submitted.includes(4), "the typography-only closing slide is sent to the model");
+  assert.ok(!result.rendered.includes(4), "and not rendered as a local text card");
+  const strict = await compose("photo-required", false, false, undefined, false, false, false, false, "quebec511", true);
+  assert.ok(!strict.submitted.includes(4), "a strict photo policy still keeps it local");
 });
 
 test("a cover marked typography-only is still generated by the image model; only the strict photo policy keeps it local", async () => {

@@ -326,19 +326,30 @@ export async function createCreativeAssetBatch({
   return saved;
 }
 
-export async function insertRegeneratedCreativeAsset({ previous, prompt, references, unitSnapshot, expectedDraftVersion }: {
+export async function insertRegeneratedCreativeAsset({ previous, prompt, references, unitSnapshot, expectedDraftVersion, design }: {
   previous: CreativeGeneratedAsset;
   prompt: string;
   references?: import("./creative-brand-generation").GenerationReferences;
   unitSnapshot?: CreativeUnit;
   expectedDraftVersion?: number;
+  /**
+   * A locally composed text card redesigned by the image model: the new
+   * version takes this text-to-image endpoint and the brand post-processing
+   * the local card never had.
+   */
+  design?: { endpoint: string; brandOverlaySnapshot?: unknown; carouselChromeSnapshot?: unknown };
 }): Promise<CreativeGeneratedAsset> {
   const id = randomUUID();
-  const guided = references ? Boolean(references.base || references.characters.length || references.brand.length || references.story?.length) : undefined;
-  const originalModel = findCreativeImageModelByEndpoint(previous.providerEndpoint);
-  if (!originalModel) throw new CreativeBrandReferenceConflictError("The original image model is unavailable.");
-  const regeneratedEndpoint = guided === undefined ? previous.providerEndpoint
-    : creativeImageEndpoint(originalModel.descriptor, guided ? "reference-guided" : "text-to-image");
+  // A verified place map or photo is sent as the last reference image (see
+  // submitStoredAsset), so it needs the reference-guided endpoint too.
+  const placeReference = (unitSnapshot ?? previous.unitSnapshot).placeVisual?.generationUse === "ai-reference";
+  const guided = design ? false
+    : references ? Boolean(references.base || references.characters.length || references.brand.length || references.story?.length || placeReference) : undefined;
+  const originalModel = design ? undefined : findCreativeImageModelByEndpoint(previous.providerEndpoint);
+  if (!design && !originalModel) throw new CreativeBrandReferenceConflictError("The original image model is unavailable.");
+  const regeneratedEndpoint = design ? design.endpoint
+    : guided === undefined ? previous.providerEndpoint
+    : creativeImageEndpoint(originalModel!.descriptor, guided ? "reference-guided" : "text-to-image");
   const [, inserted] = await db.batch([
     db.select({ id: creativeAssetBatches.id }).from(creativeAssetBatches)
       .innerJoin(creativeDrafts, eq(creativeDrafts.id, creativeAssetBatches.draftId))
@@ -352,7 +363,9 @@ export async function insertRegeneratedCreativeAsset({ previous, prompt, referen
         COALESCE(${guided === undefined ? null : guided ? "reference-guided" : "text-to-image"}::creative_asset_generation_mode,a.generation_mode),
         ${regeneratedEndpoint},
         COALESCE(${references ? JSON.stringify(references) : null}::jsonb,a.reference_snapshot),
-        COALESCE(${references ? referenceEnvelopeHash(references) : null},a.reference_input_hash),a.brand_overlay_snapshot,a.carousel_chrome_snapshot
+        COALESCE(${references ? referenceEnvelopeHash(references) : null},a.reference_input_hash),
+        COALESCE(${design?.brandOverlaySnapshot ? JSON.stringify(design.brandOverlaySnapshot) : null}::jsonb,a.brand_overlay_snapshot),
+        COALESCE(${design?.carouselChromeSnapshot ? JSON.stringify(design.carouselChromeSnapshot) : null}::jsonb,a.carousel_chrome_snapshot)
       FROM creative_assets a JOIN creative_asset_batches b ON b.id=a.batch_id JOIN creative_drafts d ON d.id=b.draft_id
       WHERE a.id=${previous.id}::uuid AND a.status NOT IN ('queued','generating') AND b.status <> 'stale' AND (d.status='approved' OR ${expectedDraftVersion ?? references?.textSync?.draftVersion ?? null}=d.version) AND d.version=b.draft_version
         AND NOT EXISTS (SELECT 1 FROM creative_assets newer WHERE newer.batch_id=a.batch_id AND newer.unit_order=a.unit_order AND newer.version>a.version)

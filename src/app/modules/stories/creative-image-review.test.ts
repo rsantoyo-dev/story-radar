@@ -25,6 +25,13 @@ test("third-party logos block", () => {
   assert.match(imageReviewIssues({ ...clean, thirdPartyLogos: ["WWE", " "] }, { characters: [] }).join(" "), /third-party logos: WWE\./);
 });
 
+test("a pasted map keeps its provider's logo; other logos still block", () => {
+  const verifiedMap = { provider: "Google", region: { left: 6, top: 47, right: 94, bottom: 92 } };
+  assert.deepEqual(imageReviewIssues({ ...clean, thirdPartyLogos: ["Google", "Google Maps logo"] }, { verifiedMap, characters: [] }), []);
+  assert.match(imageReviewIssues({ ...clean, thirdPartyLogos: ["Google", "Nike"] }, { verifiedMap, characters: [] }).join(" "), /third-party logos: Nike\./);
+  assert.match(imageReviewIssues({ ...clean, thirdPartyLogos: ["Google"] }, { characters: [] }).join(" "), /third-party logos: Google\./, "without a pasted map, a Google logo is generated");
+});
+
 test("only a complete, structured answer is trusted", () => {
   assert.throws(() => parseImageReviewAnswer("nope"), CreativeImageReviewResponseError);
   assert.throws(() => parseImageReviewAnswer(JSON.stringify({ possibleRealPersonLikeness: false })), CreativeImageReviewResponseError);

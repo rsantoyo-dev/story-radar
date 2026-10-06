@@ -15,6 +15,7 @@ import { isOfficialRoadNoticeSource } from "./quebec-road-map";
 import { sourceLocations, sourceLocationForUnit } from "./source-location";
 import { prepareSourceLocation } from "./prepare-source-location";
 import { resolveGooglePlaceMap } from "./resolve-google-place-map";
+import { mapPaletteFromBrand } from "./creative-map-panel";
 
 const schema = { type: "object", additionalProperties: false, required: ["mentions", "purpose"], properties: {
   purpose: { type: "string", enum: ["location", "current-state", "unknown"] },
@@ -95,7 +96,7 @@ export async function preparePlaceVisuals(topicId: string, draft: CreativeDraft,
     // result for a name- and scope-confirmed place, so any success here is at
     // least as trustworthy as the Wikidata path below. Any failure (no key,
     // no budget, ambiguous, provider error) falls through unchanged.
-    const google=await resolveGooglePlaceMap(mention.name,profile.geoScope,profile.language,googleSignal).catch(()=>undefined);
+    const google=await resolveGooglePlaceMap(mention.name,profile.geoScope,profile.language,googleSignal,undefined,undefined,undefined,mapPaletteFromBrand(profile.brandPalette ?? [])).catch(()=>undefined);
     if(google){
       result.bytes=google.bytes;result.evidence.representation="map";result.evidence.adapter=google.evidence.adapter;
       result.evidence.sourceUrl=google.evidence.sourceUrl;result.evidence.attribution=google.evidence.attribution;

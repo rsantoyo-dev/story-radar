@@ -250,7 +250,7 @@ export async function getCreativeWorkspaceState(
     ...(acquisitionTaxonomy ? { acquisitionTaxonomy } : {}),
     ...(brief ? { brief } : {}),
     briefIsCurrent,
-    collectionContexts: await storyCollectionContexts(topicId,storyId),
+    collectionContexts: (await storyCollectionContexts(topicId,storyId)).map(({runId,context,createdAt})=>({runId,context,foundAt:createdAt.toISOString()})),
     drafts,
     daily,
     textSpend: await getCreativeTextSpend(topicId, storyId),

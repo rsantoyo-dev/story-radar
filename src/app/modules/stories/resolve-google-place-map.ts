@@ -11,6 +11,7 @@ import {
 import { providerLanguage } from "./creative-documentary-providers";
 import type { CreativeGeoScope } from "./creative-content.types";
 import { PLACE_VISUAL_VERSION, type PlaceVisualEvidence } from "./creative-place-visual";
+import type { MapPalette } from "./creative-map-panel";
 
 export type GoogleGenerationConfig = { maxPerDay: number };
 export function googleGenerationConfig(
@@ -58,6 +59,8 @@ export async function resolveGooglePlaceMap(
   config: GoogleMapsConfig = googleMapsConfig(),
   generation: GoogleGenerationConfig = googleGenerationConfig(),
   transport?: GoogleTransport,
+  /** The brand's colours, drawn by Google's own map styling. */
+  palette?: MapPalette,
 ): Promise<{ evidence: PlaceVisualEvidence; bytes: Buffer } | undefined> {
   if (!config.enabled || !config.apiKey) return undefined;
   if (!reserveGenerationCall(generation.maxPerDay)) return undefined;
@@ -73,7 +76,7 @@ export async function resolveGooglePlaceMap(
     });
     const place = selectMatchingGooglePlace(candidates, incomplete);
     if (!place) return undefined;
-    const bytes = await provider.map(place);
+    const bytes = await provider.map(place, palette);
     const metadata = await sharp(bytes, { limitInputPixels: 16_000_000 }).metadata();
     if (
       !metadata.width ||

@@ -1,7 +1,7 @@
 "use client";
 import Image from "next/image";
 import { useEffect, useState } from "react";
-import { STORY_REFERENCE_PURPOSES, type StoryReferencePhoto, type StoryReferenceSelection } from "./modules/stories/story-materials.types";
+import { STORY_REFERENCE_PURPOSES, type PhotoFocus, type StoryReferencePhoto, type StoryReferenceSelection } from "./modules/stories/story-materials.types";
 import type { CommonsPersonCandidate } from "./modules/stories/commons-person-photos";
 import { Button, FormField, InlineNotice, LoadingState } from "./ui/primitives";
 import styles from "./radar-dashboard.generated.module.css";
@@ -24,9 +24,63 @@ export function useStoryPhotos({ topicId, storyId, secret }: Scope) {
   }, [topicId, storyId, secret, reload]);
   return { photos, error, refresh: () => setReload(value => value + 1) };
 }
-function PhotoPreview({ scope, photo }: { scope: Scope; photo: StoryReferencePhoto }) {
+async function saveFocus(scope: Scope, photo: StoryReferencePhoto, focus: PhotoFocus | null): Promise<void> {
+  const response = await fetch(photoUrl(scope, photo.id), { method: "PATCH", headers: { Authorization: `Bearer ${scope.secret.trim()}`, "Content-Type": "application/json" }, body: JSON.stringify({ focus }) });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error ?? "Could not save the focal point");
+}
+const FOCUS_STEP = 0.05;
+/** The preview's shape (3:2), shared with the stylesheet. */
+const PREVIEW_ASPECT = 3 / 2;
+/**
+ * The photo at its own shape, letterboxed in the 3:2 preview. A click marks
+ * where the subject is; documentary crops keep that point. Arrow keys move
+ * the point and Enter saves it.
+ */
+function FocalPointPhoto({ url, photo, onSave, disabled }: { url: string; photo: StoryReferencePhoto; onSave: (focus: PhotoFocus) => void; disabled: boolean }) {
+  const [natural, setNatural] = useState<{ width: number; height: number }>();
+  const [pending, setPending] = useState<PhotoFocus>();
+  const point = pending ?? photo.focus;
+  const aspect = natural ? natural.width / natural.height : PREVIEW_ASPECT;
+  // The photo box, centred in the preview at the photo's own shape.
+  const size = aspect < PREVIEW_ASPECT
+    ? { width: `${(aspect / PREVIEW_ASPECT) * 100}%`, height: "100%" }
+    : { width: "100%", height: `${(PREVIEW_ASPECT / aspect) * 100}%` };
+  const clamp = (value: number) => Math.min(1, Math.max(0, Math.round(value * 1000) / 1000));
+  return <div className={styles.storyPhotoFocusFrame}>
+    <div role="button" tabIndex={disabled ? -1 : 0} aria-disabled={disabled} className={styles.storyPhotoFocus}
+      aria-label={`Focal point of ${photo.name}: click where the people are. Arrow keys move it, Enter saves.`}
+      style={size}
+      onClick={event => {
+        if (disabled || event.detail === 0) return;
+        const box = event.currentTarget.getBoundingClientRect();
+        const focus = { x: clamp((event.clientX - box.left) / box.width), y: clamp((event.clientY - box.top) / box.height) };
+        setPending(focus);
+        onSave(focus);
+      }}
+      onKeyDown={event => {
+        if (disabled) return;
+        const moves: Record<string, [number, number]> = { ArrowLeft: [-FOCUS_STEP, 0], ArrowRight: [FOCUS_STEP, 0], ArrowUp: [0, -FOCUS_STEP], ArrowDown: [0, FOCUS_STEP] };
+        const current = point ?? { x: 0.5, y: 0.5 };
+        if (moves[event.key]) {
+          event.preventDefault();
+          setPending({ x: clamp(current.x + moves[event.key][0]), y: clamp(current.y + moves[event.key][1]) });
+        } else if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSave(current);
+        }
+      }}>
+      <Image src={url} alt={photo.description} width={natural?.width ?? 240} height={natural?.height ?? 160} unoptimized
+        onLoad={event => setNatural({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })} />
+      {point ? <span className={styles.storyPhotoFocusMarker} style={{ left: `${point.x * 100}%`, top: `${point.y * 100}%` }} aria-hidden="true" /> : null}
+    </div>
+  </div>;
+}
+function PhotoPreview({ scope, photo, onFocusSaved, disabled = false }: { scope: Scope; photo: StoryReferencePhoto; onFocusSaved?: () => void; disabled?: boolean }) {
   const [url, setUrl] = useState<string>();
   const [failed, setFailed] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [focusError, setFocusError] = useState("");
   const { topicId, storyId, secret } = scope;
   useEffect(() => {
     const controller = new AbortController();
@@ -37,7 +91,20 @@ function PhotoPreview({ scope, photo }: { scope: Scope; photo: StoryReferencePho
       .catch(() => { if (!controller.signal.aborted) setFailed(true); });
     return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [topicId, storyId, secret, photo.id]);
-  return url ? <Image className={styles.storyPhotoPreview} src={url} alt={photo.description} width={240} height={160} unoptimized /> : <span>{failed ? "Preview unavailable" : "Loading photo…"}</span>;
+  if (!url) return <span>{failed ? "Preview unavailable" : "Loading photo…"}</span>;
+  if (!onFocusSaved || !photo.active) return <Image className={styles.storyPhotoPreview} src={url} alt={photo.description} width={240} height={160} unoptimized />;
+  async function save(focus: PhotoFocus | null) {
+    setSaving(true); setFocusError("");
+    try { await saveFocus(scope, photo, focus); onFocusSaved?.(); }
+    catch (error) { setFocusError(error instanceof Error ? error.message : "Could not save the focal point"); }
+    finally { setSaving(false); }
+  }
+  return <>
+    <FocalPointPhoto url={url} photo={photo} disabled={disabled || saving} onSave={focus => void save(focus)} />
+    <small>{saving ? "Saving the focal point…" : photo.focus ? "Focal point set: documentary crops keep it. Regenerate the slides that use this photo to apply it." : "Click where the people are: documentary crops keep that point."}</small>
+    {photo.focus ? <button type="button" disabled={disabled || saving} onClick={() => void save(null)}>Automatic framing</button> : null}
+    {focusError ? <p role="alert">{focusError}</p> : null}
+  </>;
 }
 export function StoryPhotosPanel(scope: Scope) {
   const { photos, error, refresh } = useStoryPhotos(scope);
@@ -77,7 +144,7 @@ export function StoryPhotosPanel(scope: Scope) {
     <p>Story evidence photos stay with this Story. They are separate from Topic brand references and fictional characters. Choose their use on each draft slide before image generation. For reused photos, record the photographer, file page, license and any changes in the source field.</p>
     {error ? <p role="alert">{error}</p> : null}
     <div className={styles.storyPhotoGrid}>{photos.map(photo => <article className={styles.storyPhotoCard} key={photo.id}>
-      <PhotoPreview scope={scope} photo={photo} />
+      <PhotoPreview scope={scope} photo={photo} onFocusSaved={refresh} disabled={busy} />
       <strong>{photo.name}</strong><p>{photo.description}</p><small>{photo.provenance}</small>
       {photo.active ? <button type="button" disabled={busy} onClick={() => revoke(photo.id)}>Remove from future generation</button> : <span>Removed · history preserved</span>}
     </article>)}</div>
@@ -158,16 +225,19 @@ function CommonsPersonSearch({ scope, disabled, onImported }: { scope: Scope; di
   </div>;
 }
 
-export function StoryPhotoPicker({ scope, photos, selected, onChange }: {
+export function StoryPhotoPicker({ scope, photos, selected, onChange, onPhotosChanged }: {
   scope: Scope; photos: StoryReferencePhoto[]; selected: StoryReferenceSelection[];
   onChange: (selected: StoryReferenceSelection[]) => void;
+  /** Reloads the photos after the editor sets a focal point. */
+  onPhotosChanged?: () => void;
 }) {
   return <fieldset className={styles.storyMaterials}><legend>Story photos for this slide · up to 3</legend>
     <p>Add photos in View content. Reference uses send the image to the model. Documentary portrait keeps one photo in a local composition, without AI redrawing the face; verify identity, source and reuse terms before approving.</p>
     <div className={styles.storyPhotoGrid}>{photos.filter(photo => photo.active || selected.some(ref => ref.id === photo.id)).map(photo => {
       const reference = selected.find(ref => ref.id === photo.id);
       return <article className={styles.storyPhotoCard} key={photo.id}>
-        <PhotoPreview scope={scope} photo={photo} />
+        {/* Only a documentary photo is cropped locally; a reference photo is redrawn by the model. */}
+        <PhotoPreview scope={scope} photo={photo} onFocusSaved={reference?.purpose === "documentary-portrait" ? onPhotosChanged : undefined} />
         <small>{photo.provenance}</small>
         <label><input type="checkbox" checked={Boolean(reference)} disabled={!reference && (!photo.active || (photo.providerTransmissionAllowed && (selected.length >= 3 || selected.some(ref => ref.purpose === "documentary-portrait"))))} onChange={event => onChange(!event.target.checked ? selected.filter(ref => ref.id !== photo.id)
           // A photo that may not be sent to the model is only ever a documentary portrait (exclusive on its slide).

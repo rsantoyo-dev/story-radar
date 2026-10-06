@@ -156,6 +156,64 @@ for (const modelKey of CREATIVE_IMAGE_MODELS) test(`editing ${modelKey} preserve
 });
 
 
+test("regenerating a slide whose only reference is a verified place map stays reference-guided", async () => {
+  const client = new PGlite();
+  try {
+    await createAssetTables(client);
+    const model = creativeImageModel("gpt-image");
+    const placeVisual = { representation: "map", generationUse: "ai-reference", adapter: "google-maps", sha256: "map-hash", referenceTopicId: "00000000-0000-4000-8000-000000000009" };
+    await client.exec(`
+      INSERT INTO creative_drafts(id,topic_id,version,status) VALUES ('00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000009',1,'approved');
+      INSERT INTO creative_asset_batches(id,draft_id,draft_version,status,total_assets) VALUES ('00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000001',1,'completed',1);`);
+    await client.query(`INSERT INTO creative_assets(id,batch_id,unit_order,unit_role,version,status,prompt,expected_text,unit_snapshot,generation_mode,model,provider_endpoint)
+      VALUES ('00000000-0000-4000-8000-000000000003','00000000-0000-4000-8000-000000000002',1,'cover',1,'generated','prompt','text',$1,'reference-guided',$2,$3)`,
+      [JSON.stringify({ order: 1, placeVisual }), model.providerModel, model.referenceEndpoint]);
+    const db = Object.assign(drizzle(client), { batch: async (queries: PromiseLike<unknown>[]) => {
+      await client.exec("BEGIN");
+      try { const results = []; for (const query of queries) results.push(await query); await client.exec("COMMIT"); return results; }
+      catch (error) { await client.exec("ROLLBACK"); throw error; }
+    } });
+    const repo = loadRepo("./creative-assets.repository.ts", db);
+    const previous = (await (repo.findCreativeAssetById as unknown as (id: string) => Promise<{asset: unknown}>)("00000000-0000-4000-8000-000000000003")).asset;
+    const edit = repo.insertRegeneratedCreativeAsset as unknown as (input: unknown) => Promise<{id: string}>;
+    const next = await edit({ previous, prompt: "again", references: { schema: 1, characters: [], brand: [] }, unitSnapshot: { order: 1, placeVisual, brandReferenceSelection: { selected: [], excluded: [], note: null } } });
+    const saved = (await client.query<{generation_mode: string;provider_endpoint: string}>("SELECT generation_mode,provider_endpoint FROM creative_assets WHERE id=$1", [next.id])).rows[0];
+    assert.equal(saved.generation_mode, "reference-guided", "the map is sent as the last reference image");
+    assert.equal(saved.provider_endpoint, model.referenceEndpoint);
+  } finally { await client.close(); }
+});
+
+test("a local text card can be redesigned by the image model as the next version, with the carousel's chrome", async () => {
+  const client = new PGlite();
+  try {
+    await createAssetTables(client);
+    const model = creativeImageModel("gpt-image");
+    await client.exec(`
+      INSERT INTO creative_drafts(id,topic_id,version,status) VALUES ('00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000009',1,'approved');
+      INSERT INTO creative_asset_batches(id,draft_id,draft_version,status,total_assets) VALUES ('00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000001',1,'completed',1);`);
+    await client.query(`INSERT INTO creative_assets(id,batch_id,unit_order,unit_role,version,status,prompt,expected_text,unit_snapshot,generation_mode,model,provider_endpoint)
+      VALUES ('00000000-0000-4000-8000-000000000003','00000000-0000-4000-8000-000000000002',5,'conclusion',1,'generated','Deterministic editorial composition','text',$1,'text-to-image',$2,'local/draft-typography-v1')`,
+      [JSON.stringify({ order: 5, assetRequest: "typography-only" }), model.providerModel]);
+    const db = Object.assign(drizzle(client), { batch: async (queries: PromiseLike<unknown>[]) => {
+      await client.exec("BEGIN");
+      try { const results = []; for (const query of queries) results.push(await query); await client.exec("COMMIT"); return results; }
+      catch (error) { await client.exec("ROLLBACK"); throw error; }
+    } });
+    const repo = loadRepo("./creative-assets.repository.ts", db);
+    const previous = (await (repo.findCreativeAssetById as unknown as (id: string) => Promise<{asset: unknown}>)("00000000-0000-4000-8000-000000000003")).asset;
+    const edit = repo.insertRegeneratedCreativeAsset as unknown as (input: unknown) => Promise<{id: string; version: number}>;
+    const chrome = { enabled: true, style: "pill", compositorVersion: 1 };
+    const next = await edit({ previous, prompt: "Typography-led slide", unitSnapshot: { order: 5, assetRequest: "typography-only" }, design: { endpoint: model.textToImageEndpoint, carouselChromeSnapshot: chrome } });
+    const saved = (await client.query<{generation_mode: string; provider_endpoint: string; carousel_chrome_snapshot: unknown; brand_overlay_snapshot: unknown; version: number}>(
+      "SELECT generation_mode,provider_endpoint,carousel_chrome_snapshot,brand_overlay_snapshot,version FROM creative_assets WHERE id=$1", [next.id])).rows[0];
+    assert.equal(saved.version, 2);
+    assert.equal(saved.generation_mode, "text-to-image");
+    assert.equal(saved.provider_endpoint, model.textToImageEndpoint);
+    assert.deepEqual(saved.carousel_chrome_snapshot, chrome);
+    assert.equal(saved.brand_overlay_snapshot, null, "no logo on a slide the overlay does not cover");
+  } finally { await client.close(); }
+});
+
 test("a text revision reuses files and versions in a new unapproved batch, preserving historical approvals", async () => {
   const client = new PGlite();
   try {

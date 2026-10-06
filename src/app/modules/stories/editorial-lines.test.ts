@@ -191,3 +191,15 @@ test("brief context hashing survives actual JSONB storage without invalidating l
     assert.notEqual(JSON.stringify(lines.collectionContextForHash({...reloaded,query:"Housing"})),JSON.stringify(original));
   }finally{await client.close();}
 });
+test("a story found by several runs of one strategy defaults to the latest run; different lines or questions need a choice",()=>{
+  const earlier=lines.collectionContext(line,[],"",undefined,new Date("2026-09-15T10:00:00Z"));
+  const later=lines.collectionContext({...line,revision:2},[],"",undefined,now);
+  const choices=[{runId:"run-later",context:later},{runId:"run-earlier",context:earlier}];
+  assert.equal(lines.defaultStoryContext(choices)?.runId,"run-later","same line, question and period: only the run date differs");
+  assert.equal(lines.defaultStoryContext([choices[1]])?.runId,"run-earlier");
+  assert.equal(lines.defaultStoryContext([]),undefined);
+  const otherQuestion={runId:"run-question",context:lines.collectionContext(line,[],"Loneliness",undefined,now)};
+  assert.equal(lines.defaultStoryContext([otherQuestion,...choices]),undefined,"a different research question is a real choice");
+  const otherLine={runId:"run-line",context:{...later,lineId:"00000000-0000-4000-8000-000000000012"}};
+  assert.equal(lines.defaultStoryContext([otherLine,...choices]),undefined,"a different line is a real choice");
+});

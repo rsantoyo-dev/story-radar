@@ -40,7 +40,7 @@ function workflow({failEvaluate=false,limit=false,cachedCollection=false,draftMo
     "./approve-daily-story":{DailyStoryNotEligibleError:NotEligibleError,approveDailyStory:async(_topic:unknown,storyId:string)=>{if(failApproval)throw new Error("Approval failed");if(notEligible.includes(storyId))throw new NotEligibleError("not eligible");if(!approved){calls.push("approve");approved=true;}}},
     "./story-duplicates.repository":{storyAlreadyPublished:async(_topic:unknown,storyId:string)=>published.includes(storyId),sameEventStories:async(_topic:unknown,storyId:string)=>(sameEvent[storyId] ?? []).map(id=>({storyId:id,title:`Same ${id}`}))},
     "../topics/topic-context":{requireTopic:async()=>({id:topicId})},
-    "../editorial-lines/editorial-lines":{collectionContext:()=>({sourceIds:[lineId]}),resolveLineResearch:()=>({enabled:true,collectionContext:{sourceIds:[lineId]}})},
+    "../editorial-lines/editorial-lines":{...localRequire("../editorial-lines/editorial-lines"),collectionContext:()=>({sourceIds:[lineId]}),resolveLineResearch:()=>({enabled:true,collectionContext:{sourceIds:[lineId]}})},
     "../editorial-lines/editorial-lines.repository":{storyCollectionContexts:async()=>[],getEditorialLine:async()=>({name:"News"}),reserveCollection:async()=>({cached:cachedCollection?{counts:{included:4},sources:{successful:1,failed:0}}:undefined}),finishCollection:async()=>{}},
     "../topics/topic-catalog.repository":{listTopicRssSourceConfigs:async()=>[{id:lineId,enabled:true}]},
     "../sources/ai-research/ai-research.repository":{getAiResearchSourceConfig:async()=>({})},

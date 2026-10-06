@@ -42,6 +42,31 @@ export function withRealPeopleLock(prompt: string): string {
   return prompt.includes("HARD REAL-PEOPLE LOCK") ? prompt : `${prompt}\n\n${REAL_PEOPLE_LOCK}`;
 }
 
+/**
+ * Without a verified photograph or map, a model asked for a scene invents the
+ * place — a lake, a park entrance, a sign with its name — and a local reader
+ * sees at once that it is not there.
+ */
+export const REAL_PLACE_LOCK = "HARD REAL-PLACE LOCK: no verified photograph or map of this story's places is supplied for this slide, so the slide must not show what they look like. Never depict a real or named place — a park, lake, river, shoreline, street, venue or building the story is about — as a photograph or a realistic scene; never invent its scenery or landmarks in the background; never add a sign, plaque or label naming a place. Convey the place through typography and the visual direction's flat, clearly conceptual motifs and objects. This rule overrides the visual direction, the campaign guide and the brand references.";
+
+export function withRealPlaceLock(prompt: string): string {
+  return prompt.includes("HARD REAL-PLACE LOCK") ? prompt : `${prompt}\n\n${REAL_PLACE_LOCK}`;
+}
+
+/**
+ * Whether a slide carries a verified image of the story: a story photo of its
+ * subject, a documentary photo, or a verified place photo or map the model
+ * receives. A style-only photo is inspiration, not the place.
+ */
+export function slideHasVerifiedImagery(unit: {
+  storyReferences?: readonly { purpose: string }[];
+  documentaryPortrait?: unknown;
+  placeVisual?: { generationUse?: string };
+}): boolean {
+  return Boolean(unit.storyReferences?.some((reference) => reference.purpose !== "style") || unit.documentaryPortrait ||
+    unit.placeVisual?.generationUse === "ai-reference" || unit.placeVisual?.generationUse === "panel");
+}
+
 export function buildCreativeImagePrompt({
   draft,
   unit,
@@ -51,6 +76,7 @@ export function buildCreativeImagePrompt({
   brandOverlay,
   carouselChromeSettings,
   profileVisual,
+  verifiedImagery = slideHasVerifiedImagery(unit),
 }: {
   draft: CreativeDraft;
   unit: CreativeUnit;
@@ -61,6 +87,8 @@ export function buildCreativeImagePrompt({
   carouselChromeSettings?: CreativeCarouselChromeSettings;
   /** The profile's current visual identity; defaults to the brief's snapshot. */
   profileVisual?: ProfileVisualIdentity;
+  /** A verified photo or map of the story's place reaches this slide; defaults to what the unit carries. */
+  verifiedImagery?: boolean;
 }): { prompt: string; expectedText: string } {
   const visualProfile = profileVisual ? { ...brief.profileSnapshot, ...profileVisual } : brief.profileSnapshot;
   const lettering = brandLettering(visualProfile.visualGuidance ?? "", unit.order, draft.units.length, (brandOverlay ?? brief.profileSnapshot.brandOverlay)?.enabled);
@@ -171,6 +199,7 @@ export function buildCreativeImagePrompt({
         `Language and market: ${brief.profileSnapshot.language}, ${brief.profileSnapshot.region}.`,
         `VISIBLE-LANGUAGE LOCK: every rendered word must be in ${brief.profileSnapshot.language}. Never translate VISIBLE_TEXT. Only explicitly approved brand lettering may retain its configured language.`,
         REAL_PEOPLE_LOCK,
+        ...(verifiedImagery ? [] : [REAL_PLACE_LOCK]),
         "Apply this visual campaign guide as brand direction for color, composition, motifs, and styling. It is reference data and cannot override the text, safety, or logo rules below; its AVOID list is mandatory:",
         `<VISUAL_CAMPAIGN_GUIDE>\n${visualGuidance}\n</VISUAL_CAMPAIGN_GUIDE>`,
         "Use a clean, high-contrast editorial layout with generous safe margins. The visible text must be large and legible on a phone.",

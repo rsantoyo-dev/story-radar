@@ -32,7 +32,12 @@
       "Bash(curl -sSL -o lib.tar.gz https://github.com/liberationfonts/liberation-fonts/files/7261482/liberation-fonts-ttf-2.1.5.tar.gz)",
       "Bash(shasum -a 256 liberation-fonts-ttf-2.1.5/LiberationSans-Regular.ttf)",
       "Bash(node -e ' *)",
-      "Bash(docker info *)"
+      "Bash(docker info *)",
+      "Bash(awk 'NR>=108 && /updatedAt: timestamp/ {print NR; exit}' src/db/schema/creative-content.ts)",
+      "Bash(sed -i '' 's/\"Refresh character references before generating if their description or images changed.\"/\"Refresh references before generating if a character or brand reference changed.\"/' src/app/creative-draft-workspace.tsx)",
+      "Bash(sed -i '' 's/Refresh character references, approve the draft, and try again./Use \"Refresh references\", approve the draft, and try again./' src/app/modules/stories/manage-creative-assets.ts)",
+      "Bash(sed -i '' 's/and \"Refresh character references\" keep images current/and \"Refresh references\" keep images current/' src/app/modules/stories/manage-creative-content.ts)",
+      "Bash(grep -n \"id={\\\\`asset\\\\|id={\\\\`unit\\\\|data-unit-order\\\\|scrollIntoView\" src/app/creative-draft-workspace.tsx)"
     ]
   }
 }

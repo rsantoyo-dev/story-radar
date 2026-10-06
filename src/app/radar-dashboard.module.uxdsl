@@ -3076,6 +3076,38 @@
   object-fit: contain;
   border-radius: radius(2);
 }
+/* The photo at its own shape inside the 3:2 preview, so a click maps to the photo. */
+.storyPhotoFocusFrame {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  aspect-ratio: 3 / 2;
+}
+.storyPhotoFocus {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  cursor: crosshair;
+}
+.storyPhotoFocus[aria-disabled="true"] {
+  cursor: progress;
+}
+.storyPhotoFocus img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: radius(2);
+}
+.storyPhotoFocusMarker {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 2px solid palette(light-light);
+  box-shadow: 0 0 0 2px palette(primary-main), shadow(2);
+  pointer-events: none;
+}
 
 .storyMaterialForm :focus-visible, .storyMaterials :focus-visible {
   outline: border(2, palette(primary-main), solid);

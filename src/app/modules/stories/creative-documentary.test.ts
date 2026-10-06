@@ -1,6 +1,7 @@
 import * as textMeter from "./creative-text-meter";
 import * as roadEvidence from "./road-notice-evidence";
 import * as evidenceGuardrails from "./creative-evidence-guardrails";
+import * as mapPanel from "./creative-map-panel";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -27,6 +28,7 @@ function load<T>(file: string, dependencies: Record<string, unknown>, env: Recor
       if (name === "node:crypto") return crypto;
       if (name === "./road-notice-evidence") return roadEvidence;
       if (name === "./creative-evidence-guardrails") return evidenceGuardrails;
+      if (name === "./creative-map-panel") return mapPanel;
       if (!(name in dependencies)) throw new Error(`Unexpected server dependency: ${name}`);
       return dependencies[name];
     },

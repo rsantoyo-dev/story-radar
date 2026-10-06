@@ -54,6 +54,14 @@ export async function loadStoryReferenceImages(references: StoryGenerationRefere
   }));
 }
 /**
+ * The photo's focal point now, for a slide pasting that same photo again. A
+ * photo whose bytes changed, or that is gone, has none.
+ */
+export async function currentPortraitFocus(topicId: string, storyId: string, photoId: string, sha256: string) {
+  const row = await findStoryPhoto(topicId, storyId, photoId);
+  return row && row.sha256 === sha256 ? publicStoryPhoto(row).focus : undefined;
+}
+/**
  * The exact bytes of a documentary portrait for local compositing after an
  * AI-designed slide is generated. The photo must still be active and match
  * the snapshot hash recorded on the asset; it is never sent to a provider.
