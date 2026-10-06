@@ -38,6 +38,7 @@ import {
 import type { EditorialEvaluationPublicConfig } from "./editorial-evaluation.config";
 import type { EditorialProfileFreshnessPolicy } from "./editorial-profile.types";
 import { getEditorialProfile } from "./editorial-profile.repository";
+import { loadPublicationThumbnails } from "./publication-thumbnails";
 import { listStoryPublications } from "./social-publications.repository";
 import type { StorySocialPublication } from "./social-publications.types";
 import { processingStatusAfterUnselect } from "./story-selection-reset";
@@ -103,6 +104,12 @@ export type EditorialDashboardStory = {
     postUrl?: string;
     externalId: string;
   }[];
+  /**
+   * Image URLs to try, in order, for a published Story's thumbnail: the exact
+   * published cover first, Instagram's expiring thumbnail last. Absent when
+   * nothing published has a known image (e.g. manually marked published).
+   */
+  publicationThumbnails?: string[];
 };
 
 export type EditorialCollectedStory = {
@@ -1223,7 +1230,7 @@ export async function getEditorialDashboardStats(
 
   const selectedStoryIds = selectedRows.map((row) => row.storyId);
   const publicationsByStoryId = new Map<string, StorySocialPublication[]>();
-  const [selectedPublications, linkedInstagramMedia, publishedInstagramJobs] =
+  const [selectedPublications, linkedInstagramMedia, publishedInstagramJobs, thumbnailsByStoryId] =
     await Promise.all([
       listStoryPublications(topicId, selectedStoryIds),
       selectedStoryIds.length
@@ -1252,6 +1259,7 @@ export async function getEditorialDashboardStats(
             isNotNull(instagramPublicationJobs.publishedMediaId),
           ))
         : Promise.resolve([]),
+      loadPublicationThumbnails(topicId, selectedStoryIds),
     ]);
 
   for (const publication of selectedPublications) {
@@ -1455,6 +1463,9 @@ export async function getEditorialDashboardStats(
       ...(row.enrichedAt ? { enrichedAt: row.enrichedAt } : {}),
       publications: publicationsByStoryId.get(row.storyId) ?? [],
       confirmedPublications: [...(confirmedByStoryId.get(row.storyId)?.values() ?? [])],
+      ...(thumbnailsByStoryId.get(row.storyId)?.length
+        ? { publicationThumbnails: thumbnailsByStoryId.get(row.storyId) }
+        : {}),
     })),
   };
 }
