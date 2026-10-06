@@ -148,10 +148,11 @@ export async function listInstagramMedia(
   igUserId: string,
   accessToken: string,
   options: { after?: string; limit?: number } = {},
+  host: InstagramGraphHost = DEFAULT_INSTAGRAM_GRAPH_HOST,
 ): Promise<InstagramMediaListPage> {
   const limit = Math.min(Math.max(options.limit ?? 25, 1), 50);
   const url = new URL(
-    `https://graph.instagram.com/${GRAPH_API_VERSION}/${igUserId}/media`,
+    `https://${host}/${GRAPH_API_VERSION}/${igUserId}/media`,
   );
   url.searchParams.set("fields", INSTAGRAM_MEDIA_FIELDS);
   url.searchParams.set("limit", String(limit));
@@ -172,9 +173,10 @@ export async function fetchInstagramMediaInsights(
   mediaId: string,
   accessToken: string,
   metrics: readonly string[],
+  host: InstagramGraphHost = DEFAULT_INSTAGRAM_GRAPH_HOST,
 ): Promise<unknown> {
   const url = new URL(
-    `https://graph.instagram.com/${GRAPH_API_VERSION}/${mediaId}/insights`,
+    `https://${host}/${GRAPH_API_VERSION}/${mediaId}/insights`,
   );
   url.searchParams.set("metric", metrics.join(","));
   url.searchParams.set("metric_type", "total_value");

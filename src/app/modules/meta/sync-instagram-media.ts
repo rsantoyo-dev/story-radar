@@ -7,11 +7,12 @@ import {
 import type { MediaSyncSummary } from "./meta-connection.types";
 import { classifyMetaGraphError, describeMetaVerificationError } from "./meta-verification";
 import {
-  getDecryptedTopicMetaAccessToken,
-  getTopicMetaConnectionStatus,
-  recordInstagramMediaSync,
-  recordMetaVerificationFailure,
-} from "./topic-meta-connections.repository";
+  getInstagramHistoryCredentials,
+  getInstagramHistoryStatus,
+  recordInstagramHistoryAuthFailure,
+  type InstagramHistoryCredentials,
+} from "./instagram-history-account";
+import { recordInstagramMediaSync } from "./topic-meta-connections.repository";
 import {
   countTopicInstagramMedia,
   reconcileTopicInstagramMediaLinks,
@@ -42,15 +43,15 @@ export async function syncInstagramMediaPage(
   topicId: string,
   options: { after?: string } = {},
 ): Promise<InstagramMediaSyncResult> {
-  const account = await getDecryptedTopicMetaAccessToken(topicId);
+  const account = await getInstagramHistoryCredentials(topicId);
   if (!account) {
     throw new InstagramMediaSyncError(
-      "This topic has no connected Instagram account",
+      "This topic has no connected Instagram account or Facebook Page with a linked Instagram account",
     );
   }
 
   const empty = { imported: 0, updated: 0, carousels: 0 };
-  const status = await getTopicMetaConnectionStatus(topicId);
+  const status = await getInstagramHistoryStatus(topicId);
   if (status.state === "needs-reconnect") {
     return finalize(topicId, account, { ...empty, error: "needs-reconnect" });
   }
@@ -59,20 +60,17 @@ export async function syncInstagramMediaPage(
   try {
     page = await listInstagramMedia(account.igUserId, account.accessToken, {
       after: options.after,
-    });
+    }, account.host);
   } catch (error) {
     const graphError =
       error instanceof MetaGraphApiError ? error.graphError : undefined;
     const kind = classifyMetaGraphError(graphError);
     console.error(`Instagram media sync failed for topic ${topicId}`, error);
     if (kind === "auth") {
-      await recordMetaVerificationFailure(topicId, account.connectionVersion, {
-        message: describeMetaVerificationError(
-          graphError,
-          "The Instagram token was rejected during media sync",
-        ),
-        forceReconnect: true,
-      });
+      await recordInstagramHistoryAuthFailure(topicId, account, describeMetaVerificationError(
+        graphError,
+        "The Instagram token was rejected during media sync",
+      ));
     }
     return finalize(topicId, account, {
       ...empty,
@@ -115,18 +113,22 @@ export async function syncInstagramMediaPage(
 
 async function finalize(
   topicId: string,
-  account: { igUserId: string; connectionVersion: string },
+  account: Pick<InstagramHistoryCredentials, "source" | "igUserId" | "connectionVersion">,
   input: MediaSyncSummary & { cursor?: string | null },
 ): Promise<InstagramMediaSyncResult> {
   const syncedAt = new Date();
   const { cursor, ...summary } = input;
-  await recordInstagramMediaSync(topicId, {
-    connectionVersion: account.connectionVersion,
-    summary,
-    // Omit `cursor` on a failed sync so the stored one is left untouched.
-    ...(cursor !== undefined ? { cursor } : {}),
-    syncedAt,
-  });
+  // Only the direct connection keeps sync bookkeeping; a Page sync is visible
+  // through the imported rows themselves.
+  if (account.source === "instagram-direct") {
+    await recordInstagramMediaSync(topicId, {
+      connectionVersion: account.connectionVersion,
+      summary,
+      // Omit `cursor` on a failed sync so the stored one is left untouched.
+      ...(cursor !== undefined ? { cursor } : {}),
+      syncedAt,
+    });
+  }
   const totalImported = await countTopicInstagramMedia(
     topicId,
     account.igUserId,

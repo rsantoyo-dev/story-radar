@@ -15,6 +15,7 @@ import {
 
 import { db } from "@/db/client";
 import {
+  instagramMediaMetricSnapshots,
   stories,
   storySocialPublications,
   topicInstagramMedia,
@@ -35,6 +36,7 @@ import {
   type StoredInstagramMediaMetric,
 } from "./instagram-media-insights-response";
 import { instagramPermalinkShortcode } from "./instagram-permalink";
+import { METRIC_HISTORY_MAX_AGE_HOURS, publicationAgeHours, snapshotDue } from "./instagram-metric-history";
 
 export type InstagramMediaUpsertCounts = {
   imported: number;
@@ -588,7 +590,7 @@ export async function saveInstagramMediaMetrics(input: {
       .limit(1);
     const prior = normalizeMetricsBlob(existing?.metrics) ?? {};
     const merged = mergeInstagramMediaMetricsBlob(prior, input.result.ok);
-    updated = await db
+    const saved = await db
       .update(topicInstagramMedia)
       .set({
         metrics: merged,
@@ -599,7 +601,9 @@ export async function saveInstagramMediaMetrics(input: {
         updatedAt: at,
       })
       .where(where)
-      .returning({ id: topicInstagramMedia.id });
+      .returning({ id: topicInstagramMedia.id, publishedAt: topicInstagramMedia.publishedAt });
+    updated = saved;
+    if (saved[0]) await recordInstagramMetricSnapshot({ ...input, mediaId: saved[0].id, publishedAt: saved[0].publishedAt, metrics: input.result.ok, apiVersion: input.result.apiVersion, at });
   }
 
   if (updated.length === 0) return undefined;
@@ -608,6 +612,89 @@ export async function saveInstagramMediaMetrics(input: {
     input.igUserId,
     input.externalId,
   );
+}
+
+/**
+ * IG-07: keeps what this read observed — only its own metrics, never merged
+ * with older values — as one point of the publication's history. A failed
+ * history write never fails the metrics refresh that triggered it.
+ */
+async function recordInstagramMetricSnapshot(input: {
+  topicId: string;
+  igUserId: string;
+  externalId: string;
+  mediaId: string;
+  publishedAt: Date;
+  metrics: Record<string, ParsedInstagramMediaMetric>;
+  apiVersion: string;
+  at: Date;
+}): Promise<void> {
+  try {
+    await db.insert(instagramMediaMetricSnapshots).values({
+      mediaId: input.mediaId,
+      topicId: input.topicId,
+      igUserId: input.igUserId,
+      externalId: input.externalId,
+      capturedAt: input.at,
+      ageHours: publicationAgeHours(input.publishedAt, input.at),
+      metrics: input.metrics,
+      apiVersion: input.apiVersion,
+    });
+  } catch (error) {
+    console.error(`Instagram metric history was not recorded for ${input.externalId}`, error);
+  }
+}
+
+/**
+ * Accessible publications of the last 30 days whose next history capture is
+ * due (IG-07), youngest first — young publications change fastest.
+ */
+export async function listInstagramMediaDueForSnapshot(
+  topicId: string,
+  igUserId: string,
+  now: Date,
+  limit: number,
+): Promise<string[]> {
+  const rows = await db
+    .select({
+      externalId: topicInstagramMedia.externalId,
+      publishedAt: topicInstagramMedia.publishedAt,
+      lastCapturedAt: sql<Date | null>`max(${instagramMediaMetricSnapshots.capturedAt})`.mapWith((value) => value ? new Date(value) : null),
+    })
+    .from(topicInstagramMedia)
+    .leftJoin(instagramMediaMetricSnapshots, eq(instagramMediaMetricSnapshots.mediaId, topicInstagramMedia.id))
+    .where(
+      and(
+        eq(topicInstagramMedia.topicId, topicId),
+        eq(topicInstagramMedia.igUserId, igUserId),
+        eq(topicInstagramMedia.accessState, "accessible"),
+        gte(topicInstagramMedia.publishedAt, new Date(now.getTime() - METRIC_HISTORY_MAX_AGE_HOURS * 3_600_000)),
+      ),
+    )
+    .groupBy(topicInstagramMedia.id)
+    .orderBy(sql`${topicInstagramMedia.publishedAt} desc`);
+  return rows
+    .filter((row) => snapshotDue(row.publishedAt, row.lastCapturedAt, now))
+    .slice(0, Math.min(Math.max(limit, 1), 50))
+    .map((row) => row.externalId);
+}
+
+/** Every history point of the given publications, oldest first. */
+export async function listInstagramMetricSnapshots(
+  topicId: string,
+  externalIds: readonly string[],
+): Promise<{ externalId: string; capturedAt: Date; ageHours: number; metrics: unknown }[]> {
+  if (externalIds.length === 0) return [];
+  return db
+    .select({
+      externalId: instagramMediaMetricSnapshots.externalId,
+      capturedAt: instagramMediaMetricSnapshots.capturedAt,
+      ageHours: instagramMediaMetricSnapshots.ageHours,
+      metrics: instagramMediaMetricSnapshots.metrics,
+    })
+    .from(instagramMediaMetricSnapshots)
+    .where(and(eq(instagramMediaMetricSnapshots.topicId, topicId), inArray(instagramMediaMetricSnapshots.externalId, [...externalIds])))
+    .orderBy(instagramMediaMetricSnapshots.capturedAt);
 }
 
 export type SetInstagramMediaLink =

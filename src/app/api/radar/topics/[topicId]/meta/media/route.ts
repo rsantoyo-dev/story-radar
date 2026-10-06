@@ -1,10 +1,7 @@
 import { authorizeRadarCollector } from "@/app/api/radar/radar-api-auth";
 import { noStoreJson } from "@/app/api/radar/topics/topic-route-utils";
 import { isInstagramMediaFormat } from "@/app/modules/meta/instagram-media-format";
-import {
-  getConnectedInstagramAccount,
-  getTopicMetaConnectionStatus,
-} from "@/app/modules/meta/topic-meta-connections.repository";
+import { getInstagramHistoryStatus } from "@/app/modules/meta/instagram-history-account";
 import { listTopicInstagramMedia } from "@/app/modules/meta/topic-instagram-media.repository";
 import { requireTopic, TopicContextError } from "@/app/modules/topics/topic-context";
 
@@ -24,12 +21,12 @@ export async function GET(request: Request, context: Context) {
 
   try {
     const topicId = await topicIdFromContext(context);
-    const status = await getTopicMetaConnectionStatus(topicId);
-    const account = await getConnectedInstagramAccount(topicId);
+    const status = await getInstagramHistoryStatus(topicId);
+    const account = status.account;
 
     const base = {
       state: status.state,
-      account: account ? { igUsername: account.igUsername } : null,
+      account: account ? { igUsername: account.igUsername, source: account.source } : null,
       lastMediaSyncAt: status.lastMediaSyncAt ?? null,
     };
     if (!account) {

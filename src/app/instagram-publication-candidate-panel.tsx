@@ -46,6 +46,15 @@ function destinationLabel(destination: CandidateDestinationSummary, channel: Pub
   return channel === "instagram-page" ? `${account} (through the Facebook Page)` : account;
 }
 
+/**
+ * The review reads each frozen file from this app's own origin. The public
+ * delivery URL is the provider's address; behind a tunnel a browser can get
+ * the tunnel's warning page there instead of the image.
+ */
+function previewSrc(deliveryUrl: string): string {
+  try { return new URL(deliveryUrl).pathname; } catch { return deliveryUrl; }
+}
+
 type Props = {
   topicId: string;
   draftId: string;
@@ -299,7 +308,7 @@ export function InstagramPublicationCandidatePanel({ topicId, draftId, batchId, 
         <p className={styles.publicationCaption}>{pkg.caption}</p>
         {pkg.hashtags.length ? <p>{pkg.hashtags.join(" ")}</p> : null}
         <ol className={styles.publicationPreviewList}>{pkg.slides.map((slide) => <li key={slide.unitOrder} className={styles.publicationPackageSlide}>
-          <Image unoptimized src={slide.deliveryUrl} width={108} height={135} alt={`Publication image ${slide.unitOrder} of ${pkg.slides.length}`} />
+          <Image unoptimized src={previewSrc(slide.deliveryUrl)} width={108} height={135} alt={`Publication image ${slide.unitOrder} of ${pkg.slides.length}`} />
           <span>Image {slide.unitOrder} · version {slide.assetVersion}</span>
         </li>)}</ol>
         <details><summary>Technical delivery details</summary>

@@ -192,3 +192,34 @@ export const topicInstagramMediaChildren = pgTable(
     ),
   ],
 );
+
+/**
+ * IG-07: append-only history of one publication's metrics. Every successful
+ * read is kept as observed at that moment, with the publication's real age,
+ * so publications can be compared at the same age (24 hours, 3 days, 7 days).
+ * The latest values stay on topic_instagram_media; a snapshot is never
+ * updated, and past snapshots are never reconstructed from later totals.
+ */
+export const instagramMediaMetricSnapshots = pgTable(
+  "instagram_media_metric_snapshots",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    mediaId: uuid("media_id")
+      .notNull()
+      .references(() => topicInstagramMedia.id, { onDelete: "cascade" }),
+    topicId: uuid("topic_id").notNull(),
+    igUserId: text("ig_user_id").notNull(),
+    externalId: text("external_id").notNull(),
+    capturedAt: timestamp("captured_at", { withTimezone: true }).notNull(),
+    /** Hours between publication and capture, as measured. */
+    ageHours: integer("age_hours").notNull(),
+    /** The metrics read at capturedAt only — never merged with older values. */
+    metrics: jsonb("metrics").notNull(),
+    apiVersion: text("api_version").notNull(),
+  },
+  (table) => [
+    index("instagram_media_metric_snapshots_media_captured_idx").on(table.mediaId, table.capturedAt),
+    index("instagram_media_metric_snapshots_topic_captured_idx").on(table.topicId, table.capturedAt),
+    check("instagram_media_metric_snapshots_age_check", sql`${table.ageHours} >= 0`),
+  ],
+);

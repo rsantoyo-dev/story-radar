@@ -15,10 +15,11 @@ import {
   describeMetaVerificationError,
 } from "./meta-verification";
 import {
-  getDecryptedTopicMetaAccessToken,
-  getTopicMetaConnectionStatus,
-  recordMetaVerificationFailure,
-} from "./topic-meta-connections.repository";
+  getInstagramHistoryCredentials,
+  getInstagramHistoryStatus,
+  recordInstagramHistoryAuthFailure,
+  type InstagramHistoryCredentials,
+} from "./instagram-history-account";
 import {
   listInstagramMediaForMetricsRefresh,
   saveInstagramMediaMetrics,
@@ -32,18 +33,18 @@ export type InstagramMediaMetricsRefreshResult = {
   refreshed: number;
   /** Publications whose refresh failed; their previous values are kept. */
   failed: number;
-  /** Set when the whole run stopped early (`"needs-reconnect"`). */
+  /** Set when the whole run stopped early: `"needs-reconnect"`, or a missing insights permission. */
   error?: string;
   queriedAt: string;
   /** The fresh item — only for the single-publication form. */
   item?: InstagramMediaListItem;
 };
 
-type Account = {
-  accessToken: string;
-  igUserId: string;
-  connectionVersion: string;
-};
+type Account = InstagramHistoryCredentials;
+
+/** Shown to the editor when Meta refuses insights for the whole account. */
+export const INSIGHTS_PERMISSION_MESSAGE =
+  "Meta did not grant permission to read Instagram insights. For a Facebook Page connection, add instagram_manage_insights to the app's Facebook Login configuration and reconnect the Page; for a direct Instagram connection, reconnect and allow insights.";
 
 /**
  * Reads current Instagram insights for a topic's publications (IG-05) and
@@ -57,9 +58,9 @@ type Account = {
  */
 export async function refreshInstagramMediaMetrics(
   topicId: string,
-  options: { externalId?: string; limit?: number } = {},
+  options: { externalId?: string; externalIds?: readonly string[]; limit?: number } = {},
 ): Promise<InstagramMediaMetricsRefreshResult> {
-  const account = await getDecryptedTopicMetaAccessToken(topicId);
+  const account = await getInstagramHistoryCredentials(topicId);
   if (!account) {
     throw new InstagramMediaMetricsError(
       "This topic has no connected Instagram account",
@@ -69,13 +70,15 @@ export async function refreshInstagramMediaMetrics(
   const queriedAt = new Date();
   const at = queriedAt.toISOString();
 
-  const status = await getTopicMetaConnectionStatus(topicId);
+  const status = await getInstagramHistoryStatus(topicId);
   if (status.state === "needs-reconnect") {
     return { refreshed: 0, failed: 0, error: "needs-reconnect", queriedAt: at };
   }
 
   const externalIds = options.externalId
     ? [options.externalId]
+    : options.externalIds
+    ? [...options.externalIds]
     : (
         await listInstagramMediaForMetricsRefresh(
           topicId,
@@ -92,6 +95,15 @@ export async function refreshInstagramMediaMetrics(
     const outcome = await refreshOne(topicId, account, externalId, queriedAt);
     if (outcome === "auth") {
       return { refreshed, failed, error: "needs-reconnect", queriedAt: at };
+    }
+    // Refused before anything succeeded: the account lacks the grant. After a
+    // success it is one publication Meta will not report on; keep going.
+    if (outcome === "permission" && refreshed === 0) {
+      return { refreshed, failed, error: INSIGHTS_PERMISSION_MESSAGE, queriedAt: at };
+    }
+    if (outcome === "permission") {
+      failed += 1;
+      continue;
     }
     if (outcome.ok) {
       refreshed += 1;
@@ -114,7 +126,7 @@ async function refreshOne(
   account: Account,
   externalId: string,
   queriedAt: Date,
-): Promise<"auth" | { ok: boolean; item?: InstagramMediaListItem }> {
+): Promise<"auth" | "permission" | { ok: boolean; item?: InstagramMediaListItem }> {
   let candidates: string[] = [...INSTAGRAM_MEDIA_INSIGHT_METRICS];
 
   // Each iteration returns, or drops exactly one unsupported metric and retries.
@@ -125,6 +137,7 @@ async function refreshOne(
         externalId,
         account.accessToken,
         candidates,
+        account.host,
       );
       const ok = parseInstagramMediaInsights(payload, candidates);
       const item = await saveInstagramMediaMetrics({
@@ -139,16 +152,17 @@ async function refreshOne(
       const graphError =
         error instanceof MetaGraphApiError ? error.graphError : undefined;
 
-      if (classifyMetaGraphError(graphError) === "auth") {
-        await recordMetaVerificationFailure(topicId, account.connectionVersion, {
-          message: describeMetaVerificationError(
-            graphError,
-            "The Instagram token was rejected while reading metrics",
-          ),
-          forceReconnect: true,
-        });
+      const kind = classifyMetaGraphError(graphError);
+      if (kind === "auth") {
+        await recordInstagramHistoryAuthFailure(topicId, account, describeMetaVerificationError(
+          graphError,
+          "The Instagram token was rejected while reading metrics",
+        ));
         return "auth";
       }
+      // A missing insights grant covers every publication: stop the run and
+      // keep each publication's last good values instead of marking them failed.
+      if (kind === "permission") return "permission";
 
       const status =
         error instanceof MetaGraphApiError ? error.status : undefined;

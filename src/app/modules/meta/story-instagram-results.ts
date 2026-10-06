@@ -5,10 +5,7 @@ import { findCreativeDraftById } from "@/app/modules/stories/creative-content.re
 
 import { instagramCreativeVersionLabel } from "./instagram-creative-version-label";
 import type { MetaConnectionState } from "./meta-connection.types";
-import {
-  getConnectedInstagramAccount,
-  getTopicMetaConnectionStatus,
-} from "./topic-meta-connections.repository";
+import { getInstagramHistoryStatus } from "./instagram-history-account";
 import {
   listStoryInstagramPosts,
   type InstagramMediaListItem,
@@ -44,11 +41,11 @@ export async function getStoryInstagramResults(
   topicId: string,
   storyId: string,
 ): Promise<StoryInstagramResults> {
-  const [status, account, items] = await Promise.all([
-    getTopicMetaConnectionStatus(topicId),
-    getConnectedInstagramAccount(topicId),
+  const [status, items] = await Promise.all([
+    getInstagramHistoryStatus(topicId),
     listStoryInstagramPosts(topicId, storyId),
   ]);
+  const account = status.account;
 
   const draftsById = new Map<string, { format: string }>();
   const draftIds = new Set(items.flatMap(item => item.linkedDraftId ? [item.linkedDraftId] : []));

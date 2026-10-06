@@ -15,7 +15,7 @@ import {
   SelectedStoryContentNotFoundError,
 } from "@/app/modules/stories/story-content.repository";
 
-import { getConnectedInstagramAccount } from "./topic-meta-connections.repository";
+import { getInstagramHistoryStatus } from "./instagram-history-account";
 import {
   findApprovedStoryMatchForPermalink,
   getTopicInstagramMediaListItem,
@@ -63,7 +63,7 @@ export async function linkInstagramMediaToStory(
     throw new InstagramMediaLinkError("A publication id is required");
   }
 
-  const account = await getConnectedInstagramAccount(topicId);
+  const { account } = await getInstagramHistoryStatus(topicId);
   if (!account) {
     throw new InstagramMediaLinkError(
       "This topic has no connected Instagram account",
@@ -201,7 +201,7 @@ export async function suggestInstagramMediaStory(
   topicId: string,
   externalId: string,
 ): Promise<{ storyId: string; storyTitle: string } | null> {
-  const account = await getConnectedInstagramAccount(topicId);
+  const { account } = await getInstagramHistoryStatus(topicId);
   if (!account) return null;
   const media = await getTopicInstagramMediaListItem(
     topicId,

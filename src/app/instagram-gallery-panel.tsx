@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import styles from "./creative-draft-workspace.generated.module.css";
+import { InlineNotice } from "./ui/primitives";
 
 type MetaConnectionState =
   | "disconnected"
@@ -50,6 +51,15 @@ type MediaMetric = {
   error?: string;
 };
 
+type MediaSyncResult = {
+  imported: number;
+  updated: number;
+  error?: string;
+  totalImported: number;
+  nextCursor?: string;
+  syncedAt: string;
+};
+
 type MetricsRefreshResult = {
   refreshed: number;
   failed: number;
@@ -86,7 +96,8 @@ type BatchOption = {
 
 type MediaResponse = {
   state: MetaConnectionState;
-  account: { igUsername: string | null } | null;
+  /** `facebook-page`: the Instagram account linked to the topic's Facebook Page. */
+  account: { igUsername: string | null; source?: "instagram-direct" | "facebook-page" } | null;
   lastMediaSyncAt: string | null;
   items: MediaItem[];
   nextCursor?: string;
@@ -135,6 +146,9 @@ export function InstagramGalleryPanel({
   const [error, setError] = useState<string>();
   const [reloadKey, setReloadKey] = useState(0);
   const [brokenThumbs, setBrokenThumbs] = useState<Set<string>>(new Set());
+  const [action, setAction] = useState<"sync" | "metrics">();
+  const [syncCursor, setSyncCursor] = useState<string>();
+  const [actionNotice, setActionNotice] = useState<{ tone: "success" | "error"; text: string }>();
   // The in-flight request. A filter change / reload aborts it, so a late
   // "Load older" from the previous filter set never appends to the new list.
   const inFlight = useRef<AbortController | null>(null);
@@ -263,6 +277,46 @@ export function InstagramGalleryPanel({
       .finally(() => setLoadingMore(false));
   };
 
+  // IG-02/IG-05 from the gallery itself: a topic connected through its
+  // Facebook Page has no direct-Instagram panel to run them from.
+  const syncPublications = (after?: string) => {
+    if (action) return;
+    setAction("sync");
+    setActionNotice(undefined);
+    requestJson<MediaSyncResult>(`/api/radar/topics/${encodeURIComponent(topicId)}/meta/media/sync`, secret, {
+      method: "POST",
+      ...(after ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ after }) } : {}),
+    })
+      .then((result) => {
+        setSyncCursor(result.nextCursor);
+        setActionNotice(result.error === "needs-reconnect"
+          ? { tone: "error", text: "The token was rejected. Reconnect the account in Channels and sync again." }
+          : result.error
+          ? { tone: "error", text: `Sync stopped early: ${result.error}. ${result.imported} imported before it failed.` }
+          : { tone: "success", text: `${result.imported} imported · ${result.updated} updated · ${result.totalImported} total` });
+        retry();
+      })
+      .catch((requestError) => setActionNotice({ tone: "error", text: getErrorMessage(requestError) }))
+      .finally(() => setAction(undefined));
+  };
+
+  const refreshAllMetrics = () => {
+    if (action) return;
+    setAction("metrics");
+    setActionNotice(undefined);
+    requestJson<MetricsRefreshResult>(metricsUrl(topicId), secret, { method: "POST" })
+      .then((result) => {
+        setActionNotice(result.error === "needs-reconnect"
+          ? { tone: "error", text: "The token was rejected. Reconnect the account in Channels and refresh again." }
+          : result.error
+          ? { tone: "error", text: result.error }
+          : { tone: "success", text: `${result.refreshed} publications updated${result.failed ? ` · ${result.failed} failed` : ""}` });
+        retry();
+      })
+      .catch((requestError) => setActionNotice({ tone: "error", text: getErrorMessage(requestError) }))
+      .finally(() => setAction(undefined));
+  };
+
   if (!authenticated) return null;
 
   const loading = !data && !error;
@@ -283,6 +337,7 @@ export function InstagramGalleryPanel({
           <strong id="instagram-gallery-title">Instagram publications</strong>
           <p className={styles.brandAssetHint}>
             {data?.account?.igUsername ? `@${data.account.igUsername}` : "—"}
+            {data?.account?.source === "facebook-page" ? " · via the Facebook Page" : ""}
             {data?.lastMediaSyncAt
               ? ` · last sync ${new Date(data.lastMediaSyncAt).toLocaleString()}`
               : " · not synced yet"}
@@ -308,16 +363,48 @@ export function InstagramGalleryPanel({
         </p>
       ) : notConnected ? (
         <p className={styles.brandAssetHint}>
-          Connect this topic&rsquo;s Instagram account in the panel above, then
-          use &ldquo;Sync publications&rdquo;.
+          Connect this topic&rsquo;s Instagram account, or a Facebook Page with
+          a linked Instagram account, in Channels. Then use &ldquo;Sync
+          publications&rdquo;.
         </p>
       ) : needsReconnect ? (
         <p className={styles.brandAssetHint}>
-          The Instagram token needs to be reconnected before the gallery can
-          load. Reconnect in the panel above.
+          The connection token needs to be renewed before the gallery can
+          load. Reconnect it in Channels.
         </p>
       ) : (
         <>
+          <div className={styles.metaConnectionActions}>
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              disabled={disabled || Boolean(action) || reloading}
+              onClick={() => syncPublications()}
+            >
+              {action === "sync" ? "Syncing…" : "Sync publications"}
+            </button>
+            {syncCursor ? (
+              <button
+                type="button"
+                className={styles.secondaryButton}
+                disabled={disabled || Boolean(action) || reloading}
+                onClick={() => syncPublications(syncCursor)}
+              >
+                Load older from Instagram
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              disabled={disabled || Boolean(action) || reloading}
+              onClick={refreshAllMetrics}
+            >
+              {action === "metrics" ? "Refreshing…" : "Refresh metrics"}
+            </button>
+          </div>
+          {actionNotice ? (
+            <InlineNotice tone={actionNotice.tone}>{actionNotice.text}</InlineNotice>
+          ) : null}
           <div className={styles.instagramFilters}>
             <label className={styles.field}>
               <span>Format</span>

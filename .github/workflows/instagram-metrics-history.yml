@@ -1,0 +1,52 @@
+# Instagram metrics history (IG-07).
+#
+# Every hour this calls one bounded pass. The app imports each brand's newest
+# publications and reads the metrics of those whose next capture is due
+# (every 6 hours for 3 days, daily to 7 days, every 3 days to 30 days), keeping
+# each read as a snapshot. It never publishes, links or approves anything.
+#
+# Configure in the repository settings:
+#   Variables → INSTAGRAM_METRICS_WORKER_URL     e.g. https://story-radar.vercel.app
+#   Secrets   → INSTAGRAM_METRICS_WORKER_SECRET  same value as on Vercel
+# Until both exist the job exits early without failing.
+name: Instagram metrics history
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: instagram-metrics-history
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Run one metrics history pass
+        env:
+          APP_URL: ${{ vars.INSTAGRAM_METRICS_WORKER_URL }}
+          WORKER_SECRET: ${{ secrets.INSTAGRAM_METRICS_WORKER_SECRET }}
+        run: |
+          if [ -z "$APP_URL" ] || [ -z "$WORKER_SECRET" ]; then
+            echo "::notice::INSTAGRAM_METRICS_WORKER_URL (variable) or INSTAGRAM_METRICS_WORKER_SECRET (secret) is not set; nothing to do."
+            exit 0
+          fi
+          case "$APP_URL" in
+            https://*) ;;
+            *) echo "::error::INSTAGRAM_METRICS_WORKER_URL must start with https://"; exit 1 ;;
+          esac
+          code=$(curl -sS -o /tmp/body -w '%{http_code}' -X POST --max-time 300 \
+            -H "Authorization: Bearer $WORKER_SECRET" \
+            "${APP_URL%/}/api/internal/instagram-metrics/capture") || code=000
+          echo "HTTP $code"
+          if [ "$code" = "200" ]; then
+            cat /tmp/body; echo
+          else
+            echo "::error::Instagram metrics pass failed with HTTP $code (check the secret, the URL and the deployment logs)."
+            exit 1
+          fi

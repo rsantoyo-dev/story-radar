@@ -18,7 +18,7 @@ function harness({ postVersion = 2, draftVersion = 3, batchId = "batch", batchDr
       return { id: "draft", storyId: draftStory, provider: "documentary", format: "carousel", version: draftVersion, units: [{ order: 1, headline: "Current headline" }] };
     } },
     "./instagram-creative-version-label": { instagramCreativeVersionLabel: () => "Historical carousel" },
-    "./topic-meta-connections.repository": { getTopicMetaConnectionStatus: async () => ({ state: "operational" }), getConnectedInstagramAccount: async () => ({ igUsername: "test" }) },
+    "./instagram-history-account": { getInstagramHistoryStatus: async () => ({ state: "operational", account: { source: "facebook-page", igUserId: "ig", igUsername: "test" } }) },
     "./topic-instagram-media.repository": { listStoryInstagramPosts: async (topic: string, story: string) => {
       assert.equal(topic, "topic"); assert.equal(story, "story");
       return found ? [{ externalId: "post", linkedDraftId: "draft", linkedDraftVersion: postVersion, linkedBatchId: batchId || null }] : [];

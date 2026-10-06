@@ -2,11 +2,6 @@
 
 ## Backlog
 
-### IG-07 — Sincronización automática (histórico de métricas)
-
-  - tags: [ig]
-  - note: post-MVP — no entra en esta fase; retomar cuando el SaaS escale y la sincronización manual (IG-05) deje de bastar.
-
 ### IG-08 — Comparar rendimiento de publicaciones equivalentes
 
   - tags: [ig]
@@ -22,6 +17,11 @@
 ## En progreso
 
 ## En revisión / QA
+
+### IG-07 — Sincronización automática (histórico de métricas)
+
+  - tags: [ig]
+  - note: 2026-10-06 — cada lectura de métricas se guarda en `instagram_media_metric_snapshots` (migración 0089) con su edad real; pasada horaria `/api/internal/instagram-metrics/capture` (GitHub Actions, `INSTAGRAM_METRICS_WORKER_SECRET`): cada 6 h hasta 72 h, diaria hasta 7 días, cada 3 días hasta 30. Funciona también con cuentas conectadas por Página de Facebook. Pendiente: secreto y URL en Vercel/GitHub, y la lectura por edad (24 h, 72 h, 7 d) en la interfaz (IG-08).
 
 ### IG-06 — Ver resultados desde la historia editorial
 
