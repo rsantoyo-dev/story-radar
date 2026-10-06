@@ -11,15 +11,18 @@ import {
   CREATIVE_BRAND_SCOPES,
   CREATIVE_BRAND_UI_ROLES,
   CREATIVE_CAROUSEL_CHROME_STYLES,
+  CREATIVE_CAROUSEL_CHROME_STYLE_LABELS,
   type BrandContributionAspect,
   type CreativeBrandContribution,
   type CreativeBrandPaletteColor,
   type CreativeBrandReference,
   type CreativeBrandReferenceKind,
   type CreativeCharacter,
+  type CreativeCarouselChromeStyle,
   type CreativeCharacterReferenceImage,
   type CreativeProfile,
 } from "./modules/stories/creative-content.types";
+import { buildCreativeCarouselChromePreviewSvg } from "./modules/stories/creative-carousel-chrome-svg";
 import { contrastRatio } from "@/design/color/oklch";
 import { deriveBrandUiPalette } from "@/design/topic-themes";
 import styles from "./creative-draft-workspace.generated.module.css";
@@ -481,25 +484,32 @@ export function CarouselNumberingEditor({
       </header>
 
       <fieldset className={styles.carouselChromeControls} disabled={disabled}>
-        <div className={styles.carouselChromeOptions}>
-          <div className={styles.brandControlGroup}>
-            <span className={styles.brandControlLabel}>Counter style</span>
-            <div className={styles.brandSegmented} role="group" aria-label="Carousel counter style">
-              {CREATIVE_CAROUSEL_CHROME_STYLES.map((style) => (
-                <button
-                  key={style}
-                  type="button"
-                  className={`${styles.brandOptionButton} ${
-                    chrome.style === style ? styles.brandOptionSelected : ""
-                  }`}
-                  aria-pressed={chrome.style === style}
-                  onClick={() => onChange({ style })}
-                >
-                  {style === "pill" ? "Pill badge" : "Minimal"}
-                </button>
-              ))}
-            </div>
+        <div className={styles.brandControlGroup}>
+          <span className={styles.brandControlLabel}>Counter style</span>
+          <div
+            className={styles.carouselChromeStyleGrid}
+            role="radiogroup"
+            aria-label="Carousel counter style"
+          >
+            {CREATIVE_CAROUSEL_CHROME_STYLES.map((style) => (
+              <button
+                key={style}
+                type="button"
+                role="radio"
+                aria-checked={chrome.style === style}
+                className={`${styles.carouselChromeStyleOption} ${
+                  chrome.style === style ? styles.carouselChromeStyleSelected : ""
+                }`}
+                title={CREATIVE_CAROUSEL_CHROME_STYLE_LABELS[style].description}
+                onClick={() => onChange({ style })}
+              >
+                <CarouselChromePreviewImage chrome={chrome} style={style} withCue={false} />
+                <span>{CREATIVE_CAROUSEL_CHROME_STYLE_LABELS[style].label}</span>
+              </button>
+            ))}
           </div>
+        </div>
+        <div className={styles.carouselChromeOptions}>
           <CarouselChromePaletteSelect
             label="Badge"
             value={chrome.backgroundColor}
@@ -523,26 +533,59 @@ export function CarouselNumberingEditor({
         <div className={styles.carouselChromePreview} aria-label="Carousel numbering preview">
           <span>Preview · slide 2 of 6</span>
           {chrome.enabled ? (
-            <div
-              className={`${styles.carouselChromePreviewBadge} ${
-                chrome.style === "minimal" ? styles.carouselChromePreviewMinimal : ""
-              }`}
-              style={{
-                backgroundColor: chrome.backgroundColor,
-                borderColor: chrome.accentColor,
-                color: chrome.textColor,
-              }}
-            >
-              <b style={{ color: chrome.style === "minimal" ? chrome.textColor : chrome.accentColor }}>2/6</b>
-              <span> · next idea </span>
-              <b style={{ color: chrome.accentColor }}>→</b>
-            </div>
+            <CarouselChromePreviewImage chrome={chrome} style={chrome.style} withCue />
           ) : (
             <p>Numbering is off for the next carousel batch.</p>
           )}
         </div>
       </fieldset>
     </section>
+  );
+}
+
+const PREVIEW_COPY_WITH_CUE = {
+  progress: "2/6",
+  continuationCue: "next idea",
+  visibleText: "2/6 · next idea →",
+};
+const PREVIEW_COPY = { progress: "2/6", visibleText: "2/6" };
+
+/** Renders the exact compositor markup for a counter style. */
+function CarouselChromePreviewImage({
+  chrome,
+  style,
+  withCue,
+}: {
+  chrome: CreativeProfile["carouselChrome"];
+  style: CreativeCarouselChromeStyle;
+  withCue: boolean;
+}) {
+  const width = withCue ? 360 : 200;
+  const height = withCue ? 96 : 80;
+  const source = useMemo(() => {
+    const svg = buildCreativeCarouselChromePreviewSvg({
+      copy: withCue ? PREVIEW_COPY_WITH_CUE : PREVIEW_COPY,
+      colors: {
+        background: chrome.backgroundColor,
+        text: chrome.textColor,
+        accent: chrome.accentColor,
+      },
+      style,
+      width,
+      height,
+    });
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  }, [chrome.backgroundColor, chrome.textColor, chrome.accentColor, style, withCue, width, height]);
+
+  return (
+    <Image
+      className={styles.carouselChromePreviewImage}
+      src={source}
+      alt={withCue ? `${CREATIVE_CAROUSEL_CHROME_STYLE_LABELS[style].label} counter preview` : ""}
+      width={width}
+      height={height}
+      unoptimized
+    />
   );
 }
 
