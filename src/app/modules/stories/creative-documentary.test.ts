@@ -13,6 +13,8 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import sharp from "sharp";
 import ts from "typescript";
 import * as policy from "./creative-documentary";
+import * as carouselChromeSvg from "./creative-carousel-chrome-svg";
+import { CREATIVE_CAROUSEL_CHROME_STYLES } from "./creative-content.types";
 import * as usageAttribution from "../credits/usage-attribution";
 import * as providerPrices from "../credits/provider-prices";
 import * as sourceLocation from "./source-location";
@@ -346,8 +348,10 @@ test("a typography-only carousel slide gets the numbering badge; a non-carousel 
   // silently missing on a "no verified place" slide would reintroduce.
   const chrome = load<typeof import("./creative-carousel-chrome")>("creative-carousel-chrome.ts", {
     sharp,
+    "./creative-carousel-chrome-svg": carouselChromeSvg,
     "./creative-brand-overlay": { creativeCanvasDimensions: () => ({ width: 1080, height: 1350 }) },
     "./creative-content.types": {
+      CREATIVE_CAROUSEL_CHROME_STYLES,
       DEFAULT_CREATIVE_CAROUSEL_CHROME_SETTINGS: {
         enabled: true, style: "pill", backgroundColor: "#102A43", textColor: "#F6F0E4", accentColor: "#E8A83E",
       },
