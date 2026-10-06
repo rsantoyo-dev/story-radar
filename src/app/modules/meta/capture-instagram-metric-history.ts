@@ -35,7 +35,9 @@ export async function captureInstagramMetricHistory(now = new Date()): Promise<I
   // Rotate the starting topic on each hourly invocation. An earlier slow or
   // timed-out account cannot permanently starve accounts later in the list.
   activeTopics.sort((a, b) => a.id.localeCompare(b.id));
-  const start = activeTopics.length ? Math.floor(now.getTime() / 3_600_000) % activeTopics.length : 0;
+  // Move by the whole group, rather than one topic: each account gets a turn
+  // roughly every ceil(topicCount / MAX_TOPICS_PER_PASS) hours.
+  const start = activeTopics.length ? (Math.floor(now.getTime() / 3_600_000) * MAX_TOPICS_PER_PASS) % activeTopics.length : 0;
   const selected = Array.from({ length: Math.min(activeTopics.length, MAX_TOPICS_PER_PASS) },
     (_, offset) => activeTopics[(start + offset) % activeTopics.length]);
   const results: InstagramMetricHistoryTopicResult[] = [];

@@ -92,23 +92,23 @@ test("every successful metrics read is kept as a snapshot with the publication's
 
 test("hourly passes rotate fairly and cap total topic work", async () => {
   const seen: string[] = [];
+  const ids = "abcdefghij".split("");
   const capture = load<typeof import("./capture-instagram-metric-history")>("./capture-instagram-metric-history.ts", {
-    "@/db/client": { db: { select: () => ({ from: () => ({ where: async () => "abcde".split("").map(id => ({ id, name: id })) }) }) } },
+    "@/db/client": { db: { select: () => ({ from: () => ({ where: async () => ids.map(id => ({ id, name: id })) }) }) } },
     "@/db/schema": { topics: { id: {}, name: {}, isActive: {} } },
     "drizzle-orm": { eq: () => ({}) },
     "./instagram-history-account": { getInstagramHistoryStatus: async (id: string) => { seen.push(id); return { state: "disconnected" }; } },
     "./sync-instagram-media": {}, "./topic-instagram-media.repository": {}, "./refresh-instagram-media-metrics": {},
   });
-  await capture.captureInstagramMetricHistory(new Date("2026-10-06T12:00:00Z"));
-  assert.equal(seen.length, 3);
-  const first = [...seen]; seen.length = 0;
-  await capture.captureInstagramMetricHistory(new Date("2026-10-06T13:00:00Z"));
-  assert.equal(seen.length, 3);
-  assert.notDeepEqual(seen, first);
-  const second = [...seen]; seen.length = 0;
-  await capture.captureInstagramMetricHistory(new Date("2026-10-06T14:00:00Z"));
-  assert.equal(seen.length, 3);
-  assert.deepEqual(new Set([...first, ...second, ...seen]), new Set("abcde"));
+  const groups: string[][] = [];
+  for (const hour of [12, 13, 14, 15]) {
+    seen.length = 0;
+    await capture.captureInstagramMetricHistory(new Date(`2026-10-06T${hour}:00:00Z`));
+    assert.equal(seen.length, 3);
+    groups.push([...seen]);
+  }
+  assert.deepEqual(new Set(groups.flat()), new Set(ids), "all ten topics get a turn within four hours");
+  assert.equal(new Set([...groups[0], ...groups[1]]).size, 6, "adjacent hours use different topic slots");
 });
 
 test("a scheduled pass imports new posts and reads only the due ones, and leaves a dead token to the editor", async () => {
