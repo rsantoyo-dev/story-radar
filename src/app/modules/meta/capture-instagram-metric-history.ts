@@ -10,8 +10,9 @@ import { refreshInstagramMediaMetrics } from "./refresh-instagram-media-metrics"
 import { syncInstagramMediaPage } from "./sync-instagram-media";
 import { listInstagramMediaDueForSnapshot } from "./topic-instagram-media.repository";
 
-/** Bounds one scheduled pass per account; anything left is due again next pass. */
-const MAX_CAPTURES_PER_TOPIC = 25;
+/** Graph calls may take 15 seconds each; keep one serverless pass below 300 seconds. */
+const MAX_TOPICS_PER_PASS = 3;
+const MAX_CAPTURES_PER_TOPIC = 4;
 
 export type InstagramMetricHistoryTopicResult = {
   topic: string;
@@ -31,8 +32,14 @@ export type InstagramMetricHistoryTopicResult = {
  */
 export async function captureInstagramMetricHistory(now = new Date()): Promise<InstagramMetricHistoryTopicResult[]> {
   const activeTopics = await db.select({ id: topics.id, name: topics.name }).from(topics).where(eq(topics.isActive, true));
+  // Rotate the starting topic on each hourly invocation. An earlier slow or
+  // timed-out account cannot permanently starve accounts later in the list.
+  activeTopics.sort((a, b) => a.id.localeCompare(b.id));
+  const start = activeTopics.length ? Math.floor(now.getTime() / 3_600_000) % activeTopics.length : 0;
+  const selected = Array.from({ length: Math.min(activeTopics.length, MAX_TOPICS_PER_PASS) },
+    (_, offset) => activeTopics[(start + offset) % activeTopics.length]);
   const results: InstagramMetricHistoryTopicResult[] = [];
-  for (const topic of activeTopics) {
+  for (const topic of selected) {
     const status = await getInstagramHistoryStatus(topic.id);
     if (!status.account) continue;
     const result: InstagramMetricHistoryTopicResult = { topic: topic.name, account: status.account.igUsername ?? undefined, imported: 0, captured: 0, failed: 0 };

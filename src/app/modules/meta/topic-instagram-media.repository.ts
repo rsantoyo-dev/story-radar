@@ -601,9 +601,17 @@ export async function saveInstagramMediaMetrics(input: {
         updatedAt: at,
       })
       .where(where)
-      .returning({ id: topicInstagramMedia.id, publishedAt: topicInstagramMedia.publishedAt });
+      .returning({
+        id: topicInstagramMedia.id,
+        publishedAt: topicInstagramMedia.publishedAt,
+        linkedStoryId: topicInstagramMedia.linkedStoryId,
+        linkedDraftId: topicInstagramMedia.linkedDraftId,
+        linkedDraftVersion: topicInstagramMedia.linkedDraftVersion,
+        linkedBatchId: topicInstagramMedia.linkedBatchId,
+        publishedPackageId: topicInstagramMedia.publishedPackageId,
+      });
     updated = saved;
-    if (saved[0]) await recordInstagramMetricSnapshot({ ...input, mediaId: saved[0].id, publishedAt: saved[0].publishedAt, metrics: input.result.ok, apiVersion: input.result.apiVersion, at });
+    if (saved[0]) await recordInstagramMetricSnapshot({ ...input, ...saved[0], mediaId: saved[0].id, metrics: input.result.ok, apiVersion: input.result.apiVersion, at });
   }
 
   if (updated.length === 0) return undefined;
@@ -625,6 +633,11 @@ async function recordInstagramMetricSnapshot(input: {
   externalId: string;
   mediaId: string;
   publishedAt: Date;
+  linkedStoryId: string | null;
+  linkedDraftId: string | null;
+  linkedDraftVersion: number | null;
+  linkedBatchId: string | null;
+  publishedPackageId: string | null;
   metrics: Record<string, ParsedInstagramMediaMetric>;
   apiVersion: string;
   at: Date;
@@ -635,6 +648,12 @@ async function recordInstagramMetricSnapshot(input: {
       topicId: input.topicId,
       igUserId: input.igUserId,
       externalId: input.externalId,
+      linkedStoryId: input.linkedStoryId,
+      linkedDraftId: input.linkedDraftId,
+      linkedDraftVersion: input.linkedDraftVersion,
+      linkedBatchId: input.linkedBatchId,
+      publishedPackageId: input.publishedPackageId,
+      publishedAt: input.publishedAt,
       capturedAt: input.at,
       ageHours: publicationAgeHours(input.publishedAt, input.at),
       metrics: input.metrics,
