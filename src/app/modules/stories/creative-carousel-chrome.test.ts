@@ -583,3 +583,62 @@ test("rejects an unknown counter style", () => {
     /must be one of/iu,
   );
 });
+
+const IRREGULAR_STYLES = ["brush", "blob", "sketch", "torn-paper", "sticker"] as const;
+
+test("irregular shapes stay inside the reserved badge on every slide", async () => {
+  for (const style of IRREGULAR_STYLES) {
+    for (const [unitOrder, continuationCue] of [
+      [1, undefined],
+      [3, "qué cambia para tu bolsillo hoy"],
+      [9, "lo que sigue"],
+    ] as const) {
+      const chrome = buildCreativeCarouselChrome({
+        aspectRatio: "4:5",
+        unitOrder,
+        totalSlides: 10,
+        continuationCue,
+        settings: { enabled: true, style, ...BRAND },
+      });
+      if (chrome.geometry.layout === "skipped") assert.fail(`${style} skipped`);
+      const badge = chrome.geometry.badge;
+      const { data, info } = await sharp(chrome.overlay!.input)
+        .ensureAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      for (let y = badge.top - 20; y < badge.top + badge.height + 20; y += 1) {
+        for (let x = badge.left - 20; x < badge.left + badge.width + 20; x += 1) {
+          if (x < 0 || y < 0 || x >= info.width || y >= info.height) continue;
+          const inside =
+            x >= badge.left - 1 && x <= badge.left + badge.width + 1 &&
+            y >= badge.top - 1 && y <= badge.top + badge.height + 1;
+          if (!inside) {
+            assert.equal(
+              data[(y * info.width + x) * info.channels + 3],
+              0,
+              `${style} slide ${unitOrder} paints outside its badge at ${x},${y}`,
+            );
+          }
+        }
+      }
+    }
+  }
+});
+
+test("irregular shapes are reproducible per slide and vary between slides", () => {
+  const render = (style: (typeof IRREGULAR_STYLES)[number], unitOrder: number) =>
+    buildCreativeCarouselChrome({
+      aspectRatio: "4:5",
+      unitOrder,
+      totalSlides: 5,
+      settings: { enabled: true, style, ...BRAND },
+    }).overlay!.input.toString("utf8");
+  for (const style of IRREGULAR_STYLES) {
+    assert.equal(render(style, 2), render(style, 2), `${style} is not deterministic`);
+    assert.notEqual(
+      render(style, 2).replace(/>\d\/5</u, ""),
+      render(style, 3).replace(/>\d\/5</u, ""),
+      `${style} does not vary between slides`,
+    );
+  }
+});

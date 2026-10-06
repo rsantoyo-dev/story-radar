@@ -83,6 +83,16 @@ export function renderCreativeCarouselChromeMarkup({
       return renderDots(badge, text, copy, colors);
     case "progress-bar":
       return renderProgressBar(badge, text, copy, colors);
+    case "brush":
+      return renderBrush(badge, text, copy, colors, seededRandom(style, copy));
+    case "blob":
+      return renderBlob(badge, text, copy, colors, seededRandom(style, copy));
+    case "sketch":
+      return renderSketch(badge, text, copy, colors, seededRandom(style, copy));
+    case "torn-paper":
+      return renderTornPaper(badge, text, copy, colors, seededRandom(style, copy));
+    case "sticker":
+      return renderSticker(badge, text, copy, colors, seededRandom(style, copy));
   }
 }
 
@@ -255,6 +265,246 @@ function renderProgressBar(
     `<rect x="${badge.left + inset}" y="${trackTop}" width="${trackWidth}" height="${barHeight}" rx="${Math.round(barHeight / 2)}" fill="${colors.text}" fill-opacity="0.3"/>`,
     `<rect x="${badge.left + inset}" y="${trackTop}" width="${filled}" height="${barHeight}" rx="${Math.round(barHeight / 2)}" fill="${colors.accent}"/>`,
   ].join("");
+}
+
+// ---------------------------------------------------------------------------
+// Irregular shapes. Every point is clamped to the badge so prompt reservation
+// and logo avoidance still hold. Variation comes from a seed derived from the
+// style and slide position: each slide differs slightly, but the same slide
+// always produces the same bytes.
+
+type Point = [number, number];
+type Random = () => number;
+
+function renderBrush(
+  badge: CreativeCarouselPixelRect,
+  text: CreativeCarouselChromeText,
+  copy: CreativeCarouselChromeCopy,
+  colors: CreativeCarouselChromeColors,
+  random: Random,
+): string {
+  const { left, top, width, height } = badge;
+  const right = left + width;
+  const bottom = top + height;
+  const wobble = height * 0.1;
+  const ragged = height * 0.22;
+  const steps = Math.max(4, Math.round(width / (height * 0.7)));
+  const points: Point[] = [];
+  for (let index = 0; index <= steps; index += 1) {
+    points.push([left + ragged + ((width - ragged * 2) * index) / steps, top + random() * wobble]);
+  }
+  for (let index = 1; index < 5; index += 1) {
+    const y = top + (height * index) / 5;
+    points.push([right - (index % 2 === 0 ? random() * 0.3 : 0.6 + random() * 0.4) * ragged, y]);
+  }
+  for (let index = steps; index >= 0; index -= 1) {
+    points.push([left + ragged + ((width - ragged * 2) * index) / steps, bottom - random() * wobble]);
+  }
+  for (let index = 4; index > 0; index -= 1) {
+    const y = top + (height * index) / 5;
+    points.push([left + (index % 2 === 0 ? random() * 0.3 : 0.6 + random() * 0.4) * ragged, y]);
+  }
+  const streakY = top + height * (0.14 + random() * 0.04);
+  return [
+    `<path d="${polygonPath(points, badge)}" fill="${colors.background}" fill-opacity="0.94"/>`,
+    `<path d="${polygonPath(
+      [
+        [left + ragged * 1.4, streakY],
+        [right - ragged * 1.6, streakY + random() * 2],
+        [right - ragged * 1.8, streakY + 2],
+        [left + ragged * 1.5, streakY + 2.5],
+      ],
+      badge,
+    )}" fill="${colors.text}" fill-opacity="0.12"/>`,
+    renderChromeText(text, copy, colors, "brush"),
+  ].join("");
+}
+
+function renderBlob(
+  badge: CreativeCarouselPixelRect,
+  text: CreativeCarouselChromeText,
+  copy: CreativeCarouselChromeCopy,
+  colors: CreativeCarouselChromeColors,
+  random: Random,
+): string {
+  const cx = badge.left + badge.width / 2;
+  const cy = badge.top + badge.height / 2;
+  const halfWidth = badge.width / 2;
+  const halfHeight = badge.height / 2;
+  const count = 12;
+  const offset = random() * Math.PI * 2;
+  const points: Point[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const angle = offset + (Math.PI * 2 * index) / count;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    // Superellipse keeps the text area wide; jitter makes it organic.
+    const scale = 0.76 + random() * 0.24;
+    points.push([
+      cx + halfWidth * (0.9 + random() * 0.1) * Math.sign(cos) * Math.abs(cos) ** 0.45,
+      cy + halfHeight * scale * Math.sign(sin) * Math.abs(sin) ** 0.8,
+    ]);
+  }
+  return `<path d="${smoothClosedPath(points, badge)}" fill="${colors.background}" fill-opacity="0.92"/>${renderChromeText(text, copy, colors, "blob")}`;
+}
+
+function renderSketch(
+  badge: CreativeCarouselPixelRect,
+  text: CreativeCarouselChromeText,
+  copy: CreativeCarouselChromeCopy,
+  colors: CreativeCarouselChromeColors,
+  random: Random,
+): string {
+  const stroke = strokeWidth(badge);
+  const jitter = badge.height * 0.07;
+  const inner = insetRect(badge, stroke + jitter);
+  const outline = () =>
+    wobblyRectPoints(inner, Math.max(3, Math.round(badge.width / (badge.height * 1.2))), jitter, random);
+  return [
+    `<path d="${polygonPath(outline(), badge)}" fill="${colors.background}" fill-opacity="0.85"/>`,
+    `<path d="${polygonPath(outline(), badge)}" fill="none" stroke="${colors.accent}" stroke-width="${stroke}" stroke-linejoin="round"/>`,
+    `<path d="${polygonPath(outline(), badge)}" fill="none" stroke="${colors.accent}" stroke-width="${Math.max(1, Math.round(stroke / 2))}" stroke-opacity="0.6" stroke-linejoin="round"/>`,
+    renderChromeText(text, copy, colors, "sketch"),
+  ].join("");
+}
+
+function renderTornPaper(
+  badge: CreativeCarouselPixelRect,
+  text: CreativeCarouselChromeText,
+  copy: CreativeCarouselChromeCopy,
+  colors: CreativeCarouselChromeColors,
+  random: Random,
+): string {
+  const { left, top, width, height } = badge;
+  const right = left + width;
+  const bottom = top + height;
+  const tooth = height * 0.14;
+  const step = height * 0.22;
+  const points: Point[] = [];
+  for (let x = left; x < right; x += step * (0.7 + random() * 0.6)) {
+    points.push([x, top + random() * tooth]);
+  }
+  points.push([right, top + random() * tooth]);
+  for (let x = right; x > left; x -= step * (0.7 + random() * 0.6)) {
+    points.push([x, bottom - random() * tooth]);
+  }
+  points.push([left, bottom - random() * tooth]);
+  return `<path d="${polygonPath(points, badge)}" fill="${colors.background}" fill-opacity="0.96"/>${renderChromeText(text, copy, colors, "torn-paper")}`;
+}
+
+function renderSticker(
+  badge: CreativeCarouselPixelRect,
+  text: CreativeCarouselChromeText,
+  copy: CreativeCarouselChromeCopy,
+  colors: CreativeCarouselChromeColors,
+  random: Random,
+): string {
+  const shadow = Math.max(2, Math.round(badge.height * 0.07));
+  const availableWidth = badge.width - shadow;
+  const availableHeight = badge.height - shadow;
+  // Long badges tilt less so the sticker keeps at least ~80% of its height.
+  const maxRadians = Math.atan((availableHeight * 0.2) / availableWidth);
+  const direction = random() < 0.5 ? -1 : 1;
+  const radians = Math.min(((1.5 + random() * 1.5) * Math.PI) / 180, maxRadians);
+  const degrees = (direction * radians * 180) / Math.PI;
+  // Largest rectangle whose rotated bounding box stays inside the badge.
+  const sin = Math.sin(radians);
+  const cos = Math.cos(radians);
+  const height = Math.max(
+    1,
+    (availableHeight - (availableWidth * sin) / cos) / (cos - (sin * sin) / cos),
+  );
+  const width = Math.max(1, (availableWidth - height * sin) / cos);
+  const cx = badge.left + availableWidth / 2;
+  const cy = badge.top + availableHeight / 2;
+  const rect = (dx: number, fill: string, opacity: string) =>
+    `<rect x="${fixed(cx - width / 2 + dx)}" y="${fixed(cy - height / 2 + dx)}" width="${fixed(width)}" height="${fixed(height)}" rx="${fixed(height * 0.22)}" fill="${fill}"${opacity}/>`;
+  const centeredText = { ...text, centerX: Math.round(cx), centerY: Math.round(cy) };
+  return [
+    `<g transform="rotate(${fixed(degrees)} ${fixed(cx)} ${fixed(cy)})">`,
+    rect(shadow, colors.accent, ""),
+    rect(0, colors.background, ""),
+    renderChromeText(centeredText, copy, colors, "sticker"),
+    "</g>",
+  ].join("");
+}
+
+function wobblyRectPoints(
+  rect: CreativeCarouselPixelRect,
+  segmentsPerLongEdge: number,
+  jitter: number,
+  random: Random,
+): Point[] {
+  const { left, top, width, height } = rect;
+  const right = left + width;
+  const bottom = top + height;
+  const wobble = () => (random() - 0.5) * 2 * jitter;
+  const points: Point[] = [];
+  for (let index = 0; index < segmentsPerLongEdge; index += 1) {
+    points.push([left + (width * index) / segmentsPerLongEdge + wobble(), top + wobble()]);
+  }
+  points.push([right + wobble(), top + wobble()], [right + wobble(), bottom + wobble()]);
+  for (let index = segmentsPerLongEdge - 1; index > 0; index -= 1) {
+    points.push([left + (width * index) / segmentsPerLongEdge + wobble(), bottom + wobble()]);
+  }
+  points.push([left + wobble(), bottom + wobble()]);
+  return points;
+}
+
+function polygonPath(points: Point[], bounds: CreativeCarouselPixelRect): string {
+  return `${points
+    .map(([x, y], index) => `${index === 0 ? "M" : "L"}${fixed(clampX(x, bounds))} ${fixed(clampY(y, bounds))}`)
+    .join(" ")} Z`;
+}
+
+/** Closed Catmull-Rom spline converted to cubic Béziers, clamped to bounds. */
+function smoothClosedPath(points: Point[], bounds: CreativeCarouselPixelRect): string {
+  const at = (index: number) => points[(index + points.length) % points.length]!;
+  const parts = [`M${fixed(clampX(at(0)[0], bounds))} ${fixed(clampY(at(0)[1], bounds))}`];
+  for (let index = 0; index < points.length; index += 1) {
+    const [p0, p1, p2, p3] = [at(index - 1), at(index), at(index + 1), at(index + 2)];
+    const c1: Point = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6];
+    const c2: Point = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
+    parts.push(
+      `C${[c1, c2, p2].map(([x, y]) => `${fixed(clampX(x, bounds))} ${fixed(clampY(y, bounds))}`).join(" ")}`,
+    );
+  }
+  return `${parts.join(" ")} Z`;
+}
+
+function insetRect(rect: CreativeCarouselPixelRect, inset: number): CreativeCarouselPixelRect {
+  return {
+    left: rect.left + inset,
+    top: rect.top + inset,
+    width: Math.max(1, rect.width - inset * 2),
+    height: Math.max(1, rect.height - inset * 2),
+  };
+}
+
+function clampX(x: number, bounds: CreativeCarouselPixelRect): number {
+  return Math.min(bounds.left + bounds.width, Math.max(bounds.left, x));
+}
+
+function clampY(y: number, bounds: CreativeCarouselPixelRect): number {
+  return Math.min(bounds.top + bounds.height, Math.max(bounds.top, y));
+}
+
+function fixed(value: number): string {
+  return String(Math.round(value * 10) / 10);
+}
+
+/** Mulberry32 seeded from the style and slide progress: stable per slide. */
+function seededRandom(style: string, copy: CreativeCarouselChromeCopy): Random {
+  let seed = 2166136261;
+  for (const character of `${style}:${copy.progress}`) {
+    seed = Math.imul(seed ^ character.charCodeAt(0), 16777619);
+  }
+  return () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let value = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value;
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
 function renderChromeText(
