@@ -39,10 +39,8 @@ const PREVIEW_ASPECT = 3 / 2;
  */
 function FocalPointPhoto({ url, photo, onSave, disabled }: { url: string; photo: StoryReferencePhoto; onSave: (focus: PhotoFocus) => void; disabled: boolean }) {
   const [natural, setNatural] = useState<{ width: number; height: number }>();
-  const [pending, setPending] = useState<{ focus: PhotoFocus; base: string }>();
-  // A local preview belongs only to the persisted focus it was based on.
-  const focusKey = photo.focus ? `${photo.focus.x}:${photo.focus.y}` : "auto";
-  const point = pending?.base === focusKey ? pending.focus : photo.focus;
+  const [pending, setPending] = useState<PhotoFocus>();
+  const point = pending ?? photo.focus;
   const aspect = natural ? natural.width / natural.height : PREVIEW_ASPECT;
   // The photo box, centred in the preview at the photo's own shape.
   const size = aspect < PREVIEW_ASPECT
@@ -57,7 +55,7 @@ function FocalPointPhoto({ url, photo, onSave, disabled }: { url: string; photo:
         if (disabled || event.detail === 0) return;
         const box = event.currentTarget.getBoundingClientRect();
         const focus = { x: clamp((event.clientX - box.left) / box.width), y: clamp((event.clientY - box.top) / box.height) };
-        setPending({ focus, base: focusKey });
+        setPending(focus);
         onSave(focus);
       }}
       onKeyDown={event => {
@@ -66,7 +64,7 @@ function FocalPointPhoto({ url, photo, onSave, disabled }: { url: string; photo:
         const current = point ?? { x: 0.5, y: 0.5 };
         if (moves[event.key]) {
           event.preventDefault();
-          setPending({ focus: { x: clamp(current.x + moves[event.key][0]), y: clamp(current.y + moves[event.key][1]) }, base: focusKey });
+          setPending({ x: clamp(current.x + moves[event.key][0]), y: clamp(current.y + moves[event.key][1]) });
         } else if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           onSave(current);
@@ -102,7 +100,8 @@ function PhotoPreview({ scope, photo, onFocusSaved, disabled = false }: { scope:
     finally { setSaving(false); }
   }
   return <>
-    <FocalPointPhoto url={url} photo={photo} disabled={disabled || saving} onSave={focus => void save(focus)} />
+    <FocalPointPhoto key={`${photo.id}:${photo.focus?.x ?? "auto"}:${photo.focus?.y ?? "auto"}`}
+      url={url} photo={photo} disabled={disabled || saving} onSave={focus => void save(focus)} />
     <small>{saving ? "Saving the focal point…" : photo.focus ? "Focal point set: documentary crops keep it. Regenerate the slides that use this photo to apply it." : "Click where the people are: documentary crops keep that point."}</small>
     {photo.focus ? <button type="button" disabled={disabled || saving} onClick={() => void save(null)}>Automatic framing</button> : null}
     {focusError ? <p role="alert">{focusError}</p> : null}
