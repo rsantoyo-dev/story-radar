@@ -13,6 +13,7 @@
     "worker:instagram": "node scripts/instagram-publication-worker.mjs",
     "credits:reset": "node scripts/reset-demo-credits.mjs",
     "postinstall": "patch-package",
+    "pretest": "npm run uxdsl:build",
     "test": "node --import tsx --test scripts/vercel-env.test.mjs src/app/*.test.ts src/app/ui/*.test.tsx src/app/modules/credits/*.test.ts src/app/modules/stories/*.test.ts src/app/modules/documents/*.test.ts src/app/modules/meta/*.test.ts src/app/modules/topics/*.test.ts src/app/modules/sources/*.test.ts src/design/*.test.ts src/design/*/*.test.ts",
     "uxdsl:build": "uxdsl build",
     "uxdsl:watch": "uxdsl watch",

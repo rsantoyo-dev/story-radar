@@ -13,7 +13,6 @@ test("creation disclosure uses native expansion and closes predictably for keybo
     HTMLElement: globalThis.HTMLElement,
     Element: globalThis.Element,
     Node: globalThis.Node,
-    navigator: globalThis.navigator,
     actEnvironment: (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT,
   };
   Object.assign(globalThis, {
@@ -22,9 +21,11 @@ test("creation disclosure uses native expansion and closes predictably for keybo
     HTMLElement: dom.window.HTMLElement,
     Element: dom.window.Element,
     Node: dom.window.Node,
-    navigator: dom.window.navigator,
     IS_REACT_ACT_ENVIRONMENT: true,
   });
+  // Node >= 21 defines `navigator` as a read-only getter; Object.assign cannot replace it.
+  const previousNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  Object.defineProperty(globalThis, "navigator", { value: dom.window.navigator, configurable: true, writable: true });
 
   let activations = 0;
   const { createRoot } = await import("react-dom/client");
@@ -88,6 +89,8 @@ test("creation disclosure uses native expansion and closes predictably for keybo
   } finally {
     await act(async () => { root.unmount(); });
     Object.assign(globalThis, previous);
+    if (previousNavigator) Object.defineProperty(globalThis, "navigator", previousNavigator);
+    else delete (globalThis as { navigator?: unknown }).navigator;
     dom.window.close();
   }
 });

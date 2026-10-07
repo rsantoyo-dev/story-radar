@@ -1,0 +1,54 @@
+# Pull request checks: lint, tests, production build and migration check.
+#
+# Runs on every pull request and on pushes to main. The four checks run as
+# separate jobs so one failure does not hide the others. No secrets are used:
+# the build and drizzle-kit only need placeholder database URLs (the app opens
+# its database lazily, and `drizzle-kit check` reads the migration folder
+# without connecting).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: ${{ matrix.task }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        task: [lint, test, build, "db:check"]
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+      DATABASE_URL_DIRECT: postgresql://ci:ci@localhost:5432/ci
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: npm run ${{ matrix.task }}
+        run: |
+          set -o pipefail
+          npm run "${{ matrix.task }}" 2>&1 | tee task-output.txt
+
+      - name: Annotate failing tests
+        if: failure() && matrix.task == 'test'
+        run: node .github/scripts/annotate-test-failures.mjs task-output.txt
