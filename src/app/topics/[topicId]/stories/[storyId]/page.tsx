@@ -2,7 +2,7 @@ import { requireTopicPageAccess } from "@/app/modules/auth/access";
 import { getTopicById } from "@/app/modules/topics/topic-catalog.repository";
 import { resolveTopicUiTheme } from "@/app/modules/topics/topic-ui-theme";
 import { connection } from "next/server";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { StoryWorkspacePageClient } from "./story-workspace-page-client";
 
@@ -25,6 +25,8 @@ export default async function StoryPage({
   const { user } = await requireTopicPageAccess(topicId, "viewer", `/topics/${encodeURIComponent(topicId)}/stories/${encodeURIComponent(storyId)}`);
   const topic = await getTopicById(topicId);
   if (!topic) notFound();
+  // A brand still in its guided setup has no studio yet.
+  if (user && topic.setupCompletedAt === null) redirect(`/?topicId=${encodeURIComponent(topicId)}`);
   const themeStyle = await resolveTopicUiTheme(topicId, topic.themeKey);
 
   return <StoryWorkspacePageClient

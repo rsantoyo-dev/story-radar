@@ -1402,6 +1402,12 @@ export function RadarDashboard({
       return true;
     }
 
+    // Signed in, a brand that has not finished its guided setup opens the setup instead.
+    if (account && topics.find((topic) => topic.id === topicId)?.ready !== true) {
+      router.push(`/?topicId=${encodeURIComponent(topicId)}`);
+      return true;
+    }
+
     if (
       preferencesDirty &&
       !window.confirm(

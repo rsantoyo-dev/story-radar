@@ -27,6 +27,19 @@ export const topics = pgTable(
     description: text("description"),
     themeKey: text("theme_key").default("press-green").notNull(),
     isActive: boolean("is_active").default(true).notNull(),
+    /**
+     * Guided setup (identity → sources → channels). A brand opens the
+     * dashboard only once setup is completed; brands that existed before the
+     * guide were marked complete when it shipped.
+     */
+    setupIdentityConfirmedAt: timestamp("setup_identity_confirmed_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    setupCompletedAt: timestamp("setup_completed_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
     createdAt: timestamp("created_at", {
       withTimezone: true,
       mode: "date",

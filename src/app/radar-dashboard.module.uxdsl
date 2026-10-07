@@ -3750,6 +3750,57 @@
 .demoCreditsLink:hover { background: palette(primary-dark); }
 .demoCreditsLink:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 2px; }
 
+/* Guided brand setup: identity → sources → channels, one step at a time. */
+.setupPage { display: grid; align-content: start; gap: density(5); max-width: 1080px; min-height: 100dvh; margin: 0 auto; padding: density(6) density(5) density(11); background: palette(light-main); color: palette(dark-main); }
+.setupHeader { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: density(4); }
+.setupHeader > div:first-child > span { color: palette(tertiary-main); @ds-typo(caption); font-size: 0.75rem; font-weight: 700; }
+.setupHeader h1 { margin: density(1) 0 0; @ds-typo(h2); font-size: clamp(1.4rem, 2.4vw, 1.9rem); letter-spacing: -0.03em; }
+.setupHeaderActions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: density(3); }
+.setupBrandSwitch { display: flex; align-items: center; gap: density(2); color: palette(tertiary-main); @ds-typo(caption); font-size: 0.72rem; font-weight: 700; }
+.setupBrandSwitch select { min-height: 34px; padding: 0 density(3); border: 1px solid palette(dark-main, 0.18); border-radius: radius(2); background: palette(light-light); color: palette(dark-main); @ds-typo(small); }
+.setupAccount { max-width: 220px; overflow: hidden; color: palette(tertiary-main); @ds-typo(caption); font-size: 0.75rem; text-overflow: ellipsis; white-space: nowrap; }
+.setupSteps { display: grid; grid-template-columns: xs(repeat(2, minmax(0, 1fr))) md(repeat(4, minmax(0, 1fr))); gap: density(2); margin: 0; padding: 0; list-style: none; }
+.setupSteps button { display: flex; align-items: center; gap: density(3); width: 100%; min-height: 56px; padding: density(3); border: 1px solid palette(dark-main, 0.1); border-radius: radius(3); background: palette(light-light); color: palette(dark-main); text-align: left; cursor: pointer; }
+.setupSteps button:disabled { cursor: not-allowed; }
+.setupSteps button:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 2px; }
+.setupSteps b { display: grid; flex: none; width: 28px; height: 28px; place-items: center; border-radius: 999px; background: palette(neutral-light, 0.6); color: palette(tertiary-main); @ds-typo(caption); font-weight: 800; }
+.setupSteps span { display: grid; min-width: 0; gap: 1px; }
+.setupSteps strong { @ds-typo(small); font-size: 0.85rem; font-weight: 750; }
+.setupSteps small { overflow: hidden; color: palette(tertiary-main); @ds-typo(caption); font-size: 0.7rem; text-overflow: ellipsis; white-space: nowrap; }
+.setupSteps li[data-state="current"] button { border-color: palette(primary-main); box-shadow: inset 0 0 0 1px palette(primary-main); }
+.setupSteps li[data-state="current"] b { background: palette(primary-main); color: palette(light-light); }
+.setupSteps li[data-state="done"] b { background: palette(success-main); color: palette(light-light); }
+.setupSteps li[data-state="locked"] button { opacity: 0.55; }
+.setupNotice { margin: 0; padding: density(3) density(4); border-radius: radius(2); background: palette(primary-light, 0.2); color: palette(primary-dark); @ds-typo(small); font-weight: 650; }
+.setupNotice[data-tone="error"] { background: palette(error-light, 0.2); color: palette(error-dark); }
+.setupStep { display: grid; gap: density(4); padding: density(5); border: 1px solid palette(dark-main, 0.08); border-radius: radius(3); background: palette(light-light); }
+.setupIntro { display: grid; gap: density(2); max-width: 760px; }
+.setupIntro h2 { margin: 0; @ds-typo(h3); font-size: 1.2rem; }
+.setupIntro p { margin: 0; color: palette(tertiary-main); @ds-typo(small); font-size: 0.875rem; line-height: 1.5; }
+.setupIntro p.setupOk { color: palette(success-dark); font-weight: 700; }
+.setupMissing { display: grid; gap: density(1); margin: 0; padding-left: density(5); color: palette(error-dark); @ds-typo(small); font-size: 0.85rem; font-weight: 650; }
+.setupTabs { display: flex; flex-wrap: wrap; gap: density(1); padding: density(1); border-radius: radius(3); background: palette(neutral-light, 0.45); justify-self: start; }
+.setupTabs button { min-height: 34px; padding: 0 density(3); border: 0; border-radius: radius(2); background: transparent; color: palette(tertiary-main); @ds-typo(caption); font-size: 0.78rem; font-weight: 700; cursor: pointer; }
+.setupTabs button[aria-pressed="true"] { background: palette(light-light); color: palette(primary-dark); box-shadow: shadow(1); }
+.setupTabs button:focus-visible, .setupAlternative > summary:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 2px; }
+.setupPanel { display: grid; gap: density(4); min-width: 0; }
+.setupAlternative { border-top: 1px solid palette(dark-main, 0.08); padding-top: density(3); }
+.setupAlternative > summary { color: palette(primary-dark); @ds-typo(small); font-weight: 700; cursor: pointer; }
+.setupSummary { display: grid; gap: density(2); margin: 0; padding: 0; list-style: none; }
+.setupSummary li { @ds-typo(small); font-weight: 650; }
+.setupSummary li::before { content: "○ "; color: palette(tertiary-main); }
+.setupSummary li[data-done="true"]::before { content: "✓ "; color: palette(success-dark); }
+.setupFooter { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: density(2); padding-top: density(3); border-top: 1px solid palette(dark-main, 0.08); }
+.setupPrimary { @ds-button(contained primary 2); min-height: 40px; padding-inline: density(5); @ds-typo(small); font-weight: 750; }
+.setupSecondary { @ds-button(outlined primary 2); justify-self: start; min-height: 40px; padding-inline: density(4); @ds-typo(small); font-weight: 700; }
+.setupGhost { min-height: 40px; padding-inline: density(4); border: 0; border-radius: radius(2); background: transparent; color: palette(tertiary-main); @ds-typo(small); font-weight: 700; cursor: pointer; }
+.setupPrimary:disabled, .setupSecondary:disabled, .setupGhost:disabled { cursor: not-allowed; opacity: 0.5; }
+@media (max-width: 639px) {
+  .setupPage { padding-inline: density(4); }
+  .setupAccount { display: none; }
+  .setupStep { padding: density(4); }
+}
+
 /* Spending page: prepaid balance, products sold, and who they were sold for. */
 .spendingPage { display: grid; gap: density(6); max-width: 1180px; min-height: 100dvh; margin: 0 auto; padding: density(6) density(5) density(11); background: palette(light-main); color: palette(dark-main); }
 .spendingHeader { display: grid; gap: density(3); }

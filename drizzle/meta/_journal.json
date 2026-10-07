@@ -663,8 +663,15 @@
     {
       "idx": 95,
       "version": "7",
-      "when": 1791400528162,
-      "tag": "0095_billing_credit_purchases",
+      "when": 1791400069426,
+      "tag": "0095_topic_guided_setup",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1791400129426,
+      "tag": "0096_billing_credit_purchases",
       "breakpoints": true
     }
   ]
