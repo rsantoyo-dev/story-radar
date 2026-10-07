@@ -19,6 +19,7 @@ import {
   type WorkspaceRole,
 } from "./access.core";
 import { auth, AuthConfigError } from "./auth";
+import { recordAuditEvent } from "../observability/audit";
 
 export type SessionUser = {
   id: string;
@@ -71,10 +72,21 @@ export async function getSessionUser(requestHeaders: Headers): Promise<SessionUs
  */
 export async function ensureBootstrapAccess(user: SessionUser): Promise<void> {
   if (!isBootstrapOwner(user, parseBootstrapEmails(process.env.AUTH_BOOTSTRAP_OWNER_EMAILS))) return;
-  await db.insert(workspaceMembers)
+  const added = await db.insert(workspaceMembers)
     .values({ workspaceId: DEFAULT_WORKSPACE_ID, userId: user.id, role: "owner" })
-    .onConflictDoNothing();
-  await db.insert(platformStaff).values({ userId: user.id }).onConflictDoNothing();
+    .onConflictDoNothing()
+    .returning({ userId: workspaceMembers.userId });
+  const staff = await db.insert(platformStaff).values({ userId: user.id }).onConflictDoNothing()
+    .returning({ userId: platformStaff.userId });
+  if (added.length) {
+    await recordAuditEvent({
+      action: "workspace.member.added", actorType: "system", entityType: "workspace_member", entityId: `${DEFAULT_WORKSPACE_ID}:${user.id}`,
+      workspaceId: DEFAULT_WORKSPACE_ID, details: { userId: user.id, role: "owner", reason: "AUTH_BOOTSTRAP_OWNER_EMAILS" },
+    });
+  }
+  if (staff.length) {
+    await recordAuditEvent({ action: "platform.staff.granted", actorType: "system", entityType: "user", entityId: user.id, details: { reason: "AUTH_BOOTSTRAP_OWNER_EMAILS" } });
+  }
 }
 
 /**
@@ -86,8 +98,14 @@ export async function ensurePersonalWorkspace(user: SessionUser): Promise<UserWo
   const memberships = await listUserWorkspaces(user.id);
   if (memberships.length) return memberships;
   const personal = personalWorkspaceFor(user);
-  await db.insert(workspaces).values(personal).onConflictDoNothing();
+  const created = await db.insert(workspaces).values(personal).onConflictDoNothing().returning({ id: workspaces.id });
   await db.insert(workspaceMembers).values({ workspaceId: personal.id, userId: user.id, role: "owner" }).onConflictDoNothing();
+  if (created.length) {
+    await recordAuditEvent({
+      action: "workspace.created", actorType: "user", actorId: user.id, entityType: "workspace", entityId: personal.id,
+      workspaceId: personal.id, details: { reason: "first sign-in", ownerUserId: user.id },
+    });
+  }
   return listUserWorkspaces(user.id);
 }
 

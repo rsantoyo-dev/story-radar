@@ -9,6 +9,7 @@ import { db } from "@/db/client";
 import { accounts, sessions, users, verifications } from "@/db/schema";
 
 import { MAGIC_LINK_EXPIRES_IN_SECONDS, sendSignInEmail } from "./auth-email";
+import { recordAuditEvent } from "../observability/audit";
 
 /**
  * Better Auth server configuration (FEAT-AUTH-001, AUTH-01).
@@ -120,6 +121,26 @@ function createAuth() {
     },
     advanced: {
       cookiePrefix: COOKIE_PREFIX,
+    },
+    // Audit trail (FEAT-OBS-001): new accounts and every sign-in.
+    databaseHooks: {
+      user: {
+        create: {
+          after: async (user: { id: string }) => {
+            await recordAuditEvent({ action: "auth.user.created", actorType: "user", actorId: user.id, entityType: "user", entityId: user.id });
+          },
+        },
+      },
+      session: {
+        create: {
+          after: async (session: { id: string; userId: string; ipAddress?: string | null; userAgent?: string | null }) => {
+            await recordAuditEvent({
+              action: "auth.session.created", actorType: "user", actorId: session.userId, entityType: "session", entityId: session.id,
+              details: { ipAddress: session.ipAddress ?? null, userAgent: session.userAgent?.slice(0, 300) ?? null },
+            });
+          },
+        },
+      },
     },
     plugins: [
       magicLink({

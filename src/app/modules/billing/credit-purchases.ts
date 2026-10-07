@@ -17,6 +17,7 @@ import {
   type CreditPack,
   type StripePriceLike,
 } from "./billing.core";
+import { recordAuditEvent } from "../observability/audit";
 import { stripeLivemode, stripeRequest } from "./stripe";
 
 export class CreditPackNotFoundError extends Error {
@@ -81,6 +82,10 @@ export async function startCreditCheckout(input: {
     currency: (session.currency ?? pack.currency).toLowerCase(),
     createdByUserId: input.userId ?? null,
   }).onConflictDoNothing();
+  await recordAuditEvent({
+    action: "billing.checkout.started", entityType: "billing_checkout", entityId: session.id, workspaceId: input.workspaceId,
+    details: { priceId: pack.priceId, credits: pack.credits, amount: session.amount_total ?? pack.unitAmount, currency: session.currency ?? pack.currency, livemode },
+  });
   return session.url;
 }
 
@@ -103,14 +108,29 @@ export async function applyStripeEvent(event: StripeEvent): Promise<StripeEventR
       await recordCheckout(purchase);
       if (!purchase.paid) return { handled: true, detail: "checkout completed, payment pending" };
       const result = await db.execute(sql`SELECT post_credit_purchase(${purchase.sessionId}, ${purchase.paymentIntentId}, ${purchase.amountTotal}, ${purchase.currency}) AS credits`);
-      return { handled: true, detail: `granted ${Number(result.rows[0]?.credits ?? 0)} credits` };
+      const granted = Number(result.rows[0]?.credits ?? 0);
+      if (granted > 0) {
+        await recordAuditEvent({
+          action: "billing.purchase.paid", actorType: "stripe", entityType: "billing_checkout", entityId: purchase.sessionId,
+          workspaceId: purchase.workspaceId,
+          details: { eventId: event.id, credits: granted, amount: purchase.amountTotal, currency: purchase.currency, paymentIntentId: purchase.paymentIntentId, livemode: purchase.livemode },
+        });
+      }
+      return { handled: true, detail: `granted ${granted} credits` };
     }
     case "checkout.session.expired":
     case "checkout.session.async_payment_failed": {
       const purchase = checkoutPurchaseFrom(object);
       if (!purchase) return { handled: false, detail: "not a credit purchase" };
-      await db.update(billingPurchases).set({ status: "expired", updatedAt: new Date() })
-        .where(and(eq(billingPurchases.stripeCheckoutSessionId, purchase.sessionId), eq(billingPurchases.status, "open")));
+      const expired = await db.update(billingPurchases).set({ status: "expired", updatedAt: new Date() })
+        .where(and(eq(billingPurchases.stripeCheckoutSessionId, purchase.sessionId), eq(billingPurchases.status, "open")))
+        .returning({ id: billingPurchases.id });
+      if (expired.length) {
+        await recordAuditEvent({
+          action: "billing.checkout.expired", actorType: "stripe", entityType: "billing_checkout", entityId: purchase.sessionId,
+          workspaceId: purchase.workspaceId, outcome: "failure", details: { eventId: event.id, eventType: event.type },
+        });
+      }
       return { handled: true, detail: "checkout closed without payment" };
     }
     case "charge.refunded": {
@@ -119,6 +139,14 @@ export async function applyStripeEvent(event: StripeEvent): Promise<StripeEventR
       const result = await db.execute(sql`SELECT apply_credit_purchase_refund(${refund.paymentIntentId}, ${refund.amountRefunded}) AS micros`);
       const micros = Number(result.rows[0]?.micros ?? 0);
       if (micros < 0) return { handled: false, detail: "refund for another kind of payment" };
+      if (micros === 0) return { handled: true, detail: "refund already applied" };
+      const [refunded] = await db.select({ workspaceId: billingPurchases.workspaceId, sessionId: billingPurchases.stripeCheckoutSessionId })
+        .from(billingPurchases).where(eq(billingPurchases.stripePaymentIntentId, refund.paymentIntentId)).limit(1);
+      await recordAuditEvent({
+        action: "billing.purchase.refunded", actorType: "stripe", entityType: "billing_checkout", entityId: refunded?.sessionId ?? refund.paymentIntentId,
+        workspaceId: refunded?.workspaceId ?? null,
+        details: { eventId: event.id, paymentIntentId: refund.paymentIntentId, amountRefunded: refund.amountRefunded, creditsTakenBack: micros / 10_000 },
+      });
       return { handled: true, detail: `took back ${micros / 10_000} credits` };
     }
     default:

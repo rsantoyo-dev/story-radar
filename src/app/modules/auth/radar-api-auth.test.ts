@@ -6,6 +6,7 @@ import { runInNewContext } from "node:vm";
 import ts from "typescript";
 
 import * as core from "./access.core";
+import * as auditCore from "../observability/audit.core";
 
 const noop = () => undefined;
 const quiet: Record<string, unknown> = { debug: noop, info: noop, warn: noop, error: noop, child: () => quiet };
@@ -50,6 +51,8 @@ function load(sessionUser?: Member) {
       if (name === "@/app/modules/topics/topic-context") return { TopicContextError };
       if (name === "@/app/modules/auth/session-credential") return { SIGNED_IN_CREDENTIAL: "signed-in-session" };
       if (name === "@/app/modules/observability/logger") return silentLogger;
+      if (name === "@/app/modules/observability/audit") return { recordAuditEventLater: noop, recordAuditEvent: async () => undefined };
+      if (name === "@/app/modules/observability/audit.core") return auditCore;
       throw new Error(`Unexpected dependency: ${name}`);
     },
   });

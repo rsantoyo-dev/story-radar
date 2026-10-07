@@ -21,6 +21,7 @@ import {
   recordMetaVerificationSuccess,
   saveTopicMetaConnection,
 } from "@/app/modules/meta/topic-meta-connections.repository";
+import { recordAuditEventLater } from "@/app/modules/observability/audit";
 
 export const runtime = "nodejs";
 
@@ -93,6 +94,10 @@ export async function GET(request: Request) {
       accessToken: longLived.accessToken,
       tokenExpiresAt: new Date(Date.now() + longLived.expiresIn * 1_000),
       grantedPermissions: shortLived.grantedPermissions,
+    });
+    recordAuditEventLater({
+      action: "meta.instagram.connected", entityType: "topic", entityId: topicId, topicId,
+      details: { igUserId: shortLived.userId, igUsername: username ?? null, connectionVersion, grantedPermissions: shortLived.grantedPermissions },
     });
 
     // Best-effort: prove insights actually work right now, the same way

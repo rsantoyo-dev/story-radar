@@ -5,6 +5,7 @@ import {
   getTopicMetaConnectionStatus,
 } from "@/app/modules/meta/topic-meta-connections.repository";
 import { TopicContextError, requireTopic } from "@/app/modules/topics/topic-context";
+import { recordAuditEventLater } from "@/app/modules/observability/audit";
 
 type Context = { params: Promise<{ topicId: string }> };
 
@@ -27,6 +28,7 @@ export async function DELETE(request: Request, context: Context) {
   try {
     const topicId = await topicIdFromContext(context);
     await disconnectTopicMeta(topicId);
+    recordAuditEventLater({ action: "meta.instagram.disconnected", entityType: "topic", entityId: topicId, topicId });
     return noStoreJson(await getTopicMetaConnectionStatus(topicId));
   } catch (error) {
     return metaRouteError(error, "disconnect the Instagram account");

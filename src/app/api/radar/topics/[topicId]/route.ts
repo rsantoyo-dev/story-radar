@@ -15,6 +15,7 @@ import {
   noStoreJson,
   topicCatalogError,
 } from "../topic-route-utils";
+import { recordAuditEventLater } from "@/app/modules/observability/audit";
 
 type Context = { params: Promise<{ topicId: string }> };
 
@@ -29,6 +30,7 @@ export async function PATCH(request: Request, context: Context) {
       (await jsonObject(request)) as UpdateTopicInput,
     );
 
+    recordAuditEventLater({ action: "topic.updated", entityType: "topic", entityId: topicId, topicId, details: { name: topic.name } });
     return noStoreJson({ topic });
   } catch (error) {
     return topicRouteError(error, "update the topic");
@@ -56,6 +58,7 @@ export async function DELETE(request: Request, context: Context) {
     }
 
     await deleteTopic(topicId, topic.workspaceId);
+    recordAuditEventLater({ action: "topic.deleted", entityType: "topic", entityId: topicId, topicId, details: { name: topic.name } });
     return noStoreJson({ deleted: true });
   } catch (error) {
     return topicRouteError(error, "delete the topic");

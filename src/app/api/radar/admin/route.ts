@@ -11,6 +11,7 @@ import {
   requireRequestTopic,
   topicRequestErrorResponse,
 } from "../radar-topic";
+import { recordAuditEventLater } from "@/app/modules/observability/audit";
 
 export async function GET(request: Request) {
   const unauthorizedResponse = await authorizeRadarCollector(request);
@@ -60,6 +61,7 @@ export async function DELETE(request: Request) {
   try {
     const topicId = await requireRequestTopic(request);
     const deleted = await clearStoryRadarData(topicId);
+    recordAuditEventLater({ action: "admin.topic_data.cleared", entityType: "topic", entityId: topicId, topicId, details: { deleted } });
 
     return NextResponse.json({
       deleted,

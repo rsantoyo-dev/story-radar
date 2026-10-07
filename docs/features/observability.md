@@ -1,7 +1,7 @@
 # Observability: logs and audit trail
 
 **ID:** FEAT-OBS-001
-**Status:** Layer 1 (structured logger) implemented; layers 2–3 (audit events, change capture) next
+**Status:** Layers 1 (structured logger) and 2 (audit events) implemented; layer 3 (change capture) next
 **Date:** October 7, 2026
 **Product:** Press Craftor
 
@@ -21,9 +21,27 @@ When something goes wrong, or someone asks "who did this and when?", the answer 
 
 Vercel keeps runtime logs only for a short time. For longer retention and alerting, add a log drain (for example Axiom or Better Stack) or Sentry for errors; the JSON format works with all of them unchanged.
 
-## Layer 2 — audit events (next)
+## Layer 2 — audit events (implemented)
 
-An append-only `audit_events` table: when, workspace, actor (user, operator, worker, Stripe, system), action (`billing.purchase.paid`, `member.role.changed`, `draft.approved`, `publication.sent`…), entity type and id, outcome, request id and redacted details. Written by the domain services at each significant action; never updated or deleted; readable per workspace by owners and admins, and across workspaces by platform staff.
+`audit_events` (migration `0097`) is **append-only**: a trigger refuses UPDATE, DELETE and TRUNCATE for everyone. Each row: `occurred_at`, `workspace_id`, `topic_id`, `actor_type` (`user`, `operator`, `worker`, `stripe`, `system`), `actor_id`, `action` (`area.object.verb`), `entity_type` / `entity_id`, `outcome` (`success`, `failure`, `denied`, `attempted`), `request_id` (joins the logs) and redacted `details`. Workspace and topic are plain ids, so history outlives deleted records.
+
+`recordAuditEvent()` / `recordAuditEventLater()` (`src/app/modules/observability/audit.ts`) fill actor, workspace, topic and request id from the request context; the "later" form writes after the response is sent. An audit write that fails is logged as an error and never fails the action.
+
+| Action | When |
+|---|---|
+| `api.request` · attempted | Every authorized POST/PUT/PATCH/DELETE on the radar API: who asked for which route |
+| `api.request` · denied | A signed-in caller refused for role or topic (anonymous 401s stay in the logs) |
+| `auth.user.created`, `auth.session.created` | New account; every sign-in (IP and user agent) |
+| `workspace.created`, `workspace.member.added`, `platform.staff.granted` | Personal workspace on first sign-in; bootstrap owner |
+| `topic.created`, `topic.updated`, `topic.deleted` | Brand lifecycle |
+| `meta.instagram.connected` / `disconnected`, `meta.facebook.connected` / `disconnected` | Publishing connections |
+| `publication.package.frozen` / `discarded`, `publication.publish.requested`, `publication.job.confirmed_not_published` | Publishing decisions |
+| `billing.checkout.started`, `billing.purchase.paid`, `billing.purchase.refunded`, `billing.checkout.expired` | Credit purchases (Stripe) |
+| `credits.demo.reset`, `admin.topic_data.cleared` | Operator actions |
+
+`GET /api/radar/audit` (owners and admins) lists the workspace's events newest first, filtered by `action` prefix, `entityType`/`entityId`, `topicId`, and paged with `before`.
+
+Add an event wherever a new significant action is introduced; prefer the route or service that knows the outcome.
 
 ## Layer 3 — database change capture (next)
 
