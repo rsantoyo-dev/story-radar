@@ -26,6 +26,7 @@ export * from "./workspaces";
 export * from "./workspace-access";
 export * from "./ai-usage-charges";
 export * from "./audit-events";
+export * from "./db-change-log";
 export * from "./billing";
 export * from "./workspace-credit-entries";
 
