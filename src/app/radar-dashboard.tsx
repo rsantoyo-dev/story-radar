@@ -245,6 +245,8 @@ type EditorialDashboardStory = {
     postUrl?: string;
     externalId: string;
   }[];
+  /** Image URLs to try in order; the exact published cover comes first. */
+  publicationThumbnails?: string[];
 };
 
 type EditorialCollectedStory = {
@@ -2061,14 +2063,17 @@ export function RadarDashboard({
             {publishedStories.map((story) => {
               const stage = storyPublicationStage(story);
               return <article className={styles.queueItem} key={story.storyId}>
-                <div>
-                  <span className={styles.queueMeta}>{story.sourceName}{stage.active ? " · Still in Production for another destination" : ""}</span>
-                  <h3>{story.title}</h3>
-                  <div className={styles.queuePublishedDestinations} aria-label="Published destinations">
-                    {stage.publishedDestinations.map((publication) => {
-                      const label = `${formatPublicationPlatform(publication.platform as PublicationPlatform)} · ${publication.source === "manual" ? "Marked published" : "Confirmed"}${publication.publishedAt ? ` · ${formatTableDate(String(publication.publishedAt))}` : ""}`;
-                      return publication.postUrl ? <a key={publication.platform} href={publication.postUrl} target="_blank" rel="noopener noreferrer" aria-label={`View ${label} post in a new tab`}>{label} ↗</a> : <span key={publication.platform}>{label}</span>;
-                    })}
+                <div className={styles.queuePublishedBody}>
+                  <PublishedStoryThumbnail key={(story.publicationThumbnails ?? []).join(" ")} urls={story.publicationThumbnails ?? []} title={story.title} />
+                  <div>
+                    <span className={styles.queueMeta}>{story.sourceName}{stage.active ? " · Still in Production for another destination" : ""}</span>
+                    <h3>{story.title}</h3>
+                    <div className={styles.queuePublishedDestinations} aria-label="Published destinations">
+                      {stage.publishedDestinations.map((publication) => {
+                        const label = `${formatPublicationPlatform(publication.platform as PublicationPlatform)} · ${publication.source === "manual" ? "Marked published" : "Confirmed"}${publication.publishedAt ? ` · ${formatTableDate(String(publication.publishedAt))}` : ""}`;
+                        return publication.postUrl ? <a key={publication.platform} href={publication.postUrl} target="_blank" rel="noopener noreferrer" aria-label={`View ${label} post in a new tab`}>{label} ↗</a> : <span key={publication.platform}>{label}</span>;
+                      })}
+                    </div>
                   </div>
                 </div>
                 <Button size="compact" onClick={() => openCreativeStory(story.storyId, { tab: "publication" })} disabled={!canAuthenticate || isBusy}>Open Story</Button>
@@ -4707,4 +4712,31 @@ function formatContentStatus(
     case "missing":
       return "missing";
   }
+}
+
+/**
+ * Cover of a published Story. Tries each candidate in order (the exact
+ * published cover first, Instagram's expiring signed URL last) and falls back
+ * to a neutral placeholder when none loads.
+ */
+function PublishedStoryThumbnail({ urls, title }: { urls: string[]; title: string }) {
+  const [index, setIndex] = useState(0);
+  const url = urls[index];
+  if (!url) {
+    return <div className={styles.queueThumbnailPlaceholder} aria-hidden="true">No image</div>;
+  }
+  return (
+    // Remote, already-sized delivery images; next/image would need every
+    // signed CDN host allow-listed.
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      className={styles.queueThumbnail}
+      src={url}
+      alt={`Cover of “${title}”`}
+      loading="lazy"
+      decoding="async"
+      referrerPolicy="no-referrer"
+      onError={() => setIndex((current) => current + 1)}
+    />
+  );
 }

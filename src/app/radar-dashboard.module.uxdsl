@@ -3822,6 +3822,11 @@
 @media (max-width: 639px) {
   .queuePublicationDetails > .publicationQuickControl { position: static; width: min(100%, 260px); margin-top: density(2); }
 }
+.queuePublishedBody { display: flex; align-items: flex-start; gap: density(4); }
+.queuePublishedBody > div { flex: 1; min-width: 0; }
+.queueThumbnail, .queueThumbnailPlaceholder { flex: none; width: 72px; aspect-ratio: 4 / 5; border: 1px solid palette(dark-main, 0.1); border-radius: radius(2); background: palette(dark-main, 0.06); }
+.queueThumbnail { display: block; height: auto; object-fit: cover; }
+.queueThumbnailPlaceholder { display: grid; place-items: center; padding: density(1); color: palette(tertiary-main); @ds-typo(caption); font-size: 0.6875rem; font-weight: 650; text-align: center; }
 .queuePublishedDestinations { display: flex; flex-wrap: wrap; gap: density(2); margin-top: density(3); }
 .queuePublishedDestinations a, .queuePublishedDestinations span { display: inline-flex; align-items: center; min-height: 28px; padding: density(1) density(2); border-radius: radius(2); background: palette(primary-main, 0.09); color: palette(primary-dark); @ds-typo(caption); font-size: 0.75rem; font-weight: 700; text-decoration: none; }
 .queuePublishedDestinations a:hover { background: palette(primary-main, 0.16); }
