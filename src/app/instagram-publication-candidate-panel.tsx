@@ -80,6 +80,7 @@ export function InstagramPublicationCandidatePanel({ topicId, draftId, batchId, 
   const [job, setJob] = useState<PublicationJobView>();
   const [jobBusy, setJobBusy] = useState(false);
   const [confirmPackageId, setConfirmPackageId] = useState("");
+  const [confirmNotPublished, setConfirmNotPublished] = useState(false);
   const publishing = useRef(false);
   const [jobPackageId, setJobPackageId] = useState("");
   const [jobError, setJobError] = useState("");
@@ -226,6 +227,23 @@ export function InstagramPublicationCandidatePanel({ topicId, draftId, batchId, 
     } finally { publishing.current = false; setJobBusy(false); }
   }
 
+  async function markNotPublished(jobId: string) {
+    setJobBusy(true);
+    setJobError("");
+    try {
+      const response = await fetch(jobUrl, {
+        method: "PATCH", headers: { ...authHeader(), "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId, action: "confirm-not-published" }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "Could not record the check");
+      setJob(body.job);
+      setConfirmNotPublished(false);
+    } catch (err) {
+      setJobError(err instanceof Error ? err.message : "Could not record the check");
+    } finally { setJobBusy(false); }
+  }
+
   // Poll the job while it is running; the effect only mounts a timer while a
   // non-terminal job is set, and clears it when the job finishes or unmounts.
   const jobId = job?.id;
@@ -340,6 +358,17 @@ export function InstagramPublicationCandidatePanel({ topicId, draftId, batchId, 
         {job.status === "published" && !job.permalink ? <p><small>Published and recorded. The permalink is not available yet.</small></p> : null}
         {job.canRetry ? <button type="button" className={styles.secondaryButton} disabled={!jobPackageId || jobBusy || packageBusy} onClick={() => void publish(retryPackageId(jobPackageId), job.id)}>{jobBusy ? "Starting retry…" : job.status === "suspended" ? "Revalidate and retry publishing" : "Retry publishing"}</button> : null}
         {job.status === "suspended" && !job.canRetry && job.failureKind !== "uncertain" ? <p><small>Review the recorded reason before creating another publication order.</small></p> : null}
+        {job.status === "suspended" && job.failureKind === "uncertain" && !job.publishedMediaId ? <div className={styles.publicationConfirm} role="group" aria-label={`Resolve the uncertain ${platform} publication`}>
+          <p><small>No new version of this draft can be sent to this account until you check {platform}. If the post is there, keep this order as it is.</small></p>
+          {confirmNotPublished ? <>
+            <strong>Confirm that this post is not on {platform}?</strong>
+            <p><small>The order becomes retryable and other versions can be sent. If it did post, sending again creates a duplicate.</small></p>
+            <div className={styles.publicationPackageActions}>
+              <button type="button" className={styles.primaryButton} disabled={jobBusy} onClick={() => void markNotPublished(job.id)}>{jobBusy ? "Saving…" : "Yes, it was not published"}</button>
+              <button type="button" className={styles.secondaryButton} disabled={jobBusy} onClick={() => setConfirmNotPublished(false)}>Cancel</button>
+            </div>
+          </> : <button type="button" className={styles.secondaryButton} disabled={jobBusy} onClick={() => setConfirmNotPublished(true)}>I checked {platform}: it is not published</button>}
+        </div> : null}
         <p><small>{channel === "facebook-page" ? "Images are uploaded unpublished and appear only as one post." : "A finished container is not a confirmed publication. A carousel posts as one."}</small></p>
       </div> : null}
     </div> : null}

@@ -18,7 +18,13 @@ import {
   CreativeContentConflictError,
   CreativeContentNotFoundError,
 } from "../stories/manage-creative-content";
-import { PublicationJobConflictError } from "./publish-publication-package.core";
+import {
+  PublicationJobConflictError,
+  releasedUncertainError,
+  UNRESOLVED_SEND_STATUSES,
+  unresolvedSendMessage,
+  unresolvedSendsTo,
+} from "./publish-publication-package.core";
 import { publicationPostText } from "./instagram-publication-candidate";
 import { preservePublishedPackage } from "../stories/storage-maintenance";
 
@@ -268,6 +274,7 @@ export async function requestPublishNow(
   if (existing) {
     // The request must explicitly name the failed job, preventing a delayed initial POST from retrying it.
     if (existing.status !== "failed" && existing.status !== "suspended") return toPublicationJobView(mapJobRow(existing), maxAttempts());
+    await assertNoUnresolvedSend(topicId, draftId, channel, accountId, existing.id);
     const patch = publicationRetryPatch(mapJobRow(existing), maxAttempts());
     const [retried] = await db.update(instagramPublicationJobs)
       .set({ ...patchToColumns(patch), packageId: pkg.id, batchId: pkg.batchId, startedAt: new Date(), leaseOwner: null, leaseUntil: null })
@@ -277,6 +284,7 @@ export async function requestPublishNow(
     if (retried) after(() => advancePublicationJob(retried.id));
     return toPublicationJobView(mapJobRow(retried ?? await loadJobRow(existing.id)), maxAttempts());
   }
+  await assertNoUnresolvedSend(topicId, draftId, channel, accountId);
   const now = new Date();
   const inserted = await db
     .insert(instagramPublicationJobs)
@@ -315,11 +323,90 @@ export async function requestPublishNow(
   if (job.topicId !== topicId || job.draftId !== draftId) {
     throw new PublicationJobConflictError("This exact package already has a publication order in another draft.");
   }
+  if (inserted[0]) {
+    // Two different packages requested at the same moment both pass the check
+    // above; the earlier order stands and the later one is withdrawn before
+    // any worker can touch it.
+    const competing = unresolvedSendsTo(await unresolvedSendRows(topicId, draftId), { channel, accountId }, job.id)
+      .filter((row) => row.createdAt.getTime() < job.createdAt.getTime() ||
+        (row.createdAt.getTime() === job.createdAt.getTime() && row.id < job.id));
+    if (competing.length) {
+      await db.delete(instagramPublicationJobs)
+        .where(and(eq(instagramPublicationJobs.id, job.id), eq(instagramPublicationJobs.status, "queued"), isNull(instagramPublicationJobs.leaseOwner)));
+      throw new PublicationJobConflictError(unresolvedSendMessage(publicationPlatformLabel(channel)));
+    }
+  }
 
   if (job.status !== "published" && job.status !== "suspended") {
     after(() => advancePublicationJob(job.id));
   }
   return toPublicationJobView(mapJobRow(job), maxAttempts());
+}
+
+function unresolvedSendRows(topicId: string, draftId: string) {
+  return db.select({
+    id: instagramPublicationJobs.id,
+    status: instagramPublicationJobs.status,
+    failureKind: instagramPublicationJobs.failureKind,
+    channel: instagramPublicationJobs.channel,
+    igUserId: instagramPublicationJobs.igUserId,
+    pageId: instagramPublicationJobs.pageId,
+    createdAt: instagramPublicationJobs.createdAt,
+  }).from(instagramPublicationJobs).where(and(
+    eq(instagramPublicationJobs.topicId, topicId),
+    eq(instagramPublicationJobs.draftId, draftId),
+    or(
+      inArray(instagramPublicationJobs.status, [...UNRESOLVED_SEND_STATUSES]),
+      and(eq(instagramPublicationJobs.status, "suspended"), eq(instagramPublicationJobs.failureKind, "uncertain")),
+    ),
+  ));
+}
+
+/** No second send of a draft to an account while an earlier one is unsettled. */
+async function assertNoUnresolvedSend(
+  topicId: string,
+  draftId: string,
+  channel: PublicationChannel,
+  accountId: string,
+  exceptJobId?: string,
+): Promise<void> {
+  if (unresolvedSendsTo(await unresolvedSendRows(topicId, draftId), { channel, accountId }, exceptJobId).length) {
+    throw new PublicationJobConflictError(unresolvedSendMessage(publicationPlatformLabel(channel)));
+  }
+}
+
+/**
+ * An editor checked the platform and the post is not there: the uncertain
+ * order becomes a retryable failure (with a fresh attempt budget and the
+ * check recorded in its error), which also lifts the block on new sends.
+ * Only a suspended order with an uncertain outcome and no media id qualifies;
+ * one still being confirmed keeps checking on its own.
+ */
+export async function releaseUncertainPublicationJob(
+  topicId: string,
+  draftId: string,
+  jobId: string,
+): Promise<PublicationJobView> {
+  const current = await loadJobRow(jobId);
+  if (current.topicId !== topicId || current.draftId !== draftId) {
+    throw new CreativeContentNotFoundError("Publication order not found");
+  }
+  const platform = publicationPlatformLabel(parsePublicationChannel(current.channel) ?? DEFAULT_PUBLICATION_CHANNEL);
+  const now = new Date();
+  const [released] = await db.update(instagramPublicationJobs)
+    .set({ status: "failed", failureKind: "retryable", attempts: 0, leaseOwner: null, leaseUntil: null,
+      lastError: releasedUncertainError(platform, current.attempts, now), finishedAt: current.finishedAt ?? now, updatedAt: now })
+    .where(and(
+      eq(instagramPublicationJobs.id, jobId),
+      eq(instagramPublicationJobs.status, "suspended"),
+      eq(instagramPublicationJobs.failureKind, "uncertain"),
+      isNull(instagramPublicationJobs.publishedMediaId),
+    ))
+    .returning();
+  if (!released) {
+    throw new PublicationJobConflictError("Only a suspended order whose outcome is uncertain can be marked as not published.");
+  }
+  return toPublicationJobView(mapJobRow(released), maxAttempts());
 }
 
 /** One bounded step, protected by a DB lease. No recursion or sleeping request. */

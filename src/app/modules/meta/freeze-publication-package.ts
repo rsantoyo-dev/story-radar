@@ -28,6 +28,7 @@ import { getPublicationCandidate } from "./get-publication-candidate";
 import { getChannelPublicationDestination } from "./publication-channel-connections";
 import { DEFAULT_PUBLICATION_CHANNEL, parsePublicationChannel, type PublicationChannel } from "./publication-channel";
 import {
+  PublicationPackageConflictError,
   runFreezePublicationPackage,
   type FrozenPackage,
   type PersistDeliveryFile,
@@ -137,6 +138,35 @@ export async function freezePublicationPackage(
           .insert(instagramDeliveryFiles)
           .values(files as (typeof instagramDeliveryFiles.$inferInsert)[]),
       ]);
+    },
+    renew: async (pkg, files) => {
+      const previous = await db
+        .select({ objectKey: instagramDeliveryFiles.objectKey })
+        .from(instagramDeliveryFiles)
+        .where(eq(instagramDeliveryFiles.packageId, pkg.packageId));
+      // Only the package exactly as read: a concurrent renewal or a status
+      // change (stale, consumed) wins and this one stops.
+      const [claimed] = await db
+        .update(instagramPublicationPackages)
+        .set({ expiresAt: pkg.expiresAt, publishingAccessPending: pkg.publishingAccessPending, updatedAt: pkg.updatedAt })
+        .where(and(
+          eq(instagramPublicationPackages.id, pkg.packageId),
+          eq(instagramPublicationPackages.status, "frozen"),
+          eq(instagramPublicationPackages.expiresAt, pkg.previousExpiresAt),
+        ))
+        .returning({ id: instagramPublicationPackages.id });
+      if (!claimed) {
+        throw new PublicationPackageConflictError("This review changed while it was being renewed. Refresh and try again.");
+      }
+      // New tokens: links handed out for the expired window stop resolving.
+      await db.batch([
+        db.delete(instagramDeliveryFiles).where(eq(instagramDeliveryFiles.packageId, pkg.packageId)),
+        db.insert(instagramDeliveryFiles).values(files as (typeof instagramDeliveryFiles.$inferInsert)[]),
+      ]);
+      const current = files.map((file) => file.objectKey);
+      await Promise.all(previous
+        .filter((file) => !current.includes(file.objectKey))
+        .map((file) => deletePrivateR2Object(file.objectKey).catch(() => undefined)));
     },
   });
 }

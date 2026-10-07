@@ -11,7 +11,10 @@ import {
   runPublishPublicationJob,
   publicationRetryPatch,
   isTerminalPublicationJobStatus,
+  isUnresolvedSend,
   PublicationJobLeaseLostError,
+  releasedUncertainError,
+  unresolvedSendsTo,
   type ContainerStatusCode,
   type FrozenPackageForPublish,
   type PublicationJobRow,
@@ -461,4 +464,34 @@ test("access checked after an asynchronous probe is compared with the current ti
     return enabledAccess({ checkedAt: new Date(time).toISOString(), expiresAt: new Date(time + 240000).toISOString() });
   };
   assert.equal((await runPublishPublicationJob(h.deps)).status, "preparing");
+});
+
+test("a send is unresolved while in flight, being confirmed or suspended as uncertain", () => {
+  for (const status of ["queued", "preparing", "creating-containers", "containers-ready", "publishing", "pending-confirmation"]) {
+    assert.equal(isUnresolvedSend({ status, failureKind: null }), true, status);
+  }
+  assert.equal(isUnresolvedSend({ status: "suspended", failureKind: "uncertain" }), true);
+  assert.equal(isUnresolvedSend({ status: "suspended", failureKind: "invalidated" }), false);
+  assert.equal(isUnresolvedSend({ status: "failed", failureKind: "retryable" }), false);
+  assert.equal(isUnresolvedSend({ status: "published", failureKind: null }), false);
+});
+
+test("only unresolved orders to the same account and channel block a new send", () => {
+  const at = new Date("2026-10-07T12:00:00Z");
+  const rows = [
+    { id: "same", status: "suspended", failureKind: "uncertain", channel: "instagram-direct", igUserId: "1789", pageId: null, createdAt: at },
+    { id: "other-account", status: "publishing", failureKind: null, channel: "instagram-direct", igUserId: "9999", pageId: null, createdAt: at },
+    { id: "facebook", status: "pending-confirmation", failureKind: "uncertain", channel: "facebook-page", igUserId: null, pageId: "555", createdAt: at },
+    { id: "done", status: "published", failureKind: null, channel: "instagram-direct", igUserId: "1789", pageId: null, createdAt: at },
+  ];
+  assert.deepEqual(unresolvedSendsTo(rows, { channel: "instagram-direct", accountId: "1789" }).map((row) => row.id), ["same"]);
+  assert.deepEqual(unresolvedSendsTo(rows, { channel: "instagram-direct", accountId: "1789" }, "same"), []);
+  assert.deepEqual(unresolvedSendsTo(rows, { channel: "facebook-page", accountId: "555" }).map((row) => row.id), ["facebook"]);
+});
+
+test("a released order records who checked, when, and after how many attempts", () => {
+  assert.equal(
+    releasedUncertainError("Instagram", 2, new Date("2026-10-07T15:04:30Z")),
+    "An editor checked Instagram on 2026-10-07 15:04 UTC and confirmed this post was not published (after 2 attempts). It can be published again.",
+  );
 });

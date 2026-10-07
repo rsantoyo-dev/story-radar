@@ -6,6 +6,7 @@ import {
 import {
   getPublicationJob,
   listPublicationJobs,
+  releaseUncertainPublicationJob,
   requestPublishNow,
 } from "@/app/modules/meta/publish-publication-package";
 import { parsePublicationChannel } from "@/app/modules/meta/publication-channel";
@@ -77,6 +78,31 @@ export async function GET(request: Request, context: Context) {
     return (
       topicRequestErrorResponse(error) ??
       creativeRouteErrorResponse(error, "load the publication jobs")
+    );
+  }
+}
+
+/** An editor checked the platform: the uncertain order did not post. */
+export async function PATCH(request: Request, context: Context) {
+  const unauthorized = authorizeRadarCollector(request);
+  if (unauthorized) return unauthorized;
+  const draftId = await parseId(context);
+  if (!draftId) return noStoreJson({ error: "draftId must be a valid UUID" }, 400);
+
+  try {
+    const body = (await request.json()) as { jobId?: unknown; action?: unknown };
+    if (typeof body.jobId !== "string" || !UUID_PATTERN.test(body.jobId)) {
+      return noStoreJson({ error: "jobId must be a valid UUID" }, 400);
+    }
+    if (body.action !== "confirm-not-published") {
+      return noStoreJson({ error: "action must be confirm-not-published" }, 400);
+    }
+    const topicId = await requireActiveRequestTopic(request);
+    return noStoreJson({ job: await releaseUncertainPublicationJob(topicId, draftId, body.jobId) });
+  } catch (error) {
+    return (
+      topicRequestErrorResponse(error) ??
+      creativeRouteErrorResponse(error, "record that the post was not published")
     );
   }
 }
