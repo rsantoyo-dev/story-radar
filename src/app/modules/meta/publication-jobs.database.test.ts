@@ -53,7 +53,7 @@ async function setup(options: { channel?: "facebook-page" } = {}) {
       token: `opaque-token-${unitOrder}`, objectKey: `private-key-${unitOrder}`, contentType: "image/jpeg", byteSize: 123,
       sha256: "hash", sourceSha256: "source-hash", width: 1080, height: 1350, expiresAt: new Date(Date.now() + 86_400_000) });
   }
-  const calls = { publish: 0, create: 0, after: 0, upload: 0, feed: 0, feedPhotoIds: [] as string[], feedMessage: "", uploadedUrls: [] as string[] };
+  const calls = { publish: 0, create: 0, after: 0, upload: 0, feed: 0, feedPhotoIds: [] as string[], feedMessage: "", uploadedUrls: [] as string[], preservedPackages: [] as string[] };
   const control = { rejectPublish: false, connection: "conn-1", containerStatus: "FINISHED", feedTimesOut: false };
   const destination = () => facebook
     ? { channel: "facebook-page", pageId: "555", igUserId: null, connected: true, expired: false, connectionVersion: control.connection, appConfigurationVersion: "app-1" }
@@ -63,6 +63,7 @@ async function setup(options: { channel?: "facebook-page" } = {}) {
     "next/server": { after: () => { calls.after++; } }, // Deliberately never runs: only the worker advances jobs.
     "../stories/manage-creative-content": { CreativeContentConflictError: class extends Error {}, CreativeContentNotFoundError: class extends Error {} },
     "./publish-publication-package.core": core,
+    "../stories/storage-maintenance": { preservePublishedPackage: async (packageId: string) => { calls.preservedPackages.push(packageId); } },
     "./instagram-publishing-access": access,
     "./get-publication-candidate": { getPublicationCandidate: async () => ({ state: "ready", snapshotHash: "snapshot" }) },
     "./check-instagram-publishing-access": { checkInstagramPublishingAccess: async () => ({ state: "enabled", message: "ok",
@@ -131,6 +132,8 @@ test("concurrent publish requests and independent workers converge on one order 
     assert.equal((await h.row()).status, "published");
     assert.equal(h.calls.publish, 1);
     assert.equal(h.calls.create, 1);
+    // The published JPEGs leave the 7-day class once, when the post confirms.
+    assert.deepEqual(h.calls.preservedPackages, [ids.pkg]);
     const replay = await h.repo.requestPublishNow(ids.topic, ids.draft, ids.pkg);
     assert.equal(replay.id, jobs[0].id);
     assert.equal(replay.status, "published");

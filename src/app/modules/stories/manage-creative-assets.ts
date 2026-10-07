@@ -19,7 +19,7 @@ import "server-only";
 import { recordUsageCharge } from "../credits/usage-charges.repository";
 import { estimateFalImageCost } from "./fal-image-cost";
 
-import { storeEditBase, readEditBase, readGeneratedImage } from "./creative-image-source";
+import { archiveApprovedImage, readCreativeAssetImage, storeEditBase, readEditBase, readGeneratedImage } from "./creative-image-source";
 import { listActivatedBrandReferences } from "./creative-brand-references.repository";
 import {
   beginCreativeAssetEditRequestRun,
@@ -962,6 +962,12 @@ export async function changeCreativeAssetApproval(
   }
 
   await setCreativeAssetApproval(assetId, action === "approve");
+  if (action === "approve") {
+    // Keep the approved image beyond fal's 30 days. Best effort: approval
+    // never fails on storage, and the hourly maintenance retries the copy.
+    await archiveApprovedImage({ topicId, assetId, version: found.asset.version, imageUrl: found.asset.imageUrl })
+      .catch(() => console.error(`Approved image ${assetId} v${found.asset.version} could not be copied to R2 yet; maintenance will retry.`));
+  }
   const batch = await refreshCreativeAssetBatchStatus(found.batch.id);
   return { batch, configuration: publicConfigurationForBatch(batch) };
 }
@@ -1941,7 +1947,7 @@ export async function downloadApprovedCreativeImage(topicId: string, assetId: st
   if (found.asset.providerEndpoint !== DRAFT_TYPOGRAPHY_ENDPOINT) assertGenerativeImageryAllowed(draft, await getTopicVisualFidelityMode(topicId));
   const references = await getCreativeAssetGenerationReferences(assetId);
   await assertBrandReferenceEligibility([...references.brand, ...(references.provenanceBrand ?? [])]);
-  const file = await readGeneratedImage(found.asset.imageUrl);
+  const file = await readCreativeAssetImage({ topicId, assetId, version: found.asset.version, imageUrl: found.asset.imageUrl });
   const latest = await requireCreativeAsset(assetId);
   const latestDraft = await requireCreativeDraft(topicId, latest.batch.draftId);
   assertCurrentAsset(latest.asset, latest.batch, latestDraft.version);

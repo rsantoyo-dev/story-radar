@@ -3,7 +3,15 @@ import { request } from "node:https";
 import { createHash, randomUUID } from "node:crypto";
 import sharp from "sharp";
 import { lookupPublicAddress } from "../sources/rss/fetch-rss-feed";
-import { buildCreativeBrandAssetObjectKey, putPrivateR2Object, readPrivateR2ImageFile } from "./r2-storage";
+import {
+  buildApprovedImageArchiveKey,
+  buildEditBaseObjectKey,
+  privateR2ObjectExists,
+  putPrivateR2Object,
+  readPrivateR2ImageFile,
+  readPrivateR2ImageIfPresent,
+} from "./r2-storage";
+import { createAssetImageStore, type AssetImageRef } from "./creative-asset-image-store.core";
 import type { GenerationReferences } from "./creative-brand-generation";
 
 /** Only server-stored Fal output URLs; no redirects or arbitrary client URLs. */
@@ -35,10 +43,38 @@ export async function readGeneratedImage(urlValue: string): Promise<File> {
   return new File([new Uint8Array(png)], "image.png", { type: "image/png" });
 }
 
+const assetImageStore = createAssetImageStore({
+  archiveKey: buildApprovedImageArchiveKey,
+  exists: (objectKey) => privateR2ObjectExists(objectKey, AbortSignal.timeout(10_000)),
+  readArchive: (objectKey) => readPrivateR2ImageIfPresent(objectKey, AbortSignal.timeout(20_000)),
+  writeArchive: async (objectKey, file) => {
+    const body = new Uint8Array(await file.arrayBuffer());
+    await putPrivateR2Object({
+      objectKey,
+      body,
+      contentType: file.type || "image/png",
+      metadata: { sha256: createHash("sha256").update(body).digest("hex") },
+      signal: AbortSignal.timeout(20_000),
+    });
+  },
+  readSource: readGeneratedImage,
+});
+
+/** Copies an approved generated image to R2 (180-day class) unless already there. */
+export function archiveApprovedImage(ref: AssetImageRef) {
+  return assetImageStore.archive(ref);
+}
+
+/** A generated image's bytes: its R2 copy when archived, otherwise fal. */
+export function readCreativeAssetImage(ref: AssetImageRef): Promise<File> {
+  return assetImageStore.read(ref);
+}
+
 export async function storeEditBase(topicId: string, assetId: string, version: number, url: string): Promise<NonNullable<GenerationReferences["base"]>> {
-  const file = await readGeneratedImage(url);
+  // An approved base may be older than fal's 30 days; its R2 copy still works.
+  const file = await readCreativeAssetImage({ topicId, assetId, version, imageUrl: url });
   const body = new Uint8Array(await file.arrayBuffer());
-  const objectKey = buildCreativeBrandAssetObjectKey({ topicId, assetId: randomUUID() });
+  const objectKey = buildEditBaseObjectKey({ topicId, id: randomUUID() });
   await putPrivateR2Object({ objectKey, body, contentType: file.type, signal: AbortSignal.timeout(20_000) });
   return { assetId, version, objectKey, sha256: createHash("sha256").update(body).digest("hex"), contentType: file.type, fileName: file.name };
 }

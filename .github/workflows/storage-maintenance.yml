@@ -1,0 +1,52 @@
+# Hourly R2 storage maintenance.
+#
+# Copies approved images to R2 before fal deletes them (30 days) and moves the
+# delivery JPEGs of published posts to the permanent class. It never deletes:
+# R2 lifecycle rules expire the 7-day and 180-day classes
+# (see docs/r2-storage-retention.md and `npm run r2:lifecycle`).
+#
+# Uses the same configuration as the auto collection worker:
+#   Variables → AUTO_COLLECTION_WORKER_URL     e.g. https://story-radar.vercel.app
+#   Secrets   → AUTO_COLLECTION_WORKER_SECRET  same value as on Vercel
+# Until both exist the job exits early without failing.
+name: Storage maintenance
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: storage-maintenance
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - name: Run one storage maintenance pass
+        env:
+          APP_URL: ${{ vars.AUTO_COLLECTION_WORKER_URL }}
+          WORKER_SECRET: ${{ secrets.AUTO_COLLECTION_WORKER_SECRET }}
+        run: |
+          if [ -z "$APP_URL" ] || [ -z "$WORKER_SECRET" ]; then
+            echo "::notice::AUTO_COLLECTION_WORKER_URL (variable) or AUTO_COLLECTION_WORKER_SECRET (secret) is not set; nothing to do."
+            exit 0
+          fi
+          case "$APP_URL" in
+            https://*) ;;
+            *) echo "::error::AUTO_COLLECTION_WORKER_URL must start with https://"; exit 1 ;;
+          esac
+          code=$(curl -sS -o /tmp/body -w '%{http_code}' -X POST --max-time 300 \
+            -H "Authorization: Bearer $WORKER_SECRET" \
+            "${APP_URL%/}/api/internal/storage-maintenance/tick") || code=000
+          echo "HTTP $code"
+          if [ "$code" = "200" ]; then
+            cat /tmp/body; echo
+          else
+            echo "::error::Storage maintenance pass failed with HTTP $code (check the secret, the URL and the deployment logs)."
+            exit 1
+          fi
