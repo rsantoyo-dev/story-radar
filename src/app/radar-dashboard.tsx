@@ -5,6 +5,7 @@ import type { CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
+import { SignOutButton } from "./account/sign-out-button";
 import { DailyPreparationPanel } from "./daily-preparation-panel";
 import { DailyEditorialPlannerPanel } from "./daily-editorial-planner-panel";
 import { StoryPhotosPanel } from "./story-photos-panel";
@@ -490,11 +491,14 @@ function writeStoredSecret(secret: string): void {
 }
 
 export function RadarDashboard({
+  account,
   initialTopicId,
   initialThemeStyle,
   initialTopics,
   initialPreferences,
 }: {
+  /** The signed-in user, when sign-in is required. */
+  account?: { email: string };
   initialTopicId: string;
   initialThemeStyle: CSSProperties;
   initialTopics: DashboardTopic[];
@@ -1542,6 +1546,10 @@ export function RadarDashboard({
         </nav>
 
         <div className={styles.sidebarFooter}>
+          {account ? <div className={styles.sidebarAccount}>
+            <p title={account.email}>{account.email}</p>
+            <SignOutButton size="compact" />
+          </div> : null}
           <p>Press Craftor · Editorial studio</p>
         </div>
       </aside>

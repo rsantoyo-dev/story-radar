@@ -3,17 +3,21 @@ import "server-only";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { betterAuth } from "better-auth";
 import { nextCookies } from "better-auth/next-js";
+import { magicLink } from "better-auth/plugins";
 
 import { db } from "@/db/client";
 import { accounts, sessions, users, verifications } from "@/db/schema";
+
+import { MAGIC_LINK_EXPIRES_IN_SECONDS, sendSignInEmail } from "./auth-email";
 
 /**
  * Better Auth server configuration (FEAT-AUTH-001, AUTH-01).
  *
  * Sessions live in the database and travel as an httpOnly cookie; a short
- * signed cookie cache avoids a Neon round trip on every render. Google is the
- * only sign-in method during the alpha, so there is no password storage and no
- * transactional email here.
+ * signed cookie cache avoids a Neon round trip on every render. People sign
+ * in with Google or with a one-time emailed link (Resend); there is no
+ * password storage. Signing in grants nothing by itself: access comes from a
+ * workspace membership (see access.ts).
  *
  * The instance is created lazily, like `db`, so `next build` can import route
  * modules without the runtime secrets; the first real request still fails with
@@ -117,7 +121,14 @@ function createAuth() {
     advanced: {
       cookiePrefix: COOKIE_PREFIX,
     },
-    plugins: [nextCookies()],
+    plugins: [
+      magicLink({
+        expiresIn: MAGIC_LINK_EXPIRES_IN_SECONDS,
+        sendMagicLink: async ({ email, url }) => sendSignInEmail(email, url),
+      }),
+      // Must stay last so it can set cookies from server actions.
+      nextCookies(),
+    ],
   });
 }
 

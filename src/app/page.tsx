@@ -1,5 +1,7 @@
 import { getStoryKeywordPreferences } from "@/app/modules/stories/story-preferences.repository";
+import { requireWorkspacePageAccess } from "@/app/modules/auth/access";
 import {
+  DEFAULT_WORKSPACE_ID,
   getDefaultTopic,
   listTopics,
 } from "@/app/modules/topics/topic-catalog.repository";
@@ -10,6 +12,9 @@ import { RadarDashboard } from "./radar-dashboard";
 
 export default async function Home({ searchParams }: { searchParams: Promise<{ topicId?: string | string[]; metaTopicId?: string | string[] }> }) {
   await connection();
+  // Topics still all live in the default workspace; multi-workspace listing
+  // arrives with workspace-scoped APIs.
+  const { user } = await requireWorkspacePageAccess(DEFAULT_WORKSPACE_ID, "viewer", "/");
 
   const [defaultTopic, topics, query] = await Promise.all([
     getDefaultTopic(),
@@ -23,6 +28,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ t
 
   return (
     <RadarDashboard
+      {...(user ? { account: { email: user.email } } : {})}
       initialTopicId={selectedTopic.id}
       initialThemeStyle={initialThemeStyle}
       initialTopics={topics.map((topic) => ({

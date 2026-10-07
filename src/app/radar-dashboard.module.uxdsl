@@ -315,6 +315,9 @@
   border-top: 1px solid palette(primary-light, 0.14);
 }
 
+.sidebarAccount { display: grid; gap: density(2); margin-bottom: density(3); }
+.sidebarAccount p { overflow: hidden; margin: 0; text-overflow: ellipsis; white-space: nowrap; @ds-typo(caption); }
+
 .sidebarFooter .environment {
   border-color: palette(primary-light, 0.16);
   background: palette(light-light, 0.06);

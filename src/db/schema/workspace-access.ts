@@ -13,13 +13,7 @@ import {
 import { users } from "./auth";
 import { workspaces } from "./workspaces";
 
-/**
- * Roles inside a workspace (the customer account that owns Topics and pays).
- * owner: billing and members · admin: members and settings · editor: creates
- * and publishes · viewer: read only. Platform staff is separate (below).
- */
-export const WORKSPACE_ROLES = ["owner", "admin", "editor", "viewer"] as const;
-export type WorkspaceRole = (typeof WORKSPACE_ROLES)[number];
+export { WORKSPACE_ROLES, type WorkspaceRole } from "./workspace-roles";
 
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
