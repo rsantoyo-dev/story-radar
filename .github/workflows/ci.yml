@@ -45,4 +45,10 @@ jobs:
         run: npm ci --no-audit --no-fund
 
       - name: npm run ${{ matrix.task }}
-        run: npm run ${{ matrix.task }}
+        run: |
+          set -o pipefail
+          npm run "${{ matrix.task }}" 2>&1 | tee task-output.txt
+
+      - name: Annotate failing tests
+        if: failure() && matrix.task == 'test'
+        run: node .github/scripts/annotate-test-failures.mjs task-output.txt
