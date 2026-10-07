@@ -1,20 +1,20 @@
-import { authorizeRadarCollector } from "@/app/api/radar/radar-api-auth";
+import { authorizeRadarCollector, requireTopicForRequest } from "@/app/api/radar/radar-api-auth";
 import { noStoreJson } from "@/app/api/radar/topics/topic-route-utils";
 import { getTopicKnowledgeDocumentDetails } from "@/app/modules/documents/knowledge-documents.repository";
 import { KnowledgeDocumentNotFoundError } from "@/app/modules/documents/knowledge-document.types";
-import { requireTopic, TopicContextError } from "@/app/modules/topics/topic-context";
+import { TopicContextError } from "@/app/modules/topics/topic-context";
 
 type Context = {
   params: Promise<{ topicId: string; topicDocumentId: string }>;
 };
 
 export async function GET(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   try {
     const { topicId, topicDocumentId } = await context.params;
-    const topic = await requireTopic(topicId);
+    const topic = await requireTopicForRequest(request, topicId);
     return noStoreJson(
       await getTopicKnowledgeDocumentDetails(topic.id, topicDocumentId),
     );

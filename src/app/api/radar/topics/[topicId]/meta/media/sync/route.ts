@@ -5,7 +5,7 @@ import {
   InstagramMediaSyncError,
   syncInstagramMediaPage,
 } from "@/app/modules/meta/sync-instagram-media";
-import { requireTopic, TopicContextError } from "@/app/modules/topics/topic-context";
+import { TopicContextError, requireTopic } from "@/app/modules/topics/topic-context";
 
 type Context = { params: Promise<{ topicId: string }> };
 
@@ -16,7 +16,7 @@ type Context = { params: Promise<{ topicId: string }> };
  * `error`), not as a non-2xx — the same convention as the verify route.
  */
 export async function POST(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   try {

@@ -20,7 +20,7 @@ type Context = { params: Promise<{ storyId: string }> };
  * Read-only; storyId from the path, topicId from `?topicId=`.
  */
 export async function GET(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   const storyId = await parseStoryId(context);

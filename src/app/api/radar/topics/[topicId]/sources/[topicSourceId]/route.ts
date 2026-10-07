@@ -2,6 +2,7 @@ import { authorizeRadarCollector } from "@/app/api/radar/radar-api-auth";
 import {
   detachRssSourceFromTopic,
   listTopicRssSourceConfigs,
+  topicWorkspaceId,
   TopicCatalogNotFoundError,
   TopicCatalogValidationError,
   updateRssSource,
@@ -9,7 +10,7 @@ import {
   type UpdateRssSourceInput,
   type UpdateTopicSourceInput,
 } from "@/app/modules/topics/topic-catalog.repository";
-import { requireTopic, TopicContextError } from "@/app/modules/topics/topic-context";
+import { TopicContextError, requireTopic } from "@/app/modules/topics/topic-context";
 
 import {
   jsonObject,
@@ -20,7 +21,7 @@ import {
 type Context = { params: Promise<{ topicId: string; topicSourceId: string }> };
 
 export async function PATCH(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   try {
@@ -32,14 +33,14 @@ export async function PATCH(request: Request, context: Context) {
       if (typeof body.source !== "object" || body.source === null || Array.isArray(body.source)) {
         throw new TopicCatalogValidationError("source must be an object");
       }
-      await updateRssSource(current.id, body.source as UpdateRssSourceInput);
+      await updateRssSource(current.id, body.source as UpdateRssSourceInput, await topicWorkspaceId(topicId));
     }
 
     if (body.link !== undefined) {
       if (typeof body.link !== "object" || body.link === null || Array.isArray(body.link)) {
         throw new TopicCatalogValidationError("link must be an object");
       }
-      await updateTopicSource(topicSourceId, body.link as UpdateTopicSourceInput);
+      await updateTopicSource(topicSourceId, body.link as UpdateTopicSourceInput, await topicWorkspaceId(topicId));
     }
 
     const source = await getTopicSource(topicId, topicSourceId);
@@ -50,13 +51,13 @@ export async function PATCH(request: Request, context: Context) {
 }
 
 export async function DELETE(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   try {
     const { topicId, topicSourceId } = await sourceContext(context);
     await getTopicSource(topicId, topicSourceId);
-    await detachRssSourceFromTopic(topicSourceId);
+    await detachRssSourceFromTopic(topicSourceId, await topicWorkspaceId(topicId));
 
     return noStoreJson({ detached: true });
   } catch (error) {

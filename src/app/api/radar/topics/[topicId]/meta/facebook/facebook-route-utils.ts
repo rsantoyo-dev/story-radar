@@ -1,7 +1,7 @@
 import { noStoreJson } from "@/app/api/radar/topics/topic-route-utils";
 import { MetaIntegrationConfigError } from "@/app/modules/meta/meta-integration.config";
 import { TopicFacebookConnectionError } from "@/app/modules/meta/topic-facebook-connections.repository";
-import { requireTopic, TopicContextError } from "@/app/modules/topics/topic-context";
+import { TopicContextError, requireTopic } from "@/app/modules/topics/topic-context";
 import type { Topic } from "@/db/schema";
 
 export type TopicRouteContext = { params: Promise<{ topicId: string }> };

@@ -23,7 +23,7 @@ const UUID_PATTERN =
 type Context = { params: Promise<{ assetId: string }> };
 
 export async function POST(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const assetId = await parseId(context);
   if (!assetId) {
@@ -48,7 +48,7 @@ export async function POST(request: Request, context: Context) {
 }
 
 export async function PATCH(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const assetId = await parseId(context);
   if (!assetId) {
@@ -86,7 +86,7 @@ async function parseId(context: Context): Promise<string | undefined> {
 }
 
 export async function GET(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   try {
     const assetId = await parseId(context);

@@ -24,7 +24,7 @@ type Context = { params: Promise<{ referenceId: string }> };
 
 /** Streams the private reference image bytes — no signed URL, per-topic scoped. */
 export async function GET(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const { referenceId } = await context.params;
   if (!UUID_PATTERN.test(referenceId)) {
@@ -62,7 +62,7 @@ export async function GET(request: Request, context: Context) {
  * is `{ isActive: false }`.
  */
 export async function PATCH(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const { referenceId } = await context.params;
   if (!UUID_PATTERN.test(referenceId)) {
@@ -89,7 +89,7 @@ export async function PATCH(request: Request, context: Context) {
 }
 
 export async function PUT(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   try {
     const { referenceId } = await context.params;
@@ -113,7 +113,7 @@ export async function PUT(request: Request, context: Context) {
  * the image model again, while drafts and images that used it keep history.
  */
 export async function DELETE(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const { referenceId } = await context.params;
   if (!UUID_PATTERN.test(referenceId)) {

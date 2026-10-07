@@ -70,6 +70,7 @@ test("demo ledger charges each new settled text call once and resets without los
     await client.exec(readFileSync(new URL("../../../../drizzle/0081_spicy_giant_man.sql", import.meta.url), "utf8"));
     await client.exec(readFileSync(new URL("../../../../drizzle/0086_polite_skrulls.sql", import.meta.url), "utf8"));
     await client.exec(readFileSync(new URL("../../../../drizzle/0090_demo_credit_reset_in_flight.sql", import.meta.url), "utf8"));
+    await client.exec(readFileSync(new URL("../../../../drizzle/0094_workspace_credits.sql", import.meta.url), "utf8"));
 
     const balance = async () => Number((await client.query<{ balance: string }>(
       "SELECT sum(amount_micros)::text AS balance FROM workspace_credit_entries WHERE workspace_id='default'",
@@ -189,7 +190,7 @@ test("spending since a reset separates our provider cost, the charge and the mar
     await client.query("INSERT INTO workspaces VALUES ('default')");
     await client.query("INSERT INTO topics VALUES ($1, 'default', 'Salut Brossard')", [topicId]);
     await client.query("INSERT INTO stories VALUES ($1, '21 toiles')", [storyId]);
-    for (const migration of ["0081_spicy_giant_man", "0086_polite_skrulls", "0090_demo_credit_reset_in_flight"]) {
+    for (const migration of ["0081_spicy_giant_man", "0086_polite_skrulls", "0090_demo_credit_reset_in_flight", "0094_workspace_credits"]) {
       await client.exec(readFileSync(new URL(`../../../../drizzle/${migration}.sql`, import.meta.url), "utf8"));
     }
     // Before the reset: one charged image that must not count in the new period.
@@ -226,3 +227,45 @@ test("spending since a reset separates our provider cost, the charge and the mar
   }
 });
 
+
+test("each workspace has its own balance: a signup grant once, and only its own topics' spend", async () => {
+  const client = new PGlite();
+  const defaultTopic = randomUUID();
+  const otherTopic = randomUUID();
+  const storyId = randomUUID();
+  try {
+    await client.exec(`
+      CREATE TABLE workspaces (id text PRIMARY KEY);
+      CREATE TABLE topics (id uuid PRIMARY KEY, workspace_id text NOT NULL REFERENCES workspaces(id), name text NOT NULL DEFAULT 'Brand', is_active boolean NOT NULL DEFAULT true);
+      CREATE TABLE stories (id uuid PRIMARY KEY, title text);
+      CREATE TABLE creative_text_calls (
+        id uuid PRIMARY KEY, topic_id uuid NOT NULL REFERENCES topics(id),
+        story_id uuid NOT NULL REFERENCES stories(id), operation text NOT NULL,
+        provider text NOT NULL, model text NOT NULL, status text NOT NULL,
+        reserved_micros integer NOT NULL, charged_micros integer,
+        pricing jsonb NOT NULL, finished_at timestamptz,
+        created_at timestamptz NOT NULL DEFAULT now()
+      );
+    `);
+    await client.query("INSERT INTO workspaces VALUES ('default'), ('ws_b')");
+    await client.query("INSERT INTO topics (id, workspace_id) VALUES ($1, 'default'), ($2, 'ws_b')", [defaultTopic, otherTopic]);
+    await client.query("INSERT INTO stories VALUES ($1, 'A story')", [storyId]);
+    for (const migration of ["0081_spicy_giant_man", "0086_polite_skrulls", "0090_demo_credit_reset_in_flight", "0094_workspace_credits"]) {
+      await client.exec(readFileSync(new URL(`../../../../drizzle/${migration}.sql`, import.meta.url), "utf8"));
+    }
+    await client.query(`INSERT INTO ai_usage_charges (topic_id, story_id, kind, provider, model, operation, cost_micros, pricing, idempotency_key)
+      VALUES ($1, $2, 'image', 'fal', 'gpt-image', 'creative_image', 40000, '{"demoMarkupBasisPoints":2500}', 'image:b')`, [otherTopic, storyId]);
+    const repository = loadRepository(client);
+    const other = await repository.getDemoCreditAccount("ws_b");
+    const demo = await repository.getDemoCreditAccount("default");
+    assert.equal(other.balanceMicros, 1_000_000 - 50_000, "100 signup credits, minus its own image");
+    assert.equal(demo.balanceMicros, 10_000_000, "the demo workspace is untouched by another workspace's spend");
+    await repository.getDemoCreditAccount("ws_b");
+    assert.equal(Number((await client.query<{ n: number }>("SELECT count(*)::int AS n FROM workspace_credit_entries WHERE kind = 'signup_grant'")).rows[0].n), 1, "granted once");
+    const spending = loadSpending(client);
+    assert.equal((await spending.getSpendingReport({ workspaceId: "default", period: "all" })).totals.count, 0);
+    assert.equal((await spending.getSpendingReport({ workspaceId: "ws_b", period: "all" })).totals.count, 1);
+  } finally {
+    await client.close();
+  }
+});

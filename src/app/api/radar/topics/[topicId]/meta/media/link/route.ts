@@ -9,7 +9,7 @@ import {
   SelectedStoryContentNotFoundError,
   type InstagramMediaLinkInput,
 } from "@/app/modules/meta/link-instagram-media";
-import { requireTopic, TopicContextError } from "@/app/modules/topics/topic-context";
+import { TopicContextError, requireTopic } from "@/app/modules/topics/topic-context";
 
 type Context = { params: Promise<{ topicId: string }> };
 
@@ -20,7 +20,7 @@ type Context = { params: Promise<{ topicId: string }> };
  * - `?draftId=`    → image batches of that draft
  */
 export async function GET(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   try {
@@ -60,7 +60,7 @@ export async function GET(request: Request, context: Context) {
  * story, batch ∈ draft) happen in `linkInstagramMediaToStory`.
  */
 export async function POST(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   try {

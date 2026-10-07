@@ -10,7 +10,7 @@ export async function GET(request: Request, context: Context) { return handle(re
 export async function DELETE(request: Request, context: Context) { return handle(request, context, true); }
 /** Sets where the photo's subject is ({ focus: { x, y } }), or clears it ({ focus: null }). */
 export async function PATCH(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const { storyId, photoId } = await context.params;
   if (!STORY_UUID.test(storyId) || !STORY_UUID.test(photoId)) return noStoreJson({ error: "Invalid photo ID" }, 400);
@@ -22,7 +22,7 @@ export async function PATCH(request: Request, context: Context) {
   } catch (error) { return topicRequestErrorResponse(error) ?? creativeRouteErrorResponse(error, "frame story photo"); }
 }
 async function handle(request: Request, context: Context, revoke: boolean) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const { storyId, photoId } = await context.params;
   if (!STORY_UUID.test(storyId) || !STORY_UUID.test(photoId)) return noStoreJson({ error: "Invalid photo ID" }, 400);

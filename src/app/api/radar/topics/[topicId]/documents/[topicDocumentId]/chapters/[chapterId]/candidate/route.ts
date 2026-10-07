@@ -1,11 +1,11 @@
-import { authorizeRadarCollector } from "@/app/api/radar/radar-api-auth";
+import { authorizeRadarCollector, requireTopicForRequest } from "@/app/api/radar/radar-api-auth";
 import { noStoreJson } from "@/app/api/radar/topics/topic-route-utils";
 import {
   KnowledgeDocumentNotFoundError,
   KnowledgeDocumentValidationError,
 } from "@/app/modules/documents/knowledge-document.types";
 import { promoteKnowledgeChapterToStory } from "@/app/modules/documents/promote-knowledge-section";
-import { requireTopic, TopicContextError } from "@/app/modules/topics/topic-context";
+import { TopicContextError } from "@/app/modules/topics/topic-context";
 
 type Context = {
   params: Promise<{
@@ -16,12 +16,12 @@ type Context = {
 };
 
 export async function POST(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   try {
     const { topicId, topicDocumentId, chapterId } = await context.params;
-    const topic = await requireTopic(topicId, { active: true });
+    const topic = await requireTopicForRequest(request, topicId, { active: true });
     const result = await promoteKnowledgeChapterToStory(
       topic.id,
       topicDocumentId,

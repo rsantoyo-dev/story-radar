@@ -14,7 +14,7 @@ import {
   recordMetaVerificationFailure,
   recordMetaVerificationSuccess,
 } from "@/app/modules/meta/topic-meta-connections.repository";
-import { requireTopic, TopicContextError } from "@/app/modules/topics/topic-context";
+import { TopicContextError, requireTopic } from "@/app/modules/topics/topic-context";
 
 type Context = { params: Promise<{ topicId: string }> };
 
@@ -26,7 +26,7 @@ type Context = { params: Promise<{ topicId: string }> };
  * returned status, not a route error, so this never returns non-2xx for it.
  */
 export async function POST(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   try {

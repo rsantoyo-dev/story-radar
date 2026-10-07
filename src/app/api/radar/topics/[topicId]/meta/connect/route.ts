@@ -12,7 +12,7 @@ import {
   getEffectiveMetaAppCredentials,
   TopicMetaConnectionError,
 } from "@/app/modules/meta/topic-meta-connections.repository";
-import { requireTopic, TopicContextError } from "@/app/modules/topics/topic-context";
+import { TopicContextError, requireTopic } from "@/app/modules/topics/topic-context";
 import type { Topic } from "@/db/schema";
 
 type Context = { params: Promise<{ topicId: string }> };
@@ -32,7 +32,7 @@ const INSTAGRAM_OAUTH_SCOPES = [
  * which is why the topic is bound through the signed `state` param instead.
  */
 export async function POST(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   try {

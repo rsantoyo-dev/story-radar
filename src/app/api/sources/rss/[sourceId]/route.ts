@@ -17,7 +17,7 @@ export async function GET(
   request: Request,
   context: RouteContext,
 ) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   const { sourceId } = await context.params;

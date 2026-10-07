@@ -10,7 +10,7 @@ import { facebookRouteError, topicFromContext, type TopicRouteContext } from "..
 
 /** Re-checks the connected Page live. A failed check is returned in the status body, never as a non-2xx. */
 export async function POST(request: Request, context: TopicRouteContext) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   try {
     const topic = await topicFromContext(context);

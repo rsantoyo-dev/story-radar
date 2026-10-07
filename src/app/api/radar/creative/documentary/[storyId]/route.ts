@@ -8,7 +8,7 @@ export const maxDuration = 120;
 type Context = { params: Promise<{ storyId: string }> };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 async function handle(request: Request, context: Context, method: "GET" | "POST" | "PATCH") {
-  const unauthorized = authorizeRadarCollector(request); if (unauthorized) return unauthorized;
+  const unauthorized = await authorizeRadarCollector(request); if (unauthorized) return unauthorized;
   const { storyId } = await context.params;
   if (!uuid.test(storyId)) return noStoreJson({ error: "Invalid story ID" }, 400);
   try {

@@ -17,7 +17,7 @@ const UUID_PATTERN =
 type Context = { params: Promise<{ assetId: string }> };
 
 export async function GET(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const { assetId } = await context.params;
   if (!UUID_PATTERN.test(assetId)) {

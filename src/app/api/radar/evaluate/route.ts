@@ -20,7 +20,7 @@ import {
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  const unauthorizedResponse = authorizeRadarCollector(request);
+  const unauthorizedResponse = await authorizeRadarCollector(request);
 
   if (unauthorizedResponse) {
     return unauthorizedResponse;

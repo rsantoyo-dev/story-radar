@@ -6,14 +6,14 @@ import {
   saveAiResearchSourceConfig,
 } from "@/app/modules/sources/ai-research/ai-research.repository";
 import type { UpdateAiResearchSourceInput } from "@/app/modules/sources/ai-research/ai-research.types";
-import { requireTopic, TopicContextError } from "@/app/modules/topics/topic-context";
+import { TopicContextError, requireTopic } from "@/app/modules/topics/topic-context";
 
 import { jsonObject, noStoreJson } from "../../topic-route-utils";
 
 type Context = { params: Promise<{ topicId: string }> };
 
 export async function GET(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   try {
@@ -26,7 +26,7 @@ export async function GET(request: Request, context: Context) {
 }
 
 export async function PUT(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   try {

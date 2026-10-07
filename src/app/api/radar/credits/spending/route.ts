@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 
-import { authorizeRadarCollector } from "@/app/api/radar/radar-api-auth";
+import { authorizeRadarCollector, requestWorkspaceId } from "@/app/api/radar/radar-api-auth";
 import { getSpendingReport, type SpendingPeriod } from "@/app/modules/credits/spending.repository";
 
 const PERIODS: readonly SpendingPeriod[] = ["reset", "7d", "30d", "all"];
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function GET(request: Request) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   const params = new URL(request.url).searchParams;
@@ -17,7 +17,7 @@ export async function GET(request: Request) {
   const offset = Number(params.get("offset") ?? 0);
 
   try {
-    return NextResponse.json(await getSpendingReport({ period, topicId, offset: Number.isFinite(offset) ? offset : 0 }), {
+    return NextResponse.json(await getSpendingReport({ workspaceId: requestWorkspaceId(request), period, topicId, offset: Number.isFinite(offset) ? offset : 0 }), {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {

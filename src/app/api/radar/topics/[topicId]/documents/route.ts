@@ -12,7 +12,7 @@ import {
   KnowledgeDocumentValidationError,
   type CreateKnowledgeDocumentInput,
 } from "@/app/modules/documents/knowledge-document.types";
-import { requireTopic, TopicContextError } from "@/app/modules/topics/topic-context";
+import { TopicContextError, requireTopic } from "@/app/modules/topics/topic-context";
 import { after } from "next/server";
 
 type Context = { params: Promise<{ topicId: string }> };
@@ -20,7 +20,7 @@ type Context = { params: Promise<{ topicId: string }> };
 export const maxDuration = 120;
 
 export async function GET(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   try {
@@ -32,7 +32,7 @@ export async function GET(request: Request, context: Context) {
 }
 
 export async function POST(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   try {

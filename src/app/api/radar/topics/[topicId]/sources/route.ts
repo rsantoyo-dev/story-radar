@@ -3,12 +3,13 @@ import {
   attachRssSourceToTopic,
   createOrReuseRssSource,
   listTopicRssSourceConfigs,
+  topicWorkspaceId,
   TopicCatalogNotFoundError,
   TopicCatalogValidationError,
   type AttachTopicSourceInput,
   type CreateRssSourceInput,
 } from "@/app/modules/topics/topic-catalog.repository";
-import { requireTopic, TopicContextError } from "@/app/modules/topics/topic-context";
+import { TopicContextError, requireTopic } from "@/app/modules/topics/topic-context";
 
 import {
   jsonObject,
@@ -19,7 +20,7 @@ import {
 type Context = { params: Promise<{ topicId: string }> };
 
 export async function GET(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   try {
@@ -31,7 +32,7 @@ export async function GET(request: Request, context: Context) {
 }
 
 export async function POST(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   try {
@@ -40,7 +41,7 @@ export async function POST(request: Request, context: Context) {
     const link = parseLinkInput(body);
     const sourceId = typeof body.sourceId === "string" && body.sourceId.trim()
       ? body.sourceId.trim()
-      : await createSourceFromBody(body);
+      : await createSourceFromBody(body, await topicWorkspaceId(topicId));
 
     await attachRssSourceToTopic(topicId, sourceId, link);
     const sources = await listTopicRssSourceConfigs(topicId);
@@ -61,7 +62,7 @@ async function topicIdFromContext(context: Context): Promise<string> {
   return (await requireTopic(topicId)).id;
 }
 
-async function createSourceFromBody(body: Record<string, unknown>): Promise<string> {
+async function createSourceFromBody(body: Record<string, unknown>, workspaceId: string): Promise<string> {
   const value = body.source;
 
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -70,7 +71,7 @@ async function createSourceFromBody(body: Record<string, unknown>): Promise<stri
     );
   }
 
-  return (await createOrReuseRssSource(value as CreateRssSourceInput)).id;
+  return (await createOrReuseRssSource(value as CreateRssSourceInput, workspaceId)).id;
 }
 
 function parseLinkInput(body: Record<string, unknown>): AttachTopicSourceInput {

@@ -1,5 +1,6 @@
 import { authorizeRadarCollector } from "@/app/api/radar/radar-api-auth";
 import {
+  DEFAULT_WORKSPACE_ID,
   getDefaultTopic,
   listTopics,
   TopicCatalogNotFoundError,
@@ -7,7 +8,7 @@ import {
   deleteTopic,
   type UpdateTopicInput,
 } from "@/app/modules/topics/topic-catalog.repository";
-import { requireTopic, TopicContextError } from "@/app/modules/topics/topic-context";
+import { TopicContextError, requireTopic } from "@/app/modules/topics/topic-context";
 
 import {
   jsonObject,
@@ -18,7 +19,7 @@ import {
 type Context = { params: Promise<{ topicId: string }> };
 
 export async function PATCH(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   try {
@@ -35,25 +36,26 @@ export async function PATCH(request: Request, context: Context) {
 }
 
 export async function DELETE(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  // Deleting a brand removes its work: admins and owners.
+  const unauthorized = await authorizeRadarCollector(request, "admin");
   if (unauthorized) return unauthorized;
 
   try {
-    const topicId = await topicIdFromContext(context);
-    const defaultTopic = await getDefaultTopic();
+    const topic = await requireTopic((await context.params).topicId);
+    const topicId = topic.id;
 
-    if (topicId === defaultTopic.id) {
+    if (topic.workspaceId === DEFAULT_WORKSPACE_ID && topicId === (await getDefaultTopic()).id) {
       return noStoreJson(
         { error: "The seeded Tech topic cannot be deleted" },
         409,
       );
     }
 
-    if ((await listTopics()).length <= 1) {
+    if ((await listTopics(topic.workspaceId)).length <= 1) {
       return noStoreJson({ error: "At least one topic is required" }, 409);
     }
 
-    await deleteTopic(topicId);
+    await deleteTopic(topicId, topic.workspaceId);
     return noStoreJson({ deleted: true });
   } catch (error) {
     return topicRouteError(error, "delete the topic");

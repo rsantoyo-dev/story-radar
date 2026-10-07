@@ -49,7 +49,7 @@ function readSecret(): string {
   catch { return ""; }
 }
 
-export function SpendingPageClient() {
+export function SpendingPageClient({ signedIn = false }: { signedIn?: boolean }) {
   const [secret] = useState(readSecret);
   const [period, setPeriod] = useState<SpendingPeriod>("reset");
   const [topicId, setTopicId] = useState("");
@@ -76,7 +76,7 @@ export function SpendingPageClient() {
   }, [period, topicId, secret]);
 
   useEffect(() => {
-    if (!secret) {
+    if (!secret && !signedIn) {
       Promise.resolve().then(() => setError("Connect with the collector secret on the dashboard to see spending."));
       return;
     }
@@ -85,7 +85,7 @@ export function SpendingPageClient() {
       if (active) setError(cause instanceof Error ? cause.message : "Spending is unavailable right now.");
     });
     return () => { active = false; };
-  }, [load, secret]);
+  }, [load, secret, signedIn]);
 
   const reset = () => {
     if (!window.confirm("Reset the demo balance to 1,000 credits? Past activity stays in the history; spending restarts from now.")) return;
@@ -122,7 +122,7 @@ export function SpendingPageClient() {
           {report?.topicOptions.map((topic) => <option key={topic.id} value={topic.id}>{topic.name}</option>)}
         </select>
       </label>
-      <button type="button" className={styles.spendingReset} disabled={busy || !secret} onClick={reset}>{busy ? "Resetting…" : "Reset balance to 1,000"}</button>
+      {account?.canReset ? <button type="button" className={styles.spendingReset} disabled={busy} onClick={reset}>{busy ? "Resetting…" : "Reset balance to 1,000"}</button> : null}
     </section> : null}
     {notice ? <p className={styles.spendingNotice} role="status">{notice}</p> : null}
 

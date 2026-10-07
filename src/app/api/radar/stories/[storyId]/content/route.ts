@@ -35,7 +35,7 @@ export async function GET(
   request: Request,
   context: StoryContentRouteContext,
 ) {
-  const unauthorizedResponse = authorizeRadarCollector(request);
+  const unauthorizedResponse = await authorizeRadarCollector(request);
 
   if (unauthorizedResponse) {
     return unauthorizedResponse;
@@ -79,7 +79,7 @@ export async function POST(
   request: Request,
   context: StoryContentRouteContext,
 ) {
-  const unauthorizedResponse = authorizeRadarCollector(request);
+  const unauthorizedResponse = await authorizeRadarCollector(request);
 
   if (unauthorizedResponse) {
     return unauthorizedResponse;
@@ -143,7 +143,7 @@ function noStoreJson(value: unknown): NextResponse {
 }
 
 export async function PUT(request: Request, context: StoryContentRouteContext) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const storyId = await parseStoryId(context);
   if (!storyId) return NextResponse.json({ error: "Invalid story ID" }, { status: 400 });

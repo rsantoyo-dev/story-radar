@@ -30,7 +30,7 @@ async function parseId(context: Context): Promise<string | undefined> {
 }
 
 export async function GET(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const draftId = await parseId(context);
   if (!draftId) {
@@ -50,7 +50,7 @@ export async function GET(request: Request, context: Context) {
 }
 
 export async function PUT(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const draftId = await parseId(context);
   if (!draftId) {
@@ -71,7 +71,7 @@ export async function PUT(request: Request, context: Context) {
 }
 
 export async function POST(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const draftId = await parseId(context);
   if (!draftId) {
@@ -115,7 +115,7 @@ export async function POST(request: Request, context: Context) {
 }
 
 export async function DELETE(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const draftId = await parseId(context);
   if (!draftId) {

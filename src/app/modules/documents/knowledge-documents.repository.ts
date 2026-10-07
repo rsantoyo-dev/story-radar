@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 
 import { and, desc, eq } from "drizzle-orm";
 
-import { DEFAULT_WORKSPACE_ID } from "@/app/modules/topics/topic-catalog.repository";
+import { topicWorkspaceId } from "@/app/modules/topics/topic-catalog.repository";
 import { db } from "@/db/client";
 import {
   knowledgeDocumentIngestionRuns,
@@ -37,11 +37,13 @@ export async function createOrAttachKnowledgeDocument(
   topicId: string,
   input: CreateOrAttachInput,
 ): Promise<{ documentId: string; topicDocumentId: string }> {
+  // Documents live in the workspace of the topic they are attached to.
+  const workspaceId = await topicWorkspaceId(topicId);
   const normalized = normalizeInput(input);
   const [created] = await db
     .insert(knowledgeDocuments)
     .values({
-      workspaceId: DEFAULT_WORKSPACE_ID,
+      workspaceId: workspaceId,
       canonicalUrl: normalized.canonicalUrl,
       sourceUrl: normalized.canonicalUrl,
       documentType: normalized.documentType,
@@ -53,11 +55,11 @@ export async function createOrAttachKnowledgeDocument(
     })
     .returning({ id: knowledgeDocuments.id });
 
-  const documentId = created?.id ?? (await findDocumentId(normalized.canonicalUrl));
+  const documentId = created?.id ?? (await findDocumentId(workspaceId, normalized.canonicalUrl));
   const [attached] = await db
     .insert(topicKnowledgeDocuments)
     .values({
-      workspaceId: DEFAULT_WORKSPACE_ID,
+      workspaceId: workspaceId,
       topicId,
       documentId,
       enabled: true,
@@ -83,8 +85,10 @@ export async function createOrAttachUploadedKnowledgeDocument(
   topicId: string,
   input: { canonicalUrl: string; objectKey: string; name: string },
 ): Promise<{ documentId: string; topicDocumentId: string }> {
+  // Documents live in the workspace of the topic they are attached to.
+  const workspaceId = await topicWorkspaceId(topicId);
   const [created] = await db.insert(knowledgeDocuments).values({
-    workspaceId: DEFAULT_WORKSPACE_ID,
+    workspaceId: workspaceId,
     canonicalUrl: input.canonicalUrl,
     sourceUrl: input.canonicalUrl,
     objectKey: input.objectKey,
@@ -98,7 +102,7 @@ export async function createOrAttachUploadedKnowledgeDocument(
     id: knowledgeDocuments.id,
     objectKey: knowledgeDocuments.objectKey,
   }).from(knowledgeDocuments).where(and(
-    eq(knowledgeDocuments.workspaceId, DEFAULT_WORKSPACE_ID),
+    eq(knowledgeDocuments.workspaceId, workspaceId),
     eq(knowledgeDocuments.canonicalUrl, input.canonicalUrl),
   )).limit(1);
   if (existing && existing.objectKey !== input.objectKey) {
@@ -107,7 +111,7 @@ export async function createOrAttachUploadedKnowledgeDocument(
   const documentId = created?.id ?? existing?.id;
   if (!documentId) throw new Error("The uploaded document could not be found");
   const [attached] = await db.insert(topicKnowledgeDocuments).values({
-    workspaceId: DEFAULT_WORKSPACE_ID,
+    workspaceId: workspaceId,
     topicId,
     documentId,
     enabled: true,
@@ -123,13 +127,15 @@ export async function attachExistingKnowledgeDocument(
   topicId: string,
   documentId: string,
 ): Promise<void> {
+  // Documents live in the workspace of the topic they are attached to.
+  const workspaceId = await topicWorkspaceId(topicId);
   const [document] = await db.select({ id: knowledgeDocuments.id })
     .from(knowledgeDocuments)
-    .where(and(eq(knowledgeDocuments.id, documentId), eq(knowledgeDocuments.workspaceId, DEFAULT_WORKSPACE_ID)))
+    .where(and(eq(knowledgeDocuments.id, documentId), eq(knowledgeDocuments.workspaceId, workspaceId)))
     .limit(1);
   if (!document) throw new KnowledgeDocumentNotFoundError("Document not found");
   await db.insert(topicKnowledgeDocuments).values({
-    workspaceId: DEFAULT_WORKSPACE_ID,
+    workspaceId: workspaceId,
     topicId,
     documentId,
     enabled: true,
@@ -143,11 +149,13 @@ export async function detachKnowledgeDocument(
   topicId: string,
   documentId: string,
 ): Promise<void> {
+  // Documents live in the workspace of the topic they are attached to.
+  const workspaceId = await topicWorkspaceId(topicId);
   await db.delete(topicKnowledgeDocuments)
     .where(and(
       eq(topicKnowledgeDocuments.topicId, topicId),
       eq(topicKnowledgeDocuments.documentId, documentId),
-      eq(topicKnowledgeDocuments.workspaceId, DEFAULT_WORKSPACE_ID),
+      eq(topicKnowledgeDocuments.workspaceId, workspaceId),
     ));
 }
 
@@ -502,12 +510,12 @@ export async function getTopicKnowledgeDocumentDetails(
   };
 }
 
-async function findDocumentId(canonicalUrl: string): Promise<string> {
+async function findDocumentId(workspaceId: string, canonicalUrl: string): Promise<string> {
   const [document] = await db
     .select({ id: knowledgeDocuments.id })
     .from(knowledgeDocuments)
     .where(and(
-      eq(knowledgeDocuments.workspaceId, DEFAULT_WORKSPACE_ID),
+      eq(knowledgeDocuments.workspaceId, workspaceId),
       eq(knowledgeDocuments.canonicalUrl, canonicalUrl),
     ))
     .limit(1);

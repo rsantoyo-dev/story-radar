@@ -13,7 +13,7 @@ import {
 } from "../radar-topic";
 
 export async function GET(request: Request) {
-  const unauthorizedResponse = authorizeRadarCollector(request);
+  const unauthorizedResponse = await authorizeRadarCollector(request);
 
   if (unauthorizedResponse) {
     return unauthorizedResponse;
@@ -39,7 +39,8 @@ export async function GET(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const unauthorizedResponse = authorizeRadarCollector(request);
+  // Clearing a topic's selections, drafts and runs: admins and owners only.
+  const unauthorizedResponse = await authorizeRadarCollector(request, "admin");
 
   if (unauthorizedResponse) {
     return unauthorizedResponse;

@@ -1,10 +1,10 @@
-import { authorizeRadarCollector } from "@/app/api/radar/radar-api-auth";
+import { authorizeRadarCollector, requireTopicForRequest } from "@/app/api/radar/radar-api-auth";
 import { fetchRssFeed } from "@/app/modules/sources/rss/fetch-rss-feed";
 import {
   listTopicRssSourceConfigs,
   TopicCatalogNotFoundError,
 } from "@/app/modules/topics/topic-catalog.repository";
-import { requireTopic, TopicContextError } from "@/app/modules/topics/topic-context";
+import { TopicContextError } from "@/app/modules/topics/topic-context";
 
 import { noStoreJson, topicCatalogError } from "../../../../topic-route-utils";
 
@@ -15,12 +15,12 @@ type Context = {
 export const runtime = "nodejs";
 
 export async function POST(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   try {
     const { topicId, topicSourceId } = await context.params;
-    const source = (await listTopicRssSourceConfigs((await requireTopic(topicId)).id)).find(
+    const source = (await listTopicRssSourceConfigs((await requireTopicForRequest(request, topicId)).id)).find(
       (candidate) => candidate.topicSourceId === topicSourceId,
     );
 

@@ -490,6 +490,23 @@ function writeStoredSecret(secret: string): void {
   }
 }
 
+/** The signed-in account in the top bar: email, workspace and role, and sign out. */
+function AccountMenu({ account }: { account: { email: string; name?: string; workspaceName?: string; role?: string } }) {
+  const label = (account.name?.trim() || account.email).slice(0, 1).toUpperCase();
+  return <details className={styles.accountMenu}>
+    <summary aria-label={`Signed in as ${account.email}`}>
+      <span className={styles.accountAvatar} aria-hidden="true">{label}</span>
+      <span className={styles.accountEmail}>{account.email}</span>
+    </summary>
+    <div className={styles.accountPanel}>
+      <strong>{account.name?.trim() || account.email}</strong>
+      <small>{account.email}</small>
+      {account.workspaceName ? <small>{account.workspaceName}{account.role ? ` · ${account.role}` : ""}</small> : null}
+      <SignOutButton size="compact" />
+    </div>
+  </details>;
+}
+
 export function RadarDashboard({
   account,
   initialTopicId,
@@ -497,8 +514,8 @@ export function RadarDashboard({
   initialTopics,
   initialPreferences,
 }: {
-  /** The signed-in user, when sign-in is required. */
-  account?: { email: string };
+  /** The signed-in user, when sign-in is required: the API trusts the session instead of the collector secret. */
+  account?: { email: string; name?: string; workspaceName?: string; role?: string };
   initialTopicId: string;
   initialThemeStyle: CSSProperties;
   initialTopics: DashboardTopic[];
@@ -564,7 +581,8 @@ export function RadarDashboard({
   // editor does not have to reconnect just to find the same Story.
   useEffect(() => {
     const stored = readStoredSecret();
-    if (!stored) return;
+    // Signed in: the session cookie authorizes every request; no secret needed.
+    if (!stored && !account) return;
     let cancelled = false;
     const topicId = initialTopicId;
     Promise.all([
@@ -581,10 +599,10 @@ export function RadarDashboard({
       setNotice({ tone: "error", title: "Topic data could not be loaded", message: getErrorMessage(error) });
     });
     return () => { cancelled = true; };
-  }, [initialTopicId]);
+  }, [initialTopicId, account]);
 
   const isBusy = activeOperation !== undefined;
-  const canAuthenticate = secret.trim().length > 0;
+  const canAuthenticate = Boolean(account) || secret.trim().length > 0;
   const canDelete = canAuthenticate && confirmation === "DELETE" && !isBusy;
   const selectedTopic = topics.find((topic) => topic.id === selectedTopicId);
   const selectedTopicName = selectedTopic?.name ?? "this topic";
@@ -1546,10 +1564,6 @@ export function RadarDashboard({
         </nav>
 
         <div className={styles.sidebarFooter}>
-          {account ? <div className={styles.sidebarAccount}>
-            <p title={account.email}>{account.email}</p>
-            <SignOutButton size="compact" />
-          </div> : null}
           <p>Press Craftor · Editorial studio</p>
         </div>
       </aside>
@@ -1640,13 +1654,15 @@ export function RadarDashboard({
                   </div>
                   <a className={styles.topbarActionLink} href="#today">Today</a>
                   <DemoCreditIndicator secret={secret} />
-                  <div className={styles.topbarSession}>
+                  {account ? <AccountMenu account={account} /> : <div className={styles.topbarSession}>
                     <span className={`${styles.topbarStatus} ${styles.online}`} role="status" aria-label="Connected" title="Connected" />
                     <button type="button" className={styles.disconnectButton} onClick={handleDisconnect} disabled={isBusy} aria-label="Disconnect" title="Disconnect">
                       <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M6 2.5H3.5A1.5 1.5 0 0 0 2 4v8a1.5 1.5 0 0 0 1.5 1.5H6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /><path d="M10 5l3 3-3 3M13 8H6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
                     </button>
-                  </div>
+                  </div>}
                 </>
+              ) : account ? (
+                <AccountMenu account={account} />
               ) : (
                 <form className={styles.secretControl} onSubmit={(event) => { event.preventDefault(); void handleConnect(); }}>
                   <label className={styles.secretField}><span>Collector secret</span><input type="password" aria-label="Collector secret" value={secret} onChange={(event) => { setSecret(event.target.value); setStats(undefined); }} placeholder="Paste secret" autoComplete="off" spellCheck={false} /></label>

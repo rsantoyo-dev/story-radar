@@ -15,9 +15,9 @@ export class DemoCreditResetBlockedError extends Error {}
  * history is kept and "spent" restarts from this moment. The key makes a
  * retried request return the same reset instead of posting a second one.
  */
-export async function resetDemoCredits(key: string, reason: string): Promise<number> {
+export async function resetDemoCredits(key: string, reason: string, workspaceId = "default"): Promise<number> {
   try {
-    const result = await db.execute(sql`SELECT reset_demo_credits(${key}, 'dashboard', ${reason}) AS balance`);
+    const result = await db.execute(sql`SELECT reset_demo_credits(${key}, 'dashboard', ${reason}, ${workspaceId}) AS balance`);
     return Number(result.rows[0]?.balance ?? 0);
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
@@ -28,9 +28,9 @@ export async function resetDemoCredits(key: string, reason: string): Promise<num
 }
 
 /** When the current demo period began: the latest reset, or the opening grant. */
-export async function currentSpendingPeriodStart(): Promise<Date | null> {
+export async function currentSpendingPeriodStart(workspaceId = "default"): Promise<Date | null> {
   const result = await db.execute(sql`SELECT max(created_at) AS start FROM workspace_credit_entries
-    WHERE workspace_id = 'default' AND kind IN ('demo_reset', 'demo_grant')`);
+    WHERE workspace_id = ${workspaceId} AND kind IN ('demo_reset', 'demo_grant', 'signup_grant')`);
   const start = result.rows[0]?.start;
   return start ? new Date(String(start)) : null;
 }
@@ -100,7 +100,7 @@ function periodFrom(period: SpendingPeriod, periodStart: Date | null, now = Date
  * generic usage charges, each joined to its ledger debit when it was charged.
  * Zero-cost rejected calls are left out; unpriced calls stay visible.
  */
-function spendingItems(from: Date | null, topicId: string | null) {
+function spendingItems(workspaceId: string, from: Date | null, topicId: string | null) {
   return sql`WITH items AS (
       SELECT c.id, 'text'::text AS kind, c.operation, c.provider, c.model, c.topic_id, c.story_id,
         coalesce(c.finished_at, c.created_at) AS at,
@@ -115,7 +115,7 @@ function spendingItems(from: Date | null, topicId: string | null) {
       LEFT JOIN workspace_credit_entries e ON e.source_usage_charge_id = u.id
     ), scoped AS (
       SELECT i.*, t.name AS topic_name FROM items i JOIN topics t ON t.id = i.topic_id
-      WHERE t.workspace_id = 'default'
+      WHERE t.workspace_id = ${workspaceId}
         AND (${from ? from.toISOString() : null}::timestamptz IS NULL OR i.at >= ${from ? from.toISOString() : null}::timestamptz)
         AND (${topicId}::uuid IS NULL OR i.topic_id = ${topicId}::uuid)
         AND NOT (i.cost IS NOT NULL AND i.cost = 0 AND i.ledger IS NULL)
@@ -149,14 +149,15 @@ function addLines(target: SpendingLine, source: SpendingLine): void {
   target.unpricedCount += source.unpricedCount;
 }
 
-export async function getSpendingReport(input: { period?: SpendingPeriod; topicId?: string | null; offset?: number } = {}): Promise<SpendingReport> {
+export async function getSpendingReport(input: { workspaceId?: string; period?: SpendingPeriod; topicId?: string | null; offset?: number } = {}): Promise<SpendingReport> {
+  const workspaceId = input.workspaceId ?? "default";
   await syncDemoCredits();
   const period = input.period ?? "reset";
   const topicId = input.topicId ?? null;
   const offset = Math.max(0, Math.floor(input.offset ?? 0));
-  const periodStart = await currentSpendingPeriodStart();
+  const periodStart = await currentSpendingPeriodStart(workspaceId);
   const from = periodFrom(period, periodStart);
-  const items = spendingItems(from, topicId);
+  const items = spendingItems(workspaceId, from, topicId);
 
   const [totals, products, stories, topics, entries, topicOptions] = await Promise.all([
     db.execute(sql`${items} SELECT ${LINE_COLUMNS}, count(DISTINCT story_id)::int AS stories FROM scoped`),
@@ -172,7 +173,7 @@ export async function getSpendingReport(input: { period?: SpendingPeriod; topicI
         i.story_id, s.title AS story_title, i.cost, i.ledger, i.uncertain
       FROM scoped i LEFT JOIN stories s ON s.id = i.story_id
       ORDER BY i.at DESC, i.id DESC LIMIT ${PAGE_SIZE + 1} OFFSET ${offset}`),
-    db.execute(sql`SELECT id, name FROM topics WHERE workspace_id = 'default' AND is_active ORDER BY name`),
+    db.execute(sql`SELECT id, name FROM topics WHERE workspace_id = ${workspaceId} AND is_active ORDER BY name`),
   ]);
 
   // Several operations can be one product (e.g. two repair passes); merge them.

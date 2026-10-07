@@ -23,7 +23,7 @@ type Context = { params: Promise<{ referenceId: string }> };
  * missing `GEMINI_API_KEY` as 503.
  */
 export async function POST(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   const { referenceId } = await context.params;

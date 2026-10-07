@@ -35,7 +35,7 @@ const UUID_PATTERN =
 type Context = { params: Promise<{ storyId: string }> };
 
 export async function GET(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const storyId = await parseId(context);
 
@@ -61,7 +61,7 @@ export async function GET(request: Request, context: Context) {
 }
 
 export async function POST(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const preparationRunId = new URL(request.url).searchParams.get("preparationRunId") || undefined;
   if (preparationRunId && !UUID_PATTERN.test(preparationRunId)) {

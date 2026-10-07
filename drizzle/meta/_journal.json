@@ -652,6 +652,13 @@
       "when": 1791388018492,
       "tag": "0093_workspace_access",
       "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1791396928162,
+      "tag": "0094_workspace_credits",
+      "breakpoints": true
     }
   ]
 }

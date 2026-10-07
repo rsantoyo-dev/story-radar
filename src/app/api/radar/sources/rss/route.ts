@@ -1,4 +1,4 @@
-import { authorizeRadarCollector } from "@/app/api/radar/radar-api-auth";
+import { authorizeRadarCollector, requireTopicForRequest } from "@/app/api/radar/radar-api-auth";
 import { jsonObject, noStoreJson, topicCatalogError } from "@/app/api/radar/topics/topic-route-utils";
 import {
   attachRssSourceToTopic,
@@ -7,10 +7,10 @@ import {
   type AttachTopicSourceInput,
   type CreateRssSourceInput,
 } from "@/app/modules/topics/topic-catalog.repository";
-import { requireTopic, TopicContextError } from "@/app/modules/topics/topic-context";
+import { TopicContextError } from "@/app/modules/topics/topic-context";
 
 export async function POST(request: Request) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   try {
@@ -27,8 +27,10 @@ export async function POST(request: Request) {
     if (!link || typeof link !== "object" || Array.isArray(link)) {
       throw new TopicCatalogValidationError("Feed link settings are invalid");
     }
-    await Promise.all(topicIds.map((id) => requireTopic(id, { active: true })));
-    const source = await createOrReuseRssSource(body.source as CreateRssSourceInput);
+    const linkedTopics = await Promise.all(topicIds.map((id) => requireTopicForRequest(request, id, { active: true })));
+    const workspaceId = linkedTopics[0]!.workspaceId;
+    if (linkedTopics.some((topic) => topic.workspaceId !== workspaceId)) return noStoreJson({ error: "All topics must belong to the same workspace." }, 400);
+    const source = await createOrReuseRssSource(body.source as CreateRssSourceInput, workspaceId);
     for (const topicId of topicIds) {
       await attachRssSourceToTopic(topicId, source.id, link as AttachTopicSourceInput);
     }

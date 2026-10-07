@@ -20,7 +20,7 @@ type Context = {
 };
 
 export async function GET(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const ids = await parseIds(context);
   if (!ids) return noStoreJson({ error: "Character and reference IDs must be valid UUIDs" }, 400);
@@ -47,7 +47,7 @@ export async function GET(request: Request, context: Context) {
 }
 
 export async function DELETE(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const ids = await parseIds(context);
   if (!ids) return noStoreJson({ error: "Character and reference IDs must be valid UUIDs" }, 400);

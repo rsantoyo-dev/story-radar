@@ -144,13 +144,13 @@ export function DemoCreditIndicator({ secret }: { secret: string }) {
       <div className={styles.demoCreditsActions}>
         <Link href="/spending" className={styles.demoCreditsLink}>Spending &amp; history</Link>
         <button type="button" className={styles.demoCreditsRefresh} onClick={() => void refresh()}>Refresh balance</button>
-        <button type="button" className={styles.demoCreditsRefresh} disabled={resetState.busy} onClick={() => {
+        {account?.canReset ? <button type="button" className={styles.demoCreditsRefresh} disabled={resetState.busy} onClick={() => {
           if (!window.confirm("Reset the demo balance to 1,000 credits? Past activity stays in the history; spending restarts from now.")) return;
           setResetState({ busy: true });
           void resetDemoCreditBalance(secret)
             .then(() => { setResetState({ message: "Balance reset to 1,000 credits." }); return refresh(); })
             .catch((cause: unknown) => setResetState({ message: cause instanceof Error ? cause.message : "The demo balance could not be reset." }));
-        }}>{resetState.busy ? "Resetting…" : "Reset to 1,000"}</button>
+        }}>{resetState.busy ? "Resetting…" : "Reset to 1,000"}</button> : null}
       </div>
     </div>
   </details>;

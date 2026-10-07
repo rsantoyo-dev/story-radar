@@ -9,7 +9,7 @@ type Context = { params: Promise<{ storyId: string }> };
 export async function GET(request: Request, context: Context) { return handle(request, context, false); }
 export async function POST(request: Request, context: Context) { return handle(request, context, true); }
 async function handle(request: Request, context: Context, upload: boolean) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const { storyId } = await context.params;
   if (!STORY_UUID.test(storyId)) return noStoreJson({ error: "Invalid story ID" }, 400);

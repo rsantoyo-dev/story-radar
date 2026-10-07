@@ -315,8 +315,6 @@
   border-top: 1px solid palette(primary-light, 0.14);
 }
 
-.sidebarAccount { display: grid; gap: density(2); margin-bottom: density(3); }
-.sidebarAccount p { overflow: hidden; margin: 0; text-overflow: ellipsis; white-space: nowrap; @ds-typo(caption); }
 
 .sidebarFooter .environment {
   border-color: palette(primary-light, 0.16);
@@ -3735,6 +3733,18 @@
 .demoCreditsRefresh { min-height: 36px; padding: density(2) density(3); border: 1px solid palette(primary-main, 0.3); border-radius: radius(2); background: palette(light-light); color: palette(primary-dark); @ds-typo(caption); font-size: 0.75rem; font-weight: 700; cursor: pointer; }
 .demoCreditsRefresh:hover { background: palette(primary-light, 0.25); }
 .demoCreditsRefresh:disabled { cursor: progress; opacity: 0.6; }
+/* The signed-in account in the top bar. */
+.accountMenu { position: relative; flex: none; }
+.accountMenu > summary { display: flex; align-items: center; gap: density(2); min-height: 34px; padding: 0 density(2) 0 density(1); border: 1px solid palette(dark-main, 0.12); border-radius: radius(2); background: palette(light-light); color: palette(dark-main); cursor: pointer; list-style: none; }
+.accountMenu > summary::marker { content: ""; }
+.accountMenu > summary::-webkit-details-marker { display: none; }
+.accountMenu > summary:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 2px; }
+.accountAvatar { display: grid; width: 26px; height: 26px; place-items: center; border-radius: 999px; background: palette(primary-main); color: palette(light-light); @ds-typo(caption); font-size: 0.75rem; font-weight: 800; }
+.accountEmail { max-width: 180px; overflow: hidden; @ds-typo(caption); font-size: 0.75rem; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.accountPanel { position: absolute; z-index: 30; top: calc(100% + 8px); right: 0; display: grid; gap: density(1); width: min(280px, calc(100vw - 24px)); padding: density(4); border: 1px solid palette(surface-light); border-radius: radius(3); background: palette(light-light); box-shadow: shadow(4); color: palette(dark-main); }
+.accountPanel strong { overflow-wrap: anywhere; @ds-typo(small); font-weight: 750; }
+.accountPanel small { overflow-wrap: anywhere; color: palette(tertiary-main); @ds-typo(caption); font-size: 0.72rem; }
+.accountPanel button { justify-self: start; margin-top: density(2); }
 .demoCreditsActions { display: flex; flex-wrap: wrap; align-items: center; gap: density(2); }
 .demoCreditsLink { display: inline-flex; align-items: center; min-height: 36px; padding: density(2) density(3); border-radius: radius(2); background: palette(primary-main); color: palette(light-light); @ds-typo(caption); font-size: 0.75rem; font-weight: 700; text-decoration: none; }
 .demoCreditsLink:hover { background: palette(primary-dark); }
@@ -3866,10 +3876,11 @@
   .contextSelectedLink { min-height: 44px; }
   .demoCredits > summary, .demoCreditsRefresh { min-height: 44px; }
   .topbarSession .disconnectButton { width: 44px; height: 44px; }
+  .accountMenu > summary { min-height: 44px; }
 }
 
 @media (max-width: 639px) {
-  .topbarActionLink, .demoCredits > summary span { display: none; }
+  .topbarActionLink, .demoCredits > summary span, .accountEmail { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

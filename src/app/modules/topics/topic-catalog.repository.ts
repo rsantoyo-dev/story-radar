@@ -109,19 +109,33 @@ export async function listTopics(
     .orderBy(asc(topics.name));
 }
 
+/**
+ * A topic by id. With `workspaceId`, only inside that workspace; without it,
+ * wherever the topic lives — callers resolve access (API routes and pages)
+ * before reaching topic-keyed data, and topic ids are UUIDs.
+ */
 export async function getTopicById(
   topicId: string,
-  workspaceId = DEFAULT_WORKSPACE_ID,
+  workspaceId?: string,
 ): Promise<Topic | undefined> {
   const [topic] = await db
     .select()
     .from(topics)
     .where(
-      and(eq(topics.id, topicId), eq(topics.workspaceId, workspaceId)),
+      workspaceId === undefined
+        ? eq(topics.id, topicId)
+        : and(eq(topics.id, topicId), eq(topics.workspaceId, workspaceId)),
     )
     .limit(1);
 
   return topic;
+}
+
+/** The workspace a topic belongs to. */
+export async function topicWorkspaceId(topicId: string): Promise<string> {
+  const topic = await getTopicById(topicId);
+  if (!topic) throw new TopicCatalogNotFoundError("Topic was not found");
+  return topic.workspaceId;
 }
 
 export async function getTopicBySlug(
@@ -181,8 +195,9 @@ export async function createTopic(
 export async function updateTopic(
   topicId: string,
   input: UpdateTopicInput,
-  workspaceId = DEFAULT_WORKSPACE_ID,
+  workspaceIdInput?: string,
 ): Promise<Topic> {
+  const workspaceId = workspaceIdInput ?? await topicWorkspaceId(topicId);
   const existing = await assertTopicExists(topicId, workspaceId);
   const update = normalizeTopicUpdate(input, existing);
   const [saved] = await db
@@ -202,8 +217,9 @@ export async function updateTopic(
 
 export async function deleteTopic(
   topicId: string,
-  workspaceId = DEFAULT_WORKSPACE_ID,
+  workspaceIdInput?: string,
 ): Promise<void> {
+  const workspaceId = workspaceIdInput ?? await topicWorkspaceId(topicId);
   const deleted = await db
     .delete(topics)
     .where(
@@ -372,8 +388,9 @@ export async function deleteUnlinkedRssSource(
  */
 export async function listTopicRssSourceConfigs(
   topicId: string,
-  workspaceId = DEFAULT_WORKSPACE_ID,
+  workspaceIdInput?: string,
 ): Promise<TopicRssSourceConfig[]> {
+  const workspaceId = workspaceIdInput ?? await topicWorkspaceId(topicId);
   await assertTopicExists(topicId, workspaceId);
 
   const rows = await db
@@ -430,8 +447,9 @@ export async function attachRssSourceToTopic(
   topicId: string,
   sourceId: string,
   input: AttachTopicSourceInput = {},
-  workspaceId = DEFAULT_WORKSPACE_ID,
+  workspaceIdInput?: string,
 ): Promise<TopicSource> {
+  const workspaceId = workspaceIdInput ?? await topicWorkspaceId(topicId);
   await Promise.all([
     assertTopicExists(topicId, workspaceId),
     assertRssSourceExists(sourceId, workspaceId),

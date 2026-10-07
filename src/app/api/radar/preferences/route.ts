@@ -15,7 +15,7 @@ const MAX_TERMS_PER_LIST = 100;
 const MAX_TERM_LENGTH = 80;
 
 export async function GET(request: Request) {
-  const unauthorizedResponse = authorizeRadarCollector(request);
+  const unauthorizedResponse = await authorizeRadarCollector(request);
 
   if (unauthorizedResponse) {
     return unauthorizedResponse;
@@ -39,7 +39,7 @@ export async function GET(request: Request) {
 }
 
 export async function PUT(request: Request) {
-  const unauthorizedResponse = authorizeRadarCollector(request);
+  const unauthorizedResponse = await authorizeRadarCollector(request);
 
   if (unauthorizedResponse) {
     return unauthorizedResponse;

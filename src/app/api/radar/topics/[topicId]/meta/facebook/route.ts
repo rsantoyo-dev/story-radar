@@ -8,7 +8,7 @@ import {
 import { facebookRouteError, topicFromContext, type TopicRouteContext } from "./facebook-route-utils";
 
 export async function GET(request: Request, context: TopicRouteContext) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   try {
     const topic = await topicFromContext(context);
@@ -20,7 +20,7 @@ export async function GET(request: Request, context: TopicRouteContext) {
 
 /** Disconnects only the Facebook Page; a directly connected Instagram account is untouched. */
 export async function DELETE(request: Request, context: TopicRouteContext) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   try {
     const topic = await topicFromContext(context);

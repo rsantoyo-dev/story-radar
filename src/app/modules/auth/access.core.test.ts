@@ -6,7 +6,10 @@ import {
   isAuthRequired,
   isBootstrapOwner,
   isWorkspaceRole,
+  minimumRoleForMethod,
   parseBootstrapEmails,
+  personalWorkspaceFor,
+  pickCurrentWorkspace,
   safeReturnPath,
   strongestRole,
 } from "./access.core";
@@ -66,3 +69,30 @@ describe("safeReturnPath", () => {
     }
   });
 });
+
+describe("request roles and workspaces", () => {
+  it("reads as a viewer and changes as an editor", () => {
+    for (const method of ["GET", "head", "OPTIONS"]) assert.equal(minimumRoleForMethod(method), "viewer");
+    for (const method of ["POST", "PATCH", "PUT", "delete"]) assert.equal(minimumRoleForMethod(method), "editor");
+  });
+
+  it("works in the strongest membership, then by name", () => {
+    const pick = pickCurrentWorkspace([
+      { workspaceId: "b", name: "Beta", role: "viewer" as const },
+      { workspaceId: "c", name: "Craft", role: "owner" as const },
+      { workspaceId: "a", name: "Alpha", role: "owner" as const },
+    ]);
+    assert.equal(pick?.workspaceId, "a");
+    assert.equal(pickCurrentWorkspace([]), undefined);
+  });
+
+  it("gives each account one stable personal workspace with a valid slug", () => {
+    const first = personalWorkspaceFor({ id: "user-1", name: "Ana", email: "ana@example.com" });
+    assert.deepEqual(personalWorkspaceFor({ id: "user-1", name: "Ana", email: "ana@example.com" }), first);
+    assert.notEqual(personalWorkspaceFor({ id: "user-2", name: "Ana", email: "ana@example.com" }).id, first.id);
+    assert.match(first.slug, /^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+    assert.equal(first.name, "Ana's workspace");
+    assert.equal(personalWorkspaceFor({ id: "user-3", name: "", email: "bo@example.com" }).name, "bo's workspace");
+  });
+});
+

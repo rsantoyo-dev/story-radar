@@ -27,7 +27,7 @@ const UUID_PATTERN =
 type Context = { params: Promise<{ draftId: string }> };
 
 export async function GET(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const draftId = await parseId(context);
   if (!draftId) {
@@ -61,7 +61,7 @@ export async function GET(request: Request, context: Context) {
 }
 
 export async function POST(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const draftId = await parseId(context);
   if (!draftId) {

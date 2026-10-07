@@ -9,7 +9,7 @@ import { getMetaIntegrationHealth } from "@/app/modules/meta/meta-integration.co
  * settings are present. Values of secrets are never returned.
  */
 export async function GET(request: Request) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   return noStoreJson({

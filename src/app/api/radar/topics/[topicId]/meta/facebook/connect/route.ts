@@ -27,7 +27,7 @@ const FACEBOOK_PAGE_SCOPES = ["pages_show_list", "pages_read_engagement", "pages
  * rejects it and vice versa. The browser navigates top-level to this URL.
  */
 export async function POST(request: Request, context: TopicRouteContext) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   try {

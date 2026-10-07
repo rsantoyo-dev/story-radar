@@ -14,6 +14,8 @@ import {
   isBootstrapOwner,
   isWorkspaceRole,
   parseBootstrapEmails,
+  personalWorkspaceFor,
+  pickCurrentWorkspace,
   type WorkspaceRole,
 } from "./access.core";
 import { auth } from "./auth";
@@ -57,6 +59,31 @@ export async function ensureBootstrapAccess(user: SessionUser): Promise<void> {
   await db.insert(platformStaff).values({ userId: user.id }).onConflictDoNothing();
 }
 
+/**
+ * A signed-in account with no workspace gets its own, empty one (owner), so a
+ * new user starts Press Craftor from zero without seeing anyone else's data.
+ * Idempotent: the workspace id is derived from the user id.
+ */
+export async function ensurePersonalWorkspace(user: SessionUser): Promise<UserWorkspace[]> {
+  const memberships = await listUserWorkspaces(user.id);
+  if (memberships.length) return memberships;
+  const personal = personalWorkspaceFor(user);
+  await db.insert(workspaces).values(personal).onConflictDoNothing();
+  await db.insert(workspaceMembers).values({ workspaceId: personal.id, userId: user.id, role: "owner" }).onConflictDoNothing();
+  return listUserWorkspaces(user.id);
+}
+
+/** Bootstrap, then the account's memberships (creating its own workspace when it has none). */
+export async function resolveUserWorkspaces(user: SessionUser): Promise<UserWorkspace[]> {
+  await ensureBootstrapAccess(user);
+  return ensurePersonalWorkspace(user);
+}
+
+/** The workspace an account works in when nothing names one. */
+export function currentWorkspace(memberships: readonly UserWorkspace[]): UserWorkspace | undefined {
+  return pickCurrentWorkspace(memberships);
+}
+
 export async function isPlatformStaff(userId: string): Promise<boolean> {
   const [row] = await db.select({ userId: platformStaff.userId }).from(platformStaff)
     .where(eq(platformStaff.userId, userId)).limit(1);
@@ -89,6 +116,8 @@ export async function requireTopicRole(
   topicId: string,
   minimum: WorkspaceRole,
 ): Promise<WorkspaceRole | "staff"> {
+  // A malformed id never reaches the uuid column: it is simply not accessible.
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(topicId)) throw new AccessDeniedError();
   const [row] = await db
     .select({ role: workspaceMembers.role })
     .from(topics)
@@ -103,15 +132,14 @@ export async function requireTopicRole(
 
 /**
  * For server-rendered pages. When AUTH_REQUIRED is on: no session goes to
- * /login, a session without any workspace goes to /no-access. When off,
- * returns no user and the page behaves as before.
+ * /login; a first sign-in gets its own workspace. When off, returns no user
+ * and the page behaves as before.
  */
 export async function requirePageAccess(returnPath = "/"): Promise<{ user?: SessionUser; workspaces: UserWorkspace[] }> {
   if (!authRequired()) return { workspaces: [] };
   const user = await getSessionUser(await headers());
   if (!user) redirect(`/login?next=${encodeURIComponent(returnPath)}`);
-  await ensureBootstrapAccess(user);
-  const memberships = await listUserWorkspaces(user.id);
+  const memberships = await resolveUserWorkspaces(user);
   if (!memberships.length && !(await isPlatformStaff(user.id))) redirect("/no-access");
   return { user, workspaces: memberships };
 }

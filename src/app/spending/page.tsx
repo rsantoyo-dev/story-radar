@@ -8,6 +8,6 @@ export const metadata: Metadata = { title: "Spending · Press Craftor" };
 
 /** All data loads client-side through the authorized credits API. */
 export default async function SpendingPage() {
-  await requirePageAccess("/spending");
-  return <SpendingPageClient />;
+  const { user } = await requirePageAccess("/spending");
+  return <SpendingPageClient signedIn={Boolean(user)} />;
 }

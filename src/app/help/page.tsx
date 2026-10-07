@@ -3,13 +3,14 @@ import Link from "next/link";
 import { getTopicById } from "@/app/modules/topics/topic-catalog.repository";
 import { resolveTopicUiTheme } from "@/app/modules/topics/topic-ui-theme";
 import { connection } from "next/server";
-import { requirePageAccess } from "@/app/modules/auth/access";
+import { requirePageAccess, requireTopicPageAccess } from "@/app/modules/auth/access";
 
 export default async function HelpPage({ searchParams }: { searchParams: Promise<{ topicId?: string | string[] }> }) {
   await connection();
   await requirePageAccess("/help");
   const query = await searchParams;
   const topicId = typeof query.topicId === "string" ? query.topicId : undefined;
+  if (topicId) await requireTopicPageAccess(topicId, "viewer", `/help?topicId=${encodeURIComponent(topicId)}`);
   const topic = topicId ? await getTopicById(topicId) : undefined;
   const themeStyle = topic ? await resolveTopicUiTheme(topic.id, topic.themeKey) : undefined;
   const topicQuery = topicId ? `?topicId=${encodeURIComponent(topicId)}` : "";

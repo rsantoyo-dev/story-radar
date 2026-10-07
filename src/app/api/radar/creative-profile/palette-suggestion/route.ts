@@ -25,7 +25,7 @@ export const maxDuration = 60;
  * profile is not modified here, the editor saves it from the panel.
  */
 export async function POST(request: Request) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   try {

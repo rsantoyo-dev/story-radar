@@ -5,7 +5,7 @@ import { detectUploadedPdf, detectUrlSource, SourceDetectionError } from "@/app/
 export const maxDuration = 120;
 
 export async function POST(request: Request) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   try {
     const detected = request.headers.get("content-type")?.includes("multipart/form-data")

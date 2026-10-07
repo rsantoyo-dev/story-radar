@@ -10,7 +10,7 @@ export async function POST(request: Request, context: {
         draftId: string;
     }>;
 }) {
-    const unauthorized = authorizeRadarCollector(request);
+    const unauthorized = await authorizeRadarCollector(request);
     if (unauthorized)
         return unauthorized;
     try {

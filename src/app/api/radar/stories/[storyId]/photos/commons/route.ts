@@ -24,7 +24,7 @@ export async function POST(request: Request, context: Context) {
 }
 
 async function handle(request: Request, context: Context, run: (topicId: string, storyId: string) => Promise<unknown>, status = 200) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const { storyId } = await context.params;
   if (!STORY_UUID.test(storyId)) return noStoreJson({ error: "Invalid story ID" }, 400);

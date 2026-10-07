@@ -10,7 +10,7 @@ const reply = (body: unknown, status = 200) => Response.json(body, { status, hea
 const errorReply = (error: unknown) => topicRequestErrorResponse(error) ?? reply({ error: error instanceof MapsPreviewError ? error.message : "The map preview could not be prepared." }, error instanceof MapsPreviewError ? error.status : 502);
 
 export async function GET(request: Request) {
-  const unauthorized = authorizeRadarCollector(request); if (unauthorized) return unauthorized;
+  const unauthorized = await authorizeRadarCollector(request); if (unauthorized) return unauthorized;
   try {
     await requireActiveRequestTopic(request);
     const config = googleMapsConfig();
@@ -19,7 +19,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const unauthorized = authorizeRadarCollector(request); if (unauthorized) return unauthorized;
+  const unauthorized = await authorizeRadarCollector(request); if (unauthorized) return unauthorized;
   try {
     const topicId = await requireActiveRequestTopic(request);
     // Bound streamed input too; a missing Content-Length must not bypass the limit.

@@ -22,12 +22,13 @@ export default async function StoryPage({
 }) {
   await connection();
   const [{ topicId, storyId }, query] = await Promise.all([params, searchParams]);
-  await requireTopicPageAccess(topicId, "viewer", `/topics/${encodeURIComponent(topicId)}/stories/${encodeURIComponent(storyId)}`);
+  const { user } = await requireTopicPageAccess(topicId, "viewer", `/topics/${encodeURIComponent(topicId)}/stories/${encodeURIComponent(storyId)}`);
   const topic = await getTopicById(topicId);
   if (!topic) notFound();
   const themeStyle = await resolveTopicUiTheme(topicId, topic.themeKey);
 
   return <StoryWorkspacePageClient
+    signedIn={Boolean(user)}
     topicId={topicId}
     topicName={topic.name}
     themeStyle={themeStyle}

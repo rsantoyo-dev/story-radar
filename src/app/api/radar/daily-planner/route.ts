@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 export async function GET(request: Request) { return handle(request,false); }
 export async function POST(request: Request) { return handle(request,true); }
 async function handle(request: Request, generate: boolean) {
-  const unauthorized=authorizeRadarCollector(request);
+  const unauthorized=await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   try {
     const topicId=await requireActiveRequestTopic(request);

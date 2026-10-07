@@ -10,7 +10,7 @@ import {
 } from "./radar-topic";
 
 export async function GET(request: Request) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   const searchParams = new URL(request.url).searchParams;

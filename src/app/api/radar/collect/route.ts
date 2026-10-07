@@ -17,7 +17,7 @@ import {
 export const maxDuration = 120;
 
 export async function POST(request: Request) {
-  const unauthorizedResponse = authorizeRadarCollector(request);
+  const unauthorizedResponse = await authorizeRadarCollector(request);
 
   if (unauthorizedResponse) {
     return unauthorizedResponse;

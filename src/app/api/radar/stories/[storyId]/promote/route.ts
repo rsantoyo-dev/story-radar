@@ -23,7 +23,7 @@ type Context = { params: Promise<{ storyId: string }> };
  * the action and preserve the evaluator's original decision.
  */
 export async function POST(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   const storyId = await parseStoryId(context);

@@ -14,7 +14,7 @@ export const runtime = "nodejs";
 const MAX_BRAND_MULTIPART_BYTES = 6 * 1024 * 1024;
 
 export async function POST(request: Request) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   const contentLength = request.headers.get("content-length");

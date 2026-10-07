@@ -23,7 +23,7 @@ type Context = { params: Promise<{ storyId: string }> };
  * Clearing the flag returns the story to the AI evaluation candidate pool.
  */
 export async function POST(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   const storyId = await parseStoryId(context);

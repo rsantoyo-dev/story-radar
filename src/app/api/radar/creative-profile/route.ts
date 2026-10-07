@@ -16,7 +16,7 @@ import {
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   try {
@@ -30,7 +30,7 @@ export async function GET(request: Request) {
 }
 
 export async function PUT(request: Request) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   try {

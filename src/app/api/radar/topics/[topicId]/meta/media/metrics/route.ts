@@ -5,7 +5,7 @@ import {
   InstagramMediaMetricsError,
   refreshInstagramMediaMetrics,
 } from "@/app/modules/meta/refresh-instagram-media-metrics";
-import { requireTopic, TopicContextError } from "@/app/modules/topics/topic-context";
+import { TopicContextError, requireTopic } from "@/app/modules/topics/topic-context";
 
 type Context = { params: Promise<{ topicId: string }> };
 
@@ -17,7 +17,7 @@ type Context = { params: Promise<{ topicId: string }> };
  * as a non-2xx — the same convention as the sync route.
  */
 export async function POST(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   try {

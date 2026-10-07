@@ -17,7 +17,7 @@ const UUID_PATTERN =
 type Context = { params: Promise<{ characterId: string }> };
 
 export async function POST(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const characterId = await parseCharacterId(context);
   if (!characterId) {

@@ -1,5 +1,5 @@
+import { requireTopicForRequest } from "@/app/api/radar/radar-api-auth";
 import {
-  requireTopic,
   topicIdFromRequest,
 } from "@/app/modules/topics/topic-context";
 import { parseOverviewPeriod } from "@/app/modules/topics/topic-overview.logic";
@@ -20,14 +20,14 @@ import { topicRequestErrorResponse } from "../radar-topic";
  * app's own data.
  */
 export async function GET(request: Request) {
-  const unauthorizedResponse = authorizeRadarCollector(request);
+  const unauthorizedResponse = await authorizeRadarCollector(request);
 
   if (unauthorizedResponse) {
     return unauthorizedResponse;
   }
 
   try {
-    const topic = await requireTopic(topicIdFromRequest(request));
+    const topic = await requireTopicForRequest(request, topicIdFromRequest(request));
     const period = parseOverviewPeriod(
       new URL(request.url).searchParams.get("period"),
     );

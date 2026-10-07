@@ -3,7 +3,7 @@ import { noStoreJson } from "@/app/api/radar/topics/topic-route-utils";
 import { isInstagramMediaFormat } from "@/app/modules/meta/instagram-media-format";
 import { getInstagramHistoryStatus } from "@/app/modules/meta/instagram-history-account";
 import { listTopicInstagramMedia } from "@/app/modules/meta/topic-instagram-media.repository";
-import { requireTopic, TopicContextError } from "@/app/modules/topics/topic-context";
+import { TopicContextError, requireTopic } from "@/app/modules/topics/topic-context";
 
 type Context = { params: Promise<{ topicId: string }> };
 
@@ -16,7 +16,7 @@ const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
  * Read-only — never calls Graph.
  */
 export async function GET(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
   try {

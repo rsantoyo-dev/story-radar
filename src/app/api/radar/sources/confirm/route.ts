@@ -1,6 +1,6 @@
 import { after } from "next/server";
 
-import { authorizeRadarCollector } from "@/app/api/radar/radar-api-auth";
+import { authorizeRadarCollector, requireTopicForRequest } from "@/app/api/radar/radar-api-auth";
 import { jsonObject, noStoreJson } from "@/app/api/radar/topics/topic-route-utils";
 import { enqueueKnowledgeDocument, enqueueUploadedKnowledgeDocument, processKnowledgeDocumentIngestion } from "@/app/modules/documents/ingest-knowledge-document";
 import { buildKnowledgeDocumentObjectKey, putPrivateR2Object } from "@/app/modules/stories/r2-storage";
@@ -8,18 +8,20 @@ import { persistUnscoredStoryContribution } from "@/app/modules/stories/story-ra
 import { detectUploadedPdf, detectUrlSource, SourceDetectionError } from "@/app/modules/sources/detect-source";
 import { attachExistingKnowledgeDocument } from "@/app/modules/documents/knowledge-documents.repository";
 import { attachRssSourceToTopic, createOrReuseRssSource } from "@/app/modules/topics/topic-catalog.repository";
-import { requireTopic, TopicContextError } from "@/app/modules/topics/topic-context";
+import { TopicContextError } from "@/app/modules/topics/topic-context";
 
 export const maxDuration = 120;
 
 export async function POST(request: Request) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   try {
     const isFile = request.headers.get("content-type")?.includes("multipart/form-data");
     const payload = isFile ? await readFilePayload(request) : await readUrlPayload(request);
     const topicIds = parseTopicIds(payload.topicIds);
-    await Promise.all(topicIds.map((topicId) => requireTopic(topicId, { active: true })));
+    const linkedTopics = await Promise.all(topicIds.map((topicId) => requireTopicForRequest(request, topicId, { active: true })));
+    const workspaceId = linkedTopics[0]!.workspaceId;
+    if (linkedTopics.some((topic) => topic.workspaceId !== workspaceId)) return noStoreJson({ error: "All topics must belong to the same workspace." }, 400);
     const detected = payload.file
       ? await detectUploadedPdf(payload.file)
       : await detectUrlSource(payload.url!);
@@ -34,7 +36,7 @@ export async function POST(request: Request) {
       const feed = await createOrReuseRssSource({
         name: contribution.content.title ?? new URL(url).hostname,
         url, language: "unknown", region: "global", contentMode: "auto",
-      });
+      }, workspaceId);
       for (const topicId of topicIds) await attachRssSourceToTopic(topicId, feed.id);
       return noStoreJson({ sourceType: "rss", sourceId: feed.id, topicIds }, 201);
     }

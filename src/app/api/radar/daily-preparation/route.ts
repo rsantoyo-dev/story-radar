@@ -15,7 +15,7 @@ export const maxDuration=300;
 export async function GET(request:Request){return handle(request,false);}
 export async function POST(request:Request){return handle(request,true);}
 async function handle(request:Request,write:boolean) {
-  const denied=authorizeRadarCollector(request);if(denied)return denied;
+  const denied=await authorizeRadarCollector(request);if(denied)return denied;
   try {
     const topicId=await requireActiveRequestTopic(request);
     let run=await latestPreparation(topicId);

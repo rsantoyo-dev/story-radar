@@ -13,7 +13,7 @@ export const maxDuration = 120;
  * (and, for the whole identity, a palette); the profile is saved by the editor.
  */
 export async function POST(request: Request) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   try {
     const topicId = await requireActiveRequestTopic(request);

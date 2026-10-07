@@ -18,9 +18,11 @@ function returnHref(topicId: string, from?: string, returnContext?: string): str
 }
 
 export function StoryWorkspacePageClient({
-  topicId, topicName, themeStyle, storyId, from, returnContext, initialTab,
+  signedIn = false, topicId, topicName, themeStyle, storyId, from, returnContext, initialTab,
   initialDraftId, initialEditorialRunId, initialPreparationRunId,
 }: {
+  /** A signed-in session authorizes every request; the collector secret is not needed. */
+  signedIn?: boolean;
   topicId: string;
   topicName: string;
   themeStyle: CSSProperties;
@@ -49,7 +51,7 @@ export function StoryWorkspacePageClient({
   const tab = WORKSPACE_TABS.find((candidate) => candidate === initialTab) ?? "focus";
 
   useEffect(() => {
-    if (!secret) {
+    if (!secret && !signedIn) {
       Promise.resolve().then(() => setError("Connect with the collector secret on the dashboard to open this story."));
       return;
     }
@@ -68,7 +70,7 @@ export function StoryWorkspacePageClient({
       if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Could not open the story.");
     });
     return () => controller.abort();
-  }, [secret, storyId, topicId]);
+  }, [secret, signedIn, storyId, topicId]);
 
   return <main className={styles.routeShell} style={themeStyle}>
     <div className={styles.routeTopbar}>

@@ -9,7 +9,7 @@ export const maxDuration = 120;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function GET(request: Request, context: { params: Promise<{ draftId: string }> }) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const { draftId } = await context.params;
   const params = new URL(request.url).searchParams;

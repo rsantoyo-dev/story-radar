@@ -20,7 +20,7 @@ const UUID_PATTERN =
 type Context = { params: Promise<{ characterId: string }> };
 
 export async function PATCH(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const characterId = await parseCharacterId(context);
   if (!characterId) {
@@ -44,7 +44,7 @@ export async function PATCH(request: Request, context: Context) {
 }
 
 export async function DELETE(request: Request, context: Context) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const characterId = await parseCharacterId(context);
   if (!characterId) {

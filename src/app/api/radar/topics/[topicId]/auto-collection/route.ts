@@ -51,7 +51,7 @@ export async function PATCH(request: Request, context: TopicRouteContext) {
 }
 
 async function handle(request: Request, context: TopicRouteContext, run: (topicId: string) => Promise<unknown>) {
-  const unauthorized = authorizeRadarCollector(request);
+  const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   try {
     const topic = await topicFromContext(context);
