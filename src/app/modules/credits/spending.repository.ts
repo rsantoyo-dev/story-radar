@@ -21,7 +21,7 @@ export async function resetDemoCredits(key: string, reason: string, workspaceId 
     return Number(result.rows[0]?.balance ?? 0);
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
-    const running = /demo_reset_running: (.+)/.exec(message);
+    const running = /demo_reset_(?:running|purchased): (.+)/.exec(message);
     if (running) throw new DemoCreditResetBlockedError(running[1]);
     throw error;
   }
