@@ -11,7 +11,6 @@ test("modal contains keyboard focus, inerts the page, and returns focus on Escap
     window: globalThis.window,
     document: globalThis.document,
     HTMLElement: globalThis.HTMLElement,
-    navigator: globalThis.navigator,
     getComputedStyle: globalThis.getComputedStyle,
     actEnvironment: (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT,
   };
@@ -19,10 +18,12 @@ test("modal contains keyboard focus, inerts the page, and returns focus on Escap
     window: dom.window,
     document: dom.window.document,
     HTMLElement: dom.window.HTMLElement,
-    navigator: dom.window.navigator,
     getComputedStyle: dom.window.getComputedStyle.bind(dom.window),
     IS_REACT_ACT_ENVIRONMENT: true,
   });
+  // Node >= 21 defines `navigator` as a read-only getter; Object.assign cannot replace it.
+  const previousNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  Object.defineProperty(globalThis, "navigator", { value: dom.window.navigator, configurable: true, writable: true });
   const rects = dom.window.HTMLElement.prototype.getClientRects;
   dom.window.HTMLElement.prototype.getClientRects = function () { return [this.getBoundingClientRect()] as unknown as DOMRectList; };
 
@@ -67,6 +68,8 @@ test("modal contains keyboard focus, inerts the page, and returns focus on Escap
     await act(async () => { root.unmount(); });
     dom.window.HTMLElement.prototype.getClientRects = rects;
     Object.assign(globalThis, previous);
+    if (previousNavigator) Object.defineProperty(globalThis, "navigator", previousNavigator);
+    else delete (globalThis as { navigator?: unknown }).navigator;
     dom.window.close();
   }
 });
