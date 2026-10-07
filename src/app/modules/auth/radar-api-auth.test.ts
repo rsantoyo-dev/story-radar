@@ -7,6 +7,10 @@ import ts from "typescript";
 
 import * as core from "./access.core";
 
+const noop = () => undefined;
+const quiet: Record<string, unknown> = { debug: noop, info: noop, warn: noop, error: noop, child: () => quiet };
+const silentLogger = { createLogger: () => quiet, enterRequestLogContext: noop, annotateLogContext: noop };
+
 const requireLocal = createRequire(import.meta.url);
 const SECRET = "operator-secret";
 const DEFAULT_TOPIC = "11111111-1111-4111-8111-111111111111";
@@ -45,6 +49,7 @@ function load(sessionUser?: Member) {
       if (name === "@/app/modules/topics/topic-catalog.repository") return { DEFAULT_WORKSPACE_ID: "default", getTopicById: async (id: string) => topics[id] };
       if (name === "@/app/modules/topics/topic-context") return { TopicContextError };
       if (name === "@/app/modules/auth/session-credential") return { SIGNED_IN_CREDENTIAL: "signed-in-session" };
+      if (name === "@/app/modules/observability/logger") return silentLogger;
       throw new Error(`Unexpected dependency: ${name}`);
     },
   });

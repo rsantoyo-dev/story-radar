@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 
 import { authorizeRadarCollector, requestAccess } from "@/app/api/radar/radar-api-auth";
 import { CreditPackNotFoundError, startCreditCheckout } from "@/app/modules/billing/credit-purchases";
-import { isStripeConfigured, StripeRequestError } from "@/app/modules/billing/stripe";
+import { isStripeConfigured } from "@/app/modules/billing/stripe";
+import { createLogger } from "@/app/modules/observability/logger";
+
+const log = createLogger("billing");
 
 const NO_STORE = { "Cache-Control": "no-store" };
 
@@ -33,12 +36,13 @@ export async function POST(request: Request) {
       userId: access.kind === "member" ? access.user.id : undefined,
       email: access.kind === "member" ? access.user.email : undefined,
     });
+    log.info("Credit checkout started", { priceId });
     return NextResponse.json({ url }, { headers: NO_STORE });
   } catch (error) {
     if (error instanceof CreditPackNotFoundError) {
       return NextResponse.json({ error: error.message }, { status: 409, headers: NO_STORE });
     }
-    console.error("Could not start a credit checkout", error instanceof StripeRequestError ? `${error.status} ${error.code ?? ""} ${error.message}` : error);
+    log.error("Credit checkout could not start", { priceId, error });
     return NextResponse.json({ error: "The payment page could not be opened. Try again in a moment." }, { status: 502, headers: NO_STORE });
   }
 }

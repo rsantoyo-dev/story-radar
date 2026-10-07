@@ -4,6 +4,9 @@ import { authorizeRadarCollector, requestAccess } from "@/app/api/radar/radar-ap
 import { hasRole } from "@/app/modules/auth/access.core";
 import { listCreditPacks, listWorkspacePurchases } from "@/app/modules/billing/credit-purchases";
 import { isStripeConfigured, stripeLivemode } from "@/app/modules/billing/stripe";
+import { createLogger } from "@/app/modules/observability/logger";
+
+const log = createLogger("billing");
 
 const NO_STORE = { "Cache-Control": "no-store" };
 
@@ -21,7 +24,7 @@ export async function GET(request: Request) {
     const [packs, purchases] = await Promise.all([listCreditPacks(), listWorkspacePurchases(access.workspaceId)]);
     return NextResponse.json({ configured: true, livemode: stripeLivemode(), canBuy, packs, purchases }, { headers: NO_STORE });
   } catch (error) {
-    console.error("Could not load credit packs", error instanceof Error ? error.message : error);
+    log.error("Credit packs could not be loaded", { error });
     return NextResponse.json({ error: "Credit packs are unavailable right now." }, { status: 503, headers: NO_STORE });
   }
 }

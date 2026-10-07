@@ -16,6 +16,9 @@ import { DEFAULT_WORKSPACE_ID, getTopicById } from "@/app/modules/topics/topic-c
 import { TopicContextError } from "@/app/modules/topics/topic-context";
 import { SIGNED_IN_CREDENTIAL } from "@/app/modules/auth/session-credential";
 import type { Topic } from "@/db/schema";
+import { annotateLogContext, createLogger, enterRequestLogContext } from "@/app/modules/observability/logger";
+
+const log = createLogger("auth");
 
 /**
  * Who an API request acts for. The shared collector secret is the operator
@@ -41,6 +44,8 @@ export async function authorizeRadarCollector(
   request: Request,
   minimum?: WorkspaceRole,
 ): Promise<NextResponse | undefined> {
+  // Synchronously, before any await, so the rest of the handler logs with this request's context.
+  enterRequestLogContext(request);
   const configuredSecret = process.env.RADAR_COLLECTOR_SECRET?.trim();
   const authorization = request.headers.get("authorization")?.trim();
 
@@ -59,12 +64,16 @@ export async function authorizeRadarCollector(
   }
 
   if (!access) {
+    log.warn("API request refused: not signed in");
     if (!configuredSecret && !authRequired()) {
       return NextResponse.json({ error: "RADAR_COLLECTOR_SECRET is not configured" }, { status: 503 });
     }
     return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
   }
   accessByRequest.set(request, access);
+  annotateLogContext(access.kind === "member"
+    ? { actor: "member", userId: access.user.id, workspaceId: access.workspaceId, role: access.role }
+    : { actor: "operator", workspaceId: access.workspaceId });
 
   const topicId = topicIdInUrl(request);
   if (topicId) {
@@ -151,5 +160,6 @@ function topicIdInUrl(request: Request): string | undefined {
 }
 
 function refuse(error: string, status: 403 | 404): NextResponse {
+  log.warn("API request refused", { status, reason: error });
   return NextResponse.json({ error }, { status, headers: { "Cache-Control": "no-store" } });
 }
