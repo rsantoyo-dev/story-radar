@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
+import { useRouter } from "next/navigation";
 
 import { SignOutButton } from "./account/sign-out-button";
 import { AddSourceDialog } from "./add-source-dialog";
@@ -51,6 +52,7 @@ export function TopicSetupWizard({ topic, topics, account, themeStyle, initialSt
   initialStatus: TopicSetupStatus;
   meta: { facebookSelectionId?: string; connected?: boolean; error?: string };
 }) {
+  const router = useRouter();
   const [status, setStatus] = useState(initialStatus);
   const [step, setStep] = useState<Step>(() => meta.facebookSelectionId || meta.connected || meta.error ? "channels" : firstOpenStep(initialStatus));
   const [identitySection, setIdentitySection] = useState<CreativeProfileSection>("profile");
@@ -121,7 +123,7 @@ export function TopicSetupWizard({ topic, topics, account, themeStyle, initialSt
 
   async function finish() {
     const done = await post("complete");
-    if (done?.completed) window.location.assign(`/?topicId=${encodeURIComponent(topic.id)}`);
+    if (done?.completed) { router.push(`/?topicId=${encodeURIComponent(topic.id)}`); router.refresh(); }
   }
 
   const reachable = (target: Step) => {
@@ -138,7 +140,7 @@ export function TopicSetupWizard({ topic, topics, account, themeStyle, initialSt
       <div className={styles.setupHeaderActions}>
         {topics.length > 1 ? <label className={styles.setupBrandSwitch}>
           <span>Brand</span>
-          <select value={topic.id} onChange={(event) => window.location.assign(`/?topicId=${encodeURIComponent(event.target.value)}`)}>
+          <select value={topic.id} onChange={(event) => router.push(`/?topicId=${encodeURIComponent(event.target.value)}`)}>
             {topics.map((item) => <option key={item.id} value={item.id}>{item.name}{item.ready ? "" : " · setting up"}</option>)}
           </select>
         </label> : null}
