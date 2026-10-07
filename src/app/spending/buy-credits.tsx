@@ -25,7 +25,11 @@ const STATUS_LABELS: Record<string, string> = {
  * Stripe Checkout; credits arrive when Stripe confirms the payment.
  */
 export function BuyCredits({ secret, refreshKey }: { secret: string; refreshKey: number }) {
-  const headers = useMemo<Record<string, string>>(() => secret ? { Authorization: `Bearer ${secret}` } : {}, [secret]);
+  const headers = useMemo((): Record<string, string> => {
+    const value: Record<string, string> = {};
+    if (secret) value.Authorization = `Bearer ${secret}`;
+    return value;
+  }, [secret]);
   const [billing, setBilling] = useState<BillingState>();
   const [error, setError] = useState<string>();
   const [buying, setBuying] = useState<string>();
