@@ -79,7 +79,7 @@ describe("sanitize", () => {
     assert.deepEqual(sanitize(cyclic), { a: 1, self: "[circular]" });
     assert.match(JSON.stringify(sanitize({ a: { b: { c: { d: { e: { f: { g: 1 } } } } } } })), /\[truncated\]/u);
     assert.equal(sanitize(new Date("2026-10-07T00:00:00Z")), "2026-10-07T00:00:00.000Z");
-    assert.equal(sanitize(10n), "10");
+    assert.equal(sanitize(BigInt(10)), "10");
     assert.equal(sanitize(new Uint8Array(4)), "[binary 4 bytes]");
   });
 });
