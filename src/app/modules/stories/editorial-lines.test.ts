@@ -94,6 +94,29 @@ test("new line schema and repository preserve revisions, isolate brands and rese
   }finally{await client.close();}
 });
 
+test("a collection killed mid-run is retired after the stale window and its ID then fails explicitly",async()=>{
+  const client=new PGlite();try{
+    const otherTopic="00000000-0000-4000-8000-000000000002";
+    await client.exec(`CREATE TABLE topics(id uuid PRIMARY KEY);CREATE TABLE topic_stories(topic_id uuid,story_id uuid,PRIMARY KEY(topic_id,story_id));INSERT INTO topics VALUES ('${line.topicId}'),('${otherTopic}');`);
+    await client.exec(readFileSync("drizzle/0055_lonely_sphinx.sql","utf8"));
+    const database=drizzle(client);const db=Object.assign(database,{batch:async(queries:PromiseLike<unknown>[])=>{await client.exec("BEGIN");try{const results=[];for(const query of queries)results.push(await query);await client.exec("COMMIT");return results;}catch(e){await client.exec("ROLLBACK");throw e;}}});
+    const repo=load<typeof import("../editorial-lines/editorial-lines.repository")>("src/app/modules/editorial-lines/editorial-lines.repository.ts",{"@/db/client":{db},"@/db/schema":schema,"./editorial-lines":lines,"../topics/topic-catalog.repository":{listTopicRssSourceConfigs:async()=>[]},"../sources/ai-research/ai-research.repository":{getAiResearchSourceConfig:async()=>brandResearch}});
+    const killed="00000000-0000-4000-8000-0000000000a1",live="00000000-0000-4000-8000-0000000000a2",elsewhere="00000000-0000-4000-8000-0000000000a3";
+    const stale=lines.COLLECTION_RUN_STALE_MINUTES+1;
+    await client.exec(`INSERT INTO editorial_collection_runs(id,topic_id,status,started_at) VALUES
+      ('${killed}','${line.topicId}','running',now()-interval '${stale} minutes'),
+      ('${live}','${line.topicId}','running',now()-interval '1 minute'),
+      ('${elsewhere}','${otherTopic}','running',now()-interval '${stale} minutes')`);
+    await assert.rejects(repo.reserveCollection(line.topicId,killed),lines.CollectionRunFailedError);
+    await assert.rejects(repo.reserveCollection(line.topicId,live),/already running/);
+    const rows=(await client.query<{id:string;status:string;error:string|null;finished:boolean}>("select id,status,error,finished_at is not null as finished from editorial_collection_runs order by id")).rows;
+    assert.deepEqual(rows.map(row=>[row.id,row.status,row.finished]),[[killed,"failed",true],[live,"running",false],[elsewhere,"running",false]]);
+    assert.match(String(rows[0].error),/interrupted/);
+    // A finish arriving after retirement cannot resurrect the run.
+    await repo.finishCollection(line.topicId,killed,{late:true});
+    assert.equal((await client.query<{status:string}>(`select status from editorial_collection_runs where id='${killed}'`)).rows[0].status,"failed");
+  }finally{await client.close();}
+});
 test("actual research collector applies a line window after discovery and retains unknown dates only for undated context",async()=>{
   const collector=load<typeof import("../sources/ai-research/collect-ai-research-candidates")>("src/app/modules/sources/ai-research/collect-ai-research-candidates.ts",{
     "../../editorial-lines/editorial-lines":lines,

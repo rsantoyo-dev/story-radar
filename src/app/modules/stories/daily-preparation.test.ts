@@ -19,7 +19,7 @@ const lineId="22222222-2222-4222-8222-222222222222";
 class LimitError extends Error {}
 class NotEligibleError extends Error {}
 type Asset={id:string;unitOrder:number;status:string;safetyFlag?:boolean};
-function workflow({failEvaluate=false,limit=false,cachedCollection=false,draftMode=false,incomplete=false,likelyFull=false,failApproval=false,noChoice=false,editorialReady=true,scoop=false,
+function workflow({failedCollection=false,collectionRunId=undefined as string|undefined,failEvaluate=false,limit=false,cachedCollection=false,draftMode=false,incomplete=false,likelyFull=false,failApproval=false,noChoice=false,editorialReady=true,scoop=false,
   alternatives=[] as string[],sameEvent={} as Record<string,string[]>,published=[] as string[],
   prepared=undefined as undefined | {draftStatus?:string;draftVersion?:number;images?:boolean},incompleteFor=[] as string[],notEligible=[] as string[],autoApprove=false,failAutoApprove=false,
   images=[[{id:"a1",unitOrder:1,status:"generated"},{id:"a2",unitOrder:2,status:"generated"}]] as Asset[][]}={}) {
@@ -35,13 +35,15 @@ function workflow({failEvaluate=false,limit=false,cachedCollection=false,draftMo
   let draftApproved = false;
   let run={id:lineId,topicId,lineId,timezone:"UTC",status:"running",step:"collect",leaseOwner:"owner",progress:{mode:draftMode?"draft":"day",lineName:"News",evaluated:0,evaluationBatches:0} as Record<string,unknown>,error:null as string|null};
   let evalCalls=0;
+  const reservations:string[]=[];
+  if(collectionRunId)run.progress.collectionRunId=collectionRunId;
   const service=load("./daily-preparation.ts",{
     "./creative-quality":{isCreativeDraftReadyForAutomation:()=>editorialReady},
     "./approve-daily-story":{DailyStoryNotEligibleError:NotEligibleError,approveDailyStory:async(_topic:unknown,storyId:string)=>{if(failApproval)throw new Error("Approval failed");if(notEligible.includes(storyId))throw new NotEligibleError("not eligible");if(!approved){calls.push("approve");approved=true;}}},
     "./story-duplicates.repository":{storyAlreadyPublished:async(_topic:unknown,storyId:string)=>published.includes(storyId),sameEventStories:async(_topic:unknown,storyId:string)=>(sameEvent[storyId] ?? []).map(id=>({storyId:id,title:`Same ${id}`}))},
     "../topics/topic-context":{requireTopic:async()=>({id:topicId})},
     "../editorial-lines/editorial-lines":{...localRequire("../editorial-lines/editorial-lines"),collectionContext:()=>({sourceIds:[lineId]}),resolveLineResearch:()=>({enabled:true,collectionContext:{sourceIds:[lineId]}})},
-    "../editorial-lines/editorial-lines.repository":{storyCollectionContexts:async()=>[],getEditorialLine:async()=>({name:"News"}),reserveCollection:async()=>({cached:cachedCollection?{counts:{included:4},sources:{successful:1,failed:0}}:undefined}),finishCollection:async()=>{}},
+    "../editorial-lines/editorial-lines.repository":{storyCollectionContexts:async()=>[],getEditorialLine:async()=>({name:"News"}),reserveCollection:async(_topic:string,id:string)=>{reservations.push(id);if(failedCollection&&reservations.length===1)throw new (localRequire("../editorial-lines/editorial-lines").CollectionRunFailedError)();return {cached:cachedCollection?{counts:{included:4},sources:{successful:1,failed:0}}:undefined};},finishCollection:async()=>{}},
     "../topics/topic-catalog.repository":{listTopicRssSourceConfigs:async()=>[{id:lineId,enabled:true}]},
     "../sources/ai-research/ai-research.repository":{getAiResearchSourceConfig:async()=>({})},
     "./editorial-profile.repository":{getEditorialProfile:async()=>({})},
@@ -77,7 +79,7 @@ function workflow({failEvaluate=false,limit=false,cachedCollection=false,draftMo
   });
   if(scoop)run.progress.trigger="scoop";
   if(autoApprove)run.progress.autoApprove=true;
-  return {service,calls,contentCalls,workspaceCalls,briefCalls,get run(){return run;},approveDraft(){draftApproved=true;},retry(){run.status="running";failEvaluate=false;}};
+  return {service,calls,reservations,contentCalls,workspaceCalls,briefCalls,get run(){return run;},approveDraft(){draftApproved=true;},retry(){run.status="running";failEvaluate=false;}};
 }
 test("daily workflow checkpoints collection, evaluates uncached batches then recommends",async()=>{
   const w=workflow();await w.service.drivePreparation(topicId,lineId);
@@ -96,6 +98,15 @@ test("evaluation failure retries that step, never recollects and never exposes r
 test("quota exhaustion is a visible partial evaluation, not a fabricated success",async()=>{
   const w=workflow({limit:true});await w.service.drivePreparation(topicId,lineId);
   assert.deepEqual(w.calls,["collect","evaluate","recommend"]);assert.match(String(w.run.progress.evaluationWarning),/daily limit/);assert.equal(w.run.progress.evaluated,0);
+});
+test("a resumed run whose saved collection was interrupted collects again under a new ID",async()=>{
+  const interrupted="33333333-3333-4333-8333-333333333333";
+  const w=workflow({failedCollection:true,collectionRunId:interrupted});await w.service.drivePreparation(topicId,lineId);
+  assert.equal(w.reservations.length,2);
+  assert.equal(w.reservations[0],interrupted);
+  assert.notEqual(w.reservations[1],interrupted);
+  assert.equal(w.run.progress.collectionRunId,w.reservations[1]);
+  assert.ok(w.calls.includes("collect"));
 });
 test("recovery reuses a completed collection instead of calling collectors again",async()=>{
   const w=workflow({cachedCollection:true});await w.service.drivePreparation(topicId,lineId);
