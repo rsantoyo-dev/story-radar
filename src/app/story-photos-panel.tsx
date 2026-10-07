@@ -100,7 +100,8 @@ function PhotoPreview({ scope, photo, onFocusSaved, disabled = false }: { scope:
     finally { setSaving(false); }
   }
   return <>
-    <FocalPointPhoto url={url} photo={photo} disabled={disabled || saving} onSave={focus => void save(focus)} />
+    <FocalPointPhoto key={`${photo.id}:${photo.focus?.x ?? "auto"}:${photo.focus?.y ?? "auto"}`}
+      url={url} photo={photo} disabled={disabled || saving} onSave={focus => void save(focus)} />
     <small>{saving ? "Saving the focal point…" : photo.focus ? "Focal point set: documentary crops keep it. Regenerate the slides that use this photo to apply it." : "Click where the people are: documentary crops keep that point."}</small>
     {photo.focus ? <button type="button" disabled={disabled || saving} onClick={() => void save(null)}>Automatic framing</button> : null}
     {focusError ? <p role="alert">{focusError}</p> : null}

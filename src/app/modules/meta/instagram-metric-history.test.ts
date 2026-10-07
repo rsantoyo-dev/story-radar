@@ -75,14 +75,40 @@ test("every successful metrics read is kept as a snapshot with the publication's
     const repo = load<typeof import("./topic-instagram-media.repository")>("./topic-instagram-media.repository.ts", { "@/db/client": { db: drizzle(client) }, "@/db/schema": schema });
     const reach = (value: number) => ({ reach: { value, state: "ok", unit: "accounts", period: "lifetime" } });
     await repo.saveInstagramMediaMetrics({ topicId: "00000000-0000-4000-8000-000000000009", igUserId: "ig", externalId: "post-1", result: { ok: reach(40) as never, apiVersion: "v21.0" }, queriedAt: new Date("2026-10-06T12:30:00Z") });
+    // A corrected link must not rewrite attribution of an earlier observation.
+    await client.query(`UPDATE topic_instagram_media SET linked_story_id = '00000000-0000-4000-8000-000000000002' WHERE external_id = 'post-1'`);
     await repo.saveInstagramMediaMetrics({ topicId: "00000000-0000-4000-8000-000000000009", igUserId: "ig", externalId: "post-1", result: { error: "denied" }, queriedAt: new Date("2026-10-06T18:00:00Z") });
     await repo.saveInstagramMediaMetrics({ topicId: "00000000-0000-4000-8000-000000000009", igUserId: "ig", externalId: "post-1", result: { ok: reach(65) as never, apiVersion: "v21.0" }, queriedAt: new Date("2026-10-08T12:00:00Z") });
     const history = await repo.listInstagramMetricSnapshots("00000000-0000-4000-8000-000000000009", ["post-1"]);
     assert.deepEqual(history.map((point) => [point.ageHours, (point.metrics as { reach: { value: number } }).reach.value]), [[24, 40], [72, 65]]);
+    const attribution = await client.query<{ linked_story_id: string | null; published_at: Date }>(`SELECT linked_story_id, published_at FROM instagram_media_metric_snapshots ORDER BY captured_at`);
+    assert.deepEqual(attribution.rows.map(row => row.linked_story_id), [null, "00000000-0000-4000-8000-000000000002"]);
+    assert.ok(attribution.rows.every(row => row.published_at != null));
     const now = new Date("2026-10-08T15:00:00Z");
     assert.deepEqual(await repo.listInstagramMediaDueForSnapshot("00000000-0000-4000-8000-000000000009", "ig", now, 10), [], "captured 3 hours ago, daily at this age");
     assert.deepEqual(await repo.listInstagramMediaDueForSnapshot("00000000-0000-4000-8000-000000000009", "ig", new Date("2026-10-09T12:00:00Z"), 10), ["post-1"]);
   } finally { await client.close(); }
+});
+
+test("hourly passes rotate fairly and cap total topic work", async () => {
+  const seen: string[] = [];
+  const ids = "abcdefghij".split("");
+  const capture = load<typeof import("./capture-instagram-metric-history")>("./capture-instagram-metric-history.ts", {
+    "@/db/client": { db: { select: () => ({ from: () => ({ where: async () => ids.map(id => ({ id, name: id })) }) }) } },
+    "@/db/schema": { topics: { id: {}, name: {}, isActive: {} } },
+    "drizzle-orm": { eq: () => ({}) },
+    "./instagram-history-account": { getInstagramHistoryStatus: async (id: string) => { seen.push(id); return { state: "disconnected" }; } },
+    "./sync-instagram-media": {}, "./topic-instagram-media.repository": {}, "./refresh-instagram-media-metrics": {},
+  });
+  const groups: string[][] = [];
+  for (const hour of [12, 13, 14, 15]) {
+    seen.length = 0;
+    await capture.captureInstagramMetricHistory(new Date(`2026-10-06T${hour}:00:00Z`));
+    assert.equal(seen.length, 3);
+    groups.push([...seen]);
+  }
+  assert.deepEqual(new Set(groups.flat()), new Set(ids), "all ten topics get a turn within four hours");
+  assert.equal(new Set([...groups[0], ...groups[1]]).size, 6, "adjacent hours use different topic slots");
 });
 
 test("a scheduled pass imports new posts and reads only the due ones, and leaves a dead token to the editor", async () => {

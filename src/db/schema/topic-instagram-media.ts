@@ -210,6 +210,13 @@ export const instagramMediaMetricSnapshots = pgTable(
     topicId: uuid("topic_id").notNull(),
     igUserId: text("ig_user_id").notNull(),
     externalId: text("external_id").notNull(),
+    /** Immutable attribution at capture time; no FK so deleted links remain historically identifiable. */
+    linkedStoryId: uuid("linked_story_id"),
+    linkedDraftId: uuid("linked_draft_id"),
+    linkedDraftVersion: integer("linked_draft_version"),
+    linkedBatchId: uuid("linked_batch_id"),
+    publishedPackageId: uuid("published_package_id"),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
     capturedAt: timestamp("captured_at", { withTimezone: true }).notNull(),
     /** Hours between publication and capture, as measured. */
     ageHours: integer("age_hours").notNull(),
