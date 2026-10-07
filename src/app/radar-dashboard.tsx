@@ -522,11 +522,13 @@ export function RadarDashboard({
   initialPreferences: KeywordPreferences;
 }) {
   const router = useRouter();
-  const [secret, setSecretState] = useState(() => readStoredSecret());
+  // Signed in, the session authorizes requests: never send (or keep) the collector secret.
+  const [secret, setSecretState] = useState(() => account ? "" : readStoredSecret());
   const setSecret = useCallback((next: string) => {
     setSecretState(next);
     writeStoredSecret(next);
   }, []);
+  useEffect(() => { if (account) writeStoredSecret(""); }, [account]);
   const [topics, setTopics] = useState(initialTopics);
   const [selectedTopicId, setSelectedTopicId] = useState(initialTopicId);
   const selectedTopicIdRef = useRef(initialTopicId);

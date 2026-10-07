@@ -36,7 +36,7 @@ export function StoryWorkspacePageClient({
 }) {
   const router = useRouter();
   const [secret] = useState(() => {
-    if (typeof window === "undefined") return "";
+    if (typeof window === "undefined" || signedIn) return "";
     try { return window.sessionStorage.getItem("story-radar:collector-secret") ?? ""; }
     catch { return ""; }
   });

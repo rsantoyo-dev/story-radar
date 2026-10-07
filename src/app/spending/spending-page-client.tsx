@@ -50,7 +50,7 @@ function readSecret(): string {
 }
 
 export function SpendingPageClient({ signedIn = false }: { signedIn?: boolean }) {
-  const [secret] = useState(readSecret);
+  const [secret] = useState(() => signedIn ? "" : readSecret());
   const [period, setPeriod] = useState<SpendingPeriod>("reset");
   const [topicId, setTopicId] = useState("");
   const [report, setReport] = useState<SpendingReport>();
