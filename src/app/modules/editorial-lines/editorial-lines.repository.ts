@@ -1,11 +1,11 @@
 import "server-only";
 import { randomUUID, createHash } from "node:crypto";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, lt, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { editorialLines, editorialCollectionRuns, editorialStoryContexts, topics } from "@/db/schema";
 import { listTopicRssSourceConfigs } from "../topics/topic-catalog.repository";
 import { getAiResearchSourceConfig } from "../sources/ai-research/ai-research.repository";
-import { defaultStoryContext, EditorialLineError, parseLineConfig, type EditorialLine, type EditorialCollectionContext } from "./editorial-lines";
+import { COLLECTION_RUN_STALE_MINUTES, CollectionRunFailedError, defaultStoryContext, EditorialLineError, parseLineConfig, type EditorialLine, type EditorialCollectionContext } from "./editorial-lines";
 
 const asLine = (row: typeof editorialLines.$inferSelect): EditorialLine => ({...row.config,id:row.id,topicId:row.topicId,revision:row.revision,archived:row.archived,isDefault:row.id===defaultEditorialLineId(row.topicId)});
 export async function listEditorialLines(topicId:string) { await ensureDefaultEditorialLine(topicId); return (await db.select().from(editorialLines).where(eq(editorialLines.topicId,topicId)).orderBy(desc(editorialLines.updatedAt))).map(asLine); }
@@ -42,9 +42,14 @@ export function validId(value:unknown):string {
 export async function reserveCollection(topicId:string,id:string,context?:EditorialCollectionContext) {
   const configured=Number(process.env.COLLECTION_MAX_RUNS_PER_DAY || 20);
   const limit=Number.isInteger(configured)&&configured>0?Math.min(configured,1000):20;
-  // Separate statements in one transaction: lock the topic before the quota read.
-  const [,inserted]=await db.batch([
+  // Separate statements in one transaction: lock the topic, retire runs whose
+  // function was killed mid-collection, then read the quota and insert.
+  const [,,inserted]=await db.batch([
     db.select({id:topics.id}).from(topics).where(eq(topics.id,topicId)).for("update"),
+    db.update(editorialCollectionRuns)
+      .set({status:"failed",error:STALE_COLLECTION_ERROR,finishedAt:sql`now()`})
+      .where(and(eq(editorialCollectionRuns.topicId,topicId),eq(editorialCollectionRuns.status,"running"),
+        lt(editorialCollectionRuns.startedAt,sql`now() - make_interval(mins => ${COLLECTION_RUN_STALE_MINUTES})`))),
     db.execute(sql`INSERT INTO editorial_collection_runs(id,topic_id,line_id,context)
       SELECT ${id}::uuid,${topicId}::uuid,${context?.lineId ?? null}::uuid,${context?JSON.stringify(context):null}::jsonb
       WHERE (SELECT count(*) FROM editorial_collection_runs WHERE topic_id=${topicId}::uuid AND started_at >= date_trunc('day',now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') < ${limit}
@@ -55,10 +60,12 @@ export async function reserveCollection(topicId:string,id:string,context?:Editor
   if(!inserted.rows.length) {
     if(JSON.stringify(identity(run.context))!==JSON.stringify(identity(context ?? null)))throw new EditorialLineError("This request ID belongs to another collection",409);
     if(run.result)return {cached:run.result};
-    throw new EditorialLineError(run.status==="running"?"Collection already running; check its results before retrying":"Collection failed; start a new attempt",409);
+    if(run.status==="running")throw new EditorialLineError("Collection already running; check its results before retrying",409);
+    throw new CollectionRunFailedError();
   }
   return {cached:undefined};
 }
+const STALE_COLLECTION_ERROR="Collection interrupted before it finished; saved partial results remain available";
 export async function finishCollection(topicId:string,id:string,result?:Record<string,unknown>,error?:string) {
   const sources=result?.sources as {failed?:number;successful?:number}|undefined;
   const status=error ? "failed" : sources?.failed ? sources.successful ? "partial" : "failed" : "completed";

@@ -1,4 +1,4 @@
-import type { StoryCandidate } from "./story-candidate.types";
+import type { StoryCandidate, StoryContributionRef } from "./story-candidate.types";
 
 const TRACKING_QUERY_PARAMETERS = new Set([
   "_hsenc",
@@ -114,6 +114,11 @@ function selectPreferredCandidate(
     getContentQuality(right) > getContentQuality(left) ? right : left;
   const publishedAt = selectEarliestDate(left.publishedAt, right.publishedAt);
 
+  const mergedContributions = mergeContributions(
+    preferred,
+    preferred === left ? right : left,
+  );
+
   return {
     ...preferred,
     tags: [...new Set([...left.tags, ...right.tags])],
@@ -121,7 +126,45 @@ function selectPreferredCandidate(
     fetchedAt: new Date(
       Math.max(left.fetchedAt.getTime(), right.fetchedAt.getTime()),
     ),
+    ...(mergedContributions.length ? { mergedContributions } : {}),
   };
+}
+
+/**
+ * Provenance the preferred candidate must carry after absorbing `absorbed`:
+ * everything both already carried plus `absorbed` itself, once per source
+ * item, never the preferred candidate's own identity.
+ */
+export function mergeContributions(
+  preferred: StoryCandidate,
+  absorbed: StoryCandidate,
+): StoryContributionRef[] {
+  const ownKey = contributionKey(preferred);
+  const merged = new Map<string, StoryContributionRef>();
+  for (const ref of [
+    ...(preferred.mergedContributions ?? []),
+    contributionRef(absorbed),
+    ...(absorbed.mergedContributions ?? []),
+  ]) {
+    const key = contributionKey(ref);
+    if (key !== ownKey && !merged.has(key)) merged.set(key, ref);
+  }
+  return [...merged.values()];
+}
+
+function contributionRef(candidate: StoryCandidate): StoryContributionRef {
+  return {
+    sourceId: candidate.sourceId,
+    sourceName: candidate.sourceName,
+    externalId: candidate.externalId,
+    url: candidate.url,
+    fetchedAt: candidate.fetchedAt,
+    ...(candidate.research ? { research: candidate.research } : {}),
+  };
+}
+
+function contributionKey(ref: Pick<StoryContributionRef, "sourceId" | "externalId">): string {
+  return `${ref.sourceId}\u0000${ref.externalId.trim()}`;
 }
 
 function getContentQuality(candidate: StoryCandidate): number {

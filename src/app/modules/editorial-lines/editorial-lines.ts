@@ -22,6 +22,16 @@ export type EditorialCollectionContext = {
 };
 export type LineCollectionRequest = { lineId: string; query?: string; period?: EditorialPeriod; requestId: string };
 export class EditorialLineError extends Error { constructor(message: string, public status = 400) { super(message); } }
+/**
+ * The collection run reserved under this ID failed or was interrupted. Its
+ * saved partial results remain; reserve a new ID to collect again.
+ */
+export class CollectionRunFailedError extends EditorialLineError { constructor() { super("Collection failed; start a new attempt", 409); } }
+/**
+ * A collection still "running" after this long was killed with its function
+ * (collect allows 120 s, daily preparation 300 s) and will never finish.
+ */
+export const COLLECTION_RUN_STALE_MINUTES = 10;
 const obj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 export function boundedText(v: unknown, field: string, max: number, empty = false): string {
   if (typeof v !== "string" || v.trim().length > max || (!empty && !v.trim())) throw new EditorialLineError(`Invalid ${field}`);
