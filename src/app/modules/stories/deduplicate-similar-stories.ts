@@ -1,4 +1,5 @@
 import { normalizeRelevanceText } from "./evaluate-story-relevance";
+import { mergeContributions } from "./deduplicate-story-candidates";
 import type { StoryCandidate } from "./story-candidate.types";
 
 export const DEFAULT_SIMILAR_TITLE_THRESHOLD = 0.78;
@@ -259,6 +260,10 @@ function selectPreferredStory(
 ): StoryCandidate {
   const preferred = getStoryQuality(right) > getStoryQuality(left) ? right : left;
   const publishedAt = selectEarliestDate(left.publishedAt, right.publishedAt);
+  const mergedContributions = mergeContributions(
+    preferred,
+    preferred === left ? right : left,
+  );
 
   return {
     ...preferred,
@@ -267,6 +272,7 @@ function selectPreferredStory(
     fetchedAt: new Date(
       Math.max(left.fetchedAt.getTime(), right.fetchedAt.getTime()),
     ),
+    ...(mergedContributions.length ? { mergedContributions } : {}),
   };
 }
 

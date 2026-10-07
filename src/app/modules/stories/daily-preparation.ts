@@ -18,7 +18,7 @@ const ALREADY_PUBLISHED = "Already published in this topic";
 const PRE_CREATIVE_STEPS = new Set(["approve", "content", "focus", "brief"]);
 import { randomUUID } from "node:crypto";
 import { requireTopic } from "../topics/topic-context";
-import { collectionContext, defaultStoryContext, resolveLineResearch } from "../editorial-lines/editorial-lines";
+import { CollectionRunFailedError, collectionContext, defaultStoryContext, resolveLineResearch } from "../editorial-lines/editorial-lines";
 import { getEditorialLine, reserveCollection, finishCollection } from "../editorial-lines/editorial-lines.repository";
 import { listTopicRssSourceConfigs } from "../topics/topic-catalog.repository";
 import { getAiResearchSourceConfig } from "../sources/ai-research/ai-research.repository";
@@ -79,10 +79,21 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
       const aiResearch=resolveLineResearch(research,line,context);
       const selected=sources.filter(s=>context.sourceIds.includes(s.id));
       if(!selected.some(s=>s.enabled) && !aiResearch.enabled)throw new Error("No active sources in this editorial line");
-      const collectionId=progress.collectionRunId ?? randomUUID();
+      let collectionId=progress.collectionRunId ?? randomUUID();
       progress.collectionRunId=collectionId;
       await checkpointPreparation(run,progress);
-      const reservation=await reserveCollection(topicId,collectionId,aiResearch.collectionContext);
+      let reservation;
+      try {
+        reservation=await reserveCollection(topicId,collectionId,aiResearch.collectionContext);
+      } catch(error) {
+        if(!(error instanceof CollectionRunFailedError))throw error;
+        // The saved attempt failed or was interrupted; its partial results stay. Collect again under a new ID.
+        collectionId=randomUUID();
+        progress.collectionRunId=collectionId;
+        await checkpointPreparation(run,progress);
+        note("The previous collection was interrupted; collecting again");
+        reservation=await reserveCollection(topicId,collectionId,aiResearch.collectionContext);
+      }
       if(reservation.cached) {
         const cached=reservation.cached as {counts?:{included?:number};sources?:{successful?:number;failed?:number}};
         if(cached.sources?.failed && !cached.sources.successful)throw new Error("All collection sources failed");

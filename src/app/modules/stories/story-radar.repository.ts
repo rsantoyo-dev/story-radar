@@ -26,6 +26,7 @@ import {
   topicStories,
 } from "@/db/schema";
 
+import { STORY_CONFLICT_SQL } from "./story-merge-policy";
 import { canonicalizeStoryUrl } from "./deduplicate-story-candidates";
 import {
   calculateTitleSimilarity,
@@ -623,9 +624,11 @@ async function upsertStoryCandidate(
     })
     .onConflictDoUpdate({
       target: stories.canonicalUrl,
+      // The row is shared by every Topic: a later contribution fills gaps
+      // but never replaces what an earlier one established (story-merge-policy).
       set: {
-        originalUrl: candidate.url,
-        title: candidate.title,
+        originalUrl: sql.raw(STORY_CONFLICT_SQL.originalUrl),
+        title: sql.raw(STORY_CONFLICT_SQL.title),
         contentText: sql`CASE
           WHEN ${incomingContentIsBetter} THEN ${incomingContentText}
           ELSE ${stories.contentText}
@@ -634,8 +637,8 @@ async function upsertStoryCandidate(
           WHEN ${incomingContentIsBetter} THEN ${incomingContentStatus}
           ELSE ${stories.contentStatus}
         END`,
-        language: candidate.language,
-        region: candidate.region,
+        language: sql.raw(STORY_CONFLICT_SQL.language),
+        region: sql.raw(STORY_CONFLICT_SQL.region),
         tags: sql`ARRAY(
           SELECT DISTINCT tag
           FROM unnest(${stories.tags} || ${incomingTags}) AS tag
@@ -685,6 +688,33 @@ async function upsertStoryCandidate(
         fetchedAt: candidate.fetchedAt,
       },
     });
+
+  // Sources merged into this Story by deduplication keep their own provenance
+  // row. An item already recorded (possibly under another Story) is left as is.
+  const mergedContributions = (candidate.mergedContributions ?? []).filter(
+    (ref) =>
+      ref.sourceId !== candidate.sourceId ||
+      ref.externalId !== candidate.externalId,
+  );
+  if (mergedContributions.length) {
+    await db
+      .insert(storySources)
+      .values(
+        mergedContributions.map((ref) => ({
+          storyId: storedStory.id,
+          sourceId: ref.sourceId,
+          sourceName: ref.sourceName,
+          externalId: ref.externalId,
+          sourceUrl: ref.url,
+          researchScore: ref.research?.score ?? null,
+          researchReasons: ref.research?.reasons ?? null,
+          fetchedAt: ref.fetchedAt,
+        })),
+      )
+      .onConflictDoNothing({
+        target: [storySources.sourceId, storySources.externalId],
+      });
+  }
   return storedStory.id;
 }
 

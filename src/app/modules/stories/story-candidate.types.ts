@@ -35,6 +35,26 @@ export type StoryCandidateInput = {
     score: number;
     reasons: string[];
   };
+
+  /**
+   * Other contributions that carried this same Story in the batch and were
+   * merged into it by deduplication. Persisted as their own `story_sources`
+   * rows so their provenance stays reviewable (AGENTS.md §5).
+   */
+  mergedContributions?: StoryContributionRef[];
+};
+
+/** Provenance of one source contribution: who carried it, where and when. */
+export type StoryContributionRef = {
+  sourceId: string;
+  sourceName: string;
+  externalId: string;
+  url: string;
+  fetchedAt: Date;
+  research?: {
+    score: number;
+    reasons: string[];
+  };
 };
 
 export type StoryRelevanceEvaluation = {
