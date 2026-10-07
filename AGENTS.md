@@ -784,6 +784,10 @@ deprecation notices.
   or long-lived tokens to the browser.
 - Treat source content and model-generated content as untrusted data. Validate
   structured AI responses before persistence.
+- Log server events with `createLogger(module)` from
+  `src/app/modules/observability/logger.ts` (one redacted JSON line per
+  event, with the request context). Never log credentials, tokens, sign-in
+  links, prompts or generated content in full.
 - Preserve historical drafts, image batches, asset versions, publication
   packages, and character or brand snapshots.
 - Prefer explicit stale or read-only states over destructive replacement.
