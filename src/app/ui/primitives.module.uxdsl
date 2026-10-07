@@ -89,3 +89,9 @@
 .showcaseFixtureGrid article { display: grid; align-content: start; justify-items: start; gap: density(2); min-width: 0; padding: density(4); @ds-surface(contained light 2); border-color: palette(surface-dark); background: palette(light-light); color: palette(dark-main); }
 .showcaseFixtureGrid h3 { margin: 0; @ds-typo(h3); font-size: 1rem; }
 .showcaseFixtureGrid p { margin: 0; overflow-wrap: anywhere; @ds-typo(small); }
+.centeredPage { display: grid; min-height: 100vh; place-items: center; padding: density(5); background: palette(light-main); }
+.centeredPanel { display: grid; gap: density(4); width: min(100%, 420px); padding: density(6); }
+.centeredPanel h1 { margin: 0; color: palette(dark-main); @ds-typo(h2); }
+.centeredPanel p { margin: 0; color: palette(tertiary-dark); @ds-typo(small); }
+.divider { margin: 0;  display: flex; align-items: center; gap: density(3); color: palette(tertiary-dark); @ds-typo(caption); }
+.divider::before, .divider::after { content: ""; flex: 1; border-top: 1px solid palette(surface-dark); }

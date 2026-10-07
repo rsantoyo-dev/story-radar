@@ -49,6 +49,22 @@ jobs:
           set -o pipefail
           npm run "${{ matrix.task }}" 2>&1 | tee task-output.txt
 
+      - name: Schema matches the migrations
+        if: matrix.task == 'db:check'
+        timeout-minutes: 5
+        # drizzle-kit only reads src/db/schema and drizzle/meta; it writes a new
+        # migration when the schema has changes no migration covers.
+        run: |
+          npx drizzle-kit generate --name schema-drift-check < /dev/null
+          if [ -n "$(git status --porcelain drizzle)" ]; then
+            echo "::error title=Schema drift::src/db/schema has changes without a migration. Run npm run db:generate and commit the result."
+            git status --porcelain drizzle
+            for file in $(git ls-files --others --exclude-standard drizzle | grep '\.sql$'); do
+              echo "::error file=$file,title=Missing migration::$(head -c 3000 "$file" | sed -e ':a' -e 'N' -e '$!ba' -e 's/%/%25/g' -e 's/\n/%0A/g')"
+            done
+            exit 1
+          fi
+
       - name: Annotate failing tests
         if: failure() && matrix.task == 'test'
         run: node .github/scripts/annotate-test-failures.mjs task-output.txt

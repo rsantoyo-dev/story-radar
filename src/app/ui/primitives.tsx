@@ -34,6 +34,20 @@ export function IconButton({ "aria-label": label, className, ...props }: ButtonP
   return <Button {...props} aria-label={label} className={classes(styles.iconButton, className)} />;
 }
 
+/** A single centred panel on its own page (sign-in, access messages). */
+export function CenteredPanel({ title, children }: { title: string; children: ReactNode }) {
+  return <main className={styles.centeredPage}>
+    <section className={classes(styles.surface, styles.centeredPanel)} aria-labelledby="centered-panel-title">
+      <h1 id="centered-panel-title">{title}</h1>
+      {children}
+    </section>
+  </main>;
+}
+
+export function Divider({ children }: { children: ReactNode }) {
+  return <div className={styles.divider} role="separator">{children}</div>;
+}
+
 export function Surface({ tone = "default", className, ...props }: HTMLAttributes<HTMLElement> & { tone?: "default" | "subtle" }) {
   return <section {...props} className={classes(styles.surface, tone === "subtle" && styles.surfaceSubtle, className)} />;
 }
