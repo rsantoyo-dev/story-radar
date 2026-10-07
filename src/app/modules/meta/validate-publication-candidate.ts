@@ -9,6 +9,7 @@ import type { CreativeAssetBatch, CreativeDraft } from "../stories/creative-cont
 import {
   candidateDestinationSummary,
   captionWithPhotoCredits,
+  postTextBlockers,
   destinationBlockers,
   editorialCandidateBlockers,
   publicationSnapshotHash,
@@ -43,7 +44,13 @@ export async function validatePublicationCandidate(deps: CandidateDependencies):
   const input = await deps.load();
   const { draft, batch, destination } = input;
   const initialHash = publicationSnapshotHash(input);
-  const blockers = editorialCandidateBlockers(draft, batch, input.sourceToken);
+  const blockers = [
+    ...editorialCandidateBlockers(draft, batch, input.sourceToken),
+    ...postTextBlockers(
+      { caption: captionWithPhotoCredits(draft.caption, input.photoCredits ?? []), hashtags: draft.hashtags },
+      destination.channel,
+    ),
+  ];
   const files: Record<string, string> = {};
   if (!blockers.length) {
     // Bound memory to one decoded image; never invoke an image generator.

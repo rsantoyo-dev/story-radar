@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import type { CreativeAssetBatch, CreativeDraft } from "../stories/creative-content.types";
 import { documentarySnapshot, DOCUMENTARY_PROVIDER, eligiblePhoto } from "../stories/creative-documentary";
 import { imageTextNeedsUpdate } from "../stories/creative-image-text-sync";
+import { buildCaptionForPosting } from "../stories/creative-draft-export";
 
 export type PublicationBlocker = { code: string; message: string; assetId?: string };
 export type PublicationDestination = {
@@ -94,6 +95,37 @@ export function captionWithPhotoCredits(caption: string, credits: readonly strin
   const lines = [...new Set(credits.map((credit) => credit.trim()).filter(Boolean))]
     .filter((credit) => !caption.includes(credit));
   return lines.length ? `${caption.trimEnd()}\n\n${lines.join("\n")}` : caption;
+}
+
+/**
+ * The exact text a frozen package posts: its caption, then its hashtags. The
+ * package stores them apart (and hashes both), so every send must join them
+ * here; posting the caption alone drops the hashtags the editor approved.
+ */
+export function publicationPostText(pkg: { caption: string; hashtags: readonly string[] }): string {
+  return buildCaptionForPosting({ caption: pkg.caption, hashtags: [...pkg.hashtags] });
+}
+
+/** Instagram rejects captions over 2,200 characters or with more than 30 hashtags. */
+export const INSTAGRAM_CAPTION_MAX_CHARACTERS = 2200;
+export const INSTAGRAM_CAPTION_MAX_HASHTAGS = 30;
+
+export function postTextBlockers(
+  pkg: { caption: string; hashtags: readonly string[] },
+  channel: PublicationChannel | undefined,
+): PublicationBlocker[] {
+  if (channel === "facebook-page") return [];
+  const text = publicationPostText(pkg);
+  const blockers: PublicationBlocker[] = [];
+  const length = [...text].length;
+  if (length > INSTAGRAM_CAPTION_MAX_CHARACTERS) {
+    blockers.push({ code: "caption-too-long", message: `The caption with its hashtags has ${length} characters; Instagram allows ${INSTAGRAM_CAPTION_MAX_CHARACTERS}. Shorten the caption or remove hashtags.` });
+  }
+  const hashtagCount = text.match(/(^|\s)#[^\s#]+/gu)?.length ?? 0;
+  if (hashtagCount > INSTAGRAM_CAPTION_MAX_HASHTAGS) {
+    blockers.push({ code: "too-many-hashtags", message: `The post has ${hashtagCount} hashtags; Instagram allows ${INSTAGRAM_CAPTION_MAX_HASHTAGS}.` });
+  }
+  return blockers;
 }
 
 /** Stable identities include full server snapshots, never serialized secrets. */

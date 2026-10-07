@@ -19,6 +19,7 @@ import {
   CreativeContentNotFoundError,
 } from "../stories/manage-creative-content";
 import { PublicationJobConflictError } from "./publish-publication-package.core";
+import { publicationPostText } from "./instagram-publication-candidate";
 
 import { getPublicationCandidate } from "./get-publication-candidate";
 import {
@@ -395,10 +396,12 @@ async function buildDependencies(
     await assertLease();
     return token;
   }
+  // Caption and hashtags are frozen apart; this is the one text that posts.
+  const postText = publicationPostText(pkgRow);
   const frozen: FrozenPackageForPublish = {
     status: pkgRow.status as FrozenPackageForPublish["status"],
     mediaType: pkgRow.mediaType as "image" | "carousel",
-    caption: pkgRow.caption,
+    caption: postText,
     candidateSnapshotHash: pkgRow.candidateSnapshotHash,
     expiresAt: pkgRow.expiresAt,
     destination: { igUserId: pkgRow.igUserId, igUsername: pkgRow.igUsername, pageId: pkgRow.pageId },
@@ -427,7 +430,7 @@ async function buildDependencies(
           publishContainer: async (parentContainerId) => {
             const token = await currentToken(true);
             return publishPagePhotoPost(token.accountId, token.accessToken, {
-              message: pkgRow.caption,
+              message: postText,
               photoIds: facebookPhotoIds(parentContainerId),
             });
           },
@@ -528,7 +531,7 @@ async function buildDependencies(
           mediaType: input.mediaType === "carousel" ? "CAROUSEL_ALBUM" : "IMAGE",
           mediaProductType: "FEED",
           permalink: input.permalink ?? null,
-          caption: pkgRow.caption,
+          caption: postText,
           publishedAt,
           linkedStoryId: job.storyId,
           linkedDraftId: job.draftId,

@@ -3,7 +3,7 @@ import test from "node:test";
 import sharp from "sharp";
 import type { CreativeDraft, CreativeAssetBatch } from "../stories/creative-content.types";
 import { DOCUMENTARY_PROVIDER, DOCUMENTARY_VERSION } from "../stories/creative-documentary";
-import { captionWithPhotoCredits, destinationBlockers, editorialCandidateBlockers, publicationSnapshotHash } from "./instagram-publication-candidate";
+import { captionWithPhotoCredits, destinationBlockers, editorialCandidateBlockers, INSTAGRAM_CAPTION_MAX_CHARACTERS, postTextBlockers, publicationPostText, publicationSnapshotHash } from "./instagram-publication-candidate";
 import { validatePublicationCandidate, type CandidateInputs } from "./validate-publication-candidate";
 
 function fixture(): CandidateInputs {
@@ -172,4 +172,31 @@ test("photo credits are published in the caption, once each, unless the editor a
   assert.equal(captionWithPhotoCredits("Une légende.\n", [credit, credit, " "]), `Une légende.\n\n${credit}`);
   assert.equal(captionWithPhotoCredits(`Une légende. ${credit}`, [credit]), `Une légende. ${credit}`);
   assert.equal(captionWithPhotoCredits("Une légende.", []), "Une légende.");
+});
+
+test("the posted text is the caption followed by the approved hashtags", () => {
+  assert.equal(
+    publicationPostText({ caption: "Exact caption\nwith whitespace ", hashtags: ["#approved", "montreal"] }),
+    "Exact caption\nwith whitespace\n\n#approved #montreal",
+  );
+  assert.equal(publicationPostText({ caption: "Caption only", hashtags: [] }), "Caption only");
+});
+
+test("Instagram caption limits block before freezing; Facebook is exempt", () => {
+  const long = { caption: "a".repeat(INSTAGRAM_CAPTION_MAX_CHARACTERS - 5), hashtags: ["#one", "#two"] };
+  assert.deepEqual(postTextBlockers(long, undefined).map((blocker) => blocker.code), ["caption-too-long"]);
+  assert.deepEqual(postTextBlockers(long, "instagram-page").map((blocker) => blocker.code), ["caption-too-long"]);
+  assert.deepEqual(postTextBlockers(long, "facebook-page"), []);
+
+  const tags = { caption: "Short", hashtags: Array.from({ length: 31 }, (_, index) => `#tag${index}`) };
+  assert.deepEqual(postTextBlockers(tags, "instagram-direct").map((blocker) => blocker.code), ["too-many-hashtags"]);
+  assert.deepEqual(postTextBlockers({ caption: "Short #inline", hashtags: ["#approved"] }, undefined), []);
+});
+
+test("a caption that would exceed Instagram's limit with its hashtags is not a candidate", async () => {
+  const input = fixture();
+  input.draft = { ...input.draft, caption: "a".repeat(INSTAGRAM_CAPTION_MAX_CHARACTERS) } as CreativeDraft;
+  const result = await validatePublicationCandidate({ load: async () => input, readApprovedImage: imageFile });
+  assert.equal(result.state, "not-candidate");
+  assert.ok(result.blockers.some((blocker) => blocker.code === "caption-too-long"));
 });
