@@ -20,6 +20,8 @@ export type DashboardTopic = {
   description?: string;
   themeKey: string;
   isActive: boolean;
+  /** Guided setup completed (signed-in mode); unknown for a topic created in this session. */
+  ready?: boolean;
 };
 
 export type TopicConfigurationView = "topics" | "rss" | "ai" | "documents" | "manual";

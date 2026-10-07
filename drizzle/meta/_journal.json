@@ -659,6 +659,13 @@
       "when": 1791396928162,
       "tag": "0094_workspace_credits",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1791400069426,
+      "tag": "0095_topic_guided_setup",
+      "breakpoints": true
     }
   ]
 }
