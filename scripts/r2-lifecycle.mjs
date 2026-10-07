@@ -7,7 +7,8 @@
 // CLOUDFLARE_R2_ACCESS_KEY_ID, CLOUDFLARE_R2_SECRET_ACCESS_KEY and
 // CLOUDFLARE_R2_OBJECT_PREFIX from the environment or .env files. The access
 // key needs permission to edit the bucket's lifecycle configuration.
-import { loadEnvConfig } from "@next/env";
+// @next/env is CommonJS: Node ESM cannot import its named exports directly.
+import nextEnv from "@next/env";
 import {
   GetBucketLifecycleConfigurationCommand,
   PutBucketLifecycleConfigurationCommand,
@@ -20,7 +21,7 @@ import {
   normalizeObjectPrefix,
 } from "./r2-lifecycle-rules.mjs";
 
-loadEnvConfig(process.cwd(), process.env.NODE_ENV !== "production");
+nextEnv.loadEnvConfig(process.cwd(), process.env.NODE_ENV !== "production");
 
 const apply = process.argv.includes("--apply");
 const required = (name) => {
