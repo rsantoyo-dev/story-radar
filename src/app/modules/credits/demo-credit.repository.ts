@@ -7,7 +7,7 @@ import { DEMO_CREDIT_GRANT_MICROS } from "./demo-credit-policy";
 
 export type DemoCreditEntry = {
   id: string;
-  kind: "demo_grant" | "usage_debit" | "demo_reset" | "refund" | "signup_grant";
+  kind: "demo_grant" | "usage_debit" | "demo_reset" | "refund" | "signup_grant" | "purchase" | "purchase_reversal";
   amountMicros: number;
   referenceCostMicros: number | null;
   markupBasisPoints: number | null;

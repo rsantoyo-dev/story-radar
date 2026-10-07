@@ -3794,6 +3794,16 @@
 .spendingHistory small { overflow-wrap: anywhere; color: palette(tertiary-main); font-size: 0.72rem; }
 .spendingHistory b { flex: none; font-variant-numeric: tabular-nums; }
 .spendingMore { justify-self: start; @ds-button(outlined primary 2); min-height: 36px; padding-inline: density(4); @ds-typo(caption); font-size: 0.78rem; font-weight: 700; }
+.spendingSection > p { margin: 0; color: palette(tertiary-main); @ds-typo(small); font-size: 0.82rem; line-height: 1.5; }
+.spendingPacks { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: density(3); margin: 0; padding: 0; list-style: none; }
+.spendingPacks li { display: grid; align-content: start; gap: density(2); padding: density(4); border: 1px solid palette(dark-main, 0.08); border-radius: radius(3); background: palette(light-light); }
+.spendingPacks strong { @ds-typo(h3); font-size: 1.05rem; font-weight: 750; }
+.spendingPacks b { @ds-typo(h3); font-size: 1.3rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.spendingPacks small { color: palette(tertiary-main); @ds-typo(caption); font-size: 0.72rem; font-weight: 600; line-height: 1.4; }
+.spendingBuy { justify-self: stretch; @ds-button(contained primary 2); min-height: 38px; padding-inline: density(4); @ds-typo(caption); font-size: 0.8rem; font-weight: 700; }
+.spendingBuy:disabled { cursor: progress; opacity: 0.6; }
+.spendingBuy:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 2px; }
+.spendingTestMode { justify-self: start; padding: density(1) density(2); border-radius: radius(2); background: palette(warning-light, 0.35); color: palette(dark-main); @ds-typo(caption); font-size: 0.7rem; font-weight: 750; }
 @media (max-width: 639px) {
   .spendingPage { padding-inline: density(4); }
   .spendingReset { margin-left: 0; }

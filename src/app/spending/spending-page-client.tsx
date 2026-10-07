@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { DemoCreditAccount } from "@/app/modules/credits/demo-credit.repository";
 import type { SpendingEntry, SpendingLine, SpendingPeriod, SpendingReport } from "@/app/modules/credits/spending.repository";
 import { resetDemoCreditBalance } from "@/app/demo-credit-indicator";
+import { BuyCredits } from "./buy-credits";
 import styles from "@/app/radar-dashboard.generated.module.css";
 
 const PERIODS: { value: SpendingPeriod; label: string }[] = [
@@ -59,6 +60,7 @@ export function SpendingPageClient({ signedIn = false }: { signedIn?: boolean })
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const [billingRefresh, setBillingRefresh] = useState(0);
 
   const load = useCallback(async (offset = 0) => {
     const query = new URLSearchParams({ period, offset: String(offset), ...(topicId ? { topicId } : {}) });
@@ -86,6 +88,25 @@ export function SpendingPageClient({ signedIn = false }: { signedIn?: boolean })
     });
     return () => { active = false; };
   }, [load, secret, signedIn]);
+
+  // Back from Stripe Checkout: credits arrive when Stripe confirms the payment, usually within seconds.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const purchase = params.get("purchase");
+    if (!purchase) return;
+    window.history.replaceState(null, "", window.location.pathname);
+    if (purchase === "cancelled") {
+      Promise.resolve().then(() => setNotice("Checkout cancelled. Nothing was charged."));
+      return;
+    }
+    if (purchase !== "success") return;
+    Promise.resolve().then(() => setNotice("Payment received. Your credits appear here as soon as Stripe confirms it."));
+    const timers = [4_000, 12_000].map((delay) => window.setTimeout(() => {
+      setBillingRefresh((value) => value + 1);
+      void load().catch(() => undefined);
+    }, delay));
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [load]);
 
   const reset = () => {
     if (!window.confirm("Reset the demo balance to 1,000 credits? Past activity stays in the history; spending restarts from now.")) return;
@@ -125,6 +146,8 @@ export function SpendingPageClient({ signedIn = false }: { signedIn?: boolean })
       {account?.canReset ? <button type="button" className={styles.spendingReset} disabled={busy} onClick={reset}>{busy ? "Resetting…" : "Reset balance to 1,000"}</button> : null}
     </section> : null}
     {notice ? <p className={styles.spendingNotice} role="status">{notice}</p> : null}
+
+    {!error && (secret || signedIn) ? <BuyCredits secret={secret} refreshKey={billingRefresh} /> : null}
 
     {!error && !report ? <p className={styles.spendingLoading} role="status">Loading spending…</p> : null}
 

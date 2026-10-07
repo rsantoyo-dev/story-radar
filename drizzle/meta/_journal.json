@@ -659,6 +659,13 @@
       "when": 1791396928162,
       "tag": "0094_workspace_credits",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1791400528162,
+      "tag": "0095_billing_credit_purchases",
+      "breakpoints": true
     }
   ]
 }

@@ -11,10 +11,11 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { aiUsageCharges } from "./ai-usage-charges";
+import { billingPurchases } from "./billing";
 import { creativeTextCalls } from "./creative-text-accounting";
 import { workspaces } from "./workspaces";
 
-/** Immutable demo-credit postings. This is also the ledger AUTH-08 will extend. */
+/** Immutable credit postings per workspace: grants, usage, refunds and Stripe purchases. */
 export const workspaceCreditEntries = pgTable(
   "workspace_credit_entries",
   {
@@ -34,6 +35,11 @@ export const workspaceCreditEntries = pgTable(
     /** The non-text spend this debit settles (images, searches, maps…). */
     sourceUsageChargeId: uuid("source_usage_charge_id").references(
       () => aiUsageCharges.id,
+      { onDelete: "restrict" },
+    ),
+    /** The Stripe purchase a `purchase` or `purchase_reversal` posting belongs to. */
+    sourcePurchaseId: uuid("source_purchase_id").references(
+      () => billingPurchases.id,
       { onDelete: "restrict" },
     ),
     referenceCostMicros: integer("reference_cost_micros"),
@@ -58,18 +64,20 @@ export const workspaceCreditEntries = pgTable(
     ),
     check(
       "workspace_credit_entries_kind_check",
-      sql`${table.kind} IN ('demo_grant', 'signup_grant', 'usage_debit', 'refund', 'demo_reset')`,
+      sql`${table.kind} IN ('demo_grant', 'signup_grant', 'usage_debit', 'refund', 'demo_reset', 'purchase', 'purchase_reversal')`,
     ),
     check(
       "workspace_credit_entries_amount_check",
-      sql`(${table.kind} = 'usage_debit' AND ${table.amountMicros} < 0)
-        OR (${table.kind} IN ('demo_grant', 'signup_grant', 'refund') AND ${table.amountMicros} > 0)
-        OR (${table.kind} = 'demo_reset')`,
+      sql`(${table.kind} IN ('usage_debit', 'purchase_reversal') AND ${table.amountMicros} < 0) OR (${table.kind} IN ('demo_grant', 'signup_grant', 'refund', 'purchase') AND ${table.amountMicros} > 0) OR (${table.kind} = 'demo_reset')`,
     ),
     check(
       "workspace_credit_entries_source_check",
       sql`(${table.kind} = 'usage_debit' AND ((${table.sourceTextCallId} IS NOT NULL) <> (${table.sourceUsageChargeId} IS NOT NULL)) AND ${table.referenceCostMicros} IS NOT NULL AND ${table.referenceCostMicros} > 0 AND ${table.markupBasisPoints} IS NOT NULL AND ${table.markupBasisPoints} >= 0)
         OR (${table.kind} <> 'usage_debit' AND ${table.sourceTextCallId} IS NULL AND ${table.sourceUsageChargeId} IS NULL AND ${table.referenceCostMicros} IS NULL AND ${table.markupBasisPoints} IS NULL)`,
+    ),
+    check(
+      "workspace_credit_entries_purchase_check",
+      sql`(${table.kind} IN ('purchase', 'purchase_reversal')) = (${table.sourcePurchaseId} IS NOT NULL)`,
     ),
   ],
 );

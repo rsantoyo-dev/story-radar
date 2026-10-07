@@ -19,6 +19,8 @@ function entryLabel(entry: DemoCreditEntry): string {
     case "demo_reset": return "Demo balance reset";
     case "signup_grant": return "Signup grant";
     case "refund": return "Refund";
+    case "purchase": return entry.reason || "Credits bought";
+    case "purchase_reversal": return entry.reason || "Purchase refunded";
     case "usage_debit": return entry.usageKind && entry.usageKind !== "text" ? KIND_LABELS[entry.usageKind] ?? entry.usageKind : entry.operation || "Creative Studio text";
   }
 }
