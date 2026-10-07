@@ -54,7 +54,21 @@ async function currentRules() {
   }
 }
 
-const existing = await currentRules();
+function explainAndExit(error) {
+  if (error?.Code === "AccessDenied" || error?.$metadata?.httpStatusCode === 403) {
+    console.error(`R2 refused to ${apply ? "change" : "read"} the bucket's lifecycle rules (AccessDenied).
+The app's key only has "Object Read & Write", which cannot edit bucket settings.
+Either add the rules in the Cloudflare dashboard (R2 → ${bucket} → Settings → Object lifecycle rules):
+${describeLifecycleChanges([], prefix).map((line) => `  ${line.replace(/^add\s+/, "")}`).join("\n")}
+or run this command once with a temporary "Admin Read & Write" R2 token passed inline
+(CLOUDFLARE_R2_ACCESS_KEY_ID=... CLOUDFLARE_R2_SECRET_ACCESS_KEY=... npm run r2:lifecycle -- --apply),
+then delete that token.`);
+    process.exit(3);
+  }
+  throw error;
+}
+
+const existing = await currentRules().catch(explainAndExit);
 const changes = describeLifecycleChanges(existing, prefix);
 console.log(`Bucket ${bucket}, prefix ${prefix}/`);
 if (!changes.length) {
@@ -70,8 +84,8 @@ if (!apply) {
 await client.send(new PutBucketLifecycleConfigurationCommand({
   Bucket: bucket,
   LifecycleConfiguration: { Rules: mergeLifecycleRules(existing, prefix) },
-}));
-const remaining = describeLifecycleChanges(await currentRules(), prefix);
+})).catch(explainAndExit);
+const remaining = describeLifecycleChanges(await currentRules().catch(explainAndExit), prefix);
 if (remaining.length) {
   console.error("The bucket did not accept every rule:\n" + remaining.map((line) => `  ${line}`).join("\n"));
   process.exit(1);
