@@ -18,7 +18,7 @@ import {
   pickCurrentWorkspace,
   type WorkspaceRole,
 } from "./access.core";
-import { auth } from "./auth";
+import { auth, AuthConfigError } from "./auth";
 
 export type SessionUser = {
   id: string;
@@ -37,6 +37,24 @@ export class AccessDeniedError extends Error {
 
 export function authRequired(): boolean {
   return isAuthRequired(process.env.AUTH_REQUIRED);
+}
+
+/**
+ * For pages: the signed-in user, or undefined; when sign-in is misconfigured
+ * on the server, the login page explains it instead of every page failing.
+ */
+export async function getPageSessionUser(): Promise<SessionUser | undefined> {
+  let misconfigured = false;
+  try {
+    return await getSessionUser(await headers());
+  } catch (error) {
+    if (!(error instanceof AuthConfigError)) throw error;
+    console.error(`Sign-in is not configured: ${error.message}`);
+    misconfigured = true;
+  }
+  // redirect() throws; keep it outside the try.
+  if (misconfigured) redirect("/login?error=config");
+  return undefined;
 }
 
 /** The signed-in user for these request headers, or undefined. */
@@ -137,7 +155,7 @@ export async function requireTopicRole(
  */
 export async function requirePageAccess(returnPath = "/"): Promise<{ user?: SessionUser; workspaces: UserWorkspace[] }> {
   if (!authRequired()) return { workspaces: [] };
-  const user = await getSessionUser(await headers());
+  const user = await getPageSessionUser();
   if (!user) redirect(`/login?next=${encodeURIComponent(returnPath)}`);
   const memberships = await resolveUserWorkspaces(user);
   if (!memberships.length && !(await isPlatformStaff(user.id))) redirect("/no-access");
