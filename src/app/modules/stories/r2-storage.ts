@@ -1,12 +1,21 @@
 import "server-only";
 
 import {
+  CopyObjectCommand,
   DeleteObjectCommand,
   GetObjectCommand,
   type GetObjectCommandOutput,
+  HeadObjectCommand,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
+
+import {
+  approvedImageArchiveSegments,
+  deliverySegments,
+  editBaseSegments,
+  retentionObjectKey,
+} from "./r2-retention";
 
 const MAX_REFERENCE_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_DOCUMENT_BYTES = 40_000_000;
@@ -30,11 +39,14 @@ export async function putPrivateR2Object({
   objectKey,
   body,
   contentType,
+  metadata,
   signal,
 }: {
   objectKey: string;
   body: Uint8Array;
   contentType: string;
+  /** Small string metadata stored with the object (e.g. its sha256). */
+  metadata?: Record<string, string>;
   signal?: AbortSignal;
 }): Promise<{ objectKey: string; contentType: string; size: number }> {
   assertObjectKey(objectKey);
@@ -51,6 +63,7 @@ export async function putPrivateR2Object({
         Key: objectKey,
         Body: body,
         ContentType: resolvedContentType,
+        ...(metadata ? { Metadata: metadata } : {}),
       }),
       { abortSignal: signal },
     );
@@ -240,7 +253,7 @@ export async function readPrivateR2ImageFile({
   } catch (error) {
     throw new R2StorageObjectError(
       `The private reference image could not be read from R2: ${errorMessage(error)}`,
-      { retryable: isRetryableR2Error(error) },
+      { retryable: isRetryableR2Error(error), notFound: isNotFound(error) },
     );
   }
 
@@ -384,6 +397,20 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown R2 error";
 }
 
+function isNotFound(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const name = (error as { name?: unknown }).name;
+  const status = (error as { $metadata?: { httpStatusCode?: unknown } }).$metadata?.httpStatusCode;
+  return name === "NoSuchKey" || name === "NotFound" || status === 404;
+}
+
+/** Joins a retention class and segments under the configured prefix. */
+function retentionKey(retention: "7d" | "180d" | "permanent", segments: string[]): string {
+  const key = retentionObjectKey(getR2Client().configuration.objectPrefix, retention, segments);
+  assertObjectKey(key);
+  return key;
+}
+
 function isRetryableR2Error(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return true;
   const metadata = (error as { $metadata?: { httpStatusCode?: unknown } })
@@ -396,11 +423,20 @@ function isRetryableR2Error(error: unknown): boolean {
 export class R2StorageConfigurationError extends Error {}
 export class R2StorageObjectError extends Error {
   readonly retryable: boolean;
+  /** The object does not exist (HTTP 404 / NoSuchKey). */
+  readonly notFound: boolean;
 
-  constructor(message: string, options: { retryable?: boolean } = {}) {
+  constructor(message: string, options: { retryable?: boolean; notFound?: boolean } = {}) {
     super(message);
     this.name = "R2StorageObjectError";
     this.retryable = options.retryable ?? true;
+    this.notFound = options.notFound ?? false;
+  }
+}
+export class R2StorageMissingObjectError extends R2StorageObjectError {
+  constructor(objectKey: string) {
+    super(`The private object does not exist in R2: ${objectKey}`, { retryable: false, notFound: true });
+    this.name = "R2StorageMissingObjectError";
   }
 }
 export class R2StorageValidationError extends Error {}
@@ -424,15 +460,92 @@ export function buildPublicationDeliveryObjectKey({
   packageId: string;
   unitOrder: number;
 }): string {
-  const { objectPrefix } = getR2Client().configuration;
-  return [
-    objectPrefix,
-    "topics",
-    safeKeySegment(topicId, "topic ID"),
-    "publication-delivery",
-    safeKeySegment(packageId, "publication package ID"),
-    `${safeKeySegment(String(unitOrder), "slide order")}.jpg`,
-  ].join("/");
+  // Lives in the 7-day class: a package that is never published is removed by
+  // the R2 lifecycle rule. Publishing copies its files to the permanent class.
+  return retentionKey("7d", deliverySegments("publication-delivery", {
+    topicId: safeKeySegment(topicId, "topic ID"),
+    packageId: safeKeySegment(packageId, "publication package ID"),
+    unitOrder,
+  }));
+}
+
+/** Permanent copy of a delivery JPEG once its package has been published. */
+export function buildPublishedDeliveryObjectKey(input: {
+  topicId: string;
+  packageId: string;
+  unitOrder: number;
+}): string {
+  return retentionKey("permanent", deliverySegments("published", {
+    topicId: safeKeySegment(input.topicId, "topic ID"),
+    packageId: safeKeySegment(input.packageId, "publication package ID"),
+    unitOrder: input.unitOrder,
+  }));
+}
+
+/** R2 copy of an approved generated image, kept 180 days. */
+export function buildApprovedImageArchiveKey(input: {
+  topicId: string;
+  assetId: string;
+  version: number;
+}): string {
+  return retentionKey("180d", approvedImageArchiveSegments({
+    topicId: safeKeySegment(input.topicId, "topic ID"),
+    assetId: safeKeySegment(input.assetId, "asset ID"),
+    version: input.version,
+  }));
+}
+
+/** Snapshot of an image used as the base of an edit, kept 180 days. */
+export function buildEditBaseObjectKey(input: { topicId: string; id: string }): string {
+  return retentionKey("180d", editBaseSegments({
+    topicId: safeKeySegment(input.topicId, "topic ID"),
+    id: safeKeySegment(input.id, "edit base ID"),
+  }));
+}
+
+/** The configured key prefix, for callers that classify existing keys. */
+export function configuredR2ObjectPrefix(): string {
+  return getR2Client().configuration.objectPrefix;
+}
+
+/** True when the object exists; false only for a definite 404. */
+export async function privateR2ObjectExists(objectKey: string, signal?: AbortSignal): Promise<boolean> {
+  assertObjectKey(objectKey);
+  const { client, configuration } = getR2Client();
+  try {
+    await client.send(new HeadObjectCommand({ Bucket: configuration.bucket, Key: objectKey }), { abortSignal: signal });
+    return true;
+  } catch (error) {
+    if (isNotFound(error)) return false;
+    throw new R2StorageObjectError(`The private object could not be checked in R2: ${errorMessage(error)}`, { retryable: isRetryableR2Error(error) });
+  }
+}
+
+/** Server-side copy inside the bucket; nothing is downloaded. */
+export async function copyPrivateR2Object(sourceKey: string, destinationKey: string, signal?: AbortSignal): Promise<void> {
+  assertObjectKey(sourceKey);
+  assertObjectKey(destinationKey);
+  const { client, configuration } = getR2Client();
+  try {
+    await client.send(new CopyObjectCommand({
+      Bucket: configuration.bucket,
+      Key: destinationKey,
+      CopySource: `${configuration.bucket}/${sourceKey.split("/").map(encodeURIComponent).join("/")}`,
+    }), { abortSignal: signal });
+  } catch (error) {
+    if (isNotFound(error)) throw new R2StorageMissingObjectError(sourceKey);
+    throw new R2StorageObjectError(`The private object could not be copied in R2: ${errorMessage(error)}`, { retryable: isRetryableR2Error(error) });
+  }
+}
+
+/** Reads a private image, or returns undefined when the object does not exist. */
+export async function readPrivateR2ImageIfPresent(objectKey: string, signal?: AbortSignal): Promise<File | undefined> {
+  try {
+    return await readPrivateR2ImageFile({ objectKey, signal });
+  } catch (error) {
+    if (error instanceof R2StorageObjectError && error.notFound) return undefined;
+    throw error;
+  }
 }
 
 /** Private immutable photo belonging to one story in one topic. */

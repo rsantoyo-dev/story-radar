@@ -20,6 +20,7 @@ import {
 } from "../stories/manage-creative-content";
 import { PublicationJobConflictError } from "./publish-publication-package.core";
 import { publicationPostText } from "./instagram-publication-candidate";
+import { preservePublishedPackage } from "../stories/storage-maintenance";
 
 import { getPublicationCandidate } from "./get-publication-candidate";
 import {
@@ -331,6 +332,17 @@ export async function advancePublicationJob(jobId: string): Promise<void> {
   if (!claimed) return;
   try {
     await runPublishPublicationJob(await buildDependencies(jobId, owner));
+    const [job] = await db
+      .select({ status: instagramPublicationJobs.status, packageId: instagramPublicationJobs.packageId })
+      .from(instagramPublicationJobs)
+      .where(eq(instagramPublicationJobs.id, jobId))
+      .limit(1);
+    if (job?.status === "published") {
+      // Move the exact published JPEGs out of the 7-day class now; the hourly
+      // storage maintenance retries if this copy fails.
+      await preservePublishedPackage(job.packageId).catch(() =>
+        console.error(`Published files of package ${job.packageId} were not preserved yet; maintenance will retry.`));
+    }
   } catch {
     // Provider/DB exceptions may contain credentials. Keep only the operational job id.
     console.error(`Publication job ${jobId} step failed; the worker will resume it.`);
