@@ -19,7 +19,6 @@ test("Discover search inherits the line period and preserves a one-run override 
     HTMLElement: globalThis.HTMLElement,
     Element: globalThis.Element,
     Node: globalThis.Node,
-    navigator: globalThis.navigator,
     fetch: globalThis.fetch,
     actEnvironment: (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT,
   };
@@ -29,13 +28,16 @@ test("Discover search inherits the line period and preserves a one-run override 
     HTMLElement: dom.window.HTMLElement,
     Element: dom.window.Element,
     Node: dom.window.Node,
-    navigator: dom.window.navigator,
     IS_REACT_ACT_ENVIRONMENT: true,
     fetch: async () => ({ ok: true, json: async () => ({
       lines: [{ id: "line-1", name: "Daily", objective: "Find useful updates", mode: "news", period: { kind: "relative", hours: 24 }, timezone: "America/Toronto", sourceMode: "inherit", sourceIds: [], excludedSourceIds: [], researchEnabled: true, archived: false }],
       sources: [], runs: [], researchDefaults: { enabled: aiResearchAvailable }, associations: [],
     }) }),
   });
+
+  // Node >= 21 defines `navigator` as a read-only getter; Object.assign cannot replace it.
+  const previousNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  Object.defineProperty(globalThis, "navigator", { value: dom.window.navigator, configurable: true, writable: true });
 
   const selections: (EditorialLineSelection | undefined)[] = [];
   const { createRoot } = await import("react-dom/client");
@@ -77,6 +79,8 @@ test("Discover search inherits the line period and preserves a one-run override 
   } finally {
     await act(async () => { root.unmount(); });
     Object.assign(globalThis, previous);
+    if (previousNavigator) Object.defineProperty(globalThis, "navigator", previousNavigator);
+    else delete (globalThis as { navigator?: unknown }).navigator;
     if (previousCssLoader) localRequire.extensions[".css"] = previousCssLoader;
     else delete localRequire.extensions[".css"];
     dom.window.close();
