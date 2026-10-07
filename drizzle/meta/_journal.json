@@ -638,6 +638,13 @@
       "when": 1791367052121,
       "tag": "0091_instagram_snapshot_attribution",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1791367669807,
+      "tag": "0092_creative_asset_approval_acknowledgement",
+      "breakpoints": true
     }
   ]
 }

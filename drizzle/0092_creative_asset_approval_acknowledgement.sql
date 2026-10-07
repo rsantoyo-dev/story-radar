@@ -1,0 +1,1 @@
+ALTER TABLE "creative_assets" ADD COLUMN "approval_acknowledgement" jsonb;

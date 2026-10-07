@@ -201,6 +201,22 @@ test("carousel slide counts in the internal rationale are not unsupported Story 
   }, facts).some((issue) => issue.code === "UNSUPPORTED_NUMBER"));
 });
 
+test("references to the brief's fact IDs in the internal rationale are not unsupported Story numbers", () => {
+  const facts: CreativeKeyFact[] = [{ id: "fact-1", statement: "The deli closes after 26 years.", sourceExcerpt: "The deli closes after 26 years." }];
+  const planned: GeneratedCreativeDraft = {
+    concept: "A deli closes",
+    narrativeRationale: "Cover facts 1 and 2 support the exact hook; fact-5 and facts 3, 4 or 6 close it. Les faits 2 et 7 ouvrent le récit.",
+    caption: "The deli closes after 26 years.", hashtags: [], altText: "Deli carousel.",
+    units: [unit(1, "cover", "hook", "The deli closes after 26 years", undefined, ["fact-1"])],
+  };
+  assert.ok(!deterministicFactQualityIssues(planned, facts).some((issue) => issue.code === "UNSUPPORTED_NUMBER"));
+  // A number that is a claim, next to a fact reference, is still checked.
+  assert.ok(deterministicFactQualityIssues({
+    ...planned,
+    narrativeRationale: "Fact 1 says the deli served 400 customers a day.",
+  }, facts).some((issue) => issue.code === "UNSUPPORTED_NUMBER"));
+});
+
 test("removes unsupported numeric publishing copy before editorial review", () => {
   const supportedFacts: CreativeKeyFact[] = [
     {

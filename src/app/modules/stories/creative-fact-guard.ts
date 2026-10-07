@@ -340,8 +340,16 @@ function stripNarrativePlanningLabels(value?: string): string | undefined {
     // The rationale describes the carousel plan, so “7 diapositives” and
     // “slide 7” count its own units. They are not claims about the Story.
     // Leave every other number here for the factual guard to check.
-    .replace(/\b\d{1,2}\s*(?:[-‑–—]\s*)?(?:diapositives?|slides?|frames?)\b|\b(?:diapositives?|slides?|frames?)\s*(?:n[º°o]?\s*)?\d{1,2}\b/giu, " ");
+    .replace(/\b\d{1,2}\s*(?:[-‑–—]\s*)?(?:diapositives?|slides?|frames?)\b|\b(?:diapositives?|slides?|frames?)\s*(?:n[º°o]?\s*)?\d{1,2}\b/giu, " ")
+    // “Facts 1 and 2”, “fact-5”, “faits 3 et 4” cite the brief's fact IDs.
+    .replace(FACT_REFERENCE_LABEL, " ");
 }
+
+const FACT_ID = String.raw`(?:key\s+)?(?:facts?|faits?|hechos?)\s*(?:[-‑#]\s*|n[º°o]?\s*)?\d{1,2}`;
+const FACT_REFERENCE_LABEL = new RegExp(
+  String.raw`\b${FACT_ID}(?:\s*(?:,|&|/|\band\b|\bor\b|\bet\b|\bou\b|\by\b|\bo\b)\s*(?:${FACT_ID}|\d{1,2}))*\b`,
+  "giu",
+);
 
 export function deterministicFactQualityIssues(
   draft: GeneratedCreativeDraft,

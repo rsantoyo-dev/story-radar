@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { CreativeImageReviewResponseError, imageReviewIssues, parseImageReviewAnswer } from "./creative-image-review";
+import { buildImageReviewInstructions, CreativeImageReviewResponseError, imageReviewIssues, parseImageReviewAnswer } from "./creative-image-review";
 
 const clean = { peopleOutsideVerifiedPhoto: false, possibleRealPersonLikeness: false, thirdPartyLogos: [], summary: "" };
 const photo = { personName: "Kevin Owens", region: { left: 46, top: 42, right: 94, bottom: 90 } };
@@ -37,3 +37,10 @@ test("only a complete, structured answer is trusted", () => {
   assert.throws(() => parseImageReviewAnswer(JSON.stringify({ possibleRealPersonLikeness: false })), CreativeImageReviewResponseError);
   assert.deepEqual(parseImageReviewAnswer(JSON.stringify({ ...clean, thirdPartyLogos: ["Rothmans", 4] })).thirdPartyLogos, ["Rothmans"]);
 });
+
+test("non-human characters such as ghosts and jack-o'-lanterns are not reviewed as people", () => {
+  const instructions = buildImageReviewInstructions();
+  assert.match(instructions, /Non-human characters are not people either: ghosts, monsters/);
+  assert.match(instructions, /any human face, head, body, silhouette or figure/, "human figures still count");
+});
+

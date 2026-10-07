@@ -1362,13 +1362,34 @@ export function CreativeDraftWorkspace({
     });
   }
 
+  /**
+   * Approves one image. When the automatic review flags it, the editor sees why
+   * and decides: approving anyway records their override on the image.
+   */
+  async function approveImage(assetId: string, label?: string): Promise<CreativeAssetBatchResponse> {
+    const send = (reviewOverride: boolean) => requestJson<CreativeAssetBatchResponse>(
+      topicUrl(`/api/radar/creative/assets/${encodeURIComponent(assetId)}`, topicId),
+      secret,
+      { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "approve", reviewOverride }) },
+    );
+    try {
+      return await send(false);
+    } catch (reason) {
+      const blocked = reason as Error & { code?: string; issues?: string[] };
+      if (blocked.code !== "image_review_blocked") throw reason;
+      const issues = blocked.issues?.length ? blocked.issues.map((issue) => `• ${issue}`).join("\n") : blocked.message;
+      if (!window.confirm(`${label ? `${label}: ` : ""}the automatic review flagged this image:\n\n${issues}\n\nLook at the image yourself. Approve it anyway? Your decision is recorded on the image.`)) throw reason;
+      return send(true);
+    }
+  }
+
   async function handleImageApproval(
     assetId: string,
     action: "approve" | "unapprove",
   ) {
     if (!activeDraftId || assetBusy || viewingHistoricalDraft) return;
     await runAsset(`${action}:${assetId}`, async () => {
-      const response = await requestJson<CreativeAssetBatchResponse>(
+      const response = action === "approve" ? await approveImage(assetId) : await requestJson<CreativeAssetBatchResponse>(
         topicUrl(
           `/api/radar/creative/assets/${encodeURIComponent(assetId)}`,
           topicId,
@@ -1398,12 +1419,8 @@ export function CreativeDraftWorkspace({
     if (!window.confirm(`Approve ${assetIds.length} ${assetIds.length === 1 ? "image" : "images"}? Check the visible text of every slide first.`)) return;
     await runAsset("approve:all", async () => {
       let approved = 0;
-      for (const assetId of assetIds) {
-        const response = await requestJson<CreativeAssetBatchResponse>(
-          topicUrl(`/api/radar/creative/assets/${encodeURIComponent(assetId)}`, topicId),
-          secret,
-          { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "approve" }) },
-        ).catch((reason) => {
+      for (const [index, assetId] of assetIds.entries()) {
+        const response = await approveImage(assetId, `Image ${index + 1} of ${assetIds.length}`).catch((reason) => {
           throw new Error(`${approved} of ${assetIds.length} approved. ${getErrorMessage(reason)}`);
         });
         approved += 1;
@@ -4355,8 +4372,13 @@ async function requestJson<T>(url: string, secret: string, init: RequestInit = {
       signal: controller.signal,
       headers: { ...init.headers, Authorization: `Bearer ${secret.trim()}` },
     });
-    const payload = (await response.json().catch(() => undefined)) as { error?: string } | undefined;
-    if (!response.ok) throw new Error(payload?.error ?? `Request failed with ${response.status}`);
+    const payload = (await response.json().catch(() => undefined)) as { error?: string; code?: string; issues?: string[] } | undefined;
+    if (!response.ok) {
+      const failure: Error & { code?: string; issues?: string[] } = new Error(payload?.error ?? `Request failed with ${response.status}`);
+      failure.code = payload?.code;
+      failure.issues = payload?.issues;
+      throw failure;
+    }
     return payload as T;
   } catch (error) {
     if (controller.signal.aborted && !init.signal?.aborted) {

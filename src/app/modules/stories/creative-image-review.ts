@@ -5,7 +5,7 @@
  * verified photo, and third-party logos. The verdict is advisory text from a
  * model, so only the structured fields below are trusted.
  */
-export const CREATIVE_IMAGE_REVIEW_PROMPT_VERSION = "image-review-v5";
+export const CREATIVE_IMAGE_REVIEW_PROMPT_VERSION = "image-review-v6";
 
 export type CreativeImageReviewInput = {
   visibleText: string;
@@ -41,7 +41,7 @@ export function buildImageReviewInstructions(): string {
   return [
     "You review one finished social-media slide before publication. Answer only from what is visible in the image.",
     "The verified photo region is approximate (within about 6% of the canvas). The verified photograph is one cleanly bounded photo (rectangle, rounded rectangle, arch or circle) placed there; everything beyond its boundary is outside it, including a person partly hidden behind it or a scene behind it.",
-    "peopleOutsideVerifiedPhoto: true if any human face, head, body, silhouette or figure appears outside the verified photograph (when one is given) and is not one of the listed approved fictional characters. Drawings, illustrations and photorealistic people all count. Theatre masks, emoji, pictograms, simple icons, object illustrations, and clothing or equipment with no visible face, skin or body part are not people.",
+    "peopleOutsideVerifiedPhoto: true if any human face, head, body, silhouette or figure appears outside the verified photograph (when one is given) and is not one of the listed approved fictional characters. Drawings, illustrations and photorealistic people all count. Theatre masks, emoji, pictograms, simple icons, object illustrations, and clothing or equipment with no visible face, skin or body part are not people. Non-human characters are not people either: ghosts, monsters, skeletons, witches' hats or costumes without a person in them, scarecrows, jack-o'-lanterns, mascots, toys, animals and creatures, even when drawn with a face.",
     "possibleRealPersonLikeness: true if anything outside the verified photograph could be read as a depiction of a real person — especially anyone named in the visible text — whether photorealistic, illustrated or caricatured. A second, generated version of the photographed person also counts.",
     "thirdPartyLogos: list recognizable logos or trademark emblems of brands, teams, leagues, sponsors or products drawn outside the verified photograph and the verified map (for example on generated clothing, belts, cars or signs). Ignore anything inside the verified photograph or the verified map — a map's provider logo and attribution are required there — words that are part of the visible text, and the publication's own name or logo.",
     "summary: one short sentence describing any problem, or an empty string.",

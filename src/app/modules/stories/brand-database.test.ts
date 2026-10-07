@@ -49,7 +49,7 @@ test("approval checks revoked references and rejects an older image after a newe
       CREATE TYPE creative_asset_status AS ENUM ('generated','approved','queued');
       CREATE TABLE creative_drafts (id uuid PRIMARY KEY,topic_id uuid,version int,status text);
       CREATE TABLE creative_asset_batches (id uuid PRIMARY KEY,draft_id uuid,draft_version int,status text);
-      CREATE TABLE creative_assets (id uuid PRIMARY KEY,batch_id uuid,unit_order int,version int,status creative_asset_status,reference_snapshot jsonb,approved_at timestamptz,updated_at timestamptz);
+      CREATE TABLE creative_assets (id uuid PRIMARY KEY,batch_id uuid,unit_order int,version int,status creative_asset_status,reference_snapshot jsonb,approved_at timestamptz,updated_at timestamptz,approval_acknowledgement jsonb);
       CREATE TABLE creative_brand_references (id uuid PRIMARY KEY,topic_id uuid,is_active boolean,provider_transmission_allowed boolean,version int,sha256 text,usage_note text);
       INSERT INTO creative_drafts VALUES ('00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000009',1,'approved');
       INSERT INTO creative_asset_batches VALUES ('00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000001',1,'generated');
@@ -66,13 +66,17 @@ test("approval checks revoked references and rejects an older image after a newe
       catch (error) { await client.exec("ROLLBACK"); throw error; }
     } });
     const repo = loadRepo("./creative-assets.repository.ts", batchDb);
-    const approve = repo.setCreativeAssetApproval as unknown as (id: string, approved: boolean) => Promise<void>;
+    const approve = repo.setCreativeAssetApproval as unknown as (id: string, approved: boolean, acknowledgement?: Record<string, unknown> | null) => Promise<void>;
     const id = "00000000-0000-4000-8000-000000000003";
     await assert.rejects(approve(id, true), /changed/);
     await client.exec("UPDATE creative_brand_references SET provider_transmission_allowed=true");
-    await approve(id, true);
-    assert.equal((await client.query<{status: string}>("SELECT status FROM creative_assets")).rows[0].status, "approved");
+    // An editor's override of the automatic review is recorded with the approval and cleared with it.
+    await approve(id, true, { kind: "image-review-override", issues: ["The image shows generated people on a slide without an approved character."] });
+    const approvedRow = (await client.query<{ status: string; approval_acknowledgement: { kind: string } | null }>("SELECT status,approval_acknowledgement FROM creative_assets")).rows[0];
+    assert.equal(approvedRow.status, "approved");
+    assert.equal(approvedRow.approval_acknowledgement?.kind, "image-review-override");
     await approve(id, false);
+    assert.equal((await client.query<{ approval_acknowledgement: unknown }>("SELECT approval_acknowledgement FROM creative_assets")).rows[0].approval_acknowledgement, null);
     await client.exec(`INSERT INTO creative_assets SELECT '00000000-0000-4000-8000-000000000005',batch_id,unit_order,2,'queued',reference_snapshot,null,null FROM creative_assets`);
     await assert.rejects(approve(id, true), /changed/);
     await client.exec("UPDATE creative_drafts SET version=2");

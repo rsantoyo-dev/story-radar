@@ -2,6 +2,8 @@ import { resolveStoryReferences, loadStoryReferenceImages, loadDocumentaryPortra
 import { compositeDocumentaryPortrait, PORTRAIT_ZONE_PROMPT, portraitAccent, portraitLayoutForSlide, portraitPhotoRegion, portraitZonePrompt } from "./creative-portrait-composite";
 import { compositeMapPanel, MAP_PANEL_VISUAL_DIRECTION, mapPanelRegion, mapPanelZonePrompt, mapPaletteFromBrand } from "./creative-map-panel";
 import { creativeImageReviewEnabled, reviewCreativeImage } from "./review-creative-image";
+import { CREATIVE_IMAGE_REVIEW_PROMPT_VERSION } from "./creative-image-review";
+import { CreativeImageReviewBlockedError } from "./creative-run-errors";
 import { normalizePalette } from "./creative-visual-guidance";
 import { storyReferencePrompt, enforceStoryReferencePrompt, photoLedVisualDirection, type StoryGenerationReference } from "./story-reference-generation";
 import { assertStoryEditionCurrent } from "./manage-creative-content";
@@ -929,10 +931,23 @@ async function executeCreativeAssetImageEdit({
   return { asset: submitted, batch };
 }
 
+export type CreativeImageReviewOverride = {
+  kind: "image-review-override";
+  issues: string[];
+  reviewPromptVersion: string;
+  acknowledgedAt: string;
+};
+
+/**
+ * `reviewOverride` is an editor's explicit decision after checking the image
+ * themselves: the automatic review's issues are recorded on the asset and the
+ * image is approved anyway. Automated workflows never pass it.
+ */
 export async function changeCreativeAssetApproval(
   topicId: string,
   assetId: string,
   action: "approve" | "unapprove",
+  options: { reviewOverride?: boolean } = {},
 ): Promise<CreativeAssetBatchResponse> {
   const found = await requireCreativeAsset(assetId);
   const draft = await requireCreativeDraft(topicId, found.batch.draftId);
@@ -943,6 +958,7 @@ export async function changeCreativeAssetApproval(
   await assertEditorialEvidence(topicId, draft);
   if (action === "approve" && !await roadMapStillCurrent(found.asset.unitSnapshot.placeVisual?.adapterEvidence ?? found.asset.unitSnapshot.roadMapEvidence, (await requireCreativeBrief(topicId, draft.briefId)).keyFacts)) throw new CreativeContentConflictError("The official road notice changed or cannot be checked. Regenerate this image to refresh it before approval.");
 
+  let acknowledgement: CreativeImageReviewOverride | null = null;
   if (action === "approve") {
     if (found.asset.status !== "generated") {
       throw new CreativeContentConflictError(
@@ -953,7 +969,13 @@ export async function changeCreativeAssetApproval(
       draft,
       await getTopicVisualFidelityMode(topicId),
     );
-    await assertImagePassesReview(topicId, draft, found.asset);
+    const issues = await imageReviewIssuesFor(topicId, draft, found.asset);
+    if (issues.length && !options.reviewOverride) {
+      throw new CreativeImageReviewBlockedError(`Automatic review flagged this image: ${issues.join(" ")} Check the image yourself: regenerate it, or approve it anyway if the review is wrong.`, issues);
+    }
+    if (issues.length) acknowledgement = {
+      kind: "image-review-override", issues, reviewPromptVersion: CREATIVE_IMAGE_REVIEW_PROMPT_VERSION, acknowledgedAt: new Date().toISOString(),
+    };
   }
   if (action === "unapprove" && found.asset.status !== "approved") {
     throw new CreativeContentConflictError(
@@ -961,7 +983,7 @@ export async function changeCreativeAssetApproval(
     );
   }
 
-  await setCreativeAssetApproval(assetId, action === "approve");
+  await setCreativeAssetApproval(assetId, action === "approve", acknowledgement);
   if (action === "approve") {
     // Keep the approved image beyond fal's 30 days. Best effort: approval
     // never fails on storage, and the hourly maintenance retries the copy.
@@ -978,8 +1000,8 @@ export async function changeCreativeAssetApproval(
  * people and third-party logos are caught here. Locally composed slides
  * contain no generated imagery and are not reviewed.
  */
-async function assertImagePassesReview(topicId: string, draft: CreativeDraft, asset: CreativeGeneratedAsset): Promise<void> {
-  if (!creativeImageReviewEnabled() || asset.providerEndpoint === DRAFT_TYPOGRAPHY_ENDPOINT || !asset.imageUrl) return;
+async function imageReviewIssuesFor(topicId: string, draft: CreativeDraft, asset: CreativeGeneratedAsset): Promise<string[]> {
+  if (!creativeImageReviewEnabled() || asset.providerEndpoint === DRAFT_TYPOGRAPHY_ENDPOINT || !asset.imageUrl) return [];
   const [references, brief, file] = await Promise.all([
     getCreativeAssetGenerationReferences(asset.id),
     requireCreativeBrief(topicId, draft.briefId),
@@ -989,7 +1011,7 @@ async function assertImagePassesReview(topicId: string, draft: CreativeDraft, as
   const issues = await reviewCreativeImage({
     topicId,
     storyId: draft.storyId,
-    cacheKey: `${asset.id}:${asset.version}:${asset.imageUrl}`,
+    cacheKey: `${CREATIVE_IMAGE_REVIEW_PROMPT_VERSION}:${asset.id}:${asset.version}:${asset.imageUrl}`,
     image: Buffer.from(await file.arrayBuffer()),
     visibleText: asset.expectedText,
     publicationName: brief.profileSnapshot.name,
@@ -998,9 +1020,7 @@ async function assertImagePassesReview(topicId: string, draft: CreativeDraft, as
       ? { verifiedMap: { provider: asset.unitSnapshot.placeVisual.adapter === "google-maps" ? "Google" : "OpenStreetMap", region: mapPanelRegion() } } : {}),
     characters: references.characters.map((character) => ({ name: character.name, description: character.description })),
   });
-  if (issues.length) {
-    throw new CreativeContentConflictError(`Automatic review blocked this image: ${issues.join(" ")} Regenerate it before approving.`);
-  }
+  return issues;
 }
 
 /** How long a queued asset may wait for its fal.ai request ID while references upload. */

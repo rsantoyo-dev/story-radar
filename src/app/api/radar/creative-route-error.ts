@@ -18,6 +18,7 @@ import { CreativeAssetValidationError } from "@/app/modules/stories/manage-creat
 import { CreativeAssetEditRequestValidationError } from "@/app/modules/stories/creative-asset-edit-request-input";
 import { PublicationPackageValidationError } from "@/app/modules/meta/instagram-publication-package";
 import { PublicationPackageConflictError } from "@/app/modules/meta/freeze-publication-package.core";
+import { CreativeImageReviewBlockedError } from "@/app/modules/stories/creative-run-errors";
 import {
   PublicationJobConflictError,
   PublicationJobStateError,
@@ -95,6 +96,10 @@ export function creativeRouteErrorResponse(
 
   if (error instanceof CreativeContentInsufficientError) {
     return NextResponse.json({ error: error.message }, { status: 422 });
+  }
+
+  if (error instanceof CreativeImageReviewBlockedError) {
+    return NextResponse.json({ error: error.message, code: "image_review_blocked", issues: error.issues }, { status: 409 });
   }
 
   if (error instanceof CreativeContentConflictError) {

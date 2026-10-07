@@ -56,7 +56,7 @@ export async function PATCH(request: Request, context: Context) {
   }
 
   try {
-    const body = (await request.json()) as { action?: unknown };
+    const body = (await request.json()) as { action?: unknown; reviewOverride?: unknown };
     if (body.action !== "approve" && body.action !== "unapprove") {
       return noStoreJson({ error: "action must be approve or unapprove" }, 400);
     }
@@ -65,6 +65,8 @@ export async function PATCH(request: Request, context: Context) {
         await requireActiveRequestTopic(request),
         assetId,
         body.action,
+        // An editor who checked the image may approve over the automatic review.
+        { reviewOverride: body.action === "approve" && body.reviewOverride === true },
       ),
     );
   } catch (error) {

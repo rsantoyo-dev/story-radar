@@ -777,6 +777,12 @@ export const creativeAssets = pgTable(
       withTimezone: true,
       mode: "date",
     }),
+    /**
+     * What a human explicitly accepted when approving this image: the
+     * automatic review's issues they checked and overrode. Null when the
+     * review passed; cleared on unapprove.
+     */
+    approvalAcknowledgement: jsonb("approval_acknowledgement"),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),

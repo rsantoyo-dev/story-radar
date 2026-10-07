@@ -522,7 +522,8 @@ export async function failCreativeAsset(
 }
 
 /** Lock in the same order as edits, then recheck on a fresh statement snapshot. */
-export async function setCreativeAssetApproval(assetId: string, approved: boolean): Promise<void> {
+/** `acknowledgement` records what an editor accepted over the automatic review; cleared on unapprove. */
+export async function setCreativeAssetApproval(assetId: string, approved: boolean, acknowledgement: Record<string, unknown> | null = null): Promise<void> {
   const [,, result] = await db.batch([
     db.execute(sql`SELECT d.id FROM creative_assets a JOIN creative_asset_batches b ON b.id=a.batch_id
       JOIN creative_drafts d ON d.id=b.draft_id WHERE a.id=${assetId}::uuid FOR UPDATE OF d`),
@@ -532,7 +533,8 @@ export async function setCreativeAssetApproval(assetId: string, approved: boolea
         THEN COALESCE(a.reference_snapshot->'brand','[]'::jsonb) || COALESCE(a.reference_snapshot->'provenanceBrand','[]'::jsonb)
         ELSE '[]'::jsonb END) e WHERE a.id=${assetId}::uuid) FOR SHARE OF r`),
     db.execute(sql`UPDATE creative_assets a SET status=${approved ? "approved" : "generated"}::creative_asset_status,
-      approved_at=${approved ? new Date() : null},updated_at=now()
+      approved_at=${approved ? new Date() : null},
+      approval_acknowledgement=${approved && acknowledgement ? JSON.stringify(acknowledgement) : null}::jsonb,updated_at=now()
       FROM creative_asset_batches b,creative_drafts d
       WHERE a.id=${assetId}::uuid AND b.id=a.batch_id AND d.id=b.draft_id
       AND b.status<>'stale' AND d.version=b.draft_version AND d.status='approved'
