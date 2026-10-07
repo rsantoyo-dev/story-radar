@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { CreativeDraftWorkspace, type WorkspaceTab } from "@/app/creative-draft-workspace";
 import { StoryContentViewer, type StoryContentResponse } from "@/app/radar-dashboard";
 import styles from "@/app/creative-draft-workspace.generated.module.css";
+import { SIGNED_IN_CREDENTIAL } from "@/app/modules/auth/session-credential";
 
 const WORKSPACE_TABS: readonly WorkspaceTab[] = ["content", "focus", "script", "visuals", "publication"];
 
@@ -90,7 +91,7 @@ export function StoryWorkspacePageClient({
       topicId={topicId}
       storyId={storyId}
       storyTitle={content.title}
-      secret={secret}
+      secret={signedIn ? SIGNED_IN_CREDENTIAL : secret}
       onClose={() => router.push(back)}
       onOpenContent={() => setContentOpen(true)}
       contentSummary={content}
@@ -101,7 +102,7 @@ export function StoryWorkspacePageClient({
     {contentOpen && content ? <StoryContentViewer
       key={`${topicId}:${storyId}:${content.editorial?.revision ?? 0}`}
       content={content}
-      secret={secret}
+      secret={signedIn ? SIGNED_IN_CREDENTIAL : secret}
       topicId={topicId}
       onSaved={(saved) => { setContent(saved); if (workspaceDirty) setContentSaved(true); else { setWorkspaceNonce((current) => current + 1); setContentSaved(false); } }}
       onClose={() => setContentOpen(false)}

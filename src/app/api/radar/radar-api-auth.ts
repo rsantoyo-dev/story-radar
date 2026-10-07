@@ -14,6 +14,7 @@ import {
 import { hasRole, minimumRoleForMethod, type WorkspaceRole } from "@/app/modules/auth/access.core";
 import { DEFAULT_WORKSPACE_ID, getTopicById } from "@/app/modules/topics/topic-catalog.repository";
 import { TopicContextError } from "@/app/modules/topics/topic-context";
+import { SIGNED_IN_CREDENTIAL } from "@/app/modules/auth/session-credential";
 import type { Topic } from "@/db/schema";
 
 /**
@@ -44,7 +45,7 @@ export async function authorizeRadarCollector(
   const authorization = request.headers.get("authorization")?.trim();
 
   let access: RadarRequestAccess | undefined;
-  if (configuredSecret && authorization === `Bearer ${configuredSecret}`) {
+  if (configuredSecret && configuredSecret !== SIGNED_IN_CREDENTIAL && authorization === `Bearer ${configuredSecret}`) {
     access = { kind: "operator", workspaceId: DEFAULT_WORKSPACE_ID, role: "owner", staff: true };
   } else {
     const user = await getSessionUser(request.headers).catch(() => undefined);

@@ -44,6 +44,7 @@ function load(sessionUser?: Member) {
       if (name === "@/app/modules/auth/access.core") return core;
       if (name === "@/app/modules/topics/topic-catalog.repository") return { DEFAULT_WORKSPACE_ID: "default", getTopicById: async (id: string) => topics[id] };
       if (name === "@/app/modules/topics/topic-context") return { TopicContextError };
+      if (name === "@/app/modules/auth/session-credential") return { SIGNED_IN_CREDENTIAL: "signed-in-session" };
       throw new Error(`Unexpected dependency: ${name}`);
     },
   });
@@ -74,6 +75,8 @@ describe("API authorization", () => {
   it("refuses a request with neither the secret nor a session", async () => {
     assert.equal(await status(load().authorizeRadarCollector(request("/api/radar/topics"))), 401);
     assert.equal(await status(load().authorizeRadarCollector(request("/api/radar/topics", "GET", "wrong"))), 401);
+    // The panels' signed-in placeholder is never a secret: without a session it is refused.
+    assert.equal(await status(load().authorizeRadarCollector(request("/api/radar/topics", "GET", "signed-in-session"))), 401);
   });
 
   it("lets a viewer read its topic but not change it, and hides other workspaces' topics", async () => {

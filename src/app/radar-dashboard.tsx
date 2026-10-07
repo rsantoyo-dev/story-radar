@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 import { SignOutButton } from "./account/sign-out-button";
+import { SIGNED_IN_CREDENTIAL } from "./modules/auth/session-credential";
 import { DailyPreparationPanel } from "./daily-preparation-panel";
 import { DailyEditorialPlannerPanel } from "./daily-editorial-planner-panel";
 import { StoryPhotosPanel } from "./story-photos-panel";
@@ -605,6 +606,8 @@ export function RadarDashboard({
 
   const isBusy = activeOperation !== undefined;
   const canAuthenticate = Boolean(account) || secret.trim().length > 0;
+  // Panels still take a `secret` prop; signed in, they get the session placeholder.
+  const panelSecret = account ? SIGNED_IN_CREDENTIAL : secret;
   const canDelete = canAuthenticate && confirmation === "DELETE" && !isBusy;
   const selectedTopic = topics.find((topic) => topic.id === selectedTopicId);
   const selectedTopicName = selectedTopic?.name ?? "this topic";
@@ -1585,7 +1588,7 @@ export function RadarDashboard({
           initialTopicId={selectedTopicId}
           defaultLanguage={selectedCreativeProfile?.language}
           defaultRegion={selectedCreativeProfile?.region}
-          secret={secret}
+          secret={panelSecret}
           onClose={() => setNewStoryOpen(false)}
           onCreated={handleStoryCreated}
         />
@@ -1595,7 +1598,7 @@ export function RadarDashboard({
         <AddSourceDialog
           topics={topics}
           initialTopicId={selectedTopicId}
-          secret={secret}
+          secret={panelSecret}
           onClose={() => setAddSourceOpen(false)}
           onCreated={handleSourceAdded}
         />
@@ -1655,7 +1658,7 @@ export function RadarDashboard({
                     </DisclosureActionMenu>
                   </div>
                   <a className={styles.topbarActionLink} href="#today">Today</a>
-                  <DemoCreditIndicator secret={secret} />
+                  <DemoCreditIndicator secret={panelSecret} />
                   {account ? <AccountMenu account={account} /> : <div className={styles.topbarSession}>
                     <span className={`${styles.topbarStatus} ${styles.online}`} role="status" aria-label="Connected" title="Connected" />
                     <button type="button" className={styles.disconnectButton} onClick={handleDisconnect} disabled={isBusy} aria-label="Disconnect" title="Disconnect">
@@ -1701,11 +1704,11 @@ export function RadarDashboard({
           >
 
         <section id="overview" className={styles.anchorTarget} hidden={activeView !== "today"}>
-          <DailyPreparationPanel onOpenDraft={(storyId,_title,draftId,preparationRunId)=>openCreativeStory(storyId,{draftId,preparationRunId,tab:"script"})} key={`daily-${selectedTopicId}`} topicId={selectedTopicId} secret={secret} disabled={!canAuthenticate || isBusy || isTopicLoading} refreshKey={stats} onViewContent={handleViewContent} onPrepareContent={handlePrepareContent} onSelect={handlePlannerSelect} preparingStoryId={activeOperation === "prepare" ? activeStoryId : undefined} onCompleted={()=>{void fetchDatabaseStats(secret,selectedTopicId).then(setStats).catch(()=>{});}} />
-          <DailyEditorialPlannerPanel key={`planner-${selectedTopicId}`} topicId={selectedTopicId} secret={secret} disabled={!canAuthenticate || isBusy} refreshKey={stats} onViewContent={handleViewContent} onPrepareContent={handlePrepareContent} onSelect={handlePlannerSelect} preparingStoryId={activeOperation === "prepare" ? activeStoryId : undefined} />
+          <DailyPreparationPanel onOpenDraft={(storyId,_title,draftId,preparationRunId)=>openCreativeStory(storyId,{draftId,preparationRunId,tab:"script"})} key={`daily-${selectedTopicId}`} topicId={selectedTopicId} secret={panelSecret} disabled={!canAuthenticate || isBusy || isTopicLoading} refreshKey={stats} onViewContent={handleViewContent} onPrepareContent={handlePrepareContent} onSelect={handlePlannerSelect} preparingStoryId={activeOperation === "prepare" ? activeStoryId : undefined} onCompleted={()=>{void fetchDatabaseStats(secret,selectedTopicId).then(setStats).catch(()=>{});}} />
+          <DailyEditorialPlannerPanel key={`planner-${selectedTopicId}`} topicId={selectedTopicId} secret={panelSecret} disabled={!canAuthenticate || isBusy} refreshKey={stats} onViewContent={handleViewContent} onPrepareContent={handlePrepareContent} onSelect={handlePlannerSelect} preparingStoryId={activeOperation === "prepare" ? activeStoryId : undefined} />
           <TopicOverviewPanel
             key={selectedTopicId}
-            secret={secret}
+            secret={panelSecret}
             topicId={selectedTopicId}
             topicName={selectedTopic?.name ?? "this topic"}
             topicDescription={selectedTopic?.description}
@@ -1722,7 +1725,7 @@ export function RadarDashboard({
             catalogError={sourceCatalogError}
             topics={topics}
             selectedTopicId={selectedTopicId}
-            secret={secret}
+            secret={panelSecret}
             disabled={isBusy}
             onTopicsChange={setTopics}
             onTopicChange={handleTopicChange}
@@ -1742,7 +1745,7 @@ export function RadarDashboard({
               catalogError={sourceCatalogError}
               topics={topics}
               selectedTopicId={selectedTopicId}
-              secret={secret}
+              secret={panelSecret}
               disabled={isBusy}
               onTopicsChange={setTopics}
               onTopicChange={handleTopicChange}
@@ -1760,7 +1763,7 @@ export function RadarDashboard({
         <div id="editorial" className={styles.anchorTarget} hidden={activeView !== "strategy" || !["#strategy", "#editorial"].includes(activeNavHash)}>
           <EditorialProfilePanel
             topicId={selectedTopicId}
-            secret={secret}
+            secret={panelSecret}
             disabled={isBusy}
             onProfileSaved={(profile, reactivatedStories) => {
               setMaxAgeHours(
@@ -1789,13 +1792,13 @@ export function RadarDashboard({
           <AcquisitionLensesPanel
             key={selectedTopicId}
             topicId={selectedTopicId}
-            secret={secret}
+            secret={panelSecret}
             disabled={isBusy}
           />
         </div>
 
         <div id="editorial-lines" className={styles.anchorTarget} hidden={activeView !== "strategy" || activeNavHash !== "#strategy/lines"}>
-          <EditorialLinesPanel key={`strategy-${selectedTopicId}`} topicId={selectedTopicId} secret={secret} disabled={isBusy} manageOnly refreshKey={lineRefresh} onLoaded={setLineData} />
+          <EditorialLinesPanel key={`strategy-${selectedTopicId}`} topicId={selectedTopicId} secret={panelSecret} disabled={isBusy} manageOnly refreshKey={lineRefresh} onLoaded={setLineData} />
         </div>
 
         <div id="editorial-creative" className={styles.anchorTarget} hidden={activeView !== "identity"}>
@@ -1803,7 +1806,7 @@ export function RadarDashboard({
             key={selectedTopicId}
             section={activeNavHash === "#creative-profile-voice" ? "voice" : ["#creative-profile-brand", "#creative-profile-carousel"].includes(activeNavHash) ? "visual" : activeNavHash === "#creative-profile-characters" ? "assets" : "profile"}
             topicId={selectedTopicId}
-            secret={secret}
+            secret={panelSecret}
             disabled={isBusy}
             onProfileLoaded={acceptSelectedCreativeProfile}
             onProfileSaved={acceptSelectedCreativeProfile}
@@ -1814,7 +1817,7 @@ export function RadarDashboard({
           <MetaConnectionPanel
             key={selectedTopicId}
             topicId={selectedTopicId}
-            secret={secret}
+            secret={panelSecret}
             disabled={isBusy}
             onConnectionChanged={() => setMetaRefreshToken((n) => n + 1)}
           />
@@ -1824,7 +1827,7 @@ export function RadarDashboard({
           <FacebookConnectionPanel
             key={`facebook-${selectedTopicId}`}
             topicId={selectedTopicId}
-            secret={secret}
+            secret={panelSecret}
             disabled={isBusy}
             selectionId={facebookSelection?.topicId === selectedTopicId ? facebookSelection.selectionId : undefined}
             onSelectionHandled={clearFacebookSelection}
@@ -1835,7 +1838,7 @@ export function RadarDashboard({
           <InstagramGalleryPanel
             key={selectedTopicId}
             topicId={selectedTopicId}
-            secret={secret}
+            secret={panelSecret}
             disabled={isBusy}
             refreshToken={metaRefreshToken}
             onLinked={() => setMetaRefreshToken(n => n + 1)}
@@ -1849,7 +1852,7 @@ export function RadarDashboard({
               <a href="#discover">View {stats?.editorial?.collectedStories.length ?? 0} candidates →</a>
             </div>
 
-            <EditorialLinesPanel key={selectedTopicId} topicId={selectedTopicId} secret={secret} disabled={isBusy} refreshKey={lineRefresh} onSelection={setLineSelection} onLoaded={setLineData}/>
+            <EditorialLinesPanel key={selectedTopicId} topicId={selectedTopicId} secret={panelSecret} disabled={isBusy} refreshKey={lineRefresh} onSelection={setLineSelection} onLoaded={setLineData}/>
             <div className={styles.buttonRow}>
               <button
                 type="submit"
@@ -2112,7 +2115,7 @@ export function RadarDashboard({
           <StoryContentViewer
             key={`${selectedTopicId}:${contentViewer.storyId}`}
             content={contentViewer}
-            secret={secret}
+            secret={panelSecret}
             topicId={selectedTopicId}
             onSaved={setContentViewer}
             onClose={() => setContentViewer(undefined)}
