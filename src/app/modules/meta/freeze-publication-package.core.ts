@@ -106,6 +106,15 @@ export type PersistDeliveryFile = {
   createdAt: Date;
 };
 
+export type RenewPackage = {
+  packageId: string;
+  /** Optimistic guard: the renewal only applies to the package as it was read. */
+  previousExpiresAt: Date;
+  expiresAt: Date;
+  publishingAccessPending: boolean;
+  updatedAt: Date;
+};
+
 export type FreezeDependencies = {
   loadCandidate: () => Promise<PublicationCandidate>;
   loadContext: () => Promise<{
@@ -131,6 +140,12 @@ export type FreezeDependencies = {
   putObject: (objectKey: string, bytes: Uint8Array, contentType: string) => Promise<void>;
   removeObject: (objectKey: string) => Promise<void>;
   persist: (pkg: PersistPackage, files: PersistDeliveryFile[]) => Promise<void>;
+  /**
+   * Renews an expired frozen package in place: same id, same content and
+   * package hash, new delivery files and expiry. Without it an expired
+   * package is returned as is.
+   */
+  renew?: (pkg: RenewPackage, files: PersistDeliveryFile[]) => Promise<void>;
   deliveryBaseUrl: string;
   ttlHours?: number;
   now?: () => Date;
@@ -172,9 +187,12 @@ export async function runFreezePublicationPackage(
   const pendingPublishingAccess = candidate.state !== "ready";
 
   const existing = await deps.findExisting(draftId, candidate.snapshotHash);
-  if (existing) return existing;
+  // A live package is reused as is. An expired one is renewed below: the same
+  // approved set gets fresh delivery files instead of being blocked forever by
+  // the one-package-per-set rule.
+  if (existing && (!deps.renew || Date.parse(existing.expiresAt) > now().getTime())) return existing;
   // One package per exact approved set: a used one can never be frozen again.
-  const used = await deps.findUsed?.(draftId, candidate.snapshotHash);
+  const used = existing ? undefined : await deps.findUsed?.(draftId, candidate.snapshotHash);
   if (used) {
     throw new PublicationPackageConflictError(used.status === "consumed"
       ? "This exact post was already published on this channel. Change the script or an image to publish a new version."
@@ -184,7 +202,7 @@ export async function runFreezePublicationPackage(
   const context = await deps.loadContext();
   const orderedAssets = [...candidate.assets].sort((a, b) => a.order - b.order);
 
-  const packageId = randomUUID();
+  const packageId = existing?.id ?? randomUUID();
   const timestamp = now();
   const expiresAt = new Date(timestamp.getTime() + ttlHours * 60 * 60 * 1_000);
 
@@ -241,13 +259,45 @@ export async function runFreezePublicationPackage(
     ...(context.channel !== "instagram-direct" ? { channel: context.channel, pageId: context.pageId } : {}),
   });
 
+  // Renewing never changes what would be posted: a job's idempotency key is
+  // derived from this hash.
+  if (existing && packageHash !== existing.packageHash) {
+    throw new PublicationPackageConflictError(
+      "The images of this expired review no longer match it. Check publication readiness again.",
+    );
+  }
+
+  const files: PersistDeliveryFile[] = deliverySlides.map((slide) => ({
+    packageId,
+    unitOrder: slide.unitOrder,
+    assetVersion: slide.assetVersion,
+    token: slide.token,
+    objectKey: slide.objectKey,
+    contentType: "image/jpeg",
+    byteSize: slide.jpeg.byteLength,
+    sha256: slide.sha256,
+    sourceSha256: slide.sourceSha256,
+    width: slide.width,
+    height: slide.height,
+    expiresAt,
+    createdAt: timestamp,
+  }));
+
   const stored: string[] = [];
   try {
     for (const slide of deliverySlides) {
       await deps.putObject(slide.objectKey, slide.jpeg, "image/jpeg");
       stored.push(slide.objectKey);
     }
-    await deps.persist(
+    if (existing && deps.renew) {
+      await deps.renew({
+        packageId,
+        previousExpiresAt: new Date(existing.expiresAt),
+        expiresAt,
+        publishingAccessPending: pendingPublishingAccess,
+        updatedAt: timestamp,
+      }, files);
+    } else await deps.persist(
       {
         id: packageId,
         topicId,
@@ -277,21 +327,7 @@ export async function runFreezePublicationPackage(
         createdAt: timestamp,
         updatedAt: timestamp,
       },
-      deliverySlides.map((slide) => ({
-        packageId,
-        unitOrder: slide.unitOrder,
-        assetVersion: slide.assetVersion,
-        token: slide.token,
-        objectKey: slide.objectKey,
-        contentType: "image/jpeg",
-        byteSize: slide.jpeg.byteLength,
-        sha256: slide.sha256,
-        sourceSha256: slide.sourceSha256,
-        width: slide.width,
-        height: slide.height,
-        expiresAt,
-        createdAt: timestamp,
-      })),
+      files,
     );
   } catch (error) {
     await Promise.all(stored.map((key) => deps.removeObject(key).catch(() => undefined)));
@@ -310,7 +346,7 @@ export async function runFreezePublicationPackage(
     channel: context.channel,
     publishingAccessPending: pendingPublishingAccess,
     expiresAt: expiresAt.toISOString(),
-    createdAt: timestamp.toISOString(),
+    createdAt: existing?.createdAt ?? timestamp.toISOString(),
     slides: deliverySlides.map((slide) => ({
       unitOrder: slide.unitOrder,
       assetVersion: slide.assetVersion,

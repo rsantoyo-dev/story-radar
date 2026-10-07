@@ -15,7 +15,7 @@
 
 import { classifyMetaGraphError } from "./meta-verification";
 import { MetaGraphApiError } from "./meta-token-response";
-import type { PublicationChannel } from "./publication-channel";
+import { destinationAccountId, type PublicationChannel } from "./publication-channel";
 import {
   publishingAccessIsCurrent,
   type PublishingAccess,
@@ -202,6 +202,55 @@ export function toPublicationJobView(row: PublicationJobRow, maxAttempts = MAX_A
     startedAt: row.startedAt ? row.startedAt.toISOString() : null,
     finishedAt: row.finishedAt ? row.finishedAt.toISOString() : null,
   };
+}
+
+/** A send may be in flight, or its outcome is still being checked. */
+export const UNRESOLVED_SEND_STATUSES = [
+  "queued", "preparing", "creating-containers", "containers-ready", "publishing", "pending-confirmation",
+] as const satisfies readonly PublicationJobStatus[];
+
+export type SendDestinationRow = {
+  id: string;
+  status: string;
+  failureKind: string | null;
+  channel: string;
+  igUserId: string | null;
+  pageId: string | null;
+  createdAt: Date;
+};
+
+/** In flight, being confirmed, or suspended without knowing whether it posted. */
+export function isUnresolvedSend(row: Pick<SendDestinationRow, "status" | "failureKind">): boolean {
+  return (UNRESOLVED_SEND_STATUSES as readonly string[]).includes(row.status) ||
+    (row.status === "suspended" && row.failureKind === "uncertain");
+}
+
+/**
+ * Orders of one draft to the same account whose outcome is not settled. While
+ * one exists, another send of that draft to that account could post it twice
+ * (an edited caption or a reconnect changes the idempotency key).
+ */
+export function unresolvedSendsTo<T extends SendDestinationRow>(
+  rows: readonly T[],
+  destination: { channel: PublicationChannel; accountId: string },
+  exceptJobId?: string,
+): T[] {
+  return rows.filter((row) =>
+    row.id !== exceptJobId &&
+    isUnresolvedSend(row) &&
+    row.channel === destination.channel &&
+    destinationAccountId({ channel: row.channel as PublicationChannel, pageId: row.pageId, igUserId: row.igUserId }) === destination.accountId);
+}
+
+export function unresolvedSendMessage(platform: string): string {
+  return `Another publication of this draft to this ${platform} account is not confirmed yet. ` +
+    `Wait for it to finish, or, if it is suspended as uncertain, check ${platform} and mark it as not published before sending again.`;
+}
+
+/** Released by an editor who checked the platform: nothing was posted. */
+export function releasedUncertainError(platform: string, attempts: number, at: Date): string {
+  return `An editor checked ${platform} on ${at.toISOString().slice(0, 16).replace("T", " ")} UTC and confirmed this post was not published` +
+    ` (after ${attempts} ${attempts === 1 ? "attempt" : "attempts"}). It can be published again.`;
 }
 
 /** Only a safe failure or a suspension before ALL provider work can be retried. */

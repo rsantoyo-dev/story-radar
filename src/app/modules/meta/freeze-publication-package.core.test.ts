@@ -10,6 +10,7 @@ import {
   type FrozenPackage,
   type PersistDeliveryFile,
   type PersistPackage,
+  type RenewPackage,
 } from "./freeze-publication-package.core";
 
 async function jpeg1080x1350(): Promise<File> {
@@ -212,4 +213,68 @@ test("an approved set that was already published is refused at once, before any 
   await assert.rejects(runFreezePublicationPackage("t", "draft", deps), /already published on this channel/);
   assert.equal(reads, 0);
   assert.equal(puts.length, 0);
+});
+
+async function expiredPrior(over: Partial<FrozenPackage> = {}): Promise<FrozenPackage> {
+  // Freeze once to learn the exact package hash this content produces.
+  const first = await runFreezePublicationPackage("t", "draft", baseDeps().deps);
+  return { ...first, id: "prior", expiresAt: "2026-09-09T11:00:00Z", createdAt: "2026-09-08T11:00:00Z", ...over };
+}
+
+test("an expired package of the same approved set is renewed in place with new delivery files", async () => {
+  const prior = await expiredPrior();
+  const renewed: { pkg?: RenewPackage; files?: PersistDeliveryFile[] } = {};
+  const { deps, puts, persisted } = baseDeps({
+    findExisting: async () => prior,
+    findUsed: async () => { throw new Error("an expired frozen package is not a used one"); },
+    renew: async (pkg, files) => { renewed.pkg = pkg; renewed.files = files; },
+  });
+  const frozen = await runFreezePublicationPackage("t", "draft", deps);
+
+  assert.equal(frozen.id, "prior");
+  assert.equal(frozen.packageHash, prior.packageHash);
+  assert.equal(frozen.createdAt, prior.createdAt);
+  assert.equal(frozen.expiresAt, "2026-09-10T12:00:00.000Z");
+  assert.equal(persisted.pkg, undefined, "renewal never inserts a second package");
+  assert.deepEqual(renewed.pkg, {
+    packageId: "prior",
+    previousExpiresAt: new Date(prior.expiresAt),
+    expiresAt: new Date("2026-09-10T12:00:00Z"),
+    publishingAccessPending: false,
+    updatedAt: new Date("2026-09-09T12:00:00Z"),
+  });
+  assert.deepEqual(renewed.files?.map((file) => file.packageId), ["prior", "prior"]);
+  assert.deepEqual(puts, ["delivery/prior/1.jpg", "delivery/prior/2.jpg"]);
+  // Fresh tokens: links from the expired window stop working.
+  for (const slide of frozen.slides) {
+    assert.ok(!prior.slides.some((old) => old.deliveryUrl === slide.deliveryUrl));
+  }
+});
+
+test("a package that has not expired is returned without renewing", async () => {
+  const prior = await expiredPrior({ expiresAt: "2026-09-09T13:00:00Z" });
+  let renewals = 0;
+  const { deps, puts } = baseDeps({ findExisting: async () => prior, renew: async () => { renewals += 1; } });
+  assert.equal((await runFreezePublicationPackage("t", "draft", deps)).id, "prior");
+  assert.equal(renewals, 0);
+  assert.equal(puts.length, 0);
+});
+
+test("renewal refuses if the re-rendered content would change what is posted", async () => {
+  const prior = await expiredPrior({ packageHash: "a-different-hash" });
+  let renewals = 0;
+  const { deps, puts } = baseDeps({ findExisting: async () => prior, renew: async () => { renewals += 1; } });
+  await assert.rejects(runFreezePublicationPackage("t", "draft", deps), PublicationPackageConflictError);
+  assert.equal(renewals, 0);
+  assert.equal(puts.length, 0, "nothing is uploaded before the content check");
+});
+
+test("a failed renewal removes the files it uploaded", async () => {
+  const prior = await expiredPrior();
+  const { deps, removed } = baseDeps({
+    findExisting: async () => prior,
+    renew: async () => { throw new PublicationPackageConflictError("changed concurrently"); },
+  });
+  await assert.rejects(runFreezePublicationPackage("t", "draft", deps), /changed concurrently/);
+  assert.deepEqual(removed, ["delivery/prior/1.jpg", "delivery/prior/2.jpg"]);
 });

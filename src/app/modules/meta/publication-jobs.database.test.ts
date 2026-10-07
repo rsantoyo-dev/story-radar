@@ -311,3 +311,55 @@ test("a Facebook post whose outcome is unknown is never re-posted", async () => 
     assert.match(row.lastError ?? "", /Facebook/);
   } finally { await h.client.close(); }
 });
+
+async function insertEditedVersion(h: Awaited<ReturnType<typeof setup>>, id: string) {
+  // The same draft and account, with an edited caption: a different package hash.
+  await h.db.insert(schema.instagramPublicationPackages).values({ id, topicId: ids.topic, draftId: ids.draft,
+    batchId: ids.batch, storyId: ids.story, draftVersion: 2, candidateSnapshotHash: `snapshot-${id}`, packageHash: `package-${id}`,
+    mediaType: "image", caption: "Edited caption", connectionVersion: "conn-1", igUserId: "1789",
+    scriptSnapshot: {}, transforms: [], expiresAt: new Date(Date.now() + 86_400_000) });
+  await h.db.insert(schema.instagramDeliveryFiles).values({ packageId: id, unitOrder: 1, assetVersion: 2,
+    token: `token-${id}`, objectKey: `key-${id}`, contentType: "image/jpeg", byteSize: 123,
+    sha256: "hash-2", sourceSha256: "source-hash-2", width: 1080, height: 1350, expiresAt: new Date(Date.now() + 86_400_000) });
+}
+
+test("an edited version is not sent while an earlier send to the same account is uncertain, until an editor confirms it did not post", async () => {
+  const h = await setup();
+  const edited = "00000000-0000-4000-8000-000000000007";
+  try {
+    const first = await h.repo.requestPublishNow(ids.topic, ids.draft, ids.pkg);
+    await h.db.update(schema.instagramPublicationJobs).set({ status: "suspended", failureKind: "uncertain",
+      lastError: "The confirmation window expired. Resolve manually before any new send.", finishedAt: new Date() });
+    await insertEditedVersion(h, edited);
+
+    await assert.rejects(h.repo.requestPublishNow(ids.topic, ids.draft, edited), /not confirmed yet/);
+    assert.equal((await h.db.select().from(schema.instagramPublicationJobs)).length, 1);
+
+    const released = await h.repo.releaseUncertainPublicationJob(ids.topic, ids.draft, first.id);
+    assert.equal(released.status, "failed");
+    assert.equal(released.failureKind, "retryable");
+    assert.equal(released.canRetry, true);
+    assert.match(released.lastError ?? "", /confirmed this post was not published/);
+    await assert.rejects(h.repo.releaseUncertainPublicationJob(ids.topic, ids.draft, first.id), /Only a suspended order/);
+
+    const second = await h.repo.requestPublishNow(ids.topic, ids.draft, edited);
+    assert.notEqual(second.id, first.id);
+    assert.equal(second.status, "queued");
+  } finally { await h.client.close(); }
+});
+
+test("a send still being confirmed blocks other versions and cannot be marked as not published", async () => {
+  const h = await setup();
+  const edited = "00000000-0000-4000-8000-000000000008";
+  try {
+    const first = await h.repo.requestPublishNow(ids.topic, ids.draft, ids.pkg);
+    await h.db.update(schema.instagramPublicationJobs).set({ status: "pending-confirmation", failureKind: "uncertain",
+      lastError: "The send outcome is uncertain. Checking without resending." });
+    await insertEditedVersion(h, edited);
+
+    await assert.rejects(h.repo.requestPublishNow(ids.topic, ids.draft, edited), /not confirmed yet/);
+    await assert.rejects(h.repo.releaseUncertainPublicationJob(ids.topic, ids.draft, first.id), /Only a suspended order/);
+    // Replaying the original request stays read-only and returns the same order.
+    assert.equal((await h.repo.requestPublishNow(ids.topic, ids.draft, ids.pkg)).id, first.id);
+  } finally { await h.client.close(); }
+});
