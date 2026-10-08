@@ -899,7 +899,7 @@ async function repairAndVerifyEditorialDraft(
       const response=await generateOpenAiStructuredResponse({apiKey,model,
         instructions:NARRATIVE_PLAN_POLICY+" Fix the diagnosed structural failures with one revised plan and the corresponding script. Keep exactly the existing slide count. Preserve sound wording when possible. You may reassign known facts and slide goals, but cannot change the evidence, format, character identities or brand. Return only the requested structured data. "+DRAFT_SYSTEM_INSTRUCTION+" For this authorized replan, your returned plan replaces the supplied old plan. Align every returned slide and hook candidate with the returned plan, using only the original fact IDs.",
         schema:{type:'object',additionalProperties:false,required:['reason','angle','hook','plan','draft'],properties:{reason:{type:'string'},angle:{type:'string'},hook:{type:'string'},plan:narrativePlanSchema,draft:creativeDraftSchema('carousel',current.units.length,options.characterRoster.length>0)}},
-        schemaName:'creative_narrative_replan',reasoningEffort:'medium',maxOutputTokens:8192,timeoutMs:60000,auditContext:options.openAiAuditContext,
+        schemaName:'creative_narrative_replan',reasoningEffort:'medium',maxOutputTokens:8192,timeoutMs:120000,auditContext:options.openAiAuditContext,
         contents:{draft:current,findings:issues,previousAttempt:current.editorialRepair?.lastPatchRejection,carouselNarrativePolicy:carouselNarrativePolicyForPrompt(options.profile.conversionGoal,options.profile.storyStructure),facts:brief.keyFacts,plan:brief.carouselPlan,editorialAngle:brief.editorialAngle,editorialDirection:options.editorialDirection,profile:profileForPrompt(options.profile),topic:topicForPrompt(options.topic),outputAspectRatio:options.outputAspectRatio},
       });
       try {
@@ -930,7 +930,7 @@ async function repairAndVerifyEditorialDraft(
       const severity=tier==='sol'?'severe':classifyCreativeRepairSeverity(issues,current.qualityReview!.scores);
       const response=await generateOpenAiStructuredResponse({apiKey,model:severity==='severe'?models.severeRepairModel:severity==='minor'?models.minorRepairModel:models.structuralRepairModel,
         schema:finalRepairSchema,schemaName:'creative_editorial_targeted_patch',reasoningEffort:'medium',maxOutputTokens:4096,
-        timeoutMs:Math.min(60_000,deadline-Date.now()),auditContext:options.openAiAuditContext,
+        timeoutMs:Math.min(120_000,deadline-Date.now()),auditContext:options.openAiAuditContext,
         instructions:FINAL_REPAIR_INSTRUCTION+'\nCorrect the supplied editorial findings, including hook and narrative weaknesses. Preserve sound slides. Do not award scores or change evidence. Quality thresholds are acceptance requirements, never instructions to inflate a score.',
         contents:{draft:current,blockers:issues,editableScopes:scopes,previousAttempt:current.editorialRepair?.lastPatchRejection,facts:brief.keyFacts,carouselPlan:brief.carouselPlan,
           topic:options.topic,language:options.profile.language,conversionGoal:options.profile.conversionGoal,qualityThresholds:CREATIVE_QUALITY_THRESHOLDS},
@@ -2128,6 +2128,9 @@ async function generateJson({
     instructions: systemInstruction, contents,
     schema: strictCreativeSchema(schema), schemaName: openAiSchemaName,
     maxOutputTokens: Math.max(maxOutputTokens, 8192),
+    // A long list (up to 20 slides, twice the tokens) needs more than the
+    // default minute; a repair cut off at 60 s left a 10-slide list blocked.
+    ...(maxOutputTokens > 6_144 ? { timeoutMs: 150_000 } : {}),
     reasoningEffort: "low", auditContext: openAiAuditContext,
   });
   if (startAt === "openai") return runLuna();

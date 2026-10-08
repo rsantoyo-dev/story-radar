@@ -91,9 +91,13 @@ export async function runCreativeHookTournament(input: {
   const wordCount = (value?: string) => (value?.trim() ? value.trim().split(/\s+/u).length : 0);
   // Slide 2's headline and subheadline share the slide's word budget with its supporting text.
   const secondSlideWordBudget = second ? Math.max(4, CAROUSEL_SLIDE_MAX_WORDS - wordCount(second.body)) : undefined;
-  const allowedFactIds = coverAllowedFactIds(brief, draft);
   // A list carousel (hook, one slide per item, closing) sells the whole list.
   const list = profile.storyStructure === "hook-list" && draft.units.length > 3 ? { itemCount: draft.units.length - 2 } : undefined;
+  // A list cover cites only what the plan gave the cover (the count): an
+  // item's detail on the cover ("free", a price, a venue) fails the cover's
+  // fact assignment in review and belongs to that item's slide.
+  const listCoverFacts = list ? (brief.carouselPlan?.slides[0]?.allowedFactIds ?? cover.factIds).filter((id) => brief.keyFacts.some((fact) => fact.id === id)) : [];
+  const allowedFactIds = listCoverFacts.length ? listCoverFacts : coverAllowedFactIds(brief, draft);
   const facts: CreativeKeyFact[] = brief.keyFacts.filter((fact) => allowedFactIds.includes(fact.id));
   const context = { publication: profile.name, language: profile.language, region: profile.region, audience: profile.audience };
   // The brand's voice, so covers sound like this publication, not a listings page.
