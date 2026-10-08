@@ -68,3 +68,7 @@ jobs:
       - name: Annotate failing tests
         if: failure() && matrix.task == 'test'
         run: node .github/scripts/annotate-test-failures.mjs task-output.txt
+
+      - name: Annotate lint problems
+        if: failure() && matrix.task == 'lint'
+        run: node .github/scripts/annotate-lint-failures.mjs task-output.txt
