@@ -80,6 +80,8 @@ export async function runCreativeHookTournament(input: {
   rounds?: 1 | 2;
   /** The editor's recent picks for this Topic: the judge learns the house taste from them. */
   houseTaste?: readonly HookTasteExample[];
+  /** The original article's headline: the writers may borrow its voice, never its claims. */
+  sourceHeadline?: string;
 }): Promise<{ draft: GeneratedCreativeDraft; tournament: CreativeHookTournament; usage: CreativeAiUsage; calls: number }> {
   const model = process.env.CREATIVE_HOOK_MODEL?.trim() || DEFAULT_HOOK_MODEL;
   const judgeModel = process.env.CREATIVE_HOOK_JUDGE_MODEL?.trim() || model;
@@ -94,6 +96,8 @@ export async function runCreativeHookTournament(input: {
   const list = profile.storyStructure === "hook-list" && draft.units.length > 3 ? { itemCount: draft.units.length - 2 } : undefined;
   const facts: CreativeKeyFact[] = brief.keyFacts.filter((fact) => allowedFactIds.includes(fact.id));
   const context = { publication: profile.name, language: profile.language, region: profile.region, audience: profile.audience };
+  // The brand's voice, so covers sound like this publication, not a listings page.
+  const voice = { personality: profile.brandPersonality ?? [], formality: profile.formality, humor: profile.humor, energy: profile.energy };
   const call = (instructions: string, contents: string, schemaName: string, schema: object, effort: "low" | "medium" | "high", modelName: string, maxOutputTokens: number) =>
     generateOpenAiStructuredResponse({
       apiKey: input.apiKey,
@@ -120,7 +124,7 @@ export async function runCreativeHookTournament(input: {
     return checked.secondDropped ? { ...checked.candidate, secondDropped: checked.secondDropped.join(", ") } : checked.candidate;
   });
   const judge = async (options: Entry[]) => {
-    const response = await call(buildHookJudgeInstructions(list), buildHookJudgeContents({ ...context, facts, draft, options, ...(input.houseTaste?.length ? { houseTaste: input.houseTaste } : {}) }), "hook_scores", HOOK_SCORES_SCHEMA, "medium", judgeModel, 12_000);
+    const response = await call(buildHookJudgeInstructions(list), buildHookJudgeContents({ ...context, voice, facts, draft, options, ...(input.houseTaste?.length ? { houseTaste: input.houseTaste } : {}) }), "hook_scores", HOOK_SCORES_SCHEMA, "medium", judgeModel, 12_000);
     parseHookScores(response.text, options.length).forEach((score, index) => {
       const option = options[index];
       option.score = score;
@@ -148,7 +152,7 @@ export async function runCreativeHookTournament(input: {
   };
 
   // Round 1: the open field.
-  const written = await call(buildHookGeneratorInstructions(list), buildHookGeneratorContents({ ...context, brief, draft, allowedFactIds, ...(secondSlideWordBudget ? { secondSlideWordBudget } : {}) }), "hook_candidates", HOOK_CANDIDATES_SCHEMA, writingEffort(), model, 20_000);
+  const written = await call(buildHookGeneratorInstructions(list), buildHookGeneratorContents({ ...context, voice, brief, draft, allowedFactIds, ...(input.sourceHeadline ? { sourceHeadline: input.sourceHeadline } : {}), ...(secondSlideWordBudget ? { secondSlideWordBudget } : {}) }), "hook_candidates", HOOK_CANDIDATES_SCHEMA, writingEffort(), model, 20_000);
   let usage = written.usage;
   const field = admit(parseHookCandidates(written.text, { allowedFactIds, slideCount: draft.units.length, incumbentHeadline: cover.headline, language: profile.language }), 1);
   const firstOptions = [incumbent, ...field.filter((entry) => !entry.rejected)];
@@ -168,7 +172,7 @@ export async function runCreativeHookTournament(input: {
   let judgeModelUsed = first.response.model;
   const polished: Entry[] = [];
   if (finalists.length && (input.rounds ?? 2) === 2) {
-    const refined = await call(buildHookRefineInstructions(list), buildHookRefineContents({ ...context, facts, draft, covers: finalists, ...(secondSlideWordBudget ? { secondSlideWordBudget } : {}) }), "hook_candidates", HOOK_CANDIDATES_SCHEMA, writingEffort(), model, 16_000);
+    const refined = await call(buildHookRefineInstructions(list), buildHookRefineContents({ ...context, voice, facts, draft, covers: finalists, ...(secondSlideWordBudget ? { secondSlideWordBudget } : {}) }), "hook_candidates", HOOK_CANDIDATES_SCHEMA, writingEffort(), model, 16_000);
     usage = addUsage(usage, refined.usage);
     calls += 1;
     const openingKey = (entry: HookCandidate) => `${entry.headline}|${entry.secondHeadline ?? ""}`.trim().toLocaleLowerCase();

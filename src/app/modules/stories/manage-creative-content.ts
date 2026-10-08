@@ -1510,8 +1510,10 @@ export async function improveCreativeDraftHook(
   const profile = { ...liveProfile, storyStructure: brief.profileSnapshot?.storyStructure ?? liveProfile.storyStructure };
   const runId = createHash("sha256").update(`hook:${current.id}:${current.version}:${Date.now()}`).digest("hex").slice(0, 32);
   const houseTaste = await listRecentHookTaste(topicId);
+  const sourceHeadline = (await getDailyDraftStory(topicId, current.storyId, undefined, true).catch(() => undefined))?.title;
   const result = await withCreativeTextBudget({ topicId, storyId: current.storyId, runId }, () => runCreativeHookTournament({
     apiKey,
+    ...(sourceHeadline ? { sourceHeadline } : {}),
     auditContext: { runId, topicId, storyId: current.storyId },
     profile,
     brief,

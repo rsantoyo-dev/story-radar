@@ -168,6 +168,7 @@ export async function runSingleShotCreativePipeline(
         brief,
         draft,
         format: resolvedOptions.format,
+        ...(resolvedOptions.story.title ? { sourceHeadline: resolvedOptions.story.title } : {}),
       });
       tournament = hook.tournament;
       callsUsed += hook.calls;
