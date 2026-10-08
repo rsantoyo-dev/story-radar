@@ -39,7 +39,7 @@ Vercel keeps runtime logs only for a short time. For longer retention and alerti
 | `billing.checkout.started`, `billing.purchase.paid`, `billing.purchase.refunded`, `billing.checkout.expired` | Credit purchases (Stripe) |
 | `credits.demo.reset`, `admin.topic_data.cleared` | Operator actions |
 
-`GET /api/radar/audit` (owners and admins) lists the workspace's events newest first, filtered by `action` prefix, `entityType`/`entityId`, `topicId`, and paged with `before`.
+`GET /api/radar/audit` (owners and admins) lists the workspace's events newest first, filtered by `action` prefix, `excludeAction` prefix, `outcome`, `entityType`/`entityId`, `topicId`, and paged with `before`; `actors` names the members who acted. Platform staff may pass `scope=all` for every workspace, including events recorded without one (sign-ins).
 
 Add an event wherever a new significant action is introduced; prefer the route or service that knows the outcome.
 
@@ -63,7 +63,7 @@ Migration `0098` adds `db_change_log` and the trigger `capture_row_change`, atta
 
 High-volume tables (stories, story sources, metrics snapshots, AI usage) keep their own run and receipt records instead. A cascade (deleting a topic, clearing its data) records every row it removes.
 
-`GET /api/radar/admin/changes` (platform operator) lists changes newest first, filtered by `table`, `rowKey`, `transactionId`, paged with `before`.
+`GET /api/radar/admin/changes` (owners and admins) lists the workspace's changes newest first, filtered by `table`, `operation`, `rowKey`, `transactionId`, `topicId`, paged with `before`. Platform staff may pass `scope=all` for every workspace, including rows that belong to none (users, staff, workspaces themselves) and rows captured before migration `0099` resolved a workspace.
 
 ### Useful queries
 
@@ -79,6 +79,12 @@ SELECT * FROM audit_events WHERE request_id = '<x-vercel-id>';
 SELECT occurred_at, actor_type, actor_id, action, entity_type, entity_id, outcome
 FROM audit_events WHERE workspace_id = '<workspace>' AND occurred_at > now() - interval '1 day' ORDER BY occurred_at;
 ```
+
+## Where to look
+
+- **Administration › Activity** in the dashboard reads both histories: *Actions* (the audit trail, API requests hidden by default) and *Record changes* (before and after values per field), filtered by area or record, outcome or operation, and brand, grouped by day with older pages on demand. Platform staff also get an *All workspaces* switch.
+- **Technical logs** stay in Vercel: the project's Logs tab, or `npx vercel logs https://story-radar.vercel.app`.
+- **SQL** in the Neon console for anything the views do not filter (queries above).
 
 ## Retention
 

@@ -3947,3 +3947,49 @@ button.sidebarTopicAvatar:focus-visible { outline: 2px solid palette(primary-lig
 @media (prefers-reduced-motion: reduce) {
   .sidebar, .sidebarNav a, .contextTabs a, .actionMenuChevron { transition-duration: 0ms; }
 }
+
+/* Administration › Activity: the audit trail and record change history (FEAT-OBS-001). */
+.activityPanel { display: grid; gap: density(4); }
+.activityPanel header { display: grid; gap: density(1); }
+.activityPanel header h2 { margin: 0; }
+.activityPanel header p { @ds-typo(small); margin: 0; color: palette(tertiary-dark); }
+.activityModes { display: inline-flex; justify-self: start; gap: density(1); padding: density(1); border-radius: radius(3); background: palette(surface-light); }
+.activityModes button { min-height: 36px; padding: 0 density(4); border: 0; border-radius: radius(2); background: transparent; color: palette(tertiary-dark); @ds-typo(small); font-weight: 700; cursor: pointer; }
+.activityModes button[aria-pressed="true"] { background: palette(light-light); color: palette(primary-dark); box-shadow: shadow(1); }
+.activityModes button:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 2px; }
+.activityFilters { display: grid; grid-template-columns: xs(repeat(2, minmax(0, 1fr))) md(repeat(3, minmax(0, 200px)) auto); align-items: end; gap: density(3); }
+.activityFilters > label:not(.activityToggle) { display: grid; gap: density(1); min-width: 0; color: palette(primary-dark); @ds-typo(caption); font-size: 0.75rem; font-weight: 700; }
+.activityFilters select { box-sizing: border-box; width: 100%; min-height: 40px; padding: 0 density(3); border: 1px solid palette(dark-main, 0.16); border-radius: radius(2); background: palette(light-light); color: palette(dark-main); font: inherit; @ds-typo(small); }
+.activityFilters select:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 2px; }
+.activityToggle { display: flex; align-items: center; gap: density(2); min-height: 40px; color: palette(primary-dark); @ds-typo(small); cursor: pointer; }
+.activityToggle input { width: 16px; height: 16px; accent-color: palette(primary-main); }
+.activityEmpty { @ds-typo(small); margin: 0; padding: density(4); border: 1px dashed palette(dark-main, 0.14); border-radius: radius(2); color: palette(tertiary-main); text-align: center; }
+.activityEmpty[role="alert"] { border-style: solid; border-color: palette(error-main, 0.3); color: palette(error-dark); }
+.activityDays { display: grid; gap: density(4); }
+.activityDays h3 { @ds-typo(caption); margin: 0 0 density(2); color: palette(primary-main); font-size: 0.6875rem; font-weight: 750; letter-spacing: 0.14em; text-transform: uppercase; }
+.activityDays ol { margin: 0; padding: 0; border: 1px solid palette(dark-main, 0.08); border-radius: radius(2); list-style: none; }
+.activityItem { display: grid; grid-template-columns: 10px minmax(0, 1fr); gap: density(3); padding: density(3) density(4); }
+.activityItem + .activityItem { border-top: 1px solid palette(dark-main, 0.06); }
+.activityItem > div { display: grid; gap: density(1); min-width: 0; }
+.activityItem p { display: flex; flex-wrap: wrap; align-items: baseline; gap: density(2); margin: 0; color: palette(dark-main); @ds-typo(small); }
+.activityItem code { overflow-wrap: anywhere; color: palette(tertiary-dark); @ds-typo(code); font-size: 0.75rem; }
+.activityItem small { color: palette(tertiary-main); @ds-typo(caption); font-size: 0.75rem; }
+.activityItem details > summary { width: fit-content; color: palette(primary-dark); @ds-typo(caption); font-size: 0.75rem; font-weight: 700; cursor: pointer; }
+.activityItem details > summary:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 2px; }
+.activityItem dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: density(1) density(3); margin: density(2) 0 0; @ds-typo(caption); font-size: 0.75rem; }
+.activityItem dt { color: palette(tertiary-main); font-weight: 700; }
+.activityItem dd { margin: 0; overflow-wrap: anywhere; color: palette(dark-main); }
+.activityItem details > p { @ds-typo(caption); margin: density(2) 0 0; color: palette(tertiary-main); font-size: 0.7rem; }
+.activityDot { width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: palette(tertiary-main); }
+.activityDot[data-outcome="success"], .activityDot[data-operation="INSERT"] { background: palette(success-main); }
+.activityDot[data-outcome="failure"], .activityDot[data-operation="DELETE"] { background: palette(error-main); }
+.activityDot[data-outcome="denied"] { background: palette(warning-main); }
+.activityDot[data-operation="UPDATE"] { background: palette(primary-main); }
+.activityValues { width: 100%; margin-top: density(2); border-collapse: collapse; @ds-typo(caption); font-size: 0.75rem; table-layout: fixed; }
+.activityValues th, .activityValues td { padding: density(1) density(2); border-bottom: 1px solid palette(dark-main, 0.06); overflow-wrap: anywhere; text-align: left; vertical-align: top; }
+.activityValues thead th { color: palette(tertiary-main); font-weight: 700; }
+.activityValues tbody th { width: 30%; color: palette(primary-dark); font-weight: 650; }
+.activityMore { justify-self: center; min-height: 40px; padding: 0 density(5); border: 1px solid palette(dark-main, 0.16); border-radius: radius(pill); background: palette(light-light); color: palette(primary-dark); @ds-typo(small); font-weight: 700; cursor: pointer; }
+.activityMore:hover:not(:disabled) { border-color: palette(primary-main); }
+.activityMore:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 2px; }
+.activityMore:disabled { cursor: progress; opacity: 0.6; }

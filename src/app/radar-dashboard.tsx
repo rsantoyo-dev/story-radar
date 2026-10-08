@@ -12,6 +12,7 @@ import { DailyEditorialPlannerPanel } from "./daily-editorial-planner-panel";
 import { StoryPhotosPanel } from "./story-photos-panel";
 import type { StoryContentEdition } from "./modules/stories/story-materials.types";
 
+import { ActivityPanel } from "./activity-panel";
 import { EditorialLinesPanel, type EditorialLinesData, type EditorialLineSelection } from "./editorial-lines-panel";
 import { periodError } from "./editorial-period-controls";
 import { CreativeProfilePanel } from "./creative-profile-panel";
@@ -632,6 +633,7 @@ export function RadarDashboard({
     activeView === "identity" ? [["#creative-profile-identity", "Profile"], ["#creative-profile-voice", "Voice"], ["#creative-profile-brand", "Visual"], ["#creative-profile-characters", "Assets"]] :
     activeView === "sources" ? [["#sources/rss", "RSS"], ["#sources/ai", "AI research"], ["#sources/documents", "Documents"], ["#sources/manual", "Original content"]] :
     activeView === "publications" ? [["#publications", "To publish"], ["#publications/published", "Published"], ["#publications/history", "Instagram history"]] :
+    activeView === "admin" ? [["#admin", "Status"], ["#admin/activity", "Activity"]] :
     [];
 
   useEffect(() => {
@@ -1689,12 +1691,12 @@ export function RadarDashboard({
           </div>
           <div className={styles.contextBar}>
             <div className={styles.contextHeading}>
-              <span>{activeView === "topics" ? "Workspace" : <>{selectedTopicName} · {activeView === "today" || activeView === "discover" || activeView === "production" || activeView === "publications" || activeView === "results" ? "Daily work" : "Brand"}</>}</span>
+              <span>{activeView === "topics" || activeView === "admin" ? "Workspace" : <>{selectedTopicName} · {activeView === "today" || activeView === "discover" || activeView === "production" || activeView === "publications" || activeView === "results" ? "Daily work" : "Brand"}</>}</span>
               <strong>{DASHBOARD_VIEW_TITLES[activeView]}</strong>
             </div>
             {contextTabs.length > 0 ? <nav className={styles.contextTabs} aria-label={`${DASHBOARD_VIEW_TITLES[activeView]} options`}>
               {contextTabs.map(([hash, label]) => {
-                const current = activeNavHash === hash || (hash === "#discover" && ["#stories", "#stories/collected"].includes(activeNavHash)) || (hash === "#discover/search" && activeNavHash === "#collect") || (hash === "#strategy" && activeNavHash === "#editorial") || (hash === "#creative-profile-identity" && ["#identity", "#editorial-creative"].includes(activeNavHash)) || (hash === "#sources/rss" && activeNavHash === "#sources") || (hash === "#publications/history" && activeNavHash === "#editorial-instagram");
+                const current = activeNavHash === hash || (hash === "#discover" && ["#stories", "#stories/collected"].includes(activeNavHash)) || (hash === "#discover/search" && activeNavHash === "#collect") || (hash === "#strategy" && activeNavHash === "#editorial") || (hash === "#creative-profile-identity" && ["#identity", "#editorial-creative"].includes(activeNavHash)) || (hash === "#sources/rss" && activeNavHash === "#sources") || (hash === "#publications/history" && activeNavHash === "#editorial-instagram") || (hash === "#admin" && activeNavHash === "#settings");
                 return <a key={hash} href={hash} className={current ? styles.contextTabActive : undefined} aria-current={current ? "page" : undefined}>{label}</a>;
               })}
             </nav> : null}
@@ -1876,7 +1878,11 @@ export function RadarDashboard({
           </form>
         </div>
 
-        <div id="settings" className={styles.anchorTarget} hidden={activeView !== "admin"}>
+        <div id="activity" className={styles.anchorTarget} hidden={activeView !== "admin" || activeNavHash !== "#admin/activity"}>
+          <ActivityPanel secret={panelSecret} topics={topics} active={activeView === "admin" && activeNavHash === "#admin/activity"} />
+        </div>
+
+        <div id="settings" className={styles.anchorTarget} hidden={activeView !== "admin" || activeNavHash === "#admin/activity"}>
           <section className={styles.panel}>
             <div className={styles.panelHeading}>
               <div>
@@ -2146,7 +2152,7 @@ export function RadarDashboard({
           </div>
         ) : null}
 
-        <section className={`${styles.panel} ${styles.dangerPanel}`} hidden={activeView !== "admin"}>
+        <section className={`${styles.panel} ${styles.dangerPanel}`} hidden={activeView !== "admin" || activeNavHash === "#admin/activity"}>
           <div className={styles.dangerCopy}>
             <p className={styles.sectionNumber}>06 · Danger zone</p>
             <h2>Clear or regenerate data</h2>
