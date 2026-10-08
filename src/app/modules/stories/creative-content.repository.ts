@@ -74,7 +74,7 @@ import {
 } from "./creative-carousel-chrome-validation";
 import { withCreativeFactClaimGuard } from "./creative-fact-guard";
 import { EDITOR_TEXT_FIELDS } from "./creative-quality";
-import { allowEditorFactsInPlan } from "./creative-narrative-plan";
+import { allowEditorFactsInPlan, legacyNarrativeEvidenceKey } from "./creative-narrative-plan";
 import { editorFactToKeyFact, listActiveEditorFacts } from "./story-editor-facts.repository";
 
 type CreativeRunTask = "brief" | "draft";
@@ -865,6 +865,7 @@ function mapCreativeBrief(
     keyFacts: (row.keyFacts as CreativeKeyFact[]).map(
       withCreativeFactClaimGuard,
     ),
+    storedEvidenceKey: legacyNarrativeEvidenceKey({ keyFacts: row.keyFacts as CreativeKeyFact[] }),
     ...(carouselPlan
       ? { carouselPlan }
       : {}),

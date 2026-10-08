@@ -761,7 +761,11 @@ export async function recoverCreativeDraft(options: GenerateDraftOptions & {
   const deadline=options.deadline ?? Date.now()+CREATIVE_DRAFT_TIME_BUDGET_MS;
   if (!options.checkpoint) await options.onCheckpoint({stage:"patched",draft,usage});
   const copyKey = (value: GeneratedCreativeDraft) => JSON.stringify({...value, qualityReview: undefined, editorialRepair: undefined});
-  const reuseReview = options.currentReviewIsCurrent === true && copyKey(draft) === copyKey(savedDraft) &&
+  // Only a resumed request reuses its review. A new request reviews again: the
+  // saved review may carry findings from rules that have since changed, and the
+  // repair would chase them (a phantom factual blocker escalates to the
+  // costliest editor and makes every correction look like no improvement).
+  const reuseReview = Boolean(options.checkpoint) && options.currentReviewIsCurrent === true && copyKey(draft) === copyKey(savedDraft) &&
     (draft.qualityReview?.critic?.provider === "openai" || draft.qualityReview?.critic?.provider === "google") &&
     !draft.qualityReview.issues.some(issue => /^(?:CRITIC_|EDITORIAL_REVIEW_|FINAL_(?:REVIEW_UNAVAILABLE|COPY_REVIEW_REQUIRED))/.test(issue.code));
   if (!draft.editorialRepair?.pendingVerification && !reuseReview) {

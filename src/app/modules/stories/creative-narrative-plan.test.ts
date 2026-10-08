@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import vm from "node:vm";
 import ts from "typescript";
-import { narrativeEvidenceKey, resolveNarrativeBrief } from "./creative-narrative-plan";
+import { legacyNarrativeEvidenceKey, narrativeEvidenceKey, resolveNarrativeBrief } from "./creative-narrative-plan";
 import { narrativeRepetitionIssues } from "./creative-narrative-diagnostics";
 import { CREATIVE_QUALITY_THRESHOLDS, repairDeterministicCreativeCopy } from "./creative-quality";
 import type { GeneratedCreativeBrief, GeneratedCreativeDraft, CreativeAiUsage } from "./creative-content.types";
@@ -100,6 +100,21 @@ test("evidence binding is stable across object-key order and exact repetition ha
     repeated.units[0].body = "The company disclosed several reports about unexpected behaviour in its agents.";
     repeated.units[2].body = repeated.units[0].body;
     assert.ok(narrativeRepetitionIssues(repeated).some(issue => issue.code === "PLAN_REPETITIVE_CLOSING"));
+});
+
+test("a revision survives a change in how claim guards are derived, never a change in the evidence", () => {
+    const guarded = { ...brief, keyFacts: brief.keyFacts.map(fact => ({ ...fact, claimGuard: { certainty: "estimated" as const, requiredPhrases: ["over the past six months"], forbiddenPhrases: [], scopePhrases: [], allowedNumbers: ["6"] } })) };
+    const rederived = { ...guarded, keyFacts: guarded.keyFacts.map(fact => ({ ...fact, claimGuard: { ...fact.claimGuard, certainty: "asserted" as const } })) };
+    const revision = (evidenceKey: string) => ({ ...draft, narrativeRevision: { version: 1 as const, reason: "r", model: "m", evidenceKey, originalPlan: brief.carouselPlan!, plan: brief.carouselPlan!, angle: "a", hook: "h", previousDraft: draft } });
+    // Today's key ignores the guard.
+    assert.equal(narrativeEvidenceKey(guarded), narrativeEvidenceKey(rederived));
+    assert.doesNotThrow(() => resolveNarrativeBrief(rederived, revision(narrativeEvidenceKey(guarded))));
+    // A legacy key over the stored facts still matches once the guard is re-derived on read.
+    assert.throws(() => resolveNarrativeBrief(rederived, revision(legacyNarrativeEvidenceKey(guarded))), /different evidence/);
+    assert.doesNotThrow(() => resolveNarrativeBrief({ ...rederived, storedEvidenceKey: legacyNarrativeEvidenceKey(guarded) }, revision(legacyNarrativeEvidenceKey(guarded))));
+    // Changed evidence is still refused.
+    const changed = { ...rederived, keyFacts: [{ ...rederived.keyFacts[0], statement: "Changed evidence" }, ...rederived.keyFacts.slice(1)] };
+    assert.throws(() => resolveNarrativeBrief(changed, revision(narrativeEvidenceKey(guarded))), /different evidence/);
 });
 
 test("a rejected reviewer plan is repaired with its exact response and shared policy, without rewriting evidence", async () => {

@@ -167,7 +167,13 @@ export async function runEditorialRepairLoop(input: {
             progress.solAttempts++;
         // Invalid structural proposals need another structural correction, not
         // a text-only patch that cannot change the plan causing the failure.
-        const replan=Boolean(input.replan && (!progress.narrativeReplanAttempted || progress.lastPatchRejection?.kind === "plan") && structuralNarrativeIssues(draft).length);
+        // Otherwise a replan, which rewrites the plan and every slide, comes
+        // first only when every finding is structural: when findings also name
+        // concrete copy on a slide (a long cover, a dense closing), a targeted
+        // patch fixes them with far less to go wrong.
+        const structural = structuralNarrativeIssues(draft);
+        const copyFindings = issues.filter(issue => issue.unitOrder !== undefined && !structural.includes(issue));
+        const replan=Boolean(input.replan && structural.length && (progress.lastPatchRejection?.kind === "plan" || (!progress.narrativeReplanAttempted && !copyFindings.length)));
         if(replan)progress.narrativeReplanAttempted=true;
         await save(); // Persist the replan allowance before a paid request too.
         let patched: Awaited<ReturnType<typeof input.patch>>;
@@ -178,14 +184,18 @@ export async function runEditorialRepairLoop(input: {
             return stop(error instanceof Error ? error.message : 'Targeted correction failed.');
         }
         add(patched.usage);
+        if (patched.rejectionReason) {
+            // Local validation refused it: no correction was made, so the tier
+            // keeps its remaining attempt (the hard cap of two still holds),
+            // retried with the validator's feedback.
+            progress.lastPatchRejection = {tier, reason: patched.rejectionReason, kind: replan ? "plan" : "copy"};
+            await save();
+            continue;
+        }
+        // Economical mode: one correction that reaches verification per tier.
         if (input.oneCorrectionPerTier) {
             if (tier === "terra") progress.terraStopped = true;
             else progress.solStopped = true;
-        }
-        if (patched.rejectionReason) {
-            progress.lastPatchRejection = {tier, reason: patched.rejectionReason, kind: replan ? "plan" : "copy"};
-            await save();
-            continue; // Give the same tier its remaining attempt, with validator feedback.
         }
         delete progress.lastPatchRejection;
         const copy = (value: GeneratedCreativeDraft) => JSON.stringify({ ...value, qualityReview: undefined, editorialRepair: undefined });

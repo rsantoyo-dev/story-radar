@@ -725,6 +725,13 @@ export type GeneratedCreativeBrief = {
    * callers fall back to the profile's strategy.
    */
   appliedFramingStrategy?: CreativeFramingStrategy;
+  /**
+   * The legacy narrative evidence key of the facts exactly as stored (claim
+   * guards included), set when a brief is read from the database, so a
+   * revision saved before guards were left out of the key still matches after
+   * a guard rule changes.
+   */
+  storedEvidenceKey?: string;
 };
 
 /**

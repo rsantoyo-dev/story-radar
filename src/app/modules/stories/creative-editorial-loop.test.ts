@@ -125,6 +125,18 @@ test("legacy silent patch failures may use remaining attempts without resetting 
     await runEditorialRepairLoop({draft:result.draft,canContinue:()=>true,checkpoint:async()=>{},patch:async()=>assert.fail("Exhausted attempts cannot restart"),verify:async()=>assert.fail()});
 });
 
+test("concrete copy findings get a targeted patch before any replan", async () => {
+    const draft=makeDraft();draft.qualityReview!.issues=[
+      {code:'WEAK_RESOLUTION',severity:'warning',unitOrder:5,message:'The closing restates the cover.'},
+      {code:'COVER_HOOK_TOO_LONG',severity:'warning',unitOrder:1,message:'The cover headline has 21 words.'}];
+    const calls:string[]=[];
+    await runEditorialRepairLoop({draft,oneCorrectionPerTier:true,canContinue:()=>true,checkpoint:async()=>{},escalate:()=>false,
+      replan:async(current)=>{calls.push('replan');return {draft:current,usage};},
+      patch:async(current)=>{calls.push('patch');return {draft:{...current,caption:current.caption+' shorter'},usage};},
+      verify:async(current)=>({draft:{...makeDraft(90),caption:current.caption},usage})});
+    assert.deepEqual(calls,['patch']);
+});
+
 test("invalid structural proposals use remaining repair slots without falling back to incompatible copy patches", async () => {
     const draft=makeDraft();draft.qualityReview!.issues=[{code:'BURIED_HOOK',severity:'warning',unitOrder:1,message:'Strong detail appears too late.'}];
     let replans=0,patches=0;
@@ -148,6 +160,31 @@ test("economical mode makes one correction per tier even when scores improve gra
     assert.equal(result.draft.editorialRepair?.solAttempts, 1);
     await runEditorialRepairLoop({draft: result.draft, oneCorrectionPerTier: true, canContinue: () => true, checkpoint: async () => {}, patch: async () => assert.fail("Resume must not reopen stopped tiers"), verify: async () => assert.fail()});
 });
+test("economical mode retries a tier whose correction local validation refused, within the cap of two", async () => {
+    const calls: string[] = [];
+    const result = await runEditorialRepairLoop({draft: makeDraft(), oneCorrectionPerTier: true, canContinue: () => true, checkpoint: async () => {},
+        escalate: () => false,
+        patch: async (draft, tier, issues) => {
+            calls.push(tier);
+            // The first proposal breaks the plan; the retry sees why.
+            if (calls.length === 1) return {draft, usage, rejectionReason: "used an unplanned fact on slide 2"};
+            assert.equal(draft.editorialRepair?.lastPatchRejection?.reason, "used an unplanned fact on slide 2");
+            void issues;
+            return {draft: {...draft, caption: draft.caption + " corrected"}, usage};
+        },
+        verify: async draft => {calls.push("verify"); return {draft: {...makeDraft(90), caption: draft.caption}, usage};},
+    });
+    assert.deepEqual(calls, ["terra", "terra", "verify"]);
+    assert.equal(result.draft.editorialRepair?.terraAttempts, 2);
+    assert.match(result.draft.caption, /corrected/);
+    // Two refusals spend the tier: the cap still holds.
+    const refused: string[] = [];
+    await runEditorialRepairLoop({draft: makeDraft(), oneCorrectionPerTier: true, canContinue: () => true, checkpoint: async () => {}, escalate: () => false,
+        patch: async (draft, tier) => {refused.push(tier); return {draft, usage, rejectionReason: "invalid"};},
+        verify: async () => assert.fail("Nothing valid to verify")});
+    assert.deepEqual(refused, ["terra", "terra"]);
+});
+
 test("the stronger tier is skipped when the caller says no factual defect warrants it", async () => {
     const calls: string[] = [];
     const result = await runEditorialRepairLoop({draft: makeDraft(), oneCorrectionPerTier: true, canContinue: () => true, checkpoint: async () => {},
