@@ -6,6 +6,7 @@ import {
   applyHookToDraft,
   buildHookGeneratorContents,
   buildHookGeneratorInstructions,
+  coverPromisesList,
   buildHookJudgeContents,
   buildHookJudgeInstructions,
   buildHookRefineContents,
@@ -89,6 +90,8 @@ export async function runCreativeHookTournament(input: {
   // Slide 2's headline and subheadline share the slide's word budget with its supporting text.
   const secondSlideWordBudget = second ? Math.max(4, CAROUSEL_SLIDE_MAX_WORDS - wordCount(second.body)) : undefined;
   const allowedFactIds = coverAllowedFactIds(brief, draft);
+  // A list carousel (hook, one slide per item, closing) sells the whole list.
+  const list = profile.storyStructure === "hook-list" && draft.units.length > 3 ? { itemCount: draft.units.length - 2 } : undefined;
   const facts: CreativeKeyFact[] = brief.keyFacts.filter((fact) => allowedFactIds.includes(fact.id));
   const context = { publication: profile.name, language: profile.language, region: profile.region, audience: profile.audience };
   const call = (instructions: string, contents: string, schemaName: string, schema: object, effort: "low" | "medium" | "high", modelName: string, maxOutputTokens: number) =>
@@ -111,12 +114,13 @@ export async function runCreativeHookTournament(input: {
     value, input.format, brief.keyFacts, profile.language, profile.conversionGoal, profile.framingStrategy, profile.storyStructure,
   );
   const admit = (parsed: HookCandidate[], round: 1 | 2): Entry[] => parsed.map((candidate) => {
+    if (list && !coverPromisesList(candidate, list.itemCount)) return { ...candidate, round, rejected: `A list cover must promise all ${list.itemCount} items: their count and what they are.` };
     const checked = admitHookCandidate<Entry>(draft, { ...candidate, round }, issues);
     if (checked.blockers.length) return { ...checked.candidate, rejected: `Introduces validation blockers: ${checked.blockers.join(", ")}` };
     return checked.secondDropped ? { ...checked.candidate, secondDropped: checked.secondDropped.join(", ") } : checked.candidate;
   });
   const judge = async (options: Entry[]) => {
-    const response = await call(buildHookJudgeInstructions(), buildHookJudgeContents({ ...context, facts, draft, options, ...(input.houseTaste?.length ? { houseTaste: input.houseTaste } : {}) }), "hook_scores", HOOK_SCORES_SCHEMA, "medium", judgeModel, 12_000);
+    const response = await call(buildHookJudgeInstructions(list), buildHookJudgeContents({ ...context, facts, draft, options, ...(input.houseTaste?.length ? { houseTaste: input.houseTaste } : {}) }), "hook_scores", HOOK_SCORES_SCHEMA, "medium", judgeModel, 12_000);
     parseHookScores(response.text, options.length).forEach((score, index) => {
       const option = options[index];
       option.score = score;
@@ -144,7 +148,7 @@ export async function runCreativeHookTournament(input: {
   };
 
   // Round 1: the open field.
-  const written = await call(buildHookGeneratorInstructions(), buildHookGeneratorContents({ ...context, brief, draft, allowedFactIds, ...(secondSlideWordBudget ? { secondSlideWordBudget } : {}) }), "hook_candidates", HOOK_CANDIDATES_SCHEMA, writingEffort(), model, 20_000);
+  const written = await call(buildHookGeneratorInstructions(list), buildHookGeneratorContents({ ...context, brief, draft, allowedFactIds, ...(secondSlideWordBudget ? { secondSlideWordBudget } : {}) }), "hook_candidates", HOOK_CANDIDATES_SCHEMA, writingEffort(), model, 20_000);
   let usage = written.usage;
   const field = admit(parseHookCandidates(written.text, { allowedFactIds, slideCount: draft.units.length, incumbentHeadline: cover.headline, language: profile.language }), 1);
   const firstOptions = [incumbent, ...field.filter((entry) => !entry.rejected)];
@@ -164,7 +168,7 @@ export async function runCreativeHookTournament(input: {
   let judgeModelUsed = first.response.model;
   const polished: Entry[] = [];
   if (finalists.length && (input.rounds ?? 2) === 2) {
-    const refined = await call(buildHookRefineInstructions(), buildHookRefineContents({ ...context, facts, draft, covers: finalists, ...(secondSlideWordBudget ? { secondSlideWordBudget } : {}) }), "hook_candidates", HOOK_CANDIDATES_SCHEMA, writingEffort(), model, 16_000);
+    const refined = await call(buildHookRefineInstructions(list), buildHookRefineContents({ ...context, facts, draft, covers: finalists, ...(secondSlideWordBudget ? { secondSlideWordBudget } : {}) }), "hook_candidates", HOOK_CANDIDATES_SCHEMA, writingEffort(), model, 16_000);
     usage = addUsage(usage, refined.usage);
     calls += 1;
     const openingKey = (entry: HookCandidate) => `${entry.headline}|${entry.secondHeadline ?? ""}`.trim().toLocaleLowerCase();

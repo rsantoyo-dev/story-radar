@@ -199,8 +199,11 @@ export function getCreativeContentPublicConfig(): CreativeContentPublicConfig {
       // v54/v9: an "auto" brief that found a list is written as one (list
       // headlines name the item and what the reader gets, never a price or a
       // condition), up to 20 slides, and no copy says a detail is unknown.
-      carousel: carouselWriterModel ? `carousel-draft-v54-writer-${carouselWriterModel}` : "carousel-draft-v54",
-      sequence: "sequence-draft-v9",
+      // v55/v10: list items use the event's own name and open with what
+      // happens there; a list closing plans the whole list (by day when it
+      // can), never a subset; visual directions keep an identity's mixed media.
+      carousel: carouselWriterModel ? `carousel-draft-v55-writer-${carouselWriterModel}` : "carousel-draft-v55",
+      sequence: "sequence-draft-v10",
     },
     maxRunsPerDay: parsePositiveInteger(
       process.env.CREATIVE_MAX_RUNS_PER_DAY,

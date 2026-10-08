@@ -24,6 +24,10 @@ import {
   type CreativeHookTournament,
   type HookCandidate,
   type HookScore,
+  buildHookGeneratorInstructions,
+  buildHookJudgeInstructions,
+  buildHookRefineInstructions,
+  coverPromisesList,
 } from "./creative-hook-tournament";
 import type { CreativeQualityIssue, GeneratedCreativeDraft } from "./creative-content.types";
 
@@ -238,4 +242,20 @@ test("a new cover cites its own facts, borrowing the writer's cover facts only a
   assert.deepEqual(inherited.candidate.factIds, ["fact-3", "fact-1"], "only the fact it needs is borrowed");
   const overBudget = admitHookCandidate(twoFactCover, candidate("Au DIX30 dimanche", { factIds: ["fact-3", "fact-4"] }), issuesOf);
   assert.ok(overBudget.blockers.length > 0, "no fact set satisfies both rules");
+});
+
+test("a list carousel's covers all promise the whole list; one item is never the cover", () => {
+  const list = { itemCount: 8 };
+  assert.match(buildHookGeneratorInstructions(list), /enumerated list of 8 items/);
+  assert.match(buildHookGeneratorInstructions(list), /never make one item the cover's subject/);
+  assert.match(buildHookRefineInstructions(list), /enumerated list of 8 items/);
+  assert.match(buildHookJudgeInstructions(list), /scores below 60 on clarity and payoff/);
+  assert.doesNotMatch(buildHookGeneratorInstructions(), /enumerated list/, "an ordinary carousel keeps its open field");
+
+  assert.equal(coverPromisesList({ headline: "Your weekend just got weirder: 8 things to do", subheadline: "Around Austin, Oct. 9–11" }, 8), true);
+  assert.equal(coverPromisesList({ headline: "Eight ways to spend a weird Austin weekend" }, 8), true);
+  assert.equal(coverPromisesList({ headline: "Huit sorties à Laval ce week-end" }, 8), true);
+  assert.equal(coverPromisesList({ headline: "Dix-huit idées pour la fin de semaine" }, 18), true);
+  assert.equal(coverPromisesList({ headline: "Free yoga can start your Sunday at Meanwhile" }, 8), false);
+  assert.equal(coverPromisesList({ headline: "28 vendors and more this weekend" }, 8), false, "a different number is not the list's count");
 });

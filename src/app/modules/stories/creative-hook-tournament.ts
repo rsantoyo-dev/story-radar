@@ -9,7 +9,8 @@ import type { CreativeKeyFact, CreativeQualityIssue, GeneratedCreativeBrief, Gen
  * interior slides are never touched: the cover is written knowing what they
  * already pay off.
  */
-export const CREATIVE_HOOK_TOURNAMENT_PROMPT_VERSION = "hook-tournament-v5";
+// v6: a list carousel's covers all promise the whole list (count, subject, scope).
+export const CREATIVE_HOOK_TOURNAMENT_PROMPT_VERSION = "hook-tournament-v6";
 export const HOOK_TOURNAMENT_CANDIDATES = 6;
 const HOOK_MAX_CANDIDATES = 10;
 const HOOK_HEADLINE_MAX_WORDS = 12;
@@ -196,7 +197,33 @@ export function coverAllowedFactIds(brief: Pick<GeneratedCreativeBrief, "carouse
   return ids.length ? ids : [...known];
 }
 
-export function buildHookGeneratorInstructions(): string {
+/**
+ * A list carousel ("8 things to do this weekend") sells the whole list: every
+ * cover must promise the count, what the items are and their scope, and only
+ * the voice may vary. A cover about one item would hide the other seven and
+ * repeat that item's own slide.
+ */
+export function listCoverRules(itemCount: number): string {
+  return `This carousel is an enumerated list of ${itemCount} items, one per slide after the cover. Every cover must promise the whole list: its count (${itemCount}), what the items are and their scope — the place and the dates when a fact states them — so the reader knows the carousel offers ${itemCount} choices. Vary the voice between covers (playful, practical, local, surprising), and you may borrow the source's own framing when a fact supports it, but never make one item the cover's subject, never promise more or fewer items than the slides deliver, and keep the date range or scope in the context line when the headline has no room for it. payoffUnitOrder is 2, the first item. Leave the slide 2 headline empty unless it names slide 2's item more vividly.`;
+}
+
+/** The count a list cover must carry, as digits or as a number word in a supported language. */
+export function coverPromisesList(cover: { headline: string; subheadline?: string }, itemCount: number): boolean {
+  const text = ` ${`${cover.headline} ${cover.subheadline ?? ""}`.toLocaleLowerCase().normalize("NFKD").replace(/\p{M}+/gu, "").replace(/[^\p{L}\p{N}]+/gu, " ")} `;
+  const words = NUMBER_WORDS[itemCount] ?? [];
+  return text.includes(` ${itemCount} `) || words.some((word) => text.includes(` ${word} `));
+}
+
+const NUMBER_WORDS: Record<number, string[]> = {
+  2: ["two", "deux", "dos", "dois"], 3: ["three", "trois", "tres", "tres"], 4: ["four", "quatre", "cuatro", "quatro"],
+  5: ["five", "cinq", "cinco"], 6: ["six", "seis"], 7: ["seven", "sept", "siete", "sete"], 8: ["eight", "huit", "ocho", "oito"],
+  9: ["nine", "neuf", "nueve", "nove"], 10: ["ten", "dix", "diez", "dez"], 11: ["eleven", "onze", "once"], 12: ["twelve", "douze", "doce"],
+  13: ["thirteen", "treize", "trece", "treze"], 14: ["fourteen", "quatorze", "catorce", "catorze"], 15: ["fifteen", "quinze", "quince"],
+  16: ["sixteen", "seize", "dieciseis", "dezesseis"], 17: ["seventeen", "dix sept", "diecisiete", "dezessete"],
+  18: ["eighteen", "dix huit", "dieciocho", "dezoito"],
+};
+
+export function buildHookGeneratorInstructions(list?: { itemCount: number }): string {
   return [
     "You are the cover editor of a local media brand. The interior slides of this carousel are final and good; your job is the opening: the cover — the headline and one short context line — that makes this audience stop scrolling, see themselves in the story and swipe, and the headline of slide 2, the first thing they see after the swipe.",
     `Write ${HOOK_TOURNAMENT_CANDIDATES} genuinely different covers in the publication language. Spread them across the mechanisms in mechanismGuide and across the reader segments named in the audience; use a mechanism only where the facts support it.`,
@@ -211,6 +238,7 @@ export function buildHookGeneratorInstructions(): string {
     "At least three covers should be ones a bold, ambitious editor would fight for, while staying exactly true to the facts.",
     `For every cover, write the headline of slide 2, the first thing the reader sees after the swipe (secondHeadline, at most ${SECOND_HEADLINE_MAX_WORDS} words), and only if it adds something a slide 2 subheadline (secondSubheadline, at most ${SECOND_SUBHEADLINE_MAX_WORDS} words, otherwise empty); together they fit slide2WordBudget words, and shorter is better. Slide 2 must pay off the cover's promise at once and make the reader want the next slide; it moves the story forward, never restating the cover's claim, figure or place. It keeps its supporting text and its factIds, so its headline must be supported by those facts and agree with that text, and must state nothing more certainly than they do: a projected, estimated, reported or attributed figure keeps its hedge in the headline itself. Leave both empty to keep slide 2 as it is.`,
     "Return the covers as candidates, each with its slide 2 headline, the mechanism used, the reader segment it speaks to, the factIds the cover relies on (only from coverFacts) and payoffUnitOrder.",
+    ...(list ? [listCoverRules(list.itemCount)] : []),
   ].join("\n");
 }
 
@@ -243,13 +271,14 @@ export function buildHookGeneratorContents(input: {
   });
 }
 
-export function buildHookRefineInstructions(): string {
+export function buildHookRefineInstructions(list?: { itemCount: number }): string {
   return [
     "You are the final cover editor. These are the best openings so far for this carousel: a cover and the slide 2 headline that follows it. Make each one as strong as it can be: write one sharpened version of every opening — tighter rhythm, the most concrete words, a stronger verb, the hook in the first three words, nothing a reader has to decode — with a slide 2 headline that pays the cover off at once.",
     "Keep each cover's idea, mechanism and factIds; you may also cite the writer's cover facts. Stay exactly true to the facts: keep hedges and attribution in their shortest faithful form, never raise certainty, never add a number, place, person, cause or consequence the facts do not state.",
     `Headline: at most 12 words and ideally 6 to 9; it must work on its own. Context line: optional, at most 24 words, naming the source once. Slide 2 headline: at most ${SECOND_HEADLINE_MAX_WORDS} words, supported by slide 2's own facts and supporting text; its subheadline at most ${SECOND_SUBHEADLINE_MAX_WORDS} words or empty; together within slide2WordBudget words.`,
     "Write as a native speaker of the publication language from its region; no clickbait formulas, emojis, all-caps words or exclamation marks.",
     "Return the sharpened versions as candidates.",
+    ...(list ? [listCoverRules(list.itemCount)] : []),
   ].join("\n");
 }
 
@@ -277,7 +306,7 @@ export function buildHookRefineContents(input: {
   });
 }
 
-export function buildHookJudgeInstructions(): string {
+export function buildHookJudgeInstructions(list?: { itemCount: number }): string {
   return [
     "You judge cover options for a local media brand twice over: as an exacting editor and as a member of its audience scrolling a feed. Each option is a cover — a headline and a context line — and the slide 2 headline written to follow it; slide 2's supporting text is in slides. Score every option from 1 to 100 on each dimension, independently, in the order given. The first six dimensions judge the cover alone.",
     "recognition: would a reader in the audience see themselves — their place, routine or community — in this cover within one second?",
@@ -291,6 +320,7 @@ export function buildHookJudgeInstructions(): string {
     "Be strict and comparative: 95 or more means a top editor would publish it unchanged; the options compete, so do not give them all the same score. Give a reason of at most 12 words.",
     "houseTaste, when present, lists past decisions of this publication's editor: the cover they kept over strong alternatives. Learn what they value and let it guide your scores and ranking; never let it override fidelity.",
     "Then rank every option by its cover alone, from the one you would publish to the one you would cut: ranking lists each option number exactly once, best first. Rank by what would make this audience stop and swipe while staying true to the facts; slide 2 does not change the ranking. An option whose cover fails fidelity ranks last.",
+    ...(list ? [`This carousel is a list of ${list.itemCount} items. A cover that does not promise the whole list — its count and what the items are — scores below 60 on clarity and payoff and ranks below every cover that does, however appealing its single item.`] : []),
   ].join("\n");
 }
 

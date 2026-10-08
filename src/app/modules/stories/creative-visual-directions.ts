@@ -7,7 +7,7 @@ import type { CreativeFormat, CreativeUnit } from "./creative-content.types";
  * images keeps that old layout. This rewrites only the directions under the
  * current identity; the approved visible text never changes.
  */
-export const CREATIVE_VISUAL_DIRECTIONS_PROMPT_VERSION = "visual-directions-v1";
+export const CREATIVE_VISUAL_DIRECTIONS_PROMPT_VERSION = "visual-directions-v2";
 export const VISUAL_DIRECTION_MAX_LENGTH = 1_000;
 const VISUAL_DIRECTION_MIN_LENGTH = 20;
 
@@ -48,6 +48,7 @@ export function buildVisualDirectionsInstructions(): string {
     "The visible text of every slide is approved and fixed. Never change, add, translate or quote words to render; refer to them only as the headline, the subheadline, the body or the call to action.",
     "Follow the creative identity exactly: its priority, style, photography, composition, variation across slides, typography, avoid list, allowed exceptions and what to do when no verified image is available. Anything in the avoid list must not appear, even if the previous direction asked for it.",
     "Plan the slides as one sequence: keep palette, typography and treatment consistent, and vary the dominant layout from slide to slide as the identity asks. Do not keep the previous layout just because it existed; keep it only where it already satisfies the identity.",
+    "When the identity mixes media (for example illustration with photographic cut-outs of food, drinks or objects), use that mix on every slide: give the photographic treatment to the one or two subjects per slide where it adds the most appetite or force, and keep everything the identity keeps illustrated in its illustrated style.",
     "Facts stay conservative: depict only subjects supported by the slide's visible text or its previous direction. Never add real people, named places, landmarks, logos, businesses, events, dates or numbers. Keep any verified photo, map or approved character the previous direction relies on (flags in the slide data), without describing a real person's face beyond what the reference provides.",
     "Use the approved palette by name or hex. Each direction: one concrete paragraph on layout, focal point, imagery, scale and placement, at most 900 characters, written in the same language as the previous directions.",
     "Return every slide once, with its order unchanged.",
