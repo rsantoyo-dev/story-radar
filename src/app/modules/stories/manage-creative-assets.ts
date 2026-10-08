@@ -1983,29 +1983,42 @@ export async function downloadApprovedCreativeImage(topicId: string, assetId: st
 }
 
 /**
- * Every approved image of the draft's current batch as one ZIP, slides in
- * order. Each image goes through downloadApprovedCreativeImage, so the archive
- * holds exactly what a one-by-one download would allow.
+ * Every image of the draft's current batch as one ZIP, slides in order, so an
+ * editor can check them locally or with another tool before approving. An
+ * approved image goes through downloadApprovedCreativeImage, exactly as a
+ * one-by-one download; one not yet approved is a review copy, named
+ * "-review" so it is never mistaken for an approved, publishable file.
  */
-export async function downloadApprovedCreativeBatch(topicId: string, draftId: string): Promise<{ fileName: string; archive: Buffer; count: number }> {
+export async function downloadCreativeBatch(topicId: string, draftId: string): Promise<{ fileName: string; archive: Buffer; count: number; reviewCopies: number }> {
   const draft = await requireCreativeDraft(topicId, draftId);
   const { batch } = await getCreativeDraftAssets(topicId, draftId);
-  const approved = (batch?.assets ?? []).filter((asset) => asset.status === "approved").sort((left, right) => left.unitOrder - right.unitOrder);
-  if (!approved.length) throw new CreativeContentConflictError("Approve the images before downloading them.");
-  const files: { name: string; data: Uint8Array }[] = new Array(approved.length);
+  const assets = (batch?.assets ?? [])
+    .filter((asset) => (asset.status === "approved" || asset.status === "generated") && asset.imageUrl)
+    .sort((left, right) => left.unitOrder - right.unitOrder);
+  if (!assets.length) throw new CreativeContentConflictError("This batch has no generated images to download yet.");
+  const files: { name: string; data: Uint8Array }[] = new Array(assets.length);
   let next = 0;
   // Four at a time: each read may fetch the stored image and recheck its evidence.
   const worker = async () => {
-    while (next < approved.length) {
+    while (next < assets.length) {
       const index = next++;
-      const asset = approved[index]!;
-      const file = await downloadApprovedCreativeImage(topicId, asset.id);
+      const asset = assets[index]!;
+      const approved = asset.status === "approved" && draft.status === "approved";
+      const file = approved
+        ? await downloadApprovedCreativeImage(topicId, asset.id)
+        : await readCreativeAssetImage({ topicId, assetId: asset.id, version: asset.version, imageUrl: asset.imageUrl! });
       const extension = file.type === "image/jpeg" ? "jpg" : file.type === "image/webp" ? "webp" : "png";
-      files[index] = { name: `slide-${String(asset.unitOrder).padStart(2, "0")}.${extension}`, data: new Uint8Array(await file.arrayBuffer()) };
+      files[index] = { name: `slide-${String(asset.unitOrder).padStart(2, "0")}${approved ? "" : "-review"}.${extension}`, data: new Uint8Array(await file.arrayBuffer()) };
     }
   };
-  await Promise.all(Array.from({ length: Math.min(4, approved.length) }, worker));
-  return { fileName: `carousel-v${draft.version}-${new Date().toISOString().slice(0, 10)}.zip`, archive: zipStore(files), count: files.length };
+  await Promise.all(Array.from({ length: Math.min(4, assets.length) }, worker));
+  const reviewCopies = files.filter((file) => file.name.includes("-review")).length;
+  return {
+    fileName: `carousel-v${draft.version}${reviewCopies ? "-review" : ""}-${new Date().toISOString().slice(0, 10)}.zip`,
+    archive: zipStore(files),
+    count: files.length,
+    reviewCopies,
+  };
 }
 
 export async function previewCreativeImageBase(topicId: string, assetId: string): Promise<File> {

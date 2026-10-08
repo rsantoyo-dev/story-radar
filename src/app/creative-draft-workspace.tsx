@@ -1431,8 +1431,8 @@ export function CreativeDraftWorkspace({
     });
   }
 
-  /** Every approved image of the current batch as one ZIP, slides in order. */
-  async function handleDownloadAllImages(count: number) {
+  /** Every image of the current batch as one ZIP, slides in order; unapproved ones are review copies. */
+  async function handleDownloadAllImages(count: number, reviewCopies: number) {
     if (!activeDraftId || assetBusy) return;
     await runAsset("download:all", async () => {
       const response = await fetch(topicUrl(`/api/radar/creative/drafts/${encodeURIComponent(activeDraftId)}/assets/download`, topicId), {
@@ -1450,7 +1450,7 @@ export function CreativeDraftWorkspace({
       link.download = fileName;
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
-      setNotice(`${count} approved ${count === 1 ? "image" : "images"} downloaded as ${fileName}.`);
+      setNotice(`${count} ${count === 1 ? "image" : "images"} downloaded as ${fileName}${reviewCopies ? ` (${reviewCopies} not yet approved, named "-review")` : ""}.`);
     });
   }
 
@@ -2660,11 +2660,14 @@ export function CreativeDraftWorkspace({
                             </button> : null;
                           })()}
                           {(() => {
-                            const approvedCount = currentAssetBatch.assets.filter(asset => asset.status === "approved").length;
-                            return approvedCount && activeDraft.status === "approved" && !viewingHistoricalDraft ? <button type="button" className={styles.secondaryButton}
-                              disabled={Boolean(assetBusy)} onClick={() => void handleDownloadAllImages(approvedCount)}
-                              title={approvedCount < currentAssetBatch.assets.length ? "Only approved images are downloaded." : undefined}>
-                              {assetBusy === "download:all" ? "Preparing the download…" : approvedCount === currentAssetBatch.assets.length ? `Download all ${approvedCount} images` : `Download ${approvedCount} approved images`}
+                            const downloadable = currentAssetBatch.assets.filter(asset => (asset.status === "approved" || asset.status === "generated") && asset.imageUrl);
+                            const reviewCopies = downloadable.filter(asset => asset.status !== "approved" || activeDraft.status !== "approved").length;
+                            // Unapproved images are included as review copies, so the editor can check
+                            // them locally or with another tool before approving.
+                            return downloadable.length && !viewingHistoricalDraft ? <button type="button" className={styles.secondaryButton}
+                              disabled={Boolean(assetBusy)} onClick={() => void handleDownloadAllImages(downloadable.length, reviewCopies)}
+                              title={reviewCopies ? "Images not yet approved are included as review copies, named \"-review\"." : undefined}>
+                              {assetBusy === "download:all" ? "Preparing the download…" : `Download all ${downloadable.length} images`}
                             </button> : null;
                           })()}
                         </div>
