@@ -473,6 +473,14 @@ export function CreativeDraftWorkspace({
   const currentAssetBatch = assetBatchIsStaleForCurrentDraft
     ? undefined
     : assetBatch;
+  // The server approves a version only once every image of its batch shows
+  // the saved text and has finished generating (approveSavedCreativeDraft).
+  const imagesBlockingApproval = activeDraft && currentAssetBatch && currentAssetBatch.status !== "stale" && currentAssetBatch.draftVersion === activeDraft.version
+    ? currentAssetBatch.assets.filter((asset) => {
+        const unit = activeDraft.units.find((candidate) => candidate.order === asset.unitOrder);
+        return !unit || imageTextNeedsUpdate(asset.unitSnapshot, unit) || !["generated", "approved"].includes(asset.status);
+      }).map((asset) => asset.unitOrder)
+    : [];
   // Image approve/regenerate controls (card and thumbnail strip) share one rule.
   const assetsReadOnly = Boolean(
     viewingHistoricalDraft ||
@@ -2290,8 +2298,8 @@ export function CreativeDraftWorkspace({
                         <button
                           type="button"
                           className={styles.approveButton}
-                          disabled={Boolean(busy) || dirty || activeApprovalHasDeterministicBlockers}
-                          title={dirty ? "Save your edits before approval." : activeApprovalHasDeterministicBlockers ? "Resolve the deterministic editorial blockers shown below before approval." : activeDraftRequiresHumanReviewAcknowledgement ? "Review the automated quality notes before approving." : undefined}
+                          disabled={Boolean(busy) || dirty || activeApprovalHasDeterministicBlockers || imagesBlockingApproval.length > 0}
+                          title={busy === "hook" ? "The cover tournament is choosing this script's cover; approval opens when it finishes." : !dirty && imagesBlockingApproval.length ? "Update the images listed below in Visuals first." : dirty ? "Save your edits before approval." : activeApprovalHasDeterministicBlockers ? "Resolve the deterministic editorial blockers shown below before approval." : activeDraftRequiresHumanReviewAcknowledgement ? "Review the automated quality notes before approving." : undefined}
                           onClick={handleApproveDraft}
                         >
                           {busy === "approve" ? "Approving…" : activeDraftRequiresHumanReviewAcknowledgement ? "Approve after review" : "Approve draft"}
@@ -2300,6 +2308,11 @@ export function CreativeDraftWorkspace({
                     </div>
                     <div aria-live="polite">
                       {!dirty ? <p>Version {activeDraft.version} is already saved. Save becomes available when you edit the script.</p> : null}
+                      {busy === "hook" ? <p>The cover tournament is choosing this script&apos;s cover (about 30 seconds). Approval opens when it finishes.</p> : null}
+                      {!dirty && activeDraft.status !== "approved" && imagesBlockingApproval.length ? <p>
+                        Update the image of {imagesBlockingApproval.length === 1 ? "slide" : "slides"} {imagesBlockingApproval.join(", ")} in Visuals first: each image must show this version&apos;s saved text, and be finished, before the script can be approved.{" "}
+                        <button type="button" className={styles.secondaryButton} onClick={() => selectTab("visuals")}>Go to Visuals</button>
+                      </p> : null}
                       {activeApprovalHasDeterministicBlockers ? <>
                         <strong>Approval and image generation are blocked:</strong>
                         <ul>{activeDraftApprovalState.blockers.map((issue, index) => (
