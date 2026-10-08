@@ -14,6 +14,7 @@ import {
   creativeRouteErrorResponse,
   noStoreJson,
 } from "../../../../creative-route-error";
+import { recordAuditEventLater } from "@/app/modules/observability/audit";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -43,10 +44,12 @@ export async function POST(request: Request, context: Context) {
       return noStoreJson({ error: "retryJobId must be a valid UUID" }, 400);
     }
     const topicId = await requireActiveRequestTopic(request);
-    return noStoreJson(
-      { job: await requestPublishNow(topicId, draftId, body.packageId, body.retryJobId as string | undefined) },
-      202,
-    );
+    const job = await requestPublishNow(topicId, draftId, body.packageId, body.retryJobId as string | undefined);
+    recordAuditEventLater({
+      action: "publication.publish.requested", entityType: "publication_package", entityId: body.packageId, topicId,
+      details: { draftId, retryJobId: body.retryJobId ?? null, jobId: job.id, status: job.status },
+    });
+    return noStoreJson({ job }, 202);
   } catch (error) {
     return (
       topicRequestErrorResponse(error) ??
@@ -98,7 +101,9 @@ export async function PATCH(request: Request, context: Context) {
       return noStoreJson({ error: "action must be confirm-not-published" }, 400);
     }
     const topicId = await requireActiveRequestTopic(request);
-    return noStoreJson({ job: await releaseUncertainPublicationJob(topicId, draftId, body.jobId) });
+    const job = await releaseUncertainPublicationJob(topicId, draftId, body.jobId);
+    recordAuditEventLater({ action: "publication.job.confirmed_not_published", entityType: "publication_job", entityId: body.jobId, topicId, details: { draftId } });
+    return noStoreJson({ job });
   } catch (error) {
     return (
       topicRequestErrorResponse(error) ??

@@ -6,6 +6,7 @@ import {
 } from "@/app/modules/topics/topic-catalog.repository";
 
 import { jsonObject, noStoreJson, topicCatalogError } from "./topic-route-utils";
+import { recordAuditEventLater } from "@/app/modules/observability/audit";
 
 export async function GET(request: Request) {
   const unauthorized = await authorizeRadarCollector(request);
@@ -26,6 +27,7 @@ export async function POST(request: Request) {
   try {
     const input = await jsonObject(request);
     const topic = await createTopic(input as CreateTopicInput, requestWorkspaceId(request));
+    recordAuditEventLater({ action: "topic.created", entityType: "topic", entityId: topic.id, topicId: topic.id, details: { name: topic.name } });
 
     return noStoreJson({ topic }, 201);
   } catch (error) {

@@ -25,6 +25,7 @@ export * from "./topics";
 export * from "./workspaces";
 export * from "./workspace-access";
 export * from "./ai-usage-charges";
+export * from "./audit-events";
 export * from "./billing";
 export * from "./workspace-credit-entries";
 

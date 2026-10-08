@@ -13,6 +13,7 @@ import {
   creativeRouteErrorResponse,
   noStoreJson,
 } from "../../../../creative-route-error";
+import { recordAuditEventLater } from "@/app/modules/observability/audit";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -61,10 +62,9 @@ export async function POST(request: Request, context: Context) {
     const channel = body.channel === undefined ? DEFAULT_PUBLICATION_CHANNEL : parsePublicationChannel(body.channel);
     if (!channel) return noStoreJson({ error: "Unknown publication channel" }, 400);
     const topicId = await requireActiveRequestTopic(request);
-    return noStoreJson(
-      { package: await freezePublicationPackage(topicId, draftId, body.batchId, channel) },
-      201,
-    );
+    const frozen = await freezePublicationPackage(topicId, draftId, body.batchId, channel);
+    recordAuditEventLater({ action: "publication.package.frozen", entityType: "publication_package", entityId: frozen.id, topicId, details: { draftId, batchId: body.batchId, channel } });
+    return noStoreJson({ package: frozen }, 201);
   } catch (error) {
     return (
       topicRequestErrorResponse(error) ??
@@ -86,6 +86,7 @@ export async function DELETE(request: Request, context: Context) {
     }
     const topicId = await requireActiveRequestTopic(request);
     await discardPublicationPackage(topicId, body.packageId);
+    recordAuditEventLater({ action: "publication.package.discarded", entityType: "publication_package", entityId: body.packageId, topicId, details: { draftId } });
     return noStoreJson({ ok: true });
   } catch (error) {
     return (

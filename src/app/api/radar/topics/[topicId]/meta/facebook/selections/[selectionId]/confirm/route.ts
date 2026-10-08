@@ -8,6 +8,7 @@ import {
 } from "@/app/modules/meta/topic-facebook-connections.repository";
 
 import { facebookRouteError, topicFromContext } from "../../../facebook-route-utils";
+import { recordAuditEventLater } from "@/app/modules/observability/audit";
 
 type Context = { params: Promise<{ topicId: string; selectionId: string }> };
 
@@ -46,6 +47,10 @@ export async function POST(request: Request, context: Context) {
       tasks: page.tasks,
       ...(page.linkedIgUserId ? { linkedIgUserId: page.linkedIgUserId } : {}),
       ...(page.linkedIgUsername ? { linkedIgUsername: page.linkedIgUsername } : {}),
+    });
+    recordAuditEventLater({
+      action: "meta.facebook.connected", entityType: "topic", entityId: topic.id, topicId: topic.id,
+      details: { pageId: page.pageId, pageName: page.pageName, connectionVersion },
     });
     // Best-effort live check so the card shows the verified state immediately.
     await verifyAndRecordFacebookPage({
