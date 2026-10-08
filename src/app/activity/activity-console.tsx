@@ -192,7 +192,7 @@ export function ActivityConsole({ signedIn = false }: { signedIn?: boolean }) {
       return;
     }
     let active = true;
-    loadSummary().catch((cause: unknown) => { if (active) setError(cause instanceof Error ? cause.message : "Activity is unavailable right now."); });
+    Promise.resolve().then(() => loadSummary()).catch((cause: unknown) => { if (active) setError(cause instanceof Error ? cause.message : "Activity is unavailable right now."); });
     return () => { active = false; };
   }, [loadSummary, signedIn, secret]);
 
