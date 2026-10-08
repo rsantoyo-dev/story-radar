@@ -21,8 +21,9 @@ const CERTAINTY_UPGRADE_PATTERN =
   /\b(?:is|are|was|were)\s+(?:fully\s+|entirely\s+)?(?:ai[-‐‑‒–— ]generated|ai[-‐‑‒–— ]written|written by ai)\b|\bai[-‐‑‒–— ]written\s+(?:content|pages?|articles?|text)\b/iu;
 const SIGNAL_PATTERN =
   /\b(?:show(?:s|ed)? signs?|significant signs?|authorship signs?|signals?|likely (?:written|edited|generated)|detect(?:ed|ion)|identify|identified)\b/iu;
+// "over 60 vendors" is an estimate; "over the past six months" is a period.
 const ESTIMATE_PATTERN =
-  /~|\b(?:about|approximately|estimated|estimate|nearly|roughly|around|more than|aproximadamente|estimad[oa]s?|casi|alrededor de|cerca de|unos?|en promedio|más de)\b|(?<![-‐‑‒–—])\bover\b(?![-‐‑‒–—])/iu;
+  /~|\b(?:about|approximately|estimated|estimate|nearly|roughly|around|more than|aproximadamente|estimad[oa]s?|casi|alrededor de|cerca de|unos?|en promedio|más de)\b|(?<![-‐‑‒–—])\bover\b(?![-‐‑‒–—])(?!\s+(?:the\s+)?(?:past|last|next|previous|coming|following|course|period|weekend|time|years?|months?|weeks?|days?|decades?)\b)/iu;
 const PROJECTION_PATTERN = /\b(?:projected|forecast|expected to|could reach)\b/iu;
 const ASSOCIATION_PATTERN = /\b(?:associated with|correlat(?:ed|ion)|linked to|asociad[oa]s? con|correlacionad[oa]s?|vinculad[oa]s? con)\b/iu;
 const REPORTED_PATTERN = /\b(?:according to|reported|report says|study says)\b/iu;

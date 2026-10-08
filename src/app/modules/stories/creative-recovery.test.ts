@@ -46,3 +46,18 @@ test('a version conflict rejects recovery before any provider or persistence cal
  await assert.rejects(api.recoverSavedCreativeDraft('topic','draft',2,'request'),errors.CreativeContentConflictError);
  assert.deepEqual(events,[]);
 });
+
+test('each repair request gets its own attempts; the last rejection and a pending verification carry over', () => {
+ const {api}=harness();
+ // The module runs in its own vm context: compare by content, not prototype.
+ const plain=(value:unknown)=>JSON.parse(JSON.stringify(value));
+ const spent={terraAttempts:1,solAttempts:1,terraStopped:true,solStopped:true,narrativeReplanAttempted:true,pendingVerification:false,lastTier:'sol' as const,
+  stopReason:'Editorial repair stopped: Terra 1/2 attempts; Sol 1/2 attempts.',lastPatchRejection:{tier:'sol' as const,reason:'rolled back'}};
+ // Before: a second click inherited both stops and only re-reviewed.
+ assert.deepEqual(plain(api.freshRecoveryRepair(spent,true)),{terraAttempts:0,solAttempts:0,pendingVerification:false,lastPatchRejection:{tier:'sol',reason:'rolled back'}});
+ const fallback={concept:'reviewed copy'};
+ const pending={...spent,pendingVerification:true,verifiedFallback:fallback as never};
+ assert.deepEqual(plain(api.freshRecoveryRepair(pending,true)),{terraAttempts:0,solAttempts:0,pendingVerification:true,verifiedFallback:fallback,lastTier:'sol',lastPatchRejection:{tier:'sol',reason:'rolled back'}});
+ // An outdated review cannot verify the pending correction: start over.
+ assert.equal(api.freshRecoveryRepair(pending,false).pendingVerification,false);
+});

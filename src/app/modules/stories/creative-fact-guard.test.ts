@@ -3112,3 +3112,23 @@ test("a named 511-style service (Québec 511) is not read as an unsupported numb
     ),
   );
 });
+
+test("a period introduced by \"over the past\" is not an estimate the slide must hedge", () => {
+  const trend: CreativeKeyFact = {
+    id: "fact-5",
+    statement: "En Toronto y Vancouver las rentas muestran signos de estabilidad y han tenido una tendencia al alza durante los últimos seis meses.",
+    sourceExcerpt: "rents in Toronto and Vancouver are showing signs of stability and have trended higher over the past six months",
+    requiredQualifiers: ["showing signs of stability", "over the past six months"],
+  };
+  const slide = (body: string): GeneratedCreativeDraft => ({
+    concept: "Rentas", caption: "Rentas.", hashtags: [], altText: "Rentas.",
+    units: [unit(1, "cover", "hook", "Rentas en Canadá", undefined, ["fact-5"]),
+      unit(2, "content", "explain", "Toronto y Vancouver muestran señales de estabilidad", body, ["fact-5"])],
+  });
+  const lost = (body: string) => deterministicFactQualityIssues(slide(body), [trend]).some((issue) => issue.code === "LOST_QUALIFIER");
+  assert.equal(lost("Las rentas de Toronto y Vancouver muestran señales de estabilidad y han tendido al alza durante los últimos seis meses."), false);
+  // "over" as "more than" still needs its hedge.
+  const vendors: CreativeKeyFact = { id: "fact-5", statement: "The market hosts over 60 vendors.", sourceExcerpt: "over 60 vendors", requiredQualifiers: ["over 60 vendors"] };
+  assert.ok(deterministicFactQualityIssues({ ...slide(""), units: [unit(1, "cover", "hook", "Market", undefined, ["fact-5"]), unit(2, "content", "explain", "The market hosts 60 vendors", undefined, ["fact-5"])] }, [vendors])
+    .some((issue) => issue.code === "LOST_QUALIFIER"));
+});

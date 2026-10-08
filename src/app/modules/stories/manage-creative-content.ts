@@ -57,6 +57,7 @@ import {
   snapshotsForCreativeCharacterIds,
   snapshotsForCreativeUnits,
 } from "./creative-characters.repository";
+import type { EditorialRepairProgress } from "./creative-editorial-loop";
 import type {
   CreativeAspectRatio,
   CreativeBrief,
@@ -880,6 +881,21 @@ export async function createCreativeDraft(
   }
 }
 
+/**
+ * Each "Repair and review" request gets its own Terra and Sol attempts. The
+ * counters an earlier request left on the draft bound that request's own
+ * retries (its checkpoint carries them); carried into a new request they made
+ * every later click a review that stopped at once. What is still useful is
+ * kept: the last rejected correction, as feedback for the next one, and a
+ * correction still waiting for verification while its review is current.
+ */
+export function freshRecoveryRepair(previous:EditorialRepairProgress,reviewIsCurrent:boolean):EditorialRepairProgress {
+  const pending=previous.pendingVerification && reviewIsCurrent;
+  return {terraAttempts:0,solAttempts:0,pendingVerification:pending,
+    ...(pending ? {verifiedFallback:previous.verifiedFallback,lastTier:previous.lastTier} : {}),
+    ...(previous.lastPatchRejection ? {lastPatchRejection:previous.lastPatchRejection} : {})};
+}
+
 export async function recoverSavedCreativeDraft(topicId:string,draftId:string,expectedVersion:number,requestId:string):Promise<CreativeDraft> {
   await requireTopic(topicId,{active:true});
   const current=await findCreativeDraftById(topicId,draftId);
@@ -900,7 +916,7 @@ export async function recoverSavedCreativeDraft(topicId:string,draftId:string,ex
   try {
     const result=job.result?.stage==='reviewed' ? job.result : await withCreativeTextBudget({topicId,storyId:current.storyId,runId:requestId},()=>recoverCreativeDraft({
       ...configuration,currentReviewIsCurrent:job.input.draft.qualityReviewIsCurrent===true,currentDraft:{...job.input.draft,
-        ...(job.input.draft.qualityReviewIsCurrent===false && job.input.draft.editorialRepair ? {editorialRepair:{...job.input.draft.editorialRepair,pendingVerification:false,verifiedFallback:undefined}} : {})},brief:job.input.brief,profile:job.input.brief.profileSnapshot,topic,
+        ...(job.input.draft.editorialRepair ? {editorialRepair:freshRecoveryRepair(job.input.draft.editorialRepair,job.input.draft.qualityReviewIsCurrent!==false)} : {})},brief:job.input.brief,profile:job.input.brief.profileSnapshot,topic,
       story:{title:job.input.draft.concept,url:"",text:"",contentStatus:"full",contentSource:"article"},
       format:current.format,outputAspectRatio:current.outputAspectRatio,characterRoster,
       openAiAuditContext:{topicId,storyId:current.storyId,runId:requestId},checkpoint:job.result??undefined,
