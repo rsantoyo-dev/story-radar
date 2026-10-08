@@ -1396,9 +1396,12 @@ export function trailingSentenceFragment(body?: string): string | undefined {
       .split(/\s+/u)
       .filter(Boolean);
     const lastTailWord = tailWords[tailWords.length - 1] ?? "";
-    // "with X unchanged / planned / rising" is a valid absolute construction;
-    // only a tail that ends on a plain noun reads as a cut-off clause.
-    const isAbsoluteConstruction = /(?:ed|ing|en)$/iu.test(lastTailWord);
+    // "with X unchanged / planned / rising" is a valid absolute construction,
+    // and so is one whose participle sits mid-phrase ("with music scheduled
+    // throughout the day"); only a tail with no participle after its noun
+    // ("with some children.") reads as a cut-off clause.
+    const isAbsoluteConstruction = /(?:ed|ing|en)$/iu.test(lastTailWord) ||
+      tailWords.slice(2).some((word) => /(?:ed|ing)$/iu.test(word));
     if (
       !isAbsoluteConstruction &&
       !tailWords.some((word) => FINITE_VERB_HINT.test(word))

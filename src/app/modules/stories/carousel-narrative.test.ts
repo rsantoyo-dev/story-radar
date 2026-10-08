@@ -1605,3 +1605,9 @@ test("after the cover a subheadline is a short label and the slide stays light",
   assert.equal(dense.find((issue) => issue.code === "slide-too-dense")?.unitIndex, 1);
   assert.ok(!evaluate({ headline: words(10), body: words(CAROUSEL_SLIDE_MAX_WORDS - 10) + "." }).some((issue) => issue.code === "slide-too-dense"));
 });
+
+test("a with-clause whose participle sits mid-phrase is complete, not a cut-off fragment", () => {
+  assert.equal(trailingSentenceFragment("Its terraced gardens host a day of German food, beer, live music and family activities, with music scheduled throughout the day."), undefined);
+  assert.equal(trailingSentenceFragment("Prices held steady, with inflation unchanged."), undefined);
+  assert.ok(trailingSentenceFragment("The market opens Sunday, with some vendors."), "a tail with no participle still reads as cut off");
+});
