@@ -1,7 +1,7 @@
 # Observability: logs and audit trail
 
 **ID:** FEAT-OBS-001
-**Status:** Layers 1 (structured logger) and 2 (audit events) implemented; layer 3 (change capture) next
+**Status:** All three layers implemented: structured logger, audit events, database change capture
 **Date:** October 7, 2026
 **Product:** Press Craftor
 
@@ -43,6 +43,43 @@ Vercel keeps runtime logs only for a short time. For longer retention and alerti
 
 Add an event wherever a new significant action is introduced; prefer the route or service that knows the outcome.
 
-## Layer 3 — database change capture (next)
+## Layer 3 — database change capture (implemented)
 
-A generic PostgreSQL trigger on critical tables (credit ledger, purchases, members and invitations, publication packages and jobs, approvals) records every INSERT, UPDATE and DELETE with the before and after row and the database user, whatever wrote it — application, script or a manual query. High-volume tables (stories, sources, metrics) keep their own run records instead.
+Migration `0098` adds `db_change_log` and the trigger `capture_row_change`, attached to the critical tables. The database itself records every change, whatever made it — the app, a script, a migration or a manual query:
+
+- `table_name`, `operation` (`INSERT`, `UPDATE`, `DELETE`), `row_key` (primary key, `:`-joined), `old_values` / `new_values`, `changed_columns`, `db_user`, `transaction_id`, `occurred_at` (`clock_timestamp()`).
+- **Updates keep only the columns that changed.** `updated_at` and busy bookkeeping columns (worker leases, sync cursors, run timestamps) and bulky snapshots are left out per table; an update that changes nothing else is not recorded.
+- **Secrets never copied**: columns named like `*secret*`, `*password*`, `token_hash`, `*token_encrypted`, `access_token`… are stored as `[redacted]` (still listed in `changed_columns`). Text over 2,000 characters and documents over 8,000 are cut.
+- **Append-only**, with the same trigger as `audit_events`.
+- `transaction_id` groups the rows one statement or function changed; with `occurred_at` it lines up with `audit_events` and the logs (`request_id`).
+
+| Captured tables | Operations |
+|---|---|
+| `workspaces`, `workspace_members`, `workspace_invitations`, `platform_staff`, `users` | all |
+| `billing_purchases`, `billing_customers` | all |
+| `workspace_credit_entries` | UPDATE, DELETE only (the ledger is itself append-only; inserts are already the record) |
+| `topics`, `topic_meta_connections`, `topic_facebook_connections`, `editorial_lines`, `topic_editorial_profiles`, `creative_profiles`, `rss_sources`, `topic_sources`, `topic_auto_collection_settings` | all |
+| `creative_drafts`, `creative_assets` (approvals and status), `instagram_publication_packages`, `instagram_publication_jobs`, `story_social_publications` | all |
+
+High-volume tables (stories, story sources, metrics snapshots, AI usage) keep their own run and receipt records instead. A cascade (deleting a topic, clearing its data) records every row it removes.
+
+`GET /api/radar/admin/changes` (platform operator) lists changes newest first, filtered by `table`, `rowKey`, `transactionId`, paged with `before`.
+
+### Useful queries
+
+```sql
+-- Who changed this member's role, and when?
+SELECT occurred_at, operation, old_values, new_values FROM db_change_log
+WHERE table_name = 'workspace_members' AND row_key = '<workspace>:<user>' ORDER BY occurred_at;
+
+-- Everything one request did: its audit event, then the rows its transaction changed.
+SELECT * FROM audit_events WHERE request_id = '<x-vercel-id>';
+
+-- A workspace's day.
+SELECT occurred_at, actor_type, actor_id, action, entity_type, entity_id, outcome
+FROM audit_events WHERE workspace_id = '<workspace>' AND occurred_at > now() - interval '1 day' ORDER BY occurred_at;
+```
+
+## Retention
+
+`audit_events` and `db_change_log` are kept indefinitely for now. Watch their size in Neon; when needed, archive by month to R2 with an explicit, audited maintenance function rather than deleting rows.
