@@ -2,6 +2,7 @@
 
 **Status:** Phase 0 done (measurement and ratchet). Phases 1–4 pending.
 **Owner:** Press Craftor UI.
+**Stories:** [UXA-00–09](uxdsl-alignment.kanban.md) — resume with UXA-01.
 **Related:** [UI/UX consistency](ui-ux-consistency.md) · [UXDSL agent guide](../uxdsl-agent-guide.md) · [UXDSL findings log](../uxdsl-findings.md)
 
 ## Goal
