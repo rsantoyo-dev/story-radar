@@ -334,8 +334,8 @@ const QUOTED_EDITORIAL_GOAL_LABEL = new RegExp(
  * as a label is not asserting them as a claim, so they must not reach that
  * check as prose.
  */
-function stripNarrativePlanningLabels(value?: string): string | undefined {
-  return value
+function stripNarrativePlanningLabels(value?: string, contentUnits = 0): string | undefined {
+  const stripped = value
     ?.replace(QUOTED_EDITORIAL_GOAL_LABEL, " ")
     // The rationale describes the carousel plan, so “7 diapositives” and
     // “slide 7” count its own units. They are not claims about the Story.
@@ -343,6 +343,11 @@ function stripNarrativePlanningLabels(value?: string): string | undefined {
     .replace(/\b\d{1,2}\s*(?:[-‑–—]\s*)?(?:diapositives?|slides?|frames?)\b|\b(?:diapositives?|slides?|frames?)\s*(?:n[º°o]?\s*)?\d{1,2}\b/giu, " ")
     // “Facts 1 and 2”, “fact-5”, “faits 3 et 4” cite the brief's fact IDs.
     .replace(FACT_REFERENCE_LABEL, " ");
+  // “les 6 sorties” counts the plan's own items (the slides between the cover
+  // and the closing), the way a list rationale introduces them.
+  return contentUnits >= 3
+    ? stripped?.replace(new RegExp(String.raw`\b${contentUnits}(?=\s+\p{L})`, "gu"), " ")
+    : stripped;
 }
 
 const FACT_ID = String.raw`(?:key\s+)?(?:facts?|faits?|hechos?)\s*(?:[-‑#]\s*|n[º°o]?\s*)?\d{1,2}`;
@@ -368,7 +373,7 @@ export function deterministicFactQualityIssues(
     draft.concept,
     // Planning labels and slide counts describe this draft's structure. The
     // remaining rationale still receives the same factual checks.
-    stripNarrativePlanningLabels(draft.narrativeRationale),
+    stripNarrativePlanningLabels(draft.narrativeRationale, draft.units.filter((unit) => unit.role === "content").length),
     draft.caption,
     draft.callToAction,
     draft.altText,

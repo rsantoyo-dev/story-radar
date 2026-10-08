@@ -199,6 +199,16 @@ test("carousel slide counts in the internal rationale are not unsupported Story 
     ...planned,
     narrativeRationale: "Ce plan prétend que 7 personnes ont visité ces parcs.",
   }, facts).some((issue) => issue.code === "UNSUPPORTED_NUMBER"));
+  // A list plan counting its own items between the cover and the closing,
+  // even when no fact states the count; in the published caption the same
+  // count is still a claim to support.
+  const uncounted: CreativeKeyFact[] = [{ id: "fact-1", statement: "The guide lists parks to visit.", sourceExcerpt: "The guide lists parks to visit." }];
+  const listPlan = { ...planned, concept: "Parks", caption: "Parks to explore.",
+    units: planned.units.map((slide) => ({ ...slide, headline: "Parks" })),
+    narrativeRationale: "Une diapositive d'ouverture annonçant les 5 sorties répertoriées, une par sortie, puis une conclusion." };
+  assert.ok(!deterministicFactQualityIssues(listPlan, uncounted).some((issue) => issue.code === "UNSUPPORTED_NUMBER"));
+  assert.ok(deterministicFactQualityIssues({ ...listPlan, caption: "Les 5 sorties à explorer." }, uncounted)
+    .some((issue) => issue.code === "UNSUPPORTED_NUMBER"));
 });
 
 test("references to the brief's fact IDs in the internal rationale are not unsupported Story numbers", () => {
