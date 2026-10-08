@@ -45,7 +45,10 @@ export function mentionsForUnit(unit: CreativeUnit, facts: CreativeKeyFact[], me
 export function visualEvidenceCurrent(evidence?: PlaceVisualEvidence, now = Date.now()): boolean {
   if (!evidence || evidence.representation === "typography") return true;
   const age = now - Date.parse(evidence.preparedAt);
-  return evidence.version === PLACE_VISUAL_VERSION && Boolean(evidence.sha256 && evidence.attribution) && age >= 0 && age < 86_400_000;
+  // A photo is only ever checked against its verified place; one recorded
+  // without it can never be generated or approved, so it is prepared again.
+  const complete = evidence.representation !== "photo" || Boolean(evidence.photo && evidence.place);
+  return evidence.version === PLACE_VISUAL_VERSION && complete && Boolean(evidence.sha256 && evidence.attribution) && age >= 0 && age < 86_400_000;
 }
 
 /** The brand's area names a municipality, a region and a country: providers can then check a place against all three. */

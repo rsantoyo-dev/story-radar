@@ -128,7 +128,7 @@ async function preparePlaceVisualsFor(topicId: string, draft: CreativeDraft, pro
   const googleSignal=providerDeadline();
   const materialCache = new Map<string, PreparedPlaceVisual>();
   // Verified places still without a photo, for Openverse after the loop.
-  const openverseWanted: { result: PreparedPlaceVisual; place: PlaceEvidence; unverified?: string }[] = [];
+  const openverseWanted: { result: PreparedPlaceVisual; place: PlaceEvidence; superseded?: string[] }[] = [];
   for (const unit of draft.units) {
     const reusable = prepared.get(unit.order);
     if (reusable) { results.set(unit.order, reusable); continue; }
@@ -158,7 +158,7 @@ async function preparePlaceVisualsFor(topicId: string, draft: CreativeDraft, pro
           result.evidence.place = place; result.evidence.sourceUrl = place.sourceUrl;
           const photo = await providers.photo(place).catch(() => undefined);
           if (photo && eligiblePhoto(photo.evidence, place)) applyIdentityPhoto(result, photo);
-          else openverseWanted.push({ result, place, unverified });
+          else openverseWanted.push({ result, place, superseded: [unverified] });
         } else result.evidence.reasons.push("Identity could not be established from provider records and geographic scope.");
       } catch { result.evidence.reasons.push("A geographic provider failed or exceeded its limit."); }
       if (!result.bytes) result.evidence.reasons.push(unverified);
@@ -224,7 +224,7 @@ async function preparePlaceVisualsFor(topicId: string, draft: CreativeDraft, pro
       result.evidence.sourceUrl=google.evidence.sourceUrl;result.evidence.attribution=google.evidence.attribution;
       result.evidence.sha256=google.evidence.sha256;result.evidence.reasons.push(...google.evidence.reasons);
       // The real-photo slide fell back to a map; Openverse may still find its photo.
-      if(photoFirst && place)openverseWanted.push({result,place});
+      if(photoFirst && place)openverseWanted.push({result,place,superseded:google.evidence.reasons});
       materialCache.set(cacheKey,result);continue;
     }
     try {
@@ -254,10 +254,12 @@ async function preparePlaceVisualsFor(topicId: string, draft: CreativeDraft, pro
  * The second photo source, for places Wikidata verified but Commons had no
  * eligible photo of: a reviewed Openverse photograph becomes the slide's
  * identity reference (replacing a map a real-photo slide fell back to).
- * Anything that fails or runs out of time leaves the slide as it was.
+ * The photo is read back against its verified place, so the place is recorded
+ * with it, and the replaced map's reasons are withdrawn. Anything that fails
+ * or runs out of time leaves the slide as it was.
  */
 async function applyOpenversePhotos(
-  wanted: { result: PreparedPlaceVisual; place: PlaceEvidence; unverified?: string }[],
+  wanted: { result: PreparedPlaceVisual; place: PlaceEvidence; superseded?: string[] }[],
   context: { topicId: string; storyId: string; scope: CreativeProfile["geoScope"]; contact?: string; until: number },
 ): Promise<void> {
   if (!wanted.length || !openverseEnabled() || context.until - Date.now() < OPENVERSE_MIN_WINDOW_MS) return;
@@ -272,10 +274,11 @@ async function applyOpenversePhotos(
       const place = entries[0]!.place;
       const photo = await openversePlacePhoto({ place, scope: context.scope, topicId: context.topicId, storyId: context.storyId, signal, contact: context.contact }).catch(() => undefined);
       if (!photo || !eligiblePhoto(photo.evidence, place)) continue;
-      for (const { result, unverified } of entries) {
+      for (const { result, superseded = [] } of entries) {
         if (result.evidence.representation === "photo") continue;
         delete result.bytes; delete result.evidence.adapter; delete result.evidence.sha256; delete result.evidence.attribution;
-        result.evidence.reasons = result.evidence.reasons.filter(reason => reason !== unverified);
+        result.evidence.reasons = result.evidence.reasons.filter(reason => !superseded.includes(reason));
+        result.evidence.place = place; result.evidence.sourceUrl = place.sourceUrl;
         applyIdentityPhoto(result, photo);
         result.evidence.reasons.push(`Openverse photograph (${photo.evidence.sourceUrl.includes("flickr.com") ? "Flickr" : "Wikimedia"}) whose title names ${place.name}; an automated visual check confirmed it shows the place. Identity reference only.`);
       }

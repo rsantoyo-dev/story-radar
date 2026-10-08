@@ -271,6 +271,9 @@ test("Openverse is the second photo source: only for a verified place without a 
   assert.equal(replaced.evidence.representation, "photo");
   assert.equal(replaced.evidence.adapter, undefined, "the map's provider no longer applies");
   assert.equal(replaced.evidence.photo?.provider, "openverse");
+  assert.equal(replaced.evidence.place?.name, "Paramount Theatre", "the photo keeps the verified place it is read back against");
+  assert.ok(policy.eligiblePhoto(replaced.evidence.photo!, replaced.evidence.place!));
+  assert.ok(!replaced.evidence.reasons.includes("Google-verified place"), "the replaced map's reasons are withdrawn");
 
   // Nothing found, or Openverse switched off: the slide stays as it was.
   const none = preparation({ openverse: new Set() });

@@ -84,4 +84,8 @@ test("each slide selects only its cited named event and expires visual evidence"
   assert.equal(visualEvidenceCurrent(evidence,now),true);
   assert.equal(visualEvidenceCurrent(evidence,now+86400000),false);
   assert.equal(visualEvidenceCurrent({...evidence,sha256:undefined},now),false);
+  // A photo recorded without its verified place is prepared again, never carried.
+  const photo={...evidence,representation:"photo" as const,photo:{} as import("./creative-documentary").PhotoEvidence};
+  assert.equal(visualEvidenceCurrent(photo,now),false);
+  assert.equal(visualEvidenceCurrent({...photo,place:{} as import("./creative-documentary").PlaceEvidence},now),true);
 });
