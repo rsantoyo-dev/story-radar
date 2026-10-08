@@ -355,9 +355,10 @@ GMAP-01 a GMAP-08 y GMAP-10 completadas con evidencia de ejecución; exportació
 
 ## Mapa en recuadro y escena con vida — 8 de octubre de 2026
 
-El mapa de Google ya no ocupa la mitad inferior del slide. Ahora es un recuadro
-de 540×340, el tamaño al que se pide el mapa estático (escala 2), así que el
-logo y el crédito de Google se leen como Google los dibuja. Va a la derecha,
+El mapa de Google ya no ocupa la mitad inferior del slide. Ahora es una tarjeta
+de 420×264 apoyada sobre la escena, con borde claro y sombra suave. Es el tamaño
+al que se pide el mapa estático (escala 2), así que el logo y el crédito de
+Google se leen como Google los dibuja. Va a la derecha,
 entre el titular y el contador de slides (`creative-map-panel.ts`, layout
 `inset`). Alrededor, el modelo dibuja la escena del slide con un toque de
 realismo dentro del estilo de la marca: la actividad que los hechos respaldan
@@ -369,4 +370,4 @@ La revisión automática de imágenes (`image-review-v7`) ya no bloquea a person
 genéricas ficticias en slides sin personaje. Sigue bloqueando el parecido con
 personas reales o nombradas, y a personas añadidas alrededor de la foto
 verificada de una persona. Los lotes anteriores guardan su layout `band` y se
-recomponen igual. Versión de composición: `+map-ai-v7`.
+recomponen igual. Versión de composición: `+map-ai-v8`.

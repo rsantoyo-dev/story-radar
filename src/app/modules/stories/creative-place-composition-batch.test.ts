@@ -21,6 +21,7 @@ test("the assets GET recognizes place-composition batches with or without a mode
     "integrated-portrait-4x5-v13:place-visual-v4+map-ai-v6:4f53cda18c2baa0c0354bb5f",
     // The map inset with a lively scene around it.
     "integrated-portrait-4x5-v13:place-visual-v4+map-ai-v7:4f53cda18c2baa0c0354bb5f",
+    "integrated-portrait-4x5-v13:place-visual-v4+map-ai-v8:4f53cda18c2baa0c0354bb5f",
     "integrated-portrait-4x5-v13:place-visual-v4+local-v2:4f53cda18c2baa0c0354bb5f:story-refs-v3-abc",
   ]) assert.equal(exports.run!(version), true, version);
   for (const version of ["integrated-portrait-4x5-v13", "integrated-portrait-4x5-v13:place-visual-v3:abc", "place-visual-v4"]) assert.equal(exports.run!(version), false, version);

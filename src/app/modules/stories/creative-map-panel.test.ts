@@ -8,7 +8,7 @@ import ts from "typescript";
 import sharp from "sharp";
 
 import * as policy from "./creative-documentary";
-import { compositeMapPanel, MAP_INSET_SCENE_DIRECTION, MAP_PANEL_MAP, MAP_PANEL_MAT, mapInsetVisualDirection, mapPaletteFromBrand, mapPanelLayout, mapPanelMat, mapPanelRegion, mapPanelZonePrompt } from "./creative-map-panel";
+import { compositeMapPanel, MAP_INSET_SCENE_DIRECTION, MAP_PANEL_MAP, MAP_PANEL_MAT, mapInsetVisualDirection, mapPaletteFromBrand, mapPanelLayout, mapPanelMap, mapPanelMat, mapPanelRegion, mapPanelZonePrompt } from "./creative-map-panel";
 
 const requireLocal = createRequire(import.meta.url);
 function load(file: string, imports: Record<string, unknown>) {
@@ -38,20 +38,37 @@ test("the map palette takes the brand's page, text and accent, plus water and pa
   assert.equal(unlabeled?.primary, "#101010", "and the darkest is the text");
 });
 
-test("the map is pasted unaltered in its band, on the brand mat, and nothing else changes", async () => {
+test("a band-era map is pasted unaltered in its band, on the brand mat, and nothing else changes", async () => {
   const base = await sharp({ create: { width: 1080, height: 1350, channels: 3, background: "#FFF9F0" } }).png().toBuffer();
   const map = await sharp({ create: { width: 1080, height: 680, channels: 3, background: "#3A7BD5" } })
     .composite([{ input: await sharp({ create: { width: 200, height: 200, channels: 3, background: "#E04040" } }).png().toBuffer(), left: 440, top: 240 }])
     .png().toBuffer();
+  const composed = await compositeMapPanel({ image: base, map, matColor: "#173F43", layout: "band" });
+  const { data, info } = await sharp(composed).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  const pixel = (x: number, y: number) => [...data.subarray((y * info.width + x) * 3, (y * info.width + x) * 3 + 3)];
+  const mat = mapPanelMat("band"), inner = mapPanelMap("band");
+  assert.deepEqual(pixel(10, 10), [0xFF, 0xF9, 0xF0], "outside the panel the slide is untouched");
+  assert.deepEqual(pixel(mat.left + 3, mat.top + 300), [0x17, 0x3F, 0x43], "the mat border is the brand colour");
+  const centre = pixel(inner.left + Math.round(inner.width / 2), inner.top + Math.round(inner.height / 2));
+  assert.ok(centre[0] > 200 && centre[1] < 90, `the map's own centre survives: ${centre}`);
+  const edge = pixel(inner.left + 20, inner.top + 20);
+  assert.ok(edge[2] > 180 && edge[0] < 90, `the map reaches its corners, uncropped: ${edge}`);
+});
+
+test("the map card lies on the scene: a light border, a soft shadow below, the map itself untouched", async () => {
+  const base = await sharp({ create: { width: 1080, height: 1350, channels: 3, background: "#C8A070" } }).png().toBuffer();
+  const map = await sharp({ create: { width: 840, height: 528, channels: 3, background: "#3A7BD5" } })
+    .composite([{ input: await sharp({ create: { width: 120, height: 120, channels: 3, background: "#E04040" } }).png().toBuffer(), left: 360, top: 204 }])
+    .png().toBuffer();
   const composed = await compositeMapPanel({ image: base, map, matColor: "#173F43" });
   const { data, info } = await sharp(composed).removeAlpha().raw().toBuffer({ resolveWithObject: true });
   const pixel = (x: number, y: number) => [...data.subarray((y * info.width + x) * 3, (y * info.width + x) * 3 + 3)];
-  assert.deepEqual(pixel(10, 10), [0xFF, 0xF9, 0xF0], "outside the panel the slide is untouched");
-  assert.deepEqual(pixel(MAP_PANEL_MAT.left + 3, MAP_PANEL_MAT.top + 300), [0x17, 0x3F, 0x43], "the mat border is the brand colour");
+  assert.deepEqual(pixel(10, 10), [0xC8, 0xA0, 0x70], "the scene elsewhere is untouched");
+  assert.ok(pixel(MAP_PANEL_MAT.left + 3, MAP_PANEL_MAT.top + 100).every((channel) => channel > 240), "a light card border, not the brand mat");
   const centre = pixel(MAP_PANEL_MAP.left + Math.round(MAP_PANEL_MAP.width / 2), MAP_PANEL_MAP.top + Math.round(MAP_PANEL_MAP.height / 2));
   assert.ok(centre[0] > 200 && centre[1] < 90, `the map's own centre survives: ${centre}`);
-  const edge = pixel(MAP_PANEL_MAP.left + 20, MAP_PANEL_MAP.top + 20);
-  assert.ok(edge[2] > 180 && edge[0] < 90, `the map reaches its corners, uncropped: ${edge}`);
+  const below = pixel(MAP_PANEL_MAT.left + Math.round(MAP_PANEL_MAT.width / 2), MAP_PANEL_MAT.top + MAP_PANEL_MAT.height + 6);
+  assert.ok(below[0] < 0xC8 && below[0] > 0x60, `a soft shadow falls just below the card: ${below}`);
 });
 
 test("the slide reserves a small inset for the map and is told never to draw another place", () => {
@@ -59,11 +76,11 @@ test("the slide reserves a small inset for the map and is told never to draw ano
   const region = mapPanelRegion();
   const [, top, bottom] = /from (\d+)% to (\d+)% of the height/.exec(prompt) ?? [];
   assert.ok(Number(top) <= region.top && Number(bottom) >= region.bottom, `the reserved zone covers the whole inset: ${top}–${bottom}% vs ${region.top}–${region.bottom}%`);
-  assert.match(prompt, /small framed inset/);
+  assert.match(prompt, /small printed map card lying on the scene/);
   assert.match(prompt, /Do not draw any other map, street, road, pin or route, and no recognizable landmark or building facade/);
   assert.match(prompt, /Never place text inside or across it/);
-  // Google's static map is requested at 540×340 (scale 2): the inset shows it at that size.
-  assert.deepEqual([MAP_PANEL_MAP.width, MAP_PANEL_MAP.height], [540, 340]);
+  // The card shows Google's static map at the size it is requested at (scale 2).
+  assert.deepEqual([MAP_PANEL_MAP.width, MAP_PANEL_MAP.height], [420, 264]);
   // It sits on the right, clear of the headline above and the slide counter at the bottom.
   assert.ok(region.top >= 55 && region.bottom <= 88 && region.right <= 96, JSON.stringify(region));
 });

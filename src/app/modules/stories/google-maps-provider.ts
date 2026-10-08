@@ -230,10 +230,17 @@ export function brandedStaticMapStyles(palette: MapPalette): string[] {
   ];
 }
 
+/**
+ * The size a static map is requested at (scale 2) and shown at in the slide's
+ * map card, so Google's logo and attribution keep the size Google draws them
+ * at. Small on purpose: the map only has to locate one place.
+ */
+export const GOOGLE_STATIC_MAP_SIZE = { width: 420, height: 264 } as const;
+
 export function staticGoogleMapUrl(place: GooglePlaceCandidate, config: GoogleMapsConfig, palette?: MapPalette): URL {
   const url = new URL("https://maps.googleapis.com/maps/api/staticmap");
   const point = `${place.latitude},${place.longitude}`;
-  const params = new URLSearchParams({ center: point, zoom: "16", size: "540x340", scale: "2", maptype: "roadmap", format: "png", markers: `color:${palette ? googleHex(palette.accent) : "red"}|${point}`, key: config.apiKey });
+  const params = new URLSearchParams({ center: point, zoom: "16", size: `${GOOGLE_STATIC_MAP_SIZE.width}x${GOOGLE_STATIC_MAP_SIZE.height}`, scale: "2", maptype: "roadmap", format: "png", markers: `color:${palette ? googleHex(palette.accent) : "red"}|${point}`, key: config.apiKey });
   for (const style of palette ? brandedStaticMapStyles(palette) : []) params.append("style", style);
   url.search = params.toString();
   if (config.signingSecret) {

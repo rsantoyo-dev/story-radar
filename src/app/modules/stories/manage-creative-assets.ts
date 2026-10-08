@@ -2040,7 +2040,8 @@ function placeCompositionVersion(draftId: string): string {
   // make every unapproved place image of the last day unapprovable.
   // +map-ai-v7: a pasted Google map is a small inset with the slide's own
   // lively scene around it (fictional people doing the activity), not a band.
-  return mapReferenceMode() === "ai" ? `${base}+map-ai-v7` : `${base}+local-v2`;
+  // +map-ai-v8: the inset is a smaller map card (420 × 264) lying on the scene.
+  return mapReferenceMode() === "ai" ? `${base}+map-ai-v8` : `${base}+local-v2`;
 }
 
 /**

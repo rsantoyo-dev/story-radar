@@ -11,27 +11,32 @@ import sharp from "sharp";
 const CANVAS = { width: 1080, height: 1350 } as const;
 
 /**
- * "inset" (since October 2026): a small framed map on the right, between the
- * headline and the slide counter, with the slide's own scene around it. Google's
- * static map is requested at 540×340 (scale 2), so at this size its logo and
- * attribution read exactly as Google draws them. "band": the earlier panel
- * across the lower half, kept so batches composed with it recompose the same way.
+ * "inset" (since October 2026): a small map card on the right, between the
+ * headline and the slide counter, lying on the slide's own scene with a light
+ * border and a soft shadow. It is shown at the size Google's static map is
+ * requested at (GOOGLE_STATIC_MAP_SIZE, scale 2), so the logo and attribution
+ * read as Google draws them. "band": the earlier panel across the lower half on
+ * a brand-colour mat, kept so batches composed with it recompose the same way.
  */
 export type MapPanelLayout = "band" | "inset";
-const MAT_BORDER = 6;
-const MAT_RADIUS = 18;
+const BORDERS: Record<MapPanelLayout, number> = { band: 6, inset: 8 };
+const RADII: Record<MapPanelLayout, number> = { band: 18, inset: 14 };
+const INSET_MAP = { width: 420, height: 264 } as const;
 const MATS: Record<MapPanelLayout, { left: number; top: number; width: number; height: number }> = {
   band: { left: 64, top: 640, width: 952, height: 604 },
-  inset: { left: 480, top: 820, width: 540 + 2 * MAT_BORDER, height: 340 + 2 * MAT_BORDER },
+  inset: { left: 1080 - 56 - (INSET_MAP.width + 2 * BORDERS.inset), top: 860, width: INSET_MAP.width + 2 * BORDERS.inset, height: INSET_MAP.height + 2 * BORDERS.inset },
 };
+/** The inset card reads as a printed map lying on the scene. */
+const INSET_CARD_COLOR = "#FFFDF8";
 
-/** The mat behind the map; the map sits inside it with an even border. */
+/** The mat (or card) behind the map; the map sits inside it with an even border. */
 export function mapPanelMat(layout: MapPanelLayout = "inset") {
   return MATS[layout];
 }
 export function mapPanelMap(layout: MapPanelLayout = "inset") {
   const mat = MATS[layout];
-  return { left: mat.left + MAT_BORDER, top: mat.top + MAT_BORDER, width: mat.width - 2 * MAT_BORDER, height: mat.height - 2 * MAT_BORDER };
+  const border = BORDERS[layout];
+  return { left: mat.left + border, top: mat.top + border, width: mat.width - 2 * border, height: mat.height - 2 * border };
 }
 /** The current layout's mat and map. */
 export const MAP_PANEL_MAT = mapPanelMat();
@@ -89,8 +94,8 @@ A real, unmodified street map will be placed onto this slide AFTER generation as
   }
   return `
 <VERIFIED_MAP_ZONE>
-A real, unmodified street map will be placed onto this slide AFTER generation as a small framed inset, occupying ${area}.
-- Keep that rectangle free of text, faces and the scene's key objects; the scene may continue around it. It will be covered.
+A real, unmodified street map will be placed onto this slide AFTER generation as a small printed map card lying on the scene, occupying ${area}.
+- Let the scene continue around and behind it, but keep that rectangle free of text, faces and the scene's key objects. It will be covered.
 - Never place text inside or across it; keep the bottom of the slide below it clear as well.
 - Do not draw any other map, street, road, pin or route, and no recognizable landmark or building facade: the inset is what shows the place.
 - Draw no frame, border, mount, caption strip or credit for the map.
@@ -99,7 +104,20 @@ A real, unmodified street map will be placed onto this slide AFTER generation as
 
 function matSvg(fill: string, layout: MapPanelLayout): Buffer {
   const { width, height } = MATS[layout];
-  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="${width}" height="${height}" rx="${MAT_RADIUS}" ry="${MAT_RADIUS}" fill="${fill}"/></svg>`);
+  const radius = RADII[layout];
+  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="${width}" height="${height}" rx="${radius}" ry="${radius}" fill="${fill}"/></svg>`);
+}
+
+const SHADOW = { spread: 28, offsetY: 10, blur: 12, opacity: 0.3 } as const;
+/** A soft drop shadow, so the card sits on the scene rather than over a flat band. */
+async function cardShadow(layout: MapPanelLayout): Promise<Buffer> {
+  const { width, height } = MATS[layout];
+  const radius = RADII[layout];
+  const pad = SHADOW.spread;
+  return sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width + 2 * pad}" height="${height + 2 * pad}"><rect x="${pad}" y="${pad}" width="${width}" height="${height}" rx="${radius}" ry="${radius}" fill="rgba(0,0,0,${SHADOW.opacity})"/></svg>`))
+    .blur(SHADOW.blur)
+    .png()
+    .toBuffer();
 }
 
 export async function compositeMapPanel({ image, map, matColor, layout = "inset" }: {
@@ -111,15 +129,17 @@ export async function compositeMapPanel({ image, map, matColor, layout = "inset"
 }): Promise<Buffer> {
   const mat = MATS[layout];
   const place = mapPanelMap(layout);
+  const cardColor = layout === "inset" ? INSET_CARD_COLOR : (/^#[0-9a-f]{6}$/iu.test(matColor) ? matColor : "#1f2933");
   // "contain" never crops: the provider's logo and attribution sit at its edges.
   const fitted = await sharp(map, { limitInputPixels: 16_000_000 })
-    .resize({ width: place.width, height: place.height, fit: "contain", background: matColor })
+    .resize({ width: place.width, height: place.height, fit: "contain", background: cardColor })
     .png()
     .toBuffer();
   return sharp(image)
     .resize(CANVAS.width, CANVAS.height, { fit: "fill" })
     .composite([
-      { input: matSvg(/^#[0-9a-f]{6}$/iu.test(matColor) ? matColor : "#1f2933", layout), left: mat.left, top: mat.top },
+      ...(layout === "inset" ? [{ input: await cardShadow(layout), left: mat.left - SHADOW.spread, top: mat.top - SHADOW.spread + SHADOW.offsetY }] : []),
+      { input: matSvg(cardColor, layout), left: mat.left, top: mat.top },
       { input: fitted, left: place.left, top: place.top },
     ])
     .png()
