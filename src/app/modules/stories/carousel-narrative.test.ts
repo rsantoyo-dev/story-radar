@@ -21,6 +21,9 @@ import {
   trailingSentenceFragment,
   type CarouselPlan,
   validateCarouselPlan,
+  isCarouselSlideCount,
+  MAX_CAROUSEL_SLIDES,
+  resolveStoryStructure,
 } from "./carousel-narrative";
 import { repairDeterministicCreativeCopy } from "./creative-quality";
 import type { GeneratedCreativeDraft } from "./creative-content.types";
@@ -1490,10 +1493,35 @@ test("a hook-list structure replaces the preferred arcs with a list arc in the p
   assert.match(list.listArc ?? "", /choose, plan, save or share/);
   assert.equal(list.preferredClosingGoal, "conclude");
 
-  const narrative = carouselNarrativePolicyForPrompt("saves");
-  assert.equal(narrative.listArc, undefined);
-  assert.match(narrative.flexibility, /preferred arc/);
-  assert.deepEqual(carouselNarrativePolicyForPrompt("saves", "auto").listArc, undefined);
+  // "auto" (and an unset structure) may find a list, so it offers the list arc conditionally.
+  const auto = carouselNarrativePolicyForPrompt("saves", "auto");
+  assert.match(auto.listArc ?? "", /establishes the count/);
+  assert.match(auto.flexibility, /When the source is an enumerated list/);
+  assert.match(auto.flexibility, /preferred arc/);
+  assert.match(carouselNarrativePolicyForPrompt("saves").flexibility, /When the source is an enumerated list/);
+
+  const steps = carouselNarrativePolicyForPrompt("saves", "hook-steps");
+  assert.equal(steps.listArc, undefined);
+  assert.doesNotMatch(steps.flexibility, /enumerated list/);
+});
+
+test("an auto profile is judged as a list only when its brief planned one", () => {
+  assert.equal(resolveStoryStructure("auto", { structure: "list" }), "hook-list");
+  assert.equal(resolveStoryStructure(undefined, { structure: "list" }), "hook-list");
+  assert.equal(resolveStoryStructure("auto", { structure: "arc" }), "auto");
+  assert.equal(resolveStoryStructure("auto", undefined), "auto");
+  // An explicit choice is never overridden by the brief.
+  assert.equal(resolveStoryStructure("hook-steps", { structure: "list" }), "hook-steps");
+  assert.equal(resolveStoryStructure("hook-list", { structure: "arc" }), "hook-list");
+});
+
+test("a carousel may have 3 to 20 slides; only 3 to 8 have a preferred arc", () => {
+  assert.equal(MAX_CAROUSEL_SLIDES, 20);
+  assert.equal(isCarouselSlideCount(20), true);
+  assert.equal(isCarouselSlideCount(21), false);
+  assert.equal(isCarouselSlideCount(2), false);
+  assert.equal(getPreferredCarouselArc(12), undefined);
+  assert.ok(getPreferredCarouselArc(8));
 });
 
 test("a hook-list cover is its count promise, so the reader-consequence cover and closing rules stand down", () => {

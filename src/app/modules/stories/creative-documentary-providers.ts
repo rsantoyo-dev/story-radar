@@ -47,13 +47,32 @@ export function entityNames(entity: Entity): string[] {
   return [...Object.values(entity.labels ?? {}).map(v => v.value), ...Object.values(entity.aliases ?? {}).flat().map(v => v.value)].filter(v => typeof v === "string").map(normalizePlaceName);
 }
 
+/**
+ * Wikidata/Commons requests one run may spend. One place costs a search, up
+ * to six candidate entities, the administrative hierarchy and country (read
+ * once per run, then cached) and up to four Commons file queries, with room
+ * for a maxlag retry: 36. A list carousel can resolve up to 18 places in one
+ * run; each further place reuses the cached hierarchy, so it adds at most
+ * about a dozen requests (1 search + 6 candidates + 4 files + a retry). The
+ * budget therefore grows by 12 per further place, capped so that a malformed
+ * run stays a bounded, serial load on these free public services.
+ */
+const LOOKUP_CALLS_FIRST_PLACE = 36;
+const LOOKUP_CALLS_PER_FURTHER_PLACE = 12;
+const LOOKUP_CALLS_MAX = 240;
+export function documentaryLookupBudget(places = 1): number {
+  const further = Number.isFinite(places) ? Math.max(0, Math.floor(places) - 1) : 0;
+  return Math.min(LOOKUP_CALLS_MAX, LOOKUP_CALLS_FIRST_PLACE + LOOKUP_CALLS_PER_FURTHER_PLACE * further);
+}
+
 /** The per-run cache bounds API calls and shares hierarchy reads across mentions. */
-export function documentaryProviders(signal: AbortSignal, language = "en", profileContact?: string) {
+export function documentaryProviders(signal: AbortSignal, language = "en", profileContact?: string, options: { places?: number } = {}) {
   const contact = resolveGeoContact(profileContact, process.env.CREATIVE_GEO_CONTACT);
+  const maxCalls = documentaryLookupBudget(options.places);
   let calls = 0;
   const entities = new Map<string, Entity>();
   async function api(host: string, params: Record<string, string>): Promise<Record<string, unknown>> {
-    if (++calls > 36) throw new Error("Geographic lookup budget exhausted");
+    if (++calls > maxCalls) throw new Error("Geographic lookup budget exhausted");
     const request = async (maxlag: boolean) => {
       const url = new URL(`https://${host}/w/api.php`);
       url.search = new URLSearchParams({ format: "json", ...(maxlag ? { maxlag: "5" } : {}), ...params }).toString();
@@ -64,7 +83,7 @@ export function documentaryProviders(signal: AbortSignal, language = "en", profi
     // once without it: one bounded request, instead of silently dropping the
     // slide's verified photo to a fallback illustration.
     if (record(data) && record(data.error) && data.error.code === "maxlag") {
-      if (++calls > 36) throw new Error("Geographic lookup budget exhausted");
+      if (++calls > maxCalls) throw new Error("Geographic lookup budget exhausted");
       await new Promise(resolve => setTimeout(resolve, 2_000));
       data = await request(false);
     }

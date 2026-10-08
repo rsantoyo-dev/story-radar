@@ -31,6 +31,7 @@ import {
   getDefaultViewerQuestion,
   getPreferredCarouselArc,
   type CarouselEditorialGoal,
+  MAX_CAROUSEL_SLIDES,
 } from "./modules/stories/carousel-narrative";
 import {
   creativeQualityReviewHasUnresolvedBlockers,
@@ -2300,6 +2301,7 @@ export function CreativeDraftWorkspace({
                   <CreativeHookTournamentPanel
                     tournament={activeDraft.hookTournament}
                     error={activeDraft.hookTournamentError}
+                    {...(activeDraft.hookTournamentPending ? { pendingKey: `${activeDraft.id}:${activeDraft.version}` } : {})}
                     currentUnits={activeDraft.units.slice(0, 2)}
                     disabled={Boolean(busy) || Boolean(assetBusy) || dirty}
                     busy={busy === "hook"}
@@ -3503,7 +3505,7 @@ function DraftEditor({
   }
 
   function addSlide() {
-    if ((format !== "carousel" && format !== "sequence") || draft.units.length >= 8) return;
+    if ((format !== "carousel" && format !== "sequence") || draft.units.length >= MAX_CAROUSEL_SLIDES) return;
     const currentArc = getPreferredCarouselArc(
       draft.units.length,
       conversionGoal,
@@ -3715,7 +3717,7 @@ function DraftEditor({
 
       <div className={styles.unitsHeading}>
         <div><h4>{format === "meme" ? "Meme frame" : "Carousel slides"}</h4><p>Text and visual directions remain separate for later composition.</p></div>
-        {(format === "carousel" || format === "sequence") ? <button type="button" onClick={addSlide} disabled={draft.units.length >= 8}>+ Add slide</button> : null}
+        {(format === "carousel" || format === "sequence") ? <button type="button" onClick={addSlide} disabled={draft.units.length >= MAX_CAROUSEL_SLIDES}>+ Add slide</button> : null}
       </div>
 
       {draft.units.length > 1 ? <div className={styles.pieceSelector} role="group" aria-label="Choose a slide to edit">

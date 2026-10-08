@@ -111,6 +111,7 @@ function stepDetail(step: DailyPreparationStep, progress: DailyPreparationProgre
     case "content": return progress.storyTitle && `Content ready: ${progress.storyTitle}`;
     case "focus": return progress.editorialDirection && `Focus: ${progress.editorialDirection.length > 80 ? `${progress.editorialDirection.slice(0, 80)}…` : progress.editorialDirection}`;
     case "brief": return progress.draftId ? "Carousel script ready" : progress.briefId ? "Brief ready" : undefined;
+    case "cover": return progress.draftSummary?.hook && `Cover: ${progress.draftSummary.hook}`;
     case "approve-draft": return progress.draftId && "Script approved";
     case "images": return progress.assetBatchId && "Image batch generated";
     default: return undefined;
@@ -302,7 +303,7 @@ export function DailyPreparationPanel({onCompleted,onOpenDraft,...props}:Props) 
     <ol className={styles.dailyPreparationSteps}>{steps.map((step,index)=>{
       const done=index<=completedIndex;
       const active=!fresh && run?.step===step && !done;
-      const opensDraft=step==="brief" || step==="approve-draft" || step==="images";
+      const opensDraft=step==="brief" || step==="cover" || step==="approve-draft" || step==="images";
       const canOpen=done && ((step==="content" && run?.progress.storyId) || (opensDraft && run?.progress.briefId));
       // Drives the color coding in radar-dashboard.module.uxdsl — keep in
       // sync with the [data-step-status="..."] rules there.

@@ -149,7 +149,7 @@ function harness(
 
 /** N distinct, grounded facts (no numbers, distinct names) plus the source text that carries every excerpt. */
 function manyFacts(count: number) {
-  const artists = ["Alice Moreau", "Benoît Tremblay", "Camille Roy", "Daniel Gagnon", "Élise Fortin", "Félix Côté", "Gabrielle Lavoie", "Hugo Bouchard", "Inès Gauthier", "Julien Morin", "Karine Lévesque", "Louis Pelletier", "Marie Bergeron", "Nadia Simard", "Olivier Girard", "Pascale Nadeau"];
+  const artists = ["Alice Moreau", "Benoît Tremblay", "Camille Roy", "Daniel Gagnon", "Élise Fortin", "Félix Côté", "Gabrielle Lavoie", "Hugo Bouchard", "Inès Gauthier", "Julien Morin", "Karine Lévesque", "Louis Pelletier", "Marie Bergeron", "Nadia Simard", "Olivier Girard", "Pascale Nadeau", "Quentin Dubé", "Rosalie Caron", "Samuel Poulin", "Thérèse Bélanger", "Ulysse Ouellet", "Valérie Cloutier", "William Fournier", "Xavière Paquette", "Yannick Leblanc", "Zoé Martel"];
   const facts = Array.from({ length: count }, (_, i) => {
     const sentence = `${artists[i]} presents new work at the library gallery this season.`;
     return { id: `fact-${i + 1}`, statement: sentence, sourceExcerpt: sentence, requiredQualifiers: [], attribution: "the city" };
@@ -353,10 +353,33 @@ test("the brief may carry as many facts as the story warrants, and the instructi
   const h = harness(() => ({}));
   // 6 was a hard ceiling: the writer never sees the article, so a 13-item
   // programme capped at 6 facts could never pay off "which one to start with?".
-  // The upper end is set by Gemini's schema validator, not by us — see the
-  // constant's comment and scripts/creative-schema-check.mts before raising it.
-  assert.ok(h.maxFacts >= 12, `expected a generous ceiling, got ${h.maxFacts}`);
-  assert.equal(h.briefSchema(taxonomy).properties.keyFacts.maxItems, h.maxFacts);
+  // A list of up to 18 items needs a fact per item plus the count fact. Gemini
+  // refuses keyFacts.maxItems above 15 but accepts no maxItems, so the schema
+  // leaves it out and the parser holds the ceiling (next test).
+  assert.ok(h.maxFacts >= 19, `expected room for an 18-item list, got ${h.maxFacts}`);
+  assert.equal(h.briefSchema(taxonomy).properties.keyFacts.maxItems, undefined);
+});
+
+test("the brief declares list or arc, and long carousels keep Gemini-safe array bounds", () => {
+  const h = harness(() => ({}));
+  const plan = (h.briefSchema(taxonomy).properties as unknown as Record<string, { required: string[]; properties: Record<string, { maximum?: number; maxItems?: number; type?: string }> }>).carouselPlan;
+  assert.ok(plan.required.includes("structure"));
+  assert.equal(plan.properties.structure.type, "string");
+  assert.equal(plan.properties.slideCount.maximum, 20);
+  // Gemini refuses array maxItems above 15; slideCount bounds the slides instead.
+  assert.equal(plan.properties.slides.maxItems, undefined);
+
+  const units = (count: number) => (h.schema("carousel", count, false).properties.units as unknown as { minItems?: number; maxItems?: number });
+  assert.deepEqual([units(6).minItems, units(6).maxItems], [6, 6]);
+  assert.equal(units(12).maxItems, undefined, "a 12-slide list is held to its count by the parser, not the schema");
+
+  const withStructure = (structure: string) => {
+    const response = validResponse();
+    return JSON.stringify({ ...response, carouselPlan: { ...(response.carouselPlan as Record<string, unknown>), structure } });
+  };
+  const planOf = (value: unknown) => (value as { carouselPlan?: { structure?: string } }).carouselPlan;
+  assert.equal(planOf(h.parseBrief(withStructure("list"), sourceText, "followers", taxonomy, false))?.structure, "list");
+  assert.equal(planOf(h.parseBrief(withStructure("listicle"), sourceText, "followers", taxonomy, false))?.structure, undefined);
 });
 
 test("the parser accepts every fact count the schema allows, and rejects one past it", () => {

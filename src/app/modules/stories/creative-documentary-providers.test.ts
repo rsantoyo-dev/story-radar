@@ -165,3 +165,22 @@ test("museum CC BY-SA photo without trailing license slash is downloaded with it
   assert.ok(result.bytes.equals(bytes));
   assert.ok(policy.eligiblePhoto(result.evidence, place));
 });
+
+test("the lookup budget covers one place as before and grows, bounded, with the places a list resolves", async () => {
+  const h = providers(() => ({ search: [] }));
+  assert.equal(h.module.documentaryLookupBudget(), 36);
+  assert.equal(h.module.documentaryLookupBudget(1), 36);
+  assert.equal(h.module.documentaryLookupBudget(0), 36);
+  assert.equal(h.module.documentaryLookupBudget(2), 48);
+  assert.equal(h.module.documentaryLookupBudget(18), 240);
+  assert.equal(h.module.documentaryLookupBudget(500), 240);
+  assert.equal(h.module.documentaryLookupBudget(Number.NaN), 36);
+  // An empty search costs exactly one request per place.
+  for (const [options, budget] of [[undefined, 36], [{ places: 2 }, 48]] as const) {
+    const run = providers(() => ({ search: [] }));
+    const lookup = run.module.documentaryProviders(AbortSignal.timeout(5000), "en", undefined, options);
+    for (let i = 0; i < budget; i++) assert.equal(await lookup.resolve(mention, scope), undefined);
+    await assert.rejects(lookup.resolve(mention, scope), /budget exhausted/);
+    assert.equal(run.calls.length, budget);
+  }
+});

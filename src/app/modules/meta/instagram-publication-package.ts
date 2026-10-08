@@ -30,11 +30,18 @@ const DEFAULT_LIMITS: MetaImageLimits = {
   maxCarouselSlides: 10,
 };
 
+/**
+ * Drafts may have up to 20 slides (Instagram's in-app ceiling), but Meta's
+ * content-publishing API has documented 10 children per carousel. Raise
+ * IG_PUBLISH_MAX_CAROUSEL_SLIDES (up to 20) once Meta accepts more for this app.
+ */
 export function getMetaImageLimits(): MetaImageLimits {
   const maxBytes = Number(process.env.IG_PUBLISH_MAX_IMAGE_BYTES);
+  const maxCarouselSlides = Number(process.env.IG_PUBLISH_MAX_CAROUSEL_SLIDES);
   return {
     ...DEFAULT_LIMITS,
     ...(Number.isInteger(maxBytes) && maxBytes > 0 ? { maxBytes } : {}),
+    ...(Number.isInteger(maxCarouselSlides) && maxCarouselSlides >= DEFAULT_LIMITS.minCarouselSlides && maxCarouselSlides <= 20 ? { maxCarouselSlides } : {}),
   };
 }
 
@@ -71,7 +78,9 @@ export function resolvePublicationMediaType(
   throw new PublicationPackageValidationError(
     slideCount < 1
       ? "A publication package needs at least one approved image."
-      : `Instagram carousels allow ${limits.minCarouselSlides}–${limits.maxCarouselSlides} images; this set has ${slideCount}.`,
+      : slideCount > limits.maxCarouselSlides
+        ? `Instagram publishing accepts up to ${limits.maxCarouselSlides} images per carousel through the API; this carousel has ${slideCount}. Post it from the Instagram app, or remove slides before publishing here.`
+        : `Instagram carousels allow ${limits.minCarouselSlides}–${limits.maxCarouselSlides} images; this set has ${slideCount}.`,
   );
 }
 

@@ -3,8 +3,14 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
+import * as placeVisual from "./creative-place-visual";
 
-async function compose(mode = "illustration-editorial", photoTest = false, includeUnresolvedGeoUnit = false, mapMode?: "ai" | "local", includeUnresolvedRealPhotoUnit = false, includeIdentityPhotoUnit = false, coverTypographyOnly = false, includeDocumentaryPortraitUnit = false, mapAdapter = "quebec511", closingTypographyOnly = false) {
+/** Automatic place detection: the draft's format, the brand's area, extra undeclared slides and what research returns for them. */
+/** The one eligible Commons photo the fixtures share; storage is checked by reference. */
+const commonsPhotoBytes = Buffer.from("commons-photo");
+type AutoFixture ={ format: string; geoScope: Record<string, string | null>; units: { id: string; order: number; role: string; type: string; assetRequest: string; headline: string; visualDirection: string; visualNeed?: string }[]; research: Map<number, unknown> };
+
+async function compose(mode = "illustration-editorial", photoTest = false, includeUnresolvedGeoUnit = false, mapMode?: "ai" | "local", includeUnresolvedRealPhotoUnit = false, includeIdentityPhotoUnit = false, coverTypographyOnly = false, includeDocumentaryPortraitUnit = false, mapAdapter = "quebec511", closingTypographyOnly = false, auto?: AutoFixture) {
   const source = readFileSync("src/app/modules/stories/manage-creative-assets.ts", "utf8");
   const start = source.indexOf("async function composeDraftPlaceVisuals(");
   const end = source.indexOf("async function recomposePlaceAsset(", start);
@@ -14,7 +20,7 @@ async function compose(mode = "illustration-editorial", photoTest = false, inclu
   let assets: Record<string, unknown>[] = [];
   const photo = Buffer.from("verified-photo");
   const map = Buffer.from("verified-map");
-  const identityPhotoBytes = Buffer.from("commons-photo");
+  const identityPhotoBytes = commonsPhotoBytes;
   const storedPhotos: string[] = [];
   const prepared = new Map<number, unknown>([[3, { bytes: photo, evidence: { representation: "photo", reasons: ["Archive photograph from an eligible source; not evidence of the event."], place: { name: "Museum" }, photo: { author: "Yource", license: "CC BY-SA 4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0/" } } }]]);
   if (mapMode) prepared.set(2, { bytes: map, evidence: { representation: "map", adapter: mapAdapter, sha256: "map-sha", attribution: "MTMD · CC BY 4.0 · © OpenStreetMap contributors", reasons: ["Official MTMD segment rendered as location context"], adapterEvidence: { reason: "matched", segment: { id: "172650", chantier: "319446" } } } });
@@ -26,7 +32,7 @@ async function compose(mode = "illustration-editorial", photoTest = false, inclu
   // eligible CC-licensed archive photo grounds the place's identity only.
   if (includeIdentityPhotoUnit) prepared.set(7, { bytes: identityPhotoBytes, evidence: { representation: "photo", generationUse: "ai-reference", reasons: ["Archive photograph from an eligible source, used only to ground the place's identity in an AI-assisted adaptation; not evidence of current conditions."], place: { name: "pont Gouin" }, photo: { author: "Pierre cb", license: "CC0", licenseUrl: "https://creativecommons.org/publicdomain/zero/1.0/", contentType: "image/jpeg" } } });
   type TestUnit = { id: string; order: number; role: string; type: string; assetRequest: string; headline: string; visualDirection: string; visualNeed?: string; storyReferences?: { id: string; purpose: string }[] };
-  const draft = { id: "draft", version: 3, storyId: "story",
+  const draft = { id: "draft", version: 3, storyId: "story", ...(auto ? { format: auto.format } : {}),
     units: ([1, 2, 3, 4].map(order => ({ id: String(order), order, role: order === 1 ? "cover" : "content",
       type: "carousel-slide", assetRequest: (coverTypographyOnly && order === 1) || (closingTypographyOnly && order === 4) ? "typography-only" : "generated-image", headline: "Headline", visualDirection: "Editorial illustration" })) as TestUnit[])
       .concat(includeUnresolvedGeoUnit ? [{ id: "5", order: 5, role: "content", type: "carousel-slide",
@@ -36,7 +42,10 @@ async function compose(mode = "illustration-editorial", photoTest = false, inclu
       .concat(includeIdentityPhotoUnit ? [{ id: "7", order: 7, role: "content", type: "carousel-slide",
         assetRequest: "generated-image", headline: "Headline", visualNeed: "real-photo", visualDirection: "Abstract paper-collage motif, no bridge drawn" }] : [])
       .concat(includeDocumentaryPortraitUnit ? [{ id: "8", order: 8, role: "content", type: "carousel-slide",
-        assetRequest: "generated-image", headline: "Person", visualDirection: "Photograph of the person", storyReferences: [{ id: "photo-id", purpose: "documentary-portrait" }] }] : [])};
+        assetRequest: "generated-image", headline: "Person", visualDirection: "Photograph of the person", storyReferences: [{ id: "photo-id", purpose: "documentary-portrait" }] }] : [])
+      .concat(auto?.units ?? [])};
+  // Research returns the reusable originals plus whatever it found for the automatic slides.
+  const researchResults = new Map([...prepared, ...(auto?.research ?? [])]);
   const exports: { run?: (...args: unknown[]) => Promise<unknown> } = {};
   runInNewContext(ts.transpileModule(code, { compilerOptions: {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
@@ -61,7 +70,12 @@ async function compose(mode = "illustration-editorial", photoTest = false, inclu
     documentaryVisualInputHash: () => "photo-hash",
     resolveCreativeBrandGeneration: async () => ({ inputHash: "brand", snapshot: { brand: true }, carouselChromeSnapshot: { chrome: true }, visual: { name: "Brand", brandPalette: [] } }),
     findCurrentCreativeAssetBatch: async () => undefined,
-    getCreativeProfile: async () => ({}),
+    getCreativeProfile: async () => (auto ? { geoScope: auto.geoScope } : {}),
+    autoPlaceDetectionEnabled: placeVisual.autoPlaceDetectionEnabled,
+    autoPlaceCandidate: placeVisual.autoPlaceCandidate,
+    evidenceWithoutMaterial: placeVisual.evidenceWithoutMaterial,
+    // Sequential, so the submission order stays deterministic.
+    mapWithConcurrency: async <T,>(values: T[], _concurrency: number, task: (value: T) => Promise<void>) => { for (const value of values) await task(value); },
     getDailyDraftStory: async (topic: string, story: string, run: unknown, workspace: boolean) => {
       assert.equal(topic, "topic");
       assert.equal(story, "story");
@@ -75,7 +89,7 @@ async function compose(mode = "illustration-editorial", photoTest = false, inclu
     requiresVerifiedGeography: (unit: { visualDirection: string; visualNeed?: string }) => unit.visualNeed === "verified-map" || unit.visualNeed === "real-photo" || unit.visualDirection === "Public square rally",
     GEOGRAPHIC_FALLBACK_VISUAL_DIRECTION: "Conceptual fallback, no verified place",
     preparePlaceVisuals: async (_topic: string, selected: typeof draft) => {
-      researched = selected.units.map(u => u.order); return prepared;
+      researched = selected.units.map(u => u.order); return researchResults;
     },
     assertGenerativeImageryAllowed: () => { assert.equal(mode, "illustration-editorial"); },
     snapshotsForCreativeUnits: async () => new Map(),
@@ -408,4 +422,76 @@ test("a documentary-portrait slide generated text-to-image still matches its bat
   assert.equal(matches({ assets: [asset("text-to-image", "t2i")] }, { units: [portraitUnit] }), true);
   // A photo the model adapts is a real reference and needs reference-guided generation.
   assert.equal(matches({ assets: [asset("text-to-image", "t2i")] }, { units: [{ order: 3, storyReferences: [{ id: "p", purpose: "place" }] }] }), false);
+});
+
+const austin = { municipality: "Austin", region: "Texas", country: "United States", validatedLocationId: null };
+const autoUnit = (order: number, extra: Record<string, unknown> = {}) => ({ id: String(order), order, role: "content", type: "carousel-slide",
+  assetRequest: "generated-image", headline: `Venue ${order}`, visualDirection: "Flat editorial illustration of a sunny afternoon", ...extra });
+const automaticPhoto = { bytes: commonsPhotoBytes, evidence: { representation: "photo", detection: "automatic", generationUse: "ai-reference", version: "place-visual-v2", preparedAt: "2026-10-08T00:00:00.000Z",
+  reasons: ["Archive photograph from an eligible source, used only to ground the place's identity in an AI-assisted adaptation; not evidence of current conditions."],
+  place: { name: "Zilker Park" }, photo: { author: "Larry D. Moore", license: "CC BY-SA 4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0/", contentType: "image/jpeg" } } };
+const automaticUnverified = { evidence: { representation: "typography", detection: "automatic", version: "place-visual-v2", preparedAt: "2026-10-08T00:00:00.000Z",
+  reasons: ["Identity could not be established from provider records and geographic scope.", "No verifiable photograph for Barton Springs Pool; brand illustration kept."] } };
+
+test("automatic place detection researches every undeclared image slide only for a brand with a complete area", async () => {
+  const units = [autoUnit(10), autoUnit(11, { assetRequest: "typography-only" }), autoUnit(12, { visualNeed: "typography" })];
+  const on = await compose("illustration-editorial", false, false, undefined, false, false, false, false, "quebec511", false, { format: "carousel", geoScope: austin, units, research: new Map() });
+  assert.deepEqual(on.researched, [1, 2, 3, 4, 10], "undeclared image slides join research; typography slides never do");
+  for (const scope of [{ ...austin, region: "" }, { ...austin, municipality: "" }, { ...austin, country: "" }]) {
+    const off = await compose("illustration-editorial", false, false, undefined, false, false, false, false, "quebec511", false, { format: "carousel", geoScope: scope, units, research: new Map() });
+    assert.deepEqual(off.researched, [3], "an incomplete area keeps today's research set");
+  }
+  const meme = await compose("illustration-editorial", false, false, undefined, false, false, false, false, "quebec511", false, { format: "meme", geoScope: austin, units, research: new Map() });
+  assert.deepEqual(meme.researched, [3]);
+  // Nothing found: every undeclared slide is the same creative illustration as without places.
+  assert.deepEqual(on.submitted, [1, 2, 4, 10, 11, 12]);
+  assert.deepEqual(on.rendered, [3]);
+});
+
+test("an automatic place slide with an eligible photo is an AI identity reference in the brand's style, stored and credited", async () => {
+  const result = await compose("illustration-editorial", false, false, "ai", false, false, false, false, "quebec511", false,
+    { format: "carousel", geoScope: austin, units: [autoUnit(10)], research: new Map([[10, automaticPhoto]]) });
+  assert.ok(result.submitted.includes(10));
+  assert.ok(!result.rendered.includes(10), "never a local photo card");
+  assert.deepEqual(result.storedPhotos, ["photo-sha"]);
+  const slide = result.assets.find(a => a.unitOrder === 10)!;
+  assert.equal(slide.generationMode, "reference-guided");
+  assert.match(String(slide.prompt), /LAST input image is the verified archive photograph of Zilker Park/);
+  assert.match(String(slide.prompt), /Adaptation IA · Larry D\. Moore · CC BY-SA 4\.0/);
+  assert.match(String(slide.prompt), /\[Flat editorial illustration of a sunny afternoon\]/, "the writer's own direction is kept");
+  const evidence = (slide.unitSnapshot as { placeVisual: { generationUse: string; detection: string; referenceTopicId: string; sha256: string } }).placeVisual;
+  assert.equal(evidence.generationUse, "ai-reference");
+  assert.equal(evidence.detection, "automatic");
+  assert.equal(evidence.referenceTopicId, "topic");
+  assert.equal(evidence.sha256, "photo-sha");
+});
+
+test("where references are composed locally, an automatic photo is not used: the slide stays a creative illustration, never a photo card", async () => {
+  const result = await compose("illustration-editorial", false, false, "local", false, false, false, false, "quebec511", false,
+    { format: "carousel", geoScope: austin, units: [autoUnit(10)], research: new Map([[10, automaticPhoto]]) });
+  assert.ok(result.submitted.includes(10));
+  assert.ok(!result.rendered.includes(10));
+  assert.deepEqual(result.storedPhotos, []);
+  const slide = result.assets.find(a => a.unitOrder === 10)!;
+  assert.doesNotMatch(String(slide.prompt), /LAST input image/);
+  const evidence = (slide.unitSnapshot as { placeVisual: { representation: string; generationUse?: string; photo?: unknown; sha256?: string; reasons: string[] } }).placeVisual;
+  assert.equal(evidence.representation, "typography");
+  assert.equal(evidence.generationUse, undefined);
+  assert.equal(evidence.photo, undefined);
+  assert.equal(evidence.sha256, undefined);
+  assert.match(evidence.reasons.join(" "), /brand illustration kept/);
+});
+
+test("an automatic place slide with nothing verifiable keeps the normal creative illustration and records why", async () => {
+  const result = await compose("illustration-editorial", false, false, "ai", false, false, false, false, "quebec511", false,
+    { format: "carousel", geoScope: austin, units: [autoUnit(10)], research: new Map([[10, automaticUnverified]]) });
+  assert.ok(result.submitted.includes(10), "generated by the model");
+  assert.ok(!result.rendered.includes(10), "no typography placeholder");
+  const slide = result.assets.find(a => a.unitOrder === 10)!;
+  assert.equal(slide.prompt, "Creative prompt [Flat editorial illustration of a sunny afternoon] with brand");
+  assert.notEqual(slide.providerEndpoint, "local/composition");
+  const evidence = (slide.unitSnapshot as { placeVisual: { representation: string; generationUse?: string; reasons: string[] } }).placeVisual;
+  assert.equal(evidence.representation, "typography");
+  assert.equal(evidence.generationUse, undefined, "never counted as verified imagery");
+  assert.match(evidence.reasons.join(" "), /No verifiable photograph for Barton Springs Pool; brand illustration kept\./);
 });

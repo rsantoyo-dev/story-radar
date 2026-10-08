@@ -1,3 +1,4 @@
+import { MAX_CAROUSEL_SLIDES } from "./carousel-narrative";
 import type { CreativeQualityIssue, GeneratedCreativeDraft } from "./creative-content.types";
 
 export const COVER_HOOK_TARGET = "6–10";
@@ -44,7 +45,7 @@ export const hookSelectionSchema = {
       properties: {
         headline: stringSchema(240), subheadline: stringSchema(240),
         factIds: { type: "array", minItems: 1, maxItems: 6, items: stringSchema(80) },
-        readerQuestion: stringSchema(200), payoffUnitOrder: { type: "integer", minimum: 1, maximum: 8 },
+        readerQuestion: stringSchema(200), payoffUnitOrder: { type: "integer", minimum: 1, maximum: MAX_CAROUSEL_SLIDES },
         supported: { type: "boolean" },
         checks: { type: "object", additionalProperties: false, required: [...HOOK_CHECKS],
           properties: Object.fromEntries(HOOK_CHECKS.map(key => [key, { type: "boolean" }])) },

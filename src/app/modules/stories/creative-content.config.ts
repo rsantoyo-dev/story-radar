@@ -168,8 +168,12 @@ export function getCreativeContentPublicConfig(): CreativeContentPublicConfig {
     // so plans built on template questions are not reused. v40: the
     // "hook-list" story structure (one enumerated item per slide, a
     // count-and-subject cover, a closing that helps the reader act on the
-    // list) and its list arc in the narrative policy.
-    briefPromptVersion: "creative-brief-v40",
+    // list) and its list arc in the narrative policy. v41: "auto" decides from
+    // the source whether the story is an enumerated list and the brief
+    // declares carouselPlan.structure; lists take one slide per item up to 20
+    // slides (24 facts, enforced by the parser); never extract or write that a
+    // detail is missing; lead with the experience, logistics after it.
+    briefPromptVersion: "creative-brief-v41",
     // v28/v52/v7: the writer now has explicit guidance for what a
     // publish-ready caption reads like — a concrete opening stake, one line
     // per distinct practical consequence the facts support, and caption
@@ -192,8 +196,11 @@ export function getCreativeContentPublicConfig(): CreativeContentPublicConfig {
       // terms (hook-list items, or hook-steps for a procedure drafted as a
       // carousel), and the critic is told a count-and-subject cover is the
       // list's reason to continue.
-      carousel: carouselWriterModel ? `carousel-draft-v53-writer-${carouselWriterModel}` : "carousel-draft-v53",
-      sequence: "sequence-draft-v8",
+      // v54/v9: an "auto" brief that found a list is written as one (list
+      // headlines name the item and what the reader gets, never a price or a
+      // condition), up to 20 slides, and no copy says a detail is unknown.
+      carousel: carouselWriterModel ? `carousel-draft-v54-writer-${carouselWriterModel}` : "carousel-draft-v54",
+      sequence: "sequence-draft-v9",
     },
     maxRunsPerDay: parsePositiveInteger(
       process.env.CREATIVE_MAX_RUNS_PER_DAY,

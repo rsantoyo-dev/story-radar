@@ -65,8 +65,9 @@ export type PlaceExtraction = { mentions: PlaceMention[]; purpose: "location" | 
 export function normalizePlaceName(value: string): string {
   return value.normalize("NFKD").replace(/(\p{Script=Latin})\p{M}+/gu, "$1").normalize("NFC").toLocaleLowerCase().replace(/[’']/gu, "'").replace(/[-‐‑–]/gu, " ").replace(/\s+/gu, " ").trim();
 }
-export function parsePlaceExtraction(value: unknown, source: string): PlaceExtraction {
-  if (!record(value) || !Array.isArray(value.mentions) || value.mentions.length > 6 || !["location", "current-state", "unknown"].includes(String(value.purpose))) throw new Error("Invalid place extraction");
+/** `maxMentions`: six for a documentary story; a list carousel's research names up to 20 venues. */
+export function parsePlaceExtraction(value: unknown, source: string, maxMentions = 6): PlaceExtraction {
+  if (!record(value) || !Array.isArray(value.mentions) || value.mentions.length > maxMentions || !["location", "current-state", "unknown"].includes(String(value.purpose))) throw new Error("Invalid place extraction");
   const mentions = value.mentions.map((item): PlaceMention => {
     if (!record(item) || Object.keys(item).some(k => !["name", "kind", "role", "excerpt", "municipality", "region", "country", "purpose"].includes(k))) throw new Error("Unexpected place fields");
     for (const key of ["name", "excerpt", "municipality", "region", "country"]) {

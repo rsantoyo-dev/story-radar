@@ -9,6 +9,7 @@ import {
 import { generateSingleShotCreativeScript } from "./creative-single-shot-generator";
 import { CREATIVE_PUBLISHABLE_THRESHOLDS, deterministicCreativeQualityIssues } from "./creative-quality";
 import { effectiveFramingStrategy } from "./creative-content.types";
+import { resolveStoryStructure } from "./carousel-narrative";
 import type {
   CreativeAiUsage,
   CreativeQualityIssue,
@@ -125,6 +126,12 @@ export async function runSingleShotCreativePipeline(
   let usage = generated.usage;
   let callsUsed = generated.attempts;
   const brief = generated.brief;
+  // An "auto" profile whose brief planned an enumerated list is written, judged
+  // and covered as a list from here on (see resolveStoryStructure).
+  const resolvedOptions = {
+    ...generatorOptions,
+    profile: { ...generatorOptions.profile, storyStructure: resolveStoryStructure(generatorOptions.profile.storyStructure, brief.carouselPlan) },
+  };
   // The writer that produced the current best draft. Starts as the initial
   // writer, but a kept repair round updates it — see the SingleShotCheckpoint
   // doc comment above for why this must never stay fixed to the first writer.
@@ -141,11 +148,15 @@ export async function runSingleShotCreativePipeline(
   // an OpenAI credential, or when it fails, the writer's cover is kept.
   let tournament: CreativeHookTournament | undefined;
   let tournamentError: string | undefined;
-  const carouselLikeFormat = generatorOptions.format === "carousel" || generatorOptions.format === "sequence";
+  let tournamentPending = false;
+  const carouselLikeFormat = resolvedOptions.format === "carousel" || resolvedOptions.format === "sequence";
   const timeLeft = startedAt + functionBudgetMs - AUDIT_RESERVE_MS - Date.now();
   if (carouselLikeFormat && openAiApiKey && creativeHookTournamentEnabled() && timeLeft < HOOK_ONE_ROUND_MS) {
-    tournamentError = "Skipped: not enough time left in this run. Use \"Find a stronger cover\" on the script.";
-    draft = { ...draft, hookTournamentError: tournamentError };
+    // Quality before speed: a run without time for the cover hands it to its
+    // own step (the studio or daily preparation runs it right after) instead
+    // of skipping it.
+    tournamentPending = true;
+    draft = { ...draft, hookTournamentPending: true };
   } else if (carouselLikeFormat && openAiApiKey && creativeHookTournamentEnabled()) {
     try {
       const hook = await runCreativeHookTournament({
@@ -153,10 +164,10 @@ export async function runSingleShotCreativePipeline(
         ...(hookHouseTaste?.length ? { houseTaste: hookHouseTaste } : {}),
         apiKey: openAiApiKey,
         ...(openAiAuditContext ? { auditContext: openAiAuditContext } : {}),
-        profile: generatorOptions.profile,
+        profile: resolvedOptions.profile,
         brief,
         draft,
-        format: generatorOptions.format,
+        format: resolvedOptions.format,
       });
       tournament = hook.tournament;
       callsUsed += hook.calls;
@@ -174,21 +185,22 @@ export async function runSingleShotCreativePipeline(
   const openingBlockers = (value: GeneratedCreativeDraft) => {
     const opening = new Set(value.units.slice(0, 2).map((unit) => unit.order));
     return deterministicCreativeQualityIssues(
-      value, generatorOptions.format, brief.keyFacts, generatorOptions.profile.language, generatorOptions.profile.conversionGoal,
-      generatorOptions.profile.framingStrategy, generatorOptions.profile.storyStructure,
+      value, resolvedOptions.format, brief.keyFacts, resolvedOptions.profile.language, resolvedOptions.profile.conversionGoal,
+      resolvedOptions.profile.framingStrategy, resolvedOptions.profile.storyStructure,
     ).filter((issue) => issue.severity === "blocker" && issue.unitOrder !== undefined && opening.has(issue.unitOrder)).length;
   };
   const withHook = (value: GeneratedCreativeDraft, findings: readonly CreativeQualityIssue[]): GeneratedCreativeDraft => ({
     ...(tournament ? { ...keepTournamentCover(value, tournament, findings, isConcreteFactualQualityIssue, openingBlockers), hookTournament: tournament } : value),
     ...(tournamentError ? { hookTournamentError: tournamentError } : {}),
+    ...(tournamentPending ? { hookTournamentPending: true } : {}),
   });
 
   // Judge the draft by the lens the brief actually applied. A brief that
   // correctly fell back to explainer — because no fact established a reader
   // consequence — was still being failed for not being reader-framed.
   const judgedProfile = {
-    ...generatorOptions.profile,
-    framingStrategy: effectiveFramingStrategy(generatorOptions.profile.framingStrategy, brief),
+    ...resolvedOptions.profile,
+    framingStrategy: effectiveFramingStrategy(resolvedOptions.profile.framingStrategy, brief),
   };
 
   // Gemini credentials are mandatory for this pipeline (they write the
@@ -197,16 +209,16 @@ export async function runSingleShotCreativePipeline(
   // independent review.
   callsUsed += 1;
   const audit = await runGeminiEditorialQualityGate({
-    apiKey: generatorOptions.apiKey,
-    paidApiKey: generatorOptions.paidGeminiApiKey,
-    model: generatorOptions.model,
+    apiKey: resolvedOptions.apiKey,
+    paidApiKey: resolvedOptions.paidGeminiApiKey,
+    model: resolvedOptions.model,
     currentDraft: draft,
-    format: generatorOptions.format,
+    format: resolvedOptions.format,
     brief,
-    topic: generatorOptions.topic,
+    topic: resolvedOptions.topic,
     profile: judgedProfile,
-    outputAspectRatio: generatorOptions.outputAspectRatio,
-    characterRoster: generatorOptions.characterRoster,
+    outputAspectRatio: resolvedOptions.outputAspectRatio,
+    characterRoster: resolvedOptions.characterRoster,
     slim: false,
   });
   usage = sumCreativeAiUsage(usage, audit.usage);
@@ -348,13 +360,13 @@ export async function runSingleShotCreativePipeline(
     let repairRejectionReason: string | undefined;
     try {
       const revision = await generateSingleShotCreativeScript({
-        ...generatorOptions,
+        ...resolvedOptions,
         ...(openAiApiKey ? { openAiApiKey } : {}),
         ...(openAiAuditContext ? { openAiAuditContext } : {}),
         // The repair loop can use a different (cheaper) writer than the
         // initial script — see CREATIVE_SINGLE_SHOT_REPAIR_MODEL. Falls back
         // to the same writer that wrote the script when unset.
-        carouselWriterModel: generatorOptions.repairWriterModel ?? generatorOptions.carouselWriterModel,
+        carouselWriterModel: resolvedOptions.repairWriterModel ?? resolvedOptions.carouselWriterModel,
         existingBrief: brief,
         maxAttempts: 2,
         revision: {
@@ -370,7 +382,7 @@ export async function runSingleShotCreativePipeline(
       const inspect = (value: GeneratedCreativeDraft) =>
         deterministicCreativeQualityIssues(
           value,
-          generatorOptions.format,
+          resolvedOptions.format,
           brief.keyFacts,
           judgedProfile.language,
           judgedProfile.conversionGoal,
@@ -410,16 +422,16 @@ export async function runSingleShotCreativePipeline(
 
     callsUsed += 1;
     const verify = await runGeminiEditorialQualityGate({
-      apiKey: generatorOptions.apiKey,
-      paidApiKey: generatorOptions.paidGeminiApiKey,
-      model: generatorOptions.model,
+      apiKey: resolvedOptions.apiKey,
+      paidApiKey: resolvedOptions.paidGeminiApiKey,
+      model: resolvedOptions.model,
       currentDraft: repaired,
-      format: generatorOptions.format,
+      format: resolvedOptions.format,
       brief,
-      topic: generatorOptions.topic,
+      topic: resolvedOptions.topic,
       profile: judgedProfile,
-      outputAspectRatio: generatorOptions.outputAspectRatio,
-      characterRoster: generatorOptions.characterRoster,
+      outputAspectRatio: resolvedOptions.outputAspectRatio,
+      characterRoster: resolvedOptions.characterRoster,
       slim: true,
     });
     usage = sumCreativeAiUsage(usage, verify.usage);

@@ -1,6 +1,6 @@
 export type DailyPreparationStep =
   | "collect" | "evaluate" | "recommend" | "approve" | "content"
-  | "focus" | "brief" | "draft" | "approve-draft" | "images";
+  | "focus" | "brief" | "draft" | "cover" | "approve-draft" | "images";
 // "draft" is no longer part of the active sequence below — the single-shot
 // pipeline writes the draft and its carousel script together, so the
 // separate "draft" step it used to take is now folded into "brief" (see
@@ -9,13 +9,13 @@ export type DailyPreparationStep =
 // persisted mid-flight before this change keeps resolving instead of hitting
 // "Unknown preparation stage" after a deploy.
 export const DAILY_PREPARATION_STEPS: DailyPreparationStep[] =
-  ["collect", "evaluate", "recommend", "approve", "content", "focus", "brief", "approve-draft", "images"];
+  ["collect", "evaluate", "recommend", "approve", "content", "focus", "brief", "cover", "approve-draft", "images"];
 // "recommend"/"brief" keep their original ids — only their display titles
 // changed (Select/Draft) — so an in-flight or historical run row saved under
 // an older step sequence still resolves to the same step.
 export const DAILY_PREPARATION_TITLES: Record<DailyPreparationStep, string> = {
   collect: "Collect", evaluate: "Evaluate", recommend: "Select", approve: "Approve Story",
-  content: "Content", focus: "Focus", brief: "Script", draft: "Carousel",
+  content: "Content", focus: "Focus", brief: "Script", draft: "Carousel", cover: "Cover",
   "approve-draft": "Approve script", images: "Visuals",
 };
 export function preparationTarget(progress: DailyPreparationProgress): DailyPreparationStep {
@@ -58,6 +58,8 @@ export type DailyPreparationProgress = {
   selection?: { reason?: string; summary?: string; alternatives: string[] };
   /** The script the run produced, at a glance. */
   draftSummary?: { format: string; slides: number; hook?: string };
+  /** The review run for a cover the tournament changed, reused if the step is retried. */
+  coverReviewRequestId?: string;
   /** What the system approved on its own, for the audit trail. */
   autoApproved?: { draftId?: string; draftApprovedAt?: string; assetIds?: string[]; imagesApprovedAt?: string };
 };
@@ -74,7 +76,7 @@ export const DAILY_PREPARATION_LABELS:Record<string,string>={
   collect:"Collecting stories…", evaluate:"Evaluating stories with AI…",
   recommend:"Selecting today’s story…", approve:"Approving the selected story…",
   content:"Preparing and checking article content…", focus:"Suggesting an editorial focus…",
-  brief:"Creating the script and carousel…", draft:"Generating the carousel…",
+  brief:"Creating the script and carousel…", draft:"Generating the carousel…", cover:"Choosing the strongest cover…",
   "approve-draft":"Approving the script…", images:"Generating visuals…",
 };
 

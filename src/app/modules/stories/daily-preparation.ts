@@ -5,7 +5,7 @@ import { sameEventStories, storyAlreadyPublished } from "./story-duplicates.repo
 import { BRIEF_EVIDENCE_REVIEW_MESSAGE, DAILY_PREPARATION_STEPS, preparationTarget, type DailyPreparationStep } from "./daily-preparation.types";
 import { prepareStoryContent } from "./prepare-selected-story-content";
 import { getStoryContent } from "./story-content.repository";
-import { approveSavedCreativeDraft, createCreativeBrief, createCreativeDraft, getCreativeWorkspaceState, suggestEditorialFocus } from "./manage-creative-content";
+import { approveSavedCreativeDraft, createCreativeBrief, createCreativeDraft, getCreativeWorkspaceState, improveCreativeDraftHook, recoverSavedCreativeDraft, suggestEditorialFocus } from "./manage-creative-content";
 import { changeCreativeAssetApproval, generateCreativeDraftAssets, getCreativeDraftAssets } from "./manage-creative-assets";
 import { storyCollectionContexts } from "../editorial-lines/editorial-lines.repository";
 class PreparationReviewNeeded extends Error {}
@@ -235,9 +235,12 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
         ? `Reused script v${draft.version}${draft.status==="approved"?", already approved":""}`
         : `Script written: ${draft.format}${draft.units?.length?`, ${draft.units.length} slides`:""}`);
       // An editor's approval already answers for this exact version.
-      if(adopted?.status==="approved")return await finish("brief", "approve-draft");
+      if(adopted?.status==="approved")return await finish("brief", "cover");
       if(!isCreativeDraftReadyForAutomation(draft,draft.format,draft.qualityReviewIsCurrent === true))throw new PreparationReviewNeeded("The draft is saved, but automated editorial validation has not passed for this exact version. Its findings and evidence were preserved; it cannot advance as publication-ready.");
-      return await finish("brief", "approve-draft");
+      // A run that had no time left for its cover tournament hands it to the
+      // next step, which starts in a fresh request with the full time budget.
+      if(draft.hookTournamentPending && !draft.hookTournament){await finish("brief", "cover");return false;}
+      return await finish("brief", "cover");
     } else if(run.step==="draft") {
       // Legacy only: no new run ever reaches this step ("brief" above now
       // does its work too), but a run already sitting here from before this
@@ -252,6 +255,31 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
       progress.draftId=draft.id;
       if(!isCreativeDraftReadyForAutomation(draft,draft.format,draft.qualityReviewIsCurrent === true))throw new PreparationReviewNeeded("The draft is saved, but automated editorial validation has not passed for this exact version. Its findings and evidence were preserved; it cannot advance as publication-ready.");
       return await finish("draft", "approve-draft");
+    } else if(run.step==="cover") {
+      if(!progress.storyId || !progress.draftId)throw new PreparationReviewNeeded("Review the carrousel before approving it.");
+      const workspace=await getCreativeWorkspaceState(topicId,progress.storyId,run.id);
+      const draft=workspace.drafts.find(d=>d.id===progress.draftId);
+      if(!draft)throw new PreparationReviewNeeded("The draft is no longer available. Review it in the workspace.");
+      // The script run ran out of time for its cover: the tournament runs here, in its own request.
+      if(draft.status!=="approved" && draft.hookTournamentPending && !draft.hookTournament) {
+        const covered=await improveCreativeDraftHook(topicId,draft.id,draft.version);
+        progress.draftSummary={...(progress.draftSummary ?? {format:covered.format,slides:covered.units.length}),hook:covered.units[0]?.headline};
+        if(covered.version===draft.version){note("Cover tournament kept the writer's cover");return await finish("cover","approve-draft");}
+        note("Cover tournament chose a stronger cover");
+        // The new cover is reviewed again before automation may approve it, in the next request.
+        if(!isCreativeDraftReadyForAutomation(covered,covered.format,covered.qualityReviewIsCurrent===true)){await savePreparation(run,{step:"cover",progress});return false;}
+        return await finish("cover","approve-draft");
+      }
+      // A cover the tournament changed is reviewed like any other new version.
+      if(draft.status!=="approved" && draft.hookTournament?.replaced && !isCreativeDraftReadyForAutomation(draft,draft.format,draft.qualityReviewIsCurrent===true)) {
+        progress.coverReviewRequestId??=randomUUID();
+        await savePreparation(run,{step:"cover",progress});
+        const reviewed=await recoverSavedCreativeDraft(topicId,draft.id,draft.version,progress.coverReviewRequestId);
+        note(isCreativeDraftReadyForAutomation(reviewed,reviewed.format,reviewed.qualityReviewIsCurrent===true)
+          ? "The new cover passed the automated review"
+          : "The new cover needs a review in the story workspace");
+      }
+      return await finish("cover","approve-draft");
     } else if(run.step==="approve-draft") {
       if(!progress.storyId || !progress.draftId)throw new PreparationReviewNeeded("Review the carrousel before approving it.");
       const workspace=await getCreativeWorkspaceState(topicId,progress.storyId,run.id);
@@ -321,7 +349,7 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
     return true;
   } catch(error) {
     if(error instanceof PreparationReviewNeeded){await savePreparation(run,{status:"needs-review",progress,error:error.message});return false;}
-    const errors:Record<string,string>={collect:"Collection could not finish. Check the editorial line, sources and collection budget, then retry this step.",evaluate:"AI evaluation could not finish. Check provider availability, then retry this step.",content:"Article preparation failed. Review the content or retry this step.",brief:"Creative brief generation failed. Check the content and creative AI budget, then retry.",draft:"Draft generation failed. Check the brief and creative AI budget, then retry.",recommend:"Today's recommendation could not finish. Check the planner status and daily budget, then retry this step.",approve:"The story could not be approved. Check its current status, then retry this step.",focus:"The editorial focus could not be suggested. Check provider availability, then retry this step.","approve-draft":"The carrousel could not be approved. Review it in the creative workspace, then retry this step.",images:"Image generation could not be submitted. Check the approved draft and image budget, then retry this step."};
+    const errors:Record<string,string>={collect:"Collection could not finish. Check the editorial line, sources and collection budget, then retry this step.",evaluate:"AI evaluation could not finish. Check provider availability, then retry this step.",content:"Article preparation failed. Review the content or retry this step.",brief:"Creative brief generation failed. Check the content and creative AI budget, then retry.",cover:"The cover tournament could not finish. Retry this step, or run \"Find a stronger cover\" in the story workspace.",draft:"Draft generation failed. Check the brief and creative AI budget, then retry.",recommend:"Today's recommendation could not finish. Check the planner status and daily budget, then retry this step.",approve:"The story could not be approved. Check its current status, then retry this step.",focus:"The editorial focus could not be suggested. Check provider availability, then retry this step.","approve-draft":"The carrousel could not be approved. Review it in the creative workspace, then retry this step.",images:"Image generation could not be submitted. Check the approved draft and image budget, then retry this step."};
     await savePreparation(run,{status:"failed",progress,error:errors[run.step] ?? "Preparation failed."});
     return false;
   }

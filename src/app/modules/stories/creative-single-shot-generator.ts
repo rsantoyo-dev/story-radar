@@ -17,6 +17,7 @@ import {
   parseJsonObject,
   profileForPrompt,
   providerLabel,
+  scriptOutputTokens,
   strictCreativeSchema,
   sumCreativeAiUsage,
   topicForPrompt,
@@ -34,7 +35,7 @@ import {
 } from "./creative-framing-instruction";
 import { CREATIVE_PUBLISHABLE_THRESHOLDS } from "./creative-quality";
 import { effectiveFramingStrategy } from "./creative-content.types";
-import { CAROUSEL_BODY_MAX_WORDS, CAROUSEL_BODY_TARGET_WORDS, carouselNarrativePolicyForPrompt, templatePlanQuestions, unspentPlanFactIds } from "./carousel-narrative";
+import { CAROUSEL_BODY_MAX_WORDS, CAROUSEL_BODY_TARGET_WORDS, carouselNarrativePolicyForPrompt, MAX_CAROUSEL_SLIDES, resolveStoryStructure, templatePlanQuestions, unspentPlanFactIds } from "./carousel-narrative";
 import { deterministicCreativeQualityIssues, repairDeterministicCreativeCopy } from "./creative-quality";
 import { unsupportedFactNames } from "./creative-fact-guard";
 import { enforceCoverTitle } from "./creative-cover-title";
@@ -441,7 +442,7 @@ export async function generateSingleShotCreativeScript(
       const unspent = unspentPlanFactIds(parsed.carouselPlan, parsed.keyFacts.map((fact) => fact.id));
       if (unspent.length) {
         throw new CreativeContentResponseError(
-          `Facts ${unspent.join(", ")} are extracted but no slide before the closing is allowed to use them, so the ending cannot resolve the opening with them (a closing may only reuse evidence the reader has seen). Assign each to the slide that answers its question, add slides (up to 8) if the arc needs them, or drop it from keyFacts and renumber if it is not load-bearing.`,
+          `Facts ${unspent.join(", ")} are extracted but no slide before the closing is allowed to use them, so the ending cannot resolve the opening with them (a closing may only reuse evidence the reader has seen). Assign each to the slide that answers its question, add slides (up to ${MAX_CAROUSEL_SLIDES}) if the arc needs them, or drop it from keyFacts and renumber if it is not load-bearing.`,
         );
       }
     }
@@ -475,6 +476,9 @@ export async function generateSingleShotCreativeScript(
   // Step 2: the visible script, written against the brief just produced. The
   // slide count is known now, so the schema pins units to exactly it.
   const carouselLike = format === "carousel" || format === "sequence";
+  // An "auto" profile whose brief planned an enumerated list is written and
+  // checked as a list from here on.
+  const storyStructure = resolveStoryStructure(profile.storyStructure, brief.carouselPlan);
   const draftSchema = creativeSingleShotDraftSchema(
     format,
     carouselLike ? brief.carouselPlan?.slideCount : undefined,
@@ -498,7 +502,7 @@ export async function generateSingleShotCreativeScript(
   )}${creativeScriptStructureInstruction(
     // This pipeline always drafts a carousel, so a hook-steps brief that found
     // a real procedure is written as steps here rather than as a sequence.
-    profile.storyStructure,
+    storyStructure,
     brief.recommendedFormat === "sequence",
   )}${revision ? REVISION_INSTRUCTION : ""}`;
   const draftContents = {
@@ -597,7 +601,7 @@ export async function generateSingleShotCreativeScript(
         profile.language,
         profile.conversionGoal,
         profile.framingStrategy,
-        profile.storyStructure,
+        storyStructure,
       );
       // A revision only answers for the slides it rewrote: copy left exactly as
       // it was (written under an older, looser limit) is not retried.
@@ -619,7 +623,7 @@ export async function generateSingleShotCreativeScript(
           profile.language,
           profile.conversionGoal,
           profile.framingStrategy,
-          profile.storyStructure,
+          storyStructure,
         ).filter((issue) => issue.severity === "blocker").map((issue) => `${issue.code}:${issue.unitOrder ?? 0}`));
         const introduced = currentIssues.filter((issue) =>
           issue.severity === "blocker" && !priorBlockers.has(`${issue.code}:${issue.unitOrder ?? 0}`));
@@ -635,7 +639,7 @@ export async function generateSingleShotCreativeScript(
 
   let draft: GeneratedCreativeDraft;
   const writeScript = writerModel ? callWriter : call;
-  const draftResponse = await writeScript(draftInstruction, draftSchema, draftContents, format === "meme" ? 3_072 : 6_144);
+  const draftResponse = await writeScript(draftInstruction, draftSchema, draftContents, format === "meme" ? 3_072 : scriptOutputTokens(brief.carouselPlan?.slideCount));
   try {
     draft = parseDraft(draftResponse.text, true);
   } catch (error) {
@@ -645,7 +649,7 @@ export async function generateSingleShotCreativeScript(
       draftInstruction + DRAFT_RETRY,
       draftSchema,
       { ...draftContents, previousValidationError: error.message, previousDraft: draftResponse.text },
-      format === "meme" ? 3_072 : 6_144,
+      format === "meme" ? 3_072 : scriptOutputTokens(brief.carouselPlan?.slideCount),
     );
     draft = parseDraft(retry.text, false);
   }

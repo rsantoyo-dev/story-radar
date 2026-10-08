@@ -1,21 +1,34 @@
 import type { CreativeFramingStrategy, CreativeStoryStructure } from "./creative-content.types";
 
+import { MAX_CAROUSEL_LIST_ITEMS, MAX_CAROUSEL_SLIDES } from "./carousel-narrative";
+
+/** The list rules both a "hook-list" profile and an "auto" profile that finds a list follow. */
+const LIST_BRIEF_RULES = `Extract one keyFact per enumerated item, stating what it is together with the date, time, place, price, registration or condition a reader needs to act on it, exactly as the source states them; add a second fact for an item only when the source states a separate condition for it, such as a road closure or a full registration. Never extract a fact that only says a detail is missing ("price not stated", "admission unspecified"). Extract one keyFact whose sourceExcerpt establishes how many items the source enumerates, so the cover's count is supported. Plan the carousel as: a hook slide whose viewerQuestion asks what the list offers and whose allowedFactIds include the count fact; then one slide per item in source order — explain, or opportunity when the item is something the reader can do — each citing only that item's facts; then a conclude slide that reuses two or more items' facts to help the reader choose, plan, save or share. Do not merge two items into one slide, do not drop an item to fit a preferred arc, and never promise more items than the facts enumerate. Use as many slides as the list needs, up to ${MAX_CAROUSEL_SLIDES} (hook, up to ${MAX_CAROUSEL_LIST_ITEMS} items, conclude); only a longer list keeps its first ${MAX_CAROUSEL_LIST_ITEMS} items in source order and names the rest in riskFlags. The framing strategy shapes wording only; it never turns the list into a consequence story.`;
+
 /**
- * The brief-side rules for an enumerated list. Returned with its own leading
- * blank line so callers can append it directly; empty for every other
- * structure, since "hook-steps" is already described in the shared brief
- * instruction and "auto" needs nothing.
+ * The brief-side structure rules, returned with their own leading blank line
+ * so callers can append them directly. "hook-list" always plans a list; "auto"
+ * (the default) plans one only when the source enumerates distinct items, and
+ * either way the brief declares what it planned in carouselPlan.structure, so
+ * the script, the critic and the code checks follow the same decision.
+ * "hook-steps" is already described in the shared brief instruction.
  */
 export function creativeBriefStructureInstruction(
   storyStructure: CreativeStoryStructure | undefined,
 ): string {
-  if (storyStructure !== "hook-list") return "";
-  return `\n\nSTORY STRUCTURE: hook-list
-This story is an enumerated list ("N things to do", "N tips", "N changes"), not a narrative arc; keep the carousel format. Extract one keyFact per enumerated item, stating what it is together with the date, time, place, price, registration or condition a reader needs to act on it, exactly as the source states them; add a second fact for an item only when the source states a separate condition for it, such as a road closure or a full registration. Extract one keyFact whose sourceExcerpt establishes how many items the source enumerates, so the cover's count is supported. Plan the carousel as: a hook slide whose viewerQuestion asks what the list offers and whose allowedFactIds include the count fact; then one slide per item in source order — explain, or opportunity when the item is something the reader can do — each citing only that item's facts; then a conclude slide that reuses two or more items' facts to help the reader choose, plan, save or share. Do not merge two items into one slide, do not drop an item to fit a preferred arc, and never promise more items than the facts enumerate. With at most 8 slides (hook, up to 6 items, conclude), keep the source's first items in order and name in riskFlags any item left out. The framing strategy shapes wording only; it never turns the list into a consequence story. If the source does not enumerate distinct items, plan an ordinary carousel and say so in riskFlags.`;
+  if (storyStructure === "hook-list") {
+    return `\n\nSTORY STRUCTURE: hook-list
+This story is an enumerated list ("N things to do", "N tips", "N changes"), not a narrative arc; keep the carousel format and set carouselPlan.structure to "list". ${LIST_BRIEF_RULES} If the source does not enumerate distinct items, plan an ordinary carousel, set carouselPlan.structure to "arc", and say so in riskFlags.`;
+  }
+  if (storyStructure === "hook-steps") return `\n\nSet carouselPlan.structure to "arc".`;
+  return `\n\nSTORY STRUCTURE: decide from the source
+When the source's value is a set of three or more distinct items a reader can act on or choose between separately — events, places, plans, tips, offers, changes — it is an enumerated list ("N things to do this weekend", "5 new rules"): keep the carousel format, set carouselPlan.structure to "list", and follow these rules. ${LIST_BRIEF_RULES} Otherwise set carouselPlan.structure to "arc" and plan an ordinary carousel; a story that merely mentions several things while making one point is not a list.`;
 }
 
 /**
  * The script-side rules for a structured carousel, in the writer's terms.
+ * Called with the structure the brief resolved (see resolveStoryStructure), so
+ * an "auto" profile whose brief found a list gets the list rules.
  * "hook-steps" is stated only when the brief confirmed a source-backed
  * procedure: forcing steps onto a carousel the brief already downgraded would
  * invent them. Returned with a leading blank line; empty when not applicable.
@@ -27,7 +40,7 @@ export function creativeScriptStructureInstruction(
   switch (storyStructure) {
     case "hook-list":
       return `\n\nSTRUCTURE FOR THE SCRIPT: hook-list
-The cover is the count-and-subject promise the plan's hook fact supports (for example "5 choses à faire à Saint-Jean ce week-end"), with the date range or scope as subheadline when a fact states it; the number of concrete items is the reason to continue, so do not replace it with a consequence, a run-on summary of the items, or a question that hides the list. Its continuationCue may name the first item. Each middle slide is one item: its name as the headline, then the practical details its facts state — when, where, cost, registration, conditions — in the body; do not narrate a story across items and do not add a consequence a fact does not state. The closing helps the reader act on the list — choose, plan, save or share — carrying the configured conversion goal as its single action; it is not a synthesis and not a recap label. If the plan's hook slide cites no count fact, the brief found no enumerated list: write an ordinary carousel.`;
+The cover is the count-and-subject promise the plan's hook fact supports (for example "5 choses à faire à Saint-Jean ce week-end"), with the date range or scope as subheadline when a fact states it; the number of concrete items is the reason to continue, so do not replace it with a consequence, a run-on summary of the items, or a question that hides the list. Name the list's real scope: do not present one item's neighborhood, venue or condition as the subject of the whole list. Its continuationCue may name the first item. Each middle slide is one item: its name and what the reader gets to do or enjoy there as the headline — never a price, an admission rule, a warning or a condition — then the practical details its facts state in the body, in this order: when, where, cost, then registration or conditions (weather, closures, limits) as a short final note. Do not narrate a story across items and do not add a consequence a fact does not state. The closing helps the reader act on the list — choose, plan, save or share — carrying the configured conversion goal as its single action; it is not a synthesis, not a recap label, and not a list of admission terms. If the plan's hook slide cites no count fact, the brief found no enumerated list: write an ordinary carousel.`;
     case "hook-steps":
       return procedureSupported
         ? `\n\nSTRUCTURE FOR THE SCRIPT: hook-steps

@@ -92,7 +92,7 @@ import {
   CREATIVE_DRAFT_TIME_BUDGET_MS,
   type CreativeTopicContext,
 } from "./gemini-creative-content-generator";
-import { isCarouselEditorialGoal } from "./carousel-narrative";
+import { isCarouselEditorialGoal, MAX_CAROUSEL_SLIDES, MIN_CAROUSEL_SLIDES, resolveStoryStructure } from "./carousel-narrative";
 import {
   deterministicCreativeQualityIssues,
   getCreativeDraftApprovalState,
@@ -427,7 +427,7 @@ export async function createCreativeBrief(
     const brief = await insertCreativeBrief({
       topicId,
       storyId,
-      profile,
+      profile: withResolvedStoryStructure(profile, result.brief.carouselPlan),
       provider: result.provider,
       model: result.model,
       modelVersion: result.modelVersion,
@@ -546,7 +546,7 @@ async function createCreativeBriefAndDraftSingleShot({
             briefRow = await insertCreativeBrief({
               topicId,
               storyId,
-              profile,
+              profile: withResolvedStoryStructure(profile, brief.carouselPlan),
               // The brief-extraction call is always Gemini in this pipeline
               // (generateSingleShotCreativeScript never routes it through
               // carouselWriterModel) — unlike the draft below, "google" here
@@ -1504,7 +1504,10 @@ export async function improveCreativeDraftHook(
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) throw new CreativeContentConfigurationError("OPENAI_API_KEY is not configured; the cover tournament is unavailable");
 
-  const [profile, characterRoster] = await Promise.all([getCreativeProfile(topicId), listCreativeCharacterRoster(topicId)]);
+  const [liveProfile, characterRoster] = await Promise.all([getCreativeProfile(topicId), listCreativeCharacterRoster(topicId)]);
+  // The cover is judged by the structure the brief was written under: a list
+  // stays a list even when the profile says "auto" or changed since.
+  const profile = { ...liveProfile, storyStructure: brief.profileSnapshot?.storyStructure ?? liveProfile.storyStructure };
   const runId = createHash("sha256").update(`hook:${current.id}:${current.version}:${Date.now()}`).digest("hex").slice(0, 32);
   const houseTaste = await listRecentHookTaste(topicId);
   const result = await withCreativeTextBudget({ topicId, storyId: current.storyId, runId }, () => runCreativeHookTournament({
@@ -1851,14 +1854,14 @@ function validateEditableDraft(
     outputAspectRatio,
   );
   const rawUnits = record.units;
-  const minimum = format === "meme" ? 1 : 3;
-  const maximum = format === "meme" ? 1 : 8;
+  const minimum = format === "meme" ? 1 : MIN_CAROUSEL_SLIDES;
+  const maximum = format === "meme" ? 1 : MAX_CAROUSEL_SLIDES;
 
   if (!Array.isArray(rawUnits) || rawUnits.length < minimum || rawUnits.length > maximum) {
     throw new CreativeDraftValidationError(
       format === "meme"
         ? "A meme draft must contain exactly one frame"
-        : "A carousel draft must contain 3 to 8 slides",
+        : `A carousel draft must contain ${MIN_CAROUSEL_SLIDES} to ${MAX_CAROUSEL_SLIDES} slides`,
     );
   }
 
@@ -2114,4 +2117,14 @@ export async function assertStoryEditionCurrent(topicId: string, draft: Creative
     requireStoryContent(story, configuration.maxContentCharacters), brief.editorialDirection, brief.collectionContext);
   if (expected !== brief.inputHash && !briefHashMatches(brief, profile, (candidate) => createBriefInputHash(story, applyCreativeBriefOverrides(candidate, brief.overrides), topic, configuration,
     requireStoryContent(story, configuration.maxContentCharacters), brief.editorialDirection, brief.collectionContext))) throw new CreativeContentConflictError("The story was edited. Refresh the brief and draft before approving or generating images.");
+}
+
+/**
+ * The profile a brief is saved with: an "auto" structure becomes "hook-list"
+ * when the brief planned an enumerated list, so every later step (approval
+ * checks, cover tournament, recovery) judges the draft as the brief wrote it.
+ */
+function withResolvedStoryStructure(profile: CreativeProfile, plan: Parameters<typeof resolveStoryStructure>[1]): CreativeProfile {
+  const storyStructure = resolveStoryStructure(profile.storyStructure, plan);
+  return storyStructure === profile.storyStructure ? profile : { ...profile, storyStructure };
 }

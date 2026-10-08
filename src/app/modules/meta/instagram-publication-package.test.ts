@@ -45,8 +45,20 @@ test("resolvePublicationMediaType: 1 → image, 2..10 → carousel, else error",
   assert.throws(() => resolvePublicationMediaType(0), PublicationPackageValidationError);
   assert.throws(
     () => resolvePublicationMediaType(11),
-    (e: unknown) => e instanceof PublicationPackageValidationError && /2–10 images/.test((e as Error).message),
+    (e: unknown) => e instanceof PublicationPackageValidationError && /up to 10 images per carousel/.test((e as Error).message),
   );
+});
+
+test("the API carousel ceiling can be raised to 20 once Meta accepts it, never beyond", () => {
+  const previous = process.env.IG_PUBLISH_MAX_CAROUSEL_SLIDES;
+  try {
+    process.env.IG_PUBLISH_MAX_CAROUSEL_SLIDES = "20";
+    assert.equal(resolvePublicationMediaType(20), "carousel");
+    process.env.IG_PUBLISH_MAX_CAROUSEL_SLIDES = "40";
+    assert.throws(() => resolvePublicationMediaType(11), PublicationPackageValidationError);
+  } finally {
+    if (previous === undefined) delete process.env.IG_PUBLISH_MAX_CAROUSEL_SLIDES; else process.env.IG_PUBLISH_MAX_CAROUSEL_SLIDES = previous;
+  }
 });
 
 test("computePackageHash is stable and order- and content-sensitive", () => {

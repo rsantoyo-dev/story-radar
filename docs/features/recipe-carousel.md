@@ -12,9 +12,9 @@ El flujo sigue siendo **Story Review → Creative Brief → Draft → aprobació
 
 ## Comportamiento
 
-- `storyStructure: auto`: elección del formato según fuente; las noticias mantienen el flujo habitual.
+- `storyStructure: auto`: elección del formato según fuente; las noticias mantienen el flujo habitual, y una fuente que enumera tres o más ítems independientes se planifica como lista (ver "Hook + lista" abajo).
 - `storyStructure: hook-steps`: preferir `sequence` si la fuente contiene un procedimiento respaldado. La preferencia llega al brief.
-- `sequence`: usa carouselPlan, unidades carousel-slide, edición, referencias, versiones y aprobaciones existentes; 3–8 slides y formato de imágenes configurado (feed habitual 1080×1350).
+- `sequence`: usa carouselPlan, unidades carousel-slide, edición, referencias, versiones y aprobaciones existentes; 3–20 slides y formato de imágenes configurado (feed habitual 1080×1350).
 - Sin instrucciones suficientes: carrusel explicativo y motivo en riskFlags. No fabricar materiales, cantidades, tiempos ni pasos.
 - Para aplicar la preferencia a trabajo existente: guardar perfil y crear un brief nuevo; no reescribir drafts históricos automáticamente.
 
@@ -29,8 +29,32 @@ guardar, compartir). Se implementa dentro del formato carrusel — no es un
 formato nuevo ni requiere migración — con su propia instrucción en el brief y en
 el guion (`creative-framing-instruction.ts`), un arco de lista en la política
 narrativa, y sin las reglas de portada/cierre de "consecuencia para el lector",
-que rechazarían justo esa forma. Máximo 8 slides: hook + hasta 6 ítems + cierre;
+que rechazarían justo esa forma. Máximo 20 slides: hook + hasta 18 ítems + cierre;
 los ítems sobrantes se nombran en `riskFlags`, nunca se fusionan ni se inventan.
+
+### Lista automática, 20 slides y portada sin saltos (2026-10-08)
+
+- **`auto` detecta la lista.** El brief declara `carouselPlan.structure`
+  (`"list"` o `"arc"`). Con `auto` y `"list"`, `resolveStoryStructure` la trata
+  como `hook-list`: el perfil guardado con el brief (`profile_snapshot`) lleva
+  la estructura resuelta, así guion, crítico, torneo de portada, recuperación y
+  aprobación juzgan la lista como lista.
+- **Hasta 20 slides** (hook + 18 ítems + cierre) y hasta 24 keyFacts. Gemini
+  rechaza `maxItems` mayores que 15 en el esquema, pero acepta el arreglo sin
+  `maxItems`: los topes viven en el parser (verificado con
+  `scripts/creative-schema-check.mts`). Un guion de más de 8 slides tampoco
+  lleva `maxItems` en el esquema y recibe el doble de tokens.
+- **Publicación:** la API de Instagram publica hasta 10 imágenes por carrusel;
+  `IG_PUBLISH_MAX_CAROUSEL_SLIDES` (hasta 20) lo sube cuando Meta lo acepte.
+- **Redacción:** nunca escribir que un dato falta ("unspecified", "no indica");
+  se omite. El titular de cada ítem es el ítem y lo que el lector vive ahí; la
+  logística va en el cuerpo y las condiciones (clima, cierres, inscripción) al
+  final, nunca como titular.
+- **La portada no se salta por tiempo.** Si la ejecución no tiene tiempo para el
+  torneo, el borrador queda con `hookTournamentPending` y el torneo corre como
+  paso propio: el estudio lo lanza solo y la preparación diaria tiene el paso
+  `cover` (si la portada cambia, la revisión automática corre de nuevo antes de
+  aprobar).
 
 Un brief puede apartarse del perfil del topic en tres ajustes — estructura,
 enfoque (`framingStrategy`) y objetivo de conversión — desde Creative Studio,

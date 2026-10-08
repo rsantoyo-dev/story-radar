@@ -923,6 +923,12 @@ export type GeneratedCreativeDraft = {
   hookTournament?: import("./creative-hook-tournament").CreativeHookTournament;
   /** Why the cover tournament could not run; the writer's cover was kept. */
   hookTournamentError?: string;
+  /**
+   * The run ran out of time before the cover tournament, so it continues as
+   * its own step (studio or daily preparation) instead of being skipped.
+   * Cleared once a tournament is recorded.
+   */
+  hookTournamentPending?: boolean;
   /** Present only for a post-approval Story derived from another draft. */
   companion?: CreativeCompanionMetadata;
   units: CreativeUnit[];

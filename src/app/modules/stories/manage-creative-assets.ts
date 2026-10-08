@@ -9,7 +9,7 @@ import { storyReferencePrompt, enforceStoryReferencePrompt, photoLedVisualDirect
 import { assertStoryEditionCurrent } from "./manage-creative-content";
 import { readDocumentaryPhotoReference, readDocumentaryMapReference, storeDocumentaryMapReference, storeDocumentaryPhotoReference, documentaryVisualInputHash, reuseDocumentaryVisuals } from "./reuse-documentary-visuals";
 import { preparePlaceVisuals } from "./prepare-place-visuals";
-import { visualEvidenceCurrent } from "./creative-place-visual";
+import { visualEvidenceCurrent, autoPlaceCandidate, autoPlaceDetectionEnabled, autoPlaceFormat, evidenceWithoutMaterial } from "./creative-place-visual";
 import { roadMapStillCurrent } from "./prepare-road-map";
 import { getDailyDraftStory } from "./daily-draft-access";
 import { renderDraftTypography, DRAFT_TYPOGRAPHY_ENDPOINT } from "./creative-draft-typography";
@@ -286,6 +286,7 @@ export async function generateCreativeDraftAssets(
   if (draft.units.some(requiresVerifiedGeography) || resolveEffectiveVisualFidelity({ inheritedMode: await getTopicVisualFidelityMode(topicId), override: draft.visualFidelityOverride?.mode ?? null, overrideReason: draft.visualFidelityOverride?.reason }).mode === "photo-required") {
     return composeDraftPlaceVisuals(topicId, draft, brief, imageQuality);
   }
+  if (await detectsPlacesAutomatically(topicId, draft)) return composeDraftPlaceVisuals(topicId, draft, brief, imageQuality);
   assertGenerativeImageryAllowed(
     draft,
     await getTopicVisualFidelityMode(topicId),
@@ -2027,7 +2028,27 @@ function placeCompositionVersion(draftId: string): string {
   // reserves a band and the exact, brand-styled map is pasted there.
   // +map-ai-v5: every typography-only slide is designed by the model, not
   // only the cover.
-  return mapReferenceMode() === "ai" ? `${base}+map-ai-v5` : base;
+  // +map-ai-v6 / +local-v2: automatic place detection researches undeclared
+  // slides (a verified photo as an identity reference, or the illustration
+  // kept), and a declared real-photo slide tries its photo before the Google
+  // map. A batch composed under the earlier rules is never returned as the
+  // "existing" result for the same draft version. PLACE_VISUAL_VERSION is not
+  // bumped: the evidence shape only gains an optional field, and a bump would
+  // make every unapproved place image of the last day unapprovable.
+  return mapReferenceMode() === "ai" ? `${base}+map-ai-v6` : `${base}+local-v2`;
+}
+
+/**
+ * Whether a draft that declares no geography still goes through place
+ * composition: automatic place detection applies to it (complete brand area,
+ * carousel or sequence, illustration-editorial) and at least one slide could
+ * name a place. Place composition is 4:5 only, so a 9:16 draft never does.
+ * Cheap checks first: a meme or a 9:16 draft reads nothing more.
+ */
+async function detectsPlacesAutomatically(topicId: string, draft: CreativeDraft): Promise<boolean> {
+  if (!autoPlaceFormat(draft.format) || outputAspectRatioForDraft(draft) !== "4:5" || !draft.units.some(autoPlaceCandidate)) return false;
+  const mode = resolveEffectiveVisualFidelity({ inheritedMode: await getTopicVisualFidelityMode(topicId), override: draft.visualFidelityOverride?.mode ?? null, overrideReason: draft.visualFidelityOverride?.reason }).mode;
+  return autoPlaceDetectionEnabled({ format: draft.format, geoScope: (await getCreativeProfile(topicId)).geoScope, mode });
 }
 
 async function composeDraftPlaceVisuals(topicId: string, draft: CreativeDraft, brief: Awaited<ReturnType<typeof requireCreativeBrief>>, quality: CreativeImageQuality, prepared?: Map<number, import("./creative-place-visual").PreparedPlaceVisual>): Promise<CreativeAssetGenerationResponse> {
@@ -2057,9 +2078,13 @@ async function composeDraftPlaceVisuals(topicId: string, draft: CreativeDraft, b
   const mode = resolveEffectiveVisualFidelity({ inheritedMode, override: draft.visualFidelityOverride?.mode ?? null, overrideReason: draft.visualFidelityOverride?.reason }).mode;
   // Research only slides that actually request geographic material. An unrelated
   // creative cover must not become a placeholder because another slide has a photo.
+  // Under automatic place detection every undeclared image slide is researched
+  // too; one that names no single place in the brand's area stays the same
+  // creative illustration it would be in a batch without places.
+  const autoPlaces = autoPlaceDetectionEnabled({ format: draft.format, geoScope: profile.geoScope, mode });
   const geographicDraft = { ...draft, units: draft.units.filter(unit =>
     !portraitReferences.has(unit.order) && (prepared?.has(unit.order) || requiresVerifiedGeography(unit) ||
-    mode === "photo-required" || mode === "verified-references")) };
+    mode === "photo-required" || mode === "verified-references" || (autoPlaces && autoPlaceCandidate(unit)))) };
   const visuals = geographicDraft.units.length
     ? await preparePlaceVisuals(topicId, geographicDraft, profile, brief.keyFacts, story?.url || "", prepared)
     : new Map<number, import("./creative-place-visual").PreparedPlaceVisual>();
@@ -2078,6 +2103,11 @@ async function composeDraftPlaceVisuals(topicId: string, draft: CreativeDraft, b
   // current-state slide and an eligible archive photo grounds its identity —
   // never used as evidence of the event itself.
   const identityPhoto = (order: number) => { const visual = visuals.get(order); return mapReference && visual?.bytes && visual.evidence.representation === "photo" && visual.evidence.generationUse === "ai-reference" ? visual : undefined; };
+  // An automatic place slide (prepare-place-visuals.ts) only ever carries a
+  // verified photo as an AI identity reference, or nothing: it is always
+  // designed by the model, never a map or a local photo card. Where the dial
+  // composes references locally, its photo is simply not used.
+  const automaticPlace = (order: number) => visuals.get(order)?.evidence.detection === "automatic";
   // A slide that asks for a real place still generates a real image when no
   // verified photo or map exists: it falls back to the same conceptual AI
   // composition as any other slide (never claiming documentary accuracy)
@@ -2089,7 +2119,7 @@ async function composeDraftPlaceVisuals(topicId: string, draft: CreativeDraft, b
   // Only the strict photo policies keep it local.
   // A documentary-portrait slide is designed by the AI too (reserved photo zone,
   // no reference image); the strict photo policies below keep it local.
-  const creativeUnits = draft.units.filter(unit => (!visuals.get(unit.order)?.bytes || (photoReferenceTest && visuals.get(unit.order)?.evidence.photo) || verifiedMap(unit.order) || identityPhoto(unit.order)) &&
+  const creativeUnits = draft.units.filter(unit => (!visuals.get(unit.order)?.bytes || (photoReferenceTest && visuals.get(unit.order)?.evidence.photo) || verifiedMap(unit.order) || identityPhoto(unit.order) || automaticPlace(unit.order)) &&
     mode !== "photo-required" && mode !== "verified-references");
   if (creativeUnits.length) assertGenerativeImageryAllowed({ ...draft, units: creativeUnits }, inheritedMode);
   const creativeOrders = new Set(creativeUnits.map(unit => unit.order));
@@ -2104,20 +2134,21 @@ async function composeDraftPlaceVisuals(topicId: string, draft: CreativeDraft, b
     [unit.order, await resolveBrandGenerationReferences(topicId, unit.brandReferenceSelection)] as const)));
   // The exact map/photo bytes fetched or rendered are stored before anything
   // is submitted: the generator reads them back by hash, and so can a reviewer.
-  for (const unit of creativeUnits) {
+  // Three at a time: an automatic list can carry a photo on most of its slides.
+  await mapWithConcurrency(creativeUnits, 3, async unit => {
     const mapVisual = verifiedMap(unit.order);
     if (mapVisual) {
       const sha256 = await storeDocumentaryMapReference(topicId, mapVisual.bytes!);
       if (mapVisual.evidence.sha256 && mapVisual.evidence.sha256 !== sha256) throw new CreativeAssetValidationError("The verified map changed while it was being stored. Generate the images again.");
       mapVisual.evidence.sha256 = sha256;
-      continue;
+      return;
     }
     const identityVisual = identityPhoto(unit.order);
-    if (!identityVisual) continue;
+    if (!identityVisual) return;
     const sha256 = await storeDocumentaryPhotoReference(topicId, identityVisual.bytes!, identityVisual.evidence.photo!.contentType);
     if (identityVisual.evidence.sha256 && identityVisual.evidence.sha256 !== sha256) throw new CreativeAssetValidationError("The verified photo changed while it was being stored. Generate the images again.");
     identityVisual.evidence.sha256 = sha256;
-  }
+  });
 
   let batch = await createCreativeAssetBatch({ draftId: draft.id, draftVersion: draft.version, outputAspectRatio: "4:5", imageQuality: quality, width: 1080, height: 1350,
     identity: { provider: configuration.provider, model: configuration.model, promptVersion: configuration.promptVersion, imageQuality: quality, brandInputHash: brand.inputHash },
@@ -2177,7 +2208,12 @@ async function composeDraftPlaceVisuals(topicId: string, draft: CreativeDraft, b
               // declared visualNeed), not only when the direction itself asked
               // for geography — otherwise a real-photo/verified-map slide that
               // resolved nothing leaves no trace of why on the persisted asset.
-              : requiresVerifiedGeography(unit) ? placeEvidence : undefined,
+              : requiresVerifiedGeography(unit) ? placeEvidence
+              // An automatic place slide with no photograph sent keeps its
+              // research trail ("No verifiable photograph for …") but never
+              // the material itself.
+              : automaticPlace(unit.order) && placeEvidence ? evidenceWithoutMaterial(placeEvidence, "This deployment composes verified photographs locally, which an automatic place slide never uses; brand illustration kept.")
+              : undefined,
           },
           ...imagePrompt, prompt,
         };
@@ -2187,11 +2223,12 @@ async function composeDraftPlaceVisuals(topicId: string, draft: CreativeDraft, b
         documentaryPortrait: portrait ? { photoId: portrait.id, sha256: portrait.sha256, name: portrait.name, description: portrait.description, provenance: portrait.provenance } : undefined },
         prompt: portrait ? "Deterministic documentary photo composition preserving the uploaded photograph, saved copy and source credit; no image-model request" : "Deterministic editorial composition preserving saved copy; verified location material or conceptual symbols; no place generated",
         expectedText: [unit.headline, unit.subheadline, unit.body, unit.ctaQuestion].filter(Boolean).join("\n"), generationMode: "text-to-image", providerEndpoint: DRAFT_TYPOGRAPHY_ENDPOINT, referenceSnapshot: [], referenceInputHash: portrait ? documentaryPortraitIdentity(new Map([[unit.order, portrait]])) : brand.inputHash }; }) });
+  // Submitted three at a time, as a batch without places is: with automatic
+  // place detection a 20-slide list composes here, after place preparation,
+  // and the request must finish well inside its time limit.
+  await mapWithConcurrency(batch.assets.filter(asset => asset.providerEndpoint !== DRAFT_TYPOGRAPHY_ENDPOINT), 3, asset => submitStoredAsset(asset, configuration));
   for (const asset of batch.assets) {
-    if (asset.providerEndpoint !== DRAFT_TYPOGRAPHY_ENDPOINT) {
-      await submitStoredAsset(asset, configuration);
-      continue;
-    }
+    if (asset.providerEndpoint !== DRAFT_TYPOGRAPHY_ENDPOINT) continue;
     try {
       const portrait = portraitReferences.get(asset.unitOrder);
       const original = portrait ? Buffer.from(await (await loadStoryReferenceImages([portrait]))[0].arrayBuffer()) : visuals.get(asset.unitOrder)?.bytes;
@@ -2222,6 +2259,18 @@ async function currentPlaceVisual(topicId: string, draft: CreativeDraft, asset: 
   if (previous.generationUse && refreshed.bytes && fresh.representation === "map" && previous.representation === "map") {
     const sha256 = await storeDocumentaryMapReference(topicId, refreshed.bytes);
     return { ...fresh, sha256, generationUse: previous.generationUse, referenceTopicId: topicId, ...(previous.panelColor ? { panelColor: previous.panelColor } : {}) };
+  }
+  // An identity photo (declared real-photo or automatic place) is read back
+  // by hash as the slide's last reference, and the saved prompt names it: store
+  // the refreshed photo the same way, or stop before submitting a prompt that
+  // describes a photograph the model would never receive.
+  if (previous.generationUse === "ai-reference" && previous.representation === "photo") {
+    if (!refreshed.bytes || fresh.representation !== "photo" || fresh.generationUse !== "ai-reference" || !fresh.photo) {
+      throw new CreativeContentConflictError("The verified place photo for this slide could not be refreshed. Try again later.");
+    }
+    const sha256 = await storeDocumentaryPhotoReference(topicId, refreshed.bytes, fresh.photo.contentType);
+    if (fresh.sha256 && fresh.sha256 !== sha256) throw new CreativeAssetValidationError("The verified photo changed while it was being stored. Generate the images again.");
+    return { ...fresh, sha256, referenceTopicId: topicId };
   }
   return fresh;
 }

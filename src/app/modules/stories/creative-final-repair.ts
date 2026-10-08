@@ -1,3 +1,4 @@
+import { MAX_CAROUSEL_SLIDES } from "./carousel-narrative";
 import type {
   CreativeAiUsage,
   CreativeFormat,
@@ -45,7 +46,7 @@ export const finalRepairSchema = {
         additionalProperties: false,
         required: ["unitOrder", "field", "text"],
         properties: {
-          unitOrder: { type: "integer", minimum: 0, maximum: 8 },
+          unitOrder: { type: "integer", minimum: 0, maximum: MAX_CAROUSEL_SLIDES },
           field: { type: "string", enum: [...Object.keys(unitFields), ...Object.keys(publicationFields)] },
           text: { type: "string", maxLength: 3_000 },
         },

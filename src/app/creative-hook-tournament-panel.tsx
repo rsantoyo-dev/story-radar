@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useRef } from "react";
+
 import {
   hookOpeningForDraft,
   openingOnDraft,
@@ -71,9 +73,14 @@ type OpeningUnit = { headline: string; subheadline?: string };
  * in use, and the editor's choice. Picking a cover saves it, with its slide 2
  * headline, as a new version and teaches the judge this publication's taste.
  */
-export function CreativeHookTournamentPanel({ tournament, error, currentUnits, disabled, busy, onImprove, onUse }: {
+export function CreativeHookTournamentPanel({ tournament, error, pendingKey, currentUnits, disabled, busy, onImprove, onUse }: {
   tournament?: CreativeHookTournament;
   error?: string;
+  /**
+   * Set when the run ran out of time before the tournament (draft id and
+   * version): the panel starts it once, as soon as the studio is free.
+   */
+  pendingKey?: string;
   /** The draft's cover and slide 2 as they are now. */
   currentUnits: readonly OpeningUnit[];
   disabled: boolean;
@@ -81,6 +88,13 @@ export function CreativeHookTournamentPanel({ tournament, error, currentUnits, d
   onImprove: () => void;
   onUse: (index: number) => void;
 }) {
+  const started = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!pendingKey || tournament || disabled || started.current === pendingKey) return;
+    started.current = pendingKey;
+    onImprove();
+  }, [pendingKey, tournament, disabled, onImprove]);
+
   const ranked = (tournament?.candidates ?? [])
     .map((candidate, index) => ({ candidate, index }))
     .filter(({ candidate }) => !candidate.rejected && candidate.total !== undefined)
@@ -110,6 +124,7 @@ export function CreativeHookTournamentPanel({ tournament, error, currentUnits, d
           {busy ? "Writing and judging covers… about 1–2 minutes" : tournament ? "Run the cover tournament again" : "Find a stronger cover"}
         </button>
       </div>
+      {pendingKey && !tournament ? <p className={styles.hookPanelNote}>The script was written without time left to choose its cover, so the cover tournament runs now as its own step.</p> : null}
       {error && !tournament ? <p className={styles.hookPanelNote}>{error}</p> : null}
       {finalists.length ? (
         <ul className={styles.hookOptions}>

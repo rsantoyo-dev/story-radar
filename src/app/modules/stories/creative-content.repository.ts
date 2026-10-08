@@ -980,6 +980,7 @@ function mapCreativeDraft(
     ...(generated.visualDirectionsRewrite ? { visualDirectionsRewrite: generated.visualDirectionsRewrite } : {}),
     ...(generated.hookTournament ? { hookTournament: generated.hookTournament } : {}),
     ...(generated.hookTournamentError ? { hookTournamentError: generated.hookTournamentError } : {}),
+    ...(generated.hookTournamentPending && !generated.hookTournament ? { hookTournamentPending: true } : {}),
     ...(generated.qualityReview
       ? {
           qualityReview: {...generated.qualityReview,issues:generated.qualityReview.issues.map(issue =>

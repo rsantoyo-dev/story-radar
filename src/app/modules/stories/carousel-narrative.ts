@@ -21,7 +21,25 @@ export const CAROUSEL_EDITORIAL_GOALS = [
 export type CarouselEditorialGoal =
   (typeof CAROUSEL_EDITORIAL_GOALS)[number];
 
-export type CarouselSlideCount = 3 | 4 | 5 | 6 | 7 | 8;
+/**
+ * A carousel has 3 to 20 slides (Instagram's in-app ceiling). Most stories need
+ * 5–8; an enumerated list takes one slide per item, so it may use all 20: a
+ * hook, up to 18 items and a closing.
+ */
+export const MIN_CAROUSEL_SLIDES = 3;
+export const MAX_CAROUSEL_SLIDES = 20;
+export const MAX_CAROUSEL_LIST_ITEMS = MAX_CAROUSEL_SLIDES - 2;
+
+export type CarouselSlideCount = number;
+
+/** The slide counts that have a preferred arc; longer carousels are lists or explain their own order. */
+type PreferredArcSlideCount = 3 | 4 | 5 | 6 | 7 | 8;
+
+/**
+ * How the brief planned the carousel: "list" when the source enumerates items
+ * and each gets its own slide, "arc" for an ordinary narrative.
+ */
+export type CarouselPlanStructure = "list" | "arc";
 
 export type CarouselPlanSlide = {
   editorialGoal: CarouselEditorialGoal;
@@ -35,6 +53,8 @@ export type CarouselPlan = {
   slideCount: CarouselSlideCount;
   rationale: string;
   slides: CarouselPlanSlide[];
+  /** Absent on plans written before the brief declared it. */
+  structure?: CarouselPlanStructure;
 };
 
 export const CAROUSEL_EDITORIAL_GOAL_OPTIONS = [
@@ -119,7 +139,7 @@ export const PREFERRED_CAROUSEL_ARCS = {
     "debate",
   ],
 } as const satisfies Record<
-  CarouselSlideCount,
+  PreferredArcSlideCount,
   readonly CarouselEditorialGoal[]
 >;
 
@@ -245,7 +265,7 @@ export function getPreferredCarouselArc(
   conversionGoal?: CreativeConversionGoal,
 ): readonly CarouselEditorialGoal[] | undefined {
   if (slideCount < 3 || slideCount > 8) return undefined;
-  const preferred = PREFERRED_CAROUSEL_ARCS[slideCount as CarouselSlideCount];
+  const preferred = PREFERRED_CAROUSEL_ARCS[slideCount as PreferredArcSlideCount];
   if (!conversionGoal) return preferred;
   return [
     ...preferred.slice(0, -1),
@@ -297,7 +317,7 @@ export function getDefaultViewerQuestion(
 export function isCarouselSlideCount(
   value: unknown,
 ): value is CarouselSlideCount {
-  return Number.isInteger(value) && (value as number) >= 3 && (value as number) <= 8;
+  return Number.isInteger(value) && (value as number) >= MIN_CAROUSEL_SLIDES && (value as number) <= MAX_CAROUSEL_SLIDES;
 }
 
 export function maximumFactsForGoal(goal: CarouselEditorialGoal): number {
@@ -627,11 +647,15 @@ export function carouselNarrativePolicyForPrompt(
     ? getPreferredCarouselClosingGoal(conversionGoal)
     : undefined;
   const listStructure = storyStructure === "hook-list";
+  // "auto" decides from the source: the list arc applies only when the brief finds an enumerated list.
+  const listPossible = listStructure || storyStructure === undefined || storyStructure === "auto";
   return {
     flexibility: listStructure
       ? "This story is an enumerated list: plan hook, then one slide per enumerated item in source order, then the preferred closing goal. The preferred arcs below do not apply to it; never merge or drop items to fit one."
-      : "Use the preferred arc for the selected slide count unless the story requires another sequence. It already reflects preferredClosingGoal. Explain other deviations in narrativeRationale.",
-    ...(listStructure
+      : listPossible
+        ? "When the source is an enumerated list (see STORY STRUCTURE), use listArc: one slide per item, never merged or dropped to fit a preferred arc. Otherwise use the preferred arc for the selected slide count unless the story requires another sequence; it already reflects preferredClosingGoal. Explain other deviations in narrativeRationale."
+        : "Use the preferred arc for the selected slide count unless the story requires another sequence. It already reflects preferredClosingGoal. Explain other deviations in narrativeRationale.",
+    ...(listPossible
       ? {
           listArc:
             "hook (its allowedFactIds include the fact that establishes the count) → one explain or opportunity slide per item, each citing only that item's facts → conclude (reuses two or more items' facts to help the reader choose, plan, save or share)",
@@ -657,7 +681,7 @@ export function carouselNarrativePolicyForPrompt(
       ([goal, maximumFacts]) => ({ goal, maximumFacts }),
     ),
     rules: [
-      `One idea per slide: a short headline (at most ${CAROUSEL_HEADLINE_MAX_WORDS} words after the cover) and supporting text of about ${CAROUSEL_BODY_TARGET_WORDS} words, never above ${CAROUSEL_BODY_MAX_WORDS}. Prefer more slides with less text over fewer dense slides: when a slide would need more, give the extra fact its own slide (up to 8) or cut secondary detail, never a qualifier or attribution.`,
+      `One idea per slide: a short headline (at most ${CAROUSEL_HEADLINE_MAX_WORDS} words after the cover) and supporting text of about ${CAROUSEL_BODY_TARGET_WORDS} words, never above ${CAROUSEL_BODY_MAX_WORDS}. Prefer more slides with less text over fewer dense slides: when a slide would need more, give the extra fact its own slide (up to ${MAX_CAROUSEL_SLIDES}) or cut secondary detail, never a qualifier or attribution.`,
       "Use only facts necessary to advance the story; do not use every available fact simply because it exists.",
       "viewerQuestion describes the mental question answered by that slide and is not visible slide copy.",
       "Write every viewerQuestion in the creative profile language and about this story: it names the specific thing the reader wants to know from that slide's allowedFactIds. Never use a generic template question (a bare 'why does this matter', 'how is this happening', 'what is the takeaway'). Ask why or how only when an allowed fact states the mechanism or cause; otherwise ask what the facts show.",
@@ -1599,4 +1623,17 @@ function questionIntentCount(value: string): number {
 
 function numericTokens(value?: string): string[] {
   return [...new Set(extractCreativeNumericLiterals(value ?? ""))];
+}
+
+/**
+ * The structure the draft actually follows. A profile set to "auto" becomes
+ * "hook-list" when the brief planned an enumerated list, so the writer, the
+ * critic and the code checks all judge the list as a list.
+ */
+export function resolveStoryStructure(
+  configured: CreativeStoryStructure | undefined,
+  plan: Pick<CarouselPlan, "structure"> | undefined,
+): CreativeStoryStructure | undefined {
+  if ((configured === undefined || configured === "auto") && plan?.structure === "list") return "hook-list";
+  return configured;
 }

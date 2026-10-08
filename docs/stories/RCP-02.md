@@ -11,7 +11,7 @@ Como editor, quiero contrato genérico sequence, para crear secuencias útiles d
 ## Criterios de aceptación
 
 - Aceptar meme, carousel y sequence en esquema del proveedor, validadores y enum de base de datos.
-- Sequence conserva unidades carousel-slide y límites existentes de 3–8 slides.
+- Sequence conserva unidades carousel-slide y límites existentes de 3–20 slides (desde 2026-10-08).
 - La recomendación y alternativa son distintas y tienen exactamente una puntuación cada una. No exigir tres puntuaciones.
 
 ## Implementación y evidencia
