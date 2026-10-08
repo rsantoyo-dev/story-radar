@@ -821,6 +821,10 @@ Preserve design intent, not just the current computed value:
 - Change shared theme definitions only for intentional system-wide changes.
 - Use direct foundation tokens or native CSS for intentional exceptions.
 - Verify responsive behavior and affected shared consumers.
+- `npm run lint` fails when any UXDSL alignment category grows past
+  `docs/uxdsl-alignment.baseline.json` (see `docs/features/uxdsl-alignment.md`).
+  Use a role or token; when UXDSL cannot express the decision, mark the rule
+  `/* uxdsl-exception: <reason> */` and record it in `docs/uxdsl-findings.md`.
 
 
 ---

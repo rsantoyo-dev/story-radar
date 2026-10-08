@@ -15,15 +15,16 @@
     "r2:lifecycle": "node scripts/r2-lifecycle.mjs",
     "postinstall": "patch-package",
     "pretest": "npm run uxdsl:build",
-    "test": "node --import tsx --test scripts/vercel-env.test.mjs scripts/r2-lifecycle-rules.test.mjs src/app/*.test.ts src/app/ui/*.test.tsx src/app/modules/auth/*.test.ts src/app/modules/billing/*.test.ts src/app/modules/observability/*.test.ts src/app/modules/credits/*.test.ts src/app/modules/stories/*.test.ts src/app/modules/documents/*.test.ts src/app/modules/meta/*.test.ts src/app/modules/topics/*.test.ts src/app/modules/sources/*.test.ts src/design/*.test.ts src/design/*/*.test.ts",
+    "test": "node --import tsx --test scripts/vercel-env.test.mjs scripts/r2-lifecycle-rules.test.mjs scripts/uxdsl-audit.test.mjs src/app/*.test.ts src/app/ui/*.test.tsx src/app/modules/auth/*.test.ts src/app/modules/billing/*.test.ts src/app/modules/observability/*.test.ts src/app/modules/credits/*.test.ts src/app/modules/stories/*.test.ts src/app/modules/documents/*.test.ts src/app/modules/meta/*.test.ts src/app/modules/topics/*.test.ts src/app/modules/sources/*.test.ts src/design/*.test.ts src/design/*/*.test.ts",
     "uxdsl:build": "uxdsl build",
     "uxdsl:watch": "uxdsl watch",
-    "lint": "eslint",
+    "lint": "eslint && node scripts/uxdsl-audit.mjs --check",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:check": "drizzle-kit check",
     "db:studio": "drizzle-kit studio",
-    "worker:daily": "node scripts/daily-preparation-worker.mjs"
+    "worker:daily": "node scripts/daily-preparation-worker.mjs",
+    "uxdsl:audit": "node scripts/uxdsl-audit.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1117.0",
