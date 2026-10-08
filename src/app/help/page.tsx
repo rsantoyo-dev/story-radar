@@ -20,7 +20,7 @@ export default async function HelpPage({ searchParams }: { searchParams: Promise
       <p>Quick guide</p>
       <h1>From source material to publication</h1>
       <ol>
-        <li><strong>Set up your brand.</strong> Start in <Link href={`/${topicQuery}#topics`}>Manage Topics</Link>, then review Creative identity, Editorial strategy, Sources, and Channels.</li>
+        <li><strong>Set up your brand.</strong> Start in <Link href={`/${topicQuery}#topics`}>Brands</Link>, then review Creative identity, Editorial strategy, Sources, and Channels.</li>
         <li><strong>Find a Story.</strong> Open <Link href={`/${topicQuery}#discover`}>Discover</Link> to collect, evaluate, and select material. Approving a Story for production does not approve its script or publish it.</li>
         <li><strong>Review a version.</strong> Open <Link href={`/${topicQuery}#production`}>Production</Link>, then review Content, Focus, Script, Visuals, and Publication in the Story workspace. Script, image, and publication approvals are separate.</li>
         <li><strong>Recover publication work.</strong> Check <Link href={`/${topicQuery}#publications/history`}>Publication history</Link> and the Story’s Publication stage. If delivery is uncertain, reconcile the existing job before trying to send again.</li>

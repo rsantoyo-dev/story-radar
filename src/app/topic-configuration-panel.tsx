@@ -29,23 +29,23 @@ export type TopicConfigurationView = "topics" | "rss" | "ai" | "documents" | "ma
 const VIEW_HEADING: Record<TopicConfigurationView, { eyebrow: string; title: string; description: string }> = {
   topics: {
     eyebrow: "Workspace",
-    title: "Topics",
-    description: "Manage publications and their editorial lines.",
+    title: "Brands",
+    description: "Each brand is its own publication, with its own identity, strategy, sources and channels.",
   },
   rss: {
     eyebrow: "Sources",
     title: "RSS feeds",
-    description: "Manage feeds connected to the selected topic.",
+    description: "Feeds this brand collects stories from. Feeds are shared across the workspace and linked per brand.",
   },
   ai: {
     eyebrow: "Sources",
     title: "AI research",
-    description: "Configure web-grounded discovery for the selected topic.",
+    description: "Web-grounded discovery for this brand.",
   },
   documents: {
     eyebrow: "Sources",
     title: "Documents",
-    description: "Manage page-linked knowledge documents for the selected topic.",
+    description: "Reference documents this brand can draw on.",
   },
   manual: {
     eyebrow: "Sources",
@@ -207,7 +207,9 @@ export function TopicConfigurationPanel({
   const [feedTopicIds, setFeedTopicIds] = useState<string[]>([selectedTopicId]);
   const [documentTopicIds, setDocumentTopicIds] = useState<string[]>([selectedTopicId]);
   const [catalogRefresh, setCatalogRefresh] = useState(0);
-  const [filterTopicId, setFilterTopicId] = useState("");
+  // "current" follows the brand picked in the sidebar; "" lists every brand.
+  const [topicFilter, setTopicFilter] = useState("current");
+  const filterTopicId = topicFilter === "current" ? selectedTopicId : topicFilter;
   const [feedStatusFilter, setFeedStatusFilter] = useState("all");
   const [documentResult, setDocumentResult] = useState<{
     topicId: string;
@@ -843,7 +845,6 @@ export function TopicConfigurationPanel({
           <h2 id={`configuration-${view}-title`}>{VIEW_HEADING[view].title}</h2>
           <small>{VIEW_HEADING[view].description}</small>
         </div>
-        {view !== "topics" ? <span className={styles.count}>{selectedTopic?.name ?? "Select a topic"}</span> : null}
       </div>
 
       {!canUseApi ? (
@@ -854,24 +855,14 @@ export function TopicConfigurationPanel({
       {notice ? <p className={styles.notice} role="status">{notice}</p> : null}
 
       {view === "topics" ? <>
-      <div className={styles.topicCards} aria-label="Available Topics">
-        {topics.map((topic) => {
-          const linkedCount = (catalog?.rss.filter((feed) => feed.topics.some((link) => link.topicId === topic.id)).length ?? 0) +
-            (catalog?.documents.filter((document) => document.topics.some((link) => link.topicId === topic.id)).length ?? 0);
-          return <button key={topic.id} type="button" className={selectedTopicId === topic.id ? `${styles.topicCard} ${styles.topicCardActive}` : styles.topicCard} style={topicThemeStyle(topic.themeKey)} onClick={() => changeTopic(topic.id)} disabled={!topic.isActive || disabled || Boolean(busy)} aria-current={selectedTopicId === topic.id ? "true" : undefined}>
-            <span className={styles.topicCardPreview} aria-hidden="true">{topic.name.slice(0, 1).toUpperCase()}</span>
-            <span className={styles.topicCardCopy}><strong>{topic.name}</strong><small>{topic.description || "No editorial description"}</small><span>{topic.isActive ? `${linkedCount} linked sources` : "Inactive"}</span></span>
-          </button>;
-        })}
-      </div>
       <div className={styles.topicRow}>
-        <p className={styles.topicRowContext}>Editing <strong>{selectedTopic?.name ?? "a Topic"}</strong>. Use the Topic selector in the top bar to switch.</p>
+        <p className={styles.topicRowContext}>Working on <strong>{selectedTopic?.name ?? "a brand"}</strong>. Choose another brand below or in the sidebar.</p>
         <div className={styles.topicActions}>
           <button type="button" onClick={() => setShowTopicForm(true)} disabled={!canUseApi || disabled || Boolean(busy)}>
-            New topic
+            New brand
           </button>
           <button type="button" onClick={openTopicEdit} disabled={!canUseApi || disabled || Boolean(busy)}>
-            Edit topic
+            Edit brand
           </button>
         </div>
       </div>
@@ -880,12 +871,24 @@ export function TopicConfigurationPanel({
         <h3>Continue setting up {selectedTopic.name}</h3>
         <p>Each step opens its own workspace. Channels are needed when you are ready to publish.</p>
         <ol>
-          <li><a href="#identity">1. Identity <span>Review the Topic’s visual identity</span></a></li>
+          <li><a href="#identity">1. Identity <span>Review the brand’s visual identity</span></a></li>
           <li><a href="#strategy/lines">2. Strategy <span>Review editorial lines</span></a></li>
-          <li><a href="#sources/rss">3. Sources <span>{catalog ? `${catalog.rss.filter((feed) => feed.topics.some((link) => link.topicId === selectedTopicId)).length + catalog.documents.filter((document) => document.topics.some((link) => link.topicId === selectedTopicId)).length} linked feeds and documents` : "Loading linked records…"}</span></a></li>
+          <li><a href="#sources/rss">3. Sources <span>{catalog ? plural(catalog.rss.filter((feed) => feed.topics.some((link) => link.topicId === selectedTopicId)).length + catalog.documents.filter((document) => document.topics.some((link) => link.topicId === selectedTopicId)).length, "linked feed or document", "linked feeds and documents") : "Loading linked records…"}</span></a></li>
           <li><a href="#channels">4. Channels <span>Check connection before publishing</span></a></li>
         </ol>
       </nav> : null}
+
+      <h3 className={styles.topicCardsHeading}>All brands</h3>
+      <div className={styles.topicCards} aria-label="All brands">
+        {topics.map((topic) => {
+          const linkedCount = (catalog?.rss.filter((feed) => feed.topics.some((link) => link.topicId === topic.id)).length ?? 0) +
+            (catalog?.documents.filter((document) => document.topics.some((link) => link.topicId === topic.id)).length ?? 0);
+          return <button key={topic.id} type="button" className={selectedTopicId === topic.id ? `${styles.topicCard} ${styles.topicCardActive}` : styles.topicCard} style={topicThemeStyle(topic.themeKey)} onClick={() => changeTopic(topic.id)} disabled={!topic.isActive || disabled || Boolean(busy)} aria-current={selectedTopicId === topic.id ? "true" : undefined}>
+            <span className={styles.topicCardPreview} aria-hidden="true">{topic.name.slice(0, 1).toUpperCase()}</span>
+            <span className={styles.topicCardCopy}><strong>{topic.name}</strong><small>{topic.description || "No editorial description"}</small><span>{topic.isActive ? plural(linkedCount, "linked source", "linked sources") : "Inactive"}</span></span>
+          </button>;
+        })}
+      </div>
 
       {showTopicForm || editingTopic ? (
         <form
@@ -896,7 +899,7 @@ export function TopicConfigurationPanel({
           }}
         >
           <label>
-            <span>Topic name</span>
+            <span>Brand name</span>
             <input value={topicName} onChange={(event) => setTopicName(event.target.value)} maxLength={120} />
           </label>
           <label>
@@ -904,7 +907,7 @@ export function TopicConfigurationPanel({
             <input value={topicDescription} onChange={(event) => setTopicDescription(event.target.value)} maxLength={1000} placeholder="Audience or editorial focus" />
           </label>
           <label className={styles.themeField}>
-            <span>Topic theme</span>
+            <span>Theme</span>
             <select value={topicThemeKey} onChange={(event) => setTopicThemeKey(event.target.value)}>
               {TOPIC_THEMES.map((theme) => (
                 <option key={theme.key} value={theme.key}>{theme.label}</option>
@@ -912,7 +915,7 @@ export function TopicConfigurationPanel({
             </select>
           </label>
           <ActionRow>
-            <Button type="submit" variant="primary" disabled={Boolean(busy)}>{editingTopic ? "Save topic" : "Create topic"}</Button>
+            <Button type="submit" variant="primary" disabled={Boolean(busy)}>{editingTopic ? "Save brand" : "Create brand"}</Button>
             <Button variant="quiet" onClick={() => { setShowTopicForm(false); setEditingTopic(false); }} disabled={Boolean(busy)}>Cancel</Button>
           </ActionRow>
         </form>
@@ -958,11 +961,8 @@ export function TopicConfigurationPanel({
 
       {view === "rss" ? <div className={styles.sourcesContent}>
           <div className={styles.catalogFilters}>
-            <label>Topic
-              <select value={filterTopicId} onChange={(event) => setFilterTopicId(event.target.value)}>
-                <option value="">All topics</option>
-                {topics.map((topic) => <option key={topic.id} value={topic.id}>{topic.name}</option>)}
-              </select>
+            <label>Brand
+              <TopicFilterSelect value={topicFilter} onChange={setTopicFilter} topics={topics} selectedTopicId={selectedTopicId} />
             </label>
             <label>Status
               <select value={feedStatusFilter} onChange={(event) => setFeedStatusFilter(event.target.value)}>
@@ -1174,11 +1174,8 @@ export function TopicConfigurationPanel({
           <button type="button" onClick={onNewStory} disabled={!canUseApi || disabled || Boolean(busy)}>New story</button>
         </div>
         <div className={styles.catalogFilters}>
-          <label>Topic
-            <select value={filterTopicId} onChange={(event) => setFilterTopicId(event.target.value)}>
-              <option value="">All topics</option>
-              {topics.map((topic) => <option key={topic.id} value={topic.id}>{topic.name}</option>)}
-            </select>
+          <label>Brand
+            <TopicFilterSelect value={topicFilter} onChange={setTopicFilter} topics={topics} selectedTopicId={selectedTopicId} />
           </label>
         </div>
         {!catalog ? <p className={styles.loading}>Loading manual stories…</p> : catalog.manual.length === 0 ? (
@@ -1422,6 +1419,19 @@ export function TopicConfigurationPanel({
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return <label><span>{label}</span>{children}</label>;
+}
+
+function TopicFilterSelect({ value, onChange, topics, selectedTopicId }: { value: string; onChange: (value: string) => void; topics: DashboardTopic[]; selectedTopicId: string }) {
+  const current = topics.find((topic) => topic.id === selectedTopicId);
+  return <select value={value} onChange={(event) => onChange(event.target.value)}>
+    <option value="current">{current ? `${current.name} (current)` : "Current brand"}</option>
+    <option value="">All brands</option>
+    {topics.filter((topic) => topic.id !== selectedTopicId).map((topic) => <option key={topic.id} value={topic.id}>{topic.name}</option>)}
+  </select>;
+}
+
+function plural(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`;
 }
 
 function notifyCatalogChanged() {

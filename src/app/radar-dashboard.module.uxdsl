@@ -1379,10 +1379,11 @@
 .candidateHero { display: flex; flex-direction: xs(column) md(row); justify-content: space-between; align-items: xs(stretch) md(center); gap: density(5); }
 .candidateHero h2 { margin: density(1) 0; color: palette(dark-main); @ds-typo(h2); font-size: clamp(1.5rem, 2.5vw, 2.125rem); letter-spacing: -0.035em; }
 .candidateHero p:not(.kicker) { max-width: 62ch; margin: 0; color: palette(tertiary-main); @ds-typo(small); }
-.candidateHeroActions { display: flex; flex-wrap: wrap; align-items: center; gap: density(2); }
-.candidateHeroActions a { @ds-button(outlined primary 2); display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding-inline: density(4); color: palette(primary-dark); @ds-typo(small); font-weight: 700; text-decoration: none; white-space: nowrap; }
+.candidateHeroActions { display: flex; flex: none; flex-wrap: xs(wrap) md(nowrap); align-items: center; gap: density(2); }
+.candidateHeroActions > * { flex: xs(1 1 auto) md(none); }
+.candidateHeroActions a { @ds-button(outlined primary 2); display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding-inline: density(4); border-radius: 11px; color: palette(primary-dark); @ds-typo(small); font-size: 13px; font-weight: 700; text-decoration: none; white-space: nowrap; }
 .candidateHeroActions a:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 2px; }
-.candidateHeroActions .evaluateButton { width: auto; box-shadow: none; }
+.candidateHeroActions .evaluateButton { width: auto; box-shadow: none; white-space: nowrap; }
 .candidateStageLinks { display: flex; flex-wrap: wrap; align-items: center; gap: density(3); margin-top: density(4); padding-bottom: density(4); border-bottom: 1px solid palette(dark-main, 0.1); color: palette(tertiary-main); @ds-typo(small); }
 .candidateStageLinks a { color: palette(primary-dark); font-weight: 700; text-decoration: none; }
 .candidateStageLinks a:hover { text-decoration: underline; }
@@ -3377,6 +3378,55 @@
   appearance: auto;
 }
 
+/* Editorial strategy › Lines: one brand's editorial lines and the editor for the chosen one. */
+.linesManager { display: grid; gap: density(5); }
+.linesManager header { display: grid; gap: density(1); }
+.linesManager header h2 { margin: 0; }
+.linesManager header p { @ds-typo(small); margin: 0; color: palette(tertiary-dark); }
+.linesManager [role="alert"] { @ds-typo(small); margin: density(2) 0 0; color: palette(error-dark); }
+.linesPicker { display: flex; flex-wrap: wrap; gap: density(2); }
+.linesPicker button { display: inline-flex; align-items: center; gap: density(2); min-height: 38px; padding: 0 density(4); border: 1px solid palette(dark-main, 0.16); border-radius: radius(pill); background: palette(light-light); color: palette(primary-dark); @ds-typo(small); font-weight: 650; cursor: pointer; }
+.linesPicker button:hover:not(:disabled) { border-color: palette(primary-main); }
+.linesPicker button[aria-pressed="true"] { border-color: palette(dark-main); background: palette(dark-main); color: palette(light-light); }
+.linesPicker button small { padding: 1px density(2); border-radius: radius(pill); background: palette(primary-main, 0.12); @ds-typo(caption); font-size: 0.6875rem; }
+.linesPicker button[aria-pressed="true"] small { background: palette(light-light, 0.18); }
+.linesPicker button:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 2px; }
+.linesPicker button:disabled { cursor: not-allowed; opacity: 0.5; }
+.linesManager fieldset { display: grid; gap: density(4); min-width: 0; margin: 0; padding: 0; border: 0; }
+.linesManager legend { @ds-typo(body); margin-bottom: density(2); padding: 0; color: palette(dark-main); font-weight: 700; }
+.linesGroup { display: grid; min-width: 0; padding-top: density(4); border-top: 1px solid palette(dark-main, 0.08); }
+.linesGroup h3 { @ds-typo(caption); margin: 0; color: palette(primary-main); font-size: 0.6875rem; font-weight: 750; letter-spacing: 0.14em; text-transform: uppercase; }
+.linesFields { display: grid; grid-template-columns: xs(1fr) md(repeat(2, minmax(0, 1fr))); column-gap: density(4); }
+.linesManager .field,
+.discoverSearchOptions .field { margin-top: density(3); }
+.linesManager .field > span,
+.discoverSearchOptions .field > span { margin-bottom: density(2); }
+.linesManager .field input,
+.linesManager .field select,
+.linesManager .field textarea,
+.discoverSearchOptions .field input,
+.discoverSearchOptions .field select { @ds-input(outlined primary 2); box-sizing: border-box; width: 100%; border-color: palette(surface-dark); background: palette(light-light, 0.84); color: palette(dark-main); font: inherit; @ds-typo(small); }
+.linesManager .field input,
+.linesManager .field select,
+.discoverSearchOptions .field input,
+.discoverSearchOptions .field select { height: 44px; padding: 0 density(3); }
+.linesManager .field textarea { min-height: 88px; padding: density(3); line-height: 1.5; resize: vertical; }
+.linesManager .field select:focus-visible,
+.linesManager .field textarea:focus-visible,
+.discoverSearchOptions .field select:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 2px; }
+.linesSources { margin: density(3) 0 0; padding: 0; border: 1px solid palette(dark-main, 0.08); border-radius: radius(2); list-style: none; }
+.linesSources li + li { border-top: 1px solid palette(dark-main, 0.08); }
+.linesSources label { display: flex; align-items: center; justify-content: space-between; gap: density(3); padding: density(2) density(3); color: palette(dark-main); @ds-typo(small); }
+.linesSources label > span { min-width: 0; overflow-wrap: anywhere; }
+.linesSources small { color: palette(tertiary-main); }
+.linesSources select { flex: none; width: 112px; min-height: 36px; padding: 0 density(2); border: 1px solid palette(dark-main, 0.16); border-radius: radius(2); background: palette(light-light); color: palette(dark-main); font: inherit; }
+.linesSources select:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 2px; }
+.linesNote { @ds-typo(small); margin: density(3) 0 0; color: palette(tertiary-main); }
+.linesActions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: density(3); padding-top: density(4); border-top: 1px solid palette(dark-main, 0.08); }
+.linesActions [role="status"] { @ds-typo(small); margin: 0; color: palette(tertiary-main); }
+.linesActions .buttonRow { width: xs(100%) sm(auto); margin-top: 0; }
+.linesActions .primaryButton { flex: none; }
+
 /* ---------------------------------------------------------------------------
  * Global "New story" entry point (FEAT-SRC-001, SRC-01).
  * The dialog reuses .contentViewerBackdrop / .contentViewer / .contentViewerHeader
@@ -3772,7 +3822,7 @@ button.sidebarTopicAvatar:focus-visible { outline: 2px solid palette(primary-lig
 .spendingReset:disabled { cursor: progress; opacity: 0.6; }
 .spendingNotice, .spendingLoading, .spendingNote { margin: 0; color: palette(tertiary-main); @ds-typo(small); font-size: 0.82rem; line-height: 1.5; }
 .spendingNotice { padding: density(3) density(4); border-radius: radius(2); background: palette(primary-light, 0.2); color: palette(primary-dark); font-weight: 650; }
-.spendingSummary { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: density(3); margin: 0; }
+.spendingSummary { display: grid; grid-template-columns: xs(repeat(2, minmax(0, 1fr))) md(repeat(3, minmax(0, 1fr))) lg(repeat(auto-fit, minmax(150px, 1fr))); gap: density(3); margin: 0; }
 .spendingSummary > div { display: grid; gap: density(1); padding: density(4); border: 1px solid palette(dark-main, 0.08); border-radius: radius(3); background: palette(light-light); }
 .spendingSummary dt { color: palette(tertiary-main); @ds-typo(caption); font-size: 0.72rem; font-weight: 700; }
 .spendingSummary dd { margin: 0; @ds-typo(h3); font-size: 1.15rem; font-weight: 750; font-variant-numeric: tabular-nums; }

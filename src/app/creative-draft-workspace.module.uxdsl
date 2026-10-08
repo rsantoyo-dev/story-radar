@@ -158,8 +158,7 @@
 }
 
 .profilePanel {
-  margin-bottom: density(5);
-  border: 1px solid palette(surface-light);
+  border: 1px solid palette(dark-main, 0.1);
   border-radius: 15px;
   background: palette(light-light);
 }
@@ -169,10 +168,10 @@
   align-items: center;
   justify-content: space-between;
   gap: density(5);
-  padding: density(5) density(5);
+  padding: density(4) density(5);
   color: palette(primary-dark);
   @ds-typo (caption);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 750;
   cursor: pointer;
   list-style: none;
@@ -293,7 +292,7 @@
   margin: calc(density(3) * -1) 0 0;
   color: palette(tertiary-main);
   @ds-typo (caption);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -679,35 +678,47 @@
   align-items: start;
 }
 
+/* A status, not an action: a tinted label with a dot, never a filled button shape. */
 .metaStatusChip {
+  display: inline-flex;
   flex: 0 0 auto;
-  padding: density(2) density(3);
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
   border: border(1, palette(surface-dark), solid);
   border-radius: radius(full);
   background: palette(light-light);
   color: palette(tertiary-dark);
   @ds-typo(caption);
-  font-size: 10px;
-  font-weight: 750;
+  font-size: 11px;
+  font-weight: 700;
   white-space: nowrap;
 }
 
+.metaStatusChip::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
+}
+
 .metaStatusConnected {
-  border-color: palette(success-main);
-  background: palette(success-light);
+  border-color: palette(success-main, 0.35);
+  background: palette(success-main, 0.08);
   color: palette(success-dark);
 }
 
 .metaStatusWarning {
-  border-color: palette(warning-main);
-  background: palette(warning-light);
+  border-color: palette(warning-main, 0.45);
+  background: palette(warning-main, 0.08);
   color: palette(warning-dark);
 }
 
 .metaStatusError {
-  border-color: palette(error-main);
-  background: palette(error-light);
-  color: palette(error-main);
+  border-color: palette(error-main, 0.35);
+  background: palette(error-main, 0.06);
+  color: palette(error-dark);
 }
 
 .metaConnectionBody {
@@ -1222,7 +1233,8 @@
 .field select,
 .emojiRow input[type="number"] {
   width: 100%;
-  border: 1px solid palette(surface-light);
+  /* surface-light sits too close to the page background to read as a field edge. */
+  border: 1px solid palette(dark-main, 0.16);
   border-radius: 9px;
   outline: none;
   background: palette(light-light);
@@ -1237,6 +1249,13 @@
 .emojiRow input[type="number"] {
   height: 38px;
   padding: 0 11px;
+}
+
+.field input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  accent-color: palette(primary-main);
 }
 
 .field textarea {
@@ -2683,11 +2702,19 @@
 }
 
 .instagramFilters {
-  display: flex;
-  flex-direction: xs(column) sm(row);
-  flex-wrap: wrap;
-  align-items: flex-end;
+  display: grid;
+  grid-template-columns: xs(repeat(2, minmax(0, 1fr))) md(repeat(4, minmax(0, 160px)) auto);
+  align-items: end;
   gap: density(3);
+}
+
+.instagramFilters .field select,
+.instagramFilters .field input {
+  border-color: palette(dark-main, 0.16);
+}
+
+.instagramFilters > button {
+  justify-self: start;
 }
 
 .instagramGrid {

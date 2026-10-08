@@ -256,7 +256,7 @@ export function CreativeProfilePanel({
       <section className={styles.section}>
         <div className={styles.sectionHeading}>
           <div>
-            <span>Topic voice</span>
+            <span>Brand voice</span>
             <h3>Creative profile</h3>
           </div>
         </div>
@@ -273,7 +273,7 @@ export function CreativeProfilePanel({
       <section className={styles.section}>
         <div className={styles.sectionHeading}>
           <div>
-            <span>Topic voice</span>
+            <span>Brand voice</span>
             <h3>Creative profile</h3>
           </div>
         </div>
@@ -306,7 +306,7 @@ export function CreativeProfilePanel({
     <section className={styles.section} id="creative-profile">
       <div className={styles.sectionHeading}>
         <div>
-          <span>Topic voice</span>
+          <span>Brand voice</span>
           <h3>Creative profile</h3>
         </div>
         <div className={styles.budget}>
@@ -315,7 +315,7 @@ export function CreativeProfilePanel({
       </div>
 
       <p className={styles.profileGuideHint}>
-        These settings define how every meme and carousel for this topic is
+        These settings define how every meme and carousel for this brand is
         written and designed. Editing them here affects all future creations;
         historical drafts keep the snapshot they were generated with.
       </p>

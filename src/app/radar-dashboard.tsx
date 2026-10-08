@@ -1663,8 +1663,8 @@ export function RadarDashboard({
                     <button type="button" className={styles.newStoryButton} onClick={() => setNewStoryOpen(true)} disabled={!canAuthenticate || isTopicLoading || topics.length === 0}>＋ New story</button>
                     <DisclosureActionMenu label="More creation actions" className={styles.actionMenu} panelClassName={styles.actionMenuItems} iconClassName={styles.actionMenuChevron}>
                       <button type="button" onClick={() => setAddSourceOpen(true)}>Add source</button>
-                      <button type="button" onClick={() => { setNewTopicNonce((current) => current + 1); window.location.hash = "#topics"; }}>New Topic</button>
-                      <a href="#topics">Manage Topics</a>
+                      <button type="button" onClick={() => { setNewTopicNonce((current) => current + 1); window.location.hash = "#topics"; }}>New brand</button>
+                      <a href="#topics">All brands</a>
                     </DisclosureActionMenu>
                   </div>
                   <a className={styles.topbarActionLink} href="#today">Today</a>
@@ -1689,7 +1689,7 @@ export function RadarDashboard({
           </div>
           <div className={styles.contextBar}>
             <div className={styles.contextHeading}>
-              <span>{selectedTopicName} · {activeView === "today" || activeView === "discover" || activeView === "production" || activeView === "publications" || activeView === "results" ? "Daily work" : "Brand"}</span>
+              <span>{activeView === "topics" ? "Workspace" : <>{selectedTopicName} · {activeView === "today" || activeView === "discover" || activeView === "production" || activeView === "publications" || activeView === "results" ? "Daily work" : "Brand"}</>}</span>
               <strong>{DASHBOARD_VIEW_TITLES[activeView]}</strong>
             </div>
             {contextTabs.length > 0 ? <nav className={styles.contextTabs} aria-label={`${DASHBOARD_VIEW_TITLES[activeView]} options`}>
@@ -1699,7 +1699,6 @@ export function RadarDashboard({
               })}
             </nav> : null}
             <div className={styles.contextActions}>
-              {activeView === "today" && stats ? <button type="button" className={styles.contextPrimaryAction} onClick={() => document.getElementById("overview")?.scrollIntoView({ behavior: "smooth", block: "start" })} disabled={!canAuthenticate || isTopicLoading || topics.length === 0}>Prepare my day</button> : null}
               {activeView === "discover" && stats ? <a className={styles.contextSelectedLink} href="#production" aria-label={`Open ${productionStories.length} active selected stories in Production`}>Selected <span>{productionStories.length}</span> →</a> : null}
               {activeView === "sources" && stats ? <button type="button" className={styles.contextPrimaryAction} onClick={() => setAddSourceOpen(true)} disabled={!canAuthenticate || isTopicLoading}>＋ Add source</button> : null}
             </div>
@@ -1998,7 +1997,7 @@ export function RadarDashboard({
         <section className={styles.workQueue} hidden={activeView !== "production"} aria-label="Stories in production">
           <div className={styles.queueHeading}>
             <div><p className={styles.kicker}>Production</p><h2>Selected · ready to work</h2></div>
-            <span>{productionStories.length} stories</span>
+            <span>{countLabel(productionStories.length, "story", "stories")}</span>
           </div>
           <p className={styles.queueIntro}>Approved stories stay here until their recorded destinations are published. If you posted outside Press Craftor, mark that destination as published below. A Story stays here while another destination is pending.</p>
           {productionStories.length ? (
@@ -2083,7 +2082,7 @@ export function RadarDashboard({
         </div>
 
         <section className={styles.workQueue} hidden={activeView !== "publications" || activeNavHash !== "#publications"} aria-label="Pending publications">
-          <div className={styles.queueHeading}><div><p className={styles.kicker}>Instagram</p><h2>Review before publishing</h2></div><span>{pendingInstagramStories.length} stories without an Instagram publication record</span></div>
+          <div className={styles.queueHeading}><div><p className={styles.kicker}>Instagram</p><h2>Review before publishing</h2></div><span>{countLabel(pendingInstagramStories.length, "story", "stories")} without an Instagram publication record</span></div>
           <p className={styles.queueIntro}>Open the studio to check the script, images, and destination account before authorizing publication.</p>
           {pendingInstagramStories.length > 0 ? <div className={styles.queueList}>
             {pendingInstagramStories.map((story) => (
@@ -2096,7 +2095,7 @@ export function RadarDashboard({
         </section>
 
         <section className={styles.workQueue} hidden={activeView !== "publications" || activeNavHash !== "#publications/published"} aria-label="Published stories">
-          <div className={styles.queueHeading}><div><p className={styles.kicker}>Publications</p><h2>Published stories</h2></div><span>{publishedStories.length} stories</span></div>
+          <div className={styles.queueHeading}><div><p className={styles.kicker}>Publications</p><h2>Published stories</h2></div><span>{countLabel(publishedStories.length, "story", "stories")}</span></div>
           <p className={styles.queueIntro}>Stories with a confirmed Instagram post or a platform marked published in manual tracking. Editorial approval and draft history remain available.</p>
           {publishedStories.length ? <div className={styles.queueList}>
             {publishedStories.map((story) => {
@@ -4473,6 +4472,10 @@ function countTextWords(value: string | undefined): number {
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat("en-CA").format(value);
+}
+
+function countLabel(count: number, one: string, many: string): string {
+  return `${formatNumber(count)} ${count === 1 ? one : many}`;
 }
 
 function formatEditorialProvider(provider: string): string {

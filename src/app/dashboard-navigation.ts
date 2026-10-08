@@ -36,6 +36,6 @@ export const DASHBOARD_VIEW_TITLES: Record<DashboardView, string> = {
   strategy: "Editorial strategy",
   sources: "Sources",
   channels: "Channels",
-  topics: "Manage Topics",
+  topics: "Brands",
   admin: "Administration",
 };

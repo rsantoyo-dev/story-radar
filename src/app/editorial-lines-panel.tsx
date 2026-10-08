@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { EditorialLine, EditorialLineConfig, EditorialPeriod, EditorialCollectionContext, LineResearchSettings } from "./modules/editorial-lines/editorial-lines";
 import styles from "./radar-dashboard.generated.module.css";
 import { useUnsavedBeforeUnload } from "./ui/use-unsaved-before-unload";
@@ -12,13 +12,15 @@ export function EditorialLinesPanel({topicId,secret,disabled=false,manageOnly=fa
   const [choice,setChoice]=useState("");const [query,setQuery]=useState("");const [periodOverride,setPeriodOverride]=useState<EditorialPeriod>();
   const [editing,setEditing]=useState<EditorialLine>();const [config,setConfig]=useState<EditorialLineConfig>(empty);
   const researchHelpId=useId();
+  // The manager opens the default line once; after that the editor's choice stands.
+  const opened=useRef(false);
   const dirty=manageOnly && JSON.stringify(config)!==JSON.stringify(editing??empty);
   const currentPeriodError=periodError(config.period);
   const timeZoneError=isValidTimeZone(config.timezone)?"":"Choose a valid IANA time zone, such as America/Toronto.";
   useUnsavedBeforeUnload(dirty);
   const current=data?.topicId===topicId?data:undefined;
   useEffect(()=>{if(!secret.trim()||!topicId)return;const controller=new AbortController();
-    fetch(`/api/radar/topics/${topicId}/editorial-lines`,{headers:{Authorization:`Bearer ${secret.trim()}`},signal:controller.signal,cache:"no-store"}).then(async r=>{const value=await r.json();if(!r.ok)throw new Error(value.error);return {...value,topicId} as EditorialLinesData;}).then(value=>{if(controller.signal.aborted)return;setData(value);setError("");onLoaded?.(value);if(!manageOnly && !value.lines.some(line=>line.id===choice&&!line.archived)){const active=value.lines.filter(line=>!line.archived);const next=active.length===1?active[0]:undefined;setChoice(next?.id??"");setQuery("");setPeriodOverride(undefined);onSelection?.(next?{topicId,lineId:next.id,query:""}:undefined);}}).catch(e=>{if(!controller.signal.aborted)setError(e.message);});return()=>controller.abort();
+    fetch(`/api/radar/topics/${topicId}/editorial-lines`,{headers:{Authorization:`Bearer ${secret.trim()}`},signal:controller.signal,cache:"no-store"}).then(async r=>{const value=await r.json();if(!r.ok)throw new Error(value.error);return {...value,topicId} as EditorialLinesData;}).then(value=>{if(controller.signal.aborted)return;setData(value);setError("");onLoaded?.(value);if(manageOnly&&!opened.current){opened.current=true;const line=value.lines.find(l=>l.isDefault&&!l.archived)??value.lines.find(l=>!l.archived);if(line){setEditing(line);setConfig(line);}}if(!manageOnly && !value.lines.some(line=>line.id===choice&&!line.archived)){const active=value.lines.filter(line=>!line.archived);const next=active.length===1?active[0]:undefined;setChoice(next?.id??"");setQuery("");setPeriodOverride(undefined);onSelection?.(next?{topicId,lineId:next.id,query:""}:undefined);}}).catch(e=>{if(!controller.signal.aborted)setError(e.message);});return()=>controller.abort();
   },[topicId,secret,revision,refreshKey,onLoaded,choice,onSelection,manageOnly]);
   useEffect(()=>{
     const changed=(event:Event)=>{if((event as CustomEvent<string>).detail===topicId)setRevision(n=>n+1);};
@@ -39,7 +41,7 @@ export function EditorialLinesPanel({topicId,secret,disabled=false,manageOnly=fa
     if(!archive && (currentPeriodError || timeZoneError)){setError(currentPeriodError || timeZoneError);return;}
     if(archive && !window.confirm(`Archive “${editing?.name}”? Existing Stories and runs remain available.`))return;
     setBusy(true);setError("");try{
-    const r=await fetch(`/api/radar/topics/${topicId}/editorial-lines`,{method:"POST",headers:{Authorization:`Bearer ${secret.trim()}`,"Content-Type":"application/json"},body:JSON.stringify({id:editing?.id,revision:editing?.revision,archived:archive,config})});const value=await r.json();if(!r.ok)throw new Error(r.status===409?"This line changed elsewhere. Your edits are still here. Reload its latest version before saving again.":value.error);setEditing(undefined);setConfig(empty);window.dispatchEvent(new CustomEvent("editorial-lines-changed",{detail:topicId}));if(archive&&editing?.id===choice)updateSelection("","",undefined);
+    const r=await fetch(`/api/radar/topics/${topicId}/editorial-lines`,{method:"POST",headers:{Authorization:`Bearer ${secret.trim()}`,"Content-Type":"application/json"},body:JSON.stringify({id:editing?.id,revision:editing?.revision,archived:archive,config})});const value=await r.json();if(!r.ok)throw new Error(r.status===409?"This line changed elsewhere. Your edits are still here. Reload its latest version before saving again.":value.error);const saved:EditorialLine|undefined=archive?undefined:value.line;opened.current=Boolean(saved);setEditing(saved);setConfig(saved??empty);window.dispatchEvent(new CustomEvent("editorial-lines-changed",{detail:topicId}));if(archive&&editing?.id===choice)updateSelection("","",undefined);
   }catch(e){setError(e instanceof Error?e.message:"Unable to save line");}finally{setBusy(false);}}
   return <div>
     {error?<p role="alert">{error}</p>:null}
@@ -58,27 +60,48 @@ export function EditorialLinesPanel({topicId,secret,disabled=false,manageOnly=fa
       </>:<p className={styles.discoverSearchScope}>Choose an editorial line to use its saved period, feeds, and AI research settings. <a href="#strategy/lines">Configure lines in Editorial strategy</a>.</p>}
       {current?.runs.length?<details className={styles.discoverSearchOptions}><summary>Recent searches</summary>{current.runs.map(run=><p key={run.id}>{run.context?.name??"Brand collection"} · {run.status} {run.result?.persistence?`· ${run.result.persistence.persistedStories} candidates`:""}{run.error?` · ${run.error}`:""}{run.result?.sources?.details?.filter(s=>s.error).map(s=><small key={s.sourceId}> {s.sourceName}: {s.error}</small>)}{run.result?.coverage?<small> {run.result.coverage}</small>:null}</p>)}</details>:null}
     </>:null}
-    {manageOnly?<details open><summary>Manage editorial lines</summary>
-      <p>Configure each line here, then choose it in Discover. Combine feeds and AI research, or use either independently.</p>
-      <div className={styles.buttonRow}>{current?.lines.map(line=><button key={line.id} type="button" className={styles.secondaryButton} disabled={busy||disabled} aria-pressed={editing?.id===line.id} onClick={()=>chooseEditor(line)}>{line.name}{line.isDefault?" (default)":""}{line.archived?" (archived)":""}</button>)}<button type="button" className={styles.secondaryButton} disabled={busy||disabled} onClick={()=>chooseEditor()}>New line</button></div>
+    {manageOnly?<section className={`${styles.panel} ${styles.linesManager}`} aria-labelledby={`${researchHelpId}-lines`}>
+      <header>
+        <span className={styles.eyebrow}>Editorial lines</span>
+        <h2 id={`${researchHelpId}-lines`}>Strategies for this brand</h2>
+        <p>Configure each line here, then choose it in Discover. Combine feeds and AI research, or use either independently.</p>
+      </header>
+      <div className={styles.linesPicker} role="group" aria-label="Editorial lines">{current?.lines.map(line=><button key={line.id} type="button" disabled={busy||disabled} aria-pressed={editing?.id===line.id} onClick={()=>chooseEditor(line)}>{line.name}{line.isDefault?<small>Default</small>:null}{line.archived?<small>Archived</small>:null}</button>)}<button type="button" disabled={busy||disabled} aria-pressed={!editing} onClick={()=>chooseEditor()}>+ New line</button></div>
       <fieldset disabled={busy||disabled||!secret.trim()}>
-        <label className={styles.field}>Name<input value={config.name} maxLength={100} onChange={e=>setConfig({...config,name:e.target.value})}/></label>
-        <label className={styles.field}>Objective<textarea value={config.objective} maxLength={2000} onChange={e=>setConfig({...config,objective:e.target.value})}/></label>
-        <label className={styles.field}>Themes (comma separated)<input value={config.themes.join(",")} onChange={e=>setConfig({...config,themes:e.target.value.split(",")})}/></label>
-        <label className={styles.field}>Editorial mode<select value={config.mode} onChange={e=>setConfig({...config,mode:e.target.value as EditorialLineConfig["mode"]})}><option value="news">News</option><option value="context">Context / studies</option><option value="guide">Practical guide</option></select></label>
-        <PeriodEditor value={config.period} onChange={period=>setConfig({...config,period})}/>
-        <label className={styles.field}>Time zone for this line<input list="editorial-line-timezones" value={config.timezone} aria-invalid={Boolean(timeZoneError)} aria-describedby={timeZoneError?"editorial-line-timezone-error":undefined} onChange={e=>setConfig({...config,timezone:e.target.value})}/></label>
-        <datalist id="editorial-line-timezones"><option value="UTC"/><option value="America/Toronto"/><option value="America/Vancouver"/><option value="America/New_York"/><option value="America/Mexico_City"/><option value="Europe/London"/><option value="Europe/Madrid"/></datalist>
-        {timeZoneError?<p id="editorial-line-timezone-error" role="alert">{timeZoneError}</p>:<p>Choose a suggestion or enter another valid IANA time zone. Exact date ranges use their own UTC offsets.</p>}
-        <label className={styles.field}>RSS feeds<select value={config.sourceMode} onChange={e=>setConfig({...config,sourceMode:e.target.value as "inherit"|"selected"})}><option value="inherit">Inherit active brand feeds</option><option value="selected">Selected feeds only (none = AI only)</option></select></label>
-        {current?.sources.map(source=><label key={source.id} className={styles.field}><span>{source.name}{source.enabled?"":" (disabled at brand level)"}</span><select value={config.excludedSourceIds.includes(source.id)?"exclude":config.sourceIds.includes(source.id)?"include":"default"} onChange={e=>setConfig({...config,sourceIds:[...config.sourceIds.filter(id=>id!==source.id),...(e.target.value==="include"?[source.id]:[])],excludedSourceIds:[...config.excludedSourceIds.filter(id=>id!==source.id),...(e.target.value==="exclude"?[source.id]:[])]})}><option value="default">Default</option><option value="include">Include</option><option value="exclude">Exclude</option></select></label>)}
-        <ResearchEditor config={config} defaults={current?.researchDefaults} onChange={setConfig}/>
-        <label className={styles.field}>Allowed publisher domains (comma separated; empty = unrestricted)<input value={config.domains.join(",")} onChange={e=>setConfig({...config,domains:e.target.value?e.target.value.split(","):[]})}/></label>
-        <p>RSS feeds do not guarantee historical coverage. No age cutoff still uses bounded searches. Collection does not approve or publish stories.</p>
-        <p role="status">{dirty?"Unsaved line changes":editing?`Editing ${editing.name} · revision ${editing.revision}`:"Create a line with a name and objective."}</p>
-        <div className={styles.buttonRow}><button type="button" className={styles.primaryButton} disabled={busy||(!dirty&&!editing?.archived)||!config.name.trim()||!config.objective.trim()||Boolean(currentPeriodError)||Boolean(timeZoneError)} onClick={()=>save(false)}>{busy?"Saving…":editing?.archived?"Restore line":"Save line"}</button><button type="button" className={styles.secondaryButton} disabled={busy||!dirty} onClick={cancelChanges}>Cancel changes</button>{editing&&!editing.archived&&!editing.isDefault?<button type="button" className={styles.secondaryButton} disabled={busy} onClick={()=>save(true)}>Archive line</button>:null}</div>
+        <legend>{editing?`Edit “${editing.name}”`:"New line"}</legend>
+        <div className={styles.linesGroup}>
+          <h3>Line</h3>
+          <div className={styles.linesFields}>
+            <label className={styles.field}><span>Name</span><input value={config.name} maxLength={100} onChange={e=>setConfig({...config,name:e.target.value})}/></label>
+            <label className={styles.field}><span>Editorial mode</span><select value={config.mode} onChange={e=>setConfig({...config,mode:e.target.value as EditorialLineConfig["mode"]})}><option value="news">News</option><option value="context">Context / studies</option><option value="guide">Practical guide</option></select></label>
+          </div>
+          <label className={styles.field}><span>Objective</span><textarea rows={3} value={config.objective} maxLength={2000} onChange={e=>setConfig({...config,objective:e.target.value})}/></label>
+          <label className={styles.field}><span>Themes</span><input value={config.themes.join(",")} onChange={e=>setConfig({...config,themes:e.target.value.split(",")})}/><small>Separate themes with commas.</small></label>
+        </div>
+        <div className={styles.linesGroup}>
+          <h3>Period</h3>
+          <PeriodEditor value={config.period} onChange={period=>setConfig({...config,period})}/>
+          <label className={styles.field}><span>Time zone</span><input list="editorial-line-timezones" value={config.timezone} aria-invalid={Boolean(timeZoneError)} aria-describedby={timeZoneError?"editorial-line-timezone-error":undefined} onChange={e=>setConfig({...config,timezone:e.target.value})}/>
+            {timeZoneError?<small id="editorial-line-timezone-error" role="alert">{timeZoneError}</small>:<small>Choose a suggestion or enter another valid IANA time zone. Exact date ranges use their own UTC offsets.</small>}</label>
+          <datalist id="editorial-line-timezones"><option value="UTC"/><option value="America/Toronto"/><option value="America/Vancouver"/><option value="America/New_York"/><option value="America/Mexico_City"/><option value="Europe/London"/><option value="Europe/Madrid"/></datalist>
+        </div>
+        <div className={styles.linesGroup}>
+          <h3>Sources</h3>
+          <label className={styles.field}><span>RSS feeds</span><select value={config.sourceMode} onChange={e=>setConfig({...config,sourceMode:e.target.value as "inherit"|"selected"})}><option value="inherit">Inherit active brand feeds</option><option value="selected">Selected feeds only (none = AI only)</option></select></label>
+          {current?.sources.length?<ul className={styles.linesSources}>{current.sources.map(source=><li key={source.id}><label><span>{source.name}{source.enabled?"":<small> Disabled at brand level</small>}</span><select value={config.excludedSourceIds.includes(source.id)?"exclude":config.sourceIds.includes(source.id)?"include":"default"} onChange={e=>setConfig({...config,sourceIds:[...config.sourceIds.filter(id=>id!==source.id),...(e.target.value==="include"?[source.id]:[])],excludedSourceIds:[...config.excludedSourceIds.filter(id=>id!==source.id),...(e.target.value==="exclude"?[source.id]:[])]})}><option value="default">Default</option><option value="include">Include</option><option value="exclude">Exclude</option></select></label></li>)}</ul>:null}
+          <label className={styles.field}><span>Allowed publisher domains</span><input value={config.domains.join(",")} onChange={e=>setConfig({...config,domains:e.target.value?e.target.value.split(","):[]})}/><small>Separate domains with commas. Leave empty to allow any publisher.</small></label>
+        </div>
+        <div className={styles.linesGroup}>
+          <h3>AI research</h3>
+          <ResearchEditor config={config} defaults={current?.researchDefaults} onChange={setConfig}/>
+        </div>
+        <p className={styles.linesNote}>RSS feeds do not guarantee historical coverage. No age cutoff still uses bounded searches. Collection does not approve or publish stories.</p>
+        <div className={styles.linesActions}>
+          <p role="status">{dirty?"Unsaved changes":editing?`Revision ${editing.revision}`:"A new line needs a name and objective."}</p>
+          <div className={styles.buttonRow}>{editing&&!editing.archived&&!editing.isDefault?<button type="button" className={styles.secondaryButton} disabled={busy} onClick={()=>save(true)}>Archive line</button>:null}<button type="button" className={styles.secondaryButton} disabled={busy||!dirty} onClick={cancelChanges}>Cancel changes</button><button type="button" className={styles.primaryButton} disabled={busy||(!dirty&&!editing?.archived)||!config.name.trim()||!config.objective.trim()||Boolean(currentPeriodError)||Boolean(timeZoneError)} onClick={()=>save(false)}>{busy?"Saving…":editing?.archived?"Restore line":"Save line"}</button></div>
+        </div>
       </fieldset>
-    </details>:null}
+    </section>:null}
   </div>;
 }
 function periodLabel(p:EditorialPeriod){return p.kind==="relative"?`${p.hours} hours`:p.kind==="any"?"No age cutoff":`${p.from} → ${p.to}`;}
@@ -94,7 +117,7 @@ function RangeEndpointField({label,value,errorId,onChange}:{label:string;value:s
 function PeriodEditor({value,onChange}:{value:EditorialPeriod;onChange:(p:EditorialPeriod)=>void}){
   const error=periodError(value);
   const errorId=useId();
-  return <div><label className={styles.field}>Period<select value={value.kind} onChange={e=>onChange(e.target.value==="any"?{kind:"any"}:e.target.value==="relative"?{kind:"relative",hours:72}:{kind:"range",from:new Date(Date.now()-86400000).toISOString(),to:new Date().toISOString()})}><option value="relative">Relative hours</option><option value="range">Exact range</option><option value="any">No age cutoff</option></select></label>{value.kind==="relative"?<label className={styles.field}>Hours (72 = 3 days; 8760 = 365 days)<input type="number" min={1} max={87600} aria-invalid={Boolean(error)} aria-describedby={error?errorId:undefined} value={value.hours} onChange={e=>onChange({...value,hours:Number(e.target.value)})}/></label>:value.kind==="range"?<><RangeEndpointField label="From" value={value.from} errorId={error?errorId:undefined} onChange={from=>onChange({...value,from})}/><RangeEndpointField label="To" value={value.to} errorId={error?errorId:undefined} onChange={to=>onChange({...value,to})}/></>:null}{error?<p id={errorId} role="alert">{error}</p>:null}</div>;
+  return <div><div className={styles.linesFields}><label className={styles.field}><span>Period</span><select value={value.kind} onChange={e=>onChange(e.target.value==="any"?{kind:"any"}:e.target.value==="relative"?{kind:"relative",hours:72}:{kind:"range",from:new Date(Date.now()-86400000).toISOString(),to:new Date().toISOString()})}><option value="relative">Relative hours</option><option value="range">Exact range</option><option value="any">No age cutoff</option></select></label>{value.kind==="relative"?<label className={styles.field}><span>Hours</span><input type="number" min={1} max={87600} aria-invalid={Boolean(error)} aria-describedby={error?errorId:undefined} value={value.hours} onChange={e=>onChange({...value,hours:Number(e.target.value)})}/><small>72 = 3 days · 8760 = 365 days</small></label>:null}</div>{value.kind==="range"?<><RangeEndpointField label="From" value={value.from} errorId={error?errorId:undefined} onChange={from=>onChange({...value,from})}/><RangeEndpointField label="To" value={value.to} errorId={error?errorId:undefined} onChange={to=>onChange({...value,to})}/></>:null}{error?<p id={errorId} role="alert">{error}</p>:null}</div>;
 }
 
 
@@ -111,7 +134,7 @@ function ResearchEditor({config,defaults,onChange}:{config:EditorialLineConfig;d
   const custom=config.research?.mode==="custom"?config.research:undefined;
   const update=(patch:Partial<LineResearchSettings>)=>{if(custom)onChange({...config,research:{...custom,...patch}});};
   return <>
-    <label className={styles.field}>AI web search<select value={mode} onChange={e=>{
+    <label className={styles.field}><span>AI web search</span><select value={mode} onChange={e=>{
       const mode=e.target.value as "inherit"|"disabled"|"custom";
       onChange({...config,researchEnabled:mode!=="disabled",research:mode==="custom"?{
         instruction:defaults?.instruction||config.objective,orientation:defaults?.orientation??"informative",
@@ -119,16 +142,18 @@ function ResearchEditor({config,defaults,onChange}:{config:EditorialLineConfig;d
         includeContent:defaults?.includeContent??true,priority:defaults?.priority??50,mode
       }:{mode}});
     }}><option value="inherit">Inherit brand AI search</option><option value="custom">Custom AI search for this line</option><option value="disabled">Disabled (feeds only)</option></select></label>
-    {mode==="inherit"?<p>{defaults?.enabled?"Brand AI search is enabled.":"Brand AI search is disabled; choose custom to enable it for this line."} {defaults? `${defaults.resultLimit} results · ${defaults.language} · ${defaults.region} · ${defaults.orientation}`:""} The line&apos;s period applies.</p>:null}
+    {mode==="inherit"?<p className={styles.linesNote}>{defaults?.enabled?"Brand AI search is enabled.":"Brand AI search is disabled; choose custom to enable it for this line."} {defaults? `${defaults.resultLimit} results · ${defaults.language} · ${defaults.region} · ${defaults.orientation}.`:""} The line&apos;s period applies.</p>:null}
     {custom?<>
-      <p>This line runs its own AI search using the existing providers. Its period, objective, themes and publisher domains apply automatically.</p>
-      <label className={styles.field}>Search instruction<textarea maxLength={2000} value={custom.instruction} onChange={e=>update({instruction:e.target.value})}/></label>
-      <label className={styles.field}>Orientation<select value={custom.orientation} onChange={e=>update({orientation:e.target.value as LineResearchSettings["orientation"]})}><option value="informative">Informative</option><option value="trend">Trend</option><option value="provocative">Provocative</option></select></label>
-      <label className={styles.field}>Maximum results<input type="number" min={1} max={10} value={custom.resultLimit} onChange={e=>update({resultLimit:Number(e.target.value)})}/></label>
-      <label className={styles.field}>Language<input maxLength={32} value={custom.language} onChange={e=>update({language:e.target.value})}/></label>
-      <label className={styles.field}>Region<input maxLength={80} value={custom.region} onChange={e=>update({region:e.target.value})}/></label>
-      <label className={styles.field}>Priority<input type="number" min={0} max={100} value={custom.priority} onChange={e=>update({priority:Number(e.target.value)})}/></label>
-      <label className={styles.field}><span>Retrieve article content</span><input type="checkbox" checked={custom.includeContent} onChange={e=>update({includeContent:e.target.checked})}/></label>
+      <p className={styles.linesNote}>This line runs its own AI search using the existing providers. Its period, objective, themes and publisher domains apply automatically.</p>
+      <label className={styles.field}><span>Search instruction</span><textarea rows={3} maxLength={2000} value={custom.instruction} onChange={e=>update({instruction:e.target.value})}/></label>
+      <div className={styles.linesFields}>
+        <label className={styles.field}><span>Orientation</span><select value={custom.orientation} onChange={e=>update({orientation:e.target.value as LineResearchSettings["orientation"]})}><option value="informative">Informative</option><option value="trend">Trend</option><option value="provocative">Provocative</option></select></label>
+        <label className={styles.field}><span>Maximum results</span><input type="number" min={1} max={10} value={custom.resultLimit} onChange={e=>update({resultLimit:Number(e.target.value)})}/></label>
+        <label className={styles.field}><span>Language</span><input maxLength={32} value={custom.language} onChange={e=>update({language:e.target.value})}/></label>
+        <label className={styles.field}><span>Region</span><input maxLength={80} value={custom.region} onChange={e=>update({region:e.target.value})}/></label>
+        <label className={styles.field}><span>Priority</span><input type="number" min={0} max={100} value={custom.priority} onChange={e=>update({priority:Number(e.target.value)})}/></label>
+      </div>
+      <label className={styles.discoverPeriodToggle}><input type="checkbox" checked={custom.includeContent} onChange={e=>update({includeContent:e.target.checked})}/>Retrieve article content</label>
     </>:null}
   </>;
 }

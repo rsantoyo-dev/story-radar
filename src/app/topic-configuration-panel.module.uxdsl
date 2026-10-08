@@ -53,6 +53,13 @@
   text-transform: uppercase;
 }
 
+/* The panel eyebrow matches the dashboard's .eyebrow so every view opens the same way. */
+.heading > div > p {
+  font-size: 0.6875rem;
+  font-weight: 750;
+  letter-spacing: 0.14em;
+}
+
 .heading h2,
 .sourcesHeading h3,
 .knowledgeHeading h3 {
@@ -235,6 +242,14 @@
   padding: density(4);
 }
 
+.catalogList > li {
+  border: 1px solid palette(dark-main, 0.1);
+}
+
+.catalogList > li > button {
+  justify-self: start;
+}
+
 .linkedSources h3 { @ds-typo(h5); margin: 0; color: palette(dark-main); }
 .linkedSources p { @ds-typo(small); margin: 0; color: palette(tertiary-main); }
 .linkedSources a,
@@ -367,7 +382,8 @@
   white-space: nowrap;
 }
 
-.topicCards { display: grid; grid-template-columns: xs(1fr) sm(repeat(2, minmax(0, 1fr))) xl(repeat(3, minmax(0, 1fr))); gap: density(4); margin-block: density(6); }
+.topicCardsHeading { @ds-typo(caption); margin: density(6) 0 0; color: palette(primary-main); font-size: 0.6875rem; font-weight: 750; letter-spacing: 0.14em; text-transform: uppercase; }
+.topicCards { display: grid; grid-template-columns: xs(1fr) sm(repeat(2, minmax(0, 1fr))) xl(repeat(3, minmax(0, 1fr))); gap: density(4); margin-block: density(3) density(6); }
 .topicCard { display: grid; overflow: hidden; min-width: 0; padding: 0; border: 1px solid palette(dark-main, 0.12); border-radius: radius(3); background: palette(light-light); color: palette(dark-main); text-align: left; cursor: pointer; }
 .topicCard:hover:not(:disabled), .topicCard:focus-visible { border-color: palette(primary-main, 0.65); box-shadow: shadow(2); }
 .topicCard.topicCardActive { border-color: palette(primary-main); box-shadow: 0 0 0 2px palette(primary-main, 0.16); }

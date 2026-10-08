@@ -190,10 +190,10 @@ test("Collection only selects a saved line while Topics owns configuration",()=>
   const collection=renderToStaticMarkup(createElement(EditorialLinesPanel,{topicId:line.topicId,secret:""}));
   assert.match(collection,/Choose an editorial line/);
   assert.doesNotMatch(collection,/Existing brand collection/);
-  assert.doesNotMatch(collection,/Manage editorial lines|Save line|Search instruction|Period for this collection only/);
+  assert.doesNotMatch(collection,/Strategies for this brand|Save line|Search instruction|Period for this collection only/);
   assert.match(collection,/#strategy\/lines/);
   const management=renderToStaticMarkup(createElement(EditorialLinesPanel,{topicId:line.topicId,secret:"",manageOnly:true}));
-  assert.match(management,/Manage editorial lines/);
+  assert.match(management,/Strategies for this brand/);
   assert.match(management,/Custom AI search for this line/);
   assert.match(management,/Save line/);
   assert.doesNotMatch(management,/Existing brand collection|Research today/);

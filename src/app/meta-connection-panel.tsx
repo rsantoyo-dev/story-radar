@@ -394,7 +394,8 @@ export function MetaConnectionPanel({
       {!error && status?.lastVerificationError ? <InlineNotice tone="warning" title="Insights need attention">{status.lastVerificationError}</InlineNotice> : null}
 
       <ActionRow>
-        <StatusBadge tone={status?.connected ? "success" : "neutral"}>{!status ? "Checking connection…" : status.connected ? "Connected" : "Not connected"}</StatusBadge>
+        {/* The header chip names the connection state once it is known. */}
+        {!status ? <StatusBadge tone="neutral">Checking connection…</StatusBadge> : null}
         <StatusBadge tone={status?.publishing?.state === "enabled" ? "success" : "warning"}>Publishing: {status?.publishing?.state === "enabled" ? "verified" : status?.publishing?.state ?? "not checked"}</StatusBadge>
         <StatusBadge tone={status?.connected && status.state !== "needs-reconnect" ? "info" : "warning"}>Sync: {status?.connected ? status.state === "needs-reconnect" ? "reconnect required" : "available to run" : "connect first"}</StatusBadge>
         <StatusBadge tone={status?.state === "operational" ? "success" : "warning"}>Insights: {status?.state === "operational" ? "available" : "not verified"}</StatusBadge>

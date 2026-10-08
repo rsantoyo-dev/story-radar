@@ -1873,7 +1873,7 @@ export function CreativeDraftWorkspace({
                     else { onClose(); window.location.hash = "editorial-creative"; }
                   }}
                 >
-                  Edit in Topic voice →
+                  Edit in Creative identity →
                 </a>
               </div>
               <div className={styles.profileSummaryGrid}>
@@ -1890,7 +1890,7 @@ export function CreativeDraftWorkspace({
               </div>
               <p className={styles.profileGuideHint}>
                 This profile is defined for the topic and applies to every meme
-                and carousel here. Editing it in Topic voice refreshes future
+                and carousel here. Editing it in Creative identity refreshes future
                 briefs; this draft keeps the snapshot it was generated with until
                 you refresh it.
               </p>
