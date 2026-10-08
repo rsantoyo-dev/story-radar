@@ -47,7 +47,7 @@ export function withRealPeopleLock(prompt: string): string {
  * place — a lake, a park entrance, a sign with its name — and a local reader
  * sees at once that it is not there.
  */
-export const REAL_PLACE_LOCK = "HARD REAL-PLACE LOCK: no verified photograph or map of this story's places is supplied for this slide, so the slide must not show what they look like. Never depict a real or named place — a park, lake, river, shoreline, street, venue or building the story is about — as a photograph or a realistic scene; never invent its scenery or landmarks in the background; never add a sign, plaque or label naming a place. Convey the place through typography and the visual direction's flat, clearly conceptual motifs and objects. This rule overrides the visual direction, the campaign guide and the brand references.";
+export const REAL_PLACE_LOCK = "HARD REAL-PLACE LOCK: no verified photograph or map of this story's places is supplied for this slide, so the slide must not show what they look like. Never depict a real or named place — a park, lake, river, shoreline, street, venue or building the story is about — as a photograph or a realistic scene; never invent its scenery or landmarks in the background; never add a sign, plaque or label naming a place. Convey it through typography and what happens there — the activity, fictional generic people doing it and the objects involved — in a generic setting nobody could take for the place itself. This rule overrides the visual direction, the campaign guide and the brand references.";
 
 export function withRealPlaceLock(prompt: string): string {
   return prompt.includes("HARD REAL-PLACE LOCK") ? prompt : `${prompt}\n\n${REAL_PLACE_LOCK}`;

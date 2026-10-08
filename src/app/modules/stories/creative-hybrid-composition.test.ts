@@ -115,6 +115,7 @@ async function compose(mode = "illustration-editorial", photoTest = false, inclu
     normalizePalette: () => [],
     mapPaletteFromBrand: () => ({ surface: "#FFF9F0", primary: "#173F43", accent: "#B94F24" }),
     MAP_PANEL_VISUAL_DIRECTION: "Calm layout around the pasted map",
+    PLACE_FREE_SCENE_DIRECTION: "Generic scene of the activity, no place shown",
     mapInsetVisualDirection: (direction: string) => `${direction} Lively scene around the map inset`,
     mapPanelLayout: (evidence?: { panelLayout?: string }) => evidence?.panelLayout === "inset" ? "inset" : "band",
     mapPanelZonePrompt: () => "\n<VERIFIED_MAP_ZONE>reserved</VERIFIED_MAP_ZONE>",
@@ -368,9 +369,9 @@ test("a real-photo slide with no map language in its own direction still keeps i
   const snapshot = unresolved.unitSnapshot as { placeVisual?: { reasons: string[] } };
   assert.ok(snapshot.placeVisual, "the research reasons must survive on the persisted asset");
   assert.match(snapshot.placeVisual!.reasons.join(" "), /Identity could not be established/);
-  // The writer's own direction is already the safe fallback for a
-  // visualNeed-triggered slide; it must reach the prompt unchanged.
-  assert.match(String(unresolved.prompt), /Abstract paper-collage motif, no bridge drawn/);
+  // The writer's own direction is kept, and the slide still shows what happens
+  // there as a generic scene instead of abstract shapes alone.
+  assert.match(String(unresolved.prompt), /\[Abstract paper-collage motif, no bridge drawn\. Generic scene of the activity, no place shown\]/);
   assert.doesNotMatch(String(unresolved.prompt), /Conceptual fallback, no verified place/);
 });
 

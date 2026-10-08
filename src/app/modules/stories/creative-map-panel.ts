@@ -65,6 +65,12 @@ export const MAP_PANEL_VISUAL_DIRECTION = "A calm editorial layout on the brand'
  */
 export const MAP_INSET_SCENE_DIRECTION = "Show the activity this slide's facts describe as a lively, warm scene in the brand's style with a light touch of realism: fictional, generic people doing it (never a real, named or recognizable person), with the food, drinks, music, objects and atmosphere the facts support. Keep the setting generic — no recognizable facade, landmark, street or sign naming a place — because the verified map inset shows where it is. When the facts describe a closure, works or damage, show no crowd or celebration.";
 
+/**
+ * A place slide with no verified photo or map: what happens there, in a
+ * setting nobody could take for the place itself.
+ */
+export const PLACE_FREE_SCENE_DIRECTION = "Show the activity this slide's facts describe as a lively, warm scene in the brand's style, with real-looking objects, food, drinks or tools where the identity allows them: fictional, generic people doing it (never a real, named or recognizable person). Keep the setting generic — no recognizable facade, landmark, street, sign naming a place, map, pin or route — because no verified image of the place is supplied. When the facts describe a closure, works or damage, show no crowd or celebration.";
+
 /** The slide's own direction plus the scene; a direction that only asked for a map becomes the scene. */
 export function mapInsetVisualDirection(direction: string, asksForGeography: boolean): string {
   return asksForGeography || !direction.trim() ? MAP_INSET_SCENE_DIRECTION : `${direction.trim()} ${MAP_INSET_SCENE_DIRECTION}`;

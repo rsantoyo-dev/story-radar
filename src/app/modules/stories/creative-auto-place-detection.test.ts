@@ -283,6 +283,19 @@ test("Openverse is the second photo source: only for a verified place without a 
   assert.deepEqual(off.calls.openverse, [], "disabled Openverse is never called");
 });
 
+test("an archive photo the research calls context is still the model's identity reference under illustration-editorial", async () => {
+  const location = { purpose: "location", mentions };
+  const designed = preparation({ photos: new Set(["Paramount Theatre"]), extraction: location });
+  const photo = (await designed.run([unit(2, ["paramount"], { visualNeed: "real-photo" })])).get(2)!;
+  assert.equal(photo.evidence.representation, "photo");
+  assert.equal(photo.evidence.generationUse, "ai-reference", "the model designs the slide around it, not a local photo card");
+  // A strict photo policy keeps the photograph as direct, unaltered evidence.
+  const strict = preparation({ photos: new Set(["Paramount Theatre"]), extraction: location, profile: { visualFidelityMode: "verified-references" } });
+  const direct = (await strict.run([unit(2, ["paramount"], { visualNeed: "real-photo" })])).get(2)!;
+  assert.equal(direct.evidence.representation, "photo");
+  assert.equal(direct.evidence.generationUse, undefined);
+});
+
 test("a declared verified-map slide keeps the Google map first", async () => {
   const h = preparation({ photos: new Set(["Zilker Park"]), google: true });
   const result = (await h.run([unit(2, ["zilker"], { visualNeed: "verified-map" })])).get(2)!;

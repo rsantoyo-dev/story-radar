@@ -1,6 +1,6 @@
 import { resolveStoryReferences, loadStoryReferenceImages, loadDocumentaryPortraitPhoto, currentPortraitFocus } from "./manage-story-photos";
 import { compositeDocumentaryPortrait, PORTRAIT_ZONE_PROMPT, portraitAccent, portraitLayoutForSlide, portraitPhotoRegion, portraitZonePrompt } from "./creative-portrait-composite";
-import { compositeMapPanel, MAP_PANEL_VISUAL_DIRECTION, mapInsetVisualDirection, mapPanelLayout, mapPanelRegion, mapPanelZonePrompt, mapPaletteFromBrand } from "./creative-map-panel";
+import { compositeMapPanel, MAP_PANEL_VISUAL_DIRECTION, mapInsetVisualDirection, mapPanelLayout, mapPanelRegion, mapPanelZonePrompt, mapPaletteFromBrand, PLACE_FREE_SCENE_DIRECTION } from "./creative-map-panel";
 import { zipStore } from "./zip-store";
 import { creativeImageReviewEnabled, reviewCreativeImage } from "./review-creative-image";
 import { CREATIVE_IMAGE_REVIEW_PROMPT_VERSION } from "./creative-image-review";
@@ -2030,7 +2030,7 @@ export async function previewCreativeImageBase(topicId: string, assetId: string)
 }
 
 /** Never name or reconstruct the specific place; only conceptual research failed, not the slide's theme. */
-const GEOGRAPHIC_FALLBACK_VISUAL_DIRECTION = "No verified photograph or map could be confirmed for the specific place this slide describes. Render a single, oversized flat-iconographic motif instead — a location pin, a stylized road or path icon, or a clock/calendar if the slide is about timing — in bold, editorial color on a clean background. Never depict a phone, tablet, computer, screen, app, dashboard, or any interface: a rendered screen implies specific map or app content this slide cannot verify, and text or icons inside a small rendered screen usually come out illegible or garbled. Do not depict a specific real street, building, map, road sign, storefront or landmark, and do not imply geographic or documentary accuracy for any particular location.";
+const GEOGRAPHIC_FALLBACK_VISUAL_DIRECTION = "No verified photograph or map could be confirmed for the specific place this slide describes. " + PLACE_FREE_SCENE_DIRECTION + " Never depict a phone, tablet, computer, screen, app, dashboard, or any interface: a rendered screen implies specific map or app content this slide cannot verify, and text or icons inside a small rendered screen usually come out illegible or garbled. Do not depict a specific real street, building, map, road sign, storefront or landmark, and do not imply geographic or documentary accuracy for any particular location.";
 
 /**
  * A batch produced by composeDraftPlaceVisuals carries the place-composition
@@ -2081,7 +2081,10 @@ function placeCompositionVersion(draftId: string): string {
   // +map-ai-v7: a pasted Google map is a small inset with the slide's own
   // lively scene around it (fictional people doing the activity), not a band.
   // +map-ai-v8: the inset is a smaller map card (420 × 264) lying on the scene.
-  return mapReferenceMode() === "ai" ? `${base}+map-ai-v8` : `${base}+local-v2`;
+  // +map-ai-v9: under illustration-editorial a verified archive photo is
+  // always the model's identity reference (never a local photo card), and a
+  // place slide with nothing verified shows the activity as a generic scene.
+  return mapReferenceMode() === "ai" ? `${base}+map-ai-v9` : `${base}+local-v2`;
 }
 
 /**
@@ -2214,12 +2217,16 @@ async function composeDraftPlaceVisuals(topicId: string, draft: CreativeDraft, b
         // Only a referenced map is sent to the model; a pasted one never is.
         const mapVisual = pastedMap ? undefined : anyMap;
         const unresolvedGeoRequest = !anyMap && requestsGeographicReconstruction(unit.visualDirection) && !photoReferenceTest;
+        // A declared place slide that resolved nothing still shows what happens
+        // there, as a generic scene, instead of its abstract fallback shapes.
+        const unresolvedPlace = !unresolvedGeoRequest && !anyMap && !identityPhoto(unit.order) && requiresVerifiedGeography(unit) && !photoReferenceTest;
         // A slide whose direction describes a map gets the panel direction: the
         // verified map is provided, so the model must build around it, not draw one.
         // A pasted map takes the slide's image area whatever the direction asked.
         const promptUnit = unresolvedGeoRequest ? { ...unit, visualDirection: GEOGRAPHIC_FALLBACK_VISUAL_DIRECTION }
           : pastedMap ? { ...unit, visualDirection: mapInsetVisualDirection(unit.visualDirection, requestsGeographicReconstruction(unit.visualDirection)) }
-          : mapVisual && requestsGeographicReconstruction(unit.visualDirection) ? { ...unit, visualDirection: MAP_REFERENCE_VISUAL_DIRECTION } : unit;
+          : mapVisual && requestsGeographicReconstruction(unit.visualDirection) ? { ...unit, visualDirection: MAP_REFERENCE_VISUAL_DIRECTION }
+          : unresolvedPlace ? { ...unit, visualDirection: [unit.visualDirection.trim().replace(/[.\s]+$/u, ""), PLACE_FREE_SCENE_DIRECTION].filter(Boolean).join(". ") } : unit;
         const photoLedUnit = { ...promptUnit, visualDirection: photoLedVisualDirection(promptUnit.visualDirection, storyReferencesByOrder.get(unit.order) ?? []) };
         const photoVisual = photoReferenceTest && visuals.get(unit.order)?.evidence.photo ? visuals.get(unit.order)!.evidence : identityPhoto(unit.order)?.evidence;
         const imagePrompt = buildCreativeImagePrompt({ draft, unit: photoLedUnit, brief,

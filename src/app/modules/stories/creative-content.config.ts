@@ -202,8 +202,11 @@ export function getCreativeContentPublicConfig(): CreativeContentPublicConfig {
       // v55/v10: list items use the event's own name and open with what
       // happens there; a list closing plans the whole list (by day when it
       // can), never a subset; visual directions keep an identity's mixed media.
-      carousel: carouselWriterModel ? `carousel-draft-v55-writer-${carouselWriterModel}` : "carousel-draft-v55",
-      sequence: "sequence-draft-v10",
+      // v56/v11: a real-photo slide's direction is the scene of what happens
+      // there (fictional people, real objects, generic setting), never an
+      // abstract arrangement of shapes.
+      carousel: carouselWriterModel ? `carousel-draft-v56-writer-${carouselWriterModel}` : "carousel-draft-v56",
+      sequence: "sequence-draft-v11",
     },
     maxRunsPerDay: parsePositiveInteger(
       process.env.CREATIVE_MAX_RUNS_PER_DAY,

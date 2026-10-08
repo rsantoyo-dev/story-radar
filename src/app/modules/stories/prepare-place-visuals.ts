@@ -98,7 +98,8 @@ async function preparePlaceVisualsFor(topicId: string, draft: CreativeDraft, pro
   // slide is researched too, and becomes an automatic place slide only when
   // it names exactly one place in the brand's area (autoPlaceMention). Such a
   // slide never takes the map, address-anchor or regional-adapter paths.
-  const autoEnabled = autoPlaceDetectionEnabled({ format: draft.format, geoScope: profile.geoScope, mode: placeFidelityMode(profile.visualFidelityMode, draft.visualFidelityOverride) });
+  const fidelityMode = placeFidelityMode(profile.visualFidelityMode, draft.visualFidelityOverride);
+  const autoEnabled = autoPlaceDetectionEnabled({ format: draft.format, geoScope: profile.geoScope, mode: fidelityMode });
   const automatic = (unit: CreativeDraft["units"][number]) => autoEnabled && autoPlaceCandidate(unit);
   // Without automatic detection, an undeclared cover with no address anchor
   // is still researched as the story's own place, as before.
@@ -195,8 +196,11 @@ async function preparePlaceVisualsFor(topicId: string, draft: CreativeDraft, pro
     // ground an honest AI-assisted adaptation of that identity, composed in
     // the carousel's own style, never depicting the event itself. This is
     // a distinct evidentiary use, marked below, from the direct-evidence
-    // use `purpose: "location"` already makes.
-    const identityOnly = extraction.purpose!=="location" && photoFirst;
+    // use `purpose: "location"` already makes. Under illustration-editorial
+    // the model designs every slide, so the photo is always that identity
+    // reference: as direct evidence it would become a local photo card with
+    // none of the carousel's design.
+    const identityOnly = (extraction.purpose!=="location" && photoFirst) || fidelityMode==="illustration-editorial";
     const cacheKey=`${mention.name}|${extraction.purpose}|${photoFirst?"photo":"map"}`;
     const cached=materialCache.get(cacheKey);if(cached){results.set(unit.order,cached);continue;}
     const tryPhoto=async(place:PlaceEvidence)=>{
