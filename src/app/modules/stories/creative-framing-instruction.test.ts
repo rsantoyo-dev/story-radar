@@ -32,10 +32,18 @@ test("the script instruction states list items for hook-list, and steps only for
   const list = creativeScriptStructureInstruction("hook-list");
   assert.match(list, /STRUCTURE FOR THE SCRIPT: hook-list/);
   assert.match(list, /count-and-subject promise/);
-  assert.match(list, /not a synthesis, not a recap label/);
-  // List headlines carry the item and what the reader gets; conditions go last in the body.
+  // The cover adds a verifiable draw only when the hook slide cites it.
+  assert.match(list, /a draw that makes the list worth opening/);
+  assert.match(list, /Count a subset only when the hook slide cites a fact for every item in it/);
+  // A list slide is light: short headline, one sentence and a practical line; fine print goes to the caption.
+  assert.match(list, /headline: at most 8 words/);
   assert.match(list, /never a price, an admission rule, a warning or a condition/);
-  assert.match(list, /registration or conditions \(weather, closures, limits\) as a short final note/);
+  assert.match(list, /body: at most 18 words: one short sentence on what happens there/);
+  assert.match(list, /Keep every required qualifier with the fact it qualifies/);
+  assert.match(list, /the caption carries them, with their qualifiers/);
+  // The closing gives one takeaway instead of re-listing the items.
+  assert.match(list, /one concrete takeaway that helps the reader choose or plan/);
+  assert.match(list, /never a re-listing or comparison of the items, a synthesis, a recap label/);
   assert.match(list, /do not present one item's neighborhood, venue or condition as the subject of the whole list/);
   // A hook-steps profile whose brief found no procedure was downgraded to a
   // plain carousel; telling the writer to produce steps anyway would invent them.

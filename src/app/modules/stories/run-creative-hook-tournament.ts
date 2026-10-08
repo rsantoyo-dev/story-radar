@@ -28,7 +28,7 @@ import {
   type HookScore,
   type HookTasteExample,
 } from "./creative-hook-tournament";
-import { CAROUSEL_SLIDE_MAX_WORDS } from "./carousel-narrative";
+import { CAROUSEL_SLIDE_MAX_WORDS, resolveStoryStructure } from "./carousel-narrative";
 import { deterministicCreativeQualityIssues } from "./creative-quality";
 import { generateOpenAiStructuredResponse, type OpenAiUsageContext } from "./openai-structured-response";
 
@@ -92,10 +92,10 @@ export async function runCreativeHookTournament(input: {
   // Slide 2's headline and subheadline share the slide's word budget with its supporting text.
   const secondSlideWordBudget = second ? Math.max(4, CAROUSEL_SLIDE_MAX_WORDS - wordCount(second.body)) : undefined;
   // A list carousel (hook, one slide per item, closing) sells the whole list.
-  const list = profile.storyStructure === "hook-list" && draft.units.length > 3 ? { itemCount: draft.units.length - 2 } : undefined;
-  // A list cover cites only what the plan gave the cover (the count): an
-  // item's detail on the cover ("free", a price, a venue) fails the cover's
-  // fact assignment in review and belongs to that item's slide.
+  const list = resolveStoryStructure(profile.storyStructure, brief.carouselPlan) === "hook-list" && draft.units.length > 3 ? { itemCount: draft.units.length - 2 } : undefined;
+  // A list cover cites only what the plan gave the cover: the count, and the
+  // facts of the items behind its draw (free, new, ending soon). Any other
+  // item detail on the cover fails the cover's fact assignment in review.
   const listCoverFacts = list ? (brief.carouselPlan?.slides[0]?.allowedFactIds ?? cover.factIds).filter((id) => brief.keyFacts.some((fact) => fact.id === id)) : [];
   const allowedFactIds = listCoverFacts.length ? listCoverFacts : coverAllowedFactIds(brief, draft);
   const facts: CreativeKeyFact[] = brief.keyFacts.filter((fact) => allowedFactIds.includes(fact.id));

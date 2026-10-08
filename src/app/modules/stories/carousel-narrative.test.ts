@@ -194,6 +194,35 @@ test("narrows a middle slide that shares evidence with the slide before to its o
   assert.match(validateCarouselPlan(stuck.plan, new Set(["fact-1", "fact-2", "fact-3"])).join("\n"), /slides 2 and 3 reuse evidence/);
 });
 
+test("a list's first item keeps its own fact when the hook promised it, so no item shifts onto another's evidence", () => {
+  const known = new Set(Array.from({ length: 9 }, (_, index) => `fact-${index + 1}`));
+  // The live plan: the hook cites the count (fact-1) and the first item's draw
+  // (fact-2); each item slide cites its own fact; the closing reuses two items.
+  const listPlan: CarouselPlan = {
+    slideCount: 10,
+    structure: "list",
+    rationale: "Hook, eight items in source order, closing.",
+    slides: [slide("hook", ["fact-1", "fact-2"]), ...Array.from({ length: 8 }, (_, index) => slide("opportunity", [`fact-${index + 2}`])), slide("conclude", ["fact-8", "fact-9"])],
+  };
+  const { plan } = repairCarouselPlanEvidence(listPlan, known);
+  assert.deepEqual(plan.slides.slice(1, 9).map((item) => item.allowedFactIds), Array.from({ length: 8 }, (_, index) => [`fact-${index + 2}`]));
+  assert.deepEqual(validateCarouselPlan(plan, known), []);
+  // An arc's slide 2 that only repeats the cover still spends unshown evidence.
+  const arc = repairCarouselPlanEvidence({ ...listPlan, structure: "arc" }, known);
+  assert.notDeepEqual(arc.plan.slides[1]?.allowedFactIds, ["fact-2"]);
+});
+
+test("one item's practical details joined in one question are one job; a different question still counts twice", () => {
+  const known = new Set(["fact-1", "fact-2", "fact-3"]);
+  const plan = (question: string): CarouselPlan => ({ slideCount: 3, structure: "list", rationale: "Hook, item, closing.",
+    slides: [slide("hook", ["fact-1"]), { ...slide("opportunity", ["fact-2"]), viewerQuestion: question }, slide("conclude", ["fact-1", "fact-2"])] });
+  for (const question of ["Where and for how long does ACL return this weekend?", "When and where is the pumpkin fest?", "¿Dónde y a qué hora es el mercado?"]) {
+    assert.ok(!validateCarouselPlan(plan(question), known).some((error) => /multiple editorial questions/.test(error)), question);
+  }
+  assert.ok(validateCarouselPlan(plan("What does the festival offer and why does it matter?"), known).some((error) => /multiple editorial questions/.test(error)));
+  assert.ok(validateCarouselPlan(plan("Where is it, and what does it cost?"), known).some((error) => /multiple editorial questions/.test(error)));
+});
+
 test("allows a conclude slide to synthesize three facts established earlier", () => {
   assert.equal(maximumFactsForGoal("conclude"), 3);
   assert.equal(maximumFactsForGoal("debate"), 2);

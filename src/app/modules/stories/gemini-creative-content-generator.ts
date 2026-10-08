@@ -3615,11 +3615,14 @@ function parseCarouselPlan(
       ),
     };
   });
+  // Known before the repair: a list's item slides keep their own facts.
+  const structure = record.structure === "list" || record.structure === "arc" ? record.structure : undefined;
   const repairedPlan = repairCarouselPlanEvidence(
     {
       slideCount: record.slideCount,
       rationale: shortText(record.rationale, "carouselPlan rationale", 1_000),
       slides,
+      ...(structure ? { structure } : {}),
     },
     knownFactIds,
   );
@@ -3642,7 +3645,6 @@ function parseCarouselPlan(
   if (errors.length > 0 && !deferValidation) {
     throw new CreativeContentResponseError(errors.join("\n"));
   }
-  const structure = record.structure === "list" || record.structure === "arc" ? record.structure : undefined;
   return structure ? { ...plan, structure } : plan;
 }
 

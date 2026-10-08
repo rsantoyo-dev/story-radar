@@ -10,7 +10,9 @@ import type { CreativeKeyFact, CreativeQualityIssue, GeneratedCreativeBrief, Gen
  * already pay off.
  */
 // v6: a list carousel's covers all promise the whole list (count, subject, scope).
-export const CREATIVE_HOOK_TOURNAMENT_PROMPT_VERSION = "hook-tournament-v6";
+// v7: a list cover may add a verifiable draw (free, new, ending soon, a span
+// between two items) from coverFacts, and the judge prefers it to a bare inventory.
+export const CREATIVE_HOOK_TOURNAMENT_PROMPT_VERSION = "hook-tournament-v7";
 export const HOOK_TOURNAMENT_CANDIDATES = 6;
 const HOOK_MAX_CANDIDATES = 10;
 const HOOK_HEADLINE_MAX_WORDS = 12;
@@ -204,7 +206,7 @@ export function coverAllowedFactIds(brief: Pick<GeneratedCreativeBrief, "carouse
  * repeat that item's own slide.
  */
 export function listCoverRules(itemCount: number): string {
-  return `This carousel is an enumerated list of ${itemCount} items, one per slide after the cover. Every cover must promise the whole list: its count (${itemCount}), what the items are and their scope — the place and the dates when a fact states them — so the reader knows the carousel offers ${itemCount} choices. Vary the voice between covers (playful, practical, local, surprising), and you may borrow the source's own framing when a fact supports it, but cite only coverFacts — never single out one item's detail (that it is free, its price, its venue) on the cover, since that belongs to the item's slide — never make one item the cover's subject, never promise more or fewer items than the slides deliver, and keep the date range or scope in the context line when the headline has no room for it. payoffUnitOrder is 2, the first item. Leave the slide 2 headline empty unless it names slide 2's item more vividly.`;
+  return `This carousel is an enumerated list of ${itemCount} items, one per slide after the cover. Every cover must promise the whole list: its count (${itemCount}), what the items are and their scope — the place and the dates when a fact states them — so the reader knows the carousel offers ${itemCount} choices. Vary the voice between covers (playful, practical, local, surprising), and you may borrow the source's own framing when a fact supports it, but cite only coverFacts. Add one concrete draw when coverFacts give one — what is free, new or opening, or ending soon, or the span between two very different items ("From free yoga to a beer garden") — and count a subset ("two of them free") only when coverFacts include a fact for every item in it. Never put one item's price, venue or condition on the cover, never make one item the cover's subject, never promise more or fewer items than the slides deliver, and keep the date range or scope in the context line when the headline has no room for it. payoffUnitOrder is 2, the first item. Leave the slide 2 headline empty unless it names slide 2's item more vividly. Between covers that promise the whole list, one with a concrete, verifiable draw beats a bare inventory of what and where.`;
 }
 
 /** The count a list cover must carry, as digits or as a number word in a supported language. */
@@ -330,7 +332,7 @@ export function buildHookJudgeInstructions(list?: { itemCount: number }): string
     "Be strict and comparative: 95 or more means a top editor would publish it unchanged; the options compete, so do not give them all the same score. Give a reason of at most 12 words.",
     "houseTaste, when present, lists past decisions of this publication's editor: the cover they kept over strong alternatives. Learn what they value and let it guide your scores and ranking; never let it override fidelity.",
     "Then rank every option by its cover alone, from the one you would publish to the one you would cut: ranking lists each option number exactly once, best first. Rank by what would make this audience stop and swipe while staying true to the facts; slide 2 does not change the ranking. An option whose cover fails fidelity ranks last.",
-    ...(list ? [`This carousel is a list of ${list.itemCount} items. A cover that does not promise the whole list — its count and what the items are — scores below 60 on clarity and payoff and ranks below every cover that does, however appealing its single item.`] : []),
+    ...(list ? [`This carousel is a list of ${list.itemCount} items. A cover that does not promise the whole list — its count and what the items are — scores below 60 on clarity and payoff and ranks below every cover that does, however appealing its single item. Among covers that do, one with a concrete, verifiable draw — what is free, new or ending soon — scores higher on pull than a bare inventory of what and where.`] : []),
   ].join("\n");
 }
 

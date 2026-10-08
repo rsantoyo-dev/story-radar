@@ -172,8 +172,10 @@ export function getCreativeContentPublicConfig(): CreativeContentPublicConfig {
     // the source whether the story is an enumerated list and the brief
     // declares carouselPlan.structure; lists take one slide per item up to 20
     // slides (24 facts, enforced by the parser); never extract or write that a
-    // detail is missing; lead with the experience, logistics after it.
-    briefPromptVersion: "creative-brief-v41",
+    // detail is missing; lead with the experience, logistics after it. v42: a
+    // list's hook slide also carries the facts of its draw (free, new,
+    // ending this weekend) so the cover can promise it.
+    briefPromptVersion: "creative-brief-v42",
     // v28/v52/v7: the writer now has explicit guidance for what a
     // publish-ready caption reads like — a concrete opening stake, one line
     // per distinct practical consequence the facts support, and caption
@@ -205,8 +207,12 @@ export function getCreativeContentPublicConfig(): CreativeContentPublicConfig {
       // v56/v11: a real-photo slide's direction is the scene of what happens
       // there (fictional people, real objects, generic setting), never an
       // abstract arrangement of shapes.
-      carousel: carouselWriterModel ? `carousel-draft-v56-writer-${carouselWriterModel}` : "carousel-draft-v56",
-      sequence: "sequence-draft-v11",
+      // v57/v12: list slides are lighter (headline ≤ 8 words, one sentence and
+      // a practical line, fine print in the caption), the cover adds a
+      // verifiable draw and shows it, and the closing gives one takeaway
+      // instead of re-listing the items.
+      carousel: carouselWriterModel ? `carousel-draft-v57-writer-${carouselWriterModel}` : "carousel-draft-v57",
+      sequence: "sequence-draft-v12",
     },
     maxRunsPerDay: parsePositiveInteger(
       process.env.CREATIVE_MAX_RUNS_PER_DAY,

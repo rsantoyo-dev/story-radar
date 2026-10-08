@@ -342,6 +342,9 @@ export function repairCarouselPlanEvidence(
   /** Each earlier slide's allowed facts, so a closing can be checked against every one of them. */
   const slideFactSets: Set<string>[] = [];
   let repaired = false;
+  // In a list each item slide owns its item's facts, and the hook may promise
+  // an item (its draw: free, new, ending soon) that the item's slide delivers.
+  const isList = plan.structure === "list";
 
   const slides = plan.slides.map((slide, index) => {
     let allowedFactIds = [
@@ -427,12 +430,15 @@ export function repairCarouselPlanEvidence(
       repaired = true;
     } else if (
       index > 0 &&
+      !(isList && index === 1) &&
       allowedFactIds.length > 0 &&
       allowedFactIds.every((factId) => previousFactIds.has(factId))
     ) {
       // Repeating the previous slide's evidence gives the reader no reason to
       // swipe (REPEATED_EVIDENCE_NO_NEW_REWARD). Spend evidence the arc has not
-      // shown yet rather than restating what is already on screen.
+      // shown yet rather than restating what is already on screen. A list's
+      // first item keeps its facts even when the hook promised it: handing it
+      // the next item's fact would shift every item onto the wrong evidence.
       const unused = availableFactIds.find((factId) => !establishedFacts.has(factId));
       if (unused) {
         allowedFactIds = [unused];
@@ -1611,17 +1617,26 @@ function visibleCopyOverlapRatio(
   return shared / smaller.size;
 }
 
+/** Where, when, for how long, at what time: the practical details of one thing. */
+const LOGISTICS_QUESTION = /^(?:(?:a|de|en|para|por|to|for|at|until)\s+)?(?:where|when|how\s+long|how\s+much|what\s+time|dónde|cuándo|cuánto|qué\s+hora)\b/iu;
+
 function questionIntentCount(value: string): number {
   // Embedded interrogatives do not create a second job: "What changed in
   // how files are shared?" is one question. Count explicit questions and
   // coordinated question clauses instead of every interrogative word.
-  const coordinated = value.match(
+  const coordinated = [...value.matchAll(
     new RegExp(
-      `(?:\\b(?:and|or|also|y|e|o|además)\\s+|[;,]\\s*)${QUESTION_WORD_WITH_PREPOSITION}(?=\\s|[¿?])`,
+      `(?:\\b(?:and|or|also|y|e|o|además)\\s+|[;,]\\s*)(?=${QUESTION_WORD_WITH_PREPOSITION}(?:\\s|[¿?]))`,
       "giu",
     ),
-  );
-  return Math.max(value.match(/\?+/gu)?.length ?? 0, 1 + (coordinated?.length ?? 0));
+  )];
+  // "Where and for how long does ACL return?" asks for one item's practical
+  // details, not two jobs: a logistics clause joined to a logistics question
+  // does not count again.
+  const leadsWithLogistics = LOGISTICS_QUESTION.test(value.replace(/^[¿\s]+/u, ""));
+  const counted = coordinated.filter((match) =>
+    !(leadsWithLogistics && LOGISTICS_QUESTION.test(value.slice(match.index! + match[0].length))));
+  return Math.max(value.match(/\?+/gu)?.length ?? 0, 1 + counted.length);
 }
 
 function numericTokens(value?: string): string[] {

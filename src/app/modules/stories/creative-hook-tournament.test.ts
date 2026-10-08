@@ -251,6 +251,12 @@ test("a list carousel's covers all promise the whole list; one item is never the
   assert.match(buildHookRefineInstructions(list), /enumerated list of 8 items/);
   assert.match(buildHookJudgeInstructions(list), /scores below 60 on clarity and payoff/);
   assert.doesNotMatch(buildHookGeneratorInstructions(), /enumerated list/, "an ordinary carousel keeps its open field");
+  // A verifiable draw (free, new, ending soon) is allowed from coverFacts and
+  // preferred by the judge; a subset is counted only when each item is cited.
+  assert.match(buildHookGeneratorInstructions(list), /Add one concrete draw when coverFacts give one/);
+  assert.match(buildHookGeneratorInstructions(list), /only when coverFacts include a fact for every item in it/);
+  assert.match(buildHookGeneratorInstructions(list), /Never put one item's price, venue or condition on the cover/);
+  assert.match(buildHookJudgeInstructions(list), /concrete, verifiable draw — what is free, new or ending soon — scores higher on pull/);
 
   assert.equal(coverPromisesList({ headline: "Your weekend just got weirder: 8 things to do", subheadline: "Around Austin, Oct. 9–11" }, 8), true);
   assert.equal(coverPromisesList({ headline: "Eight ways to spend a weird Austin weekend" }, 8), true);
