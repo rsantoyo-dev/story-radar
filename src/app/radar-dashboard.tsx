@@ -1519,10 +1519,7 @@ export function RadarDashboard({
             <span className={styles.logo} aria-hidden="true">
               <span />
             </span>
-            <div>
-              <p className={styles.eyebrow}>Control center</p>
-              <h1>Press Craftor</h1>
-            </div>
+            <h1>Press Craftor</h1>
           </div>
           <button
             type="button"
@@ -1533,6 +1530,27 @@ export function RadarDashboard({
             ×
           </button>
           <button type="button" className={styles.collapseSidebarButton} onClick={() => setSidebarCollapsed((current) => !current)} aria-label={sidebarCollapsed ? "Expand menu" : "Collapse menu"} aria-expanded={!sidebarCollapsed} title={sidebarCollapsed ? "Expand menu" : "Collapse menu"}>{sidebarCollapsed ? "›" : "‹"}</button>
+        </div>
+
+        <div className={styles.sidebarTopic}>
+          {sidebarCollapsed ? (
+            <button type="button" className={styles.sidebarTopicAvatar} onClick={() => setSidebarCollapsed(false)} aria-label={`${selectedTopicName}: expand the menu to switch brands`} title={selectedTopicName}>
+              {selectedTopicName.slice(0, 1).toUpperCase()}
+            </button>
+          ) : <>
+            <label className={styles.sidebarTopicPicker}>
+              <span className={styles.sidebarTopicAvatar} aria-hidden="true">{selectedTopicName.slice(0, 1).toUpperCase()}</span>
+              <select value={selectedTopicId} onChange={(event) => { if (handleTopicChange(event.target.value)) setSidebarOpen(false); }} disabled={isBusy || isTopicLoading} aria-label="Current brand">
+                {topics.map((topic) => <option key={topic.id} value={topic.id}>{topic.name}</option>)}
+              </select>
+              <span className={isTopicLoading ? styles.topicLoadingIndicator : styles.sidebarTopicChevron} aria-hidden="true">
+                <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" focusable="false">
+                  {isTopicLoading ? <path d="M10 3a7 7 0 1 1-7 7" /> : <path d="m5 7.5 5 5 5-5" />}
+                </svg>
+              </span>
+            </label>
+            <a href="#topics" className={styles.sidebarTopicSettings} onClick={() => setSidebarOpen(false)}>Brand settings</a>
+          </>}
         </div>
 
         <nav className={styles.sidebarNav} aria-label="Sections">
@@ -1637,20 +1655,6 @@ export function RadarDashboard({
               <button ref={menuButtonRef} type="button" className={styles.menuButton} onClick={() => setSidebarOpen(true)} aria-label="Open menu" aria-expanded={sidebarOpen}>
                 <span /><span /><span />
               </button>
-              <div className={styles.currentTopic}>
-                <span className={styles.topicAvatar} aria-hidden="true">{selectedTopicName.slice(0, 1).toUpperCase()}</span>
-                <div className={styles.topicSelectWrap}>
-                  <select value={selectedTopicId} onChange={(event) => handleTopicChange(event.target.value)} disabled={isBusy || isTopicLoading} aria-label="Current Topic">
-                    {topics.map((topic) => <option key={topic.id} value={topic.id}>{topic.name}</option>)}
-                  </select>
-                  <span className={isTopicLoading ? styles.topicLoadingIndicator : undefined} aria-hidden="true">
-                    <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" focusable="false">
-                      {isTopicLoading ? <path d="M10 3a7 7 0 1 1-7 7" /> : <path d="m5 7.5 5 5 5-5" />}
-                    </svg>
-                  </span>
-                </div>
-                <a href="#topics" className={styles.topicManage} aria-label="Manage Topics" title="Manage Topics">Manage</a>
-              </div>
             </div>
             <div className={styles.topbarGlobalActions}>
               {stats ? (
@@ -1685,7 +1689,7 @@ export function RadarDashboard({
           </div>
           <div className={styles.contextBar}>
             <div className={styles.contextHeading}>
-              <span>{activeView === "today" || activeView === "discover" || activeView === "production" || activeView === "publications" || activeView === "results" ? "Daily work" : "Brand"}</span>
+              <span>{selectedTopicName} · {activeView === "today" || activeView === "discover" || activeView === "production" || activeView === "publications" || activeView === "results" ? "Daily work" : "Brand"}</span>
               <strong>{DASHBOARD_VIEW_TITLES[activeView]}</strong>
             </div>
             {contextTabs.length > 0 ? <nav className={styles.contextTabs} aria-label={`${DASHBOARD_VIEW_TITLES[activeView]} options`}>

@@ -365,9 +365,7 @@
   gap: xs(density(2)) sm(density(3));
 }
 
-.topbarLeft,
-.currentTopic,
-.topicSelectWrap {
+.topbarLeft {
   display: flex;
   align-items: center;
 }
@@ -509,13 +507,6 @@
   white-space: nowrap;
 }
 
-.currentTopic {
-  align-items: center;
-  flex-direction: row;
-  gap: density(3);
-  min-width: 0;
-  flex: 1;
-}
 
 .topbarLabel {
   display: xs(none) md(inline);
@@ -528,64 +519,11 @@
   white-space: nowrap;
 }
 
-.topicSelectWrap {
-  position: relative;
-  min-width: 0;
-  width: xs(100%) md(220px);
-  max-width: xs(none) md(220px);
-}
 
-.topicSelectWrap::before {
-  position: absolute;
-  z-index: 1;
-  top: 50%;
-  left: density(3);
-  width: 8px;
-  height: 8px;
-  border-radius: radius(5);
-  background: palette(primary-main);
-  box-shadow: 0 0 0 3px palette(primary-main, 0.14);
-  content: "";
-  pointer-events: none;
-  transform: translateY(-50%);
-}
 
-.topicSelectWrap select {
-  @ds-input(outlined primary 2);
-  appearance: none;
-  width: 100%;
-  min-height: 32px;
-  padding: 0 density(9) 0 density(7);
-  border-color: palette(dark-main, 0.12);
-  background: palette(light-light);
-  color: palette(dark-main);
-  @ds-typo (small);
-  font-size: 0.75rem;
-  font-weight: 650;
-  cursor: pointer;
-}
 
-.topicSelectWrap select:focus-visible {
-  border-color: palette(primary-main);
-  box-shadow: 0 0 0 4px palette(primary-main, 0.12);
-}
 
-.topicSelectWrap select:disabled {
-  cursor: not-allowed;
-  opacity: 0.58;
-}
 
-/* An SVG chevron centred by flex: a text glyph sits on its baseline and
- * drifts low however its box is nudged. */
-.topicSelectWrap > span {
-  position: absolute;
-  inset-block: 0;
-  right: density(4);
-  display: flex;
-  align-items: center;
-  color: palette(primary-main);
-  pointer-events: none;
-}
 
 .topicLoadingIndicator svg {
   animation: topic-spin 700ms linear infinite;
@@ -3650,37 +3588,49 @@
 .appShell [hidden] { display: none !important; }
 
 .sidebar { flex-basis: 240px; width: 240px; padding: density(5) density(4); box-shadow: none; }
-.sidebarNav { gap: density(1); margin-top: density(9); }
+.sidebarNav { gap: density(1); margin-top: density(4); }
 .sidebarNav a { min-height: 40px; padding-inline: density(4); font-size: 0.875rem; }
 .sidebarNav a.navActive { border-color: palette(primary-light, 0.28); box-shadow: inset 3px 0 0 palette(secondary-main); }
-.navLabel { margin-block: density(7) density(2); }
+.navLabel { margin-block: density(7) density(2); color: palette(primary-light, 0.62); }
 .sidebarBottomNav { display: grid; gap: density(1); margin-top: auto; padding-top: density(5); border-top: 1px solid palette(primary-light, 0.14); }
 .sidebarBottomNav a { display: flex; align-items: center; gap: density(4); min-height: 40px; padding-inline: density(4); border-radius: radius(2); color: palette(primary-light); @ds-typo(small); font-size: 0.875rem; font-weight: 620; text-decoration: none; }
 .sidebarBottomNav a:hover, .sidebarBottomNav a:focus-visible, .sidebarBottomNav a.navActive { background: palette(primary-light, 0.12); color: palette(light-light); outline: 0; }
 .sidebarFooter { margin-top: density(3); padding: density(2) density(3) 0; border: 0; }
 .sidebarFooter p { margin: 0; font-size: 0.625rem; }
-.collapseSidebarButton { display: xs(none) lg(grid); flex: none; width: 28px; height: 28px; place-items: center; border: 1px solid palette(primary-light, 0.22); border-radius: radius(2); background: transparent; color: palette(primary-light); @ds-typo(h3); font-size: 1.125rem; cursor: pointer; }
+.sidebarHeader { align-items: center; gap: density(2); padding: 0; }
+.sidebar .brand { min-width: 0; gap: density(2); }
+.sidebar .brand h1 { margin: 0; overflow: hidden; font-size: 0.95rem; line-height: 1.2; letter-spacing: -0.02em; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar .logo { flex: none; width: 30px; height: 30px; }
+.sidebar .logo::before { width: 17px; height: 17px; }
+.sidebar .logo::after { width: 9px; height: 9px; }
+.sidebarTopic { display: grid; gap: density(2); margin-top: density(6); padding: density(3); border: 1px solid palette(primary-light, 0.16); border-radius: radius(3); background: palette(primary-light, 0.06); }
+.sidebarTopicPicker { position: relative; display: flex; align-items: center; gap: density(2); min-width: 0; }
+.sidebarTopicAvatar { display: grid; flex: none; width: 30px; height: 30px; place-items: center; padding: 0; border: 0; border-radius: radius(2); background: palette(primary-main); color: palette(light-light); @ds-typo(small); font-weight: 800; }
+button.sidebarTopicAvatar { cursor: pointer; }
+button.sidebarTopicAvatar:focus-visible { outline: 2px solid palette(primary-light); outline-offset: 2px; }
+.sidebarTopicPicker select { appearance: none; flex: 1; width: 100%; min-width: 0; min-height: 34px; padding: 0 density(6) 0 density(1); overflow: hidden; border: 0; border-radius: radius(2); background: transparent; color: palette(light-light); @ds-typo(small); font-size: 0.9rem; font-weight: 700; text-overflow: ellipsis; cursor: pointer; }
+.sidebarTopicPicker select option { color: palette(dark-main); }
+.sidebarTopicPicker select:focus-visible { outline: 2px solid palette(primary-light); outline-offset: 2px; }
+.sidebarTopicPicker select:disabled { cursor: progress; opacity: 0.7; }
+.sidebarTopicChevron, .sidebarTopicPicker .topicLoadingIndicator { position: absolute; inset-block: 0; right: density(1); display: flex; align-items: center; color: palette(primary-light); pointer-events: none; }
+.sidebarTopicSettings { justify-self: start; color: palette(primary-light); @ds-typo(caption); font-size: 0.72rem; font-weight: 650; text-decoration: none; }
+.sidebarTopicSettings:hover, .sidebarTopicSettings:focus-visible { color: palette(light-light); text-decoration: underline; }
+.collapseSidebarButton { display: xs(none) lg(grid); flex: none; width: 26px; height: 26px; place-items: center; border: 1px solid palette(primary-light, 0.22); border-radius: radius(2); background: transparent; color: palette(primary-light); @ds-typo(h3); font-size: 1.125rem; cursor: pointer; }
 .collapseSidebarButton:hover, .collapseSidebarButton:focus-visible { border-color: palette(primary-light, 0.6); color: palette(light-light); }
 @media (min-width: 1024px) {
   .sidebarCollapsed { flex-basis: 64px; width: 64px; padding-inline: density(2); }
   .sidebarCollapsed .sidebarHeader { flex-direction: column; align-items: center; gap: density(3); padding: 0; }
-  .sidebarCollapsed .sidebarHeader .brand > div, .sidebarCollapsed .navLabel, .sidebarCollapsed .sidebarFooter, .sidebarCollapsed .sidebarNav a > span:not(.navIcon), .sidebarCollapsed .sidebarBottomNav a > span:not(.navIcon) { display: none; }
-  .sidebarCollapsed .sidebarNav { margin-top: density(7); }
+  .sidebarCollapsed .sidebarHeader .brand h1, .sidebarCollapsed .navLabel, .sidebarCollapsed .sidebarFooter, .sidebarCollapsed .sidebarNav a > span:not(.navIcon), .sidebarCollapsed .sidebarBottomNav a > span:not(.navIcon) { display: none; }
+  .sidebarCollapsed .sidebarNav { margin-top: density(4); }
+  .sidebarCollapsed .sidebarTopic { justify-items: center; margin-top: density(5); padding: 0; border: 0; background: none; }
   .sidebarCollapsed .sidebarNav a, .sidebarCollapsed .sidebarBottomNav a { justify-content: center; padding-inline: 0; }
   .sidebarCollapsed .navIcon { width: 20px; height: 20px; }
 }
 
 .topbar { gap: 0; padding: 0 density(5); background: palette(light-light, 0.94); }
-/* While the menu button shows (below lg), actions take their own row on the right instead of crowding it. */
-.topbarPrimary { min-height: 56px; grid-template-columns: xs(minmax(0, 1fr)) lg(minmax(0, 1fr) auto); gap: density(3); padding-block: density(2); }
+/* The menu button (below lg) on the left; the brand picker lives in the sidebar, actions on the right. */
+.topbarPrimary { min-height: 56px; grid-template-columns: auto minmax(0, 1fr); gap: density(3); padding-block: density(2); }
 .topbarLeft { justify-content: xs(space-between) lg(flex-start); gap: density(3); }
-.currentTopic { flex: 0 1 auto; gap: density(2); }
-.topicAvatar { display: grid; flex: none; width: 32px; height: 32px; place-items: center; border-radius: radius(2); background: palette(primary-light); color: palette(primary-dark); @ds-typo(small); font-weight: 800; }
-.topicSelectWrap { width: xs(min(50vw, 220px)) md(220px); }
-.topicSelectWrap::before { content: none; }
-.topicSelectWrap select { min-height: 34px; padding-left: density(3); font-size: 0.8125rem; }
-.topicManage { display: xs(none) lg(inline-flex); align-items: center; min-height: 34px; padding-inline: density(2); color: palette(primary-dark); @ds-typo(caption); font-size: 0.75rem; font-weight: 650; text-decoration: none; white-space: nowrap; }
-.topicManage:hover, .topicManage:focus-visible { text-decoration: underline; }
 .topbarGlobalActions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: density(2); min-width: 0; }
 /* Header controls share one height: 34px with a mouse, 44px on touch and small screens. */
 .splitAction { display: inline-flex; align-items: stretch; min-height: 34px; }
@@ -3702,8 +3652,8 @@
 .demoCredits > summary { display: flex; align-items: center; gap: density(2); min-height: 34px; padding: density(1) density(3); border: 1px solid palette(primary-main, 0.22); border-radius: radius(2); background: palette(primary-light, 0.2); color: palette(primary-dark); @ds-typo(caption); font-size: 0.75rem; cursor: pointer; list-style: none; white-space: nowrap; }
 .demoCredits > summary::marker { content: ""; }
 .demoCredits > summary::-webkit-details-marker { display: none; }
-.demoCredits > summary::after { content: "⌄"; margin-left: density(1); }
-.demoCredits[open] > summary::after { transform: rotate(180deg); }
+.demoCredits > summary::after { content: ""; flex: none; width: 6px; height: 6px; margin: 0 density(1) 3px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); }
+.demoCredits[open] > summary::after { margin-bottom: -3px; transform: rotate(225deg); }
 .demoCredits > summary:focus-visible, .demoCreditsRefresh:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 2px; }
 .demoCreditsPanel { position: absolute; z-index: 30; top: calc(100% + 8px); right: 0; width: min(390px, calc(100vw - 24px)); max-height: min(70vh, 650px); overflow-y: auto; padding: density(5); border: 1px solid palette(surface-light); border-radius: radius(3); background: palette(light-light); box-shadow: shadow(4); color: palette(dark-main); }
 .demoCreditsPanel h2 { margin: 0 0 density(2); @ds-typo(h3); font-size: 1rem; }
@@ -3922,7 +3872,6 @@
 @media (max-width: 767px) {
   .topbar { padding-inline: density(3); }
   .topbarPrimary { gap: density(2); }
-  .topicManage { display: none; }
   .demoCreditsPanel { position: fixed; top: 96px; right: 12px; left: 12px; width: auto; max-height: calc(100dvh - 108px); }
   .contextBar { gap: density(2); flex-wrap: wrap; padding-block: density(2); }
   .contextHeading { flex: 1 1 100%; }
@@ -3931,13 +3880,14 @@
 }
 
 @media (max-width: 639px), (pointer: coarse) {
-  .splitAction, .splitAction .newStoryButton, .actionMenu summary { min-height: 44px; }
-  .actionMenu summary { width: 44px; }
+  .splitAction, .splitAction .newStoryButton, .actionMenu summary { min-height: 40px; }
+  .actionMenu summary { width: 40px; }
   .actionMenuItems button, .actionMenuItems a { min-height: 44px; }
   .contextSelectedLink { min-height: 44px; }
-  .demoCredits > summary, .demoCreditsRefresh { min-height: 44px; }
-  .topbarSession .disconnectButton { width: 44px; height: 44px; }
-  .accountMenu > summary { min-height: 44px; }
+  .demoCredits > summary { min-height: 40px; }
+  .demoCreditsRefresh { min-height: 44px; }
+  .topbarSession .disconnectButton { width: 40px; height: 40px; }
+  .accountMenu > summary { min-height: 40px; }
 }
 
 @media (max-width: 639px) {
