@@ -43,7 +43,9 @@ module.exports = {
       // postcss-uxdsl 0.5.0-beta.6 made DEFAULT_THEME the full base theme,
       // which now ships `fonts.google: ["Inter:wght@400;500;600;700"]` unless
       // a project's own theme sets `fonts.google` itself (see that package's
-      // CHANGELOG, "0.5.0-beta.6" / MIG-B6-16). This app only uses the Geist
+      // CHANGELOG, "0.5.0-beta.6" / MIG-B6-16). Since beta.7 that import is
+      // emitted first, where browsers honor it (MIG-B7-14), so leaving it
+      // unset would now really request Google Fonts. This app only uses the Geist
       // fonts Next's own `next/font` already loads locally (the `ui`/`code`
       // vars above; `externalTokens` in uxdsl.theme.config.cjs). Left unset,
       // the default silently emitted an unrequested
