@@ -234,7 +234,7 @@ export function ActivityConsole({ signedIn = false }: { signedIn?: boolean }) {
 
     <div role="tablist" aria-label="Activity" className={styles.spendingPeriods}>
       {([["requests", "API requests"], ["events", "Actions"], ["changes", "Data changes"]] as const).map(([value, label]) =>
-        <button key={value} type="button" role="tab" aria-selected={tab === value} aria-pressed={tab === value} onClick={() => { setTab(value); setOpen(undefined); }}>{label}</button>)}
+        <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => { setTab(value); setOpen(undefined); }}>{label}</button>)}
     </div>
 
     <section className={styles.spendingControls} aria-label="Filters">

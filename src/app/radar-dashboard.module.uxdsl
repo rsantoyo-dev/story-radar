@@ -3814,7 +3814,7 @@
 .spendingControls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: density(4); }
 .spendingPeriods { display: flex; flex-wrap: wrap; gap: density(1); padding: density(1); border-radius: radius(3); background: palette(neutral-light, 0.45); }
 .spendingPeriods button { min-height: 36px; padding: density(2) density(3); border: 0; border-radius: radius(2); background: transparent; color: palette(tertiary-main); @ds-typo(caption); font-size: 0.78rem; font-weight: 700; cursor: pointer; }
-.spendingPeriods button[aria-pressed="true"] { background: palette(light-light); color: palette(primary-dark); box-shadow: shadow(1); }
+.spendingPeriods button[aria-pressed="true"], .spendingPeriods button[aria-selected="true"] { background: palette(light-light); color: palette(primary-dark); box-shadow: shadow(1); }
 .spendingPeriods button:focus-visible, .spendingTopic select:focus-visible, .spendingReset:focus-visible, .spendingMore:focus-visible, .spendingTable a:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 2px; }
 .spendingTopic { display: grid; gap: density(1); color: palette(tertiary-main); @ds-typo(caption); font-size: 0.72rem; font-weight: 700; }
 .spendingTopic select { min-height: 38px; min-width: 200px; padding: density(1) density(3); border: 1px solid palette(dark-main, 0.18); border-radius: radius(2); background: palette(light-light); color: palette(dark-main); @ds-typo(small); }
