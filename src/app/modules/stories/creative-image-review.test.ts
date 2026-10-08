@@ -17,7 +17,8 @@ test("an invented likeness of a real person always blocks, even with an approved
 
 test("people added around a verified photo block; an approved fictional character does not", () => {
   assert.match(imageReviewIssues({ ...clean, peopleOutsideVerifiedPhoto: true }, { verifiedPhoto: photo, characters: [] }).join(" "), /around the verified photo/);
-  assert.match(imageReviewIssues({ ...clean, peopleOutsideVerifiedPhoto: true }, { characters: [] }).join(" "), /without an approved character/);
+  // Generic, fictional people doing the activity are allowed without a character.
+  assert.deepEqual(imageReviewIssues({ ...clean, peopleOutsideVerifiedPhoto: true }, { characters: [] }), []);
   assert.deepEqual(imageReviewIssues({ ...clean, peopleOutsideVerifiedPhoto: true }, { characters: [{ name: "Jo", description: "brand mascot" }] }), []);
 });
 

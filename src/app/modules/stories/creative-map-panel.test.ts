@@ -8,7 +8,7 @@ import ts from "typescript";
 import sharp from "sharp";
 
 import * as policy from "./creative-documentary";
-import { compositeMapPanel, MAP_PANEL_MAP, MAP_PANEL_MAT, mapPaletteFromBrand, mapPanelRegion, mapPanelZonePrompt } from "./creative-map-panel";
+import { compositeMapPanel, MAP_INSET_SCENE_DIRECTION, MAP_PANEL_MAP, MAP_PANEL_MAT, mapInsetVisualDirection, mapPaletteFromBrand, mapPanelLayout, mapPanelMat, mapPanelRegion, mapPanelZonePrompt } from "./creative-map-panel";
 
 const requireLocal = createRequire(import.meta.url);
 function load(file: string, imports: Record<string, unknown>) {
@@ -54,13 +54,35 @@ test("the map is pasted unaltered in its band, on the brand mat, and nothing els
   assert.ok(edge[2] > 180 && edge[0] < 90, `the map reaches its corners, uncropped: ${edge}`);
 });
 
-test("the slide reserves the band and is told never to draw geography", () => {
+test("the slide reserves a small inset for the map and is told never to draw another place", () => {
   const prompt = mapPanelZonePrompt();
   const region = mapPanelRegion();
   const [, top, bottom] = /from (\d+)% to (\d+)% of the height/.exec(prompt) ?? [];
-  assert.ok(Number(top) <= region.top && Number(bottom) >= region.bottom, `the reserved zone covers the whole panel: ${top}–${bottom}% vs ${region.top}–${region.bottom}%`);
-  assert.match(prompt, /Do not draw any map, street, road, pin/);
-  assert.match(prompt, /Place every piece of text above it/);
+  assert.ok(Number(top) <= region.top && Number(bottom) >= region.bottom, `the reserved zone covers the whole inset: ${top}–${bottom}% vs ${region.top}–${region.bottom}%`);
+  assert.match(prompt, /small framed inset/);
+  assert.match(prompt, /Do not draw any other map, street, road, pin or route, and no recognizable landmark or building facade/);
+  assert.match(prompt, /Never place text inside or across it/);
+  // Google's static map is requested at 540×340 (scale 2): the inset shows it at that size.
+  assert.deepEqual([MAP_PANEL_MAP.width, MAP_PANEL_MAP.height], [540, 340]);
+  // It sits on the right, clear of the headline above and the slide counter at the bottom.
+  assert.ok(region.top >= 55 && region.bottom <= 88 && region.right <= 96, JSON.stringify(region));
+});
+
+test("a batch composed with the earlier band recomposes with the band", () => {
+  assert.equal(mapPanelLayout(undefined), "band");
+  assert.equal(mapPanelLayout({ panelLayout: "inset" }), "inset");
+  assert.match(mapPanelZonePrompt("band"), /Place every piece of text above it/);
+  assert.equal(mapPanelMat("band").width, 952);
+});
+
+test("the inset keeps the slide's scene and makes it lively, without inventing the venue", () => {
+  const scene = mapInsetVisualDirection("Beer steins and pretzels on a long table.", false);
+  assert.match(scene, /^Beer steins and pretzels on a long table\. /);
+  assert.match(scene, /fictional, generic people doing it/);
+  assert.match(scene, /no recognizable facade, landmark, street or sign naming a place/);
+  assert.match(scene, /closure, works or damage, show no crowd/);
+  // A direction that only asked for a map becomes the scene itself.
+  assert.equal(mapInsetVisualDirection("A street map of downtown with a pin", true), MAP_INSET_SCENE_DIRECTION);
 });
 
 test("a Google static map is requested in the brand's colours, without points of interest", () => {

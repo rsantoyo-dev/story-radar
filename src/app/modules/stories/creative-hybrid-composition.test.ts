@@ -115,6 +115,8 @@ async function compose(mode = "illustration-editorial", photoTest = false, inclu
     normalizePalette: () => [],
     mapPaletteFromBrand: () => ({ surface: "#FFF9F0", primary: "#173F43", accent: "#B94F24" }),
     MAP_PANEL_VISUAL_DIRECTION: "Calm layout around the pasted map",
+    mapInsetVisualDirection: (direction: string) => `${direction} Lively scene around the map inset`,
+    mapPanelLayout: (evidence?: { panelLayout?: string }) => evidence?.panelLayout === "inset" ? "inset" : "band",
     mapPanelZonePrompt: () => "\n<VERIFIED_MAP_ZONE>reserved</VERIFIED_MAP_ZONE>",
     storyReferenceBatchTag: () => ":story-refs-v3-refs-hash",
     photoLedVisualDirection: (direction: string) => direction,
@@ -174,9 +176,10 @@ test("a Google map is never sent to the model: the slide reserves a band and the
   const slide = result.assets.find(a => a.unitOrder === 2)!;
   assert.doesNotMatch(String(slide.prompt), /LAST input image/, "no reference instruction");
   assert.match(String(slide.prompt), /VERIFIED_MAP_ZONE/);
-  assert.match(String(slide.prompt), /\[Calm layout around the pasted map\]/, "the slide's own direction gives way to the panel");
+  assert.match(String(slide.prompt), /Lively scene around the map inset/, "the slide's own scene lives around the small map inset");
   const evidence = (slide.unitSnapshot as { placeVisual: { generationUse: string; panelColor: string; referenceTopicId: string; sha256: string; reasons: string[] } }).placeVisual;
   assert.equal(evidence.generationUse, "panel");
+  assert.equal((evidence as { panelLayout?: string }).panelLayout, "inset", "new batches use the small inset");
   assert.equal(evidence.panelColor, "#173F43");
   assert.equal(evidence.referenceTopicId, "topic");
   assert.equal(evidence.sha256, "map-sha");
@@ -304,7 +307,7 @@ test("a real-photo slide on a closure story is composed from an identity-only ar
   assert.match(String(bridge.prompt), /LAST input image is the verified archive photograph of pont Gouin/);
   assert.match(String(bridge.prompt), /Pierre cb/);
   assert.match(String(bridge.prompt), /not evidence of current conditions/);
-  assert.match(String(bridge.prompt), /Do not invent event attendance, damage, closures, barriers, detour signage or changes/);
+  assert.match(String(bridge.prompt), /Do not invent damage, closures, barriers, detour signage or changes not shown in the photograph itself\. When the slide's facts describe something people do there.*when the facts describe a closure, works or damage, show no crowd or celebration/);
   const snapshot = bridge.unitSnapshot as { placeVisual: { generationUse: string; referenceTopicId: string; reasons: string[]; photo: { license: string } } };
   assert.equal(snapshot.placeVisual.generationUse, "ai-reference");
   assert.equal(snapshot.placeVisual.referenceTopicId, "topic");

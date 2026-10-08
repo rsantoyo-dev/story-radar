@@ -11,6 +11,8 @@ export type PlaceVisualEvidence = {
   preparedAt: string;
   /** "ai-reference": the model receives it; "panel": it is pasted unaltered after generation. */
   generationUse?: "ai-reference" | "panel";
+  /** A pasted map's layout (see mapPanelLayout); absent on band-era snapshots. */
+  panelLayout?: "inset";
   /**
    * "automatic": the writer declared no place need; automatic place detection
    * found the slide's one named place in the brand's area. Such a slide only
