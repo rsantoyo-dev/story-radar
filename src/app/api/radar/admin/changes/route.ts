@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { authorizeRadarCollector, requestIsOperator } from "@/app/api/radar/radar-api-auth";
 import { db } from "@/db/client";
 import { dbChangeLog } from "@/db/schema";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 const NO_STORE = { "Cache-Control": "no-store" };
 
@@ -12,7 +13,7 @@ const NO_STORE = { "Cache-Control": "no-store" };
  * operators only: it spans workspaces. Filters: `table`, `rowKey`,
  * `transactionId`, `before` (ISO time), `limit` (≤ 200).
  */
-export async function GET(request: Request) {
+async function route_GET(request: Request) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   if (!requestIsOperator(request)) {
@@ -39,3 +40,5 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "The change history is unavailable right now." }, { status: 503, headers: NO_STORE });
   }
 }
+
+export const GET = withApiLog(route_GET);

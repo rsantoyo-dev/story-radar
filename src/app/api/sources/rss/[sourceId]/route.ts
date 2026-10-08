@@ -6,6 +6,7 @@ import {
 } from "@/app/api/radar/radar-topic";
 import { listTopicRssSourceConfigs } from "@/app/modules/topics/topic-catalog.repository";
 import { NextResponse } from "next/server";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 type RouteContext = {
   params: Promise<{
@@ -13,7 +14,7 @@ type RouteContext = {
   }>;
 };
 
-export async function GET(
+async function route_GET(
   request: Request,
   context: RouteContext,
 ) {
@@ -53,3 +54,5 @@ export async function GET(
     );
   }
 }
+
+export const GET = withApiLog(route_GET);

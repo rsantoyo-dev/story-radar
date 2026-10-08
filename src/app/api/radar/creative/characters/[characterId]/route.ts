@@ -11,6 +11,7 @@ import {
   creativeRouteErrorResponse,
   noStoreJson,
 } from "@/app/api/radar/creative-route-error";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
 
@@ -19,7 +20,7 @@ const UUID_PATTERN =
 
 type Context = { params: Promise<{ characterId: string }> };
 
-export async function PATCH(request: Request, context: Context) {
+async function route_PATCH(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const characterId = await parseCharacterId(context);
@@ -43,7 +44,7 @@ export async function PATCH(request: Request, context: Context) {
   }
 }
 
-export async function DELETE(request: Request, context: Context) {
+async function route_DELETE(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const characterId = await parseCharacterId(context);
@@ -69,3 +70,6 @@ async function parseCharacterId(context: Context): Promise<string | undefined> {
   const { characterId } = await context.params;
   return UUID_PATTERN.test(characterId) ? characterId : undefined;
 }
+
+export const PATCH = withApiLog(route_PATCH);
+export const DELETE = withApiLog(route_DELETE);

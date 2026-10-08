@@ -15,6 +15,7 @@ import {
   SocialPublicationValidationError,
   upsertStorySocialPublication,
 } from "@/app/modules/stories/social-publications.repository";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
 
@@ -36,7 +37,7 @@ const DELETE_FIELDS = new Set(["platform"]);
 
 type Context = { params: Promise<{ storyId: string }> };
 
-export async function GET(request: Request, context: Context) {
+async function route_GET(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -56,7 +57,7 @@ export async function GET(request: Request, context: Context) {
   }
 }
 
-export async function PUT(request: Request, context: Context) {
+async function route_PUT(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -78,7 +79,7 @@ export async function PUT(request: Request, context: Context) {
   }
 }
 
-export async function DELETE(request: Request, context: Context) {
+async function route_DELETE(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -233,3 +234,7 @@ function noStoreJson(value: unknown, status = 200): NextResponse {
     headers: { "Cache-Control": "no-store" },
   });
 }
+
+export const GET = withApiLog(route_GET);
+export const PUT = withApiLog(route_PUT);
+export const DELETE = withApiLog(route_DELETE);

@@ -8,6 +8,7 @@ import {
   topicRequestErrorResponse,
 } from "@/app/api/radar/radar-topic";
 import { analyzeBrandReference } from "@/app/modules/stories/analyze-brand-reference";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
 
@@ -22,7 +23,7 @@ type Context = { params: Promise<{ referenceId: string }> };
  * populated. Provider failure comes back as 502; the daily cap as 429; a
  * missing `GEMINI_API_KEY` as 503.
  */
-export async function POST(request: Request, context: Context) {
+async function route_POST(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -44,3 +45,5 @@ export async function POST(request: Request, context: Context) {
     return creativeRouteErrorResponse(error, "analyze the brand reference");
   }
 }
+
+export const POST = withApiLog(route_POST);

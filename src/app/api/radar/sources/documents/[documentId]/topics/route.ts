@@ -6,6 +6,7 @@ import {
 } from "@/app/modules/documents/knowledge-documents.repository";
 import { KnowledgeDocumentNotFoundError } from "@/app/modules/documents/knowledge-document.types";
 import { TopicContextError } from "@/app/modules/topics/topic-context";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 type Context = { params: Promise<{ documentId: string }> };
 
@@ -28,10 +29,13 @@ async function update(request: Request, context: Context, attach: boolean) {
   }
 }
 
-export async function POST(request: Request, context: Context) {
+async function route_POST(request: Request, context: Context) {
   return update(request, context, true);
 }
 
-export async function DELETE(request: Request, context: Context) {
+async function route_DELETE(request: Request, context: Context) {
   return update(request, context, false);
 }
+
+export const POST = withApiLog(route_POST);
+export const DELETE = withApiLog(route_DELETE);

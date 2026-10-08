@@ -210,6 +210,7 @@ test("Static map signatures cover the exact path and query sent to Google", () =
 test("Preview API authenticates, bounds streamed input and exposes only configuration flags", async () => {
   const { provider } = harness(); let calls = 0;
   const route = load("src/app/api/radar/creative/maps-preview/route.ts", {
+    "@/app/modules/observability/api-request-log": { withApiLog: <T>(handler: T) => handler },
     "@/app/api/radar/radar-api-auth": { authorizeRadarCollector: (r: Request) => r.headers.get("Authorization") === "Bearer test" ? undefined : new Response(null, { status: 401 }) },
     "@/app/api/radar/radar-topic": { requireActiveRequestTopic: async () => "topic-a", topicRequestErrorResponse: () => undefined },
     "@/app/modules/stories/creative-profile.repository": { getCreativeProfile: async () => profile },

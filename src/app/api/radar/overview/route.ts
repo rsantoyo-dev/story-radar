@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 
 import { authorizeRadarCollector } from "../radar-api-auth";
 import { topicRequestErrorResponse } from "../radar-topic";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 /**
  * Read-only aggregate for the Topic Overview (FEAT-OVW-001).
@@ -19,7 +20,7 @@ import { topicRequestErrorResponse } from "../radar-topic";
  * anything and never calls a provider — mounting the Overview only reads the
  * app's own data.
  */
-export async function GET(request: Request) {
+async function route_GET(request: Request) {
   const unauthorizedResponse = await authorizeRadarCollector(request);
 
   if (unauthorizedResponse) {
@@ -47,3 +48,5 @@ export async function GET(request: Request) {
     );
   }
 }
+
+export const GET = withApiLog(route_GET);

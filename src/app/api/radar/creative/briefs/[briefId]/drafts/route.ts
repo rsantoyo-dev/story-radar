@@ -10,6 +10,7 @@ import {
   creativeRouteErrorResponse,
   noStoreJson,
 } from "../../../../creative-route-error";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
 // Brief/draft generation chains several model calls and a bounded editorial
@@ -21,7 +22,7 @@ const UUID_PATTERN =
 
 type Context = { params: Promise<{ briefId: string }> };
 
-export async function POST(request: Request, context: Context) {
+async function route_POST(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const preparationRunId = new URL(request.url).searchParams.get("preparationRunId") || undefined;
@@ -78,3 +79,5 @@ export async function POST(request: Request, context: Context) {
     return creativeRouteErrorResponse(error, "generate the creative draft");
   }
 }
+
+export const POST = withApiLog(route_POST);

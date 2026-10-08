@@ -3,6 +3,7 @@ import { noStoreJson } from "@/app/api/radar/topics/topic-route-utils";
 import { getPendingFacebookSelection } from "@/app/modules/meta/meta-facebook-oauth-selections.repository";
 
 import { facebookRouteError, topicFromContext } from "../../facebook-route-utils";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 type Context = { params: Promise<{ topicId: string; selectionId: string }> };
 
@@ -13,7 +14,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
  * already-used selection is a normal result — `{ pages: [], expired: true }`
  * lets the picker say "start over" without a fetch-error branch.
  */
-export async function GET(request: Request, context: Context) {
+async function route_GET(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   try {
@@ -28,3 +29,5 @@ export async function GET(request: Request, context: Context) {
     return facebookRouteError(error, "read the Facebook Page selection");
   }
 }
+
+export const GET = withApiLog(route_GET);

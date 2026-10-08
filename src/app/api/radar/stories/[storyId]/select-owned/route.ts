@@ -9,6 +9,7 @@ import {
   OwnedContentSelectionConflictError,
   selectOwnedContentStory,
 } from "@/app/modules/stories/select-owned-content";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
 
@@ -17,7 +18,7 @@ const UUID_PATTERN =
 
 type Context = { params: Promise<{ storyId: string }> };
 
-export async function POST(request: Request, context: Context) {
+async function route_POST(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -69,3 +70,5 @@ function noStoreJson(value: unknown, status = 200): NextResponse {
     headers: { "Cache-Control": "no-store" },
   });
 }
+
+export const POST = withApiLog(route_POST);

@@ -12,6 +12,7 @@ import { signMetaOAuthState } from "@/app/modules/meta/meta-oauth-state";
 import { getEffectiveMetaFacebookAppCredentials } from "@/app/modules/meta/topic-facebook-connections.repository";
 
 import { facebookRouteError, topicFromContext, type TopicRouteContext } from "../facebook-route-utils";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 /**
  * Used only when no Login Configuration id is set; a config_id defines the
@@ -26,7 +27,7 @@ const FACEBOOK_PAGE_SCOPES = ["pages_show_list", "pages_read_engagement", "pages
  * the signed state carries mechanism "facebook", so the Instagram callback
  * rejects it and vice versa. The browser navigates top-level to this URL.
  */
-export async function POST(request: Request, context: TopicRouteContext) {
+async function route_POST(request: Request, context: TopicRouteContext) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -72,3 +73,5 @@ export async function POST(request: Request, context: TopicRouteContext) {
     return facebookRouteError(error, "start the Facebook connection");
   }
 }
+
+export const POST = withApiLog(route_POST);

@@ -3,20 +3,21 @@ import { requireActiveRequestTopic, topicRequestErrorResponse } from "@/app/api/
 import { creativeRouteErrorResponse, noStoreJson } from "@/app/api/radar/creative-route-error";
 import { CommonsPersonError, importCommonsPersonPhoto, parseCommonsSubjectKind, searchCommonsPeople } from "@/app/modules/stories/commons-person-photos";
 import { STORY_UUID } from "@/app/modules/stories/story-materials.types";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 type Context = { params: Promise<{ storyId: string }> };
 
 /** GET ?q=name&kind=person|place → real people (exact name) or places with a reusable Commons photo. */
-export async function GET(request: Request, context: Context) {
+async function route_GET(request: Request, context: Context) {
   const params = new URL(request.url).searchParams;
   return handle(request, context, (topicId, storyId) =>
     searchCommonsPeople(topicId, storyId, params.get("q"), parseCommonsSubjectKind(params.get("kind"))).then((people) => ({ people })));
 }
 
 /** POST {entityId} → imports that person's photo as a documentary-portrait-only story photo. */
-export async function POST(request: Request, context: Context) {
+async function route_POST(request: Request, context: Context) {
   return handle(request, context, async (topicId, storyId) => {
     const body = (await request.json().catch(() => undefined)) as { entityId?: unknown; kind?: unknown } | undefined;
     return { photo: await importCommonsPersonPhoto(topicId, storyId, body?.entityId, parseCommonsSubjectKind(body?.kind)) };
@@ -36,3 +37,6 @@ async function handle(request: Request, context: Context, run: (topicId: string,
     return topicRequestErrorResponse(error) ?? creativeRouteErrorResponse(error, "find a Wikimedia Commons portrait");
   }
 }
+
+export const GET = withApiLog(route_GET);
+export const POST = withApiLog(route_POST);

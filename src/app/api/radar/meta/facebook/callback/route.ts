@@ -24,6 +24,7 @@ import {
 import { consumeMetaOAuthAttempt } from "@/app/modules/meta/meta-oauth-attempts.repository";
 import { verifyMetaOAuthState } from "@/app/modules/meta/meta-oauth-state";
 import { getEffectiveMetaFacebookAppCredentials } from "@/app/modules/meta/topic-facebook-connections.repository";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
 
@@ -37,7 +38,7 @@ const MAX_ACCOUNT_PAGES = 4;
  * connected yet: the Pages the user manages are stored server-side and the
  * editor is sent back to choose one explicitly.
  */
-export async function GET(request: Request) {
+async function route_GET(request: Request) {
   const url = new URL(request.url);
   const state = url.searchParams.get("state");
   const code = url.searchParams.get("code");
@@ -170,3 +171,5 @@ function genericFailureRedirect(message: string): string {
   url.searchParams.set("metaError", message);
   return url.toString();
 }
+
+export const GET = withApiLog(route_GET);

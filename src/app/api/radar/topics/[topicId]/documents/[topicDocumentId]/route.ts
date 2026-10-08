@@ -3,12 +3,13 @@ import { noStoreJson } from "@/app/api/radar/topics/topic-route-utils";
 import { getTopicKnowledgeDocumentDetails } from "@/app/modules/documents/knowledge-documents.repository";
 import { KnowledgeDocumentNotFoundError } from "@/app/modules/documents/knowledge-document.types";
 import { TopicContextError } from "@/app/modules/topics/topic-context";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 type Context = {
   params: Promise<{ topicId: string; topicDocumentId: string }>;
 };
 
-export async function GET(request: Request, context: Context) {
+async function route_GET(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -26,3 +27,5 @@ export async function GET(request: Request, context: Context) {
     return noStoreJson({ error: "Unable to load the knowledge document" }, 500);
   }
 }
+
+export const GET = withApiLog(route_GET);

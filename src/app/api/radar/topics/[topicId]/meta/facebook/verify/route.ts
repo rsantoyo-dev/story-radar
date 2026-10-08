@@ -7,9 +7,10 @@ import {
 } from "@/app/modules/meta/topic-facebook-connections.repository";
 
 import { facebookRouteError, topicFromContext, type TopicRouteContext } from "../facebook-route-utils";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 /** Re-checks the connected Page live. A failed check is returned in the status body, never as a non-2xx. */
-export async function POST(request: Request, context: TopicRouteContext) {
+async function route_POST(request: Request, context: TopicRouteContext) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   try {
@@ -24,3 +25,5 @@ export async function POST(request: Request, context: TopicRouteContext) {
     return facebookRouteError(error, "verify the Facebook Page connection");
   }
 }
+
+export const POST = withApiLog(route_POST);

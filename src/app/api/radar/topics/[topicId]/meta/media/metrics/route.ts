@@ -6,6 +6,7 @@ import {
   refreshInstagramMediaMetrics,
 } from "@/app/modules/meta/refresh-instagram-media-metrics";
 import { TopicContextError, requireTopic } from "@/app/modules/topics/topic-context";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 type Context = { params: Promise<{ topicId: string }> };
 
@@ -16,7 +17,7 @@ type Context = { params: Promise<{ topicId: string }> };
  * failure comes back in the 200 body (`error` / per-publication `failed`), not
  * as a non-2xx — the same convention as the sync route.
  */
-export async function POST(request: Request, context: Context) {
+async function route_POST(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -96,3 +97,5 @@ function metaMediaMetricsRouteError(error: unknown) {
     500,
   );
 }
+
+export const POST = withApiLog(route_POST);

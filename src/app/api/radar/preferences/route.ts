@@ -10,11 +10,12 @@ import {
   requireRequestTopic,
   topicRequestErrorResponse,
 } from "../radar-topic";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 const MAX_TERMS_PER_LIST = 100;
 const MAX_TERM_LENGTH = 80;
 
-export async function GET(request: Request) {
+async function route_GET(request: Request) {
   const unauthorizedResponse = await authorizeRadarCollector(request);
 
   if (unauthorizedResponse) {
@@ -38,7 +39,7 @@ export async function GET(request: Request) {
   }
 }
 
-export async function PUT(request: Request) {
+async function route_PUT(request: Request) {
   const unauthorizedResponse = await authorizeRadarCollector(request);
 
   if (unauthorizedResponse) {
@@ -139,3 +140,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 class InvalidPreferencesError extends Error {}
+
+export const GET = withApiLog(route_GET);
+export const PUT = withApiLog(route_PUT);

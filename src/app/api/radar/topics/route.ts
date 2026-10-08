@@ -7,8 +7,9 @@ import {
 
 import { jsonObject, noStoreJson, topicCatalogError } from "./topic-route-utils";
 import { recordAuditEventLater } from "@/app/modules/observability/audit";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
-export async function GET(request: Request) {
+async function route_GET(request: Request) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -19,7 +20,7 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+async function route_POST(request: Request) {
   // A new brand is a workspace decision: admins and owners.
   const unauthorized = await authorizeRadarCollector(request, "admin");
   if (unauthorized) return unauthorized;
@@ -34,3 +35,6 @@ export async function POST(request: Request) {
     return topicCatalogError(error, "create the topic");
   }
 }
+
+export const GET = withApiLog(route_GET);
+export const POST = withApiLog(route_POST);

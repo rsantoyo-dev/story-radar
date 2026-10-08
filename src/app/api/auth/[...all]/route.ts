@@ -1,6 +1,7 @@
 import { toNextJsHandler } from "better-auth/next-js";
 
 import { auth } from "@/app/modules/auth/auth";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 /**
  * Better Auth owns every route under /api/auth: Google sign-in, its callback,
@@ -10,4 +11,8 @@ import { auth } from "@/app/modules/auth/auth";
  */
 export const runtime = "nodejs";
 
-export const { GET, POST } = toNextJsHandler(auth);
+const handlers = toNextJsHandler(auth);
+
+// Logged like every route (status, timing); bodies and secrets of sign-in are never stored.
+export const GET = withApiLog(handlers.GET);
+export const POST = withApiLog(handlers.POST);

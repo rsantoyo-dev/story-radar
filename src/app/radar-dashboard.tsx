@@ -145,7 +145,7 @@ type StoryReviewView = {
   publicationFilter?: PublicationFilter;
 };
 
-type NavigationGlyph = "today" | "discover" | "production" | "publications" | "results" | "identity" | "strategy" | "sources" | "channels" | "help" | "admin";
+type NavigationGlyph = "today" | "discover" | "production" | "publications" | "results" | "identity" | "strategy" | "sources" | "channels" | "help" | "admin" | "activity";
 
 function NavGlyph({ name }: { name: NavigationGlyph }) {
   const shapes = {
@@ -158,6 +158,7 @@ function NavGlyph({ name }: { name: NavigationGlyph }) {
     strategy: <><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="8" cy="6" r="2" fill="currentColor" stroke="none"/><circle cx="16" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="11" cy="18" r="2" fill="currentColor" stroke="none"/></>,
     sources: <><path d="M4 20a16 16 0 0 0-2-2M4 12a8 8 0 0 1 8 8M4 4a16 16 0 0 1 16 16"/><circle cx="4" cy="20" r="1" fill="currentColor" stroke="none"/></>,
     channels: <><circle cx="6" cy="12" r="3"/><circle cx="18" cy="5" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 10.5 6.8-4M8.6 13.5l6.8 4"/></>,
+    activity: <><path d="M3 12h4l3-8 4 16 3-8h4"/></>,
     help: <><circle cx="12" cy="12" r="10"/><path d="M9.3 9a3 3 0 0 1 5.4 1.8c0 2-2.7 2.5-2.7 4.2M12 18h.01"/></>,
     admin: <><circle cx="12" cy="12" r="3"/><path d="M10 2h4l.7 2.4 2.2 1 2.2-1.2 2.8 2.8-1.2 2.2 1 2.2L24 12l-2.3.7-1 2.2 1.2 2.2-2.8 2.8-2.2-1.2-2.2 1L14 22h-4l-.7-2.3-2.2-1-2.2 1.2-2.8-2.8 1.2-2.2-1-2.2L0 12l2.3-.7 1-2.2-1.2-2.2 2.8-2.8 2.2 1.2 2.2-1z"/></>,
   } satisfies Record<NavigationGlyph, React.ReactNode>;
@@ -1571,6 +1572,9 @@ export function RadarDashboard({
         </nav>
         <nav className={styles.sidebarBottomNav} aria-label="More options">
           <Link href={`/help?topicId=${encodeURIComponent(selectedTopicId)}`} onClick={() => setSidebarOpen(false)} aria-label="Help" title={sidebarCollapsed ? "Help" : undefined}><span className={styles.navIcon} aria-hidden="true"><NavGlyph name="help" /></span><span>Help</span></Link>
+          {!account || account.role === "owner" || account.role === "admin"
+            ? <Link href="/activity" onClick={() => setSidebarOpen(false)} aria-label="Activity" title={sidebarCollapsed ? "Activity" : undefined}><span className={styles.navIcon} aria-hidden="true"><NavGlyph name="activity" /></span><span>Activity</span></Link>
+            : null}
           <a href="#admin" className={activeView === "admin" ? styles.navActive : undefined} aria-current={activeView === "admin" ? "page" : undefined} onClick={() => setSidebarOpen(false)} aria-label="Administration" title={sidebarCollapsed ? "Administration" : undefined}><span className={styles.navIcon} aria-hidden="true"><NavGlyph name="admin" /></span><span>Administration</span></a>
         </nav>
 

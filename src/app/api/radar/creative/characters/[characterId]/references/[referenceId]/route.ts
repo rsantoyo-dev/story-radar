@@ -9,6 +9,7 @@ import {
   creativeRouteErrorResponse,
   noStoreJson,
 } from "@/app/api/radar/creative-route-error";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
 
@@ -19,7 +20,7 @@ type Context = {
   params: Promise<{ characterId: string; referenceId: string }>;
 };
 
-export async function GET(request: Request, context: Context) {
+async function route_GET(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const ids = await parseIds(context);
@@ -46,7 +47,7 @@ export async function GET(request: Request, context: Context) {
   }
 }
 
-export async function DELETE(request: Request, context: Context) {
+async function route_DELETE(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const ids = await parseIds(context);
@@ -75,3 +76,6 @@ async function parseIds(
     ? { characterId, referenceId }
     : undefined;
 }
+
+export const GET = withApiLog(route_GET);
+export const DELETE = withApiLog(route_DELETE);

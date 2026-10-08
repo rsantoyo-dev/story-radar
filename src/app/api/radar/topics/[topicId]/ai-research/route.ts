@@ -9,10 +9,11 @@ import type { UpdateAiResearchSourceInput } from "@/app/modules/sources/ai-resea
 import { TopicContextError, requireTopic } from "@/app/modules/topics/topic-context";
 
 import { jsonObject, noStoreJson } from "../../topic-route-utils";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 type Context = { params: Promise<{ topicId: string }> };
 
-export async function GET(request: Request, context: Context) {
+async function route_GET(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -25,7 +26,7 @@ export async function GET(request: Request, context: Context) {
   }
 }
 
-export async function PUT(request: Request, context: Context) {
+async function route_PUT(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -56,3 +57,6 @@ function errorResponse(error: unknown, action: string) {
   console.error(`Unable to ${action}`, error);
   return noStoreJson({ error: `Unable to ${action}` }, 500);
 }
+
+export const GET = withApiLog(route_GET);
+export const PUT = withApiLog(route_PUT);

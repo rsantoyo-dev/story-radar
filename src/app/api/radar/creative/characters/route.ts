@@ -11,10 +11,11 @@ import {
   creativeRouteErrorResponse,
   noStoreJson,
 } from "@/app/api/radar/creative-route-error";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
 
-export async function GET(request: Request) {
+async function route_GET(request: Request) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -30,7 +31,7 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+async function route_POST(request: Request) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -49,3 +50,6 @@ export async function POST(request: Request) {
     return creativeRouteErrorResponse(error, "create the supporting character");
   }
 }
+
+export const GET = withApiLog(route_GET);
+export const POST = withApiLog(route_POST);

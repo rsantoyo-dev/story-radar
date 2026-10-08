@@ -17,6 +17,7 @@ import {
   creativeRouteErrorResponse,
   noStoreJson,
 } from "../../../../creative-route-error";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -26,7 +27,7 @@ const UUID_PATTERN =
 
 type Context = { params: Promise<{ draftId: string }> };
 
-export async function GET(request: Request, context: Context) {
+async function route_GET(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const draftId = await parseId(context);
@@ -60,7 +61,7 @@ export async function GET(request: Request, context: Context) {
   }
 }
 
-export async function POST(request: Request, context: Context) {
+async function route_POST(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const draftId = await parseId(context);
@@ -188,3 +189,6 @@ async function parseGenerationInput(request: Request): Promise<{
 }
 
 class InvalidImageQualityError extends Error {}
+
+export const GET = withApiLog(route_GET);
+export const POST = withApiLog(route_POST);

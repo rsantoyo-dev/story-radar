@@ -14,6 +14,7 @@ import {
   noStoreJson,
 } from "../../../../creative-route-error";
 import { recordAuditEventLater } from "@/app/modules/observability/audit";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -28,7 +29,7 @@ async function parseId(context: Context): Promise<string | undefined> {
   return UUID_PATTERN.test(draftId) ? draftId : undefined;
 }
 
-export async function GET(request: Request, context: Context) {
+async function route_GET(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const draftId = await parseId(context);
@@ -48,7 +49,7 @@ export async function GET(request: Request, context: Context) {
   }
 }
 
-export async function POST(request: Request, context: Context) {
+async function route_POST(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const draftId = await parseId(context);
@@ -73,7 +74,7 @@ export async function POST(request: Request, context: Context) {
   }
 }
 
-export async function DELETE(request: Request, context: Context) {
+async function route_DELETE(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const draftId = await parseId(context);
@@ -95,3 +96,7 @@ export async function DELETE(request: Request, context: Context) {
     );
   }
 }
+
+export const GET = withApiLog(route_GET);
+export const POST = withApiLog(route_POST);
+export const DELETE = withApiLog(route_DELETE);

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { authorizeRadarCollector, requestIsOperator, requestWorkspaceId } from "@/app/api/radar/radar-api-auth";
 import { DemoCreditResetBlockedError, resetDemoCredits } from "@/app/modules/credits/spending.repository";
 import { recordAuditEventLater } from "@/app/modules/observability/audit";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 const KEY_PATTERN = /^demo_reset:[A-Za-z0-9-]{8,64}$/;
 
@@ -11,7 +12,7 @@ const KEY_PATTERN = /^demo_reset:[A-Za-z0-9-]{8,64}$/;
  * ledger; only the current period restarts. The client sends one key per
  * click so a retried request cannot post a second reset.
  */
-export async function POST(request: Request) {
+async function route_POST(request: Request) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   // Restoring credits is a platform decision, not a workspace one.
@@ -38,3 +39,5 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "The demo balance could not be reset." }, { status: 503, headers: { "Cache-Control": "no-store" } });
   }
 }
+
+export const POST = withApiLog(route_POST);

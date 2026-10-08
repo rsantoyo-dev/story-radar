@@ -3,13 +3,14 @@ import { requireActiveRequestTopic, topicRequestErrorResponse } from "@/app/api/
 import { getCreativeProfile } from "@/app/modules/stories/creative-profile.repository";
 import { googleMapsConfig, MapsPreviewError, parseMapsPreviewInput } from "@/app/modules/stories/google-maps-provider";
 import { prepareGoogleMapsPreview } from "@/app/modules/stories/google-maps-preview";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 const reply = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "private, no-store, max-age=0", "Pragma": "no-cache", "Vary": "Authorization" } });
 const errorReply = (error: unknown) => topicRequestErrorResponse(error) ?? reply({ error: error instanceof MapsPreviewError ? error.message : "The map preview could not be prepared." }, error instanceof MapsPreviewError ? error.status : 502);
 
-export async function GET(request: Request) {
+async function route_GET(request: Request) {
   const unauthorized = await authorizeRadarCollector(request); if (unauthorized) return unauthorized;
   try {
     await requireActiveRequestTopic(request);
@@ -18,7 +19,7 @@ export async function GET(request: Request) {
   } catch (error) { return errorReply(error); }
 }
 
-export async function POST(request: Request) {
+async function route_POST(request: Request) {
   const unauthorized = await authorizeRadarCollector(request); if (unauthorized) return unauthorized;
   try {
     const topicId = await requireActiveRequestTopic(request);
@@ -42,3 +43,6 @@ export async function POST(request: Request) {
     return reply(await prepareGoogleMapsPreview(topicId, input, profile, { signal: request.signal }));
   } catch (error) { return errorReply(error); }
 }
+
+export const GET = withApiLog(route_GET);
+export const POST = withApiLog(route_POST);

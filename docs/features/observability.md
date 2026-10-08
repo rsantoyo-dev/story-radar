@@ -1,7 +1,7 @@
 # Observability: logs and audit trail
 
 **ID:** FEAT-OBS-001
-**Status:** All three layers implemented: structured logger, audit events, database change capture
+**Status:** Structured logger, audit events, database change capture, API request log and the Activity console implemented
 **Date:** October 7, 2026
 **Product:** Press Craftor
 
@@ -29,17 +29,15 @@ Vercel keeps runtime logs only for a short time. For longer retention and alerti
 
 | Action | When |
 |---|---|
-| `api.request` · attempted | Every authorized POST/PUT/PATCH/DELETE on the radar API: who asked for which route |
-| `api.request` · denied | A signed-in caller refused for role or topic (anonymous 401s stay in the logs) |
 | `auth.user.created`, `auth.session.created` | New account; every sign-in (IP and user agent) |
 | `workspace.created`, `workspace.member.added`, `platform.staff.granted` | Personal workspace on first sign-in; bootstrap owner |
 | `topic.created`, `topic.updated`, `topic.deleted` | Brand lifecycle |
 | `meta.instagram.connected` / `disconnected`, `meta.facebook.connected` / `disconnected` | Publishing connections |
 | `publication.package.frozen` / `discarded`, `publication.publish.requested`, `publication.job.confirmed_not_published` | Publishing decisions |
 | `billing.checkout.started`, `billing.purchase.paid`, `billing.purchase.refunded`, `billing.checkout.expired` | Credit purchases (Stripe) |
-| `credits.demo.reset`, `admin.topic_data.cleared` | Operator actions |
+| `credits.demo.reset`, `admin.topic_data.cleared`, `activity.request_logs.purged` | Operator actions |
 
-`GET /api/radar/audit` (owners and admins) lists the workspace's events newest first, filtered by `action` prefix, `entityType`/`entityId`, `topicId`, and paged with `before`.
+Every API call (with its status and refusals) is in the request log below rather than duplicated here.
 
 Add an event wherever a new significant action is introduced; prefer the route or service that knows the outcome.
 
@@ -63,7 +61,7 @@ Migration `0098` adds `db_change_log` and the trigger `capture_row_change`, atta
 
 High-volume tables (stories, story sources, metrics snapshots, AI usage) keep their own run and receipt records instead. A cascade (deleting a topic, clearing its data) records every row it removes.
 
-`GET /api/radar/admin/changes` (platform operator) lists changes newest first, filtered by `table`, `rowKey`, `transactionId`, paged with `before`.
+Each change also stores `workspace_id` and `topic_id` (the row's own, its topic's, or for an asset its draft's topic), so owners see their workspace's changes in the console.
 
 ### Useful queries
 
@@ -80,6 +78,26 @@ SELECT occurred_at, actor_type, actor_id, action, entity_type, entity_id, outcom
 FROM audit_events WHERE workspace_id = '<workspace>' AND occurred_at > now() - interval '1 day' ORDER BY occurred_at;
 ```
 
+## API request log
+
+`api_request_log` (migration `0099`) holds **every call to every API route** — including sign-in, workers and the Stripe webhook — written by `withApiLog()` after the response is sent: request id, workspace, topic, actor, method, path, query, status, duration, client IP and user agent.
+
+- **Bodies**: request bodies of changes (JSON/text up to 256 KB read) and response bodies of changes and of failures (status ≥ 400) are stored redacted and cut at 16,000 characters. Successful reads keep only their size. Sign-in and delivery-link routes never store bodies; delivery tokens in paths become `/api/deliver/[token]`.
+- **Every route uses it**: route files export `export const GET = withApiLog(route_GET)`. New routes must do the same.
+- **Retention**: unlike the audit trail, request logs are operational data. The hourly storage maintenance deletes rows older than `API_REQUEST_LOG_RETENTION_DAYS` (default 30), and owners can delete matching rows from the console; each deletion is recorded as `activity.request_logs.purged`.
+
+## Activity console
+
+`/activity` (sidebar → Activity; owners and admins, platform staff for support) shows, for the current workspace:
+
+- **24-hour summary**: requests and p95 time, server errors, refusals (401/403), actions and failed ones, data changes — each opens the matching filter.
+- **API requests**, **Actions** and **Data changes** tabs, filtered by period, person, brand, status and method, action area and outcome, table, and free text (request id, path, ids, body text). Rows expand to bodies, details or a field-by-field before/after diff.
+- **Follow a request**: from any request id, see its calls, its actions and the data changed while it ran.
+- **Download JSON** of the visible rows; **Delete matching requests** for owners.
+- Platform staff can switch to **All workspaces**.
+
+APIs (admin+): `GET /api/radar/activity/summary`, `GET|DELETE /api/radar/activity/requests`, `GET /api/radar/activity/events`, `GET /api/radar/activity/changes`, `GET /api/radar/activity/trail/{requestId}` (`?scope=all` for staff).
+
 ## Retention
 
-`audit_events` and `db_change_log` are kept indefinitely for now. Watch their size in Neon; when needed, archive by month to R2 with an explicit, audited maintenance function rather than deleting rows.
+`api_request_log`: 30 days by default (see above). `audit_events` and `db_change_log` are kept indefinitely for now. Watch their size in Neon; when needed, archive by month to R2 with an explicit, audited maintenance function rather than deleting rows.

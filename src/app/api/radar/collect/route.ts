@@ -13,10 +13,11 @@ import {
   requireActiveRequestTopic,
   topicRequestErrorResponse,
 } from "../radar-topic";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const maxDuration = 120;
 
-export async function POST(request: Request) {
+async function route_POST(request: Request) {
   const unauthorizedResponse = await authorizeRadarCollector(request);
 
   if (unauthorizedResponse) {
@@ -123,3 +124,5 @@ function parseMaxAgeHours(value: string | null): number | undefined {
     ? maxAgeHours
     : undefined;
 }
+
+export const POST = withApiLog(route_POST);

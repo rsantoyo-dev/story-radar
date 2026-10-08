@@ -2,11 +2,12 @@ import { NextResponse } from "next/server";
 
 import { authorizeRadarCollector, requestWorkspaceId } from "@/app/api/radar/radar-api-auth";
 import { getSpendingReport, type SpendingPeriod } from "@/app/modules/credits/spending.repository";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 const PERIODS: readonly SpendingPeriod[] = ["reset", "7d", "30d", "all"];
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export async function GET(request: Request) {
+async function route_GET(request: Request) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -25,3 +26,5 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Spending is unavailable right now." }, { status: 503, headers: { "Cache-Control": "no-store" } });
   }
 }
+
+export const GET = withApiLog(route_GET);

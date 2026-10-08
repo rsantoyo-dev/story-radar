@@ -4,10 +4,11 @@ import { creativeRouteErrorResponse, noStoreJson } from "@/app/api/radar/creativ
 import { listStoryPhotos } from "@/app/modules/stories/story-materials.repository";
 import { uploadStoryPhoto } from "@/app/modules/stories/manage-story-photos";
 import { STORY_UUID } from "@/app/modules/stories/story-materials.types";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 export const runtime = "nodejs";
 type Context = { params: Promise<{ storyId: string }> };
-export async function GET(request: Request, context: Context) { return handle(request, context, false); }
-export async function POST(request: Request, context: Context) { return handle(request, context, true); }
+async function route_GET(request: Request, context: Context) { return handle(request, context, false); }
+async function route_POST(request: Request, context: Context) { return handle(request, context, true); }
 async function handle(request: Request, context: Context, upload: boolean) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
@@ -19,3 +20,6 @@ async function handle(request: Request, context: Context, upload: boolean) {
     return noStoreJson(upload ? await uploadStoryPhoto(topicId, storyId, await request.formData()) : await listStoryPhotos(topicId, storyId));
   } catch (error) { return topicRequestErrorResponse(error) ?? creativeRouteErrorResponse(error, "manage story photos"); }
 }
+
+export const GET = withApiLog(route_GET);
+export const POST = withApiLog(route_POST);

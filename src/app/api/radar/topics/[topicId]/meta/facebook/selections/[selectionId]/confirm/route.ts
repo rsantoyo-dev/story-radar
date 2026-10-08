@@ -9,6 +9,7 @@ import {
 
 import { facebookRouteError, topicFromContext } from "../../../facebook-route-utils";
 import { recordAuditEventLater } from "@/app/modules/observability/audit";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 type Context = { params: Promise<{ topicId: string; selectionId: string }> };
 
@@ -20,7 +21,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
  * and the selection is consumed atomically, so a double-click or a replay
  * cannot attach a second Page.
  */
-export async function POST(request: Request, context: Context) {
+async function route_POST(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   try {
@@ -65,3 +66,5 @@ export async function POST(request: Request, context: Context) {
     return facebookRouteError(error, "connect the Facebook Page");
   }
 }
+
+export const POST = withApiLog(route_POST);

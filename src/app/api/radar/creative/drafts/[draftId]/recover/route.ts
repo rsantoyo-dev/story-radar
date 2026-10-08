@@ -2,10 +2,11 @@ import { authorizeRadarCollector } from "@/app/api/radar/radar-api-auth";
 import { requireActiveRequestTopic, topicRequestErrorResponse } from "@/app/api/radar/radar-topic";
 import { recoverSavedCreativeDraft } from "@/app/modules/stories/manage-creative-content";
 import { creativeRouteErrorResponse, noStoreJson } from "../../../../creative-route-error";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-export async function POST(request: Request, context: {
+async function route_POST(request: Request, context: {
     params: Promise<{
         draftId: string;
     }>;
@@ -24,3 +25,5 @@ export async function POST(request: Request, context: {
         return topicRequestErrorResponse(error) ?? creativeRouteErrorResponse(error, "repair and review the saved draft");
     }
 }
+
+export const POST = withApiLog(route_POST);

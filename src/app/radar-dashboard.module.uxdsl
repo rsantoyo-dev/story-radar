@@ -3851,6 +3851,48 @@
 .spendingPacks strong { @ds-typo(h3); font-size: 1.05rem; font-weight: 750; }
 .spendingPacks b { @ds-typo(h3); font-size: 1.3rem; font-weight: 800; font-variant-numeric: tabular-nums; }
 .spendingPacks small { color: palette(tertiary-main); @ds-typo(caption); font-size: 0.72rem; font-weight: 600; line-height: 1.4; }
+.activityStat { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; text-decoration: underline dotted palette(dark-main, 0.3); text-underline-offset: 4px; }
+.activityStat[data-alert="true"] { color: palette(error-main); }
+.activityStat:focus-visible, .activityRow:focus-visible, .activityLink:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 2px; }
+.activitySearch { display: flex; align-items: flex-end; gap: density(2); }
+.activitySearch input { min-height: 38px; min-width: 240px; padding: density(1) density(3); border: 1px solid palette(dark-main, 0.18); border-radius: radius(2); background: palette(light-light); color: palette(dark-main); @ds-typo(small); }
+.activityToggle { display: flex; align-items: center; gap: density(2); min-height: 38px; color: palette(tertiary-main); @ds-typo(caption); font-size: 0.78rem; font-weight: 700; }
+.activityActions { display: flex; flex-wrap: wrap; align-items: center; gap: density(2); }
+.activityActions .spendingReset { margin-left: auto; }
+.activityList { display: grid; margin: 0; padding: 0; border: 1px solid palette(dark-main, 0.08); border-radius: radius(3); background: palette(light-light); list-style: none; overflow: hidden; }
+.activityList > li { border-top: 1px solid palette(dark-main, 0.06); }
+.activityList > li:first-child { border-top: 0; }
+.activityRow { display: grid; grid-template-columns: 150px 64px minmax(0, 1fr) auto 72px minmax(0, 180px); align-items: center; gap: density(3); width: 100%; padding: density(2) density(4); border: 0; background: transparent; color: palette(dark-main); text-align: left; @ds-typo(small); font-size: 0.8rem; font-variant-numeric: tabular-nums; cursor: pointer; }
+.activityRow:hover, .activityRow[aria-expanded="true"] { background: palette(neutral-light, 0.35); }
+.activityRow time { color: palette(tertiary-main); white-space: nowrap; }
+.activityMethod { font-weight: 800; letter-spacing: 0.02em; }
+.activityPath { min-width: 0; overflow: hidden; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.76rem; text-overflow: ellipsis; white-space: nowrap; }
+.activityMuted { min-width: 0; overflow: hidden; color: palette(tertiary-main); text-overflow: ellipsis; white-space: nowrap; }
+.activityBadgeOk, .activityBadgeWarning, .activityBadgeError { justify-self: start; padding: 2px density(2); border-radius: radius(2); @ds-typo(caption); font-size: 0.72rem; font-weight: 800; }
+.activityBadgeOk { background: palette(success-light, 0.35); color: palette(success-dark); }
+.activityBadgeWarning { background: palette(warning-light, 0.45); color: palette(dark-main); }
+.activityBadgeError { background: palette(error-light, 0.35); color: palette(error-dark); }
+.activityDetail { display: grid; gap: density(2); padding: density(3) density(4) density(4); background: palette(neutral-light, 0.2); }
+.activityDetail dl { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: density(2); margin: 0; }
+.activityDetail dt { color: palette(tertiary-main); @ds-typo(caption); font-size: 0.7rem; font-weight: 700; }
+.activityDetail dd { margin: 0; overflow-wrap: anywhere; @ds-typo(small); font-size: 0.78rem; }
+.activityDetail h4 { margin: density(1) 0 0; @ds-typo(caption); font-size: 0.74rem; font-weight: 800; }
+.activityDetail pre, .activityDiff pre { max-height: 360px; margin: 0; padding: density(2) density(3); overflow: auto; border: 1px solid palette(dark-main, 0.08); border-radius: radius(2); background: palette(light-light); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.74rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.activityDiff pre { max-height: 200px; border: 0; padding: 0; background: transparent; }
+.activityDiff { width: 100%; border-collapse: collapse; @ds-typo(small); font-size: 0.78rem; }
+.activityDiff th, .activityDiff td { padding: density(2); border-bottom: 1px solid palette(dark-main, 0.06); text-align: left; vertical-align: top; }
+.activityDiff thead th { color: palette(tertiary-main); @ds-typo(caption); font-size: 0.7rem; font-weight: 700; }
+.activityLink { padding: 0; border: 0; background: none; color: palette(primary-dark); font: inherit; font-weight: 700; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.activityLink:hover { text-decoration: underline; }
+.activityTrail { display: grid; gap: density(3); padding: density(4); border: 1px solid palette(primary-main, 0.35); border-radius: radius(3); background: palette(primary-light, 0.12); }
+.activityTrail h2 { margin: 0; @ds-typo(h3); font-size: 1rem; overflow-wrap: anywhere; }
+.activityTrail h3 { margin: 0; @ds-typo(caption); font-size: 0.78rem; font-weight: 800; }
+.activityTrailHead { display: flex; align-items: center; justify-content: space-between; gap: density(3); }
+@media (max-width: 799px) {
+  .activityRow { grid-template-columns: 1fr auto; }
+  .activityRow time, .activityRow .activityPath { grid-column: 1 / -1; }
+  .activitySearch, .activitySearch input { width: 100%; min-width: 0; }
+}
 .spendingBuy { justify-self: stretch; @ds-button(contained primary 2); min-height: 38px; padding-inline: density(4); @ds-typo(caption); font-size: 0.8rem; font-weight: 700; }
 .spendingBuy:disabled { cursor: progress; opacity: 0.6; }
 .spendingBuy:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 2px; }

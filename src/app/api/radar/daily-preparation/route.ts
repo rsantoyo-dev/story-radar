@@ -10,10 +10,11 @@ import { drivePreparation } from "@/app/modules/stories/daily-preparation";
 import { listEditorialLines, getEditorialLine, validId } from "@/app/modules/editorial-lines/editorial-lines.repository";
 import { EditorialLineError } from "@/app/modules/editorial-lines/editorial-lines";
 import { plannerDay } from "@/app/modules/stories/daily-editorial-planner.types";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 export const runtime="nodejs";
 export const maxDuration=300;
-export async function GET(request:Request){return handle(request,false);}
-export async function POST(request:Request){return handle(request,true);}
+async function route_GET(request:Request){return handle(request,false);}
+async function route_POST(request:Request){return handle(request,true);}
 async function handle(request:Request,write:boolean) {
   const denied=await authorizeRadarCollector(request);if(denied)return denied;
   try {
@@ -76,3 +77,6 @@ async function handle(request:Request,write:boolean) {
     return noStoreJson({error:"Daily preparation could not be loaded. Check server configuration."},500);
   }
 }
+
+export const GET = withApiLog(route_GET);
+export const POST = withApiLog(route_POST);

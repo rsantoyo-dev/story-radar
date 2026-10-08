@@ -6,11 +6,12 @@ import {
   confirmTopicIdentity,
   getTopicSetupStatus,
 } from "@/app/modules/topics/topic-setup";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 type Context = { params: Promise<{ topicId: string }> };
 
 /** The brand's guided setup progress (identity → sources → channels). */
-export async function GET(request: Request, context: Context) {
+async function route_GET(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   try {
@@ -21,7 +22,7 @@ export async function GET(request: Request, context: Context) {
 }
 
 /** `confirm-identity` once the identity is reviewed; `complete` to open the dashboard. */
-export async function POST(request: Request, context: Context) {
+async function route_POST(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   try {
@@ -40,3 +41,6 @@ function setupError(error: unknown, action: string) {
   console.error(`Could not ${action}`, error);
   return noStoreJson({ error: `Could not ${action}.` }, 500);
 }
+
+export const GET = withApiLog(route_GET);
+export const POST = withApiLog(route_POST);

@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 
 import { authorizeRadarCollector, requestIsOperator, requestWorkspaceId } from "@/app/api/radar/radar-api-auth";
 import { getDemoCreditAccount } from "@/app/modules/credits/demo-credit.repository";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
-export async function GET(request: Request) {
+async function route_GET(request: Request) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -20,3 +21,5 @@ export async function GET(request: Request) {
     );
   }
 }
+
+export const GET = withApiLog(route_GET);

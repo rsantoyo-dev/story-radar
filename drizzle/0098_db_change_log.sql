@@ -59,7 +59,7 @@ BEGIN
     SELECT d.topic_id::text INTO v_topic FROM creative_asset_batches b JOIN creative_drafts d ON d.id = b.draft_id
     WHERE b.id = (v_row ->> 'batch_id')::uuid;
   END IF;
-  v_workspace := v_row ->> 'workspace_id';
+  v_workspace := CASE WHEN TG_TABLE_NAME = 'workspaces' THEN v_row ->> 'id' ELSE v_row ->> 'workspace_id' END;
   IF v_workspace IS NULL AND v_topic IS NOT NULL THEN
     SELECT t.workspace_id INTO v_workspace FROM topics t WHERE t.id = v_topic::uuid;
   END IF;

@@ -17,8 +17,6 @@ import { TopicContextError } from "@/app/modules/topics/topic-context";
 import { SIGNED_IN_CREDENTIAL } from "@/app/modules/auth/session-credential";
 import type { Topic } from "@/db/schema";
 import { annotateLogContext, createLogger, enterRequestLogContext } from "@/app/modules/observability/logger";
-import { recordAuditEventLater } from "@/app/modules/observability/audit";
-import { isMutatingMethod, topicIdFromUrl } from "@/app/modules/observability/audit.core";
 
 const log = createLogger("auth");
 
@@ -87,10 +85,6 @@ export async function authorizeRadarCollector(
     const needed = minimum ?? minimumRoleForMethod(request.method);
     if (!hasRole(access.role, needed) && !access.staff) return refuse(`This needs the ${needed} role in your workspace.`, 403);
   }
-  // Every authorized change request leaves a trace of who asked for what (FEAT-OBS-001).
-  if (isMutatingMethod(request.method)) {
-    recordAuditEventLater({ action: "api.request", outcome: "attempted", entityType: "route", entityId: routeLabel(request), topicId: topicIdFromUrl(request.url) ?? null });
-  }
   return undefined;
 }
 
@@ -158,10 +152,6 @@ async function roleOnTopic(access: RadarRequestAccess, topic: Topic): Promise<Wo
   return access.staff ? "staff" : undefined;
 }
 
-function routeLabel(request: Request): string {
-  try { return `${request.method} ${new URL(request.url).pathname}`; } catch { return request.method; }
-}
-
 function topicIdInUrl(request: Request): string | undefined {
   const url = new URL(request.url);
   const fromPath = TOPIC_IN_PATH.exec(url.pathname)?.[1];
@@ -172,7 +162,5 @@ function topicIdInUrl(request: Request): string | undefined {
 
 function refuse(error: string, status: 403 | 404): NextResponse {
   log.warn("API request refused", { status, reason: error });
-  // Only refusals of signed-in callers are audited; anonymous noise stays in the logs.
-  recordAuditEventLater({ action: "api.request", outcome: "denied", entityType: "route", details: { status, reason: error } });
   return NextResponse.json({ error }, { status, headers: { "Cache-Control": "no-store" } });
 }

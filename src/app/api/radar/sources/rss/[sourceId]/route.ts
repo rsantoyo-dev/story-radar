@@ -1,10 +1,11 @@
 import { authorizeRadarCollector, requestWorkspaceId } from "@/app/api/radar/radar-api-auth";
 import { noStoreJson } from "@/app/api/radar/topics/topic-route-utils";
 import { deleteUnlinkedRssSource, getRssSourceById } from "@/app/modules/topics/topic-catalog.repository";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 type Context = { params: Promise<{ sourceId: string }> };
 
-export async function DELETE(request: Request, context: Context) {
+async function route_DELETE(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   try {
@@ -19,3 +20,5 @@ export async function DELETE(request: Request, context: Context) {
     return noStoreJson({ error: "Unable to delete feed" }, 500);
   }
 }
+
+export const DELETE = withApiLog(route_DELETE);

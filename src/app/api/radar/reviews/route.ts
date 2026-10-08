@@ -13,12 +13,13 @@ import {
   requireActiveRequestTopic,
   topicRequestErrorResponse,
 } from "../radar-topic";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 const MAX_STORIES_PER_REVIEW = 100;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-export async function PATCH(request: Request) {
+async function route_PATCH(request: Request) {
   const unauthorizedResponse = await authorizeRadarCollector(request);
 
   if (unauthorizedResponse) {
@@ -65,7 +66,7 @@ export async function PATCH(request: Request) {
  * This is the inverse of approving a shortlist story and is used to clear the
  * Selected stories board after editorial priorities change.
  */
-export async function DELETE(request: Request) {
+async function route_DELETE(request: Request) {
   const unauthorizedResponse = await authorizeRadarCollector(request);
 
   if (unauthorizedResponse) {
@@ -154,3 +155,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 class InvalidStoryReviewError extends Error {}
+
+export const PATCH = withApiLog(route_PATCH);
+export const DELETE = withApiLog(route_DELETE);

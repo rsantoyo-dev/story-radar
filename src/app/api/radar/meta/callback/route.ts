@@ -22,6 +22,7 @@ import {
   saveTopicMetaConnection,
 } from "@/app/modules/meta/topic-meta-connections.repository";
 import { recordAuditEventLater } from "@/app/modules/observability/audit";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
 
@@ -33,7 +34,7 @@ export const runtime = "nodejs";
  * Instagram Login authorizes the Instagram account directly: no Facebook
  * Page is involved.
  */
-export async function GET(request: Request) {
+async function route_GET(request: Request) {
   const url = new URL(request.url);
   const state = url.searchParams.get("state");
   const code = url.searchParams.get("code");
@@ -152,3 +153,5 @@ function genericFailureRedirect(message: string): string {
   url.searchParams.set("metaError", message);
   return url.toString();
 }
+
+export const GET = withApiLog(route_GET);

@@ -6,6 +6,7 @@ import {
   syncInstagramMediaPage,
 } from "@/app/modules/meta/sync-instagram-media";
 import { TopicContextError, requireTopic } from "@/app/modules/topics/topic-context";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 type Context = { params: Promise<{ topicId: string }> };
 
@@ -15,7 +16,7 @@ type Context = { params: Promise<{ topicId: string }> };
  * with older publications. A sync failure is returned in the body (with
  * `error`), not as a non-2xx — the same convention as the verify route.
  */
-export async function POST(request: Request, context: Context) {
+async function route_POST(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -71,3 +72,5 @@ function metaMediaSyncRouteError(error: unknown) {
   console.error("Failed to sync Instagram media", error);
   return noStoreJson({ error: "Unable to sync Instagram publications" }, 500);
 }
+
+export const POST = withApiLog(route_POST);

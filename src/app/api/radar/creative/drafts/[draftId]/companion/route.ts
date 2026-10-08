@@ -8,6 +8,7 @@ import {
   creativeRouteErrorResponse,
   noStoreJson,
 } from "../../../../creative-route-error";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
 // Brief/draft generation chains several model calls and a bounded editorial
@@ -19,7 +20,7 @@ const UUID_PATTERN =
 
 type Context = { params: Promise<{ draftId: string }> };
 
-export async function POST(request: Request, context: Context) {
+async function route_POST(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const { draftId } = await context.params;
@@ -43,3 +44,5 @@ export async function POST(request: Request, context: Context) {
     return creativeRouteErrorResponse(error, "create the companion Story");
   }
 }
+
+export const POST = withApiLog(route_POST);

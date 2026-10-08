@@ -10,6 +10,7 @@ import {
   type InstagramMediaLinkInput,
 } from "@/app/modules/meta/link-instagram-media";
 import { TopicContextError, requireTopic } from "@/app/modules/topics/topic-context";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 type Context = { params: Promise<{ topicId: string }> };
 
@@ -19,7 +20,7 @@ type Context = { params: Promise<{ topicId: string }> };
  * - `?storyId=`    → drafts belonging to that story
  * - `?draftId=`    → image batches of that draft
  */
-export async function GET(request: Request, context: Context) {
+async function route_GET(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -59,7 +60,7 @@ export async function GET(request: Request, context: Context) {
  * `{ storyId: null }` clears it. Belonging checks (story approved, draft ∈
  * story, batch ∈ draft) happen in `linkInstagramMediaToStory`.
  */
-export async function POST(request: Request, context: Context) {
+async function route_POST(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -162,3 +163,6 @@ function metaMediaLinkRouteError(error: unknown) {
   console.error("Failed to link Instagram publication", error);
   return noStoreJson({ error: "Unable to link the Instagram publication" }, 500);
 }
+
+export const GET = withApiLog(route_GET);
+export const POST = withApiLog(route_POST);

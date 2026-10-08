@@ -14,6 +14,7 @@ import {
 } from "@/app/modules/meta/topic-meta-connections.repository";
 import { TopicContextError, requireTopic } from "@/app/modules/topics/topic-context";
 import type { Topic } from "@/db/schema";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 type Context = { params: Promise<{ topicId: string }> };
 
@@ -31,7 +32,7 @@ const INSTAGRAM_OAUTH_SCOPES = [
  * /api/radar/meta/callback route with no Authorization header we control,
  * which is why the topic is bound through the signed `state` param instead.
  */
-export async function POST(request: Request, context: Context) {
+async function route_POST(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -92,3 +93,5 @@ function metaConnectRouteError(error: unknown) {
   console.error("Failed to start the Meta connection", error);
   return noStoreJson({ error: "Unable to start the Instagram connection" }, 500);
 }
+
+export const POST = withApiLog(route_POST);

@@ -788,6 +788,9 @@ deprecation notices.
   `src/app/modules/observability/logger.ts` (one redacted JSON line per
   event, with the request context). Never log credentials, tokens, sign-in
   links, prompts or generated content in full.
+- Export every route handler through `withApiLog` (`export const GET =
+  withApiLog(route_GET)`) so each call lands in the API request log, and
+  record significant business actions with `recordAuditEvent`.
 - Preserve historical drafts, image batches, asset versions, publication
   packages, and character or brand snapshots.
 - Prefer explicit stale or read-only states over destructive replacement.

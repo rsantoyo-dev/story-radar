@@ -9,6 +9,7 @@ import {
   promoteEditorialReviewCandidate,
 } from "@/app/modules/stories/story-editorial.repository";
 import { NextResponse } from "next/server";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
 
@@ -22,7 +23,7 @@ type Context = { params: Promise<{ storyId: string }> };
  * intentionally a separate route from shortlist approval so the UI can label
  * the action and preserve the evaluator's original decision.
  */
-export async function POST(request: Request, context: Context) {
+async function route_POST(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -67,3 +68,5 @@ function noStoreJson(value: unknown, status = 200): NextResponse {
     headers: { "Cache-Control": "no-store" },
   });
 }
+
+export const POST = withApiLog(route_POST);

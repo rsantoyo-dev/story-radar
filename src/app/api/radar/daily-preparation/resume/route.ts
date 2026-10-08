@@ -4,9 +4,10 @@ import { getTopicById } from "@/app/modules/topics/topic-catalog.repository";
 import { noStoreJson } from "../../creative-route-error";
 import { pendingPreparations } from "@/app/modules/stories/daily-preparation.repository";
 import { drivePreparation } from "@/app/modules/stories/daily-preparation";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 export const runtime="nodejs";
 export const maxDuration=300;
-export async function POST(request:Request) {
+async function route_POST(request:Request) {
   const denied=await authorizeRadarCollector(request);if(denied)return denied;
   // Only this caller's workspace: one member never drives another workspace's work.
   const access=requestAccess(request);
@@ -16,3 +17,5 @@ export async function POST(request:Request) {
   after(async()=>{await Promise.allSettled(runs.map(run=>drivePreparation(run.topicId,run.id)));});
   return noStoreJson({selected:runs.length});
 }
+
+export const POST = withApiLog(route_POST);

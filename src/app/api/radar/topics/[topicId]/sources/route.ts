@@ -16,10 +16,11 @@ import {
   noStoreJson,
   topicCatalogError,
 } from "../../topic-route-utils";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 type Context = { params: Promise<{ topicId: string }> };
 
-export async function GET(request: Request, context: Context) {
+async function route_GET(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -31,7 +32,7 @@ export async function GET(request: Request, context: Context) {
   }
 }
 
-export async function POST(request: Request, context: Context) {
+async function route_POST(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -98,3 +99,6 @@ function sourceRouteError(error: unknown, action: string) {
 
   return topicCatalogError(error, action);
 }
+
+export const GET = withApiLog(route_GET);
+export const POST = withApiLog(route_POST);

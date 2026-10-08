@@ -8,8 +8,9 @@ import {
   type CreateRssSourceInput,
 } from "@/app/modules/topics/topic-catalog.repository";
 import { TopicContextError } from "@/app/modules/topics/topic-context";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
-export async function POST(request: Request) {
+async function route_POST(request: Request) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -40,3 +41,5 @@ export async function POST(request: Request) {
     return topicCatalogError(error, "add workspace RSS feed");
   }
 }
+
+export const POST = withApiLog(route_POST);

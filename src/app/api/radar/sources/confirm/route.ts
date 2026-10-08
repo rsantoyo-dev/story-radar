@@ -9,10 +9,11 @@ import { detectUploadedPdf, detectUrlSource, SourceDetectionError } from "@/app/
 import { attachExistingKnowledgeDocument } from "@/app/modules/documents/knowledge-documents.repository";
 import { attachRssSourceToTopic, createOrReuseRssSource } from "@/app/modules/topics/topic-catalog.repository";
 import { TopicContextError } from "@/app/modules/topics/topic-context";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const maxDuration = 120;
 
-export async function POST(request: Request) {
+async function route_POST(request: Request) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   try {
@@ -134,3 +135,5 @@ function parseTopicIds(value: unknown): string[] {
   }
   return [...new Set(value as string[])];
 }
+
+export const POST = withApiLog(route_POST);

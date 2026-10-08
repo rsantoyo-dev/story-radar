@@ -9,6 +9,7 @@ import {
 } from "@/app/api/radar/radar-topic";
 import { listCreativeBrandReferences } from "@/app/modules/stories/creative-brand-references.repository";
 import { uploadCreativeBrandReference } from "@/app/modules/stories/manage-creative-brand-references";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
 
@@ -22,7 +23,7 @@ const ALLOWED_FIELDS = new Set([
   "providerTransmissionAllowed",
 ]);
 
-export async function GET(request: Request) {
+async function route_GET(request: Request) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -37,7 +38,7 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+async function route_POST(request: Request) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -97,3 +98,6 @@ export async function POST(request: Request) {
     return creativeRouteErrorResponse(error, "upload the brand reference");
   }
 }
+
+export const GET = withApiLog(route_GET);
+export const POST = withApiLog(route_POST);

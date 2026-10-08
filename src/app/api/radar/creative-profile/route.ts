@@ -12,10 +12,11 @@ import {
   requireRequestTopic,
   topicRequestErrorResponse,
 } from "../radar-topic";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
 
-export async function GET(request: Request) {
+async function route_GET(request: Request) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -29,7 +30,7 @@ export async function GET(request: Request) {
   }
 }
 
-export async function PUT(request: Request) {
+async function route_PUT(request: Request) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -57,3 +58,6 @@ export async function PUT(request: Request) {
     return creativeRouteErrorResponse(error, "save the creative profile");
   }
 }
+
+export const GET = withApiLog(route_GET);
+export const PUT = withApiLog(route_PUT);

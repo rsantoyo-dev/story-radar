@@ -12,8 +12,9 @@ import {
   topicRequestErrorResponse,
 } from "../radar-topic";
 import { recordAuditEventLater } from "@/app/modules/observability/audit";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
-export async function GET(request: Request) {
+async function route_GET(request: Request) {
   const unauthorizedResponse = await authorizeRadarCollector(request);
 
   if (unauthorizedResponse) {
@@ -39,7 +40,7 @@ export async function GET(request: Request) {
   }
 }
 
-export async function DELETE(request: Request) {
+async function route_DELETE(request: Request) {
   // Clearing a topic's selections, drafts and runs: admins and owners only.
   const unauthorizedResponse = await authorizeRadarCollector(request, "admin");
 
@@ -95,3 +96,6 @@ async function getRadarAdminStats(topicId: string) {
     editorial,
   };
 }
+
+export const GET = withApiLog(route_GET);
+export const DELETE = withApiLog(route_DELETE);

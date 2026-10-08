@@ -15,6 +15,7 @@ import {
   recordMetaVerificationSuccess,
 } from "@/app/modules/meta/topic-meta-connections.repository";
 import { TopicContextError, requireTopic } from "@/app/modules/topics/topic-context";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 type Context = { params: Promise<{ topicId: string }> };
 
@@ -25,7 +26,7 @@ type Context = { params: Promise<{ topicId: string }> };
  * Access for it. A verification failure is a legitimate result read from the
  * returned status, not a route error, so this never returns non-2xx for it.
  */
-export async function POST(request: Request, context: Context) {
+async function route_POST(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -82,3 +83,5 @@ function metaVerifyRouteError(error: unknown) {
   console.error("Failed to verify the Instagram connection", error);
   return noStoreJson({ error: "Unable to verify the Instagram connection" }, 500);
 }
+
+export const POST = withApiLog(route_POST);

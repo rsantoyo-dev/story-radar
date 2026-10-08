@@ -6,6 +6,7 @@ import {
 } from "@/app/modules/documents/knowledge-document.types";
 import { promoteKnowledgeSectionToStory } from "@/app/modules/documents/promote-knowledge-section";
 import { TopicContextError } from "@/app/modules/topics/topic-context";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 type Context = {
   params: Promise<{
@@ -15,7 +16,7 @@ type Context = {
   }>;
 };
 
-export async function POST(request: Request, context: Context) {
+async function route_POST(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -42,3 +43,5 @@ export async function POST(request: Request, context: Context) {
     return noStoreJson({ error: "Unable to create the story candidate" }, 500);
   }
 }
+
+export const POST = withApiLog(route_POST);

@@ -8,6 +8,7 @@ import {
   DuplicateFlagClearConflictError,
 } from "@/app/modules/stories/story-duplicates.repository";
 import { NextResponse } from "next/server";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
 
@@ -22,7 +23,7 @@ type Context = { params: Promise<{ storyId: string }> };
  * document (e.g. adjacent book chapters) that share boilerplate headings.
  * Clearing the flag returns the story to the AI evaluation candidate pool.
  */
-export async function POST(request: Request, context: Context) {
+async function route_POST(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -63,3 +64,5 @@ function noStoreJson(value: unknown, status = 200): NextResponse {
     headers: { "Cache-Control": "no-store" },
   });
 }
+
+export const POST = withApiLog(route_POST);

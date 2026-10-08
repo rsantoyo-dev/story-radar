@@ -5,6 +5,7 @@ import { createKnowledgeIngestionRunForTopicDocument } from "@/app/modules/docum
 import { KnowledgeDocumentNotFoundError } from "@/app/modules/documents/knowledge-document.types";
 import { TopicContextError } from "@/app/modules/topics/topic-context";
 import { after } from "next/server";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 type Context = {
   params: Promise<{ topicId: string; topicDocumentId: string }>;
@@ -12,7 +13,7 @@ type Context = {
 
 export const maxDuration = 120;
 
-export async function POST(request: Request, context: Context) {
+async function route_POST(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -33,3 +34,5 @@ export async function POST(request: Request, context: Context) {
     return noStoreJson({ error: "Unable to retry the knowledge document" }, 500);
   }
 }
+
+export const POST = withApiLog(route_POST);

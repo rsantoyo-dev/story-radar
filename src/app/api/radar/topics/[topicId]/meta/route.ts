@@ -6,10 +6,11 @@ import {
 } from "@/app/modules/meta/topic-meta-connections.repository";
 import { TopicContextError, requireTopic } from "@/app/modules/topics/topic-context";
 import { recordAuditEventLater } from "@/app/modules/observability/audit";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 type Context = { params: Promise<{ topicId: string }> };
 
-export async function GET(request: Request, context: Context) {
+async function route_GET(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -21,7 +22,7 @@ export async function GET(request: Request, context: Context) {
   }
 }
 
-export async function DELETE(request: Request, context: Context) {
+async function route_DELETE(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -47,3 +48,6 @@ function metaRouteError(error: unknown, action: string) {
   console.error(`Failed to ${action}`, error);
   return noStoreJson({ error: `Unable to ${action}` }, 500);
 }
+
+export const GET = withApiLog(route_GET);
+export const DELETE = withApiLog(route_DELETE);

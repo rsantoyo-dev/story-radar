@@ -6,6 +6,7 @@ import {
   topicRequestErrorResponse,
 } from "@/app/api/radar/radar-topic";
 import { getStoryInstagramResults, getStoryInstagramVersion } from "@/app/modules/meta/story-instagram-results";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
 
@@ -19,7 +20,7 @@ type Context = { params: Promise<{ storyId: string }> };
  * metrics and resolved creative version, for the panel inside Creative Studio.
  * Read-only; storyId from the path, topicId from `?topicId=`.
  */
-export async function GET(request: Request, context: Context) {
+async function route_GET(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -59,3 +60,5 @@ async function parseStoryId(context: Context): Promise<string | undefined> {
 function noStoreJson(value: unknown): NextResponse {
   return NextResponse.json(value, { headers: { "Cache-Control": "no-store" } });
 }
+
+export const GET = withApiLog(route_GET);

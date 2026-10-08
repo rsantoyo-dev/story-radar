@@ -16,10 +16,11 @@ import {
   topicCatalogError,
 } from "../topic-route-utils";
 import { recordAuditEventLater } from "@/app/modules/observability/audit";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 type Context = { params: Promise<{ topicId: string }> };
 
-export async function PATCH(request: Request, context: Context) {
+async function route_PATCH(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -37,7 +38,7 @@ export async function PATCH(request: Request, context: Context) {
   }
 }
 
-export async function DELETE(request: Request, context: Context) {
+async function route_DELETE(request: Request, context: Context) {
   // Deleting a brand removes its work: admins and owners.
   const unauthorized = await authorizeRadarCollector(request, "admin");
   if (unauthorized) return unauthorized;
@@ -77,3 +78,6 @@ function topicRouteError(error: unknown, action: string) {
 
   return topicCatalogError(error, action);
 }
+
+export const PATCH = withApiLog(route_PATCH);
+export const DELETE = withApiLog(route_DELETE);

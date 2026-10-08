@@ -4,6 +4,7 @@ import { isInstagramMediaFormat } from "@/app/modules/meta/instagram-media-forma
 import { getInstagramHistoryStatus } from "@/app/modules/meta/instagram-history-account";
 import { listTopicInstagramMedia } from "@/app/modules/meta/topic-instagram-media.repository";
 import { TopicContextError, requireTopic } from "@/app/modules/topics/topic-context";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 type Context = { params: Promise<{ topicId: string }> };
 
@@ -15,7 +16,7 @@ const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
  * active account and last successful sync so the panel is self-contained.
  * Read-only — never calls Graph.
  */
-export async function GET(request: Request, context: Context) {
+async function route_GET(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -116,3 +117,5 @@ function metaMediaRouteError(error: unknown) {
   console.error("Failed to read Instagram publications", error);
   return noStoreJson({ error: "Unable to read Instagram publications" }, 500);
 }
+
+export const GET = withApiLog(route_GET);

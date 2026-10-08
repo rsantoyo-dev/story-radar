@@ -8,12 +8,13 @@ import {
   topicRequestErrorResponse,
 } from "@/app/api/radar/radar-topic";
 import { uploadCreativeBrandAsset } from "@/app/modules/stories/manage-creative-brand-assets";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
 
 const MAX_BRAND_MULTIPART_BYTES = 6 * 1024 * 1024;
 
-export async function POST(request: Request) {
+async function route_POST(request: Request) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -68,3 +69,5 @@ export async function POST(request: Request) {
     return creativeRouteErrorResponse(error, "upload the brand asset");
   }
 }
+
+export const POST = withApiLog(route_POST);

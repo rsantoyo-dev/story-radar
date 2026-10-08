@@ -14,12 +14,13 @@ import {
 } from "@/app/modules/documents/knowledge-document.types";
 import { TopicContextError, requireTopic } from "@/app/modules/topics/topic-context";
 import { after } from "next/server";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 type Context = { params: Promise<{ topicId: string }> };
 
 export const maxDuration = 120;
 
-export async function GET(request: Request, context: Context) {
+async function route_GET(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -31,7 +32,7 @@ export async function GET(request: Request, context: Context) {
   }
 }
 
-export async function POST(request: Request, context: Context) {
+async function route_POST(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -80,3 +81,6 @@ function documentRouteError(error: unknown, action: string) {
   console.error(`Failed to ${action}`, error);
   return noStoreJson({ error: `Unable to ${action}` }, 500);
 }
+
+export const GET = withApiLog(route_GET);
+export const POST = withApiLog(route_POST);

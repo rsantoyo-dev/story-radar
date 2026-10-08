@@ -16,10 +16,11 @@ import {
   requireActiveRequestTopic,
   topicRequestErrorResponse,
 } from "../radar-topic";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
 
-export async function POST(request: Request) {
+async function route_POST(request: Request) {
   const unauthorizedResponse = await authorizeRadarCollector(request);
 
   if (unauthorizedResponse) {
@@ -127,3 +128,5 @@ async function readEvaluationRequest(
 }
 
 class InvalidEditorialEvaluationRequestError extends Error {}
+
+export const POST = withApiLog(route_POST);

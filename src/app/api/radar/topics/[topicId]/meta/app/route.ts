@@ -9,6 +9,7 @@ import {
   saveTopicMetaAppOverride,
 } from "@/app/modules/meta/topic-meta-connections.repository";
 import { TopicContextError, requireTopic } from "@/app/modules/topics/topic-context";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 type Context = { params: Promise<{ topicId: string }> };
 
@@ -17,7 +18,7 @@ type Context = { params: Promise<{ topicId: string }> };
  * in META_APP_ID/META_APP_SECRET; this exists for the (expected to be rare)
  * topic whose Instagram account must be authorized through its own app.
  */
-export async function PUT(request: Request, context: Context) {
+async function route_PUT(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -33,7 +34,7 @@ export async function PUT(request: Request, context: Context) {
   }
 }
 
-export async function DELETE(request: Request, context: Context) {
+async function route_DELETE(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -70,3 +71,6 @@ function metaAppRouteError(error: unknown, action: string) {
   console.error(`Failed to ${action}`, error);
   return noStoreJson({ error: `Unable to ${action}` }, 500);
 }
+
+export const PUT = withApiLog(route_PUT);
+export const DELETE = withApiLog(route_DELETE);

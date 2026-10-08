@@ -23,6 +23,7 @@ import {
   creativeRouteErrorResponse,
   noStoreJson,
 } from "../../../creative-route-error";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
 // Brief/draft generation chains several model calls and a bounded editorial
@@ -34,7 +35,7 @@ const UUID_PATTERN =
 
 type Context = { params: Promise<{ storyId: string }> };
 
-export async function GET(request: Request, context: Context) {
+async function route_GET(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const storyId = await parseId(context);
@@ -60,7 +61,7 @@ export async function GET(request: Request, context: Context) {
   }
 }
 
-export async function POST(request: Request, context: Context) {
+async function route_POST(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const preparationRunId = new URL(request.url).searchParams.get("preparationRunId") || undefined;
@@ -158,3 +159,6 @@ async function parseId(context: Context): Promise<string | undefined> {
   const { storyId } = await context.params;
   return UUID_PATTERN.test(storyId) ? storyId : undefined;
 }
+
+export const GET = withApiLog(route_GET);
+export const POST = withApiLog(route_POST);

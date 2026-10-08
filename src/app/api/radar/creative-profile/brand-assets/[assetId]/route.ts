@@ -8,6 +8,7 @@ import {
   topicRequestErrorResponse,
 } from "@/app/api/radar/radar-topic";
 import { readCreativeBrandAsset } from "@/app/modules/stories/manage-creative-brand-assets";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
 
@@ -16,7 +17,7 @@ const UUID_PATTERN =
 
 type Context = { params: Promise<{ assetId: string }> };
 
-export async function GET(request: Request, context: Context) {
+async function route_GET(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const { assetId } = await context.params;
@@ -44,3 +45,5 @@ export async function GET(request: Request, context: Context) {
     return creativeRouteErrorResponse(error, "load the brand asset");
   }
 }
+
+export const GET = withApiLog(route_GET);

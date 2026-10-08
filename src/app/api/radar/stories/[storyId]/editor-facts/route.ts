@@ -9,6 +9,7 @@ import {
   retractStoryEditorFact,
   StoryEditorFactValidationError,
 } from "@/app/modules/stories/story-editor-facts.repository";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
 type Context = { params: Promise<{ storyId: string }> };
@@ -18,18 +19,18 @@ type Context = { params: Promise<{ storyId: string }> };
  * sourceUrl?, note?}) and retract (DELETE {id}). A retracted fact is kept for
  * history and stops supporting new saves, reviews and approvals.
  */
-export async function GET(request: Request, context: Context) {
+async function route_GET(request: Request, context: Context) {
   return handle(request, context, async (topicId, storyId) => ({ facts: await listStoryEditorFacts(topicId, storyId) }));
 }
 
-export async function POST(request: Request, context: Context) {
+async function route_POST(request: Request, context: Context) {
   return handle(request, context, async (topicId, storyId) => {
     const input = parseEditorFactInput(await request.json().catch(() => undefined));
     return { fact: await addStoryEditorFact(topicId, storyId, input) };
   }, 201);
 }
 
-export async function DELETE(request: Request, context: Context) {
+async function route_DELETE(request: Request, context: Context) {
   return handle(request, context, async (topicId, storyId) => {
     const body = (await request.json().catch(() => undefined)) as { id?: unknown } | undefined;
     if (typeof body?.id !== "string" || !STORY_UUID.test(body.id)) {
@@ -60,3 +61,7 @@ async function handle(
     return topicRequestErrorResponse(error) ?? creativeRouteErrorResponse(error, "manage the story's editor facts");
   }
 }
+
+export const GET = withApiLog(route_GET);
+export const POST = withApiLog(route_POST);
+export const DELETE = withApiLog(route_DELETE);

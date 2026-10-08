@@ -4,6 +4,7 @@ import { authorizeRadarCollector, requestAccess } from "@/app/api/radar/radar-ap
 import { CreditPackNotFoundError, startCreditCheckout } from "@/app/modules/billing/credit-purchases";
 import { isStripeConfigured } from "@/app/modules/billing/stripe";
 import { createLogger } from "@/app/modules/observability/logger";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 const log = createLogger("billing");
 
@@ -14,7 +15,7 @@ function appUrl(request: Request): string {
 }
 
 /** Starts a Stripe Checkout for one credit pack. Owners and admins only. */
-export async function POST(request: Request) {
+async function route_POST(request: Request) {
   const unauthorized = await authorizeRadarCollector(request, "admin");
   if (unauthorized) return unauthorized;
   if (!isStripeConfigured()) {
@@ -46,3 +47,5 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "The payment page could not be opened. Try again in a moment." }, { status: 502, headers: NO_STORE });
   }
 }
+
+export const POST = withApiLog(route_POST);

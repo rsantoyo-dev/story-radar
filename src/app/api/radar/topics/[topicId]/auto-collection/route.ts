@@ -12,13 +12,14 @@ import { previewScoops } from "@/app/modules/stories/auto-collection";
 import { TopicContextError } from "@/app/modules/topics/topic-context";
 
 import { topicFromContext, type TopicRouteContext } from "../meta/facebook/facebook-route-utils";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 /**
  * GET settings + recent scoops. GET ?preview=1[&minGrowth=&minEditorial=&maxAgeHours=]
  * lists which recent stories would qualify — read-only, spends no AI.
  * PUT settings; PATCH {scoopId, action: "seen"|"dismiss"}.
  */
-export async function GET(request: Request, context: TopicRouteContext) {
+async function route_GET(request: Request, context: TopicRouteContext) {
   const params = new URL(request.url).searchParams;
   if (params.get("preview") === "1") {
     return handle(request, context, async (topicId) => {
@@ -38,11 +39,11 @@ export async function GET(request: Request, context: TopicRouteContext) {
   return handle(request, context, async (topicId) => ({ settings: await getAutoCollectionSettings(topicId) ?? null, scoops: await listTopicScoops(topicId) }));
 }
 
-export async function PUT(request: Request, context: TopicRouteContext) {
+async function route_PUT(request: Request, context: TopicRouteContext) {
   return handle(request, context, async (topicId) => ({ settings: await saveAutoCollectionSettings(topicId, await request.json().catch(() => undefined)) }));
 }
 
-export async function PATCH(request: Request, context: TopicRouteContext) {
+async function route_PATCH(request: Request, context: TopicRouteContext) {
   return handle(request, context, async (topicId) => {
     const body = (await request.json().catch(() => undefined)) as { scoopId?: unknown; action?: unknown } | undefined;
     if (typeof body?.scoopId !== "string") throw new AutoCollectionValidationError("scoopId is required.");
@@ -63,3 +64,7 @@ async function handle(request: Request, context: TopicRouteContext, run: (topicI
     return noStoreJson({ error: "Unable to update the automatic reader" }, 500);
   }
 }
+
+export const GET = withApiLog(route_GET);
+export const PUT = withApiLog(route_PUT);
+export const PATCH = withApiLog(route_PATCH);

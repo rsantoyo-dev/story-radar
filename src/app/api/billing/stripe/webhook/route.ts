@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { applyStripeEvent } from "@/app/modules/billing/credit-purchases";
 import { verifyStripeSignature } from "@/app/modules/billing/stripe.core";
 import { annotateLogContext, createLogger, enterRequestLogContext } from "@/app/modules/observability/logger";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 const log = createLogger("stripe-webhook");
 
@@ -12,7 +13,7 @@ const log = createLogger("stripe-webhook");
  * Public, but only a payload signed with STRIPE_WEBHOOK_SECRET is applied.
  * A 5xx makes Stripe retry; every handler is idempotent.
  */
-export async function POST(request: Request) {
+async function route_POST(request: Request) {
   enterRequestLogContext(request);
   annotateLogContext({ actor: "stripe" });
   const secret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
@@ -43,3 +44,5 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Event could not be applied" }, { status: 500 });
   }
 }
+
+export const POST = withApiLog(route_POST);

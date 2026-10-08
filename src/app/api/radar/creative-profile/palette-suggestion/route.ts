@@ -15,6 +15,7 @@ import {
   BrandPaletteSuggestionLimitError,
   suggestBrandPalette,
 } from "@/app/modules/stories/suggest-brand-palette";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -24,7 +25,7 @@ export const maxDuration = 60;
  * `{ prompt }`. Returns a proposed brand palette plus a short summary; the
  * profile is not modified here, the editor saves it from the panel.
  */
-export async function POST(request: Request) {
+async function route_POST(request: Request) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -51,3 +52,5 @@ export async function POST(request: Request) {
     return creativeRouteErrorResponse(error, "suggest a brand palette");
   }
 }
+
+export const POST = withApiLog(route_POST);

@@ -17,10 +17,11 @@ import {
   noStoreJson,
   topicCatalogError,
 } from "../../../topic-route-utils";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 type Context = { params: Promise<{ topicId: string; topicSourceId: string }> };
 
-export async function PATCH(request: Request, context: Context) {
+async function route_PATCH(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -50,7 +51,7 @@ export async function PATCH(request: Request, context: Context) {
   }
 }
 
-export async function DELETE(request: Request, context: Context) {
+async function route_DELETE(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -93,3 +94,6 @@ function sourceRouteError(error: unknown, action: string) {
 
   return topicCatalogError(error, action);
 }
+
+export const PATCH = withApiLog(route_PATCH);
+export const DELETE = withApiLog(route_DELETE);

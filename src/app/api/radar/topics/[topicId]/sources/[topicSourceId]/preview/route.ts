@@ -7,6 +7,7 @@ import {
 import { TopicContextError } from "@/app/modules/topics/topic-context";
 
 import { noStoreJson, topicCatalogError } from "../../../../topic-route-utils";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 type Context = {
   params: Promise<{ topicId: string; topicSourceId: string }>;
@@ -14,7 +15,7 @@ type Context = {
 
 export const runtime = "nodejs";
 
-export async function POST(request: Request, context: Context) {
+async function route_POST(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -46,3 +47,5 @@ export async function POST(request: Request, context: Context) {
     return topicCatalogError(error, "preview the RSS source");
   }
 }
+
+export const POST = withApiLog(route_POST);

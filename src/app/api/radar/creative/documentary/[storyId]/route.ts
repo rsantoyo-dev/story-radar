@@ -3,6 +3,7 @@ import { requireActiveRequestTopic, topicRequestErrorResponse } from "@/app/api/
 import { getDocumentaryPreparation, prepareDocumentary, reviewDocumentary } from "@/app/modules/stories/manage-creative-documentary";
 import { record } from "@/app/modules/stories/creative-documentary";
 import { creativeRouteErrorResponse, noStoreJson } from "../../../creative-route-error";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 export const runtime = "nodejs";
 export const maxDuration = 120;
 type Context = { params: Promise<{ storyId: string }> };
@@ -28,6 +29,10 @@ async function handle(request: Request, context: Context, method: "GET" | "POST"
     return topicRequestErrorResponse(error) || creativeRouteErrorResponse(error, "prepare or review the documentary publication");
   }
 }
-export async function GET(request: Request, context: Context) { return handle(request, context, "GET"); }
-export async function POST(request: Request, context: Context) { return handle(request, context, "POST"); }
-export async function PATCH(request: Request, context: Context) { return handle(request, context, "PATCH"); }
+async function route_GET(request: Request, context: Context) { return handle(request, context, "GET"); }
+async function route_POST(request: Request, context: Context) { return handle(request, context, "POST"); }
+async function route_PATCH(request: Request, context: Context) { return handle(request, context, "PATCH"); }
+
+export const GET = withApiLog(route_GET);
+export const POST = withApiLog(route_POST);
+export const PATCH = withApiLog(route_PATCH);

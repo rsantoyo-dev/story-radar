@@ -13,6 +13,7 @@ import {
   creativeRouteErrorResponse,
   noStoreJson,
 } from "../../../creative-route-error";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -22,7 +23,7 @@ const UUID_PATTERN =
 
 type Context = { params: Promise<{ assetId: string }> };
 
-export async function POST(request: Request, context: Context) {
+async function route_POST(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const assetId = await parseId(context);
@@ -47,7 +48,7 @@ export async function POST(request: Request, context: Context) {
   }
 }
 
-export async function PATCH(request: Request, context: Context) {
+async function route_PATCH(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const assetId = await parseId(context);
@@ -85,7 +86,7 @@ async function parseId(context: Context): Promise<string | undefined> {
   return UUID_PATTERN.test(assetId) ? assetId : undefined;
 }
 
-export async function GET(request: Request, context: Context) {
+async function route_GET(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   try {
@@ -98,3 +99,7 @@ export async function GET(request: Request, context: Context) {
     return new Response(file, { headers: { "Content-Type": file.type, "Cache-Control": "private, no-store", "Content-Disposition": `attachment; filename="${assetId}.png"` } });
   } catch (error) { return topicRequestErrorResponse(error) || creativeRouteErrorResponse(error, "download the approved image"); }
 }
+
+export const POST = withApiLog(route_POST);
+export const PATCH = withApiLog(route_PATCH);
+export const GET = withApiLog(route_GET);

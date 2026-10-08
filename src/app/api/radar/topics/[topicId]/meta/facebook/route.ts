@@ -7,8 +7,9 @@ import {
 
 import { facebookRouteError, topicFromContext, type TopicRouteContext } from "./facebook-route-utils";
 import { recordAuditEventLater } from "@/app/modules/observability/audit";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
-export async function GET(request: Request, context: TopicRouteContext) {
+async function route_GET(request: Request, context: TopicRouteContext) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   try {
@@ -20,7 +21,7 @@ export async function GET(request: Request, context: TopicRouteContext) {
 }
 
 /** Disconnects only the Facebook Page; a directly connected Instagram account is untouched. */
-export async function DELETE(request: Request, context: TopicRouteContext) {
+async function route_DELETE(request: Request, context: TopicRouteContext) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   try {
@@ -32,3 +33,6 @@ export async function DELETE(request: Request, context: TopicRouteContext) {
     return facebookRouteError(error, "disconnect the Facebook Page");
   }
 }
+
+export const GET = withApiLog(route_GET);
+export const DELETE = withApiLog(route_DELETE);

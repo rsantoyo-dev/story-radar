@@ -3,6 +3,7 @@ import { creativeRouteErrorResponse, noStoreJson } from "@/app/api/radar/creativ
 import { requireActiveRequestTopic, topicRequestErrorResponse } from "@/app/api/radar/radar-topic";
 import { CreativeIdentityValidationError } from "@/app/modules/stories/creative-identity";
 import { CreativeIdentitySuggestionLimitError, suggestCreativeIdentity } from "@/app/modules/stories/suggest-creative-identity";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -12,7 +13,7 @@ export const maxDuration = 120;
  * `{ guide, instruction?, fields?, current? }`. Returns a proposed identity
  * (and, for the whole identity, a palette); the profile is saved by the editor.
  */
-export async function POST(request: Request) {
+async function route_POST(request: Request) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   try {
@@ -28,3 +29,5 @@ export async function POST(request: Request) {
     return creativeRouteErrorResponse(error, "organize the creative identity");
   }
 }
+
+export const POST = withApiLog(route_POST);

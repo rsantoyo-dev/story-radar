@@ -8,8 +8,9 @@ import {
   requireActiveRequestTopic,
   topicRequestErrorResponse,
 } from "./radar-topic";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
-export async function GET(request: Request) {
+async function route_GET(request: Request) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -72,3 +73,5 @@ function parseMaxAgeHours(value: string | null): number | undefined {
     ? maxAgeHours
     : undefined;
 }
+
+export const GET = withApiLog(route_GET);

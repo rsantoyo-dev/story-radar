@@ -14,6 +14,7 @@ import {
   editCreativeBrandReference,
   readCreativeBrandReferenceFile,
 } from "@/app/modules/stories/manage-creative-brand-references";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
 
@@ -23,7 +24,7 @@ const UUID_PATTERN =
 type Context = { params: Promise<{ referenceId: string }> };
 
 /** Streams the private reference image bytes — no signed URL, per-topic scoped. */
-export async function GET(request: Request, context: Context) {
+async function route_GET(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const { referenceId } = await context.params;
@@ -61,7 +62,7 @@ export async function GET(request: Request, context: Context) {
  * permission) or toggles `isActive`. Nothing is ever hard-deleted — deactivating
  * is `{ isActive: false }`.
  */
-export async function PATCH(request: Request, context: Context) {
+async function route_PATCH(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const { referenceId } = await context.params;
@@ -88,7 +89,7 @@ export async function PATCH(request: Request, context: Context) {
   }
 }
 
-export async function PUT(request: Request, context: Context) {
+async function route_PUT(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   try {
@@ -112,7 +113,7 @@ export async function PUT(request: Request, context: Context) {
  * Removes the reference from the library (soft delete): it is never sent to
  * the image model again, while drafts and images that used it keep history.
  */
-export async function DELETE(request: Request, context: Context) {
+async function route_DELETE(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const { referenceId } = await context.params;
@@ -127,3 +128,8 @@ export async function DELETE(request: Request, context: Context) {
     return topicRequestErrorResponse(error) ?? creativeRouteErrorResponse(error, "delete the brand reference");
   }
 }
+
+export const GET = withApiLog(route_GET);
+export const PATCH = withApiLog(route_PATCH);
+export const PUT = withApiLog(route_PUT);
+export const DELETE = withApiLog(route_DELETE);

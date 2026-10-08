@@ -9,12 +9,13 @@ import {
 } from "@/app/modules/documents/knowledge-document.types";
 import { promoteKnowledgeChaptersToStory } from "@/app/modules/documents/promote-knowledge-section";
 import { TopicContextError } from "@/app/modules/topics/topic-context";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 type Context = {
   params: Promise<{ topicId: string; topicDocumentId: string }>;
 };
 
-export async function POST(request: Request, context: Context) {
+async function route_POST(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -74,3 +75,5 @@ function optionalTitle(value: unknown): string | undefined {
   }
   return title;
 }
+
+export const POST = withApiLog(route_POST);

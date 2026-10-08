@@ -1,6 +1,7 @@
 import { authorizeRadarCollector } from "@/app/api/radar/radar-api-auth";
 import { noStoreJson } from "@/app/api/radar/topics/topic-route-utils";
 import { getMetaIntegrationHealth } from "@/app/modules/meta/meta-integration.config";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 /**
  * Deployment self-check for the Instagram integration. Reports whether
@@ -8,7 +9,7 @@ import { getMetaIntegrationHealth } from "@/app/modules/meta/meta-integration.co
  * redirect URI to register in the Meta App Dashboard, and which server-side
  * settings are present. Values of secrets are never returned.
  */
-export async function GET(request: Request) {
+async function route_GET(request: Request) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -22,3 +23,5 @@ export async function GET(request: Request) {
     },
   });
 }
+
+export const GET = withApiLog(route_GET);

@@ -1,8 +1,9 @@
 import { authorizeRadarCollector, requestWorkspaceId } from "@/app/api/radar/radar-api-auth";
 import { noStoreJson } from "@/app/api/radar/topics/topic-route-utils";
 import { listWorkspaceSourceCatalog } from "@/app/modules/sources/workspace-source-catalog.repository";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
-export async function GET(request: Request) {
+async function route_GET(request: Request) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
 
@@ -13,3 +14,5 @@ export async function GET(request: Request) {
     return noStoreJson({ error: "Unable to load workspace sources" }, 500);
   }
 }
+
+export const GET = withApiLog(route_GET);

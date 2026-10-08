@@ -2,12 +2,13 @@ import { authorizeRadarCollector, requireTopicForRequest } from "@/app/api/radar
 import { noStoreJson } from "@/app/api/radar/topics/topic-route-utils";
 import { checkInstagramPublishingAccess } from "@/app/modules/meta/check-instagram-publishing-access";
 import { TopicContextError } from "@/app/modules/topics/topic-context";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
 /** Explicit read-only verification; no media, approval or connection mutations. */
-export async function POST(request: Request, context: { params: Promise<{ topicId: string }> }) {
+async function route_POST(request: Request, context: { params: Promise<{ topicId: string }> }) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   try {
@@ -20,3 +21,5 @@ export async function POST(request: Request, context: { params: Promise<{ topicI
     return noStoreJson({ error: "Unable to verify Instagram publishing access" }, 503);
   }
 }
+
+export const POST = withApiLog(route_POST);

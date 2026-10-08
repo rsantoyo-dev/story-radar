@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { authorizeRadarCollector, requestAccess } from "@/app/api/radar/radar-api-auth";
 import { db } from "@/db/client";
 import { auditEvents } from "@/db/schema";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 const NO_STORE = { "Cache-Control": "no-store" };
 
@@ -12,7 +13,7 @@ const NO_STORE = { "Cache-Control": "no-store" };
  * `action` (prefix, e.g. `billing.`), `entityType` + `entityId`, `topicId`,
  * `before` (ISO time, for paging), `limit` (≤ 200).
  */
-export async function GET(request: Request) {
+async function route_GET(request: Request) {
   const unauthorized = await authorizeRadarCollector(request, "admin");
   if (unauthorized) return unauthorized;
   const params = new URL(request.url).searchParams;
@@ -37,3 +38,5 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "The audit trail is unavailable right now." }, { status: 503, headers: NO_STORE });
   }
 }
+
+export const GET = withApiLog(route_GET);

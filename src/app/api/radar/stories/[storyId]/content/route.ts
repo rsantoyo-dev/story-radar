@@ -15,6 +15,7 @@ import {
   topicRequestErrorResponse,
 } from "@/app/api/radar/radar-topic";
 import { NextResponse } from "next/server";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
 /**
@@ -31,7 +32,7 @@ type StoryContentRouteContext = {
   params: Promise<{ storyId: string }>;
 };
 
-export async function GET(
+async function route_GET(
   request: Request,
   context: StoryContentRouteContext,
 ) {
@@ -75,7 +76,7 @@ export async function GET(
   }
 }
 
-export async function POST(
+async function route_POST(
   request: Request,
   context: StoryContentRouteContext,
 ) {
@@ -142,7 +143,7 @@ function noStoreJson(value: unknown): NextResponse {
   });
 }
 
-export async function PUT(request: Request, context: StoryContentRouteContext) {
+async function route_PUT(request: Request, context: StoryContentRouteContext) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const storyId = await parseStoryId(context);
@@ -156,3 +157,7 @@ export async function PUT(request: Request, context: StoryContentRouteContext) {
     return topicRequestErrorResponse(error) ?? creativeRouteErrorResponse(error, "save story content");
   }
 }
+
+export const GET = withApiLog(route_GET);
+export const POST = withApiLog(route_POST);
+export const PUT = withApiLog(route_PUT);

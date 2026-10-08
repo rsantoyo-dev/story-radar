@@ -3,10 +3,11 @@ import { EditorialEvaluationConfigurationError } from "@/app/modules/stories/edi
 import { authorizeRadarCollector } from "../radar-api-auth";
 import { requireActiveRequestTopic, topicRequestErrorResponse } from "../radar-topic";
 import { noStoreJson } from "../creative-route-error";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
-export async function GET(request: Request) { return handle(request,false); }
-export async function POST(request: Request) { return handle(request,true); }
+async function route_GET(request: Request) { return handle(request,false); }
+async function route_POST(request: Request) { return handle(request,true); }
 async function handle(request: Request, generate: boolean) {
   const unauthorized=await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
@@ -26,3 +27,6 @@ async function handle(request: Request, generate: boolean) {
     return noStoreJson({error:"The daily planner could not be loaded. Check server configuration and migrations."},500);
   }
 }
+
+export const GET = withApiLog(route_GET);
+export const POST = withApiLog(route_POST);

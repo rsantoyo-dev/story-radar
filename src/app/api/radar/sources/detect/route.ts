@@ -1,10 +1,11 @@
 import { authorizeRadarCollector } from "@/app/api/radar/radar-api-auth";
 import { jsonObject, noStoreJson } from "@/app/api/radar/topics/topic-route-utils";
 import { detectUploadedPdf, detectUrlSource, SourceDetectionError } from "@/app/modules/sources/detect-source";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const maxDuration = 120;
 
-export async function POST(request: Request) {
+async function route_POST(request: Request) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   try {
@@ -34,3 +35,5 @@ async function detectFile(request: Request) {
   if (!(file instanceof File)) throw new SourceDetectionError("Choose a PDF file");
   return detectUploadedPdf(file);
 }
+
+export const POST = withApiLog(route_POST);

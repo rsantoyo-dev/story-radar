@@ -1,5 +1,6 @@
 import { resolveDeliveryFile } from "@/app/modules/meta/freeze-publication-package";
 import { readPrivateR2ImageFile } from "@/app/modules/stories/r2-storage";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 /**
  * Public, unauthenticated delivery of a frozen publication JPEG (PUB-03). The
@@ -30,7 +31,7 @@ async function locate(context: Context) {
   return { code: 200 as const, target };
 }
 
-export async function GET(_request: Request, context: Context) {
+async function route_GET(_request: Request, context: Context) {
   try {
     const located = await locate(context);
     if (located.code !== 200) {
@@ -46,7 +47,7 @@ export async function GET(_request: Request, context: Context) {
   }
 }
 
-export async function HEAD(_request: Request, context: Context) {
+async function route_HEAD(_request: Request, context: Context) {
   try {
     const located = await locate(context);
     return new Response(null, {
@@ -57,3 +58,6 @@ export async function HEAD(_request: Request, context: Context) {
     return new Response(null, { status: 502 });
   }
 }
+
+export const GET = withApiLog(route_GET);
+export const HEAD = withApiLog(route_HEAD);

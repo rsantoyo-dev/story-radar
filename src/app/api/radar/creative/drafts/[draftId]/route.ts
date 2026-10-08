@@ -18,6 +18,7 @@ import {
   creativeRouteErrorResponse,
   noStoreJson,
 } from "../../../creative-route-error";
+import { withApiLog } from "@/app/modules/observability/api-request-log";
 
 export const runtime = "nodejs";
 
@@ -26,7 +27,7 @@ const UUID_PATTERN =
 
 type Context = { params: Promise<{ draftId: string }> };
 
-export async function PUT(request: Request, context: Context) {
+async function route_PUT(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const draftId = await parseId(context);
@@ -51,7 +52,7 @@ export async function PUT(request: Request, context: Context) {
   }
 }
 
-export async function PATCH(request: Request, context: Context) {
+async function route_PATCH(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
   const draftId = await parseId(context);
@@ -179,3 +180,6 @@ async function parseId(context: Context): Promise<string | undefined> {
   const { draftId } = await context.params;
   return UUID_PATTERN.test(draftId) ? draftId : undefined;
 }
+
+export const PUT = withApiLog(route_PUT);
+export const PATCH = withApiLog(route_PATCH);
