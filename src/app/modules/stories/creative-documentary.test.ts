@@ -464,6 +464,7 @@ test("a quebec.ca source selects the MTMD adapter, which receives the slide's fa
     "./creative-content.repository": { getCreativeDailyUsage: async () => ({ remainingRuns: 10 }), createCreativeAiRun: async () => { throw new Error("Place research must not run for an official road source"); } },
     "./creative-content.config": { getCreativeContentPublicConfig: () => ({ maxRunsPerDay: 10 }) },
     "./resolve-google-place-map": { resolveGooglePlaceMap: async () => { throw new Error("Google must not run for a road segment"); } },
+    "./openverse-place-photo": { openverseEnabled: () => false, openversePlacePhoto: async () => undefined },
   }, { CREATIVE_GEO_SOURCE_ADAPTERS: "quebec511", OPENAI_API_KEY: "configured" });
   const draft = { units, storyId: "story", briefId: "brief" } as unknown as import("./creative-content.types").CreativeDraft;
   const result = await service.preparePlaceVisuals("topic", draft, profile, facts, "https://www.quebec.ca/nouvelles/actualites/details/fermetures-72523");
@@ -500,6 +501,7 @@ test("a slide declared real-photo, with no map language in its direction, still 
     // as proof), and falls to a map when the provider has none eligible.
     "./openai-structured-response": { generateOpenAiStructuredResponse: async () => ({ text: JSON.stringify({ purpose: "unknown", mentions: [bridgeMention] }), usage: {}, model: "test" }) },
     "./resolve-google-place-map": { resolveGooglePlaceMap: async () => undefined },
+    "./openverse-place-photo": { openverseEnabled: () => false, openversePlacePhoto: async () => undefined },
   };
   const service = load<typeof import("./prepare-place-visuals")>("prepare-place-visuals.ts", dependencies, { OPENAI_API_KEY: "test", CREATIVE_GEO_SOURCE_ADAPTERS: "" });
   const draft = { units: [unit], storyId: "story", briefId: "brief" } as unknown as import("./creative-content.types").CreativeDraft;
@@ -531,6 +533,7 @@ test("a real-photo slide on a closure story uses an eligible archive photo as an
     "./creative-content.repository": { getCreativeDailyUsage: async () => ({ remainingRuns: 10 }), createCreativeAiRun: async () => "run", completeCreativeAiRun: async () => {}, failCreativeAiRun: async () => {} },
     "./openai-structured-response": { generateOpenAiStructuredResponse: async () => ({ text: JSON.stringify({ purpose: "unknown", mentions: [bridgeMention] }), usage: {}, model: "test" }) },
     "./resolve-google-place-map": { resolveGooglePlaceMap: async () => undefined },
+    "./openverse-place-photo": { openverseEnabled: () => false, openversePlacePhoto: async () => undefined },
   };
   const service = load<typeof import("./prepare-place-visuals")>("prepare-place-visuals.ts", dependencies, { OPENAI_API_KEY: "test", CREATIVE_GEO_SOURCE_ADAPTERS: "" });
   const draft = { units: [unit], storyId: "story", briefId: "brief" } as unknown as import("./creative-content.types").CreativeDraft;
@@ -562,6 +565,7 @@ test("worldwide preparation resolves source-backed places, maps current-state re
     "./creative-content.repository":{getCreativeDailyUsage:async()=>({remainingRuns:10}),createCreativeAiRun:async()=>"run",completeCreativeAiRun:async()=>{},failCreativeAiRun:async()=>{}},
     "./openai-structured-response":{generateOpenAiStructuredResponse:async()=>({text:JSON.stringify({purpose:"current-state",mentions:[mention]}),usage:{},model:"test"})},
     "./resolve-google-place-map":{resolveGooglePlaceMap:async()=>undefined},
+    "./openverse-place-photo":{openverseEnabled:()=>false,openversePlacePhoto:async()=>undefined},
   };
   const service=load<typeof import("./prepare-place-visuals")>("prepare-place-visuals.ts",dependencies,{OPENAI_API_KEY:"test",CREATIVE_GEO_SOURCE_ADAPTERS:""});
   const draft={units:[unit,{...unit,id:"second",order:2,role:"content",visualDirection:"Typography"}],storyId:"story",briefId:"brief"} as unknown as import("./creative-content.types").CreativeDraft;
@@ -591,6 +595,7 @@ test("nearby source address maps only its cited slide without AI research or cha
     "./creative-content.config": { getCreativeContentPublicConfig: () => ({ maxRunsPerDay: 10 }) },
     "./openai-structured-response": {},
     "./resolve-google-place-map": { resolveGooglePlaceMap: async () => undefined },
+    "./openverse-place-photo": { openverseEnabled: () => false, openversePlacePhoto: async () => undefined },
   }, { OPENAI_API_KEY: "configured" });
   const result = await service.preparePlaceVisuals("topic", draft, profile, facts, "https://example.org/event");
   assert.equal(maps, 1);

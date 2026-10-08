@@ -535,3 +535,36 @@ verified-reference restrictions remain in force.
 For the experiment, generate a **new image batch version** after enabling the
 variable; regenerating a historical local-composition asset keeps its old render
 path. No schema change or source draft rewrite is needed.
+
+## Detección automática y Openverse como segunda fuente — 8 de octubre de 2026
+
+**Detección automática.** En una marca con área completa (municipio, región y
+país) y fidelidad `illustration-editorial`, cada slide con imagen de un
+carrusel se investiga aunque el escritor no lo haya marcado. Un slide que cita
+exactamente un lugar con nombre dentro del área es un *slide de lugar
+automático* (`creative-place-visual.ts`). Solo acepta una identidad verificada
+en Wikidata y una foto elegible, siempre como referencia para la adaptación con
+IA en el estilo de la marca: nunca un mapa ni una tarjeta de foto. Si nada se
+verifica, el slide queda con la ilustración normal y el motivo registrado.
+
+**Openverse.** Después de recorrer los slides, los lugares que Wikidata
+verificó pero que no tienen foto elegible en Commons se buscan en Openverse
+(Flickr y Wikimedia), hasta 8 lugares, 4 a la vez, dentro del plazo de los
+proveedores (`openverse-place-photo.ts`). Una candidata debe:
+
+- nombrar el lugar como frase completa en su título;
+- tener licencia CC0, dominio público, CC BY o CC BY-SA (uso comercial y
+  modificación), verificada otra vez sobre su `license_url`;
+- venir de Flickr o Wikimedia, no estar marcada como sensible ni para adultos,
+  y medir al menos 900 px de lado largo y 500 px de lado corto;
+- pasar un control visual automático (`place-photo-review-v1`): muestra el
+  lugar en sí, no contradice el nombre, no tiene personas como sujeto ni marcas
+  de agua. El control se mide como `place_photo_review`.
+
+La búsqueda es por texto: en una prueba con "Austin Zoo" y "Zilker Park", las
+primeras candidatas eran un letrero y un perro, y el control visual las
+rechazó; las fotos de Wikimedia del Susanna Dickinson Museum pasaron. Una foto
+de Openverse nunca es evidencia del evento ni de condiciones actuales, y
+también reemplaza el mapa de un slide `real-photo` que no encontró foto.
+Openverse responde en 10–20 s y a veces falla: cualquier error o falta de
+tiempo deja el slide como estaba. `CREATIVE_OPENVERSE=off` lo desactiva.

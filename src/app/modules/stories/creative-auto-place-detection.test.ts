@@ -114,9 +114,14 @@ const photo = (placeId: string): policy.PhotoEvidence => ({ placeId, sourceUrl: 
   author: "Larry D. Moore", license: "CC0", licenseUrl: "https://creativecommons.org/publicdomain/zero/1.0/", attribution: "Larry D. Moore · CC0", captureDate: null,
   retrievedAt: new Date().toISOString(), sha256: "b".repeat(64), width: 1600, height: 1067, contentType: "image/jpeg" });
 
-type Harness = { extraction?: unknown; photos?: Set<string>; places?: Set<string>; google?: boolean; profile?: Partial<CreativeProfile>; facts?: CreativeKeyFact[] };
+const openversePhoto = (placeId: string): policy.PhotoEvidence => ({ ...photo(placeId), provider: "openverse", sourceUrl: "https://www.flickr.com/photos/someone/1",
+  resourceUrl: "https://live.staticflickr.com/1/1_b.jpg", author: "joejungmann", license: "Public domain", licenseUrl: "https://creativecommons.org/publicdomain/mark/1.0/",
+  attribution: "joejungmann · Public domain", creditUrl: "https://www.flickr.com/photos/someone/1", width: 1024, height: 683,
+  review: { model: "gpt-test", version: "place-photo-review-v1", summary: "The zoo's entrance gate." } });
+
+type Harness = { extraction?: unknown; photos?: Set<string>; places?: Set<string>; google?: boolean; openverse?: Set<string>; profile?: Partial<CreativeProfile>; facts?: CreativeKeyFact[] };
 function preparation(options: Harness = {}) {
-  const calls = { research: 0, resolve: [] as string[], photo: [] as string[], google: [] as string[], osm: 0, budgets: [] as unknown[], schema: undefined as unknown };
+  const calls = { research: 0, resolve: [] as string[], photo: [] as string[], google: [] as string[], openverse: [] as string[], osm: 0, budgets: [] as unknown[], schema: undefined as unknown };
   const service = load<typeof import("./prepare-place-visuals")>("prepare-place-visuals.ts", {
     "node:crypto": crypto, "../credits/usage-attribution": usageAttribution, "./creative-documentary": policy, "./creative-place-visual": visual,
     "./creative-evidence-guardrails": evidenceGuardrails, "./open-map-geometry": geometry, "./creative-map-panel": mapPanel,
@@ -136,6 +141,10 @@ function preparation(options: Harness = {}) {
         resolve: async (mention: policy.PlaceMention) => { calls.resolve.push(mention.name); return (options.places ?? new Set([mention.name])).has(mention.name) ? place(mention.name, `Q${calls.resolve.length}`) : undefined; },
         photo: async (found: policy.PlaceEvidence) => { calls.photo.push(found.name); return options.photos?.has(found.name) ? { bytes: Buffer.from(`photo:${found.name}`), evidence: photo(found.id) } : undefined; },
       };
+    } },
+    "./openverse-place-photo": { openverseEnabled: () => options.openverse !== undefined, openversePlacePhoto: async (input: { place: policy.PlaceEvidence }) => {
+      calls.openverse.push(input.place.name);
+      return options.openverse?.has(input.place.name) ? { bytes: Buffer.from(`openverse:${input.place.name}`), evidence: openversePhoto(input.place.id) } : undefined;
     } },
     "./resolve-google-place-map": { resolveGooglePlaceMap: async (name: string) => {
       calls.google.push(name);
@@ -233,6 +242,42 @@ test("a declared real-photo slide tries the verified Commons photo before the Go
   assert.deepEqual(osm.calls.resolve, ["Paramount Theatre"], "the identity resolved for the photo is reused for the OSM point");
   assert.equal(pointMap.evidence.representation, "map");
   assert.equal(pointMap.evidence.attribution, geometry.OSM_ATTRIBUTION);
+});
+
+test("Openverse is the second photo source: only for a verified place without a Commons photo, and only as an identity reference", async () => {
+  // An automatic slide: Commons has nothing, Openverse has a reviewed photo.
+  const auto = preparation({ openverse: new Set(["Barton Springs Pool"]) });
+  const found = (await auto.run([unit(2, ["barton"])])).get(2)!;
+  assert.equal(found.evidence.representation, "photo");
+  assert.equal(found.evidence.generationUse, "ai-reference");
+  assert.equal(found.evidence.photo?.provider, "openverse");
+  assert.equal(found.bytes?.toString(), "openverse:Barton Springs Pool");
+  assert.match(found.evidence.attribution ?? "", /joejungmann · Public domain/);
+  assert.ok(!found.evidence.reasons.some(reason => reason.startsWith("No verifiable photograph")), "the unverified note is withdrawn");
+  assert.ok(found.evidence.reasons.some(reason => reason.includes("Openverse photograph (Flickr)")));
+  assert.deepEqual(auto.calls.openverse, ["Barton Springs Pool"]);
+
+  // A Commons photo wins, and an unverified identity never reaches Openverse.
+  const commons = preparation({ photos: new Set(["Zilker Park"]), openverse: new Set(["Zilker Park"]) });
+  assert.equal((await commons.run([unit(2, ["zilker"])])).get(2)!.evidence.photo?.provider, undefined);
+  assert.deepEqual(commons.calls.openverse, []);
+  const unknown = preparation({ places: new Set(), openverse: new Set(["Barton Springs Pool"]) });
+  assert.equal((await unknown.run([unit(2, ["barton"])])).get(2)!.bytes, undefined);
+  assert.deepEqual(unknown.calls.openverse, []);
+
+  // A declared real-photo slide that fell back to a Google map gets the photo it asked for.
+  const declared = preparation({ google: true, openverse: new Set(["Paramount Theatre"]) });
+  const replaced = (await declared.run([unit(2, ["paramount"], { visualNeed: "real-photo" })])).get(2)!;
+  assert.equal(replaced.evidence.representation, "photo");
+  assert.equal(replaced.evidence.adapter, undefined, "the map's provider no longer applies");
+  assert.equal(replaced.evidence.photo?.provider, "openverse");
+
+  // Nothing found, or Openverse switched off: the slide stays as it was.
+  const none = preparation({ openverse: new Set() });
+  assert.equal((await none.run([unit(2, ["barton"])])).get(2)!.bytes, undefined);
+  const off = preparation({});
+  await off.run([unit(2, ["barton"])]);
+  assert.deepEqual(off.calls.openverse, [], "disabled Openverse is never called");
 });
 
 test("a declared verified-map slide keeps the Google map first", async () => {

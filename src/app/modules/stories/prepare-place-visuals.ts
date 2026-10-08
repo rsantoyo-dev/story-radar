@@ -16,6 +16,7 @@ import { isOfficialRoadNoticeSource } from "./quebec-road-map";
 import { sourceLocations, sourceLocationForUnit } from "./source-location";
 import { prepareSourceLocation } from "./prepare-source-location";
 import { resolveGooglePlaceMap } from "./resolve-google-place-map";
+import { openverseEnabled, openversePlacePhoto } from "./openverse-place-photo";
 import { mapPaletteFromBrand } from "./creative-map-panel";
 
 /** A list carousel features up to 18 venues; a cover and a closing slide can name two more. */
@@ -43,6 +44,15 @@ const PLACE_RESEARCH_VERSION = `${PLACE_VISUAL_VERSION}+research-v2`;
 const PLACE_RESEARCH_TIMEOUT_MS = 30_000;
 const STOP_STARTING_SLIDES_MS = 65_000;
 const PROVIDER_DEADLINE_MS = 75_000;
+/**
+ * Openverse, the second photo source, runs after every slide was tried, for
+ * at most 8 Wikidata-verified places without a Commons photo, four at a time:
+ * its searches take about 20 s each, so it gets a single window that still
+ * ends by the provider deadline.
+ */
+const OPENVERSE_MAX_PLACES = 8;
+const OPENVERSE_CONCURRENCY = 4;
+const OPENVERSE_MIN_WINDOW_MS = 15_000;
 // The MTMD adapter covers 511 notice pages and the ministry's own press
 // releases; either way the geometry is the official WFS record, never the page.
 const adapters = [{ id: "quebec511", supports: isOfficialRoadNoticeSource, prepare: prepareRoadMap }];
@@ -117,6 +127,8 @@ async function preparePlaceVisualsFor(topicId: string, draft: CreativeDraft, pro
   const providers=documentaryProviders(providerDeadline(), profile.language, profile.geoProviderContact, {places});
   const googleSignal=providerDeadline();
   const materialCache = new Map<string, PreparedPlaceVisual>();
+  // Verified places still without a photo, for Openverse after the loop.
+  const openverseWanted: { result: PreparedPlaceVisual; place: PlaceEvidence; unverified?: string }[] = [];
   for (const unit of draft.units) {
     const reusable = prepared.get(unit.order);
     if (reusable) { results.set(unit.order, reusable); continue; }
@@ -146,6 +158,7 @@ async function preparePlaceVisualsFor(topicId: string, draft: CreativeDraft, pro
           result.evidence.place = place; result.evidence.sourceUrl = place.sourceUrl;
           const photo = await providers.photo(place).catch(() => undefined);
           if (photo && eligiblePhoto(photo.evidence, place)) applyIdentityPhoto(result, photo);
+          else openverseWanted.push({ result, place, unverified });
         } else result.evidence.reasons.push("Identity could not be established from provider records and geographic scope.");
       } catch { result.evidence.reasons.push("A geographic provider failed or exceeded its limit."); }
       if (!result.bytes) result.evidence.reasons.push(unverified);
@@ -210,6 +223,8 @@ async function preparePlaceVisualsFor(topicId: string, draft: CreativeDraft, pro
       result.bytes=google.bytes;result.evidence.representation="map";result.evidence.adapter=google.evidence.adapter;
       result.evidence.sourceUrl=google.evidence.sourceUrl;result.evidence.attribution=google.evidence.attribution;
       result.evidence.sha256=google.evidence.sha256;result.evidence.reasons.push(...google.evidence.reasons);
+      // The real-photo slide fell back to a map; Openverse may still find its photo.
+      if(photoFirst && place)openverseWanted.push({result,place});
       materialCache.set(cacheKey,result);continue;
     }
     try {
@@ -227,7 +242,44 @@ async function preparePlaceVisualsFor(topicId: string, draft: CreativeDraft, pro
         if(!result.bytes)result.evidence.reasons.push("No eligible photograph or sufficiently precise map location.");
       }
     }catch{result.evidence.reasons.push("A geographic provider failed or exceeded its limit; source text retained.");}
+    // A real-photo slide that only found a map (or nothing) asks Openverse for the photo it wanted.
+    if(photoFirst && place && result.evidence.representation!=="photo")openverseWanted.push({result,place});
     materialCache.set(cacheKey,result);
   }
+  await applyOpenversePhotos(openverseWanted, { topicId, storyId: draft.storyId, scope: profile.geoScope, contact: profile.geoProviderContact, until: startedAt + PROVIDER_DEADLINE_MS });
   return results;
+}
+
+/**
+ * The second photo source, for places Wikidata verified but Commons had no
+ * eligible photo of: a reviewed Openverse photograph becomes the slide's
+ * identity reference (replacing a map a real-photo slide fell back to).
+ * Anything that fails or runs out of time leaves the slide as it was.
+ */
+async function applyOpenversePhotos(
+  wanted: { result: PreparedPlaceVisual; place: PlaceEvidence; unverified?: string }[],
+  context: { topicId: string; storyId: string; scope: CreativeProfile["geoScope"]; contact?: string; until: number },
+): Promise<void> {
+  if (!wanted.length || !openverseEnabled() || context.until - Date.now() < OPENVERSE_MIN_WINDOW_MS) return;
+  const byPlace = new Map<string, typeof wanted>();
+  for (const entry of wanted) byPlace.set(entry.place.id, [...(byPlace.get(entry.place.id) ?? []), entry]);
+  const places = [...byPlace.values()].slice(0, OPENVERSE_MAX_PLACES);
+  const signal = AbortSignal.timeout(context.until - Date.now());
+  let next = 0;
+  const worker = async () => {
+    while (next < places.length && !signal.aborted) {
+      const entries = places[next++]!;
+      const place = entries[0]!.place;
+      const photo = await openversePlacePhoto({ place, scope: context.scope, topicId: context.topicId, storyId: context.storyId, signal, contact: context.contact }).catch(() => undefined);
+      if (!photo || !eligiblePhoto(photo.evidence, place)) continue;
+      for (const { result, unverified } of entries) {
+        if (result.evidence.representation === "photo") continue;
+        delete result.bytes; delete result.evidence.adapter; delete result.evidence.sha256; delete result.evidence.attribution;
+        result.evidence.reasons = result.evidence.reasons.filter(reason => reason !== unverified);
+        applyIdentityPhoto(result, photo);
+        result.evidence.reasons.push(`Openverse photograph (${photo.evidence.sourceUrl.includes("flickr.com") ? "Flickr" : "Wikimedia"}) whose title names ${place.name}; an automated visual check confirmed it shows the place. Identity reference only.`);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(OPENVERSE_CONCURRENCY, places.length) }, worker));
 }

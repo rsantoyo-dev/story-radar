@@ -35,6 +35,7 @@ const PRODUCTS: Record<string, Omit<SpendingProduct, "key">> = {
   place_search: { label: "Place lookup", group: "Places & maps" },
   static_map: { label: "Map", group: "Places & maps" },
   place_photo: { label: "Place photo", group: "Places & maps" },
+  place_photo_review: { label: "Place photo check", group: "Places & maps" },
   publication_places: { label: "Place research", group: "Places & maps" },
   documentary_places: { label: "Place research", group: "Places & maps" },
   creative_identity: { label: "Brand identity assistant", group: "Brand setup" },

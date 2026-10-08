@@ -41,6 +41,13 @@ export type PhotoEvidence = {
   width: number;
   height: number;
   contentType: string;
+  /**
+   * Absent for Commons. "openverse": found by a text search (Flickr or
+   * Wikimedia via Openverse) for a Wikidata-verified place, accepted only
+   * after an automated visual check, and only ever an identity reference.
+   */
+  provider?: "openverse";
+  review?: { model: string; version: string; summary: string };
 };
 export type DocumentarySnapshot = {
   version: typeof DOCUMENTARY_VERSION;
@@ -133,7 +140,11 @@ export function photoNeedsAuthor(license: string): boolean {
 export function eligiblePhoto(photo: PhotoEvidence, place: PlaceEvidence, now = Date.now()): boolean {
   const age = now - Date.parse(photo.retrievedAt);
   const rights = portraitPhotoLicense(photo.licenseUrl);
-  return photo.placeId === place.id && photo.width >= 1080 && photo.height >= 640 &&
+  // An Openverse photo grounds an AI adaptation only, so it needs less than a printed one.
+  const sizeFits = photo.provider === "openverse"
+    ? Math.max(photo.width, photo.height) >= 900 && Math.min(photo.width, photo.height) >= 500 && photo.review !== undefined
+    : photo.width >= 1080 && photo.height >= 640;
+  return photo.placeId === place.id && sizeFits &&
     /^[a-f0-9]{64}$/.test(photo.sha256) && age >= 0 && age <= 86400_000 &&
     Boolean(rights && rights.license === photo.license && (!photoNeedsAuthor(photo.license) || photo.author.trim())) &&
     Boolean(photo.attribution) && ["image/jpeg", "image/png", "image/webp"].includes(photo.contentType);

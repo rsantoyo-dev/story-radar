@@ -8,9 +8,11 @@ import { lookupPublicAddress } from "../sources/rss/fetch-rss-feed";
 import type { CreativeGeoScope } from "./creative-content.types";
 import { commonsPhotoRights, photoNeedsAuthor, mentionFitsScope, normalizePlaceName, record, type PlaceMention, type PlaceEvidence, type PhotoEvidence } from "./creative-documentary";
 
-const HOSTS = new Set(["ws.mapserver.transports.gouv.qc.ca", "www.wikidata.org", "commons.wikimedia.org", "upload.wikimedia.org"]);
+// Openverse (its API and Flickr images) is the second photo source; see openverse-place-photo.core.ts.
+const HOSTS = new Set(["ws.mapserver.transports.gouv.qc.ca", "www.wikidata.org", "commons.wikimedia.org", "upload.wikimedia.org", "api.openverse.org", "live.staticflickr.com"]);
 /** Fixed providers, no redirects, connection-time public DNS validation, bounded body/time. */
-export function fetchDocumentaryResource(url: URL, signal: AbortSignal, maxBytes = 2_000_000, contact = process.env.CREATIVE_GEO_CONTACT || ""): Promise<Buffer> {
+/** `idleMs`: how long the provider may stay silent; Openverse searches take about 20 s. */
+export function fetchDocumentaryResource(url: URL, signal: AbortSignal, maxBytes = 2_000_000, contact = process.env.CREATIVE_GEO_CONTACT || "", idleMs = 8_000): Promise<Buffer> {
   if (/[\r\n]/.test(contact)) throw new Error("Invalid geographic provider contact");
   if (url.protocol !== "https:" || !HOSTS.has(url.hostname) || url.port || url.username || url.password || url.hash) throw new Error("Unsupported documentary source");
   return new Promise((resolve, reject) => {
@@ -31,7 +33,7 @@ export function fetchDocumentaryResource(url: URL, signal: AbortSignal, maxBytes
       response.on("end", () => resolve(Buffer.concat(chunks)));
     });
     req.on("error", () => reject(new Error("Documentary provider request failed")));
-    req.setTimeout(8_000, () => req.destroy(new Error("Documentary request timed out")));
+    req.setTimeout(idleMs, () => req.destroy(new Error("Documentary request timed out")));
     req.end();
   });
 }
