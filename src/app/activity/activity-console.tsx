@@ -158,26 +158,33 @@ export function ActivityConsole({ signedIn = false }: { signedIn?: boolean }) {
     setMeta(await fetchJson<SummaryResponse>(`/api/radar/activity/summary${allWorkspaces ? "?scope=all" : ""}`));
   }, [fetchJson, allWorkspaces]);
 
-  const load = useCallback(async (more = false) => {
+  const fetchPage = useCallback(async (before?: string | null) => {
+    const extra: Record<string, string> = before ? { before } : {};
+    if (tab === "requests") return { tab, page: await fetchJson<Page<RequestRow>>(`/api/radar/activity/requests?${params(extra)}`) } as const;
+    if (tab === "events") return { tab, page: await fetchJson<Page<EventRow>>(`/api/radar/activity/events?${params(extra)}`) } as const;
+    return { tab, page: await fetchJson<Page<ChangeRow>>(`/api/radar/activity/changes?${params(extra)}`) } as const;
+  }, [tab, params, fetchJson]);
+
+  const apply = useCallback((result: Awaited<ReturnType<typeof fetchPage>>, append: boolean) => {
+    const merge = <T,>(current: Page<T> | undefined, page: Page<T>): Page<T> =>
+      (append && current ? { rows: [...current.rows, ...page.rows], nextBefore: page.nextBefore } : page);
+    if (result.tab === "requests") setRequests((current) => merge(current, result.page));
+    else if (result.tab === "events") setEvents((current) => merge(current, result.page));
+    else setChanges((current) => merge(current, result.page));
+  }, []);
+
+  /** Loads the first page for the current filters, or the next older page. */
+  const load = useCallback(async (before?: string | null) => {
     setLoading(true);
     try {
-      if (tab === "requests") {
-        const page = await fetchJson<Page<RequestRow>>(`/api/radar/activity/requests?${params(more && requests?.nextBefore ? { before: requests.nextBefore } : {})}`);
-        setRequests((current) => (more && current ? { rows: [...current.rows, ...page.rows], nextBefore: page.nextBefore } : page));
-      } else if (tab === "events") {
-        const page = await fetchJson<Page<EventRow>>(`/api/radar/activity/events?${params(more && events?.nextBefore ? { before: events.nextBefore } : {})}`);
-        setEvents((current) => (more && current ? { rows: [...current.rows, ...page.rows], nextBefore: page.nextBefore } : page));
-      } else {
-        const page = await fetchJson<Page<ChangeRow>>(`/api/radar/activity/changes?${params(more && changes?.nextBefore ? { before: changes.nextBefore } : {})}`);
-        setChanges((current) => (more && current ? { rows: [...current.rows, ...page.rows], nextBefore: page.nextBefore } : page));
-      }
+      apply(await fetchPage(before), Boolean(before));
       setError(undefined);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Activity is unavailable right now.");
     } finally {
       setLoading(false);
     }
-  }, [tab, params, fetchJson, requests?.nextBefore, events?.nextBefore, changes?.nextBefore]);
+  }, [apply, fetchPage]);
 
   useEffect(() => {
     if (!signedIn && !secret) {
@@ -189,9 +196,10 @@ export function ActivityConsole({ signedIn = false }: { signedIn?: boolean }) {
     return () => { active = false; };
   }, [loadSummary, signedIn, secret]);
 
-  // Reload the visible list when its filters change (not when paging state changes).
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { if (signedIn || secret) void Promise.resolve().then(() => load(false)); }, [tab, range, allWorkspaces, actorId, topicId, query, method, status, action, outcome, table]);
+  // The first page reloads whenever a filter (and so `load`) changes.
+  useEffect(() => {
+    if (signedIn || secret) void Promise.resolve().then(() => load());
+  }, [load, signedIn, secret]);
 
   const openTrail = (requestId: string) => {
     setTrail({ requestId });
@@ -203,7 +211,7 @@ export function ActivityConsole({ signedIn = false }: { signedIn?: boolean }) {
   const purge = () => {
     if (!window.confirm("Delete every API request log that matches the current filters? Actions and data changes are kept. This cannot be undone.")) return;
     fetchJson<{ deleted: number }>(`/api/radar/activity/requests?${params()}`, { method: "DELETE", headers: { "X-Confirm": "DELETE" } })
-      .then((result) => { setNotice(`${result.deleted.toLocaleString("en-US")} request logs deleted. The deletion itself is recorded in Actions.`); return Promise.all([load(false), loadSummary()]); })
+      .then((result) => { setNotice(`${result.deleted.toLocaleString("en-US")} request logs deleted. The deletion itself is recorded in Actions.`); return Promise.all([load(), loadSummary()]); })
       .catch((cause: unknown) => setNotice(cause instanceof Error ? cause.message : "The request logs could not be deleted."));
   };
 
@@ -297,7 +305,7 @@ export function ActivityConsole({ signedIn = false }: { signedIn?: boolean }) {
     </section>
 
     <div className={styles.activityActions}>
-      <button type="button" className={styles.spendingMore} disabled={loading} onClick={() => { void load(false); void loadSummary(); }}>{loading ? "Loading…" : "Refresh"}</button>
+      <button type="button" className={styles.spendingMore} disabled={loading} onClick={() => { void load(); void loadSummary(); }}>{loading ? "Loading…" : "Refresh"}</button>
       <button type="button" className={styles.spendingMore} disabled={!rows?.length} onClick={() => download(`activity-${tab}-${new Date().toISOString().slice(0, 19)}.json`, rows ?? [])}>Download JSON</button>
       {tab === "requests" && meta?.canPurge ? <button type="button" className={styles.spendingReset} onClick={purge}>Delete matching requests…</button> : null}
     </div>
@@ -389,7 +397,7 @@ export function ActivityConsole({ signedIn = false }: { signedIn?: boolean }) {
         </div> : null}
       </li>)}</ul> : null}
 
-      {nextBefore ? <button type="button" className={styles.spendingMore} disabled={loading} onClick={() => void load(true)}>Load older</button> : null}
+      {nextBefore ? <button type="button" className={styles.spendingMore} disabled={loading} onClick={() => void load(nextBefore)}>Load older</button> : null}
     </section>
   </main>;
 }
