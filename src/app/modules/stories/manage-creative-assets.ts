@@ -57,7 +57,7 @@ import {
   setCreativeAssetRequest,
 } from "./creative-assets.repository";
 import { resolveCreativeOutputAspectRatio } from "./creative-aspect-ratio";
-import { buildCreativeImagePrompt, slideHasVerifiedImagery, withCurrentVisualGuide, withRealPeopleLock, withRealPlaceLock, type ProfileVisualIdentity } from "./build-creative-image-prompt";
+import { buildCreativeImagePrompt, REAL_PLACE_LOCK, slideHasVerifiedImagery, withCurrentVisualGuide, withRealPeopleLock, withRealPlaceLock, type ProfileVisualIdentity } from "./build-creative-image-prompt";
 import {
   appendCreativeCarouselChromeContract,
   buildCreativeCarouselChrome,
@@ -841,7 +841,7 @@ async function executeCreativeAssetImageEdit({
   // slide is regenerated from its prompt plus the instruction instead, and the
   // original photo is pasted in again afterwards.
   if (found.asset.unitSnapshot.documentaryPortrait) edit = { ...edit, useImageAsBase: false };
-  if (imageEditRequestsGeographicReconstruction({ savedPrompt: found.asset.prompt, editedPrompt: basePrompt, editInstruction: edit.editInstruction })) {
+  if (imageEditRequestsGeographicReconstruction({ savedPrompt: found.asset.prompt, editedPrompt: basePrompt, editInstruction: edit.editInstruction, systemLines: [REAL_PLACE_LOCK] })) {
     throw new CreativeContentConflictError("Maps and recognizable real-place edits require documentary preparation, not generative reconstruction.");
   }
   const brandSnapshot = await getCreativeAssetBrandOverlaySnapshot(

@@ -58,13 +58,17 @@ export function requestsGeographicReconstruction(direction: string): boolean {
  * text already in that prompt (e.g. a Topic's visual guide that mentions
  * "Maps/Street View" as a verification aid) was accepted when the image was
  * generated, so it must not block a plain regeneration of the same slide.
+ * Neither do `systemLines`, the constraints the pipeline itself writes (such
+ * as the real-place lock, which forbids maps): a revised wording of one is a
+ * release change, not something the editor added.
  */
 export function imageEditRequestsGeographicReconstruction(input: {
   savedPrompt: string;
   editedPrompt: string;
   editInstruction?: string;
+  systemLines?: readonly string[];
 }): boolean {
-  const savedLines = new Set(input.savedPrompt.split("\n").map((line) => line.trim()));
+  const savedLines = new Set([...input.savedPrompt.split("\n"), ...(input.systemLines ?? [])].map((line) => line.trim()));
   const addedText = input.editedPrompt
     .split("\n")
     .filter((line) => !savedLines.has(line.trim()))

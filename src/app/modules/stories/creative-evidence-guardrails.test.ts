@@ -93,6 +93,17 @@ test("a brand guide that mentions Street View does not block regenerating the sa
   assert.equal(imageEditRequestsGeographicReconstruction({ savedPrompt, editedPrompt: `${savedPrompt}\nMake sure each hand has exactly five fingers.` }), false);
 });
 
+test("a revised wording of the pipeline's own real-place lock does not block updating an older image", () => {
+  const oldLock = "HARD REAL-PLACE LOCK: no verified photograph or map of this story's places is supplied. Convey the place through flat motifs.";
+  const currentLock = "HARD REAL-PLACE LOCK: no verified photograph or map of this story's places is supplied. Convey it through what happens there.";
+  const savedPrompt = `Editorial collage, a picnic tote.\n\n${oldLock}`;
+  const editedPrompt = `Editorial collage, a picnic tote.\n\n${currentLock}`;
+  assert.ok(requestsGeographicReconstruction(currentLock), "the lock alone matches the detector");
+  assert.ok(imageEditRequestsGeographicReconstruction({ savedPrompt, editedPrompt }), "without being told, it reads as an added line");
+  assert.equal(imageEditRequestsGeographicReconstruction({ savedPrompt, editedPrompt, systemLines: [currentLock] }), false);
+  assert.ok(imageEditRequestsGeographicReconstruction({ savedPrompt, editedPrompt: `${editedPrompt}\nAdd a road map of Austin.`, systemLines: [currentLock] }));
+});
+
 test("an image edit that adds a map request is still sent to documentary preparation", () => {
   const savedPrompt = "Editorial collage, three abstract shapes.";
   assert.ok(imageEditRequestsGeographicReconstruction({ savedPrompt, editedPrompt: `${savedPrompt}\nAdd a road map of Saint-Jean in the background.` }));
