@@ -1,6 +1,7 @@
 import { resolveStoryReferences, loadStoryReferenceImages, loadDocumentaryPortraitPhoto, currentPortraitFocus } from "./manage-story-photos";
 import { compositeDocumentaryPortrait, PORTRAIT_ZONE_PROMPT, portraitAccent, portraitLayoutForSlide, portraitPhotoRegion, portraitZonePrompt } from "./creative-portrait-composite";
 import { compositeMapPanel, MAP_PANEL_VISUAL_DIRECTION, mapInsetVisualDirection, mapPanelLayout, mapPanelRegion, mapPanelZonePrompt, mapPaletteFromBrand } from "./creative-map-panel";
+import { zipStore } from "./zip-store";
 import { creativeImageReviewEnabled, reviewCreativeImage } from "./review-creative-image";
 import { CREATIVE_IMAGE_REVIEW_PROMPT_VERSION } from "./creative-image-review";
 import { CreativeImageReviewBlockedError } from "./creative-run-errors";
@@ -1979,6 +1980,32 @@ export async function downloadApprovedCreativeImage(topicId: string, assetId: st
   if (latest.asset.status !== "approved" || latestDraft.status !== "approved") throw new CreativeContentConflictError("The approval changed during download.");
   await assertBrandReferenceEligibility([...references.brand, ...(references.provenanceBrand ?? [])]);
   return file;
+}
+
+/**
+ * Every approved image of the draft's current batch as one ZIP, slides in
+ * order. Each image goes through downloadApprovedCreativeImage, so the archive
+ * holds exactly what a one-by-one download would allow.
+ */
+export async function downloadApprovedCreativeBatch(topicId: string, draftId: string): Promise<{ fileName: string; archive: Buffer; count: number }> {
+  const draft = await requireCreativeDraft(topicId, draftId);
+  const { batch } = await getCreativeDraftAssets(topicId, draftId);
+  const approved = (batch?.assets ?? []).filter((asset) => asset.status === "approved").sort((left, right) => left.unitOrder - right.unitOrder);
+  if (!approved.length) throw new CreativeContentConflictError("Approve the images before downloading them.");
+  const files: { name: string; data: Uint8Array }[] = new Array(approved.length);
+  let next = 0;
+  // Four at a time: each read may fetch the stored image and recheck its evidence.
+  const worker = async () => {
+    while (next < approved.length) {
+      const index = next++;
+      const asset = approved[index]!;
+      const file = await downloadApprovedCreativeImage(topicId, asset.id);
+      const extension = file.type === "image/jpeg" ? "jpg" : file.type === "image/webp" ? "webp" : "png";
+      files[index] = { name: `slide-${String(asset.unitOrder).padStart(2, "0")}.${extension}`, data: new Uint8Array(await file.arrayBuffer()) };
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(4, approved.length) }, worker));
+  return { fileName: `carousel-v${draft.version}-${new Date().toISOString().slice(0, 10)}.zip`, archive: zipStore(files), count: files.length };
 }
 
 export async function previewCreativeImageBase(topicId: string, assetId: string): Promise<File> {

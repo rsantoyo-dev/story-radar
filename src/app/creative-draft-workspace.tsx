@@ -1431,6 +1431,29 @@ export function CreativeDraftWorkspace({
     });
   }
 
+  /** Every approved image of the current batch as one ZIP, slides in order. */
+  async function handleDownloadAllImages(count: number) {
+    if (!activeDraftId || assetBusy) return;
+    await runAsset("download:all", async () => {
+      const response = await fetch(topicUrl(`/api/radar/creative/drafts/${encodeURIComponent(activeDraftId)}/assets/download`, topicId), {
+        headers: { Authorization: `Bearer ${secret.trim()}` },
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error ?? "The images could not be downloaded.");
+      }
+      const fileName = /filename="([^"]+)"/u.exec(response.headers.get("Content-Disposition") ?? "")?.[1] ?? "carousel.zip";
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+      setNotice(`${count} approved ${count === 1 ? "image" : "images"} downloaded as ${fileName}.`);
+    });
+  }
+
   function patchEditRequest(draftId: string, request: CreativeAssetEditRequest) {
     setEditRequests((current) => {
       const requests =
@@ -2199,6 +2222,9 @@ export function CreativeDraftWorkspace({
                   </div>
                 ) : null}
 
+                {activeDraft?.promptOutdated && !viewingHistoricalDraft && activeDraft.status !== "approved" ? (
+                  <p className={styles.hookPanelNote}>This script was written with an earlier version of the writing rules. You can still approve it, or use “Generate new AI draft” to write it with the latest rules.</p>
+                ) : null}
                 {activeDraft && editableDraft && !viewingHistoricalDraft ? (
                   <div className={styles.approvalBar}>
                     <div>
@@ -2631,6 +2657,14 @@ export function CreativeDraftWorkspace({
                             return pendingApproval.length && !assetsReadOnly && !assetsPending ? <button type="button" className={styles.secondaryButton}
                               disabled={Boolean(assetBusy)} onClick={() => void handleApproveAllImages(pendingApproval)}>
                               {assetBusy === "approve:all" ? "Approving images…" : `Approve all ${pendingApproval.length} images`}
+                            </button> : null;
+                          })()}
+                          {(() => {
+                            const approvedCount = currentAssetBatch.assets.filter(asset => asset.status === "approved").length;
+                            return approvedCount && activeDraft.status === "approved" && !viewingHistoricalDraft ? <button type="button" className={styles.secondaryButton}
+                              disabled={Boolean(assetBusy)} onClick={() => void handleDownloadAllImages(approvedCount)}
+                              title={approvedCount < currentAssetBatch.assets.length ? "Only approved images are downloaded." : undefined}>
+                              {assetBusy === "download:all" ? "Preparing the download…" : approvedCount === currentAssetBatch.assets.length ? `Download all ${approvedCount} images` : `Download ${approvedCount} approved images`}
                             </button> : null;
                           })()}
                         </div>

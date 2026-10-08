@@ -179,15 +179,14 @@ export async function getCreativeWorkspaceState(
       model: configuration.model,
       promptVersion: configuration.draftPromptVersions[draft.format],
     };
-    // The writer model is part of the carousel prompt version (so the cache
-    // regenerates with the new writer), but swapping the writer alone does
-    // not change the source, brief or policy: the draft stays current.
-    const withoutWriter = (version: string) => version.replace(/-writer-.+$/u, "");
-    const writerOnlyChange =
-      draft.promptVersion !== generation.promptVersion &&
-      withoutWriter(draft.promptVersion) === withoutWriter(generation.promptVersion);
+    // A draft written for this exact brief, format and ratio under an earlier
+    // prompt version (newer writing rules, or another writer model) stays
+    // current and approvable: improving the prompts must not lock an editor
+    // out of a script they are working on. promptOutdated tells the Studio a
+    // newer version exists. Only a changed brief or setting makes it history.
+    const earlierPrompt = draft.promptVersion !== generation.promptVersion;
     return (
-      (writerOnlyChange &&
+      (earlierPrompt &&
         [generation, { provider: draft.provider, model: draft.model }].some((writer) =>
           draft.inputHash === createDraftInputHash(brief.id, brief.inputHash, draft.format, draft.outputAspectRatio, {
             provider: writer.provider,
@@ -221,6 +220,7 @@ export async function getCreativeWorkspaceState(
     .map((draft) => ({
       ...draft,
       visualDirectionsOutdated: visualDirectionsOutdated(draft, brief, currentGuide),
+      ...(!draft.companion && draft.promptVersion !== configuration.draftPromptVersions[draft.format] ? { promptOutdated: true } : {}),
       // Historical drafts remain in the workspace response for a future
       // read-only history view. A companion has its own provenance hash, so it
       // inherits freshness from its still-approved current parent draft.

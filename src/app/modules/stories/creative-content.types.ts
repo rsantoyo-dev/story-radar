@@ -976,6 +976,8 @@ export type CreativeDraft = GeneratedCreativeDraft & {
   inputIsCurrent?: boolean;
   /** The visual directions were written under an earlier creative identity or palette. */
   visualDirectionsOutdated?: boolean;
+  /** Written with an earlier version of the writing rules; still approvable. */
+  promptOutdated?: boolean;
   /** False when saved copy no longer matches the AI-reviewed snapshot. */
   qualityReviewIsCurrent?: boolean;
   /**
