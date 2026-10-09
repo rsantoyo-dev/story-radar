@@ -60,7 +60,7 @@ function RunImages({ topicId, draftId, secret, draftApproved, disabled, fallback
       {image.imageUrl && !PENDING_IMAGE.has(image.status)
         ? <Image unoptimized src={image.imageUrl} width={432} height={540} alt={`Image ${image.unitOrder}`} />
         : <span aria-label={`Image ${image.unitOrder} ${image.status}`}>{image.unitOrder}</span>}
-      {(image.status === "generated" || image.status === "approved") && draftApproved ? <button type="button" className={styles.runImageApproval} data-approved={image.status === "approved"}
+      {(image.status === "generated" || image.status === "approved") && draftApproved ? <button type="button" className={styles.runImageApproval} aria-pressed={image.status === "approved"}
         disabled={disabled || Boolean(busyAsset) || (image.status === "generated" && image.safetyFlag)}
         title={image.safetyFlag ? "Flagged by the safety checker: regenerate it in the draft" : image.status === "approved" ? `Remove approval from image ${image.unitOrder}` : `Approve image ${image.unitOrder}`}
         aria-label={image.status === "approved" ? `Remove approval from image ${image.unitOrder}` : `Approve image ${image.unitOrder}`}

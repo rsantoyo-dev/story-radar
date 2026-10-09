@@ -2707,7 +2707,7 @@ export function CreativeDraftWorkspace({
                             </button>
                             {approvable && !viewingHistoricalDraft ? <button
                               type="button"
-                              className={`${styles.assetSelectionApprove} ${approved ? styles.assetSelectionApproved : ""}`}
+                              className={styles.assetSelectionApprove}
                               aria-pressed={approved}
                               aria-label={approved ? `Unapprove ${slideLabel} image` : `Approve ${slideLabel} image`}
                               title={approvalLockReason ?? (approved ? "Approved — click to unapprove" : "Approve this image")}

@@ -206,7 +206,9 @@ module.exports = {
       "danger-outline": actionButton({ bg: "palette(light-light)", color: "palette(error-main)", border: "border(error)", hover: { border: "border(error-strong)" } }),
       info: actionButton({ bg: "palette(light-light)", color: "palette(info-dark)", border: "border(info-accent)", hover: { border: "border(info-strong)" } }),
       neutral: actionButton({ bg: "palette(light-light)", color: "palette(neutral-dark)", border: "border(neutral-strong)" }),
-      overlay: actionButton({ bg: "palette(dark-main, 0.5)", color: "palette(light-light)", border: "border(inverse)", radius: "radius(pill)", padding: "0 density(3)", hover: { bg: "palette(dark-main, 0.7)" } }),
+      // A round approve toggle laid over an image: aria-pressed turns it green.
+      check: actionButton({ bg: "palette(dark-main, 0.5)", color: "palette(light-light)", border: "border(inverse)", radius: "radius(circle)", padding: "0",
+        hover: { bg: "palette(success-dark)" }, selected: { bg: "palette(success-main)", color: "palette(success-contrast)" } }),
       chip: actionButton({ bg: "palette(light-light)", color: "palette(primary-dark)", border: "border(hairline)", radius: "radius(pill)", padding: "0 density(3)", hover: { border: "border(primary)" }, selected: { bg: "palette(primary-light, 0.2)", border: "border(primary)" } }),
       tinted: actionButton({ bg: "palette(primary-light, 0.2)", color: "palette(primary-dark)", border: "border(primary-faint)", hover: { border: "border(primary)" } }),
       outline: actionButton({ bg: "transparent", color: "inherit", border: "border(current)" }),

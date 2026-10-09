@@ -2178,10 +2178,7 @@
 .assetSelectionThumb[aria-pressed="true"] { border: border(focus); box-shadow: shadow(1); }
 .assetSelectionThumb > span:not(.assetSelectionImage):not(.assetSelectionPlaceholder) { @ds-typo (meta-strong); }
 .assetSelectionThumb small { color: palette(tertiary-main); @ds-typo (fine); }
-.assetSelectionApprove { @ds-button (overlay); position: absolute; top: density(3); right: density(3); display: grid; width: 28px; height: 28px; padding: 0; place-items: center; border-radius: radius(circle); background: palette(dark-main, 0.55); @ds-typo (small-strong); box-shadow: shadow(1); }
-.assetSelectionApprove:hover:not(:disabled) { background: palette(success-dark); }
-.assetSelectionApproved { background: palette(success-main); border-color: palette(light-light); color: palette(success-contrast); }
-.assetSelectionApprove:disabled { opacity: 0.55; cursor: not-allowed; }
+.assetSelectionApprove { @ds-button (check); position: absolute; top: density(3); right: density(3); display: grid; width: 28px; height: 28px; place-items: center; @ds-typo (small-strong); box-shadow: shadow(1); }
 @media (pointer: coarse) { .assetSelectionApprove { width: 36px; height: 36px; } }
 .assetSelectionImage, .assetSelectionPlaceholder { position: relative; display: grid; width: 100%; aspect-ratio: 4 / 5; place-items: center; overflow: hidden; border-radius: radius(1); background: palette(surface-light); }
 .assetSelectionImage img { object-fit: cover; }
