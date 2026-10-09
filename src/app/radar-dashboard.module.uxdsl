@@ -3762,3 +3762,23 @@ button.sidebarTopicAvatar:focus-visible { outline: border(focus-soft); outline-o
 .activityAfter { position: absolute; top: -1.6em; left: density(4); color: palette(tertiary-main); @ds-typo (meta-strong); }
 .activityGroup { display: grid; gap: density(2); margin: density(2) 0 0; padding: 0 0 0 density(3); border-left: border(hairline); list-style: none; }
 .activityGroup > li > div { display: grid; gap: density(1); min-width: 0; }
+
+/* Automatic reader (Editorial strategy → Automation) and urgent stories (Today). */
+.autoPanel { display: grid; gap: density(4); }
+.autoGrid { display: grid; grid-template-columns: xs(1fr) md(repeat(2, minmax(0, 1fr))); align-items: start; gap: density(3); }
+.autoToggle { display: flex; align-items: flex-start; gap: density(2); }
+.autoToggle span { display: grid; gap: density(1); }
+.autoToggle strong { @ds-typo(body-strong); color: palette(primary-dark); }
+.autoToggle small,
+.autoMeta { @ds-typo(meta); margin: 0; color: palette(tertiary-main); }
+.autoFieldset { display: grid; gap: density(3); margin: 0; padding: density(3); border: border(hairline); border-radius: radius(3); }
+.autoFieldset legend { @ds-typo(label); padding: 0 density(1); color: palette(primary-dark); }
+.urgentList { display: grid; gap: density(2); margin: 0; padding: 0; list-style: none; }
+.urgentItem { @ds-surface(card); display: grid; gap: density(2); padding: density(3); }
+.urgentItemHeading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: density(2); }
+.urgentItemHeading strong { @ds-typo(body-strong); color: palette(primary-dark); }
+.urgentReasons { @ds-typo(fine); margin: 0; color: palette(tertiary-main); }
+.urgentBanner { @ds-surface(notice-warning); display: grid; gap: density(3); margin-bottom: density(4); padding: density(4); }
+.urgentBanner h2 { @ds-typo(title-sm); margin: 0; color: palette(dark-main); }
+.urgentBannerEyebrow { @ds-typo(eyebrow); margin: 0; color: palette(warning-dark); }
+.navBadgeUrgent { background: palette(warning-main); color: palette(warning-contrast); }

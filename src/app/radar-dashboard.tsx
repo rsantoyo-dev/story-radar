@@ -7,6 +7,7 @@ import Link from "next/link";
 
 import { SignOutButton } from "./account/sign-out-button";
 import { SIGNED_IN_CREDENTIAL } from "./modules/auth/session-credential";
+import { AutoCollectionPanel } from "./auto-collection-panel";
 import { DailyPreparationPanel } from "./daily-preparation-panel";
 import { DailyEditorialPlannerPanel } from "./daily-editorial-planner-panel";
 import { StoryPhotosPanel } from "./story-photos-panel";
@@ -20,6 +21,7 @@ import { InstagramGalleryPanel } from "./instagram-gallery-panel";
 import { FacebookConnectionPanel } from "./facebook-connection-panel";
 import { MetaConnectionPanel } from "./meta-connection-panel";
 import { EditorialProfilePanel } from "./editorial-profile-panel";
+import { UrgentStoriesBanner } from "./urgent-stories-banner";
 import { AcquisitionLensesPanel } from "./acquisition-lenses-panel";
 import { TopicOverviewPanel } from "./topic-overview-panel";
 import { NewStoryDialog, type CreatedStory } from "./new-story-dialog";
@@ -537,6 +539,8 @@ export function RadarDashboard({
   const [lineSelection,setLineSelection]=useState<EditorialLineSelection>();
   const [lineData,setLineData]=useState<EditorialLinesData>();
   const [lineRefresh,setLineRefresh]=useState(0);
+  // Unseen urgent stories for the selected Topic, reported by the Today banner.
+  const [urgentCount,setUrgentCount]=useState(0);
   const [maxAgeHours, setMaxAgeHours] = useState("72");
   const [confirmation, setConfirmation] = useState("");
   const [favoredTerms, setFavoredTerms] = useState(
@@ -629,7 +633,7 @@ export function RadarDashboard({
   );
   const contextTabs: readonly [string, string][] =
     activeView === "discover" ? [["#discover", "Candidates"], ["#discover/search", "Search"], ["#optimization", "Diagnostics"]] :
-    activeView === "strategy" ? [["#strategy", "Criteria"], ["#strategy/lines", "Lines"], ["#editorial-lenses", "Angles"], ["#preferences", "Preferences"]] :
+    activeView === "strategy" ? [["#strategy", "Criteria"], ["#strategy/lines", "Lines"], ["#strategy/automation", "Automation"], ["#editorial-lenses", "Angles"], ["#preferences", "Preferences"]] :
     activeView === "identity" ? [["#creative-profile-identity", "Profile"], ["#creative-profile-voice", "Voice"], ["#creative-profile-brand", "Visual"], ["#creative-profile-characters", "Assets"]] :
     activeView === "sources" ? [["#sources/rss", "RSS"], ["#sources/ai", "AI research"], ["#sources/documents", "Documents"], ["#sources/manual", "Original content"]] :
     activeView === "publications" ? [["#publications", "To publish"], ["#publications/published", "Published"], ["#publications/history", "Instagram history"]] :
@@ -1570,6 +1574,7 @@ export function RadarDashboard({
                 <span className={styles.navIcon} aria-hidden="true"><NavGlyph name={icon} /></span>
                 <span>{label}</span>
                 {view === "production" && productionStories.length > 0 ? <span className={styles.navBadge} aria-label={`${productionStories.length} active selected stories`}>{productionStories.length}</span> : null}
+                {view === "today" && urgentCount > 0 ? <span className={`${styles.navBadge} ${styles.navBadgeUrgent}`} aria-label={`${urgentCount} urgent ${urgentCount === 1 ? "story" : "stories"}`}>{urgentCount}</span> : null}
               </a>
             );
           })}
@@ -1715,6 +1720,7 @@ export function RadarDashboard({
           >
 
         <section id="overview" className={styles.anchorTarget} hidden={activeView !== "today"}>
+          <UrgentStoriesBanner key={`urgent-${selectedTopicId}`} topicId={selectedTopicId} secret={panelSecret} onCountChange={setUrgentCount} onOpenStory={(storyId, preparationRunId) => openCreativeStory(storyId, { preparationRunId, tab: "script" })} />
           <DailyPreparationPanel onOpenDraft={(storyId,_title,draftId,preparationRunId)=>openCreativeStory(storyId,{draftId,preparationRunId,tab:"script"})} key={`daily-${selectedTopicId}`} topicId={selectedTopicId} secret={panelSecret} disabled={!canAuthenticate || isBusy || isTopicLoading} refreshKey={stats} onViewContent={handleViewContent} onPrepareContent={handlePrepareContent} onSelect={handlePlannerSelect} preparingStoryId={activeOperation === "prepare" ? activeStoryId : undefined} onCompleted={()=>{void fetchDatabaseStats(secret,selectedTopicId).then(setStats).catch(()=>{});}} />
           <DailyEditorialPlannerPanel key={`planner-${selectedTopicId}`} topicId={selectedTopicId} secret={panelSecret} disabled={!canAuthenticate || isBusy} refreshKey={stats} onViewContent={handleViewContent} onPrepareContent={handlePrepareContent} onSelect={handlePlannerSelect} preparingStoryId={activeOperation === "prepare" ? activeStoryId : undefined} />
           <TopicOverviewPanel
@@ -1810,6 +1816,10 @@ export function RadarDashboard({
 
         <div id="editorial-lines" className={styles.anchorTarget} hidden={activeView !== "strategy" || activeNavHash !== "#strategy/lines"}>
           <EditorialLinesPanel key={`strategy-${selectedTopicId}`} topicId={selectedTopicId} secret={panelSecret} disabled={isBusy} manageOnly refreshKey={lineRefresh} onLoaded={setLineData} />
+        </div>
+
+        <div id="strategy-automation" className={styles.anchorTarget} hidden={activeView !== "strategy" || activeNavHash !== "#strategy/automation"}>
+          <AutoCollectionPanel key={`automation-${selectedTopicId}`} topicId={selectedTopicId} secret={panelSecret} disabled={isBusy} onOpenStory={(storyId, preparationRunId) => openCreativeStory(storyId, { preparationRunId, tab: "script" })} />
         </div>
 
         <div id="editorial-creative" className={styles.anchorTarget} hidden={activeView !== "identity"}>
