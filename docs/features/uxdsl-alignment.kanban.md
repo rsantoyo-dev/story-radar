@@ -40,7 +40,7 @@ work exposes UXDSL's real bugs, gaps and advantages. Before each story, run
 
   - priority: medium
   - tags: [uxdsl, upstream]
-  - File the findings log's bugs, gaps and frictions in the UXDSL repository; record their status in the log.
+  - File the findings log's bugs, gaps and frictions in the UXDSL repository; record their status in the log. The prioritized proposals are written up in [UXDSL — proposals for the next beta](../uxdsl-next-beta.md).
 
 ## Done
 

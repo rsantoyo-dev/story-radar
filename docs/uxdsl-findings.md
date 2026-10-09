@@ -1,7 +1,9 @@
 # UXDSL findings log
 
 What aligning Press Craftor with UXDSL teaches about UXDSL itself (see
-[UXDSL alignment](features/uxdsl-alignment.md)). Newest first. Types: **bug**,
+[UXDSL alignment](features/uxdsl-alignment.md)). What they add up to, as
+proposals for the next beta: [UXDSL — proposals for the next beta](uxdsl-next-beta.md).
+Newest first. Types: **bug**,
 **gap**, **friction**, **advantage**. Each entry is meant to be filed or
 quoted upstream as written.
 
