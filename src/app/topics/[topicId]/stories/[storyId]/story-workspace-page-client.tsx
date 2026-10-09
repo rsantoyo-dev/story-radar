@@ -8,6 +8,8 @@ import { CreativeDraftWorkspace, type WorkspaceTab } from "@/app/creative-draft-
 import { StoryContentViewer, type StoryContentResponse } from "@/app/radar-dashboard";
 import styles from "@/app/creative-draft-workspace.generated.module.css";
 import { SIGNED_IN_CREDENTIAL } from "@/app/modules/auth/session-credential";
+import { draft2Href } from "@/app/draft-2-canvas.core";
+import { LinkButton } from "@/app/ui/primitives";
 
 const WORKSPACE_TABS: readonly WorkspaceTab[] = ["content", "focus", "script", "visuals", "publication"];
 
@@ -77,6 +79,8 @@ export function StoryWorkspacePageClient({
     <div className={styles.routeTopbar}>
       {content && !error ? <strong className={styles.routeBrand}>Press Craftor</strong> : <Link href={back} aria-label="Back to list">← <span>Press Craftor</span></Link>}
       <span className={styles.routeBreadcrumb}>{topicName} <span aria-hidden="true">/</span> Production <span aria-hidden="true">/</span> Story</span>
+      {/* The second pipeline grows beside this studio; the canvas opens the same story. */}
+      <LinkButton size="compact" href={draft2Href(topicId, storyId, { from, returnContext })} title="Open this story in the Draft 2 canvas">Draft 2</LinkButton>
     </div>
     {error ? <div className={styles.routeError} role="alert"><strong>Could not open the studio</strong><p>{error}</p><Link href={back}>Back to dashboard</Link></div> : null}
     {!content && !error ? <div className={styles.routeLoading} role="status">Loading story…</div> : null}

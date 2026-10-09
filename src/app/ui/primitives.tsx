@@ -1,4 +1,5 @@
-import { cloneElement, isValidElement, useId, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from "react";
+import { cloneElement, isValidElement, useId, type ButtonHTMLAttributes, type ComponentProps, type HTMLAttributes, type ReactNode } from "react";
+import Link from "next/link";
 
 import type { CapabilityState, ChannelCapabilities } from "../modules/meta/channel-capabilities";
 import { ModalLayer } from "./modal-layer";
@@ -32,6 +33,13 @@ export function Button({ variant = "secondary", size = "regular", busy = false, 
 
 export function IconButton({ "aria-label": label, className, ...props }: ButtonProps & { "aria-label": string }) {
   return <Button {...props} aria-label={label} className={classes(styles.iconButton, className)} />;
+}
+
+/** A navigation link drawn like a button: the same roles and sizes as Button, for a route rather than an action. */
+export function LinkButton({ variant = "secondary", size = "regular", className, children, ...props }: ComponentProps<typeof Link> & { variant?: ButtonVariant; size?: ControlSize }) {
+  return <Link {...props} data-ui-button="" className={classes(styles.button, buttonVariants[variant], size === "compact" && styles.buttonCompact, className)}>
+    {children}
+  </Link>;
 }
 
 /** A single centred panel on its own page (sign-in, access messages). */

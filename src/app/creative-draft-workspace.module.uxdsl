@@ -3271,9 +3271,9 @@
 .pieceSelector button strong { overflow: hidden; color: palette(dark-main); @ds-typo (caption); text-overflow: ellipsis; white-space: nowrap; }
 .routeShell { min-height: 100svh; background: palette(light-light); color: palette(dark-main); }
 .routeTopbar { display: flex; align-items: center; justify-content: space-between; gap: density(4); min-height: 56px; padding-inline: xs(density(4)) md(density(7)); border-bottom: border(subtle); background: palette(light-light); }
-.routeTopbar a { color: palette(primary-dark); @ds-typo (compact-strong); text-decoration: none; white-space: nowrap; }
+.routeTopbar a:not([data-ui-button]) { color: palette(primary-dark); @ds-typo (compact-strong); text-decoration: none; white-space: nowrap; }
 .routeBrand { color: palette(dark-main); @ds-typo (compact-strong); white-space: nowrap; }
-.routeTopbar a:hover, .routeTopbar a:focus-visible { text-decoration: underline; }
+.routeTopbar a:not([data-ui-button]):hover, .routeTopbar a:not([data-ui-button]):focus-visible { text-decoration: underline; }
 .routeBreadcrumb { overflow: hidden; color: palette(tertiary-main); @ds-typo (caption); text-overflow: ellipsis; white-space: nowrap; }
 .routeBreadcrumb span { padding-inline: density(2); }
 .routeError, .routeLoading { @ds-surface (card); width: min(700px, calc(100% - 2rem)); margin: density(9) auto; padding: density(7); border-radius: radius(3); @ds-typo(body); }

@@ -1,0 +1,26 @@
+/* Draft 2 canvas: the page shell, the story header and the two columns (source material, canvas). */
+.shell { min-height: 100svh; background: palette(light-light); color: palette(dark-main); }
+.topbar { display: flex; align-items: center; gap: density(4); min-height: 56px; padding-inline: xs(density(4)) md(density(7)); border-bottom: border(subtle); background: palette(light-light); }
+.topbar a { color: palette(primary-dark); @ds-typo (compact-strong); text-decoration: none; white-space: nowrap; }
+.topbar a:hover, .topbar a:focus-visible { text-decoration: underline; }
+.breadcrumb { overflow: hidden; color: palette(tertiary-main); @ds-typo (caption); text-overflow: ellipsis; white-space: nowrap; }
+.breadcrumb span { padding-inline: density(2); }
+.notice { width: min(1320px, calc(100% - 2rem)); margin: density(6) auto 0; }
+.page { display: grid; gap: density(6); width: min(1320px, calc(100% - 2rem)); margin: 0 auto; padding-block: density(6) density(9); }
+.header { display: grid; gap: density(2); }
+.header h1 { max-width: 32ch; margin: 0; color: palette(dark-main); @ds-typo (title-lg); }
+.eyebrow { margin: 0; color: palette(primary-dark); @ds-typo (eyebrow); }
+.meta { display: flex; flex-wrap: wrap; align-items: center; gap: density(2) density(3); margin: 0; color: palette(tertiary-dark); @ds-typo (small); }
+.meta a { color: palette(primary-dark); @ds-typo (small-strong); }
+.columns { display: grid; gap: density(5); align-items: start; }
+@media (min-width: 960px) { .columns { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.column { display: grid; gap: density(4); align-content: start; }
+.reading { display: grid; gap: density(3); max-height: 70svh; overflow: auto; padding-right: density(2); }
+.reading p { max-width: 70ch; margin: 0; color: palette(dark-main); @ds-typo (body); }
+.steps { display: grid; gap: density(3); margin: 0; padding: 0; list-style: none; }
+.steps li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: density(3); align-items: start; padding: density(3); border: border(dashed-control); border-radius: radius(2); }
+.stepNumber { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: border(control); border-radius: radius(circle); color: palette(tertiary-dark); @ds-typo (label); }
+.stepStatus { white-space: nowrap; }
+.steps strong { display: block; color: palette(dark-main); @ds-typo (small-strong); }
+.steps p { margin: density(1) 0 0; color: palette(tertiary-dark); @ds-typo (small); }
+@media (max-width: 639px) { .topbar a span { display: none; } .breadcrumb { flex: 1; } }

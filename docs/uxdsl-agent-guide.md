@@ -57,7 +57,7 @@ instead.
 | `uxdsl.config.cjs` | The one build/watch orchestration file: `breakpoints`, a `builds` array (all six entries), and `watch` globs. No `theme` here — that's the file above. |
 | `postcss-uxdsl-source.cjs` | PostCSS guard applied to already-compiled output for the separate Next.js-level pass (see §3). |
 
-Entries and their outputs (all six declared in `uxdsl.config.cjs`'s `builds`
+Entries and their outputs (all seven declared in `uxdsl.config.cjs`'s `builds`
 array, in this order):
 
 | Source | Output | Kind |
@@ -67,6 +67,7 @@ array, in this order):
 | `src/app/creative-draft-workspace.module.uxdsl` | `creative-draft-workspace.generated.module.css` | CSS Module |
 | `src/app/editorial-profile-panel.module.uxdsl` | `editorial-profile-panel.generated.module.css` | CSS Module |
 | `src/app/topic-configuration-panel.module.uxdsl` | `topic-configuration-panel.generated.module.css` | CSS Module |
+| `src/app/draft-2-canvas.module.uxdsl` | `draft-2-canvas.generated.module.css` | CSS Module (the Draft 2 canvas, beside the studio) |
 | `src/app/ui/primitives.module.uxdsl` | `ui/primitives.generated.module.css` | CSS Module |
 
 Never edit a `*.generated.module.css` by hand. Edit the `.uxdsl` source and
