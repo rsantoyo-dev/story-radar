@@ -176,6 +176,11 @@ const MAX_FACTS_BY_GOAL: Record<CarouselEditorialGoal, number> = {
   conclude: 3,
   debate: 2,
 };
+/**
+ * A list's closing may lay out the plan for the period, one practical fact per
+ * item (see attachListPracticalFacts), so it can cite more than an arc's.
+ */
+export const LIST_CLOSING_MAX_FACTS = 6;
 
 export const CAROUSEL_SUBHEADLINE_MAX_WORDS = 18;
 export const CAROUSEL_CONTINUATION_CUE_MAX_WORDS = 10;
@@ -320,8 +325,8 @@ export function isCarouselSlideCount(
   return Number.isInteger(value) && (value as number) >= MIN_CAROUSEL_SLIDES && (value as number) <= MAX_CAROUSEL_SLIDES;
 }
 
-export function maximumFactsForGoal(goal: CarouselEditorialGoal): number {
-  return MAX_FACTS_BY_GOAL[goal];
+export function maximumFactsForGoal(goal: CarouselEditorialGoal, structure?: CarouselPlan["structure"]): number {
+  return structure === "list" && goal === "conclude" ? LIST_CLOSING_MAX_FACTS : MAX_FACTS_BY_GOAL[goal];
 }
 
 /**
@@ -393,7 +398,7 @@ export function repairCarouselPlanEvidence(
           (left, right) => rank(left) - rank(right),
         );
         const budget = Math.min(
-          maximumFactsForGoal(slide.editorialGoal),
+          maximumFactsForGoal(slide.editorialGoal, plan.structure),
           Math.max(2, allowedFactIds.length),
           ordered.length,
         );
@@ -462,7 +467,7 @@ export function repairCarouselPlanEvidence(
       }
     }
 
-    const budget = maximumFactsForGoal(slide.editorialGoal);
+    const budget = maximumFactsForGoal(slide.editorialGoal, plan.structure);
     if (allowedFactIds.length > budget) {
       allowedFactIds = allowedFactIds.slice(0, budget);
       repaired = true;
@@ -584,7 +589,7 @@ export function validateCarouselPlan(
     if (slide.allowedFactIds.some((factId) => !knownFactIds.has(factId))) {
       errors.push(`carouselPlan slide ${index + 1} cites an unknown fact`);
     }
-    if (slide.allowedFactIds.length > maximumFactsForGoal(slide.editorialGoal)) {
+    if (slide.allowedFactIds.length > maximumFactsForGoal(slide.editorialGoal, plan.structure)) {
       errors.push(
         `carouselPlan slide ${index + 1} exceeds the ${slide.editorialGoal} fact budget`,
       );
@@ -686,6 +691,7 @@ export function carouselNarrativePolicyForPrompt(
     factBudgets: Object.entries(MAX_FACTS_BY_GOAL).map(
       ([goal, maximumFacts]) => ({ goal, maximumFacts }),
     ),
+    ...(listPossible ? { listClosingMaximumFacts: LIST_CLOSING_MAX_FACTS } : {}),
     rules: [
       `One idea per slide: a short headline (at most ${CAROUSEL_HEADLINE_MAX_WORDS} words after the cover) and supporting text of about ${CAROUSEL_BODY_TARGET_WORDS} words, never above ${CAROUSEL_BODY_MAX_WORDS}. Prefer more slides with less text over fewer dense slides: when a slide would need more, give the extra fact its own slide (up to ${MAX_CAROUSEL_SLIDES}) or cut secondary detail, never a qualifier or attribution.`,
       "Use only facts necessary to advance the story; do not use every available fact simply because it exists.",
@@ -783,15 +789,15 @@ export function evaluateCarouselNarrative(
         message: `Slide ${slide} asks more than one editorial question; split the ideas so the slide has one clear job.`,
       });
     }
-    if (
-      unit.editorialGoal &&
-      unit.factIds.length > MAX_FACTS_BY_GOAL[unit.editorialGoal]
-    ) {
+    const factBudget = unit.editorialGoal
+      ? maximumFactsForGoal(unit.editorialGoal, storyStructure === "hook-list" ? "list" : undefined)
+      : undefined;
+    if (factBudget !== undefined && unit.factIds.length > factBudget) {
       warnings.push({
         severity: "blocker",
         code: "fact-budget",
         unitIndex,
-        message: `Slide ${slide} uses ${unit.factIds.length} facts; ${unit.editorialGoal} usually needs at most ${MAX_FACTS_BY_GOAL[unit.editorialGoal]}.`,
+        message: `Slide ${slide} uses ${unit.factIds.length} facts; ${unit.editorialGoal} usually needs at most ${factBudget}.`,
       });
     }
     if (unit.ctaQuestion?.trim() && unitIndex !== units.length - 1) {

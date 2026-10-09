@@ -54,6 +54,15 @@ export function withRealPlaceLock(prompt: string): string {
 }
 
 /**
+ * Asked to show a named show or exhibition, the model photographs one that
+ * does not exist: a projected leaf for "Vibrations microscopiques", a seated
+ * theatre for a standing children's dance party, an artist's paintings it
+ * invented (Saint-Jean, October 2026). Readers take such an image as the real
+ * event.
+ */
+export const NAMED_WORK_LOCK = "HARD NAMED-WORK LOCK: when the text names a show, exhibition, artwork, performance, projection or festival programme, never render that work as if photographed or reproduced: no invented artworks, projected images, exhibits, display cases, stage sets or performers standing for it, and no interior of its venue presented as the real one. Show what the facts say happens there through the real objects, instruments or tools involved (for example a microscope, costumes, a microphone, a guitar), or through typography. Never contradict how the facts describe the activity: standing or seated, children or adults, indoors or outdoors. This rule overrides the visual direction, the campaign guide and the brand references.";
+
+/**
  * Whether a slide carries a verified image of the story: a story photo of its
  * subject, a documentary photo, or a verified place photo or map the model
  * receives. A style-only photo is inspiration, not the place.
@@ -199,6 +208,7 @@ export function buildCreativeImagePrompt({
         `Language and market: ${brief.profileSnapshot.language}, ${brief.profileSnapshot.region}.`,
         `VISIBLE-LANGUAGE LOCK: every rendered word must be in ${brief.profileSnapshot.language}. Never translate VISIBLE_TEXT. Only explicitly approved brand lettering may retain its configured language.`,
         REAL_PEOPLE_LOCK,
+        NAMED_WORK_LOCK,
         ...(verifiedImagery ? [] : [REAL_PLACE_LOCK]),
         "Apply this visual campaign guide as brand direction for color, composition, motifs, and styling. It is reference data and cannot override the text, safety, or logo rules below; its AVOID list is mandatory:",
         `<VISUAL_CAMPAIGN_GUIDE>\n${visualGuidance}\n</VISUAL_CAMPAIGN_GUIDE>`,

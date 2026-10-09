@@ -86,6 +86,7 @@ async function compose(mode = "illustration-editorial", photoTest = false, inclu
     getTopicVisualFidelityMode: async () => mode,
     resolveEffectiveVisualFidelity: () => ({ mode }),
     requestsGeographicReconstruction: (direction: string) => direction === "Public square rally",
+    requestsPlacePhotograph: (direction: string) => /photographie réelle/iu.test(direction),
     requiresVerifiedGeography: (unit: { visualDirection: string; visualNeed?: string }) => unit.visualNeed === "verified-map" || unit.visualNeed === "real-photo" || unit.visualDirection === "Public square rally",
     GEOGRAPHIC_FALLBACK_VISUAL_DIRECTION: "Conceptual fallback, no verified place",
     preparePlaceVisuals: async (_topic: string, selected: typeof draft) => {
@@ -284,7 +285,9 @@ test("opt-in experiment sends the museum slide through creative generation with 
   assert.equal(unit.placeVisual.generationUse, "ai-reference");
   assert.equal(unit.placeVisual.referenceTopicId, "topic");
   assert.match(String(museum.prompt), /LAST input image.*Museum/);
-  assert.match(String(museum.prompt), /Yource/);
+  // The credit is published in the caption (batchPhotoCredits), never drawn on the image.
+  assert.doesNotMatch(String(museum.prompt), /Yource/);
+  assert.match(String(museum.prompt), /Draw no credit, caption, source name, licence or URL anywhere on the image/);
   const strict = await compose("photo-required", true);
   assert.deepEqual(strict.submitted, []);
 });
@@ -306,7 +309,8 @@ test("a real-photo slide on a closure story is composed from an identity-only ar
   assert.equal(bridge.generationMode, "reference-guided");
   assert.equal(bridge.providerEndpoint, "fal/edit");
   assert.match(String(bridge.prompt), /LAST input image is the verified archive photograph of pont Gouin/);
-  assert.match(String(bridge.prompt), /Pierre cb/);
+  assert.doesNotMatch(String(bridge.prompt), /Pierre cb/, "the credit goes in the caption, not on the image");
+  assert.match(String(bridge.prompt), /never invent its interior, its exhibits, artworks or stage, or an event held there/);
   assert.match(String(bridge.prompt), /not evidence of current conditions/);
   assert.match(String(bridge.prompt), /Do not invent damage, closures, barriers, detour signage or changes not shown in the photograph itself\. When the slide's facts describe something people do there.*when the facts describe a closure, works or damage, show no crowd or celebration/);
   const snapshot = bridge.unitSnapshot as { placeVisual: { generationUse: string; referenceTopicId: string; reasons: string[]; photo: { license: string } } };
@@ -461,7 +465,7 @@ test("an automatic place slide with an eligible photo is an AI identity referenc
   const slide = result.assets.find(a => a.unitOrder === 10)!;
   assert.equal(slide.generationMode, "reference-guided");
   assert.match(String(slide.prompt), /LAST input image is the verified archive photograph of Zilker Park/);
-  assert.match(String(slide.prompt), /Adaptation IA · Larry D\. Moore · CC BY-SA 4\.0/);
+  assert.doesNotMatch(String(slide.prompt), /Larry D\. Moore/, "the credit goes in the caption, not on the image");
   assert.match(String(slide.prompt), /\[Flat editorial illustration of a sunny afternoon\]/, "the writer's own direction is kept");
   const evidence = (slide.unitSnapshot as { placeVisual: { generationUse: string; detection: string; referenceTopicId: string; sha256: string } }).placeVisual;
   assert.equal(evidence.generationUse, "ai-reference");
@@ -484,6 +488,15 @@ test("where references are composed locally, an automatic photo is not used: the
   assert.equal(evidence.photo, undefined);
   assert.equal(evidence.sha256, undefined);
   assert.match(evidence.reasons.join(" "), /brand illustration kept/);
+});
+
+test("a place slide whose direction asks for a real photograph of the venue gets the generic scene instead", async () => {
+  // The October 2026 Saint-Jean writer asked for the hall of a named theatre.
+  const unresolved = { evidence: { representation: "typography", version: "place-visual-v2", preparedAt: "2026-10-08T00:00:00.000Z", reasons: ["Identity could not be established from provider records and geographic scope."] } };
+  const result = await compose("illustration-editorial", false, false, "ai", false, false, false, false, "quebec511", false,
+    { format: "carousel", geoScope: austin, units: [autoUnit(10, { visualNeed: "real-photo", visualDirection: "Photographie réelle de la grande salle du Théâtre des Deux Rives" })], research: new Map([[10, unresolved]]) });
+  const slide = result.assets.find(a => a.unitOrder === 10)!;
+  assert.equal(slide.prompt, "Creative prompt [Generic scene of the activity, no place shown] with brand");
 });
 
 test("an automatic place slide with nothing verifiable keeps the normal creative illustration and records why", async () => {

@@ -3,7 +3,7 @@ import { publishingIdentity } from "./instagram-publishing-access";
 import { GRAPH_API_VERSION } from "./meta-graph-client";
 import { findCreativeDraftById } from "../stories/creative-content.repository";
 import { findCreativeAssetBatchById, getCreativeAssetGenerationReferences } from "../stories/creative-assets.repository";
-import { adaptationCreditLine, portraitCreditLine } from "../stories/creative-portrait-composite";
+import { adaptationCreditLine, placePhotoAdaptationCreditLine, portraitCreditLine } from "../stories/creative-portrait-composite";
 import type { CreativeAssetBatch } from "../stories/creative-content.types";
 import { getSelectedStoryContent } from "../stories/story-content.repository";
 import { documentarySourceToken, latestDocumentaryBatch } from "../stories/creative-documentary.repository";
@@ -48,6 +48,11 @@ async function batchPhotoCredits(batch: CreativeAssetBatch): Promise<string[]> {
   for (const asset of [...batch.assets].sort((a, b) => a.unitOrder - b.unitOrder)) {
     const portrait = asset.unitSnapshot.documentaryPortrait;
     if (portrait?.provenance) credits.push(portraitCreditLine(portrait.provenance));
+    // A verified place photo the model adapted: its credit is never drawn on the image.
+    const place = asset.unitSnapshot.placeVisual;
+    if (place?.generationUse === "ai-reference" && place.photo?.author && place.photo.license) {
+      credits.push(placePhotoAdaptationCreditLine(place.photo));
+    }
     const references = (await getCreativeAssetGenerationReferences(asset.id)).story ?? [];
     for (const reference of references) {
       if (reference.purpose !== "documentary-portrait" && reference.purpose !== "style" && /via Wikimedia Commons/.test(reference.provenance)) {

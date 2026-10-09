@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { evidenceQualityIssues, imageEditRequestsGeographicReconstruction, onlyTruncatedCreativeFacts, locationOnlyRoadFacts, requestsGeographicReconstruction, requiresVerifiedGeography } from "./creative-evidence-guardrails";
+import { evidenceQualityIssues, imageEditRequestsGeographicReconstruction, onlyTruncatedCreativeFacts, locationOnlyRoadFacts, requestsGeographicReconstruction, requestsPlacePhotograph, requiresVerifiedGeography } from "./creative-evidence-guardrails";
 import type { GeneratedCreativeDraft } from "./creative-content.types";
 const draft: GeneratedCreativeDraft = {concept:"Repères",caption:"Les seules informations disponibles sont des repères géographiques à Saint-Sébastien et à Saint-Jean-sur-Richelieu. Sans précision sur la nature de la situation routière ou ses effets.",hashtags:[],altText:"",units:[]};
 test("the reported road-marker carousel is blocked, not converted into a cautious non-news post", () => {
@@ -108,4 +108,16 @@ test("an image edit that adds a map request is still sent to documentary prepara
   const savedPrompt = "Editorial collage, three abstract shapes.";
   assert.ok(imageEditRequestsGeographicReconstruction({ savedPrompt, editedPrompt: `${savedPrompt}\nAdd a road map of Saint-Jean in the background.` }));
   assert.ok(imageEditRequestsGeographicReconstruction({ savedPrompt, editedPrompt: savedPrompt, editInstruction: "Replace the shapes with a Google Maps screenshot" }));
+});
+
+test("a direction asking for a real photograph of a place is recognized in French, English and Spanish", () => {
+  // The October 2026 Saint-Jean writer's directions for named venues.
+  assert.equal(requestsPlacePhotograph("Photographie authentique de la grande salle du Théâtre des Deux Rives, montrant les rangées de fauteuils."), true);
+  assert.equal(requestsPlacePhotograph("Vue photographique réelle d'une galerie d'exposition du Musée du Haut-Richelieu."), true);
+  assert.equal(requestsPlacePhotograph("Plan photographique réel de l'espace scénique du Cabaret-Théâtre."), true);
+  assert.equal(requestsPlacePhotograph("A realistic photo of the Paramount Theatre lobby."), true);
+  assert.equal(requestsPlacePhotograph("Fotografía real del mercado."), true);
+  // Real objects as photographic cut-outs are what the identity asks for.
+  assert.equal(requestsPlacePhotograph("Un détourage photographique net d'une feuille d'automne et d'un microscope sur fond crème."), false);
+  assert.equal(requestsPlacePhotograph("Photographic cut-out of a guitar and a microphone on a flat teal field."), false);
 });

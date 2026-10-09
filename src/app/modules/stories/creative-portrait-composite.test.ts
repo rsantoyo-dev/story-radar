@@ -3,7 +3,7 @@ import test from "node:test";
 
 import sharp from "sharp";
 
-import { adaptationCreditLine, compositeDocumentaryPortrait, focalCrop, PORTRAIT_LAYOUTS, PORTRAIT_PHOTO, PORTRAIT_ZONE, portraitAccent, portraitCreditLine, portraitLayoutForSlide, portraitZonePrompt } from "./creative-portrait-composite";
+import { adaptationCreditLine, compositeDocumentaryPortrait, placePhotoAdaptationCreditLine, focalCrop, PORTRAIT_LAYOUTS, PORTRAIT_PHOTO, PORTRAIT_ZONE, portraitAccent, portraitCreditLine, portraitLayoutForSlide, portraitZonePrompt } from "./creative-portrait-composite";
 import { parsePhotoFocus } from "./story-materials.types";
 
 async function pixel(image: Buffer, x: number, y: number): Promise<number[]> {
@@ -45,6 +45,9 @@ test("the credit line keeps author and license and drops URLs", () => {
 test("an AI adaptation of a licensed photo has a credit line for the caption", () => {
   const credit = adaptationCreditLine("Photo: Pierre Bona · CC BY-SA 3.0 (https://creativecommons.org/licenses/by-sa/3.0/) · https://commons.wikimedia.org/wiki/File:M.jpg · via Wikimedia Commons");
   assert.equal(credit, "Adaptation IA · Photo: Pierre Bona · CC BY-SA 3.0 · via Wikimedia Commons");
+  // A verified place photo the model adapted gets the same caption line; its image carries none.
+  assert.equal(placePhotoAdaptationCreditLine({ author: "Yource", license: "CC BY-SA 4.0" }), "Adaptation IA · Photo: Yource · CC BY-SA 4.0 · via Wikimedia Commons");
+  assert.equal(placePhotoAdaptationCreditLine({ author: "Larry D. Moore", license: "CC BY 2.0", provider: "openverse" }), "Adaptation IA · Photo: Larry D. Moore · CC BY 2.0 · via Openverse");
 });
 
 test("photo slides rotate through the layouts, never repeating on consecutive slides", () => {

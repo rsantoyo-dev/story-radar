@@ -12,7 +12,9 @@ export type PlaceVisualEvidence = {
   /** "ai-reference": the model receives it; "panel": it is pasted unaltered after generation. */
   generationUse?: "ai-reference" | "panel";
   /** A pasted map's layout (see mapPanelLayout); absent on band-era snapshots. */
-  panelLayout?: "inset";
+  panelLayout?: "inset" | "inset-labelled";
+  /** The provider's name and street address for the place, printed on a labelled map card. */
+  mapLabel?: { name: string; address: string };
   /**
    * "automatic": the writer declared no place need; automatic place detection
    * found the slide's one named place in the brand's area. Such a slide only

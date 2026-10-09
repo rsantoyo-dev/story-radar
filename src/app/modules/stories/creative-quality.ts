@@ -290,7 +290,7 @@ export function repairDeterministicCreativeCopy(
       if (unit.editorialGoal) {
         unit.factIds = unit.factIds.slice(
           0,
-          maximumFactsForGoal(unit.editorialGoal),
+          maximumFactsForGoal(unit.editorialGoal, carouselPlan?.structure),
         );
       }
       if (unit.continuationCue) {
@@ -480,7 +480,7 @@ export function repairDeterministicCreativeCopy(
       if (unit.editorialGoal) {
         unit.factIds = unit.factIds.slice(
           0,
-          maximumFactsForGoal(unit.editorialGoal),
+          maximumFactsForGoal(unit.editorialGoal, carouselPlan?.structure),
         );
       }
       // The same English-leak cleanup for every covered non-English profile:

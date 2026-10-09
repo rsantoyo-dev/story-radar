@@ -250,3 +250,8 @@ export async function compositeDocumentaryPortrait({
 export function adaptationCreditLine(provenance: string): string {
   return `Adaptation IA · ${portraitCreditLine(provenance)}`.slice(0, 110);
 }
+
+/** The same credit for a verified place photo the model adapted (Commons, or found through Openverse). */
+export function placePhotoAdaptationCreditLine(photo: { author: string; license: string; provider?: string }): string {
+  return adaptationCreditLine(`Photo: ${photo.author} · ${photo.license} · ${photo.provider === "openverse" ? "via Openverse" : "via Wikimedia Commons"}`);
+}

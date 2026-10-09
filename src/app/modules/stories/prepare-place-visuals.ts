@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import type { CreativeDraft, CreativeKeyFact, CreativeProfile } from "./creative-content.types";
 import { documentaryProviders } from "./creative-documentary-providers";
 import { eligiblePhoto, parsePlaceExtraction, type PlaceEvidence, type PlaceExtraction, type PhotoEvidence, type DocumentarySnapshot } from "./creative-documentary";
-import { PLACE_VISUAL_VERSION, autoPlaceCandidate, autoPlaceDetectionEnabled, autoPlaceMention, mentionsForUnit, placeFidelityMode, type PreparedPlaceVisual } from "./creative-place-visual";
+import { PLACE_VISUAL_VERSION, autoPlaceCandidate, autoPlaceDetectionEnabled, autoPlaceMention, mentionsForUnit, placeFidelityMode, unitSource, type PreparedPlaceVisual } from "./creative-place-visual";
 import { renderOpenMap } from "./open-map-render";
 import { OSM_ATTRIBUTION } from "./open-map-geometry";
 import { generateOpenAiStructuredResponse } from "./openai-structured-response";
@@ -222,10 +222,11 @@ async function preparePlaceVisualsFor(topicId: string, draft: CreativeDraft, pro
     // name- and scope-confirmed place, so any success here is at least as
     // trustworthy as the Wikidata path below. Any failure (no key, no budget,
     // ambiguous, provider error) falls through unchanged.
-    const google=await resolveGooglePlaceMap(mention.name,profile.geoScope,profile.language,googleSignal,undefined,undefined,undefined,mapPaletteFromBrand(profile.brandPalette ?? [])).catch(()=>undefined);
+    const google=await resolveGooglePlaceMap(mention.name,profile.geoScope,profile.language,googleSignal,undefined,undefined,undefined,mapPaletteFromBrand(profile.brandPalette ?? []),unitSource(unit,facts)).catch(()=>undefined);
     if(google){
       result.bytes=google.bytes;result.evidence.representation="map";result.evidence.adapter=google.evidence.adapter;
       result.evidence.sourceUrl=google.evidence.sourceUrl;result.evidence.attribution=google.evidence.attribution;
+      if(google.evidence.mapLabel)result.evidence.mapLabel=google.evidence.mapLabel;
       result.evidence.sha256=google.evidence.sha256;result.evidence.reasons.push(...google.evidence.reasons);
       // The real-photo slide fell back to a map; Openverse may still find its photo.
       if(photoFirst && place)openverseWanted.push({result,place,superseded:google.evidence.reasons});

@@ -53,6 +53,17 @@ export function requestsGeographicReconstruction(direction: string): boolean {
 }
 
 /**
+ * Whether a direction asks for a real, authentic or documentary photograph
+ * ("Photographie réelle de la grande salle du Théâtre des Deux Rives"). On a
+ * place slide with no verified photo, that reads as the place itself: the
+ * October 2026 Saint-Jean writer asked for exactly that despite its rules.
+ */
+export function requestsPlacePhotograph(direction: string): boolean {
+  return /\b(?:photographie|photo|vue photographique|plan photographique|cliche|image) (?:reel(?:le)?|authentique|realiste|documentaire)\b|\b(?:real|authentic|realistic|documentary) (?:photo|photograph|view|shot|picture)\b|\bfotografia (?:real|autentica|realista|documental)\b/
+    .test(normalized(direction));
+}
+
+/**
  * Whether an image edit asks for a map or real-place reconstruction. Only the
  * edit instruction and the lines the editor added to the saved prompt count:
  * text already in that prompt (e.g. a Topic's visual guide that mentions

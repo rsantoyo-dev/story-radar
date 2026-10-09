@@ -8,6 +8,8 @@ import sharp from "sharp";
 import * as policy from "./creative-documentary";
 import * as providerPrices from "../credits/provider-prices";
 import { PLACE_VISUAL_VERSION } from "./creative-place-visual";
+import * as mapPanel from "./creative-map-panel";
+import * as addressCheck from "./place-address-check";
 import type { GoogleTransport } from "./google-maps-provider";
 
 function load(file: string, imports: Record<string, unknown>) {
@@ -32,6 +34,7 @@ function harness() {
     "server-only": {}, sharp, "node:crypto": crypto, "./google-maps-provider": provider,
     "./creative-documentary-providers": { providerLanguage: (value: string) => (value || "en").slice(0, 2).toLowerCase() },
     "./creative-place-visual": { PLACE_VISUAL_VERSION },
+    "./creative-map-panel": mapPanel, "./place-address-check": addressCheck,
   }) as typeof import("./resolve-google-place-map");
   return { provider, resolver };
 }
@@ -67,6 +70,24 @@ test("a confirmed place returns a real static map with Google provenance", async
   assert.match(result?.evidence.attribution ?? "", /Google Maps/);
   assert.match(result?.evidence.sourceUrl ?? "", /google\.com\/maps\/search/);
   assert.equal(result?.bytes.toString("hex"), image.toString("hex"));
+});
+
+test("the map card is labelled with Google's name and street address, and a marker at another address than the facts state is no map", async () => {
+  const { resolver } = harness();
+  const image = await raster();
+  const facts = "Lieu : Centre d’art du Domaine Trinity, 360, rue McGinnis, secteur Iberville.";
+  const at = (formattedAddress: string) => transport(image, { places: [place({ formattedAddress })] }).fetch;
+  const confirmed = await resolver.resolveGooglePlaceMap("Place Jacques-Cartier", scope, "fr", AbortSignal.timeout(1000), config, { maxPerDay: 100 },
+    at("360 Rue McGinnis, Saint-Jean-sur-Richelieu, QC J2X 3H6, Canada"), undefined, facts);
+  assert.equal(JSON.stringify(confirmed?.evidence.mapLabel), JSON.stringify({ name: "Place Jacques-Cartier", address: "360 Rue McGinnis" }));
+  assert.match(confirmed?.evidence.reasons.join(" ") ?? "", /matches the street address the facts state/);
+  const elsewhere = await resolver.resolveGooglePlaceMap("Place Jacques-Cartier", scope, "fr", AbortSignal.timeout(1000), config, { maxPerDay: 100 },
+    at("182 Rue Jacques-Cartier N, Saint-Jean-sur-Richelieu, QC J3B 6Z1, Canada"), undefined, facts);
+  assert.equal(elsewhere, undefined);
+  // Facts without an address cannot contradict the provider.
+  const unstated = await resolver.resolveGooglePlaceMap("Place Jacques-Cartier", scope, "fr", AbortSignal.timeout(1000), config, { maxPerDay: 100 },
+    at("182 Rue Jacques-Cartier N, Saint-Jean-sur-Richelieu, QC J3B 6Z1, Canada"), undefined, "Dimanche matin, une visite.");
+  assert.equal(unstated?.evidence.representation, "map");
 });
 
 test("an ambiguous or unmatched result falls through with no map, not a guess", async () => {

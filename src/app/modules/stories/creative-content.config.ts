@@ -174,8 +174,12 @@ export function getCreativeContentPublicConfig(): CreativeContentPublicConfig {
     // slides (24 facts, enforced by the parser); never extract or write that a
     // detail is missing; lead with the experience, logistics after it. v42: a
     // list's hook slide also carries the facts of its draw (free, new,
-    // ending this weekend) so the cover can promise it.
-    briefPromptVersion: "creative-brief-v42",
+    // ending this weekend) so the cover can promise it. v43: each list item
+    // keeps its practical passage (day, time, price, ages) as a fact of its
+    // own, extracted verbatim from a labelled block when the model misses it
+    // (attachListPracticalFacts); the closing may cite one per item; a
+    // forecast for the period stays a qualified fact.
+    briefPromptVersion: "creative-brief-v43",
     // v28/v52/v7: the writer now has explicit guidance for what a
     // publish-ready caption reads like — a concrete opening stake, one line
     // per distinct practical consequence the facts support, and caption
@@ -211,8 +215,13 @@ export function getCreativeContentPublicConfig(): CreativeContentPublicConfig {
       // a practical line, fine print in the caption), the cover adds a
       // verifiable draw and shows it, and the closing gives one takeaway
       // instead of re-listing the items.
-      carousel: carouselWriterModel ? `carousel-draft-v57-writer-${carouselWriterModel}` : "carousel-draft-v57",
-      sequence: "sequence-draft-v12",
+      // v58/v13: a list cover's headline is the promise and its subheadline
+      // the draw, over one main image (never cards or thumbnails per item);
+      // each item ends with a practical line (day · time · ages · price);
+      // when the closing's facts give times, it is the plan by day plus a
+      // short call to action.
+      carousel: carouselWriterModel ? `carousel-draft-v58-writer-${carouselWriterModel}` : "carousel-draft-v58",
+      sequence: "sequence-draft-v13",
     },
     maxRunsPerDay: parsePositiveInteger(
       process.env.CREATIVE_MAX_RUNS_PER_DAY,

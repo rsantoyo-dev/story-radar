@@ -11,7 +11,8 @@ import {
 import { providerLanguage } from "./creative-documentary-providers";
 import type { CreativeGeoScope } from "./creative-content.types";
 import { PLACE_VISUAL_VERSION, type PlaceVisualEvidence } from "./creative-place-visual";
-import type { MapPalette } from "./creative-map-panel";
+import { streetAddress, type MapPalette } from "./creative-map-panel";
+import { providerAddressMatchesStated } from "./place-address-check";
 
 export type GoogleGenerationConfig = { maxPerDay: number };
 export function googleGenerationConfig(
@@ -61,6 +62,8 @@ export async function resolveGooglePlaceMap(
   transport?: GoogleTransport,
   /** The brand's colours, drawn by Google's own map styling. */
   palette?: MapPalette,
+  /** The slide's source text: a street address it states must be Google's. */
+  statedText?: string,
 ): Promise<{ evidence: PlaceVisualEvidence; bytes: Buffer } | undefined> {
   if (!config.enabled || !config.apiKey) return undefined;
   if (!reserveGenerationCall(generation.maxPerDay)) return undefined;
@@ -76,6 +79,9 @@ export async function resolveGooglePlaceMap(
     });
     const place = selectMatchingGooglePlace(candidates, incomplete);
     if (!place) return undefined;
+    // A marker at another address than the one the facts state is a wrong map.
+    const addressMatch = statedText === undefined ? undefined : providerAddressMatchesStated(statedText, place.address);
+    if (addressMatch === false) return undefined;
     const bytes = await provider.map(place, palette);
     const metadata = await sharp(bytes, { limitInputPixels: 16_000_000 }).metadata();
     if (
@@ -98,10 +104,12 @@ export async function resolveGooglePlaceMap(
         sourceUrl: place.sourceUrl,
         attribution: `Google Maps · ${place.name}`,
         sha256: createHash("sha256").update(bytes).digest("hex"),
+        mapLabel: { name: place.name, address: streetAddress(place.address) },
         reasons: [
           place.exactName
             ? "Google Maps confirmed this place's name and geographic scope; static map centered on its verified coordinates, not a live closure or event map."
             : `Google returned one named point in the requested scope ("${place.name}"); identity with the story's mention is not independently verified beyond that match.`,
+          ...(addressMatch ? [`Google's address (${streetAddress(place.address)}) matches the street address the facts state.`] : []),
         ],
       },
     };
