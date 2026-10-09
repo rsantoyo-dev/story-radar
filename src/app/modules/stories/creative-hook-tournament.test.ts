@@ -117,6 +117,11 @@ test("later passes keep the tournament's cover unless facts or rules require the
   const blockers = (value: GeneratedCreativeDraft) => (value.units[0].headline === winner.headline ? 1 : 0);
   assert.equal(keepTournamentCover(rewritten, tournament, [], notFactual, blockers).units[0].headline, "Style rewrite", "a rewrite that clears a rule blocker stands");
   assert.equal(keepTournamentCover(rewritten, { ...tournament, replaced: false }, [], notFactual).units[0].headline, "Style rewrite", "nothing to protect when the writer's cover won");
+  // A chosen cover citing a fact the plan keeps off the cover is never put back:
+  // every review would reject the draft as citing an unplanned fact.
+  const offPlan = keepTournamentCover(rewritten, tournament, [], notFactual, undefined, ["fact-9"]);
+  assert.equal(offPlan, rewritten, "the rewrite's own, planned cover stands");
+  assert.equal(keepTournamentCover(rewritten, tournament, [], notFactual, undefined, winner.factIds).units[0].headline, winner.headline, "a planned tournament cover is still kept");
 });
 
 test("the judge's ranking decides among eligible covers; the writer's cover keeps its place unless outranked", () => {

@@ -619,10 +619,18 @@ export function keepTournamentCover(
   findings: readonly CreativeQualityIssue[],
   isFactual: (issue: CreativeQualityIssue) => boolean,
   openingBlockers: (draft: GeneratedCreativeDraft) => number = () => 0,
+  /**
+   * The facts the plan allows on the cover slide. A chosen cover citing others
+   * is never restored: every review rejects it as an unplanned fact, so the
+   * draft could not be verified again (October 2026, a Pentagon cover citing
+   * slide 2's fact).
+   */
+  allowedCoverFactIds?: readonly string[],
 ): GeneratedCreativeDraft {
   const chosen = tournament?.candidates[tournament.selectedIndex];
   const [cover, second] = next.units;
   if (!tournament?.replaced || !chosen || !cover) return next;
+  if (allowedCoverFactIds && chosen.factIds.some((id) => !allowedCoverFactIds.includes(id))) return next;
   // Only a factual finding on the slide itself may change what the tournament
   // chose for it; deck-level findings (fact reuse, arc, caption) are about
   // other copy.

@@ -1,5 +1,5 @@
 import { resolveNarrativeBrief } from "./creative-narrative-plan";
-import { claimRecovery, getRecovery, latestRecovery, checkpointRecovery, finishRecovery } from "./creative-recovery.repository";
+import { claimRecovery, getRecovery, latestRecovery, checkpointRecovery, finishRecovery, type RecoveryCheckpoint } from "./creative-recovery.repository";
 import { withCreativeTextBudget } from "./creative-text-meter";
 import { getCreativeTextSpend, recordTextOutcome } from "./creative-text-accounting.repository";
 import { getDailyDraftStory } from "./daily-draft-access";
@@ -29,7 +29,7 @@ import {
   getCreativeCompanionRuntimeConfig,
   getCreativeContentRuntimeConfig,
 } from "./creative-content.config";
-import { runSingleShotCreativePipeline } from "./creative-single-shot-editorial";
+import { recoverSingleShotDraft, runSingleShotCreativePipeline } from "./creative-single-shot-editorial";
 import { applyCreativeBriefOverrides, normalizeCreativeBriefOverrides } from "./creative-content.types";
 import {
   approveCreativeDraft,
@@ -914,13 +914,26 @@ export async function recoverSavedCreativeDraft(topicId:string,draftId:string,ex
   const characterRoster=await listCreativeCharacterRoster(topicId);
   const job=await claimRecovery(topicId,requestId,current,brief);
   try {
-    const result=job.result?.stage==='reviewed' ? job.result : await withCreativeTextBudget({topicId,storyId:current.storyId,runId:requestId},()=>recoverCreativeDraft({
+    const story=()=>({title:job.input.draft.concept,url:"",text:"",contentStatus:"full" as const,contentSource:"article" as const});
+    const onCheckpoint=(value:RecoveryCheckpoint)=>checkpointRecovery(topicId,requestId,value,job.lease_token);
+    // A draft the single-shot pipeline's Gemini critic reviewed is repaired the
+    // way that pipeline repairs (rewrite, verify, keep only an improvement):
+    // the legacy loop below only corrects drafts its OpenAI critic reviewed,
+    // and for these it reviewed again without correcting anything.
+    const singleShot=()=>job.input.draft.qualityReview?.critic?.provider==='google' && current.format!=='meme';
+    const result=job.result?.stage==='reviewed' ? job.result : await withCreativeTextBudget({topicId,storyId:current.storyId,runId:requestId},()=>singleShot()
+      ? recoverSingleShotDraft({
+        ...configuration,brief:resolveNarrativeBrief(job.input.brief,job.input.draft),currentDraft:job.input.draft,profile:job.input.brief.profileSnapshot,topic,story:story(),
+        format:current.format,outputAspectRatio:current.outputAspectRatio,characterRoster,
+        openAiAuditContext:{topicId,storyId:current.storyId,runId:requestId},...(job.result ? {checkpoint:job.result} : {}),onCheckpoint,
+      })
+      : recoverCreativeDraft({
       ...configuration,currentReviewIsCurrent:job.input.draft.qualityReviewIsCurrent===true,currentDraft:{...job.input.draft,
         ...(job.input.draft.editorialRepair ? {editorialRepair:freshRecoveryRepair(job.input.draft.editorialRepair,job.input.draft.qualityReviewIsCurrent!==false)} : {})},brief:job.input.brief,profile:job.input.brief.profileSnapshot,topic,
-      story:{title:job.input.draft.concept,url:"",text:"",contentStatus:"full",contentSource:"article"},
+      story:story(),
       format:current.format,outputAspectRatio:current.outputAspectRatio,characterRoster,
       openAiAuditContext:{topicId,storyId:current.storyId,runId:requestId},checkpoint:job.result??undefined,
-      onCheckpoint:value=>checkpointRecovery(topicId,requestId,value,job.lease_token),
+      onCheckpoint,
     }));
     const generated={...result.draft,recoveryId:requestId,units:result.draft.units.map((unit,index)=>({...unit,
       id:current.units[index]?.id,storyReferences:result.draft.narrativeRevision && JSON.stringify(unit.factIds)!==JSON.stringify(current.units[index]?.factIds) ? undefined : current.units[index]?.storyReferences,

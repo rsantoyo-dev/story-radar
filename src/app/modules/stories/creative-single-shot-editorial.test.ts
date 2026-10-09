@@ -23,7 +23,10 @@ type OpenAiParams = { model: string; schemaName: string; contents: Record<string
 type GeminiExports = { CreativeContentResponseError: new (message: string) => Error };
 type SingleShotGeneratorExports = Record<string, unknown>;
 type Checkpoint = { draft: { singleShotRun?: { stage: string; verdict?: string; callsUsed: number; stopReason?: string; repairRounds?: number } }; callsUsed: number };
+type RecoveredDraft = { units: { headline: string }[]; qualityReview?: { status: string; critic?: { provider: string } }; singleShotRun?: Checkpoint["draft"]["singleShotRun"] };
 type EditorialExports = {
+  withPlannedFacts: (draft: unknown, brief: unknown) => { units: { factIds: string[] }[] };
+  recoverSingleShotDraft: (options: unknown) => Promise<{ draft: RecoveredDraft; usage: { totalTokens: number } }>;
   runSingleShotCreativePipeline: (options: unknown) => Promise<{
     brief: unknown;
     draft: { units: unknown[]; qualityReview?: { status: string }; singleShotRun?: Checkpoint["draft"]["singleShotRun"]; blockedSource?: { reason: string } };
@@ -135,7 +138,7 @@ function harness(
       : id === "./creative-single-shot-generator" ? singleShotGeneratorExports
       : sharedRequire(id),
   });
-  return { run: editorialExports.runSingleShotCreativePipeline, geminiCalls, auditCalls, openAiCalls };
+  return { run: editorialExports.runSingleShotCreativePipeline, recover: editorialExports.recoverSingleShotDraft, planned: editorialExports.withPlannedFacts, geminiCalls, auditCalls, openAiCalls };
 }
 
 const taxonomy = { taxonomyVersion: 17, lenses: [{ key: "general", enabled: true, isFallback: true }] };
@@ -534,4 +537,62 @@ test("the cover tournament runs before the audit, and a style-only rewrite canno
   } finally {
     hookStage = { enabled: false };
   }
+});
+
+// "Repair and review" on a draft the Gemini critic reviewed. The legacy loop
+// only corrects OpenAI-reviewed drafts, so these were reviewed again and never
+// corrected (October 2026).
+const blockerReview = { verdict: "revised", scores: { ...strongScores, overall: 70 }, issues: [
+  { unitOrder: 1, code: "UNSUPPORTED_PERSONALIZATION", severity: "blocker", message: "The cover promises the reader something the fact does not." },
+], draft: undefined, hookSelection };
+
+async function savedSingleShotDraft() {
+  const generated = harness(() => validResponse(), () => ({ verdict: "accepted", scores: strongScores, issues: [], draft: undefined, hookSelection }));
+  return generated.run(options());
+}
+
+test("Repair and review rewrites a Gemini-reviewed draft and keeps the verified improvement", async () => {
+  const saved = await savedSingleShotDraft();
+  const h = harness(() => validResponse(), (call, index) => index === 0 ? blockerReview : { verdict: "accepted", scores: strongScores, issues: [], draft: undefined, hookSelection });
+  const checkpoints: unknown[] = [];
+  const result = await h.recover({ ...options(), brief: saved.brief, currentDraft: saved.draft, onCheckpoint: async (value: unknown) => { checkpoints.push(value); } });
+  assert.equal(h.auditCalls.length, 2, "a fresh review, then the verification of the rewrite");
+  assert.equal(h.geminiCalls.length, 1, "one rewrite against the same brief");
+  const rewrite = h.geminiCalls[0] as { reviewFindings?: { code: string }[] };
+  assert.ok(rewrite.reviewFindings?.some((finding) => finding.code === "UNSUPPORTED_PERSONALIZATION"), "the rewrite gets the review's findings");
+  assert.equal(result.draft.qualityReview?.status, "accepted");
+  assert.equal(result.draft.qualityReview?.critic?.provider, "google", "still judged by the independent Gemini critic");
+  assert.equal(result.draft.singleShotRun?.repairRounds, 1);
+  assert.equal(result.draft.singleShotRun?.verdict, "accepted");
+  assert.ok(checkpoints.length >= 2, "the review and the kept correction are checkpointed");
+});
+
+test("Repair and review keeps the reviewed copy when the verified correction is no better, and says why", async () => {
+  const saved = await savedSingleShotDraft();
+  const worse = { ...blockerReview, scores: { ...strongScores, overall: 60 }, issues: [...blockerReview.issues,
+    { unitOrder: 3, code: "UNSUPPORTED_INFERENCE", severity: "blocker", message: "The closing adds a consequence." }] };
+  const h = harness(() => validResponse(), (call, index) => index === 0 ? blockerReview : worse);
+  const result = await h.recover({ ...options(), brief: saved.brief, currentDraft: saved.draft, onCheckpoint: async () => {} });
+  assert.equal(result.draft.singleShotRun?.repairRounds, 0);
+  assert.equal(result.draft.singleShotRun?.verdict, "correctable");
+  assert.match(result.draft.singleShotRun?.stopReason ?? "", /did not improve on the reviewed copy/);
+});
+
+test("Repair and review starts no rewrite it could not verify before the request answers", async () => {
+  const saved = await savedSingleShotDraft();
+  const h = harness(() => validResponse(), () => blockerReview);
+  const result = await h.recover({ ...options(), brief: saved.brief, currentDraft: saved.draft, onCheckpoint: async () => {}, deadline: Date.now() + 1_000 });
+  assert.equal(h.geminiCalls.length, 0, "no rewrite started");
+  assert.equal(h.auditCalls.length, 1, "the review still ran");
+  assert.match(result.draft.singleShotRun?.stopReason ?? "", /No time remained/);
+});
+
+test("a slide citing a fact its plan keeps elsewhere is narrowed to its planned facts before review", () => {
+  const h = harness(() => validResponse(), () => blockerReview);
+  const plan = { slides: [{ allowedFactIds: ["fact-1"] }, { allowedFactIds: ["fact-2"] }] };
+  const draft = { units: [{ order: 1, factIds: ["fact-1", "fact-2"] }, { order: 2, factIds: ["fact-3"] }] };
+  const narrowed = h.planned(draft, { carouselPlan: plan });
+  assert.equal(JSON.stringify(narrowed.units.map((unit) => unit.factIds)), JSON.stringify([["fact-1"], ["fact-2"]]), "an off-plan fact is dropped; a slide left with none takes its planned facts");
+  const valid = { units: [{ order: 1, factIds: ["fact-1"] }, { order: 2, factIds: ["fact-2"] }] };
+  assert.equal(h.planned(valid, { carouselPlan: plan }), valid, "a planned draft is returned unchanged");
 });

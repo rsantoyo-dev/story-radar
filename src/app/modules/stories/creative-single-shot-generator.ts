@@ -368,7 +368,10 @@ export async function generateSingleShotCreativeScript(
       contents,
       schema: strictCreativeSchema(schema),
       schemaName: "creative_draft",
-      maxOutputTokens: Math.max(maxOutputTokens, 8_192),
+      // A revision reasons over the previous script and every finding before
+      // rewriting it whole; at 8,192 Luna's reasoning used the budget and
+      // returned no script (October 2026). Usage, not the cap, is billed.
+      maxOutputTokens: Math.max(maxOutputTokens, revision ? 16_384 : 8_192),
       // The legacy writer path hardcodes "low", tuned for Luna as a cheap
       // fallback. Here the writer is chosen for quality, and the script
       // decides hook, structure and fact allocation — the calls where extra

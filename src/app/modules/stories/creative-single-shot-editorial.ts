@@ -2,6 +2,8 @@ import "server-only";
 
 import { actionableEditorialIssues, improved } from "./creative-editorial-loop";
 import {
+  CreativeContentResponseError,
+  emptyCreativeAiUsage,
   isConcreteFactualQualityIssue,
   runGeminiEditorialQualityGate,
   sumCreativeAiUsage,
@@ -191,7 +193,7 @@ export async function runSingleShotCreativePipeline(
     ).filter((issue) => issue.severity === "blocker" && issue.unitOrder !== undefined && opening.has(issue.unitOrder)).length;
   };
   const withHook = (value: GeneratedCreativeDraft, findings: readonly CreativeQualityIssue[]): GeneratedCreativeDraft => ({
-    ...(tournament ? { ...keepTournamentCover(value, tournament, findings, isConcreteFactualQualityIssue, openingBlockers), hookTournament: tournament } : value),
+    ...(tournament ? { ...keepTournamentCover(value, tournament, findings, isConcreteFactualQualityIssue, openingBlockers, brief.carouselPlan?.slides[0]?.allowedFactIds), hookTournament: tournament } : value),
     ...(tournamentError ? { hookTournamentError: tournamentError } : {}),
     ...(tournamentPending ? { hookTournamentPending: true } : {}),
   });
@@ -466,4 +468,169 @@ export async function runSingleShotCreativePipeline(
   }
 
   throw new Error("unreachable: the repair loop always returns before exhausting its iterations");
+}
+
+/**
+ * Each slide cites only the facts its plan allows. A cover the tournament
+ * wrote around a later slide's fact was saved citing it, and every review
+ * rejected the draft before reading it; narrowed, the review judges the cover
+ * on its planned evidence instead, and an unsupported cover becomes a finding
+ * the rewrite can correct.
+ */
+export function withPlannedFacts(draft: GeneratedCreativeDraft, brief: Pick<GeneratedCreativeBrief, "carouselPlan">): GeneratedCreativeDraft {
+  const slides = brief.carouselPlan?.slides;
+  if (!slides) return draft;
+  let changed = false;
+  const units = draft.units.map((unit, index) => {
+    const allowed = slides[index]?.allowedFactIds;
+    if (!allowed || unit.factIds.every((id) => allowed.includes(id))) return unit;
+    changed = true;
+    const kept = unit.factIds.filter((id) => allowed.includes(id));
+    return { ...unit, factIds: kept.length ? kept : [...allowed] };
+  });
+  return changed ? { ...draft, units } : draft;
+}
+
+/** "Repair and review" answers inside its route's limit (300 s). */
+const RECOVERY_BUDGET_MS = 280_000;
+/** A rewrite (up to two writer calls) plus its verification. */
+const RECOVERY_ROUND_RESERVE_MS = 150_000;
+
+export type SingleShotRecoveryCheckpoint = { stage: "patched" | "reviewed"; draft: GeneratedCreativeDraft; usage: CreativeAiUsage };
+
+/**
+ * "Repair and review" for a draft the single-shot pipeline's Gemini critic
+ * reviewed. The legacy repair loop only corrects drafts its OpenAI critic
+ * reviewed, so these were reviewed again and never corrected (October 2026:
+ * a Pentagon story kept a cover the critic rejected, click after click).
+ *
+ * The draft gets a fresh Gemini review, then the pipeline's own repair rounds:
+ * a rewrite against the same brief with every open finding, kept only when it
+ * adds no validation blocker and an independent verification shows it
+ * improved. Rounds stop when the draft is accepted, stops improving, or would
+ * not finish before the route answers; the reason is recorded on the draft.
+ */
+export async function recoverSingleShotDraft(
+  options: Parameters<typeof generateSingleShotCreativeScript>[0] & {
+    brief: GeneratedCreativeBrief;
+    currentDraft: GeneratedCreativeDraft;
+    /** A checkpoint from an interrupted attempt: its draft is reviewed again, not rewritten blindly. */
+    checkpoint?: SingleShotRecoveryCheckpoint;
+    onCheckpoint: (value: SingleShotRecoveryCheckpoint) => Promise<void>;
+    deadline?: number;
+  },
+): Promise<{ draft: GeneratedCreativeDraft; usage: CreativeAiUsage }> {
+  const { brief, currentDraft, checkpoint, onCheckpoint, openAiApiKey, openAiAuditContext, deadline: requestedDeadline, ...generatorOptions } = options;
+  const deadline = requestedDeadline ?? Date.now() + RECOVERY_BUDGET_MS;
+  const resolvedOptions = {
+    ...generatorOptions,
+    profile: { ...generatorOptions.profile, storyStructure: resolveStoryStructure(generatorOptions.profile.storyStructure, brief.carouselPlan) },
+  };
+  const judgedProfile = {
+    ...resolvedOptions.profile,
+    framingStrategy: effectiveFramingStrategy(resolvedOptions.profile.framingStrategy, brief),
+  };
+  // The cover tournament's choice survives a rewrite unless a factual finding names its slide.
+  const tournament = currentDraft.hookTournament;
+  const openingBlockers = (value: GeneratedCreativeDraft) => {
+    const opening = new Set(value.units.slice(0, 2).map((unit) => unit.order));
+    return deterministicCreativeQualityIssues(
+      value, resolvedOptions.format, brief.keyFacts, judgedProfile.language, judgedProfile.conversionGoal,
+      judgedProfile.framingStrategy, judgedProfile.storyStructure,
+    ).filter((issue) => issue.severity === "blocker" && issue.unitOrder !== undefined && opening.has(issue.unitOrder)).length;
+  };
+  const withHook = (value: GeneratedCreativeDraft, findings: readonly CreativeQualityIssue[]): GeneratedCreativeDraft =>
+    tournament ? { ...keepTournamentCover(value, tournament, findings, isConcreteFactualQualityIssue, openingBlockers, brief.carouselPlan?.slides[0]?.allowedFactIds), hookTournament: tournament } : value;
+  const review = (draft: GeneratedCreativeDraft, slim: boolean) => runGeminiEditorialQualityGate({
+    apiKey: resolvedOptions.apiKey,
+    paidApiKey: resolvedOptions.paidGeminiApiKey,
+    model: resolvedOptions.model,
+    currentDraft: draft,
+    format: resolvedOptions.format,
+    brief,
+    topic: resolvedOptions.topic,
+    profile: judgedProfile,
+    outputAspectRatio: resolvedOptions.outputAspectRatio,
+    characterRoster: resolvedOptions.characterRoster,
+    slim,
+  });
+  const inspect = (value: GeneratedCreativeDraft) =>
+    deterministicCreativeQualityIssues(
+      value, resolvedOptions.format, brief.keyFacts, judgedProfile.language, judgedProfile.conversionGoal,
+      judgedProfile.framingStrategy, judgedProfile.storyStructure,
+    ).filter((issue) => issue.severity === "blocker").map((issue) => `${issue.code}:${issue.unitOrder ?? 0}`);
+
+  let usage = checkpoint?.usage ?? emptyCreativeAiUsage();
+  let callsUsed = 1;
+  const audit = await review(withPlannedFacts(checkpoint?.draft ?? currentDraft, brief), false);
+  usage = sumCreativeAiUsage(usage, audit.usage);
+  if (audit.criticUnavailable) {
+    throw new CreativeContentResponseError(`The saved copy was retained. Independent review could not complete: ${audit.criticUnavailable.reason}`);
+  }
+  let best = withHook(audit.draft, actionableEditorialIssues(audit.draft));
+  let actionable = actionableEditorialIssues(best);
+  await onCheckpoint({ stage: "patched", draft: best, usage });
+
+  let rounds = 0;
+  let stopReason: string | undefined;
+  for (let round = 1; round <= MAX_SINGLE_SHOT_REPAIR_ROUNDS; round++) {
+    if (best.qualityReview?.status === "accepted") break;
+    if (!actionable.length) { stopReason = "The review left no actionable finding to correct."; break; }
+    if (Date.now() + RECOVERY_ROUND_RESERVE_MS > deadline) {
+      stopReason = rounds ? "Corrected and verified; run Repair and review again to continue." : "No time remained for a correction in this request; run Repair and review again.";
+      break;
+    }
+    let candidate: GeneratedCreativeDraft;
+    try {
+      const revision = await generateSingleShotCreativeScript({
+        ...resolvedOptions,
+        ...(openAiApiKey ? { openAiApiKey } : {}),
+        ...(openAiAuditContext ? { openAiAuditContext } : {}),
+        carouselWriterModel: resolvedOptions.repairWriterModel ?? resolvedOptions.carouselWriterModel,
+        existingBrief: brief,
+        maxAttempts: 2,
+        revision: {
+          previousDraft: best,
+          findings: actionable,
+          ...(best.qualityReview?.scores ? { scores: best.qualityReview.scores } : {}),
+          thresholds: CREATIVE_PUBLISHABLE_THRESHOLDS,
+        },
+      });
+      callsUsed += revision.attempts;
+      usage = sumCreativeAiUsage(usage, revision.usage);
+      candidate = withHook(revision.draft, actionable);
+    } catch (error) {
+      if (!(error instanceof Error) || error.name === "AbortError") throw error;
+      stopReason = `The correction could not be written: ${error.message}`.slice(0, 300);
+      break;
+    }
+    const before = new Set(inspect(best));
+    const introduced = inspect(candidate).filter((key) => !before.has(key));
+    if (introduced.length) { stopReason = `The correction introduced validation blockers (${introduced.join(", ")}); the reviewed copy was kept.`; break; }
+    callsUsed += 1;
+    const verify = await review(candidate, true);
+    usage = sumCreativeAiUsage(usage, verify.usage);
+    if (verify.criticUnavailable) { stopReason = `Verification unavailable: ${verify.criticUnavailable.reason}. The correction was not promoted.`; break; }
+    const verified = withHook(verify.draft, actionableEditorialIssues(verify.draft));
+    if (!improved(best, verified)) { stopReason = "The verified correction did not improve on the reviewed copy, so the reviewed copy was kept."; break; }
+    best = verified;
+    actionable = actionableEditorialIssues(best);
+    rounds += 1;
+    await onCheckpoint({ stage: "patched", draft: best, usage });
+  }
+
+  const accepted = best.qualityReview?.status === "accepted";
+  const draft: GeneratedCreativeDraft = {
+    ...best,
+    singleShotRun: {
+      stage: "done",
+      callsUsed,
+      verdict: accepted ? "accepted" : "correctable",
+      ...(accepted ? {} : { findings: actionable }),
+      repairAttempted: true,
+      repairRounds: rounds,
+      ...(stopReason && !accepted ? { stopReason } : {}),
+    },
+  };
+  return { draft, usage };
 }
