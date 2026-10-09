@@ -38,6 +38,7 @@ import { effectiveFramingStrategy } from "./creative-content.types";
 import { CAROUSEL_BODY_MAX_WORDS, CAROUSEL_BODY_TARGET_WORDS, carouselNarrativePolicyForPrompt, MAX_CAROUSEL_SLIDES, resolveStoryStructure, templatePlanQuestions, unspentPlanFactIds } from "./carousel-narrative";
 import { deterministicCreativeQualityIssues, repairDeterministicCreativeCopy } from "./creative-quality";
 import { unsupportedFactNames } from "./creative-fact-guard";
+import { isPracticalPassage } from "./list-practical-evidence";
 import { enforceCoverTitle } from "./creative-cover-title";
 import type { TopicAcquisitionTaxonomy } from "./acquisition-lenses";
 import type {
@@ -407,6 +408,10 @@ export async function generateSingleShotCreativeScript(
       const leaks = (Array.isArray(raw.keyFacts) ? raw.keyFacts : []).flatMap((item) => {
         const fact = item as { id?: unknown; statement?: unknown; sourceExcerpt?: unknown };
         if (typeof fact.statement !== "string" || typeof fact.sourceExcerpt !== "string") return [];
+        // A list item's practical block ("Date : … Heure : …") never names the
+        // item; the parse narrows its statement to the block, and the item's
+        // name stays in its other fact. Sending it back cost a whole brief call.
+        if (isPracticalPassage(fact.sourceExcerpt)) return [];
         const names = unsupportedFactNames(fact.statement, fact.sourceExcerpt);
         return names.length ? [`${typeof fact.id === "string" ? fact.id : "a fact"} (${names.join("; ")})`] : [];
       });

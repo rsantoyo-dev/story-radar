@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { GeneratedCreativeBrief } from "./creative-content.types";
-import { attachListPracticalFacts, practicalBlocks } from "./list-practical-evidence";
+import { attachListPracticalFacts, isPracticalPassage, practicalBlocks } from "./list-practical-evidence";
 
 // The October 2026 Saint-Jean weekend list: each item names itself in one
 // sentence and gives its practical details in a labelled block below.
@@ -145,4 +145,21 @@ test("blocks that may precede their items, arcs and briefs without blocks are le
   assert.deepEqual(attachListPracticalFacts(listBrief(), plain, 24), listBrief());
   // No room for more facts: nothing is invented to fit.
   assert.equal(attachListPracticalFacts(listBrief(), SOURCE, 4).keyFacts.length, 4);
+});
+
+test("a practical passage is recognized, so its fact is narrowed instead of sent back", () => {
+  assert.equal(isPracticalPassage("Date : dimanche 11 octobre 2026.\nHeure : 16 h.\nTarif régulier annoncé : 22 $ CA."), true);
+  assert.equal(isPracticalPassage("Dimanche après-midi, Les Incomplètes invitent les familles à « Bêtes de fête »."), false);
+  assert.equal(isPracticalPassage(""), false);
+});
+
+test("an excerpt that already holds the whole block, plus a line after it, is reused instead of duplicated", () => {
+  // The October 2026 brief: the model cited the block and the festival line after it.
+  const brief = listBrief();
+  const block = "Date : dimanche 11 octobre 2026.\nHeure : 16 h.\nLieu : Cabaret-Théâtre du Vieux-Saint-Jean, 190, rue Laurier.\nTarif régulier annoncé : 22 $ CA.";
+  brief.keyFacts.push(fact("fact-5", `${block}\n\n3. DERNIÈRE FIN DE SEMAINE POUR LE GRAND FEU DE 1876`));
+  brief.carouselPlan!.slides[2]!.allowedFactIds = ["fact-3", "fact-5"];
+  const attached = attachListPracticalFacts(brief, SOURCE, 24);
+  assert.deepEqual(attached.carouselPlan!.slides[2]!.allowedFactIds, ["fact-3", "fact-5"]);
+  assert.ok(!attached.keyFacts.some((entry) => entry.id !== "fact-5" && entry.statement.includes("Heure : 16 h.")), "no second copy of the block");
 });

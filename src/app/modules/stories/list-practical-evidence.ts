@@ -68,6 +68,18 @@ export function practicalBlocks(source: string): Block[] {
   return blocks;
 }
 
+/**
+ * Whether an excerpt is essentially one labelled practical block. Its fact is
+ * then narrowed to the excerpt instead of being sent back for a wider one: the
+ * item's name lives in its other fact, on the same slide.
+ */
+export function isPracticalPassage(excerpt: string): boolean {
+  const text = excerpt.trim();
+  if (!text) return false;
+  const covered = practicalBlocks(text).reduce((sum, block) => sum + (block.end - block.start), 0);
+  return covered >= 0.8 * text.length;
+}
+
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 
 /** Where an excerpt starts in the source, tolerating line breaks and apostrophe styles. */
@@ -136,7 +148,8 @@ export function attachListPracticalFacts(
     if (!block || (position === items.length - 1 && block.start - item.anchor > lastGapLimit)) return;
     const excerpt = sourceText.slice(block.start, block.end);
     const slide = slides[item.index]!;
-    const existing = facts.find((fact) => fact.sourceExcerpt && comparable(fact.sourceExcerpt) === comparable(excerpt));
+    // A fact whose excerpt already holds the whole block (plus a line around it) covers it.
+    const existing = facts.find((fact) => fact.sourceExcerpt && comparable(fact.sourceExcerpt).includes(comparable(excerpt)));
     if (!existing || !slide.allowedFactIds.includes(existing.id)) {
       // An item worth a time and a price is one the reader can do.
       const room = (goal: typeof slide.editorialGoal) => slide.allowedFactIds.length < maximumFactsForGoal(goal);

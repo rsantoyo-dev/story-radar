@@ -19,6 +19,7 @@ test("a hook-list brief always plans a list; an auto brief plans one only when t
   assert.match(list, /Never extract a fact that only says a detail is missing/);
   // Practical details in their own passage become the item's second fact.
   assert.match(list, /extract that whole passage, copied exactly, as a second keyFact and cite both facts on the item's slide/);
+  assert.match(list, /never add the item's name to it, because its excerpt does not carry it/);
   assert.match(list, /a forecast stays a forecast, with the date it was consulted/);
   assert.match(list, /preferring the items' practical passages so it can lay out the plan for the period/);
 

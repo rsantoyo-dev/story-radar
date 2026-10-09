@@ -4412,7 +4412,10 @@ function normalizeEditorialDirection(value: string): string {
 
 async function requestJson<T>(url: string, secret: string, init: RequestInit = {}): Promise<T> {
   const controller = new AbortController();
-  const timeoutMs = init.method === "POST" ? 300_000 : 75_000;
+  // A generation may use its whole time budget (CREATIVE_DRAFT_TIME_BUDGET_MS,
+  // 480 s) when a provider is slow; the browser waits a little longer than
+  // that, and a host that stops the function sooner answers with an error first.
+  const timeoutMs = init.method === "POST" ? 540_000 : 75_000;
   const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
   const abortRequest = () => controller.abort();
   init.signal?.addEventListener("abort", abortRequest, { once: true });
@@ -4434,7 +4437,11 @@ async function requestJson<T>(url: string, secret: string, init: RequestInit = {
     return payload as T;
   } catch (error) {
     if (controller.signal.aborted && !init.signal?.aborted) {
-      throw new Error("The request took too long. Check the AI provider and try again.");
+      // The server keeps working after the browser stops waiting: retrying at
+      // once would start a second, paid generation of the same thing.
+      throw new Error(init.method === "POST"
+        ? "The browser stopped waiting, but the server may still finish this request. Refresh the page in a minute to see the result before trying again."
+        : "The request took too long. Check the AI provider and try again.");
     }
     throw error;
   } finally {
