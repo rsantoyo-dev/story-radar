@@ -10,15 +10,14 @@
 }
 
 .workspace {
+  @ds-surface (card);
   display: flex;
   overflow: hidden;
   flex-direction: column;
   width: min(1180px, 100%);
   max-height: xs(calc(100svh - 20px)) md(calc(100svh - 48px));
-  border: 1px solid palette(surface-light, 0.9);
-  border-radius: xs(16px) md(22px);
-  background: palette(light-light);
-  box-shadow: 0 28px 90px palette(dark-main, 0.3);
+  border-radius: radius(4);
+  box-shadow: shadow(overlay);
 }
 
 .header {
@@ -27,7 +26,7 @@
   justify-content: space-between;
   gap: density(6);
   padding: xs(density(5)) md(density(6));
-  border-bottom: 1px solid palette(surface-light);
+  border-bottom: border(subtle);
   background: palette(light-light);
 }
 
@@ -35,34 +34,25 @@
 .sectionHeading span,
 .recommendation span,
 .briefCopy span {
-  margin: 0 0 5px;
+  margin: 0 0 space(2);
   color: palette(tertiary-main);
-  @ds-typo (caption);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
+  @ds-typo (badge);
 }
 
 .header h2 {
   max-width: 900px;
   margin: 0;
   color: palette(dark-main);
-  @ds-typo (h2);
-  font-size: 21px;
-  line-height: 1.25;
+  @ds-typo (title-lg);
 }
 
 .header > button {
+  @ds-button (secondary);
   width: 36px;
   height: 36px;
-  border: 1px solid palette(surface-light);
-  border-radius: 50%;
-  background: palette(light-light);
-  color: palette(primary-dark);
-  @ds-typo (h3);
-  font-size: 24px;
-  cursor: pointer;
+  border: border(subtle);
+  border-radius: radius(circle);
+  @ds-typo (icon-lg);
 }
 
 .body {
@@ -85,17 +75,14 @@
 }
 
 .progressStep {
+  @ds-surface (card);
   display: flex;
   align-items: center;
   gap: density(3);
   padding: density(3) density(4);
-  border: 1px solid palette(surface-light);
-  border-radius: 999px;
-  background: palette(light-light);
+  border-radius: radius(pill);
   color: palette(tertiary-main);
-  @ds-typo (caption);
-  font-size: 11px;
-  font-weight: 700;
+  @ds-typo (meta-strong);
 }
 
 .progressStep span {
@@ -103,10 +90,9 @@
   width: 20px;
   height: 20px;
   place-items: center;
-  border-radius: 50%;
+  border-radius: radius(circle);
   background: palette(light-light);
-  @ds-typo (caption);
-  font-size: 10px;
+  @ds-typo (fine);
 }
 
 .progressActive {
@@ -122,22 +108,20 @@
 .notice,
 .error,
 .warning {
-  margin: 0 0 16px;
+  margin: 0 0 space(5);
   padding: density(4) density(5);
-  border-radius: 12px;
+  border-radius: radius(3);
   @ds-typo (caption);
-  font-size: 12px;
-  line-height: 1.5;
 }
 
 .notice {
-  border: 1px solid palette(primary-light);
+  border: border(primary-soft);
   background: palette(light-light);
   color: palette(primary-dark);
 }
 
 .error {
-  border: 1px solid palette(error-light);
+  border: border(error);
   background: palette(light-light);
   color: palette(error-dark);
 }
@@ -152,28 +136,24 @@
 }
 
 .warning {
-  border: 1px solid palette(warning-light);
+  border: border(warning);
   background: palette(light-light);
   color: palette(warning-dark);
 }
 
 .profilePanel {
-  border: 1px solid palette(dark-main, 0.1);
-  border-radius: 15px;
-  background: palette(light-light);
+  @ds-surface (panel);
+  border-radius: radius(3);
 }
 
 .profilePanel summary {
+  @ds-button (link);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: density(5);
   padding: density(4) density(5);
-  color: palette(primary-dark);
-  @ds-typo (caption);
-  font-size: 13px;
-  font-weight: 750;
-  cursor: pointer;
+  @ds-typo (compact-strong);
   list-style: none;
 }
 
@@ -189,9 +169,7 @@
 
 .profilePanel summary small {
   color: palette(tertiary-main);
-  @ds-typo (caption);
-  font-size: 10px;
-  font-weight: 500;
+  @ds-typo (fine);
 }
 
 .profileSummaryHead {
@@ -209,31 +187,22 @@
 }
 
 .profileSummaryHead strong {
-  @ds-typo (caption);
-  font-size: 11px;
-  font-weight: 750;
+  @ds-typo (eyebrow);
   color: palette(primary-dark);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
 }
 
 .profileSummaryHead small {
-  @ds-typo (caption);
-  font-size: 10px;
-  font-weight: 500;
+  @ds-typo (fine);
   color: palette(tertiary-main);
 }
 
 .profileSummaryLink {
+  @ds-surface (card);
   flex: 0 0 auto;
   padding: density(2) density(3);
-  border: 1px solid palette(surface-light);
   border-radius: radius(full);
-  background: palette(light-light);
   color: palette(primary-main);
-  @ds-typo (caption);
-  font-size: 11px;
-  font-weight: 700;
+  @ds-typo (meta-strong);
   text-decoration: none;
   white-space: nowrap;
 }
@@ -264,7 +233,7 @@
   margin: 0;
   padding: density(5);
   border: 0;
-  border-top: border(1, palette(surface-light), solid);
+  border-top: border(1);
 }
 
 /* Grouped creative-profile panel: a stack of disclosure cards, no fieldset chrome. */
@@ -283,7 +252,7 @@
   z-index: 2;
   min-width: 0;
   padding: density(3);
-  border-top: 1px solid palette(surface-dark);
+  border-top: border(control);
   background: palette(light-light);
   box-shadow: shadow(1);
 }
@@ -292,8 +261,6 @@
   margin: calc(density(3) * -1) 0 0;
   color: palette(tertiary-main);
   @ds-typo (caption);
-  font-size: 12px;
-  line-height: 1.45;
 }
 
 .carouselChromePanel {
@@ -303,7 +270,7 @@
   display: grid;
   gap: density(4);
   padding: density(4);
-  border: border(1, palette(surface-dark), solid);
+  border: border(1);
   border-radius: radius(3);
   background: palette(surface-light);
   box-shadow: shadow(1);
@@ -334,7 +301,7 @@
   align-items: center;
   gap: density(2);
   padding: density(2);
-  border: border(1, palette(surface-dark), solid);
+  border: border(1);
   border-radius: radius(2);
   background: palette(light-light);
 }
@@ -366,8 +333,7 @@
 
 .paletteColor code {
   color: palette(tertiary-dark);
-  @ds-typo(caption);
-  font-size: 10px;
+  @ds-typo (fine);
 }
 
 .paletteRemove,
@@ -376,8 +342,7 @@
   border-radius: radius(1);
   width: max-content;
   min-height: density(6);
-  @ds-typo(caption);
-  font-weight: 700;
+  @ds-typo (label);
 }
 
 .paletteRemove {
@@ -400,8 +365,7 @@
   display: grid;
   gap: density(2);
   color: palette(primary-dark);
-  @ds-typo(caption);
-  font-weight: 700;
+  @ds-typo (label);
 }
 
 .carouselChromeSelect select {
@@ -416,7 +380,7 @@
   gap: density(2);
   justify-items: start;
   padding: density(3);
-  border: border(1, palette(surface-dark), solid);
+  border: border(1);
   border-radius: radius(2);
   background: palette(light-light);
 }
@@ -442,31 +406,23 @@
 }
 
 .carouselChromeStyleOption {
+  @ds-button (secondary);
   display: grid;
   gap: density(1);
   justify-items: center;
   min-width: 0;
   padding: density(2);
-  border: border(1, palette(surface-dark), solid);
+  border: border(1);
   border-radius: radius(2);
-  background: palette(light-light);
-  color: palette(primary-dark);
-  @ds-typo(caption);
-  font-weight: 700;
-  cursor: pointer;
+  @ds-typo (label);
 }
 
 .carouselChromeStyleOption:hover {
   border-color: palette(primary-main);
 }
 
-.carouselChromeStyleOption:focus-visible {
-  outline: border(2, palette(primary-main), solid);
-  outline-offset: 2px;
-}
-
 .carouselChromeStyleSelected {
-  border: border(2, palette(primary-main), solid);
+  border: border(2);
   background: palette(primary-light);
 }
 
@@ -478,17 +434,14 @@
 
 .brandUiPreviewLabel {
   color: palette(tertiary-dark);
-  @ds-typo(caption);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  @ds-typo (eyebrow);
 }
 
 .brandUiFrame {
   display: grid;
   grid-template-rows: auto 1fr;
   overflow: hidden;
-  border: border(1, palette(surface-dark), solid);
+  border: border(1);
   border-radius: radius(2);
   box-shadow: shadow(1);
 }
@@ -503,8 +456,7 @@
 }
 
 .brandUiNav strong {
-  @ds-typo(caption);
-  font-weight: 800;
+  @ds-typo (label);
 }
 
 .brandUiMain {
@@ -515,19 +467,17 @@
   display: grid;
   gap: density(1);
   padding: density(3);
-  border: border(1, palette(surface-dark), solid);
+  border: border(1);
   border-radius: radius(2);
 }
 
 .brandUiCard strong {
-  @ds-typo(body);
-  font-weight: 750;
+  @ds-typo (body-strong);
 }
 
 .brandUiCard p {
   margin: 0;
   @ds-typo(caption);
-  line-height: 1.4;
 }
 
 .brandUiRow {
@@ -542,10 +492,9 @@
   display: inline-flex;
   align-items: center;
   padding: density(1) density(3);
-  border: border(1, transparent, solid);
+  border: border(1);
   border-radius: radius(1);
-  @ds-typo(caption);
-  font-weight: 700;
+  @ds-typo (label);
 }
 
 .brandUiBadge {
@@ -553,15 +502,14 @@
   align-items: center;
   padding: density(1) density(2);
   border-radius: radius(full);
-  @ds-typo(caption);
-  font-weight: 700;
+  @ds-typo (label);
 }
 
 .brandUiInput {
   display: block;
   margin-top: density(2);
   padding: density(1) density(2);
-  border: border(1, palette(neutral-main), solid);
+  border: border(1);
   border-radius: radius(1);
   @ds-typo(caption);
 }
@@ -580,32 +528,32 @@
   align-items: center;
   gap: density(1);
   padding: density(1) density(2);
-  border: border(1, palette(surface-dark), solid);
+  border: border(1);
   border-radius: radius(full);
   color: palette(tertiary-dark);
   @ds-typo(caption);
 }
 
 .brandUiCheck[data-pass="false"] {
+  @ds-typo (emphasis);
   border-color: palette(secondary-main);
-  font-weight: 800;
 }
 
 .brandUiCheck code {
-  font-size: 10px;
+
+  @ds-typo (fine);
 }
 
 .brandUiWarnings {
+  @ds-surface (card);
   display: grid;
   gap: density(1);
   margin: 0;
   padding: density(2) density(3);
-  border-left: border(2, palette(secondary-main), solid);
+  border-left: border(2);
   border-radius: radius(1);
-  background: palette(light-light);
   color: palette(tertiary-dark);
   @ds-typo(caption);
-  line-height: 1.4;
 }
 
 .brandOverlayPanel {
@@ -615,7 +563,7 @@
   display: grid;
   gap: density(4);
   padding: density(4);
-  border: border(1, palette(surface-dark), solid);
+  border: border(1);
   border-radius: radius(3);
   background: palette(surface-light);
   box-shadow: shadow(1);
@@ -632,8 +580,7 @@
 .brandOverlayHeader strong {
   display: block;
   color: palette(primary-dark);
-  @ds-typo(caption);
-  font-weight: 750;
+  @ds-typo (label);
 }
 
 .brandOverlayHeader p {
@@ -641,7 +588,6 @@
   margin: density(1) 0 0;
   color: palette(tertiary-dark);
   @ds-typo(caption);
-  line-height: 1.45;
 }
 
 .brandEnabledToggle {
@@ -652,12 +598,11 @@
   align-items: center;
   gap: density(2);
   padding: density(2) density(3);
-  border: border(1, palette(surface-dark), solid);
+  border: border(1);
   border-radius: radius(2);
   background: palette(light-light);
   color: palette(primary-dark);
-  @ds-typo(caption);
-  font-weight: 750;
+  @ds-typo (label);
   cursor: pointer;
 }
 
@@ -680,25 +625,23 @@
 
 /* A status, not an action: a tinted label with a dot, never a filled button shape. */
 .metaStatusChip {
+  @ds-surface (boxed);
+  border: border(1);
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border: border(1, palette(surface-dark), solid);
+  gap: space(3);
+  padding: space(2) space(4);
   border-radius: radius(full);
-  background: palette(light-light);
   color: palette(tertiary-dark);
-  @ds-typo(caption);
-  font-size: 11px;
-  font-weight: 700;
+  @ds-typo (meta-strong);
   white-space: nowrap;
 }
 
 .metaStatusChip::before {
   width: 6px;
   height: 6px;
-  border-radius: 50%;
+  border-radius: radius(circle);
   background: currentColor;
   content: "";
 }
@@ -740,17 +683,13 @@
 
 .metaConnectionDetails dt {
   color: palette(tertiary-dark);
-  @ds-typo(caption);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  @ds-typo (badge);
 }
 
 .metaConnectionDetails dd {
   margin: 0;
   color: palette(primary-dark);
-  @ds-typo(caption);
-  font-weight: 700;
+  @ds-typo (label);
 }
 
 .metaConnectionActions {
@@ -772,18 +711,19 @@
   min-width: 0;
   gap: density(3);
   padding: density(3);
-  border: border(1, palette(surface-dark), solid);
+  border: border(1);
   border-radius: radius(2);
   background: palette(light-light);
 }
 
 .brandAssetPreview {
+  @ds-surface (card);
+  border: border(1);
   display: grid;
   min-height: density(14);
   overflow: hidden;
   place-items: center;
   padding: density(4);
-  border: border(1, palette(surface-light), solid);
   border-radius: radius(2);
   background:
     linear-gradient(45deg, palette(surface-light) 25%, transparent 25%),
@@ -831,12 +771,12 @@
   margin: 0;
   color: palette(tertiary-dark);
   @ds-typo(caption);
-  line-height: 1.45;
 }
 
 .brandAssetHint,
 .brandEnableHint {
-  font-size: 10px;
+
+  @ds-typo (fine);
 }
 
 .brandUpload {
@@ -850,8 +790,7 @@
   justify-content: center;
   padding: 0 density(4);
   border-radius: radius(2);
-  @ds-typo(caption);
-  font-weight: 750;
+  @ds-typo (label);
   cursor: pointer;
 }
 
@@ -864,7 +803,7 @@
 }
 
 .brandUpload:focus-within {
-  outline: 2px solid palette(primary-main);
+  outline: border(focus);
   outline-offset: density(1);
 }
 
@@ -897,8 +836,7 @@
 .brandRange > span,
 .brandColorControl > span:first-child {
   color: palette(primary-dark);
-  @ds-typo(caption);
-  font-weight: 750;
+  @ds-typo (label);
 }
 
 .brandSegmented {
@@ -913,14 +851,13 @@
   justify-content: center;
   padding: 0 density(3);
   border-radius: radius(2);
-  @ds-typo(caption);
-  font-weight: 750;
+  @ds-typo (label);
   cursor: pointer;
 }
 
 .brandOptionSelected {
   @ds-button(contained primary 2);
-  border: border(1, palette(primary-main), solid);
+  border: border(1);
 }
 
 .brandPlacementGrid {
@@ -980,7 +917,7 @@
 
 .brandPlacementSelected {
   @ds-button(contained primary 2);
-  border: border(1, palette(primary-main), solid);
+  border: border(1);
 }
 
 .brandPlacementSelected::after {
@@ -1016,6 +953,7 @@
 }
 
 .brandColorPicker input {
+  /* uxdsl-exception: a native control or a dismiss area, not an action a Button role styles */
   width: density(7);
   height: density(6);
   padding: 0;
@@ -1032,17 +970,17 @@
 }
 
 .brandBackdropHint {
+  @ds-surface (boxed);
+  border: border(1);
   padding: density(3);
-  border: border(1, palette(surface-dark), solid);
   border-radius: radius(2);
-  background: palette(light-light);
 }
 
 .charactersSection {
   display: grid;
   gap: density(4);
   padding-top: density(4);
-  border-top: 1px solid palette(surface-light);
+  border-top: border(subtle);
 }
 
 .charactersHeading,
@@ -1058,25 +996,20 @@
 .charactersHeading strong,
 .characterSlot > header strong {
   color: palette(primary-dark);
-  @ds-typo (caption);
-  font-size: 11px;
+  @ds-typo (meta);
 }
 
 .charactersHeading p,
 .referenceEmpty {
   margin: density(1) 0 0;
   color: palette(tertiary-main);
-  @ds-typo (caption);
-  font-size: 10px;
-  line-height: 1.45;
+  @ds-typo (fine);
 }
 
 .charactersHeading small,
 .characterReferencesHeading small {
   color: palette(tertiary-main);
-  @ds-typo (caption);
-  font-size: 9px;
-  font-weight: 750;
+  @ds-typo (fine-strong);
 }
 
 .characterGrid {
@@ -1086,13 +1019,12 @@
 }
 
 .characterSlot {
+  @ds-surface (card);
   display: grid;
   align-content: start;
   gap: density(3);
   padding: density(4);
-  border: 1px solid palette(surface-light);
-  border-radius: 8px;
-  background: palette(light-light);
+  border-radius: radius(2);
 }
 
 .characterSlot > header span,
@@ -1100,23 +1032,14 @@
   display: block;
   margin-bottom: density(1);
   color: palette(tertiary-main);
-  @ds-typo (caption);
-  font-size: 8px;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  @ds-typo (badge);
 }
 
 .characterRemoveButton,
 .referenceItem button {
-  border: 0;
-  background: transparent;
-  color: palette(error-main);
+  @ds-button (link-danger);
   font: inherit;
-  @ds-typo (caption);
-  font-size: 9px;
-  font-weight: 750;
-  cursor: pointer;
+  @ds-typo (fine-strong);
 }
 
 .characterRemoveButton:disabled,
@@ -1137,12 +1060,11 @@
 }
 
 .referenceItem {
+  @ds-surface (card);
   min-width: 0;
   margin: 0;
   overflow: hidden;
-  border: 1px solid palette(surface-light);
-  border-radius: 7px;
-  background: palette(light-light);
+  border-radius: radius(2);
 }
 
 .referenceItem img,
@@ -1153,8 +1075,7 @@
   place-items: center;
   background: palette(light-light);
   color: palette(tertiary-main);
-  @ds-typo (caption);
-  font-size: 8px;
+  @ds-typo (fine);
   object-fit: cover;
 }
 
@@ -1166,33 +1087,27 @@
 .referenceItem figcaption span {
   overflow: hidden;
   color: palette(tertiary-main);
-  @ds-typo (caption);
-  font-size: 7px;
+  @ds-typo (fine);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .referenceItem figcaption button {
   flex: 0 0 auto;
-  @ds-typo (caption);
-  font-size: 7px;
+  @ds-typo (fine);
 }
 
 .referenceUpload {
+  @ds-button (secondary);
   display: inline-flex;
   width: max-content;
   max-width: 100%;
   min-height: 31px;
   align-items: center;
-  padding: 0 10px;
-  border: 1px dashed palette(primary-main);
-  border-radius: 7px;
-  background: palette(light-light);
-  color: palette(primary-dark);
-  @ds-typo (caption);
-  font-size: 9px;
-  font-weight: 750;
-  cursor: pointer;
+  padding: 0 space(4);
+  border: border(dashed-primary);
+  border-radius: radius(2);
+  @ds-typo (fine-strong);
 }
 
 .referenceUpload input {
@@ -1223,32 +1138,28 @@
 .field > span,
 .factPicker legend {
   color: palette(primary-dark);
-  @ds-typo (caption);
-  font-size: 10px;
-  font-weight: 750;
+  @ds-typo (fine-strong);
 }
 
 .field input,
 .field textarea,
 .field select,
 .emojiRow input[type="number"] {
+  @ds-input (field);
   width: 100%;
   /* surface-light sits too close to the page background to read as a field edge. */
-  border: 1px solid palette(dark-main, 0.16);
-  border-radius: 9px;
+  border-radius: radius(2);
   outline: none;
-  background: palette(light-light);
   color: palette(dark-main);
   font: inherit;
   @ds-typo (caption);
-  font-size: 12px;
 }
 
 .field input,
 .field select,
 .emojiRow input[type="number"] {
   height: 38px;
-  padding: 0 11px;
+  padding: 0 space(4);
 }
 
 .field input[type="checkbox"] {
@@ -1261,7 +1172,6 @@
 .field textarea {
   min-height: 66px;
   padding: density(3) density(4);
-  line-height: 1.5;
   resize: vertical;
 }
 
@@ -1269,7 +1179,7 @@
 .field textarea:focus,
 .field select:focus {
   border-color: palette(primary-main);
-  box-shadow: 0 0 0 3px palette(primary-main, 0.12);
+  box-shadow: shadow(ring);
 }
 
 .sliders {
@@ -1277,7 +1187,7 @@
   grid-template-columns: xs(1fr) sm(repeat(2, 1fr)) md(repeat(5, 1fr));
   gap: density(4);
   padding: density(4);
-  border-radius: 11px;
+  border-radius: radius(3);
   background: palette(light-light);
 }
 
@@ -1286,9 +1196,7 @@
   flex-direction: column;
   gap: density(2);
   color: palette(primary-main);
-  @ds-typo (caption);
-  font-size: 9px;
-  font-weight: 700;
+  @ds-typo (fine-strong);
 }
 
 .sliders label span {
@@ -1305,9 +1213,7 @@
   align-items: center;
   gap: density(6);
   color: palette(primary-dark);
-  @ds-typo (caption);
-  font-size: 11px;
-  font-weight: 650;
+  @ds-typo (meta-strong);
 }
 
 .emojiRow label {
@@ -1321,11 +1227,10 @@
 }
 
 .section {
+  @ds-surface (card);
   margin-top: density(5);
   padding: density(5);
-  border: 1px solid palette(surface-light);
-  border-radius: 17px;
-  background: palette(light-light);
+  border-radius: radius(4);
 }
 
 .sectionHeading {
@@ -1340,19 +1245,16 @@
 .sectionHeading h3 {
   margin: 0;
   color: palette(dark-main);
-  @ds-typo (h3);
-  font-size: 17px;
+  @ds-typo (title);
 }
 
 .budget,
 .statusPill {
   padding: density(2) density(3);
-  border-radius: 999px;
+  border-radius: radius(pill);
   background: palette(light-light);
   color: palette(primary-main);
-  @ds-typo (caption);
-  font-size: 9px;
-  font-weight: 750;
+  @ds-typo (fine-strong);
 }
 
 .statusApproved {
@@ -1362,31 +1264,27 @@
 
 .briefCallout,
 .generateDraftCard {
+  @ds-surface (dropzone);
   display: flex;
   align-items: xs(stretch) md(center);
   flex-direction: xs(column) md(row);
   justify-content: space-between;
   gap: density(6);
   padding: density(5);
-  border: 1px dashed palette(surface-dark);
-  border-radius: 13px;
-  background: palette(light-light);
+  border-radius: radius(3);
 }
 
 .briefCallout strong,
 .generateDraftCard strong {
   color: palette(primary-dark);
   @ds-typo (caption);
-  font-size: 12px;
 }
 
 .briefCallout p,
 .generateDraftCard p {
   margin: density(2) 0 0;
   color: palette(tertiary-main);
-  @ds-typo (caption);
-  font-size: 11px;
-  line-height: 1.45;
+  @ds-typo (meta);
 }
 
 .editorialDirectionPanel {
@@ -1396,7 +1294,7 @@
   min-width: 0;
   gap: density(2);
   padding: density(4);
-  border: border(1, palette(surface-light), solid);
+  border: border(1);
 }
 
 .editorialDirectionPanel > p {
@@ -1406,20 +1304,18 @@
 }
 
 .historyPanel {
+  @ds-surface (card);
   margin-top: density(5);
-  border: 1px solid palette(surface-light);
-  border-radius: 13px;
-  background: palette(light-light);
+  border-radius: radius(3);
 }
 
 .historyPanel summary {
+  @ds-button (link);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: density(5);
   padding: density(4) density(5);
-  color: palette(primary-dark);
-  cursor: pointer;
   list-style: none;
 }
 
@@ -1437,46 +1333,39 @@
 
 .historyPanel summary strong,
 .historyList button strong {
-  @ds-typo (caption);
-  font-size: 11px;
+  @ds-typo (meta);
 }
 
 .historyPanel summary small,
 .historyList button small {
   color: palette(tertiary-main);
-  @ds-typo (caption);
-  font-size: 9px;
-  font-weight: 600;
+  @ds-typo (fine-strong);
 }
 
 .historyPanel summary > span:last-child,
 .historyList button > span:last-child {
   flex: 0 0 auto;
   color: palette(primary-main);
-  @ds-typo (caption);
-  font-size: 9px;
-  font-weight: 800;
+  @ds-typo (fine-strong);
 }
 
 .historyList {
   display: grid;
   gap: density(3);
-  padding: 0 12px 12px;
+  padding: 0 space(4) space(4);
 }
 
 .historyList button {
+  @ds-button (secondary);
   display: flex;
   min-width: 0;
   align-items: center;
   justify-content: space-between;
   gap: density(4);
   padding: density(4) density(4);
-  border: 1px solid palette(surface-light);
-  border-radius: 8px;
-  background: palette(light-light);
-  color: palette(primary-dark);
+  border: border(subtle);
+  border-radius: radius(2);
   text-align: left;
-  cursor: pointer;
 }
 
 .historyList button strong,
@@ -1486,12 +1375,13 @@
 
 .historyList button:hover,
 .historyList button:focus-visible,
-.historySelected {
-  border-color: palette(primary-main) !important;
-  background: palette(light-light) !important;
+.historyList button.historySelected {
+  border-color: palette(primary-main);
+  background: palette(light-light);
 }
 
 .historyCallout {
+  @ds-surface (callout);
   display: flex;
   align-items: xs(stretch) md(center);
   flex-direction: xs(column) md(row);
@@ -1499,23 +1389,18 @@
   gap: density(5);
   margin-bottom: density(5);
   padding: density(4) density(5);
-  border: 1px solid palette(primary-light);
-  border-radius: 12px;
-  background: palette(light-light);
+  border-radius: radius(3);
 }
 
 .historyCallout strong {
   color: palette(primary-dark);
   @ds-typo (caption);
-  font-size: 12px;
 }
 
 .historyCallout p {
   margin: density(2) 0 0;
   color: palette(primary-main);
-  @ds-typo (caption);
-  font-size: 10px;
-  line-height: 1.45;
+  @ds-typo (fine);
 }
 
 .historyActions {
@@ -1531,13 +1416,12 @@
 }
 
 .historicalDraftDetails {
+  @ds-surface (card);
   display: grid;
   gap: density(4);
   margin-bottom: density(5);
   padding: density(5);
-  border: 1px solid palette(surface-light);
-  border-radius: 12px;
-  background: palette(light-light);
+  border-radius: radius(3);
 }
 
 .historicalDraftHeading {
@@ -1551,23 +1435,18 @@
 .historicalDraftHeading strong {
   color: palette(primary-dark);
   @ds-typo (caption);
-  font-size: 12px;
 }
 
 .historicalDraftHeading p {
   margin: density(2) 0 0;
   color: palette(tertiary-main);
-  @ds-typo (caption);
-  font-size: 10px;
-  line-height: 1.45;
+  @ds-typo (fine);
 }
 
 .historicalDraftHeading small {
   flex: 0 0 auto;
   color: palette(primary-main);
-  @ds-typo (caption);
-  font-size: 9px;
-  font-weight: 800;
+  @ds-typo (fine-strong);
 }
 
 .historicalRegenerationAction {
@@ -1582,16 +1461,13 @@
 
 .historicalRegenerationAction strong {
   color: palette(primary-contrast);
-  @ds-typo (caption);
-  font-size: 11px;
+  @ds-typo (meta);
 }
 
 .historicalRegenerationAction p {
   margin: density(1) 0 0;
   color: palette(primary-contrast);
-  @ds-typo (caption);
-  font-size: 9px;
-  line-height: 1.45;
+  @ds-typo (fine);
 }
 
 .historicalRegenerationAction button {
@@ -1609,9 +1485,7 @@
 .historicalRegenerationControls small {
   max-width: xs(none) md(320px);
   color: palette(error-light);
-  @ds-typo (caption);
-  font-size: 9px;
-  line-height: 1.4;
+  @ds-typo (fine);
 }
 
 .historicalDraftFields {
@@ -1627,55 +1501,44 @@
 
 .readOnlyDraftField > span {
   color: palette(tertiary-main);
-  @ds-typo (caption);
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  @ds-typo (badge);
 }
 
 .readOnlyDraftField textarea {
+  @ds-input (field);
   width: 100%;
   min-height: 0;
   resize: vertical;
-  border: 1px solid palette(surface-light);
-  border-radius: 8px;
-  background: palette(light-light);
+  border: border(subtle);
+  border-radius: radius(2);
   color: palette(dark-main);
   font: inherit;
-  @ds-typo (caption);
-  font-size: 11px;
-  line-height: 1.45;
+  @ds-typo (meta);
 }
 
 .historicalUnits {
-  border: 1px solid palette(surface-light);
-  border-radius: 10px;
-  background: palette(light-light);
+  @ds-surface (card);
+  border-radius: radius(2);
 }
 
 .historicalUnits summary {
+  @ds-button (link);
   padding: density(4) density(4);
-  color: palette(primary-dark);
-  @ds-typo (caption);
-  font-size: 10px;
-  font-weight: 800;
-  cursor: pointer;
+  @ds-typo (fine-strong);
 }
 
 .historicalUnits > div {
   display: grid;
   gap: density(4);
-  padding: 0 12px 12px;
+  padding: 0 space(4) space(4);
 }
 
 .historicalUnits article {
+  @ds-surface (card);
   display: grid;
   gap: density(3);
   padding: density(4);
-  border: 1px solid palette(surface-light);
-  border-radius: 9px;
-  background: palette(light-light);
+  border-radius: radius(2);
 }
 
 .historicalUnits article > header {
@@ -1687,14 +1550,12 @@
 
 .historicalUnits article strong {
   color: palette(primary-dark);
-  @ds-typo (caption);
-  font-size: 11px;
+  @ds-typo (meta);
 }
 
 .historicalUnits article small {
   color: palette(tertiary-main);
-  @ds-typo (caption);
-  font-size: 9px;
+  @ds-typo (fine);
 }
 
 .completeScript {
@@ -1705,11 +1566,9 @@
 }
 
 .completeScript summary {
+  @ds-button (link);
   padding: density(4);
-  color: palette(primary-dark);
-  @ds-typo (caption);
-  font-weight: 800;
-  cursor: pointer;
+  @ds-typo (label);
 }
 
 .completeScriptBody {
@@ -1728,16 +1587,13 @@
 
 .completeScriptHeading strong {
   color: palette(primary-dark);
-  @ds-typo (caption);
-  font-weight: 800;
+  @ds-typo (label);
 }
 
 .completeScriptHeading p {
   margin: density(1) 0 0;
   color: palette(tertiary-main);
-  @ds-typo (caption);
-  font-size: 9px;
-  line-height: 1.45;
+  @ds-typo (fine);
 }
 
 .completeScript textarea {
@@ -1746,15 +1602,12 @@
   width: 100%;
   resize: vertical;
   color: palette(dark-main);
-  @ds-typo (caption);
-  font-size: 10px;
-  line-height: 1.5;
+  @ds-typo (fine);
 }
 
 .completeScript small {
   color: palette(error-main);
-  @ds-typo (caption);
-  font-size: 9px;
+  @ds-typo (fine);
 }
 
 .primaryButton,
@@ -1762,32 +1615,24 @@
 .approveButton,
 .unapproveButton {
   min-height: 38px;
-  padding: 0 15px;
-  border-radius: 9px;
-  @ds-typo (caption);
-  font-size: 10px;
-  font-weight: 800;
-  cursor: pointer;
+  @ds-typo (button);
 }
 
 .primaryButton,
 .approveButton {
-  border: 1px solid palette(primary-dark);
-  background: palette(primary-dark);
-  color: palette(light-light);
+
+  @ds-button (primary);
 }
 
 .secondaryButton {
+  @ds-button (secondary);
   justify-self: start;
-  border: 1px solid palette(surface-dark);
-  background: palette(light-light);
-  color: palette(primary-dark);
+  border: border(control);
 }
 
 .unapproveButton {
-  border: 1px solid palette(warning-main);
-  background: palette(warning-light);
-  color: palette(warning-dark);
+
+  @ds-button (warning);
 }
 
 .primaryButton:disabled,
@@ -1812,21 +1657,19 @@
   grid-template-columns: xs(1fr) md(0.42fr 1fr);
   gap: density(5);
   padding: density(5);
-  border-radius: 13px;
+  border-radius: radius(3);
   background: linear-gradient(135deg, palette(light-light), palette(light-light));
 }
 
 .recommendation strong {
   display: block;
   color: palette(dark-main);
-  @ds-typo (h3);
-  font-size: 21px;
+  @ds-typo (title-lg);
 }
 
 .recommendation small {
   color: palette(tertiary-main);
-  @ds-typo (caption);
-  font-size: 9px;
+  @ds-typo (fine);
 }
 
 .recommendation p,
@@ -1834,8 +1677,6 @@
   margin: 0;
   color: palette(primary-dark);
   @ds-typo (caption);
-  font-size: 12px;
-  line-height: 1.55;
 }
 
 .briefCopyGrid {
@@ -1846,15 +1687,15 @@
 
 .briefCopy {
   padding: density(4);
-  border: 1px solid palette(surface-light);
-  border-radius: 10px;
+  border: border(subtle);
+  border-radius: radius(2);
 }
 
 .editorialAngle {
   @ds-surface(flat light 3);
   display: grid;
   gap: density(3);
-  border: 1px solid palette(surface-light);
+  border: border(subtle);
 }
 
 .editorialAngle header {
@@ -1886,9 +1727,8 @@
 }
 
 .editorialAngle details summary {
+  @ds-button (link-accent);
   @ds-typo(small);
-  cursor: pointer;
-  color: palette(primary-main);
 }
 
 .editorialAngle details p {
@@ -1897,12 +1737,12 @@
 }
 
 .carouselPlanSummary {
+  @ds-surface (card);
+  border: border(1);
   display: grid;
   gap: density(3);
   padding: density(4);
-  border: border(1, palette(surface-light), solid);
   border-radius: radius(2);
-  background: palette(light-light);
 }
 
 .carouselPlanSummary h4,
@@ -1912,16 +1752,13 @@
 
 .carouselPlanSummary h4 {
   color: palette(primary-dark);
-  @ds-typo (h4);
-  font-size: 11px;
+  @ds-typo (meta-strong);
 }
 
 .carouselPlanSummary p {
   margin-top: density(1);
   color: palette(tertiary-main);
-  @ds-typo (caption);
-  font-size: 10px;
-  line-height: 1.45;
+  @ds-typo (fine);
 }
 
 .carouselPlanSummary ol {
@@ -1948,14 +1785,14 @@
 }
 
 .carouselPlanSummary strong {
+  @ds-typo (fine);
   color: palette(primary-dark);
-  font-size: 10px;
 }
 
 .carouselPlanSummary span,
 .carouselPlanSummary small {
+  @ds-typo (fine);
   color: palette(tertiary-main);
-  font-size: 9px;
 }
 
 .formatOptions {
@@ -1965,53 +1802,45 @@
 }
 
 .formatOptions button {
+  @ds-button (secondary);
   display: grid;
   grid-template-columns: 1fr auto;
   gap: density(2) density(5);
   padding: density(4);
-  border: 1px solid palette(surface-light);
-  border-radius: 12px;
-  background: palette(light-light);
-  color: palette(primary-dark);
+  border: border(subtle);
+  border-radius: radius(3);
   text-align: left;
-  cursor: pointer;
 }
 
 .formatOptions button > span {
-  @ds-typo (caption);
-  font-size: 11px;
-  font-weight: 800;
+  @ds-typo (meta-strong);
 }
 
 .formatOptions button > strong {
-  @ds-typo (h4);
-  font-size: 18px;
+  @ds-typo (title);
 }
 
 .formatOptions button > small {
   grid-column: 1 / -1;
   color: palette(tertiary-main);
-  @ds-typo (caption);
-  font-size: 10px;
-  line-height: 1.45;
+  @ds-typo (fine);
 }
 
 .formatOptions .selectedFormat {
   border-color: palette(primary-main);
   background: palette(light-light);
-  box-shadow: 0 0 0 2px palette(primary-dark, 0.1);
+  box-shadow: shadow(ring);
 }
 
 .draftSetup {
+  @ds-surface (card);
   display: flex;
   align-items: xs(stretch) md(flex-end);
   flex-direction: xs(column) md(row);
   gap: density(5);
   margin-bottom: density(5);
   padding: density(4) density(4);
-  border: 1px solid palette(surface-light);
-  border-radius: 12px;
-  background: palette(light-light);
+  border-radius: radius(3);
 }
 
 .aspectRatioField {
@@ -2020,23 +1849,20 @@
 }
 
 .draftSetup p {
-  margin: 0 0 4px;
+  margin: 0 0 space(2);
   color: palette(tertiary-main);
-  @ds-typo (caption);
-  font-size: 10px;
-  line-height: 1.45;
+  @ds-typo (fine);
 }
 
 .imageQualitySetup {
+  @ds-surface (card);
   display: flex;
   align-items: xs(stretch) md(flex-end);
   flex-direction: xs(column) md(row);
   gap: density(5);
   margin-bottom: density(5);
   padding: density(4) density(4);
-  border: 1px solid palette(surface-light);
-  border-radius: 12px;
-  background: palette(light-light);
+  border-radius: radius(3);
 }
 
 .imageQualityField {
@@ -2045,11 +1871,9 @@
 }
 
 .imageQualitySetup p {
-  margin: 0 0 4px;
+  margin: 0 0 space(2);
   color: palette(tertiary-main);
-  @ds-typo (caption);
-  font-size: 10px;
-  line-height: 1.45;
+  @ds-typo (fine);
 }
 
 .factsAndRisks {
@@ -2060,16 +1884,15 @@
 
 .factsAndRisks > div {
   padding: density(4);
-  border-radius: 11px;
+  border-radius: radius(3);
   background: palette(light-light);
 }
 
 .factsAndRisks h4,
 .unitsHeading h4 {
-  margin: 0 0 8px;
+  margin: 0 0 space(3);
   color: palette(primary-dark);
-  @ds-typo (h4);
-  font-size: 11px;
+  @ds-typo (meta-strong);
 }
 
 .factsAndRisks ul {
@@ -2084,29 +1907,24 @@
 .factsAndRisks p {
   margin: 0;
   color: palette(tertiary-main);
-  @ds-typo (caption);
-  font-size: 10px;
-  line-height: 1.45;
+  @ds-typo (fine);
 }
 
 .factsAndRisks li small {
   display: block;
   margin-top: density(1);
   color: palette(tertiary-main);
-  @ds-typo (caption);
-  font-size: 8px;
+  @ds-typo (fine);
 }
 
 .factsAndRisks li span {
   display: inline-block;
   margin-right: density(3);
   padding: density(1) density(2);
-  border-radius: 4px;
+  border-radius: radius(1);
   background: palette(surface-light);
   color: palette(primary-dark);
-  @ds-typo (caption);
-  font-size: 8px;
-  font-weight: 800;
+  @ds-typo (fine-strong);
 }
 
 .editor {
@@ -2129,25 +1947,20 @@
 .unitsHeading p {
   margin: 0;
   color: palette(tertiary-main);
-  @ds-typo (caption);
-  font-size: 10px;
+  @ds-typo (fine);
 }
 
 .unitsHeading button,
 .unitActions button {
-  border: 1px solid palette(surface-light);
-  border-radius: 7px;
-  background: palette(light-light);
-  color: palette(primary-dark);
-  @ds-typo (caption);
-  font-size: 10px;
-  font-weight: 750;
-  cursor: pointer;
+  @ds-button (secondary);
+  border: border(subtle);
+  border-radius: radius(2);
+  @ds-typo (fine-strong);
 }
 
 .unitsHeading button {
   height: 32px;
-  padding: 0 11px;
+  padding: 0 space(4);
 }
 
 .units {
@@ -2156,16 +1969,15 @@
 }
 
 .narrativeReview {
+  @ds-surface (card);
   padding: density(4);
-  border: border(1, palette(warning-light), solid);
+  border: border(1);
   border-radius: radius(2);
-  background: palette(light-light);
   color: palette(warning-dark);
 }
 
 .narrativeReview strong {
-  @ds-typo (caption);
-  font-weight: 800;
+  @ds-typo (label);
 }
 
 .narrativeReview ul {
@@ -2176,18 +1988,15 @@
 }
 
 .narrativeReview li {
-  @ds-typo (caption);
-  font-size: 10px;
-  line-height: 1.45;
+  @ds-typo (fine);
 }
 
 .unit {
+  @ds-surface (card);
   display: grid;
   gap: density(4);
   padding: density(5);
-  border: 1px solid palette(surface-light);
-  border-radius: 13px;
-  background: palette(light-light);
+  border-radius: radius(3);
 }
 
 .unit > header {
@@ -2205,19 +2014,15 @@
 
 .unit > header span {
   padding: density(2) density(3);
-  border-radius: 6px;
+  border-radius: radius(2);
   background: palette(surface-light);
   color: palette(primary-dark);
-  @ds-typo (caption);
-  font-size: 8px;
-  font-weight: 800;
-  text-transform: uppercase;
+  @ds-typo (badge);
 }
 
 .unit > header strong {
   color: palette(primary-dark);
-  @ds-typo (caption);
-  font-size: 11px;
+  @ds-typo (meta);
 }
 
 .unitActions {
@@ -2236,26 +2041,22 @@
   gap: density(3);
   margin: 0;
   padding: density(3);
-  border: 1px solid palette(surface-light);
-  border-radius: 9px;
+  border: border(subtle);
+  border-radius: radius(2);
 }
 
 .factPicker legend {
-  padding: 0 5px;
+  padding: 0 space(2);
 }
 
 .factPicker label {
+  @ds-button (secondary);
   display: flex;
   align-items: center;
   gap: density(2);
   padding: density(2) density(3);
-  border-radius: 6px;
-  background: palette(light-light);
-  color: palette(primary-dark);
-  @ds-typo (caption);
-  font-size: 9px;
-  font-weight: 700;
-  cursor: pointer;
+  border-radius: radius(2);
+  @ds-typo (fine-strong);
 }
 
 .factPicker input {
@@ -2270,7 +2071,7 @@
   gap: density(6);
   margin-top: density(5);
   padding-top: density(5);
-  border-top: 1px solid palette(surface-light);
+  border-top: border(subtle);
 }
 
 .approvalBar > div:first-child {
@@ -2281,14 +2082,12 @@
 
 .approvalBar strong {
   color: palette(primary-dark);
-  @ds-typo (caption);
-  font-size: 11px;
+  @ds-typo (meta);
 }
 
 .approvalBar small {
   color: palette(tertiary-main);
-  @ds-typo (caption);
-  font-size: 9px;
+  @ds-typo (fine);
 }
 
 .approvalBar > div:last-child {
@@ -2311,32 +2110,27 @@
   gap: density(5);
   padding: density(5) density(1) 0;
   color: palette(tertiary-main);
-  @ds-typo (caption);
-  font-size: 9px;
+  @ds-typo (fine);
 }
 
 .footer a {
   color: palette(primary-dark);
-  @ds-typo (caption);
-  font-size: 10px;
-  font-weight: 800;
+  @ds-typo (fine-strong);
   text-decoration: none;
 }
 
 .assetLoading {
   padding: density(6);
-  border: 1px dashed palette(surface-light);
-  border-radius: 12px;
+  border: border(dashed-subtle);
+  border-radius: radius(3);
   color: palette(tertiary-main);
-  @ds-typo (caption);
-  font-size: 11px;
+  @ds-typo (meta);
   text-align: center;
 }
 
 .generateDraftCard .assetVariantHint {
   color: palette(primary-main);
-  @ds-typo (caption);
-  font-size: 10px;
+  @ds-typo (fine);
 }
 
 .assetWorkspace {
@@ -2351,30 +2145,25 @@
   justify-content: space-between;
   gap: density(5);
   padding: density(4) density(5);
-  border-radius: 12px;
+  border-radius: radius(3);
   background: palette(light-light);
 }
 
 .assetBatchSummary strong {
   color: palette(primary-dark);
   @ds-typo (caption);
-  font-size: 12px;
 }
 
 .assetBatchSummary p {
   margin: density(1) 0 0;
   color: palette(tertiary-main);
-  @ds-typo (caption);
-  font-size: 10px;
-  line-height: 1.45;
+  @ds-typo (fine);
 }
 
 .assetBatchSummary small {
   flex: 0 0 auto;
   color: palette(tertiary-main);
-  @ds-typo (caption);
-  font-size: 9px;
-  font-weight: 750;
+  @ds-typo (fine-strong);
 }
 
 .assetGrid {
@@ -2385,12 +2174,11 @@
 .assetGrid > div { min-width: 0; max-width: 780px; }
 .assetSelection { display: flex; gap: density(3); overflow-x: auto; padding: density(2); }
 .assetSelectionItem { position: relative; flex: 0 0 112px; }
-.assetSelectionThumb { display: grid; width: 100%; gap: density(2); padding: density(2); border: 1px solid palette(surface-light); border-radius: radius(2); background: palette(light-light); color: palette(dark-main); text-align: left; cursor: pointer; }
-.assetSelectionThumb[aria-pressed="true"] { border: 2px solid palette(primary-main); box-shadow: shadow(1); }
-.assetSelectionThumb:focus-visible, .assetSelectionApprove:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 2px; }
-.assetSelectionThumb > span:not(.assetSelectionImage):not(.assetSelectionPlaceholder) { @ds-typo(caption); font-size: 0.6875rem; font-weight: 700; }
-.assetSelectionThumb small { color: palette(tertiary-main); @ds-typo(caption); font-size: 0.625rem; }
-.assetSelectionApprove { position: absolute; top: density(3); right: density(3); display: grid; width: 28px; height: 28px; padding: 0; place-items: center; border: 2px solid palette(light-light); border-radius: radius(circle); background: palette(dark-main, 0.55); color: palette(light-light); @ds-typo(small); font-size: 0.875rem; font-weight: 800; line-height: 1; cursor: pointer; box-shadow: shadow(1); }
+.assetSelectionThumb { @ds-button (secondary); display: grid; width: 100%; gap: density(2); padding: density(2); border: border(subtle); border-radius: radius(2); color: palette(dark-main); text-align: left; }
+.assetSelectionThumb[aria-pressed="true"] { border: border(focus); box-shadow: shadow(1); }
+.assetSelectionThumb > span:not(.assetSelectionImage):not(.assetSelectionPlaceholder) { @ds-typo (meta-strong); }
+.assetSelectionThumb small { color: palette(tertiary-main); @ds-typo (fine); }
+.assetSelectionApprove { @ds-button (overlay); position: absolute; top: density(3); right: density(3); display: grid; width: 28px; height: 28px; padding: 0; place-items: center; border-radius: radius(circle); background: palette(dark-main, 0.55); @ds-typo (small-strong); box-shadow: shadow(1); }
 .assetSelectionApprove:hover:not(:disabled) { background: palette(success-dark); }
 .assetSelectionApproved { background: palette(success-main); border-color: palette(light-light); color: palette(success-contrast); }
 .assetSelectionApprove:disabled { opacity: 0.55; cursor: not-allowed; }
@@ -2398,26 +2186,25 @@
 .assetSelectionImage, .assetSelectionPlaceholder { position: relative; display: grid; width: 100%; aspect-ratio: 4 / 5; place-items: center; overflow: hidden; border-radius: radius(1); background: palette(surface-light); }
 .assetSelectionImage img { object-fit: cover; }
 
-.assetActionFeedback { margin: 0; padding: density(2) density(3); border: 1px solid palette(success-main); border-radius: radius(2); background: color-mix(in srgb, palette(success-main) 10%, palette(light-light)); color: palette(dark-main); @ds-typo(small); }
-.assetActionFeedbackError { border-color: palette(error-main); background: color-mix(in srgb, palette(error-main) 10%, palette(light-light)); font-weight: 650; }
+.assetActionFeedback { @ds-surface (notice-success); margin: 0; padding: density(2) density(3); border-radius: radius(2); color: palette(dark-main); @ds-typo(small); }
+.assetActionFeedbackError { @ds-typo (emphasis); border-color: palette(error-main); background: color-mix(in srgb, palette(error-main) 10%, palette(light-light)); }
 
 .editorFacts { display: grid; gap: density(3); margin-top: density(4); }
 .editorFactList { display: grid; gap: density(2); margin: 0; padding: 0; list-style: none; }
-.editorFactList li { display: flex; align-items: flex-start; justify-content: space-between; gap: density(3); padding: density(3); border: 1px solid palette(surface-dark); border-radius: radius(2); background: palette(light-light); }
+.editorFactList li { @ds-surface (boxed); display: flex; align-items: flex-start; justify-content: space-between; gap: density(3); padding: density(3); border-radius: radius(2); }
 .editorFactList li > div { display: grid; gap: density(1); min-width: 0; }
-.editorFactList strong { color: palette(primary-dark); @ds-typo(caption); font-weight: 750; }
+.editorFactList strong { color: palette(primary-dark); @ds-typo (label); }
 .editorFactList p { margin: 0; color: palette(dark-main); @ds-typo(small); overflow-wrap: anywhere; }
-.editorFactList a { color: palette(primary-dark); @ds-typo(caption); font-weight: 650; }
+.editorFactList a { color: palette(primary-dark); @ds-typo (label); }
 
 .assetCard {
+  @ds-surface (card);
   display: grid;
   align-content: start;
   gap: density(4);
   min-width: 0;
   padding: density(4);
-  border: 1px solid palette(surface-light);
-  border-radius: 14px;
-  background: palette(light-light);
+  border-radius: radius(3);
 }
 
 .assetCard > header {
@@ -2436,24 +2223,19 @@
 .assetCard > header strong {
   color: palette(dark-main);
   @ds-typo (caption);
-  font-size: 12px;
 }
 
 .assetCard > header small {
   color: palette(tertiary-main);
-  @ds-typo (caption);
-  font-size: 9px;
+  @ds-typo (fine);
 }
 
 .assetStatus {
   padding: density(2) density(3);
-  border-radius: 999px;
+  border-radius: radius(pill);
   background: palette(light-light);
   color: palette(tertiary-main);
-  @ds-typo (caption);
-  font-size: 8px;
-  font-weight: 800;
-  text-transform: uppercase;
+  @ds-typo (badge);
 }
 
 .assetApproved {
@@ -2467,12 +2249,11 @@
 }
 
 .assetPreview {
+  @ds-surface (card);
   position: relative;
   overflow: hidden;
   width: 100%;
-  border: 1px solid palette(surface-light);
-  border-radius: 11px;
-  background: palette(light-light);
+  border-radius: radius(3);
 }
 .assetPreviewActual { overflow: auto; }
 .assetPreviewCanvas { position: relative; display: block; width: 100%; height: 100%; }
@@ -2493,23 +2274,20 @@
 }
 
 .assetPlaceholder strong {
-  @ds-typo (caption);
-  font-size: 11px;
+  @ds-typo (meta);
 }
 
 .assetPlaceholder small {
   max-width: 300px;
-  @ds-typo (caption);
-  font-size: 9px;
-  line-height: 1.45;
+  @ds-typo (fine);
 }
 
 .assetSpinner {
   width: 24px;
   height: 24px;
-  border: 3px solid palette(surface-light);
+  border: border(subtle);
   border-top-color: palette(primary-dark);
-  border-radius: 50%;
+  border-radius: radius(circle);
   animation: asset-spin 0.8s linear infinite;
 }
 
@@ -2520,82 +2298,62 @@
 }
 
 .expectedText {
+  @ds-surface (card);
   padding: density(3) density(4);
-  border: 1px solid palette(surface-light);
-  border-radius: 9px;
-  background: palette(light-light);
+  border-radius: radius(2);
 }
 
 .expectedText span {
   color: palette(tertiary-main);
-  @ds-typo (caption);
-  font-size: 8px;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  @ds-typo (badge);
 }
 
 .expectedText p {
   margin: density(2) 0 0;
   color: palette(dark-main);
-  @ds-typo (caption);
-  font-size: 11px;
-  font-weight: 650;
-  line-height: 1.45;
+  @ds-typo (meta-strong);
   white-space: pre-wrap;
 }
 
 .assetSafety {
+  @ds-surface (notice-error);
   padding: density(3) density(3);
-  border: 1px solid palette(error-light);
-  border-radius: 8px;
-  background: palette(light-light);
+  border-radius: radius(2);
   color: palette(error-dark);
-  @ds-typo (caption);
-  font-size: 9px;
+  @ds-typo (fine);
 }
 
 .assetTextWarning {
+  @ds-surface (notice-warning);
   padding: density(3) density(3);
-  border: 1px solid palette(warning-light);
-  border-radius: 8px;
-  background: palette(warning-light);
+  border-radius: radius(2);
   color: palette(warning-dark);
-  @ds-typo (caption);
-  font-size: 9px;
-  line-height: 1.4;
+  @ds-typo (fine);
 }
-.inlineLink { padding: 0; border: 0; background: none; color: palette(primary-dark); font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
-.inlineLink:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 2px; }
+.inlineLink { @ds-button (link); @ds-typo (emphasis); padding: 0; font: inherit; text-decoration: underline; }
 
 .assetPrompt {
-  border: 1px solid palette(surface-light);
-  border-radius: 9px;
-  background: palette(light-light);
+  @ds-surface (card);
+  border-radius: radius(2);
 }
 
 .assetPrompt summary {
+  @ds-button (link);
   padding: density(3) density(4);
-  color: palette(primary-dark);
-  @ds-typo (caption);
-  font-size: 9px;
-  font-weight: 750;
-  cursor: pointer;
+  @ds-typo (fine-strong);
 }
 
 .assetPrompt textarea {
+  @ds-input (field);
   width: calc(100% - 20px);
-  margin: 0 10px 10px;
+  margin: 0 space(4) space(4);
   padding: density(3);
-  border: 1px solid palette(surface-light);
-  border-radius: 8px;
+  border: border(subtle);
+  border-radius: radius(2);
   outline: none;
-  background: palette(light-light);
   color: palette(dark-main);
   font: inherit;
-  @ds-typo (caption);
-  font-size: 10px;
-  line-height: 1.45;
+  @ds-typo (fine);
   resize: vertical;
 }
 
@@ -2619,21 +2377,18 @@
 
 .assetActions a {
   color: palette(primary-dark);
-  @ds-typo (caption);
-  font-size: 9px;
-  font-weight: 750;
+  @ds-typo (fine-strong);
   text-decoration: none;
 }
 
 .assetActions small {
   color: palette(tertiary-main);
-  @ds-typo (caption);
-  font-size: 8px;
+  @ds-typo (fine);
 }
 
 .assetActions button {
   min-height: 34px;
-  padding: 0 11px;
+  padding: 0 space(4);
 }
 
 
@@ -2647,7 +2402,7 @@
   padding: density(5);
   color: palette(surface-contrast);
   background: palette(surface-main);
-  border: border(1, palette(primary-light), solid);
+  border: border(1);
 }
 
 .documentaryPreview {
@@ -2690,7 +2445,7 @@
   padding: density(5);
   color: palette(surface-contrast);
   background: palette(surface-main);
-  border: border(1, palette(primary-light), solid);
+  border: border(1);
 }
 
 .instagramGalleryHeader {
@@ -2773,8 +2528,7 @@
 }
 
 .instagramBadge {
-  @ds-typo(caption);
-  font-weight: 700;
+  @ds-typo (label);
   color: palette(primary-main);
 }
 
@@ -2802,19 +2556,15 @@
 }
 
 .instagramLink {
+  @ds-button (link-accent);
   @ds-typo(caption);
-  color: palette(primary-main);
-  background: none;
-  border: none;
   padding: 0;
-  cursor: pointer;
   text-decoration: underline;
 }
 
 /* IG-04 — link a publication to its editorial story */
 .instagramLinkChip {
-  @ds-typo(caption);
-  font-weight: 700;
+  @ds-typo (label);
   color: palette(primary-main);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2862,41 +2612,34 @@
 }
 
 .instagramMetricLabel {
-  @ds-typo(caption);
-  font-size: 10px;
+  @ds-typo (fine);
   color: palette(tertiary-dark);
 }
 
 .instagramMetricValue {
-  @ds-typo(caption);
-  font-weight: 800;
+  @ds-typo (label);
   color: palette(primary-dark);
 }
 
 .instagramMetricUnavailable {
-  @ds-typo(caption);
-  font-weight: 800;
+  @ds-typo (label);
   color: palette(tertiary-main);
 }
 
 .instagramMetricError {
-  @ds-typo(caption);
-  font-weight: 800;
+  @ds-typo (label);
   color: palette(warning-dark);
 }
 
 .instagramMetricRatios {
   margin: 0;
-  @ds-typo(caption);
-  font-size: 10px;
+  @ds-typo (fine);
   color: palette(tertiary-dark);
 }
 
 .instagramMetricsHint {
   margin: 0;
-  @ds-typo(caption);
-  font-size: 10px;
-  line-height: 1.45;
+  @ds-typo (fine);
   color: palette(tertiary-dark);
 }
 
@@ -2941,8 +2684,7 @@
 }
 
 .storyInstagramVersionChip {
-  @ds-typo(caption);
-  font-weight: 700;
+  @ds-typo (label);
   color: palette(primary-main);
   display: flex;
   align-items: center;
@@ -3000,12 +2742,11 @@
 }
 
 .brandReferenceItem {
+  @ds-surface (card);
   margin: 0;
-  border: 1px solid palette(surface-light);
-  border-radius: 7px;
+  border-radius: radius(2);
   overflow: hidden;
   display: grid;
-  background: palette(light-light);
 }
 
 .brandReferenceItem img {
@@ -3026,8 +2767,7 @@
 }
 
 .brandReferenceBadge {
-  @ds-typo(caption);
-  font-size: 8px;
+  @ds-typo (fine);
   color: palette(primary-main);
 }
 
@@ -3035,14 +2775,13 @@
   display: flex;
   align-items: center;
   gap: density(1);
-  @ds-typo(caption);
-  font-size: 8px;
+  @ds-typo (fine);
   color: palette(tertiary-dark);
 }
 
 .brandReferencePillOn {
+  @ds-typo (emphasis);
   color: palette(primary-dark);
-  font-weight: 750;
 }
 
 /* BRAND-02 — contribution + analysis */
@@ -3053,15 +2792,11 @@
 }
 
 .brandContributionChip {
-  @ds-typo(caption);
-  font-size: 9px;
-  font-weight: 750;
+  @ds-button (chip);
+  @ds-typo (fine-strong);
   padding: density(1) density(3);
-  border: 1px solid palette(surface-dark);
+  border: border(control);
   border-radius: radius(full);
-  background: palette(light-light);
-  color: palette(primary-dark);
-  cursor: pointer;
   text-transform: capitalize;
 }
 
@@ -3077,12 +2812,11 @@
 }
 
 .brandAnalysis {
+  @ds-surface (card);
   display: grid;
   gap: density(2);
   padding: density(3);
-  border: 1px solid palette(surface-light);
   border-radius: radius(2);
-  background: palette(light-light);
 }
 
 .brandAnalysisRow {
@@ -3090,19 +2824,15 @@
   grid-template-columns: 84px 1fr auto;
   gap: density(2);
   align-items: start;
-  @ds-typo(caption);
-  font-size: 10px;
+  @ds-typo (fine);
 }
 
 .brandAnalysisBadge {
-  @ds-typo(caption);
-  font-size: 8px;
-  font-weight: 800;
+  @ds-button (chip);
+  @ds-typo (fine-strong);
   padding: density(1) density(2);
-  border: 1px solid palette(surface-dark);
+  border: border(control);
   border-radius: radius(full);
-  background: palette(light-light);
-  cursor: pointer;
   white-space: nowrap;
 }
 
@@ -3129,13 +2859,12 @@
 .brandUnitSelection {
   display: grid;
   gap: density(1);
-  @ds-typo(caption);
-  font-size: 10px;
+  @ds-typo (fine);
   color: palette(tertiary-dark);
 }
 
 .brandUnitSelection > span {
-  font-weight: 750;
+  @ds-typo (emphasis);
   color: palette(primary-dark);
 }
 
@@ -3145,7 +2874,7 @@
 }
 
 .brandUnitSelection code {
-  font-size: 9px;
+  @ds-typo (fine);
   color: palette(tertiary-main);
 }
 
@@ -3175,7 +2904,7 @@
   flex-direction: column;
   gap: density(1);
   padding: density(2);
-  border: border(1, palette(primary-main), solid);
+  border: border(1);
   border-radius: radius(2);
 }
 
@@ -3189,7 +2918,7 @@
   @ds-typo(caption);
   align-self: flex-start;
   padding: density(1) density(2);
-  border: border(1, palette(primary-main), solid);
+  border: border(1);
   border-radius: radius(full);
   color: palette(primary-main);
 }
@@ -3204,10 +2933,10 @@
   @ds-surface(flat primary 2);
   @ds-typo(body);
   padding: density(3);
-  border: border(1, palette(primary-main), solid);
+  border: border(1);
 }
 
-.mapsPreviewPanel summary { cursor: pointer; font-weight: 600; }
+.mapsPreviewPanel summary { @ds-typo (emphasis); cursor: pointer; }
 .mapsPreviewActions { display: flex; flex-wrap: wrap; gap: density(2); }
 .mapsPreviewActions button { @ds-button(outlined primary 2); }
 .mapsPreviewActions button:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -3222,7 +2951,7 @@
   padding: density(3);
   gap: density(2);
   color: palette(primary-dark);
-  border: border(1, palette(neutral-main), solid);
+  border: border(1);
 }
 .mapsPreviewComposition h3 { @ds-typo(h6); margin: density(1) 0; }
 .mapsPreviewComposition p { @ds-typo(caption); margin: density(1) 0; }
@@ -3232,7 +2961,7 @@
 .mapsPreviewMedia { flex: 0 0 auto; width: 100%; display: grid; place-items: center; }
 .mapsPreviewMedia img { display: block; width: 100%; height: auto; object-fit: contain; }
 /* Provider-required text treatment; do not restyle the attribution as brand copy. */
-.mapsAttribution { font: 400 14px Arial, sans-serif; color: #1f1f1f; background: #fff; white-space: nowrap; padding: density(1); }
+.mapsAttribution { /* uxdsl-exception: the Google Maps attribution keeps the provider's own type and colors */ font: 400 14px Arial, sans-serif; color: #1f1f1f; background: #fff; white-space: nowrap; padding: density(1); }
 
 .publicationCandidate {
   @ds-surface(flat primary);
@@ -3253,16 +2982,10 @@
 /* Inline "go to where this is fixed" action beside a publication blocker. */
 .blockerAction {
   @ds-button(flat primary 1);
-  @ds-typo(caption);
-  font-weight: 700;
+  @ds-typo (label);
   text-decoration: underline;
   text-underline-offset: 2px;
   cursor: pointer;
-}
-
-.blockerAction:focus-visible {
-  outline: 2px solid palette(primary-main);
-  outline-offset: 2px;
 }
 
 .publicationCaption {
@@ -3273,7 +2996,7 @@
 .publicationPackage {
   display: grid;
   gap: density(2);
-  border-top: 1px solid palette(surface-dark);
+  border-top: border(control);
   padding-top: density(2);
 }
 
@@ -3281,7 +3004,7 @@
   display: grid;
   gap: density(1);
   padding: density(2);
-  border: 1px solid palette(surface-dark);
+  border: border(control);
   border-radius: radius(2);
 }
 
@@ -3295,7 +3018,7 @@
 .publicationPreviewList { display: flex; flex-wrap: wrap; gap: density(3); margin: 0; padding: 0; list-style: none; }
 .publicationPreviewList img { display: block; width: 108px; height: 135px; border-radius: radius(2); object-fit: contain; background: palette(surface-light); }
 .publicationPreviewList span { color: palette(tertiary-dark); @ds-typo(caption); }
-.publicationConfirm { display: grid; gap: density(2); padding: density(3); border: 1px solid palette(warning-main); border-radius: radius(2); background: palette(warning-light); color: palette(dark-main); }
+.publicationConfirm { @ds-surface (notice-warning); display: grid; gap: density(2); padding: density(3); border: border(warning-strong); border-radius: radius(2); color: palette(dark-main); }
 .publicationConfirm p { margin: 0; @ds-typo(small); }
 
 .publicationPackageActions {
@@ -3306,10 +3029,10 @@
 }
 
 .publicationJob {
+  @ds-surface (boxed);
   display: grid;
   gap: density(1);
   padding: density(2);
-  border: 1px solid palette(surface-dark);
   border-radius: radius(2);
   background: palette(primary-contrast);
   color: palette(primary-main);
@@ -3326,7 +3049,7 @@
   display: grid;
   gap: density(4);
   padding: density(4);
-  border: 1px solid palette(surface-dark);
+  border: border(control);
   border-radius: radius(3);
   background: palette(surface-light);
   box-shadow: shadow(1);
@@ -3340,13 +3063,13 @@
 /* Creative identity: one fieldset per branch, each with its own AI rewrite row. */
 /* Content sits at the top: a shorter field must not stretch its rows to match its neighbour. */
 .identityFields { display: grid; grid-template-columns: xs(1fr) lg(repeat(2, minmax(0, 1fr))); gap: density(4); align-items: start; }
-.identityField { display: grid; align-content: start; gap: density(2); min-width: 0; margin: 0; padding: density(3); border: 1px solid palette(surface-dark); border-radius: radius(2); background: palette(light-light); }
-.identityField legend { padding: 0 density(1); @ds-typo(caption); font-weight: 800; color: palette(primary-dark); }
+.identityField { @ds-surface (boxed); display: grid; align-content: start; gap: density(2); min-width: 0; margin: 0; padding: density(3); border-radius: radius(2); }
+.identityField legend { padding: 0 density(1); @ds-typo (label); color: palette(primary-dark); }
 .identityField textarea, .identityField select, .paletteAssistantForm input, .identityFieldAssistant input { @ds-input(outlined neutral 2); width: 100%; }
 .identityField small { @ds-typo(caption); color: palette(dark-main, 0.6); }
 /* Folded per-field AI rewrite: a small, clearly attached disclosure under its field. */
 .profilePanel .identityFieldAssistant { display: grid; gap: density(2); padding: density(1) density(2); border: 0; border-radius: radius(2); background: palette(primary-light, 0.12); box-shadow: none; }
-.profilePanel .identityFieldAssistant summary { display: block; min-height: 0; padding: density(1) 0; @ds-typo(caption); font-weight: 700; color: palette(primary-dark); cursor: pointer; }
+.profilePanel .identityFieldAssistant summary { @ds-button (link); display: block; min-height: 0; padding: density(1) 0; @ds-typo (label); }
 .profilePanel .identityFieldAssistant[open] { padding-bottom: density(2); }
 .identityFieldAssistant button { justify-self: start; }
 .identityAvoidAdd { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: density(2); align-items: center; }
@@ -3356,30 +3079,29 @@
 .identityField > input { @ds-input(outlined neutral 2); width: 100%; }
 .identityAvoidGroups { display: grid; grid-template-columns: xs(1fr) lg(repeat(2, minmax(0, 1fr))); gap: density(3); align-items: start; }
 .identityAvoidGroups > small, .identityAvoidGroups > button { grid-column: 1 / -1; }
-.identityAvoidGroup { display: grid; gap: density(2); padding: density(2); border: 1px solid palette(warning-main, 0.35); border-radius: radius(2); }
+.identityAvoidGroup { display: grid; gap: density(2); padding: density(2); border: border(warning-soft); border-radius: radius(2); }
 .identityAvoidGroupHeader { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: density(2); align-items: center; }
-.identityAvoidGroupHeader input { @ds-input(outlined neutral 2); width: 100%; font-weight: 700; }
-.identityField select { min-height: 42px; padding-block: 0; line-height: 1.2; }
+.identityAvoidGroupHeader input { @ds-typo (emphasis); @ds-input(outlined neutral 2); width: 100%; }
+.identityField select { @ds-typo (inherit); min-height: 42px; padding-block: 0; }
 .identityField textarea::placeholder, .identityField input::placeholder, .paletteAssistantForm input::placeholder { color: palette(dark-main, 0.45); }
 .identityAvoidList { display: flex; flex-wrap: wrap; gap: density(1); margin: 0; padding: 0; list-style: none; }
-.identityAvoidList li { display: inline-flex; align-items: center; gap: density(1); padding: density(1) density(2); border: 1px solid palette(warning-main, 0.5); border-radius: 999px; background: palette(warning-light, 0.4); @ds-typo(caption); color: palette(dark-main); }
-.identityAvoidList button { border: 0; background: none; cursor: pointer; font-weight: 800; color: palette(warning-dark); }
-.identityAvoidList button:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 1px; }
+.identityAvoidList li { @ds-surface (card); display: inline-flex; align-items: center; gap: density(1); padding: density(1) density(2); border: border(warning-soft); border-radius: radius(pill); background: palette(warning-light, 0.4); @ds-typo(caption); color: palette(dark-main); }
+.identityAvoidList button { @ds-button (link-warning); @ds-typo (emphasis); }
 
 .paletteAssistantForm textarea {
+  @ds-typo (multiline);
   @ds-input(outlined neutral 2);
   width: 100%;
   min-height: density(12);
   padding: density(3);
   resize: vertical;
-  line-height: 1.5;
   background: palette(light-light);
   color: palette(dark-main);
 }
 
 .paletteAssistantForm textarea:focus {
   border-color: palette(primary-main);
-  box-shadow: 0 0 0 4px palette(primary-main, 0.12);
+  box-shadow: shadow(ring);
   outline: none;
 }
 
@@ -3411,7 +3133,7 @@
   align-items: center;
   gap: density(2);
   padding: density(2);
-  border: 1px solid palette(surface-dark);
+  border: border(control);
   border-radius: radius(2);
   background: palette(light-light);
 }
@@ -3420,7 +3142,7 @@
   display: block;
   width: density(7);
   height: density(7);
-  border: 1px solid palette(dark-main, 0.12);
+  border: border(hairline);
   border-radius: radius(1);
 }
 
@@ -3432,16 +3154,14 @@
 .paletteAssistantSwatch strong {
   overflow: hidden;
   color: palette(dark-main);
-  @ds-typo(caption);
-  font-weight: 700;
+  @ds-typo (label);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .paletteAssistantSwatch small {
   color: palette(tertiary-dark);
-  @ds-typo(caption);
-  font-size: 10px;
+  @ds-typo (fine);
 }
 
 /* Brand palette: optional usage intent and share per colour. */
@@ -3491,12 +3211,11 @@
 }
 
 .paletteShareBar {
+  @ds-surface (boxed);
   display: flex;
   height: density(4);
   overflow: hidden;
-  border: 1px solid palette(surface-dark);
   border-radius: radius(1);
-  background: palette(light-light);
 }
 
 .paletteShareBar span {
@@ -3514,84 +3233,83 @@
   );
 }
 
-.workspace [hidden] { display: none !important; }
+.workspace [hidden] { /* uxdsl-exception: the hidden attribute must win over any display a component sets */ display: none !important; }
 .pageRoot { min-height: 100svh; padding: xs(density(3)) md(density(6)); background: palette(light-light); }
 .pageWorkspace { width: min(1440px, 100%); max-height: none; margin-inline: auto; overflow: visible; border: 0; border-radius: 0; box-shadow: none; }
 .pageWorkspace .body { overflow: visible; padding: xs(density(3)) md(density(6)); }
 .pageWorkspace .header { position: sticky; top: 0; z-index: 5; padding-block: density(4); }
-.workspaceTabs { display: flex; gap: density(2); margin-bottom: density(5); overflow-x: auto; border-bottom: 1px solid palette(surface-light); }
-.workspaceTabs button { display: inline-flex; align-items: center; gap: density(2); min-height: 44px; padding: density(2) density(4); border: 0; border-bottom: 2px solid transparent; background: transparent; color: palette(tertiary-main); @ds-typo(small); font-size: 0.8125rem; font-weight: 700; white-space: nowrap; cursor: pointer; }
+.workspaceTabs { display: flex; gap: density(2); margin-bottom: density(5); overflow-x: auto; border-bottom: border(subtle); }
+.workspaceTabs button { @ds-button (tab); display: inline-flex; align-items: center; gap: density(2); min-height: 44px; padding: density(2) density(4); border-bottom: border(clear); @ds-typo (compact-strong); white-space: nowrap; }
 .workspaceTabs button:hover, .workspaceTabs button:focus-visible { color: palette(primary-dark); }
 .workspaceTabs button.workspaceTabActive { border-bottom-color: palette(primary-main); color: palette(primary-dark); }
-.workspaceTabs button span { display: inline-grid; width: 16px; height: 16px; place-items: center; border-radius: radius(full); background: palette(success-light); color: palette(success-dark); @ds-typo(caption); font-size: 0.625rem; }
+.workspaceTabs button span { display: inline-grid; width: 16px; height: 16px; place-items: center; border-radius: radius(full); background: palette(success-light); color: palette(success-dark); @ds-typo (fine); }
 .pageWorkspace .progress { display: none; }
-.contentStage { display: grid; gap: density(4); padding: density(7); border: 1px solid palette(surface-light); border-radius: radius(3); background: palette(light-light); }
-.contentStage h3 { margin: 0; color: palette(dark-main); @ds-typo(h3); font-size: 1.25rem; }
+.contentStage { @ds-surface (card); display: grid; gap: density(4); padding: density(7); border-radius: radius(3); }
+.contentStage h3 { margin: 0; color: palette(dark-main); @ds-typo (title-lg); }
 .contentStage p { max-width: 70ch; margin: 0; color: palette(tertiary-main); @ds-typo(body); }
-.contentStage > span, .stageEyebrow { color: palette(primary-dark); @ds-typo(caption); font-size: 0.75rem; font-weight: 700; }
+.contentStage > span, .stageEyebrow { color: palette(primary-dark); @ds-typo (label); }
 .contentStage button { justify-self: start; }
 .contentStage a { color: palette(primary-dark); @ds-typo(small); }
-.contentSummary { display: grid; gap: density(3); padding: density(4); border: 1px solid palette(surface-light); border-radius: radius(2); background: palette(surface-light, 0.2); }
-.contentSummary h4 { margin: 0; color: palette(dark-main); @ds-typo(h3); font-size: 1rem; }
-.contentSummary > strong { color: palette(primary-dark); @ds-typo(caption); font-size: 0.75rem; }
+.contentSummary { @ds-surface (card); display: grid; gap: density(3); padding: density(4); border-radius: radius(2); background: palette(surface-light, 0.2); }
+.contentSummary h4 { margin: 0; color: palette(dark-main); @ds-typo (title-sm); }
+.contentSummary > strong { color: palette(primary-dark); @ds-typo (caption); }
 .contentSummary details { min-width: 0; }
-.contentSummary summary { color: palette(primary-dark); font-weight: 700; cursor: pointer; }
+.contentSummary summary { @ds-button (link); @ds-typo (emphasis); }
 .contentSummary details p { max-height: 24rem; overflow: auto; margin-block: density(3); white-space: pre-wrap; overflow-wrap: anywhere; }
-.textPreview { margin-bottom: density(5); border: 1px solid palette(surface-light); border-radius: radius(3); background: palette(light-light); }
-.textPreview > summary { padding: density(4); color: palette(dark-main); @ds-typo(small); font-weight: 750; cursor: pointer; }
+.textPreview { @ds-surface (card); margin-bottom: density(5); border-radius: radius(3); }
+.textPreview > summary { @ds-button (link-dark); padding: density(4); @ds-typo (small-strong); }
 .textPreviewGrid { display: flex; gap: density(3); padding: density(4); overflow-x: auto; }
-.textPreviewPiece { display: flex; flex: 0 0 min(190px, 70vw); min-height: 235px; flex-direction: column; align-items: stretch; gap: density(3); padding: density(5); border: 1px solid palette(surface-light); border-radius: radius(3); aspect-ratio: 4 / 5; background: palette(primary-light, 0.18); text-align: left; cursor: pointer; }
-.textPreviewPieceSelected { border: 2px solid palette(primary-main); box-shadow: shadow(1); }
-.textPreviewPiece:focus-visible { outline: 2px solid palette(primary-main); outline-offset: 2px; }
-.textPreviewPiece > span, .textPreviewPiece small { color: palette(tertiary-main); @ds-typo(caption); font-size: 0.6875rem; }
-.textPreviewPiece strong { color: palette(dark-main); @ds-typo(h3); font-size: 1rem; line-height: 1.25; }
-.textPreviewPiece p { margin: 0; color: palette(primary-dark); @ds-typo(small); font-size: 0.75rem; }
+.textPreviewPiece { @ds-button (tinted); display: flex; flex: 0 0 min(190px, 70vw); min-height: 235px; flex-direction: column; align-items: stretch; gap: density(3); padding: density(5); border: border(subtle); border-radius: radius(3); aspect-ratio: 4 / 5; background: palette(primary-light, 0.18); text-align: left; }
+.textPreviewPieceSelected { border: border(focus); box-shadow: shadow(1); }
+.textPreviewPiece > span, .textPreviewPiece small { color: palette(tertiary-main); @ds-typo (meta); }
+.textPreviewPiece strong { color: palette(dark-main); @ds-typo (title-sm); }
+.textPreviewPiece p { margin: 0; color: palette(primary-dark); @ds-typo (caption); }
 .textPreviewPiece small { margin-top: auto; }
 .textPreviewImage { position: relative; display: block; width: 100%; aspect-ratio: 4 / 5; overflow: hidden; border-radius: radius(1); }
 .textPreviewImage img { object-fit: cover; }
 .pieceSelector { display: flex; gap: density(2); overflow-x: auto; padding: density(2); }
 .pieceSelector button { display: grid; flex: 0 0 min(150px, 60vw); gap: density(1); min-height: 54px; padding: density(3); @ds-button(outlined neutral 2); text-align: left; cursor: pointer; }
-.pieceSelector button[aria-pressed="true"] { border: 2px solid palette(primary-main); background: palette(primary-light, 0.2); }
-.pieceSelector button span { color: palette(tertiary-main); @ds-typo(caption); font-size: 0.6875rem; }
-.pieceSelector button strong { overflow: hidden; color: palette(dark-main); @ds-typo(small); font-size: 0.75rem; text-overflow: ellipsis; white-space: nowrap; }
+.pieceSelector button[aria-pressed="true"] { border: border(focus); background: palette(primary-light, 0.2); }
+.pieceSelector button span { color: palette(tertiary-main); @ds-typo (meta); }
+.pieceSelector button strong { overflow: hidden; color: palette(dark-main); @ds-typo (caption); text-overflow: ellipsis; white-space: nowrap; }
 .routeShell { min-height: 100svh; background: palette(light-light); color: palette(dark-main); }
-.routeTopbar { display: flex; align-items: center; justify-content: space-between; gap: density(4); min-height: 56px; padding-inline: xs(density(4)) md(density(7)); border-bottom: 1px solid palette(surface-light); background: palette(light-light); }
-.routeTopbar a { color: palette(primary-dark); @ds-typo(small); font-size: 0.8125rem; font-weight: 700; text-decoration: none; white-space: nowrap; }
-.routeBrand { color: palette(dark-main); @ds-typo(small); font-size: 0.8125rem; font-weight: 760; white-space: nowrap; }
+.routeTopbar { display: flex; align-items: center; justify-content: space-between; gap: density(4); min-height: 56px; padding-inline: xs(density(4)) md(density(7)); border-bottom: border(subtle); background: palette(light-light); }
+.routeTopbar a { color: palette(primary-dark); @ds-typo (compact-strong); text-decoration: none; white-space: nowrap; }
+.routeBrand { color: palette(dark-main); @ds-typo (compact-strong); white-space: nowrap; }
 .routeTopbar a:hover, .routeTopbar a:focus-visible { text-decoration: underline; }
-.routeBreadcrumb { overflow: hidden; color: palette(tertiary-main); @ds-typo(caption); font-size: 0.75rem; text-overflow: ellipsis; white-space: nowrap; }
+.routeBreadcrumb { overflow: hidden; color: palette(tertiary-main); @ds-typo (caption); text-overflow: ellipsis; white-space: nowrap; }
 .routeBreadcrumb span { padding-inline: density(2); }
-.routeError, .routeLoading { width: min(700px, calc(100% - 2rem)); margin: density(9) auto; padding: density(7); border: 1px solid palette(surface-light); border-radius: radius(3); background: palette(light-light); @ds-typo(body); }
+.routeError, .routeLoading { @ds-surface (card); width: min(700px, calc(100% - 2rem)); margin: density(9) auto; padding: density(7); border-radius: radius(3); @ds-typo(body); }
 .routeError strong { @ds-typo(h3); }
-.routeError a { color: palette(primary-dark); @ds-typo(small); font-weight: 700; }
-.routeRefresh { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: density(3); width: min(1320px, calc(100% - 2rem)); margin: density(4) auto 0; padding: density(4); border: 1px solid palette(warning-light); border-radius: radius(2); background: palette(warning-light, 0.25); color: palette(warning-dark); @ds-typo(small); font-size: 0.8125rem; }
-.routeRefresh button { @ds-button(outlined warning 2); min-height: 34px; @ds-typo(caption); font-size: 0.75rem; font-weight: 700; cursor: pointer; }
+.routeError a { color: palette(primary-dark); @ds-typo (small-strong); }
+.routeRefresh { @ds-surface (card); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: density(3); width: min(1320px, calc(100% - 2rem)); margin: density(4) auto 0; padding: density(4); border: border(warning); border-radius: radius(2); background: palette(warning-light, 0.25); color: palette(warning-dark); @ds-typo (compact); }
+.routeRefresh button { @ds-button(outlined warning 2); min-height: 34px; @ds-typo (label); cursor: pointer; }
 @media (max-width: 639px) { .routeTopbar a span { display: none; } .routeBreadcrumb { flex: 1; } }
 .helpContent { width: min(760px, calc(100% - 2rem)); margin: density(9) auto; }
-.helpContent > p:first-child { margin: 0; color: palette(primary-dark); @ds-typo(caption); font-size: 0.75rem; font-weight: 750; text-transform: uppercase; letter-spacing: 0.08em; }
-.helpContent h1 { margin: density(2) 0 density(8); color: palette(dark-main); @ds-typo(h1); font-size: clamp(2rem, 5vw, 3rem); letter-spacing: -0.05em; }
+.helpContent > p:first-child { margin: 0; color: palette(primary-dark); @ds-typo (eyebrow); }
+.helpContent h1 { margin: density(2) 0 density(8); color: palette(dark-main); @ds-typo (display-lg); }
 .helpContent ol { display: grid; gap: density(3); padding-left: density(7); }
-.helpContent li, .helpContent p { color: palette(tertiary-main); @ds-typo(body); line-height: 1.6; }
+.helpContent li, .helpContent p { color: palette(tertiary-main); @ds-typo(body); }
 .helpContent li strong { color: palette(dark-main); }
-.helpContent a { color: palette(primary-dark); font-weight: 700; }
+.helpContent a { @ds-typo (emphasis); color: palette(primary-dark); }
 
-.hookPanel { display: grid; gap: density(3); margin-bottom: density(5); padding: density(4) density(5); border: 1px solid palette(primary-light); border-radius: 12px; background: palette(light-light); }
+.hookPanel { @ds-surface (callout); display: grid; gap: density(3); margin-bottom: density(5); padding: density(4) density(5); border-radius: radius(3); }
 .hookPanelHeader { display: flex; flex-direction: xs(column) md(row); align-items: xs(stretch) md(center); justify-content: space-between; gap: density(3); }
-.hookPanelHeader strong { color: palette(primary-dark); @ds-typo(caption); font-size: 12px; }
-.hookPanelHeader p, .hookPanelNote { margin: density(1) 0 0; color: palette(primary-main); @ds-typo(caption); font-size: 11px; }
+.hookPanelHeader strong { color: palette(primary-dark); @ds-typo (caption); }
+.hookPanelHeader p, .hookPanelNote { margin: density(1) 0 0; color: palette(primary-main); @ds-typo (meta); }
 .hookOptions { display: grid; gap: density(2); margin: 0; padding: 0; list-style: none; }
-.hookOption { display: grid; grid-template-columns: xs(1fr) md(minmax(0, 1fr) auto); gap: density(2) density(3); align-items: center; padding: density(3); border: 1px solid palette(primary-light); border-radius: radius(2); background: palette(light-light); }
-.hookOptionChosen { border-color: palette(primary-main); box-shadow: inset 3px 0 0 palette(primary-main); }
+.hookOption { @ds-surface (callout); display: grid; grid-template-columns: xs(1fr) md(minmax(0, 1fr) auto); gap: density(2) density(3); align-items: center; padding: density(3); border-radius: radius(2); }
+.hookOptionChosen { border-color: palette(primary-main); box-shadow: shadow(inset-primary); }
 .hookOptionText { display: grid; gap: density(1); min-width: 0; }
-.hookOptionText strong { @ds-typo(body); font-weight: 700; color: palette(dark-main); }
+.hookOptionText strong { @ds-typo (body-strong); color: palette(dark-main); }
 .hookOptionText span { @ds-typo(caption); color: palette(dark-main, 0.72); }
-.hookSecond { padding-left: density(2); border-left: 2px solid palette(primary-light); }
+.hookSecond { padding-left: density(2); border-left: border(focus-soft); }
 .hookOptionAction { display: flex; justify-content: xs(flex-start) md(flex-end); }
 .hookOptionMeta { display: flex; flex-wrap: wrap; gap: density(1); grid-column: 1 / -1; }
-.hookOptionMeta span { padding: 2px density(2); border-radius: 999px; background: palette(primary-light, 0.45); @ds-typo(caption); font-size: 10px; color: palette(primary-dark); }
-.hookScores { grid-column: 1 / -1; margin: 0; @ds-typo(caption); font-size: 11px; color: palette(dark-main, 0.72); }
-.hookScores b { margin-right: density(1); font-size: 13px; color: palette(primary-dark); }
+.hookOptionMeta span { padding: space(1) density(2); border-radius: radius(pill); background: palette(primary-light, 0.45); @ds-typo (fine); color: palette(primary-dark); }
+.hookScores { grid-column: 1 / -1; margin: 0; @ds-typo (meta); color: palette(dark-main, 0.72); }
+.hookScores b { @ds-typo (compact); margin-right: density(1); color: palette(primary-dark); }
 .hookScores em { font-style: normal; color: palette(dark-main, 0.6); }
-.hookCurrent { @ds-typo(caption); font-weight: 700; color: palette(success-dark); }
-.hookAll summary { cursor: pointer; @ds-typo(caption); color: palette(primary-main); }
+.hookCurrent { @ds-typo (label); color: palette(success-dark); }
+.hookAll summary { @ds-button (link-accent); @ds-typo(caption); }
 .hookAll[open] summary { margin-bottom: density(2); }

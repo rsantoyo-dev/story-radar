@@ -30,11 +30,9 @@
 }
 
 .heading p {
-  @ds-typo(caption);
-  margin: 0 0 0.25rem;
+  @ds-typo (eyebrow);
+  margin: 0 0 space(2);
   color: palette(info-main);
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
 }
 
 .heading h2,
@@ -102,15 +100,15 @@
 
 .panel textarea { resize: vertical; }
 .panel input:focus,
-.panel textarea:focus { outline: 2px solid palette(info-main, 0.22); border-color: palette(info-main); }
+.panel textarea:focus { outline: border(focus-soft); border-color: palette(info-main); }
 
 .numberField > div { position: relative; }
-.numberField input { padding-right: 2.8rem; }
+.numberField input { padding-right: space(9); }
 .numberField > div small { @ds-typo(caption); position: absolute; right: density(2); color: palette(info-main); }
 .numberField > small { @ds-typo(caption); color: palette(error-main); }
 .numberField input[aria-invalid="true"] { border-color: palette(error-main); }
 
-.weightsHeading { margin-top: density(2); padding-top: density(5); border-top: border(1, surface-dark, solid); }
+.weightsHeading { margin-top: density(2); padding-top: density(5); border-top: border(1); }
 
 .policyHint {
   @ds-typo(small);

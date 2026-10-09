@@ -1,6 +1,6 @@
 # UXDSL alignment
 
-**Status:** Phase 0 done (measurement and ratchet). Phases 1–4 pending.
+**Status:** Phases 0–3 done on 8 October 2026: every stylesheet audits at zero findings, with 7 documented exceptions. Phase 4 (components) and UXA-10 pending.
 **Owner:** Press Craftor UI.
 **Stories:** [UXA-00–09](uxdsl-alignment.kanban.md) — resume with UXA-01.
 **Related:** [UI/UX consistency](ui-ux-consistency.md) · [UXDSL agent guide](../uxdsl-agent-guide.md) · [UXDSL findings log](../uxdsl-findings.md)
@@ -64,6 +64,36 @@ typography (local font sizes such as 9–13 px over `@ds-typo` roles), in
 hand-built buttons and containers (the default Surface and Button roles are
 used only through ad hoc arguments, and the theme defines no project roles),
 and in 66 copies of the same focus ring.
+
+## Result (8 October 2026)
+
+| Category | Before | After |
+|---|---|---|
+| color | 2 | 0 |
+| spacing | 34 | 0 |
+| radius | 81 | 0 |
+| border | 225 | 0 |
+| shadow | 21 | 0 |
+| type | 741 | 0 |
+| focus | 66 | 0 |
+| button | 85 | 0 |
+| surface | 127 | 0 |
+| important | 7 | 0 |
+| documented exceptions | 0 | 7 |
+
+The theme now defines 45 typography roles (a 10 px floor; display, interface,
+emphasis and icon roles), 40 border and 11 shadow presets, 8 Surface roles
+(`card`, `panel`, `boxed`, `callout`, `dropzone` and three notices), 19 Button
+roles (filled, outlined, on-image, chip, tab and text styles, each with every
+state spelled out) and an Input role, plus one focus treatment for every
+focusable element. The audit's definitions were tightened while migrating: a
+focus ring built from tokens, a rule that only sets the cursor and a
+container with no visible edge are not findings.
+
+Two choices kept the interface as it looked rather than as the code asked:
+the 37 edges written `border(n, color, style)` keep the gray they actually
+rendered (finding 10), and the 137 rules whose `@ds-typo` follows a block
+margin keep the directive's position (finding 9).
 
 ## Phases
 

@@ -22,6 +22,7 @@ html {
 }
 
 body {
+  @ds-typo (document);
   margin: 0;
   display: flex;
   flex-direction: column;
@@ -30,11 +31,21 @@ body {
   /* Next/font's own variable, with the same fallback chain the theme's `ui`
    * font family already resolves to — kept explicit since no uxdsl function
    * wraps a bare font-family the way palette()/density() wrap a token. */
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
 
 * {
   box-sizing: border-box;
+}
+
+/*
+ * One focus treatment for every focusable element. Button and Input roles
+ * carry the same ring in their own focus-visible state; components that show
+ * focus another way (a fill, a field ring) set it explicitly and win, since
+ * :where() adds no specificity.
+ */
+:where(a, button, summary, select, textarea, input, [tabindex]):focus-visible {
+  outline: border(focus);
+  outline-offset: space(1);
 }
 
 button,

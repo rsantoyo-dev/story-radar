@@ -28,6 +28,17 @@ test("tokens and roles are aligned; literals that decide design are findings", (
   assert.equal(raw.important, 1);
 });
 
+test("a focus ring or a clickable rule built from tokens and roles is not a finding", () => {
+  const counts = auditStylesheet(`
+    .tab:focus-visible { outline: border(focus); outline-offset: space(1); }
+    .row { cursor: pointer; }
+    .avatar { background: palette(primary-main); border: 0; border-radius: radius(2); }
+  `);
+  assert.equal(counts.focus, 0);
+  assert.equal(counts.button, 0, "a rule that only sets the cursor draws no button");
+  assert.equal(counts.surface, 0, "no visible edge: not a hand-built container");
+});
+
 test("a documented exception is counted as such, not as findings", () => {
   const counts = auditStylesheet(".map { /* uxdsl-exception: provider map card keeps its printed look */ border-radius: 14px; box-shadow: 0 10px 28px rgba(0,0,0,.3); }");
   assert.equal(counts.exception, 1);

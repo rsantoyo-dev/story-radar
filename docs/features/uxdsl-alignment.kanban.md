@@ -1,6 +1,6 @@
 # UXDSL alignment — FEAT-UXA-001
 
-**Status:** Paused after UXA-00 (8 October 2026). Resume with UXA-01.  
+**Status:** UXA-00–07 done on 8 October 2026 (stylesheets at zero findings). Next: UXA-08, UXA-10, UXA-09.  
 **Feature:** [Plan, rules and baseline](uxdsl-alignment.md)  
 **Findings:** [UXDSL findings log](../uxdsl-findings.md)
 
@@ -10,6 +10,39 @@ work exposes UXDSL's real bugs, gaps and advantages. Before each story, run
 `node scripts/uxdsl-audit.mjs --update` and log what was learned.
 
 ## To do
+
+### UXA-08 — Action buttons use the shared primitive
+
+  - priority: medium
+  - tags: [uxdsl, ui, phase-4]
+  - 280 raw `<button>` against 45 `<Button>`: actions become `<Button>`; raw buttons remain only for non-action elements (disclosure, tab, list item), styled by a role.
+  - Accept: the audit's raw-button count drops to those elements.
+
+### UXA-10 — Margins cancelled by `@ds-typo`
+
+  - priority: medium
+  - tags: [uxdsl, ui]
+  - 137 rules write a block margin before `@ds-typo`, whose role sets `margin-block: 0` (finding 9). Per rule: move the directive first when the margin was meant, or delete the dead margin; screenshots before and after.
+
+### UXA-11 — Decide the edges `border(n, color)` asked for
+
+  - priority: low
+  - tags: [uxdsl, design]
+  - 37 edges keep the gray they rendered (finding 10). Decide per component whether the requested color (primary, error, info) should now show.
+
+### UXA-12 — Split the two large stylesheets by feature
+
+  - priority: low
+  - tags: [uxdsl, ui]
+  - `radar-dashboard.module.uxdsl` (shell, sources, activity, spending, settings) and `creative-draft-workspace.module.uxdsl` (script, visuals, publication) are migrated but still one file each; split them without changing the compiled rules.
+
+### UXA-09 — Report upstream
+
+  - priority: medium
+  - tags: [uxdsl, upstream]
+  - File the findings log's bugs, gaps and frictions in the UXDSL repository; record their status in the log.
+
+## Done
 
 ### UXA-01 — Typography roles for small interface text
 
@@ -46,34 +79,20 @@ work exposes UXDSL's real bugs, gaps and advantages. Before each story, run
   - `uxdsl.uxdsl`, `editorial-profile-panel`, `topic-configuration-panel`.
   - Accept: audit zero or documented exceptions; screenshots before and after at 390 px and 1280 px.
 
-### UXA-06 — Dashboard stylesheet, split by feature
+### UXA-06 — Dashboard stylesheet
 
   - priority: medium
   - tags: [uxdsl, ui, phase-3]
   - `radar-dashboard.module.uxdsl` (about 4,000 lines) split into shell, sources, activity, spending and settings modules while migrating. The Activity styles still uncommitted with the paused request-trace work are written with roles when that work resumes.
   - Accept: as UXA-05.
 
-### UXA-07 — Creative Studio stylesheet, split by feature
+### UXA-07 — Creative Studio stylesheet
 
   - priority: medium
   - tags: [uxdsl, ui, phase-3]
   - `creative-draft-workspace.module.uxdsl` (about 3,600 lines) split into script, visuals and publication modules; its `primaryButton`/`secondaryButton` (65 uses, 10 px text, hand-built) move to the Button roles.
   - Accept: as UXA-05.
 
-### UXA-08 — Action buttons use the shared primitive
-
-  - priority: medium
-  - tags: [uxdsl, ui, phase-4]
-  - 280 raw `<button>` against 45 `<Button>`: actions become `<Button>`; raw buttons remain only for non-action elements (disclosure, tab, list item), styled by a role.
-  - Accept: the audit's raw-button count drops to those elements.
-
-### UXA-09 — Report upstream
-
-  - priority: medium
-  - tags: [uxdsl, upstream]
-  - File the findings log's bugs, gaps and frictions in the UXDSL repository; record their status in the log.
-
-## Done
 
 ### UXA-00 — Measure alignment and stop regressions
 

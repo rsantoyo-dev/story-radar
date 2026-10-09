@@ -53,9 +53,14 @@ export function auditStylesheet(source, from = "stylesheet.uxdsl") {
       if (prop === "box-shadow" && value.trim() !== "none" && !/\bshadow\(/u.test(value)) counts.shadow += 1;
       if (TYPE_PROPERTY.test(prop)) counts.type += 1;
     }
-    if (/:focus(?:-visible|-within)?\b/u.test(rule.selector) && has(/^(?:outline|box-shadow)$/u)) counts.focus += 1;
-    if (!hasRole && declarations.some((decl) => decl.prop === "cursor" && decl.value.trim() === "pointer")) counts.button += 1;
-    if (!hasRole && has(/^background(?:-color)?$/u) && has(/^border(?:-(?:top|right|bottom|left))?$/u) && has(RADIUS_PROPERTY)) counts.surface += 1;
+    // A focus ring drawn with literal values; one built from Border and
+    // Space tokens is the system's own treatment.
+    if (/:focus(?:-visible|-within)?\b/u.test(rule.selector) && declarations.some((decl) => /^(?:outline|outline-offset|box-shadow)$/u.test(decl.prop) && LENGTH.test(decl.value) && !/\b(?:border|space|density|shadow)\(/u.test(decl.value))) counts.focus += 1;
+    // A hand-built button decides a look (fill, edge or text color) on a
+    // clickable rule; a rule that only sets the cursor styles no button.
+    const drawn = (pattern) => declarations.some((decl) => pattern.test(decl.prop) && !/^(?:0|none|transparent|initial|inherit)$/u.test(decl.value.trim()));
+    if (!hasRole && declarations.some((decl) => decl.prop === "cursor" && decl.value.trim() === "pointer") && drawn(/^(?:background(?:-color)?|border|color)$/u)) counts.button += 1;
+    if (!hasRole && drawn(/^background(?:-color)?$/u) && drawn(/^border(?:-(?:top|right|bottom|left))?$/u) && has(RADIUS_PROPERTY)) counts.surface += 1;
   });
   return counts;
 }

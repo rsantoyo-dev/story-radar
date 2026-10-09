@@ -46,18 +46,15 @@
 .heading p,
 .sourcesHeading p,
 .knowledgeHeading p {
-  @ds-typo(caption);
-  margin: 0 0 0.25rem;
+  @ds-typo (eyebrow);
+  margin: 0 0 space(2);
   color: palette(primary-main);
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
 }
 
 /* The panel eyebrow matches the dashboard's .eyebrow so every view opens the same way. */
 .heading > div > p {
-  font-size: 0.6875rem;
-  font-weight: 750;
-  letter-spacing: 0.14em;
+
+  @ds-typo (meta-strong);
 }
 
 .heading h2,
@@ -135,13 +132,13 @@
 
 .topicRowContext { margin: 0; color: palette(tertiary-dark); @ds-typo(small); }
 .topicRowContext strong { color: palette(dark-main); }
-.topicSetupGuide { display: grid; gap: density(3); margin-top: density(5); padding: density(4); border: 1px solid palette(surface-dark); border-radius: radius(3); background: palette(light-light); }
-.topicSetupGuide h3 { margin: 0; color: palette(dark-main); @ds-typo(h3); font-size: 1.125rem; }
+.topicSetupGuide { @ds-surface (boxed); display: grid; gap: density(3); margin-top: density(5); padding: density(4); border-radius: radius(3); }
+.topicSetupGuide h3 { margin: 0; color: palette(dark-main); @ds-typo (title); }
 .topicSetupGuide > p { margin: 0; color: palette(tertiary-dark); @ds-typo(small); }
 .topicSetupGuide ol { display: grid; grid-template-columns: xs(minmax(0, 1fr)) md(repeat(2, minmax(0, 1fr))); gap: density(2); margin: 0; padding: 0; list-style: none; }
-.topicSetupGuide a { display: grid; min-height: 44px; gap: density(1); padding: density(3); border: 1px solid palette(surface-dark); border-radius: radius(2); color: palette(primary-dark); text-decoration: none; font-weight: 700; }
+.topicSetupGuide a { @ds-typo (emphasis); display: grid; min-height: 44px; gap: density(1); padding: density(3); border: border(control); border-radius: radius(2); color: palette(primary-dark); text-decoration: none; }
 .topicSetupGuide a:hover, .topicSetupGuide a:focus-visible { border-color: palette(primary-main); background: palette(primary-light); }
-.topicSetupGuide a span { color: palette(tertiary-dark); @ds-typo(caption); font-weight: 400; }
+.topicSetupGuide a span { color: palette(tertiary-dark); @ds-typo (caption); }
 
 .topicActions,
 .sourceActions,
@@ -181,12 +178,12 @@
 
 .topicForm,
 .sourceForm {
+  @ds-surface (boxed);
+  border: border(1);
   display: grid;
   gap: density(4);
   margin-top: density(5);
-  border: border(1, surface-dark, solid);
   border-radius: radius(3);
-  background: palette(light-light);
   padding: density(4);
 }
 
@@ -208,8 +205,10 @@
 
 .panel textarea { min-height: density(15); resize: vertical; }
 
-.toggle { display: flex !important; align-items: center; gap: density(1); }
+/* label.toggle outranks .sourceForm > label (display: grid) by coming later at the same specificity. */
+label.toggle { display: flex; align-items: center; gap: density(1); }
 .toggle input[type="checkbox"] {
+  /* uxdsl-exception: a native control or a dismiss area, not an action a Button role styles */
   appearance: auto;
   width: density(3);
   height: density(3);
@@ -243,7 +242,7 @@
 }
 
 .catalogList > li {
-  border: 1px solid palette(dark-main, 0.1);
+  border: border(hairline);
 }
 
 .catalogList > li > button {
@@ -280,7 +279,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: density(3);
-  border: border(1, surface-dark, solid);
+  border: border(1);
   border-radius: radius(2);
   padding: density(3);
 }
@@ -344,11 +343,11 @@
 .sourceCopy > div { display: flex; align-items: center; gap: density(1); }
 .sourceCopy a { @ds-typo(caption); overflow: hidden; color: palette(primary-dark); text-overflow: ellipsis; white-space: nowrap; }
 .sourceCopy small { @ds-typo(small); color: palette(tertiary-main); }
-.preview { @ds-typo(caption); width: 100%; border-top: border(1, surface-dark, solid); padding-top: density(3); color: palette(dark-main); }
+.preview { @ds-typo(caption); width: 100%; border-top: border(1); padding-top: density(3); color: palette(dark-main); }
 .preview ol { display: grid; gap: density(1); margin: density(2) 0 0; padding-left: density(5); }
 .preview a { color: palette(primary-dark); }
 .inlineError { @ds-typo(small); color: palette(error-main); }
-.documentSections { width: 100%; border-top: border(1, surface-dark, solid); padding-top: density(3); }
+.documentSections { width: 100%; border-top: border(1); padding-top: density(3); }
 .documentSections > strong { @ds-typo(body); color: palette(dark-main); }
 .dossierBuilder {
   @ds-surface(flat neutral);
@@ -359,7 +358,7 @@
   gap: density(3);
   margin-top: density(3);
   padding: density(3);
-  border: border(1, palette(surface-light), solid);
+  border: border(1);
 }
 .dossierBuilder > div { display: grid; gap: density(1); }
 .dossierBuilder strong { @ds-typo(caption); color: palette(primary-dark); }
@@ -382,16 +381,16 @@
   white-space: nowrap;
 }
 
-.topicCardsHeading { @ds-typo(caption); margin: density(6) 0 0; color: palette(primary-main); font-size: 0.6875rem; font-weight: 750; letter-spacing: 0.14em; text-transform: uppercase; }
+.topicCardsHeading { @ds-typo (eyebrow); margin: density(6) 0 0; color: palette(primary-main); }
 .topicCards { display: grid; grid-template-columns: xs(1fr) sm(repeat(2, minmax(0, 1fr))) xl(repeat(3, minmax(0, 1fr))); gap: density(4); margin-block: density(3) density(6); }
-.topicCard { display: grid; overflow: hidden; min-width: 0; padding: 0; border: 1px solid palette(dark-main, 0.12); border-radius: radius(3); background: palette(light-light); color: palette(dark-main); text-align: left; cursor: pointer; }
+.topicCard { @ds-button (secondary); display: grid; overflow: hidden; min-width: 0; padding: 0; border-radius: radius(3); color: palette(dark-main); text-align: left; }
 .topicCard:hover:not(:disabled), .topicCard:focus-visible { border-color: palette(primary-main, 0.65); box-shadow: shadow(2); }
-.topicCard.topicCardActive { border-color: palette(primary-main); box-shadow: 0 0 0 2px palette(primary-main, 0.16); }
+.topicCard.topicCardActive { border-color: palette(primary-main); box-shadow: shadow(ring); }
 .topicCard:disabled { cursor: not-allowed; opacity: 0.65; }
-.topicCardPreview { display: grid; height: 90px; place-items: center; background: linear-gradient(135deg, palette(primary-main), palette(secondary-main)); color: palette(primary-contrast); @ds-typo(h1); font-size: 2.5rem; font-weight: 750; }
+.topicCardPreview { display: grid; height: 90px; place-items: center; background: linear-gradient(135deg, palette(primary-main), palette(secondary-main)); color: palette(primary-contrast); @ds-typo (monogram); }
 .topicCardCopy { display: grid; gap: density(2); padding: density(4); }
-.topicCardCopy strong { color: palette(dark-main); @ds-typo(h3); font-size: 1rem; }
-.topicCardCopy small { overflow: hidden; color: palette(tertiary-main); @ds-typo(small); font-size: 0.75rem; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
-.topicCardCopy > span { color: palette(primary-dark); @ds-typo(caption); font-size: 0.6875rem; font-weight: 700; }
-.topicAdvanced { margin-top: density(6); border-top: 1px solid palette(surface-light); }
-.topicAdvanced > summary { min-height: 44px; padding-block: density(4); color: palette(primary-dark); @ds-typo(small); font-weight: 700; cursor: pointer; }
+.topicCardCopy strong { color: palette(dark-main); @ds-typo (title-sm); }
+.topicCardCopy small { overflow: hidden; color: palette(tertiary-main); @ds-typo (caption); text-overflow: ellipsis; white-space: nowrap; }
+.topicCardCopy > span { color: palette(primary-dark); @ds-typo (meta-strong); }
+.topicAdvanced { margin-top: density(6); border-top: border(subtle); }
+.topicAdvanced > summary { @ds-button (link); min-height: 44px; padding-block: density(4); @ds-typo (small-strong); }
