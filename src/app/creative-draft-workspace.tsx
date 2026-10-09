@@ -382,6 +382,18 @@ export function CreativeDraftWorkspace({
     return () => controller.abort();
   }, [secret, storyId, topicId, initialDraftId, initialPreparationRunId]);
 
+  // The address names the draft on screen, so a reload reopens it. A link
+  // still naming the draft from before "Generate new brief and carousel"
+  // reopened that old draft and its images, as if new approvals were lost
+  // (Saint-Jean, October 2026).
+  useEffect(() => {
+    if (mode !== "page" || !activeDraftId) return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("draftId") === activeDraftId) return;
+    url.searchParams.set("draftId", activeDraftId);
+    window.history.replaceState(null, "", url.toString());
+  }, [mode, activeDraftId]);
+
   useEffect(() => {
     if (!activeDraftId) return;
     const controller = new AbortController();
@@ -2108,8 +2120,10 @@ export function CreativeDraftWorkspace({
                         <p>
                           Its posting copy, question, hashtags, prompts, and
                           generated images remain available here. This saved
-                          version is read-only. Use Create improved version
-                          below to apply the current narrative rules.
+                          version is read-only.{" "}
+                          {currentDraft
+                            ? "A newer draft for the current inputs already exists: return to it to keep working."
+                            : "Use Create improved version below to apply the current narrative rules."}
                         </p>
                       </div>
                       {currentDraft ? (
@@ -2132,6 +2146,9 @@ export function CreativeDraftWorkspace({
                           Boolean(busy) ||
                           !workspace.story.hasContent
                         }
+                        // A current draft already applies the current rules;
+                        // generating again from here would pay for a duplicate.
+                        offerRegeneration={!currentDraft}
                         generationError={error}
                         onCreateImprovedVersion={handleRefreshDraftFromProfile}
                       />
@@ -2856,12 +2873,15 @@ function HistoricalDraftDetails({
   draft,
   creating,
   createDisabled,
+  offerRegeneration,
   generationError,
   onCreateImprovedVersion,
 }: {
   draft: CreativeDraft;
   creating: boolean;
   createDisabled: boolean;
+  /** False when a current draft exists: the editor returns to it instead. */
+  offerRegeneration: boolean;
   generationError?: string;
   onCreateImprovedVersion: () => void;
 }) {
@@ -2880,30 +2900,32 @@ function HistoricalDraftDetails({
           {capitalize(draft.format)} · v{draft.version}
         </small>
       </div>
-      <div className={styles.historicalRegenerationAction}>
-        <div>
-          <strong>Generate with the new narrative rules</strong>
-          <p>
-            Creates a new brief and carousel when needed. This saved version
-            and its images remain unchanged in history.
-          </p>
+      {offerRegeneration ? (
+        <div className={styles.historicalRegenerationAction}>
+          <div>
+            <strong>Generate with the new narrative rules</strong>
+            <p>
+              Creates a new brief and carousel when needed. This saved version
+              and its images remain unchanged in history.
+            </p>
+          </div>
+          <div className={styles.historicalRegenerationControls}>
+            <button
+              type="button"
+              className={styles.primaryButton}
+              disabled={createDisabled}
+              onClick={onCreateImprovedVersion}
+            >
+              {creating
+                ? "Generating new brief and carousel…"
+                : "Generate new brief and carousel"}
+            </button>
+            {generationError ? (
+              <small role="alert">Generation failed: {generationError}</small>
+            ) : null}
+          </div>
         </div>
-        <div className={styles.historicalRegenerationControls}>
-          <button
-            type="button"
-            className={styles.primaryButton}
-            disabled={createDisabled}
-            onClick={onCreateImprovedVersion}
-          >
-            {creating
-              ? "Generating new brief and carousel…"
-              : "Generate new brief and carousel"}
-          </button>
-          {generationError ? (
-            <small role="alert">Generation failed: {generationError}</small>
-          ) : null}
-        </div>
-      </div>
+      ) : null}
       <div className={styles.historicalDraftFields}>
         <ReadOnlyDraftField label="Concept" value={draft.concept} rows={3} />
         <ReadOnlyDraftField
