@@ -1,9 +1,10 @@
 "use client";
 import { useEffect, useRef, useState, useSyncExternalStore, type ComponentProps, type ReactNode } from "react";
 import { DailyEditorialPlannerPanel } from "./daily-editorial-planner-panel";
-import { BRIEF_EVIDENCE_REVIEW_MESSAGE, preparationCallLabel, preparationModelLabel, type PreparationTextCall, DAILY_PREPARATION_LABELS, DAILY_PREPARATION_STEPS, DAILY_PREPARATION_TITLES, preparationTarget, type DailyPreparationStep, type DailyPreparationRun, type DailyPreparationProgress } from "./modules/stories/daily-preparation.types";
+import { BRIEF_EVIDENCE_REVIEW_MESSAGE, STORY_UNSELECTED_MESSAGE, preparationCallLabel, preparationModelLabel, runApprovedStory, type PreparationTextCall, DAILY_PREPARATION_LABELS, DAILY_PREPARATION_STEPS, DAILY_PREPARATION_TITLES, preparationTarget, type DailyPreparationStep, type DailyPreparationRun, type DailyPreparationProgress } from "./modules/stories/daily-preparation.types";
 import Image from "next/image";
 import { RunPublishActions } from "./run-publish-actions";
+import { Button } from "./ui/primitives";
 import styles from "./radar-dashboard.generated.module.css";
 
 type RunImage = { id: string; unitOrder: number; status: string; imageUrl?: string | null; safetyFlag?: boolean };
@@ -120,12 +121,16 @@ function stepDetail(step: DailyPreparationStep, progress: DailyPreparationProgre
 const subscribe=()=>()=>{};
 const browserZone=()=>Intl.DateTimeFormat().resolvedOptions().timeZone;
 const serverZone=()=>"UTC";
-type Props=ComponentProps<typeof DailyEditorialPlannerPanel> & {onCompleted:()=>void;onOpenDraft:(storyId:string,title:string,draftId?:string,preparationRunId?:string)=>void};
+type Props=ComponentProps<typeof DailyEditorialPlannerPanel> & {onCompleted:()=>void;onOpenDraft:(storyId:string,title:string,draftId?:string,preparationRunId?:string)=>void;
+  /** Removes the story from production; resolves false when the editor cancels. */
+  onUnselect?:(storyId:string)=>Promise<boolean>};
 type RunSlides={version:number;status:string;units:{order:number;role:string;headline:string;subheadline:string|null}[]};
 /** What a story chosen in the selector already has, read before any run starts. */
 type StoryPreview={storyId:string;contentReady:boolean;briefIsCurrent:boolean;briefAt?:string;draft?:{id:string;version:number;status:string;format:string;units:RunSlides["units"]}};
 type InProgressStory={storyId:string;title:string;version:number;status:string;updatedAt:string};
-type State={run:DailyPreparationRun|null;lines:{id:string;name:string;timezone:string}[];calls?:PreparationTextCall[];slides?:RunSlides|null;inProgress?:InProgressStory[]};
+type State={run:DailyPreparationRun|null;lines:{id:string;name:string;timezone:string}[];calls?:PreparationTextCall[];slides?:RunSlides|null;inProgress?:InProgressStory[];
+  /** Whether the run's story is still in production (null: no story, or unknown). */
+  storySelected?:boolean|null};
 
 /** The script as slides before any image exists: number, role and headline on a 4:5 card. */
 function RunSlidesPreview({ slides }: { slides: RunSlides }) {
@@ -137,7 +142,7 @@ function RunSlidesPreview({ slides }: { slides: RunSlides }) {
     </li>)}</ol>
   </div>;
 }
-export function DailyPreparationPanel({onCompleted,onOpenDraft,...props}:Props) {
+export function DailyPreparationPanel({onCompleted,onOpenDraft,onUnselect,...props}:Props) {
   const {topicId,secret,disabled}=props;
   const timezone=useSyncExternalStore(subscribe,browserZone,serverZone);
   const [data,setData]=useState<State>();
@@ -250,6 +255,18 @@ export function DailyPreparationPanel({onCompleted,onOpenDraft,...props}:Props) 
       const value=await response.json();if(!response.ok)throw new Error(value.error);
       apply(value);
     }catch(error){setError(error instanceof Error?error.message:"Unable to stop the run");}
+    finally{posting.current=false;setPending(false);}
+  }
+  async function unselectStory(){
+    const storyId=run?.progress.storyId;
+    if(posting.current || !storyId || !onUnselect)return;
+    ++generation.current;posting.current=true;setPending(true);setError("");
+    try {
+      if(!(await onUnselect(storyId)))return;
+      const response=await fetch(`/api/radar/daily-preparation?topicId=${encodeURIComponent(topicId)}`,{headers:{Authorization:`Bearer ${secret.trim()}`},cache:"no-store"});
+      const value=await response.json();if(!response.ok)throw new Error(value.error);
+      apply(value);
+    }catch(error){setError(error instanceof Error?error.message:"Unable to refresh the run");}
     finally{posting.current=false;setPending(false);}
   }
   async function acknowledgeBrief(){
@@ -367,9 +384,12 @@ export function DailyPreparationPanel({onCompleted,onOpenDraft,...props}:Props) 
       {run.progress.skippedStories?.length ? <div role="status"><p>Skipped {run.progress.skippedStories.length === 1 ? "1 story" : `${run.progress.skippedStories.length} stories`} and moved to the next one:</p><ul>{run.progress.skippedStories.map(story=><li key={story.storyId}>{story.title || "Untitled story"}: {story.reason}</li>)}</ul></div> : null}
       {run.progress.autoApproved ? <p role="status">Approved automatically:{run.progress.autoApproved.draftApprovedAt ? " script" : ""}{run.progress.autoApproved.assetIds?.length ? `${run.progress.autoApproved.draftApprovedAt ? " and" : ""} ${run.progress.autoApproved.assetIds.length} images` : ""}. Review them in the draft before publishing.</p> : null}
       {run.error && <p role="alert">{run.error}</p>}
+      {runApprovedStory(run.progress) && data?.storySelected===false && run.error!==STORY_UNSELECTED_MESSAGE
+        ? <p role="status">This story was removed from production. Continuing this run will not select it again: start a new run to choose another story, or approve this one again in Discover.</p> : null}
       {run.progress.storyId && run.status!=="running" && <div className={styles.dailyPlannerActions}>
         <button type="button" className={styles.secondaryButton} disabled={disabled} onClick={()=>props.onViewContent(run.progress.storyId!)}>Review content</button>
         {(run.progress.briefId || run.progress.draftId) && <button type="button" className={styles.primaryButton} disabled={disabled} onClick={()=>onOpenDraft(run.progress.storyId!,run.progress.storyTitle ?? "Creative draft",run.progress.draftId,run.id)}>{run.progress.draftId?"Open draft":"Open creative brief"}</button>}
+        {onUnselect && data?.storySelected===true && <Button variant="quiet" disabled={disabled || pending} onClick={()=>void unselectStory()}>Unselect story</Button>}
         {run.status==="needs-review" && run.step==="brief" && run.error===BRIEF_EVIDENCE_REVIEW_MESSAGE && run.progress.briefId && <button type="button" className={styles.secondaryButton} disabled={disabled || pending} onClick={()=>void acknowledgeBrief()}>Accept brief and continue</button>}
       </div>}
       {run.status==="needs-review" && run.step==="brief" && run.error===BRIEF_EVIDENCE_REVIEW_MESSAGE && <p role="status">Retrying regenerates the same brief from the same source and will keep saying this when the gap is inherent to the source (for example, a small local sample) rather than a fluke. Open the brief above to judge it yourself, then use “Accept brief and continue” instead of retrying.</p>}

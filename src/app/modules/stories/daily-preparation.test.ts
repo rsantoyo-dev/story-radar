@@ -6,6 +6,8 @@ import vm from "node:vm";
 import ts from "typescript";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
+import { SQL } from "drizzle-orm";
+import { getTableConfig, PgDialect, type PgTable } from "drizzle-orm/pg-core";
 import * as schema from "@/db/schema";
 const localRequire=createRequire(import.meta.url);
 function load(file:string,mocks:Record<string,unknown>) {
@@ -22,6 +24,7 @@ type Asset={id:string;unitOrder:number;status:string;safetyFlag?:boolean};
 function workflow({failedCollection=false,collectionRunId=undefined as string|undefined,failEvaluate=false,limit=false,cachedCollection=false,draftMode=false,incomplete=false,likelyFull=false,failApproval=false,noChoice=false,editorialReady=true,scoop=false,
   alternatives=[] as string[],sameEvent={} as Record<string,string[]>,published=[] as string[],
   prepared=undefined as undefined | {draftStatus?:string;draftVersion?:number;images?:boolean},incompleteFor=[] as string[],notEligible=[] as string[],autoApprove=false,failAutoApprove=false,
+  unselected=[] as string[],
   images=[[{id:"a1",unitOrder:1,status:"generated"},{id:"a2",unitOrder:2,status:"generated"}]] as Asset[][]}={}) {
   let imagePolls=0;
   // Work done by hand in the studio before the run, if any; otherwise the run creates it.
@@ -39,7 +42,10 @@ function workflow({failedCollection=false,collectionRunId=undefined as string|un
   if(collectionRunId)run.progress.collectionRunId=collectionRunId;
   const service=load("./daily-preparation.ts",{
     "./creative-quality":{isCreativeDraftReadyForAutomation:()=>editorialReady},
-    "./approve-daily-story":{DailyStoryNotEligibleError:NotEligibleError,approveDailyStory:async(_topic:unknown,storyId:string)=>{if(failApproval)throw new Error("Approval failed");if(notEligible.includes(storyId))throw new NotEligibleError("not eligible");if(!approved){calls.push("approve");approved=true;}}},
+    "./approve-daily-story":{DailyStoryNotEligibleError:NotEligibleError,approveDailyStory:async(_topic:unknown,storyId:string)=>{if(failApproval)throw new Error("Approval failed");if(notEligible.includes(storyId))throw new NotEligibleError("not eligible");
+        if(unselected.includes(storyId))unselected.splice(unselected.indexOf(storyId),1);
+        if(!approved){calls.push("approve");approved=true;}},
+      dailyStoryIsSelected:async(_topic:unknown,storyId:string)=>!unselected.includes(storyId)},
     "./story-duplicates.repository":{storyAlreadyPublished:async(_topic:unknown,storyId:string)=>published.includes(storyId),sameEventStories:async(_topic:unknown,storyId:string)=>(sameEvent[storyId] ?? []).map(id=>({storyId:id,title:`Same ${id}`}))},
     "../topics/topic-context":{requireTopic:async()=>({id:topicId})},
     "../editorial-lines/editorial-lines":{...localRequire("../editorial-lines/editorial-lines"),collectionContext:()=>({sourceIds:[lineId]}),resolveLineResearch:()=>({enabled:true,collectionContext:{sourceIds:[lineId]}})},
@@ -79,7 +85,10 @@ function workflow({failedCollection=false,collectionRunId=undefined as string|un
   });
   if(scoop)run.progress.trigger="scoop";
   if(autoApprove)run.progress.autoApprove=true;
-  return {service,calls,reservations,contentCalls,workspaceCalls,briefCalls,get run(){return run;},approveDraft(){draftApproved=true;},retry(){run.status="running";failEvaluate=false;}};
+  return {service,calls,reservations,contentCalls,workspaceCalls,briefCalls,get run(){return run;},approveDraft(){draftApproved=true;},retry(){run.status="running";failEvaluate=false;},
+    /** An editor removes the story from production, or approves it again. */
+    unselect(storyId:string){unselected.push(storyId);approved=false;},
+    reselect(storyId:string){unselected.splice(unselected.indexOf(storyId),1);approved=true;}};
 }
 test("daily workflow checkpoints collection, evaluates uncached batches then recommends",async()=>{
   const w=workflow();await w.service.drivePreparation(topicId,lineId);
@@ -425,6 +434,76 @@ test("a resumed run never prepares a story that was published since; it moves to
   assert.equal(again.run.progress.storyId,altA);
   assert.notEqual(again.run.progress.briefId,"old-brief");
   assert.equal((again.run.progress.skippedStories as {reason:string}[])[0].reason,"Already published in this topic");
+});
+
+test("a story an editor unselects after the run approved it is never selected again by continuing the run",async()=>{
+  const w=workflow({draftMode:true});w.run.progress.targetStep="approve";
+  await drain(w);
+  assert.equal(w.run.status,"completed");
+  assert.equal(w.run.progress.approvedStoryId,topicId);
+  w.unselect(topicId);
+  Object.assign(w.run,{status:"running",step:"content",progress:{...w.run.progress,targetStep:"brief"}});
+  await drain(w);
+  assert.equal(w.run.status,"needs-review");
+  assert.equal(w.run.step,"content");
+  assert.match(w.run.error ?? "",/removed from production/);
+  assert.equal(w.calls.filter(c=>c==="approve").length,1);
+  assert.equal(w.calls.includes("focus"),false);
+  // Approved again in Discover, the same run continues from where it stopped.
+  w.reselect(topicId);w.retry();
+  await drain(w);
+  assert.equal(w.run.status,"completed");
+  assert.equal(w.run.progress.completedStep,"brief");
+  assert.equal(w.calls.filter(c=>c==="approve").length,1);
+});
+
+test("a run saved before approvals were recorded also leaves an unselected story alone",async()=>{
+  const w=workflow({draftMode:true,unselected:[topicId]});
+  Object.assign(w.run,{step:"brief",status:"running",progress:{...w.run.progress,storyId:topicId,storyTitle:"Story",completedStep:"focus",targetStep:"images"}});
+  await drain(w);
+  assert.equal(w.run.status,"needs-review");
+  assert.match(w.run.error ?? "",/removed from production/);
+  assert.deepEqual(w.calls,[]);
+});
+
+test("a fallback story the run has not approved yet is still approved after a skip",async()=>{
+  const w=workflow({draftMode:true,incompleteFor:[topicId],alternatives:[altA],unselected:[altA]});
+  await drain(w);
+  assert.equal(w.run.status,"completed");
+  assert.equal(w.run.progress.storyId,altA);
+  assert.equal(w.run.progress.approvedStoryId,altA);
+});
+
+/** A schema table as plain columns (enums as text, no constraints), enough for repository queries. */
+async function createTable(client:PGlite,dialect:PgDialect,table:PgTable) {
+  const config=getTableConfig(table);
+  const columns=config.columns.map(column=>{
+    const value=column.default instanceof SQL ? dialect.sqlToQuery(column.default).sql
+      : column.default===undefined ? undefined : typeof column.default==="string" ? `'${column.default}'` : String(column.default);
+    const type=column.getSQLType().includes("enum") || column.columnType==="PgEnumColumn" ? "text" : column.getSQLType();
+    return `"${column.name}" ${type}${column.primary?" PRIMARY KEY":""}${value?` DEFAULT ${value}`:""}`;
+  });
+  await client.exec(`CREATE TABLE "${config.name}" (${columns.join(",")})`);
+}
+
+test("stories in progress are still selected, with a recent script and no publication",async()=>{
+  const client=new PGlite();
+  try {
+    const dialect=new PgDialect();
+    for(const table of [schema.stories,schema.topicStories,schema.creativeDrafts,schema.storySocialPublications])await createTable(client,dialect,table);
+    const stories=[[altA,"approved","Selected"],[altB,null,"Unselected by an editor"],[sameSource,"approved","Published"]] as const;
+    for(const [id,decision,title] of stories) {
+      await client.exec(`INSERT INTO stories(id,title) VALUES ('${id}','${title}');
+        INSERT INTO topic_stories(topic_id,story_id,review_decision) VALUES ('${topicId}','${id}',${decision?`'${decision}'`:"NULL"});
+        INSERT INTO creative_drafts(topic_id,story_id,version,status,updated_at) VALUES ('${topicId}','${id}',2,'draft',now());`);
+    }
+    await client.exec(`INSERT INTO story_social_publications(topic_id,story_id,status) VALUES ('${topicId}','${sameSource}','published')`);
+    const repo=load("./daily-preparation.repository.ts",{"@/db/client":{db:drizzle(client)},"@/db/schema":schema});
+    const rows=await repo.listStoriesInProgress(topicId) as {storyId:string;title:string;version:number}[];
+    assert.deepEqual(rows.map(row=>[row.storyId,row.title,row.version]),[[altA,"Selected",2]]);
+  } finally {
+    await client.close();
+  }
 });
 
 test("an older run with no fallbacks asks for a new run instead of preparing a published story",async()=>{

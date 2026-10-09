@@ -1,8 +1,8 @@
 import "server-only";
 import { isCreativeDraftReadyForAutomation } from "./creative-quality";
-import { approveDailyStory, DailyStoryNotEligibleError } from "./approve-daily-story";
+import { approveDailyStory, dailyStoryIsSelected, DailyStoryNotEligibleError } from "./approve-daily-story";
 import { sameEventStories, storyAlreadyPublished } from "./story-duplicates.repository";
-import { BRIEF_EVIDENCE_REVIEW_MESSAGE, DAILY_PREPARATION_STEPS, preparationTarget, type DailyPreparationStep } from "./daily-preparation.types";
+import { BRIEF_EVIDENCE_REVIEW_MESSAGE, DAILY_PREPARATION_STEPS, STORY_UNSELECTED_MESSAGE, preparationTarget, runApprovedStory, type DailyPreparationStep } from "./daily-preparation.types";
 import { prepareStoryContent } from "./prepare-selected-story-content";
 import { getStoryContent } from "./story-content.repository";
 import { approveSavedCreativeDraft, createCreativeBrief, createCreativeDraft, getCreativeWorkspaceState, improveCreativeDraftHook, recoverSavedCreativeDraft, suggestEditorialFocus } from "./manage-creative-content";
@@ -64,12 +64,18 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
     progress.storyTitle=next.title;
     note(`Trying "${next.title ?? "the next story"}"${next.via==="same-event"?" (same event, another source)":""}`);
     // Everything prepared so far belonged to the previous story.
-    for(const key of ["editorialDirection","briefId","draftId","assetBatchId","acknowledgedBriefId","provisionalImages"] as const)delete progress[key];
+    for(const key of ["editorialDirection","briefId","draftId","assetBatchId","acknowledgedBriefId","provisionalImages","approvedStoryId"] as const)delete progress[key];
     await savePreparation(run,{step:"content",progress});
     return true;
   }
+  async function approveStory(storyId:string) {
+    await approveDailyStory(topicId, storyId);
+    progress.approvedStoryId=storyId;
+  }
   try {
     await requireTopic(topicId,{active:true});
+    // An editor who unselected the story after this run approved it decides: the run stops instead of approving it again.
+    if(runApprovedStory(progress) && !(await dailyStoryIsSelected(topicId,progress.storyId!)))throw new PreparationReviewNeeded(STORY_UNSELECTED_MESSAGE);
     // A resumed or older run may still hold a story published since; never prepare it twice.
     if(progress.storyId && PRE_CREATIVE_STEPS.has(run.step) && await storyAlreadyPublished(topicId,progress.storyId))return await skip(ALREADY_PUBLISHED,false);
     if(run.step==="collect") {
@@ -162,11 +168,11 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
       return await finish("recommend", "approve");
     } else if(run.step==="approve") {
       if(!progress.storyId)throw new PreparationReviewNeeded("Choose a story to approve.");
-      await approveDailyStory(topicId, progress.storyId);
+      await approveStory(progress.storyId);
       return await finish("approve", "content");
     } else if(run.step==="content") {
       if(!progress.storyId)throw new PreparationReviewNeeded("Choose a story to prepare.");
-      try { await approveDailyStory(topicId, progress.storyId); }
+      try { await approveStory(progress.storyId); }
       catch(error) {
         if(error instanceof DailyStoryNotEligibleError && progress.skippedStories?.length)return await skip("Not eligible for approval",false);
         throw error;
@@ -208,7 +214,7 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
       // no extra cost; the legacy (flag-off) path still pays for it here,
       // exactly as it did as its own step before.
       if(!progress.storyId)throw new PreparationReviewNeeded("The recommended story is unavailable.");
-      await approveDailyStory(topicId, progress.storyId);
+      await approveStory(progress.storyId);
       const contexts=await storyCollectionContexts(topicId,progress.storyId);
       const context=contexts.find(c=>c.runId===progress.collectionRunId) ?? defaultStoryContext(contexts);
       if(contexts.length>1 && !context)throw new PreparationReviewNeeded(MULTIPLE_CONTEXTS_MESSAGE);
@@ -246,7 +252,7 @@ export async function advancePreparation(topicId:string,id:string):Promise<boole
       // does its work too), but a run already sitting here from before this
       // change must still resolve instead of erroring after deploy.
       if(!progress.storyId || !progress.briefId)throw new PreparationReviewNeeded("Review the creative brief before continuing.");
-      await approveDailyStory(topicId, progress.storyId);
+      await approveStory(progress.storyId);
       const workspace=await getCreativeWorkspaceState(topicId,progress.storyId,run.id);
       if(!workspace.briefIsCurrent || workspace.brief?.id!==progress.briefId)throw new PreparationReviewNeeded("The creative inputs changed. Review or regenerate the brief in the workspace.");
       const result=await createCreativeDraft(topicId,progress.briefId,workspace.brief.recommendedFormat,undefined,false,run.id);

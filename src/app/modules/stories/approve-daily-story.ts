@@ -3,10 +3,15 @@ import { getSelectedStoryContent, SelectedStoryContentNotFoundError } from "./st
 import { getEditorialProfile } from "./editorial-profile.repository";
 import { plannerInputs } from "./daily-editorial-planner.repository";
 import { getEditorialEvaluationPublicConfig } from "./editorial-evaluation.config";
-import { promoteEditorialReviewCandidate, reviewEditorialShortlist } from "./story-editorial.repository";
+import { promoteEditorialReviewCandidate, reviewEditorialShortlist, storyIsSelected } from "./story-editorial.repository";
 
 /** The story is no longer a planner candidate (rejected, duplicate, aged out). */
 export class DailyStoryNotEligibleError extends Error {}
+
+/** Whether the story is still selected for production; an editor may have unselected it. */
+export async function dailyStoryIsSelected(topicId: string, storyId: string) {
+  return storyIsSelected(topicId, storyId);
+}
 
 /** Reuse the planner card's approval actions; retries keep an existing approval. */
 export async function approveDailyStory(topicId: string, storyId: string) {

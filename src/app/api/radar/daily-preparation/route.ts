@@ -4,6 +4,7 @@ import { requireActiveRequestTopic, topicRequestErrorResponse } from "../radar-t
 import { noStoreJson } from "../creative-route-error";
 import { listStoryTextCallsSince } from "@/app/modules/stories/creative-text-accounting.repository";
 import { findCreativeDraftById } from "@/app/modules/stories/creative-content.repository";
+import { storyIsSelected } from "@/app/modules/stories/story-editorial.repository";
 import { listStoriesInProgress, latestPreparation, startStoryPreparation, startPreparation, retryPreparation, continuePreparation, acknowledgePreparationBrief, stopPreparation } from "@/app/modules/stories/daily-preparation.repository";
 import { DAILY_PREPARATION_STEPS, type DailyPreparationStep } from "@/app/modules/stories/daily-preparation.types";
 import { drivePreparation } from "@/app/modules/stories/daily-preparation";
@@ -65,10 +66,12 @@ async function handle(request:Request,write:boolean) {
     const calls=run?.progress.storyId ? await listStoryTextCallsSince(topicId,run.progress.storyId,new Date(run.startedAt)).catch(()=>[]) : [];
     // Stories worked on by hand, so the panel can pick one up where it was left.
     const inProgress=await listStoriesInProgress(topicId).catch(()=>[]);
+    // Whether the run's story is still in production, so the panel can offer to unselect it or say it was removed.
+    const storySelected=run?.progress.storyId ? await storyIsSelected(topicId,run.progress.storyId).catch(()=>null) : null;
     // The current script as slides (read live, so edits in the studio show here too).
     const draft=run?.progress.draftId ? await findCreativeDraftById(topicId,run.progress.draftId).catch(()=>undefined) : undefined;
     const slides=draft ? {version:draft.version,status:draft.status,units:draft.units.map(u=>({order:u.order,role:u.role,headline:u.headline,subheadline:u.subheadline ?? null}))} : null;
-    return noStoreJson({run:run?{id:run.id,topicId:run.topicId,lineId:run.lineId,timezone:run.timezone,status:run.status,step:run.step,progress:run.progress,error:run.error,startedAt:run.startedAt,updatedAt:run.updatedAt}:null,lines,calls,slides,inProgress});
+    return noStoreJson({run:run?{id:run.id,topicId:run.topicId,lineId:run.lineId,timezone:run.timezone,status:run.status,step:run.step,progress:run.progress,error:run.error,startedAt:run.startedAt,updatedAt:run.updatedAt}:null,lines,calls,slides,inProgress,storySelected});
   } catch(error) {
     const topicError=topicRequestErrorResponse(error);if(topicError)return topicError;
     if(error instanceof EditorialLineError)return noStoreJson({error:error.message},error.status);

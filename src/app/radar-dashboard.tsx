@@ -1029,20 +1029,25 @@ export function RadarDashboard({
     }
   }
 
-  async function handleUnselectStories(storyIds: string[]) {
-    if (storyIds.length === 0) return;
+  /** Resolves true once the stories left production; false when cancelled or refused. */
+  async function handleUnselectStories(storyIds: string[]): Promise<boolean> {
+    if (storyIds.length === 0) return false;
 
-    const plural = storyIds.length === 1 ? "story" : "stories";
+    const single = storyIds.length === 1;
     if (
       !window.confirm(
-        `Remove ${storyIds.length} selected ${plural} from this board? They will remain collected with their AI evaluation, drafts, and publication records, and can be approved again later.`,
+        single
+          ? "Remove this story from production? It stays collected with its AI evaluation, drafts and publication records, and you can approve it again later. A Today run preparing it stops instead of selecting it again."
+          : `Remove ${storyIds.length} stories from production? They stay collected with their AI evaluation, drafts and publication records, and you can approve them again later. Today runs preparing them stop instead of selecting them again.`,
       )
     ) {
-      return;
+      return false;
     }
 
+    let unselected = false;
     await runOperation("unselect", async () => {
       const result = await unselectStories(secret, selectedTopicId, storyIds);
+      unselected = true;
       const nextStats = await fetchDatabaseStats(secret, selectedTopicId);
 
       setStats(nextStats);
@@ -1053,6 +1058,7 @@ export function RadarDashboard({
         message: `${result.unselectedStories} ${result.unselectedStories === 1 ? "story was" : "stories were"} returned to the collected review queue.`,
       };
     });
+    return unselected;
   }
 
   function handlePromoteReviewCandidate(
@@ -1721,7 +1727,7 @@ export function RadarDashboard({
 
         <section id="overview" className={styles.anchorTarget} hidden={activeView !== "today"}>
           <UrgentStoriesBanner key={`urgent-${selectedTopicId}`} topicId={selectedTopicId} secret={panelSecret} onCountChange={setUrgentCount} onOpenStory={(storyId, preparationRunId) => openCreativeStory(storyId, { preparationRunId, tab: "script" })} />
-          <DailyPreparationPanel onOpenDraft={(storyId,_title,draftId,preparationRunId)=>openCreativeStory(storyId,{draftId,preparationRunId,tab:"script"})} key={`daily-${selectedTopicId}`} topicId={selectedTopicId} secret={panelSecret} disabled={!canAuthenticate || isBusy || isTopicLoading} refreshKey={stats} onViewContent={handleViewContent} onPrepareContent={handlePrepareContent} onSelect={handlePlannerSelect} preparingStoryId={activeOperation === "prepare" ? activeStoryId : undefined} onCompleted={()=>{void fetchDatabaseStats(secret,selectedTopicId).then(setStats).catch(()=>{});}} />
+          <DailyPreparationPanel onOpenDraft={(storyId,_title,draftId,preparationRunId)=>openCreativeStory(storyId,{draftId,preparationRunId,tab:"script"})} onUnselect={(storyId)=>handleUnselectStories([storyId])} key={`daily-${selectedTopicId}`} topicId={selectedTopicId} secret={panelSecret} disabled={!canAuthenticate || isBusy || isTopicLoading} refreshKey={stats} onViewContent={handleViewContent} onPrepareContent={handlePrepareContent} onSelect={handlePlannerSelect} preparingStoryId={activeOperation === "prepare" ? activeStoryId : undefined} onCompleted={()=>{void fetchDatabaseStats(secret,selectedTopicId).then(setStats).catch(()=>{});}} />
           <DailyEditorialPlannerPanel key={`planner-${selectedTopicId}`} topicId={selectedTopicId} secret={panelSecret} disabled={!canAuthenticate || isBusy} refreshKey={stats} onViewContent={handleViewContent} onPrepareContent={handlePrepareContent} onSelect={handlePlannerSelect} preparingStoryId={activeOperation === "prepare" ? activeStoryId : undefined} />
           <TopicOverviewPanel
             key={selectedTopicId}
@@ -2038,6 +2044,7 @@ export function RadarDashboard({
                         onUpdate={handlePublicationUpdate}
                       />
                     </details>
+                    <Button size="compact" variant="quiet" onClick={() => { void handleUnselectStories([story.storyId]); }} disabled={!canAuthenticate || isBusy}>Unselect</Button>
                   </div>
                 </article>;
               })}
@@ -2501,7 +2508,11 @@ function EditorialEvaluationPanel({
   const unevaluatedCount = collectedStories.length - evaluatedCount;
   const readyToSelectCount = collectedStories.filter(isReadyToSelectCandidate).length;
   const activeSelectedCount = countActiveSelected(selectedStories);
-  const selectedStoryIdsForClear = selectedStories.map((story) => story.storyId);
+  // Only stories still in production: Publications lists the published ones
+  // from their selection, so clearing them would hide them there.
+  const selectedStoryIdsForClear = selectedStories
+    .filter((story) => storyPublicationStage(story).active)
+    .map((story) => story.storyId);
   // Published has its own Publications view. This quick filter matches the
   // active Production queue, including Stories pending on another platform.
   const quickViews: {
@@ -2846,7 +2857,7 @@ function EditorialEvaluationPanel({
                     >
                       {isReviewing
                         ? "Clearing…"
-                        : `Clear selected stories (${selectedStoryIdsForClear.length})`}
+                        : `Unselect all in production (${selectedStoryIdsForClear.length})`}
                     </button>
                   ) : null}
                 </div>

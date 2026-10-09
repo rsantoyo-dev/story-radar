@@ -923,6 +923,25 @@ export async function unselectEditorialStories(
   return returnedRows.length;
 }
 
+/** Whether a human approval currently keeps the story in production for this topic. */
+export async function storyIsSelected(
+  topicId: string,
+  storyId: string,
+): Promise<boolean> {
+  const rows = await db
+    .select({ storyId: topicStories.storyId })
+    .from(topicStories)
+    .where(
+      and(
+        eq(topicStories.topicId, topicId),
+        eq(topicStories.storyId, storyId),
+        eq(topicStories.reviewDecision, "approved"),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
+}
+
 /**
  * A human can explicitly promote an AI "review" or "reject" recommendation
  * after reading the source (e.g. evergreen owned-content reference material the

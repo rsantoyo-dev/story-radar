@@ -62,12 +62,29 @@ export type DailyPreparationProgress = {
   coverReviewRequestId?: string;
   /** What the system approved on its own, for the audit trail. */
   autoApproved?: { draftId?: string; draftApprovedAt?: string; assetIds?: string[]; imagesApprovedAt?: string };
+  /** The story this run approved for production; an editor may unselect it later. */
+  approvedStoryId?: string;
 };
 /** The brief step's contentSufficiency checkpoint message — a human already
  * reviewing it in the workspace can override it once for this exact brief;
  * a shared constant keeps the throw site and the panel's button in sync. */
 export const BRIEF_EVIDENCE_REVIEW_MESSAGE =
   "The creative brief needs more evidence. Review the content and brief before continuing.";
+/** An editor unselected the story after the run approved it; the run never selects it again on its own. */
+export const STORY_UNSELECTED_MESSAGE =
+  "This story was removed from production, so the run stopped instead of selecting it again. Start a new run to choose another story, or approve this one again in Discover to continue.";
+/**
+ * Whether the run has already approved its current story. Runs saved before
+ * `approvedStoryId` existed approved it once they went past Approve without
+ * moving to a fallback story.
+ */
+export function runApprovedStory(progress: DailyPreparationProgress): boolean {
+  if (!progress.storyId) return false;
+  if (progress.approvedStoryId !== undefined) return progress.approvedStoryId === progress.storyId;
+  if (progress.skippedStories?.length || !progress.completedStep) return false;
+  const completed = progress.completedStep === "draft" ? "brief" : progress.completedStep;
+  return DAILY_PREPARATION_STEPS.indexOf(completed) >= DAILY_PREPARATION_STEPS.indexOf("approve");
+}
 export type DailyPreparationRun = {
   id:string;topicId:string;lineId:string;timezone:string;status:string;step:string;
   progress:DailyPreparationProgress;error:string|null;startedAt:string;updatedAt:string;
