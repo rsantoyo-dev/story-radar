@@ -170,17 +170,18 @@ test("a quoted editorialGoal label in narrativeRationale is not read as an unsup
     ),
   );
 
-  // An actual unsupported claim in narrativeRationale is still caught.
+  // An actual unsupported claim in narrativeRationale is still caught, as a
+  // warning: the note is internal and copied from the brief's plan.
   const draftWithRealClaim: GeneratedCreativeDraft = {
     ...draftWithLabel,
     narrativeRationale:
       "The larger roster proves the team is favored to win the season.",
   };
-  assert.ok(
-    deterministicFactQualityIssues(draftWithRealClaim, facts).some(
-      (issue) => issue.code === "UNSUPPORTED_INFERENCE",
-    ),
+  const caught = deterministicFactQualityIssues(draftWithRealClaim, facts).find(
+    (issue) => issue.code === "RATIONALE_UNSUPPORTED_INFERENCE",
   );
+  assert.equal(caught?.severity, "warning");
+  assert.match(caught?.message ?? "", /proves the team is favored/);
 });
 
 test("carousel slide counts in the internal rationale are not unsupported Story numbers", () => {

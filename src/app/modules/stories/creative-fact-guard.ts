@@ -358,22 +358,14 @@ const FACT_REFERENCE_LABEL = new RegExp(
 );
 
 /**
- * The first inference the facts do not support, with the field it is in and
- * the words around it, so a correction knows exactly what to change.
+ * The first inference the facts do not support among these fields, with the
+ * field it is in and the words around it, so a correction knows exactly what
+ * to change.
  */
 export function unsupportedInferenceLocation(
-  draft: Pick<GeneratedCreativeDraft, "concept" | "narrativeRationale" | "caption" | "callToAction" | "altText" | "units">,
+  fields: readonly (readonly [field: string, text: string | undefined])[],
   sourceCopy: string,
 ): { field: string; phrase: string } | undefined {
-  const fields: [string, string | undefined][] = [
-    ["concept", draft.concept],
-    // Planning labels and slide counts describe this draft's structure. The
-    // remaining rationale still receives the same factual checks.
-    ["narrative rationale", stripNarrativePlanningLabels(draft.narrativeRationale, draft.units.filter((unit) => unit.role === "content").length)],
-    ["caption", draft.caption],
-    ["call to action", draft.callToAction],
-    ["alt text", draft.altText],
-  ];
   for (const { pattern, sourceSupport } of UNSUPPORTED_INFERENCE_PATTERNS) {
     if (sourceSupport.test(sourceCopy)) continue;
     for (const [field, text] of fields) {
@@ -438,15 +430,30 @@ export function deterministicFactQualityIssues(
       message: `The publishing copy uses ${unsupportedDraftNumbers.join(", ")} without support from the creative brief.`,
     });
   }
-  const inference = unsupportedInferenceLocation(draft, allSourceCopy);
+  // Named field and words: a repair told only "the copy adds a consequence"
+  // could not find what to change (October 2026).
+  const inference = unsupportedInferenceLocation([
+    ["concept", draft.concept], ["caption", draft.caption], ["call to action", draft.callToAction], ["alt text", draft.altText],
+  ], allSourceCopy);
   if (inference) {
-    // Named field and words: a repair told only "the copy adds a consequence"
-    // rewrote the slides and left the caption's "drives" in place, round after
-    // round (October 2026).
     issues.push({
       code: "UNSUPPORTED_INFERENCE",
       severity: "blocker",
       message: `The ${inference.field} says "${inference.phrase}": a trend, causal effect, or consequence that the key facts do not establish. Remove or rephrase it there.`,
+    });
+  }
+  // The narrative rationale is an internal note, never published, and the
+  // writer copies it from the brief's plan, so no rewrite can change it: a
+  // planner's "shifting capability focus" kept a Pentagon carousel blocked
+  // through every repair (October 2026). It is still reported, for the editor.
+  const rationaleInference = unsupportedInferenceLocation([
+    ["narrative rationale", stripNarrativePlanningLabels(draft.narrativeRationale, draft.units.filter((unit) => unit.role === "content").length)],
+  ], allSourceCopy);
+  if (rationaleInference) {
+    issues.push({
+      code: "RATIONALE_UNSUPPORTED_INFERENCE",
+      severity: "warning",
+      message: `The narrative rationale (an internal note, never published) says "${rationaleInference.phrase}": a trend, causal effect, or consequence that the key facts do not establish. Edit the note if it misdescribes the story.`,
     });
   }
   const altTextMismatch = findAltTextSlideMismatch(draft);

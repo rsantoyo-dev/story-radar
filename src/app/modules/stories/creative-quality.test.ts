@@ -177,19 +177,23 @@ test("drops a leftover rationale when the arc follows the preferred sequence", (
   );
 });
 
-test("blocks an unsupported common-infrastructure conclusion in the rationale", () => {
+test("reports an unsupported common-infrastructure conclusion in the rationale without blocking", () => {
   const unsupportedInference = structuredClone(draft);
   unsupportedInference.narrativeRationale =
     "The overlapping outages expose a common cloud choke point.";
 
-  assert.ok(
-    deterministicCreativeQualityIssues(
-      unsupportedInference,
-      "carousel",
-      facts,
-      "English",
-    ).some((issue) => issue.code === "UNSUPPORTED_INFERENCE"),
-  );
+  const issues = deterministicCreativeQualityIssues(unsupportedInference, "carousel", facts, "English");
+  // The rationale is an internal note copied from the brief's plan: reported, never a blocker.
+  assert.ok(issues.some((issue) => issue.code === "RATIONALE_UNSUPPORTED_INFERENCE" && issue.severity === "warning"));
+  assert.ok(!issues.some((issue) => issue.code === "UNSUPPORTED_INFERENCE"));
+
+  // The same conclusion in published copy still blocks, naming where it is.
+  const inCaption = structuredClone(draft);
+  inCaption.caption = "The overlapping outages expose a common cloud choke point.";
+  const captionIssue = deterministicCreativeQualityIssues(inCaption, "carousel", facts, "English")
+    .find((issue) => issue.code === "UNSUPPORTED_INFERENCE");
+  assert.equal(captionIssue?.severity, "blocker");
+  assert.match(captionIssue?.message ?? "", /^The caption says ".*common cloud choke point/);
 });
 
 test("flags a table-of-contents caption on a carousel", () => {
