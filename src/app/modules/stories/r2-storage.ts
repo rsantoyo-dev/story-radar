@@ -1,4 +1,5 @@
 import "server-only";
+import { withTransientR2Retry } from "./r2-retry";
 
 import {
   CopyObjectCommand,
@@ -57,7 +58,9 @@ export async function putPrivateR2Object({
 
   const { client, configuration } = getR2Client();
   try {
-    await client.send(
+    // A PUT of the same bytes under the same key is idempotent, so a dropped
+    // connection is retried instead of failing a whole publication.
+    await withTransientR2Retry(() => client.send(
       new PutObjectCommand({
         Bucket: configuration.bucket,
         Key: objectKey,
@@ -66,7 +69,7 @@ export async function putPrivateR2Object({
         ...(metadata ? { Metadata: metadata } : {}),
       }),
       { abortSignal: signal },
-    );
+    ), { signal });
   } catch (error) {
     throw new R2StorageObjectError(
       `The private object could not be stored in R2: ${errorMessage(error)}`,
