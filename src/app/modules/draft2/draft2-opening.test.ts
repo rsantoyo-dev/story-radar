@@ -6,10 +6,12 @@ import vm from "node:vm";
 import ts from "typescript";
 import * as types from "./draft2-facts.types";
 import * as openingTypes from "./draft2-opening.types";
+import * as focusTypes from "./draft2-focus.types";
 import * as models from "./draft2-models";
 import * as skills from "./skills/draft2-skills";
 import * as hooks from "./skills/hooks";
 import type { Draft2Opening, Draft2OpeningCandidate, Draft2OpeningScore } from "./draft2-opening.types";
+import type { Draft2Focus, Draft2FocusValues } from "./draft2-focus.types";
 
 const localRequire = createRequire(import.meta.url);
 const topicId = "11111111-1111-4111-8111-111111111111";
@@ -21,6 +23,21 @@ const facts: types.Draft2Fact[] = [
   { id: "f2", claim: "A DOD official says awards took less than a week in several instances.", evidence: "A DOD official says awards took less than a week in several instances", kind: "event", status: "attributed", attribution: "A DOD official", importance: 80 },
 ];
 const factsThreads = { openai: { model: "gpt-6.1-sol", responseId: "resp_facts" }, anthropic: { model: "claude-sonnet-5-5", history: [{ role: "user", text: "{\"article\":{}}" }, { role: "assistant", text: "{\"verdict\":\"valid\"}" }] } };
+/** A focus Claude decided and the editor left as it was. */
+const FOCUS_VALUES: Draft2FocusValues = {
+  line: { id: "55555555-5555-4555-8555-555555555555", revision: 2, name: "Actualidad", objective: "Recent defence AI news for founders who sell to government." },
+  audience: "Founders who sell software to the Pentagon",
+  framing: "reader-consequence",
+  readerConsequence: { text: "A short product video can now open a Pentagon contract.", factIds: ["f1", "f2"] },
+  structure: { kind: "arc", itemFactIds: [] },
+  goal: "followers",
+  voice: { gravity: "ordinary", formality: 30, humor: 40, energy: 70, optimism: 60, provocation: 60 },
+  direction: "Lead with the five-minute video; pay it with the award time.",
+};
+const FOCUS: Draft2Focus = {
+  status: "ready", version: 2, values: FOCUS_VALUES, ai: FOCUS_VALUES, reasons: {}, edited: [], lineOptions: [FOCUS_VALUES.line!],
+  decidedBy: { provider: "anthropic", model: "claude-sonnet-5-5" }, decidedAt: "2026-10-10T12:00:00.000Z",
+};
 const profile = { name: "Example Daily", language: "English", region: "Austin", platform: "Instagram", audience: "Founders who sell to government", brandPersonality: ["direct"], formality: 30, humor: 70, energy: 70, optimism: 60, provocation: 60 };
 
 const HEADLINES = [
@@ -65,7 +82,7 @@ const proposalsFor = (contents: JudgeContents) => contents.proposalsWanted
   : [];
 
 const score = (candidateId: string, overall: number, overrides: Partial<Draft2OpeningScore> = {}): Draft2OpeningScore =>
-  ({ candidateId, tension: overall, payoff: overall, clarity: overall, grounding: overall, voice: overall, overall, note: "Why.", ...overrides });
+  ({ candidateId, tension: overall, payoff: overall, clarity: overall, grounding: overall, voice: overall, focus: overall, overall, note: "Why.", ...overrides });
 
 /** Claude: scores every candidate it receives (`overall` per id, or a full score, 70 otherwise) and proposes when asked. */
 const judge = (verdict: "accept" | "revise", winnerId: string, overall: Record<string, number | Draft2OpeningScore>, extra: Record<string, unknown> = {}) => (contents: JudgeContents) => ({
@@ -76,7 +93,7 @@ const judge = (verdict: "accept" | "revise", winnerId: string, overall: Record<s
 });
 
 type Call = { provider: "openai" | "anthropic"; role: "writer" | "judge"; input: Record<string, unknown> };
-type Row = Record<string, unknown> & { opening: Draft2Opening | null; threads: types.Draft2Threads; trace: types.Draft2TraceEntry[] };
+type Row = Record<string, unknown> & { opening: Draft2Opening | null; focus: Draft2Focus | null; threads: types.Draft2Threads; trace: types.Draft2TraceEntry[] };
 
 /** The orchestrator with both providers, the profile and the database replaced; `writes` and `judgments` decide each round. */
 function harness({ writes, judgments, failAt, session, busy = false, claimRefused = false, secondsPerCall }: {
@@ -91,7 +108,7 @@ function harness({ writes, judgments, failAt, session, busy = false, claimRefuse
 }) {
   const calls: Call[] = [];
   let row: Row = {
-    id: sessionId, topicId, storyId, step: "facts", status: "ready", facts, evaluation: null, rounds: [], opening: null, error: null,
+    id: sessionId, topicId, storyId, step: "focus", status: "ready", facts, evaluation: null, rounds: [], focus: FOCUS, opening: null, error: null,
     threads: factsThreads as types.Draft2Threads,
     trace: [{ at: "2026-10-09T12:00:00.000Z", step: "facts", round: 1, provider: "openai", model: "gpt-6.1-sol", operation: "draft2_facts", durationMs: 10, outcome: "ok" }],
     ...session,
@@ -119,6 +136,7 @@ function harness({ writes, judgments, failAt, session, busy = false, claimRefuse
     "server-only": {},
     "./draft2-facts.types": types,
     "./draft2-opening.types": openingTypes,
+    "./draft2-focus.types": focusTypes,
     "./draft2-models": models,
     "./skills/draft2-skills": skills,
     "./skills/hooks": hooks,
@@ -148,6 +166,8 @@ function harness({ writes, judgments, failAt, session, busy = false, claimRefuse
     run: (options: { resume?: boolean } = {}) => exports.runDraft2Opening({ topicId, storyId, sessionId, ...options }),
     choose: (candidateId: string) => exports.recordOpeningChoice({ topicId, sessionId, candidateId }),
     calls,
+    /** Changes the stored session between requests, as the editor would. */
+    patch: (values: Partial<Row>) => { row = { ...row, ...values }; },
     writerCalls: () => calls.filter((call) => call.role === "writer").map((call) => call.input.contents as WriterContents),
     judgeCalls: () => calls.filter((call) => call.role === "judge").map((call) => call.input),
     row: () => row,
@@ -157,13 +177,13 @@ function harness({ writes, judgments, failAt, session, busy = false, claimRefuse
 const json = (value: unknown) => JSON.stringify(value);
 const ROUND_ONE = HEADLINES.map((_, index) => `c${index + 1}`);
 
-test("Claude writes and Sol judges; both read the facts snapshot where their provider caches it, never a conversation", async () => {
+test("Claude writes and Sol judges; both read the focus and the facts snapshot where their provider caches it, never a conversation", async () => {
   const h = harness({ writes: [writer()], judgments: [judge("accept", "c1", { c1: 96 })] });
   const session = await h.run();
   assert.equal(h.calls.map((call) => `${call.role}:${call.provider}`).join(","), "writer:anthropic,judge:openai");
   const [claude, sol] = h.calls;
   assert.equal(claude.input.history, undefined, "the writer gets no transcript");
-  assert.equal(json(claude.input.context), json({ verifiedFacts: openingTypes.openingFactsSnapshot(facts) }), "the facts travel as Claude's cached context");
+  assert.equal(json(claude.input.context), json({ focus: focusTypes.focusForModels(FOCUS_VALUES), verifiedFacts: openingTypes.openingFactsSnapshot(facts) }), "the focus and the facts travel as Claude's cached context");
   assert.deepEqual(Object.keys(claude.input.contents as object), ["task", "candidatesWanted"]);
   assert.equal((claude.input.contents as WriterContents).candidatesWanted, 15, "the first round explores fifteen hooks");
   assert.equal(claude.input.effort, "high");
@@ -171,7 +191,8 @@ test("Claude writes and Sol judges; both read the facts snapshot where their pro
   assert.equal(sol.input.previousResponseId, undefined, "Sol keeps no conversation");
   assert.equal(sol.input.store, undefined);
   assert.equal(sol.input.context, undefined);
-  assert.equal(Object.keys(sol.input.contents as object)[0], "verifiedFacts", "the facts lead Sol's input, so OpenAI reads them from its cache");
+  assert.deepEqual(Object.keys(sol.input.contents as object).slice(0, 2), ["focus", "verifiedFacts"], "the focus and the facts lead Sol's input, so OpenAI reads them from its cache");
+  assert.equal(json((sol.input.contents as { focus: unknown }).focus), json(focusTypes.focusForModels(FOCUS_VALUES)));
   assert.equal(json((sol.input.contents as { verifiedFacts: unknown }).verifiedFacts), json(openingTypes.openingFactsSnapshot(facts)));
   assert.equal((sol.input.contents as JudgeContents).proposalsWanted, 3, "round 1 asks Sol for three openings of its own");
   assert.equal(sol.input.reasoningEffort, "high");
@@ -187,7 +208,44 @@ test("Claude writes and Sol judges; both read the facts snapshot where their pro
   assert.equal(session.opening?.candidates.length, 15);
   assert.equal(json(session.threads), json(factsThreads), "the facts conversations are left as they were");
   assert.equal(session.trace.length, 3, "the facts trace is kept and the opening's calls are added");
-  assert.equal(json(session.trace.slice(1).map((entry) => [entry.step, entry.provider, entry.operation, entry.skillVersions])), json([["opening", "anthropic", "draft2_opening", { hooks: "5" }], ["opening", "openai", "draft2_opening_review", { hooks: "5" }]]));
+  assert.equal(json(session.trace.slice(1).map((entry) => [entry.step, entry.provider, entry.operation, entry.skillVersions])), json([["opening", "anthropic", "draft2_opening", { hooks: "6" }], ["opening", "openai", "draft2_opening_review", { hooks: "6" }]]));
+  assert.equal(json(session.opening?.focus), json({ version: 2, values: FOCUS_VALUES }), "the run records the focus it followed");
+});
+
+test("the opening follows a decided focus: none, one still being decided or one with a finding stops it before any call", async () => {
+  await assert.rejects(harness({ writes: [], judgments: [], session: { focus: null } }).run(), (error: Error) => error instanceof types.Draft2InputError && /Decide the focus first/.test(error.message));
+  await assert.rejects(harness({ writes: [], judgments: [], session: { focus: { ...FOCUS, status: "running" } } }).run(), /still being decided/);
+  const noConsequence = { ...FOCUS, values: { ...FOCUS_VALUES, readerConsequence: null } };
+  await assert.rejects(harness({ writes: [], judgments: [], session: { focus: noConsequence } }).run(), /Fix the focus first: The framing leads with the reader consequence/);
+  const failedLater = harness({ writes: [writer()], judgments: [judge("accept", "c1", { c1: 96 })], session: { step: "focus", status: "failed", focus: { ...FOCUS, status: "failed", error: "HTTP 529" } } });
+  assert.equal((await failedLater.run()).opening?.focus?.version, 2, "a failed later decision leaves the values from before, which the opening may follow");
+});
+
+test("a paused run continues with the focus it started with, even after the editor changed the focus", async () => {
+  const h = harness({
+    writes: [writer(), writer(), writer()],
+    judgments: [judge("revise", "c3", { c3: 84, c5: 80, c1: 79 }), judge("revise", "c16", { c16: 90, "c3.2": 88 }), judge("accept", "c16.3", { "c16.3": 96 })],
+    secondsPerCall: 60,
+  });
+  await h.run();
+  h.patch({ focus: { ...FOCUS, version: 3, values: { ...FOCUS_VALUES, goal: "saves" }, edited: ["goal"] } });
+  const finished = await h.run({ resume: true });
+  const read = h.calls.map((call) => json(call.role === "writer" ? (call.input.context as { focus: unknown }).focus : (call.input.contents as { focus: unknown }).focus));
+  assert.equal(new Set(read).size, 1, "every call of the run read the focus it started with");
+  assert.equal(finished.opening?.focus?.version, 2);
+});
+
+test("a run stored before the Focus step cannot continue; it is written again", async () => {
+  const earlier = { status: "paused", resumeRound: 2, rounds: [], candidates: [] };
+  await assert.rejects(harness({ writes: [], judgments: [], session: { step: "opening", status: "needs-review", opening: earlier } }).run({ resume: true }), /started before the Focus step/);
+});
+
+test("a steps or list focus lets the cover promise its count", async () => {
+  const steps = { ...FOCUS, values: { ...FOCUS_VALUES, structure: { kind: "steps" as const, itemFactIds: ["f1", "f2"] } } };
+  const h = harness({ writes: [writer({ c1: "2 steps to a Pentagon award" })], judgments: [judge("accept", "c1", { c1: 96 })], session: { focus: steps } });
+  const session = await h.run();
+  assert.deepEqual(session.opening?.rounds[0].mechanical, [], "2 is the number of steps the focus names");
+  assert.equal(session.opening?.winnerId, "c1");
 });
 
 test("loop: fifteen openings; then three revised beside the judge's three proposals, as written and edited; then two revised beside its last proposal, for the final pick", async () => {
@@ -241,7 +299,7 @@ test("regression: a revision that scores lower, or loses grounding the overall d
   });
   const session = await h.run();
   assert.equal(json(session.opening?.rounds[1].regressions?.map((regression) => [regression.candidateId, regression.previousId, regression.worse])), json([
-    ["c3.2", "c3", ["tension 84 → 78", "payoff 84 → 78", "clarity 84 → 78", "voice 84 → 72"]],
+    ["c3.2", "c3", ["tension 84 → 78", "payoff 84 → 78", "clarity 84 → 78", "voice 84 → 72", "focus 84 → 78"]],
     ["c1.2", "c1", ["grounding 79 → 70"]],
   ]));
   const third = h.writerCalls()[2];
@@ -389,7 +447,7 @@ test("a malformed judgment fails the step", async () => {
 });
 
 test("the opening starts only on verified facts, one run at a time", async () => {
-  await assert.rejects(harness({ writes: [], judgments: [], session: { status: "needs-review" } }).run(), (error: Error) => error instanceof types.Draft2InputError && /verified facts/.test(error.message));
+  await assert.rejects(harness({ writes: [], judgments: [], session: { step: "facts", status: "needs-review" } }).run(), (error: Error) => error instanceof types.Draft2InputError && /verified facts/.test(error.message));
   await assert.rejects(harness({ writes: [], judgments: [], busy: true }).run(), (error: Error) => error instanceof types.Draft2BusyError);
   await assert.rejects(harness({ writes: [], judgments: [], claimRefused: true }).run(), (error: Error) => error instanceof types.Draft2BusyError, "a concurrent request claimed the session first");
   await assert.rejects(harness({ writes: [], judgments: [], session: { storyId: "44444444-4444-4444-8444-444444444444" } }).run(), /not found for the story/);

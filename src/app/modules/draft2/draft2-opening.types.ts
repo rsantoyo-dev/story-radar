@@ -1,4 +1,5 @@
 import { comparableText, Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
+import type { Draft2FocusSnapshot } from "./draft2-focus.types";
 import type { Draft2Provider } from "./draft2-models";
 
 /**
@@ -15,7 +16,8 @@ import type { Draft2Provider } from "./draft2-models";
  * proposals, as written and edited; then the two best revised beside its
  * last proposal, for its final pick. The program keeps the better of each
  * version and its revision, and a material factual error keeps any version
- * from winning. Everything here is pure:
+ * from winning. Every run follows the story's focus (draft2-focus.types.ts),
+ * which both models read and the judge scores. Everything here is pure:
  * contracts, schemas, parsing, the mechanical checks, version bookkeeping
  * and the acceptance rule.
  */
@@ -55,12 +57,13 @@ export const SLIDE2_BODY_MAX_WORDS = 30;
 /** Slide 2 restates the cover when this share of their longer words is the same. */
 export const SLIDE2_RESTATEMENT_OVERLAP = 0.5;
 
-export const OPENING_CRITERIA = ["tension", "payoff", "clarity", "grounding", "voice"] as const;
+/** "focus" came with the Focus step: scores stored before it have none, and read as passing on it. */
+export const OPENING_CRITERIA = ["tension", "payoff", "clarity", "grounding", "voice", "focus"] as const;
 export const OPENING_MECHANICAL_CODES = [
   "FACT_UNKNOWN", "NO_FACTS", "COVER_TOO_LONG", "SUBHEADLINE_TOO_LONG", "SLIDE2_HEADLINE_TOO_LONG", "SLIDE2_BODY_TOO_LONG",
   "ATTRIBUTION_ON_COVER", "SLIDE2_RESTATES_COVER", "SLIDE2_NO_NEW_FACT", "UNSUPPORTED_NUMBER", "DUPLICATE_CANDIDATE",
 ] as const;
-export const OPENING_JUDGE_CODES = ["WEAK_TENSION", "PROMISE_NOT_PAID", "UNCLEAR", "OVERCLAIMS", "OFF_VOICE", "LABEL_NOT_HOOK", "OTHER"] as const;
+export const OPENING_JUDGE_CODES = ["WEAK_TENSION", "PROMISE_NOT_PAID", "UNCLEAR", "OVERCLAIMS", "OFF_VOICE", "OFF_FOCUS", "LABEL_NOT_HOOK", "OTHER"] as const;
 export const OPENING_ISSUE_CODES = [...OPENING_MECHANICAL_CODES, ...OPENING_JUDGE_CODES] as const;
 
 export type Draft2OpeningCriterion = (typeof OPENING_CRITERIA)[number];
@@ -97,6 +100,8 @@ export type Draft2OpeningScore = {
   clarity: number;
   grounding: number;
   voice: number;
+  /** How well the opening follows the story's focus; absent on scores stored before the Focus step. */
+  focus?: number;
   overall: number;
   /** One sentence: why this score. */
   note: string;
@@ -161,6 +166,8 @@ export type Draft2Opening = {
   /** Who wrote and who judged this run; a run stored before the swap has none (Sol wrote, Claude judged). */
   writer?: Draft2OpeningRole;
   judge?: Draft2OpeningRole;
+  /** The focus this run followed; a run stored before the Focus step has none. */
+  focus?: Draft2FocusSnapshot;
   /** Earlier runs of the step on this session, oldest first, without their rounds. */
   previousRuns?: Draft2OpeningRun[];
 };
@@ -344,12 +351,8 @@ export function parseOpeningEvaluation(answer: string, candidateIds: readonly st
       if (typeof number !== "number" || !Number.isInteger(number)) throw new Draft2ResponseError(`The judge's ${key} score for ${candidateId} is not an integer`);
       return Math.min(100, Math.max(1, number));
     };
-    return {
-      candidateId,
-      tension: value("tension"), payoff: value("payoff"), clarity: value("clarity"), grounding: value("grounding"), voice: value("voice"),
-      overall: value("overall"),
-      note: text(item.note, 600) ?? "",
-    };
+    const criteria = Object.fromEntries(OPENING_CRITERIA.map((criterion) => [criterion, value(criterion)])) as Record<Draft2OpeningCriterion, number>;
+    return { candidateId, ...criteria, overall: value("overall"), note: text(item.note, 600) ?? "" };
   });
   const unscored = candidateIds.filter((id) => !scored.has(id));
   if (unscored.length) throw new Draft2ResponseError(`The judge did not score ${unscored.join(", ")}`);
@@ -400,8 +403,13 @@ function numbersIn(value: string): { written: string; digits: string }[] {
 
 const headlineKey = (value: string) => comparableText(value).replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 
-/** The program's findings on each candidate, before the judge. They never depend on a model and they block a candidate from winning. */
-export function mechanicalOpeningIssues(candidates: readonly Draft2OpeningCandidate[], facts: readonly Draft2Fact[]): Draft2OpeningIssue[] {
+/**
+ * The program's findings on each candidate, before the judge. They never
+ * depend on a model and they block a candidate from winning. `itemCount`, the
+ * number of items or steps the focus names, counts as a stated number: a
+ * list's cover promises it ("5 things to do") though no fact states it.
+ */
+export function mechanicalOpeningIssues(candidates: readonly Draft2OpeningCandidate[], facts: readonly Draft2Fact[], { itemCount }: { itemCount?: number } = {}): Draft2OpeningIssue[] {
   const byId = new Map(facts.map((fact) => [fact.id, fact]));
   const headlines = new Map<string, Draft2OpeningCandidate>();
   const issues: Draft2OpeningIssue[] = [];
@@ -433,7 +441,7 @@ export function mechanicalOpeningIssues(candidates: readonly Draft2OpeningCandid
       add("SLIDE2_NO_NEW_FACT", "slide2", "Slide 2 cites only facts the cover already used; its payoff needs one the cover did not spend.");
     }
     const cited = [...cover.factIds, ...slide2.factIds].flatMap((id) => { const fact = byId.get(id); return fact ? [fact] : []; });
-    const stated = new Set(cited.flatMap((fact) => [...numbersIn(fact.claim), ...numbersIn(fact.evidence)].map((number) => number.digits)));
+    const stated = new Set([...cited.flatMap((fact) => [...numbersIn(fact.claim), ...numbersIn(fact.evidence)].map((number) => number.digits)), ...(itemCount ? [String(itemCount)] : [])]);
     for (const [part, value] of [["cover", `${cover.headline} ${cover.subheadline}`], ["slide2", `${slide2.headline} ${slide2.body}`]] as const) {
       const unsupported = [...new Set(numbersIn(value).filter((number) => !stated.has(number.digits)).map((number) => number.written))];
       if (unsupported.length) add("UNSUPPORTED_NUMBER", part, `${unsupported.join(", ")} ${unsupported.length === 1 ? "is" : "are"} not stated by the facts this candidate cites.`);
@@ -447,9 +455,12 @@ export function mechanicalOpeningIssues(candidates: readonly Draft2OpeningCandid
   return issues;
 }
 
-/** Whether a score meets the skill's thresholds: overall ≥ 95 and no criterion below 85. */
+/** A criterion's score, or undefined on a score stored before the criterion existed (the focus). */
+export const criterionScore = (score: Draft2OpeningScore, criterion: Draft2OpeningCriterion): number | undefined => score[criterion];
+
+/** Whether a score meets the skill's thresholds: overall ≥ 95 and no criterion below 85 (a criterion it predates does not count). */
 export function openingScorePasses(score: Draft2OpeningScore): boolean {
-  return score.overall >= OPENING_ACCEPT_SCORE && OPENING_CRITERIA.every((criterion) => score[criterion] >= OPENING_CRITERION_FLOOR);
+  return score.overall >= OPENING_ACCEPT_SCORE && OPENING_CRITERIA.every((criterion) => (criterionScore(score, criterion) ?? OPENING_CRITERION_FLOOR) >= OPENING_CRITERION_FLOOR);
 }
 
 /** Candidates that may not win: any program finding, or a material factual error the judge named. */
@@ -563,8 +574,12 @@ export function openingRegressions(revisions: readonly Draft2OpeningVersion[], p
   return revisions.flatMap((revision) => {
     const before = previous.find((version) => version.candidate.id === revision.candidate.revisionOf);
     if (!before?.score || !revision.score) return [];
+    const lost = (criterion: Draft2OpeningCriterion) => {
+      const [from, to] = [criterionScore(before.score!, criterion), criterionScore(revision.score!, criterion)];
+      return from !== undefined && to !== undefined && to < from ? [`${criterion} ${from} → ${to}`] : [];
+    };
     const worse = [
-      ...OPENING_CRITERIA.filter((criterion) => revision.score![criterion] < before.score![criterion]).map((criterion) => `${criterion} ${before.score![criterion]} → ${revision.score![criterion]}`),
+      ...OPENING_CRITERIA.flatMap(lost),
       ...(before.findings.length ? [] : revision.findings.map((finding) => finding.code)),
       ...(hasMaterialError(before) ? [] : revision.issues.filter((issue) => issue.material).map((issue) => `material ${issue.code}`)),
     ];
@@ -712,7 +727,7 @@ export function openingJudgeRequest(round: number, candidates: readonly Draft2Op
 /** Why a run ends without an accepted opening: the best version's weak criteria and what is left to fix on it. */
 export function openingReviewNote(best: Draft2OpeningVersion | undefined, last: Draft2OpeningRound | undefined, lead: string): string {
   const score = best?.score;
-  const weak = score ? OPENING_CRITERIA.filter((criterion) => score[criterion] < OPENING_CRITERION_FLOOR).map((criterion) => `${criterion} ${score[criterion]}`) : [];
+  const weak = score ? OPENING_CRITERIA.flatMap((criterion) => { const value = criterionScore(score, criterion); return value !== undefined && value < OPENING_CRITERION_FLOOR ? [`${criterion} ${value}`] : []; }) : [];
   const standing = best && score
     ? `The best version, ${best.candidate.id}, scored ${score.overall}/100${weak.length ? ` (${weak.join(", ")})` : ""}.`
     : "Every version has a program finding.";
@@ -739,5 +754,6 @@ export function openingRunSummary(opening: Draft2Opening): Draft2OpeningRun {
     ...(opening.error ? { error: opening.error } : {}),
     ...(opening.writer ? { writer: opening.writer } : {}),
     ...(opening.judge ? { judge: opening.judge } : {}),
+    ...(opening.focus ? { focus: opening.focus } : {}),
   };
 }

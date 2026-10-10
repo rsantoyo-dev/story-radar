@@ -9,6 +9,10 @@ import { COLLECTION_RUN_STALE_MINUTES, CollectionRunFailedError, defaultStoryCon
 
 const asLine = (row: typeof editorialLines.$inferSelect): EditorialLine => ({...row.config,id:row.id,topicId:row.topicId,revision:row.revision,archived:row.archived,isDefault:row.id===defaultEditorialLineId(row.topicId)});
 export async function listEditorialLines(topicId:string) { await ensureDefaultEditorialLine(topicId); return (await db.select().from(editorialLines).where(eq(editorialLines.topicId,topicId)).orderBy(desc(editorialLines.updatedAt))).map(asLine); }
+/** The Topic's lines that are not archived, newest first. A read only: unlike listEditorialLines it never creates the default line. */
+export async function activeEditorialLines(topicId:string):Promise<EditorialLine[]> {
+  return (await db.select().from(editorialLines).where(and(eq(editorialLines.topicId,topicId),eq(editorialLines.archived,false))).orderBy(desc(editorialLines.updatedAt))).map(asLine);
+}
 export async function getEditorialLine(topicId:string,id:string) {
   const [row]=await db.select().from(editorialLines).where(and(eq(editorialLines.topicId,topicId),eq(editorialLines.id,id)));
   if(!row)throw new EditorialLineError("Editorial line not found",404);return asLine(row);

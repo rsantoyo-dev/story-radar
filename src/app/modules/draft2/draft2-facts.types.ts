@@ -69,7 +69,7 @@ export type Draft2Threads = {
 };
 
 /** The pipeline's steps that have been built, in order. */
-export type Draft2Step = "facts" | "opening";
+export type Draft2Step = "facts" | "focus" | "opening";
 
 export type Draft2TraceEntry = {
   at: string;

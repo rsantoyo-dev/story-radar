@@ -92,6 +92,20 @@ wins or stands in as the best so far. Each round shows the judge's
 originals against the writer's edits, score for score. The sections below
 describe revision 7.
 
+**Revision 8: the Opening follows the Focus.** A new step between the facts
+and the opening (`docs/features/draft2-focus.md`) decides what the story is
+for: its editorial line, audience, framing, reader consequence, structure,
+goal, voice and direction. A new run needs a decided focus with no program
+finding and records the version it followed (`opening.focus`); both models
+read the focus beside the verified facts, where their provider caches them.
+Hooks v6 adds a Focus section (framing, structure, goal and voice rules), the
+voice is judged against the focus's, a sixth criterion, `focus`, sits inside
+the gate, and the judge names a departure from the focus `OFF_FOCUS`. The
+item count of a list or steps focus counts as a stated number. A run stored
+before this step cannot be continued; scores stored before it have no
+`focus` and still read as passing on it. Step numbers below predate the
+Focus: the Opening is now step 3.
+
 ## 1. Goal
 
 Draft 2 is the second creative pipeline, built one step at a time beside the
@@ -189,7 +203,7 @@ not change; the existing Facts tests must pass unchanged except for the
 import path of the instruction text. Record `skillVersions` on every trace
 entry (`Draft2TraceEntry.skillVersions?: Record<string, string>`).
 
-## 4. The hooks skill (`hooks.ts`, version "5")
+## 4. The hooks skill (`hooks.ts`, version "6")
 
 Version 2 replaced v1's "never a hedge word on the cover", which invited
 dropping a qualifier, added that the story's gravity bounds the voice (a
@@ -201,7 +215,8 @@ are tried beside the revisions. Version 4 adds that a contrast between two
 facts is told side by side, never as a change the facts do not state.
 Version 5 says the judge's proposals compete as written and as edited, that
 an edit or a revision keeps the creative device, and that saying what the
-facts do not is a material error. A test keeps the numbers in this text
+facts do not is a material error. Version 6 makes the opening follow the
+story's focus and scores how well it does. A test keeps the numbers in this text
 equal to the constants in §5.
 
 ```markdown
@@ -212,6 +227,32 @@ The cover makes a promise the reader feels in one second; slide 2 pays the
 first instalment of that promise with a fact the cover did not spend. Both are
 judged as one unit: a strong cover with a weak slide 2 loses the swipe, and a
 cover whose promise slide 2 cannot pay is a lie.
+
+## Focus
+Every story arrives with its focus, decided before the opening and reviewed
+by the editor: the editorial line it serves, its audience, the framing, the
+reader consequence, the structure, the goal, the voice and a direction. The
+opening follows it:
+- framing "reader-consequence": the cover opens with the reader consequence,
+  in the reader's terms, before any organization, figure or place;
+  "explainer": with the mechanism or the clearest account of what happened;
+  "authority": with the decision, institution or expert the facts support.
+- structure "list": the cover headline promises the list, with its count
+  (the number of items the focus names, which counts as stated) and its
+  subject, and the place and period when the facts state them; the
+  subheadline gives its draw; slide 2 is the first item, as its facts state
+  it. "steps": the cover promises the result; slide 2 gives what the reader
+  needs first or the first step. "arc": the tension and its first payoff.
+- goal: what the promise invites. "followers": a reason to come back;
+  "saves": something worth keeping; "shares": something worth sending to
+  someone; "discussion": a question the facts leave open. It shapes the
+  promise, never the facts.
+- voice: the gravity and tone the focus sets, in the publication's language
+  and personality; it wins over the publication's defaults.
+- audience and direction: whom the opening speaks to, what it leads with and
+  what it leaves for later.
+The reader consequence and the direction are guidance, not facts: every
+sentence still rests on the verified facts it cites.
 
 ## Cover headline
 - At most 8 words, a complete thought with a verb, readable at a glance on a
@@ -259,10 +300,13 @@ cover whose promise slide 2 cannot pay is a lie.
 - payoff: does slide 2 pay the promise with something new and concrete?
 - clarity: instant comprehension on a phone, no jargon, no inside knowledge.
 - grounding: nothing intensified beyond the facts; qualifiers kept.
-- voice: the publication's language, audience and tone, as far as the story's
-  gravity allows. A grave story (war, death, injury, illness, legal jeopardy)
-  is told straight: never reward a joke on it, and never mark an opening down
-  for lacking humor or lightness the subject cannot carry.
+- voice: the voice the focus sets (its gravity and tone) in the
+  publication's language. A grave story (war, death, injury, illness, legal
+  jeopardy) is told straight: never reward a joke on it, and never mark an
+  opening down for lacking humor or lightness the subject cannot carry.
+- focus: does the opening follow the focus: its framing, reader
+  consequence, structure, audience and goal? A strong opening that ignores
+  the focus the editor approved misses its brief.
 An opening is accepted only when overall ≥ 95 and no criterion is below 85.
 
 ## Revisions

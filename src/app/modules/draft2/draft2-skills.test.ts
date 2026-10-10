@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { brandBrief, composeInstructions, DRAFT2_ROLES, DRAFT2_SKILLS, type Draft2Skill } from "./skills/draft2-skills";
 import { FACTS_ROLES, FACTS_SKILL } from "./skills/facts";
+import { FOCUS_ROLES, FOCUS_SKILL } from "./skills/focus";
 import { HOOKS_SKILL, OPENING_ROLES } from "./skills/hooks";
+import { toneLine } from "./skills/tone";
+import { FOCUS_FIELDS, FOCUS_FRAMINGS, FOCUS_GOALS, FOCUS_GRAVITIES, FOCUS_STRUCTURES } from "./draft2-focus.types";
 import {
   COVER_HEADLINE_MAX_WORDS, COVER_SUBHEADLINE_MAX_WORDS, OPENING_ACCEPT_SCORE, OPENING_CANDIDATES, OPENING_CRITERIA, OPENING_CRITERION_FLOOR,
   SLIDE2_BODY_MAX_WORDS, SLIDE2_HEADLINE_MAX_WORDS,
@@ -19,8 +22,8 @@ test("instructions are the role, then each skill, then the brand brief, and reco
   assert.equal(writer.instructions, `${OPENING_ROLES["opening-writer"]}\n\n## Shared craft\n\n# Brand`);
   assert.deepEqual(writer.skillVersions, { hooks: "7" });
   assert.equal(composeInstructions("opening-judge", [skill]).instructions, `${OPENING_ROLES["opening-judge"]}\n\n## Shared craft\n\n## Judge only`, "a role reads its own part after the shared text");
-  assert.deepEqual(Object.keys(DRAFT2_ROLES).sort(), ["extractor", "opening-judge", "opening-writer", "reviewer"]);
-  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@1", "hooks@5"]);
+  assert.deepEqual(Object.keys(DRAFT2_ROLES).sort(), ["extractor", "focus-editor", "opening-judge", "opening-writer", "reviewer"]);
+  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@1", "focus@1", "hooks@6"]);
 });
 
 test("the Facts prompts keep their words: the extractor reads its rules, the reviewer its checklist", () => {
@@ -47,7 +50,7 @@ test("hooks never trades a qualifier for a cleaner headline, lets gravity bound 
   assert.match(HOOKS_SKILL.text, /Avoid\n  hedge words there too, but never by dropping a qualifier/);
   assert.match(HOOKS_SKILL.text, /When a claim\n  cannot stand without its qualifier or its source, do not headline it/);
   assert.doesNotMatch(HOOKS_SKILL.text, /never a hedge word\n  on the cover/, "the v1 rule that invited dropping \"could\" is gone");
-  assert.match(HOOKS_SKILL.text, /- voice: [^]*as far as the story's\n  gravity allows\. A grave story/);
+  assert.match(HOOKS_SKILL.text, /- voice: the voice the focus sets \(its gravity and tone\)[^]*A grave story[^]*told straight/);
   assert.match(HOOKS_SKILL.text, /## Revisions\n[^]*A version that comes\s+out flatter, more bureaucratic or less clear is worse/);
   assert.match(HOOKS_SKILL.text, /the judge's own\s+proposals compete beside them, as the judge wrote them and as the writer\s+edited them/);
   assert.match(HOOKS_SKILL.text, /is a material error: it keeps an opening from winning,\s+however strong its hook/);
@@ -72,4 +75,25 @@ test("the brand brief gives the publication's voice in plain words and nothing a
   const sparse = brandBrief({ ...profile, region: "  ", brandPersonality: [], formality: 0, provocation: 100 });
   assert.ok(!sparse.includes("Region") && !sparse.includes("Brand personality"), "empty fields are left out");
   assert.match(sparse, /formality 1\/100: casual;.*provocation 100\/100: provocative, never insulting\./);
+});
+
+test("the openings follow the focus: framing, structure, goal and voice, scored as a criterion, guidance never evidence", () => {
+  assert.match(HOOKS_SKILL.text, /## Focus\nEvery story arrives with its focus/);
+  assert.match(HOOKS_SKILL.text, /framing "reader-consequence": the cover opens with the reader consequence/);
+  assert.match(HOOKS_SKILL.text, /structure "list": the cover headline promises the list, with its count\n  \(the number of items the focus names, which counts as stated\)/);
+  assert.match(HOOKS_SKILL.text, /It shapes the\n  promise, never the facts\./);
+  assert.match(HOOKS_SKILL.text, /The reader consequence and the direction are guidance, not facts/);
+  assert.match(OPENING_ROLES["opening-writer"], /following the story's focus/);
+  assert.match(OPENING_ROLES["opening-judge"], /Judge against the verified facts and the story's focus you receive only; name an opening that departs from the focus in an OFF_FOCUS issue\./);
+});
+
+test("the focus skill names every field and value the contract accepts, and the editor's choices win", () => {
+  for (const field of FOCUS_FIELDS) assert.match(FOCUS_SKILL.text, new RegExp(`\\n- ${field}: `), field);
+  for (const value of [...FOCUS_FRAMINGS, ...FOCUS_STRUCTURES, ...FOCUS_GOALS, ...FOCUS_GRAVITIES]) assert.ok(FOCUS_SKILL.text.includes(`"${value}"`), value);
+  assert.match(FOCUS_SKILL.text, /editorChoices are the editor's decisions\. Return each exactly as given/);
+  assert.match(FOCUS_SKILL.text, /A famous name is not a reason/);
+  const { instructions, skillVersions } = composeInstructions("focus-editor", [FOCUS_SKILL], brandBrief(profile));
+  assert.ok(instructions.startsWith(FOCUS_ROLES["focus-editor"]));
+  assert.ok(instructions.endsWith(`${toneLine(profile)}.`), "the brand brief, with the tone defaults, comes last");
+  assert.deepEqual(skillVersions, { focus: "1" });
 });

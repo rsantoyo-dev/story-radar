@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
 import {
-  OPENING_CANDIDATES, OPENING_DEVELOP_INSTRUCTION, OPENING_REVISION_INSTRUCTION, bestOpeningVersions, hasMaterialError, mechanicalOpeningIssues, openingAcceptedWinner, openingExploreRequest, openingFactsSnapshot,
-  openingFreshWanted, openingIsAccepted, openingJudgeRequest, openingRefineRequest, openingRegressions, openingReviewNote, openingRunSummary, openingTargets,
+  OPENING_CANDIDATES, OPENING_CRITERIA, OPENING_DEVELOP_INSTRUCTION, OPENING_REVISION_INSTRUCTION, bestOpeningVersions, hasMaterialError, mechanicalOpeningIssues, openingAcceptedWinner, openingExploreRequest, openingFactsSnapshot,
+  openingFreshWanted, openingIsAccepted, openingJudgeRequest, openingRefineRequest, openingRegressions, openingReviewNote, openingRunSummary, openingScorePasses, openingTargets,
   openingVersions, openingWordCount, parseOpeningCandidates, parseOpeningEvaluation, renumberedCandidates, renumberedProposals, writtenCandidates,
   type Draft2OpeningCandidate, type Draft2OpeningEvaluation, type Draft2OpeningIssue, type Draft2OpeningRound, type Draft2OpeningScore,
 } from "./draft2-opening.types";
@@ -25,7 +25,7 @@ const candidate = (id: string, overrides: CandidateOverrides = {}): Draft2Openin
 });
 
 const score = (candidateId: string, overall: number, overrides: Partial<Draft2OpeningScore> = {}): Draft2OpeningScore =>
-  ({ candidateId, tension: overall, payoff: overall, clarity: overall, grounding: overall, voice: overall, overall, note: "Why.", ...overrides });
+  ({ candidateId, tension: overall, payoff: overall, clarity: overall, grounding: overall, voice: overall, focus: overall, overall, note: "Why.", ...overrides });
 
 const evaluation = (overrides: Partial<Draft2OpeningEvaluation> = {}): Draft2OpeningEvaluation =>
   ({ verdict: "accept", winnerId: "c1", scores: [score("c1", 96), score("c2", 95), score("c3", 80)], issues: [], suggestions: [], summary: "Strong.", ...overrides });
@@ -246,7 +246,7 @@ test("a revision that scores lower, or picks up a program finding, is a regressi
     evaluation: evaluation({ verdict: "revise", winnerId: "c2.2", scores: [score("c1.2", 80, { voice: 72, tension: 90 }), score("c2.2", 88)] }),
   })]);
   assert.deepEqual(openingRegressions(revisions, before), [
-    { candidateId: "c1.2", previousId: "c1", from: 84, to: 80, worse: ["payoff 84 → 80", "clarity 84 → 80", "grounding 84 → 80", "voice 84 → 72"] },
+    { candidateId: "c1.2", previousId: "c1", from: 84, to: 80, worse: ["payoff 84 → 80", "clarity 84 → 80", "grounding 84 → 80", "voice 84 → 72", "focus 84 → 80"] },
     { candidateId: "c2.2", previousId: "c2", from: 80, to: 88, worse: ["COVER_TOO_LONG"] },
   ]);
   const improved = openingVersions([judgedRound(2, [{ ...candidate("c1.2"), revisionOf: "c1" }], { "c1.2": 90 })]);
@@ -282,7 +282,7 @@ test("the writer refines with each target's scores and issues, any earlier attem
   assert.equal(target.id, "c1", "c1.2 scored lower, so c1 is revised again");
   assert.equal(target.scores?.overall, 84);
   assert.deepEqual(target.issues.map((issue) => issue.code), ["WEAK_TENSION"]);
-  assert.deepEqual(target.earlierAttempts, [{ id: "c1.2", coverHeadline: "A flatter headline", overall: 78, worse: ["tension 84 → 78", "payoff 84 → 78", "clarity 84 → 78", "grounding 84 → 78", "voice 84 → 78"] }]);
+  assert.deepEqual(target.earlierAttempts, [{ id: "c1.2", coverHeadline: "A flatter headline", overall: 78, worse: ["tension 84 → 78", "payoff 84 → 78", "clarity 84 → 78", "grounding 84 → 78", "voice 84 → 78", "focus 84 → 78"] }]);
   assert.equal(request.instruction, OPENING_REVISION_INSTRUCTION);
   assert.match(OPENING_REVISION_INSTRUCTION, /Never make the writing flatter or more bureaucratic/);
   const withAngles = openingRefineRequest(openingTargets(versions, 2), versions, regressions, first, 2);
@@ -313,9 +313,32 @@ test("a run that ends without acceptance names the best version's weak criteria 
   assert.match(openingReviewNote(undefined, first, "Stopped."), /^Stopped\. Every version has a program finding\. Remaining issues: UNSUPPORTED_NUMBER \(c1 · cover\), PROMISE_NOT_PAID/);
 });
 
-test("an earlier run is summarized without its rounds, keeping the editor's choice", () => {
-  const summary = openingRunSummary({ status: "ready", rounds: [{ round: 1, candidates: [candidate("c1")], mechanical: [], at: "t" }], candidates: [candidate("c1"), candidate("c2")], winnerId: "c1", editorChoiceId: "c2", editorChoiceAt: "2026-10-09T12:00:00.000Z" });
+test("an earlier run is summarized without its rounds, keeping the editor's choice and the focus it followed", () => {
+  const focus = { version: 3, values: { audience: "Founders" } } as unknown as NonNullable<Parameters<typeof openingRunSummary>[0]["focus"]>;
+  const summary = openingRunSummary({ status: "ready", rounds: [{ round: 1, candidates: [candidate("c1")], mechanical: [], at: "t" }], candidates: [candidate("c1"), candidate("c2")], winnerId: "c1", editorChoiceId: "c2", editorChoiceAt: "2026-10-09T12:00:00.000Z", focus });
   assert.equal("rounds" in summary, false);
   assert.equal(summary.editorChoiceId, "c2");
   assert.equal(summary.candidates.length, 2);
+  assert.equal(summary.focus?.version, 3);
+});
+
+test("focus is a criterion like the others: parsed, inside the gate, and absent only from scores stored before the Focus step", () => {
+  assert.deepEqual([...OPENING_CRITERIA], ["tension", "payoff", "clarity", "grounding", "voice", "focus"]);
+  const answer = (scores: unknown[]) => JSON.stringify({ verdict: "accept", winnerId: "c1", summary: "x", suggestions: [], proposals: [], issues: [], scores });
+  assert.equal(parseOpeningEvaluation(answer([score("c1", 96, { focus: 88 })]), ["c1"]).scores[0].focus, 88);
+  const { focus: _focus, ...withoutFocus } = score("c1", 96);
+  void _focus;
+  assert.throws(() => parseOpeningEvaluation(answer([withoutFocus]), ["c1"]), /focus score for c1 is not an integer/, "a new judgment must score the focus");
+  assert.equal(openingScorePasses(score("c1", 96, { focus: 84 })), false, "an opening that misses the focus fails the gate");
+  assert.equal(openingScorePasses(withoutFocus), true, "a score stored before the Focus step passes on the criterion it predates");
+  const legacy = openingVersions([judgedRound(1, [candidate("c1")], {}, { evaluation: evaluation({ winnerId: "c1", scores: [withoutFocus] }) })]);
+  const revised = openingVersions([judgedRound(2, [{ ...candidate("c1.2"), revisionOf: "c1" }], {}, { evaluation: evaluation({ verdict: "revise", winnerId: "c1.2", scores: [score("c1.2", 90, { focus: 60 })] }) })]);
+  assert.deepEqual(openingRegressions(revised, legacy).map((regression) => regression.worse.some((entry) => entry.startsWith("focus"))), [false], "no loss is read from a criterion the earlier score lacks");
+});
+
+test("the number of items a list or steps focus names counts as a stated number, so the cover can promise it", () => {
+  const list = { cover: { headline: "3 ways the Pentagon buys faster" } };
+  assert.deepEqual(findings(list), ["UNSUPPORTED_NUMBER c1 cover"], "without a focus, the count is a number no fact states");
+  assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1", list)], facts, { itemCount: 3 })), []);
+  assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1", { cover: { headline: "4 ways the Pentagon buys faster" } })], facts, { itemCount: 3 })), ["UNSUPPORTED_NUMBER c1 cover"], "only the focus's own count");
 });

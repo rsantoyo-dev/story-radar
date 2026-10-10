@@ -2,11 +2,16 @@
 
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import Link from "next/link";
-import { ActionRow, Button, EmptyState, InlineNotice, LoadingState, SectionHeader, StatusBadge, Surface, type StatusTone } from "@/app/ui/primitives";
+import { ActionRow, Button, EmptyState, FormField, InlineNotice, LoadingState, SectionHeader, StatusBadge, Surface, type StatusTone } from "@/app/ui/primitives";
 import type { StoryContentResponse } from "@/app/radar-dashboard";
 import type { Draft2Fact, Draft2FactsEvaluation, Draft2FactsRound, Draft2SessionStatus, Draft2TraceEntry } from "@/app/modules/draft2/draft2-facts.types";
 import {
-  OPENING_CRITERIA, OPENING_CRITERION_FLOOR, OPENING_MAX_ROUNDS, OPENING_STALL_MS, hasMaterialError, openingAcceptedWinner, openingResumeRound, openingScorePasses, openingVersions,
+  FOCUS_AUDIENCE_MAX_CHARACTERS, FOCUS_CONSEQUENCE_MAX_CHARACTERS, FOCUS_DIRECTION_MAX_CHARACTERS, FOCUS_FRAMINGS, FOCUS_GOALS, FOCUS_GRAVITIES, FOCUS_STRUCTURES, focusFindings,
+  type Draft2Focus, type Draft2FocusField, type Draft2FocusFinding, type Draft2FocusValues, type Draft2FocusVoice,
+} from "@/app/modules/draft2/draft2-focus.types";
+import { TONE_KEYS, toneWords, type ToneKey } from "@/app/modules/draft2/skills/tone";
+import {
+  OPENING_CRITERIA, OPENING_CRITERION_FLOOR, OPENING_MAX_ROUNDS, OPENING_STALL_MS, criterionScore, hasMaterialError, openingAcceptedWinner, openingResumeRound, openingScorePasses, openingVersions,
   type Draft2Opening, type Draft2OpeningCriterion, type Draft2OpeningIssue, type Draft2OpeningRegression, type Draft2OpeningRound, type Draft2OpeningScore, type Draft2OpeningVersion,
 } from "@/app/modules/draft2/draft2-opening.types";
 import { DRAFT2_OPENING_EARLIER_ROLES, DRAFT2_OPENING_ROLES, draft2ProviderName } from "@/app/modules/draft2/draft2-models";
@@ -21,13 +26,14 @@ type Draft2SessionView = {
   facts: Draft2Fact[] | null;
   evaluation: Draft2FactsEvaluation | null;
   rounds: Draft2FactsRound[];
+  focus: Draft2Focus | null;
   opening: Draft2Opening | null;
   trace: Draft2TraceEntry[];
   error: string | null;
   updatedAt: string;
 };
 
-type Draft2RunStep = "facts" | "opening";
+type Draft2RunStep = "facts" | "focus" | "opening";
 
 /** Up to three rounds of two provider calls; the route itself allows 300 s. */
 const STEP_REQUEST_TIMEOUT_MS = 540_000;
@@ -45,6 +51,12 @@ const SESSION_STATUS: Record<Draft2SessionStatus, { label: string; tone: StatusT
   failed: { label: "Failed", tone: "error" },
 };
 
+const FOCUS_STATUS: Record<Draft2Focus["status"], { label: string; tone: StatusTone }> = {
+  running: { label: "Deciding", tone: "info" },
+  ready: { label: "Decided", tone: "success" },
+  failed: { label: "Failed", tone: "error" },
+};
+
 const OPENING_STATUS: Record<Draft2Opening["status"], { label: string; tone: StatusTone }> = {
   running: { label: "Running", tone: "info" },
   paused: { label: "Paused", tone: "info" },
@@ -59,7 +71,13 @@ const FACT_STATUS: Record<Draft2Fact["status"], { label: string; tone: StatusTon
   disputed: { label: "Disputed", tone: "warning" },
 };
 
-const CRITERION_LABEL: Record<Draft2OpeningCriterion, string> = { tension: "Tension", payoff: "Payoff", clarity: "Clarity", grounding: "Grounding", voice: "Voice" };
+const CRITERION_LABEL: Record<Draft2OpeningCriterion, string> = { tension: "Tension", payoff: "Payoff", clarity: "Clarity", grounding: "Grounding", voice: "Voice", focus: "Focus" };
+
+const FRAMING_LABEL: Record<Draft2FocusValues["framing"], string> = { "reader-consequence": "Reader consequence", explainer: "Explainer", authority: "Authority" };
+const STRUCTURE_LABEL: Record<Draft2FocusValues["structure"]["kind"], string> = { arc: "Arc: one story, one tension", steps: "Steps: an ordered procedure", list: "List: “N things to…”" };
+const GOAL_LABEL: Record<Draft2FocusValues["goal"], string> = { followers: "Followers", discussion: "Discussion", saves: "Saves", shares: "Shares" };
+const GRAVITY_LABEL: Record<Draft2FocusVoice["gravity"], string> = { light: "Light", ordinary: "Ordinary", serious: "Serious", grave: "Grave" };
+const TONE_LABEL: Record<ToneKey, string> = { formality: "Formality", humor: "Humor", energy: "Energy", optimism: "Optimism", provocation: "Provocation" };
 
 const providerLabel = (provider: Draft2TraceEntry["provider"]) => provider === "openai" ? "Sol" : "Claude";
 type RoleNames = { writer: string; judge: string };
@@ -92,7 +110,7 @@ const issueTarget = (issue: Draft2OpeningIssue) => issue.candidateId ? ` · ${is
 /**
  * Draft 2: the second creative pipeline, built one step at a time beside the
  * current studio, which it never touches. The canvas brings in the selected
- * story and runs each step on it: Facts, then the Opening.
+ * story and runs each step on it: Facts, the Focus, then the Opening.
  */
 export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle, storyId, from, returnContext }: {
   /** A signed-in session authorizes every request; the collector secret is not needed. */
@@ -116,6 +134,8 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const [runError, setRunError] = useState<{ step: Draft2RunStep; message: string }>();
   const [choosing, setChoosing] = useState<string>();
   const [choiceError, setChoiceError] = useState<string>();
+  const [savingFocus, setSavingFocus] = useState<Draft2FocusField>();
+  const [focusError, setFocusError] = useState<string>();
   const [following, setFollowing] = useState<string>();
   // The clock a run is measured against, to tell a run that went silent from one still working.
   const [now, setNow] = useState(0);
@@ -210,17 +230,21 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   }
 
   /**
-   * Runs one step: Facts starts a new session, the Opening continues the
-   * current one; `continuing` picks a paused or stopped opening up. A run
-   * that pauses, or whose request is lost, goes on from its last checkpoint
-   * in a new request until it finishes.
+   * Runs one step: Facts starts a new session, the Focus and the Opening
+   * continue the current one; `continuing` picks a paused or stopped opening
+   * up. A run that pauses, or whose request is lost, goes on from its last
+   * checkpoint in a new request until it finishes.
    */
   async function runStep(step: Draft2RunStep, { continuing = false } = {}) {
-    if (running || (step === "opening" && !session)) return;
-    setRunning(step); setRunError(undefined); setChoiceError(undefined);
+    if (running || (step !== "facts" && !session)) return;
+    setRunning(step); setRunError(undefined); setChoiceError(undefined); setFocusError(undefined);
     try {
       if (step === "facts") {
         setSession(await postStep("facts", { storyId }));
+        return;
+      }
+      if (step === "focus") {
+        setSession(await postStep("focus", { storyId, sessionId: session?.id }));
         return;
       }
       let payload: Record<string, unknown> = { storyId, sessionId: session?.id, ...(continuing ? { continue: true } : {}) };
@@ -242,7 +266,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
         payload = { storyId, sessionId: next.id, continue: true };
       }
     } catch (cause) {
-      const failure = step === "facts" ? "The facts step failed." : "The opening step failed.";
+      const failure = step === "facts" ? "The facts step failed." : step === "focus" ? "The focus step failed." : "The opening step failed.";
       const message = cause instanceof Draft2LostRequest ? `${cause.message} The server may still finish the step; reload to see it.` : cause instanceof Error ? cause.message : failure;
       setRunError({ step, message });
       // A failed run keeps its trace on the session; show it.
@@ -250,6 +274,24 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
     } finally {
       setFollowing(undefined);
       setRunning(undefined);
+    }
+  }
+
+  /** Saves one focus field the editor changed, or gives it back to Claude's value; one change at a time. */
+  async function saveFocus(field: Draft2FocusField, change: { value: unknown } | { reset: true }) {
+    if (!session || running || savingFocus) return;
+    setSavingFocus(field); setFocusError(undefined);
+    try {
+      const response = await fetch(`/api/radar/draft2/focus?topicId=${encodeURIComponent(topicId)}`, {
+        method: "PATCH", cache: "no-store", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: session.id, field, ...change }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? "Could not save the focus.");
+      setSession(body.session as Draft2SessionView);
+    } catch (cause) {
+      setFocusError(cause instanceof Error ? cause.message : "Could not save the focus.");
+    } finally {
+      setSavingFocus(undefined);
     }
   }
 
@@ -280,7 +322,17 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   // A run still marked running whose heartbeat stopped: its request or the server ended, and it can be continued.
   const stalled = !running && session?.opening?.status === "running" && now > 0 && now - Date.parse(session.updatedAt) > OPENING_STALL_MS;
   const openingStatus = running === "opening" ? OPENING_STATUS.running : stalled ? { label: "Stopped", tone: "warning" as const } : session?.opening ? OPENING_STATUS[session.opening.status] : undefined;
-  const stepStatus: Partial<Record<string, { label: string; tone: StatusTone }>> = { facts: factsStatus, opening: openingStatus };
+  // The focus the opening would follow: decided, not being decided, and free of program findings.
+  const focus = session?.focus ?? undefined;
+  const focusProblems = focus?.values ? focusFindings(focus.values) : [];
+  const focusStalled = !running && focus?.status === "running" && now > 0 && now - Date.parse(session?.updatedAt ?? "") > OPENING_STALL_MS;
+  const focusReady = Boolean(focus?.values) && focus?.status !== "running" && focusProblems.length === 0;
+  const focusStatus = running === "focus" ? FOCUS_STATUS.running : focusStalled ? { label: "Stopped", tone: "warning" as const }
+    : focus?.values && focusProblems.length && focus.status !== "running" ? { label: "Needs a fix", tone: "warning" as const } : focus ? FOCUS_STATUS[focus.status] : undefined;
+  // An opening written with another version of the focus, or before the Focus step.
+  const openingFocusVersion = session?.opening?.focus?.version;
+  const focusChanged = Boolean(session?.opening && focus?.values) && openingFocusVersion !== focus?.version;
+  const stepStatus: Partial<Record<string, { label: string; tone: StatusTone }>> = { facts: factsStatus, focus: focusStatus, opening: openingStatus };
   const resumable = session?.opening && (session.opening.status === "paused" || stalled) && openingResumeRound(session.opening) <= OPENING_MAX_ROUNDS;
   const resumeRound = resumable && session?.opening ? openingResumeRound(session.opening) : undefined;
   const pausedRound = session?.opening?.status === "paused" ? openingResumeRound(session.opening) : undefined;
@@ -312,7 +364,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
             : <EmptyState title="No article text yet">Prepare the content in the studio first; the canvas reads the same stored text.</EmptyState>}
         </Surface>
         <Surface className={styles.column} aria-label="Canvas">
-          <SectionHeader level={3} eyebrow="Canvas" title={session?.opening ? "Facts, then the opening" : session ? "Facts first" : "Nothing built yet"} description="Each step is added separately. The current studio keeps working as it does today." />
+          <SectionHeader level={3} eyebrow="Canvas" title={session?.opening ? "Facts, focus, then the opening" : session?.focus ? "Facts, then the focus" : session ? "Facts first" : "Nothing built yet"} description="Each step is added separately. The current studio keeps working as it does today." />
           <ol className={styles.steps}>
             {DRAFT_2_STEPS.map((step, index) => {
               const status = stepStatus[step.key];
@@ -340,20 +392,47 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
             {session?.step === "facts" && session.error && running !== "facts" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
             {session && running !== "facts" ? <FactsSessionView session={session} verified={factsVerified} /> : null}
           </section>
+          <section className={styles.factsPanel} aria-label="Focus step">
+            <div className={styles.factsHeader}>
+              <div>
+                <p className={styles.eyebrow}>Step 2 · Focus</p>
+                <p className={styles.factsIntro}>Claude reads the verified facts, the Topic’s creative profile and its editorial lines, and decides what the story is for: the line it serves, its audience, framing, reader consequence, structure, goal, voice and direction. Change any field; your changes stay yours when Claude decides again, and the opening follows the result.</p>
+              </div>
+              <Button variant="primary" size="compact" busy={running === "focus"} disabled={!factsVerified || running !== undefined || savingFocus !== undefined} onClick={() => { void runStep("focus"); }}>
+                {running === "focus" ? "Deciding…" : focus?.values ? "Decide again" : "Decide the focus"}
+              </Button>
+            </div>
+            {!factsVerified && !running ? <p className={styles.factMeta}>The focus builds only on verified facts; verify them first.</p> : null}
+            {running === "focus" ? <LoadingState>Claude is deciding the focus{focus?.edited.length ? `, keeping your ${focus.edited.length === 1 ? "change" : `${focus.edited.length} changes`}` : ""}. This can take a minute.</LoadingState> : null}
+            {focusStalled ? <InlineNotice tone="warning" title="This decision stopped">Its request or the server ended before Claude answered. Decide the focus again.</InlineNotice> : null}
+            {runError?.step === "focus" ? <InlineNotice tone="error" title="The focus step stopped">{runError.message}</InlineNotice> : null}
+            {focus?.status === "failed" && focus.error && running !== "focus" ? <InlineNotice tone="error" title="The last decision failed">{focus.error}{focus.values ? " The focus below is the one from before it." : ""}</InlineNotice> : null}
+            {focusError ? <InlineNotice tone="error" title="Your change was not saved">{focusError}</InlineNotice> : null}
+            {focus?.values && running !== "focus" ? <FocusView
+              focus={focus}
+              findings={focusProblems}
+              saving={savingFocus}
+              locked={running !== undefined || savingFocus !== undefined}
+              onSave={(field, value) => { void saveFocus(field, { value }); }}
+              onReset={(field) => { void saveFocus(field, { reset: true }); }}
+            /> : null}
+          </section>
           <section className={styles.factsPanel} aria-label="Opening step">
             <div className={styles.factsHeader}>
               <div>
-                <p className={styles.eyebrow}>Step 2 · Opening</p>
-                <p className={styles.factsIntro}>{TODAY.writer} writes fifteen openings (cover and slide 2) from the verified facts; {TODAY.judge} scores them and proposes three of its own. {TODAY.writer} revises the three best and edits {TODAY.judge}’s proposals, which also compete as {TODAY.judge} wrote them; {TODAY.judge} scores all nine without knowing which are its own, and proposes one more, which competes the same way beside {TODAY.writer}’s two best for {TODAY.judge}’s final pick. The better version always stays, and an opening that says what the facts do not never wins. Accepted at 95/100 with no criterion below 85.</p>
+                <p className={styles.eyebrow}>Step 3 · Opening</p>
+                <p className={styles.factsIntro}>{TODAY.writer} writes fifteen openings (cover and slide 2) from the verified facts, following the focus; {TODAY.judge} scores them and proposes three of its own. {TODAY.writer} revises the three best and edits {TODAY.judge}’s proposals, which also compete as {TODAY.judge} wrote them; {TODAY.judge} scores all nine without knowing which are its own, and proposes one more, which competes the same way beside {TODAY.writer}’s two best for {TODAY.judge}’s final pick. The better version always stays, and an opening that says what the facts do not never wins. Accepted at 95/100 with no criterion below 85, how well it follows the focus included.</p>
               </div>
               <ActionRow>
                 {resumeRound && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("opening", { continuing: true }); }}>Continue from round {resumeRound}</Button> : null}
-                <Button variant="primary" size="compact" busy={running === "opening"} disabled={!factsVerified || running !== undefined} onClick={() => { void runStep("opening"); }}>
+                <Button variant="primary" size="compact" busy={running === "opening"} disabled={!factsVerified || !focusReady || running !== undefined || savingFocus !== undefined} onClick={() => { void runStep("opening"); }}>
                   {running === "opening" ? "Writing and judging…" : session?.opening ? "Write the opening again" : "Write the opening"}
                 </Button>
               </ActionRow>
             </div>
             {!factsVerified && !running ? <p className={styles.factMeta}>The opening builds only on verified facts; verify them first.</p> : null}
+            {factsVerified && !focusReady && !running ? <p className={styles.factMeta}>{focus?.values && focus.status !== "running" ? "The opening waits until the focus is fixed (see the notes above)." : "The opening follows the story’s focus; decide it first."}</p> : null}
+            {focusChanged && running !== "opening" && focus ? <InlineNotice tone="info" title="The focus changed">{openingFocusVersion ? `This opening followed focus v${openingFocusVersion}; the focus is now v${focus.version}.` : "This opening was written before the Focus step."} Write it again to follow the focus as it stands.</InlineNotice> : null}
             {running === "opening" ? <LoadingState>{following ? `${following} Following the run on the server…` : pausedRound ? `Continuing with round ${pausedRound} in a new request…` : `${TODAY.writer} writes fifteen openings; ${TODAY.judge} judges each round. This can take a few minutes.`}</LoadingState> : null}
             {stalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {new Date(session.updatedAt).toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit" })}: its request or the server ended. Continue from round {resumeRound} picks it up at its last checkpoint; a round already written is judged, not written again.</InlineNotice> : null}
             {runError?.step === "opening" ? <InlineNotice tone="error" title="The opening step stopped">{runError.message}</InlineNotice> : null}
@@ -540,7 +619,180 @@ function ChosenOpening({ version, names, label, tone }: { version: Draft2Opening
 
 function ScoreRow({ score }: { score: Draft2OpeningScore }) {
   return <p className={styles.scoreRow}>
-    {OPENING_CRITERIA.map((criterion) => <span key={criterion} data-low={score[criterion] < OPENING_CRITERION_FLOOR ? "" : undefined}>{CRITERION_LABEL[criterion]} <strong>{score[criterion]}</strong></span>)}
+    {OPENING_CRITERIA.map((criterion) => {
+      // A score stored before the Focus step has no focus criterion.
+      const value = criterionScore(score, criterion);
+      return value === undefined ? null : <span key={criterion} data-low={value < OPENING_CRITERION_FLOOR ? "" : undefined}>{CRITERION_LABEL[criterion]} <strong>{value}</strong></span>;
+    })}
     <span>Overall <strong>{score.overall}</strong></span>
   </p>;
+}
+
+const clip = (value: string, max = 140) => value.length > max ? `${value.slice(0, max - 1).trimEnd()}…` : value;
+
+/** A field's value in a few words, for Claude's value beside the editor's choice. */
+function focusValueText(field: Draft2FocusField, values: Draft2FocusValues): string {
+  switch (field) {
+    case "line": return values.line?.name ?? "no line";
+    case "audience": return values.audience;
+    case "framing": return FRAMING_LABEL[values.framing];
+    case "readerConsequence": return values.readerConsequence?.text ?? "none";
+    case "structure": return STRUCTURE_LABEL[values.structure.kind];
+    case "goal": return GOAL_LABEL[values.goal];
+    case "voice": return `${GRAVITY_LABEL[values.voice.gravity]} · ${TONE_KEYS.map((key) => `${key} ${values.voice[key]}`).join(" · ")}`;
+    case "direction": return values.direction;
+  }
+}
+
+/**
+ * The Focus step: every field with Claude's reason, or the editor's choice
+ * beside Claude's value. Selects save when they change, text when it loses
+ * focus; the controls wait while a change is saved or a step runs.
+ */
+function FocusView({ focus, findings, saving, locked, onSave, onReset }: {
+  focus: Draft2Focus;
+  findings: readonly Draft2FocusFinding[];
+  saving?: Draft2FocusField;
+  locked: boolean;
+  onSave: (field: Draft2FocusField, value: unknown) => void;
+  onReset: (field: Draft2FocusField) => void;
+}) {
+  const values = focus.values!;
+  const decided = focus.decidedAt ? new Date(focus.decidedAt).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" }) : undefined;
+  const edited = (field: Draft2FocusField) => focus.edited.includes(field);
+  /** Claude's reason, or, for the editor's field, Claude's value beside it. */
+  const about = (field: Draft2FocusField, detail?: string) => [
+    edited(field) ? `Your choice. Claude’s: ${focus.ai ? clip(focusValueText(field, focus.ai)) : "none"}.` : focus.reasons?.[field],
+    detail,
+  ].filter(Boolean).join(" ") || undefined;
+  const reset = (field: Draft2FocusField) => edited(field)
+    ? <div><Button variant="quiet" size="compact" busy={saving === field} disabled={locked} onClick={() => onReset(field)}>Use Claude’s</Button></div>
+    : null;
+  const consequence = values.readerConsequence;
+  const items = values.structure.itemFactIds;
+  // Text fields start again from the saved value whenever the focus changes.
+  const key = (field: Draft2FocusField) => `${field}-${focus.version}`;
+  return <div className={styles.focusBody}>
+    <p className={styles.factMeta}>Focus v{focus.version}{decided ? ` · decided by Claude, ${decided}` : ""}{focus.edited.length ? ` · ${focus.edited.length} of your ${focus.edited.length === 1 ? "change" : "changes"} kept` : ""}. The opening follows this version.</p>
+    {findings.length ? <InlineNotice tone="warning" title="The opening waits for this">{findings.map((finding) => finding.detail).join(" ")}</InlineNotice> : null}
+    <div className={styles.focusGrid}>
+      <div className={styles.focusField}>
+        <FormField label="Editorial line" description={about("line", values.line?.objective ? `The line: ${clip(values.line.objective, 220)}` : undefined)}>
+          <select value={values.line?.id ?? ""} disabled={locked || !focus.lineOptions.length} onChange={(event) => onSave("line", event.target.value)}>
+            {focus.lineOptions.length
+              ? focus.lineOptions.map((line) => <option key={line.id} value={line.id}>{line.name}</option>)
+              : <option value="">The Topic has no editorial line</option>}
+          </select>
+        </FormField>
+        {reset("line")}
+      </div>
+      <div className={styles.focusField}>
+        <FocusText key={key("audience")} label="Audience" description={about("audience")} value={values.audience} max={FOCUS_AUDIENCE_MAX_CHARACTERS} disabled={locked} onCommit={(value) => onSave("audience", value)} />
+        {reset("audience")}
+      </div>
+      <div className={styles.focusField}>
+        <FormField label="Framing" description={about("framing")}>
+          <select value={values.framing} disabled={locked} onChange={(event) => onSave("framing", event.target.value)}>
+            {FOCUS_FRAMINGS.map((framing) => <option key={framing} value={framing}>{FRAMING_LABEL[framing]}</option>)}
+          </select>
+        </FormField>
+        {reset("framing")}
+      </div>
+      <div className={styles.focusField}>
+        <FocusText
+          key={key("readerConsequence")}
+          label="Reader consequence"
+          description={about("readerConsequence", consequence?.factIds.length ? `Facts · ${consequence.factIds.join(", ")}` : consequence ? "Your words: guidance, not a fact." : "None: no fact establishes one.")}
+          value={consequence?.text ?? ""}
+          max={FOCUS_CONSEQUENCE_MAX_CHARACTERS}
+          allowEmpty
+          disabled={locked}
+          onCommit={(value) => onSave("readerConsequence", value)}
+        />
+        {reset("readerConsequence")}
+      </div>
+      <div className={styles.focusField}>
+        <FormField label="Structure" description={about("structure", values.structure.kind === "arc" ? undefined : items.length ? `${items.length} ${values.structure.kind === "list" ? "items" : "steps"} · ${items.join(", ")}` : "No items yet: decide again for Claude to find them.")}>
+          <select value={values.structure.kind} disabled={locked} onChange={(event) => onSave("structure", event.target.value)}>
+            {FOCUS_STRUCTURES.map((kind) => <option key={kind} value={kind}>{STRUCTURE_LABEL[kind]}</option>)}
+          </select>
+        </FormField>
+        {reset("structure")}
+      </div>
+      <div className={styles.focusField}>
+        <FormField label="Goal" description={about("goal")}>
+          <select value={values.goal} disabled={locked} onChange={(event) => onSave("goal", event.target.value)}>
+            {FOCUS_GOALS.map((goal) => <option key={goal} value={goal}>{GOAL_LABEL[goal]}</option>)}
+          </select>
+        </FormField>
+        {reset("goal")}
+      </div>
+      <div className={`${styles.focusField} ${styles.focusWide}`}>
+        <FocusVoice key={key("voice")} voice={values.voice} description={about("voice")} disabled={locked} onCommit={(voice) => onSave("voice", voice)} />
+        {reset("voice")}
+      </div>
+      <div className={`${styles.focusField} ${styles.focusWide}`}>
+        <FocusText key={key("direction")} label="Direction" description={about("direction")} value={values.direction} max={FOCUS_DIRECTION_MAX_CHARACTERS} rows={5} disabled={locked} onCommit={(value) => onSave("direction", value)} />
+        {reset("direction")}
+      </div>
+    </div>
+  </div>;
+}
+
+/** A text field that saves when it loses focus and changed; an emptied required field goes back to the saved value. */
+function FocusText({ label, description, value, max, rows = 2, allowEmpty = false, disabled, onCommit }: {
+  label: string; description?: string; value: string; max: number; rows?: number; allowEmpty?: boolean; disabled: boolean; onCommit: (value: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  return <FormField label={label} description={description}>
+    <textarea
+      value={draft}
+      rows={rows}
+      maxLength={max}
+      disabled={disabled}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => {
+        if (draft.trim() === value.trim()) return;
+        if (!draft.trim() && !allowEmpty) { setDraft(value); return; }
+        onCommit(draft);
+      }}
+    />
+  </FormField>;
+}
+
+/** The story's gravity and its five tone dials, saved together: the gravity when it changes, a dial when it loses focus. */
+function FocusVoice({ voice, description, disabled, onCommit }: { voice: Draft2FocusVoice; description?: string; disabled: boolean; onCommit: (voice: Draft2FocusVoice) => void }) {
+  const [draft, setDraft] = useState(voice);
+  const commit = (next: Draft2FocusVoice) => { if (JSON.stringify(next) !== JSON.stringify(voice)) onCommit(next); };
+  return <fieldset className={styles.focusVoice}>
+    <legend className={styles.focusLegend}>Voice</legend>
+    <div className={styles.voiceDials}>
+      <FormField label="Gravity">
+        <select value={draft.gravity} disabled={disabled} onChange={(event) => {
+          const next = { ...draft, gravity: event.target.value as Draft2FocusVoice["gravity"] };
+          setDraft(next);
+          commit(next);
+        }}>
+          {FOCUS_GRAVITIES.map((gravity) => <option key={gravity} value={gravity}>{GRAVITY_LABEL[gravity]}</option>)}
+        </select>
+      </FormField>
+      {TONE_KEYS.map((key) => <FormField key={key} label={TONE_LABEL[key]} description={toneWords(key, draft[key])}>
+        <input
+          type="number"
+          min={1}
+          max={100}
+          step={1}
+          value={Number.isFinite(draft[key]) ? draft[key] : ""}
+          disabled={disabled}
+          onChange={(event) => setDraft({ ...draft, [key]: event.target.valueAsNumber })}
+          onBlur={() => {
+            const value = Math.round(draft[key]);
+            if (Number.isInteger(value) && value >= 1 && value <= 100) commit({ ...draft, [key]: value });
+            else setDraft(voice);
+          }}
+        />
+      </FormField>)}
+    </div>
+    {description ? <p className={styles.factMeta}>{description}</p> : null}
+  </fieldset>;
 }

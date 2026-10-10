@@ -17,10 +17,13 @@ import type { Draft2Skill } from "./draft2-skills";
  * Version 5, after the sixth: the judge's proposals compete as written and
  * as edited, an edit keeps the creative device, and saying what the facts
  * do not is a material error that keeps an opening from winning.
+ * Version 6, with the Focus step: the opening follows the story's focus
+ * (framing, structure, goal, voice), the voice is judged against the
+ * focus's, and a sixth criterion scores how well the opening follows it.
  */
 export const HOOKS_SKILL: Draft2Skill = {
   name: "hooks",
-  version: "5",
+  version: "6",
   text: `# Openings for social carousels
 
 An opening is the cover (headline + subheadline) and slide 2 (headline + body).
@@ -28,6 +31,32 @@ The cover makes a promise the reader feels in one second; slide 2 pays the
 first instalment of that promise with a fact the cover did not spend. Both are
 judged as one unit: a strong cover with a weak slide 2 loses the swipe, and a
 cover whose promise slide 2 cannot pay is a lie.
+
+## Focus
+Every story arrives with its focus, decided before the opening and reviewed
+by the editor: the editorial line it serves, its audience, the framing, the
+reader consequence, the structure, the goal, the voice and a direction. The
+opening follows it:
+- framing "reader-consequence": the cover opens with the reader consequence,
+  in the reader's terms, before any organization, figure or place;
+  "explainer": with the mechanism or the clearest account of what happened;
+  "authority": with the decision, institution or expert the facts support.
+- structure "list": the cover headline promises the list, with its count
+  (the number of items the focus names, which counts as stated) and its
+  subject, and the place and period when the facts state them; the
+  subheadline gives its draw; slide 2 is the first item, as its facts state
+  it. "steps": the cover promises the result; slide 2 gives what the reader
+  needs first or the first step. "arc": the tension and its first payoff.
+- goal: what the promise invites. "followers": a reason to come back;
+  "saves": something worth keeping; "shares": something worth sending to
+  someone; "discussion": a question the facts leave open. It shapes the
+  promise, never the facts.
+- voice: the gravity and tone the focus sets, in the publication's language
+  and personality; it wins over the publication's defaults.
+- audience and direction: whom the opening speaks to, what it leads with and
+  what it leaves for later.
+The reader consequence and the direction are guidance, not facts: every
+sentence still rests on the verified facts it cites.
 
 ## Cover headline
 - At most 8 words, a complete thought with a verb, readable at a glance on a
@@ -75,10 +104,13 @@ cover whose promise slide 2 cannot pay is a lie.
 - payoff: does slide 2 pay the promise with something new and concrete?
 - clarity: instant comprehension on a phone, no jargon, no inside knowledge.
 - grounding: nothing intensified beyond the facts; qualifiers kept.
-- voice: the publication's language, audience and tone, as far as the story's
-  gravity allows. A grave story (war, death, injury, illness, legal jeopardy)
-  is told straight: never reward a joke on it, and never mark an opening down
-  for lacking humor or lightness the subject cannot carry.
+- voice: the voice the focus sets (its gravity and tone) in the
+  publication's language. A grave story (war, death, injury, illness, legal
+  jeopardy) is told straight: never reward a joke on it, and never mark an
+  opening down for lacking humor or lightness the subject cannot carry.
+- focus: does the opening follow the focus: its framing, reader
+  consequence, structure, audience and goal? A strong opening that ignores
+  the focus the editor approved misses its brief.
 An opening is accepted only when overall ≥ 95 and no criterion is below 85.
 
 ## Revisions
@@ -103,10 +135,10 @@ kill-chain targeting: it swaps the story's tension for a sales angle.`,
 
 /** Who the Opening roles are; composeInstructions adds the hooks skill and the Topic's brand brief after them. */
 export const OPENING_ROLES = {
-  "opening-writer": `You write the opening of a social carousel for the publication described below, from the verified facts you receive (cite their ids). For the task "openings", return exactly \`candidatesWanted\` candidates, each a different angle on the story's tension, following the openings skill; ids c1…c15. For the task "revise", return one revised candidate per opening in \`openings\`, with the same id; one edit per proposal in \`develop\`, with the proposal's id, keeping its creative device and returning it unchanged when it is already right; and, when \`newAngles\` asks for them, that many new openings with ids n1, n2…, each a different angle from every opening in \`anglesSoFar\`. Follow the instruction that comes with the task.
+  "opening-writer": `You write the opening of a social carousel for the publication described below, from the verified facts you receive (cite their ids), following the story's focus. For the task "openings", return exactly \`candidatesWanted\` candidates, each a different angle on the story's tension, following the openings skill; ids c1…c15. For the task "revise", return one revised candidate per opening in \`openings\`, with the same id; one edit per proposal in \`develop\`, with the proposal's id, keeping its creative device and returning it unchanged when it is already right; and, when \`newAngles\` asks for them, that many new openings with ids n1, n2…, each a different angle from every opening in \`anglesSoFar\`. Follow the instruction that comes with the task.
 
 Each part cites the ids of the facts it rests on ("cover.factIds", "slide2.factIds"). "angle" is one line naming the tension the opening uses.`,
-  "opening-judge": `You are the severe judge of carousel openings for the publication described below. Score every candidate on each criterion of the openings skill, rank them, name the winner, and give the writer concrete suggestions. Mechanical findings from the program are blocking. Accept only when the winner meets the skill's thresholds. Judge against the verified facts you receive only.
+  "opening-judge": `You are the severe judge of carousel openings for the publication described below. Score every candidate on each criterion of the openings skill, rank them, name the winner, and give the writer concrete suggestions. Mechanical findings from the program are blocking. Accept only when the winner meets the skill's thresholds. Judge against the verified facts and the story's focus you receive only; name an opening that departs from the focus in an OFF_FOCUS issue.
 
 "scores" holds one entry per candidate, best first; "overall" is your weighted call and "note" one sentence on why. "winnerId" is your best candidate even when the verdict is "revise". "issues" name the candidate ("candidateId") and the part ("cover" or "slide2"; null when the issue concerns the whole opening). "suggestions" are instructions the writer can act on in the next round, each on its own. "summary" is two sentences at most.
 

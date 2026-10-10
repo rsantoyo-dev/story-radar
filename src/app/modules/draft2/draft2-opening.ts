@@ -8,6 +8,7 @@ import { activeDraft2Session, claimDraft2Session, getDraft2Session, touchDraft2S
 import { draft2DevTrace } from "./draft2-dev-trace";
 import { DRAFT2_OPENING_EARLIER_ROLES, DRAFT2_OPENING_ROLES, draft2ProviderName, draft2SolModel, type Draft2Provider } from "./draft2-models";
 import { Draft2BusyError, Draft2InputError, type Draft2TraceEntry } from "./draft2-facts.types";
+import { focusFindings, focusForModels, focusItemCount, type Draft2FocusSnapshot } from "./draft2-focus.types";
 import {
   DRAFT2_OPENING_EVALUATION_SCHEMA, DRAFT2_OPENING_SCHEMA, OPENING_MAX_ROUNDS, bestOpeningVersions, mechanicalOpeningIssues, openingAcceptedWinner,
   openingExploreRequest, openingFactsSnapshot, openingFreshWanted, openingJudgeRequest, openingRefineRequest, openingRegressions, openingReviewNote,
@@ -42,8 +43,9 @@ export type Draft2OpeningInput = {
 };
 
 /**
- * Runs the Opening step on a session whose facts are verified, as a funnel
- * (OPENING_ROUND_PLAN). Claude writes and Sol judges (DRAFT2_OPENING_ROLES).
+ * Runs the Opening step on a session whose facts are verified and whose
+ * focus is decided, as a funnel (OPENING_ROUND_PLAN). Claude writes and Sol
+ * judges (DRAFT2_OPENING_ROLES); both follow the focus the run started with.
  * Round 1: the writer writes fifteen openings (cover + slide 2); the judge
  * scores them and proposes three of its own. Round 2: the writer revises the
  * three best clean versions against their own issues, develops the
@@ -53,10 +55,10 @@ export type Draft2OpeningInput = {
  * judge's final pick. The program keeps the better of each version and its
  * revision, so a round never loses the best opening so far.
  *
- * Both models receive the same compact state on every call (the verified
- * facts first, so they are read from the prompt cache, then the round's
- * candidates, scores and issues) instead of a conversation that grows each
- * round. Every provider call is checkpointed, so a failure keeps its trace.
+ * Both models receive the same compact state on every call (the focus and
+ * the verified facts first, so they are read from the prompt cache, then the
+ * round's candidates, scores and issues) instead of a conversation that
+ * grows each round. Every provider call is checkpointed, so a failure keeps its trace.
  * When a request's time cannot fit the next round or judgment, the run
  * pauses with every round saved; when a request or the server dies, the run
  * stops sending its heartbeat. Either way a continue request (resume) runs
@@ -69,11 +71,13 @@ export async function runDraft2Opening({ topicId, storyId, sessionId, resume = f
   if (await activeDraft2Session(topicId, storyId)) throw new Draft2BusyError("A Draft 2 run is already in progress for this story.");
   const facts = session.facts ?? [];
   // A rerun of the opening is allowed in any state the busy check let through, including a run a timeout left "running".
-  const factsVerified = session.step === "opening" || (session.step === "facts" && session.status === "ready");
+  // The focus starts only on verified facts, so a session at the focus step has them.
+  const factsVerified = session.step === "opening" || session.step === "focus" || (session.step === "facts" && session.status === "ready");
   if (!facts.length || !factsVerified) throw new Draft2InputError("The opening builds only on verified facts. Verify the facts first.");
   // A run left "running" passed the busy check only because its heartbeat stopped: its request or server died.
   const stopped = session.opening && (session.opening.status === "paused" || session.opening.status === "running") ? session.opening : undefined;
   if (resume && (!stopped || openingResumeRound(stopped) > OPENING_MAX_ROUNDS)) throw new Draft2InputError("There is no paused or stopped opening to continue. Write the opening again.");
+  const focus = openingFocus(session, resume ? stopped : undefined);
 
   const configuredOpenAiKey = process.env.OPENAI_API_KEY?.trim();
   if (!configuredOpenAiKey) throw new Draft2InputError("OPENAI_API_KEY is not configured; Sol needs it.");
@@ -89,6 +93,8 @@ export async function runDraft2Opening({ topicId, storyId, sessionId, resume = f
   const writer = composeInstructions("opening-writer", [HOOKS_SKILL], brief);
   const judge = composeInstructions("opening-judge", [HOOKS_SKILL], brief);
   const verifiedFacts = openingFactsSnapshot(facts);
+  const focusBrief = focusForModels(focus.values);
+  const itemCount = focusItemCount(focus.values);
 
   const trace: Draft2TraceEntry[] = [...session.trace];
   // A continue request picks the run up at its last checkpoint; a new run starts fresh and keeps the earlier one, with the editor's choice.
@@ -96,7 +102,7 @@ export async function runDraft2Opening({ topicId, storyId, sessionId, resume = f
   const opening: Draft2Opening = resume && stopped
     ? { ...stopped, status: "running", resumeRound: undefined, error: undefined, ...roles }
     : {
-      status: "running", rounds: [], candidates: [], ...roles,
+      status: "running", rounds: [], candidates: [], ...roles, focus,
       ...(session.opening ? { previousRuns: [...(session.opening.previousRuns ?? []), openingRunSummary(session.opening)] } : {}),
     };
   const claimed = await claimDraft2Session(session.id, { step: "opening", opening, error: null });
@@ -129,20 +135,20 @@ export async function runDraft2Opening({ topicId, storyId, sessionId, resume = f
   }
 
   /**
-   * One structured call to a role's model, with the verified facts where its
-   * provider caches them: Claude's cached context block, or the head of Sol's
-   * input (OpenAI caches a repeated prefix on its own).
+   * One structured call to a role's model, with the focus and the verified
+   * facts where its provider caches them: Claude's cached context block, or
+   * the head of Sol's input (OpenAI caches a repeated prefix on its own).
    */
   function ask(role: Draft2OpeningRole, round: number, operation: string, request: { instructions: string; skillVersions: Record<string, string>; contents: Record<string, unknown>; schema: Record<string, unknown> }) {
     const { instructions, skillVersions, contents, schema } = request;
     if (role.provider === "anthropic") {
-      const traceRequest = { instructions, context: { verifiedFacts: `${verifiedFacts.length} facts (cached)` }, contents };
+      const traceRequest = { instructions, context: { focus: focusBrief, verifiedFacts: `${verifiedFacts.length} facts (cached)` }, contents };
       return traced(round, "anthropic", role.model, operation, skillVersions, traceRequest, () => generateAnthropicStructuredResponse({
-        apiKey: anthropicApiKey, model: role.model, instructions, context: { verifiedFacts }, contents,
+        apiKey: anthropicApiKey, model: role.model, instructions, context: { focus: focusBrief, verifiedFacts }, contents,
         schema, schemaName: operation, maxOutputTokens: MAX_OUTPUT_TOKENS, effort: "high", timeoutMs: CALL_TIMEOUT_MS, auditContext,
       }));
     }
-    const input = { verifiedFacts, ...contents };
+    const input = { focus: focusBrief, verifiedFacts, ...contents };
     return traced(round, "openai", role.model, operation, skillVersions, { instructions, contents: input }, () => generateOpenAiStructuredResponse({
       apiKey: openAiApiKey, model: role.model, instructions, contents: input,
       schema, schemaName: operation, maxOutputTokens: MAX_OUTPUT_TOKENS, reasoningEffort: role === roles.judge ? "high" : "medium", timeoutMs: CALL_TIMEOUT_MS, auditContext,
@@ -208,7 +214,7 @@ export async function runDraft2Opening({ topicId, storyId, sessionId, resume = f
           candidates = writtenCandidates(targets.map((target) => target.candidate), answer, round, fresh, before, proposals);
           const revisions = candidates.filter((candidate) => candidate.revisionOf).length;
           const kind = revisions === 0 ? "explore" : revisions === candidates.length ? "refine" : "mixed";
-          mechanical = mechanicalOpeningIssues(candidates, facts);
+          mechanical = mechanicalOpeningIssues(candidates, facts, { itemCount });
           opening.rounds.push({ round, kind, candidates, mechanical, at: new Date().toISOString() });
           opening.candidates = candidates;
           await checkpoint();
@@ -258,6 +264,24 @@ export async function runDraft2Opening({ topicId, storyId, sessionId, resume = f
     clearInterval(heartbeat);
   }
   return (await updateDraft2Session(session.id, {})) ?? claimed;
+}
+
+/**
+ * The focus a run follows: a continued run keeps the one it started with; a
+ * new run takes the session's focus as it stands, which must be decided, not
+ * being decided, and free of program findings.
+ */
+function openingFocus(session: Draft2SessionRow, stopped: Draft2Opening | undefined): Draft2FocusSnapshot {
+  if (stopped) {
+    if (!stopped.focus) throw new Draft2InputError("This run started before the Focus step and cannot continue. Write the opening again.");
+    return stopped.focus;
+  }
+  const focus = session.focus;
+  if (!focus?.values) throw new Draft2InputError("The opening follows the story's focus. Decide the focus first.");
+  if (focus.status === "running") throw new Draft2InputError("The focus was still being decided when its request ended. Decide it again first.");
+  const findings = focusFindings(focus.values);
+  if (findings.length) throw new Draft2InputError(`Fix the focus first: ${findings.map((finding) => finding.detail).join(" ")}`);
+  return { version: focus.version, values: focus.values };
 }
 
 /**
