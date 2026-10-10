@@ -39,6 +39,13 @@ export type LogContext = {
 
 const contextStore = new AsyncLocalStorage<LogContext>();
 
+/** What an API request's audit event keeps for debugging: kept beside the context so log lines stay lean. */
+export type RequestProblem = { time: string; level: "warn" | "error"; module: string; msg: string; [field: string]: unknown };
+type RequestTrace = { startedAt: number; problems: RequestProblem[] };
+const traces = new WeakMap<LogContext, RequestTrace>();
+const MAX_PROBLEMS = 20;
+const CONTEXT_FIELDS = new Set(["requestId", "method", "path", "actor", "userId", "workspaceId", "topicId", "role"]);
+
 type ConsoleMethod = (...args: unknown[]) => void;
 type ConsoleWriters = Record<"debug" | "info" | "warn" | "error", ConsoleMethod>;
 
@@ -68,8 +75,13 @@ function write(level: LogLevel, module: string, message: string, fields?: Record
   const { minimum, format } = settings();
   if (!shouldLog(level, minimum)) return;
   try {
-    const line = formatLogEntry(buildLogEntry({ level, module, message, fields, context: contextStore.getStore() }), format);
-    writers()[level](line);
+    const context = contextStore.getStore();
+    const entry = buildLogEntry({ level, module, message, fields, context });
+    writers()[level](formatLogEntry(entry, format));
+    const trace = context ? traces.get(context) : undefined;
+    if (trace && (level === "warn" || level === "error") && trace.problems.length < MAX_PROBLEMS) {
+      trace.problems.push(Object.fromEntries(Object.entries(entry).filter(([key]) => !CONTEXT_FIELDS.has(key))) as RequestProblem);
+    }
   } catch {
     // Logging must never break the request it describes.
     writers().error(JSON.stringify({ time: new Date().toISOString(), level: "error", module: "logger", msg: "A log entry could not be written" }));
@@ -119,8 +131,15 @@ export function enterRequestLogContext(request: Request): LogContext {
   let path: string | undefined;
   try { path = new URL(request.url).pathname; } catch { path = undefined; }
   const context: LogContext = { requestId: requestIdFrom(request.headers), method: request.method, path };
+  traces.set(context, { startedAt: Date.now(), problems: [] });
   contextStore.enterWith(context);
   return context;
+}
+
+/** When the request started and the warnings and errors it logged so far (redacted, at most 20). */
+export function requestTrace(context: LogContext): { startedAt: Date; problems: RequestProblem[] } | undefined {
+  const trace = traces.get(context);
+  return trace ? { startedAt: new Date(trace.startedAt), problems: [...trace.problems] } : undefined;
 }
 
 /** Adds who the request acts for (or any other field) to the current context. */

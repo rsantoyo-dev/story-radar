@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { nextBefore, parseAuditQuery, parseChangeQuery } from "./activity.core";
+import { nextBefore, parseAuditQuery, parseChangeQuery, requestWindow, uuidsIn } from "./activity.core";
 
 const params = (query: string) => new URLSearchParams(query);
 
@@ -52,5 +52,26 @@ describe("activity queries", () => {
     const rows = [{ occurredAt: new Date("2026-10-07T10:00:00Z") }, { occurredAt: new Date("2026-10-07T09:00:00Z") }];
     assert.equal(nextBefore(rows, 2), "2026-10-07T09:00:00.000Z");
     assert.equal(nextBefore(rows, 3), null);
+  });
+
+  it("matches a request's changes to its recorded start and a few seconds after its last event", () => {
+    const window = requestWindow({ startedAt: "2026-10-08T10:00:00.000Z" }, [new Date("2026-10-08T10:00:04Z"), new Date("2026-10-08T10:00:05Z")]);
+    assert.equal(window.from.toISOString(), "2026-10-08T10:00:00.000Z");
+    assert.equal(window.to.toISOString(), "2026-10-08T10:00:08.000Z");
+    assert.equal(window.startedAt?.toISOString(), "2026-10-08T10:00:00.000Z");
+  });
+
+  it("guesses a minute back for requests recorded before their start was kept, and caps long ones", () => {
+    const legacy = requestWindow({}, [new Date("2026-10-08T10:00:00Z")]);
+    assert.equal(legacy.from.toISOString(), "2026-10-08T09:59:00.000Z");
+    assert.equal(legacy.startedAt, undefined);
+    const long = requestWindow({ startedAt: "2026-10-08T08:00:00Z" }, [new Date("2026-10-08T10:00:00Z")]);
+    assert.equal(long.from.toISOString(), "2026-10-08T09:45:03.000Z");
+    assert.equal(requestWindow({ startedAt: "later" }, [new Date("2026-10-08T10:00:00Z")]).startedAt, undefined);
+  });
+
+  it("finds the records an API path names", () => {
+    assert.deepEqual(uuidsIn("POST /api/radar/creative/drafts/f427ba10-be81-499f-b02b-65dbcb8cf6c1/assets"), ["f427ba10-be81-499f-b02b-65dbcb8cf6c1"]);
+    assert.deepEqual(uuidsIn("POST /api/radar/evaluate"), []);
   });
 });

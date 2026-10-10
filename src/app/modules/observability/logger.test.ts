@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { annotateLogContext, createLogger, currentLogContext, enterRequestLogContext, installConsoleBridge, withLogContext } from "./logger";
+import { annotateLogContext, createLogger, currentLogContext, enterRequestLogContext, installConsoleBridge, requestTrace, withLogContext } from "./logger";
 
 function capture(work: () => void | Promise<void>): Promise<Record<string, unknown>[]> {
   const lines: string[] = [];
@@ -84,5 +84,24 @@ describe("logger", () => {
       Object.assign(console, original);
       delete process.env.LOG_FORMAT;
     }
+  });
+
+  it("keeps a request's start time and its warnings and errors for the audit trail", async () => {
+    let trace: ReturnType<typeof requestTrace>;
+    await capture(() => withLogContext({}, async () => {
+      const context = enterRequestLogContext(new Request("https://app.test/api/radar/evaluate", { method: "POST" }));
+      const log = createLogger("evaluation");
+      log.info("Started");
+      log.warn("Provider slow", { provider: "gemini", apiKey: "secret-value" });
+      for (let attempt = 0; attempt < 25; attempt += 1) log.error("Provider failed", { attempt });
+      trace = requestTrace(context);
+    }));
+    assert.ok(trace!.startedAt instanceof Date);
+    assert.equal(trace!.problems.length, 20);
+    assert.equal(trace!.problems[0].level, "warn");
+    assert.equal(trace!.problems[0].module, "evaluation");
+    assert.equal(trace!.problems[0].apiKey, "[redacted]");
+    assert.equal(trace!.problems[0].path, undefined);
+    assert.ok(trace!.problems.slice(1).every((problem) => problem.level === "error"));
   });
 });

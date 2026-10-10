@@ -2,7 +2,8 @@ import { and, desc, eq, inArray, like, lt, notLike, type SQL } from "drizzle-orm
 import { NextResponse } from "next/server";
 
 import { authorizeRadarCollector, requestAccess } from "@/app/api/radar/radar-api-auth";
-import { nextBefore, parseAuditQuery } from "@/app/modules/observability/activity.core";
+import { nextBefore, parseAuditQuery, uuidsIn } from "@/app/modules/observability/activity.core";
+import { subjectTitles } from "@/app/modules/observability/request-trace";
 import { db } from "@/db/client";
 import { auditEvents, users } from "@/db/schema";
 
@@ -12,7 +13,8 @@ const NO_STORE = { "Cache-Control": "no-store" };
  * The workspace's audit trail, newest first (owners and admins). Filters:
  * `action` (prefix, e.g. `billing.`), `excludeAction` (prefix), `outcome`,
  * `entityType` + `entityId`, `topicId`, `before` (ISO time, for paging),
- * `limit` (≤ 200). `actors` names the members who acted. Platform staff may
+ * `limit` (≤ 200). `actors` names the members who acted and `subjects` the
+ * stories that API requests worked on. Platform staff may
  * pass `scope=all` for every workspace, including events with none (sign-ins).
  */
 export async function GET(request: Request) {
@@ -37,8 +39,9 @@ export async function GET(request: Request) {
       ? await db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(inArray(users.id, actorIds))
       : [];
     const actors = Object.fromEntries(people.map((person) => [person.id, person.name.trim() || person.email]));
+    const subjects = await subjectTitles(events.flatMap((event) => event.action === "api.request" ? uuidsIn(event.entityId ?? "") : []));
     return NextResponse.json(
-      { events, actors, scope: query.scope, canSeeAllWorkspaces: access.staff, nextBefore: nextBefore(events, query.limit) },
+      { events, actors, subjects, scope: query.scope, canSeeAllWorkspaces: access.staff, nextBefore: nextBefore(events, query.limit) },
       { headers: NO_STORE },
     );
   } catch (error) {

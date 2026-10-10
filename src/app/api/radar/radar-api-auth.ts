@@ -17,7 +17,7 @@ import { TopicContextError } from "@/app/modules/topics/topic-context";
 import { SIGNED_IN_CREDENTIAL } from "@/app/modules/auth/session-credential";
 import type { Topic } from "@/db/schema";
 import { annotateLogContext, createLogger, enterRequestLogContext } from "@/app/modules/observability/logger";
-import { recordAuditEventLater } from "@/app/modules/observability/audit";
+import { recordAuditEventLater, recordRequestAuditLater } from "@/app/modules/observability/audit";
 import { isMutatingMethod, topicIdFromUrl } from "@/app/modules/observability/audit.core";
 
 const log = createLogger("auth");
@@ -87,10 +87,12 @@ export async function authorizeRadarCollector(
     const needed = minimum ?? minimumRoleForMethod(request.method);
     if (!hasRole(access.role, needed) && !access.staff) return refuse(`This needs the ${needed} role in your workspace.`, 403);
   }
-  // Every authorized change request leaves a trace of who asked for what (FEAT-OBS-001).
-  if (isMutatingMethod(request.method)) {
-    recordAuditEventLater({ action: "api.request", outcome: "attempted", entityType: "route", entityId: routeLabel(request), topicId: topicIdFromUrl(request.url) ?? null });
-  }
+  // Every authorized change request leaves a trace of who asked for what, with its timing and
+  // logged problems (FEAT-OBS-001); a read leaves one only when it logged an error.
+  recordRequestAuditLater(
+    { action: "api.request", outcome: "attempted", entityType: "route", entityId: routeLabel(request), topicId: topicIdFromUrl(request.url) ?? null },
+    { onlyOnError: !isMutatingMethod(request.method) },
+  );
   return undefined;
 }
 

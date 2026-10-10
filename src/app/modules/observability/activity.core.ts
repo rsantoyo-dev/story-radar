@@ -97,3 +97,33 @@ export function parseChangeQuery(params: URLSearchParams, staff: boolean): Chang
 export function nextBefore(rows: readonly { occurredAt: Date }[], limit: number): string | null {
   return rows.length === limit ? rows.at(-1)?.occurredAt.toISOString() ?? null : null;
 }
+
+/** Vercel's `x-vercel-id` or a UUID. */
+export const REQUEST_ID = /^[A-Za-z0-9:._-]{1,128}$/u;
+
+const FALLBACK_WINDOW_MS = 60_000;
+const SETTLE_MS = 3_000;
+const MAX_WINDOW_MS = 15 * 60_000;
+
+/**
+ * The span a request's record changes and AI calls are matched to: from its
+ * recorded start (or a minute before its first event, for requests recorded
+ * before starts were kept) to a few seconds after its last event, at most 15
+ * minutes.
+ */
+export function requestWindow(details: Record<string, unknown>, recordedAt: readonly Date[]): { from: Date; to: Date; startedAt?: Date } {
+  const last = Math.max(...recordedAt.map((date) => date.getTime()));
+  const started = typeof details.startedAt === "string" ? new Date(details.startedAt) : undefined;
+  const startedAt = started && !Number.isNaN(started.getTime()) && started.getTime() <= last ? started : undefined;
+  const to = last + SETTLE_MS;
+  const from = Math.max(startedAt ? startedAt.getTime() : last - FALLBACK_WINDOW_MS, to - MAX_WINDOW_MS);
+  return { from: new Date(from), to: new Date(to), ...(startedAt ? { startedAt } : {}) };
+}
+
+/** The UUIDs in an API path, e.g. the story and draft a request worked on. */
+export function uuidsIn(text: string): string[] {
+  return text.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/giu) ?? [];
+}
+
+/** How long after a request its background work (images, follow-up writes) is still traced. */
+export const FOLLOW_UP_MS = 10 * 60_000;
