@@ -235,6 +235,51 @@ async function handleInstagramResponse<T>(response: Response): Promise<T> {
   return body as T;
 }
 
+/** What Instagram says of a professional account found by its username (Business Discovery). */
+export type InstagramDiscoveredAccount = { username: string; name: string; followers?: number; website?: string };
+
+/**
+ * Instagram's "user cannot be found" answer to a Business Discovery lookup
+ * (code 110, subcode 2207013). Code 110 alone also answers for an invalid
+ * account of the Topic's own, which must fail rather than read as not found.
+ */
+function isUnknownInstagramUser(error: unknown): boolean {
+  const graph = error instanceof MetaGraphApiError ? (error.graphError as { error?: { code?: unknown; error_subcode?: unknown } } | undefined)?.error : undefined;
+  return graph?.code === 110 && graph.error_subcode === 2207013;
+}
+
+/**
+ * Read-only: whether a username is an Instagram professional (business or
+ * creator) account, and its public name, through Business Discovery on the
+ * Topic's own linked account. Only answers for professional accounts, and
+ * only with a Facebook Page token on graph.facebook.com. Undefined when
+ * Instagram knows no such account; any other failure throws.
+ */
+export async function fetchInstagramBusinessDiscovery(
+  igUserId: string,
+  accessToken: string,
+  username: string,
+  host: InstagramGraphHost = "graph.facebook.com",
+): Promise<InstagramDiscoveredAccount | undefined> {
+  if (!IG_MEDIA_ID.test(igUserId)) throw new MetaGraphApiError("Invalid Instagram account identity", 400);
+  if (!/^[A-Za-z0-9._]{1,30}$/.test(username)) throw new MetaGraphApiError("Invalid Instagram username", 400);
+  let payload: { business_discovery?: { username?: unknown; name?: unknown; followers_count?: unknown; website?: unknown } };
+  try {
+    payload = await instagramGraphGet(igUserId, accessToken, `business_discovery.username(${username}){username,name,followers_count,website}`, host);
+  } catch (error) {
+    if (isUnknownInstagramUser(error)) return undefined;
+    throw error;
+  }
+  const found = payload.business_discovery;
+  if (!found || typeof found.username !== "string") return undefined;
+  return {
+    username: found.username,
+    name: typeof found.name === "string" ? found.name : found.username,
+    ...(typeof found.followers_count === "number" ? { followers: found.followers_count } : {}),
+    ...(typeof found.website === "string" && found.website ? { website: found.website } : {}),
+  };
+}
+
 /** Read-only PUB-02 probe. Never creates a container or calls media_publish. */
 export async function fetchInstagramPublishingQuota(igUserId: string, accessToken: string, host: InstagramGraphHost = DEFAULT_INSTAGRAM_GRAPH_HOST) {
   if (!/^[0-9]+$/.test(igUserId)) throw new MetaGraphApiError("Invalid Instagram account identity", 400);

@@ -103,6 +103,8 @@ export async function findLatestCreativeBrief(
         eq(storyCreativeBriefs.topicId, topicId),
         eq(storyCreativeBriefs.storyId, storyId),
         ne(storyCreativeBriefs.provider, "documentary"),
+        // A Draft 2 publication copy is never a v1 brief.
+        ne(storyCreativeBriefs.provider, "draft2"),
       ),
     )
     .orderBy(desc(storyCreativeBriefs.createdAt))
@@ -268,6 +270,8 @@ export async function findCreativeDraftsForStory(
         eq(creativeDrafts.topicId, topicId),
         eq(creativeDrafts.storyId, storyId),
         ne(creativeDrafts.provider, "documentary"),
+        // A Draft 2 publication copy lives in Draft 2's canvas, not in v1's Studio.
+        ne(creativeDrafts.provider, "draft2"),
       ),
     )
     .orderBy(desc(creativeDrafts.updatedAt));
@@ -1126,7 +1130,7 @@ async function computeBrandReferenceSelectionByOrder(
   units: GeneratedCreativeDraft["units"],
   visualFidelityOverride: VisualFidelityOverride | null | undefined,
 ): Promise<Map<number, BrandReferenceSelection>> {
-  if (provider === "documentary") return new Map();
+  if (provider === "documentary" || provider === "draft2") return new Map();
 
   const [eligible, inheritedMode] = await Promise.all([
     listActivatedBrandReferences(topicId),

@@ -10,6 +10,8 @@ import { documentarySourceToken, latestDocumentaryBatch } from "../stories/creat
 import { DOCUMENTARY_PROVIDER } from "../stories/creative-documentary";
 import { documentaryImage } from "../stories/manage-creative-documentary";
 import { downloadApprovedCreativeImage } from "../stories/manage-creative-assets";
+import { DRAFT2_PROVIDER } from "../draft2/draft2-publication.types";
+import { readDraft2PublicationImage } from "../draft2/draft2-publication";
 import { CreativeContentConflictError, CreativeContentNotFoundError, getCreativeWorkspaceState } from "../stories/manage-creative-content";
 import { checkChannelPublishingAccess, getChannelPublicationDestination } from "./publication-channel-connections";
 import { DEFAULT_PUBLICATION_CHANNEL, type PublicationChannel } from "./publication-channel";
@@ -26,19 +28,23 @@ export async function getPublicationCandidate(topicId: string, draftId: string, 
       const batch = await findCreativeAssetBatchById(batchId);
       if (!batch || batch.draftId !== draft.id) throw new CreativeContentNotFoundError("Image batch not found for this draft");
       if (batch.provider === DOCUMENTARY_PROVIDER && (await latestDocumentaryBatch(topicId, draft.storyId))?.id !== batch.id) throw new CreativeContentConflictError("Validate the latest documentary preparation.");
-      if (batch.provider !== DOCUMENTARY_PROVIDER) {
+      // A documentary or Draft 2 copy is approved as a whole in its own pipeline; v1's workspace never shows it.
+      if (batch.provider !== DOCUMENTARY_PROVIDER && batch.provider !== DRAFT2_PROVIDER) {
         const workspace = await getCreativeWorkspaceState(topicId, draft.storyId);
         const current = workspace.drafts.find(item => item.id === draftId);
         if (!current) throw new CreativeContentNotFoundError("Draft not found");
         draft = current;
       }
       const [sourceToken, destination] = await Promise.all([documentarySourceToken(topicId, draft.storyId), getChannelPublicationDestination(topicId, channel)]);
-      const photoCredits = batch.provider === DOCUMENTARY_PROVIDER ? [] : await batchPhotoCredits(batch);
+      // A Draft 2 caption already carries its credits.
+      const photoCredits = batch.provider === DOCUMENTARY_PROVIDER || batch.provider === DRAFT2_PROVIDER ? [] : await batchPhotoCredits(batch);
       return { topicId, draft, batch, sourceToken, destination, photoCredits };
     },
     readApprovedImage: (input, assetId) => input.batch.provider === DOCUMENTARY_PROVIDER
       ? documentaryImage(topicId, input.draft.storyId, assetId, false, true)
-      : downloadApprovedCreativeImage(topicId, assetId),
+      : input.batch.provider === DRAFT2_PROVIDER
+        ? readDraft2PublicationImage(topicId, assetId)
+        : downloadApprovedCreativeImage(topicId, assetId),
   });
 }
 

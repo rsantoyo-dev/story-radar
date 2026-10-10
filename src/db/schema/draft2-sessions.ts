@@ -8,6 +8,9 @@ import type { Draft2Deck } from "@/app/modules/draft2/draft2-deck.types";
 import type { Draft2Inventory } from "@/app/modules/draft2/draft2-inventory.types";
 import type { Draft2Visual } from "@/app/modules/draft2/draft2-visual.types";
 import type { Draft2Images } from "@/app/modules/draft2/draft2-images.types";
+import type { Draft2Mentions } from "@/app/modules/draft2/draft2-mentions.types";
+import type { Draft2Caption } from "@/app/modules/draft2/draft2-caption.types";
+import type { Draft2Publication } from "@/app/modules/draft2/draft2-publication.types";
 import type { Draft2Focus } from "@/app/modules/draft2/draft2-focus.types";
 import type { Draft2Opening } from "@/app/modules/draft2/draft2-opening.types";
 
@@ -43,6 +46,12 @@ export const draft2Sessions = pgTable("draft2_sessions", {
   visual: jsonb("visual").$type<Draft2Visual>(),
   /** Step 8: the slides' images as runs of attempts (generated, reviewed, corrected), the version each slide shows, and earlier runs. The image files live in R2. */
   images: jsonb("images").$type<Draft2Images>(),
+  /** Step 9, before the caption: the Instagram accounts it may tag, checked on Instagram and confirmed by the editor. */
+  mentions: jsonb("mentions").$type<Draft2Mentions>(),
+  /** Step 9: the post caption, every round, the winner, the editor's choice, and what it wrote for. */
+  caption: jsonb("caption").$type<Draft2Caption>(),
+  /** Step 10: what the editor approved and the v1 draft and batch it was copied into for v1's publication. */
+  publication: jsonb("publication").$type<Draft2Publication>(),
   threads: jsonb("threads").$type<Draft2Threads>().notNull().default(sql`'{}'::jsonb`),
   trace: jsonb("trace").$type<Draft2TraceEntry[]>().notNull().default(sql`'[]'::jsonb`),
   error: text("error"),

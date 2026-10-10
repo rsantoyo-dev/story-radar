@@ -70,7 +70,8 @@ export const DRAFT_2_STEPS = [
   { key: "inventory", title: "People and places", detail: "Who and where the story names, and the verified photos and maps of them." },
   { key: "visual", title: "Visual script", detail: "The carousel's images as one visual story, in the brand's identity." },
   { key: "images", title: "Images", detail: "Each slide made from the visual script, reviewed, and corrected once when it needs it; logo and page number added afterwards." },
-  { key: "review", title: "Review", detail: "Deterministic checks and a calibrated judge before approval." },
+  { key: "caption", title: "Caption", detail: "The post’s text: short lines and blank lines, the brand’s emojis, the closing’s call to action, the accounts you tag and 5 to 8 hashtags." },
+  { key: "publish", title: "Publish", detail: "The carousel approved as it stands, then published to Facebook, Instagram or both once you confirm the exact post." },
 ] as const;
 
 /** Characters per token, roughly, for JSON in English, French or Spanish: close enough to tell an answer from thinking. */

@@ -1162,6 +1162,9 @@ export async function approveSavedCreativeDraft(
   if (current.provider === "documentary") {
     throw new CreativeContentConflictError("Review the complete documentary publication in its final review panel.");
   }
+  if (current.provider === "draft2") {
+    throw new CreativeContentConflictError("Approve this carousel in its Draft 2 canvas.");
+  }
 
   const brief = await findCreativeBriefById(topicId, current.briefId);
   if (!brief) {

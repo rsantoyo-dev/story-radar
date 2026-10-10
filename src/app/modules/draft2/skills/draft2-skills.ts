@@ -1,4 +1,5 @@
 import type { CreativeProfile } from "../../stories/creative-content.types";
+import { CAPTION_ROLES, CAPTIONS_SKILL } from "./captions";
 import { CLOSING_ROLES, CLOSINGS_SKILL } from "./closings";
 import { DECK_ROLES, DECKS_SKILL } from "./decks";
 import { FACTS_ROLES, FACTS_SKILL } from "./facts";
@@ -15,9 +16,9 @@ import { toneLine } from "./tone";
  * skill, so they work from one rubric; every provider call records the
  * skill versions its instructions were composed from.
  */
-export type Draft2SkillName = "facts" | "focus" | "hooks" | "closings" | "decks" | "visuals" | "images";
+export type Draft2SkillName = "facts" | "focus" | "hooks" | "closings" | "decks" | "visuals" | "images" | "captions";
 export type Draft2Role = "extractor" | "reviewer" | "focus-editor" | "opening-writer" | "opening-judge" | "closing-writer" | "closing-judge" | "deck-writer" | "deck-judge"
-  | "people-finder" | "visual-writer" | "visual-judge" | "image-judge";
+  | "people-finder" | "visual-writer" | "visual-judge" | "image-judge" | "caption-writer" | "caption-judge" | "mention-finder";
 
 export type Draft2Skill = {
   name: Draft2SkillName;
@@ -28,10 +29,10 @@ export type Draft2Skill = {
   roleText?: Partial<Record<Draft2Role, string>>;
 };
 
-export const DRAFT2_SKILLS: Record<Draft2SkillName, Draft2Skill> = { facts: FACTS_SKILL, focus: FOCUS_SKILL, hooks: HOOKS_SKILL, closings: CLOSINGS_SKILL, decks: DECKS_SKILL, visuals: VISUALS_SKILL, images: IMAGES_SKILL };
+export const DRAFT2_SKILLS: Record<Draft2SkillName, Draft2Skill> = { facts: FACTS_SKILL, focus: FOCUS_SKILL, hooks: HOOKS_SKILL, closings: CLOSINGS_SKILL, decks: DECKS_SKILL, visuals: VISUALS_SKILL, images: IMAGES_SKILL, captions: CAPTIONS_SKILL };
 
 /** Each role's own instructions: who it is and what it receives. */
-export const DRAFT2_ROLES: Record<Draft2Role, string> = { ...FACTS_ROLES, ...FOCUS_ROLES, ...OPENING_ROLES, ...CLOSING_ROLES, ...DECK_ROLES, ...VISUAL_ROLES, ...IMAGE_ROLES };
+export const DRAFT2_ROLES: Record<Draft2Role, string> = { ...FACTS_ROLES, ...FOCUS_ROLES, ...OPENING_ROLES, ...CLOSING_ROLES, ...DECK_ROLES, ...VISUAL_ROLES, ...IMAGE_ROLES, ...CAPTION_ROLES };
 
 /** Role instructions + the skills the role reads + the Topic's brand brief, in that order. */
 export function composeInstructions(role: Draft2Role, skills: readonly Draft2Skill[], brandBrief?: string): { instructions: string; skillVersions: Record<string, string> } {

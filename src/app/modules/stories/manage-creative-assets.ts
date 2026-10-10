@@ -1681,6 +1681,9 @@ async function requireCreativeDraft(topicId: string, draftId: string) {
   if (draft.provider === "documentary") {
     throw new CreativeContentConflictError("Use documentary preparation and its complete final review for this publication.");
   }
+  if (draft.provider === "draft2") {
+    throw new CreativeContentConflictError("This carousel was made in Draft 2; change its images in its Draft 2 canvas.");
+  }
   return draft;
 }
 

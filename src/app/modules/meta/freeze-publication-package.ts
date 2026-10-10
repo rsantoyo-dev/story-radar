@@ -12,6 +12,8 @@ import {
 import { findCreativeDraftById } from "../stories/creative-content.repository";
 import { findCreativeAssetBatchById } from "../stories/creative-assets.repository";
 import { DOCUMENTARY_PROVIDER } from "../stories/creative-documentary";
+import { DRAFT2_PROVIDER } from "../draft2/draft2-publication.types";
+import { readDraft2PublicationImage } from "../draft2/draft2-publication";
 import { documentaryImage } from "../stories/manage-creative-documentary";
 import { downloadApprovedCreativeImage } from "../stories/manage-creative-assets";
 import {
@@ -122,7 +124,9 @@ export async function freezePublicationPackage(
     readApprovedImage: (assetId, storyId, provider) =>
       provider === DOCUMENTARY_PROVIDER
         ? documentaryImage(topicId, storyId, assetId, false, true)
-        : downloadApprovedCreativeImage(topicId, assetId),
+        : provider === DRAFT2_PROVIDER
+          ? readDraft2PublicationImage(topicId, assetId)
+          : downloadApprovedCreativeImage(topicId, assetId),
     buildObjectKey: (packageId, unitOrder) =>
       buildPublicationDeliveryObjectKey({ topicId, packageId, unitOrder }),
     putObject: async (objectKey, body, contentType) => {

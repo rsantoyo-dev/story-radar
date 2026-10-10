@@ -14,7 +14,7 @@ brand's logo and page number added afterwards, then check each image before
 the editor sees it.
 
 ```text
-Facts → Focus → Opening → Closing → Deck → People and places → Visual script → Images → (Review)
+Facts → Focus → Opening → Closing → Deck → People and places → Visual script → Images → Caption → Publish
 ```
 
 ## 2. Decisions taken with the editor (2026-10-10)
@@ -191,8 +191,8 @@ pipeline does. Those drafts would then:
   URLs.
 
 Publishing (which needs a v1 draft and batch for
-`instagram_publication_packages`) can freeze an approved Draft 2 carousel
-into v1 rows at that point, as an immutable package.
+`instagram_publication_packages`) copies the approved carousel into v1 rows
+once, at approval, under the `draft2` provider (`draft2-caption.md`).
 
 ## 8. Tests
 

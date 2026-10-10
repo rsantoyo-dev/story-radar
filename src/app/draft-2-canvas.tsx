@@ -20,6 +20,9 @@ import { DECK_GATE, DECK_MAX_ROUNDS, type Draft2Deck, type Draft2DeckCandidate, 
 import { INVENTORY_CHARACTER_CHOICES, type Draft2CharacterChoice, type Draft2Inventory, type Draft2InventoryEntity, type Draft2InventoryStoryPhoto } from "@/app/modules/draft2/draft2-inventory.types";
 import { VISUAL_GATE, VISUAL_MAX_ROUNDS, visualPlan, type Draft2Visual, type Draft2VisualCandidate, type Draft2VisualCriterion, type Draft2VisualRecurring, type Draft2VisualShot } from "@/app/modules/draft2/draft2-visual.types";
 import { IMAGES_MAX_REQUESTS, latestAttempt, shownAttempt, slideSettled, type Draft2ImageAttempt, type Draft2ImageReview, type Draft2Images, type Draft2SlideImage } from "@/app/modules/draft2/draft2-images.types";
+import { CAPTION_GATE, CAPTION_MAX_CHARACTERS, CAPTION_MAX_ROUNDS, captionPostText, type Draft2Caption, type Draft2CaptionCandidate, type Draft2CaptionCriterion } from "@/app/modules/draft2/draft2-caption.types";
+import { confirmedMentions, mentionEntities, sameMentions, type Draft2MentionAccount, type Draft2MentionStatus, type Draft2Mentions } from "@/app/modules/draft2/draft2-mentions.types";
+import { publicationCurrent, publicationTarget, targetPostText, type Draft2Publication, type Draft2PublicationTarget } from "@/app/modules/draft2/draft2-publication.types";
 import {
   criterionOf, funnelAcceptedWinner, funnelExtendable, funnelResumeRound, funnelScorePasses, funnelVersions, hasMaterialError,
   type FunnelCandidate, type FunnelGate, type FunnelIssue, type FunnelRegression, type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion,
@@ -27,6 +30,8 @@ import {
 import { DRAFT2_OPENING_EARLIER_ROLES, DRAFT2_OPENING_ROLES, draft2ProviderName } from "@/app/modules/draft2/draft2-models";
 import { contentStatusLabel, DRAFT_2_STEPS, paragraphs, sourceHost, storyHref, traceUsageLine, wordCount } from "./draft-2-canvas.core";
 import { StoryPhotosPanel } from "./story-photos-panel";
+import { RunPublishActions } from "./run-publish-actions";
+import { PublicationChannelsPanel } from "./publication-channels-panel";
 import styles from "./draft-2-canvas.generated.module.css";
 
 /** The Draft 2 session as the API returns it. */
@@ -44,14 +49,17 @@ type Draft2SessionView = {
   inventory: Draft2Inventory | null;
   visual: Draft2Visual | null;
   images: Draft2Images | null;
+  mentions: Draft2Mentions | null;
+  caption: Draft2Caption | null;
+  publication: Draft2Publication | null;
   trace: Draft2TraceEntry[];
   error: string | null;
   updatedAt: string;
 };
 
-type Draft2RunStep = "facts" | "focus" | "opening" | "closing" | "deck" | "inventory" | "visual" | "images";
+type Draft2RunStep = "facts" | "focus" | "opening" | "closing" | "deck" | "inventory" | "visual" | "images" | "mentions" | "caption" | "publication";
 /** The steps that run on the funnel, in rounds that can pause and continue. */
-type Draft2FunnelStep = "opening" | "closing" | "deck" | "visual";
+type Draft2FunnelStep = "opening" | "closing" | "deck" | "visual" | "caption";
 
 /** Up to three rounds of two provider calls; the route itself allows 300 s. */
 const STEP_REQUEST_TIMEOUT_MS = 540_000;
@@ -99,6 +107,11 @@ const SHOT_LABEL: Record<Draft2VisualShot, string> = { wide: "Wide shot", medium
 const IMAGES_STATUS: Record<Draft2Images["status"], { label: string; tone: StatusTone }> = {
   running: { label: "Generating", tone: "info" }, paused: { label: "Paused", tone: "warning" }, ready: { label: "Ready", tone: "success" },
   "needs-review": { label: "Needs review", tone: "warning" }, failed: { label: "Failed", tone: "error" },
+};
+const CAPTION_CRITERION_LABEL: Record<Draft2CaptionCriterion, string> = { hook: "Hook", scan: "Scan", grounding: "Grounding", voice: "Voice", action: "Action", hashtags: "Hashtags", fit: "Fit" };
+const MENTION_STATUS: Record<Draft2MentionStatus, { label: string; tone: StatusTone }> = {
+  verified: { label: "On Instagram", tone: "info" }, confirmed: { label: "Tagged", tone: "success" }, rejected: { label: "Not them", tone: "neutral" },
+  "not-found": { label: "Not found", tone: "neutral" }, unavailable: { label: "Not checked", tone: "warning" },
 };
 const NEED_LABEL: Record<string, string> = { "generic-illustration": "Illustration", "character-reference": "Brand character", "real-photo": "Verified photo", "verified-map": "Verified map", typography: "Typography" };
 
@@ -172,6 +185,9 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const [inventoryError, setInventoryError] = useState<string>();
   const [savingImage, setSavingImage] = useState<string>();
   const [imageError, setImageError] = useState<string>();
+  const [savingMention, setSavingMention] = useState<string>();
+  const [mentionError, setMentionError] = useState<string>();
+  const [acknowledged, setAcknowledged] = useState(false);
   const [focusError, setFocusError] = useState<string>();
   const [following, setFollowing] = useState<string>();
   // The clock a run is measured against, to tell a run that went silent from one still working.
@@ -273,21 +289,21 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
    * up. A run that pauses, or whose request is lost, goes on from its last
    * checkpoint in a new request until it finishes.
    */
-  async function runStep(step: Draft2RunStep, { continuing = false } = {}) {
+  async function runStep(step: Exclude<Draft2RunStep, "publication">, { continuing = false } = {}) {
     if (running || (step !== "facts" && !session)) return;
-    setRunning(step); setRunError(undefined); setChoiceError(undefined); setFocusError(undefined);
+    setRunning(step); setRunError(undefined); setChoiceError(undefined); setFocusError(undefined); setMentionError(undefined);
     try {
       if (step === "facts") {
         setSession(await postStep("facts", { storyId }));
         return;
       }
-      if (step === "focus" || step === "inventory") {
+      if (step === "focus" || step === "inventory" || step === "mentions") {
         setSession(await postStep(step, { storyId, sessionId: session?.id }));
         return;
       }
       let payload: Record<string, unknown> = { storyId, sessionId: session?.id, ...(continuing ? { continue: true } : {}) };
       // Each request advances at least one round or judgment; a round can pause once before its writer and once before its judge. An images run pauses while fal works.
-      const maxRounds = step === "visual" ? VISUAL_MAX_ROUNDS : step === "deck" ? DECK_MAX_ROUNDS : step === "closing" ? CLOSING_MAX_ROUNDS : OPENING_MAX_ROUNDS;
+      const maxRounds = step === "caption" ? CAPTION_MAX_ROUNDS : step === "visual" ? VISUAL_MAX_ROUNDS : step === "deck" ? DECK_MAX_ROUNDS : step === "closing" ? CLOSING_MAX_ROUNDS : OPENING_MAX_ROUNDS;
       const maxRequests = step === "images" ? IMAGES_MAX_REQUESTS : maxRounds * 2;
       for (let request = 0; request <= maxRequests; request++) {
         let next: Draft2SessionView | undefined;
@@ -374,6 +390,40 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
       setSavingImage(undefined);
     }
     if (queued) void runStep("images", { continuing: true });
+  }
+
+  /** One decision on the accounts to tag: tag one, say it is not them, take that back, or add one of the editor's (checked on Instagram). */
+  async function decideMention(input: Record<string, unknown>): Promise<boolean> {
+    if (!session || running || savingMention) return false;
+    setSavingMention(String(input.accountId ?? input.action)); setMentionError(undefined);
+    try {
+      const response = await fetch(`/api/radar/draft2/mentions?topicId=${encodeURIComponent(topicId)}`, {
+        method: "PATCH", cache: "no-store", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: session.id, ...input }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? "Could not save the decision.");
+      setSession(body.session as Draft2SessionView);
+      return true;
+    } catch (cause) {
+      setMentionError(cause instanceof Error ? cause.message : "Could not save the decision.");
+      return false;
+    } finally {
+      setSavingMention(undefined);
+    }
+  }
+
+  /** Approves the carousel as it stands for publishing; nothing is published until the editor confirms a channel below. */
+  async function approvePublication(acknowledgeIssues = acknowledged) {
+    if (!session || running) return;
+    setRunning("publication"); setRunError(undefined);
+    try {
+      setSession(await postStep("publication", { storyId, sessionId: session.id, acknowledgeIssues }));
+      setAcknowledged(false);
+    } catch (cause) {
+      setRunError({ step: "publication", message: cause instanceof Error ? cause.message : "Could not approve the carousel." });
+    } finally {
+      setRunning(undefined);
+    }
   }
 
   /** Records the editor's pick among the versions of an opening or a closing. */
@@ -469,7 +519,32 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const visualFinished = Boolean(visual && chosenVisualId && visual.status !== "running" && visual.status !== "paused");
   const imagesReady = visualFinished && !visualChanged;
   const imagesChanged = Boolean(images && chosenVisualId && images.visualId !== chosenVisualId);
-  const stepStatus: Partial<Record<string, { label: string; tone: StatusTone }>> = { facts: factsStatus, focus: focusStatus, opening: openingStatus, closing: closingStatus, deck: deckStatus, inventory: inventoryStatus, visual: visualStatus, images: imagesStatus };
+  // The accounts the caption may tag: proposed for the people, places and organizations, checked on Instagram, tagged only once the editor confirms them.
+  const mentions = session?.mentions ?? undefined;
+  const mentionsStalled = !running && mentions?.status === "running" && now > 0 && now - Date.parse(session?.updatedAt ?? "") > OPENING_STALL_MS;
+  const mentionsSearching = mentions?.status === "running" && !mentionsStalled;
+  const tagged = confirmedMentions(mentions);
+  const mentionsReady = inventory?.status === "ready";
+  // The caption accompanies the finished images, while the visual script they picture is still in the session.
+  const caption = session?.caption ?? undefined;
+  const captionStalled = !running && caption?.status === "running" && now > 0 && now - Date.parse(session?.updatedAt ?? "") > OPENING_STALL_MS;
+  const captionStatus = running === "caption" ? OPENING_STATUS.running : captionStalled ? { label: "Stopped", tone: "warning" as const } : caption ? OPENING_STATUS[caption.status] : undefined;
+  const imagesFinished = Boolean(images && images.status !== "running" && images.status !== "paused" && images.slides.every((slide) => slideSettled(slide) && shownAttempt(slide)));
+  const imagesScriptGone = Boolean(images && !funnelVersions(visual?.rounds ?? []).some((version) => version.candidate.id === images.visualId));
+  const captionReady = imagesFinished && !imagesScriptGone;
+  const captionResumable = caption && (caption.status === "paused" || captionStalled) && funnelResumeRound(caption) <= CAPTION_MAX_ROUNDS;
+  const captionResumeRound = captionResumable && caption ? funnelResumeRound(caption) : undefined;
+  const captionPausedRound = caption?.status === "paused" ? funnelResumeRound(caption) : undefined;
+  // A caption written for other images, or tagging other accounts, than the ones now.
+  const captionImagesChanged = Boolean(caption?.imagesRunId && images && caption.imagesRunId !== images.runId);
+  const captionMentionsChanged = Boolean(caption && caption.status !== "running" && !sameMentions(caption.mentions, tagged));
+  const captionDisplay = captionDisplayFor(caption);
+  // Publish: the carousel as it stands, approved once and copied for v1's publication.
+  const publication = session?.publication ?? undefined;
+  const { target: publishable, blocker: publishBlocker } = publicationState(session);
+  const approvedCurrent = publicationCurrent(publication, publishable);
+  const publishStatus = running === "publication" ? { label: "Approving", tone: "info" as const } : approvedCurrent ? { label: "Approved", tone: "success" as const } : publication ? { label: "Changed since", tone: "warning" as const } : undefined;
+  const stepStatus: Partial<Record<string, { label: string; tone: StatusTone }>> = { facts: factsStatus, focus: focusStatus, opening: openingStatus, closing: closingStatus, deck: deckStatus, inventory: inventoryStatus, visual: visualStatus, images: imagesStatus, caption: captionStatus, publish: publishStatus };
   const resumable = session?.opening && (session.opening.status === "paused" || stalled) && openingResumeRound(session.opening) <= OPENING_MAX_ROUNDS;
   const resumeRound = resumable && session?.opening ? openingResumeRound(session.opening) : undefined;
   const pausedRound = session?.opening?.status === "paused" ? openingResumeRound(session.opening) : undefined;
@@ -715,6 +790,67 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
             {imageError ? <InlineNotice tone="error" title="Your decision was not saved">{imageError}</InlineNotice> : null}
             {images && session && running !== "images" ? <ImagesView images={images} story={{ topicId, sessionId: session.id, secret }} saving={savingImage} locked={running !== undefined || savingImage !== undefined} onDecide={(input) => { void decideImage(input); }} /> : null}
           </section>
+          <section className={styles.factsPanel} aria-label="Caption step">
+            <div className={styles.factsHeader}>
+              <div>
+                <p className={styles.eyebrow}>Step 9 · Caption</p>
+                <p className={styles.factsIntro}>The post’s text for the finished carousel, in the publication’s voice: an opening line that stops the reader, short lines with blank lines between them, the emojis the brand allows, the closing’s one call to action, the accounts you tag below and 5 to 8 hashtags at the end. The program adds the photo credits after the text. {TODAY.writer} writes three captions; {TODAY.judge} scores them and proposes one of its own; {TODAY.writer} revises the best and edits {TODAY.judge}’s, which also competes as {TODAY.judge} wrote it, for {TODAY.judge}’s pick. Accepted at 95/100 with no criterion below 85.</p>
+              </div>
+              <ActionRow>
+                {captionResumeRound && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("caption", { continuing: true }); }}>Continue from round {captionResumeRound}</Button> : null}
+                <Button variant="primary" size="compact" busy={running === "caption"} disabled={!factsVerified || !captionReady || running !== undefined || savingMention !== undefined || mentionsSearching} onClick={() => { void runStep("caption"); }}>
+                  {running === "caption" ? "Writing and judging…" : caption ? "Write the caption again" : "Write the caption"}
+                </Button>
+              </ActionRow>
+            </div>
+            {factsVerified && !captionReady && !running ? <p className={styles.factMeta}>{imagesScriptGone ? "The visual script these images picture is no longer in the session; make the images again first." : "The caption accompanies the finished carousel; finish the images first, with an image on every slide."}</p> : null}
+            <div className={styles.openingGroup}>
+              <div className={styles.factsHeader}>
+                <SectionHeader level={3} title="Accounts to tag" description="Claude proposes the Instagram accounts of the story’s people, places and organizations; Instagram says which exist and what they are called; only the accounts you tag reach the caption. On Facebook an @username stays plain text." />
+                <Button variant="secondary" size="compact" busy={running === "mentions"} disabled={!factsVerified || !mentionsReady || running !== undefined || savingMention !== undefined || mentionsSearching} onClick={() => { void runStep("mentions"); }}>
+                  {running === "mentions" ? "Finding…" : mentions ? "Find again" : "Find accounts to tag"}
+                </Button>
+              </div>
+              {factsVerified && !mentionsReady && !running ? <p className={styles.factMeta}>The accounts are those of the people and places; find them first (step 6).</p> : null}
+              {running === "mentions" ? <LoadingState>Claude proposes the accounts; each one is checked on Instagram. This can take a minute.</LoadingState> : null}
+              {mentionsStalled ? <InlineNotice tone="warning" title="This search stopped">Its request or the server ended before it finished. Find the accounts again.</InlineNotice> : null}
+              {runError?.step === "mentions" ? <InlineNotice tone="error" title="The search stopped">{runError.message}</InlineNotice> : null}
+              {mentions?.status === "failed" && mentions.error && running !== "mentions" ? <InlineNotice tone="error" title="The last search failed">{mentions.error}</InlineNotice> : null}
+              {mentionError ? <InlineNotice tone="error" title="Your decision was not saved">{mentionError}</InlineNotice> : null}
+              {inventory && running !== "mentions" && !mentionsSearching ? <MentionsView mentions={mentions} entities={mentionEntities(inventory)} saving={savingMention} locked={running !== undefined || savingMention !== undefined} onDecide={decideMention} /> : null}
+            </div>
+            {captionImagesChanged && running !== "caption" ? <InlineNotice tone="info" title="The images changed">This caption was written for an earlier images run. Write it again for the images as they are now.</InlineNotice> : null}
+            {captionMentionsChanged && !captionImagesChanged && running !== "caption" ? <InlineNotice tone="info" title="The accounts to tag changed">This caption tags {caption?.mentions?.length ? listed(caption.mentions.map((mention) => mention.handle)) : "no account"}; you tag {tagged.length ? listed(tagged.map((mention) => mention.handle)) : "none"} now. Write it again to tag them.</InlineNotice> : null}
+            {running === "caption" ? <LoadingState>{following ? `${following} Following the run on the server…` : captionPausedRound ? `Continuing with round ${captionPausedRound} in a new request…` : `${TODAY.writer} writes three captions; ${TODAY.judge} judges each round. This can take a few minutes.`}</LoadingState> : null}
+            {captionStalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {new Date(session.updatedAt).toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit" })}: its request or the server ended. Continue from round {captionResumeRound} picks it up at its last checkpoint; a round already written is judged, not written again.</InlineNotice> : null}
+            {runError?.step === "caption" ? <InlineNotice tone="error" title="The caption step stopped">{runError.message}</InlineNotice> : null}
+            {session?.step === "caption" && session.error && running !== "caption" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
+            {choiceError?.step === "caption" ? <InlineNotice tone="error" title="Your choice was not saved">{choiceError.message}</InlineNotice> : null}
+            {caption && running !== "caption" ? <FunnelRunView
+              run={caption}
+              display={captionDisplay}
+              choosing={choosing?.step === "caption" ? choosing.id : undefined}
+              locked={running !== undefined || caption.status === "running"}
+              onChoose={(candidateId) => { void choose("caption", candidateId); }}
+            /> : null}
+          </section>
+          <section className={styles.factsPanel} aria-label="Publish step">
+            <div className={styles.factsHeader}>
+              <div>
+                <p className={styles.eyebrow}>Step 10 · Publish</p>
+                <p className={styles.factsIntro}>You approve the carousel as it stands: each slide’s image and the chosen caption, with its credits and hashtags. v1’s publication then freezes it as one exact package and publishes it to the Topic’s Facebook Page, its Instagram account, or both at once, with its queue, retries and links to the posts. Nothing is published until you confirm the exact post. A carousel publishes 2 to 10 images.</p>
+              </div>
+              <Button variant="primary" size="compact" busy={running === "publication"} disabled={!publishable || approvedCurrent || running !== undefined || Boolean(publishable?.issues.length && !acknowledged)} onClick={() => { void approvePublication(); }}>
+                {running === "publication" ? "Approving…" : approvedCurrent ? "Approved" : publication ? "Approve it again" : "Approve for publishing"}
+              </Button>
+            </div>
+            {factsVerified && !running && !caption ? <p className={styles.factMeta}>The post needs its caption; write it first.</p> : null}
+            {factsVerified && !running && publishBlocker ? <p className={styles.factMeta}>{publishBlocker}</p> : null}
+            {publication && !approvedCurrent && publishable && running !== "publication" ? <InlineNotice tone="info" title="The carousel changed since you approved it">The approved copy is the one from {new Date(publication.approvedAt).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" })}. Approve it again to publish the carousel as it stands now; what was already published stays as it is.</InlineNotice> : null}
+            {runError?.step === "publication" ? <InlineNotice tone="error" title="The carousel was not approved">{runError.message}</InlineNotice> : null}
+            {publishable ? <PublishPreview target={publishable} approved={approvedCurrent} acknowledged={acknowledged} locked={running !== undefined} onAcknowledge={setAcknowledged} /> : null}
+            {publication && approvedCurrent ? <PublishedCopy publication={publication} topicId={topicId} secret={secret} locked={running !== undefined} approving={running === "publication"} onApprove={() => { void approvePublication(publication.acknowledgedIssues.length > 0); }} /> : null}
+          </section>
           {session?.trace.length && !running ? <details className={styles.trace}>
             <summary>{session.trace.length} provider {session.trace.length === 1 ? "call" : "calls"}</summary>
             <ol className={styles.traceList}>
@@ -880,6 +1016,31 @@ const CLOSING_DISPLAY: FunnelDisplay<Draft2ClosingCandidate> = {
     <SlideCard label="Last slide" headline={candidate.last.headline} text={candidate.last.body} cta={candidate.last.cta || undefined} factIds={candidate.last.factIds} />
   </div>,
 };
+
+/** The caption's display: each caption by its opening line, and the chosen one as the post will read, with the credits the program adds and its hashtags. */
+function captionDisplayFor(caption: Draft2Caption | undefined): FunnelDisplay<Draft2CaptionCandidate> {
+  const credits = caption?.credits ?? [];
+  const opening = (candidate: Draft2CaptionCandidate) => candidate.text.split("\n")[0] ?? "";
+  return {
+    noun: "caption",
+    plural: "captions",
+    gate: CAPTION_GATE,
+    labels: CAPTION_CRITERION_LABEL,
+    lines: (candidate) => ({ title: opening(candidate), details: [`${[...candidate.text].length} characters · ${candidate.hashtags.map((tag) => `#${tag}`).join(" ")}`] }),
+    proposal: opening,
+    cards: (candidate) => <CaptionPost text={captionPostText({ text: candidate.text, credits, hashtags: candidate.hashtags })} factIds={candidate.factIds} />,
+  };
+}
+
+/** The carousel as it can be approved now, or what it still needs. */
+function publicationState(session: Draft2SessionView | null | undefined): { target?: Draft2PublicationTarget; blocker?: string } {
+  if (!session?.caption) return {};
+  try {
+    return { target: publicationTarget(session) };
+  } catch (cause) {
+    return { blocker: cause instanceof Error ? cause.message : "The carousel cannot be approved yet." };
+  }
+}
 
 /** A funnel step's run: every round's verdict, the version the next steps build on, and every other version to choose from. */
 function FunnelRunView<C extends FunnelCandidate>({ run, display, choosing, locked, onChoose }: {
@@ -1251,6 +1412,142 @@ function PrivateDraft2Image({ url, secret, alt }: { url: string; secret: string;
   }, [url, secret]);
   return <div className={styles.imageFrame}>
     {src ? <Image className={styles.imageFill} src={src} alt={alt} width={432} height={540} unoptimized /> : <p className={styles.factMeta}>{failed ? "Could not load the image." : "Loading…"}</p>}
+  </div>;
+}
+
+/**
+ * The Instagram accounts the caption may tag: Claude proposes usernames for
+ * the story's people, places and organizations, Instagram says which exist
+ * and what they are called, and the editor tags the ones that are them, or
+ * adds an account of their own. Only tagged accounts reach the caption.
+ */
+function MentionsView({ mentions, entities, saving, locked, onDecide }: {
+  mentions: Draft2Mentions | undefined;
+  entities: readonly Draft2InventoryEntity[];
+  saving?: string;
+  locked: boolean;
+  onDecide: (input: Record<string, unknown>) => Promise<boolean>;
+}) {
+  const [handle, setHandle] = useState("");
+  const [name, setName] = useState("");
+  const [entityId, setEntityId] = useState("");
+  const accounts = mentions?.accounts ?? [];
+  const nameOf = (id?: string) => entities.find((entity) => entity.id === id)?.name;
+  async function add() {
+    if (await onDecide({ action: "add", handle, name, ...(entityId ? { entityId } : {}) })) { setHandle(""); setName(""); setEntityId(""); }
+  }
+  return <div className={styles.focusBody}>
+    {mentions ? <p className={styles.factMeta}>Accounts v{mentions.version}{mentions.foundAt ? ` · found ${new Date(mentions.foundAt).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" })}` : ""}{mentions.lookup === "instagram-page" ? " · checked on Instagram through the Topic’s Facebook Page" : ""}.</p> : null}
+    {mentions?.note ? <p className={styles.factMeta}>{mentions.note}</p> : null}
+    {accounts.length
+      ? <ol className={styles.factList}>{accounts.map((account) => <MentionItem key={account.id} account={account} entityName={nameOf(account.entityId)} saving={saving === account.id} locked={locked} onDecide={onDecide} />)}</ol>
+      : mentions?.status === "ready" ? <p className={styles.factMeta}>No account to tag was found.</p> : null}
+    <details>
+      <summary>Add an account</summary>
+      <p className={styles.factMeta}>An Instagram account you know is theirs. It is checked on Instagram; tag it once it is found.</p>
+      <div className={styles.mentionForm}>
+        <FormField label="Instagram username">
+          <input value={handle} maxLength={31} placeholder="@username" autoComplete="off" disabled={locked} onChange={(event) => setHandle(event.target.value)} />
+        </FormField>
+        <FormField label="Who it is">
+          <input value={name} maxLength={120} disabled={locked} onChange={(event) => setName(event.target.value)} />
+        </FormField>
+        {entities.length ? <FormField label="In the story">
+          <select value={entityId} disabled={locked} onChange={(event) => { setEntityId(event.target.value); if (!name.trim()) setName(nameOf(event.target.value) ?? ""); }}>
+            <option value="">No one the story names</option>
+            {entities.map((entity) => <option key={entity.id} value={entity.id}>{entity.name}</option>)}
+          </select>
+        </FormField> : null}
+      </div>
+      <ActionRow>
+        <Button size="compact" variant="secondary" busy={saving === "add"} disabled={locked || !handle.trim() || !name.trim()} onClick={() => { void add(); }}>Check and add</Button>
+      </ActionRow>
+    </details>
+  </div>;
+}
+
+/** One account: who it should be, what Instagram calls it, and the editor's decision. */
+function MentionItem({ account, entityName, saving, locked, onDecide }: {
+  account: Draft2MentionAccount;
+  entityName?: string;
+  saving: boolean;
+  locked: boolean;
+  onDecide: (input: Record<string, unknown>) => Promise<boolean>;
+}) {
+  const status = MENTION_STATUS[account.status];
+  const found = account.account;
+  return <li className={styles.factItem}>
+    <div className={styles.factHead}>
+      <span className={styles.factId}>{account.id}</span>
+      <strong>@{found?.username ?? account.handle}</strong>
+      <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+      <span className={styles.factMeta}>{account.name}{entityName && entityName !== account.name ? ` · ${entityName}` : ""}{account.source === "editor" ? " · added by you" : ""}</span>
+    </div>
+    {found ? <p className={styles.factMeta}>Instagram: {found.name || "no name"}{found.followers !== undefined ? ` · ${found.followers.toLocaleString("en-CA")} followers` : ""}{found.website ? ` · ${found.website}` : ""} · <a href={`https://www.instagram.com/${encodeURIComponent(found.username)}/`} target="_blank" rel="noreferrer">Profile ↗</a></p> : null}
+    {found && account.match === "weak" && account.status === "verified" ? <p className={styles.factMeta}>Its name is not {account.name}’s: check it is them before you tag it.</p> : null}
+    {account.note ? <p className={styles.factMeta}>{account.note}</p> : null}
+    <ActionRow>
+      {found && (account.status === "verified" || account.status === "rejected") ? <Button size="compact" variant="secondary" busy={saving} disabled={locked} onClick={() => { void onDecide({ action: "confirm", accountId: account.id }); }}>Tag this account</Button> : null}
+      {account.status === "verified" ? <Button size="compact" variant="quiet" disabled={locked} onClick={() => { void onDecide({ action: "reject", accountId: account.id }); }}>Not them</Button> : null}
+      {account.status === "confirmed" ? <Button size="compact" variant="quiet" busy={saving} disabled={locked} onClick={() => { void onDecide({ action: "reopen", accountId: account.id }); }}>Untag</Button> : null}
+    </ActionRow>
+  </li>;
+}
+
+/** The post as Facebook and Instagram will show it: its line breaks and blank lines kept, then the credits and the hashtags. */
+function CaptionPost({ text, factIds }: { text: string; factIds: readonly string[] }) {
+  return <div className={styles.captionPost}>
+    <p className={styles.captionText}>{text}</p>
+    <p className={styles.openingFacts}>{[...text].length.toLocaleString("en-CA")} of {CAPTION_MAX_CHARACTERS.toLocaleString("en-CA")} characters · Facts · {factIds.join(", ")}</p>
+  </div>;
+}
+
+/** What approving publishes: the images in order and the post as it will read, with what the review left for the editor to look at. */
+function PublishPreview({ target, approved, acknowledged, locked, onAcknowledge }: {
+  target: Draft2PublicationTarget;
+  approved: boolean;
+  acknowledged: boolean;
+  locked: boolean;
+  onAcknowledge: (value: boolean) => void;
+}) {
+  const one = target.issues.length === 1;
+  return <div className={styles.openingGroup}>
+    <p className={styles.factMeta}>{target.slides.length} images, in order: {target.slides.map((slide) => `${slide.label} v${slide.version}`).join(" · ")}.</p>
+    <CaptionPost text={targetPostText(target)} factIds={target.caption.factIds} />
+    {target.issues.length ? <InlineNotice tone={approved ? "info" : "warning"} title={approved ? `Approved as ${one ? "it is" : "they are"}` : `Look at ${one ? "this image" : "these images"} before publishing`}>
+      <ul className={styles.issueList}>{target.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>
+      {approved ? null : <label className={styles.factMeta}><input type="checkbox" checked={acknowledged} disabled={locked} onChange={(event) => onAcknowledge(event.target.checked)} /> I looked at {one ? "it" : "them"}: publish {one ? "it" : "them"} as {one ? "it is" : "they are"}</label>}
+    </InlineNotice> : null}
+  </div>;
+}
+
+/**
+ * The approved copy and v1's publication on it: one confirmation for the
+ * Facebook Page, its Instagram account or both, then each channel in detail,
+ * with its checks, the exact post, its orders and their retries.
+ */
+function PublishedCopy({ publication, topicId, secret, locked, approving, onApprove }: {
+  publication: Draft2Publication;
+  topicId: string;
+  secret: string;
+  locked: boolean;
+  approving: boolean;
+  onApprove: () => void;
+}) {
+  return <div className={styles.openingGroup}>
+    <p className={styles.factMeta}>Approved {new Date(publication.approvedAt).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" })} · {publication.slides.length} images{publication.acknowledgedIssues.length ? ` · ${publication.acknowledgedIssues.length} ${publication.acknowledgedIssues.length === 1 ? "image" : "images"} you looked at yourself` : ""}.</p>
+    <RunPublishActions topicId={topicId} draftId={publication.draftId} batchId={publication.batchId} secret={secret} disabled={locked} />
+    <details>
+      <summary>Each channel in detail: its checks, the exact post, its orders and retries</summary>
+      <PublicationChannelsPanel topicId={topicId} draftId={publication.draftId} batchId={publication.batchId} secret={secret} disabled={locked} />
+    </details>
+    <details>
+      <summary>Publishing says the approval is no longer current?</summary>
+      <p className={styles.factMeta}>A change to the Topic’s visual policy retires every approval. Approve the carousel again: it is copied once more for publishing, exactly as it stands.</p>
+      <ActionRow>
+        <Button variant="quiet" size="compact" busy={approving} disabled={locked} onClick={onApprove}>Approve it again</Button>
+      </ActionRow>
+    </details>
   </div>;
 }
 

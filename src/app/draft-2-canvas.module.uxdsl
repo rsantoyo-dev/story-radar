@@ -74,6 +74,11 @@
 .imageFrame { display: grid; place-items: center; aspect-ratio: 4 / 5; overflow: hidden; border-radius: radius(1); background: palette(light-light); }
 .imageFill { width: 100%; height: 100%; object-fit: cover; }
 .imageVersions { display: flex; flex-wrap: wrap; gap: density(1); }
+/* The caption: the post as it will read, its line breaks and blank lines kept. */
+.captionPost { display: grid; gap: density(2); max-width: 60ch; padding: density(4); border: border(control); border-radius: radius(2); }
+.captionText { margin: 0; color: palette(dark-main); @ds-typo (body); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Adding an account to tag: its username, who it is and whom in the story it stands for. */
+.mentionForm { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: density(3); }
 /* After the role, whose block margins are 0: the cited facts sit at the card's foot. */
 .openingFacts { color: palette(tertiary-dark); @ds-typo (caption); margin-top: auto; }
 .scoreRow { display: flex; flex-wrap: wrap; gap: density(1) density(3); margin: 0; color: palette(tertiary-dark); @ds-typo (caption); }

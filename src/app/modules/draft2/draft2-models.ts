@@ -28,3 +28,5 @@ export const DRAFT2_CLOSING_ROLES: { writer: Draft2Provider; judge: Draft2Provid
 export const DRAFT2_DECK_ROLES: { writer: Draft2Provider; judge: Draft2Provider } = DRAFT2_OPENING_ROLES;
 /** And the visual script: Claude writes it, Sol judges it. */
 export const DRAFT2_VISUAL_ROLES: { writer: Draft2Provider; judge: Draft2Provider } = DRAFT2_OPENING_ROLES;
+/** And the caption: the post's text by the model that wrote the carousel, judged by the other. */
+export const DRAFT2_CAPTION_ROLES: { writer: Draft2Provider; judge: Draft2Provider } = DRAFT2_OPENING_ROLES;
