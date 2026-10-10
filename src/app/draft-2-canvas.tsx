@@ -6,8 +6,8 @@ import { Button, EmptyState, InlineNotice, LoadingState, SectionHeader, StatusBa
 import type { StoryContentResponse } from "@/app/radar-dashboard";
 import type { Draft2Fact, Draft2FactsEvaluation, Draft2FactsRound, Draft2SessionStatus, Draft2TraceEntry } from "@/app/modules/draft2/draft2-facts.types";
 import {
-  OPENING_CRITERIA, OPENING_CRITERION_FLOOR, openingAcceptedWinner, openingScorePasses,
-  type Draft2Opening, type Draft2OpeningCandidate, type Draft2OpeningCriterion, type Draft2OpeningIssue, type Draft2OpeningRound, type Draft2OpeningScore,
+  OPENING_CRITERIA, OPENING_CRITERION_FLOOR, openingAcceptedWinner, openingScorePasses, openingVersions,
+  type Draft2Opening, type Draft2OpeningCriterion, type Draft2OpeningIssue, type Draft2OpeningRound, type Draft2OpeningScore, type Draft2OpeningVersion,
 } from "@/app/modules/draft2/draft2-opening.types";
 import { contentStatusLabel, DRAFT_2_STEPS, paragraphs, sourceHost, storyHref, wordCount } from "./draft-2-canvas.core";
 import styles from "./draft-2-canvas.generated.module.css";
@@ -233,7 +233,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
             <div className={styles.factsHeader}>
               <div>
                 <p className={styles.eyebrow}>Step 2 · Opening</p>
-                <p className={styles.factsIntro}>Sol writes seven openings (cover and slide 2) from the verified facts; the program checks lengths, fact ids and numbers; Claude scores each round, at most three. Accepted at 95/100 with no criterion below 85.</p>
+                <p className={styles.factsIntro}>Sol writes seven openings (cover and slide 2) from the verified facts and Claude scores them; then Sol revises the two best against their issues, and the best once more. The better version always stays. Accepted at 95/100 with no criterion below 85.</p>
               </div>
               <Button variant="primary" size="compact" busy={running === "opening"} disabled={!factsVerified || running !== undefined} onClick={() => { void runStep("opening"); }}>
                 {running === "opening" ? "Writing and judging…" : session?.opening ? "Write the opening again" : "Write the opening"}
@@ -251,7 +251,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
             <ol className={styles.traceList}>
               {session.trace.map((entry, index) => <li key={index} data-outcome={entry.outcome}>
                 <span>{providerLabel(entry.provider)} · {entry.model} · {entry.operation} · {entry.step} round {entry.round}</span>
-                <span>{entry.outcome === "ok" ? `${entry.usage?.promptTokens ?? 0} in · ${entry.usage?.outputTokens ?? 0} out${entry.cachedInputTokens ? ` · ${entry.cachedInputTokens} cached` : ""}` : entry.note ?? "failed"} · {(entry.durationMs / 1000).toFixed(1)} s</span>
+                <span>{entry.outcome === "ok" ? `${entry.usage?.promptTokens ?? 0} in · ${entry.usage?.outputTokens ?? 0} out${entry.cachedInputTokens ? ` · ${entry.cachedInputTokens} cached` : ""}${entry.cacheWriteTokens ? ` · ${entry.cacheWriteTokens} written to cache` : ""}` : entry.note ?? "failed"} · {(entry.durationMs / 1000).toFixed(1)} s</span>
               </li>)}
             </ol>
           </details> : null}
@@ -305,45 +305,39 @@ function FactsSessionView({ session, verified }: { session: Draft2SessionView; v
   </>;
 }
 
-/** The Opening step: every round's verdict, the opening the next steps build on, and the other candidates to choose from. */
+/** The Opening step: every round's verdict, the opening the next steps build on, and every other version to choose from. */
 function OpeningView({ opening, choosing, locked, onChoose }: { opening: Draft2Opening; choosing?: string; locked: boolean; onChoose: (candidateId: string) => void }) {
-  const last = opening.rounds[opening.rounds.length - 1];
-  const scores = new Map((opening.evaluation?.scores ?? []).map((score) => [score.candidateId, score]));
-  const findings = (candidateId: string) => (last?.mechanical ?? []).filter((issue) => issue.candidateId === candidateId).length;
-  const chosen = opening.candidates.find((candidate) => candidate.id === (opening.editorChoiceId ?? opening.winnerId));
-  const others = opening.candidates.filter((candidate) => candidate.id !== chosen?.id);
-  const winnerLabel = opening.status === "ready" ? "Accepted" : "Best clean candidate";
+  const versions = openingVersions(opening.rounds);
+  const chosen = versions.find((version) => version.candidate.id === (opening.editorChoiceId ?? opening.winnerId));
+  const others = versions.filter((version) => version !== chosen).sort((a, b) => (b.score?.overall ?? 0) - (a.score?.overall ?? 0));
+  const winnerLabel = opening.status === "ready" ? "Accepted" : "Best so far";
   return <>
     {opening.rounds.length ? <ol className={styles.roundList} aria-label="Opening rounds">
       {opening.rounds.map((round) => <OpeningRoundView key={round.round} round={round} />)}
     </ol> : null}
     {chosen ? <ChosenOpening
-      candidate={chosen}
-      score={scores.get(chosen.id)}
+      version={chosen}
       label={opening.editorChoiceId ? "Your choice" : winnerLabel}
       tone={opening.editorChoiceId || opening.status === "ready" ? "success" : "warning"}
     /> : null}
     {others.length ? <div className={styles.openingGroup}>
-      <SectionHeader level={3} title={chosen ? "The other candidates" : "Candidates"} description="The last round, as Claude scored it. The opening you choose is the one the next steps build on." />
+      <SectionHeader level={3} title={chosen ? "Every other version" : "Every version"} description="All the openings of this run, as Claude scored them. The one you choose is what the next steps build on." />
       <ol className={styles.factList}>
-        {others.map((candidate) => {
-          const score = scores.get(candidate.id);
-          const count = findings(candidate.id);
-          return <li key={candidate.id} className={styles.factItem}>
-            <div className={styles.factHead}>
-              <span className={styles.factId}>{candidate.id}</span>
-              {score ? <StatusBadge tone={openingScorePasses(score) ? "success" : "neutral"}>{score.overall}/100</StatusBadge> : null}
-              {count ? <StatusBadge tone="warning">{count} program {count === 1 ? "finding" : "findings"}</StatusBadge> : null}
-              {candidate.id === opening.winnerId ? <StatusBadge tone="info">{winnerLabel}</StatusBadge> : null}
-            </div>
-            <p className={styles.factClaim}>{candidate.cover.headline}</p>
-            <p className={styles.factMeta}>{candidate.cover.subheadline}</p>
-            <p className={styles.factMeta}>Slide 2 · {candidate.slide2.headline}</p>
-            <div>
-              <Button variant="quiet" size="compact" busy={choosing === candidate.id} disabled={locked || choosing !== undefined} onClick={() => onChoose(candidate.id)}>Choose this opening</Button>
-            </div>
-          </li>;
-        })}
+        {others.map((version) => <li key={version.candidate.id} className={styles.factItem}>
+          <div className={styles.factHead}>
+            <span className={styles.factId}>{version.candidate.id}</span>
+            {version.score ? <StatusBadge tone={openingScorePasses(version.score) ? "success" : "neutral"}>{version.score.overall}/100</StatusBadge> : null}
+            {version.findings.length ? <StatusBadge tone="warning">{version.findings.length} program {version.findings.length === 1 ? "finding" : "findings"}</StatusBadge> : null}
+            {version.candidate.id === opening.winnerId ? <StatusBadge tone="info">{winnerLabel}</StatusBadge> : null}
+            <span className={styles.factMeta}>round {version.round}{version.candidate.revisionOf ? ` · revises ${version.candidate.revisionOf}` : ""}</span>
+          </div>
+          <p className={styles.factClaim}>{version.candidate.cover.headline}</p>
+          <p className={styles.factMeta}>{version.candidate.cover.subheadline}</p>
+          <p className={styles.factMeta}>Slide 2 · {version.candidate.slide2.headline}</p>
+          <div>
+            <Button variant="quiet" size="compact" busy={choosing === version.candidate.id} disabled={locked || choosing !== undefined} onClick={() => onChoose(version.candidate.id)}>Choose this opening</Button>
+          </div>
+        </li>)}
       </ol>
     </div> : null}
   </>;
@@ -354,15 +348,18 @@ function OpeningRoundView({ round }: { round: Draft2OpeningRound }) {
   const programWinner = evaluation ? openingAcceptedWinner(round.mechanical, evaluation) : undefined;
   const winnerId = programWinner ?? evaluation?.winnerId;
   const winner = evaluation?.scores.find((score) => score.candidateId === winnerId);
+  const revised = round.candidates.flatMap((candidate) => candidate.revisionOf ? [candidate.revisionOf] : []);
   return <li className={styles.roundCard}>
     <div className={styles.factHead}>
       <strong>Round {round.round}</strong>
-      <span>Sol wrote {round.candidates.length} {round.candidates.length === 1 ? "opening" : "openings"}</span>
+      <span>{round.kind === "refine" ? `Sol revised ${revised.join(" and ")}` : `Sol wrote ${round.candidates.length} ${round.candidates.length === 1 ? "opening" : "openings"}`}</span>
       {evaluation
         ? <StatusBadge tone={programWinner ? "success" : "warning"}>Claude: {evaluation.verdict} · {winnerId} {winner?.overall}/100</StatusBadge>
         : <StatusBadge tone="neutral">Claude did not answer</StatusBadge>}
     </div>
-    {round.restored?.length ? <p className={styles.factMeta}>Sol changed or dropped {round.restored.join(", ")}, which Claude’s scores kept; the program put {round.restored.length === 1 ? "it" : "them"} back as scored.</p> : null}
+    {(round.regressions ?? []).map((regression) => <p key={regression.candidateId} className={styles.factMeta}>
+      {regression.candidateId} scored {regression.to}, below {regression.previousId}’s {regression.from}{regression.worse.length ? ` (${regression.worse.join(", ")})` : ""}; {regression.previousId} stays the better version.
+    </p>)}
     {evaluation && programWinner && programWinner !== evaluation.winnerId ? <p className={styles.factMeta}>Claude picked {evaluation.winnerId}, which has a program finding; {programWinner}, the best clean candidate, meets the thresholds and wins.</p> : null}
     {evaluation ? <p className={styles.factMeta}>{evaluation.summary}</p> : null}
     {winner ? <ScoreRow score={winner} /> : null}
@@ -377,13 +374,15 @@ function OpeningRoundView({ round }: { round: Draft2OpeningRound }) {
 }
 
 /** The opening the next steps build on, as two 4:5 cards: the cover and slide 2. */
-function ChosenOpening({ candidate, score, label, tone }: { candidate: Draft2OpeningCandidate; score?: Draft2OpeningScore; label: string; tone: StatusTone }) {
+function ChosenOpening({ version, label, tone }: { version: Draft2OpeningVersion; label: string; tone: StatusTone }) {
+  const { candidate, score } = version;
   return <div className={styles.openingGroup}>
     <div className={styles.factHead}>
       <span className={styles.factId}>{candidate.id}</span>
       <StatusBadge tone={tone}>{label}</StatusBadge>
       {score ? <strong>{score.overall}/100</strong> : null}
       {candidate.angle ? <span>{candidate.angle}</span> : null}
+      <span className={styles.factMeta}>round {version.round}{candidate.revisionOf ? ` · revises ${candidate.revisionOf}` : ""}</span>
     </div>
     {score ? <ScoreRow score={score} /> : null}
     {score?.note ? <p className={styles.factMeta}>{score.note}</p> : null}

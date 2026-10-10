@@ -71,6 +71,6 @@ export function brandBrief(profile: Pick<CreativeProfile, "name" | "language" | 
     line("Platform", profile.platform),
     line("Audience", profile.audience),
     personality.length ? `- Brand personality: ${personality.join(", ")}.` : undefined,
-    `- Tone: ${tone.join("; ")}.`,
+    `- Tone, the publication's defaults for an ordinary story (the story's gravity sets the ceiling): ${tone.join("; ")}.`,
   ].filter((entry) => entry !== undefined).join("\n");
 }

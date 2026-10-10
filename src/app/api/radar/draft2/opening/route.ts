@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 // Up to three writer rounds and three judgments; the step stops starting rounds well inside this.
 export const maxDuration = 300;
 
-const CANDIDATE_ID_PATTERN = /^[\w-]{1,24}$/;
+const CANDIDATE_ID_PATTERN = /^[\w.-]{1,24}$/;
 
 /** Runs the Opening step on the session's verified facts and returns the finished session. */
 export async function POST(request: Request) {

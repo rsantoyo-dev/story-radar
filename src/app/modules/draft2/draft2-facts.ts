@@ -11,14 +11,13 @@ import {
   parseDraft2Facts, parseDraft2FactsEvaluation, revisionRequest,
   type Draft2Fact, type Draft2FactsEvaluation, type Draft2FactsRound, type Draft2Threads, type Draft2TraceEntry,
 } from "./draft2-facts.types";
+import { draft2SolModel } from "./draft2-models";
 import { composeInstructions } from "./skills/draft2-skills";
 import { FACTS_SKILL } from "./skills/facts";
 import type { Draft2SessionRow } from "@/db/schema";
 
 export { Draft2BusyError, Draft2InputError } from "./draft2-facts.types";
 
-/** The extractor; the reviewer is Claude (anthropic.config). */
-export const DEFAULT_DRAFT2_EXTRACTOR_MODEL = "gpt-6.1-sol";
 /** A round that would start after this point is left to a new request; the route allows 300 s. */
 const TIME_BUDGET_MS = 230_000;
 const EXTRACTOR_MAX_OUTPUT_TOKENS = 6_000;
@@ -44,7 +43,7 @@ export async function runDraft2Facts({ topicId, storyId }: Draft2FactsInput): Pr
 
   const openAiApiKey = process.env.OPENAI_API_KEY?.trim();
   if (!openAiApiKey) throw new Draft2InputError("OPENAI_API_KEY is not configured; the extractor needs it.");
-  const extractorModel = process.env.DRAFT2_EXTRACTOR_MODEL?.trim() || DEFAULT_DRAFT2_EXTRACTOR_MODEL;
+  const extractorModel = draft2SolModel(process.env);
   const anthropicApiKey = requireAnthropicApiKey();
   const reviewerModel = getAnthropicRuntimeConfig().model;
 

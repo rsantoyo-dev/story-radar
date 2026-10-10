@@ -20,7 +20,7 @@ test("instructions are the role, then each skill, then the brand brief, and reco
   assert.deepEqual(writer.skillVersions, { hooks: "7" });
   assert.equal(composeInstructions("opening-judge", [skill]).instructions, `${OPENING_ROLES["opening-judge"]}\n\n## Shared craft\n\n## Judge only`, "a role reads its own part after the shared text");
   assert.deepEqual(Object.keys(DRAFT2_ROLES).sort(), ["extractor", "opening-judge", "opening-writer", "reviewer"]);
-  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@1", "hooks@1"]);
+  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@1", "hooks@2"]);
 });
 
 test("the Facts prompts keep their words: the extractor reads its rules, the reviewer its checklist", () => {
@@ -40,7 +40,16 @@ test("the openings rubric states the thresholds the program enforces", () => {
   assert.match(HOOKS_SKILL.text, new RegExp(`- Headline at most ${SLIDE2_HEADLINE_MAX_WORDS} words; body at most ${SLIDE2_BODY_MAX_WORDS} words\\.`));
   assert.match(HOOKS_SKILL.text, new RegExp(`overall ≥ ${OPENING_ACCEPT_SCORE} and no criterion is below ${OPENING_CRITERION_FLOOR}`));
   for (const criterion of OPENING_CRITERIA) assert.match(HOOKS_SKILL.text, new RegExp(`\\n- ${criterion}: `));
-  assert.match(OPENING_ROLES["opening-writer"], new RegExp(`Ids c1…c${OPENING_CANDIDATES};`));
+  assert.match(OPENING_ROLES["opening-writer"], new RegExp(`ids c1…c${OPENING_CANDIDATES}\\.`));
+});
+
+test("hooks v2 never trades a qualifier for a cleaner headline, lets gravity bound the voice, and protects what a revision must keep", () => {
+  assert.match(HOOKS_SKILL.text, /Avoid\n  hedge words there too, but never by dropping a qualifier/);
+  assert.match(HOOKS_SKILL.text, /When a claim\n  cannot stand without its qualifier or its source, do not headline it/);
+  assert.doesNotMatch(HOOKS_SKILL.text, /never a hedge word\n  on the cover/, "the v1 rule that invited dropping \"could\" is gone");
+  assert.match(HOOKS_SKILL.text, /- voice: [^]*as far as the story's\n  gravity allows\. A grave story/);
+  assert.match(HOOKS_SKILL.text, /## Revisions\n[^]*A revision that comes out flatter, more\nbureaucratic or less clear is worse/);
+  assert.doesNotMatch(OPENING_ROLES["opening-judge"], /judge every candidate again/, "a revision round judges the revisions beside what they revise");
 });
 
 test("the brand brief gives the publication's voice in plain words and nothing about visuals or calls to action", () => {
@@ -53,7 +62,7 @@ test("the brand brief gives the publication's voice in plain words and nothing a
     "- Platform: Instagram.",
     "- Audience: Parents who plan their weekend on Thursday.",
     "- Brand personality: warm, practical.",
-    "- Tone: formality 30/100: conversational; humor 20/100: rarely; energy 70/100: lively; optimism 65/100: hopeful; provocation 60/100: direct, never insulting.",
+    "- Tone, the publication's defaults for an ordinary story (the story's gravity sets the ceiling): formality 30/100: conversational; humor 20/100: rarely; energy 70/100: lively; optimism 65/100: hopeful; provocation 60/100: direct, never insulting.",
   ].join("\n"));
   const sparse = brandBrief({ ...profile, region: "  ", brandPersonality: [], formality: 0, provocation: 100 });
   assert.ok(!sparse.includes("Region") && !sparse.includes("Brand personality"), "empty fields are left out");

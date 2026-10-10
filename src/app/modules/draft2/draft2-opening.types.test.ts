@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
 import {
-  keptOpeningIds, mechanicalOpeningIssues, mergeKeptCandidates, openingAcceptedWinner, openingIsAccepted, openingReviewNote, openingRevisionRequest,
-  openingRunSummary, openingWordCount, parseOpeningCandidates, parseOpeningEvaluation,
-  type Draft2OpeningCandidate, type Draft2OpeningEvaluation, type Draft2OpeningIssue, type Draft2OpeningScore,
+  OPENING_REVISION_INSTRUCTION, bestOpeningVersions, mechanicalOpeningIssues, openingAcceptedWinner, openingExploreRequest, openingFactsSnapshot, openingIsAccepted,
+  openingJudgeRequest, openingRefineRequest, openingRegressions, openingReviewNote, openingRunSummary, openingTargets, openingVersions, openingWordCount,
+  parseOpeningCandidates, parseOpeningEvaluation, renumberedCandidates, revisedCandidates,
+  type Draft2OpeningCandidate, type Draft2OpeningEvaluation, type Draft2OpeningIssue, type Draft2OpeningRound, type Draft2OpeningScore,
 } from "./draft2-opening.types";
 
 const facts: Draft2Fact[] = [
@@ -135,37 +136,107 @@ test("an opening is accepted only on an accept verdict whose winner passes every
   assert.equal(openingAcceptedWinner(flagged, evaluation({ scores: [score("c1", 98), score("c2", 99, { voice: 70 }), score("c3", 95)] })), "c3", "the best clean candidate that passes, not merely the highest");
 });
 
-test("a revision keeps the best clean candidates scored 90 or more, at most three, and sends the program's findings first", () => {
-  const flagged: Draft2OpeningIssue[] = [{ code: "COVER_TOO_LONG", candidateId: "c4", part: "cover", detail: "Too long." }];
-  const verdict = evaluation({ verdict: "revise", scores: [score("c1", 90), score("c2", 92), score("c3", 89), score("c4", 99), score("c5", 93), score("c6", 91)], issues: [{ code: "WEAK_TENSION", candidateId: "c3", part: "cover", detail: "Labels the news." }], suggestions: ["Name the deadline."] });
-  const keep = keptOpeningIds(flagged, verdict);
-  assert.deepEqual(keep, ["c5", "c2", "c6"]);
-  const request = openingRevisionRequest(flagged, verdict, keep);
-  assert.deepEqual(request.issues.map((issue) => issue.code), ["COVER_TOO_LONG", "WEAK_TENSION"]);
-  assert.deepEqual(request.keep, ["c5", "c2", "c6"]);
-  assert.deepEqual(request.suggestions, ["Name the deadline."]);
-  assert.match(request.instruction, /Return 7 candidates: keep the listed ones unchanged/);
+/** A judged round: every candidate scored (70 unless named), no findings unless given. */
+const judgedRound = (number: number, candidates: Draft2OpeningCandidate[], overall: Record<string, number>, overrides: Partial<Draft2OpeningRound> = {}): Draft2OpeningRound => ({
+  round: number, kind: number === 1 ? "explore" : "refine", candidates, mechanical: [], at: "t",
+  evaluation: evaluation({ verdict: "revise", winnerId: candidates[0].id, scores: candidates.map((entry) => score(entry.id, overall[entry.id] ?? 70)) }),
+  ...overrides,
+});
+const ids = (versions: { candidate: { id: string } }[]) => versions.map((version) => version.candidate.id);
+
+test("both models read the verified facts as one compact snapshot, the same every round", () => {
+  assert.deepEqual(openingFactsSnapshot(facts.slice(1)), [
+    { id: "f2", claim: facts[1].claim, status: "attributed", attribution: "A DOD official", evidence: facts[1].evidence, importance: 80 },
+    { id: "f3", claim: facts[2].claim, status: "attributed", qualifier: "could", attribution: "the Pentagon", evidence: facts[2].evidence, importance: 70 },
+  ]);
+  const request = openingExploreRequest(openingFactsSnapshot(facts));
+  assert.deepEqual(Object.keys(request), ["verifiedFacts", "task", "candidatesWanted"], "the facts lead, so the prompt cache reads them");
 });
 
-test("a kept candidate the writer dropped or rewrote is put back as the judge scored it, without growing the list", () => {
-  const previous = ["c1", "c2", "c3"].map((id) => candidate(id, { cover: { headline: `Headline ${id}` } }));
-  const revised = [
-    candidate("c1", { cover: { headline: "Headline c1 rewritten" } }),
-    ...["c4", "c5", "c6", "c7", "c8", "c9"].map((id) => candidate(id, { cover: { headline: `Headline ${id}` } })),
-  ];
-  const merged = mergeKeptCandidates(previous, revised, ["c1", "c2"]);
-  assert.deepEqual(merged.restored, ["c1", "c2"]);
-  assert.equal(merged.candidates.length, 7);
-  assert.equal(merged.candidates[0].cover.headline, "Headline c1", "the rewrite is replaced by the scored original");
-  assert.deepEqual(merged.candidates.map((entry) => entry.id), ["c1", "c4", "c5", "c6", "c7", "c8", "c2"], "the last new candidate makes room for the restored one");
-  assert.deepEqual(mergeKeptCandidates(previous, [previous[0], candidate("c4")], ["c1"]).restored, [], "an unchanged kept candidate is not a restoration");
+test("the best version can come from any round: clean first, then the highest overall, a later round on a tie", () => {
+  const first = judgedRound(1, ["c1", "c2", "c3"].map((id) => candidate(id)), { c1: 84, c2: 90, c3: 80 }, { mechanical: [{ code: "COVER_TOO_LONG", candidateId: "c2", part: "cover", detail: "11 words" }] });
+  const second = judgedRound(2, [{ ...candidate("c1.2"), revisionOf: "c1" }, { ...candidate("c3.2"), revisionOf: "c3" }], { "c1.2": 78, "c3.2": 84 });
+  const versions = openingVersions([first, second]);
+  assert.deepEqual(ids(versions), ["c1", "c2", "c3", "c1.2", "c3.2"]);
+  assert.equal(versions[1].findings.length, 1);
+  assert.deepEqual(ids(bestOpeningVersions(versions)), ["c3.2", "c1", "c3", "c1.2"], "c2 has a program finding; c3.2 ties c1 at 84 and is later");
+  const reused = openingVersions([judgedRound(1, [candidate("c1")], { c1: 70 }), judgedRound(2, [candidate("c1", { angle: "New" })], { c1: 75 })]);
+  assert.equal(reused.length, 1, "the first loop reused ids; the latest round's candidate stands");
+  assert.equal(reused[0].candidate.angle, "New");
 });
 
-test("a run that ends without acceptance names the best clean candidate's weak criteria and the remaining issues", () => {
-  const flagged: Draft2OpeningIssue[] = [{ code: "UNSUPPORTED_NUMBER", candidateId: "c1", part: "cover", detail: "2 trillion" }];
-  const note = openingReviewNote(flagged, evaluation({ verdict: "revise", scores: [score("c1", 97), score("c2", 92, { payoff: 82 })], issues: [{ code: "PROMISE_NOT_PAID", candidateId: "c2", part: "slide2", detail: "No payoff." }] }), "Claude did not accept an opening after 3 rounds.");
-  assert.equal(note, "Claude did not accept an opening after 3 rounds. The best clean candidate, c2, scored 92/100 (payoff 82). Remaining issues: UNSUPPORTED_NUMBER (c1 · cover), PROMISE_NOT_PAID (c2 · slide2). Choose an opening below or write it again.");
-  assert.match(openingReviewNote([...flagged, { ...flagged[0], candidateId: "c2" }], evaluation({ scores: [score("c1", 97), score("c2", 92)] }), "Stopped."), /Every candidate has a program finding/);
+test("round 2 refines the two best clean versions, round 3 the best one; with nothing clean a round writes new angles", () => {
+  const versions = openingVersions([judgedRound(1, ["c1", "c2", "c3", "c4"].map((id) => candidate(id)), { c1: 80, c2: 88, c3: 84, c4: 60 })]);
+  assert.deepEqual(ids(openingTargets(versions, 1)), []);
+  assert.deepEqual(ids(openingTargets(versions, 2)), ["c2", "c3"]);
+  assert.deepEqual(ids(openingTargets(versions, 3)), ["c2"]);
+  const flagged = openingVersions([judgedRound(1, [candidate("c1")], { c1: 96 }, { mechanical: [{ code: "NO_FACTS", candidateId: "c1", part: "cover", detail: "x" }] })]);
+  assert.deepEqual(ids(openingTargets(flagged, 2)), []);
+});
+
+test("a revision that scores lower, or picks up a program finding, is a regression naming what got worse", () => {
+  const before = openingVersions([judgedRound(1, [candidate("c1"), candidate("c2")], { c1: 84, c2: 80 })]);
+  const revisions = openingVersions([judgedRound(2, [{ ...candidate("c1.2"), revisionOf: "c1" }, { ...candidate("c2.2"), revisionOf: "c2" }], {}, {
+    mechanical: [{ code: "COVER_TOO_LONG", candidateId: "c2.2", part: "cover", detail: "11 words" }],
+    evaluation: evaluation({ verdict: "revise", winnerId: "c2.2", scores: [score("c1.2", 80, { voice: 72, tension: 90 }), score("c2.2", 88)] }),
+  })]);
+  assert.deepEqual(openingRegressions(revisions, before), [
+    { candidateId: "c1.2", previousId: "c1", from: 84, to: 80, worse: ["payoff 84 → 80", "clarity 84 → 80", "grounding 84 → 80", "voice 84 → 72"] },
+    { candidateId: "c2.2", previousId: "c2", from: 80, to: 88, worse: ["COVER_TOO_LONG"] },
+  ]);
+  const improved = openingVersions([judgedRound(2, [{ ...candidate("c1.2"), revisionOf: "c1" }], { "c1.2": 90 })]);
+  assert.deepEqual(openingRegressions(improved, before), []);
+});
+
+test("revisions get ids naming their round and the version they revise; new angles get ids after every id used", () => {
+  const targets = [candidate("c3"), candidate("c5.2")];
+  const revised = revisedCandidates(targets, [candidate("c5.2", { angle: "Sharper" }), candidate("c9")], 3);
+  assert.deepEqual(revised.map((entry) => [entry.id, entry.revisionOf, entry.angle]), [["c3.3", "c3", "Speed over paperwork"], ["c5.3", "c5.2", "Sharper"]], "c9 matched c3 by order");
+  assert.throws(() => revisedCandidates(targets, [], 2), /no revision/);
+  const versions = openingVersions([judgedRound(1, ["c1", "c7"].map((id) => candidate(id)), {}), judgedRound(2, [{ ...candidate("c7.2"), revisionOf: "c7" }], {})]);
+  assert.deepEqual(renumberedCandidates([candidate("c1"), candidate("x")], versions).map((entry) => entry.id), ["c8", "c9"]);
+  assert.deepEqual(renumberedCandidates([candidate("a"), candidate("b")], []).map((entry) => entry.id), ["c1", "c2"]);
+});
+
+test("the writer refines with each target's scores and issues, any earlier attempt that came out worse, and the preservation instruction", () => {
+  const first = judgedRound(1, [candidate("c1"), candidate("c2")], { c1: 84, c2: 80 }, {
+    mechanical: [],
+    evaluation: evaluation({ verdict: "revise", winnerId: "c1", scores: [score("c1", 84), score("c2", 80)], issues: [{ code: "WEAK_TENSION", candidateId: "c1", part: "cover", detail: "Flat." }], suggestions: ["Name the deadline."] }),
+  });
+  const second = judgedRound(2, [{ ...candidate("c1.2", { cover: { headline: "A flatter headline" } }), revisionOf: "c1" }], { "c1.2": 78 });
+  const versions = openingVersions([first, second]);
+  const regressions = openingRegressions(versions.filter((version) => version.round === 2), versions);
+  const request = openingRefineRequest(openingFactsSnapshot(facts), openingTargets(versions, 3), versions, regressions, ["Keep the payoff."]);
+  assert.deepEqual(Object.keys(request), ["verifiedFacts", "task", "openings", "suggestions", "instruction"]);
+  assert.equal(request.task, "revise");
+  assert.equal(request.openings.length, 1);
+  const [target] = request.openings;
+  assert.equal(target.id, "c1", "c1.2 scored lower, so c1 is revised again");
+  assert.equal(target.scores?.overall, 84);
+  assert.deepEqual(target.issues.map((issue) => issue.code), ["WEAK_TENSION"]);
+  assert.deepEqual(target.earlierAttempts, [{ id: "c1.2", coverHeadline: "A flatter headline", overall: 78, worse: ["tension 84 → 78", "payoff 84 → 78", "clarity 84 → 78", "grounding 84 → 78", "voice 84 → 78"] }]);
+  assert.equal(request.instruction, OPENING_REVISION_INSTRUCTION);
+  assert.match(OPENING_REVISION_INSTRUCTION, /Never make the writing flatter or more bureaucratic/);
+});
+
+test("the judge sees each revision beside the version it revises, with that version's scores", () => {
+  const versions = openingVersions([judgedRound(1, [candidate("c1")], { c1: 84 })]);
+  const request = openingJudgeRequest(2, [{ ...candidate("c1.2"), revisionOf: "c1" }], [], openingTargets(versions, 2));
+  assert.equal(JSON.stringify(request.candidates.map((entry) => [entry.id, entry.revises])), JSON.stringify([["c1.2", "c1"]]));
+  assert.equal("revisionOf" in request.candidates[0], false, "the models read revises, not the program's field");
+  assert.equal(request.previousVersions?.[0].scores?.overall, 84);
+  assert.equal("previousVersions" in openingJudgeRequest(1, [candidate("c1")], [], []), false);
+  assert.equal("verifiedFacts" in request, false, "the facts travel as the cached context, not in each round's contents");
+});
+
+test("a run that ends without acceptance names the best version's weak criteria and what is left to fix on it", () => {
+  const first = judgedRound(1, [candidate("c1"), candidate("c2")], {}, {
+    mechanical: [{ code: "UNSUPPORTED_NUMBER", candidateId: "c1", part: "cover", detail: "2 trillion" }],
+    evaluation: evaluation({ verdict: "revise", winnerId: "c1", scores: [score("c1", 97), score("c2", 92, { payoff: 82 })], issues: [{ code: "PROMISE_NOT_PAID", candidateId: "c2", part: "slide2", detail: "No payoff." }] }),
+  });
+  const best = bestOpeningVersions(openingVersions([first]))[0];
+  assert.equal(openingReviewNote(best, first, "Claude did not accept an opening after 3 rounds."), "Claude did not accept an opening after 3 rounds. The best version, c2, scored 92/100 (payoff 82). Remaining issues: PROMISE_NOT_PAID (c2 · slide2). Choose an opening below or write it again.");
+  assert.match(openingReviewNote(undefined, first, "Stopped."), /^Stopped\. Every version has a program finding\. Remaining issues: UNSUPPORTED_NUMBER \(c1 · cover\), PROMISE_NOT_PAID/);
 });
 
 test("an earlier run is summarized without its rounds, keeping the editor's choice", () => {

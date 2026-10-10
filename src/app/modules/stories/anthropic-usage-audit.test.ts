@@ -121,6 +121,25 @@ test("the request asks for JSON output under the schema the API accepts, keeps t
   assert.equal(result.stopReason, "end_turn");
 });
 
+test("a step's stable context is its own cached block before the contents, and cache writes are reported apart from reads", async () => {
+  const calls: FetchCall[] = [];
+  const logs: Record<string, unknown>[] = [];
+  const written = JSON.stringify({ ...JSON.parse(successBody), usage: { input_tokens: 40, output_tokens: 60, cache_creation_input_tokens: 1200, cache_read_input_tokens: 0 } });
+  const exports = load(async (url, init) => { calls.push({ url, init }); return response(200, written); }, logs);
+  const result = await exports.generateAnthropicStructuredResponse(request({ context: { verifiedFacts: ["private fact"] } })) as Result & { cacheWriteTokens?: number };
+  const body = JSON.parse(calls[0].init.body);
+  assert.equal(body.messages.length, 1, "no history: one user turn");
+  assert.deepEqual(body.messages[0].content, [
+    { type: "text", text: JSON.stringify({ verifiedFacts: ["private fact"] }), cache_control: { type: "ephemeral" } },
+    { type: "text", text: JSON.stringify({ story: "private evidence" }) },
+  ]);
+  assert.equal(result.cacheWriteTokens, 1200);
+  assert.equal(result.cachedInputTokens, 0);
+  assert.equal(result.usage.promptTokens, 1240, "writes count inside the prompt, like reads");
+  assert.equal(logs[1].cacheWriteTokens, 1200);
+  assert.ok(!JSON.stringify(logs).includes("private fact"));
+});
+
 test("an overloaded provider gets one more attempt; a rate limit does not", async () => {
   let overloaded = 0;
   const logs: Record<string, unknown>[] = [];

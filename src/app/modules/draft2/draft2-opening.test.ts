@@ -6,6 +6,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import * as types from "./draft2-facts.types";
 import * as openingTypes from "./draft2-opening.types";
+import * as models from "./draft2-models";
 import * as skills from "./skills/draft2-skills";
 import * as hooks from "./skills/hooks";
 import type { Draft2Opening, Draft2OpeningCandidate, Draft2OpeningScore } from "./draft2-opening.types";
@@ -19,8 +20,8 @@ const facts: types.Draft2Fact[] = [
   { id: "f1", claim: "The program reviews product videos no longer than five minutes.", evidence: "reviews product videos \"no longer than five minutes\"", kind: "event", status: "established", importance: 90 },
   { id: "f2", claim: "A DOD official says awards took less than a week in several instances.", evidence: "A DOD official says awards took less than a week in several instances", kind: "event", status: "attributed", attribution: "A DOD official", importance: 80 },
 ];
-const factsHistory = [{ role: "user", text: JSON.stringify({ article: { title: "Story" }, facts }) }, { role: "assistant", text: JSON.stringify({ verdict: "valid" }) }];
-const profile = { name: "Example Daily", language: "English", region: "Austin", platform: "Instagram", audience: "Founders who sell to government", brandPersonality: ["direct"], formality: 30, humor: 20, energy: 70, optimism: 60, provocation: 60 };
+const factsThreads = { openai: { model: "gpt-6.1-sol", responseId: "resp_facts" }, anthropic: { model: "claude-sonnet-5-5", history: [{ role: "user", text: "{\"article\":{}}" }, { role: "assistant", text: "{\"verdict\":\"valid\"}" }] } };
+const profile = { name: "Example Daily", language: "English", region: "Austin", platform: "Instagram", audience: "Founders who sell to government", brandPersonality: ["direct"], formality: 30, humor: 70, energy: 70, optimism: 60, provocation: 60 };
 
 const HEADLINES = [
   "Pentagon buyers now judge five-minute videos", "Your demo video is now the bid", "Five minutes of video replaces the paperwork",
@@ -28,19 +29,27 @@ const HEADLINES = [
 ];
 
 /** Seven mechanically clean candidates; `overrides` replaces the cover headline of some ids. */
-const candidates = (prefix = "", overrides: Record<string, string> = {}): Draft2OpeningCandidate[] => HEADLINES.map((headline, index) => ({
+const candidates = (overrides: Record<string, string> = {}): Draft2OpeningCandidate[] => HEADLINES.map((headline, index) => ({
   id: `c${index + 1}`,
-  cover: { headline: overrides[`c${index + 1}`] ?? `${prefix}${headline}`, subheadline: "Product demos replace months of paperwork in a new buying program.", factIds: ["f1"] },
+  cover: { headline: overrides[`c${index + 1}`] ?? headline, subheadline: "Product demos replace months of paperwork in a new buying program.", factIds: ["f1"] },
   slide2: { headline: "Awards in under a week", body: "A DOD official says awards took less than a week in several instances.", factIds: ["f2"] },
   angle: "Speed over paperwork",
 }));
 
+type Opening = { id: string; cover: Draft2OpeningCandidate["cover"]; slide2: Draft2OpeningCandidate["slide2"]; angle: string };
+type WriterContents = { task: string; verifiedFacts: unknown[]; openings?: Opening[]; candidatesWanted?: number; feedback?: unknown; instruction?: string; suggestions?: string[] };
+type JudgeContents = { round: number; candidates: { id: string; revises?: string }[]; previousVersions?: { id: string; scores?: Draft2OpeningScore }[] };
+
+/** Sol: seven new candidates for "openings"; for "revise", each opening back with its id and a new angle line. */
+const writer = (overrides: Record<string, string> = {}) => (contents: WriterContents) => contents.task === "revise"
+  ? { candidates: (contents.openings ?? []).map((opening) => ({ id: opening.id, cover: opening.cover, slide2: opening.slide2, angle: `${opening.angle}, sharper` })) }
+  : { candidates: candidates(overrides) };
+
 const score = (candidateId: string, overall: number, overrides: Partial<Draft2OpeningScore> = {}): Draft2OpeningScore =>
   ({ candidateId, tension: overall, payoff: overall, clarity: overall, grounding: overall, voice: overall, overall, note: "Why.", ...overrides });
 
-type Judged = { candidates: { id: string }[] };
-/** A judge that scores every candidate it receives: `overall` per id, 70 for the rest. */
-const judge = (verdict: "accept" | "revise", winnerId: string, overall: Record<string, number>, extra: Record<string, unknown> = {}) => (contents: Judged) => ({
+/** Claude: scores every candidate it receives (`overall` per id, 70 otherwise). */
+const judge = (verdict: "accept" | "revise", winnerId: string, overall: Record<string, number>, extra: Record<string, unknown> = {}) => (contents: JudgeContents) => ({
   verdict, winnerId, summary: `${verdict} ${winnerId}.`, issues: [], suggestions: [],
   scores: contents.candidates.map((candidate) => score(candidate.id, overall[candidate.id] ?? 70)),
   ...extra,
@@ -51,8 +60,8 @@ type Row = Record<string, unknown> & { opening: Draft2Opening | null; threads: t
 
 /** The orchestrator with both providers, the profile and the database replaced; `writes` and `judgments` decide each round. */
 function harness({ writes, judgments, failAt, session, busy = false, claimRefused = false }: {
-  writes: (() => unknown)[];
-  judgments: ((contents: Judged) => unknown)[];
+  writes: ((contents: WriterContents) => unknown)[];
+  judgments: ((contents: JudgeContents) => unknown)[];
   failAt?: { provider: "openai" | "anthropic"; call: number };
   session?: Record<string, unknown>;
   busy?: boolean;
@@ -61,7 +70,7 @@ function harness({ writes, judgments, failAt, session, busy = false, claimRefuse
   const calls: Call[] = [];
   let row: Row = {
     id: sessionId, topicId, storyId, step: "facts", status: "ready", facts, evaluation: null, rounds: [], opening: null, error: null,
-    threads: { openai: { model: "gpt-6.1-sol", responseId: "resp_facts" }, anthropic: { model: "claude-sonnet-5-5", history: factsHistory as types.Draft2HistoryTurn[] } },
+    threads: factsThreads as types.Draft2Threads,
     trace: [{ at: "2026-10-09T12:00:00.000Z", step: "facts", round: 1, provider: "openai", model: "gpt-6.1-sol", operation: "draft2_facts", durationMs: 10, outcome: "ok" }],
     ...session,
   };
@@ -74,6 +83,7 @@ function harness({ writes, judgments, failAt, session, busy = false, claimRefuse
     "server-only": {},
     "./draft2-facts.types": types,
     "./draft2-opening.types": openingTypes,
+    "./draft2-models": models,
     "./skills/draft2-skills": skills,
     "./skills/hooks": hooks,
     "./draft2-dev-trace": { draft2DevTrace: () => undefined },
@@ -84,13 +94,14 @@ function harness({ writes, judgments, failAt, session, busy = false, claimRefuse
       calls.push({ provider: "openai", input });
       const index = write++;
       if (failAt?.provider === "openai" && failAt.call === index + 1) throw Object.assign(new Error("OpenAI gpt-6.1-sol failed (HTTP 529: overloaded)"), { status: 529 });
-      return { text: JSON.stringify(writes[index]()), provider: "openai", model: input.model, usage, responseId: `resp_opening_${index + 1}` };
+      return { text: JSON.stringify(writes[index](input.contents as WriterContents)), provider: "openai", model: input.model, usage, cachedInputTokens: index ? 900 : 0 };
     } },
     "../stories/anthropic-structured-response": { generateAnthropicStructuredResponse: async (input: Record<string, unknown>) => {
       calls.push({ provider: "anthropic", input });
       const index = judgment++;
       if (failAt?.provider === "anthropic" && failAt.call === index + 1) throw new Error("Claude claude-sonnet-5-5 failed (HTTP 529: overloaded)");
-      return { text: JSON.stringify(judgments[index](input.contents as Judged)), provider: "anthropic", model: input.model, usage, cachedInputTokens: 80 };
+      // The first call writes the facts to the cache; later calls read them.
+      return { text: JSON.stringify(judgments[index](input.contents as JudgeContents)), provider: "anthropic", model: input.model, usage, cachedInputTokens: index ? 1_200 : 0, cacheWriteTokens: index ? 0 : 1_200 };
     } },
     "./draft2-session.repository": {
       activeDraft2Session: async () => busy ? row : undefined,
@@ -105,155 +116,165 @@ function harness({ writes, judgments, failAt, session, busy = false, claimRefuse
     run: () => exports.runDraft2Opening({ topicId, storyId, sessionId }),
     choose: (candidateId: string) => exports.recordOpeningChoice({ topicId, sessionId, candidateId }),
     calls,
+    writerCalls: () => calls.filter((call) => call.provider === "openai").map((call) => call.input.contents as WriterContents),
+    judgeCalls: () => calls.filter((call) => call.provider === "anthropic").map((call) => call.input),
     row: () => row,
   };
 }
 
-const contentsOf = (call: Call) => call.input.contents as Record<string, unknown>;
+const json = (value: unknown) => JSON.stringify(value);
 
-test("an opening the judge accepts on the first round continues both facts conversations and is ready", async () => {
-  const h = harness({ writes: [() => ({ candidates: candidates() })], judgments: [judge("accept", "c1", { c1: 96 })] });
+test("an opening Claude accepts in round 1 is ready; both models read the facts snapshot, not a conversation", async () => {
+  const h = harness({ writes: [writer()], judgments: [judge("accept", "c1", { c1: 96 })] });
   const session = await h.run();
   assert.equal(h.calls.map((call) => call.provider).join(","), "openai,anthropic");
-  const [writer, judgeCall] = h.calls;
-  assert.equal(writer.input.previousResponseId, "resp_facts", "Sol continues the conversation where it extracted the facts");
-  assert.equal(writer.input.store, true);
-  assert.equal(writer.input.model, "gpt-6.1-sol");
-  assert.equal(contentsOf(writer).task, "openings");
-  assert.equal(contentsOf(writer).candidatesWanted, 7);
-  assert.equal((contentsOf(writer).facts as unknown[]).length, 2, "the writer receives the verified facts");
-  assert.match(String(writer.input.instructions), /# Openings for social carousels[\s\S]*# The publication\n- Name: Example Daily\./, "the hooks skill, then the brand brief");
-  assert.equal((judgeCall.input.history as unknown[]).length, 2, "Claude continues its facts transcript");
-  assert.equal("facts" in contentsOf(judgeCall), false, "the facts are already in Claude's transcript");
-  assert.equal((contentsOf(judgeCall).candidates as unknown[]).length, 7);
-  assert.equal(JSON.stringify(contentsOf(judgeCall).mechanicalFindings), "[]");
-  assert.equal(judgeCall.input.instructions !== writer.input.instructions && String(judgeCall.input.instructions).includes(hooks.HOOKS_SKILL.text), true, "the judge reads the same skill");
-  assert.equal(session.threads.openai?.responseId, "resp_opening_1");
-  assert.equal(session.threads.anthropic?.history.length, 4, "the opening turn and the verdict are kept for the next step");
+  const [sol, claude] = h.calls;
+  assert.equal(sol.input.previousResponseId, undefined, "Sol no longer continues its facts conversation");
+  assert.equal(sol.input.store, undefined);
+  assert.deepEqual(Object.keys(sol.input.contents as object), ["verifiedFacts", "task", "candidatesWanted"], "the facts lead the request, so they are read from the cache");
+  assert.equal((sol.input.contents as WriterContents).verifiedFacts.length, 2);
+  assert.match(String(sol.input.instructions), /# Openings for social carousels[\s\S]*# The publication\n- Name: Example Daily\./, "the hooks skill, then the brand brief");
+  assert.equal(claude.input.history, undefined, "Claude gets no transcript");
+  assert.equal(json(claude.input.context), json({ verifiedFacts: openingTypes.openingFactsSnapshot(facts) }), "the facts travel as Claude's cached context");
+  assert.equal("verifiedFacts" in (claude.input.contents as object), false);
+  assert.ok(String(claude.input.instructions).includes(hooks.HOOKS_SKILL.text), "the judge reads the same skill");
   assert.equal(session.step, "opening");
   assert.equal(session.status, "ready");
   assert.equal(session.error, null);
   assert.equal(session.opening?.status, "ready");
   assert.equal(session.opening?.winnerId, "c1");
-  assert.equal(session.opening?.candidates.length, 7);
-  assert.equal(session.opening?.rounds.length, 1);
+  assert.equal(session.opening?.rounds[0].kind, "explore");
+  assert.equal(json(session.threads), json(factsThreads), "the facts conversations are left as they were");
   assert.equal(session.trace.length, 3, "the facts trace is kept and the opening's calls are added");
-  assert.equal(JSON.stringify(session.trace.slice(1).map((entry) => [entry.step, entry.provider, entry.skillVersions])), JSON.stringify([["opening", "openai", { hooks: "1" }], ["opening", "anthropic", { hooks: "1" }]]));
+  assert.equal(json(session.trace.slice(1).map((entry) => [entry.step, entry.provider, entry.skillVersions])), json([["opening", "openai", { hooks: "2" }], ["opening", "anthropic", { hooks: "2" }]]));
 });
 
-test("a revise verdict sends the scores, the suggestions and the candidates to keep back to Sol, until Claude accepts", async () => {
-  const round2 = candidates("Now: ");
+test("loop: after round 1 Sol revises only the two best clean versions, then only the best one, and the run stops at round 3", async () => {
   const h = harness({
-    writes: [() => ({ candidates: candidates() }), () => ({ candidates: round2.map((entry, index) => [1, 2, 4].includes(index) ? candidates()[index] : entry) })],
+    writes: [writer(), writer(), writer()],
     judgments: [
-      judge("revise", "c3", { c3: 93, c2: 92, c5: 91, c1: 90 }, { suggestions: ["Pay the cover's promise with the award time."], issues: [{ code: "WEAK_TENSION", candidateId: "c4", part: "cover", detail: "Labels the news." }] }),
-      judge("accept", "c4", { c4: 97 }),
+      judge("revise", "c3", { c3: 84, c5: 80, c1: 79 }, { suggestions: ["Pay the promise with the award time."], issues: [{ code: "WEAK_TENSION", candidateId: "c3", part: "cover", detail: "Flat." }] }),
+      judge("revise", "c3.2", { "c3.2": 88, "c5.2": 82 }),
+      judge("revise", "c3.3", { "c3.3": 90 }),
     ],
   });
   const session = await h.run();
-  assert.equal(h.calls.map((call) => call.provider).join(","), "openai,anthropic,openai,anthropic");
-  const revision = contentsOf(h.calls[2]);
-  assert.equal(h.calls[2].input.previousResponseId, "resp_opening_1", "the second round continues the stored response");
-  assert.deepEqual(revision.keep, ["c3", "c2", "c5"], "the best three clean candidates scored 90 or more");
-  assert.deepEqual(revision.suggestions, ["Pay the cover's promise with the award time."]);
-  assert.equal(revision.judgeVerdict, "revise");
-  assert.equal((revision.issues as { code: string }[])[0].code, "WEAK_TENSION");
-  assert.match(String(revision.instruction), /keep the listed ones unchanged/);
-  assert.equal((h.calls[3].input.history as unknown[]).length, 4);
-  assert.equal(session.opening?.status, "ready");
-  assert.equal(session.opening?.winnerId, "c4");
-  assert.equal(session.opening?.rounds.length, 2);
-  assert.equal(session.opening?.rounds[1].restored, undefined, "the kept candidates came back unchanged");
-  assert.equal(session.threads.openai?.responseId, "resp_opening_2");
-  assert.equal(session.threads.anthropic?.history.length, 6);
+  assert.equal(h.calls.length, 6);
+  const [first, second, third] = h.writerCalls();
+  assert.equal(first.task, "openings");
+  assert.equal(json([second.task, second.openings?.map((opening) => opening.id)]), json(["revise", ["c3", "c5"]]), "round 2 refines the two best clean versions");
+  assert.equal(json([third.task, third.openings?.map((opening) => opening.id)]), json(["revise", ["c3.2"]]), "round 3 refines the best one");
+  assert.equal(json(second.suggestions), json(["Pay the promise with the award time."]));
+  assert.equal(json((second.openings?.[0] as unknown as { issues: { code: string }[] }).issues.map((issue) => issue.code)), json(["WEAK_TENSION"]), "each target carries its own issues");
+  assert.match(String(second.instruction), /Preserve its narrative promise/);
+  const judged = h.judgeCalls().map((call) => call.contents as JudgeContents);
+  assert.equal(json(judged.map((contents) => contents.candidates.map((candidate) => [candidate.id, candidate.revises ?? null]))), json([
+    ["c1", "c2", "c3", "c4", "c5", "c6", "c7"].map((id) => [id, null]), [["c3.2", "c3"], ["c5.2", "c5"]], [["c3.3", "c3.2"]],
+  ]), "Claude judges 7, then 2, then 1, each beside the version it revises");
+  assert.equal(json(judged[1].previousVersions?.map((version) => [version.id, version.scores?.overall])), json([["c3", 84], ["c5", 80]]));
+  assert.equal(session.status, "needs-review");
+  assert.equal(session.opening?.winnerId, "c3.3", "the best version of the run stands in");
+  assert.equal(json(session.opening?.rounds.map((round) => round.kind)), json(["explore", "refine", "refine"]));
+  assert.match(String(session.error), /after 3 rounds\. The best version, c3\.3, scored 90\/100/);
+});
+
+test("regression: a revision that scores lower never replaces the version it revised, and its losses are recorded", async () => {
+  const h = harness({
+    writes: [writer(), writer(), writer()],
+    judgments: [
+      judge("revise", "c3", { c3: 84, c5: 80 }),
+      (contents) => ({ ...judge("revise", "c5.2", {})(contents), scores: [score("c3.2", 78, { voice: 72, grounding: 86 }), score("c5.2", 81)] }),
+      judge("revise", "c3.3", { "c3.3": 83 }),
+    ],
+  });
+  const session = await h.run();
+  const regressions = session.opening?.rounds[1].regressions;
+  assert.equal(json(regressions), json([{ candidateId: "c3.2", previousId: "c3", from: 84, to: 78, worse: ["tension 84 → 78", "payoff 84 → 78", "clarity 84 → 78", "voice 84 → 72"] }]));
+  const third = h.writerCalls()[2];
+  assert.equal(json(third.openings?.map((opening) => opening.id)), json(["c3"]), "round 3 refines c3 again, not the weaker c3.2");
+  assert.equal(json((third.openings?.[0] as unknown as { earlierAttempts: { id: string; overall: number }[] }).earlierAttempts.map((attempt) => [attempt.id, attempt.overall])), json([["c3.2", 78]]), "Sol sees the attempt that came out worse");
+  assert.equal(json(session.opening?.rounds[2].regressions?.map((regression) => regression.candidateId)), json(["c3.3"]));
+  assert.equal(session.opening?.winnerId, "c3", "the best version so far is still the first round's");
+});
+
+test("caching: Claude's cached context is identical every round, no history accumulates, and every call records its cache reads and writes", async () => {
+  const h = harness({ writes: [writer(), writer(), writer()], judgments: [judge("revise", "c1", { c1: 84, c2: 82 }), judge("revise", "c1.2", { "c1.2": 86 }), judge("revise", "c1.3", { "c1.3": 87 })] });
+  const session = await h.run();
+  const calls = h.judgeCalls();
+  assert.equal(calls.length, 3);
+  assert.equal(new Set(calls.map((call) => json(call.context))).size, 1, "the facts block never changes, so rounds 2 and 3 read it from the cache");
+  assert.ok(calls.every((call) => call.history === undefined));
+  const sizes = calls.map((call) => json(call.contents).length);
+  assert.ok(sizes[1] < sizes[0] && sizes[2] < sizes[1], `the judge's request shrinks as the round narrows (${sizes.join(" > ")})`);
+  const writerPrefixes = h.writerCalls().map((contents) => json(contents.verifiedFacts));
+  assert.equal(new Set(writerPrefixes).size, 1, "Sol's request starts with the same facts every round");
+  const judgeTrace = session.trace.filter((entry) => entry.provider === "anthropic");
+  assert.equal(json(judgeTrace.map((entry) => [entry.cachedInputTokens, entry.cacheWriteTokens ?? 0])), json([[0, 1_200], [1_200, 0], [1_200, 0]]));
 });
 
 test("when the judge's winner has a program finding, the clean runner-up wins if it passes", async () => {
-  const flagged = candidates("", { c1: "Pentagon says videos now win contracts" });
-  const h = harness({ writes: [() => ({ candidates: flagged })], judgments: [judge("accept", "c1", { c1: 98, c2: 96 })] });
+  const h = harness({ writes: [writer({ c1: "Pentagon says videos now win contracts" })], judgments: [judge("accept", "c1", { c1: 98, c2: 96 })] });
   const session = await h.run();
   assert.equal(h.calls.length, 2);
-  assert.equal((contentsOf(h.calls[1]).mechanicalFindings as { code: string }[])[0].code, "ATTRIBUTION_ON_COVER", "Claude sees the program's findings");
-  assert.equal(session.opening?.status, "ready");
+  assert.equal((h.judgeCalls()[0].contents as { mechanicalFindings: { code: string }[] }).mechanicalFindings[0].code, "ATTRIBUTION_ON_COVER");
   assert.equal(session.opening?.winnerId, "c2");
 });
 
-test("when the judge's winner has a program finding and no clean candidate passes, the round is a revise", async () => {
-  const flagged = candidates("", { c1: "Pentagon says videos now win contracts" });
-  const h = harness({
-    writes: [() => ({ candidates: flagged }), () => ({ candidates: candidates("Now: ") })],
-    judgments: [judge("accept", "c1", { c1: 98, c2: 94 }), judge("accept", "c5", { c5: 95 })],
-  });
+test("with nothing clean to refine, the next round writes seven new angles with fresh ids", async () => {
+  const tooLong = Object.fromEntries(HEADLINES.map((headline, index) => [`c${index + 1}`, `${headline} and so much more`]));
+  const h = harness({ writes: [writer(tooLong), writer()], judgments: [judge("revise", "c1", { c1: 90 }), judge("accept", "c9", { c9: 96 })] });
   const session = await h.run();
-  assert.equal(h.calls.length, 4, "a second round ran");
-  const revision = contentsOf(h.calls[2]);
-  assert.equal((revision.issues as { code: string }[])[0].code, "ATTRIBUTION_ON_COVER", "the program's findings come first");
-  assert.deepEqual(revision.keep, ["c2"], "a flagged candidate is never kept, however high its score");
-  assert.equal(session.opening?.winnerId, "c5");
+  const second = h.writerCalls()[1];
+  assert.equal(second.task, "openings");
+  assert.ok(second.feedback, "Sol hears why the first seven cannot win");
+  assert.equal(json(session.opening?.rounds[1].candidates.map((candidate) => candidate.id)), json(["c8", "c9", "c10", "c11", "c12", "c13", "c14"]));
+  assert.equal(session.opening?.winnerId, "c9");
 });
 
-test("after three rounds without acceptance the candidates wait for the editor, with the best clean one in front", async () => {
-  const h = harness({
-    writes: [() => ({ candidates: candidates() }), () => ({ candidates: candidates("Now: ") }), () => ({ candidates: candidates("Then: ") })],
-    judgments: [judge("revise", "c1", { c1: 88 }), judge("revise", "c2", { c2: 89 }), judge("revise", "c3", { c3: 92, c4: 91 }, { issues: [{ code: "PROMISE_NOT_PAID", candidateId: "c3", part: "slide2", detail: "No payoff." }] })],
-  });
-  const session = await h.run();
-  assert.equal(h.calls.length, 6);
-  assert.equal(session.status, "needs-review");
-  assert.equal(session.opening?.status, "needs-review");
-  assert.equal(session.opening?.winnerId, "c3");
-  assert.equal(session.opening?.candidates.length, 7, "the last round's candidates are kept");
-  assert.equal(session.opening?.candidates[0].cover.headline, "Then: Pentagon buyers now judge five-minute videos");
-  assert.match(String(session.error), /after 3 rounds\. The best clean candidate, c3, scored 92\/100\. Remaining issues: PROMISE_NOT_PAID \(c3 · slide2\)/);
-  assert.equal(session.opening?.error, session.error);
-});
-
-test("a provider failure marks the opening failed with its trace and surfaces the error", async () => {
-  const h = harness({ writes: [() => ({ candidates: candidates() })], judgments: [judge("revise", "c1", { c1: 80 })], failAt: { provider: "openai", call: 2 } });
+test("a provider failure marks the opening failed, keeps the trace and the best version so far, and surfaces the error", async () => {
+  const h = harness({ writes: [writer()], judgments: [judge("revise", "c4", { c4: 86 })], failAt: { provider: "openai", call: 2 } });
   await assert.rejects(h.run(), /HTTP 529/);
   const row = h.row();
   assert.equal(row.status, "failed");
   assert.equal(row.opening?.status, "failed");
   assert.match(String(row.opening?.error), /HTTP 529/);
   assert.equal(row.opening?.rounds.length, 1, "the first round is not lost");
+  assert.equal(row.opening?.winnerId, "c4");
   const last = row.trace[row.trace.length - 1];
   assert.equal(`${last.step} ${last.provider} ${last.outcome}`, "opening openai error");
-  assert.equal(row.threads.openai?.responseId, "resp_opening_1");
 });
 
-test("a malformed judgment fails the step without advancing Claude's transcript", async () => {
-  const h = harness({ writes: [() => ({ candidates: candidates() })], judgments: [() => ({ verdict: "accept", winnerId: "c9", summary: "x", scores: [], issues: [], suggestions: [] })] });
+test("a malformed judgment fails the step", async () => {
+  const h = harness({ writes: [writer()], judgments: [() => ({ verdict: "accept", winnerId: "c9", summary: "x", scores: [], issues: [], suggestions: [] })] });
   await assert.rejects(h.run(), (error: Error) => error instanceof types.Draft2ResponseError);
   assert.equal(h.row().status, "failed");
-  assert.equal(h.row().threads.anthropic?.history.length, 2);
 });
 
 test("the opening starts only on verified facts, one run at a time", async () => {
-  const unverified = harness({ writes: [], judgments: [], session: { status: "needs-review" } });
-  await assert.rejects(unverified.run(), (error: Error) => error instanceof types.Draft2InputError && /verified facts/.test(error.message));
-  await assert.rejects(harness({ writes: [], judgments: [], session: { threads: {} } }).run(), /conversations are missing/);
+  await assert.rejects(harness({ writes: [], judgments: [], session: { status: "needs-review" } }).run(), (error: Error) => error instanceof types.Draft2InputError && /verified facts/.test(error.message));
   await assert.rejects(harness({ writes: [], judgments: [], busy: true }).run(), (error: Error) => error instanceof types.Draft2BusyError);
   await assert.rejects(harness({ writes: [], judgments: [], claimRefused: true }).run(), (error: Error) => error instanceof types.Draft2BusyError, "a concurrent request claimed the session first");
   await assert.rejects(harness({ writes: [], judgments: [], session: { storyId: "44444444-4444-4444-8444-444444444444" } }).run(), /not found for the story/);
-  const rerun = harness({ writes: [() => ({ candidates: candidates() })], judgments: [judge("accept", "c2", { c2: 99 })], session: { step: "opening", status: "failed" } });
-  assert.equal((await rerun.run()).status, "ready", "a failed opening can run again");
+  const rerun = harness({ writes: [writer()], judgments: [judge("accept", "c2", { c2: 99 })], session: { step: "opening", status: "failed", threads: {} } });
+  assert.equal((await rerun.run()).status, "ready", "a failed opening can run again, without the facts conversations");
 });
 
-test("the editor's choice is recorded on the opening, an unknown candidate is refused, and a rerun keeps it", async () => {
+test("the editor can choose any version of the run; an unknown one is refused; a rerun keeps the choice", async () => {
   const h = harness({
-    writes: [() => ({ candidates: candidates() }), () => ({ candidates: candidates("Again: ") })],
-    judgments: [judge("accept", "c1", { c1: 96 }), judge("accept", "c2", { c2: 97 })],
+    writes: [writer(), writer(), writer(), writer()],
+    judgments: [judge("revise", "c1", { c1: 84, c2: 82 }), judge("accept", "c1.2", { "c1.2": 96 }), judge("accept", "c3", { c3: 97 })],
   });
   await h.run();
-  const chosen = await h.choose("c3");
-  assert.equal(chosen.opening?.editorChoiceId, "c3");
-  assert.equal(chosen.opening?.winnerId, "c1", "the judge's pick stays beside the choice");
+  const chosen = await h.choose("c2");
+  assert.equal(chosen.opening?.editorChoiceId, "c2", "a first-round version stays choosable after the refinement");
+  assert.equal(chosen.opening?.winnerId, "c1.2", "the judge's pick stays beside the choice");
   assert.ok(chosen.opening?.editorChoiceAt);
+  assert.equal((await h.choose("c1.2")).opening?.editorChoiceId, "c1.2");
   await assert.rejects(h.choose("c9"), (error: Error) => error instanceof types.Draft2InputError && /c9 is not one of/.test(error.message));
   const rerun = await h.run();
-  assert.equal(rerun.opening?.winnerId, "c2");
+  assert.equal(rerun.opening?.winnerId, "c3");
   assert.equal(rerun.opening?.editorChoiceId, undefined, "a new opening starts without a choice");
-  assert.equal(JSON.stringify(rerun.opening?.previousRuns?.map((run) => [run.winnerId, run.editorChoiceId, run.candidates.length])), JSON.stringify([["c1", "c3", 7]]), "the earlier run and its choice stay on the session");
+  assert.equal(json(rerun.opening?.previousRuns?.map((run) => [run.winnerId, run.editorChoiceId])), json([["c1.2", "c1.2"]]), "the earlier run and its choice stay on the session");
 });
 
 test("a choice waits while the opening is being written", async () => {

@@ -81,6 +81,8 @@ export type Draft2TraceEntry = {
   durationMs: number;
   usage?: CreativeAiUsage;
   cachedInputTokens?: number;
+  /** Prompt-cache writes (Claude), counted inside usage.promptTokens like the reads. */
+  cacheWriteTokens?: number;
   outcome: "ok" | "error";
   note?: string;
   /** The skill versions the call's instructions were composed from (skills/draft2-skills.ts). */

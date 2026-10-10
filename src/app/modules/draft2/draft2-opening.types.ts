@@ -3,19 +3,20 @@ import { comparableText, Draft2ResponseError, type Draft2Fact } from "./draft2-f
 /**
  * Opening, the second Draft 2 step: the cover (headline + subheadline) and
  * slide 2 (headline + body), judged as one unit. A writer (Sol) proposes
- * candidates from the verified facts; the program checks what a program can
- * (lengths, fact ids, numbers, attribution, repetition); a judge (Claude)
- * scores every candidate on the hooks skill. Everything here is pure:
- * contracts, schemas, parsing, the mechanical checks and the acceptance rule.
+ * seven candidates from the verified facts; the program checks what a
+ * program can (lengths, fact ids, numbers, attribution, repetition); a judge
+ * (Claude) scores them on the hooks skill. After the first round the best
+ * versions are refined, not replaced: the two best, then the best one, and
+ * the program keeps the better of each version and its revision.
+ * Everything here is pure: contracts, schemas, parsing, the mechanical
+ * checks, version bookkeeping and the acceptance rule.
  */
 export const OPENING_CANDIDATES = 7;
+/** The second round revises this many of the first round's best versions; the third revises the best one. */
+export const OPENING_FINALISTS = 2;
 export const OPENING_MAX_ROUNDS = 3;
 export const OPENING_ACCEPT_SCORE = 95;
 export const OPENING_CRITERION_FLOOR = 85;
-/** A clean candidate the judge scored this high is kept unchanged in the next round. */
-export const OPENING_KEEP_SCORE = 90;
-/** At most this many are kept, so every revision tries at least four new angles instead of resubmitting a list the judge already refused. */
-export const OPENING_KEEP_MAX = 3;
 export const COVER_HEADLINE_MAX_WORDS = 8;
 export const COVER_SUBHEADLINE_MAX_WORDS = 18;
 export const SLIDE2_HEADLINE_MAX_WORDS = 8;
@@ -35,12 +36,14 @@ export type Draft2OpeningCriterion = (typeof OPENING_CRITERIA)[number];
 export type Draft2OpeningIssueCode = (typeof OPENING_ISSUE_CODES)[number];
 
 export type Draft2OpeningCandidate = {
-  /** c1…c7, stable across rounds when kept. */
+  /** c1…c7 for new angles; a revision names its round ("c3.2" revises c3 in round 2). Unique within a run. */
   id: string;
   cover: { headline: string; subheadline: string; factIds: string[] };
   slide2: { headline: string; body: string; factIds: string[] };
   /** One line: the tension this opening uses. */
   angle: string;
+  /** The version this candidate revises; set by the program. */
+  revisionOf?: string;
 };
 
 export type Draft2OpeningIssue = { code: Draft2OpeningIssueCode; candidateId?: string; part?: "cover" | "slide2"; detail: string };
@@ -70,28 +73,54 @@ export type Draft2OpeningEvaluation = {
 
 export type Draft2OpeningRound = {
   round: number;
+  /** explore: new angles; refine: revisions of the best versions so far. Rounds stored before refinement have none (explore). */
+  kind?: "explore" | "refine";
   candidates: Draft2OpeningCandidate[];
   mechanical: Draft2OpeningIssue[];
-  /** Candidates the judge asked to keep that the writer dropped or changed; the program put the originals back. */
-  restored?: string[];
   evaluation?: Draft2OpeningEvaluation;
+  /** Revisions that came out worse than the version they revised; that version stays the better one. */
+  regressions?: Draft2OpeningRegression[];
   at: string;
+};
+
+export type Draft2OpeningRegression = {
+  /** The revision. */
+  candidateId: string;
+  /** The version it revised. */
+  previousId: string;
+  /** Overall scores, previous then revision. */
+  from: number;
+  to: number;
+  /** What got worse: criteria as "voice 85 → 72", and program findings the previous version did not have. */
+  worse: string[];
 };
 
 export type Draft2Opening = {
   status: "running" | "ready" | "needs-review" | "failed";
   rounds: Draft2OpeningRound[];
-  /** The last round's list. */
+  /** The last round's candidates; openingVersions lists every version of the run. */
   candidates: Draft2OpeningCandidate[];
+  /** The last round's verdict. */
   evaluation?: Draft2OpeningEvaluation;
-  /** The judge's pick, validated by the program. */
+  /** The accepted opening (status ready), or the best version so far: a version id from any round. */
   winnerId?: string;
   /** Set by the editor; wins over winnerId downstream. */
   editorChoiceId?: string;
   editorChoiceAt?: string;
   error?: string;
-  /** Earlier runs of the step on this session, oldest first, without their rounds (Claude's transcript keeps those exchanges). */
+  /** Earlier runs of the step on this session, oldest first, without their rounds. */
   previousRuns?: Draft2OpeningRun[];
+};
+
+/** One version of an opening with what the round it was written in found on it. */
+export type Draft2OpeningVersion = {
+  candidate: Draft2OpeningCandidate;
+  round: number;
+  score?: Draft2OpeningScore;
+  /** The program's findings; any one keeps the version from winning. */
+  findings: Draft2OpeningIssue[];
+  /** The judge's issues. */
+  issues: Draft2OpeningIssue[];
 };
 
 /** How an earlier run ended: its candidates, the verdict, the winner and the editor's choice. */
@@ -389,67 +418,143 @@ export function openingIsAccepted(mechanical: readonly Draft2OpeningIssue[], eva
   return openingAcceptedWinner(mechanical, evaluation) !== undefined;
 }
 
-/** The candidates the next round keeps unchanged: clean, scored at least OPENING_KEEP_SCORE, the best OPENING_KEEP_MAX. */
-export function keptOpeningIds(mechanical: readonly Draft2OpeningIssue[], evaluation: Draft2OpeningEvaluation): string[] {
-  const flagged = flaggedCandidates(mechanical);
-  return evaluation.scores
-    .filter((score) => score.overall >= OPENING_KEEP_SCORE && !flagged.has(score.candidateId))
-    .sort((a, b) => b.overall - a.overall)
-    .slice(0, OPENING_KEEP_MAX)
-    .map((score) => score.candidateId);
+/** The facts both models receive on every call, the same in every round so it is read from the prompt cache. */
+export function openingFactsSnapshot(facts: readonly Draft2Fact[]) {
+  return facts.map((fact) => ({
+    id: fact.id, claim: fact.claim, status: fact.status,
+    ...(fact.qualifier ? { qualifier: fact.qualifier } : {}), ...(fact.attribution ? { attribution: fact.attribution } : {}),
+    evidence: fact.evidence, importance: fact.importance,
+  }));
 }
 
-/** What the writer receives for its next round: the judge's verdict, the program's findings first, and what to keep. */
-export function openingRevisionRequest(mechanical: readonly Draft2OpeningIssue[], evaluation: Draft2OpeningEvaluation, keep: readonly string[]) {
+/** Every version the run wrote, with its score and findings; a later round's candidate replaces an earlier one with the same id (the first loop reused ids). */
+export function openingVersions(rounds: readonly Draft2OpeningRound[]): Draft2OpeningVersion[] {
+  const byId = new Map<string, Draft2OpeningVersion>();
+  for (const round of rounds) {
+    for (const candidate of round.candidates) {
+      byId.delete(candidate.id);
+      byId.set(candidate.id, {
+        candidate,
+        round: round.round,
+        score: round.evaluation?.scores.find((score) => score.candidateId === candidate.id),
+        findings: round.mechanical.filter((issue) => issue.candidateId === candidate.id),
+        issues: (round.evaluation?.issues ?? []).filter((issue) => issue.candidateId === candidate.id),
+      });
+    }
+  }
+  return [...byId.values()];
+}
+
+/** The versions that may win, best first: scored, no program finding, highest overall (a later round wins a tie). */
+export function bestOpeningVersions(versions: readonly Draft2OpeningVersion[]): Draft2OpeningVersion[] {
+  return versions
+    .filter((version) => version.score && version.findings.length === 0)
+    .sort((a, b) => b.score!.overall - a.score!.overall || b.round - a.round);
+}
+
+/** What a round works on: the best clean versions to refine (two in round 2, then one); none means the round writes new angles. */
+export function openingTargets(versions: readonly Draft2OpeningVersion[], round: number): Draft2OpeningVersion[] {
+  return round === 1 ? [] : bestOpeningVersions(versions).slice(0, round === 2 ? OPENING_FINALISTS : 1);
+}
+
+/** Revisions that came out worse than the version they revised: a lower overall, or a program finding the previous version did not have. */
+export function openingRegressions(revisions: readonly Draft2OpeningVersion[], previous: readonly Draft2OpeningVersion[]): Draft2OpeningRegression[] {
+  return revisions.flatMap((revision) => {
+    const before = previous.find((version) => version.candidate.id === revision.candidate.revisionOf);
+    if (!before?.score || !revision.score) return [];
+    const worse = [
+      ...OPENING_CRITERIA.filter((criterion) => revision.score![criterion] < before.score![criterion]).map((criterion) => `${criterion} ${before.score![criterion]} → ${revision.score![criterion]}`),
+      ...(before.findings.length ? [] : revision.findings.map((finding) => finding.code)),
+    ];
+    const regressed = revision.score.overall < before.score.overall || (revision.findings.length > 0 && before.findings.length === 0);
+    return regressed ? [{ candidateId: revision.candidate.id, previousId: before.candidate.id, from: before.score.overall, to: revision.score.overall, worse }] : [];
+  });
+}
+
+const rootId = (id: string) => id.split(".")[0];
+
+/**
+ * The writer's revisions as new versions: one per target, matched by id (or
+ * in order when the writer renamed them), each with an id naming its round
+ * ("c3" revised in round 2 becomes "c3.2").
+ */
+export function revisedCandidates(targets: readonly Draft2OpeningCandidate[], answer: readonly Draft2OpeningCandidate[], round: number): Draft2OpeningCandidate[] {
+  const unmatched = answer.filter((candidate) => !targets.some((target) => target.id === candidate.id));
+  const revisions = targets.flatMap((target) => {
+    const revision = answer.find((candidate) => candidate.id === target.id) ?? unmatched.shift();
+    return revision ? [{ ...revision, id: `${rootId(target.id)}.${round}`, revisionOf: target.id }] : [];
+  });
+  if (!revisions.length) throw new Draft2ResponseError("The writer returned no revision of the openings it was given");
+  return revisions;
+}
+
+/** New angles get ids after every id the run used, so each version keeps one id for the whole run. */
+export function renumberedCandidates(answer: readonly Draft2OpeningCandidate[], versions: readonly Draft2OpeningVersion[]): Draft2OpeningCandidate[] {
+  let next = Math.max(0, ...versions.map((version) => Number(/^c(\d+)/.exec(version.candidate.id)?.[1] ?? 0))) + 1;
+  return answer.map((candidate) => ({ ...candidate, id: `c${next++}` }));
+}
+
+/** A candidate as the models read it: the version it revises, never the program's bookkeeping. */
+const shown = ({ revisionOf, ...candidate }: Draft2OpeningCandidate) => ({ ...candidate, ...(revisionOf ? { revises: revisionOf } : {}) });
+
+/** What the writer receives for new angles: the facts first (cached), then, after a round with nothing to refine, what went wrong. */
+export function openingExploreRequest(verifiedFacts: ReturnType<typeof openingFactsSnapshot>, last?: Draft2OpeningRound) {
   return {
-    judgeVerdict: evaluation.verdict,
-    judgeSummary: evaluation.summary,
-    scores: evaluation.scores,
-    issues: [...mechanical, ...evaluation.issues],
-    suggestions: evaluation.suggestions,
-    keep: [...keep],
-    instruction: `Return ${OPENING_CANDIDATES} candidates: keep the listed ones unchanged with their ids, replace the others with new angles that answer the issues.`,
+    verifiedFacts,
+    task: "openings",
+    candidatesWanted: OPENING_CANDIDATES,
+    ...(last?.evaluation ? { feedback: {
+      note: "Every opening so far has a program finding. Write new angles that avoid these issues.",
+      judgeSummary: last.evaluation.summary,
+      issues: [...last.mechanical, ...last.evaluation.issues],
+      suggestions: last.evaluation.suggestions,
+    } } : {}),
   };
 }
 
-const sameOpening = (a: Draft2OpeningCandidate, b: Draft2OpeningCandidate) =>
-  [a.cover.headline, a.cover.subheadline, a.slide2.headline, a.slide2.body].map(comparableText).join("\n") === [b.cover.headline, b.cover.subheadline, b.slide2.headline, b.slide2.body].map(comparableText).join("\n")
-  && a.cover.factIds.join() === b.cover.factIds.join() && a.slide2.factIds.join() === b.slide2.factIds.join();
+export const OPENING_REVISION_INSTRUCTION = "Revise each opening in openings and return exactly one candidate per opening, with the same id. Preserve its narrative promise, the payoff slide 2 delivers (with its attribution), every fact claim already approved and its strongest creative elements. Change only what its issues name. Never make the writing flatter or more bureaucratic to gain precision. When earlierAttempts lists a revision that scored lower, do not repeat what made it worse.";
 
-/**
- * The revised list with every kept candidate exactly as the judge scored it:
- * one the writer dropped or rewrote is put back, in place of the last new
- * candidates when the list would grow past OPENING_CANDIDATES.
- */
-export function mergeKeptCandidates(previous: readonly Draft2OpeningCandidate[], revised: readonly Draft2OpeningCandidate[], keep: readonly string[]): { candidates: Draft2OpeningCandidate[]; restored: string[] } {
-  const kept = new Map(previous.filter((candidate) => keep.includes(candidate.id)).map((candidate) => [candidate.id, candidate]));
-  const restored: string[] = [];
-  const candidates = revised.map((candidate) => {
-    const original = kept.get(candidate.id);
-    if (!original) return candidate;
-    kept.delete(candidate.id);
-    if (!sameOpening(original, candidate)) restored.push(candidate.id);
-    return original;
-  });
-  for (const original of kept.values()) {
-    candidates.push(original);
-    restored.push(original.id);
-  }
-  for (let index = candidates.length - 1; candidates.length > OPENING_CANDIDATES && index >= 0; index--) {
-    if (!keep.includes(candidates[index].id)) candidates.splice(index, 1);
-  }
-  return { candidates, restored };
+/** What the writer receives to refine: each target with its scores, the program's findings and the judge's issues, and any earlier attempt that came out worse. */
+export function openingRefineRequest(verifiedFacts: ReturnType<typeof openingFactsSnapshot>, targets: readonly Draft2OpeningVersion[], versions: readonly Draft2OpeningVersion[], regressions: readonly Draft2OpeningRegression[], suggestions: readonly string[]) {
+  return {
+    verifiedFacts,
+    task: "revise",
+    openings: targets.map((target) => ({
+      ...shown(target.candidate),
+      scores: target.score,
+      issues: [...target.findings, ...target.issues],
+      earlierAttempts: regressions.filter((regression) => regression.previousId === target.candidate.id).map((regression) => ({
+        id: regression.candidateId,
+        coverHeadline: versions.find((version) => version.candidate.id === regression.candidateId)?.candidate.cover.headline,
+        overall: regression.to,
+        worse: regression.worse,
+      })),
+    })),
+    suggestions: [...suggestions],
+    instruction: OPENING_REVISION_INSTRUCTION,
+  };
 }
 
-/** Why a run ends without an accepted opening: the best clean candidate's weak criteria, then the remaining issues. */
-export function openingReviewNote(mechanical: readonly Draft2OpeningIssue[], evaluation: Draft2OpeningEvaluation, lead: string): string {
-  const best = bestCleanCandidate(mechanical, evaluation);
-  const weak = best ? OPENING_CRITERIA.filter((criterion) => best[criterion] < OPENING_CRITERION_FLOOR).map((criterion) => `${criterion} ${best[criterion]}`) : [];
-  const standing = best
-    ? `The best clean candidate, ${best.candidateId}, scored ${best.overall}/100${weak.length ? ` (${weak.join(", ")})` : ""}.`
-    : "Every candidate has a program finding.";
-  const issues = [...mechanical, ...evaluation.issues].slice(0, 6)
-    .map((issue) => `${issue.code}${issue.candidateId ? ` (${issue.candidateId}${issue.part ? ` · ${issue.part}` : ""})` : ""}`);
+/** What the judge receives each round, beside the cached facts: the candidates, the versions they revise with their scores, the program's findings. */
+export function openingJudgeRequest(round: number, candidates: readonly Draft2OpeningCandidate[], mechanical: readonly Draft2OpeningIssue[], revised: readonly Draft2OpeningVersion[]) {
+  return {
+    task: "openings",
+    round,
+    candidates: candidates.map(shown),
+    ...(revised.length ? { previousVersions: revised.map((version) => ({ ...shown(version.candidate), scores: version.score, issues: [...version.findings, ...version.issues] })) } : {}),
+    mechanicalFindings: mechanical,
+  };
+}
+
+/** Why a run ends without an accepted opening: the best version's weak criteria and what is left to fix on it. */
+export function openingReviewNote(best: Draft2OpeningVersion | undefined, last: Draft2OpeningRound | undefined, lead: string): string {
+  const score = best?.score;
+  const weak = score ? OPENING_CRITERIA.filter((criterion) => score[criterion] < OPENING_CRITERION_FLOOR).map((criterion) => `${criterion} ${score[criterion]}`) : [];
+  const standing = best && score
+    ? `The best version, ${best.candidate.id}, scored ${score.overall}/100${weak.length ? ` (${weak.join(", ")})` : ""}.`
+    : "Every version has a program finding.";
+  const left = best ? best.issues : [...(last?.mechanical ?? []), ...(last?.evaluation?.issues ?? [])];
+  const issues = left.slice(0, 6).map((issue) => `${issue.code}${issue.candidateId ? ` (${issue.candidateId}${issue.part ? ` · ${issue.part}` : ""})` : ""}`);
   return `${lead} ${standing}${issues.length ? ` Remaining issues: ${issues.join(", ")}.` : ""} Choose an opening below or write it again.`;
 }
 

@@ -31,6 +31,8 @@ export type AnthropicStructuredResponse = {
   usage: CreativeAiUsage;
   /** Prompt-cache reads, already counted inside usage.promptTokens. */
   cachedInputTokens?: number;
+  /** Prompt-cache writes, also counted inside usage.promptTokens; the API bills them above the base input rate. */
+  cacheWriteTokens?: number;
   stopReason?: string;
 };
 
@@ -71,6 +73,7 @@ async function requestAnthropicStructuredResponse({
   auditContext,
   images = [],
   history = [],
+  context,
 }: {
   apiKey: string;
   model: string;
@@ -98,6 +101,13 @@ async function requestAnthropicStructuredResponse({
    * calls reread it at the cached rate.
    */
   history?: AnthropicHistoryTurn[];
+  /**
+   * The stable part of a request every call of a step repeats (such as the
+   * verified facts): sent as the first block of the user turn and marked for
+   * prompt caching, so later calls with the same instructions read it at
+   * the cached rate instead of carrying a growing history.
+   */
+  context?: unknown;
 }): Promise<AnthropicStructuredResponse> {
   const auditId = randomUUID();
   const startedAt = Date.now();
@@ -118,7 +128,11 @@ async function requestAnthropicStructuredResponse({
       })),
       {
         role: "user",
-        content: [{ type: "text", text: JSON.stringify(contents) }, ...images.map((image) => ({ type: "image", source: imageSource(image) }))],
+        content: [
+          ...(context === undefined ? [] : [{ type: "text", text: JSON.stringify(context), cache_control: { type: "ephemeral" } }]),
+          { type: "text", text: JSON.stringify(contents) },
+          ...images.map((image) => ({ type: "image", source: imageSource(image) })),
+        ],
       },
     ],
     output_config: { format: { type: "json_schema", schema: anthropicSchema(schema) }, ...(effort ? { effort } : {}) },
@@ -167,12 +181,13 @@ async function requestAnthropicStructuredResponse({
     }
     const usage = anthropicUsage(payload.usage);
     const cachedInputTokens = cacheReadTokens(payload.usage);
+    const cacheWriteTokens = cacheCreationTokens(payload.usage);
     const stopReason = typeof payload.stop_reason === "string" ? payload.stop_reason : undefined;
     receipt({
       event: response.ok ? "response-received" : "http-error", attempt,
       requestId: response.headers?.get?.("request-id") ?? undefined,
       httpStatus: response.status, elapsedMs: Date.now() - startedAt,
-      usageKnown: Boolean(payload.usage), usage, cachedInputTokens, stopReason,
+      usageKnown: Boolean(payload.usage), usage, cachedInputTokens, cacheWriteTokens, stopReason,
     });
     if (!response.ok) {
       lastError = Object.assign(new AnthropicEditorialError(
@@ -203,6 +218,7 @@ async function requestAnthropicStructuredResponse({
       model,
       usage,
       cachedInputTokens,
+      cacheWriteTokens,
       ...(stopReason ? { stopReason } : {}),
     };
   }
@@ -284,6 +300,10 @@ export function anthropicUsage(value: unknown): CreativeAiUsage {
 
 function cacheReadTokens(value: unknown): number {
   return value && typeof value === "object" ? usageNumber((value as { cache_read_input_tokens?: unknown }).cache_read_input_tokens) : 0;
+}
+
+function cacheCreationTokens(value: unknown): number {
+  return value && typeof value === "object" ? usageNumber((value as { cache_creation_input_tokens?: unknown }).cache_creation_input_tokens) : 0;
 }
 
 function emptyUsage(): CreativeAiUsage {
