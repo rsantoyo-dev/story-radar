@@ -43,6 +43,7 @@ const TEXT_RULES: [RegExp, string][] = [
   [/\bwhsec_[A-Za-z0-9]{6,}/g, "whsec_[redacted]"],
   [/\bre_[A-Za-z0-9]{16,}/g, "re_[redacted]"],
   [/\bAIza[0-9A-Za-z_-]{30,}/g, "AIza[redacted]"],
+  [/\bsk-ant-[A-Za-z0-9_-]{8,}/g, "sk-ant-[redacted]"],
   [/\bEAA[A-Za-z0-9]{20,}/g, "EAA[redacted]"],
   [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "[redacted-jwt]"],
   [/\bBearer\s+[A-Za-z0-9._~+/=-]{6,}/gi, "Bearer [redacted]"],

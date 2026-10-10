@@ -16,10 +16,11 @@ test("the production example has only supported configuration and keeps Luna rep
   const parsed = parseConfig(example);
   assert.equal(parsed[key], "gpt-6-luna");
   assert.equal(parsed.CREATIVE_SINGLE_SHOT_ENABLED, "true");
+  assert.equal(parsed.CREATIVE_ANTHROPIC_MODEL, "claude-sonnet-5-5");
 });
 
 test("credentials, local URLs and Vercel system tokens cannot be synced", () => {
-  for (const forbidden of ["OPENAI_API_KEY", "DATABASE_URL", "META_TOKEN_ENCRYPTION_KEY", "RADAR_APP_URL", "VERCEL_OIDC_TOKEN"]) {
+  for (const forbidden of ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "DATABASE_URL", "META_TOKEN_ENCRYPTION_KEY", "RADAR_APP_URL", "VERCEL_OIDC_TOKEN"]) {
     assert.throws(() => parseConfig(`${forbidden}="do-not-print-this"`), (error) => {
       assert.match(error.message, /Unmanaged variable/u);
       assert.ok(!error.message.includes("do-not-print-this"));

@@ -54,6 +54,8 @@ import {
   R2StorageValidationError,
 } from "@/app/modules/stories/r2-storage";
 import { SelectedStoryContentNotFoundError } from "@/app/modules/stories/story-content.repository";
+import { AnthropicEditorialError } from "@/app/modules/stories/anthropic-structured-response";
+import { AnthropicConfigurationError } from "@/app/modules/stories/anthropic.config";
 
 export function creativeRouteErrorResponse(
   error: unknown,
@@ -61,6 +63,7 @@ export function creativeRouteErrorResponse(
 ): NextResponse {
   if(error instanceof CreativeTextBudgetError)return NextResponse.json({error:error.message,code:"STORY_TEXT_BUDGET"},{status:429});
   if(error instanceof CreativeTextPricingError)return NextResponse.json({error:error.message,code:"TEXT_PRICING_REQUIRED"},{status:503});
+  if(error instanceof AnthropicConfigurationError)return NextResponse.json({error:error.message,code:"ANTHROPIC_NOT_CONFIGURED"},{status:503});
   if (
     error instanceof CreativeContentNotFoundError ||
     error instanceof SelectedStoryContentNotFoundError ||
@@ -150,6 +153,7 @@ export function creativeRouteErrorResponse(
     error instanceof CreativeHookTournamentResponseError ||
     error instanceof CompanionStoryResponseError ||
     error instanceof OpenAiEditorialError ||
+    error instanceof AnthropicEditorialError ||
     error instanceof FalImageResponseError ||
     error instanceof R2StorageObjectError ||
     error instanceof CreativeBrandAnalysisError

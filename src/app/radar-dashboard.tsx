@@ -4509,6 +4509,7 @@ function formatEditorialProvider(provider: string): string {
   const names: Record<string, string> = {
     google: "Gemini",
     openai: "OpenAI Luna",
+    anthropic: "Claude",
     groq: "Groq",
     cloudflare: "Cloudflare",
   };

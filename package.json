@@ -24,7 +24,8 @@
     "db:check": "drizzle-kit check",
     "db:studio": "drizzle-kit studio",
     "worker:daily": "node scripts/daily-preparation-worker.mjs",
-    "uxdsl:audit": "node scripts/uxdsl-audit.mjs"
+    "uxdsl:audit": "node scripts/uxdsl-audit.mjs",
+    "ai:anthropic:check": "node --env-file=.env.local scripts/anthropic-check.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1117.0",

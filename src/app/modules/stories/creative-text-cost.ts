@@ -34,6 +34,19 @@ export function textRate(provider: string, model: string, inputTokens: number, o
         if (rate && inputTokens > 272000)
             rate = { ...rate, input: rate.input * 2, cached: rate.cached * 2, output: rate.output * 1.5 };
     }
+    if (!rate && provider === "anthropic") {
+        // Checked October 9, 2026 (platform.claude.com/docs/en/about-claude/pricing).
+        // Cache reads are 10% of input. Cache writes (25% over input) are not
+        // modelled: the adapter sets no cache breakpoints yet, so any write
+        // tokens settle at the input rate. Re-verify by the expiry below.
+        const rates: Record<string, number[]> = { "claude-haiku-4-5-20251001": [1, 5, .1], "claude-sonnet-5-5": [2, 10, .2], "claude-opus-5-5": [4, 20, .4], "claude-fable-5-1": [10, 50, 1] };
+        const r = rates[model];
+        if (r && now < Date.parse("2027-01-09"))
+            rate = { input: r[0], output: r[1], cached: r[2], version: "2026-10-09" };
+        // Long-context premium past 200K input tokens: double input, 1.5x output.
+        if (rate && inputTokens > 200000)
+            rate = { ...rate, input: rate.input * 2, cached: rate.cached * 2, output: rate.output * 1.5 };
+    }
     if (!rate && provider === "google" && ["gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash"].includes(model)) {
         const factor = now < Date.parse("2027-01-01") ? 1 : 2;
         rate = { input: .75 * factor, output: 3.75 * factor, cached: .075 * factor, thoughtsExtra: true, version: "2026-09-20" };

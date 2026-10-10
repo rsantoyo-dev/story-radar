@@ -116,8 +116,11 @@ export function preparationCallLabel(call: PreparationTextCall, earlier: Prepara
   if (call.operation === "creative_json") return call.provider === "google" ? "Brief or critic review" : "AI step (fallback provider)";
   return CALL_LABELS[call.operation] ?? call.operation.replace(/_/g, " ");
 }
-/** "gpt-6.1-sol" → "GPT-6.1 Sol", "gemini-3.8-flash" → "Gemini 3.8 Flash". */
+/** "gpt-6.1-sol" → "GPT-6.1 Sol", "gemini-3.8-flash" → "Gemini 3.8 Flash", "claude-sonnet-5-5" → "Claude Sonnet 5.5". */
 export function preparationModelLabel(model: string): string {
+  // Claude ids carry the version as two hyphenated digits, sometimes with a date suffix.
+  const claude = /^claude-([a-z]+)-(\d+)-(\d+)(?:-\d{8})?$/i.exec(model.split("/").pop()!);
+  if (claude) return `Claude ${claude[1].charAt(0).toUpperCase()}${claude[1].slice(1).toLowerCase()} ${claude[2]}.${claude[3]}`;
   return model.split("/").pop()!.split("-").map((part, index) =>
     index === 0 && /^gpt$/i.test(part) ? "GPT" : /^\d/.test(part) ? part : part.charAt(0).toUpperCase() + part.slice(1),
   ).join(" ").replace(/^GPT (\S+)/, "GPT-$1");
