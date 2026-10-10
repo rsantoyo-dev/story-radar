@@ -55,6 +55,10 @@ const FACT_STATUS: Record<Draft2Fact["status"], { label: string; tone: StatusTon
 const CRITERION_LABEL: Record<Draft2OpeningCriterion, string> = { tension: "Tension", payoff: "Payoff", clarity: "Clarity", grounding: "Grounding", voice: "Voice" };
 
 const providerLabel = (provider: Draft2TraceEntry["provider"]) => provider === "openai" ? "Sol" : "Claude";
+/** Where a version comes from: its round, and the version it revises or the proposal of Claude's it develops. */
+const versionOrigin = ({ round, candidate }: Draft2OpeningVersion) =>
+  `round ${round}${candidate.revisionOf ? ` · revises ${candidate.revisionOf}` : ""}${candidate.proposalOf ? ` · develops Claude’s ${candidate.proposalOf}` : ""}`;
+
 /** Why a revision did not replace its version: a lower score, or the same or a higher one with a loss the score does not show. */
 function regressionNote({ candidateId, previousId, from, to, worse }: Draft2OpeningRegression): string {
   const losses = worse.length ? ` (${worse.join(", ")})` : "";
@@ -259,7 +263,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
             <div className={styles.factsHeader}>
               <div>
                 <p className={styles.eyebrow}>Step 2 · Opening</p>
-                <p className={styles.factsIntro}>Sol writes ten openings (cover and slide 2) from the verified facts and Claude scores them. Sol revises the three best against their issues and tries two new angles; Claude keeps the two best, which Sol refines for the final pick. The better version always stays. Accepted at 95/100 with no criterion below 85.</p>
+                <p className={styles.factsIntro}>Sol writes fifteen openings (cover and slide 2) from the verified facts; Claude scores them and proposes three of its own. Sol revises the three best, develops Claude’s proposals and tries three new angles; Claude scores them without knowing which grew from its proposals, and proposes one more. Sol refines the two best and develops it for Claude’s final pick. The better version always stays. Accepted at 95/100 with no criterion below 85.</p>
               </div>
               <ActionRow>
                 {resumeRound && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("opening", { continuing: true }); }}>Continue from round {resumeRound}</Button> : null}
@@ -269,7 +273,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
               </ActionRow>
             </div>
             {!factsVerified && !running ? <p className={styles.factMeta}>The opening builds only on verified facts; verify them first.</p> : null}
-            {running === "opening" ? <LoadingState>{resumeRound ? `Continuing with round ${resumeRound} in a new request…` : "Sol writes ten openings; Claude judges each round. This can take a few minutes."}</LoadingState> : null}
+            {running === "opening" ? <LoadingState>{resumeRound ? `Continuing with round ${resumeRound} in a new request…` : "Sol writes fifteen openings; Claude judges each round. This can take a few minutes."}</LoadingState> : null}
             {runError?.step === "opening" ? <InlineNotice tone="error" title="The opening step stopped">{runError.message}</InlineNotice> : null}
             {session?.step === "opening" && session.error && running !== "opening" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
             {choiceError ? <InlineNotice tone="error" title="Your choice was not saved">{choiceError}</InlineNotice> : null}
@@ -358,7 +362,7 @@ function OpeningView({ opening, choosing, locked, onChoose }: { opening: Draft2O
             {version.score ? <StatusBadge tone={openingScorePasses(version.score) ? "success" : "neutral"}>{version.score.overall}/100</StatusBadge> : null}
             {version.findings.length ? <StatusBadge tone="warning">{version.findings.length} program {version.findings.length === 1 ? "finding" : "findings"}</StatusBadge> : null}
             {version.candidate.id === opening.winnerId ? <StatusBadge tone="info">{winnerLabel}</StatusBadge> : null}
-            <span className={styles.factMeta}>round {version.round}{version.candidate.revisionOf ? ` · revises ${version.candidate.revisionOf}` : ""}</span>
+            <span className={styles.factMeta}>{versionOrigin(version)}</span>
           </div>
           <p className={styles.factClaim}>{version.candidate.cover.headline}</p>
           <p className={styles.factMeta}>{version.candidate.cover.subheadline}</p>
@@ -378,11 +382,14 @@ function OpeningRoundView({ round }: { round: Draft2OpeningRound }) {
   const winnerId = programWinner ?? evaluation?.winnerId;
   const winner = evaluation?.scores.find((score) => score.candidateId === winnerId);
   const revised = round.candidates.flatMap((candidate) => candidate.revisionOf ? [candidate.revisionOf] : []);
-  const fresh = round.candidates.filter((candidate) => !candidate.revisionOf).map((candidate) => candidate.id);
-  const wrote = [
+  const developed = round.candidates.filter((candidate) => candidate.proposalOf).map((candidate) => candidate.id);
+  const fresh = round.candidates.filter((candidate) => !candidate.revisionOf && !candidate.proposalOf).map((candidate) => candidate.id);
+  const wrote = listed([
     revised.length ? `revised ${listed(revised)}` : "",
-    fresh.length ? (revised.length ? `tried ${fresh.length} new ${fresh.length === 1 ? "angle" : "angles"} (${fresh.join(", ")})` : `wrote ${fresh.length} ${fresh.length === 1 ? "opening" : "openings"}`) : "",
-  ].filter(Boolean).join(" and ");
+    developed.length ? `developed ${developed.length} of Claude’s proposals (${developed.join(", ")})` : "",
+    fresh.length ? (revised.length || developed.length ? `tried ${fresh.length} new ${fresh.length === 1 ? "angle" : "angles"} (${fresh.join(", ")})` : `wrote ${fresh.length} ${fresh.length === 1 ? "opening" : "openings"}`) : "",
+  ].filter(Boolean));
+  const proposals = evaluation?.proposals ?? [];
   return <li className={styles.roundCard}>
     <div className={styles.factHead}>
       <strong>Round {round.round}</strong>
@@ -402,6 +409,9 @@ function OpeningRoundView({ round }: { round: Draft2OpeningRound }) {
     {evaluation?.suggestions.length ? <details><summary>{evaluation.suggestions.length} {evaluation.suggestions.length === 1 ? "suggestion" : "suggestions"} for the next round</summary>
       <ul className={styles.issueList}>{evaluation.suggestions.map((suggestion, index) => <li key={index}>{suggestion}</li>)}</ul>
     </details> : null}
+    {proposals.length ? <details><summary>Claude proposed {proposals.length} {proposals.length === 1 ? "opening" : "openings"} for the next round</summary>
+      <ul className={styles.issueList}>{proposals.map((proposal) => <li key={proposal.id}><strong>{proposal.id}</strong>: {proposal.cover.headline} · slide 2: {proposal.slide2.headline}</li>)}</ul>
+    </details> : null}
   </li>;
 }
 
@@ -414,7 +424,7 @@ function ChosenOpening({ version, label, tone }: { version: Draft2OpeningVersion
       <StatusBadge tone={tone}>{label}</StatusBadge>
       {score ? <strong>{score.overall}/100</strong> : null}
       {candidate.angle ? <span>{candidate.angle}</span> : null}
-      <span className={styles.factMeta}>round {version.round}{candidate.revisionOf ? ` · revises ${candidate.revisionOf}` : ""}</span>
+      <span className={styles.factMeta}>{versionOrigin(version)}</span>
     </div>
     {score ? <ScoreRow score={score} /> : null}
     {score?.note ? <p className={styles.factMeta}>{score.note}</p> : null}

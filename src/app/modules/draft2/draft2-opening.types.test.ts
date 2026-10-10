@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
 import {
-  OPENING_CANDIDATES, OPENING_REVISION_INSTRUCTION, bestOpeningVersions, mechanicalOpeningIssues, openingAcceptedWinner, openingExploreRequest, openingFactsSnapshot,
+  OPENING_CANDIDATES, OPENING_DEVELOP_INSTRUCTION, OPENING_REVISION_INSTRUCTION, bestOpeningVersions, mechanicalOpeningIssues, openingAcceptedWinner, openingExploreRequest, openingFactsSnapshot,
   openingFreshWanted, openingIsAccepted, openingJudgeRequest, openingRefineRequest, openingRegressions, openingReviewNote, openingRunSummary, openingTargets,
-  openingVersions, openingWordCount, parseOpeningCandidates, parseOpeningEvaluation, renumberedCandidates, writtenCandidates,
+  openingVersions, openingWordCount, parseOpeningCandidates, parseOpeningEvaluation, renumberedCandidates, renumberedProposals, writtenCandidates,
   type Draft2OpeningCandidate, type Draft2OpeningEvaluation, type Draft2OpeningIssue, type Draft2OpeningRound, type Draft2OpeningScore,
 } from "./draft2-opening.types";
 
@@ -81,6 +81,9 @@ test("the judge's answer is parsed strictly: every candidate scored once with in
   assert.throws(() => parseOpeningEvaluation(answer({ verdict: "maybe" }), ids), /incomplete/);
   assert.throws(() => parseOpeningEvaluation(answer({ summary: "" }), ids), /incomplete/);
   assert.throws(() => parseOpeningEvaluation("[1]", ids), /not an object/);
+  const proposed = parseOpeningEvaluation(answer({ proposals: [candidate("p1"), { id: "p2", cover: { headline: "Only a headline" } }, candidate("p3"), candidate("p4"), candidate("p5")] }), ids);
+  assert.deepEqual(proposed.proposals?.map((proposal) => proposal.id), ["p1", "p3", "p4"], "the judge's own openings: a malformed one is dropped, at most three are kept");
+  assert.equal("proposals" in parseOpeningEvaluation(answer({ proposals: [] }), ids), false);
 });
 
 test("a clean candidate has no mechanical finding; unknown or missing fact ids are flagged per part", () => {
@@ -151,7 +154,7 @@ test("both models read the verified facts as one compact snapshot, the same ever
   ]);
   const request = openingExploreRequest(openingFactsSnapshot(facts), OPENING_CANDIDATES);
   assert.deepEqual(Object.keys(request), ["verifiedFacts", "task", "candidatesWanted"], "the facts lead, so the prompt cache reads them");
-  assert.equal(request.candidatesWanted, 10);
+  assert.equal(request.candidatesWanted, OPENING_CANDIDATES);
 });
 
 test("the best version can come from any round: clean first, then the highest overall, a later round on a tie", () => {
@@ -174,17 +177,36 @@ test("the best version can come from any round: clean first, then the highest ov
 test("the funnel: ten new angles, then the three best lines revised beside two new angles, then the two best lines", () => {
   const first = judgedRound(1, ["c1", "c2", "c3", "c4", "c5"].map((id) => candidate(id)), { c1: 80, c2: 88, c3: 84, c4: 60, c5: 82 });
   assert.deepEqual(ids(openingTargets(openingVersions([first]), 1)), []);
-  assert.equal(openingFreshWanted(1, []), 10);
+  assert.equal(openingFreshWanted(1, []), 15);
   const targets = openingTargets(openingVersions([first]), 2);
   assert.deepEqual(ids(targets), ["c2", "c3", "c5"]);
-  assert.equal(openingFreshWanted(2, targets), 2);
+  assert.equal(openingFreshWanted(2, targets), 3);
   const second = judgedRound(2, [{ ...candidate("c2.2"), revisionOf: "c2" }, candidate("c11")], { "c2.2": 90, c11: 86 });
   assert.deepEqual(ids(openingTargets(openingVersions([first, second]), 3)), ["c2.2", "c11"], "one version per line: c2 (88) is skipped, c2.2 already speaks for that opening");
   assert.equal(openingFreshWanted(3, openingTargets(openingVersions([first, second]), 3)), 0);
   const flagged = openingVersions([judgedRound(1, [candidate("c1")], { c1: 96 }, { mechanical: [{ code: "NO_FACTS", candidateId: "c1", part: "cover", detail: "x" }] })]);
   assert.deepEqual(ids(openingTargets(flagged, 2)), []);
-  assert.equal(openingFreshWanted(2, []), 5, "a round with nothing clean to revise writes new angles in its place");
+  assert.equal(openingFreshWanted(2, []), 6, "a round with nothing clean to revise writes new angles in its place");
   assert.equal(openingFreshWanted(3, []), 2);
+});
+
+test("the judge's proposals are numbered across the run, developed under fresh ids that remember them, and never revealed to the judge", () => {
+  const first = judgedRound(1, [candidate("c1")], {}, { evaluation: evaluation({ verdict: "revise", winnerId: "c1", scores: [score("c1", 80)], proposals: [candidate("p1"), candidate("p2"), candidate("p3")] }) });
+  assert.deepEqual(renumberedProposals([candidate("x"), candidate("y")], [first]).map((proposal) => proposal.id), ["p4", "p5"]);
+  const versions = openingVersions([first]);
+  const developed = writtenCandidates([candidate("c1")], [candidate("p2", { angle: "Sharper" }), candidate("c1"), candidate("p1"), candidate("n1")], 2, 1, versions, [candidate("p1"), candidate("p2")]);
+  assert.deepEqual(developed.map((entry) => [entry.id, entry.revisionOf ?? null, entry.proposalOf ?? null]), [["c1.2", "c1", null], ["c2", null, "p1"], ["c3", null, "p2"], ["c4", null, null]]);
+  assert.equal(developed[2].angle, "Sharper");
+  const judged = openingJudgeRequest(2, developed, [], openingTargets(versions, 2));
+  assert.equal(judged.candidates.some((entry) => "proposalOf" in entry), false, "the judge scores its own ideas blind");
+  assert.equal(judged.proposalsWanted, 1);
+  assert.equal(openingJudgeRequest(1, [candidate("c1")], [], []).proposalsWanted, 3);
+  assert.equal("proposalsWanted" in openingJudgeRequest(3, [candidate("c1")], [], []), false, "the final round only decides");
+  const request = openingRefineRequest(openingFactsSnapshot(facts), openingTargets(versions, 2), versions, [], first, 3, [candidate("p1")]);
+  assert.deepEqual(request.develop?.map((proposal) => proposal.id), ["p1"]);
+  assert.ok(request.instruction.startsWith(`${OPENING_REVISION_INSTRUCTION} ${OPENING_DEVELOP_INSTRUCTION} Then write 3 new openings`));
+  const developOnly = openingRefineRequest(openingFactsSnapshot(facts), [], versions, [], first, 0, [candidate("p1")]);
+  assert.equal(developOnly.instruction, OPENING_DEVELOP_INSTRUCTION);
 });
 
 test("a revision that scores lower, or picks up a program finding, is a regression naming what got worse", () => {

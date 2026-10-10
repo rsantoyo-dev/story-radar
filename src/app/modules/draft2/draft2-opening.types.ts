@@ -5,27 +5,34 @@ import { comparableText, Draft2ResponseError, type Draft2Fact } from "./draft2-f
  * slide 2 (headline + body), judged as one unit. A writer (Sol) proposes
  * candidates from the verified facts; the program checks what a program can
  * (lengths, fact ids, numbers, attribution, repetition); a judge (Claude)
- * scores them on the hooks skill. The rounds narrow like a funnel (see
- * OPENING_ROUND_PLAN): ten openings, then the three best revised beside two
- * new angles, then the two best revised for the final pick. The program
- * keeps the better of each version and its revision. Everything here is
- * pure: contracts, schemas, parsing, the mechanical checks, version
- * bookkeeping and the acceptance rule.
+ * scores them on the hooks skill and proposes openings of its own, which the
+ * writer develops in the next round without the judge being told which
+ * ones they are. The rounds narrow like a funnel (OPENING_ROUND_PLAN):
+ * fifteen openings; then the three best revised, the judge's three
+ * proposals developed and three new angles; then the two best revised and
+ * the judge's last proposal developed, for its final pick. The program keeps
+ * the better of each version and its revision. Everything here is pure:
+ * contracts, schemas, parsing, the mechanical checks, version bookkeeping
+ * and the acceptance rule.
  */
 /** The first round's new angles: the hook matters most, so the first round explores widely. */
-export const OPENING_CANDIDATES = 10;
+export const OPENING_CANDIDATES = 15;
 /**
- * What each round asks of Sol: how many of the best versions so far to
- * revise (each from a different line of revisions) and how many new angles
- * to write beside them, in case the first angles have a ceiling. A round
- * with fewer clean versions than it wants to revise writes new angles in
- * their place.
+ * What each round asks: how many of the best versions so far Sol revises
+ * (each from a different line of revisions), how many new angles it writes
+ * beside them, and how many openings of its own the judge proposes for Sol
+ * to develop in the next round. A round with fewer clean versions than it
+ * wants to revise writes new angles in their place.
+ *   round 1: 15 new → Claude scores 15, proposes 3
+ *   round 2: 3 revised + 3 developed + 3 new = 9 → Claude scores 9, proposes 1
+ *   round 3: 2 revised + 1 developed = 3 → Claude's final pick
  */
-export const OPENING_ROUND_PLAN: readonly { revise: number; fresh: number }[] = [
-  { revise: 0, fresh: OPENING_CANDIDATES },
-  { revise: 3, fresh: 2 },
-  { revise: 2, fresh: 0 },
+export const OPENING_ROUND_PLAN: readonly { revise: number; fresh: number; proposals: number }[] = [
+  { revise: 0, fresh: OPENING_CANDIDATES, proposals: 3 },
+  { revise: 3, fresh: 3, proposals: 1 },
+  { revise: 2, fresh: 0, proposals: 0 },
 ];
+const MAX_PROPOSALS = Math.max(...OPENING_ROUND_PLAN.map((plan) => plan.proposals));
 export const OPENING_MAX_ROUNDS = OPENING_ROUND_PLAN.length;
 export const OPENING_ACCEPT_SCORE = 95;
 export const OPENING_CRITERION_FLOOR = 85;
@@ -56,6 +63,8 @@ export type Draft2OpeningCandidate = {
   angle: string;
   /** The version this candidate revises; set by the program. */
   revisionOf?: string;
+  /** The judge's proposal this candidate develops; set by the program and never shown to the judge. */
+  proposalOf?: string;
 };
 
 export type Draft2OpeningIssue = { code: Draft2OpeningIssueCode; candidateId?: string; part?: "cover" | "slide2"; detail: string };
@@ -81,6 +90,8 @@ export type Draft2OpeningEvaluation = {
   /** For the writer's next round. */
   suggestions: string[];
   summary: string;
+  /** The judge's own openings (ids p1, p2… across the run), which the writer develops in the next round. */
+  proposals?: Draft2OpeningCandidate[];
 };
 
 export type Draft2OpeningRound = {
@@ -145,36 +156,34 @@ const nullableString = { type: ["string", "null"] };
 const factIds = { type: "array", maxItems: 10, items: { type: "string" } };
 const score = { type: "integer", minimum: 1, maximum: 100 };
 
+/** One opening, as the writer writes it and the judge proposes it. */
+const openingItem = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    cover: {
+      type: "object",
+      properties: { headline: { type: "string" }, subheadline: { type: "string" }, factIds },
+      required: ["headline", "subheadline", "factIds"],
+      additionalProperties: false,
+    },
+    slide2: {
+      type: "object",
+      properties: { headline: { type: "string" }, body: { type: "string" }, factIds },
+      required: ["headline", "body", "factIds"],
+      additionalProperties: false,
+    },
+    angle: { type: "string" },
+  },
+  required: ["id", "cover", "slide2", "angle"],
+  additionalProperties: false,
+};
+
 /** The writer's answer: the complete candidate list. */
 export const DRAFT2_OPENING_SCHEMA: Record<string, unknown> = {
   type: "object",
   properties: {
-    candidates: {
-      type: "array",
-      minItems: 1,
-      maxItems: OPENING_CANDIDATES,
-      items: {
-        type: "object",
-        properties: {
-          id: { type: "string" },
-          cover: {
-            type: "object",
-            properties: { headline: { type: "string" }, subheadline: { type: "string" }, factIds },
-            required: ["headline", "subheadline", "factIds"],
-            additionalProperties: false,
-          },
-          slide2: {
-            type: "object",
-            properties: { headline: { type: "string" }, body: { type: "string" }, factIds },
-            required: ["headline", "body", "factIds"],
-            additionalProperties: false,
-          },
-          angle: { type: "string" },
-        },
-        required: ["id", "cover", "slide2", "angle"],
-        additionalProperties: false,
-      },
-    },
+    candidates: { type: "array", minItems: 1, maxItems: OPENING_CANDIDATES, items: openingItem },
   },
   required: ["candidates"],
   additionalProperties: false,
@@ -219,8 +228,9 @@ export const DRAFT2_OPENING_EVALUATION_SCHEMA: Record<string, unknown> = {
     },
     suggestions: { type: "array", maxItems: 20, items: { type: "string" } },
     summary: { type: "string" },
+    proposals: { type: "array", maxItems: MAX_PROPOSALS, items: openingItem },
   },
-  required: ["verdict", "winnerId", "scores", "issues", "suggestions", "summary"],
+  required: ["verdict", "winnerId", "scores", "issues", "suggestions", "summary", "proposals"],
   additionalProperties: false,
 };
 
@@ -245,31 +255,38 @@ function factIdList(value: unknown): string[] | undefined {
   return ids.slice(0, 10);
 }
 
-/** The writer's answer as candidates; anything malformed is a response error, never persisted. Fact ids are checked by the program, not here. */
+/** One opening from a model's answer, or undefined when a part is missing or malformed. Fact ids are checked by the program, not here. */
+function openingFrom(raw: unknown, fallbackId: string): Draft2OpeningCandidate | undefined {
+  const item = record(raw);
+  const cover = record(item.cover);
+  const slide2 = record(item.slide2);
+  const coverHeadline = text(cover.headline, 300);
+  const subheadline = text(cover.subheadline, 500);
+  const slideHeadline = text(slide2.headline, 300);
+  const slideBody = text(slide2.body, 1_000);
+  const coverFacts = factIdList(cover.factIds);
+  const slideFacts = factIdList(slide2.factIds);
+  if (!coverHeadline || !subheadline || !slideHeadline || !slideBody || !coverFacts || !slideFacts) return undefined;
+  return {
+    id: text(item.id, 24) ?? fallbackId,
+    cover: { headline: coverHeadline, subheadline, factIds: coverFacts },
+    slide2: { headline: slideHeadline, body: slideBody, factIds: slideFacts },
+    angle: text(item.angle, 400) ?? "",
+  };
+}
+
+/** The writer's answer as candidates; anything malformed is a response error, never persisted. */
 export function parseOpeningCandidates(answer: string): Draft2OpeningCandidate[] {
   const body = parseObject(answer, "writer");
   if (!Array.isArray(body.candidates) || body.candidates.length === 0) throw new Draft2ResponseError("The writer returned no candidates");
   const seen = new Set<string>();
   return body.candidates.slice(0, OPENING_CANDIDATES).map((raw, index) => {
-    const item = record(raw);
-    const id = text(item.id, 24) ?? `c${index + 1}`;
-    const cover = record(item.cover);
-    const slide2 = record(item.slide2);
-    const coverHeadline = text(cover.headline, 300);
-    const subheadline = text(cover.subheadline, 500);
-    const slideHeadline = text(slide2.headline, 300);
-    const slideBody = text(slide2.body, 1_000);
-    const coverFacts = factIdList(cover.factIds);
-    const slideFacts = factIdList(slide2.factIds);
-    if (!coverHeadline || !subheadline || !slideHeadline || !slideBody || !coverFacts || !slideFacts) throw new Draft2ResponseError(`Candidate ${id} is incomplete or malformed`);
+    const candidate = openingFrom(raw, `c${index + 1}`);
+    const id = candidate?.id ?? text(record(raw).id, 24) ?? `c${index + 1}`;
+    if (!candidate) throw new Draft2ResponseError(`Candidate ${id} is incomplete or malformed`);
     if (seen.has(id)) throw new Draft2ResponseError(`Candidate id ${id} is repeated`);
     seen.add(id);
-    return {
-      id,
-      cover: { headline: coverHeadline, subheadline, factIds: coverFacts },
-      slide2: { headline: slideHeadline, body: slideBody, factIds: slideFacts },
-      angle: text(item.angle, 400) ?? "",
-    };
+    return candidate;
   });
 }
 
@@ -319,7 +336,11 @@ export function parseOpeningEvaluation(answer: string, candidateIds: readonly st
     return [{ code, detail, ...(candidateId && known.has(candidateId) ? { candidateId } : {}), ...(part ? { part } : {}) }];
   });
   const suggestions = (Array.isArray(body.suggestions) ? body.suggestions : []).slice(0, 20).flatMap((item) => { const value = text(item, 600); return value ? [value] : []; });
-  return { verdict, winnerId, scores, issues, suggestions, summary };
+  // The judge's own openings are inputs for the writer: a malformed one is dropped, never fatal.
+  const proposals = (Array.isArray(body.proposals) ? body.proposals : [])
+    .flatMap((raw, index) => { const proposal = openingFrom(raw, `p${index + 1}`); return proposal ? [proposal] : []; })
+    .slice(0, MAX_PROPOSALS);
+  return { verdict, winnerId, scores, issues, suggestions, summary, ...(proposals.length ? { proposals } : {}) };
 }
 
 /** Words a reader sees: whitespace-separated tokens with a letter or digit, so a dash or an emoji is not a word. */
@@ -515,19 +536,33 @@ export function openingRegressions(revisions: readonly Draft2OpeningVersion[], p
 /**
  * The writer's answer as this round's versions. A revision keeps its
  * target's id and becomes a new version named for its round ("c3" revised in
- * round 2 becomes "c3.2"); when the round writes no new angle, a renamed
- * revision is matched in order. Every other candidate is a new angle, up to
- * the number asked, with a fresh id.
+ * round 2 becomes "c3.2"); a development keeps its proposal's id and becomes
+ * a new opening with a fresh id that remembers the proposal; every other
+ * candidate is a new angle, up to the number asked, with a fresh id. When
+ * the round writes no new angle, renamed answers are matched in order.
  */
-export function writtenCandidates(targets: readonly Draft2OpeningCandidate[], answer: readonly Draft2OpeningCandidate[], round: number, freshWanted: number, versions: readonly Draft2OpeningVersion[]): Draft2OpeningCandidate[] {
-  const others = answer.filter((candidate) => !targets.some((target) => target.id === candidate.id));
+export function writtenCandidates(targets: readonly Draft2OpeningCandidate[], answer: readonly Draft2OpeningCandidate[], round: number, freshWanted: number, versions: readonly Draft2OpeningVersion[], proposals: readonly Draft2OpeningCandidate[] = []): Draft2OpeningCandidate[] {
+  const asked = [...targets, ...proposals].map((entry) => entry.id);
+  const others = answer.filter((candidate) => !asked.includes(candidate.id));
+  const matched = (id: string) => answer.find((candidate) => candidate.id === id) ?? (freshWanted === 0 ? others.shift() : undefined);
   const revisions = targets.flatMap((target) => {
-    const revision = answer.find((candidate) => candidate.id === target.id) ?? (freshWanted === 0 ? others.shift() : undefined);
+    const revision = matched(target.id);
     return revision ? [{ ...revision, id: `${rootId(target.id)}.${round}`, revisionOf: target.id }] : [];
   });
-  const written = [...revisions, ...renumberedCandidates(others.slice(0, freshWanted), versions)];
+  const developed = proposals.flatMap((proposal) => {
+    const development = matched(proposal.id);
+    return development ? [{ ...development, proposalOf: proposal.id }] : [];
+  });
+  const fresh = renumberedCandidates([...developed, ...others.slice(0, freshWanted)], versions);
+  const written = [...revisions, ...fresh];
   if (!written.length) throw new Draft2ResponseError("The writer returned none of the openings it was asked for");
   return written;
+}
+
+/** The judge's proposals with ids after every proposal of the run (p1, p2…), so a development names one proposal. */
+export function renumberedProposals(proposals: readonly Draft2OpeningCandidate[], rounds: readonly Draft2OpeningRound[]): Draft2OpeningCandidate[] {
+  let next = rounds.reduce((count, round) => count + (round.evaluation?.proposals?.length ?? 0), 0) + 1;
+  return proposals.map((proposal) => ({ ...proposal, id: `p${next++}` }));
 }
 
 /** New angles get ids after every id the run used, so each version keeps one id for the whole run. */
@@ -536,8 +571,15 @@ export function renumberedCandidates(answer: readonly Draft2OpeningCandidate[], 
   return answer.map((candidate) => ({ ...candidate, id: `c${next++}` }));
 }
 
-/** A candidate as the models read it: the version it revises, never the program's bookkeeping. */
-const shown = ({ revisionOf, ...candidate }: Draft2OpeningCandidate) => ({ ...candidate, ...(revisionOf ? { revises: revisionOf } : {}) });
+/**
+ * A candidate as the models read it: the version it revises, never the
+ * program's bookkeeping. Which candidates develop the judge's proposals is
+ * never shown, so the judge scores its own ideas blind.
+ */
+const shown = ({ revisionOf, proposalOf, ...candidate }: Draft2OpeningCandidate) => {
+  void proposalOf;
+  return { ...candidate, ...(revisionOf ? { revises: revisionOf } : {}) };
+};
 
 /** Every opening tried so far, so new angles do not repeat one. */
 const anglesSoFar = (versions: readonly Draft2OpeningVersion[]) =>
@@ -567,15 +609,24 @@ export function openingExploreRequest(verifiedFacts: ReturnType<typeof openingFa
 export const OPENING_REVISION_INSTRUCTION = "Revise each opening in openings and return exactly one candidate per opening, with the same id. Preserve its narrative promise, the payoff slide 2 delivers (with its attribution), every fact claim already approved and its strongest creative elements. Change only what its issues name. Never make the writing flatter or more bureaucratic to gain precision. When earlierAttempts lists a revision that scored lower, do not repeat what made it worse.";
 
 /** The instruction for the new angles a round writes beside its revisions. */
-export const openingNewAnglesInstruction = (count: number) => `Then write ${count} new ${count === 1 ? "opening" : "openings"}, with ids ${Array.from({ length: count }, (_, index) => `n${index + 1}`).join(", ")}: each a different angle from every opening in anglesSoFar and from the ones you revise, built to answer the issues and suggestions, in case the first angles have a ceiling.`;
+export const openingNewAnglesInstruction = (count: number) => `Then write ${count} new ${count === 1 ? "opening" : "openings"}, with ids ${Array.from({ length: count }, (_, index) => `n${index + 1}`).join(", ")}: each a different angle from every opening in anglesSoFar and from the ones you revise or develop, built to answer the issues and suggestions, in case the first angles have a ceiling.`;
+
+/** The instruction for the proposals a round develops. */
+export const OPENING_DEVELOP_INSTRUCTION = "Develop each proposal in develop into one opening of your own, with the proposal's id: keep its idea and angle, write it in the publication's voice, and ground every claim on the facts it cites.";
 
 /**
- * What the writer receives to revise: each target with its scores, the
- * program's findings and the judge's issues, and any earlier attempt that
- * came out worse; and, when the round asks for new angles, every opening
- * tried so far and what the last judgment found.
+ * What the writer receives after the first round: each target to revise with
+ * its scores, the program's findings and the judge's issues, and any earlier
+ * attempt that came out worse; the proposals to develop; and, when the round
+ * asks for new angles, every opening tried so far and what the last
+ * judgment found.
  */
-export function openingRefineRequest(verifiedFacts: ReturnType<typeof openingFactsSnapshot>, targets: readonly Draft2OpeningVersion[], versions: readonly Draft2OpeningVersion[], regressions: readonly Draft2OpeningRegression[], last: Draft2OpeningRound | undefined, newAngles = 0) {
+export function openingRefineRequest(verifiedFacts: ReturnType<typeof openingFactsSnapshot>, targets: readonly Draft2OpeningVersion[], versions: readonly Draft2OpeningVersion[], regressions: readonly Draft2OpeningRegression[], last: Draft2OpeningRound | undefined, newAngles = 0, proposals: readonly Draft2OpeningCandidate[] = []) {
+  const instruction = [
+    targets.length ? OPENING_REVISION_INSTRUCTION : "",
+    proposals.length ? OPENING_DEVELOP_INSTRUCTION : "",
+    newAngles > 0 ? openingNewAnglesInstruction(newAngles) : "",
+  ].filter(Boolean).join(" ");
   return {
     verifiedFacts,
     task: "revise",
@@ -590,20 +641,23 @@ export function openingRefineRequest(verifiedFacts: ReturnType<typeof openingFac
         worse: regression.worse,
       })),
     })),
+    ...(proposals.length ? { develop: proposals.map(shown) } : {}),
     ...(newAngles > 0 ? { newAngles, anglesSoFar: anglesSoFar(versions), ...(last ? { feedback: feedback(last) } : {}) } : {}),
     suggestions: [...(last?.evaluation?.suggestions ?? [])],
-    instruction: newAngles > 0 ? `${OPENING_REVISION_INSTRUCTION} ${openingNewAnglesInstruction(newAngles)}` : OPENING_REVISION_INSTRUCTION,
+    instruction,
   };
 }
 
 /** What the judge receives each round, beside the cached facts: the candidates, the versions they revise with their scores, the program's findings. */
 export function openingJudgeRequest(round: number, candidates: readonly Draft2OpeningCandidate[], mechanical: readonly Draft2OpeningIssue[], revised: readonly Draft2OpeningVersion[]) {
+  const proposalsWanted = OPENING_ROUND_PLAN[round - 1]?.proposals ?? 0;
   return {
     task: "openings",
     round,
     candidates: candidates.map(shown),
     ...(revised.length ? { previousVersions: revised.map((version) => ({ ...shown(version.candidate), scores: version.score, issues: [...version.findings, ...version.issues] })) } : {}),
     mechanicalFindings: mechanical,
+    ...(proposalsWanted ? { proposalsWanted } : {}),
   };
 }
 

@@ -11,7 +11,7 @@ import { Draft2BusyError, Draft2InputError, type Draft2TraceEntry } from "./draf
 import {
   DRAFT2_OPENING_EVALUATION_SCHEMA, DRAFT2_OPENING_SCHEMA, OPENING_MAX_ROUNDS, bestOpeningVersions, mechanicalOpeningIssues, openingAcceptedWinner,
   openingExploreRequest, openingFactsSnapshot, openingFreshWanted, openingJudgeRequest, openingRefineRequest, openingRegressions, openingReviewNote,
-  openingRunSummary, openingTargets, openingVersions, parseOpeningCandidates, parseOpeningEvaluation, writtenCandidates,
+  openingRunSummary, openingTargets, openingVersions, parseOpeningCandidates, parseOpeningEvaluation, renumberedProposals, writtenCandidates,
   type Draft2Opening,
 } from "./draft2-opening.types";
 import { brandBrief, composeInstructions } from "./skills/draft2-skills";
@@ -25,10 +25,10 @@ import type { Draft2SessionRow } from "@/db/schema";
  */
 const TIME_BUDGET_MS = 230_000;
 const ROUND_DEADLINE_MS = 280_000;
-/** Ten openings and Sol's reasoning. */
-const WRITER_MAX_OUTPUT_TOKENS = 8_000;
-/** Covers ten scores, the verdict and Claude's thinking, which the API counts against the same ceiling. */
-const JUDGE_MAX_OUTPUT_TOKENS = 16_000;
+/** Fifteen openings and Sol's reasoning. */
+const WRITER_MAX_OUTPUT_TOKENS = 12_000;
+/** Covers fifteen scores, three proposals, the verdict and Claude's thinking, which the API counts against the same ceiling. */
+const JUDGE_MAX_OUTPUT_TOKENS = 24_000;
 
 export type Draft2OpeningInput = {
   topicId: string;
@@ -40,10 +40,12 @@ export type Draft2OpeningInput = {
 
 /**
  * Runs the Opening step on a session whose facts are verified, as a funnel
- * (OPENING_ROUND_PLAN). Round 1: Sol writes ten openings (cover + slide 2)
- * and Claude scores them. Round 2: Sol revises the three best clean versions
- * against their own issues and writes two new angles beside them; Claude
- * scores the five. Round 3: Sol revises the two best for Claude's final
+ * (OPENING_ROUND_PLAN). Round 1: Sol writes fifteen openings (cover + slide
+ * 2); Claude scores them and proposes three of its own. Round 2: Sol revises
+ * the three best clean versions against their own issues, develops Claude's
+ * proposals and writes three new angles; Claude scores the nine, not told
+ * which ones grew from its proposals, and proposes one more. Round 3: Sol
+ * revises the two best and develops the last proposal for Claude's final
  * pick. The program keeps the better of each version and its revision, so a
  * round never loses the best opening so far.
  *
@@ -148,8 +150,10 @@ export async function runDraft2Opening({ topicId, storyId, sessionId, resume = f
         const targets = openingTargets(before, round);
         const fresh = openingFreshWanted(round, targets);
         const last = opening.rounds[opening.rounds.length - 1];
-        const writerContents = targets.length
-          ? openingRefineRequest(verifiedFacts, targets, before, opening.rounds.flatMap((entry) => entry.regressions ?? []), last, fresh)
+        // The judge's proposals from the last round, which this round develops.
+        const proposals = round > 1 ? last?.evaluation?.proposals ?? [] : [];
+        const writerContents = targets.length || proposals.length
+          ? openingRefineRequest(verifiedFacts, targets, before, opening.rounds.flatMap((entry) => entry.regressions ?? []), last, fresh, proposals)
           : openingExploreRequest(verifiedFacts, fresh, last, before);
         const writerRequest = { instructions: writer.instructions, contents: writerContents };
         const written = await traced(round, "openai", writerModel, "draft2_opening", writer.skillVersions, writerRequest, () => generateOpenAiStructuredResponse({
@@ -157,7 +161,7 @@ export async function runDraft2Opening({ topicId, storyId, sessionId, resume = f
           schema: DRAFT2_OPENING_SCHEMA, schemaName: "draft2_opening", maxOutputTokens: WRITER_MAX_OUTPUT_TOKENS, reasoningEffort: "medium", auditContext,
         }));
         const answer = parseOpeningCandidates(written.text);
-        const candidates = writtenCandidates(targets.map((target) => target.candidate), answer, round, fresh, before);
+        const candidates = writtenCandidates(targets.map((target) => target.candidate), answer, round, fresh, before, proposals);
         const revisions = candidates.filter((candidate) => candidate.revisionOf).length;
         const kind = revisions === 0 ? "explore" : revisions === candidates.length ? "refine" : "mixed";
         const mechanical = mechanicalOpeningIssues(candidates, facts);
@@ -172,7 +176,8 @@ export async function runDraft2Opening({ topicId, storyId, sessionId, resume = f
           apiKey: anthropicApiKey, model: judgeModel, instructions: judge.instructions, context: { verifiedFacts }, contents: judgeContents,
           schema: DRAFT2_OPENING_EVALUATION_SCHEMA, schemaName: "draft2_opening_review", maxOutputTokens: JUDGE_MAX_OUTPUT_TOKENS, effort: "high", auditContext,
         }));
-        const evaluation = parseOpeningEvaluation(judged.text, candidates.map((candidate) => candidate.id));
+        const judgment = parseOpeningEvaluation(judged.text, candidates.map((candidate) => candidate.id));
+        const evaluation = judgment.proposals ? { ...judgment, proposals: renumberedProposals(judgment.proposals, opening.rounds) } : judgment;
         const index = opening.rounds.length - 1;
         opening.rounds[index] = { ...opening.rounds[index], evaluation };
         // A revision that came out worse never replaces the version it revised: the better one stays in front.
