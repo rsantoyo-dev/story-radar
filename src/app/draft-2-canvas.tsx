@@ -7,7 +7,7 @@ import type { StoryContentResponse } from "@/app/radar-dashboard";
 import type { Draft2Fact, Draft2FactsEvaluation, Draft2FactsRound, Draft2SessionStatus, Draft2TraceEntry } from "@/app/modules/draft2/draft2-facts.types";
 import {
   OPENING_CRITERIA, OPENING_CRITERION_FLOOR, openingAcceptedWinner, openingScorePasses, openingVersions,
-  type Draft2Opening, type Draft2OpeningCriterion, type Draft2OpeningIssue, type Draft2OpeningRound, type Draft2OpeningScore, type Draft2OpeningVersion,
+  type Draft2Opening, type Draft2OpeningCriterion, type Draft2OpeningIssue, type Draft2OpeningRegression, type Draft2OpeningRound, type Draft2OpeningScore, type Draft2OpeningVersion,
 } from "@/app/modules/draft2/draft2-opening.types";
 import { contentStatusLabel, DRAFT_2_STEPS, paragraphs, sourceHost, storyHref, wordCount } from "./draft-2-canvas.core";
 import styles from "./draft-2-canvas.generated.module.css";
@@ -54,6 +54,15 @@ const FACT_STATUS: Record<Draft2Fact["status"], { label: string; tone: StatusTon
 const CRITERION_LABEL: Record<Draft2OpeningCriterion, string> = { tension: "Tension", payoff: "Payoff", clarity: "Clarity", grounding: "Grounding", voice: "Voice" };
 
 const providerLabel = (provider: Draft2TraceEntry["provider"]) => provider === "openai" ? "Sol" : "Claude";
+/** Why a revision did not replace its version: a lower score, or the same or a higher one with a loss the score does not show. */
+function regressionNote({ candidateId, previousId, from, to, worse }: Draft2OpeningRegression): string {
+  const losses = worse.length ? ` (${worse.join(", ")})` : "";
+  const lead = to < from ? `${candidateId} scored ${to}, below ${previousId}’s ${from}${losses}`
+    : to === from ? `${candidateId} matched ${previousId}’s ${from} but did worse${losses}`
+      : `${candidateId} scored ${to} to ${previousId}’s ${from} but did worse${losses}`;
+  return `${lead}; ${previousId} stays the better version.`;
+}
+
 const listed = (items: readonly string[]) => items.length > 1 ? `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}` : items.join("");
 const issueTarget = (issue: Draft2OpeningIssue) => issue.candidateId ? ` · ${issue.candidateId}${issue.part ? ` · ${issue.part === "slide2" ? "slide 2" : "cover"}` : ""}` : "";
 
@@ -363,9 +372,7 @@ function OpeningRoundView({ round }: { round: Draft2OpeningRound }) {
         ? <StatusBadge tone={programWinner ? "success" : "warning"}>Claude: {evaluation.verdict} · {winnerId} {winner?.overall}/100</StatusBadge>
         : <StatusBadge tone="neutral">Claude did not answer</StatusBadge>}
     </div>
-    {(round.regressions ?? []).map((regression) => <p key={regression.candidateId} className={styles.factMeta}>
-      {regression.candidateId} scored {regression.to}, below {regression.previousId}’s {regression.from}{regression.worse.length ? ` (${regression.worse.join(", ")})` : ""}; {regression.previousId} stays the better version.
-    </p>)}
+    {(round.regressions ?? []).map((regression) => <p key={regression.candidateId} className={styles.factMeta}>{regressionNote(regression)}</p>)}
     {evaluation && programWinner && programWinner !== evaluation.winnerId ? <p className={styles.factMeta}>Claude picked {evaluation.winnerId}, which has a program finding; {programWinner}, the best clean candidate, meets the thresholds and wins.</p> : null}
     {evaluation ? <p className={styles.factMeta}>{evaluation.summary}</p> : null}
     {winner ? <ScoreRow score={winner} /> : null}
