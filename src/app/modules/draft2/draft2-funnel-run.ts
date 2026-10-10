@@ -34,7 +34,7 @@ const HEARTBEAT_MS = 30_000;
 
 type Composed = { instructions: string; skillVersions: Record<string, string> };
 /** The session columns a funnel step lives in. */
-export type FunnelColumn = "opening" | "closing" | "deck";
+export type FunnelColumn = "opening" | "closing" | "deck" | "visual";
 
 /** What a step gives the funnel for one run, once its prerequisites are met: the prompts, the cached context and the step's own contract. */
 export type FunnelSetup<C extends FunnelCandidate, S extends FunnelScore, I extends FunnelIssue> = {
@@ -72,8 +72,8 @@ export type FunnelStep<C extends FunnelCandidate, S extends FunnelScore, I exten
   earlierRoles?: { writer: Draft2Provider; judge: Draft2Provider };
   /** What the run follows (the focus, the opening…), from the session: an input error when a prerequisite is missing. A continued run passes the run it continues. */
   snapshot: (session: Draft2SessionRow, continuing: R | undefined) => Snapshot;
-  /** What a new run records besides the funnel's bookkeeping: the snapshots it follows. */
-  newRun: (snapshot: Snapshot) => Partial<R>;
+  /** What a new run records besides the funnel's bookkeeping: the snapshots it follows (and what of the profile it ran under). */
+  newRun: (snapshot: Snapshot, profile: CreativeProfile) => Partial<R>;
   setup: (input: { snapshot: Snapshot; profile: CreativeProfile; facts: readonly Draft2Fact[]; plan: readonly FunnelPlanRound[] }) => FunnelSetup<C, S, I>;
 };
 
@@ -137,7 +137,8 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
     ? { writer: stopped.writer ?? modelOf(earlier.writer), judge: stopped.judge ?? modelOf(earlier.judge) }
     : { writer: modelOf(def.roles.writer), judge: modelOf(def.roles.judge) };
   const judgeName = draft2ProviderName(roles.judge.provider);
-  const setup = def.setup({ snapshot, profile: await getCreativeProfile(topicId), facts, plan });
+  const profile = await getCreativeProfile(topicId);
+  const setup = def.setup({ snapshot, profile, facts, plan });
   const verifiedFacts = factsSnapshot(facts);
 
   const trace: Draft2TraceEntry[] = [...session.trace];
@@ -146,7 +147,7 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
   const run = (resume && stopped
     ? { ...stopped, status: "running", resumeRound: undefined, error: undefined, ...roles }
     : {
-      status: "running", rounds: [], candidates: [], ...roles, ...def.newRun(snapshot),
+      status: "running", rounds: [], candidates: [], ...roles, ...def.newRun(snapshot, profile),
       ...(current ? { previousRuns: [...(current.previousRuns ?? []), funnelRunSummary(current)] } : {}),
     }) as R;
   const claimed = await claimDraft2Session(session.id, { step: def.step, [def.step]: run, error: null } as unknown as Draft2SessionPatch);

@@ -5,6 +5,8 @@ import { stories } from "./stories";
 import type { Draft2Fact, Draft2FactsEvaluation, Draft2FactsRound, Draft2Threads, Draft2TraceEntry } from "@/app/modules/draft2/draft2-facts.types";
 import type { Draft2Closing } from "@/app/modules/draft2/draft2-closing.types";
 import type { Draft2Deck } from "@/app/modules/draft2/draft2-deck.types";
+import type { Draft2Inventory } from "@/app/modules/draft2/draft2-inventory.types";
+import type { Draft2Visual } from "@/app/modules/draft2/draft2-visual.types";
 import type { Draft2Focus } from "@/app/modules/draft2/draft2-focus.types";
 import type { Draft2Opening } from "@/app/modules/draft2/draft2-opening.types";
 
@@ -34,6 +36,10 @@ export const draft2Sessions = pgTable("draft2_sessions", {
   closing: jsonb("closing").$type<Draft2Closing>(),
   /** Step 5: the slides between slide 2 and the closing, every round, the winner, the editor's choice, and the opening and closing it connects. */
   deck: jsonb("deck").$type<Draft2Deck>(),
+  /** Step 6: the people, places and organizations the facts name, their verified material, the editor's confirmations and the characters choice. */
+  inventory: jsonb("inventory").$type<Draft2Inventory>(),
+  /** Step 7: the visual script, every round, the winner, the editor's choice, and what it scripted and followed. */
+  visual: jsonb("visual").$type<Draft2Visual>(),
   threads: jsonb("threads").$type<Draft2Threads>().notNull().default(sql`'{}'::jsonb`),
   trace: jsonb("trace").$type<Draft2TraceEntry[]>().notNull().default(sql`'[]'::jsonb`),
   error: text("error"),

@@ -59,8 +59,16 @@
 /* A list item's practical line: day · time · ages · price. */
 .openingPractical { margin: 0; color: palette(tertiary-dark); @ds-typo (small-strong); }
 /* The whole carousel, cover to call to action, as many cards per row as fit; the slides other steps wrote are quieter. */
-.carouselCards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr)); gap: density(3); }
+.carouselCards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr)); gap: density(3); margin: 0; padding: 0; list-style: none; }
 .openingCard[data-quiet] { opacity: 0.72; }
+/* People and places: a person's Commons candidates, each a thumbnail beside who it is. */
+.candidateList { display: grid; gap: density(2); margin: 0; padding: 0; list-style: none; }
+.candidate { display: grid; grid-template-columns: minmax(0, 10rem) minmax(0, 1fr); gap: density(3); align-items: start; }
+.candidateThumb { width: 100%; height: auto; border-radius: radius(1); object-fit: cover; }
+/* The visual script: each slide's words above its beat and art direction. */
+.visualBody { display: grid; gap: density(2); }
+.visualSlide { display: flex; flex-direction: column; gap: density(1); padding: density(3); border: border(control); border-radius: radius(2); }
+.visualWords { margin: 0; color: palette(dark-main); @ds-typo (small-strong); }
 /* After the role, whose block margins are 0: the cited facts sit at the card's foot. */
 .openingFacts { color: palette(tertiary-dark); @ds-typo (caption); margin-top: auto; }
 .scoreRow { display: flex; flex-wrap: wrap; gap: density(1) density(3); margin: 0; color: palette(tertiary-dark); @ds-typo (caption); }

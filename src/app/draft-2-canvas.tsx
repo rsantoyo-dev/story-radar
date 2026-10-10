@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { ActionRow, Button, EmptyState, FormField, InlineNotice, LoadingState, SectionHeader, StatusBadge, Surface, type StatusTone } from "@/app/ui/primitives";
 import type { StoryContentResponse } from "@/app/radar-dashboard";
@@ -16,6 +17,8 @@ import {
 } from "@/app/modules/draft2/draft2-opening.types";
 import { CLOSING_GATE, CLOSING_MAX_ROUNDS, type Draft2Closing, type Draft2ClosingCandidate, type Draft2ClosingCriterion } from "@/app/modules/draft2/draft2-closing.types";
 import { DECK_GATE, DECK_MAX_ROUNDS, type Draft2Deck, type Draft2DeckCandidate, type Draft2DeckCriterion } from "@/app/modules/draft2/draft2-deck.types";
+import { INVENTORY_CHARACTER_CHOICES, type Draft2CharacterChoice, type Draft2Inventory, type Draft2InventoryEntity } from "@/app/modules/draft2/draft2-inventory.types";
+import { VISUAL_GATE, VISUAL_MAX_ROUNDS, type Draft2Visual, type Draft2VisualCandidate, type Draft2VisualCriterion } from "@/app/modules/draft2/draft2-visual.types";
 import {
   criterionOf, funnelAcceptedWinner, funnelResumeRound, funnelScorePasses, funnelVersions, hasMaterialError,
   type FunnelCandidate, type FunnelGate, type FunnelIssue, type FunnelRegression, type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion,
@@ -36,14 +39,16 @@ type Draft2SessionView = {
   opening: Draft2Opening | null;
   closing: Draft2Closing | null;
   deck: Draft2Deck | null;
+  inventory: Draft2Inventory | null;
+  visual: Draft2Visual | null;
   trace: Draft2TraceEntry[];
   error: string | null;
   updatedAt: string;
 };
 
-type Draft2RunStep = "facts" | "focus" | "opening" | "closing" | "deck";
+type Draft2RunStep = "facts" | "focus" | "opening" | "closing" | "deck" | "inventory" | "visual";
 /** The steps that run on the funnel, in rounds that can pause and continue. */
-type Draft2FunnelStep = "opening" | "closing" | "deck";
+type Draft2FunnelStep = "opening" | "closing" | "deck" | "visual";
 
 /** Up to three rounds of two provider calls; the route itself allows 300 s. */
 const STEP_REQUEST_TIMEOUT_MS = 540_000;
@@ -84,6 +89,9 @@ const FACT_STATUS: Record<Draft2Fact["status"], { label: string; tone: StatusTon
 const CRITERION_LABEL: Record<Draft2OpeningCriterion, string> = { tension: "Tension", payoff: "Payoff", clarity: "Clarity", grounding: "Grounding", voice: "Voice", focus: "Focus" };
 const CLOSING_CRITERION_LABEL: Record<Draft2ClosingCriterion, string> = { resolution: "Resolution", meaning: "Meaning", action: "Action", continuity: "Continuity", grounding: "Grounding", voice: "Voice", focus: "Focus" };
 const DECK_CRITERION_LABEL: Record<Draft2DeckCriterion, string> = { flow: "Flow", coverage: "Coverage", pacing: "Pacing", clarity: "Clarity", grounding: "Grounding", voice: "Voice", focus: "Focus" };
+const VISUAL_CRITERION_LABEL: Record<Draft2VisualCriterion, string> = { narrative: "Narrative", continuity: "Continuity", brand: "Brand", truth: "Truth", fit: "Fit", craft: "Craft", focus: "Focus" };
+const CHARACTER_CHOICE_LABEL: Record<Draft2CharacterChoice, string> = { auto: "Claude decides in each script", on: "A brand character narrates", off: "No brand character" };
+const NEED_LABEL: Record<string, string> = { "generic-illustration": "Illustration", "character-reference": "Brand character", "real-photo": "Verified photo", "verified-map": "Verified map", typography: "Typography" };
 
 const FRAMING_LABEL: Record<Draft2FocusValues["framing"], string> = { "reader-consequence": "Reader consequence", explainer: "Explainer", authority: "Authority" };
 const STRUCTURE_LABEL: Record<Draft2FocusValues["structure"]["kind"], string> = { arc: "Arc: one story, one tension", steps: "Steps: an ordered procedure", list: "List: “N things to…”" };
@@ -118,7 +126,7 @@ function regressionNote({ candidateId, previousId, from, to, worse }: FunnelRegr
 
 const listed = (items: readonly string[]) => items.length > 1 ? `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}` : items.join("");
 const PART_LABEL: Record<string, string> = { cover: "cover", slide2: "slide 2", penultimate: "penultimate", last: "last slide" };
-/** A part as the editor reads it: a slide of the opening or closing, or "deck slide 2" for the deck's s2. */
+/** A part as the editor reads it: a slide of the opening or closing, or "deck slide 2" for the deck's s2 (the visual script names slides the same way). */
 const partLabel = (part: string) => PART_LABEL[part] ?? (/^s(\d+)$/.exec(part) ? `deck slide ${part.slice(1)}` : part);
 const issueTarget = (issue: FunnelIssue) => issue.candidateId ? ` · ${issue.candidateId}${issue.part ? ` · ${partLabel(issue.part)}` : ""}` : "";
 
@@ -151,6 +159,8 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const [choosing, setChoosing] = useState<{ step: Draft2FunnelStep; id: string }>();
   const [choiceError, setChoiceError] = useState<{ step: Draft2FunnelStep; message: string }>();
   const [savingFocus, setSavingFocus] = useState<Draft2FocusField>();
+  const [savingInventory, setSavingInventory] = useState<string>();
+  const [inventoryError, setInventoryError] = useState<string>();
   const [focusError, setFocusError] = useState<string>();
   const [following, setFollowing] = useState<string>();
   // The clock a run is measured against, to tell a run that went silent from one still working.
@@ -260,13 +270,13 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
         setSession(await postStep("facts", { storyId }));
         return;
       }
-      if (step === "focus") {
-        setSession(await postStep("focus", { storyId, sessionId: session?.id }));
+      if (step === "focus" || step === "inventory") {
+        setSession(await postStep(step, { storyId, sessionId: session?.id }));
         return;
       }
       let payload: Record<string, unknown> = { storyId, sessionId: session?.id, ...(continuing ? { continue: true } : {}) };
       // Each request advances at least one round or judgment; a round can pause once before its writer and once before its judge.
-      const maxRounds = step === "deck" ? DECK_MAX_ROUNDS : step === "closing" ? CLOSING_MAX_ROUNDS : OPENING_MAX_ROUNDS;
+      const maxRounds = step === "visual" ? VISUAL_MAX_ROUNDS : step === "deck" ? DECK_MAX_ROUNDS : step === "closing" ? CLOSING_MAX_ROUNDS : OPENING_MAX_ROUNDS;
       for (let request = 0; request <= maxRounds * 2; request++) {
         let next: Draft2SessionView | undefined;
         try {
@@ -311,6 +321,24 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
       setFocusError(cause instanceof Error ? cause.message : "Could not save the focus.");
     } finally {
       setSavingFocus(undefined);
+    }
+  }
+
+  /** One people-and-places decision: confirm, reject or reopen a person's photo, or the characters choice. */
+  async function decideInventory(input: Record<string, unknown>) {
+    if (!session || running || savingInventory) return;
+    setSavingInventory(String(input.entityId ?? input.action)); setInventoryError(undefined);
+    try {
+      const response = await fetch(`/api/radar/draft2/inventory?topicId=${encodeURIComponent(topicId)}`, {
+        method: "PATCH", cache: "no-store", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: session.id, ...input }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? "Could not save the decision.");
+      setSession(body.session as Draft2SessionView);
+    } catch (cause) {
+      setInventoryError(cause instanceof Error ? cause.message : "Could not save the decision.");
+    } finally {
+      setSavingInventory(undefined);
     }
   }
 
@@ -376,7 +404,26 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const deckPausedRound = deck?.status === "paused" ? funnelResumeRound(deck) : undefined;
   // A deck written for another closing or opening than the ones chosen now.
   const deckEndsChanged = Boolean(deck?.closing && deck.opening && ((chosenClosingId && deck.closing.id !== chosenClosingId) || (chosenOpeningId && deck.opening.id !== chosenOpeningId)));
-  const stepStatus: Partial<Record<string, { label: string; tone: StatusTone }>> = { facts: factsStatus, focus: focusStatus, opening: openingStatus, closing: closingStatus, deck: deckStatus };
+  // People and places: found once the facts are verified; the people Commons matched wait for the editor.
+  const inventory = session?.inventory ?? undefined;
+  const inventoryStalled = !running && inventory?.status === "running" && now > 0 && now - Date.parse(session?.updatedAt ?? "") > OPENING_STALL_MS;
+  const peopleToConfirm = inventory?.entities.filter((entity) => entity.person?.status === "candidates").length ?? 0;
+  const inventoryStatus = running === "inventory" ? { label: "Searching", tone: "info" as const } : inventoryStalled ? { label: "Stopped", tone: "warning" as const }
+    : inventory?.status === "failed" ? { label: "Failed", tone: "error" as const } : inventory?.status === "ready" ? (peopleToConfirm ? { label: `${peopleToConfirm} to confirm`, tone: "warning" as const } : { label: "Found", tone: "success" as const }) : undefined;
+  // The visual script pictures the chosen deck between the chosen opening and closing, once the people and places are found.
+  const visual = session?.visual ?? undefined;
+  const visualStalled = !running && visual?.status === "running" && now > 0 && now - Date.parse(session?.updatedAt ?? "") > OPENING_STALL_MS;
+  const visualStatus = running === "visual" ? OPENING_STATUS.running : visualStalled ? { label: "Stopped", tone: "warning" as const } : visual ? OPENING_STATUS[visual.status] : undefined;
+  const chosenDeckId = deck?.editorChoiceId ?? deck?.winnerId;
+  const deckFinished = Boolean(deck && chosenDeckId && deck.status !== "running" && deck.status !== "paused");
+  const visualReady = deckFinished && !deckEndsChanged && inventory?.status === "ready";
+  const visualResumable = visual && (visual.status === "paused" || visualStalled) && funnelResumeRound(visual) <= VISUAL_MAX_ROUNDS;
+  const visualResumeRound = visualResumable && visual ? funnelResumeRound(visual) : undefined;
+  const visualPausedRound = visual?.status === "paused" ? funnelResumeRound(visual) : undefined;
+  // A visual script of another deck, or of people and places found or decided since.
+  const visualChanged = Boolean(visual?.deckId && ((chosenDeckId && visual.deckId !== chosenDeckId) || (inventory && visual.inventoryVersion !== inventory.version)));
+  const visualDisplay = visualDisplayFor(inventory);
+  const stepStatus: Partial<Record<string, { label: string; tone: StatusTone }>> = { facts: factsStatus, focus: focusStatus, opening: openingStatus, closing: closingStatus, deck: deckStatus, inventory: inventoryStatus, visual: visualStatus };
   const resumable = session?.opening && (session.opening.status === "paused" || stalled) && openingResumeRound(session.opening) <= OPENING_MAX_ROUNDS;
   const resumeRound = resumable && session?.opening ? openingResumeRound(session.opening) : undefined;
   const pausedRound = session?.opening?.status === "paused" ? openingResumeRound(session.opening) : undefined;
@@ -546,6 +593,53 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
               onChoose={(candidateId) => { void choose("deck", candidateId); }}
             /> : null}
           </section>
+          <section className={styles.factsPanel} aria-label="People and places step">
+            <div className={styles.factsHeader}>
+              <div>
+                <p className={styles.eyebrow}>Step 6 · People and places</p>
+                <p className={styles.factsIntro}>Claude lists the people, places and organizations the verified facts name; the program looks them up as v1 does. A person is never generated: if Commons has a licensed photo of them and you confirm it is them, it can appear as a documentary portrait, pasted unchanged. A place appears only through its verified photo or map, within the Topic’s geo scope. Organizations are never drawn. You also say whether the brand’s characters may narrate.</p>
+              </div>
+              <Button variant="primary" size="compact" busy={running === "inventory"} disabled={!factsVerified || running !== undefined || savingInventory !== undefined} onClick={() => { void runStep("inventory"); }}>
+                {running === "inventory" ? "Searching…" : inventory ? "Search again" : "Find people and places"}
+              </Button>
+            </div>
+            {!factsVerified && !running ? <p className={styles.factMeta}>People and places are found only in verified facts; verify them first.</p> : null}
+            {running === "inventory" ? <LoadingState>Claude lists who and where; Wikidata, Commons and Openverse are checked for each. This can take a minute or two.</LoadingState> : null}
+            {inventoryStalled ? <InlineNotice tone="warning" title="This search stopped">Its request or the server ended before it finished. Search again.</InlineNotice> : null}
+            {runError?.step === "inventory" ? <InlineNotice tone="error" title="The search stopped">{runError.message}</InlineNotice> : null}
+            {inventory?.status === "failed" && inventory.error && running !== "inventory" ? <InlineNotice tone="error" title="The last search failed">{inventory.error}</InlineNotice> : null}
+            {inventoryError ? <InlineNotice tone="error" title="Your decision was not saved">{inventoryError}</InlineNotice> : null}
+            {inventory && inventory.status !== "running" && running !== "inventory" ? <InventoryView inventory={inventory} saving={savingInventory} locked={running !== undefined || savingInventory !== undefined} onDecide={(input) => { void decideInventory(input); }} /> : null}
+          </section>
+          <section className={styles.factsPanel} aria-label="Visual script step">
+            <div className={styles.factsHeader}>
+              <div>
+                <p className={styles.eyebrow}>Step 7 · Visual script</p>
+                <p className={styles.factsIntro}>{TODAY.writer} writes the carousel’s images as one visual story, in the brand’s identity: a concept, a recurring cast, a motif that evolves from slide to slide and, for each slide, the beat its image adds (never its words again), a reproducible art direction and the verified material or characters it uses. {TODAY.judge} scores three scripts (two for a carousel of more than ten slides) and proposes one of its own; {TODAY.writer} revises the best and edits {TODAY.judge}’s, which also competes as {TODAY.judge} wrote it, for {TODAY.judge}’s pick. Accepted at 95/100 with no criterion below 85. The images themselves come in a later step.</p>
+              </div>
+              <ActionRow>
+                {visualResumeRound && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("visual", { continuing: true }); }}>Continue from round {visualResumeRound}</Button> : null}
+                <Button variant="primary" size="compact" busy={running === "visual"} disabled={!factsVerified || !visualReady || running !== undefined || savingInventory !== undefined} onClick={() => { void runStep("visual"); }}>
+                  {running === "visual" ? "Writing and judging…" : visual ? "Write the visual script again" : "Write the visual script"}
+                </Button>
+              </ActionRow>
+            </div>
+            {factsVerified && !visualReady && !running ? <p className={styles.factMeta}>{!deckFinished ? "The visual script pictures the whole carousel; finish the deck first." : deckEndsChanged ? "The deck connects another opening or closing than the ones chosen now; write the deck again first." : "Find the people and places first: the script shows only what is verified."}</p> : null}
+            {peopleToConfirm && visualReady && !running ? <p className={styles.factMeta}>{peopleToConfirm} {peopleToConfirm === 1 ? "person waits" : "people wait"} for your confirmation; until then the script tells the story without showing them.</p> : null}
+            {visualChanged && running !== "visual" ? <InlineNotice tone="info" title="The deck or the people and places changed">This script pictures {visual?.deckId} with people and places v{visual?.inventoryVersion}; the deck chosen now is {chosenDeckId} and the people and places are v{inventory?.version}. Write the visual script again to follow them.</InlineNotice> : null}
+            {running === "visual" ? <LoadingState>{following ? `${following} Following the run on the server…` : visualPausedRound ? `Continuing with round ${visualPausedRound} in a new request…` : `${TODAY.writer} writes the scripts; ${TODAY.judge} judges each round. This can take a few minutes.`}</LoadingState> : null}
+            {visualStalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {new Date(session.updatedAt).toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit" })}: its request or the server ended. Continue from round {visualResumeRound} picks it up at its last checkpoint; a round already written is judged, not written again.</InlineNotice> : null}
+            {runError?.step === "visual" ? <InlineNotice tone="error" title="The visual script stopped">{runError.message}</InlineNotice> : null}
+            {session?.step === "visual" && session.error && running !== "visual" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
+            {choiceError?.step === "visual" ? <InlineNotice tone="error" title="Your choice was not saved">{choiceError.message}</InlineNotice> : null}
+            {visual && running !== "visual" ? <FunnelRunView
+              run={visual}
+              display={visualDisplay}
+              choosing={choosing?.step === "visual" ? choosing.id : undefined}
+              locked={running !== undefined || visual.status === "running"}
+              onChoose={(candidateId) => { void choose("visual", candidateId); }}
+            /> : null}
+          </section>
           {session?.trace.length && !running ? <details className={styles.trace}>
             <summary>{session.trace.length} provider {session.trace.length === 1 ? "call" : "calls"}</summary>
             <ol className={styles.traceList}>
@@ -616,7 +710,7 @@ type FunnelDisplay<C extends FunnelCandidate> = {
   /** One of the judge's proposals, in one line. */
   proposal: (candidate: C) => string;
   /** The chosen version, as the slides it will be; the run says what it connects (the deck shows the whole carousel). */
-  cards: (candidate: C, run: FunnelRun<C, FunnelScore, FunnelIssue> & Partial<Pick<Draft2Deck, "opening" | "closing">>) => ReactNode;
+  cards: (candidate: C, run: FunnelRun<C, FunnelScore, FunnelIssue> & Partial<Pick<Draft2Deck, "opening" | "closing">> & Partial<Pick<Draft2Visual, "carousel" | "characters">>) => ReactNode;
 };
 
 const OPENING_DISPLAY: FunnelDisplay<Draft2OpeningCandidate> = {
@@ -648,6 +742,46 @@ const DECK_DISPLAY: FunnelDisplay<Draft2DeckCandidate> = {
   </div>,
 };
 
+/** The visual script's display: each slide's words beside its beat and direction; reference ids read as the names of the people and places they stand for. */
+function visualDisplayFor(inventory: Draft2Inventory | undefined): FunnelDisplay<Draft2VisualCandidate> {
+  const nameOf = (id: string) => inventory?.entities.find((entity) => entity.id === id)?.name ?? inventory?.storyPhotos.find((photo) => photo.id === id)?.name ?? id;
+  return {
+    noun: "visual script",
+    plural: "visual scripts",
+    gate: VISUAL_GATE,
+    labels: VISUAL_CRITERION_LABEL,
+    lines: (candidate) => ({
+      title: candidate.concept,
+      details: [`Motif · ${candidate.motif}`, `Cast · ${candidate.cast}`, candidate.characterPlan.use ? `Character narrates · ${candidate.characterPlan.role}` : "No brand character"],
+    }),
+    proposal: (candidate) => candidate.concept,
+    cards: (candidate, run) => <div className={styles.visualBody}>
+      <p className={styles.factClaim}>{candidate.concept}</p>
+      <p className={styles.factMeta}>Motif · {candidate.motif}</p>
+      <p className={styles.factMeta}>Cast · {candidate.cast}</p>
+      <p className={styles.factMeta}>{candidate.characterPlan.use
+        ? `Narrated by ${candidate.characterPlan.characterIds.map((id) => run.characters?.find((character) => character.id === id)?.name ?? id).join(" and ")}: ${candidate.characterPlan.role}`
+        : "No brand character narrates."}</p>
+      <ol className={styles.carouselCards}>
+        {candidate.slides.map((slide) => {
+          const words = run.carousel?.find((entry) => entry.slide === slide.slide);
+          return <li key={slide.slide} className={styles.visualSlide}>
+            <div className={styles.factHead}>
+              <strong>{words?.label ?? slide.slide}</strong>
+              <StatusBadge tone={slide.need === "real-photo" || slide.need === "verified-map" ? "info" : "neutral"}>{NEED_LABEL[slide.need] ?? slide.need}</StatusBadge>
+            </div>
+            {words ? <p className={styles.visualWords}>{words.headline}</p> : null}
+            <p className={styles.factMeta}>Beat · {slide.beat}</p>
+            <p className={styles.openingText}>{slide.direction}</p>
+            {slide.characterIds.length ? <p className={styles.factMeta}>Characters · {slide.characterIds.map((id) => run.characters?.find((character) => character.id === id)?.name ?? id).join(", ")}</p> : null}
+            {slide.references.length ? <p className={styles.factMeta}>Verified material · {slide.references.map(nameOf).join(", ")}</p> : null}
+          </li>;
+        })}
+      </ol>
+    </div>,
+  };
+}
+
 const CLOSING_DISPLAY: FunnelDisplay<Draft2ClosingCandidate> = {
   noun: "closing",
   plural: "closings",
@@ -669,7 +803,7 @@ const CLOSING_DISPLAY: FunnelDisplay<Draft2ClosingCandidate> = {
 
 /** A funnel step's run: every round's verdict, the version the next steps build on, and every other version to choose from. */
 function FunnelRunView<C extends FunnelCandidate>({ run, display, choosing, locked, onChoose }: {
-  run: FunnelRun<C, FunnelScore, FunnelIssue> & { writer?: Draft2Opening["writer"]; judge?: Draft2Opening["judge"] } & Partial<Pick<Draft2Deck, "opening" | "closing">>;
+  run: FunnelRun<C, FunnelScore, FunnelIssue> & { writer?: Draft2Opening["writer"]; judge?: Draft2Opening["judge"] } & Partial<Pick<Draft2Deck, "opening" | "closing">> & Partial<Pick<Draft2Visual, "carousel" | "characters">>;
   display: FunnelDisplay<C>;
   choosing?: string;
   locked: boolean;
@@ -814,6 +948,82 @@ function ScoreRow<C extends FunnelCandidate>({ score, display }: { score: Funnel
     })}
     <span>Overall <strong>{score.overall}</strong></span>
   </p>;
+}
+
+/**
+ * The people, places and organizations the facts name, with what verified
+ * material each has: Commons candidates a person waits on the editor for, a
+ * place's photo and map, and the story's own photos. The characters choice
+ * says whether the brand's characters may narrate.
+ */
+function InventoryView({ inventory, saving, locked, onDecide }: { inventory: Draft2Inventory; saving?: string; locked: boolean; onDecide: (input: Record<string, unknown>) => void }) {
+  const people = inventory.entities.filter((entity) => entity.kind === "person");
+  const places = inventory.entities.filter((entity) => entity.kind === "place");
+  const organizations = inventory.entities.filter((entity) => entity.kind === "organization");
+  return <div className={styles.focusBody}>
+    <p className={styles.factMeta}>People and places v{inventory.version}{inventory.foundAt ? ` · found ${new Date(inventory.foundAt).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" })}` : ""}. The visual script uses only what is verified here.</p>
+    <FormField label="The brand’s characters" description={inventory.roster.length ? `${inventory.roster.map((character) => character.name).join(" and ")}, the Topic’s ${inventory.roster.length === 1 ? "character" : "characters"} with a reference image.` : "The Topic has no character with a reference image; none can narrate."}>
+      <select value={inventory.characters} disabled={locked || !inventory.roster.length} onChange={(event) => onDecide({ action: "characters", characters: event.target.value })}>
+        {INVENTORY_CHARACTER_CHOICES.map((choice) => <option key={choice} value={choice}>{CHARACTER_CHOICE_LABEL[choice]}</option>)}
+      </select>
+    </FormField>
+    {inventory.entities.length ? null : <p className={styles.factMeta}>The facts name no person, place or organization.</p>}
+    {people.length ? <div className={styles.openingGroup}>
+      <SectionHeader level={3} title="People" description="Never generated. A confirmed Commons photo can appear as a documentary portrait, pasted unchanged; anyone else is told without being shown." />
+      <ol className={styles.factList}>{people.map((entity) => <PersonItem key={entity.id} entity={entity} saving={saving === entity.id} locked={locked} onDecide={onDecide} />)}</ol>
+    </div> : null}
+    {places.length ? <div className={styles.openingGroup}>
+      <SectionHeader level={3} title="Places" description="A real place appears only through its verified photo or map; otherwise as a generic scene of its kind." />
+      <ol className={styles.factList}>{places.map((entity) => <li key={entity.id} className={styles.factItem}>
+        <div className={styles.factHead}>
+          <span className={styles.factId}>{entity.id}</span>
+          <strong>{entity.name}</strong>
+          <StatusBadge tone={entity.place?.status === "verified" ? "success" : entity.place?.status === "not-found" ? "neutral" : "warning"}>{entity.place?.status === "verified" ? "Verified" : entity.place?.status === "not-found" ? "Not found" : "Not checked"}</StatusBadge>
+          <span className={styles.factMeta}>{entity.role} · {entity.factIds.join(", ")}</span>
+        </div>
+        {entity.description ? <p className={styles.factMeta}>{entity.description}</p> : null}
+        {entity.place?.status === "verified" ? <p className={styles.factMeta}>{[
+          entity.place.photo ? `Photo · ${entity.place.photo.author} · ${entity.place.photo.license} · ${entity.place.photo.source === "openverse" ? "Openverse" : "Wikimedia Commons"}` : "No eligible photo",
+          entity.place.map ? "a map can be drawn" : "no coordinates for a map",
+        ].join(" · ")}</p> : null}
+        {entity.place?.note ? <p className={styles.factMeta}>{entity.place.note}</p> : null}
+      </li>)}</ol>
+    </div> : null}
+    {organizations.length ? <p className={styles.factMeta}>Organizations, never drawn and never named in an image (no logos): {organizations.map((entity) => entity.name).join(", ")}.</p> : null}
+    {inventory.storyPhotos.length ? <p className={styles.factMeta}>The story’s photos: {inventory.storyPhotos.map((photo) => `${photo.name}${photo.transmissionAllowed ? "" : " (documentary portrait only)"}`).join(", ")}.</p> : null}
+  </div>;
+}
+
+/** A person and their Commons candidates: confirm the one that is them, or say none is. */
+function PersonItem({ entity, saving, locked, onDecide }: { entity: Draft2InventoryEntity; saving: boolean; locked: boolean; onDecide: (input: Record<string, unknown>) => void }) {
+  const person = entity.person;
+  const status = person?.status;
+  return <li className={styles.factItem}>
+    <div className={styles.factHead}>
+      <span className={styles.factId}>{entity.id}</span>
+      <strong>{entity.name}</strong>
+      <StatusBadge tone={status === "confirmed" ? "success" : status === "candidates" ? "warning" : "neutral"}>{status === "confirmed" ? "Portrait confirmed" : status === "candidates" ? "Confirm the photo" : status === "rejected" ? "No photo" : status === "none" ? "Not on Commons" : "Not checked"}</StatusBadge>
+      <span className={styles.factMeta}>{entity.role} · {entity.factIds.join(", ")}</span>
+    </div>
+    {entity.description ? <p className={styles.factMeta}>{entity.description}</p> : null}
+    {person?.note ? <p className={styles.factMeta}>{person.note}</p> : null}
+    {status === "confirmed" && person?.confirmed ? <p className={styles.factMeta}>{person.confirmed.name}{person.confirmed.description ? ` · ${person.confirmed.description}` : ""} · {person.confirmed.author} · {person.confirmed.license}</p> : null}
+    {status === "candidates" ? <ul className={styles.candidateList}>
+      {person!.candidates.map((candidate) => <li key={candidate.entityId} className={styles.candidate}>
+        <Image className={styles.candidateThumb} src={candidate.thumbnailUrl} alt={`Wikimedia Commons photo of ${candidate.name}`} width={160} height={120} unoptimized />
+        <div>
+          <p className={styles.factClaim}>{candidate.name}{candidate.birthYear ? ` (born ${candidate.birthYear})` : ""}</p>
+          {candidate.description ? <p className={styles.factMeta}>{candidate.description}</p> : null}
+          <p className={styles.factMeta}>{candidate.author} · {candidate.license} · <a href={candidate.commonsUrl} target="_blank" rel="noreferrer">Commons ↗</a></p>
+          <Button variant="secondary" size="compact" busy={saving} disabled={locked} onClick={() => onDecide({ action: "confirm", entityId: entity.id, candidateId: candidate.entityId })}>This is them</Button>
+        </div>
+      </li>)}
+    </ul> : null}
+    <ActionRow>
+      {status === "candidates" ? <Button variant="quiet" size="compact" disabled={locked} onClick={() => onDecide({ action: "reject", entityId: entity.id })}>None of these</Button> : null}
+      {status === "confirmed" || status === "rejected" ? <Button variant="quiet" size="compact" disabled={locked} onClick={() => onDecide({ action: "reopen", entityId: entity.id })}>Change</Button> : null}
+    </ActionRow>
+  </li>;
 }
 
 const clip = (value: string, max = 140) => value.length > max ? `${value.slice(0, max - 1).trimEnd()}…` : value;

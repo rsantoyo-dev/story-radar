@@ -5,6 +5,8 @@ import { draft2Sessions, type Draft2SessionRow } from "@/db/schema";
 import type { Draft2Fact, Draft2FactsEvaluation, Draft2FactsRound, Draft2SessionStatus, Draft2Step, Draft2Threads, Draft2TraceEntry } from "./draft2-facts.types";
 import type { Draft2Closing } from "./draft2-closing.types";
 import type { Draft2Deck } from "./draft2-deck.types";
+import type { Draft2Inventory } from "./draft2-inventory.types";
+import type { Draft2Visual } from "./draft2-visual.types";
 import type { Draft2Focus } from "./draft2-focus.types";
 import { OPENING_STALL_MS, type Draft2Opening } from "./draft2-opening.types";
 
@@ -12,12 +14,11 @@ import { OPENING_STALL_MS, type Draft2Opening } from "./draft2-opening.types";
 const ACTIVE_WINDOW_MINUTES = 10;
 
 /**
- * When a running session was last seen alive. The focus, the opening, the
- * closing and the deck send a heartbeat, so they count as stopped after
- * OPENING_STALL_MS of silence; a facts run checkpoints only between calls,
- * so it keeps the longer window.
+ * When a running session was last seen alive. Every step but Facts sends a
+ * heartbeat, so it counts as stopped after OPENING_STALL_MS of silence; a
+ * facts run checkpoints only between calls, so it keeps the longer window.
  */
-const aliveSince = () => sql`CASE WHEN ${draft2Sessions.step} IN ('opening', 'focus', 'closing', 'deck')
+const aliveSince = () => sql`CASE WHEN ${draft2Sessions.step} IN ('opening', 'focus', 'closing', 'deck', 'inventory', 'visual')
   THEN now() - make_interval(secs => ${OPENING_STALL_MS / 1_000})
   ELSE now() - make_interval(mins => ${ACTIVE_WINDOW_MINUTES}) END`;
 
@@ -36,6 +37,8 @@ export type Draft2SessionPatch = Partial<{
   opening: Draft2Opening | null;
   closing: Draft2Closing | null;
   deck: Draft2Deck | null;
+  inventory: Draft2Inventory | null;
+  visual: Draft2Visual | null;
   threads: Draft2Threads;
   trace: Draft2TraceEntry[];
   error: string | null;

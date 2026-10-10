@@ -26,3 +26,5 @@ export const DRAFT2_OPENING_EARLIER_ROLES: { writer: Draft2Provider; judge: Draf
 export const DRAFT2_CLOSING_ROLES: { writer: Draft2Provider; judge: Draft2Provider } = DRAFT2_OPENING_ROLES;
 /** The Deck too: one model writes the whole carousel and the other judges it. */
 export const DRAFT2_DECK_ROLES: { writer: Draft2Provider; judge: Draft2Provider } = DRAFT2_OPENING_ROLES;
+/** And the visual script: Claude writes it, Sol judges it. */
+export const DRAFT2_VISUAL_ROLES: { writer: Draft2Provider; judge: Draft2Provider } = DRAFT2_OPENING_ROLES;
