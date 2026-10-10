@@ -96,7 +96,8 @@ type Row = Record<string, unknown> & { opening: Draft2Opening | null; focus: Dra
 function harness({ writes, judgments, failAt, session, busy = false, claimRefused = false, secondsPerCall }: {
   writes: ((contents: WriterContents) => unknown)[];
   judgments: ((contents: JudgeContents) => unknown)[];
-  failAt?: { role: "writer" | "judge"; call: number };
+  /** That call fails: overloaded, or with the error given (a cut-off carries its usage). */
+  failAt?: { role: "writer" | "judge"; call: number; error?: Error };
   session?: Record<string, unknown>;
   busy?: boolean;
   claimRefused?: boolean;
@@ -123,7 +124,7 @@ function harness({ writes, judgments, failAt, session, busy = false, claimRefuse
     calls.push({ provider, role, input });
     tick();
     const index = role === "writer" ? write++ : judgment++;
-    if (failAt?.role === role && failAt.call === index + 1) throw Object.assign(new Error(`${provider} ${String(input.model)} failed (HTTP 529: overloaded)`), { status: 529 });
+    if (failAt?.role === role && failAt.call === index + 1) throw failAt.error ?? Object.assign(new Error(`${provider} ${String(input.model)} failed (HTTP 529: overloaded)`), { status: 529 });
     const text = role === "writer" ? writes[index](input.contents as WriterContents) : judgments[index](input.contents as JudgeContents);
     return { text: JSON.stringify(text), provider, model: input.model, usage };
   };
@@ -181,7 +182,7 @@ test("Claude writes and Sol judges; both read the focus and the facts snapshot w
   assert.equal(json(claude.input.context), json({ focus: focusTypes.focusForModels(FOCUS_VALUES), verifiedFacts: openingTypes.openingFactsSnapshot(facts) }), "the focus and the facts travel as Claude's cached context");
   assert.deepEqual(Object.keys(claude.input.contents as object), ["task", "candidatesWanted"]);
   assert.equal((claude.input.contents as WriterContents).candidatesWanted, 15, "the first round explores fifteen hooks");
-  assert.equal(claude.input.effort, "high");
+  assert.equal(claude.input.effort, "medium", "round 1's fifteen openings are written with medium effort");
   assert.match(String(claude.input.instructions), /# Openings for social carousels[\s\S]*# The publication\n- Name: Example Daily\./, "the hooks skill, then the brand brief");
   assert.equal(sol.input.previousResponseId, undefined, "Sol keeps no conversation");
   assert.equal(sol.input.store, undefined);
@@ -190,7 +191,7 @@ test("Claude writes and Sol judges; both read the focus and the facts snapshot w
   assert.equal(json((sol.input.contents as { focus: unknown }).focus), json(focusTypes.focusForModels(FOCUS_VALUES)));
   assert.equal(json((sol.input.contents as { verifiedFacts: unknown }).verifiedFacts), json(openingTypes.openingFactsSnapshot(facts)));
   assert.equal((sol.input.contents as JudgeContents).proposalsWanted, 3, "round 1 asks Sol for three openings of its own");
-  assert.equal(sol.input.reasoningEffort, "high");
+  assert.equal(sol.input.reasoningEffort, "medium", "and judged with medium reasoning");
   assert.ok(String(sol.input.instructions).includes(hooks.HOOKS_SKILL.text), "the judge reads the same skill");
   assert.equal(json([claude.input.timeoutMs, sol.input.timeoutMs]), json([240_000, 240_000]), "fifteen openings take longer than the adapters' default 120 s");
   assert.equal(json([session.opening?.writer, session.opening?.judge]), json([{ provider: "anthropic", model: "claude-sonnet-5-5" }, { provider: "openai", model: "gpt-6.1-sol" }]), "the run records who wrote and who judged");
@@ -278,6 +279,7 @@ test("loop: fifteen openings; then three revised beside the judge's three propos
     ["c16", "p1", false], ["c17", "p2", false], ["c18", "p3", false], ["c19", "p1", true], ["c20", "p2", true], ["c21", "p3", true],
   ]), "the canvas can set each original against its edit");
   assert.equal(json(rounds.map((round) => round.kind)), json(["explore", "mixed", "mixed"]));
+  assert.equal(json(h.calls.map((call) => call.input.effort ?? call.input.reasoningEffort)), json(["medium", "medium", "high", "high", "high", "high"]), "the rounds that refine think hard");
   assert.equal(session.status, "needs-review");
   assert.equal(session.opening?.winnerId, "c16.3", "the best version of the run stands in");
   assert.match(String(session.error), /after 3 rounds\. The best version, c16\.3, scored 93\/100/);
@@ -472,4 +474,15 @@ test("the editor can choose any version of the run; an unknown one is refused; a
 test("a choice waits while the opening is being written", async () => {
   const h = harness({ writes: [], judgments: [], session: { step: "opening", status: "running", opening: { status: "running", rounds: [], candidates: candidates() } } });
   await assert.rejects(h.choose("c1"), (error: Error) => error instanceof types.Draft2BusyError);
+});
+
+test("a call cut off at the output ceiling keeps its usage and how far its answer got on the trace", async () => {
+  const cutOff = Object.assign(new Error("Claude claude-sonnet-5-5 ran out of output tokens before finishing (24000)"), {
+    usage: { promptTokens: 9_541, outputTokens: 24_000, thoughtsTokens: 0, totalTokens: 33_541 },
+    details: { stopReason: "max_tokens", answerCharacters: 0 },
+  });
+  const h = harness({ writes: [writer()], judgments: [], failAt: { role: "writer", call: 1, error: cutOff } });
+  await assert.rejects(h.run(), /ran out of output tokens/);
+  const last = h.row().trace[h.row().trace.length - 1];
+  assert.equal(json([last.outcome, last.usage?.outputTokens, last.answerCharacters, last.stopReason]), json(["error", 24_000, 0, "max_tokens"]), "all of it went to thinking");
 });

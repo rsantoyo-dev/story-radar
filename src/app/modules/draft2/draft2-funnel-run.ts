@@ -9,7 +9,7 @@ import { draft2DevTrace } from "./draft2-dev-trace";
 import { draft2ProviderName, draft2SolModel, type Draft2Provider } from "./draft2-models";
 import { Draft2BusyError, Draft2InputError, type Draft2Fact, type Draft2TraceEntry } from "./draft2-facts.types";
 import {
-  factsSnapshot, funnelAcceptedWinner, funnelBestVersions, funnelFreshWanted, funnelRegressions, funnelRenumberedProposals, funnelResumeRound,
+  factsSnapshot, failedCall, funnelAcceptedWinner, funnelBestVersions, funnelFreshWanted, funnelRegressions, funnelRenumberedProposals, funnelResumeRound,
   funnelReviewNote, funnelRunSummary, funnelTargets, funnelVersions, funnelWrittenCandidates,
   type FunnelCandidate, type FunnelEvaluation, type FunnelGate, type FunnelIssue, type FunnelPlanRound, type FunnelRegression, type FunnelRole,
   type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion,
@@ -182,17 +182,20 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
    */
   function ask(role: FunnelRole, round: number, operation: string, request: Composed & { contents: Record<string, unknown>; schema: Record<string, unknown> }) {
     const { instructions, skillVersions, contents, schema } = request;
+    // The round's effort, for the writer and the judge alike; Sol writing a stored run keeps medium.
+    const effort = def.plan[round - 1]?.effort ?? "high";
     if (role.provider === "anthropic") {
-      const traceRequest = { instructions, context: { ...setup.context, verifiedFacts: `${verifiedFacts.length} facts (cached)` }, contents };
+      const traceRequest = { instructions, context: { ...setup.context, verifiedFacts: `${verifiedFacts.length} facts (cached)` }, contents, effort };
       return traced(round, "anthropic", role.model, operation, skillVersions, traceRequest, () => generateAnthropicStructuredResponse({
         apiKey: anthropicApiKey, model: role.model, instructions, context: { ...setup.context, verifiedFacts }, contents,
-        schema, schemaName: operation, maxOutputTokens: MAX_OUTPUT_TOKENS, effort: "high", timeoutMs: CALL_TIMEOUT_MS, auditContext,
+        schema, schemaName: operation, maxOutputTokens: MAX_OUTPUT_TOKENS, effort, timeoutMs: CALL_TIMEOUT_MS, auditContext,
       }));
     }
     const input = { ...setup.context, verifiedFacts, ...contents };
-    return traced(round, "openai", role.model, operation, skillVersions, { instructions, contents: input }, () => generateOpenAiStructuredResponse({
+    const reasoningEffort = role === roles.judge ? effort : "medium";
+    return traced(round, "openai", role.model, operation, skillVersions, { instructions, contents: input, reasoningEffort }, () => generateOpenAiStructuredResponse({
       apiKey: openAiApiKey, model: role.model, instructions, contents: input,
-      schema, schemaName: operation, maxOutputTokens: MAX_OUTPUT_TOKENS, reasoningEffort: role === roles.judge ? "high" : "medium", timeoutMs: CALL_TIMEOUT_MS, auditContext,
+      schema, schemaName: operation, maxOutputTokens: MAX_OUTPUT_TOKENS, reasoningEffort, timeoutMs: CALL_TIMEOUT_MS, auditContext,
     }));
   }
 
@@ -204,7 +207,7 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
     try {
       const value = await call();
       const durationMs = Date.now() - begin;
-      trace.push({ at, step: def.step, round, provider, model, operation, durationMs, usage: value.usage, cachedInputTokens: value.cachedInputTokens, ...(value.cacheWriteTokens ? { cacheWriteTokens: value.cacheWriteTokens } : {}), outcome: "ok", skillVersions });
+      trace.push({ at, step: def.step, round, provider, model, operation, durationMs, usage: value.usage, cachedInputTokens: value.cachedInputTokens, ...(value.cacheWriteTokens ? { cacheWriteTokens: value.cacheWriteTokens } : {}), answerCharacters: value.text.length, outcome: "ok", skillVersions });
       let answer: unknown = value.text;
       try { answer = JSON.parse(value.text); } catch { /* the parser reports a malformed answer */ }
       draft2DevTrace({ step: def.step, round, provider, model, operation, phase: "response", durationMs, detail: { usage: value.usage, cachedInputTokens: value.cachedInputTokens, cacheWriteTokens: value.cacheWriteTokens, answer } });
@@ -212,8 +215,8 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
     } catch (error) {
       const durationMs = Date.now() - begin;
       const note = error instanceof Error ? error.message : "unknown error";
-      trace.push({ at, step: def.step, round, provider, model, operation, durationMs, outcome: "error", note, skillVersions });
-      draft2DevTrace({ step: def.step, round, provider, model, operation, phase: "error", durationMs, detail: { error: note } });
+      trace.push({ at, step: def.step, round, provider, model, operation, durationMs, outcome: "error", note, ...failedCall(error), skillVersions });
+      draft2DevTrace({ step: def.step, round, provider, model, operation, phase: "error", durationMs, detail: { error: note, ...failedCall(error) } });
       throw error;
     }
   }

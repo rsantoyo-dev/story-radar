@@ -69,3 +69,42 @@ export const DRAFT_2_STEPS = [
   { key: "deck", title: "Deck", detail: "The slides written once to deliver the cover and reach the closing." },
   { key: "review", title: "Review", detail: "Deterministic checks and a calibrated judge before approval." },
 ] as const;
+
+/** Characters per token, roughly, for JSON in English, French or Spanish: close enough to tell an answer from thinking. */
+const CHARACTERS_PER_TOKEN = 3.5;
+
+/** What the trace line reads of one provider call (draft2-facts.types.ts, Draft2TraceEntry). */
+type TraceCall = {
+  provider: "openai" | "anthropic";
+  usage?: { promptTokens: number; outputTokens: number; thoughtsTokens?: number; totalTokens: number };
+  cachedInputTokens?: number;
+  cacheWriteTokens?: number;
+  answerCharacters?: number;
+  outcome: "ok" | "error";
+  note?: string;
+  durationMs: number;
+};
+
+/**
+ * One provider call in the trace: tokens in and out, how the output split
+ * between the answer and thinking (Sol reports its reasoning; for Claude it
+ * is what the output holds beyond the answer, estimated from its length),
+ * the cache, and the error a failed call ended on, with what it still cost.
+ */
+export function traceUsageLine(call: TraceCall): string {
+  const usage = call.usage && call.usage.totalTokens > 0 ? call.usage : undefined;
+  let split = "";
+  if (usage && call.provider === "openai" && usage.thoughtsTokens) split = ` (${usage.thoughtsTokens} reasoning)`;
+  if (usage && call.provider === "anthropic" && call.answerCharacters !== undefined) {
+    const answer = Math.round(call.answerCharacters / CHARACTERS_PER_TOKEN);
+    split = ` (≈${answer} answer, ≈${Math.max(0, usage.outputTokens - answer)} thinking)`;
+  }
+  const tokens = usage ? [
+    `${usage.promptTokens} in`,
+    `${usage.outputTokens} out${split}`,
+    ...(call.cachedInputTokens ? [`${call.cachedInputTokens} cached`] : []),
+    ...(call.cacheWriteTokens ? [`${call.cacheWriteTokens} written to cache`] : []),
+  ] : [];
+  const lead = call.outcome === "ok" ? tokens : [call.note ?? "failed", ...tokens];
+  return [...lead, `${(call.durationMs / 1000).toFixed(1)} s`].join(" · ");
+}

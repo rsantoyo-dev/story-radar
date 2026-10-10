@@ -5,8 +5,8 @@ import {
   funnelFreshWanted, funnelJudgeRequest, funnelParseCandidates, funnelParseEvaluation, funnelRecord, funnelRefineRequest, funnelRegressions,
   funnelRenumbered, funnelRenumberedProposals, funnelResumeRound, funnelReviewNote, funnelRunSummary, funnelScorePasses, funnelTargets, funnelText,
   funnelVersions, funnelWordCount, funnelWrittenCandidates, hasMaterialError as funnelHasMaterialError, headlineKey, longWords, numbersIn, statedNumbers, wordOverlap,
-  type FunnelCandidate, type FunnelEvaluation, type FunnelGate, type FunnelIssue, type FunnelRegression, type FunnelRole, type FunnelRound, type FunnelRun,
-  type FunnelScore, type FunnelVersion, type FunnelWords,
+  type FunnelCandidate, type FunnelEvaluation, type FunnelGate, type FunnelIssue, type FunnelPlanRound, type FunnelRegression, type FunnelRole, type FunnelRound,
+  type FunnelRun, type FunnelScore, type FunnelVersion, type FunnelWords,
 } from "./draft2-funnel";
 
 /**
@@ -38,12 +38,15 @@ export const OPENING_CANDIDATES = 15;
  * edited it. A round with fewer clean versions than it wants to revise
  * writes new angles in their place. (New angles written after round 1 never
  * won in any real run, so the judge's originals took their place.)
- *   round 1: 15 new → the judge scores 15, proposes 3
+ *   round 1: 15 new → the judge scores 15, proposes 3   (medium effort)
  *   round 2: 3 revised + 3 originals + 3 edits = 9 → scores 9, proposes 1
  *   round 3: 2 revised + 1 original + 1 edit = 4 → the judge's final pick
+ * Round 1 explores with medium effort: with the focus, fifteen openings at
+ * high effort took Claude past its 24,000 output tokens (thinking, not the
+ * answer) and Sol past its 240 s. The rounds that refine think hard.
  */
-export const OPENING_ROUND_PLAN: readonly { revise: number; fresh: number; proposals: number }[] = [
-  { revise: 0, fresh: OPENING_CANDIDATES, proposals: 3 },
+export const OPENING_ROUND_PLAN: readonly FunnelPlanRound[] = [
+  { revise: 0, fresh: OPENING_CANDIDATES, proposals: 3, effort: "medium" },
   { revise: 3, fresh: 0, proposals: 1 },
   { revise: 2, fresh: 0, proposals: 0 },
 ];

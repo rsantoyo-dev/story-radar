@@ -34,6 +34,8 @@ export type AnthropicStructuredResponse = {
   /** Prompt-cache writes, also counted inside usage.promptTokens; the API bills them above the base input rate. */
   cacheWriteTokens?: number;
   stopReason?: string;
+  /** The length of the answer's text; the rest of the output tokens went to thinking. */
+  answerCharacters?: number;
 };
 
 export const ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages";
@@ -183,11 +185,14 @@ async function requestAnthropicStructuredResponse({
     const cachedInputTokens = cacheReadTokens(payload.usage);
     const cacheWriteTokens = cacheCreationTokens(payload.usage);
     const stopReason = typeof payload.stop_reason === "string" ? payload.stop_reason : undefined;
+    const text = extractAnthropicText(payload);
+    // How much of the output was the answer (a length, never the text): the rest was thinking.
+    const answerCharacters = text.length;
     receipt({
       event: response.ok ? "response-received" : "http-error", attempt,
       requestId: response.headers?.get?.("request-id") ?? undefined,
       httpStatus: response.status, elapsedMs: Date.now() - startedAt,
-      usageKnown: Boolean(payload.usage), usage, cachedInputTokens, cacheWriteTokens, stopReason,
+      usageKnown: Boolean(payload.usage), usage, cachedInputTokens, cacheWriteTokens, stopReason, answerCharacters,
     });
     if (!response.ok) {
       lastError = Object.assign(new AnthropicEditorialError(
@@ -197,14 +202,15 @@ async function requestAnthropicStructuredResponse({
       throw lastError;
     }
 
-    // A refusal or a cut-off answer is not structured output; the usage travels with the error so the meter settles it.
+    // A refusal or a cut-off answer is not structured output; the usage travels with the error so the meter settles it,
+    // with how far the answer got, so a cut-off in thinking can be told from an answer that grew too long.
     if (stopReason === "refusal" || stopReason === "max_tokens") {
       throw new AnthropicEditorialError(
         stopReason === "refusal" ? `Claude ${model} refused the request` : `Claude ${model} ran out of output tokens before finishing (${maxOutputTokens})`,
         usage,
+        { stopReason, answerCharacters },
       );
     }
-    const text = extractAnthropicText(payload);
     if (!text) {
       throw new AnthropicEditorialError(
         `Claude ${model} returned no structured output (${stopReason ?? "unknown stop reason"})`,
@@ -220,6 +226,7 @@ async function requestAnthropicStructuredResponse({
       cachedInputTokens,
       cacheWriteTokens,
       ...(stopReason ? { stopReason } : {}),
+      answerCharacters,
     };
   }
   throw lastError ?? new AnthropicEditorialError(`Claude ${model} request failed`);
@@ -333,6 +340,8 @@ export class AnthropicEditorialError extends Error {
   constructor(
     message: string,
     readonly usage?: CreativeAiUsage,
+    /** Why the answer stopped and how far it got, on a refusal or a cut-off. */
+    readonly details?: { stopReason?: string; answerCharacters?: number },
   ) {
     super(message);
   }

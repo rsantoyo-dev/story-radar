@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { draft2Href, paragraphs, sourceHost, storyHref, wordCount } from "./draft-2-canvas.core";
+import { draft2Href, paragraphs, sourceHost, storyHref, traceUsageLine, wordCount } from "./draft-2-canvas.core";
 
 const topicId = "11111111-1111-4111-8111-111111111111";
 const storyId = "22222222-2222-4222-8222-222222222222";
@@ -30,4 +30,16 @@ test("the reading view splits paragraphs on blank lines and joins wrapped lines"
   assert.deepEqual(paragraphs(undefined), []);
   assert.equal(wordCount("one two  three\nfour"), 4);
   assert.equal(wordCount("   "), 0);
+});
+
+test("a trace line splits each call's output between the answer and thinking, and keeps what a failed call cost", () => {
+  const usage = (outputTokens: number, thoughtsTokens = 0) => ({ promptTokens: 9_541, outputTokens, thoughtsTokens, totalTokens: 9_541 + outputTokens });
+  assert.equal(traceUsageLine({ provider: "anthropic", usage: usage(15_233), answerCharacters: 10_500, cacheWriteTokens: 9_519, outcome: "ok", durationMs: 107_200 }),
+    "9541 in · 15233 out (≈3000 answer, ≈12233 thinking) · 9519 written to cache · 107.2 s");
+  assert.equal(traceUsageLine({ provider: "openai", usage: usage(11_876, 7_768), cachedInputTokens: 2_010, outcome: "ok", durationMs: 221_200 }),
+    "9541 in · 11876 out (7768 reasoning) · 2010 cached · 221.2 s");
+  assert.equal(traceUsageLine({ provider: "anthropic", usage: usage(24_000), answerCharacters: 0, outcome: "error", note: "Claude ran out of output tokens before finishing (24000)", durationMs: 170_400 }),
+    "Claude ran out of output tokens before finishing (24000) · 9541 in · 24000 out (≈0 answer, ≈24000 thinking) · 170.4 s", "a cut-off in thinking reads as such");
+  assert.equal(traceUsageLine({ provider: "openai", outcome: "error", note: "Sol did not respond within 240 seconds", durationMs: 240_200 }), "Sol did not respond within 240 seconds · 240.2 s");
+  assert.equal(traceUsageLine({ provider: "anthropic", usage: usage(2_457), outcome: "ok", durationMs: 21_900 }), "9541 in · 2457 out · 21.9 s", "a call stored before the split was recorded");
 });

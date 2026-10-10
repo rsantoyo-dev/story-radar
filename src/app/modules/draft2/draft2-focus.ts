@@ -6,6 +6,7 @@ import { getCreativeProfile } from "../stories/creative-profile.repository";
 import { getStoryContent } from "../stories/story-content.repository";
 import { activeEditorialLines, storyCollectionContexts } from "../editorial-lines/editorial-lines.repository";
 import { activeDraft2Session, claimDraft2Session, getDraft2Session, touchDraft2Session, updateDraft2Session } from "./draft2-session.repository";
+import { failedCall } from "./draft2-funnel";
 import { draft2DevTrace } from "./draft2-dev-trace";
 import { Draft2BusyError, Draft2InputError, type Draft2TraceEntry } from "./draft2-facts.types";
 import {
@@ -77,14 +78,14 @@ export async function decideDraft2Focus({ topicId, storyId, sessionId }: Draft2F
           schema: DRAFT2_FOCUS_SCHEMA, schemaName: "draft2_focus", maxOutputTokens: MAX_OUTPUT_TOKENS, effort: "high", timeoutMs: CALL_TIMEOUT_MS, auditContext,
         });
         const durationMs = Date.now() - begin;
-        trace.push({ at, step: "focus", round: 1, provider: "anthropic", model, operation: "draft2_focus", durationMs, usage: answered.usage, cachedInputTokens: answered.cachedInputTokens, ...(answered.cacheWriteTokens ? { cacheWriteTokens: answered.cacheWriteTokens } : {}), outcome: "ok", skillVersions });
+        trace.push({ at, step: "focus", round: 1, provider: "anthropic", model, operation: "draft2_focus", durationMs, usage: answered.usage, cachedInputTokens: answered.cachedInputTokens, ...(answered.cacheWriteTokens ? { cacheWriteTokens: answered.cacheWriteTokens } : {}), answerCharacters: answered.text.length, outcome: "ok", skillVersions });
         draft2DevTrace({ step: "focus", round: 1, provider: "anthropic", model, operation: "draft2_focus", phase: "response", durationMs, detail: { usage: answered.usage, answer: answered.text } });
         const decision = parseFocusDecision(answered.text, { facts, lines: lineOptions, editorChoices });
         return decidedFocus(focus, decision, { provider: "anthropic", model }, new Date());
       } catch (error) {
         if (trace.length === session.trace.length) {
           const note = error instanceof Error ? error.message : "unknown error";
-          trace.push({ at, step: "focus", round: 1, provider: "anthropic", model, operation: "draft2_focus", durationMs: Date.now() - begin, outcome: "error", note, skillVersions });
+          trace.push({ at, step: "focus", round: 1, provider: "anthropic", model, operation: "draft2_focus", durationMs: Date.now() - begin, outcome: "error", note, ...failedCall(error), skillVersions });
           draft2DevTrace({ step: "focus", round: 1, provider: "anthropic", model, operation: "draft2_focus", phase: "error", durationMs: Date.now() - begin, detail: { error: note } });
         }
         throw error;

@@ -1,4 +1,4 @@
-import { comparableText, Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
+import { comparableText, Draft2ResponseError, type Draft2Fact, type Draft2TraceEntry } from "./draft2-facts.types";
 import type { Draft2Provider } from "./draft2-models";
 
 /**
@@ -93,8 +93,13 @@ export type FunnelVersion<C extends FunnelCandidate = FunnelCandidate, S extends
 /** A role of a run: which provider's model played it. */
 export type FunnelRole = { provider: Draft2Provider; model: string };
 
-/** What a round asks: versions to revise (each from a different line), new candidates, and the judge's own proposals. */
-export type FunnelPlanRound = { revise: number; fresh: number; proposals: number };
+/**
+ * What a round asks: versions to revise (each from a different line), new
+ * candidates, the judge's own proposals, and how hard both models think
+ * (high unless the round says otherwise: a wide round thinks less per
+ * candidate so it fits a call's time and output).
+ */
+export type FunnelPlanRound = { revise: number; fresh: number; proposals: number; effort?: "medium" | "high" };
 
 /** A step's acceptance rule: overall at least `accept` and every criterion at least `floor`. */
 export type FunnelGate = { criteria: readonly string[]; accept: number; floor: number };
@@ -612,4 +617,18 @@ export const headlineKey = (value: string) => comparableText(value).replace(/[^\
 /** The numbers the cited facts state, plus a count the step may state on its own (a list's items). */
 export function statedNumbers(cited: readonly Draft2Fact[], count?: number): Set<string> {
   return new Set([...cited.flatMap((fact) => [...numbersIn(fact.claim), ...numbersIn(fact.evidence)].map((number) => number.digits)), ...(count ? [String(count)] : [])]);
+}
+
+/**
+ * What a failed call still tells: the usage a provider charged for it and,
+ * on a cut-off, how far the answer got, so running out of tokens in
+ * thinking can be told from an answer that grew too long.
+ */
+export function failedCall(error: unknown): Pick<Draft2TraceEntry, "usage" | "answerCharacters" | "stopReason"> {
+  const failed = error && typeof error === "object" ? error as { usage?: Draft2TraceEntry["usage"]; details?: { stopReason?: unknown; answerCharacters?: unknown } } : {};
+  return {
+    ...(failed.usage && failed.usage.totalTokens > 0 ? { usage: failed.usage } : {}),
+    ...(typeof failed.details?.answerCharacters === "number" ? { answerCharacters: failed.details.answerCharacters } : {}),
+    ...(typeof failed.details?.stopReason === "string" ? { stopReason: failed.details.stopReason } : {}),
+  };
 }

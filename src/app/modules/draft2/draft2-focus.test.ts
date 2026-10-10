@@ -6,6 +6,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import * as types from "./draft2-facts.types";
 import * as focusTypes from "./draft2-focus.types";
+import * as funnel from "./draft2-funnel";
 import * as openingTypes from "./draft2-opening.types";
 import * as skills from "./skills/draft2-skills";
 import * as focusSkill from "./skills/focus";
@@ -66,6 +67,7 @@ function harness({ answers = [], session, busy = false, claimRefused = false, fa
     "server-only": {},
     "./draft2-facts.types": types,
     "./draft2-focus.types": focusTypes,
+    "./draft2-funnel": funnel,
     "./draft2-opening.types": openingTypes,
     "./skills/draft2-skills": skills,
     "./skills/focus": focusSkill,

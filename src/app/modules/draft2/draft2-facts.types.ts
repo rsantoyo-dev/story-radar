@@ -83,6 +83,10 @@ export type Draft2TraceEntry = {
   cachedInputTokens?: number;
   /** Prompt-cache writes (Claude), counted inside usage.promptTokens like the reads. */
   cacheWriteTokens?: number;
+  /** The answer's length; for Claude, the output tokens beyond it went to thinking. Also kept on a cut-off, with the usage. */
+  answerCharacters?: number;
+  /** Why a provider stopped an answer short (max_tokens, refusal). */
+  stopReason?: string;
   outcome: "ok" | "error";
   note?: string;
   /** The skill versions the call's instructions were composed from (skills/draft2-skills.ts). */

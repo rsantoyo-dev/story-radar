@@ -158,14 +158,25 @@ test("an overloaded provider gets one more attempt; a rate limit does not", asyn
   assert.equal(limited, 1);
 });
 
-test("a refusal or a cut-off answer fails with its usage, so the meter can settle the cost", async () => {
+test("a refusal or a cut-off answer fails with its usage, so the meter can settle the cost, and with how far the answer got", async () => {
   for (const [stopReason, pattern] of [["max_tokens", /ran out of output tokens/], ["refusal", /refused/]] as const) {
-    const body = JSON.stringify({ content: [{ type: "text", text: "{\"facts\":[{\"id\":\"f1\"" }], stop_reason: stopReason, usage: { input_tokens: 100, output_tokens: 4096 } });
-    const exports = load(async () => response(200, body), []);
-    await assert.rejects(exports.generateAnthropicStructuredResponse(request()), (error: Error & { usage?: { totalTokens: number } }) => {
+    const body = JSON.stringify({ content: [{ type: "thinking", thinking: "private reasoning", signature: "sig" }, { type: "text", text: "{\"facts\":[{\"id\":\"f1\"" }], stop_reason: stopReason, usage: { input_tokens: 100, output_tokens: 4096 } });
+    const logs: Record<string, unknown>[] = [];
+    const exports = load(async () => response(200, body), logs);
+    await assert.rejects(exports.generateAnthropicStructuredResponse(request()), (error: Error & { usage?: { totalTokens: number }; details?: { stopReason?: string; answerCharacters?: number } }) => {
       assert.match(error.message, pattern);
       assert.equal(error.usage?.totalTokens, 4196);
+      assert.equal(JSON.stringify(error.details), JSON.stringify({ stopReason, answerCharacters: 20 }), "the answer had begun: 20 characters of JSON, the rest of the 4096 tokens was thinking");
       return true;
     });
+    const received = logs.find((entry) => entry.event === "response-received");
+    assert.equal(received?.answerCharacters, 20, "the receipt carries the answer's length, never its text");
+    assert.doesNotMatch(JSON.stringify(logs), /private reasoning|"f1"/);
   }
+});
+
+test("every answer reports its length, so the trace can tell the answer from thinking", async () => {
+  const exports = load(async () => response(200, successBody), []);
+  const result = await exports.generateAnthropicStructuredResponse(request()) as Result & { answerCharacters?: number };
+  assert.equal(result.answerCharacters, JSON.stringify(answer).length);
 });

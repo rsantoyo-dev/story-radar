@@ -20,7 +20,7 @@ import {
   type FunnelCandidate, type FunnelGate, type FunnelIssue, type FunnelRegression, type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion,
 } from "@/app/modules/draft2/draft2-funnel";
 import { DRAFT2_OPENING_EARLIER_ROLES, DRAFT2_OPENING_ROLES, draft2ProviderName } from "@/app/modules/draft2/draft2-models";
-import { contentStatusLabel, DRAFT_2_STEPS, paragraphs, sourceHost, storyHref, wordCount } from "./draft-2-canvas.core";
+import { contentStatusLabel, DRAFT_2_STEPS, paragraphs, sourceHost, storyHref, traceUsageLine, wordCount } from "./draft-2-canvas.core";
 import styles from "./draft-2-canvas.generated.module.css";
 
 /** The Draft 2 session as the API returns it. */
@@ -506,7 +506,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
             <ol className={styles.traceList}>
               {session.trace.map((entry, index) => <li key={index} data-outcome={entry.outcome}>
                 <span>{providerLabel(entry.provider)} · {entry.model} · {entry.operation} · {entry.step} round {entry.round}</span>
-                <span>{entry.outcome === "ok" ? `${entry.usage?.promptTokens ?? 0} in · ${entry.usage?.outputTokens ?? 0} out${entry.cachedInputTokens ? ` · ${entry.cachedInputTokens} cached` : ""}${entry.cacheWriteTokens ? ` · ${entry.cacheWriteTokens} written to cache` : ""}` : entry.note ?? "failed"} · {(entry.durationMs / 1000).toFixed(1)} s</span>
+                <span>{traceUsageLine(entry)}</span>
               </li>)}
             </ol>
           </details> : null}

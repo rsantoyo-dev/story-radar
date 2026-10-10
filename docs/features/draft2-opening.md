@@ -113,6 +113,16 @@ runner); `draft2-opening.ts` is now the Opening's definition of that runner
 (`docs/features/draft2-closing.md`) is a second one. The functions named in
 §5 and §7 keep their names in `draft2-opening.types.ts`.
 
+**Revision 10: effort by round.** With the focus, Claude writing fifteen
+openings at high effort spent its 24,000 output tokens on thinking before
+finishing (the answer itself is 2,000 to 4,000 tokens; successful calls had
+already used 15,000 to 23,000), and Sol judging them passed its 240 s. A
+round may now set its effort (`FunnelPlanRound.effort`): round 1 explores
+with medium effort for both models, the rounds that refine keep high. Every
+call's trace entry now keeps its answer's length (`answerCharacters`), so the
+canvas shows how Claude's output split between the answer and thinking, and
+a cut-off keeps its usage and how far the answer got.
+
 ## 1. Goal
 
 Draft 2 is the second creative pipeline, built one step at a time beside the
