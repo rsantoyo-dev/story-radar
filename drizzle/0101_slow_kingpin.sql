@@ -1,0 +1,1 @@
+ALTER TABLE "draft2_sessions" ADD COLUMN "opening" jsonb;

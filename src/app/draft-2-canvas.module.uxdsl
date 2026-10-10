@@ -35,8 +35,21 @@
 .factMeta { margin: 0; color: palette(tertiary-dark); @ds-typo (caption); }
 .issueList { display: grid; gap: density(1); margin: 0; padding-left: density(5); color: palette(dark-main); @ds-typo (small); }
 .issueList strong { @ds-typo (label); }
-.factsPanel summary { color: palette(primary-dark); @ds-typo (small-strong); }
+.factsPanel summary, .trace summary { color: palette(primary-dark); @ds-typo (small-strong); }
 .factItem blockquote { margin: density(2) 0 0; padding-left: density(3); border-left: border(control); color: palette(tertiary-dark); @ds-typo (small); }
+/* The Opening step: the chosen cover and slide 2 as 4:5 cards, the judge's scores in one row. */
+/* Shrinkable tracks: a 4:5 card turns its text height into a minimum width, which an auto track would grow to fit past the panel. */
+.openingGroup { display: grid; grid-template-columns: minmax(0, 1fr); gap: density(3); }
+.openingCards { display: grid; grid-template-columns: minmax(0, 1fr); gap: density(3); }
+@media (min-width: 960px) { .openingCards { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.openingCard { display: flex; flex-direction: column; gap: density(2); aspect-ratio: 4 / 5; padding: density(4); border: border(control); border-radius: radius(2); }
+.openingHeadline { margin: 0; color: palette(dark-main); @ds-typo (title-lg); }
+.openingText { margin: 0; color: palette(dark-main); @ds-typo (body); }
+/* After the role, whose block margins are 0: the cited facts sit at the card's foot. */
+.openingFacts { color: palette(tertiary-dark); @ds-typo (caption); margin-top: auto; }
+.scoreRow { display: flex; flex-wrap: wrap; gap: density(1) density(3); margin: 0; color: palette(tertiary-dark); @ds-typo (caption); }
+.scoreRow strong { color: palette(dark-main); @ds-typo (label); }
+.scoreRow [data-low] strong { color: palette(warning-dark); }
 .trace { padding-top: density(2); }
 .traceList { margin-top: density(2); }
 .traceList li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: density(2); color: palette(tertiary-dark); @ds-typo (caption); }

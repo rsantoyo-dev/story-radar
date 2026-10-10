@@ -701,6 +701,13 @@
       "when": 1791594168621,
       "tag": "0100_colossal_cerise",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1791597774801,
+      "tag": "0101_slow_kingpin",
+      "breakpoints": true
     }
   ]
 }

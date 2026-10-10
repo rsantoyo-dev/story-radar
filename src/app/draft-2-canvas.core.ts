@@ -63,7 +63,7 @@ export function contentStatusLabel(status: string): string {
 /** The steps the canvas will grow into, in the order they will be built. */
 export const DRAFT_2_STEPS = [
   { key: "facts", title: "Facts", detail: "Verified facts with the qualifier each one must keep." },
-  { key: "cover", title: "Cover", detail: "Candidate covers judged on the story's tension, not on safety." },
+  { key: "opening", title: "Opening", detail: "Cover and slide 2 judged as one unit: the promise and its first payoff." },
   { key: "closing", title: "Closing", detail: "A closing that resolves the cover's promise and gives the reader a decision." },
   { key: "deck", title: "Deck", detail: "The slides written once to deliver the cover and reach the closing." },
   { key: "review", title: "Review", detail: "Deterministic checks and a calibrated judge before approval." },

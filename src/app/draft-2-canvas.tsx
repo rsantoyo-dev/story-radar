@@ -5,6 +5,10 @@ import Link from "next/link";
 import { Button, EmptyState, InlineNotice, LoadingState, SectionHeader, StatusBadge, Surface, type StatusTone } from "@/app/ui/primitives";
 import type { StoryContentResponse } from "@/app/radar-dashboard";
 import type { Draft2Fact, Draft2FactsEvaluation, Draft2FactsRound, Draft2SessionStatus, Draft2TraceEntry } from "@/app/modules/draft2/draft2-facts.types";
+import {
+  OPENING_CRITERIA, OPENING_CRITERION_FLOOR, openingAcceptedWinner, openingScorePasses,
+  type Draft2Opening, type Draft2OpeningCandidate, type Draft2OpeningCriterion, type Draft2OpeningIssue, type Draft2OpeningRound, type Draft2OpeningScore,
+} from "@/app/modules/draft2/draft2-opening.types";
 import { contentStatusLabel, DRAFT_2_STEPS, paragraphs, sourceHost, storyHref, wordCount } from "./draft-2-canvas.core";
 import styles from "./draft-2-canvas.generated.module.css";
 
@@ -16,17 +20,27 @@ type Draft2SessionView = {
   facts: Draft2Fact[] | null;
   evaluation: Draft2FactsEvaluation | null;
   rounds: Draft2FactsRound[];
+  opening: Draft2Opening | null;
   trace: Draft2TraceEntry[];
   error: string | null;
   updatedAt: string;
 };
 
-/** Up to three extractions and three reviews; the route itself allows 300 s. */
-const FACTS_REQUEST_TIMEOUT_MS = 540_000;
+type Draft2RunStep = "facts" | "opening";
+
+/** Up to three rounds of two provider calls; the route itself allows 300 s. */
+const STEP_REQUEST_TIMEOUT_MS = 540_000;
 
 const SESSION_STATUS: Record<Draft2SessionStatus, { label: string; tone: StatusTone }> = {
   running: { label: "Running", tone: "info" },
   ready: { label: "Verified", tone: "success" },
+  "needs-review": { label: "Needs review", tone: "warning" },
+  failed: { label: "Failed", tone: "error" },
+};
+
+const OPENING_STATUS: Record<Draft2Opening["status"], { label: string; tone: StatusTone }> = {
+  running: { label: "Running", tone: "info" },
+  ready: { label: "Ready", tone: "success" },
   "needs-review": { label: "Needs review", tone: "warning" },
   failed: { label: "Failed", tone: "error" },
 };
@@ -37,12 +51,15 @@ const FACT_STATUS: Record<Draft2Fact["status"], { label: string; tone: StatusTon
   disputed: { label: "Disputed", tone: "warning" },
 };
 
+const CRITERION_LABEL: Record<Draft2OpeningCriterion, string> = { tension: "Tension", payoff: "Payoff", clarity: "Clarity", grounding: "Grounding", voice: "Voice" };
+
 const providerLabel = (provider: Draft2TraceEntry["provider"]) => provider === "openai" ? "Sol" : "Claude";
+const issueTarget = (issue: Draft2OpeningIssue) => issue.candidateId ? ` · ${issue.candidateId}${issue.part ? ` · ${issue.part === "slide2" ? "slide 2" : "cover"}` : ""}` : "";
 
 /**
  * Draft 2: the second creative pipeline, built one step at a time beside the
  * current studio, which it never touches. The canvas brings in the selected
- * story and runs each step on it; today, Facts.
+ * story and runs each step on it: Facts, then the Opening.
  */
 export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle, storyId, from, returnContext }: {
   /** A signed-in session authorizes every request; the collector secret is not needed. */
@@ -62,8 +79,10 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const [content, setContent] = useState<StoryContentResponse>();
   const [error, setError] = useState<string>();
   const [session, setSession] = useState<Draft2SessionView | null>();
-  const [running, setRunning] = useState(false);
-  const [runError, setRunError] = useState<string>();
+  const [running, setRunning] = useState<Draft2RunStep>();
+  const [runError, setRunError] = useState<{ step: Draft2RunStep; message: string }>();
+  const [choosing, setChoosing] = useState<string>();
+  const [choiceError, setChoiceError] = useState<string>();
   const back = storyHref(topicId, storyId, { from, returnContext });
   const headers = { Authorization: `Bearer ${secret}` };
 
@@ -90,7 +109,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   }, [secret, signedIn, storyId, topicId]);
 
   const loadSession = useCallback(async (signal?: AbortSignal) => {
-    const response = await fetch(`/api/radar/draft2/facts?topicId=${encodeURIComponent(topicId)}&storyId=${encodeURIComponent(storyId)}`, { cache: "no-store", signal, headers: { Authorization: `Bearer ${secret}` } });
+    const response = await fetch(`/api/radar/draft2/session?topicId=${encodeURIComponent(topicId)}&storyId=${encodeURIComponent(storyId)}`, { cache: "no-store", signal, headers: { Authorization: `Bearer ${secret}` } });
     const body = await response.json();
     if (!response.ok) throw new Error(body.error ?? "Could not read the Draft 2 session.");
     return (body.session ?? null) as Draft2SessionView | null;
@@ -103,25 +122,45 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
     return () => controller.abort();
   }, [content, loadSession]);
 
-  async function runFacts() {
-    if (running) return;
-    setRunning(true); setRunError(undefined);
+  /** Runs one step: Facts starts a new session, the Opening continues the current one. */
+  async function runStep(step: Draft2RunStep) {
+    if (running || (step === "opening" && !session)) return;
+    setRunning(step); setRunError(undefined); setChoiceError(undefined);
+    const failure = step === "facts" ? "The facts step failed." : "The opening step failed.";
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), FACTS_REQUEST_TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), STEP_REQUEST_TIMEOUT_MS);
     try {
-      const response = await fetch(`/api/radar/draft2/facts?topicId=${encodeURIComponent(topicId)}`, {
-        method: "POST", cache: "no-store", signal: controller.signal, headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ storyId }),
+      const response = await fetch(`/api/radar/draft2/${step}?topicId=${encodeURIComponent(topicId)}`, {
+        method: "POST", cache: "no-store", signal: controller.signal, headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify(step === "facts" ? { storyId } : { storyId, sessionId: session?.id }),
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(body.error ?? "The facts step failed.");
+      if (!response.ok) throw new Error(body.error ?? failure);
       setSession(body.session as Draft2SessionView);
     } catch (cause) {
-      setRunError(cause instanceof Error && cause.name === "AbortError" ? "The request took too long. The server may still finish the step; reload to see it." : cause instanceof Error ? cause.message : "The facts step failed.");
+      setRunError({ step, message: cause instanceof Error && cause.name === "AbortError" ? "The request took too long. The server may still finish the step; reload to see it." : cause instanceof Error ? cause.message : failure });
       // A failed run keeps its trace on the session; show it.
       loadSession().then(setSession).catch(() => undefined);
     } finally {
       clearTimeout(timeout);
-      setRunning(false);
+      setRunning(undefined);
+    }
+  }
+
+  async function chooseOpening(candidateId: string) {
+    if (!session || choosing || running) return;
+    setChoosing(candidateId); setChoiceError(undefined);
+    try {
+      const response = await fetch(`/api/radar/draft2/opening?topicId=${encodeURIComponent(topicId)}`, {
+        method: "PATCH", cache: "no-store", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: session.id, candidateId }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? "Could not record your choice.");
+      setSession(body.session as Draft2SessionView);
+    } catch (cause) {
+      setChoiceError(cause instanceof Error ? cause.message : "Could not record your choice.");
+    } finally {
+      setChoosing(undefined);
     }
   }
 
@@ -129,7 +168,11 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const words = wordCount(content?.text);
   const text = paragraphs(content?.text);
   const contentReady = content?.contentStatus === "full" || content?.contentStatus === "likely-full";
-  const factsStatus = running ? SESSION_STATUS.running : session ? SESSION_STATUS[session.status] : undefined;
+  // Later steps only start on verified facts, so a session past Facts has them.
+  const factsVerified = Boolean(session?.facts) && (session?.step !== "facts" || session?.status === "ready");
+  const factsStatus = running === "facts" ? SESSION_STATUS.running : session ? (factsVerified ? SESSION_STATUS.ready : SESSION_STATUS[session.status]) : undefined;
+  const openingStatus = running === "opening" ? OPENING_STATUS.running : session?.opening ? OPENING_STATUS[session.opening.status] : undefined;
+  const stepStatus: Partial<Record<string, { label: string; tone: StatusTone }>> = { facts: factsStatus, opening: openingStatus };
 
   return <main className={styles.shell} style={themeStyle}>
     <div className={styles.topbar}>
@@ -158,15 +201,18 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
             : <EmptyState title="No article text yet">Prepare the content in the studio first; the canvas reads the same stored text.</EmptyState>}
         </Surface>
         <Surface className={styles.column} aria-label="Canvas">
-          <SectionHeader level={3} eyebrow="Canvas" title={session ? "Facts first" : "Nothing built yet"} description="Each step is added separately. The current studio keeps working as it does today." />
+          <SectionHeader level={3} eyebrow="Canvas" title={session?.opening ? "Facts, then the opening" : session ? "Facts first" : "Nothing built yet"} description="Each step is added separately. The current studio keeps working as it does today." />
           <ol className={styles.steps}>
-            {DRAFT_2_STEPS.map((step, index) => <li key={step.key}>
-              <span className={styles.stepNumber} aria-hidden="true">{index + 1}</span>
-              <div><strong>{step.title}</strong><p>{step.detail}</p></div>
-              {step.key === "facts" && factsStatus
-                ? <StatusBadge className={styles.stepStatus} tone={factsStatus.tone}>{factsStatus.label}</StatusBadge>
-                : <StatusBadge className={styles.stepStatus}>Not started</StatusBadge>}
-            </li>)}
+            {DRAFT_2_STEPS.map((step, index) => {
+              const status = stepStatus[step.key];
+              return <li key={step.key}>
+                <span className={styles.stepNumber} aria-hidden="true">{index + 1}</span>
+                <div><strong>{step.title}</strong><p>{step.detail}</p></div>
+                {status
+                  ? <StatusBadge className={styles.stepStatus} tone={status.tone}>{status.label}</StatusBadge>
+                  : <StatusBadge className={styles.stepStatus}>Not started</StatusBadge>}
+              </li>;
+            })}
           </ol>
           <section className={styles.factsPanel} aria-label="Facts step">
             <div className={styles.factsHeader}>
@@ -174,22 +220,48 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
                 <p className={styles.eyebrow}>Step 1 · Facts</p>
                 <p className={styles.factsIntro}>Sol extracts the facts; Claude checks them against the article; they loop on Claude’s suggestions, at most three extractions.</p>
               </div>
-              <Button variant="primary" size="compact" busy={running} disabled={!text.length || session === undefined} onClick={() => { void runFacts(); }}>
-                {running ? "Extracting and verifying…" : session ? "Run the facts again" : "Extract and verify facts"}
+              <Button variant="primary" size="compact" busy={running === "facts"} disabled={!text.length || session === undefined || running !== undefined} onClick={() => { void runStep("facts"); }}>
+                {running === "facts" ? "Extracting and verifying…" : session ? "Run the facts again" : "Extract and verify facts"}
               </Button>
             </div>
-            {running ? <LoadingState>Sol is extracting; Claude reviews each round. This can take a minute or two.</LoadingState> : null}
-            {runError ? <InlineNotice tone="error" title="The facts step stopped">{runError}</InlineNotice> : null}
-            {session?.error && !running ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
-            {session && !running ? <FactsSessionView session={session} /> : null}
+            {running === "facts" ? <LoadingState>Sol is extracting; Claude reviews each round. This can take a minute or two.</LoadingState> : null}
+            {runError?.step === "facts" ? <InlineNotice tone="error" title="The facts step stopped">{runError.message}</InlineNotice> : null}
+            {session?.step === "facts" && session.error && running !== "facts" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
+            {session && running !== "facts" ? <FactsSessionView session={session} verified={factsVerified} /> : null}
           </section>
+          <section className={styles.factsPanel} aria-label="Opening step">
+            <div className={styles.factsHeader}>
+              <div>
+                <p className={styles.eyebrow}>Step 2 · Opening</p>
+                <p className={styles.factsIntro}>Sol writes seven openings (cover and slide 2) from the verified facts; the program checks lengths, fact ids and numbers; Claude scores each round, at most three. Accepted at 95/100 with no criterion below 85.</p>
+              </div>
+              <Button variant="primary" size="compact" busy={running === "opening"} disabled={!factsVerified || running !== undefined} onClick={() => { void runStep("opening"); }}>
+                {running === "opening" ? "Writing and judging…" : session?.opening ? "Write the opening again" : "Write the opening"}
+              </Button>
+            </div>
+            {!factsVerified && !running ? <p className={styles.factMeta}>The opening builds only on verified facts; verify them first.</p> : null}
+            {running === "opening" ? <LoadingState>Sol writes seven openings; Claude judges each round. This can take a few minutes.</LoadingState> : null}
+            {runError?.step === "opening" ? <InlineNotice tone="error" title="The opening step stopped">{runError.message}</InlineNotice> : null}
+            {session?.step === "opening" && session.error && running !== "opening" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
+            {choiceError ? <InlineNotice tone="error" title="Your choice was not saved">{choiceError}</InlineNotice> : null}
+            {session?.opening && running !== "opening" ? <OpeningView opening={session.opening} choosing={choosing} locked={running !== undefined || session.opening.status === "running"} onChoose={(candidateId) => { void chooseOpening(candidateId); }} /> : null}
+          </section>
+          {session?.trace.length && !running ? <details className={styles.trace}>
+            <summary>{session.trace.length} provider {session.trace.length === 1 ? "call" : "calls"}</summary>
+            <ol className={styles.traceList}>
+              {session.trace.map((entry, index) => <li key={index} data-outcome={entry.outcome}>
+                <span>{providerLabel(entry.provider)} · {entry.model} · {entry.operation} · {entry.step} round {entry.round}</span>
+                <span>{entry.outcome === "ok" ? `${entry.usage?.promptTokens ?? 0} in · ${entry.usage?.outputTokens ?? 0} out${entry.cachedInputTokens ? ` · ${entry.cachedInputTokens} cached` : ""}` : entry.note ?? "failed"} · {(entry.durationMs / 1000).toFixed(1)} s</span>
+              </li>)}
+            </ol>
+          </details> : null}
         </Surface>
       </div>
     </div> : null}
   </main>;
 }
 
-function FactsSessionView({ session }: { session: Draft2SessionView }) {
+function FactsSessionView({ session, verified }: { session: Draft2SessionView; verified: boolean }) {
   return <>
     {session.rounds.length ? <ol className={styles.roundList} aria-label="Rounds">
       {session.rounds.map((round) => <li key={round.round} className={styles.roundCard}>
@@ -212,7 +284,7 @@ function FactsSessionView({ session }: { session: Draft2SessionView }) {
       </li>)}
     </ol> : null}
     {session.facts?.length ? <div>
-      <SectionHeader level={3} title={`${session.facts.length} facts`} description={session.status === "ready" ? "Verified: the next steps build only on these." : "The latest list; not verified yet."} />
+      <SectionHeader level={3} title={`${session.facts.length} facts`} description={verified ? "Verified: the next steps build only on these." : "The latest list; not verified yet."} />
       <ol className={styles.factList}>
         {session.facts.map((fact) => <li key={fact.id} className={styles.factItem}>
           <div className={styles.factHead}>
@@ -230,14 +302,111 @@ function FactsSessionView({ session }: { session: Draft2SessionView }) {
         </li>)}
       </ol>
     </div> : null}
-    {session.trace.length ? <details className={styles.trace}>
-      <summary>{session.trace.length} provider {session.trace.length === 1 ? "call" : "calls"}</summary>
-      <ol className={styles.traceList}>
-        {session.trace.map((entry, index) => <li key={index} data-outcome={entry.outcome}>
-          <span>{providerLabel(entry.provider)} · {entry.model} · {entry.operation} · round {entry.round}</span>
-          <span>{entry.outcome === "ok" ? `${entry.usage?.promptTokens ?? 0} in · ${entry.usage?.outputTokens ?? 0} out${entry.cachedInputTokens ? ` · ${entry.cachedInputTokens} cached` : ""}` : entry.note ?? "failed"} · {(entry.durationMs / 1000).toFixed(1)} s</span>
-        </li>)}
-      </ol>
-    </details> : null}
   </>;
+}
+
+/** The Opening step: every round's verdict, the opening the next steps build on, and the other candidates to choose from. */
+function OpeningView({ opening, choosing, locked, onChoose }: { opening: Draft2Opening; choosing?: string; locked: boolean; onChoose: (candidateId: string) => void }) {
+  const last = opening.rounds[opening.rounds.length - 1];
+  const scores = new Map((opening.evaluation?.scores ?? []).map((score) => [score.candidateId, score]));
+  const findings = (candidateId: string) => (last?.mechanical ?? []).filter((issue) => issue.candidateId === candidateId).length;
+  const chosen = opening.candidates.find((candidate) => candidate.id === (opening.editorChoiceId ?? opening.winnerId));
+  const others = opening.candidates.filter((candidate) => candidate.id !== chosen?.id);
+  const winnerLabel = opening.status === "ready" ? "Accepted" : "Best clean candidate";
+  return <>
+    {opening.rounds.length ? <ol className={styles.roundList} aria-label="Opening rounds">
+      {opening.rounds.map((round) => <OpeningRoundView key={round.round} round={round} />)}
+    </ol> : null}
+    {chosen ? <ChosenOpening
+      candidate={chosen}
+      score={scores.get(chosen.id)}
+      label={opening.editorChoiceId ? "Your choice" : winnerLabel}
+      tone={opening.editorChoiceId || opening.status === "ready" ? "success" : "warning"}
+    /> : null}
+    {others.length ? <div className={styles.openingGroup}>
+      <SectionHeader level={3} title={chosen ? "The other candidates" : "Candidates"} description="The last round, as Claude scored it. The opening you choose is the one the next steps build on." />
+      <ol className={styles.factList}>
+        {others.map((candidate) => {
+          const score = scores.get(candidate.id);
+          const count = findings(candidate.id);
+          return <li key={candidate.id} className={styles.factItem}>
+            <div className={styles.factHead}>
+              <span className={styles.factId}>{candidate.id}</span>
+              {score ? <StatusBadge tone={openingScorePasses(score) ? "success" : "neutral"}>{score.overall}/100</StatusBadge> : null}
+              {count ? <StatusBadge tone="warning">{count} program {count === 1 ? "finding" : "findings"}</StatusBadge> : null}
+              {candidate.id === opening.winnerId ? <StatusBadge tone="info">{winnerLabel}</StatusBadge> : null}
+            </div>
+            <p className={styles.factClaim}>{candidate.cover.headline}</p>
+            <p className={styles.factMeta}>{candidate.cover.subheadline}</p>
+            <p className={styles.factMeta}>Slide 2 · {candidate.slide2.headline}</p>
+            <div>
+              <Button variant="quiet" size="compact" busy={choosing === candidate.id} disabled={locked || choosing !== undefined} onClick={() => onChoose(candidate.id)}>Choose this opening</Button>
+            </div>
+          </li>;
+        })}
+      </ol>
+    </div> : null}
+  </>;
+}
+
+function OpeningRoundView({ round }: { round: Draft2OpeningRound }) {
+  const evaluation = round.evaluation;
+  const programWinner = evaluation ? openingAcceptedWinner(round.mechanical, evaluation) : undefined;
+  const winnerId = programWinner ?? evaluation?.winnerId;
+  const winner = evaluation?.scores.find((score) => score.candidateId === winnerId);
+  return <li className={styles.roundCard}>
+    <div className={styles.factHead}>
+      <strong>Round {round.round}</strong>
+      <span>Sol wrote {round.candidates.length} {round.candidates.length === 1 ? "opening" : "openings"}</span>
+      {evaluation
+        ? <StatusBadge tone={programWinner ? "success" : "warning"}>Claude: {evaluation.verdict} · {winnerId} {winner?.overall}/100</StatusBadge>
+        : <StatusBadge tone="neutral">Claude did not answer</StatusBadge>}
+    </div>
+    {round.restored?.length ? <p className={styles.factMeta}>Sol changed or dropped {round.restored.join(", ")}, which Claude’s scores kept; the program put {round.restored.length === 1 ? "it" : "them"} back as scored.</p> : null}
+    {evaluation && programWinner && programWinner !== evaluation.winnerId ? <p className={styles.factMeta}>Claude picked {evaluation.winnerId}, which has a program finding; {programWinner}, the best clean candidate, meets the thresholds and wins.</p> : null}
+    {evaluation ? <p className={styles.factMeta}>{evaluation.summary}</p> : null}
+    {winner ? <ScoreRow score={winner} /> : null}
+    {round.mechanical.length || evaluation?.issues.length ? <ul className={styles.issueList}>
+      {round.mechanical.map((issue, index) => <li key={`m${index}`}><strong>Program · {issue.code}</strong>{issueTarget(issue)}: {issue.detail}</li>)}
+      {(evaluation?.issues ?? []).map((issue, index) => <li key={`j${index}`}><strong>{issue.code}</strong>{issueTarget(issue)}: {issue.detail}</li>)}
+    </ul> : null}
+    {evaluation?.suggestions.length ? <details><summary>{evaluation.suggestions.length} {evaluation.suggestions.length === 1 ? "suggestion" : "suggestions"} for the next round</summary>
+      <ul className={styles.issueList}>{evaluation.suggestions.map((suggestion, index) => <li key={index}>{suggestion}</li>)}</ul>
+    </details> : null}
+  </li>;
+}
+
+/** The opening the next steps build on, as two 4:5 cards: the cover and slide 2. */
+function ChosenOpening({ candidate, score, label, tone }: { candidate: Draft2OpeningCandidate; score?: Draft2OpeningScore; label: string; tone: StatusTone }) {
+  return <div className={styles.openingGroup}>
+    <div className={styles.factHead}>
+      <span className={styles.factId}>{candidate.id}</span>
+      <StatusBadge tone={tone}>{label}</StatusBadge>
+      {score ? <strong>{score.overall}/100</strong> : null}
+      {candidate.angle ? <span>{candidate.angle}</span> : null}
+    </div>
+    {score ? <ScoreRow score={score} /> : null}
+    {score?.note ? <p className={styles.factMeta}>{score.note}</p> : null}
+    <div className={styles.openingCards}>
+      <article className={styles.openingCard} aria-label="Cover">
+        <p className={styles.eyebrow}>Cover</p>
+        <p className={styles.openingHeadline}>{candidate.cover.headline}</p>
+        <p className={styles.openingText}>{candidate.cover.subheadline}</p>
+        <p className={styles.openingFacts}>Facts · {candidate.cover.factIds.join(", ")}</p>
+      </article>
+      <article className={styles.openingCard} aria-label="Slide 2">
+        <p className={styles.eyebrow}>Slide 2</p>
+        <p className={styles.openingHeadline}>{candidate.slide2.headline}</p>
+        <p className={styles.openingText}>{candidate.slide2.body}</p>
+        <p className={styles.openingFacts}>Facts · {candidate.slide2.factIds.join(", ")}</p>
+      </article>
+    </div>
+  </div>;
+}
+
+function ScoreRow({ score }: { score: Draft2OpeningScore }) {
+  return <p className={styles.scoreRow}>
+    {OPENING_CRITERIA.map((criterion) => <span key={criterion} data-low={score[criterion] < OPENING_CRITERION_FLOOR ? "" : undefined}>{CRITERION_LABEL[criterion]} <strong>{score[criterion]}</strong></span>)}
+    <span>Overall <strong>{score.overall}</strong></span>
+  </p>;
 }

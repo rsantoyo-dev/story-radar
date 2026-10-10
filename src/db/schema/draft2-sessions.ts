@@ -3,6 +3,7 @@ import { check, index, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm
 import { topics } from "./topics";
 import { stories } from "./stories";
 import type { Draft2Fact, Draft2FactsEvaluation, Draft2FactsRound, Draft2Threads, Draft2TraceEntry } from "@/app/modules/draft2/draft2-facts.types";
+import type { Draft2Opening } from "@/app/modules/draft2/draft2-opening.types";
 
 /**
  * One run of the Draft 2 pipeline for a story. Vercel functions keep nothing
@@ -20,7 +21,10 @@ export const draft2Sessions = pgTable("draft2_sessions", {
   facts: jsonb("facts").$type<Draft2Fact[]>(),
   /** The reviewer's latest verdict on that list. */
   evaluation: jsonb("evaluation").$type<Draft2FactsEvaluation>(),
+  /** The facts rounds. */
   rounds: jsonb("rounds").$type<Draft2FactsRound[]>().notNull().default(sql`'[]'::jsonb`),
+  /** Step 2: the cover and slide 2, every round's candidates and verdicts, the winner and the editor's choice. */
+  opening: jsonb("opening").$type<Draft2Opening>(),
   threads: jsonb("threads").$type<Draft2Threads>().notNull().default(sql`'{}'::jsonb`),
   trace: jsonb("trace").$type<Draft2TraceEntry[]>().notNull().default(sql`'[]'::jsonb`),
   error: text("error"),

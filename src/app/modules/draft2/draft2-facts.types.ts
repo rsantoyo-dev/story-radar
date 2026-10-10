@@ -68,9 +68,12 @@ export type Draft2Threads = {
   anthropic?: { model: string; history: Draft2HistoryTurn[] };
 };
 
+/** The pipeline's steps that have been built, in order. */
+export type Draft2Step = "facts" | "opening";
+
 export type Draft2TraceEntry = {
   at: string;
-  step: "facts";
+  step: Draft2Step;
   round: number;
   provider: "openai" | "anthropic";
   model: string;
@@ -80,10 +83,17 @@ export type Draft2TraceEntry = {
   cachedInputTokens?: number;
   outcome: "ok" | "error";
   note?: string;
+  /** The skill versions the call's instructions were composed from (skills/draft2-skills.ts). */
+  skillVersions?: Record<string, string>;
 };
 
 export type Draft2SessionStatus = "running" | "ready" | "needs-review" | "failed";
 
+/** A step that cannot start: missing text, unverified facts, a missing key. */
+export class Draft2InputError extends Error {}
+/** Another run of the story is still in progress. */
+export class Draft2BusyError extends Error {}
+/** A model answer that does not fit its contract; never persisted. */
 export class Draft2ResponseError extends Error {}
 
 const nullableString = { type: ["string", "null"] };
