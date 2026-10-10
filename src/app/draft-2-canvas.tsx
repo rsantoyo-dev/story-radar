@@ -200,6 +200,7 @@ function FactsSessionView({ session }: { session: Draft2SessionView }) {
             ? <StatusBadge tone={round.evaluation.verdict === "valid" && round.mechanical.length === 0 ? "success" : "warning"}>Claude: {round.evaluation.verdict} · {round.evaluation.score}/100</StatusBadge>
             : <StatusBadge tone="neutral">Claude did not answer</StatusBadge>}
         </div>
+        {round.restored?.length ? <p className={styles.factMeta}>Sol dropped {round.restored.length} valid {round.restored.length === 1 ? "fact" : "facts"} without a reason ({round.restored.join(", ")}); the program put them back before the review.</p> : null}
         {round.evaluation ? <p className={styles.factMeta}>{round.evaluation.summary}</p> : null}
         {round.mechanical.length || round.evaluation?.issues.length ? <ul className={styles.issueList}>
           {round.mechanical.map((issue, index) => <li key={`m${index}`}><strong>Program · {issue.code}</strong>{issue.factId ? ` · ${issue.factId}` : ""}: {issue.detail}</li>)}
@@ -220,7 +221,11 @@ function FactsSessionView({ session }: { session: Draft2SessionView }) {
             <span className={styles.factMeta}>{fact.kind} · importance {fact.importance}</span>
           </div>
           <p className={styles.factClaim}>{fact.claim}</p>
-          {fact.qualifier || fact.attribution ? <p className={styles.factMeta}>{[fact.qualifier, fact.attribution ? `attributed to ${fact.attribution}` : undefined].filter(Boolean).join(" · ")}</p> : null}
+          {fact.qualifier || fact.attribution ? <p className={styles.factMeta}>{[
+            fact.qualifier,
+            // "according to X" already names the source; do not say it twice.
+            fact.attribution && !fact.qualifier?.toLowerCase().includes(fact.attribution.toLowerCase()) ? `attributed to ${fact.attribution}` : undefined,
+          ].filter(Boolean).join(" · ")}</p> : null}
           <details><summary>Evidence</summary><blockquote>{fact.evidence}</blockquote></details>
         </li>)}
       </ol>

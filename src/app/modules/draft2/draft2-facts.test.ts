@@ -23,7 +23,11 @@ function harness({ reviews, extractions, failExtractionAt }: {
   const sessions: Record<string, unknown>[] = [];
   let extraction = 0;
   let review = 0;
-  const facts = (evidence: string) => JSON.stringify({ facts: [{ id: "f1", claim: "Videos are reviewed within five minutes.", evidence, kind: "event", status: "established", attribution: null, qualifier: null, importance: 90 }] });
+  const facts = (evidence: string) => JSON.stringify({ facts: [
+    { id: "f1", claim: "Videos are reviewed within five minutes.", evidence, kind: "event", status: "established", attribution: null, qualifier: null, importance: 90 },
+    // The extractor drops this valid fact on every revision, as the first real run did; the program restores it.
+    ...(extraction === 1 ? [{ id: "f2", claim: "Awards took less than a week.", evidence: "awards took less than a week", kind: "event", status: "attributed", attribution: "A DOD official", qualifier: null, importance: 70 }] : []),
+  ] });
   const evidenceByRound = extractions ?? ["reviews product videos no longer than five minutes", "reviews product videos no longer than five minutes", "reviews product videos no longer than five minutes"];
   const exports: Record<string, (...args: unknown[]) => Promise<Record<string, unknown>>> = {};
   const code = ts.transpileModule(readFileSync(new URL("./draft2-facts.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -81,12 +85,17 @@ test("a revise verdict sends the suggestions back to the extractor in the same c
   const revision = h.calls[2].input.contents as { suggestions: string[]; issues: { code: string }[] };
   assert.deepEqual(revision.suggestions, ["Name the program."]);
   assert.equal(revision.issues[0].code, "VAGUE");
+  assert.deepEqual((revision as unknown as { previousFacts: { id: string }[] }).previousFacts.map((fact) => fact.id), ["f1", "f2"], "the extractor sees what it must keep");
   const history = h.calls[3].input.history as { role: string; text: string }[];
   assert.equal(history.length, 2);
   assert.equal(history[0].role, "user");
   assert.ok(history[0].text.includes(article), "the article travels once, in the cached first turn");
   assert.equal(history[1].role, "assistant");
-  assert.equal((session.rounds as types.Draft2FactsRound[]).length, 2);
+  const rounds = session.rounds as types.Draft2FactsRound[];
+  assert.equal(rounds.length, 2);
+  assert.deepEqual(rounds[1].restored, ["f2"], "the fact the extractor dropped without a reason is back");
+  assert.deepEqual(rounds[1].facts.map((fact) => fact.id), ["f1", "f2"]);
+  assert.deepEqual((h.calls[3].input.contents as { restoredByProgram: string[] }).restoredByProgram, ["f2"], "the reviewer is told what the program restored");
   assert.equal((session.threads as types.Draft2Threads).openai?.responseId, "resp_2");
 });
 
@@ -107,7 +116,7 @@ test("after three extractions without acceptance the facts stay for a human, wit
   assert.equal(h.calls.length, 6);
   assert.match(String(session.error), /3 extractions/);
   assert.equal((session.evaluation as types.Draft2FactsEvaluation).verdict, "revise");
-  assert.equal((session.facts as types.Draft2Fact[]).length, 1, "the latest list is kept");
+  assert.equal((session.facts as types.Draft2Fact[]).length, 2, "the latest list is kept, with the restored fact");
 });
 
 test("a provider failure marks the session failed with its trace and surfaces the error", async () => {
@@ -117,5 +126,5 @@ test("a provider failure marks the session failed with its trace and surfaces th
   const trace = h.last().trace as types.Draft2TraceEntry[];
   assert.equal(trace.length, 3);
   assert.equal(trace[2].outcome, "error");
-  assert.equal((h.last().facts as types.Draft2Fact[]).length, 1, "the first round's facts are not lost");
+  assert.equal((h.last().facts as types.Draft2Fact[]).length, 2, "the first round's facts are not lost");
 });

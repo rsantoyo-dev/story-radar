@@ -8,6 +8,10 @@ import type { CreativeAiUsage } from "../stories/creative-content.types";
  * contracts, schemas, parsing and the mechanical checks.
  */
 export const DRAFT2_FACTS_MAX_ROUNDS = 3;
+/** A dense article yields 25 to 30 facts; a cap below that made the extractor drop valid facts to add the missing ones. */
+export const DRAFT2_FACTS_MAX_COUNT = 40;
+/** Issues that justify leaving a fact out of the next list; any other dropped fact is restored by the program. */
+const REMOVAL_CODES = new Set<Draft2IssueCode>(["DUPLICATE", "UNSUPPORTED", "EVIDENCE_NOT_FOUND"]);
 export const DRAFT2_FACT_STATUSES = ["established", "attributed", "disputed"] as const;
 export const DRAFT2_FACT_KINDS = ["event", "number", "date", "quote", "name", "claim"] as const;
 export const DRAFT2_ISSUE_CODES = [
@@ -50,6 +54,8 @@ export type Draft2FactsRound = {
   facts: Draft2Fact[];
   /** Findings of the program that searched each fact's evidence in the article. */
   mechanical: Draft2FactsIssue[];
+  /** Facts of the previous round the extractor dropped without a reason; the program put them back. */
+  restored?: string[];
   evaluation?: Draft2FactsEvaluation;
   at: string;
 };
@@ -89,7 +95,7 @@ export const DRAFT2_FACTS_SCHEMA: Record<string, unknown> = {
     facts: {
       type: "array",
       minItems: 1,
-      maxItems: 24,
+      maxItems: DRAFT2_FACTS_MAX_COUNT,
       items: {
         type: "object",
         properties: {
@@ -158,7 +164,7 @@ export function parseDraft2Facts(answer: string): Draft2Fact[] {
   const body = parseObject(answer, "extractor");
   if (!Array.isArray(body.facts) || body.facts.length === 0) throw new Draft2ResponseError("The extractor returned no facts");
   const seen = new Set<string>();
-  return body.facts.slice(0, 24).map((raw, index) => {
+  return body.facts.slice(0, DRAFT2_FACTS_MAX_COUNT).map((raw, index) => {
     const item = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
     const id = text(item.id, 24) ?? `f${index + 1}`;
     const claim = text(item.claim, MAX_CLAIM_CHARACTERS);
@@ -234,13 +240,30 @@ export function draft2FactsAreValid(mechanical: readonly Draft2FactsIssue[], eva
 }
 
 /** The issues and suggestions the extractor receives for its next pass: the program's findings first, then the reviewer's. */
-export function revisionRequest(mechanical: readonly Draft2FactsIssue[], evaluation: Draft2FactsEvaluation) {
+export function revisionRequest(previous: readonly Draft2Fact[], mechanical: readonly Draft2FactsIssue[], evaluation: Draft2FactsEvaluation) {
   return {
     reviewerVerdict: evaluation.verdict,
     reviewerScore: evaluation.score,
     reviewerSummary: evaluation.summary,
     issues: [...mechanical, ...evaluation.issues],
     suggestions: evaluation.suggestions,
-    instruction: "Apply the issues and suggestions above and return the complete revised facts list, keeping the ids of the facts you did not change.",
+    previousFacts: previous.map((fact) => ({ id: fact.id, claim: fact.claim })),
+    instruction: `Apply the issues and suggestions above and return the complete revised facts list. It must keep every fact in previousFacts, with its id, unless an issue above names that fact as a duplicate or unsupported: fix, requalify or split facts in place and add the missing ones with new ids. Dropping a fact that no issue names is a regression. Up to ${DRAFT2_FACTS_MAX_COUNT} facts.`,
   };
+}
+
+/**
+ * The revised list with every fact of the previous round the extractor
+ * dropped without a reason put back: an issue naming the fact as a
+ * duplicate, unsupported or without evidence is a reason; a fact rewritten
+ * under a new id (same claim or same evidence) was not dropped.
+ */
+export function mergeRevisedFacts(previous: readonly Draft2Fact[], revised: readonly Draft2Fact[], previousIssues: readonly Draft2FactsIssue[]): { facts: Draft2Fact[]; restored: string[] } {
+  const removable = new Set(previousIssues.filter((issue) => issue.factId && REMOVAL_CODES.has(issue.code)).map((issue) => issue.factId));
+  const ids = new Set(revised.map((fact) => fact.id));
+  const claims = new Set(revised.map((fact) => comparableText(fact.claim)));
+  const evidence = new Set(revised.map((fact) => comparableText(fact.evidence)));
+  const restored = previous.filter((fact) =>
+    !ids.has(fact.id) && !removable.has(fact.id) && !claims.has(comparableText(fact.claim)) && !evidence.has(comparableText(fact.evidence)));
+  return { facts: [...revised, ...restored].slice(0, DRAFT2_FACTS_MAX_COUNT), restored: restored.map((fact) => fact.id) };
 }

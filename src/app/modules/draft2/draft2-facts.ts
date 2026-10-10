@@ -7,7 +7,7 @@ import { getAnthropicRuntimeConfig, requireAnthropicApiKey } from "../stories/an
 import { activeDraft2Session, createDraft2Session, updateDraft2Session } from "./draft2-session.repository";
 import { draft2DevTrace } from "./draft2-dev-trace";
 import {
-  DRAFT2_FACTS_MAX_ROUNDS, DRAFT2_FACTS_REVIEW_SCHEMA, DRAFT2_FACTS_SCHEMA, draft2FactsAreValid, mechanicalFactIssues,
+  DRAFT2_FACTS_MAX_COUNT, DRAFT2_FACTS_MAX_ROUNDS, DRAFT2_FACTS_REVIEW_SCHEMA, DRAFT2_FACTS_SCHEMA, draft2FactsAreValid, mechanicalFactIssues, mergeRevisedFacts,
   parseDraft2Facts, parseDraft2FactsEvaluation, revisionRequest,
   type Draft2Fact, type Draft2FactsEvaluation, type Draft2FactsRound, type Draft2Threads, type Draft2TraceEntry,
 } from "./draft2-facts.types";
@@ -33,9 +33,9 @@ Rules:
 - "qualifier": only a hedge that changes how certain the claim is and must travel with it ("alleged", "proposed", "reported", "expected", "estimated", "could", "potentially", "according to X"), or null when none applies. Time or place phrases ("this year", "in May"), ranges ("up to") and ordinary nouns are never qualifiers; they belong inside the claim.
 - Copy numbers, dates, currencies, units and names exactly as written. Never convert, round, infer, combine or add outside knowledge.
 - "kind": event, number, date, quote, name or claim. "importance": 1 to 100, how much the story depends on this fact.
-- Return between 6 and 20 facts, most important first, each with a stable id (f1, f2, ...). One idea per fact; no duplicates; nothing the article does not say.
+- Return every fact the story depends on: the central event, who, what, when, the key figures, the stated consequences and limits, what each named person or organization says. A dense article yields 25 to 30 facts; never more than ${DRAFT2_FACTS_MAX_COUNT}. Most important first, each with a stable id (f1, f2, ...). One idea per fact; no duplicates; nothing the article does not say.
 
-When a reviewer sends issues and suggestions, apply them and return the complete revised list (not a diff), keeping the ids of the facts you did not change.`;
+When a reviewer sends issues and suggestions, apply them and return the complete revised list (not a diff): keep every previous fact and its id unless an issue names it as a duplicate or unsupported, fix or requalify facts in place, and add the missing ones with new ids.`;
 
 export const DRAFT2_REVIEWER_INSTRUCTIONS = `You are the severe fact checker of an editorial team. You receive an article and a list of facts another model extracted from it, plus mechanical findings from a program that searched each fact's evidence in the article. Judge the list against the article only; never use outside knowledge.
 
@@ -111,22 +111,28 @@ export async function runDraft2Facts({ topicId, storyId }: Draft2FactsInput): Pr
           return;
         }
         // 1. The extractor: the article on the first round; afterwards only the reviewer's findings, in the same stored conversation.
-        const extractorContents = round === 1 ? { article } : revisionRequest(mechanical, evaluation!);
+        const extractorContents = round === 1 ? { article } : revisionRequest(facts!, mechanical, evaluation!);
         const extractorRequest = { instructions: DRAFT2_EXTRACTOR_INSTRUCTIONS, contents: extractorContents, previousResponseId: threads.openai?.responseId };
         const extracted = await traced(round, "openai", extractorModel, "draft2_facts", extractorRequest, () => generateOpenAiStructuredResponse({
           apiKey: openAiApiKey, model: extractorModel, instructions: DRAFT2_EXTRACTOR_INSTRUCTIONS, contents: extractorContents,
           schema: DRAFT2_FACTS_SCHEMA, schemaName: "draft2_facts", maxOutputTokens: EXTRACTOR_MAX_OUTPUT_TOKENS, reasoningEffort: "medium",
           store: true, previousResponseId: threads.openai?.responseId, auditContext,
         }), (value) => JSON.parse(value.text));
-        facts = parseDraft2Facts(extracted.text);
+        const revised = parseDraft2Facts(extracted.text);
+        // A revision that silently drops valid facts is a regression the program repairs before the review.
+        const merged = round === 1 ? { facts: revised, restored: [] } : mergeRevisedFacts(facts!, revised, [...mechanical, ...evaluation!.issues]);
+        facts = merged.facts;
+        if (merged.restored.length) draft2DevTrace({ step: "facts", round, provider: "openai", model: extractorModel, operation: "draft2_facts", phase: "response", detail: { restoredByProgram: merged.restored } });
         if (extracted.responseId) threads.openai = { model: extractorModel, responseId: extracted.responseId };
         mechanical = mechanicalFactIssues(facts, articleText);
-        rounds.push({ round, facts, mechanical, at: new Date().toISOString() });
+        rounds.push({ round, facts, mechanical, ...(merged.restored.length ? { restored: merged.restored } : {}), at: new Date().toISOString() });
         await checkpoint({ facts });
 
         // 2. The reviewer: the article travels once; later rounds continue Claude's cached transcript with the revised list only.
         const history = threads.anthropic?.history ?? [];
-        const reviewerContents = round === 1 ? { article, facts, mechanicalFindings: mechanical } : { revisedFacts: facts, round, mechanicalFindings: mechanical };
+        const reviewerContents = round === 1
+          ? { article, facts, mechanicalFindings: mechanical }
+          : { revisedFacts: facts, round, mechanicalFindings: mechanical, ...(merged.restored.length ? { restoredByProgram: merged.restored } : {}) };
         const reviewerRequest = { instructions: DRAFT2_REVIEWER_INSTRUCTIONS, history: history.map((turn) => ({ role: turn.role, characters: turn.text.length })), contents: reviewerContents };
         const reviewed = await traced(round, "anthropic", reviewerModel, "draft2_facts_review", reviewerRequest, () => generateAnthropicStructuredResponse({
           apiKey: anthropicApiKey, model: reviewerModel, instructions: DRAFT2_REVIEWER_INSTRUCTIONS, contents: reviewerContents, history,
