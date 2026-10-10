@@ -694,6 +694,13 @@
       "when": 1791417870315,
       "tag": "0099_db_change_log_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1791594168621,
+      "tag": "0100_colossal_cerise",
+      "breakpoints": true
     }
   ]
 }

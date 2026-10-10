@@ -39,6 +39,7 @@ const ANTHROPIC_TIMEOUT_MS = 120_000;
 const RETRIED_STATUSES = new Set([500, 502, 503, 529]);
 
 export type AnthropicUsageContext = { runId: string; topicId: string; storyId: string };
+export type AnthropicHistoryTurn = { role: "user" | "assistant"; text: string };
 
 export async function generateAnthropicStructuredResponse(options: Parameters<typeof requestAnthropicStructuredResponse>[0] & {
   /** The caller records this call's usage charge itself. */
@@ -63,6 +64,7 @@ async function requestAnthropicStructuredResponse({
   retryDelayMs = 1_500,
   auditContext,
   images = [],
+  history = [],
 }: {
   apiKey: string;
   model: string;
@@ -79,6 +81,13 @@ async function requestAnthropicStructuredResponse({
   auditContext?: AnthropicUsageContext;
   /** Images (data URLs or https URLs) the model reads alongside the contents. */
   images?: string[];
+  /**
+   * Earlier turns of a kept conversation, oldest first and ending with an
+   * assistant turn. The API keeps no conversation state, so the caller
+   * resends them; the first user turn is marked for prompt caching so later
+   * calls reread it at the cached rate.
+   */
+  history?: AnthropicHistoryTurn[];
 }): Promise<AnthropicStructuredResponse> {
   const auditId = randomUUID();
   const startedAt = Date.now();
@@ -87,15 +96,21 @@ async function requestAnthropicStructuredResponse({
     auditId, at: new Date().toISOString(), model, operation: schemaName,
     maxOutputTokens, ...(auditContext ? { context: auditContext } : {}), ...details,
   }));
-  receipt({ event: "started" });
+  receipt({ event: "started", historyTurns: history.length });
   const body = JSON.stringify({
     model,
     max_tokens: maxOutputTokens,
     system: instructions,
-    messages: [{
-      role: "user",
-      content: [{ type: "text", text: JSON.stringify(contents) }, ...images.map((image) => ({ type: "image", source: imageSource(image) }))],
-    }],
+    messages: [
+      ...history.map((turn, index) => ({
+        role: turn.role,
+        content: [{ type: "text", text: turn.text, ...(index === 0 && turn.role === "user" ? { cache_control: { type: "ephemeral" } } : {}) }],
+      })),
+      {
+        role: "user",
+        content: [{ type: "text", text: JSON.stringify(contents) }, ...images.map((image) => ({ type: "image", source: imageSource(image) }))],
+      },
+    ],
     tools: [{ name: schemaName, description: "Record the structured result of this task.", input_schema: schema }],
     tool_choice: { type: "tool", name: schemaName, disable_parallel_tool_use: true },
   });

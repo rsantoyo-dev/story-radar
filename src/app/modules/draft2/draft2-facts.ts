@@ -1,0 +1,154 @@
+import "server-only";
+import { getStoryContent } from "../stories/story-content.repository";
+import { withCreativeTextBudget } from "../stories/creative-text-meter";
+import { generateOpenAiStructuredResponse } from "../stories/openai-structured-response";
+import { generateAnthropicStructuredResponse } from "../stories/anthropic-structured-response";
+import { getAnthropicRuntimeConfig, requireAnthropicApiKey } from "../stories/anthropic.config";
+import { activeDraft2Session, createDraft2Session, updateDraft2Session } from "./draft2-session.repository";
+import { draft2DevTrace } from "./draft2-dev-trace";
+import {
+  DRAFT2_FACTS_MAX_ROUNDS, DRAFT2_FACTS_REVIEW_SCHEMA, DRAFT2_FACTS_SCHEMA, draft2FactsAreValid, mechanicalFactIssues,
+  parseDraft2Facts, parseDraft2FactsEvaluation, revisionRequest,
+  type Draft2Fact, type Draft2FactsEvaluation, type Draft2FactsRound, type Draft2Threads, type Draft2TraceEntry,
+} from "./draft2-facts.types";
+import type { Draft2SessionRow } from "@/db/schema";
+
+export class Draft2InputError extends Error {}
+export class Draft2BusyError extends Error {}
+
+/** The extractor; the reviewer is Claude (anthropic.config). */
+export const DEFAULT_DRAFT2_EXTRACTOR_MODEL = "gpt-6.1-sol";
+/** A round that would start after this point is left to a new request; the route allows 300 s. */
+const TIME_BUDGET_MS = 230_000;
+const EXTRACTOR_MAX_OUTPUT_TOKENS = 6_000;
+const REVIEWER_MAX_OUTPUT_TOKENS = 4_000;
+
+export const DRAFT2_EXTRACTOR_INSTRUCTIONS = `You are the fact extractor of an editorial team that produces social carousels. You receive one article as JSON and answer only through the tool.
+
+Rules:
+- A fact is one checkable claim, written in the article's language as a complete sentence a reader could verify against the article.
+- "evidence" is a verbatim excerpt copied exactly from the article text (punctuation and spelling included; at most 300 characters) that supports the claim on its own. Never paraphrase inside "evidence".
+- "status": "established" when the article states it as fact in its own voice; "attributed" when the article reports that someone says, claims, estimates, proposes or alleges it (then "attribution" names who, exactly as the article does); "disputed" when the article presents it as contested, denied or uncertain.
+- "qualifier": the word or phrase that must travel with the claim ("alleged", "proposed", "reported", "expected", "estimated", "according to X"), or null when none applies.
+- Copy numbers, dates, currencies, units and names exactly as written. Never convert, round, infer, combine or add outside knowledge.
+- "kind": event, number, date, quote, name or claim. "importance": 1 to 100, how much the story depends on this fact.
+- Return between 6 and 20 facts, most important first, each with a stable id (f1, f2, ...). One idea per fact; no duplicates; nothing the article does not say.
+
+When a reviewer sends issues and suggestions, apply them and return the complete revised list (not a diff), keeping the ids of the facts you did not change.`;
+
+export const DRAFT2_REVIEWER_INSTRUCTIONS = `You are the severe fact checker of an editorial team. You receive an article and a list of facts another model extracted from it, plus mechanical findings from a program that searched each fact's evidence in the article. Judge the list against the article only; never use outside knowledge.
+
+Check every fact:
+1. Grounding: the claim follows from its evidence without adding, removing or sharpening meaning.
+2. Evidence: the excerpt is verbatim from the article and supports the whole claim.
+3. Status and qualifier: "established" only when the article states it in its own voice; anything someone says, claims, estimates, proposes or alleges is "attributed" with the right attribution; contested or denied statements are "disputed". A missing or wrong qualifier is a blocking issue.
+4. Exactness: numbers, dates, currencies, units and names match the article exactly.
+5. Completeness: the facts the story depends on are present (the central event, who, what, when, the key figures, the stated consequences and limits). Name any missing key fact.
+6. Hygiene: no duplicates, no vague claims, no two facts that contradict each other.
+
+Answer only through the tool. "verdict" is "valid" only when there is no blocking issue: every fact is grounded and correctly qualified, values are exact and no key fact is missing; otherwise "revise". "score" (1 to 100) is your confidence that a carousel built only from these facts would be accurate and complete. "issues" name the fact id when one applies. "suggestions" are concrete instructions for the extractor's next pass (what to add, remove, split, requalify or fix), each actionable on its own. "summary" is two sentences at most.
+
+On a revised list, re-check everything, not only your previous issues.`;
+
+export type Draft2FactsInput = { topicId: string; storyId: string };
+
+/**
+ * Runs the Facts step for a story: extract, check, revise, at most three
+ * extractions. Every provider call is checkpointed on the session so the
+ * conversations survive for the next step and a failure keeps its trace.
+ */
+export async function runDraft2Facts({ topicId, storyId }: Draft2FactsInput): Promise<Draft2SessionRow> {
+  const content = await getStoryContent(topicId, storyId);
+  const articleText = content.text?.trim() ?? "";
+  if (!articleText) throw new Draft2InputError("The story has no article text yet. Prepare the content in the studio first.");
+  if (await activeDraft2Session(topicId, storyId)) throw new Draft2BusyError("A Draft 2 run is already in progress for this story.");
+
+  const openAiApiKey = process.env.OPENAI_API_KEY?.trim();
+  if (!openAiApiKey) throw new Draft2InputError("OPENAI_API_KEY is not configured; the extractor needs it.");
+  const extractorModel = process.env.DRAFT2_EXTRACTOR_MODEL?.trim() || DEFAULT_DRAFT2_EXTRACTOR_MODEL;
+  const anthropicApiKey = requireAnthropicApiKey();
+  const reviewerModel = getAnthropicRuntimeConfig().model;
+
+  const session = await createDraft2Session({ topicId, storyId, step: "facts" });
+  const auditContext = { runId: session.id, topicId, storyId };
+  const article = { title: content.title, url: content.url, text: articleText };
+  const startedAt = Date.now();
+  const rounds: Draft2FactsRound[] = [];
+  const trace: Draft2TraceEntry[] = [];
+  const threads: Draft2Threads = {};
+  let facts: Draft2Fact[] | undefined;
+  let evaluation: Draft2FactsEvaluation | undefined;
+  let mechanical: ReturnType<typeof mechanicalFactIssues> = [];
+
+  const checkpoint = (patch: Parameters<typeof updateDraft2Session>[1]) => updateDraft2Session(session.id, { rounds, threads, trace, ...patch });
+
+  /** One provider call: traced on the console in development, recorded on the session always. */
+  async function traced<T>(round: number, provider: "openai" | "anthropic", model: string, operation: string, request: unknown, call: () => Promise<T & { usage: Draft2TraceEntry["usage"]; cachedInputTokens?: number }>, summarize: (value: T) => unknown): Promise<T> {
+    draft2DevTrace({ step: "facts", round, provider, model, operation, phase: "request", detail: request });
+    const at = new Date().toISOString();
+    const begin = Date.now();
+    try {
+      const value = await call();
+      const durationMs = Date.now() - begin;
+      trace.push({ at, step: "facts", round, provider, model, operation, durationMs, usage: value.usage, cachedInputTokens: value.cachedInputTokens, outcome: "ok" });
+      draft2DevTrace({ step: "facts", round, provider, model, operation, phase: "response", durationMs, detail: { usage: value.usage, cachedInputTokens: value.cachedInputTokens, answer: summarize(value) } });
+      return value;
+    } catch (error) {
+      const durationMs = Date.now() - begin;
+      const note = error instanceof Error ? error.message : "unknown error";
+      trace.push({ at, step: "facts", round, provider, model, operation, durationMs, outcome: "error", note });
+      draft2DevTrace({ step: "facts", round, provider, model, operation, phase: "error", durationMs, detail: { error: note } });
+      throw error;
+    }
+  }
+
+  try {
+    await withCreativeTextBudget({ topicId, storyId, runId: session.id }, async () => {
+      for (let round = 1; round <= DRAFT2_FACTS_MAX_ROUNDS; round++) {
+        if (round > 1 && Date.now() - startedAt > TIME_BUDGET_MS) {
+          await checkpoint({ status: "needs-review", facts: facts ?? null, evaluation: evaluation ?? null, error: `Stopped before round ${round}: the request's time budget is spent. Run the facts again to continue from the reviewer's suggestions.` });
+          return;
+        }
+        // 1. The extractor: the article on the first round; afterwards only the reviewer's findings, in the same stored conversation.
+        const extractorContents = round === 1 ? { article } : revisionRequest(mechanical, evaluation!);
+        const extractorRequest = { instructions: DRAFT2_EXTRACTOR_INSTRUCTIONS, contents: extractorContents, previousResponseId: threads.openai?.responseId };
+        const extracted = await traced(round, "openai", extractorModel, "draft2_facts", extractorRequest, () => generateOpenAiStructuredResponse({
+          apiKey: openAiApiKey, model: extractorModel, instructions: DRAFT2_EXTRACTOR_INSTRUCTIONS, contents: extractorContents,
+          schema: DRAFT2_FACTS_SCHEMA, schemaName: "draft2_facts", maxOutputTokens: EXTRACTOR_MAX_OUTPUT_TOKENS, reasoningEffort: "medium",
+          store: true, previousResponseId: threads.openai?.responseId, auditContext,
+        }), (value) => JSON.parse(value.text));
+        facts = parseDraft2Facts(extracted.text);
+        if (extracted.responseId) threads.openai = { model: extractorModel, responseId: extracted.responseId };
+        mechanical = mechanicalFactIssues(facts, articleText);
+        rounds.push({ round, facts, mechanical, at: new Date().toISOString() });
+        await checkpoint({ facts });
+
+        // 2. The reviewer: the article travels once; later rounds continue Claude's cached transcript with the revised list only.
+        const history = threads.anthropic?.history ?? [];
+        const reviewerContents = round === 1 ? { article, facts, mechanicalFindings: mechanical } : { revisedFacts: facts, round, mechanicalFindings: mechanical };
+        const reviewerRequest = { instructions: DRAFT2_REVIEWER_INSTRUCTIONS, history: history.map((turn) => ({ role: turn.role, characters: turn.text.length })), contents: reviewerContents };
+        const reviewed = await traced(round, "anthropic", reviewerModel, "draft2_facts_review", reviewerRequest, () => generateAnthropicStructuredResponse({
+          apiKey: anthropicApiKey, model: reviewerModel, instructions: DRAFT2_REVIEWER_INSTRUCTIONS, contents: reviewerContents, history,
+          schema: DRAFT2_FACTS_REVIEW_SCHEMA, schemaName: "draft2_facts_review", maxOutputTokens: REVIEWER_MAX_OUTPUT_TOKENS, auditContext,
+        }), (value) => JSON.parse(value.text));
+        evaluation = parseDraft2FactsEvaluation(reviewed.text);
+        threads.anthropic = { model: reviewerModel, history: [...history, { role: "user", text: JSON.stringify(reviewerContents) }, { role: "assistant", text: reviewed.text }] };
+        rounds[rounds.length - 1] = { ...rounds[rounds.length - 1], evaluation };
+
+        if (draft2FactsAreValid(mechanical, evaluation)) {
+          await checkpoint({ status: "ready", facts, evaluation, error: null });
+          return;
+        }
+        if (round === DRAFT2_FACTS_MAX_ROUNDS) {
+          await checkpoint({ status: "needs-review", facts, evaluation, error: `The reviewer did not accept the facts after ${DRAFT2_FACTS_MAX_ROUNDS} extractions. Review the remaining issues.` });
+          return;
+        }
+        await checkpoint({ evaluation });
+      }
+    });
+  } catch (error) {
+    await checkpoint({ status: "failed", facts: facts ?? null, evaluation: evaluation ?? null, error: error instanceof Error ? error.message : "The facts step failed." }).catch(() => undefined);
+    throw error;
+  }
+  return (await updateDraft2Session(session.id, {})) ?? session;
+}

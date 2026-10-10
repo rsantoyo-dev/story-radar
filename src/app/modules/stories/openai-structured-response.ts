@@ -15,6 +15,7 @@ type OpenAiReasoningEffort =
   | "max";
 
 type OpenAiResponsesPayload = {
+  id?: unknown;
   output_text?: unknown;
   output?: unknown;
   usage?: unknown;
@@ -29,6 +30,8 @@ export type OpenAiStructuredResponse = {
   usage: CreativeAiUsage;
   cachedInputTokens?: number;
   webSearch?: { calls: number; sources: { url: string; title: string; imageUrl?: string }[] };
+  /** The stored response's id, when `store` was requested: a later call continues it with previousResponseId. */
+  responseId?: string;
 };
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
@@ -71,6 +74,8 @@ async function requestOpenAiStructuredResponse({
   webSearch = false,
   auditContext,
   images = [],
+  store = false,
+  previousResponseId,
 }: {
   apiKey: string;
   model: string;
@@ -85,6 +90,10 @@ async function requestOpenAiStructuredResponse({
   auditContext?: OpenAiUsageContext;
   /** Images (data URLs) the model reads alongside the contents. */
   images?: string[];
+  /** Keep the response on OpenAI's side so a later call can continue the conversation. */
+  store?: boolean;
+  /** Continue a stored response: the contents become the next turn; instructions are sent again, as the API requires. */
+  previousResponseId?: string;
 }): Promise<OpenAiStructuredResponse> {
   const auditId = randomUUID();
   const startedAt = Date.now();
@@ -121,7 +130,8 @@ async function requestOpenAiStructuredResponse({
           },
         },
         max_output_tokens: maxOutputTokens,
-        store: false,
+        store,
+        ...(previousResponseId ? { previous_response_id: previousResponseId } : {}),
         ...(webSearch ? {
           tools: [{ type: "web_search", search_content_types: ["text", "image"], image_settings: { max_results: 3, caption: true } }],
           tool_choice: "required", max_tool_calls: 3,
@@ -183,6 +193,7 @@ async function requestOpenAiStructuredResponse({
     usage: openAiUsage(payload.usage),
     cachedInputTokens: usageNumber(rawUsage?.input_tokens_details?.cached_tokens),
     ...(webSearch ? { webSearch: extractWebSearchSources(payload.output) } : {}),
+    ...(store && typeof payload.id === "string" ? { responseId: payload.id } : {}),
   };
 }
 
