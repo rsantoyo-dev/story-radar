@@ -143,12 +143,29 @@ test("Claude scripts the chosen carousel and Sol judges it; both read the focus,
   assert.equal(json([session.status, visual.status, visual.winnerId, visual.deckId, visual.inventoryVersion, visual.characterChoice, visual.mode, visual.carousel?.length]), json(["ready", "ready", "c2", "c3", 4, "auto", "illustration-editorial", 6]));
 });
 
-test("three scripts, then the two best revised beside Sol's script as written and edited, for Sol's pick", async () => {
-  const h = harness({ writes: [writer(), writer()], judgments: [judge("revise", "c2", { c2: 88, c3: 85 }), judge("revise", "c4", { "c2.2": 89, "c3.2": 86, c4: 91, c5: 90 })] });
+const UNACCEPTED = () => [judge("revise", "c2", { c2: 88, c3: 85 }), judge("revise", "c4", { "c2.2": 89, "c3.2": 86, c4: 91, c5: 90 }), judge("revise", "c4.3", { "c4.3": 93 })];
+
+test("three scripts, then the two best revised beside Sol's script as written and edited, then the best once more, for Sol's pick", async () => {
+  const h = harness({ writes: [writer(), writer(), writer()], judgments: UNACCEPTED() });
   const session = await h.run();
-  assert.equal(json(h.judgeCalls().map((contents) => contents.candidates?.map((candidate) => candidate.id))), json([["c1", "c2", "c3"], ["c2.2", "c3.2", "c4", "c5"]]), "Sol's script as edited (c4) and as written (c5) take the ids after c3");
-  assert.equal(json(h.calls.map((call) => call.input.effort ?? call.input.reasoningEffort)), json(["medium", "medium", "high", "high"]));
-  assert.match(String(session.error), /^Sol did not accept a visual script after 2 rounds\. The best version, c4, scored 91\/100/);
+  assert.equal(json(h.judgeCalls().map((contents) => contents.candidates?.map((candidate) => candidate.id))), json([["c1", "c2", "c3"], ["c2.2", "c3.2", "c4", "c5"], ["c4.3"]]), "Sol's script as edited (c4) and as written (c5) take the ids after c3; round 3 revises only the best");
+  assert.equal(json(h.calls.map((call) => call.input.effort ?? call.input.reasoningEffort)), json(["medium", "medium", "high", "high", "high", "high"]));
+  assert.match(String(session.error), /^Sol did not accept a visual script after 3 rounds\. The best version, c4\.3, scored 93\/100/);
+});
+
+test("a run that ended unaccepted after two rounds, before the step had a third, continues with round 3 only", async () => {
+  const ended = await harness({ writes: [writer(), writer(), writer()], judgments: UNACCEPTED() }).run();
+  // The run as the two-round plan left it: both rounds judged, the best version standing in.
+  const twoRounds = JSON.parse(JSON.stringify({ ...ended.visual!, rounds: ended.visual!.rounds.slice(0, 2), status: "needs-review", winnerId: "c4" })) as Draft2Visual;
+  const h = harness({ writes: [writer()], judgments: [judge("accept", "c4.3", { "c4.3": 96 })], session: { step: "visual", status: "needs-review", visual: twoRounds } });
+  const continued = await h.run({ resume: true });
+  assert.equal(json(h.judgeCalls().map((contents) => contents.candidates?.map((candidate) => candidate.id))), json([["c4.3"]]));
+  assert.equal(json(h.calls.map((call) => [call.role, call.input.effort ?? call.input.reasoningEffort])), json([["writer", "high"], ["judge", "high"]]), "one write and one judgment");
+  assert.equal(json([continued.visual?.status, continued.visual?.winnerId, continued.visual?.rounds.length, continued.visual?.previousRuns]), json(["ready", "c4.3", 3, undefined]), "the same run, not a new one");
+  const done = JSON.parse(JSON.stringify(ended.visual)) as Draft2Visual;
+  await assert.rejects(harness({ writes: [], judgments: [], session: { step: "visual", status: "needs-review", visual: done } }).run({ resume: true }), /There is no paused or stopped visual script to continue/);
+  const changed = harness({ writes: [], judgments: [], session: { step: "visual", status: "needs-review", visual: twoRounds, inventory: { ...INVENTORY, version: 5 } } });
+  await assert.rejects(changed.run({ resume: true }), /The people and places changed since this run started/);
 });
 
 test("a long carousel explores two scripts", async () => {

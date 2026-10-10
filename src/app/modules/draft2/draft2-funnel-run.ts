@@ -9,7 +9,7 @@ import { draft2DevTrace } from "./draft2-dev-trace";
 import { draft2ProviderName, draft2SolModel, type Draft2Provider } from "./draft2-models";
 import { Draft2BusyError, Draft2InputError, type Draft2Fact, type Draft2TraceEntry } from "./draft2-facts.types";
 import {
-  factsSnapshot, failedCall, funnelAcceptedWinner, funnelBestVersions, funnelFreshWanted, funnelRegressions, funnelRenumberedProposals, funnelResumeRound,
+  factsSnapshot, failedCall, funnelAcceptedWinner, funnelBestVersions, funnelExtendable, funnelFreshWanted, funnelRegressions, funnelRenumberedProposals, funnelResumeRound,
   funnelReviewNote, funnelRunSummary, funnelTargets, funnelVersions, funnelWrittenCandidates,
   type FunnelCandidate, type FunnelEvaluation, type FunnelGate, type FunnelIssue, type FunnelPlanRound, type FunnelRegression, type FunnelRole,
   type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion,
@@ -81,7 +81,7 @@ export type FunnelStepInput = {
   topicId: string;
   storyId: string;
   sessionId: string;
-  /** Continue a run that paused for time, or that stopped when its request or server died, instead of starting a new one. */
+  /** Continue a run that paused for time, that stopped when its request or server died, or that ended unaccepted before its plan gained rounds, instead of starting a new one. */
   resume?: boolean;
 };
 
@@ -104,7 +104,9 @@ const runOf = <R>(session: Draft2SessionRow, column: FunnelColumn) => (session a
  * round or judgment, the run pauses with every round saved; when a request
  * or the server dies, the run stops sending its heartbeat. Either way a
  * continue request (resume) runs on from the last checkpoint: a round
- * already written is judged, not written again.
+ * already written is judged, not written again. A run that ended without an
+ * accepted candidate continues the same way once its step's plan has gained
+ * rounds, with only the added rounds.
  */
 export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelScore, I extends FunnelIssue, R extends FunnelRun<C, S, I> & { previousRuns?: unknown[] }, Snapshot>(
   def: FunnelStep<C, S, I, R, Snapshot>, { topicId, storyId, sessionId, resume = false }: FunnelStepInput,
@@ -118,13 +120,15 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
   if (!facts.length || !factsVerified) throw new Draft2InputError(`The ${def.noun} builds only on verified facts. Verify the facts first.`);
   const current = runOf<R>(session, def.step);
   // A run left "running" passed the busy check only because its heartbeat stopped: its request or server died.
-  const stopped = current && (current.status === "paused" || current.status === "running") ? current : undefined;
+  // A run that ended unaccepted continues only with rounds its plan gained since; a plan chosen per run is known once the snapshot is (checked below).
+  const ended = current && funnelExtendable(current, typeof def.plan === "function" ? Infinity : def.plan.length) ? current : undefined;
+  const stopped = current && (current.status === "paused" || current.status === "running") ? current : ended;
   const nothingToContinue = `There is no paused or stopped ${def.noun} to continue. Write the ${def.noun} again.`;
   if (resume && !stopped) throw new Draft2InputError(nothingToContinue);
   const snapshot = def.snapshot(session, resume ? stopped : undefined);
   const plan = typeof def.plan === "function" ? def.plan(snapshot) : def.plan;
   const maxRounds = plan.length;
-  if (resume && stopped && funnelResumeRound(stopped) > maxRounds) throw new Draft2InputError(nothingToContinue);
+  if (resume && stopped && (funnelResumeRound(stopped) > maxRounds || (stopped.status === "needs-review" && !funnelExtendable(stopped, maxRounds)))) throw new Draft2InputError(nothingToContinue);
 
   const configuredOpenAiKey = process.env.OPENAI_API_KEY?.trim();
   if (!configuredOpenAiKey) throw new Draft2InputError("OPENAI_API_KEY is not configured; Sol needs it.");

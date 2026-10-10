@@ -6,7 +6,7 @@ import {
   type FunnelCandidate, type FunnelEvaluation, type FunnelGate, type FunnelIssue, type FunnelPlanRound, type FunnelRegression, type FunnelRole,
   type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion, type FunnelWords,
 } from "./draft2-funnel";
-import { entityMaterial, type Draft2CharacterChoice, type Draft2Inventory } from "./draft2-inventory.types";
+import { entityMaterial, referencePhotos, type Draft2CharacterChoice, type Draft2Inventory } from "./draft2-inventory.types";
 import type { Draft2ClosingOpening } from "./draft2-closing.types";
 import type { Draft2DeckCandidate, Draft2DeckClosing } from "./draft2-deck.types";
 
@@ -18,8 +18,11 @@ import type { Draft2DeckCandidate, Draft2DeckClosing } from "./draft2-deck.types
  * beat its image adds (never its words again), a reproducible art direction,
  * the kind of image and the verified material or characters it uses. On the
  * shared funnel (draft2-funnel.ts), Claude writes and Sol judges:
- *   3 scripts → Sol scores, proposes 1 → 2 revised + 1 original + 1 edit → Sol's pick
- *   (2 scripts, then 1 revised, for a carousel of more than 10 slides).
+ *   3 scripts → Sol scores, proposes 1 → 2 revised + 1 original + 1 edit → the best revised once more → Sol's pick
+ *   (2 scripts, then 1 revised, then the best once more, for a carousel of more than 10 slides).
+ * The third round revises only the best: by then Sol's script, as written
+ * and as edited, is usually two near-identical versions of one idea, and its
+ * remaining issues are precise fixes rather than a new direction.
  * The output keeps v1's slide contract (visualDirection, visualNeed,
  * characterIds, references) so a later image step can reuse v1's generator.
  * Everything here is pure: contracts, schemas, parsing, the mechanical
@@ -32,12 +35,14 @@ export const VISUAL_LONG_CAROUSEL = 10;
 export const VISUAL_PLAN: readonly FunnelPlanRound[] = [
   { revise: 0, fresh: VISUAL_CANDIDATES, proposals: 1, effort: "medium" },
   { revise: 2, fresh: 0, proposals: 0 },
+  { revise: 1, fresh: 0, proposals: 0 },
 ];
 export const VISUAL_LONG_PLAN: readonly FunnelPlanRound[] = [
   { revise: 0, fresh: VISUAL_LONG_CANDIDATES, proposals: 1, effort: "medium" },
   { revise: 1, fresh: 0, proposals: 0 },
+  { revise: 1, fresh: 0, proposals: 0 },
 ];
-export const VISUAL_MAX_ROUNDS = 2;
+export const VISUAL_MAX_ROUNDS = 3;
 export const VISUAL_ACCEPT_SCORE = 95;
 export const VISUAL_CRITERION_FLOOR = 85;
 export const VISUAL_DIRECTION_MAX_CHARACTERS = 700;
@@ -268,7 +273,7 @@ export function mechanicalVisualIssues(candidates: readonly Draft2VisualCandidat
   const positions = carousel.map((slide) => slide.slide);
   const roster = new Set(characters.map((character) => character.id));
   const entities = new Map(inventory.entities.map((entity) => [entity.id, { entity, material: entityMaterial(entity) }]));
-  const storyPhotos = new Set(inventory.storyPhotos.filter((photo) => photo.transmissionAllowed).map((photo) => photo.id));
+  const storyPhotos = new Set(referencePhotos(inventory).map((photo) => photo.id));
   const strict = mode !== "illustration-editorial";
   const keys = new Map<string, Draft2VisualCandidate>();
   const issues: Draft2VisualIssue[] = [];

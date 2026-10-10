@@ -4,9 +4,12 @@ import { generateAnthropicStructuredResponse } from "../stories/anthropic-struct
 import { getAnthropicRuntimeConfig, requireAnthropicApiKey } from "../stories/anthropic.config";
 import { getCreativeProfile } from "../stories/creative-profile.repository";
 import { importCommonsPersonPhoto, searchCommonsPeople } from "../stories/commons-person-photos";
-import { documentaryProviders } from "../stories/creative-documentary-providers";
+import { documentaryProviders, providerLanguage } from "../stories/creative-documentary-providers";
 import { openverseEnabled, openversePlacePhoto } from "../stories/openverse-place-photo";
 import { placeScopeComplete } from "../stories/creative-place-visual";
+import { resolveGeoContact } from "../stories/creative-geo-contact";
+import { googleMapsConfig, googleMapsProvider, selectMatchingGooglePlace, type GoogleMapsConfig } from "../stories/google-maps-provider";
+import { providerAddressMatchesStated } from "../stories/place-address-check";
 import { listStoryPhotos } from "../stories/story-materials.repository";
 import { listCreativeCharacterRoster } from "../stories/creative-characters.repository";
 import { activeDraft2Session, claimDraft2Session, getDraft2Session, touchDraft2Session, updateDraft2Session } from "./draft2-session.repository";
@@ -14,12 +17,13 @@ import { draft2DevTrace } from "./draft2-dev-trace";
 import { comparableText, Draft2BusyError, Draft2InputError, type Draft2Fact, type Draft2TraceEntry } from "./draft2-facts.types";
 import { factsSnapshot, failedCall } from "./draft2-funnel";
 import {
-  DRAFT2_INVENTORY_SCHEMA, INVENTORY_MAX_PEOPLE_LOOKUPS, INVENTORY_MAX_PLACE_LOOKUPS, carriedDecisions, decidedInventory, parseInventoryAction, parseInventoryEntities, personEntity,
-  type Draft2Inventory, type Draft2InventoryEntity, type Draft2InventoryStoryPhoto, type Draft2PlacePhoto,
+  DRAFT2_INVENTORY_SCHEMA, INVENTORY_MAX_PEOPLE_LOOKUPS, INVENTORY_MAX_PLACE_LOOKUPS, carriedDecisions, decidedInventory, inventoryEntity, keptPlaceRejections, parseInventoryAction,
+  parseInventoryEntities, personEntity, rejectedEntity, reopenedEntity, storyPhotosDiffer, withStoryPhoto, withStoryPhotos,
+  type Draft2GooglePlace, type Draft2Inventory, type Draft2InventoryEntity, type Draft2InventoryStoryPhoto, type Draft2PlacePhoto,
 } from "./draft2-inventory.types";
 import { OPENING_STALL_MS } from "./draft2-opening.types";
 import { brandBrief, composeInstructions } from "./skills/draft2-skills";
-import type { CreativeProfile } from "../stories/creative-content.types";
+import type { CreativeGeoScope, CreativeProfile } from "../stories/creative-content.types";
 import type { Draft2SessionRow } from "@/db/schema";
 
 const MAX_OUTPUT_TOKENS = 8_000;
@@ -48,13 +52,99 @@ const excerptFor = (entity: Draft2InventoryEntity, facts: readonly Draft2Fact[])
 
 const note = (error: unknown) => error instanceof Error ? error.message.slice(0, 200) : "The lookup failed.";
 
+/** Google Maps Platform as v1 configures it, when it is on; a malformed setting reads as off. */
+function googleConfig(): GoogleMapsConfig | undefined {
+  try {
+    const config = googleMapsConfig();
+    return config.enabled && config.apiKey ? config : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * v1's Google rule (resolve-google-place-map.ts): one name- and scope-matched
+ * point, or none, and never one at another street address than the facts
+ * state (`otherAddress`). Only the place's identity is kept; the map is
+ * drawn when the images are made. One Places text search, billed to the
+ * story.
+ */
+async function googlePlace(maps: ReturnType<typeof googleMapsProvider>, name: string, scope: CreativeGeoScope, language: string, statedText: string): Promise<{ place?: Draft2GooglePlace; otherAddress?: string }> {
+  const { candidates, incomplete } = await maps.search({ mode: "google", name, municipality: scope.municipality, region: scope.region, country: scope.country, languageCode: providerLanguage(language) });
+  const match = selectMatchingGooglePlace(candidates, incomplete);
+  if (!match) return {};
+  if (providerAddressMatchesStated(statedText, match.address) === false) return { otherAddress: match.address };
+  return { place: { placeId: match.id, name: match.name, address: match.address, latitude: match.latitude, longitude: match.longitude, sourceUrl: match.sourceUrl, exactName: match.exactName } };
+}
+
+type PlaceLookup = {
+  providers: ReturnType<typeof documentaryProviders> | undefined;
+  maps: ReturnType<typeof googleMapsProvider> | undefined;
+  profile: CreativeProfile;
+  facts: readonly Draft2Fact[];
+  topicId: string;
+  storyId: string;
+  signal: AbortSignal;
+  outOfTime: () => boolean;
+};
+
+/**
+ * One place: Wikidata within the Topic's geo scope, with a Commons photo,
+ * else an Openverse one, and a map when it has coordinates; when Wikidata
+ * has no match or no coordinates, Google Maps for the map. Verified when
+ * either confirms it; otherwise the note says what was checked.
+ */
+async function lookUpPlace(entity: Draft2InventoryEntity, { providers, maps, profile, facts, topicId, storyId, signal, outOfTime }: PlaceLookup): Promise<NonNullable<Draft2InventoryEntity["place"]>> {
+  const scope = profile.geoScope;
+  const notes: string[] = [];
+  let checked = false;
+  let wikidata: { wikidataId: string; sourceUrl: string; photo?: Draft2PlacePhoto; map: boolean } | undefined;
+  if (providers) {
+    try {
+      const evidence = await providers.resolve({ name: entity.name, kind: "named", role: entity.role === "subject" ? "event" : "secondary", excerpt: excerptFor(entity, facts), municipality: "", region: "", country: "", purpose: "location" }, scope);
+      checked = true;
+      if (evidence) {
+        const found = await providers.photo(evidence).catch(() => undefined)
+          ?? (openverseEnabled() && !outOfTime() ? await openversePlacePhoto({ place: evidence, scope, topicId, storyId, signal, contact: profile.geoProviderContact }).catch(() => undefined) : undefined);
+        const photo: Draft2PlacePhoto | undefined = found ? {
+          source: found.evidence.provider === "openverse" ? "openverse" : "commons", author: found.evidence.author, license: found.evidence.license,
+          ...(found.evidence.licenseUrl ? { licenseUrl: found.evidence.licenseUrl } : {}), ...(found.evidence.creditUrl ? { creditUrl: found.evidence.creditUrl } : {}),
+          resourceUrl: found.evidence.resourceUrl, width: found.evidence.width, height: found.evidence.height, retrievedAt: found.evidence.retrievedAt,
+        } : undefined;
+        wikidata = { wikidataId: evidence.id, sourceUrl: evidence.sourceUrl, ...(photo ? { photo } : {}), map: Boolean(evidence.coordinates) };
+      } else {
+        notes.push("Wikidata has no single match for it within the Topic's geo scope.");
+      }
+    } catch (error) {
+      notes.push(`Wikidata: ${note(error)}`);
+    }
+  } else {
+    notes.push("Wikidata was not checked: add a Wikimedia contact (an email) in the Topic's creative profile.");
+  }
+  let google: Draft2GooglePlace | undefined;
+  if (maps && !wikidata?.map && !outOfTime()) {
+    try {
+      const stated = facts.filter((fact) => entity.factIds.includes(fact.id)).map((fact) => `${fact.claim} ${fact.evidence}`).join(" ");
+      const answer = await googlePlace(maps, entity.name, scope, profile.language, stated);
+      checked = true;
+      google = answer.place;
+      if (answer.otherAddress) notes.push(`Google Maps' match is at ${answer.otherAddress.slice(0, 160)}, not the street address the facts state.`);
+      else if (!google) notes.push("Google Maps has no single match for it within the Topic's geo scope.");
+    } catch (error) {
+      notes.push(`Google Maps: ${note(error)}`);
+    }
+  }
+  // A place only Google confirmed keeps the note on Wikidata: it says why there is no photo.
+  if (wikidata || google) return { status: "verified", ...(wikidata ?? {}), ...(google ? { google } : {}), map: Boolean(wikidata?.map || google), ...(!wikidata && notes.length ? { note: notes.join(" ") } : {}) };
+  return { status: checked ? "not-found" : "unavailable", map: false, note: notes.join(" ") };
+}
+
 /**
  * Looks each entity up the way v1 does, one at a time and within a budget:
  * a person in Wikidata and Commons (candidates for the editor; a decision
  * the editor already made is kept), a place in Wikidata within the Topic's
- * geo scope, with a Commons photo, else an Openverse one, and whether it has
- * coordinates for a map. A failed lookup is recorded on its entity, never
- * fatal.
+ * geo scope, else in Google Maps (lookUpPlace). A failed lookup is recorded
+ * on its entity, never fatal.
  */
 async function lookUp(entities: Draft2InventoryEntity[], { topicId, storyId, profile, facts }: { topicId: string; storyId: string; profile: CreativeProfile; facts: readonly Draft2Fact[] }): Promise<Draft2InventoryEntity[]> {
   const started = Date.now();
@@ -64,9 +154,13 @@ async function lookUp(entities: Draft2InventoryEntity[], { topicId, storyId, pro
   try {
     const people = entities.filter((entity) => entity.kind === "person" && !entity.person).slice(0, INVENTORY_MAX_PEOPLE_LOOKUPS).map((entity) => entity.id);
     const places = entities.filter((entity) => entity.kind === "place").slice(0, INVENTORY_MAX_PLACE_LOOKUPS).map((entity) => entity.id);
-    const scope = profile.geoScope;
-    const scoped = placeScopeComplete(scope);
-    const providers = scoped && places.length ? documentaryProviders(controller.signal, profile.language, profile.geoProviderContact, { places: places.length }) : undefined;
+    const scoped = placeScopeComplete(profile.geoScope);
+    // Wikidata asks for a contact on every request; without one, v1's lookups would quietly find nothing.
+    const contact = resolveGeoContact(profile.geoProviderContact, process.env.CREATIVE_GEO_CONTACT);
+    const providers = scoped && contact && places.length ? documentaryProviders(controller.signal, profile.language, profile.geoProviderContact, { places: places.length }) : undefined;
+    const google = scoped && places.length ? googleConfig() : undefined;
+    const maps = google ? googleMapsProvider(google, controller.signal) : undefined;
+    const lookup: PlaceLookup = { providers, maps, profile, facts, topicId, storyId, signal: controller.signal, outOfTime };
     const result: Draft2InventoryEntity[] = [];
     for (const entity of entities) {
       if (people.includes(entity.id)) {
@@ -80,22 +174,10 @@ async function lookUp(entities: Draft2InventoryEntity[], { topicId, storyId, pro
         continue;
       }
       if (places.includes(entity.id)) {
-        if (!scoped || !providers) { result.push({ ...entity, place: { status: "unavailable", map: false, note: "The Topic's geo scope (municipality, region and country) is incomplete, so no place can be verified." } }); continue; }
+        if (!scoped) { result.push({ ...entity, place: { status: "unavailable", map: false, note: "The Topic's geo scope (municipality, region and country) is incomplete, so no place can be verified." } }); continue; }
+        if (!providers && !maps) { result.push({ ...entity, place: { status: "unavailable", map: false, note: "Add a Wikimedia contact (an email) in the Topic's creative profile so places can be looked up in Wikidata." } }); continue; }
         if (outOfTime()) { result.push({ ...entity, place: { status: "unavailable", map: false, note: "The lookups ran out of time; search again." } }); continue; }
-        try {
-          const evidence = await providers.resolve({ name: entity.name, kind: "named", role: entity.role === "subject" ? "event" : "secondary", excerpt: excerptFor(entity, facts), municipality: "", region: "", country: "", purpose: "location" }, scope);
-          if (!evidence) { result.push({ ...entity, place: { status: "not-found", map: false, note: "Wikidata has no single match for it within the Topic's geo scope." } }); continue; }
-          const found = await providers.photo(evidence).catch(() => undefined)
-            ?? (openverseEnabled() && !outOfTime() ? await openversePlacePhoto({ place: evidence, scope, topicId, storyId, signal: controller.signal, contact: profile.geoProviderContact }).catch(() => undefined) : undefined);
-          const photo: Draft2PlacePhoto | undefined = found ? {
-            source: found.evidence.provider === "openverse" ? "openverse" : "commons", author: found.evidence.author, license: found.evidence.license,
-            ...(found.evidence.licenseUrl ? { licenseUrl: found.evidence.licenseUrl } : {}), ...(found.evidence.creditUrl ? { creditUrl: found.evidence.creditUrl } : {}),
-            resourceUrl: found.evidence.resourceUrl, width: found.evidence.width, height: found.evidence.height, retrievedAt: found.evidence.retrievedAt,
-          } : undefined;
-          result.push({ ...entity, place: { status: "verified", wikidataId: evidence.id, sourceUrl: evidence.sourceUrl, ...(photo ? { photo } : {}), map: Boolean(evidence.coordinates) } });
-        } catch (error) {
-          result.push({ ...entity, place: { status: "unavailable", map: false, note: note(error) } });
-        }
+        result.push({ ...entity, place: await lookUpPlace(entity, lookup) });
         continue;
       }
       result.push(entity);
@@ -110,8 +192,9 @@ async function lookUp(entities: Draft2InventoryEntity[], { topicId, storyId, pro
  * Finds the people, places and organizations the verified facts name and
  * what verified images exist of them. One Claude call lists them (the
  * program keeps only names the cited facts contain), then the program looks
- * them up. Decisions the editor already made on a person, and the
- * characters choice, carry over to a new search.
+ * them up. The editor's decisions (a person confirmed or rejected, a place
+ * set aside, a story photo linked) and the characters choice carry over to
+ * a new search.
  */
 export async function findDraft2Inventory({ topicId, storyId, sessionId }: { topicId: string; storyId: string; sessionId: string }): Promise<Draft2SessionRow> {
   const session = await getDraft2Session(topicId, sessionId);
@@ -148,8 +231,9 @@ export async function findDraft2Inventory({ topicId, storyId, sessionId }: { top
       }
       trace.push({ at, step: "inventory", round: 1, provider: "anthropic", model, operation: "draft2_inventory", durationMs: Date.now() - begin, usage: answered.usage, cachedInputTokens: answered.cachedInputTokens, ...(answered.cacheWriteTokens ? { cacheWriteTokens: answered.cacheWriteTokens } : {}), answerCharacters: answered.text.length, outcome: "ok", skillVersions });
       draft2DevTrace({ step: "inventory", round: 1, provider: "anthropic", model, operation: "draft2_inventory", phase: "response", durationMs: Date.now() - begin, detail: { usage: answered.usage, answer: answered.text } });
-      const entities = carriedDecisions(parseInventoryEntities(answered.text, facts), earlier);
-      return { entities: await lookUp(entities, { topicId, storyId, profile, facts }), storyPhotos: await storyPhotos(topicId, storyId), roster: await roster(topicId) };
+      const photos = await storyPhotos(topicId, storyId);
+      const entities = carriedDecisions(parseInventoryEntities(answered.text, facts), earlier, photos);
+      return { entities: keptPlaceRejections(await lookUp(entities, { topicId, storyId, profile, facts }), earlier), storyPhotos: photos, roster: await roster(topicId) };
     });
     const now = new Date().toISOString();
     const inventory: Draft2Inventory = {
@@ -169,9 +253,12 @@ export async function findDraft2Inventory({ topicId, storyId, sessionId }: { top
 /**
  * One editor decision, with no model call: confirm a person's Commons
  * candidate (the photo is imported as a story photo that is never sent to an
- * image model, only pasted as a documentary portrait), reject them all,
- * reopen the choice, or say whether the brand's characters may narrate
- * (which reads the roster again).
+ * image model, only pasted as a documentary portrait), reject a person's
+ * candidates or a place's match, take that back, link one of the story's
+ * photos to a person or place (or unlink it), read the story's photos again
+ * after the editor added one, or say whether the brand's characters may
+ * narrate (which reads the roster again). A decision that changes nothing
+ * keeps the version, which a visual script records.
  */
 export async function editDraft2Inventory({ topicId, sessionId, input }: { topicId: string; sessionId: string; input: unknown }): Promise<Draft2SessionRow> {
   const action = parseInventoryAction(input);
@@ -185,19 +272,26 @@ export async function editDraft2Inventory({ topicId, sessionId, input }: { topic
   let next: Draft2Inventory;
   if (action.action === "characters") {
     next = { ...decidedInventory(inventory, undefined, (entity) => entity, now, action.characters), roster: await roster(topicId) };
-  } else {
+  } else if (action.action === "photos") {
+    const refreshed = withStoryPhotos(inventory, await storyPhotos(topicId, session.storyId));
+    if (!storyPhotosDiffer(refreshed, inventory)) return session;
+    next = { ...refreshed, version: inventory.version + 1, updatedAt: now.toISOString() };
+  } else if (action.action === "photo") {
+    const entity = inventoryEntity(inventory, action.entityId);
+    const photos = await storyPhotos(topicId, session.storyId);
+    const photo = action.storyPhotoId === null ? null : photos.find((entry) => entry.id === action.storyPhotoId);
+    if (photo === undefined) throw new Draft2InputError("That photo is not one of the story's photos (a removed photo cannot be used). Reload the canvas.");
+    next = decidedInventory(withStoryPhotos(inventory, photos), entity.id, (current) => withStoryPhoto(current, photo), now);
+  } else if (action.action === "confirm") {
     const entity = personEntity(inventory, action.entityId);
-    if (action.action === "confirm") {
-      const candidate = entity.person!.candidates.find((entry) => entry.entityId === action.candidateId);
-      if (!candidate) throw new Draft2InputError(`${action.candidateId} is not one of the Commons candidates for ${entity.name}.`);
-      const photo = await importCommonsPersonPhoto(topicId, session.storyId, candidate.entityId, "person");
-      next = decidedInventory(inventory, entity.id, (current) => ({ ...current, person: { ...current.person!, status: "confirmed", confirmed: { ...candidate, storyPhotoId: photo.id } } }), now);
-      next = { ...next, storyPhotos: [...next.storyPhotos.filter((entry) => entry.id !== photo.id), { id: photo.id, name: photo.name, description: photo.description, provenance: photo.provenance, transmissionAllowed: photo.providerTransmissionAllowed }] };
-    } else if (action.action === "reject") {
-      next = decidedInventory(inventory, entity.id, (current) => ({ ...current, person: { ...current.person!, status: "rejected", confirmed: undefined } }), now);
-    } else {
-      next = decidedInventory(inventory, entity.id, (current) => ({ ...current, person: { ...current.person!, status: current.person!.candidates.length ? "candidates" : "none", confirmed: undefined } }), now);
-    }
+    const candidate = entity.person!.candidates.find((entry) => entry.entityId === action.candidateId);
+    if (!candidate) throw new Draft2InputError(`${action.candidateId} is not one of the Commons candidates for ${entity.name}.`);
+    const photo = await importCommonsPersonPhoto(topicId, session.storyId, candidate.entityId, "person");
+    next = decidedInventory(inventory, entity.id, (current) => ({ ...current, person: { ...current.person!, status: "confirmed", confirmed: { ...candidate, storyPhotoId: photo.id } } }), now);
+    next = { ...next, storyPhotos: [...next.storyPhotos.filter((entry) => entry.id !== photo.id), { id: photo.id, name: photo.name, description: photo.description, provenance: photo.provenance, transmissionAllowed: photo.providerTransmissionAllowed }] };
+  } else {
+    const entity = inventoryEntity(inventory, action.entityId);
+    next = decidedInventory(inventory, entity.id, action.action === "reject" ? rejectedEntity : reopenedEntity, now);
   }
   const updated = await updateDraft2Session(session.id, { inventory: next });
   if (!updated) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");

@@ -436,6 +436,15 @@ export function funnelResumeRound(run: { resumeRound?: number; rounds: readonly 
   return unjudged ? unjudged.round : run.rounds.length + 1;
 }
 
+/**
+ * Whether a run that ended without an accepted candidate can go on: every
+ * round it ran was judged, and its step's plan has gained rounds since it
+ * ended. It continues with the added rounds, from the versions it has.
+ */
+export function funnelExtendable(run: { status: string; rounds: readonly { evaluation?: unknown }[] }, planRounds: number): boolean {
+  return run.status === "needs-review" && run.rounds.length > 0 && run.rounds.length < planRounds && run.rounds.every((round) => round.evaluation);
+}
+
 /** A run as it ended, for the session's record of earlier runs: everything but its rounds, its earlier runs and its resume point. */
 export function funnelRunSummary<R extends FunnelRun & { previousRuns?: unknown }>(run: R): Omit<R, "rounds" | "previousRuns" | "resumeRound"> {
   const { rounds, previousRuns, resumeRound, ...summary } = run;

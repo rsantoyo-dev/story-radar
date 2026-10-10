@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import * as types from "./draft2-facts.types";
+import * as geoContact from "../stories/creative-geo-contact";
+import * as addressCheck from "../stories/place-address-check";
 import * as funnel from "./draft2-funnel";
 import * as inventoryTypes from "./draft2-inventory.types";
 import * as openingTypes from "./draft2-opening.types";
@@ -28,11 +30,28 @@ const SCOPE = { municipality: "Longueuil", region: "Québec", country: "Canada",
 const photoEvidence = (provider?: "openverse") => ({ evidence: { placeId: "Q1", sourceUrl: "https://commons.wikimedia.org/wiki/File:y.jpg", resourceUrl: "https://upload.wikimedia.org/y.jpg", author: "B. Lens", license: "CC BY 4.0", licenseUrl: "https://creativecommons.org/licenses/by/4.0/", attribution: "B. Lens · CC BY 4.0", captureDate: "2024", retrievedAt: "2026-10-10T12:00:00.000Z", sha256: "abc", width: 2000, height: 1300, contentType: "image/jpeg", ...(provider ? { provider } : {}) }, bytes: Buffer.from("x") });
 
 type Row = Record<string, unknown> & { inventory: Draft2Inventory | null; trace: types.Draft2TraceEntry[]; updatedAt: Date };
+type StoryPhoto = { id: string; name: string; description: string; provenance: string; providerTransmissionAllowed: boolean; active: boolean };
+const STORY_PHOTOS: StoryPhoto[] = [{ id: "p1", name: "Reading room", description: "The editor's photo", provenance: "Editor", providerTransmissionAllowed: true, active: true }, { id: "p0", name: "Old", description: "", provenance: "", providerTransmissionAllowed: true, active: false }];
+/** A Google Places match (google-maps-provider.ts, GooglePlaceCandidate). */
+const googleMatch = (name: string, address: string) => ({ id: "gp-1", name, address, sourceUrl: "https://www.google.com/maps/search/?api=1&query=x", latitude: 45.53, longitude: -73.51, matchesScope: true, exactName: true, pointSuitable: true, namedPoint: true, photos: [], attributions: [], exclusions: [] });
 
-function harness({ session, scope = SCOPE, peopleFail = false }: { session?: Record<string, unknown>; scope?: typeof SCOPE | { municipality: string; region: string; country: string; validatedLocationId: null }; peopleFail?: boolean } = {}) {
-  const calls: { search: string[]; resolve: string[]; openverse: string[]; imported: string[]; claude: Record<string, unknown>[] } = { search: [], resolve: [], openverse: [], imported: [], claude: [] };
-  let row: Row = { id: sessionId, topicId, storyId, step: "deck", status: "ready", facts, inventory: null, error: null, trace: [], updatedAt: new Date(), ...session };
-  const profile = { name: "Salut Longueuil", language: "French", region: "Longueuil", platform: "Instagram", audience: "Residents", brandPersonality: [], formality: 30, humor: 40, energy: 60, optimism: 60, provocation: 30, geoScope: scope, geoProviderContact: "editor@example.com" };
+function harness({ session, scope = SCOPE, peopleFail = false, contact = "editor@example.com", google = false, wikidataMisses = [], googlePlaces = {}, storyFacts = facts }: {
+  session?: Record<string, unknown>;
+  scope?: typeof SCOPE | { municipality: string; region: string; country: string; validatedLocationId: null };
+  peopleFail?: boolean;
+  /** The Topic's Wikimedia contact; none in the environment. */
+  contact?: string;
+  /** Whether Google Maps Platform is configured. */
+  google?: boolean;
+  /** Places Wikidata has no match for. */
+  wikidataMisses?: string[];
+  googlePlaces?: Record<string, ReturnType<typeof googleMatch>>;
+  storyFacts?: types.Draft2Fact[];
+} = {}) {
+  const calls: { search: string[]; resolve: string[]; openverse: string[]; imported: string[]; google: string[]; claude: Record<string, unknown>[] } = { search: [], resolve: [], openverse: [], imported: [], google: [], claude: [] };
+  let row: Row = { id: sessionId, topicId, storyId, step: "deck", status: "ready", facts: storyFacts, inventory: null, error: null, trace: [], updatedAt: new Date(), ...session };
+  let photos = STORY_PHOTOS;
+  const profile = { name: "Salut Longueuil", language: "French", region: "Longueuil", platform: "Instagram", audience: "Residents", brandPersonality: [], formality: 30, humor: 40, energy: 60, optimism: 60, provocation: 30, geoScope: scope, geoProviderContact: contact };
   const mocks: Record<string, unknown> = {
     "server-only": {},
     "./draft2-facts.types": types,
@@ -52,13 +71,24 @@ function harness({ session, scope = SCOPE, peopleFail = false }: { session?: Rec
       searchCommonsPeople: async (_topic: string, _story: string, name: string) => { calls.search.push(name); if (peopleFail) throw new Error("Configure a contact for Wikimedia requests."); return [CANDIDATE]; },
       importCommonsPersonPhoto: async (_topic: string, _story: string, entityId: string, kind: string) => { calls.imported.push(`${entityId}:${kind}`); return { id: "photo-1", name: "Catherine Fournier", description: "Commons portrait", provenance: "Photo: A. Photographer", providerTransmissionAllowed: false, active: true }; },
     },
-    "../stories/creative-documentary-providers": { documentaryProviders: () => ({
-      resolve: async (mention: { name: string }) => { calls.resolve.push(mention.name); return { id: mention.name === "Rue Saint-Charles" ? "Q111" : "Q222", name: mention.name, sourceUrl: "https://www.wikidata.org/wiki/Q111", revision: 1, scope: SCOPE, hierarchy: [], ...(mention.name === "Rue Saint-Charles" ? { coordinates: { latitude: 45.5, longitude: -73.5 } } : {}) }; },
+    "../stories/creative-documentary-providers": { providerLanguage: () => "fr", documentaryProviders: () => ({
+      resolve: async (mention: { name: string }) => {
+        calls.resolve.push(mention.name);
+        if (wikidataMisses.includes(mention.name)) return undefined;
+        return { id: mention.name === "Rue Saint-Charles" ? "Q111" : "Q222", name: mention.name, sourceUrl: "https://www.wikidata.org/wiki/Q111", revision: 1, scope: SCOPE, hierarchy: [], ...(mention.name === "Rue Saint-Charles" ? { coordinates: { latitude: 45.5, longitude: -73.5 } } : {}) };
+      },
       photo: async (place: { name: string }) => place.name === "Rue Saint-Charles" ? photoEvidence() : undefined,
     }) },
+    "../stories/creative-geo-contact": geoContact,
+    "../stories/place-address-check": addressCheck,
+    "../stories/google-maps-provider": {
+      googleMapsConfig: () => ({ enabled: google, apiKey: google ? "g-key" : "", signingSecret: "", maxPhotos: 2, maxPreviewsPerDay: 10 }),
+      googleMapsProvider: () => ({ search: async (input: { name: string }) => { calls.google.push(input.name); return { candidates: googlePlaces[input.name] ? [googlePlaces[input.name]] : [], incomplete: false }; } }),
+      selectMatchingGooglePlace: (candidates: { matchesScope: boolean }[], incomplete: boolean) => incomplete ? undefined : candidates.find((candidate) => candidate.matchesScope),
+    },
     "../stories/openverse-place-photo": { openverseEnabled: () => true, openversePlacePhoto: async (input: { place: { name: string } }) => { calls.openverse.push(input.place.name); return photoEvidence("openverse"); } },
     "../stories/creative-place-visual": { placeScopeComplete: (value?: { municipality?: string; region?: string; country?: string }) => Boolean(value?.municipality && value.region && value.country) },
-    "../stories/story-materials.repository": { listStoryPhotos: async () => [{ id: "p1", name: "Reading room", description: "The editor's photo", provenance: "Editor", providerTransmissionAllowed: true, active: true }, { id: "p0", name: "Old", description: "", provenance: "", providerTransmissionAllowed: true, active: false }] },
+    "../stories/story-materials.repository": { listStoryPhotos: async () => photos },
     "../stories/creative-characters.repository": { listCreativeCharacterRoster: async () => [{ id: "char-mia", name: "Mia", description: "An illustrated local presenter", referenceFingerprint: "x" }] },
     "./draft2-session.repository": {
       activeDraft2Session: async () => undefined,
@@ -74,6 +104,8 @@ function harness({ session, scope = SCOPE, peopleFail = false }: { session?: Rec
     decide: (input: Record<string, unknown>) => exports.editDraft2Inventory({ topicId, sessionId, input }),
     calls,
     row: () => row,
+    /** The story's photos from now on, as the editor added or removed some. */
+    setPhotos: (next: StoryPhoto[]) => { photos = next; },
   };
 }
 
@@ -143,4 +175,62 @@ test("people and places are found only in verified facts, and decided only once 
   await assert.rejects(harness().decide({ action: "characters", characters: "on" }), /Find the people and places first/);
   const searching = harness({ session: { status: "running", inventory: { status: "running", version: 1, entities: [], storyPhotos: [], characters: "auto", roster: [] } } });
   await assert.rejects(searching.decide({ action: "characters", characters: "on" }), (error: Error) => error instanceof types.Draft2BusyError);
+});
+
+test("a place Wikidata has no match or no coordinates for is looked up in Google Maps for its map, never one at another street address than the facts state", async () => {
+  const h = harness({ google: true, wikidataMisses: ["Vieux-Longueuil"], googlePlaces: { "Vieux-Longueuil": googleMatch("Vieux-Longueuil", "Vieux-Longueuil, Longueuil, QC, Canada") } });
+  const [, street, quarter] = (await h.find()).inventory!.entities;
+  assert.equal(json([street.place?.status, street.place?.map, street.place?.google]), json(["verified", true, undefined]), "Wikidata's coordinates are enough for a map");
+  assert.equal(json([quarter.place?.status, quarter.place?.map, quarter.place?.google?.placeId, quarter.place?.wikidataId]), json(["verified", true, "gp-1", undefined]));
+  assert.equal(quarter.place?.note, "Wikidata has no single match for it within the Topic's geo scope.", "it says why there is no photo");
+  assert.deepEqual(h.calls.google, ["Vieux-Longueuil"]);
+  const stated: types.Draft2Fact[] = [...facts.slice(0, 2), { ...facts[2], claim: "The Vieux-Longueuil library at 100 rue Saint-Laurent reopens Saturday.", evidence: "The Vieux-Longueuil library at 100 rue Saint-Laurent reopens Saturday" }];
+  const elsewhere = harness({ google: true, storyFacts: stated, wikidataMisses: ["Vieux-Longueuil"], googlePlaces: { "Vieux-Longueuil": googleMatch("Vieux-Longueuil", "250 Rue Saint-Charles O, Longueuil, QC") } });
+  const moved = (await elsewhere.find()).inventory!.entities[2];
+  assert.equal(json([moved.place?.status, moved.place?.map]), json(["not-found", false]));
+  assert.match(String(moved.place?.note), /Google Maps' match is at 250 Rue Saint-Charles O, Longueuil, QC, not the street address the facts state\./);
+});
+
+test("without a Wikimedia contact, Wikidata is not asked and the note says so; Google Maps still is, and with neither a place is not checked", async () => {
+  const h = harness({ contact: "", google: true, googlePlaces: { "Vieux-Longueuil": googleMatch("Vieux-Longueuil", "Vieux-Longueuil, Longueuil, QC, Canada") } });
+  const [, street, quarter] = (await h.find()).inventory!.entities;
+  assert.deepEqual(h.calls.resolve, [], "no Wikidata request without a contact");
+  assert.equal(json([street.place?.status, street.place?.note]), json(["not-found", "Wikidata was not checked: add a Wikimedia contact (an email) in the Topic's creative profile. Google Maps has no single match for it within the Topic's geo scope."]));
+  assert.equal(json([quarter.place?.status, quarter.place?.google?.name, quarter.place?.map]), json(["verified", "Vieux-Longueuil", true]));
+  const neither = await harness({ contact: "", google: false }).find();
+  assert.equal(json(neither.inventory!.entities[1].place), json({ status: "unavailable", map: false, note: "Add a Wikimedia contact (an email) in the Topic's creative profile so places can be looked up in Wikidata." }));
+});
+
+test("the editor gives a person or place one of the story's photos and takes it back; the photos are read again after one is added or removed", async () => {
+  const h = harness({ wikidataMisses: ["Vieux-Longueuil"] });
+  await h.find();
+  const linked = await h.decide({ action: "photo", entityId: "e3", storyPhotoId: "p1" });
+  const quarter = linked.inventory!.entities[2];
+  assert.equal(json([quarter.storyPhoto, linked.inventory!.version]), json([{ id: "p1", name: "Reading room", provenance: "Editor", transmissionAllowed: true }, 2]));
+  assert.equal(json(inventoryTypes.entityMaterial(quarter)), json({ portrait: false, photo: true, map: false }), "a place Wikidata missed shows the editor's photo");
+  const portrait = await h.decide({ action: "photo", entityId: "e1", storyPhotoId: "p1" });
+  assert.equal(inventoryTypes.entityMaterial(portrait.inventory!.entities[0]).portrait, true);
+  assert.equal(json(inventoryTypes.referencePhotos(portrait.inventory!)), json([]), "a person's photo is only ever their portrait");
+  const unlinked = await h.decide({ action: "photo", entityId: "e1", storyPhotoId: null });
+  assert.equal(json([unlinked.inventory!.entities[0].storyPhoto, unlinked.inventory!.version]), json([undefined, 4]));
+  assert.equal((await h.decide({ action: "photos" })).inventory!.version, 4, "nothing changed: the version a visual script follows stays");
+  h.setPhotos([{ id: "p1", name: "Reading room", description: "", provenance: "Editor", providerTransmissionAllowed: true, active: false }, { id: "p2", name: "Front door", description: "The entrance", provenance: "Editor", providerTransmissionAllowed: false, active: true }]);
+  const refreshed = await h.decide({ action: "photos" });
+  assert.equal(json([refreshed.inventory!.version, refreshed.inventory!.storyPhotos.map((photo) => photo.id), refreshed.inventory!.entities[2].storyPhoto]), json([5, ["p2"], undefined]), "a removed photo's link is dropped");
+  await assert.rejects(h.decide({ action: "photo", entityId: "e3", storyPhotoId: "p1" }), /not one of the story's photos/);
+  await assert.rejects(h.decide({ action: "photo", entityId: "e4", storyPhotoId: "p2" }), /e4 is not one of this story's people or places/);
+});
+
+test("the editor sets a wrong place aside and takes it back; a new search keeps it aside while it finds the same match, and keeps the photos given", async () => {
+  const h = harness();
+  await h.find();
+  const aside = await h.decide({ action: "reject", entityId: "e2" });
+  assert.equal(json([aside.inventory!.entities[1].place?.status, inventoryTypes.entityMaterial(aside.inventory!.entities[1])]), json(["rejected", { portrait: false, photo: false, map: false }]));
+  await h.decide({ action: "photo", entityId: "e3", storyPhotoId: "p1" });
+  const again = await h.find();
+  assert.equal(json([again.inventory!.entities[1].place?.status, again.inventory!.entities[2].storyPhoto?.id]), json(["rejected", "p1"]), "the same Wikidata item comes back: still aside");
+  const back = await h.decide({ action: "reopen", entityId: "e2" });
+  assert.equal(back.inventory!.entities[1].place?.status, "verified");
+  await assert.rejects(h.decide({ action: "reopen", entityId: "e2" }), /has no decision to take back/);
+  await assert.rejects(h.decide({ action: "reject", entityId: "e4" }), /e4 is not one of this story's people or places/);
 });

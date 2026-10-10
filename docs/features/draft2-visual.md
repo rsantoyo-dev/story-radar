@@ -24,8 +24,19 @@ Facts → Focus → Opening → Closing → Deck → People and places → Visua
 | --- | --- |
 | A person's Commons photo | the editor confirms each match among the candidates; places are confirmed by Wikidata within the Topic's geo scope |
 | The brand's characters | Claude decides in each script, with v1's rules, and Sol judges; the editor may force "on" or "off" |
-| Funnel | 3 scripts (2 for a carousel of more than 10 slides) → Sol proposes 1 → 2 revised (1 for a long carousel) + Sol's as written + as edited → Sol's pick; round 1 at medium effort |
+| Funnel | 3 scripts (2 for a carousel of more than 10 slides) → Sol proposes 1 → 2 revised (1 for a long carousel) + Sol's as written + as edited → the best revised once more → Sol's pick; round 1 at medium effort |
 | Scope | the script only; images are a later step that reuses v1's generator |
+
+Added the same day, after the first real run (St-Jean, best script 91/100
+after two rounds):
+
+| Question | Decision |
+| --- | --- |
+| A third round? | yes, revising only the best version: Sol's script as written and as edited were two near-identical 91s, and Sol's remaining issues were precise fixes (sizes, a repeated composition, one beat) |
+| A run that ended after two rounds | continues with round 3 alone ("Continue with round 3"), while the deck and the people and places are the ones it followed |
+| A person or place the lookups miss | the editor gives them one of the story's photos, from v1's story photo panel (upload, or Commons under another name) |
+| Maps | Google Maps for the map of a place Wikidata has no match or no coordinates for, in the same search, when Google is configured |
+| A wrong place match | the editor sets it aside ("Not this place") |
 
 ## 3. Step 6 · People and places (`draft2-inventory.ts`, `draft2-inventory.types.ts`)
 
@@ -40,17 +51,41 @@ Facts → Focus → Opening → Closing → Deck → People and places → Visua
      imports it with `importCommonsPersonPhoto` as a story photo that is
      never sent to a model, or rejects them all.
    - **Places** (at most 6), only with a complete geo scope:
-     - `documentaryProviders().resolve` for the Wikidata identity;
+     - `documentaryProviders().resolve` for the Wikidata identity, only
+       with a Wikimedia contact (the Topic's, else `CREATIVE_GEO_CONTACT`):
+       without one, v1's lookup would quietly find nothing, so the place's
+       note says to add it;
      - `.photo` for a Commons photo, else `openversePlacePhoto`;
-     - a map is possible when there are coordinates.
+     - a map is possible when there are coordinates;
+     - **Google Maps** when Wikidata has no match or no coordinates, and
+       Google Maps Platform is configured (`googleMapsConfig`): one Places
+       text search with v1's rule (`selectMatchingGooglePlace`: one name-
+       and scope-matched point), never a match at another street address
+       than the facts state (`providerAddressMatchesStated`). Only its
+       identity is kept (`place.google`: id, name, address, coordinates,
+       whether the name is exactly the story's); the map is drawn when the
+       images are made. The search is billed to the story, like v1's.
    - **Organizations** are never looked up and never drawn.
    - **The story's active photos and the Topic's character roster** (only
      characters with a reference image) are kept too.
-3. **Decisions:** confirm, reject or reopen a person, and the characters
-   choice (`auto` | `on` | `off`, which reads the roster again). Each
-   decision bumps the inventory's version.
-4. **A new search** keeps every confirmed or rejected person and the
-   characters choice.
+3. **Decisions:**
+   - confirm, reject or reopen a person;
+   - set a place's match aside ("Not this place", status `rejected`) or
+     take it back;
+   - give a person or place one of the story's photos (`storyPhoto`), or
+     take it back: a person's is only ever a documentary portrait, pasted
+     unchanged, and never a reference the script may use by the photo's
+     own id (`referencePhotos`); a place's is its photo;
+   - read the story's photos again after the editor added or removed one
+     in the panel (a link to a removed photo is dropped);
+   - the characters choice (`auto` | `on` | `off`, which reads the roster
+     again).
+
+   Each decision that changes something bumps the inventory's version; one
+   that changes nothing keeps it, since a visual script records it.
+4. **A new search** keeps every confirmed or rejected person, every story
+   photo given (while it is still one of the story's), every place set
+   aside while the same match comes back, and the characters choice.
 
 Photo evidence older than 24 h is checked again before images are made (v1's
 `eligiblePhoto`); the inventory only says what exists.
@@ -111,39 +146,59 @@ are `ILLUSTRATES_TEXT`, `BREAKS_CONTINUITY`, `OFF_BRAND`, `LOOKS_AI`,
 
 - A funnel step's plan may be chosen per run (already used by the deck).
 - `newRun` receives the profile, so the run records the visual mode.
+- A run that ended without an accepted candidate continues (`resume`)
+  once its step's plan has gained rounds, with only the added rounds
+  (`funnelExtendable`): every round it ran was judged, and its snapshot's
+  checks still hold.
 
 ## 6. Persistence, API, canvas
 
 - **Columns:** `draft2_sessions.inventory` and `draft2_sessions.visual`
   (jsonb, additive migration 0105). `aliveSince()` covers both steps.
 - **People and places:** `POST /api/radar/draft2/inventory`
-  `{ storyId, sessionId }`; `PATCH` `{ sessionId, action, … }`.
+  `{ storyId, sessionId }`; `PATCH` `{ sessionId, action, … }`, where
+  `action` is `confirm` `{ entityId, candidateId }`, `reject` or `reopen`
+  `{ entityId }`, `photo` `{ entityId, storyPhotoId | null }`, `photos`, or
+  `characters` `{ characters }`.
 - **Visual script:** `POST /api/radar/draft2/visual`
   `{ storyId, sessionId, continue? }`; `PATCH` `{ sessionId, candidateId }`.
 - **Canvas, step 6:**
   - the characters choice;
   - people with their Commons candidates (thumbnail, author and license,
     "This is them" or "None of these");
-  - places with their photo and map;
-  - organizations and story photos.
+  - places with their Wikidata item and photo, or Google Maps' match
+    (name, address, a warning when Google's name differs), the map, and
+    "Not this place";
+  - for each person and place, "Their/Its photo from the story";
+  - organizations and story photos;
+  - v1's story photo panel (`StoryPhotosPanel`, with `onChanged`) in a
+    disclosure, to upload a photo or find one on Commons under another
+    name.
 - **Canvas, step 7:**
   - the funnel view, with the chosen script's concept, motif, cast and
     characters;
   - each slide's words beside its beat, direction, kind of image and
     material;
   - a notice when the deck or the people and places changed since the
-    script.
+    script;
+  - "Continue with round 3" on a run that ended after two rounds.
 
 ## 7. Tests
 
-- `draft2-inventory.types.test.ts`: the name check, carried decisions, the
-  editor's actions, material, and what the models read.
+- `draft2-inventory.types.test.ts`: the name check, carried decisions
+  (people, story photos, places set aside), the editor's actions,
+  material, the photos a script may use, and what the models read.
 - `draft2-inventory.test.ts`: the extraction, the lookups and their
-  failures, confirming and choosing, a new search, prerequisites.
-- `draft2-visual.types.test.ts`: the carousel and plan, parsing, every
-  program finding, duplicates, the requests.
-- `draft2-visual.test.ts`: the context and instructions, the rounds, a long
-  carousel, prerequisites, resuming, choosing.
+  failures, Google Maps for a place Wikidata misses (and a match at
+  another address), no Wikimedia contact, confirming and choosing, giving
+  and taking back story photos, reading them again, setting a place
+  aside, a new search, prerequisites.
+- `draft2-visual.types.test.ts`: the carousel and plan, an ended run that
+  can continue, parsing, every program finding (a person's story photo
+  among them), duplicates, the requests.
+- `draft2-visual.test.ts`: the context and instructions, the three rounds,
+  continuing an ended run with round 3, a long carousel, prerequisites,
+  resuming, choosing.
 - `draft2-skills.test.ts`: the visual scripts rubric matches the constants.
 
 ## 8. Out of scope

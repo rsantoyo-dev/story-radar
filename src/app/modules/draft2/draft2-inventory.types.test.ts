@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Draft2InputError, Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
 import {
-  carriedDecisions, decidedInventory, entityMaterial, inventoryForModels, parseInventoryAction, parseInventoryEntities, personEntity,
-  type Draft2Inventory, type Draft2InventoryEntity,
+  carriedDecisions, decidedInventory, entityMaterial, inventoryEntity, inventoryForModels, keptPlaceRejections, parseInventoryAction, parseInventoryEntities, personEntity,
+  referencePhotos, rejectedEntity, reopenedEntity, storyPhotosDiffer, withStoryPhoto, withStoryPhotos,
+  type Draft2Inventory, type Draft2InventoryEntity, type Draft2InventoryStoryPhoto,
 } from "./draft2-inventory.types";
 
 const facts: Draft2Fact[] = [
@@ -71,4 +72,61 @@ test("what the visual script may show: a confirmed portrait, a verified place's 
     ["documentary portrait (a real photo pasted unchanged)"], ["none: never depict them; tell the story without showing them"], ["verified place photo", "verified map"], ["none: organizations are never drawn, no logos"],
   ]);
   assert.deepEqual(forModels.storyPhotos.map((photo) => photo.id), ["p1"], "a portrait travels with its person, never as a story photo the model may read");
+});
+
+const PHOTO: Draft2InventoryStoryPhoto = { id: "p1", name: "Reading room", description: "The editor's photo", provenance: "Editor", transmissionAllowed: true };
+const verifiedPlace = (google?: string): Draft2InventoryEntity => ({
+  id: "e2", name: "Rue Saint-Charles", kind: "place", role: "secondary", description: "", factIds: ["f1"],
+  place: { status: "verified", wikidataId: "Q1", map: true, ...(google ? { google: { placeId: google, name: "Rue Saint-Charles", address: "Rue Saint-Charles, Longueuil, QC", latitude: 45.5, longitude: -73.5, sourceUrl: "https://www.google.com/maps/search/?api=1", exactName: true } } : {}) },
+});
+
+test("a new search keeps a story photo given to a person or place while it is still the story's, and a place set aside while the same match comes back", () => {
+  const fresh = parseInventoryEntities(answer([
+    { name: "Catherine Fournier", kind: "person", role: "subject", description: "Mayor", factIds: ["f1"] },
+    { name: "Rue Saint-Charles", kind: "place", role: "secondary", description: "", factIds: ["f1"] },
+  ]), facts);
+  const earlier = inventory([withStoryPhoto(person("none"), PHOTO), { ...verifiedPlace(), place: { ...verifiedPlace().place!, status: "rejected" } }]);
+  assert.equal(json(carriedDecisions(fresh, earlier, [PHOTO]).map((entity) => entity.storyPhoto?.id)), json(["p1", undefined]));
+  assert.equal(carriedDecisions(fresh, earlier, [])[0].storyPhoto, undefined, "a photo removed from the story is no longer theirs");
+  assert.equal(keptPlaceRejections([verifiedPlace()], earlier)[0].place?.status, "rejected", "the same Wikidata item: still aside");
+  assert.equal(keptPlaceRejections([verifiedPlace("gp-9")], earlier)[0].place?.status, "verified", "another match is the editor's to judge again");
+  assert.equal(keptPlaceRejections([verifiedPlace()], undefined)[0].place?.status, "verified");
+});
+
+test("the editor's decisions on places and story photos are contracts: reject and reopen a match, give or take back a photo, read the photos again", () => {
+  assert.deepEqual(parseInventoryAction({ action: "photo", entityId: "e3", storyPhotoId: "5f0c1b2a-0000-4000-8000-000000000001" }), { action: "photo", entityId: "e3", storyPhotoId: "5f0c1b2a-0000-4000-8000-000000000001" });
+  assert.deepEqual(parseInventoryAction({ action: "photo", entityId: "e3", storyPhotoId: null }), { action: "photo", entityId: "e3", storyPhotoId: null });
+  assert.deepEqual(parseInventoryAction({ action: "photos" }), { action: "photos" });
+  for (const bad of [{ action: "photo", entityId: "e3" }, { action: "photo", entityId: "e3", storyPhotoId: "../x" }, { action: "photo", storyPhotoId: "p1" }]) {
+    assert.throws(() => parseInventoryAction(bad), (error: Error) => error instanceof Draft2InputError);
+  }
+  const organization: Draft2InventoryEntity = { id: "e4", name: "Pomerleau", kind: "organization", role: "mentioned", description: "", factIds: ["f2"] };
+  assert.equal(inventoryEntity(inventory([verifiedPlace()]), "e2").name, "Rue Saint-Charles");
+  assert.throws(() => inventoryEntity(inventory([organization]), "e4"), /e4 is not one of this story's people or places/);
+  const aside = rejectedEntity(verifiedPlace());
+  assert.equal(json([aside.place?.status, aside.place?.wikidataId, reopenedEntity(aside).place?.status]), json(["rejected", "Q1", "verified"]), "setting aside keeps the match, to take it back");
+  assert.throws(() => rejectedEntity({ ...verifiedPlace(), place: { status: "not-found", map: false } }), /has no match to set aside/);
+  assert.throws(() => reopenedEntity(verifiedPlace()), /has no decision to take back/);
+  assert.equal(rejectedEntity(person("candidates")).person?.status, "rejected");
+  assert.equal(json(withStoryPhoto(withStoryPhoto(verifiedPlace(), PHOTO), null)), json(verifiedPlace()));
+  const refreshed = withStoryPhotos(inventory([withStoryPhoto(verifiedPlace(), PHOTO)]), []);
+  assert.equal(json([refreshed.entities[0].storyPhoto, refreshed.storyPhotos, refreshed.version]), json([undefined, [], 3]), "a removed photo's link is dropped; the version is the caller's");
+  const stored = { ...inventory([withStoryPhoto(verifiedPlace(), PHOTO)]), storyPhotos: [{ transmissionAllowed: true, provenance: "Editor", name: "Reading room", id: "p1", description: "The editor's photo" }] };
+  assert.equal(storyPhotosDiffer(stored, withStoryPhotos(stored, [PHOTO])), false, "a stored row's keys in another order are the same photos");
+  assert.equal(storyPhotosDiffer(stored, withStoryPhotos(stored, [{ ...PHOTO, name: "Hall" }])), true);
+});
+
+test("a story photo given to a person is only ever their portrait; one given to a place is its photo; a place set aside or not found shows nothing of its own", () => {
+  const portrait = withStoryPhoto(person("none"), PHOTO);
+  const notFound: Draft2InventoryEntity = { id: "e3", name: "Parc des Parulines", kind: "place", role: "subject", description: "", factIds: ["f1"], place: { status: "not-found", map: false, note: "Not in Wikidata." } };
+  assert.deepEqual(entityMaterial(portrait), { portrait: true, photo: false, map: false });
+  assert.deepEqual(entityMaterial(notFound), { portrait: false, photo: false, map: false });
+  assert.deepEqual(entityMaterial(withStoryPhoto(notFound, PHOTO)), { portrait: false, photo: true, map: false });
+  assert.deepEqual(entityMaterial(rejectedEntity(verifiedPlace("gp-1"))), { portrait: false, photo: false, map: false });
+  assert.deepEqual(entityMaterial({ ...verifiedPlace("gp-1"), place: { ...verifiedPlace("gp-1").place!, wikidataId: undefined } }), { portrait: false, photo: false, map: true }, "Google Maps' match is a map");
+  const second = { ...PHOTO, id: "p2", name: "Hall" };
+  const linked = { ...inventory([portrait, withStoryPhoto(notFound, second)]), storyPhotos: [PHOTO, second] };
+  assert.deepEqual(referencePhotos(linked).map((photo) => photo.id), ["p2"], "the person's photo travels only with them, as their portrait");
+  assert.deepEqual(inventoryForModels(linked).storyPhotos.map((photo) => photo.id), ["p2"]);
+  assert.deepEqual(inventoryForModels(linked).entities.map((entity) => entity.verifiedMaterial), [["documentary portrait (a real photo pasted unchanged)"], ["verified place photo"]]);
 });

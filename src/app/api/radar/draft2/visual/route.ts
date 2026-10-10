@@ -5,7 +5,7 @@ import { recordVisualChoice, runDraft2Visual } from "@/app/modules/draft2/draft2
 import { DRAFT2_UUID_PATTERN, draft2ErrorResponse } from "../draft2-route";
 
 export const runtime = "nodejs";
-// Two writer rounds and two judgments; the step stops starting rounds well inside this.
+// Up to three writer rounds and three judgments; the step pauses before a round it has no time for, well inside this.
 export const maxDuration = 300;
 
 const CANDIDATE_ID_PATTERN = /^[\w.-]{1,24}$/;
@@ -13,7 +13,8 @@ const CANDIDATE_ID_PATTERN = /^[\w.-]{1,24}$/;
 /**
  * Runs the visual script on the session's chosen deck and returns the
  * session: finished, or paused before a round this request had no time for
- * (visual.status "paused"); `continue: true` runs a paused run on.
+ * (visual.status "paused"); `continue: true` runs a paused or stopped run
+ * on, or one that ended unaccepted before the step gained its third round.
  */
 export async function POST(request: Request) {
   const denied = await authorizeRadarCollector(request);

@@ -107,8 +107,12 @@ function PhotoPreview({ scope, photo, onFocusSaved, disabled = false }: { scope:
     {focusError ? <p role="alert">{focusError}</p> : null}
   </>;
 }
-export function StoryPhotosPanel(scope: Scope) {
-  const { photos, error, refresh } = useStoryPhotos(scope);
+export function StoryPhotosPanel({ onChanged, ...scope }: Scope & {
+  /** Told after a photo is added, removed or reframed, so a page that lists the story's photos reads them again. */
+  onChanged?: () => void;
+}) {
+  const { photos, error, refresh: reload } = useStoryPhotos(scope);
+  const refresh = () => { reload(); onChanged?.(); };
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [messageIsError, setMessageIsError] = useState(false);

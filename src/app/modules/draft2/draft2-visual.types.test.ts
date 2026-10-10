@@ -6,7 +6,7 @@ import {
   visualExploreRequest, visualJudgeRequest, visualModeLine, visualPlan, visualRefineRequest, visualSchema,
   type Draft2CarouselSlide, type Draft2VisualCandidate, type Draft2VisualIssue, type Draft2VisualRound, type Draft2VisualScore, type Draft2VisualSlide,
 } from "./draft2-visual.types";
-import { funnelVersions } from "./draft2-funnel";
+import { funnelExtendable, funnelVersions } from "./draft2-funnel";
 import type { Draft2Inventory, Draft2InventoryEntity } from "./draft2-inventory.types";
 
 const opening = {
@@ -55,13 +55,20 @@ const findings = (candidate: Draft2VisualCandidate, options: Partial<typeof rule
 const withSlide = (position: string, overrides: Partial<Draft2VisualSlide>) => script("c1", { slides: script("c1").slides.map((entry) => entry.slide === position ? { ...entry, ...overrides } : entry) });
 const score = (candidateId: string, overall: number): Draft2VisualScore => ({ candidateId, narrative: overall, continuity: overall, brand: overall, truth: overall, fit: overall, craft: overall, focus: overall, overall, note: "Why." });
 
-test("the carousel in order, from the opening, the deck and the closing; three scripts, two for a long carousel", () => {
+test("the carousel in order, from the opening, the deck and the closing; three scripts, two for a long carousel, and a third round on the best", () => {
   assert.deepEqual(carousel.map((entry) => [entry.slide, entry.label]), [["cover", "Cover"], ["slide2", "Slide 2"], ["s1", "Slide 3"], ["s2", "Slide 4"], ["penultimate", "Slide 5"], ["last", "Slide 6"]]);
   assert.equal(carousel[5].cta, "Follow us for what opens near you.");
   assert.deepEqual(carouselSlides(opening, deck, { ...closing, penultimate: undefined }).map((entry) => entry.slide).slice(-1), ["last"]);
   assert.equal(visualPlan(carousel), VISUAL_PLAN);
   assert.equal(visualPlan(Array.from({ length: 11 })), VISUAL_LONG_PLAN);
-  assert.deepEqual(VISUAL_PLAN.map((round) => [round.fresh, round.revise, round.proposals, round.effort ?? "high"]), [[3, 0, 1, "medium"], [0, 2, 0, "high"]]);
+  assert.deepEqual(VISUAL_PLAN.map((round) => [round.fresh, round.revise, round.proposals, round.effort ?? "high"]), [[3, 0, 1, "medium"], [0, 2, 0, "high"], [0, 1, 0, "high"]]);
+  assert.deepEqual(VISUAL_LONG_PLAN.map((round) => [round.fresh, round.revise, round.proposals, round.effort ?? "high"]), [[2, 0, 1, "medium"], [0, 1, 0, "high"], [0, 1, 0, "high"]]);
+  const judged = { round: 1, candidates: [], mechanical: [], at: "t", evaluation: {} };
+  const unjudged = { ...judged, round: 2, evaluation: undefined };
+  assert.equal(funnelExtendable({ status: "needs-review", rounds: [judged, { ...judged, round: 2 }] }, VISUAL_PLAN.length), true, "a run that ended after two rounds takes the third");
+  assert.equal(funnelExtendable({ status: "needs-review", rounds: [judged, { ...judged, round: 2 }, { ...judged, round: 3 }] }, VISUAL_PLAN.length), false, "a run that had every round");
+  assert.equal(funnelExtendable({ status: "ready", rounds: [judged] }, VISUAL_PLAN.length), false, "an accepted run");
+  assert.equal(funnelExtendable({ status: "needs-review", rounds: [judged, unjudged] }, VISUAL_PLAN.length), false, "a round left unjudged is a stopped run's to continue");
   const schema = visualSchema(carousel.map((entry) => entry.slide)) as { properties: { candidates: { items: { properties: { slides: { minItems: number; items: { properties: { slide: { enum: string[] } } } } } } } } };
   assert.equal(schema.properties.candidates.items.properties.slides.minItems, 6);
   assert.deepEqual(schema.properties.candidates.items.properties.slides.items.properties.slide.enum, ["cover", "slide2", "s1", "s2", "penultimate", "last"]);
@@ -105,6 +112,9 @@ test("verified material backs what a slide asks for, and the strict modes genera
   assert.deepEqual(findings(withSlide("s1", { need: "verified-map", references: ["e2"] })), []);
   assert.deepEqual(findings(withSlide("s1", { need: "verified-map", references: ["p1"] })), ["NEED_MISMATCH c1 s1"], "a story photo is no map");
   assert.deepEqual(findings(withSlide("s1", { need: "real-photo", references: ["p1"] })), []);
+  const given = { ...inventory, entities: inventory.entities.map((entity) => entity.id === "e3" ? { ...entity, storyPhoto: { id: "p1", name: "Reading room", provenance: "Editor", transmissionAllowed: true } } : entity) };
+  assert.deepEqual(findings(withSlide("slide2", { need: "real-photo", references: ["e3"], direction: direction("Tremblay at the desk, from the front") }), { inventory: given }), [], "the story photo the editor gave him is his portrait");
+  assert.deepEqual(findings(withSlide("s1", { need: "real-photo", references: ["p1"] }), { inventory: given }), ["REFERENCE_UNKNOWN c1 s1", "NEED_MISMATCH c1 s1"], "a person's photo is never a free reference");
   assert.deepEqual(findings(withSlide("s1", { need: "real-photo", references: ["e2"], characterIds: ["char-mia"] })), ["NEED_MISMATCH c1 s1"], "the character stays off verified material");
   assert.deepEqual(findings(withSlide("s2", { need: "typography" })), []);
   const plain = script("c1", { characterPlan: { use: false, characterIds: [], role: "" }, slides: script("c1").slides.map((entry) => ({ ...entry, characterIds: [], need: entry.slide === "cover" ? "typography" as const : "generic-illustration" as const })) });

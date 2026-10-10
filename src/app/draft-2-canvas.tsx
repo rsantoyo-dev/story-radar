@@ -17,14 +17,15 @@ import {
 } from "@/app/modules/draft2/draft2-opening.types";
 import { CLOSING_GATE, CLOSING_MAX_ROUNDS, type Draft2Closing, type Draft2ClosingCandidate, type Draft2ClosingCriterion } from "@/app/modules/draft2/draft2-closing.types";
 import { DECK_GATE, DECK_MAX_ROUNDS, type Draft2Deck, type Draft2DeckCandidate, type Draft2DeckCriterion } from "@/app/modules/draft2/draft2-deck.types";
-import { INVENTORY_CHARACTER_CHOICES, type Draft2CharacterChoice, type Draft2Inventory, type Draft2InventoryEntity } from "@/app/modules/draft2/draft2-inventory.types";
-import { VISUAL_GATE, VISUAL_MAX_ROUNDS, type Draft2Visual, type Draft2VisualCandidate, type Draft2VisualCriterion } from "@/app/modules/draft2/draft2-visual.types";
+import { INVENTORY_CHARACTER_CHOICES, type Draft2CharacterChoice, type Draft2Inventory, type Draft2InventoryEntity, type Draft2InventoryStoryPhoto } from "@/app/modules/draft2/draft2-inventory.types";
+import { VISUAL_GATE, VISUAL_MAX_ROUNDS, visualPlan, type Draft2Visual, type Draft2VisualCandidate, type Draft2VisualCriterion } from "@/app/modules/draft2/draft2-visual.types";
 import {
-  criterionOf, funnelAcceptedWinner, funnelResumeRound, funnelScorePasses, funnelVersions, hasMaterialError,
+  criterionOf, funnelAcceptedWinner, funnelExtendable, funnelResumeRound, funnelScorePasses, funnelVersions, hasMaterialError,
   type FunnelCandidate, type FunnelGate, type FunnelIssue, type FunnelRegression, type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion,
 } from "@/app/modules/draft2/draft2-funnel";
 import { DRAFT2_OPENING_EARLIER_ROLES, DRAFT2_OPENING_ROLES, draft2ProviderName } from "@/app/modules/draft2/draft2-models";
 import { contentStatusLabel, DRAFT_2_STEPS, paragraphs, sourceHost, storyHref, traceUsageLine, wordCount } from "./draft-2-canvas.core";
+import { StoryPhotosPanel } from "./story-photos-panel";
 import styles from "./draft-2-canvas.generated.module.css";
 
 /** The Draft 2 session as the API returns it. */
@@ -324,7 +325,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
     }
   }
 
-  /** One people-and-places decision: confirm, reject or reopen a person's photo, or the characters choice. */
+  /** One people-and-places decision: a person's photo, a place's match, a story photo for either, the story's photos read again, or the characters choice. */
   async function decideInventory(input: Record<string, unknown>) {
     if (!session || running || savingInventory) return;
     setSavingInventory(String(input.entityId ?? input.action)); setInventoryError(undefined);
@@ -417,11 +418,13 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const chosenDeckId = deck?.editorChoiceId ?? deck?.winnerId;
   const deckFinished = Boolean(deck && chosenDeckId && deck.status !== "running" && deck.status !== "paused");
   const visualReady = deckFinished && !deckEndsChanged && inventory?.status === "ready";
-  const visualResumable = visual && (visual.status === "paused" || visualStalled) && funnelResumeRound(visual) <= VISUAL_MAX_ROUNDS;
-  const visualResumeRound = visualResumable && visual ? funnelResumeRound(visual) : undefined;
-  const visualPausedRound = visual?.status === "paused" ? funnelResumeRound(visual) : undefined;
   // A visual script of another deck, or of people and places found or decided since.
   const visualChanged = Boolean(visual?.deckId && ((chosenDeckId && visual.deckId !== chosenDeckId) || (inventory && visual.inventoryVersion !== inventory.version)));
+  const visualResumable = visual && (visual.status === "paused" || visualStalled) && funnelResumeRound(visual) <= VISUAL_MAX_ROUNDS;
+  // A run that ended unaccepted before the step had its third round takes it, while it still follows the deck and the people and places.
+  const visualExtendable = Boolean(visual && !visualChanged && funnelExtendable(visual, visualPlan(visual.carousel ?? []).length));
+  const visualResumeRound = (visualResumable || visualExtendable) && visual ? funnelResumeRound(visual) : undefined;
+  const visualPausedRound = visual?.status === "paused" ? funnelResumeRound(visual) : undefined;
   const visualDisplay = visualDisplayFor(inventory);
   const stepStatus: Partial<Record<string, { label: string; tone: StatusTone }>> = { facts: factsStatus, focus: focusStatus, opening: openingStatus, closing: closingStatus, deck: deckStatus, inventory: inventoryStatus, visual: visualStatus };
   const resumable = session?.opening && (session.opening.status === "paused" || stalled) && openingResumeRound(session.opening) <= OPENING_MAX_ROUNDS;
@@ -597,34 +600,41 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
             <div className={styles.factsHeader}>
               <div>
                 <p className={styles.eyebrow}>Step 6 · People and places</p>
-                <p className={styles.factsIntro}>Claude lists the people, places and organizations the verified facts name; the program looks them up as v1 does. A person is never generated: if Commons has a licensed photo of them and you confirm it is them, it can appear as a documentary portrait, pasted unchanged. A place appears only through its verified photo or map, within the Topic’s geo scope. Organizations are never drawn. You also say whether the brand’s characters may narrate.</p>
+                <p className={styles.factsIntro}>Claude lists the people, places and organizations the verified facts name; the program looks them up as v1 does. A person is never generated: if Commons has a licensed photo of them and you confirm it is them, it can appear as a documentary portrait, pasted unchanged. A place appears only through its verified photo or map, within the Topic’s geo scope: Wikidata first, then Google Maps for the map when Wikidata has no match. When a lookup finds nothing, give the person or place one of the story’s photos: upload it, or find it on Commons under another name. Organizations are never drawn. You also say whether the brand’s characters may narrate.</p>
               </div>
               <Button variant="primary" size="compact" busy={running === "inventory"} disabled={!factsVerified || running !== undefined || savingInventory !== undefined} onClick={() => { void runStep("inventory"); }}>
                 {running === "inventory" ? "Searching…" : inventory ? "Search again" : "Find people and places"}
               </Button>
             </div>
             {!factsVerified && !running ? <p className={styles.factMeta}>People and places are found only in verified facts; verify them first.</p> : null}
-            {running === "inventory" ? <LoadingState>Claude lists who and where; Wikidata, Commons and Openverse are checked for each. This can take a minute or two.</LoadingState> : null}
+            {running === "inventory" ? <LoadingState>Claude lists who and where; Wikidata, Commons, Openverse and Google Maps are checked for each. This can take a minute or two.</LoadingState> : null}
             {inventoryStalled ? <InlineNotice tone="warning" title="This search stopped">Its request or the server ended before it finished. Search again.</InlineNotice> : null}
             {runError?.step === "inventory" ? <InlineNotice tone="error" title="The search stopped">{runError.message}</InlineNotice> : null}
             {inventory?.status === "failed" && inventory.error && running !== "inventory" ? <InlineNotice tone="error" title="The last search failed">{inventory.error}</InlineNotice> : null}
             {inventoryError ? <InlineNotice tone="error" title="Your decision was not saved">{inventoryError}</InlineNotice> : null}
-            {inventory && inventory.status !== "running" && running !== "inventory" ? <InventoryView inventory={inventory} saving={savingInventory} locked={running !== undefined || savingInventory !== undefined} onDecide={(input) => { void decideInventory(input); }} /> : null}
+            {inventory && inventory.status !== "running" && running !== "inventory" ? <InventoryView
+              inventory={inventory}
+              story={{ topicId, storyId, secret }}
+              saving={savingInventory}
+              locked={running !== undefined || savingInventory !== undefined}
+              onDecide={(input) => { void decideInventory(input); }}
+            /> : null}
           </section>
           <section className={styles.factsPanel} aria-label="Visual script step">
             <div className={styles.factsHeader}>
               <div>
                 <p className={styles.eyebrow}>Step 7 · Visual script</p>
-                <p className={styles.factsIntro}>{TODAY.writer} writes the carousel’s images as one visual story, in the brand’s identity: a concept, a recurring cast, a motif that evolves from slide to slide and, for each slide, the beat its image adds (never its words again), a reproducible art direction and the verified material or characters it uses. {TODAY.judge} scores three scripts (two for a carousel of more than ten slides) and proposes one of its own; {TODAY.writer} revises the best and edits {TODAY.judge}’s, which also competes as {TODAY.judge} wrote it, for {TODAY.judge}’s pick. Accepted at 95/100 with no criterion below 85. The images themselves come in a later step.</p>
+                <p className={styles.factsIntro}>{TODAY.writer} writes the carousel’s images as one visual story, in the brand’s identity: a concept, a recurring cast, a motif that evolves from slide to slide and, for each slide, the beat its image adds (never its words again), a reproducible art direction and the verified material or characters it uses. {TODAY.judge} scores three scripts (two for a carousel of more than ten slides) and proposes one of its own; {TODAY.writer} revises the best and edits {TODAY.judge}’s, which also competes as {TODAY.judge} wrote it; a third round revises the best once more, for {TODAY.judge}’s pick. Accepted at 95/100 with no criterion below 85. The images themselves come in a later step.</p>
               </div>
               <ActionRow>
-                {visualResumeRound && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("visual", { continuing: true }); }}>Continue from round {visualResumeRound}</Button> : null}
+                {visualResumeRound && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("visual", { continuing: true }); }}>{visualExtendable ? `Continue with round ${visualResumeRound}` : `Continue from round ${visualResumeRound}`}</Button> : null}
                 <Button variant="primary" size="compact" busy={running === "visual"} disabled={!factsVerified || !visualReady || running !== undefined || savingInventory !== undefined} onClick={() => { void runStep("visual"); }}>
                   {running === "visual" ? "Writing and judging…" : visual ? "Write the visual script again" : "Write the visual script"}
                 </Button>
               </ActionRow>
             </div>
             {factsVerified && !visualReady && !running ? <p className={styles.factMeta}>{!deckFinished ? "The visual script pictures the whole carousel; finish the deck first." : deckEndsChanged ? "The deck connects another opening or closing than the ones chosen now; write the deck again first." : "Find the people and places first: the script shows only what is verified."}</p> : null}
+            {visualExtendable && visual && !running ? <p className={styles.factMeta}>This run ended after {visual.rounds.length} rounds, before the visual script had a third. Continue with round {visualResumeRound} revises its best version once more against Sol’s remaining issues: one write and one judgment.</p> : null}
             {peopleToConfirm && visualReady && !running ? <p className={styles.factMeta}>{peopleToConfirm} {peopleToConfirm === 1 ? "person waits" : "people wait"} for your confirmation; until then the script tells the story without showing them.</p> : null}
             {visualChanged && running !== "visual" ? <InlineNotice tone="info" title="The deck or the people and places changed">This script pictures {visual?.deckId} with people and places v{visual?.inventoryVersion}; the deck chosen now is {chosenDeckId} and the people and places are v{inventory?.version}. Write the visual script again to follow them.</InlineNotice> : null}
             {running === "visual" ? <LoadingState>{following ? `${following} Following the run on the server…` : visualPausedRound ? `Continuing with round ${visualPausedRound} in a new request…` : `${TODAY.writer} writes the scripts; ${TODAY.judge} judges each round. This can take a few minutes.`}</LoadingState> : null}
@@ -953,10 +963,18 @@ function ScoreRow<C extends FunnelCandidate>({ score, display }: { score: Funnel
 /**
  * The people, places and organizations the facts name, with what verified
  * material each has: Commons candidates a person waits on the editor for, a
- * place's photo and map, and the story's own photos. The characters choice
+ * place's photo and map, and the story's own photos, which the editor gives
+ * to a person or place the lookups could not show. The characters choice
  * says whether the brand's characters may narrate.
  */
-function InventoryView({ inventory, saving, locked, onDecide }: { inventory: Draft2Inventory; saving?: string; locked: boolean; onDecide: (input: Record<string, unknown>) => void }) {
+function InventoryView({ inventory, story, saving, locked, onDecide }: {
+  inventory: Draft2Inventory;
+  /** For the story's photos panel: the editor adds a photo there, then gives it to a person or place. */
+  story: { topicId: string; storyId: string; secret: string };
+  saving?: string;
+  locked: boolean;
+  onDecide: (input: Record<string, unknown>) => void;
+}) {
   const people = inventory.entities.filter((entity) => entity.kind === "person");
   const places = inventory.entities.filter((entity) => entity.kind === "place");
   const organizations = inventory.entities.filter((entity) => entity.kind === "organization");
@@ -969,45 +987,51 @@ function InventoryView({ inventory, saving, locked, onDecide }: { inventory: Dra
     </FormField>
     {inventory.entities.length ? null : <p className={styles.factMeta}>The facts name no person, place or organization.</p>}
     {people.length ? <div className={styles.openingGroup}>
-      <SectionHeader level={3} title="People" description="Never generated. A confirmed Commons photo can appear as a documentary portrait, pasted unchanged; anyone else is told without being shown." />
-      <ol className={styles.factList}>{people.map((entity) => <PersonItem key={entity.id} entity={entity} saving={saving === entity.id} locked={locked} onDecide={onDecide} />)}</ol>
+      <SectionHeader level={3} title="People" description="Never generated. A confirmed Commons photo, or one of the story’s photos you give them, can appear as a documentary portrait, pasted unchanged; anyone else is told without being shown." />
+      <ol className={styles.factList}>{people.map((entity) => <PersonItem key={entity.id} entity={entity} photos={inventory.storyPhotos} saving={saving === entity.id} locked={locked} onDecide={onDecide} />)}</ol>
     </div> : null}
     {places.length ? <div className={styles.openingGroup}>
-      <SectionHeader level={3} title="Places" description="A real place appears only through its verified photo or map; otherwise as a generic scene of its kind." />
-      <ol className={styles.factList}>{places.map((entity) => <li key={entity.id} className={styles.factItem}>
-        <div className={styles.factHead}>
-          <span className={styles.factId}>{entity.id}</span>
-          <strong>{entity.name}</strong>
-          <StatusBadge tone={entity.place?.status === "verified" ? "success" : entity.place?.status === "not-found" ? "neutral" : "warning"}>{entity.place?.status === "verified" ? "Verified" : entity.place?.status === "not-found" ? "Not found" : "Not checked"}</StatusBadge>
-          <span className={styles.factMeta}>{entity.role} · {entity.factIds.join(", ")}</span>
-        </div>
-        {entity.description ? <p className={styles.factMeta}>{entity.description}</p> : null}
-        {entity.place?.status === "verified" ? <p className={styles.factMeta}>{[
-          entity.place.photo ? `Photo · ${entity.place.photo.author} · ${entity.place.photo.license} · ${entity.place.photo.source === "openverse" ? "Openverse" : "Wikimedia Commons"}` : "No eligible photo",
-          entity.place.map ? "a map can be drawn" : "no coordinates for a map",
-        ].join(" · ")}</p> : null}
-        {entity.place?.note ? <p className={styles.factMeta}>{entity.place.note}</p> : null}
-      </li>)}</ol>
+      <SectionHeader level={3} title="Places" description="A real place appears only through its verified photo or map, or one of the story’s photos you give it; otherwise as a generic scene of its kind." />
+      <ol className={styles.factList}>{places.map((entity) => <PlaceItem key={entity.id} entity={entity} photos={inventory.storyPhotos} locked={locked} onDecide={onDecide} />)}</ol>
     </div> : null}
     {organizations.length ? <p className={styles.factMeta}>Organizations, never drawn and never named in an image (no logos): {organizations.map((entity) => entity.name).join(", ")}.</p> : null}
     {inventory.storyPhotos.length ? <p className={styles.factMeta}>The story’s photos: {inventory.storyPhotos.map((photo) => `${photo.name}${photo.transmissionAllowed ? "" : " (documentary portrait only)"}`).join(", ")}.</p> : null}
+    <details>
+      <summary>Add a photo, or find one on Commons under another name</summary>
+      <p className={styles.factMeta}>For a person or place the lookups could not show: upload a photo you have the rights to, or search Commons (a person by their exact full name, a place by the larger place it belongs to). Then give it to the person or place above.</p>
+      <StoryPhotosPanel topicId={story.topicId} storyId={story.storyId} secret={story.secret} onChanged={() => onDecide({ action: "photos" })} />
+    </details>
   </div>;
 }
 
-/** A person and their Commons candidates: confirm the one that is them, or say none is. */
-function PersonItem({ entity, saving, locked, onDecide }: { entity: Draft2InventoryEntity; saving: boolean; locked: boolean; onDecide: (input: Record<string, unknown>) => void }) {
+/** One of the story's photos for a person or place: a person's appears only as their documentary portrait, pasted unchanged. */
+function StoryPhotoChoice({ entity, photos, locked, onDecide }: { entity: Draft2InventoryEntity; photos: readonly Draft2InventoryStoryPhoto[]; locked: boolean; onDecide: (input: Record<string, unknown>) => void }) {
+  if (!photos.length && !entity.storyPhoto) return null;
+  const person = entity.kind === "person";
+  return <FormField label={person ? "Their photo from the story" : "Its photo from the story"} description={person ? "Pasted unchanged as a documentary portrait, never redrawn. Check it is them." : "Shows this place. Check it is the place."}>
+    <select value={entity.storyPhoto?.id ?? ""} disabled={locked} onChange={(event) => onDecide({ action: "photo", entityId: entity.id, storyPhotoId: event.target.value || null })}>
+      <option value="">No story photo</option>
+      {photos.map((photo) => <option key={photo.id} value={photo.id}>{photo.name}{photo.transmissionAllowed ? "" : " · documentary only"}</option>)}
+      {entity.storyPhoto && !photos.some((photo) => photo.id === entity.storyPhoto?.id) ? <option value={entity.storyPhoto.id}>{entity.storyPhoto.name} · removed</option> : null}
+    </select>
+  </FormField>;
+}
+
+/** A person and their Commons candidates: confirm the one that is them, or say none is; or give them one of the story's photos. */
+function PersonItem({ entity, photos, saving, locked, onDecide }: { entity: Draft2InventoryEntity; photos: readonly Draft2InventoryStoryPhoto[]; saving: boolean; locked: boolean; onDecide: (input: Record<string, unknown>) => void }) {
   const person = entity.person;
   const status = person?.status;
   return <li className={styles.factItem}>
     <div className={styles.factHead}>
       <span className={styles.factId}>{entity.id}</span>
       <strong>{entity.name}</strong>
-      <StatusBadge tone={status === "confirmed" ? "success" : status === "candidates" ? "warning" : "neutral"}>{status === "confirmed" ? "Portrait confirmed" : status === "candidates" ? "Confirm the photo" : status === "rejected" ? "No photo" : status === "none" ? "Not on Commons" : "Not checked"}</StatusBadge>
+      <StatusBadge tone={status === "confirmed" || entity.storyPhoto ? "success" : status === "candidates" ? "warning" : "neutral"}>{status === "confirmed" ? "Portrait confirmed" : entity.storyPhoto ? "Story photo" : status === "candidates" ? "Confirm the photo" : status === "rejected" ? "No photo" : status === "none" ? "Not on Commons" : "Not checked"}</StatusBadge>
       <span className={styles.factMeta}>{entity.role} · {entity.factIds.join(", ")}</span>
     </div>
     {entity.description ? <p className={styles.factMeta}>{entity.description}</p> : null}
     {person?.note ? <p className={styles.factMeta}>{person.note}</p> : null}
     {status === "confirmed" && person?.confirmed ? <p className={styles.factMeta}>{person.confirmed.name}{person.confirmed.description ? ` · ${person.confirmed.description}` : ""} · {person.confirmed.author} · {person.confirmed.license}</p> : null}
+    {entity.storyPhoto ? <p className={styles.factMeta}>Story photo · {entity.storyPhoto.name} · {entity.storyPhoto.provenance}</p> : null}
     {status === "candidates" ? <ul className={styles.candidateList}>
       {person!.candidates.map((candidate) => <li key={candidate.entityId} className={styles.candidate}>
         <Image className={styles.candidateThumb} src={candidate.thumbnailUrl} alt={`Wikimedia Commons photo of ${candidate.name}`} width={160} height={120} unoptimized />
@@ -1019,9 +1043,42 @@ function PersonItem({ entity, saving, locked, onDecide }: { entity: Draft2Invent
         </div>
       </li>)}
     </ul> : null}
+    {status !== "confirmed" ? <StoryPhotoChoice entity={entity} photos={photos} locked={locked} onDecide={onDecide} /> : null}
     <ActionRow>
       {status === "candidates" ? <Button variant="quiet" size="compact" disabled={locked} onClick={() => onDecide({ action: "reject", entityId: entity.id })}>None of these</Button> : null}
       {status === "confirmed" || status === "rejected" ? <Button variant="quiet" size="compact" disabled={locked} onClick={() => onDecide({ action: "reopen", entityId: entity.id })}>Change</Button> : null}
+    </ActionRow>
+  </li>;
+}
+
+const PLACE_STATUS_LABEL = { verified: "Verified", "not-found": "Not found", unavailable: "Not checked", rejected: "Set aside" } as const;
+
+/**
+ * A place and what the lookups found: its Wikidata item with a photo, or
+ * Google Maps' match for its map. The editor sets a wrong match aside, or
+ * gives the place one of the story's photos.
+ */
+function PlaceItem({ entity, photos, locked, onDecide }: { entity: Draft2InventoryEntity; photos: readonly Draft2InventoryStoryPhoto[]; locked: boolean; onDecide: (input: Record<string, unknown>) => void }) {
+  const place = entity.place;
+  const status = place?.status;
+  const found = status === "verified" || status === "rejected";
+  return <li className={styles.factItem}>
+    <div className={styles.factHead}>
+      <span className={styles.factId}>{entity.id}</span>
+      <strong>{entity.name}</strong>
+      <StatusBadge tone={status === "verified" || entity.storyPhoto ? "success" : status === "unavailable" ? "warning" : "neutral"}>{status !== "verified" && entity.storyPhoto ? "Story photo" : status ? PLACE_STATUS_LABEL[status] : "Not checked"}</StatusBadge>
+      <span className={styles.factMeta}>{entity.role} · {entity.factIds.join(", ")}</span>
+    </div>
+    {entity.description ? <p className={styles.factMeta}>{entity.description}</p> : null}
+    {found && place?.wikidataId ? <p className={styles.factMeta}>Wikidata <a href={place.sourceUrl} target="_blank" rel="noreferrer">{place.wikidataId} ↗</a> · {place.photo ? `photo · ${place.photo.author} · ${place.photo.license} · ${place.photo.source === "openverse" ? "Openverse" : "Wikimedia Commons"}` : "no eligible photo"}</p> : null}
+    {found && place?.google ? <p className={styles.factMeta}>Google Maps · {place.google.name} · {place.google.address} · <a href={place.google.sourceUrl} target="_blank" rel="noreferrer">Map ↗</a>{place.google.exactName ? "" : " · Google’s name differs from the story’s: check it is the same place"}</p> : null}
+    {found ? <p className={styles.factMeta}>{place?.map ? "A map can be drawn." : "No coordinates for a map."}{status === "rejected" ? " Set aside: the script shows nothing of this match." : ""}</p> : null}
+    {place?.note ? <p className={styles.factMeta}>{place.note}</p> : null}
+    {entity.storyPhoto ? <p className={styles.factMeta}>Story photo · {entity.storyPhoto.name} · {entity.storyPhoto.provenance}</p> : null}
+    <StoryPhotoChoice entity={entity} photos={photos} locked={locked} onDecide={onDecide} />
+    <ActionRow>
+      {status === "verified" ? <Button variant="quiet" size="compact" disabled={locked} onClick={() => onDecide({ action: "reject", entityId: entity.id })}>Not this place</Button> : null}
+      {status === "rejected" ? <Button variant="quiet" size="compact" disabled={locked} onClick={() => onDecide({ action: "reopen", entityId: entity.id })}>It is this place</Button> : null}
     </ActionRow>
   </li>;
 }
