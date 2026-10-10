@@ -54,6 +54,8 @@
 .openingCard { display: flex; flex-direction: column; gap: density(2); aspect-ratio: 4 / 5; padding: density(4); border: border(control); border-radius: radius(2); }
 .openingHeadline { margin: 0; color: palette(dark-main); @ds-typo (title-lg); }
 .openingText { margin: 0; color: palette(dark-main); @ds-typo (body); }
+/* The last slide's call to action, apart from its text as it will be on the slide. */
+.openingCta { margin: 0; color: palette(primary-dark); @ds-typo (small-strong); }
 /* After the role, whose block margins are 0: the cited facts sit at the card's foot. */
 .openingFacts { color: palette(tertiary-dark); @ds-typo (caption); margin-top: auto; }
 .scoreRow { display: flex; flex-wrap: wrap; gap: density(1) density(3); margin: 0; color: palette(tertiary-dark); @ds-typo (caption); }

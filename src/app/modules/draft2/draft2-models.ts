@@ -21,3 +21,6 @@ export function draft2ProviderName(provider: Draft2Provider): string {
  */
 export const DRAFT2_OPENING_ROLES: { writer: Draft2Provider; judge: Draft2Provider } = { writer: "anthropic", judge: "openai" };
 export const DRAFT2_OPENING_EARLIER_ROLES: { writer: Draft2Provider; judge: Draft2Provider } = { writer: "openai", judge: "anthropic" };
+
+/** The Closing keeps the Opening's roles, so the story is written by one model and judged by the other end to end. */
+export const DRAFT2_CLOSING_ROLES: { writer: Draft2Provider; judge: Draft2Provider } = DRAFT2_OPENING_ROLES;

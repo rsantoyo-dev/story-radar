@@ -3,6 +3,7 @@ import { and, desc, eq, gt, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { draft2Sessions, type Draft2SessionRow } from "@/db/schema";
 import type { Draft2Fact, Draft2FactsEvaluation, Draft2FactsRound, Draft2SessionStatus, Draft2Step, Draft2Threads, Draft2TraceEntry } from "./draft2-facts.types";
+import type { Draft2Closing } from "./draft2-closing.types";
 import type { Draft2Focus } from "./draft2-focus.types";
 import { OPENING_STALL_MS, type Draft2Opening } from "./draft2-opening.types";
 
@@ -10,11 +11,12 @@ import { OPENING_STALL_MS, type Draft2Opening } from "./draft2-opening.types";
 const ACTIVE_WINDOW_MINUTES = 10;
 
 /**
- * When a running session was last seen alive. An opening and a focus send a
- * heartbeat, so they count as stopped after OPENING_STALL_MS of silence; a
- * facts run checkpoints only between calls, so it keeps the longer window.
+ * When a running session was last seen alive. The focus, the opening and the
+ * closing send a heartbeat, so they count as stopped after OPENING_STALL_MS
+ * of silence; a facts run checkpoints only between calls, so it keeps the
+ * longer window.
  */
-const aliveSince = () => sql`CASE WHEN ${draft2Sessions.step} IN ('opening', 'focus')
+const aliveSince = () => sql`CASE WHEN ${draft2Sessions.step} IN ('opening', 'focus', 'closing')
   THEN now() - make_interval(secs => ${OPENING_STALL_MS / 1_000})
   ELSE now() - make_interval(mins => ${ACTIVE_WINDOW_MINUTES}) END`;
 
@@ -31,6 +33,7 @@ export type Draft2SessionPatch = Partial<{
   rounds: Draft2FactsRound[];
   focus: Draft2Focus | null;
   opening: Draft2Opening | null;
+  closing: Draft2Closing | null;
   threads: Draft2Threads;
   trace: Draft2TraceEntry[];
   error: string | null;

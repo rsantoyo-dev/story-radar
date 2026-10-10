@@ -2,10 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { brandBrief, composeInstructions, DRAFT2_ROLES, DRAFT2_SKILLS, type Draft2Skill } from "./skills/draft2-skills";
 import { FACTS_ROLES, FACTS_SKILL } from "./skills/facts";
+import { CLOSING_ROLES, CLOSINGS_SKILL } from "./skills/closings";
 import { FOCUS_ROLES, FOCUS_SKILL } from "./skills/focus";
 import { HOOKS_SKILL, OPENING_ROLES } from "./skills/hooks";
 import { toneLine } from "./skills/tone";
 import { FOCUS_FIELDS, FOCUS_FRAMINGS, FOCUS_GOALS, FOCUS_GRAVITIES, FOCUS_STRUCTURES } from "./draft2-focus.types";
+import {
+  CLOSING_ACCEPT_SCORE, CLOSING_CANDIDATES, CLOSING_CRITERIA, CLOSING_CRITERION_FLOOR, CTA_MAX_WORDS, LAST_BODY_MAX_WORDS, LAST_HEADLINE_MAX_WORDS, LAST_PLAN_BODY_MAX_WORDS,
+  PENULTIMATE_BODY_MAX_WORDS, PENULTIMATE_HEADLINE_MAX_WORDS, callToActionBrief,
+} from "./draft2-closing.types";
 import {
   COVER_HEADLINE_MAX_WORDS, COVER_SUBHEADLINE_MAX_WORDS, OPENING_ACCEPT_SCORE, OPENING_CANDIDATES, OPENING_CRITERIA, OPENING_CRITERION_FLOOR,
   SLIDE2_BODY_MAX_WORDS, SLIDE2_HEADLINE_MAX_WORDS,
@@ -22,8 +27,8 @@ test("instructions are the role, then each skill, then the brand brief, and reco
   assert.equal(writer.instructions, `${OPENING_ROLES["opening-writer"]}\n\n## Shared craft\n\n# Brand`);
   assert.deepEqual(writer.skillVersions, { hooks: "7" });
   assert.equal(composeInstructions("opening-judge", [skill]).instructions, `${OPENING_ROLES["opening-judge"]}\n\n## Shared craft\n\n## Judge only`, "a role reads its own part after the shared text");
-  assert.deepEqual(Object.keys(DRAFT2_ROLES).sort(), ["extractor", "focus-editor", "opening-judge", "opening-writer", "reviewer"]);
-  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@1", "focus@1", "hooks@6"]);
+  assert.deepEqual(Object.keys(DRAFT2_ROLES).sort(), ["closing-judge", "closing-writer", "extractor", "focus-editor", "opening-judge", "opening-writer", "reviewer"]);
+  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@1", "focus@1", "hooks@6", "closings@1"]);
 });
 
 test("the Facts prompts keep their words: the extractor reads its rules, the reviewer its checklist", () => {
@@ -96,4 +101,27 @@ test("the focus skill names every field and value the contract accepts, and the 
   assert.ok(instructions.startsWith(FOCUS_ROLES["focus-editor"]));
   assert.ok(instructions.endsWith(`${toneLine(profile)}.`), "the brand brief, with the tone defaults, comes last");
   assert.deepEqual(skillVersions, { focus: "1" });
+});
+
+test("the closings rubric states the thresholds and limits the program enforces", () => {
+  assert.match(CLOSINGS_SKILL.text, new RegExp(`## Penultimate slide\\n- Headline at most ${PENULTIMATE_HEADLINE_MAX_WORDS} words; body at most ${PENULTIMATE_BODY_MAX_WORDS} words\\.`));
+  assert.match(CLOSINGS_SKILL.text, new RegExp(`## Last slide\\n- Headline at most ${LAST_HEADLINE_MAX_WORDS} words; body at most ${LAST_BODY_MAX_WORDS} words \\(${LAST_PLAN_BODY_MAX_WORDS} for the plan`));
+  assert.match(CLOSINGS_SKILL.text, new RegExp(`cta: the one call to action, at most ${CTA_MAX_WORDS} words`));
+  assert.match(CLOSINGS_SKILL.text, new RegExp(`overall ≥ ${CLOSING_ACCEPT_SCORE} and no criterion is below ${CLOSING_CRITERION_FLOOR}`));
+  for (const criterion of CLOSING_CRITERIA) assert.match(CLOSINGS_SKILL.text, new RegExp(`\\n- ${criterion}: `), criterion);
+  assert.match(CLOSING_ROLES["closing-writer"], new RegExp(`ids c1…c${CLOSING_CANDIDATES}\\.`));
+});
+
+test("closings: one action the goal decides and the publication words, a grave story may end without one, never a recap", () => {
+  for (const goal of FOCUS_GOALS) assert.match(CLOSINGS_SKILL.text, new RegExp(`\\n- "${goal}": `), goal);
+  assert.match(CLOSINGS_SKILL.text, /The focus's goal decides the action; the publication's call-to-action\s+style decides its voice and wording\. One action, never two\./);
+  assert.match(CLOSINGS_SKILL.text, /A grave story \(the focus's gravity "grave"\) may end without one/);
+  assert.match(CLOSINGS_SKILL.text, /Never a recap, a summary label/);
+  assert.match(CLOSINGS_SKILL.text, /"two-slides", for an arc[^]*"one-slide", for a list or steps/);
+  assert.match(CLOSING_ROLES["closing-judge"], /against the opening it ends, the story's focus and the verified facts you receive only/);
+  assert.match(CLOSING_ROLES["closing-judge"], /OFF_GOAL issue/);
+  const { instructions, skillVersions } = composeInstructions("closing-writer", [CLOSINGS_SKILL], `${brandBrief(profile)}\n\n${callToActionBrief({ style: "Warm.", emojis: 0 })}`);
+  assert.ok(instructions.startsWith(CLOSING_ROLES["closing-writer"]));
+  assert.ok(instructions.endsWith("# Calls to action\n- The publication's style (its voice and wording; the focus's goal decides the action): Warm.\n- Emojis: none."));
+  assert.deepEqual(skillVersions, { closings: "1" });
 });

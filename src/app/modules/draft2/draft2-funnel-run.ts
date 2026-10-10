@@ -34,7 +34,7 @@ const HEARTBEAT_MS = 30_000;
 
 type Composed = { instructions: string; skillVersions: Record<string, string> };
 /** The session columns a funnel step lives in. */
-export type FunnelColumn = "opening";
+export type FunnelColumn = "opening" | "closing";
 
 /** What a step gives the funnel for one run, once its prerequisites are met: the prompts, the cached context and the step's own contract. */
 export type FunnelSetup<C extends FunnelCandidate, S extends FunnelScore, I extends FunnelIssue> = {

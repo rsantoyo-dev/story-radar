@@ -106,6 +106,13 @@ before this step cannot be continued; scores stored before it have no
 `focus` and still read as passing on it. Step numbers below predate the
 Focus: the Opening is now step 3.
 
+**Revision 9: the loop is shared.** The loop and its bookkeeping moved,
+unchanged, into `draft2-funnel.ts` (pure) and `draft2-funnel-run.ts` (the
+runner); `draft2-opening.ts` is now the Opening's definition of that runner
+(plan, gate, roles, prompts, checks, requests), and the Closing
+(`docs/features/draft2-closing.md`) is a second one. The functions named in
+§5 and §7 keep their names in `draft2-opening.types.ts`.
+
 ## 1. Goal
 
 Draft 2 is the second creative pipeline, built one step at a time beside the
@@ -451,7 +458,7 @@ and the winner has no mechanical issue. If the judge's winner has a mechanical
 issue, the program picks the best mechanically clean candidate as `winnerId`
 when its scores pass; otherwise the round is a revise.
 
-## 7. The loop (`draft2-opening.ts`)
+## 7. The loop (`draft2-funnel-run.ts`, configured by `draft2-opening.ts`)
 
 ```ts
 export async function runDraft2Opening({ topicId, storyId, sessionId }): Promise<Draft2SessionRow>

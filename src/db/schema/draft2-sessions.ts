@@ -3,6 +3,7 @@ import { check, index, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm
 import { topics } from "./topics";
 import { stories } from "./stories";
 import type { Draft2Fact, Draft2FactsEvaluation, Draft2FactsRound, Draft2Threads, Draft2TraceEntry } from "@/app/modules/draft2/draft2-facts.types";
+import type { Draft2Closing } from "@/app/modules/draft2/draft2-closing.types";
 import type { Draft2Focus } from "@/app/modules/draft2/draft2-focus.types";
 import type { Draft2Opening } from "@/app/modules/draft2/draft2-opening.types";
 
@@ -28,6 +29,8 @@ export const draft2Sessions = pgTable("draft2_sessions", {
   focus: jsonb("focus").$type<Draft2Focus>(),
   /** Step 3: the cover and slide 2, every round's candidates and verdicts, the winner, the editor's choice and the focus it followed. */
   opening: jsonb("opening").$type<Draft2Opening>(),
+  /** Step 4: the penultimate and last slides (or the last alone), every round, the winner, the editor's choice, the opening it ends and the focus it followed. */
+  closing: jsonb("closing").$type<Draft2Closing>(),
   threads: jsonb("threads").$type<Draft2Threads>().notNull().default(sql`'{}'::jsonb`),
   trace: jsonb("trace").$type<Draft2TraceEntry[]>().notNull().default(sql`'[]'::jsonb`),
   error: text("error"),

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import { ActionRow, Button, EmptyState, FormField, InlineNotice, LoadingState, SectionHeader, StatusBadge, Surface, type StatusTone } from "@/app/ui/primitives";
 import type { StoryContentResponse } from "@/app/radar-dashboard";
@@ -11,9 +11,14 @@ import {
 } from "@/app/modules/draft2/draft2-focus.types";
 import { TONE_KEYS, toneWords, type ToneKey } from "@/app/modules/draft2/skills/tone";
 import {
-  OPENING_CRITERIA, OPENING_CRITERION_FLOOR, OPENING_MAX_ROUNDS, OPENING_STALL_MS, criterionScore, hasMaterialError, openingAcceptedWinner, openingResumeRound, openingScorePasses, openingVersions,
-  type Draft2Opening, type Draft2OpeningCriterion, type Draft2OpeningIssue, type Draft2OpeningRegression, type Draft2OpeningRound, type Draft2OpeningScore, type Draft2OpeningVersion,
+  OPENING_GATE, OPENING_MAX_ROUNDS, OPENING_STALL_MS, openingResumeRound,
+  type Draft2Opening, type Draft2OpeningCandidate, type Draft2OpeningCriterion,
 } from "@/app/modules/draft2/draft2-opening.types";
+import { CLOSING_GATE, CLOSING_MAX_ROUNDS, type Draft2Closing, type Draft2ClosingCandidate, type Draft2ClosingCriterion } from "@/app/modules/draft2/draft2-closing.types";
+import {
+  criterionOf, funnelAcceptedWinner, funnelResumeRound, funnelScorePasses, funnelVersions, hasMaterialError,
+  type FunnelCandidate, type FunnelGate, type FunnelIssue, type FunnelRegression, type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion,
+} from "@/app/modules/draft2/draft2-funnel";
 import { DRAFT2_OPENING_EARLIER_ROLES, DRAFT2_OPENING_ROLES, draft2ProviderName } from "@/app/modules/draft2/draft2-models";
 import { contentStatusLabel, DRAFT_2_STEPS, paragraphs, sourceHost, storyHref, wordCount } from "./draft-2-canvas.core";
 import styles from "./draft-2-canvas.generated.module.css";
@@ -28,12 +33,15 @@ type Draft2SessionView = {
   rounds: Draft2FactsRound[];
   focus: Draft2Focus | null;
   opening: Draft2Opening | null;
+  closing: Draft2Closing | null;
   trace: Draft2TraceEntry[];
   error: string | null;
   updatedAt: string;
 };
 
-type Draft2RunStep = "facts" | "focus" | "opening";
+type Draft2RunStep = "facts" | "focus" | "opening" | "closing";
+/** The steps that run on the funnel, in rounds that can pause and continue. */
+type Draft2FunnelStep = "opening" | "closing";
 
 /** Up to three rounds of two provider calls; the route itself allows 300 s. */
 const STEP_REQUEST_TIMEOUT_MS = 540_000;
@@ -72,6 +80,7 @@ const FACT_STATUS: Record<Draft2Fact["status"], { label: string; tone: StatusTon
 };
 
 const CRITERION_LABEL: Record<Draft2OpeningCriterion, string> = { tension: "Tension", payoff: "Payoff", clarity: "Clarity", grounding: "Grounding", voice: "Voice", focus: "Focus" };
+const CLOSING_CRITERION_LABEL: Record<Draft2ClosingCriterion, string> = { resolution: "Resolution", meaning: "Meaning", action: "Action", continuity: "Continuity", grounding: "Grounding", voice: "Voice", focus: "Focus" };
 
 const FRAMING_LABEL: Record<Draft2FocusValues["framing"], string> = { "reader-consequence": "Reader consequence", explainer: "Explainer", authority: "Authority" };
 const STRUCTURE_LABEL: Record<Draft2FocusValues["structure"]["kind"], string> = { arc: "Arc: one story, one tension", steps: "Steps: an ordered procedure", list: "List: “N things to…”" };
@@ -90,13 +99,13 @@ const roleNames = (opening: Pick<Draft2Opening, "writer" | "judge">): RoleNames 
 });
 
 /** Where a version comes from: its round, and the version it revises or the judge's proposal it is (as written) or edits. */
-const versionOrigin = ({ round, candidate }: Draft2OpeningVersion, names: RoleNames) => {
+const versionOrigin = ({ round, candidate }: FunnelVersion, names: RoleNames) => {
   const proposal = candidate.proposalOf ? (candidate.asProposed ? ` · ${names.judge}’s ${candidate.proposalOf} as written` : ` · ${names.writer}’s edit of ${names.judge}’s ${candidate.proposalOf}`) : "";
   return `round ${round}${candidate.revisionOf ? ` · revises ${candidate.revisionOf}` : ""}${proposal}`;
 };
 
 /** Why a revision did not replace its version: a lower score, or the same or a higher one with a loss the score does not show. */
-function regressionNote({ candidateId, previousId, from, to, worse }: Draft2OpeningRegression): string {
+function regressionNote({ candidateId, previousId, from, to, worse }: FunnelRegression): string {
   const losses = worse.length ? ` (${worse.join(", ")})` : "";
   const lead = to < from ? `${candidateId} scored ${to}, below ${previousId}’s ${from}${losses}`
     : to === from ? `${candidateId} matched ${previousId}’s ${from} but did worse${losses}`
@@ -105,12 +114,14 @@ function regressionNote({ candidateId, previousId, from, to, worse }: Draft2Open
 }
 
 const listed = (items: readonly string[]) => items.length > 1 ? `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}` : items.join("");
-const issueTarget = (issue: Draft2OpeningIssue) => issue.candidateId ? ` · ${issue.candidateId}${issue.part ? ` · ${issue.part === "slide2" ? "slide 2" : "cover"}` : ""}` : "";
+const PART_LABEL: Record<string, string> = { cover: "cover", slide2: "slide 2", penultimate: "penultimate", last: "last slide" };
+const issueTarget = (issue: FunnelIssue) => issue.candidateId ? ` · ${issue.candidateId}${issue.part ? ` · ${PART_LABEL[issue.part] ?? issue.part}` : ""}` : "";
 
 /**
  * Draft 2: the second creative pipeline, built one step at a time beside the
  * current studio, which it never touches. The canvas brings in the selected
- * story and runs each step on it: Facts, the Focus, then the Opening.
+ * story and runs each step on it: Facts, the Focus, the Opening, then the
+ * Closing.
  */
 export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle, storyId, from, returnContext }: {
   /** A signed-in session authorizes every request; the collector secret is not needed. */
@@ -132,8 +143,8 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const [session, setSession] = useState<Draft2SessionView | null>();
   const [running, setRunning] = useState<Draft2RunStep>();
   const [runError, setRunError] = useState<{ step: Draft2RunStep; message: string }>();
-  const [choosing, setChoosing] = useState<string>();
-  const [choiceError, setChoiceError] = useState<string>();
+  const [choosing, setChoosing] = useState<{ step: Draft2FunnelStep; id: string }>();
+  const [choiceError, setChoiceError] = useState<{ step: Draft2FunnelStep; message: string }>();
   const [savingFocus, setSavingFocus] = useState<Draft2FocusField>();
   const [focusError, setFocusError] = useState<string>();
   const [following, setFollowing] = useState<string>();
@@ -210,7 +221,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   }
 
   /** Follows a run whose request was lost until it finishes, pauses or goes silent; undefined when the server stays unreachable. */
-  async function followRun(): Promise<Draft2SessionView | undefined> {
+  async function followRun(step: Draft2FunnelStep): Promise<Draft2SessionView | undefined> {
     let unreachableSince: number | undefined;
     for (;;) {
       await new Promise((resolve) => setTimeout(resolve, FOLLOW_POLL_MS));
@@ -223,15 +234,16 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
         if (Date.now() - unreachableSince > FOLLOW_UNREACHABLE_MS) return undefined;
         continue;
       }
-      if (!current?.opening) return current ?? undefined;
+      const run = current?.[step];
+      if (!current || !run) return current ?? undefined;
       setSession(current);
-      if (current.opening.status !== "running" || Date.now() - Date.parse(current.updatedAt) > OPENING_STALL_MS) return current;
+      if (run.status !== "running" || Date.now() - Date.parse(current.updatedAt) > OPENING_STALL_MS) return current;
     }
   }
 
   /**
-   * Runs one step: Facts starts a new session, the Focus and the Opening
-   * continue the current one; `continuing` picks a paused or stopped opening
+   * Runs one step: Facts starts a new session, the others continue the
+   * current one; `continuing` picks a paused or stopped opening or closing
    * up. A run that pauses, or whose request is lost, goes on from its last
    * checkpoint in a new request until it finishes.
    */
@@ -249,24 +261,26 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
       }
       let payload: Record<string, unknown> = { storyId, sessionId: session?.id, ...(continuing ? { continue: true } : {}) };
       // Each request advances at least one round or judgment; a round can pause once before its writer and once before its judge.
-      for (let request = 0; request <= OPENING_MAX_ROUNDS * 2; request++) {
+      const maxRounds = step === "closing" ? CLOSING_MAX_ROUNDS : OPENING_MAX_ROUNDS;
+      for (let request = 0; request <= maxRounds * 2; request++) {
         let next: Draft2SessionView | undefined;
         try {
-          next = await postStep("opening", payload);
+          next = await postStep(step, payload);
         } catch (cause) {
           if (!(cause instanceof Draft2LostRequest)) throw cause;
           setFollowing(cause.message);
-          next = await followRun();
+          next = await followRun(step);
           setFollowing(undefined);
           if (!next) throw new Error(`${cause.message} The server has not answered since; when it is back, reload and continue the run from where it stopped.`);
         }
         setSession(next);
         // Paused, or silent since its request was lost: pick it up again.
-        if (next.opening?.status !== "paused" && next.opening?.status !== "running") return;
+        const status = next[step]?.status;
+        if (status !== "paused" && status !== "running") return;
         payload = { storyId, sessionId: next.id, continue: true };
       }
     } catch (cause) {
-      const failure = step === "facts" ? "The facts step failed." : step === "focus" ? "The focus step failed." : "The opening step failed.";
+      const failure = `The ${step} step failed.`;
       const message = cause instanceof Draft2LostRequest ? `${cause.message} The server may still finish the step; reload to see it.` : cause instanceof Error ? cause.message : failure;
       setRunError({ step, message });
       // A failed run keeps its trace on the session; show it.
@@ -295,18 +309,19 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
     }
   }
 
-  async function chooseOpening(candidateId: string) {
+  /** Records the editor's pick among the versions of an opening or a closing. */
+  async function choose(step: Draft2FunnelStep, candidateId: string) {
     if (!session || choosing || running) return;
-    setChoosing(candidateId); setChoiceError(undefined);
+    setChoosing({ step, id: candidateId }); setChoiceError(undefined);
     try {
-      const response = await fetch(`/api/radar/draft2/opening?topicId=${encodeURIComponent(topicId)}`, {
+      const response = await fetch(`/api/radar/draft2/${step}?topicId=${encodeURIComponent(topicId)}`, {
         method: "PATCH", cache: "no-store", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: session.id, candidateId }),
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "Could not record your choice.");
       setSession(body.session as Draft2SessionView);
     } catch (cause) {
-      setChoiceError(cause instanceof Error ? cause.message : "Could not record your choice.");
+      setChoiceError({ step, message: cause instanceof Error ? cause.message : "Could not record your choice." });
     } finally {
       setChoosing(undefined);
     }
@@ -332,7 +347,19 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   // An opening written with another version of the focus, or before the Focus step.
   const openingFocusVersion = session?.opening?.focus?.version;
   const focusChanged = Boolean(session?.opening && focus?.values) && openingFocusVersion !== focus?.version;
-  const stepStatus: Partial<Record<string, { label: string; tone: StatusTone }>> = { facts: factsStatus, focus: focusStatus, opening: openingStatus };
+  // The closing ends the opening the editor chose (else the judge's winner), once that run has finished and followed a focus.
+  const closing = session?.closing ?? undefined;
+  const closingStalled = !running && closing?.status === "running" && now > 0 && now - Date.parse(session?.updatedAt ?? "") > OPENING_STALL_MS;
+  const closingStatus = running === "closing" ? OPENING_STATUS.running : closingStalled ? { label: "Stopped", tone: "warning" as const } : closing ? OPENING_STATUS[closing.status] : undefined;
+  const chosenOpeningId = session?.opening?.editorChoiceId ?? session?.opening?.winnerId;
+  const openingFinished = Boolean(session?.opening && chosenOpeningId && session.opening.status !== "running" && session.opening.status !== "paused");
+  const closingReady = openingFinished && Boolean(session?.opening?.focus);
+  const closingResumable = closing && (closing.status === "paused" || closingStalled) && funnelResumeRound(closing) <= CLOSING_MAX_ROUNDS;
+  const closingResumeRound = closingResumable && closing ? funnelResumeRound(closing) : undefined;
+  const closingPausedRound = closing?.status === "paused" ? funnelResumeRound(closing) : undefined;
+  // A closing written for another opening than the one chosen now.
+  const closingOpeningChanged = Boolean(closing?.opening && chosenOpeningId && closing.opening.id !== chosenOpeningId);
+  const stepStatus: Partial<Record<string, { label: string; tone: StatusTone }>> = { facts: factsStatus, focus: focusStatus, opening: openingStatus, closing: closingStatus };
   const resumable = session?.opening && (session.opening.status === "paused" || stalled) && openingResumeRound(session.opening) <= OPENING_MAX_ROUNDS;
   const resumeRound = resumable && session?.opening ? openingResumeRound(session.opening) : undefined;
   const pausedRound = session?.opening?.status === "paused" ? openingResumeRound(session.opening) : undefined;
@@ -437,8 +464,42 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
             {stalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {new Date(session.updatedAt).toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit" })}: its request or the server ended. Continue from round {resumeRound} picks it up at its last checkpoint; a round already written is judged, not written again.</InlineNotice> : null}
             {runError?.step === "opening" ? <InlineNotice tone="error" title="The opening step stopped">{runError.message}</InlineNotice> : null}
             {session?.step === "opening" && session.error && running !== "opening" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
-            {choiceError ? <InlineNotice tone="error" title="Your choice was not saved">{choiceError}</InlineNotice> : null}
-            {session?.opening && running !== "opening" ? <OpeningView opening={session.opening} choosing={choosing} locked={running !== undefined || session.opening.status === "running"} onChoose={(candidateId) => { void chooseOpening(candidateId); }} /> : null}
+            {choiceError?.step === "opening" ? <InlineNotice tone="error" title="Your choice was not saved">{choiceError.message}</InlineNotice> : null}
+            {session?.opening && running !== "opening" ? <FunnelRunView
+              run={session.opening}
+              display={OPENING_DISPLAY}
+              choosing={choosing?.step === "opening" ? choosing.id : undefined}
+              locked={running !== undefined || session.opening.status === "running"}
+              onChoose={(candidateId) => { void choose("opening", candidateId); }}
+            /> : null}
+          </section>
+          <section className={styles.factsPanel} aria-label="Closing step">
+            <div className={styles.factsHeader}>
+              <div>
+                <p className={styles.eyebrow}>Step 4 · Closing</p>
+                <p className={styles.factsIntro}>{TODAY.writer} writes eight endings for the opening you chose, following the focus that opening followed. For an arc, the penultimate slide pays the cover’s promise in full and the last says what it means for the reader, with the one call to action the focus’s goal asks for, in the publication’s call-to-action style; for a list or steps, the last slide alone, with the plan or the result. {TODAY.judge} scores them and proposes two of its own; {TODAY.writer} revises the two best and edits {TODAY.judge}’s proposals, which also compete as {TODAY.judge} wrote them, for {TODAY.judge}’s pick. Accepted at 95/100 with no criterion below 85.</p>
+              </div>
+              <ActionRow>
+                {closingResumeRound && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("closing", { continuing: true }); }}>Continue from round {closingResumeRound}</Button> : null}
+                <Button variant="primary" size="compact" busy={running === "closing"} disabled={!factsVerified || !closingReady || running !== undefined || savingFocus !== undefined} onClick={() => { void runStep("closing"); }}>
+                  {running === "closing" ? "Writing and judging…" : closing ? "Write the closing again" : "Write the closing"}
+                </Button>
+              </ActionRow>
+            </div>
+            {factsVerified && !closingReady && !running ? <p className={styles.factMeta}>{openingFinished ? "The opening was written before the Focus step; write it again first." : "The closing ends the opening you choose; finish the opening first."}</p> : null}
+            {closingOpeningChanged && running !== "closing" && closing?.opening ? <InlineNotice tone="info" title="The opening changed">This closing ends {closing.opening.id}; the opening chosen now is {chosenOpeningId}. Write the closing again to end it.</InlineNotice> : null}
+            {running === "closing" ? <LoadingState>{following ? `${following} Following the run on the server…` : closingPausedRound ? `Continuing with round ${closingPausedRound} in a new request…` : `${TODAY.writer} writes eight endings; ${TODAY.judge} judges each round. This can take a few minutes.`}</LoadingState> : null}
+            {closingStalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {new Date(session.updatedAt).toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit" })}: its request or the server ended. Continue from round {closingResumeRound} picks it up at its last checkpoint; a round already written is judged, not written again.</InlineNotice> : null}
+            {runError?.step === "closing" ? <InlineNotice tone="error" title="The closing step stopped">{runError.message}</InlineNotice> : null}
+            {session?.step === "closing" && session.error && running !== "closing" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
+            {choiceError?.step === "closing" ? <InlineNotice tone="error" title="Your choice was not saved">{choiceError.message}</InlineNotice> : null}
+            {closing && running !== "closing" ? <FunnelRunView
+              run={closing}
+              display={CLOSING_DISPLAY}
+              choosing={choosing?.step === "closing" ? choosing.id : undefined}
+              locked={running !== undefined || closing.status === "running"}
+              onChoose={(candidateId) => { void choose("closing", candidateId); }}
+            /> : null}
           </section>
           {session?.trace.length && !running ? <details className={styles.trace}>
             <summary>{session.trace.length} provider {session.trace.length === 1 ? "call" : "calls"}</summary>
@@ -499,50 +560,105 @@ function FactsSessionView({ session, verified }: { session: Draft2SessionView; v
   </>;
 }
 
-/** The Opening step: every round's verdict, the opening the next steps build on, and every other version to choose from. */
-function OpeningView({ opening, choosing, locked, onChoose }: { opening: Draft2Opening; choosing?: string; locked: boolean; onChoose: (candidateId: string) => void }) {
-  const names = roleNames(opening);
-  const versions = openingVersions(opening.rounds);
-  const chosen = versions.find((version) => version.candidate.id === (opening.editorChoiceId ?? opening.winnerId));
+/** What a funnel step shows of its runs: its names, its gate and criteria, and how its candidates read. */
+type FunnelDisplay<C extends FunnelCandidate> = {
+  noun: string;
+  plural: string;
+  gate: FunnelGate;
+  labels: Record<string, string>;
+  /** A version in the list of every version: its main line and the lines under it. */
+  lines: (candidate: C) => { title: string; details: string[] };
+  /** One of the judge's proposals, in one line. */
+  proposal: (candidate: C) => string;
+  /** The chosen version, as the slides it will be. */
+  cards: (candidate: C) => ReactNode;
+};
+
+const OPENING_DISPLAY: FunnelDisplay<Draft2OpeningCandidate> = {
+  noun: "opening",
+  plural: "openings",
+  gate: OPENING_GATE,
+  labels: CRITERION_LABEL,
+  lines: (candidate) => ({ title: candidate.cover.headline, details: [candidate.cover.subheadline, `Slide 2 · ${candidate.slide2.headline}`] }),
+  proposal: (candidate) => `${candidate.cover.headline} · slide 2: ${candidate.slide2.headline}`,
+  cards: (candidate) => <div className={styles.openingCards}>
+    <SlideCard label="Cover" headline={candidate.cover.headline} text={candidate.cover.subheadline} factIds={candidate.cover.factIds} />
+    <SlideCard label="Slide 2" headline={candidate.slide2.headline} text={candidate.slide2.body} factIds={candidate.slide2.factIds} />
+  </div>,
+};
+
+const CLOSING_DISPLAY: FunnelDisplay<Draft2ClosingCandidate> = {
+  noun: "closing",
+  plural: "closings",
+  gate: CLOSING_GATE,
+  labels: CLOSING_CRITERION_LABEL,
+  lines: (candidate) => ({
+    title: candidate.penultimate?.headline ?? candidate.last.headline,
+    details: [
+      ...(candidate.penultimate ? [candidate.penultimate.body, `Last slide · ${candidate.last.headline}`] : [candidate.last.body]),
+      candidate.last.cta ? `Call to action · ${candidate.last.cta}` : "No call to action",
+    ],
+  }),
+  proposal: (candidate) => `${candidate.penultimate ? `${candidate.penultimate.headline} · last: ` : ""}${candidate.last.headline}`,
+  cards: (candidate) => <div className={styles.openingCards}>
+    {candidate.penultimate ? <SlideCard label="Penultimate" headline={candidate.penultimate.headline} text={candidate.penultimate.body} factIds={candidate.penultimate.factIds} /> : null}
+    <SlideCard label="Last slide" headline={candidate.last.headline} text={candidate.last.body} cta={candidate.last.cta || undefined} factIds={candidate.last.factIds} />
+  </div>,
+};
+
+/** A funnel step's run: every round's verdict, the version the next steps build on, and every other version to choose from. */
+function FunnelRunView<C extends FunnelCandidate>({ run, display, choosing, locked, onChoose }: {
+  run: FunnelRun<C, FunnelScore, FunnelIssue> & { writer?: Draft2Opening["writer"]; judge?: Draft2Opening["judge"] };
+  display: FunnelDisplay<C>;
+  choosing?: string;
+  locked: boolean;
+  onChoose: (candidateId: string) => void;
+}) {
+  const names = roleNames(run);
+  const versions = funnelVersions(run.rounds);
+  const chosen = versions.find((version) => version.candidate.id === (run.editorChoiceId ?? run.winnerId));
   const others = versions.filter((version) => version !== chosen).sort((a, b) => (b.score?.overall ?? 0) - (a.score?.overall ?? 0));
-  const winnerLabel = opening.status === "ready" ? "Accepted" : "Best so far";
+  const winnerLabel = run.status === "ready" ? "Accepted" : "Best so far";
   return <>
-    {opening.rounds.length ? <ol className={styles.roundList} aria-label="Opening rounds">
-      {opening.rounds.map((round) => <OpeningRoundView key={round.round} round={round} names={names} />)}
+    {run.rounds.length ? <ol className={styles.roundList} aria-label={`${display.noun[0].toUpperCase()}${display.noun.slice(1)} rounds`}>
+      {run.rounds.map((round) => <FunnelRoundView key={round.round} round={round} names={names} display={display} />)}
     </ol> : null}
-    {chosen ? <ChosenOpening
+    {chosen ? <ChosenVersion
       version={chosen}
       names={names}
-      label={opening.editorChoiceId ? "Your choice" : winnerLabel}
-      tone={opening.editorChoiceId || opening.status === "ready" ? "success" : "warning"}
+      display={display}
+      label={run.editorChoiceId ? "Your choice" : winnerLabel}
+      tone={run.editorChoiceId || run.status === "ready" ? "success" : "warning"}
     /> : null}
     {others.length ? <div className={styles.openingGroup}>
-      <SectionHeader level={3} title={chosen ? "Every other version" : "Every version"} description={`All the openings of this run, as ${names.judge} scored them. The one you choose is what the next steps build on.`} />
+      <SectionHeader level={3} title={chosen ? "Every other version" : "Every version"} description={`All the ${display.plural} of this run, as ${names.judge} scored them. The one you choose is what the next steps build on.`} />
       <ol className={styles.factList}>
-        {others.map((version) => <li key={version.candidate.id} className={styles.factItem}>
-          <div className={styles.factHead}>
-            <span className={styles.factId}>{version.candidate.id}</span>
-            {version.score ? <StatusBadge tone={openingScorePasses(version.score) ? "success" : "neutral"}>{version.score.overall}/100</StatusBadge> : null}
-            {version.findings.length ? <StatusBadge tone="warning">{version.findings.length} program {version.findings.length === 1 ? "finding" : "findings"}</StatusBadge> : null}
-            {hasMaterialError(version) ? <StatusBadge tone="error">Factual error</StatusBadge> : null}
-            {version.candidate.id === opening.winnerId ? <StatusBadge tone="info">{winnerLabel}</StatusBadge> : null}
-            <span className={styles.factMeta}>{versionOrigin(version, names)}</span>
-          </div>
-          <p className={styles.factClaim}>{version.candidate.cover.headline}</p>
-          <p className={styles.factMeta}>{version.candidate.cover.subheadline}</p>
-          <p className={styles.factMeta}>Slide 2 · {version.candidate.slide2.headline}</p>
-          <div>
-            <Button variant="quiet" size="compact" busy={choosing === version.candidate.id} disabled={locked || choosing !== undefined} onClick={() => onChoose(version.candidate.id)}>Choose this opening</Button>
-          </div>
-        </li>)}
+        {others.map((version) => {
+          const { title, details } = display.lines(version.candidate);
+          return <li key={version.candidate.id} className={styles.factItem}>
+            <div className={styles.factHead}>
+              <span className={styles.factId}>{version.candidate.id}</span>
+              {version.score ? <StatusBadge tone={funnelScorePasses(version.score, display.gate) ? "success" : "neutral"}>{version.score.overall}/100</StatusBadge> : null}
+              {version.findings.length ? <StatusBadge tone="warning">{version.findings.length} program {version.findings.length === 1 ? "finding" : "findings"}</StatusBadge> : null}
+              {hasMaterialError(version) ? <StatusBadge tone="error">Factual error</StatusBadge> : null}
+              {version.candidate.id === run.winnerId ? <StatusBadge tone="info">{winnerLabel}</StatusBadge> : null}
+              <span className={styles.factMeta}>{versionOrigin(version, names)}</span>
+            </div>
+            <p className={styles.factClaim}>{title}</p>
+            {details.map((detail, index) => <p key={index} className={styles.factMeta}>{detail}</p>)}
+            <div>
+              <Button variant="quiet" size="compact" busy={choosing === version.candidate.id} disabled={locked || choosing !== undefined} onClick={() => onChoose(version.candidate.id)}>Choose this {display.noun}</Button>
+            </div>
+          </li>;
+        })}
       </ol>
     </div> : null}
   </>;
 }
 
-function OpeningRoundView({ round, names }: { round: Draft2OpeningRound; names: RoleNames }) {
+function FunnelRoundView<C extends FunnelCandidate>({ round, names, display }: { round: FunnelRound<C, FunnelScore, FunnelIssue>; names: RoleNames; display: FunnelDisplay<C> }) {
   const evaluation = round.evaluation;
-  const programWinner = evaluation ? openingAcceptedWinner(round.mechanical, evaluation) : undefined;
+  const programWinner = evaluation ? funnelAcceptedWinner(round.mechanical, evaluation, display.gate) : undefined;
   const winnerId = programWinner ?? evaluation?.winnerId;
   const winner = evaluation?.scores.find((score) => score.candidateId === winnerId);
   const revised = round.candidates.flatMap((candidate) => candidate.revisionOf ? [candidate.revisionOf] : []);
@@ -552,7 +668,7 @@ function OpeningRoundView({ round, names }: { round: Draft2OpeningRound; names: 
   const wrote = listed([
     revised.length ? `revised ${listed(revised)}` : "",
     edited.length ? `edited ${edited.length} of ${names.judge}’s proposals (${edited.join(", ")})` : "",
-    fresh.length ? (revised.length || edited.length || originals.length ? `tried ${fresh.length} new ${fresh.length === 1 ? "angle" : "angles"} (${fresh.join(", ")})` : `wrote ${fresh.length} ${fresh.length === 1 ? "opening" : "openings"}`) : "",
+    fresh.length ? (revised.length || edited.length || originals.length ? `tried ${fresh.length} new ${fresh.length === 1 ? "angle" : "angles"} (${fresh.join(", ")})` : `wrote ${fresh.length} ${fresh.length === 1 ? display.noun : display.plural}`) : "",
   ].filter(Boolean));
   const proposals = evaluation?.proposals ?? [];
   // Each proposal as the judge wrote it against the writer's edit: whose version scored higher.
@@ -573,7 +689,7 @@ function OpeningRoundView({ round, names }: { round: Draft2OpeningRound; names: 
     {(round.regressions ?? []).map((regression) => <p key={regression.candidateId} className={styles.factMeta}>{regressionNote(regression)}</p>)}
     {evaluation && programWinner && programWinner !== evaluation.winnerId ? <p className={styles.factMeta}>{names.judge} picked {evaluation.winnerId}, which has a program finding; {programWinner}, the best clean candidate, meets the thresholds and wins.</p> : null}
     {evaluation ? <p className={styles.factMeta}>{evaluation.summary}</p> : null}
-    {winner ? <ScoreRow score={winner} /> : null}
+    {winner ? <ScoreRow score={winner} display={display} /> : null}
     {round.mechanical.length || evaluation?.issues.length ? <ul className={styles.issueList}>
       {round.mechanical.map((issue, index) => <li key={`m${index}`}><strong>Program · {issue.code}</strong>{issueTarget(issue)}: {issue.detail}</li>)}
       {(evaluation?.issues ?? []).map((issue, index) => <li key={`j${index}`}><strong>{issue.material ? `Material · ${issue.code}` : issue.code}</strong>{issueTarget(issue)}: {issue.detail}</li>)}
@@ -581,14 +697,14 @@ function OpeningRoundView({ round, names }: { round: Draft2OpeningRound; names: 
     {evaluation?.suggestions.length ? <details><summary>{evaluation.suggestions.length} {evaluation.suggestions.length === 1 ? "suggestion" : "suggestions"} for the next round</summary>
       <ul className={styles.issueList}>{evaluation.suggestions.map((suggestion, index) => <li key={index}>{suggestion}</li>)}</ul>
     </details> : null}
-    {proposals.length ? <details><summary>{names.judge} proposed {proposals.length} {proposals.length === 1 ? "opening" : "openings"} for the next round</summary>
-      <ul className={styles.issueList}>{proposals.map((proposal) => <li key={proposal.id}><strong>{proposal.id}</strong>: {proposal.cover.headline} · slide 2: {proposal.slide2.headline}</li>)}</ul>
+    {proposals.length ? <details><summary>{names.judge} proposed {proposals.length} {proposals.length === 1 ? display.noun : display.plural} for the next round</summary>
+      <ul className={styles.issueList}>{proposals.map((proposal) => <li key={proposal.id}><strong>{proposal.id}</strong>: {display.proposal(proposal)}</li>)}</ul>
     </details> : null}
   </li>;
 }
 
-/** The opening the next steps build on, as two 4:5 cards: the cover and slide 2. */
-function ChosenOpening({ version, names, label, tone }: { version: Draft2OpeningVersion; names: RoleNames; label: string; tone: StatusTone }) {
+/** The version the next steps build on, with its scores, as the slides it will be. */
+function ChosenVersion<C extends FunnelCandidate>({ version, names, display, label, tone }: { version: FunnelVersion<C, FunnelScore, FunnelIssue>; names: RoleNames; display: FunnelDisplay<C>; label: string; tone: StatusTone }) {
   const { candidate, score } = version;
   return <div className={styles.openingGroup}>
     <div className={styles.factHead}>
@@ -598,31 +714,29 @@ function ChosenOpening({ version, names, label, tone }: { version: Draft2Opening
       {candidate.angle ? <span>{candidate.angle}</span> : null}
       <span className={styles.factMeta}>{versionOrigin(version, names)}</span>
     </div>
-    {score ? <ScoreRow score={score} /> : null}
+    {score ? <ScoreRow score={score} display={display} /> : null}
     {score?.note ? <p className={styles.factMeta}>{score.note}</p> : null}
-    <div className={styles.openingCards}>
-      <article className={styles.openingCard} aria-label="Cover">
-        <p className={styles.eyebrow}>Cover</p>
-        <p className={styles.openingHeadline}>{candidate.cover.headline}</p>
-        <p className={styles.openingText}>{candidate.cover.subheadline}</p>
-        <p className={styles.openingFacts}>Facts · {candidate.cover.factIds.join(", ")}</p>
-      </article>
-      <article className={styles.openingCard} aria-label="Slide 2">
-        <p className={styles.eyebrow}>Slide 2</p>
-        <p className={styles.openingHeadline}>{candidate.slide2.headline}</p>
-        <p className={styles.openingText}>{candidate.slide2.body}</p>
-        <p className={styles.openingFacts}>Facts · {candidate.slide2.factIds.join(", ")}</p>
-      </article>
-    </div>
+    {display.cards(candidate)}
   </div>;
 }
 
-function ScoreRow({ score }: { score: Draft2OpeningScore }) {
+/** One slide as a 4:5 card: its headline, its text, the call to action on the last, and the facts it cites. */
+function SlideCard({ label, headline, text, cta, factIds }: { label: string; headline: string; text: string; cta?: string; factIds: readonly string[] }) {
+  return <article className={styles.openingCard} aria-label={label}>
+    <p className={styles.eyebrow}>{label}</p>
+    <p className={styles.openingHeadline}>{headline}</p>
+    <p className={styles.openingText}>{text}</p>
+    {cta ? <p className={styles.openingCta}>{cta}</p> : null}
+    <p className={styles.openingFacts}>Facts · {factIds.join(", ")}</p>
+  </article>;
+}
+
+function ScoreRow<C extends FunnelCandidate>({ score, display }: { score: FunnelScore; display: FunnelDisplay<C> }) {
   return <p className={styles.scoreRow}>
-    {OPENING_CRITERIA.map((criterion) => {
-      // A score stored before the Focus step has no focus criterion.
-      const value = criterionScore(score, criterion);
-      return value === undefined ? null : <span key={criterion} data-low={value < OPENING_CRITERION_FLOOR ? "" : undefined}>{CRITERION_LABEL[criterion]} <strong>{value}</strong></span>;
+    {display.gate.criteria.map((criterion) => {
+      // A score stored before a criterion existed (the opening's focus) has none.
+      const value = criterionOf(score, criterion);
+      return value === undefined ? null : <span key={criterion} data-low={value < display.gate.floor ? "" : undefined}>{display.labels[criterion] ?? criterion} <strong>{value}</strong></span>;
     })}
     <span>Overall <strong>{score.overall}</strong></span>
   </p>;

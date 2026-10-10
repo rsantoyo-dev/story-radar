@@ -1,9 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import vm from "node:vm";
-import ts from "typescript";
 import * as types from "./draft2-facts.types";
 import * as openingTypes from "./draft2-opening.types";
 import * as focusTypes from "./draft2-focus.types";
@@ -11,10 +7,10 @@ import * as funnel from "./draft2-funnel";
 import * as models from "./draft2-models";
 import * as skills from "./skills/draft2-skills";
 import * as hooks from "./skills/hooks";
+import { loadInSandbox } from "./draft2-test-sandbox";
 import type { Draft2Opening, Draft2OpeningCandidate, Draft2OpeningScore } from "./draft2-opening.types";
 import type { Draft2Focus, Draft2FocusValues } from "./draft2-focus.types";
 
-const localRequire = createRequire(import.meta.url);
 const topicId = "11111111-1111-4111-8111-111111111111";
 const storyId = "22222222-2222-4222-8222-222222222222";
 const sessionId = "33333333-3333-4333-8333-333333333333";
@@ -171,27 +167,6 @@ function harness({ writes, judgments, failAt, session, busy = false, claimRefuse
     judgeCalls: () => calls.filter((call) => call.role === "judge").map((call) => call.input),
     row: () => row,
   };
-}
-
-/**
- * Loads one of the step's modules into a sandbox, with `mocks` for what it
- * imports; a local module that is not mocked (the funnel's runner) is loaded
- * into the same sandbox, so it shares the mocks and the clock.
- */
-function loadInSandbox(file: string, mocks: Record<string, unknown>, globals: Record<string, unknown>): Record<string, unknown> {
-  const context = vm.createContext({ JSON, Error, Object, Array, Math, Number, String, Boolean, Set, Map, Promise, console, setInterval, clearInterval, ...globals });
-  const modules = new Map<string, Record<string, unknown>>();
-  const load = (path: string): Record<string, unknown> => {
-    const loaded = modules.get(path);
-    if (loaded) return loaded;
-    const exports: Record<string, unknown> = {};
-    modules.set(path, exports);
-    const code = ts.transpileModule(readFileSync(new URL(path, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-    const evaluate = vm.runInContext(`(function (exports, require) {\n${code}\n})`, context) as (exports: unknown, require: (name: string) => unknown) => void;
-    evaluate(exports, (name) => name in mocks ? mocks[name] : name.startsWith("./") ? load(`${name}.ts`) : localRequire(name));
-    return exports;
-  };
-  return load(file);
 }
 
 const json = (value: unknown) => JSON.stringify(value);

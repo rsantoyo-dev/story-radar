@@ -715,6 +715,13 @@
       "when": 1791609026888,
       "tag": "0102_milky_squirrel_girl",
       "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1791629883572,
+      "tag": "0103_nifty_silver_sable",
+      "breakpoints": true
     }
   ]
 }
