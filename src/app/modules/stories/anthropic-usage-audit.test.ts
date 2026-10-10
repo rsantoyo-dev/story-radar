@@ -11,16 +11,25 @@ const compiled = ts.transpileModule(readFileSync(new URL("./anthropic-structured
 }).outputText;
 
 type Result = { text: string; usage: { promptTokens: number; outputTokens: number; totalTokens: number }; cachedInputTokens?: number; stopReason?: string };
-type Exports = { generateAnthropicStructuredResponse: (input: unknown) => Promise<Result> };
+type Exports = {
+  generateAnthropicStructuredResponse: (input: unknown) => Promise<Result>;
+  anthropicSchema: (schema: unknown) => unknown;
+};
 type FetchCall = { url: string; init: { headers: Record<string, string>; body: string } };
 
+const answer = { facts: [{ id: "f1", text: "private generated fact" }] };
 const successBody = JSON.stringify({
   id: "msg_test", type: "message", role: "assistant", model: "claude-sonnet-5-5",
-  content: [{ type: "tool_use", id: "toolu_test", name: "draft2_facts", input: { facts: [{ id: "f1", text: "private generated fact" }] } }],
-  stop_reason: "tool_use",
+  content: [{ type: "thinking", thinking: "private reasoning", signature: "sig" }, { type: "text", text: JSON.stringify(answer) }],
+  stop_reason: "end_turn",
   usage: { input_tokens: 80, output_tokens: 60, cache_creation_input_tokens: 0, cache_read_input_tokens: 20 },
 });
 const errorBody = JSON.stringify({ type: "error", error: { type: "rate_limit_error", message: "private rate limit detail" } });
+const schema = {
+  type: "object",
+  properties: { facts: { type: "array", minItems: 1, maxItems: 24, items: { type: "object", properties: { id: { type: "string", maxLength: 24 }, minimum: { type: "integer" }, importance: { type: "integer", minimum: 1, maximum: 100 } }, required: ["id", "minimum", "importance"], additionalProperties: false } } },
+  required: ["facts"], additionalProperties: false,
+};
 
 function load(fetchImpl: (url: string, init: FetchCall["init"]) => Promise<unknown>, logs: Record<string, unknown>[]) {
   const exports = {} as Exports;
@@ -36,8 +45,7 @@ function load(fetchImpl: (url: string, init: FetchCall["init"]) => Promise<unkno
 const request = (extra: Record<string, unknown> = {}) => ({
   apiKey: "private-api-key", model: "claude-sonnet-5-5", instructions: "private instructions",
   auditContext: { runId: "run-test", topicId: "topic-test", storyId: "story-test" },
-  contents: { story: "private evidence" }, schema: { type: "object", properties: { facts: { type: "array" } }, required: ["facts"], additionalProperties: false },
-  schemaName: "draft2_facts", maxOutputTokens: 4096, selfMetered: true, retryDelayMs: 0, ...extra,
+  contents: { story: "private evidence" }, schema, schemaName: "draft2_facts", maxOutputTokens: 4096, selfMetered: true, retryDelayMs: 0, ...extra,
 });
 const response = (status: number, body: string) => ({ ok: status < 400, status, headers: { get: () => "request-test" }, text: async () => body });
 
@@ -66,15 +74,19 @@ test("Claude receipts identify charges and uncertain requests without exposing c
     if (outcome === "success") {
       assert.equal(logs[1].cachedInputTokens, 20);
       assert.equal((logs[1].usage as { promptTokens: number }).promptTokens, 100, "cache reads count inside the prompt");
-      assert.equal(logs[1].stopReason, "tool_use");
+      assert.equal(logs[1].stopReason, "end_turn");
     }
   }
 });
 
-test("the request forces the schema as a tool call and converts data-URL images", async () => {
+test("the request asks for JSON output under the schema the API accepts, keeps the history cached and converts images", async () => {
   const calls: FetchCall[] = [];
   const exports = load(async (url, init) => { calls.push({ url, init }); return response(200, successBody); }, []);
-  const result = await exports.generateAnthropicStructuredResponse(request({ images: ["data:image/png;base64,QUJD", "https://example.com/cover.jpg"] }));
+  const result = await exports.generateAnthropicStructuredResponse(request({
+    effort: "high",
+    images: ["data:image/png;base64,QUJD", "https://example.com/cover.jpg"],
+    history: [{ role: "user", text: "private article turn" }, { role: "assistant", text: "{\"verdict\":\"revise\"}" }],
+  }));
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, "https://api.anthropic.com/v1/messages");
   assert.equal(calls[0].init.headers["x-api-key"], "private-api-key");
@@ -83,19 +95,30 @@ test("the request forces the schema as a tool call and converts data-URL images"
   assert.equal(body.model, "claude-sonnet-5-5");
   assert.equal(body.max_tokens, 4096);
   assert.equal(body.system, "private instructions");
-  assert.deepEqual(body.tool_choice, { type: "tool", name: "draft2_facts", disable_parallel_tool_use: true });
-  assert.equal(body.tools[0].name, "draft2_facts");
-  assert.deepEqual(body.tools[0].input_schema, request().schema);
-  assert.deepEqual(body.messages[0].content, [
+  assert.equal(body.tools, undefined, "no forced tool: Sonnet 5.5 rejects tool_choice");
+  assert.equal(body.tool_choice, undefined);
+  assert.equal(body.output_config.effort, "high");
+  assert.equal(body.output_config.format.type, "json_schema");
+  const sent = body.output_config.format.schema;
+  assert.equal(sent.properties.facts.minItems, 1);
+  assert.equal(sent.properties.facts.maxItems, undefined, "array size constraints are stripped");
+  const item = sent.properties.facts.items.properties;
+  assert.deepEqual(item.importance, { type: "integer" }, "numeric constraints are stripped");
+  assert.deepEqual(item.id, { type: "string" }, "length constraints are stripped");
+  assert.deepEqual(item.minimum, { type: "integer" }, "a field that happens to be named like a keyword survives");
+  assert.deepEqual(body.messages.map((message: { role: string }) => message.role), ["user", "assistant", "user"]);
+  assert.deepEqual(body.messages[0].content[0].cache_control, { type: "ephemeral" }, "the first history turn is cached");
+  assert.equal(body.messages[1].content[0].cache_control, undefined);
+  assert.deepEqual(body.messages[2].content, [
     { type: "text", text: JSON.stringify({ story: "private evidence" }) },
     { type: "image", source: { type: "base64", media_type: "image/png", data: "QUJD" } },
     { type: "image", source: { type: "url", url: "https://example.com/cover.jpg" } },
   ]);
-  assert.equal(result.text, JSON.stringify({ facts: [{ id: "f1", text: "private generated fact" }] }));
+  assert.equal(result.text, JSON.stringify(answer), "thinking blocks never reach the output");
   // The result is built inside the vm realm: compare values, not prototypes.
   assert.equal(JSON.stringify(result.usage), JSON.stringify({ promptTokens: 100, outputTokens: 60, thoughtsTokens: 0, totalTokens: 160 }));
   assert.equal(result.cachedInputTokens, 20);
-  assert.equal(result.stopReason, "tool_use");
+  assert.equal(result.stopReason, "end_turn");
 });
 
 test("an overloaded provider gets one more attempt; a rate limit does not", async () => {
@@ -103,7 +126,7 @@ test("an overloaded provider gets one more attempt; a rate limit does not", asyn
   const logs: Record<string, unknown>[] = [];
   const retried = load(async () => overloaded++ === 0 ? response(529, errorBody) : response(200, successBody), logs);
   const result = await retried.generateAnthropicStructuredResponse(request());
-  assert.equal(result.stopReason, "tool_use");
+  assert.equal(result.stopReason, "end_turn");
   assert.deepEqual(logs.map((entry) => [entry.event, entry.attempt]), [["started", undefined], ["http-error", 1], ["response-received", 2]]);
 
   let limited = 0;
@@ -116,15 +139,14 @@ test("an overloaded provider gets one more attempt; a rate limit does not", asyn
   assert.equal(limited, 1);
 });
 
-test("a truncated answer without the tool call fails with its usage, so the meter can settle the cost", async () => {
-  const truncated = JSON.stringify({
-    content: [{ type: "text", text: "private partial prose" }], stop_reason: "max_tokens",
-    usage: { input_tokens: 100, output_tokens: 4096 },
-  });
-  const exports = load(async () => response(200, truncated), []);
-  await assert.rejects(exports.generateAnthropicStructuredResponse(request()), (error: Error & { usage?: { totalTokens: number } }) => {
-    assert.match(error.message, /no structured output \(max_tokens\)/);
-    assert.equal(error.usage?.totalTokens, 4196);
-    return true;
-  });
+test("a refusal or a cut-off answer fails with its usage, so the meter can settle the cost", async () => {
+  for (const [stopReason, pattern] of [["max_tokens", /ran out of output tokens/], ["refusal", /refused/]] as const) {
+    const body = JSON.stringify({ content: [{ type: "text", text: "{\"facts\":[{\"id\":\"f1\"" }], stop_reason: stopReason, usage: { input_tokens: 100, output_tokens: 4096 } });
+    const exports = load(async () => response(200, body), []);
+    await assert.rejects(exports.generateAnthropicStructuredResponse(request()), (error: Error & { usage?: { totalTokens: number } }) => {
+      assert.match(error.message, pattern);
+      assert.equal(error.usage?.totalTokens, 4196);
+      return true;
+    });
+  }
 });

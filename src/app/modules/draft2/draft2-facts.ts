@@ -21,7 +21,8 @@ export const DEFAULT_DRAFT2_EXTRACTOR_MODEL = "gpt-6.1-sol";
 /** A round that would start after this point is left to a new request; the route allows 300 s. */
 const TIME_BUDGET_MS = 230_000;
 const EXTRACTOR_MAX_OUTPUT_TOKENS = 6_000;
-const REVIEWER_MAX_OUTPUT_TOKENS = 4_000;
+/** Covers the verdict and Claude's thinking, which the API counts against the same ceiling. */
+const REVIEWER_MAX_OUTPUT_TOKENS = 12_000;
 
 export const DRAFT2_EXTRACTOR_INSTRUCTIONS = `You are the fact extractor of an editorial team that produces social carousels. You receive one article as JSON and answer only through the tool.
 
@@ -29,7 +30,7 @@ Rules:
 - A fact is one checkable claim, written in the article's language as a complete sentence a reader could verify against the article.
 - "evidence" is a verbatim excerpt copied exactly from the article text (punctuation and spelling included; at most 300 characters) that supports the claim on its own. Never paraphrase inside "evidence".
 - "status": "established" when the article states it as fact in its own voice; "attributed" when the article reports that someone says, claims, estimates, proposes or alleges it (then "attribution" names who, exactly as the article does); "disputed" when the article presents it as contested, denied or uncertain.
-- "qualifier": the word or phrase that must travel with the claim ("alleged", "proposed", "reported", "expected", "estimated", "according to X"), or null when none applies.
+- "qualifier": only a hedge that changes how certain the claim is and must travel with it ("alleged", "proposed", "reported", "expected", "estimated", "could", "potentially", "according to X"), or null when none applies. Time or place phrases ("this year", "in May"), ranges ("up to") and ordinary nouns are never qualifiers; they belong inside the claim.
 - Copy numbers, dates, currencies, units and names exactly as written. Never convert, round, infer, combine or add outside knowledge.
 - "kind": event, number, date, quote, name or claim. "importance": 1 to 100, how much the story depends on this fact.
 - Return between 6 and 20 facts, most important first, each with a stable id (f1, f2, ...). One idea per fact; no duplicates; nothing the article does not say.
@@ -129,7 +130,7 @@ export async function runDraft2Facts({ topicId, storyId }: Draft2FactsInput): Pr
         const reviewerRequest = { instructions: DRAFT2_REVIEWER_INSTRUCTIONS, history: history.map((turn) => ({ role: turn.role, characters: turn.text.length })), contents: reviewerContents };
         const reviewed = await traced(round, "anthropic", reviewerModel, "draft2_facts_review", reviewerRequest, () => generateAnthropicStructuredResponse({
           apiKey: anthropicApiKey, model: reviewerModel, instructions: DRAFT2_REVIEWER_INSTRUCTIONS, contents: reviewerContents, history,
-          schema: DRAFT2_FACTS_REVIEW_SCHEMA, schemaName: "draft2_facts_review", maxOutputTokens: REVIEWER_MAX_OUTPUT_TOKENS, auditContext,
+          schema: DRAFT2_FACTS_REVIEW_SCHEMA, schemaName: "draft2_facts_review", maxOutputTokens: REVIEWER_MAX_OUTPUT_TOKENS, effort: "high", auditContext,
         }), (value) => JSON.parse(value.text));
         evaluation = parseDraft2FactsEvaluation(reviewed.text);
         threads.anthropic = { model: reviewerModel, history: [...history, { role: "user", text: JSON.stringify(reviewerContents) }, { role: "assistant", text: reviewed.text }] };

@@ -10,10 +10,12 @@ import type { CreativeAiUsage } from "./creative-content.types";
  * usage metered against the Story text budget, receipts that never carry
  * credentials, prompts or generated text.
  *
- * Structured output is a forced tool call: the schema is the tool's input
- * schema, so the answer arrives as the tool's `input` object. Extended
- * thinking is deliberately not enabled here, because the API does not allow
- * forcing a tool while thinking is on.
+ * Structured output uses the API's JSON outputs (`output_config.format`,
+ * constrained decoding): the answer is the JSON in the response's text
+ * block. Forced tool calls are not an option, since Claude Sonnet 5.5 and
+ * later reject `tool_choice` of type "tool". The API accepts a subset of
+ * JSON Schema, so numeric, length and array-size constraints are stripped
+ * before sending; the callers' parsers keep enforcing them.
  */
 type AnthropicMessagesPayload = {
   content?: unknown;
@@ -37,9 +39,12 @@ const ANTHROPIC_VERSION = "2023-06-01";
 const ANTHROPIC_TIMEOUT_MS = 120_000;
 /** Transient provider states worth one more attempt. A rate limit (429) is not retried: the caller decides. */
 const RETRIED_STATUSES = new Set([500, 502, 503, 529]);
+/** JSON Schema keywords the API's structured outputs reject; the caller's parser validates them instead. */
+const UNSUPPORTED_SCHEMA_KEYWORDS = new Set(["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf", "minLength", "maxLength", "maxItems", "uniqueItems"]);
 
 export type AnthropicUsageContext = { runId: string; topicId: string; storyId: string };
 export type AnthropicHistoryTurn = { role: "user" | "assistant"; text: string };
+export type AnthropicEffort = "low" | "medium" | "high";
 
 export async function generateAnthropicStructuredResponse(options: Parameters<typeof requestAnthropicStructuredResponse>[0] & {
   /** The caller records this call's usage charge itself. */
@@ -59,6 +64,7 @@ async function requestAnthropicStructuredResponse({
   schema,
   schemaName,
   maxOutputTokens,
+  effort,
   timeoutMs = ANTHROPIC_TIMEOUT_MS,
   attempts = 2,
   retryDelayMs = 1_500,
@@ -70,10 +76,14 @@ async function requestAnthropicStructuredResponse({
   model: string;
   instructions: string;
   contents: unknown;
-  /** A JSON schema object (type "object"); it becomes the forced tool's input schema. */
+  /** A JSON schema object (type "object", additionalProperties false on every object); unsupported constraints are stripped. */
   schema: Record<string, unknown>;
+  /** Names the operation in receipts and accounting. */
   schemaName: string;
+  /** Covers the answer and the model's thinking, which the API counts against the same ceiling. */
   maxOutputTokens: number;
+  /** The model's reasoning effort; the model's default when unset. */
+  effort?: AnthropicEffort;
   timeoutMs?: number;
   /** Attempts for transient failures (overload, 5xx, transport); a timeout is never retried. */
   attempts?: number;
@@ -94,7 +104,7 @@ async function requestAnthropicStructuredResponse({
   // Safe per-call receipts: never log credentials, prompts or generated text.
   const receipt = (details: Record<string, unknown>) => console.info("[anthropic-usage]", JSON.stringify({
     auditId, at: new Date().toISOString(), model, operation: schemaName,
-    maxOutputTokens, ...(auditContext ? { context: auditContext } : {}), ...details,
+    maxOutputTokens, ...(effort ? { effort } : {}), ...(auditContext ? { context: auditContext } : {}), ...details,
   }));
   receipt({ event: "started", historyTurns: history.length });
   const body = JSON.stringify({
@@ -111,8 +121,7 @@ async function requestAnthropicStructuredResponse({
         content: [{ type: "text", text: JSON.stringify(contents) }, ...images.map((image) => ({ type: "image", source: imageSource(image) }))],
       },
     ],
-    tools: [{ name: schemaName, description: "Record the structured result of this task.", input_schema: schema }],
-    tool_choice: { type: "tool", name: schemaName, disable_parallel_tool_use: true },
+    output_config: { format: { type: "json_schema", schema: anthropicSchema(schema) }, ...(effort ? { effort } : {}) },
   });
 
   let lastError: AnthropicEditorialError | undefined;
@@ -173,7 +182,14 @@ async function requestAnthropicStructuredResponse({
       throw lastError;
     }
 
-    const text = extractAnthropicToolInput(payload, schemaName);
+    // A refusal or a cut-off answer is not structured output; the usage travels with the error so the meter settles it.
+    if (stopReason === "refusal" || stopReason === "max_tokens") {
+      throw new AnthropicEditorialError(
+        stopReason === "refusal" ? `Claude ${model} refused the request` : `Claude ${model} ran out of output tokens before finishing (${maxOutputTokens})`,
+        usage,
+      );
+    }
+    const text = extractAnthropicText(payload);
     if (!text) {
       throw new AnthropicEditorialError(
         `Claude ${model} returned no structured output (${stopReason ?? "unknown stop reason"})`,
@@ -205,6 +221,22 @@ function imageSource(image: string): Record<string, string> {
     : { type: "url", url: image };
 }
 
+/** The schema without the constraints the API rejects; `minItems` keeps at most 1. */
+export function anthropicSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(anthropicSchema);
+  if (!value || typeof value !== "object") return value;
+  const result: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (UNSUPPORTED_SCHEMA_KEYWORDS.has(key)) continue;
+    if (key === "minItems") { if (typeof entry === "number") result[key] = Math.min(1, Math.max(0, entry)); continue; }
+    // Keyword names inside `properties` are field names, not constraints.
+    result[key] = key === "properties" && entry && typeof entry === "object" && !Array.isArray(entry)
+      ? Object.fromEntries(Object.entries(entry as Record<string, unknown>).map(([field, fieldSchema]) => [field, anthropicSchema(fieldSchema)]))
+      : anthropicSchema(entry);
+  }
+  return result;
+}
+
 function parsePayload(value: string): AnthropicMessagesPayload {
   try {
     const parsed = JSON.parse(value) as unknown;
@@ -218,14 +250,17 @@ function parsePayload(value: string): AnthropicMessagesPayload {
   throw new AnthropicEditorialError("Claude returned an invalid JSON response");
 }
 
-/** The forced tool's input as JSON text. Prose without a tool call is not structured output (a truncated answer). */
-export function extractAnthropicToolInput(payload: AnthropicMessagesPayload, toolName: string): string {
+/** The answer's text blocks joined; thinking blocks are never part of the output. */
+export function extractAnthropicText(payload: AnthropicMessagesPayload): string {
   if (!Array.isArray(payload.content)) return "";
-  const calls = payload.content.filter((block): block is Record<string, unknown> =>
-    Boolean(block) && typeof block === "object" && (block as Record<string, unknown>).type === "tool_use"
-    && Boolean((block as Record<string, unknown>).input) && typeof (block as Record<string, unknown>).input === "object");
-  const call = calls.find((block) => block.name === toolName) ?? calls[0];
-  return call ? JSON.stringify(call.input) : "";
+  return payload.content
+    .flatMap((block) => {
+      if (!block || typeof block !== "object") return [];
+      const value = block as { type?: unknown; text?: unknown };
+      return value.type === "text" && typeof value.text === "string" ? [value.text] : [];
+    })
+    .join("")
+    .trim();
 }
 
 /**

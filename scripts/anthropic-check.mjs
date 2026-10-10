@@ -1,6 +1,7 @@
-// Verifies ANTHROPIC_API_KEY with the smallest useful Claude call: one forced
-// tool call capped at 64 output tokens. Prints the model, stop reason, request
-// id and token usage; never the key.
+// Verifies ANTHROPIC_API_KEY with the smallest useful Claude call: one JSON
+// answer under a schema, capped at 256 output tokens (the model's thinking
+// counts against that cap). Prints the model, stop reason, request id and
+// token usage; never the key.
 //   npm run ai:anthropic:check        (reads .env.local)
 const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
 const model = process.env.CREATIVE_ANTHROPIC_MODEL?.trim() || "claude-sonnet-5-5";
@@ -14,15 +15,10 @@ const response = await fetch("https://api.anthropic.com/v1/messages", {
   headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
   body: JSON.stringify({
     model,
-    max_tokens: 64,
-    system: "Answer only by calling the tool.",
+    max_tokens: 256,
+    system: "Answer with the JSON the schema asks for.",
     messages: [{ role: "user", content: "Confirm the connection works." }],
-    tools: [{
-      name: "connection_check",
-      description: "Report that the connection works.",
-      input_schema: { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"], additionalProperties: false },
-    }],
-    tool_choice: { type: "tool", name: "connection_check" },
+    output_config: { format: { type: "json_schema", schema: { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"], additionalProperties: false } } },
   }),
 });
 const body = await response.json().catch(() => ({}));
@@ -30,8 +26,8 @@ if (!response.ok) {
   console.error(`Claude ${model} answered HTTP ${response.status}: ${body?.error?.message ?? "unknown error"}`);
   process.exit(1);
 }
-const tool = (body.content ?? []).find((block) => block.type === "tool_use");
+const text = (body.content ?? []).filter((block) => block.type === "text").map((block) => block.text).join("");
 console.log(JSON.stringify({
   model: body.model, stopReason: body.stop_reason, requestId: response.headers.get("request-id"),
-  toolInput: tool?.input ?? null, usage: body.usage,
+  answer: text, usage: body.usage,
 }, null, 2));
