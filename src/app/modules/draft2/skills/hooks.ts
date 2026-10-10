@@ -9,11 +9,13 @@ import type { Draft2Skill } from "./draft2-skills";
  *
  * Version 2, after the first real run: the headline rule no longer invites
  * dropping a qualifier, voice yields to the story's gravity, and revisions
- * must keep what already works.
+ * must keep what already works. Version 3, after the second: a slide 2
+ * headline that states an attributed claim carries its attribution, and new
+ * angles are tried beside the revisions.
  */
 export const HOOKS_SKILL: Draft2Skill = {
   name: "hooks",
-  version: "2",
+  version: "3",
   text: `# Openings for social carousels
 
 An opening is the cover (headline + subheadline) and slide 2 (headline + body).
@@ -46,7 +48,8 @@ cover whose promise slide 2 cannot pay is a lie.
 - The first payoff: it delivers the first concrete thing the cover promised,
   using at least one fact the cover did not use. It advances; it never
   restates or explains the cover.
-- Attribution lives here when a fact is attributed ("A DOD official says…").
+- Attribution lives here when a fact is attributed ("A DOD official says…"),
+  in the headline too when the headline states the attributed claim.
 
 ## Facts
 - Every sentence rests on the verified facts cited by id. Numbers, names,
@@ -65,12 +68,13 @@ cover whose promise slide 2 cannot pay is a lie.
 An opening is accepted only when overall ≥ 95 and no criterion is below 85.
 
 ## Revisions
-After the first round, the best openings are revised instead of replaced. A
-revision keeps what made the opening strong (its promise, slide 2's payoff
-and its attribution, the facts already approved, its best lines) and changes
-only what the issues name. A revision that comes out flatter, more
-bureaucratic or less clear is worse, even when it is more precise; the
-program keeps the better version.
+After the first round, the best openings are revised, and new angles are
+tried beside them in case the first angles have a ceiling. A revision keeps
+what made the opening strong (its promise, slide 2's payoff and its
+attribution, the facts already approved, its best lines) and changes only
+what the issues name. A revision that comes out flatter, more bureaucratic or
+less clear is worse, even when it is more precise; the program keeps the
+better version. A new angle differs from every opening already tried.
 
 ## Examples
 Strong: "Give Gemini the goal, not the step-by-step" / slide 2 pays with the
@@ -84,7 +88,7 @@ kill-chain targeting: it swaps the story's tension for a sales angle.`,
 
 /** Who the Opening roles are; composeInstructions adds the hooks skill and the Topic's brand brief after them. */
 export const OPENING_ROLES = {
-  "opening-writer": `You write the opening of a social carousel for the publication described below, from the verified facts you receive (cite their ids). For the task "openings", return exactly \`candidatesWanted\` candidates, each a different angle on the story's tension, following the openings skill; ids c1…c7. For the task "revise", return one revised candidate per opening listed, with the same id, following the instruction that comes with it.
+  "opening-writer": `You write the opening of a social carousel for the publication described below, from the verified facts you receive (cite their ids). For the task "openings", return exactly \`candidatesWanted\` candidates, each a different angle on the story's tension, following the openings skill; ids c1…c10. For the task "revise", return one revised candidate per opening listed, with the same id, and, when \`newAngles\` asks for them, that many new openings with ids n1, n2…, each a different angle from every opening in \`anglesSoFar\`; follow the instruction that comes with the task.
 
 Each part cites the ids of the facts it rests on ("cover.factIds", "slide2.factIds"). "angle" is one line naming the tension the opening uses.`,
   "opening-judge": `You are the severe judge of carousel openings for the publication described below. Score every candidate on each criterion of the openings skill, rank them, name the winner, and give the writer concrete suggestions. Mechanical findings from the program are blocking. Accept only when the winner meets the skill's thresholds. Judge against the verified facts you receive only.

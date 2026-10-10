@@ -3,18 +3,30 @@ import { comparableText, Draft2ResponseError, type Draft2Fact } from "./draft2-f
 /**
  * Opening, the second Draft 2 step: the cover (headline + subheadline) and
  * slide 2 (headline + body), judged as one unit. A writer (Sol) proposes
- * seven candidates from the verified facts; the program checks what a
- * program can (lengths, fact ids, numbers, attribution, repetition); a judge
- * (Claude) scores them on the hooks skill. After the first round the best
- * versions are refined, not replaced: the two best, then the best one, and
- * the program keeps the better of each version and its revision.
- * Everything here is pure: contracts, schemas, parsing, the mechanical
- * checks, version bookkeeping and the acceptance rule.
+ * candidates from the verified facts; the program checks what a program can
+ * (lengths, fact ids, numbers, attribution, repetition); a judge (Claude)
+ * scores them on the hooks skill. The rounds narrow like a funnel (see
+ * OPENING_ROUND_PLAN): ten openings, then the three best revised beside two
+ * new angles, then the two best revised for the final pick. The program
+ * keeps the better of each version and its revision. Everything here is
+ * pure: contracts, schemas, parsing, the mechanical checks, version
+ * bookkeeping and the acceptance rule.
  */
-export const OPENING_CANDIDATES = 7;
-/** The second round revises this many of the first round's best versions; the third revises the best one. */
-export const OPENING_FINALISTS = 2;
-export const OPENING_MAX_ROUNDS = 3;
+/** The first round's new angles: the hook matters most, so the first round explores widely. */
+export const OPENING_CANDIDATES = 10;
+/**
+ * What each round asks of Sol: how many of the best versions so far to
+ * revise (each from a different line of revisions) and how many new angles
+ * to write beside them, in case the first angles have a ceiling. A round
+ * with fewer clean versions than it wants to revise writes new angles in
+ * their place.
+ */
+export const OPENING_ROUND_PLAN: readonly { revise: number; fresh: number }[] = [
+  { revise: 0, fresh: OPENING_CANDIDATES },
+  { revise: 3, fresh: 2 },
+  { revise: 2, fresh: 0 },
+];
+export const OPENING_MAX_ROUNDS = OPENING_ROUND_PLAN.length;
 export const OPENING_ACCEPT_SCORE = 95;
 export const OPENING_CRITERION_FLOOR = 85;
 export const COVER_HEADLINE_MAX_WORDS = 8;
@@ -36,7 +48,7 @@ export type Draft2OpeningCriterion = (typeof OPENING_CRITERIA)[number];
 export type Draft2OpeningIssueCode = (typeof OPENING_ISSUE_CODES)[number];
 
 export type Draft2OpeningCandidate = {
-  /** c1…c7 for new angles; a revision names its round ("c3.2" revises c3 in round 2). Unique within a run. */
+  /** c1, c2… for new angles; a revision names its round ("c3.2" revises c3 in round 2). Unique within a run. */
   id: string;
   cover: { headline: string; subheadline: string; factIds: string[] };
   slide2: { headline: string; body: string; factIds: string[] };
@@ -73,8 +85,8 @@ export type Draft2OpeningEvaluation = {
 
 export type Draft2OpeningRound = {
   round: number;
-  /** explore: new angles; refine: revisions of the best versions so far. Rounds stored before refinement have none (explore). */
-  kind?: "explore" | "refine";
+  /** explore: new angles only; refine: revisions only; mixed: both. Rounds stored before refinement have none (explore). */
+  kind?: "explore" | "refine" | "mixed";
   candidates: Draft2OpeningCandidate[];
   mechanical: Draft2OpeningIssue[];
   evaluation?: Draft2OpeningEvaluation;
@@ -445,19 +457,43 @@ export function openingVersions(rounds: readonly Draft2OpeningRound[]): Draft2Op
   return [...byId.values()];
 }
 
-/** The versions that may win, best first: scored, no program finding, highest overall (a later round wins a tie). */
+/**
+ * The versions that may win, best first: scored, no program finding, highest
+ * overall. A tie goes to the better grounded version (conservative facts),
+ * then to the later round.
+ */
 export function bestOpeningVersions(versions: readonly Draft2OpeningVersion[]): Draft2OpeningVersion[] {
   return versions
     .filter((version) => version.score && version.findings.length === 0)
-    .sort((a, b) => b.score!.overall - a.score!.overall || b.round - a.round);
+    .sort((a, b) => b.score!.overall - a.score!.overall || b.score!.grounding - a.score!.grounding || b.round - a.round);
 }
 
-/** What a round works on: the best clean versions to refine (two in round 2, then one); none means the round writes new angles. */
+const rootId = (id: string) => id.split(".")[0];
+
+/** What a round revises: the best clean version of each line of revisions, as many lines as the round's plan wants. */
 export function openingTargets(versions: readonly Draft2OpeningVersion[], round: number): Draft2OpeningVersion[] {
-  return round === 1 ? [] : bestOpeningVersions(versions).slice(0, round === 2 ? OPENING_FINALISTS : 1);
+  const lines = new Set<string>();
+  const best: Draft2OpeningVersion[] = [];
+  for (const version of bestOpeningVersions(versions)) {
+    const line = rootId(version.candidate.id);
+    if (lines.has(line)) continue;
+    lines.add(line);
+    best.push(version);
+  }
+  return best.slice(0, OPENING_ROUND_PLAN[round - 1]?.revise ?? 0);
 }
 
-/** Revisions that came out worse than the version they revised: a lower overall, or a program finding the previous version did not have. */
+/** How many new angles a round writes: its plan's, plus one for every version it wanted to revise and could not. */
+export function openingFreshWanted(round: number, targets: readonly Draft2OpeningVersion[]): number {
+  const plan = OPENING_ROUND_PLAN[round - 1] ?? { revise: 0, fresh: 0 };
+  return plan.fresh + Math.max(0, plan.revise - targets.length);
+}
+
+/**
+ * Revisions that came out worse than the version they revised: a lower
+ * overall, a grounding loss the overall did not repay, or a program finding
+ * the previous version did not have.
+ */
 export function openingRegressions(revisions: readonly Draft2OpeningVersion[], previous: readonly Draft2OpeningVersion[]): Draft2OpeningRegression[] {
   return revisions.flatMap((revision) => {
     const before = previous.find((version) => version.candidate.id === revision.candidate.revisionOf);
@@ -466,26 +502,29 @@ export function openingRegressions(revisions: readonly Draft2OpeningVersion[], p
       ...OPENING_CRITERIA.filter((criterion) => revision.score![criterion] < before.score![criterion]).map((criterion) => `${criterion} ${before.score![criterion]} → ${revision.score![criterion]}`),
       ...(before.findings.length ? [] : revision.findings.map((finding) => finding.code)),
     ];
-    const regressed = revision.score.overall < before.score.overall || (revision.findings.length > 0 && before.findings.length === 0);
+    const regressed = revision.score.overall < before.score.overall
+      || (revision.score.overall === before.score.overall && revision.score.grounding < before.score.grounding)
+      || (revision.findings.length > 0 && before.findings.length === 0);
     return regressed ? [{ candidateId: revision.candidate.id, previousId: before.candidate.id, from: before.score.overall, to: revision.score.overall, worse }] : [];
   });
 }
 
-const rootId = (id: string) => id.split(".")[0];
-
 /**
- * The writer's revisions as new versions: one per target, matched by id (or
- * in order when the writer renamed them), each with an id naming its round
- * ("c3" revised in round 2 becomes "c3.2").
+ * The writer's answer as this round's versions. A revision keeps its
+ * target's id and becomes a new version named for its round ("c3" revised in
+ * round 2 becomes "c3.2"); when the round writes no new angle, a renamed
+ * revision is matched in order. Every other candidate is a new angle, up to
+ * the number asked, with a fresh id.
  */
-export function revisedCandidates(targets: readonly Draft2OpeningCandidate[], answer: readonly Draft2OpeningCandidate[], round: number): Draft2OpeningCandidate[] {
-  const unmatched = answer.filter((candidate) => !targets.some((target) => target.id === candidate.id));
+export function writtenCandidates(targets: readonly Draft2OpeningCandidate[], answer: readonly Draft2OpeningCandidate[], round: number, freshWanted: number, versions: readonly Draft2OpeningVersion[]): Draft2OpeningCandidate[] {
+  const others = answer.filter((candidate) => !targets.some((target) => target.id === candidate.id));
   const revisions = targets.flatMap((target) => {
-    const revision = answer.find((candidate) => candidate.id === target.id) ?? unmatched.shift();
+    const revision = answer.find((candidate) => candidate.id === target.id) ?? (freshWanted === 0 ? others.shift() : undefined);
     return revision ? [{ ...revision, id: `${rootId(target.id)}.${round}`, revisionOf: target.id }] : [];
   });
-  if (!revisions.length) throw new Draft2ResponseError("The writer returned no revision of the openings it was given");
-  return revisions;
+  const written = [...revisions, ...renumberedCandidates(others.slice(0, freshWanted), versions)];
+  if (!written.length) throw new Draft2ResponseError("The writer returned none of the openings it was asked for");
+  return written;
 }
 
 /** New angles get ids after every id the run used, so each version keeps one id for the whole run. */
@@ -497,25 +536,43 @@ export function renumberedCandidates(answer: readonly Draft2OpeningCandidate[], 
 /** A candidate as the models read it: the version it revises, never the program's bookkeeping. */
 const shown = ({ revisionOf, ...candidate }: Draft2OpeningCandidate) => ({ ...candidate, ...(revisionOf ? { revises: revisionOf } : {}) });
 
-/** What the writer receives for new angles: the facts first (cached), then, after a round with nothing to refine, what went wrong. */
-export function openingExploreRequest(verifiedFacts: ReturnType<typeof openingFactsSnapshot>, last?: Draft2OpeningRound) {
+/** Every opening tried so far, so new angles do not repeat one. */
+const anglesSoFar = (versions: readonly Draft2OpeningVersion[]) =>
+  versions.map((version) => ({ id: version.candidate.id, coverHeadline: version.candidate.cover.headline, ...(version.score ? { overall: version.score.overall } : {}) }));
+
+/** What the last round's judge found, for new angles that must avoid it. */
+const feedback = (last: Draft2OpeningRound) => ({
+  judgeSummary: last.evaluation?.summary,
+  issues: [...last.mechanical, ...(last.evaluation?.issues ?? [])],
+});
+
+/** What the writer receives for new angles only: the facts first (cached), then, after a round, what was tried and what went wrong. */
+export function openingExploreRequest(verifiedFacts: ReturnType<typeof openingFactsSnapshot>, candidatesWanted: number, last?: Draft2OpeningRound, versions: readonly Draft2OpeningVersion[] = []) {
   return {
     verifiedFacts,
     task: "openings",
-    candidatesWanted: OPENING_CANDIDATES,
-    ...(last?.evaluation ? { feedback: {
-      note: "Every opening so far has a program finding. Write new angles that avoid these issues.",
-      judgeSummary: last.evaluation.summary,
-      issues: [...last.mechanical, ...last.evaluation.issues],
+    candidatesWanted,
+    ...(last?.evaluation ? {
+      note: "No opening so far is clean enough to revise. Write new angles, each different from every opening in anglesSoFar, that avoid these issues.",
+      anglesSoFar: anglesSoFar(versions),
+      feedback: feedback(last),
       suggestions: last.evaluation.suggestions,
-    } } : {}),
+    } : {}),
   };
 }
 
 export const OPENING_REVISION_INSTRUCTION = "Revise each opening in openings and return exactly one candidate per opening, with the same id. Preserve its narrative promise, the payoff slide 2 delivers (with its attribution), every fact claim already approved and its strongest creative elements. Change only what its issues name. Never make the writing flatter or more bureaucratic to gain precision. When earlierAttempts lists a revision that scored lower, do not repeat what made it worse.";
 
-/** What the writer receives to refine: each target with its scores, the program's findings and the judge's issues, and any earlier attempt that came out worse. */
-export function openingRefineRequest(verifiedFacts: ReturnType<typeof openingFactsSnapshot>, targets: readonly Draft2OpeningVersion[], versions: readonly Draft2OpeningVersion[], regressions: readonly Draft2OpeningRegression[], suggestions: readonly string[]) {
+/** The instruction for the new angles a round writes beside its revisions. */
+export const openingNewAnglesInstruction = (count: number) => `Then write ${count} new ${count === 1 ? "opening" : "openings"}, with ids ${Array.from({ length: count }, (_, index) => `n${index + 1}`).join(", ")}: each a different angle from every opening in anglesSoFar and from the ones you revise, built to answer the issues and suggestions, in case the first angles have a ceiling.`;
+
+/**
+ * What the writer receives to revise: each target with its scores, the
+ * program's findings and the judge's issues, and any earlier attempt that
+ * came out worse; and, when the round asks for new angles, every opening
+ * tried so far and what the last judgment found.
+ */
+export function openingRefineRequest(verifiedFacts: ReturnType<typeof openingFactsSnapshot>, targets: readonly Draft2OpeningVersion[], versions: readonly Draft2OpeningVersion[], regressions: readonly Draft2OpeningRegression[], last: Draft2OpeningRound | undefined, newAngles = 0) {
   return {
     verifiedFacts,
     task: "revise",
@@ -530,8 +587,9 @@ export function openingRefineRequest(verifiedFacts: ReturnType<typeof openingFac
         worse: regression.worse,
       })),
     })),
-    suggestions: [...suggestions],
-    instruction: OPENING_REVISION_INSTRUCTION,
+    ...(newAngles > 0 ? { newAngles, anglesSoFar: anglesSoFar(versions), ...(last ? { feedback: feedback(last) } : {}) } : {}),
+    suggestions: [...(last?.evaluation?.suggestions ?? [])],
+    instruction: newAngles > 0 ? `${OPENING_REVISION_INSTRUCTION} ${openingNewAnglesInstruction(newAngles)}` : OPENING_REVISION_INSTRUCTION,
   };
 }
 

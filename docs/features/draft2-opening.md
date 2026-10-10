@@ -15,8 +15,19 @@ issues, round 3 refines the best one, and the program always keeps the
 better of a version and its revision. Both models receive a compact snapshot
 (the verified facts first, cached) instead of continuing the Facts
 conversations. Hooks v2 fixes a headline rule that invited dropping
-qualifiers and lets the story's gravity bound the voice. The sections below
-describe revision 2.
+qualifiers and lets the story's gravity bound the voice.
+
+**Revision 3, after the second run.** The best angle of the second run
+plateaued at 90: its strongest version overclaimed ("shift from guardrails to
+lethality"), and removing the overclaim made it flatter (86). Revising one
+angle cannot get past its ceiling, and the hook matters most, so the step is
+now a wider funnel: ten openings; then the three best revised beside two new
+angles written from everything Claude found; then the two best lines refined
+for Claude's final pick. A tie goes to the better grounded version, and a
+revision that keeps the overall but loses grounding counts as a regression
+(the second run put the overclaiming c2.2 ahead of c2 on a 90–90 tie). Hooks
+v3 adds that a slide 2 headline stating an attributed claim carries its
+attribution. The sections below describe revision 3.
 
 ## 1. Goal
 
@@ -30,10 +41,11 @@ Step 2 produces the **Opening** of the carousel: the cover (headline +
 subheadline) and slide 2 (headline + body), judged as one unit. The cover is
 a promise; slide 2 is its first payoff, where the swipe is won or lost. The
 step is done when Claude scores the best candidate at least 95/100 with no
-blocking issue, within at most three generator rounds: seven candidates,
-then the two best revised, then the best one refined. Every version of the
-run stays stored with its scores so the editor can choose another; the
-editor's choice is recorded (it will later calibrate the judge).
+blocking issue, within at most three generator rounds: ten candidates, then
+the three best revised beside two new angles, then the two best refined for
+the final pick. Every version of the run stays stored with its scores so the
+editor can choose another; the editor's choice is recorded (it will later
+calibrate the judge).
 
 Principles that bind every prompt and check (from AGENTS.md §10–12):
 
@@ -114,13 +126,16 @@ not change; the existing Facts tests must pass unchanged except for the
 import path of the instruction text. Record `skillVersions` on every trace
 entry (`Draft2TraceEntry.skillVersions?: Record<string, string>`).
 
-## 4. The hooks skill (`hooks.ts`, version "2")
+## 4. The hooks skill (`hooks.ts`, version "3")
 
-Version 2 replaces v1's "never a hedge word on the cover", which invited
-dropping a qualifier, adds that the story's gravity bounds the voice (a brand
-with humor 70 must not be marked down for telling a story about military
-targeting straight), and adds the Revisions section. A test keeps the
-numbers in this text equal to the constants in §5.
+Version 2 replaced v1's "never a hedge word on the cover", which invited
+dropping a qualifier, added that the story's gravity bounds the voice (a
+brand with humor 70 must not be marked down for telling a story about
+military targeting straight), and added the Revisions section. Version 3
+adds that a slide 2 headline stating an attributed claim carries its
+attribution (Claude flagged it twice in the second run) and that new angles
+are tried beside the revisions. A test keeps the numbers in this text equal
+to the constants in §5.
 
 ```markdown
 # Openings for social carousels
@@ -155,7 +170,8 @@ cover whose promise slide 2 cannot pay is a lie.
 - The first payoff: it delivers the first concrete thing the cover promised,
   using at least one fact the cover did not use. It advances; it never
   restates or explains the cover.
-- Attribution lives here when a fact is attributed ("A DOD official says…").
+- Attribution lives here when a fact is attributed ("A DOD official says…"),
+  in the headline too when the headline states the attributed claim.
 
 ## Facts
 - Every sentence rests on the verified facts cited by id. Numbers, names,
@@ -174,12 +190,13 @@ cover whose promise slide 2 cannot pay is a lie.
 An opening is accepted only when overall ≥ 95 and no criterion is below 85.
 
 ## Revisions
-After the first round, the best openings are revised instead of replaced. A
-revision keeps what made the opening strong (its promise, slide 2's payoff
-and its attribution, the facts already approved, its best lines) and changes
-only what the issues name. A revision that comes out flatter, more
-bureaucratic or less clear is worse, even when it is more precise; the
-program keeps the better version.
+After the first round, the best openings are revised, and new angles are
+tried beside them in case the first angles have a ceiling. A revision keeps
+what made the opening strong (its promise, slide 2's payoff and its
+attribution, the facts already approved, its best lines) and changes only
+what the issues name. A revision that comes out flatter, more bureaucratic or
+less clear is worse, even when it is more precise; the program keeps the
+better version. A new angle differs from every opening already tried.
 
 ## Examples
 Strong: "Give Gemini the goal, not the step-by-step" / slide 2 pays with the
@@ -194,9 +211,13 @@ kill-chain targeting: it swaps the story's tension for a sales angle.
 ## 5. Contracts (`draft2-opening.types.ts`)
 
 ```ts
-export const OPENING_CANDIDATES = 7;           // round 1, and any round with nothing clean to refine
-export const OPENING_FINALISTS = 2;            // round 2 revises this many; round 3 refines the best one
-export const OPENING_MAX_ROUNDS = 3;
+export const OPENING_CANDIDATES = 10;          // round 1: the hook matters most, so explore widely
+export const OPENING_ROUND_PLAN = [            // per round: best lines to revise, new angles beside them
+  { revise: 0, fresh: 10 },
+  { revise: 3, fresh: 2 },                     // Claude scores 5
+  { revise: 2, fresh: 0 },                     // Claude's final pick between 2
+];                                             // a round short of clean versions writes new angles in their place
+export const OPENING_MAX_ROUNDS = OPENING_ROUND_PLAN.length;
 export const OPENING_ACCEPT_SCORE = 95;
 export const OPENING_CRITERION_FLOOR = 85;
 export const COVER_HEADLINE_MAX_WORDS = 8;
@@ -205,7 +226,7 @@ export const SLIDE2_HEADLINE_MAX_WORDS = 8;
 export const SLIDE2_BODY_MAX_WORDS = 30;
 
 export type Draft2OpeningCandidate = {
-  id: string;                       // c1…c7 for new angles; "c3.2" is c3 revised in round 2. Unique within a run.
+  id: string;                       // c1, c2… for new angles; "c3.2" is c3 revised in round 2. Unique within a run.
   cover: { headline: string; subheadline: string; factIds: string[] };
   slide2: { headline: string; body: string; factIds: string[] };
   angle: string;                    // one line: the tension this opening uses
@@ -243,11 +264,12 @@ export type Draft2OpeningRegression = {
   previousId: string;                // the version it revised
   from: number; to: number;          // overall, previous then revision
   worse: string[];                   // "voice 85 → 72", and program findings the previous version did not have
+                                     // a regression: lower overall, the same overall with lower grounding, or a new program finding
 };
 
 export type Draft2OpeningRound = {
   round: number;
-  kind?: "explore" | "refine";       // rounds stored before revision 2 have none (explore)
+  kind?: "explore" | "refine" | "mixed";  // rounds stored before revision 2 have none (explore)
   candidates: Draft2OpeningCandidate[];
   mechanical: Draft2OpeningIssue[];
   evaluation?: Draft2OpeningEvaluation;
@@ -317,32 +339,42 @@ export async function runDraft2Opening({ topicId, storyId, sessionId }): Promise
 2. Load the profile (`getCreativeProfile`) → `brandBrief`.
 3. Claim the session: `step = "opening"`, `status = "running"`, a fresh
    `opening`; an earlier opening moves to `opening.previousRuns`.
-4. Inside `withCreativeTextBudget`, for `round` 1…3 (no new round after 230 s):
-   - **Targets** (`openingTargets`): none in round 1; in round 2 the two best
-     clean versions (scored, no program finding, highest overall); in round 3
-     the best one. A version from any round counts, so when round 2's
-     revisions come out worse, round 3 refines round 1's best again.
+4. Inside `withCreativeTextBudget`, for `round` 1…3 (no new round after 230 s,
+   or when the last round, repeated, would end past 280 s):
+   - **Targets** (`openingTargets`): the best clean version of each line of
+     revisions (scored, no program finding, highest overall, ties to the
+     better grounding), as many lines as `OPENING_ROUND_PLAN` asks: none in
+     round 1, three in round 2, two in round 3. A version from any round
+     counts, so when a revision comes out worse, the next round revises the
+     version before it again. `openingFreshWanted` adds a new angle for every
+     line it could not revise.
    - **Writer (Sol)**: `generateOpenAiStructuredResponse` with
      `composeInstructions("opening-writer", [HOOKS_SKILL], brandBrief)`,
-     `reasoningEffort: "medium"`, `maxOutputTokens: 6000`, schema name
+     `reasoningEffort: "medium"`, `maxOutputTokens: 8000`, schema name
      `draft2_opening`, no stored conversation. Contents:
      `openingExploreRequest` ({ verifiedFacts, task: "openings",
-     candidatesWanted: 7 }, plus feedback after a round with nothing clean) or
-     `openingRefineRequest` ({ verifiedFacts, task: "revise", openings: each
-     target with its scores, issues and `earlierAttempts` that came out
-     worse, suggestions, instruction: `OPENING_REVISION_INSTRUCTION` }).
-   - **Ids**: new angles are renumbered after every id used (`c1…c7`, then
-     `c8…`); a revision of `c3` in round 2 becomes `c3.2` with
-     `revisionOf: "c3"` (`revisedCandidates` matches by id, or in order when
-     the writer renamed them).
+     candidatesWanted }, plus `anglesSoFar` and feedback after a round with
+     nothing clean) or `openingRefineRequest` ({ verifiedFacts, task:
+     "revise", openings: each target with its scores, issues and
+     `earlierAttempts` that came out worse; when the round wants new angles,
+     `newAngles`, `anglesSoFar` (every opening tried, with its score) and
+     `feedback` (the last judgment's summary and every issue); suggestions;
+     instruction: `OPENING_REVISION_INSTRUCTION`, plus "Then write N new
+     openings, with ids n1…" }).
+   - **Ids** (`writtenCandidates`): a revision keeps its target's id and
+     becomes `c3.2` (`revisionOf: "c3"`); every other candidate is a new
+     angle, renumbered after every id used (`c1…c10`, then `c11…`), up to the
+     number asked. Only a round without new angles matches a renamed
+     revision in order.
    - **Program**: `mechanicalOpeningIssues`.
    - **Judge (Claude)**: `generateAnthropicStructuredResponse` with
      `composeInstructions("opening-judge", [HOOKS_SKILL], brandBrief)`,
-     `effort: "high"`, `maxOutputTokens: 12000`, `context: { verifiedFacts }`
+     `effort: "high"`, `maxOutputTokens: 16000` (ten scores and thinking), `context: { verifiedFacts }`
      (cached), contents `openingJudgeRequest` ({ task, round, candidates,
      previousVersions with their scores, mechanicalFindings }), no history.
-   - **Bookkeeping**: record the round; `openingRegressions` marks each
-     revision that scored lower than the version it revised, or picked up a
+   - **Bookkeeping**: record the round (`kind` explore, refine or mixed);
+     `openingRegressions` marks each revision that scored lower than the
+     version it revised, kept the overall but lost grounding, or picked up a
      program finding it did not have, with what got worse. The better version
      simply stays ahead in `bestOpeningVersions`.
    - If `openingAcceptedWinner` → `opening.status = "ready"`, `winnerId`,
@@ -357,9 +389,11 @@ Writer role (`opening-writer`): "You write the opening of a social carousel
 for the publication described below, from the verified facts you receive
 (cite their ids). For the task "openings", return exactly `candidatesWanted`
 candidates, each a different angle on the story's tension, following the
-openings skill; ids c1…c7. For the task "revise", return one revised
-candidate per opening listed, with the same id, following the instruction
-that comes with it."
+openings skill; ids c1…c10. For the task "revise", return one revised
+candidate per opening listed, with the same id, and, when `newAngles` asks
+for them, that many new openings with ids n1, n2…, each a different angle
+from every opening in `anglesSoFar`; follow the instruction that comes with
+the task."
 
 `OPENING_REVISION_INSTRUCTION`: "Revise each opening in openings and return
 exactly one candidate per opening, with the same id. Preserve its narrative
@@ -423,8 +457,8 @@ In `src/app/draft-2-canvas.tsx`:
   - `Button` "Write the opening" (primary), enabled only when Facts is
     verified; "Write the opening again" when an opening exists. Same long
     timeout and error handling as `runFacts`.
-  - Rounds: for each round, what Sol did ("wrote 7 openings" or "revised c3
-    and c5"), any regression ("c3.2 scored 78, below c3's 84 (voice 85 → 72);
+  - Rounds: for each round, what Sol did ("wrote 10 openings", or "revised
+    c3, c5 and c1 and tried 2 new angles (c11, c12)"), any regression ("c3.2 scored 78, below c3's 84 (voice 85 → 72);
     c3 stays the better version"), the judge's summary, the winner's scores
     (five criteria + overall), issues (program findings first, with
     `candidateId`/`part`), suggestions in a `<details>`.
@@ -465,18 +499,21 @@ dependency mocked):
   snapshot and carry no stored conversation; Claude gets the snapshot as its
   cached context and no history; `threads` untouched; `opening.status ===
   "ready"`, session `step === "opening"`.
-- loop: after round 1 Sol revises only the two best clean versions, then only
-  the best one; Claude judges 7, then 2, then 1, each beside the version it
-  revises; the run stops at round 3 with the best version in front.
-- regression: a revision that scores lower never replaces its version; the
-  regression names what got worse; round 3 refines the better version and
-  Sol sees the attempt that came out worse.
+- loop: ten openings; then the three best revised beside two new angles that
+  know every opening tried; then the two best lines (a new angle among them)
+  for the final pick; Claude judges 10, then 5, then 2, each revision beside
+  the version it revises; the run stops at round 3 with the best version in
+  front.
+- regression: a revision that scores lower, or keeps the overall but loses
+  grounding, never replaces its version; the regression names what got
+  worse; round 3 refines the better version and Sol sees the attempt that
+  came out worse.
 - caching: Claude's context is identical every round, no history
   accumulates, the judge's request shrinks as the rounds narrow, and the
   trace records cache reads and writes per call.
 - the judge's winner has a program finding → the clean runner-up wins when
-  it passes; with nothing clean, the next round writes new angles with fresh
-  ids.
+  it passes; with nothing clean, the next round writes new angles in place
+  of the revisions (five), with fresh ids.
 - provider failure → `failed`, trace keeps the error, the best version so far
   stays, rethrown; a malformed judgment fails the step.
 - `recordOpeningChoice` accepts a version from any round, rejects an unknown

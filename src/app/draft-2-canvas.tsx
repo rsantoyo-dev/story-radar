@@ -54,6 +54,7 @@ const FACT_STATUS: Record<Draft2Fact["status"], { label: string; tone: StatusTon
 const CRITERION_LABEL: Record<Draft2OpeningCriterion, string> = { tension: "Tension", payoff: "Payoff", clarity: "Clarity", grounding: "Grounding", voice: "Voice" };
 
 const providerLabel = (provider: Draft2TraceEntry["provider"]) => provider === "openai" ? "Sol" : "Claude";
+const listed = (items: readonly string[]) => items.length > 1 ? `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}` : items.join("");
 const issueTarget = (issue: Draft2OpeningIssue) => issue.candidateId ? ` · ${issue.candidateId}${issue.part ? ` · ${issue.part === "slide2" ? "slide 2" : "cover"}` : ""}` : "";
 
 /**
@@ -233,7 +234,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
             <div className={styles.factsHeader}>
               <div>
                 <p className={styles.eyebrow}>Step 2 · Opening</p>
-                <p className={styles.factsIntro}>Sol writes seven openings (cover and slide 2) from the verified facts and Claude scores them; then Sol revises the two best against their issues, and the best once more. The better version always stays. Accepted at 95/100 with no criterion below 85.</p>
+                <p className={styles.factsIntro}>Sol writes ten openings (cover and slide 2) from the verified facts and Claude scores them. Sol revises the three best against their issues and tries two new angles; Claude keeps the two best, which Sol refines for the final pick. The better version always stays. Accepted at 95/100 with no criterion below 85.</p>
               </div>
               <Button variant="primary" size="compact" busy={running === "opening"} disabled={!factsVerified || running !== undefined} onClick={() => { void runStep("opening"); }}>
                 {running === "opening" ? "Writing and judging…" : session?.opening ? "Write the opening again" : "Write the opening"}
@@ -349,10 +350,15 @@ function OpeningRoundView({ round }: { round: Draft2OpeningRound }) {
   const winnerId = programWinner ?? evaluation?.winnerId;
   const winner = evaluation?.scores.find((score) => score.candidateId === winnerId);
   const revised = round.candidates.flatMap((candidate) => candidate.revisionOf ? [candidate.revisionOf] : []);
+  const fresh = round.candidates.filter((candidate) => !candidate.revisionOf).map((candidate) => candidate.id);
+  const wrote = [
+    revised.length ? `revised ${listed(revised)}` : "",
+    fresh.length ? (revised.length ? `tried ${fresh.length} new ${fresh.length === 1 ? "angle" : "angles"} (${fresh.join(", ")})` : `wrote ${fresh.length} ${fresh.length === 1 ? "opening" : "openings"}`) : "",
+  ].filter(Boolean).join(" and ");
   return <li className={styles.roundCard}>
     <div className={styles.factHead}>
       <strong>Round {round.round}</strong>
-      <span>{round.kind === "refine" ? `Sol revised ${revised.join(" and ")}` : `Sol wrote ${round.candidates.length} ${round.candidates.length === 1 ? "opening" : "openings"}`}</span>
+      <span>Sol {wrote}</span>
       {evaluation
         ? <StatusBadge tone={programWinner ? "success" : "warning"}>Claude: {evaluation.verdict} · {winnerId} {winner?.overall}/100</StatusBadge>
         : <StatusBadge tone="neutral">Claude did not answer</StatusBadge>}

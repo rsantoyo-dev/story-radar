@@ -20,7 +20,7 @@ test("instructions are the role, then each skill, then the brand brief, and reco
   assert.deepEqual(writer.skillVersions, { hooks: "7" });
   assert.equal(composeInstructions("opening-judge", [skill]).instructions, `${OPENING_ROLES["opening-judge"]}\n\n## Shared craft\n\n## Judge only`, "a role reads its own part after the shared text");
   assert.deepEqual(Object.keys(DRAFT2_ROLES).sort(), ["extractor", "opening-judge", "opening-writer", "reviewer"]);
-  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@1", "hooks@2"]);
+  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@1", "hooks@3"]);
 });
 
 test("the Facts prompts keep their words: the extractor reads its rules, the reviewer its checklist", () => {
@@ -43,12 +43,14 @@ test("the openings rubric states the thresholds the program enforces", () => {
   assert.match(OPENING_ROLES["opening-writer"], new RegExp(`ids c1…c${OPENING_CANDIDATES}\\.`));
 });
 
-test("hooks v2 never trades a qualifier for a cleaner headline, lets gravity bound the voice, and protects what a revision must keep", () => {
+test("hooks never trades a qualifier for a cleaner headline, lets gravity bound the voice, protects what a revision must keep, and tries new angles", () => {
   assert.match(HOOKS_SKILL.text, /Avoid\n  hedge words there too, but never by dropping a qualifier/);
   assert.match(HOOKS_SKILL.text, /When a claim\n  cannot stand without its qualifier or its source, do not headline it/);
   assert.doesNotMatch(HOOKS_SKILL.text, /never a hedge word\n  on the cover/, "the v1 rule that invited dropping \"could\" is gone");
   assert.match(HOOKS_SKILL.text, /- voice: [^]*as far as the story's\n  gravity allows\. A grave story/);
-  assert.match(HOOKS_SKILL.text, /## Revisions\n[^]*A revision that comes out flatter, more\nbureaucratic or less clear is worse/);
+  assert.match(HOOKS_SKILL.text, /## Revisions\n[^]*A revision that comes out flatter,\s+more\s+bureaucratic\s+or\s+less\s+clear\s+is\s+worse/);
+  assert.match(HOOKS_SKILL.text, /new angles are\s+tried beside them/);
+  assert.match(HOOKS_SKILL.text, /Attribution lives here when a fact is attributed[^]*in the headline too when the headline states the attributed claim/);
   assert.doesNotMatch(OPENING_ROLES["opening-judge"], /judge every candidate again/, "a revision round judges the revisions beside what they revise");
 });
 

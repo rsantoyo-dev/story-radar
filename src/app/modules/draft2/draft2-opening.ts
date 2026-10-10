@@ -10,8 +10,8 @@ import { draft2SolModel } from "./draft2-models";
 import { Draft2BusyError, Draft2InputError, type Draft2TraceEntry } from "./draft2-facts.types";
 import {
   DRAFT2_OPENING_EVALUATION_SCHEMA, DRAFT2_OPENING_SCHEMA, OPENING_MAX_ROUNDS, bestOpeningVersions, mechanicalOpeningIssues, openingAcceptedWinner,
-  openingExploreRequest, openingFactsSnapshot, openingJudgeRequest, openingRefineRequest, openingRegressions, openingReviewNote, openingRunSummary,
-  openingTargets, openingVersions, parseOpeningCandidates, parseOpeningEvaluation, renumberedCandidates, revisedCandidates,
+  openingExploreRequest, openingFactsSnapshot, openingFreshWanted, openingJudgeRequest, openingRefineRequest, openingRegressions, openingReviewNote,
+  openingRunSummary, openingTargets, openingVersions, parseOpeningCandidates, parseOpeningEvaluation, writtenCandidates,
   type Draft2Opening,
 } from "./draft2-opening.types";
 import { brandBrief, composeInstructions } from "./skills/draft2-skills";
@@ -20,18 +20,23 @@ import type { Draft2SessionRow } from "@/db/schema";
 
 /** A round that would start after this point is left to a new request; the route allows 300 s. */
 const TIME_BUDGET_MS = 230_000;
-const WRITER_MAX_OUTPUT_TOKENS = 6_000;
-/** Covers the verdict and Claude's thinking, which the API counts against the same ceiling. */
-const JUDGE_MAX_OUTPUT_TOKENS = 12_000;
+/** No round starts when the last one, repeated, would end past this point. */
+const ROUND_DEADLINE_MS = 280_000;
+/** Ten openings and Sol's reasoning. */
+const WRITER_MAX_OUTPUT_TOKENS = 8_000;
+/** Covers ten scores, the verdict and Claude's thinking, which the API counts against the same ceiling. */
+const JUDGE_MAX_OUTPUT_TOKENS = 16_000;
 
 export type Draft2OpeningInput = { topicId: string; storyId: string; sessionId: string };
 
 /**
- * Runs the Opening step on a session whose facts are verified. Round 1: Sol
- * writes seven openings (cover + slide 2) and Claude scores them. Round 2:
- * Sol revises the two best clean versions against their own issues. Round
- * 3: Sol refines the best one. The program keeps the better of each version
- * and its revision, so a round never loses the best opening so far.
+ * Runs the Opening step on a session whose facts are verified, as a funnel
+ * (OPENING_ROUND_PLAN). Round 1: Sol writes ten openings (cover + slide 2)
+ * and Claude scores them. Round 2: Sol revises the three best clean versions
+ * against their own issues and writes two new angles beside them; Claude
+ * scores the five. Round 3: Sol revises the two best for Claude's final
+ * pick. The program keeps the better of each version and its revision, so a
+ * round never loses the best opening so far.
  *
  * Both models receive the same compact state on every call (the verified
  * facts first, so they are read from the prompt cache, then the round's
@@ -67,6 +72,7 @@ export async function runDraft2Opening({ topicId, storyId, sessionId }: Draft2Op
   if (!claimed) throw new Draft2BusyError("A Draft 2 run is already in progress for this story.");
   const auditContext = { runId: session.id, topicId, storyId };
   const startedAt = Date.now();
+  let lastRoundMs = 0;
 
   const checkpoint = (patch: Draft2SessionPatch = {}) => updateDraft2Session(session.id, { opening, trace, ...patch });
 
@@ -105,29 +111,32 @@ export async function runDraft2Opening({ topicId, storyId, sessionId }: Draft2Op
   try {
     await withCreativeTextBudget({ topicId, storyId, runId: session.id }, async () => {
       for (let round = 1; round <= OPENING_MAX_ROUNDS; round++) {
-        if (round > 1 && Date.now() - startedAt > TIME_BUDGET_MS) {
+        const elapsed = Date.now() - startedAt;
+        if (round > 1 && (elapsed > TIME_BUDGET_MS || elapsed + lastRoundMs > ROUND_DEADLINE_MS)) {
           await needsReview(`Stopped before round ${round}: the request's time budget is spent.`);
           return;
         }
-        // 1. The writer: seven new angles first; afterwards the best clean versions, each with its own issues, to revise.
-        //    New angles again only when nothing so far is clean enough to refine.
+        const roundStartedAt = Date.now();
+        // 1. The writer: new angles first; afterwards the best clean versions, each with its own issues, to revise,
+        //    beside the new angles the round's plan asks for (more of them when too few versions are clean).
         const before = openingVersions(opening.rounds);
         const targets = openingTargets(before, round);
+        const fresh = openingFreshWanted(round, targets);
         const last = opening.rounds[opening.rounds.length - 1];
         const writerContents = targets.length
-          ? openingRefineRequest(verifiedFacts, targets, before, opening.rounds.flatMap((entry) => entry.regressions ?? []), last?.evaluation?.suggestions ?? [])
-          : openingExploreRequest(verifiedFacts, last);
+          ? openingRefineRequest(verifiedFacts, targets, before, opening.rounds.flatMap((entry) => entry.regressions ?? []), last, fresh)
+          : openingExploreRequest(verifiedFacts, fresh, last, before);
         const writerRequest = { instructions: writer.instructions, contents: writerContents };
         const written = await traced(round, "openai", writerModel, "draft2_opening", writer.skillVersions, writerRequest, () => generateOpenAiStructuredResponse({
           apiKey: openAiApiKey, model: writerModel, instructions: writer.instructions, contents: writerContents,
           schema: DRAFT2_OPENING_SCHEMA, schemaName: "draft2_opening", maxOutputTokens: WRITER_MAX_OUTPUT_TOKENS, reasoningEffort: "medium", auditContext,
         }));
         const answer = parseOpeningCandidates(written.text);
-        const candidates = targets.length
-          ? revisedCandidates(targets.map((target) => target.candidate), answer, round)
-          : renumberedCandidates(answer, before);
+        const candidates = writtenCandidates(targets.map((target) => target.candidate), answer, round, fresh, before);
+        const revisions = candidates.filter((candidate) => candidate.revisionOf).length;
+        const kind = revisions === 0 ? "explore" : revisions === candidates.length ? "refine" : "mixed";
         const mechanical = mechanicalOpeningIssues(candidates, facts);
-        opening.rounds.push({ round, kind: targets.length ? "refine" : "explore", candidates, mechanical, at: new Date().toISOString() });
+        opening.rounds.push({ round, kind, candidates, mechanical, at: new Date().toISOString() });
         opening.candidates = candidates;
         await checkpoint();
 
@@ -160,6 +169,7 @@ export async function runDraft2Opening({ topicId, storyId, sessionId }: Draft2Op
         // The best version so far, kept on the row in case a later call fails.
         const best = bestOpeningVersions(openingVersions(opening.rounds))[0];
         if (best) opening.winnerId = best.candidate.id;
+        lastRoundMs = Date.now() - roundStartedAt;
         await checkpoint();
       }
     });
