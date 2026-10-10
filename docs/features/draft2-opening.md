@@ -62,7 +62,21 @@ written is judged, not written again. A judgment that would not fit the
 request pauses the run too. The writer and the judge get 180 s and 240 s per
 call. The canvas follows a run whose request was lost (a dropped connection,
 a timeout, a gateway's page) by reading the session, and continues it when
-it pauses or stops. The sections below describe revision 5 with these.
+it pauses or stops.
+
+**Revision 6: Claude writes, Sol judges.** In the sixth run the judge's
+proposals were the strongest hooks of the run ("The Pentagon wants the
+competition it helped end", "A Pentagon fast lane has one senator worried"),
+and the writer, asked to develop them, made each one more literal and
+weaker (79, 62, 70 and 86, against the device each original had: irony,
+worry, a simile, scale). For the Opening the roles are swapped
+(`DRAFT2_OPENING_ROLES`): Claude writes, with the verified facts as its
+cached context block, and Sol judges, with the facts at the head of its
+input (OpenAI caches a repeated prefix) and high reasoning effort. A run
+records its roles (`opening.writer`, `opening.judge`); a run stored before
+the swap continues with Sol writing and Claude judging, and the canvas
+names each run's roles. Facts keeps its roles (Sol extracts, Claude
+verifies). The sections below describe revision 6.
 
 ## 1. Goal
 
@@ -395,14 +409,16 @@ export async function runDraft2Opening({ topicId, storyId, sessionId }): Promise
      counts, so when a revision comes out worse, the next round revises the
      version before it again. `openingFreshWanted` adds a new angle for every
      line it could not revise.
-   - **Writer (Sol)**: `generateOpenAiStructuredResponse` with
-     `composeInstructions("opening-writer", [HOOKS_SKILL], brandBrief)`,
-     `reasoningEffort: "medium"`, `maxOutputTokens: 12000`, schema name
-     `draft2_opening`, no stored conversation. Contents:
-     `openingExploreRequest` ({ verifiedFacts, task: "openings",
-     candidatesWanted }, plus `anglesSoFar` and feedback after a round with
-     nothing clean) or `openingRefineRequest` ({ verifiedFacts, task:
-     "revise", openings: each target with its scores, issues and
+   - **Calls** (`ask`): one path per role. Claude gets the verified facts
+     as `context` (a cached block); Sol gets them at the head of its
+     `contents`. Both: `maxOutputTokens: 24000`, 240 s per call, no
+     conversation. Claude's effort is high; Sol's reasoning is high as the
+     judge (medium when a pre-swap run has it writing).
+   - **Writer (Claude)**: `composeInstructions("opening-writer",
+     [HOOKS_SKILL], brandBrief)`, schema name `draft2_opening`. Contents:
+     `openingExploreRequest` ({ task: "openings", candidatesWanted }, plus
+     `anglesSoFar` and feedback after a round with nothing clean) or
+     `openingRefineRequest` ({ task: "revise", openings: each target with its scores, issues and
      `earlierAttempts` that came out worse; `develop`: the judge's proposals
      from the last round; when the round wants new angles, `newAngles`,
      `anglesSoFar` (every opening tried, with its score) and `feedback` (the
@@ -416,10 +432,9 @@ export async function runDraft2Opening({ topicId, storyId, sessionId }): Promise
      after every id used (`c1…c15`, then `c16…`), up to the number asked.
      Only a round without new angles matches renamed answers in order.
    - **Program**: `mechanicalOpeningIssues`.
-   - **Judge (Claude)**: `generateAnthropicStructuredResponse` with
-     `composeInstructions("opening-judge", [HOOKS_SKILL], brandBrief)`,
-     `effort: "high"`, `maxOutputTokens: 24000` (fifteen scores, proposals and thinking), `context: { verifiedFacts }`
-     (cached), contents `openingJudgeRequest` ({ task, round, candidates,
+   - **Judge (Sol)**: `composeInstructions("opening-judge", [HOOKS_SKILL],
+     brandBrief)`, schema name `draft2_opening_review`, contents
+     `openingJudgeRequest` after the facts ({ task, round, candidates,
      previousVersions with their scores, mechanicalFindings, and
      `proposalsWanted` when the plan asks }), no history. Candidates never
      carry `proposalOf`: the judge scores its own ideas blind. Its proposals

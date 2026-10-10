@@ -152,8 +152,8 @@ test("both models read the verified facts as one compact snapshot, the same ever
     { id: "f2", claim: facts[1].claim, status: "attributed", attribution: "A DOD official", evidence: facts[1].evidence, importance: 80 },
     { id: "f3", claim: facts[2].claim, status: "attributed", qualifier: "could", attribution: "the Pentagon", evidence: facts[2].evidence, importance: 70 },
   ]);
-  const request = openingExploreRequest(openingFactsSnapshot(facts), OPENING_CANDIDATES);
-  assert.deepEqual(Object.keys(request), ["verifiedFacts", "task", "candidatesWanted"], "the facts lead, so the prompt cache reads them");
+  const request = openingExploreRequest(OPENING_CANDIDATES);
+  assert.deepEqual(Object.keys(request), ["task", "candidatesWanted"], "the facts travel apart, where the writer's provider caches them");
   assert.equal(request.candidatesWanted, OPENING_CANDIDATES);
 });
 
@@ -202,10 +202,10 @@ test("the judge's proposals are numbered across the run, developed under fresh i
   assert.equal(judged.proposalsWanted, 1);
   assert.equal(openingJudgeRequest(1, [candidate("c1")], [], []).proposalsWanted, 3);
   assert.equal("proposalsWanted" in openingJudgeRequest(3, [candidate("c1")], [], []), false, "the final round only decides");
-  const request = openingRefineRequest(openingFactsSnapshot(facts), openingTargets(versions, 2), versions, [], first, 3, [candidate("p1")]);
+  const request = openingRefineRequest(openingTargets(versions, 2), versions, [], first, 3, [candidate("p1")]);
   assert.deepEqual(request.develop?.map((proposal) => proposal.id), ["p1"]);
   assert.ok(request.instruction.startsWith(`${OPENING_REVISION_INSTRUCTION} ${OPENING_DEVELOP_INSTRUCTION} Then write 3 new openings`));
-  const developOnly = openingRefineRequest(openingFactsSnapshot(facts), [], versions, [], first, 0, [candidate("p1")]);
+  const developOnly = openingRefineRequest([], versions, [], first, 0, [candidate("p1")]);
   assert.equal(developOnly.instruction, OPENING_DEVELOP_INSTRUCTION);
 });
 
@@ -243,8 +243,8 @@ test("the writer refines with each target's scores and issues, any earlier attem
   const second = judgedRound(2, [{ ...candidate("c1.2", { cover: { headline: "A flatter headline" } }), revisionOf: "c1" }], { "c1.2": 78 });
   const versions = openingVersions([first, second]);
   const regressions = openingRegressions(versions.filter((version) => version.round === 2), versions);
-  const request = openingRefineRequest(openingFactsSnapshot(facts), openingTargets(versions, 3).slice(0, 1), versions, regressions, { ...second, evaluation: evaluation({ verdict: "revise", winnerId: "c1.2", scores: [score("c1.2", 78)], suggestions: ["Keep the payoff."] }) });
-  assert.deepEqual(Object.keys(request), ["verifiedFacts", "task", "openings", "suggestions", "instruction"]);
+  const request = openingRefineRequest(openingTargets(versions, 3).slice(0, 1), versions, regressions, { ...second, evaluation: evaluation({ verdict: "revise", winnerId: "c1.2", scores: [score("c1.2", 78)], suggestions: ["Keep the payoff."] }) });
+  assert.deepEqual(Object.keys(request), ["task", "openings", "suggestions", "instruction"]);
   assert.deepEqual(request.suggestions, ["Keep the payoff."]);
   assert.equal(request.task, "revise");
   assert.equal(request.openings.length, 1);
@@ -255,8 +255,8 @@ test("the writer refines with each target's scores and issues, any earlier attem
   assert.deepEqual(target.earlierAttempts, [{ id: "c1.2", coverHeadline: "A flatter headline", overall: 78, worse: ["tension 84 → 78", "payoff 84 → 78", "clarity 84 → 78", "grounding 84 → 78", "voice 84 → 78"] }]);
   assert.equal(request.instruction, OPENING_REVISION_INSTRUCTION);
   assert.match(OPENING_REVISION_INSTRUCTION, /Never make the writing flatter or more bureaucratic/);
-  const withAngles = openingRefineRequest(openingFactsSnapshot(facts), openingTargets(versions, 2), versions, regressions, first, 2);
-  assert.deepEqual(Object.keys(withAngles), ["verifiedFacts", "task", "openings", "newAngles", "anglesSoFar", "feedback", "suggestions", "instruction"]);
+  const withAngles = openingRefineRequest(openingTargets(versions, 2), versions, regressions, first, 2);
+  assert.deepEqual(Object.keys(withAngles), ["task", "openings", "newAngles", "anglesSoFar", "feedback", "suggestions", "instruction"]);
   assert.equal(withAngles.newAngles, 2);
   assert.deepEqual(withAngles.anglesSoFar?.map((angle) => angle.id), ["c1", "c2", "c1.2"], "new angles know every opening tried");
   assert.deepEqual(withAngles.feedback?.issues.map((issue) => issue.code), ["WEAK_TENSION"], "and what the last judgment found");

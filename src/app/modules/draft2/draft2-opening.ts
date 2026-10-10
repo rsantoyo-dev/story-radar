@@ -6,13 +6,13 @@ import { getAnthropicRuntimeConfig, requireAnthropicApiKey } from "../stories/an
 import { getCreativeProfile } from "../stories/creative-profile.repository";
 import { activeDraft2Session, claimDraft2Session, getDraft2Session, touchDraft2Session, updateDraft2Session, type Draft2SessionPatch } from "./draft2-session.repository";
 import { draft2DevTrace } from "./draft2-dev-trace";
-import { draft2SolModel } from "./draft2-models";
+import { DRAFT2_OPENING_EARLIER_ROLES, DRAFT2_OPENING_ROLES, draft2ProviderName, draft2SolModel, type Draft2Provider } from "./draft2-models";
 import { Draft2BusyError, Draft2InputError, type Draft2TraceEntry } from "./draft2-facts.types";
 import {
   DRAFT2_OPENING_EVALUATION_SCHEMA, DRAFT2_OPENING_SCHEMA, OPENING_MAX_ROUNDS, bestOpeningVersions, mechanicalOpeningIssues, openingAcceptedWinner,
   openingExploreRequest, openingFactsSnapshot, openingFreshWanted, openingJudgeRequest, openingRefineRequest, openingRegressions, openingReviewNote,
   openingResumeRound, openingRunSummary, openingTargets, openingVersions, parseOpeningCandidates, parseOpeningEvaluation, renumberedProposals, writtenCandidates,
-  type Draft2Opening,
+  type Draft2Opening, type Draft2OpeningRole,
 } from "./draft2-opening.types";
 import { brandBrief, composeInstructions } from "./skills/draft2-skills";
 import { HOOKS_SKILL } from "./skills/hooks";
@@ -26,13 +26,10 @@ import type { Draft2SessionRow } from "@/db/schema";
  */
 const TIME_BUDGET_MS = 230_000;
 const ROUND_DEADLINE_MS = 280_000;
-/** Fifteen openings and Sol's reasoning. */
-const WRITER_MAX_OUTPUT_TOKENS = 12_000;
-/** Covers fifteen scores, three proposals, the verdict and Claude's thinking, which the API counts against the same ceiling. */
-const JUDGE_MAX_OUTPUT_TOKENS = 24_000;
-/** Fifteen openings took Sol 73 s and Claude 111 s in a real run; the adapters' default limit is 120 s. */
-const WRITER_TIMEOUT_MS = 180_000;
-const JUDGE_TIMEOUT_MS = 240_000;
+/** Fifteen openings, or fifteen scores and the proposals, with the model's thinking, which both APIs count against the same ceiling. */
+const MAX_OUTPUT_TOKENS = 24_000;
+/** Fifteen openings took 73 s to write and 111 s to judge in a real run; the adapters' default limit is 120 s. */
+const CALL_TIMEOUT_MS = 240_000;
 /** Shows the run is alive between checkpoints, well inside OPENING_STALL_MS. */
 const HEARTBEAT_MS = 30_000;
 
@@ -46,14 +43,15 @@ export type Draft2OpeningInput = {
 
 /**
  * Runs the Opening step on a session whose facts are verified, as a funnel
- * (OPENING_ROUND_PLAN). Round 1: Sol writes fifteen openings (cover + slide
- * 2); Claude scores them and proposes three of its own. Round 2: Sol revises
- * the three best clean versions against their own issues, develops Claude's
- * proposals and writes three new angles; Claude scores the nine, not told
- * which ones grew from its proposals, and proposes one more. Round 3: Sol
- * revises the two best and develops the last proposal for Claude's final
- * pick. The program keeps the better of each version and its revision, so a
- * round never loses the best opening so far.
+ * (OPENING_ROUND_PLAN). Claude writes and Sol judges (DRAFT2_OPENING_ROLES).
+ * Round 1: the writer writes fifteen openings (cover + slide 2); the judge
+ * scores them and proposes three of its own. Round 2: the writer revises the
+ * three best clean versions against their own issues, develops the
+ * proposals and writes three new angles; the judge scores the nine, not
+ * told which ones grew from its proposals, and proposes one more. Round 3:
+ * the writer revises the two best and develops the last proposal for the
+ * judge's final pick. The program keeps the better of each version and its
+ * revision, so a round never loses the best opening so far.
  *
  * Both models receive the same compact state on every call (the verified
  * facts first, so they are read from the prompt cache, then the round's
@@ -77,11 +75,16 @@ export async function runDraft2Opening({ topicId, storyId, sessionId, resume = f
   const stopped = session.opening && (session.opening.status === "paused" || session.opening.status === "running") ? session.opening : undefined;
   if (resume && (!stopped || openingResumeRound(stopped) > OPENING_MAX_ROUNDS)) throw new Draft2InputError("There is no paused or stopped opening to continue. Write the opening again.");
 
-  const openAiApiKey = process.env.OPENAI_API_KEY?.trim();
-  if (!openAiApiKey) throw new Draft2InputError("OPENAI_API_KEY is not configured; the writer needs it.");
-  const writerModel = draft2SolModel(process.env);
+  const configuredOpenAiKey = process.env.OPENAI_API_KEY?.trim();
+  if (!configuredOpenAiKey) throw new Draft2InputError("OPENAI_API_KEY is not configured; Sol needs it.");
+  const openAiApiKey: string = configuredOpenAiKey;
   const anthropicApiKey = requireAnthropicApiKey();
-  const judgeModel = getAnthropicRuntimeConfig().model;
+  const modelOf = (provider: Draft2Provider): Draft2OpeningRole => ({ provider, model: provider === "openai" ? draft2SolModel(process.env) : getAnthropicRuntimeConfig().model });
+  // A run keeps the roles it started with; a new run takes today's (Claude writes, Sol judges).
+  const roles = resume && stopped
+    ? { writer: stopped.writer ?? modelOf(DRAFT2_OPENING_EARLIER_ROLES.writer), judge: stopped.judge ?? modelOf(DRAFT2_OPENING_EARLIER_ROLES.judge) }
+    : { writer: modelOf(DRAFT2_OPENING_ROLES.writer), judge: modelOf(DRAFT2_OPENING_ROLES.judge) };
+  const judgeName = draft2ProviderName(roles.judge.provider);
   const brief = brandBrief(await getCreativeProfile(topicId));
   const writer = composeInstructions("opening-writer", [HOOKS_SKILL], brief);
   const judge = composeInstructions("opening-judge", [HOOKS_SKILL], brief);
@@ -91,9 +94,9 @@ export async function runDraft2Opening({ topicId, storyId, sessionId, resume = f
   // A continue request picks the run up at its last checkpoint; a new run starts fresh and keeps the earlier one, with the editor's choice.
   const firstRound = resume && stopped ? openingResumeRound(stopped) : 1;
   const opening: Draft2Opening = resume && stopped
-    ? { ...stopped, status: "running", resumeRound: undefined, error: undefined }
+    ? { ...stopped, status: "running", resumeRound: undefined, error: undefined, ...roles }
     : {
-      status: "running", rounds: [], candidates: [],
+      status: "running", rounds: [], candidates: [], ...roles,
       ...(session.opening ? { previousRuns: [...(session.opening.previousRuns ?? []), openingRunSummary(session.opening)] } : {}),
     };
   const claimed = await claimDraft2Session(session.id, { step: "opening", opening, error: null });
@@ -107,7 +110,7 @@ export async function runDraft2Opening({ topicId, storyId, sessionId, resume = f
   /** Leaves the next round, or this round's judgment, to a new request; everything so far is saved and the best version stands in meanwhile. */
   async function pause(round: number, judgmentOnly = false) {
     const note = judgmentOnly
-      ? `Paused before Claude judges round ${round}: this request's time is spent. The run continues in a new request.`
+      ? `Paused before ${judgeName} judges round ${round}: this request's time is spent. The run continues in a new request.`
       : `Paused before round ${round}: this request's time is spent. The run continues from round ${round} in a new request.`;
     opening.status = "paused";
     opening.resumeRound = round;
@@ -123,6 +126,27 @@ export async function runDraft2Opening({ topicId, storyId, sessionId, resume = f
     opening.error = note;
     if (best) opening.winnerId = best.candidate.id;
     await checkpoint({ status: "needs-review", error: note });
+  }
+
+  /**
+   * One structured call to a role's model, with the verified facts where its
+   * provider caches them: Claude's cached context block, or the head of Sol's
+   * input (OpenAI caches a repeated prefix on its own).
+   */
+  function ask(role: Draft2OpeningRole, round: number, operation: string, request: { instructions: string; skillVersions: Record<string, string>; contents: Record<string, unknown>; schema: Record<string, unknown> }) {
+    const { instructions, skillVersions, contents, schema } = request;
+    if (role.provider === "anthropic") {
+      const traceRequest = { instructions, context: { verifiedFacts: `${verifiedFacts.length} facts (cached)` }, contents };
+      return traced(round, "anthropic", role.model, operation, skillVersions, traceRequest, () => generateAnthropicStructuredResponse({
+        apiKey: anthropicApiKey, model: role.model, instructions, context: { verifiedFacts }, contents,
+        schema, schemaName: operation, maxOutputTokens: MAX_OUTPUT_TOKENS, effort: "high", timeoutMs: CALL_TIMEOUT_MS, auditContext,
+      }));
+    }
+    const input = { verifiedFacts, ...contents };
+    return traced(round, "openai", role.model, operation, skillVersions, { instructions, contents: input }, () => generateOpenAiStructuredResponse({
+      apiKey: openAiApiKey, model: role.model, instructions, contents: input,
+      schema, schemaName: operation, maxOutputTokens: MAX_OUTPUT_TOKENS, reasoningEffort: role === roles.judge ? "high" : "medium", timeoutMs: CALL_TIMEOUT_MS, auditContext,
+    }));
   }
 
   /** One provider call: traced on the console in development, recorded on the session always. */
@@ -177,14 +201,9 @@ export async function runDraft2Opening({ topicId, storyId, sessionId, resume = f
           // The judge's proposals from the last round, which this round develops.
           const proposals = round > 1 ? last?.evaluation?.proposals ?? [] : [];
           const writerContents = targets.length || proposals.length
-            ? openingRefineRequest(verifiedFacts, targets, before, opening.rounds.flatMap((entry) => entry.regressions ?? []), last, fresh, proposals)
-            : openingExploreRequest(verifiedFacts, fresh, last, before);
-          const writerRequest = { instructions: writer.instructions, contents: writerContents };
-          const answered = await traced(round, "openai", writerModel, "draft2_opening", writer.skillVersions, writerRequest, () => generateOpenAiStructuredResponse({
-            apiKey: openAiApiKey, model: writerModel, instructions: writer.instructions, contents: writerContents,
-            schema: DRAFT2_OPENING_SCHEMA, schemaName: "draft2_opening", maxOutputTokens: WRITER_MAX_OUTPUT_TOKENS, reasoningEffort: "medium",
-            timeoutMs: WRITER_TIMEOUT_MS, auditContext,
-          }));
+            ? openingRefineRequest(targets, before, opening.rounds.flatMap((entry) => entry.regressions ?? []), last, fresh, proposals)
+            : openingExploreRequest(fresh, last, before);
+          const answered = await ask(roles.writer, round, "draft2_opening", { ...writer, contents: writerContents, schema: DRAFT2_OPENING_SCHEMA });
           const answer = parseOpeningCandidates(answered.text);
           candidates = writtenCandidates(targets.map((target) => target.candidate), answer, round, fresh, before, proposals);
           const revisions = candidates.filter((candidate) => candidate.revisionOf).length;
@@ -199,14 +218,9 @@ export async function runDraft2Opening({ topicId, storyId, sessionId, resume = f
           }
         }
 
-        // 2. The judge: the facts as a cached block, then this round's candidates beside the versions they revise.
+        // 2. The judge: the facts, then this round's candidates beside the versions they revise.
         const judgeContents = openingJudgeRequest(round, candidates, mechanical, targets);
-        const judgeRequest = { instructions: judge.instructions, context: { verifiedFacts: `${verifiedFacts.length} facts (cached)` }, contents: judgeContents };
-        const judged = await traced(round, "anthropic", judgeModel, "draft2_opening_review", judge.skillVersions, judgeRequest, () => generateAnthropicStructuredResponse({
-          apiKey: anthropicApiKey, model: judgeModel, instructions: judge.instructions, context: { verifiedFacts }, contents: judgeContents,
-          schema: DRAFT2_OPENING_EVALUATION_SCHEMA, schemaName: "draft2_opening_review", maxOutputTokens: JUDGE_MAX_OUTPUT_TOKENS, effort: "high",
-          timeoutMs: JUDGE_TIMEOUT_MS, auditContext,
-        }));
+        const judged = await ask(roles.judge, round, "draft2_opening_review", { ...judge, contents: judgeContents, schema: DRAFT2_OPENING_EVALUATION_SCHEMA });
         const judgment = parseOpeningEvaluation(judged.text, candidates.map((candidate) => candidate.id));
         const evaluation = judgment.proposals ? { ...judgment, proposals: renumberedProposals(judgment.proposals, opening.rounds) } : judgment;
         const index = opening.rounds.findIndex((entry) => entry.round === round);
@@ -224,7 +238,7 @@ export async function runDraft2Opening({ topicId, storyId, sessionId, resume = f
           return;
         }
         if (round === OPENING_MAX_ROUNDS) {
-          await needsReview(`Claude did not accept an opening after ${OPENING_MAX_ROUNDS} rounds.`);
+          await needsReview(`${judgeName} did not accept an opening after ${OPENING_MAX_ROUNDS} rounds.`);
           return;
         }
         // The best version so far, kept on the row in case a later call fails.

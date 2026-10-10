@@ -1,10 +1,12 @@
 import { comparableText, Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
+import type { Draft2Provider } from "./draft2-models";
 
 /**
  * Opening, the second Draft 2 step: the cover (headline + subheadline) and
- * slide 2 (headline + body), judged as one unit. A writer (Sol) proposes
- * candidates from the verified facts; the program checks what a program can
- * (lengths, fact ids, numbers, attribution, repetition); a judge (Claude)
+ * slide 2 (headline + body), judged as one unit. A writer (Claude since the
+ * fifth run) proposes candidates from the verified facts; the program checks
+ * what a program can (lengths, fact ids, numbers, attribution, repetition);
+ * a judge (Sol since the fifth run)
  * scores them on the hooks skill and proposes openings of its own, which the
  * writer develops in the next round without the judge being told which
  * ones they are. The rounds narrow like a funnel (OPENING_ROUND_PLAN):
@@ -124,6 +126,9 @@ export type Draft2OpeningRegression = {
   worse: string[];
 };
 
+/** A role of the run: which provider's model played it. */
+export type Draft2OpeningRole = { provider: Draft2Provider; model: string };
+
 export type Draft2Opening = {
   /** paused: the request's time ran out before resumeRound; a continue request runs on from it with every earlier round kept. */
   status: "running" | "paused" | "ready" | "needs-review" | "failed";
@@ -140,6 +145,9 @@ export type Draft2Opening = {
   error?: string;
   /** The round a paused run continues from. */
   resumeRound?: number;
+  /** Who wrote and who judged this run; a run stored before the swap has none (Sol wrote, Claude judged). */
+  writer?: Draft2OpeningRole;
+  judge?: Draft2OpeningRole;
   /** Earlier runs of the step on this session, oldest first, without their rounds. */
   previousRuns?: Draft2OpeningRun[];
 };
@@ -597,10 +605,9 @@ const feedback = (last: Draft2OpeningRound) => ({
   issues: [...last.mechanical, ...(last.evaluation?.issues ?? [])],
 });
 
-/** What the writer receives for new angles only: the facts first (cached), then, after a round, what was tried and what went wrong. */
-export function openingExploreRequest(verifiedFacts: ReturnType<typeof openingFactsSnapshot>, candidatesWanted: number, last?: Draft2OpeningRound, versions: readonly Draft2OpeningVersion[] = []) {
+/** What the writer receives for new angles only (the facts travel apart, where its provider caches them); after a round, what was tried and what went wrong. */
+export function openingExploreRequest(candidatesWanted: number, last?: Draft2OpeningRound, versions: readonly Draft2OpeningVersion[] = []) {
   return {
-    verifiedFacts,
     task: "openings",
     candidatesWanted,
     ...(last?.evaluation ? {
@@ -627,14 +634,13 @@ export const OPENING_DEVELOP_INSTRUCTION = "Develop each proposal in develop int
  * asks for new angles, every opening tried so far and what the last
  * judgment found.
  */
-export function openingRefineRequest(verifiedFacts: ReturnType<typeof openingFactsSnapshot>, targets: readonly Draft2OpeningVersion[], versions: readonly Draft2OpeningVersion[], regressions: readonly Draft2OpeningRegression[], last: Draft2OpeningRound | undefined, newAngles = 0, proposals: readonly Draft2OpeningCandidate[] = []) {
+export function openingRefineRequest(targets: readonly Draft2OpeningVersion[], versions: readonly Draft2OpeningVersion[], regressions: readonly Draft2OpeningRegression[], last: Draft2OpeningRound | undefined, newAngles = 0, proposals: readonly Draft2OpeningCandidate[] = []) {
   const instruction = [
     targets.length ? OPENING_REVISION_INSTRUCTION : "",
     proposals.length ? OPENING_DEVELOP_INSTRUCTION : "",
     newAngles > 0 ? openingNewAnglesInstruction(newAngles) : "",
   ].filter(Boolean).join(" ");
   return {
-    verifiedFacts,
     task: "revise",
     openings: targets.map((target) => ({
       ...shown(target.candidate),
@@ -654,7 +660,7 @@ export function openingRefineRequest(verifiedFacts: ReturnType<typeof openingFac
   };
 }
 
-/** What the judge receives each round, beside the cached facts: the candidates, the versions they revise with their scores, the program's findings. */
+/** What the judge receives each round, beside the facts: the candidates, the versions they revise with their scores, the program's findings. */
 export function openingJudgeRequest(round: number, candidates: readonly Draft2OpeningCandidate[], mechanical: readonly Draft2OpeningIssue[], revised: readonly Draft2OpeningVersion[]) {
   const proposalsWanted = OPENING_ROUND_PLAN[round - 1]?.proposals ?? 0;
   return {
@@ -695,5 +701,7 @@ export function openingRunSummary(opening: Draft2Opening): Draft2OpeningRun {
     ...(opening.winnerId ? { winnerId: opening.winnerId } : {}),
     ...(opening.editorChoiceId ? { editorChoiceId: opening.editorChoiceId, editorChoiceAt: opening.editorChoiceAt } : {}),
     ...(opening.error ? { error: opening.error } : {}),
+    ...(opening.writer ? { writer: opening.writer } : {}),
+    ...(opening.judge ? { judge: opening.judge } : {}),
   };
 }
