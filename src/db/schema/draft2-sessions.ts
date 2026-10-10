@@ -7,6 +7,7 @@ import type { Draft2Closing } from "@/app/modules/draft2/draft2-closing.types";
 import type { Draft2Deck } from "@/app/modules/draft2/draft2-deck.types";
 import type { Draft2Inventory } from "@/app/modules/draft2/draft2-inventory.types";
 import type { Draft2Visual } from "@/app/modules/draft2/draft2-visual.types";
+import type { Draft2Images } from "@/app/modules/draft2/draft2-images.types";
 import type { Draft2Focus } from "@/app/modules/draft2/draft2-focus.types";
 import type { Draft2Opening } from "@/app/modules/draft2/draft2-opening.types";
 
@@ -40,6 +41,8 @@ export const draft2Sessions = pgTable("draft2_sessions", {
   inventory: jsonb("inventory").$type<Draft2Inventory>(),
   /** Step 7: the visual script, every round, the winner, the editor's choice, and what it scripted and followed. */
   visual: jsonb("visual").$type<Draft2Visual>(),
+  /** Step 8: the slides' images as runs of attempts (generated, reviewed, corrected), the version each slide shows, and earlier runs. The image files live in R2. */
+  images: jsonb("images").$type<Draft2Images>(),
   threads: jsonb("threads").$type<Draft2Threads>().notNull().default(sql`'{}'::jsonb`),
   trace: jsonb("trace").$type<Draft2TraceEntry[]>().notNull().default(sql`'[]'::jsonb`),
   error: text("error"),

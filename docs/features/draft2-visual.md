@@ -38,6 +38,17 @@ after two rounds):
 | Maps | Google Maps for the map of a place Wikidata has no match or no coordinates for, in the same search, when Google is configured |
 | A wrong place match | the editor sets it aside ("Not this place") |
 
+Visual script v2, the same day, after the 94 (the same toad at six sizes,
+three closing slides on one formula):
+
+| Question | Decision |
+| --- | --- |
+| A real story | a `protagonist` the images follow, and each beat is an action: something happens on every slide |
+| The headline | the image model letters the words; each slide says how its image plays with its headline (`headlineLink`, optional) |
+| Repetition | a `shot` per slide (wide, medium, close, overhead, typography); no two adjacent slides share one |
+| Logo and page number | the script reads where the Topic puts them (`layout`) and keeps them clear |
+| Reconstruction | a generic scene of the activity (anonymous people, a setting nobody could take for the place) is allowed, and the judge flags `REPETITIVE` scripts |
+
 ## 3. Step 6 · People and places (`draft2-inventory.ts`, `draft2-inventory.types.ts`)
 
 1. **Extraction.** One Claude call (role `people-finder`, medium effort, the
@@ -100,6 +111,8 @@ continued run needs the inventory version it read.
 - `focus`
 - `carousel`: every slide's words, in order (`cover`, `slide2`, `s1`…,
   `penultimate`, `last`)
+- `layout` (`visualLayout`): the image model letters the words; the logo's
+  area and slides, and the page number's, as the Topic configures them
 - `peopleAndPlaces`: each entity with what it may show, and the story's
   photos
 - `characters` and `characterChoice`
@@ -109,15 +122,16 @@ The instructions add the brand brief, the visual identity in full
 (`resolveCreativeVisualGuidance`) and the visual mode.
 
 **A script:**
-- `concept`, `cast` and `motif`;
+- `concept`, `protagonist`, `cast` and `motif`;
 - `characterPlan { use, characterIds, role }`;
-- one slide per carousel slide: `beat` (what the image adds), `direction`
-  (≤ 700 characters), `need` (v1's `visualNeed`), `characterIds` (≤ 2) and
-  `references` (entity and story photo ids).
+- one slide per carousel slide: `beat` (what happens in the image), `shot`,
+  `headlineLink`, `direction` (≤ 700 characters), `need` (v1's
+  `visualNeed`), `characterIds` (≤ 2) and `references` (entity and story
+  photo ids).
 
 **Criteria:** narrative, continuity, brand, truth, fit, craft, focus.
 Accepted at overall ≥ 95 with every criterion ≥ 85. The judge's issue codes
-are `ILLUSTRATES_TEXT`, `BREAKS_CONTINUITY`, `OFF_BRAND`, `LOOKS_AI`,
+are `ILLUSTRATES_TEXT`, `BREAKS_CONTINUITY`, `REPETITIVE`, `OFF_BRAND`, `LOOKS_AI`,
 `CONTRADICTS_FACTS`, `CROWDS_TEXT`, `VAGUE`, `CHARACTER_MISUSED` and
 `OFF_FOCUS`.
 
@@ -137,6 +151,8 @@ are `ILLUSTRATES_TEXT`, `BREAKS_CONTINUITY`, `OFF_BRAND`, `LOOKS_AI`,
 | `AVOID_TERM` | a term from the identity's avoid list |
 | `FORBIDDEN_ELEMENT` | words, logos, signage or swipe cues in the image |
 | `DUPLICATE_CANDIDATE` | as elsewhere |
+| `SAME_SHOT` | two adjacent slides with the same shot |
+| `SHOT_MISMATCH` | a typography slide without the typography shot, or the reverse |
 
 **The output keeps v1's slide contract** (`visualDirection`, `visualNeed`,
 `characterIds`, story references), so the image step can feed
@@ -203,6 +219,5 @@ are `ILLUSTRATES_TEXT`, `BREAKS_CONTINUITY`, `OFF_BRAND`, `LOOKS_AI`,
 
 ## 8. Out of scope
 
-- Generating the images, which will reuse v1's prompt builder, references
-  and image review.
+- Generating the images: step 8, `docs/features/draft2-images.md`.
 - The publication caption, which carries photo credits.

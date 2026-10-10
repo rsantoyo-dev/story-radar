@@ -3,7 +3,7 @@ import test from "node:test";
 import { Draft2ResponseError } from "./draft2-facts.types";
 import {
   VISUAL_CRITERIA, VISUAL_LONG_PLAN, VISUAL_PLAN, avoidTerms, carouselSlides, mechanicalVisualIssues, parseVisualCandidates, parseVisualEvaluation, sameVisual,
-  visualExploreRequest, visualJudgeRequest, visualModeLine, visualPlan, visualRefineRequest, visualSchema,
+  visualExploreRequest, visualJudgeRequest, visualLayout, visualModeLine, visualPlan, visualRefineRequest, visualSchema,
   type Draft2CarouselSlide, type Draft2VisualCandidate, type Draft2VisualIssue, type Draft2VisualRound, type Draft2VisualScore, type Draft2VisualSlide,
 } from "./draft2-visual.types";
 import { funnelExtendable, funnelVersions } from "./draft2-funnel";
@@ -38,11 +38,14 @@ const inventory: Pick<Draft2Inventory, "entities" | "storyPhotos"> = {
 const characters = [{ id: "char-mia", name: "Mia", description: "An illustrated local presenter in a mustard coat" }];
 
 const direction = (focal: string) => `Paper-cut collage in cream and night blue: ${focal}, one focal subject on the left third, soft lavender light, generous space at the top for the headline.`;
-const slide = (position: string, overrides: Partial<Draft2VisualSlide> = {}): Draft2VisualSlide => ({ slide: position, beat: `The ${position} beat.`, direction: direction(`a library card for ${position}`), need: "generic-illustration", characterIds: [], references: [], ...overrides });
+/** Shots that never repeat from one slide to the next. */
+const SHOTS: Record<string, Draft2VisualSlide["shot"]> = { cover: "wide", slide2: "medium", s1: "close", s2: "medium", penultimate: "wide", last: "close" };
+const slide = (position: string, overrides: Partial<Draft2VisualSlide> = {}): Draft2VisualSlide => ({ slide: position, beat: `The ${position} beat.`, shot: SHOTS[position] ?? "medium", headlineLink: "", direction: direction(`a library card for ${position}`), need: "generic-illustration", characterIds: [], references: [], ...overrides });
 /** A clean script: Mia guides the reader from a closed door to an open reading room. */
 const script = (id: string, overrides: Partial<Draft2VisualCandidate> = {}): Draft2VisualCandidate => ({
   id, angle: "From the closed door to the open room",
   concept: "Mia walks the reader from a closed library door to a full reading room.",
+  protagonist: "Mia, guiding a reader seen from behind",
   motif: "A library card that gains a stamp on every slide.",
   cast: "Mia, the illustrated presenter in her mustard coat; anonymous readers seen from behind.",
   characterPlan: { use: true, characterIds: ["char-mia"], role: "The reader's guide" },
@@ -72,6 +75,29 @@ test("the carousel in order, from the opening, the deck and the closing; three s
   const schema = visualSchema(carousel.map((entry) => entry.slide)) as { properties: { candidates: { items: { properties: { slides: { minItems: number; items: { properties: { slide: { enum: string[] } } } } } } } } };
   assert.equal(schema.properties.candidates.items.properties.slides.minItems, 6);
   assert.deepEqual(schema.properties.candidates.items.properties.slides.items.properties.slide.enum, ["cover", "slide2", "s1", "s2", "penultimate", "last"]);
+  const item = (schema as unknown as { properties: { candidates: { items: { required: string[]; properties: { slides: { items: { required: string[]; properties: { shot: { enum: string[] } } } } } } } } }).properties.candidates.items;
+  assert.ok(item.required.includes("protagonist"));
+  assert.deepEqual(item.properties.slides.items.properties.shot.enum, ["wide", "medium", "close", "overhead", "typography"]);
+  assert.ok(item.properties.slides.items.required.includes("headlineLink"));
+});
+
+test("the layout tells the script what is added afterwards: the words the image model letters, the logo where the Topic puts it, the page number", () => {
+  const overlay = { enabled: true, scope: "first-unit", placement: "top-left", sizePercent: 12, insetPercent: 2, backdropMode: "solid", backdropColor: "#F6F0E4", backdropOpacity: 0, assetId: "a1", asset: { id: "a1", fileName: "logo.png", contentType: "image/png", fileSize: 1, width: 400, height: 200, createdAt: new Date(0) } } as const;
+  const chrome = { enabled: true, style: "blob", backgroundColor: "#173F52", textColor: "#E3A62F", accentColor: "#F6F0E4" } as const;
+  const layout = visualLayout({ brandOverlay: overlay, carouselChrome: chrome } as unknown as Parameters<typeof visualLayout>[0], carousel);
+  assert.deepEqual(layout.logo, { slides: ["cover"], area: "the top left corner, about 12% of the slide's width, plus a margin" });
+  assert.match(String(layout.numbering?.area), /page-number badge centred on the bottom edge/);
+  assert.match(layout.lettering, /The image model letters each slide's words/);
+  const everywhere = visualLayout({ brandOverlay: { ...overlay, scope: "all-units" }, carouselChrome: { ...chrome, enabled: false } } as unknown as Parameters<typeof visualLayout>[0], carousel);
+  assert.deepEqual([everywhere.logo?.slides.length, everywhere.numbering], [6, null]);
+  assert.equal(visualLayout({ brandOverlay: { ...overlay, enabled: false }, carouselChrome: chrome } as unknown as Parameters<typeof visualLayout>[0], carousel).logo, null, "no logo when it is off");
+});
+
+test("shots alternate: no two slides in a row share one, and a typography slide has the typography shot, and only it", () => {
+  assert.deepEqual(findings(withSlide("s1", { shot: "medium" })), ["SAME_SHOT c1 s1", "SAME_SHOT c1 s2"], "s1 repeats slide 2's, and s2 repeats s1's");
+  assert.deepEqual(findings(withSlide("s2", { need: "typography" })), ["SHOT_MISMATCH c1 s2"]);
+  assert.deepEqual(findings(withSlide("s2", { shot: "typography" })), ["SHOT_MISMATCH c1 s2"]);
+  assert.deepEqual(findings(withSlide("s2", { need: "typography", shot: "typography" })), []);
 });
 
 test("the writer's answer becomes scripts; a slide missing a part is rejected; the judge scores every visual criterion per carousel slide", () => {
@@ -116,8 +142,8 @@ test("verified material backs what a slide asks for, and the strict modes genera
   assert.deepEqual(findings(withSlide("slide2", { need: "real-photo", references: ["e3"], direction: direction("Tremblay at the desk, from the front") }), { inventory: given }), [], "the story photo the editor gave him is his portrait");
   assert.deepEqual(findings(withSlide("s1", { need: "real-photo", references: ["p1"] }), { inventory: given }), ["REFERENCE_UNKNOWN c1 s1", "NEED_MISMATCH c1 s1"], "a person's photo is never a free reference");
   assert.deepEqual(findings(withSlide("s1", { need: "real-photo", references: ["e2"], characterIds: ["char-mia"] })), ["NEED_MISMATCH c1 s1"], "the character stays off verified material");
-  assert.deepEqual(findings(withSlide("s2", { need: "typography" })), []);
-  const plain = script("c1", { characterPlan: { use: false, characterIds: [], role: "" }, slides: script("c1").slides.map((entry) => ({ ...entry, characterIds: [], need: entry.slide === "cover" ? "typography" as const : "generic-illustration" as const })) });
+  assert.deepEqual(findings(withSlide("s2", { need: "typography", shot: "typography" })), []);
+  const plain = script("c1", { characterPlan: { use: false, characterIds: [], role: "" }, slides: script("c1").slides.map((entry) => ({ ...entry, characterIds: [], ...(entry.slide === "cover" ? { need: "typography" as const, shot: "typography" as const } : { need: "generic-illustration" as const }) })) });
   assert.deepEqual(findings(plain), ["COVER_TYPOGRAPHY c1 cover"]);
   const strict = findings(script("c1"), { mode: "photo-required" });
   assert.equal(strict.filter((code) => code.startsWith("STRICT_MODE")).length, 7, "every generated slide, and the character on the cover");
@@ -148,7 +174,7 @@ test("the requests name scripts, and the mode line says what may be generated", 
   const versions = funnelVersions([first]);
   const refine = visualRefineRequest(versions.slice(0, 1), versions, [], first, 0, [script("p1")]);
   assert.deepEqual(Object.keys(refine), ["task", "scripts", "develop", "suggestions", "instruction"]);
-  assert.match(refine.instruction, /^Revise each script in scripts[^]*Keep its concept, its cast and its motif[^]*Edit the script in develop/);
+  assert.match(refine.instruction, /^Revise each script in scripts[^]*Keep its concept, its protagonist, its cast and its motif[^]*Edit the script in develop/);
   assert.equal(visualJudgeRequest(VISUAL_PLAN, 1, [script("c1")], [], []).proposalsWanted, 1);
   assert.match(visualModeLine("illustration-editorial"), /real people only through confirmed documentary portraits/);
   assert.match(visualModeLine("photo-required"), /Nothing is generated/);

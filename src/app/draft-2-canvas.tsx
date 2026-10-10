@@ -18,7 +18,8 @@ import {
 import { CLOSING_GATE, CLOSING_MAX_ROUNDS, type Draft2Closing, type Draft2ClosingCandidate, type Draft2ClosingCriterion } from "@/app/modules/draft2/draft2-closing.types";
 import { DECK_GATE, DECK_MAX_ROUNDS, type Draft2Deck, type Draft2DeckCandidate, type Draft2DeckCriterion } from "@/app/modules/draft2/draft2-deck.types";
 import { INVENTORY_CHARACTER_CHOICES, type Draft2CharacterChoice, type Draft2Inventory, type Draft2InventoryEntity, type Draft2InventoryStoryPhoto } from "@/app/modules/draft2/draft2-inventory.types";
-import { VISUAL_GATE, VISUAL_MAX_ROUNDS, visualPlan, type Draft2Visual, type Draft2VisualCandidate, type Draft2VisualCriterion } from "@/app/modules/draft2/draft2-visual.types";
+import { VISUAL_GATE, VISUAL_MAX_ROUNDS, visualPlan, type Draft2Visual, type Draft2VisualCandidate, type Draft2VisualCriterion, type Draft2VisualShot } from "@/app/modules/draft2/draft2-visual.types";
+import { IMAGES_MAX_REQUESTS, latestAttempt, shownAttempt, slideSettled, type Draft2ImageAttempt, type Draft2ImageReview, type Draft2Images, type Draft2SlideImage } from "@/app/modules/draft2/draft2-images.types";
 import {
   criterionOf, funnelAcceptedWinner, funnelExtendable, funnelResumeRound, funnelScorePasses, funnelVersions, hasMaterialError,
   type FunnelCandidate, type FunnelGate, type FunnelIssue, type FunnelRegression, type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion,
@@ -42,12 +43,13 @@ type Draft2SessionView = {
   deck: Draft2Deck | null;
   inventory: Draft2Inventory | null;
   visual: Draft2Visual | null;
+  images: Draft2Images | null;
   trace: Draft2TraceEntry[];
   error: string | null;
   updatedAt: string;
 };
 
-type Draft2RunStep = "facts" | "focus" | "opening" | "closing" | "deck" | "inventory" | "visual";
+type Draft2RunStep = "facts" | "focus" | "opening" | "closing" | "deck" | "inventory" | "visual" | "images";
 /** The steps that run on the funnel, in rounds that can pause and continue. */
 type Draft2FunnelStep = "opening" | "closing" | "deck" | "visual";
 
@@ -92,6 +94,11 @@ const CLOSING_CRITERION_LABEL: Record<Draft2ClosingCriterion, string> = { resolu
 const DECK_CRITERION_LABEL: Record<Draft2DeckCriterion, string> = { flow: "Flow", coverage: "Coverage", pacing: "Pacing", clarity: "Clarity", grounding: "Grounding", voice: "Voice", focus: "Focus" };
 const VISUAL_CRITERION_LABEL: Record<Draft2VisualCriterion, string> = { narrative: "Narrative", continuity: "Continuity", brand: "Brand", truth: "Truth", fit: "Fit", craft: "Craft", focus: "Focus" };
 const CHARACTER_CHOICE_LABEL: Record<Draft2CharacterChoice, string> = { auto: "Claude decides in each script", on: "A brand character narrates", off: "No brand character" };
+const SHOT_LABEL: Record<Draft2VisualShot, string> = { wide: "Wide shot", medium: "Medium shot", close: "Close-up", overhead: "Overhead", typography: "Typography" };
+const IMAGES_STATUS: Record<Draft2Images["status"], { label: string; tone: StatusTone }> = {
+  running: { label: "Generating", tone: "info" }, paused: { label: "Paused", tone: "warning" }, ready: { label: "Ready", tone: "success" },
+  "needs-review": { label: "Needs review", tone: "warning" }, failed: { label: "Failed", tone: "error" },
+};
 const NEED_LABEL: Record<string, string> = { "generic-illustration": "Illustration", "character-reference": "Brand character", "real-photo": "Verified photo", "verified-map": "Verified map", typography: "Typography" };
 
 const FRAMING_LABEL: Record<Draft2FocusValues["framing"], string> = { "reader-consequence": "Reader consequence", explainer: "Explainer", authority: "Authority" };
@@ -162,6 +169,8 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const [savingFocus, setSavingFocus] = useState<Draft2FocusField>();
   const [savingInventory, setSavingInventory] = useState<string>();
   const [inventoryError, setInventoryError] = useState<string>();
+  const [savingImage, setSavingImage] = useState<string>();
+  const [imageError, setImageError] = useState<string>();
   const [focusError, setFocusError] = useState<string>();
   const [following, setFollowing] = useState<string>();
   // The clock a run is measured against, to tell a run that went silent from one still working.
@@ -237,7 +246,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   }
 
   /** Follows a run whose request was lost until it finishes, pauses or goes silent; undefined when the server stays unreachable. */
-  async function followRun(step: Draft2FunnelStep): Promise<Draft2SessionView | undefined> {
+  async function followRun(step: Draft2FunnelStep | "images"): Promise<Draft2SessionView | undefined> {
     let unreachableSince: number | undefined;
     for (;;) {
       await new Promise((resolve) => setTimeout(resolve, FOLLOW_POLL_MS));
@@ -276,9 +285,10 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
         return;
       }
       let payload: Record<string, unknown> = { storyId, sessionId: session?.id, ...(continuing ? { continue: true } : {}) };
-      // Each request advances at least one round or judgment; a round can pause once before its writer and once before its judge.
+      // Each request advances at least one round or judgment; a round can pause once before its writer and once before its judge. An images run pauses while fal works.
       const maxRounds = step === "visual" ? VISUAL_MAX_ROUNDS : step === "deck" ? DECK_MAX_ROUNDS : step === "closing" ? CLOSING_MAX_ROUNDS : OPENING_MAX_ROUNDS;
-      for (let request = 0; request <= maxRounds * 2; request++) {
+      const maxRequests = step === "images" ? IMAGES_MAX_REQUESTS : maxRounds * 2;
+      for (let request = 0; request <= maxRequests; request++) {
         let next: Draft2SessionView | undefined;
         try {
           next = await postStep(step, payload);
@@ -341,6 +351,28 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
     } finally {
       setSavingInventory(undefined);
     }
+  }
+
+  /** One image decision: another image of a slide, made at once, or the version a slide shows. */
+  async function decideImage(input: Record<string, unknown>) {
+    if (!session || running || savingImage) return;
+    setSavingImage(String(input.slide)); setImageError(undefined);
+    let queued = false;
+    try {
+      const response = await fetch(`/api/radar/draft2/images?topicId=${encodeURIComponent(topicId)}`, {
+        method: "PATCH", cache: "no-store", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: session.id, ...input }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? "Could not save the decision.");
+      const next = body.session as Draft2SessionView;
+      setSession(next);
+      queued = next.images?.status === "paused";
+    } catch (cause) {
+      setImageError(cause instanceof Error ? cause.message : "Could not save the decision.");
+    } finally {
+      setSavingImage(undefined);
+    }
+    if (queued) void runStep("images", { continuing: true });
   }
 
   /** Records the editor's pick among the versions of an opening or a closing. */
@@ -426,7 +458,17 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const visualResumeRound = (visualResumable || visualExtendable) && visual ? funnelResumeRound(visual) : undefined;
   const visualPausedRound = visual?.status === "paused" ? funnelResumeRound(visual) : undefined;
   const visualDisplay = visualDisplayFor(inventory);
-  const stepStatus: Partial<Record<string, { label: string; tone: StatusTone }>> = { facts: factsStatus, focus: focusStatus, opening: openingStatus, closing: closingStatus, deck: deckStatus, inventory: inventoryStatus, visual: visualStatus };
+  // The images picture the chosen visual script once its run has finished, while it still follows the deck and the people and places.
+  const images = session?.images ?? undefined;
+  const imagesStalled = !running && images?.status === "running" && now > 0 && now - Date.parse(session?.updatedAt ?? "") > OPENING_STALL_MS;
+  const imagesPending = Boolean(images?.slides.some((slide) => !slideSettled(slide)));
+  const imagesResumable = Boolean(images && imagesPending && (images.status === "paused" || images.status === "failed" || imagesStalled));
+  const imagesStatus = running === "images" ? { label: "Generating", tone: "info" as const } : imagesStalled ? { label: "Stopped", tone: "warning" as const } : images ? IMAGES_STATUS[images.status] : undefined;
+  const chosenVisualId = visual?.editorChoiceId ?? visual?.winnerId;
+  const visualFinished = Boolean(visual && chosenVisualId && visual.status !== "running" && visual.status !== "paused");
+  const imagesReady = visualFinished && !visualChanged;
+  const imagesChanged = Boolean(images && chosenVisualId && images.visualId !== chosenVisualId);
+  const stepStatus: Partial<Record<string, { label: string; tone: StatusTone }>> = { facts: factsStatus, focus: focusStatus, opening: openingStatus, closing: closingStatus, deck: deckStatus, inventory: inventoryStatus, visual: visualStatus, images: imagesStatus };
   const resumable = session?.opening && (session.opening.status === "paused" || stalled) && openingResumeRound(session.opening) <= OPENING_MAX_ROUNDS;
   const resumeRound = resumable && session?.opening ? openingResumeRound(session.opening) : undefined;
   const pausedRound = session?.opening?.status === "paused" ? openingResumeRound(session.opening) : undefined;
@@ -650,6 +692,28 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
               onChoose={(candidateId) => { void choose("visual", candidateId); }}
             /> : null}
           </section>
+          <section className={styles.factsPanel} aria-label="Images step">
+            <div className={styles.factsHeader}>
+              <div>
+                <p className={styles.eyebrow}>Step 8 · Images</p>
+                <p className={styles.factsIntro}>GPT Image makes each slide from the chosen visual script and the brand’s identity, and letters the slide’s words itself; the page number and the logo are added afterwards where the brand puts them, and a verified photo or map is pasted unchanged. {TODAY.judge} reviews each image: the words as they appear, what covers them, real people, other brands’ logos, what the brand avoids and the facts. A slide it flags is corrected once, from its image before the logo and the page number. Low quality, three calls a slide at most.</p>
+              </div>
+              <ActionRow>
+                {imagesResumable && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("images", { continuing: true }); }}>Continue</Button> : null}
+                <Button variant="primary" size="compact" busy={running === "images"} disabled={!factsVerified || !imagesReady || running !== undefined || savingImage !== undefined} onClick={() => { void runStep("images"); }}>
+                  {running === "images" ? "Making the images…" : images ? "Make the images again" : "Make the images"}
+                </Button>
+              </ActionRow>
+            </div>
+            {factsVerified && !imagesReady && !running ? <p className={styles.factMeta}>{!visualFinished ? "The images picture the visual script; finish it first." : "The deck or the people and places changed since the visual script; write the visual script again first."}</p> : null}
+            {imagesChanged && running !== "images" ? <InlineNotice tone="info" title="The visual script changed">These images picture {images?.visualId}; the visual script chosen now is {chosenVisualId}. Make the images again to follow it.</InlineNotice> : null}
+            {running === "images" ? <LoadingState>{following ? `${following} Following the run on the server…` : images?.status === "paused" ? "Continuing in a new request while fal works…" : `GPT Image makes the slides; ${TODAY.judge} reviews each one. This can take a few minutes.`}</LoadingState> : null}
+            {imagesStalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {new Date(session.updatedAt).toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit" })}: its request or the server ended. Continue picks it up; an image already asked for is not asked for again.</InlineNotice> : null}
+            {runError?.step === "images" ? <InlineNotice tone="error" title="The images stopped">{runError.message}</InlineNotice> : null}
+            {session?.step === "images" && session.error && running !== "images" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
+            {imageError ? <InlineNotice tone="error" title="Your decision was not saved">{imageError}</InlineNotice> : null}
+            {images && session && running !== "images" ? <ImagesView images={images} story={{ topicId, sessionId: session.id, secret }} saving={savingImage} locked={running !== undefined || savingImage !== undefined} onDecide={(input) => { void decideImage(input); }} /> : null}
+          </section>
           {session?.trace.length && !running ? <details className={styles.trace}>
             <summary>{session.trace.length} provider {session.trace.length === 1 ? "call" : "calls"}</summary>
             <ol className={styles.traceList}>
@@ -762,11 +826,12 @@ function visualDisplayFor(inventory: Draft2Inventory | undefined): FunnelDisplay
     labels: VISUAL_CRITERION_LABEL,
     lines: (candidate) => ({
       title: candidate.concept,
-      details: [`Motif · ${candidate.motif}`, `Cast · ${candidate.cast}`, candidate.characterPlan.use ? `Character narrates · ${candidate.characterPlan.role}` : "No brand character"],
+      details: [...(candidate.protagonist ? [`Protagonist · ${candidate.protagonist}`] : []), `Motif · ${candidate.motif}`, `Cast · ${candidate.cast}`, candidate.characterPlan.use ? `Character narrates · ${candidate.characterPlan.role}` : "No brand character"],
     }),
     proposal: (candidate) => candidate.concept,
     cards: (candidate, run) => <div className={styles.visualBody}>
       <p className={styles.factClaim}>{candidate.concept}</p>
+      {candidate.protagonist ? <p className={styles.factMeta}>Protagonist · {candidate.protagonist}</p> : null}
       <p className={styles.factMeta}>Motif · {candidate.motif}</p>
       <p className={styles.factMeta}>Cast · {candidate.cast}</p>
       <p className={styles.factMeta}>{candidate.characterPlan.use
@@ -779,9 +844,11 @@ function visualDisplayFor(inventory: Draft2Inventory | undefined): FunnelDisplay
             <div className={styles.factHead}>
               <strong>{words?.label ?? slide.slide}</strong>
               <StatusBadge tone={slide.need === "real-photo" || slide.need === "verified-map" ? "info" : "neutral"}>{NEED_LABEL[slide.need] ?? slide.need}</StatusBadge>
+              {slide.shot ? <span className={styles.factMeta}>{SHOT_LABEL[slide.shot]}</span> : null}
             </div>
             {words ? <p className={styles.visualWords}>{words.headline}</p> : null}
             <p className={styles.factMeta}>Beat · {slide.beat}</p>
+            {slide.headlineLink ? <p className={styles.factMeta}>With the headline · {slide.headlineLink}</p> : null}
             <p className={styles.openingText}>{slide.direction}</p>
             {slide.characterIds.length ? <p className={styles.factMeta}>Characters · {slide.characterIds.map((id) => run.characters?.find((character) => character.id === id)?.name ?? id).join(", ")}</p> : null}
             {slide.references.length ? <p className={styles.factMeta}>Verified material · {slide.references.map(nameOf).join(", ")}</p> : null}
@@ -1081,6 +1148,107 @@ function PlaceItem({ entity, photos, locked, onDecide }: { entity: Draft2Invento
       {status === "rejected" ? <Button variant="quiet" size="compact" disabled={locked} onClick={() => onDecide({ action: "reopen", entityId: entity.id })}>It is this place</Button> : null}
     </ActionRow>
   </li>;
+}
+
+/**
+ * The carousel's images in order, each with the version it shows and Sol's
+ * review of it, and the editor's choices: another image (with what to
+ * change, optionally as an edit of the one shown), or another version.
+ */
+function ImagesView({ images, story, saving, locked, onDecide }: {
+  images: Draft2Images;
+  /** Where the images are read from; the secret authorizes it when the editor is not signed in. */
+  story: { topicId: string; sessionId: string; secret: string };
+  saving?: string;
+  locked: boolean;
+  onDecide: (input: Record<string, unknown>) => void;
+}) {
+  const shown = images.slides.filter((slide) => shownAttempt(slide)).length;
+  const costMicros = images.slides.flatMap((slide) => slide.attempts).reduce((sum, attempt) => sum + (attempt.costMicros ?? 0), 0);
+  return <div className={styles.focusBody}>
+    <p className={styles.factMeta}>{shown} of {images.slides.length} slides · from visual script {images.visualId} · {images.quality} quality · {images.model}{costMicros ? ` · ≈US$${(costMicros / 1_000_000).toFixed(2)} in images` : ""}</p>
+    <ol className={styles.imageGrid}>{images.slides.map((slide) => <SlideImageCard key={slide.slide} slide={slide} runId={images.runId} story={story} saving={saving === slide.slide} locked={locked} onDecide={onDecide} />)}</ol>
+  </div>;
+}
+
+const IMAGE_STATUS_LABEL: Record<Draft2ImageAttempt["status"], string> = { queued: "Waiting", submitting: "Sending", generating: "Generating", generated: "Made", failed: "Failed" };
+
+/** What Sol found on an image: passed, its blocking issues, or why it could not look. */
+function ImageReviewLines({ review }: { review: Draft2ImageReview }) {
+  if (review.status === "passed") return <p className={styles.factMeta}>Sol: passed.{review.note ? ` ${review.note}` : ""}</p>;
+  if (review.status === "unavailable") return <p className={styles.factMeta}>{review.note}</p>;
+  return <>
+    <ul className={styles.issueList}>{review.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>
+    {review.note ? <p className={styles.factMeta}>{review.note}</p> : null}
+  </>;
+}
+
+/** One slide: its image, its versions, the review, what it could not show, and another image. */
+function SlideImageCard({ slide, runId, story, saving, locked, onDecide }: {
+  slide: Draft2SlideImage;
+  runId: string;
+  story: { topicId: string; sessionId: string; secret: string };
+  saving: boolean;
+  locked: boolean;
+  onDecide: (input: Record<string, unknown>) => void;
+}) {
+  const [instruction, setInstruction] = useState("");
+  const [edit, setEdit] = useState(false);
+  const shown = shownAttempt(slide);
+  const latest = latestAttempt(slide);
+  const generated = slide.attempts.filter((attempt) => attempt.status === "generated");
+  const pending = !slideSettled(slide);
+  const corrected = shown?.kind === "correct" ? slide.attempts.find((attempt) => attempt.version === shown.baseVersion) : undefined;
+  const tone: StatusTone = !shown ? (latest?.status === "failed" ? "error" : "info") : shown.review?.status === "passed" ? "success" : "warning";
+  const url = shown ? `/api/radar/draft2/images/file?topicId=${encodeURIComponent(story.topicId)}&sessionId=${encodeURIComponent(story.sessionId)}&run=${encodeURIComponent(runId)}&slide=${encodeURIComponent(slide.slide)}&version=${shown.version}` : undefined;
+  return <li className={styles.imageCard}>
+    <div className={styles.factHead}>
+      <strong>{slide.label}</strong>
+      <StatusBadge tone={tone}>{shown ? (shown.review?.status === "passed" ? "Passed" : shown.kind === "correct" ? "Corrected" : shown.review?.status === "issues" ? "Issues" : "Made") : latest ? IMAGE_STATUS_LABEL[latest.status] : "No image"}</StatusBadge>
+      {shown ? <span className={styles.factMeta}>v{shown.version}</span> : null}
+    </div>
+    {url ? <PrivateDraft2Image url={url} secret={story.secret} alt={`${slide.label}, version ${shown?.version}`} /> : <div className={styles.imageFrame}><p className={styles.factMeta}>{latest?.status === "failed" ? latest.error : pending ? "Being made…" : "No image"}</p></div>}
+    {generated.length > 1 ? <div className={styles.imageVersions} role="group" aria-label={`${slide.label}: versions`}>
+      {generated.map((attempt) => <Button key={attempt.version} size="compact" variant={attempt.version === shown?.version ? "secondary" : "quiet"} disabled={locked || attempt.version === shown?.version} onClick={() => onDecide({ action: "choose", slide: slide.slide, version: attempt.version })}>
+        v{attempt.version}{attempt.kind === "correct" ? " · corrected" : attempt.kind === "regenerate" ? " · yours" : ""}
+      </Button>)}
+    </div> : null}
+    {shown?.review ? <ImageReviewLines review={shown.review} /> : null}
+    {corrected?.review ? <p className={styles.factMeta}>Corrected from v{corrected.version} for: {corrected.review.issues.join(" ")} Not reviewed again: look at it yourself.</p> : null}
+    {latest && latest !== shown && latest.status === "failed" ? <p className={styles.factMeta}>v{latest.version} failed: {latest.error}</p> : null}
+    {slide.notes.map((entry) => <p key={entry} className={styles.factMeta}>{entry}</p>)}
+    <details>
+      <summary>Another image</summary>
+      <FormField label="What to change" description="Optional for a new image; needed to edit this one.">
+        <textarea value={instruction} maxLength={600} rows={2} disabled={locked || pending} onChange={(event) => setInstruction(event.target.value)} />
+      </FormField>
+      <label className={styles.factMeta}><input type="checkbox" checked={edit} disabled={locked || pending || !shown} onChange={(event) => setEdit(event.target.checked)} /> Edit this image, keeping its layout</label>
+      <ActionRow>
+        <Button size="compact" variant="secondary" busy={saving} disabled={locked || pending || (edit && !instruction.trim())} onClick={() => onDecide({ action: "regenerate", slide: slide.slide, instruction, edit })}>{edit ? "Edit the image" : "Make another image"}</Button>
+      </ActionRow>
+    </details>
+  </li>;
+}
+
+/** A private image: fetched with the editor's credentials and shown from memory. */
+function PrivateDraft2Image({ url, secret, alt }: { url: string; secret: string; alt: string }) {
+  const [src, setSrc] = useState("");
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    let objectUrl = "";
+    fetch(url, { headers: { Authorization: `Bearer ${secret}` }, cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("The image is unavailable.");
+        const blob = await response.blob();
+        if (!controller.signal.aborted) { objectUrl = URL.createObjectURL(blob); setSrc(objectUrl); }
+      })
+      .catch(() => { if (!controller.signal.aborted) setFailed(true); });
+    return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [url, secret]);
+  return <div className={styles.imageFrame}>
+    {src ? <Image className={styles.imageFill} src={src} alt={alt} width={432} height={540} unoptimized /> : <p className={styles.factMeta}>{failed ? "Could not load the image." : "Loading…"}</p>}
+  </div>;
 }
 
 const clip = (value: string, max = 140) => value.length > max ? `${value.slice(0, max - 1).trimEnd()}…` : value;

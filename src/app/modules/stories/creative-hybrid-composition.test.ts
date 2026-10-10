@@ -74,6 +74,7 @@ async function compose(mode = "illustration-editorial", photoTest = false, inclu
     autoPlaceDetectionEnabled: placeVisual.autoPlaceDetectionEnabled,
     autoPlaceCandidate: placeVisual.autoPlaceCandidate,
     evidenceWithoutMaterial: placeVisual.evidenceWithoutMaterial,
+    verifiedPlacePhotoInstruction: placeVisual.verifiedPlacePhotoInstruction,
     // Sequential, so the submission order stays deterministic.
     mapWithConcurrency: async <T,>(values: T[], _concurrency: number, task: (value: T) => Promise<void>) => { for (const value of values) await task(value); },
     getDailyDraftStory: async (topic: string, story: string, run: unknown, workspace: boolean) => {

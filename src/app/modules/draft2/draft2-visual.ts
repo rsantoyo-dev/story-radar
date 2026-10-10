@@ -7,7 +7,7 @@ import { funnelVersions } from "./draft2-funnel";
 import { inventoryForModels, type Draft2CharacterChoice, type Draft2Inventory } from "./draft2-inventory.types";
 import {
   VISUAL_GATE, avoidTerms, carouselSlides, mechanicalVisualIssues, parseVisualCandidates, parseVisualEvaluation, sameVisual, visualEvaluationSchema, visualExploreRequest,
-  visualJudgeRequest, visualModeLine, visualPlan, visualRefineRequest, visualSchema,
+  visualJudgeRequest, visualLayout, visualModeLine, visualPlan, visualRefineRequest, visualSchema,
   type Draft2CarouselSlide, type Draft2Visual, type Draft2VisualCandidate, type Draft2VisualCharacter, type Draft2VisualIssue, type Draft2VisualMode, type Draft2VisualScore,
 } from "./draft2-visual.types";
 import { brandBrief, composeInstructions } from "./skills/draft2-skills";
@@ -84,7 +84,8 @@ const VISUAL_STEP: FunnelStep<Draft2VisualCandidate, Draft2VisualScore, Draft2Vi
     return {
       writer: composeInstructions("visual-writer", [VISUALS_SKILL], brief),
       judge: composeInstructions("visual-judge", [VISUALS_SKILL], brief),
-      context: { focus: focusForModels(focus.values), carousel, peopleAndPlaces: inventoryForModels(inventory), characters, characterChoice },
+      // The layout: the image model letters the words, and the logo and the page number are added afterwards, where the Topic puts them.
+      context: { focus: focusForModels(focus.values), carousel, layout: visualLayout(profile, carousel), peopleAndPlaces: inventoryForModels(inventory), characters, characterChoice },
       schemas: { writer: visualSchema(positions), judge: visualEvaluationSchema(positions) },
       parseCandidates: parseVisualCandidates,
       parseEvaluation: (text, ids) => parseVisualEvaluation(text, ids, positions),

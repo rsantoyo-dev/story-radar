@@ -24,6 +24,7 @@ import {
 import { OPENING_STALL_MS } from "./draft2-opening.types";
 import { brandBrief, composeInstructions } from "./skills/draft2-skills";
 import type { CreativeGeoScope, CreativeProfile } from "../stories/creative-content.types";
+import type { PlaceMention } from "../stories/creative-documentary";
 import type { Draft2SessionRow } from "@/db/schema";
 
 const MAX_OUTPUT_TOKENS = 8_000;
@@ -49,6 +50,11 @@ async function roster(topicId: string): Promise<Draft2Inventory["roster"]> {
 const excerptFor = (entity: Draft2InventoryEntity, facts: readonly Draft2Fact[]) =>
   facts.filter((fact) => entity.factIds.includes(fact.id)).map((fact) => fact.evidence).find((evidence) => comparableText(evidence).includes(comparableText(entity.name)))
   ?? facts.find((fact) => entity.factIds.includes(fact.id))?.evidence ?? entity.name;
+
+/** A place as v1's Wikidata lookup reads it (documentaryProviders().resolve); the images step resolves it again the same way. */
+export function placeMention(entity: Draft2InventoryEntity, facts: readonly Draft2Fact[]): PlaceMention {
+  return { name: entity.name, kind: "named", role: entity.role === "subject" ? "event" : "secondary", excerpt: excerptFor(entity, facts), municipality: "", region: "", country: "", purpose: "location" };
+}
 
 const note = (error: unknown) => error instanceof Error ? error.message.slice(0, 200) : "The lookup failed.";
 
@@ -101,7 +107,7 @@ async function lookUpPlace(entity: Draft2InventoryEntity, { providers, maps, pro
   let wikidata: { wikidataId: string; sourceUrl: string; photo?: Draft2PlacePhoto; map: boolean } | undefined;
   if (providers) {
     try {
-      const evidence = await providers.resolve({ name: entity.name, kind: "named", role: entity.role === "subject" ? "event" : "secondary", excerpt: excerptFor(entity, facts), municipality: "", region: "", country: "", purpose: "location" }, scope);
+      const evidence = await providers.resolve(placeMention(entity, facts), scope);
       checked = true;
       if (evidence) {
         const found = await providers.photo(evidence).catch(() => undefined)

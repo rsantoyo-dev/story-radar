@@ -7,6 +7,7 @@ import type { Draft2Closing } from "./draft2-closing.types";
 import type { Draft2Deck } from "./draft2-deck.types";
 import type { Draft2Inventory } from "./draft2-inventory.types";
 import type { Draft2Visual } from "./draft2-visual.types";
+import type { Draft2Images } from "./draft2-images.types";
 import type { Draft2Focus } from "./draft2-focus.types";
 import { OPENING_STALL_MS, type Draft2Opening } from "./draft2-opening.types";
 
@@ -18,7 +19,7 @@ const ACTIVE_WINDOW_MINUTES = 10;
  * heartbeat, so it counts as stopped after OPENING_STALL_MS of silence; a
  * facts run checkpoints only between calls, so it keeps the longer window.
  */
-const aliveSince = () => sql`CASE WHEN ${draft2Sessions.step} IN ('opening', 'focus', 'closing', 'deck', 'inventory', 'visual')
+const aliveSince = () => sql`CASE WHEN ${draft2Sessions.step} IN ('opening', 'focus', 'closing', 'deck', 'inventory', 'visual', 'images')
   THEN now() - make_interval(secs => ${OPENING_STALL_MS / 1_000})
   ELSE now() - make_interval(mins => ${ACTIVE_WINDOW_MINUTES}) END`;
 
@@ -39,6 +40,7 @@ export type Draft2SessionPatch = Partial<{
   deck: Draft2Deck | null;
   inventory: Draft2Inventory | null;
   visual: Draft2Visual | null;
+  images: Draft2Images | null;
   threads: Draft2Threads;
   trace: Draft2TraceEntry[];
   error: string | null;

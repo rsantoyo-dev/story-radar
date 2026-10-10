@@ -69,6 +69,7 @@ export const DRAFT_2_STEPS = [
   { key: "deck", title: "Deck", detail: "The slides between slide 2 and the closing, one idea each: the story from its promise to its end." },
   { key: "inventory", title: "People and places", detail: "Who and where the story names, and the verified photos and maps of them." },
   { key: "visual", title: "Visual script", detail: "The carousel's images as one visual story, in the brand's identity." },
+  { key: "images", title: "Images", detail: "Each slide made from the visual script, reviewed, and corrected once when it needs it; logo and page number added afterwards." },
   { key: "review", title: "Review", detail: "Deterministic checks and a calibrated judge before approval." },
 ] as const;
 

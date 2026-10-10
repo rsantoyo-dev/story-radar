@@ -15,6 +15,7 @@ import {
   approvedImageArchiveSegments,
   deliverySegments,
   editBaseSegments,
+  draft2ImageSegments,
   retentionObjectKey,
 } from "./r2-retention";
 
@@ -503,6 +504,17 @@ export function buildEditBaseObjectKey(input: { topicId: string; id: string }): 
   return retentionKey("180d", editBaseSegments({
     topicId: safeKeySegment(input.topicId, "topic ID"),
     id: safeKeySegment(input.id, "edit base ID"),
+  }));
+}
+
+/** A Draft 2 slide image or one of its inputs (base, map, prompt), kept 180 days; `file` such as "cover-v2.png". */
+export function buildDraft2ImageObjectKey(input: { topicId: string; sessionId: string; runId: string; file: string }): string {
+  if (!/^[a-zA-Z0-9_-]{1,64}\.(png|txt)$/.test(input.file)) throw new R2StorageValidationError("The Draft 2 image file name is invalid");
+  return retentionKey("180d", draft2ImageSegments({
+    topicId: safeKeySegment(input.topicId, "topic ID"),
+    sessionId: safeKeySegment(input.sessionId, "session ID"),
+    runId: safeKeySegment(input.runId, "run ID"),
+    file: input.file,
   }));
 }
 

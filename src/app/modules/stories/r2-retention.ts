@@ -10,7 +10,7 @@
  * | Class       | Kept for            | What goes here                               |
  * | ----------- | ------------------- | -------------------------------------------- |
  * | `7d`        | 7 days              | Frozen delivery JPEGs not (yet) published    |
- * | `180d`      | 180 days            | Approved generated images, edit bases        |
+ * | `180d`      | 180 days            | Approved generated images, edit bases, Draft 2 images |
  * | `permanent` | until deleted by app | Delivery JPEGs of published packages         |
  */
 export const R2_RETENTION_CLASSES = ["7d", "180d", "permanent"] as const;
@@ -55,6 +55,11 @@ export function approvedImageArchiveSegments(input: {
 
 export function editBaseSegments(input: { topicId: string; id: string }): string[] {
   return ["edit-bases", "topics", input.topicId, `${input.id}.png`];
+}
+
+/** A Draft 2 slide image, its pre-overlay base, its map panel or its prompt, under its run. */
+export function draft2ImageSegments(input: { topicId: string; sessionId: string; runId: string; file: string }): string[] {
+  return ["draft2-images", "topics", input.topicId, input.sessionId, input.runId, input.file];
 }
 
 export function deliverySegments(
