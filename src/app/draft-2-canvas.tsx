@@ -6,7 +6,7 @@ import { ActionRow, Button, EmptyState, InlineNotice, LoadingState, SectionHeade
 import type { StoryContentResponse } from "@/app/radar-dashboard";
 import type { Draft2Fact, Draft2FactsEvaluation, Draft2FactsRound, Draft2SessionStatus, Draft2TraceEntry } from "@/app/modules/draft2/draft2-facts.types";
 import {
-  OPENING_CRITERIA, OPENING_CRITERION_FLOOR, OPENING_MAX_ROUNDS, openingAcceptedWinner, openingScorePasses, openingVersions,
+  OPENING_CRITERIA, OPENING_CRITERION_FLOOR, OPENING_MAX_ROUNDS, OPENING_STALL_MS, openingAcceptedWinner, openingResumeRound, openingScorePasses, openingVersions,
   type Draft2Opening, type Draft2OpeningCriterion, type Draft2OpeningIssue, type Draft2OpeningRegression, type Draft2OpeningRound, type Draft2OpeningScore, type Draft2OpeningVersion,
 } from "@/app/modules/draft2/draft2-opening.types";
 import { contentStatusLabel, DRAFT_2_STEPS, paragraphs, sourceHost, storyHref, wordCount } from "./draft-2-canvas.core";
@@ -30,6 +30,12 @@ type Draft2RunStep = "facts" | "opening";
 
 /** Up to three rounds of two provider calls; the route itself allows 300 s. */
 const STEP_REQUEST_TIMEOUT_MS = 540_000;
+/** How often a run whose request was lost is checked, and how long the server may stay unreachable before the canvas stops waiting. */
+const FOLLOW_POLL_MS = 10_000;
+const FOLLOW_UNREACHABLE_MS = 3 * 60_000;
+
+/** A request that ended without telling how the run went: the connection dropped, it timed out, or a gateway answered for the server. The run may go on. */
+class Draft2LostRequest extends Error {}
 
 const SESSION_STATUS: Record<Draft2SessionStatus, { label: string; tone: StatusTone }> = {
   running: { label: "Running", tone: "info" },
@@ -98,6 +104,9 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const [runError, setRunError] = useState<{ step: Draft2RunStep; message: string }>();
   const [choosing, setChoosing] = useState<string>();
   const [choiceError, setChoiceError] = useState<string>();
+  const [following, setFollowing] = useState<string>();
+  // The clock a run is measured against, to tell a run that went silent from one still working.
+  const [now, setNow] = useState(0);
   const back = storyHref(topicId, storyId, { from, returnContext });
   const headers = { Authorization: `Bearer ${secret}` };
 
@@ -123,6 +132,13 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
     return () => controller.abort();
   }, [secret, signedIn, storyId, topicId]);
 
+  useEffect(() => {
+    const tick = () => setNow(Date.now());
+    void Promise.resolve().then(tick);
+    const clock = setInterval(tick, 30_000);
+    return () => clearInterval(clock);
+  }, []);
+
   const loadSession = useCallback(async (signal?: AbortSignal) => {
     const response = await fetch(`/api/radar/draft2/session?topicId=${encodeURIComponent(topicId)}&storyId=${encodeURIComponent(storyId)}`, { cache: "no-store", signal, headers: { Authorization: `Bearer ${secret}` } });
     const body = await response.json();
@@ -138,40 +154,89 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   }, [content, loadSession]);
 
   /** Runs one step: Facts starts a new session, the Opening continues the current one. */
-  /** One step request; each has its own timeout, since a paused opening continues in further requests. */
+  /** One step request; each has its own timeout, since an opening continues in further requests. */
   async function postStep(step: Draft2RunStep, payload: Record<string, unknown>): Promise<Draft2SessionView> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), STEP_REQUEST_TIMEOUT_MS);
     try {
-      const response = await fetch(`/api/radar/draft2/${step}?topicId=${encodeURIComponent(topicId)}`, {
-        method: "POST", cache: "no-store", signal: controller.signal, headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify(payload),
-      });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error ?? (step === "facts" ? "The facts step failed." : "The opening step failed."));
-      return body.session as Draft2SessionView;
+      let response: Response;
+      try {
+        response = await fetch(`/api/radar/draft2/${step}?topicId=${encodeURIComponent(topicId)}`, {
+          method: "POST", cache: "no-store", signal: controller.signal, headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify(payload),
+        });
+      } catch (cause) {
+        throw new Draft2LostRequest(cause instanceof Error && cause.name === "AbortError" ? "The request took too long." : "The connection to the server dropped.");
+      }
+      const body = await response.json().catch(() => undefined) as { session?: Draft2SessionView; error?: string } | undefined;
+      if (response.ok && body?.session) return body.session;
+      // A gateway's page instead of the route's answer: the run may still be going.
+      if (!body?.error) throw new Draft2LostRequest(`The server answered ${response.status} without a result.`);
+      throw new Error(body.error);
     } finally {
       clearTimeout(timeout);
     }
   }
 
-  /** Runs one step: Facts starts a new session, the Opening continues the current one; `continuing` runs a paused opening on. */
+  /** Follows a run whose request was lost until it finishes, pauses or goes silent; undefined when the server stays unreachable. */
+  async function followRun(): Promise<Draft2SessionView | undefined> {
+    let unreachableSince: number | undefined;
+    for (;;) {
+      await new Promise((resolve) => setTimeout(resolve, FOLLOW_POLL_MS));
+      let current: Draft2SessionView | null;
+      try {
+        current = await loadSession();
+        unreachableSince = undefined;
+      } catch {
+        unreachableSince ??= Date.now();
+        if (Date.now() - unreachableSince > FOLLOW_UNREACHABLE_MS) return undefined;
+        continue;
+      }
+      if (!current?.opening) return current ?? undefined;
+      setSession(current);
+      if (current.opening.status !== "running" || Date.now() - Date.parse(current.updatedAt) > OPENING_STALL_MS) return current;
+    }
+  }
+
+  /**
+   * Runs one step: Facts starts a new session, the Opening continues the
+   * current one; `continuing` picks a paused or stopped opening up. A run
+   * that pauses, or whose request is lost, goes on from its last checkpoint
+   * in a new request until it finishes.
+   */
   async function runStep(step: Draft2RunStep, { continuing = false } = {}) {
     if (running || (step === "opening" && !session)) return;
     setRunning(step); setRunError(undefined); setChoiceError(undefined);
     try {
-      let next = await postStep(step, step === "facts" ? { storyId } : { storyId, sessionId: session?.id, ...(continuing ? { continue: true } : {}) });
-      // A run that paused for time goes on in a new request, one round at least each time, until it finishes.
-      for (let request = 0; step === "opening" && next.opening?.status === "paused" && request < OPENING_MAX_ROUNDS; request++) {
-        setSession(next);
-        next = await postStep("opening", { storyId, sessionId: next.id, continue: true });
+      if (step === "facts") {
+        setSession(await postStep("facts", { storyId }));
+        return;
       }
-      setSession(next);
+      let payload: Record<string, unknown> = { storyId, sessionId: session?.id, ...(continuing ? { continue: true } : {}) };
+      // Each request advances at least one round or judgment; a round can pause once before its writer and once before its judge.
+      for (let request = 0; request <= OPENING_MAX_ROUNDS * 2; request++) {
+        let next: Draft2SessionView | undefined;
+        try {
+          next = await postStep("opening", payload);
+        } catch (cause) {
+          if (!(cause instanceof Draft2LostRequest)) throw cause;
+          setFollowing(cause.message);
+          next = await followRun();
+          setFollowing(undefined);
+          if (!next) throw new Error(`${cause.message} The server has not answered since; when it is back, reload and continue the run from where it stopped.`);
+        }
+        setSession(next);
+        // Paused, or silent since its request was lost: pick it up again.
+        if (next.opening?.status !== "paused" && next.opening?.status !== "running") return;
+        payload = { storyId, sessionId: next.id, continue: true };
+      }
     } catch (cause) {
       const failure = step === "facts" ? "The facts step failed." : "The opening step failed.";
-      setRunError({ step, message: cause instanceof Error && cause.name === "AbortError" ? "The request took too long. The server may still finish the step; reload to see it." : cause instanceof Error ? cause.message : failure });
+      const message = cause instanceof Draft2LostRequest ? `${cause.message} The server may still finish the step; reload to see it.` : cause instanceof Error ? cause.message : failure;
+      setRunError({ step, message });
       // A failed run keeps its trace on the session; show it.
       loadSession().then(setSession).catch(() => undefined);
     } finally {
+      setFollowing(undefined);
       setRunning(undefined);
     }
   }
@@ -200,9 +265,13 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   // Later steps only start on verified facts, so a session past Facts has them.
   const factsVerified = Boolean(session?.facts) && (session?.step !== "facts" || session?.status === "ready");
   const factsStatus = running === "facts" ? SESSION_STATUS.running : session ? (factsVerified ? SESSION_STATUS.ready : SESSION_STATUS[session.status]) : undefined;
-  const openingStatus = running === "opening" ? OPENING_STATUS.running : session?.opening ? OPENING_STATUS[session.opening.status] : undefined;
+  // A run still marked running whose heartbeat stopped: its request or the server ended, and it can be continued.
+  const stalled = !running && session?.opening?.status === "running" && now > 0 && now - Date.parse(session.updatedAt) > OPENING_STALL_MS;
+  const openingStatus = running === "opening" ? OPENING_STATUS.running : stalled ? { label: "Stopped", tone: "warning" as const } : session?.opening ? OPENING_STATUS[session.opening.status] : undefined;
   const stepStatus: Partial<Record<string, { label: string; tone: StatusTone }>> = { facts: factsStatus, opening: openingStatus };
-  const resumeRound = session?.opening?.status === "paused" ? session.opening.resumeRound : undefined;
+  const resumable = session?.opening && (session.opening.status === "paused" || stalled) && openingResumeRound(session.opening) <= OPENING_MAX_ROUNDS;
+  const resumeRound = resumable && session?.opening ? openingResumeRound(session.opening) : undefined;
+  const pausedRound = session?.opening?.status === "paused" ? openingResumeRound(session.opening) : undefined;
 
   return <main className={styles.shell} style={themeStyle}>
     <div className={styles.topbar}>
@@ -273,7 +342,8 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
               </ActionRow>
             </div>
             {!factsVerified && !running ? <p className={styles.factMeta}>The opening builds only on verified facts; verify them first.</p> : null}
-            {running === "opening" ? <LoadingState>{resumeRound ? `Continuing with round ${resumeRound} in a new request…` : "Sol writes fifteen openings; Claude judges each round. This can take a few minutes."}</LoadingState> : null}
+            {running === "opening" ? <LoadingState>{following ? `${following} Following the run on the server…` : pausedRound ? `Continuing with round ${pausedRound} in a new request…` : "Sol writes fifteen openings; Claude judges each round. This can take a few minutes."}</LoadingState> : null}
+            {stalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {new Date(session.updatedAt).toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit" })}: its request or the server ended. Continue from round {resumeRound} picks it up at its last checkpoint; a round already written is judged, not written again.</InlineNotice> : null}
             {runError?.step === "opening" ? <InlineNotice tone="error" title="The opening step stopped">{runError.message}</InlineNotice> : null}
             {session?.step === "opening" && session.error && running !== "opening" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
             {choiceError ? <InlineNotice tone="error" title="Your choice was not saved">{choiceError}</InlineNotice> : null}

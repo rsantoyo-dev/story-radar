@@ -34,6 +34,12 @@ export const OPENING_ROUND_PLAN: readonly { revise: number; fresh: number; propo
 ];
 const MAX_PROPOSALS = Math.max(...OPENING_ROUND_PLAN.map((plan) => plan.proposals));
 export const OPENING_MAX_ROUNDS = OPENING_ROUND_PLAN.length;
+/**
+ * A running opening sends a heartbeat every 30 s and checkpoints after every
+ * provider call; one silent this long has stopped (its request or server
+ * died) and can be continued from its last checkpoint.
+ */
+export const OPENING_STALL_MS = 2 * 60_000;
 export const OPENING_ACCEPT_SCORE = 95;
 export const OPENING_CRITERION_FLOOR = 85;
 export const COVER_HEADLINE_MAX_WORDS = 8;
@@ -671,6 +677,13 @@ export function openingReviewNote(best: Draft2OpeningVersion | undefined, last: 
   const left = best ? best.issues : [...(last?.mechanical ?? []), ...(last?.evaluation?.issues ?? [])];
   const issues = left.slice(0, 6).map((issue) => `${issue.code}${issue.candidateId ? ` (${issue.candidateId}${issue.part ? ` · ${issue.part}` : ""})` : ""}`);
   return `${lead} ${standing}${issues.length ? ` Remaining issues: ${issues.join(", ")}.` : ""} Choose an opening below or write it again.`;
+}
+
+/** The round a paused or stopped run continues from: the one it paused before, else a round written but not judged, else the next. */
+export function openingResumeRound(opening: Pick<Draft2Opening, "resumeRound" | "rounds">): number {
+  if (opening.resumeRound) return opening.resumeRound;
+  const unjudged = opening.rounds.find((round) => !round.evaluation);
+  return unjudged ? unjudged.round : opening.rounds.length + 1;
 }
 
 /** An opening as it ended, for the session's record of earlier runs. */

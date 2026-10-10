@@ -134,9 +134,10 @@ function harness({ writes, judgments, failAt, session, busy = false, claimRefuse
       getDraft2Session: async (topic: string, id: string) => topic === topicId && id === row.id ? row : undefined,
       claimDraft2Session: async (_id: string, patch: Record<string, unknown>) => { if (claimRefused) return undefined; row = { ...row, ...patch, status: "running" }; return row; },
       updateDraft2Session: async (_id: string, patch: Record<string, unknown>) => { row = { ...row, ...patch }; return row; },
+      touchDraft2Session: async () => undefined,
     },
   };
-  vm.runInNewContext(code, { exports, Date: secondsPerCall ? FakeDate : Date, JSON, Error, Object, Array, Math, Number, String, Boolean, Set, Map, Promise, console, process: { env: { OPENAI_API_KEY: "sk-test" } },
+  vm.runInNewContext(code, { exports, Date: secondsPerCall ? FakeDate : Date, JSON, Error, Object, Array, Math, Number, String, Boolean, Set, Map, Promise, console, setInterval, clearInterval, process: { env: { OPENAI_API_KEY: "sk-test" } },
     require: (name: string) => name in mocks ? mocks[name] : localRequire(name) });
   return {
     run: (options: { resume?: boolean } = {}) => exports.runDraft2Opening({ topicId, storyId, sessionId, ...options }),
@@ -166,6 +167,7 @@ test("an opening Claude accepts in round 1 is ready; both models read the facts 
   assert.equal(json(claude.input.context), json({ verifiedFacts: openingTypes.openingFactsSnapshot(facts) }), "the facts travel as Claude's cached context");
   assert.equal("verifiedFacts" in (claude.input.contents as object), false);
   assert.equal((claude.input.contents as JudgeContents).proposalsWanted, 3, "round 1 asks Claude for three openings of its own");
+  assert.equal(json([sol.input.timeoutMs, claude.input.timeoutMs]), json([180_000, 240_000]), "fifteen openings take longer than the adapters' default 120 s");
   assert.ok(String(claude.input.instructions).includes(hooks.HOOKS_SKILL.text), "the judge reads the same skill");
   assert.equal(session.step, "opening");
   assert.equal(session.status, "ready");
@@ -276,9 +278,42 @@ test("a round the request has no time for pauses the run with everything saved; 
   assert.equal(finished.trace.filter((entry) => entry.step === "opening").length, 6, "the trace keeps every call of both requests");
 });
 
-test("continuing needs a paused run", async () => {
+test("when Sol's writing uses up the request's time, the run pauses before Claude judges, and a continue request judges the saved round", async () => {
+  const h = harness({ writes: [writer()], judgments: [judge("revise", "c3", { c3: 84 })], secondsPerCall: 240 });
+  const paused = await h.run();
+  assert.equal(h.calls.map((call) => call.provider).join(","), "openai");
+  assert.equal(json([paused.opening?.status, paused.opening?.resumeRound, paused.opening?.rounds.length, Boolean(paused.opening?.rounds[0].evaluation)]), json(["paused", 1, 1, false]));
+  assert.match(String(paused.error), /Paused before Claude judges round 1/);
+  const judged = await h.run({ resume: true });
+  assert.equal(h.calls.map((call) => call.provider).join(","), "openai,anthropic", "the saved round is judged, not written again");
+  assert.equal((h.calls[1].input.contents as JudgeContents).candidates.length, 15);
+  assert.equal(json([judged.opening?.status, judged.opening?.resumeRound, judged.opening?.rounds[0].evaluation?.verdict]), json(["paused", 2, "revise"]), "the next round waits for another request");
+});
+
+test("a run whose server died after Sol wrote a round continues by judging that round, with nothing written again", async () => {
+  // A run whose round-2 judgment never came back leaves round 2 written but unjudged, as a server that died would.
+  const died = harness({ writes: [writer(), writer()], judgments: [judge("revise", "c3", { c3: 84, c5: 80, c1: 79 })], failAt: { provider: "anthropic", call: 2 } });
+  await assert.rejects(died.run());
+  const before = died.row();
+  assert.equal(json([before.opening?.rounds.length, Boolean(before.opening?.rounds[1].evaluation)]), json([2, false]));
+  const h = harness({
+    writes: [writer()],
+    judgments: [judge("revise", "c16", { c16: 90, "c3.2": 88 }), judge("accept", "c16.3", { "c16.3": 96 })],
+    session: { ...before, status: "running", error: null, opening: { ...before.opening, status: "running", error: undefined } },
+  });
+  const session = await h.run({ resume: true });
+  assert.equal(h.calls.map((call) => call.provider).join(","), "anthropic,openai,anthropic", "round 2 is judged as written; round 3 runs whole");
+  const [first] = h.judgeCalls();
+  assert.equal((first.contents as JudgeContents).round, 2);
+  assert.equal((first.contents as JudgeContents).candidates.length, 9);
+  assert.equal(json((first.contents as JudgeContents).previousVersions?.map((version) => version.id)), json(["c3", "c5", "c1"]), "Claude still sees what each revision revises");
+  assert.equal(json([session.status, session.opening?.winnerId, session.opening?.rounds.length]), json(["ready", "c16.3", 3]));
+  assert.equal(session.opening?.previousRuns, undefined, "it is the same run");
+});
+
+test("continuing needs a paused or stopped run", async () => {
   const h = harness({ writes: [], judgments: [], session: { step: "opening", status: "needs-review", opening: { status: "needs-review", rounds: [], candidates: candidates() } } });
-  await assert.rejects(h.run({ resume: true }), (error: Error) => error instanceof types.Draft2InputError && /no paused opening/.test(error.message));
+  await assert.rejects(h.run({ resume: true }), (error: Error) => error instanceof types.Draft2InputError && /no paused or stopped opening/.test(error.message));
 });
 
 test("when the judge's winner has a program finding, the clean runner-up wins if it passes", async () => {

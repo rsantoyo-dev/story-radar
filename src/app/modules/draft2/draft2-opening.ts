@@ -4,14 +4,14 @@ import { generateOpenAiStructuredResponse } from "../stories/openai-structured-r
 import { generateAnthropicStructuredResponse } from "../stories/anthropic-structured-response";
 import { getAnthropicRuntimeConfig, requireAnthropicApiKey } from "../stories/anthropic.config";
 import { getCreativeProfile } from "../stories/creative-profile.repository";
-import { activeDraft2Session, claimDraft2Session, getDraft2Session, updateDraft2Session, type Draft2SessionPatch } from "./draft2-session.repository";
+import { activeDraft2Session, claimDraft2Session, getDraft2Session, touchDraft2Session, updateDraft2Session, type Draft2SessionPatch } from "./draft2-session.repository";
 import { draft2DevTrace } from "./draft2-dev-trace";
 import { draft2SolModel } from "./draft2-models";
 import { Draft2BusyError, Draft2InputError, type Draft2TraceEntry } from "./draft2-facts.types";
 import {
   DRAFT2_OPENING_EVALUATION_SCHEMA, DRAFT2_OPENING_SCHEMA, OPENING_MAX_ROUNDS, bestOpeningVersions, mechanicalOpeningIssues, openingAcceptedWinner,
   openingExploreRequest, openingFactsSnapshot, openingFreshWanted, openingJudgeRequest, openingRefineRequest, openingRegressions, openingReviewNote,
-  openingRunSummary, openingTargets, openingVersions, parseOpeningCandidates, parseOpeningEvaluation, renumberedProposals, writtenCandidates,
+  openingResumeRound, openingRunSummary, openingTargets, openingVersions, parseOpeningCandidates, parseOpeningEvaluation, renumberedProposals, writtenCandidates,
   type Draft2Opening,
 } from "./draft2-opening.types";
 import { brandBrief, composeInstructions } from "./skills/draft2-skills";
@@ -21,7 +21,8 @@ import type { Draft2SessionRow } from "@/db/schema";
 /**
  * The route allows 300 s. A round that would start after TIME_BUDGET_MS, or
  * whose predecessor, repeated, would end past ROUND_DEADLINE_MS, is left to a
- * new request: the run pauses with everything saved and continues there.
+ * new request, and so is a judgment whose writer ended past TIME_BUDGET_MS:
+ * the run pauses with everything saved and continues there.
  */
 const TIME_BUDGET_MS = 230_000;
 const ROUND_DEADLINE_MS = 280_000;
@@ -29,12 +30,17 @@ const ROUND_DEADLINE_MS = 280_000;
 const WRITER_MAX_OUTPUT_TOKENS = 12_000;
 /** Covers fifteen scores, three proposals, the verdict and Claude's thinking, which the API counts against the same ceiling. */
 const JUDGE_MAX_OUTPUT_TOKENS = 24_000;
+/** Fifteen openings took Sol 73 s and Claude 111 s in a real run; the adapters' default limit is 120 s. */
+const WRITER_TIMEOUT_MS = 180_000;
+const JUDGE_TIMEOUT_MS = 240_000;
+/** Shows the run is alive between checkpoints, well inside OPENING_STALL_MS. */
+const HEARTBEAT_MS = 30_000;
 
 export type Draft2OpeningInput = {
   topicId: string;
   storyId: string;
   sessionId: string;
-  /** Continue the run that paused for time, from its next round, instead of starting a new one. */
+  /** Continue a run that paused for time, or that stopped when its request or server died, instead of starting a new one. */
   resume?: boolean;
 };
 
@@ -53,8 +59,11 @@ export type Draft2OpeningInput = {
  * facts first, so they are read from the prompt cache, then the round's
  * candidates, scores and issues) instead of a conversation that grows each
  * round. Every provider call is checkpointed, so a failure keeps its trace.
- * When a request's time cannot fit the next round, the run pauses with
- * every round saved; a continue request (resume) runs on from that round.
+ * When a request's time cannot fit the next round or judgment, the run
+ * pauses with every round saved; when a request or the server dies, the run
+ * stops sending its heartbeat. Either way a continue request (resume) runs
+ * on from the last checkpoint: a round already written is judged, not
+ * written again.
  */
 export async function runDraft2Opening({ topicId, storyId, sessionId, resume = false }: Draft2OpeningInput): Promise<Draft2SessionRow> {
   const session = await getDraft2Session(topicId, sessionId);
@@ -64,8 +73,9 @@ export async function runDraft2Opening({ topicId, storyId, sessionId, resume = f
   // A rerun of the opening is allowed in any state the busy check let through, including a run a timeout left "running".
   const factsVerified = session.step === "opening" || (session.step === "facts" && session.status === "ready");
   if (!facts.length || !factsVerified) throw new Draft2InputError("The opening builds only on verified facts. Verify the facts first.");
-  const paused = session.opening?.status === "paused" && session.opening.resumeRound ? session.opening : undefined;
-  if (resume && !paused) throw new Draft2InputError("There is no paused opening to continue. Write the opening again.");
+  // A run left "running" passed the busy check only because its heartbeat stopped: its request or server died.
+  const stopped = session.opening && (session.opening.status === "paused" || session.opening.status === "running") ? session.opening : undefined;
+  if (resume && (!stopped || openingResumeRound(stopped) > OPENING_MAX_ROUNDS)) throw new Draft2InputError("There is no paused or stopped opening to continue. Write the opening again.");
 
   const openAiApiKey = process.env.OPENAI_API_KEY?.trim();
   if (!openAiApiKey) throw new Draft2InputError("OPENAI_API_KEY is not configured; the writer needs it.");
@@ -78,10 +88,10 @@ export async function runDraft2Opening({ topicId, storyId, sessionId, resume = f
   const verifiedFacts = openingFactsSnapshot(facts);
 
   const trace: Draft2TraceEntry[] = [...session.trace];
-  // A continue request picks the paused run up where it stopped; a new run starts fresh and keeps the earlier one, with the editor's choice.
-  const firstRound = resume && paused ? paused.resumeRound! : 1;
-  const opening: Draft2Opening = resume && paused
-    ? { ...paused, status: "running", resumeRound: undefined, error: undefined }
+  // A continue request picks the run up at its last checkpoint; a new run starts fresh and keeps the earlier one, with the editor's choice.
+  const firstRound = resume && stopped ? openingResumeRound(stopped) : 1;
+  const opening: Draft2Opening = resume && stopped
+    ? { ...stopped, status: "running", resumeRound: undefined, error: undefined }
     : {
       status: "running", rounds: [], candidates: [],
       ...(session.opening ? { previousRuns: [...(session.opening.previousRuns ?? []), openingRunSummary(session.opening)] } : {}),
@@ -94,9 +104,11 @@ export async function runDraft2Opening({ topicId, storyId, sessionId, resume = f
 
   const checkpoint = (patch: Draft2SessionPatch = {}) => updateDraft2Session(session.id, { opening, trace, ...patch });
 
-  /** Leaves the next round to a new request; everything so far is saved and the best version stands in meanwhile. */
-  async function pause(round: number) {
-    const note = `Paused before round ${round}: this request's time is spent. The run continues from round ${round} in a new request.`;
+  /** Leaves the next round, or this round's judgment, to a new request; everything so far is saved and the best version stands in meanwhile. */
+  async function pause(round: number, judgmentOnly = false) {
+    const note = judgmentOnly
+      ? `Paused before Claude judges round ${round}: this request's time is spent. The run continues in a new request.`
+      : `Paused before round ${round}: this request's time is spent. The run continues from round ${round} in a new request.`;
     opening.status = "paused";
     opening.resumeRound = round;
     opening.error = note;
@@ -135,6 +147,8 @@ export async function runDraft2Opening({ topicId, storyId, sessionId, resume = f
     }
   }
 
+  // Between checkpoints, the heartbeat shows the run is alive; when it stops, the run can be continued.
+  const heartbeat = setInterval(() => { void touchDraft2Session(session.id).catch(() => undefined); }, HEARTBEAT_MS);
   try {
     await withCreativeTextBudget({ topicId, storyId, runId: session.id }, async () => {
       for (let round = firstRound; round <= OPENING_MAX_ROUNDS; round++) {
@@ -144,41 +158,58 @@ export async function runDraft2Opening({ topicId, storyId, sessionId, resume = f
           return;
         }
         const roundStartedAt = Date.now();
-        // 1. The writer: new angles first; afterwards the best clean versions, each with its own issues, to revise,
-        //    beside the new angles the round's plan asks for (more of them when too few versions are clean).
-        const before = openingVersions(opening.rounds);
-        const targets = openingTargets(before, round);
-        const fresh = openingFreshWanted(round, targets);
-        const last = opening.rounds[opening.rounds.length - 1];
-        // The judge's proposals from the last round, which this round develops.
-        const proposals = round > 1 ? last?.evaluation?.proposals ?? [] : [];
-        const writerContents = targets.length || proposals.length
-          ? openingRefineRequest(verifiedFacts, targets, before, opening.rounds.flatMap((entry) => entry.regressions ?? []), last, fresh, proposals)
-          : openingExploreRequest(verifiedFacts, fresh, last, before);
-        const writerRequest = { instructions: writer.instructions, contents: writerContents };
-        const written = await traced(round, "openai", writerModel, "draft2_opening", writer.skillVersions, writerRequest, () => generateOpenAiStructuredResponse({
-          apiKey: openAiApiKey, model: writerModel, instructions: writer.instructions, contents: writerContents,
-          schema: DRAFT2_OPENING_SCHEMA, schemaName: "draft2_opening", maxOutputTokens: WRITER_MAX_OUTPUT_TOKENS, reasoningEffort: "medium", auditContext,
-        }));
-        const answer = parseOpeningCandidates(written.text);
-        const candidates = writtenCandidates(targets.map((target) => target.candidate), answer, round, fresh, before, proposals);
-        const revisions = candidates.filter((candidate) => candidate.revisionOf).length;
-        const kind = revisions === 0 ? "explore" : revisions === candidates.length ? "refine" : "mixed";
-        const mechanical = mechanicalOpeningIssues(candidates, facts);
-        opening.rounds.push({ round, kind, candidates, mechanical, at: new Date().toISOString() });
-        opening.candidates = candidates;
-        await checkpoint();
+        const before = openingVersions(opening.rounds.filter((entry) => entry.round < round));
+        const last = opening.rounds.find((entry) => entry.round === round - 1);
+        // A round written before its request died, or paused before its judgment, is judged as it stands.
+        const written = opening.rounds.find((entry) => entry.round === round && !entry.evaluation);
+        let targets: ReturnType<typeof openingTargets>;
+        let candidates: Draft2Opening["candidates"];
+        let mechanical: NonNullable<typeof written>["mechanical"];
+        if (written) {
+          ({ candidates, mechanical } = written);
+          // The versions its revisions revise, in the order the judge reads the revisions.
+          targets = candidates.flatMap((candidate) => before.filter((version) => version.candidate.id === candidate.revisionOf));
+        } else {
+          // 1. The writer: new angles first; afterwards the best clean versions, each with its own issues, to revise,
+          //    beside the new angles the round's plan asks for (more of them when too few versions are clean).
+          targets = openingTargets(before, round);
+          const fresh = openingFreshWanted(round, targets);
+          // The judge's proposals from the last round, which this round develops.
+          const proposals = round > 1 ? last?.evaluation?.proposals ?? [] : [];
+          const writerContents = targets.length || proposals.length
+            ? openingRefineRequest(verifiedFacts, targets, before, opening.rounds.flatMap((entry) => entry.regressions ?? []), last, fresh, proposals)
+            : openingExploreRequest(verifiedFacts, fresh, last, before);
+          const writerRequest = { instructions: writer.instructions, contents: writerContents };
+          const answered = await traced(round, "openai", writerModel, "draft2_opening", writer.skillVersions, writerRequest, () => generateOpenAiStructuredResponse({
+            apiKey: openAiApiKey, model: writerModel, instructions: writer.instructions, contents: writerContents,
+            schema: DRAFT2_OPENING_SCHEMA, schemaName: "draft2_opening", maxOutputTokens: WRITER_MAX_OUTPUT_TOKENS, reasoningEffort: "medium",
+            timeoutMs: WRITER_TIMEOUT_MS, auditContext,
+          }));
+          const answer = parseOpeningCandidates(answered.text);
+          candidates = writtenCandidates(targets.map((target) => target.candidate), answer, round, fresh, before, proposals);
+          const revisions = candidates.filter((candidate) => candidate.revisionOf).length;
+          const kind = revisions === 0 ? "explore" : revisions === candidates.length ? "refine" : "mixed";
+          mechanical = mechanicalOpeningIssues(candidates, facts);
+          opening.rounds.push({ round, kind, candidates, mechanical, at: new Date().toISOString() });
+          opening.candidates = candidates;
+          await checkpoint();
+          if (Date.now() - startedAt > TIME_BUDGET_MS) {
+            await pause(round, true);
+            return;
+          }
+        }
 
         // 2. The judge: the facts as a cached block, then this round's candidates beside the versions they revise.
         const judgeContents = openingJudgeRequest(round, candidates, mechanical, targets);
         const judgeRequest = { instructions: judge.instructions, context: { verifiedFacts: `${verifiedFacts.length} facts (cached)` }, contents: judgeContents };
         const judged = await traced(round, "anthropic", judgeModel, "draft2_opening_review", judge.skillVersions, judgeRequest, () => generateAnthropicStructuredResponse({
           apiKey: anthropicApiKey, model: judgeModel, instructions: judge.instructions, context: { verifiedFacts }, contents: judgeContents,
-          schema: DRAFT2_OPENING_EVALUATION_SCHEMA, schemaName: "draft2_opening_review", maxOutputTokens: JUDGE_MAX_OUTPUT_TOKENS, effort: "high", auditContext,
+          schema: DRAFT2_OPENING_EVALUATION_SCHEMA, schemaName: "draft2_opening_review", maxOutputTokens: JUDGE_MAX_OUTPUT_TOKENS, effort: "high",
+          timeoutMs: JUDGE_TIMEOUT_MS, auditContext,
         }));
         const judgment = parseOpeningEvaluation(judged.text, candidates.map((candidate) => candidate.id));
         const evaluation = judgment.proposals ? { ...judgment, proposals: renumberedProposals(judgment.proposals, opening.rounds) } : judgment;
-        const index = opening.rounds.length - 1;
+        const index = opening.rounds.findIndex((entry) => entry.round === round);
         opening.rounds[index] = { ...opening.rounds[index], evaluation };
         // A revision that came out worse never replaces the version it revised: the better one stays in front.
         const regressions = openingRegressions(openingVersions(opening.rounds).filter((version) => version.round === round), before);
@@ -209,6 +240,8 @@ export async function runDraft2Opening({ topicId, storyId, sessionId, resume = f
     opening.error = message;
     await checkpoint({ status: "failed", error: message }).catch(() => undefined);
     throw error;
+  } finally {
+    clearInterval(heartbeat);
   }
   return (await updateDraft2Session(session.id, {})) ?? claimed;
 }

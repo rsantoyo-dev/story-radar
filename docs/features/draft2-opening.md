@@ -50,7 +50,19 @@ proposes one more → Sol revises the two best and develops it (three) →
 Claude decides. Which versions grew from a proposal is stored, so the runs
 show whether the judge's ideas win and whether it favours them. Voice is
 left as it is: a step before the Opening will define the voice and become
-part of its request. The sections below describe revision 5.
+part of its request.
+
+**Reliability, after the fifth run.** Fifteen openings made round 1 take
+185 s (Sol 73 s, Claude 111.5 s against the adapters' 120 s limit), and the
+dev server died while Claude judged round 2, leaving the run "running" with
+round 2 written and blocking the story for ten minutes. Now an opening run
+sends a heartbeat every 30 s, so a silent run counts as stopped after two
+minutes and can be continued from its last checkpoint: a round already
+written is judged, not written again. A judgment that would not fit the
+request pauses the run too. The writer and the judge get 180 s and 240 s per
+call. The canvas follows a run whose request was lost (a dropped connection,
+a timeout, a gateway's page) by reading the session, and continues it when
+it pauses or stops. The sections below describe revision 5 with these.
 
 ## 1. Goal
 
@@ -425,10 +437,19 @@ export async function runDraft2Opening({ topicId, storyId, sessionId }): Promise
      criteria and its remaining issues.
 5. On any thrown error: `opening.status = "failed"`, session `status =
    "failed"`, `error` = message; rethrow (the route maps it).
-6. Continue (`resume: true`): only a paused opening; the run is claimed
-   again and goes on from `resumeRound` with its rounds, trace and choice;
-   it is the same run, so nothing moves to `previousRuns`. The first round of
-   a request never pauses, so every request advances at least one round.
+6. Continue (`resume: true`): a paused opening, or one still marked running
+   whose heartbeat stopped (`OPENING_STALL_MS`, two minutes; the busy check
+   refuses a live one). It goes on from `openingResumeRound`: the round it
+   paused before, else a round written but not judged (judged as it stands,
+   with the versions its revisions revise), else the next round; with its
+   rounds, trace and choice. It is the same run, so nothing moves to
+   `previousRuns`. The first round of a request never pauses, so every
+   request advances at least one round or judgment.
+7. Reliability: a 30 s heartbeat (`touchDraft2Session`) while the run works;
+   an opening session counts as alive for two minutes after its last sign
+   (a facts session keeps ten); the writer gets 180 s per call and the
+   judge 240 s; after a round's writer, a judgment that the request's time
+   cannot fit pauses the run ("Paused before Claude judges round N").
 
 Writer role (`opening-writer`): "You write the opening of a social carousel
 for the publication described below, from the verified facts you receive
@@ -484,7 +505,7 @@ opening, with its choice, in `opening.previousRuns`.
 ## 9. API
 
 - `POST /api/radar/draft2/opening` body `{ storyId, sessionId, continue? }` → `{ session }`,
-  finished or paused; `continue: true` runs a paused run on.
+  finished or paused; `continue: true` runs a paused or stopped run on.
   Errors: 422 `Draft2InputError`, 409 `Draft2BusyError`, 502
   `Draft2ResponseError`, provider errors through `creativeRouteErrorResponse`.
   `maxDuration = 300`.
@@ -510,7 +531,10 @@ In `src/app/draft-2-canvas.tsx`:
     has the long timeout; a paused answer is continued at once in a new
     request ("Continuing with round N in a new request…"), and a run left
     paused (a closed tab) shows "Continue from round N" and the Opening
-    badge "Paused".
+    badge "Paused". A request that ends without an answer (a dropped
+    connection, a timeout, a gateway's page) is followed by reading the
+    session every 10 s; a run that goes silent shows "Stopped", a notice
+    with the time of its last sign, and "Continue from round N".
   - Rounds: for each round, what Sol did ("wrote 15 openings", or "revised
     c3, c5 and c1, developed 3 of Claude's proposals (c16, c17, c18) and
     tried 3 new angles (c19, c20, c21)"), what Claude proposed for the next
@@ -573,7 +597,10 @@ dependency mocked):
   and writes new angles in place of the revisions (six), with fresh ids.
 - pause and continue (a fake clock): two rounds fit, the run pauses before
   round 3 with everything saved; a continue request runs round 3 from the
-  saved rounds; continuing a run that is not paused is refused.
+  saved rounds; a writer that uses up the time pauses the run before the
+  judgment, and the continue request judges the saved round; a run whose
+  server died after a round was written continues by judging that round,
+  with nothing written again; continuing a finished run is refused.
 - provider failure → `failed`, trace keeps the error, the best version so far
   stays, rethrown; a malformed judgment fails the step.
 - `recordOpeningChoice` accepts a version from any round, rejects an unknown
