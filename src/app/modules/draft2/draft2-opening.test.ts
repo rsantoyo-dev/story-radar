@@ -7,6 +7,7 @@ import ts from "typescript";
 import * as types from "./draft2-facts.types";
 import * as openingTypes from "./draft2-opening.types";
 import * as focusTypes from "./draft2-focus.types";
+import * as funnel from "./draft2-funnel";
 import * as models from "./draft2-models";
 import * as skills from "./skills/draft2-skills";
 import * as hooks from "./skills/hooks";
@@ -130,11 +131,10 @@ function harness({ writes, judgments, failAt, session, busy = false, claimRefuse
     const text = role === "writer" ? writes[index](input.contents as WriterContents) : judgments[index](input.contents as JudgeContents);
     return { text: JSON.stringify(text), provider, model: input.model, usage };
   };
-  const exports: Record<string, (...args: unknown[]) => Promise<Row>> = {};
-  const code = ts.transpileModule(readFileSync(new URL("./draft2-opening.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const mocks: Record<string, unknown> = {
     "server-only": {},
     "./draft2-facts.types": types,
+    "./draft2-funnel": funnel,
     "./draft2-opening.types": openingTypes,
     "./draft2-focus.types": focusTypes,
     "./draft2-models": models,
@@ -160,8 +160,7 @@ function harness({ writes, judgments, failAt, session, busy = false, claimRefuse
       touchDraft2Session: async () => undefined,
     },
   };
-  vm.runInNewContext(code, { exports, Date: secondsPerCall ? FakeDate : Date, JSON, Error, Object, Array, Math, Number, String, Boolean, Set, Map, Promise, console, setInterval, clearInterval, process: { env: { OPENAI_API_KEY: "sk-test" } },
-    require: (name: string) => name in mocks ? mocks[name] : localRequire(name) });
+  const exports = loadInSandbox("./draft2-opening.ts", mocks, { Date: secondsPerCall ? FakeDate : Date, process: { env: { OPENAI_API_KEY: "sk-test" } } }) as Record<string, (...args: unknown[]) => Promise<Row>>;
   return {
     run: (options: { resume?: boolean } = {}) => exports.runDraft2Opening({ topicId, storyId, sessionId, ...options }),
     choose: (candidateId: string) => exports.recordOpeningChoice({ topicId, sessionId, candidateId }),
@@ -172,6 +171,27 @@ function harness({ writes, judgments, failAt, session, busy = false, claimRefuse
     judgeCalls: () => calls.filter((call) => call.role === "judge").map((call) => call.input),
     row: () => row,
   };
+}
+
+/**
+ * Loads one of the step's modules into a sandbox, with `mocks` for what it
+ * imports; a local module that is not mocked (the funnel's runner) is loaded
+ * into the same sandbox, so it shares the mocks and the clock.
+ */
+function loadInSandbox(file: string, mocks: Record<string, unknown>, globals: Record<string, unknown>): Record<string, unknown> {
+  const context = vm.createContext({ JSON, Error, Object, Array, Math, Number, String, Boolean, Set, Map, Promise, console, setInterval, clearInterval, ...globals });
+  const modules = new Map<string, Record<string, unknown>>();
+  const load = (path: string): Record<string, unknown> => {
+    const loaded = modules.get(path);
+    if (loaded) return loaded;
+    const exports: Record<string, unknown> = {};
+    modules.set(path, exports);
+    const code = ts.transpileModule(readFileSync(new URL(path, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+    const evaluate = vm.runInContext(`(function (exports, require) {\n${code}\n})`, context) as (exports: unknown, require: (name: string) => unknown) => void;
+    evaluate(exports, (name) => name in mocks ? mocks[name] : name.startsWith("./") ? load(`${name}.ts`) : localRequire(name));
+    return exports;
+  };
+  return load(file);
 }
 
 const json = (value: unknown) => JSON.stringify(value);
