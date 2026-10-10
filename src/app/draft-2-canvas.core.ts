@@ -66,7 +66,7 @@ export const DRAFT_2_STEPS = [
   { key: "focus", title: "Focus", detail: "What the story is for: its line, audience, framing, structure, goal and voice." },
   { key: "opening", title: "Opening", detail: "Cover and slide 2 judged as one unit: the promise and its first payoff." },
   { key: "closing", title: "Closing", detail: "The ending: the cover's promise paid in full, what it means for the reader, one call to action." },
-  { key: "deck", title: "Deck", detail: "The slides written once to deliver the cover and reach the closing." },
+  { key: "deck", title: "Deck", detail: "The slides between slide 2 and the closing, one idea each: the story from its promise to its end." },
   { key: "review", title: "Review", detail: "Deterministic checks and a calibrated judge before approval." },
 ] as const;
 

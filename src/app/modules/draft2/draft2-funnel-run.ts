@@ -34,7 +34,7 @@ const HEARTBEAT_MS = 30_000;
 
 type Composed = { instructions: string; skillVersions: Record<string, string> };
 /** The session columns a funnel step lives in. */
-export type FunnelColumn = "opening" | "closing";
+export type FunnelColumn = "opening" | "closing" | "deck";
 
 /** What a step gives the funnel for one run, once its prerequisites are met: the prompts, the cached context and the step's own contract. */
 export type FunnelSetup<C extends FunnelCandidate, S extends FunnelScore, I extends FunnelIssue> = {
@@ -62,7 +62,8 @@ export type FunnelStep<C extends FunnelCandidate, S extends FunnelScore, I exten
   noun: string;
   article: string;
   plural: string;
-  plan: readonly FunnelPlanRound[];
+  /** The rounds, the same for every run, or chosen from what the run follows (the deck's depend on the story's structure). */
+  plan: readonly FunnelPlanRound[] | ((snapshot: Snapshot) => readonly FunnelPlanRound[]);
   gate: FunnelGate;
   operations: { writer: string; judge: string };
   /** Who writes and who judges a new run. */
@@ -73,7 +74,7 @@ export type FunnelStep<C extends FunnelCandidate, S extends FunnelScore, I exten
   snapshot: (session: Draft2SessionRow, continuing: R | undefined) => Snapshot;
   /** What a new run records besides the funnel's bookkeeping: the snapshots it follows. */
   newRun: (snapshot: Snapshot) => Partial<R>;
-  setup: (input: { snapshot: Snapshot; profile: CreativeProfile; facts: readonly Draft2Fact[] }) => FunnelSetup<C, S, I>;
+  setup: (input: { snapshot: Snapshot; profile: CreativeProfile; facts: readonly Draft2Fact[]; plan: readonly FunnelPlanRound[] }) => FunnelSetup<C, S, I>;
 };
 
 export type FunnelStepInput = {
@@ -118,9 +119,12 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
   const current = runOf<R>(session, def.step);
   // A run left "running" passed the busy check only because its heartbeat stopped: its request or server died.
   const stopped = current && (current.status === "paused" || current.status === "running") ? current : undefined;
-  const maxRounds = def.plan.length;
-  if (resume && (!stopped || funnelResumeRound(stopped) > maxRounds)) throw new Draft2InputError(`There is no paused or stopped ${def.noun} to continue. Write the ${def.noun} again.`);
+  const nothingToContinue = `There is no paused or stopped ${def.noun} to continue. Write the ${def.noun} again.`;
+  if (resume && !stopped) throw new Draft2InputError(nothingToContinue);
   const snapshot = def.snapshot(session, resume ? stopped : undefined);
+  const plan = typeof def.plan === "function" ? def.plan(snapshot) : def.plan;
+  const maxRounds = plan.length;
+  if (resume && stopped && funnelResumeRound(stopped) > maxRounds) throw new Draft2InputError(nothingToContinue);
 
   const configuredOpenAiKey = process.env.OPENAI_API_KEY?.trim();
   if (!configuredOpenAiKey) throw new Draft2InputError("OPENAI_API_KEY is not configured; Sol needs it.");
@@ -133,7 +137,7 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
     ? { writer: stopped.writer ?? modelOf(earlier.writer), judge: stopped.judge ?? modelOf(earlier.judge) }
     : { writer: modelOf(def.roles.writer), judge: modelOf(def.roles.judge) };
   const judgeName = draft2ProviderName(roles.judge.provider);
-  const setup = def.setup({ snapshot, profile: await getCreativeProfile(topicId), facts });
+  const setup = def.setup({ snapshot, profile: await getCreativeProfile(topicId), facts, plan });
   const verifiedFacts = factsSnapshot(facts);
 
   const trace: Draft2TraceEntry[] = [...session.trace];
@@ -183,7 +187,7 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
   function ask(role: FunnelRole, round: number, operation: string, request: Composed & { contents: Record<string, unknown>; schema: Record<string, unknown> }) {
     const { instructions, skillVersions, contents, schema } = request;
     // The round's effort, for the writer and the judge alike; Sol writing a stored run keeps medium.
-    const effort = def.plan[round - 1]?.effort ?? "high";
+    const effort = plan[round - 1]?.effort ?? "high";
     if (role.provider === "anthropic") {
       const traceRequest = { instructions, context: { ...setup.context, verifiedFacts: `${verifiedFacts.length} facts (cached)` }, contents, effort };
       return traced(round, "anthropic", role.model, operation, skillVersions, traceRequest, () => generateAnthropicStructuredResponse({
@@ -246,8 +250,8 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
         } else {
           // 1. The writer: new candidates first; afterwards the best clean versions, each with its own issues, to revise,
           //    beside the new candidates the round's plan asks for (more of them when too few versions are clean).
-          targets = funnelTargets(before, round, def.plan);
-          const fresh = funnelFreshWanted(round, targets, def.plan);
+          targets = funnelTargets(before, round, plan);
+          const fresh = funnelFreshWanted(round, targets, plan);
           // The judge's proposals from the last round, which this round sets beside the writer's edits.
           const proposals = round > 1 ? last?.evaluation?.proposals ?? [] : [];
           const writerContents = targets.length || proposals.length

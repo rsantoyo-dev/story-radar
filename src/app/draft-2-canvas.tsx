@@ -15,6 +15,7 @@ import {
   type Draft2Opening, type Draft2OpeningCandidate, type Draft2OpeningCriterion,
 } from "@/app/modules/draft2/draft2-opening.types";
 import { CLOSING_GATE, CLOSING_MAX_ROUNDS, type Draft2Closing, type Draft2ClosingCandidate, type Draft2ClosingCriterion } from "@/app/modules/draft2/draft2-closing.types";
+import { DECK_GATE, DECK_MAX_ROUNDS, type Draft2Deck, type Draft2DeckCandidate, type Draft2DeckCriterion } from "@/app/modules/draft2/draft2-deck.types";
 import {
   criterionOf, funnelAcceptedWinner, funnelResumeRound, funnelScorePasses, funnelVersions, hasMaterialError,
   type FunnelCandidate, type FunnelGate, type FunnelIssue, type FunnelRegression, type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion,
@@ -34,14 +35,15 @@ type Draft2SessionView = {
   focus: Draft2Focus | null;
   opening: Draft2Opening | null;
   closing: Draft2Closing | null;
+  deck: Draft2Deck | null;
   trace: Draft2TraceEntry[];
   error: string | null;
   updatedAt: string;
 };
 
-type Draft2RunStep = "facts" | "focus" | "opening" | "closing";
+type Draft2RunStep = "facts" | "focus" | "opening" | "closing" | "deck";
 /** The steps that run on the funnel, in rounds that can pause and continue. */
-type Draft2FunnelStep = "opening" | "closing";
+type Draft2FunnelStep = "opening" | "closing" | "deck";
 
 /** Up to three rounds of two provider calls; the route itself allows 300 s. */
 const STEP_REQUEST_TIMEOUT_MS = 540_000;
@@ -81,6 +83,7 @@ const FACT_STATUS: Record<Draft2Fact["status"], { label: string; tone: StatusTon
 
 const CRITERION_LABEL: Record<Draft2OpeningCriterion, string> = { tension: "Tension", payoff: "Payoff", clarity: "Clarity", grounding: "Grounding", voice: "Voice", focus: "Focus" };
 const CLOSING_CRITERION_LABEL: Record<Draft2ClosingCriterion, string> = { resolution: "Resolution", meaning: "Meaning", action: "Action", continuity: "Continuity", grounding: "Grounding", voice: "Voice", focus: "Focus" };
+const DECK_CRITERION_LABEL: Record<Draft2DeckCriterion, string> = { flow: "Flow", coverage: "Coverage", pacing: "Pacing", clarity: "Clarity", grounding: "Grounding", voice: "Voice", focus: "Focus" };
 
 const FRAMING_LABEL: Record<Draft2FocusValues["framing"], string> = { "reader-consequence": "Reader consequence", explainer: "Explainer", authority: "Authority" };
 const STRUCTURE_LABEL: Record<Draft2FocusValues["structure"]["kind"], string> = { arc: "Arc: one story, one tension", steps: "Steps: an ordered procedure", list: "List: “N things to…”" };
@@ -115,7 +118,9 @@ function regressionNote({ candidateId, previousId, from, to, worse }: FunnelRegr
 
 const listed = (items: readonly string[]) => items.length > 1 ? `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}` : items.join("");
 const PART_LABEL: Record<string, string> = { cover: "cover", slide2: "slide 2", penultimate: "penultimate", last: "last slide" };
-const issueTarget = (issue: FunnelIssue) => issue.candidateId ? ` · ${issue.candidateId}${issue.part ? ` · ${PART_LABEL[issue.part] ?? issue.part}` : ""}` : "";
+/** A part as the editor reads it: a slide of the opening or closing, or "deck slide 2" for the deck's s2. */
+const partLabel = (part: string) => PART_LABEL[part] ?? (/^s(\d+)$/.exec(part) ? `deck slide ${part.slice(1)}` : part);
+const issueTarget = (issue: FunnelIssue) => issue.candidateId ? ` · ${issue.candidateId}${issue.part ? ` · ${partLabel(issue.part)}` : ""}` : "";
 
 /**
  * Draft 2: the second creative pipeline, built one step at a time beside the
@@ -261,7 +266,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
       }
       let payload: Record<string, unknown> = { storyId, sessionId: session?.id, ...(continuing ? { continue: true } : {}) };
       // Each request advances at least one round or judgment; a round can pause once before its writer and once before its judge.
-      const maxRounds = step === "closing" ? CLOSING_MAX_ROUNDS : OPENING_MAX_ROUNDS;
+      const maxRounds = step === "deck" ? DECK_MAX_ROUNDS : step === "closing" ? CLOSING_MAX_ROUNDS : OPENING_MAX_ROUNDS;
       for (let request = 0; request <= maxRounds * 2; request++) {
         let next: Draft2SessionView | undefined;
         try {
@@ -359,7 +364,19 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const closingPausedRound = closing?.status === "paused" ? funnelResumeRound(closing) : undefined;
   // A closing written for another opening than the one chosen now.
   const closingOpeningChanged = Boolean(closing?.opening && chosenOpeningId && closing.opening.id !== chosenOpeningId);
-  const stepStatus: Partial<Record<string, { label: string; tone: StatusTone }>> = { facts: factsStatus, focus: focusStatus, opening: openingStatus, closing: closingStatus };
+  // The deck connects the chosen opening and the closing that ends it, once the closing's run has finished.
+  const deck = session?.deck ?? undefined;
+  const deckStalled = !running && deck?.status === "running" && now > 0 && now - Date.parse(session?.updatedAt ?? "") > OPENING_STALL_MS;
+  const deckStatus = running === "deck" ? OPENING_STATUS.running : deckStalled ? { label: "Stopped", tone: "warning" as const } : deck ? OPENING_STATUS[deck.status] : undefined;
+  const chosenClosingId = closing?.editorChoiceId ?? closing?.winnerId;
+  const closingFinished = Boolean(closing && chosenClosingId && closing.status !== "running" && closing.status !== "paused");
+  const deckReady = closingFinished && !closingOpeningChanged;
+  const deckResumable = deck && (deck.status === "paused" || deckStalled) && funnelResumeRound(deck) <= DECK_MAX_ROUNDS;
+  const deckResumeRound = deckResumable && deck ? funnelResumeRound(deck) : undefined;
+  const deckPausedRound = deck?.status === "paused" ? funnelResumeRound(deck) : undefined;
+  // A deck written for another closing or opening than the ones chosen now.
+  const deckEndsChanged = Boolean(deck?.closing && deck.opening && ((chosenClosingId && deck.closing.id !== chosenClosingId) || (chosenOpeningId && deck.opening.id !== chosenOpeningId)));
+  const stepStatus: Partial<Record<string, { label: string; tone: StatusTone }>> = { facts: factsStatus, focus: focusStatus, opening: openingStatus, closing: closingStatus, deck: deckStatus };
   const resumable = session?.opening && (session.opening.status === "paused" || stalled) && openingResumeRound(session.opening) <= OPENING_MAX_ROUNDS;
   const resumeRound = resumable && session?.opening ? openingResumeRound(session.opening) : undefined;
   const pausedRound = session?.opening?.status === "paused" ? openingResumeRound(session.opening) : undefined;
@@ -501,6 +518,34 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
               onChoose={(candidateId) => { void choose("closing", candidateId); }}
             /> : null}
           </section>
+          <section className={styles.factsPanel} aria-label="Deck step">
+            <div className={styles.factsHeader}>
+              <div>
+                <p className={styles.eyebrow}>Step 5 · Deck</p>
+                <p className={styles.factsIntro}>{TODAY.writer} writes the slides between slide 2 and the closing you chose, one idea each, so the carousel reads as one story: for an arc, four decks of two to five slides; for a list or steps, two decks with the items slide 2 did not cover, one per slide, in order. {TODAY.judge} scores them and proposes a deck of its own; {TODAY.writer} revises the best, touching only the slides the issues name, and edits {TODAY.judge}’s deck, which also competes as {TODAY.judge} wrote it, for {TODAY.judge}’s pick. Accepted at 95/100 with no criterion below 85.</p>
+              </div>
+              <ActionRow>
+                {deckResumeRound && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("deck", { continuing: true }); }}>Continue from round {deckResumeRound}</Button> : null}
+                <Button variant="primary" size="compact" busy={running === "deck"} disabled={!factsVerified || !deckReady || running !== undefined || savingFocus !== undefined} onClick={() => { void runStep("deck"); }}>
+                  {running === "deck" ? "Writing and judging…" : deck ? "Write the deck again" : "Write the deck"}
+                </Button>
+              </ActionRow>
+            </div>
+            {factsVerified && !deckReady && !running ? <p className={styles.factMeta}>{closingOpeningChanged ? "The closing ends another opening than the one chosen now; write the closing again first." : "The deck leads to the closing you choose; finish the closing first."}</p> : null}
+            {deckEndsChanged && running !== "deck" ? <InlineNotice tone="info" title="The opening or the closing changed">This deck connects {deck?.opening?.id} and {deck?.closing?.id}; the ones chosen now are {chosenOpeningId} and {chosenClosingId}. Write the deck again to connect them.</InlineNotice> : null}
+            {running === "deck" ? <LoadingState>{following ? `${following} Following the run on the server…` : deckPausedRound ? `Continuing with round ${deckPausedRound} in a new request…` : `${TODAY.writer} writes the decks; ${TODAY.judge} judges each round. This can take a few minutes.`}</LoadingState> : null}
+            {deckStalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {new Date(session.updatedAt).toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit" })}: its request or the server ended. Continue from round {deckResumeRound} picks it up at its last checkpoint; a round already written is judged, not written again.</InlineNotice> : null}
+            {runError?.step === "deck" ? <InlineNotice tone="error" title="The deck step stopped">{runError.message}</InlineNotice> : null}
+            {session?.step === "deck" && session.error && running !== "deck" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
+            {choiceError?.step === "deck" ? <InlineNotice tone="error" title="Your choice was not saved">{choiceError.message}</InlineNotice> : null}
+            {deck && running !== "deck" ? <FunnelRunView
+              run={deck}
+              display={DECK_DISPLAY}
+              choosing={choosing?.step === "deck" ? choosing.id : undefined}
+              locked={running !== undefined || deck.status === "running"}
+              onChoose={(candidateId) => { void choose("deck", candidateId); }}
+            /> : null}
+          </section>
           {session?.trace.length && !running ? <details className={styles.trace}>
             <summary>{session.trace.length} provider {session.trace.length === 1 ? "call" : "calls"}</summary>
             <ol className={styles.traceList}>
@@ -570,8 +615,8 @@ type FunnelDisplay<C extends FunnelCandidate> = {
   lines: (candidate: C) => { title: string; details: string[] };
   /** One of the judge's proposals, in one line. */
   proposal: (candidate: C) => string;
-  /** The chosen version, as the slides it will be. */
-  cards: (candidate: C) => ReactNode;
+  /** The chosen version, as the slides it will be; the run says what it connects (the deck shows the whole carousel). */
+  cards: (candidate: C, run: FunnelRun<C, FunnelScore, FunnelIssue> & Partial<Pick<Draft2Deck, "opening" | "closing">>) => ReactNode;
 };
 
 const OPENING_DISPLAY: FunnelDisplay<Draft2OpeningCandidate> = {
@@ -584,6 +629,22 @@ const OPENING_DISPLAY: FunnelDisplay<Draft2OpeningCandidate> = {
   cards: (candidate) => <div className={styles.openingCards}>
     <SlideCard label="Cover" headline={candidate.cover.headline} text={candidate.cover.subheadline} factIds={candidate.cover.factIds} />
     <SlideCard label="Slide 2" headline={candidate.slide2.headline} text={candidate.slide2.body} factIds={candidate.slide2.factIds} />
+  </div>,
+};
+
+const DECK_DISPLAY: FunnelDisplay<Draft2DeckCandidate> = {
+  noun: "deck",
+  plural: "decks",
+  gate: DECK_GATE,
+  labels: DECK_CRITERION_LABEL,
+  lines: (candidate) => ({ title: candidate.slides[0]?.headline ?? "", details: [`${candidate.slides.length} ${candidate.slides.length === 1 ? "slide" : "slides"}: ${candidate.slides.map((slide) => slide.headline).join(" / ")}`] }),
+  proposal: (candidate) => candidate.slides.map((slide) => slide.headline).join(" / "),
+  cards: (candidate, run) => <div className={styles.carouselCards}>
+    {run.opening ? <SlideCard label="Cover" headline={run.opening.cover.headline} text={run.opening.cover.subheadline} factIds={run.opening.cover.factIds} quiet /> : null}
+    {run.opening ? <SlideCard label="Slide 2" headline={run.opening.slide2.headline} text={run.opening.slide2.body} factIds={run.opening.slide2.factIds} quiet /> : null}
+    {candidate.slides.map((slide, index) => <SlideCard key={index} label={`Slide ${index + 3} · deck`} headline={slide.headline} text={slide.body} practical={slide.practical || undefined} factIds={slide.factIds} />)}
+    {run.closing?.penultimate ? <SlideCard label="Penultimate" headline={run.closing.penultimate.headline} text={run.closing.penultimate.body} factIds={run.closing.penultimate.factIds} quiet /> : null}
+    {run.closing ? <SlideCard label="Last slide" headline={run.closing.last.headline} text={run.closing.last.body} cta={run.closing.last.cta || undefined} factIds={run.closing.last.factIds} quiet /> : null}
   </div>,
 };
 
@@ -608,7 +669,7 @@ const CLOSING_DISPLAY: FunnelDisplay<Draft2ClosingCandidate> = {
 
 /** A funnel step's run: every round's verdict, the version the next steps build on, and every other version to choose from. */
 function FunnelRunView<C extends FunnelCandidate>({ run, display, choosing, locked, onChoose }: {
-  run: FunnelRun<C, FunnelScore, FunnelIssue> & { writer?: Draft2Opening["writer"]; judge?: Draft2Opening["judge"] };
+  run: FunnelRun<C, FunnelScore, FunnelIssue> & { writer?: Draft2Opening["writer"]; judge?: Draft2Opening["judge"] } & Partial<Pick<Draft2Deck, "opening" | "closing">>;
   display: FunnelDisplay<C>;
   choosing?: string;
   locked: boolean;
@@ -625,6 +686,7 @@ function FunnelRunView<C extends FunnelCandidate>({ run, display, choosing, lock
     </ol> : null}
     {chosen ? <ChosenVersion
       version={chosen}
+      run={run}
       names={names}
       display={display}
       label={run.editorChoiceId ? "Your choice" : winnerLabel}
@@ -704,7 +766,14 @@ function FunnelRoundView<C extends FunnelCandidate>({ round, names, display }: {
 }
 
 /** The version the next steps build on, with its scores, as the slides it will be. */
-function ChosenVersion<C extends FunnelCandidate>({ version, names, display, label, tone }: { version: FunnelVersion<C, FunnelScore, FunnelIssue>; names: RoleNames; display: FunnelDisplay<C>; label: string; tone: StatusTone }) {
+function ChosenVersion<C extends FunnelCandidate>({ version, run, names, display, label, tone }: {
+  version: FunnelVersion<C, FunnelScore, FunnelIssue>;
+  run: Parameters<FunnelDisplay<C>["cards"]>[1];
+  names: RoleNames;
+  display: FunnelDisplay<C>;
+  label: string;
+  tone: StatusTone;
+}) {
   const { candidate, score } = version;
   return <div className={styles.openingGroup}>
     <div className={styles.factHead}>
@@ -716,16 +785,21 @@ function ChosenVersion<C extends FunnelCandidate>({ version, names, display, lab
     </div>
     {score ? <ScoreRow score={score} display={display} /> : null}
     {score?.note ? <p className={styles.factMeta}>{score.note}</p> : null}
-    {display.cards(candidate)}
+    {display.cards(candidate, run)}
   </div>;
 }
 
-/** One slide as a 4:5 card: its headline, its text, the call to action on the last, and the facts it cites. */
-function SlideCard({ label, headline, text, cta, factIds }: { label: string; headline: string; text: string; cta?: string; factIds: readonly string[] }) {
-  return <article className={styles.openingCard} aria-label={label}>
+/**
+ * One slide as a 4:5 card: its headline, its text, a list item's practical
+ * line, the call to action on the last, and the facts it cites. A quiet card
+ * is a slide another step wrote, shown for context.
+ */
+function SlideCard({ label, headline, text, practical, cta, factIds, quiet = false }: { label: string; headline: string; text: string; practical?: string; cta?: string; factIds: readonly string[]; quiet?: boolean }) {
+  return <article className={styles.openingCard} aria-label={label} data-quiet={quiet ? "" : undefined}>
     <p className={styles.eyebrow}>{label}</p>
     <p className={styles.openingHeadline}>{headline}</p>
     <p className={styles.openingText}>{text}</p>
+    {practical ? <p className={styles.openingPractical}>{practical}</p> : null}
     {cta ? <p className={styles.openingCta}>{cta}</p> : null}
     <p className={styles.openingFacts}>Facts · {factIds.join(", ")}</p>
   </article>;

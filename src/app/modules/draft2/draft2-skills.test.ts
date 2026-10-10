@@ -3,6 +3,11 @@ import test from "node:test";
 import { brandBrief, composeInstructions, DRAFT2_ROLES, DRAFT2_SKILLS, type Draft2Skill } from "./skills/draft2-skills";
 import { FACTS_ROLES, FACTS_SKILL } from "./skills/facts";
 import { CLOSING_ROLES, CLOSINGS_SKILL } from "./skills/closings";
+import { DECK_ROLES, DECKS_SKILL } from "./skills/decks";
+import {
+  DECK_ACCEPT_SCORE, DECK_ARC_MAX_SLIDES, DECK_ARC_MIN_SLIDES, DECK_BODY_MAX_WORDS, DECK_CRITERIA, DECK_CRITERION_FLOOR, DECK_HEADLINE_MAX_WORDS, DECK_ITEM_SENTENCE_MAX_WORDS,
+  DECK_PRACTICAL_MAX_WORDS,
+} from "./draft2-deck.types";
 import { FOCUS_ROLES, FOCUS_SKILL } from "./skills/focus";
 import { HOOKS_SKILL, OPENING_ROLES } from "./skills/hooks";
 import { toneLine } from "./skills/tone";
@@ -27,8 +32,8 @@ test("instructions are the role, then each skill, then the brand brief, and reco
   assert.equal(writer.instructions, `${OPENING_ROLES["opening-writer"]}\n\n## Shared craft\n\n# Brand`);
   assert.deepEqual(writer.skillVersions, { hooks: "7" });
   assert.equal(composeInstructions("opening-judge", [skill]).instructions, `${OPENING_ROLES["opening-judge"]}\n\n## Shared craft\n\n## Judge only`, "a role reads its own part after the shared text");
-  assert.deepEqual(Object.keys(DRAFT2_ROLES).sort(), ["closing-judge", "closing-writer", "extractor", "focus-editor", "opening-judge", "opening-writer", "reviewer"]);
-  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@1", "focus@1", "hooks@6", "closings@1"]);
+  assert.deepEqual(Object.keys(DRAFT2_ROLES).sort(), ["closing-judge", "closing-writer", "deck-judge", "deck-writer", "extractor", "focus-editor", "opening-judge", "opening-writer", "reviewer"]);
+  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@1", "focus@1", "hooks@6", "closings@1", "decks@1"]);
 });
 
 test("the Facts prompts keep their words: the extractor reads its rules, the reviewer its checklist", () => {
@@ -124,4 +129,16 @@ test("closings: one action the goal decides and the publication words, a grave s
   assert.ok(instructions.startsWith(CLOSING_ROLES["closing-writer"]));
   assert.ok(instructions.endsWith("# Calls to action\n- The publication's style (its voice and wording; the focus's goal decides the action): Warm.\n- Emojis: none."));
   assert.deepEqual(skillVersions, { closings: "1" });
+});
+
+test("the decks rubric states the shapes, limits and thresholds the program enforces", () => {
+  assert.match(DECKS_SKILL.text, new RegExp(`"arc": the development of one story, in ${DECK_ARC_MIN_SLIDES} to ${DECK_ARC_MAX_SLIDES} slides`));
+  assert.match(DECKS_SKILL.text, new RegExp(`- Headline at most ${DECK_HEADLINE_MAX_WORDS} words; body at most ${DECK_BODY_MAX_WORDS} words \\(${DECK_ITEM_SENTENCE_MAX_WORDS} for a list's item,\\s+whose practical line has at most ${DECK_PRACTICAL_MAX_WORDS} words of its own\\)`));
+  assert.match(DECKS_SKILL.text, new RegExp(`overall ≥ ${DECK_ACCEPT_SCORE} and no criterion is below ${DECK_CRITERION_FLOOR}`));
+  for (const criterion of DECK_CRITERIA) assert.match(DECKS_SKILL.text, new RegExp(`\\n- ${criterion}: `), criterion);
+  assert.match(DECKS_SKILL.text, /"list": one slide per item in "items", in that order/);
+  assert.match(DECKS_SKILL.text, /never\s+a recap or a summary label/);
+  assert.match(DECK_ROLES["deck-writer"], /each a different path from slide 2 to the closing/);
+  assert.match(DECK_ROLES["deck-judge"], /"part": "s1" for the first deck slide/);
+  assert.deepEqual(composeInstructions("deck-judge", [DECKS_SKILL], brandBrief(profile)).skillVersions, { decks: "1" });
 });
