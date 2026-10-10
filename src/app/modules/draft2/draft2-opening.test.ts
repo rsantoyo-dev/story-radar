@@ -53,7 +53,8 @@ const opening = (id: string, headline: string, angle: string) => ({ ...candidate
 const writer = (overrides: Record<string, string> = {}) => (contents: WriterContents) => contents.task === "revise"
   ? { candidates: [
     ...(contents.openings ?? []).map((target) => ({ id: target.id, cover: target.cover, slide2: target.slide2, angle: `${target.angle}, sharper` })),
-    ...(contents.develop ?? []).map((proposal) => ({ id: proposal.id, cover: proposal.cover, slide2: proposal.slide2, angle: `${proposal.angle}, developed` })),
+    // An edit that keeps the proposal's cover and sharpens slide 2's headline (an unchanged one would be dropped).
+    ...(contents.develop ?? []).map((proposal) => ({ id: proposal.id, cover: proposal.cover, slide2: { ...proposal.slide2, headline: "Awards came within a week" }, angle: `${proposal.angle}, edited` })),
     ...NEW_HEADLINES.concat(HEADLINES).slice(0, contents.newAngles ?? 0).map((headline, index) => opening(`n${index + 1}`, `${headline}`, "A new angle")),
   ] }
   : { candidates: candidates(overrides, contents.candidatesWanted) };
@@ -186,26 +187,25 @@ test("Claude writes and Sol judges; both read the facts snapshot where their pro
   assert.equal(session.opening?.candidates.length, 15);
   assert.equal(json(session.threads), json(factsThreads), "the facts conversations are left as they were");
   assert.equal(session.trace.length, 3, "the facts trace is kept and the opening's calls are added");
-  assert.equal(json(session.trace.slice(1).map((entry) => [entry.step, entry.provider, entry.operation, entry.skillVersions])), json([["opening", "anthropic", "draft2_opening", { hooks: "4" }], ["opening", "openai", "draft2_opening_review", { hooks: "4" }]]));
+  assert.equal(json(session.trace.slice(1).map((entry) => [entry.step, entry.provider, entry.operation, entry.skillVersions])), json([["opening", "anthropic", "draft2_opening", { hooks: "5" }], ["opening", "openai", "draft2_opening_review", { hooks: "5" }]]));
 });
 
-test("loop: fifteen openings; then three revised, the judge's three proposals developed and three new; then two revised and its last proposal, for the final pick", async () => {
+test("loop: fifteen openings; then three revised beside the judge's three proposals, as written and edited; then two revised beside its last proposal, for the final pick", async () => {
   const h = harness({
     writes: [writer(), writer(), writer()],
     judgments: [
       judge("revise", "c3", { c3: 84, c5: 80, c1: 79 }, { suggestions: ["Pay the promise with the award time."], issues: [{ code: "WEAK_TENSION", candidateId: "c3", part: "cover", detail: "Flat." }] }),
       judge("revise", "c16", { "c3.2": 88, c16: 90, "c5.2": 82, "c1.2": 75, c17: 74, c18: 73, c19: 72, c20: 71, c21: 69 }),
-      judge("revise", "c16.3", { "c16.3": 93, "c3.3": 89, c22: 91 }),
+      judge("revise", "c16.3", { "c16.3": 93, "c3.3": 89, c22: 91, c23: 92 }),
     ],
   });
   const session = await h.run();
   assert.equal(h.calls.length, 6);
   const [first, second, third] = h.writerCalls();
   assert.equal(json([first.task, first.candidatesWanted]), json(["openings", 15]));
-  assert.equal(json([second.task, second.openings?.map((target) => target.id), second.develop?.map((proposal) => proposal.id), second.newAngles]), json(["revise", ["c3", "c5", "c1"], ["p1", "p2", "p3"], 3]), "round 2: three revised, the judge's three proposals developed, three new angles");
+  assert.equal(json([second.task, second.openings?.map((target) => target.id), second.develop?.map((proposal) => proposal.id), second.newAngles ?? 0]), json(["revise", ["c3", "c5", "c1"], ["p1", "p2", "p3"], 0]), "round 2: three revised and the judge's three proposals to edit, no new angles");
   assert.equal(second.develop?.[0].cover.headline, PROPOSAL_HEADLINES[0]);
-  assert.equal(second.anglesSoFar?.length, 15, "the new angles know the fifteen already tried");
-  assert.match(String(second.instruction), /Preserve its narrative promise[\s\S]*Develop each proposal in develop[\s\S]*Then write 3 new openings, with ids n1, n2, n3/);
+  assert.match(String(second.instruction), /Preserve its narrative promise[\s\S]*Edit each proposal in develop[\s\S]*Keep its creative device/);
   assert.equal(json(second.suggestions), json(["Pay the promise with the award time."]));
   assert.equal(json((second.openings?.[0] as unknown as { issues: { code: string }[] }).issues.map((issue) => issue.code)), json(["WEAK_TENSION"]), "each target carries its own issues");
   assert.equal(json([third.task, third.openings?.map((target) => target.id), third.develop?.map((proposal) => proposal.id), third.newAngles ?? 0]), json(["revise", ["c16", "c3.2"], ["p4"], 0]), "round 3: the two best lines and the judge's last proposal");
@@ -213,14 +213,17 @@ test("loop: fifteen openings; then three revised, the judge's three proposals de
   assert.equal(json(judged.map((contents) => contents.candidates.map((candidate) => [candidate.id, candidate.revises ?? null]))), json([
     ROUND_ONE.map((id) => [id, null]),
     [["c3.2", "c3"], ["c5.2", "c5"], ["c1.2", "c1"], ["c16", null], ["c17", null], ["c18", null], ["c19", null], ["c20", null], ["c21", null]],
-    [["c16.3", "c16"], ["c3.3", "c3.2"], ["c22", null]],
-  ]), "the judge scores 15, then 9, then 3");
-  assert.ok(judged.every((contents) => contents.candidates.every((candidate) => !("proposalOf" in candidate))), "the judge is never told which candidates grew from its proposals");
+    [["c16.3", "c16"], ["c3.3", "c3.2"], ["c22", null], ["c23", null]],
+  ]), "the judge scores 15, then 9, then 4");
+  assert.ok(judged.every((contents) => contents.candidates.every((candidate) => !("proposalOf" in candidate) && !("asProposed" in candidate))), "the judge is never told which candidates are its own proposals");
+  assert.equal(json(judged[1].candidates.slice(6).map((candidate) => (candidate as unknown as Opening).cover.headline)), json(PROPOSAL_HEADLINES.slice(0, 3)), "the judge's originals compete exactly as written");
   assert.equal(json(judged.map((contents) => contents.proposalsWanted ?? 0)), json([3, 1, 0]));
   assert.equal(json(judged[1].previousVersions?.map((version) => [version.id, version.scores?.overall])), json([["c3", 84], ["c5", 80], ["c1", 79]]));
   const rounds = session.opening?.rounds ?? [];
   assert.equal(json(rounds.map((round) => round.evaluation?.proposals?.map((proposal) => proposal.id) ?? [])), json([["p1", "p2", "p3"], ["p4"], []]), "proposals are numbered across the run");
-  assert.equal(json(rounds[1].candidates.filter((candidate) => candidate.proposalOf).map((candidate) => [candidate.id, candidate.proposalOf])), json([["c16", "p1"], ["c17", "p2"], ["c18", "p3"]]), "the canvas can tell which versions grew from the judge's proposals");
+  assert.equal(json(rounds[1].candidates.filter((candidate) => candidate.proposalOf).map((candidate) => [candidate.id, candidate.proposalOf, candidate.asProposed ?? false])), json([
+    ["c16", "p1", false], ["c17", "p2", false], ["c18", "p3", false], ["c19", "p1", true], ["c20", "p2", true], ["c21", "p3", true],
+  ]), "the canvas can set each original against its edit");
   assert.equal(json(rounds.map((round) => round.kind)), json(["explore", "mixed", "mixed"]));
   assert.equal(session.status, "needs-review");
   assert.equal(session.opening?.winnerId, "c16.3", "the best version of the run stands in");
@@ -256,7 +259,7 @@ test("caching: the writer's cached facts are identical every round, the judge's 
   assert.ok(h.calls.every((call) => call.input.history === undefined && call.input.previousResponseId === undefined));
   const judgeInputs = h.judgeCalls();
   assert.equal(new Set(judgeInputs.map((input) => json((input.contents as { verifiedFacts: unknown }).verifiedFacts))).size, 1, "Sol's input starts with the same facts every round");
-  assert.equal(json(judgeInputs.map((input) => (input.contents as JudgeContents).candidates.length)), json([15, 9, 3]), "the funnel narrows");
+  assert.equal(json(judgeInputs.map((input) => (input.contents as JudgeContents).candidates.length)), json([15, 9, 4]), "the funnel narrows");
   const writerTrace = session.trace.filter((entry) => entry.provider === "anthropic");
   assert.equal(json(writerTrace.map((entry) => [entry.cachedInputTokens, entry.cacheWriteTokens ?? 0])), json([[0, 1_200], [1_200, 0], [1_200, 0]]), "every call records its cache reads and writes");
 });
@@ -344,16 +347,26 @@ test("when the judge's winner has a program finding, the clean runner-up wins if
   assert.equal(session.opening?.winnerId, "c2");
 });
 
-test("with nothing clean to revise, the next round develops the judge's proposals and writes new angles in place of the revisions", async () => {
+test("with nothing clean to revise, the next round sets the judge's proposals, as written and edited, beside new angles in place of the revisions", async () => {
   const tooLong = Object.fromEntries(HEADLINES.map((headline, index) => [`c${index + 1}`, `${headline} and so much more`]));
   const h = harness({ writes: [writer(tooLong), writer()], judgments: [judge("revise", "c1", { c1: 90 }), judge("accept", "c17", { c17: 96 })] });
   const session = await h.run();
   const second = h.writerCalls()[1];
-  assert.equal(json([second.task, second.openings?.length, second.develop?.length, second.newAngles]), json(["revise", 0, 3, 6]), "three new angles plus three in place of the revisions");
+  assert.equal(json([second.task, second.openings?.length, second.develop?.length, second.newAngles]), json(["revise", 0, 3, 3]), "three new angles in place of the revisions");
   assert.ok(second.feedback, "the writer hears why the first fifteen cannot win");
   assert.equal(second.anglesSoFar?.length, 15);
-  assert.equal(json(session.opening?.rounds[1].candidates.map((candidate) => candidate.id)), json(["c16", "c17", "c18", "c19", "c20", "c21", "c22", "c23", "c24"]));
+  assert.equal(json(session.opening?.rounds[1].candidates.map((candidate) => [candidate.id, candidate.proposalOf ?? null, candidate.asProposed ?? false])), json([
+    ["c16", "p1", false], ["c17", "p2", false], ["c18", "p3", false], ["c19", "p1", true], ["c20", "p2", true], ["c21", "p3", true], ["c22", null, false], ["c23", null, false], ["c24", null, false],
+  ]));
   assert.equal(session.opening?.winnerId, "c17");
+});
+
+test("a material factual error blocks the judge's own pick: the clean runner-up wins", async () => {
+  const material = { code: "OVERCLAIMS", candidateId: "c1", part: "cover", detail: "The headline drops the $500 million limit.", material: true };
+  const h = harness({ writes: [writer()], judgments: [judge("accept", "c1", { c1: 97, c2: 96 }, { issues: [material] })] });
+  const session = await h.run();
+  assert.equal(json([session.status, session.opening?.winnerId]), json(["ready", "c2"]));
+  assert.equal(session.opening?.rounds[0].evaluation?.issues[0].material, true, "the error stays on record");
 });
 
 test("a provider failure marks the opening failed, keeps the trace and the best version so far, and surfaces the error", async () => {

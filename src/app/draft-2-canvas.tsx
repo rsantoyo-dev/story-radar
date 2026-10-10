@@ -6,7 +6,7 @@ import { ActionRow, Button, EmptyState, InlineNotice, LoadingState, SectionHeade
 import type { StoryContentResponse } from "@/app/radar-dashboard";
 import type { Draft2Fact, Draft2FactsEvaluation, Draft2FactsRound, Draft2SessionStatus, Draft2TraceEntry } from "@/app/modules/draft2/draft2-facts.types";
 import {
-  OPENING_CRITERIA, OPENING_CRITERION_FLOOR, OPENING_MAX_ROUNDS, OPENING_STALL_MS, openingAcceptedWinner, openingResumeRound, openingScorePasses, openingVersions,
+  OPENING_CRITERIA, OPENING_CRITERION_FLOOR, OPENING_MAX_ROUNDS, OPENING_STALL_MS, hasMaterialError, openingAcceptedWinner, openingResumeRound, openingScorePasses, openingVersions,
   type Draft2Opening, type Draft2OpeningCriterion, type Draft2OpeningIssue, type Draft2OpeningRegression, type Draft2OpeningRound, type Draft2OpeningScore, type Draft2OpeningVersion,
 } from "@/app/modules/draft2/draft2-opening.types";
 import { DRAFT2_OPENING_EARLIER_ROLES, DRAFT2_OPENING_ROLES, draft2ProviderName } from "@/app/modules/draft2/draft2-models";
@@ -71,9 +71,11 @@ const roleNames = (opening: Pick<Draft2Opening, "writer" | "judge">): RoleNames 
   judge: draft2ProviderName(opening.judge?.provider ?? DRAFT2_OPENING_EARLIER_ROLES.judge),
 });
 
-/** Where a version comes from: its round, and the version it revises or the judge's proposal it develops. */
-const versionOrigin = ({ round, candidate }: Draft2OpeningVersion, names: RoleNames) =>
-  `round ${round}${candidate.revisionOf ? ` · revises ${candidate.revisionOf}` : ""}${candidate.proposalOf ? ` · develops ${names.judge}’s ${candidate.proposalOf}` : ""}`;
+/** Where a version comes from: its round, and the version it revises or the judge's proposal it is (as written) or edits. */
+const versionOrigin = ({ round, candidate }: Draft2OpeningVersion, names: RoleNames) => {
+  const proposal = candidate.proposalOf ? (candidate.asProposed ? ` · ${names.judge}’s ${candidate.proposalOf} as written` : ` · ${names.writer}’s edit of ${names.judge}’s ${candidate.proposalOf}`) : "";
+  return `round ${round}${candidate.revisionOf ? ` · revises ${candidate.revisionOf}` : ""}${proposal}`;
+};
 
 /** Why a revision did not replace its version: a lower score, or the same or a higher one with a loss the score does not show. */
 function regressionNote({ candidateId, previousId, from, to, worse }: Draft2OpeningRegression): string {
@@ -342,7 +344,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
             <div className={styles.factsHeader}>
               <div>
                 <p className={styles.eyebrow}>Step 2 · Opening</p>
-                <p className={styles.factsIntro}>{TODAY.writer} writes fifteen openings (cover and slide 2) from the verified facts; {TODAY.judge} scores them and proposes three of its own. {TODAY.writer} revises the three best, develops {TODAY.judge}’s proposals and tries three new angles; {TODAY.judge} scores them without knowing which grew from its proposals, and proposes one more. {TODAY.writer} refines the two best and develops it for {TODAY.judge}’s final pick. The better version always stays. Accepted at 95/100 with no criterion below 85.</p>
+                <p className={styles.factsIntro}>{TODAY.writer} writes fifteen openings (cover and slide 2) from the verified facts; {TODAY.judge} scores them and proposes three of its own. {TODAY.writer} revises the three best and edits {TODAY.judge}’s proposals, which also compete as {TODAY.judge} wrote them; {TODAY.judge} scores all nine without knowing which are its own, and proposes one more, which competes the same way beside {TODAY.writer}’s two best for {TODAY.judge}’s final pick. The better version always stays, and an opening that says what the facts do not never wins. Accepted at 95/100 with no criterion below 85.</p>
               </div>
               <ActionRow>
                 {resumeRound && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("opening", { continuing: true }); }}>Continue from round {resumeRound}</Button> : null}
@@ -443,6 +445,7 @@ function OpeningView({ opening, choosing, locked, onChoose }: { opening: Draft2O
             <span className={styles.factId}>{version.candidate.id}</span>
             {version.score ? <StatusBadge tone={openingScorePasses(version.score) ? "success" : "neutral"}>{version.score.overall}/100</StatusBadge> : null}
             {version.findings.length ? <StatusBadge tone="warning">{version.findings.length} program {version.findings.length === 1 ? "finding" : "findings"}</StatusBadge> : null}
+            {hasMaterialError(version) ? <StatusBadge tone="error">Factual error</StatusBadge> : null}
             {version.candidate.id === opening.winnerId ? <StatusBadge tone="info">{winnerLabel}</StatusBadge> : null}
             <span className={styles.factMeta}>{versionOrigin(version, names)}</span>
           </div>
@@ -464,29 +467,37 @@ function OpeningRoundView({ round, names }: { round: Draft2OpeningRound; names: 
   const winnerId = programWinner ?? evaluation?.winnerId;
   const winner = evaluation?.scores.find((score) => score.candidateId === winnerId);
   const revised = round.candidates.flatMap((candidate) => candidate.revisionOf ? [candidate.revisionOf] : []);
-  const developed = round.candidates.filter((candidate) => candidate.proposalOf).map((candidate) => candidate.id);
+  const edited = round.candidates.filter((candidate) => candidate.proposalOf && !candidate.asProposed).map((candidate) => candidate.id);
+  const originals = round.candidates.filter((candidate) => candidate.asProposed);
   const fresh = round.candidates.filter((candidate) => !candidate.revisionOf && !candidate.proposalOf).map((candidate) => candidate.id);
   const wrote = listed([
     revised.length ? `revised ${listed(revised)}` : "",
-    developed.length ? `developed ${developed.length} of ${names.judge}’s proposals (${developed.join(", ")})` : "",
-    fresh.length ? (revised.length || developed.length ? `tried ${fresh.length} new ${fresh.length === 1 ? "angle" : "angles"} (${fresh.join(", ")})` : `wrote ${fresh.length} ${fresh.length === 1 ? "opening" : "openings"}`) : "",
+    edited.length ? `edited ${edited.length} of ${names.judge}’s proposals (${edited.join(", ")})` : "",
+    fresh.length ? (revised.length || edited.length || originals.length ? `tried ${fresh.length} new ${fresh.length === 1 ? "angle" : "angles"} (${fresh.join(", ")})` : `wrote ${fresh.length} ${fresh.length === 1 ? "opening" : "openings"}`) : "",
   ].filter(Boolean));
   const proposals = evaluation?.proposals ?? [];
+  // Each proposal as the judge wrote it against the writer's edit: whose version scored higher.
+  const scoreOf = (id?: string) => evaluation?.scores.find((score) => score.candidateId === id)?.overall;
+  const duels = originals.map((original) => {
+    const edit = round.candidates.find((candidate) => candidate.proposalOf === original.proposalOf && !candidate.asProposed);
+    return `${original.proposalOf} ${scoreOf(original.id) ?? "–"} as written / ${edit ? `${scoreOf(edit.id) ?? "–"} edited` : "not edited"}`;
+  });
   return <li className={styles.roundCard}>
     <div className={styles.factHead}>
       <strong>Round {round.round}</strong>
-      <span>{names.writer} {wrote}</span>
+      <span>{wrote ? `${names.writer} ${wrote}` : ""}{originals.length ? `${wrote ? "; " : ""}${names.judge}’s ${originals.length === 1 ? "proposal competes" : "proposals compete"} as written too (${originals.map((original) => original.id).join(", ")})` : ""}</span>
       {evaluation
         ? <StatusBadge tone={programWinner ? "success" : "warning"}>{names.judge}: {evaluation.verdict} · {winnerId} {winner?.overall}/100</StatusBadge>
         : <StatusBadge tone="neutral">{names.judge} did not answer</StatusBadge>}
     </div>
+    {duels.length ? <p className={styles.factMeta}>{names.judge}’s proposals, as written against {names.writer}’s edits: {duels.join(" · ")}.</p> : null}
     {(round.regressions ?? []).map((regression) => <p key={regression.candidateId} className={styles.factMeta}>{regressionNote(regression)}</p>)}
     {evaluation && programWinner && programWinner !== evaluation.winnerId ? <p className={styles.factMeta}>{names.judge} picked {evaluation.winnerId}, which has a program finding; {programWinner}, the best clean candidate, meets the thresholds and wins.</p> : null}
     {evaluation ? <p className={styles.factMeta}>{evaluation.summary}</p> : null}
     {winner ? <ScoreRow score={winner} /> : null}
     {round.mechanical.length || evaluation?.issues.length ? <ul className={styles.issueList}>
       {round.mechanical.map((issue, index) => <li key={`m${index}`}><strong>Program · {issue.code}</strong>{issueTarget(issue)}: {issue.detail}</li>)}
-      {(evaluation?.issues ?? []).map((issue, index) => <li key={`j${index}`}><strong>{issue.code}</strong>{issueTarget(issue)}: {issue.detail}</li>)}
+      {(evaluation?.issues ?? []).map((issue, index) => <li key={`j${index}`}><strong>{issue.material ? `Material · ${issue.code}` : issue.code}</strong>{issueTarget(issue)}: {issue.detail}</li>)}
     </ul> : null}
     {evaluation?.suggestions.length ? <details><summary>{evaluation.suggestions.length} {evaluation.suggestions.length === 1 ? "suggestion" : "suggestions"} for the next round</summary>
       <ul className={styles.issueList}>{evaluation.suggestions.map((suggestion, index) => <li key={index}>{suggestion}</li>)}</ul>

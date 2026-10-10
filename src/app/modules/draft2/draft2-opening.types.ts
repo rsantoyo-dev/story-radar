@@ -7,31 +7,35 @@ import type { Draft2Provider } from "./draft2-models";
  * fifth run) proposes candidates from the verified facts; the program checks
  * what a program can (lengths, fact ids, numbers, attribution, repetition);
  * a judge (Sol since the fifth run)
- * scores them on the hooks skill and proposes openings of its own, which the
- * writer develops in the next round without the judge being told which
- * ones they are. The rounds narrow like a funnel (OPENING_ROUND_PLAN):
- * fifteen openings; then the three best revised, the judge's three
- * proposals developed and three new angles; then the two best revised and
- * the judge's last proposal developed, for its final pick. The program keeps
- * the better of each version and its revision. Everything here is pure:
+ * scores them on the hooks skill and proposes openings of its own. In the
+ * next round each proposal competes twice, as the judge wrote it and as the
+ * writer edited it, without the judge being told which is which or that
+ * either is its own. The rounds narrow like a funnel (OPENING_ROUND_PLAN):
+ * fifteen openings; then the three best revised beside the judge's three
+ * proposals, as written and edited; then the two best revised beside its
+ * last proposal, for its final pick. The program keeps the better of each
+ * version and its revision, and a material factual error keeps any version
+ * from winning. Everything here is pure:
  * contracts, schemas, parsing, the mechanical checks, version bookkeeping
  * and the acceptance rule.
  */
 /** The first round's new angles: the hook matters most, so the first round explores widely. */
 export const OPENING_CANDIDATES = 15;
 /**
- * What each round asks: how many of the best versions so far Sol revises
- * (each from a different line of revisions), how many new angles it writes
- * beside them, and how many openings of its own the judge proposes for Sol
- * to develop in the next round. A round with fewer clean versions than it
- * wants to revise writes new angles in their place.
- *   round 1: 15 new → Claude scores 15, proposes 3
- *   round 2: 3 revised + 3 developed + 3 new = 9 → Claude scores 9, proposes 1
- *   round 3: 2 revised + 1 developed = 3 → Claude's final pick
+ * What each round asks: how many of the best versions so far the writer
+ * revises (each from a different line of revisions), how many new angles it
+ * writes, and how many openings of its own the judge proposes. Each proposal
+ * competes in the next round twice: as the judge wrote it and as the writer
+ * edited it. A round with fewer clean versions than it wants to revise
+ * writes new angles in their place. (New angles written after round 1 never
+ * won in any real run, so the judge's originals took their place.)
+ *   round 1: 15 new → the judge scores 15, proposes 3
+ *   round 2: 3 revised + 3 originals + 3 edits = 9 → scores 9, proposes 1
+ *   round 3: 2 revised + 1 original + 1 edit = 4 → the judge's final pick
  */
 export const OPENING_ROUND_PLAN: readonly { revise: number; fresh: number; proposals: number }[] = [
   { revise: 0, fresh: OPENING_CANDIDATES, proposals: 3 },
-  { revise: 3, fresh: 3, proposals: 1 },
+  { revise: 3, fresh: 0, proposals: 1 },
   { revise: 2, fresh: 0, proposals: 0 },
 ];
 const MAX_PROPOSALS = Math.max(...OPENING_ROUND_PLAN.map((plan) => plan.proposals));
@@ -71,11 +75,20 @@ export type Draft2OpeningCandidate = {
   angle: string;
   /** The version this candidate revises; set by the program. */
   revisionOf?: string;
-  /** The judge's proposal this candidate develops; set by the program and never shown to the judge. */
+  /** The judge's proposal this candidate comes from; set by the program and never shown to the judge. */
   proposalOf?: string;
+  /** The proposal exactly as the judge wrote it, competing beside the writer's edit; set by the program and never shown to the judge. */
+  asProposed?: boolean;
 };
 
-export type Draft2OpeningIssue = { code: Draft2OpeningIssueCode; candidateId?: string; part?: "cover" | "slide2"; detail: string };
+export type Draft2OpeningIssue = {
+  code: Draft2OpeningIssueCode;
+  candidateId?: string;
+  part?: "cover" | "slide2";
+  detail: string;
+  /** The judge's call that the opening states something the facts do not; it keeps the version from winning. */
+  material?: boolean;
+};
 
 export type Draft2OpeningScore = {
   candidateId: string;
@@ -235,8 +248,9 @@ export const DRAFT2_OPENING_EVALUATION_SCHEMA: Record<string, unknown> = {
           candidateId: nullableString,
           part: nullableString,
           detail: { type: "string" },
+          material: { type: "boolean" },
         },
-        required: ["code", "candidateId", "part", "detail"],
+        required: ["code", "candidateId", "part", "detail", "material"],
         additionalProperties: false,
       },
     },
@@ -347,7 +361,7 @@ export function parseOpeningEvaluation(answer: string, candidateIds: readonly st
     const code = OPENING_ISSUE_CODES.find((candidate) => candidate === item.code) ?? "OTHER";
     const candidateId = text(item.candidateId, 24);
     const part = item.part === "cover" || item.part === "slide2" ? item.part : undefined;
-    return [{ code, detail, ...(candidateId && known.has(candidateId) ? { candidateId } : {}), ...(part ? { part } : {}) }];
+    return [{ code, detail, ...(candidateId && known.has(candidateId) ? { candidateId } : {}), ...(part ? { part } : {}), ...(item.material === true ? { material: true } : {}) }];
   });
   const suggestions = (Array.isArray(body.suggestions) ? body.suggestions : []).slice(0, 20).flatMap((item) => { const value = text(item, 600); return value ? [value] : []; });
   // The judge's own openings are inputs for the writer: a malformed one is dropped, never fatal.
@@ -389,7 +403,7 @@ const headlineKey = (value: string) => comparableText(value).replace(/[^\p{L}\p{
 /** The program's findings on each candidate, before the judge. They never depend on a model and they block a candidate from winning. */
 export function mechanicalOpeningIssues(candidates: readonly Draft2OpeningCandidate[], facts: readonly Draft2Fact[]): Draft2OpeningIssue[] {
   const byId = new Map(facts.map((fact) => [fact.id, fact]));
-  const headlines = new Map<string, string>();
+  const headlines = new Map<string, Draft2OpeningCandidate>();
   const issues: Draft2OpeningIssue[] = [];
   for (const candidate of candidates) {
     const add = (code: Draft2OpeningIssueCode, part: "cover" | "slide2" | undefined, detail: string) =>
@@ -424,10 +438,11 @@ export function mechanicalOpeningIssues(candidates: readonly Draft2OpeningCandid
       const unsupported = [...new Set(numbersIn(value).filter((number) => !stated.has(number.digits)).map((number) => number.written))];
       if (unsupported.length) add("UNSUPPORTED_NUMBER", part, `${unsupported.join(", ")} ${unsupported.length === 1 ? "is" : "are"} not stated by the facts this candidate cites.`);
     }
+    // A proposal's original and the writer's edit may share a headline on purpose: the edit kept what worked.
     const key = headlineKey(cover.headline);
     const earlier = headlines.get(key);
-    if (earlier) add("DUPLICATE_CANDIDATE", "cover", `The cover headline repeats ${earlier}'s.`);
-    else headlines.set(key, candidate.id);
+    if (earlier && !(candidate.proposalOf && earlier.proposalOf === candidate.proposalOf)) add("DUPLICATE_CANDIDATE", "cover", `The cover headline repeats ${earlier.id}'s.`);
+    else if (!earlier) headlines.set(key, candidate);
   }
   return issues;
 }
@@ -437,11 +452,13 @@ export function openingScorePasses(score: Draft2OpeningScore): boolean {
   return score.overall >= OPENING_ACCEPT_SCORE && OPENING_CRITERIA.every((criterion) => score[criterion] >= OPENING_CRITERION_FLOOR);
 }
 
-const flaggedCandidates = (mechanical: readonly Draft2OpeningIssue[]) => new Set(mechanical.flatMap((issue) => issue.candidateId ? [issue.candidateId] : []));
+/** Candidates that may not win: any program finding, or a material factual error the judge named. */
+const flaggedCandidates = (mechanical: readonly Draft2OpeningIssue[], evaluation?: Draft2OpeningEvaluation) => new Set(
+  [...mechanical, ...(evaluation?.issues.filter((issue) => issue.material) ?? [])].flatMap((issue) => issue.candidateId ? [issue.candidateId] : []));
 
-/** The highest-scored candidate the program found nothing on (the judge's order breaks ties), optionally among those that pass. */
+/** The highest-scored candidate with no program finding and no material factual error (the judge's order breaks ties), optionally among those that pass. */
 export function bestCleanCandidate(mechanical: readonly Draft2OpeningIssue[], evaluation: Draft2OpeningEvaluation, { passing = false } = {}): Draft2OpeningScore | undefined {
-  const flagged = flaggedCandidates(mechanical);
+  const flagged = flaggedCandidates(mechanical, evaluation);
   let best: Draft2OpeningScore | undefined;
   for (const score of evaluation.scores) {
     if (flagged.has(score.candidateId) || (passing && !openingScorePasses(score))) continue;
@@ -453,14 +470,15 @@ export function bestCleanCandidate(mechanical: readonly Draft2OpeningIssue[], ev
 /**
  * The winner of an accepted round, or undefined when the round is a revise.
  * The judge must accept, and its winner must meet the thresholds with no
- * mechanical finding; when the program found something on the judge's pick,
- * the best clean candidate that meets the thresholds wins instead.
+ * mechanical finding and no material factual error; when either blocks the
+ * judge's pick, the best clean candidate that meets the thresholds wins
+ * instead.
  */
 export function openingAcceptedWinner(mechanical: readonly Draft2OpeningIssue[], evaluation: Draft2OpeningEvaluation): string | undefined {
   if (evaluation.verdict !== "accept") return undefined;
   const pick = evaluation.scores.find((score) => score.candidateId === evaluation.winnerId);
   if (!pick) return undefined;
-  if (!flaggedCandidates(mechanical).has(pick.candidateId)) return openingScorePasses(pick) ? pick.candidateId : undefined;
+  if (!flaggedCandidates(mechanical, evaluation).has(pick.candidateId)) return openingScorePasses(pick) ? pick.candidateId : undefined;
   return bestCleanCandidate(mechanical, evaluation, { passing: true })?.candidateId;
 }
 
@@ -495,24 +513,33 @@ export function openingVersions(rounds: readonly Draft2OpeningRound[]): Draft2Op
   return [...byId.values()];
 }
 
+/** Whether the judge named a material factual error on a version: it states something the facts do not. */
+export const hasMaterialError = (version: Draft2OpeningVersion) => version.issues.some((issue) => issue.material);
+
+const byScore = (a: Draft2OpeningVersion, b: Draft2OpeningVersion) =>
+  b.score!.overall - a.score!.overall || b.score!.grounding - a.score!.grounding || b.round - a.round;
+
 /**
- * The versions that may win, best first: scored, no program finding, highest
- * overall. A tie goes to the better grounded version (conservative facts),
- * then to the later round.
+ * The versions that may win, best first: scored, no program finding, no
+ * material factual error, highest overall. A tie goes to the better
+ * grounded version (conservative facts), then to the later round.
  */
 export function bestOpeningVersions(versions: readonly Draft2OpeningVersion[]): Draft2OpeningVersion[] {
-  return versions
-    .filter((version) => version.score && version.findings.length === 0)
-    .sort((a, b) => b.score!.overall - a.score!.overall || b.score!.grounding - a.score!.grounding || b.round - a.round);
+  return versions.filter((version) => version.score && version.findings.length === 0 && !hasMaterialError(version)).sort(byScore);
 }
 
 const rootId = (id: string) => id.split(".")[0];
 
-/** What a round revises: the best clean version of each line of revisions, as many lines as the round's plan wants. */
+/**
+ * What a round revises: the best version of each line of revisions with no
+ * program finding, as many lines as the round's plan wants. A version with a
+ * material factual error may be revised (the revision is how it gets fixed)
+ * but never wins as it stands.
+ */
 export function openingTargets(versions: readonly Draft2OpeningVersion[], round: number): Draft2OpeningVersion[] {
   const lines = new Set<string>();
   const best: Draft2OpeningVersion[] = [];
-  for (const version of bestOpeningVersions(versions)) {
+  for (const version of versions.filter((entry) => entry.score && entry.findings.length === 0).sort(byScore)) {
     const line = rootId(version.candidate.id);
     if (lines.has(line)) continue;
     lines.add(line);
@@ -530,7 +557,7 @@ export function openingFreshWanted(round: number, targets: readonly Draft2Openin
 /**
  * Revisions that came out worse than the version they revised: a lower
  * overall, a grounding loss the overall did not repay, or a program finding
- * the previous version did not have.
+ * or material factual error the previous version did not have.
  */
 export function openingRegressions(revisions: readonly Draft2OpeningVersion[], previous: readonly Draft2OpeningVersion[]): Draft2OpeningRegression[] {
   return revisions.flatMap((revision) => {
@@ -539,21 +566,29 @@ export function openingRegressions(revisions: readonly Draft2OpeningVersion[], p
     const worse = [
       ...OPENING_CRITERIA.filter((criterion) => revision.score![criterion] < before.score![criterion]).map((criterion) => `${criterion} ${before.score![criterion]} → ${revision.score![criterion]}`),
       ...(before.findings.length ? [] : revision.findings.map((finding) => finding.code)),
+      ...(hasMaterialError(before) ? [] : revision.issues.filter((issue) => issue.material).map((issue) => `material ${issue.code}`)),
     ];
     const regressed = revision.score.overall < before.score.overall
       || (revision.score.overall === before.score.overall && revision.score.grounding < before.score.grounding)
-      || (revision.findings.length > 0 && before.findings.length === 0);
+      || (revision.findings.length > 0 && before.findings.length === 0)
+      || (hasMaterialError(revision) && !hasMaterialError(before));
     return regressed ? [{ candidateId: revision.candidate.id, previousId: before.candidate.id, from: before.score.overall, to: revision.score.overall, worse }] : [];
   });
 }
 
+/** Whether two openings say the same thing: the same four texts and the same cited facts. */
+const sameOpening = (a: Draft2OpeningCandidate, b: Draft2OpeningCandidate) =>
+  [a.cover.headline, a.cover.subheadline, a.slide2.headline, a.slide2.body].map(comparableText).join("\n") === [b.cover.headline, b.cover.subheadline, b.slide2.headline, b.slide2.body].map(comparableText).join("\n")
+  && a.cover.factIds.join() === b.cover.factIds.join() && a.slide2.factIds.join() === b.slide2.factIds.join();
+
 /**
- * The writer's answer as this round's versions. A revision keeps its
+ * This round's versions from the writer's answer. A revision keeps its
  * target's id and becomes a new version named for its round ("c3" revised in
- * round 2 becomes "c3.2"); a development keeps its proposal's id and becomes
- * a new opening with a fresh id that remembers the proposal; every other
- * candidate is a new angle, up to the number asked, with a fresh id. When
- * the round writes no new angle, renamed answers are matched in order.
+ * round 2 becomes "c3.2"). Each of the judge's proposals competes twice,
+ * under fresh ids: the writer's edit (answered under the proposal's id;
+ * dropped when it changed nothing) and the proposal exactly as the judge
+ * wrote it. Every other candidate is a new angle, up to the number asked.
+ * When the round writes no new angle, renamed answers are matched in order.
  */
 export function writtenCandidates(targets: readonly Draft2OpeningCandidate[], answer: readonly Draft2OpeningCandidate[], round: number, freshWanted: number, versions: readonly Draft2OpeningVersion[], proposals: readonly Draft2OpeningCandidate[] = []): Draft2OpeningCandidate[] {
   const asked = [...targets, ...proposals].map((entry) => entry.id);
@@ -563,11 +598,12 @@ export function writtenCandidates(targets: readonly Draft2OpeningCandidate[], an
     const revision = matched(target.id);
     return revision ? [{ ...revision, id: `${rootId(target.id)}.${round}`, revisionOf: target.id }] : [];
   });
-  const developed = proposals.flatMap((proposal) => {
-    const development = matched(proposal.id);
-    return development ? [{ ...development, proposalOf: proposal.id }] : [];
+  const edits = proposals.flatMap((proposal) => {
+    const edit = matched(proposal.id);
+    return edit && !sameOpening(edit, proposal) ? [{ ...edit, proposalOf: proposal.id }] : [];
   });
-  const fresh = renumberedCandidates([...developed, ...others.slice(0, freshWanted)], versions);
+  const originals = proposals.map((proposal) => ({ ...proposal, proposalOf: proposal.id, asProposed: true }));
+  const fresh = renumberedCandidates([...edits, ...originals, ...others.slice(0, freshWanted)], versions);
   const written = [...revisions, ...fresh];
   if (!written.length) throw new Draft2ResponseError("The writer returned none of the openings it was asked for");
   return written;
@@ -590,8 +626,8 @@ export function renumberedCandidates(answer: readonly Draft2OpeningCandidate[], 
  * program's bookkeeping. Which candidates develop the judge's proposals is
  * never shown, so the judge scores its own ideas blind.
  */
-const shown = ({ revisionOf, proposalOf, ...candidate }: Draft2OpeningCandidate) => {
-  void proposalOf;
+const shown = ({ revisionOf, proposalOf, asProposed, ...candidate }: Draft2OpeningCandidate) => {
+  void proposalOf; void asProposed;
   return { ...candidate, ...(revisionOf ? { revises: revisionOf } : {}) };
 };
 
@@ -619,13 +655,13 @@ export function openingExploreRequest(candidatesWanted: number, last?: Draft2Ope
   };
 }
 
-export const OPENING_REVISION_INSTRUCTION = "Revise each opening in openings and return exactly one candidate per opening, with the same id. Preserve its narrative promise, the payoff slide 2 delivers (with its attribution), every fact claim already approved and its strongest creative elements. Change only what its issues name. Never make the writing flatter or more bureaucratic to gain precision. When earlierAttempts lists a revision that scored lower, do not repeat what made it worse.";
+export const OPENING_REVISION_INSTRUCTION = "Revise each opening in openings and return exactly one candidate per opening, with the same id. Preserve its narrative promise, the payoff slide 2 delivers (with its attribution), every fact claim already approved and its creative device: the irony, surprise, tension or contrast that makes it a hook. Fix what its issues name in as few words as possible; if a fix would cost the device, find another way to keep it rather than going literal. Never make the writing flatter or more bureaucratic to gain precision. When earlierAttempts lists a revision that scored lower, do not repeat what made it worse.";
 
 /** The instruction for the new angles a round writes beside its revisions. */
 export const openingNewAnglesInstruction = (count: number) => `Then write ${count} new ${count === 1 ? "opening" : "openings"}, with ids ${Array.from({ length: count }, (_, index) => `n${index + 1}`).join(", ")}: each a different angle from every opening in anglesSoFar and from the ones you revise or develop, built to answer the issues and suggestions, in case the first angles have a ceiling.`;
 
 /** The instruction for the proposals a round develops. */
-export const OPENING_DEVELOP_INSTRUCTION = "Develop each proposal in develop into one opening of your own, with the proposal's id: keep its idea and angle, write it in the publication's voice, and ground every claim on the facts it cites.";
+export const OPENING_DEVELOP_INSTRUCTION = "Edit each proposal in develop and return it with the proposal's id. Keep its creative device (the irony, surprise, tension or contrast that makes it a hook) and keep its headline unless a fact or a program rule requires a change; change only what must change, in as few words as possible, and never make it more literal. A proposal that is already right comes back unchanged. The proposal also competes as written, so an edit only helps when it is better.";
 
 /**
  * What the writer receives after the first round: each target to revise with

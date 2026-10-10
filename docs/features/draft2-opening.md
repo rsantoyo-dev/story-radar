@@ -76,7 +76,21 @@ input (OpenAI caches a repeated prefix) and high reasoning effort. A run
 records its roles (`opening.writer`, `opening.judge`); a run stored before
 the swap continues with Sol writing and Claude judging, and the canvas
 names each run's roles. Facts keeps its roles (Sol extracts, Claude
-verifies). The sections below describe revision 6.
+verifies).
+
+**Revision 7: the judge's proposals compete as written.** To learn whether
+the judge's hooks beat the writer's, each proposal now competes twice in
+the next round, as the judge wrote it and as the writer edited it, under
+fresh ids the judge cannot trace; they take the place of round 2's new
+angles, which never won in any run. The writer edits instead of rewriting:
+it keeps the proposal's creative device (the irony, surprise, tension or
+contrast) and its headline unless a fact or a program rule forces a change,
+and an edit that changes nothing is dropped; revisions follow the same
+minimal-edit rule. The judge marks an issue "material" when an opening says
+what the facts do not; a version with one can still be revised, but never
+wins or stands in as the best so far. Each round shows the judge's
+originals against the writer's edits, score for score. The sections below
+describe revision 7.
 
 ## 1. Goal
 
@@ -175,7 +189,7 @@ not change; the existing Facts tests must pass unchanged except for the
 import path of the instruction text. Record `skillVersions` on every trace
 entry (`Draft2TraceEntry.skillVersions?: Record<string, string>`).
 
-## 4. The hooks skill (`hooks.ts`, version "4")
+## 4. The hooks skill (`hooks.ts`, version "5")
 
 Version 2 replaced v1's "never a hedge word on the cover", which invited
 dropping a qualifier, added that the story's gravity bounds the voice (a
@@ -184,8 +198,11 @@ military targeting straight), and added the Revisions section. Version 3
 adds that a slide 2 headline stating an attributed claim carries its
 attribution (Claude flagged it twice in the second run) and that new angles
 are tried beside the revisions. Version 4 adds that a contrast between two
-facts is told side by side, never as a change the facts do not state. A test
-keeps the numbers in this text equal to the constants in §5.
+facts is told side by side, never as a change the facts do not state.
+Version 5 says the judge's proposals compete as written and as edited, that
+an edit or a revision keeps the creative device, and that saying what the
+facts do not is a material error. A test keeps the numbers in this text
+equal to the constants in §5.
 
 ```markdown
 # Openings for social carousels
@@ -232,6 +249,10 @@ cover whose promise slide 2 cannot pay is a lie.
   from A to B", "moved from A to B", "now", "no longer", "turned") unless a
   fact states the change. Side by side, the reader feels the contrast and the
   facts claim no more than they say.
+- Saying what the facts do not (an allegation or estimate as established, a
+  qualifier or limit dropped, a number, cause, consequence, quote or name
+  they do not give) is a material error: it keeps an opening from winning,
+  however strong its hook.
 
 ## Scoring (1–100 each; overall is the judge's weighted call)
 - tension: does the headline make the reader need the next slide?
@@ -245,13 +266,14 @@ cover whose promise slide 2 cannot pay is a lie.
 An opening is accepted only when overall ≥ 95 and no criterion is below 85.
 
 ## Revisions
-After the first round, the best openings are revised, and new angles are
-tried beside them in case the first angles have a ceiling. A revision keeps
-what made the opening strong (its promise, slide 2's payoff and its
-attribution, the facts already approved, its best lines) and changes only
-what the issues name. A revision that comes out flatter, more bureaucratic or
-less clear is worse, even when it is more precise; the program keeps the
-better version. A new angle differs from every opening already tried.
+After the first round, the best openings are revised, and the judge's own
+proposals compete beside them, as the judge wrote them and as the writer
+edited them. A revision or an edit keeps what made the opening strong: its
+creative device (the irony, surprise, tension or contrast), its promise,
+slide 2's payoff and its attribution, the facts already approved. It changes
+only what the issues name, in as few words as possible. A version that comes
+out flatter, more bureaucratic or less clear is worse, even when it is more
+precise; the program keeps the better version.
 
 ## Examples
 Strong: "Give Gemini the goal, not the step-by-step" / slide 2 pays with the
@@ -269,8 +291,8 @@ kill-chain targeting: it swaps the story's tension for a sales angle.
 export const OPENING_CANDIDATES = 15;          // round 1: the hook matters most, so explore widely
 export const OPENING_ROUND_PLAN = [            // per round: best lines to revise, new angles, Claude's own proposals
   { revise: 0, fresh: 15, proposals: 3 },      // Claude scores 15, proposes 3
-  { revise: 3, fresh: 3, proposals: 1 },       // + the 3 proposals developed: Claude scores 9, proposes 1
-  { revise: 2, fresh: 0, proposals: 0 },       // + the last proposal developed: Claude's final pick among 3
+  { revise: 3, fresh: 0, proposals: 1 },       // + the 3 proposals as written and as edited: the judge scores 9, proposes 1
+  { revise: 2, fresh: 0, proposals: 0 },       // + the last proposal as written and as edited: the judge's final pick among 4
 ];                                             // a round short of clean versions writes new angles in their place
 export const OPENING_MAX_ROUNDS = OPENING_ROUND_PLAN.length;
 export const OPENING_ACCEPT_SCORE = 95;
@@ -286,7 +308,8 @@ export type Draft2OpeningCandidate = {
   slide2: { headline: string; body: string; factIds: string[] };
   angle: string;                    // one line: the tension this opening uses
   revisionOf?: string;              // set by the program; the models read it as "revises"
-  proposalOf?: string;              // the judge's proposal it develops; set by the program, never shown to the judge
+  proposalOf?: string;              // the judge's proposal it comes from; set by the program, never shown to the judge
+  asProposed?: boolean;             // the proposal exactly as the judge wrote it, beside the writer's edit
 };
 
 export type Draft2OpeningIssueCode =
@@ -297,7 +320,8 @@ export type Draft2OpeningIssueCode =
   | "WEAK_TENSION" | "PROMISE_NOT_PAID" | "UNCLEAR" | "OVERCLAIMS" | "OFF_VOICE"
   | "LABEL_NOT_HOOK" | "OTHER";     // judge
 
-export type Draft2OpeningIssue = { code: Draft2OpeningIssueCode; candidateId?: string; part?: "cover" | "slide2"; detail: string };
+export type Draft2OpeningIssue = { code: Draft2OpeningIssueCode; candidateId?: string; part?: "cover" | "slide2"; detail: string;
+  material?: boolean };             // the judge's call: the opening says what the facts do not; it never wins
 
 export type Draft2OpeningScore = {
   candidateId: string;
@@ -373,7 +397,7 @@ enum become `OTHER`.
 | `SLIDE2_RESTATES_COVER` | Jaccard overlap of comparable word sets (words of 4+ letters) between cover headline+subheadline and slide 2 headline+body ≥ 0.5. |
 | `SLIDE2_NO_NEW_FACT` | Every slide2.factId is already in cover.factIds. |
 | `UNSUPPORTED_NUMBER` | A number in any of the four texts (`/\d[\d.,]*/g`, compared after removing separators) does not appear in the claim or evidence of the candidate's cited facts. |
-| `DUPLICATE_CANDIDATE` | Two candidates share a comparable cover headline. |
+| `DUPLICATE_CANDIDATE` | Two candidates share a comparable cover headline (except a proposal's original and the writer's edit of it). |
 
 Candidates with mechanical issues still go to the judge (with the findings),
 but the program never lets one win: `openingIsAccepted(mechanical,
@@ -426,18 +450,23 @@ export async function runDraft2Opening({ topicId, storyId, sessionId }): Promise
      `OPENING_REVISION_INSTRUCTION`, `OPENING_DEVELOP_INSTRUCTION` and "Then
      write N new openings, with ids n1…", as the round needs }).
    - **Ids** (`writtenCandidates`): a revision keeps its target's id and
-     becomes `c3.2` (`revisionOf: "c3"`); a development answers with its
-     proposal's id and becomes a new opening with a fresh id and
-     `proposalOf: "p2"`; every other candidate is a new angle, renumbered
-     after every id used (`c1…c15`, then `c16…`), up to the number asked.
-     Only a round without new angles matches renamed answers in order.
+     becomes `c3.2` (`revisionOf: "c3"`). Each proposal competes twice
+     under fresh ids: the writer's edit (answered under the proposal's id,
+     `proposalOf: "p2"`; dropped when it changed nothing) and the proposal
+     exactly as the judge wrote it (`proposalOf: "p2"`, `asProposed: true`).
+     Every other candidate is a new angle, renumbered after every id used
+     (`c1…c15`, then `c16…`), up to the number asked. Only a round without
+     new angles matches renamed answers in order.
    - **Program**: `mechanicalOpeningIssues`.
    - **Judge (Sol)**: `composeInstructions("opening-judge", [HOOKS_SKILL],
      brandBrief)`, schema name `draft2_opening_review`, contents
      `openingJudgeRequest` after the facts ({ task, round, candidates,
      previousVersions with their scores, mechanicalFindings, and
      `proposalsWanted` when the plan asks }), no history. Candidates never
-     carry `proposalOf`: the judge scores its own ideas blind. Its proposals
+     carry `proposalOf` or `asProposed`: the judge scores its own ideas
+     blind. It marks an issue `material` when the opening says what the
+     facts do not; `bestOpeningVersions` and `openingAcceptedWinner` skip a
+     version with one, while `openingTargets` may still revise it. Its proposals
      are parsed leniently (a malformed one is dropped) and numbered across
      the run (`renumberedProposals`).
    - **Bookkeeping**: record the round (`kind` explore, refine or mixed);
@@ -552,8 +581,10 @@ In `src/app/draft-2-canvas.tsx`:
     with the time of its last sign, and "Continue from round N".
   - Rounds: for each round, what Sol did ("wrote 15 openings", or "revised
     c3, c5 and c1, developed 3 of Claude's proposals (c16, c17, c18) and
-    tried 3 new angles (c19, c20, c21)"), what Claude proposed for the next
-    round (in a `<details>`), any regression ("c3.2 scored 78, below c3's 84 (voice 85 → 72);
+    tried 3 new angles (c19, c20, c21)"), the judge's originals against the
+    writer's edits score for score ("p1 84 as written / 79 edited"), what the
+    judge proposed for the next round (in a `<details>`), material issues
+    labelled "Material", a "Factual error" badge on such versions, any regression ("c3.2 scored 78, below c3's 84 (voice 85 → 72);
     c3 stays the better version"), the judge's summary, the winner's scores
     (five criteria + overall), issues (program findings first, with
     `candidateId`/`part`), suggestions in a `<details>`.
@@ -607,9 +638,11 @@ dependency mocked):
 - caching: Claude's context is identical every round, no history
   accumulates, the judge's request shrinks as the rounds narrow, and the
   trace records cache reads and writes per call.
-- the judge's winner has a program finding → the clean runner-up wins when
-  it passes; with nothing clean, the next round develops Claude's proposals
-  and writes new angles in place of the revisions (six), with fresh ids.
+- the judge's winner has a program finding, or a material factual error →
+  the clean runner-up wins when it passes; with nothing clean, the next
+  round sets the judge's proposals, as written and edited, beside new angles
+  in place of the revisions; an edit that changes nothing is dropped; an
+  original and its edit may share a headline.
 - pause and continue (a fake clock): two rounds fit, the run pauses before
   round 3 with everything saved; a continue request runs round 3 from the
   saved rounds; a writer that uses up the time pauses the run before the

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
 import {
-  OPENING_CANDIDATES, OPENING_DEVELOP_INSTRUCTION, OPENING_REVISION_INSTRUCTION, bestOpeningVersions, mechanicalOpeningIssues, openingAcceptedWinner, openingExploreRequest, openingFactsSnapshot,
+  OPENING_CANDIDATES, OPENING_DEVELOP_INSTRUCTION, OPENING_REVISION_INSTRUCTION, bestOpeningVersions, hasMaterialError, mechanicalOpeningIssues, openingAcceptedWinner, openingExploreRequest, openingFactsSnapshot,
   openingFreshWanted, openingIsAccepted, openingJudgeRequest, openingRefineRequest, openingRegressions, openingReviewNote, openingRunSummary, openingTargets,
   openingVersions, openingWordCount, parseOpeningCandidates, parseOpeningEvaluation, renumberedCandidates, renumberedProposals, writtenCandidates,
   type Draft2OpeningCandidate, type Draft2OpeningEvaluation, type Draft2OpeningIssue, type Draft2OpeningRound, type Draft2OpeningScore,
@@ -174,39 +174,69 @@ test("the best version can come from any round: clean first, then the highest ov
   assert.equal(reused[0].candidate.angle, "New");
 });
 
-test("the funnel: ten new angles, then the three best lines revised beside two new angles, then the two best lines", () => {
+test("the funnel: fifteen new angles, then the three best lines revised (the judge's proposals take the place of new angles), then the two best lines", () => {
   const first = judgedRound(1, ["c1", "c2", "c3", "c4", "c5"].map((id) => candidate(id)), { c1: 80, c2: 88, c3: 84, c4: 60, c5: 82 });
   assert.deepEqual(ids(openingTargets(openingVersions([first]), 1)), []);
   assert.equal(openingFreshWanted(1, []), 15);
   const targets = openingTargets(openingVersions([first]), 2);
   assert.deepEqual(ids(targets), ["c2", "c3", "c5"]);
-  assert.equal(openingFreshWanted(2, targets), 3);
+  assert.equal(openingFreshWanted(2, targets), 0, "no new angles after round 1: the judge's proposals compete instead");
   const second = judgedRound(2, [{ ...candidate("c2.2"), revisionOf: "c2" }, candidate("c11")], { "c2.2": 90, c11: 86 });
   assert.deepEqual(ids(openingTargets(openingVersions([first, second]), 3)), ["c2.2", "c11"], "one version per line: c2 (88) is skipped, c2.2 already speaks for that opening");
   assert.equal(openingFreshWanted(3, openingTargets(openingVersions([first, second]), 3)), 0);
   const flagged = openingVersions([judgedRound(1, [candidate("c1")], { c1: 96 }, { mechanical: [{ code: "NO_FACTS", candidateId: "c1", part: "cover", detail: "x" }] })]);
   assert.deepEqual(ids(openingTargets(flagged, 2)), []);
-  assert.equal(openingFreshWanted(2, []), 6, "a round with nothing clean to revise writes new angles in its place");
+  assert.equal(openingFreshWanted(2, []), 3, "a round with nothing clean to revise writes new angles in its place");
   assert.equal(openingFreshWanted(3, []), 2);
 });
 
-test("the judge's proposals are numbered across the run, developed under fresh ids that remember them, and never revealed to the judge", () => {
+test("each proposal competes twice, as the judge wrote it and as the writer edited it, under fresh ids the judge cannot trace", () => {
   const first = judgedRound(1, [candidate("c1")], {}, { evaluation: evaluation({ verdict: "revise", winnerId: "c1", scores: [score("c1", 80)], proposals: [candidate("p1"), candidate("p2"), candidate("p3")] }) });
   assert.deepEqual(renumberedProposals([candidate("x"), candidate("y")], [first]).map((proposal) => proposal.id), ["p4", "p5"]);
   const versions = openingVersions([first]);
-  const developed = writtenCandidates([candidate("c1")], [candidate("p2", { angle: "Sharper" }), candidate("c1"), candidate("p1"), candidate("n1")], 2, 1, versions, [candidate("p1"), candidate("p2")]);
-  assert.deepEqual(developed.map((entry) => [entry.id, entry.revisionOf ?? null, entry.proposalOf ?? null]), [["c1.2", "c1", null], ["c2", null, "p1"], ["c3", null, "p2"], ["c4", null, null]]);
-  assert.equal(developed[2].angle, "Sharper");
-  const judged = openingJudgeRequest(2, developed, [], openingTargets(versions, 2));
-  assert.equal(judged.candidates.some((entry) => "proposalOf" in entry), false, "the judge scores its own ideas blind");
+  const proposals = [candidate("p1", { cover: { headline: "The Pentagon wants the competition it helped end" } }), candidate("p2", { cover: { headline: "A Pentagon fast lane has one senator worried" } })];
+  const answer = [
+    candidate("p2", { cover: { headline: "A Pentagon fast lane has one senator worried" }, slide2: { headline: "Awards came within a week" }, angle: "Kept the worry" }),
+    candidate("c1"),
+    proposals[0],
+    candidate("n1"),
+  ];
+  const written = writtenCandidates([candidate("c1")], answer, 2, 0, versions, proposals);
+  assert.deepEqual(written.map((entry) => [entry.id, entry.revisionOf ?? null, entry.proposalOf ?? null, entry.asProposed ?? false]), [
+    ["c1.2", "c1", null, false],
+    ["c2", null, "p2", false],
+    ["c3", null, "p1", true],
+    ["c4", null, "p2", true],
+  ], "p1 came back unchanged, so only its original competes; p2 competes as edited and as written");
+  assert.equal(written[1].cover.headline, written[3].cover.headline, "the edit may keep the headline that worked");
+  assert.deepEqual(mechanicalOpeningIssues(written, facts).filter((issue) => issue.code === "DUPLICATE_CANDIDATE"), [], "an original and its edit share a headline on purpose");
+  assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1"), candidate("c2")], facts)), ["DUPLICATE_CANDIDATE c2 cover"], "unrelated openings still may not repeat one");
+  const judged = openingJudgeRequest(2, written, [], openingTargets(versions, 2));
+  assert.equal(judged.candidates.some((entry) => "proposalOf" in entry || "asProposed" in entry), false, "the judge scores its own ideas blind");
   assert.equal(judged.proposalsWanted, 1);
   assert.equal(openingJudgeRequest(1, [candidate("c1")], [], []).proposalsWanted, 3);
   assert.equal("proposalsWanted" in openingJudgeRequest(3, [candidate("c1")], [], []), false, "the final round only decides");
-  const request = openingRefineRequest(openingTargets(versions, 2), versions, [], first, 3, [candidate("p1")]);
-  assert.deepEqual(request.develop?.map((proposal) => proposal.id), ["p1"]);
-  assert.ok(request.instruction.startsWith(`${OPENING_REVISION_INSTRUCTION} ${OPENING_DEVELOP_INSTRUCTION} Then write 3 new openings`));
-  const developOnly = openingRefineRequest([], versions, [], first, 0, [candidate("p1")]);
-  assert.equal(developOnly.instruction, OPENING_DEVELOP_INSTRUCTION);
+  const request = openingRefineRequest(openingTargets(versions, 2), versions, [], first, 0, proposals);
+  assert.deepEqual(request.develop?.map((proposal) => proposal.id), ["p1", "p2"]);
+  assert.equal(request.instruction, `${OPENING_REVISION_INSTRUCTION} ${OPENING_DEVELOP_INSTRUCTION}`);
+  assert.match(OPENING_DEVELOP_INSTRUCTION, /Keep its creative device \(the irony, surprise, tension or contrast that makes it a hook\) and keep its headline unless a fact or a program rule requires a change/);
+  assert.match(OPENING_DEVELOP_INSTRUCTION, /A proposal that is already right comes back unchanged/);
+  assert.match(OPENING_REVISION_INSTRUCTION, /its creative device: the irony, surprise, tension or contrast that makes it a hook/);
+  assert.equal(openingRefineRequest([], versions, [], first, 0, proposals).instruction, OPENING_DEVELOP_INSTRUCTION);
+});
+
+test("a material factual error keeps a version from winning or standing in, but it may still be revised", () => {
+  const material = { code: "OVERCLAIMS" as const, candidateId: "c1", part: "cover" as const, detail: "Drops the $500 million limit.", material: true };
+  const first = judgedRound(1, [candidate("c1"), candidate("c2")], {}, { evaluation: evaluation({ verdict: "accept", winnerId: "c1", scores: [score("c1", 97), score("c2", 96)], issues: [material] }) });
+  const versions = openingVersions([first]);
+  assert.equal(hasMaterialError(versions[0]), true);
+  assert.deepEqual(ids(bestOpeningVersions(versions)), ["c2"], "c1 cannot stand in, however high it scored");
+  assert.deepEqual(ids(openingTargets(versions, 2)), ["c1", "c2"], "the revision is how c1 gets fixed");
+  assert.equal(openingAcceptedWinner([], first.evaluation!), "c2", "the judge's own pick is blocked by its material error");
+  const parsed = parseOpeningEvaluation(JSON.stringify({ verdict: "revise", winnerId: "c1", summary: "x", suggestions: [], proposals: [], scores: [score("c1", 80)], issues: [{ code: "OVERCLAIMS", candidateId: "c1", part: "cover", detail: "Drops a qualifier.", material: true }, { code: "UNCLEAR", candidateId: "c1", part: "cover", detail: "Jargon.", material: false }] }), ["c1"]);
+  assert.deepEqual(parsed.issues.map((issue) => [issue.code, issue.material ?? false]), [["OVERCLAIMS", true], ["UNCLEAR", false]]);
+  const revised = openingVersions([judgedRound(2, [{ ...candidate("c2.2"), revisionOf: "c2" }], {}, { evaluation: evaluation({ verdict: "revise", winnerId: "c2.2", scores: [score("c2.2", 97)], issues: [{ ...material, candidateId: "c2.2" }] }) })]);
+  assert.deepEqual(openingRegressions(revised, versions).map((regression) => regression.worse), [["material OVERCLAIMS"]], "a revision that gains a material error is worse, whatever its score");
 });
 
 test("a revision that scores lower, or picks up a program finding, is a regression naming what got worse", () => {
