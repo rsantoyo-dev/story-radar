@@ -2,7 +2,7 @@ import { comparableText } from "./draft2-facts.types";
 import type { Draft2FocusSnapshot } from "./draft2-focus.types";
 import {
   funnelEvaluationSchema, funnelExploreRequest, funnelJudgeRequest, funnelParseCandidates, funnelParseEvaluation, funnelRecord, funnelRefineRequest,
-  funnelText, headlineKey,
+  funnelText, headlineKey, longWords, wordOverlap,
   type FunnelCandidate, type FunnelEvaluation, type FunnelGate, type FunnelIssue, type FunnelPlanRound, type FunnelRegression, type FunnelRole,
   type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion, type FunnelWords,
 } from "./draft2-funnel";
@@ -13,15 +13,18 @@ import type { CreativeProfile } from "../stories/creative-content.types";
 
 /**
  * Visual script, the Draft 2 step after the deck and the people-and-places
- * inventory: the carousel's images written as one visual story. Each
- * candidate is a whole script: a concept, the protagonist the images follow,
- * a recurring cast, a motif that evolves, whether the brand's character
+ * inventory: the carousel's images written as one visual sequence, not a
+ * series of variations on one subject (visuals v3). Each candidate is a
+ * whole script: a concept, an optional protagonist and motif that may open,
+ * disappear and return, a recurring cast, whether the brand's character
  * narrates, and for each slide what happens in its image (never its words
- * again), its shot, how it plays with its headline, a reproducible art
- * direction, the kind of image and the verified material or characters it
- * uses. The image model letters each slide's words itself, and the logo and
- * the page number are added afterwards (layout): the script composes around
- * them. On the
+ * again), its dominant subject and what the reader sees there for the first
+ * time, how much the recurring element takes, its shot, how it plays with
+ * its headline, a reproducible art direction, the kind of image and the
+ * verified material or characters it uses. Continuity comes from the
+ * brand's identity; progression from what each image shows. The image model
+ * letters each slide's words itself, and the logo and the page number are
+ * added afterwards (layout): the script composes around them. On the
  * shared funnel (draft2-funnel.ts), Claude writes and Sol judges:
  *   3 scripts → Sol scores, proposes 1 → 2 revised + 1 original + 1 edit → the best revised once more → Sol's pick
  *   (2 scripts, then 1 revised, then the best once more, for a carousel of more than 10 slides).
@@ -60,18 +63,30 @@ const ROLE_MAX_CHARACTERS = 200;
 export const VISUAL_MAX_CHARACTERS_PER_SLIDE = 2;
 /** v1's kinds of slide image (creative-visual-need.ts), so a later image step routes each slide as v1 does. */
 export const VISUAL_NEEDS = ["generic-illustration", "character-reference", "real-photo", "verified-map", "typography"] as const;
-/** How close each image is: no two slides in a row share one, so the carousel never repeats one layout. */
+/** How close each image is: no two slides in a row share one, so the carousel never repeats one layout. A new shot is not, by itself, progression. */
 export const VISUAL_SHOTS = ["wide", "medium", "close", "overhead", "typography"] as const;
+/** How much a slide gives the recurring element (the protagonist or the motif): none, a supporting accent, the dominant subject, or the deliberate return that closes the story. */
+export const VISUAL_RECURRING = ["none", "accent", "focus", "callback"] as const;
+/** The recurring element leads at most this many slides (the return aside), never two in a row. */
+export const VISUAL_MAX_RECURRING_FOCUS = 2;
+/** Two subjects this alike (the share of their longer words) are the same subject. */
+const SAME_SUBJECT_OVERLAP = 0.6;
 const HEADLINE_LINK_MAX_CHARACTERS = 240;
 const PROTAGONIST_MAX_CHARACTERS = 300;
+export const VISUAL_SUBJECT_MAX_CHARACTERS = 160;
+export const VISUAL_DISCOVERY_MAX_CHARACTERS = 240;
 
-export const VISUAL_CRITERIA = ["narrative", "continuity", "brand", "truth", "fit", "craft", "focus"] as const;
+export const VISUAL_CRITERIA = ["narrative", "progression", "beat", "continuity", "brand", "truth", "craft", "focus"] as const;
 export const VISUAL_MECHANICAL_CODES = [
   "SLIDE_ORDER", "DIRECTION_TOO_LONG", "DIRECTION_TOO_SHORT", "BEAT_MISSING", "CHARACTER_UNKNOWN", "CHARACTER_OFF_PLAN", "CHARACTER_CHOICE",
   "TOO_MANY_CHARACTERS", "REFERENCE_UNKNOWN", "NEED_MISMATCH", "STRICT_MODE", "COVER_TYPOGRAPHY", "UNVERIFIED_PERSON", "UNVERIFIED_PLACE",
   "ORGANIZATION_NAMED", "AVOID_TERM", "FORBIDDEN_ELEMENT", "DUPLICATE_CANDIDATE", "SAME_SHOT", "SHOT_MISMATCH",
+  "SUBJECT_MISSING", "DISCOVERY_MISSING", "SAME_SUBJECT", "RECURRING_DOMINANT", "CALLBACK_MISPLACED",
 ] as const;
-export const VISUAL_JUDGE_CODES = ["ILLUSTRATES_TEXT", "BREAKS_CONTINUITY", "REPETITIVE", "OFF_BRAND", "LOOKS_AI", "CONTRADICTS_FACTS", "CROWDS_TEXT", "VAGUE", "CHARACTER_MISUSED", "OFF_FOCUS", "OTHER"] as const;
+export const VISUAL_JUDGE_CODES = [
+  "ILLUSTRATES_TEXT", "BREAKS_CONTINUITY", "REPETITIVE", "MOTIF_DEPENDENCY", "OFF_BEAT", "TOO_ABSTRACT", "OFF_BRAND", "LOOKS_AI", "CONTRADICTS_FACTS", "CROWDS_TEXT", "VAGUE",
+  "CHARACTER_MISUSED", "OFF_FOCUS", "OTHER",
+] as const;
 export const VISUAL_ISSUE_CODES = [...VISUAL_MECHANICAL_CODES, ...VISUAL_JUDGE_CODES] as const;
 export const VISUAL_GATE: FunnelGate = { criteria: VISUAL_CRITERIA, accept: VISUAL_ACCEPT_SCORE, floor: VISUAL_CRITERION_FLOOR };
 
@@ -79,6 +94,7 @@ export type Draft2VisualCriterion = (typeof VISUAL_CRITERIA)[number];
 export type Draft2VisualIssueCode = (typeof VISUAL_ISSUE_CODES)[number];
 export type Draft2VisualNeed = (typeof VISUAL_NEEDS)[number];
 export type Draft2VisualShot = (typeof VISUAL_SHOTS)[number];
+export type Draft2VisualRecurring = (typeof VISUAL_RECURRING)[number];
 /** The creative profile's visual mode: what may be generated. */
 export type Draft2VisualMode = "illustration-editorial" | "verified-references" | "photo-required";
 
@@ -92,6 +108,12 @@ export type Draft2VisualSlide = {
   slide: string;
   /** What happens in this image, as an action; never the slide's words again. */
   beat: string;
+  /** The image's dominant subject: who or what it is about (scripts before visuals v3 have none). */
+  subject: string;
+  /** What the reader sees here for the first time, tied to the beat (scripts before visuals v3 have none). */
+  discovery: string;
+  /** How much the slide gives the recurring element (scripts before visuals v3 have none). */
+  recurring: Draft2VisualRecurring;
   /** How close the image is (scripts before visuals v2 have none). */
   shot: Draft2VisualShot;
   /** How the image plays with its headline, in one line; empty when the words carry the slide alone. */
@@ -106,7 +128,7 @@ export type Draft2VisualSlide = {
 export type Draft2VisualCandidate = FunnelCandidate & {
   /** The visual story, in one or two sentences. */
   concept: string;
-  /** Who or what the images follow from the cover to the last slide (scripts before visuals v2 have none). */
+  /** Who or what the story follows, if anyone; optional since visuals v3 (scripts before v2 have none). */
   protagonist: string;
   /** The visual thread that evolves across the slides. */
   motif: string;
@@ -116,7 +138,7 @@ export type Draft2VisualCandidate = FunnelCandidate & {
   slides: Draft2VisualSlide[];
 };
 export type Draft2VisualIssue = FunnelIssue & { code: Draft2VisualIssueCode };
-export type Draft2VisualScore = FunnelScore & { narrative: number; continuity: number; brand: number; truth: number; fit: number; craft: number; focus: number };
+export type Draft2VisualScore = FunnelScore & { narrative: number; progression: number; beat: number; continuity: number; brand: number; truth: number; craft: number; focus: number };
 export type Draft2VisualEvaluation = FunnelEvaluation<Draft2VisualCandidate, Draft2VisualScore, Draft2VisualIssue>;
 export type Draft2VisualRound = FunnelRound<Draft2VisualCandidate, Draft2VisualScore, Draft2VisualIssue>;
 export type Draft2VisualVersion = FunnelVersion<Draft2VisualCandidate, Draft2VisualScore, Draft2VisualIssue>;
@@ -214,6 +236,9 @@ function visualItem(positions: readonly string[]) {
           properties: {
             slide: { type: "string", enum: [...positions] },
             beat: { type: "string" },
+            subject: { type: "string" },
+            discovery: { type: "string" },
+            recurring: { type: "string", enum: [...VISUAL_RECURRING] },
             shot: { type: "string", enum: [...VISUAL_SHOTS] },
             headlineLink: { type: "string" },
             direction: { type: "string" },
@@ -221,7 +246,7 @@ function visualItem(positions: readonly string[]) {
             characterIds: idList,
             references: idList,
           },
-          required: ["slide", "beat", "shot", "headlineLink", "direction", "need", "characterIds", "references"],
+          required: ["slide", "beat", "subject", "discovery", "recurring", "shot", "headlineLink", "direction", "need", "characterIds", "references"],
           additionalProperties: false,
         },
       },
@@ -253,11 +278,13 @@ const strings = (value: unknown, max = 6): string[] => [...new Set((Array.isArra
 function visualFrom(raw: unknown, fallbackId: string): Draft2VisualCandidate | undefined {
   const item = funnelRecord(raw);
   const concept = funnelText(item.concept, CONCEPT_MAX_CHARACTERS * 2);
-  const protagonist = funnelText(item.protagonist, PROTAGONIST_MAX_CHARACTERS);
-  const motif = funnelText(item.motif, MOTIF_MAX_CHARACTERS * 2);
+  // The protagonist and the motif are optional: an empty one means the identity alone carries the continuity.
+  const optional = (value: unknown, max: number) => typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, max) : undefined;
+  const protagonist = optional(item.protagonist, PROTAGONIST_MAX_CHARACTERS);
+  const motif = optional(item.motif, MOTIF_MAX_CHARACTERS * 2);
   const cast = funnelText(item.cast, CAST_MAX_CHARACTERS * 2);
   const plan = funnelRecord(item.characterPlan);
-  if (!concept || !protagonist || !motif || !cast || typeof plan.use !== "boolean" || !Array.isArray(item.slides) || !item.slides.length) return undefined;
+  if (!concept || protagonist === undefined || motif === undefined || !cast || typeof plan.use !== "boolean" || !Array.isArray(item.slides) || !item.slides.length) return undefined;
   const slides: Draft2VisualSlide[] = [];
   for (const entry of item.slides.slice(0, 24)) {
     const slide = funnelRecord(entry);
@@ -266,9 +293,12 @@ function visualFrom(raw: unknown, fallbackId: string): Draft2VisualCandidate | u
     const beat = typeof slide.beat === "string" ? slide.beat.replace(/\s+/g, " ").trim() : undefined;
     const need = VISUAL_NEEDS.find((candidate) => candidate === slide.need);
     const shot = VISUAL_SHOTS.find((candidate) => candidate === slide.shot);
-    if (!position || direction === undefined || beat === undefined || !need || !shot) return undefined;
+    const recurring = VISUAL_RECURRING.find((candidate) => candidate === slide.recurring);
+    const subject = optional(slide.subject, VISUAL_SUBJECT_MAX_CHARACTERS * 2);
+    const discovery = optional(slide.discovery, VISUAL_DISCOVERY_MAX_CHARACTERS * 2);
+    if (!position || direction === undefined || beat === undefined || !need || !shot || !recurring || subject === undefined || discovery === undefined) return undefined;
     const headlineLink = typeof slide.headlineLink === "string" ? slide.headlineLink.replace(/\s+/g, " ").trim().slice(0, HEADLINE_LINK_MAX_CHARACTERS) : "";
-    slides.push({ slide: position, beat, shot, headlineLink, direction, need, characterIds: strings(slide.characterIds, 4), references: strings(slide.references) });
+    slides.push({ slide: position, beat, subject, discovery, recurring, shot, headlineLink, direction, need, characterIds: strings(slide.characterIds, 4), references: strings(slide.references) });
   }
   return {
     id: funnelText(item.id, 24) ?? fallbackId,
@@ -316,7 +346,11 @@ export function avoidTerms(identity: { avoid?: readonly { items: readonly string
  * or place named without its verified material, no organization named, none
  * of the brand's avoid terms, nothing that would be drawn as words or logos;
  * no two slides in a row with the same shot, and a typography shot exactly
- * on a typography slide.
+ * on a typography slide. Progression, which a new shot alone is not: each
+ * slide names its dominant subject and what it shows for the first time; no
+ * two slides in a row share a dominant subject; the recurring element leads
+ * at most two slides, never two in a row, and returns at most once, at the
+ * end.
  */
 export function mechanicalVisualIssues(candidates: readonly Draft2VisualCandidate[], { carousel, inventory, characters, characterChoice, mode, avoid }: {
   carousel: readonly Draft2CarouselSlide[];
@@ -349,16 +383,28 @@ export function mechanicalVisualIssues(candidates: readonly Draft2VisualCandidat
     const earlier = keys.get(concept);
     if (earlier && !(candidate.proposalOf && earlier.proposalOf === candidate.proposalOf)) add("DUPLICATE_CANDIDATE", undefined, `The concept repeats ${earlier.id}'s.`);
     else if (!earlier) keys.set(concept, candidate);
+    const labelOf = (position: string) => carousel.find((entry) => entry.slide === position)?.label ?? position;
+    const partOf = (position: string) => positions.includes(position) ? position : undefined;
     candidate.slides.forEach((slide, index) => {
       const previous = candidate.slides[index - 1];
-      if (!previous || previous.shot !== slide.shot) return;
-      const labelOf = (position: string) => carousel.find((entry) => entry.slide === position)?.label ?? position;
-      add("SAME_SHOT", positions.includes(slide.slide) ? slide.slide : undefined, `${labelOf(slide.slide)} repeats ${labelOf(previous.slide)}'s ${slide.shot} shot; alternate the shots so no two slides in a row look alike.`);
+      if (!previous) return;
+      if (previous.shot === slide.shot) add("SAME_SHOT", partOf(slide.slide), `${labelOf(slide.slide)} repeats ${labelOf(previous.slide)}'s ${slide.shot} shot; alternate the shots so no two slides in a row look alike.`);
+      if (slide.subject && previous.subject && sameSubject(slide.subject, previous.subject)) {
+        add("SAME_SUBJECT", partOf(slide.slide), `${labelOf(slide.slide)} is about the same subject as ${labelOf(previous.slide)} ("${slide.subject}"); show something the carousel has not shown yet.`);
+      }
+      if (slide.recurring === "focus" && previous.recurring === "focus") add("RECURRING_DOMINANT", partOf(slide.slide), `The recurring element leads ${labelOf(previous.slide)} and ${labelOf(slide.slide)} in a row; let one of them show something else.`);
     });
+    const focused = candidate.slides.filter((slide) => slide.recurring === "focus").length;
+    if (focused > VISUAL_MAX_RECURRING_FOCUS) add("RECURRING_DOMINANT", undefined, `The recurring element leads ${focused} slides; it leads at most ${VISUAL_MAX_RECURRING_FOCUS}, and may return once at the end.`);
+    const callbacks = candidate.slides.filter((slide) => slide.recurring === "callback");
+    const closing = positions.slice(-2);
+    if (callbacks.length > 1 || callbacks.some((slide) => !closing.includes(slide.slide))) add("CALLBACK_MISPLACED", undefined, "The recurring element returns once, on one of the last two slides, to give the end a new meaning.");
     for (const slide of candidate.slides) {
       const part = positions.includes(slide.slide) ? slide.slide : undefined;
       const label = carousel.find((entry) => entry.slide === slide.slide)?.label ?? slide.slide;
       if ((slide.need === "typography") !== (slide.shot === "typography")) add("SHOT_MISMATCH", part, `${label} is a ${slide.need} slide with a ${slide.shot} shot; a typography slide has the typography shot, and only it.`);
+      if (!slide.subject || slide.subject.length > VISUAL_SUBJECT_MAX_CHARACTERS) add("SUBJECT_MISSING", part, `${label} needs its dominant subject, in 1 to ${VISUAL_SUBJECT_MAX_CHARACTERS} characters: who or what its image is about.`);
+      if (!slide.discovery || slide.discovery.length > VISUAL_DISCOVERY_MAX_CHARACTERS) add("DISCOVERY_MISSING", part, `${label} needs a discovery, in 1 to ${VISUAL_DISCOVERY_MAX_CHARACTERS} characters: what the reader sees there for the first time.`);
       if (slide.direction.length > VISUAL_DIRECTION_MAX_CHARACTERS) add("DIRECTION_TOO_LONG", part, `${label}'s direction has ${slide.direction.length} characters; the limit is ${VISUAL_DIRECTION_MAX_CHARACTERS}.`);
       if (slide.direction.length < VISUAL_DIRECTION_MIN_CHARACTERS) add("DIRECTION_TOO_SHORT", part, `${label}'s direction is too short to reproduce (${slide.direction.length} characters).`);
       if (!slide.beat || slide.beat.length > VISUAL_BEAT_MAX_CHARACTERS) add("BEAT_MISSING", part, `${label} needs a beat of 1 to ${VISUAL_BEAT_MAX_CHARACTERS} characters: what its image adds to the story.`);
@@ -395,11 +441,17 @@ export function mechanicalVisualIssues(candidates: readonly Draft2VisualCandidat
   return issues;
 }
 
+/** Whether two subjects are the same: the same words once compared, or most of their longer words shared. */
+function sameSubject(a: string, b: string): boolean {
+  if (comparableText(a) === comparableText(b)) return true;
+  return wordOverlap(longWords(a), longWords(b)) >= SAME_SUBJECT_OVERLAP;
+}
+
 /** Whether two scripts say the same thing: the same whole and the same slides. */
 export const sameVisual = (a: Draft2VisualCandidate, b: Draft2VisualCandidate) => {
   const key = (candidate: Draft2VisualCandidate) => JSON.stringify([
     comparableText(candidate.concept), comparableText(candidate.protagonist ?? ""), comparableText(candidate.motif), comparableText(candidate.cast), candidate.characterPlan.use, candidate.characterPlan.characterIds,
-    candidate.slides.map((slide) => [slide.slide, comparableText(slide.beat), slide.shot, comparableText(slide.headlineLink ?? ""), comparableText(slide.direction), slide.need, slide.characterIds, slide.references]),
+    candidate.slides.map((slide) => [slide.slide, comparableText(slide.beat), comparableText(slide.subject ?? ""), comparableText(slide.discovery ?? ""), slide.recurring, slide.shot, comparableText(slide.headlineLink ?? ""), comparableText(slide.direction), slide.need, slide.characterIds, slide.references]),
   ]);
   return key(a) === key(b);
 };

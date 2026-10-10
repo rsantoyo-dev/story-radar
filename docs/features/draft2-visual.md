@@ -49,6 +49,19 @@ three closing slides on one formula):
 | Logo and page number | the script reads where the Topic puts them (`layout`) and keeps them clear |
 | Reconstruction | a generic scene of the activity (anonymous people, a setting nobody could take for the place) is allowed, and the judge flags `REPETITIVE` scripts |
 
+Visual script v3, the same day, after the first two image decks (Tech: nine
+views of one "shutter"; St-Jean: one toad on six slides, both accepted by Sol
+with continuity 97–98). The editor chose to fix it in the script and its
+judge, with no new call:
+
+| Question | Decision |
+| --- | --- |
+| The rule | visual continuity must not replace visual progression: continuity comes from the brand's identity, progression from what each image shows |
+| The recurring element | the protagonist and the motif are optional; a slide gives it `none`, `accent`, `focus` (at most two slides, never two in a row) or the `callback` that closes the story (once, on one of the last two slides) |
+| Each slide | its dominant `subject` (never the previous slide's) and its `discovery` (what the reader sees there first) |
+| The judge | Sol scores progression, beat relevance and identity continuity apart; a new camera, crop or scale is not progression; codes `MOTIF_DEPENDENCY`, `TOO_ABSTRACT`, `OFF_BEAT` |
+| Safety | concrete before abstract: the activity with anonymous people, institutions through what they do; a metaphor is the last resort. Truth never requires hiding the people, places or activities a story is about |
+
 ## 3. Step 6 · People and places (`draft2-inventory.ts`, `draft2-inventory.types.ts`)
 
 1. **Extraction.** One Claude call (role `people-finder`, medium effort, the
@@ -122,16 +135,20 @@ The instructions add the brand brief, the visual identity in full
 (`resolveCreativeVisualGuidance`) and the visual mode.
 
 **A script:**
-- `concept`, `protagonist`, `cast` and `motif`;
+- `concept`, `cast`, and an optional `protagonist` and `motif` (empty when
+  the identity alone carries the continuity);
 - `characterPlan { use, characterIds, role }`;
-- one slide per carousel slide: `beat` (what happens in the image), `shot`,
+- one slide per carousel slide: `beat` (what happens in the image),
+  `subject` (its dominant subject), `discovery` (what it shows first),
+  `recurring` (`none` | `accent` | `focus` | `callback`), `shot`,
   `headlineLink`, `direction` (≤ 700 characters), `need` (v1's
   `visualNeed`), `characterIds` (≤ 2) and `references` (entity and story
   photo ids).
 
-**Criteria:** narrative, continuity, brand, truth, fit, craft, focus.
+**Criteria (v3):** narrative, progression, beat, continuity (the identity),
+brand, truth, craft, focus.
 Accepted at overall ≥ 95 with every criterion ≥ 85. The judge's issue codes
-are `ILLUSTRATES_TEXT`, `BREAKS_CONTINUITY`, `REPETITIVE`, `OFF_BRAND`, `LOOKS_AI`,
+are `ILLUSTRATES_TEXT`, `BREAKS_CONTINUITY`, `REPETITIVE`, `MOTIF_DEPENDENCY`, `OFF_BEAT`, `TOO_ABSTRACT`, `OFF_BRAND`, `LOOKS_AI`,
 `CONTRADICTS_FACTS`, `CROWDS_TEXT`, `VAGUE`, `CHARACTER_MISUSED` and
 `OFF_FOCUS`.
 
@@ -153,6 +170,10 @@ are `ILLUSTRATES_TEXT`, `BREAKS_CONTINUITY`, `REPETITIVE`, `OFF_BRAND`, `LOOKS_A
 | `DUPLICATE_CANDIDATE` | as elsewhere |
 | `SAME_SHOT` | two adjacent slides with the same shot |
 | `SHOT_MISMATCH` | a typography slide without the typography shot, or the reverse |
+| `SUBJECT_MISSING`, `DISCOVERY_MISSING` | a slide without its dominant subject or what it shows first |
+| `SAME_SUBJECT` | two adjacent slides about the same subject (the same words, or most of their longer words) |
+| `RECURRING_DOMINANT` | the recurring element leads more than two slides, or two in a row |
+| `CALLBACK_MISPLACED` | more than one return, or a return before the last two slides |
 
 **The output keeps v1's slide contract** (`visualDirection`, `visualNeed`,
 `characterIds`, story references), so the image step can feed

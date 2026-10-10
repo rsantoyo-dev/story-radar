@@ -118,9 +118,14 @@ function toneFor(focus: Draft2FocusValues | undefined, profile: CreativeProfile)
   return { primary, energy: dial(focus?.voice.energy, profile.energy), humor: dial(focus?.voice.humor, profile.humor), reason: "The story's focus." };
 }
 
-/** The script's whole as v1's "Overall concept": every image is made on its own, so each prompt carries the story it belongs to. */
+/**
+ * The script's whole as v1's "Overall concept": every image is made on its
+ * own, so each prompt carries the story it belongs to, and how the recurring
+ * cast looks when a slide shows it. It never asks for the protagonist or the
+ * motif on every slide: each slide's direction says what it shows.
+ */
 const storyConcept = (script: Draft2VisualCandidate) =>
-  [script.concept, script.protagonist ? `The images follow ${script.protagonist}` : "", `Recurring cast: ${script.cast}`, `Motif: ${script.motif}`]
+  [script.concept, script.cast ? `When a slide shows them, the recurring cast looks the same on every slide: ${script.cast}` : ""]
     .map((part) => part.trim().replace(/[.\s]+$/u, "")).filter(Boolean).join(". ") + ".";
 
 /** The Topic's logo as v1 composites it (resolveCreativeBrandGeneration): off, or its settings with the stored PNG they point to. */

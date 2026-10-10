@@ -56,10 +56,12 @@ const profile = {
 type Contents = { task: string; candidatesWanted?: number; scripts?: { id: string }[]; develop?: { id: string }[]; round?: number; candidates?: { id: string }[]; proposalsWanted?: number };
 /** A clean script for the carousel the context carries, under a concept. */
 const SHOTS = ["wide", "medium", "close"] as const;
+/** A different place for every slide, as a sequence moves on. */
+const SUBJECTS = ["lantern", "bicycle", "garden", "kitchen", "harbour", "market", "classroom", "orchard", "workshop", "station", "library", "bridge", "meadow", "rooftop", "bakery", "ferry", "museum"];
 const script = (id: string, concept: string, carousel: Draft2CarouselSlide[]): Draft2VisualCandidate => ({
   id, angle: concept, concept, protagonist: "A reader seen from behind", motif: "A library card that gains a stamp on every slide.", cast: "Anonymous readers seen from behind.",
   characterPlan: { use: false, characterIds: [], role: "" },
-  slides: carousel.map((slide, index) => ({ slide: slide.slide, beat: `The ${slide.slide} beat.`, shot: SHOTS[index % SHOTS.length], headlineLink: "", direction: `Paper-cut collage in cream and night blue: a library card for ${slide.slide}, one focal subject, room at the top for the headline.`, need: "generic-illustration", characterIds: [], references: [] })),
+  slides: carousel.map((slide, index) => ({ slide: slide.slide, beat: `The ${slide.slide} beat.`, subject: `the ${SUBJECTS[index]}`, discovery: `What ${slide.slide} shows first.`, recurring: "none", shot: SHOTS[index % SHOTS.length], headlineLink: "", direction: `Paper-cut collage in cream and night blue: a library card for ${slide.slide}, one focal subject, room at the top for the headline.`, need: "generic-illustration", characterIds: [], references: [] })),
 });
 const CONCEPTS = ["A door that opens slide by slide", "A card that fills with stamps", "A lamp that brightens the hall"];
 const writer = () => (contents: Contents, carousel: Draft2CarouselSlide[]) => contents.task === "revise"
@@ -68,7 +70,7 @@ const writer = () => (contents: Contents, carousel: Draft2CarouselSlide[]) => co
     ...(contents.develop ?? []).map((proposal) => script(proposal.id, "An edited walk through the library", carousel)),
   ] }
   : { candidates: CONCEPTS.slice(0, contents.candidatesWanted).map((concept, index) => script(`c${index + 1}`, concept, carousel)) };
-const score = (candidateId: string, overall: number): Draft2VisualScore => ({ candidateId, narrative: overall, continuity: overall, brand: overall, truth: overall, fit: overall, craft: overall, focus: overall, overall, note: "Why." });
+const score = (candidateId: string, overall: number): Draft2VisualScore => ({ candidateId, narrative: overall, progression: overall, beat: overall, continuity: overall, brand: overall, truth: overall, craft: overall, focus: overall, overall, note: "Why." });
 const judge = (verdict: "accept" | "revise", winnerId: string, overall: Record<string, number>) => (contents: Contents, carousel: Draft2CarouselSlide[]) => ({
   verdict, winnerId, summary: `${verdict} ${winnerId}.`, issues: [], suggestions: [],
   scores: (contents.candidates ?? []).map((candidate) => score(candidate.id, overall[candidate.id] ?? 70)),
@@ -139,7 +141,7 @@ test("Claude scripts the chosen carousel and Sol judges it; both read the focus,
   assert.match(String(claude.input.instructions), /# The publication[^]*# Visual identity\nSALUT LONGUEUIL — CREATIVE IDENTITY[^]*- Visual mode: illustration-editorial\./);
   assert.ok(String(claude.input.instructions).includes(visuals.VISUALS_SKILL.text));
   assert.equal(json([(claude.input.contents as Contents).candidatesWanted, claude.input.effort, (sol.input.contents as Contents).proposalsWanted, sol.input.reasoningEffort]), json([3, "medium", 1, "medium"]));
-  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.skillVersions])), json([["visual", "draft2_visual", { visuals: "2" }], ["visual", "draft2_visual_review", { visuals: "2" }]]));
+  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.skillVersions])), json([["visual", "draft2_visual", { visuals: "3" }], ["visual", "draft2_visual_review", { visuals: "3" }]]));
   const visual = session.visual!;
   assert.equal(json([session.status, visual.status, visual.winnerId, visual.deckId, visual.inventoryVersion, visual.characterChoice, visual.mode, visual.carousel?.length]), json(["ready", "ready", "c2", "c3", 4, "auto", "illustration-editorial", 6]));
 });

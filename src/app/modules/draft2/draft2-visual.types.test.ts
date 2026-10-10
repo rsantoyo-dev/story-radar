@@ -24,6 +24,7 @@ const deck = { slides: [
   { headline: "A corner for the kids", body: "Low shelves and cushions wait in the children's corner.", practical: "", factIds: ["f2"] },
 ] };
 const carousel: Draft2CarouselSlide[] = carouselSlides(opening, deck, closing);
+const json = (value: unknown) => JSON.stringify(value);
 
 const material = (overrides: Partial<Draft2InventoryEntity> & Pick<Draft2InventoryEntity, "id" | "name" | "kind">): Draft2InventoryEntity => ({ role: "secondary", description: "", factIds: ["f1"], ...overrides });
 const inventory: Pick<Draft2Inventory, "entities" | "storyPhotos"> = {
@@ -40,7 +41,12 @@ const characters = [{ id: "char-mia", name: "Mia", description: "An illustrated 
 const direction = (focal: string) => `Paper-cut collage in cream and night blue: ${focal}, one focal subject on the left third, soft lavender light, generous space at the top for the headline.`;
 /** Shots that never repeat from one slide to the next. */
 const SHOTS: Record<string, Draft2VisualSlide["shot"]> = { cover: "wide", slide2: "medium", s1: "close", s2: "medium", penultimate: "wide", last: "close" };
-const slide = (position: string, overrides: Partial<Draft2VisualSlide> = {}): Draft2VisualSlide => ({ slide: position, beat: `The ${position} beat.`, shot: SHOTS[position] ?? "medium", headlineLink: "", direction: direction(`a library card for ${position}`), need: "generic-illustration", characterIds: [], references: [], ...overrides });
+/** Subjects that move on from slide to slide, as a sequence does. */
+const SUBJECTS: Record<string, string> = { cover: "a closed library door at dawn", slide2: "the mayor's ribbon on the steps", s1: "a child reaching for a picture book", s2: "volunteers shelving returned books", penultimate: "an evening reading circle", last: "the same door, open and lit" };
+const slide = (position: string, overrides: Partial<Draft2VisualSlide> = {}): Draft2VisualSlide => ({
+  slide: position, beat: `The ${position} beat.`, subject: SUBJECTS[position] ?? position, discovery: `What ${position} shows for the first time.`, recurring: "none", shot: SHOTS[position] ?? "medium", headlineLink: "",
+  direction: direction(`a library card for ${position}`), need: "generic-illustration", characterIds: [], references: [], ...overrides,
+});
 /** A clean script: Mia guides the reader from a closed door to an open reading room. */
 const script = (id: string, overrides: Partial<Draft2VisualCandidate> = {}): Draft2VisualCandidate => ({
   id, angle: "From the closed door to the open room",
@@ -56,7 +62,7 @@ const rules: Parameters<typeof mechanicalVisualIssues>[1] = { carousel, inventor
 const codes = (issues: Draft2VisualIssue[]) => issues.map((issue) => [issue.code, issue.candidateId, issue.part].filter(Boolean).join(" "));
 const findings = (candidate: Draft2VisualCandidate, options: Partial<typeof rules> = {}) => codes(mechanicalVisualIssues([candidate], { ...rules, ...options }));
 const withSlide = (position: string, overrides: Partial<Draft2VisualSlide>) => script("c1", { slides: script("c1").slides.map((entry) => entry.slide === position ? { ...entry, ...overrides } : entry) });
-const score = (candidateId: string, overall: number): Draft2VisualScore => ({ candidateId, narrative: overall, continuity: overall, brand: overall, truth: overall, fit: overall, craft: overall, focus: overall, overall, note: "Why." });
+const score = (candidateId: string, overall: number): Draft2VisualScore => ({ candidateId, narrative: overall, progression: overall, beat: overall, continuity: overall, brand: overall, truth: overall, craft: overall, focus: overall, overall, note: "Why." });
 
 test("the carousel in order, from the opening, the deck and the closing; three scripts, two for a long carousel, and a third round on the best", () => {
   assert.deepEqual(carousel.map((entry) => [entry.slide, entry.label]), [["cover", "Cover"], ["slide2", "Slide 2"], ["s1", "Slide 3"], ["s2", "Slide 4"], ["penultimate", "Slide 5"], ["last", "Slide 6"]]);
@@ -79,6 +85,7 @@ test("the carousel in order, from the opening, the deck and the closing; three s
   assert.ok(item.required.includes("protagonist"));
   assert.deepEqual(item.properties.slides.items.properties.shot.enum, ["wide", "medium", "close", "overhead", "typography"]);
   assert.ok(item.properties.slides.items.required.includes("headlineLink"));
+  for (const field of ["subject", "discovery", "recurring"]) assert.ok(item.properties.slides.items.required.includes(field), field);
 });
 
 test("the layout tells the script what is added afterwards: the words the image model letters, the logo where the Topic puts it, the page number", () => {
@@ -91,6 +98,19 @@ test("the layout tells the script what is added afterwards: the words the image 
   const everywhere = visualLayout({ brandOverlay: { ...overlay, scope: "all-units" }, carouselChrome: { ...chrome, enabled: false } } as unknown as Parameters<typeof visualLayout>[0], carousel);
   assert.deepEqual([everywhere.logo?.slides.length, everywhere.numbering], [6, null]);
   assert.equal(visualLayout({ brandOverlay: { ...overlay, enabled: false }, carouselChrome: chrome } as unknown as Parameters<typeof visualLayout>[0], carousel).logo, null, "no logo when it is off");
+});
+
+test("continuity does not replace progression: each slide names its subject and what it shows first, no subject leads two slides in a row, and the recurring element leads at most two and returns once at the end", () => {
+  assert.deepEqual(findings(withSlide("s1", { subject: "the mayor's ribbon on the steps" })), ["SAME_SUBJECT c1 s1"], "the same subject as slide 2");
+  assert.deepEqual(findings(withSlide("s1", { subject: "the mayor's ribbon, closer, on the steps" })), ["SAME_SUBJECT c1 s1"], "a closer view of the same subject is the same subject");
+  assert.deepEqual(findings(withSlide("s1", { subject: "" })), ["SUBJECT_MISSING c1 s1"]);
+  assert.deepEqual(findings(withSlide("s1", { discovery: "" })), ["DISCOVERY_MISSING c1 s1"]);
+  const recurring = (roles: Draft2VisualSlide["recurring"][]) => script("c1", { slides: script("c1").slides.map((entry, index) => ({ ...entry, recurring: roles[index] ?? "none" })) });
+  assert.deepEqual(findings(recurring(["focus", "accent", "none", "focus", "accent", "callback"])), [], "it may open, step back, lead once more and return at the end");
+  assert.deepEqual(findings(recurring(["focus", "focus"])), ["RECURRING_DOMINANT c1 slide2"]);
+  assert.deepEqual(findings(recurring(["focus", "none", "focus", "none", "focus"])), ["RECURRING_DOMINANT c1"]);
+  assert.deepEqual(findings(recurring(["focus", "none", "callback"])), ["CALLBACK_MISPLACED c1"], "a return belongs to the end");
+  assert.deepEqual(findings(recurring(["none", "none", "none", "none", "callback", "callback"])), ["CALLBACK_MISPLACED c1"], "once");
 });
 
 test("shots alternate: no two slides in a row share one, and a typography slide has the typography shot, and only it", () => {
@@ -109,7 +129,11 @@ test("the writer's answer becomes scripts; a slide missing a part is rejected; t
   const evaluation = parseVisualEvaluation(JSON.stringify({ verdict: "revise", winnerId: "c1", summary: "x", suggestions: [], proposals: [script("p1")], scores: [score("c1", 90)],
     issues: [{ code: "ILLUSTRATES_TEXT", candidateId: "c1", part: "s2", detail: "Repeats the words.", material: false }, { code: "LOOKS_AI", candidateId: "c1", part: "slide9", detail: "Glossy." }] }), ["c1"], carousel.map((entry) => entry.slide));
   assert.deepEqual(evaluation.issues.map((issue) => [issue.code, issue.part ?? null]), [["ILLUSTRATES_TEXT", "s2"], ["LOOKS_AI", null]]);
-  assert.deepEqual([...VISUAL_CRITERIA], ["narrative", "continuity", "brand", "truth", "fit", "craft", "focus"]);
+  assert.deepEqual([...VISUAL_CRITERIA], ["narrative", "progression", "beat", "continuity", "brand", "truth", "craft", "focus"]);
+  const [open] = parseVisualCandidates(JSON.stringify({ candidates: [{ ...script("c1"), protagonist: "", motif: "" }] }));
+  assert.equal(json([open.protagonist, open.motif]), json(["", ""]), "the protagonist and the motif are optional: the identity can carry the continuity alone");
+  const noSubject = { ...script("c1"), slides: script("c1").slides.map(({ subject, ...rest }) => { void subject; return rest; }) };
+  assert.throws(() => parseVisualCandidates(JSON.stringify({ candidates: [noSubject] })), /c1 is incomplete/);
 });
 
 test("a clean script has no finding; it has one slide per carousel slide, in order, each with a beat and a direction within its length", () => {

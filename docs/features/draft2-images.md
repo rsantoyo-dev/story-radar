@@ -130,7 +130,15 @@ The editor:
   never corrected on its own;
 - chooses the version a slide shows.
 
-## 5. Visual script v2 (the script the images read)
+## 5. The visual script the images read (v2, then v3)
+
+Since visuals v3 (`draft2-visual.md`), each slide also names its dominant
+`subject`, which leads its direction after the beat ("Its subject: …"), and
+the prompts' concept no longer names the protagonist or the motif: only how
+the recurring cast looks when a slide shows it, so no image is asked to
+repeat it.
+
+v2, for reference:
 
 - **Whole:** a `protagonist` the images follow.
 - **Per slide:**

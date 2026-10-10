@@ -142,15 +142,20 @@ function unitRole(words: Draft2CarouselSlide, index: number, total: number): Cre
  * The slide as v1's prompt builder reads it (build-creative-image-prompt.ts):
  * its words as the visible text (the cover's text as its subheadline, a
  * practical line under the body, the call to action), and the script's
- * direction, led by what happens in the image and how it plays with the
- * headline. A slide that pastes a real photo casts no character.
+ * direction, led by what happens in the image, its dominant subject and how
+ * it plays with the headline. A slide that pastes a real photo casts no
+ * character.
  */
 export function slideUnit(carousel: readonly Draft2CarouselSlide[], index: number, script: Draft2VisualSlide, material: readonly Draft2SlideMaterial[]): CreativeUnit {
   const words = carousel[index];
   const text = words.text.trim();
   const body = [text, words.practical?.trim()].filter((part): part is string => Boolean(part)).join("\n");
   const pasted = material.some((entry) => entry.kind === "pasted-photo");
-  const lead = [script.beat ? `What happens: ${sentence(script.beat)}.` : "", script.headlineLink ? `With its headline: ${sentence(script.headlineLink)}.` : ""].filter(Boolean).join(" ");
+  const lead = [
+    script.beat ? `What happens: ${sentence(script.beat)}.` : "",
+    script.subject ? `Its subject: ${sentence(script.subject)}.` : "",
+    script.headlineLink ? `With its headline: ${sentence(script.headlineLink)}.` : "",
+  ].filter(Boolean).join(" ");
   return {
     order: index + 1,
     type: "carousel-slide",

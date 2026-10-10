@@ -19,7 +19,7 @@ const carousel: Draft2CarouselSlide[] = [
   { slide: "last", label: "Slide 4", headline: "Light rain: it goes on", text: "Cancelled in heavy rain.", cta: "Follow us for family outings.", factIds: ["f3"] },
 ];
 const scriptSlide = (slide: string, overrides: Partial<Draft2VisualSlide> = {}): Draft2VisualSlide => ({
-  slide, beat: `A child steps forward on ${slide}`, shot: "medium", headlineLink: "", direction: `Photographic collage on cream: a child's boots on a trail, ${slide}.`, need: "generic-illustration", characterIds: [], references: [], ...overrides,
+  slide, beat: `A child steps forward on ${slide}`, subject: `the ${slide} trail`, discovery: `What ${slide} shows first`, recurring: "none", shot: "medium", headlineLink: "", direction: `Photographic collage on cream: a child's boots on a trail, ${slide}.`, need: "generic-illustration", characterIds: [], references: [], ...overrides,
 });
 const script = (overrides: Partial<Draft2VisualCandidate> = {}): Draft2VisualCandidate => ({
   id: "c4", angle: "The walk", concept: "A family walks the trail and meets its animals.", protagonist: "A child seen from behind", motif: "Boots that get muddier", cast: "A child and an adult, from behind",
@@ -41,7 +41,7 @@ test("a slide as v1's prompt builder reads it: the cover's text as its subheadli
   const units = carousel.map((_, index) => slideUnit(carousel, index, slides[index], []));
   assert.equal(json(units.map((unit) => [unit.order, unit.role, unit.assetRequest])), json([[1, "cover", "generated-image"], [2, "content", "typography-only"], [3, "conclusion", "generated-image"], [4, "call-to-action", "generated-image"]]));
   assert.equal(json([units[0].subheadline, units[0].body, units[1].body, units[3].ctaQuestion]), json(["A free rally at the park on Saturday.", undefined, "Naturalists explain them.\n9:30 to 12:30", "Follow us for family outings."]));
-  assert.equal(units[1].visualDirection, "What happens: A child steps forward on s1. With its headline: the three animals the headline names, met on the trail. Photographic collage on cream: a child's boots on a trail, s1.");
+  assert.equal(units[1].visualDirection, "What happens: A child steps forward on s1. Its subject: the s1 trail. With its headline: the three animals the headline names, met on the trail. Photographic collage on cream: a child's boots on a trail, s1.");
   assert.equal(json([units[0].characterIds, units[0].visualNeed, units[0].aspectRatio, units[0].factIds]), json([["char-jo"], "generic-illustration", "4:5", ["f1"]]));
   const pasted = slideUnit(carousel, 0, slides[0], [{ kind: "pasted-photo", storyPhotoId: "photo-portrait", name: "Catherine Fournier", person: true }]);
   assert.equal(json(pasted.characterIds), json([]), "a real photo is the only person on its slide");
@@ -70,7 +70,7 @@ test("what a slide shows of its references: a person's portrait pasted, a place'
 });
 
 const visualRun = (overrides: Partial<Draft2Visual> = {}): Draft2Visual => ({
-  status: "needs-review", winnerId: "c4", candidates: [script()], rounds: [{ round: 1, candidates: [script()], mechanical: [], at: "t", evaluation: { verdict: "revise", winnerId: "c4", scores: [{ candidateId: "c4", narrative: 94, continuity: 94, brand: 94, truth: 94, fit: 94, craft: 94, focus: 94, overall: 94, note: "x" }], issues: [], suggestions: [], summary: "x" } }],
+  status: "needs-review", winnerId: "c4", candidates: [script()], rounds: [{ round: 1, candidates: [script()], mechanical: [], at: "t", evaluation: { verdict: "revise", winnerId: "c4", scores: [{ candidateId: "c4", narrative: 94, progression: 94, beat: 94, continuity: 94, brand: 94, truth: 94, craft: 94, focus: 94, overall: 94, note: "x" }], issues: [], suggestions: [], summary: "x" } }],
   carousel, deckId: "c3", inventoryVersion: 3, mode: "illustration-editorial", ...overrides,
 });
 

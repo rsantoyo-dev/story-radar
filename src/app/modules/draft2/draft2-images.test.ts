@@ -36,7 +36,7 @@ const carousel: Draft2CarouselSlide[] = [
   { slide: "last", label: "Slide 3", headline: "See you there", text: "Light rain is fine.", cta: "Follow us.", factIds: ["f1"] },
 ];
 const scriptSlide = (slide: string, overrides: Partial<Draft2VisualSlide> = {}): Draft2VisualSlide => ({
-  slide, beat: `A child walks on ${slide}`, shot: slide === "s1" ? "close" : "wide", headlineLink: "", direction: `Photographic collage on cream: a child's boots on a trail, ${slide}.`, need: "generic-illustration", characterIds: [], references: [], ...overrides,
+  slide, beat: `A child walks on ${slide}`, subject: `the ${slide} trail`, discovery: `What ${slide} shows first`, recurring: "none", shot: slide === "s1" ? "close" : "wide", headlineLink: "", direction: `Photographic collage on cream: a child's boots on a trail, ${slide}.`, need: "generic-illustration", characterIds: [], references: [], ...overrides,
 });
 const SCRIPT: Draft2VisualCandidate = {
   id: "c4", angle: "The walk", concept: "A family walks the trail and meets its animals.", protagonist: "A child seen from behind", motif: "Boots that get muddier", cast: "A child and an adult",
@@ -46,7 +46,7 @@ const SCRIPT: Draft2VisualCandidate = {
 const VISUAL: Draft2Visual = {
   status: "needs-review", winnerId: "c4", candidates: [SCRIPT], carousel, deckId: "c3", inventoryVersion: 2, mode: "illustration-editorial",
   focus: { version: 1, values: { voice: { gravity: "light", formality: 30, humor: 60, energy: 70, optimism: 70, provocation: 20 } } as never },
-  rounds: [{ round: 1, candidates: [SCRIPT], mechanical: [], at: "t", evaluation: { verdict: "revise", winnerId: "c4", scores: [{ candidateId: "c4", narrative: 94, continuity: 94, brand: 94, truth: 94, fit: 94, craft: 94, focus: 94, overall: 94, note: "x" }], issues: [], suggestions: [], summary: "x" } }],
+  rounds: [{ round: 1, candidates: [SCRIPT], mechanical: [], at: "t", evaluation: { verdict: "revise", winnerId: "c4", scores: [{ candidateId: "c4", narrative: 94, progression: 94, beat: 94, continuity: 94, brand: 94, truth: 94, craft: 94, focus: 94, overall: 94, note: "x" }], issues: [], suggestions: [], summary: "x" } }],
 };
 const INVENTORY: Draft2Inventory = { status: "ready", version: 2, entities: [], storyPhotos: [], characters: "auto", roster: [{ id: "char-jo", name: "Jo", description: "An illustrated guide" }] };
 const ASSET = { id: "logo-1", fileName: "logo.png", contentType: "image/png", fileSize: 10, width: 400, height: 200, createdAt: new Date(0) };
@@ -217,9 +217,9 @@ test("every slide is made from v1's prompt, finished with v1's post-production i
     ["openai/gpt-image-2.5/sunburst/text-to-image", []],
   ]), "Jo's reference image goes to the edit endpoint");
   assert.equal(json(h.calls.prompts.map((prompt) => [prompt.order, prompt.characters, prompt.logo])), json([[1, [], true], [2, ["Jo"], true], [3, [], true]]));
-  assert.equal(h.calls.prompts[0].concept, "A family walks the trail and meets its animals. The images follow A child seen from behind. Recurring cast: A child and an adult. Motif: Boots that get muddier.");
+  assert.equal(h.calls.prompts[0].concept, "A family walks the trail and meets its animals. When a slide shows them, the recurring cast looks the same on every slide: A child and an adult.", "never the protagonist or the motif on every slide");
   assert.equal(json(h.calls.prompts[0].tone), json({ primary: "playful", energy: 70, humor: 60, reason: "The story's focus." }), "the focus's voice");
-  assert.match(String(h.calls.prompts[1].direction), /^What happens: A child walks on s1\. Photographic collage/);
+  assert.match(String(h.calls.prompts[1].direction), /^What happens: A child walks on s1\. Its subject: the s1 trail\. Photographic collage/);
   // The page number on every slide, then the logo on the cover only (first-unit); the image before them is kept for edits.
   const request = (slide: number) => images.slides[slide].attempts[0].requestId;
   assert.equal(json([stored(h, "cover-v1.png"), stored(h, "s1-v1.png"), stored(h, "last-v1.png"), stored(h, "cover-v1-base.png")]), json([`raw:${request(0)}|1/3|logo`, `raw:${request(1)}|2/3`, `raw:${request(2)}|3/3`, `raw:${request(0)}`]));

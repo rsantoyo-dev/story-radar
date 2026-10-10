@@ -18,7 +18,7 @@ import {
 import { CLOSING_GATE, CLOSING_MAX_ROUNDS, type Draft2Closing, type Draft2ClosingCandidate, type Draft2ClosingCriterion } from "@/app/modules/draft2/draft2-closing.types";
 import { DECK_GATE, DECK_MAX_ROUNDS, type Draft2Deck, type Draft2DeckCandidate, type Draft2DeckCriterion } from "@/app/modules/draft2/draft2-deck.types";
 import { INVENTORY_CHARACTER_CHOICES, type Draft2CharacterChoice, type Draft2Inventory, type Draft2InventoryEntity, type Draft2InventoryStoryPhoto } from "@/app/modules/draft2/draft2-inventory.types";
-import { VISUAL_GATE, VISUAL_MAX_ROUNDS, visualPlan, type Draft2Visual, type Draft2VisualCandidate, type Draft2VisualCriterion, type Draft2VisualShot } from "@/app/modules/draft2/draft2-visual.types";
+import { VISUAL_GATE, VISUAL_MAX_ROUNDS, visualPlan, type Draft2Visual, type Draft2VisualCandidate, type Draft2VisualCriterion, type Draft2VisualRecurring, type Draft2VisualShot } from "@/app/modules/draft2/draft2-visual.types";
 import { IMAGES_MAX_REQUESTS, latestAttempt, shownAttempt, slideSettled, type Draft2ImageAttempt, type Draft2ImageReview, type Draft2Images, type Draft2SlideImage } from "@/app/modules/draft2/draft2-images.types";
 import {
   criterionOf, funnelAcceptedWinner, funnelExtendable, funnelResumeRound, funnelScorePasses, funnelVersions, hasMaterialError,
@@ -92,7 +92,8 @@ const FACT_STATUS: Record<Draft2Fact["status"], { label: string; tone: StatusTon
 const CRITERION_LABEL: Record<Draft2OpeningCriterion, string> = { tension: "Tension", payoff: "Payoff", clarity: "Clarity", grounding: "Grounding", voice: "Voice", focus: "Focus" };
 const CLOSING_CRITERION_LABEL: Record<Draft2ClosingCriterion, string> = { resolution: "Resolution", meaning: "Meaning", action: "Action", continuity: "Continuity", grounding: "Grounding", voice: "Voice", focus: "Focus" };
 const DECK_CRITERION_LABEL: Record<Draft2DeckCriterion, string> = { flow: "Flow", coverage: "Coverage", pacing: "Pacing", clarity: "Clarity", grounding: "Grounding", voice: "Voice", focus: "Focus" };
-const VISUAL_CRITERION_LABEL: Record<Draft2VisualCriterion, string> = { narrative: "Narrative", continuity: "Continuity", brand: "Brand", truth: "Truth", fit: "Fit", craft: "Craft", focus: "Focus" };
+const VISUAL_CRITERION_LABEL: Record<Draft2VisualCriterion, string> = { narrative: "Narrative", progression: "Progression", beat: "Beat", continuity: "Identity", brand: "Brand", truth: "Truth", craft: "Craft", focus: "Focus" };
+const RECURRING_LABEL: Record<Draft2VisualRecurring, string> = { none: "", accent: "Recurring element as an accent", focus: "Recurring element leads", callback: "The recurring element returns" };
 const CHARACTER_CHOICE_LABEL: Record<Draft2CharacterChoice, string> = { auto: "Claude decides in each script", on: "A brand character narrates", off: "No brand character" };
 const SHOT_LABEL: Record<Draft2VisualShot, string> = { wide: "Wide shot", medium: "Medium shot", close: "Close-up", overhead: "Overhead", typography: "Typography" };
 const IMAGES_STATUS: Record<Draft2Images["status"], { label: string; tone: StatusTone }> = {
@@ -848,6 +849,8 @@ function visualDisplayFor(inventory: Draft2Inventory | undefined): FunnelDisplay
             </div>
             {words ? <p className={styles.visualWords}>{words.headline}</p> : null}
             <p className={styles.factMeta}>Beat · {slide.beat}</p>
+            {slide.subject ? <p className={styles.factMeta}>Subject · {slide.subject}{slide.recurring && RECURRING_LABEL[slide.recurring] ? ` · ${RECURRING_LABEL[slide.recurring]}` : ""}</p> : null}
+            {slide.discovery ? <p className={styles.factMeta}>New here · {slide.discovery}</p> : null}
             {slide.headlineLink ? <p className={styles.factMeta}>With the headline · {slide.headlineLink}</p> : null}
             <p className={styles.openingText}>{slide.direction}</p>
             {slide.characterIds.length ? <p className={styles.factMeta}>Characters · {slide.characterIds.map((id) => run.characters?.find((character) => character.id === id)?.name ?? id).join(", ")}</p> : null}
