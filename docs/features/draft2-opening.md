@@ -27,7 +27,17 @@ for Claude's final pick. A tie goes to the better grounded version, and a
 revision that keeps the overall but loses grounding counts as a regression
 (the second run put the overclaiming c2.2 ahead of c2 on a 90–90 tie). Hooks
 v3 adds that a slide 2 headline stating an attributed claim carries its
-attribution. The sections below describe revision 3.
+attribution.
+
+**Revision 4, after the third run.** The funnel's last round never ran: the
+first two rounds took 100 s and 91 s, and the request (300 s on Vercel) had
+no room left for a third under the time rule. A run now pauses before a round
+its request cannot fit, with every round saved, and the canvas continues it
+in a new request on its own (a "Continue from round N" button covers a
+closed tab). Hooks v4: the strongest angle of all three runs died on change
+verbs ("shift from guardrails to lethality", "move from… to", "now
+includes") the facts do not state, so a contrast between two facts is told
+side by side. The sections below describe revision 4.
 
 ## 1. Goal
 
@@ -126,7 +136,7 @@ not change; the existing Facts tests must pass unchanged except for the
 import path of the instruction text. Record `skillVersions` on every trace
 entry (`Draft2TraceEntry.skillVersions?: Record<string, string>`).
 
-## 4. The hooks skill (`hooks.ts`, version "3")
+## 4. The hooks skill (`hooks.ts`, version "4")
 
 Version 2 replaced v1's "never a hedge word on the cover", which invited
 dropping a qualifier, added that the story's gravity bounds the voice (a
@@ -134,8 +144,9 @@ brand with humor 70 must not be marked down for telling a story about
 military targeting straight), and added the Revisions section. Version 3
 adds that a slide 2 headline stating an attributed claim carries its
 attribution (Claude flagged it twice in the second run) and that new angles
-are tried beside the revisions. A test keeps the numbers in this text equal
-to the constants in §5.
+are tried beside the revisions. Version 4 adds that a contrast between two
+facts is told side by side, never as a change the facts do not state. A test
+keeps the numbers in this text equal to the constants in §5.
 
 ```markdown
 # Openings for social carousels
@@ -177,6 +188,11 @@ cover whose promise slide 2 cannot pay is a lie.
 - Every sentence rests on the verified facts cited by id. Numbers, names,
   dates and qualifiers exactly as the facts state them. An attributed or
   disputed fact never becomes an established one on the cover.
+- A contrast between two facts is told as the two facts side by side ("last
+  cycle asked for A; this year's asks for B"), never as a change ("shifted
+  from A to B", "moved from A to B", "now", "no longer", "turned") unless a
+  fact states the change. Side by side, the reader feels the contrast and the
+  facts claim no more than they say.
 
 ## Scoring (1–100 each; overall is the judge's weighted call)
 - tension: does the headline make the reader need the next slide?
@@ -278,7 +294,7 @@ export type Draft2OpeningRound = {
 };
 
 export type Draft2Opening = {
-  status: "running" | "ready" | "needs-review" | "failed";
+  status: "running" | "paused" | "ready" | "needs-review" | "failed";  // paused: continues from resumeRound
   rounds: Draft2OpeningRound[];
   candidates: Draft2OpeningCandidate[];   // the last round's; openingVersions(rounds) lists every version
   evaluation?: Draft2OpeningEvaluation;   // the last round's
@@ -286,6 +302,7 @@ export type Draft2Opening = {
   editorChoiceId?: string;                 // set by PATCH; wins over winnerId downstream
   editorChoiceAt?: string;
   error?: string;
+  resumeRound?: number;                    // the round a paused run continues from
   previousRuns?: Draft2OpeningRun[];       // earlier runs on the session, without their rounds
 };
 ```
@@ -339,8 +356,11 @@ export async function runDraft2Opening({ topicId, storyId, sessionId }): Promise
 2. Load the profile (`getCreativeProfile`) → `brandBrief`.
 3. Claim the session: `step = "opening"`, `status = "running"`, a fresh
    `opening`; an earlier opening moves to `opening.previousRuns`.
-4. Inside `withCreativeTextBudget`, for `round` 1…3 (no new round after 230 s,
-   or when the last round, repeated, would end past 280 s):
+4. Inside `withCreativeTextBudget`, for `round` 1…3. A round after the
+   request's first does not start after 230 s, or when the last round,
+   repeated, would end past 280 s: the run pauses instead (`opening.status =
+   "paused"`, `resumeRound`, session `status = "needs-review"`), with every
+   round saved and the best version so far as `winnerId`.
    - **Targets** (`openingTargets`): the best clean version of each line of
      revisions (scored, no program finding, highest overall, ties to the
      better grounding), as many lines as `OPENING_ROUND_PLAN` asks: none in
@@ -384,6 +404,10 @@ export async function runDraft2Opening({ topicId, storyId, sessionId }): Promise
      criteria and its remaining issues.
 5. On any thrown error: `opening.status = "failed"`, session `status =
    "failed"`, `error` = message; rethrow (the route maps it).
+6. Continue (`resume: true`): only a paused opening; the run is claimed
+   again and goes on from `resumeRound` with its rounds, trace and choice;
+   it is the same run, so nothing moves to `previousRuns`. The first round of
+   a request never pauses, so every request advances at least one round.
 
 Writer role (`opening-writer`): "You write the opening of a social carousel
 for the publication described below, from the verified facts you receive
@@ -433,7 +457,8 @@ opening, with its choice, in `opening.previousRuns`.
 
 ## 9. API
 
-- `POST /api/radar/draft2/opening` body `{ storyId, sessionId }` → `{ session }`.
+- `POST /api/radar/draft2/opening` body `{ storyId, sessionId, continue? }` → `{ session }`,
+  finished or paused; `continue: true` runs a paused run on.
   Errors: 422 `Draft2InputError`, 409 `Draft2BusyError`, 502
   `Draft2ResponseError`, provider errors through `creativeRouteErrorResponse`.
   `maxDuration = 300`.
@@ -455,8 +480,11 @@ In `src/app/draft-2-canvas.tsx`:
   `opening.status` (Running / Ready / Needs review / Failed), else "Not started".
 - Below the Facts panel, an "Opening" panel:
   - `Button` "Write the opening" (primary), enabled only when Facts is
-    verified; "Write the opening again" when an opening exists. Same long
-    timeout and error handling as `runFacts`.
+    verified; "Write the opening again" when an opening exists. Each request
+    has the long timeout; a paused answer is continued at once in a new
+    request ("Continuing with round N in a new request…"), and a run left
+    paused (a closed tab) shows "Continue from round N" and the Opening
+    badge "Paused".
   - Rounds: for each round, what Sol did ("wrote 10 openings", or "revised
     c3, c5 and c1 and tried 2 new angles (c11, c12)"), any regression ("c3.2 scored 78, below c3's 84 (voice 85 → 72);
     c3 stays the better version"), the judge's summary, the winner's scores
@@ -514,6 +542,9 @@ dependency mocked):
 - the judge's winner has a program finding → the clean runner-up wins when
   it passes; with nothing clean, the next round writes new angles in place
   of the revisions (five), with fresh ids.
+- pause and continue (a fake clock): two rounds fit, the run pauses before
+  round 3 with everything saved; a continue request runs round 3 from the
+  saved rounds; continuing a run that is not paused is refused.
 - provider failure → `failed`, trace keeps the error, the best version so far
   stays, rethrown; a malformed judgment fails the step.
 - `recordOpeningChoice` accepts a version from any round, rejects an unknown

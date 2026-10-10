@@ -108,7 +108,8 @@ export type Draft2OpeningRegression = {
 };
 
 export type Draft2Opening = {
-  status: "running" | "ready" | "needs-review" | "failed";
+  /** paused: the request's time ran out before resumeRound; a continue request runs on from it with every earlier round kept. */
+  status: "running" | "paused" | "ready" | "needs-review" | "failed";
   rounds: Draft2OpeningRound[];
   /** The last round's candidates; openingVersions lists every version of the run. */
   candidates: Draft2OpeningCandidate[];
@@ -120,6 +121,8 @@ export type Draft2Opening = {
   editorChoiceId?: string;
   editorChoiceAt?: string;
   error?: string;
+  /** The round a paused run continues from. */
+  resumeRound?: number;
   /** Earlier runs of the step on this session, oldest first, without their rounds. */
   previousRuns?: Draft2OpeningRun[];
 };

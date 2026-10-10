@@ -18,16 +18,25 @@ import { brandBrief, composeInstructions } from "./skills/draft2-skills";
 import { HOOKS_SKILL } from "./skills/hooks";
 import type { Draft2SessionRow } from "@/db/schema";
 
-/** A round that would start after this point is left to a new request; the route allows 300 s. */
+/**
+ * The route allows 300 s. A round that would start after TIME_BUDGET_MS, or
+ * whose predecessor, repeated, would end past ROUND_DEADLINE_MS, is left to a
+ * new request: the run pauses with everything saved and continues there.
+ */
 const TIME_BUDGET_MS = 230_000;
-/** No round starts when the last one, repeated, would end past this point. */
 const ROUND_DEADLINE_MS = 280_000;
 /** Ten openings and Sol's reasoning. */
 const WRITER_MAX_OUTPUT_TOKENS = 8_000;
 /** Covers ten scores, the verdict and Claude's thinking, which the API counts against the same ceiling. */
 const JUDGE_MAX_OUTPUT_TOKENS = 16_000;
 
-export type Draft2OpeningInput = { topicId: string; storyId: string; sessionId: string };
+export type Draft2OpeningInput = {
+  topicId: string;
+  storyId: string;
+  sessionId: string;
+  /** Continue the run that paused for time, from its next round, instead of starting a new one. */
+  resume?: boolean;
+};
 
 /**
  * Runs the Opening step on a session whose facts are verified, as a funnel
@@ -42,8 +51,10 @@ export type Draft2OpeningInput = { topicId: string; storyId: string; sessionId: 
  * facts first, so they are read from the prompt cache, then the round's
  * candidates, scores and issues) instead of a conversation that grows each
  * round. Every provider call is checkpointed, so a failure keeps its trace.
+ * When a request's time cannot fit the next round, the run pauses with
+ * every round saved; a continue request (resume) runs on from that round.
  */
-export async function runDraft2Opening({ topicId, storyId, sessionId }: Draft2OpeningInput): Promise<Draft2SessionRow> {
+export async function runDraft2Opening({ topicId, storyId, sessionId, resume = false }: Draft2OpeningInput): Promise<Draft2SessionRow> {
   const session = await getDraft2Session(topicId, sessionId);
   if (!session || session.storyId !== storyId) throw new Draft2InputError("This Draft 2 session was not found for the story. Reload the canvas.");
   if (await activeDraft2Session(topicId, storyId)) throw new Draft2BusyError("A Draft 2 run is already in progress for this story.");
@@ -51,6 +62,8 @@ export async function runDraft2Opening({ topicId, storyId, sessionId }: Draft2Op
   // A rerun of the opening is allowed in any state the busy check let through, including a run a timeout left "running".
   const factsVerified = session.step === "opening" || (session.step === "facts" && session.status === "ready");
   if (!facts.length || !factsVerified) throw new Draft2InputError("The opening builds only on verified facts. Verify the facts first.");
+  const paused = session.opening?.status === "paused" && session.opening.resumeRound ? session.opening : undefined;
+  if (resume && !paused) throw new Draft2InputError("There is no paused opening to continue. Write the opening again.");
 
   const openAiApiKey = process.env.OPENAI_API_KEY?.trim();
   if (!openAiApiKey) throw new Draft2InputError("OPENAI_API_KEY is not configured; the writer needs it.");
@@ -63,11 +76,14 @@ export async function runDraft2Opening({ topicId, storyId, sessionId }: Draft2Op
   const verifiedFacts = openingFactsSnapshot(facts);
 
   const trace: Draft2TraceEntry[] = [...session.trace];
-  // A rerun starts a fresh opening; the earlier one stays on the row, with the editor's choice.
-  const opening: Draft2Opening = {
-    status: "running", rounds: [], candidates: [],
-    ...(session.opening ? { previousRuns: [...(session.opening.previousRuns ?? []), openingRunSummary(session.opening)] } : {}),
-  };
+  // A continue request picks the paused run up where it stopped; a new run starts fresh and keeps the earlier one, with the editor's choice.
+  const firstRound = resume && paused ? paused.resumeRound! : 1;
+  const opening: Draft2Opening = resume && paused
+    ? { ...paused, status: "running", resumeRound: undefined, error: undefined }
+    : {
+      status: "running", rounds: [], candidates: [],
+      ...(session.opening ? { previousRuns: [...(session.opening.previousRuns ?? []), openingRunSummary(session.opening)] } : {}),
+    };
   const claimed = await claimDraft2Session(session.id, { step: "opening", opening, error: null });
   if (!claimed) throw new Draft2BusyError("A Draft 2 run is already in progress for this story.");
   const auditContext = { runId: session.id, topicId, storyId };
@@ -75,6 +91,15 @@ export async function runDraft2Opening({ topicId, storyId, sessionId }: Draft2Op
   let lastRoundMs = 0;
 
   const checkpoint = (patch: Draft2SessionPatch = {}) => updateDraft2Session(session.id, { opening, trace, ...patch });
+
+  /** Leaves the next round to a new request; everything so far is saved and the best version stands in meanwhile. */
+  async function pause(round: number) {
+    const note = `Paused before round ${round}: this request's time is spent. The run continues from round ${round} in a new request.`;
+    opening.status = "paused";
+    opening.resumeRound = round;
+    opening.error = note;
+    await checkpoint({ status: "needs-review", error: note });
+  }
 
   /** Ends the run without an accepted opening; the best version stands in until the editor chooses. */
   async function needsReview(lead: string) {
@@ -110,10 +135,10 @@ export async function runDraft2Opening({ topicId, storyId, sessionId }: Draft2Op
 
   try {
     await withCreativeTextBudget({ topicId, storyId, runId: session.id }, async () => {
-      for (let round = 1; round <= OPENING_MAX_ROUNDS; round++) {
+      for (let round = firstRound; round <= OPENING_MAX_ROUNDS; round++) {
         const elapsed = Date.now() - startedAt;
-        if (round > 1 && (elapsed > TIME_BUDGET_MS || elapsed + lastRoundMs > ROUND_DEADLINE_MS)) {
-          await needsReview(`Stopped before round ${round}: the request's time budget is spent.`);
+        if (round > firstRound && (elapsed > TIME_BUDGET_MS || elapsed + lastRoundMs > ROUND_DEADLINE_MS)) {
+          await pause(round);
           return;
         }
         const roundStartedAt = Date.now();

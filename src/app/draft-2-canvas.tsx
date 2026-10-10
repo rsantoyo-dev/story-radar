@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import Link from "next/link";
-import { Button, EmptyState, InlineNotice, LoadingState, SectionHeader, StatusBadge, Surface, type StatusTone } from "@/app/ui/primitives";
+import { ActionRow, Button, EmptyState, InlineNotice, LoadingState, SectionHeader, StatusBadge, Surface, type StatusTone } from "@/app/ui/primitives";
 import type { StoryContentResponse } from "@/app/radar-dashboard";
 import type { Draft2Fact, Draft2FactsEvaluation, Draft2FactsRound, Draft2SessionStatus, Draft2TraceEntry } from "@/app/modules/draft2/draft2-facts.types";
 import {
-  OPENING_CRITERIA, OPENING_CRITERION_FLOOR, openingAcceptedWinner, openingScorePasses, openingVersions,
+  OPENING_CRITERIA, OPENING_CRITERION_FLOOR, OPENING_MAX_ROUNDS, openingAcceptedWinner, openingScorePasses, openingVersions,
   type Draft2Opening, type Draft2OpeningCriterion, type Draft2OpeningIssue, type Draft2OpeningRegression, type Draft2OpeningRound, type Draft2OpeningScore, type Draft2OpeningVersion,
 } from "@/app/modules/draft2/draft2-opening.types";
 import { contentStatusLabel, DRAFT_2_STEPS, paragraphs, sourceHost, storyHref, wordCount } from "./draft-2-canvas.core";
@@ -40,6 +40,7 @@ const SESSION_STATUS: Record<Draft2SessionStatus, { label: string; tone: StatusT
 
 const OPENING_STATUS: Record<Draft2Opening["status"], { label: string; tone: StatusTone }> = {
   running: { label: "Running", tone: "info" },
+  paused: { label: "Paused", tone: "info" },
   ready: { label: "Ready", tone: "success" },
   "needs-review": { label: "Needs review", tone: "warning" },
   failed: { label: "Failed", tone: "error" },
@@ -133,26 +134,40 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   }, [content, loadSession]);
 
   /** Runs one step: Facts starts a new session, the Opening continues the current one. */
-  async function runStep(step: Draft2RunStep) {
-    if (running || (step === "opening" && !session)) return;
-    setRunning(step); setRunError(undefined); setChoiceError(undefined);
-    const failure = step === "facts" ? "The facts step failed." : "The opening step failed.";
+  /** One step request; each has its own timeout, since a paused opening continues in further requests. */
+  async function postStep(step: Draft2RunStep, payload: Record<string, unknown>): Promise<Draft2SessionView> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), STEP_REQUEST_TIMEOUT_MS);
     try {
       const response = await fetch(`/api/radar/draft2/${step}?topicId=${encodeURIComponent(topicId)}`, {
-        method: "POST", cache: "no-store", signal: controller.signal, headers: { ...headers, "Content-Type": "application/json" },
-        body: JSON.stringify(step === "facts" ? { storyId } : { storyId, sessionId: session?.id }),
+        method: "POST", cache: "no-store", signal: controller.signal, headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify(payload),
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(body.error ?? failure);
-      setSession(body.session as Draft2SessionView);
+      if (!response.ok) throw new Error(body.error ?? (step === "facts" ? "The facts step failed." : "The opening step failed."));
+      return body.session as Draft2SessionView;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  /** Runs one step: Facts starts a new session, the Opening continues the current one; `continuing` runs a paused opening on. */
+  async function runStep(step: Draft2RunStep, { continuing = false } = {}) {
+    if (running || (step === "opening" && !session)) return;
+    setRunning(step); setRunError(undefined); setChoiceError(undefined);
+    try {
+      let next = await postStep(step, step === "facts" ? { storyId } : { storyId, sessionId: session?.id, ...(continuing ? { continue: true } : {}) });
+      // A run that paused for time goes on in a new request, one round at least each time, until it finishes.
+      for (let request = 0; step === "opening" && next.opening?.status === "paused" && request < OPENING_MAX_ROUNDS; request++) {
+        setSession(next);
+        next = await postStep("opening", { storyId, sessionId: next.id, continue: true });
+      }
+      setSession(next);
     } catch (cause) {
+      const failure = step === "facts" ? "The facts step failed." : "The opening step failed.";
       setRunError({ step, message: cause instanceof Error && cause.name === "AbortError" ? "The request took too long. The server may still finish the step; reload to see it." : cause instanceof Error ? cause.message : failure });
       // A failed run keeps its trace on the session; show it.
       loadSession().then(setSession).catch(() => undefined);
     } finally {
-      clearTimeout(timeout);
       setRunning(undefined);
     }
   }
@@ -183,6 +198,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const factsStatus = running === "facts" ? SESSION_STATUS.running : session ? (factsVerified ? SESSION_STATUS.ready : SESSION_STATUS[session.status]) : undefined;
   const openingStatus = running === "opening" ? OPENING_STATUS.running : session?.opening ? OPENING_STATUS[session.opening.status] : undefined;
   const stepStatus: Partial<Record<string, { label: string; tone: StatusTone }>> = { facts: factsStatus, opening: openingStatus };
+  const resumeRound = session?.opening?.status === "paused" ? session.opening.resumeRound : undefined;
 
   return <main className={styles.shell} style={themeStyle}>
     <div className={styles.topbar}>
@@ -245,12 +261,15 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
                 <p className={styles.eyebrow}>Step 2 · Opening</p>
                 <p className={styles.factsIntro}>Sol writes ten openings (cover and slide 2) from the verified facts and Claude scores them. Sol revises the three best against their issues and tries two new angles; Claude keeps the two best, which Sol refines for the final pick. The better version always stays. Accepted at 95/100 with no criterion below 85.</p>
               </div>
-              <Button variant="primary" size="compact" busy={running === "opening"} disabled={!factsVerified || running !== undefined} onClick={() => { void runStep("opening"); }}>
-                {running === "opening" ? "Writing and judging…" : session?.opening ? "Write the opening again" : "Write the opening"}
-              </Button>
+              <ActionRow>
+                {resumeRound && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("opening", { continuing: true }); }}>Continue from round {resumeRound}</Button> : null}
+                <Button variant="primary" size="compact" busy={running === "opening"} disabled={!factsVerified || running !== undefined} onClick={() => { void runStep("opening"); }}>
+                  {running === "opening" ? "Writing and judging…" : session?.opening ? "Write the opening again" : "Write the opening"}
+                </Button>
+              </ActionRow>
             </div>
             {!factsVerified && !running ? <p className={styles.factMeta}>The opening builds only on verified facts; verify them first.</p> : null}
-            {running === "opening" ? <LoadingState>Sol writes seven openings; Claude judges each round. This can take a few minutes.</LoadingState> : null}
+            {running === "opening" ? <LoadingState>{resumeRound ? `Continuing with round ${resumeRound} in a new request…` : "Sol writes ten openings; Claude judges each round. This can take a few minutes."}</LoadingState> : null}
             {runError?.step === "opening" ? <InlineNotice tone="error" title="The opening step stopped">{runError.message}</InlineNotice> : null}
             {session?.step === "opening" && session.error && running !== "opening" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
             {choiceError ? <InlineNotice tone="error" title="Your choice was not saved">{choiceError}</InlineNotice> : null}

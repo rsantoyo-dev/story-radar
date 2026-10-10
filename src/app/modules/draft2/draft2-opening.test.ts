@@ -64,13 +64,15 @@ type Call = { provider: "openai" | "anthropic"; input: Record<string, unknown> }
 type Row = Record<string, unknown> & { opening: Draft2Opening | null; threads: types.Draft2Threads; trace: types.Draft2TraceEntry[] };
 
 /** The orchestrator with both providers, the profile and the database replaced; `writes` and `judgments` decide each round. */
-function harness({ writes, judgments, failAt, session, busy = false, claimRefused = false }: {
+function harness({ writes, judgments, failAt, session, busy = false, claimRefused = false, secondsPerCall }: {
   writes: ((contents: WriterContents) => unknown)[];
   judgments: ((contents: JudgeContents) => unknown)[];
   failAt?: { provider: "openai" | "anthropic"; call: number };
   session?: Record<string, unknown>;
   busy?: boolean;
   claimRefused?: boolean;
+  /** Every provider call takes this long on a fake clock, so a run meets the request's time limit. */
+  secondsPerCall?: number;
 }) {
   const calls: Call[] = [];
   let row: Row = {
@@ -81,6 +83,9 @@ function harness({ writes, judgments, failAt, session, busy = false, claimRefuse
   };
   let write = 0;
   let judgment = 0;
+  let clock = Date.now();
+  class FakeDate extends Date { static now() { return clock; } }
+  const tick = () => { clock += (secondsPerCall ?? 0) * 1_000; };
   const usage = { promptTokens: 100, outputTokens: 50, thoughtsTokens: 0, totalTokens: 150 };
   const exports: Record<string, (...args: unknown[]) => Promise<Row>> = {};
   const code = ts.transpileModule(readFileSync(new URL("./draft2-opening.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -97,12 +102,14 @@ function harness({ writes, judgments, failAt, session, busy = false, claimRefuse
     "../stories/creative-profile.repository": { getCreativeProfile: async () => profile },
     "../stories/openai-structured-response": { generateOpenAiStructuredResponse: async (input: Record<string, unknown>) => {
       calls.push({ provider: "openai", input });
+      tick();
       const index = write++;
       if (failAt?.provider === "openai" && failAt.call === index + 1) throw Object.assign(new Error("OpenAI gpt-6.1-sol failed (HTTP 529: overloaded)"), { status: 529 });
       return { text: JSON.stringify(writes[index](input.contents as WriterContents)), provider: "openai", model: input.model, usage, cachedInputTokens: index ? 900 : 0 };
     } },
     "../stories/anthropic-structured-response": { generateAnthropicStructuredResponse: async (input: Record<string, unknown>) => {
       calls.push({ provider: "anthropic", input });
+      tick();
       const index = judgment++;
       if (failAt?.provider === "anthropic" && failAt.call === index + 1) throw new Error("Claude claude-sonnet-5-5 failed (HTTP 529: overloaded)");
       // The first call writes the facts to the cache; later calls read them.
@@ -115,10 +122,10 @@ function harness({ writes, judgments, failAt, session, busy = false, claimRefuse
       updateDraft2Session: async (_id: string, patch: Record<string, unknown>) => { row = { ...row, ...patch }; return row; },
     },
   };
-  vm.runInNewContext(code, { exports, Date, JSON, Error, Object, Array, Math, Number, String, Boolean, Set, Map, Promise, console, process: { env: { OPENAI_API_KEY: "sk-test" } },
+  vm.runInNewContext(code, { exports, Date: secondsPerCall ? FakeDate : Date, JSON, Error, Object, Array, Math, Number, String, Boolean, Set, Map, Promise, console, process: { env: { OPENAI_API_KEY: "sk-test" } },
     require: (name: string) => name in mocks ? mocks[name] : localRequire(name) });
   return {
-    run: () => exports.runDraft2Opening({ topicId, storyId, sessionId }),
+    run: (options: { resume?: boolean } = {}) => exports.runDraft2Opening({ topicId, storyId, sessionId, ...options }),
     choose: (candidateId: string) => exports.recordOpeningChoice({ topicId, sessionId, candidateId }),
     calls,
     writerCalls: () => calls.filter((call) => call.provider === "openai").map((call) => call.input.contents as WriterContents),
@@ -152,7 +159,7 @@ test("an opening Claude accepts in round 1 is ready; both models read the facts 
   assert.equal(session.opening?.rounds[0].kind, "explore");
   assert.equal(json(session.threads), json(factsThreads), "the facts conversations are left as they were");
   assert.equal(session.trace.length, 3, "the facts trace is kept and the opening's calls are added");
-  assert.equal(json(session.trace.slice(1).map((entry) => [entry.step, entry.provider, entry.skillVersions])), json([["opening", "openai", { hooks: "3" }], ["opening", "anthropic", { hooks: "3" }]]));
+  assert.equal(json(session.trace.slice(1).map((entry) => [entry.step, entry.provider, entry.skillVersions])), json([["opening", "openai", { hooks: "4" }], ["opening", "anthropic", { hooks: "4" }]]));
   assert.equal(session.opening?.candidates.length, 10);
 });
 
@@ -223,6 +230,33 @@ test("caching: Claude's cached context is identical every round, no history accu
   assert.equal(new Set(writerPrefixes).size, 1, "Sol's request starts with the same facts every round");
   const judgeTrace = session.trace.filter((entry) => entry.provider === "anthropic");
   assert.equal(json(judgeTrace.map((entry) => [entry.cachedInputTokens, entry.cacheWriteTokens ?? 0])), json([[0, 1_200], [1_200, 0], [1_200, 0]]));
+});
+
+test("a round the request has no time for pauses the run with everything saved; a continue request runs on from it", async () => {
+  const h = harness({
+    writes: [writer(), writer(), writer()],
+    judgments: [judge("revise", "c3", { c3: 84, c5: 80, c1: 79 }), judge("revise", "c11", { c11: 90, "c3.2": 88 }), judge("accept", "c11.3", { "c11.3": 96 })],
+    secondsPerCall: 60,
+  });
+  const paused = await h.run();
+  assert.equal(h.calls.length, 4, "two rounds fit; the third would end past the request's limit");
+  assert.equal(paused.status, "needs-review");
+  assert.equal(json([paused.opening?.status, paused.opening?.resumeRound, paused.opening?.rounds.length]), json(["paused", 3, 2]));
+  assert.equal(paused.opening?.winnerId, "c11", "the best version so far stands in while paused");
+  assert.match(String(paused.error), /Paused before round 3/);
+  const finished = await h.run({ resume: true });
+  assert.equal(h.calls.length, 6);
+  const third = h.writerCalls()[2];
+  assert.equal(json([third.task, third.openings?.map((opening) => opening.id)]), json(["revise", ["c11", "c3.2"]]), "round 3 picks up from the saved rounds");
+  assert.equal(json([finished.status, finished.opening?.status, finished.opening?.winnerId, finished.opening?.rounds.length]), json(["ready", "ready", "c11.3", 3]));
+  assert.equal(finished.opening?.resumeRound, undefined);
+  assert.equal(finished.opening?.previousRuns, undefined, "a continued run is the same run, not an earlier one");
+  assert.equal(finished.trace.filter((entry) => entry.step === "opening").length, 6, "the trace keeps every call of both requests");
+});
+
+test("continuing needs a paused run", async () => {
+  const h = harness({ writes: [], judgments: [], session: { step: "opening", status: "needs-review", opening: { status: "needs-review", rounds: [], candidates: candidates() } } });
+  await assert.rejects(h.run({ resume: true }), (error: Error) => error instanceof types.Draft2InputError && /no paused opening/.test(error.message));
 });
 
 test("when the judge's winner has a program finding, the clean runner-up wins if it passes", async () => {

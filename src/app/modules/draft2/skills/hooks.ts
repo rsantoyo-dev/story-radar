@@ -11,11 +11,13 @@ import type { Draft2Skill } from "./draft2-skills";
  * dropping a qualifier, voice yields to the story's gravity, and revisions
  * must keep what already works. Version 3, after the second: a slide 2
  * headline that states an attributed claim carries its attribution, and new
- * angles are tried beside the revisions.
+ * angles are tried beside the revisions. Version 4, after the third: a
+ * contrast between two facts is told side by side, never as a change the
+ * facts do not state (the strongest angle of three runs failed there).
  */
 export const HOOKS_SKILL: Draft2Skill = {
   name: "hooks",
-  version: "3",
+  version: "4",
   text: `# Openings for social carousels
 
 An opening is the cover (headline + subheadline) and slide 2 (headline + body).
@@ -55,6 +57,11 @@ cover whose promise slide 2 cannot pay is a lie.
 - Every sentence rests on the verified facts cited by id. Numbers, names,
   dates and qualifiers exactly as the facts state them. An attributed or
   disputed fact never becomes an established one on the cover.
+- A contrast between two facts is told as the two facts side by side ("last
+  cycle asked for A; this year's asks for B"), never as a change ("shifted
+  from A to B", "moved from A to B", "now", "no longer", "turned") unless a
+  fact states the change. Side by side, the reader feels the contrast and the
+  facts claim no more than they say.
 
 ## Scoring (1–100 each; overall is the judge's weighted call)
 - tension: does the headline make the reader need the next slide?

@@ -20,7 +20,7 @@ test("instructions are the role, then each skill, then the brand brief, and reco
   assert.deepEqual(writer.skillVersions, { hooks: "7" });
   assert.equal(composeInstructions("opening-judge", [skill]).instructions, `${OPENING_ROLES["opening-judge"]}\n\n## Shared craft\n\n## Judge only`, "a role reads its own part after the shared text");
   assert.deepEqual(Object.keys(DRAFT2_ROLES).sort(), ["extractor", "opening-judge", "opening-writer", "reviewer"]);
-  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@1", "hooks@3"]);
+  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@1", "hooks@4"]);
 });
 
 test("the Facts prompts keep their words: the extractor reads its rules, the reviewer its checklist", () => {
@@ -51,6 +51,7 @@ test("hooks never trades a qualifier for a cleaner headline, lets gravity bound 
   assert.match(HOOKS_SKILL.text, /## Revisions\n[^]*A revision that comes out flatter,\s+more\s+bureaucratic\s+or\s+less\s+clear\s+is\s+worse/);
   assert.match(HOOKS_SKILL.text, /new angles are\s+tried beside them/);
   assert.match(HOOKS_SKILL.text, /Attribution lives here when a fact is attributed[^]*in the headline too when the headline states the attributed claim/);
+  assert.match(HOOKS_SKILL.text, /A contrast between two facts is told as the two facts side by side[^]*never as a change \("shifted\s+from A to B"[^]*unless a\s+fact states the change/);
   assert.doesNotMatch(OPENING_ROLES["opening-judge"], /judge every candidate again/, "a revision round judges the revisions beside what they revise");
 });
 

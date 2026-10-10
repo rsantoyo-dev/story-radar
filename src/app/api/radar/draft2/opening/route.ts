@@ -10,17 +10,21 @@ export const maxDuration = 300;
 
 const CANDIDATE_ID_PATTERN = /^[\w.-]{1,24}$/;
 
-/** Runs the Opening step on the session's verified facts and returns the finished session. */
+/**
+ * Runs the Opening step on the session's verified facts and returns the
+ * session: finished, or paused before a round this request had no time for
+ * (opening.status "paused"); `continue: true` runs a paused run on.
+ */
 export async function POST(request: Request) {
   const denied = await authorizeRadarCollector(request);
   if (denied) return denied;
-  const body = await request.json().catch(() => null) as { storyId?: unknown; sessionId?: unknown } | null;
+  const body = await request.json().catch(() => null) as { storyId?: unknown; sessionId?: unknown; continue?: unknown } | null;
   const storyId = typeof body?.storyId === "string" ? body.storyId : "";
   const sessionId = typeof body?.sessionId === "string" ? body.sessionId : "";
   if (!DRAFT2_UUID_PATTERN.test(storyId) || !DRAFT2_UUID_PATTERN.test(sessionId)) return noStoreJson({ error: "storyId and sessionId must be valid UUIDs" }, 400);
   try {
     const topicId = await requireActiveRequestTopic(request);
-    return noStoreJson({ session: await runDraft2Opening({ topicId, storyId, sessionId }) });
+    return noStoreJson({ session: await runDraft2Opening({ topicId, storyId, sessionId, resume: body?.continue === true }) });
   } catch (error) {
     return draft2ErrorResponse(error, "run the Draft 2 opening step");
   }
