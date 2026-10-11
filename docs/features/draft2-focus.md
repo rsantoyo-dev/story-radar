@@ -59,6 +59,12 @@ rests on the verified facts.
 | `direction` | one paragraph, at most 1,500 characters (v1's editorial focus) | — |
 | `visualDirection` | one or two sentences, at most 600 characters: how the images tell this story within the brand's visual identity (the world they live in, who leads them, what recurs); the visual script follows it (since 2026-10-10, focus skill v2; a focus decided before has none) | — |
 
+An answer outside the contract (a field too long, a value the contract
+does not accept) is asked for again once, with the rule it broke as
+`correction` in the request (`FOCUS_ATTEMPTS`, skill v3, 2026-10-10: a
+real run failed on a 301-character reader consequence); a second one fails
+the step. Both calls are on the trace.
+
 A framing or structure the profile fixes (not `auto`) is kept unless the
 facts cannot support it, and the reason says so.
 
@@ -73,14 +79,15 @@ The AI's cited fact ids are filtered to the verified facts when its answer is
 parsed. A reader consequence the editor writes by hand cites no facts; it is
 the editor's direction, like v1's editorial focus.
 
-## 4. The focus skill (`skills/focus.ts`, version "2")
+## 4. The focus skill (`skills/focus.ts`, version "3")
 
 A versioned TypeScript string like the other skills, composed with the role
 `focus-editor` and the Topic's brand brief (`composeInstructions`). It
 describes each field, the defaults, the rules for `editorChoices` and the
-reasons. The trace records `{ focus: "2" }` on the call. Since version 2 the
+reasons. The trace records `{ focus: "3" }` on the call. Since version 2 the
 call also reads the Topic's visual identity in full (as the visual step
-does), the frame of `visualDirection`.
+does), the frame of `visualDirection`; version 3 states the 300-character
+limits of the audience and the reader consequence and the `correction` rule.
 
 ## 5. Contracts (`draft2-focus.types.ts`)
 

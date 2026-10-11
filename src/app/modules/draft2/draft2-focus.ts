@@ -9,7 +9,7 @@ import { activeDraft2Session, claimDraft2Session, getDraft2Session, touchDraft2S
 import { failedCall } from "./draft2-funnel";
 import { traceCost } from "./draft2-trace-cost";
 import { draft2DevTrace } from "./draft2-dev-trace";
-import { Draft2BusyError, Draft2InputError, type Draft2TraceEntry } from "./draft2-facts.types";
+import { Draft2BusyError, Draft2InputError, Draft2ResponseError, type Draft2TraceEntry } from "./draft2-facts.types";
 import {
   DRAFT2_FOCUS_SCHEMA, applyFocusEdit, decidedFocus, editorChoicesOf, focusDecisionRequest, focusLine, focusToday, parseFocusDecision, resetFocusField,
   type Draft2Focus, type Draft2FocusField,
@@ -27,6 +27,8 @@ const MAX_OUTPUT_TOKENS = 12_000;
 const CALL_TIMEOUT_MS = 240_000;
 /** Shows the decision is alive, well inside OPENING_STALL_MS (the window aliveSince() gives the focus too). */
 const HEARTBEAT_MS = 30_000;
+/** One call, and one more when the answer breaks a rule of the contract (a field too long, a value outside it): the rule goes back as the correction to apply. */
+const FOCUS_ATTEMPTS = 2;
 
 export type Draft2FocusInput = { topicId: string; storyId: string; sessionId: string };
 
@@ -74,27 +76,38 @@ export async function decideDraft2Focus({ topicId, storyId, sessionId }: Draft2F
   let decided: Draft2Focus;
   try {
     decided = await withCreativeTextBudget({ topicId, storyId, runId: session.id }, async () => {
-      draft2DevTrace({ step: "focus", round: 1, provider: "anthropic", model, operation: "draft2_focus", phase: "request", detail: { instructions, context: { verifiedFacts: `${verifiedFacts.length} facts (cached)` }, contents } });
-      const at = new Date().toISOString();
-      const begin = Date.now();
-      try {
-        const answered = await generateAnthropicStructuredResponse({
-          apiKey, model, instructions, context: { verifiedFacts }, contents,
-          schema: DRAFT2_FOCUS_SCHEMA, schemaName: "draft2_focus", maxOutputTokens: MAX_OUTPUT_TOKENS, effort: "high", timeoutMs: CALL_TIMEOUT_MS, auditContext,
-        });
-        const durationMs = Date.now() - begin;
-        trace.push({ at, step: "focus", round: 1, provider: "anthropic", model, operation: "draft2_focus", durationMs, usage: answered.usage, cachedInputTokens: answered.cachedInputTokens, ...(answered.cacheWriteTokens ? { cacheWriteTokens: answered.cacheWriteTokens } : {}), answerCharacters: answered.text.length, outcome: "ok", skillVersions, effort: "high", ...traceCost("anthropic", model, answered.usage, answered.cachedInputTokens, answered.cacheWriteTokens) });
-        draft2DevTrace({ step: "focus", round: 1, provider: "anthropic", model, operation: "draft2_focus", phase: "response", durationMs, detail: { usage: answered.usage, answer: answered.text } });
-        const decision = parseFocusDecision(answered.text, { facts, lines: lineOptions, editorChoices });
-        return decidedFocus(focus, decision, { provider: "anthropic", model }, new Date());
-      } catch (error) {
-        if (trace.length === session.trace.length) {
+      let correction: string | undefined;
+      for (let attempt = 1; attempt <= FOCUS_ATTEMPTS; attempt++) {
+        const request = correction ? { ...contents, correction } : contents;
+        draft2DevTrace({ step: "focus", round: attempt, provider: "anthropic", model, operation: "draft2_focus", phase: "request", detail: { instructions, context: { verifiedFacts: `${verifiedFacts.length} facts (cached)` }, contents: request } });
+        const at = new Date().toISOString();
+        const begin = Date.now();
+        let answered: Awaited<ReturnType<typeof generateAnthropicStructuredResponse>>;
+        try {
+          answered = await generateAnthropicStructuredResponse({
+            apiKey, model, instructions, context: { verifiedFacts }, contents: request,
+            schema: DRAFT2_FOCUS_SCHEMA, schemaName: "draft2_focus", maxOutputTokens: MAX_OUTPUT_TOKENS, effort: "high", timeoutMs: CALL_TIMEOUT_MS, auditContext,
+          });
+        } catch (error) {
           const note = error instanceof Error ? error.message : "unknown error";
-          trace.push({ at, step: "focus", round: 1, provider: "anthropic", model, operation: "draft2_focus", durationMs: Date.now() - begin, outcome: "error", note, ...failedCall(error), skillVersions });
-          draft2DevTrace({ step: "focus", round: 1, provider: "anthropic", model, operation: "draft2_focus", phase: "error", durationMs: Date.now() - begin, detail: { error: note } });
+          trace.push({ at, step: "focus", round: attempt, provider: "anthropic", model, operation: "draft2_focus", durationMs: Date.now() - begin, outcome: "error", note, ...failedCall(error), skillVersions, effort: "high" });
+          draft2DevTrace({ step: "focus", round: attempt, provider: "anthropic", model, operation: "draft2_focus", phase: "error", durationMs: Date.now() - begin, detail: { error: note } });
+          throw error;
         }
-        throw error;
+        const durationMs = Date.now() - begin;
+        trace.push({ at, step: "focus", round: attempt, provider: "anthropic", model, operation: "draft2_focus", durationMs, usage: answered.usage, cachedInputTokens: answered.cachedInputTokens, ...(answered.cacheWriteTokens ? { cacheWriteTokens: answered.cacheWriteTokens } : {}), answerCharacters: answered.text.length, outcome: "ok", skillVersions, effort: "high", ...traceCost("anthropic", model, answered.usage, answered.cachedInputTokens, answered.cacheWriteTokens) });
+        draft2DevTrace({ step: "focus", round: attempt, provider: "anthropic", model, operation: "draft2_focus", phase: "response", durationMs, detail: { usage: answered.usage, answer: answered.text } });
+        try {
+          const decision = parseFocusDecision(answered.text, { facts, lines: lineOptions, editorChoices });
+          return decidedFocus(focus, decision, { provider: "anthropic", model }, new Date());
+        } catch (error) {
+          // An answer outside the contract (a field too long, a value it does not accept) is asked for again once, with the rule it broke; a second one fails the step.
+          if (!(error instanceof Draft2ResponseError) || attempt === FOCUS_ATTEMPTS) throw error;
+          correction = `${error.message}. Return the whole decision again, every field and every reason, with this fixed and nothing else changed.`;
+          draft2DevTrace({ step: "focus", round: attempt, provider: "anthropic", model, operation: "draft2_focus", phase: "error", durationMs, detail: { correction } });
+        }
       }
+      throw new Draft2ResponseError("The focus could not be decided.");
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "The focus step failed.";

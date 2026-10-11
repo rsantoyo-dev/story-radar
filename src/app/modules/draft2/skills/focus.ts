@@ -7,7 +7,7 @@ import type { Draft2Skill } from "./draft2-skills";
  */
 export const FOCUS_SKILL: Draft2Skill = {
   name: "focus",
-  version: "2",
+  version: "3",
   text: `# The focus of a story
 
 The focus is the brief every later step follows: which editorial line the
@@ -22,16 +22,17 @@ field; it is guidance for the writing, never evidence.
   story (foundBy) unless another's objective plainly fits it better. lineId
   is null only when the Topic has no line.
 - audience: the part of the publication's audience this story speaks to, as
-  one concrete phrase (who, where, in what situation), at most 40 words.
-  Never wider than the publication's audience.
+  one concrete phrase (who, where, in what situation), at most 40 words and
+  300 characters. Never wider than the publication's audience.
 - framing: "reader-consequence" when a fact establishes a concrete change for
   the audience (what they pay, owe, can do or must decide); "explainer" when
   the value is understanding how something works or what happened;
   "authority" when the news is the decision, the institution or the expert
   itself. When the publication sets a framing (topicDefaults.framing is not
   "auto"), keep it unless the facts cannot support it, and say why.
-- readerConsequence: one sentence, in the publication's language, of what
-  changes for the audience, resting only on the facts it cites (factIds),
+- readerConsequence: one sentence of at most 300 characters, in the
+  publication's language, of what changes for the audience, resting only on
+  the facts it cites (factIds),
   with every qualifier they carry: a proposal stays proposed, an estimate an
   estimate, an allegation attributed. text is null and factIds empty when no
   fact establishes a consequence; the framing cannot then be
@@ -82,7 +83,10 @@ field; it is guidance for the writing, never evidence.
   direction; a "list" structure needs its items; an "explainer" framing
   changes what the reader consequence is for.
 - reasons: one sentence per field on why, naming the facts that decide it.
-  For a field in editorChoices, say how the other fields fit it.`,
+  For a field in editorChoices, say how the other fields fit it.
+- correction, when present, names a rule your earlier answer broke (a field
+  too long, a value outside the contract): return the whole decision again,
+  every field and every reason, with it fixed and nothing else changed.`,
 };
 
 export const FOCUS_ROLES = {

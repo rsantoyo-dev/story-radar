@@ -98,6 +98,7 @@ function harness({ answers = [], session, busy = false, claimRefused = false, fa
     decide: () => exports.decideDraft2Focus({ topicId, storyId, sessionId }),
     edit: (field: string, change: { value?: unknown; reset?: boolean }) => exports.editDraft2Focus({ topicId, sessionId, field, ...change }),
     calls,
+    last: () => row,
     row: () => row,
   };
 }
@@ -130,7 +131,7 @@ test("Claude decides the focus from the cached facts, the brand brief, the profi
   assert.equal(json(focus.decidedBy), json({ provider: "anthropic", model: "claude-sonnet-5-5" }));
   const last = session.trace[session.trace.length - 1];
   assert.equal(session.trace.length, 2, "the facts trace is kept");
-  assert.equal(json([last.step, last.provider, last.operation, last.outcome, last.skillVersions, last.cacheWriteTokens]), json(["focus", "anthropic", "draft2_focus", "ok", { focus: "2" }, 900]));
+  assert.equal(json([last.step, last.provider, last.operation, last.outcome, last.skillVersions, last.cacheWriteTokens]), json(["focus", "anthropic", "draft2_focus", "ok", { focus: "3" }, 900]));
 });
 
 test("deciding again keeps the editor's fields: Claude receives them as choices and the program keeps them whatever it answers", async () => {
@@ -157,11 +158,14 @@ test("a failed decision keeps the focus from before, marks it failed and keeps t
   assert.equal(json([last.step, last.operation, last.outcome]), json(["focus", "draft2_focus", "error"]));
 });
 
-test("an answer outside the contract fails the step without changing the focus", async () => {
-  const h = harness({ answers: [answer({ lineId: "77777777-7777-4777-8777-777777777777" })] });
+test("two answers outside the contract fail the step without changing the focus; the second was asked with the rule the first broke", async () => {
+  const wrongLine = answer({ lineId: "77777777-7777-4777-8777-777777777777" });
+  const h = harness({ answers: [wrongLine, wrongLine] });
   await assert.rejects(h.decide(), (error: Error) => error instanceof types.Draft2ResponseError && /editorial line the Topic does not have/.test(error.message));
+  assert.equal(h.calls.length, 2);
+  assert.match(String((h.calls[1].contents as { correction: string }).correction), /editorial line the Topic does not have/);
   assert.equal(json([h.row().status, h.row().focus?.status, h.row().focus?.values]), json(["failed", "failed", undefined]));
-  assert.equal(h.row().trace[h.row().trace.length - 1].outcome, "ok", "the call itself answered; its trace stays");
+  assert.equal(h.row().trace[h.row().trace.length - 1].outcome, "ok", "the calls themselves answered; their trace stays");
 });
 
 test("the focus starts only on verified facts, one run at a time", async () => {
@@ -187,4 +191,28 @@ test("an edit is saved with no provider call; a reset gives the field back; neit
   const stopped = harness({ session: { ...h.row(), status: "running", updatedAt: new Date(Date.now() - 5 * 60_000), focus: { ...h.row().focus, status: "running" } } });
   assert.equal((await stopped.edit("goal", { value: "saves" })).focus?.values?.goal, "saves", "a decision that stopped answering does not hold the focus");
   await assert.rejects(harness().edit("goal", { value: "saves" }), /Decide the focus before changing it/);
+});
+
+test("an answer outside the contract is asked for again once, with the rule it broke as the correction; the second one decides", async () => {
+  const h = harness({ answers: [answer({ readerConsequence: { text: "x".repeat(301), factIds: ["f1"] } }), answer()] });
+  const session = await h.decide();
+  assert.equal(session.status, "ready");
+  assert.equal(h.calls.length, 2);
+  const retry = h.calls[1].contents as { correction: string; story: { title: string } };
+  assert.match(retry.correction, /^The focus's reader consequence is longer than 300 characters\. Return the whole decision again, every field and every reason/);
+  assert.equal(retry.story.title, "Pentagon buys AI by video", "the whole request travels again");
+  assert.equal("correction" in (h.calls[0].contents as object), false, "the first request carries none");
+  assert.equal(h.calls[1].instructions, h.calls[0].instructions, "the same instructions and cached facts");
+  assert.equal((session.focus as Draft2Focus).values?.readerConsequence?.text, "A five-minute video can now open a Pentagon contract.");
+  const focusTrace = (session.trace as types.Draft2TraceEntry[]).filter((entry) => entry.step === "focus");
+  assert.equal(json(focusTrace.map((entry) => [entry.round, entry.outcome, entry.effort])), json([[1, "ok", "high"], [2, "ok", "high"]]), "both calls are on the trace: they were paid");
+});
+
+test("a second answer outside the contract fails the step, with both calls on the trace", async () => {
+  const h = harness({ answers: [answer({ audience: "" }), answer({ direction: "" })] });
+  await assert.rejects(h.decide(), /direction is missing or longer than/);
+  assert.equal(h.calls.length, 2);
+  const last = h.last();
+  assert.equal(json([last.status, (last.focus as Draft2Focus).status]), json(["failed", "failed"]));
+  assert.equal((last.trace as types.Draft2TraceEntry[]).filter((entry) => entry.step === "focus").length, 2);
 });

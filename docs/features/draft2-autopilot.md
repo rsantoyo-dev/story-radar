@@ -128,7 +128,10 @@ one write and one judgment.
 
 ## 7. The visual direction (Focus) and two scripts (Visual)
 
-- The Focus gains `visualDirection` (≤ 600 characters; focus skill v2):
+- The Focus gains `visualDirection` (≤ 600 characters; focus skill v2, v3
+  the same day with the explicit 300-character limits and one retry on an
+  answer outside the contract, after a real run failed on a 301-character
+  reader consequence):
   how the images tell this story within the brand's visual identity: the
   world they live in, who or what leads them, what recurs. Claude decides it
   reading the identity in full (as the visual step does); the editor edits
