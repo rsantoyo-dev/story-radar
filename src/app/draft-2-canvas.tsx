@@ -1273,9 +1273,12 @@ function FunnelRoundView<C extends FunnelCandidate>({ round, names, display }: {
     {(round.regressions ?? []).map((regression) => <p key={regression.candidateId} className={styles.factMeta}>{regressionNote(regression)}</p>)}
     {evaluation && programWinner && programWinner !== evaluation.winnerId ? <p className={styles.factMeta}>{names.judge} picked {evaluation.winnerId}, which has a program finding; {programWinner}, the best clean candidate, meets the thresholds and wins.</p> : null}
     {evaluation ? <p className={styles.factMeta}>{evaluation.summary}</p> : null}
-    {round.shadow ? <p className={styles.factMeta}>Shadow judgment at {round.shadow.effort}{round.shadow.error
+    {round.shadow ? <p className={styles.factMeta}>Shadow judgment by {round.shadow.model} at {round.shadow.effort}{round.shadow.error
       ? ` failed: ${round.shadow.error}`
-      : `: ${round.shadow.verdict} · ${round.shadow.winnerId} ${round.shadow.scores?.find((score) => score.candidateId === round.shadow?.winnerId)?.overall ?? "–"}/100 · ${round.shadow.agrees ? "the same winner as the judgment that counts" : "another winner than the judgment that counts"} · ${(round.shadow.durationMs / 1000).toFixed(0)} s${round.shadow.scores?.length ? ` · ${round.shadow.scores.map((score) => `${score.candidateId} ${score.overall}`).join(", ")}` : ""}`}</p> : null}
+      : `: ${round.shadow.verdict} · ${round.shadow.winnerId} ${round.shadow.scores?.find((score) => score.candidateId === round.shadow?.winnerId)?.overall ?? "–"}/100 · ${round.shadow.agrees ? "the same winner as the judgment that counts" : "another winner than the judgment that counts"} · ${(round.shadow.durationMs / 1000).toFixed(0)} s${round.shadow.scores?.length ? ` · ${round.shadow.scores.map((score) => `${score.candidateId} ${score.overall}`).join(", ")}` : ""}${round.shadow.issues ? ` · ${round.shadow.issues.length} ${round.shadow.issues.length === 1 ? "issue" : "issues"}${round.shadow.issues.length ? ` (${[...new Set(round.shadow.issues.map((issue) => issue.code))].join(", ")})` : ""}` : ""}${round.shadow.proposals ? ` · ${round.shadow.proposals} ${round.shadow.proposals === 1 ? "proposal" : "proposals"}` : ""}`}</p> : null}
+    {round.shadow?.issues?.length ? <details><summary>What the shadow judgment found</summary>
+      <ul className={styles.issueList}>{round.shadow.issues.map((issue, index) => <li key={index}><strong>{issue.code}</strong>{issue.candidateId ? ` · ${issue.candidateId}` : ""}: {issue.detail}</li>)}</ul>
+    </details> : null}
     {winner ? <ScoreRow score={winner} display={display} /> : null}
     {round.mechanical.length || evaluation?.issues.length ? <ul className={styles.issueList}>
       {round.mechanical.map((issue, index) => <li key={`m${index}`}><strong>Program · {issue.code}</strong>{issueTarget(issue)}: {issue.detail}</li>)}

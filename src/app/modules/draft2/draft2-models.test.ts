@@ -1,13 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { draft2RevisionEffort, draft2RoleModel, draft2ShadowJudgeEffort } from "./draft2-models";
+import { draft2RevisionEffort, draft2RoleModel, draft2ShadowJudgeEffort, draft2ShadowJudgeModel } from "./draft2-models";
 
 const defaults = { anthropic: "claude-sonnet-5-5", openai: "gpt-6.1-sol" };
 
-test("a revision round runs at high unless the environment says otherwise, per role", () => {
-  assert.deepEqual([draft2RevisionEffort("writer", {}), draft2RevisionEffort("judge", {})], ["high", "high"]);
-  const env = { DRAFT2_REVISION_EFFORT_JUDGE: " Medium ", DRAFT2_REVISION_EFFORT_WRITER: "nonsense" };
-  assert.deepEqual([draft2RevisionEffort("writer", env), draft2RevisionEffort("judge", env)], ["high", "medium"], "an unknown value is ignored");
+test("a revision round's writer thinks at high and its judge judges at medium unless the environment says otherwise, per role", () => {
+  assert.deepEqual([draft2RevisionEffort("writer", {}), draft2RevisionEffort("judge", {})], ["high", "medium"]);
+  const env = { DRAFT2_REVISION_EFFORT_JUDGE: " High ", DRAFT2_REVISION_EFFORT_WRITER: "nonsense" };
+  assert.deepEqual([draft2RevisionEffort("writer", env), draft2RevisionEffort("judge", env)], ["high", "high"], "an unknown value is ignored");
+});
+
+test("the shadow judgment's model comes from the environment when it is one of the judge's provider", () => {
+  assert.equal(draft2ShadowJudgeModel({}, "openai"), undefined);
+  assert.equal(draft2ShadowJudgeModel({ DRAFT2_SHADOW_JUDGE_MODEL: "gpt-6-luna" }, "openai"), "gpt-6-luna");
+  assert.equal(draft2ShadowJudgeModel({ DRAFT2_SHADOW_JUDGE_MODEL: "gpt-6-luna" }, "anthropic"), undefined, "a GPT model cannot shadow a Claude judge");
+  assert.equal(draft2ShadowJudgeModel({ DRAFT2_SHADOW_JUDGE_MODEL: "claude-opus-5-5" }, "anthropic"), "claude-opus-5-5");
 });
 
 test("the shadow judgment's effort comes from the environment, or there is none", () => {

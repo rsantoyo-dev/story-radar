@@ -146,7 +146,7 @@ test("an arc: four decks, then the two best revised beside Sol's deck as written
   const session = await h.run();
   assert.equal(json(h.judgeCalls().map((contents) => contents.candidates.map((candidate) => candidate.id))), json([["c1", "c2", "c3", "c4"], ["c2.2", "c3.2", "c5", "c6"]]));
   assert.equal(json(session.deck?.rounds[1].candidates.map((candidate) => [candidate.id, candidate.proposalOf ?? null, candidate.asProposed ?? false])), json([["c2.2", null, false], ["c3.2", null, false], ["c5", "p1", false], ["c6", "p1", true]]));
-  assert.equal(json(h.calls.map((call) => call.input.effort ?? call.input.reasoningEffort)), json(["medium", "medium", "high", "high"]));
+  assert.equal(json(h.calls.map((call) => call.input.effort ?? call.input.reasoningEffort)), json(["medium", "medium", "high", "medium"]));
   assert.match(String(session.error), /^Sol did not accept a deck after 2 rounds\. The best version, c5, scored 91\/100[^]*Choose a deck below or write it again\./);
 });
 

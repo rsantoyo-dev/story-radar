@@ -81,18 +81,28 @@ is the next step when runs should outlive the tab.
 
 | Variable | Effect |
 | --- | --- |
-| `DRAFT2_REVISION_EFFORT_JUDGE`, `DRAFT2_REVISION_EFFORT_WRITER` | The effort of a funnel round whose plan names none (the revision rounds): `low`, `medium` or `high` (default). Round 1 keeps the plan's `medium`. |
-| `DRAFT2_SHADOW_JUDGE_EFFORT` | A second judgment of every round at this effort, run in parallel with the real one (`Promise.all`), recorded on the round (`round.shadow`: verdict, winner, scores, whether it agrees, duration) and never deciding. The trace keeps it as `<operation>_shadow` with its cost. Unset, or equal to the round's effort, means no shadow. |
+| `DRAFT2_REVISION_EFFORT_JUDGE`, `DRAFT2_REVISION_EFFORT_WRITER` | The effort of a funnel round whose plan names none (the revision rounds): `low`, `medium` or `high`. Defaults: the writer `high`; the judge `medium` since the first autopilot run (2026-10-10 night: a shadow at medium named the same winner as high in 7 rounds of 7, at 35–45% of the time, 1–2 points more lenient at the top). Round 1 keeps the plan's `medium`. |
+| `DRAFT2_SHADOW_JUDGE_EFFORT`, `DRAFT2_SHADOW_JUDGE_MODEL` | A second judgment of every round, at this effort (else the round's) and by this model of the judge's provider (else the judge's), run in parallel with the real one (`Promise.all`), recorded on the round (`round.shadow`: model, effort, verdict, winner, scores, the issues it found cut short, how many proposals, whether it agrees, duration) and never deciding. The trace keeps it as `<operation>_shadow` with its model and cost. No shadow when both equal the real judgment's. |
 | `DRAFT2_MODEL_<STEP>_WRITER`, `DRAFT2_MODEL_<STEP>_JUDGE` | The model a step's role runs on (`DRAFT2_MODEL_OPENING_WRITER=claude-opus-5-5`), when it is one of the role's provider; the run records it (`writer.model`), so a stored run keeps its models whatever the environment says later. |
 
-The experiment the editor asked for: `DRAFT2_SHADOW_JUDGE_EFFORT=medium` on
-a few stories and compare, round by round, the shadow's winner and scores
-with the real judgment at `high`; if they agree, set
-`DRAFT2_REVISION_EFFORT_JUDGE=medium` (and try the writer's) for real; if
-the shadow is lenient (scores systematically higher), keep `high` at least
-on the Opening's last round. For Opus on the hooks:
-`DRAFT2_MODEL_OPENING_WRITER=claude-opus-5-5` and compare Sol's round-1 best
-and the final result with the Sonnet history. Both cost cents per story.
+The first experiment (`DRAFT2_SHADOW_JUDGE_EFFORT=medium`, one story, seven
+rounds): the same winner every time, scores within +2 at the top, one case
+where medium would have accepted at 95 what high scored 94 (the Opening's
+last round). The judge's revision rounds now default to `medium`.
+
+The second, running: `DRAFT2_SHADOW_JUDGE_MODEL=gpt-6-luna` (GPT-6 Luna,
+$0.10 / $0.50 per million against Sol's $2 / $10; the rate is in the meter)
+with the gate kept at 95 as the reference. Sol judged ~$0.83 of the $1.66 a
+story costs; Luna would judge it for ~$0.05. Read, story by story, whether
+Luna names Sol's winners, whether its scores are inflated (a 95 of Luna's is
+not a 95 of Sol's), and whether its issues are as actionable; then decide
+between Luna on every round, Luna on the early rounds with Sol as the final
+gate and proposer, or Sol. Note that Sol's proposals have produced winners
+(the first autopilot run's opening, c18.3, revised Sol's proposal c18), so
+a judge that proposes worse costs quality even when it scores alike.
+
+For Opus on the hooks: `DRAFT2_MODEL_OPENING_WRITER=claude-opus-5-5` and
+compare Sol's round-1 best and the final result with the Sonnet history.
 
 The Closing's first round now names `effort: "medium"` like every other
 step's (its plan predated the effort field and ran at `high`: 131–207 s per

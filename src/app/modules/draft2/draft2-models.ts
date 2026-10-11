@@ -15,24 +15,33 @@ const effortOf = (value: string | undefined): Draft2Effort | undefined => DRAFT2
 
 /**
  * The effort of a funnel round whose plan names none (the revision rounds):
- * "high", or DRAFT2_REVISION_EFFORT_WRITER / DRAFT2_REVISION_EFFORT_JUDGE from
- * the environment, so the revisions can run at medium while a judge shadow
- * (below) measures what high would have said. A round that names its effort
- * (round 1, medium) keeps it.
+ * the writer thinks at "high"; the judge judges at "medium" since 2026-10-10,
+ * when a shadow at medium named the same winner as high in 7 rounds of 7 at
+ * a third of the time. DRAFT2_REVISION_EFFORT_WRITER / DRAFT2_REVISION_EFFORT_JUDGE
+ * override either. A round that names its effort (round 1, medium) keeps it.
  */
 export function draft2RevisionEffort(role: "writer" | "judge", env: Draft2Env): Draft2Effort {
-  return effortOf(role === "judge" ? env.DRAFT2_REVISION_EFFORT_JUDGE : env.DRAFT2_REVISION_EFFORT_WRITER) ?? "high";
+  return effortOf(role === "judge" ? env.DRAFT2_REVISION_EFFORT_JUDGE : env.DRAFT2_REVISION_EFFORT_WRITER) ?? (role === "judge" ? "medium" : "high");
 }
 
 /**
- * A second judgment of every funnel round at this effort, run beside the
- * real one and recorded on the round (never deciding anything), so two
- * efforts can be compared on the same candidates: DRAFT2_SHADOW_JUDGE_EFFORT.
- * Undefined, or equal to the round's effort, means no shadow.
+ * A second judgment of every funnel round, run beside the real one and
+ * recorded on the round (never deciding anything), so another effort, another
+ * model, or both can be compared with the real judge on the same candidates:
+ * DRAFT2_SHADOW_JUDGE_EFFORT (else the round's effort) and
+ * DRAFT2_SHADOW_JUDGE_MODEL (a model of the judge's provider; else the judge's
+ * model). No shadow runs when both equal the real judgment's.
  */
 export function draft2ShadowJudgeEffort(env: Draft2Env): Draft2Effort | undefined {
   return effortOf(env.DRAFT2_SHADOW_JUDGE_EFFORT);
 }
+export function draft2ShadowJudgeModel(env: Draft2Env, provider: Draft2Provider): string | undefined {
+  const configured = env.DRAFT2_SHADOW_JUDGE_MODEL?.trim();
+  return configured && modelFits(provider, configured) ? configured : undefined;
+}
+
+/** Whether a model name belongs to a provider: Claude's begin with "claude-", OpenAI's with "gpt-". */
+const modelFits = (provider: Draft2Provider, model: string) => provider === "anthropic" ? /^claude-[a-z0-9.-]+$/i.test(model) : /^gpt-[a-z0-9.-]+$/i.test(model);
 
 /**
  * The model a step's role runs on: DRAFT2_MODEL_<STEP>_<ROLE> (for instance
@@ -42,8 +51,7 @@ export function draft2ShadowJudgeEffort(env: Draft2Env): Draft2Effort | undefine
  */
 export function draft2RoleModel(step: string, role: "writer" | "judge", provider: Draft2Provider, env: Draft2Env, defaults: Record<Draft2Provider, string>): string {
   const configured = env[`DRAFT2_MODEL_${step.toUpperCase()}_${role.toUpperCase()}`]?.trim();
-  const fits = configured && (provider === "anthropic" ? /^claude-[a-z0-9.-]+$/i.test(configured) : /^gpt-[a-z0-9.-]+$/i.test(configured));
-  return fits ? configured : defaults[provider];
+  return configured && modelFits(provider, configured) ? configured : defaults[provider];
 }
 
 /** The names the canvas and the notes give each provider's model. */

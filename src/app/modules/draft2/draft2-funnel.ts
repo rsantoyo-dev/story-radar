@@ -106,7 +106,7 @@ export const FUNNEL_EXTRA_ROUND: FunnelPlanRound = { revise: 1, fresh: 0, propos
 /** How many extra rounds one run may take. */
 export const FUNNEL_MAX_EXTRA_ROUNDS = 2;
 
-/** A second judgment of a round at another effort, recorded beside the real one and deciding nothing (draft2ShadowJudgeEffort). */
+/** A second judgment of a round at another effort or by another model, recorded beside the real one and deciding nothing (draft2ShadowJudgeEffort, draft2ShadowJudgeModel). */
 export type FunnelShadowJudgment = {
   effort: "low" | "medium" | "high";
   model: string;
@@ -115,6 +115,10 @@ export type FunnelShadowJudgment = {
   verdict?: string;
   winnerId?: string;
   scores?: { candidateId: string; overall: number }[];
+  /** The issues it found (at most a dozen, each detail cut short), to read its usefulness beside its scores. */
+  issues?: { code: string; candidateId?: string; detail: string }[];
+  /** How many candidates of its own it proposed. */
+  proposals?: number;
   /** Whether it named the same winner as the real judgment. */
   agrees?: boolean;
   error?: string;

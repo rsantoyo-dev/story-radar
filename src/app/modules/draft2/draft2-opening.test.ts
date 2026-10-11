@@ -284,7 +284,7 @@ test("loop: fifteen openings; then three revised beside the judge's three propos
     ["c16", "p1", false], ["c17", "p2", false], ["c18", "p3", false], ["c19", "p1", true], ["c20", "p2", true], ["c21", "p3", true],
   ]), "the canvas can set each original against its edit");
   assert.equal(json(rounds.map((round) => round.kind)), json(["explore", "mixed", "mixed"]));
-  assert.equal(json(h.calls.map((call) => call.input.effort ?? call.input.reasoningEffort)), json(["medium", "medium", "high", "high", "high", "high"]), "the rounds that refine think hard");
+  assert.equal(json(h.calls.map((call) => call.input.effort ?? call.input.reasoningEffort)), json(["medium", "medium", "high", "medium", "high", "medium"]), "the rounds that refine think hard");
   assert.equal(session.status, "needs-review");
   assert.equal(session.opening?.winnerId, "c16.3", "the best version of the run stands in");
   assert.match(String(session.error), /after 3 rounds\. The best version, c16\.3, scored 93\/100/);
@@ -533,4 +533,21 @@ test("the environment names a step's writer model and the revision rounds' effor
     "Opus writes this step; a Claude model cannot play Sol's role; round 1 keeps the plan's medium, the revision takes the environment's efforts");
   assert.equal(json([session.opening?.writer, session.opening?.judge]), json([{ provider: "anthropic", model: "claude-opus-5-5" }, { provider: "openai", model: "gpt-6.1-sol" }]));
   assert.equal(json(session.trace.filter((entry) => entry.step === "opening").map((entry) => [entry.model, entry.effort, entry.costMicros])), json([["claude-opus-5-5", "medium", 1234], ["gpt-6.1-sol", "medium", 1234], ["claude-opus-5-5", "low", 1234], ["gpt-6.1-sol", "medium", 1234]]));
+});
+
+test("a shadow judgment by another model of the judge's provider runs at the round's effort, records what it found, and decides nothing", async () => {
+  const h = harness({
+    writes: [writer()],
+    judgments: [judge("accept", "c1", { c1: 96 }), (contents: JudgeContents) => ({ ...judge("revise", "c2", { c1: 90, c2: 93 })(contents), issues: [{ code: "UNCLEAR", candidateId: "c1", part: "cover", detail: "The cover promises what slide 2 does not pay. " + "x".repeat(200) }], proposals: [] })],
+    env: { DRAFT2_SHADOW_JUDGE_MODEL: "gpt-6-luna" },
+  });
+  const session = await h.run();
+  assert.equal(json([session.opening?.status, session.opening?.winnerId, session.opening?.judge]), json(["ready", "c1", { provider: "openai", model: "gpt-6.1-sol" }]), "the real judge and its model decide");
+  const judges = h.judgeCalls();
+  assert.equal(json(judges.map((input) => [input.schemaName, input.model, input.reasoningEffort])), json([["draft2_opening_review", "gpt-6.1-sol", "medium"], ["draft2_opening_review_shadow", "gpt-6-luna", "medium"]]), "the same effort, another model");
+  assert.equal(judges[0].instructions, judges[1].instructions);
+  const shadow = session.opening?.rounds[0].shadow;
+  assert.equal(json([shadow?.model, shadow?.effort, shadow?.verdict, shadow?.winnerId, shadow?.agrees, shadow?.proposals]), json(["gpt-6-luna", "medium", "revise", "c2", false, 0]));
+  assert.equal(json(shadow?.issues), json([{ code: "UNCLEAR", candidateId: "c1", detail: ("The cover promises what slide 2 does not pay. " + "x".repeat(200)).slice(0, 160) }]), "its issues, cut short");
+  assert.equal(json(session.trace.filter((entry) => entry.operation === "draft2_opening_review_shadow").map((entry) => [entry.model, entry.effort, entry.costMicros])), json([["gpt-6-luna", "medium", 1234]]));
 });

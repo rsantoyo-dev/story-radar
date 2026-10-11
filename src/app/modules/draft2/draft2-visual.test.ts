@@ -154,7 +154,7 @@ test("two scripts, then both revised beside Sol's script as written and edited, 
   const h = harness({ writes: [writer(), writer(), writer()], judgments: UNACCEPTED() });
   const session = await h.run();
   assert.equal(json(h.judgeCalls().map((contents) => contents.candidates?.map((candidate) => candidate.id))), json([["c1", "c2"], ["c2.2", "c1.2", "c3", "c4"], ["c4.3"]]), "Sol's script as edited (c3) and as written (c4) take the ids after c2; round 3 revises only the best");
-  assert.equal(json(h.calls.map((call) => call.input.effort ?? call.input.reasoningEffort)), json(["medium", "medium", "high", "high", "high", "high"]));
+  assert.equal(json(h.calls.map((call) => call.input.effort ?? call.input.reasoningEffort)), json(["medium", "medium", "high", "medium", "high", "medium"]));
   assert.match(String(session.error), /^Sol did not accept a visual script after 3 rounds\. The best version, c4\.3, scored 93\/100/);
 });
 
@@ -165,7 +165,7 @@ test("a run that ended unaccepted after two rounds, before the step had a third,
   const h = harness({ writes: [writer()], judgments: [judge("accept", "c4.3", { "c4.3": 96 })], session: { step: "visual", status: "needs-review", visual: twoRounds } });
   const continued = await h.run({ resume: true });
   assert.equal(json(h.judgeCalls().map((contents) => contents.candidates?.map((candidate) => candidate.id))), json([["c4.3"]]));
-  assert.equal(json(h.calls.map((call) => [call.role, call.input.effort ?? call.input.reasoningEffort])), json([["writer", "high"], ["judge", "high"]]), "one write and one judgment");
+  assert.equal(json(h.calls.map((call) => [call.role, call.input.effort ?? call.input.reasoningEffort])), json([["writer", "high"], ["judge", "medium"]]), "one write and one judgment");
   assert.equal(json([continued.visual?.status, continued.visual?.winnerId, continued.visual?.rounds.length, continued.visual?.previousRuns]), json(["ready", "c4.3", 3, undefined]), "the same run, not a new one");
   const done = JSON.parse(JSON.stringify(ended.visual)) as Draft2Visual;
   await assert.rejects(harness({ writes: [], judgments: [], session: { step: "visual", status: "needs-review", visual: done } }).run({ resume: true }), /There is no paused or stopped visual script to continue/);

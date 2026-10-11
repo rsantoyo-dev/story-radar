@@ -6,7 +6,7 @@ import { getAnthropicRuntimeConfig, requireAnthropicApiKey } from "../stories/an
 import { getCreativeProfile } from "../stories/creative-profile.repository";
 import { activeDraft2Session, claimDraft2Session, getDraft2Session, touchDraft2Session, updateDraft2Session, type Draft2SessionPatch } from "./draft2-session.repository";
 import { draft2DevTrace } from "./draft2-dev-trace";
-import { draft2ProviderName, draft2RevisionEffort, draft2RoleModel, draft2ShadowJudgeEffort, draft2SolModel, type Draft2Effort, type Draft2Provider } from "./draft2-models";
+import { draft2ProviderName, draft2RevisionEffort, draft2RoleModel, draft2ShadowJudgeEffort, draft2ShadowJudgeModel, draft2SolModel, type Draft2Effort, type Draft2Provider } from "./draft2-models";
 import { traceCostMicros } from "./draft2-trace-cost";
 import { Draft2BusyError, Draft2InputError, type Draft2Fact, type Draft2TraceEntry } from "./draft2-facts.types";
 import {
@@ -226,11 +226,11 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
    * block, or the tail of Sol's instructions. The effort is the round's (or
    * the shadow judgment's), and the timeout what is left of the route's time.
    */
-  function ask(role: FunnelRole, round: number, operation: string, request: Composed & { contents: Record<string, unknown>; schema: Record<string, unknown> }, effortOverride?: Draft2Effort) {
+  function ask(role: FunnelRole, round: number, operation: string, request: Composed & { contents: Record<string, unknown>; schema: Record<string, unknown> }, options: { effort?: Draft2Effort; kind?: "writer" | "judge" } = {}) {
     const { instructions, skillVersions, contents, schema } = request;
-    const roleKind = role === roles.judge ? "judge" : "writer";
-    // The round's effort, for the writer and the judge alike; Sol writing a stored run keeps medium.
-    const effort = effortOverride ?? effortFor(round, roleKind);
+    const roleKind = options.kind ?? (role === roles.judge ? "judge" : "writer");
+    // The round's effort, for the writer and the judge alike (or the shadow judgment's); Sol writing a stored run keeps medium.
+    const effort = options.effort ?? effortFor(round, roleKind);
     const timeoutMs = callTimeoutMs();
     if (role.provider === "anthropic") {
       const traceRequest = { instructions, context: { ...setup.context, verifiedFacts: `${verifiedFacts.length} facts (cached)` }, contents, effort };
@@ -247,19 +247,25 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
   }
 
   /**
-   * The shadow judgment of a round: the judge's request again at another
-   * effort (draft2ShadowJudgeEffort), in parallel with the real one. Its
-   * verdict, winner and scores are kept on the round for comparison and
+   * The shadow judgment of a round: the judge's request again, at another
+   * effort or by another model of the judge's provider (draft2ShadowJudgeEffort,
+   * draft2ShadowJudgeModel), in parallel with the real one. Its verdict,
+   * winner, scores and issues are kept on the round for comparison and
    * decide nothing; a failure is kept as a note. Never throws.
    */
-  async function shadowJudgment(round: number, request: Composed & { contents: Record<string, unknown>; schema: Record<string, unknown> }, ids: readonly string[], effort: Draft2Effort): Promise<FunnelShadowJudgment> {
+  async function shadowJudgment(round: number, request: Composed & { contents: Record<string, unknown>; schema: Record<string, unknown> }, ids: readonly string[], effort: Draft2Effort, model: string): Promise<FunnelShadowJudgment> {
     const begin = Date.now();
     try {
-      const answered = await ask(roles.judge, round, `${def.operations.judge}_shadow`, request, effort);
+      const answered = await ask({ provider: roles.judge.provider, model }, round, `${def.operations.judge}_shadow`, request, { effort, kind: "judge" });
       const parsed = setup.parseEvaluation(answered.text, ids);
-      return { effort, model: roles.judge.model, durationMs: Date.now() - begin, verdict: parsed.verdict, winnerId: parsed.winnerId, scores: parsed.scores.map((score) => ({ candidateId: score.candidateId, overall: score.overall })) };
+      return {
+        effort, model, durationMs: Date.now() - begin, verdict: parsed.verdict, winnerId: parsed.winnerId,
+        scores: parsed.scores.map((score) => ({ candidateId: score.candidateId, overall: score.overall })),
+        issues: parsed.issues.slice(0, 12).map((issue) => ({ code: issue.code, ...(issue.candidateId ? { candidateId: issue.candidateId } : {}), detail: issue.detail.slice(0, 160) })),
+        proposals: parsed.proposals?.length ?? 0,
+      };
     } catch (error) {
-      return { effort, model: roles.judge.model, durationMs: Date.now() - begin, error: error instanceof Error ? error.message.slice(0, 200) : "The shadow judgment failed." };
+      return { effort, model, durationMs: Date.now() - begin, error: error instanceof Error ? error.message.slice(0, 200) : "The shadow judgment failed." };
     }
   }
 
@@ -343,11 +349,12 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
         }
         const judgeRequest = { ...setup.judge, contents: setup.judgeRequest(round, candidates, mechanical, targets), schema: setup.schemas.judge };
         const ids = candidates.map((candidate) => candidate.id);
-        // The shadow judgment, when the environment asks for one, runs beside the real one and never decides.
-        const shadowEffort = draft2ShadowJudgeEffort(process.env);
+        // The shadow judgment, when the environment asks for one (another effort, another model, or both), runs beside the real one and never decides.
+        const shadowEffort = draft2ShadowJudgeEffort(process.env) ?? judgeEffort;
+        const shadowModel = draft2ShadowJudgeModel(process.env, roles.judge.provider) ?? roles.judge.model;
         const [judged, shadow] = await Promise.all([
           ask(roles.judge, round, def.operations.judge, judgeRequest),
-          shadowEffort && shadowEffort !== judgeEffort ? shadowJudgment(round, judgeRequest, ids, shadowEffort) : Promise.resolve(undefined),
+          shadowEffort !== judgeEffort || shadowModel !== roles.judge.model ? shadowJudgment(round, judgeRequest, ids, shadowEffort, shadowModel) : Promise.resolve(undefined),
         ]);
         const judgment = setup.parseEvaluation(judged.text, ids);
         const evaluation = judgment.proposals ? { ...judgment, proposals: funnelRenumberedProposals(judgment.proposals, run.rounds) } : judgment;
