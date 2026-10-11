@@ -45,12 +45,13 @@ const modelFits = (provider: Draft2Provider, model: string) => provider === "ant
 
 /**
  * The model a step's role runs on: DRAFT2_MODEL_<STEP>_<ROLE> (for instance
- * DRAFT2_MODEL_OPENING_WRITER=claude-opus-5-5) when it names a model of the
- * role's provider, else the provider's default. The run records the model it
- * ran on, so a stored run keeps it whatever the environment says later.
+ * DRAFT2_MODEL_OPENING_WRITER=claude-opus-5-5), else DRAFT2_MODEL_<ROLE> for
+ * every funnel step (DRAFT2_MODEL_JUDGE=gpt-6-luna), when it names a model of
+ * the role's provider; else the provider's default. The run records the model
+ * it ran on, so a stored run keeps it whatever the environment says later.
  */
 export function draft2RoleModel(step: string, role: "writer" | "judge", provider: Draft2Provider, env: Draft2Env, defaults: Record<Draft2Provider, string>): string {
-  const configured = env[`DRAFT2_MODEL_${step.toUpperCase()}_${role.toUpperCase()}`]?.trim();
+  const configured = (env[`DRAFT2_MODEL_${step.toUpperCase()}_${role.toUpperCase()}`] ?? env[`DRAFT2_MODEL_${role.toUpperCase()}`])?.trim();
   return configured && modelFits(provider, configured) ? configured : defaults[provider];
 }
 

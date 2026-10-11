@@ -29,4 +29,7 @@ test("a step's role runs on the model the environment names for it, when it is o
   assert.equal(draft2RoleModel("closing", "writer", "anthropic", { DRAFT2_MODEL_OPENING_WRITER: "claude-opus-5-5" }, defaults), "claude-sonnet-5-5", "another step keeps its default");
   assert.equal(draft2RoleModel("opening", "judge", "openai", { DRAFT2_MODEL_OPENING_JUDGE: "claude-opus-5-5" }, defaults), "gpt-6.1-sol", "a Claude model cannot play Sol's role");
   assert.equal(draft2RoleModel("opening", "judge", "openai", { DRAFT2_MODEL_OPENING_JUDGE: "gpt-6.1-sol-mini" }, defaults), "gpt-6.1-sol-mini");
+  assert.equal(draft2RoleModel("closing", "judge", "openai", { DRAFT2_MODEL_JUDGE: "gpt-6-luna" }, defaults), "gpt-6-luna", "one variable for every step's judge");
+  assert.equal(draft2RoleModel("opening", "judge", "openai", { DRAFT2_MODEL_JUDGE: "gpt-6-luna", DRAFT2_MODEL_OPENING_JUDGE: "gpt-6.1-sol" }, defaults), "gpt-6.1-sol", "a step's own variable wins");
+  assert.equal(draft2RoleModel("opening", "writer", "anthropic", { DRAFT2_MODEL_JUDGE: "gpt-6-luna" }, defaults), "claude-sonnet-5-5", "the judge's variable leaves the writer alone");
 });
