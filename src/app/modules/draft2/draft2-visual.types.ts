@@ -325,6 +325,12 @@ export function parseVisualEvaluation(answer: string, candidateIds: readonly str
 
 /** Elements no image may carry: they would be drawn as words, logos or interface. */
 const FORBIDDEN = /\b(logos?|watermarks?|captions?|subtitles?|hashtags?|swipe|page numbers?|signage|(?:text|words|letters|lettering) (?:that )?(?:reads?|says?|saying))\b/iu;
+/** A direction that keeps a corner for the logo added afterwards, or rules an element out ("no logos", "sin texto"), does not ask for it (in the publications' languages). */
+const ALLOWED = /\b(?:espacio|zona|área|hueco|esquina|margen|room|space|zone|area|corner|margin)\b[^.;]{0,30}?\blogos?\b|\blogos?\b[^.;]{0,20}?\b(?:se añade|added|afterwards|después|luego)\b|\b(?:sin|no|without|never|nunca|ningún|ninguna)\b[^.;]{0,20}?\b(?:logos?|watermarks?|captions?|subtitles?|hashtags?|signage|page numbers?|text|words|letters|lettering)\b/giu;
+/** The forbidden element a direction asks for, if any: words, logos, signs or interface the image would have to carry. */
+export function forbiddenElement(direction: string): string | undefined {
+  return FORBIDDEN.exec(direction.replace(ALLOWED, " "))?.[0];
+}
 
 /** A name as a direction might write it: the full name and, for a person, the surname when it is distinctive. */
 function nameForms(name: string, kind: "person" | "place" | "organization"): string[] {
@@ -438,8 +444,8 @@ export function mechanicalVisualIssues(candidates: readonly Draft2VisualCandidat
       }
       const avoided = avoid.find((term) => mentions(direction, term));
       if (avoided) add("AVOID_TERM", part, `${label}'s direction asks for "${avoided}", which the brand's identity avoids.`);
-      const forbidden = FORBIDDEN.exec(slide.direction);
-      if (forbidden) add("FORBIDDEN_ELEMENT", part, `${label}'s direction asks for "${forbidden[0]}"; images carry no words, logos, signs or interface.`);
+      const forbidden = forbiddenElement(slide.direction);
+      if (forbidden) add("FORBIDDEN_ELEMENT", part, `${label}'s direction asks for "${forbidden}"; images carry no words, logos, signs or interface.`);
     }
   }
   return issues;

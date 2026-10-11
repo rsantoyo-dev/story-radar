@@ -35,6 +35,10 @@ const ROUTE_LIMIT_MS = 300_000;
 const MIN_CALL_TIMEOUT_MS = 60_000;
 /** What a judgment takes at each effort before this run has measured one (Sol took 58–121 s at medium and 120–210 s at high in real runs). */
 const JUDGE_ESTIMATE_MS: Record<Draft2Effort, number> = { low: 60_000, medium: 120_000, high: 200_000 };
+/** What a revision takes to write at each effort before this run has measured one (Claude took 20–70 s at high on text, 40–134 s on visual scripts). */
+const WRITER_ESTIMATE_MS: Record<Draft2Effort, number> = { low: 30_000, medium: 45_000, high: 60_000 };
+/** A provider that did not answer in time (both adapters say so in these words): the run pauses at the round and continues in a new request. */
+const TIMED_OUT = /did not respond within/u;
 /** Shows the run is alive between checkpoints, well inside OPENING_STALL_MS. */
 const HEARTBEAT_MS = 30_000;
 
@@ -178,12 +182,16 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
    * another effort with room for a harder one (real runs took 1.2–1.5x longer
    * at high than at medium); else the estimate for the effort.
    */
-  const expectedJudgeMs = (effort: Draft2Effort) => {
-    const judged = [...trace].reverse().filter((entry) => entry.step === def.step && entry.operation === def.operations.judge && entry.outcome === "ok");
-    const same = judged.find((entry) => entry.effort === effort);
+  const expectedCallMs = (operation: string, effort: Draft2Effort, estimates: Record<Draft2Effort, number>) => {
+    const made = [...trace].reverse().filter((entry) => entry.step === def.step && entry.operation === operation && entry.outcome === "ok");
+    const same = made.find((entry) => entry.effort === effort);
     if (same) return same.durationMs;
-    return judged[0] ? Math.round(judged[0].durationMs * 1.5) : JUDGE_ESTIMATE_MS[effort];
+    return made[0] ? Math.round(made[0].durationMs * 1.5) : estimates[effort];
   };
+  const expectedJudgeMs = (effort: Draft2Effort) => expectedCallMs(def.operations.judge, effort, JUDGE_ESTIMATE_MS);
+  const expectedWriterMs = (effort: Draft2Effort) => expectedCallMs(def.operations.writer, effort, WRITER_ESTIMATE_MS);
+  /** The round being written or judged, for a pause when a provider does not answer in time. */
+  let currentRound = firstRound;
 
   const checkpoint = (patch: Draft2SessionPatch = {}) => updateDraft2Session(session.id, { [def.step]: run, trace, ...patch } as unknown as Draft2SessionPatch);
 
@@ -298,8 +306,12 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
   try {
     await withCreativeTextBudget({ topicId, storyId, runId: session.id }, async () => {
       for (let round = firstRound; round <= maxRounds; round++) {
+        currentRound = round;
         const elapsed = Date.now() - startedAt;
-        if (round > firstRound && (elapsed > TIME_BUDGET_MS || elapsed + lastRoundMs > ROUND_DEADLINE_MS)) {
+        // A later round starts only when the request has time for it: not past the budget, not longer than the last round would take again,
+        // and with room for its writer and its judgment as this step has measured them (else estimated), so no call is lost to the route's limit.
+        const expectedRoundMs = expectedWriterMs(effortFor(round, "writer")) + expectedJudgeMs(effortFor(round, "judge"));
+        if (round > firstRound && (elapsed > TIME_BUDGET_MS || elapsed + lastRoundMs > ROUND_DEADLINE_MS || elapsed + expectedRoundMs > ROUTE_LIMIT_MS - 15_000)) {
           await pause(round);
           return;
         }
@@ -385,6 +397,15 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : `The ${def.noun} step failed.`;
+    if (error instanceof Error && TIMED_OUT.test(error.message)) {
+      // The call is lost, the round is not: everything written so far is saved, and a continue request writes or judges this round again.
+      run.status = "paused";
+      run.resumeRound = currentRound;
+      run.error = `Paused at round ${currentRound}: ${message}. The run continues from there in a new request.`;
+      await checkpoint({ status: "needs-review", error: run.error });
+      clearInterval(heartbeat);
+      return (await updateDraft2Session(session.id, {})) ?? claimed;
+    }
     run.status = "failed";
     run.error = message;
     await checkpoint({ status: "failed", error: message }).catch(() => undefined);

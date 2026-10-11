@@ -650,7 +650,9 @@ export const headlineKey = (value: string) => comparableText(value).replace(/[^\
 
 /** The numbers the cited facts state, plus a count the step may state on its own (a list's items). */
 export function statedNumbers(cited: readonly Draft2Fact[], count?: number): Set<string> {
-  return new Set([...cited.flatMap((fact) => [...numbersIn(fact.claim), ...numbersIn(fact.evidence)].map((number) => number.digits)), ...(count ? [String(count)] : [])]);
+  // A list or a procedure states its count, and its items' or steps' own numbering (1…N) is not a quantity: real runs lost seven hooks to a "1".
+  const numbering = count ? Array.from({ length: count }, (_, index) => String(index + 1)) : [];
+  return new Set([...cited.flatMap((fact) => [...numbersIn(fact.claim), ...numbersIn(fact.evidence)].map((number) => number.digits)), ...numbering]);
 }
 
 /**

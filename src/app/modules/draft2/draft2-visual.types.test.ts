@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Draft2ResponseError } from "./draft2-facts.types";
 import {
+  forbiddenElement,
   VISUAL_CRITERIA, VISUAL_LONG_PLAN, VISUAL_PLAN, avoidTerms, carouselSlides, mechanicalVisualIssues, parseVisualCandidates, parseVisualEvaluation, sameVisual,
   visualExploreRequest, visualJudgeRequest, visualLayout, visualModeLine, visualPlan, visualRefineRequest, visualSchema,
   type Draft2CarouselSlide, type Draft2VisualCandidate, type Draft2VisualIssue, type Draft2VisualRound, type Draft2VisualScore, type Draft2VisualSlide,
@@ -202,4 +203,14 @@ test("the requests name scripts, and the mode line says what may be generated", 
   assert.equal(visualJudgeRequest(VISUAL_PLAN, 1, [script("c1")], [], []).proposalsWanted, 1);
   assert.match(visualModeLine("illustration-editorial"), /real people only through confirmed documentary portraits/);
   assert.match(visualModeLine("photo-required"), /Nothing is generated/);
+});
+
+test("a direction that reserves the logo's corner or rules logos out asks for no logo; one that draws a logo, a caption or lettering does", () => {
+  assert.equal(forbiddenElement("Collage en crema; arriba a la izquierda queda libre el espacio para el logo, sin texto."), undefined);
+  assert.equal(forbiddenElement("Paper-cut scene, the top-left corner kept clear for the logo added afterwards."), undefined);
+  assert.equal(forbiddenElement("A kitchen table, no logos, no signage, nothing written."), undefined);
+  assert.equal(forbiddenElement("A tote bag with the library's logo on the shelf."), "logo");
+  assert.equal(forbiddenElement("A door with lettering that reads OPEN."), "lettering that reads");
+  assert.equal(forbiddenElement("A kitchen with no text anywhere; a shop sign that says CLOSED hangs on the door."), undefined, "a sign is a thing in the scene; lettering, words or text that read something are forbidden");
+  assert.equal(forbiddenElement("Photo with a caption under it."), "caption");
 });

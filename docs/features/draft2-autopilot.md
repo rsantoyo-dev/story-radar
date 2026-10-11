@@ -121,10 +121,23 @@ judgment in real runs).
   (`earlierReview`), instead of a conversation that grows each round
   (facts skill v2; `threads.anthropic` is no longer written).
 - A call never gets more than what is left of the route's 300 s
-  (`callTimeoutMs`), and a judgment that would not fit waits for a new
-  request: expected length = this step's last judgment at that effort on
-  the trace, else its last at another effort × 1.5, else 60/120/200 s for
+  (`callTimeoutMs`); a round starts only when its writer and its judgment
+  are expected to fit, and a judgment that would not fit waits for a new
+  request. Expected lengths: this step's last call of that kind at that
+  effort on the trace, else its last at another effort × 1.5, else
+  60/120/200 s for a judgment and 30/45/60 s for a revision at
   low/medium/high.
+- A provider that does not answer in time (the adapters' "did not respond
+  within") pauses the run at its round instead of failing it: everything
+  written so far is kept and a continue request (the autopilot sends it)
+  writes or judges that round again. The second real run lost a 169 s
+  visual revision to the old behaviour and re-ran the whole step.
+- Two mechanical checks stopped producing false positives that wasted whole
+  rounds: a list's or a procedure's own numbering (1…N) is not a quantity
+  the facts must state (`statedNumbers`; seven hooks were blocked by a "1"),
+  and a direction that reserves the logo's corner or rules logos out asks
+  for no logo (`forbiddenElement`; both scripts of a round were blocked by
+  "espacio para el logo").
 
 ## 6. One more round (`more`)
 

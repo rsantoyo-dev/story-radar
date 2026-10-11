@@ -551,3 +551,16 @@ test("a shadow judgment by another model of the judge's provider runs at the rou
   assert.equal(json(shadow?.issues), json([{ code: "UNCLEAR", candidateId: "c1", detail: ("The cover promises what slide 2 does not pay. " + "x".repeat(200)).slice(0, 160) }]), "its issues, cut short");
   assert.equal(json(session.trace.filter((entry) => entry.operation === "draft2_opening_review_shadow").map((entry) => [entry.model, entry.effort, entry.costMicros])), json([["gpt-6-luna", "medium", 1234]]));
 });
+
+test("a provider that does not answer in time pauses the run at its round instead of failing it; a continue request writes that round again", async () => {
+  const h = harness({
+    writes: [writer(), writer(), writer()], judgments: [judge("revise", "c1", { c1: 84, c2: 82 }), judge("accept", "c1.2", { "c1.2": 96 })],
+    failAt: { role: "writer", call: 2, error: new Error("Claude claude-sonnet-5-5 did not respond within 169 seconds") },
+  });
+  const paused = await h.run();
+  assert.equal(json([paused.status, paused.opening?.status, paused.opening?.resumeRound, paused.opening?.rounds.length, paused.opening?.winnerId]), json(["needs-review", "paused", 2, 1, "c1"]), "round 1 is kept, with its best version standing in");
+  assert.match(String(paused.error), /^Paused at round 2: Claude claude-sonnet-5-5 did not respond within 169 seconds\. The run continues/);
+  assert.equal(json(h.row().trace.filter((entry) => entry.step === "opening").map((entry) => [entry.round, entry.operation, entry.outcome])), json([[1, "draft2_opening", "ok"], [1, "draft2_opening_review", "ok"], [2, "draft2_opening", "error"]]), "the lost call stays on the trace");
+  const finished = await h.run({ resume: true });
+  assert.equal(json([finished.opening?.status, finished.opening?.winnerId, finished.opening?.rounds.length, h.calls.length]), json(["ready", "c1.2", 2, 5]), "round 2 written again in the new request, round 1 never rewritten");
+});
