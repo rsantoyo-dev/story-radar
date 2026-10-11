@@ -66,10 +66,14 @@ test("the brand's emojis, the hashtags after the text, and no talk of the carous
   assert.deepEqual(codes([caption("c1", { text: TEXT.replace(/\n+/gu, " ") + " More words to pass the length a caption reads as one block without blank lines, and then some more words." })]), ["c1:NO_SPACING"]);
 });
 
-test("only the accounts the editor confirmed are tagged; an email address is not an account", () => {
+test("every account the editor confirmed is tagged, and no other; an email address is not an account", () => {
   const tagged = `${TEXT}\nWith @biblio.longueuil and info@longueuil.quebec. Thanks @Biblio.Longueuil.`;
   assert.deepEqual(codes([caption("c1", { text: tagged })], { mentions: [{ handle: "@Biblio.Longueuil" }] }), []);
   assert.deepEqual(codes([caption("c1", { text: `${tagged} Thanks @cfournier.` })], { mentions: [{ handle: "@biblio.longueuil" }] }), ["c1:UNVERIFIED_MENTION"]);
+  assert.deepEqual(codes([caption("c1")], { mentions: [{ handle: "@biblio.longueuil" }] }), ["c1:MENTION_MISSING"], "a confirmed account the caption never tags");
+  const [issue] = mechanicalCaptionIssues([caption("c1", { text: tagged })], facts, { credits: [], mentions: [{ handle: "@biblio.longueuil" }, { handle: "@cirqueeloize" }], rules: RULES });
+  assert.deepEqual([issue.code, issue.detail], ["MENTION_MISSING", "@cirqueeloize is an account the editor confirmed; tag it once, where its name would go or right after it."], "one of two confirmed accounts left out");
+  assert.deepEqual(codes([caption("c1", { text: `${TEXT}\nMerci @cirqueeloize.` })], { mentions: [{ handle: "@cirqueeloize" }] }), [], "a period after the handle ends the sentence");
 });
 
 test("two captions that open alike: the second is a duplicate, unless both are the judge's proposal as written and as edited", () => {

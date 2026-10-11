@@ -5,13 +5,14 @@ import type { Draft2Skill } from "./draft2-skills";
  * one model and judged by the other from this one text. It carries v1's
  * caption rules (creative-single-shot-generator.ts, CAPTION_STYLE_INSTRUCTION)
  * with Draft 2's differences: the line breaks are kept, the credits and the
- * hashtags are added by the program, and an @account appears only when the
- * editor confirmed it. Its numbers mirror draft2-caption.types.ts (a test
- * keeps them together).
+ * hashtags are added by the program, and the accounts the editor confirmed
+ * are tagged, no other (v2: v1 only allowed tagging them, and in the first
+ * two sessions with confirmed accounts the writer tagged none). Its numbers
+ * mirror draft2-caption.types.ts (a test keeps them together).
  */
 export const CAPTIONS_SKILL: Draft2Skill = {
   name: "captions",
-  version: "1",
+  version: "2",
   text: `# Captions for social carousels
 
 The caption is read beside the carousel, often after it: it does not repeat
@@ -36,8 +37,10 @@ slide numbers).
   program adds the credits and the hashtags after it.
 
 ## Accounts
-- Tag an @account only from mentions, the accounts the editor confirmed, at
-  most once each, where it reads naturally. Every other person, place or
+- Tag every account in mentions, the accounts the editor confirmed: each
+  once, as its @handle where its name would go or right after it, so the
+  line still reads well. The editor confirmed them to have them tagged; a
+  caption that leaves one out does not pass. Every other person, place or
   organization is written by name, never as an @handle.
 
 ## Hashtags

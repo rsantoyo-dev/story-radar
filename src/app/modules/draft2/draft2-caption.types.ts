@@ -39,7 +39,7 @@ export const CAPTION_SPACING_THRESHOLD = 240;
 
 export const CAPTION_CRITERIA = ["hook", "scan", "grounding", "voice", "action", "hashtags", "fit"] as const;
 export const CAPTION_MECHANICAL_CODES = [
-  "FACT_UNKNOWN", "NO_FACTS", "TEXT_TOO_LONG", "TOO_MANY_EMOJIS", "HASHTAG_COUNT", "HASHTAG_FORMAT", "HASHTAG_IN_TEXT", "UNVERIFIED_MENTION",
+  "FACT_UNKNOWN", "NO_FACTS", "TEXT_TOO_LONG", "TOO_MANY_EMOJIS", "HASHTAG_COUNT", "HASHTAG_FORMAT", "HASHTAG_IN_TEXT", "UNVERIFIED_MENTION", "MENTION_MISSING",
   "UNSUPPORTED_NUMBER", "NARRATES_CAROUSEL", "NO_SPACING", "CREDIT_IN_TEXT", "DUPLICATE_CANDIDATE",
 ] as const;
 export const CAPTION_JUDGE_CODES = ["WEAK_HOOK", "DENSE", "OVERCLAIMS", "OFF_VOICE", "CTA_MISMATCH", "WEAK_HASHTAGS", "REPEATS_SLIDES", "OFF_FOCUS", "OTHER"] as const;
@@ -151,9 +151,9 @@ const CREDIT = /(©|\b(?:photo|photos|crédit|crédits|credit|credits|foto|fotos
  * The program's findings on each caption, before the judge; any one keeps a
  * caption from winning. Facts and numbers as everywhere; the whole post
  * within Instagram's limit; the brand's emoji allowance; 5 to 8 well-formed
- * hashtags, none inside the text; no @handle the editor has not confirmed;
- * no talk of the carousel's slides; blank lines in a long caption; no
- * credit line (the program adds them).
+ * hashtags, none inside the text; every account the editor confirmed tagged,
+ * and no other @handle; no talk of the carousel's slides; blank lines in a
+ * long caption; no credit line (the program adds them).
  */
 export function mechanicalCaptionIssues(candidates: readonly Draft2CaptionCandidate[], facts: readonly Draft2Fact[], { credits, mentions, rules }: {
   credits: readonly string[]; mentions: readonly { handle: string }[]; rules: Draft2CaptionRules;
@@ -180,6 +180,9 @@ export function mechanicalCaptionIssues(candidates: readonly Draft2CaptionCandid
     const handles = [...candidate.text.matchAll(MENTION)].map((match) => match[1]!.replace(/\.+$/u, "").toLowerCase()).filter(Boolean);
     const unverified = [...new Set(handles.filter((handle) => !allowed.has(handle)))];
     if (unverified.length) add("UNVERIFIED_MENTION", `${unverified.map((handle) => `@${handle}`).join(", ")} ${unverified.length === 1 ? "is" : "are"} not an account the editor confirmed; write the name instead.`);
+    // The editor confirmed an account to have it tagged: a caption that leaves one out is not done.
+    const missing = [...new Set(mentions.map((mention) => mention.handle.replace(/^@/u, "")))].filter((handle) => !handles.includes(handle.toLowerCase()));
+    if (missing.length) add("MENTION_MISSING", `${missing.map((handle) => `@${handle}`).join(", ")} ${missing.length === 1 ? "is an account the editor confirmed; tag it" : "are accounts the editor confirmed; tag each"} once, where its name would go or right after it.`);
     const cited = candidate.factIds.flatMap((id) => { const fact = byId.get(id); return fact ? [fact] : []; });
     const stated = statedNumbers(cited);
     const unsupported = [...new Set(numbersIn(candidate.text).filter((number) => !stated.has(number.digits)).map((number) => number.written))];

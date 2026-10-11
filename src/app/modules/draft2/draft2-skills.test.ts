@@ -38,7 +38,7 @@ test("instructions are the role, then each skill, then the brand brief, and reco
   assert.deepEqual(writer.skillVersions, { hooks: "7" });
   assert.equal(composeInstructions("opening-judge", [skill]).instructions, `${OPENING_ROLES["opening-judge"]}\n\n## Shared craft\n\n## Judge only`, "a role reads its own part after the shared text");
   assert.deepEqual(Object.keys(DRAFT2_ROLES).sort(), ["caption-judge", "caption-writer", "closing-judge", "closing-writer", "deck-judge", "deck-writer", "extractor", "focus-editor", "image-judge", "mention-finder", "opening-judge", "opening-writer", "people-finder", "reviewer", "visual-judge", "visual-writer"]);
-  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@2", "focus@3", "hooks@6", "closings@1", "decks@1", "visuals@4", "images@1", "captions@1"]);
+  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@2", "focus@3", "hooks@6", "closings@1", "decks@1", "visuals@4", "images@1", "captions@2"]);
 });
 
 test("the Facts prompts keep their words (the reviewer's say the article is context and name earlierReview since v2): the extractor reads its rules, the reviewer its checklist", () => {
@@ -190,15 +190,16 @@ test("the image review rubric asks for the words as drawn, what covers them, the
   assert.deepEqual(composeInstructions("image-judge", [IMAGES_SKILL], brandBrief(profile)).skillVersions, { images: "1" });
 });
 
-test("the captions rubric keeps the caption's numbers, and tags only the accounts the editor confirmed", () => {
+test("the captions rubric keeps the caption's numbers, and tags every account the editor confirmed, no other", () => {
   assert.match(CAPTIONS_SKILL.text, new RegExp(`overall ≥ ${CAPTION_ACCEPT_SCORE} and no criterion is below ${CAPTION_CRITERION_FLOOR}`));
   assert.match(CAPTIONS_SKILL.text, new RegExp(`${CAPTION_MIN_HASHTAGS} to ${CAPTION_MAX_HASHTAGS}, each one word without the #`));
   for (const criterion of CAPTION_CRITERIA) assert.match(CAPTIONS_SKILL.text, new RegExp(`\\n- ${criterion}: `), criterion);
-  assert.match(CAPTIONS_SKILL.text, /Tag an @account only from mentions, the accounts the editor confirmed/);
+  assert.match(CAPTIONS_SKILL.text, /Tag every account in mentions, the accounts the editor confirmed: each\n  once/);
+  assert.match(CAPTIONS_SKILL.text, /Every other person, place or\n  organization is written by name, never as an @handle/);
   assert.match(CAPTIONS_SKILL.text, /Never write a photo credit, a source line or a hashtag in the text/);
   assert.match(CAPTION_ROLES["caption-writer"], new RegExp(`ids c1…c${CAPTION_CANDIDATES}`));
   assert.match(CAPTION_ROLES["caption-writer"], /"text" keeps its line breaks/);
   assert.match(CAPTION_ROLES["mention-finder"], /Never invent a username to fill the list/);
-  assert.deepEqual(composeInstructions("caption-writer", [CAPTIONS_SKILL], brandBrief(profile)).skillVersions, { captions: "1" });
+  assert.deepEqual(composeInstructions("caption-writer", [CAPTIONS_SKILL], brandBrief(profile)).skillVersions, { captions: "2" });
   assert.deepEqual(composeInstructions("mention-finder", [], brandBrief(profile)).skillVersions, {}, "the finder reads its role and the brand brief, no skill");
 });

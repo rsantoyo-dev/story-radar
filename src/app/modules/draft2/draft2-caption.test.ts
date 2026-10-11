@@ -145,7 +145,7 @@ test("Claude writes three captions for the finished carousel and Sol judges them
     assert.ok(String(call.input.instructions).includes("- Emojis: at most 3 in the whole caption."));
     assert.ok(String(call.input.instructions).includes("the same single action, stated once (Save this for Saturday.)"));
   }
-  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.skillVersions])), json([["caption", "draft2_caption", { captions: "1" }], ["caption", "draft2_caption_review", { captions: "1" }]]));
+  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.skillVersions])), json([["caption", "draft2_caption", { captions: "2" }], ["caption", "draft2_caption_review", { captions: "2" }]]));
   const run = session.caption!;
   assert.equal(json([session.step, session.status, run.status, run.winnerId, run.imagesRunId, run.mentionsVersion, run.credits, run.rules]),
     json(["caption", "ready", "ready", "c2", "run-1", 4, [], { emojis: 3, ctaStyle: "One warm, concrete step", cta: "Save this for Saturday.", grave: false }]));
@@ -166,6 +166,15 @@ test("a caption that tags an account the editor did not confirm can never win", 
   const session = await h.run();
   assert.equal(json(session.caption?.rounds[0].mechanical.map((issue) => [issue.candidateId, issue.code])), json([["c1", "UNVERIFIED_MENTION"]]));
   assert.equal(session.caption?.winnerId, "c2", "Sol's pick has a program finding; the best clean caption wins");
+});
+
+test("a caption that leaves out an account the editor confirmed can never win", async () => {
+  const untagged = (contents: WriterContents) => ({ candidates: (writer(contents).candidates as Draft2CaptionCandidate[]).map((candidate) => candidate.id === "c1" ? { ...candidate, text: candidate.text.replace(" with @biblio.longueuil.", ".") } : candidate) });
+  const h = harness({ writes: [untagged], judgments: [judge("accept", "c1", { c1: 98, c2: 96 })] });
+  const session = await h.run();
+  assert.equal(json(session.caption?.rounds[0].mechanical.map((issue) => [issue.candidateId, issue.code, issue.detail])),
+    json([["c1", "MENTION_MISSING", "@biblio.longueuil is an account the editor confirmed; tag it once, where its name would go or right after it."]]));
+  assert.equal(session.caption?.winnerId, "c2", "the editor confirmed the account to have it tagged; the best caption that tags it wins");
 });
 
 test("the caption waits for the finished carousel: every slide made, from a visual script still in the session", async () => {

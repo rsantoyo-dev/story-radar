@@ -7,8 +7,8 @@ pipeline. Read AGENTS.md first, then the other Draft 2 briefs
 
 ## 1. Goal
 
-Write the post's text for the finished carousel, tag only the Instagram
-accounts the editor confirmed, then publish the carousel through v1's
+Write the post's text for the finished carousel, tag the Instagram accounts
+the editor confirmed and no other, then publish the carousel through v1's
 publication to the Topic's Facebook Page, its Instagram account or both.
 
 ```text
@@ -21,7 +21,7 @@ Facts → Focus → Opening → Closing → Deck → People and places → Visua
 | --- | --- |
 | Where the caption is written | a new step after Images, not inside the deck: it reads the finished carousel |
 | Rounds | 2 (three captions and Sol's proposal, then the best revised beside Sol's as written and as edited) |
-| Mentions | only accounts Instagram verified and the editor confirmed |
+| Mentions | every account Instagram verified and the editor confirmed is tagged once, and no other @handle (since 2026-10-11: under a rule that only allowed tagging, the writer tagged none in the first two sessions with confirmed accounts) |
 | Publishing | v1's publication, reused: its immutable package, queue, retries and permalinks |
 | Format | short lines and blank lines kept (v1 collapses them), the brand's emojis, 5 to 8 hashtags at the end |
 
@@ -85,7 +85,10 @@ channels.
   whole post with credits and hashtags over 2,200); `TOO_MANY_EMOJIS`;
   `HASHTAG_COUNT` (5 to 8), `HASHTAG_FORMAT`, `HASHTAG_IN_TEXT`;
   `UNVERIFIED_MENTION` (an @handle not confirmed; a period after it ends the
-  sentence); `NARRATES_CAROUSEL` ("swipe", "in this carousel"…);
+  sentence); `MENTION_MISSING` (an account the editor confirmed that the
+  caption does not tag; a confirmed account is a decision to tag it, so a
+  caption without it cannot win and the writer sees the finding in the next
+  round); `NARRATES_CAROUSEL` ("swipe", "in this carousel"…);
   `NO_SPACING` (over 240 characters with no blank line); `CREDIT_IN_TEXT`;
   `DUPLICATE_CANDIDATE`.
 - **The post** (`captionPostText`): the text with its line breaks, a blank
