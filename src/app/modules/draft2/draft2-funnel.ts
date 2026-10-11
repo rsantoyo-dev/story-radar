@@ -658,7 +658,13 @@ export const headlineKey = (value: string) => comparableText(value).replace(/[^\
 export function statedNumbers(cited: readonly Draft2Fact[], count?: number): Set<string> {
   // A list or a procedure states its count, and its items' or steps' own numbering (1…N) is not a quantity: real runs lost seven hooks to a "1".
   const numbering = count ? Array.from({ length: count }, (_, index) => String(index + 1)) : [];
-  return new Set([...cited.flatMap((fact) => [...numbersIn(fact.claim), ...numbersIn(fact.evidence)].map((number) => number.digits)), ...numbering]);
+  const stated = cited.flatMap((fact) => [...numbersIn(fact.claim), ...numbersIn(fact.evidence)].map((number) => number.digits));
+  // A season or a term written as two consecutive years run together ("20262027", a source's lost hyphen) states both years, so "2026-2027" is not an unsupported number.
+  const seasons = stated.flatMap((digits) => {
+    const years = /^((?:19|20)\d\d)((?:19|20)\d\d)$/.exec(digits);
+    return years && Number(years[2]) === Number(years[1]) + 1 ? [years[1], years[2]] : [];
+  });
+  return new Set([...stated, ...seasons, ...numbering]);
 }
 
 /**

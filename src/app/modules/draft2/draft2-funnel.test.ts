@@ -11,3 +11,11 @@ test("the numbers a slide may state: the cited facts', a list's count and its it
   assert.equal(statedNumbers(facts, 5).has("7"), false);
   assert.deepEqual(numbersIn("Tip 1 of 5: 1,200 visitors, 10 a.m.").map((number) => number.digits), ["1", "5", "1200", "10"]);
 });
+
+test("a season run together in the source (\"20262027\") states both years, so a slide may write 2026-2027", () => {
+  const season: Draft2Fact[] = [{ id: "f1", claim: "Les P’tites sorties 20262027 misent sur l’imaginaire.", evidence: "Les P’tites sorties 20262027 misent", kind: "event", status: "established", importance: 80 }];
+  const stated = statedNumbers(season);
+  assert.deepEqual([...stated].sort(), ["2026", "20262027", "2027"]);
+  assert.ok(numbersIn("Huit spectacles en 2026-2027").every((number) => stated.has(number.digits)), "the range's two years are stated");
+  assert.equal(statedNumbers([{ ...season[0], claim: "Code 20252027 on the door.", evidence: "20252027" }]).has("2025"), false, "eight digits that are not consecutive years stay one number");
+});
