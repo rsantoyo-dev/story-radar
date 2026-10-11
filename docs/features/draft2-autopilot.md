@@ -141,15 +141,21 @@ judgment in real runs).
   fault: JavaScript's `\b` takes "á" for a boundary, so `\blogo\b`
   matched inside "diálogo"; the checks now use Unicode-aware boundaries.
 
-## 6. One more round (`more`)
+## 6. Extra rounds: the floor and "one more round"
 
-A run that ended unaccepted with its plan's rounds spent may take an extra
-round (`FUNNEL_EXTRA_ROUND`: the best version revised once more against its
-remaining issues), at most `FUNNEL_MAX_EXTRA_ROUNDS` (2) per run; the run
-records `extraRounds`. `POST /api/radar/draft2/<step>` takes `more: true`
-(with `continue`); the canvas offers "One more round" on Opening, Closing,
-Deck, Visual script and Caption. It replaces a fresh run (0.2–0.4 $) with
-one write and one judgment.
+The gate (95) stays the goal. An unaccepted run whose best version is at or
+above `FUNNEL_ACCEPTABLE_SCORE` (90) is acceptable for the editor to
+review; under it, the run takes an extra round on its own
+(`FUNNEL_EXTRA_ROUND`: the best version revised once more against its
+remaining issues). The editor may also ask for one ("One more round";
+`POST /api/radar/draft2/<step>` with `more: true` and `continue`). Both
+count against `FUNNEL_MAX_EXTRA_ROUNDS` (2) per run, the cap that keeps a
+run from looping; the run records `extraRounds`, and the note says whether
+the best stays under the floor. The canvas shows an unaccepted run as
+"Acceptable · 93" or "Under 90 · 84"; the autopilot's log says the same.
+With Sol judging, no real run so far ended under 90; with Luna, a visual
+script at 84 would have taken two more rounds (2026-10-11, the editor's
+rule: "95 es la meta; menos de 90 amerita otra ronda").
 
 ## 7. The visual direction (Focus) and two scripts (Visual)
 

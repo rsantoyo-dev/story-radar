@@ -161,7 +161,8 @@ test("a list: two decks carrying the items slide 2 did not cover, then the best 
     // The best deck revised, and Sol's deck edited back to the plain first item.
     ? { candidates: [...(contents.decks ?? []).map((target) => ({ ...items(target.id), angle: "Sharper" })), ...(contents.develop ?? []).map((proposal) => ({ ...items(proposal.id), angle: "Edited" }))] }
     : { candidates: [items("c1"), { ...items("c2"), slides: [{ ...items("c2").slides[0], headline: "Five minutes, one video" }, items("c2").slides[1]] }] };
-  const listJudge = (contents: JudgeContents) => ({ verdict: "revise", winnerId: contents.candidates[0].id, summary: "x", issues: [], suggestions: [], scores: contents.candidates.map((candidate) => score(candidate.id, 88)), proposals: contents.proposalsWanted ? [{ ...items("p1"), slides: [{ ...items("p1").slides[0], headline: "Sol's first item" }, items("p1").slides[1]] }] : [] });
+  // Scores at the floor the funnel works to: this test is about the list's shape, not about extra rounds.
+  const listJudge = (contents: JudgeContents) => ({ verdict: "revise", winnerId: contents.candidates[0].id, summary: "x", issues: [], suggestions: [], scores: contents.candidates.map((candidate) => score(candidate.id, 90)), proposals: contents.proposalsWanted ? [{ ...items("p1"), slides: [{ ...items("p1").slides[0], headline: "Sol's first item" }, items("p1").slides[1]] }] : [] });
   const h = harness({ writes: [listWriter, listWriter], judgments: [listJudge, listJudge], session: { closing: closingFor } });
   const session = await h.run();
   assert.equal(json(session.deck?.shape), json({ kind: "list", min: 2, max: 2, items: ["f1", "f4"] }), "slide 2 carried f2's item");

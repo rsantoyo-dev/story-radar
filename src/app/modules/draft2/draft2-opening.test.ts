@@ -294,25 +294,26 @@ test("regression: a revision that scores lower, or loses grounding the overall d
   const h = harness({
     writes: [writer(), writer(), writer()],
     judgments: [
-      judge("revise", "c3", { c3: 84, c5: 80, c1: 79 }),
-      judge("revise", "c5.2", { "c3.2": score("c3.2", 78, { voice: 72, grounding: 86 }), "c5.2": 81, "c1.2": score("c1.2", 79, { grounding: 70, tension: 88 }) }),
-      judge("revise", "c5.3", { "c3.3": 83, "c5.3": 82 }),
+      // Scores at or above the floor the funnel works to, so no extra round joins: this test is about regressions.
+      judge("revise", "c3", { c3: 92, c5: 88, c1: 87 }),
+      judge("revise", "c5.2", { "c3.2": score("c3.2", 86, { voice: 72, grounding: 94 }), "c5.2": 89, "c1.2": score("c1.2", 87, { grounding: 70, tension: 88 }) }),
+      judge("revise", "c5.3", { "c3.3": 91, "c5.3": 90 }),
     ],
   });
   const session = await h.run();
   assert.equal(json(session.opening?.rounds[1].regressions?.map((regression) => [regression.candidateId, regression.previousId, regression.worse])), json([
-    ["c3.2", "c3", ["tension 84 → 78", "payoff 84 → 78", "clarity 84 → 78", "voice 84 → 72", "focus 84 → 78"]],
-    ["c1.2", "c1", ["grounding 79 → 70"]],
+    ["c3.2", "c3", ["tension 92 → 86", "payoff 92 → 86", "clarity 92 → 86", "voice 92 → 72", "focus 92 → 86"]],
+    ["c1.2", "c1", ["grounding 87 → 70"]],
   ]));
   const third = h.writerCalls()[2];
   assert.equal(json(third.openings?.map((target) => target.id)), json(["c3", "c5.2"]), "round 3 refines c3 again, not the weaker c3.2");
-  assert.equal(json((third.openings?.[0] as unknown as { earlierAttempts: { id: string; overall: number }[] }).earlierAttempts.map((attempt) => [attempt.id, attempt.overall])), json([["c3.2", 78]]), "the writer sees the attempt that came out worse");
+  assert.equal(json((third.openings?.[0] as unknown as { earlierAttempts: { id: string; overall: number }[] }).earlierAttempts.map((attempt) => [attempt.id, attempt.overall])), json([["c3.2", 86]]), "the writer sees the attempt that came out worse");
   assert.equal(json(session.opening?.rounds[2].regressions?.map((regression) => regression.candidateId)), json(["c3.3"]));
   assert.equal(session.opening?.winnerId, "c3", "the best version so far is still the first round's");
 });
 
 test("caching: the writer's cached facts are identical every round, the judge's input starts with the same facts, and no history accumulates", async () => {
-  const h = harness({ writes: [writer(), writer(), writer()], judgments: [judge("revise", "c1", { c1: 84, c2: 82 }), judge("revise", "c1.2", { "c1.2": 86 }), judge("revise", "c1.3", { "c1.3": 87 })] });
+  const h = harness({ writes: [writer(), writer(), writer()], judgments: [judge("revise", "c1", { c1: 90, c2: 88 }), judge("revise", "c1.2", { "c1.2": 91 }), judge("revise", "c1.3", { "c1.3": 92 })] });
   const session = await h.run();
   const writerInputs = h.calls.filter((call) => call.role === "writer").map((call) => call.input);
   assert.equal(new Set(writerInputs.map((input) => json(input.context))).size, 1, "Claude reads the same facts block from its cache in rounds 2 and 3");
@@ -497,10 +498,11 @@ test("a call cut off at the output ceiling keeps its usage and how far its answe
 test("an extra round: a run that ended unaccepted after its plan's rounds revises its best version once more, at most twice", async () => {
   const h = harness({
     writes: [writer(), writer(), writer(), writer(), writer()],
-    judgments: [judge("revise", "c1", { c1: 84, c2: 82 }), judge("revise", "c1.2", { "c1.2": 86 }), judge("revise", "c1.3", { "c1.3": 87 }), judge("revise", "c1.4", { "c1.4": 90 }), judge("revise", "c1.5", { "c1.5": 92 })],
+    judgments: [judge("revise", "c1", { c1: 90, c2: 82 }), judge("revise", "c1.2", { "c1.2": 91 }), judge("revise", "c1.3", { "c1.3": 92 }), judge("revise", "c1.4", { "c1.4": 93 }), judge("revise", "c1.5", { "c1.5": 94 })],
   });
   const ended = await h.run();
-  assert.equal(json([ended.opening?.status, ended.opening?.rounds.length, ended.opening?.extraRounds ?? 0]), json(["needs-review", 3, 0]));
+  assert.equal(json([ended.opening?.status, ended.opening?.rounds.length, ended.opening?.extraRounds ?? 0]), json(["needs-review", 3, 0]), "at or above the floor, the plan's rounds are enough");
+  assert.match(String(ended.error), /^Sol did not accept an opening after 3 rounds\. The best version, c1\.3, scored 92\/100/);
   await assert.rejects(h.run({ resume: true }), /no paused or stopped opening to continue/, "the plan's rounds are spent");
   const fourth = await h.run({ resume: true, more: true });
   assert.equal(json([fourth.opening?.status, fourth.opening?.rounds.length, fourth.opening?.extraRounds, fourth.opening?.winnerId]), json(["needs-review", 4, 1, "c1.4"]));
@@ -563,4 +565,23 @@ test("a provider that does not answer in time pauses the run at its round instea
   assert.equal(json(h.row().trace.filter((entry) => entry.step === "opening").map((entry) => [entry.round, entry.operation, entry.outcome])), json([[1, "draft2_opening", "ok"], [1, "draft2_opening_review", "ok"], [2, "draft2_opening", "error"]]), "the lost call stays on the trace");
   const finished = await h.run({ resume: true });
   assert.equal(json([finished.opening?.status, finished.opening?.winnerId, finished.opening?.rounds.length, h.calls.length]), json(["ready", "c1.2", 2, 5]), "round 2 written again in the new request, round 1 never rewritten");
+});
+
+test("under the floor, the run takes an extra round on its own, at most twice; at or above it, the plan's rounds are enough", async () => {
+  const low = harness({
+    writes: [writer(), writer(), writer(), writer(), writer()],
+    judgments: [judge("revise", "c1", { c1: 80, c2: 78 }), judge("revise", "c1.2", { "c1.2": 84 }), judge("revise", "c1.3", { "c1.3": 87 }), judge("revise", "c1.4", { "c1.4": 88 }), judge("revise", "c1.5", { "c1.5": 89 })],
+  });
+  const session = await low.run();
+  assert.equal(json([session.opening?.status, session.opening?.rounds.length, session.opening?.extraRounds, session.opening?.winnerId]), json(["needs-review", 5, 2, "c1.5"]), "two extra rounds, then the cap");
+  assert.match(String(session.error), /^Sol did not accept an opening after 5 rounds \(2 extra\), and the best stays under 90\/100\. The best version, c1\.5, scored 89\/100/);
+  assert.equal(json(low.judgeCalls().slice(3).map((input) => (input.contents as JudgeContents).candidates.map((candidate) => candidate.id))), json([["c1.4"], ["c1.5"]]), "each extra round revises the best version alone");
+  await assert.rejects(low.run({ resume: true, more: true }), /already had its 2 extra rounds/, "the cap holds for the editor too");
+
+  const rescued = harness({
+    writes: [writer(), writer(), writer(), writer()],
+    judgments: [judge("revise", "c1", { c1: 80, c2: 78 }), judge("revise", "c1.2", { "c1.2": 84 }), judge("revise", "c1.3", { "c1.3": 87 }), judge("accept", "c1.4", { "c1.4": 96 })],
+  });
+  const ready = await rescued.run();
+  assert.equal(json([ready.opening?.status, ready.opening?.rounds.length, ready.opening?.extraRounds, ready.opening?.winnerId]), json(["ready", 4, 1, "c1.4"]), "the extra round can still reach the gate");
 });

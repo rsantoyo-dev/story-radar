@@ -24,7 +24,7 @@ import { CAPTION_GATE, CAPTION_MAX_CHARACTERS, CAPTION_MAX_ROUNDS, captionPostTe
 import { confirmedMentions, mentionEntities, sameMentions, type Draft2MentionAccount, type Draft2MentionStatus, type Draft2Mentions } from "@/app/modules/draft2/draft2-mentions.types";
 import { publicationCurrent, publicationTarget, targetPostText, type Draft2Publication, type Draft2PublicationTarget } from "@/app/modules/draft2/draft2-publication.types";
 import {
-  FUNNEL_MAX_EXTRA_ROUNDS, criterionOf, funnelAcceptedWinner, funnelExtendable, funnelResumeRound, funnelScorePasses, funnelVersions, hasMaterialError,
+  FUNNEL_ACCEPTABLE_SCORE, FUNNEL_MAX_EXTRA_ROUNDS, criterionOf, funnelAcceptedWinner, funnelBestVersions, funnelExtendable, funnelResumeRound, funnelScorePasses, funnelVersions, hasMaterialError,
   type FunnelCandidate, type FunnelGate, type FunnelIssue, type FunnelRegression, type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion,
 } from "@/app/modules/draft2/draft2-funnel";
 import { DRAFT2_OPENING_EARLIER_ROLES, DRAFT2_OPENING_ROLES, draft2ProviderName } from "@/app/modules/draft2/draft2-models";
@@ -71,7 +71,7 @@ const FOLLOW_UNREACHABLE_MS = 3 * 60_000;
 class Draft2LostRequest extends Error {}
 
 /** One step the autopilot ran, how it ended, and what it took. */
-type AutopilotEntry = { step: Draft2RunStep; status: "ready" | "needs-review" | "failed"; ms: number; startedAt: string };
+type AutopilotEntry = { step: Draft2RunStep; status: "ready" | "needs-review" | "failed"; ms: number; startedAt: string; /** The best score a funnel step reached. */ score?: number };
 type Autopilot = { active: boolean; startedAt: string; current?: Draft2RunStep; steps: AutopilotEntry[]; outcome?: string; finishedAt?: string };
 type AutopilotNext = { step: Exclude<Draft2RunStep, "publication">; continuing?: boolean } | { done: true } | { blocked: string };
 const STEP_TITLE: Record<Draft2RunStep, string> = {
@@ -144,6 +144,18 @@ function stepOutcome(session: Draft2SessionView, step: Draft2RunStep): Autopilot
   if (step === "facts") return session.step !== "facts" || session.status === "ready" ? "ready" : session.status === "failed" ? "failed" : "needs-review";
   const status = (session as unknown as Record<string, { status?: string } | null>)[step]?.status;
   return status === "failed" ? "failed" : status === "needs-review" ? "needs-review" : "ready";
+}
+
+/** The best score a run reached, across its rounds. */
+const bestScoreOf = <C extends FunnelCandidate>(run: FunnelRun<C> | null | undefined): number | undefined => run ? funnelBestVersions(funnelVersions(run.rounds))[0]?.score?.overall : undefined;
+
+/** A funnel run's status as the canvas shows it: an unaccepted run is acceptable from the floor the funnel works to, and under it once its extra rounds are spent. */
+function funnelStatusOf<C extends FunnelCandidate>(run: FunnelRun<C> | null | undefined): { label: string; tone: StatusTone } | undefined {
+  if (!run) return undefined;
+  if (run.status !== "needs-review") return OPENING_STATUS[run.status];
+  const best = bestScoreOf(run);
+  if (best === undefined) return OPENING_STATUS["needs-review"];
+  return best >= FUNNEL_ACCEPTABLE_SCORE ? { label: `Acceptable · ${best}`, tone: "info" } : { label: `Under ${FUNNEL_ACCEPTABLE_SCORE} · ${best}`, tone: "warning" };
 }
 
 /** Whether a run that ended unaccepted with its rounds spent may take one more (FUNNEL_EXTRA_ROUND), up to the cap. */
@@ -450,7 +462,8 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
       const begin = Date.now();
       const result = await runStep(next.step, { continuing: next.continuing, on: current });
       const status: AutopilotEntry["status"] = result ? stepOutcome(result, next.step) : "failed";
-      show({ current: undefined, steps: [...state.steps, { step: next.step, status, ms: Date.now() - begin, startedAt: new Date(begin).toISOString() }] });
+      const score = result && (next.step === "opening" || next.step === "closing" || next.step === "deck" || next.step === "visual") ? bestScoreOf(result[next.step] as FunnelRun | null) : undefined;
+      show({ current: undefined, steps: [...state.steps, { step: next.step, status, ms: Date.now() - begin, startedAt: new Date(begin).toISOString(), ...(score !== undefined ? { score } : {}) }] });
       if (!result || status === "failed") { show({ outcome: `The ${STEP_TITLE[next.step].toLowerCase()} step failed; the run stopped there.` }); break; }
       current = result;
     }
@@ -576,7 +589,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const factsStatus = running === "facts" ? SESSION_STATUS.running : session ? (factsVerified ? SESSION_STATUS.ready : SESSION_STATUS[session.status]) : undefined;
   // A run still marked running whose heartbeat stopped: its request or the server ended, and it can be continued.
   const stalled = !running && session?.opening?.status === "running" && now > 0 && now - Date.parse(session.updatedAt) > OPENING_STALL_MS;
-  const openingStatus = running === "opening" ? OPENING_STATUS.running : stalled ? { label: "Stopped", tone: "warning" as const } : session?.opening ? OPENING_STATUS[session.opening.status] : undefined;
+  const openingStatus = running === "opening" ? OPENING_STATUS.running : stalled ? { label: "Stopped", tone: "warning" as const } : funnelStatusOf(session?.opening);
   // The focus the opening would follow: decided, not being decided, and free of program findings.
   const focus = session?.focus ?? undefined;
   const focusProblems = focus?.values ? focusFindings(focus.values) : [];
@@ -590,7 +603,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   // The closing ends the opening the editor chose (else the judge's winner), once that run has finished and followed a focus.
   const closing = session?.closing ?? undefined;
   const closingStalled = !running && closing?.status === "running" && now > 0 && now - Date.parse(session?.updatedAt ?? "") > OPENING_STALL_MS;
-  const closingStatus = running === "closing" ? OPENING_STATUS.running : closingStalled ? { label: "Stopped", tone: "warning" as const } : closing ? OPENING_STATUS[closing.status] : undefined;
+  const closingStatus = running === "closing" ? OPENING_STATUS.running : closingStalled ? { label: "Stopped", tone: "warning" as const } : funnelStatusOf(closing);
   const chosenOpeningId = session?.opening?.editorChoiceId ?? session?.opening?.winnerId;
   const openingFinished = Boolean(session?.opening && chosenOpeningId && session.opening.status !== "running" && session.opening.status !== "paused");
   const closingReady = openingFinished && Boolean(session?.opening?.focus);
@@ -602,7 +615,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   // The deck connects the chosen opening and the closing that ends it, once the closing's run has finished.
   const deck = session?.deck ?? undefined;
   const deckStalled = !running && deck?.status === "running" && now > 0 && now - Date.parse(session?.updatedAt ?? "") > OPENING_STALL_MS;
-  const deckStatus = running === "deck" ? OPENING_STATUS.running : deckStalled ? { label: "Stopped", tone: "warning" as const } : deck ? OPENING_STATUS[deck.status] : undefined;
+  const deckStatus = running === "deck" ? OPENING_STATUS.running : deckStalled ? { label: "Stopped", tone: "warning" as const } : funnelStatusOf(deck);
   const chosenClosingId = closing?.editorChoiceId ?? closing?.winnerId;
   const closingFinished = Boolean(closing && chosenClosingId && closing.status !== "running" && closing.status !== "paused");
   const deckReady = closingFinished && !closingOpeningChanged;
@@ -620,7 +633,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   // The visual script pictures the chosen deck between the chosen opening and closing, once the people and places are found.
   const visual = session?.visual ?? undefined;
   const visualStalled = !running && visual?.status === "running" && now > 0 && now - Date.parse(session?.updatedAt ?? "") > OPENING_STALL_MS;
-  const visualStatus = running === "visual" ? OPENING_STATUS.running : visualStalled ? { label: "Stopped", tone: "warning" as const } : visual ? OPENING_STATUS[visual.status] : undefined;
+  const visualStatus = running === "visual" ? OPENING_STATUS.running : visualStalled ? { label: "Stopped", tone: "warning" as const } : funnelStatusOf(visual);
   const chosenDeckId = deck?.editorChoiceId ?? deck?.winnerId;
   const deckFinished = Boolean(deck && chosenDeckId && deck.status !== "running" && deck.status !== "paused");
   const visualReady = deckFinished && !deckEndsChanged && inventory?.status === "ready";
@@ -651,7 +664,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   // The caption accompanies the finished images, while the visual script they picture is still in the session.
   const caption = session?.caption ?? undefined;
   const captionStalled = !running && caption?.status === "running" && now > 0 && now - Date.parse(session?.updatedAt ?? "") > OPENING_STALL_MS;
-  const captionStatus = running === "caption" ? OPENING_STATUS.running : captionStalled ? { label: "Stopped", tone: "warning" as const } : caption ? OPENING_STATUS[caption.status] : undefined;
+  const captionStatus = running === "caption" ? OPENING_STATUS.running : captionStalled ? { label: "Stopped", tone: "warning" as const } : funnelStatusOf(caption);
   const imagesFinished = Boolean(images && images.status !== "running" && images.status !== "paused" && images.slides.every((slide) => slideSettled(slide) && shownAttempt(slide)));
   const imagesScriptGone = Boolean(images && !funnelVersions(visual?.rounds ?? []).some((version) => version.candidate.id === images.visualId));
   const captionReady = imagesFinished && !imagesScriptGone;
@@ -707,7 +720,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
             <div className={styles.factsHeader}>
               <div>
                 <p className={styles.eyebrow}>Autopilot</p>
-                <p className={styles.factsIntro}>Runs every step to the images without stopping, from where the story stands: the facts if they are not verified, the focus, the people and places, the accounts to tag, the opening, the closing, the deck, the visual script and the images. Each step keeps {TODAY.judge}’s winner; a step that ends under 95 is marked and the run goes on; a failure, or a step that needs you, stops it. You review at the end: re-run or choose in any step, confirm the accounts, write the caption and approve. Every step below shows its progress, time and cost meanwhile.</p>
+                <p className={styles.factsIntro}>Runs every step to the images without stopping, from where the story stands: the facts if they are not verified, the focus, the people and places, the accounts to tag, the opening, the closing, the deck, the visual script and the images. Each step keeps {TODAY.judge}’s winner; 95 is the goal, a step that ends from {FUNNEL_ACCEPTABLE_SCORE} is acceptable and marked for you, and one under {FUNNEL_ACCEPTABLE_SCORE} takes up to {FUNNEL_MAX_EXTRA_ROUNDS} extra rounds on its own before the run goes on; a failure, or a step that needs you, stops it. You review at the end: re-run or choose in any step, confirm the accounts, write the caption and approve. Every step below shows its progress, time and cost meanwhile.</p>
               </div>
               <ActionRow>
                 {autopilot?.active ? <Button variant="secondary" size="compact" disabled={stopRequested.current} onClick={() => { stopRequested.current = true; }}>Stop after this step</Button> : null}
@@ -1833,7 +1846,7 @@ function AutopilotView({ autopilot, trace, now }: { autopilot: Autopilot; trace:
   return <div className={styles.focusBody}>
     {autopilot.steps.length ? <ol className={styles.autopilotList}>
       {autopilot.steps.map((entry) => <li key={entry.startedAt} data-status={entry.status}>
-        <strong>{STEP_TITLE[entry.step]}</strong> · {entry.status === "ready" ? "done" : entry.status === "needs-review" ? "under the gate, look at it" : "failed"} · {minutes(entry.ms)} · {usd(costOf(entry))}
+        <strong>{STEP_TITLE[entry.step]}</strong> · {entry.status === "ready" ? `done${entry.score !== undefined ? ` · ${entry.score}` : ""}` : entry.status === "needs-review" ? (entry.score === undefined ? "look at it" : entry.score >= FUNNEL_ACCEPTABLE_SCORE ? `acceptable · ${entry.score}` : `under ${FUNNEL_ACCEPTABLE_SCORE} · ${entry.score}, look at it`) : "failed"} · {minutes(entry.ms)} · {usd(costOf(entry))}
       </li>)}
     </ol> : null}
     {autopilot.current ? <LoadingState>{STEP_TITLE[autopilot.current]} is running; its progress is on its step below.</LoadingState> : null}

@@ -103,8 +103,14 @@ export type FunnelRole = { provider: Draft2Provider; model: string };
 export type FunnelPlanRound = { revise: number; fresh: number; proposals: number; effort?: "low" | "medium" | "high" };
 /** An extra round the editor asks for once the plan's rounds are spent: the best version revised once more against its remaining issues. */
 export const FUNNEL_EXTRA_ROUND: FunnelPlanRound = { revise: 1, fresh: 0, proposals: 0 };
-/** How many extra rounds one run may take. */
+/** How many extra rounds one run may take, on its own (under the floor) and at the editor's request together: the cap that keeps a run from looping. */
 export const FUNNEL_MAX_EXTRA_ROUNDS = 2;
+/**
+ * The floor the funnel works to: the gate (95) stays the goal, and an
+ * unaccepted result at or above this is acceptable for the editor to
+ * review; under it, the run takes an extra round on its own, up to the cap.
+ */
+export const FUNNEL_ACCEPTABLE_SCORE = 90;
 
 /** A second judgment of a round at another effort or by another model, recorded beside the real one and deciding nothing (draft2ShadowJudgeEffort, draft2ShadowJudgeModel). */
 export type FunnelShadowJudgment = {

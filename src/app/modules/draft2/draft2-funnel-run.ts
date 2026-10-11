@@ -10,7 +10,7 @@ import { draft2ProviderName, draft2RevisionEffort, draft2RoleModel, draft2Shadow
 import { traceCostMicros } from "./draft2-trace-cost";
 import { Draft2BusyError, Draft2InputError, type Draft2Fact, type Draft2TraceEntry } from "./draft2-facts.types";
 import {
-  FUNNEL_EXTRA_ROUND, FUNNEL_MAX_EXTRA_ROUNDS, factsSnapshot, failedCall, funnelAcceptedWinner, funnelBestVersions, funnelExtendable, funnelFreshWanted, funnelRegressions,
+  FUNNEL_ACCEPTABLE_SCORE, FUNNEL_EXTRA_ROUND, FUNNEL_MAX_EXTRA_ROUNDS, factsSnapshot, failedCall, funnelAcceptedWinner, funnelBestVersions, funnelExtendable, funnelFreshWanted, funnelRegressions,
   funnelRenumberedProposals, funnelResumeRound, funnelReviewNote, funnelRunSummary, funnelTargets, funnelVersions, funnelWrittenCandidates,
   type FunnelCandidate, type FunnelEvaluation, type FunnelGate, type FunnelIssue, type FunnelPlanRound, type FunnelRegression, type FunnelRole,
   type FunnelRound, type FunnelRun, type FunnelScore, type FunnelShadowJudgment, type FunnelVersion,
@@ -141,8 +141,9 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
   const nothingToContinue = `There is no paused or stopped ${def.noun} to continue. Write the ${def.noun} again.`;
   if (resume && !stopped) throw new Draft2InputError(nothingToContinue);
   const snapshot = def.snapshot(session, resume ? stopped : undefined);
-  const plan: readonly FunnelPlanRound[] = [...(typeof def.plan === "function" ? def.plan(snapshot) : def.plan), ...Array.from({ length: extraRounds }, () => FUNNEL_EXTRA_ROUND)];
-  const maxRounds = plan.length;
+  // The plan may still grow by extra rounds while the run goes, when its best stays under the floor; never past the cap.
+  let plan: FunnelPlanRound[] = [...(typeof def.plan === "function" ? def.plan(snapshot) : def.plan), ...Array.from({ length: extraRounds }, () => FUNNEL_EXTRA_ROUND)];
+  let maxRounds = plan.length;
   if (resume && stopped && (funnelResumeRound(stopped) > maxRounds || (stopped.status === "needs-review" && !funnelExtendable(stopped, maxRounds)))) throw new Draft2InputError(nothingToContinue);
 
   const configuredOpenAiKey = process.env.OPENAI_API_KEY?.trim();
@@ -385,7 +386,23 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
           return;
         }
         if (round === maxRounds) {
-          await needsReview(`${judgeName} did not accept ${def.article} after ${maxRounds} rounds.`);
+          const best = funnelBestVersions(funnelVersions(run.rounds))[0];
+          const bestScore = best?.score?.overall ?? 0;
+          // Under the floor the funnel works to, one more round on its own (the best version revised against its issues), never past the cap.
+          if (bestScore < FUNNEL_ACCEPTABLE_SCORE && (run.extraRounds ?? 0) < FUNNEL_MAX_EXTRA_ROUNDS) {
+            run.extraRounds = (run.extraRounds ?? 0) + 1;
+            plan = [...plan, FUNNEL_EXTRA_ROUND];
+            maxRounds = plan.length;
+            if (best) run.winnerId = best.candidate.id;
+            lastRoundMs = Date.now() - roundStartedAt;
+            await checkpoint();
+            continue;
+          }
+          // The note's lead: the rounds, and, under the floor, that the extra rounds are spent too.
+          const extra = run.extraRounds ?? 0;
+          await needsReview(bestScore >= FUNNEL_ACCEPTABLE_SCORE
+            ? `${judgeName} did not accept ${def.article} after ${maxRounds} rounds.`
+            : `${judgeName} did not accept ${def.article} after ${maxRounds} rounds${extra ? ` (${extra} extra)` : ""}, and the best stays under ${FUNNEL_ACCEPTABLE_SCORE}/100.`);
           return;
         }
         // The best version so far, kept on the row in case a later call fails.
