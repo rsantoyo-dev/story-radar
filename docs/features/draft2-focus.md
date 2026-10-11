@@ -57,6 +57,7 @@ rests on the verified facts.
 | `goal` | `followers` · `discussion` · `saves` · `shares` | the profile's `conversionGoal` |
 | `voice` | gravity (`light` · `ordinary` · `serious` · `grave`) and the five tone dials, 1–100 | the profile's dials, moved only as far as the gravity requires |
 | `direction` | one paragraph, at most 1,500 characters (v1's editorial focus) | — |
+| `visualDirection` | one or two sentences, at most 600 characters: how the images tell this story within the brand's visual identity (the world they live in, who leads them, what recurs); the visual script follows it (since 2026-10-10, focus skill v2; a focus decided before has none) | — |
 
 A framing or structure the profile fixes (not `auto`) is kept unless the
 facts cannot support it, and the reason says so.
@@ -72,12 +73,14 @@ The AI's cited fact ids are filtered to the verified facts when its answer is
 parsed. A reader consequence the editor writes by hand cites no facts; it is
 the editor's direction, like v1's editorial focus.
 
-## 4. The focus skill (`skills/focus.ts`, version "1")
+## 4. The focus skill (`skills/focus.ts`, version "2")
 
 A versioned TypeScript string like the other skills, composed with the role
 `focus-editor` and the Topic's brand brief (`composeInstructions`). It
 describes each field, the defaults, the rules for `editorChoices` and the
-reasons. The trace records `{ focus: "1" }` on the call.
+reasons. The trace records `{ focus: "2" }` on the call. Since version 2 the
+call also reads the Topic's visual identity in full (as the visual step
+does), the frame of `visualDirection`.
 
 ## 5. Contracts (`draft2-focus.types.ts`)
 
@@ -151,7 +154,8 @@ field without a provider call. It is refused while Claude is deciding.
   a continued run keeps its own snapshot. A run stored before this step has
   none and cannot be continued (write it again).
 - Both models read `{ focus, verifiedFacts }` where their provider caches it
-  (Claude's `context`; the head of Sol's input).
+  (Claude's `context`; since 2026-10-10 the tail of Sol's instructions, see
+  `draft2-autopilot.md`).
 - Hooks skill v6: a Focus section (framing, structure, goal and voice rules;
   the focus is guidance, not facts), the `focus` criterion, the voice judged
   against the focus's voice, and the judge issue code `OFF_FOCUS`.

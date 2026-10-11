@@ -10,7 +10,7 @@ import type { Draft2Skill } from "./draft2-skills";
  */
 export const VISUALS_SKILL: Draft2Skill = {
   name: "visuals",
-  version: "3",
+  version: "4",
   text: `# Visual scripts for social carousels
 
 A visual script is the sequence of images a carousel is made of, written as
@@ -38,6 +38,9 @@ the turn and the end. An image never just repeats its slide's words.
   progression.
 
 ## The whole
+- The script follows the focus's visualDirection when it has one: the world
+  the images live in, who or what leads them, what recurs. The concept makes
+  it specific to these slides; it never contradicts it.
 - concept: the visual story in one or two sentences.
 - protagonist: who or what the story follows, if anyone: anonymous people
   doing what the story is about (at a distance, from behind or partly in
@@ -170,7 +173,7 @@ more repetitive is worse; the program keeps the better version.`,
 
 export const VISUAL_ROLES = {
   "people-finder": `You list the people, places and organizations named in the verified facts you receive, for the publication described below. For each: its name exactly as the facts write it, its kind (person, place or organization), its role in the story ("subject": the story is about them; "secondary": they act in it; "mentioned"), one line on who or what it is in this story, and the ids of the facts that name it. Use only names the facts state; never a generic noun ("a teacher", "the city") and never a name the facts do not give. Places are named venues, streets, neighbourhoods, cities or regions; organizations are companies, agencies, institutions and teams. List each one once.`,
-  "visual-writer": `You write the visual script of a social carousel for the publication described below: the images of the carousel you receive, as one visual sequence that takes the reader somewhere, not a series of variations on one subject, from its slides' words, the story's focus, the verified facts, the people and places with the verified material each may show, the brand's characters, and the layout (what is added to each image afterwards). For the task "scripts", return exactly \`candidatesWanted\` scripts, each a different visual story, following the visual scripts skill; ids c1…c3. For the task "revise", return one revised script per script in \`scripts\`, with the same id; the script in \`develop\` edited, with its id, returned unchanged when it is already right; and, when \`newAngles\` asks for them, that many new scripts with ids n1, n2…. Follow the instruction that comes with the task.
+  "visual-writer": `You write the visual script of a social carousel for the publication described below: the images of the carousel you receive, as one visual sequence that takes the reader somewhere, not a series of variations on one subject, from its slides' words, the story's focus, the verified facts, the people and places with the verified material each may show, the brand's characters, and the layout (what is added to each image afterwards). For the task "scripts", return exactly \`candidatesWanted\` scripts, each a different visual story, following the visual scripts skill; ids c1, c2…. For the task "revise", return one revised script per script in \`scripts\`, with the same id; the script in \`develop\` edited, with its id, returned unchanged when it is already right; and, when \`newAngles\` asks for them, that many new scripts with ids n1, n2…. Follow the instruction that comes with the task.
 
 Each script has one slide per carousel slide, in the carousel's order, named as the carousel names it ("cover", "slide2", "s1"…, "penultimate", "last"). "angle" is one line naming the visual story.`,
   "visual-judge": `You are the severe judge of carousel visual scripts for the publication described below. Score every script on each criterion of the visual scripts skill, against the carousel it pictures, the brand's identity, the story's focus, the people and places with their verified material, and the verified facts you receive only; rank them, name the winner, and give the writer concrete suggestions. Mechanical findings from the program are blocking. Accept only when the winner meets the skill's thresholds.

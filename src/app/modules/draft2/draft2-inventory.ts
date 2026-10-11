@@ -14,6 +14,7 @@ import { listStoryPhotos } from "../stories/story-materials.repository";
 import { listCreativeCharacterRoster } from "../stories/creative-characters.repository";
 import { activeDraft2Session, claimDraft2Session, getDraft2Session, touchDraft2Session, updateDraft2Session } from "./draft2-session.repository";
 import { draft2DevTrace } from "./draft2-dev-trace";
+import { traceCost } from "./draft2-trace-cost";
 import { comparableText, Draft2BusyError, Draft2InputError, type Draft2Fact, type Draft2TraceEntry } from "./draft2-facts.types";
 import { factsSnapshot, failedCall } from "./draft2-funnel";
 import {
@@ -235,7 +236,7 @@ export async function findDraft2Inventory({ topicId, storyId, sessionId }: { top
         trace.push({ at, step: "inventory", round: 1, provider: "anthropic", model, operation: "draft2_inventory", durationMs: Date.now() - begin, outcome: "error", note: note(error), ...failedCall(error), skillVersions });
         throw error;
       }
-      trace.push({ at, step: "inventory", round: 1, provider: "anthropic", model, operation: "draft2_inventory", durationMs: Date.now() - begin, usage: answered.usage, cachedInputTokens: answered.cachedInputTokens, ...(answered.cacheWriteTokens ? { cacheWriteTokens: answered.cacheWriteTokens } : {}), answerCharacters: answered.text.length, outcome: "ok", skillVersions });
+      trace.push({ at, step: "inventory", round: 1, provider: "anthropic", model, operation: "draft2_inventory", durationMs: Date.now() - begin, usage: answered.usage, cachedInputTokens: answered.cachedInputTokens, ...(answered.cacheWriteTokens ? { cacheWriteTokens: answered.cacheWriteTokens } : {}), answerCharacters: answered.text.length, outcome: "ok", skillVersions, effort: "medium", ...traceCost("anthropic", model, answered.usage, answered.cachedInputTokens, answered.cacheWriteTokens) });
       draft2DevTrace({ step: "inventory", round: 1, provider: "anthropic", model, operation: "draft2_inventory", phase: "response", durationMs: Date.now() - begin, detail: { usage: answered.usage, answer: answered.text } });
       const photos = await storyPhotos(topicId, storyId);
       const entities = carriedDecisions(parseInventoryEntities(answered.text, facts), earlier, photos);

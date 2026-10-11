@@ -64,13 +64,13 @@ const findings = (candidate: Draft2VisualCandidate, options: Partial<typeof rule
 const withSlide = (position: string, overrides: Partial<Draft2VisualSlide>) => script("c1", { slides: script("c1").slides.map((entry) => entry.slide === position ? { ...entry, ...overrides } : entry) });
 const score = (candidateId: string, overall: number): Draft2VisualScore => ({ candidateId, narrative: overall, progression: overall, beat: overall, continuity: overall, brand: overall, truth: overall, craft: overall, focus: overall, overall, note: "Why." });
 
-test("the carousel in order, from the opening, the deck and the closing; three scripts, two for a long carousel, and a third round on the best", () => {
+test("the carousel in order, from the opening, the deck and the closing; two scripts, and a third round on the best", () => {
   assert.deepEqual(carousel.map((entry) => [entry.slide, entry.label]), [["cover", "Cover"], ["slide2", "Slide 2"], ["s1", "Slide 3"], ["s2", "Slide 4"], ["penultimate", "Slide 5"], ["last", "Slide 6"]]);
   assert.equal(carousel[5].cta, "Follow us for what opens near you.");
   assert.deepEqual(carouselSlides(opening, deck, { ...closing, penultimate: undefined }).map((entry) => entry.slide).slice(-1), ["last"]);
   assert.equal(visualPlan(carousel), VISUAL_PLAN);
   assert.equal(visualPlan(Array.from({ length: 11 })), VISUAL_LONG_PLAN);
-  assert.deepEqual(VISUAL_PLAN.map((round) => [round.fresh, round.revise, round.proposals, round.effort ?? "high"]), [[3, 0, 1, "medium"], [0, 2, 0, "high"], [0, 1, 0, "high"]]);
+  assert.deepEqual(VISUAL_PLAN.map((round) => [round.fresh, round.revise, round.proposals, round.effort ?? "high"]), [[2, 0, 1, "medium"], [0, 2, 0, "high"], [0, 1, 0, "high"]]);
   assert.deepEqual(VISUAL_LONG_PLAN.map((round) => [round.fresh, round.revise, round.proposals, round.effort ?? "high"]), [[2, 0, 1, "medium"], [0, 1, 0, "high"], [0, 1, 0, "high"]]);
   const judged = { round: 1, candidates: [], mechanical: [], at: "t", evaluation: {} };
   const unjudged = { ...judged, round: 2, evaluation: undefined };

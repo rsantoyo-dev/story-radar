@@ -38,17 +38,18 @@ test("instructions are the role, then each skill, then the brand brief, and reco
   assert.deepEqual(writer.skillVersions, { hooks: "7" });
   assert.equal(composeInstructions("opening-judge", [skill]).instructions, `${OPENING_ROLES["opening-judge"]}\n\n## Shared craft\n\n## Judge only`, "a role reads its own part after the shared text");
   assert.deepEqual(Object.keys(DRAFT2_ROLES).sort(), ["caption-judge", "caption-writer", "closing-judge", "closing-writer", "deck-judge", "deck-writer", "extractor", "focus-editor", "image-judge", "mention-finder", "opening-judge", "opening-writer", "people-finder", "reviewer", "visual-judge", "visual-writer"]);
-  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@1", "focus@1", "hooks@6", "closings@1", "decks@1", "visuals@3", "images@1", "captions@1"]);
+  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@2", "focus@2", "hooks@6", "closings@1", "decks@1", "visuals@4", "images@1", "captions@1"]);
 });
 
-test("the Facts prompts keep their words: the extractor reads its rules, the reviewer its checklist", () => {
+test("the Facts prompts keep their words (the reviewer's say the article is context and name earlierReview since v2): the extractor reads its rules, the reviewer its checklist", () => {
   const extractor = composeInstructions("extractor", [FACTS_SKILL]).instructions;
   const reviewer = composeInstructions("reviewer", [FACTS_SKILL]).instructions;
   assert.ok(extractor.startsWith(`${FACTS_ROLES.extractor}\n\nRules:\n- A fact is one checkable claim`));
   assert.ok(extractor.endsWith("add the missing ones with new ids."));
   assert.match(extractor, /never more than 40\./);
   assert.ok(reviewer.startsWith(`${FACTS_ROLES.reviewer}\n\nCheck every fact:\n1. Grounding`));
-  assert.ok(reviewer.endsWith("On a revised list, re-check everything, not only your previous issues."));
+  assert.ok(reviewer.endsWith("On a revised list (revisedFacts, with your earlierReview beside it), re-check everything, not only your previous issues."));
+  assert.match(FACTS_ROLES.reviewer, /an article \(as context, the same on every round\)/);
   assert.ok(!reviewer.includes("Rules:") && !extractor.includes("Check every fact:"));
 });
 
@@ -110,7 +111,9 @@ test("the focus skill names every field and value the contract accepts, and the 
   const { instructions, skillVersions } = composeInstructions("focus-editor", [FOCUS_SKILL], brandBrief(profile));
   assert.ok(instructions.startsWith(FOCUS_ROLES["focus-editor"]));
   assert.ok(instructions.endsWith(`${toneLine(profile)}.`), "the brand brief, with the tone defaults, comes last");
-  assert.deepEqual(skillVersions, { focus: "1" });
+  assert.deepEqual(skillVersions, { focus: "2" });
+  assert.match(FOCUS_SKILL.text, /visualDirection: one or two sentences, at most 600 characters/);
+  assert.match(FOCUS_ROLES["focus-editor"], /the frame of visualDirection/);
 });
 
 test("the closings rubric states the thresholds and limits the program enforces", () => {
@@ -171,7 +174,9 @@ test("the visual scripts rubric states the limits and thresholds the program enf
   assert.match(VISUALS_SKILL.text, /The image model letters each slide's words inside the image/);
   assert.match(VISUALS_SKILL.text, /is not a\s+reconstruction/);
   assert.match(VISUAL_ROLES["visual-judge"], /"REPETITIVE"/);
-  assert.deepEqual(composeInstructions("visual-writer", [VISUALS_SKILL], brandBrief(profile)).skillVersions, { visuals: "3" });
+  assert.deepEqual(composeInstructions("visual-writer", [VISUALS_SKILL], brandBrief(profile)).skillVersions, { visuals: "4" });
+  assert.match(VISUALS_SKILL.text, /The script follows the focus's visualDirection when it has one/);
+  assert.match(VISUAL_ROLES["visual-writer"], /ids c1, c2…/);
   assert.deepEqual(composeInstructions("people-finder", [], brandBrief(profile)).skillVersions, {}, "the finder reads its role and the brand brief, no skill");
 });
 

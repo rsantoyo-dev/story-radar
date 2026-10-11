@@ -15,6 +15,8 @@ export const withCreativeTextBudget = <T>(context: TextSpendContext, work: () =>
     scope.run(context, () => withUsageAttribution({ topicId: context.topicId, storyId: context.storyId }, work));
 type Usage = CreativeAiUsage & {
     cachedInputTokens?: number;
+    /** Prompt-cache writes (Claude), billed above the input rate. */
+    cacheWriteTokens?: number;
 };
 /**
  * Inside a Creative Studio scope, reserves against the Story text budget and
@@ -57,11 +59,11 @@ export async function meterCreativeText<T>(input: {
         // Explicit request rejection has no inference charge; unknown transport outcomes retain the reservation.
         const rejected = [400, 401, 402, 403, 404, 413, 422, 429].includes(e?.status ?? 0);
         const known = e?.usage && e.usage.totalTokens > 0 ? e.usage : undefined;
-        await repository.finishTextCall(id, context, known ? textCostMicros(rate, known, known.cachedInputTokens) : rejected ? 0 : null, known).catch(() => { });
+        await repository.finishTextCall(id, context, known ? textCostMicros(rate, known, known.cachedInputTokens, known.cacheWriteTokens) : rejected ? 0 : null, known).catch(() => { });
         throw error;
     }
     const measured = usage(value);
-    await repository.finishTextCall(id, context, measured ? textCostMicros(rate, measured, measured.cachedInputTokens) : null, measured);
+    await repository.finishTextCall(id, context, measured ? textCostMicros(rate, measured, measured.cachedInputTokens, measured.cacheWriteTokens) : null, measured);
     return value;
 }
 /** An unknown rate records the call unpriced (visible, not charged) instead of failing finished work. */
@@ -76,7 +78,7 @@ async function recordUnscopedText(input: { provider: string; model: string; oper
     await recordAttributedUsage({
         kind: "text", provider: input.provider, model: input.model, operation: input.operation,
         units: { promptTokens: measured.promptTokens, outputTokens: measured.outputTokens, thoughtsTokens: measured.thoughtsTokens, cachedTokens: measured.cachedInputTokens ?? 0 },
-        costMicros: rate ? textCostMicros(rate, measured, measured.cachedInputTokens) : null,
+        costMicros: rate ? textCostMicros(rate, measured, measured.cachedInputTokens, measured.cacheWriteTokens) : null,
         estimated: false, rate: rate ? { ...rate } : { unpriced: true }, idempotencyKey: `text:${randomUUID()}`,
     });
 }

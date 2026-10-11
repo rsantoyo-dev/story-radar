@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+const json = (value: unknown) => JSON.stringify(value);
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import vm from "node:vm";
@@ -68,10 +69,11 @@ test("facts the reviewer accepts on the first round are ready after one extracti
   assert.equal(h.calls[0].input.store, true, "the extractor's conversation is kept for the next steps");
   assert.equal(h.calls[0].input.previousResponseId, undefined);
   assert.deepEqual((h.calls[0].input.contents as { article: { title: string } }).article.title, "Story");
-  assert.equal((h.calls[1].input.history as unknown[]).length, 0, "the reviewer reads the article on its first turn");
+  assert.equal((h.calls[1].input.context as { article: { title: string } }).article.title, "Story", "the reviewer reads the article as cached context");
+  assert.equal(h.calls[1].input.history, undefined, "no conversation");
   const threads = session.threads as types.Draft2Threads;
   assert.equal(threads.openai?.responseId, "resp_1");
-  assert.equal(threads.anthropic?.history.length, 2, "the article turn and the verdict are kept for later steps");
+  assert.equal(threads.anthropic, undefined, "no transcript is kept: the article is cached context on every round");
   assert.equal((session.facts as types.Draft2Fact[])[0].id, "f1");
   assert.equal((session.trace as types.Draft2TraceEntry[]).length, 2);
 });
@@ -86,11 +88,10 @@ test("a revise verdict sends the suggestions back to the extractor in the same c
   assert.deepEqual(revision.suggestions, ["Name the program."]);
   assert.equal(revision.issues[0].code, "VAGUE");
   assert.deepEqual((revision as unknown as { previousFacts: { id: string }[] }).previousFacts.map((fact) => fact.id), ["f1", "f2"], "the extractor sees what it must keep");
-  const history = h.calls[3].input.history as { role: string; text: string }[];
-  assert.equal(history.length, 2);
-  assert.equal(history[0].role, "user");
-  assert.ok(history[0].text.includes(article), "the article travels once, in the cached first turn");
-  assert.equal(history[1].role, "assistant");
+  const second = h.calls[3].input as { context: { article: { text: string } }; contents: { revisedFacts: { id: string }[]; earlierReview: { round: number; verdict: string; suggestions: string[] } }; history?: unknown };
+  assert.ok(second.context.article.text.includes(article), "the article travels as cached context, the same block every round");
+  assert.equal(second.history, undefined, "no conversation grows");
+  assert.equal(json([second.contents.earlierReview.round, second.contents.earlierReview.verdict, second.contents.earlierReview.suggestions]), json([1, "revise", ["Name the program."]]), "the reviewer sees its earlier verdict beside the revised list");
   const rounds = session.rounds as types.Draft2FactsRound[];
   assert.equal(rounds.length, 2);
   assert.deepEqual(rounds[1].restored, ["f2"], "the fact the extractor dropped without a reason is back");

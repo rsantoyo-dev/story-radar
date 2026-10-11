@@ -13,7 +13,7 @@ import { TONE_KEYS, toneLine, toneValue, type ToneKey } from "./skills/tone";
  * evidence. Everything here is pure: contracts, the schema, parsing, edits
  * and the program's findings.
  */
-export const FOCUS_FIELDS = ["line", "audience", "framing", "readerConsequence", "structure", "goal", "voice", "direction"] as const;
+export const FOCUS_FIELDS = ["line", "audience", "framing", "readerConsequence", "structure", "goal", "voice", "direction", "visualDirection"] as const;
 export const FOCUS_FRAMINGS = ["reader-consequence", "explainer", "authority"] as const;
 export const FOCUS_STRUCTURES = ["arc", "steps", "list"] as const;
 export const FOCUS_GRAVITIES = ["light", "ordinary", "serious", "grave"] as const;
@@ -22,6 +22,8 @@ export const FOCUS_AUDIENCE_MAX_CHARACTERS = 300;
 export const FOCUS_CONSEQUENCE_MAX_CHARACTERS = 300;
 /** v1's editorial focus paragraph had the same ceiling. */
 export const FOCUS_DIRECTION_MAX_CHARACTERS = 1_500;
+/** The visual approach: one or two sentences the visual script follows. */
+export const FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS = 600;
 const REASON_MAX_CHARACTERS = 400;
 /** A line's objective as the focus keeps it; the longest real one is about 900 characters. */
 const LINE_OBJECTIVE_MAX_CHARACTERS = 600;
@@ -54,6 +56,8 @@ export type Draft2FocusValues = {
   voice: Draft2FocusVoice;
   /** What to lead with, what to leave out, what the reader takes away (v1's editorial focus). */
   direction: string;
+  /** How the images tell this story within the brand's visual identity: the world they live in, who leads them, what recurs. The visual script follows it. Absent on a focus decided before the field existed. */
+  visualDirection?: string;
 };
 
 export type Draft2FocusRole = { provider: Draft2Provider; model: string };
@@ -119,6 +123,7 @@ export const DRAFT2_FOCUS_SCHEMA: Record<string, unknown> = {
       additionalProperties: false,
     },
     direction: { type: "string" },
+    visualDirection: { type: "string" },
     reasons: {
       type: "object",
       properties: Object.fromEntries(FOCUS_FIELDS.map((field) => [field, { type: "string" }])),
@@ -126,7 +131,7 @@ export const DRAFT2_FOCUS_SCHEMA: Record<string, unknown> = {
       additionalProperties: false,
     },
   },
-  required: ["lineId", "audience", "framing", "readerConsequence", "structure", "goal", "voice", "direction", "reasons"],
+  required: ["lineId", "audience", "framing", "readerConsequence", "structure", "goal", "voice", "direction", "visualDirection", "reasons"],
   additionalProperties: false,
 };
 
@@ -189,12 +194,14 @@ export function parseFocusDecision(answer: string, { facts, lines, editorChoices
   const framing = oneOf(FOCUS_FRAMINGS, body.framing);
   const goal = oneOf(FOCUS_GOALS, body.goal);
   const direction = text(body.direction, FOCUS_DIRECTION_MAX_CHARACTERS);
+  const visualDirection = text(body.visualDirection, FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS);
   const structure = record(body.structure);
   const kind = oneOf(FOCUS_STRUCTURES, structure.kind);
   const voice = record(body.voice);
   const gravity = oneOf(FOCUS_GRAVITIES, voice.gravity);
   if (!audience) throw new Draft2ResponseError(`The focus's audience is missing or longer than ${FOCUS_AUDIENCE_MAX_CHARACTERS} characters`);
   if (!direction) throw new Draft2ResponseError(`The focus's direction is missing or longer than ${FOCUS_DIRECTION_MAX_CHARACTERS} characters`);
+  if (!visualDirection) throw new Draft2ResponseError(`The focus's visual direction is missing or longer than ${FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS} characters`);
   if (!framing || !goal || !kind || !gravity) throw new Draft2ResponseError("The focus's framing, goal, structure or gravity is outside the contract");
   if (TONE_KEYS.some((key) => typeof voice[key] !== "number" || !Number.isFinite(voice[key]))) throw new Draft2ResponseError("The focus's voice needs a number for every tone dial");
 
@@ -219,6 +226,7 @@ export function parseFocusDecision(answer: string, { facts, lines, editorChoices
     goal,
     voice: { gravity, ...Object.fromEntries(TONE_KEYS.map((key) => [key, toneValue(voice[key])])) } as Draft2FocusVoice,
     direction,
+    visualDirection,
   };
   const given = record((parsed as Record<string, unknown>).reasons);
   const chosen = new Set(Object.keys(editorChoices).map((key) => key === "lineId" ? "line" : key));
@@ -271,6 +279,7 @@ function editedValue(focus: Draft2Focus, field: Draft2FocusField, value: unknown
     }
     case "audience": return plain(FOCUS_AUDIENCE_MAX_CHARACTERS, "audience");
     case "direction": return plain(FOCUS_DIRECTION_MAX_CHARACTERS, "direction");
+    case "visualDirection": return plain(FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS, "visual direction");
     case "readerConsequence": {
       const words = plain(FOCUS_CONSEQUENCE_MAX_CHARACTERS, "reader consequence", { empty: true });
       if (!words) return null;
@@ -368,6 +377,7 @@ export function focusForModels(values: Draft2FocusValues) {
     goal: values.goal,
     voice: { gravity: voice.gravity, tone: toneLine(voice) },
     direction: values.direction,
+    ...(values.visualDirection ? { visualDirection: values.visualDirection } : {}),
   };
 }
 

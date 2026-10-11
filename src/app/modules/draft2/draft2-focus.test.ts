@@ -44,6 +44,7 @@ const answer = (overrides: Record<string, unknown> = {}) => ({
   goal: "followers",
   voice: { gravity: "ordinary", formality: 30, humor: 40, energy: 70, optimism: 60, provocation: 60 },
   direction: "Lead with the five-minute video; pay it with the award time.",
+  visualDirection: "Anonymous founders at a laptop; the demo video recurs and closes the story as a signed award.",
   reasons,
   ...overrides,
 });
@@ -129,7 +130,7 @@ test("Claude decides the focus from the cached facts, the brand brief, the profi
   assert.equal(json(focus.decidedBy), json({ provider: "anthropic", model: "claude-sonnet-5-5" }));
   const last = session.trace[session.trace.length - 1];
   assert.equal(session.trace.length, 2, "the facts trace is kept");
-  assert.equal(json([last.step, last.provider, last.operation, last.outcome, last.skillVersions, last.cacheWriteTokens]), json(["focus", "anthropic", "draft2_focus", "ok", { focus: "1" }, 900]));
+  assert.equal(json([last.step, last.provider, last.operation, last.outcome, last.skillVersions, last.cacheWriteTokens]), json(["focus", "anthropic", "draft2_focus", "ok", { focus: "2" }, 900]));
 });
 
 test("deciding again keeps the editor's fields: Claude receives them as choices and the program keeps them whatever it answers", async () => {

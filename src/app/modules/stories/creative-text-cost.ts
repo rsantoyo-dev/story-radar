@@ -35,14 +35,15 @@ export function textRate(provider: string, model: string, inputTokens: number, o
             rate = { ...rate, input: rate.input * 2, cached: rate.cached * 2, output: rate.output * 1.5 };
     }
     if (!rate && provider === "anthropic") {
-        // Checked October 9, 2026 (platform.claude.com/docs/en/about-claude/pricing).
-        // Cache reads are 10% of input. Cache writes (25% over input) are not
-        // modelled: the adapter sets no cache breakpoints yet, so any write
-        // tokens settle at the input rate. Re-verify by the expiry below.
-        const rates: Record<string, number[]> = { "claude-haiku-4-5-20251001": [1, 5, .1], "claude-sonnet-5-5": [2, 10, .2], "claude-opus-5-5": [4, 20, .4], "claude-fable-5-1": [10, 50, 1] };
+        // Checked October 10, 2026 (platform.claude.com/docs/en/build-with-claude/prompt-caching,
+        // pricing table): cache reads are 5% of input on Sonnet 5.5 and Opus 5.5,
+        // 2.5% on Fable 5.1, 10% on Haiku 4.5. Cache writes are 25% over input
+        // (textCostMicros, `written`): the adapters mark the stable context for
+        // caching. Re-verify by the expiry below.
+        const rates: Record<string, number[]> = { "claude-haiku-4-5-20251001": [1, 5, .1], "claude-sonnet-5-5": [2, 10, .1], "claude-opus-5-5": [4, 20, .2], "claude-fable-5-1": [10, 50, .25] };
         const r = rates[model];
-        if (r && now < Date.parse("2027-01-09"))
-            rate = { input: r[0], output: r[1], cached: r[2], version: "2026-10-09" };
+        if (r && now < Date.parse("2027-01-10"))
+            rate = { input: r[0], output: r[1], cached: r[2], version: "2026-10-10" };
         // Long-context premium past 200K input tokens: double input, 1.5x output.
         if (rate && inputTokens > 200000)
             rate = { ...rate, input: rate.input * 2, cached: rate.cached * 2, output: rate.output * 1.5 };
@@ -55,9 +56,12 @@ export function textRate(provider: string, model: string, inputTokens: number, o
         throw new CreativeTextPricingError(`Configure a verified text rate for ${provider}/${model} before spending credits.`);
     return rate;
 }
-export function textCostMicros(rate: TextRate, usage: CreativeAiUsage, cached = 0): number {
+/** Prompt-cache writes (Claude) are billed at 1.25x the input rate; the written tokens are already inside promptTokens. */
+const CACHE_WRITE_PREMIUM = 0.25;
+export function textCostMicros(rate: TextRate, usage: CreativeAiUsage, cached = 0, written = 0): number {
     const input = Math.max(0, usage.promptTokens), cache = Math.min(input, Math.max(0, cached));
-    return Math.ceil((input - cache) * rate.input + cache * rate.cached +
+    const writes = Math.min(input - cache, Math.max(0, written));
+    return Math.ceil((input - cache) * rate.input + cache * rate.cached + writes * rate.input * CACHE_WRITE_PREMIUM +
         (Math.max(0, usage.outputTokens) + (rate.thoughtsExtra ? Math.max(0, usage.thoughtsTokens) : 0)) * rate.output);
 }
 export function textBudgetMicros(): number {

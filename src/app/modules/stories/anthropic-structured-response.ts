@@ -57,7 +57,7 @@ export async function generateAnthropicStructuredResponse(options: Parameters<ty
   const { selfMetered, ...request } = options;
   return meterCreativeText({provider:"anthropic",model:request.model,operation:request.schemaName,
     payload:{instructions:request.instructions,contents:request.contents,schema:request.schema},maxOutputTokens:request.maxOutputTokens,selfMetered},
-    () => requestAnthropicStructuredResponse(request), value => value.usage.totalTokens > 0 ? {...value.usage,cachedInputTokens:value.cachedInputTokens} : undefined);
+    () => requestAnthropicStructuredResponse(request), value => value.usage.totalTokens > 0 ? {...value.usage,cachedInputTokens:value.cachedInputTokens,cacheWriteTokens:value.cacheWriteTokens} : undefined);
 }
 
 async function requestAnthropicStructuredResponse({

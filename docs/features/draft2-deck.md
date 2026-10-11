@@ -50,7 +50,8 @@ list's deck is long, so it explores less.
 All of it is recorded on the run (`deck.opening`, `deck.closing`,
 `deck.focus`, `deck.shape`). Both models read
 `{ focus, opening, closing, deck, emojis, verifiedFacts }` where their
-provider caches it.
+provider caches it (Claude's `context`; the tail of Sol's instructions since
+2026-10-10).
 
 ## 5. The decks skill (`skills/decks.ts`, version "1")
 

@@ -40,7 +40,9 @@ Facts → Focus → Opening → Closing → Deck → Review
   `# Calls to action` section (`callToActionBrief`).
 
 Both models read `{ focus, opening, shape, verifiedFacts }` where their
-provider caches it.
+provider caches it (Claude's `context`; the tail of Sol's instructions since
+2026-10-10). Round 1 explores at medium effort since the same day, like the
+other steps' first rounds (`CLOSING_ROUND_PLAN`).
 
 ## 4. The closings skill (`skills/closings.ts`, version "1")
 

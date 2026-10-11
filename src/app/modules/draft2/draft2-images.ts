@@ -41,6 +41,7 @@ import { verifiedPlacePhotoInstruction } from "../stories/creative-place-visual"
 import { buildImageReviewInstructions, buildImageReviewText, type CreativeImageReviewInput } from "../stories/creative-image-review";
 import { activeDraft2Session, claimDraft2Session, getDraft2Session, touchDraft2Session, updateDraft2Session, type Draft2SessionPatch } from "./draft2-session.repository";
 import { draft2DevTrace } from "./draft2-dev-trace";
+import { traceCost } from "./draft2-trace-cost";
 import { Draft2BusyError, Draft2InputError, type Draft2Fact, type Draft2TraceEntry } from "./draft2-facts.types";
 import { failedCall } from "./draft2-funnel";
 import { draft2SolModel } from "./draft2-models";
@@ -432,7 +433,7 @@ async function reviewAttempt(ctx: Context, slide: Draft2SlideImage, attempt: Dra
       auditContext: { runId: ctx.sessionId, topicId: ctx.topicId, storyId: ctx.storyId },
     });
     const durationMs = Date.now() - begin;
-    ctx.trace.push({ at, step: "images", round: attempt.version, provider: "openai", model, operation: "draft2_image_review", durationMs, usage: answered.usage, cachedInputTokens: answered.cachedInputTokens, answerCharacters: answered.text.length, outcome: "ok", note: slide.label, skillVersions });
+    ctx.trace.push({ at, step: "images", round: attempt.version, provider: "openai", model, operation: "draft2_image_review", durationMs, usage: answered.usage, cachedInputTokens: answered.cachedInputTokens, answerCharacters: answered.text.length, outcome: "ok", note: slide.label, skillVersions, effort: "low", ...traceCost("openai", model, answered.usage, answered.cachedInputTokens) });
     draft2DevTrace({ step: "images", round: attempt.version, provider: "openai", model, operation: "draft2_image_review", phase: "response", durationMs, detail: { slide: slide.slide, answer: answered.text } });
     attempt.review = draft2ImageReview(parseDraft2ImageReview(answered.text), { ...input, expectedText: attempt.expectedText ?? "" }, { model, at, durationMs });
   } catch (error) {

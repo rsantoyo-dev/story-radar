@@ -93,7 +93,7 @@ type Call = { provider: "openai" | "anthropic"; role: "writer" | "judge"; input:
 type Row = Record<string, unknown> & { opening: Draft2Opening | null; focus: Draft2Focus | null; threads: types.Draft2Threads; trace: types.Draft2TraceEntry[] };
 
 /** The orchestrator with both providers, the profile and the database replaced; `writes` and `judgments` decide each round. */
-function harness({ writes, judgments, failAt, session, busy = false, claimRefused = false, secondsPerCall }: {
+function harness({ writes, judgments, failAt, session, busy = false, claimRefused = false, secondsPerCall, env = {} }: {
   writes: ((contents: WriterContents) => unknown)[];
   judgments: ((contents: JudgeContents) => unknown)[];
   /** That call fails: overloaded, or with the error given (a cut-off carries its usage). */
@@ -103,6 +103,8 @@ function harness({ writes, judgments, failAt, session, busy = false, claimRefuse
   claimRefused?: boolean;
   /** Every provider call takes this long on a fake clock, so a run meets the request's time limit. */
   secondsPerCall?: number;
+  /** The knobs an experiment turns (draft2-models.ts), beside the keys the run needs. */
+  env?: Record<string, string>;
 }) {
   const calls: Call[] = [];
   let row: Row = {
@@ -138,6 +140,8 @@ function harness({ writes, judgments, failAt, session, busy = false, claimRefuse
     "./skills/draft2-skills": skills,
     "./skills/hooks": hooks,
     "./draft2-dev-trace": { draft2DevTrace: () => undefined },
+    // A fixed cost per call: the trace's arithmetic is the meter's (creative-text-cost.test.ts); here only that it is recorded.
+    "./draft2-trace-cost": { traceCostMicros: () => 1234 },
     "../stories/creative-text-meter": { withCreativeTextBudget: async (_context: unknown, work: () => Promise<unknown>) => work() },
     "../stories/anthropic.config": { getAnthropicRuntimeConfig: () => ({ apiKey: "k", model: "claude-sonnet-5-5" }), requireAnthropicApiKey: () => "k" },
     "../stories/creative-profile.repository": { getCreativeProfile: async () => profile },
@@ -157,9 +161,9 @@ function harness({ writes, judgments, failAt, session, busy = false, claimRefuse
       touchDraft2Session: async () => undefined,
     },
   };
-  const exports = loadInSandbox("./draft2-opening.ts", mocks, { Date: secondsPerCall ? FakeDate : Date, process: { env: { OPENAI_API_KEY: "sk-test" } } }) as Record<string, (...args: unknown[]) => Promise<Row>>;
+  const exports = loadInSandbox("./draft2-opening.ts", mocks, { Date: secondsPerCall ? FakeDate : Date, process: { env: { OPENAI_API_KEY: "sk-test", ...env } } }) as Record<string, (...args: unknown[]) => Promise<Row>>;
   return {
-    run: (options: { resume?: boolean } = {}) => exports.runDraft2Opening({ topicId, storyId, sessionId, ...options }),
+    run: (options: { resume?: boolean; more?: boolean } = {}) => exports.runDraft2Opening({ topicId, storyId, sessionId, ...options }),
     choose: (candidateId: string) => exports.recordOpeningChoice({ topicId, sessionId, candidateId }),
     calls,
     /** Changes the stored session between requests, as the editor would. */
@@ -171,6 +175,8 @@ function harness({ writes, judgments, failAt, session, busy = false, claimRefuse
 }
 
 const json = (value: unknown) => JSON.stringify(value);
+/** The step's context and the facts, as Sol receives them: at the tail of its instructions, the same on every call (its prefix cache). */
+const solContextOf = (input: Record<string, unknown>) => JSON.parse(String(input.instructions).split("\n# Context\n")[1].split("\n").slice(1).join("\n")) as Record<string, unknown>;
 const ROUND_ONE = HEADLINES.map((_, index) => `c${index + 1}`);
 
 test("Claude writes and Sol judges; both read the focus and the facts snapshot where their provider caches it, never a conversation", async () => {
@@ -187,9 +193,8 @@ test("Claude writes and Sol judges; both read the focus and the facts snapshot w
   assert.equal(sol.input.previousResponseId, undefined, "Sol keeps no conversation");
   assert.equal(sol.input.store, undefined);
   assert.equal(sol.input.context, undefined);
-  assert.deepEqual(Object.keys(sol.input.contents as object).slice(0, 2), ["focus", "verifiedFacts"], "the focus and the facts lead Sol's input, so OpenAI reads them from its cache");
-  assert.equal(json((sol.input.contents as { focus: unknown }).focus), json(focusTypes.focusForModels(FOCUS_VALUES)));
-  assert.equal(json((sol.input.contents as { verifiedFacts: unknown }).verifiedFacts), json(openingTypes.openingFactsSnapshot(facts)));
+  assert.equal(json(solContextOf(sol.input)), json({ focus: focusTypes.focusForModels(FOCUS_VALUES), verifiedFacts: openingTypes.openingFactsSnapshot(facts) }), "the focus and the facts close Sol's instructions, the same on every call, so OpenAI reads them from its prefix cache");
+  assert.deepEqual(Object.keys(sol.input.contents as object).slice(0, 1), ["task"], "the round's request alone travels in Sol's input");
   assert.equal((sol.input.contents as JudgeContents).proposalsWanted, 3, "round 1 asks Sol for three openings of its own");
   assert.equal(sol.input.reasoningEffort, "medium", "and judged with medium reasoning");
   assert.ok(String(sol.input.instructions).includes(hooks.HOOKS_SKILL.text), "the judge reads the same skill");
@@ -226,7 +231,7 @@ test("a paused run continues with the focus it started with, even after the edit
   await h.run();
   h.patch({ focus: { ...FOCUS, version: 3, values: { ...FOCUS_VALUES, goal: "saves" }, edited: ["goal"] } });
   const finished = await h.run({ resume: true });
-  const read = h.calls.map((call) => json(call.role === "writer" ? (call.input.context as { focus: unknown }).focus : (call.input.contents as { focus: unknown }).focus));
+  const read = h.calls.map((call) => json(call.role === "writer" ? (call.input.context as { focus: unknown }).focus : solContextOf(call.input).focus));
   assert.equal(new Set(read).size, 1, "every call of the run read the focus it started with");
   assert.equal(finished.opening?.focus?.version, 2);
 });
@@ -313,7 +318,9 @@ test("caching: the writer's cached facts are identical every round, the judge's 
   assert.equal(new Set(writerInputs.map((input) => json(input.context))).size, 1, "Claude reads the same facts block from its cache in rounds 2 and 3");
   assert.ok(h.calls.every((call) => call.input.history === undefined && call.input.previousResponseId === undefined));
   const judgeInputs = h.judgeCalls();
-  assert.equal(new Set(judgeInputs.map((input) => json((input.contents as { verifiedFacts: unknown }).verifiedFacts))).size, 1, "Sol's input starts with the same facts every round");
+  assert.equal(new Set(judgeInputs.map((input) => input.instructions)).size, 1, "Sol's instructions, with the context and the facts at their tail, are identical every round: its prefix cache reads them");
+  assert.match(String(judgeInputs[0].instructions), /# Context\nThe same on every call of this run[^]*"verifiedFacts":\[\{"id":"f1"/);
+  assert.ok(judgeInputs.every((input) => !("verifiedFacts" in (input.contents as object))), "the round's request alone travels in Sol's input");
   assert.equal(json(judgeInputs.map((input) => (input.contents as JudgeContents).candidates.length)), json([15, 9, 4]), "the funnel narrows");
   const writerTrace = session.trace.filter((entry) => entry.provider === "anthropic");
   assert.equal(json(writerTrace.map((entry) => [entry.cachedInputTokens, entry.cacheWriteTokens ?? 0])), json([[0, 1_200], [1_200, 0], [1_200, 0]]), "every call records its cache reads and writes");
@@ -485,4 +492,45 @@ test("a call cut off at the output ceiling keeps its usage and how far its answe
   await assert.rejects(h.run(), /ran out of output tokens/);
   const last = h.row().trace[h.row().trace.length - 1];
   assert.equal(json([last.outcome, last.usage?.outputTokens, last.answerCharacters, last.stopReason]), json(["error", 24_000, 0, "max_tokens"]), "all of it went to thinking");
+});
+
+test("an extra round: a run that ended unaccepted after its plan's rounds revises its best version once more, at most twice", async () => {
+  const h = harness({
+    writes: [writer(), writer(), writer(), writer(), writer()],
+    judgments: [judge("revise", "c1", { c1: 84, c2: 82 }), judge("revise", "c1.2", { "c1.2": 86 }), judge("revise", "c1.3", { "c1.3": 87 }), judge("revise", "c1.4", { "c1.4": 90 }), judge("revise", "c1.5", { "c1.5": 92 })],
+  });
+  const ended = await h.run();
+  assert.equal(json([ended.opening?.status, ended.opening?.rounds.length, ended.opening?.extraRounds ?? 0]), json(["needs-review", 3, 0]));
+  await assert.rejects(h.run({ resume: true }), /no paused or stopped opening to continue/, "the plan's rounds are spent");
+  const fourth = await h.run({ resume: true, more: true });
+  assert.equal(json([fourth.opening?.status, fourth.opening?.rounds.length, fourth.opening?.extraRounds, fourth.opening?.winnerId]), json(["needs-review", 4, 1, "c1.4"]));
+  assert.equal(json((h.judgeCalls()[3].contents as JudgeContents).candidates.map((candidate) => candidate.id)), json(["c1.4"]), "the best version, revised once more, alone");
+  assert.match(String(fourth.error), /after 4 rounds/);
+  const fifth = await h.run({ resume: true, more: true });
+  assert.equal(json([fifth.opening?.status, fifth.opening?.rounds.length, fifth.opening?.extraRounds, fifth.opening?.winnerId]), json(["needs-review", 5, 2, "c1.5"]));
+  await assert.rejects(h.run({ resume: true, more: true }), /already had its 2 extra rounds/);
+});
+
+test("a shadow judgment at another effort runs beside the real one, is recorded on the round with whether it agrees, and decides nothing", async () => {
+  const h = harness({ writes: [writer()], judgments: [judge("accept", "c1", { c1: 96 }), judge("revise", "c2", { c1: 80, c2: 85 })], env: { DRAFT2_SHADOW_JUDGE_EFFORT: "high" } });
+  const session = await h.run();
+  assert.equal(json([session.opening?.status, session.opening?.winnerId]), json(["ready", "c1"]), "the real judgment decides");
+  const judges = h.judgeCalls();
+  assert.equal(json(judges.map((input) => [input.schemaName, input.reasoningEffort])), json([["draft2_opening_review", "medium"], ["draft2_opening_review_shadow", "high"]]));
+  assert.equal(judges[0].instructions, judges[1].instructions, "the same request, at another effort");
+  const shadow = session.opening?.rounds[0].shadow;
+  assert.equal(json([shadow?.effort, shadow?.model, shadow?.verdict, shadow?.winnerId, shadow?.agrees, shadow?.scores?.map((score) => [score.candidateId, score.overall]).slice(0, 2)]), json(["high", "gpt-6.1-sol", "revise", "c2", false, [["c1", 80], ["c2", 85]]]));
+  assert.equal(json(session.trace.filter((entry) => entry.provider === "openai" && entry.step === "opening").map((entry) => [entry.operation, entry.effort, entry.costMicros])), json([["draft2_opening_review", "medium", 1234], ["draft2_opening_review_shadow", "high", 1234]]), "both judgments are traced, with their effort and cost");
+});
+
+test("the environment names a step's writer model and the revision rounds' efforts; the run records what it ran on", async () => {
+  const h = harness({
+    writes: [writer(), writer()], judgments: [judge("revise", "c1", { c1: 84, c2: 82 }), judge("accept", "c1.2", { "c1.2": 96 })],
+    env: { DRAFT2_MODEL_OPENING_WRITER: "claude-opus-5-5", DRAFT2_MODEL_OPENING_JUDGE: "claude-opus-5-5", DRAFT2_REVISION_EFFORT_WRITER: "low", DRAFT2_REVISION_EFFORT_JUDGE: "medium" },
+  });
+  const session = await h.run();
+  assert.equal(json(h.calls.map((call) => [call.input.model, call.input.effort ?? call.input.reasoningEffort])), json([["claude-opus-5-5", "medium"], ["gpt-6.1-sol", "medium"], ["claude-opus-5-5", "low"], ["gpt-6.1-sol", "medium"]]),
+    "Opus writes this step; a Claude model cannot play Sol's role; round 1 keeps the plan's medium, the revision takes the environment's efforts");
+  assert.equal(json([session.opening?.writer, session.opening?.judge]), json([{ provider: "anthropic", model: "claude-opus-5-5" }, { provider: "openai", model: "gpt-6.1-sol" }]));
+  assert.equal(json(session.trace.filter((entry) => entry.step === "opening").map((entry) => [entry.model, entry.effort, entry.costMicros])), json([["claude-opus-5-5", "medium", 1234], ["gpt-6.1-sol", "medium", 1234], ["claude-opus-5-5", "low", 1234], ["gpt-6.1-sol", "medium", 1234]]));
 });

@@ -12,6 +12,7 @@ import {
   type Draft2Fact, type Draft2FactsEvaluation, type Draft2FactsRound, type Draft2Threads, type Draft2TraceEntry,
 } from "./draft2-facts.types";
 import { draft2SolModel } from "./draft2-models";
+import { traceCost } from "./draft2-trace-cost";
 import { composeInstructions } from "./skills/draft2-skills";
 import { FACTS_SKILL } from "./skills/facts";
 import type { Draft2SessionRow } from "@/db/schema";
@@ -61,20 +62,20 @@ export async function runDraft2Facts({ topicId, storyId }: Draft2FactsInput): Pr
   const checkpoint = (patch: Parameters<typeof updateDraft2Session>[1]) => updateDraft2Session(session.id, { rounds, threads, trace, ...patch });
 
   /** One provider call: traced on the console in development, recorded on the session always. */
-  async function traced<T>(round: number, provider: "openai" | "anthropic", model: string, operation: string, request: unknown, call: () => Promise<T & { usage: Draft2TraceEntry["usage"]; cachedInputTokens?: number }>, summarize: (value: T) => unknown): Promise<T> {
+  async function traced<T>(round: number, provider: "openai" | "anthropic", model: string, operation: string, effort: "medium" | "high", request: unknown, call: () => Promise<T & { usage: Draft2TraceEntry["usage"]; cachedInputTokens?: number; cacheWriteTokens?: number }>, summarize: (value: T) => unknown): Promise<T> {
     draft2DevTrace({ step: "facts", round, provider, model, operation, phase: "request", detail: request });
     const at = new Date().toISOString();
     const begin = Date.now();
     try {
       const value = await call();
       const durationMs = Date.now() - begin;
-      trace.push({ at, step: "facts", round, provider, model, operation, durationMs, usage: value.usage, cachedInputTokens: value.cachedInputTokens, outcome: "ok", skillVersions: EXTRACTOR.skillVersions });
+      trace.push({ at, step: "facts", round, provider, model, operation, durationMs, usage: value.usage, cachedInputTokens: value.cachedInputTokens, ...(value.cacheWriteTokens ? { cacheWriteTokens: value.cacheWriteTokens } : {}), outcome: "ok", skillVersions: EXTRACTOR.skillVersions, effort, ...traceCost(provider, model, value.usage, value.cachedInputTokens, value.cacheWriteTokens) });
       draft2DevTrace({ step: "facts", round, provider, model, operation, phase: "response", durationMs, detail: { usage: value.usage, cachedInputTokens: value.cachedInputTokens, answer: summarize(value) } });
       return value;
     } catch (error) {
       const durationMs = Date.now() - begin;
       const note = error instanceof Error ? error.message : "unknown error";
-      trace.push({ at, step: "facts", round, provider, model, operation, durationMs, outcome: "error", note, skillVersions: EXTRACTOR.skillVersions });
+      trace.push({ at, step: "facts", round, provider, model, operation, durationMs, outcome: "error", note, skillVersions: EXTRACTOR.skillVersions, effort });
       draft2DevTrace({ step: "facts", round, provider, model, operation, phase: "error", durationMs, detail: { error: note } });
       throw error;
     }
@@ -90,7 +91,7 @@ export async function runDraft2Facts({ topicId, storyId }: Draft2FactsInput): Pr
         // 1. The extractor: the article on the first round; afterwards only the reviewer's findings, in the same stored conversation.
         const extractorContents = round === 1 ? { article } : revisionRequest(facts!, mechanical, evaluation!);
         const extractorRequest = { instructions: EXTRACTOR.instructions, contents: extractorContents, previousResponseId: threads.openai?.responseId };
-        const extracted = await traced(round, "openai", extractorModel, "draft2_facts", extractorRequest, () => generateOpenAiStructuredResponse({
+        const extracted = await traced(round, "openai", extractorModel, "draft2_facts", "medium", extractorRequest, () => generateOpenAiStructuredResponse({
           apiKey: openAiApiKey, model: extractorModel, instructions: EXTRACTOR.instructions, contents: extractorContents,
           schema: DRAFT2_FACTS_SCHEMA, schemaName: "draft2_facts", maxOutputTokens: EXTRACTOR_MAX_OUTPUT_TOKENS, reasoningEffort: "medium",
           store: true, previousResponseId: threads.openai?.responseId, auditContext,
@@ -105,18 +106,17 @@ export async function runDraft2Facts({ topicId, storyId }: Draft2FactsInput): Pr
         rounds.push({ round, facts, mechanical, ...(merged.restored.length ? { restored: merged.restored } : {}), at: new Date().toISOString() });
         await checkpoint({ facts });
 
-        // 2. The reviewer: the article travels once; later rounds continue Claude's cached transcript with the revised list only.
-        const history = threads.anthropic?.history ?? [];
+        // 2. The reviewer: the article as cached context on every round; a revised list travels with the reviewer's earlier verdict beside it,
+        //    never a conversation that grows each round (real runs resent 9k → 16k → 23k tokens, cached only from the third).
         const reviewerContents = round === 1
-          ? { article, facts, mechanicalFindings: mechanical }
-          : { revisedFacts: facts, round, mechanicalFindings: mechanical, ...(merged.restored.length ? { restoredByProgram: merged.restored } : {}) };
-        const reviewerRequest = { instructions: REVIEWER.instructions, history: history.map((turn) => ({ role: turn.role, characters: turn.text.length })), contents: reviewerContents };
-        const reviewed = await traced(round, "anthropic", reviewerModel, "draft2_facts_review", reviewerRequest, () => generateAnthropicStructuredResponse({
-          apiKey: anthropicApiKey, model: reviewerModel, instructions: REVIEWER.instructions, contents: reviewerContents, history,
+          ? { facts, mechanicalFindings: mechanical }
+          : { round, revisedFacts: facts, mechanicalFindings: mechanical, ...(merged.restored.length ? { restoredByProgram: merged.restored } : {}), earlierReview: { round: round - 1, verdict: evaluation!.verdict, score: evaluation!.score, issues: evaluation!.issues, suggestions: evaluation!.suggestions } };
+        const reviewerRequest = { instructions: REVIEWER.instructions, context: { article: `${articleText.length} characters (cached)` }, contents: reviewerContents };
+        const reviewed = await traced(round, "anthropic", reviewerModel, "draft2_facts_review", "high", reviewerRequest, () => generateAnthropicStructuredResponse({
+          apiKey: anthropicApiKey, model: reviewerModel, instructions: REVIEWER.instructions, context: { article }, contents: reviewerContents,
           schema: DRAFT2_FACTS_REVIEW_SCHEMA, schemaName: "draft2_facts_review", maxOutputTokens: REVIEWER_MAX_OUTPUT_TOKENS, effort: "high", auditContext,
         }), (value) => JSON.parse(value.text));
         evaluation = parseDraft2FactsEvaluation(reviewed.text);
-        threads.anthropic = { model: reviewerModel, history: [...history, { role: "user", text: JSON.stringify(reviewerContents) }, { role: "assistant", text: reviewed.text }] };
         rounds[rounds.length - 1] = { ...rounds[rounds.length - 1], evaluation };
 
         if (draft2FactsAreValid(mechanical, evaluation)) {

@@ -23,6 +23,12 @@
 .stepStatus { white-space: nowrap; }
 .steps strong { display: block; color: palette(dark-main); @ds-typo (small-strong); }
 .steps p { margin: density(1) 0 0; color: palette(tertiary-dark); @ds-typo (small); }
+/* What a step took so far: time inside calls and the meter's cost. */
+.stepMetrics { color: palette(primary-dark); @ds-typo (caption); }
+/* The autopilot's log: one line per step it ran. */
+.autopilotList { display: grid; gap: density(1); margin: 0; padding-left: density(5); color: palette(dark-main); @ds-typo (small); }
+.autopilotList li[data-status="failed"] { color: palette(error-dark); }
+.autopilotList li[data-status="needs-review"] { color: palette(warning-dark); }
 .factsPanel { display: grid; gap: density(4); padding-top: density(4); border-top: border(subtle); }
 .factsHeader { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: density(3); }
 .factsIntro { max-width: 60ch; margin: density(1) 0 0; color: palette(tertiary-dark); @ds-typo (small); }

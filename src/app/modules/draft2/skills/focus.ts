@@ -7,7 +7,7 @@ import type { Draft2Skill } from "./draft2-skills";
  */
 export const FOCUS_SKILL: Draft2Skill = {
   name: "focus",
-  version: "1",
+  version: "2",
   text: `# The focus of a story
 
 The focus is the brief every later step follows: which editorial line the
@@ -62,6 +62,15 @@ field; it is guidance for the writing, never evidence.
   language: what to lead with, which facts carry the promise, what to leave
   out or keep for later slides, and what the reader takes away. It guides
   the writer; it never adds a fact.
+- visualDirection: one or two sentences, at most 600 characters, on how the
+  images should tell this story within the publication's visual identity
+  (given below when it has one): the world the images live in, who or what
+  could lead them (anonymous people doing the activity, an object with a
+  role in what happens, the brand's character when one narrates), and what
+  could recur from the first slide to the last and return changed at the
+  end. It is the approach the visual script follows; the script decides each
+  image. Never a real person, never a named real place, never the slides'
+  words.
 
 ## Rules
 - Use only the verified facts: no consequence, number, date, cause or name
@@ -77,5 +86,5 @@ field; it is guidance for the writing, never evidence.
 };
 
 export const FOCUS_ROLES = {
-  "focus-editor": `You decide the focus of a story for the publication described below, from its verified facts (cite their ids), the publication's defaults (topicDefaults) and its editorial lines (lines, with the ones that found the story in foundBy). The story's title is context, not a fact. Follow the focus skill and return every field with a reason for each.`,
+  "focus-editor": `You decide the focus of a story for the publication described below, from its verified facts (cite their ids), the publication's defaults (topicDefaults) and its editorial lines (lines, with the ones that found the story in foundBy). The story's title is context, not a fact. Follow the focus skill and return every field with a reason for each; the publication's visual identity, when given below, is the frame of visualDirection.`,
 } as const;

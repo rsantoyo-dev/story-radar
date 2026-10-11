@@ -36,7 +36,10 @@ import type { CreativeProfile } from "../stories/creative-content.types";
  * Everything here is pure: contracts, schemas, parsing, the mechanical
  * checks and the requests.
  */
-export const VISUAL_CANDIDATES = 3;
+/** Two scripts in the first round: the focus fixes the visual approach, so they differ in execution, not in direction. */
+export const VISUAL_CANDIDATES = 2;
+/** The most scripts one round writes: the two best revised beside the judge's proposal as edited (the schema's and the parser's ceiling). */
+export const VISUAL_ROUND_MAX_CANDIDATES = 3;
 export const VISUAL_LONG_CANDIDATES = 2;
 /** A carousel longer than this explores two scripts: each script carries one direction per slide. */
 export const VISUAL_LONG_CAROUSEL = 10;
@@ -261,7 +264,7 @@ function visualItem(positions: readonly string[]) {
 export function visualSchema(positions: readonly string[]): Record<string, unknown> {
   return {
     type: "object",
-    properties: { candidates: { type: "array", minItems: 1, maxItems: VISUAL_CANDIDATES, items: visualItem(positions) } },
+    properties: { candidates: { type: "array", minItems: 1, maxItems: VISUAL_ROUND_MAX_CANDIDATES, items: visualItem(positions) } },
     required: ["candidates"],
     additionalProperties: false,
   };
@@ -269,7 +272,8 @@ export function visualSchema(positions: readonly string[]): Record<string, unkno
 
 /** The judge's answer: scores, issues, the verdict and its own script. */
 export function visualEvaluationSchema(positions: readonly string[]): Record<string, unknown> {
-  return funnelEvaluationSchema({ criteria: VISUAL_CRITERIA, codes: VISUAL_ISSUE_CODES, maxScored: VISUAL_CANDIDATES + 1, item: visualItem(positions), maxProposals: 1 });
+  // The judge scores at most the round's scripts and the proposal as written beside them.
+  return funnelEvaluationSchema({ criteria: VISUAL_CRITERIA, codes: VISUAL_ISSUE_CODES, maxScored: VISUAL_ROUND_MAX_CANDIDATES + 1, item: visualItem(positions), maxProposals: 1 });
 }
 
 const strings = (value: unknown, max = 6): string[] => [...new Set((Array.isArray(value) ? value : []).filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0 && entry.trim().length <= 64).map((entry) => entry.trim()))].slice(0, max);
@@ -311,7 +315,7 @@ function visualFrom(raw: unknown, fallbackId: string): Draft2VisualCandidate | u
 
 /** The writer's answer as scripts; anything malformed is a response error, never persisted. */
 export function parseVisualCandidates(answer: string): Draft2VisualCandidate[] {
-  return funnelParseCandidates(answer, visualFrom, VISUAL_CANDIDATES);
+  return funnelParseCandidates(answer, visualFrom, VISUAL_ROUND_MAX_CANDIDATES);
 }
 
 /** The judge's answer as an evaluation of these scripts (see funnelParseEvaluation); issues name a carousel position. */

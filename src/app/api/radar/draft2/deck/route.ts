@@ -18,13 +18,13 @@ const CANDIDATE_ID_PATTERN = /^[\w.-]{1,24}$/;
 export async function POST(request: Request) {
   const denied = await authorizeRadarCollector(request);
   if (denied) return denied;
-  const body = await request.json().catch(() => null) as { storyId?: unknown; sessionId?: unknown; continue?: unknown } | null;
+  const body = await request.json().catch(() => null) as { storyId?: unknown; sessionId?: unknown; continue?: unknown; more?: unknown } | null;
   const storyId = typeof body?.storyId === "string" ? body.storyId : "";
   const sessionId = typeof body?.sessionId === "string" ? body.sessionId : "";
   if (!DRAFT2_UUID_PATTERN.test(storyId) || !DRAFT2_UUID_PATTERN.test(sessionId)) return noStoreJson({ error: "storyId and sessionId must be valid UUIDs" }, 400);
   try {
     const topicId = await requireActiveRequestTopic(request);
-    return noStoreJson({ session: await runDraft2Deck({ topicId, storyId, sessionId, resume: body?.continue === true }) });
+    return noStoreJson({ session: await runDraft2Deck({ topicId, storyId, sessionId, resume: body?.continue === true || body?.more === true, more: body?.more === true }) });
   } catch (error) {
     return draft2ErrorResponse(error, "run the Draft 2 deck step");
   }

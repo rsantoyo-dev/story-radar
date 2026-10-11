@@ -65,6 +65,7 @@ export type Draft2HistoryTurn = { role: "user" | "assistant"; text: string };
 /** The provider conversations the next steps continue. */
 export type Draft2Threads = {
   openai?: { model: string; responseId: string };
+  /** Kept by sessions from before the reviewer read the article as cached context (facts skill v1); no longer written. */
   anthropic?: { model: string; history: Draft2HistoryTurn[] };
 };
 
@@ -91,6 +92,10 @@ export type Draft2TraceEntry = {
   note?: string;
   /** The skill versions the call's instructions were composed from (skills/draft2-skills.ts). */
   skillVersions?: Record<string, string>;
+  /** The reasoning effort the call ran at (Claude's output_config.effort, Sol's reasoning.effort). */
+  effort?: "low" | "medium" | "high";
+  /** What the call cost by the meter's rates (USD micros); absent when the model has no verified rate. */
+  costMicros?: number;
 };
 
 export type Draft2SessionStatus = "running" | "ready" | "needs-review" | "failed";

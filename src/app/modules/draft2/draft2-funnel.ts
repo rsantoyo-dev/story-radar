@@ -76,6 +76,7 @@ export type FunnelRound<C extends FunnelCandidate = FunnelCandidate, S extends F
   evaluation?: FunnelEvaluation<C, S, I>;
   /** Revisions that came out worse than the version they revised; that version stays the better one. */
   regressions?: FunnelRegression[];
+  shadow?: FunnelShadowJudgment;
   at: string;
 };
 
@@ -99,7 +100,25 @@ export type FunnelRole = { provider: Draft2Provider; model: string };
  * (high unless the round says otherwise: a wide round thinks less per
  * candidate so it fits a call's time and output).
  */
-export type FunnelPlanRound = { revise: number; fresh: number; proposals: number; effort?: "medium" | "high" };
+export type FunnelPlanRound = { revise: number; fresh: number; proposals: number; effort?: "low" | "medium" | "high" };
+/** An extra round the editor asks for once the plan's rounds are spent: the best version revised once more against its remaining issues. */
+export const FUNNEL_EXTRA_ROUND: FunnelPlanRound = { revise: 1, fresh: 0, proposals: 0 };
+/** How many extra rounds one run may take. */
+export const FUNNEL_MAX_EXTRA_ROUNDS = 2;
+
+/** A second judgment of a round at another effort, recorded beside the real one and deciding nothing (draft2ShadowJudgeEffort). */
+export type FunnelShadowJudgment = {
+  effort: "low" | "medium" | "high";
+  model: string;
+  durationMs: number;
+  /** What it would have decided: absent when it failed or could not be parsed. */
+  verdict?: string;
+  winnerId?: string;
+  scores?: { candidateId: string; overall: number }[];
+  /** Whether it named the same winner as the real judgment. */
+  agrees?: boolean;
+  error?: string;
+};
 
 /** A step's acceptance rule: overall at least `accept` and every criterion at least `floor`. */
 export type FunnelGate = { criteria: readonly string[]; accept: number; floor: number };
@@ -121,6 +140,8 @@ export type FunnelRun<C extends FunnelCandidate = FunnelCandidate, S extends Fun
   error?: string;
   /** The round a paused run continues from. */
   resumeRound?: number;
+  /** Rounds the editor added past the plan's (FUNNEL_EXTRA_ROUND), at most FUNNEL_MAX_EXTRA_ROUNDS. */
+  extraRounds?: number;
   writer?: FunnelRole;
   judge?: FunnelRole;
 };

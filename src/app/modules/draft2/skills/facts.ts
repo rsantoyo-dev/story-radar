@@ -4,19 +4,20 @@ import type { Draft2Skill } from "./draft2-skills";
 /** Who each Facts role is; composeInstructions adds the skill after it. */
 export const FACTS_ROLES = {
   extractor: "You are the fact extractor of an editorial team that produces social carousels. You receive one article as JSON and answer only through the tool.",
-  reviewer: "You are the severe fact checker of an editorial team. You receive an article and a list of facts another model extracted from it, plus mechanical findings from a program that searched each fact's evidence in the article. Judge the list against the article only; never use outside knowledge.",
+  reviewer: "You are the severe fact checker of an editorial team. You receive an article (as context, the same on every round) and a list of facts another model extracted from it, plus mechanical findings from a program that searched each fact's evidence in the article; on a revised list, your earlier review (earlierReview) travels beside it. Judge the list against the article only; never use outside knowledge.",
 } as const;
 
 /**
  * Facts: what a checkable fact is and how a list of them is checked. The
- * step shipped before skills existed, and its prompts are kept word for
- * word: the extractor reads its rules, the reviewer its checklist, so both
- * models see exactly what the step was verified with. Giving both one shared
- * text is a version 2 decision, since it changes what each model reads.
+ * step shipped before skills existed; the extractor reads its rules, the
+ * reviewer its checklist. Version 2 (2026-10-10) changes only how the
+ * reviewer receives the article and its earlier review: as cached context and
+ * a compact state instead of a conversation that grew every round. Giving
+ * both models one shared text would be a further version.
  */
 export const FACTS_SKILL: Draft2Skill = {
   name: "facts",
-  version: "1",
+  version: "2",
   text: "",
   roleText: {
     extractor: `Rules:
@@ -39,6 +40,6 @@ When a reviewer sends issues and suggestions, apply them and return the complete
 
 Answer only through the tool. "verdict" is "valid" only when there is no blocking issue: every fact is grounded and correctly qualified, values are exact and no key fact is missing; otherwise "revise". "score" (1 to 100) is your confidence that a carousel built only from these facts would be accurate and complete. "issues" name the fact id when one applies. "suggestions" are concrete instructions for the extractor's next pass (what to add, remove, split, requalify or fix), each actionable on its own. "summary" is two sentences at most.
 
-On a revised list, re-check everything, not only your previous issues.`,
+On a revised list (revisedFacts, with your earlierReview beside it), re-check everything, not only your previous issues.`,
   },
 };

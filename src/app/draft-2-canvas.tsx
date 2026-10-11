@@ -1,13 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { ActionRow, Button, EmptyState, FormField, InlineNotice, LoadingState, SectionHeader, StatusBadge, Surface, type StatusTone } from "@/app/ui/primitives";
 import type { StoryContentResponse } from "@/app/radar-dashboard";
 import type { Draft2Fact, Draft2FactsEvaluation, Draft2FactsRound, Draft2SessionStatus, Draft2TraceEntry } from "@/app/modules/draft2/draft2-facts.types";
 import {
-  FOCUS_AUDIENCE_MAX_CHARACTERS, FOCUS_CONSEQUENCE_MAX_CHARACTERS, FOCUS_DIRECTION_MAX_CHARACTERS, FOCUS_FRAMINGS, FOCUS_GOALS, FOCUS_GRAVITIES, FOCUS_STRUCTURES, focusFindings,
+  FOCUS_AUDIENCE_MAX_CHARACTERS, FOCUS_CONSEQUENCE_MAX_CHARACTERS, FOCUS_DIRECTION_MAX_CHARACTERS, FOCUS_FRAMINGS, FOCUS_GOALS, FOCUS_GRAVITIES, FOCUS_STRUCTURES, FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS, focusFindings,
   type Draft2Focus, type Draft2FocusField, type Draft2FocusFinding, type Draft2FocusValues, type Draft2FocusVoice,
 } from "@/app/modules/draft2/draft2-focus.types";
 import { TONE_KEYS, toneWords, type ToneKey } from "@/app/modules/draft2/skills/tone";
@@ -24,11 +24,11 @@ import { CAPTION_GATE, CAPTION_MAX_CHARACTERS, CAPTION_MAX_ROUNDS, captionPostTe
 import { confirmedMentions, mentionEntities, sameMentions, type Draft2MentionAccount, type Draft2MentionStatus, type Draft2Mentions } from "@/app/modules/draft2/draft2-mentions.types";
 import { publicationCurrent, publicationTarget, targetPostText, type Draft2Publication, type Draft2PublicationTarget } from "@/app/modules/draft2/draft2-publication.types";
 import {
-  criterionOf, funnelAcceptedWinner, funnelExtendable, funnelResumeRound, funnelScorePasses, funnelVersions, hasMaterialError,
+  FUNNEL_MAX_EXTRA_ROUNDS, criterionOf, funnelAcceptedWinner, funnelExtendable, funnelResumeRound, funnelScorePasses, funnelVersions, hasMaterialError,
   type FunnelCandidate, type FunnelGate, type FunnelIssue, type FunnelRegression, type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion,
 } from "@/app/modules/draft2/draft2-funnel";
 import { DRAFT2_OPENING_EARLIER_ROLES, DRAFT2_OPENING_ROLES, draft2ProviderName } from "@/app/modules/draft2/draft2-models";
-import { contentStatusLabel, DRAFT_2_STEPS, paragraphs, sourceHost, storyHref, traceUsageLine, wordCount } from "./draft-2-canvas.core";
+import { contentStatusLabel, DRAFT_2_STEPS, minutes, paragraphs, sessionMetrics, sourceHost, stepMetrics, storyHref, traceUsageLine, usd, wordCount } from "./draft-2-canvas.core";
 import { StoryPhotosPanel } from "./story-photos-panel";
 import { RunPublishActions } from "./run-publish-actions";
 import { PublicationChannelsPanel } from "./publication-channels-panel";
@@ -69,6 +69,86 @@ const FOLLOW_UNREACHABLE_MS = 3 * 60_000;
 
 /** A request that ended without telling how the run went: the connection dropped, it timed out, or a gateway answered for the server. The run may go on. */
 class Draft2LostRequest extends Error {}
+
+/** One step the autopilot ran, how it ended, and what it took. */
+type AutopilotEntry = { step: Draft2RunStep; status: "ready" | "needs-review" | "failed"; ms: number; startedAt: string };
+type Autopilot = { active: boolean; startedAt: string; current?: Draft2RunStep; steps: AutopilotEntry[]; outcome?: string; finishedAt?: string };
+type AutopilotNext = { step: Exclude<Draft2RunStep, "publication">; continuing?: boolean } | { done: true } | { blocked: string };
+const STEP_TITLE: Record<Draft2RunStep, string> = {
+  facts: "Facts", focus: "Focus", inventory: "People and places", mentions: "Accounts to tag", opening: "Opening", closing: "Closing", deck: "Deck", visual: "Visual script", images: "Images", caption: "Caption", publication: "Publish",
+};
+
+/** A funnel run as the autopilot reads it: nothing yet, stopped (to continue), failed (stop), finished for something that changed since (write again), or finished. */
+function runNeeds(step: Exclude<Draft2RunStep, "publication">, run: { status: string; winnerId?: string; editorChoiceId?: string; error?: string } | null | undefined, changed: boolean, noun: string): AutopilotNext | undefined {
+  if (!run) return { step };
+  if (run.status === "paused" || run.status === "running") return { step, continuing: true };
+  if (run.status === "failed") return { blocked: `The ${noun} failed${run.error ? `: ${run.error}` : "."} Run it again once it is fixed.` };
+  if (!(run.editorChoiceId ?? run.winnerId) || changed) return { step };
+  return undefined;
+}
+
+/**
+ * The next step the autopilot runs, from the session as it stands: the first
+ * step not finished, stopped, or finished for something that changed since
+ * (the same rules the canvas shows on each step). A step that needs the
+ * editor blocks the run; a run marked running whose heartbeat stopped is
+ * continued.
+ */
+function nextAutopilotStep(session: Draft2SessionView | null, now: number): AutopilotNext {
+  if (!session) return { step: "facts" };
+  const stale = now - Date.parse(session.updatedAt) > OPENING_STALL_MS;
+  const factsVerified = Boolean(session.facts?.length) && (session.step !== "facts" || session.status === "ready");
+  if (!factsVerified) {
+    if (session.step === "facts" && session.status === "running" && !stale) return { blocked: "The facts are still being verified." };
+    if (session.step === "facts" && session.status === "needs-review" && session.facts?.length) return { blocked: "Sol and Claude did not agree on the facts after three extractions: review them, then run the facts again." };
+    return { step: "facts" };
+  }
+  const focus = session.focus;
+  if (!focus?.values || (focus.status === "running" && stale)) return { step: "focus" };
+  if (focus.status === "running") return { blocked: "The focus is being decided." };
+  const findings = focusFindings(focus.values);
+  if (findings.length) return { blocked: `Fix the focus first: ${findings.map((finding) => finding.detail).join(" ")}` };
+  const inventory = session.inventory;
+  if (!inventory || inventory.status === "failed" || (inventory.status === "running" && stale)) return { step: "inventory" };
+  if (inventory.status === "running") return { blocked: "The people and places are being found." };
+  const mentions = session.mentions;
+  if (!mentions || mentions.status === "failed" || (mentions.status === "running" && stale)) return { step: "mentions" };
+  const opening = session.opening;
+  const openingNeeds = runNeeds("opening", opening, Boolean(opening && (!opening.focus || opening.focus.version !== focus.version)), "opening");
+  if (openingNeeds) return openingNeeds;
+  const openingId = opening!.editorChoiceId ?? opening!.winnerId;
+  const closing = session.closing;
+  const closingNeeds = runNeeds("closing", closing, Boolean(closing?.opening && closing.opening.id !== openingId), "closing");
+  if (closingNeeds) return closingNeeds;
+  const closingId = closing!.editorChoiceId ?? closing!.winnerId;
+  const deck = session.deck;
+  const deckNeeds = runNeeds("deck", deck, Boolean(deck && ((deck.closing && deck.closing.id !== closingId) || (deck.opening && deck.opening.id !== openingId))), "deck");
+  if (deckNeeds) return deckNeeds;
+  const deckId = deck!.editorChoiceId ?? deck!.winnerId;
+  const visual = session.visual;
+  const visualNeeds = runNeeds("visual", visual, Boolean(visual && (visual.deckId !== deckId || visual.inventoryVersion !== inventory.version)), "visual script");
+  if (visualNeeds) return visualNeeds;
+  const visualId = visual!.editorChoiceId ?? visual!.winnerId;
+  const images = session.images;
+  if (!images || images.visualId !== visualId) return { step: "images" };
+  const pending = images.slides.some((slide) => !slideSettled(slide));
+  if (pending && (images.status === "paused" || images.status === "failed" || (images.status === "running" && stale))) return { step: "images", continuing: true };
+  if (images.status === "running" && !stale) return { blocked: "The images are being made." };
+  if (images.status === "failed") return { blocked: `The images failed${images.error ? `: ${images.error}` : "."}` };
+  if (images.slides.some((slide) => !shownAttempt(slide))) return { blocked: "Some slides have no image: make them from their cards, then go on." };
+  return { done: true };
+}
+
+/** How a step ended for the autopilot's log. */
+function stepOutcome(session: Draft2SessionView, step: Draft2RunStep): AutopilotEntry["status"] {
+  if (step === "facts") return session.step !== "facts" || session.status === "ready" ? "ready" : session.status === "failed" ? "failed" : "needs-review";
+  const status = (session as unknown as Record<string, { status?: string } | null>)[step]?.status;
+  return status === "failed" ? "failed" : status === "needs-review" ? "needs-review" : "ready";
+}
+
+/** Whether a run that ended unaccepted with its rounds spent may take one more (FUNNEL_EXTRA_ROUND), up to the cap. */
+const moreRoundAvailable = (run: { status: string; rounds: readonly { evaluation?: unknown }[]; extraRounds?: number } | null | undefined, planRounds: number) =>
+  Boolean(run && run.status === "needs-review" && run.rounds.length > 0 && run.rounds.every((round) => round.evaluation) && run.rounds.length >= planRounds + (run.extraRounds ?? 0) && (run.extraRounds ?? 0) < FUNNEL_MAX_EXTRA_ROUNDS);
 
 const SESSION_STATUS: Record<Draft2SessionStatus, { label: string; tone: StatusTone }> = {
   running: { label: "Running", tone: "info" },
@@ -188,6 +268,10 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const [savingMention, setSavingMention] = useState<string>();
   const [mentionError, setMentionError] = useState<string>();
   const [acknowledged, setAcknowledged] = useState(false);
+  // The step running now, readable from a loop that outlives the render that started it (the autopilot).
+  const runningRef = useRef<Draft2RunStep | undefined>(undefined);
+  const [autopilot, setAutopilot] = useState<Autopilot>();
+  const stopRequested = useRef(false);
   const [focusError, setFocusError] = useState<string>();
   const [following, setFollowing] = useState<string>();
   // The clock a run is measured against, to tell a run that went silent from one still working.
@@ -289,19 +373,22 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
    * up. A run that pauses, or whose request is lost, goes on from its last
    * checkpoint in a new request until it finishes.
    */
-  async function runStep(step: Exclude<Draft2RunStep, "publication">, { continuing = false } = {}) {
-    if (running || (step !== "facts" && !session)) return;
+  async function runStep(step: Exclude<Draft2RunStep, "publication">, { continuing = false, more = false, on = session }: { continuing?: boolean; more?: boolean; on?: Draft2SessionView | null } = {}): Promise<Draft2SessionView | undefined> {
+    if (runningRef.current || (step !== "facts" && !on)) return undefined;
+    runningRef.current = step;
     setRunning(step); setRunError(undefined); setChoiceError(undefined); setFocusError(undefined); setMentionError(undefined);
     try {
       if (step === "facts") {
-        setSession(await postStep("facts", { storyId }));
-        return;
+        const next = await postStep("facts", { storyId });
+        setSession(next);
+        return next;
       }
       if (step === "focus" || step === "inventory" || step === "mentions") {
-        setSession(await postStep(step, { storyId, sessionId: session?.id }));
-        return;
+        const next = await postStep(step, { storyId, sessionId: on?.id });
+        setSession(next);
+        return next;
       }
-      let payload: Record<string, unknown> = { storyId, sessionId: session?.id, ...(continuing ? { continue: true } : {}) };
+      let payload: Record<string, unknown> = { storyId, sessionId: on?.id, ...(continuing ? { continue: true } : {}), ...(more ? { more: true } : {}) };
       // Each request advances at least one round or judgment; a round can pause once before its writer and once before its judge. An images run pauses while fal works.
       const maxRounds = step === "caption" ? CAPTION_MAX_ROUNDS : step === "visual" ? VISUAL_MAX_ROUNDS : step === "deck" ? DECK_MAX_ROUNDS : step === "closing" ? CLOSING_MAX_ROUNDS : OPENING_MAX_ROUNDS;
       const maxRequests = step === "images" ? IMAGES_MAX_REQUESTS : maxRounds * 2;
@@ -319,19 +406,55 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
         setSession(next);
         // Paused, or silent since its request was lost: pick it up again.
         const status = next[step]?.status;
-        if (status !== "paused" && status !== "running") return;
+        if (status !== "paused" && status !== "running") return next;
         payload = { storyId, sessionId: next.id, continue: true };
       }
+      return undefined;
     } catch (cause) {
       const failure = `The ${step} step failed.`;
       const message = cause instanceof Draft2LostRequest ? `${cause.message} The server may still finish the step; reload to see it.` : cause instanceof Error ? cause.message : failure;
       setRunError({ step, message });
       // A failed run keeps its trace on the session; show it.
       loadSession().then(setSession).catch(() => undefined);
+      return undefined;
     } finally {
       setFollowing(undefined);
+      runningRef.current = undefined;
       setRunning(undefined);
     }
+  }
+
+  /**
+   * Runs every step to the images without stopping, from wherever the session
+   * stands: each step keeps the judge's winner; a step that ends under the
+   * gate is marked and the run goes on; a failure, or a step that needs the
+   * editor, stops it. The editor reviews at the end: re-runs or chooses in
+   * any step, confirms the accounts, writes the caption and approves.
+   */
+  async function runAutopilot() {
+    if (runningRef.current || autopilot?.active) return;
+    stopRequested.current = false;
+    let state: Autopilot = { active: true, startedAt: new Date().toISOString(), steps: [] };
+    const show = (change: Partial<Autopilot>) => { state = { ...state, ...change }; setAutopilot(state); };
+    show({});
+    let current: Draft2SessionView | null = session ?? null;
+    let previous: Draft2RunStep | undefined;
+    for (let guard = 0; guard < 14; guard++) {
+      if (stopRequested.current) { show({ outcome: "Stopped at your request; every step so far is kept." }); break; }
+      const next = nextAutopilotStep(current, Date.now());
+      if ("done" in next) { show({ outcome: "The images are made. Confirm the accounts to tag, write the caption and approve the carousel for publishing." }); break; }
+      if ("blocked" in next) { show({ outcome: next.blocked }); break; }
+      if (next.step === previous) { show({ outcome: `The ${STEP_TITLE[next.step].toLowerCase()} step did not advance; look at it before going on.` }); break; }
+      previous = next.step;
+      show({ current: next.step });
+      const begin = Date.now();
+      const result = await runStep(next.step, { continuing: next.continuing, on: current });
+      const status: AutopilotEntry["status"] = result ? stepOutcome(result, next.step) : "failed";
+      show({ current: undefined, steps: [...state.steps, { step: next.step, status, ms: Date.now() - begin, startedAt: new Date(begin).toISOString() }] });
+      if (!result || status === "failed") { show({ outcome: `The ${STEP_TITLE[next.step].toLowerCase()} step failed; the run stopped there.` }); break; }
+      current = result;
+    }
+    show({ active: false, current: undefined, finishedAt: new Date().toISOString() });
   }
 
   /** Saves one focus field the editor changed, or gives it back to Claude's value; one change at a time. */
@@ -505,7 +628,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const visualChanged = Boolean(visual?.deckId && ((chosenDeckId && visual.deckId !== chosenDeckId) || (inventory && visual.inventoryVersion !== inventory.version)));
   const visualResumable = visual && (visual.status === "paused" || visualStalled) && funnelResumeRound(visual) <= VISUAL_MAX_ROUNDS;
   // A run that ended unaccepted before the step had its third round takes it, while it still follows the deck and the people and places.
-  const visualExtendable = Boolean(visual && !visualChanged && funnelExtendable(visual, visualPlan(visual.carousel ?? []).length));
+  const visualExtendable = Boolean(visual && !visualChanged && funnelExtendable(visual, visualPlan(visual.carousel ?? []).length + (visual.extraRounds ?? 0)));
   const visualResumeRound = (visualResumable || visualExtendable) && visual ? funnelResumeRound(visual) : undefined;
   const visualPausedRound = visual?.status === "paused" ? funnelResumeRound(visual) : undefined;
   const visualDisplay = visualDisplayFor(inventory);
@@ -545,6 +668,9 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const approvedCurrent = publicationCurrent(publication, publishable);
   const publishStatus = running === "publication" ? { label: "Approving", tone: "info" as const } : approvedCurrent ? { label: "Approved", tone: "success" as const } : publication ? { label: "Changed since", tone: "warning" as const } : undefined;
   const stepStatus: Partial<Record<string, { label: string; tone: StatusTone }>> = { facts: factsStatus, focus: focusStatus, opening: openingStatus, closing: closingStatus, deck: deckStatus, inventory: inventoryStatus, visual: visualStatus, images: imagesStatus, caption: captionStatus, publish: publishStatus };
+  // What each step took so far, this run's and earlier ones: time inside calls and the meter's cost.
+  const metrics = stepMetrics(session?.trace ?? [], session?.images);
+  const totals = sessionMetrics(session?.trace ?? [], session?.images);
   const resumable = session?.opening && (session.opening.status === "paused" || stalled) && openingResumeRound(session.opening) <= OPENING_MAX_ROUNDS;
   const resumeRound = resumable && session?.opening ? openingResumeRound(session.opening) : undefined;
   const pausedRound = session?.opening?.status === "paused" ? openingResumeRound(session.opening) : undefined;
@@ -577,12 +703,28 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
         </Surface>
         <Surface className={styles.column} aria-label="Canvas">
           <SectionHeader level={3} eyebrow="Canvas" title={session?.opening ? "Facts, focus, then the opening" : session?.focus ? "Facts, then the focus" : session ? "Facts first" : "Nothing built yet"} description="Each step is added separately. The current studio keeps working as it does today." />
+          <section className={styles.factsPanel} aria-label="Autopilot">
+            <div className={styles.factsHeader}>
+              <div>
+                <p className={styles.eyebrow}>Autopilot</p>
+                <p className={styles.factsIntro}>Runs every step to the images without stopping, from where the story stands: the facts if they are not verified, the focus, the people and places, the accounts to tag, the opening, the closing, the deck, the visual script and the images. Each step keeps {TODAY.judge}’s winner; a step that ends under 95 is marked and the run goes on; a failure, or a step that needs you, stops it. You review at the end: re-run or choose in any step, confirm the accounts, write the caption and approve. Every step below shows its progress, time and cost meanwhile.</p>
+              </div>
+              <ActionRow>
+                {autopilot?.active ? <Button variant="secondary" size="compact" disabled={stopRequested.current} onClick={() => { stopRequested.current = true; }}>Stop after this step</Button> : null}
+                <Button variant="primary" size="compact" busy={autopilot?.active} disabled={!text.length || session === undefined || running !== undefined || autopilot?.active} onClick={() => { void runAutopilot(); }}>
+                  {autopilot?.active ? `Running ${autopilot.current ? STEP_TITLE[autopilot.current].toLowerCase() : ""}…` : "Run to images"}
+                </Button>
+              </ActionRow>
+            </div>
+            {autopilot ? <AutopilotView autopilot={autopilot} trace={session?.trace ?? []} now={now} /> : null}
+          </section>
           <ol className={styles.steps}>
             {DRAFT_2_STEPS.map((step, index) => {
               const status = stepStatus[step.key];
+              const metric = metrics[step.key];
               return <li key={step.key}>
                 <span className={styles.stepNumber} aria-hidden="true">{index + 1}</span>
-                <div><strong>{step.title}</strong><p>{step.detail}</p></div>
+                <div><strong>{step.title}</strong><p>{step.detail}</p>{metric ? <p className={styles.stepMetrics}>{metric.calls ? `${minutes(metric.ms)} in ${metric.calls} ${metric.calls === 1 ? "call" : "calls"} · ` : ""}{usd(metric.costMicros)}</p> : null}</div>
                 {status
                   ? <StatusBadge className={styles.stepStatus} tone={status.tone}>{status.label}</StatusBadge>
                   : <StatusBadge className={styles.stepStatus}>Not started</StatusBadge>}
@@ -608,7 +750,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
             <div className={styles.factsHeader}>
               <div>
                 <p className={styles.eyebrow}>Step 2 · Focus</p>
-                <p className={styles.factsIntro}>Claude reads the verified facts, the Topic’s creative profile and its editorial lines, and decides what the story is for: the line it serves, its audience, framing, reader consequence, structure, goal, voice and direction. Change any field; your changes stay yours when Claude decides again, and the opening follows the result.</p>
+                <p className={styles.factsIntro}>Claude reads the verified facts, the Topic’s creative profile, its visual identity and its editorial lines, and decides what the story is for: the line it serves, its audience, framing, reader consequence, structure, goal, voice and direction, and the visual direction the images follow. Change any field; your changes stay yours when Claude decides again, and the opening follows the result.</p>
               </div>
               <Button variant="primary" size="compact" busy={running === "focus"} disabled={!factsVerified || running !== undefined || savingFocus !== undefined} onClick={() => { void runStep("focus"); }}>
                 {running === "focus" ? "Deciding…" : focus?.values ? "Decide again" : "Decide the focus"}
@@ -637,6 +779,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
               </div>
               <ActionRow>
                 {resumeRound && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("opening", { continuing: true }); }}>Continue from round {resumeRound}</Button> : null}
+                {moreRoundAvailable(session?.opening, OPENING_MAX_ROUNDS) && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("opening", { continuing: true, more: true }); }}>One more round</Button> : null}
                 <Button variant="primary" size="compact" busy={running === "opening"} disabled={!factsVerified || !focusReady || running !== undefined || savingFocus !== undefined} onClick={() => { void runStep("opening"); }}>
                   {running === "opening" ? "Writing and judging…" : session?.opening ? "Write the opening again" : "Write the opening"}
                 </Button>
@@ -666,6 +809,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
               </div>
               <ActionRow>
                 {closingResumeRound && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("closing", { continuing: true }); }}>Continue from round {closingResumeRound}</Button> : null}
+                {moreRoundAvailable(closing, CLOSING_MAX_ROUNDS) && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("closing", { continuing: true, more: true }); }}>One more round</Button> : null}
                 <Button variant="primary" size="compact" busy={running === "closing"} disabled={!factsVerified || !closingReady || running !== undefined || savingFocus !== undefined} onClick={() => { void runStep("closing"); }}>
                   {running === "closing" ? "Writing and judging…" : closing ? "Write the closing again" : "Write the closing"}
                 </Button>
@@ -694,6 +838,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
               </div>
               <ActionRow>
                 {deckResumeRound && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("deck", { continuing: true }); }}>Continue from round {deckResumeRound}</Button> : null}
+                {moreRoundAvailable(deck, DECK_MAX_ROUNDS) && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("deck", { continuing: true, more: true }); }}>One more round</Button> : null}
                 <Button variant="primary" size="compact" busy={running === "deck"} disabled={!factsVerified || !deckReady || running !== undefined || savingFocus !== undefined} onClick={() => { void runStep("deck"); }}>
                   {running === "deck" ? "Writing and judging…" : deck ? "Write the deck again" : "Write the deck"}
                 </Button>
@@ -742,10 +887,11 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
             <div className={styles.factsHeader}>
               <div>
                 <p className={styles.eyebrow}>Step 7 · Visual script</p>
-                <p className={styles.factsIntro}>{TODAY.writer} writes the carousel’s images as one visual story, in the brand’s identity: a concept, a recurring cast, a motif that evolves from slide to slide and, for each slide, the beat its image adds (never its words again), a reproducible art direction and the verified material or characters it uses. {TODAY.judge} scores three scripts (two for a carousel of more than ten slides) and proposes one of its own; {TODAY.writer} revises the best and edits {TODAY.judge}’s, which also competes as {TODAY.judge} wrote it; a third round revises the best once more, for {TODAY.judge}’s pick. Accepted at 95/100 with no criterion below 85. The images themselves come in a later step.</p>
+                <p className={styles.factsIntro}>{TODAY.writer} writes the carousel’s images as one visual story, in the brand’s identity: a concept, a recurring cast, a motif that evolves from slide to slide and, for each slide, the beat its image adds (never its words again), a reproducible art direction and the verified material or characters it uses. {TODAY.judge} scores two scripts, written to the focus’s visual direction, and proposes one of its own; {TODAY.writer} revises the best and edits {TODAY.judge}’s, which also competes as {TODAY.judge} wrote it; a third round revises the best once more, for {TODAY.judge}’s pick. Accepted at 95/100 with no criterion below 85. The images themselves come in a later step.</p>
               </div>
               <ActionRow>
                 {visualResumeRound && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("visual", { continuing: true }); }}>{visualExtendable ? `Continue with round ${visualResumeRound}` : `Continue from round ${visualResumeRound}`}</Button> : null}
+                {!visualResumeRound && moreRoundAvailable(visual, visualPlan(visual?.carousel ?? []).length) && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("visual", { continuing: true, more: true }); }}>One more round</Button> : null}
                 <Button variant="primary" size="compact" busy={running === "visual"} disabled={!factsVerified || !visualReady || running !== undefined || savingInventory !== undefined} onClick={() => { void runStep("visual"); }}>
                   {running === "visual" ? "Writing and judging…" : visual ? "Write the visual script again" : "Write the visual script"}
                 </Button>
@@ -798,6 +944,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
               </div>
               <ActionRow>
                 {captionResumeRound && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("caption", { continuing: true }); }}>Continue from round {captionResumeRound}</Button> : null}
+                {moreRoundAvailable(caption, CAPTION_MAX_ROUNDS) && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("caption", { continuing: true, more: true }); }}>One more round</Button> : null}
                 <Button variant="primary" size="compact" busy={running === "caption"} disabled={!factsVerified || !captionReady || running !== undefined || savingMention !== undefined || mentionsSearching} onClick={() => { void runStep("caption"); }}>
                   {running === "caption" ? "Writing and judging…" : caption ? "Write the caption again" : "Write the caption"}
                 </Button>
@@ -852,10 +999,10 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
             {publication && approvedCurrent ? <PublishedCopy publication={publication} topicId={topicId} secret={secret} locked={running !== undefined} approving={running === "publication"} onApprove={() => { void approvePublication(publication.acknowledgedIssues.length > 0); }} /> : null}
           </section>
           {session?.trace.length && !running ? <details className={styles.trace}>
-            <summary>{session.trace.length} provider {session.trace.length === 1 ? "call" : "calls"}</summary>
+            <summary>{session.trace.length} provider {session.trace.length === 1 ? "call" : "calls"} · {minutes(totals.ms)} in calls · {usd(totals.costMicros)} · {TODAY.judge} {Math.round(totals.openaiShare * 100)}% of the time</summary>
             <ol className={styles.traceList}>
               {session.trace.map((entry, index) => <li key={index} data-outcome={entry.outcome}>
-                <span>{providerLabel(entry.provider)} · {entry.model} · {entry.operation} · {entry.step} round {entry.round}</span>
+                <span>{providerLabel(entry.provider)} · {entry.model}{entry.effort ? ` · ${entry.effort}` : ""} · {entry.operation} · {entry.step} round {entry.round}</span>
                 <span>{traceUsageLine(entry)}</span>
               </li>)}
             </ol>
@@ -1126,6 +1273,9 @@ function FunnelRoundView<C extends FunnelCandidate>({ round, names, display }: {
     {(round.regressions ?? []).map((regression) => <p key={regression.candidateId} className={styles.factMeta}>{regressionNote(regression)}</p>)}
     {evaluation && programWinner && programWinner !== evaluation.winnerId ? <p className={styles.factMeta}>{names.judge} picked {evaluation.winnerId}, which has a program finding; {programWinner}, the best clean candidate, meets the thresholds and wins.</p> : null}
     {evaluation ? <p className={styles.factMeta}>{evaluation.summary}</p> : null}
+    {round.shadow ? <p className={styles.factMeta}>Shadow judgment at {round.shadow.effort}{round.shadow.error
+      ? ` failed: ${round.shadow.error}`
+      : `: ${round.shadow.verdict} · ${round.shadow.winnerId} ${round.shadow.scores?.find((score) => score.candidateId === round.shadow?.winnerId)?.overall ?? "–"}/100 · ${round.shadow.agrees ? "the same winner as the judgment that counts" : "another winner than the judgment that counts"} · ${(round.shadow.durationMs / 1000).toFixed(0)} s${round.shadow.scores?.length ? ` · ${round.shadow.scores.map((score) => `${score.candidateId} ${score.overall}`).join(", ")}` : ""}`}</p> : null}
     {winner ? <ScoreRow score={winner} display={display} /> : null}
     {round.mechanical.length || evaluation?.issues.length ? <ul className={styles.issueList}>
       {round.mechanical.map((issue, index) => <li key={`m${index}`}><strong>Program · {issue.code}</strong>{issueTarget(issue)}: {issue.detail}</li>)}
@@ -1564,6 +1714,7 @@ function focusValueText(field: Draft2FocusField, values: Draft2FocusValues): str
     case "goal": return GOAL_LABEL[values.goal];
     case "voice": return `${GRAVITY_LABEL[values.voice.gravity]} · ${TONE_KEYS.map((key) => `${key} ${values.voice[key]}`).join(" · ")}`;
     case "direction": return values.direction;
+    case "visualDirection": return values.visualDirection ?? "";
   }
 }
 
@@ -1658,7 +1809,32 @@ function FocusView({ focus, findings, saving, locked, onSave, onReset }: {
         <FocusText key={key("direction")} label="Direction" description={about("direction")} value={values.direction} max={FOCUS_DIRECTION_MAX_CHARACTERS} rows={5} disabled={locked} onCommit={(value) => onSave("direction", value)} />
         {reset("direction")}
       </div>
+      <div className={`${styles.focusField} ${styles.focusWide}`}>
+        <FocusText key={key("visualDirection")} label="Visual direction" description={about("visualDirection", values.visualDirection ? "The visual script follows it: the world the images live in, who leads them, what recurs." : "Decided before this field existed: decide again for Claude to set it, or write it.")} value={values.visualDirection ?? ""} max={FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS} rows={3} disabled={locked} onCommit={(value) => onSave("visualDirection", value)} />
+        {reset("visualDirection")}
+      </div>
     </div>
+  </div>;
+}
+
+/** The autopilot's log: each step it ran, how it ended, what it took in time and in the meter's cost, and where it stands. */
+function AutopilotView({ autopilot, trace, now }: { autopilot: Autopilot; trace: readonly Draft2TraceEntry[]; now: number }) {
+  // A step's cost: the calls of its trace step made while it ran (the accounts to tag have their own trace step).
+  const costOf = (entry: AutopilotEntry) => {
+    const begin = Date.parse(entry.startedAt);
+    return trace.filter((call) => call.step === entry.step && Date.parse(call.at) >= begin - 1_000 && Date.parse(call.at) <= begin + entry.ms + 1_000).reduce((sum, call) => sum + (call.costMicros ?? 0), 0);
+  };
+  const spent = autopilot.steps.reduce((sum, entry) => sum + costOf(entry), 0);
+  const elapsed = (autopilot.finishedAt ? Date.parse(autopilot.finishedAt) : Math.max(now, Date.parse(autopilot.startedAt))) - Date.parse(autopilot.startedAt);
+  const failed = autopilot.steps.some((entry) => entry.status === "failed");
+  return <div className={styles.focusBody}>
+    {autopilot.steps.length ? <ol className={styles.autopilotList}>
+      {autopilot.steps.map((entry) => <li key={entry.startedAt} data-status={entry.status}>
+        <strong>{STEP_TITLE[entry.step]}</strong> · {entry.status === "ready" ? "done" : entry.status === "needs-review" ? "under the gate, look at it" : "failed"} · {minutes(entry.ms)} · {usd(costOf(entry))}
+      </li>)}
+    </ol> : null}
+    {autopilot.current ? <LoadingState>{STEP_TITLE[autopilot.current]} is running; its progress is on its step below.</LoadingState> : null}
+    {autopilot.outcome ? <InlineNotice tone={failed ? "error" : "info"} title={autopilot.active ? "Autopilot" : `Autopilot finished · ${minutes(elapsed)} · ${usd(spent)}`}>{autopilot.outcome}</InlineNotice> : null}
   </div>;
 }
 

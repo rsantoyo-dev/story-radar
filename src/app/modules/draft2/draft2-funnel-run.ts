@@ -6,13 +6,14 @@ import { getAnthropicRuntimeConfig, requireAnthropicApiKey } from "../stories/an
 import { getCreativeProfile } from "../stories/creative-profile.repository";
 import { activeDraft2Session, claimDraft2Session, getDraft2Session, touchDraft2Session, updateDraft2Session, type Draft2SessionPatch } from "./draft2-session.repository";
 import { draft2DevTrace } from "./draft2-dev-trace";
-import { draft2ProviderName, draft2SolModel, type Draft2Provider } from "./draft2-models";
+import { draft2ProviderName, draft2RevisionEffort, draft2RoleModel, draft2ShadowJudgeEffort, draft2SolModel, type Draft2Effort, type Draft2Provider } from "./draft2-models";
+import { traceCostMicros } from "./draft2-trace-cost";
 import { Draft2BusyError, Draft2InputError, type Draft2Fact, type Draft2TraceEntry } from "./draft2-facts.types";
 import {
-  factsSnapshot, failedCall, funnelAcceptedWinner, funnelBestVersions, funnelExtendable, funnelFreshWanted, funnelRegressions, funnelRenumberedProposals, funnelResumeRound,
-  funnelReviewNote, funnelRunSummary, funnelTargets, funnelVersions, funnelWrittenCandidates,
+  FUNNEL_EXTRA_ROUND, FUNNEL_MAX_EXTRA_ROUNDS, factsSnapshot, failedCall, funnelAcceptedWinner, funnelBestVersions, funnelExtendable, funnelFreshWanted, funnelRegressions,
+  funnelRenumberedProposals, funnelResumeRound, funnelReviewNote, funnelRunSummary, funnelTargets, funnelVersions, funnelWrittenCandidates,
   type FunnelCandidate, type FunnelEvaluation, type FunnelGate, type FunnelIssue, type FunnelPlanRound, type FunnelRegression, type FunnelRole,
-  type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion,
+  type FunnelRound, type FunnelRun, type FunnelScore, type FunnelShadowJudgment, type FunnelVersion,
 } from "./draft2-funnel";
 import type { CreativeProfile } from "../stories/creative-content.types";
 import type { Draft2SessionRow } from "@/db/schema";
@@ -29,6 +30,11 @@ const ROUND_DEADLINE_MS = 280_000;
 const MAX_OUTPUT_TOKENS = 24_000;
 /** Fifteen openings took 73 s to write and 111 s to judge in a real run; the adapters' default limit is 120 s. */
 const CALL_TIMEOUT_MS = 240_000;
+/** The route's own limit: a call never gets more than what is left of it, and a judgment that would not fit is left to a new request instead of being lost to it. */
+const ROUTE_LIMIT_MS = 300_000;
+const MIN_CALL_TIMEOUT_MS = 60_000;
+/** What a judgment takes at each effort before this run has measured one (Sol took 58–121 s at medium and 120–210 s at high in real runs). */
+const JUDGE_ESTIMATE_MS: Record<Draft2Effort, number> = { low: 60_000, medium: 120_000, high: 200_000 };
 /** Shows the run is alive between checkpoints, well inside OPENING_STALL_MS. */
 const HEARTBEAT_MS = 30_000;
 
@@ -83,6 +89,8 @@ export type FunnelStepInput = {
   sessionId: string;
   /** Continue a run that paused for time, that stopped when its request or server died, or that ended unaccepted before its plan gained rounds, instead of starting a new one. */
   resume?: boolean;
+  /** With resume: give a run that ended unaccepted one extra round (FUNNEL_EXTRA_ROUND), at most FUNNEL_MAX_EXTRA_ROUNDS per run. */
+  more?: boolean;
 };
 
 const runOf = <R>(session: Draft2SessionRow, column: FunnelColumn) => (session as unknown as Record<FunnelColumn, R | null>)[column] ?? undefined;
@@ -109,7 +117,7 @@ const runOf = <R>(session: Draft2SessionRow, column: FunnelColumn) => (session a
  * rounds, with only the added rounds.
  */
 export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelScore, I extends FunnelIssue, R extends FunnelRun<C, S, I> & { previousRuns?: unknown[] }, Snapshot>(
-  def: FunnelStep<C, S, I, R, Snapshot>, { topicId, storyId, sessionId, resume = false }: FunnelStepInput,
+  def: FunnelStep<C, S, I, R, Snapshot>, { topicId, storyId, sessionId, resume = false, more = false }: FunnelStepInput,
 ): Promise<Draft2SessionRow> {
   const session = await getDraft2Session(topicId, sessionId);
   if (!session || session.storyId !== storyId) throw new Draft2InputError("This Draft 2 session was not found for the story. Reload the canvas.");
@@ -119,14 +127,17 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
   const factsVerified = session.step !== "facts" || session.status === "ready";
   if (!facts.length || !factsVerified) throw new Draft2InputError(`The ${def.noun} builds only on verified facts. Verify the facts first.`);
   const current = runOf<R>(session, def.step);
+  // An extra round the editor asks for: the best version revised once more, at most FUNNEL_MAX_EXTRA_ROUNDS times per run.
+  if (resume && more && (current?.extraRounds ?? 0) >= FUNNEL_MAX_EXTRA_ROUNDS) throw new Draft2InputError(`This ${def.noun} already had its ${FUNNEL_MAX_EXTRA_ROUNDS} extra rounds. Write it again.`);
+  const extraRounds = (current?.extraRounds ?? 0) + (resume && more ? 1 : 0);
   // A run left "running" passed the busy check only because its heartbeat stopped: its request or server died.
-  // A run that ended unaccepted continues only with rounds its plan gained since; a plan chosen per run is known once the snapshot is (checked below).
-  const ended = current && funnelExtendable(current, typeof def.plan === "function" ? Infinity : def.plan.length) ? current : undefined;
+  // A run that ended unaccepted continues only with rounds its plan gained since (or an extra round); a plan chosen per run is known once the snapshot is (checked below).
+  const ended = current && funnelExtendable(current, (typeof def.plan === "function" ? Infinity : def.plan.length) + extraRounds) ? current : undefined;
   const stopped = current && (current.status === "paused" || current.status === "running") ? current : ended;
   const nothingToContinue = `There is no paused or stopped ${def.noun} to continue. Write the ${def.noun} again.`;
   if (resume && !stopped) throw new Draft2InputError(nothingToContinue);
   const snapshot = def.snapshot(session, resume ? stopped : undefined);
-  const plan = typeof def.plan === "function" ? def.plan(snapshot) : def.plan;
+  const plan: readonly FunnelPlanRound[] = [...(typeof def.plan === "function" ? def.plan(snapshot) : def.plan), ...Array.from({ length: extraRounds }, () => FUNNEL_EXTRA_ROUND)];
   const maxRounds = plan.length;
   if (resume && stopped && (funnelResumeRound(stopped) > maxRounds || (stopped.status === "needs-review" && !funnelExtendable(stopped, maxRounds)))) throw new Draft2InputError(nothingToContinue);
 
@@ -134,12 +145,14 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
   if (!configuredOpenAiKey) throw new Draft2InputError("OPENAI_API_KEY is not configured; Sol needs it.");
   const openAiApiKey: string = configuredOpenAiKey;
   const anthropicApiKey = requireAnthropicApiKey();
-  const modelOf = (provider: Draft2Provider): FunnelRole => ({ provider, model: provider === "openai" ? draft2SolModel(process.env) : getAnthropicRuntimeConfig().model });
-  // A run keeps the roles it started with; a new run takes today's.
+  // Each role's model: the provider's default, or the one the environment names for this step and role (draft2RoleModel).
+  const defaults: Record<Draft2Provider, string> = { openai: draft2SolModel(process.env), anthropic: getAnthropicRuntimeConfig().model };
+  const modelOf = (provider: Draft2Provider, role: "writer" | "judge"): FunnelRole => ({ provider, model: draft2RoleModel(def.step, role, provider, process.env, defaults) });
+  // A run keeps the roles (and models) it started with; a new run takes today's.
   const earlier = def.earlierRoles ?? def.roles;
   const roles = resume && stopped
-    ? { writer: stopped.writer ?? modelOf(earlier.writer), judge: stopped.judge ?? modelOf(earlier.judge) }
-    : { writer: modelOf(def.roles.writer), judge: modelOf(def.roles.judge) };
+    ? { writer: stopped.writer ?? modelOf(earlier.writer, "writer"), judge: stopped.judge ?? modelOf(earlier.judge, "judge") }
+    : { writer: modelOf(def.roles.writer, "writer"), judge: modelOf(def.roles.judge, "judge") };
   const judgeName = draft2ProviderName(roles.judge.provider);
   const profile = await getCreativeProfile(topicId);
   const setup = def.setup({ snapshot, profile, facts, plan });
@@ -149,7 +162,7 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
   // A continue request picks the run up at its last checkpoint; a new run starts fresh and keeps the earlier one, with the editor's choice.
   const firstRound = resume && stopped ? funnelResumeRound(stopped) : 1;
   const run = (resume && stopped
-    ? { ...stopped, status: "running", resumeRound: undefined, error: undefined, ...roles }
+    ? { ...stopped, status: "running", resumeRound: undefined, error: undefined, ...roles, ...(extraRounds ? { extraRounds } : {}) }
     : {
       status: "running", rounds: [], candidates: [], ...roles, ...def.newRun(snapshot, profile),
       ...(current ? { previousRuns: [...(current.previousRuns ?? []), funnelRunSummary(current)] } : {}),
@@ -159,6 +172,18 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
   const auditContext = { runId: session.id, topicId, storyId };
   const startedAt = Date.now();
   let lastRoundMs = 0;
+  /**
+   * What a judgment at an effort is expected to take: this step's last one at
+   * that effort on the trace (this request's included); else its last one at
+   * another effort with room for a harder one (real runs took 1.2–1.5x longer
+   * at high than at medium); else the estimate for the effort.
+   */
+  const expectedJudgeMs = (effort: Draft2Effort) => {
+    const judged = [...trace].reverse().filter((entry) => entry.step === def.step && entry.operation === def.operations.judge && entry.outcome === "ok");
+    const same = judged.find((entry) => entry.effort === effort);
+    if (same) return same.durationMs;
+    return judged[0] ? Math.round(judged[0].durationMs * 1.5) : JUDGE_ESTIMATE_MS[effort];
+  };
 
   const checkpoint = (patch: Draft2SessionPatch = {}) => updateDraft2Session(session.id, { [def.step]: run, trace, ...patch } as unknown as Draft2SessionPatch);
 
@@ -183,40 +208,71 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
     await checkpoint({ status: "needs-review", error: note });
   }
 
+  /** The effort a round runs a role at: the plan's, else the revision default (draft2RevisionEffort, from the environment). */
+  const effortFor = (round: number, roleKind: "writer" | "judge"): Draft2Effort => plan[round - 1]?.effort ?? draft2RevisionEffort(roleKind, process.env);
+  /** What is left of the route's time for one call: never more than CALL_TIMEOUT_MS, never less than a minute. */
+  const callTimeoutMs = () => Math.max(MIN_CALL_TIMEOUT_MS, Math.min(CALL_TIMEOUT_MS, ROUTE_LIMIT_MS - (Date.now() - startedAt) - 10_000));
+  /**
+   * Sol's stable prefix: the step's context and the verified facts at the end
+   * of its instructions, the same on every call of the run, so OpenAI's prefix
+   * cache reads them (as a string input after the format block they never
+   * matched: real runs cached Sol's instructions only).
+   */
+  const solInstructions = (instructions: string) => `${instructions}\n\n# Context\nThe same on every call of this run: the step's context, then the verified facts.\n${JSON.stringify({ ...setup.context, verifiedFacts })}`;
+
   /**
    * One structured call to a role's model, with the step's context and the
    * verified facts where its provider caches them: Claude's cached context
-   * block, or the head of Sol's input (OpenAI caches a repeated prefix on
-   * its own).
+   * block, or the tail of Sol's instructions. The effort is the round's (or
+   * the shadow judgment's), and the timeout what is left of the route's time.
    */
-  function ask(role: FunnelRole, round: number, operation: string, request: Composed & { contents: Record<string, unknown>; schema: Record<string, unknown> }) {
+  function ask(role: FunnelRole, round: number, operation: string, request: Composed & { contents: Record<string, unknown>; schema: Record<string, unknown> }, effortOverride?: Draft2Effort) {
     const { instructions, skillVersions, contents, schema } = request;
+    const roleKind = role === roles.judge ? "judge" : "writer";
     // The round's effort, for the writer and the judge alike; Sol writing a stored run keeps medium.
-    const effort = plan[round - 1]?.effort ?? "high";
+    const effort = effortOverride ?? effortFor(round, roleKind);
+    const timeoutMs = callTimeoutMs();
     if (role.provider === "anthropic") {
       const traceRequest = { instructions, context: { ...setup.context, verifiedFacts: `${verifiedFacts.length} facts (cached)` }, contents, effort };
-      return traced(round, "anthropic", role.model, operation, skillVersions, traceRequest, () => generateAnthropicStructuredResponse({
+      return traced(round, "anthropic", role.model, operation, skillVersions, effort, traceRequest, () => generateAnthropicStructuredResponse({
         apiKey: anthropicApiKey, model: role.model, instructions, context: { ...setup.context, verifiedFacts }, contents,
-        schema, schemaName: operation, maxOutputTokens: MAX_OUTPUT_TOKENS, effort, timeoutMs: CALL_TIMEOUT_MS, auditContext,
+        schema, schemaName: operation, maxOutputTokens: MAX_OUTPUT_TOKENS, effort, timeoutMs, auditContext,
       }));
     }
-    const input = { ...setup.context, verifiedFacts, ...contents };
-    const reasoningEffort = role === roles.judge ? effort : "medium";
-    return traced(round, "openai", role.model, operation, skillVersions, { instructions, contents: input, reasoningEffort }, () => generateOpenAiStructuredResponse({
-      apiKey: openAiApiKey, model: role.model, instructions, contents: input,
-      schema, schemaName: operation, maxOutputTokens: MAX_OUTPUT_TOKENS, reasoningEffort, timeoutMs: CALL_TIMEOUT_MS, auditContext,
+    const reasoningEffort: Draft2Effort = roleKind === "judge" ? effort : "medium";
+    return traced(round, "openai", role.model, operation, skillVersions, reasoningEffort, { instructions: solInstructions(instructions), contents, reasoningEffort }, () => generateOpenAiStructuredResponse({
+      apiKey: openAiApiKey, model: role.model, instructions: solInstructions(instructions), contents,
+      schema, schemaName: operation, maxOutputTokens: MAX_OUTPUT_TOKENS, reasoningEffort, timeoutMs, auditContext,
     }));
   }
 
-  /** One provider call: traced on the console in development, recorded on the session always. */
-  async function traced<T>(round: number, provider: "openai" | "anthropic", model: string, operation: string, skillVersions: Record<string, string>, request: unknown, call: () => Promise<T & { text: string; usage: Draft2TraceEntry["usage"]; cachedInputTokens?: number; cacheWriteTokens?: number }>): Promise<T & { text: string }> {
+  /**
+   * The shadow judgment of a round: the judge's request again at another
+   * effort (draft2ShadowJudgeEffort), in parallel with the real one. Its
+   * verdict, winner and scores are kept on the round for comparison and
+   * decide nothing; a failure is kept as a note. Never throws.
+   */
+  async function shadowJudgment(round: number, request: Composed & { contents: Record<string, unknown>; schema: Record<string, unknown> }, ids: readonly string[], effort: Draft2Effort): Promise<FunnelShadowJudgment> {
+    const begin = Date.now();
+    try {
+      const answered = await ask(roles.judge, round, `${def.operations.judge}_shadow`, request, effort);
+      const parsed = setup.parseEvaluation(answered.text, ids);
+      return { effort, model: roles.judge.model, durationMs: Date.now() - begin, verdict: parsed.verdict, winnerId: parsed.winnerId, scores: parsed.scores.map((score) => ({ candidateId: score.candidateId, overall: score.overall })) };
+    } catch (error) {
+      return { effort, model: roles.judge.model, durationMs: Date.now() - begin, error: error instanceof Error ? error.message.slice(0, 200) : "The shadow judgment failed." };
+    }
+  }
+
+  /** One provider call: traced on the console in development, recorded on the session always, with its effort and what it cost. */
+  async function traced<T>(round: number, provider: "openai" | "anthropic", model: string, operation: string, skillVersions: Record<string, string>, effort: Draft2Effort, request: unknown, call: () => Promise<T & { text: string; usage: Draft2TraceEntry["usage"]; cachedInputTokens?: number; cacheWriteTokens?: number }>): Promise<T & { text: string }> {
     draft2DevTrace({ step: def.step, round, provider, model, operation, phase: "request", detail: request });
     const at = new Date().toISOString();
     const begin = Date.now();
+    const cost = (usage: Draft2TraceEntry["usage"], cached = 0, written = 0) => { const costMicros = traceCostMicros(provider, model, usage, cached, written); return costMicros === undefined ? {} : { costMicros }; };
     try {
       const value = await call();
       const durationMs = Date.now() - begin;
-      trace.push({ at, step: def.step, round, provider, model, operation, durationMs, usage: value.usage, cachedInputTokens: value.cachedInputTokens, ...(value.cacheWriteTokens ? { cacheWriteTokens: value.cacheWriteTokens } : {}), answerCharacters: value.text.length, outcome: "ok", skillVersions });
+      trace.push({ at, step: def.step, round, provider, model, operation, durationMs, usage: value.usage, cachedInputTokens: value.cachedInputTokens, ...(value.cacheWriteTokens ? { cacheWriteTokens: value.cacheWriteTokens } : {}), answerCharacters: value.text.length, outcome: "ok", skillVersions, effort, ...cost(value.usage, value.cachedInputTokens, value.cacheWriteTokens) });
       let answer: unknown = value.text;
       try { answer = JSON.parse(value.text); } catch { /* the parser reports a malformed answer */ }
       draft2DevTrace({ step: def.step, round, provider, model, operation, phase: "response", durationMs, detail: { usage: value.usage, cachedInputTokens: value.cachedInputTokens, cacheWriteTokens: value.cacheWriteTokens, answer } });
@@ -224,7 +280,8 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
     } catch (error) {
       const durationMs = Date.now() - begin;
       const note = error instanceof Error ? error.message : "unknown error";
-      trace.push({ at, step: def.step, round, provider, model, operation, durationMs, outcome: "error", note, ...failedCall(error), skillVersions });
+      const failed = failedCall(error);
+      trace.push({ at, step: def.step, round, provider, model, operation, durationMs, outcome: "error", note, ...failed, skillVersions, effort, ...cost(failed.usage) });
       draft2DevTrace({ step: def.step, round, provider, model, operation, phase: "error", durationMs, detail: { error: note, ...failedCall(error) } });
       throw error;
     }
@@ -277,13 +334,25 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
           }
         }
 
-        // 2. The judge: the facts, then this round's candidates beside the versions they revise.
-        const judgeContents = setup.judgeRequest(round, candidates, mechanical, targets);
-        const judged = await ask(roles.judge, round, def.operations.judge, { ...setup.judge, contents: judgeContents, schema: setup.schemas.judge });
-        const judgment = setup.parseEvaluation(judged.text, candidates.map((candidate) => candidate.id));
+        // 2. The judge: the facts, then this round's candidates beside the versions they revise. A judgment that would not fit in
+        //    what is left of the route's time (this step's last judgment at that effort, else an estimate) waits for a new request.
+        const judgeEffort = effortFor(round, "judge");
+        if (Date.now() - startedAt + expectedJudgeMs(judgeEffort) > ROUTE_LIMIT_MS - 15_000) {
+          await pause(round, true);
+          return;
+        }
+        const judgeRequest = { ...setup.judge, contents: setup.judgeRequest(round, candidates, mechanical, targets), schema: setup.schemas.judge };
+        const ids = candidates.map((candidate) => candidate.id);
+        // The shadow judgment, when the environment asks for one, runs beside the real one and never decides.
+        const shadowEffort = draft2ShadowJudgeEffort(process.env);
+        const [judged, shadow] = await Promise.all([
+          ask(roles.judge, round, def.operations.judge, judgeRequest),
+          shadowEffort && shadowEffort !== judgeEffort ? shadowJudgment(round, judgeRequest, ids, shadowEffort) : Promise.resolve(undefined),
+        ]);
+        const judgment = setup.parseEvaluation(judged.text, ids);
         const evaluation = judgment.proposals ? { ...judgment, proposals: funnelRenumberedProposals(judgment.proposals, run.rounds) } : judgment;
         const index = run.rounds.findIndex((entry) => entry.round === round);
-        run.rounds[index] = { ...run.rounds[index], evaluation };
+        run.rounds[index] = { ...run.rounds[index], evaluation, ...(shadow ? { shadow: { ...shadow, ...(shadow.winnerId ? { agrees: shadow.winnerId === evaluation.winnerId } : {}) } } : {}) };
         // A revision that came out worse never replaces the version it revised: the better one stays in front.
         const regressions = funnelRegressions(funnelVersions(run.rounds).filter((version) => version.round === round), before, def.gate.criteria);
         if (regressions.length) run.rounds[index] = { ...run.rounds[index], regressions };

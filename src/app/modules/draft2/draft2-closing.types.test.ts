@@ -45,7 +45,7 @@ test("an arc ends on two slides, a list or steps on one; the schemas ask for exa
   const judge = closingEvaluationSchema("one-slide") as { properties: { scores: { items: { required: string[] } }; proposals: { items: { required: string[] } } } };
   assert.deepEqual(judge.properties.scores.items.required, ["candidateId", ...CLOSING_CRITERIA, "overall", "note"]);
   assert.deepEqual(judge.properties.proposals.items.required, ["id", "last", "angle"], "the judge proposes closings in the run's shape");
-  assert.deepEqual(CLOSING_ROUND_PLAN, [{ revise: 0, fresh: CLOSING_CANDIDATES, proposals: 2 }, { revise: 2, fresh: 0, proposals: 0 }], "eight, then the two best beside the two proposals");
+  assert.deepEqual(CLOSING_ROUND_PLAN, [{ revise: 0, fresh: CLOSING_CANDIDATES, proposals: 2, effort: "medium" }, { revise: 2, fresh: 0, proposals: 0 }], "eight at medium effort, then the two best beside the two proposals, thinking hard");
 });
 
 test("the writer's answer becomes closings in the run's shape; a missing part is rejected, an empty call to action is not", () => {

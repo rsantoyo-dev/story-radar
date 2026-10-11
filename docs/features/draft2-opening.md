@@ -71,8 +71,9 @@ and the writer, asked to develop them, made each one more literal and
 weaker (79, 62, 70 and 86, against the device each original had: irony,
 worry, a simile, scale). For the Opening the roles are swapped
 (`DRAFT2_OPENING_ROLES`): Claude writes, with the verified facts as its
-cached context block, and Sol judges, with the facts at the head of its
-input (OpenAI caches a repeated prefix) and high reasoning effort. A run
+cached context block, and Sol judges, with the facts at the tail of its
+instructions (since 2026-10-10; as a string input they never matched
+OpenAI's prefix cache) and high reasoning effort. A run
 records its roles (`opening.writer`, `opening.judge`); a run stored before
 the swap continues with Sol writing and Claude judging, and the canvas
 names each run's roles. Facts keeps its roles (Sol extracts, Claude

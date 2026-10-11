@@ -7,6 +7,7 @@ import { getStoryContent } from "../stories/story-content.repository";
 import { activeEditorialLines, storyCollectionContexts } from "../editorial-lines/editorial-lines.repository";
 import { activeDraft2Session, claimDraft2Session, getDraft2Session, touchDraft2Session, updateDraft2Session } from "./draft2-session.repository";
 import { failedCall } from "./draft2-funnel";
+import { traceCost } from "./draft2-trace-cost";
 import { draft2DevTrace } from "./draft2-dev-trace";
 import { Draft2BusyError, Draft2InputError, type Draft2TraceEntry } from "./draft2-facts.types";
 import {
@@ -14,6 +15,8 @@ import {
   type Draft2Focus, type Draft2FocusField,
 } from "./draft2-focus.types";
 import { OPENING_STALL_MS, openingFactsSnapshot } from "./draft2-opening.types";
+import { visualModeLine, type Draft2VisualMode } from "./draft2-visual.types";
+import { resolveCreativeVisualGuidance } from "../stories/creative-visual-guidance";
 import { brandBrief, composeInstructions } from "./skills/draft2-skills";
 import { FOCUS_SKILL } from "./skills/focus";
 import type { Draft2SessionRow } from "@/db/schema";
@@ -61,7 +64,9 @@ export async function decideDraft2Focus({ topicId, storyId, sessionId }: Draft2F
   if (!claimed) throw new Draft2BusyError("A Draft 2 run is already in progress for this story.");
   const trace: Draft2TraceEntry[] = [...session.trace];
   const auditContext = { runId: session.id, topicId, storyId };
-  const { instructions, skillVersions } = composeInstructions("focus-editor", [FOCUS_SKILL], brandBrief(profile));
+  // The visual identity in full, as the visual script reads it: the visual direction is decided within it.
+  const brief = [brandBrief(profile), `# Visual identity\n${resolveCreativeVisualGuidance(profile)}`, visualModeLine(profile.visualFidelityMode as Draft2VisualMode)].join("\n\n");
+  const { instructions, skillVersions } = composeInstructions("focus-editor", [FOCUS_SKILL], brief);
   const verifiedFacts = openingFactsSnapshot(facts);
   const contents = focusDecisionRequest({ title: content.title, today: focusToday(timezone, new Date()), profile, lines, foundBy, editorChoices });
 
@@ -78,7 +83,7 @@ export async function decideDraft2Focus({ topicId, storyId, sessionId }: Draft2F
           schema: DRAFT2_FOCUS_SCHEMA, schemaName: "draft2_focus", maxOutputTokens: MAX_OUTPUT_TOKENS, effort: "high", timeoutMs: CALL_TIMEOUT_MS, auditContext,
         });
         const durationMs = Date.now() - begin;
-        trace.push({ at, step: "focus", round: 1, provider: "anthropic", model, operation: "draft2_focus", durationMs, usage: answered.usage, cachedInputTokens: answered.cachedInputTokens, ...(answered.cacheWriteTokens ? { cacheWriteTokens: answered.cacheWriteTokens } : {}), answerCharacters: answered.text.length, outcome: "ok", skillVersions });
+        trace.push({ at, step: "focus", round: 1, provider: "anthropic", model, operation: "draft2_focus", durationMs, usage: answered.usage, cachedInputTokens: answered.cachedInputTokens, ...(answered.cacheWriteTokens ? { cacheWriteTokens: answered.cacheWriteTokens } : {}), answerCharacters: answered.text.length, outcome: "ok", skillVersions, effort: "high", ...traceCost("anthropic", model, answered.usage, answered.cachedInputTokens, answered.cacheWriteTokens) });
         draft2DevTrace({ step: "focus", round: 1, provider: "anthropic", model, operation: "draft2_focus", phase: "response", durationMs, detail: { usage: answered.usage, answer: answered.text } });
         const decision = parseFocusDecision(answered.text, { facts, lines: lineOptions, editorChoices });
         return decidedFocus(focus, decision, { provider: "anthropic", model }, new Date());

@@ -89,7 +89,9 @@ function harness({ writes, judgments, session }: { writes: ((contents: Contents,
   const answer = (provider: string, input: Record<string, unknown>) => {
     const role = input.schemaName === "draft2_visual" ? "writer" : "judge";
     calls.push({ provider, role, input });
-    const carousel = ((input.context ?? input.contents) as { carousel: Draft2CarouselSlide[] }).carousel;
+    // Claude's cached context block, or the context at the tail of Sol's instructions (its prefix cache).
+    const context = (input.context ?? JSON.parse(String(input.instructions).split("\n# Context\n")[1].split("\n").slice(1).join("\n"))) as { carousel: Draft2CarouselSlide[] };
+    const carousel = context.carousel;
     const text = role === "writer" ? writes[write++](input.contents as Contents, carousel) : judgments[judgment++](input.contents as Contents, carousel);
     return { text: JSON.stringify(text), provider, model: input.model, usage };
   };
@@ -140,18 +142,18 @@ test("Claude scripts the chosen carousel and Sol judges it; both read the focus,
   }));
   assert.match(String(claude.input.instructions), /# The publication[^]*# Visual identity\nSALUT LONGUEUIL — CREATIVE IDENTITY[^]*- Visual mode: illustration-editorial\./);
   assert.ok(String(claude.input.instructions).includes(visuals.VISUALS_SKILL.text));
-  assert.equal(json([(claude.input.contents as Contents).candidatesWanted, claude.input.effort, (sol.input.contents as Contents).proposalsWanted, sol.input.reasoningEffort]), json([3, "medium", 1, "medium"]));
-  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.skillVersions])), json([["visual", "draft2_visual", { visuals: "3" }], ["visual", "draft2_visual_review", { visuals: "3" }]]));
+  assert.equal(json([(claude.input.contents as Contents).candidatesWanted, claude.input.effort, (sol.input.contents as Contents).proposalsWanted, sol.input.reasoningEffort]), json([2, "medium", 1, "medium"]));
+  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.skillVersions])), json([["visual", "draft2_visual", { visuals: "4" }], ["visual", "draft2_visual_review", { visuals: "4" }]]));
   const visual = session.visual!;
   assert.equal(json([session.status, visual.status, visual.winnerId, visual.deckId, visual.inventoryVersion, visual.characterChoice, visual.mode, visual.carousel?.length]), json(["ready", "ready", "c2", "c3", 4, "auto", "illustration-editorial", 6]));
 });
 
 const UNACCEPTED = () => [judge("revise", "c2", { c2: 88, c3: 85 }), judge("revise", "c4", { "c2.2": 89, "c3.2": 86, c4: 91, c5: 90 }), judge("revise", "c4.3", { "c4.3": 93 })];
 
-test("three scripts, then the two best revised beside Sol's script as written and edited, then the best once more, for Sol's pick", async () => {
+test("two scripts, then both revised beside Sol's script as written and edited, then the best once more, for Sol's pick", async () => {
   const h = harness({ writes: [writer(), writer(), writer()], judgments: UNACCEPTED() });
   const session = await h.run();
-  assert.equal(json(h.judgeCalls().map((contents) => contents.candidates?.map((candidate) => candidate.id))), json([["c1", "c2", "c3"], ["c2.2", "c3.2", "c4", "c5"], ["c4.3"]]), "Sol's script as edited (c4) and as written (c5) take the ids after c3; round 3 revises only the best");
+  assert.equal(json(h.judgeCalls().map((contents) => contents.candidates?.map((candidate) => candidate.id))), json([["c1", "c2"], ["c2.2", "c1.2", "c3", "c4"], ["c4.3"]]), "Sol's script as edited (c3) and as written (c4) take the ids after c2; round 3 revises only the best");
   assert.equal(json(h.calls.map((call) => call.input.effort ?? call.input.reasoningEffort)), json(["medium", "medium", "high", "high", "high", "high"]));
   assert.match(String(session.error), /^Sol did not accept a visual script after 3 rounds\. The best version, c4\.3, scored 93\/100/);
 });
@@ -196,5 +198,5 @@ test("a stopped run continues only while the people and places are the version i
 test("the editor can choose any script of the run", async () => {
   const h = harness({ writes: [writer()], judgments: [judge("accept", "c1", { c1: 96 })] });
   await h.run();
-  assert.equal((await h.choose("c3")).visual?.editorChoiceId, "c3");
+  assert.equal((await h.choose("c2")).visual?.editorChoiceId, "c2");
 });

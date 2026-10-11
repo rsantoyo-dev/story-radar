@@ -63,12 +63,12 @@ export function contentStatusLabel(status: string): string {
 /** The steps the canvas will grow into, in the order they will be built. */
 export const DRAFT_2_STEPS = [
   { key: "facts", title: "Facts", detail: "Verified facts with the qualifier each one must keep." },
-  { key: "focus", title: "Focus", detail: "What the story is for: its line, audience, framing, structure, goal and voice." },
+  { key: "focus", title: "Focus", detail: "What the story is for: its line, audience, framing, structure, goal, voice, and the visual direction its images follow." },
   { key: "opening", title: "Opening", detail: "Cover and slide 2 judged as one unit: the promise and its first payoff." },
   { key: "closing", title: "Closing", detail: "The ending: the cover's promise paid in full, what it means for the reader, one call to action." },
   { key: "deck", title: "Deck", detail: "The slides between slide 2 and the closing, one idea each: the story from its promise to its end." },
   { key: "inventory", title: "People and places", detail: "Who and where the story names, and the verified photos and maps of them." },
-  { key: "visual", title: "Visual script", detail: "The carousel's images as one visual story, in the brand's identity." },
+  { key: "visual", title: "Visual script", detail: "The carousel's images as one visual story, in the brand's identity and the focus's visual direction." },
   { key: "images", title: "Images", detail: "Each slide made from the visual script, reviewed, and corrected once when it needs it; logo and page number added afterwards." },
   { key: "caption", title: "Caption", detail: "The post’s text: short lines and blank lines, the brand’s emojis, the closing’s call to action, the accounts you tag and 5 to 8 hashtags." },
   { key: "publish", title: "Publish", detail: "The carousel approved as it stands, then published to Facebook, Instagram or both once you confirm the exact post." },
@@ -78,8 +78,11 @@ export const DRAFT_2_STEPS = [
 const CHARACTERS_PER_TOKEN = 3.5;
 
 /** What the trace line reads of one provider call (draft2-facts.types.ts, Draft2TraceEntry). */
-type TraceCall = {
+export type TraceCall = {
+  step?: string;
   provider: "openai" | "anthropic";
+  effort?: string;
+  costMicros?: number;
   usage?: { promptTokens: number; outputTokens: number; thoughtsTokens?: number; totalTokens: number };
   cachedInputTokens?: number;
   cacheWriteTokens?: number;
@@ -110,5 +113,42 @@ export function traceUsageLine(call: TraceCall): string {
     ...(call.cacheWriteTokens ? [`${call.cacheWriteTokens} written to cache`] : []),
   ] : [];
   const lead = call.outcome === "ok" ? tokens : [call.note ?? "failed", ...tokens];
-  return [...lead, `${(call.durationMs / 1000).toFixed(1)} s`].join(" · ");
+  return [...lead, `${(call.durationMs / 1000).toFixed(1)} s`, ...(call.costMicros !== undefined ? [usd(call.costMicros)] : [])].join(" · ");
+}
+
+/** USD micros as the canvas shows them: cents. */
+export const usd = (micros: number) => `$${(micros / 1_000_000).toFixed(2)}`;
+/** A duration as the canvas shows it: seconds under a minute, else minutes with one decimal. */
+export const minutes = (ms: number) => ms >= 60_000 ? `${(ms / 60_000).toFixed(1)} min` : `${Math.round(ms / 1000)} s`;
+
+export type StepMetrics = { ms: number; costMicros: number; calls: number };
+/** The trace's step for each canvas step: the accounts to tag belong to the caption step; publishing makes no provider call. */
+const METRICS_STEP: Record<string, string> = { mentions: "caption" };
+
+/**
+ * Model time and cost per canvas step, from the session's trace (every
+ * provider call, this run's and earlier ones) and the images' provider
+ * charges. Time is time inside calls, not the clock on the wall; cost is the
+ * meter's estimate when the call's model had a verified rate.
+ */
+export function stepMetrics(trace: readonly TraceCall[], images?: { slides: { attempts: { costMicros?: number }[] }[] } | null): Record<string, StepMetrics> {
+  const metrics: Record<string, StepMetrics> = {};
+  const add = (step: string, ms: number, costMicros: number, calls: number) => {
+    const entry = metrics[step] ?? (metrics[step] = { ms: 0, costMicros: 0, calls: 0 });
+    entry.ms += ms; entry.costMicros += costMicros; entry.calls += calls;
+  };
+  for (const call of trace) {
+    if (!call.step) continue;
+    add(METRICS_STEP[call.step] ?? call.step, call.durationMs, call.costMicros ?? 0, 1);
+  }
+  for (const slide of images?.slides ?? []) for (const attempt of slide.attempts) if (attempt.costMicros) add("images", 0, attempt.costMicros, 0);
+  return metrics;
+}
+
+/** The whole session's calls: time inside them, cost, and the judge's share of the time. */
+export function sessionMetrics(trace: readonly TraceCall[], images?: { slides: { attempts: { costMicros?: number }[] }[] } | null): { ms: number; costMicros: number; calls: number; openaiShare: number } {
+  const steps = Object.values(stepMetrics(trace, images));
+  const ms = steps.reduce((sum, step) => sum + step.ms, 0);
+  const openaiMs = trace.filter((call) => call.step && call.provider === "openai").reduce((sum, call) => sum + call.durationMs, 0);
+  return { ms, costMicros: steps.reduce((sum, step) => sum + step.costMicros, 0), calls: steps.reduce((sum, step) => sum + step.calls, 0), openaiShare: ms ? openaiMs / ms : 0 };
 }

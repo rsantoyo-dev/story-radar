@@ -140,7 +140,9 @@ test("Claude writes the ending of the chosen opening and Sol judges it; both rea
   const [claude, sol] = h.calls;
   const context = { focus: focusTypes.focusForModels(VALUES), opening: closingTypes.openingForClosing(openingCandidate("c1", "Your demo video is now the bid")), shape: "two-slides" };
   assert.equal(json(claude.input.context), json({ ...context, verifiedFacts: openingTypes.openingFactsSnapshot(facts) }), "the focus the opening followed, the opening and the shape, cached before the facts");
-  assert.deepEqual(Object.keys(sol.input.contents as object).slice(0, 4), ["focus", "opening", "shape", "verifiedFacts"]);
+  // Sol's stable prefix: the step's context and the facts at the tail of its instructions, the same on every call; the round's request alone in its input.
+  assert.match(String(sol.input.instructions), /# Context\nThe same on every call of this run[^]*\{"focus":[^]*"opening":[^]*"shape":[^]*"verifiedFacts":/);
+  assert.deepEqual(Object.keys(sol.input.contents as object).slice(0, 2), ["task", "round"]);
   assert.equal((claude.input.contents as WriterContents).candidatesWanted, 8);
   assert.equal((sol.input.contents as JudgeContents).proposalsWanted, 2);
   assert.ok(String(claude.input.instructions).includes(closings.CLOSINGS_SKILL.text));
@@ -211,7 +213,8 @@ test("the closing waits for a finished opening the editor can end, written with 
 });
 
 test("a round the request has no time for pauses the run; a continue request runs it on", async () => {
-  const h = harness({ writes: [writer(), writer()], judgments: [judge("revise", "c2", { c2: 88, c5: 84 }), judge("accept", "c9", { c9: 96 })], secondsPerCall: 100 });
+  // 80 s a call: round 1 takes 160 s, so round 2 (another 160 s) waits; the continued request writes (80 s) and expects a high judgment of 1.5x the medium one (120 s), which fits.
+  const h = harness({ writes: [writer(), writer()], judgments: [judge("revise", "c2", { c2: 88, c5: 84 }), judge("accept", "c9", { c9: 96 })], secondsPerCall: 80 });
   const paused = await h.run();
   assert.equal(json([paused.closing?.status, paused.closing?.resumeRound, h.calls.length]), json(["paused", 2, 2]));
   const finished = await h.run({ resume: true });

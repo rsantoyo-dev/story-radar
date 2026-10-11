@@ -55,3 +55,14 @@ test("all configured Flash generations use verified rates, including the January
   assert.equal(textRate("google", model, 1000, undefined, Date.parse("2027-01-01")).output, 7.5);
  }
 });
+
+test("prompt-cache writes are billed 25% over the input rate, never beyond the uncached input", () => {
+    const rate = textRate("anthropic", "claude-sonnet-5-5", 1000, undefined, Date.parse("2026-10-10"));
+    assert.deepEqual([rate.input, rate.output, rate.cached, rate.version], [2, 10, .1, "2026-10-10"], "Sonnet 5.5 reads its cache at 5% (platform.claude.com, 2026-10-10)");
+    assert.equal(textCostMicros(rate, usage), 12000);
+    assert.equal(textCostMicros(rate, usage, 0, 600), 12300, "600 written tokens add 25% of their input price");
+    assert.equal(textCostMicros(rate, usage, 400, 600), 11540, "600 uncached at $2, 400 read at 5%, 600 written at +25%, 1000 out at $10");
+    assert.equal(textCostMicros(rate, usage, 400, 5000), 11540, "writes are capped at the uncached input");
+    assert.equal(textRate("anthropic", "claude-opus-5-5", 1000, undefined, Date.parse("2026-10-10")).cached, .2);
+    assert.equal(textRate("anthropic", "claude-fable-5-1", 1000, undefined, Date.parse("2026-10-10")).cached, .25);
+});

@@ -28,6 +28,7 @@ const answer = (overrides: Record<string, unknown> = {}) => JSON.stringify({
   goal: "followers",
   voice: { gravity: "ordinary", formality: 30, humor: 150, energy: 70.4, optimism: 60, provocation: 0 },
   direction: "Lead with the five-minute video; pay it with the award time.",
+  visualDirection: "Anonymous founders at a laptop and a screen; the demo video recurs, and closes the story as a signed award.",
   reasons,
   ...overrides,
 });
@@ -50,7 +51,7 @@ test("Claude's answer becomes the focus: unknown fact ids dropped, dials clamped
   assert.deepEqual(parse({ readerConsequence: { text: null, factIds: [] } }).values.readerConsequence, null);
   assert.deepEqual(parse({ structure: { kind: "list", itemFactIds: ["f3", "f1", "f9", "f2"] } }).values.structure, { kind: "list", itemFactIds: ["f3", "f1", "f2"] }, "items keep Claude's order");
   assert.equal(parseFocusDecision(answer({ lineId: null }), { facts, lines: [] }).values.line, null, "a Topic without lines has no line");
-  assert.deepEqual((DRAFT2_FOCUS_SCHEMA.required as string[]).sort(), ["audience", "direction", "framing", "goal", "lineId", "readerConsequence", "reasons", "structure", "voice"]);
+  assert.deepEqual((DRAFT2_FOCUS_SCHEMA.required as string[]).sort(), ["audience", "direction", "framing", "goal", "lineId", "readerConsequence", "reasons", "structure", "visualDirection", "voice"]);
 });
 
 test("an answer outside the contract is a response error, never a focus", () => {
@@ -60,6 +61,7 @@ test("an answer outside the contract is a response error, never a focus", () => 
   rejects({ audience: "" }, /audience is missing/);
   rejects({ audience: "x".repeat(301) }, /longer than 300/);
   rejects({ direction: "x".repeat(1_501) }, /direction is missing or longer than 1500/);
+  rejects({ visualDirection: "x".repeat(601) }, /visual direction is missing or longer than 600/);
   rejects({ framing: "auto" }, /outside the contract/);
   rejects({ goal: "virality" }, /outside the contract/);
   rejects({ structure: { kind: "carousel", itemFactIds: [] } }, /outside the contract/);
@@ -79,7 +81,7 @@ test("the editor's fields win over the answer; a structure the editor chose take
   assert.deepEqual(values.structure, { kind: "list", itemFactIds: ["f1", "f2", "f3"] }, "the list the editor asked for gets its items");
   assert.deepEqual(parse({ structure: { kind: "arc", itemFactIds: [] } }, { structure: { kind: "steps", itemFactIds: ["f1", "f2"] } }).values.structure, { kind: "steps", itemFactIds: ["f1", "f2"] }, "an answer of another kind leaves the editor's items");
   assert.equal(parse({ goal: "followers" }, { goal: "saves" }).values.goal, "saves", "whatever the answer says");
-  assert.deepEqual(Object.keys(parsed).sort(), ["audience", "direction", "framing", "voice"], "reasons only for the fields Claude decided");
+  assert.deepEqual(Object.keys(parsed).sort(), ["audience", "direction", "framing", "visualDirection", "voice"], "reasons only for the fields Claude decided");
 });
 
 test("a decision is one version more and keeps Claude's own values under the editor's fields", () => {

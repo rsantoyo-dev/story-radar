@@ -24,7 +24,7 @@ Facts → Focus → Opening → Closing → Deck → People and places → Visua
 | --- | --- |
 | A person's Commons photo | the editor confirms each match among the candidates; places are confirmed by Wikidata within the Topic's geo scope |
 | The brand's characters | Claude decides in each script, with v1's rules, and Sol judges; the editor may force "on" or "off" |
-| Funnel | 3 scripts (2 for a carousel of more than 10 slides) → Sol proposes 1 → 2 revised (1 for a long carousel) + Sol's as written + as edited → the best revised once more → Sol's pick; round 1 at medium effort |
+| Funnel | 2 scripts (3 until 2026-10-10: the focus's `visualDirection` now fixes the approach, so the scripts differ in execution) → Sol proposes 1 → 2 revised (1 for a long carousel) + Sol's as written + as edited → the best revised once more → Sol's pick; round 1 at medium effort. The schema's and the parser's ceiling is the largest round (`VISUAL_ROUND_MAX_CANDIDATES`, 3); the skill is visuals v4 |
 | Scope | the script only; images are a later step that reuses v1's generator |
 
 Added the same day, after the first real run (St-Jean, best script 91/100

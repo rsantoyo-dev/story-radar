@@ -1,6 +1,6 @@
 import { comparableText, type Draft2Fact } from "./draft2-facts.types";
 import type { Draft2FocusSnapshot, Draft2FocusStructureKind } from "./draft2-focus.types";
-import {
+import { type FunnelPlanRound,
   funnelEvaluationSchema, funnelExploreRequest, funnelFactIds, funnelJudgeRequest, funnelParseCandidates, funnelParseEvaluation, funnelRecord,
   funnelRefineRequest, funnelText, funnelWordCount, headlineKey, longWords, numbersIn, statedNumbers, wordOverlap,
   type FunnelCandidate, type FunnelEvaluation, type FunnelGate, type FunnelIssue, type FunnelRegression, type FunnelRole, type FunnelRound,
@@ -23,8 +23,9 @@ import type { Draft2OpeningCandidate } from "./draft2-opening.types";
  * mechanical checks and the requests, on the funnel's bookkeeping.
  */
 export const CLOSING_CANDIDATES = 8;
-export const CLOSING_ROUND_PLAN: readonly { revise: number; fresh: number; proposals: number }[] = [
-  { revise: 0, fresh: CLOSING_CANDIDATES, proposals: 2 },
+/** Round 1 explores eight closings at medium effort, as the other steps' first rounds do (real runs judged it at high: 131–207 s); the revision thinks hard. */
+export const CLOSING_ROUND_PLAN: readonly FunnelPlanRound[] = [
+  { revise: 0, fresh: CLOSING_CANDIDATES, proposals: 2, effort: "medium" },
   { revise: 2, fresh: 0, proposals: 0 },
 ];
 const MAX_PROPOSALS = Math.max(...CLOSING_ROUND_PLAN.map((plan) => plan.proposals));
