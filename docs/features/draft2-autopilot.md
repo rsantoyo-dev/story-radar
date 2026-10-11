@@ -137,7 +137,9 @@ judgment in real runs).
   the facts must state (`statedNumbers`; seven hooks were blocked by a "1"),
   and a direction that reserves the logo's corner or rules logos out asks
   for no logo (`forbiddenElement`; both scripts of a round were blocked by
-  "espacio para el logo").
+  "espacio para el logo"). The third run showed the word check itself at
+  fault: JavaScript's `\b` takes "á" for a boundary, so `\blogo\b`
+  matched inside "diálogo"; the checks now use Unicode-aware boundaries.
 
 ## 6. One more round (`more`)
 

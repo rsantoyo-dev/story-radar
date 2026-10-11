@@ -213,4 +213,9 @@ test("a direction that reserves the logo's corner or rules logos out asks for no
   assert.equal(forbiddenElement("A door with lettering that reads OPEN."), "lettering that reads");
   assert.equal(forbiddenElement("A kitchen with no text anywhere; a shop sign that says CLOSED hangs on the door."), undefined, "a sign is a thing in the scene; lettering, words or text that read something are forbidden");
   assert.equal(forbiddenElement("Photo with a caption under it."), "caption");
+  // Real runs: "logo" inside "diálogo", and a corner left free for the logo, are not a logo to draw.
+  assert.equal(forbiddenElement("Consultorio con tres figuras; ese diálogo es el foco. Un catálogo abierto sobre la mesa."), undefined);
+  assert.equal(forbiddenElement("Titular y texto arriba; logo abajo a la derecha y página abajo al centro libres."), undefined);
+  assert.equal(forbiddenElement("Letras teal oscuro; esquina inferior derecha libre para logo y centro inferior para página."), undefined);
+  assert.equal(forbiddenElement("Un diálogo entre dos personas; en la pared, el logo de la clínica."), "logo");
 });

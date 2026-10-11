@@ -324,9 +324,16 @@ export function parseVisualEvaluation(answer: string, candidateIds: readonly str
 }
 
 /** Elements no image may carry: they would be drawn as words, logos or interface. */
-const FORBIDDEN = /\b(logos?|watermarks?|captions?|subtitles?|hashtags?|swipe|page numbers?|signage|(?:text|words|letters|lettering) (?:that )?(?:reads?|says?|saying))\b/iu;
-/** A direction that keeps a corner for the logo added afterwards, or rules an element out ("no logos", "sin texto"), does not ask for it (in the publications' languages). */
-const ALLOWED = /\b(?:espacio|zona|área|hueco|esquina|margen|room|space|zone|area|corner|margin)\b[^.;]{0,30}?\blogos?\b|\blogos?\b[^.;]{0,20}?\b(?:se añade|added|afterwards|después|luego)\b|\b(?:sin|no|without|never|nunca|ningún|ninguna)\b[^.;]{0,20}?\b(?:logos?|watermarks?|captions?|subtitles?|hashtags?|signage|page numbers?|text|words|letters|lettering)\b/giu;
+// Word boundaries that know accented letters: JavaScript's \b takes "á" for a boundary, so \blogo\b matched inside "diálogo" and blocked a real run's slide.
+const WORD_START = "(?<![\\p{L}\\p{N}_])";
+const WORD_END = "(?![\\p{L}\\p{N}_])";
+const FORBIDDEN = new RegExp(`${WORD_START}(logos?|watermarks?|captions?|subtitles?|hashtags?|swipe|page numbers?|signage|(?:text|words|letters|lettering) (?:that )?(?:reads?|says?|saying))${WORD_END}`, "iu");
+/** A direction that keeps a corner for the logo added afterwards ("esquina libre para logo", "logo abajo a la derecha, libre"), or rules an element out ("no logos", "sin texto"), does not ask for it (in the publications' languages). */
+const ALLOWED = new RegExp([
+  `${WORD_START}(?:espacio|zona|área|hueco|esquina|margen|rincón|room|space|zone|area|corner|margin)${WORD_END}[^.;]{0,60}?${WORD_START}logos?${WORD_END}`,
+  `${WORD_START}logos?${WORD_END}[^.;]{0,60}?${WORD_START}(?:se añade|añadid[oa]|added|afterwards|después|luego|libre|libres|free|clear|empty|vacío|vacía|reservad[oa]s?)${WORD_END}`,
+  `${WORD_START}(?:sin|no|without|never|nunca|ningún|ninguna)${WORD_END}[^.;]{0,20}?${WORD_START}(?:logos?|watermarks?|captions?|subtitles?|hashtags?|signage|page numbers?|text|words|letters|lettering)${WORD_END}`,
+].join("|"), "giu");
 /** The forbidden element a direction asks for, if any: words, logos, signs or interface the image would have to carry. */
 export function forbiddenElement(direction: string): string | undefined {
   return FORBIDDEN.exec(direction.replace(ALLOWED, " "))?.[0];
