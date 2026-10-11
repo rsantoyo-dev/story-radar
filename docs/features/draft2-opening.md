@@ -443,7 +443,12 @@ candidate count.
 
 Parsers: `parseOpeningCandidates(text)` and `parseOpeningEvaluation(text)`
 throw `Draft2ResponseError` on anything malformed (missing parts, unknown
-ids, non-integer scores, a winnerId not in the list). Issue codes outside the
+ids, non-integer scores, a winnerId not in the list). One deviation is not
+malformed: a judge that scores its own proposal, or names it the winner. That
+score is dropped, the best scored candidate stands as the round's winner with
+the verdict `revise`, and the proposal competes in the next round as always
+(2026-10-11: Luna scored its proposal `p1` in a visual round 1 and one such
+score failed the whole run; the judge roles now also say never to score it). Issue codes outside the
 enum become `OTHER`.
 
 ## 6. Mechanical checks (program, before the judge)

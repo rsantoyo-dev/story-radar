@@ -526,7 +526,12 @@ export function funnelParseCandidates<C extends FunnelCandidate>(answer: string,
  * 1–100: the adapter strips the schema's bounds), and the winner must be one
  * of them. Issue codes outside the contract become OTHER; an issue naming no
  * known candidate keeps its detail without the id; a part outside the step's
- * parts is dropped. A malformed proposal is dropped, never fatal.
+ * parts is dropped. A malformed proposal is dropped, never fatal. A judge
+ * that scores its own proposal beside the candidates, or names it the
+ * winner, is not fatal either: the proposal competes in the next round,
+ * judged blind, so its score is dropped and the best scored candidate stands
+ * as the round's winner, with the verdict "revise" (the first real run that
+ * failed this way, 2026-10-11, lost a whole visual round to one such score).
  */
 export function funnelParseEvaluation<C extends FunnelCandidate, S extends FunnelScore, I extends FunnelIssue>(answer: string, candidateIds: readonly string[], { criteria, codes, parts, parseProposal, maxProposals }: {
   criteria: readonly string[];
@@ -536,15 +541,23 @@ export function funnelParseEvaluation<C extends FunnelCandidate, S extends Funne
   maxProposals: number;
 }): FunnelEvaluation<C, S, I> {
   const body = parseObject(answer, "judge");
-  const verdict = body.verdict === "accept" || body.verdict === "revise" ? body.verdict : undefined;
-  const winnerId = funnelText(body.winnerId, 24);
-  const summary = funnelText(body.summary, 1_000);
+  let verdict: "accept" | "revise" | undefined = body.verdict === "accept" || body.verdict === "revise" ? body.verdict : undefined;
+  let winnerId = funnelText(body.winnerId, 24);
+  let summary = funnelText(body.summary, 1_000);
   if (!verdict || !winnerId || !summary || !Array.isArray(body.scores)) throw new Draft2ResponseError("The judge's verdict is incomplete");
+  // The judge's own candidates are inputs for the writer: a malformed one is dropped, never fatal.
+  const offered = Array.isArray(body.proposals) ? body.proposals : [];
+  const proposals = offered
+    .flatMap((raw, index) => { const proposal = parseProposal(raw, `p${index + 1}`); return proposal ? [proposal] : []; })
+    .slice(0, maxProposals);
+  const proposed = new Set([...proposals.map((proposal) => proposal.id), ...offered.map((_, index) => `p${index + 1}`)]);
   const known = new Set(candidateIds);
   const scored = new Set<string>();
-  const scores = body.scores.map((raw) => {
+  const scores = body.scores.flatMap((raw): S[] => {
     const item = funnelRecord(raw);
     const candidateId = funnelText(item.candidateId, 24);
+    // A score the judge gave its own proposal is dropped: the proposal is judged blind in the next round.
+    if (candidateId && !known.has(candidateId) && proposed.has(candidateId)) return [];
     if (!candidateId || !known.has(candidateId)) throw new Draft2ResponseError(`The judge scored an unknown candidate (${String(item.candidateId)})`);
     if (scored.has(candidateId)) throw new Draft2ResponseError(`The judge scored ${candidateId} twice`);
     scored.add(candidateId);
@@ -553,11 +566,18 @@ export function funnelParseEvaluation<C extends FunnelCandidate, S extends Funne
       if (typeof number !== "number" || !Number.isInteger(number)) throw new Draft2ResponseError(`The judge's ${key} score for ${candidateId} is not an integer`);
       return Math.min(100, Math.max(1, number));
     };
-    return { candidateId, ...Object.fromEntries(criteria.map((criterion) => [criterion, value(criterion)])), overall: value("overall"), note: funnelText(item.note, 600) ?? "" } as unknown as S;
+    return [{ candidateId, ...Object.fromEntries(criteria.map((criterion) => [criterion, value(criterion)])), overall: value("overall"), note: funnelText(item.note, 600) ?? "" } as unknown as S];
   });
   const unscored = candidateIds.filter((id) => !scored.has(id));
   if (unscored.length) throw new Draft2ResponseError(`The judge did not score ${unscored.join(", ")}`);
-  if (!scored.has(winnerId)) throw new Draft2ResponseError(`The judge's winner ${winnerId} is not one of the candidates`);
+  if (!scored.has(winnerId)) {
+    if (!proposed.has(winnerId)) throw new Draft2ResponseError(`The judge's winner ${winnerId} is not one of the candidates`);
+    // Its own proposal cannot win the round it is proposed in: the best scored candidate stands, and the round goes on.
+    const best = scores.reduce((lead, score) => (score.overall > lead.overall ? score : lead), scores[0]!);
+    summary = `${summary} (The judge named its own proposal ${winnerId} the winner; it competes in the next round, and ${best.candidateId} stands as this round's best.)`.slice(0, 1_200);
+    winnerId = best.candidateId;
+    verdict = "revise";
+  }
   const issues = (Array.isArray(body.issues) ? body.issues : []).slice(0, 40).flatMap((raw): I[] => {
     const item = funnelRecord(raw);
     const detail = funnelText(item.detail, 600);
@@ -568,10 +588,6 @@ export function funnelParseEvaluation<C extends FunnelCandidate, S extends Funne
     return [{ code, detail, ...(candidateId && known.has(candidateId) ? { candidateId } : {}), ...(part ? { part } : {}), ...(item.material === true ? { material: true } : {}) } as I];
   });
   const suggestions = (Array.isArray(body.suggestions) ? body.suggestions : []).slice(0, 20).flatMap((item) => { const value = funnelText(item, 600); return value ? [value] : []; });
-  // The judge's own candidates are inputs for the writer: a malformed one is dropped, never fatal.
-  const proposals = (Array.isArray(body.proposals) ? body.proposals : [])
-    .flatMap((raw, index) => { const proposal = parseProposal(raw, `p${index + 1}`); return proposal ? [proposal] : []; })
-    .slice(0, maxProposals);
   return { verdict, winnerId, scores, issues, suggestions, summary, ...(proposals.length ? { proposals } : {}) };
 }
 
