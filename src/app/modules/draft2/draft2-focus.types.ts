@@ -1,5 +1,6 @@
 import { CREATIVE_CONVERSION_GOALS, type CreativeConversionGoal, type CreativeProfile } from "../stories/creative-content.types";
 import { Draft2InputError, Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
+import { entityMaterial, referencePhotos, type Draft2CharacterChoice, type Draft2Inventory } from "./draft2-inventory.types";
 import type { Draft2Provider } from "./draft2-models";
 import { TONE_KEYS, toneLine, toneValue, type ToneKey } from "./skills/tone";
 
@@ -12,8 +13,16 @@ import { TONE_KEYS, toneLine, toneValue, type ToneKey } from "./skills/tone";
  * and its judge scores how well it does. The focus is guidance, never
  * evidence. Everything here is pure: contracts, the schema, parsing, edits
  * and the program's findings.
+ *
+ * Since narrative forms, the focus also names how the carousel is told
+ * across its slides, in words and images together (narrative): classic, the
+ * method before them, or an anchor that stays from slide to slide (a guide,
+ * an object) while the story moves. People and places is found first, so
+ * Claude decides it with the brand's characters and the story's material in
+ * hand; the judge reviews a form Claude chose, and the editor has the last
+ * word.
  */
-export const FOCUS_FIELDS = ["line", "audience", "framing", "readerConsequence", "structure", "goal", "voice", "direction", "visualDirection"] as const;
+export const FOCUS_FIELDS = ["line", "audience", "framing", "readerConsequence", "structure", "goal", "voice", "direction", "narrative", "visualDirection"] as const;
 export const FOCUS_FRAMINGS = ["reader-consequence", "explainer", "authority"] as const;
 export const FOCUS_STRUCTURES = ["arc", "steps", "list"] as const;
 export const FOCUS_GRAVITIES = ["light", "ordinary", "serious", "grave"] as const;
@@ -31,11 +40,70 @@ export const FOCUS_LIST_MIN_ITEMS = 3;
 export const FOCUS_STEPS_MIN_ITEMS = 2;
 export const FOCUS_MAX_ITEMS = 12;
 const MAX_CONSEQUENCE_FACTS = 10;
+/**
+ * How the carousel is told across its slides. classic: one story told slide
+ * by slide, each image its own; character-guide: a guide (the brand's
+ * character, a figure from the story or an anonymous one) leads the reader
+ * through the story's places or moments; traveling-object: one object from
+ * the facts crosses its scenes, places or times.
+ */
+export const FOCUS_NARRATIVE_FORMS = ["classic", "character-guide", "traveling-object"] as const;
+/** resolves: the last slide pays the story off; returns: it comes back to the cover's frame, read with what the reader now knows. */
+export const FOCUS_NARRATIVE_ENDINGS = ["resolves", "returns"] as const;
+/** What stays from slide to slide: nothing (classic), one of the brand's characters, another figure, or an object. */
+export const FOCUS_ANCHOR_KINDS = ["none", "character", "figure", "object"] as const;
+export const FOCUS_ANCHOR_MAX_CHARACTERS = 200;
+export const FOCUS_PROGRESSION_MAX_CHARACTERS = 300;
+const MAX_ANCHOR_FACTS = 6;
+const MAX_ANCHOR_ALTERNATIVES = 3;
+const CHARACTER_DESCRIPTION_MAX_CHARACTERS = 300;
 
 export type Draft2FocusField = (typeof FOCUS_FIELDS)[number];
 export type Draft2FocusFraming = (typeof FOCUS_FRAMINGS)[number];
 export type Draft2FocusStructureKind = (typeof FOCUS_STRUCTURES)[number];
 export type Draft2FocusGravity = (typeof FOCUS_GRAVITIES)[number];
+export type Draft2NarrativeForm = (typeof FOCUS_NARRATIVE_FORMS)[number];
+export type Draft2NarrativeEnding = (typeof FOCUS_NARRATIVE_ENDINGS)[number];
+export type Draft2AnchorKind = (typeof FOCUS_ANCHOR_KINDS)[number];
+
+/**
+ * The narrative form as the focus keeps it, in the answer's own flat shape,
+ * so the editor's choice goes back to Claude exactly. For classic, all but
+ * the form and the ending are empty.
+ */
+export type Draft2FocusNarrative = {
+  form: Draft2NarrativeForm;
+  anchorKind: Draft2AnchorKind;
+  /** The brand character's id (People and places' roster) when the anchor is one; else null. */
+  characterId: string | null;
+  /** What stays, said the same way on every slide: the character's name, the figure or the object. */
+  anchor: string;
+  /** The facts that put the figure or the object in the story; empty for a brand character, an anonymous figure or the editor's own words. */
+  anchorFactIds: string[];
+  /** What changes from slide to slide while the anchor stays, in one line. */
+  progression: string;
+  ending: Draft2NarrativeEnding;
+};
+export const CLASSIC_NARRATIVE: Draft2FocusNarrative = { form: "classic", anchorKind: "none", characterId: null, anchor: "", anchorFactIds: [], progression: "", ending: "resolves" };
+
+/** Another anchor Claude saw in the story, for the editor to choose instead. */
+export type Draft2NarrativeAlternative = { kind: "figure" | "object"; anchor: string; factIds: string[] };
+
+/** The judge's look at the narrative form Claude chose: kept, sent back to classic (Claude's proposal kept beside), or not reviewed, with why. */
+export type Draft2NarrativeReview = { verdict: "keep" | "classic" | "unavailable"; reason: string; proposed?: Draft2FocusNarrative; by: { provider: Draft2Provider; model: string }; at: string };
+
+/**
+ * What People and places gives the focus: the brand's characters the editor
+ * allows (with a reference image), the story's people (never drawn), its
+ * places and whether each has verified material, and the story's photos.
+ */
+export type Draft2FocusMaterial = {
+  characterChoice: Draft2CharacterChoice;
+  characters: { id: string; name: string; description: string }[];
+  people: string[];
+  places: { name: string; verifiedPhoto: boolean; map: boolean }[];
+  storyPhotos: { id: string; name: string; description: string }[];
+};
 
 /** An editorial line of the Topic, as the focus keeps it: the revision it was read at and what the line is for. */
 export type Draft2FocusLine = { id: string; revision: number; name: string; objective: string };
@@ -56,6 +124,8 @@ export type Draft2FocusValues = {
   voice: Draft2FocusVoice;
   /** What to lead with, what to leave out, what the reader takes away (v1's editorial focus). */
   direction: string;
+  /** How the carousel is told across its slides, in words and images. Absent on a focus decided before narrative forms: classic. */
+  narrative?: Draft2FocusNarrative;
   /** How the images tell this story within the brand's visual identity: the world they live in, who leads them, what recurs. The visual script follows it. Absent on a focus decided before the field existed. */
   visualDirection?: string;
 };
@@ -81,12 +151,18 @@ export type Draft2Focus = {
   decidedAt?: string;
   updatedAt?: string;
   error?: string;
+  /** Other anchors Claude saw on the last decision, for the editor to choose from. */
+  narrativeOptions?: Draft2NarrativeAlternative[];
+  /** The judge's look at the narrative form Claude chose on the last decision. */
+  narrativeReview?: Draft2NarrativeReview;
+  /** The People and places version the last decision read; one confirmed or rejected since may change the narrative's material. */
+  inventoryVersion?: number;
 };
 
 /** The focus an opening run followed, kept on the run. */
 export type Draft2FocusSnapshot = { version: number; values: Draft2FocusValues };
 
-export type Draft2FocusFindingCode = "NO_READER_CONSEQUENCE" | "TOO_FEW_ITEMS";
+export type Draft2FocusFindingCode = "NO_READER_CONSEQUENCE" | "TOO_FEW_ITEMS" | "NARRATIVE_CHARACTER_UNAVAILABLE" | "NARRATIVE_REAL_PERSON";
 /** What the program finds wrong with a focus; any one keeps the Opening from starting. */
 export type Draft2FocusFinding = { field: Draft2FocusField; code: Draft2FocusFindingCode; detail: string };
 
@@ -123,6 +199,29 @@ export const DRAFT2_FOCUS_SCHEMA: Record<string, unknown> = {
       additionalProperties: false,
     },
     direction: { type: "string" },
+    narrative: {
+      type: "object",
+      properties: {
+        form: { type: "string", enum: [...FOCUS_NARRATIVE_FORMS] },
+        anchorKind: { type: "string", enum: [...FOCUS_ANCHOR_KINDS] },
+        characterId: { type: ["string", "null"] },
+        anchor: { type: "string" },
+        anchorFactIds: factIdsSchema,
+        progression: { type: "string" },
+        ending: { type: "string", enum: [...FOCUS_NARRATIVE_ENDINGS] },
+      },
+      required: ["form", "anchorKind", "characterId", "anchor", "anchorFactIds", "progression", "ending"],
+      additionalProperties: false,
+    },
+    anchorAlternatives: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { kind: { type: "string", enum: ["figure", "object"] }, anchor: { type: "string" }, factIds: factIdsSchema },
+        required: ["kind", "anchor", "factIds"],
+        additionalProperties: false,
+      },
+    },
     visualDirection: { type: "string" },
     reasons: {
       type: "object",
@@ -131,7 +230,7 @@ export const DRAFT2_FOCUS_SCHEMA: Record<string, unknown> = {
       additionalProperties: false,
     },
   },
-  required: ["lineId", "audience", "framing", "readerConsequence", "structure", "goal", "voice", "direction", "visualDirection", "reasons"],
+  required: ["lineId", "audience", "framing", "readerConsequence", "structure", "goal", "voice", "direction", "narrative", "anchorAlternatives", "visualDirection", "reasons"],
   additionalProperties: false,
 };
 
@@ -147,6 +246,87 @@ function knownFactIds(value: unknown, facts: ReadonlySet<string>, max: number): 
     if (typeof entry === "string" && facts.has(entry.trim()) && !ids.includes(entry.trim())) ids.push(entry.trim());
   }
   return ids.slice(0, max);
+}
+
+const clip = (value: string, max: number) => {
+  const plain = value.replace(/\s+/g, " ").trim();
+  return plain.length > max ? `${plain.slice(0, max - 1).trimEnd()}…` : plain;
+};
+
+/** The material People and places gives the focus; the brand's characters only while the editor has not turned them off. */
+export function focusMaterial(inventory: Pick<Draft2Inventory, "characters" | "roster" | "entities" | "storyPhotos">): Draft2FocusMaterial {
+  return {
+    characterChoice: inventory.characters,
+    characters: inventory.characters === "off" ? [] : inventory.roster.map(({ id, name, description }) => ({ id, name, description: clip(description, CHARACTER_DESCRIPTION_MAX_CHARACTERS) })),
+    people: inventory.entities.filter((entity) => entity.kind === "person").map((entity) => entity.name),
+    places: inventory.entities.filter((entity) => entity.kind === "place").map((entity) => {
+      const material = entityMaterial(entity);
+      return { name: entity.name, verifiedPhoto: Boolean(material.photo), map: Boolean(material.map) };
+    }),
+    storyPhotos: referencePhotos(inventory).map(({ id, name, description }) => ({ id, name, description })),
+  };
+}
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^\${}()|[\]\\]/g, "\\$&");
+/** The first of the story's people named in a text, as a whole name, whatever its case. */
+function realPersonIn(text: string, people: readonly string[]): string | undefined {
+  return people.find((name) => name.trim().length > 2 && new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(name.trim())}($|[^\\p{L}\\p{N}])`, "iu").test(text));
+}
+
+/** The narrative a focus follows: its own, else classic (a focus decided before narrative forms). */
+export const focusNarrative = (values: Pick<Draft2FocusValues, "narrative">): Draft2FocusNarrative => values.narrative ?? CLASSIC_NARRATIVE;
+
+/**
+ * The narrative form of Claude's answer, checked against the contract and the
+ * material. A form outside the list, an anchor of the wrong kind or missing
+ * its words, a brand character the brand does not have (or the editor turned
+ * off), an object not taken from the facts, or a real person of the story as
+ * the anchor is a response error, asked for again with the rule it broke. An
+ * answer without one is classic. The editor's choice is kept as given; the
+ * findings say what it misses.
+ */
+function parseNarrative(value: unknown, { known, material, editorChoice }: { known: ReadonlySet<string>; material?: Draft2FocusMaterial; editorChoice?: Draft2FocusNarrative }): Draft2FocusNarrative {
+  if (editorChoice) return editorChoice;
+  if (value === undefined) return CLASSIC_NARRATIVE;
+  const body = record(value);
+  const form = oneOf(FOCUS_NARRATIVE_FORMS, body.form);
+  const ending = oneOf(FOCUS_NARRATIVE_ENDINGS, body.ending);
+  if (!form || !ending) throw new Draft2ResponseError(`The narrative form is one of ${FOCUS_NARRATIVE_FORMS.join(", ")} and its ending one of ${FOCUS_NARRATIVE_ENDINGS.join(", ")}`);
+  if (form === "classic") return CLASSIC_NARRATIVE;
+  const kind = oneOf(FOCUS_ANCHOR_KINDS, body.anchorKind);
+  const allowed: readonly Draft2AnchorKind[] = form === "character-guide" ? ["character", "figure"] : ["object"];
+  if (!kind || !allowed.includes(kind)) throw new Draft2ResponseError(`A ${form} anchor is ${allowed.join(" or ")}, not ${String(body.anchorKind)}`);
+  const anchor = text(body.anchor, FOCUS_ANCHOR_MAX_CHARACTERS);
+  const progression = text(body.progression, FOCUS_PROGRESSION_MAX_CHARACTERS);
+  if (!anchor) throw new Draft2ResponseError(`The narrative's anchor is missing or longer than ${FOCUS_ANCHOR_MAX_CHARACTERS} characters`);
+  if (!progression) throw new Draft2ResponseError(`The narrative's progression is missing or longer than ${FOCUS_PROGRESSION_MAX_CHARACTERS} characters`);
+  if (kind === "character") {
+    const character = material?.characters.find((entry) => entry.id === body.characterId);
+    if (!character) {
+      throw new Draft2ResponseError(material?.characterChoice === "off"
+        ? "The editor turned the brand's characters off: the guide is a figure, or the story is told another way"
+        : `The narrative names a brand character the brand does not have (${String(body.characterId)}); use an id from material.characters`);
+    }
+    return { form, anchorKind: kind, characterId: character.id, anchor: character.name, anchorFactIds: [], progression, ending };
+  }
+  const anchorFactIds = knownFactIds(body.anchorFactIds, known, MAX_ANCHOR_FACTS);
+  if (kind === "object" && !anchorFactIds.length) throw new Draft2ResponseError("A traveling object comes from the facts: cite the facts that put it in the story in anchorFactIds");
+  const person = realPersonIn(anchor, material?.people ?? []);
+  if (person) throw new Draft2ResponseError(`${person} is a real person of the story: never the anchor, who appears only in a verified documentary photo`);
+  return { form, anchorKind: kind, characterId: null, anchor, anchorFactIds, progression, ending };
+}
+
+/** Claude's other anchors, the valid ones (a figure or an object with its words), at most three. */
+function parseAnchorAlternatives(value: unknown, known: ReadonlySet<string>, people: readonly string[]): Draft2NarrativeAlternative[] {
+  const alternatives: Draft2NarrativeAlternative[] = [];
+  for (const entry of Array.isArray(value) ? value : []) {
+    const body = record(entry);
+    const kind = body.kind === "figure" || body.kind === "object" ? body.kind : undefined;
+    const anchor = text(body.anchor, FOCUS_ANCHOR_MAX_CHARACTERS);
+    if (!kind || !anchor || realPersonIn(anchor, people) || alternatives.some((alternative) => alternative.anchor === anchor)) continue;
+    alternatives.push({ kind, anchor, factIds: knownFactIds(body.factIds, known, MAX_ANCHOR_FACTS) });
+  }
+  return alternatives.slice(0, MAX_ANCHOR_ALTERNATIVES);
 }
 
 /** A line of the Topic as the focus keeps it. */
@@ -178,11 +358,17 @@ export function editorChoicesOf(focus: Pick<Draft2Focus, "values" | "edited" | "
  * editor chose, the items come from Claude when it answered the same kind,
  * which is how a list the editor asked for gets its items.
  */
-export function parseFocusDecision(answer: string, { facts, lines, editorChoices = {} }: { facts: readonly Draft2Fact[]; lines: readonly Draft2FocusLine[]; editorChoices?: Record<string, unknown> }): { values: Draft2FocusValues; reasons: Partial<Record<Draft2FocusField, string>> } {
+export function parseFocusDecision(answer: string, { facts, lines, editorChoices = {}, material }: {
+  facts: readonly Draft2Fact[];
+  lines: readonly Draft2FocusLine[];
+  editorChoices?: Record<string, unknown>;
+  /** People and places' material: the brand characters, the people never drawn. */
+  material?: Draft2FocusMaterial;
+}): { values: Draft2FocusValues; reasons: Partial<Record<Draft2FocusField, string>>; alternatives: Draft2NarrativeAlternative[] } {
   let parsed: unknown;
   try { parsed = JSON.parse(answer); } catch { throw new Draft2ResponseError("The focus answer is not valid JSON"); }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Draft2ResponseError("The focus answer is not an object");
-  const { structure: chosenStructure, readerConsequence: chosenConsequence, ...overrides } = editorChoices;
+  const { structure: chosenStructure, readerConsequence: chosenConsequence, narrative: chosenNarrative, ...overrides } = editorChoices;
   const body = { ...(parsed as Record<string, unknown>), ...overrides };
   const known = new Set(facts.map((fact) => fact.id));
 
@@ -213,6 +399,7 @@ export function parseFocusDecision(answer: string, { facts, lines, editorChoices
     ? chosenConsequence as Draft2FocusValues["readerConsequence"]
     : consequenceText && consequenceFacts.length ? { text: consequenceText, factIds: consequenceFacts } : null;
   const answered = { kind, itemFactIds: kind === "arc" ? [] : knownFactIds(structure.itemFactIds, known, FOCUS_MAX_ITEMS) };
+  const narrative = parseNarrative(body.narrative, { known, material, editorChoice: chosenNarrative as Draft2FocusNarrative | undefined });
   const editorStructure = chosenStructure as Draft2FocusValues["structure"] | undefined;
 
   const values: Draft2FocusValues = {
@@ -226,6 +413,7 @@ export function parseFocusDecision(answer: string, { facts, lines, editorChoices
     goal,
     voice: { gravity, ...Object.fromEntries(TONE_KEYS.map((key) => [key, toneValue(voice[key])])) } as Draft2FocusVoice,
     direction,
+    narrative,
     visualDirection,
   };
   const given = record((parsed as Record<string, unknown>).reasons);
@@ -235,7 +423,7 @@ export function parseFocusDecision(answer: string, { facts, lines, editorChoices
     const reason = text(given[field], REASON_MAX_CHARACTERS);
     if (reason && !chosen.has(field)) reasons[field] = reason;
   }
-  return { values, reasons };
+  return { values, reasons, alternatives: parseAnchorAlternatives((parsed as Record<string, unknown>).anchorAlternatives, known, material?.people ?? []) };
 }
 
 /**
@@ -243,7 +431,7 @@ export function parseFocusDecision(answer: string, { facts, lines, editorChoices
  * Claude's own values under them, one version more. For an edited field,
  * Claude's earlier value stays the one the field can go back to.
  */
-export function decidedFocus(focus: Draft2Focus, decision: { values: Draft2FocusValues; reasons: Partial<Record<Draft2FocusField, string>> }, decidedBy: Draft2FocusRole, now: Date): Draft2Focus {
+export function decidedFocus(focus: Draft2Focus, decision: { values: Draft2FocusValues; reasons: Partial<Record<Draft2FocusField, string>>; alternatives?: Draft2NarrativeAlternative[] }, decidedBy: Draft2FocusRole, now: Date): Draft2Focus {
   const edited = focus.edited.filter((field) => field !== "line" || decision.values.line?.id === focus.values?.line?.id);
   const ai = Object.fromEntries(FOCUS_FIELDS.map((field) => [field, edited.includes(field) && focus.ai ? focus.ai[field] : decision.values[field]])) as Draft2FocusValues;
   return {
@@ -254,6 +442,8 @@ export function decidedFocus(focus: Draft2Focus, decision: { values: Draft2Focus
     ai,
     reasons: decision.reasons,
     edited,
+    narrativeOptions: decision.alternatives ?? [],
+    narrativeReview: undefined,
     decidedBy,
     decidedAt: now.toISOString(),
     updatedAt: now.toISOString(),
@@ -304,6 +494,7 @@ function editedValue(focus: Draft2Focus, field: Draft2FocusField, value: unknown
       const found = [values.structure, focus.ai?.structure].find((structure) => structure?.kind === kind);
       return { kind, itemFactIds: found?.itemFactIds ?? [] };
     }
+    case "narrative": return editedNarrative(focus, value);
     case "voice": {
       const voice = record(value);
       const gravity = oneOf(FOCUS_GRAVITIES, voice.gravity);
@@ -312,6 +503,35 @@ function editedValue(focus: Draft2Focus, field: Draft2FocusField, value: unknown
       return { gravity, ...Object.fromEntries(TONE_KEYS.map((key) => [key, Number(voice[key])])) } as Draft2FocusVoice;
     }
   }
+}
+
+/**
+ * The editor's narrative form, checked against the contract. Classic needs
+ * nothing more; a guide is one of the brand's characters (by id) or a figure
+ * in the editor's words; an object needs its words. An anchor Claude found
+ * (its choice, an alternative, or the proposal the judge sent back) keeps the
+ * facts it cites; the editor's own words cite none.
+ */
+function editedNarrative(focus: Draft2Focus, value: unknown): Draft2FocusNarrative {
+  const body = record(value);
+  const form = oneOf(FOCUS_NARRATIVE_FORMS, body.form);
+  if (!form) throw new Draft2InputError(`The narrative form is one of ${FOCUS_NARRATIVE_FORMS.join(", ")}.`);
+  if (form === "classic") return CLASSIC_NARRATIVE;
+  const kind = oneOf(FOCUS_ANCHOR_KINDS, body.anchorKind);
+  const allowed: readonly Draft2AnchorKind[] = form === "character-guide" ? ["character", "figure"] : ["object"];
+  if (!kind || !allowed.includes(kind)) throw new Draft2InputError(form === "character-guide" ? "A guide is one of the brand's characters or a figure you describe." : "A traveling object needs the object.");
+  const anchor = typeof body.anchor === "string" ? body.anchor.trim() : "";
+  if (!anchor || anchor.length > FOCUS_ANCHOR_MAX_CHARACTERS) throw new Draft2InputError(`Say what the ${form === "character-guide" ? "guide" : "object"} is in 1 to ${FOCUS_ANCHOR_MAX_CHARACTERS} characters.`);
+  const characterId = kind === "character" && typeof body.characterId === "string" && body.characterId.trim() ? body.characterId.trim() : null;
+  if (kind === "character" && !characterId) throw new Draft2InputError("Choose one of the brand's characters.");
+  const progression = typeof body.progression === "string" ? body.progression.trim() : "";
+  if (progression.length > FOCUS_PROGRESSION_MAX_CHARACTERS) throw new Draft2InputError(`Say what changes from slide to slide in at most ${FOCUS_PROGRESSION_MAX_CHARACTERS} characters.`);
+  const ending = oneOf(FOCUS_NARRATIVE_ENDINGS, body.ending) ?? "resolves";
+  const found = kind === "character" ? undefined : [focus.values?.narrative, focus.ai?.narrative, focus.narrativeReview?.proposed]
+    .map((narrative) => narrative && narrative.anchorKind === kind && narrative.anchor === anchor ? narrative.anchorFactIds : undefined)
+    .concat((focus.narrativeOptions ?? []).map((option) => option.kind === kind && option.anchor === anchor ? option.factIds : undefined))
+    .find((factIds) => factIds !== undefined);
+  return { form, anchorKind: kind, characterId, anchor, anchorFactIds: found ?? [], progression, ending };
 }
 
 /**
@@ -346,8 +566,13 @@ export function resetFocusField(focus: Draft2Focus, field: Draft2FocusField, now
   };
 }
 
-/** The program's findings on a focus. Any one keeps the Opening from starting until the editor fixes it or Claude decides again. */
-export function focusFindings(values: Draft2FocusValues): Draft2FocusFinding[] {
+/**
+ * The program's findings on a focus. Any one keeps the Opening from starting
+ * until the editor fixes it or Claude decides again. With People and places'
+ * material, the narrative's anchor is checked too: a brand character that is
+ * no longer available, or a real person of the story as the anchor.
+ */
+export function focusFindings(values: Draft2FocusValues, material?: Draft2FocusMaterial): Draft2FocusFinding[] {
   const findings: Draft2FocusFinding[] = [];
   if (values.framing === "reader-consequence" && !values.readerConsequence?.text) {
     findings.push({ field: "readerConsequence", code: "NO_READER_CONSEQUENCE", detail: "The framing leads with the reader consequence, and the focus has none: write it, choose another framing, or decide again." });
@@ -356,6 +581,16 @@ export function focusFindings(values: Draft2FocusValues): Draft2FocusFinding[] {
   const minimum = kind === "list" ? FOCUS_LIST_MIN_ITEMS : kind === "steps" ? FOCUS_STEPS_MIN_ITEMS : 0;
   if (itemFactIds.length < minimum) {
     findings.push({ field: "structure", code: "TOO_FEW_ITEMS", detail: `A ${kind === "list" ? "list" : "procedure"} needs at least ${minimum} ${kind === "list" ? "items" : "steps"} from the facts, and the focus names ${itemFactIds.length}: decide again for Claude to find them, or choose another structure.` });
+  }
+  const narrative = focusNarrative(values);
+  if (narrative.form !== "classic" && material) {
+    if (narrative.anchorKind === "character" && !material.characters.some((character) => character.id === narrative.characterId)) {
+      findings.push({ field: "narrative", code: "NARRATIVE_CHARACTER_UNAVAILABLE", detail: material.characterChoice === "off"
+        ? `${narrative.anchor} guides the carousel, and the brand's characters are off in People and places: turn them on there, or choose another guide.`
+        : `${narrative.anchor} is no longer one of the brand's characters with a reference image: choose another guide.` });
+    }
+    const person = narrative.anchorKind === "character" ? undefined : realPersonIn(narrative.anchor, material.people);
+    if (person) findings.push({ field: "narrative", code: "NARRATIVE_REAL_PERSON", detail: `${person} is a real person of the story: they appear only in a verified documentary photo, never drawn as the ${narrative.form === "character-guide" ? "guide" : "object"}. Choose another anchor.` });
   }
   return findings;
 }
@@ -377,8 +612,48 @@ export function focusForModels(values: Draft2FocusValues) {
     goal: values.goal,
     voice: { gravity: voice.gravity, tone: toneLine(voice) },
     direction: values.direction,
+    ...(focusNarrative(values).form !== "classic" ? { narrative: narrativeForModels(focusNarrative(values)) } : {}),
     ...(values.visualDirection ? { visualDirection: values.visualDirection } : {}),
   };
+}
+
+/** A narrative form as the models read it: the form, what stays and what changes, how it ends. */
+export function narrativeForModels(narrative: Draft2FocusNarrative) {
+  return {
+    form: narrative.form,
+    anchor: {
+      kind: narrative.anchorKind,
+      what: narrative.anchor,
+      ...(narrative.characterId ? { characterId: narrative.characterId } : {}),
+      ...(narrative.anchorFactIds.length ? { factIds: narrative.anchorFactIds } : narrative.anchorKind === "character" ? {} : { note: "not from the facts: it stands for nothing the facts do not say" }),
+    },
+    ...(narrative.progression ? { progression: narrative.progression } : {}),
+    ending: narrative.ending,
+  };
+}
+
+/** The judge's answer on a narrative form. */
+export const DRAFT2_NARRATIVE_REVIEW_SCHEMA: Record<string, unknown> = {
+  type: "object",
+  properties: { verdict: { type: "string", enum: ["keep", "classic"] }, reason: { type: "string" } },
+  required: ["verdict", "reason"],
+  additionalProperties: false,
+};
+
+/** The judge's answer as a verdict and a reason; anything else is a response error. */
+export function parseNarrativeReview(answer: string): { verdict: "keep" | "classic"; reason: string } {
+  let parsed: unknown;
+  try { parsed = JSON.parse(answer); } catch { throw new Draft2ResponseError("The narrative review is not valid JSON"); }
+  const body = record(parsed);
+  const verdict = body.verdict === "keep" || body.verdict === "classic" ? body.verdict : undefined;
+  const reason = text(body.reason, REASON_MAX_CHARACTERS);
+  if (!verdict || !reason) throw new Draft2ResponseError("The narrative review needs a verdict (keep or classic) and a reason");
+  return { verdict, reason };
+}
+
+/** What the judge receives to review a narrative form, beside its instructions and the verified facts. */
+export function narrativeReviewRequest({ values, material, title }: { values: Draft2FocusValues; material: Draft2FocusMaterial; title: string }) {
+  return { task: "narrative-review", story: { title }, focus: focusForModels(values), material };
 }
 
 /** The profile's structure setting in the focus's terms; "auto" leaves the choice to Claude. */
@@ -389,7 +664,7 @@ const PROFILE_STRUCTURE: Record<NonNullable<CreativeProfile["storyStructure"]>, 
  * skill and the brand brief, which carry the audience and the tone defaults)
  * and the verified facts.
  */
-export function focusDecisionRequest({ title, today, profile, lines, foundBy, editorChoices = {} }: {
+export function focusDecisionRequest({ title, today, profile, lines, foundBy, editorChoices = {}, material }: {
   title: string;
   today: string;
   profile: Pick<CreativeProfile, "framingStrategy" | "storyStructure" | "conversionGoal">;
@@ -397,6 +672,8 @@ export function focusDecisionRequest({ title, today, profile, lines, foundBy, ed
   /** The lines whose collection runs found the story, newest first. */
   foundBy: readonly string[];
   editorChoices?: Record<string, unknown>;
+  /** People and places' material, for the narrative form. */
+  material?: Draft2FocusMaterial;
 }) {
   return {
     task: "focus",
@@ -405,6 +682,7 @@ export function focusDecisionRequest({ title, today, profile, lines, foundBy, ed
     topicDefaults: { framing: profile.framingStrategy, structure: PROFILE_STRUCTURE[profile.storyStructure ?? "auto"], goal: profile.conversionGoal },
     lines: lines.map((line) => ({ id: line.id, name: line.name, objective: focusLine(line).objective, ...(line.themes.length ? { themes: line.themes } : {}) })),
     ...(foundBy.length ? { foundBy } : {}),
+    ...(material ? { material } : {}),
     ...(Object.keys(editorChoices).length ? { editorChoices } : {}),
   };
 }

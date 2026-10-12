@@ -6,6 +6,7 @@ import { FACTS_ROLES, FACTS_SKILL } from "./facts";
 import { FOCUS_ROLES, FOCUS_SKILL } from "./focus";
 import { HOOKS_SKILL, OPENING_ROLES } from "./hooks";
 import { IMAGE_ROLES, IMAGES_SKILL } from "./images";
+import { NARRATIVE_ROLES, NARRATIVES_SKILL } from "./narratives";
 import { VISUAL_ROLES, VISUALS_SKILL } from "./visuals";
 import { toneLine } from "./tone";
 
@@ -16,8 +17,8 @@ import { toneLine } from "./tone";
  * skill, so they work from one rubric; every provider call records the
  * skill versions its instructions were composed from.
  */
-export type Draft2SkillName = "facts" | "focus" | "hooks" | "closings" | "decks" | "visuals" | "images" | "captions";
-export type Draft2Role = "extractor" | "reviewer" | "focus-editor" | "opening-writer" | "opening-judge" | "closing-writer" | "closing-judge" | "deck-writer" | "deck-judge"
+export type Draft2SkillName = "facts" | "focus" | "narratives" | "hooks" | "closings" | "decks" | "visuals" | "images" | "captions";
+export type Draft2Role = "extractor" | "reviewer" | "focus-editor" | "focus-narrative-judge" | "opening-writer" | "opening-judge" | "closing-writer" | "closing-judge" | "deck-writer" | "deck-judge"
   | "people-finder" | "visual-writer" | "visual-judge" | "image-judge" | "caption-writer" | "caption-judge" | "mention-finder";
 
 export type Draft2Skill = {
@@ -29,10 +30,13 @@ export type Draft2Skill = {
   roleText?: Partial<Record<Draft2Role, string>>;
 };
 
-export const DRAFT2_SKILLS: Record<Draft2SkillName, Draft2Skill> = { facts: FACTS_SKILL, focus: FOCUS_SKILL, hooks: HOOKS_SKILL, closings: CLOSINGS_SKILL, decks: DECKS_SKILL, visuals: VISUALS_SKILL, images: IMAGES_SKILL, captions: CAPTIONS_SKILL };
+export const DRAFT2_SKILLS: Record<Draft2SkillName, Draft2Skill> = { facts: FACTS_SKILL, focus: FOCUS_SKILL, narratives: NARRATIVES_SKILL, hooks: HOOKS_SKILL, closings: CLOSINGS_SKILL, decks: DECKS_SKILL, visuals: VISUALS_SKILL, images: IMAGES_SKILL, captions: CAPTIONS_SKILL };
 
 /** Each role's own instructions: who it is and what it receives. */
-export const DRAFT2_ROLES: Record<Draft2Role, string> = { ...FACTS_ROLES, ...FOCUS_ROLES, ...OPENING_ROLES, ...CLOSING_ROLES, ...DECK_ROLES, ...VISUAL_ROLES, ...IMAGE_ROLES, ...CAPTION_ROLES };
+export const DRAFT2_ROLES: Record<Draft2Role, string> = { ...FACTS_ROLES, ...FOCUS_ROLES, ...NARRATIVE_ROLES, ...OPENING_ROLES, ...CLOSING_ROLES, ...DECK_ROLES, ...VISUAL_ROLES, ...IMAGE_ROLES, ...CAPTION_ROLES };
+
+/** The narratives skill when the focus names a form other than classic; a classic story's instructions stay as they were. */
+export const narrativeSkills = (narrative: { form: string } | undefined): Draft2Skill[] => narrative && narrative.form !== "classic" ? [NARRATIVES_SKILL] : [];
 
 /** Role instructions + the skills the role reads + the Topic's brand brief, in that order. */
 export function composeInstructions(role: Draft2Role, skills: readonly Draft2Skill[], brandBrief?: string): { instructions: string; skillVersions: Record<string, string> } {

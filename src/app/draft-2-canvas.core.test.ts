@@ -84,13 +84,15 @@ test("the four phases hold every step once, in the pipeline's order", () => {
 
 test("the screens before and after one, and where a key takes the canvas", () => {
   assert.deepEqual(adjacentDraft2Steps(undefined), { next: "facts" });
-  assert.deepEqual(adjacentDraft2Steps("facts"), { previous: "overview", next: "focus" });
+  assert.deepEqual(adjacentDraft2Steps("facts"), { previous: "overview", next: "inventory" }, "people and places come before the focus");
+  assert.deepEqual(adjacentDraft2Steps("focus"), { previous: "inventory", next: "opening" });
   assert.deepEqual(adjacentDraft2Steps("caption"), { previous: "images", next: "publish" });
   assert.deepEqual(adjacentDraft2Steps("publish"), { previous: "caption" });
-  assert.equal(draft2StepForKey("ArrowRight", "deck"), "inventory");
+  assert.equal(draft2StepForKey("ArrowRight", "deck"), "visual");
   assert.equal(draft2StepForKey("[", "facts"), "overview");
   assert.equal(draft2StepForKey("]", "publish"), undefined, "nothing past the last step");
-  assert.equal(draft2StepForKey("3", undefined), "opening");
+  assert.equal(draft2StepForKey("3", undefined), "focus");
+  assert.equal(draft2StepForKey("2", undefined), "inventory");
   assert.equal(draft2StepForKey("0", "facts"), "publish", "0 is the tenth step");
   assert.equal(draft2StepForKey("a", "facts"), undefined);
 });

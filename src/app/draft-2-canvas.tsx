@@ -8,8 +8,9 @@ import { ActionRow, Button, EmptyState, FormField, InlineNotice, LoadingState, S
 import type { StoryContentResponse } from "@/app/radar-dashboard";
 import type { Draft2Fact, Draft2FactsEvaluation, Draft2FactsRound, Draft2SessionStatus, Draft2TraceEntry } from "@/app/modules/draft2/draft2-facts.types";
 import {
-  FOCUS_AUDIENCE_MAX_CHARACTERS, FOCUS_CONSEQUENCE_MAX_CHARACTERS, FOCUS_DIRECTION_MAX_CHARACTERS, FOCUS_FRAMINGS, FOCUS_GOALS, FOCUS_GRAVITIES, FOCUS_STRUCTURES, FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS, focusFindings,
-  type Draft2Focus, type Draft2FocusField, type Draft2FocusFinding, type Draft2FocusValues, type Draft2FocusVoice,
+  CLASSIC_NARRATIVE, FOCUS_ANCHOR_MAX_CHARACTERS, FOCUS_AUDIENCE_MAX_CHARACTERS, FOCUS_CONSEQUENCE_MAX_CHARACTERS, FOCUS_DIRECTION_MAX_CHARACTERS, FOCUS_FRAMINGS, FOCUS_GOALS, FOCUS_GRAVITIES,
+  FOCUS_NARRATIVE_ENDINGS, FOCUS_NARRATIVE_FORMS, FOCUS_PROGRESSION_MAX_CHARACTERS, FOCUS_STRUCTURES, FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS, focusFindings, focusMaterial, focusNarrative,
+  type Draft2Focus, type Draft2FocusField, type Draft2FocusFinding, type Draft2FocusMaterial, type Draft2FocusNarrative, type Draft2FocusValues, type Draft2FocusVoice, type Draft2NarrativeForm,
 } from "@/app/modules/draft2/draft2-focus.types";
 import { TONE_KEYS, toneWords, type ToneKey } from "@/app/modules/draft2/skills/tone";
 import {
@@ -119,14 +120,17 @@ function nextAutopilotStep(session: Draft2SessionView | null, now: number): Auto
     if (session.step === "facts" && session.status === "needs-review" && session.facts?.length) return { blocked: "The reviewer did not accept the facts after three extractions: review them, then run the facts again." };
     return { step: "facts" };
   }
-  const focus = session.focus;
-  if (!focus?.values || (focus.status === "running" && stale)) return { step: "focus" };
-  if (focus.status === "running") return { blocked: "The focus is being decided." };
-  const findings = focusFindings(focus.values);
-  if (findings.length) return { blocked: `Fix the focus first: ${findings.map((finding) => finding.detail).join(" ")}` };
+  // People and places come first: the focus chooses the narrative form with them.
   const inventory = session.inventory;
   if (!inventory || inventory.status === "failed" || (inventory.status === "running" && stale)) return { step: "inventory" };
   if (inventory.status === "running") return { blocked: "The people and places are being found." };
+  const focus = session.focus;
+  const waiting = inventory.entities.filter((entity) => entity.person?.status === "candidates").length;
+  if (waiting && !focus?.values) return { blocked: `${waiting} ${waiting === 1 ? "person waits" : "people wait"} for you in People and places: confirm or reject ${waiting === 1 ? "them" : "each"}, then run the autopilot again.` };
+  if (!focus?.values || (focus.status === "running" && stale)) return { step: "focus" };
+  if (focus.status === "running") return { blocked: "The focus is being decided." };
+  const findings = focusFindings(focus.values, focusMaterial(inventory));
+  if (findings.length) return { blocked: `Fix the focus first: ${findings.map((finding) => finding.detail).join(" ")}` };
   const mentions = session.mentions;
   if (!mentions || mentions.status === "failed" || (mentions.status === "running" && stale)) return { step: "mentions" };
   const opening = session.opening;
@@ -230,6 +234,12 @@ const NEED_LABEL: Record<string, string> = { "generic-illustration": "Illustrati
 const FRAMING_LABEL: Record<Draft2FocusValues["framing"], string> = { "reader-consequence": "Reader consequence", explainer: "Explainer", authority: "Authority" };
 const STRUCTURE_LABEL: Record<Draft2FocusValues["structure"]["kind"], string> = { arc: "Arc: one story, one tension", steps: "Steps: an ordered procedure", list: "List: “N things to…”" };
 const GOAL_LABEL: Record<Draft2FocusValues["goal"], string> = { followers: "Followers", discussion: "Discussion", saves: "Saves", shares: "Shares" };
+const NARRATIVE_LABEL: Record<Draft2NarrativeForm, string> = {
+  classic: "Classic: one story, slide by slide",
+  "character-guide": "Character guide: a guide leads the reader through it",
+  "traveling-object": "Traveling object: one object crosses the story",
+};
+const ENDING_LABEL: Record<Draft2FocusNarrative["ending"], string> = { resolves: "Resolves the story", returns: "Returns to the cover" };
 const GRAVITY_LABEL: Record<Draft2FocusVoice["gravity"], string> = { light: "Light", ordinary: "Ordinary", serious: "Serious", grave: "Grave" };
 const TONE_LABEL: Record<ToneKey, string> = { formality: "Formality", humor: "Humor", energy: "Energy", optimism: "Optimism", provocation: "Provocation" };
 
@@ -650,7 +660,10 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const openingStatus = running === "opening" ? OPENING_STATUS.running : stalled ? { label: "Stopped", tone: "warning" as const } : funnelStatusOf(session?.opening);
   // The focus the opening would follow: decided, not being decided, and free of program findings.
   const focus = session?.focus ?? undefined;
-  const focusProblems = focus?.values ? focusFindings(focus.values) : [];
+  // People and places as the focus reads them: the narrative's anchor is checked against them as they stand now.
+  const focusInventory = session?.inventory ?? undefined;
+  const material = focusInventory?.status === "ready" ? focusMaterial(focusInventory) : undefined;
+  const focusProblems = focus?.values ? focusFindings(focus.values, material) : [];
   const focusStalled = !running && focus?.status === "running" && now > 0 && now - Date.parse(session?.updatedAt ?? "") > OPENING_STALL_MS;
   const focusReady = Boolean(focus?.values) && focus?.status !== "running" && focusProblems.length === 0;
   const focusStatus = running === "focus" ? FOCUS_STATUS.running : focusStalled ? { label: "Stopped", tone: "warning" as const }
@@ -779,7 +792,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const liveScreen = screenOfRun(running ?? autopilot?.current);
   const available: Record<Draft2StepKey, boolean> = {
     facts: text.length > 0,
-    focus: factsVerified,
+    focus: factsVerified && inventory?.status === "ready",
     opening: factsVerified && focusReady,
     closing: factsVerified && closingReady,
     deck: factsVerified && deckReady,
@@ -840,6 +853,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const today = todayNames(cast);
   const factsCast = { extractor: draft2ModelName(cast?.facts.extractor.model, "openai"), reviewer: draft2ModelName(cast?.facts.reviewer.model, "anthropic") };
   const imageReviewer = draft2ModelName(cast?.imageReview.model, "openai");
+  const focusReviewer = draft2ModelName(cast?.focusReview?.model, "openai");
   const commonJudge = new Set(FUNNEL_STEPS.map((step) => today[step].judge)).size === 1 ? today.opening.judge : undefined;
   const screens: Record<Draft2StepKey, { actions?: ReactNode; how: ReactNode; body: ReactNode }> = {
     facts: {
@@ -867,12 +881,15 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
       </>,
     },
     focus: {
-      actions: <Button variant="primary" size="compact" busy={running === "focus"} disabled={!factsVerified || running !== undefined || savingFocus !== undefined} onClick={() => { void runStep("focus"); }}>
+      actions: <Button variant="primary" size="compact" busy={running === "focus"} disabled={!factsVerified || inventory?.status !== "ready" || running !== undefined || savingFocus !== undefined} onClick={() => { void runStep("focus"); }}>
         {running === "focus" ? "Deciding…" : focus?.values ? "Decide again" : "Decide the focus"}
       </Button>,
-      how: <p>Claude reads the verified facts, the Topic’s creative profile, its visual identity and its editorial lines, and decides what the story is for: the line it serves, its audience, framing, reader consequence, structure, goal, voice and direction, and the visual direction the images follow. Change any field; your changes stay yours when Claude decides again, and the opening follows the result.</p>,
+      how: <p>Claude reads the verified facts, the Topic’s creative profile, its visual identity, its editorial lines and what People and places found, and decides what the story is for and how it is told: the line it serves, its audience, framing, reader consequence, structure, goal, voice and direction, the narrative form, and the visual direction the images follow. A narrative form gives every swipe a reason: a guide (the brand’s character, a figure from the story or an anonymous one) leads the reader through it, or one object crosses it; classic tells it slide by slide, as before. When Claude chooses a guide or an object, {focusReviewer} reviews it and may send the story back to classic. Change any field; your changes stay yours when Claude decides again, and every step after follows the result.</p>,
       body: <>
         {!factsVerified && !running ? needs("facts", "The focus builds only on verified facts; verify them first.") : null}
+        {factsVerified && inventory?.status !== "ready" && !running ? needs("inventory", "The focus chooses the narrative form with the story’s people, places and the brand’s characters; find them first.") : null}
+        {focus?.values && inventory && focus.inventoryVersion !== undefined && focus.inventoryVersion !== inventory.version && focusNarrative(focus.values).form !== "classic" && running !== "focus"
+          ? <InlineNotice tone="info" title="People and places changed">The narrative form was chosen with an earlier version of People and places. Decide again to choose it with what you confirmed since; your changes stay yours.</InlineNotice> : null}
         {running === "focus" ? <LoadingState>Claude is deciding the focus{focus?.edited.length ? `, keeping your ${focus.edited.length === 1 ? "change" : `${focus.edited.length} changes`}` : ""}. This can take a minute.</LoadingState> : null}
         {focusStalled ? <InlineNotice tone="warning" title="This decision stopped">Its request or the server ended before Claude answered. Decide the focus again.</InlineNotice> : null}
         {runError?.step === "focus" ? <InlineNotice tone="error" title="The focus step stopped">{runError.message}</InlineNotice> : null}
@@ -881,6 +898,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
         {focus?.values && running !== "focus" ? <FocusView
           focus={focus}
           findings={focusProblems}
+          material={material}
           saving={savingFocus}
           locked={running !== undefined || savingFocus !== undefined}
           onSave={(field, value) => { void saveFocus(field, { value }); }}
@@ -975,7 +993,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
       actions: <Button variant="primary" size="compact" busy={running === "inventory"} disabled={!factsVerified || running !== undefined || savingInventory !== undefined} onClick={() => { void runStep("inventory"); }}>
         {running === "inventory" ? "Searching…" : inventory ? "Search again" : "Find people and places"}
       </Button>,
-      how: <p>Claude lists the people, places and organizations the verified facts name; the program looks them up as v1 does. A person is never generated: if Commons has a licensed photo of them and you confirm it is them, it can appear as a documentary portrait, pasted unchanged. A place appears only through its verified photo or map, within the Topic’s geo scope: Wikidata first, then Google Maps for the map when Wikidata has no match. When a lookup finds nothing, give the person or place one of the story’s photos: upload it, or find it on Commons under another name. Organizations are never drawn. You also say whether the brand’s characters may narrate.</p>,
+      how: <p>Claude lists the people, places and organizations the verified facts name; the program looks them up as v1 does. A person is never generated: if Commons has a licensed photo of them and you confirm it is them, it can appear as a documentary portrait, pasted unchanged. A place appears only through its verified photo or map, within the Topic’s geo scope: Wikidata first, then Google Maps for the map when Wikidata has no match. When a lookup finds nothing, give the person or place one of the story’s photos: upload it, or find it on Commons under another name. Organizations are never drawn. You also say whether the brand’s characters may narrate. The focus comes after this step: it chooses the narrative form with what it finds here.</p>,
       body: <>
         {!factsVerified && !running ? needs("facts", "People and places are found only in verified facts; verify them first.") : null}
         {running === "inventory" ? <LoadingState>Claude lists who and where; Wikidata, Commons, Openverse and Google Maps are checked for each. This can take a minute or two.</LoadingState> : null}
@@ -1163,7 +1181,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
             <div className={styles.autopilotHead}>
               <div>
                 <h2 id="draft2-autopilot-title" className={styles.autopilotTitle}>Autopilot</h2>
-                <p className={styles.autopilotIntro}>Runs every step to the images without stopping, from where the story stands: the facts if they are not verified, the focus, the people and places, the accounts to tag, the opening, the closing, the deck, the visual script and the images. Each step keeps {commonJudge ? `${commonJudge}’s` : "its judge’s"} winner; 95 is the goal, a step that ends from {FUNNEL_ACCEPTABLE_SCORE} is acceptable and marked for you, and one under {FUNNEL_ACCEPTABLE_SCORE} takes up to {FUNNEL_MAX_EXTRA_ROUNDS} extra rounds on its own before the run goes on; a failure, or a step that needs you, stops it. You review at the end: re-run or choose in any step, confirm the accounts, write the caption and approve.</p>
+                <p className={styles.autopilotIntro}>Runs every step to the images, from where the story stands: the facts if they are not verified, the people and places, the focus, the accounts to tag, the opening, the closing, the deck, the visual script and the images. Before the focus chooses the narrative form, it waits for you if people in People and places wait for your confirmation. Each step keeps {commonJudge ? `${commonJudge}’s` : "its judge’s"} winner; 95 is the goal, a step that ends from {FUNNEL_ACCEPTABLE_SCORE} is acceptable and marked for you, and one under {FUNNEL_ACCEPTABLE_SCORE} takes up to {FUNNEL_MAX_EXTRA_ROUNDS} extra rounds on its own before the run goes on; a failure, or a step that needs you, stops it. You review at the end: re-run or choose in any step, confirm the accounts, write the caption and approve.</p>
               </div>
               <ActionRow>{autopilotButtons}</ActionRow>
             </div>
@@ -1904,6 +1922,10 @@ function focusValueText(field: Draft2FocusField, values: Draft2FocusValues): str
     case "goal": return GOAL_LABEL[values.goal];
     case "voice": return `${GRAVITY_LABEL[values.voice.gravity]} · ${TONE_KEYS.map((key) => `${key} ${values.voice[key]}`).join(" · ")}`;
     case "direction": return values.direction;
+    case "narrative": {
+      const narrative = focusNarrative(values);
+      return narrative.form === "classic" ? NARRATIVE_LABEL.classic : `${NARRATIVE_LABEL[narrative.form].split(":")[0]} · ${narrative.anchor}`;
+    }
     case "visualDirection": return values.visualDirection ?? "";
   }
 }
@@ -1913,9 +1935,11 @@ function focusValueText(field: Draft2FocusField, values: Draft2FocusValues): str
  * beside Claude's value. Selects save when they change, text when it loses
  * focus; the controls wait while a change is saved or a step runs.
  */
-function FocusView({ focus, findings, saving, locked, onSave, onReset }: {
+function FocusView({ focus, findings, material, saving, locked, onSave, onReset }: {
   focus: Draft2Focus;
   findings: readonly Draft2FocusFinding[];
+  /** People and places' material as it stands: the brand's characters the editor allows, the story's people. */
+  material?: Draft2FocusMaterial;
   saving?: Draft2FocusField;
   locked: boolean;
   onSave: (field: Draft2FocusField, value: unknown) => void;
@@ -2000,11 +2024,115 @@ function FocusView({ focus, findings, saving, locked, onSave, onReset }: {
         {reset("direction")}
       </div>
       <div className={`${styles.focusField} ${styles.focusWide}`}>
+        <FocusNarrative key={key("narrative")} focus={focus} material={material} description={about("narrative", values.narrative ? narrativeReviewLine(focus) : "Decided before narrative forms: decide again for Claude to choose one, or choose one here.")} disabled={locked} onCommit={(narrative) => onSave("narrative", narrative)} />
+        {reset("narrative")}
+        {focus.narrativeReview?.verdict === "classic" && focus.narrativeReview.proposed && focusNarrative(values).form === "classic"
+          ? <div><Button variant="quiet" size="compact" busy={saving === "narrative"} disabled={locked} onClick={() => onSave("narrative", focus.narrativeReview!.proposed)}>Use Claude’s {NARRATIVE_LABEL[focus.narrativeReview.proposed.form].split(":")[0].toLowerCase()}</Button></div> : null}
+      </div>
+      <div className={`${styles.focusField} ${styles.focusWide}`}>
         <FocusText key={key("visualDirection")} label="Visual direction" description={about("visualDirection", values.visualDirection ? "The visual script follows it: the world the images live in, who leads them, what recurs." : "Decided before this field existed: decide again for Claude to set it, or write it.")} value={values.visualDirection ?? ""} max={FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS} rows={3} disabled={locked} onCommit={(value) => onSave("visualDirection", value)} />
         {reset("visualDirection")}
       </div>
     </div>
   </div>;
+}
+
+/** The judge's look at the narrative form, in one line for the field's description. */
+function narrativeReviewLine(focus: Draft2Focus): string | undefined {
+  const review = focus.narrativeReview;
+  if (!review) return undefined;
+  const judge = draft2ModelName(review.by.model, review.by.provider);
+  if (review.verdict === "keep") return `${judge} kept it: ${review.reason}`;
+  if (review.verdict === "classic") return `${judge} preferred classic${review.proposed ? ` to Claude’s ${NARRATIVE_LABEL[review.proposed.form].split(":")[0].toLowerCase()} (${clip(review.proposed.anchor, 60)})` : ""}: ${review.reason}`;
+  return `Not reviewed: ${review.reason}`;
+}
+
+/**
+ * The narrative form, saved as a whole: the form, what stays (a guide or an
+ * object), how it ends, and what changes from slide to slide. A guide is one
+ * of the brand's characters (while People and places allows them), a figure
+ * Claude saw, or one the editor describes; an object is one Claude saw or one
+ * the editor describes. A form with nothing to start from waits for the
+ * editor to say what stays before it is saved.
+ */
+function FocusNarrative({ focus, material, description, disabled, onCommit }: {
+  focus: Draft2Focus;
+  material?: Draft2FocusMaterial;
+  description?: string;
+  disabled: boolean;
+  onCommit: (narrative: Draft2FocusNarrative) => void;
+}) {
+  const narrative = focusNarrative(focus.values!);
+  const [pending, setPending] = useState<Draft2NarrativeForm>();
+  const [describing, setDescribing] = useState(false);
+  const form = pending ?? narrative.form;
+  const wanted = form === "traveling-object" ? "object" : "figure";
+  const characters = material?.characters ?? [];
+  // The anchors Claude saw (its choice, the proposal the judge sent back, its alternatives) and the one standing, once each.
+  const seen = [focus.ai?.narrative, focus.narrativeReview?.proposed, narrative, ...(focus.narrativeOptions ?? []).map((option) => ({ ...CLASSIC_NARRATIVE, anchorKind: option.kind, anchor: option.anchor, anchorFactIds: option.factIds }))]
+    .filter((entry): entry is Draft2FocusNarrative => Boolean(entry && entry.anchor && (entry.anchorKind === "figure" || entry.anchorKind === "object")));
+  const anchors = [...new Map(seen.map((entry) => [`${entry.anchorKind}:${entry.anchor}`, entry])).values()].filter((entry) => entry.anchorKind === wanted);
+  const commit = (next: Draft2FocusNarrative) => { setPending(undefined); setDescribing(false); onCommit(next); };
+  const switchForm = (next: Draft2NarrativeForm) => {
+    setDescribing(false);
+    if (next === narrative.form) { setPending(undefined); return; }
+    if (next === "classic") { commit(CLASSIC_NARRATIVE); return; }
+    // Claude's own proposal for that form, else a brand character or an anchor Claude saw; else the editor says what stays.
+    const proposal = [focus.narrativeReview?.proposed, focus.ai?.narrative].find((entry) => entry?.form === next);
+    if (proposal) { commit(proposal); return; }
+    const kind = next === "traveling-object" ? "object" : "figure";
+    const kept = { progression: narrative.progression, ending: narrative.form === "classic" ? "resolves" as const : narrative.ending };
+    const character = next === "character-guide" ? characters[0] : undefined;
+    if (character) { commit({ form: next, anchorKind: "character", characterId: character.id, anchor: character.name, anchorFactIds: [], ...kept }); return; }
+    const anchor = seen.find((entry) => entry.anchorKind === kind);
+    if (anchor) { commit({ form: next, anchorKind: kind, characterId: null, anchor: anchor.anchor, anchorFactIds: anchor.anchorFactIds, ...kept }); return; }
+    setPending(next);
+    setDescribing(true);
+  };
+  const anchorValue = narrative.anchorKind === "character" ? `character:${narrative.characterId}` : `anchor:${narrative.anchor}`;
+  const chooseAnchor = (value: string) => {
+    if (value === "describe") { setDescribing(true); return; }
+    const character = characters.find((entry) => `character:${entry.id}` === value);
+    if (character) { commit({ ...narrative, anchorKind: "character", characterId: character.id, anchor: character.name, anchorFactIds: [] }); return; }
+    const anchor = anchors.find((entry) => `anchor:${entry.anchor}` === value);
+    if (anchor) commit({ ...narrative, anchorKind: anchor.anchorKind, characterId: null, anchor: anchor.anchor, anchorFactIds: anchor.anchorFactIds });
+  };
+  const subject = form === "traveling-object" ? "object" : "guide";
+  const settled = form !== "classic" && !pending;
+  return <fieldset className={styles.focusVoice}>
+    <legend className={styles.focusLegend}>Narrative form</legend>
+    {description ? <p className={styles.factMeta}>{description}</p> : null}
+    <div className={styles.focusGrid}>
+      <FormField label="Form">
+        <select value={form} disabled={disabled} onChange={(event) => switchForm(event.target.value as Draft2NarrativeForm)}>
+          {FOCUS_NARRATIVE_FORMS.map((entry) => <option key={entry} value={entry}>{NARRATIVE_LABEL[entry]}</option>)}
+        </select>
+      </FormField>
+      {settled ? <FormField label={form === "character-guide" ? "Guide" : "Object"} description={form === "character-guide" && material?.characterChoice === "off" ? "The brand’s characters are off in People and places." : undefined}>
+        <select value={anchorValue} disabled={disabled} onChange={(event) => chooseAnchor(event.target.value)}>
+          {form === "character-guide" ? characters.map((character) => <option key={character.id} value={`character:${character.id}`}>{character.name} · the brand’s character</option>) : null}
+          {narrative.anchorKind === "character" && !characters.some((character) => character.id === narrative.characterId) ? <option value={anchorValue}>{narrative.anchor} · not available</option> : null}
+          {anchors.map((entry) => <option key={entry.anchor} value={`anchor:${entry.anchor}`}>{clip(entry.anchor, 90)}{entry.anchorFactIds.length ? " · from the facts" : ""}</option>)}
+          <option value="describe">Describe another…</option>
+        </select>
+      </FormField> : null}
+      {settled ? <FormField label="Ending">
+        <select value={narrative.ending} disabled={disabled} onChange={(event) => commit({ ...narrative, ending: event.target.value as Draft2FocusNarrative["ending"] })}>
+          {FOCUS_NARRATIVE_ENDINGS.map((ending) => <option key={ending} value={ending}>{ENDING_LABEL[ending]}</option>)}
+        </select>
+      </FormField> : null}
+    </div>
+    {describing && form !== "classic" ? <FocusText
+      key={`describe-${form}`}
+      label={`Describe the ${subject}`}
+      description={form === "character-guide" ? "A figure from the story or an anonymous one, as it will look on every slide; never a real person of the story." : "One object, as it will look on every slide; nothing that suggests what the facts do not say."}
+      value=""
+      max={FOCUS_ANCHOR_MAX_CHARACTERS}
+      disabled={disabled}
+      onCommit={(value) => commit({ form, anchorKind: wanted, characterId: null, anchor: value.trim(), anchorFactIds: [], progression: narrative.progression, ending: narrative.form === "classic" ? "resolves" : narrative.ending })}
+    /> : null}
+    {settled ? <FocusText key={`progression-${narrative.form}-${narrative.anchor}`} label="What changes from slide to slide" value={narrative.progression} max={FOCUS_PROGRESSION_MAX_CHARACTERS} allowEmpty disabled={disabled} onCommit={(value) => commit({ ...narrative, progression: value.trim() })} /> : null}
+  </fieldset>;
 }
 
 /** The autopilot's log: each step it ran, how it ended, what it took in time and in the meter's cost, and where it stands. */

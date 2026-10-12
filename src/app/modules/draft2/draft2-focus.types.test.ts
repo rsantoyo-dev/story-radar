@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Draft2InputError, Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
 import {
-  DRAFT2_FOCUS_SCHEMA, FOCUS_FIELDS, applyFocusEdit, decidedFocus, editorChoicesOf, focusDecisionRequest, focusFindings, focusForModels, focusItemCount, focusLine,
-  focusToday, parseFocusDecision, resetFocusField,
-  type Draft2Focus, type Draft2FocusLine, type Draft2FocusValues,
+  CLASSIC_NARRATIVE, DRAFT2_FOCUS_SCHEMA, FOCUS_FIELDS, applyFocusEdit, decidedFocus, editorChoicesOf, focusDecisionRequest, focusFindings, focusForModels, focusItemCount, focusLine,
+  focusMaterial, focusToday, parseFocusDecision, parseNarrativeReview, resetFocusField,
+  type Draft2Focus, type Draft2FocusLine, type Draft2FocusMaterial, type Draft2FocusNarrative, type Draft2FocusValues,
 } from "./draft2-focus.types";
+import type { Draft2Inventory } from "./draft2-inventory.types";
 
 const facts: Draft2Fact[] = [
   { id: "f1", claim: "The program reviews product videos no longer than five minutes.", evidence: "videos \"no longer than five minutes\"", kind: "event", status: "established", importance: 90 },
@@ -51,7 +52,8 @@ test("Claude's answer becomes the focus: unknown fact ids dropped, dials clamped
   assert.deepEqual(parse({ readerConsequence: { text: null, factIds: [] } }).values.readerConsequence, null);
   assert.deepEqual(parse({ structure: { kind: "list", itemFactIds: ["f3", "f1", "f9", "f2"] } }).values.structure, { kind: "list", itemFactIds: ["f3", "f1", "f2"] }, "items keep Claude's order");
   assert.equal(parseFocusDecision(answer({ lineId: null }), { facts, lines: [] }).values.line, null, "a Topic without lines has no line");
-  assert.deepEqual((DRAFT2_FOCUS_SCHEMA.required as string[]).sort(), ["audience", "direction", "framing", "goal", "lineId", "readerConsequence", "reasons", "structure", "visualDirection", "voice"]);
+  assert.deepEqual((DRAFT2_FOCUS_SCHEMA.required as string[]).sort(), ["anchorAlternatives", "audience", "direction", "framing", "goal", "lineId", "narrative", "readerConsequence", "reasons", "structure", "visualDirection", "voice"]);
+  assert.deepEqual(values.narrative, CLASSIC_NARRATIVE, "an answer without a narrative form, from before them, is classic");
 });
 
 test("an answer outside the contract is a response error, never a focus", () => {
@@ -81,7 +83,7 @@ test("the editor's fields win over the answer; a structure the editor chose take
   assert.deepEqual(values.structure, { kind: "list", itemFactIds: ["f1", "f2", "f3"] }, "the list the editor asked for gets its items");
   assert.deepEqual(parse({ structure: { kind: "arc", itemFactIds: [] } }, { structure: { kind: "steps", itemFactIds: ["f1", "f2"] } }).values.structure, { kind: "steps", itemFactIds: ["f1", "f2"] }, "an answer of another kind leaves the editor's items");
   assert.equal(parse({ goal: "followers" }, { goal: "saves" }).values.goal, "saves", "whatever the answer says");
-  assert.deepEqual(Object.keys(parsed).sort(), ["audience", "direction", "framing", "visualDirection", "voice"], "reasons only for the fields Claude decided");
+  assert.deepEqual(Object.keys(parsed).sort(), ["audience", "direction", "framing", "narrative", "visualDirection", "voice"], "reasons only for the fields Claude decided");
 });
 
 test("a decision is one version more and keeps Claude's own values under the editor's fields", () => {
@@ -179,4 +181,98 @@ test("today is the date where the publication works", () => {
   assert.equal(focusToday("America/Toronto", new Date("2026-10-11T02:00:00.000Z")), "2026-10-10", "still the 10th in Toronto");
   assert.equal(focusToday("Not/AZone", new Date("2026-10-11T02:00:00.000Z")), "2026-10-11", "UTC when the zone is unknown");
   assert.equal(focusToday(undefined, NOW), "2026-10-10");
+});
+
+const MATERIAL: Draft2FocusMaterial = {
+  characterChoice: "auto",
+  characters: [{ id: "char-jo", name: "Jo", description: "The local narrator, a modern Johannaise." }],
+  people: ["Catherine Fournier"],
+  places: [{ name: "Parc des Parulines", verifiedPhoto: true, map: true }],
+  storyPhotos: [],
+};
+const guide = (overrides: Record<string, unknown> = {}) => ({ form: "character-guide", anchorKind: "character", characterId: "char-jo", anchor: "Jo, our narrator", anchorFactIds: [], progression: "From the kiosk to each animal of the trail", ending: "returns", ...overrides });
+const withNarrative = (narrative: Record<string, unknown>, material: Draft2FocusMaterial = MATERIAL) => parseFocusDecision(answer({ narrative }), { facts, lines, material });
+
+test("a narrative form: a brand character guides by its id and its name, a figure or an object keeps the facts it cites", () => {
+  assert.deepEqual(withNarrative(guide()).values.narrative, { form: "character-guide", anchorKind: "character", characterId: "char-jo", anchor: "Jo", anchorFactIds: [], progression: "From the kiosk to each animal of the trail", ending: "returns" }, "the character's own name, never Claude's words for it");
+  assert.deepEqual(withNarrative(guide({ anchorKind: "figure", characterId: null, anchor: "A curious toad", anchorFactIds: ["f2", "f9"] })).values.narrative?.anchorFactIds, ["f2"], "an id that is not a verified fact is dropped");
+  assert.deepEqual(withNarrative(guide({ anchorKind: "figure", characterId: null, anchor: "A child seen from behind", anchorFactIds: [] })).values.narrative?.anchor, "A child seen from behind", "an anonymous figure cites no fact");
+  assert.deepEqual(withNarrative({ form: "traveling-object", anchorKind: "object", characterId: null, anchor: "The bag of « bonbons »", anchorFactIds: ["f1"], progression: "Trail to trail", ending: "resolves" }).values.narrative?.anchorKind, "object");
+  assert.deepEqual(withNarrative({ form: "classic", anchorKind: "figure", characterId: null, anchor: "Ignored", anchorFactIds: ["f1"], progression: "Ignored", ending: "returns" }).values.narrative, CLASSIC_NARRATIVE, "classic keeps nothing else, and resolves");
+});
+
+test("a narrative form outside the contract or the material is a response error, asked for again with the rule it broke", () => {
+  const rejects = (narrative: Record<string, unknown>, pattern: RegExp, material: Draft2FocusMaterial = MATERIAL) =>
+    assert.throws(() => withNarrative(narrative, material), (error: Error) => error instanceof Draft2ResponseError && pattern.test(error.message));
+  rejects(guide({ form: "time-machine" }), /narrative form is one of classic, character-guide, traveling-object/);
+  rejects(guide({ anchorKind: "object" }), /character-guide anchor is character or figure/);
+  rejects(guide({ characterId: "char-mia" }), /brand character the brand does not have \(char-mia\)/);
+  rejects(guide(), /turned the brand's characters off/, { ...MATERIAL, characterChoice: "off", characters: [] });
+  rejects(guide({ anchorKind: "figure", characterId: null, anchor: "catherine fournier at the kiosk" }), /Catherine Fournier is a real person of the story/);
+  rejects({ form: "traveling-object", anchorKind: "object", characterId: null, anchor: "A ticket", anchorFactIds: [], progression: "p", ending: "resolves" }, /traveling object comes from the facts/);
+  rejects(guide({ anchorKind: "figure", characterId: null, anchor: "" }), /anchor is missing or longer than 200/);
+  rejects(guide({ progression: "x".repeat(301) }), /progression is missing or longer than 300/);
+});
+
+test("Claude's other anchors are offered to the editor: valid ones only, never a person of the story, at most three", () => {
+  const { alternatives } = parseFocusDecision(answer({ anchorAlternatives: [
+    { kind: "object", anchor: "The rally sheet", factIds: ["f1", "f9"] }, { kind: "figure", anchor: "Catherine Fournier", factIds: [] }, { kind: "person", anchor: "A bat", factIds: [] },
+    { kind: "figure", anchor: "A bat", factIds: [] }, { kind: "figure", anchor: "A spider", factIds: [] }, { kind: "figure", anchor: "A toad", factIds: [] },
+  ] }), { facts, lines, material: MATERIAL });
+  assert.deepEqual(alternatives, [{ kind: "object", anchor: "The rally sheet", factIds: ["f1"] }, { kind: "figure", anchor: "A bat", factIds: [] }, { kind: "figure", anchor: "A spider", factIds: [] }]);
+});
+
+test("the editor's narrative form: classic needs nothing; a guide or an object needs its words; an anchor Claude found keeps its facts", () => {
+  const focus = { ...decided({ narrative: withNarrative(guide({ anchorKind: "figure", characterId: null, anchor: "A curious toad", anchorFactIds: ["f2"] })).values.narrative }), narrativeOptions: [{ kind: "object" as const, anchor: "The rally sheet", factIds: ["f1"] }] };
+  const edit = (value: Partial<Draft2FocusNarrative>) => applyFocusEdit(focus, "narrative", value, NOW).values?.narrative;
+  assert.deepEqual(edit({ form: "classic", anchor: "anything" }), CLASSIC_NARRATIVE);
+  assert.deepEqual(edit({ form: "traveling-object", anchorKind: "object", anchor: "The rally sheet", progression: "" })?.anchorFactIds, ["f1"], "an alternative Claude saw keeps its facts");
+  assert.deepEqual(edit({ form: "traveling-object", anchorKind: "object", anchor: "A pumpkin bucket", progression: "" })?.anchorFactIds, [], "the editor's own words cite none");
+  assert.deepEqual(edit({ form: "character-guide", anchorKind: "character", characterId: "char-jo", anchor: "Jo", progression: "Stop to stop", ending: "returns" }), { form: "character-guide", anchorKind: "character", characterId: "char-jo", anchor: "Jo", anchorFactIds: [], progression: "Stop to stop", ending: "returns" });
+  const refuses = (value: Partial<Draft2FocusNarrative>, pattern: RegExp) => assert.throws(() => edit(value), (error: Error) => error instanceof Draft2InputError && pattern.test(error.message));
+  refuses({ form: "time-machine" as never }, /narrative form is one of/);
+  refuses({ form: "character-guide", anchorKind: "object", anchor: "x" }, /guide is one of the brand's characters or a figure/);
+  refuses({ form: "character-guide", anchorKind: "character", anchor: "Jo" }, /Choose one of the brand's characters/);
+  refuses({ form: "traveling-object", anchorKind: "object", anchor: " " }, /Say what the object is/);
+  assert.equal(applyFocusEdit(focus, "narrative", { form: "classic" }, NOW).edited.includes("narrative"), true, "the editor's form stays theirs");
+});
+
+test("the program checks the narrative against People and places as they stand: a character turned off or gone, a real person as the anchor", () => {
+  const values = (narrative: Draft2FocusNarrative): Draft2FocusValues => ({ ...decided().values!, narrative });
+  const jo: Draft2FocusNarrative = { form: "character-guide", anchorKind: "character", characterId: "char-jo", anchor: "Jo", anchorFactIds: [], progression: "", ending: "resolves" };
+  assert.deepEqual(focusFindings(values(jo), MATERIAL), []);
+  assert.deepEqual(focusFindings(values(jo)), [], "without People and places there is nothing to check");
+  assert.match(focusFindings(values(jo), { ...MATERIAL, characterChoice: "off", characters: [] })[0].detail, /Jo guides the carousel, and the brand's characters are off in People and places/);
+  assert.match(focusFindings(values(jo), { ...MATERIAL, characters: [] })[0].detail, /Jo is no longer one of the brand's characters/);
+  assert.deepEqual(focusFindings(values({ ...jo, anchorKind: "figure", characterId: null, anchor: "Catherine Fournier, smiling" }), MATERIAL).map((finding) => [finding.field, finding.code]), [["narrative", "NARRATIVE_REAL_PERSON"]]);
+});
+
+test("the models read a narrative form only when it is not classic, so a classic story's prompts stay as they were", () => {
+  const classic = decided({ narrative: CLASSIC_NARRATIVE }).values!;
+  assert.equal("narrative" in focusForModels(classic), false);
+  const told = focusForModels({ ...classic, narrative: { form: "traveling-object", anchorKind: "object", characterId: null, anchor: "The bag of « bonbons »", anchorFactIds: ["f1"], progression: "Trail to trail", ending: "returns" } });
+  assert.deepEqual(told.narrative, { form: "traveling-object", anchor: { kind: "object", what: "The bag of « bonbons »", factIds: ["f1"] }, progression: "Trail to trail", ending: "returns" });
+  const anonymous = focusForModels({ ...classic, narrative: { form: "character-guide", anchorKind: "figure", characterId: null, anchor: "A child seen from behind", anchorFactIds: [], progression: "", ending: "resolves" } });
+  assert.match(String((anonymous.narrative?.anchor as { note?: string }).note), /not from the facts/);
+});
+
+test("People and places as the focus reads them: the brand's characters only while allowed, the people never drawn, the places and what verifies them", () => {
+  const inventory = {
+    characters: "auto", roster: [{ id: "char-jo", name: "Jo", description: "x".repeat(400) }],
+    entities: [
+      { id: "e1", name: "Catherine Fournier", kind: "person", role: "subject", description: "", factIds: ["f1"] },
+      { id: "e2", name: "Parc des Parulines", kind: "place", role: "setting", description: "", factIds: ["f2"], place: { status: "verified", map: true } },
+    ],
+    storyPhotos: [],
+  } as unknown as Draft2Inventory;
+  const material = focusMaterial(inventory);
+  assert.deepEqual([material.characters.map((character) => [character.id, character.name, character.description.length]), material.people, material.places], [[["char-jo", "Jo", 300]], ["Catherine Fournier"], [{ name: "Parc des Parulines", verifiedPhoto: false, map: true }]]);
+  assert.deepEqual(focusMaterial({ ...inventory, characters: "off" }).characters, [], "characters the editor turned off are not offered");
+  assert.equal(JSON.stringify(focusDecisionRequest({ title: "t", today: "2026-10-12", profile: { framingStrategy: "auto", storyStructure: "auto", conversionGoal: "followers" }, lines: [], foundBy: [], material }).material), JSON.stringify(material));
+});
+
+test("the judge's review of a narrative form is a verdict and a reason; anything else is a response error", () => {
+  assert.deepEqual(parseNarrativeReview(JSON.stringify({ verdict: "classic", reason: "The schedule has no thread to follow." })), { verdict: "classic", reason: "The schedule has no thread to follow." });
+  assert.throws(() => parseNarrativeReview(JSON.stringify({ verdict: "maybe", reason: "x" })), Draft2ResponseError);
+  assert.throws(() => parseNarrativeReview("not json"), Draft2ResponseError);
 });

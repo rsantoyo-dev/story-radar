@@ -9,7 +9,7 @@ import {
   closingShape, mechanicalClosingIssues, openingForClosing, parseClosingCandidates, parseClosingEvaluation, sameClosing,
   type Draft2Closing, type Draft2ClosingCandidate, type Draft2ClosingIssue, type Draft2ClosingOpening, type Draft2ClosingScore, type Draft2ClosingShape,
 } from "./draft2-closing.types";
-import { brandBrief, composeInstructions } from "./skills/draft2-skills";
+import { brandBrief, composeInstructions, narrativeSkills } from "./skills/draft2-skills";
 import { CLOSINGS_SKILL } from "./skills/closings";
 import type { Draft2SessionRow } from "@/db/schema";
 
@@ -54,8 +54,8 @@ const CLOSING_STEP: FunnelStep<Draft2ClosingCandidate, Draft2ClosingScore, Draft
     const brief = `${brandBrief(profile)}\n\n${callToActionBrief({ style: profile.callToActionStyle, emojis })}`;
     const values = focus.values;
     return {
-      writer: composeInstructions("closing-writer", [CLOSINGS_SKILL], brief),
-      judge: composeInstructions("closing-judge", [CLOSINGS_SKILL], brief),
+      writer: composeInstructions("closing-writer", [CLOSINGS_SKILL, ...narrativeSkills(values.narrative)], brief),
+      judge: composeInstructions("closing-judge", [CLOSINGS_SKILL, ...narrativeSkills(values.narrative)], brief),
       context: { focus: focusForModels(values), opening: openingForClosing(opening), shape },
       schemas: { writer: closingSchema(shape), judge: closingEvaluationSchema(shape) },
       parseCandidates: (text) => parseClosingCandidates(text, shape),

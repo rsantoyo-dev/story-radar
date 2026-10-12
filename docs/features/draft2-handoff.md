@@ -33,13 +33,17 @@ Steps, in the autopilot's order:
    Claude reviews, up to three rounds. Reads the story's prepared content
    (`getStoryContent`); "Run the facts again" creates a **new session row**,
    which is the only reset there is (the old session stays as history).
-2. **Focus** — Claude decides line, audience, framing, reader consequence,
-   structure, goal, voice, direction and (since the lean pass) `visualDirection`
-   (≤ 600 chars). The editor's edits stick (`focus.version`); one corrective
-   retry on a malformed answer.
-3. **People and places** (inventory) — entities from the facts, story photos,
-   Google Maps / Wikidata matches for places, characters. In autopilot nobody
-   confirms anything, so places stay unverified (see §7).
+2. **People and places** (inventory) — entities from the facts, story photos,
+   Google Maps / Wikidata matches for places, characters. Since 2026-10-12 it
+   runs before the Focus, which chooses the narrative form with it; the
+   autopilot stops here while people wait for confirmation and no focus is
+   decided yet. Places still go unconfirmed in autopilot (see §7).
+3. **Focus** — Claude decides line, audience, framing, reader consequence,
+   structure, goal, voice, direction, the **narrative form** (classic,
+   character-guide or traveling-object, reviewed by the judge when Claude
+   chooses one; `draft2-focus.md` §12) and `visualDirection` (≤ 600 chars).
+   The editor's edits stick (`focus.version`); one corrective retry on a
+   malformed answer.
 4. **Mentions** — Claude proposes Instagram usernames, Instagram Business
    Discovery verifies them, the editor confirms (PATCH). A confirmed account
    is a decision to tag it in the caption.

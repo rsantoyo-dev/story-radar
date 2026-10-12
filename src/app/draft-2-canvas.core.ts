@@ -71,14 +71,18 @@ export function contentStatusLabel(status: string): string {
   return CONTENT_STATUS_LABELS[status] ?? status;
 }
 
-/** The steps the canvas will grow into, in the order they will be built. */
+/**
+ * The steps in the order they run. People and places comes before the Focus,
+ * so the narrative form is chosen with the brand's characters and the
+ * story's verified material in hand.
+ */
 export const DRAFT_2_STEPS = [
   { key: "facts", title: "Facts", detail: "Verified facts with the qualifier each one must keep." },
-  { key: "focus", title: "Focus", detail: "What the story is for: its line, audience, framing, structure, goal, voice, and the visual direction its images follow." },
+  { key: "inventory", title: "People and places", detail: "Who and where the story names, the verified photos and maps of them, and the brand's characters it may use." },
+  { key: "focus", title: "Focus", detail: "What the story is for and how it is told: its line, audience, framing, structure, goal, voice, narrative form and the visual direction its images follow." },
   { key: "opening", title: "Opening", detail: "Cover and slide 2 judged as one unit: the promise and its first payoff." },
   { key: "closing", title: "Closing", detail: "The ending: the cover's promise paid in full, what it means for the reader, one call to action." },
   { key: "deck", title: "Deck", detail: "The slides between slide 2 and the closing, one idea each: the story from its promise to its end." },
-  { key: "inventory", title: "People and places", detail: "Who and where the story names, and the verified photos and maps of them." },
   { key: "visual", title: "Visual script", detail: "The carousel's images as one visual story, in the brand's identity and the focus's visual direction." },
   { key: "images", title: "Images", detail: "Each slide made from the visual script, reviewed, and corrected once when it needs it; logo and page number added afterwards." },
   { key: "caption", title: "Caption", detail: "The post’s text: short lines and blank lines, the brand’s emojis, the closing’s call to action, the accounts you tag and 5 to 8 hashtags." },
@@ -95,11 +99,11 @@ export function isDraft2Step(value: unknown): value is Draft2StepKey {
 /** A step's place in the pipeline, from 1. */
 export const draft2StepNumber = (step: Draft2StepKey) => STEP_KEYS.indexOf(step) + 1;
 
-/** The pipeline in four phases: what the story says and is for, its words, its images, and the post. */
+/** The pipeline in four phases: what the story says, has and is for, its words, its images, and the post. */
 export const DRAFT_2_PHASES = [
-  { key: "story", title: "Story", steps: ["facts", "focus"] },
+  { key: "story", title: "Story", steps: ["facts", "inventory", "focus"] },
   { key: "words", title: "Words", steps: ["opening", "closing", "deck"] },
-  { key: "visuals", title: "Visuals", steps: ["inventory", "visual", "images"] },
+  { key: "visuals", title: "Visuals", steps: ["visual", "images"] },
   { key: "post", title: "Post", steps: ["caption", "publish"] },
 ] as const satisfies readonly { key: string; title: string; steps: readonly Draft2StepKey[] }[];
 

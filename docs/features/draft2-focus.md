@@ -79,7 +79,7 @@ The AI's cited fact ids are filtered to the verified facts when its answer is
 parsed. A reader consequence the editor writes by hand cites no facts; it is
 the editor's direction, like v1's editorial focus.
 
-## 4. The focus skill (`skills/focus.ts`, version "3")
+## 4. The focus skill (`skills/focus.ts`, version "4")
 
 A versioned TypeScript string like the other skills, composed with the role
 `focus-editor` and the Topic's brand brief (`composeInstructions`). It
@@ -88,6 +88,9 @@ reasons. The trace records `{ focus: "3" }` on the call. Since version 2 the
 call also reads the Topic's visual identity in full (as the visual step
 does), the frame of `visualDirection`; version 3 states the 300-character
 limits of the audience and the reader consequence and the `correction` rule.
+Version 4 adds the narrative form and its alternatives (section 12); the call
+reads the narratives skill beside it, and the trace records
+`{ focus: "4", narratives: "1" }`.
 
 ## 5. Contracts (`draft2-focus.types.ts`)
 
@@ -206,5 +209,93 @@ field without a provider call. It is refused while Claude is deciding.
 ## 11. Out of scope
 
 - The Topic's acquisition lens (a later option; the vocabulary is the Topic's).
-- A judge for the focus itself: the editor reviews it.
+- A judge for the focus itself: the editor reviews it. Only a narrative form
+  Claude chose is reviewed (section 12).
 - Using the goal in a call to action: that is the Closing's.
+
+## 12. Narrative forms (2026-10-12)
+
+The editor's goal: carousels that pull the reader from one swipe to the next.
+A narrative form says how the carousel is told across its slides, in words and
+images together. It is one more focus field, `narrative`, with the same
+machinery as the others: Claude decides it with a reason, the editor changes
+it in a dropdown and the change stays theirs, "Use Claude's" gives it back.
+
+### Decisions taken with the editor
+
+- **People and places runs before the Focus** (canvas rail, pager, autopilot):
+  the form is chosen with the brand's characters and the story's material in
+  hand. `decideDraft2Focus` refuses to run until the inventory is ready, and
+  the focus records the inventory version it read (`inventoryVersion`); the
+  canvas says so when People and places changed since a non-classic form was
+  chosen. Before the focus is decided, the autopilot stops while people wait
+  for the editor's confirmation in People and places.
+- **A closed list we define, in code**, because each form needs a recipe the
+  program can execute: `classic` (the method before narrative forms, the
+  default, and unchanged), `character-guide` (a guide leads the reader through
+  the story's places or moments) and `traveling-object` (one object from the
+  facts crosses its scenes, places or times). Same place forms (another time,
+  layer by layer) come after the anchor is tested on real stories.
+- **The anchor is what stays.** A guide is one of the brand's characters (an
+  id from People and places' roster, only while the editor allows them), a
+  figure the facts give (an animal, a mascot), an anonymous figure the story
+  calls for, or one the editor describes. Never a real person of the story:
+  they appear only in verified documentary photos. An object Claude proposes
+  comes from the facts. The ending either `resolves` or `returns` to the
+  cover's frame.
+- **Claude chooses, the judge reviews, the editor decides.** A form Claude
+  chose (never classic, never the editor's) goes to the judge
+  (`DRAFT2_MODEL_FOCUS_JUDGE`, else `DRAFT2_MODEL_JUDGE`, else Sol) in one
+  low-effort call: `keep`, or `classic` with Claude's proposal kept beside it
+  (`narrativeReview.proposed`) for the editor to take back. A review that
+  cannot run leaves Claude's form standing, with why; it never fails the
+  focus. Claude also offers up to three other anchors
+  (`narrativeOptions`) for the editor's dropdown.
+- **Classic stays as it was.** The models read the form, and every writer and
+  judge reads the narratives skill, only when the form is not classic, so a
+  classic story's prompts are exactly the ones before narrative forms.
+
+### Contract (`draft2-focus.types.ts`)
+
+- `Draft2FocusNarrative`, flat like the answer, so the editor's choice goes
+  back to Claude exactly: `form`, `anchorKind` (`none`, `character`,
+  `figure`, `object`), `characterId`, `anchor` (at most 200 characters),
+  `anchorFactIds`, `progression` (what changes from slide to slide, at most
+  300) and `ending`. A focus without one, from before narrative forms, is
+  classic (`focusNarrative`).
+- Claude's answer: a form outside the list, an anchor of the wrong kind or
+  without its words, a brand character the brand does not have or the editor
+  turned off, an object not taken from the facts, or a real person of the
+  story as the anchor is a response error, asked for again once with the
+  rule it broke. A brand character's anchor is its roster name.
+- The editor's choice: classic needs nothing; a guide is a character (by id)
+  or a figure in their words; an object needs its words. An anchor Claude
+  found keeps the facts it cites; the editor's own words cite none.
+- Program findings, against People and places as they stand (they block the
+  Opening like the others): `NARRATIVE_CHARACTER_UNAVAILABLE` (the brand's
+  characters turned off, or the character gone) and `NARRATIVE_REAL_PERSON`.
+- `focusMaterial(inventory)`: the brand's characters the editor allows, the
+  story's people (never drawn), its places with what verifies them, and its
+  photos. `focusForModels` carries `narrative` (`narrativeForModels`) only
+  when it is not classic.
+
+### Skills
+
+- `skills/focus.ts` version 4: the `narrative` field, `anchorAlternatives`,
+  and a visual direction that follows the form.
+- `skills/narratives.ts` version 1: what each form is and what it never
+  changes (the facts: aggressive curiosity, conservative facts), with a part
+  for each role: the focus's judge, and the writer and judge of the Opening
+  (the cover introduces the anchor, slide 2 takes the first step), the
+  Closing (the progression's last step; resolve or return), the Deck (one
+  step per slide, anchor present) and the visual script (the anchor in every
+  image, described the same way; a brand character by its id).
+
+### Next
+
+- The visual script's program check that the anchor is in every slide, and a
+  textless anchor plate in Images, passed as the reference of every slide
+  (a brand character's references already are); the image review checks the
+  anchor.
+- The form in the publication package, to compare forms on performance.
+- Same place forms, once the anchor holds on real stories.

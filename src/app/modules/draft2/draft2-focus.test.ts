@@ -51,13 +51,28 @@ const answer = (overrides: Record<string, unknown> = {}) => ({
 
 type Row = Record<string, unknown> & { focus: Draft2Focus | null; trace: types.Draft2TraceEntry[]; updatedAt: Date };
 
+/** People and places as found before the focus: one person of the story, a place, and the brand's character Jo. */
+const INVENTORY = {
+  status: "ready", version: 2, characters: "auto", roster: [{ id: "char-jo", name: "Jo", description: "The local narrator." }], storyPhotos: [],
+  entities: [
+    { id: "e1", name: "Catherine Fournier", kind: "person", role: "subject", description: "A naturalist", factIds: ["f1"] },
+    { id: "e2", name: "Parc des Parulines", kind: "place", role: "setting", description: "The park", factIds: ["f1"], place: { status: "verified", map: true } },
+  ],
+};
+const GUIDE = { form: "character-guide", anchorKind: "character", characterId: "char-jo", anchor: "Jo", anchorFactIds: [], progression: "From the kiosk to each animal of the trail", ending: "returns" };
+
 /** The step with Claude, the profile, the lines, the story and the database replaced; `answers` are Claude's, in order. */
-function harness({ answers = [], session, busy = false, claimRefused = false, fail = false }: {
-  answers?: unknown[]; session?: Record<string, unknown>; busy?: boolean; claimRefused?: boolean; fail?: boolean;
+function harness({ answers = [], reviews = [], session, busy = false, claimRefused = false, fail = false, env = {} }: {
+  answers?: unknown[];
+  /** The judge's answers on a narrative form, in order; an Error fails that call. */
+  reviews?: unknown[];
+  session?: Record<string, unknown>; busy?: boolean; claimRefused?: boolean; fail?: boolean;
+  env?: Record<string, string>;
 } = {}) {
   const calls: Record<string, unknown>[] = [];
+  const reviewCalls: Record<string, unknown>[] = [];
   let row: Row = {
-    id: sessionId, topicId, storyId, step: "facts", status: "ready", facts, evaluation: null, rounds: [], focus: null, opening: null, error: null, threads: {},
+    id: sessionId, topicId, storyId, step: "facts", status: "ready", facts, evaluation: null, rounds: [], focus: null, opening: null, error: null, threads: {}, inventory: INVENTORY,
     trace: [{ at: "2026-10-09T12:00:00.000Z", step: "facts", round: 1, provider: "openai", model: "gpt-6.1-sol", operation: "draft2_facts", durationMs: 10, outcome: "ok" }],
     updatedAt: new Date(),
     ...session,
@@ -84,6 +99,12 @@ function harness({ answers = [], session, busy = false, claimRefused = false, fa
       const next = answers.shift();
       return { text: typeof next === "string" ? next : JSON.stringify(next), provider: "anthropic", model: input.model, usage: { promptTokens: 100, outputTokens: 50, thoughtsTokens: 0, totalTokens: 150 }, cachedInputTokens: 0, cacheWriteTokens: 900 };
     } },
+    "../stories/openai-structured-response": { generateOpenAiStructuredResponse: async (input: Record<string, unknown>) => {
+      reviewCalls.push(input);
+      const next = reviews.shift();
+      if (next instanceof Error) throw next;
+      return { text: JSON.stringify(next), usage: { promptTokens: 80, outputTokens: 20, thoughtsTokens: 0, totalTokens: 100 }, cachedInputTokens: 0 };
+    } },
     "./draft2-session.repository": {
       activeDraft2Session: async () => busy ? row : undefined,
       getDraft2Session: async (topic: string, id: string) => topic === topicId && id === row.id ? row : undefined,
@@ -92,12 +113,13 @@ function harness({ answers = [], session, busy = false, claimRefused = false, fa
       touchDraft2Session: async () => undefined,
     },
   };
-  vm.runInNewContext(code, { exports, Date, JSON, Error, Object, Array, Math, Number, String, Boolean, Set, Map, Promise, Intl, console, setInterval, clearInterval, process: { env: {} },
+  vm.runInNewContext(code, { exports, Date, JSON, Error, Object, Array, Math, Number, String, Boolean, Set, Map, Promise, Intl, console, setInterval, clearInterval, process: { env },
     require: (name: string) => name in mocks ? mocks[name] : localRequire(name) });
   return {
     decide: () => exports.decideDraft2Focus({ topicId, storyId, sessionId }),
     edit: (field: string, change: { value?: unknown; reset?: boolean }) => exports.editDraft2Focus({ topicId, sessionId, field, ...change }),
     calls,
+    reviewCalls,
     last: () => row,
     row: () => row,
   };
@@ -111,7 +133,8 @@ test("Claude decides the focus from the cached facts, the brand brief, the profi
   const [call] = h.calls;
   assert.equal(call.model, "claude-sonnet-5-5");
   assert.equal(json(call.context), json({ verifiedFacts: openingTypes.openingFactsSnapshot(facts) }), "the facts travel as Claude's cached context");
-  assert.equal(json(Object.keys(call.contents as object)), json(["task", "story", "today", "topicDefaults", "lines", "foundBy"]));
+  assert.equal(json(Object.keys(call.contents as object)), json(["task", "story", "today", "topicDefaults", "lines", "foundBy", "material"]));
+  assert.equal(json((call.contents as { material: unknown }).material), json(focusTypes.focusMaterial(INVENTORY as never)), "People and places' material: the brand's characters, the people never drawn, the places");
   const contents = call.contents as { story: unknown; today: string; topicDefaults: unknown; lines: { id: string }[]; foundBy: string[] };
   assert.equal(json(contents.story), json({ title: "Pentagon buys AI by video" }));
   assert.match(contents.today, /^\d{4}-\d{2}-\d{2}$/);
@@ -131,7 +154,8 @@ test("Claude decides the focus from the cached facts, the brand brief, the profi
   assert.equal(json(focus.decidedBy), json({ provider: "anthropic", model: "claude-sonnet-5-5" }));
   const last = session.trace[session.trace.length - 1];
   assert.equal(session.trace.length, 2, "the facts trace is kept");
-  assert.equal(json([last.step, last.provider, last.operation, last.outcome, last.skillVersions, last.cacheWriteTokens]), json(["focus", "anthropic", "draft2_focus", "ok", { focus: "3" }, 900]));
+  assert.equal(json([last.step, last.provider, last.operation, last.outcome, last.skillVersions, last.cacheWriteTokens]), json(["focus", "anthropic", "draft2_focus", "ok", { focus: "4", narratives: "1" }, 900]));
+  assert.equal(json([focus.values?.narrative, focus.inventoryVersion, h.reviewCalls.length]), json([focusTypes.CLASSIC_NARRATIVE, 2, 0]), "a classic story is not reviewed");
 });
 
 test("deciding again keeps the editor's fields: Claude receives them as choices and the program keeps them whatever it answers", async () => {
@@ -215,4 +239,50 @@ test("a second answer outside the contract fails the step, with both calls on th
   const last = h.last();
   assert.equal(json([last.status, (last.focus as Draft2Focus).status]), json(["failed", "failed"]));
   assert.equal((last.trace as types.Draft2TraceEntry[]).filter((entry) => entry.step === "focus").length, 2);
+});
+
+test("the focus waits for People and places: the narrative form is chosen with them", async () => {
+  const h = harness({ answers: [answer()], session: { inventory: null } });
+  await assert.rejects(h.decide(), (error: Error) => error instanceof types.Draft2InputError && /Find the people and places first/.test(error.message));
+  await assert.rejects(harness({ answers: [answer()], session: { inventory: { ...INVENTORY, status: "running" } } }).decide(), /Find the people and places first/);
+});
+
+test("a guide Claude chose goes to the judge, which keeps it; the call is on the trace with the facts in its instructions", async () => {
+  const h = harness({ answers: [answer({ narrative: GUIDE })], reviews: [{ verdict: "keep", reason: "Jo turns the trail into a search the reader follows." }], env: { OPENAI_API_KEY: "sk-test", DRAFT2_MODEL_JUDGE: "gpt-6-luna" } });
+  const focus = (await h.decide()).focus!;
+  assert.equal(json([focus.values?.narrative, focus.narrativeReview?.verdict, focus.narrativeReview?.by]), json([GUIDE, "keep", { provider: "openai", model: "gpt-6-luna" }]));
+  const [review] = h.reviewCalls;
+  assert.equal(json([review.model, review.schemaName, review.reasoningEffort]), json(["gpt-6-luna", "draft2_focus_narrative_review", "low"]));
+  assert.match(String(review.instructions), /# Verified facts\n/);
+  assert.equal(json((review.contents as { focus: { narrative: unknown } }).focus.narrative), json(focusTypes.narrativeForModels(GUIDE as never)));
+  const last = h.row().trace[h.row().trace.length - 1];
+  assert.equal(json([last.provider, last.model, last.operation, last.outcome, last.skillVersions]), json(["openai", "gpt-6-luna", "draft2_focus_narrative_review", "ok", { narratives: "1" }]));
+});
+
+test("the judge sends a form back to classic: Claude's proposal stays beside it for the editor", async () => {
+  const h = harness({ answers: [answer({ narrative: GUIDE })], reviews: [{ verdict: "classic", reason: "A schedule of unrelated items has no thread to follow." }], env: { OPENAI_API_KEY: "sk-test" } });
+  const focus = (await h.decide()).focus!;
+  assert.equal(json([focus.values?.narrative, focus.ai?.narrative, focus.narrativeReview?.verdict, focus.narrativeReview?.proposed]), json([focusTypes.CLASSIC_NARRATIVE, focusTypes.CLASSIC_NARRATIVE, "classic", GUIDE]));
+  const edited = (await h.edit("narrative", { value: focus.narrativeReview?.proposed })).focus!;
+  assert.equal(json([edited.values?.narrative, edited.edited]), json([GUIDE, ["narrative"]]), "the editor takes Claude's proposal back; it stays theirs");
+});
+
+test("a review that cannot run leaves Claude's form standing, with why; a decision never fails for it", async () => {
+  const unconfigured = (await harness({ answers: [answer({ narrative: GUIDE })] }).decide()).focus!;
+  assert.equal(json([unconfigured.values?.narrative, unconfigured.narrativeReview?.verdict]), json([GUIDE, "unavailable"]));
+  assert.match(unconfigured.narrativeReview!.reason, /OPENAI_API_KEY is not configured/);
+  const h = harness({ answers: [answer({ narrative: GUIDE })], reviews: [new Error("openai gpt-6-luna failed (HTTP 429: rate limited)")], env: { OPENAI_API_KEY: "sk-test", DRAFT2_MODEL_JUDGE: "gpt-6-luna" } });
+  const session = await h.decide();
+  assert.equal(json([session.status, session.focus?.values?.narrative, session.focus?.narrativeReview?.verdict]), json(["ready", GUIDE, "unavailable"]));
+  assert.match(session.focus!.narrativeReview!.reason, /^Luna could not review the narrative form \(openai gpt-6-luna failed \(HTTP 429/);
+  assert.equal(session.trace[session.trace.length - 1].outcome, "error");
+});
+
+test("the editor's narrative form goes back to Claude as a choice and is not reviewed again", async () => {
+  const h = harness({ answers: [answer(), answer({ narrative: { ...GUIDE, characterId: "char-unknown" } })], env: { OPENAI_API_KEY: "sk-test" } });
+  await h.decide();
+  await h.edit("narrative", { value: GUIDE });
+  const focus = (await h.decide()).focus!;
+  assert.equal(json((h.calls[1].contents as { editorChoices: unknown }).editorChoices), json({ narrative: GUIDE }));
+  assert.equal(json([focus.values?.narrative, focus.narrativeReview, h.reviewCalls.length]), json([GUIDE, undefined, 0]), "kept as the editor chose it, whatever Claude answered");
 });

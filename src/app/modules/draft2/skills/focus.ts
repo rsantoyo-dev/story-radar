@@ -4,10 +4,12 @@ import type { Draft2Skill } from "./draft2-skills";
  * The focus skill: what a story is for, decided after its facts are verified
  * and before any hook is written. Claude decides it; the editor reviews it
  * and may change any field; the Opening follows it (hooks skill, "Focus").
+ * Version 4 adds the narrative form, chosen with People and places' material
+ * (the narratives skill, read beside this one, defines the forms).
  */
 export const FOCUS_SKILL: Draft2Skill = {
   name: "focus",
-  version: "3",
+  version: "4",
   text: `# The focus of a story
 
 The focus is the brief every later step follows: which editorial line the
@@ -63,15 +65,40 @@ field; it is guidance for the writing, never evidence.
   language: what to lead with, which facts carry the promise, what to leave
   out or keep for later slides, and what the reader takes away. It guides
   the writer; it never adds a fact.
+- narrative: how the carousel is told across its slides, in words and images
+  together (the narratives skill defines the forms). Choose
+  "character-guide" or "traveling-object" only when its anchor makes the
+  reader want the next slide more than a classic telling would, and say so in
+  its reason; otherwise "classic", with anchorKind "none", characterId null,
+  empty anchor, anchorFactIds and progression, and ending "resolves".
+  - character-guide: anchorKind "character" for one of the brand's characters
+    (an id from material.characters; anchor is its name), or "figure" for a
+    figure the facts give (cite them in anchorFactIds) or an anonymous figure
+    the story calls for (no facts). Never anyone in material.people.
+  - traveling-object: anchorKind "object", an object the facts give, cited in
+    anchorFactIds.
+  - anchor: what stays, in at most 200 characters, said the way it will
+    appear on every slide. progression: what changes from slide to slide
+    while the anchor stays, in one line of at most 300 characters; for a list
+    or steps, its items are the steps. ending: "returns" when the last slide
+    can come back to the cover's frame with what the reader now knows, else
+    "resolves".
+  - When material.characterChoice is "on", a brand character narrates this
+    story: a character-guide's guide is one of them. When it is "off",
+    material.characters is empty and no brand character may guide.
+- anchorAlternatives: up to three other anchors the story could carry, each a
+  figure or an object with the facts that give it (none for an anonymous
+  figure), for the editor to choose from; an empty list when there are none.
 - visualDirection: one or two sentences, at most 600 characters, on how the
   images should tell this story within the publication's visual identity
   (given below when it has one): the world the images live in, who or what
   could lead them (anonymous people doing the activity, an object with a
   role in what happens, the brand's character when one narrates), and what
   could recur from the first slide to the last and return changed at the
-  end. It is the approach the visual script follows; the script decides each
-  image. Never a real person, never a named real place, never the slides'
-  words.
+  end. With a narrative form, the anchor leads the images and is what
+  recurs. It is the approach the visual script follows; the script decides
+  each image. Never a real person, never a named real place, never the
+  slides' words.
 
 ## Rules
 - Use only the verified facts: no consequence, number, date, cause or name
@@ -90,5 +117,5 @@ field; it is guidance for the writing, never evidence.
 };
 
 export const FOCUS_ROLES = {
-  "focus-editor": `You decide the focus of a story for the publication described below, from its verified facts (cite their ids), the publication's defaults (topicDefaults) and its editorial lines (lines, with the ones that found the story in foundBy). The story's title is context, not a fact. Follow the focus skill and return every field with a reason for each; the publication's visual identity, when given below, is the frame of visualDirection.`,
+  "focus-editor": `You decide the focus of a story for the publication described below, from its verified facts (cite their ids), the publication's defaults (topicDefaults), its editorial lines (lines, with the ones that found the story in foundBy) and what People and places found (material: the brand's characters the editor allows, the story's people, its places and its photos). The story's title is context, not a fact. Follow the focus skill and return every field with a reason for each; the narratives skill defines the narrative forms; the publication's visual identity, when given below, is the frame of visualDirection.`,
 } as const;

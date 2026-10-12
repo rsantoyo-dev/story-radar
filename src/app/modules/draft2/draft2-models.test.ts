@@ -53,6 +53,7 @@ test("today's cast reads the environment the runs read: the judge's variable mov
   assert.equal(cast.funnel.caption.judge.model, "gpt-6-luna");
   assert.equal(cast.funnel.deck.judge.model, "gpt-6.1-sol", "a step's own variable wins");
   assert.deepEqual(cast.imageReview, { provider: "openai", model: "gpt-6.1-sol" });
+  assert.deepEqual(cast.focusReview, { provider: "openai", model: "gpt-6-luna" }, "the narrative form is reviewed by the judges' model");
   const extractor = draft2Cast({ DRAFT2_EXTRACTOR_MODEL: "gpt-6-astra" }, "claude-opus-5-5");
   assert.equal(extractor.facts.extractor.model, "gpt-6-astra");
   assert.equal(extractor.funnel.visual.judge.model, "gpt-6-astra", "the judges default to Sol's model");

@@ -2,13 +2,13 @@ import "server-only";
 import { recordFunnelChoice, runFunnelStep, type FunnelStep, type FunnelStepInput } from "./draft2-funnel-run";
 import { DRAFT2_OPENING_EARLIER_ROLES, DRAFT2_OPENING_ROLES } from "./draft2-models";
 import { Draft2InputError } from "./draft2-facts.types";
-import { focusFindings, focusForModels, focusItemCount, type Draft2FocusSnapshot } from "./draft2-focus.types";
+import { focusFindings, focusForModels, focusItemCount, focusMaterial, type Draft2FocusSnapshot } from "./draft2-focus.types";
 import {
   DRAFT2_OPENING_EVALUATION_SCHEMA, DRAFT2_OPENING_SCHEMA, OPENING_GATE, OPENING_ROUND_PLAN, mechanicalOpeningIssues, openingExploreRequest,
   openingJudgeRequest, openingRefineRequest, parseOpeningCandidates, parseOpeningEvaluation, sameOpening,
   type Draft2Opening, type Draft2OpeningCandidate, type Draft2OpeningIssue, type Draft2OpeningScore,
 } from "./draft2-opening.types";
-import { brandBrief, composeInstructions } from "./skills/draft2-skills";
+import { brandBrief, composeInstructions, narrativeSkills } from "./skills/draft2-skills";
 import { HOOKS_SKILL } from "./skills/hooks";
 import type { Draft2SessionRow } from "@/db/schema";
 
@@ -27,7 +27,8 @@ function openingFocus(session: Draft2SessionRow, stopped: Draft2Opening | undefi
   const focus = session.focus;
   if (!focus?.values) throw new Draft2InputError("The opening follows the story's focus. Decide the focus first.");
   if (focus.status === "running") throw new Draft2InputError("The focus was still being decided when its request ended. Decide it again first.");
-  const findings = focusFindings(focus.values);
+  // The narrative's anchor is checked against People and places as they stand now.
+  const findings = focusFindings(focus.values, session.inventory ? focusMaterial(session.inventory) : undefined);
   if (findings.length) throw new Draft2InputError(`Fix the focus first: ${findings.map((finding) => finding.detail).join(" ")}`);
   return { version: focus.version, values: focus.values };
 }
@@ -49,8 +50,8 @@ const OPENING_STEP: FunnelStep<Draft2OpeningCandidate, Draft2OpeningScore, Draft
     const brief = brandBrief(profile);
     const itemCount = focusItemCount(focus.values);
     return {
-      writer: composeInstructions("opening-writer", [HOOKS_SKILL], brief),
-      judge: composeInstructions("opening-judge", [HOOKS_SKILL], brief),
+      writer: composeInstructions("opening-writer", [HOOKS_SKILL, ...narrativeSkills(focus.values.narrative)], brief),
+      judge: composeInstructions("opening-judge", [HOOKS_SKILL, ...narrativeSkills(focus.values.narrative)], brief),
       context: { focus: focusForModels(focus.values) },
       schemas: { writer: DRAFT2_OPENING_SCHEMA, judge: DRAFT2_OPENING_EVALUATION_SCHEMA },
       parseCandidates: parseOpeningCandidates,

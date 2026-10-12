@@ -79,9 +79,11 @@ export function draft2ModelName(model: string | undefined, provider?: Draft2Prov
 
 export type Draft2FunnelStepName = "opening" | "closing" | "deck" | "visual" | "caption";
 
-/** Who plays each part in a run started now: the facts' extractor and reviewer, each funnel step's writer and judge, and the image reviews. */
+/** Who plays each part in a run started now: the facts' extractor and reviewer, the judge of a narrative form, each funnel step's writer and judge, and the image reviews. */
 export type Draft2Cast = {
   facts: { extractor: Draft2ModelRole; reviewer: Draft2ModelRole };
+  /** Reviews a narrative form Claude chose in the Focus: the judges' model unless DRAFT2_MODEL_FOCUS_JUDGE names another. */
+  focusReview: Draft2ModelRole;
   funnel: Record<Draft2FunnelStepName, { writer: Draft2ModelRole; judge: Draft2ModelRole }>;
   imageReview: Draft2ModelRole;
 };
@@ -103,6 +105,7 @@ export function draft2Cast(env: Draft2Env, anthropicModel: string): Draft2Cast {
   const steps = Object.keys(FUNNEL_STEP_ROLES) as Draft2FunnelStepName[];
   return {
     facts: { extractor: { provider: "openai", model: openaiModel }, reviewer: { provider: "anthropic", model: anthropicModel } },
+    focusReview: { provider: "openai", model: draft2RoleModel("focus", "judge", "openai", env, defaults) },
     funnel: Object.fromEntries(steps.map((step) => [step, { writer: play(step, "writer"), judge: play(step, "judge") }])) as Draft2Cast["funnel"],
     imageReview: { provider: "openai", model: openaiModel },
   };

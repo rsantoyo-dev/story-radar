@@ -7,6 +7,7 @@ import * as funnel from "./draft2-funnel";
 import * as models from "./draft2-models";
 import * as skills from "./skills/draft2-skills";
 import * as hooks from "./skills/hooks";
+import { NARRATIVES_SKILL } from "./skills/narratives";
 import { loadInSandbox } from "./draft2-test-sandbox";
 import type { Draft2Opening, Draft2OpeningCandidate, Draft2OpeningScore } from "./draft2-opening.types";
 import type { Draft2Focus, Draft2FocusValues } from "./draft2-focus.types";
@@ -600,4 +601,25 @@ test("under the floor, the run takes an extra round on its own, at most twice; a
   });
   const ready = await rescued.run();
   assert.equal(json([ready.opening?.status, ready.opening?.rounds.length, ready.opening?.extraRounds, ready.opening?.winnerId]), json(["ready", 4, 1, "c1.4"]), "the extra round can still reach the gate");
+});
+
+test("a narrative form: the writer and the judge read the narratives skill with their own part and the form in the focus; a classic story's instructions stay as they were", async () => {
+  const guide = { form: "character-guide" as const, anchorKind: "figure" as const, characterId: null, anchor: "A curious toad", anchorFactIds: ["f1"], progression: "From the kiosk to each animal of the trail", ending: "returns" as const };
+  const guided = { ...FOCUS, values: { ...FOCUS_VALUES, narrative: guide } };
+  const h = harness({ writes: [writer()], judgments: [judge("accept", "c1", { c1: 96 })], session: { focus: guided } });
+  const session = await h.run();
+  const [writerCall] = h.calls.filter((call) => call.role === "writer");
+  const [judgeCall] = h.calls.filter((call) => call.role === "judge");
+  for (const [call, role] of [[writerCall, "opening-writer"], [judgeCall, "opening-judge"]] as const) {
+    const instructions = String(call.input.instructions);
+    assert.ok(instructions.includes(NARRATIVES_SKILL.text), `${role} reads the narratives skill`);
+    assert.ok(instructions.includes(NARRATIVES_SKILL.roleText![role]!), `${role} reads its own part`);
+  }
+  assert.ok(!String(writerCall.input.instructions).includes(NARRATIVES_SKILL.roleText!["opening-judge"]!), "never the judge's part");
+  assert.equal(json(session.trace.filter((entry) => entry.step === "opening").map((entry) => entry.skillVersions)), json([{ hooks: "6", narratives: "1" }, { hooks: "6", narratives: "1" }]));
+  const context = (writerCall.input.context ?? solContextOf(writerCall.input)) as { focus: { narrative?: unknown } };
+  assert.equal(json(context.focus.narrative), json(focusTypes.narrativeForModels(guide)));
+  const classic = harness({ writes: [writer()], judgments: [judge("accept", "c1", { c1: 96 })] });
+  await classic.run();
+  assert.ok(!String(classic.calls[0].input.instructions).includes(NARRATIVES_SKILL.text), "a classic story reads no narratives skill");
 });
