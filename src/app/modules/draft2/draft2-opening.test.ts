@@ -636,3 +636,27 @@ test("a discovery premise: the writer and the judge read the discovery skill wit
   assert.equal(json(session.trace.filter((entry) => entry.step === "opening").map((entry) => entry.skillVersions)), json([{ hooks: "6", discovery: "1" }, { hooks: "6", discovery: "1" }]));
   assert.equal(json((writerCall.input.context as { focus: { concept?: unknown } }).focus.concept), json(focusTypes.conceptForModels(concept)));
 });
+
+test("a paused run whose next round is past the rounds it may have ends as its last round would have, with no call; a new run never inherits the earlier run's extra rounds", async () => {
+  const h = harness({
+    writes: [writer(), writer(), writer(), writer(), writer()],
+    judgments: [judge("revise", "c1", { c1: 80, c2: 78 }), judge("revise", "c1.2", { "c1.2": 84 }), judge("revise", "c1.3", { "c1.3": 87 }), judge("revise", "c1.4", { "c1.4": 88 }), judge("revise", "c1.5", { "c1.5": 89 })],
+  });
+  const ended = await h.run();
+  assert.equal(json([ended.opening?.rounds.length, ended.opening?.extraRounds]), json([5, 2]));
+  // As a run that inherited an earlier run's extra round was left: paused before a round past its own plan and extra rounds.
+  h.patch({ status: "needs-review", opening: { ...ended.opening!, status: "paused", resumeRound: 6, error: "Paused before round 6: this request's time is spent." } });
+  const calls = h.calls.length;
+  const closed = await h.run({ resume: true });
+  assert.equal(h.calls.length, calls, "no provider call");
+  assert.equal(json([closed.opening?.status, closed.opening?.resumeRound, closed.opening?.winnerId]), json(["needs-review", undefined, "c1.5"]));
+  assert.match(String(closed.error), /^Sol did not accept an opening after 5 rounds \(2 extra\), and the best stays under 90\/100\. The best version, c1\.5, scored 89\/100/);
+
+  const fresh = harness({
+    writes: [writer(), writer(), writer()],
+    judgments: [judge("revise", "c1", { c1: 91, c2: 82 }), judge("revise", "c1.2", { "c1.2": 92 }), judge("revise", "c1.3", { "c1.3": 93 })],
+    session: { opening: closed.opening },
+  });
+  const next = await fresh.run();
+  assert.equal(json([next.opening?.rounds.length, next.opening?.extraRounds ?? 0, next.opening?.status]), json([3, 0, "needs-review"]), "its own plan's three rounds, not the earlier run's two extra");
+});

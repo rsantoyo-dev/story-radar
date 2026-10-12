@@ -169,6 +169,13 @@ function stepOutcome(session: Draft2SessionView, step: Draft2RunStep): Autopilot
 /** The best score a run reached, across its rounds. */
 const bestScoreOf = <C extends FunnelCandidate>(run: FunnelRun<C> | null | undefined): number | undefined => run ? funnelBestVersions(funnelVersions(run.rounds))[0]?.score?.overall : undefined;
 
+/**
+ * The last round a paused or stopped run can be continued from: its plan's
+ * rounds and its own extra rounds (the floor's and the editor's), and one
+ * past them, which the server closes with the run's best version.
+ */
+const continuableUpTo = (run: { extraRounds?: number }, planRounds: number) => planRounds + (run.extraRounds ?? 0) + 1;
+
 /** The version the next steps build on: the editor's choice, else the judge's winner. */
 const chosenVersion = <C extends FunnelCandidate>(run: FunnelRun<C> | null | undefined) =>
   run ? funnelVersions(run.rounds).find((version) => version.candidate.id === (run.editorChoiceId ?? run.winnerId)) : undefined;
@@ -688,7 +695,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const chosenOpeningId = session?.opening?.editorChoiceId ?? session?.opening?.winnerId;
   const openingFinished = Boolean(session?.opening && chosenOpeningId && session.opening.status !== "running" && session.opening.status !== "paused");
   const closingReady = openingFinished && Boolean(session?.opening?.focus);
-  const closingResumable = closing && (closing.status === "paused" || closingStalled) && funnelResumeRound(closing) <= CLOSING_MAX_ROUNDS;
+  const closingResumable = closing && (closing.status === "paused" || closingStalled) && funnelResumeRound(closing) <= continuableUpTo(closing, CLOSING_MAX_ROUNDS);
   const closingResumeRound = closingResumable && closing ? funnelResumeRound(closing) : undefined;
   const closingPausedRound = closing?.status === "paused" ? funnelResumeRound(closing) : undefined;
   // A closing written for another opening than the one chosen now.
@@ -700,7 +707,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const chosenClosingId = closing?.editorChoiceId ?? closing?.winnerId;
   const closingFinished = Boolean(closing && chosenClosingId && closing.status !== "running" && closing.status !== "paused");
   const deckReady = closingFinished && !closingOpeningChanged;
-  const deckResumable = deck && (deck.status === "paused" || deckStalled) && funnelResumeRound(deck) <= DECK_MAX_ROUNDS;
+  const deckResumable = deck && (deck.status === "paused" || deckStalled) && funnelResumeRound(deck) <= continuableUpTo(deck, DECK_MAX_ROUNDS);
   const deckResumeRound = deckResumable && deck ? funnelResumeRound(deck) : undefined;
   const deckPausedRound = deck?.status === "paused" ? funnelResumeRound(deck) : undefined;
   // A deck written for another closing or opening than the ones chosen now.
@@ -720,7 +727,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const visualReady = deckFinished && !deckEndsChanged && inventory?.status === "ready";
   // A visual script of another deck, or of people and places found or decided since.
   const visualChanged = Boolean(visual?.deckId && ((chosenDeckId && visual.deckId !== chosenDeckId) || (inventory && visual.inventoryVersion !== inventory.version)));
-  const visualResumable = visual && (visual.status === "paused" || visualStalled) && funnelResumeRound(visual) <= VISUAL_MAX_ROUNDS;
+  const visualResumable = visual && (visual.status === "paused" || visualStalled) && funnelResumeRound(visual) <= continuableUpTo(visual, VISUAL_MAX_ROUNDS);
   // A run that ended unaccepted before the step had its third round takes it, while it still follows the deck and the people and places.
   const visualExtendable = Boolean(visual && !visualChanged && funnelExtendable(visual, visualPlan(visual.carousel ?? []).length + (visual.extraRounds ?? 0)));
   const visualResumeRound = (visualResumable || visualExtendable) && visual ? funnelResumeRound(visual) : undefined;
@@ -752,7 +759,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const imagesFinished = Boolean(images && images.status !== "running" && images.status !== "paused" && images.slides.every((slide) => slideSettled(slide) && shownAttempt(slide)));
   const imagesScriptGone = Boolean(images && !funnelVersions(visual?.rounds ?? []).some((version) => version.candidate.id === images.visualId));
   const captionReady = imagesFinished && !imagesScriptGone;
-  const captionResumable = caption && (caption.status === "paused" || captionStalled) && funnelResumeRound(caption) <= CAPTION_MAX_ROUNDS;
+  const captionResumable = caption && (caption.status === "paused" || captionStalled) && funnelResumeRound(caption) <= continuableUpTo(caption, CAPTION_MAX_ROUNDS);
   const captionResumeRound = captionResumable && caption ? funnelResumeRound(caption) : undefined;
   const captionPausedRound = caption?.status === "paused" ? funnelResumeRound(caption) : undefined;
   // A caption written for other images, or tagging other accounts, than the ones now.
@@ -768,7 +775,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   // What each step took so far, this run's and earlier ones: time inside calls and the meter's cost.
   const metrics = stepMetrics(session?.trace ?? [], session?.images);
   const totals = sessionMetrics(session?.trace ?? [], session?.images);
-  const resumable = session?.opening && (session.opening.status === "paused" || stalled) && openingResumeRound(session.opening) <= OPENING_MAX_ROUNDS;
+  const resumable = session?.opening && (session.opening.status === "paused" || stalled) && openingResumeRound(session.opening) <= continuableUpTo(session.opening, OPENING_MAX_ROUNDS);
   const resumeRound = resumable && session?.opening ? openingResumeRound(session.opening) : undefined;
   const pausedRound = session?.opening?.status === "paused" ? openingResumeRound(session.opening) : undefined;
 

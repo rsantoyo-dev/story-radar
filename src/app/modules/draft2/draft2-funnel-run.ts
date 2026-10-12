@@ -133,7 +133,8 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
   const current = runOf<R>(session, def.step);
   // An extra round the editor asks for: the best version revised once more, at most FUNNEL_MAX_EXTRA_ROUNDS times per run.
   if (resume && more && (current?.extraRounds ?? 0) >= FUNNEL_MAX_EXTRA_ROUNDS) throw new Draft2InputError(`This ${def.noun} already had its ${FUNNEL_MAX_EXTRA_ROUNDS} extra rounds. Write it again.`);
-  const extraRounds = (current?.extraRounds ?? 0) + (resume && more ? 1 : 0);
+  // A new run starts with none of the earlier run's extra rounds; a continued one keeps its own, and one more when the editor asks.
+  const extraRounds = resume ? (current?.extraRounds ?? 0) + (more ? 1 : 0) : 0;
   // A run left "running" passed the busy check only because its heartbeat stopped: its request or server died.
   // A run that ended unaccepted continues only with rounds its plan gained since (or an extra round); a plan chosen per run is known once the snapshot is (checked below).
   const ended = current && funnelExtendable(current, (typeof def.plan === "function" ? Infinity : def.plan.length) + extraRounds) ? current : undefined;
@@ -144,7 +145,10 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
   // The plan may still grow by extra rounds while the run goes, when its best stays under the floor; never past the cap.
   let plan: FunnelPlanRound[] = [...(typeof def.plan === "function" ? def.plan(snapshot) : def.plan), ...Array.from({ length: extraRounds }, () => FUNNEL_EXTRA_ROUND)];
   let maxRounds = plan.length;
-  if (resume && stopped && (funnelResumeRound(stopped) > maxRounds || (stopped.status === "needs-review" && !funnelExtendable(stopped, maxRounds)))) throw new Draft2InputError(nothingToContinue);
+  // A paused or stopped run whose next round is past the rounds it may have (its plan and its own extra rounds), with every round judged, has
+  // nothing left to run: it ends as its last round would have. Runs started before a new run stopped inheriting extra rounds paused this way.
+  const spent = Boolean(resume && stopped && stopped.status !== "needs-review" && funnelResumeRound(stopped) > maxRounds && stopped.rounds.length && stopped.rounds.every((entry) => entry.evaluation));
+  if (resume && stopped && !spent && (funnelResumeRound(stopped) > maxRounds || (stopped.status === "needs-review" && !funnelExtendable(stopped, maxRounds)))) throw new Draft2InputError(nothingToContinue);
 
   const configuredOpenAiKey = process.env.OPENAI_API_KEY?.trim();
   if (!configuredOpenAiKey) throw new Draft2InputError("OPENAI_API_KEY is not configured; the OpenAI models need it.");
@@ -301,6 +305,17 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
       draft2DevTrace({ step: def.step, round, provider, model, operation, phase: "error", durationMs, detail: { error: note, ...failedCall(error) } });
       throw error;
     }
+  }
+
+  if (spent) {
+    // Nothing left to run (see above): no provider call; the run ends unaccepted with its best version, as its last round would have.
+    const best = funnelBestVersions(funnelVersions(run.rounds))[0];
+    const rounds = run.rounds.length;
+    const extra = run.extraRounds ?? 0;
+    await needsReview((best?.score?.overall ?? 0) >= FUNNEL_ACCEPTABLE_SCORE
+      ? `${judgeName} did not accept ${def.article} after ${rounds} rounds.`
+      : `${judgeName} did not accept ${def.article} after ${rounds} rounds${extra ? ` (${extra} extra)` : ""}, and the best stays under ${FUNNEL_ACCEPTABLE_SCORE}/100.`);
+    return (await updateDraft2Session(session.id, {})) ?? claimed;
   }
 
   // Between checkpoints, the heartbeat shows the run is alive; when it stops, the run can be continued.
