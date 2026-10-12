@@ -8,7 +8,7 @@ import {
   openingJudgeRequest, openingRefineRequest, parseOpeningCandidates, parseOpeningEvaluation, sameOpening,
   type Draft2Opening, type Draft2OpeningCandidate, type Draft2OpeningIssue, type Draft2OpeningScore,
 } from "./draft2-opening.types";
-import { brandBrief, composeInstructions, narrativeSkills } from "./skills/draft2-skills";
+import { brandBrief, composeInstructions, creativeSkills } from "./skills/draft2-skills";
 import { HOOKS_SKILL } from "./skills/hooks";
 import type { Draft2SessionRow } from "@/db/schema";
 
@@ -50,8 +50,8 @@ const OPENING_STEP: FunnelStep<Draft2OpeningCandidate, Draft2OpeningScore, Draft
     const brief = brandBrief(profile);
     const itemCount = focusItemCount(focus.values);
     return {
-      writer: composeInstructions("opening-writer", [HOOKS_SKILL, ...narrativeSkills(focus.values.narrative)], brief),
-      judge: composeInstructions("opening-judge", [HOOKS_SKILL, ...narrativeSkills(focus.values.narrative)], brief),
+      writer: composeInstructions("opening-writer", [HOOKS_SKILL, ...creativeSkills(focus.values)], brief),
+      judge: composeInstructions("opening-judge", [HOOKS_SKILL, ...creativeSkills(focus.values)], brief),
       context: { focus: focusForModels(focus.values) },
       schemas: { writer: DRAFT2_OPENING_SCHEMA, judge: DRAFT2_OPENING_EVALUATION_SCHEMA },
       parseCandidates: parseOpeningCandidates,

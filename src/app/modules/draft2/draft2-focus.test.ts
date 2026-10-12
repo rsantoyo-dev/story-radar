@@ -154,7 +154,7 @@ test("Claude decides the focus from the cached facts, the brand brief, the profi
   assert.equal(json(focus.decidedBy), json({ provider: "anthropic", model: "claude-sonnet-5-5" }));
   const last = session.trace[session.trace.length - 1];
   assert.equal(session.trace.length, 2, "the facts trace is kept");
-  assert.equal(json([last.step, last.provider, last.operation, last.outcome, last.skillVersions, last.cacheWriteTokens]), json(["focus", "anthropic", "draft2_focus", "ok", { focus: "5", narratives: "2" }, 900]));
+  assert.equal(json([last.step, last.provider, last.operation, last.outcome, last.skillVersions, last.cacheWriteTokens]), json(["focus", "anthropic", "draft2_focus", "ok", { focus: "6", discovery: "1", narratives: "2" }, 900]));
   assert.equal(json([focus.values?.narrative, focus.inventoryVersion, h.reviewCalls.length]), json([focusTypes.CLASSIC_NARRATIVE, 2, 0]), "a classic story is not reviewed");
 });
 
@@ -285,4 +285,24 @@ test("the editor's narrative form goes back to Claude as a choice and is not rev
   const focus = (await h.decide()).focus!;
   assert.equal(json((h.calls[1].contents as { editorChoices: unknown }).editorChoices), json({ narrative: GUIDE }));
   assert.equal(json([focus.values?.narrative, focus.narrativeReview, h.reviewCalls.length]), json([GUIDE, undefined, 0]), "kept as the editor chose it, whatever Claude answered");
+});
+
+const DISCOVERY = { arc: "discovery", premise: "The park's animals sent an SOS: they need humans to bring them « bonbons ».", premiseFactIds: ["f1"], reveals: ["What is this message?", "Who sent it?", "When and where?"] };
+
+test("a premise and a narrative form Claude chose are reviewed side by side; each is kept or sent back to classic on its own", async () => {
+  const h = harness({
+    answers: [answer({ concept: DISCOVERY, narrative: GUIDE })],
+    reviews: [{ verdict: "keep", reason: "Jo carries the walk." }, { verdict: "classic", reason: "The SOS invents a danger the facts do not have." }],
+    env: { OPENAI_API_KEY: "sk-test", DRAFT2_MODEL_JUDGE: "gpt-6-luna" },
+  });
+  const focus = (await h.decide()).focus!;
+  assert.equal(json(h.reviewCalls.map((call) => call.schemaName)), json(["draft2_focus_narrative_review", "draft2_focus_concept_review"]));
+  assert.match(String(h.reviewCalls[1].instructions), /## Reviewing a premise/);
+  assert.equal(json((h.reviewCalls[1].contents as { focus: { concept: unknown } }).focus.concept), json(focusTypes.conceptForModels(DISCOVERY as never)));
+  assert.equal(json([focus.values?.narrative, focus.values?.concept, focus.ai?.concept]), json([GUIDE, focusTypes.CLASSIC_CONCEPT, focusTypes.CLASSIC_CONCEPT]));
+  assert.equal(json([focus.narrativeReview?.verdict, focus.conceptReview?.verdict, focus.conceptReview?.proposed]), json(["keep", "classic", DISCOVERY]));
+  const concept = h.row().trace.filter((entry) => entry.operation === "draft2_focus_concept_review");
+  assert.equal(json(concept.map((entry) => [entry.provider, entry.model, entry.skillVersions])), json([["openai", "gpt-6-luna", { discovery: "1" }]]));
+  const edited = (await h.edit("concept", { value: focus.conceptReview?.proposed })).focus!;
+  assert.equal(json([edited.values?.concept, edited.edited]), json([DISCOVERY, ["concept"]]), "the editor takes Claude's premise back; it stays theirs");
 });

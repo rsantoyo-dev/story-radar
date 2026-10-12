@@ -311,3 +311,46 @@ it in a dropdown and the change stays theirs, "Use Claude's" gives it back.
 
 - The form in the publication package, to compare forms on performance.
 - Same place forms, once the anchor holds on real stories.
+
+## 13. Concept: discovery (2026-10-12)
+
+The editor's aim: carousels that make the reader curious enough to swipe to
+the end, thinking outside the box within the story's tone. The concept says
+how the reader meets the news, a focus field (`concept`) beside the narrative
+form, with the same machinery (Claude's value and reason, the editor's
+choice that stays, "Use Claude's").
+
+- `classic`: the news, told straight (the method before concepts, the
+  default, unchanged).
+- `discovery`: the reader discovers the news. A premise, invented for the
+  story (an SOS the park's animals sent, a message found on a trail, a
+  mission order), is its world; a chain of reveals (2 to 6 short questions)
+  is the order the slides answer them, each slide closing the gap the one
+  before opened and opening the next; the news itself, plainly and
+  completely, is the last reveal. In storytelling terms: a delayed reveal
+  on a framing device, the "mystery box"; the curiosity gap is the engine.
+- The premise invents the world, never the news: the mission or mystery the
+  reader follows is the facts' own (it cites them in `premiseFactIds`);
+  animals, objects and places may speak, real people and organizations never
+  do; every practical value appears as the facts give it. The test: a reader
+  who follows the premise literally ends up doing what the facts say ("bring
+  « bonbons » to the animals" passes; "find who stole the bonbons" invents a
+  theft and fails).
+- Claude writes three premises (its choice and `conceptAlternatives`, kept
+  as `conceptOptions` for the editor's dropdown, with "Write your own…").
+  A premise Claude chose goes to the judge beside the narrative form, in
+  parallel (`draft2_focus_concept_review`), which keeps it or sends it back
+  to classic with the premise kept for the editor. Only for a light or
+  ordinary gravity: Claude's answer is refused otherwise, and the program
+  finds `CONCEPT_GRAVITY` on the editor's choice; `CONCEPT_REAL_PERSON` when
+  a person of the story is in the premise. People and places now also gives
+  the story's organizations (`material.organizations`).
+- `skills/discovery.ts` (v1) is read by the focus's judge and, only for a
+  discovery story, by the writers and judges of the Opening (the cover opens
+  the first question inside the premise, never with the date, time or
+  price), the Deck (one reveal per slide), the Closing (the last slide is the
+  reveal, plainly and completely, then one line in the premise's world and
+  the call to action), the visual script (each image a moment of the
+  premise's world; no lettering beyond the slide's words, nothing official of
+  a real organization) and the Caption (the premise's question first, the
+  news plainly after). Focus skill v6.

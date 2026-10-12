@@ -12,17 +12,18 @@ import { traceCost } from "./draft2-trace-cost";
 import { draft2DevTrace } from "./draft2-dev-trace";
 import { Draft2BusyError, Draft2InputError, Draft2ResponseError, type Draft2TraceEntry } from "./draft2-facts.types";
 import {
-  CLASSIC_NARRATIVE, DRAFT2_FOCUS_SCHEMA, DRAFT2_NARRATIVE_REVIEW_SCHEMA, applyFocusEdit, decidedFocus, editorChoicesOf, focusDecisionRequest, focusLine, focusMaterial, focusToday,
+  CLASSIC_CONCEPT, CLASSIC_NARRATIVE, DRAFT2_FOCUS_SCHEMA, DRAFT2_NARRATIVE_REVIEW_SCHEMA, applyFocusEdit, conceptReviewRequest, decidedFocus, editorChoicesOf, focusDecisionRequest, focusLine, focusMaterial, focusToday,
   narrativeReviewRequest, parseFocusDecision, parseNarrativeReview, resetFocusField,
-  type Draft2Focus, type Draft2FocusField,
+  type Draft2CreativeReview, type Draft2Focus, type Draft2FocusField,
 } from "./draft2-focus.types";
 import { draft2ModelName, draft2RoleModel, draft2SolModel } from "./draft2-models";
 import { OPENING_STALL_MS, openingFactsSnapshot } from "./draft2-opening.types";
 import { visualModeLine, type Draft2VisualMode } from "./draft2-visual.types";
 import { resolveCreativeVisualGuidance } from "../stories/creative-visual-guidance";
-import { brandBrief, composeInstructions } from "./skills/draft2-skills";
+import { brandBrief, composeInstructions, type Draft2Skill } from "./skills/draft2-skills";
 import { FOCUS_SKILL } from "./skills/focus";
 import { NARRATIVES_SKILL } from "./skills/narratives";
+import { DISCOVERY_SKILL } from "./skills/discovery";
 import type { Draft2SessionRow } from "@/db/schema";
 
 /** Every field and a reason for each, with Claude's thinking, which the API counts against the same ceiling. */
@@ -49,10 +50,10 @@ const factsVerified = (session: Draft2SessionRow) => Boolean(session.facts?.leng
  * found the story and People and places' material, and returns every field
  * with a reason. A field the editor set stays theirs: Claude receives it as
  * an editor's choice and the program keeps it whatever the answer says. A
- * narrative form Claude chose (not classic, not the editor's) goes to the
- * judge, which keeps it or sends the story back to classic; a review that
- * cannot run leaves Claude's form standing, with why. A failure keeps the
- * focus as it was before, with the trace.
+ * narrative form or a premise Claude chose (not classic, not the editor's)
+ * goes to the judge, both side by side, which keeps each or sends it back to
+ * classic; a review that cannot run leaves Claude's choice standing, with
+ * why. A failure keeps the focus as it was before, with the trace.
  */
 export async function decideDraft2Focus({ topicId, storyId, sessionId }: Draft2FocusInput): Promise<Draft2SessionRow> {
   const session = await getDraft2Session(topicId, sessionId);
@@ -82,27 +83,26 @@ export async function decideDraft2Focus({ topicId, storyId, sessionId }: Draft2F
   const auditContext = { runId: session.id, topicId, storyId };
   // The visual identity in full, as the visual script reads it: the visual direction is decided within it.
   const brief = [brandBrief(profile), `# Visual identity\n${resolveCreativeVisualGuidance(profile)}`, visualModeLine(profile.visualFidelityMode as Draft2VisualMode)].join("\n\n");
-  const { instructions, skillVersions } = composeInstructions("focus-editor", [FOCUS_SKILL, NARRATIVES_SKILL], brief);
+  const { instructions, skillVersions } = composeInstructions("focus-editor", [FOCUS_SKILL, DISCOVERY_SKILL, NARRATIVES_SKILL], brief);
   const verifiedFacts = openingFactsSnapshot(facts);
   const contents = focusDecisionRequest({ title: content.title, today: focusToday(timezone, new Date()), profile, lines, foundBy, editorChoices, material });
 
   /**
-   * The judge's look at a narrative form Claude chose (never at classic, nor
-   * at the editor's): "classic" sends the story back to classic and keeps
-   * Claude's proposal beside it for the editor; the visual direction Claude
-   * wrote stays as written. A call that cannot run keeps Claude's form.
+   * The judge's look at a choice Claude made (a narrative form, a premise;
+   * never classic, never the editor's): "classic" sends that choice back to
+   * classic and keeps Claude's proposal beside it for the editor; the visual
+   * direction Claude wrote stays as written. A call that cannot run keeps
+   * Claude's choice, with why. Both reviews run side by side.
    */
-  const reviewNarrative = async (decided: Draft2Focus): Promise<Draft2Focus> => {
-    const narrative = decided.values?.narrative;
-    if (!decided.values || !narrative || narrative.form === "classic" || "narrative" in editorChoices) return decided;
+  const review = async <T>({ value, role, skill, operation, contents: reviewContents, subject }: {
+    value: T; role: "focus-narrative-judge" | "focus-concept-judge"; skill: Draft2Skill; operation: string; contents: unknown; subject: string;
+  }): Promise<Draft2CreativeReview<T>> => {
     const judgeModel = draft2RoleModel("focus", "judge", "openai", process.env, { openai: draft2SolModel(process.env), anthropic: model });
     const by = { provider: "openai" as const, model: judgeModel };
     const at = new Date().toISOString();
     const openAiKey = process.env.OPENAI_API_KEY?.trim();
-    if (!openAiKey) return { ...decided, narrativeReview: { verdict: "unavailable", reason: "OPENAI_API_KEY is not configured: the narrative form was not reviewed.", by, at } };
-    const judge = composeInstructions("focus-narrative-judge", [NARRATIVES_SKILL], brief);
-    const reviewContents = narrativeReviewRequest({ values: decided.values, material, title: content.title });
-    const operation = "draft2_focus_narrative_review";
+    if (!openAiKey) return { verdict: "unavailable", reason: `OPENAI_API_KEY is not configured: the ${subject} was not reviewed.`, by, at };
+    const judge = composeInstructions(role, [skill], brief);
     draft2DevTrace({ step: "focus", round: 1, provider: "openai", model: judgeModel, operation, phase: "request", detail: { contents: reviewContents } });
     const begin = Date.now();
     try {
@@ -114,19 +114,36 @@ export async function decideDraft2Focus({ topicId, storyId, sessionId }: Draft2F
       trace.push({ at, step: "focus", round: 1, provider: "openai", model: judgeModel, operation, durationMs, usage: answered.usage, cachedInputTokens: answered.cachedInputTokens, answerCharacters: answered.text.length, outcome: "ok", skillVersions: judge.skillVersions, effort: "low", ...traceCost("openai", judgeModel, answered.usage, answered.cachedInputTokens) });
       draft2DevTrace({ step: "focus", round: 1, provider: "openai", model: judgeModel, operation, phase: "response", durationMs, detail: { usage: answered.usage, answer: answered.text } });
       const { verdict, reason } = parseNarrativeReview(answered.text);
-      if (verdict === "keep") return { ...decided, narrativeReview: { verdict, reason, by, at } };
-      return {
-        ...decided,
-        values: { ...decided.values, narrative: CLASSIC_NARRATIVE },
-        ...(decided.ai ? { ai: { ...decided.ai, narrative: CLASSIC_NARRATIVE } } : {}),
-        narrativeReview: { verdict, reason, proposed: narrative, by, at },
-      };
+      return verdict === "keep" ? { verdict, reason, by, at } : { verdict, reason, proposed: value, by, at };
     } catch (error) {
       const note = error instanceof Error ? error.message : "unknown error";
       trace.push({ at, step: "focus", round: 1, provider: "openai", model: judgeModel, operation, durationMs: Date.now() - begin, outcome: "error", note, ...failedCall(error), skillVersions: judge.skillVersions, effort: "low" });
       draft2DevTrace({ step: "focus", round: 1, provider: "openai", model: judgeModel, operation, phase: "error", durationMs: Date.now() - begin, detail: { error: note } });
-      return { ...decided, narrativeReview: { verdict: "unavailable", reason: `${draft2ModelName(judgeModel, "openai")} could not review the narrative form (${note.slice(0, 160)}); it stands as Claude chose it.`, by, at } };
+      return { verdict: "unavailable", reason: `${draft2ModelName(judgeModel, "openai")} could not review the ${subject} (${note.slice(0, 160)}); it stands as Claude chose it.`, by, at };
     }
+  };
+  const reviewChoices = async (decided: Draft2Focus): Promise<Draft2Focus> => {
+    const values = decided.values;
+    if (!values) return decided;
+    const narrative = values.narrative;
+    const concept = values.concept;
+    const reviewContents = { title: content.title, values, material };
+    const [narrativeReview, conceptReview] = await Promise.all([
+      narrative && narrative.form !== "classic" && !("narrative" in editorChoices)
+        ? review({ value: narrative, role: "focus-narrative-judge", skill: NARRATIVES_SKILL, operation: "draft2_focus_narrative_review", contents: narrativeReviewRequest(reviewContents), subject: "narrative form" })
+        : undefined,
+      concept && concept.arc === "discovery" && !("concept" in editorChoices)
+        ? review({ value: concept, role: "focus-concept-judge", skill: DISCOVERY_SKILL, operation: "draft2_focus_concept_review", contents: conceptReviewRequest(reviewContents), subject: "premise" })
+        : undefined,
+    ]);
+    const backToClassic = { ...(narrativeReview?.verdict === "classic" ? { narrative: CLASSIC_NARRATIVE } : {}), ...(conceptReview?.verdict === "classic" ? { concept: CLASSIC_CONCEPT } : {}) };
+    return {
+      ...decided,
+      values: { ...values, ...backToClassic },
+      ...(decided.ai ? { ai: { ...decided.ai, ...backToClassic } } : {}),
+      ...(narrativeReview ? { narrativeReview } : {}),
+      ...(conceptReview ? { conceptReview } : {}),
+    };
   };
 
   const heartbeat = setInterval(() => { void touchDraft2Session(session.id).catch(() => undefined); }, HEARTBEAT_MS);
@@ -156,7 +173,7 @@ export async function decideDraft2Focus({ topicId, storyId, sessionId }: Draft2F
         draft2DevTrace({ step: "focus", round: attempt, provider: "anthropic", model, operation: "draft2_focus", phase: "response", durationMs, detail: { usage: answered.usage, answer: answered.text } });
         try {
           const decision = parseFocusDecision(answered.text, { facts, lines: lineOptions, editorChoices, material });
-          return { ...(await reviewNarrative(decidedFocus(focus, decision, { provider: "anthropic", model }, new Date()))), inventoryVersion: inventory.version };
+          return { ...(await reviewChoices(decidedFocus(focus, decision, { provider: "anthropic", model }, new Date()))), inventoryVersion: inventory.version };
         } catch (error) {
           // An answer outside the contract (a field too long, a value it does not accept) is asked for again once, with the rule it broke; a second one fails the step.
           if (!(error instanceof Draft2ResponseError) || attempt === FOCUS_ATTEMPTS) throw error;

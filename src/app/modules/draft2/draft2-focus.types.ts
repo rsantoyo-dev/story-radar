@@ -22,7 +22,7 @@ import { TONE_KEYS, toneLine, toneValue, type ToneKey } from "./skills/tone";
  * hand; the judge reviews a form Claude chose, and the editor has the last
  * word.
  */
-export const FOCUS_FIELDS = ["line", "audience", "framing", "readerConsequence", "structure", "goal", "voice", "direction", "narrative", "visualDirection"] as const;
+export const FOCUS_FIELDS = ["line", "audience", "framing", "readerConsequence", "structure", "goal", "voice", "direction", "concept", "narrative", "visualDirection"] as const;
 export const FOCUS_FRAMINGS = ["reader-consequence", "explainer", "authority"] as const;
 export const FOCUS_STRUCTURES = ["arc", "steps", "list"] as const;
 export const FOCUS_GRAVITIES = ["light", "ordinary", "serious", "grave"] as const;
@@ -52,6 +52,25 @@ const MAX_CONSEQUENCE_FACTS = 10;
  * once as one wide master scene, and each slide is redrawn from its section.
  */
 export const FOCUS_NARRATIVE_FORMS = ["classic", "character-guide", "traveling-object", "panorama", "follow-the-line"] as const;
+/**
+ * How the reader meets the news. classic: the news, told straight;
+ * discovery: the reader discovers it, through a premise that is the story's
+ * own world (an SOS from the park's animals, a message found on a trail, a
+ * mission order), each slide answering one question and opening the next,
+ * the news itself the last reveal. A premise invents the world, never the
+ * news: the mission or the mystery the reader follows is the facts' own.
+ */
+export const FOCUS_CONCEPT_ARCS = ["classic", "discovery"] as const;
+export const FOCUS_PREMISE_MAX_CHARACTERS = 280;
+export const FOCUS_REVEAL_MAX_CHARACTERS = 140;
+export const FOCUS_MAX_REVEALS = 6;
+const FOCUS_MIN_REVEALS = 2;
+const MAX_PREMISE_FACTS = 6;
+/** Claude proposes three premises: its choice and two more. */
+const MAX_PREMISE_OPTIONS = 2;
+/** A premise plays with a story; a serious or grave one is told straight. */
+const PLAYFUL_GRAVITIES: readonly string[] = ["light", "ordinary"];
+
 /** resolves: the last slide pays the story off; returns: it comes back to the cover's frame, read with what the reader now knows. */
 export const FOCUS_NARRATIVE_ENDINGS = ["resolves", "returns"] as const;
 /** What stays from slide to slide: nothing (classic), one of the brand's characters, another figure, an object, the scene of a panorama, or a line. */
@@ -108,12 +127,29 @@ export type Draft2FocusNarrative = {
 };
 export const CLASSIC_NARRATIVE: Draft2FocusNarrative = { form: "classic", anchorKind: "none", characterId: null, anchor: "", anchorFactIds: [], progression: "", ending: "resolves" };
 
+export type Draft2ConceptArc = (typeof FOCUS_CONCEPT_ARCS)[number];
+/** The story's concept as the focus keeps it, in the answer's own shape. For classic, all but the arc are empty. */
+export type Draft2FocusConcept = {
+  arc: Draft2ConceptArc;
+  /** The story's own world, in one line, invented for this story. */
+  premise: string;
+  /** The facts the premise dramatizes: its mission or its mystery is theirs. Empty for the editor's own words. */
+  premiseFactIds: string[];
+  /** The questions the slides answer in order, one short line each; the news itself is the last. */
+  reveals: string[];
+};
+export const CLASSIC_CONCEPT: Draft2FocusConcept = { arc: "classic", premise: "", premiseFactIds: [], reveals: [] };
+/** Another premise Claude wrote, for the editor to choose instead. */
+export type Draft2PremiseOption = { premise: string; premiseFactIds: string[]; reveals: string[] };
+
 /** Another anchor Claude saw in the story, for the editor to choose instead. */
 export type Draft2NarrativeAlternative = { kind: "figure" | "object" | "scene" | "line"; anchor: string; factIds: string[] };
 const ALTERNATIVE_KINDS: readonly Draft2NarrativeAlternative["kind"][] = ["figure", "object", "scene", "line"];
 
-/** The judge's look at the narrative form Claude chose: kept, sent back to classic (Claude's proposal kept beside), or not reviewed, with why. */
-export type Draft2NarrativeReview = { verdict: "keep" | "classic" | "unavailable"; reason: string; proposed?: Draft2FocusNarrative; by: { provider: Draft2Provider; model: string }; at: string };
+/** The judge's look at a choice Claude made: kept, sent back to classic (Claude's proposal kept beside), or not reviewed, with why. */
+export type Draft2CreativeReview<T> = { verdict: "keep" | "classic" | "unavailable"; reason: string; proposed?: T; by: { provider: Draft2Provider; model: string }; at: string };
+export type Draft2NarrativeReview = Draft2CreativeReview<Draft2FocusNarrative>;
+export type Draft2ConceptReview = Draft2CreativeReview<Draft2FocusConcept>;
 
 /**
  * What People and places gives the focus: the brand's characters the editor
@@ -125,6 +161,8 @@ export type Draft2FocusMaterial = {
   characters: { id: string; name: string; description: string }[];
   people: string[];
   places: { name: string; verifiedPhoto: boolean; map: boolean }[];
+  /** The story's organizations: never a voice of a premise, never drawn. */
+  organizations: string[];
   storyPhotos: { id: string; name: string; description: string }[];
 };
 
@@ -147,6 +185,8 @@ export type Draft2FocusValues = {
   voice: Draft2FocusVoice;
   /** What to lead with, what to leave out, what the reader takes away (v1's editorial focus). */
   direction: string;
+  /** How the reader meets the news: straight, or discovered through a premise. Absent on a focus decided before concepts: classic. */
+  concept?: Draft2FocusConcept;
   /** How the carousel is told across its slides, in words and images. Absent on a focus decided before narrative forms: classic. */
   narrative?: Draft2FocusNarrative;
   /** How the images tell this story within the brand's visual identity: the world they live in, who leads them, what recurs. The visual script follows it. Absent on a focus decided before the field existed. */
@@ -178,6 +218,10 @@ export type Draft2Focus = {
   narrativeOptions?: Draft2NarrativeAlternative[];
   /** The judge's look at the narrative form Claude chose on the last decision. */
   narrativeReview?: Draft2NarrativeReview;
+  /** Claude's other premises on the last decision, for the editor to choose from. */
+  conceptOptions?: Draft2PremiseOption[];
+  /** The judge's look at the premise Claude chose on the last decision. */
+  conceptReview?: Draft2ConceptReview;
   /** The People and places version the last decision read; one confirmed or rejected since may change the narrative's material. */
   inventoryVersion?: number;
 };
@@ -185,7 +229,7 @@ export type Draft2Focus = {
 /** The focus an opening run followed, kept on the run. */
 export type Draft2FocusSnapshot = { version: number; values: Draft2FocusValues };
 
-export type Draft2FocusFindingCode = "NO_READER_CONSEQUENCE" | "TOO_FEW_ITEMS" | "NARRATIVE_CHARACTER_UNAVAILABLE" | "NARRATIVE_REAL_PERSON";
+export type Draft2FocusFindingCode = "NO_READER_CONSEQUENCE" | "TOO_FEW_ITEMS" | "NARRATIVE_CHARACTER_UNAVAILABLE" | "NARRATIVE_REAL_PERSON" | "CONCEPT_GRAVITY" | "CONCEPT_REAL_PERSON";
 /** What the program finds wrong with a focus; any one keeps the Opening from starting. */
 export type Draft2FocusFinding = { field: Draft2FocusField; code: Draft2FocusFindingCode; detail: string };
 
@@ -222,6 +266,26 @@ export const DRAFT2_FOCUS_SCHEMA: Record<string, unknown> = {
       additionalProperties: false,
     },
     direction: { type: "string" },
+    concept: {
+      type: "object",
+      properties: {
+        arc: { type: "string", enum: [...FOCUS_CONCEPT_ARCS] },
+        premise: { type: "string" },
+        premiseFactIds: factIdsSchema,
+        reveals: { type: "array", items: { type: "string" } },
+      },
+      required: ["arc", "premise", "premiseFactIds", "reveals"],
+      additionalProperties: false,
+    },
+    conceptAlternatives: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { premise: { type: "string" }, premiseFactIds: factIdsSchema, reveals: { type: "array", items: { type: "string" } } },
+        required: ["premise", "premiseFactIds", "reveals"],
+        additionalProperties: false,
+      },
+    },
     narrative: {
       type: "object",
       properties: {
@@ -253,7 +317,7 @@ export const DRAFT2_FOCUS_SCHEMA: Record<string, unknown> = {
       additionalProperties: false,
     },
   },
-  required: ["lineId", "audience", "framing", "readerConsequence", "structure", "goal", "voice", "direction", "narrative", "anchorAlternatives", "visualDirection", "reasons"],
+  required: ["lineId", "audience", "framing", "readerConsequence", "structure", "goal", "voice", "direction", "concept", "conceptAlternatives", "narrative", "anchorAlternatives", "visualDirection", "reasons"],
   additionalProperties: false,
 };
 
@@ -286,6 +350,7 @@ export function focusMaterial(inventory: Pick<Draft2Inventory, "characters" | "r
       const material = entityMaterial(entity);
       return { name: entity.name, verifiedPhoto: Boolean(material.photo), map: Boolean(material.map) };
     }),
+    organizations: inventory.entities.filter((entity) => entity.kind === "organization").map((entity) => entity.name),
     storyPhotos: referencePhotos(inventory).map(({ id, name, description }) => ({ id, name, description })),
   };
 }
@@ -343,6 +408,54 @@ function parseNarrative(value: unknown, { known, material, editorChoice }: { kno
   return { form, anchorKind: kind, characterId: null, anchor, anchorFactIds, progression, ending };
 }
 
+/** The concept a focus follows: its own, else classic (a focus decided before concepts). */
+export const focusConcept = (values: Pick<Draft2FocusValues, "concept">): Draft2FocusConcept => values.concept ?? CLASSIC_CONCEPT;
+
+/** The reveals of a discovery chain: the lines that fit, at most six. */
+const revealsOf = (value: unknown): string[] =>
+  (Array.isArray(value) ? value : []).flatMap((entry) => { const line = text(entry, FOCUS_REVEAL_MAX_CHARACTERS); return line ? [line] : []; }).slice(0, FOCUS_MAX_REVEALS);
+
+/**
+ * The concept of Claude's answer, checked against the contract: an arc
+ * outside the list, a premise without its words or the facts it dramatizes,
+ * a chain of fewer than two reveals, a premise for a serious or grave story,
+ * or a real person of the story in it is a response error, asked for again
+ * with the rule it broke. An answer without one is classic; the editor's
+ * choice is kept as given (the findings say what it misses).
+ */
+function parseConcept(value: unknown, { known, material, gravity, editorChoice }: { known: ReadonlySet<string>; material?: Draft2FocusMaterial; gravity: string; editorChoice?: Draft2FocusConcept }): Draft2FocusConcept {
+  if (editorChoice) return editorChoice;
+  if (value === undefined) return CLASSIC_CONCEPT;
+  const body = record(value);
+  const arc = oneOf(FOCUS_CONCEPT_ARCS, body.arc);
+  if (!arc) throw new Draft2ResponseError(`The concept's arc is one of ${FOCUS_CONCEPT_ARCS.join(", ")}`);
+  if (arc === "classic") return CLASSIC_CONCEPT;
+  if (!PLAYFUL_GRAVITIES.includes(gravity)) throw new Draft2ResponseError(`A discovery premise plays with the story, and this one's gravity is ${gravity}: tell it classic`);
+  const premise = text(body.premise, FOCUS_PREMISE_MAX_CHARACTERS);
+  if (!premise) throw new Draft2ResponseError(`The premise is missing or longer than ${FOCUS_PREMISE_MAX_CHARACTERS} characters`);
+  const premiseFactIds = knownFactIds(body.premiseFactIds, known, MAX_PREMISE_FACTS);
+  if (!premiseFactIds.length) throw new Draft2ResponseError("A premise dramatizes the facts: cite the facts its mission or mystery comes from in premiseFactIds");
+  const reveals = revealsOf(body.reveals);
+  if (reveals.length < FOCUS_MIN_REVEALS) throw new Draft2ResponseError(`The discovery chain needs ${FOCUS_MIN_REVEALS} to ${FOCUS_MAX_REVEALS} reveals of at most ${FOCUS_REVEAL_MAX_CHARACTERS} characters each, the news itself the last`);
+  const person = realPersonIn(premise, material?.people ?? []);
+  if (person) throw new Draft2ResponseError(`${person} is a real person of the story: never a voice or a character of the premise`);
+  return { arc, premise, premiseFactIds, reveals };
+}
+
+/** Claude's other premises, the valid ones (words, facts, a chain), never with a person of the story, at most two. */
+function parsePremiseOptions(value: unknown, known: ReadonlySet<string>, people: readonly string[]): Draft2PremiseOption[] {
+  const options: Draft2PremiseOption[] = [];
+  for (const entry of Array.isArray(value) ? value : []) {
+    const body = record(entry);
+    const premise = text(body.premise, FOCUS_PREMISE_MAX_CHARACTERS);
+    const premiseFactIds = knownFactIds(body.premiseFactIds, known, MAX_PREMISE_FACTS);
+    const reveals = revealsOf(body.reveals);
+    if (!premise || !premiseFactIds.length || reveals.length < FOCUS_MIN_REVEALS || realPersonIn(premise, people) || options.some((option) => option.premise === premise)) continue;
+    options.push({ premise, premiseFactIds, reveals });
+  }
+  return options.slice(0, MAX_PREMISE_OPTIONS);
+}
+
 /** Claude's other anchors, the valid ones (a figure or an object with its words), at most three. */
 function parseAnchorAlternatives(value: unknown, known: ReadonlySet<string>, people: readonly string[]): Draft2NarrativeAlternative[] {
   const alternatives: Draft2NarrativeAlternative[] = [];
@@ -391,11 +504,11 @@ export function parseFocusDecision(answer: string, { facts, lines, editorChoices
   editorChoices?: Record<string, unknown>;
   /** People and places' material: the brand characters, the people never drawn. */
   material?: Draft2FocusMaterial;
-}): { values: Draft2FocusValues; reasons: Partial<Record<Draft2FocusField, string>>; alternatives: Draft2NarrativeAlternative[] } {
+}): { values: Draft2FocusValues; reasons: Partial<Record<Draft2FocusField, string>>; alternatives: Draft2NarrativeAlternative[]; premiseOptions: Draft2PremiseOption[] } {
   let parsed: unknown;
   try { parsed = JSON.parse(answer); } catch { throw new Draft2ResponseError("The focus answer is not valid JSON"); }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Draft2ResponseError("The focus answer is not an object");
-  const { structure: chosenStructure, readerConsequence: chosenConsequence, narrative: chosenNarrative, ...overrides } = editorChoices;
+  const { structure: chosenStructure, readerConsequence: chosenConsequence, narrative: chosenNarrative, concept: chosenConcept, ...overrides } = editorChoices;
   const body = { ...(parsed as Record<string, unknown>), ...overrides };
   const known = new Set(facts.map((fact) => fact.id));
 
@@ -427,6 +540,7 @@ export function parseFocusDecision(answer: string, { facts, lines, editorChoices
     : consequenceText && consequenceFacts.length ? { text: consequenceText, factIds: consequenceFacts } : null;
   const answered = { kind, itemFactIds: kind === "arc" ? [] : knownFactIds(structure.itemFactIds, known, FOCUS_MAX_ITEMS) };
   const narrative = parseNarrative(body.narrative, { known, material, editorChoice: chosenNarrative as Draft2FocusNarrative | undefined });
+  const concept = parseConcept(body.concept, { known, material, gravity, editorChoice: chosenConcept as Draft2FocusConcept | undefined });
   const editorStructure = chosenStructure as Draft2FocusValues["structure"] | undefined;
 
   const values: Draft2FocusValues = {
@@ -440,6 +554,7 @@ export function parseFocusDecision(answer: string, { facts, lines, editorChoices
     goal,
     voice: { gravity, ...Object.fromEntries(TONE_KEYS.map((key) => [key, toneValue(voice[key])])) } as Draft2FocusVoice,
     direction,
+    concept,
     narrative,
     visualDirection,
   };
@@ -450,7 +565,11 @@ export function parseFocusDecision(answer: string, { facts, lines, editorChoices
     const reason = text(given[field], REASON_MAX_CHARACTERS);
     if (reason && !chosen.has(field)) reasons[field] = reason;
   }
-  return { values, reasons, alternatives: parseAnchorAlternatives((parsed as Record<string, unknown>).anchorAlternatives, known, material?.people ?? []) };
+  return {
+    values, reasons,
+    alternatives: parseAnchorAlternatives((parsed as Record<string, unknown>).anchorAlternatives, known, material?.people ?? []),
+    premiseOptions: parsePremiseOptions((parsed as Record<string, unknown>).conceptAlternatives, known, material?.people ?? []),
+  };
 }
 
 /**
@@ -458,7 +577,7 @@ export function parseFocusDecision(answer: string, { facts, lines, editorChoices
  * Claude's own values under them, one version more. For an edited field,
  * Claude's earlier value stays the one the field can go back to.
  */
-export function decidedFocus(focus: Draft2Focus, decision: { values: Draft2FocusValues; reasons: Partial<Record<Draft2FocusField, string>>; alternatives?: Draft2NarrativeAlternative[] }, decidedBy: Draft2FocusRole, now: Date): Draft2Focus {
+export function decidedFocus(focus: Draft2Focus, decision: { values: Draft2FocusValues; reasons: Partial<Record<Draft2FocusField, string>>; alternatives?: Draft2NarrativeAlternative[]; premiseOptions?: Draft2PremiseOption[] }, decidedBy: Draft2FocusRole, now: Date): Draft2Focus {
   const edited = focus.edited.filter((field) => field !== "line" || decision.values.line?.id === focus.values?.line?.id);
   const ai = Object.fromEntries(FOCUS_FIELDS.map((field) => [field, edited.includes(field) && focus.ai ? focus.ai[field] : decision.values[field]])) as Draft2FocusValues;
   return {
@@ -471,6 +590,8 @@ export function decidedFocus(focus: Draft2Focus, decision: { values: Draft2Focus
     edited,
     narrativeOptions: decision.alternatives ?? [],
     narrativeReview: undefined,
+    conceptOptions: decision.premiseOptions ?? [],
+    conceptReview: undefined,
     decidedBy,
     decidedAt: now.toISOString(),
     updatedAt: now.toISOString(),
@@ -522,6 +643,7 @@ function editedValue(focus: Draft2Focus, field: Draft2FocusField, value: unknown
       return { kind, itemFactIds: found?.itemFactIds ?? [] };
     }
     case "narrative": return editedNarrative(focus, value);
+    case "concept": return editedConcept(focus, value);
     case "voice": {
       const voice = record(value);
       const gravity = oneOf(FOCUS_GRAVITIES, voice.gravity);
@@ -560,6 +682,26 @@ function editedNarrative(focus: Draft2Focus, value: unknown): Draft2FocusNarrati
     .concat((focus.narrativeOptions ?? []).map((option) => option.kind === kind && option.anchor === anchor ? option.factIds : undefined))
     .find((factIds) => factIds !== undefined);
   return { form, anchorKind: kind, characterId, anchor, anchorFactIds: found ?? [], progression, ending };
+}
+
+/**
+ * The editor's concept, checked against the contract. Classic needs nothing;
+ * discovery needs its premise; the reveals are optional (the writers order
+ * them when there are none). A premise Claude wrote (its choice, another of
+ * its premises, or the one the judge sent back) keeps the facts it cites;
+ * the editor's own words cite none.
+ */
+function editedConcept(focus: Draft2Focus, value: unknown): Draft2FocusConcept {
+  const body = record(value);
+  const arc = oneOf(FOCUS_CONCEPT_ARCS, body.arc);
+  if (!arc) throw new Draft2InputError(`The concept is one of ${FOCUS_CONCEPT_ARCS.join(", ")}.`);
+  if (arc === "classic") return CLASSIC_CONCEPT;
+  const premise = typeof body.premise === "string" ? body.premise.trim() : "";
+  if (!premise || premise.length > FOCUS_PREMISE_MAX_CHARACTERS) throw new Draft2InputError(`Write the premise in 1 to ${FOCUS_PREMISE_MAX_CHARACTERS} characters.`);
+  const lines = (Array.isArray(body.reveals) ? body.reveals : []).map((entry) => typeof entry === "string" ? entry.trim() : "").filter(Boolean);
+  if (lines.length > FOCUS_MAX_REVEALS || lines.some((line) => line.length > FOCUS_REVEAL_MAX_CHARACTERS)) throw new Draft2InputError(`The discovery chain has at most ${FOCUS_MAX_REVEALS} reveals of at most ${FOCUS_REVEAL_MAX_CHARACTERS} characters each.`);
+  const found = [focus.values?.concept, focus.ai?.concept, focus.conceptReview?.proposed, ...(focus.conceptOptions ?? [])].find((entry) => entry && entry.premise === premise);
+  return { arc, premise, premiseFactIds: found?.premiseFactIds ?? [], reveals: lines };
 }
 
 /**
@@ -610,6 +752,14 @@ export function focusFindings(values: Draft2FocusValues, material?: Draft2FocusM
   if (itemFactIds.length < minimum) {
     findings.push({ field: "structure", code: "TOO_FEW_ITEMS", detail: `A ${kind === "list" ? "list" : "procedure"} needs at least ${minimum} ${kind === "list" ? "items" : "steps"} from the facts, and the focus names ${itemFactIds.length}: decide again for Claude to find them, or choose another structure.` });
   }
+  const concept = focusConcept(values);
+  if (concept.arc === "discovery") {
+    if (!PLAYFUL_GRAVITIES.includes(values.voice.gravity)) {
+      findings.push({ field: "concept", code: "CONCEPT_GRAVITY", detail: `The story's gravity is ${values.voice.gravity}: a discovery premise would play with it. Tell it classic, or change the gravity.` });
+    }
+    const person = material ? realPersonIn(concept.premise, material.people) : undefined;
+    if (person) findings.push({ field: "concept", code: "CONCEPT_REAL_PERSON", detail: `${person} is a real person of the story: never a voice or a character of the premise. Write another premise.` });
+  }
   const narrative = focusNarrative(values);
   if (narrative.form !== "classic" && material) {
     if (narrative.anchorKind === "character" && !material.characters.some((character) => character.id === narrative.characterId)) {
@@ -640,8 +790,19 @@ export function focusForModels(values: Draft2FocusValues) {
     goal: values.goal,
     voice: { gravity: voice.gravity, tone: toneLine(voice) },
     direction: values.direction,
+    ...(focusConcept(values).arc === "discovery" ? { concept: conceptForModels(focusConcept(values)) } : {}),
     ...(focusNarrative(values).form !== "classic" ? { narrative: narrativeForModels(focusNarrative(values)) } : {}),
     ...(values.visualDirection ? { visualDirection: values.visualDirection } : {}),
+  };
+}
+
+/** A discovery concept as the models read it: the premise, the facts it dramatizes, the chain of reveals. */
+export function conceptForModels(concept: Draft2FocusConcept) {
+  return {
+    arc: concept.arc,
+    premise: concept.premise,
+    ...(concept.premiseFactIds.length ? { premiseFactIds: concept.premiseFactIds } : { note: "the editor's premise: it dramatizes the facts, it adds none" }),
+    ...(concept.reveals.length ? { reveals: concept.reveals } : {}),
   };
 }
 
@@ -677,6 +838,11 @@ export function parseNarrativeReview(answer: string): { verdict: "keep" | "class
   const reason = text(body.reason, REASON_MAX_CHARACTERS);
   if (!verdict || !reason) throw new Draft2ResponseError("The narrative review needs a verdict (keep or classic) and a reason");
   return { verdict, reason };
+}
+
+/** What the judge receives to review a premise, beside its instructions and the verified facts. */
+export function conceptReviewRequest({ values, material, title }: { values: Draft2FocusValues; material: Draft2FocusMaterial; title: string }) {
+  return { task: "concept-review", story: { title }, focus: focusForModels(values), material };
 }
 
 /** What the judge receives to review a narrative form, beside its instructions and the verified facts. */

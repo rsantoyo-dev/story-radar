@@ -8,6 +8,7 @@ import * as models from "./draft2-models";
 import * as skills from "./skills/draft2-skills";
 import * as hooks from "./skills/hooks";
 import { NARRATIVES_SKILL } from "./skills/narratives";
+import { DISCOVERY_SKILL } from "./skills/discovery";
 import { loadInSandbox } from "./draft2-test-sandbox";
 import type { Draft2Opening, Draft2OpeningCandidate, Draft2OpeningScore } from "./draft2-opening.types";
 import type { Draft2Focus, Draft2FocusValues } from "./draft2-focus.types";
@@ -622,4 +623,16 @@ test("a narrative form: the writer and the judge read the narratives skill with 
   const classic = harness({ writes: [writer()], judgments: [judge("accept", "c1", { c1: 96 })] });
   await classic.run();
   assert.ok(!String(classic.calls[0].input.instructions).includes(NARRATIVES_SKILL.text), "a classic story reads no narratives skill");
+});
+
+test("a discovery premise: the writer and the judge read the discovery skill with their own part, and the premise in the focus", async () => {
+  const concept = { arc: "discovery" as const, premise: "The park's animals sent an SOS.", premiseFactIds: ["f1"], reveals: ["What is this message?", "When and where?"] };
+  const h = harness({ writes: [writer()], judgments: [judge("accept", "c1", { c1: 96 })], session: { focus: { ...FOCUS, values: { ...FOCUS_VALUES, concept } } } });
+  const session = await h.run();
+  const [writerCall] = h.calls.filter((call) => call.role === "writer");
+  const [judgeCall] = h.calls.filter((call) => call.role === "judge");
+  assert.ok(String(writerCall.input.instructions).includes(DISCOVERY_SKILL.roleText!["opening-writer"]!));
+  assert.ok(String(judgeCall.input.instructions).includes(DISCOVERY_SKILL.roleText!["opening-judge"]!));
+  assert.equal(json(session.trace.filter((entry) => entry.step === "opening").map((entry) => entry.skillVersions)), json([{ hooks: "6", discovery: "1" }, { hooks: "6", discovery: "1" }]));
+  assert.equal(json((writerCall.input.context as { focus: { concept?: unknown } }).focus.concept), json(focusTypes.conceptForModels(concept)));
 });

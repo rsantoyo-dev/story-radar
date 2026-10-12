@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Draft2InputError, Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
 import {
-  CLASSIC_NARRATIVE, DRAFT2_FOCUS_SCHEMA, FOCUS_FIELDS, applyFocusEdit, decidedFocus, editorChoicesOf, focusDecisionRequest, focusFindings, focusForModels, focusItemCount, focusLine,
+  CLASSIC_CONCEPT, CLASSIC_NARRATIVE, DRAFT2_FOCUS_SCHEMA, focusConcept, FOCUS_FIELDS, applyFocusEdit, decidedFocus, editorChoicesOf, focusDecisionRequest, focusFindings, focusForModels, focusItemCount, focusLine,
   anchorNoun, focusMaterial, focusToday, narrativeUsesMaster, parseFocusDecision, parseNarrativeReview, resetFocusField,
   type Draft2Focus, type Draft2FocusLine, type Draft2FocusMaterial, type Draft2FocusNarrative, type Draft2FocusValues,
 } from "./draft2-focus.types";
@@ -52,7 +52,7 @@ test("Claude's answer becomes the focus: unknown fact ids dropped, dials clamped
   assert.deepEqual(parse({ readerConsequence: { text: null, factIds: [] } }).values.readerConsequence, null);
   assert.deepEqual(parse({ structure: { kind: "list", itemFactIds: ["f3", "f1", "f9", "f2"] } }).values.structure, { kind: "list", itemFactIds: ["f3", "f1", "f2"] }, "items keep Claude's order");
   assert.equal(parseFocusDecision(answer({ lineId: null }), { facts, lines: [] }).values.line, null, "a Topic without lines has no line");
-  assert.deepEqual((DRAFT2_FOCUS_SCHEMA.required as string[]).sort(), ["anchorAlternatives", "audience", "direction", "framing", "goal", "lineId", "narrative", "readerConsequence", "reasons", "structure", "visualDirection", "voice"]);
+  assert.deepEqual((DRAFT2_FOCUS_SCHEMA.required as string[]).sort(), ["anchorAlternatives", "audience", "concept", "conceptAlternatives", "direction", "framing", "goal", "lineId", "narrative", "readerConsequence", "reasons", "structure", "visualDirection", "voice"]);
   assert.deepEqual(values.narrative, CLASSIC_NARRATIVE, "an answer without a narrative form, from before them, is classic");
 });
 
@@ -83,7 +83,7 @@ test("the editor's fields win over the answer; a structure the editor chose take
   assert.deepEqual(values.structure, { kind: "list", itemFactIds: ["f1", "f2", "f3"] }, "the list the editor asked for gets its items");
   assert.deepEqual(parse({ structure: { kind: "arc", itemFactIds: [] } }, { structure: { kind: "steps", itemFactIds: ["f1", "f2"] } }).values.structure, { kind: "steps", itemFactIds: ["f1", "f2"] }, "an answer of another kind leaves the editor's items");
   assert.equal(parse({ goal: "followers" }, { goal: "saves" }).values.goal, "saves", "whatever the answer says");
-  assert.deepEqual(Object.keys(parsed).sort(), ["audience", "direction", "framing", "narrative", "visualDirection", "voice"], "reasons only for the fields Claude decided");
+  assert.deepEqual(Object.keys(parsed).sort(), ["audience", "concept", "direction", "framing", "narrative", "visualDirection", "voice"], "reasons only for the fields Claude decided");
 });
 
 test("a decision is one version more and keeps Claude's own values under the editor's fields", () => {
@@ -188,6 +188,7 @@ const MATERIAL: Draft2FocusMaterial = {
   characters: [{ id: "char-jo", name: "Jo", description: "The local narrator, a modern Johannaise." }],
   people: ["Catherine Fournier"],
   places: [{ name: "Parc des Parulines", verifiedPhoto: true, map: true }],
+  organizations: ["CIME Haut-Richelieu"],
   storyPhotos: [],
 };
 const guide = (overrides: Record<string, unknown> = {}) => ({ form: "character-guide", anchorKind: "character", characterId: "char-jo", anchor: "Jo, our narrator", anchorFactIds: [], progression: "From the kiosk to each animal of the trail", ending: "returns", ...overrides });
@@ -290,4 +291,66 @@ test("a panorama's scene and a line to follow: the line comes from the facts, th
   const focus = decided();
   assert.equal(applyFocusEdit(focus, "narrative", { form: "panorama", anchorKind: "scene", anchor: "A shore at dawn" }, NOW).values?.narrative?.anchorKind, "scene");
   assert.throws(() => applyFocusEdit(focus, "narrative", { form: "follow-the-line", anchorKind: "figure", anchor: "x" }, NOW), (error: Error) => error instanceof Draft2InputError && /line to follow needs its line/.test(error.message));
+});
+
+const LIGHT = { gravity: "light", formality: 30, humor: 60, energy: 70, optimism: 60, provocation: 20 };
+const discovery = (overrides: Record<string, unknown> = {}) => ({
+  arc: "discovery", premise: "The park's animals sent an SOS: they need humans to bring them « bonbons » before Halloween.", premiseFactIds: ["f1", "f9"],
+  reveals: ["What is this message?", "Who sent it?", "What do they ask?", "When and where?"], ...overrides,
+});
+const withConcept = (concept: Record<string, unknown>, gravity = "light") => parseFocusDecision(answer({ concept, voice: { ...LIGHT, gravity } }), { facts, lines, material: MATERIAL });
+
+test("a discovery premise dramatizes the facts with its chain of reveals; classic keeps nothing; Claude offers two more premises", () => {
+  const { values, premiseOptions } = parseFocusDecision(answer({
+    concept: discovery(), voice: LIGHT,
+    conceptAlternatives: [
+      { premise: "A message is nailed to a tree on the trail.", premiseFactIds: ["f1"], reveals: ["Who left it?", "When and where?"] },
+      { premise: "Catherine Fournier needs your help.", premiseFactIds: ["f1"], reveals: ["a", "b"] },
+      { premise: "A mission order with no facts.", premiseFactIds: ["f9"], reveals: ["a", "b"] },
+      { premise: "The trail keeps a secret.", premiseFactIds: ["f2"], reveals: ["Which secret?", "When and where?"] },
+      { premise: "One too many.", premiseFactIds: ["f3"], reveals: ["a", "b"] },
+    ],
+  }), { facts, lines, material: MATERIAL });
+  assert.deepEqual(values.concept, { arc: "discovery", premise: discovery().premise, premiseFactIds: ["f1"], reveals: discovery().reveals as string[] }, "an id that is not a verified fact is dropped");
+  assert.deepEqual(premiseOptions.map((option) => option.premise), ["A message is nailed to a tree on the trail.", "The trail keeps a secret."], "never a person of the story, never without facts, two at most");
+  assert.deepEqual(withConcept({ arc: "classic", premise: "Ignored", premiseFactIds: ["f1"], reveals: ["a", "b"] }).values.concept, CLASSIC_CONCEPT);
+  assert.deepEqual(parse().values.concept, CLASSIC_CONCEPT, "an answer from before concepts is classic");
+});
+
+test("a premise outside the contract is a response error, asked for again with the rule it broke: no facts, a short chain, a serious story, a real person", () => {
+  const rejects = (concept: Record<string, unknown>, pattern: RegExp, gravity = "light") =>
+    assert.throws(() => withConcept(concept, gravity), (error: Error) => error instanceof Draft2ResponseError && pattern.test(error.message));
+  rejects(discovery({ arc: "mystery" }), /concept's arc is one of classic, discovery/);
+  rejects(discovery({ premiseFactIds: [] }), /cite the facts its mission or mystery comes from/);
+  rejects(discovery({ reveals: ["Only one?"] }), /discovery chain needs 2 to 6 reveals/);
+  rejects(discovery(), /this one's gravity is serious: tell it classic/, "serious");
+  rejects(discovery({ premise: "Catherine Fournier sent an SOS to every family." }), /Catherine Fournier is a real person of the story/);
+  rejects(discovery({ premise: "x".repeat(281) }), /premise is missing or longer than 280/);
+});
+
+test("the editor's concept: classic needs nothing; a premise Claude wrote keeps its facts, the editor's own cites none; the chain is theirs to write", () => {
+  const focus = { ...decided({ concept: withConcept(discovery()).values.concept }), conceptOptions: [{ premise: "The trail keeps a secret.", premiseFactIds: ["f2"], reveals: ["Which secret?", "When?"] }] };
+  const edit = (value: Record<string, unknown>) => applyFocusEdit(focus, "concept", value, NOW).values?.concept;
+  assert.deepEqual(edit({ arc: "classic", premise: "anything" }), CLASSIC_CONCEPT);
+  assert.deepEqual(edit({ arc: "discovery", premise: "The trail keeps a secret.", reveals: ["Which secret?"] }), { arc: "discovery", premise: "The trail keeps a secret.", premiseFactIds: ["f2"], reveals: ["Which secret?"] });
+  assert.deepEqual(edit({ arc: "discovery", premise: "Le parc a reçu une lettre", reveals: [] })?.premiseFactIds, [], "the editor's own words");
+  const refuses = (value: Record<string, unknown>, pattern: RegExp) => assert.throws(() => edit(value), (error: Error) => error instanceof Draft2InputError && pattern.test(error.message));
+  refuses({ arc: "teaser" }, /concept is one of classic, discovery/);
+  refuses({ arc: "discovery", premise: " " }, /Write the premise in 1 to 280 characters/);
+  refuses({ arc: "discovery", premise: "p", reveals: ["a", "b", "c", "d", "e", "f", "g"] }, /at most 6 reveals/);
+});
+
+test("the program checks a premise: a serious or grave story is told straight; a real person of the story is never in it", () => {
+  const values = (concept: Record<string, unknown>, gravity: string) => ({ ...decided().values!, voice: { ...decided().values!.voice, gravity }, concept: { ...discovery(), ...concept } }) as Draft2FocusValues;
+  assert.deepEqual(focusFindings(values({}, "ordinary"), MATERIAL), []);
+  assert.deepEqual(focusFindings(values({}, "grave")).map((finding) => [finding.field, finding.code]), [["concept", "CONCEPT_GRAVITY"]], "the gravity needs no People and places");
+  assert.deepEqual(focusFindings(values({ premise: "Catherine Fournier lost the bonbons" }, "light"), MATERIAL).map((finding) => finding.code), ["CONCEPT_REAL_PERSON"]);
+});
+
+test("the models read a premise only for discovery, so a classic story's prompts stay as they were", () => {
+  const classic = decided({ concept: CLASSIC_CONCEPT }).values!;
+  assert.equal("concept" in focusForModels(classic), false);
+  assert.deepEqual(focusForModels({ ...classic, concept: { arc: "discovery", premise: "An SOS", premiseFactIds: ["f1"], reveals: ["Who?", "When?"] } }).concept, { arc: "discovery", premise: "An SOS", premiseFactIds: ["f1"], reveals: ["Who?", "When?"] });
+  assert.match(String((focusForModels({ ...classic, concept: { arc: "discovery", premise: "My own", premiseFactIds: [], reveals: [] } }).concept as { note?: string }).note), /the editor's premise/);
+  assert.equal(focusConcept({}).arc, "classic");
 });

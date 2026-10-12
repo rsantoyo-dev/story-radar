@@ -10,7 +10,7 @@ import {
   visualJudgeRequest, visualLayout, visualModeLine, visualPlan, visualRefineRequest, visualSchema,
   type Draft2CarouselSlide, type Draft2Visual, type Draft2VisualCandidate, type Draft2VisualCharacter, type Draft2VisualIssue, type Draft2VisualMode, type Draft2VisualScore,
 } from "./draft2-visual.types";
-import { brandBrief, composeInstructions, narrativeSkills } from "./skills/draft2-skills";
+import { brandBrief, composeInstructions, creativeSkills } from "./skills/draft2-skills";
 import { VISUALS_SKILL } from "./skills/visuals";
 import { resolveCreativeVisualGuidance } from "../stories/creative-visual-guidance";
 import type { Draft2SessionRow } from "@/db/schema";
@@ -82,8 +82,8 @@ const VISUAL_STEP: FunnelStep<Draft2VisualCandidate, Draft2VisualScore, Draft2Vi
     const positions = carousel.map((slide) => slide.slide);
     const avoid = avoidTerms(profile.creativeIdentity);
     return {
-      writer: composeInstructions("visual-writer", [VISUALS_SKILL, ...narrativeSkills(focus.values.narrative)], brief),
-      judge: composeInstructions("visual-judge", [VISUALS_SKILL, ...narrativeSkills(focus.values.narrative)], brief),
+      writer: composeInstructions("visual-writer", [VISUALS_SKILL, ...creativeSkills(focus.values)], brief),
+      judge: composeInstructions("visual-judge", [VISUALS_SKILL, ...creativeSkills(focus.values)], brief),
       // The layout: the image model letters the words, and the logo and the page number are added afterwards, where the Topic puts them.
       context: { focus: focusForModels(focus.values), carousel, layout: visualLayout(profile, carousel), peopleAndPlaces: inventoryForModels(inventory), characters, characterChoice },
       schemas: { writer: visualSchema(positions), judge: visualEvaluationSchema(positions) },

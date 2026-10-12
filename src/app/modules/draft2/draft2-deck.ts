@@ -10,7 +10,7 @@ import {
   mechanicalDeckIssues, parseDeckCandidates, parseDeckEvaluation, sameDeck, shapeForModels,
   type Draft2Deck, type Draft2DeckCandidate, type Draft2DeckClosing, type Draft2DeckIssue, type Draft2DeckScore, type Draft2DeckShape,
 } from "./draft2-deck.types";
-import { brandBrief, composeInstructions, narrativeSkills } from "./skills/draft2-skills";
+import { brandBrief, composeInstructions, creativeSkills } from "./skills/draft2-skills";
 import { DECKS_SKILL } from "./skills/decks";
 import type { Draft2SessionRow } from "@/db/schema";
 
@@ -62,8 +62,8 @@ const DECK_STEP: FunnelStep<Draft2DeckCandidate, Draft2DeckScore, Draft2DeckIssu
     const brief = brandBrief(profile);
     const values = focus.values;
     return {
-      writer: composeInstructions("deck-writer", [DECKS_SKILL, ...narrativeSkills(values.narrative)], brief),
-      judge: composeInstructions("deck-judge", [DECKS_SKILL, ...narrativeSkills(values.narrative)], brief),
+      writer: composeInstructions("deck-writer", [DECKS_SKILL, ...creativeSkills(values)], brief),
+      judge: composeInstructions("deck-judge", [DECKS_SKILL, ...creativeSkills(values)], brief),
       context: { focus: focusForModels(values), opening: openingForClosing(opening), closing: closingForDeck(closing), deck: shapeForModels(shape), emojis },
       schemas: { writer: DRAFT2_DECK_SCHEMA, judge: DRAFT2_DECK_EVALUATION_SCHEMA },
       parseCandidates: parseDeckCandidates,

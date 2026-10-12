@@ -8,9 +8,9 @@ import { ActionRow, Button, EmptyState, FormField, InlineNotice, LoadingState, S
 import type { StoryContentResponse } from "@/app/radar-dashboard";
 import type { Draft2Fact, Draft2FactsEvaluation, Draft2FactsRound, Draft2SessionStatus, Draft2TraceEntry } from "@/app/modules/draft2/draft2-facts.types";
 import {
-  CLASSIC_NARRATIVE, FOCUS_ANCHOR_MAX_CHARACTERS, FOCUS_AUDIENCE_MAX_CHARACTERS, FOCUS_CONSEQUENCE_MAX_CHARACTERS, FOCUS_DIRECTION_MAX_CHARACTERS, FOCUS_FRAMINGS, FOCUS_GOALS, FOCUS_GRAVITIES,
+  CLASSIC_CONCEPT, CLASSIC_NARRATIVE, FOCUS_ANCHOR_MAX_CHARACTERS, FOCUS_CONCEPT_ARCS, FOCUS_MAX_REVEALS, FOCUS_PREMISE_MAX_CHARACTERS, FOCUS_REVEAL_MAX_CHARACTERS, focusConcept, FOCUS_AUDIENCE_MAX_CHARACTERS, FOCUS_CONSEQUENCE_MAX_CHARACTERS, FOCUS_DIRECTION_MAX_CHARACTERS, FOCUS_FRAMINGS, FOCUS_GOALS, FOCUS_GRAVITIES,
   FOCUS_NARRATIVE_ENDINGS, FOCUS_NARRATIVE_FORMS, FOCUS_PROGRESSION_MAX_CHARACTERS, FOCUS_STRUCTURES, FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS, focusFindings, focusMaterial, focusNarrative,
-  type Draft2Focus, type Draft2FocusField, type Draft2FocusFinding, type Draft2FocusMaterial, type Draft2FocusNarrative, type Draft2FocusValues, type Draft2FocusVoice, type Draft2NarrativeForm,
+  type Draft2Focus, type Draft2FocusField, type Draft2FocusFinding, type Draft2ConceptArc, type Draft2FocusConcept, type Draft2FocusMaterial, type Draft2FocusNarrative, type Draft2FocusValues, type Draft2FocusVoice, type Draft2NarrativeForm,
 } from "@/app/modules/draft2/draft2-focus.types";
 import { TONE_KEYS, toneWords, type ToneKey } from "@/app/modules/draft2/skills/tone";
 import {
@@ -234,6 +234,7 @@ const NEED_LABEL: Record<string, string> = { "generic-illustration": "Illustrati
 const FRAMING_LABEL: Record<Draft2FocusValues["framing"], string> = { "reader-consequence": "Reader consequence", explainer: "Explainer", authority: "Authority" };
 const STRUCTURE_LABEL: Record<Draft2FocusValues["structure"]["kind"], string> = { arc: "Arc: one story, one tension", steps: "Steps: an ordered procedure", list: "List: “N things to…”" };
 const GOAL_LABEL: Record<Draft2FocusValues["goal"], string> = { followers: "Followers", discussion: "Discussion", saves: "Saves", shares: "Shares" };
+const CONCEPT_LABEL: Record<Draft2ConceptArc, string> = { classic: "Classic: the news, told straight", discovery: "Discovery: the reader discovers the news" };
 const NARRATIVE_LABEL: Record<Draft2NarrativeForm, string> = {
   classic: "Classic: one story, slide by slide",
   "character-guide": "Character guide: a guide leads the reader through it",
@@ -893,7 +894,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
       actions: <Button variant="primary" size="compact" busy={running === "focus"} disabled={!factsVerified || inventory?.status !== "ready" || running !== undefined || savingFocus !== undefined} onClick={() => { void runStep("focus"); }}>
         {running === "focus" ? "Deciding…" : focus?.values ? "Decide again" : "Decide the focus"}
       </Button>,
-      how: <p>Claude reads the verified facts, the Topic’s creative profile, its visual identity, its editorial lines and what People and places found, and decides what the story is for and how it is told: the line it serves, its audience, framing, reader consequence, structure, goal, voice and direction, the narrative form, and the visual direction the images follow. A narrative form gives every swipe a reason: a guide (the brand’s character, a figure from the story or an anonymous one) leads the reader through it, or one object crosses it; classic tells it slide by slide, as before. When Claude chooses a guide or an object, {focusReviewer} reviews it and may send the story back to classic. Change any field; your changes stay yours when Claude decides again, and every step after follows the result.</p>,
+      how: <p>Claude reads the verified facts, the Topic’s creative profile, its visual identity, its editorial lines and what People and places found, and decides what the story is for and how it is told: the line it serves, its audience, framing, reader consequence, structure, goal, voice and direction, the narrative form, and the visual direction the images follow. A narrative form gives every swipe a reason: a guide (the brand’s character, a figure from the story or an anonymous one) leads the reader through it, or one object crosses it; classic tells it slide by slide, as before. The concept decides how the reader meets the news: straight, or discovered through a premise invented for the story (an SOS from the park’s animals, a message found on a trail), each slide answering one question and opening the next, the news itself the last reveal. When Claude chooses a narrative form or a premise, {focusReviewer} reviews it and may send it back to classic. Change any field; your changes stay yours when Claude decides again, and every step after follows the result.</p>,
       body: <>
         {!factsVerified && !running ? needs("facts", "The focus builds only on verified facts; verify them first.") : null}
         {factsVerified && inventory?.status !== "ready" && !running ? needs("inventory", "The focus chooses the narrative form with the story’s people, places and the brand’s characters; find them first.") : null}
@@ -1935,6 +1936,10 @@ function focusValueText(field: Draft2FocusField, values: Draft2FocusValues): str
     case "goal": return GOAL_LABEL[values.goal];
     case "voice": return `${GRAVITY_LABEL[values.voice.gravity]} · ${TONE_KEYS.map((key) => `${key} ${values.voice[key]}`).join(" · ")}`;
     case "direction": return values.direction;
+    case "concept": {
+      const concept = focusConcept(values);
+      return concept.arc === "classic" ? CONCEPT_LABEL.classic : `Discovery · ${concept.premise}`;
+    }
     case "narrative": {
       const narrative = focusNarrative(values);
       return narrative.form === "classic" ? NARRATIVE_LABEL.classic : `${NARRATIVE_LABEL[narrative.form].split(":")[0]} · ${narrative.anchor}`;
@@ -2037,6 +2042,12 @@ function FocusView({ focus, findings, material, saving, locked, onSave, onReset 
         {reset("direction")}
       </div>
       <div className={`${styles.focusField} ${styles.focusWide}`}>
+        <FocusConcept key={key("concept")} focus={focus} description={about("concept", values.concept ? conceptReviewLine(focus) : "Decided before concepts: decide again for Claude to propose premises, or choose here.")} disabled={locked} onCommit={(concept) => onSave("concept", concept)} />
+        {reset("concept")}
+        {focus.conceptReview?.verdict === "classic" && focus.conceptReview.proposed && focusConcept(values).arc === "classic"
+          ? <div><Button variant="quiet" size="compact" busy={saving === "concept"} disabled={locked} onClick={() => onSave("concept", focus.conceptReview!.proposed)}>Use Claude’s premise</Button></div> : null}
+      </div>
+      <div className={`${styles.focusField} ${styles.focusWide}`}>
         <FocusNarrative key={key("narrative")} focus={focus} material={material} description={about("narrative", values.narrative ? narrativeReviewLine(focus) : "Decided before narrative forms: decide again for Claude to choose one, or choose one here.")} disabled={locked} onCommit={(narrative) => onSave("narrative", narrative)} />
         {reset("narrative")}
         {focus.narrativeReview?.verdict === "classic" && focus.narrativeReview.proposed && focusNarrative(values).form === "classic"
@@ -2048,6 +2059,88 @@ function FocusView({ focus, findings, material, saving, locked, onSave, onReset 
       </div>
     </div>
   </div>;
+}
+
+/** The judge's look at the premise, in one line for the field's description. */
+function conceptReviewLine(focus: Draft2Focus): string | undefined {
+  const review = focus.conceptReview;
+  if (!review) return undefined;
+  const judge = draft2ModelName(review.by.model, review.by.provider);
+  if (review.verdict === "keep") return `${judge} kept it: ${review.reason}`;
+  if (review.verdict === "classic") return `${judge} preferred classic${review.proposed ? ` to Claude’s premise (${clip(review.proposed.premise, 80)})` : ""}: ${review.reason}`;
+  return `Not reviewed: ${review.reason}`;
+}
+
+/**
+ * The concept, saved as a whole: classic, or discovery with its premise (one
+ * of Claude's, or the editor's own) and its chain of reveals, one question
+ * per line, the news last. Discovery with no premise to start from waits for
+ * the editor's before it is saved.
+ */
+function FocusConcept({ focus, description, disabled, onCommit }: {
+  focus: Draft2Focus;
+  description?: string;
+  disabled: boolean;
+  onCommit: (concept: Draft2FocusConcept) => void;
+}) {
+  const concept = focusConcept(focus.values!);
+  const [pending, setPending] = useState(false);
+  const [writing, setWriting] = useState(false);
+  const arc: Draft2ConceptArc = pending ? "discovery" : concept.arc;
+  // Claude's premises (its choice, the one the judge sent back, its others) and the one standing, once each.
+  const premises = [...new Map([focus.ai?.concept, focus.conceptReview?.proposed, concept, ...(focus.conceptOptions ?? []).map((option) => ({ arc: "discovery" as const, ...option }))]
+    .filter((entry): entry is Draft2FocusConcept => Boolean(entry && entry.arc === "discovery" && entry.premise))
+    .map((entry) => [entry.premise, entry] as const)).values()];
+  const commit = (next: Draft2FocusConcept) => { setPending(false); setWriting(false); onCommit(next); };
+  const switchArc = (next: Draft2ConceptArc) => {
+    setWriting(false);
+    if (next === concept.arc) { setPending(false); return; }
+    if (next === "classic") { commit(CLASSIC_CONCEPT); return; }
+    if (premises[0]) { commit(premises[0]); return; }
+    setPending(true);
+    setWriting(true);
+  };
+  const settled = arc === "discovery" && !pending;
+  return <fieldset className={styles.focusVoice}>
+    <legend className={styles.focusLegend}>Concept</legend>
+    {description ? <p className={styles.factMeta}>{description}</p> : null}
+    <div className={styles.focusGrid}>
+      <FormField label="How the reader meets the news">
+        <select value={arc} disabled={disabled} onChange={(event) => switchArc(event.target.value as Draft2ConceptArc)}>
+          {FOCUS_CONCEPT_ARCS.map((entry) => <option key={entry} value={entry}>{CONCEPT_LABEL[entry]}</option>)}
+        </select>
+      </FormField>
+      {settled ? <FormField label="Premise" description={concept.premiseFactIds.length ? `Dramatizes ${concept.premiseFactIds.join(", ")}` : "Your premise: it dramatizes the facts, it adds none."}>
+        <select value={concept.premise} disabled={disabled} onChange={(event) => {
+          if (event.target.value === "write") { setWriting(true); return; }
+          const chosen = premises.find((entry) => entry.premise === event.target.value);
+          if (chosen) commit(chosen);
+        }}>
+          {premises.map((entry) => <option key={entry.premise} value={entry.premise}>{clip(entry.premise, 110)}</option>)}
+          <option value="write">Write your own…</option>
+        </select>
+      </FormField> : null}
+    </div>
+    {writing && arc === "discovery" ? <FocusText
+      key="premise-own"
+      label="Your premise"
+      description="The story's own world in one line: what the reader finds, who asks, what the mission is. It invents the world, never the news."
+      value=""
+      max={FOCUS_PREMISE_MAX_CHARACTERS}
+      disabled={disabled}
+      onCommit={(value) => commit({ arc: "discovery", premise: value.trim(), premiseFactIds: [], reveals: concept.arc === "discovery" ? concept.reveals : [] })}
+    /> : null}
+    {settled ? <FocusText
+      key={`reveals-${concept.premise}`}
+      label="Discovery chain: one question per line, the news last"
+      value={concept.reveals.join("\n")}
+      max={FOCUS_MAX_REVEALS * (FOCUS_REVEAL_MAX_CHARACTERS + 1)}
+      rows={4}
+      allowEmpty
+      disabled={disabled}
+      onCommit={(value) => commit({ ...concept, reveals: value.split("\n").map((line) => line.trim()).filter(Boolean) })}
+    /> : null}
+  </fieldset>;
 }
 
 /** The judge's look at the narrative form, in one line for the field's description. */
