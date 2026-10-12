@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { ActionRow, Button, EmptyState, FormField, InlineNotice, LoadingState, SectionHeader, StatusBadge, Surface, type StatusTone } from "@/app/ui/primitives";
+import { usePathname } from "next/navigation";
+import { ActionRow, Button, EmptyState, FormField, InlineNotice, LoadingState, SectionHeader, StatusBadge, type StatusTone } from "@/app/ui/primitives";
 import type { StoryContentResponse } from "@/app/radar-dashboard";
 import type { Draft2Fact, Draft2FactsEvaluation, Draft2FactsRound, Draft2SessionStatus, Draft2TraceEntry } from "@/app/modules/draft2/draft2-facts.types";
 import {
@@ -28,7 +29,14 @@ import {
   type FunnelCandidate, type FunnelGate, type FunnelIssue, type FunnelRegression, type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion,
 } from "@/app/modules/draft2/draft2-funnel";
 import { DRAFT2_OPENING_EARLIER_ROLES, DRAFT2_OPENING_ROLES, draft2ProviderName } from "@/app/modules/draft2/draft2-models";
-import { contentStatusLabel, DRAFT_2_STEPS, minutes, paragraphs, sessionMetrics, sourceHost, stepMetrics, storyHref, traceUsageLine, usd, wordCount } from "./draft-2-canvas.core";
+import {
+  adjacentDraft2Steps, contentStatusLabel, DRAFT_2_STEPS, draft2RailState, draft2StepFromPath, draft2StepHref, draft2StepPhase, minutes, paragraphs, sessionMetrics, sourceHost, stepMetrics, storyHref, traceUsageLine, usd, wordCount,
+  type Draft2StepKey,
+} from "./draft-2-canvas.core";
+import {
+  Draft2Rail, OverviewBoard, PipelineStrip, Prerequisite, ScreenLink, SourcePanel, StepPager, StepScreen, screenStatusLabel, useScreenMemory, useScreenShortcuts, useScreenTitle,
+  type ScreenStep,
+} from "./draft-2-canvas-shell";
 import { StoryPhotosPanel } from "./story-photos-panel";
 import { RunPublishActions } from "./run-publish-actions";
 import { PublicationChannelsPanel } from "./publication-channels-panel";
@@ -77,6 +85,14 @@ type AutopilotNext = { step: Exclude<Draft2RunStep, "publication">; continuing?:
 const STEP_TITLE: Record<Draft2RunStep, string> = {
   facts: "Facts", focus: "Focus", inventory: "People and places", mentions: "Accounts to tag", opening: "Opening", closing: "Closing", deck: "Deck", visual: "Visual script", images: "Images", caption: "Caption", publication: "Publish",
 };
+
+/** The screen a run belongs to: the accounts to tag are part of the caption's screen, the approval of the publish screen. */
+function screenOfRun(step: Draft2RunStep | undefined): Draft2StepKey | undefined {
+  return step === "mentions" ? "caption" : step === "publication" ? "publish" : step;
+}
+
+/** Where the article panel's open or closed state is kept between visits, for this browser only. */
+const SOURCE_PANEL_KEY = "press-craftor:draft2-source-panel";
 
 /** A funnel run as the autopilot reads it: nothing yet, stopped (to continue), failed (stop), finished for something that changed since (write again), or finished. */
 function runNeeds(step: Exclude<Draft2RunStep, "publication">, run: { status: string; winnerId?: string; editorChoiceId?: string; error?: string } | null | undefined, changed: boolean, noun: string): AutopilotNext | undefined {
@@ -148,6 +164,10 @@ function stepOutcome(session: Draft2SessionView, step: Draft2RunStep): Autopilot
 
 /** The best score a run reached, across its rounds. */
 const bestScoreOf = <C extends FunnelCandidate>(run: FunnelRun<C> | null | undefined): number | undefined => run ? funnelBestVersions(funnelVersions(run.rounds))[0]?.score?.overall : undefined;
+
+/** The version the next steps build on: the editor's choice, else the judge's winner. */
+const chosenVersion = <C extends FunnelCandidate>(run: FunnelRun<C> | null | undefined) =>
+  run ? funnelVersions(run.rounds).find((version) => version.candidate.id === (run.editorChoiceId ?? run.winnerId)) : undefined;
 
 /** A funnel run's status as the canvas shows it: an unaccepted run is acceptable from the floor the funnel works to, and under it once its extra rounds are spent. */
 function funnelStatusOf<C extends FunnelCandidate>(run: FunnelRun<C> | null | undefined): { label: string; tone: StatusTone } | undefined {
@@ -245,10 +265,11 @@ const partLabel = (part: string) => PART_LABEL[part] ?? (/^s(\d+)$/.exec(part) ?
 const issueTarget = (issue: FunnelIssue) => issue.candidateId ? ` · ${issue.candidateId}${issue.part ? ` · ${partLabel(issue.part)}` : ""}` : "";
 
 /**
- * Draft 2: the second creative pipeline, built one step at a time beside the
- * current studio, which it never touches. The canvas brings in the selected
- * story and runs each step on it: Facts, the Focus, the Opening, then the
- * Closing.
+ * Draft 2: the second creative pipeline, beside the current studio, which it
+ * never touches. The canvas brings in the selected story and runs each step
+ * on it, one screen per step (`/draft-2/<step>`) behind an overview
+ * (`/draft-2`): the rail, the pager and the keys move between screens in the
+ * browser, so the session, a step running and the autopilot carry on.
  */
 export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle, storyId, from, returnContext }: {
   /** A signed-in session authorizes every request; the collector secret is not needed. */
@@ -688,342 +709,443 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const resumeRound = resumable && session?.opening ? openingResumeRound(session.opening) : undefined;
   const pausedRound = session?.opening?.status === "paused" ? openingResumeRound(session.opening) : undefined;
 
+  // Screens: the overview, and one screen per step, each with its own URL.
+  const pathname = usePathname();
+  const current = draft2StepFromPath(pathname ?? "");
+  const hrefOf = (screen: Draft2StepKey | undefined) => draft2StepHref(topicId, storyId, screen, { from, returnContext });
+  const navigate = useCallback((screen: Draft2StepKey | undefined) => {
+    const href = draft2StepHref(topicId, storyId, screen, { from, returnContext });
+    if (`${window.location.pathname}${window.location.search}` !== href) window.history.pushState(null, "", href);
+  }, [topicId, storyId, from, returnContext]);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useScreenShortcuts(current, navigate, Boolean(content));
+  useScreenMemory(current ?? "overview", headingRef);
+  useScreenTitle(current ? DRAFT_2_STEPS.find((step) => step.key === current)?.title : undefined, content?.title);
+  // The article beside the screens: kept open between visits on a wide window, where it docks.
+  const [sourceOpen, setSourceOpen] = useState(false);
+  useEffect(() => {
+    let stored = false;
+    try { stored = window.localStorage.getItem(SOURCE_PANEL_KEY) === "open" && window.matchMedia("(min-width: 1280px)").matches; } catch { /* storage unavailable */ }
+    if (stored) void Promise.resolve().then(() => setSourceOpen(true));
+  }, []);
+  const showSource = useCallback((open: boolean) => {
+    setSourceOpen(open);
+    try { window.localStorage.setItem(SOURCE_PANEL_KEY, open ? "open" : "closed"); } catch { /* storage unavailable */ }
+  }, []);
+  const closeSource = useCallback(() => showSource(false), [showSource]);
+  const sourceShown = sourceOpen && current !== "facts";
+
+  // Each step as the rail, the board and the pager show it: its state, what it produced, what it took.
+  const liveScreen = screenOfRun(running ?? autopilot?.current);
+  const available: Record<Draft2StepKey, boolean> = {
+    facts: text.length > 0,
+    focus: factsVerified,
+    opening: factsVerified && focusReady,
+    closing: factsVerified && closingReady,
+    deck: factsVerified && deckReady,
+    inventory: factsVerified,
+    visual: factsVerified && visualReady,
+    images: factsVerified && imagesReady,
+    caption: factsVerified && (captionReady || mentionsReady),
+    publish: Boolean(publishable),
+  };
+  const openingChosen = chosenVersion(session?.opening);
+  const closingChosen = chosenVersion(closing);
+  const deckChosen = chosenVersion(deck);
+  const visualChosen = chosenVersion(visual);
+  const captionChosen = chosenVersion(caption);
+  const scored = (version: { score?: FunnelScore } | undefined) => version?.score ? ` · ${version.score.overall}/100` : "";
+  const shownImages = images?.slides.filter((slide) => shownAttempt(slide)).length ?? 0;
+  const summaries: Partial<Record<Draft2StepKey, string>> = {
+    facts: session?.facts?.length ? `${session.facts.length} facts${factsVerified ? ", verified" : ", not verified yet"}` : undefined,
+    focus: focus?.values ? [focus.values.line?.name, FRAMING_LABEL[focus.values.framing], STRUCTURE_LABEL[focus.values.structure.kind].split(":")[0], `goal: ${GOAL_LABEL[focus.values.goal].toLowerCase()}`].filter(Boolean).join(" · ") : undefined,
+    opening: openingChosen ? `“${openingChosen.candidate.cover.headline}”${scored(openingChosen)}` : undefined,
+    closing: closingChosen ? `“${closingChosen.candidate.last.headline}”${scored(closingChosen)}` : undefined,
+    deck: deckChosen ? `${deckChosen.candidate.slides.length} ${deckChosen.candidate.slides.length === 1 ? "slide" : "slides"} between slide 2 and the closing${scored(deckChosen)}` : undefined,
+    inventory: inventory?.entities.length ? `${inventory.entities.length} ${inventory.entities.length === 1 ? "person, place or organization" : "people, places and organizations"}${peopleToConfirm ? ` · ${peopleToConfirm} to confirm` : ""}` : inventory?.status === "ready" ? "Nobody and nowhere to show" : undefined,
+    visual: visualChosen ? `${visualChosen.candidate.concept}${scored(visualChosen)}` : undefined,
+    images: images ? `${shownImages} of ${images.slides.length} slides with an image` : undefined,
+    caption: captionChosen ? `${captionChosen.candidate.text.split("\n")[0]}${scored(captionChosen)}` : tagged.length ? `${tagged.length} ${tagged.length === 1 ? "account" : "accounts"} to tag` : undefined,
+    publish: publication && approvedCurrent ? `Approved ${new Date(publication.approvedAt).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" })}` : publication ? "Changed since you approved it" : undefined,
+  };
+  const screenSteps: ScreenStep[] = DRAFT_2_STEPS.map((step) => {
+    const metric = metrics[step.key];
+    return {
+      key: step.key,
+      title: step.title,
+      detail: step.detail,
+      status: stepStatus[step.key],
+      state: draft2RailState(stepStatus[step.key], { live: liveScreen === step.key, available: available[step.key] }),
+      summary: summaries[step.key],
+      vitals: metric ? [metric.calls ? `${minutes(metric.ms)} in ${metric.calls} ${metric.calls === 1 ? "call" : "calls"}` : "", usd(metric.costMicros)].filter(Boolean).join(" · ") : undefined,
+      cost: metric ? usd(metric.costMicros) : undefined,
+      href: hrefOf(step.key),
+    };
+  });
+  const doneSteps = screenSteps.filter((step) => step.state === "done").length;
+  const stepOf = (key: Draft2StepKey) => screenSteps.find((step) => step.key === key)!;
+  /** What a step waits for, with the way to the step that provides it. */
+  const needs = (to: Draft2StepKey, message: string) => <Prerequisite to={to} title={stepOf(to).title} href={hrefOf(to)} onNavigate={navigate}>{message}</Prerequisite>;
+  const stoppedAt = session ? new Date(session.updatedAt).toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit" }) : "";
+  const traceOf = (screen: Draft2StepKey) => (session?.trace ?? []).filter((entry) => entry.step === screen || (screen === "caption" && entry.step === "mentions"));
+
+  const autopilotButtons = <>
+    {autopilot?.active ? <Button variant="secondary" size="compact" disabled={stopRequested.current} onClick={() => { stopRequested.current = true; }}>Stop after this step</Button> : null}
+    <Button variant="primary" size="compact" busy={autopilot?.active} disabled={!text.length || session === undefined || running !== undefined || autopilot?.active} onClick={() => { void runAutopilot(); }}>
+      {autopilot?.active ? `Running ${autopilot.current ? STEP_TITLE[autopilot.current].toLowerCase() : ""}…` : "Run to images"}
+    </Button>
+  </>;
+
+  const screens: Record<Draft2StepKey, { actions?: ReactNode; how: ReactNode; body: ReactNode }> = {
+    facts: {
+      actions: <Button variant="primary" size="compact" busy={running === "facts"} disabled={!text.length || session === undefined || running !== undefined} onClick={() => { void runStep("facts"); }}>
+        {running === "facts" ? "Extracting and verifying…" : session ? "Run the facts again" : "Extract and verify facts"}
+      </Button>,
+      how: <p>Sol extracts the facts; Claude checks them against the article; they loop on Claude’s suggestions, at most three extractions. Running the facts again starts a new session: every later step starts over from the new facts, and the earlier session stays as history.</p>,
+      body: <>
+        {running === "facts" ? <LoadingState>Sol is extracting; Claude reviews each round. This can take a minute or two.</LoadingState> : null}
+        {runError?.step === "facts" ? <InlineNotice tone="error" title="The facts step stopped">{runError.message}</InlineNotice> : null}
+        {session?.step === "facts" && session.error && running !== "facts" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
+        {session && running !== "facts" ? <p className={styles.factMeta}>Running the facts again starts a new session; the steps after it start over from the new facts.</p> : null}
+        <div className={styles.factsColumns}>
+          <section className={styles.factsSource} aria-label="Source material">
+            <SectionHeader level={2} eyebrow="Source material" title="What the story says" description="The stored text, exactly as every step reads it." />
+            {text.length
+              ? <div className={styles.reading}>{text.map((paragraph, index) => <p key={index}>{paragraph}</p>)}</div>
+              : <EmptyState title="No article text yet">Prepare the content in the studio first; the canvas reads the same stored text. <Link href={back}>Open the story</Link></EmptyState>}
+          </section>
+          <section className={styles.factsResult} aria-label="The facts">
+            {session && running !== "facts" ? <FactsSessionView session={session} verified={factsVerified} /> : null}
+            {session === null && running !== "facts" && text.length ? <EmptyState title="No facts yet">Extract and verify the facts: Sol reads the article and lists every fact the story depends on; Claude checks each one against it.</EmptyState> : null}
+          </section>
+        </div>
+      </>,
+    },
+    focus: {
+      actions: <Button variant="primary" size="compact" busy={running === "focus"} disabled={!factsVerified || running !== undefined || savingFocus !== undefined} onClick={() => { void runStep("focus"); }}>
+        {running === "focus" ? "Deciding…" : focus?.values ? "Decide again" : "Decide the focus"}
+      </Button>,
+      how: <p>Claude reads the verified facts, the Topic’s creative profile, its visual identity and its editorial lines, and decides what the story is for: the line it serves, its audience, framing, reader consequence, structure, goal, voice and direction, and the visual direction the images follow. Change any field; your changes stay yours when Claude decides again, and the opening follows the result.</p>,
+      body: <>
+        {!factsVerified && !running ? needs("facts", "The focus builds only on verified facts; verify them first.") : null}
+        {running === "focus" ? <LoadingState>Claude is deciding the focus{focus?.edited.length ? `, keeping your ${focus.edited.length === 1 ? "change" : `${focus.edited.length} changes`}` : ""}. This can take a minute.</LoadingState> : null}
+        {focusStalled ? <InlineNotice tone="warning" title="This decision stopped">Its request or the server ended before Claude answered. Decide the focus again.</InlineNotice> : null}
+        {runError?.step === "focus" ? <InlineNotice tone="error" title="The focus step stopped">{runError.message}</InlineNotice> : null}
+        {focus?.status === "failed" && focus.error && running !== "focus" ? <InlineNotice tone="error" title="The last decision failed">{focus.error}{focus.values ? " The focus below is the one from before it." : ""}</InlineNotice> : null}
+        {focusError ? <InlineNotice tone="error" title="Your change was not saved">{focusError}</InlineNotice> : null}
+        {focus?.values && running !== "focus" ? <FocusView
+          focus={focus}
+          findings={focusProblems}
+          saving={savingFocus}
+          locked={running !== undefined || savingFocus !== undefined}
+          onSave={(field, value) => { void saveFocus(field, { value }); }}
+          onReset={(field) => { void saveFocus(field, { reset: true }); }}
+        /> : null}
+        {!focus?.values && factsVerified && running !== "focus" ? <EmptyState title="No focus yet">Decide the focus: Claude proposes what the story is for, and every field stays yours to change.</EmptyState> : null}
+      </>,
+    },
+    opening: {
+      actions: <>
+        {resumeRound && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("opening", { continuing: true }); }}>Continue from round {resumeRound}</Button> : null}
+        {moreRoundAvailable(session?.opening, OPENING_MAX_ROUNDS) && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("opening", { continuing: true, more: true }); }}>One more round</Button> : null}
+        <Button variant="primary" size="compact" busy={running === "opening"} disabled={!factsVerified || !focusReady || running !== undefined || savingFocus !== undefined} onClick={() => { void runStep("opening"); }}>
+          {running === "opening" ? "Writing and judging…" : session?.opening ? "Write the opening again" : "Write the opening"}
+        </Button>
+      </>,
+      how: <p>{TODAY.writer} writes fifteen openings (cover and slide 2) from the verified facts, following the focus; {TODAY.judge} scores them and proposes three of its own. {TODAY.writer} revises the three best and edits {TODAY.judge}’s proposals, which also compete as {TODAY.judge} wrote them; {TODAY.judge} scores all nine without knowing which are its own, and proposes one more, which competes the same way beside {TODAY.writer}’s two best for {TODAY.judge}’s final pick. The better version always stays, and an opening that says what the facts do not never wins. Accepted at 95/100 with no criterion below 85, how well it follows the focus included.</p>,
+      body: <>
+        {!factsVerified && !running ? needs("facts", "The opening builds only on verified facts; verify them first.") : null}
+        {factsVerified && !focusReady && !running ? needs("focus", focus?.values && focus.status !== "running" ? "The opening waits until the focus is fixed: see its notes." : "The opening follows the story’s focus; decide it first.") : null}
+        {focusChanged && running !== "opening" && focus ? <InlineNotice tone="info" title="The focus changed">{openingFocusVersion ? `This opening followed focus v${openingFocusVersion}; the focus is now v${focus.version}.` : "This opening was written before the Focus step."} Write it again to follow the focus as it stands.</InlineNotice> : null}
+        {running === "opening" ? <LoadingState>{following ? `${following} Following the run on the server…` : pausedRound ? `Continuing with round ${pausedRound} in a new request…` : `${TODAY.writer} writes fifteen openings; ${TODAY.judge} judges each round. This can take a few minutes.`}</LoadingState> : null}
+        {stalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {stoppedAt}: its request or the server ended. Continue from round {resumeRound} picks it up at its last checkpoint; a round already written is judged, not written again.</InlineNotice> : null}
+        {runError?.step === "opening" ? <InlineNotice tone="error" title="The opening step stopped">{runError.message}</InlineNotice> : null}
+        {session?.step === "opening" && session.error && running !== "opening" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
+        {choiceError?.step === "opening" ? <InlineNotice tone="error" title="Your choice was not saved">{choiceError.message}</InlineNotice> : null}
+        {session?.opening && running !== "opening" ? <FunnelRunView
+          run={session.opening}
+          display={OPENING_DISPLAY}
+          choosing={choosing?.step === "opening" ? choosing.id : undefined}
+          locked={running !== undefined || session.opening.status === "running"}
+          onChoose={(candidateId) => { void choose("opening", candidateId); }}
+        /> : null}
+        {!session?.opening && available.opening && !running ? <EmptyState title="No opening yet">Write the opening: the cover and slide 2, the promise and its first payoff, judged as one.</EmptyState> : null}
+      </>,
+    },
+    closing: {
+      actions: <>
+        {closingResumeRound && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("closing", { continuing: true }); }}>Continue from round {closingResumeRound}</Button> : null}
+        {moreRoundAvailable(closing, CLOSING_MAX_ROUNDS) && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("closing", { continuing: true, more: true }); }}>One more round</Button> : null}
+        <Button variant="primary" size="compact" busy={running === "closing"} disabled={!factsVerified || !closingReady || running !== undefined || savingFocus !== undefined} onClick={() => { void runStep("closing"); }}>
+          {running === "closing" ? "Writing and judging…" : closing ? "Write the closing again" : "Write the closing"}
+        </Button>
+      </>,
+      how: <p>{TODAY.writer} writes eight endings for the opening you chose, following the focus that opening followed. For an arc, the penultimate slide pays the cover’s promise in full and the last says what it means for the reader, with the one call to action the focus’s goal asks for, in the publication’s call-to-action style; for a list or steps, the last slide alone, with the plan or the result. {TODAY.judge} scores them and proposes two of its own; {TODAY.writer} revises the two best and edits {TODAY.judge}’s proposals, which also compete as {TODAY.judge} wrote them, for {TODAY.judge}’s pick. Accepted at 95/100 with no criterion below 85.</p>,
+      body: <>
+        {factsVerified && !closingReady && !running ? needs("opening", openingFinished ? "The opening was written before the Focus step; write it again first." : "The closing ends the opening you choose; finish the opening first.") : null}
+        {closingOpeningChanged && running !== "closing" && closing?.opening ? <InlineNotice tone="info" title="The opening changed">This closing ends {closing.opening.id}; the opening chosen now is {chosenOpeningId}. Write the closing again to end it.</InlineNotice> : null}
+        {running === "closing" ? <LoadingState>{following ? `${following} Following the run on the server…` : closingPausedRound ? `Continuing with round ${closingPausedRound} in a new request…` : `${TODAY.writer} writes eight endings; ${TODAY.judge} judges each round. This can take a few minutes.`}</LoadingState> : null}
+        {closingStalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {stoppedAt}: its request or the server ended. Continue from round {closingResumeRound} picks it up at its last checkpoint; a round already written is judged, not written again.</InlineNotice> : null}
+        {runError?.step === "closing" ? <InlineNotice tone="error" title="The closing step stopped">{runError.message}</InlineNotice> : null}
+        {session?.step === "closing" && session.error && running !== "closing" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
+        {choiceError?.step === "closing" ? <InlineNotice tone="error" title="Your choice was not saved">{choiceError.message}</InlineNotice> : null}
+        {closing && running !== "closing" ? <FunnelRunView
+          run={closing}
+          display={CLOSING_DISPLAY}
+          choosing={choosing?.step === "closing" ? choosing.id : undefined}
+          locked={running !== undefined || closing.status === "running"}
+          onChoose={(candidateId) => { void choose("closing", candidateId); }}
+        /> : null}
+        {!closing && available.closing && !running ? <EmptyState title="No closing yet">Write the closing: the ending that pays the cover’s promise and gives the reader one thing to do.</EmptyState> : null}
+      </>,
+    },
+    deck: {
+      actions: <>
+        {deckResumeRound && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("deck", { continuing: true }); }}>Continue from round {deckResumeRound}</Button> : null}
+        {moreRoundAvailable(deck, DECK_MAX_ROUNDS) && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("deck", { continuing: true, more: true }); }}>One more round</Button> : null}
+        <Button variant="primary" size="compact" busy={running === "deck"} disabled={!factsVerified || !deckReady || running !== undefined || savingFocus !== undefined} onClick={() => { void runStep("deck"); }}>
+          {running === "deck" ? "Writing and judging…" : deck ? "Write the deck again" : "Write the deck"}
+        </Button>
+      </>,
+      how: <p>{TODAY.writer} writes the slides between slide 2 and the closing you chose, one idea each, so the carousel reads as one story: for an arc, four decks of two to five slides; for a list or steps, two decks with the items slide 2 did not cover, one per slide, in order. {TODAY.judge} scores them and proposes a deck of its own; {TODAY.writer} revises the best, touching only the slides the issues name, and edits {TODAY.judge}’s deck, which also competes as {TODAY.judge} wrote it, for {TODAY.judge}’s pick. Accepted at 95/100 with no criterion below 85.</p>,
+      body: <>
+        {factsVerified && !deckReady && !running ? needs("closing", closingOpeningChanged ? "The closing ends another opening than the one chosen now; write the closing again first." : "The deck leads to the closing you choose; finish the closing first.") : null}
+        {deckEndsChanged && running !== "deck" ? <InlineNotice tone="info" title="The opening or the closing changed">This deck connects {deck?.opening?.id} and {deck?.closing?.id}; the ones chosen now are {chosenOpeningId} and {chosenClosingId}. Write the deck again to connect them.</InlineNotice> : null}
+        {running === "deck" ? <LoadingState>{following ? `${following} Following the run on the server…` : deckPausedRound ? `Continuing with round ${deckPausedRound} in a new request…` : `${TODAY.writer} writes the decks; ${TODAY.judge} judges each round. This can take a few minutes.`}</LoadingState> : null}
+        {deckStalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {stoppedAt}: its request or the server ended. Continue from round {deckResumeRound} picks it up at its last checkpoint; a round already written is judged, not written again.</InlineNotice> : null}
+        {runError?.step === "deck" ? <InlineNotice tone="error" title="The deck step stopped">{runError.message}</InlineNotice> : null}
+        {session?.step === "deck" && session.error && running !== "deck" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
+        {choiceError?.step === "deck" ? <InlineNotice tone="error" title="Your choice was not saved">{choiceError.message}</InlineNotice> : null}
+        {deck && running !== "deck" ? <FunnelRunView
+          run={deck}
+          display={DECK_DISPLAY}
+          choosing={choosing?.step === "deck" ? choosing.id : undefined}
+          locked={running !== undefined || deck.status === "running"}
+          onChoose={(candidateId) => { void choose("deck", candidateId); }}
+        /> : null}
+        {!deck && available.deck && !running ? <EmptyState title="No deck yet">Write the deck: the slides between slide 2 and the closing, one idea each.</EmptyState> : null}
+      </>,
+    },
+    inventory: {
+      actions: <Button variant="primary" size="compact" busy={running === "inventory"} disabled={!factsVerified || running !== undefined || savingInventory !== undefined} onClick={() => { void runStep("inventory"); }}>
+        {running === "inventory" ? "Searching…" : inventory ? "Search again" : "Find people and places"}
+      </Button>,
+      how: <p>Claude lists the people, places and organizations the verified facts name; the program looks them up as v1 does. A person is never generated: if Commons has a licensed photo of them and you confirm it is them, it can appear as a documentary portrait, pasted unchanged. A place appears only through its verified photo or map, within the Topic’s geo scope: Wikidata first, then Google Maps for the map when Wikidata has no match. When a lookup finds nothing, give the person or place one of the story’s photos: upload it, or find it on Commons under another name. Organizations are never drawn. You also say whether the brand’s characters may narrate.</p>,
+      body: <>
+        {!factsVerified && !running ? needs("facts", "People and places are found only in verified facts; verify them first.") : null}
+        {running === "inventory" ? <LoadingState>Claude lists who and where; Wikidata, Commons, Openverse and Google Maps are checked for each. This can take a minute or two.</LoadingState> : null}
+        {inventoryStalled ? <InlineNotice tone="warning" title="This search stopped">Its request or the server ended before it finished. Search again.</InlineNotice> : null}
+        {runError?.step === "inventory" ? <InlineNotice tone="error" title="The search stopped">{runError.message}</InlineNotice> : null}
+        {inventory?.status === "failed" && inventory.error && running !== "inventory" ? <InlineNotice tone="error" title="The last search failed">{inventory.error}</InlineNotice> : null}
+        {inventoryError ? <InlineNotice tone="error" title="Your decision was not saved">{inventoryError}</InlineNotice> : null}
+        {inventory && inventory.status !== "running" && running !== "inventory" ? <InventoryView
+          inventory={inventory}
+          story={{ topicId, storyId, secret }}
+          saving={savingInventory}
+          locked={running !== undefined || savingInventory !== undefined}
+          onDecide={(input) => { void decideInventory(input); }}
+        /> : null}
+        {!inventory && available.inventory && !running ? <EmptyState title="Nobody and nowhere found yet">Find the people and places the facts name, with the verified photos and maps the images may show.</EmptyState> : null}
+      </>,
+    },
+    visual: {
+      actions: <>
+        {visualResumeRound && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("visual", { continuing: true }); }}>{visualExtendable ? `Continue with round ${visualResumeRound}` : `Continue from round ${visualResumeRound}`}</Button> : null}
+        {!visualResumeRound && moreRoundAvailable(visual, visualPlan(visual?.carousel ?? []).length) && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("visual", { continuing: true, more: true }); }}>One more round</Button> : null}
+        <Button variant="primary" size="compact" busy={running === "visual"} disabled={!factsVerified || !visualReady || running !== undefined || savingInventory !== undefined} onClick={() => { void runStep("visual"); }}>
+          {running === "visual" ? "Writing and judging…" : visual ? "Write the visual script again" : "Write the visual script"}
+        </Button>
+      </>,
+      how: <p>{TODAY.writer} writes the carousel’s images as one visual story, in the brand’s identity: a concept, a recurring cast, a motif that evolves from slide to slide and, for each slide, the beat its image adds (never its words again), a reproducible art direction and the verified material or characters it uses. {TODAY.judge} scores two scripts, written to the focus’s visual direction, and proposes one of its own; {TODAY.writer} revises the best and edits {TODAY.judge}’s, which also competes as {TODAY.judge} wrote it; a third round revises the best once more, for {TODAY.judge}’s pick. Accepted at 95/100 with no criterion below 85. The images themselves come in a later step.</p>,
+      body: <>
+        {factsVerified && !visualReady && !running ? (!deckFinished ? needs("deck", "The visual script pictures the whole carousel; finish the deck first.")
+          : deckEndsChanged ? needs("deck", "The deck connects another opening or closing than the ones chosen now; write the deck again first.")
+            : needs("inventory", "Find the people and places first: the script shows only what is verified.")) : null}
+        {visualExtendable && visual && !running ? <p className={styles.factMeta}>This run ended after {visual.rounds.length} rounds, before the visual script had a third. Continue with round {visualResumeRound} revises its best version once more against the remaining issues: one write and one judgment.</p> : null}
+        {peopleToConfirm && visualReady && !running ? needs("inventory", `${peopleToConfirm} ${peopleToConfirm === 1 ? "person waits" : "people wait"} for your confirmation; until then the script tells the story without showing them.`) : null}
+        {visualChanged && running !== "visual" ? <InlineNotice tone="info" title="The deck or the people and places changed">This script pictures {visual?.deckId} with people and places v{visual?.inventoryVersion}; the deck chosen now is {chosenDeckId} and the people and places are v{inventory?.version}. Write the visual script again to follow them.</InlineNotice> : null}
+        {running === "visual" ? <LoadingState>{following ? `${following} Following the run on the server…` : visualPausedRound ? `Continuing with round ${visualPausedRound} in a new request…` : `${TODAY.writer} writes the scripts; ${TODAY.judge} judges each round. This can take a few minutes.`}</LoadingState> : null}
+        {visualStalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {stoppedAt}: its request or the server ended. Continue from round {visualResumeRound} picks it up at its last checkpoint; a round already written is judged, not written again.</InlineNotice> : null}
+        {runError?.step === "visual" ? <InlineNotice tone="error" title="The visual script stopped">{runError.message}</InlineNotice> : null}
+        {session?.step === "visual" && session.error && running !== "visual" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
+        {choiceError?.step === "visual" ? <InlineNotice tone="error" title="Your choice was not saved">{choiceError.message}</InlineNotice> : null}
+        {visual && running !== "visual" ? <FunnelRunView
+          run={visual}
+          display={visualDisplay}
+          choosing={choosing?.step === "visual" ? choosing.id : undefined}
+          locked={running !== undefined || visual.status === "running"}
+          onChoose={(candidateId) => { void choose("visual", candidateId); }}
+        /> : null}
+        {!visual && available.visual && !running ? <EmptyState title="No visual script yet">Write the visual script: the carousel’s images as one visual story, before any image is made.</EmptyState> : null}
+      </>,
+    },
+    images: {
+      actions: <>
+        {imagesResumable && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("images", { continuing: true }); }}>Continue</Button> : null}
+        <Button variant="primary" size="compact" busy={running === "images"} disabled={!factsVerified || !imagesReady || running !== undefined || savingImage !== undefined} onClick={() => { void runStep("images"); }}>
+          {running === "images" ? "Making the images…" : images ? "Make the images again" : "Make the images"}
+        </Button>
+      </>,
+      how: <p>GPT Image makes each slide from the chosen visual script and the brand’s identity, and letters the slide’s words itself; the page number and the logo are added afterwards where the brand puts them, and a verified photo or map is pasted unchanged. {TODAY.judge} reviews each image: the words as they appear, what covers them, real people, other brands’ logos, what the brand avoids and the facts. A slide it flags is corrected once, from its image before the logo and the page number. Low quality, three calls a slide at most.</p>,
+      body: <>
+        {factsVerified && !imagesReady && !running ? needs("visual", !visualFinished ? "The images picture the visual script; finish it first." : "The deck or the people and places changed since the visual script; write the visual script again first.") : null}
+        {imagesChanged && running !== "images" ? <InlineNotice tone="info" title="The visual script changed">These images picture {images?.visualId}; the visual script chosen now is {chosenVisualId}. Make the images again to follow it.</InlineNotice> : null}
+        {running === "images" ? <LoadingState>{following ? `${following} Following the run on the server…` : images?.status === "paused" ? "Continuing in a new request while fal works…" : `GPT Image makes the slides; ${TODAY.judge} reviews each one. This can take a few minutes.`}</LoadingState> : null}
+        {imagesStalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {stoppedAt}: its request or the server ended. Continue picks it up; an image already asked for is not asked for again.</InlineNotice> : null}
+        {runError?.step === "images" ? <InlineNotice tone="error" title="The images stopped">{runError.message}</InlineNotice> : null}
+        {session?.step === "images" && session.error && running !== "images" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
+        {imageError ? <InlineNotice tone="error" title="Your decision was not saved">{imageError}</InlineNotice> : null}
+        {images && session && running !== "images" ? <ImagesView images={images} story={{ topicId, sessionId: session.id, secret }} saving={savingImage} locked={running !== undefined || savingImage !== undefined} onDecide={(input) => { void decideImage(input); }} /> : null}
+        {!images && available.images && !running ? <EmptyState title="No images yet">Make the images: each slide from the chosen visual script, reviewed one by one.</EmptyState> : null}
+      </>,
+    },
+    caption: {
+      actions: <>
+        {captionResumeRound && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("caption", { continuing: true }); }}>Continue from round {captionResumeRound}</Button> : null}
+        {moreRoundAvailable(caption, CAPTION_MAX_ROUNDS) && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("caption", { continuing: true, more: true }); }}>One more round</Button> : null}
+        <Button variant="primary" size="compact" busy={running === "caption"} disabled={!factsVerified || !captionReady || running !== undefined || savingMention !== undefined || mentionsSearching} onClick={() => { void runStep("caption"); }}>
+          {running === "caption" ? "Writing and judging…" : caption ? "Write the caption again" : "Write the caption"}
+        </Button>
+      </>,
+      how: <p>The post’s text for the finished carousel, in the publication’s voice: an opening line that stops the reader, short lines with blank lines between them, the emojis the brand allows, the closing’s one call to action, the accounts you tag and 5 to 8 hashtags at the end. The program adds the photo credits after the text. {TODAY.writer} writes three captions; {TODAY.judge} scores them and proposes one of its own; {TODAY.writer} revises the best and edits {TODAY.judge}’s, which also competes as {TODAY.judge} wrote it, for {TODAY.judge}’s pick. Accepted at 95/100 with no criterion below 85.</p>,
+      body: <>
+        <section className={styles.screenSection} aria-label="Accounts to tag">
+          <SectionHeader level={2} title="Accounts to tag" description="Claude proposes the Instagram accounts of the story’s people, places and organizations; Instagram says which exist and what they are called; only the accounts you tag reach the caption. On Facebook an @username stays plain text." actions={
+            <Button variant="secondary" size="compact" busy={running === "mentions"} disabled={!factsVerified || !mentionsReady || running !== undefined || savingMention !== undefined || mentionsSearching} onClick={() => { void runStep("mentions"); }}>
+              {running === "mentions" ? "Finding…" : mentions ? "Find again" : "Find accounts to tag"}
+            </Button>
+          } />
+          {factsVerified && !mentionsReady && !running ? needs("inventory", "The accounts are those of the people and places; find them first.") : null}
+          {running === "mentions" ? <LoadingState>Claude proposes the accounts; each one is checked on Instagram. This can take a minute.</LoadingState> : null}
+          {mentionsStalled ? <InlineNotice tone="warning" title="This search stopped">Its request or the server ended before it finished. Find the accounts again.</InlineNotice> : null}
+          {runError?.step === "mentions" ? <InlineNotice tone="error" title="The search stopped">{runError.message}</InlineNotice> : null}
+          {mentions?.status === "failed" && mentions.error && running !== "mentions" ? <InlineNotice tone="error" title="The last search failed">{mentions.error}</InlineNotice> : null}
+          {mentionError ? <InlineNotice tone="error" title="Your decision was not saved">{mentionError}</InlineNotice> : null}
+          {inventory && running !== "mentions" && !mentionsSearching ? <MentionsView mentions={mentions} entities={mentionEntities(inventory)} saving={savingMention} locked={running !== undefined || savingMention !== undefined} onDecide={decideMention} /> : null}
+        </section>
+        <section className={styles.screenSection} aria-label="The caption">
+          <SectionHeader level={2} title="The caption" description="The post as it will read, with the credits the program adds and its hashtags." />
+          {factsVerified && !captionReady && !running ? needs("images", imagesScriptGone ? "The visual script these images picture is no longer in the session; make the images again first." : "The caption accompanies the finished carousel; finish the images first, with an image on every slide.") : null}
+          {captionImagesChanged && running !== "caption" ? <InlineNotice tone="info" title="The images changed">This caption was written for an earlier images run. Write it again for the images as they are now.</InlineNotice> : null}
+          {captionMentionsChanged && !captionImagesChanged && running !== "caption" ? <InlineNotice tone="info" title="The accounts to tag changed">This caption tags {caption?.mentions?.length ? listed(caption.mentions.map((mention) => mention.handle)) : "no account"}; you tag {tagged.length ? listed(tagged.map((mention) => mention.handle)) : "none"} now. Write it again to tag them.</InlineNotice> : null}
+          {running === "caption" ? <LoadingState>{following ? `${following} Following the run on the server…` : captionPausedRound ? `Continuing with round ${captionPausedRound} in a new request…` : `${TODAY.writer} writes three captions; ${TODAY.judge} judges each round. This can take a few minutes.`}</LoadingState> : null}
+          {captionStalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {stoppedAt}: its request or the server ended. Continue from round {captionResumeRound} picks it up at its last checkpoint; a round already written is judged, not written again.</InlineNotice> : null}
+          {runError?.step === "caption" ? <InlineNotice tone="error" title="The caption step stopped">{runError.message}</InlineNotice> : null}
+          {session?.step === "caption" && session.error && running !== "caption" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
+          {choiceError?.step === "caption" ? <InlineNotice tone="error" title="Your choice was not saved">{choiceError.message}</InlineNotice> : null}
+          {caption && running !== "caption" ? <FunnelRunView
+            run={caption}
+            display={captionDisplay}
+            choosing={choosing?.step === "caption" ? choosing.id : undefined}
+            locked={running !== undefined || caption.status === "running"}
+            onChoose={(candidateId) => { void choose("caption", candidateId); }}
+          /> : null}
+          {!caption && captionReady && !running ? <EmptyState title="No caption yet">Write the caption: the post’s text, in the publication’s voice, with the accounts you tag.</EmptyState> : null}
+        </section>
+      </>,
+    },
+    publish: {
+      actions: <Button variant="primary" size="compact" busy={running === "publication"} disabled={!publishable || approvedCurrent || running !== undefined || Boolean(publishable?.issues.length && !acknowledged)} onClick={() => { void approvePublication(); }}>
+        {running === "publication" ? "Approving…" : approvedCurrent ? "Approved" : publication ? "Approve it again" : "Approve for publishing"}
+      </Button>,
+      how: <p>You approve the carousel as it stands: each slide’s image and the chosen caption, with its credits and hashtags. v1’s publication then freezes it as one exact package and publishes it to the Topic’s Facebook Page, its Instagram account, or both at once, with its queue, retries and links to the posts. Nothing is published until you confirm the exact post. A carousel publishes 2 to 10 images.</p>,
+      body: <>
+        {factsVerified && !running && !caption ? needs("caption", "The post needs its caption; write it first.") : null}
+        {factsVerified && !running && publishBlocker ? <InlineNotice tone="warning" title="Not ready to approve">{publishBlocker}</InlineNotice> : null}
+        {publication && !approvedCurrent && publishable && running !== "publication" ? <InlineNotice tone="info" title="The carousel changed since you approved it">The approved copy is the one from {new Date(publication.approvedAt).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" })}. Approve it again to publish the carousel as it stands now; what was already published stays as it is.</InlineNotice> : null}
+        {runError?.step === "publication" ? <InlineNotice tone="error" title="The carousel was not approved">{runError.message}</InlineNotice> : null}
+        {publishable ? <PublishPreview target={publishable} approved={approvedCurrent} acknowledged={acknowledged} locked={running !== undefined} onAcknowledge={setAcknowledged} /> : null}
+        {publication && approvedCurrent ? <PublishedCopy publication={publication} topicId={topicId} secret={secret} locked={running !== undefined} approving={running === "publication"} onApprove={() => { void approvePublication(publication.acknowledgedIssues.length > 0); }} /> : null}
+      </>,
+    },
+  };
+
+  const adjacent = adjacentDraft2Steps(current);
+  const pagerTarget = (screen: Draft2StepKey | "overview" | undefined) => screen === undefined ? undefined
+    : screen === "overview" ? { screen: undefined, title: "Overview", href: hrefOf(undefined), status: `${doneSteps} of ${DRAFT_2_STEPS.length} steps done` }
+      : { screen, title: stepOf(screen).title, href: hrefOf(screen), status: screenStatusLabel(stepOf(screen)) };
+  const pager = <StepPager previous={pagerTarget(adjacent.previous)} next={pagerTarget(adjacent.next)} onNavigate={navigate} />;
+  const sourceMeta = content ? [host, contentStatusLabel(content.contentStatus), `${words.toLocaleString("en-CA")} words`].filter(Boolean).join(" · ") : "";
+
   return <main className={styles.shell} style={themeStyle}>
-    <div className={styles.topbar}>
-      <Link href={back} aria-label="Back to the story">← <span>Story</span></Link>
-      <span className={styles.breadcrumb}>{topicName} <span aria-hidden="true">/</span> Production <span aria-hidden="true">/</span> Story <span aria-hidden="true">/</span> Draft 2</span>
-    </div>
+    <header className={styles.topbar}>
+      <Link href={back} className={styles.topbarBack} aria-label="Back to the story">← <span>Story</span></Link>
+      <div className={styles.topbarTitle}>
+        <span className={styles.topbarTopic}>{topicName} · Draft 2</span>
+        <span className={styles.topbarStory}>{content?.title ?? (error ? "Could not open the story" : "Loading the story…")}</span>
+      </div>
+      {content ? <div className={styles.topbarActions}>
+        {totals.calls ? <span className={styles.topbarVitals}>{minutes(totals.ms)} in calls · {usd(totals.costMicros)}</span> : null}
+        {liveScreen && liveScreen !== current ? <ScreenLink href={hrefOf(liveScreen)} onNavigate={() => navigate(liveScreen)} className={styles.livePill}>{stepOf(liveScreen).title} running</ScreenLink> : null}
+        {current !== "facts" ? <Button variant="quiet" size="compact" aria-expanded={sourceShown} aria-controls="draft2-source" onClick={() => showSource(!sourceOpen)}>Article</Button> : null}
+        {/* The overview has the autopilot's own card; a narrow window keeps the bar to the article and the way back. */}
+        {current ? <span className={styles.topbarAutopilot}>{autopilotButtons}</span> : null}
+      </div> : null}
+    </header>
     {error ? <InlineNotice tone="error" title="Could not open the canvas" className={styles.notice}>{error} <Link href={back}>Back to the story</Link></InlineNotice> : null}
     {!content && !error ? <LoadingState className={styles.notice}>Loading the story…</LoadingState> : null}
-    {content ? <div className={styles.page}>
-      <header className={styles.header}>
-        <p className={styles.eyebrow}>Draft 2 · a new pipeline, built one step at a time</p>
-        <h1>{content.title}</h1>
-        <p className={styles.meta}>
-          {host ? <span>{host}</span> : null}
-          <StatusBadge tone={contentReady ? "success" : "warning"}>{contentStatusLabel(content.contentStatus)}</StatusBadge>
-          <span>{words.toLocaleString("en-CA")} words</span>
-          {content.enrichment?.byline ? <span>{content.enrichment.byline}</span> : null}
-          <a href={content.url} target="_blank" rel="noreferrer">Open the original ↗</a>
-        </p>
-      </header>
-      <div className={styles.columns}>
-        <Surface className={styles.column} aria-label="Source material">
-          <SectionHeader level={3} eyebrow="Source material" title="What the story says" description="The stored text, exactly as every step will read it." />
-          {text.length
-            ? <div className={styles.reading}>{text.map((paragraph, index) => <p key={index}>{paragraph}</p>)}</div>
-            : <EmptyState title="No article text yet">Prepare the content in the studio first; the canvas reads the same stored text.</EmptyState>}
-        </Surface>
-        <Surface className={styles.column} aria-label="Canvas">
-          <SectionHeader level={3} eyebrow="Canvas" title={session?.opening ? "Facts, focus, then the opening" : session?.focus ? "Facts, then the focus" : session ? "Facts first" : "Nothing built yet"} description="Each step is added separately. The current studio keeps working as it does today." />
-          <section className={styles.factsPanel} aria-label="Autopilot">
-            <div className={styles.factsHeader}>
+    {content ? <div className={styles.workspace} data-source={sourceShown ? "open" : undefined}>
+      <Draft2Rail current={current} overviewHref={hrefOf(undefined)} steps={screenSteps} onNavigate={navigate} />
+      <div className={styles.stage} key={current ?? "overview"}>
+        {current ? <StepScreen
+          step={stepOf(current)}
+          phase={draft2StepPhase(current).title}
+          total={DRAFT_2_STEPS.length}
+          headingRef={headingRef}
+          actions={screens[current].actions}
+          how={screens[current].how}
+          trace={<TraceDetails entries={traceOf(current)} />}
+          pager={pager}
+        >{screens[current].body}</StepScreen> : <article className={styles.screen} aria-labelledby="draft2-screen-title">
+          <header className={styles.overviewHero}>
+            <p className={styles.screenKicker}>Draft 2 · {topicName}</p>
+            <h1 id="draft2-screen-title" ref={headingRef} tabIndex={-1} className={styles.overviewTitle}>{content.title}</h1>
+            <p className={styles.meta}>
+              {host ? <span>{host}</span> : null}
+              <StatusBadge tone={contentReady ? "success" : "warning"}>{contentStatusLabel(content.contentStatus)}</StatusBadge>
+              <span>{words.toLocaleString("en-CA")} words</span>
+              {content.enrichment?.byline ? <span>{content.enrichment.byline}</span> : null}
+              <a href={content.url} target="_blank" rel="noreferrer">Open the original ↗</a>
+            </p>
+            <PipelineStrip steps={screenSteps} />
+            <p className={styles.screenVitals}>{doneSteps} of {DRAFT_2_STEPS.length} steps done{totals.calls ? ` · ${minutes(totals.ms)} in ${totals.calls} provider calls · ${usd(totals.costMicros)}` : ""}</p>
+          </header>
+          <section className={styles.autopilotCard} aria-labelledby="draft2-autopilot-title">
+            <div className={styles.autopilotHead}>
               <div>
-                <p className={styles.eyebrow}>Autopilot</p>
-                <p className={styles.factsIntro}>Runs every step to the images without stopping, from where the story stands: the facts if they are not verified, the focus, the people and places, the accounts to tag, the opening, the closing, the deck, the visual script and the images. Each step keeps {TODAY.judge}’s winner; 95 is the goal, a step that ends from {FUNNEL_ACCEPTABLE_SCORE} is acceptable and marked for you, and one under {FUNNEL_ACCEPTABLE_SCORE} takes up to {FUNNEL_MAX_EXTRA_ROUNDS} extra rounds on its own before the run goes on; a failure, or a step that needs you, stops it. You review at the end: re-run or choose in any step, confirm the accounts, write the caption and approve. Every step below shows its progress, time and cost meanwhile.</p>
+                <h2 id="draft2-autopilot-title" className={styles.autopilotTitle}>Autopilot</h2>
+                <p className={styles.autopilotIntro}>Runs every step to the images without stopping, from where the story stands: the facts if they are not verified, the focus, the people and places, the accounts to tag, the opening, the closing, the deck, the visual script and the images. Each step keeps {TODAY.judge}’s winner; 95 is the goal, a step that ends from {FUNNEL_ACCEPTABLE_SCORE} is acceptable and marked for you, and one under {FUNNEL_ACCEPTABLE_SCORE} takes up to {FUNNEL_MAX_EXTRA_ROUNDS} extra rounds on its own before the run goes on; a failure, or a step that needs you, stops it. You review at the end: re-run or choose in any step, confirm the accounts, write the caption and approve.</p>
               </div>
-              <ActionRow>
-                {autopilot?.active ? <Button variant="secondary" size="compact" disabled={stopRequested.current} onClick={() => { stopRequested.current = true; }}>Stop after this step</Button> : null}
-                <Button variant="primary" size="compact" busy={autopilot?.active} disabled={!text.length || session === undefined || running !== undefined || autopilot?.active} onClick={() => { void runAutopilot(); }}>
-                  {autopilot?.active ? `Running ${autopilot.current ? STEP_TITLE[autopilot.current].toLowerCase() : ""}…` : "Run to images"}
-                </Button>
-              </ActionRow>
+              <ActionRow>{autopilotButtons}</ActionRow>
             </div>
             {autopilot ? <AutopilotView autopilot={autopilot} trace={session?.trace ?? []} now={now} /> : null}
           </section>
-          <ol className={styles.steps}>
-            {DRAFT_2_STEPS.map((step, index) => {
-              const status = stepStatus[step.key];
-              const metric = metrics[step.key];
-              return <li key={step.key}>
-                <span className={styles.stepNumber} aria-hidden="true">{index + 1}</span>
-                <div><strong>{step.title}</strong><p>{step.detail}</p>{metric ? <p className={styles.stepMetrics}>{metric.calls ? `${minutes(metric.ms)} in ${metric.calls} ${metric.calls === 1 ? "call" : "calls"} · ` : ""}{usd(metric.costMicros)}</p> : null}</div>
-                {status
-                  ? <StatusBadge className={styles.stepStatus} tone={status.tone}>{status.label}</StatusBadge>
-                  : <StatusBadge className={styles.stepStatus}>Not started</StatusBadge>}
-              </li>;
-            })}
-          </ol>
-          <section className={styles.factsPanel} aria-label="Facts step">
-            <div className={styles.factsHeader}>
-              <div>
-                <p className={styles.eyebrow}>Step 1 · Facts</p>
-                <p className={styles.factsIntro}>Sol extracts the facts; Claude checks them against the article; they loop on Claude’s suggestions, at most three extractions.</p>
-              </div>
-              <Button variant="primary" size="compact" busy={running === "facts"} disabled={!text.length || session === undefined || running !== undefined} onClick={() => { void runStep("facts"); }}>
-                {running === "facts" ? "Extracting and verifying…" : session ? "Run the facts again" : "Extract and verify facts"}
-              </Button>
-            </div>
-            {running === "facts" ? <LoadingState>Sol is extracting; Claude reviews each round. This can take a minute or two.</LoadingState> : null}
-            {runError?.step === "facts" ? <InlineNotice tone="error" title="The facts step stopped">{runError.message}</InlineNotice> : null}
-            {session?.step === "facts" && session.error && running !== "facts" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
-            {session && running !== "facts" ? <FactsSessionView session={session} verified={factsVerified} /> : null}
-          </section>
-          <section className={styles.factsPanel} aria-label="Focus step">
-            <div className={styles.factsHeader}>
-              <div>
-                <p className={styles.eyebrow}>Step 2 · Focus</p>
-                <p className={styles.factsIntro}>Claude reads the verified facts, the Topic’s creative profile, its visual identity and its editorial lines, and decides what the story is for: the line it serves, its audience, framing, reader consequence, structure, goal, voice and direction, and the visual direction the images follow. Change any field; your changes stay yours when Claude decides again, and the opening follows the result.</p>
-              </div>
-              <Button variant="primary" size="compact" busy={running === "focus"} disabled={!factsVerified || running !== undefined || savingFocus !== undefined} onClick={() => { void runStep("focus"); }}>
-                {running === "focus" ? "Deciding…" : focus?.values ? "Decide again" : "Decide the focus"}
-              </Button>
-            </div>
-            {!factsVerified && !running ? <p className={styles.factMeta}>The focus builds only on verified facts; verify them first.</p> : null}
-            {running === "focus" ? <LoadingState>Claude is deciding the focus{focus?.edited.length ? `, keeping your ${focus.edited.length === 1 ? "change" : `${focus.edited.length} changes`}` : ""}. This can take a minute.</LoadingState> : null}
-            {focusStalled ? <InlineNotice tone="warning" title="This decision stopped">Its request or the server ended before Claude answered. Decide the focus again.</InlineNotice> : null}
-            {runError?.step === "focus" ? <InlineNotice tone="error" title="The focus step stopped">{runError.message}</InlineNotice> : null}
-            {focus?.status === "failed" && focus.error && running !== "focus" ? <InlineNotice tone="error" title="The last decision failed">{focus.error}{focus.values ? " The focus below is the one from before it." : ""}</InlineNotice> : null}
-            {focusError ? <InlineNotice tone="error" title="Your change was not saved">{focusError}</InlineNotice> : null}
-            {focus?.values && running !== "focus" ? <FocusView
-              focus={focus}
-              findings={focusProblems}
-              saving={savingFocus}
-              locked={running !== undefined || savingFocus !== undefined}
-              onSave={(field, value) => { void saveFocus(field, { value }); }}
-              onReset={(field) => { void saveFocus(field, { reset: true }); }}
-            /> : null}
-          </section>
-          <section className={styles.factsPanel} aria-label="Opening step">
-            <div className={styles.factsHeader}>
-              <div>
-                <p className={styles.eyebrow}>Step 3 · Opening</p>
-                <p className={styles.factsIntro}>{TODAY.writer} writes fifteen openings (cover and slide 2) from the verified facts, following the focus; {TODAY.judge} scores them and proposes three of its own. {TODAY.writer} revises the three best and edits {TODAY.judge}’s proposals, which also compete as {TODAY.judge} wrote them; {TODAY.judge} scores all nine without knowing which are its own, and proposes one more, which competes the same way beside {TODAY.writer}’s two best for {TODAY.judge}’s final pick. The better version always stays, and an opening that says what the facts do not never wins. Accepted at 95/100 with no criterion below 85, how well it follows the focus included.</p>
-              </div>
-              <ActionRow>
-                {resumeRound && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("opening", { continuing: true }); }}>Continue from round {resumeRound}</Button> : null}
-                {moreRoundAvailable(session?.opening, OPENING_MAX_ROUNDS) && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("opening", { continuing: true, more: true }); }}>One more round</Button> : null}
-                <Button variant="primary" size="compact" busy={running === "opening"} disabled={!factsVerified || !focusReady || running !== undefined || savingFocus !== undefined} onClick={() => { void runStep("opening"); }}>
-                  {running === "opening" ? "Writing and judging…" : session?.opening ? "Write the opening again" : "Write the opening"}
-                </Button>
-              </ActionRow>
-            </div>
-            {!factsVerified && !running ? <p className={styles.factMeta}>The opening builds only on verified facts; verify them first.</p> : null}
-            {factsVerified && !focusReady && !running ? <p className={styles.factMeta}>{focus?.values && focus.status !== "running" ? "The opening waits until the focus is fixed (see the notes above)." : "The opening follows the story’s focus; decide it first."}</p> : null}
-            {focusChanged && running !== "opening" && focus ? <InlineNotice tone="info" title="The focus changed">{openingFocusVersion ? `This opening followed focus v${openingFocusVersion}; the focus is now v${focus.version}.` : "This opening was written before the Focus step."} Write it again to follow the focus as it stands.</InlineNotice> : null}
-            {running === "opening" ? <LoadingState>{following ? `${following} Following the run on the server…` : pausedRound ? `Continuing with round ${pausedRound} in a new request…` : `${TODAY.writer} writes fifteen openings; ${TODAY.judge} judges each round. This can take a few minutes.`}</LoadingState> : null}
-            {stalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {new Date(session.updatedAt).toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit" })}: its request or the server ended. Continue from round {resumeRound} picks it up at its last checkpoint; a round already written is judged, not written again.</InlineNotice> : null}
-            {runError?.step === "opening" ? <InlineNotice tone="error" title="The opening step stopped">{runError.message}</InlineNotice> : null}
-            {session?.step === "opening" && session.error && running !== "opening" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
-            {choiceError?.step === "opening" ? <InlineNotice tone="error" title="Your choice was not saved">{choiceError.message}</InlineNotice> : null}
-            {session?.opening && running !== "opening" ? <FunnelRunView
-              run={session.opening}
-              display={OPENING_DISPLAY}
-              choosing={choosing?.step === "opening" ? choosing.id : undefined}
-              locked={running !== undefined || session.opening.status === "running"}
-              onChoose={(candidateId) => { void choose("opening", candidateId); }}
-            /> : null}
-          </section>
-          <section className={styles.factsPanel} aria-label="Closing step">
-            <div className={styles.factsHeader}>
-              <div>
-                <p className={styles.eyebrow}>Step 4 · Closing</p>
-                <p className={styles.factsIntro}>{TODAY.writer} writes eight endings for the opening you chose, following the focus that opening followed. For an arc, the penultimate slide pays the cover’s promise in full and the last says what it means for the reader, with the one call to action the focus’s goal asks for, in the publication’s call-to-action style; for a list or steps, the last slide alone, with the plan or the result. {TODAY.judge} scores them and proposes two of its own; {TODAY.writer} revises the two best and edits {TODAY.judge}’s proposals, which also compete as {TODAY.judge} wrote them, for {TODAY.judge}’s pick. Accepted at 95/100 with no criterion below 85.</p>
-              </div>
-              <ActionRow>
-                {closingResumeRound && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("closing", { continuing: true }); }}>Continue from round {closingResumeRound}</Button> : null}
-                {moreRoundAvailable(closing, CLOSING_MAX_ROUNDS) && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("closing", { continuing: true, more: true }); }}>One more round</Button> : null}
-                <Button variant="primary" size="compact" busy={running === "closing"} disabled={!factsVerified || !closingReady || running !== undefined || savingFocus !== undefined} onClick={() => { void runStep("closing"); }}>
-                  {running === "closing" ? "Writing and judging…" : closing ? "Write the closing again" : "Write the closing"}
-                </Button>
-              </ActionRow>
-            </div>
-            {factsVerified && !closingReady && !running ? <p className={styles.factMeta}>{openingFinished ? "The opening was written before the Focus step; write it again first." : "The closing ends the opening you choose; finish the opening first."}</p> : null}
-            {closingOpeningChanged && running !== "closing" && closing?.opening ? <InlineNotice tone="info" title="The opening changed">This closing ends {closing.opening.id}; the opening chosen now is {chosenOpeningId}. Write the closing again to end it.</InlineNotice> : null}
-            {running === "closing" ? <LoadingState>{following ? `${following} Following the run on the server…` : closingPausedRound ? `Continuing with round ${closingPausedRound} in a new request…` : `${TODAY.writer} writes eight endings; ${TODAY.judge} judges each round. This can take a few minutes.`}</LoadingState> : null}
-            {closingStalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {new Date(session.updatedAt).toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit" })}: its request or the server ended. Continue from round {closingResumeRound} picks it up at its last checkpoint; a round already written is judged, not written again.</InlineNotice> : null}
-            {runError?.step === "closing" ? <InlineNotice tone="error" title="The closing step stopped">{runError.message}</InlineNotice> : null}
-            {session?.step === "closing" && session.error && running !== "closing" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
-            {choiceError?.step === "closing" ? <InlineNotice tone="error" title="Your choice was not saved">{choiceError.message}</InlineNotice> : null}
-            {closing && running !== "closing" ? <FunnelRunView
-              run={closing}
-              display={CLOSING_DISPLAY}
-              choosing={choosing?.step === "closing" ? choosing.id : undefined}
-              locked={running !== undefined || closing.status === "running"}
-              onChoose={(candidateId) => { void choose("closing", candidateId); }}
-            /> : null}
-          </section>
-          <section className={styles.factsPanel} aria-label="Deck step">
-            <div className={styles.factsHeader}>
-              <div>
-                <p className={styles.eyebrow}>Step 5 · Deck</p>
-                <p className={styles.factsIntro}>{TODAY.writer} writes the slides between slide 2 and the closing you chose, one idea each, so the carousel reads as one story: for an arc, four decks of two to five slides; for a list or steps, two decks with the items slide 2 did not cover, one per slide, in order. {TODAY.judge} scores them and proposes a deck of its own; {TODAY.writer} revises the best, touching only the slides the issues name, and edits {TODAY.judge}’s deck, which also competes as {TODAY.judge} wrote it, for {TODAY.judge}’s pick. Accepted at 95/100 with no criterion below 85.</p>
-              </div>
-              <ActionRow>
-                {deckResumeRound && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("deck", { continuing: true }); }}>Continue from round {deckResumeRound}</Button> : null}
-                {moreRoundAvailable(deck, DECK_MAX_ROUNDS) && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("deck", { continuing: true, more: true }); }}>One more round</Button> : null}
-                <Button variant="primary" size="compact" busy={running === "deck"} disabled={!factsVerified || !deckReady || running !== undefined || savingFocus !== undefined} onClick={() => { void runStep("deck"); }}>
-                  {running === "deck" ? "Writing and judging…" : deck ? "Write the deck again" : "Write the deck"}
-                </Button>
-              </ActionRow>
-            </div>
-            {factsVerified && !deckReady && !running ? <p className={styles.factMeta}>{closingOpeningChanged ? "The closing ends another opening than the one chosen now; write the closing again first." : "The deck leads to the closing you choose; finish the closing first."}</p> : null}
-            {deckEndsChanged && running !== "deck" ? <InlineNotice tone="info" title="The opening or the closing changed">This deck connects {deck?.opening?.id} and {deck?.closing?.id}; the ones chosen now are {chosenOpeningId} and {chosenClosingId}. Write the deck again to connect them.</InlineNotice> : null}
-            {running === "deck" ? <LoadingState>{following ? `${following} Following the run on the server…` : deckPausedRound ? `Continuing with round ${deckPausedRound} in a new request…` : `${TODAY.writer} writes the decks; ${TODAY.judge} judges each round. This can take a few minutes.`}</LoadingState> : null}
-            {deckStalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {new Date(session.updatedAt).toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit" })}: its request or the server ended. Continue from round {deckResumeRound} picks it up at its last checkpoint; a round already written is judged, not written again.</InlineNotice> : null}
-            {runError?.step === "deck" ? <InlineNotice tone="error" title="The deck step stopped">{runError.message}</InlineNotice> : null}
-            {session?.step === "deck" && session.error && running !== "deck" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
-            {choiceError?.step === "deck" ? <InlineNotice tone="error" title="Your choice was not saved">{choiceError.message}</InlineNotice> : null}
-            {deck && running !== "deck" ? <FunnelRunView
-              run={deck}
-              display={DECK_DISPLAY}
-              choosing={choosing?.step === "deck" ? choosing.id : undefined}
-              locked={running !== undefined || deck.status === "running"}
-              onChoose={(candidateId) => { void choose("deck", candidateId); }}
-            /> : null}
-          </section>
-          <section className={styles.factsPanel} aria-label="People and places step">
-            <div className={styles.factsHeader}>
-              <div>
-                <p className={styles.eyebrow}>Step 6 · People and places</p>
-                <p className={styles.factsIntro}>Claude lists the people, places and organizations the verified facts name; the program looks them up as v1 does. A person is never generated: if Commons has a licensed photo of them and you confirm it is them, it can appear as a documentary portrait, pasted unchanged. A place appears only through its verified photo or map, within the Topic’s geo scope: Wikidata first, then Google Maps for the map when Wikidata has no match. When a lookup finds nothing, give the person or place one of the story’s photos: upload it, or find it on Commons under another name. Organizations are never drawn. You also say whether the brand’s characters may narrate.</p>
-              </div>
-              <Button variant="primary" size="compact" busy={running === "inventory"} disabled={!factsVerified || running !== undefined || savingInventory !== undefined} onClick={() => { void runStep("inventory"); }}>
-                {running === "inventory" ? "Searching…" : inventory ? "Search again" : "Find people and places"}
-              </Button>
-            </div>
-            {!factsVerified && !running ? <p className={styles.factMeta}>People and places are found only in verified facts; verify them first.</p> : null}
-            {running === "inventory" ? <LoadingState>Claude lists who and where; Wikidata, Commons, Openverse and Google Maps are checked for each. This can take a minute or two.</LoadingState> : null}
-            {inventoryStalled ? <InlineNotice tone="warning" title="This search stopped">Its request or the server ended before it finished. Search again.</InlineNotice> : null}
-            {runError?.step === "inventory" ? <InlineNotice tone="error" title="The search stopped">{runError.message}</InlineNotice> : null}
-            {inventory?.status === "failed" && inventory.error && running !== "inventory" ? <InlineNotice tone="error" title="The last search failed">{inventory.error}</InlineNotice> : null}
-            {inventoryError ? <InlineNotice tone="error" title="Your decision was not saved">{inventoryError}</InlineNotice> : null}
-            {inventory && inventory.status !== "running" && running !== "inventory" ? <InventoryView
-              inventory={inventory}
-              story={{ topicId, storyId, secret }}
-              saving={savingInventory}
-              locked={running !== undefined || savingInventory !== undefined}
-              onDecide={(input) => { void decideInventory(input); }}
-            /> : null}
-          </section>
-          <section className={styles.factsPanel} aria-label="Visual script step">
-            <div className={styles.factsHeader}>
-              <div>
-                <p className={styles.eyebrow}>Step 7 · Visual script</p>
-                <p className={styles.factsIntro}>{TODAY.writer} writes the carousel’s images as one visual story, in the brand’s identity: a concept, a recurring cast, a motif that evolves from slide to slide and, for each slide, the beat its image adds (never its words again), a reproducible art direction and the verified material or characters it uses. {TODAY.judge} scores two scripts, written to the focus’s visual direction, and proposes one of its own; {TODAY.writer} revises the best and edits {TODAY.judge}’s, which also competes as {TODAY.judge} wrote it; a third round revises the best once more, for {TODAY.judge}’s pick. Accepted at 95/100 with no criterion below 85. The images themselves come in a later step.</p>
-              </div>
-              <ActionRow>
-                {visualResumeRound && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("visual", { continuing: true }); }}>{visualExtendable ? `Continue with round ${visualResumeRound}` : `Continue from round ${visualResumeRound}`}</Button> : null}
-                {!visualResumeRound && moreRoundAvailable(visual, visualPlan(visual?.carousel ?? []).length) && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("visual", { continuing: true, more: true }); }}>One more round</Button> : null}
-                <Button variant="primary" size="compact" busy={running === "visual"} disabled={!factsVerified || !visualReady || running !== undefined || savingInventory !== undefined} onClick={() => { void runStep("visual"); }}>
-                  {running === "visual" ? "Writing and judging…" : visual ? "Write the visual script again" : "Write the visual script"}
-                </Button>
-              </ActionRow>
-            </div>
-            {factsVerified && !visualReady && !running ? <p className={styles.factMeta}>{!deckFinished ? "The visual script pictures the whole carousel; finish the deck first." : deckEndsChanged ? "The deck connects another opening or closing than the ones chosen now; write the deck again first." : "Find the people and places first: the script shows only what is verified."}</p> : null}
-            {visualExtendable && visual && !running ? <p className={styles.factMeta}>This run ended after {visual.rounds.length} rounds, before the visual script had a third. Continue with round {visualResumeRound} revises its best version once more against Sol’s remaining issues: one write and one judgment.</p> : null}
-            {peopleToConfirm && visualReady && !running ? <p className={styles.factMeta}>{peopleToConfirm} {peopleToConfirm === 1 ? "person waits" : "people wait"} for your confirmation; until then the script tells the story without showing them.</p> : null}
-            {visualChanged && running !== "visual" ? <InlineNotice tone="info" title="The deck or the people and places changed">This script pictures {visual?.deckId} with people and places v{visual?.inventoryVersion}; the deck chosen now is {chosenDeckId} and the people and places are v{inventory?.version}. Write the visual script again to follow them.</InlineNotice> : null}
-            {running === "visual" ? <LoadingState>{following ? `${following} Following the run on the server…` : visualPausedRound ? `Continuing with round ${visualPausedRound} in a new request…` : `${TODAY.writer} writes the scripts; ${TODAY.judge} judges each round. This can take a few minutes.`}</LoadingState> : null}
-            {visualStalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {new Date(session.updatedAt).toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit" })}: its request or the server ended. Continue from round {visualResumeRound} picks it up at its last checkpoint; a round already written is judged, not written again.</InlineNotice> : null}
-            {runError?.step === "visual" ? <InlineNotice tone="error" title="The visual script stopped">{runError.message}</InlineNotice> : null}
-            {session?.step === "visual" && session.error && running !== "visual" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
-            {choiceError?.step === "visual" ? <InlineNotice tone="error" title="Your choice was not saved">{choiceError.message}</InlineNotice> : null}
-            {visual && running !== "visual" ? <FunnelRunView
-              run={visual}
-              display={visualDisplay}
-              choosing={choosing?.step === "visual" ? choosing.id : undefined}
-              locked={running !== undefined || visual.status === "running"}
-              onChoose={(candidateId) => { void choose("visual", candidateId); }}
-            /> : null}
-          </section>
-          <section className={styles.factsPanel} aria-label="Images step">
-            <div className={styles.factsHeader}>
-              <div>
-                <p className={styles.eyebrow}>Step 8 · Images</p>
-                <p className={styles.factsIntro}>GPT Image makes each slide from the chosen visual script and the brand’s identity, and letters the slide’s words itself; the page number and the logo are added afterwards where the brand puts them, and a verified photo or map is pasted unchanged. {TODAY.judge} reviews each image: the words as they appear, what covers them, real people, other brands’ logos, what the brand avoids and the facts. A slide it flags is corrected once, from its image before the logo and the page number. Low quality, three calls a slide at most.</p>
-              </div>
-              <ActionRow>
-                {imagesResumable && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("images", { continuing: true }); }}>Continue</Button> : null}
-                <Button variant="primary" size="compact" busy={running === "images"} disabled={!factsVerified || !imagesReady || running !== undefined || savingImage !== undefined} onClick={() => { void runStep("images"); }}>
-                  {running === "images" ? "Making the images…" : images ? "Make the images again" : "Make the images"}
-                </Button>
-              </ActionRow>
-            </div>
-            {factsVerified && !imagesReady && !running ? <p className={styles.factMeta}>{!visualFinished ? "The images picture the visual script; finish it first." : "The deck or the people and places changed since the visual script; write the visual script again first."}</p> : null}
-            {imagesChanged && running !== "images" ? <InlineNotice tone="info" title="The visual script changed">These images picture {images?.visualId}; the visual script chosen now is {chosenVisualId}. Make the images again to follow it.</InlineNotice> : null}
-            {running === "images" ? <LoadingState>{following ? `${following} Following the run on the server…` : images?.status === "paused" ? "Continuing in a new request while fal works…" : `GPT Image makes the slides; ${TODAY.judge} reviews each one. This can take a few minutes.`}</LoadingState> : null}
-            {imagesStalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {new Date(session.updatedAt).toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit" })}: its request or the server ended. Continue picks it up; an image already asked for is not asked for again.</InlineNotice> : null}
-            {runError?.step === "images" ? <InlineNotice tone="error" title="The images stopped">{runError.message}</InlineNotice> : null}
-            {session?.step === "images" && session.error && running !== "images" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
-            {imageError ? <InlineNotice tone="error" title="Your decision was not saved">{imageError}</InlineNotice> : null}
-            {images && session && running !== "images" ? <ImagesView images={images} story={{ topicId, sessionId: session.id, secret }} saving={savingImage} locked={running !== undefined || savingImage !== undefined} onDecide={(input) => { void decideImage(input); }} /> : null}
-          </section>
-          <section className={styles.factsPanel} aria-label="Caption step">
-            <div className={styles.factsHeader}>
-              <div>
-                <p className={styles.eyebrow}>Step 9 · Caption</p>
-                <p className={styles.factsIntro}>The post’s text for the finished carousel, in the publication’s voice: an opening line that stops the reader, short lines with blank lines between them, the emojis the brand allows, the closing’s one call to action, the accounts you tag below and 5 to 8 hashtags at the end. The program adds the photo credits after the text. {TODAY.writer} writes three captions; {TODAY.judge} scores them and proposes one of its own; {TODAY.writer} revises the best and edits {TODAY.judge}’s, which also competes as {TODAY.judge} wrote it, for {TODAY.judge}’s pick. Accepted at 95/100 with no criterion below 85.</p>
-              </div>
-              <ActionRow>
-                {captionResumeRound && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("caption", { continuing: true }); }}>Continue from round {captionResumeRound}</Button> : null}
-                {moreRoundAvailable(caption, CAPTION_MAX_ROUNDS) && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("caption", { continuing: true, more: true }); }}>One more round</Button> : null}
-                <Button variant="primary" size="compact" busy={running === "caption"} disabled={!factsVerified || !captionReady || running !== undefined || savingMention !== undefined || mentionsSearching} onClick={() => { void runStep("caption"); }}>
-                  {running === "caption" ? "Writing and judging…" : caption ? "Write the caption again" : "Write the caption"}
-                </Button>
-              </ActionRow>
-            </div>
-            {factsVerified && !captionReady && !running ? <p className={styles.factMeta}>{imagesScriptGone ? "The visual script these images picture is no longer in the session; make the images again first." : "The caption accompanies the finished carousel; finish the images first, with an image on every slide."}</p> : null}
-            <div className={styles.openingGroup}>
-              <div className={styles.factsHeader}>
-                <SectionHeader level={3} title="Accounts to tag" description="Claude proposes the Instagram accounts of the story’s people, places and organizations; Instagram says which exist and what they are called; only the accounts you tag reach the caption. On Facebook an @username stays plain text." />
-                <Button variant="secondary" size="compact" busy={running === "mentions"} disabled={!factsVerified || !mentionsReady || running !== undefined || savingMention !== undefined || mentionsSearching} onClick={() => { void runStep("mentions"); }}>
-                  {running === "mentions" ? "Finding…" : mentions ? "Find again" : "Find accounts to tag"}
-                </Button>
-              </div>
-              {factsVerified && !mentionsReady && !running ? <p className={styles.factMeta}>The accounts are those of the people and places; find them first (step 6).</p> : null}
-              {running === "mentions" ? <LoadingState>Claude proposes the accounts; each one is checked on Instagram. This can take a minute.</LoadingState> : null}
-              {mentionsStalled ? <InlineNotice tone="warning" title="This search stopped">Its request or the server ended before it finished. Find the accounts again.</InlineNotice> : null}
-              {runError?.step === "mentions" ? <InlineNotice tone="error" title="The search stopped">{runError.message}</InlineNotice> : null}
-              {mentions?.status === "failed" && mentions.error && running !== "mentions" ? <InlineNotice tone="error" title="The last search failed">{mentions.error}</InlineNotice> : null}
-              {mentionError ? <InlineNotice tone="error" title="Your decision was not saved">{mentionError}</InlineNotice> : null}
-              {inventory && running !== "mentions" && !mentionsSearching ? <MentionsView mentions={mentions} entities={mentionEntities(inventory)} saving={savingMention} locked={running !== undefined || savingMention !== undefined} onDecide={decideMention} /> : null}
-            </div>
-            {captionImagesChanged && running !== "caption" ? <InlineNotice tone="info" title="The images changed">This caption was written for an earlier images run. Write it again for the images as they are now.</InlineNotice> : null}
-            {captionMentionsChanged && !captionImagesChanged && running !== "caption" ? <InlineNotice tone="info" title="The accounts to tag changed">This caption tags {caption?.mentions?.length ? listed(caption.mentions.map((mention) => mention.handle)) : "no account"}; you tag {tagged.length ? listed(tagged.map((mention) => mention.handle)) : "none"} now. Write it again to tag them.</InlineNotice> : null}
-            {running === "caption" ? <LoadingState>{following ? `${following} Following the run on the server…` : captionPausedRound ? `Continuing with round ${captionPausedRound} in a new request…` : `${TODAY.writer} writes three captions; ${TODAY.judge} judges each round. This can take a few minutes.`}</LoadingState> : null}
-            {captionStalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {new Date(session.updatedAt).toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit" })}: its request or the server ended. Continue from round {captionResumeRound} picks it up at its last checkpoint; a round already written is judged, not written again.</InlineNotice> : null}
-            {runError?.step === "caption" ? <InlineNotice tone="error" title="The caption step stopped">{runError.message}</InlineNotice> : null}
-            {session?.step === "caption" && session.error && running !== "caption" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
-            {choiceError?.step === "caption" ? <InlineNotice tone="error" title="Your choice was not saved">{choiceError.message}</InlineNotice> : null}
-            {caption && running !== "caption" ? <FunnelRunView
-              run={caption}
-              display={captionDisplay}
-              choosing={choosing?.step === "caption" ? choosing.id : undefined}
-              locked={running !== undefined || caption.status === "running"}
-              onChoose={(candidateId) => { void choose("caption", candidateId); }}
-            /> : null}
-          </section>
-          <section className={styles.factsPanel} aria-label="Publish step">
-            <div className={styles.factsHeader}>
-              <div>
-                <p className={styles.eyebrow}>Step 10 · Publish</p>
-                <p className={styles.factsIntro}>You approve the carousel as it stands: each slide’s image and the chosen caption, with its credits and hashtags. v1’s publication then freezes it as one exact package and publishes it to the Topic’s Facebook Page, its Instagram account, or both at once, with its queue, retries and links to the posts. Nothing is published until you confirm the exact post. A carousel publishes 2 to 10 images.</p>
-              </div>
-              <Button variant="primary" size="compact" busy={running === "publication"} disabled={!publishable || approvedCurrent || running !== undefined || Boolean(publishable?.issues.length && !acknowledged)} onClick={() => { void approvePublication(); }}>
-                {running === "publication" ? "Approving…" : approvedCurrent ? "Approved" : publication ? "Approve it again" : "Approve for publishing"}
-              </Button>
-            </div>
-            {factsVerified && !running && !caption ? <p className={styles.factMeta}>The post needs its caption; write it first.</p> : null}
-            {factsVerified && !running && publishBlocker ? <p className={styles.factMeta}>{publishBlocker}</p> : null}
-            {publication && !approvedCurrent && publishable && running !== "publication" ? <InlineNotice tone="info" title="The carousel changed since you approved it">The approved copy is the one from {new Date(publication.approvedAt).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" })}. Approve it again to publish the carousel as it stands now; what was already published stays as it is.</InlineNotice> : null}
-            {runError?.step === "publication" ? <InlineNotice tone="error" title="The carousel was not approved">{runError.message}</InlineNotice> : null}
-            {publishable ? <PublishPreview target={publishable} approved={approvedCurrent} acknowledged={acknowledged} locked={running !== undefined} onAcknowledge={setAcknowledged} /> : null}
-            {publication && approvedCurrent ? <PublishedCopy publication={publication} topicId={topicId} secret={secret} locked={running !== undefined} approving={running === "publication"} onApprove={() => { void approvePublication(publication.acknowledgedIssues.length > 0); }} /> : null}
-          </section>
-          {session?.trace.length && !running ? <details className={styles.trace}>
-            <summary>{session.trace.length} provider {session.trace.length === 1 ? "call" : "calls"} · {minutes(totals.ms)} in calls · {usd(totals.costMicros)} · {TODAY.judge} {Math.round(totals.openaiShare * 100)}% of the time</summary>
-            <ol className={styles.traceList}>
-              {session.trace.map((entry, index) => <li key={index} data-outcome={entry.outcome}>
-                <span>{providerLabel(entry.provider)} · {entry.model}{entry.effort ? ` · ${entry.effort}` : ""} · {entry.operation} · {entry.step} round {entry.round}</span>
-                <span>{traceUsageLine(entry)}</span>
-              </li>)}
-            </ol>
-          </details> : null}
-        </Surface>
+          <OverviewBoard steps={screenSteps} onNavigate={navigate} />
+          <TraceDetails entries={session?.trace ?? []} label={totals.calls ? `${TODAY.judge} ${Math.round(totals.openaiShare * 100)}% of the time` : undefined} />
+          {pager}
+        </article>}
       </div>
+      <SourcePanel id="draft2-source" open={sourceShown} title={content.title} meta={sourceMeta} onClose={closeSource}>
+        {text.length ? text.map((paragraph, index) => <p key={index}>{paragraph}</p>) : <EmptyState title="No article text yet">Prepare the content in the studio first.</EmptyState>}
+      </SourcePanel>
     </div> : null}
   </main>;
+}
+
+/** Provider calls, folded: how many, the time inside them and their cost; opened, each call's model, effort, tokens and outcome. */
+function TraceDetails({ entries, label }: { entries: readonly Draft2TraceEntry[]; label?: string }) {
+  if (!entries.length) return null;
+  const ms = entries.reduce((sum, entry) => sum + entry.durationMs, 0);
+  const costMicros = entries.reduce((sum, entry) => sum + (entry.costMicros ?? 0), 0);
+  return <details className={styles.trace}>
+    <summary>{entries.length} provider {entries.length === 1 ? "call" : "calls"} · {minutes(ms)} in calls · {usd(costMicros)}{label ? ` · ${label}` : ""}</summary>
+    <ol className={styles.traceList}>
+      {entries.map((entry, index) => <li key={index} data-outcome={entry.outcome}>
+        <span>{providerLabel(entry.provider)} · {entry.model}{entry.effort ? ` · ${entry.effort}` : ""} · {entry.operation} · {entry.step} round {entry.round}</span>
+        <span>{traceUsageLine(entry)}</span>
+      </li>)}
+    </ol>
+  </details>;
 }
 
 function FactsSessionView({ session, verified }: { session: Draft2SessionView; verified: boolean }) {
@@ -1849,7 +1971,7 @@ function AutopilotView({ autopilot, trace, now }: { autopilot: Autopilot; trace:
         <strong>{STEP_TITLE[entry.step]}</strong> · {entry.status === "ready" ? `done${entry.score !== undefined ? ` · ${entry.score}` : ""}` : entry.status === "needs-review" ? (entry.score === undefined ? "look at it" : entry.score >= FUNNEL_ACCEPTABLE_SCORE ? `acceptable · ${entry.score}` : `under ${FUNNEL_ACCEPTABLE_SCORE} · ${entry.score}, look at it`) : "failed"} · {minutes(entry.ms)} · {usd(costOf(entry))}
       </li>)}
     </ol> : null}
-    {autopilot.current ? <LoadingState>{STEP_TITLE[autopilot.current]} is running; its progress is on its step below.</LoadingState> : null}
+    {autopilot.current ? <LoadingState>{STEP_TITLE[autopilot.current]} is running; open its step on the rail to follow it.</LoadingState> : null}
     {autopilot.outcome ? <InlineNotice tone={failed ? "error" : "info"} title={autopilot.active ? "Autopilot" : `Autopilot finished · ${minutes(elapsed)} · ${usd(spent)}`}>{autopilot.outcome}</InlineNotice> : null}
   </div>;
 }

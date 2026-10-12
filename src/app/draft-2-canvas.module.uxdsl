@@ -1,72 +1,214 @@
-/* Draft 2 canvas: the page shell, the story header and the two columns (source material, canvas). */
+/* Draft 2 canvas: a top bar, the pipeline rail, one screen per step (or the overview) and the article beside them. */
+/* Every value comes from the theme: Typography roles first in each rule, Palette colors, Density spacing, Border and Shadow presets, Surface roles for cards. */
+
+/* ---------- Shell ---------- */
 .shell { min-height: 100svh; background: palette(light-light); color: palette(dark-main); }
-.topbar { display: flex; align-items: center; gap: density(4); min-height: 56px; padding-inline: xs(density(4)) md(density(7)); border-bottom: border(subtle); background: palette(light-light); }
-.topbar a { color: palette(primary-dark); @ds-typo (compact-strong); text-decoration: none; white-space: nowrap; }
-.topbar a:hover, .topbar a:focus-visible { text-decoration: underline; }
-.breadcrumb { overflow: hidden; color: palette(tertiary-main); @ds-typo (caption); text-overflow: ellipsis; white-space: nowrap; }
-.breadcrumb span { padding-inline: density(2); }
-.notice { width: min(1320px, calc(100% - 2rem)); margin: density(6) auto 0; }
-.page { display: grid; gap: density(6); width: min(1320px, calc(100% - 2rem)); margin: 0 auto; padding-block: density(6) density(9); }
-.header { display: grid; gap: density(2); }
-.header h1 { max-width: 32ch; margin: 0; color: palette(dark-main); @ds-typo (title-lg); }
-.eyebrow { margin: 0; color: palette(primary-dark); @ds-typo (eyebrow); }
-.meta { display: flex; flex-wrap: wrap; align-items: center; gap: density(2) density(3); margin: 0; color: palette(tertiary-dark); @ds-typo (small); }
-.meta a { color: palette(primary-dark); @ds-typo (small-strong); }
-.columns { display: grid; gap: density(5); align-items: start; }
-@media (min-width: 960px) { .columns { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
-.column { display: grid; gap: density(4); align-content: start; }
+.notice { width: min(68rem, calc(100% - 2rem)); margin: density(6) auto 0; }
+
+/* The top bar: the way back, the story it works on, the session's time and cost, the article and the autopilot. Translucent over the screen it scrolls above. */
+.topbar { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: xs(density(3)) md(density(4)); min-height: 3.5rem; padding-inline: xs(density(4)) md(density(6)); border-bottom: border(hairline); background: palette(light-light, 0.86); backdrop-filter: saturate(1.4) blur(14px); }
+.topbarBack { @ds-typo (compact-strong); flex: none; color: palette(primary-dark); text-decoration: none; white-space: nowrap; }
+.topbarBack:hover { text-decoration: underline; }
+.topbarTitle { display: grid; flex: 1; min-width: 0; }
+.topbarTopic { @ds-typo (meta); overflow: hidden; color: palette(tertiary-main); text-overflow: ellipsis; white-space: nowrap; }
+.topbarStory { @ds-typo (compact-strong); overflow: hidden; color: palette(dark-main); text-overflow: ellipsis; white-space: nowrap; }
+.topbarActions { display: flex; flex: none; align-items: center; gap: density(2); }
+.topbarVitals { @ds-typo (meta); color: palette(tertiary-dark); white-space: nowrap; }
+.topbarAutopilot { display: flex; align-items: center; gap: density(2); white-space: nowrap; }
+@media (max-width: 639px) { .topbarAutopilot { display: none; } }
+/* A step running on another screen: a pill that takes the editor to it. */
+.livePill { @ds-typo (label); display: inline-flex; align-items: center; gap: density(2); padding: density(1) density(3); border-radius: radius(pill); background: palette(info-main, 0.12); color: palette(info-dark); text-decoration: none; white-space: nowrap; }
+.livePill::before { width: 0.5rem; height: 0.5rem; flex: none; border-radius: radius(circle); background: palette(info-main); animation: liveBlink 1.4s ease-in-out infinite; content: ""; }
+@keyframes liveBlink { 50% { opacity: 0.25; } }
+@media (max-width: 1023px) { .topbarVitals { display: none; } }
+@media (max-width: 639px) { .topbarBack span, .topbarTopic, .livePill { display: none; } }
+
+/* ---------- Workspace: rail, stage and, when open, the article ---------- */
+.workspace { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 1024px) { .workspace { grid-template-columns: 16.5rem minmax(0, 1fr); } }
+@media (min-width: 1280px) { .workspace[data-source="open"] { grid-template-columns: 16.5rem minmax(0, 1fr) minmax(20rem, 26rem); } }
+
+/* ---------- The pipeline rail ---------- */
+/* A strip of steps under the top bar on a narrow window; a vertical rail beside the screen on a wide one. */
+.rail { position: sticky; top: 3.5rem; z-index: 20; display: flex; align-items: center; gap: density(3); overflow-x: auto; padding-block: density(2); padding-inline: density(4); border-bottom: border(hairline); background: palette(light-light, 0.94); backdrop-filter: blur(14px); scrollbar-width: none; }
+.railOverview { display: grid; flex: none; gap: density(1); padding: density(1) density(3); border-radius: radius(pill); color: palette(dark-main); text-decoration: none; transition: background 150ms ease; }
+.railOverview:hover { background: palette(primary-light, 0.12); }
+.railOverview[aria-current="page"] { background: palette(primary-light, 0.22); }
+.railOverviewTitle { @ds-typo (compact-strong); }
+.railOverviewMeta { @ds-typo (meta); display: none; color: palette(tertiary-dark); }
+.railProgress { display: none; overflow: hidden; height: 0.25rem; border-radius: radius(pill); background: palette(neutral-light, 0.7); }
+.railProgress span { display: block; height: 100%; border-radius: radius(pill); background: palette(success-main); transition: width 400ms ease; }
+.railPhase { display: flex; flex: none; align-items: center; gap: density(2); }
+.railPhaseTitle { @ds-typo (eyebrow); display: none; color: palette(tertiary-main); }
+.railList { display: flex; gap: density(1); margin: 0; padding: 0; list-style: none; }
+.railList li { position: relative; flex: none; }
+.railLink { display: flex; align-items: center; gap: density(2); padding-block: density(1); padding-inline: density(1) density(3); border-radius: radius(pill); color: palette(tertiary-dark); text-decoration: none; white-space: nowrap; transition: background 150ms ease, color 150ms ease; }
+.railLink:hover { background: palette(primary-light, 0.12); color: palette(dark-main); }
+.railLink[aria-current="page"] { background: palette(primary-light, 0.22); color: palette(dark-main); }
+.railText { display: grid; min-width: 0; }
+.railTitle { @ds-typo (compact-strong); }
+.railMeta { @ds-typo (meta); display: none; color: palette(tertiary-dark); }
+
+@media (min-width: 1024px) {
+  .rail { flex-direction: column; align-items: stretch; gap: density(6); height: calc(100svh - 3.5rem); overflow-x: hidden; overflow-y: auto; padding-block: density(6) density(9); padding-inline: density(4); border-right: border(hairline); border-bottom: 0; background: palette(light-main, 0.55); backdrop-filter: none; }
+  .railOverview { gap: density(2); padding: density(3); border-radius: radius(2); }
+  .railOverview[aria-current="page"] { box-shadow: shadow(inset-primary); }
+  .railOverviewMeta, .railProgress { display: block; }
+  .railPhase { display: grid; gap: density(2); }
+  .railPhaseTitle { display: block; margin: 0; padding-inline: density(3); }
+  .railList { display: grid; gap: density(1); }
+  .railLink { align-items: flex-start; gap: density(3); padding: density(2) density(3); border-radius: radius(2); white-space: normal; }
+  .railLink[aria-current="page"] { box-shadow: shadow(inset-primary); }
+  .railMeta { display: block; }
+  /* The track: a line from each step's ring to the next one's, green once the step is done. */
+  .railList li:not(:last-child)::before { position: absolute; top: calc(density(2) + 1.75rem + 0.25rem); bottom: calc(0.25rem - density(1) - density(2)); left: calc(density(3) + 0.875rem - 1px); width: 2px; border-radius: radius(pill); background: palette(neutral-light, 0.8); content: ""; }
+  .railList li[data-state="done"]:not(:last-child)::before { background: palette(success-main); }
+}
+
+/* A step's number in a ring that reads its state: done, running, waiting for the editor, failed, ready, or waiting on an earlier step. */
+.railRing { @ds-typo (label); position: relative; display: inline-grid; flex: none; place-items: center; width: 1.75rem; height: 1.75rem; border: border(clear); border-radius: radius(circle); border-color: palette(neutral-light); color: palette(tertiary-dark); }
+[data-state="done"] .railRing { background: palette(success-main); border-color: palette(success-main); color: palette(success-contrast); }
+[data-state="running"] .railRing { border-color: palette(info-main); color: palette(info-dark); }
+[data-state="running"] .railRing::after { position: absolute; inset: -0.3rem; border: border(clear); border-radius: radius(circle); border-color: palette(info-main); animation: ringPulse 1.6s ease-out infinite; content: ""; }
+[data-state="attention"] .railRing { background: palette(warning-main, 0.16); border-color: palette(warning-main); color: palette(warning-dark); }
+[data-state="failed"] .railRing { background: palette(error-main, 0.1); border-color: palette(error-main); color: palette(error-dark); }
+[data-state="blocked"] .railRing { border-style: dashed; color: palette(tertiary-main); }
+[data-state="blocked"] .railTitle { color: palette(tertiary-main); }
+@keyframes ringPulse { from { opacity: 0.7; transform: scale(0.85); } to { opacity: 0; transform: scale(1.4); } }
+
+/* ---------- The stage and a step's screen ---------- */
+.stage { min-width: 0; padding-block: xs(density(6)) md(density(7)); padding-inline: xs(density(4)) md(density(7)) xl(density(8)); }
+.screen { display: grid; gap: density(6); width: min(100%, 68rem); margin-inline: auto; animation: screenIn 220ms ease-out; }
+@keyframes screenIn { from { opacity: 0; transform: translateY(0.375rem); } }
+.screenHead { display: grid; gap: density(3); padding-bottom: density(5); border-bottom: border(hairline); }
+.screenKicker { @ds-typo (eyebrow); margin: 0; color: palette(primary-dark); }
+.screenTitleRow { display: flex; flex-wrap: wrap; align-items: center; gap: density(2) density(3); }
+.screenTitle { @ds-typo (display); margin: 0; color: palette(dark-main); }
+/* The title takes the focus when its screen opens, for screen readers; it is not a control. */
+.screenTitle:focus-visible { outline: 0; }
+.screenLead { @ds-typo (body); max-width: 62ch; margin: 0; color: palette(tertiary-dark); }
+.screenVitals { @ds-typo (meta); margin: 0; color: palette(tertiary-dark); }
+.screenActions { display: flex; flex-wrap: wrap; align-items: center; gap: density(2); }
+.screenHowBody { display: grid; gap: density(2); padding-top: density(2); }
+.screenHowBody p { @ds-typo (small); max-width: 72ch; margin: 0; color: palette(tertiary-dark); }
+.screenBody { display: grid; grid-template-columns: minmax(0, 1fr); gap: density(4); }
+.screenSection { display: grid; grid-template-columns: minmax(0, 1fr); gap: density(4); padding-top: density(5); border-top: border(hairline); }
+.screenSection:first-child { padding-top: 0; border-top: 0; }
+.screen summary, .trace summary { @ds-typo (small-strong); color: palette(primary-dark); }
+
+/* What a step waits for, with the way to the step that provides it. */
+.prereq { @ds-surface (callout); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: density(2) density(4); padding: density(3) density(4); }
+.prereq p { @ds-typo (small); margin: 0; color: palette(dark-main); }
+.prereq a { @ds-typo (small-strong); color: palette(primary-dark); text-decoration: none; white-space: nowrap; }
+.prereq a:hover { text-decoration: underline; }
+
+/* The screens before and after this one, as two cards. */
+.pager { display: grid; grid-template-columns: minmax(0, 1fr); gap: density(3); padding-top: density(5); border-top: border(hairline); }
+@media (min-width: 640px) { .pager { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.pagerLink { @ds-surface (card); display: grid; gap: density(1); padding: density(4); color: palette(dark-main); text-decoration: none; transition: border-color 150ms ease, box-shadow 150ms ease; }
+.pagerLink:hover { border-color: palette(primary-main); box-shadow: shadow(float); }
+.pagerLink[data-direction="next"] { grid-column: -2; justify-items: end; text-align: right; }
+.pagerHint { @ds-typo (eyebrow); color: palette(primary-dark); }
+.pagerTitle { @ds-typo (title); }
+.pagerMeta { @ds-typo (meta); color: palette(tertiary-dark); }
+.pagerKeys { @ds-typo (meta); grid-column: 1 / -1; margin: 0; color: palette(tertiary-main); text-align: center; }
+@media (pointer: coarse) { .pagerKeys { display: none; } }
+
+/* ---------- Facts: the article beside the facts drawn from it ---------- */
+.factsColumns { display: grid; grid-template-columns: minmax(0, 1fr); gap: density(5); align-items: start; }
+@media (min-width: 1280px) { .factsColumns { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); } }
+.factsSource { @ds-surface (panel); display: grid; gap: density(3); padding: density(4); }
+.factsResult { display: grid; grid-template-columns: minmax(0, 1fr); gap: density(4); }
 .reading { display: grid; gap: density(3); max-height: 70svh; overflow: auto; padding-right: density(2); }
-.reading p { max-width: 70ch; margin: 0; color: palette(dark-main); @ds-typo (body); }
-.steps { display: grid; gap: density(3); margin: 0; padding: 0; list-style: none; }
-.steps li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: density(3); align-items: start; padding: density(3); border: border(dashed-control); border-radius: radius(2); }
-.stepNumber { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: border(control); border-radius: radius(circle); color: palette(tertiary-dark); @ds-typo (label); }
-.stepStatus { white-space: nowrap; }
-.steps strong { display: block; color: palette(dark-main); @ds-typo (small-strong); }
-.steps p { margin: density(1) 0 0; color: palette(tertiary-dark); @ds-typo (small); }
-/* What a step took so far: time inside calls and the meter's cost. */
-.stepMetrics { color: palette(primary-dark); @ds-typo (caption); }
-/* The autopilot's log: one line per step it ran. */
-.autopilotList { display: grid; gap: density(1); margin: 0; padding-left: density(5); color: palette(dark-main); @ds-typo (small); }
+.reading p { @ds-typo (body); max-width: 70ch; margin: 0; color: palette(dark-main); }
+
+/* ---------- The overview ---------- */
+.overviewHero { display: grid; gap: density(3); padding-bottom: density(5); border-bottom: border(hairline); }
+.overviewTitle { @ds-typo (display-lg); max-width: 26ch; margin: 0; color: palette(dark-main); }
+.overviewTitle:focus-visible { outline: 0; }
+.meta { @ds-typo (small); display: flex; flex-wrap: wrap; align-items: center; gap: density(2) density(3); margin: 0; color: palette(tertiary-dark); }
+.meta a { @ds-typo (small-strong); color: palette(primary-dark); }
+/* The pipeline in one bar: a segment per step, colored by its state. */
+.strip { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: density(1); margin: density(2) 0 0; padding: 0; list-style: none; }
+.strip li { height: 0.375rem; border-radius: radius(pill); background: palette(neutral-light, 0.8); }
+.strip li[data-state="done"] { background: palette(success-main); }
+.strip li[data-state="running"] { background: palette(info-main); animation: liveBlink 1.4s ease-in-out infinite; }
+.strip li[data-state="attention"] { background: palette(warning-main); }
+.strip li[data-state="failed"] { background: palette(error-main); }
+.strip li[data-state="blocked"] { background: palette(neutral-light, 0.4); }
+.autopilotCard { @ds-surface (panel); display: grid; gap: density(3); padding: density(5); }
+.autopilotHead { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: density(3) density(5); }
+.autopilotTitle { @ds-typo (title); margin: 0; color: palette(dark-main); }
+.autopilotIntro { @ds-typo (small); max-width: 68ch; margin: density(1) 0 0; color: palette(tertiary-dark); }
+.autopilotList { @ds-typo (small); display: grid; gap: density(1); margin: 0; padding-left: density(5); color: palette(dark-main); }
 .autopilotList li[data-status="failed"] { color: palette(error-dark); }
 .autopilotList li[data-status="needs-review"] { color: palette(warning-dark); }
-.factsPanel { display: grid; gap: density(4); padding-top: density(4); border-top: border(subtle); }
-.factsHeader { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: density(3); }
-.factsIntro { max-width: 60ch; margin: density(1) 0 0; color: palette(tertiary-dark); @ds-typo (small); }
+/* The board: the four phases side by side as far as they fit, each step a card to open. */
+.board { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: density(5) density(4); }
+.boardPhase { display: grid; gap: density(2); align-content: start; }
+.boardPhaseTitle { @ds-typo (eyebrow); margin: 0; color: palette(tertiary-main); }
+.boardList { display: grid; gap: density(2); margin: 0; padding: 0; list-style: none; }
+.boardCard { @ds-surface (card); display: grid; gap: density(2); padding: density(3) density(4); color: palette(dark-main); text-decoration: none; transition: border-color 150ms ease, box-shadow 150ms ease; }
+.boardCard:hover { border-color: palette(primary-main); box-shadow: shadow(float); }
+.boardHead { display: flex; align-items: center; gap: density(2); }
+.boardTitle { @ds-typo (compact-strong); flex: 1; min-width: 0; }
+.boardSummary { @ds-typo (small); display: -webkit-box; overflow: hidden; color: palette(dark-main); -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
+[data-state="blocked"] .boardSummary, [data-state="idle"] .boardSummary { color: palette(tertiary-dark); }
+.boardFoot { display: flex; flex-wrap: wrap; align-items: center; gap: density(1) density(2); }
+.boardMeta { @ds-typo (meta); color: palette(tertiary-dark); }
+
+/* ---------- The article beside the screen ---------- */
+.source { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: density(4); padding: density(5) density(4); border-left: border(hairline); background: palette(light-light); }
+.source[hidden] { display: none; }
+@media (max-width: 1279px) { .source { position: fixed; top: 3.5rem; right: 0; bottom: 0; z-index: 40; width: min(100%, 28rem); box-shadow: shadow(overlay); } }
+@media (min-width: 1280px) { .source { position: sticky; top: 3.5rem; height: calc(100svh - 3.5rem); } }
+.sourceHead { display: flex; align-items: flex-start; justify-content: space-between; gap: density(3); }
+.sourceTitle { @ds-typo (title-sm); margin: density(1) 0 0; color: palette(dark-main); }
+.sourceMeta { @ds-typo (meta); margin: density(1) 0 0; color: palette(tertiary-dark); }
+.sourceBody { display: grid; align-content: start; gap: density(3); overflow: auto; padding-right: density(2); }
+.sourceBody p { @ds-typo (body); margin: 0; color: palette(dark-main); }
+
+/* ---------- Inside the steps: rounds, facts, versions, slides ---------- */
+.eyebrow { @ds-typo (eyebrow); margin: 0; color: palette(primary-dark); }
 .roundList, .factList, .traceList { display: grid; gap: density(3); margin: 0; padding: 0; list-style: none; }
 .roundCard, .factItem { display: grid; gap: density(2); padding: density(3); border: border(control); border-radius: radius(2); }
-.factHead { display: flex; flex-wrap: wrap; align-items: center; gap: density(2); color: palette(tertiary-dark); @ds-typo (small); }
-.factHead strong { color: palette(dark-main); @ds-typo (small-strong); }
-.factId { color: palette(primary-dark); @ds-typo (label); }
-.factClaim { margin: 0; color: palette(dark-main); @ds-typo (body); }
-.factMeta { margin: 0; color: palette(tertiary-dark); @ds-typo (caption); }
-.issueList { display: grid; gap: density(1); margin: 0; padding-left: density(5); color: palette(dark-main); @ds-typo (small); }
+.factHead { @ds-typo (small); display: flex; flex-wrap: wrap; align-items: center; gap: density(2); color: palette(tertiary-dark); }
+.factHead strong { @ds-typo (small-strong); color: palette(dark-main); }
+.factId { @ds-typo (label); color: palette(primary-dark); }
+.factClaim { @ds-typo (body); margin: 0; color: palette(dark-main); }
+.factMeta { @ds-typo (caption); margin: 0; color: palette(tertiary-dark); }
+.issueList { @ds-typo (small); display: grid; gap: density(1); margin: 0; padding-left: density(5); color: palette(dark-main); }
 .issueList strong { @ds-typo (label); }
-.factsPanel summary, .trace summary { color: palette(primary-dark); @ds-typo (small-strong); }
-.factItem blockquote { margin: density(2) 0 0; padding-left: density(3); border-left: border(control); color: palette(tertiary-dark); @ds-typo (small); }
-/* The Focus step: one control per field, as many columns as the panel fits; the voice and the direction span it. */
-/* Shrinkable tracks, as for the opening cards: a long option or line name must not widen the panel. */
+.factItem blockquote { @ds-typo (small); margin: density(2) 0 0; padding-left: density(3); border-left: border(control); color: palette(tertiary-dark); }
+/* The Focus step: one control per field, as many columns as the screen fits; the voice and the direction span it. */
+/* Shrinkable tracks, as for the opening cards: a long option or line name must not widen the screen. */
 .focusBody { display: grid; grid-template-columns: minmax(0, 1fr); gap: density(3); }
 .focusGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: density(3); }
 .focusField { display: grid; grid-template-columns: minmax(0, 1fr); gap: density(1); align-content: start; }
 .focusWide { grid-column: 1 / -1; }
 .focusVoice { display: grid; gap: density(2); min-width: 0; margin: 0; padding: 0; border: 0; }
-.focusLegend { padding: 0; color: palette(dark-main); @ds-typo (small-strong); }
+.focusLegend { @ds-typo (small-strong); padding: 0; color: palette(dark-main); }
 .voiceDials { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr)); gap: density(2); }
-/* The Opening step: the chosen cover and slide 2 as 4:5 cards, the judge's scores in one row. */
-/* Shrinkable tracks: a 4:5 card turns its text height into a minimum width, which an auto track would grow to fit past the panel. */
+/* The chosen cover and slide 2 as 4:5 cards, the judge's scores in one row. */
+/* Shrinkable tracks: a 4:5 card turns its text height into a minimum width, which an auto track would grow to fit past the screen. */
 .openingGroup { display: grid; grid-template-columns: minmax(0, 1fr); gap: density(3); }
 .openingCards { display: grid; grid-template-columns: minmax(0, 1fr); gap: density(3); }
 @media (min-width: 960px) { .openingCards { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
 .openingCard { display: flex; flex-direction: column; gap: density(2); aspect-ratio: 4 / 5; padding: density(4); border: border(control); border-radius: radius(2); }
-.openingHeadline { margin: 0; color: palette(dark-main); @ds-typo (title-lg); }
-.openingText { margin: 0; color: palette(dark-main); @ds-typo (body); }
+.openingHeadline { @ds-typo (title-lg); margin: 0; color: palette(dark-main); }
+.openingText { @ds-typo (body); margin: 0; color: palette(dark-main); }
 /* The last slide's call to action, apart from its text as it will be on the slide. */
-.openingCta { margin: 0; color: palette(primary-dark); @ds-typo (small-strong); }
+.openingCta { @ds-typo (small-strong); margin: 0; color: palette(primary-dark); }
 /* A list item's practical line: day · time · ages · price. */
-.openingPractical { margin: 0; color: palette(tertiary-dark); @ds-typo (small-strong); }
+.openingPractical { @ds-typo (small-strong); margin: 0; color: palette(tertiary-dark); }
 /* The whole carousel, cover to call to action, as many cards per row as fit; the slides other steps wrote are quieter. */
 .carouselCards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr)); gap: density(3); margin: 0; padding: 0; list-style: none; }
 .openingCard[data-quiet] { opacity: 0.72; }
+/* After the role, whose block margins are 0: the cited facts sit at the card's foot. */
+.openingFacts { @ds-typo (caption); margin-top: auto; color: palette(tertiary-dark); }
+.scoreRow { @ds-typo (caption); display: flex; flex-wrap: wrap; gap: density(1) density(3); margin: 0; color: palette(tertiary-dark); }
+.scoreRow strong { @ds-typo (label); color: palette(dark-main); }
+.scoreRow [data-low] strong { color: palette(warning-dark); }
 /* People and places: a person's Commons candidates, each a thumbnail beside who it is. */
 .candidateList { display: grid; gap: density(2); margin: 0; padding: 0; list-style: none; }
 .candidate { display: grid; grid-template-columns: minmax(0, 10rem) minmax(0, 1fr); gap: density(3); align-items: start; }
@@ -74,7 +216,7 @@
 /* The visual script: each slide's words above its beat and art direction. */
 .visualBody { display: grid; gap: density(2); }
 .visualSlide { display: flex; flex-direction: column; gap: density(1); padding: density(3); border: border(control); border-radius: radius(2); }
-.visualWords { margin: 0; color: palette(dark-main); @ds-typo (small-strong); }
+.visualWords { @ds-typo (small-strong); margin: 0; color: palette(dark-main); }
 .imageGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr)); gap: density(3); margin: 0; padding: 0; list-style: none; }
 .imageCard { display: flex; flex-direction: column; gap: density(2); padding: density(3); border: border(control); border-radius: radius(2); }
 .imageFrame { display: grid; place-items: center; aspect-ratio: 4 / 5; overflow: hidden; border-radius: radius(1); background: palette(light-light); }
@@ -82,16 +224,19 @@
 .imageVersions { display: flex; flex-wrap: wrap; gap: density(1); }
 /* The caption: the post as it will read, its line breaks and blank lines kept. */
 .captionPost { display: grid; gap: density(2); max-width: 60ch; padding: density(4); border: border(control); border-radius: radius(2); }
-.captionText { margin: 0; color: palette(dark-main); @ds-typo (body); white-space: pre-wrap; overflow-wrap: anywhere; }
+.captionText { @ds-typo (body); margin: 0; color: palette(dark-main); white-space: pre-wrap; overflow-wrap: anywhere; }
 /* Adding an account to tag: its username, who it is and whom in the story it stands for. */
 .mentionForm { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: density(3); }
-/* After the role, whose block margins are 0: the cited facts sit at the card's foot. */
-.openingFacts { color: palette(tertiary-dark); @ds-typo (caption); margin-top: auto; }
-.scoreRow { display: flex; flex-wrap: wrap; gap: density(1) density(3); margin: 0; color: palette(tertiary-dark); @ds-typo (caption); }
-.scoreRow strong { color: palette(dark-main); @ds-typo (label); }
-.scoreRow [data-low] strong { color: palette(warning-dark); }
+
+/* ---------- Provider calls ---------- */
 .trace { padding-top: density(2); }
 .traceList { margin-top: density(2); }
-.traceList li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: density(2); color: palette(tertiary-dark); @ds-typo (caption); }
+.traceList li { @ds-typo (caption); display: flex; flex-wrap: wrap; justify-content: space-between; gap: density(2); color: palette(tertiary-dark); }
 .traceList li[data-outcome="error"] { color: palette(error-dark); }
-@media (max-width: 639px) { .topbar a span { display: none; } .breadcrumb { flex: 1; } }
+
+/* Motion is decoration here: none when the reader asks for less. */
+@media (prefers-reduced-motion: reduce) {
+  .screen, .livePill::before, .strip li[data-state="running"] { animation: none; }
+  [data-state="running"] .railRing::after { animation: none; opacity: 0.45; }
+  .railProgress span, .railLink, .railOverview, .pagerLink, .boardCard { transition: none; }
+}

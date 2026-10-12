@@ -5,15 +5,21 @@ import { connection } from "next/server";
 import { notFound, redirect } from "next/navigation";
 
 import { Draft2Canvas } from "@/app/draft-2-canvas";
+import { isDraft2Step } from "@/app/draft-2-canvas.core";
 
-type Draft2PageParams = { topicId: string; storyId: string };
+type Draft2PageParams = { topicId: string; storyId: string; step?: string[] };
 type Draft2PageSearch = Record<string, string | string[] | undefined>;
 
 function single(value: string | string[] | undefined): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-/** The Draft 2 canvas of a story: same access and brand theme as the story page. */
+/**
+ * The Draft 2 canvas of a story: same access and brand theme as the story
+ * page. `/draft-2` is the overview and `/draft-2/<step>` a step's own
+ * screen; the canvas switches between them in the browser without leaving
+ * this page, so a run in progress keeps going while the editor moves.
+ */
 export default async function Draft2Page({
   params,
   searchParams,
@@ -22,8 +28,9 @@ export default async function Draft2Page({
   searchParams: Promise<Draft2PageSearch>;
 }) {
   await connection();
-  const [{ topicId, storyId }, query] = await Promise.all([params, searchParams]);
-  const { user } = await requireTopicPageAccess(topicId, "viewer", `/topics/${encodeURIComponent(topicId)}/stories/${encodeURIComponent(storyId)}/draft-2`);
+  const [{ topicId, storyId, step }, query] = await Promise.all([params, searchParams]);
+  if (step && (step.length > 1 || !isDraft2Step(step[0]))) notFound();
+  const { user } = await requireTopicPageAccess(topicId, "viewer", `/topics/${encodeURIComponent(topicId)}/stories/${encodeURIComponent(storyId)}/draft-2${step ? `/${step[0]}` : ""}`);
   const topic = await getTopicById(topicId);
   if (!topic) notFound();
   // A brand still in its guided setup has no studio yet.

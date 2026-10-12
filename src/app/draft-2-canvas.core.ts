@@ -17,8 +17,19 @@ function contextSearch(context: StoryLinkContext): URLSearchParams {
 
 /** The canvas of a story, keeping the dashboard return context the story page received. */
 export function draft2Href(topicId: string, storyId: string, context: StoryLinkContext = {}): string {
+  return draft2StepHref(topicId, storyId, undefined, context);
+}
+
+/** One screen of the canvas: the overview without a step, a step's own screen with one, with the same return context. */
+export function draft2StepHref(topicId: string, storyId: string, step: Draft2StepKey | undefined, context: StoryLinkContext = {}): string {
   const search = contextSearch(context).toString();
-  return `/topics/${encodeURIComponent(topicId)}/stories/${encodeURIComponent(storyId)}/draft-2${search ? `?${search}` : ""}`;
+  return `/topics/${encodeURIComponent(topicId)}/stories/${encodeURIComponent(storyId)}/draft-2${step ? `/${step}` : ""}${search ? `?${search}` : ""}`;
+}
+
+/** The step a canvas path shows: the segment after /draft-2/, when it names a step; the overview otherwise. */
+export function draft2StepFromPath(pathname: string): Draft2StepKey | undefined {
+  const match = /\/draft-2\/([^/?#]+)\/?$/.exec(pathname);
+  return match && isDraft2Step(match[1]) ? match[1] : undefined;
 }
 
 /** Back from the canvas to the story's studio, on its script tab. */
@@ -73,6 +84,67 @@ export const DRAFT_2_STEPS = [
   { key: "caption", title: "Caption", detail: "The post’s text: short lines and blank lines, the brand’s emojis, the closing’s call to action, the accounts you tag and 5 to 8 hashtags." },
   { key: "publish", title: "Publish", detail: "The carousel approved as it stands, then published to Facebook, Instagram or both once you confirm the exact post." },
 ] as const;
+
+export type Draft2StepKey = (typeof DRAFT_2_STEPS)[number]["key"];
+const STEP_KEYS: readonly string[] = DRAFT_2_STEPS.map((step) => step.key);
+
+export function isDraft2Step(value: unknown): value is Draft2StepKey {
+  return typeof value === "string" && STEP_KEYS.includes(value);
+}
+
+/** A step's place in the pipeline, from 1. */
+export const draft2StepNumber = (step: Draft2StepKey) => STEP_KEYS.indexOf(step) + 1;
+
+/** The pipeline in four phases: what the story says and is for, its words, its images, and the post. */
+export const DRAFT_2_PHASES = [
+  { key: "story", title: "Story", steps: ["facts", "focus"] },
+  { key: "words", title: "Words", steps: ["opening", "closing", "deck"] },
+  { key: "visuals", title: "Visuals", steps: ["inventory", "visual", "images"] },
+  { key: "post", title: "Post", steps: ["caption", "publish"] },
+] as const satisfies readonly { key: string; title: string; steps: readonly Draft2StepKey[] }[];
+
+export const draft2StepPhase = (step: Draft2StepKey) => DRAFT_2_PHASES.find((phase) => (phase.steps as readonly string[]).includes(step))!;
+
+/** The screens before and after one: the overview comes before the first step; the last step has none after it. */
+export function adjacentDraft2Steps(step: Draft2StepKey | undefined): { previous?: Draft2StepKey | "overview"; next?: Draft2StepKey } {
+  if (!step) return { next: DRAFT_2_STEPS[0].key };
+  const index = STEP_KEYS.indexOf(step);
+  return {
+    previous: index === 0 ? "overview" : DRAFT_2_STEPS[index - 1].key,
+    ...(index < DRAFT_2_STEPS.length - 1 ? { next: DRAFT_2_STEPS[index + 1].key } : {}),
+  };
+}
+
+/**
+ * Where a key takes the canvas, outside a text field: the left arrow or "["
+ * to the screen before, the right arrow or "]" to the one after, a digit to
+ * that step (0 is the tenth). Nothing for any other key, or past the ends.
+ */
+export function draft2StepForKey(key: string, current: Draft2StepKey | undefined): Draft2StepKey | "overview" | undefined {
+  const { previous, next } = adjacentDraft2Steps(current);
+  if (key === "ArrowLeft" || key === "[") return previous;
+  if (key === "ArrowRight" || key === "]") return next;
+  if (/^[0-9]$/.test(key)) return DRAFT_2_STEPS[key === "0" ? 9 : Number(key) - 1]?.key;
+  return undefined;
+}
+
+/** How a step reads on the pipeline rail: finished, working, waiting for the editor, failed, ready to start, or waiting on an earlier step. */
+export type Draft2RailState = "done" | "running" | "attention" | "failed" | "idle" | "blocked";
+
+/**
+ * A step's rail state from its status badge, whether it runs now in this tab,
+ * and whether it can start: a running label (Running, Generating, Searching,
+ * Deciding, Approving) is work under way; any other informational label
+ * (Paused, Acceptable) waits for the editor.
+ */
+export function draft2RailState(status: { label: string; tone: string } | undefined, { live = false, available = true }: { live?: boolean; available?: boolean } = {}): Draft2RailState {
+  if (live) return "running";
+  if (!status || status.tone === "neutral") return available ? "idle" : "blocked";
+  if (status.tone === "success") return "done";
+  if (status.tone === "error") return "failed";
+  if (status.tone === "info" && /^(running|generating|searching|deciding|approving)/i.test(status.label)) return "running";
+  return "attention";
+}
 
 /** Characters per token, roughly, for JSON in English, French or Spanish: close enough to tell an answer from thinking. */
 const CHARACTERS_PER_TOKEN = 3.5;

@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { minutes, sessionMetrics, stepMetrics, usd, draft2Href, paragraphs, sourceHost, storyHref, traceUsageLine, wordCount } from "./draft-2-canvas.core";
+import {
+  adjacentDraft2Steps, DRAFT_2_PHASES, DRAFT_2_STEPS, draft2RailState, draft2StepForKey, draft2StepFromPath, draft2StepHref, draft2StepNumber, draft2StepPhase,
+  minutes, sessionMetrics, stepMetrics, usd, draft2Href, paragraphs, sourceHost, storyHref, traceUsageLine, wordCount,
+} from "./draft-2-canvas.core";
 
 const topicId = "11111111-1111-4111-8111-111111111111";
 const storyId = "22222222-2222-4222-8222-222222222222";
@@ -59,4 +62,47 @@ test("time and cost per step come from the trace and the images' charges; the ac
   assert.equal(usd(1_540_000), "$1.54");
   assert.deepEqual([minutes(45_000), minutes(141_000)], ["45 s", "2.4 min"]);
   assert.match(traceUsageLine({ provider: "openai", usage: { promptTokens: 7_100, outputTokens: 7_200, thoughtsTokens: 2_600, totalTokens: 14_300 }, outcome: "ok", durationMs: 121_000, costMicros: 86_200 }), /121\.0 s · \$0\.09$/);
+});
+
+test("each step has its own canvas path with the same return context, and a path reads back as its step", () => {
+  assert.equal(draft2StepHref(topicId, storyId, "opening", { from: "#today", returnContext: context }),
+    `/topics/${topicId}/stories/${storyId}/draft-2/opening?from=%23today&returnContext=${context}`);
+  assert.equal(draft2StepHref(topicId, storyId, undefined), draft2Href(topicId, storyId), "no step is the overview");
+  assert.equal(draft2StepFromPath(`/topics/${topicId}/stories/${storyId}/draft-2/visual`), "visual");
+  assert.equal(draft2StepFromPath(`/topics/${topicId}/stories/${storyId}/draft-2/inventory/`), "inventory");
+  assert.equal(draft2StepFromPath(`/topics/${topicId}/stories/${storyId}/draft-2`), undefined);
+  assert.equal(draft2StepFromPath(`/topics/${topicId}/stories/${storyId}/draft-2/nothing`), undefined, "an unknown segment is no step");
+});
+
+test("the four phases hold every step once, in the pipeline's order", () => {
+  assert.deepEqual(DRAFT_2_PHASES.flatMap((phase) => [...phase.steps]), DRAFT_2_STEPS.map((step) => step.key));
+  assert.equal(draft2StepNumber("facts"), 1);
+  assert.equal(draft2StepNumber("publish"), 10);
+  assert.equal(draft2StepPhase("deck").title, "Words");
+  assert.equal(draft2StepPhase("images").title, "Visuals");
+});
+
+test("the screens before and after one, and where a key takes the canvas", () => {
+  assert.deepEqual(adjacentDraft2Steps(undefined), { next: "facts" });
+  assert.deepEqual(adjacentDraft2Steps("facts"), { previous: "overview", next: "focus" });
+  assert.deepEqual(adjacentDraft2Steps("caption"), { previous: "images", next: "publish" });
+  assert.deepEqual(adjacentDraft2Steps("publish"), { previous: "caption" });
+  assert.equal(draft2StepForKey("ArrowRight", "deck"), "inventory");
+  assert.equal(draft2StepForKey("[", "facts"), "overview");
+  assert.equal(draft2StepForKey("]", "publish"), undefined, "nothing past the last step");
+  assert.equal(draft2StepForKey("3", undefined), "opening");
+  assert.equal(draft2StepForKey("0", "facts"), "publish", "0 is the tenth step");
+  assert.equal(draft2StepForKey("a", "facts"), undefined);
+});
+
+test("a step's rail state reads its badge, what runs now and what it waits on", () => {
+  assert.equal(draft2RailState(undefined, { available: true }), "idle");
+  assert.equal(draft2RailState(undefined, { available: false }), "blocked");
+  assert.equal(draft2RailState({ label: "Ready", tone: "success" }), "done");
+  assert.equal(draft2RailState({ label: "Ready", tone: "success" }, { live: true }), "running", "running again in this tab");
+  assert.equal(draft2RailState({ label: "Generating", tone: "info" }), "running");
+  assert.equal(draft2RailState({ label: "Paused", tone: "info" }), "attention");
+  assert.equal(draft2RailState({ label: "Acceptable · 92", tone: "info" }), "attention");
+  assert.equal(draft2RailState({ label: "Under 90 · 82", tone: "warning" }), "attention");
+  assert.equal(draft2RailState({ label: "Failed", tone: "error" }), "failed");
 });
