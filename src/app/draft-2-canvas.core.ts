@@ -201,13 +201,17 @@ export type StepMetrics = { ms: number; costMicros: number; calls: number };
 /** The trace's step for each canvas step: the accounts to tag belong to the caption step; publishing makes no provider call. */
 const METRICS_STEP: Record<string, string> = { mentions: "caption" };
 
+/** What the images cost beside the trace: each attempt's charge and the anchor plate's. */
+type ImageCharges = { slides: { attempts: { costMicros?: number }[] }[]; anchorPlate?: { costMicros?: number } };
+
 /**
  * Model time and cost per canvas step, from the session's trace (every
  * provider call, this run's and earlier ones) and the images' provider
- * charges. Time is time inside calls, not the clock on the wall; cost is the
- * meter's estimate when the call's model had a verified rate.
+ * charges, the anchor plate's among them. Time is time inside calls, not the
+ * clock on the wall; cost is the meter's estimate when the call's model had a
+ * verified rate.
  */
-export function stepMetrics(trace: readonly TraceCall[], images?: { slides: { attempts: { costMicros?: number }[] }[] } | null): Record<string, StepMetrics> {
+export function stepMetrics(trace: readonly TraceCall[], images?: ImageCharges | null): Record<string, StepMetrics> {
   const metrics: Record<string, StepMetrics> = {};
   const add = (step: string, ms: number, costMicros: number, calls: number) => {
     const entry = metrics[step] ?? (metrics[step] = { ms: 0, costMicros: 0, calls: 0 });
@@ -218,11 +222,12 @@ export function stepMetrics(trace: readonly TraceCall[], images?: { slides: { at
     add(METRICS_STEP[call.step] ?? call.step, call.durationMs, call.costMicros ?? 0, 1);
   }
   for (const slide of images?.slides ?? []) for (const attempt of slide.attempts) if (attempt.costMicros) add("images", 0, attempt.costMicros, 0);
+  if (images?.anchorPlate?.costMicros) add("images", 0, images.anchorPlate.costMicros, 0);
   return metrics;
 }
 
 /** The whole session's calls: time inside them, cost, and the judge's share of the time. */
-export function sessionMetrics(trace: readonly TraceCall[], images?: { slides: { attempts: { costMicros?: number }[] }[] } | null): { ms: number; costMicros: number; calls: number; openaiShare: number } {
+export function sessionMetrics(trace: readonly TraceCall[], images?: ImageCharges | null): { ms: number; costMicros: number; calls: number; openaiShare: number } {
   const steps = Object.values(stepMetrics(trace, images));
   const ms = steps.reduce((sum, step) => sum + step.ms, 0);
   const openaiMs = trace.filter((call) => call.step && call.provider === "openai").reduce((sum, call) => sum + call.durationMs, 0);

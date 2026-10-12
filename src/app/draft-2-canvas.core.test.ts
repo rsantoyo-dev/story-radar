@@ -108,3 +108,9 @@ test("a step's rail state reads its badge, what runs now and what it waits on", 
   assert.equal(draft2RailState({ label: "Under 90 · 82", tone: "warning" }), "attention");
   assert.equal(draft2RailState({ label: "Failed", tone: "error" }), "failed");
 });
+
+test("the anchor plate's charge counts with the images'", () => {
+  const images = { slides: [{ attempts: [{ costMicros: 30_000 }, { costMicros: 20_000 }] }], anchorPlate: { costMicros: 5_000 } };
+  assert.equal(stepMetrics([], images).images.costMicros, 55_000);
+  assert.equal(sessionMetrics([], images).costMicros, 55_000);
+});

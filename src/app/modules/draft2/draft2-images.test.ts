@@ -17,6 +17,9 @@ import * as geoContact from "../stories/creative-geo-contact";
 import * as characterGeneration from "../stories/creative-character-generation";
 import * as selectBrand from "../stories/select-brand-references";
 import { loadInSandbox } from "./draft2-test-sandbox";
+import { createHash } from "node:crypto";
+
+const hashOf = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 import type { Draft2Images } from "./draft2-images.types";
 import type { Draft2Inventory } from "./draft2-inventory.types";
 import type { Draft2CarouselSlide, Draft2Visual, Draft2VisualCandidate, Draft2VisualSlide } from "./draft2-visual.types";
@@ -234,7 +237,7 @@ test("every slide is made from v1's prompt, finished with v1's post-production i
   assert.equal(json(h.calls.reviews.map((entry) => [entry.slide, (entry.contents.addedAfterwards as Record<string, unknown>).logo, (entry.contents.addedAfterwards as Record<string, unknown>).pageNumber])), json([["cover", true, "1/3"], ["s1", false, "2/3"], ["last", false, "3/3"]]));
   assert.equal(json((h.calls.reviews[1].contents as { approvedFictionalCharacters: unknown }).approvedFictionalCharacters), json([{ name: "Jo", description: "An illustrated guide" }]));
   assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.note, entry.skillVersions])), json([
-    ["images", "draft2_image_review", "Cover", { images: "1" }], ["images", "draft2_image_review", "Slide 2", { images: "1" }], ["images", "draft2_image_review", "Slide 3", { images: "1" }],
+    ["images", "draft2_image_review", "Cover", { images: "2" }], ["images", "draft2_image_review", "Slide 2", { images: "2" }], ["images", "draft2_image_review", "Slide 3", { images: "2" }],
   ]));
   const file = await h.file({ runId: images.runId, slide: "cover", version: 1 });
   assert.equal(Buffer.from(await file.arrayBuffer()).toString(), `raw:${request(0)}|1/3|logo`);
@@ -366,4 +369,37 @@ test("download all: one ZIP of each slide's shown image in slide order, checked 
   assert.doesNotMatch(approved.fileName, /-review-/);
   h.r2.set(`draft2/${images.runId}/s1-v1.png`, Buffer.from("tampered"));
   await assert.rejects(h.archive(), /does not match its record/, "an image that is not the one recorded never reaches the archive");
+});
+
+test("a narrative form's anchor is drawn once, without words, before the slides; every slide that carries it receives it after the characters; Sol checks it, and a slide without it is corrected", async () => {
+  const toad = { form: "character-guide", anchorKind: "figure", characterId: null, anchor: "A curious toad", anchorFactIds: ["f1"], progression: "From the kiosk to each animal", ending: "resolves" };
+  const visual = { ...VISUAL, focus: { version: 1, values: { ...VISUAL.focus!.values, narrative: toad } } };
+  const h = harness({ session: { visual }, reviewOf: (slide, version) => slide === "s1" && version === 1 ? { anchorShown: false } : {} });
+  const session = await h.run();
+  const images = session.images!;
+  assert.equal(json([images.anchorPlate?.anchor, images.anchorPlate?.status, images.anchorPlate?.sha256 === hashOf(h.r2.get(`draft2/${images.runId}/anchor-plate.png`)!)]), json(["A curious toad", "generated", true]));
+  const [plate, ...slides] = h.calls.submits;
+  assert.match(plate.prompt, /^ANCHOR PLATE\n\nOne reference image of A curious toad, the guide that is on every slide of this carousel/);
+  assert.match(plate.prompt, /No words, letters, numbers, logos, signs, frames or interface of any kind\./);
+  assert.equal(json(plate.files), json([]), "drawn from the script's words alone, first");
+  const byOrder = (order: number) => slides.filter((submit) => submit.prompt.startsWith(`PROMPT ${order}:`));
+  assert.equal(json(byOrder(1)[0].files), json(["anchor-plate.png"]));
+  assert.equal(json(byOrder(2)[0].files), json(["jo.png", "anchor-plate.png"]), "after the brand character's references");
+  assert.match(byOrder(2)[0].prompt, /ANCHOR REFERENCE\nInput image 2 is A curious toad, the guide that is on every slide of this carousel/);
+  assert.match(byOrder(1)[0].prompt, /Input image 1 is A curious toad/);
+  assert.equal(json(h.calls.reviews.map((review) => (review.contents.anchor as { what: string } | undefined)?.what)), json(["A curious toad", "A curious toad", "A curious toad"]));
+  const s1 = images.slides.find((slide) => slide.slide === "s1")!;
+  assert.match(s1.attempts[0].review!.issues.join(" "), /A curious toad, which is on every slide of this carousel, is missing or does not look as it does on the others\./);
+  assert.equal(json(s1.attempts.map((attempt) => [attempt.version, attempt.kind, attempt.status])), json([[1, "generate", "generated"], [2, "correct", "generated"]]));
+  assert.equal(json(byOrder(2)[1].files), json(["jo.png", "anchor-plate.png", "s1-v1-base.png"]), "the correction keeps the plate, with its base last");
+  assert.equal(json(h.calls.charges.filter((charge) => charge.operation === "draft2_anchor_plate").map((charge) => charge.idempotencyKey)), json([`draft2-anchor-plate:${images.runId}`]), "charged once");
+});
+
+test("a brand character anchor needs no plate, and a classic story none either", async () => {
+  const jo = { form: "character-guide", anchorKind: "character", characterId: "char-jo", anchor: "Jo", anchorFactIds: [], progression: "p", ending: "resolves" };
+  const visual = { ...VISUAL, focus: { version: 1, values: { ...VISUAL.focus!.values, narrative: jo } } };
+  const guided = await harness({ session: { visual } }).run();
+  assert.equal(guided.images?.anchorPlate, undefined);
+  const classic = await harness().run();
+  assert.equal(classic.images?.anchorPlate, undefined);
 });

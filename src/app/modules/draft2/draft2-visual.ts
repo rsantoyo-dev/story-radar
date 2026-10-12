@@ -2,7 +2,7 @@ import "server-only";
 import { recordFunnelChoice, runFunnelStep, type FunnelStep, type FunnelStepInput } from "./draft2-funnel-run";
 import { DRAFT2_VISUAL_ROLES } from "./draft2-models";
 import { Draft2InputError } from "./draft2-facts.types";
-import { focusForModels, type Draft2FocusSnapshot } from "./draft2-focus.types";
+import { focusForModels, focusNarrative, type Draft2FocusSnapshot } from "./draft2-focus.types";
 import { funnelVersions } from "./draft2-funnel";
 import { inventoryForModels, type Draft2CharacterChoice, type Draft2Inventory } from "./draft2-inventory.types";
 import {
@@ -89,7 +89,7 @@ const VISUAL_STEP: FunnelStep<Draft2VisualCandidate, Draft2VisualScore, Draft2Vi
       schemas: { writer: visualSchema(positions), judge: visualEvaluationSchema(positions) },
       parseCandidates: parseVisualCandidates,
       parseEvaluation: (text, ids) => parseVisualEvaluation(text, ids, positions),
-      mechanical: (candidates) => mechanicalVisualIssues(candidates, { carousel, inventory, characters, characterChoice, mode, avoid }),
+      mechanical: (candidates) => mechanicalVisualIssues(candidates, { carousel, inventory, characters, characterChoice, mode, avoid, narrative: focusNarrative(focus.values) }),
       explore: visualExploreRequest,
       refine: visualRefineRequest,
       judgeRequest: (round, candidates, mechanical, revised) => visualJudgeRequest(plan, round, candidates, mechanical, revised),

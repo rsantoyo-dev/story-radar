@@ -2,6 +2,7 @@ import { Draft2InputError, Draft2ResponseError, type Draft2Fact } from "./draft2
 import { funnelVersions } from "./draft2-funnel";
 import { referencePhotos, type Draft2Inventory } from "./draft2-inventory.types";
 import type { Draft2CarouselSlide, Draft2Visual, Draft2VisualCandidate, Draft2VisualNeed, Draft2VisualShot, Draft2VisualSlide } from "./draft2-visual.types";
+import { focusNarrative, type Draft2FocusNarrative } from "./draft2-focus.types";
 import {
   CREATIVE_IMAGE_REVIEW_SCHEMA, imageReviewIssues, parseImageReviewAnswer,
   type CreativeImageReviewAnswer, type CreativeImageReviewInput,
@@ -105,6 +106,39 @@ export type Draft2SlideImage = {
   chosenVersion?: number;
 };
 
+/**
+ * A narrative form's anchor drawn once, alone and without words, before any
+ * slide: every slide that carries the anchor receives it as a reference, so
+ * the guide or the object looks the same from the first slide to the last. A
+ * brand character needs none: its reference images are passed already. A
+ * plate that fails leaves the slides to the visual script's words alone.
+ */
+export type Draft2AnchorPlate = {
+  /** What the plate shows, as the focus names it. */
+  anchor: string;
+  status: Draft2ImageAttemptStatus;
+  queuedAt: string;
+  submittedAt?: string;
+  requestId?: string;
+  endpoint?: string;
+  promptCharacters?: number;
+  sha256?: string;
+  costMicros?: number;
+  completedAt?: string;
+  error?: string;
+};
+export const ANCHOR_PLATE_FILE = "anchor-plate.png";
+export const ANCHOR_PLATE_PROMPT_FILE = "anchor-plate.prompt.txt";
+
+/** Whether the plate lets the slides go: made, failed, or none to make. */
+export const anchorPlateSettled = (plate: Draft2AnchorPlate | undefined) => !plate || plate.status === "generated" || plate.status === "failed";
+
+/** Whether a slide carries the narrative's anchor: every generated image does; a verified photo, a verified map or a typography card tells the story without it. */
+export const slideCarriesAnchor = (slide: Pick<Draft2SlideImage, "need">) => slide.need !== "real-photo" && slide.need !== "verified-map" && slide.need !== "typography";
+
+/** The narrative a visual script followed: its focus's, else classic. */
+export const visualNarrative = (visual: Pick<Draft2Visual, "focus">): Draft2FocusNarrative => focusNarrative(visual.focus?.values ?? {});
+
 export type Draft2ImagesRun = {
   /** Names the run's files; a new run never overwrites an earlier one's images. */
   runId: string;
@@ -116,6 +150,8 @@ export type Draft2ImagesRun = {
   quality: typeof IMAGES_QUALITY;
   model: string;
   slides: Draft2SlideImage[];
+  /** The narrative form's anchor, drawn before the slides when it is a figure or an object. */
+  anchorPlate?: Draft2AnchorPlate;
   startedAt: string;
   updatedAt: string;
   error?: string;
@@ -246,9 +282,13 @@ export function newImagesRun({ runId, visual, script, carousel, inventory, model
   runId: string; visual: Draft2Visual; script: Draft2VisualCandidate; carousel: readonly Draft2CarouselSlide[]; inventory: Draft2Inventory; model: string; now: Date;
 }): Draft2ImagesRun {
   const at = now.toISOString();
+  // A guide or an object the story invents or takes from the facts is drawn once first; a brand character has its references.
+  const narrative = visualNarrative(visual);
+  const plate = narrative.form !== "classic" && (narrative.anchorKind === "figure" || narrative.anchorKind === "object") && narrative.anchor;
   return {
     runId, status: "running", visualId: script.id, ...(visual.deckId ? { deckId: visual.deckId } : {}), inventoryVersion: inventory.version,
     quality: IMAGES_QUALITY, model, startedAt: at, updatedAt: at,
+    ...(plate ? { anchorPlate: { anchor: narrative.anchor, status: "queued" as const, queuedAt: at } } : {}),
     slides: carousel.map((words, index) => {
       const scriptSlide = script.slides.find((entry) => entry.slide === words.slide);
       if (!scriptSlide) throw new Draft2InputError(`The visual script has no image for ${words.label}. Write the visual script again.`);
@@ -402,19 +442,20 @@ export function textDifferences(expected: string, transcription: string, publica
   return compact(want) === compact(shown) ? { missing: [], extra: [] } : { missing, extra };
 }
 
-/** Sol's answer: v1's review fields, plus the words as they appear, whether an overlay covers them, the lettering and the story. */
-export type Draft2ImageReviewAnswer = CreativeImageReviewAnswer & { transcription: string; textCovered: boolean; textNote: string; storyNote: string };
+/** Sol's answer: v1's review fields, plus the words as they appear, whether an overlay covers them, the lettering, the story, and whether the narrative's anchor is shown. */
+export type Draft2ImageReviewAnswer = CreativeImageReviewAnswer & { transcription: string; textCovered: boolean; textNote: string; storyNote: string; anchorShown: boolean };
 
 export const DRAFT2_IMAGE_REVIEW_SCHEMA: Record<string, unknown> = {
   type: "object",
   additionalProperties: false,
-  required: [...CREATIVE_IMAGE_REVIEW_SCHEMA.required, "transcription", "textCovered", "textNote", "storyNote"],
+  required: [...CREATIVE_IMAGE_REVIEW_SCHEMA.required, "transcription", "textCovered", "textNote", "storyNote", "anchorShown"],
   properties: {
     ...CREATIVE_IMAGE_REVIEW_SCHEMA.properties,
     transcription: { type: "string" },
     textCovered: { type: "boolean" },
     textNote: { type: "string" },
     storyNote: { type: "string" },
+    anchorShown: { type: "boolean" },
   },
 };
 
@@ -428,6 +469,8 @@ export function parseDraft2ImageReview(text: string): Draft2ImageReviewAnswer {
     textCovered: value.textCovered,
     textNote: typeof value.textNote === "string" ? oneLine(value.textNote).slice(0, 300) : "",
     storyNote: typeof value.storyNote === "string" ? oneLine(value.storyNote).slice(0, 300) : "",
+    // A review asked before narrative forms has no anchor to look for.
+    anchorShown: typeof value.anchorShown === "boolean" ? value.anchorShown : true,
   };
 }
 
@@ -438,7 +481,7 @@ const quoted = (words: readonly string[]) => words.slice(0, 8).map((word) => `«
  * words that differ from the slide's, words an overlay covers, and broken
  * lettering, all blocking; the story note never blocks.
  */
-export function draft2ImageReview(answer: Draft2ImageReviewAnswer, input: CreativeImageReviewInput & { expectedText: string }, meta: { model: string; at: string; durationMs?: number }): Draft2ImageReview {
+export function draft2ImageReview(answer: Draft2ImageReviewAnswer, input: CreativeImageReviewInput & { expectedText: string; anchor?: string }, meta: { model: string; at: string; durationMs?: number }): Draft2ImageReview {
   const issues = [...imageReviewIssues(answer, input)];
   const { missing, extra } = textDifferences(input.expectedText, answer.transcription, input.publicationName);
   if (missing.length || extra.length) {
@@ -446,6 +489,7 @@ export function draft2ImageReview(answer: Draft2ImageReviewAnswer, input: Creati
   }
   if (answer.textCovered) issues.push("The logo or the page number covers part of the slide's words.");
   if (answer.textNote) issues.push(`The lettering has a problem: ${sentence(answer.textNote)}.`);
+  if (input.anchor && !answer.anchorShown) issues.push(`${sentence(input.anchor)}, which is on every slide of this carousel, is missing or does not look as it does on the others.`);
   return {
     status: issues.length ? "issues" : "passed", issues,
     note: [answer.storyNote, answer.summary].map((part) => oneLine(part)).filter(Boolean).join(" "),

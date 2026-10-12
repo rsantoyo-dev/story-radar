@@ -219,3 +219,18 @@ test("a direction that reserves the logo's corner or rules logos out asks for no
   assert.equal(forbiddenElement("Letras teal oscuro; esquina inferior derecha libre para logo y centro inferior para página."), undefined);
   assert.equal(forbiddenElement("Un diálogo entre dos personas; en la pared, el logo de la clínica."), "logo");
 });
+
+test("a narrative form's anchor is in every generated image: a brand character by its id, a figure or an object as the recurring element; a photo, a map or a typography card is exempt", () => {
+  const mia = { form: "character-guide" as const, anchorKind: "character" as const, characterId: "char-mia", anchor: "Mia", anchorFactIds: [], progression: "From the closed door to the reading room", ending: "returns" as const };
+  const everywhere = script("c1", { slides: script("c1").slides.map((entry) => ({ ...entry, characterIds: ["char-mia"] })) });
+  assert.deepEqual(findings(everywhere, { narrative: mia }).filter((code) => code.startsWith("ANCHOR")), []);
+  assert.deepEqual(findings(script("c1"), { narrative: mia }).filter((code) => code.startsWith("ANCHOR")), ["ANCHOR_MISSING c1 slide2", "ANCHOR_MISSING c1 s1", "ANCHOR_MISSING c1 s2", "ANCHOR_MISSING c1 penultimate", "ANCHOR_MISSING c1 last"], "only the cover casts Mia");
+  assert.deepEqual(findings(script("c1"), {}).filter((code) => code.startsWith("ANCHOR")), [], "a classic story asks for no anchor");
+  const toad = { form: "character-guide" as const, anchorKind: "figure" as const, characterId: null, anchor: "A curious toad", anchorFactIds: ["f1"], progression: "Trail to trail", ending: "resolves" as const };
+  const recurring = script("c1", { characterPlan: { use: false, characterIds: [], role: "" }, slides: script("c1").slides.map((entry) => ({ ...entry, characterIds: [], need: "generic-illustration" as const, recurring: "accent" as const })) });
+  assert.deepEqual(findings(recurring, { narrative: toad }).filter((code) => code.startsWith("ANCHOR")), []);
+  const card = { ...recurring, slides: recurring.slides.map((entry) => entry.slide === "s1" ? { ...entry, recurring: "none" as const } : entry.slide === "s2" ? { ...entry, recurring: "none" as const, need: "typography" as const, shot: "typography" as const } : entry) };
+  const issues = mechanicalVisualIssues([card], { ...rules, narrative: toad }).filter((issue) => issue.code === "ANCHOR_MISSING");
+  assert.deepEqual(issues.map((issue) => issue.part), ["s1"], "the typography card is exempt");
+  assert.match(issues[0].detail, /Slide 3 leaves out A curious toad, the guide: with this narrative form it is in every image, as the recurring element\./);
+});

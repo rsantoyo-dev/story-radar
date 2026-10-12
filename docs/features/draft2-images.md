@@ -213,3 +213,26 @@ once, at approval, under the `draft2` provider (`draft2-caption.md`).
   - prerequisites.
 - `draft2-visual.types.test.ts`: the layout, the shot rules, the v2 schema.
 - `draft2-skills.test.ts`: visuals v2 and the image judge's rubric.
+
+## 9. The narrative form's anchor plate (2026-10-12)
+
+When the visual script follows a narrative form (`draft2-focus.md` §12)
+whose anchor is a figure or an object, a new images run draws that anchor
+once before any slide: one text-to-image call, alone and whole on a plain
+background in the brand's identity, with no word, logo or frame
+(`anchorPlate` on the run; `anchor-plate.png` and its prompt beside the
+slides' files). It is sent and polled as a slide is (stored prompt first,
+"submitting" before fal, never sent twice, the same grace period for a lost
+submission) and charged once (`draft2-anchor-plate:<runId>`). The slides wait
+for it; a plate that fails leaves them to the script's words, with a note.
+
+Every slide that carries the anchor (everything but a verified photo, a
+verified map or a typography card) receives the plate right after the brand
+character's references, and its prompt names it by position (ANCHOR
+REFERENCE); the brand references' budget counts it. A brand character needs
+no plate: its references already travel with each slide that casts it.
+
+Sol's review (images skill v2) answers `anchorShown` when it receives the
+anchor: an image without it, or with another one, has a blocking issue, so
+the one automatic correction redraws it, plate included. The canvas shows the
+plate's state on the Images screen and counts its cost with the images'.

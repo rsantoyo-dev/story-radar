@@ -291,11 +291,15 @@ it in a dropdown and the change stays theirs, "Use Claude's" gives it back.
   step per slide, anchor present) and the visual script (the anchor in every
   image, described the same way; a brand character by its id).
 
+### Downstream
+
+- The visual script: every generated slide carries the anchor
+  (`ANCHOR_MISSING`, `draft2-visual.md` §9).
+- Images: a figure or an object is drawn once as a textless anchor plate,
+  passed to every slide that carries it, and Sol checks the anchor
+  (`draft2-images.md` §9).
+
 ### Next
 
-- The visual script's program check that the anchor is in every slide, and a
-  textless anchor plate in Images, passed as the reference of every slide
-  (a brand character's references already are); the image review checks the
-  anchor.
 - The form in the publication package, to compare forms on performance.
 - Same place forms, once the anchor holds on real stories.

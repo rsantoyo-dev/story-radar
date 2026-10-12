@@ -48,13 +48,15 @@ import { failedCall } from "./draft2-funnel";
 import { draft2ModelName, draft2SolModel } from "./draft2-models";
 import { placeMention } from "./draft2-inventory";
 import {
+  ANCHOR_PLATE_FILE, ANCHOR_PLATE_PROMPT_FILE, anchorPlateSettled, slideCarriesAnchor, visualNarrative, type Draft2AnchorPlate,
   DRAFT2_IMAGE_REVIEW_SCHEMA, IMAGE_SUBMISSION_GRACE_MS, IMAGE_SUBMIT_CONCURRENCY, IMAGES_QUALITY,
   awaitsReview, chosenSlide, correctionFor, draft2ImageDownloads, draft2ImageReview, imageBaseFile, imageFile, imagePromptFile, imagesNote, imagesTarget, latestAttempt, mapFile,
   newImagesRun, parseDraft2ImageReview, parseImagesAction, regeneratedSlide, settledStatus, slideFacts, slideSettled, slideUnit,
   type Draft2ImageAttempt, type Draft2Images, type Draft2ImagesRun, type Draft2MapPanel, type Draft2SlideImage, type Draft2SlideMaterial,
 } from "./draft2-images.types";
 import { OPENING_STALL_MS } from "./draft2-opening.types";
-import type { Draft2FocusValues } from "./draft2-focus.types";
+import type { Draft2FocusNarrative, Draft2FocusValues } from "./draft2-focus.types";
+import { resolveCreativeVisualGuidance } from "../stories/creative-visual-guidance";
 import type { Draft2Inventory, Draft2InventoryEntity } from "./draft2-inventory.types";
 import type { Draft2CarouselSlide, Draft2VisualCandidate } from "./draft2-visual.types";
 import { brandBrief, composeInstructions } from "./skills/draft2-skills";
@@ -105,6 +107,8 @@ type Context = {
   google?: GoogleMapsConfig;
   signal: AbortSignal;
   trace: Draft2TraceEntry[];
+  /** The narrative form the visual script followed: its anchor is on every slide that carries one. */
+  narrative: Draft2FocusNarrative;
 };
 
 const objectKey = (ctx: Pick<Context, "topicId" | "sessionId" | "run">, file: string) =>
@@ -271,16 +275,20 @@ async function imageRequest(ctx: Context, slide: Draft2SlideImage, attempt: Draf
     verifiedImagery: Boolean(pasted || panel || placeFile || storyRefs.some((reference) => reference.purpose !== "style")),
   });
   const characterImages = characters.flatMap((character) => character.referenceImages);
+  // The narrative's anchor, drawn once before the slides, goes right after the characters: the slide shows it as the plate does.
+  const plateFile = ctx.run.anchorPlate?.status === "generated" && slideCarriesAnchor(slide) ? await anchorPlateFile(ctx, slide) : undefined;
+  const plates = plateFile ? 1 : 0;
   const brandRefs = await resolveBrandGenerationReferences(ctx.topicId, ctx.brandSelections.get(slide.order));
   const zone = pasted ? portraitZonePrompt(portraitLayoutForSlide(slide.order)) : panel ? mapPanelZonePrompt(panel.layout) : "";
-  let prompt = built.prompt + zone + brandReferencePrompt(brandRefs, characterImages.length)
-    + storyReferencePrompt(storyRefs, characterImages.length + brandRefs.length) + (placeFile ? verifiedPlacePhotoInstruction(placeEntry?.name) : "");
+  let prompt = built.prompt + zone + (plateFile ? anchorReferencePrompt(ctx, characterImages.length + 1) : "") + brandReferencePrompt(brandRefs, characterImages.length + plates)
+    + storyReferencePrompt(storyRefs, characterImages.length + plates + brandRefs.length) + (placeFile ? verifiedPlacePhotoInstruction(placeEntry?.name) : "");
   if (base) prompt += `\n\nIMAGE EDIT v1\nThe LAST input image is the base image to edit. Preserve its layout, copy and protagonist except for this requested change (data): ${JSON.stringify(attempt.instruction ?? "")}\nEND IMAGE EDIT`;
   else if (attempt.instruction) prompt += `\nRequested change: ${JSON.stringify(attempt.instruction)}`;
   if (prompt.length > MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS) throw new Draft2InputError(`${slide.label}'s image prompt is longer than ${MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS} characters.`);
   const files = [
     ...await Promise.all(characterImages.map((reference) => readPrivateR2ImageFile({ objectKey: reference.objectKey, contentType: reference.contentType, fileName: reference.fileName }))),
-    ...await loadBrandGenerationImages(brandRefs, characterImages.length + (base ? 1 : 0)),
+    ...(plateFile ? [plateFile] : []),
+    ...await loadBrandGenerationImages(brandRefs, characterImages.length + plates + (base ? 1 : 0)),
     ...await loadStoryReferenceImages(storyRefs),
     ...(placeFile ? [placeFile] : []),
     ...(base ? [base] : []),
@@ -293,6 +301,93 @@ async function imageRequest(ctx: Context, slide: Draft2SlideImage, attempt: Draf
     endpoint: creativeImageEndpoint(ctx.descriptor, files.length ? "reference-guided" : "text-to-image"),
     ...(placeFile && placeEntry ? { placePhoto: placeEntry.name } : {}),
   };
+}
+
+/** The anchor plate as stored, checked against its record; one that cannot be read leaves the slide to the script's words, with a note. */
+async function anchorPlateFile(ctx: Context, slide: Draft2SlideImage): Promise<File | undefined> {
+  const plate = ctx.run.anchorPlate;
+  try {
+    const file = await readPrivateR2ImageFile({ objectKey: objectKey(ctx, ANCHOR_PLATE_FILE), contentType: "image/png", fileName: ANCHOR_PLATE_FILE });
+    if (hash(new Uint8Array(await file.arrayBuffer())) !== plate?.sha256) throw new Draft2InputError("The anchor plate does not match its record.");
+    return file;
+  } catch {
+    note(slide, "The anchor plate could not be read, so this slide keeps the anchor by the script's words alone.");
+    return undefined;
+  }
+}
+
+const anchorRole = (narrative: Draft2FocusNarrative) => narrative.form === "traveling-object" ? "object" : "guide";
+
+/** How a slide's prompt names the plate among its reference images. */
+const anchorReferencePrompt = (ctx: Context, position: number) =>
+  `\n\nANCHOR REFERENCE\nInput image ${position} is ${ctx.narrative.anchor}, the ${anchorRole(ctx.narrative)} that is on every slide of this carousel. Show it in this slide's scene exactly as it looks there: the same shape, colors, proportions and details. Take only that element from it, nothing else.\nEND ANCHOR REFERENCE`;
+
+/** What the image model reads to draw the anchor plate: the anchor alone, as the visual script casts it, in the brand's identity, without a word. */
+function anchorPlatePrompt(ctx: Context, plate: Draft2AnchorPlate): string {
+  return [
+    "ANCHOR PLATE",
+    `One reference image of ${plate.anchor}, the ${anchorRole(ctx.narrative)} that is on every slide of this carousel, so every slide can show it the same way.`,
+    `How the visual script casts it: ${ctx.script.cast}`,
+    "Show it alone and whole, as that cast describes it, centered on a plain, uncluttered background in the brand's visual identity below, evenly lit, so its shape, colors and proportions read clearly. Nothing and nobody else in the image.",
+    "No words, letters, numbers, logos, signs, frames or interface of any kind.",
+    `# The brand's visual identity\n${resolveCreativeVisualGuidance(ctx.profile)}`,
+  ].join("\n\n").slice(0, MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS);
+}
+
+/** Sends the anchor plate as an attempt is sent: the prompt stored first, marked submitting before fal is called, never sent twice. */
+async function submitPlate(ctx: Context, plate: Draft2AnchorPlate, checkpoint: () => Promise<unknown>): Promise<void> {
+  try {
+    const prompt = anchorPlatePrompt(ctx, plate);
+    const endpoint = creativeImageEndpoint(ctx.descriptor, "text-to-image");
+    await putPrivateR2Object({ objectKey: objectKey(ctx, ANCHOR_PLATE_PROMPT_FILE), body: Buffer.from(prompt, "utf8"), contentType: "text/plain; charset=utf-8" });
+    Object.assign(plate, { status: "submitting", endpoint, promptCharacters: prompt.length, submittedAt: new Date().toISOString() } satisfies Partial<Draft2AnchorPlate>);
+    await checkpoint();
+    draft2DevTrace({ step: "images", round: 0, provider: "fal", model: endpoint, operation: "draft2_anchor_plate", phase: "request", detail: { anchor: plate.anchor, promptCharacters: prompt.length } });
+    const send = () => submitFalImage({
+      apiKey: ctx.fal.apiKey, prompt, width: ctx.fal.generationWidth, height: ctx.fal.generationHeight, aspectRatio: "4:5",
+      imageQuality: IMAGES_QUALITY, model: ctx.descriptor, endpoint, referenceImages: [], retention: "30d",
+    });
+    let requestId: string;
+    try {
+      requestId = await send();
+    } catch (error) {
+      if (!isTransientFalSubmitError(error)) throw error;
+      await sleep(3_000);
+      requestId = await send();
+    }
+    Object.assign(plate, { status: "generating", requestId } satisfies Partial<Draft2AnchorPlate>);
+  } catch (error) {
+    Object.assign(plate, { status: "failed", error: message(error), completedAt: new Date().toISOString() } satisfies Partial<Draft2AnchorPlate>);
+  }
+  await checkpoint();
+}
+
+/** Asks fal for the plate; once done, it is stored as it came (no logo, no page number) and charged once. */
+async function pollPlate(ctx: Context, plate: Draft2AnchorPlate, errors: { count: number }, checkpoint: () => Promise<unknown>): Promise<void> {
+  try {
+    let raw: Uint8Array | undefined;
+    const result = await pollFalImage({
+      apiKey: ctx.fal.apiKey, requestId: plate.requestId!, endpoint: plate.endpoint!, targetWidth: OUTPUT.width, targetHeight: OUTPUT.height, retention: "30d",
+      postProcess: async ({ normalizedPng }) => { raw = normalizedPng; return normalizedPng; },
+    });
+    if (result.status !== "generated") return;
+    if (!raw) throw new Draft2InputError("The anchor plate came back empty.");
+    const sha256 = hash(raw);
+    await putPrivateR2Object({ objectKey: objectKey(ctx, ANCHOR_PLATE_FILE), body: raw, contentType: "image/png", metadata: { sha256 } });
+    const estimate = estimateFalImageCost({ endpoint: plate.endpoint!, quality: IMAGES_QUALITY, width: ctx.fal.width, height: ctx.fal.height, promptCharacters: plate.promptCharacters ?? 0, referenceImages: 0 });
+    await recordUsageCharge({
+      topicId: ctx.topicId, storyId: ctx.storyId, kind: "image", provider: "fal", model: plate.endpoint!, operation: "draft2_anchor_plate",
+      units: { images: 1, width: ctx.fal.width, height: ctx.fal.height, quality: IMAGES_QUALITY, referenceImages: 0, promptCharacters: plate.promptCharacters ?? 0 },
+      costMicros: estimate?.costMicros ?? null, estimated: true, rate: estimate?.rate ?? { unpriced: true },
+      idempotencyKey: `draft2-anchor-plate:${ctx.run.runId}`,
+    });
+    Object.assign(plate, { status: "generated", sha256, completedAt: new Date().toISOString(), ...(estimate ? { costMicros: estimate.costMicros } : {}) } satisfies Partial<Draft2AnchorPlate>);
+  } catch (error) {
+    errors.count += 1;
+    if (errors.count < POLL_ATTEMPTS) return;
+    Object.assign(plate, { status: "failed", error: message(error), completedAt: new Date().toISOString() } satisfies Partial<Draft2AnchorPlate>);
+  }
+  await checkpoint();
 }
 
 /**
@@ -418,11 +513,14 @@ async function reviewAttempt(ctx: Context, slide: Draft2SlideImage, attempt: Dra
     ...(identity?.avoid.length ? { brand: { avoid: identity.avoid.map((group) => `${group.category}: ${group.items.join("; ")}`), allowed: identity.allowed, acceptance: identity.acceptance } } : {}),
   };
   const scriptSlide = ctx.script.slides.find((entry) => entry.slide === slide.slide);
+  // A narrative form's anchor is on every slide that carries one: Sol says whether this image shows it.
+  const anchor = ctx.narrative.form !== "classic" && ctx.narrative.anchor && slideCarriesAnchor(slide) ? ctx.narrative.anchor : undefined;
   const { instructions, skillVersions } = composeInstructions("image-judge", [IMAGES_SKILL], brandBrief(ctx.profile));
   const contents = {
     ...JSON.parse(buildImageReviewText(input)) as Record<string, unknown>,
     slide: { label: slide.label, need: slide.need, beat: scriptSlide?.beat ?? "", headlineLink: scriptSlide?.headlineLink ?? "" },
     addedAfterwards: { logo: logoApplies(ctx, slide.order), pageNumber: chromeFor(ctx, slide.order).overlay ? `${slide.order}/${ctx.carousel.length}` : null },
+    ...(anchor ? { anchor: { what: anchor, role: anchorRole(ctx.narrative), note: "It is on every slide of this carousel: say in anchorShown whether this image shows it as described." } } : {}),
   };
   const preview = await sharp(image).resize({ width: 864, withoutEnlargement: true }).jpeg({ quality: 82 }).toBuffer();
   draft2DevTrace({ step: "images", round: attempt.version, provider: "openai", model, operation: "draft2_image_review", phase: "request", detail: { slide: slide.slide, contents } });
@@ -436,7 +534,7 @@ async function reviewAttempt(ctx: Context, slide: Draft2SlideImage, attempt: Dra
     const durationMs = Date.now() - begin;
     ctx.trace.push({ at, step: "images", round: attempt.version, provider: "openai", model, operation: "draft2_image_review", durationMs, usage: answered.usage, cachedInputTokens: answered.cachedInputTokens, answerCharacters: answered.text.length, outcome: "ok", note: slide.label, skillVersions, effort: "low", ...traceCost("openai", model, answered.usage, answered.cachedInputTokens) });
     draft2DevTrace({ step: "images", round: attempt.version, provider: "openai", model, operation: "draft2_image_review", phase: "response", durationMs, detail: { slide: slide.slide, answer: answered.text } });
-    attempt.review = draft2ImageReview(parseDraft2ImageReview(answered.text), { ...input, expectedText: attempt.expectedText ?? "" }, { model, at, durationMs });
+    attempt.review = draft2ImageReview(parseDraft2ImageReview(answered.text), { ...input, expectedText: attempt.expectedText ?? "", ...(anchor ? { anchor } : {}) }, { model, at, durationMs });
   } catch (error) {
     const durationMs = Date.now() - begin;
     ctx.trace.push({ at, step: "images", round: attempt.version, provider: "openai", model, operation: "draft2_image_review", durationMs, outcome: "error", note: `${slide.label}: ${message(error)}`, ...failedCall(error), skillVersions });
@@ -458,7 +556,8 @@ async function imagesContext({ topicId, storyId, sessionId, run, target, facts, 
   });
   const brandSelections = selectBrandReferencesForDraft({
     units: units.map((unit) => ({ order: unit.order, role: unit.role, visualDirection: unit.visualDirection })), eligible: await listActivatedBrandReferences(topicId),
-    budget: getBrandReferenceSelectionBudget(), generativeImageryAllowed: true, characterImageCountByOrder: new Map(run.slides.map((slide) => [slide.order, slide.characterIds.length])),
+    budget: getBrandReferenceSelectionBudget(), generativeImageryAllowed: true,
+    characterImageCountByOrder: new Map(run.slides.map((slide) => [slide.order, slide.characterIds.length + (run.anchorPlate && slideCarriesAnchor(slide) ? 1 : 0)])),
   });
   // The two v1 rows its prompt builder reads, held in memory: only the fields it reads (build-creative-image-prompt.ts).
   const draft = { format: "carousel", outputAspectRatio: "4:5", concept: storyConcept(target.script), units } as unknown as CreativeDraft;
@@ -469,7 +568,7 @@ async function imagesContext({ topicId, storyId, sessionId, run, target, facts, 
   return {
     topicId, storyId, sessionId, run, script: target.script, carousel: target.carousel, inventory: target.inventory, facts, profile,
     ...(overlay ? { overlay } : {}), ...(snapshot ? { brandSnapshot: snapshot } : {}), characters, brandSelections, units, draft, brief, fal, descriptor,
-    ...(googleConfig() ? { google: googleConfig() } : {}), signal, trace,
+    ...(googleConfig() ? { google: googleConfig() } : {}), signal, trace, narrative: visualNarrative(target.visual),
   };
 }
 
@@ -525,6 +624,7 @@ export async function runDraft2Images({ topicId, storyId, sessionId, resume = fa
       const ctx = await imagesContext({ topicId, storyId, sessionId: session.id, run, target, facts, profile, fal, descriptor, signal: controller.signal, trace });
       const finished = new Map<Draft2ImageAttempt, Uint8Array>();
       const pollErrors = new Map<Draft2ImageAttempt, number>();
+      const plateErrors = { count: 0 };
       const pause = async () => {
         run.status = "paused";
         run.error = "Paused: this request's time is spent. The images continue in a new request.";
@@ -540,6 +640,20 @@ export async function runDraft2Images({ topicId, storyId, sessionId, resume = fa
           }
         }
         if (elapsed() > TIME_BUDGET_MS) return pause();
+        // The anchor plate goes first: the slides that carry the anchor take it as a reference.
+        const plate = run.anchorPlate;
+        if (plate && !anchorPlateSettled(plate)) {
+          if (plate.status === "submitting" && !plate.requestId && Date.now() - Date.parse(plate.submittedAt ?? plate.queuedAt) > IMAGE_SUBMISSION_GRACE_MS) {
+            Object.assign(plate, { status: "failed", error: "Its request was lost while it was being sent.", completedAt: new Date().toISOString() } satisfies Partial<Draft2AnchorPlate>);
+            await checkpoint();
+          } else if (plate.status === "queued") await submitPlate(ctx, plate, checkpoint);
+          else if (plate.status === "generating" && plate.requestId) await pollPlate(ctx, plate, plateErrors, checkpoint);
+          if (!anchorPlateSettled(plate)) { await sleep(POLL_INTERVAL_MS); continue; }
+          if (plate.status === "failed") {
+            for (const slide of run.slides) if (slideCarriesAnchor(slide)) note(slide, "The anchor plate could not be made, so this slide keeps the anchor by the script's words alone.");
+            await checkpoint();
+          }
+        }
         await inBatches(latest.filter(({ attempt }) => attempt.status === "queued"), IMAGE_SUBMIT_CONCURRENCY, ({ slide, attempt }) => submitAttempt(ctx, slide, attempt, checkpoint));
         await inBatches(latest.filter(({ attempt }) => attempt.status === "generating" && attempt.requestId), IMAGE_SUBMIT_CONCURRENCY, ({ slide, attempt }) => pollAttempt(ctx, slide, attempt, finished, pollErrors, checkpoint));
         const toReview = run.slides.flatMap((slide) => { const attempt = latestAttempt(slide); return attempt && awaitsReview(attempt) ? [{ slide, attempt }] : []; });

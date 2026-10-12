@@ -242,3 +242,13 @@ are `ILLUSTRATES_TEXT`, `BREAKS_CONTINUITY`, `REPETITIVE`, `MOTIF_DEPENDENCY`, `
 
 - Generating the images: step 8, `docs/features/draft2-images.md`.
 - The publication caption, which carries photo credits.
+
+## 9. Narrative forms (2026-10-12)
+
+With a focus narrative form other than classic (`draft2-focus.md` §12), the
+writer and the judge read the narratives skill's visual part, and the program
+adds `ANCHOR_MISSING`: every slide the script generates carries the anchor. A
+brand character guide is cast on it by its id; a figure or an object is the
+recurring element (`recurring` other than `none`). A verified photo, a
+verified map or a typography card is exempt. A classic script is checked as
+before.

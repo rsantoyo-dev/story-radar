@@ -7,6 +7,7 @@ import {
   type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion, type FunnelWords,
 } from "./draft2-funnel";
 import { entityMaterial, referencePhotos, type Draft2CharacterChoice, type Draft2Inventory } from "./draft2-inventory.types";
+import type { Draft2FocusNarrative } from "./draft2-focus.types";
 import type { Draft2ClosingOpening } from "./draft2-closing.types";
 import type { Draft2DeckCandidate, Draft2DeckClosing } from "./draft2-deck.types";
 import type { CreativeProfile } from "../stories/creative-content.types";
@@ -84,7 +85,7 @@ export const VISUAL_MECHANICAL_CODES = [
   "SLIDE_ORDER", "DIRECTION_TOO_LONG", "DIRECTION_TOO_SHORT", "BEAT_MISSING", "CHARACTER_UNKNOWN", "CHARACTER_OFF_PLAN", "CHARACTER_CHOICE",
   "TOO_MANY_CHARACTERS", "REFERENCE_UNKNOWN", "NEED_MISMATCH", "STRICT_MODE", "COVER_TYPOGRAPHY", "UNVERIFIED_PERSON", "UNVERIFIED_PLACE",
   "ORGANIZATION_NAMED", "AVOID_TERM", "FORBIDDEN_ELEMENT", "DUPLICATE_CANDIDATE", "SAME_SHOT", "SHOT_MISMATCH",
-  "SUBJECT_MISSING", "DISCOVERY_MISSING", "SAME_SUBJECT", "RECURRING_DOMINANT", "CALLBACK_MISPLACED",
+  "SUBJECT_MISSING", "DISCOVERY_MISSING", "SAME_SUBJECT", "RECURRING_DOMINANT", "CALLBACK_MISPLACED", "ANCHOR_MISSING",
 ] as const;
 export const VISUAL_JUDGE_CODES = [
   "ILLUSTRATES_TEXT", "BREAKS_CONTINUITY", "REPETITIVE", "MOTIF_DEPENDENCY", "OFF_BEAT", "TOO_ABSTRACT", "OFF_BRAND", "LOOKS_AI", "CONTRADICTS_FACTS", "CROWDS_TEXT", "VAGUE",
@@ -369,13 +370,15 @@ export function avoidTerms(identity: { avoid?: readonly { items: readonly string
  * at most two slides, never two in a row, and returns at most once, at the
  * end.
  */
-export function mechanicalVisualIssues(candidates: readonly Draft2VisualCandidate[], { carousel, inventory, characters, characterChoice, mode, avoid }: {
+export function mechanicalVisualIssues(candidates: readonly Draft2VisualCandidate[], { carousel, inventory, characters, characterChoice, mode, avoid, narrative }: {
   carousel: readonly Draft2CarouselSlide[];
   inventory: Pick<Draft2Inventory, "entities" | "storyPhotos">;
   characters: readonly Draft2VisualCharacter[];
   characterChoice: Draft2CharacterChoice;
   mode: Draft2VisualMode;
   avoid: readonly string[];
+  /** The focus's narrative form: with one other than classic, its anchor is in every image the script generates. */
+  narrative?: Draft2FocusNarrative;
 }): Draft2VisualIssue[] {
   const positions = carousel.map((slide) => slide.slide);
   const roster = new Set(characters.map((character) => character.id));
@@ -413,6 +416,16 @@ export function mechanicalVisualIssues(candidates: readonly Draft2VisualCandidat
     });
     const focused = candidate.slides.filter((slide) => slide.recurring === "focus").length;
     if (focused > VISUAL_MAX_RECURRING_FOCUS) add("RECURRING_DOMINANT", undefined, `The recurring element leads ${focused} slides; it leads at most ${VISUAL_MAX_RECURRING_FOCUS}, and may return once at the end.`);
+    // A narrative form's anchor is in every generated image: a brand character by its id, a figure or an object as the recurring element.
+    // A verified photo or map, or a typography card, carries the story without it.
+    if (narrative && narrative.form !== "classic") {
+      const subject = narrative.form === "traveling-object" ? "object" : "guide";
+      for (const slide of candidate.slides) {
+        if (slide.need === "real-photo" || slide.need === "verified-map" || slide.need === "typography") continue;
+        const missing = narrative.anchorKind === "character" ? !slide.characterIds.includes(narrative.characterId ?? "") : slide.recurring === "none";
+        if (missing) add("ANCHOR_MISSING", partOf(slide.slide), `${labelOf(slide.slide)} leaves out ${narrative.anchor}, the ${subject}: with this narrative form it is in every image${narrative.anchorKind === "character" ? `, cast by its id (${narrative.characterId})` : ", as the recurring element"}.`);
+      }
+    }
     const callbacks = candidate.slides.filter((slide) => slide.recurring === "callback");
     const closing = positions.slice(-2);
     if (callbacks.length > 1 || callbacks.some((slide) => !closing.includes(slide.slide))) add("CALLBACK_MISPLACED", undefined, "The recurring element returns once, on one of the last two slides, to give the end a new meaning.");

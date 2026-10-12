@@ -5,11 +5,12 @@ import type { Draft2Skill } from "./draft2-skills";
  * v1's review (creative-image-review.ts, appended to its instructions): the
  * slide's words as they appear, the overlays added after generation, the
  * lettering, and how the image tells its beat. The program compares the
- * transcription with the slide's words; Sol only reads.
+ * transcription with the slide's words; Sol only reads. Version 2 adds
+ * anchorShown: whether a narrative form's anchor is in the image.
  */
 export const IMAGES_SKILL: Draft2Skill = {
   name: "images",
-  version: "1",
+  version: "2",
   text: `# Reviewing a carousel slide image
 
 You see one finished slide: the image the model made, with the publication's
@@ -28,6 +29,10 @@ and, on some slides, a verified photo or map pasted unchanged.
   (slide.beat) and plays with its headline (slide.headlineLink), and what it
   would need to tell it better; an empty string when it already does. It
   informs the editor and never blocks the image.
+- anchorShown: when you receive an anchor (the guide or the object that is on
+  every slide of this carousel), true only if the image shows it as
+  described, recognisably the same one; false when it is missing or looks
+  like another. True when you receive no anchor.
 Judge only what you can see.`,
 };
 
