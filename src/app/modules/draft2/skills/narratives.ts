@@ -7,11 +7,15 @@ import type { Draft2Skill } from "./draft2-skills";
  * story's instructions stay exactly as they were before narrative forms.
  * The focus editor reads the shared text to choose a form, and the judge
  * that reviews Claude's choice reads its own part. Version 2 adds panorama
- * and follow-the-line, drawn once as one wide master scene.
+ * and follow-the-line, drawn once as one wide master scene. Version 3 makes
+ * the anchor a carrier (never one of the story's own subjects or items; a
+ * real object travels only when the facts say it moves) and lifts the visual
+ * script's recurring-element limits for it: on every slide by design, what
+ * must change is its state and its scene.
  */
 export const NARRATIVES_SKILL: Draft2Skill = {
   name: "narratives",
-  version: "2",
+  version: "3",
   text: `# Narrative forms
 
 A carousel is read one swipe at a time. A narrative form gives every swipe a
@@ -43,6 +47,22 @@ that makes the next step wanted. The ending either resolves the story or
 returns: the last slide comes back to the cover's frame, now read with what
 the reader knows.
 
+The anchor is a carrier, never one of the story's own subjects. A thing the
+facts describe as one of the story's attractions, products, stops or items
+is what a slide shows, not what carries the reader to it: an anchor taken
+from the list would stand beside things the facts never place it with. A
+real object from the facts travels only when the facts say it moves through
+the scenes (a float along a parade, a torch from hand to hand); otherwise the
+thread is a neutral carrier: a brand character, an anonymous figure, or a
+stylized echo of the object (its light, its silhouette, its colour) that
+never claims to be present.
+
+Because the anchor is on every slide by design, the visual script's limits
+on a recurring element (at most two slides led, never two in a row, one
+return at the end) do not apply to it, and its presence is never repetition.
+What must change is its state and the scene around it: where it is, what it
+does or finds, what the hour or the light does to it, one step per slide.
+
 What a form never changes is the facts. The anchor never says, sees or vouches
 for anything the facts do not: a guide is neither a witness nor a source, and
 its words on a slide are the slide's words, held to the same facts. An object,
@@ -62,6 +82,9 @@ place; otherwise the story is told classic. Judge:
   line a route the facts give.
 - truth: does the anchor suggest anything the facts do not say? Is it a real
   person of the story (material.people)? Either sends it back to classic.
+- carrier: is the anchor one of the story's own subjects or items (an
+  attraction, a product, a stop the facts list)? Then classic, or another
+  anchor, unless the facts say it moves through the scenes.
 - feasibility: can every image keep the anchor the same? A brand character
   with a reference image can; a figure or an object must be one thing,
   described the same way every time; a panorama or a line is drawn once as a
@@ -111,12 +134,18 @@ typography card: one light, one horizon and one scale across the slides,
 each direction saying what its section shows and what touches its left and
 right edges; a line is the recurring element, entering each slide at the
 left edge and leaving at the right. When the ending returns, the last image
-takes the cover's framing again.`,
+takes the cover's framing again. The anchor replaces any other recurring
+element the focus's visualDirection names. Its state changes on every slide;
+mark it "focus" where it leads and "accent" where it accompanies: with a
+form, those marks have no limit in number or adjacency.`,
     "visual-judge": `## The narrative form
 The focus names a narrative form (focus.narrative). Within the focus
 criterion, score whether the anchor is in every image, described the same way
 every time, and each image shows its slide's step of the progression; for a
-panorama or a line, whether the slides read as one continuous scene.`,
+panorama or a line, whether the slides read as one continuous scene. Its
+presence on every slide is the form, never REPETITIVE or MOTIF_DEPENDENCY;
+judge whether its state and its scene change from slide to slide, and
+whether its placing suggests nothing the facts do not say.`,
   },
 };
 

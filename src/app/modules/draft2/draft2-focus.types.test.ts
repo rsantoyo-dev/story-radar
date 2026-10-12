@@ -252,7 +252,9 @@ test("the models read a narrative form only when it is not classic, so a classic
   const classic = decided({ narrative: CLASSIC_NARRATIVE }).values!;
   assert.equal("narrative" in focusForModels(classic), false);
   const told = focusForModels({ ...classic, narrative: { form: "traveling-object", anchorKind: "object", characterId: null, anchor: "The bag of « bonbons »", anchorFactIds: ["f1"], progression: "Trail to trail", ending: "returns" } });
-  assert.deepEqual(told.narrative, { form: "traveling-object", anchor: { kind: "object", what: "The bag of « bonbons »", factIds: ["f1"] }, progression: "Trail to trail", ending: "returns" });
+  assert.deepEqual(told.narrative, { form: "traveling-object", anchor: { kind: "object", what: "The bag of « bonbons »", factIds: ["f1"] }, progression: "Trail to trail", recurs: "the anchor is what recurs across the images; it replaces any other recurring element visualDirection names", ending: "returns" }, "with a visualDirection in the focus, the models are told the anchor replaces whatever else it names");
+  const bare = focusForModels({ ...classic, visualDirection: "", narrative: { form: "traveling-object", anchorKind: "object", characterId: null, anchor: "The torch", anchorFactIds: ["f1"], progression: "", ending: "resolves" }, structure: { kind: "list", itemFactIds: ["f1", "f2", "f3"] } });
+  assert.deepEqual(["recurs" in (bare.narrative ?? {}), bare.narrative?.progression], [false, "one item per slide, in the list's order: the anchor meets each in turn, in a new state each time"], "no visualDirection, no note; an empty progression is filled from the structure");
   const anonymous = focusForModels({ ...classic, narrative: { form: "character-guide", anchorKind: "figure", characterId: null, anchor: "A child seen from behind", anchorFactIds: [], progression: "", ending: "resolves" } });
   assert.match(String((anonymous.narrative?.anchor as { note?: string }).note), /not from the facts/);
 });

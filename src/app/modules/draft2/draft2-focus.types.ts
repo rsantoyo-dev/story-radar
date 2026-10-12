@@ -819,7 +819,7 @@ export function focusForModels(values: Draft2FocusValues) {
     voice: { gravity: voice.gravity, tone: toneLine(voice) },
     direction: values.direction,
     ...(focusConcept(values).arc !== "classic" ? { concept: conceptForModels(focusConcept(values)) } : {}),
-    ...(focusNarrative(values).form !== "classic" ? { narrative: narrativeForModels(focusNarrative(values)) } : {}),
+    ...(focusNarrative(values).form !== "classic" ? { narrative: narrativeForModels(focusNarrative(values), structure, Boolean(values.visualDirection)) } : {}),
     ...(values.visualDirection ? { visualDirection: values.visualDirection } : {}),
   };
 }
@@ -841,8 +841,16 @@ export function conceptForModels(concept: Draft2FocusConcept) {
   };
 }
 
-/** A narrative form as the models read it: the form, what stays and what changes, how it ends. */
-export function narrativeForModels(narrative: Draft2FocusNarrative) {
+/**
+ * A narrative form as the models read it: the form, what stays and what
+ * changes, how it ends. The progression is never missing: when the editor
+ * chose the form without one (their edit may leave it empty), the structure
+ * gives it, so the writers and the judges measure the same steps. When the
+ * focus also has a visualDirection, the models are told the anchor replaces
+ * any other recurring element it names (the direction was written before the
+ * form, or without it).
+ */
+export function narrativeForModels(narrative: Draft2FocusNarrative, structure?: Draft2FocusValues["structure"], withVisualDirection = false) {
   return {
     form: narrative.form,
     anchor: {
@@ -851,9 +859,18 @@ export function narrativeForModels(narrative: Draft2FocusNarrative) {
       ...(narrative.characterId ? { characterId: narrative.characterId } : {}),
       ...(narrative.anchorFactIds.length ? { factIds: narrative.anchorFactIds } : narrative.anchorKind === "character" ? {} : { note: "not from the facts: it stands for nothing the facts do not say" }),
     },
-    ...(narrative.progression ? { progression: narrative.progression } : {}),
+    progression: narrative.progression || defaultProgression(narrative, structure),
+    ...(withVisualDirection ? { recurs: "the anchor is what recurs across the images; it replaces any other recurring element visualDirection names" } : {}),
     ending: narrative.ending,
   };
+}
+
+/** What changes from slide to slide when the editor named none: a list's items or a procedure's steps, one per slide; otherwise one step of the anchor's way from the cover to the ending. */
+function defaultProgression(narrative: Draft2FocusNarrative, structure?: Draft2FocusValues["structure"]): string {
+  const anchor = narrative.anchorKind === "scene" ? "the scene" : narrative.anchorKind === "line" ? "the line" : "the anchor";
+  if (structure?.kind === "list") return `one item per slide, in the list's order: ${anchor} meets each in turn, in a new state each time`;
+  if (structure?.kind === "steps") return `one step per slide, in order: ${anchor} takes each step, in a new state each time`;
+  return `one step per slide, from ${anchor}'s first state on the cover to the ending; the writers order the steps so that each makes the next wanted`;
 }
 
 /** The judge's answer on a narrative form. */

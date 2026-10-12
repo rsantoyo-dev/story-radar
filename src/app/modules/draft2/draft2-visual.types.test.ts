@@ -245,3 +245,23 @@ test("a panorama or a line is one wide scene: adjacent shots may match, a typogr
   assert.deepEqual(relevant(findings(broken, { narrative: line })), ["ANCHOR_MISSING c1 s1", "SECTION_MISSING c1 s2"]);
   assert.deepEqual(relevant(findings(broken, { narrative: { ...line, form: "panorama", anchorKind: "scene", anchor: "An autumn trail" } })), ["SECTION_MISSING c1 s2"], "the scene is every slide by construction");
 });
+
+test("a direction in French that keeps the logo's corner free or rules a logo out does not ask for one", () => {
+  assert.equal(forbiddenElement("Titre bleu profond en gras. Logo en haut à gauche dégagé, bas dégagé pour le numéro de page."), undefined);
+  assert.equal(forbiddenElement("Bleu profond pour la hiérarchie typographique. Aucun logo ni interface lisible."), undefined);
+  assert.equal(forbiddenElement("Accent corail discret. Pas de visage, de logo ni de lieu identifiable."), undefined);
+  assert.equal(forbiddenElement("Touche d'ocre. Aucun document lisible, nom, visage ou logo."), undefined);
+  assert.equal(forbiddenElement("Zone crème pour le titre; espace réservé au logo en haut à droite."), undefined);
+  assert.equal(forbiddenElement("Sans texte ni logo; une enseigne lumineuse ordinaire au-dessus de la porte."), undefined, "a sign is a thing in the scene");
+  assert.equal(forbiddenElement("Au mur, une affiche avec le logo de la ville."), "logo", "a logo asked for is still a logo");
+  assert.equal(forbiddenElement("Une légende sous la photo et un filigrane discret."), undefined, "French nouns for captions and watermarks are not in the forbidden list; the judge reads them");
+});
+
+test("with a narrative form the anchor is on every slide by design: the recurring-element limits and the single return do not apply to it", () => {
+  const guide = { form: "character-guide" as const, anchorKind: "figure" as const, characterId: null, anchor: "A child seen from behind", anchorFactIds: [], progression: "Stop to stop", ending: "returns" as const };
+  const recurring = (roles: Draft2VisualSlide["recurring"][]) => script("c1", { slides: script("c1").slides.map((entry, index) => ({ ...entry, recurring: roles[index] ?? "none" })) });
+  const relevant = (codes: string[]) => codes.filter((code) => /^(RECURRING_DOMINANT|CALLBACK_MISPLACED|ANCHOR_MISSING)/.test(code));
+  assert.deepEqual(relevant(findings(recurring(["focus", "focus", "focus", "accent", "callback", "callback"]), { narrative: guide })), [], "led on every slide, two returns: the form, not a fault");
+  assert.deepEqual(relevant(findings(recurring(["focus", "focus", "focus", "accent", "callback", "callback"]))), ["RECURRING_DOMINANT c1 slide2", "RECURRING_DOMINANT c1 s1", "RECURRING_DOMINANT c1", "CALLBACK_MISPLACED c1"], "without a form the limits stand");
+  assert.deepEqual(relevant(findings(recurring(["focus", "none", "focus", "accent", "accent", "callback"]), { narrative: guide })), ["ANCHOR_MISSING c1 slide2"], "a slide without the anchor is still the one fault the form has");
+});

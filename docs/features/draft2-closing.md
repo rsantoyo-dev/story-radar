@@ -142,3 +142,17 @@ Opening has:
 - The Deck (the middle), and slide counts.
 - Images, and the publication caption (which carries what the closing
   leaves out).
+
+## 11. The one-slide headline names what the slide gives (2026-10-12)
+
+Closings skill v2. In the Brossard Halloween run the one-slide closing (a
+list's practical last slide: hours, departure, registration, costume, call to
+action) carried a headline about the giant puppets, one more attraction. It
+passed the Closing at 92 and then cost the visual script every round: the
+visual judge flagged the image for not showing a planning slide under a
+puppet headline, and no image can repair a headline at odds with its own
+slide. The skill now says it: the one-slide closing's headline names what
+the slide gives the reader (the plan, the result, the choice), never one
+more item or a fact the slides already told. The visuals skill (v5) treats
+the words as fixed inputs and reports such a flaw in the summary for the
+editor, not as OFF_BEAT against the script.

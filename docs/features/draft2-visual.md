@@ -257,3 +257,36 @@ A panorama or a line is one wide scene cut into the slides: adjacent slides
 may share a shot (no `SAME_SHOT`), a typography card breaks the scene
 (`SECTION_MISSING`), a line is the recurring element on every slide, and a
 panorama's scene needs no recurring mark (every slide is a section of it).
+
+## 10. Words and images in two voices (2026-10-12)
+
+A quality review of the first runs with narrative forms (visuals skill v5,
+narratives v3) changed three things the judge and the writer read, after
+every visual run of the day had ended between 79 and 86 after five rounds:
+
+- **One story in two voices.** The script no longer "tells the story again
+  in its own way": an image adds what the words cannot say (the scale of a
+  thing, its consequence, the moment just before or after, the detail that
+  proves it, the contrast between two things), so the reader learns something
+  from the image the words did not tell. "An image never just repeats its
+  slide's words" stays.
+- **One beat per image, and the turn.** A beat is the one action the headline
+  leads with; a second fact the words carry is not missing from the image
+  (the judge flagged OFF_BEAT twelve times a run for images that showed one
+  of a slide's two facts). One slide carries the story's turn: image-led,
+  words stepping back, something true the reader did not expect, named in the
+  concept; the progression criterion asks for it.
+- **The words are fixed inputs.** A headline at odds with its own slide (the
+  Brossard practical last slide titled after the puppets) is said in the
+  summary for the editor, never as OFF_BEAT against the script; the closings
+  skill (v2) now asks the one-slide closing's headline to name what the slide
+  gives.
+
+With a narrative form, the anchor is on every slide by design, so the
+program's limits on a recurring element (`RECURRING_DOMINANT`,
+`CALLBACK_MISPLACED`) do not apply, and the judge is told its presence is
+never `REPETITIVE` or `MOTIF_DEPENDENCY`; what must change is its state and
+its scene. The `FORBIDDEN_ELEMENT` check learned the French phrasings of a
+free logo corner ("logo en haut à gauche dégagé") and of a negation ("aucun
+logo ni interface", "pas de visage, de logo ni de lieu"): fourteen false
+findings in one St-Jean run had blocked every clean script.

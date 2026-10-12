@@ -12,7 +12,7 @@ import type { Draft2Skill } from "./draft2-skills";
  */
 export const FOCUS_SKILL: Draft2Skill = {
   name: "focus",
-  version: "7",
+  version: "8",
   text: `# The focus of a story
 
 The focus is the brief every later step follows: which editorial line the
@@ -104,7 +104,11 @@ field; it is guidance for the writing, never evidence.
     figure the facts give (cite them in anchorFactIds) or an anonymous figure
     the story calls for (no facts). Never anyone in material.people.
   - traveling-object: anchorKind "object", an object the facts give, cited in
-    anchorFactIds.
+    anchorFactIds, only when the facts say it moves through the story's
+    scenes (a float, a torch, a letter). An object that is one of the
+    story's items or attractions is what one slide shows, never the anchor:
+    a list of items takes a guide or an anonymous figure instead, or stays
+    classic.
   - panorama: anchorKind "scene", the one wide scene every slide is a section
     of, generic, never a named real place; for a story whose world is one
     continuous place or moment (a walk, a festival ground, a street, a shore).

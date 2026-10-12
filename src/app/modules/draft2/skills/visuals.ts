@@ -6,11 +6,15 @@ import type { Draft2Skill } from "./draft2-skills";
  * one text; its numbers mirror the constants in draft2-visual.types.ts (a
  * test keeps them together). It carries v1's rules on real people, real
  * places and the brand's characters, and the publications' taste: close to
- * the reader, never glossy or obviously AI.
+ * the reader, never glossy or obviously AI. Version 5: the image adds what
+ * the words cannot say (one story in two voices), one beat per image, one
+ * slide carries the story's turn, the words are fixed inputs the script
+ * serves, and a narrative form's anchor is exempt from the recurring-element
+ * limits.
  */
 export const VISUALS_SKILL: Draft2Skill = {
   name: "visuals",
-  version: "4",
+  version: "5",
   text: `# Visual scripts for social carousels
 
 A visual script is the sequence of images a carousel is made of, written as
@@ -18,9 +22,14 @@ one story: a sequence, not a series. A series shows variations of one thing
 (nine views of a door); a sequence takes the reader somewhere: it can open
 on a door, then show the people, the mechanism, the institution at work and
 the consequence, and come back to the door at the end with a new meaning.
-The words already tell the story; the images tell it again in their own
-way, so a reader who saw only the images would still feel the beginning,
-the turn and the end. An image never just repeats its slide's words.
+The words and the images tell one story in two voices. An image never
+illuminates the words by showing them again: it adds what they cannot say,
+the scale of a thing, its consequence, the moment just before or after, the
+detail that proves it, the contrast between two things, so the reader learns
+something from the image the words did not tell and reads the words
+differently after it. An image never just repeats its slide's words. A
+reader who saw only the images would still feel the beginning, the turn and
+the end.
 
 ## Continuity and progression
 - Visual continuity must not replace visual progression.
@@ -36,6 +45,16 @@ the turn and the end. An image never just repeats its slide's words.
   on, and return at the end when its transformation carries new meaning.
 - A new camera, crop, scale or position of the same subject is not
   progression.
+- With a narrative form (focus.narrative), the anchor is on every slide by
+  design: the limits on a recurring element do not apply to it (the
+  narratives skill says what must change instead).
+
+## The turn
+- One slide carries the story's turn: the arc's peak, the reveal, the
+  surprise the facts hold. Its image leads and its words step back: it shows
+  something true the reader did not expect (a scale, a before beside an
+  after, the detail that changes the meaning), in the brand's medium, never
+  invented and never louder than the facts. The concept names that slide.
 
 ## The whole
 - The script follows the focus's visualDirection when it has one: the world
@@ -56,7 +75,8 @@ the turn and the end. An image never just repeats its slide's words.
 
 ## Each slide
 - beat: what happens in this image, as an action in the present tense (who
-  does what); never the slide's words again.
+  does what): one action, the one the headline leads with, never every fact
+  the slide's words carry and never the words again.
 - subject: the image's dominant subject, in a few words: who or what it is
   about. Never the previous slide's.
 - discovery: what the reader sees here for the first time, tied to the beat.
@@ -145,11 +165,11 @@ the turn and the end. An image never just repeats its slide's words.
 - narrative: do the images tell one story from the cover to the last slide,
   with a turn and an end that lands (a deliberate return allowed)?
 - progression: does each image bring a visual discovery the earlier ones
-  did not show? A new camera, crop, scale or position of the same subject
-  scores low.
-- beat: does each image show its own slide's content (its beat and
-  headline), concretely, rather than a stand-in or a metaphor where the
-  facts give something to show?
+  did not show, and does one image carry the story's turn? A new camera,
+  crop, scale or position of the same subject scores low.
+- beat: does each image show its own slide's beat, concretely, rather than
+  a stand-in or a metaphor where the facts give something to show? One beat
+  per image: a second fact the words carry is not missing from the image.
 - continuity: do all the images belong to one identity (medium, palette,
   light, typography, treatment), even where no recurring element appears?
 - brand: does every direction follow the identity, its palette, its
@@ -162,6 +182,12 @@ the turn and the end. An image never just repeats its slide's words.
   the page number?
 - focus: does it follow the focus: its gravity, voice, audience and goal?
 A visual script is accepted only when overall ≥ 95 and no criterion is below 85.
+
+## Words and images
+The slide's words are fixed inputs: the script serves them and cannot change
+them. Score the image's service to the words; a flaw in the words themselves
+(a headline at odds with its own content) is said in the summary for the
+editor, never as an OFF_BEAT issue against the script.
 
 ## Revisions
 After the first round, the best scripts are revised, and the judge's own

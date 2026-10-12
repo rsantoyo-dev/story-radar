@@ -7,10 +7,12 @@ import type { Draft2Skill } from "./draft2-skills";
  * together); a change to the text is a new version. The call-to-action
  * rules carry over what v1 learned: one action, the goal decides it, the
  * publication's style words it, and a grave story may end without one.
+ * Version 2: a one-slide closing's headline names what the slide gives,
+ * because the image step cannot repair a headline at odds with its slide.
  */
 export const CLOSINGS_SKILL: Draft2Skill = {
   name: "closings",
-  version: "1",
+  version: "2",
   text: `# Closings for social carousels
 
 A closing is how the story ends. The opening made a promise (the cover) and
@@ -30,7 +32,10 @@ opening it ends: a closing that could end any story is weak.
   each item as its time and a short name, in time order); otherwise one
   concrete takeaway that helps the reader choose. For steps, the result the
   reader gets. Then the call to action. The last item or step belongs to the
-  slides before; never repeat it here.
+  slides before; never repeat it here. Its headline names what the slide
+  gives the reader (the plan, the result, the choice), never one more item
+  or a fact the slides already told: the image of this slide follows its
+  headline, and no image can repair a headline at odds with its own slide.
 
 ## Penultimate slide
 - Headline at most 8 words; body at most 30 words.

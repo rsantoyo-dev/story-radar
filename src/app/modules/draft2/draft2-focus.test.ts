@@ -154,7 +154,7 @@ test("Claude decides the focus from the cached facts, the brand brief, the profi
   assert.equal(json(focus.decidedBy), json({ provider: "anthropic", model: "claude-sonnet-5-5" }));
   const last = session.trace[session.trace.length - 1];
   assert.equal(session.trace.length, 2, "the facts trace is kept");
-  assert.equal(json([last.step, last.provider, last.operation, last.outcome, last.skillVersions, last.cacheWriteTokens]), json(["focus", "anthropic", "draft2_focus", "ok", { focus: "7", discovery: "1", arcs: "1", narratives: "2" }, 900]));
+  assert.equal(json([last.step, last.provider, last.operation, last.outcome, last.skillVersions, last.cacheWriteTokens]), json(["focus", "anthropic", "draft2_focus", "ok", { focus: "8", discovery: "1", arcs: "1", narratives: "3" }, 900]));
   assert.equal(json([focus.values?.narrative, focus.inventoryVersion, h.reviewCalls.length]), json([focusTypes.CLASSIC_NARRATIVE, 2, 0]), "a classic story is not reviewed");
 });
 
@@ -254,9 +254,9 @@ test("a guide Claude chose goes to the judge, which keeps it; the call is on the
   const [review] = h.reviewCalls;
   assert.equal(json([review.model, review.schemaName, review.reasoningEffort]), json(["gpt-6-luna", "draft2_focus_narrative_review", "low"]));
   assert.match(String(review.instructions), /# Verified facts\n/);
-  assert.equal(json((review.contents as { focus: { narrative: unknown } }).focus.narrative), json(focusTypes.narrativeForModels(GUIDE as never)));
+  assert.equal(json((review.contents as { focus: { narrative: unknown } }).focus.narrative), json(focusTypes.focusForModels(focus.values!).narrative), "the judge reads the form as every writer will: with the structure's progression and the precedence over visualDirection");
   const last = h.row().trace[h.row().trace.length - 1];
-  assert.equal(json([last.provider, last.model, last.operation, last.outcome, last.skillVersions]), json(["openai", "gpt-6-luna", "draft2_focus_narrative_review", "ok", { narratives: "2" }]));
+  assert.equal(json([last.provider, last.model, last.operation, last.outcome, last.skillVersions]), json(["openai", "gpt-6-luna", "draft2_focus_narrative_review", "ok", { narratives: "3" }]));
 });
 
 test("the judge sends a form back to classic: Claude's proposal stays beside it for the editor", async () => {

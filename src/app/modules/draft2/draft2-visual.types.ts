@@ -329,11 +329,11 @@ export function parseVisualEvaluation(answer: string, candidateIds: readonly str
 const WORD_START = "(?<![\\p{L}\\p{N}_])";
 const WORD_END = "(?![\\p{L}\\p{N}_])";
 const FORBIDDEN = new RegExp(`${WORD_START}(logos?|watermarks?|captions?|subtitles?|hashtags?|swipe|page numbers?|signage|(?:text|words|letters|lettering) (?:that )?(?:reads?|says?|saying))${WORD_END}`, "iu");
-/** A direction that keeps a corner for the logo added afterwards ("esquina libre para logo", "logo abajo a la derecha, libre"), or rules an element out ("no logos", "sin texto"), does not ask for it (in the publications' languages). */
+/** A direction that keeps a corner for the logo added afterwards ("esquina libre para logo", "logo abajo a la derecha, libre", "logo en haut à gauche dégagé"), or rules an element out ("no logos", "sin texto", "aucun logo ni interface", "pas de visage, de logo ni de lieu"), does not ask for it (in the publications' languages). */
 const ALLOWED = new RegExp([
-  `${WORD_START}(?:espacio|zona|área|hueco|esquina|margen|rincón|room|space|zone|area|corner|margin)${WORD_END}[^.;]{0,60}?${WORD_START}logos?${WORD_END}`,
-  `${WORD_START}logos?${WORD_END}[^.;]{0,60}?${WORD_START}(?:se añade|añadid[oa]|added|afterwards|después|luego|libre|libres|free|clear|empty|vacío|vacía|reservad[oa]s?)${WORD_END}`,
-  `${WORD_START}(?:sin|no|without|never|nunca|ningún|ninguna)${WORD_END}[^.;]{0,20}?${WORD_START}(?:logos?|watermarks?|captions?|subtitles?|hashtags?|signage|page numbers?|text|words|letters|lettering)${WORD_END}`,
+  `${WORD_START}(?:espacio|zona|área|hueco|esquina|margen|rincón|room|space|zone|area|corner|margin|espace|coin|marge|emplacement|réserve)${WORD_END}[^.;]{0,60}?${WORD_START}logos?${WORD_END}`,
+  `${WORD_START}logos?${WORD_END}[^.;]{0,60}?${WORD_START}(?:se añade|añadid[oa]|added|afterwards|después|luego|libre|libres|free|clear|empty|vacío|vacía|reservad[oa]s?|dégagée?s?|libérée?s?|réservée?s?|ajoutée?s?|ensuite|plus tard|hors cadre|hors image)${WORD_END}`,
+  `${WORD_START}(?:sin|no|without|never|nunca|ningún|ninguna|sans|aucune?|pas d[e']|jamais|ni)${WORD_END}[^.;]{0,60}?${WORD_START}(?:logos?|watermarks?|captions?|subtitles?|hashtags?|signage|page numbers?|text|words|letters|lettering|texte|légendes?|filigranes?)${WORD_END}`,
 ].join("|"), "giu");
 /** The forbidden element a direction asks for, if any: words, logos, signs or interface the image would have to carry. */
 export function forbiddenElement(direction: string): string | undefined {
@@ -407,6 +407,8 @@ export function mechanicalVisualIssues(candidates: readonly Draft2VisualCandidat
     const partOf = (position: string) => positions.includes(position) ? position : undefined;
     // A panorama or a line is one wide scene cut into the slides: every section shares its scale, so adjacent shots may match.
     const master = Boolean(narrative && narrativeUsesMaster(narrative));
+    // A narrative form's anchor is on every slide by design: the limits on a recurring element do not apply to it (narratives skill).
+    const anchored = Boolean(narrative && narrative.form !== "classic");
     candidate.slides.forEach((slide, index) => {
       const previous = candidate.slides[index - 1];
       if (!previous) return;
@@ -414,10 +416,10 @@ export function mechanicalVisualIssues(candidates: readonly Draft2VisualCandidat
       if (slide.subject && previous.subject && sameSubject(slide.subject, previous.subject)) {
         add("SAME_SUBJECT", partOf(slide.slide), `${labelOf(slide.slide)} is about the same subject as ${labelOf(previous.slide)} ("${slide.subject}"); show something the carousel has not shown yet.`);
       }
-      if (slide.recurring === "focus" && previous.recurring === "focus") add("RECURRING_DOMINANT", partOf(slide.slide), `The recurring element leads ${labelOf(previous.slide)} and ${labelOf(slide.slide)} in a row; let one of them show something else.`);
+      if (!anchored && slide.recurring === "focus" && previous.recurring === "focus") add("RECURRING_DOMINANT", partOf(slide.slide), `The recurring element leads ${labelOf(previous.slide)} and ${labelOf(slide.slide)} in a row; let one of them show something else.`);
     });
     const focused = candidate.slides.filter((slide) => slide.recurring === "focus").length;
-    if (focused > VISUAL_MAX_RECURRING_FOCUS) add("RECURRING_DOMINANT", undefined, `The recurring element leads ${focused} slides; it leads at most ${VISUAL_MAX_RECURRING_FOCUS}, and may return once at the end.`);
+    if (!anchored && focused > VISUAL_MAX_RECURRING_FOCUS) add("RECURRING_DOMINANT", undefined, `The recurring element leads ${focused} slides; it leads at most ${VISUAL_MAX_RECURRING_FOCUS}, and may return once at the end.`);
     // A narrative form's anchor is in every generated image: a brand character by its id, a figure or an object as the recurring element.
     // A verified photo or map, or a typography card, carries the story without it.
     // In a panorama or a line, every slide is a section of the one scene: a typography card breaks it. The scene itself needs no recurring mark.
@@ -435,7 +437,7 @@ export function mechanicalVisualIssues(candidates: readonly Draft2VisualCandidat
     }
     const callbacks = candidate.slides.filter((slide) => slide.recurring === "callback");
     const closing = positions.slice(-2);
-    if (callbacks.length > 1 || callbacks.some((slide) => !closing.includes(slide.slide))) add("CALLBACK_MISPLACED", undefined, "The recurring element returns once, on one of the last two slides, to give the end a new meaning.");
+    if (!anchored && (callbacks.length > 1 || callbacks.some((slide) => !closing.includes(slide.slide)))) add("CALLBACK_MISPLACED", undefined, "The recurring element returns once, on one of the last two slides, to give the end a new meaning.");
     for (const slide of candidate.slides) {
       const part = positions.includes(slide.slide) ? slide.slide : undefined;
       const label = carousel.find((entry) => entry.slide === slide.slide)?.label ?? slide.slide;

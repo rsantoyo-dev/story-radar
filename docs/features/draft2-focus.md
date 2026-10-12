@@ -384,3 +384,29 @@ skill v7. Next candidates: Before → After (with the Same place forms),
 Reverse Reveal, Investigation and Multiple Perspectives, which need finer
 rules (a perception never stated as a false fact, clues that are verified
 material, every voice attributed).
+
+## 15. The anchor is a carrier (2026-10-12)
+
+The first traveling-object run (Brossard's Halloween walk, a list of five
+attractions with "une marionnette géante illuminée" as the object) showed
+the rule the form needed: an anchor taken from the story's own items stands
+beside things the facts never place it with (the judge's CONTRADICTS_FACTS
+in round 5 was right), and the writer oscillates between leaving it out
+(ANCHOR_MISSING) and inventing its presence. Focus skill v8 and narratives v3
+now say: the anchor is a carrier, never one of the story's own subjects or
+items; a real object travels only when the facts say it moves through the
+scenes (a float, a torch, a letter); a list of items takes a guide or an
+anonymous figure, or stays classic. The narrative judge checks it ("carrier").
+
+Two presentation fixes in `narrativeForModels`: the progression is never
+missing (the editor's edit may leave it empty; the structure then gives it:
+a list's items or a procedure's steps one per slide, else one step of the
+anchor's way from the cover to the ending), and when the focus also has a
+`visualDirection`, the models are told the anchor replaces any other
+recurring element it names (that run's direction, written before the editor
+chose the form, made the park trail recur instead of the puppet).
+
+Still open, for the editor's decision: a spine in the Focus that pairs each
+beat's words with its image's job and names the slide of the turn, so the
+Deck and the Visual follow one plan instead of the Visual following the
+Deck's words (`draft2-handoff.md` §10).

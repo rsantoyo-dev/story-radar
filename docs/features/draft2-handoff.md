@@ -320,3 +320,58 @@ statuses, scores and costs; never credentials. Pipe through
 | session 245e2e01 | canada en breve | first autopilot run, $1.66 |
 | session 53fbc807 | Hello Austin | ACL / Great Lawn, Opening 97 |
 | session cca409a2 | — | the r7 first run: an Opening accepted in round 1 (96) |
+
+## 10. Quality review of the narrative forms (2026-10-12)
+
+The editor asked for a second look at quality after the narrative forms,
+arcs and discovery landed: writing and image must go hand in hand, the
+structures must be visual, images must tell the story as much as the words,
+and Luna "has been scoring low, maybe the reviewer lacks context".
+
+**What the day's runs showed** (`inspect-today`, `inspect-step-issues`):
+every visual run ended between 79 and 86 after five rounds (two extra by
+the floor rule), whatever the form; openings and closings mostly passed 90.
+The low visual scores had four causes, only one of them "context":
+
+1. **Contradictory contracts.** The narratives skill put the anchor on every
+   slide while the visuals skill and the program limited a recurring element
+   to two slides, never adjacent, one return (`RECURRING_DOMINANT`,
+   `CALLBACK_MISPLACED`, judge `MOTIF_DEPENDENCY`): the writer oscillated
+   between `ANCHOR_MISSING` and those. Fixed: with a form, the anchor is
+   exempt; what must change is its state and its scene.
+2. **A bad anchor the rules allowed.** The editor picked one of the list's
+   own attractions (the giant puppet) as the traveling object; placing it in
+   every scene asserted co-location the facts never gave (Luna's
+   `CONTRADICTS_FACTS` was right). Fixed in the rules: the anchor is a
+   carrier, never one of the story's own items; a real object travels only
+   when the facts say it moves. The editor's own choice is still not
+   reviewed (Opus's decision); the rule now lives where Claude proposes.
+3. **Missing context, for real.** The editor's form edit left `progression`
+   empty, so writers and judges had no steps to measure; and the
+   `visualDirection`, written before the form, made the park trail recur
+   instead of the puppet. Fixed in `narrativeForModels`: a default
+   progression from the structure, and a precedence note over
+   visualDirection.
+4. **Judge calibration and false positives.** Luna read "beat" as "show
+   every fact the slide's words carry" (OFF_BEAT ×12 a run) and penalized
+   the image for a headline at odds with its own slide (a Closing flaw).
+   Fixed in the visuals skill (one beat per image; the words are fixed
+   inputs) and the closings skill (the one-slide headline names what the
+   slide gives). `FORBIDDEN_ELEMENT` fired fourteen times in one run on
+   French phrasings ("logo … dégagé", "aucun logo ni interface"): fixed.
+
+**The creative principle now in the rubric:** one story in two voices. The
+image adds what the words cannot say (scale, consequence, the moment before
+or after, the proving detail, a contrast), one slide carries the turn
+(image-led, words stepping back, something true the reader did not expect),
+and the progression criterion asks for it.
+
+**Proposed, not built (the editor decides):** a *spine* decided in the Focus,
+one entry per beat with the words' job, the image's job, what is withheld
+for the next slide, the anchor's state, and which slide is the turn. Deck
+and Visual would follow the same spine (today the Visual follows the Deck's
+words), and both judges would score adherence to it. It is the structural
+way to get writing and image "always hand in hand" and a planned wow moment
+grounded in a fact, rather than hoping the Visual finds one. Contract change
+in `draft2-focus.types.ts` (beats become objects), skills focus/decks/visuals,
+canvas editing of the spine (UI).
