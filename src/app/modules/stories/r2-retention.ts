@@ -14,6 +14,9 @@
  * | `permanent` | until deleted by app | Delivery JPEGs of published packages         |
  */
 export const R2_RETENTION_CLASSES = ["7d", "180d", "permanent"] as const;
+
+/** A Draft 2 image file name: letters, digits, _ and -, then one extension; the dot is the extension's only one ("cover-v2.png", "master-scene-prompt.txt"). */
+export const DRAFT2_IMAGE_FILE_PATTERN = /^[a-zA-Z0-9_-]{1,64}\.(png|txt)$/;
 export type R2RetentionClass = (typeof R2_RETENTION_CLASSES)[number];
 
 /** `<prefix>/retention/<class>/`, the literal prefix a lifecycle rule filters on. */

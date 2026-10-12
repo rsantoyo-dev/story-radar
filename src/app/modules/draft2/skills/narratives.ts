@@ -11,11 +11,13 @@ import type { Draft2Skill } from "./draft2-skills";
  * the anchor a carrier (never one of the story's own subjects or items; a
  * real object travels only when the facts say it moves) and lifts the visual
  * script's recurring-element limits for it: on every slide by design, what
- * must change is its state and its scene.
+ * must change is its state and its scene. Version 4: a scene or a line binds
+ * the images, not the words (the words follow the sections' order), and needs
+ * an identity that can hold one continuous photographic scene.
  */
 export const NARRATIVES_SKILL: Draft2Skill = {
   name: "narratives",
-  version: "3",
+  version: "4",
   text: `# Narrative forms
 
 A carousel is read one swipe at a time. A narrative form gives every swipe a
@@ -88,7 +90,12 @@ place; otherwise the story is told classic. Judge:
 - feasibility: can every image keep the anchor the same? A brand character
   with a reference image can; a figure or an object must be one thing,
   described the same way every time; a panorama or a line is drawn once as a
-  wide scene and cut into the slides.
+  wide scene and cut into the slides, so it also needs an identity that can
+  hold one continuous photographic scene: an identity built on cut-outs over
+  flat colour planes, or on a different layout per slide, cannot, and sends
+  the form back to classic. And the story's steps must be places along the
+  scene or the line; steps that are not places (a roster, a result, a plan)
+  would have to be encoded in objects, which is abstraction, not a panorama.
 Return "keep" or "classic" with a reason of at most 300 characters that names
 what decides it.`,
     "opening-writer": `## The narrative form
@@ -97,32 +104,47 @@ anchor in its first state and makes the reader want to follow it: the guide
 about to set out, the object at its start, the panorama's left end where the
 eye enters, the line's beginning with a promise of where it leads. Slide 2
 takes the first step of the progression and pays the cover's first promise.
-Call the anchor only what the focus calls it.`,
+Call the anchor only what the focus calls it. For a panorama or a line (an
+anchor of kind scene or line), the words only name where the story enters
+the scene and what its first section reaches; the scene itself is the
+images' work, and the words never describe it.`,
     "opening-judge": `## The narrative form
 The focus names a narrative form (focus.narrative). Within the focus
 criterion, score whether the cover introduces the anchor and slide 2 takes the
 first step of its progression; an opening that ignores the form misses its
-brief, however strong its hook.`,
+brief, however strong its hook. For a scene or a line, score only that the
+words follow the sections' order, never whether they describe the scene: the
+images carry it.`,
     "closing-writer": `## The narrative form
 The focus names a narrative form (focus.narrative). The penultimate slide is
 the progression's last step, with the anchor in it. The last slide resolves
 the story with the anchor present (the panorama's right end, where the line
 arrives), or, when the ending returns, comes back to the cover's frame and
-lets the reader see it again with what they now know.`,
+lets the reader see it again with what they now know. For a scene or a line,
+the words only name what the last section reaches; they never describe the
+scene.`,
     "closing-judge": `## The narrative form
 The focus names a narrative form (focus.narrative). Within the focus
 criterion, score whether the ending completes the progression with the anchor
-present and, when the ending returns, echoes the cover.`,
+present and, when the ending returns, echoes the cover. For a scene or a
+line, "present" means the words reach the scene's end in order, not that
+they describe the scene: the images carry it.`,
     "deck-writer": `## The narrative form
 The focus names a narrative form (focus.narrative). Each slide of the deck is
 one step of the progression with the anchor in it: a new place or moment for
 the guide, a new scene for the object, the next section of the panorama, the
 next thing the line reaches, in order, each slide making the next wanted. A
-list's items or a procedure's steps are the progression's steps.`,
+list's items or a procedure's steps are the progression's steps. For a
+panorama or a line, each slide's words say what its section reaches or
+shows, in order; the scene itself is the images' work, and the words never
+describe it.`,
     "deck-judge": `## The narrative form
 The focus names a narrative form (focus.narrative). Within the focus
 criterion, score whether every slide advances the progression with the anchor
-present, in an order that builds curiosity.`,
+present, in an order that builds curiosity. For a scene or a line, "present"
+means the words follow the sections' order, not that they describe the scene:
+the images carry it, and a deck is never OFF_FOCUS for leaving the scene to
+them.`,
     "visual-writer": `## The narrative form
 The focus names a narrative form (focus.narrative). The anchor is in every
 slide's image, described with the same words every time in the cast, and

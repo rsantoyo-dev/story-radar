@@ -410,3 +410,18 @@ Still open, for the editor's decision: a spine in the Focus that pairs each
 beat's words with its image's job and names the slide of the turn, so the
 Deck and the Visual follow one plan instead of the Visual following the
 Deck's words (`draft2-handoff.md` §10).
+
+### Scene forms and the words (2026-10-12, later)
+
+Saint-Jean's golf story ran with `panorama` chosen by the editor. The Deck
+lost four rounds to OFF_FOCUS because the narratives skill asked the words to
+"manifest the continuous panorama", a visual requirement; and the visual
+script could not satisfy the form against an identity built on photo
+cut-outs over flat colour planes with a different layout per slide (the
+judge, rightly: "the same 60% photo strip and cream field recur on every
+slide"). Narratives v4 and focus v9: for a panorama or a line the words only
+follow the sections' order, the scene is the images' work; and those two
+forms need an identity that can hold one continuous photographic scene,
+else classic or a guide. The editor's own form choice is still unreviewed
+(Opus's decision); a non-blocking advisory review is proposed in
+`draft2-handoff.md` §10.

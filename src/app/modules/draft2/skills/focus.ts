@@ -12,7 +12,7 @@ import type { Draft2Skill } from "./draft2-skills";
  */
 export const FOCUS_SKILL: Draft2Skill = {
   name: "focus",
-  version: "8",
+  version: "9",
   text: `# The focus of a story
 
 The focus is the brief every later step follows: which editorial line the
@@ -115,6 +115,12 @@ field; it is guidance for the writing, never evidence.
   - follow-the-line: anchorKind "line", a line with a real meaning the facts
     give (a trail, a route, a street, a river; cite them in anchorFactIds)
     that runs from the cover to the last slide and leads the reader along it.
+  - A panorama or a line only when the publication's visual identity (given
+    below) can hold one continuous photographic scene across the slides, and
+    when the story's steps are places along it. An identity built on
+    cut-outs over flat colour planes, or on a different layout per slide,
+    cannot; steps that are not places (a roster, a result, a plan) would be
+    encoded in objects, which is abstraction. Then classic or a guide.
   - anchor: what stays, in at most 200 characters, said the way it will
     appear on every slide. progression: what changes from slide to slide
     while the anchor stays, in one line of at most 300 characters; for a list

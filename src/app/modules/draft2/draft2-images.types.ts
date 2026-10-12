@@ -128,7 +128,7 @@ export type Draft2AnchorPlate = {
   error?: string;
 };
 export const ANCHOR_PLATE_FILE = "anchor-plate.png";
-export const ANCHOR_PLATE_PROMPT_FILE = "anchor-plate.prompt.txt";
+export const ANCHOR_PLATE_PROMPT_FILE = "anchor-plate-prompt.txt";
 
 /** One slide's section of the master scene, in the master's pixels. */
 export type Draft2MasterSection = { slide: string; left: number; top: number; width: number; height: number };
@@ -140,7 +140,7 @@ export type Draft2MasterSection = { slide: string; left: number; top: number; wi
  */
 export type Draft2MasterPlate = Draft2AnchorPlate & { width: number; height: number; sections: Draft2MasterSection[] };
 export const MASTER_PLATE_FILE = "master-scene.png";
-export const MASTER_PLATE_PROMPT_FILE = "master-scene.prompt.txt";
+export const MASTER_PLATE_PROMPT_FILE = "master-scene-prompt.txt";
 /** The master's height, and its widest width: under GPT Image's 3:1 ceiling, in multiples of 16. */
 const MASTER_HEIGHT = 1344;
 const MASTER_MAX_WIDTH = 3840;

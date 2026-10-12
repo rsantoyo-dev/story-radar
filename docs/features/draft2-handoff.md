@@ -375,3 +375,29 @@ way to get writing and image "always hand in hand" and a planned wow moment
 grounded in a fact, rather than hoping the Visual finds one. Contract change
 in `draft2-focus.types.ts` (beats become objects), skills focus/decks/visuals,
 canvas editing of the spine (UI).
+
+### Addendum, 2026-10-12 evening: the first run under the new rules
+
+Saint-Jean, story 3e90af2f (session 588b1d19), `panorama` chosen by the
+editor, visuals v5 / narratives v3 confirmed on the trace: the visual still
+ended at 75 after five rounds and 6 of 8 images were flagged. Three causes:
+
+1. **The master scene never existed.** `masterPlate.status = failed`, "The
+   Draft 2 image file name is invalid": the prompt file names of both plates
+   carried a second dot. Fixed (`draft2-images.md` §11). The same failure hid
+   Brossard's anchor plate. No narrative form had ever reached the images.
+2. **Panorama against this brand and this story.** Saint-Jean's identity is
+   cut-outs over flat planes with layout variation per slide; a panorama is
+   one continuous photo strip. And the story's beats (ambition, roster,
+   tournament, selection, development) are not places along a course, so the
+   writer encoded them in tees, balls and bags (TOO_ABSTRACT). Rules added
+   (focus v9, narratives v4); the editor's own choice is still not reviewed,
+   an advisory review is the open proposal.
+3. **A visual form judged on the words.** The Deck lost four rounds to
+   OFF_FOCUS "the deck does not manifest the continuous panorama". Narratives
+   v4: for a scene or a line the words follow the sections' order only.
+
+Also seen: the new "turn" rule works (the judge asks for the designated turn
+to be legible), Luna judged the words' flaws in the summary as asked, and a
+revision round of four 8-slide scripts cost $0.25 at high effort (146 s): the
+visual step's revision rounds are now the most expensive calls of a story.

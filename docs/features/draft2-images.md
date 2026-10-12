@@ -263,3 +263,17 @@ Sol checks a line as an anchor (`anchorShown`); a panorama's scene is every
 slide by construction. The edges continue the scene but are not matched to
 the pixel: a blend across the seams is a later step, to try once the master
 holds on real stories.
+
+## 11. The plates never ran until 2026-10-12 evening
+
+Both plates recorded so far, Brossard's anchor plate (traveling object) and
+Saint-Jean's master scene (panorama), ended `failed` with "The Draft 2 image
+file name is invalid" before fal.ai was called: their prompt files were named
+`anchor-plate.prompt.txt` and `master-scene.prompt.txt`, and the R2 key rule
+admits one dot only, the extension's. The tests mock R2, so the rule never
+ran there. The names are now `anchor-plate-prompt.txt` and
+`master-scene-prompt.txt`, the rule lives in one exported pattern
+(`DRAFT2_IMAGE_FILE_PATTERN`, `r2-retention.ts`) that the writer and a test
+share, and the test checks every Draft 2 file name against it. Until this
+fix, every narrative form fell back to slide-by-slide generation without
+its anchor or its scene, which is part of why those runs scored low.

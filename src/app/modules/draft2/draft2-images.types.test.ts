@@ -186,3 +186,11 @@ test("the download holds each slide's shown image in slide order, and names one 
   assert.equal(json(draft2ImageDownloads(run, { ...approved, imagesRunId: "run-0" }).map((entry) => entry.approved)), json([false, false, false]), "an approval of an earlier run approves none of these");
   assert.equal(draft2ImageDownloads({ runId: "run-1", slides: [unfinished] }).length, 0);
 });
+
+test("every Draft 2 image file name passes the storage rule, the plates' prompts included: one dot, the extension's", async () => {
+  const { DRAFT2_IMAGE_FILE_PATTERN } = await import("../stories/r2-retention");
+  const { ANCHOR_PLATE_FILE, ANCHOR_PLATE_PROMPT_FILE, MASTER_PLATE_FILE, MASTER_PLATE_PROMPT_FILE, imageFile, imageBaseFile, imagePromptFile, mapFile } = await import("./draft2-images.types");
+  const names = [ANCHOR_PLATE_FILE, ANCHOR_PLATE_PROMPT_FILE, MASTER_PLATE_FILE, MASTER_PLATE_PROMPT_FILE, imageFile("penultimate", 12), imageBaseFile("slide2", 3), imagePromptFile("cover", 1), mapFile("s4")];
+  for (const name of names) assert.match(name, DRAFT2_IMAGE_FILE_PATTERN, name);
+  assert.doesNotMatch("master-scene.prompt.txt", DRAFT2_IMAGE_FILE_PATTERN, "the first plates failed on this name before fal was called (2026-10-12)");
+});
