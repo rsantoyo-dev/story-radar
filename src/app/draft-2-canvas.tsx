@@ -20,7 +20,7 @@ import { CLOSING_GATE, CLOSING_MAX_ROUNDS, type Draft2Closing, type Draft2Closin
 import { DECK_GATE, DECK_MAX_ROUNDS, type Draft2Deck, type Draft2DeckCandidate, type Draft2DeckCriterion } from "@/app/modules/draft2/draft2-deck.types";
 import { INVENTORY_CHARACTER_CHOICES, type Draft2CharacterChoice, type Draft2Inventory, type Draft2InventoryEntity, type Draft2InventoryStoryPhoto } from "@/app/modules/draft2/draft2-inventory.types";
 import { VISUAL_GATE, VISUAL_MAX_ROUNDS, visualPlan, type Draft2Visual, type Draft2VisualCandidate, type Draft2VisualCriterion, type Draft2VisualRecurring, type Draft2VisualShot } from "@/app/modules/draft2/draft2-visual.types";
-import { IMAGES_MAX_REQUESTS, latestAttempt, shownAttempt, slideSettled, type Draft2ImageAttempt, type Draft2ImageReview, type Draft2Images, type Draft2SlideImage } from "@/app/modules/draft2/draft2-images.types";
+import { IMAGES_MAX_REQUESTS, draft2ImageDownloads, latestAttempt, shownAttempt, slideSettled, type Draft2ImageAttempt, type Draft2ImageReview, type Draft2Images, type Draft2SlideImage } from "@/app/modules/draft2/draft2-images.types";
 import { CAPTION_GATE, CAPTION_MAX_CHARACTERS, CAPTION_MAX_ROUNDS, captionPostText, type Draft2Caption, type Draft2CaptionCandidate, type Draft2CaptionCriterion } from "@/app/modules/draft2/draft2-caption.types";
 import { confirmedMentions, mentionEntities, sameMentions, type Draft2MentionAccount, type Draft2MentionStatus, type Draft2Mentions } from "@/app/modules/draft2/draft2-mentions.types";
 import { publicationCurrent, publicationTarget, targetPostText, type Draft2Publication, type Draft2PublicationTarget } from "@/app/modules/draft2/draft2-publication.types";
@@ -308,6 +308,8 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const [inventoryError, setInventoryError] = useState<string>();
   const [savingImage, setSavingImage] = useState<string>();
   const [imageError, setImageError] = useState<string>();
+  const [downloadingImages, setDownloadingImages] = useState(false);
+  const [imagesDownload, setImagesDownload] = useState<{ tone: "success" | "error"; text: string }>();
   const [savingMention, setSavingMention] = useState<string>();
   const [mentionError, setMentionError] = useState<string>();
   const [acknowledged, setAcknowledged] = useState(false);
@@ -537,6 +539,31 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
     }
   }
 
+  /** Every slide's shown image as one ZIP, built on the server, so the browser never learns where the images are stored. */
+  async function downloadImages(count: number, reviewCopies: number) {
+    if (!session || downloadingImages) return;
+    setDownloadingImages(true); setImagesDownload(undefined);
+    try {
+      const response = await fetch(`/api/radar/draft2/images/download?topicId=${encodeURIComponent(topicId)}&sessionId=${encodeURIComponent(session.id)}`, { cache: "no-store", headers });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error ?? "The images could not be downloaded.");
+      }
+      const fileName = /filename="([^"]+)"/u.exec(response.headers.get("Content-Disposition") ?? "")?.[1] ?? "carousel-draft2.zip";
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+      setImagesDownload({ tone: "success", text: `${count} ${count === 1 ? "image" : "images"} downloaded as ${fileName}${reviewCopies ? ` (${reviewCopies} not yet approved, named “-review”)` : ""}.` });
+    } catch (cause) {
+      setImagesDownload({ tone: "error", text: cause instanceof Error ? cause.message : "The images could not be downloaded." });
+    } finally {
+      setDownloadingImages(false);
+    }
+  }
+
   /** One image decision: another image of a slide, made at once, or the version a slide shows. */
   async function decideImage(input: Record<string, unknown>) {
     if (!session || running || savingImage) return;
@@ -678,6 +705,9 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const visualDisplay = visualDisplayFor(inventory);
   // The images picture the chosen visual script once its run has finished, while it still follows the deck and the people and places.
   const images = session?.images ?? undefined;
+  // What "Download all" puts in the archive: each slide's shown image; one not approved as it stands is a "-review" copy.
+  const imageDownloads = images ? draft2ImageDownloads(images, session?.publication) : [];
+  const imageReviewCopies = imageDownloads.filter((entry) => !entry.approved).length;
   const imagesStalled = !running && images?.status === "running" && now > 0 && now - Date.parse(session?.updatedAt ?? "") > OPENING_STALL_MS;
   const imagesPending = Boolean(images?.slides.some((slide) => !slideSettled(slide)));
   const imagesResumable = Boolean(images && imagesPending && (images.status === "paused" || images.status === "failed" || imagesStalled));
@@ -997,6 +1027,9 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
     images: {
       actions: <>
         {imagesResumable && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("images", { continuing: true }); }}>Continue</Button> : null}
+        {imageDownloads.length && running !== "images" ? <Button variant="secondary" size="compact" busy={downloadingImages} title={imageReviewCopies ? "Images not yet approved are included as review copies, named “-review”." : undefined} onClick={() => { void downloadImages(imageDownloads.length, imageReviewCopies); }}>
+          {downloadingImages ? "Preparing the download…" : imageDownloads.length === 1 ? "Download the image" : `Download all ${imageDownloads.length} images`}
+        </Button> : null}
         <Button variant="primary" size="compact" busy={running === "images"} disabled={!factsVerified || !imagesReady || running !== undefined || savingImage !== undefined} onClick={() => { void runStep("images"); }}>
           {running === "images" ? "Making the images…" : images ? "Make the images again" : "Make the images"}
         </Button>
@@ -1010,6 +1043,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
         {runError?.step === "images" ? <InlineNotice tone="error" title="The images stopped">{runError.message}</InlineNotice> : null}
         {session?.step === "images" && session.error && running !== "images" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
         {imageError ? <InlineNotice tone="error" title="Your decision was not saved">{imageError}</InlineNotice> : null}
+        {imagesDownload ? <InlineNotice tone={imagesDownload.tone} title={imagesDownload.tone === "error" ? "The download failed" : undefined}>{imagesDownload.text}</InlineNotice> : null}
         {images && session && running !== "images" ? <ImagesView images={images} story={{ topicId, sessionId: session.id, secret }} saving={savingImage} locked={running !== undefined || savingImage !== undefined} onDecide={(input) => { void decideImage(input); }} /> : null}
         {!images && available.images && !running ? <EmptyState title="No images yet">Make the images: each slide from the chosen visual script, reviewed one by one.</EmptyState> : null}
       </>,

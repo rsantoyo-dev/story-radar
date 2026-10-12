@@ -271,6 +271,30 @@ export function shownAttempt(slide: Draft2SlideImage): Draft2ImageAttempt | unde
   return generated.find((attempt) => attempt.version === slide.chosenVersion) ?? generated[generated.length - 1];
 }
 
+/** One slide's image in the carousel's download: the version it shows, the hash its record keeps, and its file name. */
+export type Draft2ImageDownload = { slide: string; version: number; sha256: string; name: string; approved: boolean };
+
+/**
+ * The carousel's images as files to download, in slide order: each slide's
+ * shown version, named by its place in the carousel. One the editor has not
+ * approved as it stands (the publication of this run records each slide's
+ * version and hash) is a "-review" copy, as v1 names its downloads, so it is
+ * never mistaken for an approved, publishable file. A slide with no finished
+ * image is left out.
+ */
+export function draft2ImageDownloads(
+  run: Pick<Draft2ImagesRun, "runId" | "slides">,
+  publication?: { imagesRunId: string; slides: readonly { slide: string; version: number; sha256: string }[] } | null,
+): Draft2ImageDownload[] {
+  return [...run.slides].sort((left, right) => left.order - right.order).flatMap((slide) => {
+    const attempt = shownAttempt(slide);
+    if (!attempt?.sha256) return [];
+    const approved = publication?.imagesRunId === run.runId
+      && publication.slides.some((entry) => entry.slide === slide.slide && entry.version === attempt.version && entry.sha256 === attempt.sha256);
+    return [{ slide: slide.slide, version: attempt.version, sha256: attempt.sha256, name: `slide-${String(slide.order).padStart(2, "0")}${approved ? "" : "-review"}.png`, approved }];
+  });
+}
+
 /** A first image or one the editor asked for waits for its review; a correction is final as it comes. */
 export const awaitsReview = (attempt: Draft2ImageAttempt) => attempt.status === "generated" && attempt.kind !== "correct" && !attempt.review;
 

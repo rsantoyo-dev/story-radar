@@ -197,6 +197,7 @@ function harness({ session, polls = 1, reviewOf = clean, clock, pollMs = 30_000 
     run: (options: { resume?: boolean } = {}) => exports.runDraft2Images({ topicId, storyId, sessionId, ...options }),
     decide: (input: Record<string, unknown>) => exports.editDraft2Images({ topicId, sessionId, input }),
     file: (input: Record<string, unknown>) => exports.draft2ImageFile({ topicId, sessionId, ...input }) as unknown as Promise<File>,
+    archive: () => exports.draft2ImagesArchive({ topicId, sessionId }) as unknown as Promise<{ fileName: string; archive: Buffer; count: number; reviewCopies: number }>,
     calls,
     r2,
     row: () => row,
@@ -330,4 +331,39 @@ test("images wait for a finished visual script, and for fal and Sol to be config
   await assert.rejects(harness({ session: { facts: [] } }).run(), /Images build only on verified facts/);
   await assert.rejects(harness().decide({ action: "choose", slide: "cover", version: 1 }), /Generate the images first/);
   await assert.rejects(harness().run({ resume: true }), /There are no images waiting to be made/);
+});
+
+/** The entries of a stored (uncompressed) ZIP, read from its central directory. */
+function unzipStored(archive: Buffer): { name: string; data: string }[] {
+  const end = archive.length - 22;
+  assert.equal(archive.readUInt32LE(end), 0x06054b50);
+  let at = archive.readUInt32LE(end + 16);
+  return Array.from({ length: archive.readUInt16LE(end + 10) }, () => {
+    const size = archive.readUInt32LE(at + 20);
+    const nameLength = archive.readUInt16LE(at + 28);
+    const local = archive.readUInt32LE(at + 42);
+    const name = archive.subarray(at + 46, at + 46 + nameLength).toString("utf8");
+    at += 46 + nameLength + archive.readUInt16LE(at + 30) + archive.readUInt16LE(at + 32);
+    const start = local + 30 + archive.readUInt16LE(local + 26);
+    return { name, data: archive.subarray(start, start + size).toString() };
+  });
+}
+
+test("download all: one ZIP of each slide's shown image in slide order, checked against its record; review copies until the editor approves them as they stand", async () => {
+  const h = harness();
+  await assert.rejects(h.archive(), /no finished images to download yet/, "nothing made yet");
+  const session = await h.run();
+  const images = session.images!;
+  const first = await h.archive();
+  assert.match(first.fileName, new RegExp(`^carousel-draft2-${images.runId.slice(0, 8)}-review-\\d{4}-\\d{2}-\\d{2}\\.zip$`));
+  assert.equal(json([first.count, first.reviewCopies]), json([3, 3]));
+  assert.equal(json(unzipStored(first.archive)), json([
+    { name: "slide-01-review.png", data: stored(h, "cover-v1.png") }, { name: "slide-02-review.png", data: stored(h, "s1-v1.png") }, { name: "slide-03-review.png", data: stored(h, "last-v1.png") },
+  ]), "the finished images exactly as stored");
+  h.setRow({ publication: { imagesRunId: images.runId, slides: images.slides.map((slide) => ({ slide: slide.slide, label: slide.label, order: slide.order, version: 1, sha256: slide.attempts[0].sha256 })) } });
+  const approved = await h.archive();
+  assert.equal(json([approved.reviewCopies, unzipStored(approved.archive).map((entry) => entry.name)]), json([0, ["slide-01.png", "slide-02.png", "slide-03.png"]]));
+  assert.doesNotMatch(approved.fileName, /-review-/);
+  h.r2.set(`draft2/${images.runId}/s1-v1.png`, Buffer.from("tampered"));
+  await assert.rejects(h.archive(), /does not match its record/, "an image that is not the one recorded never reaches the archive");
 });

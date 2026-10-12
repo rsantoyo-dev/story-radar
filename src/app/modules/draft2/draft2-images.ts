@@ -30,6 +30,7 @@ import { pollFalImage, submitFalImage } from "../stories/fal-image-client";
 import { estimateFalImageCost } from "../stories/fal-image-cost";
 import { recordUsageCharge } from "../credits/usage-charges.repository";
 import { buildDraft2ImageObjectKey, putPrivateR2Object, readPrivateR2ImageFile } from "../stories/r2-storage";
+import { zipStore } from "../stories/zip-store";
 import { documentaryProviders } from "../stories/creative-documentary-providers";
 import { eligiblePhoto, type PlaceEvidence } from "../stories/creative-documentary";
 import { openversePlacePhoto } from "../stories/openverse-place-photo";
@@ -48,7 +49,7 @@ import { draft2ModelName, draft2SolModel } from "./draft2-models";
 import { placeMention } from "./draft2-inventory";
 import {
   DRAFT2_IMAGE_REVIEW_SCHEMA, IMAGE_SUBMISSION_GRACE_MS, IMAGE_SUBMIT_CONCURRENCY, IMAGES_QUALITY,
-  awaitsReview, chosenSlide, correctionFor, draft2ImageReview, imageBaseFile, imageFile, imagePromptFile, imagesNote, imagesTarget, latestAttempt, mapFile,
+  awaitsReview, chosenSlide, correctionFor, draft2ImageDownloads, draft2ImageReview, imageBaseFile, imageFile, imagePromptFile, imagesNote, imagesTarget, latestAttempt, mapFile,
   newImagesRun, parseDraft2ImageReview, parseImagesAction, regeneratedSlide, settledStatus, slideFacts, slideSettled, slideUnit,
   type Draft2ImageAttempt, type Draft2Images, type Draft2ImagesRun, type Draft2MapPanel, type Draft2SlideImage, type Draft2SlideMaterial,
 } from "./draft2-images.types";
@@ -605,7 +606,43 @@ export async function draft2ImageFile({ topicId, sessionId, runId, slide, versio
   const run = session?.images ? [withoutHistory(session.images), ...(session.images.previousRuns ?? [])].find((entry) => entry.runId === runId) : undefined;
   const attempt = run?.slides.find((entry) => entry.slide === slide)?.attempts.find((entry) => entry.version === version);
   if (!session || !run || attempt?.status !== "generated" || !attempt.sha256) throw new Draft2InputError("That image is not one of this session's finished images.");
+  return storedImage({ topicId, sessionId, runId, slide, version, sha256: attempt.sha256 });
+}
+
+/** A finished image as stored, checked against the hash its record keeps. */
+async function storedImage({ topicId, sessionId, runId, slide, version, sha256 }: { topicId: string; sessionId: string; runId: string; slide: string; version: number; sha256: string }): Promise<File> {
   const file = await readPrivateR2ImageFile({ objectKey: buildDraft2ImageObjectKey({ topicId, sessionId, runId, file: imageFile(slide, version) }), contentType: "image/png", fileName: imageFile(slide, version) });
-  if (hash(new Uint8Array(await file.arrayBuffer())) !== attempt.sha256) throw new Draft2InputError("The stored image does not match its record; make the slide again.");
+  if (hash(new Uint8Array(await file.arrayBuffer())) !== sha256) throw new Draft2InputError("The stored image does not match its record; make the slide again.");
   return file;
+}
+
+/**
+ * The carousel's images as one ZIP, for the editor to check or post
+ * elsewhere: each slide's shown image in slide order (draft2ImageDownloads),
+ * read and checked as the canvas reads one, four at a time. One the editor
+ * has not approved is a "-review" copy, and so is the archive that holds one.
+ */
+export async function draft2ImagesArchive({ topicId, sessionId }: { topicId: string; sessionId: string }): Promise<{ fileName: string; archive: Buffer; count: number; reviewCopies: number }> {
+  const session = await getDraft2Session(topicId, sessionId);
+  const run = session?.images;
+  const downloads = run ? draft2ImageDownloads(run, session.publication) : [];
+  if (!run || !downloads.length) throw new Draft2InputError("There are no finished images to download yet.");
+  const files: { name: string; data: Uint8Array }[] = new Array(downloads.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < downloads.length) {
+      const index = next++;
+      const entry = downloads[index]!;
+      const file = await storedImage({ topicId, sessionId, runId: run.runId, slide: entry.slide, version: entry.version, sha256: entry.sha256 });
+      files[index] = { name: entry.name, data: new Uint8Array(await file.arrayBuffer()) };
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(4, downloads.length) }, worker));
+  const reviewCopies = downloads.filter((entry) => !entry.approved).length;
+  return {
+    fileName: `carousel-draft2-${run.runId.slice(0, 8)}${reviewCopies ? "-review" : ""}-${new Date().toISOString().slice(0, 10)}.zip`,
+    archive: zipStore(files),
+    count: files.length,
+    reviewCopies,
+  };
 }

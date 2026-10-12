@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Draft2InputError, Draft2ResponseError } from "./draft2-facts.types";
 import {
-  correctionFor, draft2ImageReview, imagesNote, imagesTarget, newImagesRun, parseDraft2ImageReview, parseImagesAction, regeneratedSlide, chosenSlide,
+  correctionFor, draft2ImageDownloads, draft2ImageReview, imagesNote, imagesTarget, newImagesRun, parseDraft2ImageReview, parseImagesAction, regeneratedSlide, chosenSlide,
   settledStatus, shownAttempt, slideMaterial, slideSettled, slideUnit, textDifferences,
   type Draft2ImageAttempt, type Draft2SlideImage,
 } from "./draft2-images.types";
@@ -168,3 +168,21 @@ test("the editor's decisions: another image (optionally an edit of the one shown
   assert.throws(() => chosenSlide(done, 5), /has no finished version 5/);
 });
 
+
+test("the download holds each slide's shown image in slide order, and names one not approved as it stands a review copy", () => {
+  const cover = slide([attempt({ sha256: "c".repeat(64) })], { slide: "cover", label: "Cover", order: 1 });
+  const middle = slide([attempt({ sha256: "1".repeat(64) }), attempt({ version: 2, kind: "regenerate", sha256: "2".repeat(64) })], { chosenVersion: 1 });
+  const unfinished = slide([attempt({ status: "failed", sha256: undefined })], { slide: "s2", label: "Slide 3", order: 3 });
+  const last = slide([attempt({ sha256: "d".repeat(64) }), attempt({ version: 2, kind: "correct", sha256: "e".repeat(64) })], { slide: "last", label: "Slide 4", order: 4 });
+  const run = { runId: "run-1", slides: [last, unfinished, middle, cover] };
+  assert.equal(json(draft2ImageDownloads(run).map((entry) => [entry.name, entry.slide, entry.version, entry.approved])), json([
+    ["slide-01-review.png", "cover", 1, false], ["slide-02-review.png", "s1", 1, false], ["slide-04-review.png", "last", 2, false],
+  ]), "in order; the editor's pick, else the newest finished version; a slide with no finished image is left out; nothing approved yet");
+  const approved = { imagesRunId: "run-1", slides: [
+    { slide: "cover", version: 1, sha256: "c".repeat(64) }, { slide: "s1", version: 2, sha256: "2".repeat(64) }, { slide: "last", version: 2, sha256: "e".repeat(64) },
+  ] };
+  assert.equal(json(draft2ImageDownloads(run, approved).map((entry) => entry.name)), json(["slide-01.png", "slide-02-review.png", "slide-04.png"]),
+    "slide 2 now shows version 1, not the version approved");
+  assert.equal(json(draft2ImageDownloads(run, { ...approved, imagesRunId: "run-0" }).map((entry) => entry.approved)), json([false, false, false]), "an approval of an earlier run approves none of these");
+  assert.equal(draft2ImageDownloads({ runId: "run-1", slides: [unfinished] }).length, 0);
+});
