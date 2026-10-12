@@ -236,3 +236,30 @@ Sol's review (images skill v2) answers `anchorShown` when it receives the
 anchor: an image without it, or with another one, has a blocking issue, so
 the one automatic correction redraws it, plate included. The canvas shows the
 plate's state on the Images screen and counts its cost with the images'.
+
+## 10. The master scene: panorama and follow-the-line (2026-10-12)
+
+A panorama or a line is drawn once, before any slide, as one wide image
+without a word: the whole carousel read left to right, with the script's
+subject and beat for each section and, for a line, one continuous line from
+the left edge to the right (`masterPlate` on the run; `master-scene.png` and
+its prompt beside the slides' files). `masterLayout` sizes it under GPT
+Image's 3:1 ceiling in multiples of 16 (1344 px high, up to 3840 wide) and
+cuts 4:5 sections side by side, centred: 3 slides take its full height,
+5 slides the middle 71%, 7 the middle 51%. It is sent, polled and charged
+once like the anchor plate (`draft2-master-scene:<runId>`), and the slides
+wait for it.
+
+Each slide's request takes its section, cut from the master (read once,
+checked against its hash) and sized as the slide is drawn, as the last input
+image, with a MASTER SECTION instruction: keep the composition, horizon,
+light and colors, and whatever touches the left and right edges, so the
+slide continues its neighbours; redraw it in full and letter its words. An
+edit or a correction redraws its own base instead. A master that fails, or a
+section that cannot be cut, leaves the slide to be drawn on its own, with a
+note. The brand references' budget counts the section.
+
+Sol checks a line as an anchor (`anchorShown`); a panorama's scene is every
+slide by construction. The edges continue the scene but are not matched to
+the pixel: a blend across the seams is a later step, to try once the master
+holds on real stories.

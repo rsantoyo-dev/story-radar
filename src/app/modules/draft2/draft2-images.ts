@@ -48,14 +48,14 @@ import { failedCall } from "./draft2-funnel";
 import { draft2ModelName, draft2SolModel } from "./draft2-models";
 import { placeMention } from "./draft2-inventory";
 import {
-  ANCHOR_PLATE_FILE, ANCHOR_PLATE_PROMPT_FILE, anchorPlateSettled, slideCarriesAnchor, visualNarrative, type Draft2AnchorPlate,
+  ANCHOR_PLATE_FILE, ANCHOR_PLATE_PROMPT_FILE, MASTER_PLATE_FILE, MASTER_PLATE_PROMPT_FILE, anchorPlateSettled, slideCarriesAnchor, visualNarrative, type Draft2AnchorPlate, type Draft2MasterPlate,
   DRAFT2_IMAGE_REVIEW_SCHEMA, IMAGE_SUBMISSION_GRACE_MS, IMAGE_SUBMIT_CONCURRENCY, IMAGES_QUALITY,
   awaitsReview, chosenSlide, correctionFor, draft2ImageDownloads, draft2ImageReview, imageBaseFile, imageFile, imagePromptFile, imagesNote, imagesTarget, latestAttempt, mapFile,
   newImagesRun, parseDraft2ImageReview, parseImagesAction, regeneratedSlide, settledStatus, slideFacts, slideSettled, slideUnit,
   type Draft2ImageAttempt, type Draft2Images, type Draft2ImagesRun, type Draft2MapPanel, type Draft2SlideImage, type Draft2SlideMaterial,
 } from "./draft2-images.types";
 import { OPENING_STALL_MS } from "./draft2-opening.types";
-import type { Draft2FocusNarrative, Draft2FocusValues } from "./draft2-focus.types";
+import { anchorNoun, type Draft2FocusNarrative, type Draft2FocusValues } from "./draft2-focus.types";
 import { resolveCreativeVisualGuidance } from "../stories/creative-visual-guidance";
 import type { Draft2Inventory, Draft2InventoryEntity } from "./draft2-inventory.types";
 import type { Draft2CarouselSlide, Draft2VisualCandidate } from "./draft2-visual.types";
@@ -109,6 +109,8 @@ type Context = {
   trace: Draft2TraceEntry[];
   /** The narrative form the visual script followed: its anchor is on every slide that carries one. */
   narrative: Draft2FocusNarrative;
+  /** The master scene as stored, read once and checked against its record, for every slide's section. */
+  master?: Promise<Uint8Array | undefined>;
 };
 
 const objectKey = (ctx: Pick<Context, "topicId" | "sessionId" | "run">, file: string) =>
@@ -261,6 +263,8 @@ async function imageRequest(ctx: Context, slide: Draft2SlideImage, attempt: Draf
   const base = attempt.baseVersion
     ? await readPrivateR2ImageFile({ objectKey: objectKey(ctx, imageBaseFile(slide.slide, attempt.baseVersion)), contentType: "image/png", fileName: imageBaseFile(slide.slide, attempt.baseVersion) })
     : undefined;
+  // A panorama's or a line's slide is redrawn from its section of the master scene, given last; an edit redraws its own base instead.
+  const section = ctx.run.masterPlate?.status === "generated" && !base ? await masterSectionFile(ctx, slide) : undefined;
   // An edit keeps what its base already shows of the place; only a new image receives the place photo again.
   const placeFile = placeEntry && !base ? await placePhoto(ctx, placeEntry).catch(() => undefined) : undefined;
   if (placeEntry && !base && !placeFile) note(slide, `The verified photo of ${placeEntry.name} could not be fetched again, so the slide shows a generic scene of its kind.`);
@@ -283,15 +287,17 @@ async function imageRequest(ctx: Context, slide: Draft2SlideImage, attempt: Draf
   let prompt = built.prompt + zone + (plateFile ? anchorReferencePrompt(ctx, characterImages.length + 1) : "") + brandReferencePrompt(brandRefs, characterImages.length + plates)
     + storyReferencePrompt(storyRefs, characterImages.length + plates + brandRefs.length) + (placeFile ? verifiedPlacePhotoInstruction(placeEntry?.name) : "");
   if (base) prompt += `\n\nIMAGE EDIT v1\nThe LAST input image is the base image to edit. Preserve its layout, copy and protagonist except for this requested change (data): ${JSON.stringify(attempt.instruction ?? "")}\nEND IMAGE EDIT`;
+  else if (section) prompt += masterSectionPrompt(ctx);
   else if (attempt.instruction) prompt += `\nRequested change: ${JSON.stringify(attempt.instruction)}`;
   if (prompt.length > MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS) throw new Draft2InputError(`${slide.label}'s image prompt is longer than ${MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS} characters.`);
   const files = [
     ...await Promise.all(characterImages.map((reference) => readPrivateR2ImageFile({ objectKey: reference.objectKey, contentType: reference.contentType, fileName: reference.fileName }))),
     ...(plateFile ? [plateFile] : []),
-    ...await loadBrandGenerationImages(brandRefs, characterImages.length + plates + (base ? 1 : 0)),
+    ...await loadBrandGenerationImages(brandRefs, characterImages.length + plates + (base || section ? 1 : 0)),
     ...await loadStoryReferenceImages(storyRefs),
     ...(placeFile ? [placeFile] : []),
     ...(base ? [base] : []),
+    ...(section ? [section] : []),
   ];
   if (files.length > MAX_REFERENCE_FILES) throw new Draft2InputError(`${slide.label} has ${files.length} reference images; GPT Image takes ${MAX_REFERENCE_FILES}.`);
   if (files.reduce((bytes, file) => bytes + file.size, 0) > MAX_REFERENCE_BYTES) throw new Draft2InputError(`${slide.label}'s reference images exceed 20 MB.`);
@@ -316,17 +322,15 @@ async function anchorPlateFile(ctx: Context, slide: Draft2SlideImage): Promise<F
   }
 }
 
-const anchorRole = (narrative: Draft2FocusNarrative) => narrative.form === "traveling-object" ? "object" : "guide";
-
 /** How a slide's prompt names the plate among its reference images. */
 const anchorReferencePrompt = (ctx: Context, position: number) =>
-  `\n\nANCHOR REFERENCE\nInput image ${position} is ${ctx.narrative.anchor}, the ${anchorRole(ctx.narrative)} that is on every slide of this carousel. Show it in this slide's scene exactly as it looks there: the same shape, colors, proportions and details. Take only that element from it, nothing else.\nEND ANCHOR REFERENCE`;
+  `\n\nANCHOR REFERENCE\nInput image ${position} is ${ctx.narrative.anchor}, the ${anchorNoun(ctx.narrative)} that is on every slide of this carousel. Show it in this slide's scene exactly as it looks there: the same shape, colors, proportions and details. Take only that element from it, nothing else.\nEND ANCHOR REFERENCE`;
 
 /** What the image model reads to draw the anchor plate: the anchor alone, as the visual script casts it, in the brand's identity, without a word. */
 function anchorPlatePrompt(ctx: Context, plate: Draft2AnchorPlate): string {
   return [
     "ANCHOR PLATE",
-    `One reference image of ${plate.anchor}, the ${anchorRole(ctx.narrative)} that is on every slide of this carousel, so every slide can show it the same way.`,
+    `One reference image of ${plate.anchor}, the ${anchorNoun(ctx.narrative)} that is on every slide of this carousel, so every slide can show it the same way.`,
     `How the visual script casts it: ${ctx.script.cast}`,
     "Show it alone and whole, as that cast describes it, centered on a plain, uncluttered background in the brand's visual identity below, evenly lit, so its shape, colors and proportions read clearly. Nothing and nobody else in the image.",
     "No words, letters, numbers, logos, signs, frames or interface of any kind.",
@@ -334,17 +338,95 @@ function anchorPlatePrompt(ctx: Context, plate: Draft2AnchorPlate): string {
   ].join("\n\n").slice(0, MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS);
 }
 
-/** Sends the anchor plate as an attempt is sent: the prompt stored first, marked submitting before fal is called, never sent twice. */
-async function submitPlate(ctx: Context, plate: Draft2AnchorPlate, checkpoint: () => Promise<unknown>): Promise<void> {
+/**
+ * A plate drawn before the slides: the anchor plate (4:5, like a slide) or
+ * the master scene (wide). Each is sent, polled, stored and charged once, as
+ * a slide's attempt is.
+ */
+type PlateJob = {
+  plate: Draft2AnchorPlate;
+  file: string;
+  promptFile: string;
+  operation: "draft2_anchor_plate" | "draft2_master_scene";
+  /** What fal draws, and what the image is normalized to. */
+  size: { width: number; height: number; aspectRatio: "4:5" | "16:9" };
+  target: { width: number; height: number };
+  prompt: () => string;
+};
+
+const anchorJob = (ctx: Context, plate: Draft2AnchorPlate): PlateJob => ({
+  plate, file: ANCHOR_PLATE_FILE, promptFile: ANCHOR_PLATE_PROMPT_FILE, operation: "draft2_anchor_plate",
+  size: { width: ctx.fal.generationWidth, height: ctx.fal.generationHeight, aspectRatio: "4:5" }, target: OUTPUT, prompt: () => anchorPlatePrompt(ctx, plate),
+});
+const masterJob = (ctx: Context, plate: Draft2MasterPlate): PlateJob => ({
+  plate, file: MASTER_PLATE_FILE, promptFile: MASTER_PLATE_PROMPT_FILE, operation: "draft2_master_scene",
+  size: { width: plate.width, height: plate.height, aspectRatio: "16:9" }, target: { width: plate.width, height: plate.height }, prompt: () => masterScenePrompt(ctx, plate),
+});
+
+/**
+ * What the image model reads to draw the master scene: the whole carousel as
+ * one wide image without a word, read left to right, one section per slide
+ * (the script's subject and beat for each), the line through all of them.
+ */
+function masterScenePrompt(ctx: Context, plate: Draft2MasterPlate): string {
+  const first = plate.sections[0];
+  const band = first && first.height < plate.height ? ` Keep the top and the bottom quiet: the story runs along the middle band, about ${Math.round((first.height / plate.height) * 100)}% of the height.` : "";
+  const sections = ctx.carousel.map((words, index) => {
+    const scriptSlide = ctx.script.slides.find((entry) => entry.slide === words.slide);
+    return `${index + 1}. ${words.label}: ${scriptSlide?.subject || scriptSlide?.beat || ""}${scriptSlide?.subject && scriptSlide.beat ? ` (${scriptSlide.beat})` : ""}`;
+  });
+  return [
+    "MASTER SCENE",
+    `One wide image: the whole world of a ${plate.sections.length}-slide carousel, read from left to right. It is cut into ${plate.sections.length} portrait sections of equal width side by side, one per slide, and each section is then redrawn as its slide, so nothing that matters is cut in half at a section's edge.`,
+    ctx.narrative.form === "follow-the-line"
+      ? `One continuous line runs through the whole image from the left edge to the right edge: ${plate.anchor}. It enters every section from the left and leaves it to the right, so each slide picks it up where the last one left it.`
+      : `The scene: ${plate.anchor}.`,
+    `From left to right, one section per slide:\n${sections.join("\n")}`,
+    `How the visual script casts it: ${ctx.script.cast}`,
+    `One light, one horizon and one scale across the whole width.${band}`,
+    "No words, letters, numbers, logos, signs, frames or interface of any kind.",
+    `# The brand's visual identity\n${resolveCreativeVisualGuidance(ctx.profile)}`,
+  ].join("\n\n").slice(0, MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS);
+}
+
+/** How a slide's prompt names its section of the master scene, given last. */
+const masterSectionPrompt = (ctx: Context) =>
+  `\n\nMASTER SECTION\nThe LAST input image is this slide's section of the carousel's one wide scene${ctx.narrative.form === "follow-the-line" ? `, with the line (${ctx.narrative.anchor}) entering at its left edge and leaving at its right edge` : ""}. Keep its composition, horizon, light and colors, and keep everything that touches its left and right edges where it is, so this slide continues the slides beside it. Redraw it in full detail as this slide, with the slide's words where the layout reserves them.\nEND MASTER SECTION`;
+
+/** A slide's section of the master scene, cut and sized as the slide is drawn; one that cannot be read leaves the slide to be drawn on its own, with a note. */
+async function masterSectionFile(ctx: Context, slide: Draft2SlideImage): Promise<File | undefined> {
+  const plate = ctx.run.masterPlate;
+  const section = plate?.sections.find((entry) => entry.slide === slide.slide);
+  ctx.master ??= readPrivateR2ImageFile({ objectKey: objectKey(ctx, MASTER_PLATE_FILE), contentType: "image/png", fileName: MASTER_PLATE_FILE })
+    .then(async (file) => { const bytes = new Uint8Array(await file.arrayBuffer()); return hash(bytes) === plate?.sha256 ? bytes : undefined; })
+    .catch(() => undefined);
+  const master = await ctx.master;
+  if (!section || !master) {
+    note(slide, "The master scene could not be read, so this slide is drawn on its own from the script.");
+    return undefined;
+  }
   try {
-    const prompt = anchorPlatePrompt(ctx, plate);
+    const png = await sharp(master).extract({ left: section.left, top: section.top, width: section.width, height: section.height })
+      .resize(ctx.fal.generationWidth, ctx.fal.generationHeight, { fit: "fill" }).png().toBuffer();
+    return new File([new Uint8Array(png)], `master-section-${slide.slide}.png`, { type: "image/png" });
+  } catch {
+    note(slide, "The master scene could not be cut for this slide, so it is drawn on its own from the script.");
+    return undefined;
+  }
+}
+
+/** Sends a plate as an attempt is sent: the prompt stored first, marked submitting before fal is called, never sent twice. */
+async function submitPlate(ctx: Context, job: PlateJob, checkpoint: () => Promise<unknown>): Promise<void> {
+  const { plate } = job;
+  try {
+    const prompt = job.prompt();
     const endpoint = creativeImageEndpoint(ctx.descriptor, "text-to-image");
-    await putPrivateR2Object({ objectKey: objectKey(ctx, ANCHOR_PLATE_PROMPT_FILE), body: Buffer.from(prompt, "utf8"), contentType: "text/plain; charset=utf-8" });
+    await putPrivateR2Object({ objectKey: objectKey(ctx, job.promptFile), body: Buffer.from(prompt, "utf8"), contentType: "text/plain; charset=utf-8" });
     Object.assign(plate, { status: "submitting", endpoint, promptCharacters: prompt.length, submittedAt: new Date().toISOString() } satisfies Partial<Draft2AnchorPlate>);
     await checkpoint();
-    draft2DevTrace({ step: "images", round: 0, provider: "fal", model: endpoint, operation: "draft2_anchor_plate", phase: "request", detail: { anchor: plate.anchor, promptCharacters: prompt.length } });
+    draft2DevTrace({ step: "images", round: 0, provider: "fal", model: endpoint, operation: job.operation, phase: "request", detail: { anchor: plate.anchor, size: job.size, promptCharacters: prompt.length } });
     const send = () => submitFalImage({
-      apiKey: ctx.fal.apiKey, prompt, width: ctx.fal.generationWidth, height: ctx.fal.generationHeight, aspectRatio: "4:5",
+      apiKey: ctx.fal.apiKey, prompt, width: job.size.width, height: job.size.height, aspectRatio: job.size.aspectRatio,
       imageQuality: IMAGES_QUALITY, model: ctx.descriptor, endpoint, referenceImages: [], retention: "30d",
     });
     let requestId: string;
@@ -362,29 +444,31 @@ async function submitPlate(ctx: Context, plate: Draft2AnchorPlate, checkpoint: (
   await checkpoint();
 }
 
-/** Asks fal for the plate; once done, it is stored as it came (no logo, no page number) and charged once. */
-async function pollPlate(ctx: Context, plate: Draft2AnchorPlate, errors: { count: number }, checkpoint: () => Promise<unknown>): Promise<void> {
+/** Asks fal for a plate; once done, it is stored as it came (no logo, no page number) and charged once. */
+async function pollPlate(ctx: Context, job: PlateJob, errors: Map<Draft2AnchorPlate, number>, checkpoint: () => Promise<unknown>): Promise<void> {
+  const { plate } = job;
   try {
     let raw: Uint8Array | undefined;
     const result = await pollFalImage({
-      apiKey: ctx.fal.apiKey, requestId: plate.requestId!, endpoint: plate.endpoint!, targetWidth: OUTPUT.width, targetHeight: OUTPUT.height, retention: "30d",
+      apiKey: ctx.fal.apiKey, requestId: plate.requestId!, endpoint: plate.endpoint!, targetWidth: job.target.width, targetHeight: job.target.height, retention: "30d",
       postProcess: async ({ normalizedPng }) => { raw = normalizedPng; return normalizedPng; },
     });
     if (result.status !== "generated") return;
-    if (!raw) throw new Draft2InputError("The anchor plate came back empty.");
+    if (!raw) throw new Draft2InputError("The plate came back empty.");
     const sha256 = hash(raw);
-    await putPrivateR2Object({ objectKey: objectKey(ctx, ANCHOR_PLATE_FILE), body: raw, contentType: "image/png", metadata: { sha256 } });
-    const estimate = estimateFalImageCost({ endpoint: plate.endpoint!, quality: IMAGES_QUALITY, width: ctx.fal.width, height: ctx.fal.height, promptCharacters: plate.promptCharacters ?? 0, referenceImages: 0 });
+    await putPrivateR2Object({ objectKey: objectKey(ctx, job.file), body: raw, contentType: "image/png", metadata: { sha256 } });
+    const estimate = estimateFalImageCost({ endpoint: plate.endpoint!, quality: IMAGES_QUALITY, width: job.target.width, height: job.target.height, promptCharacters: plate.promptCharacters ?? 0, referenceImages: 0 });
     await recordUsageCharge({
-      topicId: ctx.topicId, storyId: ctx.storyId, kind: "image", provider: "fal", model: plate.endpoint!, operation: "draft2_anchor_plate",
-      units: { images: 1, width: ctx.fal.width, height: ctx.fal.height, quality: IMAGES_QUALITY, referenceImages: 0, promptCharacters: plate.promptCharacters ?? 0 },
+      topicId: ctx.topicId, storyId: ctx.storyId, kind: "image", provider: "fal", model: plate.endpoint!, operation: job.operation,
+      units: { images: 1, width: job.target.width, height: job.target.height, quality: IMAGES_QUALITY, referenceImages: 0, promptCharacters: plate.promptCharacters ?? 0 },
       costMicros: estimate?.costMicros ?? null, estimated: true, rate: estimate?.rate ?? { unpriced: true },
-      idempotencyKey: `draft2-anchor-plate:${ctx.run.runId}`,
+      idempotencyKey: `${job.operation === "draft2_master_scene" ? "draft2-master-scene" : "draft2-anchor-plate"}:${ctx.run.runId}`,
     });
     Object.assign(plate, { status: "generated", sha256, completedAt: new Date().toISOString(), ...(estimate ? { costMicros: estimate.costMicros } : {}) } satisfies Partial<Draft2AnchorPlate>);
   } catch (error) {
-    errors.count += 1;
-    if (errors.count < POLL_ATTEMPTS) return;
+    const count = (errors.get(plate) ?? 0) + 1;
+    errors.set(plate, count);
+    if (count < POLL_ATTEMPTS) return;
     Object.assign(plate, { status: "failed", error: message(error), completedAt: new Date().toISOString() } satisfies Partial<Draft2AnchorPlate>);
   }
   await checkpoint();
@@ -514,13 +598,13 @@ async function reviewAttempt(ctx: Context, slide: Draft2SlideImage, attempt: Dra
   };
   const scriptSlide = ctx.script.slides.find((entry) => entry.slide === slide.slide);
   // A narrative form's anchor is on every slide that carries one: Sol says whether this image shows it.
-  const anchor = ctx.narrative.form !== "classic" && ctx.narrative.anchor && slideCarriesAnchor(slide) ? ctx.narrative.anchor : undefined;
+  const anchor = ctx.narrative.form !== "classic" && ctx.narrative.anchorKind !== "scene" && ctx.narrative.anchor && slideCarriesAnchor(slide) ? ctx.narrative.anchor : undefined;
   const { instructions, skillVersions } = composeInstructions("image-judge", [IMAGES_SKILL], brandBrief(ctx.profile));
   const contents = {
     ...JSON.parse(buildImageReviewText(input)) as Record<string, unknown>,
     slide: { label: slide.label, need: slide.need, beat: scriptSlide?.beat ?? "", headlineLink: scriptSlide?.headlineLink ?? "" },
     addedAfterwards: { logo: logoApplies(ctx, slide.order), pageNumber: chromeFor(ctx, slide.order).overlay ? `${slide.order}/${ctx.carousel.length}` : null },
-    ...(anchor ? { anchor: { what: anchor, role: anchorRole(ctx.narrative), note: "It is on every slide of this carousel: say in anchorShown whether this image shows it as described." } } : {}),
+    ...(anchor ? { anchor: { what: anchor, role: anchorNoun(ctx.narrative), note: "It is on every slide of this carousel: say in anchorShown whether this image shows it as described." } } : {}),
   };
   const preview = await sharp(image).resize({ width: 864, withoutEnlargement: true }).jpeg({ quality: 82 }).toBuffer();
   draft2DevTrace({ step: "images", round: attempt.version, provider: "openai", model, operation: "draft2_image_review", phase: "request", detail: { slide: slide.slide, contents } });
@@ -557,7 +641,7 @@ async function imagesContext({ topicId, storyId, sessionId, run, target, facts, 
   const brandSelections = selectBrandReferencesForDraft({
     units: units.map((unit) => ({ order: unit.order, role: unit.role, visualDirection: unit.visualDirection })), eligible: await listActivatedBrandReferences(topicId),
     budget: getBrandReferenceSelectionBudget(), generativeImageryAllowed: true,
-    characterImageCountByOrder: new Map(run.slides.map((slide) => [slide.order, slide.characterIds.length + (run.anchorPlate && slideCarriesAnchor(slide) ? 1 : 0)])),
+    characterImageCountByOrder: new Map(run.slides.map((slide) => [slide.order, slide.characterIds.length + (run.anchorPlate && slideCarriesAnchor(slide) ? 1 : 0) + (run.masterPlate ? 1 : 0)])),
   });
   // The two v1 rows its prompt builder reads, held in memory: only the fields it reads (build-creative-image-prompt.ts).
   const draft = { format: "carousel", outputAspectRatio: "4:5", concept: storyConcept(target.script), units } as unknown as CreativeDraft;
@@ -624,7 +708,7 @@ export async function runDraft2Images({ topicId, storyId, sessionId, resume = fa
       const ctx = await imagesContext({ topicId, storyId, sessionId: session.id, run, target, facts, profile, fal, descriptor, signal: controller.signal, trace });
       const finished = new Map<Draft2ImageAttempt, Uint8Array>();
       const pollErrors = new Map<Draft2ImageAttempt, number>();
-      const plateErrors = { count: 0 };
+      const plateErrors = new Map<Draft2AnchorPlate, number>();
       const pause = async () => {
         run.status = "paused";
         run.error = "Paused: this request's time is spent. The images continue in a new request.";
@@ -640,19 +724,22 @@ export async function runDraft2Images({ topicId, storyId, sessionId, resume = fa
           }
         }
         if (elapsed() > TIME_BUDGET_MS) return pause();
-        // The anchor plate goes first: the slides that carry the anchor take it as a reference.
-        const plate = run.anchorPlate;
-        if (plate && !anchorPlateSettled(plate)) {
-          if (plate.status === "submitting" && !plate.requestId && Date.now() - Date.parse(plate.submittedAt ?? plate.queuedAt) > IMAGE_SUBMISSION_GRACE_MS) {
-            Object.assign(plate, { status: "failed", error: "Its request was lost while it was being sent.", completedAt: new Date().toISOString() } satisfies Partial<Draft2AnchorPlate>);
-            await checkpoint();
-          } else if (plate.status === "queued") await submitPlate(ctx, plate, checkpoint);
-          else if (plate.status === "generating" && plate.requestId) await pollPlate(ctx, plate, plateErrors, checkpoint);
-          if (!anchorPlateSettled(plate)) { await sleep(POLL_INTERVAL_MS); continue; }
-          if (plate.status === "failed") {
-            for (const slide of run.slides) if (slideCarriesAnchor(slide)) note(slide, "The anchor plate could not be made, so this slide keeps the anchor by the script's words alone.");
-            await checkpoint();
-          }
+        // The plates go first (the anchor plate, the master scene): the slides that use them wait for them.
+        const jobs = [run.anchorPlate && anchorJob(ctx, run.anchorPlate), run.masterPlate && masterJob(ctx, run.masterPlate)]
+          .filter((job): job is PlateJob => Boolean(job) && !anchorPlateSettled((job as PlateJob).plate));
+        if (jobs.length) {
+          await Promise.all(jobs.map(async (job) => {
+            const { plate } = job;
+            if (plate.status === "submitting" && !plate.requestId && Date.now() - Date.parse(plate.submittedAt ?? plate.queuedAt) > IMAGE_SUBMISSION_GRACE_MS) {
+              Object.assign(plate, { status: "failed", error: "Its request was lost while it was being sent.", completedAt: new Date().toISOString() } satisfies Partial<Draft2AnchorPlate>);
+              await checkpoint();
+            } else if (plate.status === "queued") await submitPlate(ctx, job, checkpoint);
+            else if (plate.status === "generating" && plate.requestId) await pollPlate(ctx, job, plateErrors, checkpoint);
+          }));
+          if (jobs.some((job) => !anchorPlateSettled(job.plate))) { await sleep(POLL_INTERVAL_MS); continue; }
+          if (run.anchorPlate?.status === "failed") for (const slide of run.slides) if (slideCarriesAnchor(slide)) note(slide, "The anchor plate could not be made, so this slide keeps the anchor by the script's words alone.");
+          if (run.masterPlate?.status === "failed") for (const slide of run.slides) note(slide, "The master scene could not be made, so this slide is drawn on its own from the script.");
+          await checkpoint();
         }
         await inBatches(latest.filter(({ attempt }) => attempt.status === "queued"), IMAGE_SUBMIT_CONCURRENCY, ({ slide, attempt }) => submitAttempt(ctx, slide, attempt, checkpoint));
         await inBatches(latest.filter(({ attempt }) => attempt.status === "generating" && attempt.requestId), IMAGE_SUBMIT_CONCURRENCY, ({ slide, attempt }) => pollAttempt(ctx, slide, attempt, finished, pollErrors, checkpoint));

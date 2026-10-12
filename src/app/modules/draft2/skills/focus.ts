@@ -5,11 +5,12 @@ import type { Draft2Skill } from "./draft2-skills";
  * and before any hook is written. Claude decides it; the editor reviews it
  * and may change any field; the Opening follows it (hooks skill, "Focus").
  * Version 4 adds the narrative form, chosen with People and places' material
- * (the narratives skill, read beside this one, defines the forms).
+ * (the narratives skill, read beside this one, defines the forms); version 5
+ * adds panorama and follow-the-line.
  */
 export const FOCUS_SKILL: Draft2Skill = {
   name: "focus",
-  version: "4",
+  version: "5",
   text: `# The focus of a story
 
 The focus is the brief every later step follows: which editorial line the
@@ -66,17 +67,25 @@ field; it is guidance for the writing, never evidence.
   out or keep for later slides, and what the reader takes away. It guides
   the writer; it never adds a fact.
 - narrative: how the carousel is told across its slides, in words and images
-  together (the narratives skill defines the forms). Choose
-  "character-guide" or "traveling-object" only when its anchor makes the
-  reader want the next slide more than a classic telling would, and say so in
-  its reason; otherwise "classic", with anchorKind "none", characterId null,
-  empty anchor, anchorFactIds and progression, and ending "resolves".
+  together (the narratives skill defines the forms): "classic",
+  "character-guide", "traveling-object", "panorama" or "follow-the-line".
+  Choose a form other than "classic" only when it makes the reader want the
+  next slide more than a classic telling would, and say so in its reason;
+  otherwise "classic",
+  with anchorKind "none", characterId null, empty anchor, anchorFactIds and
+  progression, and ending "resolves".
   - character-guide: anchorKind "character" for one of the brand's characters
     (an id from material.characters; anchor is its name), or "figure" for a
     figure the facts give (cite them in anchorFactIds) or an anonymous figure
     the story calls for (no facts). Never anyone in material.people.
   - traveling-object: anchorKind "object", an object the facts give, cited in
     anchorFactIds.
+  - panorama: anchorKind "scene", the one wide scene every slide is a section
+    of, generic, never a named real place; for a story whose world is one
+    continuous place or moment (a walk, a festival ground, a street, a shore).
+  - follow-the-line: anchorKind "line", a line with a real meaning the facts
+    give (a trail, a route, a street, a river; cite them in anchorFactIds)
+    that runs from the cover to the last slide and leads the reader along it.
   - anchor: what stays, in at most 200 characters, said the way it will
     appear on every slide. progression: what changes from slide to slide
     while the anchor stays, in one line of at most 300 characters; for a list
@@ -87,8 +96,9 @@ field; it is guidance for the writing, never evidence.
     story: a character-guide's guide is one of them. When it is "off",
     material.characters is empty and no brand character may guide.
 - anchorAlternatives: up to three other anchors the story could carry, each a
-  figure or an object with the facts that give it (none for an anonymous
-  figure), for the editor to choose from; an empty list when there are none.
+  figure, an object, a scene or a line with the facts that give it (none for
+  an anonymous figure or a generic scene), for the editor to choose from; an
+  empty list when there are none.
 - visualDirection: one or two sentences, at most 600 characters, on how the
   images should tell this story within the publication's visual identity
   (given below when it has one): the world the images live in, who or what

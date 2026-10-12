@@ -202,7 +202,7 @@ export type StepMetrics = { ms: number; costMicros: number; calls: number };
 const METRICS_STEP: Record<string, string> = { mentions: "caption" };
 
 /** What the images cost beside the trace: each attempt's charge and the anchor plate's. */
-type ImageCharges = { slides: { attempts: { costMicros?: number }[] }[]; anchorPlate?: { costMicros?: number } };
+type ImageCharges = { slides: { attempts: { costMicros?: number }[] }[]; anchorPlate?: { costMicros?: number }; masterPlate?: { costMicros?: number } };
 
 /**
  * Model time and cost per canvas step, from the session's trace (every
@@ -223,6 +223,7 @@ export function stepMetrics(trace: readonly TraceCall[], images?: ImageCharges |
   }
   for (const slide of images?.slides ?? []) for (const attempt of slide.attempts) if (attempt.costMicros) add("images", 0, attempt.costMicros, 0);
   if (images?.anchorPlate?.costMicros) add("images", 0, images.anchorPlate.costMicros, 0);
+  if (images?.masterPlate?.costMicros) add("images", 0, images.masterPlate.costMicros, 0);
   return metrics;
 }
 

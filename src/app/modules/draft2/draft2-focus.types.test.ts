@@ -3,7 +3,7 @@ import test from "node:test";
 import { Draft2InputError, Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
 import {
   CLASSIC_NARRATIVE, DRAFT2_FOCUS_SCHEMA, FOCUS_FIELDS, applyFocusEdit, decidedFocus, editorChoicesOf, focusDecisionRequest, focusFindings, focusForModels, focusItemCount, focusLine,
-  focusMaterial, focusToday, parseFocusDecision, parseNarrativeReview, resetFocusField,
+  anchorNoun, focusMaterial, focusToday, narrativeUsesMaster, parseFocusDecision, parseNarrativeReview, resetFocusField,
   type Draft2Focus, type Draft2FocusLine, type Draft2FocusMaterial, type Draft2FocusNarrative, type Draft2FocusValues,
 } from "./draft2-focus.types";
 import type { Draft2Inventory } from "./draft2-inventory.types";
@@ -275,4 +275,19 @@ test("the judge's review of a narrative form is a verdict and a reason; anything
   assert.deepEqual(parseNarrativeReview(JSON.stringify({ verdict: "classic", reason: "The schedule has no thread to follow." })), { verdict: "classic", reason: "The schedule has no thread to follow." });
   assert.throws(() => parseNarrativeReview(JSON.stringify({ verdict: "maybe", reason: "x" })), Draft2ResponseError);
   assert.throws(() => parseNarrativeReview("not json"), Draft2ResponseError);
+});
+
+test("a panorama's scene and a line to follow: the line comes from the facts, the scene need not; both can be offered and chosen", () => {
+  const panorama = withNarrative({ form: "panorama", anchorKind: "scene", characterId: null, anchor: "An autumn trail from the kiosk to the pond", anchorFactIds: [], progression: "From the kiosk to each animal", ending: "returns" }).values.narrative!;
+  assert.deepEqual([panorama.form, panorama.anchorKind, panorama.anchorFactIds, narrativeUsesMaster(panorama), anchorNoun(panorama)], ["panorama", "scene", [], true, "scene"]);
+  const line = withNarrative({ form: "follow-the-line", anchorKind: "line", characterId: null, anchor: "The boardwalk trail", anchorFactIds: ["f2"], progression: "What the trail reaches", ending: "resolves" }).values.narrative!;
+  assert.deepEqual([line.anchorKind, line.anchorFactIds, narrativeUsesMaster(line), anchorNoun(line)], ["line", ["f2"], true, "line"]);
+  assert.equal(narrativeUsesMaster({ form: "character-guide" }), false);
+  assert.throws(() => withNarrative({ form: "follow-the-line", anchorKind: "line", characterId: null, anchor: "A trail", anchorFactIds: [], progression: "p", ending: "resolves" }), /line comes from the facts/);
+  assert.throws(() => withNarrative({ form: "panorama", anchorKind: "object", characterId: null, anchor: "A trail", anchorFactIds: ["f1"], progression: "p", ending: "resolves" }), /panorama anchor is scene, not object/);
+  const { alternatives } = parseFocusDecision(answer({ anchorAlternatives: [{ kind: "line", anchor: "The 15 bus route", factIds: ["f1"] }, { kind: "scene", anchor: "The whole festival ground", factIds: [] }] }), { facts, lines, material: MATERIAL });
+  assert.deepEqual(alternatives.map((alternative) => alternative.kind), ["line", "scene"]);
+  const focus = decided();
+  assert.equal(applyFocusEdit(focus, "narrative", { form: "panorama", anchorKind: "scene", anchor: "A shore at dawn" }, NOW).values?.narrative?.anchorKind, "scene");
+  assert.throws(() => applyFocusEdit(focus, "narrative", { form: "follow-the-line", anchorKind: "figure", anchor: "x" }, NOW), (error: Error) => error instanceof Draft2InputError && /line to follow needs its line/.test(error.message));
 });

@@ -234,3 +234,14 @@ test("a narrative form's anchor is in every generated image: a brand character b
   assert.deepEqual(issues.map((issue) => issue.part), ["s1"], "the typography card is exempt");
   assert.match(issues[0].detail, /Slide 3 leaves out A curious toad, the guide: with this narrative form it is in every image, as the recurring element\./);
 });
+
+test("a panorama or a line is one wide scene: adjacent shots may match, a typography card breaks it, a line is in every image, a panorama's scene needs no mark", () => {
+  const line = { form: "follow-the-line" as const, anchorKind: "line" as const, characterId: null, anchor: "The boardwalk trail", anchorFactIds: ["f1"], progression: "What the trail reaches", ending: "resolves" as const };
+  const sections = script("c1", { characterPlan: { use: false, characterIds: [], role: "" }, slides: script("c1").slides.map((entry) => ({ ...entry, shot: "wide" as const, characterIds: [], need: "generic-illustration" as const, recurring: "accent" as const })) });
+  const relevant = (codes: string[]) => codes.filter((code) => /^(SAME_SHOT|ANCHOR_MISSING|SECTION_MISSING)/.test(code));
+  assert.deepEqual(relevant(findings(sections, { narrative: line })), []);
+  assert.ok(findings(sections).some((code) => code.startsWith("SAME_SHOT")), "a classic script still alternates its shots");
+  const broken = { ...sections, slides: sections.slides.map((entry) => entry.slide === "s2" ? { ...entry, need: "typography" as const, shot: "typography" as const } : entry.slide === "s1" ? { ...entry, recurring: "none" as const } : entry) };
+  assert.deepEqual(relevant(findings(broken, { narrative: line })), ["ANCHOR_MISSING c1 s1", "SECTION_MISSING c1 s2"]);
+  assert.deepEqual(relevant(findings(broken, { narrative: { ...line, form: "panorama", anchorKind: "scene", anchor: "An autumn trail" } })), ["SECTION_MISSING c1 s2"], "the scene is every slide by construction");
+});

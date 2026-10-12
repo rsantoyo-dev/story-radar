@@ -7,7 +7,7 @@ import {
   type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion, type FunnelWords,
 } from "./draft2-funnel";
 import { entityMaterial, referencePhotos, type Draft2CharacterChoice, type Draft2Inventory } from "./draft2-inventory.types";
-import type { Draft2FocusNarrative } from "./draft2-focus.types";
+import { anchorNoun, narrativeUsesMaster, type Draft2FocusNarrative } from "./draft2-focus.types";
 import type { Draft2ClosingOpening } from "./draft2-closing.types";
 import type { Draft2DeckCandidate, Draft2DeckClosing } from "./draft2-deck.types";
 import type { CreativeProfile } from "../stories/creative-content.types";
@@ -85,7 +85,7 @@ export const VISUAL_MECHANICAL_CODES = [
   "SLIDE_ORDER", "DIRECTION_TOO_LONG", "DIRECTION_TOO_SHORT", "BEAT_MISSING", "CHARACTER_UNKNOWN", "CHARACTER_OFF_PLAN", "CHARACTER_CHOICE",
   "TOO_MANY_CHARACTERS", "REFERENCE_UNKNOWN", "NEED_MISMATCH", "STRICT_MODE", "COVER_TYPOGRAPHY", "UNVERIFIED_PERSON", "UNVERIFIED_PLACE",
   "ORGANIZATION_NAMED", "AVOID_TERM", "FORBIDDEN_ELEMENT", "DUPLICATE_CANDIDATE", "SAME_SHOT", "SHOT_MISMATCH",
-  "SUBJECT_MISSING", "DISCOVERY_MISSING", "SAME_SUBJECT", "RECURRING_DOMINANT", "CALLBACK_MISPLACED", "ANCHOR_MISSING",
+  "SUBJECT_MISSING", "DISCOVERY_MISSING", "SAME_SUBJECT", "RECURRING_DOMINANT", "CALLBACK_MISPLACED", "ANCHOR_MISSING", "SECTION_MISSING",
 ] as const;
 export const VISUAL_JUDGE_CODES = [
   "ILLUSTRATES_TEXT", "BREAKS_CONTINUITY", "REPETITIVE", "MOTIF_DEPENDENCY", "OFF_BEAT", "TOO_ABSTRACT", "OFF_BRAND", "LOOKS_AI", "CONTRADICTS_FACTS", "CROWDS_TEXT", "VAGUE",
@@ -405,10 +405,12 @@ export function mechanicalVisualIssues(candidates: readonly Draft2VisualCandidat
     else if (!earlier) keys.set(concept, candidate);
     const labelOf = (position: string) => carousel.find((entry) => entry.slide === position)?.label ?? position;
     const partOf = (position: string) => positions.includes(position) ? position : undefined;
+    // A panorama or a line is one wide scene cut into the slides: every section shares its scale, so adjacent shots may match.
+    const master = Boolean(narrative && narrativeUsesMaster(narrative));
     candidate.slides.forEach((slide, index) => {
       const previous = candidate.slides[index - 1];
       if (!previous) return;
-      if (previous.shot === slide.shot) add("SAME_SHOT", partOf(slide.slide), `${labelOf(slide.slide)} repeats ${labelOf(previous.slide)}'s ${slide.shot} shot; alternate the shots so no two slides in a row look alike.`);
+      if (!master && previous.shot === slide.shot) add("SAME_SHOT", partOf(slide.slide), `${labelOf(slide.slide)} repeats ${labelOf(previous.slide)}'s ${slide.shot} shot; alternate the shots so no two slides in a row look alike.`);
       if (slide.subject && previous.subject && sameSubject(slide.subject, previous.subject)) {
         add("SAME_SUBJECT", partOf(slide.slide), `${labelOf(slide.slide)} is about the same subject as ${labelOf(previous.slide)} ("${slide.subject}"); show something the carousel has not shown yet.`);
       }
@@ -418,10 +420,15 @@ export function mechanicalVisualIssues(candidates: readonly Draft2VisualCandidat
     if (focused > VISUAL_MAX_RECURRING_FOCUS) add("RECURRING_DOMINANT", undefined, `The recurring element leads ${focused} slides; it leads at most ${VISUAL_MAX_RECURRING_FOCUS}, and may return once at the end.`);
     // A narrative form's anchor is in every generated image: a brand character by its id, a figure or an object as the recurring element.
     // A verified photo or map, or a typography card, carries the story without it.
+    // In a panorama or a line, every slide is a section of the one scene: a typography card breaks it. The scene itself needs no recurring mark.
     if (narrative && narrative.form !== "classic") {
-      const subject = narrative.form === "traveling-object" ? "object" : "guide";
+      const subject = anchorNoun(narrative);
       for (const slide of candidate.slides) {
-        if (slide.need === "real-photo" || slide.need === "verified-map" || slide.need === "typography") continue;
+        if (master && slide.need === "typography") {
+          add("SECTION_MISSING", partOf(slide.slide), `${labelOf(slide.slide)} is a typography card: in a ${narrative.form === "panorama" ? "panorama" : "line to follow"} every slide is a section of the one wide scene.`);
+          continue;
+        }
+        if (slide.need === "real-photo" || slide.need === "verified-map" || slide.need === "typography" || narrative.anchorKind === "scene") continue;
         const missing = narrative.anchorKind === "character" ? !slide.characterIds.includes(narrative.characterId ?? "") : slide.recurring === "none";
         if (missing) add("ANCHOR_MISSING", partOf(slide.slide), `${labelOf(slide.slide)} leaves out ${narrative.anchor}, the ${subject}: with this narrative form it is in every image${narrative.anchorKind === "character" ? `, cast by its id (${narrative.characterId})` : ", as the recurring element"}.`);
       }

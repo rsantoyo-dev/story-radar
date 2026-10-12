@@ -252,3 +252,8 @@ brand character guide is cast on it by its id; a figure or an object is the
 recurring element (`recurring` other than `none`). A verified photo, a
 verified map or a typography card is exempt. A classic script is checked as
 before.
+
+A panorama or a line is one wide scene cut into the slides: adjacent slides
+may share a shot (no `SAME_SHOT`), a typography card breaks the scene
+(`SECTION_MISSING`), a line is the recurring element on every slide, and a
+panorama's scene needs no recurring mark (every slide is a section of it).

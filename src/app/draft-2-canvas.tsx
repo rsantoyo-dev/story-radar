@@ -238,6 +238,15 @@ const NARRATIVE_LABEL: Record<Draft2NarrativeForm, string> = {
   classic: "Classic: one story, slide by slide",
   "character-guide": "Character guide: a guide leads the reader through it",
   "traveling-object": "Traveling object: one object crosses the story",
+  panorama: "Panorama: one wide scene runs across every slide",
+  "follow-the-line": "Follow the line: a real line leads from slide to slide",
+};
+/** The anchor each form starts from when the editor describes one, and what the field calls it. */
+const FORM_ANCHOR: Record<Exclude<Draft2NarrativeForm, "classic">, { kind: "figure" | "object" | "scene" | "line"; label: string; describe: string }> = {
+  "character-guide": { kind: "figure", label: "Guide", describe: "A figure from the story or an anonymous one, as it will look on every slide; never a real person of the story." },
+  "traveling-object": { kind: "object", label: "Object", describe: "One object, as it will look on every slide; nothing that suggests what the facts do not say." },
+  panorama: { kind: "scene", label: "Scene", describe: "The one wide scene every slide is a section of, generic, never a named real place." },
+  "follow-the-line": { kind: "line", label: "Line", describe: "The line from the story (a trail, a route, a street, a river) that runs through every slide." },
 };
 const ENDING_LABEL: Record<Draft2FocusNarrative["ending"], string> = { resolves: "Resolves the story", returns: "Returns to the cover" };
 const GRAVITY_LABEL: Record<Draft2FocusVoice["gravity"], string> = { light: "Light", ordinary: "Ordinary", serious: "Serious", grave: "Grave" };
@@ -1686,11 +1695,13 @@ function ImagesView({ images, story, saving, locked, onDecide }: {
   onDecide: (input: Record<string, unknown>) => void;
 }) {
   const shown = images.slides.filter((slide) => shownAttempt(slide)).length;
-  const costMicros = images.slides.flatMap((slide) => slide.attempts).reduce((sum, attempt) => sum + (attempt.costMicros ?? 0), 0) + (images.anchorPlate?.costMicros ?? 0);
+  const costMicros = images.slides.flatMap((slide) => slide.attempts).reduce((sum, attempt) => sum + (attempt.costMicros ?? 0), 0) + (images.anchorPlate?.costMicros ?? 0) + (images.masterPlate?.costMicros ?? 0);
   const plate = images.anchorPlate;
+  const master = images.masterPlate;
   return <div className={styles.focusBody}>
     <p className={styles.factMeta}>{shown} of {images.slides.length} slides · from visual script {images.visualId} · {images.quality} quality · {images.model}{costMicros ? ` · ≈US$${(costMicros / 1_000_000).toFixed(2)} in images` : ""}</p>
     {plate ? <p className={styles.factMeta}>Anchor plate · {plate.anchor} · {plate.status === "generated" ? "drawn once without words; every slide that carries the anchor takes it as a reference" : plate.status === "failed" ? `could not be made${plate.error ? ` (${clip(plate.error, 120)})` : ""}; the slides keep the anchor by the script’s words alone` : "being drawn before the slides"}</p> : null}
+    {master ? <p className={styles.factMeta}>Master scene · {master.anchor} · {master.status === "generated" ? `drawn once, ${master.width}×${master.height}, without words; each slide is redrawn from its section` : master.status === "failed" ? `could not be made${master.error ? ` (${clip(master.error, 120)})` : ""}; each slide is drawn on its own from the script` : "being drawn before the slides"}</p> : null}
     <ol className={styles.imageGrid}>{images.slides.map((slide) => <SlideImageCard key={slide.slide} slide={slide} runId={images.runId} story={story} saving={saving === slide.slide} locked={locked} onDecide={onDecide} />)}</ol>
   </div>;
 }
@@ -2068,11 +2079,11 @@ function FocusNarrative({ focus, material, description, disabled, onCommit }: {
   const [pending, setPending] = useState<Draft2NarrativeForm>();
   const [describing, setDescribing] = useState(false);
   const form = pending ?? narrative.form;
-  const wanted = form === "traveling-object" ? "object" : "figure";
+  const wanted = form === "classic" ? "figure" : FORM_ANCHOR[form].kind;
   const characters = material?.characters ?? [];
   // The anchors Claude saw (its choice, the proposal the judge sent back, its alternatives) and the one standing, once each.
   const seen = [focus.ai?.narrative, focus.narrativeReview?.proposed, narrative, ...(focus.narrativeOptions ?? []).map((option) => ({ ...CLASSIC_NARRATIVE, anchorKind: option.kind, anchor: option.anchor, anchorFactIds: option.factIds }))]
-    .filter((entry): entry is Draft2FocusNarrative => Boolean(entry && entry.anchor && (entry.anchorKind === "figure" || entry.anchorKind === "object")));
+    .filter((entry): entry is Draft2FocusNarrative => Boolean(entry && entry.anchor && ["figure", "object", "scene", "line"].includes(entry.anchorKind)));
   const anchors = [...new Map(seen.map((entry) => [`${entry.anchorKind}:${entry.anchor}`, entry])).values()].filter((entry) => entry.anchorKind === wanted);
   const commit = (next: Draft2FocusNarrative) => { setPending(undefined); setDescribing(false); onCommit(next); };
   const switchForm = (next: Draft2NarrativeForm) => {
@@ -2082,7 +2093,7 @@ function FocusNarrative({ focus, material, description, disabled, onCommit }: {
     // Claude's own proposal for that form, else a brand character or an anchor Claude saw; else the editor says what stays.
     const proposal = [focus.narrativeReview?.proposed, focus.ai?.narrative].find((entry) => entry?.form === next);
     if (proposal) { commit(proposal); return; }
-    const kind = next === "traveling-object" ? "object" : "figure";
+    const kind = FORM_ANCHOR[next].kind;
     const kept = { progression: narrative.progression, ending: narrative.form === "classic" ? "resolves" as const : narrative.ending };
     const character = next === "character-guide" ? characters[0] : undefined;
     if (character) { commit({ form: next, anchorKind: "character", characterId: character.id, anchor: character.name, anchorFactIds: [], ...kept }); return; }
@@ -2099,7 +2110,7 @@ function FocusNarrative({ focus, material, description, disabled, onCommit }: {
     const anchor = anchors.find((entry) => `anchor:${entry.anchor}` === value);
     if (anchor) commit({ ...narrative, anchorKind: anchor.anchorKind, characterId: null, anchor: anchor.anchor, anchorFactIds: anchor.anchorFactIds });
   };
-  const subject = form === "traveling-object" ? "object" : "guide";
+  const subject = form === "classic" ? "guide" : FORM_ANCHOR[form].label.toLowerCase();
   const settled = form !== "classic" && !pending;
   return <fieldset className={styles.focusVoice}>
     <legend className={styles.focusLegend}>Narrative form</legend>
@@ -2110,7 +2121,7 @@ function FocusNarrative({ focus, material, description, disabled, onCommit }: {
           {FOCUS_NARRATIVE_FORMS.map((entry) => <option key={entry} value={entry}>{NARRATIVE_LABEL[entry]}</option>)}
         </select>
       </FormField>
-      {settled ? <FormField label={form === "character-guide" ? "Guide" : "Object"} description={form === "character-guide" && material?.characterChoice === "off" ? "The brand’s characters are off in People and places." : undefined}>
+      {settled ? <FormField label={FORM_ANCHOR[form].label} description={form === "character-guide" && material?.characterChoice === "off" ? "The brand’s characters are off in People and places." : undefined}>
         <select value={anchorValue} disabled={disabled} onChange={(event) => chooseAnchor(event.target.value)}>
           {form === "character-guide" ? characters.map((character) => <option key={character.id} value={`character:${character.id}`}>{character.name} · the brand’s character</option>) : null}
           {narrative.anchorKind === "character" && !characters.some((character) => character.id === narrative.characterId) ? <option value={anchorValue}>{narrative.anchor} · not available</option> : null}
@@ -2127,7 +2138,7 @@ function FocusNarrative({ focus, material, description, disabled, onCommit }: {
     {describing && form !== "classic" ? <FocusText
       key={`describe-${form}`}
       label={`Describe the ${subject}`}
-      description={form === "character-guide" ? "A figure from the story or an anonymous one, as it will look on every slide; never a real person of the story." : "One object, as it will look on every slide; nothing that suggests what the facts do not say."}
+      description={FORM_ANCHOR[form].describe}
       value=""
       max={FOCUS_ANCHOR_MAX_CHARACTERS}
       disabled={disabled}

@@ -233,8 +233,12 @@ it in a dropdown and the change stays theirs, "Use Claude's" gives it back.
 - **A closed list we define, in code**, because each form needs a recipe the
   program can execute: `classic` (the method before narrative forms, the
   default, and unchanged), `character-guide` (a guide leads the reader through
-  the story's places or moments) and `traveling-object` (one object from the
-  facts crosses its scenes, places or times). Same place forms (another time,
+  the story's places or moments), `traveling-object` (one object from the
+  facts crosses its scenes, places or times) and, since the same day,
+  `panorama` (one wide scene runs across every slide) and `follow-the-line`
+  (a line with a real meaning, from the facts, runs from slide to slide).
+  The last two are drawn once as one wide master scene, each slide redrawn
+  from its section (`draft2-images.md` §10). Same place forms (another time,
   layer by layer) come after the anchor is tested on real stories.
 - **The anchor is what stays.** A guide is one of the brand's characters (an
   id from People and places' roster, only while the editor allows them), a
@@ -259,13 +263,14 @@ it in a dropdown and the change stays theirs, "Use Claude's" gives it back.
 
 - `Draft2FocusNarrative`, flat like the answer, so the editor's choice goes
   back to Claude exactly: `form`, `anchorKind` (`none`, `character`,
-  `figure`, `object`), `characterId`, `anchor` (at most 200 characters),
+  `figure`, `object`, `scene`, `line`; `NARRATIVE_ANCHOR_KINDS` says which a
+  form takes), `characterId`, `anchor` (at most 200 characters),
   `anchorFactIds`, `progression` (what changes from slide to slide, at most
   300) and `ending`. A focus without one, from before narrative forms, is
   classic (`focusNarrative`).
 - Claude's answer: a form outside the list, an anchor of the wrong kind or
   without its words, a brand character the brand does not have or the editor
-  turned off, an object not taken from the facts, or a real person of the
+  turned off, an object or a line not taken from the facts, or a real person of the
   story as the anchor is a response error, asked for again once with the
   rule it broke. A brand character's anchor is its roster name.
 - The editor's choice: classic needs nothing; a guide is a character (by id)
@@ -282,8 +287,10 @@ it in a dropdown and the change stays theirs, "Use Claude's" gives it back.
 ### Skills
 
 - `skills/focus.ts` version 4: the `narrative` field, `anchorAlternatives`,
-  and a visual direction that follows the form.
-- `skills/narratives.ts` version 1: what each form is and what it never
+  and a visual direction that follows the form; version 5 adds panorama and
+  follow-the-line.
+- `skills/narratives.ts` version 1 (version 2 adds panorama and
+  follow-the-line): what each form is and what it never
   changes (the facts: aggressive curiosity, conservative facts), with a part
   for each role: the focus's judge, and the writer and judge of the Opening
   (the cover introduces the anchor, slide 2 takes the first step), the
@@ -297,7 +304,8 @@ it in a dropdown and the change stays theirs, "Use Claude's" gives it back.
   (`ANCHOR_MISSING`, `draft2-visual.md` §9).
 - Images: a figure or an object is drawn once as a textless anchor plate,
   passed to every slide that carries it, and Sol checks the anchor
-  (`draft2-images.md` §9).
+  (`draft2-images.md` §9); a panorama or a line is drawn once as a wide
+  master scene, each slide redrawn from its section (§10).
 
 ### Next
 

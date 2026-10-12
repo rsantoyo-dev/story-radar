@@ -2,7 +2,7 @@ import { Draft2InputError, Draft2ResponseError, type Draft2Fact } from "./draft2
 import { funnelVersions } from "./draft2-funnel";
 import { referencePhotos, type Draft2Inventory } from "./draft2-inventory.types";
 import type { Draft2CarouselSlide, Draft2Visual, Draft2VisualCandidate, Draft2VisualNeed, Draft2VisualShot, Draft2VisualSlide } from "./draft2-visual.types";
-import { focusNarrative, type Draft2FocusNarrative } from "./draft2-focus.types";
+import { focusNarrative, narrativeUsesMaster, type Draft2FocusNarrative } from "./draft2-focus.types";
 import {
   CREATIVE_IMAGE_REVIEW_SCHEMA, imageReviewIssues, parseImageReviewAnswer,
   type CreativeImageReviewAnswer, type CreativeImageReviewInput,
@@ -130,6 +130,37 @@ export type Draft2AnchorPlate = {
 export const ANCHOR_PLATE_FILE = "anchor-plate.png";
 export const ANCHOR_PLATE_PROMPT_FILE = "anchor-plate.prompt.txt";
 
+/** One slide's section of the master scene, in the master's pixels. */
+export type Draft2MasterSection = { slide: string; left: number; top: number; width: number; height: number };
+/**
+ * A panorama's or a line's master scene: the whole carousel drawn once as one
+ * wide image without a word, then cut into one section per slide, side by
+ * side; each slide is redrawn from its section, so the scene continues from
+ * slide to slide. One that fails leaves each slide to be drawn on its own.
+ */
+export type Draft2MasterPlate = Draft2AnchorPlate & { width: number; height: number; sections: Draft2MasterSection[] };
+export const MASTER_PLATE_FILE = "master-scene.png";
+export const MASTER_PLATE_PROMPT_FILE = "master-scene.prompt.txt";
+/** The master's height, and its widest width: under GPT Image's 3:1 ceiling, in multiples of 16. */
+const MASTER_HEIGHT = 1344;
+const MASTER_MAX_WIDTH = 3840;
+const SLIDE_RATIO = 4 / 5;
+
+/**
+ * The master scene's size and each slide's section: 4:5 sections side by
+ * side, as wide as the master allows, centred; with many slides they take
+ * the middle band of its height.
+ */
+export function masterLayout(positions: readonly string[]): { width: number; height: number; sections: Draft2MasterSection[] } {
+  const count = Math.max(1, positions.length);
+  const width = Math.min(MASTER_MAX_WIDTH, Math.round((SLIDE_RATIO * count * MASTER_HEIGHT) / 16) * 16);
+  const sectionHeight = Math.min(MASTER_HEIGHT, Math.floor(width / (SLIDE_RATIO * count)));
+  const sectionWidth = Math.floor(sectionHeight * SLIDE_RATIO);
+  const left = Math.floor((width - sectionWidth * count) / 2);
+  const top = Math.floor((MASTER_HEIGHT - sectionHeight) / 2);
+  return { width, height: MASTER_HEIGHT, sections: positions.map((slide, index) => ({ slide, left: left + index * sectionWidth, top, width: sectionWidth, height: sectionHeight })) };
+}
+
 /** Whether the plate lets the slides go: made, failed, or none to make. */
 export const anchorPlateSettled = (plate: Draft2AnchorPlate | undefined) => !plate || plate.status === "generated" || plate.status === "failed";
 
@@ -152,6 +183,8 @@ export type Draft2ImagesRun = {
   slides: Draft2SlideImage[];
   /** The narrative form's anchor, drawn before the slides when it is a figure or an object. */
   anchorPlate?: Draft2AnchorPlate;
+  /** A panorama's or a line's master scene, drawn before the slides. */
+  masterPlate?: Draft2MasterPlate;
   startedAt: string;
   updatedAt: string;
   error?: string;
@@ -289,6 +322,8 @@ export function newImagesRun({ runId, visual, script, carousel, inventory, model
     runId, status: "running", visualId: script.id, ...(visual.deckId ? { deckId: visual.deckId } : {}), inventoryVersion: inventory.version,
     quality: IMAGES_QUALITY, model, startedAt: at, updatedAt: at,
     ...(plate ? { anchorPlate: { anchor: narrative.anchor, status: "queued" as const, queuedAt: at } } : {}),
+    // A panorama or a line is drawn once as one wide scene, each slide from its section.
+    ...(narrativeUsesMaster(narrative) && narrative.anchor ? { masterPlate: { anchor: narrative.anchor, status: "queued" as const, queuedAt: at, ...masterLayout(carousel.map((words) => words.slide)) } } : {}),
     slides: carousel.map((words, index) => {
       const scriptSlide = script.slides.find((entry) => entry.slide === words.slide);
       if (!scriptSlide) throw new Draft2InputError(`The visual script has no image for ${words.label}. Write the visual script again.`);

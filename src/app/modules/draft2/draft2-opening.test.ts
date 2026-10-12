@@ -616,7 +616,7 @@ test("a narrative form: the writer and the judge read the narratives skill with 
     assert.ok(instructions.includes(NARRATIVES_SKILL.roleText![role]!), `${role} reads its own part`);
   }
   assert.ok(!String(writerCall.input.instructions).includes(NARRATIVES_SKILL.roleText!["opening-judge"]!), "never the judge's part");
-  assert.equal(json(session.trace.filter((entry) => entry.step === "opening").map((entry) => entry.skillVersions)), json([{ hooks: "6", narratives: "1" }, { hooks: "6", narratives: "1" }]));
+  assert.equal(json(session.trace.filter((entry) => entry.step === "opening").map((entry) => entry.skillVersions)), json([{ hooks: "6", narratives: "2" }, { hooks: "6", narratives: "2" }]));
   const context = (writerCall.input.context ?? solContextOf(writerCall.input)) as { focus: { narrative?: unknown } };
   assert.equal(json(context.focus.narrative), json(focusTypes.narrativeForModels(guide)));
   const classic = harness({ writes: [writer()], judgments: [judge("accept", "c1", { c1: 96 })] });

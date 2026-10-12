@@ -69,10 +69,11 @@ const clean: Review = () => ({ transcription: "", textCovered: false, textNote: 
 /** polls: how many times fal answers "generating" before an image is done; clock: a fake clock each poll moves by pollMs. */
 function harness({ session, polls = 1, reviewOf = clean, clock, pollMs = 30_000 }: { session?: Record<string, unknown>; polls?: number; reviewOf?: Review; clock?: { now: number }; pollMs?: number } = {}) {
   const calls = {
-    submits: [] as { endpoint: string; prompt: string; files: string[] }[],
+    submits: [] as { endpoint: string; prompt: string; files: string[]; width?: number; height?: number }[],
     reviews: [] as { slide: string; contents: Record<string, unknown> }[],
     charges: [] as Record<string, unknown>[],
     prompts: [] as Record<string, unknown>[],
+    sections: [] as Record<string, unknown>[],
   };
   const r2 = new Map<string, Buffer>();
   const pollsLeft = new Map<string, number>();
@@ -81,7 +82,14 @@ function harness({ session, polls = 1, reviewOf = clean, clock, pollMs = 30_000 
   /** Each compositor appends its name, so the stored image shows the order they ran in. */
   const step = (name: string) => async ({ image }: { image: Uint8Array }) => Buffer.from(`${Buffer.from(image).toString()}|${name}`);
   const expected = (unit: { headline: string; subheadline?: string; body?: string; ctaQuestion?: string }) => [unit.headline, unit.subheadline, unit.body, unit.ctaQuestion].filter(Boolean).join("\n");
-  const fakeSharp = () => ({ png: () => ({ toBuffer: async () => Buffer.from("map-png") }), resize: () => ({ jpeg: () => ({ toBuffer: async () => Buffer.from("jpeg") }) }) });
+  const fakeSharp = () => ({
+    png: () => ({ toBuffer: async () => Buffer.from("map-png") }), resize: () => ({ jpeg: () => ({ toBuffer: async () => Buffer.from("jpeg") }) }),
+    // A slide's section of a master scene: the rectangle cut and the size it is drawn at.
+    extract: (rect: { left: number; top: number; width: number; height: number }) => ({ resize: (width: number, height: number) => ({ png: () => ({ toBuffer: async () => {
+      calls.sections.push({ ...rect, to: `${width}x${height}` });
+      return Buffer.from(`section ${rect.left}`);
+    } }) }) }),
+  });
   const fakeDate = (source: { now: number }) => class extends Date { constructor(...args: unknown[]) { if (args.length) super(...(args as [string])); else super(source.now); } static now() { return source.now; } };
   const FakeDate = clock ? fakeDate(clock) : Date;
   const mocks: Record<string, unknown> = {
@@ -142,17 +150,17 @@ function harness({ session, polls = 1, reviewOf = clean, clock, pollMs = 30_000 
     },
     "../stories/creative-image-models": imageModels,
     "../stories/fal-image-client": {
-      submitFalImage: async (input: { endpoint: string; prompt: string; referenceImages: File[] }) => {
-        calls.submits.push({ endpoint: input.endpoint, prompt: input.prompt, files: input.referenceImages.map((file) => file.name) });
+      submitFalImage: async (input: { endpoint: string; prompt: string; referenceImages: File[]; width: number; height: number }) => {
+        calls.submits.push({ endpoint: input.endpoint, prompt: input.prompt, files: input.referenceImages.map((file) => file.name), width: input.width, height: input.height });
         const id = `req-${++requestCount}`;
         pollsLeft.set(id, polls);
         return id;
       },
-      pollFalImage: async (input: { requestId: string; postProcess: (value: { normalizedPng: Uint8Array; requestId: string; width: number; height: number }) => Promise<Uint8Array> }) => {
+      pollFalImage: async (input: { requestId: string; targetWidth: number; targetHeight: number; postProcess: (value: { normalizedPng: Uint8Array; requestId: string; width: number; height: number }) => Promise<Uint8Array> }) => {
         const left = pollsLeft.get(input.requestId) ?? 0;
         if (clock) clock.now += pollMs;
         if (left > 0) { pollsLeft.set(input.requestId, left - 1); return { status: "generating" }; }
-        await input.postProcess({ normalizedPng: Buffer.from(`raw:${input.requestId}`), requestId: input.requestId, width: 1080, height: 1350 });
+        await input.postProcess({ normalizedPng: Buffer.from(`raw:${input.requestId}`), requestId: input.requestId, width: input.targetWidth, height: input.targetHeight });
         return { status: "generated", image: { url: `https://v3.fal.media/${input.requestId}.png`, seed: 1 } };
       },
     },
@@ -402,4 +410,34 @@ test("a brand character anchor needs no plate, and a classic story none either",
   assert.equal(guided.images?.anchorPlate, undefined);
   const classic = await harness().run();
   assert.equal(classic.images?.anchorPlate, undefined);
+});
+
+test("a panorama or a line is drawn once as one wide master scene; each slide is redrawn from its section, given last, and Sol checks the line", async () => {
+  const line = { form: "follow-the-line", anchorKind: "line", characterId: null, anchor: "The boardwalk trail", anchorFactIds: ["f1"], progression: "What the trail reaches", ending: "resolves" };
+  const visual = { ...VISUAL, focus: { version: 1, values: { ...VISUAL.focus!.values, narrative: line } } };
+  const h = harness({ session: { visual } });
+  const session = await h.run();
+  const images = session.images!;
+  const master = images.masterPlate!;
+  assert.equal(json([master.anchor, master.status, master.width, master.height, master.sections.map((section) => [section.slide, section.left, section.width, section.height])]),
+    json(["The boardwalk trail", "generated", 3232, 1344, [["cover", 3, 1075, 1344], ["s1", 1078, 1075, 1344], ["last", 2153, 1075, 1344]]]));
+  assert.equal(images.anchorPlate, undefined, "a line needs no anchor plate");
+  const [first, ...slides] = h.calls.submits;
+  assert.equal(json([first.width, first.height, first.files]), json([3232, 1344, []]), "the master first, wide, from words alone");
+  assert.match(first.prompt, /^MASTER SCENE\n\nOne wide image: the whole world of a 3-slide carousel, read from left to right\./);
+  assert.match(first.prompt, /One continuous line runs through the whole image from the left edge to the right edge: The boardwalk trail\./);
+  assert.match(first.prompt, /From left to right, one section per slide:\n1\. Cover: the cover trail/);
+  const byOrder = (order: number) => slides.filter((submit) => submit.prompt.startsWith(`PROMPT ${order}:`))[0];
+  assert.equal(json(h.calls.sections), json([
+    { left: 3, top: 0, width: 1075, height: 1344, to: "1088x1360" }, { left: 1078, top: 0, width: 1075, height: 1344, to: "1088x1360" }, { left: 2153, top: 0, width: 1075, height: 1344, to: "1088x1360" },
+  ]), "each section cut from the master once and drawn at the slide's size");
+  assert.equal(json([byOrder(1).files, byOrder(2).files, byOrder(3).files]), json([["master-section-cover.png"], ["jo.png", "master-section-s1.png"], ["master-section-last.png"]]), "each slide's section, last");
+  assert.match(byOrder(2).prompt, /MASTER SECTION\nThe LAST input image is this slide's section of the carousel's one wide scene, with the line \(The boardwalk trail\) entering at its left edge and leaving at its right edge\./);
+  assert.equal(json(h.calls.reviews.map((review) => (review.contents.anchor as { what: string; role: string } | undefined)?.role)), json(["line", "line", "line"]));
+  assert.equal(json(h.calls.charges.filter((charge) => charge.operation === "draft2_master_scene").map((charge) => charge.idempotencyKey)), json([`draft2-master-scene:${images.runId}`]));
+  const panorama = { ...line, form: "panorama", anchorKind: "scene", anchor: "An autumn trail", anchorFactIds: [] };
+  const scene = harness({ session: { visual: { ...VISUAL, focus: { version: 1, values: { ...VISUAL.focus!.values, narrative: panorama } } } } });
+  await scene.run();
+  assert.match(scene.calls.submits[0].prompt, /The scene: An autumn trail\./);
+  assert.equal(scene.calls.reviews.some((review) => "anchor" in review.contents), false, "a panorama's scene is every slide by construction");
 });

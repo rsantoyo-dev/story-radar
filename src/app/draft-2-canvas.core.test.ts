@@ -110,7 +110,7 @@ test("a step's rail state reads its badge, what runs now and what it waits on", 
 });
 
 test("the anchor plate's charge counts with the images'", () => {
-  const images = { slides: [{ attempts: [{ costMicros: 30_000 }, { costMicros: 20_000 }] }], anchorPlate: { costMicros: 5_000 } };
-  assert.equal(stepMetrics([], images).images.costMicros, 55_000);
-  assert.equal(sessionMetrics([], images).costMicros, 55_000);
+  const images = { slides: [{ attempts: [{ costMicros: 30_000 }, { costMicros: 20_000 }] }], anchorPlate: { costMicros: 5_000 }, masterPlate: { costMicros: 7_000 } };
+  assert.equal(stepMetrics([], images).images.costMicros, 62_000, "the plates' charges count with the slides'");
+  assert.equal(sessionMetrics([], images).costMicros, 62_000);
 });

@@ -45,13 +45,17 @@ const MAX_CONSEQUENCE_FACTS = 10;
  * by slide, each image its own; character-guide: a guide (the brand's
  * character, a figure from the story or an anonymous one) leads the reader
  * through the story's places or moments; traveling-object: one object from
- * the facts crosses its scenes, places or times.
+ * the facts crosses its scenes, places or times; panorama: one wide scene
+ * runs across every slide, read left to right; follow-the-line: a line with
+ * a real meaning (a trail, a route, a street, a river) runs from slide to
+ * slide and leads the reader along it. Panorama and follow-the-line are drawn
+ * once as one wide master scene, and each slide is redrawn from its section.
  */
-export const FOCUS_NARRATIVE_FORMS = ["classic", "character-guide", "traveling-object"] as const;
+export const FOCUS_NARRATIVE_FORMS = ["classic", "character-guide", "traveling-object", "panorama", "follow-the-line"] as const;
 /** resolves: the last slide pays the story off; returns: it comes back to the cover's frame, read with what the reader now knows. */
 export const FOCUS_NARRATIVE_ENDINGS = ["resolves", "returns"] as const;
-/** What stays from slide to slide: nothing (classic), one of the brand's characters, another figure, or an object. */
-export const FOCUS_ANCHOR_KINDS = ["none", "character", "figure", "object"] as const;
+/** What stays from slide to slide: nothing (classic), one of the brand's characters, another figure, an object, the scene of a panorama, or a line. */
+export const FOCUS_ANCHOR_KINDS = ["none", "character", "figure", "object", "scene", "line"] as const;
 export const FOCUS_ANCHOR_MAX_CHARACTERS = 200;
 export const FOCUS_PROGRESSION_MAX_CHARACTERS = 300;
 const MAX_ANCHOR_FACTS = 6;
@@ -65,6 +69,24 @@ export type Draft2FocusGravity = (typeof FOCUS_GRAVITIES)[number];
 export type Draft2NarrativeForm = (typeof FOCUS_NARRATIVE_FORMS)[number];
 export type Draft2NarrativeEnding = (typeof FOCUS_NARRATIVE_ENDINGS)[number];
 export type Draft2AnchorKind = (typeof FOCUS_ANCHOR_KINDS)[number];
+
+/** The anchors each form takes. */
+export const NARRATIVE_ANCHOR_KINDS: Record<Draft2NarrativeForm, readonly Draft2AnchorKind[]> = {
+  classic: ["none"],
+  "character-guide": ["character", "figure"],
+  "traveling-object": ["object"],
+  panorama: ["scene"],
+  "follow-the-line": ["line"],
+};
+/** The anchors that must come from the facts when Claude names them: an object, a line. */
+const ANCHORS_FROM_FACTS: readonly Draft2AnchorKind[] = ["object", "line"];
+
+/** Whether a form is drawn once as one wide master scene, each slide redrawn from its section. */
+export const narrativeUsesMaster = (narrative: Pick<Draft2FocusNarrative, "form">) => narrative.form === "panorama" || narrative.form === "follow-the-line";
+
+/** What the anchor is called on a slide, for messages and prompts. */
+export const anchorNoun = (narrative: Pick<Draft2FocusNarrative, "form">): string =>
+  ({ classic: "story", "character-guide": "guide", "traveling-object": "object", panorama: "scene", "follow-the-line": "line" })[narrative.form];
 
 /**
  * The narrative form as the focus keeps it, in the answer's own flat shape,
@@ -87,7 +109,8 @@ export type Draft2FocusNarrative = {
 export const CLASSIC_NARRATIVE: Draft2FocusNarrative = { form: "classic", anchorKind: "none", characterId: null, anchor: "", anchorFactIds: [], progression: "", ending: "resolves" };
 
 /** Another anchor Claude saw in the story, for the editor to choose instead. */
-export type Draft2NarrativeAlternative = { kind: "figure" | "object"; anchor: string; factIds: string[] };
+export type Draft2NarrativeAlternative = { kind: "figure" | "object" | "scene" | "line"; anchor: string; factIds: string[] };
+const ALTERNATIVE_KINDS: readonly Draft2NarrativeAlternative["kind"][] = ["figure", "object", "scene", "line"];
 
 /** The judge's look at the narrative form Claude chose: kept, sent back to classic (Claude's proposal kept beside), or not reviewed, with why. */
 export type Draft2NarrativeReview = { verdict: "keep" | "classic" | "unavailable"; reason: string; proposed?: Draft2FocusNarrative; by: { provider: Draft2Provider; model: string }; at: string };
@@ -217,7 +240,7 @@ export const DRAFT2_FOCUS_SCHEMA: Record<string, unknown> = {
       type: "array",
       items: {
         type: "object",
-        properties: { kind: { type: "string", enum: ["figure", "object"] }, anchor: { type: "string" }, factIds: factIdsSchema },
+        properties: { kind: { type: "string", enum: [...ALTERNATIVE_KINDS] }, anchor: { type: "string" }, factIds: factIdsSchema },
         required: ["kind", "anchor", "factIds"],
         additionalProperties: false,
       },
@@ -294,7 +317,7 @@ function parseNarrative(value: unknown, { known, material, editorChoice }: { kno
   if (!form || !ending) throw new Draft2ResponseError(`The narrative form is one of ${FOCUS_NARRATIVE_FORMS.join(", ")} and its ending one of ${FOCUS_NARRATIVE_ENDINGS.join(", ")}`);
   if (form === "classic") return CLASSIC_NARRATIVE;
   const kind = oneOf(FOCUS_ANCHOR_KINDS, body.anchorKind);
-  const allowed: readonly Draft2AnchorKind[] = form === "character-guide" ? ["character", "figure"] : ["object"];
+  const allowed = NARRATIVE_ANCHOR_KINDS[form];
   if (!kind || !allowed.includes(kind)) throw new Draft2ResponseError(`A ${form} anchor is ${allowed.join(" or ")}, not ${String(body.anchorKind)}`);
   const anchor = text(body.anchor, FOCUS_ANCHOR_MAX_CHARACTERS);
   const progression = text(body.progression, FOCUS_PROGRESSION_MAX_CHARACTERS);
@@ -310,7 +333,11 @@ function parseNarrative(value: unknown, { known, material, editorChoice }: { kno
     return { form, anchorKind: kind, characterId: character.id, anchor: character.name, anchorFactIds: [], progression, ending };
   }
   const anchorFactIds = knownFactIds(body.anchorFactIds, known, MAX_ANCHOR_FACTS);
-  if (kind === "object" && !anchorFactIds.length) throw new Draft2ResponseError("A traveling object comes from the facts: cite the facts that put it in the story in anchorFactIds");
+  if (ANCHORS_FROM_FACTS.includes(kind) && !anchorFactIds.length) {
+    throw new Draft2ResponseError(kind === "line"
+      ? "The line comes from the facts (the trail, route, street or river they name): cite them in anchorFactIds"
+      : "A traveling object comes from the facts: cite the facts that put it in the story in anchorFactIds");
+  }
   const person = realPersonIn(anchor, material?.people ?? []);
   if (person) throw new Draft2ResponseError(`${person} is a real person of the story: never the anchor, who appears only in a verified documentary photo`);
   return { form, anchorKind: kind, characterId: null, anchor, anchorFactIds, progression, ending };
@@ -321,7 +348,7 @@ function parseAnchorAlternatives(value: unknown, known: ReadonlySet<string>, peo
   const alternatives: Draft2NarrativeAlternative[] = [];
   for (const entry of Array.isArray(value) ? value : []) {
     const body = record(entry);
-    const kind = body.kind === "figure" || body.kind === "object" ? body.kind : undefined;
+    const kind = ALTERNATIVE_KINDS.find((candidate) => candidate === body.kind);
     const anchor = text(body.anchor, FOCUS_ANCHOR_MAX_CHARACTERS);
     if (!kind || !anchor || realPersonIn(anchor, people) || alternatives.some((alternative) => alternative.anchor === anchor)) continue;
     alternatives.push({ kind, anchor, factIds: knownFactIds(body.factIds, known, MAX_ANCHOR_FACTS) });
@@ -518,10 +545,11 @@ function editedNarrative(focus: Draft2Focus, value: unknown): Draft2FocusNarrati
   if (!form) throw new Draft2InputError(`The narrative form is one of ${FOCUS_NARRATIVE_FORMS.join(", ")}.`);
   if (form === "classic") return CLASSIC_NARRATIVE;
   const kind = oneOf(FOCUS_ANCHOR_KINDS, body.anchorKind);
-  const allowed: readonly Draft2AnchorKind[] = form === "character-guide" ? ["character", "figure"] : ["object"];
-  if (!kind || !allowed.includes(kind)) throw new Draft2InputError(form === "character-guide" ? "A guide is one of the brand's characters or a figure you describe." : "A traveling object needs the object.");
+  if (!kind || !NARRATIVE_ANCHOR_KINDS[form].includes(kind)) {
+    throw new Draft2InputError(form === "character-guide" ? "A guide is one of the brand's characters or a figure you describe." : `A ${form === "traveling-object" ? "traveling object" : form === "panorama" ? "panorama" : "line to follow"} needs its ${anchorNoun({ form })}.`);
+  }
   const anchor = typeof body.anchor === "string" ? body.anchor.trim() : "";
-  if (!anchor || anchor.length > FOCUS_ANCHOR_MAX_CHARACTERS) throw new Draft2InputError(`Say what the ${form === "character-guide" ? "guide" : "object"} is in 1 to ${FOCUS_ANCHOR_MAX_CHARACTERS} characters.`);
+  if (!anchor || anchor.length > FOCUS_ANCHOR_MAX_CHARACTERS) throw new Draft2InputError(`Say what the ${anchorNoun({ form })} is in 1 to ${FOCUS_ANCHOR_MAX_CHARACTERS} characters.`);
   const characterId = kind === "character" && typeof body.characterId === "string" && body.characterId.trim() ? body.characterId.trim() : null;
   if (kind === "character" && !characterId) throw new Draft2InputError("Choose one of the brand's characters.");
   const progression = typeof body.progression === "string" ? body.progression.trim() : "";
@@ -590,7 +618,7 @@ export function focusFindings(values: Draft2FocusValues, material?: Draft2FocusM
         : `${narrative.anchor} is no longer one of the brand's characters with a reference image: choose another guide.` });
     }
     const person = narrative.anchorKind === "character" ? undefined : realPersonIn(narrative.anchor, material.people);
-    if (person) findings.push({ field: "narrative", code: "NARRATIVE_REAL_PERSON", detail: `${person} is a real person of the story: they appear only in a verified documentary photo, never drawn as the ${narrative.form === "character-guide" ? "guide" : "object"}. Choose another anchor.` });
+    if (person) findings.push({ field: "narrative", code: "NARRATIVE_REAL_PERSON", detail: `${person} is a real person of the story: they appear only in a verified documentary photo, never drawn as the ${anchorNoun(narrative)}. Choose another anchor.` });
   }
   return findings;
 }
