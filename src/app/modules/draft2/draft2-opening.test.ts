@@ -9,6 +9,7 @@ import * as skills from "./skills/draft2-skills";
 import * as hooks from "./skills/hooks";
 import { NARRATIVES_SKILL } from "./skills/narratives";
 import { DISCOVERY_SKILL } from "./skills/discovery";
+import { ARCS_SKILL } from "./skills/arcs";
 import { loadInSandbox } from "./draft2-test-sandbox";
 import type { Draft2Opening, Draft2OpeningCandidate, Draft2OpeningScore } from "./draft2-opening.types";
 import type { Draft2Focus, Draft2FocusValues } from "./draft2-focus.types";
@@ -659,4 +660,15 @@ test("a paused run whose next round is past the rounds it may have ends as its l
   });
   const next = await fresh.run();
   assert.equal(json([next.opening?.rounds.length, next.opening?.extraRounds ?? 0, next.opening?.status]), json([3, 0, "needs-review"]), "its own plan's three rounds, not the earlier run's two extra");
+});
+
+test("a story arc: the writer and the judge read the arcs skill with their own part, and the arc in the focus", async () => {
+  const concept = { arc: "cause-effect" as const, premise: "", premiseFactIds: ["f1"], reveals: ["Videos replace binders", "Awards come in a week"] };
+  const h = harness({ writes: [writer()], judgments: [judge("accept", "c1", { c1: 96 })], session: { focus: { ...FOCUS, values: { ...FOCUS_VALUES, concept } } } });
+  const session = await h.run();
+  const [writerCall] = h.calls.filter((call) => call.role === "writer");
+  assert.ok(String(writerCall.input.instructions).includes(ARCS_SKILL.roleText!["opening-writer"]!));
+  assert.ok(!String(writerCall.input.instructions).includes(DISCOVERY_SKILL.text), "no discovery skill for an arc");
+  assert.equal(json(session.trace.filter((entry) => entry.step === "opening").map((entry) => entry.skillVersions)), json([{ hooks: "6", arcs: "1" }, { hooks: "6", arcs: "1" }]));
+  assert.equal(json((writerCall.input.context as { focus: { concept?: unknown } }).focus.concept), json({ arc: "cause-effect", factIds: ["f1"], beats: concept.reveals }));
 });

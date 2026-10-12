@@ -241,7 +241,24 @@ const NEED_LABEL: Record<string, string> = { "generic-illustration": "Illustrati
 const FRAMING_LABEL: Record<Draft2FocusValues["framing"], string> = { "reader-consequence": "Reader consequence", explainer: "Explainer", authority: "Authority" };
 const STRUCTURE_LABEL: Record<Draft2FocusValues["structure"]["kind"], string> = { arc: "Arc: one story, one tension", steps: "Steps: an ordered procedure", list: "List: “N things to…”" };
 const GOAL_LABEL: Record<Draft2FocusValues["goal"], string> = { followers: "Followers", discussion: "Discussion", saves: "Saves", shares: "Shares" };
-const CONCEPT_LABEL: Record<Draft2ConceptArc, string> = { classic: "Classic: the news, told straight", discovery: "Discovery: the reader discovers the news" };
+const CONCEPT_LABEL: Record<Draft2ConceptArc, string> = {
+  classic: "Classic: the news, told straight",
+  discovery: "Discovery: the reader discovers the news",
+  "progressive-reveal": "Progressive reveal: the answer, piece by piece",
+  "problem-solution": "Problem → solution: what it costs, what solves it",
+  "cause-effect": "Cause → effect: one link of the chain per slide",
+  escalation: "Escalation: each slide bigger than the last",
+  comparison: "Comparison: two alternatives, the same criteria",
+};
+/** What a beat arc's lines are, as the field asks for them. */
+const BEATS_LABEL: Record<Exclude<Draft2ConceptArc, "classic" | "discovery">, string> = {
+  "progressive-reveal": "The pieces of the answer, one per line, in order",
+  "problem-solution": "Problem, what it costs, solution: one per line",
+  "cause-effect": "The chain, one link per line",
+  escalation: "The steps, smallest first, one per line",
+  comparison: "The criteria, one per line",
+};
+const conceptName = (arc: Draft2ConceptArc) => CONCEPT_LABEL[arc].split(":")[0];
 const NARRATIVE_LABEL: Record<Draft2NarrativeForm, string> = {
   classic: "Classic: one story, slide by slide",
   "character-guide": "Character guide: a guide leads the reader through it",
@@ -1945,7 +1962,7 @@ function focusValueText(field: Draft2FocusField, values: Draft2FocusValues): str
     case "direction": return values.direction;
     case "concept": {
       const concept = focusConcept(values);
-      return concept.arc === "classic" ? CONCEPT_LABEL.classic : `Discovery · ${concept.premise}`;
+      return concept.arc === "classic" ? CONCEPT_LABEL.classic : concept.arc === "discovery" ? `Discovery · ${concept.premise}` : `${conceptName(concept.arc)} · ${concept.reveals.join(" · ") || "beats to be ordered"}`;
     }
     case "narrative": {
       const narrative = focusNarrative(values);
@@ -2052,7 +2069,7 @@ function FocusView({ focus, findings, material, saving, locked, onSave, onReset 
         <FocusConcept key={key("concept")} focus={focus} description={about("concept", values.concept ? conceptReviewLine(focus) : "Decided before concepts: decide again for Claude to propose premises, or choose here.")} disabled={locked} onCommit={(concept) => onSave("concept", concept)} />
         {reset("concept")}
         {focus.conceptReview?.verdict === "classic" && focus.conceptReview.proposed && focusConcept(values).arc === "classic"
-          ? <div><Button variant="quiet" size="compact" busy={saving === "concept"} disabled={locked} onClick={() => onSave("concept", focus.conceptReview!.proposed)}>Use Claude’s premise</Button></div> : null}
+          ? <div><Button variant="quiet" size="compact" busy={saving === "concept"} disabled={locked} onClick={() => onSave("concept", focus.conceptReview!.proposed)}>Use Claude’s {focus.conceptReview.proposed.arc === "discovery" ? "premise" : conceptName(focus.conceptReview.proposed.arc).toLowerCase()}</Button></div> : null}
       </div>
       <div className={`${styles.focusField} ${styles.focusWide}`}>
         <FocusNarrative key={key("narrative")} focus={focus} material={material} description={about("narrative", values.narrative ? narrativeReviewLine(focus) : "Decided before narrative forms: decide again for Claude to choose one, or choose one here.")} disabled={locked} onCommit={(narrative) => onSave("narrative", narrative)} />
@@ -2074,7 +2091,11 @@ function conceptReviewLine(focus: Draft2Focus): string | undefined {
   if (!review) return undefined;
   const judge = draft2ModelName(review.by.model, review.by.provider);
   if (review.verdict === "keep") return `${judge} kept it: ${review.reason}`;
-  if (review.verdict === "classic") return `${judge} preferred classic${review.proposed ? ` to Claude’s premise (${clip(review.proposed.premise, 80)})` : ""}: ${review.reason}`;
+  if (review.verdict === "classic") {
+    const proposed = review.proposed;
+    const what = !proposed ? "" : proposed.arc === "discovery" ? ` to Claude’s premise (${clip(proposed.premise, 80)})` : ` to Claude’s ${conceptName(proposed.arc).toLowerCase()}`;
+    return `${judge} preferred classic${what}: ${review.reason}`;
+  }
   return `Not reviewed: ${review.reason}`;
 }
 
@@ -2096,18 +2117,25 @@ function FocusConcept({ focus, description, disabled, onCommit }: {
   const arc: Draft2ConceptArc = pending ? "discovery" : concept.arc;
   // Claude's premises (its choice, the one the judge sent back, its others) and the one standing, once each.
   const premises = [...new Map([focus.ai?.concept, focus.conceptReview?.proposed, concept, ...(focus.conceptOptions ?? []).map((option) => ({ arc: "discovery" as const, ...option }))]
-    .filter((entry): entry is Draft2FocusConcept => Boolean(entry && entry.arc === "discovery" && entry.premise))
+    .filter((entry): entry is Draft2FocusConcept => Boolean(entry && (entry.arc ?? "discovery") === "discovery" && entry.premise))
     .map((entry) => [entry.premise, entry] as const)).values()];
   const commit = (next: Draft2FocusConcept) => { setPending(false); setWriting(false); onCommit(next); };
   const switchArc = (next: Draft2ConceptArc) => {
     setWriting(false);
     if (next === concept.arc) { setPending(false); return; }
     if (next === "classic") { commit(CLASSIC_CONCEPT); return; }
+    if (next !== "discovery") {
+      // Claude's own concept for that arc, with its facts and beats; else the arc alone, for the writers to order.
+      const claude = [focus.ai?.concept, focus.conceptReview?.proposed, ...(focus.conceptOptions ?? []).map((option) => ({ ...option, arc: option.arc ?? "discovery" as const }))].find((entry) => entry?.arc === next);
+      commit(claude ? { arc: next, premise: "", premiseFactIds: claude.premiseFactIds, reveals: claude.reveals } : { arc: next, premise: "", premiseFactIds: [], reveals: [] });
+      return;
+    }
     if (premises[0]) { commit(premises[0]); return; }
     setPending(true);
     setWriting(true);
   };
   const settled = arc === "discovery" && !pending;
+  const beatArc = arc !== "classic" && arc !== "discovery" ? arc : undefined;
   return <fieldset className={styles.focusVoice}>
     <legend className={styles.focusLegend}>Concept</legend>
     {description ? <p className={styles.factMeta}>{description}</p> : null}
@@ -2140,6 +2168,17 @@ function FocusConcept({ focus, description, disabled, onCommit }: {
     {settled ? <FocusText
       key={`reveals-${concept.premise}`}
       label="Discovery chain: one question per line, the news last"
+      value={concept.reveals.join("\n")}
+      max={FOCUS_MAX_REVEALS * (FOCUS_REVEAL_MAX_CHARACTERS + 1)}
+      rows={4}
+      allowEmpty
+      disabled={disabled}
+      onCommit={(value) => commit({ ...concept, reveals: value.split("\n").map((line) => line.trim()).filter(Boolean) })}
+    /> : null}
+    {beatArc && concept.arc === beatArc ? <FocusText
+      key={`beats-${beatArc}-${concept.reveals.join("|")}`}
+      label={BEATS_LABEL[beatArc]}
+      description={concept.premiseFactIds.length ? `Rests on ${concept.premiseFactIds.join(", ")}` : "Your beats: they order the facts, they add none; empty, the writers order them."}
       value={concept.reveals.join("\n")}
       max={FOCUS_MAX_REVEALS * (FOCUS_REVEAL_MAX_CHARACTERS + 1)}
       rows={4}

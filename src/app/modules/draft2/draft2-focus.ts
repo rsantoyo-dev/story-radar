@@ -24,6 +24,7 @@ import { brandBrief, composeInstructions, type Draft2Skill } from "./skills/draf
 import { FOCUS_SKILL } from "./skills/focus";
 import { NARRATIVES_SKILL } from "./skills/narratives";
 import { DISCOVERY_SKILL } from "./skills/discovery";
+import { ARCS_SKILL } from "./skills/arcs";
 import type { Draft2SessionRow } from "@/db/schema";
 
 /** Every field and a reason for each, with Claude's thinking, which the API counts against the same ceiling. */
@@ -83,7 +84,7 @@ export async function decideDraft2Focus({ topicId, storyId, sessionId }: Draft2F
   const auditContext = { runId: session.id, topicId, storyId };
   // The visual identity in full, as the visual script reads it: the visual direction is decided within it.
   const brief = [brandBrief(profile), `# Visual identity\n${resolveCreativeVisualGuidance(profile)}`, visualModeLine(profile.visualFidelityMode as Draft2VisualMode)].join("\n\n");
-  const { instructions, skillVersions } = composeInstructions("focus-editor", [FOCUS_SKILL, DISCOVERY_SKILL, NARRATIVES_SKILL], brief);
+  const { instructions, skillVersions } = composeInstructions("focus-editor", [FOCUS_SKILL, DISCOVERY_SKILL, ARCS_SKILL, NARRATIVES_SKILL], brief);
   const verifiedFacts = openingFactsSnapshot(facts);
   const contents = focusDecisionRequest({ title: content.title, today: focusToday(timezone, new Date()), profile, lines, foundBy, editorChoices, material });
 
@@ -132,8 +133,11 @@ export async function decideDraft2Focus({ topicId, storyId, sessionId }: Draft2F
       narrative && narrative.form !== "classic" && !("narrative" in editorChoices)
         ? review({ value: narrative, role: "focus-narrative-judge", skill: NARRATIVES_SKILL, operation: "draft2_focus_narrative_review", contents: narrativeReviewRequest(reviewContents), subject: "narrative form" })
         : undefined,
-      concept && concept.arc === "discovery" && !("concept" in editorChoices)
-        ? review({ value: concept, role: "focus-concept-judge", skill: DISCOVERY_SKILL, operation: "draft2_focus_concept_review", contents: conceptReviewRequest(reviewContents), subject: "premise" })
+      concept && concept.arc !== "classic" && !("concept" in editorChoices)
+        ? review({
+          value: concept, role: "focus-concept-judge", skill: concept.arc === "discovery" ? DISCOVERY_SKILL : ARCS_SKILL, operation: "draft2_focus_concept_review",
+          contents: conceptReviewRequest(reviewContents), subject: concept.arc === "discovery" ? "premise" : `${concept.arc} arc`,
+        })
         : undefined,
     ]);
     const backToClassic = { ...(narrativeReview?.verdict === "classic" ? { narrative: CLASSIC_NARRATIVE } : {}), ...(conceptReview?.verdict === "classic" ? { concept: CLASSIC_CONCEPT } : {}) };

@@ -354,3 +354,33 @@ choice that stays, "Use Claude's").
   premise's world; no lettering beyond the slide's words, nothing official of
   a real organization) and the Caption (the premise's question first, the
   news plainly after). Focus skill v6.
+
+## 14. Story arcs (2026-10-12)
+
+From the editor's list of sixteen storytelling structures: several already
+existed (Inverted Pyramid is classic, Delayed Reveal is discovery, Open Loop
+→ Payoff is the engine of every arc, Countdown / List is the structure,
+Journey and Character-Driven are narrative forms, Circular is the "returns"
+ending). Five more are now concept arcs, chosen for the most curiosity at
+the least factual risk; each slide is one beat, in order, resting on the
+facts it cites:
+
+| Arc | Each slide | Truth rule |
+| --- | --- | --- |
+| `progressive-reveal` | one more piece of the answer | every piece is a fact |
+| `problem-solution` | problem, what it costs, the solution | both in the facts; no consequence added |
+| `cause-effect` | one link of the chain | every link stated by the facts, qualifiers kept |
+| `escalation` | bigger than the slide before | the facts' own magnitudes, the peak last |
+| `comparison` | one criterion, both sides | each value as the facts give it; no verdict of the writer's |
+
+They take no premise (`premise` empty), cite the facts their beats rest on
+in `premiseFactIds`, hold the beats in `reveals` (the models read them as
+`factIds` and `beats`), and apply at any gravity (a serious story may follow
+a chain of causes). Claude's two alternatives may be other arcs (each option
+records its `arc`). The judge reviews an arc with the arcs skill (`skills/arcs.ts`
+v1: definitions, the review part and each role's part for the Opening, Deck,
+Closing and visual script); the Caption reads only discovery's part. Focus
+skill v7. Next candidates: Before → After (with the Same place forms),
+Reverse Reveal, Investigation and Multiple Perspectives, which need finer
+rules (a perception never stated as a false fact, clues that are verified
+material, every voice attributed).

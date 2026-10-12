@@ -60,7 +60,16 @@ export const FOCUS_NARRATIVE_FORMS = ["classic", "character-guide", "traveling-o
  * the news itself the last reveal. A premise invents the world, never the
  * news: the mission or the mystery the reader follows is the facts' own.
  */
-export const FOCUS_CONCEPT_ARCS = ["classic", "discovery"] as const;
+export const FOCUS_CONCEPT_ARCS = ["classic", "discovery", "progressive-reveal", "problem-solution", "cause-effect", "escalation", "comparison"] as const;
+/**
+ * The arcs past classic and discovery move the reader through beats the
+ * facts give, in order: progressive-reveal (the answer piece by piece),
+ * problem-solution (a problem, what it costs, the facts' solution),
+ * cause-effect (one link of a chain the facts state per slide), escalation
+ * (each slide bigger, in the facts' own magnitudes) and comparison (two
+ * alternatives on the same criteria). They take no premise and any gravity.
+ */
+export const FOCUS_BEAT_ARCS = ["progressive-reveal", "problem-solution", "cause-effect", "escalation", "comparison"] as const;
 export const FOCUS_PREMISE_MAX_CHARACTERS = 280;
 export const FOCUS_REVEAL_MAX_CHARACTERS = 140;
 export const FOCUS_MAX_REVEALS = 6;
@@ -139,8 +148,8 @@ export type Draft2FocusConcept = {
   reveals: string[];
 };
 export const CLASSIC_CONCEPT: Draft2FocusConcept = { arc: "classic", premise: "", premiseFactIds: [], reveals: [] };
-/** Another premise Claude wrote, for the editor to choose instead. */
-export type Draft2PremiseOption = { premise: string; premiseFactIds: string[]; reveals: string[] };
+/** Another concept Claude wrote, for the editor to choose instead: a premise (discovery, when no arc is named) or an arc with its beats. */
+export type Draft2PremiseOption = { arc?: Exclude<Draft2ConceptArc, "classic">; premise: string; premiseFactIds: string[]; reveals: string[] };
 
 /** Another anchor Claude saw in the story, for the editor to choose instead. */
 export type Draft2NarrativeAlternative = { kind: "figure" | "object" | "scene" | "line"; anchor: string; factIds: string[] };
@@ -281,8 +290,11 @@ export const DRAFT2_FOCUS_SCHEMA: Record<string, unknown> = {
       type: "array",
       items: {
         type: "object",
-        properties: { premise: { type: "string" }, premiseFactIds: factIdsSchema, reveals: { type: "array", items: { type: "string" } } },
-        required: ["premise", "premiseFactIds", "reveals"],
+        properties: {
+          arc: { type: "string", enum: FOCUS_CONCEPT_ARCS.filter((arc) => arc !== "classic") },
+          premise: { type: "string" }, premiseFactIds: factIdsSchema, reveals: { type: "array", items: { type: "string" } },
+        },
+        required: ["arc", "premise", "premiseFactIds", "reveals"],
         additionalProperties: false,
       },
     },
@@ -417,9 +429,10 @@ const revealsOf = (value: unknown): string[] =>
 
 /**
  * The concept of Claude's answer, checked against the contract: an arc
- * outside the list, a premise without its words or the facts it dramatizes,
- * a chain of fewer than two reveals, a premise for a serious or grave story,
- * or a real person of the story in it is a response error, asked for again
+ * outside the list; for discovery, a premise without its words or the facts
+ * it dramatizes, a chain of fewer than two reveals, a premise for a serious
+ * or grave story, or a real person of the story in it; for another arc, no
+ * facts or fewer than two beats. Each is a response error, asked for again
  * with the rule it broke. An answer without one is classic; the editor's
  * choice is kept as given (the findings say what it misses).
  */
@@ -430,6 +443,13 @@ function parseConcept(value: unknown, { known, material, gravity, editorChoice }
   const arc = oneOf(FOCUS_CONCEPT_ARCS, body.arc);
   if (!arc) throw new Draft2ResponseError(`The concept's arc is one of ${FOCUS_CONCEPT_ARCS.join(", ")}`);
   if (arc === "classic") return CLASSIC_CONCEPT;
+  if (arc !== "discovery") {
+    const factIds = knownFactIds(body.premiseFactIds, known, MAX_PREMISE_FACTS);
+    if (!factIds.length) throw new Draft2ResponseError(`A ${arc} arc rests on the facts: cite the facts its beats come from in premiseFactIds`);
+    const beats = revealsOf(body.reveals);
+    if (beats.length < FOCUS_MIN_REVEALS) throw new Draft2ResponseError(`A ${arc} arc needs ${FOCUS_MIN_REVEALS} to ${FOCUS_MAX_REVEALS} beats of at most ${FOCUS_REVEAL_MAX_CHARACTERS} characters each, in order`);
+    return { arc, premise: "", premiseFactIds: factIds, reveals: beats };
+  }
   if (!PLAYFUL_GRAVITIES.includes(gravity)) throw new Draft2ResponseError(`A discovery premise plays with the story, and this one's gravity is ${gravity}: tell it classic`);
   const premise = text(body.premise, FOCUS_PREMISE_MAX_CHARACTERS);
   if (!premise) throw new Draft2ResponseError(`The premise is missing or longer than ${FOCUS_PREMISE_MAX_CHARACTERS} characters`);
@@ -442,16 +462,20 @@ function parseConcept(value: unknown, { known, material, gravity, editorChoice }
   return { arc, premise, premiseFactIds, reveals };
 }
 
-/** Claude's other premises, the valid ones (words, facts, a chain), never with a person of the story, at most two. */
+/** Claude's other concepts, the valid ones (a premise with its facts and chain; an arc with its facts and beats), never with a person of the story, at most two. */
 function parsePremiseOptions(value: unknown, known: ReadonlySet<string>, people: readonly string[]): Draft2PremiseOption[] {
   const options: Draft2PremiseOption[] = [];
   for (const entry of Array.isArray(value) ? value : []) {
     const body = record(entry);
-    const premise = text(body.premise, FOCUS_PREMISE_MAX_CHARACTERS);
+    const arc = body.arc === undefined ? "discovery" : FOCUS_CONCEPT_ARCS.find((candidate) => candidate === body.arc && candidate !== "classic");
+    if (!arc || arc === "classic") continue;
+    const premise = arc === "discovery" ? text(body.premise, FOCUS_PREMISE_MAX_CHARACTERS) : "";
     const premiseFactIds = knownFactIds(body.premiseFactIds, known, MAX_PREMISE_FACTS);
     const reveals = revealsOf(body.reveals);
-    if (!premise || !premiseFactIds.length || reveals.length < FOCUS_MIN_REVEALS || realPersonIn(premise, people) || options.some((option) => option.premise === premise)) continue;
-    options.push({ premise, premiseFactIds, reveals });
+    if ((arc === "discovery" && (!premise || realPersonIn(premise, people))) || !premiseFactIds.length || reveals.length < FOCUS_MIN_REVEALS) continue;
+    const key = `${arc}:${premise || reveals.join("|")}`;
+    if (options.some((option) => `${option.arc ?? "discovery"}:${option.premise || option.reveals.join("|")}` === key)) continue;
+    options.push({ arc, premise: premise ?? "", premiseFactIds, reveals });
   }
   return options.slice(0, MAX_PREMISE_OPTIONS);
 }
@@ -686,21 +710,25 @@ function editedNarrative(focus: Draft2Focus, value: unknown): Draft2FocusNarrati
 
 /**
  * The editor's concept, checked against the contract. Classic needs nothing;
- * discovery needs its premise; the reveals are optional (the writers order
- * them when there are none). A premise Claude wrote (its choice, another of
- * its premises, or the one the judge sent back) keeps the facts it cites;
- * the editor's own words cite none.
+ * discovery needs its premise; another arc takes no premise. The reveals or
+ * beats are optional (the writers order them when there are none). A concept
+ * Claude wrote (its choice, another of its concepts, or the one the judge
+ * sent back) keeps the facts it cites; the editor's own words cite none.
  */
 function editedConcept(focus: Draft2Focus, value: unknown): Draft2FocusConcept {
   const body = record(value);
   const arc = oneOf(FOCUS_CONCEPT_ARCS, body.arc);
   if (!arc) throw new Draft2InputError(`The concept is one of ${FOCUS_CONCEPT_ARCS.join(", ")}.`);
   if (arc === "classic") return CLASSIC_CONCEPT;
-  const premise = typeof body.premise === "string" ? body.premise.trim() : "";
-  if (!premise || premise.length > FOCUS_PREMISE_MAX_CHARACTERS) throw new Draft2InputError(`Write the premise in 1 to ${FOCUS_PREMISE_MAX_CHARACTERS} characters.`);
+  const premise = arc === "discovery" && typeof body.premise === "string" ? body.premise.trim() : "";
+  if (arc === "discovery" && (!premise || premise.length > FOCUS_PREMISE_MAX_CHARACTERS)) throw new Draft2InputError(`Write the premise in 1 to ${FOCUS_PREMISE_MAX_CHARACTERS} characters.`);
   const lines = (Array.isArray(body.reveals) ? body.reveals : []).map((entry) => typeof entry === "string" ? entry.trim() : "").filter(Boolean);
-  if (lines.length > FOCUS_MAX_REVEALS || lines.some((line) => line.length > FOCUS_REVEAL_MAX_CHARACTERS)) throw new Draft2InputError(`The discovery chain has at most ${FOCUS_MAX_REVEALS} reveals of at most ${FOCUS_REVEAL_MAX_CHARACTERS} characters each.`);
-  const found = [focus.values?.concept, focus.ai?.concept, focus.conceptReview?.proposed, ...(focus.conceptOptions ?? [])].find((entry) => entry && entry.premise === premise);
+  if (lines.length > FOCUS_MAX_REVEALS || lines.some((line) => line.length > FOCUS_REVEAL_MAX_CHARACTERS)) {
+    throw new Draft2InputError(`The ${arc === "discovery" ? "discovery chain has at most" : "arc has at most"} ${FOCUS_MAX_REVEALS} ${arc === "discovery" ? "reveals" : "beats"} of at most ${FOCUS_REVEAL_MAX_CHARACTERS} characters each.`);
+  }
+  const same = (entry: { arc?: Draft2ConceptArc; premise: string; reveals: string[] } | undefined) => Boolean(entry) && (entry!.arc ?? "discovery") === arc
+    && (arc === "discovery" ? entry!.premise === premise : entry!.reveals.join("\n") === lines.join("\n"));
+  const found = [focus.values?.concept, focus.ai?.concept, focus.conceptReview?.proposed, ...(focus.conceptOptions ?? [])].find(same);
   return { arc, premise, premiseFactIds: found?.premiseFactIds ?? [], reveals: lines };
 }
 
@@ -790,14 +818,21 @@ export function focusForModels(values: Draft2FocusValues) {
     goal: values.goal,
     voice: { gravity: voice.gravity, tone: toneLine(voice) },
     direction: values.direction,
-    ...(focusConcept(values).arc === "discovery" ? { concept: conceptForModels(focusConcept(values)) } : {}),
+    ...(focusConcept(values).arc !== "classic" ? { concept: conceptForModels(focusConcept(values)) } : {}),
     ...(focusNarrative(values).form !== "classic" ? { narrative: narrativeForModels(focusNarrative(values)) } : {}),
     ...(values.visualDirection ? { visualDirection: values.visualDirection } : {}),
   };
 }
 
-/** A discovery concept as the models read it: the premise, the facts it dramatizes, the chain of reveals. */
+/** A concept as the models read it: a discovery's premise, the facts it dramatizes and its chain of reveals; another arc's facts and beats. */
 export function conceptForModels(concept: Draft2FocusConcept) {
+  if (concept.arc !== "discovery") {
+    return {
+      arc: concept.arc,
+      ...(concept.premiseFactIds.length ? { factIds: concept.premiseFactIds } : { note: "the editor's beats: they order the facts, they add none" }),
+      ...(concept.reveals.length ? { beats: concept.reveals } : {}),
+    };
+  }
   return {
     arc: concept.arc,
     premise: concept.premise,

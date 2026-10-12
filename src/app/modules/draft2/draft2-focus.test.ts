@@ -154,7 +154,7 @@ test("Claude decides the focus from the cached facts, the brand brief, the profi
   assert.equal(json(focus.decidedBy), json({ provider: "anthropic", model: "claude-sonnet-5-5" }));
   const last = session.trace[session.trace.length - 1];
   assert.equal(session.trace.length, 2, "the facts trace is kept");
-  assert.equal(json([last.step, last.provider, last.operation, last.outcome, last.skillVersions, last.cacheWriteTokens]), json(["focus", "anthropic", "draft2_focus", "ok", { focus: "6", discovery: "1", narratives: "2" }, 900]));
+  assert.equal(json([last.step, last.provider, last.operation, last.outcome, last.skillVersions, last.cacheWriteTokens]), json(["focus", "anthropic", "draft2_focus", "ok", { focus: "7", discovery: "1", arcs: "1", narratives: "2" }, 900]));
   assert.equal(json([focus.values?.narrative, focus.inventoryVersion, h.reviewCalls.length]), json([focusTypes.CLASSIC_NARRATIVE, 2, 0]), "a classic story is not reviewed");
 });
 
@@ -305,4 +305,14 @@ test("a premise and a narrative form Claude chose are reviewed side by side; eac
   assert.equal(json(concept.map((entry) => [entry.provider, entry.model, entry.skillVersions])), json([["openai", "gpt-6-luna", { discovery: "1" }]]));
   const edited = (await h.edit("concept", { value: focus.conceptReview?.proposed })).focus!;
   assert.equal(json([edited.values?.concept, edited.edited]), json([DISCOVERY, ["concept"]]), "the editor takes Claude's premise back; it stays theirs");
+});
+
+test("an arc Claude chose is reviewed with the arcs skill", async () => {
+  const chain = { arc: "cause-effect", premise: "", premiseFactIds: ["f1"], reveals: ["Videos replace binders", "Awards come in a week"] };
+  const h = harness({ answers: [answer({ concept: chain })], reviews: [{ verdict: "keep", reason: "Each link is a fact." }], env: { OPENAI_API_KEY: "sk-test" } });
+  const focus = (await h.decide()).focus!;
+  assert.equal(json([focus.values?.concept, focus.conceptReview?.verdict]), json([chain, "keep"]));
+  assert.match(String(h.reviewCalls[0].instructions), /## Reviewing an arc/);
+  const entry = h.row().trace.find((call) => call.operation === "draft2_focus_concept_review");
+  assert.equal(json(entry?.skillVersions), json({ arcs: "1" }));
 });

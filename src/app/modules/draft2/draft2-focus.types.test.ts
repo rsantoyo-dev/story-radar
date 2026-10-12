@@ -354,3 +354,28 @@ test("the models read a premise only for discovery, so a classic story's prompts
   assert.match(String((focusForModels({ ...classic, concept: { arc: "discovery", premise: "My own", premiseFactIds: [], reveals: [] } }).concept as { note?: string }).note), /the editor's premise/);
   assert.equal(focusConcept({}).arc, "classic");
 });
+
+const arc = (overrides: Record<string, unknown> = {}) => ({ arc: "cause-effect", premise: "Ignored for an arc", premiseFactIds: ["f1", "f9"], reveals: ["Videos replace binders", "Awards come in a week", "Small firms get a chance"], ...overrides });
+
+test("a story arc rests on the facts with its beats in order, takes no premise and any gravity", () => {
+  const told = withConcept(arc(), "serious").values.concept;
+  assert.deepEqual(told, { arc: "cause-effect", premise: "", premiseFactIds: ["f1"], reveals: ["Videos replace binders", "Awards come in a week", "Small firms get a chance"] }, "a serious story may follow a chain of causes");
+  for (const name of ["progressive-reveal", "problem-solution", "escalation", "comparison"]) assert.equal(withConcept(arc({ arc: name })).values.concept?.arc, name);
+  assert.throws(() => withConcept(arc({ premiseFactIds: [] })), (error: Error) => error instanceof Draft2ResponseError && /A cause-effect arc rests on the facts/.test(error.message));
+  assert.throws(() => withConcept(arc({ reveals: ["One link"] })), /A cause-effect arc needs 2 to 6 beats/);
+  assert.deepEqual(focusFindings({ ...decided().values!, voice: { ...decided().values!.voice, gravity: "grave" }, concept: told! }), [], "the gravity rule is discovery's alone");
+  assert.deepEqual(focusForModels({ ...decided().values!, concept: told! }).concept, { arc: "cause-effect", factIds: ["f1"], beats: told!.reveals });
+});
+
+test("Claude's other concepts may be other arcs; the editor picks an arc with Claude's beats and facts, or orders their own", () => {
+  const { premiseOptions } = parseFocusDecision(answer({ concept: discovery(), voice: LIGHT, conceptAlternatives: [
+    { arc: "comparison", premise: "", premiseFactIds: ["f2"], reveals: ["Time", "Cost"] },
+    { arc: "escalation", premise: "", premiseFactIds: [], reveals: ["a", "b"] },
+    { arc: "classic", premise: "", premiseFactIds: ["f1"], reveals: ["a", "b"] },
+    { arc: "discovery", premise: "A message on a tree.", premiseFactIds: ["f1"], reveals: ["Who?", "When?"] },
+  ] }), { facts, lines, material: MATERIAL });
+  assert.deepEqual(premiseOptions.map((option) => [option.arc, option.premise]), [["comparison", ""], ["discovery", "A message on a tree."]], "an arc needs its facts; classic is no alternative");
+  const focus = { ...decided(), conceptOptions: premiseOptions };
+  assert.deepEqual(applyFocusEdit(focus, "concept", { arc: "comparison", premise: "ignored", reveals: ["Time", "Cost"] }, NOW).values?.concept, { arc: "comparison", premise: "", premiseFactIds: ["f2"], reveals: ["Time", "Cost"] }, "Claude's comparison keeps its facts");
+  assert.deepEqual(applyFocusEdit(focus, "concept", { arc: "escalation", reveals: [] }, NOW).values?.concept, { arc: "escalation", premise: "", premiseFactIds: [], reveals: [] }, "the arc alone, for the writers to order");
+});

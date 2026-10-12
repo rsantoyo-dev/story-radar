@@ -110,8 +110,8 @@ const CAPTION_STEP: FunnelStep<Draft2CaptionCandidate, Draft2CaptionScore, Draft
     const brief = `${brandBrief(profile)}\n\n${captionRulesBrief(rules)}`;
     return {
       // A discovery story's caption keeps the premise's question and states the news plainly.
-      writer: composeInstructions("caption-writer", [CAPTIONS_SKILL, ...discoverySkills(snapshot.focus.values.concept)], brief),
-      judge: composeInstructions("caption-judge", [CAPTIONS_SKILL, ...discoverySkills(snapshot.focus.values.concept)], brief),
+      writer: composeInstructions("caption-writer", [CAPTIONS_SKILL, ...(snapshot.focus.values.concept?.arc === "discovery" ? discoverySkills(snapshot.focus.values.concept) : [])], brief),
+      judge: composeInstructions("caption-judge", [CAPTIONS_SKILL, ...(snapshot.focus.values.concept?.arc === "discovery" ? discoverySkills(snapshot.focus.values.concept) : [])], brief),
       context: {
         focus: focusForModels(snapshot.focus.values), carousel: snapshot.carousel, mentions: snapshot.mentions, credits: snapshot.credits,
         limits: { postCharacters: CAPTION_MAX_CHARACTERS, hashtags: { min: CAPTION_MIN_HASHTAGS, max: CAPTION_MAX_HASHTAGS } },

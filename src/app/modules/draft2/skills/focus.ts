@@ -7,11 +7,12 @@ import type { Draft2Skill } from "./draft2-skills";
  * Version 4 adds the narrative form, chosen with People and places' material
  * (the narratives skill, read beside this one, defines the forms); version 5
  * adds panorama and follow-the-line; version 6 the concept (discovery: the
- * reader discovers the news through a premise; the discovery skill).
+ * reader discovers the news through a premise; the discovery skill); version
+ * 7 the story arcs (the arcs skill).
  */
 export const FOCUS_SKILL: Draft2Skill = {
   name: "focus",
-  version: "6",
+  version: "7",
   text: `# The focus of a story
 
 The focus is the brief every later step follows: which editorial line the
@@ -67,9 +68,18 @@ field; it is guidance for the writing, never evidence.
   language: what to lead with, which facts carry the promise, what to leave
   out or keep for later slides, and what the reader takes away. It guides
   the writer; it never adds a fact.
-- concept: how the reader meets the news (the discovery skill defines it).
-  "discovery" when a premise, the story's own world invented for it, would
-  pull the reader through the carousel harder than the news told straight.
+- concept: how the reader meets the news and how curiosity moves through the
+  slides (the discovery skill defines discovery, the arcs skill the other
+  arcs). Choose the arc that pulls the reader hardest for these facts:
+  "progressive-reveal" for a complex answer built piece by piece;
+  "problem-solution" for a problem the audience lives with and the solution
+  the facts give; "cause-effect" for a chain of consequences the facts state;
+  "escalation" for magnitudes that grow (records, trends); "comparison" for
+  two alternatives on the same criteria. For these, premise is empty,
+  premiseFactIds cites the facts the beats rest on, and reveals holds the
+  beats in order (2 to 6 short lines). Or "discovery" when a premise, the
+  story's own world invented for it, would pull the reader through the
+  carousel harder than the news told straight.
   Think outside the box: write three premises, true to the facts (the chosen
   one here, two more in conceptAlternatives), each in one line of at most 280
   characters, citing in premiseFactIds the facts whose mission or mystery it
@@ -78,8 +88,9 @@ field; it is guidance for the writing, never evidence.
   premise, premiseFactIds and reveals, when no premise earns it, and always
   for a "serious" or "grave" story. Never a premise in which a real person or
   organization speaks, and never one that invents the news.
-- conceptAlternatives: the two other premises; an empty list when the
-  concept is classic.
+- conceptAlternatives: two other concepts, each with its arc (another
+  premise, or another arc with its beats); an empty list when the concept is
+  classic.
 - narrative: how the carousel is told across its slides, in words and images
   together (the narratives skill defines the forms): "classic",
   "character-guide", "traveling-object", "panorama" or "follow-the-line".

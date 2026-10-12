@@ -107,5 +107,5 @@ plainly.`,
 };
 
 export const DISCOVERY_ROLES = {
-  "focus-concept-judge": `You review the premise chosen for a social carousel of the publication described below, against the story's verified facts, its focus (focus.concept is the premise and its chain of reveals) and the material People and places found. Follow the discovery skill and its review part.`,
+  "focus-concept-judge": `You review the concept chosen for a social carousel of the publication described below, against the story's verified facts, its focus (focus.concept: a discovery premise with its chain of reveals, or a story arc with its beats) and the material People and places found. Follow the skill you receive and its review part.`,
 } as const;
