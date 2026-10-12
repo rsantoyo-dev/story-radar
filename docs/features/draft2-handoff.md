@@ -229,11 +229,13 @@ is locked. Exhausted balance") — both fail the run today.
 
 ## 7. Open items, prioritized (UI first, as the editor asked)
 
-1. **Judge and writer names in the UI and messages.** `draft2ProviderName`
-   (`draft2-models.ts`) and `providerLabel` (canvas) map any OpenAI model to
-   "Sol", so with Luna judging the canvas and the run notes say "Sol did not
-   accept…" and "Sol scores". Name the model that ran (the run records
-   `writer` / `judge` as `{ provider, model }`; the trace has `model`).
+1. ~~**Judge and writer names in the UI and messages.**~~ Done: a model is
+   named by `draft2ModelName` (gpt-6-luna is Luna, gpt-6.1-sol Sol, any
+   claude-* Claude). A stored run, facts round, trace entry or image review
+   is named by the model it recorded; a run not started yet by today's cast
+   (`draft2Cast`), which the session route returns beside the session since
+   the browser cannot read the environment. The run notes ("Luna did not
+   accept…", "Paused before Luna judges…") name the run's own judge.
 2. **Autopilot should stop at People and places when places await the
    editor's confirmation** (Google match, no decision) on photo-first Topics:
    the Brossard run depicted unconfirmed places, lost two rounds to

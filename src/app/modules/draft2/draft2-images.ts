@@ -44,7 +44,7 @@ import { draft2DevTrace } from "./draft2-dev-trace";
 import { traceCost } from "./draft2-trace-cost";
 import { Draft2BusyError, Draft2InputError, type Draft2Fact, type Draft2TraceEntry } from "./draft2-facts.types";
 import { failedCall } from "./draft2-funnel";
-import { draft2SolModel } from "./draft2-models";
+import { draft2ModelName, draft2SolModel } from "./draft2-models";
 import { placeMention } from "./draft2-inventory";
 import {
   DRAFT2_IMAGE_REVIEW_SCHEMA, IMAGE_SUBMISSION_GRACE_MS, IMAGE_SUBMIT_CONCURRENCY, IMAGES_QUALITY,
@@ -439,7 +439,7 @@ async function reviewAttempt(ctx: Context, slide: Draft2SlideImage, attempt: Dra
   } catch (error) {
     const durationMs = Date.now() - begin;
     ctx.trace.push({ at, step: "images", round: attempt.version, provider: "openai", model, operation: "draft2_image_review", durationMs, outcome: "error", note: `${slide.label}: ${message(error)}`, ...failedCall(error), skillVersions });
-    attempt.review = { status: "unavailable", issues: [], note: `Sol could not review this image (${message(error)}); look at it yourself.`, transcription: "", model, at, durationMs };
+    attempt.review = { status: "unavailable", issues: [], note: `${draft2ModelName(model, "openai")} could not review this image (${message(error)}); look at it yourself.`, transcription: "", model, at, durationMs };
   }
 }
 
@@ -495,7 +495,7 @@ export async function runDraft2Images({ topicId, storyId, sessionId, resume = fa
   if (resume && current && (current.visualId !== target.script.id || current.inventoryVersion !== target.inventory.version)) {
     throw new Draft2InputError("The visual script or the people and places changed since these images started. Generate the images again.");
   }
-  if (!process.env.OPENAI_API_KEY?.trim()) throw new Draft2InputError("OPENAI_API_KEY is not configured; Sol reviews the images.");
+  if (!process.env.OPENAI_API_KEY?.trim()) throw new Draft2InputError(`OPENAI_API_KEY is not configured; ${draft2ModelName(draft2SolModel(process.env), "openai")} reviews the images.`);
   let fal: Context["fal"];
   try {
     fal = getFalImageRuntimeConfig("4:5", IMAGES_QUALITY);

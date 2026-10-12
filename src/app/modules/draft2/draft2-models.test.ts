@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { draft2RevisionEffort, draft2RoleModel, draft2ShadowJudgeEffort, draft2ShadowJudgeModel } from "./draft2-models";
+import { draft2Cast, draft2ModelName, draft2RevisionEffort, draft2RoleModel, draft2ShadowJudgeEffort, draft2ShadowJudgeModel } from "./draft2-models";
 
 const defaults = { anthropic: "claude-sonnet-5-5", openai: "gpt-6.1-sol" };
 
@@ -32,4 +32,29 @@ test("a step's role runs on the model the environment names for it, when it is o
   assert.equal(draft2RoleModel("closing", "judge", "openai", { DRAFT2_MODEL_JUDGE: "gpt-6-luna" }, defaults), "gpt-6-luna", "one variable for every step's judge");
   assert.equal(draft2RoleModel("opening", "judge", "openai", { DRAFT2_MODEL_JUDGE: "gpt-6-luna", DRAFT2_MODEL_OPENING_JUDGE: "gpt-6.1-sol" }, defaults), "gpt-6.1-sol", "a step's own variable wins");
   assert.equal(draft2RoleModel("opening", "writer", "anthropic", { DRAFT2_MODEL_JUDGE: "gpt-6-luna" }, defaults), "claude-sonnet-5-5", "the judge's variable leaves the writer alone");
+});
+
+test("a model is named as the editor calls it: an OpenAI model by its family, a Claude model Claude", () => {
+  assert.equal(draft2ModelName("gpt-6.1-sol"), "Sol");
+  assert.equal(draft2ModelName("gpt-6-luna"), "Luna", "Luna judging is not Sol");
+  assert.equal(draft2ModelName("gpt-6-astra"), "Astra");
+  assert.equal(draft2ModelName("gpt-6.1-sol-mini"), "Sol mini");
+  assert.equal(draft2ModelName("claude-sonnet-5-5"), "Claude");
+  assert.equal(draft2ModelName("claude-opus-5-5"), "Claude");
+  assert.equal(draft2ModelName("o9-preview"), "o9-preview", "an unknown model keeps its own name");
+  assert.equal(draft2ModelName(undefined, "openai"), "Sol", "a run stored before it recorded its model");
+  assert.equal(draft2ModelName(undefined, "anthropic"), "Claude");
+});
+
+test("today's cast reads the environment the runs read: the judge's variable moves every funnel judge, not the extractor or the image reviews", () => {
+  const cast = draft2Cast({ DRAFT2_MODEL_JUDGE: "gpt-6-luna", DRAFT2_MODEL_DECK_JUDGE: "gpt-6.1-sol" }, "claude-sonnet-5-5");
+  assert.deepEqual(cast.facts, { extractor: { provider: "openai", model: "gpt-6.1-sol" }, reviewer: { provider: "anthropic", model: "claude-sonnet-5-5" } });
+  assert.deepEqual(cast.funnel.opening, { writer: { provider: "anthropic", model: "claude-sonnet-5-5" }, judge: { provider: "openai", model: "gpt-6-luna" } });
+  assert.equal(cast.funnel.caption.judge.model, "gpt-6-luna");
+  assert.equal(cast.funnel.deck.judge.model, "gpt-6.1-sol", "a step's own variable wins");
+  assert.deepEqual(cast.imageReview, { provider: "openai", model: "gpt-6.1-sol" });
+  const extractor = draft2Cast({ DRAFT2_EXTRACTOR_MODEL: "gpt-6-astra" }, "claude-opus-5-5");
+  assert.equal(extractor.facts.extractor.model, "gpt-6-astra");
+  assert.equal(extractor.funnel.visual.judge.model, "gpt-6-astra", "the judges default to Sol's model");
+  assert.equal(extractor.funnel.visual.writer.model, "claude-opus-5-5");
 });

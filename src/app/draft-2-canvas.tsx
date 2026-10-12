@@ -28,7 +28,7 @@ import {
   FUNNEL_ACCEPTABLE_SCORE, FUNNEL_MAX_EXTRA_ROUNDS, criterionOf, funnelAcceptedWinner, funnelBestVersions, funnelExtendable, funnelResumeRound, funnelScorePasses, funnelVersions, hasMaterialError,
   type FunnelCandidate, type FunnelGate, type FunnelIssue, type FunnelRegression, type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion,
 } from "@/app/modules/draft2/draft2-funnel";
-import { DRAFT2_OPENING_EARLIER_ROLES, DRAFT2_OPENING_ROLES, draft2ProviderName } from "@/app/modules/draft2/draft2-models";
+import { DRAFT2_OPENING_EARLIER_ROLES, DRAFT2_OPENING_ROLES, draft2ModelName, type Draft2Cast, type Draft2FunnelStepName } from "@/app/modules/draft2/draft2-models";
 import {
   adjacentDraft2Steps, contentStatusLabel, DRAFT_2_STEPS, draft2RailState, draft2StepFromPath, draft2StepHref, draft2StepPhase, minutes, paragraphs, sessionMetrics, sourceHost, stepMetrics, storyHref, traceUsageLine, usd, wordCount,
   type Draft2StepKey,
@@ -116,7 +116,7 @@ function nextAutopilotStep(session: Draft2SessionView | null, now: number): Auto
   const factsVerified = Boolean(session.facts?.length) && (session.step !== "facts" || session.status === "ready");
   if (!factsVerified) {
     if (session.step === "facts" && session.status === "running" && !stale) return { blocked: "The facts are still being verified." };
-    if (session.step === "facts" && session.status === "needs-review" && session.facts?.length) return { blocked: "Sol and Claude did not agree on the facts after three extractions: review them, then run the facts again." };
+    if (session.step === "facts" && session.status === "needs-review" && session.facts?.length) return { blocked: "The reviewer did not accept the facts after three extractions: review them, then run the facts again." };
     return { step: "facts" };
   }
   const focus = session.focus;
@@ -233,15 +233,23 @@ const GOAL_LABEL: Record<Draft2FocusValues["goal"], string> = { followers: "Foll
 const GRAVITY_LABEL: Record<Draft2FocusVoice["gravity"], string> = { light: "Light", ordinary: "Ordinary", serious: "Serious", grave: "Grave" };
 const TONE_LABEL: Record<ToneKey, string> = { formality: "Formality", humor: "Humor", energy: "Energy", optimism: "Optimism", provocation: "Provocation" };
 
-const providerLabel = (provider: Draft2TraceEntry["provider"]) => provider === "openai" ? "Sol" : "Claude";
 type RoleNames = { writer: string; judge: string };
-/** Who writes and who judges a new run today. */
-const TODAY: RoleNames = { writer: draft2ProviderName(DRAFT2_OPENING_ROLES.writer), judge: draft2ProviderName(DRAFT2_OPENING_ROLES.judge) };
-/** Who wrote and who judged a run; one stored before the swap records no roles and had Sol writing and Claude judging. */
-const roleNames = (opening: Pick<Draft2Opening, "writer" | "judge">): RoleNames => ({
-  writer: draft2ProviderName(opening.writer?.provider ?? DRAFT2_OPENING_EARLIER_ROLES.writer),
-  judge: draft2ProviderName(opening.judge?.provider ?? DRAFT2_OPENING_EARLIER_ROLES.judge),
+const FUNNEL_STEPS: readonly Draft2FunnelStepName[] = ["opening", "closing", "deck", "visual", "caption"];
+/** Who writes and who judges each step's next run, as today's cast names them (the server reads the environment); until it answers, the providers' names. */
+const todayNames = (cast: Draft2Cast | undefined): Record<Draft2FunnelStepName, RoleNames> => Object.fromEntries(FUNNEL_STEPS.map((step) => {
+  const roles = cast?.funnel[step];
+  return [step, {
+    writer: draft2ModelName(roles?.writer.model, roles?.writer.provider ?? DRAFT2_OPENING_ROLES.writer),
+    judge: draft2ModelName(roles?.judge.model, roles?.judge.provider ?? DRAFT2_OPENING_ROLES.judge),
+  }];
+})) as Record<Draft2FunnelStepName, RoleNames>;
+/** Who wrote and who judged a run, by the models it recorded (gpt-6-luna is Luna); one stored before the swap records no roles and had Sol writing and Claude judging. */
+const roleNames = (run: Pick<Draft2Opening, "writer" | "judge">): RoleNames => ({
+  writer: draft2ModelName(run.writer?.model, run.writer?.provider ?? DRAFT2_OPENING_EARLIER_ROLES.writer),
+  judge: draft2ModelName(run.judge?.model, run.judge?.provider ?? DRAFT2_OPENING_EARLIER_ROLES.judge),
 });
+/** The model that played a provider's part in a session's facts, as its trace recorded it. */
+const factsModel = (trace: readonly Draft2TraceEntry[], provider: Draft2TraceEntry["provider"]) => trace.find((entry) => entry.step === "facts" && entry.provider === provider)?.model;
 
 /** Where a version comes from: its round, and the version it revises or the judge's proposal it is (as written) or edits. */
 const versionOrigin = ({ round, candidate }: FunnelVersion, names: RoleNames) => {
@@ -289,6 +297,8 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const [content, setContent] = useState<StoryContentResponse>();
   const [error, setError] = useState<string>();
   const [session, setSession] = useState<Draft2SessionView | null>();
+  // Who plays each part in a run started now, as the server names them with the session it loads first.
+  const [cast, setCast] = useState<Draft2Cast>();
   const [running, setRunning] = useState<Draft2RunStep>();
   const [runError, setRunError] = useState<{ step: Draft2RunStep; message: string }>();
   const [choosing, setChoosing] = useState<{ step: Draft2FunnelStep; id: string }>();
@@ -345,13 +355,13 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
     const response = await fetch(`/api/radar/draft2/session?topicId=${encodeURIComponent(topicId)}&storyId=${encodeURIComponent(storyId)}`, { cache: "no-store", signal, headers: { Authorization: `Bearer ${secret}` } });
     const body = await response.json();
     if (!response.ok) throw new Error(body.error ?? "Could not read the Draft 2 session.");
-    return (body.session ?? null) as Draft2SessionView | null;
+    return { session: (body.session ?? null) as Draft2SessionView | null, cast: body.cast as Draft2Cast | undefined };
   }, [secret, storyId, topicId]);
 
   useEffect(() => {
     if (!content) return;
     const controller = new AbortController();
-    loadSession(controller.signal).then((value) => { if (!controller.signal.aborted) setSession(value); }).catch(() => { if (!controller.signal.aborted) setSession(null); });
+    loadSession(controller.signal).then((value) => { if (!controller.signal.aborted) { setSession(value.session); setCast(value.cast); } }).catch(() => { if (!controller.signal.aborted) setSession(null); });
     return () => controller.abort();
   }, [content, loadSession]);
 
@@ -386,7 +396,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
       await new Promise((resolve) => setTimeout(resolve, FOLLOW_POLL_MS));
       let current: Draft2SessionView | null;
       try {
-        current = await loadSession();
+        current = (await loadSession()).session;
         unreachableSince = undefined;
       } catch {
         unreachableSince ??= Date.now();
@@ -448,7 +458,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
       const message = cause instanceof Draft2LostRequest ? `${cause.message} The server may still finish the step; reload to see it.` : cause instanceof Error ? cause.message : failure;
       setRunError({ step, message });
       // A failed run keeps its trace on the session; show it.
-      loadSession().then(setSession).catch(() => undefined);
+      loadSession().then((value) => setSession(value.session)).catch(() => undefined);
       return undefined;
     } finally {
       setFollowing(undefined);
@@ -796,14 +806,19 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
     </Button>
   </>;
 
+  // The names a run started now goes by: the funnel steps' writers and judges, the facts' extractor and reviewer, the images' reviewer.
+  const today = todayNames(cast);
+  const factsCast = { extractor: draft2ModelName(cast?.facts.extractor.model, "openai"), reviewer: draft2ModelName(cast?.facts.reviewer.model, "anthropic") };
+  const imageReviewer = draft2ModelName(cast?.imageReview.model, "openai");
+  const commonJudge = new Set(FUNNEL_STEPS.map((step) => today[step].judge)).size === 1 ? today.opening.judge : undefined;
   const screens: Record<Draft2StepKey, { actions?: ReactNode; how: ReactNode; body: ReactNode }> = {
     facts: {
       actions: <Button variant="primary" size="compact" busy={running === "facts"} disabled={!text.length || session === undefined || running !== undefined} onClick={() => { void runStep("facts"); }}>
         {running === "facts" ? "Extracting and verifying…" : session ? "Run the facts again" : "Extract and verify facts"}
       </Button>,
-      how: <p>Sol extracts the facts; Claude checks them against the article; they loop on Claude’s suggestions, at most three extractions. Running the facts again starts a new session: every later step starts over from the new facts, and the earlier session stays as history.</p>,
+      how: <p>{factsCast.extractor} extracts the facts; {factsCast.reviewer} checks them against the article; they loop on {factsCast.reviewer}’s suggestions, at most three extractions. Running the facts again starts a new session: every later step starts over from the new facts, and the earlier session stays as history.</p>,
       body: <>
-        {running === "facts" ? <LoadingState>Sol is extracting; Claude reviews each round. This can take a minute or two.</LoadingState> : null}
+        {running === "facts" ? <LoadingState>{factsCast.extractor} is extracting; {factsCast.reviewer} reviews each round. This can take a minute or two.</LoadingState> : null}
         {runError?.step === "facts" ? <InlineNotice tone="error" title="The facts step stopped">{runError.message}</InlineNotice> : null}
         {session?.step === "facts" && session.error && running !== "facts" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
         {session && running !== "facts" ? <p className={styles.factMeta}>Running the facts again starts a new session; the steps after it start over from the new facts.</p> : null}
@@ -816,7 +831,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
           </section>
           <section className={styles.factsResult} aria-label="The facts">
             {session && running !== "facts" ? <FactsSessionView session={session} verified={factsVerified} /> : null}
-            {session === null && running !== "facts" && text.length ? <EmptyState title="No facts yet">Extract and verify the facts: Sol reads the article and lists every fact the story depends on; Claude checks each one against it.</EmptyState> : null}
+            {session === null && running !== "facts" && text.length ? <EmptyState title="No facts yet">Extract and verify the facts: {factsCast.extractor} reads the article and lists every fact the story depends on; {factsCast.reviewer} checks each one against it.</EmptyState> : null}
           </section>
         </div>
       </>,
@@ -852,12 +867,12 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
           {running === "opening" ? "Writing and judging…" : session?.opening ? "Write the opening again" : "Write the opening"}
         </Button>
       </>,
-      how: <p>{TODAY.writer} writes fifteen openings (cover and slide 2) from the verified facts, following the focus; {TODAY.judge} scores them and proposes three of its own. {TODAY.writer} revises the three best and edits {TODAY.judge}’s proposals, which also compete as {TODAY.judge} wrote them; {TODAY.judge} scores all nine without knowing which are its own, and proposes one more, which competes the same way beside {TODAY.writer}’s two best for {TODAY.judge}’s final pick. The better version always stays, and an opening that says what the facts do not never wins. Accepted at 95/100 with no criterion below 85, how well it follows the focus included.</p>,
+      how: <p>{today.opening.writer} writes fifteen openings (cover and slide 2) from the verified facts, following the focus; {today.opening.judge} scores them and proposes three of its own. {today.opening.writer} revises the three best and edits {today.opening.judge}’s proposals, which also compete as {today.opening.judge} wrote them; {today.opening.judge} scores all nine without knowing which are its own, and proposes one more, which competes the same way beside {today.opening.writer}’s two best for {today.opening.judge}’s final pick. The better version always stays, and an opening that says what the facts do not never wins. Accepted at 95/100 with no criterion below 85, how well it follows the focus included.</p>,
       body: <>
         {!factsVerified && !running ? needs("facts", "The opening builds only on verified facts; verify them first.") : null}
         {factsVerified && !focusReady && !running ? needs("focus", focus?.values && focus.status !== "running" ? "The opening waits until the focus is fixed: see its notes." : "The opening follows the story’s focus; decide it first.") : null}
         {focusChanged && running !== "opening" && focus ? <InlineNotice tone="info" title="The focus changed">{openingFocusVersion ? `This opening followed focus v${openingFocusVersion}; the focus is now v${focus.version}.` : "This opening was written before the Focus step."} Write it again to follow the focus as it stands.</InlineNotice> : null}
-        {running === "opening" ? <LoadingState>{following ? `${following} Following the run on the server…` : pausedRound ? `Continuing with round ${pausedRound} in a new request…` : `${TODAY.writer} writes fifteen openings; ${TODAY.judge} judges each round. This can take a few minutes.`}</LoadingState> : null}
+        {running === "opening" ? <LoadingState>{following ? `${following} Following the run on the server…` : pausedRound ? `Continuing with round ${pausedRound} in a new request…` : `${today.opening.writer} writes fifteen openings; ${today.opening.judge} judges each round. This can take a few minutes.`}</LoadingState> : null}
         {stalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {stoppedAt}: its request or the server ended. Continue from round {resumeRound} picks it up at its last checkpoint; a round already written is judged, not written again.</InlineNotice> : null}
         {runError?.step === "opening" ? <InlineNotice tone="error" title="The opening step stopped">{runError.message}</InlineNotice> : null}
         {session?.step === "opening" && session.error && running !== "opening" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
@@ -880,11 +895,11 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
           {running === "closing" ? "Writing and judging…" : closing ? "Write the closing again" : "Write the closing"}
         </Button>
       </>,
-      how: <p>{TODAY.writer} writes eight endings for the opening you chose, following the focus that opening followed. For an arc, the penultimate slide pays the cover’s promise in full and the last says what it means for the reader, with the one call to action the focus’s goal asks for, in the publication’s call-to-action style; for a list or steps, the last slide alone, with the plan or the result. {TODAY.judge} scores them and proposes two of its own; {TODAY.writer} revises the two best and edits {TODAY.judge}’s proposals, which also compete as {TODAY.judge} wrote them, for {TODAY.judge}’s pick. Accepted at 95/100 with no criterion below 85.</p>,
+      how: <p>{today.closing.writer} writes eight endings for the opening you chose, following the focus that opening followed. For an arc, the penultimate slide pays the cover’s promise in full and the last says what it means for the reader, with the one call to action the focus’s goal asks for, in the publication’s call-to-action style; for a list or steps, the last slide alone, with the plan or the result. {today.closing.judge} scores them and proposes two of its own; {today.closing.writer} revises the two best and edits {today.closing.judge}’s proposals, which also compete as {today.closing.judge} wrote them, for {today.closing.judge}’s pick. Accepted at 95/100 with no criterion below 85.</p>,
       body: <>
         {factsVerified && !closingReady && !running ? needs("opening", openingFinished ? "The opening was written before the Focus step; write it again first." : "The closing ends the opening you choose; finish the opening first.") : null}
         {closingOpeningChanged && running !== "closing" && closing?.opening ? <InlineNotice tone="info" title="The opening changed">This closing ends {closing.opening.id}; the opening chosen now is {chosenOpeningId}. Write the closing again to end it.</InlineNotice> : null}
-        {running === "closing" ? <LoadingState>{following ? `${following} Following the run on the server…` : closingPausedRound ? `Continuing with round ${closingPausedRound} in a new request…` : `${TODAY.writer} writes eight endings; ${TODAY.judge} judges each round. This can take a few minutes.`}</LoadingState> : null}
+        {running === "closing" ? <LoadingState>{following ? `${following} Following the run on the server…` : closingPausedRound ? `Continuing with round ${closingPausedRound} in a new request…` : `${today.closing.writer} writes eight endings; ${today.closing.judge} judges each round. This can take a few minutes.`}</LoadingState> : null}
         {closingStalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {stoppedAt}: its request or the server ended. Continue from round {closingResumeRound} picks it up at its last checkpoint; a round already written is judged, not written again.</InlineNotice> : null}
         {runError?.step === "closing" ? <InlineNotice tone="error" title="The closing step stopped">{runError.message}</InlineNotice> : null}
         {session?.step === "closing" && session.error && running !== "closing" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
@@ -907,11 +922,11 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
           {running === "deck" ? "Writing and judging…" : deck ? "Write the deck again" : "Write the deck"}
         </Button>
       </>,
-      how: <p>{TODAY.writer} writes the slides between slide 2 and the closing you chose, one idea each, so the carousel reads as one story: for an arc, four decks of two to five slides; for a list or steps, two decks with the items slide 2 did not cover, one per slide, in order. {TODAY.judge} scores them and proposes a deck of its own; {TODAY.writer} revises the best, touching only the slides the issues name, and edits {TODAY.judge}’s deck, which also competes as {TODAY.judge} wrote it, for {TODAY.judge}’s pick. Accepted at 95/100 with no criterion below 85.</p>,
+      how: <p>{today.deck.writer} writes the slides between slide 2 and the closing you chose, one idea each, so the carousel reads as one story: for an arc, four decks of two to five slides; for a list or steps, two decks with the items slide 2 did not cover, one per slide, in order. {today.deck.judge} scores them and proposes a deck of its own; {today.deck.writer} revises the best, touching only the slides the issues name, and edits {today.deck.judge}’s deck, which also competes as {today.deck.judge} wrote it, for {today.deck.judge}’s pick. Accepted at 95/100 with no criterion below 85.</p>,
       body: <>
         {factsVerified && !deckReady && !running ? needs("closing", closingOpeningChanged ? "The closing ends another opening than the one chosen now; write the closing again first." : "The deck leads to the closing you choose; finish the closing first.") : null}
         {deckEndsChanged && running !== "deck" ? <InlineNotice tone="info" title="The opening or the closing changed">This deck connects {deck?.opening?.id} and {deck?.closing?.id}; the ones chosen now are {chosenOpeningId} and {chosenClosingId}. Write the deck again to connect them.</InlineNotice> : null}
-        {running === "deck" ? <LoadingState>{following ? `${following} Following the run on the server…` : deckPausedRound ? `Continuing with round ${deckPausedRound} in a new request…` : `${TODAY.writer} writes the decks; ${TODAY.judge} judges each round. This can take a few minutes.`}</LoadingState> : null}
+        {running === "deck" ? <LoadingState>{following ? `${following} Following the run on the server…` : deckPausedRound ? `Continuing with round ${deckPausedRound} in a new request…` : `${today.deck.writer} writes the decks; ${today.deck.judge} judges each round. This can take a few minutes.`}</LoadingState> : null}
         {deckStalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {stoppedAt}: its request or the server ended. Continue from round {deckResumeRound} picks it up at its last checkpoint; a round already written is judged, not written again.</InlineNotice> : null}
         {runError?.step === "deck" ? <InlineNotice tone="error" title="The deck step stopped">{runError.message}</InlineNotice> : null}
         {session?.step === "deck" && session.error && running !== "deck" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
@@ -956,7 +971,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
           {running === "visual" ? "Writing and judging…" : visual ? "Write the visual script again" : "Write the visual script"}
         </Button>
       </>,
-      how: <p>{TODAY.writer} writes the carousel’s images as one visual story, in the brand’s identity: a concept, a recurring cast, a motif that evolves from slide to slide and, for each slide, the beat its image adds (never its words again), a reproducible art direction and the verified material or characters it uses. {TODAY.judge} scores two scripts, written to the focus’s visual direction, and proposes one of its own; {TODAY.writer} revises the best and edits {TODAY.judge}’s, which also competes as {TODAY.judge} wrote it; a third round revises the best once more, for {TODAY.judge}’s pick. Accepted at 95/100 with no criterion below 85. The images themselves come in a later step.</p>,
+      how: <p>{today.visual.writer} writes the carousel’s images as one visual story, in the brand’s identity: a concept, a recurring cast, a motif that evolves from slide to slide and, for each slide, the beat its image adds (never its words again), a reproducible art direction and the verified material or characters it uses. {today.visual.judge} scores two scripts, written to the focus’s visual direction, and proposes one of its own; {today.visual.writer} revises the best and edits {today.visual.judge}’s, which also competes as {today.visual.judge} wrote it; a third round revises the best once more, for {today.visual.judge}’s pick. Accepted at 95/100 with no criterion below 85. The images themselves come in a later step.</p>,
       body: <>
         {factsVerified && !visualReady && !running ? (!deckFinished ? needs("deck", "The visual script pictures the whole carousel; finish the deck first.")
           : deckEndsChanged ? needs("deck", "The deck connects another opening or closing than the ones chosen now; write the deck again first.")
@@ -964,7 +979,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
         {visualExtendable && visual && !running ? <p className={styles.factMeta}>This run ended after {visual.rounds.length} rounds, before the visual script had a third. Continue with round {visualResumeRound} revises its best version once more against the remaining issues: one write and one judgment.</p> : null}
         {peopleToConfirm && visualReady && !running ? needs("inventory", `${peopleToConfirm} ${peopleToConfirm === 1 ? "person waits" : "people wait"} for your confirmation; until then the script tells the story without showing them.`) : null}
         {visualChanged && running !== "visual" ? <InlineNotice tone="info" title="The deck or the people and places changed">This script pictures {visual?.deckId} with people and places v{visual?.inventoryVersion}; the deck chosen now is {chosenDeckId} and the people and places are v{inventory?.version}. Write the visual script again to follow them.</InlineNotice> : null}
-        {running === "visual" ? <LoadingState>{following ? `${following} Following the run on the server…` : visualPausedRound ? `Continuing with round ${visualPausedRound} in a new request…` : `${TODAY.writer} writes the scripts; ${TODAY.judge} judges each round. This can take a few minutes.`}</LoadingState> : null}
+        {running === "visual" ? <LoadingState>{following ? `${following} Following the run on the server…` : visualPausedRound ? `Continuing with round ${visualPausedRound} in a new request…` : `${today.visual.writer} writes the scripts; ${today.visual.judge} judges each round. This can take a few minutes.`}</LoadingState> : null}
         {visualStalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {stoppedAt}: its request or the server ended. Continue from round {visualResumeRound} picks it up at its last checkpoint; a round already written is judged, not written again.</InlineNotice> : null}
         {runError?.step === "visual" ? <InlineNotice tone="error" title="The visual script stopped">{runError.message}</InlineNotice> : null}
         {session?.step === "visual" && session.error && running !== "visual" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
@@ -986,11 +1001,11 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
           {running === "images" ? "Making the images…" : images ? "Make the images again" : "Make the images"}
         </Button>
       </>,
-      how: <p>GPT Image makes each slide from the chosen visual script and the brand’s identity, and letters the slide’s words itself; the page number and the logo are added afterwards where the brand puts them, and a verified photo or map is pasted unchanged. {TODAY.judge} reviews each image: the words as they appear, what covers them, real people, other brands’ logos, what the brand avoids and the facts. A slide it flags is corrected once, from its image before the logo and the page number. Low quality, three calls a slide at most.</p>,
+      how: <p>GPT Image makes each slide from the chosen visual script and the brand’s identity, and letters the slide’s words itself; the page number and the logo are added afterwards where the brand puts them, and a verified photo or map is pasted unchanged. {imageReviewer} reviews each image: the words as they appear, what covers them, real people, other brands’ logos, what the brand avoids and the facts. A slide it flags is corrected once, from its image before the logo and the page number. Low quality, three calls a slide at most.</p>,
       body: <>
         {factsVerified && !imagesReady && !running ? needs("visual", !visualFinished ? "The images picture the visual script; finish it first." : "The deck or the people and places changed since the visual script; write the visual script again first.") : null}
         {imagesChanged && running !== "images" ? <InlineNotice tone="info" title="The visual script changed">These images picture {images?.visualId}; the visual script chosen now is {chosenVisualId}. Make the images again to follow it.</InlineNotice> : null}
-        {running === "images" ? <LoadingState>{following ? `${following} Following the run on the server…` : images?.status === "paused" ? "Continuing in a new request while fal works…" : `GPT Image makes the slides; ${TODAY.judge} reviews each one. This can take a few minutes.`}</LoadingState> : null}
+        {running === "images" ? <LoadingState>{following ? `${following} Following the run on the server…` : images?.status === "paused" ? "Continuing in a new request while fal works…" : `GPT Image makes the slides; ${imageReviewer} reviews each one. This can take a few minutes.`}</LoadingState> : null}
         {imagesStalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {stoppedAt}: its request or the server ended. Continue picks it up; an image already asked for is not asked for again.</InlineNotice> : null}
         {runError?.step === "images" ? <InlineNotice tone="error" title="The images stopped">{runError.message}</InlineNotice> : null}
         {session?.step === "images" && session.error && running !== "images" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
@@ -1007,7 +1022,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
           {running === "caption" ? "Writing and judging…" : caption ? "Write the caption again" : "Write the caption"}
         </Button>
       </>,
-      how: <p>The post’s text for the finished carousel, in the publication’s voice: an opening line that stops the reader, short lines with blank lines between them, the emojis the brand allows, the closing’s one call to action, the accounts you tag and 5 to 8 hashtags at the end. The program adds the photo credits after the text. {TODAY.writer} writes three captions; {TODAY.judge} scores them and proposes one of its own; {TODAY.writer} revises the best and edits {TODAY.judge}’s, which also competes as {TODAY.judge} wrote it, for {TODAY.judge}’s pick. Accepted at 95/100 with no criterion below 85.</p>,
+      how: <p>The post’s text for the finished carousel, in the publication’s voice: an opening line that stops the reader, short lines with blank lines between them, the emojis the brand allows, the closing’s one call to action, the accounts you tag and 5 to 8 hashtags at the end. The program adds the photo credits after the text. {today.caption.writer} writes three captions; {today.caption.judge} scores them and proposes one of its own; {today.caption.writer} revises the best and edits {today.caption.judge}’s, which also competes as {today.caption.judge} wrote it, for {today.caption.judge}’s pick. Accepted at 95/100 with no criterion below 85.</p>,
       body: <>
         <section className={styles.screenSection} aria-label="Accounts to tag">
           <SectionHeader level={2} title="Accounts to tag" description="Claude proposes the Instagram accounts of the story’s people, places and organizations; Instagram says which exist and what they are called; only the accounts you tag reach the caption. On Facebook an @username stays plain text." actions={
@@ -1028,7 +1043,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
           {factsVerified && !captionReady && !running ? needs("images", imagesScriptGone ? "The visual script these images picture is no longer in the session; make the images again first." : "The caption accompanies the finished carousel; finish the images first, with an image on every slide.") : null}
           {captionImagesChanged && running !== "caption" ? <InlineNotice tone="info" title="The images changed">This caption was written for an earlier images run. Write it again for the images as they are now.</InlineNotice> : null}
           {captionMentionsChanged && !captionImagesChanged && running !== "caption" ? <InlineNotice tone="info" title="The accounts to tag changed">This caption tags {caption?.mentions?.length ? listed(caption.mentions.map((mention) => mention.handle)) : "no account"}; you tag {tagged.length ? listed(tagged.map((mention) => mention.handle)) : "none"} now. Write it again to tag them.</InlineNotice> : null}
-          {running === "caption" ? <LoadingState>{following ? `${following} Following the run on the server…` : captionPausedRound ? `Continuing with round ${captionPausedRound} in a new request…` : `${TODAY.writer} writes three captions; ${TODAY.judge} judges each round. This can take a few minutes.`}</LoadingState> : null}
+          {running === "caption" ? <LoadingState>{following ? `${following} Following the run on the server…` : captionPausedRound ? `Continuing with round ${captionPausedRound} in a new request…` : `${today.caption.writer} writes three captions; ${today.caption.judge} judges each round. This can take a few minutes.`}</LoadingState> : null}
           {captionStalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {stoppedAt}: its request or the server ended. Continue from round {captionResumeRound} picks it up at its last checkpoint; a round already written is judged, not written again.</InlineNotice> : null}
           {runError?.step === "caption" ? <InlineNotice tone="error" title="The caption step stopped">{runError.message}</InlineNotice> : null}
           {session?.step === "caption" && session.error && running !== "caption" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
@@ -1114,14 +1129,14 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
             <div className={styles.autopilotHead}>
               <div>
                 <h2 id="draft2-autopilot-title" className={styles.autopilotTitle}>Autopilot</h2>
-                <p className={styles.autopilotIntro}>Runs every step to the images without stopping, from where the story stands: the facts if they are not verified, the focus, the people and places, the accounts to tag, the opening, the closing, the deck, the visual script and the images. Each step keeps {TODAY.judge}’s winner; 95 is the goal, a step that ends from {FUNNEL_ACCEPTABLE_SCORE} is acceptable and marked for you, and one under {FUNNEL_ACCEPTABLE_SCORE} takes up to {FUNNEL_MAX_EXTRA_ROUNDS} extra rounds on its own before the run goes on; a failure, or a step that needs you, stops it. You review at the end: re-run or choose in any step, confirm the accounts, write the caption and approve.</p>
+                <p className={styles.autopilotIntro}>Runs every step to the images without stopping, from where the story stands: the facts if they are not verified, the focus, the people and places, the accounts to tag, the opening, the closing, the deck, the visual script and the images. Each step keeps {commonJudge ? `${commonJudge}’s` : "its judge’s"} winner; 95 is the goal, a step that ends from {FUNNEL_ACCEPTABLE_SCORE} is acceptable and marked for you, and one under {FUNNEL_ACCEPTABLE_SCORE} takes up to {FUNNEL_MAX_EXTRA_ROUNDS} extra rounds on its own before the run goes on; a failure, or a step that needs you, stops it. You review at the end: re-run or choose in any step, confirm the accounts, write the caption and approve.</p>
               </div>
               <ActionRow>{autopilotButtons}</ActionRow>
             </div>
             {autopilot ? <AutopilotView autopilot={autopilot} trace={session?.trace ?? []} now={now} /> : null}
           </section>
           <OverviewBoard steps={screenSteps} onNavigate={navigate} />
-          <TraceDetails entries={session?.trace ?? []} label={totals.calls ? `${TODAY.judge} ${Math.round(totals.openaiShare * 100)}% of the time` : undefined} />
+          <TraceDetails entries={session?.trace ?? []} label={totals.calls ? `OpenAI ${Math.round(totals.openaiShare * 100)}% of the time` : undefined} />
           {pager}
         </article>}
       </div>
@@ -1141,7 +1156,7 @@ function TraceDetails({ entries, label }: { entries: readonly Draft2TraceEntry[]
     <summary>{entries.length} provider {entries.length === 1 ? "call" : "calls"} · {minutes(ms)} in calls · {usd(costMicros)}{label ? ` · ${label}` : ""}</summary>
     <ol className={styles.traceList}>
       {entries.map((entry, index) => <li key={index} data-outcome={entry.outcome}>
-        <span>{providerLabel(entry.provider)} · {entry.model}{entry.effort ? ` · ${entry.effort}` : ""} · {entry.operation} · {entry.step} round {entry.round}</span>
+        <span>{draft2ModelName(entry.model, entry.provider)} · {entry.model}{entry.effort ? ` · ${entry.effort}` : ""} · {entry.operation} · {entry.step} round {entry.round}</span>
         <span>{traceUsageLine(entry)}</span>
       </li>)}
     </ol>
@@ -1149,17 +1164,20 @@ function TraceDetails({ entries, label }: { entries: readonly Draft2TraceEntry[]
 }
 
 function FactsSessionView({ session, verified }: { session: Draft2SessionView; verified: boolean }) {
+  // Named by the models this session's facts ran on, not today's.
+  const extractor = draft2ModelName(factsModel(session.trace, "openai"), "openai");
+  const reviewer = draft2ModelName(factsModel(session.trace, "anthropic"), "anthropic");
   return <>
     {session.rounds.length ? <ol className={styles.roundList} aria-label="Rounds">
       {session.rounds.map((round) => <li key={round.round} className={styles.roundCard}>
         <div className={styles.factHead}>
           <strong>Round {round.round}</strong>
-          <span>Sol extracted {round.facts.length} {round.facts.length === 1 ? "fact" : "facts"}</span>
+          <span>{extractor} extracted {round.facts.length} {round.facts.length === 1 ? "fact" : "facts"}</span>
           {round.evaluation
-            ? <StatusBadge tone={round.evaluation.verdict === "valid" && round.mechanical.length === 0 ? "success" : "warning"}>Claude: {round.evaluation.verdict} · {round.evaluation.score}/100</StatusBadge>
-            : <StatusBadge tone="neutral">Claude did not answer</StatusBadge>}
+            ? <StatusBadge tone={round.evaluation.verdict === "valid" && round.mechanical.length === 0 ? "success" : "warning"}>{reviewer}: {round.evaluation.verdict} · {round.evaluation.score}/100</StatusBadge>
+            : <StatusBadge tone="neutral">{reviewer} did not answer</StatusBadge>}
         </div>
-        {round.restored?.length ? <p className={styles.factMeta}>Sol dropped {round.restored.length} valid {round.restored.length === 1 ? "fact" : "facts"} without a reason ({round.restored.join(", ")}); the program put them back before the review.</p> : null}
+        {round.restored?.length ? <p className={styles.factMeta}>{extractor} dropped {round.restored.length} valid {round.restored.length === 1 ? "fact" : "facts"} without a reason ({round.restored.join(", ")}); the program put them back before the review.</p> : null}
         {round.evaluation ? <p className={styles.factMeta}>{round.evaluation.summary}</p> : null}
         {round.mechanical.length || round.evaluation?.issues.length ? <ul className={styles.issueList}>
           {round.mechanical.map((issue, index) => <li key={`m${index}`}><strong>Program · {issue.code}</strong>{issue.factId ? ` · ${issue.factId}` : ""}: {issue.detail}</li>)}
@@ -1603,8 +1621,8 @@ function PlaceItem({ entity, photos, locked, onDecide }: { entity: Draft2Invento
 }
 
 /**
- * The carousel's images in order, each with the version it shows and Sol's
- * review of it, and the editor's choices: another image (with what to
+ * The carousel's images in order, each with the version it shows and its
+ * review, and the editor's choices: another image (with what to
  * change, optionally as an edit of the one shown), or another version.
  */
 function ImagesView({ images, story, saving, locked, onDecide }: {
@@ -1625,9 +1643,9 @@ function ImagesView({ images, story, saving, locked, onDecide }: {
 
 const IMAGE_STATUS_LABEL: Record<Draft2ImageAttempt["status"], string> = { queued: "Waiting", submitting: "Sending", generating: "Generating", generated: "Made", failed: "Failed" };
 
-/** What Sol found on an image: passed, its blocking issues, or why it could not look. */
+/** What the reviewer found on an image (named by its model): passed, its blocking issues, or why it could not look. */
 function ImageReviewLines({ review }: { review: Draft2ImageReview }) {
-  if (review.status === "passed") return <p className={styles.factMeta}>Sol: passed.{review.note ? ` ${review.note}` : ""}</p>;
+  if (review.status === "passed") return <p className={styles.factMeta}>{draft2ModelName(review.model, "openai")}: passed.{review.note ? ` ${review.note}` : ""}</p>;
   if (review.status === "unavailable") return <p className={styles.factMeta}>{review.note}</p>;
   return <>
     <ul className={styles.issueList}>{review.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>

@@ -2,7 +2,9 @@ import { authorizeRadarCollector } from "@/app/api/radar/radar-api-auth";
 import { requireActiveRequestTopic, topicRequestErrorResponse } from "@/app/api/radar/radar-topic";
 import { creativeRouteErrorResponse, noStoreJson } from "@/app/api/radar/creative-route-error";
 import { Draft2BusyError, Draft2InputError, Draft2ResponseError } from "@/app/modules/draft2/draft2-facts.types";
+import { draft2Cast } from "@/app/modules/draft2/draft2-models";
 import { latestDraft2Session } from "@/app/modules/draft2/draft2-session.repository";
+import { getAnthropicRuntimeConfig } from "@/app/modules/stories/anthropic.config";
 import { SelectedStoryContentNotFoundError } from "@/app/modules/stories/story-content.repository";
 
 /** What every Draft 2 route shares: id validation, the latest session read and the step error mapping. */
@@ -16,7 +18,8 @@ export async function latestDraft2SessionResponse(request: Request): Promise<Res
   if (!DRAFT2_UUID_PATTERN.test(storyId)) return noStoreJson({ error: "storyId must be a valid UUID" }, 400);
   try {
     const topicId = await requireActiveRequestTopic(request);
-    return noStoreJson({ session: (await latestDraft2Session(topicId, storyId)) ?? null });
+    // Beside the session, who plays each part in a run started now: the browser cannot read the environment that names the models.
+    return noStoreJson({ session: (await latestDraft2Session(topicId, storyId)) ?? null, cast: draft2Cast(process.env, getAnthropicRuntimeConfig().model) });
   } catch (error) {
     return topicRequestErrorResponse(error) ?? creativeRouteErrorResponse(error, "read the Draft 2 session");
   }

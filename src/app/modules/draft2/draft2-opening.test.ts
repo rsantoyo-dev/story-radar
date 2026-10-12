@@ -382,6 +382,22 @@ test("a run whose server died after the writer wrote a round continues by judgin
   assert.equal(session.opening?.previousRuns, undefined, "it is the same run");
 });
 
+test("the run's notes name the model that judges it: with Luna judging, Luna pauses and Luna does not accept, and a continued run keeps Luna once the environment moves on", async () => {
+  const luna = { DRAFT2_MODEL_JUDGE: "gpt-6-luna" };
+  const ended = await harness({
+    writes: [writer(), writer(), writer()],
+    judgments: [judge("revise", "c1", { c1: 90, c2: 82 }), judge("revise", "c1.2", { "c1.2": 91 }), judge("revise", "c1.3", { "c1.3": 92 })],
+    env: luna,
+  }).run();
+  assert.match(String(ended.error), /^Luna did not accept an opening after 3 rounds\. The best version, c1\.3, scored 92\/100/);
+  const h = harness({ writes: [writer()], judgments: [], secondsPerCall: 240, env: luna });
+  const paused = await h.run();
+  assert.match(String(paused.error), /^Paused before Luna judges round 1/);
+  const later = harness({ writes: [], judgments: [judge("revise", "c1", { c1: 90, c2: 82 })], session: h.row() });
+  const continued = await later.run({ resume: true });
+  assert.equal(json([later.judgeCalls().map((call) => call.model), continued.opening?.judge]), json([["gpt-6-luna"], { provider: "openai", model: "gpt-6-luna" }]), "the environment names no judge now; the run keeps the one it started with");
+});
+
 test("a run stored before the swap continues with the roles it started with: Sol writes, Claude judges", async () => {
   const died = harness({ writes: [writer(), writer()], judgments: [judge("revise", "c3", { c3: 84, c5: 80, c1: 79 })], failAt: { role: "judge", call: 2 } });
   await assert.rejects(died.run());

@@ -6,7 +6,7 @@ import { getAnthropicRuntimeConfig, requireAnthropicApiKey } from "../stories/an
 import { getCreativeProfile } from "../stories/creative-profile.repository";
 import { activeDraft2Session, claimDraft2Session, getDraft2Session, touchDraft2Session, updateDraft2Session, type Draft2SessionPatch } from "./draft2-session.repository";
 import { draft2DevTrace } from "./draft2-dev-trace";
-import { draft2ProviderName, draft2RevisionEffort, draft2RoleModel, draft2ShadowJudgeEffort, draft2ShadowJudgeModel, draft2SolModel, type Draft2Effort, type Draft2Provider } from "./draft2-models";
+import { draft2ModelName, draft2RevisionEffort, draft2RoleModel, draft2ShadowJudgeEffort, draft2ShadowJudgeModel, draft2SolModel, type Draft2Effort, type Draft2Provider } from "./draft2-models";
 import { traceCostMicros } from "./draft2-trace-cost";
 import { Draft2BusyError, Draft2InputError, type Draft2Fact, type Draft2TraceEntry } from "./draft2-facts.types";
 import {
@@ -147,7 +147,7 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
   if (resume && stopped && (funnelResumeRound(stopped) > maxRounds || (stopped.status === "needs-review" && !funnelExtendable(stopped, maxRounds)))) throw new Draft2InputError(nothingToContinue);
 
   const configuredOpenAiKey = process.env.OPENAI_API_KEY?.trim();
-  if (!configuredOpenAiKey) throw new Draft2InputError("OPENAI_API_KEY is not configured; Sol needs it.");
+  if (!configuredOpenAiKey) throw new Draft2InputError("OPENAI_API_KEY is not configured; the OpenAI models need it.");
   const openAiApiKey: string = configuredOpenAiKey;
   const anthropicApiKey = requireAnthropicApiKey();
   // Each role's model: the provider's default, or the one the environment names for this step and role (draft2RoleModel).
@@ -158,7 +158,8 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
   const roles = resume && stopped
     ? { writer: stopped.writer ?? modelOf(earlier.writer, "writer"), judge: stopped.judge ?? modelOf(earlier.judge, "judge") }
     : { writer: modelOf(def.roles.writer, "writer"), judge: modelOf(def.roles.judge, "judge") };
-  const judgeName = draft2ProviderName(roles.judge.provider);
+  // The notes name the model that judges this run (gpt-6-luna is Luna), not its provider.
+  const judgeName = draft2ModelName(roles.judge.model, roles.judge.provider);
   const profile = await getCreativeProfile(topicId);
   const setup = def.setup({ snapshot, profile, facts, plan });
   const verifiedFacts = factsSnapshot(facts);

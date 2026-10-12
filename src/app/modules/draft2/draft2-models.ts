@@ -55,9 +55,57 @@ export function draft2RoleModel(step: string, role: "writer" | "judge", provider
   return configured && modelFits(provider, configured) ? configured : defaults[provider];
 }
 
-/** The names the canvas and the notes give each provider's model. */
+/** The name a provider's model had before runs recorded their model: Sol for OpenAI, Claude for Anthropic. */
 export function draft2ProviderName(provider: Draft2Provider): string {
   return provider === "openai" ? "Sol" : "Claude";
+}
+
+/** A role played in a run: the provider and the exact model it runs on. */
+export type Draft2ModelRole = { provider: Draft2Provider; model: string };
+
+/**
+ * The name the canvas and the run notes give a model, as the editor calls
+ * it: an OpenAI model by its family (gpt-6.1-sol is Sol, gpt-6-luna Luna,
+ * gpt-6.1-sol-mini Sol mini), a Claude model Claude, anything else its own
+ * name; without a model, the provider's earlier name.
+ */
+export function draft2ModelName(model: string | undefined, provider?: Draft2Provider): string {
+  const name = model?.trim() ?? "";
+  const openai = /^gpt-[\d.]+-([a-z]+)(?:-([a-z0-9]+))?$/i.exec(name);
+  if (openai) return `${openai[1][0].toUpperCase()}${openai[1].slice(1).toLowerCase()}${openai[2] ? ` ${openai[2].toLowerCase()}` : ""}`;
+  if (/^claude-/i.test(name)) return "Claude";
+  return name || (provider ? draft2ProviderName(provider) : "");
+}
+
+export type Draft2FunnelStepName = "opening" | "closing" | "deck" | "visual" | "caption";
+
+/** Who plays each part in a run started now: the facts' extractor and reviewer, each funnel step's writer and judge, and the image reviews. */
+export type Draft2Cast = {
+  facts: { extractor: Draft2ModelRole; reviewer: Draft2ModelRole };
+  funnel: Record<Draft2FunnelStepName, { writer: Draft2ModelRole; judge: Draft2ModelRole }>;
+  imageReview: Draft2ModelRole;
+};
+
+/**
+ * Today's cast, from the environment the runs read: Sol's model
+ * (DRAFT2_EXTRACTOR_MODEL) extracts the facts and reviews the images, Claude
+ * (the Anthropic default) reviews the facts, and each funnel step's writer
+ * and judge are the models draft2RoleModel names. The canvas shows it for
+ * runs not started yet; a stored run names the models it recorded.
+ */
+export function draft2Cast(env: Draft2Env, anthropicModel: string): Draft2Cast {
+  const openaiModel = env.DRAFT2_EXTRACTOR_MODEL?.trim() || DEFAULT_DRAFT2_SOL_MODEL;
+  const defaults: Record<Draft2Provider, string> = { openai: openaiModel, anthropic: anthropicModel };
+  const play = (step: Draft2FunnelStepName, role: "writer" | "judge"): Draft2ModelRole => {
+    const provider = FUNNEL_STEP_ROLES[step][role];
+    return { provider, model: draft2RoleModel(step, role, provider, env, defaults) };
+  };
+  const steps = Object.keys(FUNNEL_STEP_ROLES) as Draft2FunnelStepName[];
+  return {
+    facts: { extractor: { provider: "openai", model: openaiModel }, reviewer: { provider: "anthropic", model: anthropicModel } },
+    funnel: Object.fromEntries(steps.map((step) => [step, { writer: play(step, "writer"), judge: play(step, "judge") }])) as Draft2Cast["funnel"],
+    imageReview: { provider: "openai", model: openaiModel },
+  };
 }
 
 /**
@@ -77,3 +125,8 @@ export const DRAFT2_DECK_ROLES: { writer: Draft2Provider; judge: Draft2Provider 
 export const DRAFT2_VISUAL_ROLES: { writer: Draft2Provider; judge: Draft2Provider } = DRAFT2_OPENING_ROLES;
 /** And the caption: the post's text by the model that wrote the carousel, judged by the other. */
 export const DRAFT2_CAPTION_ROLES: { writer: Draft2Provider; judge: Draft2Provider } = DRAFT2_OPENING_ROLES;
+
+/** Each funnel step's providers, for today's cast. */
+const FUNNEL_STEP_ROLES: Record<Draft2FunnelStepName, { writer: Draft2Provider; judge: Draft2Provider }> = {
+  opening: DRAFT2_OPENING_ROLES, closing: DRAFT2_CLOSING_ROLES, deck: DRAFT2_DECK_ROLES, visual: DRAFT2_VISUAL_ROLES, caption: DRAFT2_CAPTION_ROLES,
+};
