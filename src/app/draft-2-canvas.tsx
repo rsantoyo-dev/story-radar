@@ -1787,6 +1787,7 @@ function PersonItem({ entity, photos, saving, locked, onDecide }: { entity: Draf
           <p className={styles.factClaim}>{candidate.name}{candidate.birthYear ? ` (born ${candidate.birthYear})` : ""}</p>
           {candidate.description ? <p className={styles.factMeta}>{candidate.description}</p> : null}
           <p className={styles.factMeta}>{candidate.author} · {candidate.license} · <a href={candidate.commonsUrl} target="_blank" rel="noreferrer">Commons ↗</a></p>
+          {candidate.personalityRights ? <p className={styles.factMeta}>Commons warns of personality rights: using the photo of an identifiable person for commercial or promotional purposes may need their consent. Your call.</p> : null}
           <Button variant="secondary" size="compact" busy={saving} disabled={locked} onClick={() => onDecide({ action: "confirm", entityId: entity.id, candidateId: candidate.entityId })}>This is them</Button>
         </div>
       </li>)}

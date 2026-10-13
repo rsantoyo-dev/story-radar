@@ -7,7 +7,7 @@ import sharp from "sharp";
 import { db } from "@/db/client";
 import { storyReferencePhotos } from "@/db/schema";
 
-import { commonsPhotoRights, normalizePlaceName, photoNeedsAuthor, record } from "./creative-documentary";
+import { commonsPortraitTerms, normalizePlaceName, PORTRAIT_MIN_SIDE, record } from "./creative-documentary";
 import { fetchDocumentaryResource, providerLanguage } from "./creative-documentary-providers";
 import { resolveGeoContact } from "./creative-geo-contact";
 import { getCreativeProfile } from "./creative-profile.repository";
@@ -36,6 +36,8 @@ export type CommonsPersonCandidate = {
   author: string;
   license: string;
   commonsUrl: string;
+  /** Commons warns of personality rights: using the photo for commercial or promotional purposes may need the person's consent. The editor decides. */
+  personalityRights?: true;
 };
 
 type Entity = {
@@ -54,11 +56,10 @@ type CommonsPhoto = {
   licenseUrl: string;
   width: number;
   height: number;
+  personalityRights?: true;
 };
 
 const MAX_CANDIDATES = 5;
-/** Portraits are composed with contain-fit; below this they read as blurry on a 1080×1350 slide. */
-const MIN_PORTRAIT_SIDE = 500;
 
 export class CommonsPersonError extends StoryMaterialValidationError {}
 
@@ -141,20 +142,20 @@ async function commonsPhoto(api: ReturnType<typeof wikimediaApi>, titles: string
     if (!record(info) || !record(info.extmetadata)) continue;
     const meta = info.extmetadata;
     const get = (key: string) => (record(meta[key]) && typeof meta[key].value === "string" ? meta[key].value : "");
-    const rights = commonsPhotoRights({ licenseUrl: get("LicenseUrl"), license: get("License"), licenseShortName: get("LicenseShortName") });
-    // Restrictions carries Commons' personality-rights warnings; never import those.
-    if (!rights || get("Restrictions") || get("Permission")) continue;
-    const rawArtist = get("Artist").replace(/<[^>]*>/gu, "").replace(/\s+/g, " ").trim();
-    const artist = /no machine-readable author/i.test(rawArtist) ? "" : rawArtist;
-    // Attribution is owed for every license except the public domain.
-    const author = artist || (photoNeedsAuthor(rights.license) ? "" : "Unknown author");
     const width = Number(info.width), height = Number(info.height);
-    if (!author || author.length > 160 || Math.min(width, height) < MIN_PORTRAIT_SIDE || Number(info.size) > 15_000_000) continue;
+    const terms = commonsPortraitTerms(
+      { licenseUrl: get("LicenseUrl"), license: get("License"), licenseShortName: get("LicenseShortName"), restrictions: get("Restrictions"), artist: get("Artist") },
+      { width, height, bytes: Number(info.size) },
+    );
+    if (!terms) continue;
     if (typeof info.url !== "string" || typeof info.descriptionurl !== "string" || typeof info.thumburl !== "string") continue;
     const imageUrl = new URL(info.url), thumbnailUrl = new URL(info.thumburl), pageUrl = new URL(info.descriptionurl);
     if (imageUrl.hostname !== "upload.wikimedia.org" || !THUMBNAIL_HOSTS.has(thumbnailUrl.hostname)) continue;
     if (pageUrl.origin !== "https://commons.wikimedia.org" || !pageUrl.pathname.startsWith("/wiki/File:")) continue;
-    return { imageUrl: imageUrl.toString(), thumbnailUrl: thumbnailUrl.toString(), pageUrl: pageUrl.toString(), author, license: rights.license, licenseUrl: rights.licenseUrl, width, height };
+    return {
+      imageUrl: imageUrl.toString(), thumbnailUrl: thumbnailUrl.toString(), pageUrl: pageUrl.toString(), author: terms.author, license: terms.license, licenseUrl: terms.licenseUrl, width, height,
+      ...(terms.personalityRights ? { personalityRights: true as const } : {}),
+    };
   }
   return undefined;
 }
@@ -192,6 +193,7 @@ export async function searchCommonsPeople(topicId: string, storyId: string, quer
     candidates.push({
       entityId: person.id, name: label(person, language), ...(description ? { description } : {}), ...(year ? { birthYear: year } : {}),
       thumbnailUrl: photo.thumbnailUrl, author: photo.author, license: photo.license, commonsUrl: photo.pageUrl,
+      ...(photo.personalityRights ? { personalityRights: true as const } : {}),
     });
   }
   return candidates;
@@ -216,7 +218,7 @@ export async function importCommonsPersonPhoto(topicId: string, storyId: string,
   try {
     const pipeline = sharp(bytes, { limitInputPixels: 40_000_000, animated: false });
     const metadata = await pipeline.metadata();
-    if (!metadata.width || !metadata.height || Math.min(metadata.width, metadata.height) < MIN_PORTRAIT_SIDE || (metadata.pages ?? 1) > 1) throw new Error("Invalid image");
+    if (!metadata.width || !metadata.height || Math.min(metadata.width, metadata.height) < PORTRAIT_MIN_SIDE || (metadata.pages ?? 1) > 1) throw new Error("Invalid image");
     normalized = await pipeline.rotate().resize({ width: 2048, height: 2048, fit: "inside", withoutEnlargement: true }).webp({ quality: 90 }).toBuffer();
   } catch {
     throw new CommonsPersonError("The Commons photo could not be decoded as a still image.");
@@ -230,7 +232,7 @@ export async function importCommonsPersonPhoto(topicId: string, storyId: string,
     const [row] = await db.insert(storyReferencePhotos).values({
       id, topicId, storyId,
       name: personName.slice(0, 150),
-      description: `${personName}${description ? ` — ${description}` : ""}. ${kind === "person" ? "Portrait" : "Photo"} from Wikimedia Commons (Wikidata ${person.id}).`.slice(0, 1000),
+      description: `${personName}${description ? ` — ${description}` : ""}. ${kind === "person" ? "Portrait" : "Photo"} from Wikimedia Commons (Wikidata ${person.id}).${photo.personalityRights ? " Commons warns of personality rights." : ""}`.slice(0, 1000),
       provenance: `Photo: ${photo.author} · ${photo.license} (${photo.licenseUrl}) · ${photo.pageUrl} · via Wikimedia Commons`.slice(0, 1000),
       // A real person's photo is documentary-portrait only: never sent to the
       // image provider. A place photo's license (CC0 / PD / BY / BY-SA, never

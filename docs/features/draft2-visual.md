@@ -73,7 +73,14 @@ judge, with no new call:
    - **People** (at most 8): `searchCommonsPeople`, Wikidata humans with a
      licensed Commons photo. The editor confirms one ("This is them"), which
      imports it with `importCommonsPersonPhoto` as a story photo that is
-     never sent to a model, or rejects them all.
+     never sent to a model, or rejects them all. A photo qualifies by
+     `commonsPortraitTerms` (since 2026-10-13): a reusable license, a credit
+     when the license asks for one, at least 480 px on its short side (the
+     narrowest portrait frame; 500 before). The Permission field no longer
+     keeps a photo out (it carries Commons' license reviews: a Flickr
+     review, a permission ticket); Commons' personality-rights warning no
+     longer does either, and is shown on the candidate for the editor to
+     read before confirming; any other restriction still keeps it out.
    - **Places** (at most 6), only with a complete geo scope:
      - `documentaryProviders().resolve` for the Wikidata identity, only
        with a Wikimedia contact (the Topic's, else `CREATIVE_GEO_CONTACT`):

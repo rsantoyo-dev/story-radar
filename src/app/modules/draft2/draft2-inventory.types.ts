@@ -41,6 +41,8 @@ export type Draft2PersonCandidate = {
   author: string;
   license: string;
   commonsUrl: string;
+  /** Commons warns of personality rights; the editor reads it before confirming. */
+  personalityRights?: true;
 };
 
 /** A verified photo of a place: who took it, under which license, from where. Checked again before any image is made (24 h). */

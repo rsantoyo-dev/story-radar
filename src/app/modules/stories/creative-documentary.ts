@@ -137,6 +137,34 @@ export function commonsPhotoRights(meta: { licenseUrl: string; license: string; 
 export function photoNeedsAuthor(license: string): boolean {
   return license !== "CC0" && license !== "Public domain";
 }
+
+/** The narrowest portrait frame on a 1080×1350 slide (creative-portrait-composite's layouts) is 480 px wide; a smaller photo reads as blurry in it. */
+export const PORTRAIT_MIN_SIDE = 480;
+
+/**
+ * Whether a Commons file may be imported as a portrait, and on what terms: a
+ * reusable license (commonsPhotoRights), a credit when the license asks for
+ * one, and a size that fills the narrowest portrait frame. The Permission
+ * field never keeps a file out: it carries Commons' license reviews (a
+ * Flickr review, a permission ticket), and the license fields decide.
+ * Commons' personality-rights warning is kept for the editor to read before
+ * confirming the person; any other restriction keeps the file out.
+ */
+export function commonsPortraitTerms(
+  meta: { licenseUrl: string; license: string; licenseShortName: string; restrictions: string; artist: string },
+  file: { width: number; height: number; bytes: number },
+): { license: string; licenseUrl: string; author: string; personalityRights?: true } | undefined {
+  const rights = commonsPhotoRights(meta);
+  if (!rights) return undefined;
+  const restrictions = meta.restrictions.split(/[|,\s]+/u).map((entry) => entry.trim().toLowerCase()).filter(Boolean);
+  if (restrictions.some((entry) => entry !== "personality")) return undefined;
+  const rawArtist = meta.artist.replace(/<[^>]*>/gu, "").replace(/\s+/g, " ").trim();
+  const artist = /no machine-readable author/i.test(rawArtist) ? "" : rawArtist;
+  // Attribution is owed for every license except the public domain.
+  const author = artist || (photoNeedsAuthor(rights.license) ? "" : "Unknown author");
+  if (!author || author.length > 160 || !(Math.min(file.width, file.height) >= PORTRAIT_MIN_SIDE) || file.bytes > 15_000_000) return undefined;
+  return { ...rights, author, ...(restrictions.length ? { personalityRights: true as const } : {}) };
+}
 export function eligiblePhoto(photo: PhotoEvidence, place: PlaceEvidence, now = Date.now()): boolean {
   const age = now - Date.parse(photo.retrievedAt);
   const rights = portraitPhotoLicense(photo.licenseUrl);

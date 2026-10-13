@@ -225,6 +225,7 @@ function CommonsPersonSearch({ scope, disabled, onImported }: { scope: Scope; di
       <strong>{person.name}{kind === "person" && person.birthYear ? ` (${person.birthYear})` : ""}</strong>
       {person.description ? <p>{person.description}</p> : null}
       <small>Photo: {person.author} · {person.license} · <a href={person.commonsUrl} target="_blank" rel="noreferrer">Commons ↗</a> · <a href={`https://www.wikidata.org/wiki/${person.entityId}`} target="_blank" rel="noreferrer">{person.entityId} ↗</a></small>
+      {person.personalityRights ? <small>Commons warns of personality rights: using the photo of an identifiable person for commercial or promotional purposes may need their consent. Your call.</small> : null}
       <Button size="compact" disabled={disabled || Boolean(busy)} busy={busy === person.entityId} onClick={() => void importPerson(person)}>{busy === person.entityId ? "Importing…" : kind === "person" ? "Use this person" : "Use this place"}</Button>
     </article>)}</div> : null}
   </div>;
