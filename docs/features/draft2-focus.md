@@ -461,7 +461,8 @@ single strict schema with the spine failed on Anthropic's grammar limit
 what grow that grammar: neither schema has one now, and the parsers check
 the values instead (a test keeps both facts true). The planner reads the
 decision as the models read a focus, the earlier spine when there is one,
-and the parts of the plan the editor owns, which it returns as given.
+the parts of the plan the editor owns, which it returns as given, and
+(since 2026-10-13) People and places' material, as the first call does.
 
 ### The spine (`spine`, the spine skill v1)
 
@@ -524,3 +525,20 @@ chosen one first (`focus.deliberation.approaches`, shown read-only). The
 preference for a telling other than classic (v10) is withdrawn: the editor
 wants stories thought outside the box, not forced out of it, and a form or a
 premise is never chosen for novelty or forced onto facts that do not carry it.
+
+### The visual direction and the story's people (2026-10-13)
+
+Focus skill v12. The planner writes the visual direction, and it did not
+read People and places: on a post about five personalities with a verified
+portrait each, it reasoned that "no fact gives a verified photo of a
+person" and wrote "sans visage", and the visual script followed it with
+seven generic images. The plan now reads the material, which names the
+people with a verified documentary portrait (`material.portraits`: a
+confirmed Commons portrait, or a story photo the editor gave them). The
+rule changed from "never a real person" to: never draw a real person or a
+real place; a person appears only through their verified portrait, pasted
+unchanged on the slides about them, and a place only through its verified
+photo or map; when the story is about people with a portrait, the direction
+says the images show them that way, each on their slides, and never asks
+for faceless or anonymous images of them; a person without a verified
+portrait is never shown.

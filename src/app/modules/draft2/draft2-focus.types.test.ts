@@ -216,6 +216,7 @@ const MATERIAL: Draft2FocusMaterial = {
   characterChoice: "auto",
   characters: [{ id: "char-jo", name: "Jo", description: "The local narrator, a modern Johannaise." }],
   people: ["Catherine Fournier"],
+  portraits: [],
   places: [{ name: "Parc des Parulines", verifiedPhoto: true, map: true }],
   organizations: ["CIME Haut-Richelieu"],
   storyPhotos: [],
@@ -300,6 +301,9 @@ test("People and places as the focus reads them: the brand's characters only whi
   const material = focusMaterial(inventory);
   assert.deepEqual([material.characters.map((character) => [character.id, character.name, character.description.length]), material.people, material.places], [[["char-jo", "Jo", 300]], ["Catherine Fournier"], [{ name: "Parc des Parulines", verifiedPhoto: false, map: true }]]);
   assert.deepEqual(focusMaterial({ ...inventory, characters: "off" }).characters, [], "characters the editor turned off are not offered");
+  assert.deepEqual(material.portraits, [], "a person without a verified portrait is never shown");
+  const portrait = { ...inventory, entities: [{ ...inventory.entities[0], storyPhoto: { id: "p1", name: "Catherine Fournier", provenance: "Photo: Ville", transmissionAllowed: false } }, inventory.entities[1]] } as unknown as Draft2Inventory;
+  assert.deepEqual(focusMaterial(portrait).portraits, ["Catherine Fournier"], "a story photo the editor gave them is their portrait");
   assert.equal(JSON.stringify(focusDecisionRequest({ title: "t", today: "2026-10-12", profile: { framingStrategy: "auto", storyStructure: "auto", conversionGoal: "followers" }, lines: [], foundBy: [], material }).material), JSON.stringify(material));
 });
 

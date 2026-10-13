@@ -14,7 +14,7 @@ import { Draft2BusyError, Draft2InputError, Draft2ResponseError, type Draft2Fact
 import {
   CLASSIC_CONCEPT, CLASSIC_NARRATIVE, DRAFT2_FOCUS_PLAN_SCHEMA, DRAFT2_FOCUS_SCHEMA, DRAFT2_NARRATIVE_REVIEW_SCHEMA, FOCUS_PLAN_FIELDS, applyFocusEdit, conceptReviewRequest, decidedFocus, editorChoicesOf, focusDecisionRequest, focusForModels, focusLine, focusMaterial, focusToday,
   focusWithPlan, narrativeReviewRequest, parseFocusDecision, parseFocusPlan, parseNarrativeReview, resetFocusField,
-  type Draft2CreativeReview, type Draft2Focus, type Draft2FocusField,
+  type Draft2CreativeReview, type Draft2Focus, type Draft2FocusField, type Draft2FocusMaterial,
 } from "./draft2-focus.types";
 import { draft2ModelName, draft2RoleModel, draft2SolModel } from "./draft2-models";
 import { OPENING_STALL_MS, openingFactsSnapshot } from "./draft2-opening.types";
@@ -167,7 +167,7 @@ export async function decideDraft2Focus({ topicId, storyId, sessionId }: Draft2F
       const told = decidedFocus(focus, decision, { provider: "anthropic", model }, new Date());
       // The judge's reviews of the telling and the plan written from it run side by side; a telling the judge sent back to classic gets its plan written again.
       const plan = (telling: Draft2Focus) => focusCall({
-        apiKey, model, trace, verifiedFacts, auditContext, operation: "draft2_focus_plan", ...planCall(telling, { facts, title: content.title, brief, editorChoices }),
+        apiKey, model, trace, verifiedFacts, auditContext, operation: "draft2_focus_plan", ...planCall(telling, { facts, title: content.title, brief, editorChoices, material }),
         schema: DRAFT2_FOCUS_PLAN_SCHEMA, effort: "high", maxOutputTokens: PLAN_MAX_OUTPUT_TOKENS, again: PLAN_AGAIN,
       });
       const [reviewed, planned] = await Promise.all([reviewChoices(told), plan(told)]);
@@ -250,7 +250,7 @@ async function focusCall<T>({ apiKey, model, trace, verifiedFacts, auditContext,
  * focus and spine skills, and the skills its telling needs), its request and
  * its parse, honoring the parts of the plan the editor owns.
  */
-function planCall(focus: Draft2Focus, { facts, title, brief, editorChoices }: { facts: readonly Draft2Fact[]; title: string; brief: string; editorChoices: Record<string, unknown> }) {
+function planCall(focus: Draft2Focus, { facts, title, brief, editorChoices, material }: { facts: readonly Draft2Fact[]; title: string; brief: string; editorChoices: Record<string, unknown>; material?: Draft2FocusMaterial }) {
   const values = focus.values!;
   const planner = composeInstructions("focus-planner", [FOCUS_SKILL, SPINE_SKILL, ...creativeSkills(values)], brief);
   const owned = Object.fromEntries(Object.entries(editorChoices).filter(([key]) => (FOCUS_PLAN_FIELDS as readonly string[]).includes(key)));
@@ -259,7 +259,8 @@ function planCall(focus: Draft2Focus, { facts, title, brief, editorChoices }: { 
   return {
     instructions: planner.instructions,
     skillVersions: planner.skillVersions,
-    contents: { task: "plan", title, focus: told, editorChoices: owned } as Record<string, unknown>,
+    // People and places' material: the visual direction shows the people with a verified portrait through it, never anyone else.
+    contents: { task: "plan", title, focus: told, ...(material ? { material } : {}), editorChoices: owned } as Record<string, unknown>,
     parse: (answer: string) => parseFocusPlan(answer, { known: new Set(facts.map((fact) => fact.id)), structure: values.structure, editorChoices: owned }),
   };
 }
@@ -288,7 +289,7 @@ export async function rewriteDraft2FocusPlan({ topicId, storyId, sessionId }: Dr
   let plan;
   try {
     plan = await withCreativeTextBudget({ topicId, storyId, runId: session.id }, () => focusCall({
-      apiKey, model, trace, verifiedFacts: openingFactsSnapshot(facts), auditContext, operation: "draft2_focus_plan", ...planCall(focus, { facts, title: content.title, brief, editorChoices: editorChoicesOf(focus) }),
+      apiKey, model, trace, verifiedFacts: openingFactsSnapshot(facts), auditContext, operation: "draft2_focus_plan", ...planCall(focus, { facts, title: content.title, brief, editorChoices: editorChoicesOf(focus), ...(session.inventory?.status === "ready" ? { material: focusMaterial(session.inventory) } : {}) }),
       schema: DRAFT2_FOCUS_PLAN_SCHEMA, effort: "high", maxOutputTokens: PLAN_MAX_OUTPUT_TOKENS, again: PLAN_AGAIN,
     }));
   } catch (error) {

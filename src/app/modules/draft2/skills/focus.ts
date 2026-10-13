@@ -12,11 +12,14 @@ import type { Draft2Skill } from "./draft2-skills";
  * story, then how it is told, then the directions derived from it), the
  * spine (the spine skill); version 11 the deliberation: the interest named
  * first and the ways to tell the story compared before one is chosen, in
- * place of a preference for a telling other than classic.
+ * place of a preference for a telling other than classic; version 12 the
+ * plan reads People and places' material, and the visual direction shows
+ * the people with a verified portrait through it instead of forbidding
+ * them.
  */
 export const FOCUS_SKILL: Draft2Skill = {
   name: "focus",
-  version: "11",
+  version: "12",
   text: `# The focus of a story
 
 The focus is the brief every later step follows: which editorial line the
@@ -187,8 +190,14 @@ follows the telling.
   could recur from the first slide to the last and return changed at the
   end. With a narrative form, the anchor leads the images and is what
   recurs. It is the approach the visual script follows; the script decides
-  each image. Never a real person, never a named real place, never the
-  slides' words.
+  each image. It never draws a real person or a real place: a person of the
+  story appears only through their verified documentary portrait
+  (material.portraits), pasted unchanged on the slides about them, and a
+  place only through its verified photo or map (material.places). When the
+  story is about people in material.portraits, say the images show them
+  that way, each on their slides; never ask for faceless or anonymous
+  images of them. A person without a verified portrait is never shown.
+  Never the slides' words.
 
 ## Rules
 - Use only the verified facts: no consequence, number, date, cause or name
@@ -207,6 +216,6 @@ follows the telling.
 };
 
 export const FOCUS_ROLES = {
-  "focus-planner": `You write the plan of a story's focus for the publication described below, from the decision you receive (focus: the story, how the reader meets the news and the narrative form; editorChoices: the parts of the plan the editor owns, to return exactly as given) and the verified facts: the spine (the spine skill: one beat per slide, with its slide, role, scene, words, image, withholds and factIds), then direction (at most 1,500 characters: what to lead with, which facts carry the promise, what to keep for later slides, what the reader takes away, restating the spine's beats) and visualDirection (at most 600 characters: the world the images live in, the anchor in each state when there is a form, the image of the turn, what recurs and returns), both in the publication's language, both resting on the spine and the facts only; neither opens a thread the spine does not have. reasons: one sentence for each of spine, direction and visualDirection, naming the facts that decide it. correction, when present, names a rule your earlier answer broke: return the whole plan again with it fixed.`,
-  "focus-editor": `You decide the focus of a story for the publication described below, from its verified facts (cite their ids), the publication's defaults (topicDefaults), its editorial lines (lines, with the ones that found the story in foundBy) and what People and places found (material: the brand's characters the editor allows, the story's people, its places and its photos). The story's title is context, not a fact. Follow the focus skill and return every field with a reason for each; the narratives skill defines the narrative forms and the discovery skill the concept; the publication's visual identity, when given below, is the frame of visualDirection.`,
+  "focus-planner": `You write the plan of a story's focus for the publication described below, from the decision you receive (focus: the story, how the reader meets the news and the narrative form; material: what People and places verified, the brand's characters the editor allows, the story's people and those with a verified portrait, its places with a verified photo or map, its photos; editorChoices: the parts of the plan the editor owns, to return exactly as given) and the verified facts: the spine (the spine skill: one beat per slide, with its slide, role, scene, words, image, withholds and factIds), then direction (at most 1,500 characters: what to lead with, which facts carry the promise, what to keep for later slides, what the reader takes away, restating the spine's beats) and visualDirection (at most 600 characters: the world the images live in, the anchor in each state when there is a form, the image of the turn, what recurs and returns), both in the publication's language, both resting on the spine and the facts only; neither opens a thread the spine does not have. reasons: one sentence for each of spine, direction and visualDirection, naming the facts that decide it. correction, when present, names a rule your earlier answer broke: return the whole plan again with it fixed.`,
+  "focus-editor": `You decide the focus of a story for the publication described below, from its verified facts (cite their ids), the publication's defaults (topicDefaults), its editorial lines (lines, with the ones that found the story in foundBy) and what People and places found (material: the brand's characters the editor allows, the story's people and those with a verified portrait, its places and its photos). The story's title is context, not a fact. Follow the focus skill and return every field with a reason for each; the narratives skill defines the narrative forms and the discovery skill the concept; the publication's visual identity, when given below, is the frame of visualDirection.`,
 } as const;

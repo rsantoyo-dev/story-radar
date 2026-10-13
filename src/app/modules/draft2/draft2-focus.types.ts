@@ -223,6 +223,8 @@ export type Draft2FocusMaterial = {
   characterChoice: Draft2CharacterChoice;
   characters: { id: string; name: string; description: string }[];
   people: string[];
+  /** The story's people with a verified documentary portrait (confirmed on Commons, or a story photo the editor gave them): the images show them only through it, pasted unchanged. */
+  portraits: string[];
   places: { name: string; verifiedPhoto: boolean; map: boolean }[];
   /** The story's organizations: never a voice of a premise, never drawn. */
   organizations: string[];
@@ -509,6 +511,7 @@ export function focusMaterial(inventory: Pick<Draft2Inventory, "characters" | "r
     characterChoice: inventory.characters,
     characters: inventory.characters === "off" ? [] : inventory.roster.map(({ id, name, description }) => ({ id, name, description: clip(description, CHARACTER_DESCRIPTION_MAX_CHARACTERS) })),
     people: inventory.entities.filter((entity) => entity.kind === "person").map((entity) => entity.name),
+    portraits: inventory.entities.filter((entity) => entity.kind === "person" && entityMaterial(entity).portrait).map((entity) => entity.name),
     places: inventory.entities.filter((entity) => entity.kind === "place").map((entity) => {
       const material = entityMaterial(entity);
       return { name: entity.name, verifiedPhoto: Boolean(material.photo), map: Boolean(material.map) };
