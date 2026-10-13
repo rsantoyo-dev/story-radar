@@ -173,6 +173,16 @@ field without a provider call. It is refused while Claude is deciding.
   as a stated number, so "5 things to do" is not an `UNSUPPORTED_NUMBER`.
 - Scores stored before this step have no `focus`; they still read as passing
   on it.
+- The words follow every field but `visualDirection` (since 2026-10-13,
+  `wordsFollowFocus`): only the visual script reads it, so an edit to it alone
+  never marks the opening as following another focus, and the autopilot does
+  not write the words again for it. The focus's version still goes up; the
+  words compare the values, without the visual direction, in any key order.
+- A new visual script follows the visual direction as the focus has it now
+  (`visualFocus`): the rest of its focus is the one its words followed, with
+  their version. A script that followed another visual direction than the
+  focus has now is "changed since" (`visualDirectionChanged`), and the
+  autopilot writes it again.
 
 ## 8. Persistence and API
 

@@ -223,7 +223,9 @@ are `ILLUSTRATES_TEXT`, `BREAKS_CONTINUITY`, `REPETITIVE`, `MOTIF_DEPENDENCY`, `
   - each slide's words beside its beat, direction, kind of image and
     material;
   - a notice when the deck or the people and places changed since the
-    script;
+    script, or the focus's visual direction (a new script follows the
+    direction as the focus has it now, with the rest of the focus its
+    words followed; see `draft2-focus.md` §7);
   - "Continue with round 3" on a run that ended after two rounds.
 
 ## 7. Tests

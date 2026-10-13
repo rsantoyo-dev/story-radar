@@ -173,6 +173,15 @@ test("a run that ended unaccepted after two rounds, before the step had a third,
   await assert.rejects(changed.run({ resume: true }), /The people and places changed since this run started/);
 });
 
+test("a new script follows the visual direction as the focus has it now; the rest of the focus is the words'", async () => {
+  const now = { status: "ready", version: 3, edited: ["visualDirection"], values: { ...VALUES, audience: "Someone else", visualDirection: "Each reader by their portrait, one per slide." } };
+  const h = harness({ writes: [writer()], judgments: [judge("accept", "c2", { c2: 96 })], session: { focus: now } });
+  const session = await h.run();
+  const followed = { ...VALUES, visualDirection: "Each reader by their portrait, one per slide." };
+  assert.equal(json((h.calls[0].input.context as { focus: unknown }).focus), json(focusTypes.focusForModels(followed)));
+  assert.equal(json(session.visual?.focus), json({ version: 2, values: followed }), "the words' version and fields, with the direction as it stands");
+});
+
 test("a long carousel explores two scripts", async () => {
   const h = harness({ writes: [writer()], judgments: [judge("accept", "c1", { c1: 96 })], session: { deck: deckRun(9) } });
   await h.run();

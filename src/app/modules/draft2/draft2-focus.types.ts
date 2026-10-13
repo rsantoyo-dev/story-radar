@@ -304,6 +304,45 @@ export type Draft2FocusDeliberation = { interest: string; approaches: string[] }
 /** The focus an opening run followed, kept on the run. */
 export type Draft2FocusSnapshot = { version: number; values: Draft2FocusValues };
 
+/** A value as JSON with its object keys sorted: two copies compare equal whatever order a stored row gives their keys. */
+const canonicalJson = (value: unknown): string => JSON.stringify(value, (_key, entry: unknown) => entry && typeof entry === "object" && !Array.isArray(entry)
+  ? Object.fromEntries(Object.entries(entry).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+  : entry);
+
+/** The focus's values without the visual direction: what the words follow. */
+const wordsValues = ({ visualDirection, ...values }: Draft2FocusValues): Omit<Draft2FocusValues, "visualDirection"> => {
+  void visualDirection;
+  return values;
+};
+
+/**
+ * Whether words written with one focus still follow the focus as it stands:
+ * every field but the visual direction counts. Only the visual script reads
+ * the visual direction, so a change to it asks for a new script, never for
+ * new words.
+ */
+export function wordsFollowFocus(snapshot: Draft2FocusSnapshot | undefined, focus: { version: number; values?: Draft2FocusValues | null }): boolean {
+  if (!snapshot || !focus.values) return false;
+  return snapshot.version === focus.version || canonicalJson(wordsValues(snapshot.values)) === canonicalJson(wordsValues(focus.values));
+}
+
+/**
+ * The focus a new visual script follows: the one its words followed, with
+ * the visual direction as the focus has it now. The snapshot keeps the
+ * words' version: the other fields are theirs.
+ */
+export function visualFocus(words: Draft2FocusSnapshot, focus: { values?: Draft2FocusValues | null } | null | undefined): Draft2FocusSnapshot {
+  if (!focus?.values || focus.values.visualDirection === words.values.visualDirection) return words;
+  const { visualDirection } = focus.values;
+  return { ...words, values: { ...wordsValues(words.values), ...(visualDirection ? { visualDirection } : {}) } };
+}
+
+/** Whether a visual script followed another visual direction than the focus has now. */
+export function visualDirectionChanged(script: Draft2FocusSnapshot | undefined, focus: { values?: Draft2FocusValues | null } | null | undefined): boolean {
+  if (!script || !focus?.values) return false;
+  return (script.values.visualDirection ?? "") !== (focus.values.visualDirection ?? "");
+}
+
 export type Draft2FocusFindingCode = "NO_READER_CONSEQUENCE" | "TOO_FEW_ITEMS" | "NARRATIVE_CHARACTER_UNAVAILABLE" | "NARRATIVE_REAL_PERSON" | "CONCEPT_GRAVITY" | "CONCEPT_REAL_PERSON" | "SPINE_SHAPE";
 /** What the program finds wrong with a focus; any one keeps the Opening from starting. */
 export type Draft2FocusFinding = { field: Draft2FocusField; code: Draft2FocusFindingCode; detail: string };

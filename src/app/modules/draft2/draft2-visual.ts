@@ -2,7 +2,7 @@ import "server-only";
 import { recordFunnelChoice, runFunnelStep, type FunnelStep, type FunnelStepInput } from "./draft2-funnel-run";
 import { DRAFT2_VISUAL_ROLES } from "./draft2-models";
 import { Draft2InputError } from "./draft2-facts.types";
-import { focusForModels, focusNarrative, type Draft2FocusSnapshot } from "./draft2-focus.types";
+import { focusForModels, focusNarrative, visualFocus, type Draft2FocusSnapshot } from "./draft2-focus.types";
 import { funnelVersions } from "./draft2-funnel";
 import { inventoryForModels, type Draft2CharacterChoice, type Draft2Inventory } from "./draft2-inventory.types";
 import {
@@ -32,7 +32,8 @@ type VisualSnapshot = {
  * people and places are still the version it read; a new run takes the deck
  * as it stands (the editor's choice, else the judge's winner), once its run
  * has finished, with the opening and closing it connects, which must still
- * be the ones chosen, and the people and places as last found.
+ * be the ones chosen, the people and places as last found, and the visual
+ * direction as the focus has it now (the rest of the focus is the words').
  */
 function visualTarget(session: Draft2SessionRow, stopped: Draft2Visual | undefined): VisualSnapshot {
   const inventory = session.inventory;
@@ -56,7 +57,7 @@ function visualTarget(session: Draft2SessionRow, stopped: Draft2Visual | undefin
   if (!inventory || inventory.status !== "ready") throw new Draft2InputError("Find the people and places first: the visual script shows only what is verified.");
   return {
     carousel: carouselSlides(deck.opening, chosen.candidate, deck.closing),
-    deckId: chosen.candidate.id, openingId: deck.opening.id, closingId: deck.closing.id, focus: deck.focus,
+    deckId: chosen.candidate.id, openingId: deck.opening.id, closingId: deck.closing.id, focus: visualFocus(deck.focus, session.focus),
     inventory, characters: inventory.roster, characterChoice: inventory.characters,
   };
 }

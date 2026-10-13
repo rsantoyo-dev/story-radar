@@ -9,7 +9,7 @@ import type { StoryContentResponse } from "@/app/radar-dashboard";
 import type { Draft2Fact, Draft2FactsEvaluation, Draft2FactsRound, Draft2SessionStatus, Draft2TraceEntry } from "@/app/modules/draft2/draft2-facts.types";
 import {
   CLASSIC_CONCEPT, CLASSIC_NARRATIVE, FOCUS_ANCHOR_MAX_CHARACTERS, FOCUS_CONCEPT_ARCS, FOCUS_MAX_REVEALS, FOCUS_PREMISE_MAX_CHARACTERS, FOCUS_REVEAL_MAX_CHARACTERS, focusConcept, FOCUS_AUDIENCE_MAX_CHARACTERS, FOCUS_CONSEQUENCE_MAX_CHARACTERS, FOCUS_DIRECTION_MAX_CHARACTERS, FOCUS_FRAMINGS, FOCUS_GOALS, FOCUS_GRAVITIES,
-  FOCUS_NARRATIVE_ENDINGS, FOCUS_NARRATIVE_FORMS, FOCUS_PROGRESSION_MAX_CHARACTERS, FOCUS_STRUCTURES, FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS, focusFindings, focusMaterial, focusNarrative,
+  FOCUS_NARRATIVE_ENDINGS, FOCUS_NARRATIVE_FORMS, FOCUS_PROGRESSION_MAX_CHARACTERS, FOCUS_STRUCTURES, FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS, focusFindings, focusMaterial, focusNarrative, visualDirectionChanged, wordsFollowFocus,
   type Draft2Focus, type Draft2FocusField, type Draft2FocusFinding, type Draft2ConceptArc, type Draft2FocusConcept, type Draft2FocusMaterial, type Draft2FocusNarrative, type Draft2FocusValues, type Draft2FocusVoice, type Draft2NarrativeForm,
 } from "@/app/modules/draft2/draft2-focus.types";
 import { TONE_KEYS, toneWords, type ToneKey } from "@/app/modules/draft2/skills/tone";
@@ -136,7 +136,7 @@ function nextAutopilotStep(session: Draft2SessionView | null, now: number): Auto
   const mentions = session.mentions;
   if (!mentions || mentions.status === "failed" || (mentions.status === "running" && stale)) return { step: "mentions" };
   const opening = session.opening;
-  const openingNeeds = runNeeds("opening", opening, Boolean(opening && (!opening.focus || opening.focus.version !== focus.version)), "opening");
+  const openingNeeds = runNeeds("opening", opening, Boolean(opening && !wordsFollowFocus(opening.focus, focus)), "opening");
   if (openingNeeds) return openingNeeds;
   const openingId = opening!.editorChoiceId ?? opening!.winnerId;
   const closing = session.closing;
@@ -152,9 +152,9 @@ function nextAutopilotStep(session: Draft2SessionView | null, now: number): Auto
   if (!review || review.status === "failed" || !reviewCurrent(review, { openingId, closingId, deckId }) || (review.status === "running" && stale)) return { step: "review" };
   if (review.status === "running") return { blocked: "The carousel is being read." };
   const visual = session.visual;
-  // The script pictures the carousel's words and the images letter them: a review patch or an edit applied since asks for a new script.
+  // The script pictures the carousel's words and the images letter them: a review patch or an edit applied since asks for a new script, as does a new visual direction.
   const carouselNow = deckCarousel(deck);
-  const visualNeeds = runNeeds("visual", visual, Boolean(visual && (visual.deckId !== deckId || visual.inventoryVersion !== inventory.version || (visual.carousel && carouselNow && !sameCarouselWords(visual.carousel, carouselNow)))), "visual script");
+  const visualNeeds = runNeeds("visual", visual, Boolean(visual && (visual.deckId !== deckId || visual.inventoryVersion !== inventory.version || (visual.carousel && carouselNow && !sameCarouselWords(visual.carousel, carouselNow)) || visualDirectionChanged(visual.focus, focus))), "visual script");
   if (visualNeeds) return visualNeeds;
   const visualId = visual!.editorChoiceId ?? visual!.winnerId;
   const images = session.images;
@@ -755,9 +755,9 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const focusReady = Boolean(focus?.values) && focus?.status !== "running" && focusProblems.length === 0;
   const focusStatus = running === "focus" ? FOCUS_STATUS.running : focusStalled ? { label: "Stopped", tone: "warning" as const }
     : focus?.values && focusProblems.length && focus.status !== "running" ? { label: "Needs a fix", tone: "warning" as const } : focus ? FOCUS_STATUS[focus.status] : undefined;
-  // An opening written with another version of the focus, or before the Focus step.
+  // An opening written with another focus, or before the Focus step; a new visual direction alone asks only for a new visual script.
   const openingFocusVersion = session?.opening?.focus?.version;
-  const focusChanged = Boolean(session?.opening && focus?.values) && openingFocusVersion !== focus?.version;
+  const focusChanged = Boolean(session?.opening && focus?.values && !wordsFollowFocus(session.opening.focus, focus));
   // The closing ends the opening the editor chose (else the judge's winner), once that run has finished and followed a focus.
   const closing = session?.closing ?? undefined;
   const closingStalled = !running && closing?.status === "running" && now > 0 && now - Date.parse(session?.updatedAt ?? "") > OPENING_STALL_MS;
@@ -808,10 +808,11 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
     : { label: `${proposedPatches(review).length} to decide · ${review.editor?.scores.overall ?? "?"}`, tone: "info" as const };
   const reviewReady = deckFinished && !deckEndsChanged;
   const visualReady = deckFinished && !deckEndsChanged && inventory?.status === "ready";
-  // A visual script of another deck, of people and places found or decided since, or of words a review patch or an edit changed since (the images letter them).
+  // A visual script of another deck, of people and places found or decided since, of words a review patch or an edit changed since (the images letter them), or of another visual direction.
   const carouselNow = deckFinished && !deckEndsChanged ? deckCarousel(deck) : undefined;
   const visualWordsChanged = Boolean(visual?.carousel && carouselNow && !sameCarouselWords(visual.carousel, carouselNow));
-  const visualChanged = Boolean(visual?.deckId && ((chosenDeckId && visual.deckId !== chosenDeckId) || (inventory && visual.inventoryVersion !== inventory.version) || visualWordsChanged));
+  const visualDirectionNew = Boolean(visual?.deckId && visualDirectionChanged(visual.focus, focus));
+  const visualChanged = Boolean(visual?.deckId && ((chosenDeckId && visual.deckId !== chosenDeckId) || (inventory && visual.inventoryVersion !== inventory.version) || visualWordsChanged || visualDirectionNew));
   const visualResumable = visual && (visual.status === "paused" || visualStalled) && funnelResumeRound(visual) <= continuableUpTo(visual, VISUAL_MAX_ROUNDS);
   // A run that ended unaccepted before the step had its third round takes it, while it still follows the deck and the people and places.
   const visualExtendable = Boolean(visual && !visualChanged && funnelExtendable(visual, visualPlan(visual.carousel ?? []).length + (visual.extraRounds ?? 0)));
@@ -1146,8 +1147,10 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
             : needs("inventory", "Find the people and places first: the script shows only what is verified.")) : null}
         {visualExtendable && visual && !running ? <p className={styles.factMeta}>This run ended after {visual.rounds.length} rounds, before the visual script had a third. Continue with round {visualResumeRound} revises its best version once more against the remaining issues: one write and one judgment.</p> : null}
         {peopleToConfirm && visualReady && !running ? needs("inventory", `${peopleToConfirm} ${peopleToConfirm === 1 ? "person waits" : "people wait"} for your confirmation; until then the script tells the story without showing them.`) : null}
-        {visualChanged && running !== "visual" ? (visualWordsChanged && visual?.deckId === chosenDeckId && visual?.inventoryVersion === inventory?.version
-          ? <InlineNotice tone="info" title="The carousel’s words changed since this script">A review patch or an edit changed words this script pictures, and the images letter them. Write the visual script again to follow the words as they stand.</InlineNotice>
+        {visualChanged && running !== "visual" ? (visual?.deckId === chosenDeckId && visual?.inventoryVersion === inventory?.version
+          ? visualWordsChanged
+            ? <InlineNotice tone="info" title="The carousel’s words changed since this script">A review patch or an edit changed words this script pictures, and the images letter them. Write the visual script again to follow the words as they stand.</InlineNotice>
+            : <InlineNotice tone="info" title="The visual direction changed since this script">The focus’s visual direction is not the one this script followed. Write the visual script again to follow it; the words stay as they are.</InlineNotice>
           : <InlineNotice tone="info" title="The deck or the people and places changed">This script pictures {visual?.deckId} with people and places v{visual?.inventoryVersion}; the deck chosen now is {chosenDeckId} and the people and places are v{inventory?.version}. Write the visual script again to follow them.</InlineNotice>) : null}
         {running === "visual" ? <LoadingState>{following ? `${following} Following the run on the server…` : visualPausedRound ? `Continuing with round ${visualPausedRound} in a new request…` : `${today.visual.writer} writes the scripts; ${today.visual.judge} judges each round. This can take a few minutes.`}</LoadingState> : null}
         {visualStalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {stoppedAt}: its request or the server ended. Continue from round {visualResumeRound} picks it up at its last checkpoint; a round already written is judged, not written again.</InlineNotice> : null}
@@ -2200,7 +2203,7 @@ function FocusView({ focus, findings, material, saving, locked, onSave, onReset,
           : null}
       </div>
       <div className={`${styles.focusField} ${styles.focusWide}`}>
-        <FocusText key={key("visualDirection")} label="Visual direction" description={about("visualDirection", values.visualDirection ? "The visual script follows it: the world the images live in, who leads them, what recurs." : "Decided before this field existed: decide again for Claude to set it, or write it.")} value={values.visualDirection ?? ""} max={FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS} rows={3} disabled={locked} onCommit={(value) => onSave("visualDirection", value)} />
+        <FocusText key={key("visualDirection")} label="Visual direction" description={about("visualDirection", values.visualDirection ? "The visual script follows it: the world the images live in, who leads them, what recurs. Changing it asks for a new visual script, never for new words." : "Decided before this field existed: decide again for Claude to set it, or write it.")} value={values.visualDirection ?? ""} max={FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS} rows={3} disabled={locked} onCommit={(value) => onSave("visualDirection", value)} />
         {reset("visualDirection")}
       </div>
     </div>

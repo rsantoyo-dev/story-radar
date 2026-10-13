@@ -3,7 +3,7 @@ import test from "node:test";
 import { Draft2InputError, Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
 import {
   CLASSIC_CONCEPT, CLASSIC_NARRATIVE, DRAFT2_FOCUS_PLAN_SCHEMA, DRAFT2_FOCUS_SCHEMA, focusConcept, FOCUS_FIELDS, applyFocusEdit, decidedFocus, editorChoicesOf, focusDecisionRequest, focusFindings, focusForModels, focusItemCount, focusLine,
-  anchorNoun, focusMaterial, focusToday, focusWithPlan, narrativeUsesMaster, parseFocusDecision, parseFocusPlan, parseNarrativeReview, resetFocusField, spineShapeProblem,
+  anchorNoun, focusMaterial, focusToday, focusWithPlan, narrativeUsesMaster, parseFocusDecision, parseFocusPlan, parseNarrativeReview, resetFocusField, spineShapeProblem, visualDirectionChanged, visualFocus, wordsFollowFocus,
   type Draft2Focus, type Draft2FocusLine, type Draft2FocusMaterial, type Draft2FocusNarrative, type Draft2FocusValues, type Draft2SpineBeat,
 } from "./draft2-focus.types";
 import type { Draft2Inventory } from "./draft2-inventory.types";
@@ -489,4 +489,23 @@ test("the deliberation: the interest in one line and the tellings compared, kept
   rejects({ approaches: ["x".repeat(161), "y".repeat(161)] }, /Compare 2 to 4 ways/);
   const before = parseFocusDecision(answer({ interest: undefined, approaches: undefined }), { facts, lines });
   assert.deepEqual([before.values.interest, before.deliberation], [undefined, undefined], "an answer from before the deliberation has none");
+});
+
+test("the visual direction is the visual script's own: changing it asks for a new script, never for new words, and a new script reads it as it stands", () => {
+  const focus = decided({ visualDirection: "Generic scenes, nobody recognizable." });
+  const words = { version: focus.version, values: focus.values! };
+  const portraits = applyFocusEdit(focus, "visualDirection", "Each personality by their documentary portrait, one per slide.", NOW);
+  assert.equal(portraits.version, focus.version + 1);
+  assert.equal(wordsFollowFocus(words, portraits), true, "the words still follow a focus whose only change is the visual direction");
+  assert.equal(wordsFollowFocus(words, applyFocusEdit(portraits, "goal", "saves", NOW)), false);
+  assert.equal(wordsFollowFocus(undefined, portraits), false, "words written before the Focus step follow none");
+  const reordered = { ...words, values: Object.fromEntries(Object.entries(words.values).reverse()) as unknown as Draft2FocusValues };
+  assert.equal(wordsFollowFocus(reordered, portraits), true, "a stored row's keys in another order are the same focus");
+  assert.equal(visualDirectionChanged(words, portraits), true);
+  assert.equal(visualDirectionChanged(words, focus), false);
+  assert.equal(visualDirectionChanged(undefined, portraits), false, "a script that records no focus is not judged");
+  const followed = visualFocus(words, portraits);
+  assert.deepEqual(followed, { version: words.version, values: { ...words.values, visualDirection: "Each personality by their documentary portrait, one per slide." } }, "the words' focus, with the visual direction as it stands");
+  assert.equal(visualFocus(words, focus), words, "the same direction keeps the words' snapshot");
+  assert.equal(visualDirectionChanged(followed, portraits), false);
 });
