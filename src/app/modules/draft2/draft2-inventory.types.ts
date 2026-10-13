@@ -329,6 +329,11 @@ export function decidedInventory(inventory: Draft2Inventory, entityId: string | 
   };
 }
 
+/** A person whose Commons candidates wait for the editor; one the editor gave a story photo already has their portrait. */
+export function awaitsConfirmation(entity: Draft2InventoryEntity): boolean {
+  return entity.person?.status === "candidates" && !entity.storyPhoto;
+}
+
 /**
  * What the visual script may show of each entity: a portrait (a confirmed
  * person, or one the editor linked a story photo to), a photo (a verified

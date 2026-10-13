@@ -101,7 +101,13 @@ judge, with no new call:
      unchanged, and never a reference the script may use by the photo's
      own id (`referencePhotos`); a place's is its photo;
    - read the story's photos again after the editor added or removed one
-     in the panel (a link to a removed photo is dropped);
+     in the panel (a link to a removed photo is dropped); the canvas also
+     reads them once each time People and places opens, and on "Read the
+     story's photos again", so a photo added on the story's page or in
+     another tab appears without a new search;
+   - a person given a story photo no longer waits for confirmation, even
+     with Commons candidates still open (`awaitsConfirmation`): the photo
+     is their portrait;
    - the characters choice (`auto` | `on` | `off`, which reads the roster
      again).
 

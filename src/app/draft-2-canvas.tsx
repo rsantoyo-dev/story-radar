@@ -20,7 +20,7 @@ import {
 import { CLOSING_GATE, CLOSING_MAX_ROUNDS, type Draft2Closing, type Draft2ClosingCandidate, type Draft2ClosingCriterion } from "@/app/modules/draft2/draft2-closing.types";
 import { DECK_GATE, DECK_MAX_ROUNDS, type Draft2Deck, type Draft2DeckCandidate, type Draft2DeckCriterion } from "@/app/modules/draft2/draft2-deck.types";
 import { REVIEW_CRITERIA, proposedPatches, reviewCurrent, type Draft2Review } from "@/app/modules/draft2/draft2-review.types";
-import { INVENTORY_CHARACTER_CHOICES, type Draft2CharacterChoice, type Draft2Inventory, type Draft2InventoryEntity, type Draft2InventoryStoryPhoto } from "@/app/modules/draft2/draft2-inventory.types";
+import { INVENTORY_CHARACTER_CHOICES, awaitsConfirmation, type Draft2CharacterChoice, type Draft2Inventory, type Draft2InventoryEntity, type Draft2InventoryStoryPhoto } from "@/app/modules/draft2/draft2-inventory.types";
 import { VISUAL_GATE, VISUAL_MAX_ROUNDS, deckCarousel, sameCarouselWords, visualPlan, type Draft2Visual, type Draft2VisualCandidate, type Draft2VisualCriterion, type Draft2VisualRecurring, type Draft2VisualShot } from "@/app/modules/draft2/draft2-visual.types";
 import { IMAGES_MAX_REQUESTS, draft2ImageDownloads, latestAttempt, shownAttempt, slideSettled, type Draft2ImageAttempt, type Draft2ImageReview, type Draft2Images, type Draft2SlideImage } from "@/app/modules/draft2/draft2-images.types";
 import { CAPTION_GATE, CAPTION_MAX_CHARACTERS, CAPTION_MAX_ROUNDS, captionPostText, type Draft2Caption, type Draft2CaptionCandidate, type Draft2CaptionCriterion } from "@/app/modules/draft2/draft2-caption.types";
@@ -127,7 +127,7 @@ function nextAutopilotStep(session: Draft2SessionView | null, now: number): Auto
   if (!inventory || inventory.status === "failed" || (inventory.status === "running" && stale)) return { step: "inventory" };
   if (inventory.status === "running") return { blocked: "The people and places are being found." };
   const focus = session.focus;
-  const waiting = inventory.entities.filter((entity) => entity.person?.status === "candidates").length;
+  const waiting = inventory.entities.filter(awaitsConfirmation).length;
   if (waiting && !focus?.values) return { blocked: `${waiting} ${waiting === 1 ? "person waits" : "people wait"} for you in People and places: confirm or reject ${waiting === 1 ? "them" : "each"}, then run the autopilot again.` };
   if (!focus?.values || (focus.status === "running" && stale)) return { step: "focus" };
   if (focus.status === "running") return { blocked: "The focus is being decided." };
@@ -785,7 +785,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   // People and places: found once the facts are verified; the people Commons matched wait for the editor.
   const inventory = session?.inventory ?? undefined;
   const inventoryStalled = !running && inventory?.status === "running" && now > 0 && now - Date.parse(session?.updatedAt ?? "") > OPENING_STALL_MS;
-  const peopleToConfirm = inventory?.entities.filter((entity) => entity.person?.status === "candidates").length ?? 0;
+  const peopleToConfirm = inventory?.entities.filter(awaitsConfirmation).length ?? 0;
   const inventoryStatus = running === "inventory" ? { label: "Searching", tone: "info" as const } : inventoryStalled ? { label: "Stopped", tone: "warning" as const }
     : inventory?.status === "failed" ? { label: "Failed", tone: "error" as const } : inventory?.status === "ready" ? (peopleToConfirm ? { label: `${peopleToConfirm} to confirm`, tone: "warning" as const } : { label: "Found", tone: "success" as const }) : undefined;
   // The visual script pictures the chosen deck between the chosen opening and closing, once the people and places are found.
@@ -1689,6 +1689,15 @@ function InventoryView({ inventory, story, saving, locked, onDecide }: {
   const people = inventory.entities.filter((entity) => entity.kind === "person");
   const places = inventory.entities.filter((entity) => entity.kind === "place");
   const organizations = inventory.entities.filter((entity) => entity.kind === "organization");
+  // Photos added to the story elsewhere (its page, another tab) are read again once each time the screen opens; nothing changes when there are none new.
+  // A search that failed before naming anyone has nobody to give a photo to, and the server refuses it.
+  const photosReadable = inventory.entities.length > 0;
+  const readPhotos = useRef(false);
+  useEffect(() => {
+    if (readPhotos.current || locked || !photosReadable) return;
+    const timer = setTimeout(() => { readPhotos.current = true; onDecide({ action: "photos" }); }, 0);
+    return () => clearTimeout(timer);
+  }, [locked, onDecide, photosReadable]);
   return <div className={styles.focusBody}>
     <p className={styles.factMeta}>People and places v{inventory.version}{inventory.foundAt ? ` · found ${new Date(inventory.foundAt).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" })}` : ""}. The visual script uses only what is verified here.</p>
     <FormField label="The brand’s characters" description={inventory.roster.length ? `${inventory.roster.map((character) => character.name).join(" and ")}, the Topic’s ${inventory.roster.length === 1 ? "character" : "characters"} with a reference image.` : "The Topic has no character with a reference image; none can narrate."}>
@@ -1706,7 +1715,10 @@ function InventoryView({ inventory, story, saving, locked, onDecide }: {
       <ol className={styles.factList}>{places.map((entity) => <PlaceItem key={entity.id} entity={entity} photos={inventory.storyPhotos} locked={locked} onDecide={onDecide} />)}</ol>
     </div> : null}
     {organizations.length ? <p className={styles.factMeta}>Organizations, never drawn and never named in an image (no logos): {organizations.map((entity) => entity.name).join(", ")}.</p> : null}
-    {inventory.storyPhotos.length ? <p className={styles.factMeta}>The story’s photos: {inventory.storyPhotos.map((photo) => `${photo.name}${photo.transmissionAllowed ? "" : " (documentary portrait only)"}`).join(", ")}.</p> : null}
+    <p className={styles.factMeta}>{inventory.storyPhotos.length
+      ? `The story’s photos: ${inventory.storyPhotos.map((photo) => `${photo.name}${photo.transmissionAllowed ? "" : " (documentary portrait only)"}`).join(", ")}. Give each one to its person or place above.`
+      : "No photo of the story yet. Photos added on the story’s page appear here when this screen opens."}</p>
+    {photosReadable ? <div><Button variant="quiet" size="compact" busy={saving === "photos"} disabled={locked} onClick={() => onDecide({ action: "photos" })}>Read the story’s photos again</Button></div> : null}
     <details>
       <summary>Add a photo, or find one on Commons under another name</summary>
       <p className={styles.factMeta}>For a person or place the lookups could not show: upload a photo you have the rights to, or search Commons (a person by their exact full name, a place by the larger place it belongs to). Then give it to the person or place above.</p>

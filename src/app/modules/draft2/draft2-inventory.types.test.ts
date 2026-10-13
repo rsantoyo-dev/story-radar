@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Draft2InputError, Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
 import {
-  carriedDecisions, decidedInventory, entityMaterial, inventoryEntity, inventoryForModels, keptPlaceRejections, parseInventoryAction, parseInventoryEntities, personEntity,
+  awaitsConfirmation, carriedDecisions, decidedInventory, entityMaterial, inventoryEntity, inventoryForModels, keptPlaceRejections, parseInventoryAction, parseInventoryEntities, personEntity,
   referencePhotos, rejectedEntity, reopenedEntity, storyPhotosDiffer, withStoryPhoto, withStoryPhotos,
   type Draft2Inventory, type Draft2InventoryEntity, type Draft2InventoryStoryPhoto,
 } from "./draft2-inventory.types";
@@ -129,4 +129,11 @@ test("a story photo given to a person is only ever their portrait; one given to 
   assert.deepEqual(referencePhotos(linked).map((photo) => photo.id), ["p2"], "the person's photo travels only with them, as their portrait");
   assert.deepEqual(inventoryForModels(linked).storyPhotos.map((photo) => photo.id), ["p2"]);
   assert.deepEqual(inventoryForModels(linked).entities.map((entity) => entity.verifiedMaterial), [["documentary portrait (a real photo pasted unchanged)"], ["verified place photo"]]);
+});
+
+test("a person waits for the editor only while their candidates are open and no story photo is theirs", () => {
+  assert.equal(awaitsConfirmation(person("candidates")), true);
+  assert.equal(awaitsConfirmation(withStoryPhoto(person("candidates"), PHOTO)), false, "the story photo the editor gave them is their portrait");
+  assert.equal(awaitsConfirmation(person("none")), false);
+  assert.equal(awaitsConfirmation(verifiedPlace()), false);
 });
