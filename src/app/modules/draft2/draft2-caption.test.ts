@@ -126,6 +126,7 @@ function harness({ writes = [], judgments = [], session }: { writes?: ((contents
     run: (resume = false) => exports.runDraft2Caption({ topicId, storyId, sessionId, resume }) as Promise<Row>,
     choose: (candidateId: string) => exports.recordCaptionChoice({ topicId, sessionId, candidateId }) as Promise<Row>,
     credits: (images: Pick<Draft2Images, "slides">, inventory: unknown) => exports.captionCredits(images, inventory) as string[],
+    showCredits: (shown: boolean) => exports.recordCaptionCredits({ topicId, sessionId, shown }) as Promise<Row>,
     calls,
     row: () => row,
   };
@@ -211,6 +212,21 @@ test("the credits the post owes, as v1 owes them: a photo pasted unchanged, a Co
   assert.equal(json(h.credits(images, inventory)), json(["Portrait: Photo: Ville de Longueuil", "Adapted from: A. Lens via Wikimedia Commons, CC BY-SA 4.0", "Place photo: B. Lens · CC BY 4.0 · openverse"]),
     "the editor's own upload owes no credit; a place photo the model did not receive owes none; each credit once");
   assert.equal(json(h.credits({ slides: [slideImage("cover", 1, [{ kind: "pasted-photo", storyPhotoId: "p1", name: "Mayor", person: true }], [generated(1, { status: "failed", review: undefined })])] }, inventory)), json([]), "a slide without an image owes nothing");
+});
+
+test("the editor shows or leaves out the photo credits: no provider call, the choice stays with the next run, never while a run writes", async () => {
+  const h = harness({ writes: [writer, writer], judgments: [judge("accept", "c1", { c1: 96 }), judge("accept", "c1", { c1: 96 })] });
+  await h.run();
+  const calls = h.calls.length;
+  const hidden = await h.showCredits(false);
+  assert.equal(hidden.caption?.creditsHidden, true);
+  assert.equal(await h.showCredits(false), hidden, "the same choice changes nothing");
+  assert.equal(h.calls.length, calls, "no provider call");
+  const next = await h.run();
+  assert.equal(json([next.caption?.creditsHidden, next.caption?.previousRuns?.length]), json([true, 1]), "a new run keeps the editor's choice");
+  assert.equal((await h.showCredits(true)).caption?.creditsHidden, undefined);
+  await assert.rejects(harness({ session: { caption: { ...next.caption, status: "running" } } }).showCredits(false), (error: Error) => error instanceof types.Draft2BusyError && /The caption is being written/.test(error.message));
+  await assert.rejects(harness().showCredits(false), /Write the caption first/);
 });
 
 test("the editor can choose any caption of the run", async () => {

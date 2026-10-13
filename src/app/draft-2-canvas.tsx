@@ -23,7 +23,7 @@ import { REVIEW_CRITERIA, proposedPatches, reviewCurrent, type Draft2Review } fr
 import { INVENTORY_CHARACTER_CHOICES, awaitsConfirmation, type Draft2CharacterChoice, type Draft2Inventory, type Draft2InventoryEntity, type Draft2InventoryStoryPhoto } from "@/app/modules/draft2/draft2-inventory.types";
 import { VISUAL_GATE, VISUAL_MAX_ROUNDS, deckCarousel, sameCarouselWords, visualPlan, type Draft2Visual, type Draft2VisualCandidate, type Draft2VisualCriterion, type Draft2VisualRecurring, type Draft2VisualShot } from "@/app/modules/draft2/draft2-visual.types";
 import { IMAGES_MAX_REQUESTS, draft2ImageDownloads, latestAttempt, shownAttempt, slideSettled, type Draft2ImageAttempt, type Draft2ImageReview, type Draft2Images, type Draft2SlideImage } from "@/app/modules/draft2/draft2-images.types";
-import { CAPTION_GATE, CAPTION_MAX_CHARACTERS, CAPTION_MAX_ROUNDS, captionPostText, type Draft2Caption, type Draft2CaptionCandidate, type Draft2CaptionCriterion } from "@/app/modules/draft2/draft2-caption.types";
+import { CAPTION_GATE, CAPTION_MAX_CHARACTERS, CAPTION_MAX_ROUNDS, captionPostText, shownCredits, type Draft2Caption, type Draft2CaptionCandidate, type Draft2CaptionCriterion } from "@/app/modules/draft2/draft2-caption.types";
 import { confirmedMentions, mentionEntities, sameMentions, type Draft2MentionAccount, type Draft2MentionStatus, type Draft2Mentions } from "@/app/modules/draft2/draft2-mentions.types";
 import { publicationCurrent, publicationTarget, targetPostText, type Draft2Publication, type Draft2PublicationTarget } from "@/app/modules/draft2/draft2-publication.types";
 import {
@@ -735,6 +735,24 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
     }
   }
 
+  /** Shows the photo credits after the caption, or leaves them out at the editor's responsibility: the post's text changes; no provider call. */
+  async function showCaptionCredits(shown: boolean) {
+    if (!session || choosing || running) return;
+    setChoosing({ step: "caption", id: "credits" }); setChoiceError(undefined);
+    try {
+      const response = await fetch(`/api/radar/draft2/caption?topicId=${encodeURIComponent(topicId)}`, {
+        method: "PATCH", cache: "no-store", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: session.id, credits: shown ? "shown" : "hidden" }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? "Could not record your choice.");
+      setSession(body.session as Draft2SessionView);
+    } catch (cause) {
+      setChoiceError({ step: "caption", message: cause instanceof Error ? cause.message : "Could not record your choice." });
+    } finally {
+      setChoosing(undefined);
+    }
+  }
+
   const host = content ? sourceHost(content.url) : "";
   const words = wordCount(content?.text);
   const text = paragraphs(content?.text);
@@ -1199,7 +1217,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
           {running === "caption" ? "Writing and judging…" : caption ? "Write the caption again" : "Write the caption"}
         </Button>
       </>,
-      how: <p>The post’s text for the finished carousel, in the publication’s voice: an opening line that stops the reader, short lines with blank lines between them, the emojis the brand allows, the closing’s one call to action, the accounts you tag and 5 to 8 hashtags at the end. The program adds the photo credits after the text. {today.caption.writer} writes three captions; {today.caption.judge} scores them and proposes one of its own; {today.caption.writer} revises the best and edits {today.caption.judge}’s, which also competes as {today.caption.judge} wrote it, for {today.caption.judge}’s pick. Accepted at 95/100 with no criterion below 85.</p>,
+      how: <p>The post’s text for the finished carousel, in the publication’s voice: an opening line that stops the reader, short lines with blank lines between them, the emojis the brand allows, the closing’s one call to action, the accounts you tag and 5 to 8 hashtags at the end. The program adds the photo credits after the text, unless you leave them out. {today.caption.writer} writes three captions; {today.caption.judge} scores them and proposes one of its own; {today.caption.writer} revises the best and edits {today.caption.judge}’s, which also competes as {today.caption.judge} wrote it, for {today.caption.judge}’s pick. Accepted at 95/100 with no criterion below 85.</p>,
       body: <>
         <section className={styles.screenSection} aria-label="Accounts to tag">
           <SectionHeader level={2} title="Accounts to tag" description="Claude proposes the Instagram accounts of the story’s people, places and organizations; Instagram says which exist and what they are called; only the accounts you tag reach the caption. On Facebook an @username stays plain text." actions={
@@ -1225,6 +1243,10 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
           {runError?.step === "caption" ? <InlineNotice tone="error" title="The caption step stopped">{runError.message}</InlineNotice> : null}
           {session?.step === "caption" && session.error && running !== "caption" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
           {choiceError?.step === "caption" ? <InlineNotice tone="error" title="Your choice was not saved">{choiceError.message}</InlineNotice> : null}
+          {caption?.credits?.length && running !== "caption" ? <div>
+            <label className={styles.factMeta}><input type="checkbox" checked={!caption.creditsHidden} disabled={running !== undefined || choosing !== undefined || caption.status === "running"} onChange={(event) => { void showCaptionCredits(event.target.checked); }} /> Show the photo credits after the caption</label>
+            {caption.creditsHidden ? <p className={styles.factMeta}>Left out of this post at your responsibility: the licenses of its photos may ask for a credit ({caption.credits.join("; ")}).</p> : null}
+          </div> : null}
           {caption && running !== "caption" ? <FunnelRunView
             run={caption}
             display={captionDisplay}
@@ -1494,9 +1516,9 @@ const CLOSING_DISPLAY: FunnelDisplay<Draft2ClosingCandidate> = {
   </div>,
 };
 
-/** The caption's display: each caption by its opening line, and the chosen one as the post will read, with the credits the program adds and its hashtags. */
+/** The caption's display: each caption by its opening line, and the chosen one as the post will read, with the credits the program adds (unless the editor left them out) and its hashtags. */
 function captionDisplayFor(caption: Draft2Caption | undefined): FunnelDisplay<Draft2CaptionCandidate> {
-  const credits = caption?.credits ?? [];
+  const credits = shownCredits(caption);
   const opening = (candidate: Draft2CaptionCandidate) => candidate.text.split("\n")[0] ?? "";
   return {
     noun: "caption",

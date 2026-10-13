@@ -93,6 +93,15 @@ channels.
   `DUPLICATE_CANDIDATE`.
 - **The post** (`captionPostText`): the text with its line breaks, a blank
   line, the credits one per line, a blank line, the hashtags.
+- **Credits shown or left out** (since 2026-10-13): the editor may leave the
+  photo credits out of the post, at their own responsibility (the photos'
+  licenses may ask for them): `caption.creditsHidden`, set by
+  `recordCaptionCredits` with no provider call, refused while a run writes,
+  and carried to the next run. `shownCredits` gives the credits the post
+  shows (none when hidden) to the canvas's preview and to the publication
+  target, so an approval made with the credits no longer matches the post.
+  The caption is still written to fit with its credits, so showing them
+  again never makes the post too long.
 - **Continue:** a paused or stopped run continues only while the images run
   and the confirmed accounts are the ones it wrote for. A decision on an
   account that is not tagged changes nothing (`sameMentions` compares the
@@ -164,13 +173,16 @@ v1's candidate checks apply unchanged: the draft and every image approved,
     `{ sessionId, action: "confirm" | "reject" | "reopen", accountId }` or
     `{ sessionId, action: "add", handle, name, entityId? }`;
   - `POST /api/radar/draft2/caption` `{ storyId, sessionId, continue? }`;
-    `PATCH` `{ sessionId, candidateId }`;
+    `PATCH` `{ sessionId, candidateId }` or
+    `{ sessionId, credits: "shown" | "hidden" }`;
   - `POST /api/radar/draft2/publication`
     `{ storyId, sessionId, acknowledgeIssues? }`.
 - **Canvas, step 9:** the accounts to tag (find, tag, not them, untag, add
   one), the caption's rounds, and the chosen caption as the post will read
-  (line breaks kept, credits, hashtags, characters out of 2,200); notices
-  when the images or the tagged accounts changed since it was written.
+  (line breaks kept, credits, hashtags, characters out of 2,200); "Show the
+  photo credits after the caption" (on by default; when off, the credits
+  left out are listed); notices when the images or the tagged accounts
+  changed since it was written.
 - **Canvas, step 10:** the images in order and the post; the review's
   issues with the acknowledgement; "Approve for publishing"; then v1's
   publish actions and channel panels on the approved copy.

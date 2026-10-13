@@ -35,6 +35,19 @@ test("the carousel as it can be approved: each slide's shown image, the chosen c
   assert.equal(publicationTarget({ ...SESSION, caption: { ...CAPTION, editorChoiceId: "c1" } }).caption.id, "c1", "the editor's choice over the judge's");
 });
 
+test("the editor may leave the photo credits out: the post shows none, and an approval made with them no longer matches", () => {
+  const shown = publicationTarget(SESSION);
+  const hidden = publicationTarget({ ...SESSION, caption: { ...CAPTION, creditsHidden: true } });
+  assert.equal(json(hidden.credits), json([]));
+  assert.equal(targetPostText(hidden), "Two.\n\nSave it.\n\n#Longueuil #Biblio");
+  const approved: Draft2Publication = {
+    draftId: "d1", batchId: "b1", snapshotHash: "h", imagesRunId: "run-1", captionId: "c2", approvedAt: "t", acknowledgedIssues: [],
+    slides: shown.slides.map(({ slide: id, label, order, version, sha256 }) => ({ slide: id, label, order, version, sha256 })), postText: targetPostText(shown),
+  };
+  assert.ok(publicationCurrent(approved, shown));
+  assert.ok(!publicationCurrent(approved, hidden), "the post's text changed: approve it again");
+});
+
 test("images the review did not pass are listed for the editor to look at", () => {
   const issues = { status: "issues" as const, issues: ["The headline is cut off."], note: "", transcription: "", model: "sol", at: "t" };
   const target = publicationTarget({ ...SESSION, images: { ...IMAGES, status: "needs-review", slides: [

@@ -1,7 +1,7 @@
 import "server-only";
 import { recordFunnelChoice, runFunnelStep, type FunnelStep, type FunnelStepInput } from "./draft2-funnel-run";
 import { DRAFT2_CAPTION_ROLES } from "./draft2-models";
-import { Draft2InputError } from "./draft2-facts.types";
+import { Draft2BusyError, Draft2InputError } from "./draft2-facts.types";
 import { focusForModels, type Draft2FocusSnapshot } from "./draft2-focus.types";
 import { funnelVersions } from "./draft2-funnel";
 import { shownAttempt, slideSettled, type Draft2ImagesRun } from "./draft2-images.types";
@@ -17,6 +17,7 @@ import { brandBrief, composeInstructions, discoverySkills } from "./skills/draft
 import { CAPTIONS_SKILL } from "./skills/captions";
 import { adaptationCreditLine, placePhotoAdaptationCreditLine, portraitCreditLine } from "../stories/creative-portrait-composite";
 import type { CreativeProfile } from "../stories/creative-content.types";
+import { getDraft2Session, updateDraft2Session } from "./draft2-session.repository";
 import type { Draft2SessionRow } from "@/db/schema";
 
 /** What a caption run writes for: the images run, the carousel's words, the focus, the accounts confirmed, and the credits. */
@@ -27,6 +28,8 @@ type CaptionSnapshot = {
   mentions: { name: string; handle: string }[];
   mentionsVersion: number;
   credits: string[];
+  /** The editor's choice to leave the credits out, carried to the next run. */
+  creditsHidden?: true;
 };
 
 /**
@@ -69,7 +72,8 @@ function captionRules(profile: CreativeProfile, { carousel, focus }: Pick<Captio
  * the images and the accounts are still the ones it read; a new run takes
  * the images as they stand, once every slide is made, the carousel's words
  * and focus of the visual script they picture, the accounts the editor
- * confirmed, and the credits the shown images owe.
+ * confirmed, and the credits the shown images owe (shown or left out as the
+ * editor chose on the last run).
  */
 function captionTarget(session: Draft2SessionRow, stopped: Draft2Caption | undefined): CaptionSnapshot {
   const images = session.images;
@@ -79,7 +83,7 @@ function captionTarget(session: Draft2SessionRow, stopped: Draft2Caption | undef
     if (!imagesRunId || !carousel || !focus || !mentions || !credits) throw new Draft2InputError("This caption run does not record what it wrote for. Write the caption again.");
     if (images?.runId !== imagesRunId) throw new Draft2InputError("The images changed since this run started. Write the caption again.");
     if (!sameMentions(mentions, confirmedMentions(session.mentions))) throw new Draft2InputError("The accounts to tag changed since this run started. Write the caption again.");
-    return { imagesRunId, carousel, focus, mentions, mentionsVersion: stopped.mentionsVersion ?? 0, credits };
+    return { imagesRunId, carousel, focus, mentions, mentionsVersion: stopped.mentionsVersion ?? 0, credits, ...(stopped.creditsHidden ? { creditsHidden: true as const } : {}) };
   }
   if (!images || images.status === "running" || images.status === "paused" || !images.slides.every(slideSettled)) throw new Draft2InputError("The caption accompanies the finished carousel. Finish the images first.");
   if (images.slides.some((slide) => !shownAttempt(slide))) throw new Draft2InputError("Every slide needs an image before the caption. Make the missing ones first.");
@@ -90,6 +94,7 @@ function captionTarget(session: Draft2SessionRow, stopped: Draft2Caption | undef
   return {
     imagesRunId: images.runId, carousel: visual.carousel, focus: visual.focus,
     mentions: confirmedMentions(session.mentions), mentionsVersion, credits: captionCredits(images, session.inventory),
+    ...(session.caption?.creditsHidden ? { creditsHidden: true as const } : {}),
   };
 }
 
@@ -143,4 +148,25 @@ export function runDraft2Caption(input: FunnelStepInput): Promise<Draft2SessionR
 /** Records the editor's pick among every caption the run scored, beside the judge's scores. */
 export function recordCaptionChoice(input: { topicId: string; sessionId: string; candidateId: string }): Promise<Draft2SessionRow> {
   return recordFunnelChoice(CAPTION_STEP, input);
+}
+
+/**
+ * The editor shows the photo credits after the caption, or leaves them out
+ * at their own responsibility (the photos' licenses may ask for them). No
+ * provider call; the post's text changes, so an approval made before no
+ * longer matches it. The caption is written to fit with its credits either
+ * way, so showing them again never makes the post too long.
+ */
+export async function recordCaptionCredits({ topicId, sessionId, shown }: { topicId: string; sessionId: string; shown: boolean }): Promise<Draft2SessionRow> {
+  const session = await getDraft2Session(topicId, sessionId);
+  if (!session) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
+  const caption = session.caption;
+  if (!caption) throw new Draft2InputError("Write the caption first.");
+  if (caption.status === "running") throw new Draft2BusyError("The caption is being written; show or leave out the credits when it finishes.");
+  if (!caption.creditsHidden === shown) return session;
+  const { creditsHidden, ...rest } = caption;
+  void creditsHidden;
+  const updated = await updateDraft2Session(session.id, { caption: shown ? rest : { ...rest, creditsHidden: true } });
+  if (!updated) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
+  return updated;
 }

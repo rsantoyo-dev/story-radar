@@ -76,6 +76,8 @@ export type Draft2Caption = FunnelRun<Draft2CaptionCandidate, Draft2CaptionScore
   mentions?: { name: string; handle: string }[];
   mentionsVersion?: number;
   credits?: string[];
+  /** The editor left the photo credits out of the post, at their own responsibility (the photos' licenses may ask for them). It stays with the next run. */
+  creditsHidden?: true;
   rules?: Draft2CaptionRules;
   previousRuns?: Draft2CaptionRun[];
 };
@@ -133,6 +135,9 @@ export function parseCaptionCandidates(answer: string): Draft2CaptionCandidate[]
 export function parseCaptionEvaluation(answer: string, candidateIds: readonly string[]): Draft2CaptionEvaluation {
   return funnelParseEvaluation(answer, candidateIds, { criteria: CAPTION_CRITERIA, codes: CAPTION_ISSUE_CODES, parts: [], parseProposal: captionFrom, maxProposals: 1 });
 }
+
+/** The credits the post shows: those the shown images owe, or none when the editor left them out. */
+export const shownCredits = (caption: Pick<Draft2Caption, "credits" | "creditsHidden"> | null | undefined): string[] => caption?.creditsHidden ? [] : caption?.credits ?? [];
 
 /** The text v1 posts (publicationPostText): the caption, a blank line and the credits, a blank line and the hashtags. */
 export function captionPostText({ text, credits, hashtags }: { text: string; credits: readonly string[]; hashtags: readonly string[] }): string {

@@ -1,7 +1,7 @@
 import { Draft2InputError } from "./draft2-facts.types";
 import { funnelVersions } from "./draft2-funnel";
 import { shownAttempt, slideSettled, type Draft2Images, type Draft2SlideImage } from "./draft2-images.types";
-import { captionPostText, type Draft2Caption, type Draft2CaptionCandidate } from "./draft2-caption.types";
+import { captionPostText, shownCredits, type Draft2Caption, type Draft2CaptionCandidate } from "./draft2-caption.types";
 import { confirmedMentions, sameMentions, type Draft2Mentions } from "./draft2-mentions.types";
 
 /**
@@ -77,7 +77,7 @@ export function publicationTarget(session: { images?: Draft2Images | null; capti
   });
   return {
     slides: shown.map(({ slide, attempt }) => ({ slide: slide.slide, label: slide.label, order: slide.order, version: attempt!.version, sha256: attempt!.sha256!, image: slide })),
-    caption: chosen.candidate, credits: caption.credits ?? [], issues, imagesRunId: images.runId,
+    caption: chosen.candidate, credits: shownCredits(caption), issues, imagesRunId: images.runId,
   };
 }
 

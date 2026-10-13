@@ -1,7 +1,7 @@
 import { authorizeRadarCollector } from "@/app/api/radar/radar-api-auth";
 import { requireActiveRequestTopic } from "@/app/api/radar/radar-topic";
 import { noStoreJson } from "@/app/api/radar/creative-route-error";
-import { recordCaptionChoice, runDraft2Caption } from "@/app/modules/draft2/draft2-caption";
+import { recordCaptionChoice, recordCaptionCredits, runDraft2Caption } from "@/app/modules/draft2/draft2-caption";
 import { DRAFT2_UUID_PATTERN, draft2ErrorResponse } from "../draft2-route";
 
 export const runtime = "nodejs";
@@ -30,14 +30,27 @@ export async function POST(request: Request) {
   }
 }
 
-/** Records the editor's choice among the run's captions; no provider call. */
+/**
+ * Records the editor's choice among the run's captions (`candidateId`), or
+ * whether the post shows the photo credits (`credits: "shown" | "hidden"`);
+ * no provider call.
+ */
 export async function PATCH(request: Request) {
   const denied = await authorizeRadarCollector(request);
   if (denied) return denied;
-  const body = await request.json().catch(() => null) as { sessionId?: unknown; candidateId?: unknown } | null;
+  const body = await request.json().catch(() => null) as { sessionId?: unknown; candidateId?: unknown; credits?: unknown } | null;
   const sessionId = typeof body?.sessionId === "string" ? body.sessionId : "";
-  const candidateId = typeof body?.candidateId === "string" ? body.candidateId : "";
   if (!DRAFT2_UUID_PATTERN.test(sessionId)) return noStoreJson({ error: "sessionId must be a valid UUID" }, 400);
+  if (body?.credits !== undefined) {
+    if (body.credits !== "shown" && body.credits !== "hidden") return noStoreJson({ error: "credits must be \"shown\" or \"hidden\"" }, 400);
+    try {
+      const topicId = await requireActiveRequestTopic(request);
+      return noStoreJson({ session: await recordCaptionCredits({ topicId, sessionId, shown: body.credits === "shown" }) });
+    } catch (error) {
+      return draft2ErrorResponse(error, "record whether the post shows the photo credits");
+    }
+  }
+  const candidateId = typeof body?.candidateId === "string" ? body.candidateId : "";
   if (!CANDIDATE_ID_PATTERN.test(candidateId)) return noStoreJson({ error: "candidateId must name a candidate, such as c3" }, 400);
   try {
     const topicId = await requireActiveRequestTopic(request);
