@@ -19,6 +19,7 @@ import {
 } from "@/app/modules/draft2/draft2-opening.types";
 import { CLOSING_GATE, CLOSING_MAX_ROUNDS, type Draft2Closing, type Draft2ClosingCandidate, type Draft2ClosingCriterion } from "@/app/modules/draft2/draft2-closing.types";
 import { DECK_GATE, DECK_MAX_ROUNDS, type Draft2Deck, type Draft2DeckCandidate, type Draft2DeckCriterion } from "@/app/modules/draft2/draft2-deck.types";
+import { REVIEW_CRITERIA, proposedPatches, reviewCurrent, type Draft2Review } from "@/app/modules/draft2/draft2-review.types";
 import { INVENTORY_CHARACTER_CHOICES, type Draft2CharacterChoice, type Draft2Inventory, type Draft2InventoryEntity, type Draft2InventoryStoryPhoto } from "@/app/modules/draft2/draft2-inventory.types";
 import { VISUAL_GATE, VISUAL_MAX_ROUNDS, visualPlan, type Draft2Visual, type Draft2VisualCandidate, type Draft2VisualCriterion, type Draft2VisualRecurring, type Draft2VisualShot } from "@/app/modules/draft2/draft2-visual.types";
 import { IMAGES_MAX_REQUESTS, draft2ImageDownloads, latestAttempt, shownAttempt, slideSettled, type Draft2ImageAttempt, type Draft2ImageReview, type Draft2Images, type Draft2SlideImage } from "@/app/modules/draft2/draft2-images.types";
@@ -55,6 +56,7 @@ type Draft2SessionView = {
   opening: Draft2Opening | null;
   closing: Draft2Closing | null;
   deck: Draft2Deck | null;
+  review: Draft2Review | null;
   inventory: Draft2Inventory | null;
   visual: Draft2Visual | null;
   images: Draft2Images | null;
@@ -66,7 +68,7 @@ type Draft2SessionView = {
   updatedAt: string;
 };
 
-type Draft2RunStep = "facts" | "focus" | "opening" | "closing" | "deck" | "inventory" | "visual" | "images" | "mentions" | "caption" | "publication";
+type Draft2RunStep = "facts" | "focus" | "opening" | "closing" | "deck" | "review" | "inventory" | "visual" | "images" | "mentions" | "caption" | "publication";
 /** The steps that run on the funnel, in rounds that can pause and continue. */
 type Draft2FunnelStep = "opening" | "closing" | "deck" | "visual" | "caption";
 
@@ -84,7 +86,7 @@ type AutopilotEntry = { step: Draft2RunStep; status: "ready" | "needs-review" | 
 type Autopilot = { active: boolean; startedAt: string; current?: Draft2RunStep; steps: AutopilotEntry[]; outcome?: string; finishedAt?: string };
 type AutopilotNext = { step: Exclude<Draft2RunStep, "publication">; continuing?: boolean } | { done: true } | { blocked: string };
 const STEP_TITLE: Record<Draft2RunStep, string> = {
-  facts: "Facts", focus: "Focus", inventory: "People and places", mentions: "Accounts to tag", opening: "Opening", closing: "Closing", deck: "Deck", visual: "Visual script", images: "Images", caption: "Caption", publication: "Publish",
+  facts: "Facts", focus: "Focus", inventory: "People and places", mentions: "Accounts to tag", opening: "Opening", closing: "Closing", deck: "Deck", review: "Review", visual: "Visual script", images: "Images", caption: "Caption", publication: "Publish",
 };
 
 /** The screen a run belongs to: the accounts to tag are part of the caption's screen, the approval of the publish screen. */
@@ -145,6 +147,10 @@ function nextAutopilotStep(session: Draft2SessionView | null, now: number): Auto
   const deckNeeds = runNeeds("deck", deck, Boolean(deck && ((deck.closing && deck.closing.id !== closingId) || (deck.opening && deck.opening.id !== openingId))), "deck");
   if (deckNeeds) return deckNeeds;
   const deckId = deck!.editorChoiceId ?? deck!.winnerId;
+  // The review reads the chosen carousel before its images are planned; a new opening, closing or deck needs a new reading.
+  const review = session.review;
+  if (!review || review.status === "failed" || !reviewCurrent(review, { openingId, closingId, deckId }) || (review.status === "running" && stale)) return { step: "review" };
+  if (review.status === "running") return { blocked: "The carousel is being read." };
   const visual = session.visual;
   const visualNeeds = runNeeds("visual", visual, Boolean(visual && (visual.deckId !== deckId || visual.inventoryVersion !== inventory.version)), "visual script");
   if (visualNeeds) return visualNeeds;
@@ -348,6 +354,8 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const [choosing, setChoosing] = useState<{ step: Draft2FunnelStep; id: string }>();
   const [choiceError, setChoiceError] = useState<{ step: Draft2FunnelStep; message: string }>();
   const [savingFocus, setSavingFocus] = useState<Draft2FocusField>();
+  const [savingReview, setSavingReview] = useState<string>();
+  const [reviewError, setReviewError] = useState<string>();
   const [savingInventory, setSavingInventory] = useState<string>();
   const [inventoryError, setInventoryError] = useState<string>();
   const [savingImage, setSavingImage] = useState<string>();
@@ -472,7 +480,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
         setSession(next);
         return next;
       }
-      if (step === "focus" || step === "inventory" || step === "mentions") {
+      if (step === "focus" || step === "inventory" || step === "mentions" || step === "review") {
         const next = await postStep(step, { storyId, sessionId: on?.id });
         setSession(next);
         return next;
@@ -543,6 +551,11 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
       show({ current: undefined, steps: [...state.steps, { step: next.step, status, ms: Date.now() - begin, startedAt: new Date(begin).toISOString(), ...(score !== undefined ? { score } : {}) }] });
       if (!result || status === "failed") { show({ outcome: `The ${STEP_TITLE[next.step].toLowerCase()} step failed; the run stopped there.` }); break; }
       current = result;
+      // The review's patches are applied as the editor wrote them; the Review screen shows each and undoes any.
+      if (next.step === "review" && proposedPatches(result.review).length) {
+        const patchedSession = await decideReviewPatch("apply-all", undefined, "autopilot", result);
+        if (patchedSession) current = patchedSession;
+      }
     }
     show({ active: false, current: undefined, finishedAt: new Date().toISOString() });
   }
@@ -580,6 +593,26 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
       setFocusError(cause instanceof Error ? cause.message : "Could not rewrite the plan.");
     } finally {
       setSavingFocus(undefined);
+    }
+  }
+
+  /** One decision on a review patch (apply, decline, undo), or every proposed patch applied for the autopilot. No model call. */
+  async function decideReviewPatch(action: "apply" | "decline" | "undo" | "apply-all", patchId?: string, by: "editor" | "autopilot" = "editor", on: Draft2SessionView | null | undefined = session): Promise<Draft2SessionView | undefined> {
+    if (!on || savingReview) return undefined;
+    setSavingReview(patchId ?? action); setReviewError(undefined);
+    try {
+      const response = await fetch(`/api/radar/draft2/review?topicId=${encodeURIComponent(topicId)}`, {
+        method: "PATCH", cache: "no-store", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: on.id, action, ...(patchId ? { patchId } : {}), by }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? "Could not save the decision.");
+      setSession(body.session as Draft2SessionView);
+      return body.session as Draft2SessionView;
+    } catch (cause) {
+      setReviewError(cause instanceof Error ? cause.message : "Could not save the decision.");
+      return undefined;
+    } finally {
+      setSavingReview(undefined);
     }
   }
 
@@ -759,6 +792,19 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const visualStatus = running === "visual" ? OPENING_STATUS.running : visualStalled ? { label: "Stopped", tone: "warning" as const } : funnelStatusOf(visual);
   const chosenDeckId = deck?.editorChoiceId ?? deck?.winnerId;
   const deckFinished = Boolean(deck && chosenDeckId && deck.status !== "running" && deck.status !== "paused");
+  // The review: read for the versions chosen now, or to read again.
+  const review = session?.review ?? undefined;
+  const reviewStalled = !running && review?.status === "running" && now > 0 && now - Date.parse(session?.updatedAt ?? "") > OPENING_STALL_MS;
+  const reviewCurrentNow = reviewCurrent(review, { openingId: chosenOpeningId, closingId: chosenClosingId, deckId: chosenDeckId });
+  const reviewStatus = running === "review" ? OPENING_STATUS.running
+    : reviewStalled ? { label: "Stopped", tone: "warning" as const }
+    : !review ? undefined
+    : review.status === "failed" ? OPENING_STATUS.failed
+    : review.status === "running" ? OPENING_STATUS.running
+    : !reviewCurrentNow ? { label: "Changed since", tone: "warning" as const }
+    : review.editor?.verdict === "ready" ? { label: `Ready · ${review.editor.scores.overall}`, tone: "success" as const }
+    : { label: `${proposedPatches(review).length} to decide · ${review.editor?.scores.overall ?? "?"}`, tone: "info" as const };
+  const reviewReady = deckFinished && !deckEndsChanged;
   const visualReady = deckFinished && !deckEndsChanged && inventory?.status === "ready";
   // A visual script of another deck, or of people and places found or decided since.
   const visualChanged = Boolean(visual?.deckId && ((chosenDeckId && visual.deckId !== chosenDeckId) || (inventory && visual.inventoryVersion !== inventory.version)));
@@ -806,7 +852,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const { target: publishable, blocker: publishBlocker } = publicationState(session);
   const approvedCurrent = publicationCurrent(publication, publishable);
   const publishStatus = running === "publication" ? { label: "Approving", tone: "info" as const } : approvedCurrent ? { label: "Approved", tone: "success" as const } : publication ? { label: "Changed since", tone: "warning" as const } : undefined;
-  const stepStatus: Partial<Record<string, { label: string; tone: StatusTone }>> = { facts: factsStatus, focus: focusStatus, opening: openingStatus, closing: closingStatus, deck: deckStatus, inventory: inventoryStatus, visual: visualStatus, images: imagesStatus, caption: captionStatus, publish: publishStatus };
+  const stepStatus: Partial<Record<string, { label: string; tone: StatusTone }>> = { facts: factsStatus, focus: focusStatus, opening: openingStatus, closing: closingStatus, deck: deckStatus, review: reviewStatus, inventory: inventoryStatus, visual: visualStatus, images: imagesStatus, caption: captionStatus, publish: publishStatus };
   // What each step took so far, this run's and earlier ones: time inside calls and the meter's cost.
   const metrics = stepMetrics(session?.trace ?? [], session?.images);
   const totals = sessionMetrics(session?.trace ?? [], session?.images);
@@ -848,6 +894,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
     opening: factsVerified && focusReady,
     closing: factsVerified && closingReady,
     deck: factsVerified && deckReady,
+    review: factsVerified && reviewReady,
     inventory: factsVerified,
     visual: factsVerified && visualReady,
     images: factsVerified && imagesReady,
@@ -1040,6 +1087,22 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
           onChoose={(candidateId) => { void choose("deck", candidateId); }}
         /> : null}
         {!deck && available.deck && !running ? <EmptyState title="No deck yet">Write the deck: the slides between slide 2 and the closing, one idea each.</EmptyState> : null}
+      </>,
+    },
+    review: {
+      actions: <Button variant="primary" size="compact" busy={running === "review"} disabled={!factsVerified || !reviewReady || running !== undefined || savingReview !== undefined} onClick={() => { void runStep("review"); }}>
+        {running === "review" ? "Reading…" : review ? "Read the carousel again" : "Read the carousel"}
+      </Button>,
+      how: <p>A reader of the publication’s audience reads the carousel on a phone, slide by slide, with no rules: would they swipe, what do they think, would they follow or comment. Then {review?.editorBy ? draft2ModelName(review.editorBy.model, review.editorBy.provider) : "the editor"} reads it whole beside those reactions, the focus and the facts, scores tension, clarity, grace, flow, the turn and truth, names what works, and writes the exact patches that would make the reader want more. The program refuses a patch that misquotes a slide or breaks a step’s rules; an applied patch edits the chosen version in place and keeps what it replaced, so you can undo it. In the autopilot the proposed patches are applied as the editor wrote them.</p>,
+      body: <>
+        {factsVerified && !reviewReady && !running ? needs("deck", deckEndsChanged ? "The deck connects another opening or closing than the ones chosen now; write the deck again first." : "The review reads the whole carousel; finish the deck first.") : null}
+        {running === "review" ? <LoadingState>The reader reads the slides; then the editor scores the carousel and writes its patches. About a minute.</LoadingState> : null}
+        {reviewStalled ? <InlineNotice tone="warning" title="This reading stopped">Its request or the server ended before it finished. Read the carousel again.</InlineNotice> : null}
+        {runError?.step === "review" ? <InlineNotice tone="error" title="The review stopped">{runError.message}</InlineNotice> : null}
+        {review?.status === "failed" && review.error && running !== "review" ? <InlineNotice tone="error" title="The last reading failed">{review.error}</InlineNotice> : null}
+        {reviewError ? <InlineNotice tone="error" title="Your decision was not saved">{reviewError}</InlineNotice> : null}
+        {review && review.status !== "running" && running !== "review" ? <ReviewView review={review} current={reviewCurrentNow} saving={savingReview} locked={running !== undefined || savingReview !== undefined} onDecide={(action, patchId) => { void decideReviewPatch(action, patchId); }} /> : null}
+        {!review && available.review && !running ? <EmptyState title="Not read yet">Read the carousel: a reader reacts slide by slide, the editor scores it and proposes the exact changes.</EmptyState> : null}
       </>,
     },
     inventory: {
@@ -2405,4 +2468,45 @@ function FocusVoice({ voice, description, disabled, onCommit }: { voice: Draft2F
     </div>
     {description ? <p className={styles.factMeta}>{description}</p> : null}
   </fieldset>;
+}
+
+/** The Review step: the editor's scores, what works, the reader's reactions slide by slide, and the patches to apply, decline or undo. */
+function ReviewView({ review, current, saving, locked, onDecide }: {
+  review: Draft2Review;
+  /** Whether the review read the versions chosen now; a patch applies only to those. */
+  current: boolean;
+  saving?: string;
+  locked: boolean;
+  onDecide: (action: "apply" | "decline" | "undo", patchId: string) => void;
+}) {
+  const editor = review.editor;
+  const reader = review.reader;
+  const by = (role?: { provider: "openai" | "anthropic"; model: string }) => role ? draft2ModelName(role.model, role.provider) : "";
+  const read = new Date(review.updatedAt).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" });
+  return <div className={styles.focusBody}>
+    <p className={styles.factMeta}>Review v{review.version} · {read}{reader ? ` · reader ${by(review.readerBy)}` : ""}{editor ? ` · editor ${by(review.editorBy)}` : ""}{current ? "" : " · the opening, the closing or the deck changed since: read the carousel again"}</p>
+    {editor ? <>
+      <p className={styles.factMeta}><strong>{editor.verdict === "ready" ? "Ready" : "Patch"} · {editor.scores.overall}/100</strong> · {REVIEW_CRITERIA.map((criterion) => `${criterion} ${editor.scores[criterion]}`).join(" · ")}</p>
+      <p>{editor.summary}</p>
+      {editor.strengths.length ? <><p className={styles.factMeta}><strong>What works, and must stay</strong></p><ul>{editor.strengths.map((strength, index) => <li key={index}>{strength}</li>)}</ul></> : null}
+    </> : null}
+    {reader ? <>
+      <p className={styles.factMeta}><strong>The reader</strong> · {reader.verdict} · {reader.follow ? "would follow" : "would not follow"}{reader.share ? " · would share" : ""}{reader.comment ? ` · would comment: “${reader.comment}”` : ""}{reader.stoppedAt ? ` · stopped at ${reader.stoppedAt}` : ""}</p>
+      <ol>{reader.reactions.map((reaction) => <li key={reaction.slide}><strong>{reaction.slide}</strong> {reaction.swipe ? "swipes:" : "stops:"} {reaction.thought}</li>)}</ol>
+    </> : null}
+    {editor?.patches.length ? <>
+      <p className={styles.factMeta}><strong>Patches</strong> · {proposedPatches(review).length} to decide</p>
+      <ol>{editor.patches.map((patch) => <li key={patch.id} className={styles.focusField}>
+        <p><strong>{patch.slide} · {patch.field}</strong> · {patch.status}{patch.appliedBy ? ` by the ${patch.appliedBy}` : ""}</p>
+        <p><del>{patch.before}</del></p>
+        <p><ins>{patch.after}</ins></p>
+        <p className={styles.factMeta}>{patch.reason}{patch.note ? ` · ${patch.note}` : ""}</p>
+        {patch.status === "proposed" ? <div>
+          <Button variant="primary" size="compact" busy={saving === patch.id} disabled={locked || !current} onClick={() => onDecide("apply", patch.id)}>Apply</Button>{" "}
+          <Button variant="quiet" size="compact" busy={saving === patch.id} disabled={locked} onClick={() => onDecide("decline", patch.id)}>Decline</Button>
+        </div> : null}
+        {patch.status === "applied" ? <div><Button variant="quiet" size="compact" busy={saving === patch.id} disabled={locked || !current} onClick={() => onDecide("undo", patch.id)}>Undo</Button></div> : null}
+      </li>)}</ol>
+    </> : editor ? <p className={styles.factMeta}>No patches: the editor would change nothing.</p> : null}
+  </div>;
 }

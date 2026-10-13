@@ -35,7 +35,8 @@ effort for real.
 
 One button runs every step to the images without stopping, from where the
 session stands: Facts when they are not verified, Focus, People and places,
-accounts to tag, Opening, Closing, Deck, Visual script, Images. The caption
+accounts to tag, Opening, Closing, Deck, Review (its patches applied), Visual
+script, Images. The caption
 stays manual: it tags the accounts the editor confirms, and the editor
 approves the carousel for publishing (AGENTS.md §21 keeps that approval).
 
@@ -49,6 +50,12 @@ approves the carousel for publishing (AGENTS.md §21 keeps that approval).
 - Each step keeps the judge's winner; a step that ends under the gate
   (`needs-review`) is marked in the log and the run goes on. A failure stops
   it. "Stop after this step" lets the current request finish.
+- After the Deck, the Review reads the carousel whole (a reader, then an
+  editor) and the autopilot applies every patch the program accepted
+  (`appliedBy: "autopilot"`), so the Visual script reads the patched words;
+  the Review screen shows each patch with its before and after and undoes
+  any. A review that read other versions than the chosen ones runs again
+  (`docs/features/draft2-review.md`).
 - The loop drives the same `runStep` the buttons use (its pauses, its
   continuation requests, its lost-request follow); `runStep` now returns the
   session it ended on and reads the session it was given, so a loop that
@@ -84,6 +91,7 @@ is the next step when runs should outlive the tab.
 | `DRAFT2_REVISION_EFFORT_JUDGE`, `DRAFT2_REVISION_EFFORT_WRITER` | The effort of a funnel round whose plan names none (the revision rounds): `low`, `medium` or `high`. Defaults: the writer `high`; the judge `medium` since the first autopilot run (2026-10-10 night: a shadow at medium named the same winner as high in 7 rounds of 7, at 35–45% of the time, 1–2 points more lenient at the top). Round 1 keeps the plan's `medium`. |
 | `DRAFT2_SHADOW_JUDGE_EFFORT`, `DRAFT2_SHADOW_JUDGE_MODEL` | A second judgment of every round, at this effort (else the round's) and by this model of the judge's provider (else the judge's), run in parallel with the real one (`Promise.all`), recorded on the round (`round.shadow`: model, effort, verdict, winner, scores, the issues it found cut short, how many proposals, whether it agrees, duration) and never deciding. The trace keeps it as `<operation>_shadow` with its model and cost. No shadow when both equal the real judgment's. |
 | `DRAFT2_MODEL_<STEP>_WRITER`, `DRAFT2_MODEL_<STEP>_JUDGE`, `DRAFT2_MODEL_WRITER`, `DRAFT2_MODEL_JUDGE` | The model a step's role runs on (`DRAFT2_MODEL_OPENING_WRITER=claude-opus-5-5`), or every funnel step's (`DRAFT2_MODEL_JUDGE=gpt-6-luna`; a step's own variable wins), when it is one of the role's provider; the run records it (`writer.model`, `judge.model`), so a stored run keeps its models whatever the environment says later. Facts' extractor and the image reviews keep Sol (`DRAFT2_EXTRACTOR_MODEL`). |
+| `DRAFT2_MODEL_REVIEW_READER`, `DRAFT2_MODEL_REVIEW_JUDGE` | The Review's two OpenAI models: the reader who simulates the audience (default `DRAFT2_MODEL_JUDGE`, else gpt-6-luna, effort low, ≈ $0.01) and the editor who scores the whole carousel and writes the patches (default Sol, effort medium, ≈ $0.10–0.25). The review records both (`readerBy`, `editorBy`). |
 
 The first experiment (`DRAFT2_SHADOW_JUDGE_EFFORT=medium`, one story, seven
 rounds): the same winner every time, scores within +2 at the top, one case

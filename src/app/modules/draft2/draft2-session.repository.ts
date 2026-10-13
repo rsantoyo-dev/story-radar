@@ -5,6 +5,7 @@ import { draft2Sessions, type Draft2SessionRow } from "@/db/schema";
 import type { Draft2Fact, Draft2FactsEvaluation, Draft2FactsRound, Draft2SessionStatus, Draft2Step, Draft2Threads, Draft2TraceEntry } from "./draft2-facts.types";
 import type { Draft2Closing } from "./draft2-closing.types";
 import type { Draft2Deck } from "./draft2-deck.types";
+import type { Draft2Review } from "./draft2-review.types";
 import type { Draft2Inventory } from "./draft2-inventory.types";
 import type { Draft2Visual } from "./draft2-visual.types";
 import type { Draft2Images } from "./draft2-images.types";
@@ -41,6 +42,7 @@ export type Draft2SessionPatch = Partial<{
   opening: Draft2Opening | null;
   closing: Draft2Closing | null;
   deck: Draft2Deck | null;
+  review: Draft2Review | null;
   inventory: Draft2Inventory | null;
   visual: Draft2Visual | null;
   images: Draft2Images | null;

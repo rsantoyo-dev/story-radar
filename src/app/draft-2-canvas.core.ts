@@ -83,6 +83,7 @@ export const DRAFT_2_STEPS = [
   { key: "opening", title: "Opening", detail: "Cover and slide 2 judged as one unit: the promise and its first payoff." },
   { key: "closing", title: "Closing", detail: "The ending: the cover's promise paid in full, what it means for the reader, one call to action." },
   { key: "deck", title: "Deck", detail: "The slides between slide 2 and the closing, one idea each: the story from its promise to its end." },
+  { key: "review", title: "Review", detail: "The whole carousel read from the cover to the last slide: a reader of the audience says whether they would swipe, follow and comment; an editor scores it and proposes the exact changes that would make them." },
   { key: "visual", title: "Visual script", detail: "The carousel's images as one visual story, in the brand's identity and the focus's visual direction." },
   { key: "images", title: "Images", detail: "Each slide made from the visual script, reviewed, and corrected once when it needs it; logo and page number added afterwards." },
   { key: "caption", title: "Caption", detail: "The post’s text: short lines and blank lines, the brand’s emojis, the closing’s call to action, the accounts you tag and 5 to 8 hashtags." },
@@ -102,7 +103,7 @@ export const draft2StepNumber = (step: Draft2StepKey) => STEP_KEYS.indexOf(step)
 /** The pipeline in four phases: what the story says, has and is for, its words, its images, and the post. */
 export const DRAFT_2_PHASES = [
   { key: "story", title: "Story", steps: ["facts", "inventory", "focus"] },
-  { key: "words", title: "Words", steps: ["opening", "closing", "deck"] },
+  { key: "words", title: "Words", steps: ["opening", "closing", "deck", "review"] },
   { key: "visuals", title: "Visuals", steps: ["visual", "images"] },
   { key: "post", title: "Post", steps: ["caption", "publish"] },
 ] as const satisfies readonly { key: string; title: string; steps: readonly Draft2StepKey[] }[];

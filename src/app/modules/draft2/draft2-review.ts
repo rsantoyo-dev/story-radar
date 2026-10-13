@@ -1,0 +1,274 @@
+import "server-only";
+import { withCreativeTextBudget } from "../stories/creative-text-meter";
+import { generateOpenAiStructuredResponse } from "../stories/openai-structured-response";
+import { getCreativeProfile } from "../stories/creative-profile.repository";
+import { activeDraft2Session, claimDraft2Session, getDraft2Session, touchDraft2Session, updateDraft2Session, type Draft2SessionPatch } from "./draft2-session.repository";
+import { draft2DevTrace } from "./draft2-dev-trace";
+import { traceCost } from "./draft2-trace-cost";
+import { Draft2BusyError, Draft2InputError, type Draft2Fact, type Draft2TraceEntry } from "./draft2-facts.types";
+import { factsSnapshot, failedCall, funnelVersions, type FunnelCandidate, type FunnelRole, type FunnelRun } from "./draft2-funnel";
+import { draft2SolModel } from "./draft2-models";
+import { focusForModels, focusItemCount, type Draft2FocusSnapshot } from "./draft2-focus.types";
+import { mechanicalOpeningIssues, type Draft2Opening, type Draft2OpeningCandidate } from "./draft2-opening.types";
+import { mechanicalClosingIssues, type Draft2Closing, type Draft2ClosingCandidate } from "./draft2-closing.types";
+import { mechanicalDeckIssues, type Draft2Deck, type Draft2DeckCandidate } from "./draft2-deck.types";
+import { carouselSlides, type Draft2CarouselSlide } from "./draft2-visual.types";
+import {
+  DRAFT2_READER_SCHEMA, DRAFT2_REVIEW_SCHEMA, parseReaderAnswer, parseReviewAnswer, patchedClosing, patchedDeck, patchedOpening, reviewCurrent, reviewPatches, sameWords, slideText,
+  type Draft2Review, type Draft2ReviewPatch,
+} from "./draft2-review.types";
+import { brandBrief, composeInstructions, creativeSkills } from "./skills/draft2-skills";
+import { REVIEW_SKILL } from "./skills/review";
+import type { Draft2SessionRow } from "@/db/schema";
+
+const READER_MAX_OUTPUT_TOKENS = 4_000;
+const EDITOR_MAX_OUTPUT_TOKENS = 8_000;
+const READER_TIMEOUT_MS = 90_000;
+const EDITOR_TIMEOUT_MS = 240_000;
+const HEARTBEAT_MS = 30_000;
+const DEFAULT_READER_MODEL = "gpt-6-luna";
+
+export type Draft2ReviewInput = { topicId: string; storyId: string; sessionId: string };
+
+/** The reader: the cheap judge by default (DRAFT2_MODEL_REVIEW_READER, else DRAFT2_MODEL_JUDGE); the editor: Sol by default, the independent gate (DRAFT2_MODEL_REVIEW_JUDGE). */
+export function reviewModels(env: Record<string, string | undefined>): { reader: string; editor: string } {
+  return {
+    reader: env.DRAFT2_MODEL_REVIEW_READER?.trim() || env.DRAFT2_MODEL_JUDGE?.trim() || DEFAULT_READER_MODEL,
+    editor: env.DRAFT2_MODEL_REVIEW_JUDGE?.trim() || draft2SolModel(env as NodeJS.ProcessEnv),
+  };
+}
+
+type Chosen = { opening: Draft2Opening; closing: Draft2Closing; deck: Draft2Deck; openingId: string; closingId: string; deckId: string; deckCandidate: Draft2DeckCandidate; focus: Draft2FocusSnapshot };
+
+/** The versions the review reads: the chosen deck, consistent with the opening and the closing chosen now, and the focus they followed. */
+function chosenCarousel(session: Draft2SessionRow): Chosen {
+  const { opening, closing, deck } = session;
+  if (!opening || !closing || !deck) throw new Draft2InputError("The review reads the whole carousel: write the opening, the closing and the deck first.");
+  if (deck.status === "running" || deck.status === "paused") throw new Draft2InputError("The review reads the whole carousel. Finish the deck first.");
+  const deckId = deck.editorChoiceId ?? deck.winnerId;
+  const deckVersion = deckId ? funnelVersions(deck.rounds).find((version) => version.candidate.id === deckId) : undefined;
+  if (!deckId || !deckVersion) throw new Draft2InputError("The deck has no version to review yet. Choose a deck first.");
+  if (!deck.opening || !deck.closing || !deck.focus) throw new Draft2InputError("This deck does not record the opening and closing it connects. Write the deck again first.");
+  const openingId = opening.editorChoiceId ?? opening.winnerId;
+  const closingId = closing.editorChoiceId ?? closing.winnerId;
+  if (!openingId || !closingId) throw new Draft2InputError("Choose an opening and a closing before the review.");
+  if (openingId !== deck.opening.id || closingId !== deck.closing.id) throw new Draft2InputError(`The deck connects ${deck.opening.id} and ${deck.closing.id}; the opening and closing chosen now are ${openingId} and ${closingId}. Write the deck again first.`);
+  return { opening, closing, deck, openingId, closingId, deckId, deckCandidate: deckVersion.candidate, focus: deck.focus };
+}
+
+/** The chosen candidate of a step, found among its versions. */
+function chosenOf<C extends FunnelCandidate>(run: FunnelRun<C>, id: string): C {
+  const version = funnelVersions(run.rounds).find((entry) => entry.candidate.id === id);
+  if (!version) throw new Draft2InputError(`${id} is no longer one of the step's versions.`);
+  return version.candidate as C;
+}
+
+/**
+ * What the program finds wrong with a patched candidate, with the owning
+ * step's own checks and the context that step recorded; empty when the patch
+ * keeps every rule.
+ */
+function patchFindings(session: Draft2SessionRow, chosen: Chosen, patch: Pick<Draft2ReviewPatch, "owner" | "slide" | "field" | "after">, facts: readonly Draft2Fact[], emojis: number): string[] {
+  const values = chosen.focus.values;
+  const itemCount = focusItemCount(values);
+  if (patch.owner === "opening") {
+    const candidate = patchedOpening(chosenOf<Draft2OpeningCandidate>(chosen.opening, chosen.openingId), patch.slide, patch.field, patch.after);
+    return mechanicalOpeningIssues([candidate], facts, { itemCount }).map((issue) => issue.detail);
+  }
+  if (patch.owner === "closing") {
+    const candidate = patchedClosing(chosenOf<Draft2ClosingCandidate>(chosen.closing, chosen.closingId), patch.slide, patch.field, patch.after);
+    if (!chosen.closing.opening || !chosen.closing.shape) return ["This closing does not record the opening and the shape it was written for."];
+    return mechanicalClosingIssues([candidate], facts, { opening: chosen.closing.opening, shape: chosen.closing.shape, grave: values.voice.gravity === "grave", itemCount, emojis }).map((issue) => issue.detail);
+  }
+  const candidate = patchedDeck(chosen.deckCandidate, patch.slide, patch.field, patch.after);
+  if (!chosen.deck.opening || !chosen.deck.closing || !chosen.deck.shape) return ["This deck does not record what it connects."];
+  return mechanicalDeckIssues([candidate], facts, { opening: chosen.deck.opening, closing: chosen.deck.closing, shape: chosen.deck.shape, itemCount, emojis }).map((issue) => issue.detail);
+}
+
+/**
+ * Reads the whole carousel: first a reader of the audience, slide by slide
+ * (would they swipe, what do they think, would they follow or comment), then
+ * the editor with those reactions beside the slides, the focus and the facts,
+ * who scores it, names what works, and writes the patches. Each patch is
+ * checked by the program against the owning step's rules before it is
+ * offered; one that breaks them is refused with the rule.
+ */
+export async function reviewDraft2Carousel({ topicId, storyId, sessionId }: Draft2ReviewInput): Promise<Draft2SessionRow> {
+  const session = await getDraft2Session(topicId, sessionId);
+  if (!session || session.storyId !== storyId) throw new Draft2InputError("This Draft 2 session was not found for the story. Reload the canvas.");
+  if (await activeDraft2Session(topicId, storyId)) throw new Draft2BusyError("A Draft 2 run is already in progress for this story.");
+  const facts = session.facts ?? [];
+  if (!facts.length || (session.step === "facts" && session.status !== "ready")) throw new Draft2InputError("The review rests on verified facts. Verify the facts first.");
+  const chosen = chosenCarousel(session);
+  const carousel = carouselSlides(chosen.deck.opening!, chosen.deckCandidate, chosen.deck.closing!);
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  if (!apiKey) throw new Draft2InputError("OPENAI_API_KEY is not configured: the review needs the reader and the editor.");
+  const models = reviewModels(process.env);
+  const earlier = session.review ?? undefined;
+  const startedAt = new Date().toISOString();
+  const running: Draft2Review = {
+    status: "running", version: (earlier?.version ?? 0) + 1,
+    openingId: chosen.openingId, closingId: chosen.closingId, deckId: chosen.deckId, focusVersion: chosen.focus.version,
+    carousel, startedAt, updatedAt: startedAt,
+    previousRuns: earlier ? [...(earlier.previousRuns ?? []), (({ previousRuns: _history, carousel: _read, ...run }) => run)(earlier)] : undefined,
+  };
+  const claimed = await claimDraft2Session(session.id, { step: "review", review: running, error: null });
+  if (!claimed) throw new Draft2BusyError("A Draft 2 run is already in progress for this story.");
+  const trace: Draft2TraceEntry[] = [...session.trace];
+  const auditContext = { runId: session.id, topicId, storyId };
+  const heartbeat = setInterval(() => { void touchDraft2Session(session.id).catch(() => undefined); }, HEARTBEAT_MS);
+
+  /** One structured call on the trace, with its cost; a failure stays on the trace too. */
+  const call = async (role: FunnelRole, operation: string, request: { instructions: string; contents: Record<string, unknown>; schema: Record<string, unknown>; maxOutputTokens: number; reasoningEffort: "low" | "medium"; timeoutMs: number; skillVersions: Record<string, string> }) => {
+    const at = new Date().toISOString();
+    const begin = Date.now();
+    draft2DevTrace({ step: "review", round: 1, provider: "openai", model: role.model, operation, phase: "request", detail: { contents: request.contents } });
+    try {
+      const answered = await generateOpenAiStructuredResponse({
+        apiKey, model: role.model, instructions: request.instructions, contents: request.contents, schema: request.schema, schemaName: operation,
+        maxOutputTokens: request.maxOutputTokens, reasoningEffort: request.reasoningEffort, timeoutMs: request.timeoutMs, auditContext,
+      });
+      const durationMs = Date.now() - begin;
+      trace.push({ at, step: "review", round: 1, provider: "openai", model: role.model, operation, durationMs, usage: answered.usage, cachedInputTokens: answered.cachedInputTokens, answerCharacters: answered.text.length, outcome: "ok", skillVersions: request.skillVersions, effort: request.reasoningEffort, ...traceCost("openai", role.model, answered.usage, answered.cachedInputTokens) });
+      draft2DevTrace({ step: "review", round: 1, provider: "openai", model: role.model, operation, phase: "response", durationMs, detail: { usage: answered.usage, answer: answered.text } });
+      return answered.text;
+    } catch (error) {
+      const note = error instanceof Error ? error.message : "unknown error";
+      trace.push({ at, step: "review", round: 1, provider: "openai", model: role.model, operation, durationMs: Date.now() - begin, outcome: "error", note, ...failedCall(error), skillVersions: request.skillVersions, effort: request.reasoningEffort });
+      draft2DevTrace({ step: "review", round: 1, provider: "openai", model: role.model, operation, phase: "error", durationMs: Date.now() - begin, detail: { error: note } });
+      throw error;
+    }
+  };
+
+  let review: Draft2Review;
+  try {
+    review = await withCreativeTextBudget({ topicId, storyId, runId: session.id }, async () => {
+      const profile = await getCreativeProfile(topicId);
+      const brief = brandBrief(profile);
+      const emojis = profile.allowEmojis ? Math.max(0, profile.maxEmojis) : 0;
+      const slides = carousel.map(({ slide, label, headline, text, practical, cta }) => ({ slide, label, headline, text, ...(practical ? { practical } : {}), ...(cta ? { cta } : {}) }));
+      // 1. The reader: the audience's member, no rubric, the cheap model.
+      const readerBy: FunnelRole = { provider: "openai", model: models.reader };
+      const reader = composeInstructions("carousel-reader", [], brief);
+      const readerAnswer = await call(readerBy, "draft2_review_read", {
+        instructions: reader.instructions, contents: { task: "read", slides }, schema: DRAFT2_READER_SCHEMA, maxOutputTokens: READER_MAX_OUTPUT_TOKENS, reasoningEffort: "low", timeoutMs: READER_TIMEOUT_MS, skillVersions: reader.skillVersions,
+      });
+      const read = parseReaderAnswer(readerAnswer, carousel.map((slide) => slide.slide));
+      // 2. The editor: the whole carousel, the focus, the reader's reactions and the facts; the independent gate by default.
+      const editorBy: FunnelRole = { provider: "openai", model: models.editor };
+      const editor = composeInstructions("carousel-editor", [REVIEW_SKILL, ...creativeSkills(chosen.focus.values)], brief);
+      const editorAnswer = await call(editorBy, "draft2_review", {
+        instructions: `${editor.instructions}\n\n# Verified facts\n${JSON.stringify(factsSnapshot(facts))}`,
+        contents: { task: "review", slides, focus: focusForModels(chosen.focus.values), reader: read, limits: { patches: 6 } },
+        schema: DRAFT2_REVIEW_SCHEMA, maxOutputTokens: EDITOR_MAX_OUTPUT_TOKENS, reasoningEffort: "medium", timeoutMs: EDITOR_TIMEOUT_MS, skillVersions: editor.skillVersions,
+      });
+      const answer = parseReviewAnswer(editorAnswer, carousel);
+      // 3. The program: a patch that breaks the owning step's rules is refused with the rule, before anyone sees it as a choice.
+      const patches = reviewPatches(answer, carousel).map((patch) => {
+        if (patch.status !== "proposed") return patch;
+        const findings = patchFindings(session, chosen, patch, facts, emojis);
+        return findings.length ? { ...patch, status: "refused" as const, note: findings.join(" ") } : patch;
+      });
+      const now = new Date().toISOString();
+      return { ...running, status: "ready", reader: read, readerBy, editor: { ...answer, patches }, editorBy, updatedAt: now };
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "The review failed.";
+    await updateDraft2Session(session.id, { review: { ...running, status: "failed", error: message, updatedAt: new Date().toISOString() }, trace, status: "failed", error: message }).catch(() => undefined);
+    throw error;
+  } finally {
+    clearInterval(heartbeat);
+  }
+  return (await updateDraft2Session(session.id, { review, trace, status: "ready", error: null })) ?? claimed;
+}
+
+export type Draft2ReviewAction = "apply" | "decline" | "undo" | "apply-all";
+
+/** A step's run with one version's text replaced wherever the run keeps that version (its rounds and its last candidates). */
+function withCandidate<C extends FunnelCandidate, R extends FunnelRun<C, never, never> | FunnelRun<C>>(run: R, candidate: C): R {
+  const current = run as FunnelRun<C>;
+  return {
+    ...run,
+    rounds: current.rounds.map((round) => ({ ...round, candidates: round.candidates.map((entry) => entry.id === candidate.id ? candidate : entry) })),
+    candidates: current.candidates.map((entry) => entry.id === candidate.id ? candidate : entry),
+  } as R;
+}
+
+/**
+ * One text of the chosen carousel replaced (or restored), in the owning step
+ * and in every later step that keeps a copy of it: the closing and the deck
+ * record the opening they follow, the deck the closing it leads to. The
+ * review's own carousel follows, so a later patch quotes the words as they
+ * now stand.
+ */
+function patched(session: Draft2SessionRow, chosen: Chosen, patch: Draft2ReviewPatch, after: string): Draft2SessionPatch {
+  const changes: Draft2SessionPatch = {};
+  if (patch.owner === "opening") {
+    const candidate = patchedOpening(chosenOf<Draft2OpeningCandidate>(chosen.opening, chosen.openingId), patch.slide, patch.field, after);
+    changes.opening = withCandidate(chosen.opening, candidate);
+    const snapshot = { id: candidate.id, cover: candidate.cover, slide2: candidate.slide2 };
+    if (chosen.closing.opening?.id === candidate.id) changes.closing = { ...chosen.closing, opening: snapshot };
+    if (chosen.deck.opening?.id === candidate.id) changes.deck = { ...chosen.deck, opening: snapshot };
+  } else if (patch.owner === "closing") {
+    const candidate = patchedClosing(chosenOf<Draft2ClosingCandidate>(chosen.closing, chosen.closingId), patch.slide, patch.field, after);
+    changes.closing = withCandidate(chosen.closing, candidate);
+    if (chosen.deck.closing?.id === candidate.id) changes.deck = { ...chosen.deck, closing: { id: candidate.id, penultimate: candidate.penultimate, last: candidate.last } };
+  } else {
+    changes.deck = withCandidate(chosen.deck, patchedDeck(chosen.deckCandidate, patch.slide, patch.field, after));
+  }
+  const review = session.review!;
+  changes.review = { ...review, carousel: review.carousel.map((slide) => slide.slide !== patch.slide ? slide : patch.field === "headline" ? { ...slide, headline: after } : patch.field === "cta" ? { ...slide, cta: after } : patch.field === "practical" ? { ...slide, practical: after } : { ...slide, text: after }) };
+  return changes;
+}
+
+/**
+ * The editor's decision on a patch: applied (the chosen candidate's text
+ * replaced, the review keeping what it replaced), declined, or undone (the
+ * text restored). "apply-all" applies every patch still proposed, for the
+ * autopilot. An apply checks the slide still says what the review quoted.
+ */
+export async function decideDraft2ReviewPatch({ topicId, sessionId, patchId, action, by = "editor" }: { topicId: string; sessionId: string; patchId?: string; action: Draft2ReviewAction; by?: "editor" | "autopilot" }): Promise<Draft2SessionRow> {
+  let session = await getDraft2Session(topicId, sessionId);
+  if (!session) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
+  const review = session.review;
+  if (!review?.editor) throw new Draft2InputError("Read the carousel before deciding on its patches.");
+  if (review.status === "running") throw new Draft2BusyError("The carousel is being read; decide when the review finishes.");
+  const ids = action === "apply-all" ? review.editor.patches.filter((patch) => patch.status === "proposed").map((patch) => patch.id) : patchId ? [patchId] : [];
+  if (!ids.length) {
+    if (action === "apply-all") return session;
+    throw new Draft2InputError("Name the patch to decide on.");
+  }
+  for (const id of ids) {
+    const current = session.review!;
+    const patch = current.editor!.patches.find((entry) => entry.id === id);
+    if (!patch) throw new Draft2InputError(`${id} is not one of this review's patches.`);
+    const now = new Date().toISOString();
+    const record = (next: Draft2ReviewPatch, extra: Draft2SessionPatch = {}) => {
+      const reviewed = extra.review ?? current;
+      return { ...extra, review: { ...reviewed, version: current.version + 1, updatedAt: now, editor: { ...reviewed.editor!, patches: reviewed.editor!.patches.map((entry) => entry.id === id ? next : entry) } } } as Draft2SessionPatch;
+    };
+    let changes: Draft2SessionPatch;
+    if (action === "decline") {
+      if (patch.status !== "proposed") throw new Draft2InputError(`${id} was already ${patch.status}.`);
+      changes = record({ ...patch, status: "declined" });
+    } else if (action === "undo") {
+      if (patch.status !== "applied") throw new Draft2InputError(`${id} is not applied.`);
+      const chosen = chosenCarousel(session);
+      if (!reviewCurrent(current, chosen)) throw new Draft2InputError("The review read other versions of the carousel; read it again before undoing.");
+      const slide = current.carousel.find((entry) => entry.slide === patch.slide)!;
+      if (!sameWords(slideText(slide, patch.field), patch.after)) throw new Draft2InputError("The slide no longer says what this patch wrote; undo is not possible.");
+      changes = record({ ...patch, status: "proposed", appliedAt: undefined, appliedBy: undefined }, patched(session, chosen, patch, patch.before));
+    } else {
+      if (patch.status !== "proposed") throw new Draft2InputError(`${id} was already ${patch.status}.`);
+      const chosen = chosenCarousel(session);
+      if (!reviewCurrent(current, chosen)) throw new Draft2InputError("The review read other versions of the carousel; read it again before applying a patch.");
+      const slide = current.carousel.find((entry) => entry.slide === patch.slide)!;
+      if (!sameWords(slideText(slide, patch.field), patch.before)) throw new Draft2InputError("The slide no longer says what the review quoted; read the carousel again.");
+      changes = record({ ...patch, status: "applied", appliedAt: now, appliedBy: by }, patched(session, chosen, patch, patch.after));
+    }
+    const updated = await updateDraft2Session(session.id, changes);
+    if (!updated) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
+    session = updated;
+  }
+  return session;
+}

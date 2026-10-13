@@ -456,9 +456,57 @@ Three changes the editor approved from a reviewer's notes, all cheap:
   editor (caption): concrete, natural, tension the facts sustain, never a
   generic formula.
 
-Suggested next for 9.5 quality, not built: a whole-carousel read before the
+Suggested next for 9.5 quality; the first and the third became the Review
+(next addendum), the other two are not built: a whole-carousel read before the
 images (one call scoring flow, repetition across steps and the turn, with
 patch requests to specific steps); calibration exemplars from the editor's
 own ratings in the judges' instructions; a cheap reader simulation on the
 cover and slide 2 ("would you swipe, what do you expect next"); and the
 editor's choice vs the judge's winner as a running calibration signal.
+
+### Addendum, 2026-10-12 night: the Review, the carousel read whole before the images
+
+The editor approved the "last boost": a step after the Deck that reads the
+carousel the way a reader meets it, simulates that reader, and proposes exact
+word changes, so that tension, clarity and grace are judged on the whole and
+not slide by slide. Brief: `docs/features/draft2-review.md`. In short:
+
+- **Two calls, then the program.** A reader (role `carousel-reader`, the
+  cheap judge by default: `DRAFT2_MODEL_REVIEW_READER`, else
+  `DRAFT2_MODEL_JUDGE`, else gpt-6-luna, effort low, no rubric) swipes
+  through the slides: per slide, would they swipe and the thought in their
+  head; then follow, the comment they would leave, share, where they stopped,
+  a one-line verdict. An editor (role `carousel-editor`, review skill v1,
+  `DRAFT2_MODEL_REVIEW_JUDGE`, else Sol, effort medium) reads the slides,
+  the focus, the reader and the verified facts; scores tension, clarity,
+  grace, flow, turn, truth and overall; gives `ready` or `patch`; names the
+  strengths that must survive; writes up to six patches, each one slide, one
+  text (headline, subheadline, body, practical, cta), the exact text replaced,
+  the replacement and why.
+- **The program refuses what it cannot trust**: a quoted text that is not the
+  slide's, a replacement equal to the text, or a patched candidate that fails
+  the owning step's own mechanical checks (`mechanicalOpeningIssues`,
+  `mechanicalClosingIssues`, `mechanicalDeckIssues` with the context the
+  run recorded). A refused patch stays visible with its reason.
+- **Apply edits in place.** The chosen candidate changes in the owning step
+  (its rounds and last candidates) and in every later copy of it
+  (`closing.opening`, `deck.opening`, `deck.closing`, `review.carousel`);
+  the patch keeps `before`, so `undo` restores it. A review that read other
+  versions than the ones chosen now cannot apply: read again. Column
+  `draft2_sessions.review` (migration 0108, applied the same night).
+- **Autopilot**: after the Deck, the Review runs and every accepted patch is
+  applied as the editor wrote it (`appliedBy: "autopilot"`), then the
+  Visual script reads the patched words. The rail's Words group ends with
+  Review (the ninth step; Publish is the eleventh).
+- **Cost**: ≈ $0.01 for the reader and $0.10–0.25 for the editor, about a
+  minute. `DRAFT2_MODEL_REVIEW_JUDGE=gpt-6-luna` runs both on the cheap
+  judge.
+
+Not built: a second pass over the finished images, calibration exemplars (the
+editor has none yet), and the editor's choice vs the judge's winner as a
+calibration signal.
+
+Watch on the first real runs: how many patches the program refuses and why
+(a model that paraphrases `before` instead of quoting it loses every patch),
+whether Sol's patches read better than the judged winners they replace, and
+whether the reader's "stopped at" lands on the slides the editor would name.

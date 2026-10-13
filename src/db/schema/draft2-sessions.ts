@@ -11,6 +11,7 @@ import type { Draft2Images } from "@/app/modules/draft2/draft2-images.types";
 import type { Draft2Mentions } from "@/app/modules/draft2/draft2-mentions.types";
 import type { Draft2Caption } from "@/app/modules/draft2/draft2-caption.types";
 import type { Draft2Publication } from "@/app/modules/draft2/draft2-publication.types";
+import type { Draft2Review } from "@/app/modules/draft2/draft2-review.types";
 import type { Draft2Focus } from "@/app/modules/draft2/draft2-focus.types";
 import type { Draft2Opening } from "@/app/modules/draft2/draft2-opening.types";
 
@@ -40,6 +41,8 @@ export const draft2Sessions = pgTable("draft2_sessions", {
   closing: jsonb("closing").$type<Draft2Closing>(),
   /** Step 5: the slides between slide 2 and the closing, every round, the winner, the editor's choice, and the opening and closing it connects. */
   deck: jsonb("deck").$type<Draft2Deck>(),
+  /** The review between the deck and the visual script: the whole carousel read by a reader and an editor, with the patches and what they replaced. */
+  review: jsonb("review").$type<Draft2Review>(),
   /** Step 6: the people, places and organizations the facts name, their verified material, the editor's confirmations and the characters choice. */
   inventory: jsonb("inventory").$type<Draft2Inventory>(),
   /** Step 7: the visual script, every round, the winner, the editor's choice, and what it scripted and followed. */
