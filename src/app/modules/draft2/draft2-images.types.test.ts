@@ -4,7 +4,7 @@ import { Draft2InputError, Draft2ResponseError } from "./draft2-facts.types";
 import {
   correctionFor, draft2ImageDownloads, draft2ImageReview, imagesNote, imagesTarget, newImagesRun, parseDraft2ImageReview, parseImagesAction, regeneratedSlide, chosenSlide,
   settledStatus, shownAttempt, slideMaterial, slideSettled, slideUnit, textDifferences,
-  type Draft2ImageAttempt, type Draft2SlideImage,
+  type Draft2ImageAttempt, type Draft2SlideImage, focusSubject, parsePortraitSubject,
 } from "./draft2-images.types";
 import type { Draft2Inventory, Draft2InventoryEntity } from "./draft2-inventory.types";
 import type { Draft2CarouselSlide, Draft2Visual, Draft2VisualCandidate, Draft2VisualSlide } from "./draft2-visual.types";
@@ -193,4 +193,16 @@ test("every Draft 2 image file name passes the storage rule, the plates' prompts
   const names = [ANCHOR_PLATE_FILE, ANCHOR_PLATE_PROMPT_FILE, MASTER_PLATE_FILE, MASTER_PLATE_PROMPT_FILE, imageFile("penultimate", 12), imageBaseFile("slide2", 3), imagePromptFile("cover", 1), mapFile("s4")];
   for (const name of names) assert.match(name, DRAFT2_IMAGE_FILE_PATTERN, name);
   assert.doesNotMatch("master-scene.prompt.txt", DRAFT2_IMAGE_FILE_PATTERN, "the first plates failed on this name before fal was called (2026-10-12)");
+});
+
+test("Luna's boxes on a real photo are kept inside it; percentages read as fractions; an answer with nobody is an error", () => {
+  const answer = (value: Record<string, unknown>) => JSON.stringify({ faceVisible: true, people: 1, face: { left: 0.4, top: 0.1, right: 0.6, bottom: 0.3 }, person: { left: 0.2, top: 0.05, right: 0.9, bottom: 1 }, ...value });
+  assert.deepEqual(parsePortraitSubject(answer({})), { face: { left: 0.4, top: 0.1, right: 0.6, bottom: 0.3 }, person: { left: 0.2, top: 0.05, right: 0.9, bottom: 1 } });
+  assert.deepEqual(parsePortraitSubject(answer({ face: { left: 40, top: 10, right: 60, bottom: 30 } })).face, { left: 0.4, top: 0.1, right: 0.6, bottom: 0.3 }, "percentages");
+  assert.deepEqual(parsePortraitSubject(answer({ person: { left: -0.1, top: 0, right: 1.0, bottom: 1.0 } })).person, { left: 0, top: 0, right: 1, bottom: 1 });
+  assert.equal(parsePortraitSubject(answer({ faceVisible: false })).face, undefined, "a face that does not show is none");
+  assert.equal(parsePortraitSubject(answer({ face: { left: 0.5, top: 0.5, right: 0.5, bottom: 0.6 } })).face, undefined, "a box with no area is none");
+  assert.throws(() => parsePortraitSubject(answer({ faceVisible: false, person: { left: 0.5, top: 0.5, right: 0.5, bottom: 0.5 } })), /found nobody/);
+  assert.throws(() => parsePortraitSubject("nope"), /not valid JSON/);
+  assert.deepEqual(focusSubject({ x: 0.98, y: 0.3 }), { face: { left: 0.94, top: 0.25, right: 1, bottom: 0.35 } }, "the editor's focal point is a small face");
 });

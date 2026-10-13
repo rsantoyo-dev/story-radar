@@ -14,7 +14,7 @@ import { buildCreativeCarouselChrome, compositeCreativeCarouselChrome } from "..
 import { computeCreativeBrandPromptExclusionRect, creativeCanvasDimensions, shouldApplyCreativeBrandOverlay } from "../stories/creative-brand-overlay";
 import { creativeBrandOverlaySnapshot, findCreativeBrandAsset } from "../stories/creative-brand-assets.repository";
 import { compositeStoredCreativeBrand, isTransientFalSubmitError } from "../stories/manage-creative-assets";
-import { compositeDocumentaryPortrait, portraitAccent, portraitLayoutForSlide, portraitPhotoRegion, portraitZonePrompt } from "../stories/creative-portrait-composite";
+import { compositeDocumentaryPortrait, fitPortrait, portraitAccent, portraitLayoutForSlide, portraitPhotoRegion, portraitZonePrompt, type PortraitFit, type PortraitSubject } from "../stories/creative-portrait-composite";
 import { compositeMapPanel, mapInsetVisualDirection, mapPaletteFromBrand, mapPanelRegion, mapPanelZonePrompt, streetAddress } from "../stories/creative-map-panel";
 import { photoLedVisualDirection, storyReferencePrompt } from "../stories/story-reference-generation";
 import { currentPortraitFocus, loadDocumentaryPortraitPhoto, loadStoryReferenceImages, resolveStoryReferences } from "../stories/manage-story-photos";
@@ -45,14 +45,14 @@ import { draft2DevTrace } from "./draft2-dev-trace";
 import { traceCost } from "./draft2-trace-cost";
 import { Draft2BusyError, Draft2InputError, type Draft2Fact, type Draft2TraceEntry } from "./draft2-facts.types";
 import { failedCall } from "./draft2-funnel";
-import { draft2ModelName, draft2SolModel } from "./draft2-models";
+import { draft2ModelName, draft2PortraitModel, draft2SolModel } from "./draft2-models";
 import { placeMention } from "./draft2-inventory";
 import {
   ANCHOR_PLATE_FILE, ANCHOR_PLATE_PROMPT_FILE, MASTER_PLATE_FILE, MASTER_PLATE_PROMPT_FILE, anchorPlateSettled, slideCarriesAnchor, visualNarrative, type Draft2AnchorPlate, type Draft2MasterPlate,
-  DRAFT2_IMAGE_REVIEW_SCHEMA, IMAGE_SUBMISSION_GRACE_MS, IMAGE_SUBMIT_CONCURRENCY, IMAGES_QUALITY,
+  DRAFT2_IMAGE_REVIEW_SCHEMA, DRAFT2_PORTRAIT_SUBJECT_SCHEMA, IMAGE_SUBMISSION_GRACE_MS, IMAGE_SUBMIT_CONCURRENCY, IMAGES_QUALITY, PORTRAIT_LOCATOR_INSTRUCTIONS, focusSubject, parsePortraitSubject,
   awaitsReview, chosenSlide, correctionFor, draft2ImageDownloads, draft2ImageReview, imageBaseFile, imageFile, imagePromptFile, imagesNote, imagesTarget, latestAttempt, mapFile,
   newImagesRun, parseDraft2ImageReview, parseImagesAction, regeneratedSlide, settledStatus, slideFacts, slideSettled, slideUnit,
-  type Draft2ImageAttempt, type Draft2Images, type Draft2ImagesRun, type Draft2MapPanel, type Draft2SlideImage, type Draft2SlideMaterial,
+  type Draft2ImageAttempt, type Draft2Images, type Draft2ImagesRun, type Draft2MapPanel, type Draft2PortraitFit, type Draft2SlideImage, type Draft2SlideMaterial,
 } from "./draft2-images.types";
 import { OPENING_STALL_MS } from "./draft2-opening.types";
 import { anchorNoun, type Draft2FocusNarrative, type Draft2FocusValues } from "./draft2-focus.types";
@@ -70,6 +70,9 @@ const POLL_INTERVAL_MS = 4_000;
 const HEARTBEAT_MS = 30_000;
 const REVIEW_TIMEOUT_MS = 120_000;
 const REVIEW_MAX_OUTPUT_TOKENS = 6_000;
+/** Luna locating a person on a real photo: a short answer, its reasoning included. */
+const PORTRAIT_TIMEOUT_MS = 60_000;
+const PORTRAIT_MAX_OUTPUT_TOKENS = 2_000;
 const REVIEW_CONCURRENCY = 6;
 /** A poll that fails this many times in one request (network, storage) fails its image. */
 const POLL_ATTEMPTS = 3;
@@ -255,6 +258,7 @@ async function imageRequest(ctx: Context, slide: Draft2SlideImage, attempt: Draf
     const [reference] = await resolveStoryReferences(ctx.topicId, ctx.storyId, [{ id: pasted.storyPhotoId, purpose: "documentary-portrait" }]);
     pasted.sha256 = reference.sha256;
   }
+  if (pasted) attempt.portrait = attemptPortrait(slide, attempt, pasted);
   if (map && !map.panel) {
     map.panel = await mapPanel(ctx, slide, map).catch(() => undefined);
     if (!map.panel) note(slide, `The map of ${map.name} could not be made, so the slide shows a generic scene of its kind.`);
@@ -283,7 +287,7 @@ async function imageRequest(ctx: Context, slide: Draft2SlideImage, attempt: Draf
   const plateFile = ctx.run.anchorPlate?.status === "generated" && slideCarriesAnchor(slide) ? await anchorPlateFile(ctx, slide) : undefined;
   const plates = plateFile ? 1 : 0;
   const brandRefs = await resolveBrandGenerationReferences(ctx.topicId, ctx.brandSelections.get(slide.order));
-  const zone = pasted ? portraitZonePrompt(portraitLayoutForSlide(slide.order)) : panel ? mapPanelZonePrompt(panel.layout) : "";
+  const zone = pasted ? portraitZonePrompt(attempt.portrait?.layout ?? portraitLayoutForSlide(slide.order)) : panel ? mapPanelZonePrompt(panel.layout) : "";
   let prompt = built.prompt + zone + (plateFile ? anchorReferencePrompt(ctx, characterImages.length + 1) : "") + brandReferencePrompt(brandRefs, characterImages.length + plates)
     + storyReferencePrompt(storyRefs, characterImages.length + plates + brandRefs.length) + (placeFile ? verifiedPlacePhotoInstruction(placeEntry?.name) : "");
   if (base) prompt += `\n\nIMAGE EDIT v1\nThe LAST input image is the base image to edit. Preserve its layout, copy and protagonist except for this requested change (data): ${JSON.stringify(attempt.instruction ?? "")}\nEND IMAGE EDIT`;
@@ -510,14 +514,31 @@ async function submitAttempt(ctx: Context, slide: Draft2SlideImage, attempt: Dra
   await checkpoint();
 }
 
+/**
+ * The layout and window of the real photo an attempt is made with: an edit
+ * or a correction keeps its base image's (its zone is already drawn), a
+ * fresh image takes the photo's fit, and an image made before the fit keeps
+ * the slide's rotation.
+ */
+function attemptPortrait(slide: Draft2SlideImage, attempt: Draft2ImageAttempt, pasted: Extract<Draft2SlideMaterial, { kind: "pasted-photo" }>): PortraitFit {
+  if (attempt.portrait) return attempt.portrait;
+  if (attempt.baseVersion !== undefined) return slide.attempts.find((entry) => entry.version === attempt.baseVersion)?.portrait ?? { layout: portraitLayoutForSlide(slide.order) };
+  return pasted.portrait ? { layout: pasted.portrait.layout, ...(pasted.portrait.crop ? { crop: pasted.portrait.crop } : {}) } : { layout: portraitLayoutForSlide(slide.order) };
+}
+
 /** v1's post-production, in v1's order: the pasted photo, the map panel, the page number, the logo. */
-async function finish(ctx: Context, slide: Draft2SlideImage, image: Uint8Array): Promise<Uint8Array> {
+async function finish(ctx: Context, slide: Draft2SlideImage, attempt: Draft2ImageAttempt, image: Uint8Array): Promise<Uint8Array> {
   let out: Uint8Array = image;
   const pasted = slide.material.find(isPasted);
   if (pasted?.sha256) {
     const photo = await loadDocumentaryPortraitPhoto(pasted.storyPhotoId, pasted.sha256);
-    const focus = await currentPortraitFocus(ctx.topicId, ctx.storyId, pasted.storyPhotoId, pasted.sha256);
-    out = await compositeDocumentaryPortrait({ image: out, photo, layout: portraitLayoutForSlide(slide.order), accent: portraitAccent(ctx.profile.brandPalette ?? [], slide.order), ...(focus ? { focus } : {}) });
+    // The window chosen on the person before the image was made; one made before that crops around the editor's focal point, or on its own.
+    const fit = attemptPortrait(slide, attempt, pasted);
+    const focus = fit.crop ? undefined : await currentPortraitFocus(ctx.topicId, ctx.storyId, pasted.storyPhotoId, pasted.sha256);
+    out = await compositeDocumentaryPortrait({
+      image: out, photo, layout: fit.layout, accent: portraitAccent(ctx.profile.brandPalette ?? [], slide.order),
+      ...(fit.crop ? { crop: fit.crop } : focus ? { focus } : {}),
+    });
   }
   const panel = slide.material.find(isMap)?.panel;
   if (panel) {
@@ -544,7 +565,7 @@ async function pollAttempt(ctx: Context, slide: Draft2SlideImage, attempt: Draft
     let final: Uint8Array | undefined;
     const result = await pollFalImage({
       apiKey: ctx.fal.apiKey, requestId: attempt.requestId!, endpoint: attempt.endpoint!, targetWidth: OUTPUT.width, targetHeight: OUTPUT.height, retention: "30d",
-      postProcess: async ({ normalizedPng }) => { raw = normalizedPng; final = await finish(ctx, slide, normalizedPng); return final; },
+      postProcess: async ({ normalizedPng }) => { raw = normalizedPng; final = await finish(ctx, slide, attempt, normalizedPng); return final; },
     });
     if (result.status !== "generated") return;
     if (!raw || !final) throw new Draft2InputError("The image came back without its post-production.");
@@ -589,7 +610,7 @@ async function reviewAttempt(ctx: Context, slide: Draft2SlideImage, attempt: Dra
   const input: CreativeImageReviewInput = {
     visibleText: attempt.expectedText ?? "",
     publicationName: ctx.profile.name,
-    ...(pasted ? { verifiedPhoto: { personName: pasted.name, region: portraitPhotoRegion(portraitLayoutForSlide(slide.order)) } } : {}),
+    ...(pasted ? { verifiedPhoto: { personName: pasted.name, region: portraitPhotoRegion(attempt.portrait?.layout ?? portraitLayoutForSlide(slide.order)) } } : {}),
     ...(panel ? { verifiedMap: { provider: panel.provider, region: mapPanelRegion(panel.layout) } } : {}),
     ...(attempt.placePhoto ? { verifiedPlacePhoto: { placeName: attempt.placePhoto } } : {}),
     characters: slide.characterIds.flatMap((id) => { const character = ctx.characters.get(id); return character ? [{ name: character.name, description: character.description }] : []; }),
@@ -624,6 +645,82 @@ async function reviewAttempt(ctx: Context, slide: Draft2SlideImage, attempt: Dra
     ctx.trace.push({ at, step: "images", round: attempt.version, provider: "openai", model, operation: "draft2_image_review", durationMs, outcome: "error", note: `${slide.label}: ${message(error)}`, ...failedCall(error), skillVersions });
     attempt.review = { status: "unavailable", issues: [], note: `${draft2ModelName(model, "openai")} could not review this image (${message(error)}); look at it yourself.`, transcription: "", model, at, durationMs };
   }
+}
+
+/**
+ * Where the person is on one real photo: the editor's focal point when they
+ * set one, else Luna's look at it (once; the photo is only looked at, never
+ * edited or sent to the image model). A photo Luna cannot read is left to
+ * the composite's automatic crop, with a note on the slide.
+ */
+async function locatePortrait(ctx: Context, pasted: Extract<Draft2SlideMaterial, { kind: "pasted-photo" }>): Promise<{ size: { width: number; height: number }; subject: PortraitSubject; source: Draft2PortraitFit["source"] }> {
+  const bytes = await loadDocumentaryPortraitPhoto(pasted.storyPhotoId, pasted.sha256!);
+  const meta = await sharp(bytes, { limitInputPixels: 40_000_000 }).metadata();
+  // The composite turns the photo by its EXIF orientation first; the sizes are the turned photo's.
+  const turned = (meta.orientation ?? 1) >= 5;
+  const size = { width: (turned ? meta.height : meta.width) ?? 0, height: (turned ? meta.width : meta.height) ?? 0 };
+  const focus = await currentPortraitFocus(ctx.topicId, ctx.storyId, pasted.storyPhotoId, pasted.sha256!);
+  if (focus) return { size, subject: focusSubject(focus), source: "editor" };
+  if (!size.width || !size.height) return { size, subject: {}, source: "automatic" };
+  const model = draft2PortraitModel(process.env);
+  const at = new Date().toISOString();
+  const begin = Date.now();
+  try {
+    const preview = await sharp(bytes, { limitInputPixels: 40_000_000 }).rotate().resize({ width: 768, height: 768, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 80 }).toBuffer();
+    const answered = await generateOpenAiStructuredResponse({
+      apiKey: process.env.OPENAI_API_KEY?.trim() ?? "", model, instructions: PORTRAIT_LOCATOR_INSTRUCTIONS, contents: { person: pasted.name },
+      images: [`data:image/jpeg;base64,${preview.toString("base64")}`], schema: DRAFT2_PORTRAIT_SUBJECT_SCHEMA, schemaName: "draft2_portrait_subject",
+      maxOutputTokens: PORTRAIT_MAX_OUTPUT_TOKENS, reasoningEffort: "low", timeoutMs: PORTRAIT_TIMEOUT_MS,
+      auditContext: { runId: ctx.sessionId, topicId: ctx.topicId, storyId: ctx.storyId },
+    });
+    const subject = parsePortraitSubject(answered.text);
+    ctx.trace.push({ at, step: "images", round: 1, provider: "openai", model, operation: "draft2_portrait_subject", durationMs: Date.now() - begin, usage: answered.usage, cachedInputTokens: answered.cachedInputTokens, answerCharacters: answered.text.length, outcome: "ok", note: pasted.name, effort: "low", ...traceCost("openai", model, answered.usage, answered.cachedInputTokens) });
+    return { size, subject, source: "ai" };
+  } catch (error) {
+    ctx.trace.push({ at, step: "images", round: 1, provider: "openai", model, operation: "draft2_portrait_subject", durationMs: Date.now() - begin, outcome: "error", note: `${pasted.name}: ${message(error)}`, ...failedCall(error) });
+    return { size, subject: {}, source: "automatic" };
+  }
+}
+
+/**
+ * Each real photo is looked at once before its slide is made, and takes the
+ * layout that shows the person whole at the size the photo holds
+ * (fitPortrait), the layout of the photo slide before it only breaking
+ * ties. The image model then designs around that layout's zone, and the
+ * composite shows the same window. A slide already sent keeps the layout it
+ * was made with (its corrections edit that image).
+ */
+async function preparePortraits(ctx: Context, checkpoint: () => Promise<unknown>): Promise<void> {
+  const ordered = [...ctx.run.slides].sort((a, b) => a.order - b.order);
+  // A fresh image waiting to go out (the first, or one made again without an edit) of a photo not fitted yet.
+  const waiting = ordered.filter((slide) => {
+    const pasted = slide.material.find(isPasted);
+    const latest = latestAttempt(slide);
+    return pasted && !pasted.portrait && latest?.status === "queued" && latest.baseVersion === undefined;
+  });
+  if (!waiting.length) return;
+  const located = new Map<string, ReturnType<typeof locatePortrait>>();
+  for (const slide of waiting) {
+    const pasted = slide.material.find(isPasted)!;
+    if (!pasted.sha256) {
+      const [reference] = await resolveStoryReferences(ctx.topicId, ctx.storyId, [{ id: pasted.storyPhotoId, purpose: "documentary-portrait" }]);
+      pasted.sha256 = reference.sha256;
+    }
+    const key = `${pasted.storyPhotoId}:${pasted.sha256}`;
+    if (!located.has(key)) located.set(key, locatePortrait(ctx, pasted));
+  }
+  let previous: string | undefined;
+  for (const slide of ordered) {
+    const pasted = slide.material.find(isPasted);
+    if (!pasted) continue;
+    if (!pasted.portrait && waiting.includes(slide)) {
+      const { size, subject, source } = await located.get(`${pasted.storyPhotoId}:${pasted.sha256}`)!;
+      pasted.portrait = { ...fitPortrait(size, subject, { avoid: previous ? [previous] : [], order: slide.order }), source, ...subject };
+      if (source === "automatic") note(slide, `${pasted.name} could not be located on the photo, so its crop is automatic: check that nothing of them is cut.`);
+    }
+    previous = pasted.portrait?.layout ?? portraitLayoutForSlide(slide.order);
+  }
+  await checkpoint();
 }
 
 /** Everything a request needs to build and finish images, read once per request. */
@@ -741,6 +838,8 @@ export async function runDraft2Images({ topicId, storyId, sessionId, resume = fa
           if (run.masterPlate?.status === "failed") for (const slide of run.slides) note(slide, "The master scene could not be made, so this slide is drawn on its own from the script.");
           await checkpoint();
         }
+        // Each real photo is looked at, and given its layout, before its slide goes out.
+        await preparePortraits(ctx, checkpoint);
         await inBatches(latest.filter(({ attempt }) => attempt.status === "queued"), IMAGE_SUBMIT_CONCURRENCY, ({ slide, attempt }) => submitAttempt(ctx, slide, attempt, checkpoint));
         await inBatches(latest.filter(({ attempt }) => attempt.status === "generating" && attempt.requestId), IMAGE_SUBMIT_CONCURRENCY, ({ slide, attempt }) => pollAttempt(ctx, slide, attempt, finished, pollErrors, checkpoint));
         const toReview = run.slides.flatMap((slide) => { const attempt = latestAttempt(slide); return attempt && awaitsReview(attempt) ? [{ slide, attempt }] : []; });

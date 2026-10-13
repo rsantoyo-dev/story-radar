@@ -3,7 +3,7 @@ import test from "node:test";
 
 import sharp from "sharp";
 
-import { adaptationCreditLine, compositeDocumentaryPortrait, placePhotoAdaptationCreditLine, focalCrop, PORTRAIT_LAYOUTS, PORTRAIT_PHOTO, PORTRAIT_ZONE, portraitAccent, portraitCreditLine, portraitLayoutForSlide, portraitZonePrompt } from "./creative-portrait-composite";
+import { adaptationCreditLine, compositeDocumentaryPortrait, fitPortrait, placePhotoAdaptationCreditLine, focalCrop, PORTRAIT_LAYOUTS, PORTRAIT_PHOTO, PORTRAIT_ZONE, portraitAccent, portraitCreditLine, portraitLayoutForSlide, portraitZonePrompt } from "./creative-portrait-composite";
 import { parsePhotoFocus } from "./story-materials.types";
 
 async function pixel(image: Buffer, x: number, y: number): Promise<number[]> {
@@ -117,4 +117,38 @@ test("a focal point from the browser must be two fractions; null clears it", () 
   assert.throws(() => parsePhotoFocus({ x: 1.2, y: 0.5 }), /between 0 and 1/);
   assert.throws(() => parsePhotoFocus({ x: "0.5", y: 0.5 }), /between 0 and 1/);
   assert.throws(() => parsePhotoFocus(undefined), /between 0 and 1/);
+});
+
+test("a photo takes the layout that shows its person whole at the size it holds, its window placed on the face", () => {
+  // A close-up wider than tall: the whole face inside a shape, no enlargement.
+  const closeUp = fitPortrait({ width: 720, height: 619 }, { face: { left: 0.22, top: 0.12, right: 0.72, bottom: 0.86 }, person: { left: 0.05, top: 0.05, right: 0.95, bottom: 1 } });
+  assert.equal(closeUp.crop?.height, 619, "the full height: nothing of the face is cut");
+  // A small landscape with the face at the right: never the full-width band, which would enlarge it 1.7 times; the window keeps the face.
+  const landscape = fitPortrait({ width: 640, height: 480 }, { face: { left: 0.55, top: 0.35, right: 0.75, bottom: 0.75 } }, { order: 3 });
+  assert.notEqual(landscape.layout, "top-bleed", "the slide's rotation would have given the band");
+  assert.ok(landscape.crop!.left <= 0.55 * 640 && landscape.crop!.left + landscape.crop!.width >= 0.75 * 640, JSON.stringify(landscape));
+  // An action photo with the face at the top right: the window starts at the top, and an arch never hides the face.
+  const action = fitPortrait({ width: 600, height: 900 }, { face: { left: 0.7, top: 0.1, right: 0.8, bottom: 0.17 }, person: { left: 0.45, top: 0.08, right: 0.95, bottom: 0.95 } }, { order: 4 });
+  assert.equal(action.crop?.top, 0);
+  // A face in the arch's corner is never given the arch.
+  assert.notEqual(fitPortrait({ width: 600, height: 900 }, { face: { left: 0.88, top: 0.0, right: 1, bottom: 0.08 } }, { order: 4 }).layout, "arch-right");
+  // The layout of the photo slide before breaks ties; without anyone located, the slide's rotation and an automatic crop.
+  const medium = { face: { left: 0.38, top: 0.1, right: 0.62, bottom: 0.35 }, person: { left: 0.1, top: 0.05, right: 0.95, bottom: 1 } };
+  const first = fitPortrait({ width: 700, height: 900 }, medium, { order: 6 });
+  assert.notEqual(fitPortrait({ width: 700, height: 900 }, medium, { order: 6, avoid: [first.layout] }).layout, first.layout);
+  assert.deepEqual(fitPortrait({ width: 700, height: 900 }, {}, { order: 2 }), { layout: portraitLayoutForSlide(2) });
+});
+
+test("the composite shows the chosen window of the photo, drawn at the frame's size", async () => {
+  const design = await sharp({ create: { width: 1080, height: 1350, channels: 3, background: { r: 246, g: 240, b: 228 } } }).png().toBuffer();
+  // Red on the left half, blue on the right: a window on the right half shows only blue.
+  const photo = await sharp({ create: { width: 800, height: 600, channels: 3, background: { r: 220, g: 30, b: 30 } } })
+    .composite([{ input: await sharp({ create: { width: 400, height: 600, channels: 3, background: { r: 20, g: 40, b: 220 } } }).png().toBuffer(), left: 400, top: 0 }]).png().toBuffer();
+  const layout = PORTRAIT_LAYOUTS.find((entry) => entry.id === "offset-block-right")!;
+  const output = await compositeDocumentaryPortrait({ image: design, photo, layout: layout.id, crop: { left: 420, top: 0, width: 370, height: 464 }, focus: { x: 0, y: 0 } });
+  const { left, top, width, height } = layout.photo;
+  for (const [x, y] of [[left + 5, top + 5], [left + width - 5, top + height - 5]]) {
+    const [r, , b] = await pixel(output, x, y);
+    assert.ok(b > 180 && r < 60, `${x},${y}: the window wins over the focal point`);
+  }
 });

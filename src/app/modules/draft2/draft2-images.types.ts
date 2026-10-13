@@ -8,6 +8,7 @@ import {
   type CreativeImageReviewAnswer, type CreativeImageReviewInput,
 } from "../stories/creative-image-review";
 import type { CreativeUnit, CreativeUnitRole } from "../stories/creative-content.types";
+import type { PortraitBox, PortraitFit, PortraitSubject } from "../stories/creative-portrait-composite";
 import type { Draft2SessionRow } from "@/db/schema";
 
 /**
@@ -53,6 +54,8 @@ export type Draft2ImageAttempt = {
   version: number;
   kind: Draft2ImageAttemptKind;
   status: Draft2ImageAttemptStatus;
+  /** The layout and the window of the real photo this image was made with; an edit keeps its base's. Absent: the slide's rotation. */
+  portrait?: PortraitFit;
   /** The editor's instruction (a regeneration) or the review's issues (a correction). */
   instruction?: string;
   /** An edit starts from this version's image as it was before the logo and the page number. */
@@ -83,10 +86,19 @@ export type Draft2ImageAttempt = {
  * verified place's map pasted as a panel.
  */
 export type Draft2SlideMaterial =
-  | { kind: "pasted-photo"; storyPhotoId: string; name: string; person: boolean; entityId?: string; sha256?: string }
+  | { kind: "pasted-photo"; storyPhotoId: string; name: string; person: boolean; entityId?: string; sha256?: string; portrait?: Draft2PortraitFit }
   | { kind: "story-photo"; storyPhotoId: string; name: string; purpose: "subject" | "place" }
   | { kind: "place-photo"; entityId: string; name: string }
   | { kind: "map"; entityId: string; name: string; source: "google" | "wikidata"; panel?: Draft2MapPanel };
+
+/**
+ * The layout a real photo takes on its slide and the window of it the frame
+ * shows, chosen once before the slide is made (fitPortrait), with where the
+ * person is on the photo and who said so: Luna ("ai"), the editor's focal
+ * point ("editor"), or nobody, the crop then left to the composite
+ * ("automatic").
+ */
+export type Draft2PortraitFit = PortraitFit & { source: "ai" | "editor" | "automatic"; face?: PortraitBox; person?: PortraitBox };
 
 /** A map panel as it was fetched (its bytes are stored beside the slide's images). */
 export type Draft2MapPanel = { provider: "Google" | "OpenStreetMap"; layout: "inset" | "inset-labelled"; label?: { name: string; address: string }; sha256: string };
@@ -534,3 +546,54 @@ export function draft2ImageReview(answer: Draft2ImageReviewAnswer, input: Creati
 
 /** The facts a slide cites, as the review reads them. */
 export const slideFacts = (factIds: readonly string[], facts: readonly Draft2Fact[]) => facts.filter((fact) => factIds.includes(fact.id)).map((fact) => fact.claim);
+
+const PORTRAIT_BOX = {
+  type: "object",
+  additionalProperties: false,
+  required: ["left", "top", "right", "bottom"],
+  properties: { left: { type: "number" }, top: { type: "number" }, right: { type: "number" }, bottom: { type: "number" } },
+};
+
+/** Luna's answer on a real photo: the named person's face, when it shows, and the part of them the photo shows, as fractions of the image. */
+export const DRAFT2_PORTRAIT_SUBJECT_SCHEMA: Record<string, unknown> = {
+  type: "object",
+  additionalProperties: false,
+  required: ["faceVisible", "face", "person", "people"],
+  properties: { faceVisible: { type: "boolean" }, face: PORTRAIT_BOX, person: PORTRAIT_BOX, people: { type: "integer" } },
+};
+
+/** What Luna is asked about a real photo before its slide is composed; the photo is only looked at, never edited or redrawn. */
+export const PORTRAIT_LOCATOR_INSTRUCTIONS = `You locate a person on a documentary photograph for a layout program that crops the photograph into a frame and must not cut them. The photograph is never edited or redrawn. Give boxes as fractions of the image: 0 is its left or top edge, 1 its right or bottom edge. face: the named person's face, from the top of the hair to the chin and from ear to ear; faceVisible is false when their face does not show (face then repeats person). person: the part of the named person the photograph shows, from the top of the hair down. When several people are visible, the named person is the one the photograph is about, usually the most prominent; people is how many people are visible.`;
+
+/**
+ * Luna's boxes, kept inside the photo. Percentages (0 to 100) are read as
+ * fractions, the deviation a light model makes; a box with no area is none.
+ * An answer with neither a face nor a person is a response error.
+ */
+export function parsePortraitSubject(text: string): PortraitSubject {
+  let value: Record<string, unknown>;
+  try {
+    value = record(JSON.parse(text));
+  } catch {
+    throw new Draft2ResponseError("The portrait locator's answer is not valid JSON");
+  }
+  const box = (input: unknown): PortraitBox | undefined => {
+    const entry = record(input);
+    const numbers = [entry.left, entry.top, entry.right, entry.bottom];
+    if (!numbers.every((number) => typeof number === "number" && Number.isFinite(number))) return undefined;
+    const values = numbers as number[];
+    const scale = values.some((number) => number > 1) && values.every((number) => number <= 100) ? 100 : 1;
+    const [left, top, right, bottom] = values.map((number) => Math.min(1, Math.max(0, number / scale)));
+    return right - left >= 0.02 && bottom - top >= 0.02 ? { left, top, right, bottom } : undefined;
+  };
+  const person = box(value.person);
+  const face = value.faceVisible === false ? undefined : box(value.face);
+  if (!face && !person) throw new Draft2ResponseError("The portrait locator found nobody on the photo");
+  return { ...(face ? { face } : {}), ...(person ? { person } : {}) };
+}
+
+/** The editor's focal point on a photo as the subject to frame: a small face around it, which the crop keeps at its face line. */
+export function focusSubject(focus: { x: number; y: number }): PortraitSubject {
+  const within = (value: number) => Math.min(1, Math.max(0, value));
+  return { face: { left: within(focus.x - 0.04), top: within(focus.y - 0.05), right: within(focus.x + 0.04), bottom: within(focus.y + 0.05) } };
+}

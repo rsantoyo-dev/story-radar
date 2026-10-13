@@ -6,6 +6,12 @@ export function draft2SolModel(env: NodeJS.ProcessEnv): string {
   return env.DRAFT2_EXTRACTOR_MODEL?.trim() || DEFAULT_DRAFT2_SOL_MODEL;
 }
 
+/** Luna, OpenAI's light model: it locates the person on a real photo before its slide is composed (DRAFT2_MODEL_PORTRAIT names another). */
+export const DEFAULT_DRAFT2_LUNA_MODEL = "gpt-6-luna";
+export function draft2PortraitModel(env: NodeJS.ProcessEnv): string {
+  return env.DRAFT2_MODEL_PORTRAIT?.trim() || DEFAULT_DRAFT2_LUNA_MODEL;
+}
+
 export type Draft2Provider = "openai" | "anthropic";
 /** The environment as the knobs read it: process.env, or a test's literal. */
 export type Draft2Env = Readonly<Record<string, string | undefined>>;

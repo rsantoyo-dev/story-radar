@@ -277,3 +277,42 @@ ran there. The names are now `anchor-plate-prompt.txt` and
 share, and the test checks every Draft 2 file name against it. Until this
 fix, every narrative form fell back to slide-by-slide generation without
 its anchor or its scene, which is part of why those runs scored low.
+
+## 12. A real photo fits its frame (2026-10-13)
+
+The editor's first post of five personalities, each with a verified
+portrait, came out with photos cut: a vertical photo in the full-width band
+(1080×600) lost the chin and was enlarged 1.7 times, an action photo lost
+its player's head behind the arch, a close-up lost the top of the head. The
+layout was v1's rotation by slide order, and without the editor's focal
+point the crop was sharp's `attention`; nothing knew where the person was.
+
+- **Before a slide with a real photo goes out** (`preparePortraits`), Luna
+  (`draft2PortraitModel`, `DRAFT2_MODEL_PORTRAIT`, default `gpt-6-luna`,
+  effort low, ≈ $0.0005) looks once at a 768 px preview of each distinct
+  photo and answers where the named person's face and visible body are, as
+  fractions of the image (`DRAFT2_PORTRAIT_SUBJECT_SCHEMA`,
+  `parsePortraitSubject`: percentages read as fractions, a box without area
+  dropped, nobody found is an error). The photo is only looked at: it is
+  never edited or sent to the image model (Sol's review already sees it in
+  the finished slide). The editor's focal point on the photo, when set, wins
+  and takes the place of Luna's answer (`focusSubject`).
+- **The layout** (`fitPortrait`, creative-portrait-composite.ts): each of
+  the five layouts' frames is filled with the largest window of its shape
+  placed on the person (the face's middle at 40% of the window's height,
+  else the person centred); the layout that cuts the least of the face
+  (weight 30) and of the body (3), hides no face behind an arch's rounded
+  top or a circle's edge (20), and enlarges the photo the least beyond 1.15
+  (4 per unit) wins; the layout of the photo slide before only breaks ties
+  (0.6), the slide's rotation the last ones. Without anyone located the
+  slide keeps its rotation and the composite's automatic crop, with a note.
+- **One fit, three uses:** the slide's material keeps it
+  (`pasted.portrait`: layout, crop, source `ai` | `editor` | `automatic`,
+  face, person); the prompt reserves that layout's zone, the composite shows
+  that window (`compositeDocumentaryPortrait({ crop })`, which wins over the
+  focal point), and Sol is told that region. Each attempt records the fit
+  it was made with (`attempt.portrait`): an edit or a correction keeps its
+  base image's, a fresh image (the first, or "make it again" without an
+  edit) takes the photo's fit, which is chosen then for a slide made before
+  this step; an image made before keeps the slide's rotation.
+- The trace records each look (`draft2_portrait_subject`, with its cost).

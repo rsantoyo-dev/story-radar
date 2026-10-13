@@ -94,6 +94,83 @@ export function portraitLayoutForSlide(order: number): PortraitLayoutId {
   return PORTRAIT_LAYOUTS[(Math.max(1, order) - 1) % PORTRAIT_LAYOUTS.length].id;
 }
 
+/** A box on the photo, in fractions of its width and height (0 is the left or top edge, 1 the right or bottom). */
+export type PortraitBox = { left: number; top: number; right: number; bottom: number };
+/** Where the person is on the photo: their face and the part of them it shows, as a vision model located them, or the editor's focal point as a small face. */
+export type PortraitSubject = { face?: PortraitBox; person?: PortraitBox };
+/** The window of the photo a frame shows, in the photo's pixels after its EXIF rotation. */
+export type PortraitCrop = { left: number; top: number; width: number; height: number };
+/** The layout a photo takes on its slide and the window of it the frame shows; without a crop the composite crops on its own. */
+export type PortraitFit = { layout: PortraitLayoutId; crop?: PortraitCrop };
+
+/** Beyond this the photo is enlarged past its own pixels and reads soft; each tenth more costs a little. */
+const FREE_ENLARGEMENT = 1.15;
+/** Where a face's middle sits in its window, from the top: room above the head, the shoulders below. */
+const FACE_LINE = 0.4;
+
+/**
+ * The largest window of the frame's shape inside the photo, placed on the
+ * person: the face's middle at FACE_LINE of its height when the face is
+ * known, else the person centred; with neither, the photo's middle.
+ */
+function subjectWindow(photo: { width: number; height: number }, frame: { width: number; height: number }, subject: PortraitSubject): PortraitCrop {
+  const aspect = frame.width / frame.height;
+  const width = Math.min(photo.width, Math.round(photo.height * aspect));
+  const height = Math.min(photo.height, Math.round(width / aspect));
+  const anchor = subject.face ?? subject.person;
+  const clamp = (value: number, max: number) => Math.min(Math.max(0, Math.round(value)), max);
+  if (!anchor) return { left: Math.round((photo.width - width) / 2), top: Math.round((photo.height - height) / 2), width, height };
+  const x = ((anchor.left + anchor.right) / 2) * photo.width;
+  const y = ((anchor.top + anchor.bottom) / 2) * photo.height;
+  return { left: clamp(x - width / 2, photo.width - width), top: clamp(y - height * (subject.face ? FACE_LINE : 0.5), photo.height - height), width, height };
+}
+
+/** How much of a box the window leaves out, as a fraction of the box's area. */
+function leftOut(box: PortraitBox | undefined, window: PortraitCrop, photo: { width: number; height: number }): number {
+  if (!box) return 0;
+  const [left, top, right, bottom] = [box.left * photo.width, box.top * photo.height, box.right * photo.width, box.bottom * photo.height];
+  const area = Math.max(1, (right - left) * (bottom - top));
+  const kept = Math.max(0, Math.min(right, window.left + window.width) - Math.max(left, window.left)) * Math.max(0, Math.min(bottom, window.top + window.height) - Math.max(top, window.top));
+  return 1 - kept / area;
+}
+
+/** How much of the face an arch's rounded top or a circle's edge hides: the corners of the face's oval outside the shape, as a fraction. */
+function maskedFace(layout: PortraitLayout, window: PortraitCrop, face: PortraitBox | undefined, photo: { width: number; height: number }): number {
+  if (!face || (layout.shape !== "arch" && layout.shape !== "circle")) return 0;
+  const { width, height } = layout.photo;
+  const scale = width / window.width;
+  // A face is an oval: its box's corners pulled 15% inwards.
+  const inset = (from: number, to: number) => [from + (to - from) * 0.15, to - (to - from) * 0.15];
+  const [x0, x1] = inset(face.left * photo.width, face.right * photo.width).map((value) => (value - window.left) * scale);
+  const [y0, y1] = inset(face.top * photo.height, face.bottom * photo.height).map((value) => (value - window.top) * scale);
+  const inside = ([x, y]: number[]) => layout.shape === "circle"
+    ? ((x - width / 2) / (width / 2)) ** 2 + ((y - height / 2) / (height / 2)) ** 2 <= 1
+    : y >= width / 2 || (x - width / 2) ** 2 + (y - width / 2) ** 2 <= (width / 2) ** 2;
+  return [[x0, y0], [x1, y0], [x0, y1], [x1, y1]].filter((corner) => !inside(corner)).length / 4;
+}
+
+/**
+ * The layout that shows the person best, and the window of the photo it
+ * shows: each layout's frame is filled with the largest window of its shape
+ * placed on the person, and the one that cuts the least of the face and the
+ * body, hides no face behind an arch or a circle, and enlarges the photo the
+ * least wins; the layout of the photo slide before it, when given, only
+ * breaks ties, so photo slides still vary. Without a face or a person the
+ * crop is left to the composite.
+ */
+export function fitPortrait(photo: { width: number; height: number }, subject: PortraitSubject, { avoid = [], order = 1 }: { avoid?: readonly string[]; order?: number } = {}): PortraitFit {
+  const rotation = portraitLayoutForSlide(order);
+  let best: { fit: PortraitFit; cost: number } | undefined;
+  for (const layout of PORTRAIT_LAYOUTS) {
+    const window = subjectWindow(photo, layout.photo, subject);
+    const enlargement = layout.photo.width / window.width;
+    const cost = 30 * leftOut(subject.face, window, photo) + 3 * leftOut(subject.person, window, photo) + 20 * maskedFace(layout, window, subject.face, photo)
+      + 4 * Math.max(0, enlargement - FREE_ENLARGEMENT) + (avoid.includes(layout.id) ? 0.6 : 0) + (layout.id === rotation ? 0 : 0.01);
+    if (!best || cost < best.cost) best = { fit: { layout: layout.id, ...(subject.face || subject.person ? { crop: window } : {}) }, cost };
+  }
+  return best!.fit;
+}
+
 function layoutById(id: string | undefined): PortraitLayout {
   return PORTRAIT_LAYOUTS.find((layout) => layout.id === id) ?? LEGACY_LAYOUT;
 }
@@ -185,8 +262,16 @@ export function focalCrop(photo: { width: number; height: number }, frame: { wid
   };
 }
 
-async function framedPhoto(photo: Uint8Array, frame: { width: number; height: number }, focus?: { x: number; y: number }): Promise<Buffer> {
+async function framedPhoto(photo: Uint8Array, frame: { width: number; height: number }, focus?: { x: number; y: number }, crop?: PortraitCrop): Promise<Buffer> {
   const oriented = sharp(photo, { limitInputPixels: 40_000_000 }).rotate();
+  // The window fitPortrait chose for this frame, on the person: kept inside the photo, then drawn at the frame's size.
+  if (crop) {
+    const { data, info } = await oriented.toBuffer({ resolveWithObject: true });
+    const left = Math.min(Math.max(0, crop.left), Math.max(0, info.width - 1));
+    const top = Math.min(Math.max(0, crop.top), Math.max(0, info.height - 1));
+    const window = { left, top, width: Math.max(1, Math.min(crop.width, info.width - left)), height: Math.max(1, Math.min(crop.height, info.height - top)) };
+    return sharp(data, { limitInputPixels: 40_000_000 }).extract(window).resize({ ...frame, fit: "fill" }).ensureAlpha().png().toBuffer();
+  }
   // Without the editor's focal point the crop keeps the most salient part,
   // which in a bright landscape can be the trees rather than the people.
   if (!focus) return oriented.resize({ ...frame, fit: "cover", position: sharp.strategy.attention }).ensureAlpha().png().toBuffer();
@@ -205,6 +290,7 @@ export async function compositeDocumentaryPortrait({
   layout: layoutId,
   accent,
   focus,
+  crop,
 }: {
   image: Uint8Array;
   photo: Uint8Array;
@@ -212,11 +298,13 @@ export async function compositeDocumentaryPortrait({
   accent?: string;
   /** The editor's focal point on the photo; absent, the crop is automatic. */
   focus?: { x: number; y: number };
+  /** The window of the photo to show (fitPortrait's), which wins over the focal point. */
+  crop?: PortraitCrop;
 }): Promise<Buffer> {
   const layout = layoutById(layoutId);
   const { left, top, width, height } = layout.photo;
-  // Cropped to the shape around the editor's focal point when there is one.
-  const cropped = await framedPhoto(photo, { width, height }, focus);
+  // Cropped to the window chosen on the person, else around the editor's focal point when there is one.
+  const cropped = await framedPhoto(photo, { width, height }, focus, crop);
   const shaped = layout.shape === "rect"
     ? cropped
     : await sharp(cropped).composite([{ input: shapeSvg(layout, "#000"), blend: "dest-in" }]).png().toBuffer();

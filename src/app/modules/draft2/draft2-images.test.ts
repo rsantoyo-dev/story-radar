@@ -16,6 +16,7 @@ import * as contentTypes from "../stories/creative-content.types";
 import * as geoContact from "../stories/creative-geo-contact";
 import * as characterGeneration from "../stories/creative-character-generation";
 import * as selectBrand from "../stories/select-brand-references";
+import { fitPortrait } from "../stories/creative-portrait-composite";
 import { loadInSandbox } from "./draft2-test-sandbox";
 import { createHash } from "node:crypto";
 
@@ -74,6 +75,10 @@ function harness({ session, polls = 1, reviewOf = clean, clock, pollMs = 30_000 
     charges: [] as Record<string, unknown>[],
     prompts: [] as Record<string, unknown>[],
     sections: [] as Record<string, unknown>[],
+    /** Luna's looks at real photos (the person named), the zones the prompts reserve and the windows the composite shows. */
+    located: [] as string[],
+    zones: [] as string[],
+    portraits: [] as Record<string, unknown>[],
   };
   const r2 = new Map<string, Buffer>();
   const pollsLeft = new Map<string, number>();
@@ -84,6 +89,9 @@ function harness({ session, polls = 1, reviewOf = clean, clock, pollMs = 30_000 
   const expected = (unit: { headline: string; subheadline?: string; body?: string; ctaQuestion?: string }) => [unit.headline, unit.subheadline, unit.body, unit.ctaQuestion].filter(Boolean).join("\n");
   const fakeSharp = () => ({
     png: () => ({ toBuffer: async () => Buffer.from("map-png") }), resize: () => ({ jpeg: () => ({ toBuffer: async () => Buffer.from("jpeg") }) }),
+    // A real photo before its slide: its size, and the preview Luna looks at.
+    metadata: async () => ({ width: 800, height: 1000 }),
+    rotate: () => ({ resize: () => ({ jpeg: () => ({ toBuffer: async () => Buffer.from("preview") }) }) }),
     // A slide's section of a master scene: the rectangle cut and the size it is drawn at.
     extract: (rect: { left: number; top: number; width: number; height: number }) => ({ resize: (width: number, height: number) => ({ png: () => ({ toBuffer: async () => {
       calls.sections.push({ ...rect, to: `${width}x${height}` });
@@ -123,8 +131,9 @@ function harness({ session, polls = 1, reviewOf = clean, clock, pollMs = 30_000 
     },
     "../stories/manage-creative-assets": { compositeStoredCreativeBrand: step("logo"), isTransientFalSubmitError: () => false },
     "../stories/creative-portrait-composite": {
-      compositeDocumentaryPortrait: step("portrait"), portraitAccent: () => "#E3A62F", portraitLayoutForSlide: () => "rounded-left",
-      portraitPhotoRegion: () => ({ left: 10, top: 40, right: 50, bottom: 90 }), portraitZonePrompt: () => "\n<DOCUMENTARY_PHOTO_ZONE>",
+      compositeDocumentaryPortrait: async (input: { image: Uint8Array; layout?: string; crop?: unknown }) => { calls.portraits.push({ layout: input.layout, crop: input.crop }); return step("portrait")(input); },
+      portraitAccent: () => "#E3A62F", portraitLayoutForSlide: () => "rounded-left", fitPortrait,
+      portraitPhotoRegion: () => ({ left: 10, top: 40, right: 50, bottom: 90 }), portraitZonePrompt: (layout: string) => { calls.zones.push(layout); return "\n<DOCUMENTARY_PHOTO_ZONE>"; },
     },
     "../stories/creative-map-panel": {
       compositeMapPanel: step("map"), mapInsetVisualDirection: (direction: string) => `${direction} MAP INSET`, mapPaletteFromBrand: () => ({ surface: "#F6F0E4", primary: "#173F52", accent: "#E3A62F" }),
@@ -184,7 +193,13 @@ function harness({ session, polls = 1, reviewOf = clean, clock, pollMs = 30_000 
     "../stories/creative-geo-contact": geoContact,
     "../stories/creative-place-visual": { verifiedPlacePhotoInstruction: (name: string) => `\nPLACE PHOTO ${name}` },
     "../stories/creative-image-review": review,
-    "../stories/openai-structured-response": { generateOpenAiStructuredResponse: async (input: { contents: { slide: { label: string }; visibleText: string }; schemaName: string; images: string[] }) => {
+    "../stories/openai-structured-response": { generateOpenAiStructuredResponse: async (input: { contents: { slide: { label: string }; visibleText: string; person?: string }; schemaName: string; images: string[] }) => {
+      if (input.schemaName === "draft2_portrait_subject") {
+        calls.located.push(input.contents.person ?? "");
+        // A medium shot: the face high in the middle, the person to the bottom.
+        const text = JSON.stringify({ faceVisible: true, people: 1, face: { left: 0.4, top: 0.12, right: 0.6, bottom: 0.32 }, person: { left: 0.15, top: 0.06, right: 0.85, bottom: 1 } });
+        return { text, provider: "openai", model: "gpt-6-luna", usage: { promptTokens: 700, outputTokens: 60, thoughtsTokens: 20, totalTokens: 760 }, cachedInputTokens: 0 };
+      }
       const slide = carousel.find((entry) => entry.label === input.contents.slide.label)!.slide;
       calls.reviews.push({ slide, contents: input.contents as unknown as Record<string, unknown> });
       const version = calls.reviews.filter((entry) => entry.slide === slide).length;
@@ -329,12 +344,44 @@ test("a real person's portrait and a verified map are pasted after generation, u
   assert.match(prompt(1), /<DOCUMENTARY_PHOTO_ZONE>/);
   assert.match(prompt(2), /MAP INSET[^]*<VERIFIED_MAP_ZONE>/);
   assert.equal(json(h.calls.prompts.filter((entry) => entry.order !== 3).sort((a, b) => Number(a.order) - Number(b.order)).map((entry) => [entry.characters, entry.verifiedImagery])), json([[[], true], [[], true]]));
-  assert.equal(json([cover.material[0], s1.material[0]]), json([
+  // Luna looked at the photo once, before the slide went out; its layout is the one the prompt reserved and the composite filled, with the window on her face.
+  const portrait = cover.material[0].kind === "pasted-photo" ? cover.material[0].portrait! : undefined;
+  assert.equal(json([h.calls.located, portrait?.source, portrait?.face, h.calls.zones, h.calls.portraits]), json([
+    ["Catherine Fournier"], "ai", { left: 0.4, top: 0.12, right: 0.6, bottom: 0.32 }, [portrait?.layout], [{ layout: portrait?.layout, crop: portrait?.crop }],
+  ]));
+  assert.ok(portrait?.crop && portrait.crop.top <= 0.12 * 1000, "the window keeps her whole face");
+  assert.ok(session.trace.some((entry) => entry.operation === "draft2_portrait_subject" && entry.model === "gpt-6-luna" && entry.outcome === "ok"));
+  assert.equal(json([{ ...cover.material[0], portrait: undefined }, s1.material[0]]), json([
     { kind: "pasted-photo", storyPhotoId: "55555555-5555-4555-8555-555555555555", name: "Catherine Fournier", person: true, entityId: "e1", sha256: "c".repeat(64) },
     { kind: "map", entityId: "e2", name: "Parc des Parulines", source: "google", panel: { provider: "Google", layout: "inset-labelled", label: { name: "Parc des Parulines", address: "166 chemin du Clocher" }, sha256: s1.material[0].kind === "map" ? s1.material[0].panel!.sha256 : "" } },
   ]));
   const reviewed = (slide: string) => h.calls.reviews.find((entry) => entry.slide === slide)!.contents;
   assert.equal(json([(reviewed("cover").verifiedPhoto as { person: string }).person, (reviewed("s1").verifiedMap as { provider: string }).provider]), json(["Catherine Fournier", "Google"]));
+});
+
+test("an image made before its photo was fitted keeps the slide's layout when edited; made again from its prompt, it is fitted", async () => {
+  const inventory: Draft2Inventory = {
+    ...INVENTORY,
+    entities: [{ id: "e1", name: "Catherine Fournier", kind: "person", role: "subject", description: "", factIds: ["f1"], person: { status: "confirmed", candidates: [], confirmed: { entityId: "Q1", name: "Catherine Fournier", thumbnailUrl: "u", author: "A", license: "CC BY 4.0", commonsUrl: "c", storyPhotoId: "55555555-5555-4555-8555-555555555555" } } }],
+  };
+  const script = { ...SCRIPT, slides: [scriptSlide("cover", { need: "real-photo", references: ["e1"] }), scriptSlide("s1"), scriptSlide("last")] };
+  const visual = { ...VISUAL, candidates: [script], rounds: [{ ...VISUAL.rounds[0], candidates: [script] }] };
+  const h = harness({ session: { visual, inventory } });
+  const first = await h.run();
+  // The run as it was before photos were fitted: no fit on the photo, none on its image.
+  const before = JSON.parse(JSON.stringify(first.images)) as Draft2Images;
+  const cover = before.slides[0];
+  if (cover.material[0].kind === "pasted-photo") delete cover.material[0].portrait;
+  delete cover.attempts[0].portrait;
+  h.setRow({ images: before });
+  await h.decide({ action: "regenerate", slide: "cover", instruction: "Warmer light", edit: true });
+  const edited = await h.run({ resume: true });
+  assert.equal(json([edited.images!.slides[0].attempts[1].portrait, h.calls.located.length, h.calls.zones.at(-1)]), json([{ layout: "rounded-left" }, 1, "rounded-left"]), "the edit keeps the layout its base image was made with; nobody looks at the photo again");
+  await h.decide({ action: "regenerate", slide: "cover" });
+  const fresh = await h.run({ resume: true });
+  const slide = fresh.images!.slides[0];
+  const fit = slide.material[0].kind === "pasted-photo" ? slide.material[0].portrait : undefined;
+  assert.equal(json([h.calls.located.length, fit?.source, slide.attempts[2].portrait]), json([2, "ai", { layout: fit?.layout, crop: fit?.crop }]), "a fresh image of a photo not fitted yet is fitted first");
 });
 
 test("images wait for a finished visual script, and for fal and Sol to be configured", async () => {
