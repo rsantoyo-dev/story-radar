@@ -153,7 +153,7 @@ export async function reviewDraft2Carousel({ topicId, storyId, sessionId }: Draf
       const readerAnswer = await call(readerBy, "draft2_review_read", {
         instructions: reader.instructions, contents: { task: "read", slides }, schema: DRAFT2_READER_SCHEMA, maxOutputTokens: READER_MAX_OUTPUT_TOKENS, reasoningEffort: "low", timeoutMs: READER_TIMEOUT_MS, skillVersions: reader.skillVersions,
       });
-      const read = parseReaderAnswer(readerAnswer, carousel.map((slide) => slide.slide));
+      const read = parseReaderAnswer(readerAnswer, carousel);
       // 2. The editor: the whole carousel, the focus, the reader's reactions and the facts; the independent gate by default.
       const editorBy: FunnelRole = { provider: "openai", model: models.editor };
       const editor = composeInstructions("carousel-editor", [REVIEW_SKILL, ...creativeSkills(chosen.focus.values)], brief);

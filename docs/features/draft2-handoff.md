@@ -515,3 +515,22 @@ Watch on the first real runs: how many patches the program refuses and why
 (a model that paraphrases `before` instead of quoting it loses every patch),
 whether Sol's patches read better than the judged winners they replace, and
 whether the reader's "stopped at" lands on the slides the editor would name.
+
+### Addendum, 2026-10-13: the Review's first real run
+
+Hello Austin, the first Review in an autopilot: it failed twice in six
+seconds with "The reader answered for none of the carousel's slides". Luna
+(low) answered ~300 tokens each time, so it did read; it named the slides its
+own way (the input gives `slide`, `label` and `headline`, and nothing said
+which to answer with), and the parser knew ids only. The editor's patches
+would have lost slides the same way, and their field "text" (the name the
+input uses for the body) was not a patch field.
+
+Fix: `resolveSlide` (id in any case, label, position in three languages,
+headline; a reader who named none but answered once per slide is read in
+order), long lines cut instead of dropped, `patchField` synonyms ("text",
+"subtitle", "call to action", "practical line"), the id rule in both roles
+and the review skill (v2), and the error now says what the reader named.
+Lesson, the third time: a cheap model deviates on answer format; a parser must
+resolve every deviation whose meaning is unambiguous and stay strict on the
+rest, and a new structured call needs one real run before it is believed.

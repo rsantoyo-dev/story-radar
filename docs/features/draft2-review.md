@@ -17,7 +17,11 @@ Two provider calls, then the program:
    slides in order on a phone and says, for each one, whether they would
    swipe and the thought in their head; then whether they would follow,
    the comment they would leave, whether they would share, where they
-   stopped, and a one-line verdict.
+   stopped, and a one-line verdict. The program resolves the slides however
+   the reader named them (id in any case, label, position, headline; in order
+   when none fits and there is one answer per slide) and cuts long lines
+   instead of dropping them; the editor's patches resolve the same way, and
+   a field named "text" is the body (the cover's subheadline).
 2. **The editor** (role `carousel-editor`, the review skill v1, the
    independent gate by default: `DRAFT2_MODEL_REVIEW_JUDGE`, else Sol,
    effort medium). It reads the slides, the focus (interest, spine, voice),

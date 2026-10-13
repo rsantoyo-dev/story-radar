@@ -110,7 +110,7 @@ test("the review reads the chosen carousel: a reader of the audience first, then
   assert.equal(json(review.editor?.patches.map((patch) => [patch.id, patch.owner, patch.status])), json([["p1", "opening", "proposed"], ["p2", "opening", "refused"], ["p3", "deck", "refused"]]));
   assert.match(review.editor!.patches[1].note ?? "", /headline/i, "a cover headline over eight words breaks the opening's rule");
   assert.match(review.editor!.patches[2].note ?? "", /quoted "Tools for grown hands\."/);
-  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.outcome, entry.effort, entry.skillVersions])), json([["review", "draft2_review_read", "ok", "low", {}], ["review", "draft2_review", "ok", "medium", { review: "1" }]]));
+  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.outcome, entry.effort, entry.skillVersions])), json([["review", "draft2_review_read", "ok", "low", {}], ["review", "draft2_review", "ok", "medium", { review: "2" }]]));
 });
 
 test("a patch applied edits the chosen version in place, in its step and in the copies the later steps keep; the review keeps what it replaced, and an undo restores it", async () => {

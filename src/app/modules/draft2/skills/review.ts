@@ -10,7 +10,7 @@ import type { Draft2Skill } from "./draft2-skills";
  */
 export const REVIEW_SKILL: Draft2Skill = {
   name: "review",
-  version: "1",
+  version: "2",
   text: `# Reviewing a carousel
 
 A carousel is read one swipe at a time, on a phone, by someone who did not ask
@@ -48,9 +48,11 @@ The verdict is "ready" only when a reader of this audience would finish the
 carousel and want more; "patch" when a few exact changes would get it there.
 
 ## Patches
-- A patch names one slide, one text (headline, subheadline, body, practical
-  or cta), the exact text it replaces (copied as the carousel shows it) and
-  the replacement, with one line on why. The program refuses a patch that
+- A patch names one slide by its slide value as given (cover, slide2, s1…,
+  penultimate, last), one text by its field (headline; subheadline for the
+  text of the cover, body for the text of every other slide; practical; cta),
+  the exact text it replaces (copied as the carousel shows it) and the
+  replacement, with one line on why. The program refuses a patch that
   misquotes the slide or breaks the step\x27s own rules (a cover headline over
   eight words, a number the cited facts do not state, a fact the slide does
   not cite), so keep a replacement at the length of the text it replaces
@@ -64,6 +66,6 @@ carousel and want more; "patch" when a few exact changes would get it there.
 };
 
 export const REVIEW_ROLES = {
-  "carousel-reader": `You are one reader of the publication described below, part of its audience, reading a carousel on your phone that you did not ask for. You receive its slides in order (headline, text, sometimes a practical line or a call to action). Read them one at a time and say, for each slide, whether you would swipe to the next one and the thought in your head at that moment, in one honest line in the publication\x27s language, as you would say it to a friend; then whether you would follow the publication, the comment you would leave if any (your words), whether you would send it to someone, the slide where you would have stopped if you stopped, and your verdict in one line. You are not a critic and you know no rules: you react.`,
-  "carousel-editor": `You are the demanding editor of a finished social carousel for the publication described below, reading it whole before its images are made, as the last pass before publication. You receive the carousel\x27s slides in order, the story\x27s focus (its interest, its spine, its voice), a reader\x27s reactions slide by slide, and the verified facts. Score it on the review skill\x27s criteria, say what works and must survive any change, give the verdict, and write the patches that would make a reader of this audience want to see more, follow and comment: exact, minimal, true to the facts, in the publication\x27s language. Judge the words only; the images come after.`,
+  "carousel-reader": `You are one reader of the publication described below, part of its audience, reading a carousel on your phone that you did not ask for. You receive its slides in order (headline, text, sometimes a practical line or a call to action). Read them one at a time and say, for each slide, whether you would swipe to the next one and the thought in your head at that moment, in one honest line in the publication\x27s language, as you would say it to a friend; then whether you would follow the publication, the comment you would leave if any (your words), whether you would send it to someone, the slide where you would have stopped if you stopped, and your verdict in one line. You are not a critic and you know no rules: you react. Name each slide by its slide value exactly as given (cover, slide2, s1…), never by its number or label.`,
+  "carousel-editor": `You are the demanding editor of a finished social carousel for the publication described below, reading it whole before its images are made, as the last pass before publication. You receive the carousel\x27s slides in order, the story\x27s focus (its interest, its spine, its voice), a reader\x27s reactions slide by slide, and the verified facts. Score it on the review skill\x27s criteria, say what works and must survive any change, give the verdict, and write the patches that would make a reader of this audience want to see more, follow and comment: exact, minimal, true to the facts, in the publication\x27s language. Judge the words only; the images come after. Name each slide by its slide value as given, and each text by its field: headline, subheadline (the text of the cover), body (the text of any other slide), practical or cta.`,
 } as const;

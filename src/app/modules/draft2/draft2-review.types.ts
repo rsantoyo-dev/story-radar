@@ -146,22 +146,56 @@ const parseObject = (answer: string, what: string): Record<string, unknown> => {
   return parsed as Record<string, unknown>;
 };
 
-/** The reader's answer as the review keeps it: a reaction per known slide in the carousel's order; the rest within its limits. */
-export function parseReaderAnswer(answer: string, slides: readonly string[]): Draft2ReviewReader {
+/** A line cut to a limit (the reader knows no rules: a long line is kept, not dropped), one space between words. */
+const clip = (value: unknown, max: number): string => {
+  const line = typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
+  return line.length <= max ? line : `${line.slice(0, max - 1).trimEnd()}…`;
+};
+const normal = (value: string) => value.toLowerCase().replace(/\s+/g, " ").trim();
+/** A slide named by its position: "3", "#3", "slide 3", "slide 3 of 7", "3/7", in English, French or Spanish. */
+const POSITION_NAME = /^(?:slide|diapo(?:sitiva)?|#|n[°o]\.?)?\s*(\d{1,2})(?:\s*(?:\/|of|de|sur)\s*\d{1,2})?$/;
+
+/**
+ * The carousel slide a model named, however it named it: by its id (cover,
+ * slide2, s1…, in any case), by its label ("Slide 3"), by its position ("3",
+ * "#3", "slide 3 of 7": the third slide) or by its headline. Undefined when
+ * nothing fits. A cheap reader names slides its own way; the meaning is clear.
+ */
+export function resolveSlide(name: unknown, carousel: readonly Pick<Draft2CarouselSlide, "slide" | "label" | "headline">[]): string | undefined {
+  if (typeof name !== "string") return undefined;
+  const wanted = normal(name);
+  if (!wanted) return undefined;
+  const found = carousel.find((slide) => normal(slide.slide) === wanted) ?? carousel.find((slide) => normal(slide.label) === wanted) ?? carousel.find((slide) => normal(slide.headline) === wanted);
+  if (found) return found.slide;
+  const position = POSITION_NAME.exec(wanted);
+  return position ? carousel[Number(position[1]) - 1]?.slide : undefined;
+}
+
+/**
+ * The reader's answer as the review keeps it: a reaction per known slide in
+ * the carousel's order, the slides resolved however the reader named them (a
+ * reader who named none but answered once per slide is read in order); long
+ * lines are cut, never dropped.
+ */
+export function parseReaderAnswer(answer: string, carousel: readonly Pick<Draft2CarouselSlide, "slide" | "label" | "headline">[]): Draft2ReviewReader {
   const body = parseObject(answer, "reader");
+  const entries = (Array.isArray(body.reactions) ? body.reactions : []).map(record);
+  const resolved = entries.map((reaction) => resolveSlide(reaction.slide, carousel));
+  const inOrder = entries.length === carousel.length && resolved.every((slide) => slide === undefined);
   const given = new Map<string, Draft2ReviewReaction>();
-  for (const entry of Array.isArray(body.reactions) ? body.reactions : []) {
-    const reaction = record(entry);
-    const slide = typeof reaction.slide === "string" ? reaction.slide.trim() : "";
-    const thought = text(reaction.thought, REVIEW_LINE_MAX_CHARACTERS);
-    if (slides.includes(slide) && thought && !given.has(slide)) given.set(slide, { slide, swipe: reaction.swipe === true, thought });
+  entries.forEach((reaction, index) => {
+    const slide = inOrder ? carousel[index]?.slide : resolved[index];
+    const thought = clip(reaction.thought, REVIEW_LINE_MAX_CHARACTERS);
+    if (slide && thought && !given.has(slide)) given.set(slide, { slide, swipe: reaction.swipe === true, thought });
+  });
+  const reactions = carousel.flatMap(({ slide }) => { const reaction = given.get(slide); return reaction ? [reaction] : []; });
+  if (!reactions.length) {
+    const named = entries.map((reaction) => JSON.stringify(clip(reaction.slide, 30))).slice(0, 8).join(", ");
+    throw new Draft2ResponseError(`The reader answered for none of the carousel's slides: it named ${named || "nothing"}; the slides are ${carousel.map((slide) => slide.slide).join(", ")}`);
   }
-  const reactions = slides.flatMap((slide) => { const reaction = given.get(slide); return reaction ? [reaction] : []; });
-  if (!reactions.length) throw new Draft2ResponseError("The reader answered for none of the carousel's slides");
-  const verdict = text(body.verdict, REVIEW_LINE_MAX_CHARACTERS);
-  if (!verdict) throw new Draft2ResponseError(`The reader's verdict is missing or longer than ${REVIEW_LINE_MAX_CHARACTERS} characters`);
-  const stoppedAt = typeof body.stoppedAt === "string" && slides.includes(body.stoppedAt.trim()) ? body.stoppedAt.trim() : null;
-  return { reactions, follow: body.follow === true, comment: text(body.comment, REVIEW_LINE_MAX_CHARACTERS) ?? "", share: body.share === true, stoppedAt, verdict };
+  const verdict = clip(body.verdict, REVIEW_LINE_MAX_CHARACTERS);
+  if (!verdict) throw new Draft2ResponseError("The reader's verdict is missing");
+  return { reactions, follow: body.follow === true, comment: clip(body.comment, REVIEW_LINE_MAX_CHARACTERS), share: body.share === true, stoppedAt: resolveSlide(body.stoppedAt, carousel) ?? null, verdict };
 }
 
 /** The step a slide's words belong to: the Opening's two, the Closing's last two, the Deck's between. */
@@ -195,13 +229,25 @@ export function slideText(slide: Draft2CarouselSlide, field: Draft2ReviewPatchFi
 /** Two texts are the same words when only spacing differs. */
 export const sameWords = (a: string, b: string) => a.replace(/\s+/g, " ").trim() === b.replace(/\s+/g, " ").trim();
 
+/** The patch field a model named: the contract's names, or the slide's "text" (the cover's subheadline, every other slide's body), "subtitle", "call to action", "practical line". */
+export function patchField(name: unknown, slide: Pick<Draft2CarouselSlide, "slide">): Draft2ReviewPatchField | undefined {
+  const key = typeof name === "string" ? name.toLowerCase().replace(/[^a-z]/g, "") : "";
+  if (key === "text" || key === "copy") return slide.slide === "cover" ? "subheadline" : "body";
+  if (key === "subtitle" || key === "subhead" || key === "subheading") return "subheadline";
+  if (key === "calltoaction") return "cta";
+  if (key === "practicalline") return "practical";
+  return REVIEW_PATCH_FIELDS.find((candidate) => candidate === key);
+}
+
 export type Draft2ReviewAnswer = Omit<Draft2ReviewEditor, "patches"> & { patches: Omit<Draft2ReviewPatch, "id" | "owner" | "status" | "note">[] };
 
 /**
  * The editor's answer, checked against the contract and the carousel it read:
  * integer scores clamped to 1–100, a verdict, a summary, up to six strengths,
- * and up to six patches whose slide the carousel has and whose field that
- * slide has; a patch for a text the slide lacks is dropped, never fatal.
+ * and up to six patches whose slide the carousel has (named by id, label,
+ * position or headline) and whose field that slide has ("text" is the body,
+ * or the cover's subheadline); a patch for a text the slide lacks is dropped,
+ * never fatal.
  */
 export function parseReviewAnswer(answer: string, carousel: readonly Draft2CarouselSlide[]): Draft2ReviewAnswer {
   const body = parseObject(answer, "review");
@@ -218,11 +264,12 @@ export function parseReviewAnswer(answer: string, carousel: readonly Draft2Carou
   const patches: Draft2ReviewAnswer["patches"] = [];
   for (const entry of Array.isArray(body.patches) ? body.patches : []) {
     const patch = record(entry);
-    const slide = carousel.find((candidate) => candidate.slide === (typeof patch.slide === "string" ? patch.slide.trim() : ""));
-    const field = REVIEW_PATCH_FIELDS.find((candidate) => candidate === patch.field);
+    const slideId = resolveSlide(patch.slide, carousel);
+    const slide = carousel.find((candidate) => candidate.slide === slideId);
+    const field = slide ? patchField(patch.field, slide) : undefined;
     const before = typeof patch.before === "string" ? patch.before.trim() : "";
     const after = text(patch.after, REVIEW_PATCH_MAX_CHARACTERS);
-    const reason = text(patch.reason, REVIEW_LINE_MAX_CHARACTERS);
+    const reason = clip(patch.reason, REVIEW_LINE_MAX_CHARACTERS);
     if (!slide || !field || !slideFields(slide).includes(field) || !after || !reason) continue;
     if (patches.some((existing) => existing.slide === slide.slide && existing.field === field)) continue;
     patches.push({ slide: slide.slide, field, before, after, reason });
