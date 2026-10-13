@@ -35,6 +35,11 @@ export const FOCUS_STRUCTURES = ["arc", "steps", "list"] as const;
 export const FOCUS_GRAVITIES = ["light", "ordinary", "serious", "grave"] as const;
 export const FOCUS_GOALS = CREATIVE_CONVERSION_GOALS;
 export const FOCUS_AUDIENCE_MAX_CHARACTERS = 300;
+/** The deliberation before the telling: the interest in one line, and two to four ways to tell the story compared. */
+export const FOCUS_INTEREST_MAX_CHARACTERS = 200;
+export const FOCUS_APPROACH_MAX_CHARACTERS = 160;
+export const FOCUS_MIN_APPROACHES = 2;
+export const FOCUS_MAX_APPROACHES = 4;
 export const FOCUS_CONSEQUENCE_MAX_CHARACTERS = 300;
 /** v1's editorial focus paragraph had the same ceiling. */
 export const FOCUS_DIRECTION_MAX_CHARACTERS = 1_500;
@@ -249,6 +254,8 @@ export type Draft2FocusValues = {
   narrative?: Draft2FocusNarrative;
   /** The story in beats, one per slide, that the words and the images both follow. Absent on a focus decided before spines. */
   spine?: Draft2FocusSpine;
+  /** What in the facts makes this audience stop, in one line: Claude's deliberation, read by every step. Absent on a focus decided before it. */
+  interest?: string;
   /** How the images tell this story within the brand's visual identity: the world they live in, who leads them, what recurs. The visual script follows it. Absent on a focus decided before the field existed. */
   visualDirection?: string;
 };
@@ -286,7 +293,12 @@ export type Draft2Focus = {
   inventoryVersion?: number;
   /** True once the editor changed how the story is told (concept, form or spine) while the directions still say what Claude wrote for the earlier telling; rewriting them clears it. */
   staleDirections?: boolean;
+  /** Claude's deliberation on the last decision: the interest it found and the ways to tell the story it compared, the chosen one first. */
+  deliberation?: Draft2FocusDeliberation;
 };
+
+/** What makes the story worth telling to this audience, and the tellings compared before one was chosen. */
+export type Draft2FocusDeliberation = { interest: string; approaches: string[] };
 
 
 /** The focus an opening run followed, kept on the run. */
@@ -307,6 +319,8 @@ export const DRAFT2_FOCUS_SCHEMA: Record<string, unknown> = {
   type: "object",
   properties: {
     lineId: { type: ["string", "null"] },
+    interest: { type: "string" },
+    approaches: { type: "array", items: { type: "string" } },
     audience: { type: "string" },
     framing: { type: "string", enum: [...FOCUS_FRAMINGS] },
     readerConsequence: {
@@ -381,7 +395,7 @@ export const DRAFT2_FOCUS_SCHEMA: Record<string, unknown> = {
       additionalProperties: false,
     },
   },
-  required: ["lineId", "audience", "framing", "readerConsequence", "structure", "goal", "voice", "concept", "conceptAlternatives", "narrative", "anchorAlternatives", "reasons"],
+  required: ["lineId", "interest", "approaches", "audience", "framing", "readerConsequence", "structure", "goal", "voice", "concept", "conceptAlternatives", "narrative", "anchorAlternatives", "reasons"],
   additionalProperties: false,
 };
 
@@ -740,7 +754,7 @@ export function parseFocusDecision(answer: string, { facts, lines, editorChoices
   editorChoices?: Record<string, unknown>;
   /** People and places' material: the brand characters, the people never drawn. */
   material?: Draft2FocusMaterial;
-}): { values: Draft2FocusValues; reasons: Partial<Record<Draft2FocusField, string>>; alternatives: Draft2NarrativeAlternative[]; premiseOptions: Draft2PremiseOption[] } {
+}): { values: Draft2FocusValues; reasons: Partial<Record<Draft2FocusField, string>>; alternatives: Draft2NarrativeAlternative[]; premiseOptions: Draft2PremiseOption[]; deliberation?: Draft2FocusDeliberation } {
   let parsed: unknown;
   try { parsed = JSON.parse(answer); } catch { throw new Draft2ResponseError("The focus answer is not valid JSON"); }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Draft2ResponseError("The focus answer is not an object");
@@ -753,6 +767,12 @@ export function parseFocusDecision(answer: string, { facts, lines, editorChoices
   if (lines.length && !line) throw new Draft2ResponseError(`The focus names an editorial line the Topic does not have (${String(body.lineId)})`);
 
   const audience = text(body.audience, FOCUS_AUDIENCE_MAX_CHARACTERS);
+  // The deliberation: an answer from before it has none; one that deliberates names the interest and compares at least two tellings.
+  const deliberates = body.interest !== undefined || body.approaches !== undefined;
+  const interest = deliberates ? text(body.interest, FOCUS_INTEREST_MAX_CHARACTERS) : undefined;
+  const approaches = (Array.isArray(body.approaches) ? body.approaches : []).flatMap((entry) => { const line = text(entry, FOCUS_APPROACH_MAX_CHARACTERS); return line ? [line] : []; }).slice(0, FOCUS_MAX_APPROACHES);
+  if (deliberates && !interest) throw new Draft2ResponseError(`The interest is missing or longer than ${FOCUS_INTEREST_MAX_CHARACTERS} characters: what in these facts would make this audience stop, in one line`);
+  if (deliberates && approaches.length < FOCUS_MIN_APPROACHES) throw new Draft2ResponseError(`Compare ${FOCUS_MIN_APPROACHES} to ${FOCUS_MAX_APPROACHES} ways to tell the story in approaches, the classic telling among them, each in at most ${FOCUS_APPROACH_MAX_CHARACTERS} characters`);
   const framing = oneOf(FOCUS_FRAMINGS, body.framing);
   const goal = oneOf(FOCUS_GOALS, body.goal);
   // The directions belong to the plan (the second call); an answer that carries them (the editor's, or an older single call) keeps them within their limits.
@@ -802,6 +822,7 @@ export function parseFocusDecision(answer: string, { facts, lines, editorChoices
     narrative,
     ...(spine ? { spine } : {}),
     ...(visualDirection ? { visualDirection } : {}),
+    ...(interest ? { interest } : {}),
   };
   const given = record((parsed as Record<string, unknown>).reasons);
   const chosen = new Set(Object.keys(editorChoices).map((key) => key === "lineId" ? "line" : key));
@@ -814,6 +835,7 @@ export function parseFocusDecision(answer: string, { facts, lines, editorChoices
     values, reasons,
     alternatives: parseAnchorAlternatives((parsed as Record<string, unknown>).anchorAlternatives, known, material?.people ?? []),
     premiseOptions: parsePremiseOptions((parsed as Record<string, unknown>).conceptAlternatives, known, material?.people ?? []),
+    ...(interest ? { deliberation: { interest, approaches } } : {}),
   };
 }
 
@@ -822,9 +844,10 @@ export function parseFocusDecision(answer: string, { facts, lines, editorChoices
  * Claude's own values under them, one version more. For an edited field,
  * Claude's earlier value stays the one the field can go back to.
  */
-export function decidedFocus(focus: Draft2Focus, decision: { values: Draft2FocusValues; reasons: Partial<Record<Draft2FocusField, string>>; alternatives?: Draft2NarrativeAlternative[]; premiseOptions?: Draft2PremiseOption[] }, decidedBy: Draft2FocusRole, now: Date): Draft2Focus {
+export function decidedFocus(focus: Draft2Focus, decision: { values: Draft2FocusValues; reasons: Partial<Record<Draft2FocusField, string>>; alternatives?: Draft2NarrativeAlternative[]; premiseOptions?: Draft2PremiseOption[]; deliberation?: Draft2FocusDeliberation }, decidedBy: Draft2FocusRole, now: Date): Draft2Focus {
   const edited = focus.edited.filter((field) => field !== "line" || decision.values.line?.id === focus.values?.line?.id);
-  const ai = Object.fromEntries(FOCUS_FIELDS.map((field) => [field, edited.includes(field) && focus.ai ? focus.ai[field] : decision.values[field]])) as Draft2FocusValues;
+  // Claude's own values, field by field, plus the interest it found (not a field the editor edits, always Claude's latest).
+  const ai = { ...Object.fromEntries(FOCUS_FIELDS.map((field) => [field, edited.includes(field) && focus.ai ? focus.ai[field] : decision.values[field]])), ...(decision.values.interest ? { interest: decision.values.interest } : {}) } as Draft2FocusValues;
   return {
     ...focus,
     status: "ready",
@@ -837,6 +860,7 @@ export function decidedFocus(focus: Draft2Focus, decision: { values: Draft2Focus
     narrativeReview: undefined,
     conceptOptions: decision.premiseOptions ?? [],
     conceptReview: undefined,
+    deliberation: decision.deliberation,
     decidedBy,
     decidedAt: now.toISOString(),
     updatedAt: now.toISOString(),
@@ -1041,6 +1065,7 @@ export function focusForModels(values: Draft2FocusValues) {
   const { line, readerConsequence, structure, voice } = values;
   return {
     ...(line ? { line: { name: line.name, objective: line.objective } } : {}),
+    ...(values.interest ? { interest: values.interest } : {}),
     audience: values.audience,
     framing: values.framing,
     readerConsequence: readerConsequence

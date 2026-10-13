@@ -10,11 +10,13 @@ import type { Draft2Skill } from "./draft2-skills";
  * reader discovers the news through a premise; the discovery skill); version
  * 7 the story arcs (the arcs skill); version 10 the order of decision (the
  * story, then how it is told, then the directions derived from it), the
- * spine (the spine skill) and the preference for a telling other than classic.
+ * spine (the spine skill); version 11 the deliberation: the interest named
+ * first and the ways to tell the story compared before one is chosen, in
+ * place of a preference for a telling other than classic.
  */
 export const FOCUS_SKILL: Draft2Skill = {
   name: "focus",
-  version: "10",
+  version: "11",
   text: `# The focus of a story
 
 The focus is the brief every later step follows: which editorial line the
@@ -28,10 +30,15 @@ Decide in this order, each decision resting on the ones before it:
 1. The story: line, audience, framing, readerConsequence, structure, goal and
    voice.
 2. How it is told: concept (how the reader meets the news) and narrative (how
-   the carousel is told across its slides). Prefer a telling other than
-   classic: the publication wants carousels that leave the mould, so classic
-   is the choice only when no arc, no premise and no form fits these facts,
-   this audience and this gravity, and the reason says why none does.
+   the carousel is told across its slides). Think outside the box before you
+   choose: name the interest (what in these facts would make this audience
+   stop, in one line) and compare at least three ways to tell it, the classic
+   telling among them, each in one line with what the reader would feel on
+   the cover and what it risks (interest and approaches in the answer). Then
+   choose the telling that serves the interest best and say why the others
+   lose. Classic is a valid choice when it serves best; a premise, an arc or a
+   form is never chosen for novelty, and never forced onto facts that do not
+   carry it.
 3. The spine: the story in beats, one per slide, from the concept and the form
    (the spine skill).
 4. The directions, derived from the spine: direction restates what the beats
@@ -41,6 +48,15 @@ Decide in this order, each decision resting on the ones before it:
 Steps 1 and 2 are the task "focus", answered first; steps 3 and 4 are the
 task "plan", answered in a second call from that decision, so the plan always
 follows the telling.
+
+## Deliberation
+- interest: what in these facts would make this audience stop and read, in
+  one line of at most 200 characters, in the publication's language; every
+  step reads it.
+- approaches: two to four ways to tell this story compared, one line of at
+  most 160 characters each, the classic telling among them and the chosen
+  one first: the telling, what the reader would feel on the cover, what it
+  risks.
 
 ## Fields
 - line: the editorial line the story serves, among the Topic's lines; their

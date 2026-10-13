@@ -504,3 +504,13 @@ version they follow, as before.
 The spine shows as a read-only list under the narrative; editing the beats
 (reorder, reword, mark the turn) and moving the Direction field below the
 spine in the layout are the next UI work.
+
+### Deliberation (2026-10-12, later)
+
+Focus skill v11: before choosing the telling, Claude names the interest (one
+line, ≤ 200 characters, `values.interest`, read by every step) and compares
+two to four ways to tell the story, the classic telling among them and the
+chosen one first (`focus.deliberation.approaches`, shown read-only). The
+preference for a telling other than classic (v10) is withdrawn: the editor
+wants stories thought outside the box, not forced out of it, and a form or a
+premise is never chosen for novelty or forced onto facts that do not carry it.

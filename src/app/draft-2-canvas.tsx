@@ -2025,6 +2025,11 @@ function FocusView({ focus, findings, material, saving, locked, onSave, onReset,
   // Text fields start again from the saved value whenever the focus changes.
   const key = (field: Draft2FocusField) => `${field}-${focus.version}`;
   return <div className={styles.focusBody}>
+    {focus.deliberation ? <div className={styles.focusField}>
+      <p className={styles.factMeta}><strong>Interest:</strong> {focus.deliberation.interest}</p>
+      <p className={styles.factMeta}><strong>Tellings Claude compared, the chosen one first:</strong></p>
+      <ol>{focus.deliberation.approaches.map((approach, index) => <li key={index}>{approach}</li>)}</ol>
+    </div> : null}
     <p className={styles.factMeta}>Focus v{focus.version}{decided ? ` · decided by Claude, ${decided}` : ""}{focus.edited.length ? ` · ${focus.edited.length} of your ${focus.edited.length === 1 ? "change" : "changes"} kept` : ""}. The opening follows this version.</p>
     {findings.length ? <InlineNotice tone="warning" title="The opening waits for this">{findings.map((finding) => finding.detail).join(" ")}</InlineNotice> : null}
     <div className={styles.focusGrid}>

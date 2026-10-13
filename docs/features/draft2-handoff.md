@@ -429,3 +429,36 @@ when `staleDirections` is set before the Opening runs. For the rules batch:
 the Opening's hook may now be judged against the hook beat, and the visual
 judge's "beat" criterion against the beat's image line, so the OFF_BEAT
 reading has an anchor at last; watch the first runs for it.
+
+### Addendum, 2026-10-12 late: deliberation, demanding editors, writers' voice
+
+Three changes the editor approved from a reviewer's notes, all cheap:
+
+- **Deliberation before the telling (focus skill v11).** The decision names
+  the interest (what in these facts would make this audience stop, one line,
+  ≤ 200 chars) and compares two to four tellings, the classic among them and
+  the chosen one first, before choosing; classic is a valid answer and a form
+  is never chosen for novelty. The preference for a telling other than
+  classic is gone: thinking outside the box is required, choosing outside it
+  is not. The interest lives in `values.interest`, so every step's snapshot
+  carries it and every writer and judge reads it; the approaches stay on
+  `focus.deliberation`, shown read-only in the canvas.
+- **Judges as demanding editors, with `keep`.** The five judge roles no longer
+  say "severe judge": they name what works and must be kept, what fails, and
+  the concrete change, and a correction that costs a strength is worse than
+  the flaw. Every score carries `keep` (what must survive revision), read by
+  the parser and carried into the revision request, whose instruction tells
+  the writer to protect it (`funnelRefineRequest`). Old judgments without
+  `keep` parse as before.
+- **The writers' voice.** Each writer role opens by saying who writes: an
+  expert editor of social carousels for this audience (opening, closing,
+  deck), an expert art director (visual script), the publication's social
+  editor (caption): concrete, natural, tension the facts sustain, never a
+  generic formula.
+
+Suggested next for 9.5 quality, not built: a whole-carousel read before the
+images (one call scoring flow, repetition across steps and the turn, with
+patch requests to specific steps); calibration exemplars from the editor's
+own ratings in the judges' instructions; a cheap reader simulation on the
+cover and slide 2 ("would you swipe, what do you expect next"); and the
+editor's choice vs the judge's winner as a running calibration signal.

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { funnelParseEvaluation, numbersIn, statedNumbers } from "./draft2-funnel";
+import { funnelParseEvaluation, funnelRefineRequest, numbersIn, statedNumbers } from "./draft2-funnel";
 import { Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
 
 const facts: Draft2Fact[] = [{ id: "f1", claim: "Doors open at 10 a.m. for 1,200 visitors.", evidence: "10 a.m. … 1,200 visitors", kind: "event", status: "established", importance: 80 }];
@@ -44,4 +44,19 @@ test("a judge that scores its own proposal, or names it the winner, does not end
   assert.throws(() => parse({ scores: [score("c1", 84), score("c2", 91), score("p1", 96)], proposals: [] }), (error: Error) => error instanceof Draft2ResponseError && /unknown candidate \(p1\)/.test(error.message), "a score for p1 with no proposal is still unknown");
   assert.throws(() => parse({ scores: [score("c1", 84), score("c2", 91), score("c3", 96)] }), /unknown candidate \(c3\)/, "any other unknown id is still fatal");
   assert.throws(() => parse({ winnerId: "c7", scores: [score("c1", 84), score("c2", 91)] }), /winner c7 is not one of the candidates/);
+});
+
+test("the judge says what must survive revision: keep is read on every score and the revision request tells the writer to protect it", () => {
+  type Candidate = { id: string; angle: string; text: string };
+  const options = { criteria: ["tension"], codes: ["OTHER"], parts: [], maxProposals: 1, parseProposal: (raw: unknown, fallbackId: string): Candidate | undefined => { const item = raw as { id?: string; text?: string }; return item.text ? { id: item.id ?? fallbackId, angle: "", text: item.text } : undefined; } };
+  const answer = JSON.stringify({ verdict: "revise", winnerId: "c1", summary: "Close.", suggestions: [], issues: [], proposals: [], scores: [{ candidateId: "c1", tension: 90, overall: 90, note: "Why.", keep: "The irony of the empty hall." }, { candidateId: "c2", tension: 80, overall: 80, note: "Why." }] });
+  const parsed = funnelParseEvaluation<Candidate, { candidateId: string; overall: number; note: string; keep?: string; tension: number }, { code: string; detail: string }>(answer, ["c1", "c2"], options);
+  assert.deepEqual(parsed.scores.map((score) => score.keep), ["The irony of the empty hall.", undefined], "an older judgment without keep still parses");
+  const words = { task: "openings", listKey: "openings" as const, label: (candidate: Candidate) => ({ text: candidate.text }), noCleanNote: "none", revise: "Revise each opening.", develop: "Edit the proposal.", newCandidates: (count: number) => `Write ${count} new.` };
+  const target = { candidate: { id: "c1", angle: "", text: "Hall" }, round: 1, score: parsed.scores[0], findings: [], issues: [] };
+  const request = funnelRefineRequest(words, [target], [target], [], undefined) as { instruction: string; openings: { scores: { keep?: string } }[] };
+  assert.match(request.instruction, /^Revise each opening\. Each candidate's scores\.keep names what the judge says must survive your revision: protect it/);
+  assert.equal(request.openings[0].scores.keep, "The irony of the empty hall.", "the keep travels with the candidate's scores");
+  const bare = funnelRefineRequest(words, [{ ...target, score: { ...parsed.scores[1], candidateId: "c1" } }], [target], [], undefined) as { instruction: string };
+  assert.equal(bare.instruction, "Revise each opening.", "no keep, no note");
 });

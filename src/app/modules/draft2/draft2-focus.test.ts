@@ -48,6 +48,8 @@ const ARC_SPINE = { beats: [
 /** Claude's answer, every field valid unless overridden. */
 const answer = (overrides: Record<string, unknown> = {}) => ({
   lineId: LINE_ID,
+  interest: "A five-minute video can now open a Pentagon contract: the shortest door the Pentagon ever opened.",
+  approaches: ["Classic: the rule, the award, the number; feels like news, risks the plain.", "Discovery: the reader follows one founder's video to the award; feels like a story, risks inventing the founder.", "Escalation: five minutes, less than a week, $1.5 trillion; feels like vertigo, risks the qualifiers."],
   audience: "Founders who sell software to the Pentagon",
   framing: "reader-consequence",
   readerConsequence: { text: "A five-minute video can now open a Pentagon contract.", factIds: ["f1", "f2"] },
@@ -175,10 +177,11 @@ test("Claude decides the focus from the cached facts, the brand brief, the profi
   assert.equal(json(focus.decidedBy), json({ provider: "anthropic", model: "claude-sonnet-5-5" }));
   const [decisionCall, planCall] = session.trace.filter((entry) => entry.step === "focus");
   assert.equal(session.trace.length, 3, "the facts trace is kept; the decision and the plan are two calls");
-  assert.equal(json([decisionCall.provider, decisionCall.operation, decisionCall.outcome, decisionCall.skillVersions, decisionCall.cacheWriteTokens]), json(["anthropic", "draft2_focus", "ok", { focus: "10", discovery: "1", arcs: "1", narratives: "4", spine: "1" }, 900]));
-  assert.equal(json([planCall.operation, planCall.outcome, planCall.effort, planCall.skillVersions]), json(["draft2_focus_plan", "ok", "high", { focus: "10", spine: "1" }]), "a classic telling: the planner reads the focus and spine skills only");
+  assert.equal(json([decisionCall.provider, decisionCall.operation, decisionCall.outcome, decisionCall.skillVersions, decisionCall.cacheWriteTokens]), json(["anthropic", "draft2_focus", "ok", { focus: "11", discovery: "1", arcs: "1", narratives: "4", spine: "1" }, 900]));
+  assert.equal(json([planCall.operation, planCall.outcome, planCall.effort, planCall.skillVersions]), json(["draft2_focus_plan", "ok", "high", { focus: "11", spine: "1" }]), "a classic telling: the planner reads the focus and spine skills only");
   assert.equal(json([focus.values?.spine?.beats.length, focus.values?.direction, focus.reasons?.spine, focus.staleDirections]), json([7, PLAN.direction, "Why spine.", false]), "the plan's spine, directions and reasons join the decision");
-  assert.equal(json(Object.keys((h.calls[1].contents as { focus: Record<string, unknown> }).focus)), json(["line", "audience", "framing", "readerConsequence", "structure", "goal", "voice"]), "the planner reads the decision without the empty directions");
+  assert.equal(json(Object.keys((h.calls[1].contents as { focus: Record<string, unknown> }).focus)), json(["line", "interest", "audience", "framing", "readerConsequence", "structure", "goal", "voice"]), "the planner reads the decision, the interest first, without the empty directions");
+  assert.equal(focus.deliberation?.approaches.length, 3, "the tellings Claude compared stay on the focus for the editor");
   assert.equal(json([focus.values?.narrative, focus.inventoryVersion, h.reviewCalls.length]), json([focusTypes.CLASSIC_NARRATIVE, 2, 0]), "a classic story is not reviewed");
 });
 
@@ -360,5 +363,5 @@ test("after the editor changes how the story is told, Claude rewrites the plan f
   const contents = call.contents as { task: string; focus: { narrative?: { form: string }; spine?: unknown }; editorChoices: unknown };
   assert.equal(json([contents.task, contents.focus.narrative?.form, "spine" in contents.focus, contents.editorChoices]), json(["plan", "character-guide", true, {}]), "the planner reads the decision, the earlier spine and the parts the editor owns (none here)");
   const last = session.trace[session.trace.length - 1];
-  assert.equal(json([last.operation, last.outcome, last.effort, last.skillVersions]), json(["draft2_focus_plan", "ok", "high", { focus: "10", spine: "1", narratives: "4" }]));
+  assert.equal(json([last.operation, last.outcome, last.effort, last.skillVersions]), json(["draft2_focus_plan", "ok", "high", { focus: "11", spine: "1", narratives: "4" }]));
 });

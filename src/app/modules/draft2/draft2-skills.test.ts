@@ -39,7 +39,7 @@ test("instructions are the role, then each skill, then the brand brief, and reco
   assert.deepEqual(writer.skillVersions, { hooks: "7" });
   assert.equal(composeInstructions("opening-judge", [skill]).instructions, `${OPENING_ROLES["opening-judge"]}\n\n## Shared craft\n\n## Judge only`, "a role reads its own part after the shared text");
   assert.deepEqual(Object.keys(DRAFT2_ROLES).sort(), ["caption-judge", "caption-writer", "closing-judge", "closing-writer", "deck-judge", "deck-writer", "extractor", "focus-concept-judge", "focus-editor", "focus-narrative-judge", "focus-planner", "image-judge", "mention-finder", "opening-judge", "opening-writer", "people-finder", "reviewer", "visual-judge", "visual-writer"]);
-  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@2", "focus@10", "narratives@4", "discovery@1", "arcs@1", "spine@1", "hooks@6", "closings@2", "decks@1", "visuals@5", "images@2", "captions@2"]);
+  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@2", "focus@11", "narratives@4", "discovery@1", "arcs@1", "spine@1", "hooks@6", "closings@2", "decks@1", "visuals@5", "images@2", "captions@2"]);
 });
 
 test("the Facts prompts keep their words (the reviewer's say the article is context and name earlierReview since v2): the extractor reads its rules, the reviewer its checklist", () => {
@@ -113,7 +113,7 @@ test("the focus skill names every field and value the contract accepts, and the 
   const { instructions, skillVersions } = composeInstructions("focus-editor", [FOCUS_SKILL], brandBrief(profile));
   assert.ok(instructions.startsWith(FOCUS_ROLES["focus-editor"]));
   assert.ok(instructions.endsWith(`${toneLine(profile)}.`), "the brand brief, with the tone defaults, comes last");
-  assert.deepEqual(skillVersions, { focus: "10" });
+  assert.deepEqual(skillVersions, { focus: "11" });
   assert.match(FOCUS_SKILL.text, /readerConsequence: one sentence of at most 300 characters/);
   assert.match(FOCUS_SKILL.text, /- correction, when present, names a rule your earlier answer broke/);
   assert.match(FOCUS_SKILL.text, /visualDirection: one or two sentences, at most 600 characters/);

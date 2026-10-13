@@ -40,6 +40,8 @@ const itemsSpine = (items: number) => ({ beats: [
 /** Claude's answer, every field valid unless overridden. */
 const answer = (overrides: Record<string, unknown> = {}) => JSON.stringify({
   lineId: LINE.id,
+  interest: "A five-minute video can now open a Pentagon contract: the shortest door the Pentagon ever opened.",
+  approaches: ["Classic: the rule, the award, the number; feels like news, risks the plain.", "Discovery: the reader follows one founder's video to the award; feels like a story, risks inventing the founder.", "Escalation: five minutes, less than a week, $1.5 trillion; feels like vertigo, risks the qualifiers."],
   audience: "Founders who sell software to the Pentagon",
   framing: "reader-consequence",
   readerConsequence: { text: "A five-minute video can now open a Pentagon contract.", factIds: ["f1", "f9", "f2", "f1"] },
@@ -78,7 +80,7 @@ test("Claude's answer becomes the focus: unknown fact ids dropped, dials clamped
   assert.deepEqual(parse({ readerConsequence: { text: null, factIds: [] } }).values.readerConsequence, null);
   assert.deepEqual(parse({ structure: { kind: "list", itemFactIds: ["f3", "f1", "f9", "f2"] } }).values.structure, { kind: "list", itemFactIds: ["f3", "f1", "f2"] }, "items keep Claude's order");
   assert.equal(parseFocusDecision(answer({ lineId: null }), { facts, lines: [] }).values.line, null, "a Topic without lines has no line");
-  assert.deepEqual((DRAFT2_FOCUS_SCHEMA.required as string[]).sort(), ["anchorAlternatives", "audience", "concept", "conceptAlternatives", "framing", "goal", "lineId", "narrative", "readerConsequence", "reasons", "structure", "voice"]);
+  assert.deepEqual((DRAFT2_FOCUS_SCHEMA.required as string[]).sort(), ["anchorAlternatives", "approaches", "audience", "concept", "conceptAlternatives", "framing", "goal", "interest", "lineId", "narrative", "readerConsequence", "reasons", "structure", "voice"]);
   assert.deepEqual(values.narrative, CLASSIC_NARRATIVE, "an answer without a narrative form, from before them, is classic");
 });
 
@@ -471,4 +473,20 @@ test("the decision and the plan are two answers: the decision carries no directi
   assert.equal(enumsInArrays(DRAFT2_FOCUS_PLAN_SCHEMA), 0, "the plan schema");
   assert.deepEqual((DRAFT2_FOCUS_PLAN_SCHEMA.required as string[]).sort(), ["direction", "reasons", "spine", "visualDirection"]);
   assert.ok(JSON.stringify(DRAFT2_FOCUS_SCHEMA).length < 3_600, `the decision schema stays small (${JSON.stringify(DRAFT2_FOCUS_SCHEMA).length} characters)`);
+});
+
+test("the deliberation: the interest in one line and the tellings compared, kept on the focus; the interest travels with the values to every step", () => {
+  const decision = parse();
+  assert.equal(decision.values.interest, "A five-minute video can now open a Pentagon contract: the shortest door the Pentagon ever opened.");
+  assert.deepEqual(decision.deliberation?.approaches.length, 3);
+  const focus = decided();
+  assert.equal(focus.deliberation?.interest, focus.values?.interest);
+  assert.equal(focusForModels(focus.values!).interest, focus.values?.interest, "the Opening's writer and judge read the interest");
+  assert.equal(focus.ai?.interest, focus.values?.interest, "Claude's own interest beside its own values; not a field the editor edits");
+  const rejects = (overrides: Record<string, unknown>, pattern: RegExp) => assert.throws(() => parse(overrides), (error: Error) => error instanceof Draft2ResponseError && pattern.test(error.message));
+  rejects({ interest: "" }, /interest is missing or longer than 200/);
+  rejects({ approaches: ["Only one way."] }, /Compare 2 to 4 ways to tell the story/);
+  rejects({ approaches: ["x".repeat(161), "y".repeat(161)] }, /Compare 2 to 4 ways/);
+  const before = parseFocusDecision(answer({ interest: undefined, approaches: undefined }), { facts, lines });
+  assert.deepEqual([before.values.interest, before.deliberation], [undefined, undefined], "an answer from before the deliberation has none");
 });

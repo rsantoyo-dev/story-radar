@@ -39,7 +39,7 @@ export type FunnelIssue = {
 };
 
 /** A judge's score for one candidate; each step adds its criteria as numeric fields. */
-export type FunnelScore = { candidateId: string; overall: number; note: string };
+export type FunnelScore = { candidateId: string; overall: number; note: string; /** What in the candidate must survive revision, in the judge's words; absent on older judgments. */ keep?: string };
 
 export type FunnelEvaluation<C extends FunnelCandidate = FunnelCandidate, S extends FunnelScore = FunnelScore, I extends FunnelIssue = FunnelIssue> = {
   verdict: "accept" | "revise";
@@ -414,6 +414,7 @@ export type FunnelRefineRequest<C extends FunnelCandidate, K extends string> = {
 export function funnelRefineRequest<C extends FunnelCandidate, K extends string>(words: FunnelWords<C, K>, targets: readonly FunnelVersion<C>[], versions: readonly FunnelVersion<C>[], regressions: readonly FunnelRegression[], last: FunnelRound<C> | undefined, newCandidates = 0, proposals: readonly C[] = []): FunnelRefineRequest<C, K> {
   const instruction = [
     targets.length ? words.revise : "",
+    targets.some((target) => target.score?.keep) ? "Each candidate's scores.keep names what the judge says must survive your revision: protect it, and change nothing else than what its issues name." : "",
     proposals.length ? words.develop : "",
     newCandidates > 0 ? words.newCandidates(newCandidates) : "",
   ].filter(Boolean).join(" ");
@@ -566,7 +567,8 @@ export function funnelParseEvaluation<C extends FunnelCandidate, S extends Funne
       if (typeof number !== "number" || !Number.isInteger(number)) throw new Draft2ResponseError(`The judge's ${key} score for ${candidateId} is not an integer`);
       return Math.min(100, Math.max(1, number));
     };
-    return [{ candidateId, ...Object.fromEntries(criteria.map((criterion) => [criterion, value(criterion)])), overall: value("overall"), note: funnelText(item.note, 600) ?? "" } as unknown as S];
+    const keep = funnelText(item.keep, 300);
+    return [{ candidateId, ...Object.fromEntries(criteria.map((criterion) => [criterion, value(criterion)])), overall: value("overall"), note: funnelText(item.note, 600) ?? "", ...(keep ? { keep } : {}) } as unknown as S];
   });
   const unscored = candidateIds.filter((id) => !scored.has(id));
   if (unscored.length) throw new Draft2ResponseError(`The judge did not score ${unscored.join(", ")}`);
@@ -611,8 +613,9 @@ export function funnelEvaluationSchema({ criteria, codes, maxScored, item, maxPr
             ...Object.fromEntries(criteria.map((criterion) => [criterion, score])),
             overall: score,
             note: { type: "string" },
+            keep: { type: "string" },
           },
-          required: ["candidateId", ...criteria, "overall", "note"],
+          required: ["candidateId", ...criteria, "overall", "note", "keep"],
           additionalProperties: false,
         },
       },
