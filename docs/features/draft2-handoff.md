@@ -414,8 +414,12 @@ and asked for a telling other than classic by default. Landed:
   it between the telling and the directions; every funnel step's writer and
   judge read the spine skill when it exists. `draft2-focus.md` §16.
 - The Deck's arc length comes from the spine's middle beats.
-- `staleDirections` + "Rewrite the directions" (one Claude call,
-  `rewriteDraft2FocusDirections`, `PATCH rewrite: "directions"`).
+- `staleDirections` + "Rewrite the plan" (the plan call again,
+  `rewriteDraft2FocusPlan`, `PATCH rewrite: "plan"`).
+- The Focus is two Claude calls: the decision (story + telling) and the plan
+  (spine + directions), because one strict schema with the spine broke
+  Anthropic's compiled-grammar limit on the first real story; no schema
+  carries an enum inside an array any more (a test keeps it so).
 - The focus skill prefers a concept or a form other than classic; classic
   needs a reason.
 

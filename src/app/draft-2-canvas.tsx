@@ -565,19 +565,19 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
     }
   }
 
-  /** The two directions rewritten from how the story is now told (its concept, form and spine), after the editor changed one of them: one Claude call. */
-  async function rewriteDirections() {
+  /** The plan (the spine and the two directions) rewritten from how the story is now told, after the editor changed its concept, form or spine: one Claude call. */
+  async function rewritePlan() {
     if (!session || running || savingFocus) return;
     setSavingFocus("direction"); setFocusError(undefined);
     try {
       const response = await fetch(`/api/radar/draft2/focus?topicId=${encodeURIComponent(topicId)}`, {
-        method: "PATCH", cache: "no-store", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: session.id, storyId, rewrite: "directions" }),
+        method: "PATCH", cache: "no-store", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: session.id, storyId, rewrite: "plan" }),
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(body.error ?? "Could not rewrite the directions.");
+      if (!response.ok) throw new Error(body.error ?? "Could not rewrite the plan.");
       setSession(body.session as Draft2SessionView);
     } catch (cause) {
-      setFocusError(cause instanceof Error ? cause.message : "Could not rewrite the directions.");
+      setFocusError(cause instanceof Error ? cause.message : "Could not rewrite the plan.");
     } finally {
       setSavingFocus(undefined);
     }
@@ -955,7 +955,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
           locked={running !== undefined || savingFocus !== undefined}
           onSave={(field, value) => { void saveFocus(field, { value }); }}
           onReset={(field) => { void saveFocus(field, { reset: true }); }}
-          onRewriteDirections={() => { void rewriteDirections(); }}
+          onRewritePlan={() => { void rewritePlan(); }}
         /> : null}
         {!focus?.values && factsVerified && running !== "focus" ? <EmptyState title="No focus yet">Decide the focus: Claude proposes what the story is for, and every field stays yours to change.</EmptyState> : null}
       </>,
@@ -1997,7 +1997,7 @@ function focusValueText(field: Draft2FocusField, values: Draft2FocusValues): str
  * beside Claude's value. Selects save when they change, text when it loses
  * focus; the controls wait while a change is saved or a step runs.
  */
-function FocusView({ focus, findings, material, saving, locked, onSave, onReset, onRewriteDirections }: {
+function FocusView({ focus, findings, material, saving, locked, onSave, onReset, onRewritePlan }: {
   focus: Draft2Focus;
   findings: readonly Draft2FocusFinding[];
   /** People and places' material as it stands: the brand's characters the editor allows, the story's people. */
@@ -2006,8 +2006,8 @@ function FocusView({ focus, findings, material, saving, locked, onSave, onReset,
   locked: boolean;
   onSave: (field: Draft2FocusField, value: unknown) => void;
   onReset: (field: Draft2FocusField) => void;
-  /** Claude rewrites the direction and the visual direction from the concept, the form and the spine as they now stand. */
-  onRewriteDirections: () => void;
+  /** Claude rewrites the plan, the spine and the two directions, from the concept and the form as they now stand; a part the editor owns stays theirs. */
+  onRewritePlan: () => void;
 }) {
   const values = focus.values!;
   const decided = focus.decidedAt ? new Date(focus.decidedAt).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" }) : undefined;
@@ -2110,7 +2110,7 @@ function FocusView({ focus, findings, material, saving, locked, onSave, onReset,
         </FormField>
         {reset("spine")}
         {focus.staleDirections
-          ? <InlineNotice tone="info" title="The directions were written for another telling">You changed how the story is told; the direction and the visual direction still say what Claude wrote before. <Button variant="quiet" size="compact" busy={saving === "direction"} disabled={locked} onClick={onRewriteDirections}>Rewrite the directions</Button></InlineNotice>
+          ? <InlineNotice tone="info" title="The plan was written for another telling">You changed how the story is told; the spine and the directions still follow what Claude decided before. <Button variant="quiet" size="compact" busy={saving === "direction"} disabled={locked} onClick={onRewritePlan}>Rewrite the plan</Button></InlineNotice>
           : null}
       </div>
       <div className={`${styles.focusField} ${styles.focusWide}`}>

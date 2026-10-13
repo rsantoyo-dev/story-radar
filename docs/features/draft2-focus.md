@@ -432,12 +432,26 @@ The editor's own reading, confirmed by the day's runs: the concept (how the
 reader meets the news) and the narrative form must be decided before the
 directions, so the written and the visual scripts follow the same plan, and
 the carousel must reach a turning point or a climax. Focus skill v10 decides
-in four steps inside one Claude call: the story (line, audience, framing,
+in four steps, in two Claude calls: the story (line, audience, framing,
 consequence, structure, goal, voice), then how it is told (concept and form,
 with a stated preference for a telling other than classic: classic only when
 no arc, premise or form fits these facts, this audience and this gravity,
 and the reason says why), then the **spine**, then the two directions derived
 from it. `FOCUS_FIELDS` follows that order.
+
+The first call (task "focus", `DRAFT2_FOCUS_SCHEMA`) answers steps 1 and 2:
+the story and how it is told, with a reason per field. The second (task
+"plan", `DRAFT2_FOCUS_PLAN_SCHEMA`, role `focus-planner`, effort high) answers
+steps 3 and 4 from that decision: the spine and the two directions, with
+their reasons; it runs beside the judge's reviews of the telling, and a
+telling the judge sends back to classic gets its plan written again. Each
+call is asked again once when its answer breaks a rule. Two calls because a
+single strict schema with the spine failed on Anthropic's grammar limit
+("The compiled grammar is too large"), and because enums inside arrays are
+what grow that grammar: neither schema has one now, and the parsers check
+the values instead (a test keeps both facts true). The planner reads the
+decision as the models read a focus, the earlier spine when there is one,
+and the parts of the plan the editor owns, which it returns as given.
 
 ### The spine (`spine`, the spine skill v1)
 
@@ -477,10 +491,11 @@ for it.
 
 An edit to the concept, the form or the spine marks the directions stale
 (`staleDirections`), unless the editor owns both directions; the canvas says
-so and offers "Rewrite the directions": one Claude call at medium effort
-(`rewriteDraft2FocusDirections`, role `focus-directions-writer`, `PATCH`
-with `rewrite: "directions"`) that restates the spine in the direction and
-the visual direction, gives both back to Claude and clears the mark. The
+so and offers "Rewrite the plan": the plan call again
+(`rewriteDraft2FocusPlan`, `PATCH` with `rewrite: "plan"`), which writes a
+new spine and new directions from the telling as it now stands, keeps any
+part of the plan the editor owns, gives the rest back to Claude, moves the
+version and clears the mark. The
 Opening and the steps after it read the new directions through the focus
 version they follow, as before.
 

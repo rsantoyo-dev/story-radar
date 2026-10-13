@@ -21,7 +21,7 @@ import { toneLine } from "./tone";
  * skill versions its instructions were composed from.
  */
 export type Draft2SkillName = "facts" | "focus" | "narratives" | "discovery" | "arcs" | "spine" | "hooks" | "closings" | "decks" | "visuals" | "images" | "captions";
-export type Draft2Role = "extractor" | "reviewer" | "focus-editor" | "focus-directions-writer" | "focus-narrative-judge" | "focus-concept-judge" | "opening-writer" | "opening-judge" | "closing-writer" | "closing-judge" | "deck-writer" | "deck-judge"
+export type Draft2Role = "extractor" | "reviewer" | "focus-editor" | "focus-planner" | "focus-narrative-judge" | "focus-concept-judge" | "opening-writer" | "opening-judge" | "closing-writer" | "closing-judge" | "deck-writer" | "deck-judge"
   | "people-finder" | "visual-writer" | "visual-judge" | "image-judge" | "caption-writer" | "caption-judge" | "mention-finder";
 
 export type Draft2Skill = {

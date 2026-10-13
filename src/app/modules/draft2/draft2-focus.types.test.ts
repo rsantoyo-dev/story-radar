@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Draft2InputError, Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
 import {
-  CLASSIC_CONCEPT, CLASSIC_NARRATIVE, DRAFT2_FOCUS_SCHEMA, focusConcept, FOCUS_FIELDS, applyFocusEdit, decidedFocus, editorChoicesOf, focusDecisionRequest, focusFindings, focusForModels, focusItemCount, focusLine,
-  anchorNoun, focusMaterial, focusToday, focusWithDirections, narrativeUsesMaster, parseFocusDecision, parseFocusDirections, parseNarrativeReview, resetFocusField, spineShapeProblem,
+  CLASSIC_CONCEPT, CLASSIC_NARRATIVE, DRAFT2_FOCUS_PLAN_SCHEMA, DRAFT2_FOCUS_SCHEMA, focusConcept, FOCUS_FIELDS, applyFocusEdit, decidedFocus, editorChoicesOf, focusDecisionRequest, focusFindings, focusForModels, focusItemCount, focusLine,
+  anchorNoun, focusMaterial, focusToday, focusWithPlan, narrativeUsesMaster, parseFocusDecision, parseFocusPlan, parseNarrativeReview, resetFocusField, spineShapeProblem,
   type Draft2Focus, type Draft2FocusLine, type Draft2FocusMaterial, type Draft2FocusNarrative, type Draft2FocusValues, type Draft2SpineBeat,
 } from "./draft2-focus.types";
 import type { Draft2Inventory } from "./draft2-inventory.types";
@@ -78,7 +78,7 @@ test("Claude's answer becomes the focus: unknown fact ids dropped, dials clamped
   assert.deepEqual(parse({ readerConsequence: { text: null, factIds: [] } }).values.readerConsequence, null);
   assert.deepEqual(parse({ structure: { kind: "list", itemFactIds: ["f3", "f1", "f9", "f2"] } }).values.structure, { kind: "list", itemFactIds: ["f3", "f1", "f2"] }, "items keep Claude's order");
   assert.equal(parseFocusDecision(answer({ lineId: null }), { facts, lines: [] }).values.line, null, "a Topic without lines has no line");
-  assert.deepEqual((DRAFT2_FOCUS_SCHEMA.required as string[]).sort(), ["anchorAlternatives", "audience", "concept", "conceptAlternatives", "direction", "framing", "goal", "lineId", "narrative", "readerConsequence", "reasons", "spine", "structure", "visualDirection", "voice"]);
+  assert.deepEqual((DRAFT2_FOCUS_SCHEMA.required as string[]).sort(), ["anchorAlternatives", "audience", "concept", "conceptAlternatives", "framing", "goal", "lineId", "narrative", "readerConsequence", "reasons", "structure", "voice"]);
   assert.deepEqual(values.narrative, CLASSIC_NARRATIVE, "an answer without a narrative form, from before them, is classic");
 });
 
@@ -88,8 +88,8 @@ test("an answer outside the contract is a response error, never a focus", () => 
   rejects({ lineId: null }, /editorial line the Topic does not have/);
   rejects({ audience: "" }, /audience is missing/);
   rejects({ audience: "x".repeat(301) }, /longer than 300/);
-  rejects({ direction: "x".repeat(1_501) }, /direction is missing or longer than 1500/);
-  rejects({ visualDirection: "x".repeat(601) }, /visual direction is missing or longer than 600/);
+  rejects({ direction: "x".repeat(1_501) }, /direction is longer than 1500/);
+  rejects({ visualDirection: "x".repeat(601) }, /visual direction is longer than 600/);
   rejects({ framing: "auto" }, /outside the contract/);
   rejects({ goal: "virality" }, /outside the contract/);
   rejects({ structure: { kind: "carousel", itemFactIds: [] } }, /outside the contract/);
@@ -440,10 +440,35 @@ test("the models read the spine between the telling and the directions; the edit
   const owned = applyFocusEdit(applyFocusEdit(edited, "direction", "My own direction.", NOW), "visualDirection", "My own visual direction.", NOW);
   assert.equal(owned.staleDirections, false, "directions the editor wrote are theirs, never stale");
   assert.equal(applyFocusEdit(owned, "narrative", { form: "classic" }, NOW).staleDirections, false, "both directions the editor's: a new telling does not make them stale");
-  const rewritten = focusWithDirections(edited, { direction: "Rewritten from the spine.", visualDirection: "Rewritten images." }, NOW);
-  assert.deepEqual([rewritten.version, rewritten.values?.direction, rewritten.ai?.visualDirection, rewritten.edited, rewritten.staleDirections], [edited.version + 1, "Rewritten from the spine.", "Rewritten images.", ["spine"], false]);
-  assert.deepEqual(parseFocusDirections(JSON.stringify({ direction: " Lead with the video. ", visualDirection: "One laptop, one hall." })), { direction: "Lead with the video.", visualDirection: "One laptop, one hall." });
-  assert.throws(() => parseFocusDirections(JSON.stringify({ direction: "x", visualDirection: "y".repeat(601) })), /visual direction is missing or longer than 600/);
+  const rewritten = focusWithPlan(edited, { spine: ARC_SPINE as never, direction: "Rewritten from the spine.", visualDirection: "Rewritten images.", reasons: { spine: "Ignored: the editor owns it.", direction: "Why direction." } }, NOW);
+  assert.deepEqual([rewritten.version, rewritten.values?.direction, rewritten.ai?.visualDirection, rewritten.values?.spine?.beats.length, rewritten.edited, rewritten.staleDirections, rewritten.reasons?.direction, rewritten.reasons?.spine], [edited.version + 1, "Rewritten from the spine.", "Rewritten images.", 6, ["spine"], false, "Why direction.", "Why spine."], "the editor's spine stays theirs, with the reason it had; the directions become Claude's with their reasons");
+  assert.equal(focusWithPlan(edited, { spine: ARC_SPINE as never, direction: "d", visualDirection: "v" }, NOW, { bump: false }).version, edited.version, "within a decision the version does not move again");
+  const known = new Set(["f1", "f2", "f3"]);
+  const arc = { kind: "arc" as const, itemFactIds: [] };
+  const plan = parseFocusPlan(JSON.stringify({ spine: ARC_SPINE, direction: " Lead with the video. ", visualDirection: "One laptop, one hall.", reasons: { spine: "Why spine.", direction: "Why direction.", visualDirection: "Why visual." } }), { known, structure: arc });
+  assert.deepEqual([plan.direction, plan.visualDirection, plan.spine.beats.length, plan.reasons], ["Lead with the video.", "One laptop, one hall.", 7, { spine: "Why spine.", direction: "Why direction.", visualDirection: "Why visual." }]);
+  assert.throws(() => parseFocusPlan(JSON.stringify({ spine: ARC_SPINE, direction: "x", visualDirection: "y".repeat(601), reasons: {} }), { known, structure: arc }), /visual direction is missing or longer than 600/);
+  assert.throws(() => parseFocusPlan(JSON.stringify({ spine: { beats: ARC_SPINE.beats.slice(0, 2) }, direction: "x", visualDirection: "y", reasons: {} }), { known, structure: arc }), (error: Error) => error instanceof Draft2ResponseError && /4 to 10 beats/.test(error.message));
+  const kept = parseFocusPlan(JSON.stringify({ spine: ARC_SPINE, direction: "Claude's direction.", visualDirection: "Claude's images.", reasons: { spine: "s", direction: "d", visualDirection: "v" } }), { known, structure: arc, editorChoices: { spine: shorter, direction: "Mine." } });
+  assert.deepEqual([kept.spine.beats.length, kept.direction, kept.visualDirection, kept.reasons], [6, "Mine.", "Claude's images.", { visualDirection: "v" }], "the parts the editor owns are kept as given, without a reason of Claude's");
   assert.deepEqual(focusFindings({ ...focus.values!, structure: { kind: "steps", itemFactIds: ["f1", "f2"] } }).map((finding) => finding.code), ["SPINE_SHAPE"], "a spine for another structure is a finding until Claude decides again");
   assert.equal(spineShapeProblem(ARC_SPINE.beats as Draft2SpineBeat[], { kind: "arc", itemFactIds: [] }), undefined);
+});
+
+test("the decision and the plan are two answers: the decision carries no directions and no spine, and neither schema puts an enum inside an array (the compiled grammar has a size limit)", () => {
+  const bare = parseFocusDecision(answer({ direction: undefined, visualDirection: undefined, spine: undefined }), { facts, lines });
+  assert.deepEqual([bare.values.direction, "visualDirection" in bare.values, "spine" in bare.values], ["", false, false]);
+  assert.throws(() => parseFocusDecision(answer({ direction: "x".repeat(1501) }), { facts, lines }), /direction is longer than 1,500|direction is longer than 1500/);
+  const enumsInArrays = (node: unknown, inArray = false): number => {
+    if (!node || typeof node !== "object") return 0;
+    const record = node as Record<string, unknown>;
+    let count = Array.isArray(record.enum) && inArray ? 1 : 0;
+    for (const value of Object.values((record.properties as Record<string, unknown>) ?? {})) count += enumsInArrays(value, inArray);
+    if (record.items) count += enumsInArrays(record.items, true);
+    return count;
+  };
+  assert.equal(enumsInArrays(DRAFT2_FOCUS_SCHEMA), 0, "the decision schema");
+  assert.equal(enumsInArrays(DRAFT2_FOCUS_PLAN_SCHEMA), 0, "the plan schema");
+  assert.deepEqual((DRAFT2_FOCUS_PLAN_SCHEMA.required as string[]).sort(), ["direction", "reasons", "spine", "visualDirection"]);
+  assert.ok(JSON.stringify(DRAFT2_FOCUS_SCHEMA).length < 3_600, `the decision schema stays small (${JSON.stringify(DRAFT2_FOCUS_SCHEMA).length} characters)`);
 });

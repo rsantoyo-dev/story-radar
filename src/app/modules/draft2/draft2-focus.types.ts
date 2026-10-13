@@ -26,6 +26,10 @@ import { TONE_KEYS, toneLine, toneValue, type ToneKey } from "./skills/tone";
 export const FOCUS_FIELDS = ["line", "audience", "framing", "readerConsequence", "structure", "goal", "voice", "concept", "narrative", "spine", "direction", "visualDirection"] as const;
 /** The fields that say how the story is told; an edit to one of them leaves the directions written for another telling (staleDirections). */
 export const FOCUS_TELLING_FIELDS: readonly Draft2FocusField[] = ["concept", "narrative", "spine"];
+/** The fields the second call writes from the first's decision: the spine and the two directions derived from it (the plan). */
+export const FOCUS_PLAN_FIELDS: readonly Draft2FocusField[] = ["spine", "direction", "visualDirection"];
+/** The fields the first call decides: the story and how it is told. */
+export const FOCUS_DECISION_FIELDS: readonly Draft2FocusField[] = FOCUS_FIELDS.filter((field) => !FOCUS_PLAN_FIELDS.includes(field));
 export const FOCUS_FRAMINGS = ["reader-consequence", "explainer", "authority"] as const;
 export const FOCUS_STRUCTURES = ["arc", "steps", "list"] as const;
 export const FOCUS_GRAVITIES = ["light", "ordinary", "serious", "grave"] as const;
@@ -284,13 +288,6 @@ export type Draft2Focus = {
   staleDirections?: boolean;
 };
 
-/** Claude's answer when the directions are rewritten from the spine: the two derived fields only. */
-export const DRAFT2_FOCUS_DIRECTIONS_SCHEMA: Record<string, unknown> = {
-  type: "object",
-  properties: { direction: { type: "string" }, visualDirection: { type: "string" } },
-  required: ["direction", "visualDirection"],
-  additionalProperties: false,
-};
 
 /** The focus an opening run followed, kept on the run. */
 export type Draft2FocusSnapshot = { version: number; values: Draft2FocusValues };
@@ -331,7 +328,6 @@ export const DRAFT2_FOCUS_SCHEMA: Record<string, unknown> = {
       required: ["gravity", ...TONE_KEYS],
       additionalProperties: false,
     },
-    direction: { type: "string" },
     concept: {
       type: "object",
       properties: {
@@ -348,7 +344,7 @@ export const DRAFT2_FOCUS_SCHEMA: Record<string, unknown> = {
       items: {
         type: "object",
         properties: {
-          arc: { type: "string", enum: FOCUS_CONCEPT_ARCS.filter((arc) => arc !== "classic") },
+          arc: { type: "string" },
           premise: { type: "string" }, premiseFactIds: factIdsSchema, reveals: { type: "array", items: { type: "string" } },
         },
         required: ["arc", "premise", "premiseFactIds", "reveals"],
@@ -373,11 +369,31 @@ export const DRAFT2_FOCUS_SCHEMA: Record<string, unknown> = {
       type: "array",
       items: {
         type: "object",
-        properties: { kind: { type: "string", enum: [...ALTERNATIVE_KINDS] }, anchor: { type: "string" }, factIds: factIdsSchema },
+        properties: { kind: { type: "string" }, anchor: { type: "string" }, factIds: factIdsSchema },
         required: ["kind", "anchor", "factIds"],
         additionalProperties: false,
       },
     },
+    reasons: {
+      type: "object",
+      properties: Object.fromEntries(FOCUS_DECISION_FIELDS.map((field) => [field, { type: "string" }])),
+      required: [...FOCUS_DECISION_FIELDS],
+      additionalProperties: false,
+    },
+  },
+  required: ["lineId", "audience", "framing", "readerConsequence", "structure", "goal", "voice", "concept", "conceptAlternatives", "narrative", "anchorAlternatives", "reasons"],
+  additionalProperties: false,
+};
+
+/**
+ * The second call's answer: the plan, from the decision. The spine's positions
+ * and roles are plain strings here (the parser checks them): an enum inside an
+ * array is what grows the compiled grammar past the provider's limit, which is
+ * why the decision and the plan are two calls.
+ */
+export const DRAFT2_FOCUS_PLAN_SCHEMA: Record<string, unknown> = {
+  type: "object",
+  properties: {
     spine: {
       type: "object",
       properties: {
@@ -386,8 +402,8 @@ export const DRAFT2_FOCUS_SCHEMA: Record<string, unknown> = {
           items: {
             type: "object",
             properties: {
-              slide: { type: "string", enum: [...FOCUS_SPINE_POSITIONS] },
-              role: { type: "string", enum: [...FOCUS_SPINE_ROLES] },
+              slide: { type: "string" },
+              role: { type: "string" },
               scene: { type: "string" },
               words: { type: "string" },
               image: { type: "string" },
@@ -402,15 +418,16 @@ export const DRAFT2_FOCUS_SCHEMA: Record<string, unknown> = {
       required: ["beats"],
       additionalProperties: false,
     },
+    direction: { type: "string" },
     visualDirection: { type: "string" },
     reasons: {
       type: "object",
-      properties: Object.fromEntries(FOCUS_FIELDS.map((field) => [field, { type: "string" }])),
-      required: [...FOCUS_FIELDS],
+      properties: Object.fromEntries(FOCUS_PLAN_FIELDS.map((field) => [field, { type: "string" }])),
+      required: [...FOCUS_PLAN_FIELDS],
       additionalProperties: false,
     },
   },
-  required: ["lineId", "audience", "framing", "readerConsequence", "structure", "goal", "voice", "direction", "concept", "conceptAlternatives", "narrative", "anchorAlternatives", "spine", "visualDirection", "reasons"],
+  required: ["spine", "direction", "visualDirection", "reasons"],
   additionalProperties: false,
 };
 
@@ -604,32 +621,54 @@ export const focusSpine = (values: Pick<Draft2FocusValues, "spine">): Draft2Focu
 /** The beat of a position, for the steps: the Opening's two, the Deck's middle beats in order, the Closing's. */
 export const spineBeats = (spine: Draft2FocusSpine | undefined, position: Draft2SpinePosition): Draft2SpineBeat[] => (spine?.beats ?? []).filter((beat) => beat.slide === position);
 
-/** Claude's rewritten directions, checked against their limits; anything else is a response error. */
-export function parseFocusDirections(answer: string): { direction: string; visualDirection: string } {
+/**
+ * The plan of Claude's second call: the spine and the two directions, checked
+ * against the contract and the structure that stands; a part the editor owns
+ * (editorChoices) is kept as given, whatever the answer says for it. A broken
+ * rule is a response error, asked for again with the rule it broke.
+ */
+export function parseFocusPlan(answer: string, { known, structure, editorChoices = {} }: { known: ReadonlySet<string>; structure: Draft2FocusValues["structure"]; editorChoices?: Record<string, unknown> }): Draft2FocusPlan {
   let parsed: unknown;
-  try { parsed = JSON.parse(answer); } catch { throw new Draft2ResponseError("The directions answer is not valid JSON"); }
+  try { parsed = JSON.parse(answer); } catch { throw new Draft2ResponseError("The plan answer is not valid JSON"); }
   const body = record(parsed);
-  const direction = text(body.direction, FOCUS_DIRECTION_MAX_CHARACTERS);
-  const visualDirection = text(body.visualDirection, FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS);
+  const spine = editorChoices.spine ? editorChoices.spine as Draft2FocusSpine : spineFrom(body.spine, structure, known, (message) => { throw new Draft2ResponseError(message); });
+  const direction = typeof editorChoices.direction === "string" ? editorChoices.direction : text(body.direction, FOCUS_DIRECTION_MAX_CHARACTERS);
+  const visualDirection = typeof editorChoices.visualDirection === "string" ? editorChoices.visualDirection : text(body.visualDirection, FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS);
   if (!direction) throw new Draft2ResponseError(`The direction is missing or longer than ${FOCUS_DIRECTION_MAX_CHARACTERS} characters`);
   if (!visualDirection) throw new Draft2ResponseError(`The visual direction is missing or longer than ${FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS} characters`);
-  return { direction, visualDirection };
+  const given = record(body.reasons);
+  const reasons: Partial<Record<Draft2FocusField, string>> = {};
+  for (const field of FOCUS_PLAN_FIELDS) {
+    const reason = text(given[field], REASON_MAX_CHARACTERS);
+    if (reason && !(field in editorChoices)) reasons[field] = reason;
+  }
+  return { spine, direction, visualDirection, reasons };
 }
 
+/** The spine and the two directions, as the second call writes them from the decision. */
+export type Draft2FocusPlan = { spine: Draft2FocusSpine; direction: string; visualDirection: string; reasons?: Partial<Record<Draft2FocusField, string>> };
+
 /**
- * The focus with its directions rewritten from the current telling: both
- * become Claude's again (an editor's own direction is replaced, since they
- * asked for the rewrite), the version moves, and the directions are no
- * longer stale.
+ * The focus with its plan: the spine and the directions become Claude's (a
+ * part the editor owns stays theirs), their reasons join the decision's, and
+ * the directions are no longer stale. Within a decision the version does not
+ * move again (the decision moved it); a rewrite the editor asked for does.
  */
-export function focusWithDirections(focus: Draft2Focus, directions: { direction: string; visualDirection: string }, now: Date): Draft2Focus {
-  if (!focus.values) throw new Draft2InputError("Decide the focus before rewriting its directions.");
+export function focusWithPlan(focus: Draft2Focus, plan: Draft2FocusPlan, now: Date, { bump = true } = {}): Draft2Focus {
+  if (!focus.values) throw new Draft2InputError("Decide the focus before rewriting its plan.");
+  const owned = (field: Draft2FocusField) => focus.edited.includes(field);
+  const written: Partial<Draft2FocusValues> = {
+    ...(owned("spine") ? {} : { spine: plan.spine }),
+    ...(owned("direction") ? {} : { direction: plan.direction }),
+    ...(owned("visualDirection") ? {} : { visualDirection: plan.visualDirection }),
+  };
+  const reasons = Object.fromEntries(Object.entries(plan.reasons ?? {}).filter(([field]) => !owned(field as Draft2FocusField)));
   return {
     ...focus,
-    version: focus.version + 1,
-    values: { ...focus.values, ...directions },
-    ...(focus.ai ? { ai: { ...focus.ai, ...directions } } : {}),
-    edited: focus.edited.filter((field) => field !== "direction" && field !== "visualDirection"),
+    version: bump ? focus.version + 1 : focus.version,
+    values: { ...focus.values, ...written },
+    ...(focus.ai ? { ai: { ...focus.ai, spine: plan.spine, direction: plan.direction, visualDirection: plan.visualDirection } } : {}),
+    reasons: { ...focus.reasons, ...reasons },
     staleDirections: false,
     updatedAt: now.toISOString(),
   };
@@ -716,15 +755,18 @@ export function parseFocusDecision(answer: string, { facts, lines, editorChoices
   const audience = text(body.audience, FOCUS_AUDIENCE_MAX_CHARACTERS);
   const framing = oneOf(FOCUS_FRAMINGS, body.framing);
   const goal = oneOf(FOCUS_GOALS, body.goal);
-  const direction = text(body.direction, FOCUS_DIRECTION_MAX_CHARACTERS);
-  const visualDirection = text(body.visualDirection, FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS);
+  // The directions belong to the plan (the second call); an answer that carries them (the editor's, or an older single call) keeps them within their limits.
+  const directionGiven = typeof body.direction === "string" && body.direction.trim().length > 0;
+  const visualGiven = typeof body.visualDirection === "string" && body.visualDirection.trim().length > 0;
+  const direction = directionGiven ? text(body.direction, FOCUS_DIRECTION_MAX_CHARACTERS) : "";
+  const visualDirection = visualGiven ? text(body.visualDirection, FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS) : "";
   const structure = record(body.structure);
   const kind = oneOf(FOCUS_STRUCTURES, structure.kind);
   const voice = record(body.voice);
   const gravity = oneOf(FOCUS_GRAVITIES, voice.gravity);
   if (!audience) throw new Draft2ResponseError(`The focus's audience is missing or longer than ${FOCUS_AUDIENCE_MAX_CHARACTERS} characters`);
-  if (!direction) throw new Draft2ResponseError(`The focus's direction is missing or longer than ${FOCUS_DIRECTION_MAX_CHARACTERS} characters`);
-  if (!visualDirection) throw new Draft2ResponseError(`The focus's visual direction is missing or longer than ${FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS} characters`);
+  if (directionGiven && direction === undefined) throw new Draft2ResponseError(`The focus's direction is longer than ${FOCUS_DIRECTION_MAX_CHARACTERS} characters`);
+  if (visualGiven && visualDirection === undefined) throw new Draft2ResponseError(`The focus's visual direction is longer than ${FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS} characters`);
   if (!framing || !goal || !kind || !gravity) throw new Draft2ResponseError("The focus's framing, goal, structure or gravity is outside the contract");
   if (TONE_KEYS.some((key) => typeof voice[key] !== "number" || !Number.isFinite(voice[key]))) throw new Draft2ResponseError("The focus's voice needs a number for every tone dial");
 
@@ -755,11 +797,11 @@ export function parseFocusDecision(answer: string, { facts, lines, editorChoices
     structure: finalStructure,
     goal,
     voice: { gravity, ...Object.fromEntries(TONE_KEYS.map((key) => [key, toneValue(voice[key])])) } as Draft2FocusVoice,
-    direction,
+    direction: direction ?? "",
     concept,
     narrative,
     ...(spine ? { spine } : {}),
-    visualDirection,
+    ...(visualDirection ? { visualDirection } : {}),
   };
   const given = record((parsed as Record<string, unknown>).reasons);
   const chosen = new Set(Object.keys(editorChoices).map((key) => key === "lineId" ? "line" : key));

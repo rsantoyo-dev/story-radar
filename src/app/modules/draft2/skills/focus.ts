@@ -38,6 +38,9 @@ Decide in this order, each decision resting on the ones before it:
    lead with and keep for later; visualDirection restates the anchor, the
    scene of each beat and the image of the turn. Neither opens a thread the
    spine does not have.
+Steps 1 and 2 are the task "focus", answered first; steps 3 and 4 are the
+task "plan", answered in a second call from that decision, so the plan always
+follows the telling.
 
 ## Fields
 - line: the editorial line the story serves, among the Topic's lines; their
@@ -188,6 +191,6 @@ Decide in this order, each decision resting on the ones before it:
 };
 
 export const FOCUS_ROLES = {
-  "focus-directions-writer": `You rewrite the two directions of a story's focus for the publication described below, from the focus as it stands (focus: the story, how it is told and its spine), after the editor changed how the story is told. Return direction (at most 1,500 characters: what to lead with, which facts carry the promise, what to keep for later slides, what the reader takes away, restating the spine's beats) and visualDirection (at most 600 characters: the world the images live in, the anchor in each state when there is a form, the image of the turn, what recurs and returns), both in the publication's language, both resting on the spine and the verified facts only; neither opens a thread the spine does not have.`,
+  "focus-planner": `You write the plan of a story's focus for the publication described below, from the decision you receive (focus: the story, how the reader meets the news and the narrative form; editorChoices: the parts of the plan the editor owns, to return exactly as given) and the verified facts: the spine (the spine skill: one beat per slide, with its slide, role, scene, words, image, withholds and factIds), then direction (at most 1,500 characters: what to lead with, which facts carry the promise, what to keep for later slides, what the reader takes away, restating the spine's beats) and visualDirection (at most 600 characters: the world the images live in, the anchor in each state when there is a form, the image of the turn, what recurs and returns), both in the publication's language, both resting on the spine and the facts only; neither opens a thread the spine does not have. reasons: one sentence for each of spine, direction and visualDirection, naming the facts that decide it. correction, when present, names a rule your earlier answer broke: return the whole plan again with it fixed.`,
   "focus-editor": `You decide the focus of a story for the publication described below, from its verified facts (cite their ids), the publication's defaults (topicDefaults), its editorial lines (lines, with the ones that found the story in foundBy) and what People and places found (material: the brand's characters the editor allows, the story's people, its places and its photos). The story's title is context, not a fact. Follow the focus skill and return every field with a reason for each; the narratives skill defines the narrative forms and the discovery skill the concept; the publication's visual identity, when given below, is the frame of visualDirection.`,
 } as const;

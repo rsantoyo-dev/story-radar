@@ -54,12 +54,16 @@ const answer = (overrides: Record<string, unknown> = {}) => ({
   structure: { kind: "arc", itemFactIds: [] },
   goal: "followers",
   voice: { gravity: "ordinary", formality: 30, humor: 40, energy: 70, optimism: 60, provocation: 60 },
-  direction: "Lead with the five-minute video; pay it with the award time.",
-  visualDirection: "Anonymous founders at a laptop; the demo video recurs and closes the story as a signed award.",
-  spine: ARC_SPINE,
   reasons,
   ...overrides,
 });
+/** Claude's plan, the second call's answer: the spine and the two directions, with their reasons. */
+const PLAN = {
+  spine: ARC_SPINE,
+  direction: "Lead with the five-minute video; pay it with the award time.",
+  visualDirection: "Anonymous founders at a laptop; the demo video recurs and closes the story as a signed award.",
+  reasons: { spine: "Why spine.", direction: "Why direction.", visualDirection: "Why visualDirection." },
+};
 
 type Row = Record<string, unknown> & { focus: Draft2Focus | null; trace: types.Draft2TraceEntry[]; updatedAt: Date };
 
@@ -74,8 +78,10 @@ const INVENTORY = {
 const GUIDE = { form: "character-guide", anchorKind: "character", characterId: "char-jo", anchor: "Jo", anchorFactIds: [], progression: "From the kiosk to each animal of the trail", ending: "returns" };
 
 /** The step with Claude, the profile, the lines, the story and the database replaced; `answers` are Claude's, in order. */
-function harness({ answers = [], reviews = [], session, busy = false, claimRefused = false, fail = false, env = {} }: {
+function harness({ answers = [], plans = [], reviews = [], session, busy = false, claimRefused = false, fail = false, env = {} }: {
   answers?: unknown[];
+  /** Claude's plans, in order, for the second call of each decision and for a rewrite; PLAN when none is queued. */
+  plans?: unknown[];
   /** The judge's answers on a narrative form, in order; an Error fails that call. */
   reviews?: unknown[];
   session?: Record<string, unknown>; busy?: boolean; claimRefused?: boolean; fail?: boolean;
@@ -108,7 +114,7 @@ function harness({ answers = [], reviews = [], session, busy = false, claimRefus
     "../stories/anthropic-structured-response": { generateAnthropicStructuredResponse: async (input: Record<string, unknown>) => {
       calls.push(input);
       if (fail) throw Object.assign(new Error("anthropic claude-sonnet-5-5 failed (HTTP 529: overloaded)"), { status: 529 });
-      const next = answers.shift();
+      const next = input.schemaName === "draft2_focus_plan" ? (plans.shift() ?? PLAN) : answers.shift();
       return { text: typeof next === "string" ? next : JSON.stringify(next), provider: "anthropic", model: input.model, usage: { promptTokens: 100, outputTokens: 50, thoughtsTokens: 0, totalTokens: 150 }, cachedInputTokens: 0, cacheWriteTokens: 900 };
     } },
     "../stories/openai-structured-response": { generateOpenAiStructuredResponse: async (input: Record<string, unknown>) => {
@@ -130,7 +136,9 @@ function harness({ answers = [], reviews = [], session, busy = false, claimRefus
   return {
     decide: () => exports.decideDraft2Focus({ topicId, storyId, sessionId }),
     edit: (field: string, change: { value?: unknown; reset?: boolean }) => exports.editDraft2Focus({ topicId, sessionId, field, ...change }),
-    rewrite: () => exports.rewriteDraft2FocusDirections({ topicId, storyId, sessionId }),
+    rewrite: () => exports.rewriteDraft2FocusPlan({ topicId, storyId, sessionId }),
+    /** The decision calls alone, without the plan calls between them. */
+    decisions: () => calls.filter((call) => call.schemaName === "draft2_focus"),
     calls,
     reviewCalls,
     last: () => row,
@@ -165,9 +173,12 @@ test("Claude decides the focus from the cached facts, the brand brief, the profi
   assert.equal(json(focus.lineOptions.map((line) => line.name)), json(["Guides", "Actualidad"]));
   assert.equal(focus.reasons?.goal, "Why goal.");
   assert.equal(json(focus.decidedBy), json({ provider: "anthropic", model: "claude-sonnet-5-5" }));
-  const last = session.trace[session.trace.length - 1];
-  assert.equal(session.trace.length, 2, "the facts trace is kept");
-  assert.equal(json([last.step, last.provider, last.operation, last.outcome, last.skillVersions, last.cacheWriteTokens]), json(["focus", "anthropic", "draft2_focus", "ok", { focus: "10", discovery: "1", arcs: "1", narratives: "4", spine: "1" }, 900]));
+  const [decisionCall, planCall] = session.trace.filter((entry) => entry.step === "focus");
+  assert.equal(session.trace.length, 3, "the facts trace is kept; the decision and the plan are two calls");
+  assert.equal(json([decisionCall.provider, decisionCall.operation, decisionCall.outcome, decisionCall.skillVersions, decisionCall.cacheWriteTokens]), json(["anthropic", "draft2_focus", "ok", { focus: "10", discovery: "1", arcs: "1", narratives: "4", spine: "1" }, 900]));
+  assert.equal(json([planCall.operation, planCall.outcome, planCall.effort, planCall.skillVersions]), json(["draft2_focus_plan", "ok", "high", { focus: "10", spine: "1" }]), "a classic telling: the planner reads the focus and spine skills only");
+  assert.equal(json([focus.values?.spine?.beats.length, focus.values?.direction, focus.reasons?.spine, focus.staleDirections]), json([7, PLAN.direction, "Why spine.", false]), "the plan's spine, directions and reasons join the decision");
+  assert.equal(json(Object.keys((h.calls[1].contents as { focus: Record<string, unknown> }).focus)), json(["line", "audience", "framing", "readerConsequence", "structure", "goal", "voice"]), "the planner reads the decision without the empty directions");
   assert.equal(json([focus.values?.narrative, focus.inventoryVersion, h.reviewCalls.length]), json([focusTypes.CLASSIC_NARRATIVE, 2, 0]), "a classic story is not reviewed");
 });
 
@@ -176,8 +187,8 @@ test("deciding again keeps the editor's fields: Claude receives them as choices 
   await h.decide();
   await h.edit("goal", { value: "saves" });
   const session = await h.decide();
-  assert.equal(json((h.calls[1].contents as { editorChoices: unknown }).editorChoices), json({ goal: "saves" }));
-  assert.equal(json([session.focus?.values?.goal, session.focus?.ai?.goal, session.focus?.values?.direction]), json(["saves", "followers", "Lead with what to keep."]));
+  assert.equal(json((h.decisions()[1].contents as { editorChoices: unknown }).editorChoices), json({ goal: "saves" }));
+  assert.equal(json([session.focus?.values?.goal, session.focus?.ai?.goal, session.focus?.values?.direction]), json(["saves", "followers", PLAN.direction]), "the direction is the plan's, whatever the decision answer carried");
   assert.equal(json([session.focus?.version, session.focus?.edited]), json([3, ["goal"]]), "decided, edited, decided again");
   assert.equal("goal" in (session.focus?.reasons ?? {}), false, "the goal is the editor's, with no reason of Claude's");
 });
@@ -221,7 +232,7 @@ test("an edit is saved with no provider call; a reset gives the field back; neit
   assert.equal(json([edited.focus?.values?.audience, edited.focus?.edited, edited.focus?.version]), json(["Parents in Laval", ["audience"], 2]));
   const reset = await h.edit("audience", { reset: true });
   assert.equal(json([reset.focus?.values?.audience, reset.focus?.edited, reset.focus?.version]), json(["Founders who sell software to the Pentagon", [], 3]));
-  assert.equal(h.calls.length, 1, "no provider call");
+  assert.equal(h.calls.length, 2, "no provider call beyond the decision's two");
   await assert.rejects(h.edit("goal", { value: "virality" }), (error: Error) => error instanceof types.Draft2InputError && /goal is one of/.test(error.message));
   const deciding = harness({ session: { ...h.row(), status: "running", focus: { ...h.row().focus, status: "running" } } });
   await assert.rejects(deciding.edit("goal", { value: "saves" }), (error: Error) => error instanceof types.Draft2BusyError && /Claude is deciding/.test(error.message));
@@ -234,7 +245,7 @@ test("an answer outside the contract is asked for again once, with the rule it b
   const h = harness({ answers: [answer({ readerConsequence: { text: "x".repeat(301), factIds: ["f1"] } }), answer()] });
   const session = await h.decide();
   assert.equal(session.status, "ready");
-  assert.equal(h.calls.length, 2);
+  assert.equal(h.calls.length, 3, "the decision twice, then the plan");
   const retry = h.calls[1].contents as { correction: string; story: { title: string } };
   assert.match(retry.correction, /^The focus's reader consequence is longer than 300 characters\. Return the whole decision again, every field and every reason/);
   assert.equal(retry.story.title, "Pentagon buys AI by video", "the whole request travels again");
@@ -242,16 +253,17 @@ test("an answer outside the contract is asked for again once, with the rule it b
   assert.equal(h.calls[1].instructions, h.calls[0].instructions, "the same instructions and cached facts");
   assert.equal((session.focus as Draft2Focus).values?.readerConsequence?.text, "A five-minute video can now open a Pentagon contract.");
   const focusTrace = (session.trace as types.Draft2TraceEntry[]).filter((entry) => entry.step === "focus");
-  assert.equal(json(focusTrace.map((entry) => [entry.round, entry.outcome, entry.effort])), json([[1, "ok", "high"], [2, "ok", "high"]]), "both calls are on the trace: they were paid");
+  assert.equal(json(focusTrace.map((entry) => [entry.round, entry.operation, entry.outcome, entry.effort])), json([[1, "draft2_focus", "ok", "high"], [2, "draft2_focus", "ok", "high"], [1, "draft2_focus_plan", "ok", "high"]]), "every call is on the trace: they were paid");
 });
 
-test("a second answer outside the contract fails the step, with both calls on the trace", async () => {
-  const h = harness({ answers: [answer({ audience: "" }), answer({ direction: "" })] });
-  await assert.rejects(h.decide(), /direction is missing or longer than/);
-  assert.equal(h.calls.length, 2);
+test("a second plan outside the contract fails the step, with the decision and both plan calls on the trace", async () => {
+  const h = harness({ answers: [answer()], plans: [{ ...PLAN, direction: "" }, { ...PLAN, visualDirection: "" }] });
+  await assert.rejects(h.decide(), /visual direction is missing or longer than/);
+  assert.equal(h.calls.length, 3);
+  assert.match(String((h.calls[2].contents as { correction: string }).correction), /^The direction is missing or longer than 1500 characters\. Return the whole plan again/);
   const last = h.last();
-  assert.equal(json([last.status, (last.focus as Draft2Focus).status]), json(["failed", "failed"]));
-  assert.equal((last.trace as types.Draft2TraceEntry[]).filter((entry) => entry.step === "focus").length, 2);
+  assert.equal(json([last.status, (last.focus as Draft2Focus).status, last.focus && (last.focus as Draft2Focus).values]), json(["failed", "failed", undefined]), "a decision whose plan fails is no decision");
+  assert.equal((last.trace as types.Draft2TraceEntry[]).filter((entry) => entry.step === "focus").length, 3);
 });
 
 test("the focus waits for People and places: the narrative form is chosen with them", async () => {
@@ -267,9 +279,9 @@ test("a guide Claude chose goes to the judge, which keeps it; the call is on the
   const [review] = h.reviewCalls;
   assert.equal(json([review.model, review.schemaName, review.reasoningEffort]), json(["gpt-6-luna", "draft2_focus_narrative_review", "low"]));
   assert.match(String(review.instructions), /# Verified facts\n/);
-  assert.equal(json((review.contents as { focus: { narrative: unknown } }).focus.narrative), json(focusTypes.focusForModels(focus.values!).narrative), "the judge reads the form as every writer will: with the structure's progression and the precedence over visualDirection");
-  const last = h.row().trace[h.row().trace.length - 1];
-  assert.equal(json([last.provider, last.model, last.operation, last.outcome, last.skillVersions]), json(["openai", "gpt-6-luna", "draft2_focus_narrative_review", "ok", { narratives: "4" }]));
+  assert.equal(json((review.contents as { focus: { narrative: unknown } }).focus.narrative), json(focusTypes.focusForModels({ ...focus.values!, visualDirection: undefined }).narrative), "the judge reads the form as decided, before the plan writes the visual direction");
+  const reviewEntry = h.row().trace.find((entry) => entry.operation === "draft2_focus_narrative_review")!;
+  assert.equal(json([reviewEntry.provider, reviewEntry.model, reviewEntry.outcome, reviewEntry.skillVersions]), json(["openai", "gpt-6-luna", "ok", { narratives: "4" }]));
 });
 
 test("the judge sends a form back to classic: Claude's proposal stays beside it for the editor", async () => {
@@ -288,7 +300,7 @@ test("a review that cannot run leaves Claude's form standing, with why; a decisi
   const session = await h.decide();
   assert.equal(json([session.status, session.focus?.values?.narrative, session.focus?.narrativeReview?.verdict]), json(["ready", GUIDE, "unavailable"]));
   assert.match(session.focus!.narrativeReview!.reason, /^Luna could not review the narrative form \(openai gpt-6-luna failed \(HTTP 429/);
-  assert.equal(session.trace[session.trace.length - 1].outcome, "error");
+  assert.equal(session.trace.find((entry) => entry.operation === "draft2_focus_narrative_review")?.outcome, "error");
 });
 
 test("the editor's narrative form goes back to Claude as a choice and is not reviewed again", async () => {
@@ -296,7 +308,7 @@ test("the editor's narrative form goes back to Claude as a choice and is not rev
   await h.decide();
   await h.edit("narrative", { value: GUIDE });
   const focus = (await h.decide()).focus!;
-  assert.equal(json((h.calls[1].contents as { editorChoices: unknown }).editorChoices), json({ narrative: GUIDE }));
+  assert.equal(json((h.decisions()[1].contents as { editorChoices: unknown }).editorChoices), json({ narrative: GUIDE }));
   assert.equal(json([focus.values?.narrative, focus.narrativeReview, h.reviewCalls.length]), json([GUIDE, undefined, 0]), "kept as the editor chose it, whatever Claude answered");
 });
 
@@ -330,20 +342,23 @@ test("an arc Claude chose is reviewed with the arcs skill", async () => {
   assert.equal(json(entry?.skillVersions), json({ arcs: "1" }));
 });
 
-test("after the editor changes how the story is told, Claude rewrites the two directions from the spine in one call; they become Claude's again and the stale mark clears", async () => {
-  const h = harness({ answers: [answer(), { direction: "Lead with the spine's hook; keep the award for the climax.", visualDirection: "One laptop in an empty hall, lit at the end." }] });
+test("after the editor changes how the story is told, Claude rewrites the plan from it in one call; the spine and the directions become Claude's again and the stale mark clears", async () => {
+  const again = { ...PLAN, direction: "Lead with the guide's first stop; keep the award for the climax.", visualDirection: "Jo at one laptop in an empty hall, lit at the end." };
+  const h = harness({ answers: [answer()], plans: [PLAN, again] });
   await h.decide();
   const edited = (await h.edit("narrative", { value: GUIDE })).focus!;
-  assert.equal(edited.staleDirections, true, "a new form leaves Claude's directions behind");
+  assert.equal(edited.staleDirections, true, "a new form leaves Claude's plan behind");
   const session = await h.rewrite();
   const focus = session.focus!;
-  assert.deepEqual([focus.values?.direction, focus.values?.visualDirection, focus.ai?.direction, focus.edited, focus.staleDirections, focus.version], ["Lead with the spine's hook; keep the award for the climax.", "One laptop in an empty hall, lit at the end.", "Lead with the spine's hook; keep the award for the climax.", ["narrative"], false, edited.version + 1]);
+  assert.deepEqual([focus.values?.direction, focus.values?.visualDirection, focus.ai?.direction, focus.edited, focus.staleDirections, focus.version], [again.direction, again.visualDirection, again.direction, ["narrative"], false, edited.version + 1]);
   assert.deepEqual(focus.values?.narrative, GUIDE, "the telling the editor chose stands");
-  const call = h.calls[1];
-  assert.equal(call.schemaName, "draft2_focus_directions");
-  assert.match(String(call.instructions), /You rewrite the two directions of a story's focus/);
+  const call = h.calls[h.calls.length - 1];
+  assert.equal(call.schemaName, "draft2_focus_plan");
+  assert.match(String(call.instructions), /You write the plan of a story's focus/);
   assert.match(String(call.instructions), /# The spine/);
-  assert.equal(json((call.contents as { focus: { spine: unknown[] } }).focus.spine.length), json(7), "the writer reads the spine the directions must restate");
+  assert.match(String(call.instructions), /# Narrative forms/, "the planner reads the skill of the telling it plans for");
+  const contents = call.contents as { task: string; focus: { narrative?: { form: string }; spine?: unknown }; editorChoices: unknown };
+  assert.equal(json([contents.task, contents.focus.narrative?.form, "spine" in contents.focus, contents.editorChoices]), json(["plan", "character-guide", true, {}]), "the planner reads the decision, the earlier spine and the parts the editor owns (none here)");
   const last = session.trace[session.trace.length - 1];
-  assert.equal(json([last.operation, last.outcome, last.effort, last.skillVersions]), json(["draft2_focus_directions", "ok", "medium", { focus: "10", spine: "1", narratives: "4" }]));
+  assert.equal(json([last.operation, last.outcome, last.effort, last.skillVersions]), json(["draft2_focus_plan", "ok", "high", { focus: "10", spine: "1", narratives: "4" }]));
 });
