@@ -2,14 +2,14 @@ import { comparableText } from "./draft2-facts.types";
 import type { Draft2FocusSnapshot } from "./draft2-focus.types";
 import {
   funnelEvaluationSchema, funnelExploreRequest, funnelJudgeRequest, funnelParseCandidates, funnelParseEvaluation, funnelRecord, funnelRefineRequest,
-  funnelText, headlineKey, longWords, wordOverlap,
+  funnelText, funnelVersions, headlineKey, longWords, wordOverlap,
   type FunnelCandidate, type FunnelEvaluation, type FunnelGate, type FunnelIssue, type FunnelPlanRound, type FunnelRegression, type FunnelRole,
   type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion, type FunnelWords,
 } from "./draft2-funnel";
 import { entityMaterial, referencePhotos, type Draft2CharacterChoice, type Draft2Inventory } from "./draft2-inventory.types";
 import { anchorNoun, narrativeUsesMaster, type Draft2FocusNarrative } from "./draft2-focus.types";
 import type { Draft2ClosingOpening } from "./draft2-closing.types";
-import type { Draft2DeckCandidate, Draft2DeckClosing } from "./draft2-deck.types";
+import type { Draft2Deck, Draft2DeckCandidate, Draft2DeckClosing } from "./draft2-deck.types";
 import type { CreativeProfile } from "../stories/creative-content.types";
 
 /**
@@ -176,6 +176,29 @@ export function carouselSlides(opening: Draft2ClosingOpening, deck: Pick<Draft2D
     ...(closing.penultimate ? [{ slide: "penultimate", label: `Slide ${deck.slides.length + 3}`, headline: closing.penultimate.headline, text: closing.penultimate.body, factIds: closing.penultimate.factIds }] : []),
     { slide: "last", label: `Slide ${deck.slides.length + (closing.penultimate ? 4 : 3)}`, headline: closing.last.headline, text: closing.last.body, ...(closing.last.cta ? { cta: closing.last.cta } : {}), factIds: closing.last.factIds },
   ];
+}
+
+/**
+ * The carousel as it stands: the deck chosen (the editor's choice, else the
+ * judge's winner) between the opening and closing the deck recorded. Nothing
+ * while the deck has no chosen version or no recorded ends.
+ */
+export function deckCarousel(deck: Pick<Draft2Deck, "rounds" | "editorChoiceId" | "winnerId" | "opening" | "closing"> | null | undefined): Draft2CarouselSlide[] | undefined {
+  const chosenId = deck?.editorChoiceId ?? deck?.winnerId;
+  const chosen = deck && chosenId ? funnelVersions(deck.rounds).find((version) => version.candidate.id === chosenId)?.candidate : undefined;
+  return chosen && deck?.opening && deck.closing ? carouselSlides(deck.opening, chosen, deck.closing) : undefined;
+}
+
+/**
+ * Whether two carousels letter the same words: the same slides in the same
+ * order, each with the same headline, text, practical line and call to
+ * action. Labels and fact ids do not count. A visual script pictures the
+ * words as they stood (the image model letters them), so a review patch or
+ * an edit applied since asks for a new script.
+ */
+export function sameCarouselWords(a: readonly Draft2CarouselSlide[], b: readonly Draft2CarouselSlide[]): boolean {
+  const words = (slide: Draft2CarouselSlide) => [slide.slide, slide.headline, slide.text, slide.practical ?? "", slide.cta ?? ""].map((text) => text.trim()).join("\n");
+  return a.length === b.length && a.every((slide, index) => words(slide) === words(b[index]));
 }
 
 /**

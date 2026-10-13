@@ -502,6 +502,11 @@ not slide by slide. Brief: `docs/features/draft2-review.md`. In short:
   minute. `DRAFT2_MODEL_REVIEW_JUDGE=gpt-6-luna` runs both on the cheap
   judge.
 
+A patch applied after the visual script exists marks the script "Changed
+since" and holds the images (the words the script recorded against the
+carousel now, `sameCarouselWords`), since the images letter the words; the
+autopilot then writes the visual script again.
+
 Not built: a second pass over the finished images, calibration exemplars (the
 editor has none yet), and the editor's choice vs the judge's winner as a
 calibration signal.

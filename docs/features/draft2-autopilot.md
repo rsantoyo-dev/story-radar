@@ -54,8 +54,9 @@ approves the carousel for publishing (AGENTS.md §21 keeps that approval).
   editor) and the autopilot applies every patch the program accepted
   (`appliedBy: "autopilot"`), so the Visual script reads the patched words;
   the Review screen shows each patch with its before and after and undoes
-  any. A review that read other versions than the chosen ones runs again
-  (`docs/features/draft2-review.md`).
+  any. A review that read other versions than the chosen ones runs again, and
+  a visual script written before a patch is written again: the words it
+  pictured are no longer the carousel's (`docs/features/draft2-review.md`).
 - The loop drives the same `runStep` the buttons use (its pauses, its
   continuation requests, its lost-request follow); `runStep` now returns the
   session it ended on and reads the session it was given, so a loop that

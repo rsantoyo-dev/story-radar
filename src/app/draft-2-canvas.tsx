@@ -21,7 +21,7 @@ import { CLOSING_GATE, CLOSING_MAX_ROUNDS, type Draft2Closing, type Draft2Closin
 import { DECK_GATE, DECK_MAX_ROUNDS, type Draft2Deck, type Draft2DeckCandidate, type Draft2DeckCriterion } from "@/app/modules/draft2/draft2-deck.types";
 import { REVIEW_CRITERIA, proposedPatches, reviewCurrent, type Draft2Review } from "@/app/modules/draft2/draft2-review.types";
 import { INVENTORY_CHARACTER_CHOICES, type Draft2CharacterChoice, type Draft2Inventory, type Draft2InventoryEntity, type Draft2InventoryStoryPhoto } from "@/app/modules/draft2/draft2-inventory.types";
-import { VISUAL_GATE, VISUAL_MAX_ROUNDS, visualPlan, type Draft2Visual, type Draft2VisualCandidate, type Draft2VisualCriterion, type Draft2VisualRecurring, type Draft2VisualShot } from "@/app/modules/draft2/draft2-visual.types";
+import { VISUAL_GATE, VISUAL_MAX_ROUNDS, deckCarousel, sameCarouselWords, visualPlan, type Draft2Visual, type Draft2VisualCandidate, type Draft2VisualCriterion, type Draft2VisualRecurring, type Draft2VisualShot } from "@/app/modules/draft2/draft2-visual.types";
 import { IMAGES_MAX_REQUESTS, draft2ImageDownloads, latestAttempt, shownAttempt, slideSettled, type Draft2ImageAttempt, type Draft2ImageReview, type Draft2Images, type Draft2SlideImage } from "@/app/modules/draft2/draft2-images.types";
 import { CAPTION_GATE, CAPTION_MAX_CHARACTERS, CAPTION_MAX_ROUNDS, captionPostText, type Draft2Caption, type Draft2CaptionCandidate, type Draft2CaptionCriterion } from "@/app/modules/draft2/draft2-caption.types";
 import { confirmedMentions, mentionEntities, sameMentions, type Draft2MentionAccount, type Draft2MentionStatus, type Draft2Mentions } from "@/app/modules/draft2/draft2-mentions.types";
@@ -152,7 +152,9 @@ function nextAutopilotStep(session: Draft2SessionView | null, now: number): Auto
   if (!review || review.status === "failed" || !reviewCurrent(review, { openingId, closingId, deckId }) || (review.status === "running" && stale)) return { step: "review" };
   if (review.status === "running") return { blocked: "The carousel is being read." };
   const visual = session.visual;
-  const visualNeeds = runNeeds("visual", visual, Boolean(visual && (visual.deckId !== deckId || visual.inventoryVersion !== inventory.version)), "visual script");
+  // The script pictures the carousel's words and the images letter them: a review patch or an edit applied since asks for a new script.
+  const carouselNow = deckCarousel(deck);
+  const visualNeeds = runNeeds("visual", visual, Boolean(visual && (visual.deckId !== deckId || visual.inventoryVersion !== inventory.version || (visual.carousel && carouselNow && !sameCarouselWords(visual.carousel, carouselNow)))), "visual script");
   if (visualNeeds) return visualNeeds;
   const visualId = visual!.editorChoiceId ?? visual!.winnerId;
   const images = session.images;
@@ -806,8 +808,10 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
     : { label: `${proposedPatches(review).length} to decide · ${review.editor?.scores.overall ?? "?"}`, tone: "info" as const };
   const reviewReady = deckFinished && !deckEndsChanged;
   const visualReady = deckFinished && !deckEndsChanged && inventory?.status === "ready";
-  // A visual script of another deck, or of people and places found or decided since.
-  const visualChanged = Boolean(visual?.deckId && ((chosenDeckId && visual.deckId !== chosenDeckId) || (inventory && visual.inventoryVersion !== inventory.version)));
+  // A visual script of another deck, of people and places found or decided since, or of words a review patch or an edit changed since (the images letter them).
+  const carouselNow = deckFinished && !deckEndsChanged ? deckCarousel(deck) : undefined;
+  const visualWordsChanged = Boolean(visual?.carousel && carouselNow && !sameCarouselWords(visual.carousel, carouselNow));
+  const visualChanged = Boolean(visual?.deckId && ((chosenDeckId && visual.deckId !== chosenDeckId) || (inventory && visual.inventoryVersion !== inventory.version) || visualWordsChanged));
   const visualResumable = visual && (visual.status === "paused" || visualStalled) && funnelResumeRound(visual) <= continuableUpTo(visual, VISUAL_MAX_ROUNDS);
   // A run that ended unaccepted before the step had its third round takes it, while it still follows the deck and the people and places.
   const visualExtendable = Boolean(visual && !visualChanged && funnelExtendable(visual, visualPlan(visual.carousel ?? []).length + (visual.extraRounds ?? 0)));
@@ -1142,7 +1146,9 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
             : needs("inventory", "Find the people and places first: the script shows only what is verified.")) : null}
         {visualExtendable && visual && !running ? <p className={styles.factMeta}>This run ended after {visual.rounds.length} rounds, before the visual script had a third. Continue with round {visualResumeRound} revises its best version once more against the remaining issues: one write and one judgment.</p> : null}
         {peopleToConfirm && visualReady && !running ? needs("inventory", `${peopleToConfirm} ${peopleToConfirm === 1 ? "person waits" : "people wait"} for your confirmation; until then the script tells the story without showing them.`) : null}
-        {visualChanged && running !== "visual" ? <InlineNotice tone="info" title="The deck or the people and places changed">This script pictures {visual?.deckId} with people and places v{visual?.inventoryVersion}; the deck chosen now is {chosenDeckId} and the people and places are v{inventory?.version}. Write the visual script again to follow them.</InlineNotice> : null}
+        {visualChanged && running !== "visual" ? (visualWordsChanged && visual?.deckId === chosenDeckId && visual?.inventoryVersion === inventory?.version
+          ? <InlineNotice tone="info" title="The carousel’s words changed since this script">A review patch or an edit changed words this script pictures, and the images letter them. Write the visual script again to follow the words as they stand.</InlineNotice>
+          : <InlineNotice tone="info" title="The deck or the people and places changed">This script pictures {visual?.deckId} with people and places v{visual?.inventoryVersion}; the deck chosen now is {chosenDeckId} and the people and places are v{inventory?.version}. Write the visual script again to follow them.</InlineNotice>) : null}
         {running === "visual" ? <LoadingState>{following ? `${following} Following the run on the server…` : visualPausedRound ? `Continuing with round ${visualPausedRound} in a new request…` : `${today.visual.writer} writes the scripts; ${today.visual.judge} judges each round. This can take a few minutes.`}</LoadingState> : null}
         {visualStalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {stoppedAt}: its request or the server ended. Continue from round {visualResumeRound} picks it up at its last checkpoint; a round already written is judged, not written again.</InlineNotice> : null}
         {runError?.step === "visual" ? <InlineNotice tone="error" title="The visual script stopped">{runError.message}</InlineNotice> : null}
@@ -1170,7 +1176,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
       </>,
       how: <p>GPT Image makes each slide from the chosen visual script and the brand’s identity, and letters the slide’s words itself; the page number and the logo are added afterwards where the brand puts them, and a verified photo or map is pasted unchanged. {imageReviewer} reviews each image: the words as they appear, what covers them, real people, other brands’ logos, what the brand avoids and the facts. A slide it flags is corrected once, from its image before the logo and the page number. Low quality, three calls a slide at most.</p>,
       body: <>
-        {factsVerified && !imagesReady && !running ? needs("visual", !visualFinished ? "The images picture the visual script; finish it first." : "The deck or the people and places changed since the visual script; write the visual script again first.") : null}
+        {factsVerified && !imagesReady && !running ? needs("visual", !visualFinished ? "The images picture the visual script; finish it first." : "The carousel’s words, the deck or the people and places changed since the visual script; write the visual script again first.") : null}
         {imagesChanged && running !== "images" ? <InlineNotice tone="info" title="The visual script changed">These images picture {images?.visualId}; the visual script chosen now is {chosenVisualId}. Make the images again to follow it.</InlineNotice> : null}
         {running === "images" ? <LoadingState>{following ? `${following} Following the run on the server…` : images?.status === "paused" ? "Continuing in a new request while fal works…" : `GPT Image makes the slides; ${imageReviewer} reviews each one. This can take a few minutes.`}</LoadingState> : null}
         {imagesStalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {stoppedAt}: its request or the server ended. Continue picks it up; an image already asked for is not asked for again.</InlineNotice> : null}

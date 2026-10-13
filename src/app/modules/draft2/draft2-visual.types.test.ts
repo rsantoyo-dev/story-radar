@@ -3,7 +3,7 @@ import test from "node:test";
 import { Draft2ResponseError } from "./draft2-facts.types";
 import {
   forbiddenElement,
-  VISUAL_CRITERIA, VISUAL_LONG_PLAN, VISUAL_PLAN, avoidTerms, carouselSlides, mechanicalVisualIssues, parseVisualCandidates, parseVisualEvaluation, sameVisual,
+  VISUAL_CRITERIA, VISUAL_LONG_PLAN, VISUAL_PLAN, avoidTerms, carouselSlides, deckCarousel, mechanicalVisualIssues, parseVisualCandidates, parseVisualEvaluation, sameCarouselWords, sameVisual,
   visualExploreRequest, visualJudgeRequest, visualLayout, visualModeLine, visualPlan, visualRefineRequest, visualSchema,
   type Draft2CarouselSlide, type Draft2VisualCandidate, type Draft2VisualIssue, type Draft2VisualRound, type Draft2VisualScore, type Draft2VisualSlide,
 } from "./draft2-visual.types";
@@ -264,4 +264,21 @@ test("with a narrative form the anchor is on every slide by design: the recurrin
   assert.deepEqual(relevant(findings(recurring(["focus", "focus", "focus", "accent", "callback", "callback"]), { narrative: guide })), [], "led on every slide, two returns: the form, not a fault");
   assert.deepEqual(relevant(findings(recurring(["focus", "focus", "focus", "accent", "callback", "callback"]))), ["RECURRING_DOMINANT c1 slide2", "RECURRING_DOMINANT c1 s1", "RECURRING_DOMINANT c1", "CALLBACK_MISPLACED c1"], "without a form the limits stand");
   assert.deepEqual(relevant(findings(recurring(["focus", "none", "focus", "accent", "accent", "callback"]), { narrative: guide })), ["ANCHOR_MISSING c1 slide2"], "a slide without the anchor is still the one fault the form has");
+});
+
+test("the carousel as it stands, and whether a script's words are still its words: a patch or an edit changes them, labels and fact ids do not", () => {
+  const run = {
+    status: "ready", winnerId: "d2", rounds: [{ round: 1, candidates: [{ id: "d1", angle: "a", slides: deck.slides }, { id: "d2", angle: "b", slides: deck.slides.slice(0, 1) }], mechanical: [] }], opening, closing,
+  } as unknown as NonNullable<Parameters<typeof deckCarousel>[0]>;
+  assert.deepEqual(deckCarousel(run)?.map((slide) => slide.slide), ["cover", "slide2", "s1", "penultimate", "last"], "the winner's deck between the opening and closing the deck recorded");
+  assert.equal(deckCarousel({ ...run, editorChoiceId: "d1" })?.length, 6, "the editor's choice before the winner");
+  assert.equal(deckCarousel({ ...run, winnerId: undefined }), undefined, "no chosen deck, no carousel");
+  assert.equal(deckCarousel({ ...run, opening: undefined }), undefined, "no recorded ends, no carousel");
+  assert.equal(deckCarousel(undefined), undefined);
+  assert.ok(sameCarouselWords(carousel, carousel.map((slide) => ({ ...slide, label: "x", factIds: [] }))), "labels and fact ids are not words");
+  assert.ok(sameCarouselWords(carousel, carousel.map((slide) => ({ ...slide, headline: ` ${slide.headline} ` }))), "surrounding whitespace is not a change");
+  assert.ok(!sameCarouselWords(carousel, carousel.map((slide, index) => index === 0 ? { ...slide, headline: "Your library is back" } : slide)), "a patched cover headline");
+  assert.ok(!sameCarouselWords(carousel, carousel.map((slide) => slide.slide === "last" ? { ...slide, cta: "Save this." } : slide)), "a patched call to action");
+  assert.ok(!sameCarouselWords(carousel, carousel.map((slide) => slide.slide === "s1" ? { ...slide, practical: "Sat · 10 a.m." } : slide)), "a patched practical line");
+  assert.ok(!sameCarouselWords(carousel, carousel.slice(0, -1)), "a slide fewer");
 });

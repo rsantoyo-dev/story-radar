@@ -55,6 +55,13 @@ are applied as the editor wrote them (`appliedBy: "autopilot"`); the Review
 screen shows each with its before and after, and undoes any. A new opening,
 closing or deck chosen since makes the review "Changed since": read again.
 
+A patch applied after the visual script exists changes words the script
+pictured and the images letter, so the visual script shows "Changed since"
+(`sameCarouselWords` compares the words the script recorded with the carousel
+as it stands, `deckCarousel`), the images wait for a new script, and the
+autopilot writes the visual script again before the images. Undoing every
+patch makes the script current again.
+
 ## 3. Why words only, and before the images
 
 The images follow the words (the visual script pictures the carousel as it
