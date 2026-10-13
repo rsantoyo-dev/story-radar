@@ -565,6 +565,24 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
     }
   }
 
+  /** The two directions rewritten from how the story is now told (its concept, form and spine), after the editor changed one of them: one Claude call. */
+  async function rewriteDirections() {
+    if (!session || running || savingFocus) return;
+    setSavingFocus("direction"); setFocusError(undefined);
+    try {
+      const response = await fetch(`/api/radar/draft2/focus?topicId=${encodeURIComponent(topicId)}`, {
+        method: "PATCH", cache: "no-store", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: session.id, storyId, rewrite: "directions" }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? "Could not rewrite the directions.");
+      setSession(body.session as Draft2SessionView);
+    } catch (cause) {
+      setFocusError(cause instanceof Error ? cause.message : "Could not rewrite the directions.");
+    } finally {
+      setSavingFocus(undefined);
+    }
+  }
+
   /** One people-and-places decision: a person's photo, a place's match, a story photo for either, the story's photos read again, or the characters choice. */
   async function decideInventory(input: Record<string, unknown>) {
     if (!session || running || savingInventory) return;
@@ -937,6 +955,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
           locked={running !== undefined || savingFocus !== undefined}
           onSave={(field, value) => { void saveFocus(field, { value }); }}
           onReset={(field) => { void saveFocus(field, { reset: true }); }}
+          onRewriteDirections={() => { void rewriteDirections(); }}
         /> : null}
         {!focus?.values && factsVerified && running !== "focus" ? <EmptyState title="No focus yet">Decide the focus: Claude proposes what the story is for, and every field stays yours to change.</EmptyState> : null}
       </>,
@@ -1969,6 +1988,7 @@ function focusValueText(field: Draft2FocusField, values: Draft2FocusValues): str
       return narrative.form === "classic" ? NARRATIVE_LABEL.classic : `${NARRATIVE_LABEL[narrative.form].split(":")[0]} · ${narrative.anchor}`;
     }
     case "visualDirection": return values.visualDirection ?? "";
+    case "spine": return values.spine ? `${values.spine.beats.length} beats · ${values.spine.beats.map((beat) => beat.role).join(" › ")}` : "none";
   }
 }
 
@@ -1977,7 +1997,7 @@ function focusValueText(field: Draft2FocusField, values: Draft2FocusValues): str
  * beside Claude's value. Selects save when they change, text when it loses
  * focus; the controls wait while a change is saved or a step runs.
  */
-function FocusView({ focus, findings, material, saving, locked, onSave, onReset }: {
+function FocusView({ focus, findings, material, saving, locked, onSave, onReset, onRewriteDirections }: {
   focus: Draft2Focus;
   findings: readonly Draft2FocusFinding[];
   /** People and places' material as it stands: the brand's characters the editor allows, the story's people. */
@@ -1986,6 +2006,8 @@ function FocusView({ focus, findings, material, saving, locked, onSave, onReset 
   locked: boolean;
   onSave: (field: Draft2FocusField, value: unknown) => void;
   onReset: (field: Draft2FocusField) => void;
+  /** Claude rewrites the direction and the visual direction from the concept, the form and the spine as they now stand. */
+  onRewriteDirections: () => void;
 }) {
   const values = focus.values!;
   const decided = focus.decidedAt ? new Date(focus.decidedAt).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" }) : undefined;
@@ -2076,6 +2098,20 @@ function FocusView({ focus, findings, material, saving, locked, onSave, onReset 
         {reset("narrative")}
         {focus.narrativeReview?.verdict === "classic" && focus.narrativeReview.proposed && focusNarrative(values).form === "classic"
           ? <div><Button variant="quiet" size="compact" busy={saving === "narrative"} disabled={locked} onClick={() => onSave("narrative", focus.narrativeReview!.proposed)}>Use Claude’s {NARRATIVE_LABEL[focus.narrativeReview.proposed.form].split(":")[0].toLowerCase()}</Button></div> : null}
+      </div>
+      <div className={`${styles.focusField} ${styles.focusWide}`}>
+        <FormField label="Spine" description={about("spine", values.spine ? "One beat per slide, decided after the concept and the form: the words and the images both follow it, and the judges score each slide against its beat." : "Decided before spines: decide again for Claude to write the beats.")}>
+          {values.spine ? <ol>
+            {values.spine.beats.map((beat, index) => <li key={`${beat.slide}-${index}`}>
+              <strong>{beat.slide} · {beat.role}</strong> {beat.scene}
+              <br /><em>Words:</em> {beat.words} <em>Image:</em> {beat.image}{beat.withholds ? <> <em>Withholds:</em> {beat.withholds}</> : null}{beat.factIds.length ? <> <em>Facts:</em> {beat.factIds.join(", ")}</> : null}
+            </li>)}
+          </ol> : null}
+        </FormField>
+        {reset("spine")}
+        {focus.staleDirections
+          ? <InlineNotice tone="info" title="The directions were written for another telling">You changed how the story is told; the direction and the visual direction still say what Claude wrote before. <Button variant="quiet" size="compact" busy={saving === "direction"} disabled={locked} onClick={onRewriteDirections}>Rewrite the directions</Button></InlineNotice>
+          : null}
       </div>
       <div className={`${styles.focusField} ${styles.focusWide}`}>
         <FocusText key={key("visualDirection")} label="Visual direction" description={about("visualDirection", values.visualDirection ? "The visual script follows it: the world the images live in, who leads them, what recurs." : "Decided before this field existed: decide again for Claude to set it, or write it.")} value={values.visualDirection ?? ""} max={FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS} rows={3} disabled={locked} onCommit={(value) => onSave("visualDirection", value)} />

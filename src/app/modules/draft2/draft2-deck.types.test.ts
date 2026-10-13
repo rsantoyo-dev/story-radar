@@ -131,3 +131,11 @@ test("the requests name decks: new ones, revisions with their headlines, and the
   assert.equal(deckJudgeRequest(DECK_ARC_PLAN, 1, [deck("c1")], [], []).proposalsWanted, 1);
   assert.equal("proposalsWanted" in deckJudgeRequest(DECK_ARC_PLAN, 2, [deck("c1")], [], []), false);
 });
+
+test("an arc's deck takes its number of middle slides from the focus's spine when it has one, within the deck's own range", () => {
+  const beats = (middle: number) => ({ beats: [{ slide: "cover" }, { slide: "slide2" }, ...Array.from({ length: middle }, () => ({ slide: "middle" })), { slide: "penultimate" }, { slide: "last" }] });
+  assert.deepEqual([deckShape({ kind: "arc", itemFactIds: [] }, [], beats(3)).min, deckShape({ kind: "arc", itemFactIds: [] }, [], beats(3)).max], [3, 3], "three middle beats, three slides");
+  assert.deepEqual([deckShape({ kind: "arc", itemFactIds: [] }, [], beats(7)).min, deckShape({ kind: "arc", itemFactIds: [] }, [], beats(7)).max], [5, 5], "clamped to the deck's range");
+  assert.deepEqual([deckShape({ kind: "arc", itemFactIds: [] }, []).min, deckShape({ kind: "arc", itemFactIds: [] }, []).max], [2, 5], "no spine: the range as before");
+  assert.deepEqual(deckShape({ kind: "list", itemFactIds: ["f2", "f3", "f5"] }, ["f2"], beats(1)).items, ["f3", "f5"], "a list keeps its items whatever the spine says");
+});

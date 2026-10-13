@@ -425,3 +425,67 @@ forms need an identity that can hold one continuous photographic scene,
 else classic or a guide. The editor's own form choice is still unreviewed
 (Opus's decision); a non-blocking advisory review is proposed in
 `draft2-handoff.md` §10.
+
+## 16. The spine, and the order of decision (2026-10-12)
+
+The editor's own reading, confirmed by the day's runs: the concept (how the
+reader meets the news) and the narrative form must be decided before the
+directions, so the written and the visual scripts follow the same plan, and
+the carousel must reach a turning point or a climax. Focus skill v10 decides
+in four steps inside one Claude call: the story (line, audience, framing,
+consequence, structure, goal, voice), then how it is told (concept and form,
+with a stated preference for a telling other than classic: classic only when
+no arc, premise or form fits these facts, this audience and this gravity,
+and the reason says why), then the **spine**, then the two directions derived
+from it. `FOCUS_FIELDS` follows that order.
+
+### The spine (`spine`, the spine skill v1)
+
+The story in beats, one per slide, each with:
+
+| Field | What it is | Limit |
+| --- | --- | --- |
+| `slide` | cover, slide2, middle (the deck's slides in order), penultimate (an arc), last | |
+| `role` | hook, setup, inciting, rising, turning-point, climax, resolution, payoff | |
+| `scene` | what happens, present tense, told through the form and the concept | 240 |
+| `words` | the words' job on the slide, never the words themselves | 200 |
+| `image` | what the image adds that the words cannot say | 240 |
+| `withholds` | what the slide keeps for the next one; empty on the last only | 160 |
+| `factIds` | the verified facts the beat rests on; a hook may rest on none | 6 |
+
+Program rules (`spineShapeProblem`, a response error for Claude's answer,
+an input error for the editor's, a `SPINE_SHAPE` finding when the structure
+changes under a spine): four to ten beats; the first is the cover and a
+hook, the second slide2, then the middle beats (two to five for an arc, one
+per item or step otherwise with the first item allowed on slide2), one
+penultimate for an arc only, one last whose role is payoff or resolution; a
+turning point or a climax among them; every beat but the last withholds
+something. The roles are an adaptable sequence, never a mandatory eight.
+
+### Who reads it
+
+`focusForModels` carries the spine between the telling and the directions.
+Every funnel step's writer and judge read the spine skill when the focus has
+one (`creativeSkills`): the Opening takes the cover and slide2 beats, the
+Deck its middle beats (`deckShape` fixes an arc's slide count to them), the
+Closing the penultimate and last, the visual script the image line of every
+beat with the turn's slide image-led; the judges score adherence within the
+focus criterion. A focus decided before spines has none and nothing changes
+for it.
+
+### The directions follow the telling
+
+An edit to the concept, the form or the spine marks the directions stale
+(`staleDirections`), unless the editor owns both directions; the canvas says
+so and offers "Rewrite the directions": one Claude call at medium effort
+(`rewriteDraft2FocusDirections`, role `focus-directions-writer`, `PATCH`
+with `rewrite: "directions"`) that restates the spine in the direction and
+the visual direction, gives both back to Claude and clears the mark. The
+Opening and the steps after it read the new directions through the focus
+version they follow, as before.
+
+### Still for the canvas
+
+The spine shows as a read-only list under the narrative; editing the beats
+(reorder, reword, mark the turn) and moving the Direction field below the
+spine in the layout are the next UI work.

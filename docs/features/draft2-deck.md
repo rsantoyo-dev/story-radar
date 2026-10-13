@@ -125,3 +125,11 @@ The judge's issue codes are `BREAKS_FLOW`, `GAP`, `OVERLOADED`, `REPEATS`,
 
 - Review (the next step: the whole carousel judged together before approval).
 - Images, captions and publication.
+
+## The spine fixes an arc's length (2026-10-12)
+
+When the focus has a spine, an arc's deck has exactly as many slides as the
+spine's middle beats (`deckShape(structure, slide2FactIds, spine)`, clamped
+to the deck's 2–5 range), and the deck writer and judge read the spine skill:
+each slide is its middle beat, in order, and the turn's slide leaves room for
+its image. A list or a procedure keeps its items as before.

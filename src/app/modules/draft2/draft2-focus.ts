@@ -12,23 +12,26 @@ import { traceCost } from "./draft2-trace-cost";
 import { draft2DevTrace } from "./draft2-dev-trace";
 import { Draft2BusyError, Draft2InputError, Draft2ResponseError, type Draft2TraceEntry } from "./draft2-facts.types";
 import {
-  CLASSIC_CONCEPT, CLASSIC_NARRATIVE, DRAFT2_FOCUS_SCHEMA, DRAFT2_NARRATIVE_REVIEW_SCHEMA, applyFocusEdit, conceptReviewRequest, decidedFocus, editorChoicesOf, focusDecisionRequest, focusLine, focusMaterial, focusToday,
-  narrativeReviewRequest, parseFocusDecision, parseNarrativeReview, resetFocusField,
+  CLASSIC_CONCEPT, CLASSIC_NARRATIVE, DRAFT2_FOCUS_DIRECTIONS_SCHEMA, DRAFT2_FOCUS_SCHEMA, DRAFT2_NARRATIVE_REVIEW_SCHEMA, applyFocusEdit, conceptReviewRequest, decidedFocus, editorChoicesOf, focusDecisionRequest, focusForModels, focusLine, focusMaterial, focusToday,
+  focusWithDirections, narrativeReviewRequest, parseFocusDecision, parseFocusDirections, parseNarrativeReview, resetFocusField,
   type Draft2CreativeReview, type Draft2Focus, type Draft2FocusField,
 } from "./draft2-focus.types";
 import { draft2ModelName, draft2RoleModel, draft2SolModel } from "./draft2-models";
 import { OPENING_STALL_MS, openingFactsSnapshot } from "./draft2-opening.types";
 import { visualModeLine, type Draft2VisualMode } from "./draft2-visual.types";
 import { resolveCreativeVisualGuidance } from "../stories/creative-visual-guidance";
-import { brandBrief, composeInstructions, type Draft2Skill } from "./skills/draft2-skills";
+import { brandBrief, composeInstructions, creativeSkills, type Draft2Skill } from "./skills/draft2-skills";
 import { FOCUS_SKILL } from "./skills/focus";
 import { NARRATIVES_SKILL } from "./skills/narratives";
 import { DISCOVERY_SKILL } from "./skills/discovery";
 import { ARCS_SKILL } from "./skills/arcs";
+import { SPINE_SKILL } from "./skills/spine";
 import type { Draft2SessionRow } from "@/db/schema";
 
 /** Every field and a reason for each, with Claude's thinking, which the API counts against the same ceiling. */
 const MAX_OUTPUT_TOKENS = 12_000;
+/** Two paragraphs: the rewritten directions need far less than a whole decision. */
+const DIRECTIONS_MAX_OUTPUT_TOKENS = 6_000;
 /** One call; the adapter's default limit (120 s) is short for high effort on a long facts list. */
 const CALL_TIMEOUT_MS = 240_000;
 /** Shows the decision is alive, well inside OPENING_STALL_MS (the window aliveSince() gives the focus too). */
@@ -84,7 +87,7 @@ export async function decideDraft2Focus({ topicId, storyId, sessionId }: Draft2F
   const auditContext = { runId: session.id, topicId, storyId };
   // The visual identity in full, as the visual script reads it: the visual direction is decided within it.
   const brief = [brandBrief(profile), `# Visual identity\n${resolveCreativeVisualGuidance(profile)}`, visualModeLine(profile.visualFidelityMode as Draft2VisualMode)].join("\n\n");
-  const { instructions, skillVersions } = composeInstructions("focus-editor", [FOCUS_SKILL, DISCOVERY_SKILL, ARCS_SKILL, NARRATIVES_SKILL], brief);
+  const { instructions, skillVersions } = composeInstructions("focus-editor", [FOCUS_SKILL, DISCOVERY_SKILL, ARCS_SKILL, NARRATIVES_SKILL, SPINE_SKILL], brief);
   const verifiedFacts = openingFactsSnapshot(facts);
   const contents = focusDecisionRequest({ title: content.title, today: focusToday(timezone, new Date()), profile, lines, foundBy, editorChoices, material });
 
@@ -214,6 +217,54 @@ export async function editDraft2Focus({ topicId, sessionId, field, value, reset 
   const next = reset ? resetFocusField(focus, field, now) : applyFocusEdit(focus, field, value, now);
   if (next === focus) return session;
   const updated = await updateDraft2Session(session.id, { focus: next });
+  if (!updated) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
+  return updated;
+}
+
+/**
+ * Rewrites the focus's two directions from how the story is now told (its
+ * concept, form and spine, after the editor changed one of them): one Claude
+ * call, both fields replaced and given back to Claude, the version moved, the
+ * stale mark cleared. The spine, the concept and the form stay as they are;
+ * the Opening and the steps after it read the new directions through the
+ * focus version they follow.
+ */
+export async function rewriteDraft2FocusDirections({ topicId, storyId, sessionId }: Draft2FocusInput): Promise<Draft2SessionRow> {
+  const session = await getDraft2Session(topicId, sessionId);
+  if (!session || session.storyId !== storyId) throw new Draft2InputError("This Draft 2 session was not found for the story. Reload the canvas.");
+  const focus = session.focus;
+  if (!focus?.values) throw new Draft2InputError("Decide the focus before rewriting its directions.");
+  if (await activeDraft2Session(topicId, storyId)) throw new Draft2BusyError("A Draft 2 run is already in progress for this story.");
+  const apiKey = requireAnthropicApiKey();
+  const model = getAnthropicRuntimeConfig().model;
+  const [profile, content] = await Promise.all([getCreativeProfile(topicId), getStoryContent(topicId, storyId)]);
+  const brief = [brandBrief(profile), `# Visual identity\n${resolveCreativeVisualGuidance(profile)}`, visualModeLine(profile.visualFidelityMode as Draft2VisualMode)].join("\n\n");
+  const { instructions, skillVersions } = composeInstructions("focus-directions-writer", [FOCUS_SKILL, SPINE_SKILL, ...creativeSkills(focus.values)], brief);
+  const verifiedFacts = openingFactsSnapshot(session.facts ?? []);
+  const contents = { task: "directions", title: content.title, focus: focusForModels(focus.values), editorChoices: editorChoicesOf(focus) };
+  const auditContext = { runId: session.id, topicId, storyId };
+  const trace: Draft2TraceEntry[] = [...session.trace];
+  const at = new Date().toISOString();
+  const begin = Date.now();
+  draft2DevTrace({ step: "focus", round: 1, provider: "anthropic", model, operation: "draft2_focus_directions", phase: "request", detail: { contents } });
+  let next: Draft2Focus;
+  try {
+    const answered = await withCreativeTextBudget({ topicId, storyId, runId: session.id }, () => generateAnthropicStructuredResponse({
+      apiKey, model, instructions, context: { verifiedFacts }, contents,
+      schema: DRAFT2_FOCUS_DIRECTIONS_SCHEMA, schemaName: "draft2_focus_directions", maxOutputTokens: DIRECTIONS_MAX_OUTPUT_TOKENS, effort: "medium", timeoutMs: CALL_TIMEOUT_MS, auditContext,
+    }));
+    const durationMs = Date.now() - begin;
+    trace.push({ at, step: "focus", round: 1, provider: "anthropic", model, operation: "draft2_focus_directions", durationMs, usage: answered.usage, cachedInputTokens: answered.cachedInputTokens, ...(answered.cacheWriteTokens ? { cacheWriteTokens: answered.cacheWriteTokens } : {}), answerCharacters: answered.text.length, outcome: "ok", skillVersions, effort: "medium", ...traceCost("anthropic", model, answered.usage, answered.cachedInputTokens, answered.cacheWriteTokens) });
+    draft2DevTrace({ step: "focus", round: 1, provider: "anthropic", model, operation: "draft2_focus_directions", phase: "response", durationMs, detail: { usage: answered.usage, answer: answered.text } });
+    next = focusWithDirections(focus, parseFocusDirections(answered.text), new Date());
+  } catch (error) {
+    const note = error instanceof Error ? error.message : "unknown error";
+    trace.push({ at, step: "focus", round: 1, provider: "anthropic", model, operation: "draft2_focus_directions", durationMs: Date.now() - begin, outcome: "error", note, ...failedCall(error), skillVersions, effort: "medium" });
+    draft2DevTrace({ step: "focus", round: 1, provider: "anthropic", model, operation: "draft2_focus_directions", phase: "error", durationMs: Date.now() - begin, detail: { error: note } });
+    await updateDraft2Session(session.id, { trace }).catch(() => undefined);
+    throw error;
+  }
+  const updated = await updateDraft2Session(session.id, { focus: next, trace });
   if (!updated) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
   return updated;
 }

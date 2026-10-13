@@ -34,6 +34,17 @@ const lines = [
 const contexts = [{ runId: "run-1", context: { lineId: LINE_ID }, createdAt: new Date("2026-10-09T10:00:00.000Z") }];
 const reasons = Object.fromEntries(focusTypes.FOCUS_FIELDS.map((field) => [field, `Why ${field}.`]));
 
+/** A valid spine for an arc: seven beats, three in the middle, a turning point, a climax before the payoff. */
+const ARC_SPINE = { beats: [
+  { slide: "cover", role: "hook", scene: "A founder presses play on a five-minute video.", words: "Promise that a short video can open a contract.", image: "The scale: one laptop against an empty procurement hall.", withholds: "How fast the award came.", factIds: ["f1"] },
+  { slide: "slide2", role: "setup", scene: "The video plays; a clock starts.", words: "State the rule: videos no longer than five minutes.", image: "The timer beside the play button.", withholds: "What happened next.", factIds: ["f1"] },
+  { slide: "middle", role: "inciting", scene: "An official opens the submission.", words: "Say who reviews and what they look for.", image: "A single screen in a dark room.", withholds: "How long it took.", factIds: ["f2"] },
+  { slide: "middle", role: "rising", scene: "Days pass on a calendar.", words: "The award came in less than a week, as the official says.", image: "Seven calendar squares, six crossed.", withholds: "The size of the program.", factIds: ["f2"] },
+  { slide: "middle", role: "turning-point", scene: "The number appears.", words: "Attribute the $1.5 trillion by 2030 with its qualifier.", image: "One small laptop under a vast figure.", withholds: "What it means for a founder.", factIds: ["f3"] },
+  { slide: "penultimate", role: "climax", scene: "The founder signs.", words: "Pay the promise: the contract opened.", image: "The signed award on the same laptop.", withholds: "What to do now.", factIds: ["f1", "f2"] },
+  { slide: "last", role: "payoff", scene: "The founder closes the laptop.", words: "What it means for the reader, and the call to action.", image: "The empty hall, now lit.", withholds: "", factIds: [] },
+] };
+
 /** Claude's answer, every field valid unless overridden. */
 const answer = (overrides: Record<string, unknown> = {}) => ({
   lineId: LINE_ID,
@@ -45,6 +56,7 @@ const answer = (overrides: Record<string, unknown> = {}) => ({
   voice: { gravity: "ordinary", formality: 30, humor: 40, energy: 70, optimism: 60, provocation: 60 },
   direction: "Lead with the five-minute video; pay it with the award time.",
   visualDirection: "Anonymous founders at a laptop; the demo video recurs and closes the story as a signed award.",
+  spine: ARC_SPINE,
   reasons,
   ...overrides,
 });
@@ -118,6 +130,7 @@ function harness({ answers = [], reviews = [], session, busy = false, claimRefus
   return {
     decide: () => exports.decideDraft2Focus({ topicId, storyId, sessionId }),
     edit: (field: string, change: { value?: unknown; reset?: boolean }) => exports.editDraft2Focus({ topicId, sessionId, field, ...change }),
+    rewrite: () => exports.rewriteDraft2FocusDirections({ topicId, storyId, sessionId }),
     calls,
     reviewCalls,
     last: () => row,
@@ -154,7 +167,7 @@ test("Claude decides the focus from the cached facts, the brand brief, the profi
   assert.equal(json(focus.decidedBy), json({ provider: "anthropic", model: "claude-sonnet-5-5" }));
   const last = session.trace[session.trace.length - 1];
   assert.equal(session.trace.length, 2, "the facts trace is kept");
-  assert.equal(json([last.step, last.provider, last.operation, last.outcome, last.skillVersions, last.cacheWriteTokens]), json(["focus", "anthropic", "draft2_focus", "ok", { focus: "9", discovery: "1", arcs: "1", narratives: "4" }, 900]));
+  assert.equal(json([last.step, last.provider, last.operation, last.outcome, last.skillVersions, last.cacheWriteTokens]), json(["focus", "anthropic", "draft2_focus", "ok", { focus: "10", discovery: "1", arcs: "1", narratives: "4", spine: "1" }, 900]));
   assert.equal(json([focus.values?.narrative, focus.inventoryVersion, h.reviewCalls.length]), json([focusTypes.CLASSIC_NARRATIVE, 2, 0]), "a classic story is not reviewed");
 });
 
@@ -315,4 +328,22 @@ test("an arc Claude chose is reviewed with the arcs skill", async () => {
   assert.match(String(h.reviewCalls[0].instructions), /## Reviewing an arc/);
   const entry = h.row().trace.find((call) => call.operation === "draft2_focus_concept_review");
   assert.equal(json(entry?.skillVersions), json({ arcs: "1" }));
+});
+
+test("after the editor changes how the story is told, Claude rewrites the two directions from the spine in one call; they become Claude's again and the stale mark clears", async () => {
+  const h = harness({ answers: [answer(), { direction: "Lead with the spine's hook; keep the award for the climax.", visualDirection: "One laptop in an empty hall, lit at the end." }] });
+  await h.decide();
+  const edited = (await h.edit("narrative", { value: GUIDE })).focus!;
+  assert.equal(edited.staleDirections, true, "a new form leaves Claude's directions behind");
+  const session = await h.rewrite();
+  const focus = session.focus!;
+  assert.deepEqual([focus.values?.direction, focus.values?.visualDirection, focus.ai?.direction, focus.edited, focus.staleDirections, focus.version], ["Lead with the spine's hook; keep the award for the climax.", "One laptop in an empty hall, lit at the end.", "Lead with the spine's hook; keep the award for the climax.", ["narrative"], false, edited.version + 1]);
+  assert.deepEqual(focus.values?.narrative, GUIDE, "the telling the editor chose stands");
+  const call = h.calls[1];
+  assert.equal(call.schemaName, "draft2_focus_directions");
+  assert.match(String(call.instructions), /You rewrite the two directions of a story's focus/);
+  assert.match(String(call.instructions), /# The spine/);
+  assert.equal(json((call.contents as { focus: { spine: unknown[] } }).focus.spine.length), json(7), "the writer reads the spine the directions must restate");
+  const last = session.trace[session.trace.length - 1];
+  assert.equal(json([last.operation, last.outcome, last.effort, last.skillVersions]), json(["draft2_focus_directions", "ok", "medium", { focus: "10", spine: "1", narratives: "4" }]));
 });

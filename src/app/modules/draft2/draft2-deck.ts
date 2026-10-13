@@ -41,7 +41,7 @@ function deckTarget(session: Draft2SessionRow, stopped: Draft2Deck | undefined):
     opening: closing.opening,
     closing: { id, ...(penultimate ? { penultimate } : {}), last },
     focus: closing.focus,
-    shape: deckShape(closing.focus.values.structure, closing.opening.slide2.factIds),
+    shape: deckShape(closing.focus.values.structure, closing.opening.slide2.factIds, closing.focus.values.spine),
   };
 }
 

@@ -1,7 +1,7 @@
 import { authorizeRadarCollector } from "@/app/api/radar/radar-api-auth";
 import { requireActiveRequestTopic } from "@/app/api/radar/radar-topic";
 import { noStoreJson } from "@/app/api/radar/creative-route-error";
-import { decideDraft2Focus, editDraft2Focus } from "@/app/modules/draft2/draft2-focus";
+import { decideDraft2Focus, editDraft2Focus, rewriteDraft2FocusDirections } from "@/app/modules/draft2/draft2-focus";
 import { FOCUS_FIELDS, type Draft2FocusField } from "@/app/modules/draft2/draft2-focus.types";
 import { DRAFT2_UUID_PATTERN, draft2ErrorResponse } from "../draft2-route";
 
@@ -29,10 +29,21 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   const denied = await authorizeRadarCollector(request);
   if (denied) return denied;
-  const body = await request.json().catch(() => null) as { sessionId?: unknown; field?: unknown; value?: unknown; reset?: unknown } | null;
+  const body = await request.json().catch(() => null) as { sessionId?: unknown; storyId?: unknown; field?: unknown; value?: unknown; reset?: unknown; rewrite?: unknown } | null;
   const sessionId = typeof body?.sessionId === "string" ? body.sessionId : "";
-  const field = FOCUS_FIELDS.find((candidate) => candidate === body?.field) as Draft2FocusField | undefined;
   if (!DRAFT2_UUID_PATTERN.test(sessionId)) return noStoreJson({ error: "sessionId must be a valid UUID" }, 400);
+  // The directions rewritten from how the story is now told: one Claude call, no field.
+  if (body?.rewrite === "directions") {
+    const storyId = typeof body.storyId === "string" ? body.storyId : "";
+    if (!DRAFT2_UUID_PATTERN.test(storyId)) return noStoreJson({ error: "storyId must be a valid UUID" }, 400);
+    try {
+      const topicId = await requireActiveRequestTopic(request);
+      return noStoreJson({ session: await rewriteDraft2FocusDirections({ topicId, storyId, sessionId }) });
+    } catch (error) {
+      return draft2ErrorResponse(error, "rewrite the focus directions");
+    }
+  }
+  const field = FOCUS_FIELDS.find((candidate) => candidate === body?.field) as Draft2FocusField | undefined;
   if (!field) return noStoreJson({ error: `field must be one of ${FOCUS_FIELDS.join(", ")}` }, 400);
   const reset = body?.reset === true;
   if (!reset && !(body && "value" in body)) return noStoreJson({ error: "Send the field's value, or reset: true" }, 400);

@@ -3,8 +3,8 @@ import test from "node:test";
 import { Draft2InputError, Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
 import {
   CLASSIC_CONCEPT, CLASSIC_NARRATIVE, DRAFT2_FOCUS_SCHEMA, focusConcept, FOCUS_FIELDS, applyFocusEdit, decidedFocus, editorChoicesOf, focusDecisionRequest, focusFindings, focusForModels, focusItemCount, focusLine,
-  anchorNoun, focusMaterial, focusToday, narrativeUsesMaster, parseFocusDecision, parseNarrativeReview, resetFocusField,
-  type Draft2Focus, type Draft2FocusLine, type Draft2FocusMaterial, type Draft2FocusNarrative, type Draft2FocusValues,
+  anchorNoun, focusMaterial, focusToday, focusWithDirections, narrativeUsesMaster, parseFocusDecision, parseFocusDirections, parseNarrativeReview, resetFocusField, spineShapeProblem,
+  type Draft2Focus, type Draft2FocusLine, type Draft2FocusMaterial, type Draft2FocusNarrative, type Draft2FocusValues, type Draft2SpineBeat,
 } from "./draft2-focus.types";
 import type { Draft2Inventory } from "./draft2-inventory.types";
 
@@ -19,6 +19,24 @@ const lines = [LINE, OTHER_LINE];
 const reasons = Object.fromEntries(FOCUS_FIELDS.map((field) => [field, `Why ${field}.`]));
 const NOW = new Date("2026-10-10T15:00:00.000Z");
 
+/** A valid spine for an arc: seven beats, three in the middle, a turning point, a climax before the payoff. */
+const ARC_SPINE = { beats: [
+  { slide: "cover", role: "hook", scene: "A founder presses play on a five-minute video.", words: "Promise that a short video can open a contract.", image: "The scale: one laptop against an empty procurement hall.", withholds: "How fast the award came.", factIds: ["f1"] },
+  { slide: "slide2", role: "setup", scene: "The video plays; a clock starts.", words: "State the rule: videos no longer than five minutes.", image: "The timer beside the play button.", withholds: "What happened next.", factIds: ["f1"] },
+  { slide: "middle", role: "inciting", scene: "An official opens the submission.", words: "Say who reviews and what they look for.", image: "A single screen in a dark room.", withholds: "How long it took.", factIds: ["f2"] },
+  { slide: "middle", role: "rising", scene: "Days pass on a calendar.", words: "The award came in less than a week, as the official says.", image: "Seven calendar squares, six crossed.", withholds: "The size of the program.", factIds: ["f2"] },
+  { slide: "middle", role: "turning-point", scene: "The number appears.", words: "Attribute the $1.5 trillion by 2030 with its qualifier.", image: "One small laptop under a vast figure.", withholds: "What it means for a founder.", factIds: ["f3"] },
+  { slide: "penultimate", role: "climax", scene: "The founder signs.", words: "Pay the promise: the contract opened.", image: "The signed award on the same laptop.", withholds: "What to do now.", factIds: ["f1", "f2"] },
+  { slide: "last", role: "payoff", scene: "The founder closes the laptop.", words: "What it means for the reader, and the call to action.", image: "The empty hall, now lit.", withholds: "", factIds: [] },
+] };
+/** A valid spine for a list or a procedure of `items` items: no penultimate, one middle beat per item but the first (on slide2), the turn on the first middle beat. */
+const itemsSpine = (items: number) => ({ beats: [
+  ARC_SPINE.beats[0],
+  { ...ARC_SPINE.beats[1], words: "State the first item." },
+  ...Array.from({ length: Math.max(1, items - 1) }, (_, index) => ({ slide: "middle", role: index === 0 ? "turning-point" : "rising", scene: `Item ${index + 2} comes into view.`, words: `Say item ${index + 2}.`, image: `Item ${index + 2} as a thing in a place.`, withholds: "The next item.", factIds: [] })),
+  ARC_SPINE.beats[6],
+] });
+
 /** Claude's answer, every field valid unless overridden. */
 const answer = (overrides: Record<string, unknown> = {}) => JSON.stringify({
   lineId: LINE.id,
@@ -30,10 +48,18 @@ const answer = (overrides: Record<string, unknown> = {}) => JSON.stringify({
   voice: { gravity: "ordinary", formality: 30, humor: 150, energy: 70.4, optimism: 60, provocation: 0 },
   direction: "Lead with the five-minute video; pay it with the award time.",
   visualDirection: "Anonymous founders at a laptop and a screen; the demo video recurs, and closes the story as a signed award.",
+  spine: ARC_SPINE,
   reasons,
   ...overrides,
 });
-const parse = (overrides: Record<string, unknown> = {}, editorChoices: Record<string, unknown> = {}) => parseFocusDecision(answer(overrides), { facts, lines, editorChoices });
+/** The structure that will stand (the editor's, else the answer's) decides the spine's shape, as Claude would shape it. */
+const spineFor = (overrides: Record<string, unknown>, editorChoices: Record<string, unknown>) => {
+  const structure = (editorChoices.structure ?? overrides.structure) as { kind?: string; itemFactIds?: string[] } | undefined;
+  if (!structure || structure.kind === "arc") return ARC_SPINE;
+  const items = (structure.itemFactIds ?? []).filter((id) => ["f1", "f2", "f3"].includes(id)).length || 3;
+  return itemsSpine(items);
+};
+const parse = (overrides: Record<string, unknown> = {}, editorChoices: Record<string, unknown> = {}) => parseFocusDecision(answer({ spine: spineFor(overrides, editorChoices), ...overrides }), { facts, lines, editorChoices });
 
 const decided = (values?: Partial<Draft2FocusValues>): Draft2Focus => {
   const decision = parse();
@@ -52,7 +78,7 @@ test("Claude's answer becomes the focus: unknown fact ids dropped, dials clamped
   assert.deepEqual(parse({ readerConsequence: { text: null, factIds: [] } }).values.readerConsequence, null);
   assert.deepEqual(parse({ structure: { kind: "list", itemFactIds: ["f3", "f1", "f9", "f2"] } }).values.structure, { kind: "list", itemFactIds: ["f3", "f1", "f2"] }, "items keep Claude's order");
   assert.equal(parseFocusDecision(answer({ lineId: null }), { facts, lines: [] }).values.line, null, "a Topic without lines has no line");
-  assert.deepEqual((DRAFT2_FOCUS_SCHEMA.required as string[]).sort(), ["anchorAlternatives", "audience", "concept", "conceptAlternatives", "direction", "framing", "goal", "lineId", "narrative", "readerConsequence", "reasons", "structure", "visualDirection", "voice"]);
+  assert.deepEqual((DRAFT2_FOCUS_SCHEMA.required as string[]).sort(), ["anchorAlternatives", "audience", "concept", "conceptAlternatives", "direction", "framing", "goal", "lineId", "narrative", "readerConsequence", "reasons", "spine", "structure", "visualDirection", "voice"]);
   assert.deepEqual(values.narrative, CLASSIC_NARRATIVE, "an answer without a narrative form, from before them, is classic");
 });
 
@@ -83,7 +109,7 @@ test("the editor's fields win over the answer; a structure the editor chose take
   assert.deepEqual(values.structure, { kind: "list", itemFactIds: ["f1", "f2", "f3"] }, "the list the editor asked for gets its items");
   assert.deepEqual(parse({ structure: { kind: "arc", itemFactIds: [] } }, { structure: { kind: "steps", itemFactIds: ["f1", "f2"] } }).values.structure, { kind: "steps", itemFactIds: ["f1", "f2"] }, "an answer of another kind leaves the editor's items");
   assert.equal(parse({ goal: "followers" }, { goal: "saves" }).values.goal, "saves", "whatever the answer says");
-  assert.deepEqual(Object.keys(parsed).sort(), ["audience", "concept", "direction", "framing", "narrative", "visualDirection", "voice"], "reasons only for the fields Claude decided");
+  assert.deepEqual(Object.keys(parsed).sort(), ["audience", "concept", "direction", "framing", "narrative", "spine", "visualDirection", "voice"], "reasons only for the fields Claude decided");
 });
 
 test("a decision is one version more and keeps Claude's own values under the editor's fields", () => {
@@ -146,9 +172,10 @@ test("the program's findings: a reader-consequence framing needs a consequence, 
   assert.deepEqual(focusFindings(values), []);
   assert.deepEqual(focusFindings({ ...values, readerConsequence: null }).map((finding) => [finding.field, finding.code]), [["readerConsequence", "NO_READER_CONSEQUENCE"]]);
   assert.deepEqual(focusFindings({ ...values, framing: "explainer", readerConsequence: null }), [], "another framing needs none");
-  assert.deepEqual(focusFindings({ ...values, structure: { kind: "list", itemFactIds: ["f1", "f2"] } }).map((finding) => finding.code), ["TOO_FEW_ITEMS"]);
-  assert.match(focusFindings({ ...values, structure: { kind: "list", itemFactIds: ["f1", "f2"] } })[0].detail, /at least 3 items from the facts, and the focus names 2/);
-  assert.deepEqual(focusFindings({ ...values, structure: { kind: "steps", itemFactIds: ["f1", "f2"] } }), []);
+  assert.deepEqual(focusFindings({ ...values, structure: { kind: "list", itemFactIds: ["f1", "f2"] }, spine: undefined }).map((finding) => finding.code), ["TOO_FEW_ITEMS"]);
+  assert.match(focusFindings({ ...values, structure: { kind: "list", itemFactIds: ["f1", "f2"] }, spine: undefined })[0].detail, /at least 3 items from the facts, and the focus names 2/);
+  assert.deepEqual(focusFindings({ ...values, structure: { kind: "steps", itemFactIds: ["f1", "f2"] }, spine: undefined }), []);
+  assert.deepEqual(focusFindings({ ...values, structure: { kind: "steps", itemFactIds: ["f1", "f2"] } }).map((finding) => [finding.field, finding.code]), [["spine", "SPINE_SHAPE"]], "an arc's spine no longer fits a procedure: its penultimate beat has no slide");
   assert.equal(focusItemCount({ ...values, structure: { kind: "list", itemFactIds: ["f1", "f2", "f3"] } }), 3);
   assert.equal(focusItemCount(values), undefined);
 });
@@ -380,4 +407,43 @@ test("Claude's other concepts may be other arcs; the editor picks an arc with Cl
   const focus = { ...decided(), conceptOptions: premiseOptions };
   assert.deepEqual(applyFocusEdit(focus, "concept", { arc: "comparison", premise: "ignored", reveals: ["Time", "Cost"] }, NOW).values?.concept, { arc: "comparison", premise: "", premiseFactIds: ["f2"], reveals: ["Time", "Cost"] }, "Claude's comparison keeps its facts");
   assert.deepEqual(applyFocusEdit(focus, "concept", { arc: "escalation", reveals: [] }, NOW).values?.concept, { arc: "escalation", premise: "", premiseFactIds: [], reveals: [] }, "the arc alone, for the writers to order");
+});
+
+test("the spine: one beat per slide, shaped for the structure, a turning point or a climax, a payoff or a resolution last; anything else is asked for again", () => {
+  const { values } = parse();
+  assert.equal(values.spine?.beats.length, 7);
+  assert.deepEqual(values.spine?.beats.map((beat) => `${beat.slide}:${beat.role}`), ["cover:hook", "slide2:setup", "middle:inciting", "middle:rising", "middle:turning-point", "penultimate:climax", "last:payoff"]);
+  assert.deepEqual(values.spine?.beats[2].factIds, ["f2"], "a beat keeps the known facts it cites");
+  const rejects = (spine: unknown, pattern: RegExp) => assert.throws(() => parse({ spine }), (error: Error) => error instanceof Draft2ResponseError && pattern.test(error.message));
+  rejects({ beats: ARC_SPINE.beats.slice(0, 3) }, /4 to 10 beats/);
+  rejects({ beats: [{ ...ARC_SPINE.beats[0], role: "setup" }, ...ARC_SPINE.beats.slice(1)] }, /first beat is the cover and its role is hook/);
+  rejects({ beats: ARC_SPINE.beats.map((beat) => beat.role === "turning-point" || beat.role === "climax" ? { ...beat, role: "rising" } : beat) }, /turning point or a climax/);
+  rejects({ beats: [...ARC_SPINE.beats.slice(0, 6), { ...ARC_SPINE.beats[6], role: "rising" }] }, /last beat is a payoff or a resolution/);
+  rejects({ beats: ARC_SPINE.beats.map((beat, index) => index === 2 ? { ...beat, withholds: "" } : beat) }, /withholds something for the next slide/);
+  rejects({ beats: ARC_SPINE.beats.map((beat, index) => index === 1 ? { ...beat, scene: "x".repeat(241) } : beat) }, /Beat 2 needs its scene/);
+  rejects({ beats: ARC_SPINE.beats.filter((beat) => beat.slide !== "penultimate") }, /arc's closing has one penultimate beat/);
+  assert.equal(parse({ structure: { kind: "list", itemFactIds: ["f1", "f2", "f3"] } }).values.spine?.beats.filter((beat) => beat.slide === "middle").length, 2, "a list of three: the first item on slide2, two middle beats");
+  assert.throws(() => parse({ structure: { kind: "list", itemFactIds: ["f1", "f2", "f3"] }, spine: ARC_SPINE }), /closes on the last slide alone/, "an arc's spine on a list");
+  assert.deepEqual(parseFocusDecision(answer({ spine: undefined }), { facts, lines }).values.spine, undefined, "an answer without a spine, from before them, has none");
+});
+
+test("the models read the spine between the telling and the directions; the editor edits it whole, and a change to how the story is told leaves the directions stale until Claude rewrites them", () => {
+  const focus = decided();
+  const told = focusForModels(focus.values!);
+  assert.deepEqual(Object.keys(told).slice(-3), ["spine", "direction", "visualDirection"], "the spine comes before the directions it decides");
+  assert.deepEqual((told.spine as { slide: string; withholds?: string }[])[6], { slide: "last", role: "payoff", scene: "The founder closes the laptop.", words: "What it means for the reader, and the call to action.", image: "The empty hall, now lit." }, "an empty withholds and no facts are left out");
+  assert.equal(focus.staleDirections, false);
+  const shorter = { beats: [...ARC_SPINE.beats.slice(0, 4), ...ARC_SPINE.beats.slice(5)] };
+  const edited = applyFocusEdit(focus, "spine", shorter, NOW);
+  assert.deepEqual([edited.values?.spine?.beats.length, edited.edited, edited.staleDirections], [6, ["spine"], true], "the editor's spine stands, and the directions were written for another one");
+  assert.throws(() => applyFocusEdit(focus, "spine", { beats: ARC_SPINE.beats.slice(0, 2) }, NOW), (error: Error) => error instanceof Draft2InputError && /4 to 10 beats/.test(error.message));
+  const owned = applyFocusEdit(applyFocusEdit(edited, "direction", "My own direction.", NOW), "visualDirection", "My own visual direction.", NOW);
+  assert.equal(owned.staleDirections, false, "directions the editor wrote are theirs, never stale");
+  assert.equal(applyFocusEdit(owned, "narrative", { form: "classic" }, NOW).staleDirections, false, "both directions the editor's: a new telling does not make them stale");
+  const rewritten = focusWithDirections(edited, { direction: "Rewritten from the spine.", visualDirection: "Rewritten images." }, NOW);
+  assert.deepEqual([rewritten.version, rewritten.values?.direction, rewritten.ai?.visualDirection, rewritten.edited, rewritten.staleDirections], [edited.version + 1, "Rewritten from the spine.", "Rewritten images.", ["spine"], false]);
+  assert.deepEqual(parseFocusDirections(JSON.stringify({ direction: " Lead with the video. ", visualDirection: "One laptop, one hall." })), { direction: "Lead with the video.", visualDirection: "One laptop, one hall." });
+  assert.throws(() => parseFocusDirections(JSON.stringify({ direction: "x", visualDirection: "y".repeat(601) })), /visual direction is missing or longer than 600/);
+  assert.deepEqual(focusFindings({ ...focus.values!, structure: { kind: "steps", itemFactIds: ["f1", "f2"] } }).map((finding) => finding.code), ["SPINE_SHAPE"], "a spine for another structure is a finding until Claude decides again");
+  assert.equal(spineShapeProblem(ARC_SPINE.beats as Draft2SpineBeat[], { kind: "arc", itemFactIds: [] }), undefined);
 });

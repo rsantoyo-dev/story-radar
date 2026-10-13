@@ -8,11 +8,13 @@ import type { Draft2Skill } from "./draft2-skills";
  * (the narratives skill, read beside this one, defines the forms); version 5
  * adds panorama and follow-the-line; version 6 the concept (discovery: the
  * reader discovers the news through a premise; the discovery skill); version
- * 7 the story arcs (the arcs skill).
+ * 7 the story arcs (the arcs skill); version 10 the order of decision (the
+ * story, then how it is told, then the directions derived from it), the
+ * spine (the spine skill) and the preference for a telling other than classic.
  */
 export const FOCUS_SKILL: Draft2Skill = {
   name: "focus",
-  version: "9",
+  version: "10",
   text: `# The focus of a story
 
 The focus is the brief every later step follows: which editorial line the
@@ -20,6 +22,22 @@ story serves, whom it speaks to, how it is framed and told, what it should
 earn and in what voice. Decide each field from the verified facts and the
 publication's configuration. The editor reviews the focus and may change any
 field; it is guidance for the writing, never evidence.
+
+## Order of decision
+Decide in this order, each decision resting on the ones before it:
+1. The story: line, audience, framing, readerConsequence, structure, goal and
+   voice.
+2. How it is told: concept (how the reader meets the news) and narrative (how
+   the carousel is told across its slides). Prefer a telling other than
+   classic: the publication wants carousels that leave the mould, so classic
+   is the choice only when no arc, no premise and no form fits these facts,
+   this audience and this gravity, and the reason says why none does.
+3. The spine: the story in beats, one per slide, from the concept and the form
+   (the spine skill).
+4. The directions, derived from the spine: direction restates what the beats
+   lead with and keep for later; visualDirection restates the anchor, the
+   scene of each beat and the image of the turn. Neither opens a thread the
+   spine does not have.
 
 ## Fields
 - line: the editorial line the story serves, among the Topic's lines; their
@@ -134,6 +152,14 @@ field; it is guidance for the writing, never evidence.
   figure, an object, a scene or a line with the facts that give it (none for
   an anonymous figure or a generic scene), for the editor to choose from; an
   empty list when there are none.
+- spine: the story in beats, one per slide, written after the concept and
+  the form and before the directions (the spine skill says the roles, the
+  fields and the rules): beats, each with slide, role, scene, words, image,
+  withholds and factIds. Four to ten beats; the first the cover's hook, the
+  second slide2, then the deck's middle beats (two to five for an arc, one
+  per item or step otherwise), one penultimate for an arc, one last (a payoff
+  or a resolution); a turning point or a climax among them, placed where it
+  pulls hardest and never later than it must be.
 - visualDirection: one or two sentences, at most 600 characters, on how the
   images should tell this story within the publication's visual identity
   (given below when it has one): the world the images live in, who or what
@@ -162,5 +188,6 @@ field; it is guidance for the writing, never evidence.
 };
 
 export const FOCUS_ROLES = {
+  "focus-directions-writer": `You rewrite the two directions of a story's focus for the publication described below, from the focus as it stands (focus: the story, how it is told and its spine), after the editor changed how the story is told. Return direction (at most 1,500 characters: what to lead with, which facts carry the promise, what to keep for later slides, what the reader takes away, restating the spine's beats) and visualDirection (at most 600 characters: the world the images live in, the anchor in each state when there is a form, the image of the turn, what recurs and returns), both in the publication's language, both resting on the spine and the verified facts only; neither opens a thread the spine does not have.`,
   "focus-editor": `You decide the focus of a story for the publication described below, from its verified facts (cite their ids), the publication's defaults (topicDefaults), its editorial lines (lines, with the ones that found the story in foundBy) and what People and places found (material: the brand's characters the editor allows, the story's people, its places and its photos). The story's title is context, not a fact. Follow the focus skill and return every field with a reason for each; the narratives skill defines the narrative forms and the discovery skill the concept; the publication's visual identity, when given below, is the frame of visualDirection.`,
 } as const;

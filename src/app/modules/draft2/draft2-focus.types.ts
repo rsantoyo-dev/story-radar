@@ -22,7 +22,10 @@ import { TONE_KEYS, toneLine, toneValue, type ToneKey } from "./skills/tone";
  * hand; the judge reviews a form Claude chose, and the editor has the last
  * word.
  */
-export const FOCUS_FIELDS = ["line", "audience", "framing", "readerConsequence", "structure", "goal", "voice", "direction", "concept", "narrative", "visualDirection"] as const;
+/** The fields in the order they are decided: the story, then how it is told (concept, form, spine), then the directions derived from that. */
+export const FOCUS_FIELDS = ["line", "audience", "framing", "readerConsequence", "structure", "goal", "voice", "concept", "narrative", "spine", "direction", "visualDirection"] as const;
+/** The fields that say how the story is told; an edit to one of them leaves the directions written for another telling (staleDirections). */
+export const FOCUS_TELLING_FIELDS: readonly Draft2FocusField[] = ["concept", "narrative", "spine"];
 export const FOCUS_FRAMINGS = ["reader-consequence", "explainer", "authority"] as const;
 export const FOCUS_STRUCTURES = ["arc", "steps", "list"] as const;
 export const FOCUS_GRAVITIES = ["light", "ordinary", "serious", "grave"] as const;
@@ -148,6 +151,48 @@ export type Draft2FocusConcept = {
   reveals: string[];
 };
 export const CLASSIC_CONCEPT: Draft2FocusConcept = { arc: "classic", premise: "", premiseFactIds: [], reveals: [] };
+
+/**
+ * The spine: the carousel's story in beats, one per slide, decided after the
+ * concept and the narrative form and before the directions, so the words and
+ * the images follow one plan (the spine skill). The roles are the classic
+ * moments of a narration, an adaptable sequence: a story takes the ones it
+ * needs, repeats rising when it must, and always has a turning point or a
+ * climax and ends on a resolution or a payoff.
+ */
+export const FOCUS_SPINE_ROLES = ["hook", "setup", "inciting", "rising", "turning-point", "climax", "resolution", "payoff"] as const;
+/** Where a beat falls in the carousel, in the funnel steps' own positions: the Opening's two, the Deck's middle, the Closing's one or two. */
+export const FOCUS_SPINE_POSITIONS = ["cover", "slide2", "middle", "penultimate", "last"] as const;
+export const FOCUS_SPINE_MIN_BEATS = 4;
+export const FOCUS_SPINE_MAX_BEATS = 10;
+/** An arc's deck runs this many middle slides: the Deck's own range (a test keeps them equal). */
+export const FOCUS_SPINE_ARC_MIDDLE_MIN = 2;
+export const FOCUS_SPINE_ARC_MIDDLE_MAX = 5;
+export const FOCUS_BEAT_SCENE_MAX_CHARACTERS = 240;
+export const FOCUS_BEAT_WORDS_MAX_CHARACTERS = 200;
+export const FOCUS_BEAT_IMAGE_MAX_CHARACTERS = 240;
+export const FOCUS_BEAT_WITHHOLDS_MAX_CHARACTERS = 160;
+const MAX_BEAT_FACTS = 6;
+export type Draft2SpineRole = (typeof FOCUS_SPINE_ROLES)[number];
+export type Draft2SpinePosition = (typeof FOCUS_SPINE_POSITIONS)[number];
+/** The roles that carry the turn: the one slide whose image leads. */
+export const SPINE_TURN_ROLES: readonly Draft2SpineRole[] = ["turning-point", "climax"];
+const SPINE_ENDING_ROLES: readonly Draft2SpineRole[] = ["resolution", "payoff"];
+export type Draft2SpineBeat = {
+  slide: Draft2SpinePosition;
+  role: Draft2SpineRole;
+  /** What happens on this slide, in the present tense, told through the narrative form and the concept. */
+  scene: string;
+  /** The words' job on this slide: what they state, ask or promise; never the words themselves. */
+  words: string;
+  /** What the image adds that the words cannot say; never an illustration of them. */
+  image: string;
+  /** What this slide keeps for the next one, the open loop; empty on the last slide only. */
+  withholds: string;
+  /** The verified facts the beat rests on; a hook may rest on none. */
+  factIds: string[];
+};
+export type Draft2FocusSpine = { beats: Draft2SpineBeat[] };
 /** Another concept Claude wrote, for the editor to choose instead: a premise (discovery, when no arc is named) or an arc with its beats. */
 export type Draft2PremiseOption = { arc?: Exclude<Draft2ConceptArc, "classic">; premise: string; premiseFactIds: string[]; reveals: string[] };
 
@@ -198,6 +243,8 @@ export type Draft2FocusValues = {
   concept?: Draft2FocusConcept;
   /** How the carousel is told across its slides, in words and images. Absent on a focus decided before narrative forms: classic. */
   narrative?: Draft2FocusNarrative;
+  /** The story in beats, one per slide, that the words and the images both follow. Absent on a focus decided before spines. */
+  spine?: Draft2FocusSpine;
   /** How the images tell this story within the brand's visual identity: the world they live in, who leads them, what recurs. The visual script follows it. Absent on a focus decided before the field existed. */
   visualDirection?: string;
 };
@@ -233,12 +280,22 @@ export type Draft2Focus = {
   conceptReview?: Draft2ConceptReview;
   /** The People and places version the last decision read; one confirmed or rejected since may change the narrative's material. */
   inventoryVersion?: number;
+  /** True once the editor changed how the story is told (concept, form or spine) while the directions still say what Claude wrote for the earlier telling; rewriting them clears it. */
+  staleDirections?: boolean;
+};
+
+/** Claude's answer when the directions are rewritten from the spine: the two derived fields only. */
+export const DRAFT2_FOCUS_DIRECTIONS_SCHEMA: Record<string, unknown> = {
+  type: "object",
+  properties: { direction: { type: "string" }, visualDirection: { type: "string" } },
+  required: ["direction", "visualDirection"],
+  additionalProperties: false,
 };
 
 /** The focus an opening run followed, kept on the run. */
 export type Draft2FocusSnapshot = { version: number; values: Draft2FocusValues };
 
-export type Draft2FocusFindingCode = "NO_READER_CONSEQUENCE" | "TOO_FEW_ITEMS" | "NARRATIVE_CHARACTER_UNAVAILABLE" | "NARRATIVE_REAL_PERSON" | "CONCEPT_GRAVITY" | "CONCEPT_REAL_PERSON";
+export type Draft2FocusFindingCode = "NO_READER_CONSEQUENCE" | "TOO_FEW_ITEMS" | "NARRATIVE_CHARACTER_UNAVAILABLE" | "NARRATIVE_REAL_PERSON" | "CONCEPT_GRAVITY" | "CONCEPT_REAL_PERSON" | "SPINE_SHAPE";
 /** What the program finds wrong with a focus; any one keeps the Opening from starting. */
 export type Draft2FocusFinding = { field: Draft2FocusField; code: Draft2FocusFindingCode; detail: string };
 
@@ -321,6 +378,30 @@ export const DRAFT2_FOCUS_SCHEMA: Record<string, unknown> = {
         additionalProperties: false,
       },
     },
+    spine: {
+      type: "object",
+      properties: {
+        beats: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              slide: { type: "string", enum: [...FOCUS_SPINE_POSITIONS] },
+              role: { type: "string", enum: [...FOCUS_SPINE_ROLES] },
+              scene: { type: "string" },
+              words: { type: "string" },
+              image: { type: "string" },
+              withholds: { type: "string" },
+              factIds: factIdsSchema,
+            },
+            required: ["slide", "role", "scene", "words", "image", "withholds", "factIds"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["beats"],
+      additionalProperties: false,
+    },
     visualDirection: { type: "string" },
     reasons: {
       type: "object",
@@ -329,7 +410,7 @@ export const DRAFT2_FOCUS_SCHEMA: Record<string, unknown> = {
       additionalProperties: false,
     },
   },
-  required: ["lineId", "audience", "framing", "readerConsequence", "structure", "goal", "voice", "direction", "concept", "conceptAlternatives", "narrative", "anchorAlternatives", "visualDirection", "reasons"],
+  required: ["lineId", "audience", "framing", "readerConsequence", "structure", "goal", "voice", "direction", "concept", "conceptAlternatives", "narrative", "anchorAlternatives", "spine", "visualDirection", "reasons"],
   additionalProperties: false,
 };
 
@@ -462,6 +543,98 @@ function parseConcept(value: unknown, { known, material, gravity, editorChoice }
   return { arc, premise, premiseFactIds, reveals };
 }
 
+/** What is wrong with a spine's shape for a structure, if anything: its positions, its count of middle beats, its turn and its ending. */
+export function spineShapeProblem(beats: readonly Draft2SpineBeat[], structure: { kind: Draft2FocusStructureKind; itemFactIds: readonly string[] }): string | undefined {
+  if (beats.length < FOCUS_SPINE_MIN_BEATS || beats.length > FOCUS_SPINE_MAX_BEATS) return `The spine has ${FOCUS_SPINE_MIN_BEATS} to ${FOCUS_SPINE_MAX_BEATS} beats, one per slide; this one has ${beats.length}`;
+  const positions = beats.map((beat) => beat.slide);
+  const rank = (position: Draft2SpinePosition) => FOCUS_SPINE_POSITIONS.indexOf(position);
+  if (positions.some((position, index) => index > 0 && rank(position) < rank(positions[index - 1]))) return "The beats follow the carousel: the cover, slide2, the middle slides, the penultimate of an arc, then the last";
+  const count = (position: Draft2SpinePosition) => positions.filter((entry) => entry === position).length;
+  if (count("cover") !== 1 || positions[0] !== "cover" || beats[0].role !== "hook") return "The first beat is the cover and its role is hook, and there is one cover";
+  if (count("slide2") !== 1 || positions[1] !== "slide2") return "The second beat is slide2, and there is one";
+  if (count("last") !== 1 || positions[positions.length - 1] !== "last") return "The last beat is the last slide, and there is one";
+  const penultimates = count("penultimate");
+  if (structure.kind === "arc" ? penultimates !== 1 : penultimates !== 0) return structure.kind === "arc" ? "An arc's closing has one penultimate beat before the last" : `A ${structure.kind === "list" ? "list" : "procedure"} closes on the last slide alone: no penultimate beat`;
+  const middle = count("middle");
+  if (structure.kind === "arc" && (middle < FOCUS_SPINE_ARC_MIDDLE_MIN || middle > FOCUS_SPINE_ARC_MIDDLE_MAX)) return `An arc's deck has ${FOCUS_SPINE_ARC_MIDDLE_MIN} to ${FOCUS_SPINE_ARC_MIDDLE_MAX} middle beats; this spine has ${middle}`;
+  const items = structure.itemFactIds.length;
+  if (structure.kind !== "arc" && items && (middle < Math.max(1, items - 1) || middle > items)) return `A ${structure.kind === "list" ? "list" : "procedure"} has one middle beat per item or step (${items}, the first allowed on slide2); this spine has ${middle}`;
+  if (!beats.some((beat) => SPINE_TURN_ROLES.includes(beat.role))) return "Every spine has a turning point or a climax: the strongest true thing the facts hold";
+  if (!SPINE_ENDING_ROLES.includes(beats[beats.length - 1].role)) return "The last beat is a payoff or a resolution";
+  if (beats.slice(0, -1).some((beat) => !beat.withholds)) return "Every beat but the last withholds something for the next slide";
+  return undefined;
+}
+
+/**
+ * A spine checked against the contract and the structure, from Claude's
+ * answer (`known` facts; a broken rule is a response error, asked for again)
+ * or from the editor (`known` undefined; an input error). Each beat needs its
+ * slide and role, its scene, words and image within their limits, what it
+ * withholds (empty on the last only) and the facts it rests on.
+ */
+function spineFrom(value: unknown, structure: { kind: Draft2FocusStructureKind; itemFactIds: readonly string[] }, known: ReadonlySet<string> | undefined, fail: (message: string) => never): Draft2FocusSpine {
+  const raw = record(value).beats;
+  if (!Array.isArray(raw)) fail("The spine is a list of beats, one per slide");
+  const beats: Draft2SpineBeat[] = (raw as unknown[]).map((entry, index) => {
+    const body = record(entry);
+    const slide = oneOf(FOCUS_SPINE_POSITIONS, body.slide);
+    const role = oneOf(FOCUS_SPINE_ROLES, body.role);
+    if (!slide || !role) fail(`Beat ${index + 1}: slide is one of ${FOCUS_SPINE_POSITIONS.join(", ")} and role one of ${FOCUS_SPINE_ROLES.join(", ")}`);
+    const scene = text(body.scene, FOCUS_BEAT_SCENE_MAX_CHARACTERS);
+    const words = text(body.words, FOCUS_BEAT_WORDS_MAX_CHARACTERS);
+    const image = text(body.image, FOCUS_BEAT_IMAGE_MAX_CHARACTERS);
+    if (!scene) fail(`Beat ${index + 1} needs its scene, in 1 to ${FOCUS_BEAT_SCENE_MAX_CHARACTERS} characters`);
+    if (!words) fail(`Beat ${index + 1} needs the words' job, in 1 to ${FOCUS_BEAT_WORDS_MAX_CHARACTERS} characters`);
+    if (!image) fail(`Beat ${index + 1} needs what the image adds, in 1 to ${FOCUS_BEAT_IMAGE_MAX_CHARACTERS} characters`);
+    const withholds = typeof body.withholds === "string" ? body.withholds.trim() : "";
+    if (withholds.length > FOCUS_BEAT_WITHHOLDS_MAX_CHARACTERS) fail(`Beat ${index + 1} withholds in at most ${FOCUS_BEAT_WITHHOLDS_MAX_CHARACTERS} characters`);
+    const factIds = known
+      ? knownFactIds(body.factIds, known, MAX_BEAT_FACTS)
+      : (Array.isArray(body.factIds) ? body.factIds : []).filter((id): id is string => typeof id === "string" && id.trim().length > 0).map((id) => id.trim()).slice(0, MAX_BEAT_FACTS);
+    return { slide: slide!, role: role!, scene: scene!, words: words!, image: image!, withholds, factIds };
+  });
+  const problem = spineShapeProblem(beats, structure);
+  if (problem) fail(problem);
+  return { beats };
+}
+
+/** The spine a focus follows, if it has one (a focus decided before spines has none). */
+export const focusSpine = (values: Pick<Draft2FocusValues, "spine">): Draft2FocusSpine | undefined => values.spine;
+
+/** The beat of a position, for the steps: the Opening's two, the Deck's middle beats in order, the Closing's. */
+export const spineBeats = (spine: Draft2FocusSpine | undefined, position: Draft2SpinePosition): Draft2SpineBeat[] => (spine?.beats ?? []).filter((beat) => beat.slide === position);
+
+/** Claude's rewritten directions, checked against their limits; anything else is a response error. */
+export function parseFocusDirections(answer: string): { direction: string; visualDirection: string } {
+  let parsed: unknown;
+  try { parsed = JSON.parse(answer); } catch { throw new Draft2ResponseError("The directions answer is not valid JSON"); }
+  const body = record(parsed);
+  const direction = text(body.direction, FOCUS_DIRECTION_MAX_CHARACTERS);
+  const visualDirection = text(body.visualDirection, FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS);
+  if (!direction) throw new Draft2ResponseError(`The direction is missing or longer than ${FOCUS_DIRECTION_MAX_CHARACTERS} characters`);
+  if (!visualDirection) throw new Draft2ResponseError(`The visual direction is missing or longer than ${FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS} characters`);
+  return { direction, visualDirection };
+}
+
+/**
+ * The focus with its directions rewritten from the current telling: both
+ * become Claude's again (an editor's own direction is replaced, since they
+ * asked for the rewrite), the version moves, and the directions are no
+ * longer stale.
+ */
+export function focusWithDirections(focus: Draft2Focus, directions: { direction: string; visualDirection: string }, now: Date): Draft2Focus {
+  if (!focus.values) throw new Draft2InputError("Decide the focus before rewriting its directions.");
+  return {
+    ...focus,
+    version: focus.version + 1,
+    values: { ...focus.values, ...directions },
+    ...(focus.ai ? { ai: { ...focus.ai, ...directions } } : {}),
+    edited: focus.edited.filter((field) => field !== "direction" && field !== "visualDirection"),
+    staleDirections: false,
+    updatedAt: now.toISOString(),
+  };
+}
+
 /** Claude's other concepts, the valid ones (a premise with its facts and chain; an arc with its facts and beats), never with a person of the story, at most two. */
 function parsePremiseOptions(value: unknown, known: ReadonlySet<string>, people: readonly string[]): Draft2PremiseOption[] {
   const options: Draft2PremiseOption[] = [];
@@ -532,7 +705,7 @@ export function parseFocusDecision(answer: string, { facts, lines, editorChoices
   let parsed: unknown;
   try { parsed = JSON.parse(answer); } catch { throw new Draft2ResponseError("The focus answer is not valid JSON"); }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Draft2ResponseError("The focus answer is not an object");
-  const { structure: chosenStructure, readerConsequence: chosenConsequence, narrative: chosenNarrative, concept: chosenConcept, ...overrides } = editorChoices;
+  const { structure: chosenStructure, readerConsequence: chosenConsequence, narrative: chosenNarrative, concept: chosenConcept, spine: chosenSpine, ...overrides } = editorChoices;
   const body = { ...(parsed as Record<string, unknown>), ...overrides };
   const known = new Set(facts.map((fact) => fact.id));
 
@@ -566,20 +739,26 @@ export function parseFocusDecision(answer: string, { facts, lines, editorChoices
   const narrative = parseNarrative(body.narrative, { known, material, editorChoice: chosenNarrative as Draft2FocusNarrative | undefined });
   const concept = parseConcept(body.concept, { known, material, gravity, editorChoice: chosenConcept as Draft2FocusConcept | undefined });
   const editorStructure = chosenStructure as Draft2FocusValues["structure"] | undefined;
+  const finalStructure = editorStructure
+    ? { kind: editorStructure.kind, itemFactIds: answered.kind === editorStructure.kind && answered.itemFactIds.length ? answered.itemFactIds : editorStructure.itemFactIds }
+    : answered;
+  // The spine is checked against the structure that stands (the editor's when they chose one); an answer without one, from before spines, has none.
+  const spine = chosenSpine
+    ? chosenSpine as Draft2FocusSpine
+    : body.spine === undefined ? undefined : spineFrom(body.spine, finalStructure, known, (message) => { throw new Draft2ResponseError(message); });
 
   const values: Draft2FocusValues = {
     line: line ?? null,
     audience,
     framing,
     readerConsequence,
-    structure: editorStructure
-      ? { kind: editorStructure.kind, itemFactIds: answered.kind === editorStructure.kind && answered.itemFactIds.length ? answered.itemFactIds : editorStructure.itemFactIds }
-      : answered,
+    structure: finalStructure,
     goal,
     voice: { gravity, ...Object.fromEntries(TONE_KEYS.map((key) => [key, toneValue(voice[key])])) } as Draft2FocusVoice,
     direction,
     concept,
     narrative,
+    ...(spine ? { spine } : {}),
     visualDirection,
   };
   const given = record((parsed as Record<string, unknown>).reasons);
@@ -620,6 +799,7 @@ export function decidedFocus(focus: Draft2Focus, decision: { values: Draft2Focus
     decidedAt: now.toISOString(),
     updatedAt: now.toISOString(),
     error: undefined,
+    staleDirections: false,
   };
 }
 
@@ -668,6 +848,7 @@ function editedValue(focus: Draft2Focus, field: Draft2FocusField, value: unknown
     }
     case "narrative": return editedNarrative(focus, value);
     case "concept": return editedConcept(focus, value);
+    case "spine": return spineFrom(value, values.structure, undefined, (message) => { throw new Draft2InputError(`${message}.`); });
     case "voice": {
       const voice = record(value);
       const gravity = oneOf(FOCUS_GRAVITIES, voice.gravity);
@@ -742,12 +923,18 @@ export function applyFocusEdit(focus: Draft2Focus, field: Draft2FocusField, valu
   const next = editedValue(focus, field, value);
   if (sameValue(next, focus.values[field])) return focus;
   const backToClaude = focus.ai && sameValue(next, focus.ai[field]);
+  const edited = backToClaude ? focus.edited.filter((entry) => entry !== field) : [...new Set([...focus.edited, field])];
+  // A change to how the story is told leaves the directions written for the earlier telling, unless the editor owns both; a direction the editor writes is theirs and never stale.
+  const staleDirections = FOCUS_TELLING_FIELDS.includes(field)
+    ? !(edited.includes("direction") && edited.includes("visualDirection"))
+    : field === "direction" || field === "visualDirection" ? false : focus.staleDirections;
   return {
     ...focus,
     version: focus.version + 1,
     values: { ...focus.values, [field]: next },
-    edited: backToClaude ? focus.edited.filter((entry) => entry !== field) : [...new Set([...focus.edited, field])],
+    edited,
     updatedAt: now.toISOString(),
+    ...(staleDirections !== undefined ? { staleDirections } : {}),
   };
 }
 
@@ -798,6 +985,9 @@ export function focusFindings(values: Draft2FocusValues, material?: Draft2FocusM
     const person = narrative.anchorKind === "character" ? undefined : realPersonIn(narrative.anchor, material.people);
     if (person) findings.push({ field: "narrative", code: "NARRATIVE_REAL_PERSON", detail: `${person} is a real person of the story: they appear only in a verified documentary photo, never drawn as the ${anchorNoun(narrative)}. Choose another anchor.` });
   }
+  // A spine written for another structure (an arc's penultimate on a list, too few middle beats) no longer fits the slides the steps will write.
+  const shape = values.spine ? spineShapeProblem(values.spine.beats, values.structure) : undefined;
+  if (shape) findings.push({ field: "spine", code: "SPINE_SHAPE", detail: `${shape}: decide again for Claude to rewrite the spine for this structure, or edit the beats.` });
   return findings;
 }
 
@@ -817,11 +1007,21 @@ export function focusForModels(values: Draft2FocusValues) {
     structure: structure.kind === "arc" ? { kind: "arc" } : { kind: structure.kind, items: structure.itemFactIds.length, itemFactIds: structure.itemFactIds },
     goal: values.goal,
     voice: { gravity: voice.gravity, tone: toneLine(voice) },
-    direction: values.direction,
     ...(focusConcept(values).arc !== "classic" ? { concept: conceptForModels(focusConcept(values)) } : {}),
     ...(focusNarrative(values).form !== "classic" ? { narrative: narrativeForModels(focusNarrative(values), structure, Boolean(values.visualDirection)) } : {}),
+    ...(values.spine ? { spine: spineForModels(values.spine) } : {}),
+    direction: values.direction,
     ...(values.visualDirection ? { visualDirection: values.visualDirection } : {}),
   };
+}
+
+/** The spine as the models read it: each beat with its slide, role, scene, the words' job, what the image adds, what it withholds and its facts. */
+export function spineForModels(spine: Draft2FocusSpine) {
+  return spine.beats.map(({ slide, role, scene, words, image, withholds, factIds }) => ({
+    slide, role, scene, words, image,
+    ...(withholds ? { withholds } : {}),
+    ...(factIds.length ? { factIds } : {}),
+  }));
 }
 
 /** A concept as the models read it: a discovery's premise, the facts it dramatizes and its chain of reveals; another arc's facts and beats. */

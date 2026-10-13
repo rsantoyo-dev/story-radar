@@ -100,9 +100,13 @@ export type Draft2Deck = FunnelRun<Draft2DeckCandidate, Draft2DeckScore, Draft2D
 };
 export type Draft2DeckRun = Omit<Draft2Deck, "rounds" | "previousRuns">;
 
-/** The deck's shape for a story: an arc runs 2 to 5 slides; a list or steps carries each item or step slide 2 did not cite, in order. */
-export function deckShape(structure: { kind: Draft2FocusStructureKind; itemFactIds: readonly string[] }, slide2FactIds: readonly string[]): Draft2DeckShape {
-  if (structure.kind === "arc") return { kind: "arc", min: DECK_ARC_MIN_SLIDES, max: DECK_ARC_MAX_SLIDES, items: [] };
+/** The deck's shape for a story: an arc runs 2 to 5 slides, or exactly its spine's middle beats when the focus has a spine; a list or steps carries each item or step slide 2 did not cite, in order. */
+export function deckShape(structure: { kind: Draft2FocusStructureKind; itemFactIds: readonly string[] }, slide2FactIds: readonly string[], spine?: { beats: readonly { slide: string }[] }): Draft2DeckShape {
+  if (structure.kind === "arc") {
+    const middle = spine ? spine.beats.filter((beat) => beat.slide === "middle").length : 0;
+    const fixed = middle ? Math.min(DECK_ARC_MAX_SLIDES, Math.max(DECK_ARC_MIN_SLIDES, middle)) : undefined;
+    return { kind: "arc", min: fixed ?? DECK_ARC_MIN_SLIDES, max: fixed ?? DECK_ARC_MAX_SLIDES, items: [] };
+  }
   const items = structure.itemFactIds.filter((id) => !slide2FactIds.includes(id)).slice(0, DECK_MAX_SLIDES);
   return { kind: structure.kind, min: items.length, max: items.length, items };
 }

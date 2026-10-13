@@ -401,3 +401,27 @@ Also seen: the new "turn" rule works (the judge asks for the designated turn
 to be legible), Luna judged the words' flaws in the summary as asked, and a
 revision round of four 8-slide scripts cost $0.25 at high effort (146 s): the
 visual step's revision rounds are now the most expensive calls of a story.
+
+### Addendum, 2026-10-12 night: the spine is built
+
+The editor confirmed the order (concept and form before the directions, a
+turning point and a climax, images that tell the story as much as the words)
+and asked for a telling other than classic by default. Landed:
+
+- `focus.spine` (focus skill v10, spine skill v1): one beat per slide with
+  slide, role, scene, words' job, image's contribution, what it withholds and
+  facts; program rules on the shape; `SPINE_SHAPE` finding; the models read
+  it between the telling and the directions; every funnel step's writer and
+  judge read the spine skill when it exists. `draft2-focus.md` §16.
+- The Deck's arc length comes from the spine's middle beats.
+- `staleDirections` + "Rewrite the directions" (one Claude call,
+  `rewriteDraft2FocusDirections`, `PATCH rewrite: "directions"`).
+- The focus skill prefers a concept or a form other than classic; classic
+  needs a reason.
+
+For the UI (Opus): a beat editor (reorder, reword, pick the turn), the
+Direction field below the spine, and the autopilot could call the rewrite
+when `staleDirections` is set before the Opening runs. For the rules batch:
+the Opening's hook may now be judged against the hook beat, and the visual
+judge's "beat" criterion against the beat's image line, so the OFF_BEAT
+reading has an anchor at last; watch the first runs for it.
