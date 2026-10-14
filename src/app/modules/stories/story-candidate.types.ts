@@ -102,3 +102,11 @@ export type StoryRadarResult = {
   };
   items: StoryCandidate[];
 };
+
+/**
+ * The local relevance a contribution the editor added (a link, a document)
+ * carries until the editorial evaluation reads it: score 0 there means "not
+ * computed", never a weak story, so the evaluation takes it whatever the
+ * Topic's local floor.
+ */
+export const AWAITING_EDITORIAL_EVALUATION_REASON = "source contribution: awaiting editorial evaluation";

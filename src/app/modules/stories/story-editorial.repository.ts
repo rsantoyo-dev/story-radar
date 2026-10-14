@@ -48,7 +48,7 @@ import type {
   EditorialEvaluatorResult,
   GrowthPotentialSignals,
 } from "./editorial-evaluation.types";
-import type { StoryContentStatus } from "./story-candidate.types";
+import { AWAITING_EDITORIAL_EVALUATION_REASON, type StoryContentStatus } from "./story-candidate.types";
 
 const MAX_CANDIDATE_SCAN = 250;
 
@@ -309,7 +309,8 @@ export async function findEditorialEvaluationCandidates(
         // A story marked as the same news event as another never spends an AI
         // evaluation (see detectTopicDuplicates).
         isNull(topicStories.duplicateOfStoryId),
-        gte(topicStories.relevanceScore, minLocalScore),
+        // A contribution the editor added has no local score yet (its 0 means "not computed"): their choice takes it past the floor.
+        or(gte(topicStories.relevanceScore, minLocalScore), sql`${AWAITING_EDITORIAL_EVALUATION_REASON} = any(${topicStories.relevanceReasons})`),
         withinFreshnessWindow,
       ),
     )

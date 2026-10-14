@@ -34,10 +34,11 @@ import {
   DEFAULT_SIMILAR_TITLE_WINDOW_DAYS,
 } from "./deduplicate-similar-stories";
 import { detectTopicDuplicates } from "./story-duplicates.repository";
-import type {
-  StoryCandidate,
-  StoryCandidateInput,
-  StoryRadarResult,
+import {
+  AWAITING_EDITORIAL_EVALUATION_REASON,
+  type StoryCandidate,
+  type StoryCandidateInput,
+  type StoryRadarResult,
 } from "./story-candidate.types";
 
 export const DEFAULT_STALE_STORY_RETENTION_DAYS = 7;
@@ -116,7 +117,7 @@ export async function persistUnscoredStoryContribution(
     relevance: {
       score: 0,
       decision: "new",
-      reasons: ["source contribution: awaiting editorial evaluation"],
+      reasons: [AWAITING_EDITORIAL_EVALUATION_REASON],
     },
   };
   return upsertStoryCandidate(topicId, candidate, canonicalizeStoryUrl(candidate.url));
