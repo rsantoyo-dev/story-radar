@@ -316,3 +316,28 @@ point the crop was sharp's `attention`; nothing knew where the person was.
   edit) takes the photo's fit, which is chosen then for a slide made before
   this step; an image made before keeps the slide's rotation.
 - The trace records each look (`draft2_portrait_subject`, with its cost).
+
+## 13. Corrections that can fix what they find (2026-10-14)
+
+On the same St-Jean run Sol flagged every first image for what the auditor
+later saw (a street presented as the Vieux-Saint-Jean, a crowd implying
+attendance, an invented market stall), but the one automatic correction is
+an edit that keeps the layout and the scene, so it could not fix them, and
+it was never reviewed.
+
+- **Images skill v3:** `inventedDetails` lists what the image shows that the
+  slide's facts and words do not give (products, food, signage, a style of
+  architecture, performers, a crowd at the event) and what contradicts the
+  words; a scene that passes for a photograph of a named event or place
+  without its verified material goes in `inventedNamedSubject`.
+- **Rework:** a review that finds the image wrong in what it shows (a person
+  who could be real, people outside a verified photo, an invented named
+  subject, a contradicted fact, an invented detail) marks `rework`; its
+  correction is a new image from the slide's prompt with the refused
+  problems as requirements (`reworkInstruction`, `correctsVersion`, no
+  base). A flaw in how it is drawn (a decorative line, a shadow) is still
+  edited.
+- **Corrections are reviewed** (`reviewAfter`), never corrected again. A
+  correction made before this change stays settled without a review.
+- **The cover's lettering** (`COVER_PROMPT`): the headline dominates, large
+  and clean; the subheadline small, on one line; nothing else to read.

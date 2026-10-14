@@ -41,6 +41,8 @@ export type Draft2ImageAttemptStatus = "queued" | "submitting" | "generating" | 
 export type Draft2ImageReview = {
   status: "passed" | "issues" | "unavailable";
   issues: string[];
+  /** The image shows what it must not (a person, a scene of a named event or place, a fact it contradicts, a detail no fact gives): an edit that keeps the scene cannot fix it, so its correction is a new image. */
+  rework?: true;
   note: string;
   /** The slide's words as they appear in the image. */
   transcription: string;
@@ -58,6 +60,10 @@ export type Draft2ImageAttempt = {
   portrait?: PortraitFit;
   /** The editor's instruction (a regeneration) or the review's issues (a correction). */
   instruction?: string;
+  /** A correction made as a new image (the review asked for rework) names the version it replaces; it has no base. */
+  correctsVersion?: number;
+  /** A correction made since 2026-10-14 is reviewed once made (never corrected again); an older one never was. */
+  reviewAfter?: true;
   /** An edit starts from this version's image as it was before the logo and the page number. */
   baseVersion?: number;
   endpoint?: string;
@@ -383,20 +389,39 @@ export function draft2ImageDownloads(
 }
 
 /** A first image or one the editor asked for waits for its review; a correction is final as it comes. */
-export const awaitsReview = (attempt: Draft2ImageAttempt) => attempt.status === "generated" && attempt.kind !== "correct" && !attempt.review;
+/** A finished image not reviewed yet: a first image, an editor's, or a correction made since corrections are reviewed. */
+export const awaitsReview = (attempt: Draft2ImageAttempt) => attempt.status === "generated" && !attempt.review && (attempt.kind !== "correct" || Boolean(attempt.reviewAfter));
 
-/** Done when the newest image failed, or is finished and reviewed (a correction is never reviewed again). */
+/** Done when the newest image failed, or is finished and reviewed (a correction is reviewed, never corrected again). */
 export function attemptSettled(attempt: Draft2ImageAttempt | undefined): boolean {
   if (!attempt) return true;
-  return attempt.status === "failed" || (attempt.status === "generated" && (attempt.kind === "correct" || Boolean(attempt.review)));
+  return attempt.status === "failed" || (attempt.status === "generated" && (Boolean(attempt.review) || (attempt.kind === "correct" && !attempt.reviewAfter)));
 }
 export const slideSettled = (slide: Draft2SlideImage) => attemptSettled(latestAttempt(slide));
 
-/** A first image the review flagged gets one correction, from that image before its overlays. */
+/**
+ * A first image the review flagged gets one correction: an edit of that image
+ * before its overlays when the flaw is in how it is drawn, a new image from
+ * the slide's prompt when it shows what it must not (rework). The correction
+ * is reviewed, never corrected again.
+ */
 export function correctionFor(slide: Draft2SlideImage, attempt: Draft2ImageAttempt, now: Date): Draft2ImageAttempt | undefined {
-  if (attempt.kind !== "generate" || attempt.review?.status !== "issues" || slide.attempts.some((entry) => entry.kind === "correct" && entry.baseVersion === attempt.version)) return undefined;
-  return { version: Math.max(...slide.attempts.map((entry) => entry.version)) + 1, kind: "correct", status: "queued", instruction: correctionInstruction(attempt.review.issues), baseVersion: attempt.version, queuedAt: now.toISOString() };
+  if (attempt.kind !== "generate" || attempt.review?.status !== "issues" || slide.attempts.some((entry) => entry.kind === "correct" && (entry.baseVersion === attempt.version || entry.correctsVersion === attempt.version))) return undefined;
+  const version = Math.max(...slide.attempts.map((entry) => entry.version)) + 1;
+  // An image that shows what it must not is made again from the slide's prompt; one with a flaw in how it is drawn is edited.
+  return attempt.review.rework
+    ? { version, kind: "correct", status: "queued", instruction: reworkInstruction(attempt.review.issues), correctsVersion: attempt.version, reviewAfter: true, queuedAt: now.toISOString() }
+    : { version, kind: "correct", status: "queued", instruction: correctionInstruction(attempt.review.issues), baseVersion: attempt.version, reviewAfter: true, queuedAt: now.toISOString() };
 }
+
+/** What a new image must avoid that the first one showed: the review's issues, as requirements. */
+export function reworkInstruction(issues: readonly string[]): string {
+  const listed = issues.map((issue, index) => `(${index + 1}) ${sentence(issue)}.`).join(" ");
+  return `A first image of this slide was refused for these problems: ${listed} Make a new image that shows none of them: follow the slide's direction and the brand's rules for a subject without a verified photo (clean photographic cut-outs of the objects involved on flat colour fields, typography or a neutral setting), never a scene that could pass for a photograph of the named event or place, and nothing the slide's words and facts do not give. Render the visible text exactly as VISIBLE_TEXT gives it.`.slice(0, 1_800);
+}
+
+/** The cover's lettering: the hook dominates, clean, with little else to read. */
+export const COVER_PROMPT = "\n\nCOVER: the headline is the dominant element, large, bold and clean, on few lines; the subheadline small, on one line; no other words. One strong visual idea in the brand's style, nothing that competes with the headline.";
 
 /** What the correction asks of the image model: the review's issues, and nothing else changed. */
 export function correctionInstruction(issues: readonly string[]): string {
@@ -490,12 +515,12 @@ export function textDifferences(expected: string, transcription: string, publica
 }
 
 /** Sol's answer: v1's review fields, plus the words as they appear, whether an overlay covers them, the lettering, the story, and whether the narrative's anchor is shown. */
-export type Draft2ImageReviewAnswer = CreativeImageReviewAnswer & { transcription: string; textCovered: boolean; textNote: string; storyNote: string; anchorShown: boolean };
+export type Draft2ImageReviewAnswer = CreativeImageReviewAnswer & { transcription: string; textCovered: boolean; textNote: string; storyNote: string; anchorShown: boolean; inventedDetails: string[] };
 
 export const DRAFT2_IMAGE_REVIEW_SCHEMA: Record<string, unknown> = {
   type: "object",
   additionalProperties: false,
-  required: [...CREATIVE_IMAGE_REVIEW_SCHEMA.required, "transcription", "textCovered", "textNote", "storyNote", "anchorShown"],
+  required: [...CREATIVE_IMAGE_REVIEW_SCHEMA.required, "transcription", "textCovered", "textNote", "storyNote", "anchorShown", "inventedDetails"],
   properties: {
     ...CREATIVE_IMAGE_REVIEW_SCHEMA.properties,
     transcription: { type: "string" },
@@ -503,6 +528,7 @@ export const DRAFT2_IMAGE_REVIEW_SCHEMA: Record<string, unknown> = {
     textNote: { type: "string" },
     storyNote: { type: "string" },
     anchorShown: { type: "boolean" },
+    inventedDetails: { type: "array", items: { type: "string" } },
   },
 };
 
@@ -518,6 +544,8 @@ export function parseDraft2ImageReview(text: string): Draft2ImageReviewAnswer {
     storyNote: typeof value.storyNote === "string" ? oneLine(value.storyNote).slice(0, 300) : "",
     // A review asked before narrative forms has no anchor to look for.
     anchorShown: typeof value.anchorShown === "boolean" ? value.anchorShown : true,
+    // One asked before the check has none.
+    inventedDetails: (Array.isArray(value.inventedDetails) ? value.inventedDetails : []).flatMap((entry) => typeof entry === "string" && entry.trim() ? [oneLine(entry).slice(0, 200)] : []).slice(0, 8),
   };
 }
 
@@ -537,8 +565,12 @@ export function draft2ImageReview(answer: Draft2ImageReviewAnswer, input: Creati
   if (answer.textCovered) issues.push("The logo or the page number covers part of the slide's words.");
   if (answer.textNote) issues.push(`The lettering has a problem: ${sentence(answer.textNote)}.`);
   if (input.anchor && !answer.anchorShown) issues.push(`${sentence(input.anchor)}, which is on every slide of this carousel, is missing or does not look as it does on the others.`);
+  const invented = answer.inventedDetails ?? [];
+  if (invented.length) issues.push(`The image shows what the slide's facts and words do not give: ${invented.join("; ")}.`);
+  // What the image shows is wrong, not a detail of how it is drawn: only a new image fixes it.
+  const rework = answer.possibleRealPersonLikeness || answer.peopleOutsideVerifiedPhoto || Boolean(answer.inventedNamedSubject.trim()) || answer.factContradictions.length > 0 || invented.length > 0;
   return {
-    status: issues.length ? "issues" : "passed", issues,
+    status: issues.length ? "issues" : "passed", issues, ...(rework && issues.length ? { rework: true as const } : {}),
     note: [answer.storyNote, answer.summary].map((part) => oneLine(part)).filter(Boolean).join(" "),
     transcription: answer.transcription, model: meta.model, at: meta.at, ...(meta.durationMs !== undefined ? { durationMs: meta.durationMs } : {}),
   };

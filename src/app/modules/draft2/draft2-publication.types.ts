@@ -73,7 +73,7 @@ export function publicationTarget(session: { images?: Draft2Images | null; capti
   const issues = shown.flatMap(({ slide, attempt }) => {
     const review = attempt!.review;
     if (review?.status === "passed") return [];
-    if (attempt!.kind === "correct") return [`${slide.label}: corrected and not reviewed again.`];
+    if (attempt!.kind === "correct" && !review) return [`${slide.label}: corrected and not reviewed again.`];
     if (review?.status === "issues") return [`${slide.label}: ${review.issues.join(" ")}`];
     return [`${slide.label}: not reviewed.`];
   });

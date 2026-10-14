@@ -10,11 +10,17 @@ import type { Draft2Skill } from "./draft2-skills";
  * the words cannot say (one story in two voices), one beat per image, one
  * slide carries the story's turn, the words are fixed inputs the script
  * serves, and a narrative form's anchor is exempt from the recurring-element
- * limits.
+ * limits. Version 6, 2026-10-14, after an auditor read a festival carousel
+ * whose generic scenes (a ring with its public, an acrobat on a stage, a
+ * market stall, a street of invented façades) passed for photographs of the
+ * event: a named event, venue or place without its verified photo is never
+ * a scene that could pass for a photograph of it; each image carries what
+ * its words name and nothing the facts do not give; the cover is the
+ * promise at its strongest and the end never calmer.
  */
 export const VISUALS_SKILL: Draft2Skill = {
   name: "visuals",
-  version: "5",
+  version: "6",
   text: `# Visual scripts for social carousels
 
 A visual script is the sequence of images a carousel is made of, written as
@@ -135,13 +141,28 @@ the end.
 - A named real place appears only through its verified photo or map, in
   references; otherwise as a generic scene of its kind, unnamed and
   unrecognizable.
-- A generic scene of what the story is about (anonymous people doing the
-  activity, in a setting nobody could take for the named place) is not a
-  reconstruction: it is how a story without verified material is told, and
-  usually the best way. A reconstruction is an image that claims to document
-  the real event, place or person. Truth means not contradicting the facts
-  and not faking documents; it never requires hiding the people, places or
+- A generic scene of an everyday activity (people walking a trail, shopping
+  at a market, in a setting nobody could take for the named place) is not a
+  reconstruction, and often the best way to tell a story without verified
+  material. A reconstruction is an image that claims to document the real
+  event, place or person. Truth means not contradicting the facts and not
+  faking documents; it never requires hiding the people, places or
   activities a story is about.
+- A named event, show, venue, business or place without its verified photo
+  is never a scene that could pass for a photograph of it: not its stage,
+  its performers, its public or crowd, its stalls and products, its street
+  or its buildings. A reader takes such a photograph for what they will see
+  there, or for a place that is not theirs. Tell it instead, as the brand
+  allows, with clean photographic cut-outs of one or two objects the facts
+  involve on the brand's colour fields, a typography-led or date-led slide,
+  an anonymous person in a neutral setting nobody could take for the place
+  or the event, or clearly conceptual illustration. A real place looks real
+  only through its verified photo.
+- Each image carries what its slide's words name, their colours, era and
+  mood (a fluorescent cabaret inspired by the 1980s shows fluorescent
+  colours and objects of the 1980s), and nothing the facts and the words do
+  not give: no products, food, signage, architecture, performers or acts
+  they do not name.
 - The brand's characters are the publication's recurring narrators: a guide,
   a presenter, the reader's stand-in, in their own reference style. Cast one
   when the story needs a human presence that is not a person in it, across
@@ -160,6 +181,11 @@ the end.
   verified-map or typography only).
 - Close to the reader, never glossy, saturated or obviously AI: calm inner
   slides and one deliberate strong image, usually the cover.
+- The cover is the promise at its strongest, within the rules above: its
+  energy comes from colour, scale, cropping and the room it leaves the
+  headline, which dominates; never a calm, empty establishing shot of a
+  story about a night out. The last image returns changed: never calmer or
+  emptier than the cover it answers.
 
 ## Scoring (1–100 each; overall is the judge's weighted call)
 - narrative: do the images tell one story from the cover to the last slide,
@@ -175,8 +201,10 @@ the end.
 - brand: does every direction follow the identity, its palette, its
   variation rules and its avoid list, close to the reader?
 - truth: no real person generated, no real place without its verified
-  material, nothing that contradicts the facts (indoors or outdoors, who is
-  there, what they do)?
+  material, no scene that could pass for a photograph of a named event or
+  venue without it, nothing that contradicts the facts (indoors or outdoors,
+  who is there, what they do), and no specific the facts and the words do
+  not give? Name the first two UNVERIFIED_SCENE, the last INVENTED_DETAIL.
 - craft: could an image model make each direction as written (concrete, one
   focus, nothing impossible or vague), with room for the words, the logo and
   the page number?

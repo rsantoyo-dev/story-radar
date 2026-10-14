@@ -20,10 +20,13 @@ import type { Draft2Skill } from "./draft2-skills";
  * Version 6, with the Focus step: the opening follows the story's focus
  * (framing, structure, goal, voice), the voice is judged against the
  * focus's, and a sixth criterion scores how well the opening follows it.
+ * Version 7, 2026-10-14: the cover is a strong headline and little else; the
+ * subheadline is one short line of at most 12 words, never a sentence of
+ * details.
  */
 export const HOOKS_SKILL: Draft2Skill = {
   name: "hooks",
-  version: "6",
+  version: "7",
   text: `# Openings for social carousels
 
 An opening is the cover (headline + subheadline) and slide 2 (headline + body).
@@ -73,9 +76,11 @@ sentence still rests on the verified facts it cites.
   state, never a famous name as the only draw.
 
 ## Cover subheadline
-- At most 18 words. The concrete draw that makes the promise credible: a
-  figure, a limit, a date, a named mechanism. Carries any qualifier the claim
-  needs ("could", "proposed", "reported"). Never restates the headline.
+- At most 12 words, one short line: the one concrete draw that makes the
+  promise credible (a date, a price, a count, a limit), never a sentence of
+  details; the headline carries the cover and the details belong to the
+  slides after it. Carries any qualifier the claim needs ("could",
+  "proposed", "reported"). Never restates the headline.
 
 ## Slide 2
 - Headline at most 8 words; body at most 30 words.

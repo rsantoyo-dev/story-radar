@@ -6,11 +6,15 @@ import type { Draft2Skill } from "./draft2-skills";
  * slide's words as they appear, the overlays added after generation, the
  * lettering, and how the image tells its beat. The program compares the
  * transcription with the slide's words; Sol only reads. Version 2 adds
- * anchorShown: whether a narrative form's anchor is in the image.
+ * anchorShown: whether a narrative form's anchor is in the image. Version 3,
+ * 2026-10-14, adds inventedDetails: what the image shows that the slide's
+ * facts and words do not give (a market stall for "various vendors", Parisian
+ * façades for the Vieux-Saint-Jean), and asks for a scene that passes for a
+ * photograph of a named event or place to be named as invented.
  */
 export const IMAGES_SKILL: Draft2Skill = {
   name: "images",
-  version: "2",
+  version: "3",
   text: `# Reviewing a carousel slide image
 
 You see one finished slide: the image the model made, with the publication's
@@ -33,6 +37,15 @@ and, on some slides, a verified photo or map pasted unchanged.
   every slide of this carousel), true only if the image shows it as
   described, recognisably the same one; false when it is missing or looks
   like another. True when you receive no anchor.
+- inventedDetails: what the image shows that the slide's facts and words do
+  not give, each in a few words: products, food, signage, a style of
+  architecture, performers or acts, a crowd at the event; and what
+  contradicts what the words name (a fluorescent 1980s cabaret drawn as a
+  contemporary dance on a dark stage). An empty list when there is none.
+- A scene that could pass for a photograph of a named event, show, venue or
+  place without its verified material (its stage, its public, its stalls,
+  its street) is an invented view of it: say so in inventedNamedSubject,
+  even when no one in it is identifiable.
 Judge only what you can see.`,
 };
 

@@ -305,3 +305,38 @@ its scene. The `FORBIDDEN_ELEMENT` check learned the French phrasings of a
 free logo corner ("logo en haut à gauche dégagé") and of a negation ("aucun
 logo ni interface", "pas de visage, de logo ni de lieu"): fourteen false
 findings in one St-Jean run had blocked every clean script.
+
+## Visual script v6: visual truth for events and places (2026-10-14)
+
+An auditor read the Salut St-Jean carousel on Mon Vieux-Saint-Jean la nuit:
+the cover was a quiet street, not a festival; a wrestling ring with its
+public, an acrobat on a stage and a giant puppet looked like photographs of
+the event; the closing street had Parisian façades; a vendor slide showed a
+vegetable stall with pumpkins and baguettes for "marchands variés"; the
+fluorescent 1980s cabaret was drawn as contemporary dance. The Focus had
+asked for photographic cut-outs on flat colour fields; the script turned
+them into scenes, and the skill even called a generic scene "usually the
+best way".
+
+Visuals skill v6:
+- A named event, show, venue, business or place without its verified photo
+  is never a scene that could pass for a photograph of it (its stage,
+  performers, public, stalls, street or buildings): it is told with
+  photographic cut-outs of the objects involved on the brand's colour
+  fields, a typography- or date-led slide, an anonymous person in a neutral
+  setting, or clearly conceptual illustration. A real place looks real only
+  through its verified photo. A generic scene of an everyday activity stays
+  allowed when nobody could take it for the named place.
+- Each image carries what its words name (colours, era, mood) and nothing
+  the facts and words do not give.
+- The cover is the promise at its strongest within these rules, the
+  headline dominant; the last image never calmer or emptier than the cover.
+- The judge's truth criterion covers both; new judge codes UNVERIFIED_SCENE
+  and INVENTED_DETAIL.
+
+The Salut brands' own identity said the opposite in its `fallback` ("show
+what happens there as a generic photographic scene"): rewritten the same
+day in the data (Salut St-Jean and Salut Brossard, the old values kept in
+the session's scratch backup), with the "anonymous people" allowance
+limited to everyday activities in neutral settings. v1's prompt opener no
+longer offers "a photorealistic scene": the identity sets the medium.

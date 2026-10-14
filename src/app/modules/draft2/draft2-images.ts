@@ -49,7 +49,7 @@ import { draft2ModelName, draft2PortraitModel, draft2SolModel } from "./draft2-m
 import { placeMention } from "./draft2-inventory";
 import {
   ANCHOR_PLATE_FILE, ANCHOR_PLATE_PROMPT_FILE, MASTER_PLATE_FILE, MASTER_PLATE_PROMPT_FILE, anchorPlateSettled, slideCarriesAnchor, visualNarrative, type Draft2AnchorPlate, type Draft2MasterPlate,
-  DRAFT2_IMAGE_REVIEW_SCHEMA, DRAFT2_PORTRAIT_SUBJECT_SCHEMA, IMAGE_SUBMISSION_GRACE_MS, IMAGE_SUBMIT_CONCURRENCY, IMAGES_QUALITY, PORTRAIT_LOCATOR_INSTRUCTIONS, focusSubject, parsePortraitSubject,
+  COVER_PROMPT, DRAFT2_IMAGE_REVIEW_SCHEMA, DRAFT2_PORTRAIT_SUBJECT_SCHEMA, IMAGE_SUBMISSION_GRACE_MS, IMAGE_SUBMIT_CONCURRENCY, IMAGES_QUALITY, PORTRAIT_LOCATOR_INSTRUCTIONS, focusSubject, parsePortraitSubject,
   awaitsReview, chosenSlide, correctionFor, draft2ImageDownloads, draft2ImageReview, imageBaseFile, imageFile, imagePromptFile, imagesNote, imagesTarget, latestAttempt, mapFile,
   newImagesRun, parseDraft2ImageReview, parseImagesAction, regeneratedSlide, settledStatus, slideFacts, slideSettled, slideUnit,
   type Draft2ImageAttempt, type Draft2Images, type Draft2ImagesRun, type Draft2MapPanel, type Draft2PortraitFit, type Draft2SlideImage, type Draft2SlideMaterial,
@@ -289,7 +289,7 @@ async function imageRequest(ctx: Context, slide: Draft2SlideImage, attempt: Draf
   const brandRefs = await resolveBrandGenerationReferences(ctx.topicId, ctx.brandSelections.get(slide.order));
   const zone = pasted ? portraitZonePrompt(attempt.portrait?.layout ?? portraitLayoutForSlide(slide.order)) : panel ? mapPanelZonePrompt(panel.layout) : "";
   let prompt = built.prompt + zone + (plateFile ? anchorReferencePrompt(ctx, characterImages.length + 1) : "") + brandReferencePrompt(brandRefs, characterImages.length + plates)
-    + storyReferencePrompt(storyRefs, characterImages.length + plates + brandRefs.length) + (placeFile ? verifiedPlacePhotoInstruction(placeEntry?.name) : "");
+    + storyReferencePrompt(storyRefs, characterImages.length + plates + brandRefs.length) + (placeFile ? verifiedPlacePhotoInstruction(placeEntry?.name) : "") + (slide.order === 1 ? COVER_PROMPT : "");
   if (base) prompt += `\n\nIMAGE EDIT v1\nThe LAST input image is the base image to edit. Preserve its layout, copy and protagonist except for this requested change (data): ${JSON.stringify(attempt.instruction ?? "")}\nEND IMAGE EDIT`;
   else if (section) prompt += masterSectionPrompt(ctx);
   else if (attempt.instruction) prompt += `\nRequested change: ${JSON.stringify(attempt.instruction)}`;

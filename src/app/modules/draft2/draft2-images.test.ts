@@ -260,24 +260,39 @@ test("every slide is made from v1's prompt, finished with v1's post-production i
   assert.equal(json(h.calls.reviews.map((entry) => [entry.slide, (entry.contents.addedAfterwards as Record<string, unknown>).logo, (entry.contents.addedAfterwards as Record<string, unknown>).pageNumber])), json([["cover", true, "1/3"], ["s1", false, "2/3"], ["last", false, "3/3"]]));
   assert.equal(json((h.calls.reviews[1].contents as { approvedFictionalCharacters: unknown }).approvedFictionalCharacters), json([{ name: "Jo", description: "An illustrated guide" }]));
   assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.note, entry.skillVersions])), json([
-    ["images", "draft2_image_review", "Cover", { images: "2" }], ["images", "draft2_image_review", "Slide 2", { images: "2" }], ["images", "draft2_image_review", "Slide 3", { images: "2" }],
+    ["images", "draft2_image_review", "Cover", { images: "3" }], ["images", "draft2_image_review", "Slide 2", { images: "3" }], ["images", "draft2_image_review", "Slide 3", { images: "3" }],
   ]));
   const file = await h.file({ runId: images.runId, slide: "cover", version: 1 });
   assert.equal(Buffer.from(await file.arrayBuffer()).toString(), `raw:${request(0)}|1/3|logo`);
   await assert.rejects(h.file({ runId: images.runId, slide: "cover", version: 2 }), /not one of this session's finished images/);
 });
 
-test("a first image the review flags is corrected once, from its image before the overlays; the correction is not reviewed again", async () => {
+test("a first image the review flags is corrected once, from its image before the overlays; the correction is reviewed and never corrected again", async () => {
   const h = harness({ reviewOf: (slide) => slide === "s1" ? { transcription: "Toads, spiders and bat\nNaturalists explain them." } : {} });
   const session = await h.run();
   const s1 = session.images!.slides[1];
-  assert.equal(json(s1.attempts.map((attempt) => [attempt.version, attempt.kind, attempt.status, attempt.baseVersion ?? null, attempt.review?.status ?? null])), json([[1, "generate", "generated", null, "issues"], [2, "correct", "generated", 1, null]]));
+  assert.equal(json(s1.attempts.map((attempt) => [attempt.version, attempt.kind, attempt.status, attempt.baseVersion ?? null, attempt.review?.status ?? null])), json([[1, "generate", "generated", null, "issues"], [2, "correct", "generated", 1, "issues"]]), "the correction is reviewed (the fake reviewer flags s1 every time) and stays as it is");
   const correction = h.calls.submits.find((submit) => submit.prompt.includes("IMAGE EDIT v1"))!;
   assert.equal(json([correction.endpoint, correction.files]), json(["openai/gpt-image-2.5/sunburst/edit", ["jo.png", "s1-v1-base.png"]]), "the base, before the logo and page number, is the last input image");
   assert.match(correction.prompt, /IMAGE EDIT v1\nThe LAST input image is the base image to edit[^]*missing «bats»; not in the slide «bat»/);
   assert.equal(stored(h, "s1-v2.png"), `raw:${s1.attempts[1].requestId}|2/3`);
-  assert.equal(h.calls.reviews.length, 3, "three reviews: the correction is final as it comes");
+  assert.equal(h.calls.reviews.length, 4, "four reviews: the three first images and the correction, which is never corrected again");
+  const cover = h.calls.submits.find((submit) => submit.prompt.startsWith("PROMPT 1:"))!;
+  assert.match(cover.prompt, /COVER: the headline is the dominant element/, "the cover's lettering: the hook dominates");
+  assert.doesNotMatch(h.calls.submits.find((submit) => submit.prompt.startsWith("PROMPT 2:"))!.prompt, /COVER:/);
   assert.equal(json([session.status, session.images!.status, session.error]), json(["needs-review", "needs-review", "1 image needs your review."]));
+});
+
+test("an image that shows what it must not is made again from the slide's prompt, with no base, the refused problems as requirements; the new image is reviewed", async () => {
+  const h = harness({ reviewOf: (slide, version) => slide === "s1" && version === 1 ? { inventedDetails: ["a vegetable stall"] } : {} });
+  const session = await h.run();
+  const s1 = session.images!.slides[1];
+  assert.equal(json(s1.attempts.map((attempt) => [attempt.version, attempt.kind, attempt.baseVersion ?? null, attempt.correctsVersion ?? null, attempt.review?.status ?? null])), json([[1, "generate", null, null, "issues"], [2, "correct", null, 1, "passed"]]));
+  const remade = h.calls.submits.filter((submit) => submit.prompt.startsWith("PROMPT 2:"))[1];
+  assert.doesNotMatch(remade.prompt, /IMAGE EDIT v1/, "not an edit of the refused image");
+  assert.match(remade.prompt, /Requested change: "A first image of this slide was refused for these problems: \(1\) The image shows what the slide's facts and words do not give: a vegetable stall\./);
+  assert.equal(json(remade.files), json(["jo.png"]), "no base image: only the slide's own references");
+  assert.equal(json([session.images!.status, session.status]), json(["ready", "ready"]), "every shown image passed");
 });
 
 test("a request whose time is spent pauses; the next one polls the same requests and never sends an image twice", async () => {
@@ -442,7 +457,7 @@ test("a narrative form's anchor is drawn once, without words, before the slides;
   assert.equal(json(byOrder(2)[0].files), json(["jo.png", "anchor-plate.png"]), "after the brand character's references");
   assert.match(byOrder(2)[0].prompt, /ANCHOR REFERENCE\nInput image 2 is A curious toad, the guide that is on every slide of this carousel/);
   assert.match(byOrder(1)[0].prompt, /Input image 1 is A curious toad/);
-  assert.equal(json(h.calls.reviews.map((review) => (review.contents.anchor as { what: string } | undefined)?.what)), json(["A curious toad", "A curious toad", "A curious toad"]));
+  assert.equal(json(h.calls.reviews.map((review) => (review.contents.anchor as { what: string } | undefined)?.what)), json(["A curious toad", "A curious toad", "A curious toad", "A curious toad"]), "the three first images and the correction");
   const s1 = images.slides.find((slide) => slide.slide === "s1")!;
   assert.match(s1.attempts[0].review!.issues.join(" "), /A curious toad, which is on every slide of this carousel, is missing or does not look as it does on the others\./);
   assert.equal(json(s1.attempts.map((attempt) => [attempt.version, attempt.kind, attempt.status])), json([[1, "generate", "generated"], [2, "correct", "generated"]]));

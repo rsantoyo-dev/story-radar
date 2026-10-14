@@ -757,3 +757,13 @@ that `git status` shows as modified under `src/app/modules/observability/`,
 Closing, Deck and Review steps; images; publishing; using the editor's choice
 to retrain anything; `.md` skill files read at runtime; any change to the v1
 studio beyond additive adapter options.
+
+## Hooks v7: a strong cover, little to read (2026-10-14)
+
+The editor: "en el hook debe prevalecer un texto fuerte y evitar mucha info;
+la presentación debe ser fuerte e impactante, limpia, al estilo de la marca".
+The cover subheadline is now at most 12 words (`COVER_SUBHEADLINE_MAX_WORDS`,
+was 18): one short line with the one draw that makes the promise credible (a
+date, a price, a count, a limit), never a sentence of details. The images
+step letters the cover with the headline dominant (`COVER_PROMPT`,
+draft2-images.md §13).

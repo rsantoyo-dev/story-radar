@@ -63,7 +63,7 @@ export const OPENING_STALL_MS = 2 * 60_000;
 export const OPENING_ACCEPT_SCORE = 95;
 export const OPENING_CRITERION_FLOOR = 85;
 export const COVER_HEADLINE_MAX_WORDS = 8;
-export const COVER_SUBHEADLINE_MAX_WORDS = 18;
+export const COVER_SUBHEADLINE_MAX_WORDS = 12;
 export const SLIDE2_HEADLINE_MAX_WORDS = 8;
 export const SLIDE2_BODY_MAX_WORDS = 30;
 /** Slide 2 restates the cover when this share of their longer words is the same. */

@@ -121,6 +121,17 @@ test("Sol's review: v1's blocking issues, the words that differ, words an overla
     "The lettering has a problem: the last line is cut at the edge.",
   ]);
   assert.throws(() => parseDraft2ImageReview(JSON.stringify({ ...JSON.parse(answer()), transcription: undefined })), (error: Error) => error instanceof Draft2ResponseError);
+  assert.equal(flagged.rework, true, "a person who could be read as real is wrong in what the image shows: only a new image fixes it");
+});
+
+test("what the image shows that the facts and words do not give blocks it and asks for a new image; a flaw in how it is drawn asks for an edit", () => {
+  const invented = draft2ImageReview(parseDraft2ImageReview(answer({ inventedDetails: [" a vegetable stall with pumpkins and baguettes ", "Parisian façades"] })), reviewInput, meta);
+  assert.equal(json([invented.status, invented.rework, invented.issues]), json(["issues", true, ["The image shows what the slide's facts and words do not give: a vegetable stall with pumpkins and baguettes; Parisian façades."]]));
+  const scene = draft2ImageReview(parseDraft2ImageReview(answer({ inventedNamedSubject: "The image presents an invented view of Le Vieux-Saint-Jean as if it were real." })), reviewInput, meta);
+  assert.equal(scene.rework, true, "a scene that passes for the named place");
+  const drawn = draft2ImageReview(parseDraft2ImageReview(answer({ brandAvoidViolations: ["A decorative turquoise line under the headline"] })), reviewInput, meta);
+  assert.equal(json([drawn.status, drawn.rework ?? null]), json(["issues", null]), "a decorative line is edited away");
+  assert.deepEqual(parseDraft2ImageReview(JSON.stringify({ ...JSON.parse(answer()), inventedDetails: undefined })).inventedDetails, [], "a review asked before the check has none");
 });
 
 const attempt = (overrides: Partial<Draft2ImageAttempt> = {}): Draft2ImageAttempt => ({ version: 1, kind: "generate", status: "generated", queuedAt: NOW.toISOString(), sha256: "a".repeat(64), ...overrides });
@@ -128,15 +139,23 @@ const slide = (attempts: Draft2ImageAttempt[], overrides: Partial<Draft2SlideIma
 const passed = { status: "passed" as const, issues: [], note: "", transcription: "", model: "sol", at: "t" };
 const issues = { status: "issues" as const, issues: ["The words in the image differ from the slide's: missing «bats»."], note: "", transcription: "", model: "sol", at: "t" };
 
-test("a first image the review flags is corrected once from its image before the overlays; a correction is final as it comes", () => {
+test("a first image the review flags is corrected once: edited when the flaw is in how it is drawn, made again when it shows what it must not; the correction is reviewed, never corrected again", () => {
   const flagged = slide([attempt({ review: issues })]);
   const correction = correctionFor(flagged, flagged.attempts[0], NOW)!;
-  assert.equal(json([correction.version, correction.kind, correction.status, correction.baseVersion]), json([2, "correct", "queued", 1]));
+  assert.equal(json([correction.version, correction.kind, correction.status, correction.baseVersion, correction.reviewAfter]), json([2, "correct", "queued", 1, true]));
   assert.match(correction.instruction!, /^Fix only these problems the review found, and change nothing else[^]*\(1\) The words in the image differ from the slide's: missing «bats»\.[^]*Render the visible text exactly as VISIBLE_TEXT gives it\.$/);
   assert.equal(correctionFor(slide([attempt({ review: issues }), correction]), flagged.attempts[0], NOW), undefined, "once");
   assert.equal(correctionFor(slide([attempt({ kind: "regenerate", review: issues })]), attempt({ kind: "regenerate", review: issues }), NOW), undefined, "the editor's own images are theirs to judge");
   assert.equal(correctionFor(slide([attempt({ review: passed })]), attempt({ review: passed }), NOW), undefined);
-  assert.equal(slideSettled(slide([attempt({ review: issues }), { ...correction, status: "generated" }])), true, "a correction is not reviewed again");
+  assert.equal(slideSettled(slide([attempt({ review: issues }), { ...correction, status: "generated" }])), false, "a correction waits for its review");
+  assert.equal(slideSettled(slide([attempt({ review: issues }), { ...correction, status: "generated", review: issues }])), true, "and is never corrected again");
+  assert.equal(correctionFor(slide([attempt({ review: issues }), { ...correction, status: "generated", review: issues }]), { ...correction, status: "generated", review: issues }, NOW), undefined);
+  assert.equal(slideSettled(slide([attempt({ review: issues }), { version: 2, kind: "correct", status: "generated", queuedAt: "t" } as never])), true, "a correction made before corrections were reviewed stays settled");
+  const scene = slide([attempt({ review: { ...issues, rework: true } })]);
+  const rework = correctionFor(scene, scene.attempts[0], NOW)!;
+  assert.equal(json([rework.baseVersion ?? null, rework.correctsVersion, rework.reviewAfter]), json([null, 1, true]), "an image that shows what it must not is made again from the prompt, with no base");
+  assert.match(rework.instruction!, /^A first image of this slide was refused for these problems: \(1\)[^]*never a scene that could pass for a photograph of the named event or place/);
+  assert.equal(correctionFor(slide([scene.attempts[0], { ...rework, status: "generated" }]), scene.attempts[0], NOW), undefined, "once, whatever its kind");
   assert.equal(slideSettled(slide([attempt()])), false, "a first image waits for its review");
   assert.equal(slideSettled(slide([attempt({ status: "failed" })])), true);
 });

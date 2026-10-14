@@ -138,7 +138,8 @@ export function buildCreativeImagePrompt({
       ? characters.length > 0
         ? "Use an intentional typography-led graphic composition. The selected supporting characters must still appear clearly as designed visual subjects; do not replace them with generic icons or silhouettes."
         : "Use an intentional typography-led graphic composition; do not use a photographic subject."
-      : "Create a strong editorial illustration or photorealistic scene that supports the message.";
+      // The publication's identity rules the medium; nothing here invites a photograph of what has no verified one.
+      : "Create a strong editorial image that supports the message, in the medium the publication's visual identity sets.";
   const platform = brief.profileSnapshot.platform.trim() || "social media";
   const visualGuidance = resolveCreativeVisualGuidance(visualProfile);
   const referenceImageCount = characters.flatMap(
