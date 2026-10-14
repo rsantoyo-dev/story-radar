@@ -341,3 +341,29 @@ it was never reviewed.
   correction made before this change stays settled without a review.
 - **The cover's lettering** (`COVER_PROMPT`): the headline dominates, large
   and clean; the subheadline small, on one line; nothing else to read.
+
+## 14. The map card goes where the words are not (2026-10-14)
+
+On the St-Jean festival carousel the last slide carried the verified map of
+the Vieux-Saint-Jean. The card is pasted by the program, always bottom
+right; the slide's long closing text ran into that corner, so the card
+covered words, while the model left an empty grey box top right and drew a
+map of its own (invented streets: "rue Charles", "pont Gouin"). The editor
+asked three times, in words, to move the map; each request went to the image
+model, which can only draw another map.
+
+- **The editor moves the card** ("Map card" on a map slide: bottom right,
+  top right, bottom left; `MapPanelPosition`, `movedMapSlide`, image action
+  `map`). The slide's panel keeps the position; a new image is made from the
+  prompt (never an edit of the old layout), and its zone prompt, its paste
+  and the review's region all use that corner. Bottom right stays the
+  default, so earlier slides recompose as they were. A band never moves.
+- **The zone prompt names the corner**, keeps the rest of the slide for the
+  words, forbids any other empty box or placeholder, and any map or plan.
+- **A direction that mentions a map, a plan or a real view gives way to the
+  scene** on a map slide (v1's detectors plus the plain words map, plan,
+  carte, mapa, plano): the card is the only geography.
+- **An editor's request on a map slide** is followed by a line telling the
+  model the card is pasted by the program and never to draw a map itself.
+- **Words covered by a pasted photo or map** now ask for a new image
+  (`rework`): an edit keeps the words where they were.

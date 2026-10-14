@@ -9,6 +9,7 @@ import {
 } from "../stories/creative-image-review";
 import type { CreativeUnit, CreativeUnitRole } from "../stories/creative-content.types";
 import type { PortraitBox, PortraitFit, PortraitSubject } from "../stories/creative-portrait-composite";
+import { MAP_PANEL_POSITIONS, type MapPanelPosition } from "../stories/map-panel-position";
 import type { Draft2SessionRow } from "@/db/schema";
 
 /**
@@ -107,7 +108,11 @@ export type Draft2SlideMaterial =
 export type Draft2PortraitFit = PortraitFit & { source: "ai" | "editor" | "automatic"; face?: PortraitBox; person?: PortraitBox };
 
 /** A map panel as it was fetched (its bytes are stored beside the slide's images). */
-export type Draft2MapPanel = { provider: "Google" | "OpenStreetMap"; layout: "inset" | "inset-labelled"; label?: { name: string; address: string }; sha256: string };
+export type Draft2MapPanel = {
+  provider: "Google" | "OpenStreetMap"; layout: "inset" | "inset-labelled"; label?: { name: string; address: string }; sha256: string;
+  /** Where the editor moved the card; bottom right when absent. */
+  position?: MapPanelPosition;
+};
 
 export type Draft2SlideImage = {
   slide: string;
@@ -445,7 +450,8 @@ export function imagesNote(slides: readonly Draft2SlideImage[]): string | undefi
 /** The editor's decisions: another image of a slide (optionally an edit of the one shown), or the version a slide shows. */
 export type Draft2ImagesAction =
   | { action: "regenerate"; slide: string; instruction?: string; edit: boolean }
-  | { action: "choose"; slide: string; version: number };
+  | { action: "choose"; slide: string; version: number }
+  | { action: "map"; slide: string; position: MapPanelPosition };
 
 const record = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 
@@ -463,7 +469,25 @@ export function parseImagesAction(value: unknown): Draft2ImagesAction {
     if (body.edit === true && !instruction) throw new Draft2InputError("Say what to change in the image.");
     return { action: "regenerate", slide, ...(instruction ? { instruction } : {}), edit: body.edit === true };
   }
-  throw new Draft2InputError("The action is regenerate or choose.");
+  if (body.action === "map") {
+    const position = MAP_PANEL_POSITIONS.find((entry) => entry === body.position);
+    if (!position) throw new Draft2InputError(`The map card goes ${MAP_PANEL_POSITIONS.join(", ")}.`);
+    return { action: "map", slide, position };
+  }
+  throw new Draft2InputError("The action is regenerate, choose or map.");
+}
+
+/**
+ * The slide with its verified map card moved to another corner, and a new
+ * image queued from its prompt: the card is pasted by the program, so it is
+ * the slide's layout that changes, never something to ask the image model.
+ */
+export function movedMapSlide(slide: Draft2SlideImage, position: MapPanelPosition, now: Date): Draft2SlideImage {
+  const map = slide.material.find((entry): entry is Extract<Draft2SlideMaterial, { kind: "map" }> => entry.kind === "map");
+  if (!map?.panel) throw new Draft2InputError(`${slide.label} has no verified map card to move.`);
+  if ((map.panel.position ?? "bottom-right") === position) throw new Draft2InputError(`The map card of ${slide.label} is already there.`);
+  const moved = { ...slide, material: slide.material.map((entry) => entry === map ? { ...map, panel: { ...map.panel!, position } } : entry) };
+  return regeneratedSlide(moved, { action: "regenerate", slide: slide.slide, edit: false }, now);
 }
 
 /** The slide with another image queued: from its prompt again, or an edit of the image it shows. */
@@ -568,7 +592,8 @@ export function draft2ImageReview(answer: Draft2ImageReviewAnswer, input: Creati
   const invented = answer.inventedDetails ?? [];
   if (invented.length) issues.push(`The image shows what the slide's facts and words do not give: ${invented.join("; ")}.`);
   // What the image shows is wrong, not a detail of how it is drawn: only a new image fixes it.
-  const rework = answer.possibleRealPersonLikeness || answer.peopleOutsideVerifiedPhoto || Boolean(answer.inventedNamedSubject.trim()) || answer.factContradictions.length > 0 || invented.length > 0;
+  // Words under a pasted photo or map are where the image model set them: an edit keeps them there.
+  const rework = answer.possibleRealPersonLikeness || answer.peopleOutsideVerifiedPhoto || Boolean(answer.inventedNamedSubject.trim()) || answer.factContradictions.length > 0 || invented.length > 0 || answer.textCovered;
   return {
     status: issues.length ? "issues" : "passed", issues, ...(rework && issues.length ? { rework: true as const } : {}),
     note: [answer.storyNote, answer.summary].map((part) => oneLine(part)).filter(Boolean).join(" "),

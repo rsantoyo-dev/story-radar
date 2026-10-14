@@ -13,6 +13,7 @@ import {
   type Draft2Focus, type Draft2FocusField, type Draft2FocusFinding, type Draft2ConceptArc, type Draft2FocusConcept, type Draft2FocusMaterial, type Draft2FocusNarrative, type Draft2FocusValues, type Draft2FocusVoice, type Draft2NarrativeForm,
 } from "@/app/modules/draft2/draft2-focus.types";
 import { TONE_KEYS, toneWords, type ToneKey } from "@/app/modules/draft2/skills/tone";
+import { MAP_PANEL_POSITIONS, type MapPanelPosition } from "@/app/modules/stories/map-panel-position";
 import { DRAFT2_LEVER_GROUPS, DRAFT2_LEVERS, FREE_LEVER, LEVER_PAID_BY, MAX_LEVER_ALTERNATIVES, eligibleLevers, leverName, type Draft2FocusLevers, type Draft2LeverPaidBy } from "@/app/modules/draft2/draft2-levers.types";
 import {
   OPENING_GATE, OPENING_MAX_ROUNDS, OPENING_STALL_MS, openingResumeRound,
@@ -1888,7 +1889,9 @@ function SlideImageCard({ slide, runId, story, saving, locked, onDecide }: {
   const latest = latestAttempt(slide);
   const generated = slide.attempts.filter((attempt) => attempt.status === "generated");
   const pending = !slideSettled(slide);
-  const corrected = shown?.kind === "correct" ? slide.attempts.find((attempt) => attempt.version === shown.baseVersion) : undefined;
+  const corrected = shown?.kind === "correct" ? slide.attempts.find((attempt) => attempt.version === (shown.baseVersion ?? shown.correctsVersion)) : undefined;
+  const map = slide.material.find((entry) => entry.kind === "map");
+  const mapPosition = map?.kind === "map" && map.panel ? map.panel.position ?? "bottom-right" : undefined;
   const tone: StatusTone = !shown ? (latest?.status === "failed" ? "error" : "info") : shown.review?.status === "passed" ? "success" : "warning";
   const url = shown ? `/api/radar/draft2/images/file?topicId=${encodeURIComponent(story.topicId)}&sessionId=${encodeURIComponent(story.sessionId)}&run=${encodeURIComponent(runId)}&slide=${encodeURIComponent(slide.slide)}&version=${shown.version}` : undefined;
   return <li className={styles.imageCard}>
@@ -1904,9 +1907,14 @@ function SlideImageCard({ slide, runId, story, saving, locked, onDecide }: {
       </Button>)}
     </div> : null}
     {shown?.review ? <ImageReviewLines review={shown.review} /> : null}
-    {corrected?.review ? <p className={styles.factMeta}>Corrected from v{corrected.version} for: {corrected.review.issues.join(" ")} Not reviewed again: look at it yourself.</p> : null}
+    {corrected?.review ? <p className={styles.factMeta}>{shown?.correctsVersion ? "Made again" : "Corrected"} from v{corrected.version} for: {corrected.review.issues.join(" ")}{shown?.review ? "" : " Not reviewed again: look at it yourself."}</p> : null}
     {latest && latest !== shown && latest.status === "failed" ? <p className={styles.factMeta}>v{latest.version} failed: {latest.error}</p> : null}
     {slide.notes.map((entry) => <p key={entry} className={styles.factMeta}>{entry}</p>)}
+    {mapPosition ? <FormField label="Map card" description="The program pastes the verified map after the image is made: move it where the words are not, and a new image is made around it.">
+      <select value={mapPosition} disabled={locked || pending || saving} onChange={(event) => onDecide({ action: "map", slide: slide.slide, position: event.target.value })}>
+        {MAP_PANEL_POSITIONS.map((position) => <option key={position} value={position}>{MAP_POSITION_LABEL[position]}</option>)}
+      </select>
+    </FormField> : null}
     <details>
       <summary>Another image</summary>
       <FormField label="What to change" description="Optional for a new image; needed to edit this one.">
@@ -1919,6 +1927,8 @@ function SlideImageCard({ slide, runId, story, saving, locked, onDecide }: {
     </details>
   </li>;
 }
+
+const MAP_POSITION_LABEL: Record<MapPanelPosition, string> = { "bottom-right": "Bottom right", "top-right": "Top right", "bottom-left": "Bottom left" };
 
 /** A private image: fetched with the editor's credentials and shown from memory. */
 function PrivateDraft2Image({ url, secret, alt }: { url: string; secret: string; alt: string }) {

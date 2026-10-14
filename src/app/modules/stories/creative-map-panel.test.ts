@@ -77,12 +77,27 @@ test("the slide reserves a small inset for the map and is told never to draw ano
   const [, top, bottom] = /from (\d+)% to (\d+)% of the height/.exec(prompt) ?? [];
   assert.ok(Number(top) <= region.top && Number(bottom) >= region.bottom, `the reserved zone covers the whole inset: ${top}–${bottom}% vs ${region.top}–${region.bottom}%`);
   assert.match(prompt, /small printed map card lying on the scene/);
-  assert.match(prompt, /Do not draw any other map, street, road, pin or route, and no recognizable landmark or building facade/);
+  assert.match(prompt, /Do not draw any other map, plan, street, road, pin or route, and no recognizable landmark or building facade/);
+  assert.match(prompt, /in the bottom right corner[^]*Leave no other empty box or placeholder anywhere/);
   assert.match(prompt, /Never place text inside or across it/);
   // The card shows Google's static map at the size it is requested at (scale 2).
   assert.deepEqual([MAP_PANEL_MAP.width, MAP_PANEL_MAP.height], [420, 264]);
   // It sits on the right, clear of the headline above and the slide counter at the bottom.
   assert.ok(region.top >= 55 && region.bottom <= 88 && region.right <= 96, JSON.stringify(region));
+});
+
+test("the editor may move an inset card to the top right or the bottom left; bottom right stays where it always was", () => {
+  assert.deepEqual(mapPanelRegion("inset-labelled", "bottom-right"), mapPanelRegion("inset-labelled"), "the default is unchanged");
+  const top = mapPanelRegion("inset-labelled", "top-right");
+  const left = mapPanelRegion("inset-labelled", "bottom-left");
+  assert.equal(top.right, mapPanelRegion("inset-labelled").right);
+  assert.ok(top.top * 1350 / 100 >= 236 && top.bottom < 50, `below the tallest top logo zone, in the upper half: ${JSON.stringify(top)}`);
+  assert.ok(left.left <= 6 && left.bottom <= 90 && left.top === mapPanelRegion("inset-labelled").top, JSON.stringify(left));
+  assert.deepEqual(mapPanelRegion("band", "top-right"), mapPanelRegion("band"), "a band never moves");
+  const prompt = mapPanelZonePrompt("inset-labelled", "top-right");
+  const [, from, to] = /from (\d+)% to (\d+)% of the height/.exec(prompt) ?? [];
+  assert.ok(Number(from) <= top.top && Number(to) >= top.bottom, `the zone the prompt keeps is where the card lands: ${from}–${to}% vs ${top.top}–${top.bottom}%`);
+  assert.match(prompt, /in the top right corner[^]*set the words in the rest of the slide, beside or below it/);
 });
 
 test("a batch composed with the earlier band recomposes with the band", () => {

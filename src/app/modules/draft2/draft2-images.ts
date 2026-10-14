@@ -16,6 +16,7 @@ import { creativeBrandOverlaySnapshot, findCreativeBrandAsset } from "../stories
 import { compositeStoredCreativeBrand, isTransientFalSubmitError } from "../stories/manage-creative-assets";
 import { compositeDocumentaryPortrait, fitPortrait, portraitAccent, portraitLayoutForSlide, portraitPhotoRegion, portraitZonePrompt, type PortraitFit, type PortraitSubject } from "../stories/creative-portrait-composite";
 import { compositeMapPanel, mapInsetVisualDirection, mapPaletteFromBrand, mapPanelRegion, mapPanelZonePrompt, streetAddress } from "../stories/creative-map-panel";
+import { requestsGeographicReconstruction, requestsPlacePhotograph } from "../stories/creative-evidence-guardrails";
 import { photoLedVisualDirection, storyReferencePrompt } from "../stories/story-reference-generation";
 import { currentPortraitFocus, loadDocumentaryPortraitPhoto, loadStoryReferenceImages, resolveStoryReferences } from "../stories/manage-story-photos";
 import { snapshotsForCreativeCharacterIds } from "../stories/creative-characters.repository";
@@ -51,7 +52,7 @@ import {
   ANCHOR_PLATE_FILE, ANCHOR_PLATE_PROMPT_FILE, MASTER_PLATE_FILE, MASTER_PLATE_PROMPT_FILE, anchorPlateSettled, slideCarriesAnchor, visualNarrative, type Draft2AnchorPlate, type Draft2MasterPlate,
   COVER_PROMPT, DRAFT2_IMAGE_REVIEW_SCHEMA, DRAFT2_PORTRAIT_SUBJECT_SCHEMA, IMAGE_SUBMISSION_GRACE_MS, IMAGE_SUBMIT_CONCURRENCY, IMAGES_QUALITY, PORTRAIT_LOCATOR_INSTRUCTIONS, focusSubject, parsePortraitSubject,
   awaitsReview, chosenSlide, correctionFor, draft2ImageDownloads, draft2ImageReview, imageBaseFile, imageFile, imagePromptFile, imagesNote, imagesTarget, latestAttempt, mapFile,
-  newImagesRun, parseDraft2ImageReview, parseImagesAction, regeneratedSlide, settledStatus, slideFacts, slideSettled, slideUnit,
+  movedMapSlide, newImagesRun, parseDraft2ImageReview, parseImagesAction, regeneratedSlide, settledStatus, slideFacts, slideSettled, slideUnit,
   type Draft2ImageAttempt, type Draft2Images, type Draft2ImagesRun, type Draft2MapPanel, type Draft2PortraitFit, type Draft2SlideImage, type Draft2SlideMaterial,
 } from "./draft2-images.types";
 import { OPENING_STALL_MS } from "./draft2-opening.types";
@@ -238,6 +239,10 @@ async function placePhoto(ctx: Context, entry: Extract<Draft2SlideMaterial, { ki
   return new File([new Uint8Array(photo.bytes)], `${entity.id}-place-photo`, { type: photo.evidence.contentType });
 }
 
+/** A direction that asks for geography: a map, a plan, a real view of the place (v1's detectors, and the plain words they leave out). */
+const asksForGeography = (direction: string) => requestsGeographicReconstruction(direction) || requestsPlacePhotograph(direction)
+  || /\b(?:maps?|plans?|cartes?|mapas?|planos?)\b/u.test(direction.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase());
+
 type ImageRequest = { prompt: string; expectedText: string; files: File[]; endpoint: string; placePhoto?: string };
 
 /**
@@ -275,7 +280,8 @@ async function imageRequest(ctx: Context, slide: Draft2SlideImage, attempt: Draf
   const storyRefs = storyEntries.length ? await resolveStoryReferences(ctx.topicId, ctx.storyId, storyEntries.map((entry) => ({ id: entry.storyPhotoId, purpose: entry.purpose }))) : [];
   const characters = charactersForImageGeneration(slide.characterIds.flatMap((id) => ctx.characters.get(id) ?? []));
   const campaignCharacters = charactersForImageGeneration([...ctx.characters.values()]);
-  const direction = panel ? mapInsetVisualDirection(unit.visualDirection, false) : photoLedVisualDirection(unit.visualDirection, storyRefs);
+  // On a map slide the card is the only geography: a direction that mentions a map, a plan or a real view gives way to the scene.
+  const direction = panel ? mapInsetVisualDirection(unit.visualDirection, asksForGeography(unit.visualDirection)) : photoLedVisualDirection(unit.visualDirection, storyRefs);
   const built = buildCreativeImagePrompt({
     draft: ctx.draft, unit: { ...unit, visualDirection: direction, characterIds: slide.characterIds }, brief: ctx.brief, characters, campaignCharacters,
     brandOverlay: ctx.overlay, carouselChromeSettings: ctx.profile.carouselChrome,
@@ -287,12 +293,14 @@ async function imageRequest(ctx: Context, slide: Draft2SlideImage, attempt: Draf
   const plateFile = ctx.run.anchorPlate?.status === "generated" && slideCarriesAnchor(slide) ? await anchorPlateFile(ctx, slide) : undefined;
   const plates = plateFile ? 1 : 0;
   const brandRefs = await resolveBrandGenerationReferences(ctx.topicId, ctx.brandSelections.get(slide.order));
-  const zone = pasted ? portraitZonePrompt(attempt.portrait?.layout ?? portraitLayoutForSlide(slide.order)) : panel ? mapPanelZonePrompt(panel.layout) : "";
+  const zone = pasted ? portraitZonePrompt(attempt.portrait?.layout ?? portraitLayoutForSlide(slide.order)) : panel ? mapPanelZonePrompt(panel.layout, panel.position) : "";
   let prompt = built.prompt + zone + (plateFile ? anchorReferencePrompt(ctx, characterImages.length + 1) : "") + brandReferencePrompt(brandRefs, characterImages.length + plates)
     + storyReferencePrompt(storyRefs, characterImages.length + plates + brandRefs.length) + (placeFile ? verifiedPlacePhotoInstruction(placeEntry?.name) : "") + (slide.order === 1 ? COVER_PROMPT : "");
   if (base) prompt += `\n\nIMAGE EDIT v1\nThe LAST input image is the base image to edit. Preserve its layout, copy and protagonist except for this requested change (data): ${JSON.stringify(attempt.instruction ?? "")}\nEND IMAGE EDIT`;
   else if (section) prompt += masterSectionPrompt(ctx);
   else if (attempt.instruction) prompt += `\nRequested change: ${JSON.stringify(attempt.instruction)}`;
+  // An editor who asks to move or fix the map means the card the program pastes: the model never draws one.
+  if (panel && attempt.instruction) prompt += "\nThe verified map card is placed by the program after generation, in the zone kept for it: never draw a map, a plan, streets or a route yourself, whatever the requested change says about the map.";
   if (prompt.length > MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS) throw new Draft2InputError(`${slide.label}'s image prompt is longer than ${MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS} characters.`);
   const files = [
     ...await Promise.all(characterImages.map((reference) => readPrivateR2ImageFile({ objectKey: reference.objectKey, contentType: reference.contentType, fileName: reference.fileName }))),
@@ -546,7 +554,7 @@ async function finish(ctx: Context, slide: Draft2SlideImage, attempt: Draft2Imag
     const map = new Uint8Array(await file.arrayBuffer());
     if (hash(map) !== panel.sha256) throw new Draft2InputError(`The map of ${slide.label} changed since it was fetched; make the slide again.`);
     const color = mapPaletteFromBrand(ctx.profile.brandPalette ?? [])?.primary;
-    out = await compositeMapPanel({ image: out, map, matColor: color ?? "#1f2933", layout: panel.layout, ...(panel.label ? { label: panel.label } : {}), ...(color ? { ink: color } : {}) });
+    out = await compositeMapPanel({ image: out, map, matColor: color ?? "#1f2933", layout: panel.layout, ...(panel.position ? { position: panel.position } : {}), ...(panel.label ? { label: panel.label } : {}), ...(color ? { ink: color } : {}) });
   }
   const chrome = chromeFor(ctx, slide.order);
   if (chrome.overlay) out = await compositeCreativeCarouselChrome({ image: out, chrome });
@@ -611,7 +619,7 @@ async function reviewAttempt(ctx: Context, slide: Draft2SlideImage, attempt: Dra
     visibleText: attempt.expectedText ?? "",
     publicationName: ctx.profile.name,
     ...(pasted ? { verifiedPhoto: { personName: pasted.name, region: portraitPhotoRegion(attempt.portrait?.layout ?? portraitLayoutForSlide(slide.order)) } } : {}),
-    ...(panel ? { verifiedMap: { provider: panel.provider, region: mapPanelRegion(panel.layout) } } : {}),
+    ...(panel ? { verifiedMap: { provider: panel.provider, region: mapPanelRegion(panel.layout, panel.position) } } : {}),
     ...(attempt.placePhoto ? { verifiedPlacePhoto: { placeName: attempt.placePhoto } } : {}),
     characters: slide.characterIds.flatMap((id) => { const character = ctx.characters.get(id); return character ? [{ name: character.name, description: character.description }] : []; }),
     facts: slideFacts(ctx.units[slide.order - 1].factIds, ctx.facts),
@@ -890,7 +898,7 @@ export async function editDraft2Images({ topicId, sessionId, input }: { topicId:
   const slide = images.slides.find((entry) => entry.slide === action.slide);
   if (!slide) throw new Draft2InputError(`${action.slide} is not one of this carousel's slides.`);
   const now = new Date();
-  const changed = action.action === "choose" ? chosenSlide(slide, action.version) : regeneratedSlide(slide, action, now);
+  const changed = action.action === "choose" ? chosenSlide(slide, action.version) : action.action === "map" ? movedMapSlide(slide, action.position, now) : regeneratedSlide(slide, action, now);
   const slides = images.slides.map((entry) => entry === slide ? changed : entry);
   const settled = slides.every(slideSettled);
   const status = settled ? settledStatus(slides) : "paused";

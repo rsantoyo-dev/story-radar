@@ -136,8 +136,10 @@ function harness({ session, polls = 1, reviewOf = clean, clock, pollMs = 30_000 
       portraitPhotoRegion: () => ({ left: 10, top: 40, right: 50, bottom: 90 }), portraitZonePrompt: (layout: string) => { calls.zones.push(layout); return "\n<DOCUMENTARY_PHOTO_ZONE>"; },
     },
     "../stories/creative-map-panel": {
-      compositeMapPanel: step("map"), mapInsetVisualDirection: (direction: string) => `${direction} MAP INSET`, mapPaletteFromBrand: () => ({ surface: "#F6F0E4", primary: "#173F52", accent: "#E3A62F" }),
-      mapPanelRegion: () => ({ left: 54, top: 63, right: 95, bottom: 90 }), mapPanelZonePrompt: () => "\n<VERIFIED_MAP_ZONE>", streetAddress: (address: string) => address.split(",")[0],
+      compositeMapPanel: async (input: { image: Uint8Array; position?: string }) => Buffer.from(`${Buffer.from(input.image).toString()}|map${input.position ? `@${input.position}` : ""}`),
+      // A direction that asks for geography gives way to the scene alone.
+      mapInsetVisualDirection: (direction: string, asksForGeography: boolean) => asksForGeography ? "SCENE ONLY MAP INSET" : `${direction} MAP INSET`, mapPaletteFromBrand: () => ({ surface: "#F6F0E4", primary: "#173F52", accent: "#E3A62F" }),
+      mapPanelRegion: () => ({ left: 54, top: 63, right: 95, bottom: 90 }), mapPanelZonePrompt: (_layout: string, position?: string) => `\n<VERIFIED_MAP_ZONE${position ? ` ${position}` : ""}>`, streetAddress: (address: string) => address.split(",")[0],
     },
     "../stories/story-reference-generation": storyRefs,
     "../stories/manage-story-photos": {
@@ -397,6 +399,31 @@ test("an image made before its photo was fitted keeps the slide's layout when ed
   const slide = fresh.images!.slides[0];
   const fit = slide.material[0].kind === "pasted-photo" ? slide.material[0].portrait : undefined;
   assert.equal(json([h.calls.located.length, fit?.source, slide.attempts[2].portrait]), json([2, "ai", { layout: fit?.layout, crop: fit?.crop }]), "a fresh image of a photo not fitted yet is fitted first");
+});
+
+test("the editor moves a map card to another corner: a new image is made around it, with its zone and its paste there; asking the model about the map never makes it draw one, and a direction about a plan gives way to the scene", async () => {
+  const inventory: Draft2Inventory = {
+    ...INVENTORY,
+    entities: [{ id: "e2", name: "Vieux-Saint-Jean", kind: "place", role: "subject", description: "", factIds: ["f1"], place: { status: "verified", map: true, google: { placeId: "g1", name: "Vieux-Saint-Jean", address: "Vieux-Saint-Jean, Saint-Jean", latitude: 45.3, longitude: -73.2, sourceUrl: "s", exactName: true } } }],
+  };
+  const script = { ...SCRIPT, slides: [scriptSlide("cover"), scriptSlide("s1", { need: "verified-map", references: ["e2"], direction: "Le plan vérifié du Vieux-Saint-Jean porte le tournant gratuit/payant, entre platines et lampions." }), scriptSlide("last")] };
+  const visual = { ...VISUAL, candidates: [script], rounds: [{ ...VISUAL.rounds[0], candidates: [script] }] };
+  const h = harness({ session: { visual, inventory } });
+  await h.run();
+  const first = h.calls.prompts.find((entry) => entry.order === 2)!;
+  assert.equal(first.direction, "SCENE ONLY MAP INSET", "the plan the direction mentions is the card's job: the model gets the scene");
+  const moved = await h.decide({ action: "map", slide: "s1", position: "top-right" });
+  const s1 = moved.images!.slides[1];
+  assert.equal(json([s1.material[0].kind === "map" ? s1.material[0].panel?.position : null, s1.attempts.at(-1)?.kind, s1.attempts.at(-1)?.baseVersion ?? null, moved.images!.status]), json(["top-right", "regenerate", null, "paused"]), "a new image from the prompt, never an edit of the old layout");
+  await assert.rejects(h.decide({ action: "map", slide: "s1", position: "top-right" }), /already there/);
+  const done = await h.run({ resume: true });
+  const remade = h.calls.submits.filter((submit) => submit.prompt.startsWith("PROMPT 2:")).at(-1)!;
+  assert.match(remade.prompt, /<VERIFIED_MAP_ZONE top-right>/);
+  assert.match(stored(h, `s1-v${done.images!.slides[1].attempts.at(-1)!.version}.png`) ?? "", /\|map@top-right/);
+  await h.decide({ action: "regenerate", slide: "s1", instruction: "Mets la carte en haut à droite", edit: false });
+  await h.run({ resume: true });
+  assert.match(h.calls.submits.filter((submit) => submit.prompt.startsWith("PROMPT 2:")).at(-1)!.prompt, /never draw a map, a plan, streets or a route yourself/);
+  await assert.rejects(h.decide({ action: "map", slide: "cover", position: "top-right" }), /has no verified map card to move/);
 });
 
 test("images wait for a finished visual script, and for fal and Sol to be configured", async () => {

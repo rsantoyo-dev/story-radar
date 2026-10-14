@@ -132,6 +132,7 @@ test("what the image shows that the facts and words do not give blocks it and as
   const drawn = draft2ImageReview(parseDraft2ImageReview(answer({ brandAvoidViolations: ["A decorative turquoise line under the headline"] })), reviewInput, meta);
   assert.equal(json([drawn.status, drawn.rework ?? null]), json(["issues", null]), "a decorative line is edited away");
   assert.deepEqual(parseDraft2ImageReview(JSON.stringify({ ...JSON.parse(answer()), inventedDetails: undefined })).inventedDetails, [], "a review asked before the check has none");
+  assert.equal(draft2ImageReview(parseDraft2ImageReview(answer({ textCovered: true })), reviewInput, meta).rework, true, "words under a pasted map or photo stay where the model set them in an edit: a new image moves them");
 });
 
 const attempt = (overrides: Partial<Draft2ImageAttempt> = {}): Draft2ImageAttempt => ({ version: 1, kind: "generate", status: "generated", queuedAt: NOW.toISOString(), sha256: "a".repeat(64), ...overrides });

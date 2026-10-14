@@ -1,6 +1,7 @@
 import sharp from "sharp";
 
 import { escapeXml, estimatedTextUnits } from "./creative-carousel-chrome-svg";
+import type { MapPanelPosition } from "./map-panel-position";
 
 /**
  * A verified map inside an AI-designed slide. The image model designs the
@@ -36,17 +37,28 @@ const MATS: Record<MapPanelLayout, { left: number; top: number; width: number; h
   // Grows downward and still ends well above the page counter (y 1270).
   "inset-labelled": { ...INSET_MAT, height: INSET_MAT.height + LABEL_BAND },
 };
+/** Below the tallest logo zone a brand reserves at the top (236 px). A band never moves. */
+const TOP_INSET = 260;
+const EDGE = 56;
+
+/** The mat at its position: an inset card moved to its corner, a band where it always is. */
+function placedMat(layout: MapPanelLayout, position: MapPanelPosition = "bottom-right") {
+  const mat = MATS[layout];
+  if (layout === "band" || position === "bottom-right") return mat;
+  return { ...mat, left: position === "bottom-left" ? EDGE : mat.left, top: position === "top-right" ? TOP_INSET : mat.top };
+}
+
 /** The place a labelled map card names: Google's name and the street part of its address. */
 export type MapLabel = { name: string; address: string };
 /** The inset card reads as a printed map lying on the scene. */
 const INSET_CARD_COLOR = "#FFFDF8";
 
 /** The mat (or card) behind the map; the map sits inside it with an even border. */
-export function mapPanelMat(layout: MapPanelLayout = "inset") {
-  return MATS[layout];
+export function mapPanelMat(layout: MapPanelLayout = "inset", position?: MapPanelPosition) {
+  return placedMat(layout, position);
 }
-export function mapPanelMap(layout: MapPanelLayout = "inset") {
-  const mat = MATS[layout];
+export function mapPanelMap(layout: MapPanelLayout = "inset", position?: MapPanelPosition) {
+  const mat = placedMat(layout, position);
   const border = BORDERS[layout];
   const label = layout === "inset-labelled" ? LABEL_BAND : 0;
   return { left: mat.left + border, top: mat.top + border, width: mat.width - 2 * border, height: mat.height - 2 * border - label };
@@ -72,8 +84,8 @@ export function streetAddress(address: string): string {
 const percent = (value: number, total: number) => Math.round((value / total) * 100);
 
 /** Where the verified map sits, as rounded percentages of the canvas. */
-export function mapPanelRegion(layout: MapPanelLayout = "inset"): { left: number; top: number; right: number; bottom: number } {
-  const { left, top, width, height } = MATS[layout];
+export function mapPanelRegion(layout: MapPanelLayout = "inset", position?: MapPanelPosition): { left: number; top: number; right: number; bottom: number } {
+  const { left, top, width, height } = placedMat(layout, position);
   return { left: percent(left, CANVAS.width), top: percent(top, CANVAS.height), right: percent(left + width, CANVAS.width), bottom: percent(top + height, CANVAS.height) };
 }
 
@@ -99,9 +111,9 @@ export function mapInsetVisualDirection(direction: string, asksForGeography: boo
 }
 
 /** Appended to the slide's image prompt. The map itself is never an input. */
-export function mapPanelZonePrompt(layout: MapPanelLayout = "inset"): string {
+export function mapPanelZonePrompt(layout: MapPanelLayout = "inset", position?: MapPanelPosition): string {
   const margin = 24;
-  const mat = MATS[layout];
+  const mat = placedMat(layout, position);
   const zone = {
     left: Math.max(0, mat.left - margin),
     top: Math.max(0, mat.top - margin),
@@ -120,12 +132,14 @@ A real, unmodified street map will be placed onto this slide AFTER generation as
 - Draw no frame, border, mount, caption strip or credit for the map.
 </VERIFIED_MAP_ZONE>`;
   }
+  const corner = position === "top-right" ? "in the top right corner" : position === "bottom-left" ? "in the bottom left corner" : "in the bottom right corner";
   return `
 <VERIFIED_MAP_ZONE>
-A real, unmodified street map will be placed onto this slide AFTER generation as a small printed map card lying on the scene, occupying ${area}.
+A real, unmodified street map will be placed onto this slide AFTER generation as a small printed map card lying on the scene ${corner}, occupying ${area}.
 - Let the scene continue around and behind it, but keep that rectangle free of text, faces and the scene's key objects. It will be covered.
-- Never place text inside or across it; keep the bottom of the slide below it clear as well.
-- Do not draw any other map, street, road, pin or route, and no recognizable landmark or building facade: the inset is what shows the place.
+- Never place text inside or across it${position === "top-right" ? "; set the words in the rest of the slide, beside or below it" : "; keep the bottom of the slide below it clear as well"}.
+- Leave no other empty box or placeholder anywhere: that rectangle is the only space kept for the map.
+- Do not draw any other map, plan, street, road, pin or route, and no recognizable landmark or building facade: the inset is what shows the place.
 - Draw no frame, border, mount, caption strip or credit for the map.
 </VERIFIED_MAP_ZONE>`;
 }
@@ -166,19 +180,21 @@ function labelSvg(label: MapLabel, layout: MapPanelLayout, ink: string): Buffer 
   return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${LABEL_BAND}"><text x="${pad}" y="30" font-family="Arial, Helvetica, sans-serif" font-size="${name.size}" font-weight="700" fill="${ink}">${escapeXml(name.text)}</text><text x="${pad}" y="56" font-family="Arial, Helvetica, sans-serif" font-size="${address.size}" fill="${ink}" fill-opacity="0.78">${escapeXml(address.text)}</text></svg>`);
 }
 
-export async function compositeMapPanel({ image, map, matColor, layout = "inset", label, ink = "#1f2933" }: {
+export async function compositeMapPanel({ image, map, matColor, layout = "inset", position, label, ink = "#1f2933" }: {
   image: Uint8Array;
   map: Uint8Array;
   /** A brand colour for the mat; the text colour reads best. */
   matColor: string;
   layout?: MapPanelLayout;
+  /** Where an inset card lies; bottom right when absent. */
+  position?: MapPanelPosition;
   /** Printed under the map on an "inset-labelled" card. */
   label?: MapLabel;
   /** The label's text colour: the brand's primary when it reads on the card. */
   ink?: string;
 }): Promise<Buffer> {
-  const mat = MATS[layout];
-  const place = mapPanelMap(layout);
+  const mat = placedMat(layout, position);
+  const place = mapPanelMap(layout, position);
   const cardColor = layout === "band" ? (/^#[0-9a-f]{6}$/iu.test(matColor) ? matColor : "#1f2933") : INSET_CARD_COLOR;
   // "contain" never crops: the provider's logo and attribution sit at its edges.
   const fitted = await sharp(map, { limitInputPixels: 16_000_000 })
