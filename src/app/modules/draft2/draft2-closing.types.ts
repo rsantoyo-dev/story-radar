@@ -1,4 +1,5 @@
 import { comparableText, type Draft2Fact } from "./draft2-facts.types";
+import { leverForModels } from "./draft2-levers.types";
 import type { Draft2FocusSnapshot, Draft2FocusStructureKind } from "./draft2-focus.types";
 import { type FunnelPlanRound,
   funnelEvaluationSchema, funnelExploreRequest, funnelFactIds, funnelJudgeRequest, funnelParseCandidates, funnelParseEvaluation, funnelRecord,
@@ -81,7 +82,7 @@ export type Draft2ClosingVersion = FunnelVersion<Draft2ClosingCandidate, Draft2C
 export type Draft2ClosingRegression = FunnelRegression;
 
 /** The opening a closing ends, as the run started: the version's id and its texts. */
-export type Draft2ClosingOpening = Pick<Draft2OpeningCandidate, "id" | "cover" | "slide2">;
+export type Draft2ClosingOpening = Pick<Draft2OpeningCandidate, "id" | "cover" | "slide2" | "lever">;
 
 /** What the closing's calls to action follow besides the focus's goal: the publication's style and emoji allowance. */
 export type Draft2ClosingCtaRules = { style: string; emojis: number };
@@ -292,6 +293,8 @@ export function closingJudgeRequest(round: number, candidates: readonly Draft2Cl
 export const openingForClosing = (opening: Draft2ClosingOpening) => ({
   cover: { headline: opening.cover.headline, subheadline: opening.cover.subheadline, factIds: opening.cover.factIds },
   slide2: { headline: opening.slide2.headline, body: opening.slide2.body, factIds: opening.slide2.factIds },
+  // The promise the cover made: the carousel keeps it.
+  ...(opening.lever ? { lever: leverForModels(opening.lever) } : {}),
 });
 
 /** The publication's call-to-action rules, added to the brand brief for both models. */

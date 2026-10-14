@@ -36,6 +36,8 @@ export type Draft2Publication = {
   approvedAt: string;
   /** The review issues the editor saw and published anyway. */
   acknowledgedIssues: string[];
+  /** The cover's lever (the chosen opening's), so a brand's results can be read by lever; absent before levers. */
+  lever?: string;
 };
 
 /** What the editor approves: each slide's shown image, the chosen caption, and what the review left for them to check. */

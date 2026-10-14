@@ -465,6 +465,9 @@ enum become `OTHER`.
 | `SLIDE2_NO_NEW_FACT` | Every slide2.factId is already in cover.factIds. |
 | `UNSUPPORTED_NUMBER` | A number in any of the four texts (`/\d[\d.,]*/g`, compared after removing separators) does not appear in the claim or evidence of the candidate's cited facts. |
 | `DUPLICATE_CANDIDATE` | Two candidates share a comparable cover headline (except a proposal's original and the writer's edit of it). |
+| `LEVER_UNKNOWN` | The candidate's lever is neither "free" nor one of this story's levers (`eligibleLevers`; draft2-levers.md, since 2026-10-14). |
+| `LEVER_UNSUPPORTED` | The lever needs a figure (a number or a date) and none of the facts the cover cites carries one. |
+| `STOCK_PHRASE` | The cover (headline and subheadline) holds a stock clickbait formula (`STOCK_PHRASES`, matched without case or accents). |
 
 Candidates with mechanical issues still go to the judge (with the findings),
 but the program never lets one win: `openingIsAccepted(mechanical,

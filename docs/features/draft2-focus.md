@@ -464,6 +464,16 @@ decision as the models read a focus, the earlier spine when there is one,
 the parts of the plan the editor owns, which it returns as given, and
 (since 2026-10-13) People and places' material, as the first call does.
 
+### The levers (`levers`, the levers skill v1, focus skill v13, 2026-10-14)
+
+The plan chooses the hook's lever before the spine: a primary (an eligible
+lever or free), up to two alternatives, the facts that carry it and where
+its promise is kept (`paidBy`), with `reasons.levers`. It reads
+`eligibleLevers` and the Topic's `recentLevers`. `levers` is a plan field and
+a telling field: the editor's edit sticks and marks the directions stale.
+The Opening spreads its first fifteen openings over the levers (5, 3, 3 and
+4 free). Brief: `docs/features/draft2-levers.md`.
+
 ### The spine (`spine`, the spine skill v1)
 
 The story in beats, one per slide, each with:

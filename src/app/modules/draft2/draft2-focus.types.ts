@@ -1,6 +1,7 @@
 import { CREATIVE_CONVERSION_GOALS, type CreativeConversionGoal, type CreativeProfile } from "../stories/creative-content.types";
 import { Draft2InputError, Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
 import { entityMaterial, referencePhotos, type Draft2CharacterChoice, type Draft2Inventory } from "./draft2-inventory.types";
+import { editedLevers, leversForModels, parsePlanLevers, type Draft2FocusLevers } from "./draft2-levers.types";
 import type { Draft2Provider } from "./draft2-models";
 import { TONE_KEYS, toneLine, toneValue, type ToneKey } from "./skills/tone";
 
@@ -23,11 +24,11 @@ import { TONE_KEYS, toneLine, toneValue, type ToneKey } from "./skills/tone";
  * word.
  */
 /** The fields in the order they are decided: the story, then how it is told (concept, form, spine), then the directions derived from that. */
-export const FOCUS_FIELDS = ["line", "audience", "framing", "readerConsequence", "structure", "goal", "voice", "concept", "narrative", "spine", "direction", "visualDirection"] as const;
+export const FOCUS_FIELDS = ["line", "audience", "framing", "readerConsequence", "structure", "goal", "voice", "concept", "narrative", "levers", "spine", "direction", "visualDirection"] as const;
 /** The fields that say how the story is told; an edit to one of them leaves the directions written for another telling (staleDirections). */
-export const FOCUS_TELLING_FIELDS: readonly Draft2FocusField[] = ["concept", "narrative", "spine"];
+export const FOCUS_TELLING_FIELDS: readonly Draft2FocusField[] = ["concept", "narrative", "levers", "spine"];
 /** The fields the second call writes from the first's decision: the spine and the two directions derived from it (the plan). */
-export const FOCUS_PLAN_FIELDS: readonly Draft2FocusField[] = ["spine", "direction", "visualDirection"];
+export const FOCUS_PLAN_FIELDS: readonly Draft2FocusField[] = ["levers", "spine", "direction", "visualDirection"];
 /** The fields the first call decides: the story and how it is told. */
 export const FOCUS_DECISION_FIELDS: readonly Draft2FocusField[] = FOCUS_FIELDS.filter((field) => !FOCUS_PLAN_FIELDS.includes(field));
 export const FOCUS_FRAMINGS = ["reader-consequence", "explainer", "authority"] as const;
@@ -254,6 +255,8 @@ export type Draft2FocusValues = {
   concept?: Draft2FocusConcept;
   /** How the carousel is told across its slides, in words and images. Absent on a focus decided before narrative forms: classic. */
   narrative?: Draft2FocusNarrative;
+  /** The hook's lever (or free), up to two alternatives, and where its promise is kept; the plan chooses them with the spine. Absent on a focus decided before levers. */
+  levers?: Draft2FocusLevers;
   /** The story in beats, one per slide, that the words and the images both follow. Absent on a focus decided before spines. */
   spine?: Draft2FocusSpine;
   /** What in the facts makes this audience stop, in one line: Claude's deliberation, read by every step. Absent on a focus decided before it. */
@@ -449,6 +452,13 @@ export const DRAFT2_FOCUS_SCHEMA: Record<string, unknown> = {
 export const DRAFT2_FOCUS_PLAN_SCHEMA: Record<string, unknown> = {
   type: "object",
   properties: {
+    // Ids are strings the parser checks against the catalog: no enum inside an array keeps Anthropic's compiled grammar small.
+    levers: {
+      type: "object",
+      properties: { primary: { type: "string" }, alternatives: { type: "array", items: { type: "string" } }, factIds: factIdsSchema, paidBy: { type: "string" } },
+      required: ["primary", "alternatives", "factIds", "paidBy"],
+      additionalProperties: false,
+    },
     spine: {
       type: "object",
       properties: {
@@ -482,7 +492,7 @@ export const DRAFT2_FOCUS_PLAN_SCHEMA: Record<string, unknown> = {
       additionalProperties: false,
     },
   },
-  required: ["spine", "direction", "visualDirection", "reasons"],
+  required: ["levers", "spine", "direction", "visualDirection", "reasons"],
   additionalProperties: false,
 };
 
@@ -683,7 +693,7 @@ export const spineBeats = (spine: Draft2FocusSpine | undefined, position: Draft2
  * (editorChoices) is kept as given, whatever the answer says for it. A broken
  * rule is a response error, asked for again with the rule it broke.
  */
-export function parseFocusPlan(answer: string, { known, structure, editorChoices = {} }: { known: ReadonlySet<string>; structure: Draft2FocusValues["structure"]; editorChoices?: Record<string, unknown> }): Draft2FocusPlan {
+export function parseFocusPlan(answer: string, { known, structure, eligibleLevers = [], editorChoices = {} }: { known: ReadonlySet<string>; structure: Draft2FocusValues["structure"]; eligibleLevers?: readonly string[]; editorChoices?: Record<string, unknown> }): Draft2FocusPlan {
   let parsed: unknown;
   try { parsed = JSON.parse(answer); } catch { throw new Draft2ResponseError("The plan answer is not valid JSON"); }
   const body = record(parsed);
@@ -692,17 +702,18 @@ export function parseFocusPlan(answer: string, { known, structure, editorChoices
   const visualDirection = typeof editorChoices.visualDirection === "string" ? editorChoices.visualDirection : text(body.visualDirection, FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS);
   if (!direction) throw new Draft2ResponseError(`The direction is missing or longer than ${FOCUS_DIRECTION_MAX_CHARACTERS} characters`);
   if (!visualDirection) throw new Draft2ResponseError(`The visual direction is missing or longer than ${FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS} characters`);
+  const levers = editorChoices.levers ? editorChoices.levers as Draft2FocusLevers : parsePlanLevers(body.levers, { eligible: eligibleLevers, known });
   const given = record(body.reasons);
   const reasons: Partial<Record<Draft2FocusField, string>> = {};
   for (const field of FOCUS_PLAN_FIELDS) {
     const reason = text(given[field], REASON_MAX_CHARACTERS);
     if (reason && !(field in editorChoices)) reasons[field] = reason;
   }
-  return { spine, direction, visualDirection, reasons };
+  return { levers, spine, direction, visualDirection, reasons };
 }
 
-/** The spine and the two directions, as the second call writes them from the decision. */
-export type Draft2FocusPlan = { spine: Draft2FocusSpine; direction: string; visualDirection: string; reasons?: Partial<Record<Draft2FocusField, string>> };
+/** The levers, the spine and the two directions, as the second call writes them from the decision. */
+export type Draft2FocusPlan = { levers: Draft2FocusLevers; spine: Draft2FocusSpine; direction: string; visualDirection: string; reasons?: Partial<Record<Draft2FocusField, string>> };
 
 /**
  * The focus with its plan: the spine and the directions become Claude's (a
@@ -714,6 +725,7 @@ export function focusWithPlan(focus: Draft2Focus, plan: Draft2FocusPlan, now: Da
   if (!focus.values) throw new Draft2InputError("Decide the focus before rewriting its plan.");
   const owned = (field: Draft2FocusField) => focus.edited.includes(field);
   const written: Partial<Draft2FocusValues> = {
+    ...(owned("levers") ? {} : { levers: plan.levers }),
     ...(owned("spine") ? {} : { spine: plan.spine }),
     ...(owned("direction") ? {} : { direction: plan.direction }),
     ...(owned("visualDirection") ? {} : { visualDirection: plan.visualDirection }),
@@ -723,7 +735,7 @@ export function focusWithPlan(focus: Draft2Focus, plan: Draft2FocusPlan, now: Da
     ...focus,
     version: bump ? focus.version + 1 : focus.version,
     values: { ...focus.values, ...written },
-    ...(focus.ai ? { ai: { ...focus.ai, spine: plan.spine, direction: plan.direction, visualDirection: plan.visualDirection } } : {}),
+    ...(focus.ai ? { ai: { ...focus.ai, levers: plan.levers, spine: plan.spine, direction: plan.direction, visualDirection: plan.visualDirection } } : {}),
     reasons: { ...focus.reasons, ...reasons },
     staleDirections: false,
     updatedAt: now.toISOString(),
@@ -889,7 +901,11 @@ export function parseFocusDecision(answer: string, { facts, lines, editorChoices
 export function decidedFocus(focus: Draft2Focus, decision: { values: Draft2FocusValues; reasons: Partial<Record<Draft2FocusField, string>>; alternatives?: Draft2NarrativeAlternative[]; premiseOptions?: Draft2PremiseOption[]; deliberation?: Draft2FocusDeliberation }, decidedBy: Draft2FocusRole, now: Date): Draft2Focus {
   const edited = focus.edited.filter((field) => field !== "line" || decision.values.line?.id === focus.values?.line?.id);
   // Claude's own values, field by field, plus the interest it found (not a field the editor edits, always Claude's latest).
-  const ai = { ...Object.fromEntries(FOCUS_FIELDS.map((field) => [field, edited.includes(field) && focus.ai ? focus.ai[field] : decision.values[field]])), ...(decision.values.interest ? { interest: decision.values.interest } : {}) } as Draft2FocusValues;
+  // A field the decision leaves to the plan (the levers, until the plan answers) has no value yet: no key, as the stored row would have.
+  const ai = {
+    ...Object.fromEntries(FOCUS_FIELDS.flatMap((field) => { const value = edited.includes(field) && focus.ai ? focus.ai[field] : decision.values[field]; return value === undefined ? [] : [[field, value]]; })),
+    ...(decision.values.interest ? { interest: decision.values.interest } : {}),
+  } as Draft2FocusValues;
   return {
     ...focus,
     status: "ready",
@@ -957,6 +973,7 @@ function editedValue(focus: Draft2Focus, field: Draft2FocusField, value: unknown
     case "narrative": return editedNarrative(focus, value);
     case "concept": return editedConcept(focus, value);
     case "spine": return spineFrom(value, values.structure, undefined, (message) => { throw new Draft2InputError(`${message}.`); });
+    case "levers": return editedLevers(value, values.levers);
     case "voice": {
       const voice = record(value);
       const gravity = oneOf(FOCUS_GRAVITIES, voice.gravity);
@@ -1118,6 +1135,7 @@ export function focusForModels(values: Draft2FocusValues) {
     voice: { gravity: voice.gravity, tone: toneLine(voice) },
     ...(focusConcept(values).arc !== "classic" ? { concept: conceptForModels(focusConcept(values)) } : {}),
     ...(focusNarrative(values).form !== "classic" ? { narrative: narrativeForModels(focusNarrative(values), structure, Boolean(values.visualDirection)) } : {}),
+    ...(values.levers ? { levers: leversForModels(values.levers) } : {}),
     ...(values.spine ? { spine: spineForModels(values.spine) } : {}),
     direction: values.direction,
     ...(values.visualDirection ? { visualDirection: values.visualDirection } : {}),

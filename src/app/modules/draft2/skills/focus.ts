@@ -15,11 +15,12 @@ import type { Draft2Skill } from "./draft2-skills";
  * place of a preference for a telling other than classic; version 12 the
  * plan reads People and places' material, and the visual direction shows
  * the people with a verified portrait through it instead of forbidding
- * them.
+ * them; version 13 the plan chooses the hook's levers (the levers skill)
+ * before the spine, which keeps their promise.
  */
 export const FOCUS_SKILL: Draft2Skill = {
   name: "focus",
-  version: "12",
+  version: "13",
   text: `# The focus of a story
 
 The focus is the brief every later step follows: which editorial line the
@@ -42,8 +43,10 @@ Decide in this order, each decision resting on the ones before it:
    lose. Classic is a valid choice when it serves best; a premise, an arc or a
    form is never chosen for novelty, and never forced onto facts that do not
    carry it.
-3. The spine: the story in beats, one per slide, from the concept and the form
-   (the spine skill).
+3. The levers and the spine: the mechanism the cover uses to stop the reader
+   (the levers skill), then the story in beats, one per slide, from the
+   concept and the form (the spine skill); the hook beat makes the lever's
+   promise and a later beat keeps it.
 4. The directions, derived from the spine: direction restates what the beats
    lead with and keep for later; visualDirection restates the anchor, the
    scene of each beat and the image of the turn. Neither opens a thread the
@@ -174,6 +177,9 @@ follows the telling.
   figure, an object, a scene or a line with the facts that give it (none for
   an anonymous figure or a generic scene), for the editor to choose from; an
   empty list when there are none.
+- levers: the hook's lever and up to two alternatives, or free, with the
+  facts that carry it and where its promise is kept (the levers skill says
+  which and how); written in the plan, before the spine.
 - spine: the story in beats, one per slide, written after the concept and
   the form and before the directions (the spine skill says the roles, the
   fields and the rules): beats, each with slide, role, scene, words, image,

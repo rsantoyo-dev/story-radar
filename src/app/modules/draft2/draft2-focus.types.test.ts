@@ -111,7 +111,7 @@ test("the editor's fields win over the answer; a structure the editor chose take
   assert.deepEqual(values.structure, { kind: "list", itemFactIds: ["f1", "f2", "f3"] }, "the list the editor asked for gets its items");
   assert.deepEqual(parse({ structure: { kind: "arc", itemFactIds: [] } }, { structure: { kind: "steps", itemFactIds: ["f1", "f2"] } }).values.structure, { kind: "steps", itemFactIds: ["f1", "f2"] }, "an answer of another kind leaves the editor's items");
   assert.equal(parse({ goal: "followers" }, { goal: "saves" }).values.goal, "saves", "whatever the answer says");
-  assert.deepEqual(Object.keys(parsed).sort(), ["audience", "concept", "direction", "framing", "narrative", "spine", "visualDirection", "voice"], "reasons only for the fields Claude decided");
+  assert.deepEqual(Object.keys(parsed).sort(), ["audience", "concept", "direction", "framing", "levers", "narrative", "spine", "visualDirection", "voice"], "reasons only for the fields Claude decided");
 });
 
 test("a decision is one version more and keeps Claude's own values under the editor's fields", () => {
@@ -446,16 +446,17 @@ test("the models read the spine between the telling and the directions; the edit
   const owned = applyFocusEdit(applyFocusEdit(edited, "direction", "My own direction.", NOW), "visualDirection", "My own visual direction.", NOW);
   assert.equal(owned.staleDirections, false, "directions the editor wrote are theirs, never stale");
   assert.equal(applyFocusEdit(owned, "narrative", { form: "classic" }, NOW).staleDirections, false, "both directions the editor's: a new telling does not make them stale");
-  const rewritten = focusWithPlan(edited, { spine: ARC_SPINE as never, direction: "Rewritten from the spine.", visualDirection: "Rewritten images.", reasons: { spine: "Ignored: the editor owns it.", direction: "Why direction." } }, NOW);
+  const freeLevers = { primary: "free", alternatives: [], factIds: [], paidBy: "slide2" as const };
+  const rewritten = focusWithPlan(edited, { levers: freeLevers, spine: ARC_SPINE as never, direction: "Rewritten from the spine.", visualDirection: "Rewritten images.", reasons: { spine: "Ignored: the editor owns it.", direction: "Why direction." } }, NOW);
   assert.deepEqual([rewritten.version, rewritten.values?.direction, rewritten.ai?.visualDirection, rewritten.values?.spine?.beats.length, rewritten.edited, rewritten.staleDirections, rewritten.reasons?.direction, rewritten.reasons?.spine], [edited.version + 1, "Rewritten from the spine.", "Rewritten images.", 6, ["spine"], false, "Why direction.", "Why spine."], "the editor's spine stays theirs, with the reason it had; the directions become Claude's with their reasons");
-  assert.equal(focusWithPlan(edited, { spine: ARC_SPINE as never, direction: "d", visualDirection: "v" }, NOW, { bump: false }).version, edited.version, "within a decision the version does not move again");
+  assert.equal(focusWithPlan(edited, { levers: freeLevers, spine: ARC_SPINE as never, direction: "d", visualDirection: "v" }, NOW, { bump: false }).version, edited.version, "within a decision the version does not move again");
   const known = new Set(["f1", "f2", "f3"]);
   const arc = { kind: "arc" as const, itemFactIds: [] };
-  const plan = parseFocusPlan(JSON.stringify({ spine: ARC_SPINE, direction: " Lead with the video. ", visualDirection: "One laptop, one hall.", reasons: { spine: "Why spine.", direction: "Why direction.", visualDirection: "Why visual." } }), { known, structure: arc });
+  const plan = parseFocusPlan(JSON.stringify({ levers: freeLevers, spine: ARC_SPINE, direction: " Lead with the video. ", visualDirection: "One laptop, one hall.", reasons: { spine: "Why spine.", direction: "Why direction.", visualDirection: "Why visual." } }), { known, structure: arc });
   assert.deepEqual([plan.direction, plan.visualDirection, plan.spine.beats.length, plan.reasons], ["Lead with the video.", "One laptop, one hall.", 7, { spine: "Why spine.", direction: "Why direction.", visualDirection: "Why visual." }]);
-  assert.throws(() => parseFocusPlan(JSON.stringify({ spine: ARC_SPINE, direction: "x", visualDirection: "y".repeat(601), reasons: {} }), { known, structure: arc }), /visual direction is missing or longer than 600/);
+  assert.throws(() => parseFocusPlan(JSON.stringify({ levers: freeLevers, spine: ARC_SPINE, direction: "x", visualDirection: "y".repeat(601), reasons: {} }), { known, structure: arc }), /visual direction is missing or longer than 600/);
   assert.throws(() => parseFocusPlan(JSON.stringify({ spine: { beats: ARC_SPINE.beats.slice(0, 2) }, direction: "x", visualDirection: "y", reasons: {} }), { known, structure: arc }), (error: Error) => error instanceof Draft2ResponseError && /4 to 10 beats/.test(error.message));
-  const kept = parseFocusPlan(JSON.stringify({ spine: ARC_SPINE, direction: "Claude's direction.", visualDirection: "Claude's images.", reasons: { spine: "s", direction: "d", visualDirection: "v" } }), { known, structure: arc, editorChoices: { spine: shorter, direction: "Mine." } });
+  const kept = parseFocusPlan(JSON.stringify({ levers: freeLevers, spine: ARC_SPINE, direction: "Claude's direction.", visualDirection: "Claude's images.", reasons: { spine: "s", direction: "d", visualDirection: "v" } }), { known, structure: arc, editorChoices: { spine: shorter, direction: "Mine." } });
   assert.deepEqual([kept.spine.beats.length, kept.direction, kept.visualDirection, kept.reasons], [6, "Mine.", "Claude's images.", { visualDirection: "v" }], "the parts the editor owns are kept as given, without a reason of Claude's");
   assert.deepEqual(focusFindings({ ...focus.values!, structure: { kind: "steps", itemFactIds: ["f1", "f2"] } }).map((finding) => finding.code), ["SPINE_SHAPE"], "a spine for another structure is a finding until Claude decides again");
   assert.equal(spineShapeProblem(ARC_SPINE.beats as Draft2SpineBeat[], { kind: "arc", itemFactIds: [] }), undefined);
@@ -475,7 +476,7 @@ test("the decision and the plan are two answers: the decision carries no directi
   };
   assert.equal(enumsInArrays(DRAFT2_FOCUS_SCHEMA), 0, "the decision schema");
   assert.equal(enumsInArrays(DRAFT2_FOCUS_PLAN_SCHEMA), 0, "the plan schema");
-  assert.deepEqual((DRAFT2_FOCUS_PLAN_SCHEMA.required as string[]).sort(), ["direction", "reasons", "spine", "visualDirection"]);
+  assert.deepEqual((DRAFT2_FOCUS_PLAN_SCHEMA.required as string[]).sort(), ["direction", "levers", "reasons", "spine", "visualDirection"]);
   assert.ok(JSON.stringify(DRAFT2_FOCUS_SCHEMA).length < 3_600, `the decision schema stays small (${JSON.stringify(DRAFT2_FOCUS_SCHEMA).length} characters)`);
 });
 

@@ -1,5 +1,6 @@
 import { comparableText, type Draft2Fact } from "./draft2-facts.types";
 import type { Draft2FocusSnapshot } from "./draft2-focus.types";
+import { FREE_LEVER, leverName, leverSupported, stockPhraseIn } from "./draft2-levers.types";
 import {
   criterionOf, factsSnapshot, funnelAcceptedWinner, funnelBestClean, funnelBestVersions, funnelEvaluationSchema, funnelExploreRequest, funnelFactIds,
   funnelFreshWanted, funnelJudgeRequest, funnelParseCandidates, funnelParseEvaluation, funnelRecord, funnelRefineRequest, funnelRegressions,
@@ -73,6 +74,7 @@ export const OPENING_CRITERIA = ["tension", "payoff", "clarity", "grounding", "v
 export const OPENING_MECHANICAL_CODES = [
   "FACT_UNKNOWN", "NO_FACTS", "COVER_TOO_LONG", "SUBHEADLINE_TOO_LONG", "SLIDE2_HEADLINE_TOO_LONG", "SLIDE2_BODY_TOO_LONG",
   "ATTRIBUTION_ON_COVER", "SLIDE2_RESTATES_COVER", "SLIDE2_NO_NEW_FACT", "UNSUPPORTED_NUMBER", "DUPLICATE_CANDIDATE",
+  "LEVER_UNKNOWN", "LEVER_UNSUPPORTED", "STOCK_PHRASE",
 ] as const;
 export const OPENING_JUDGE_CODES = ["WEAK_TENSION", "PROMISE_NOT_PAID", "UNCLEAR", "OVERCLAIMS", "OFF_VOICE", "OFF_FOCUS", "LABEL_NOT_HOOK", "OTHER"] as const;
 export const OPENING_ISSUE_CODES = [...OPENING_MECHANICAL_CODES, ...OPENING_JUDGE_CODES] as const;
@@ -85,6 +87,8 @@ export type Draft2OpeningIssueCode = (typeof OPENING_ISSUE_CODES)[number];
 export type Draft2OpeningCandidate = FunnelCandidate & {
   cover: { headline: string; subheadline: string; factIds: string[] };
   slide2: { headline: string; body: string; factIds: string[] };
+  /** The hook's lever (draft2-levers.types.ts), or "free"; absent on an opening written before levers. */
+  lever?: string;
 };
 
 export type Draft2OpeningIssue = FunnelIssue & { code: Draft2OpeningIssueCode; part?: "cover" | "slide2" };
@@ -141,8 +145,9 @@ const openingItem = {
       additionalProperties: false,
     },
     angle: { type: "string" },
+    lever: { type: "string" },
   },
-  required: ["id", "cover", "slide2", "angle"],
+  required: ["id", "cover", "slide2", "angle", "lever"],
   additionalProperties: false,
 };
 
@@ -178,6 +183,7 @@ function openingFrom(raw: unknown, fallbackId: string): Draft2OpeningCandidate |
     cover: { headline: coverHeadline, subheadline, factIds: coverFacts },
     slide2: { headline: slideHeadline, body: slideBody, factIds: slideFacts },
     angle: funnelText(item.angle, 400) ?? "",
+    ...(typeof item.lever === "string" && item.lever.trim() ? { lever: item.lever.trim().toLowerCase().slice(0, 40) } : {}),
   };
 }
 
@@ -207,8 +213,11 @@ const ATTRIBUTION = /\b(according to|says?|said|reports?|reported|claims?|selon|
  * depend on a model and they block a candidate from winning. `itemCount`, the
  * number of items or steps the focus names, counts as a stated number: a
  * list's cover promises it ("5 things to do") though no fact states it.
+ * `eligibleLevers`, this story's levers: a candidate's lever must be one of
+ * them or free, and the facts its cover cites must carry what the program
+ * can check of it (a figure). No cover uses a stock formula.
  */
-export function mechanicalOpeningIssues(candidates: readonly Draft2OpeningCandidate[], facts: readonly Draft2Fact[], { itemCount }: { itemCount?: number } = {}): Draft2OpeningIssue[] {
+export function mechanicalOpeningIssues(candidates: readonly Draft2OpeningCandidate[], facts: readonly Draft2Fact[], { itemCount, eligibleLevers }: { itemCount?: number; eligibleLevers?: readonly string[] } = {}): Draft2OpeningIssue[] {
   const byId = new Map(facts.map((fact) => [fact.id, fact]));
   const headlines = new Map<string, Draft2OpeningCandidate>();
   const issues: Draft2OpeningIssue[] = [];
@@ -245,6 +254,13 @@ export function mechanicalOpeningIssues(candidates: readonly Draft2OpeningCandid
       const unsupported = [...new Set(numbersIn(value).filter((number) => !stated.has(number.digits)).map((number) => number.written))];
       if (unsupported.length) add("UNSUPPORTED_NUMBER", part, `${unsupported.join(", ")} ${unsupported.length === 1 ? "is" : "are"} not stated by the facts this candidate cites.`);
     }
+    const lever = candidate.lever;
+    if (eligibleLevers && lever && lever !== FREE_LEVER) {
+      if (!eligibleLevers.includes(lever)) add("LEVER_UNKNOWN", "cover", `"${lever}" is not one of this story's levers (${eligibleLevers.join(", ") || "none"}), nor free.`);
+      else if (!leverSupported(lever, cover.factIds.flatMap((id) => byId.get(id) ?? []))) add("LEVER_UNSUPPORTED", "cover", `${leverName(lever)} needs a number or a date in the facts the cover cites.`);
+    }
+    const stock = stockPhraseIn(`${cover.headline} ${cover.subheadline}`);
+    if (stock) add("STOCK_PHRASE", "cover", `The cover uses the stock formula "${stock}": write the lever's mechanism in the story's own words.`);
     // A proposal's original and the writer's edit may share a headline on purpose: the edit kept what worked.
     const key = headlineKey(cover.headline);
     const earlier = headlines.get(key);
@@ -324,6 +340,12 @@ export function openingFreshWanted(round: number, targets: readonly Draft2Openin
  */
 export function openingRegressions(revisions: readonly Draft2OpeningVersion[], previous: readonly Draft2OpeningVersion[]): Draft2OpeningRegression[] {
   return funnelRegressions(revisions, previous, OPENING_CRITERIA);
+}
+
+/** The lever of the opening the next steps build on (the editor's choice, else the winner), when it names one. */
+export function chosenOpeningLever(opening: Pick<Draft2Opening, "editorChoiceId" | "winnerId" | "rounds"> | null | undefined): string | undefined {
+  const chosenId = opening?.editorChoiceId ?? opening?.winnerId;
+  return chosenId ? openingVersions(opening!.rounds).find((version) => version.candidate.id === chosenId)?.candidate.lever : undefined;
 }
 
 /** Whether two openings say the same thing: the same four texts and the same cited facts. */

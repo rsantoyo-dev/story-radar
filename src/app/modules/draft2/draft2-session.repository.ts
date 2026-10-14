@@ -80,6 +80,20 @@ export async function touchDraft2Session(id: string): Promise<void> {
   await db.update(draft2Sessions).set({ updatedAt: new Date() }).where(and(eq(draft2Sessions.id, id), eq(draft2Sessions.status, "running")));
 }
 
+/**
+ * The levers of the Topic's last approved Draft 2 carousels, newest first,
+ * without this session's own: the Focus plan prefers another lever when one
+ * fits as well, so a brand does not repeat itself.
+ */
+export async function recentDraft2Levers(topicId: string, exceptSessionId: string, limit = 5): Promise<string[]> {
+  const lever = sql<string>`${draft2Sessions.publication}->>'lever'`;
+  const rows = await db.select({ lever }).from(draft2Sessions)
+    .where(and(eq(draft2Sessions.topicId, topicId), ne(draft2Sessions.id, exceptSessionId), sql`${draft2Sessions.publication}->>'lever' is not null`))
+    .orderBy(desc(sql`${draft2Sessions.publication}->>'approvedAt'`))
+    .limit(limit);
+  return rows.map((row) => row.lever);
+}
+
 /** One session, only within the topic the request may use. */
 export async function getDraft2Session(topicId: string, id: string): Promise<Draft2SessionRow | undefined> {
   const [row] = await db.select().from(draft2Sessions)

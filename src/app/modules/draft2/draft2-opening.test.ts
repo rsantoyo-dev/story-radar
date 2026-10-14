@@ -7,6 +7,8 @@ import * as funnel from "./draft2-funnel";
 import * as models from "./draft2-models";
 import * as skills from "./skills/draft2-skills";
 import * as hooks from "./skills/hooks";
+import * as leversSkill from "./skills/levers";
+import * as leverTypes from "./draft2-levers.types";
 import { NARRATIVES_SKILL } from "./skills/narratives";
 import { DISCOVERY_SKILL } from "./skills/discovery";
 import { ARCS_SKILL } from "./skills/arcs";
@@ -142,6 +144,7 @@ function harness({ writes, judgments, failAt, session, busy = false, claimRefuse
     "./draft2-models": models,
     "./skills/draft2-skills": skills,
     "./skills/hooks": hooks,
+    "./skills/levers": leversSkill,
     "./draft2-dev-trace": { draft2DevTrace: () => undefined },
     // A fixed cost per call: the trace's arithmetic is the meter's (creative-text-cost.test.ts); here only that it is recorded.
     "./draft2-trace-cost": { traceCostMicros: () => 1234 },
@@ -188,15 +191,16 @@ test("Claude writes and Sol judges; both read the focus and the facts snapshot w
   assert.equal(h.calls.map((call) => `${call.role}:${call.provider}`).join(","), "writer:anthropic,judge:openai");
   const [claude, sol] = h.calls;
   assert.equal(claude.input.history, undefined, "the writer gets no transcript");
-  assert.equal(json(claude.input.context), json({ focus: focusTypes.focusForModels(FOCUS_VALUES), verifiedFacts: openingTypes.openingFactsSnapshot(facts) }), "the focus and the facts travel as Claude's cached context");
-  assert.deepEqual(Object.keys(claude.input.contents as object), ["task", "candidatesWanted"]);
+  assert.equal(json(claude.input.context), json({ focus: focusTypes.focusForModels(FOCUS_VALUES), eligibleLevers: leverTypes.eligibleLevers(facts, FOCUS_VALUES), verifiedFacts: openingTypes.openingFactsSnapshot(facts) }), "the focus, this story's levers and the facts travel as Claude's cached context");
+  assert.deepEqual(Object.keys(claude.input.contents as object), ["task", "candidatesWanted", "levers"]);
+  assert.equal(json((claude.input.contents as { levers: unknown }).levers), json({ spread: [{ lever: "free", count: 15 }] }), "a focus decided before levers: every opening is free");
   assert.equal((claude.input.contents as WriterContents).candidatesWanted, 15, "the first round explores fifteen hooks");
   assert.equal(claude.input.effort, "medium", "round 1's fifteen openings are written with medium effort");
   assert.match(String(claude.input.instructions), /# Openings for social carousels[\s\S]*# The publication\n- Name: Example Daily\./, "the hooks skill, then the brand brief");
   assert.equal(sol.input.previousResponseId, undefined, "Sol keeps no conversation");
   assert.equal(sol.input.store, undefined);
   assert.equal(sol.input.context, undefined);
-  assert.equal(json(solContextOf(sol.input)), json({ focus: focusTypes.focusForModels(FOCUS_VALUES), verifiedFacts: openingTypes.openingFactsSnapshot(facts) }), "the focus and the facts close Sol's instructions, the same on every call, so OpenAI reads them from its prefix cache");
+  assert.equal(json(solContextOf(sol.input)), json({ focus: focusTypes.focusForModels(FOCUS_VALUES), eligibleLevers: leverTypes.eligibleLevers(facts, FOCUS_VALUES), verifiedFacts: openingTypes.openingFactsSnapshot(facts) }), "the focus, the levers and the facts close Sol's instructions, the same on every call, so OpenAI reads them from its prefix cache");
   assert.deepEqual(Object.keys(sol.input.contents as object).slice(0, 1), ["task"], "the round's request alone travels in Sol's input");
   assert.equal((sol.input.contents as JudgeContents).proposalsWanted, 3, "round 1 asks Sol for three openings of its own");
   assert.equal(sol.input.reasoningEffort, "medium", "and judged with medium reasoning");
@@ -212,7 +216,7 @@ test("Claude writes and Sol judges; both read the focus and the facts snapshot w
   assert.equal(session.opening?.candidates.length, 15);
   assert.equal(json(session.threads), json(factsThreads), "the facts conversations are left as they were");
   assert.equal(session.trace.length, 3, "the facts trace is kept and the opening's calls are added");
-  assert.equal(json(session.trace.slice(1).map((entry) => [entry.step, entry.provider, entry.operation, entry.skillVersions])), json([["opening", "anthropic", "draft2_opening", { hooks: "6" }], ["opening", "openai", "draft2_opening_review", { hooks: "6" }]]));
+  assert.equal(json(session.trace.slice(1).map((entry) => [entry.step, entry.provider, entry.operation, entry.skillVersions])), json([["opening", "anthropic", "draft2_opening", { hooks: "6", levers: "1" }], ["opening", "openai", "draft2_opening_review", { hooks: "6", levers: "1" }]]));
   assert.equal(json(session.opening?.focus), json({ version: 2, values: FOCUS_VALUES }), "the run records the focus it followed");
 });
 
@@ -237,6 +241,22 @@ test("a paused run continues with the focus it started with, even after the edit
   const read = h.calls.map((call) => json(call.role === "writer" ? (call.input.context as { focus: unknown }).focus : solContextOf(call.input).focus));
   assert.equal(new Set(read).size, 1, "every call of the run read the focus it started with");
   assert.equal(finished.opening?.focus?.version, 2);
+});
+
+test("with the plan's levers, the first round spreads its fifteen openings 5, 3, 3 and 4 free; an opening on a lever the facts cannot carry never wins", async () => {
+  const levers = { primary: "counterintuitive", alternatives: ["direct-benefit", "myth"], factIds: ["f1"], paidBy: "slide2" as const };
+  const values = { ...FOCUS_VALUES, levers };
+  const h = harness({ writes: [writer()], judgments: [judge("accept", "c1", { c1: 96 })], session: { focus: { ...FOCUS, values } } });
+  await h.run();
+  const claude = h.calls.find((call) => call.provider === "anthropic")!;
+  assert.equal(json((claude.input.contents as { levers: unknown }).levers), json({ spread: [{ lever: "counterintuitive", count: 5 }, { lever: "direct-benefit", count: 3 }, { lever: "myth", count: 3 }, { lever: "free", count: 4 }] }));
+  assert.equal(json((claude.input.context as { focus: { levers?: unknown } }).focus.levers), json(leverTypes.leversForModels(levers)), "the plan's levers, each with its promise, travel in the focus");
+  const issues = openingTypes.mechanicalOpeningIssues([
+    { ...opening("c1", "A five-minute video opens the door", "Speed"), lever: "stat" },
+    { ...opening("c2", "x", "y"), lever: "myth", cover: { ...opening("c2", "x", "y").cover, headline: "What nobody tells you about Pentagon videos" } },
+    { ...opening("c3", "Awards in under a week now", "Speed"), lever: "free" },
+  ], facts, { eligibleLevers: leverTypes.eligibleLevers(facts, values) });
+  assert.equal(json(issues.filter((issue) => issue.code.startsWith("LEVER") || issue.code === "STOCK_PHRASE").map((issue) => [issue.candidateId, issue.code])), json([["c1", "LEVER_UNKNOWN"], ["c2", "STOCK_PHRASE"]]));
 });
 
 test("a run stored before the Focus step cannot continue; it is written again", async () => {
@@ -618,7 +638,7 @@ test("a narrative form: the writer and the judge read the narratives skill with 
     assert.ok(instructions.includes(NARRATIVES_SKILL.roleText![role]!), `${role} reads its own part`);
   }
   assert.ok(!String(writerCall.input.instructions).includes(NARRATIVES_SKILL.roleText!["opening-judge"]!), "never the judge's part");
-  assert.equal(json(session.trace.filter((entry) => entry.step === "opening").map((entry) => entry.skillVersions)), json([{ hooks: "6", narratives: "4" }, { hooks: "6", narratives: "4" }]));
+  assert.equal(json(session.trace.filter((entry) => entry.step === "opening").map((entry) => entry.skillVersions)), json([{ hooks: "6", levers: "1", narratives: "4" }, { hooks: "6", levers: "1", narratives: "4" }]));
   const context = (writerCall.input.context ?? solContextOf(writerCall.input)) as { focus: { narrative?: unknown } };
   assert.equal(json(context.focus.narrative), json(focusTypes.narrativeForModels(guide)));
   const classic = harness({ writes: [writer()], judgments: [judge("accept", "c1", { c1: 96 })] });
@@ -634,7 +654,7 @@ test("a discovery premise: the writer and the judge read the discovery skill wit
   const [judgeCall] = h.calls.filter((call) => call.role === "judge");
   assert.ok(String(writerCall.input.instructions).includes(DISCOVERY_SKILL.roleText!["opening-writer"]!));
   assert.ok(String(judgeCall.input.instructions).includes(DISCOVERY_SKILL.roleText!["opening-judge"]!));
-  assert.equal(json(session.trace.filter((entry) => entry.step === "opening").map((entry) => entry.skillVersions)), json([{ hooks: "6", discovery: "1" }, { hooks: "6", discovery: "1" }]));
+  assert.equal(json(session.trace.filter((entry) => entry.step === "opening").map((entry) => entry.skillVersions)), json([{ hooks: "6", levers: "1", discovery: "1" }, { hooks: "6", levers: "1", discovery: "1" }]));
   assert.equal(json((writerCall.input.context as { focus: { concept?: unknown } }).focus.concept), json(focusTypes.conceptForModels(concept)));
 });
 
@@ -669,6 +689,6 @@ test("a story arc: the writer and the judge read the arcs skill with their own p
   const [writerCall] = h.calls.filter((call) => call.role === "writer");
   assert.ok(String(writerCall.input.instructions).includes(ARCS_SKILL.roleText!["opening-writer"]!));
   assert.ok(!String(writerCall.input.instructions).includes(DISCOVERY_SKILL.text), "no discovery skill for an arc");
-  assert.equal(json(session.trace.filter((entry) => entry.step === "opening").map((entry) => entry.skillVersions)), json([{ hooks: "6", arcs: "1" }, { hooks: "6", arcs: "1" }]));
+  assert.equal(json(session.trace.filter((entry) => entry.step === "opening").map((entry) => entry.skillVersions)), json([{ hooks: "6", levers: "1", arcs: "1" }, { hooks: "6", levers: "1", arcs: "1" }]));
   assert.equal(json((writerCall.input.context as { focus: { concept?: unknown } }).focus.concept), json({ arc: "cause-effect", factIds: ["f1"], beats: concept.reveals }));
 });

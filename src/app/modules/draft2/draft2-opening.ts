@@ -3,6 +3,7 @@ import { recordFunnelChoice, runFunnelStep, type FunnelStep, type FunnelStepInpu
 import { DRAFT2_OPENING_EARLIER_ROLES, DRAFT2_OPENING_ROLES } from "./draft2-models";
 import { Draft2InputError } from "./draft2-facts.types";
 import { focusFindings, focusForModels, focusItemCount, focusMaterial, type Draft2FocusSnapshot } from "./draft2-focus.types";
+import { eligibleLevers, leverSpread } from "./draft2-levers.types";
 import {
   DRAFT2_OPENING_EVALUATION_SCHEMA, DRAFT2_OPENING_SCHEMA, OPENING_GATE, OPENING_ROUND_PLAN, mechanicalOpeningIssues, openingExploreRequest,
   openingJudgeRequest, openingRefineRequest, parseOpeningCandidates, parseOpeningEvaluation, sameOpening,
@@ -10,6 +11,7 @@ import {
 } from "./draft2-opening.types";
 import { brandBrief, composeInstructions, creativeSkills } from "./skills/draft2-skills";
 import { HOOKS_SKILL } from "./skills/hooks";
+import { LEVERS_SKILL } from "./skills/levers";
 import type { Draft2SessionRow } from "@/db/schema";
 
 export type Draft2OpeningInput = FunnelStepInput;
@@ -49,15 +51,17 @@ const OPENING_STEP: FunnelStep<Draft2OpeningCandidate, Draft2OpeningScore, Draft
   setup: ({ snapshot: focus, profile, facts }) => {
     const brief = brandBrief(profile);
     const itemCount = focusItemCount(focus.values);
+    // The levers this story can carry; the plan's choice spreads the new openings over them, and a free hook always competes.
+    const levers = eligibleLevers(facts, focus.values);
     return {
-      writer: composeInstructions("opening-writer", [HOOKS_SKILL, ...creativeSkills(focus.values)], brief),
-      judge: composeInstructions("opening-judge", [HOOKS_SKILL, ...creativeSkills(focus.values)], brief),
-      context: { focus: focusForModels(focus.values) },
+      writer: composeInstructions("opening-writer", [HOOKS_SKILL, LEVERS_SKILL, ...creativeSkills(focus.values)], brief),
+      judge: composeInstructions("opening-judge", [HOOKS_SKILL, LEVERS_SKILL, ...creativeSkills(focus.values)], brief),
+      context: { focus: focusForModels(focus.values), eligibleLevers: levers },
       schemas: { writer: DRAFT2_OPENING_SCHEMA, judge: DRAFT2_OPENING_EVALUATION_SCHEMA },
       parseCandidates: parseOpeningCandidates,
       parseEvaluation: parseOpeningEvaluation,
-      mechanical: (candidates) => mechanicalOpeningIssues(candidates, facts, { itemCount }),
-      explore: openingExploreRequest,
+      mechanical: (candidates) => mechanicalOpeningIssues(candidates, facts, { itemCount, eligibleLevers: levers }),
+      explore: (wanted, last, versions) => ({ ...openingExploreRequest(wanted, last, versions), levers: { spread: leverSpread(focus.values.levers, wanted) } }),
       refine: openingRefineRequest,
       judgeRequest: openingJudgeRequest,
       same: sameOpening,

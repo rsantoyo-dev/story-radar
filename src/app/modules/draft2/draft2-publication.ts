@@ -14,6 +14,7 @@ import { draft2ImageFile } from "./draft2-images";
 import { slideUnit } from "./draft2-images.types";
 import { captionText, normalHashtag } from "./draft2-caption.types";
 import { DRAFT2_PROVIDER, publicationTarget, targetPostText, type Draft2Publication } from "./draft2-publication.types";
+import { chosenOpeningLever } from "./draft2-opening.types";
 import type { Draft2SessionRow } from "@/db/schema";
 
 const PUBLICATION_VERSION = "draft2-publication-v1";
@@ -85,6 +86,7 @@ export async function prepareDraft2Publication({ topicId, storyId, sessionId, ac
   if (!session || session.storyId !== storyId) throw new Draft2InputError("This Draft 2 session was not found for the story. Reload the canvas.");
   if (await activeDraft2Session(topicId, storyId)) throw new Draft2BusyError("A Draft 2 run is already in progress for this story.");
   const target = publicationTarget(session);
+  const lever = chosenOpeningLever(session.opening);
   if (target.issues.length && !acknowledgeIssues) {
     throw new Draft2InputError(`Look at ${target.issues.length === 1 ? "this image" : "these images"} before publishing, then approve again: ${target.issues.join(" ")}`);
   }
@@ -148,6 +150,7 @@ export async function prepareDraft2Publication({ topicId, storyId, sessionId, ac
     slides: target.slides.map(({ slide, label, order, version, sha256 }) => ({ slide, label, order, version, sha256 })),
     postText: targetPostText(target),
     approvedAt: new Date().toISOString(), acknowledgedIssues: acknowledgeIssues ? target.issues : [],
+    ...(lever ? { lever } : {}),
   };
   const updated = await updateDraft2Session(session.id, { publication });
   if (!updated) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");

@@ -6,7 +6,8 @@ import { getAnthropicRuntimeConfig, requireAnthropicApiKey } from "../stories/an
 import { getCreativeProfile } from "../stories/creative-profile.repository";
 import { getStoryContent } from "../stories/story-content.repository";
 import { activeEditorialLines, storyCollectionContexts } from "../editorial-lines/editorial-lines.repository";
-import { activeDraft2Session, claimDraft2Session, getDraft2Session, touchDraft2Session, updateDraft2Session } from "./draft2-session.repository";
+import { activeDraft2Session, claimDraft2Session, getDraft2Session, recentDraft2Levers, touchDraft2Session, updateDraft2Session } from "./draft2-session.repository";
+import { eligibleLevers } from "./draft2-levers.types";
 import { failedCall } from "./draft2-funnel";
 import { traceCost } from "./draft2-trace-cost";
 import { draft2DevTrace } from "./draft2-dev-trace";
@@ -26,6 +27,7 @@ import { NARRATIVES_SKILL } from "./skills/narratives";
 import { DISCOVERY_SKILL } from "./skills/discovery";
 import { ARCS_SKILL } from "./skills/arcs";
 import { SPINE_SKILL } from "./skills/spine";
+import { LEVERS_SKILL } from "./skills/levers";
 import type { Draft2SessionRow } from "@/db/schema";
 
 /** Every field and a reason for each, with Claude's thinking, which the API counts against the same ceiling. */
@@ -73,8 +75,8 @@ export async function decideDraft2Focus({ topicId, storyId, sessionId }: Draft2F
   const apiKey = requireAnthropicApiKey();
   const model = getAnthropicRuntimeConfig().model;
 
-  const [profile, lines, found, content] = await Promise.all([
-    getCreativeProfile(topicId), activeEditorialLines(topicId), storyCollectionContexts(topicId, storyId), getStoryContent(topicId, storyId),
+  const [profile, lines, found, content, recentLevers] = await Promise.all([
+    getCreativeProfile(topicId), activeEditorialLines(topicId), storyCollectionContexts(topicId, storyId), getStoryContent(topicId, storyId), recentDraft2Levers(topicId, session.id),
   ]);
   const lineOptions = lines.map(focusLine);
   const foundBy = [...new Set(found.map((entry) => entry.context.lineId))].filter((id) => lines.some((line) => line.id === id));
@@ -167,7 +169,7 @@ export async function decideDraft2Focus({ topicId, storyId, sessionId }: Draft2F
       const told = decidedFocus(focus, decision, { provider: "anthropic", model }, new Date());
       // The judge's reviews of the telling and the plan written from it run side by side; a telling the judge sent back to classic gets its plan written again.
       const plan = (telling: Draft2Focus) => focusCall({
-        apiKey, model, trace, verifiedFacts, auditContext, operation: "draft2_focus_plan", ...planCall(telling, { facts, title: content.title, brief, editorChoices, material }),
+        apiKey, model, trace, verifiedFacts, auditContext, operation: "draft2_focus_plan", ...planCall(telling, { facts, title: content.title, brief, editorChoices, material, recentLevers }),
         schema: DRAFT2_FOCUS_PLAN_SCHEMA, effort: "high", maxOutputTokens: PLAN_MAX_OUTPUT_TOKENS, again: PLAN_AGAIN,
       });
       const [reviewed, planned] = await Promise.all([reviewChoices(told), plan(told)]);
@@ -250,9 +252,11 @@ async function focusCall<T>({ apiKey, model, trace, verifiedFacts, auditContext,
  * focus and spine skills, and the skills its telling needs), its request and
  * its parse, honoring the parts of the plan the editor owns.
  */
-function planCall(focus: Draft2Focus, { facts, title, brief, editorChoices, material }: { facts: readonly Draft2Fact[]; title: string; brief: string; editorChoices: Record<string, unknown>; material?: Draft2FocusMaterial }) {
+function planCall(focus: Draft2Focus, { facts, title, brief, editorChoices, material, recentLevers }: { facts: readonly Draft2Fact[]; title: string; brief: string; editorChoices: Record<string, unknown>; material?: Draft2FocusMaterial; recentLevers: readonly string[] }) {
   const values = focus.values!;
-  const planner = composeInstructions("focus-planner", [FOCUS_SKILL, SPINE_SKILL, ...creativeSkills(values)], brief);
+  const planner = composeInstructions("focus-planner", [FOCUS_SKILL, LEVERS_SKILL, SPINE_SKILL, ...creativeSkills(values)], brief);
+  // The levers this story's facts, gravity and structure can carry; the publication's last ones, for the plan to vary.
+  const eligible = eligibleLevers(facts, values);
   const owned = Object.fromEntries(Object.entries(editorChoices).filter(([key]) => (FOCUS_PLAN_FIELDS as readonly string[]).includes(key)));
   // The decision as the planner reads it: the directions still empty are left out.
   const told = Object.fromEntries(Object.entries(focusForModels(values)).filter(([, value]) => value !== ""));
@@ -260,8 +264,8 @@ function planCall(focus: Draft2Focus, { facts, title, brief, editorChoices, mate
     instructions: planner.instructions,
     skillVersions: planner.skillVersions,
     // People and places' material: the visual direction shows the people with a verified portrait through it, never anyone else.
-    contents: { task: "plan", title, focus: told, ...(material ? { material } : {}), editorChoices: owned } as Record<string, unknown>,
-    parse: (answer: string) => parseFocusPlan(answer, { known: new Set(facts.map((fact) => fact.id)), structure: values.structure, editorChoices: owned }),
+    contents: { task: "plan", title, focus: told, ...(material ? { material } : {}), eligibleLevers: eligible, recentLevers, editorChoices: owned } as Record<string, unknown>,
+    parse: (answer: string) => parseFocusPlan(answer, { known: new Set(facts.map((fact) => fact.id)), structure: values.structure, eligibleLevers: eligible, editorChoices: owned }),
   };
 }
 
@@ -281,7 +285,7 @@ export async function rewriteDraft2FocusPlan({ topicId, storyId, sessionId }: Dr
   if (await activeDraft2Session(topicId, storyId)) throw new Draft2BusyError("A Draft 2 run is already in progress for this story.");
   const apiKey = requireAnthropicApiKey();
   const model = getAnthropicRuntimeConfig().model;
-  const [profile, content] = await Promise.all([getCreativeProfile(topicId), getStoryContent(topicId, storyId)]);
+  const [profile, content, recentLevers] = await Promise.all([getCreativeProfile(topicId), getStoryContent(topicId, storyId), recentDraft2Levers(topicId, session.id)]);
   const brief = [brandBrief(profile), `# Visual identity\n${resolveCreativeVisualGuidance(profile)}`, visualModeLine(profile.visualFidelityMode as Draft2VisualMode)].join("\n\n");
   const facts = session.facts ?? [];
   const trace: Draft2TraceEntry[] = [...session.trace];
@@ -289,7 +293,7 @@ export async function rewriteDraft2FocusPlan({ topicId, storyId, sessionId }: Dr
   let plan;
   try {
     plan = await withCreativeTextBudget({ topicId, storyId, runId: session.id }, () => focusCall({
-      apiKey, model, trace, verifiedFacts: openingFactsSnapshot(facts), auditContext, operation: "draft2_focus_plan", ...planCall(focus, { facts, title: content.title, brief, editorChoices: editorChoicesOf(focus), ...(session.inventory?.status === "ready" ? { material: focusMaterial(session.inventory) } : {}) }),
+      apiKey, model, trace, verifiedFacts: openingFactsSnapshot(facts), auditContext, operation: "draft2_focus_plan", ...planCall(focus, { facts, title: content.title, brief, editorChoices: editorChoicesOf(focus), recentLevers, ...(session.inventory?.status === "ready" ? { material: focusMaterial(session.inventory) } : {}) }),
       schema: DRAFT2_FOCUS_PLAN_SCHEMA, effort: "high", maxOutputTokens: PLAN_MAX_OUTPUT_TOKENS, again: PLAN_AGAIN,
     }));
   } catch (error) {

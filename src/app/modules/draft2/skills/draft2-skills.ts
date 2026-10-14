@@ -7,6 +7,7 @@ import { DISCOVERY_ROLES, DISCOVERY_SKILL } from "./discovery";
 import { FACTS_ROLES, FACTS_SKILL } from "./facts";
 import { FOCUS_ROLES, FOCUS_SKILL } from "./focus";
 import { HOOKS_SKILL, OPENING_ROLES } from "./hooks";
+import { LEVERS_SKILL } from "./levers";
 import { IMAGE_ROLES, IMAGES_SKILL } from "./images";
 import { NARRATIVE_ROLES, NARRATIVES_SKILL } from "./narratives";
 import { REVIEW_ROLES, REVIEW_SKILL } from "./review";
@@ -21,7 +22,7 @@ import { toneLine } from "./tone";
  * skill, so they work from one rubric; every provider call records the
  * skill versions its instructions were composed from.
  */
-export type Draft2SkillName = "facts" | "focus" | "narratives" | "discovery" | "arcs" | "spine" | "hooks" | "closings" | "decks" | "review" | "visuals" | "images" | "captions";
+export type Draft2SkillName = "facts" | "focus" | "narratives" | "discovery" | "arcs" | "spine" | "levers" | "hooks" | "closings" | "decks" | "review" | "visuals" | "images" | "captions";
 export type Draft2Role = "extractor" | "reviewer" | "focus-editor" | "focus-planner" | "focus-narrative-judge" | "focus-concept-judge" | "opening-writer" | "opening-judge" | "closing-writer" | "closing-judge" | "deck-writer" | "deck-judge"
   | "people-finder" | "visual-writer" | "visual-judge" | "image-judge" | "caption-writer" | "caption-judge" | "mention-finder" | "carousel-reader" | "carousel-editor";
 
@@ -34,7 +35,7 @@ export type Draft2Skill = {
   roleText?: Partial<Record<Draft2Role, string>>;
 };
 
-export const DRAFT2_SKILLS: Record<Draft2SkillName, Draft2Skill> = { facts: FACTS_SKILL, focus: FOCUS_SKILL, narratives: NARRATIVES_SKILL, discovery: DISCOVERY_SKILL, arcs: ARCS_SKILL, spine: SPINE_SKILL, hooks: HOOKS_SKILL, closings: CLOSINGS_SKILL, decks: DECKS_SKILL, review: REVIEW_SKILL, visuals: VISUALS_SKILL, images: IMAGES_SKILL, captions: CAPTIONS_SKILL };
+export const DRAFT2_SKILLS: Record<Draft2SkillName, Draft2Skill> = { facts: FACTS_SKILL, focus: FOCUS_SKILL, narratives: NARRATIVES_SKILL, discovery: DISCOVERY_SKILL, arcs: ARCS_SKILL, spine: SPINE_SKILL, levers: LEVERS_SKILL, hooks: HOOKS_SKILL, closings: CLOSINGS_SKILL, decks: DECKS_SKILL, review: REVIEW_SKILL, visuals: VISUALS_SKILL, images: IMAGES_SKILL, captions: CAPTIONS_SKILL };
 
 /** Each role's own instructions: who it is and what it receives. */
 export const DRAFT2_ROLES: Record<Draft2Role, string> = { ...FACTS_ROLES, ...FOCUS_ROLES, ...NARRATIVE_ROLES, ...DISCOVERY_ROLES, ...OPENING_ROLES, ...CLOSING_ROLES, ...DECK_ROLES, ...REVIEW_ROLES, ...VISUAL_ROLES, ...IMAGE_ROLES, ...CAPTION_ROLES };

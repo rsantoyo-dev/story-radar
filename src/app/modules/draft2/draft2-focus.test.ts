@@ -10,6 +10,7 @@ import * as funnel from "./draft2-funnel";
 import * as openingTypes from "./draft2-opening.types";
 import * as skills from "./skills/draft2-skills";
 import * as focusSkill from "./skills/focus";
+import * as leversSkill from "./skills/levers";
 import type { Draft2Focus } from "./draft2-focus.types";
 
 const localRequire = createRequire(import.meta.url);
@@ -59,12 +60,13 @@ const answer = (overrides: Record<string, unknown> = {}) => ({
   reasons,
   ...overrides,
 });
-/** Claude's plan, the second call's answer: the spine and the two directions, with their reasons. */
+/** Claude's plan, the second call's answer: the levers, the spine and the two directions, with their reasons. */
 const PLAN = {
+  levers: { primary: "counterintuitive", alternatives: ["direct-benefit"], factIds: ["f1", "f2"], paidBy: "slide2" },
   spine: ARC_SPINE,
   direction: "Lead with the five-minute video; pay it with the award time.",
   visualDirection: "Anonymous founders at a laptop; the demo video recurs and closes the story as a signed award.",
-  reasons: { spine: "Why spine.", direction: "Why direction.", visualDirection: "Why visualDirection." },
+  reasons: { levers: "Why levers.", spine: "Why spine.", direction: "Why direction.", visualDirection: "Why visualDirection." },
 };
 
 type Row = Record<string, unknown> & { focus: Draft2Focus | null; trace: types.Draft2TraceEntry[]; updatedAt: Date };
@@ -80,7 +82,7 @@ const INVENTORY = {
 const GUIDE = { form: "character-guide", anchorKind: "character", characterId: "char-jo", anchor: "Jo", anchorFactIds: [], progression: "From the kiosk to each animal of the trail", ending: "returns" };
 
 /** The step with Claude, the profile, the lines, the story and the database replaced; `answers` are Claude's, in order. */
-function harness({ answers = [], plans = [], reviews = [], session, busy = false, claimRefused = false, fail = false, env = {} }: {
+function harness({ answers = [], plans = [], reviews = [], session, busy = false, claimRefused = false, fail = false, env = {}, recentLevers = [] }: {
   answers?: unknown[];
   /** Claude's plans, in order, for the second call of each decision and for a rewrite; PLAN when none is queued. */
   plans?: unknown[];
@@ -88,6 +90,8 @@ function harness({ answers = [], plans = [], reviews = [], session, busy = false
   reviews?: unknown[];
   session?: Record<string, unknown>; busy?: boolean; claimRefused?: boolean; fail?: boolean;
   env?: Record<string, string>;
+  /** The Topic's last published levers, newest first. */
+  recentLevers?: string[];
 } = {}) {
   const calls: Record<string, unknown>[] = [];
   const reviewCalls: Record<string, unknown>[] = [];
@@ -107,6 +111,7 @@ function harness({ answers = [], plans = [], reviews = [], session, busy = false
     "./draft2-opening.types": openingTypes,
     "./skills/draft2-skills": skills,
     "./skills/focus": focusSkill,
+    "./skills/levers": leversSkill,
     "./draft2-dev-trace": { draft2DevTrace: () => undefined },
     "../stories/creative-text-meter": { withCreativeTextBudget: async (_context: unknown, work: () => Promise<unknown>) => work() },
     "../stories/anthropic.config": { getAnthropicRuntimeConfig: () => ({ apiKey: "k", model: "claude-sonnet-5-5" }), requireAnthropicApiKey: () => "k" },
@@ -131,6 +136,7 @@ function harness({ answers = [], plans = [], reviews = [], session, busy = false
       claimDraft2Session: async (_id: string, patch: Record<string, unknown>) => { if (claimRefused) return undefined; row = { ...row, ...patch, status: "running", updatedAt: new Date() }; return row; },
       updateDraft2Session: async (_id: string, patch: Record<string, unknown>) => { row = { ...row, ...patch, updatedAt: new Date() }; return row; },
       touchDraft2Session: async () => undefined,
+      recentDraft2Levers: async () => [...recentLevers],
     },
   };
   vm.runInNewContext(code, { exports, Date, JSON, Error, Object, Array, Math, Number, String, Boolean, Set, Map, Promise, Intl, console, setInterval, clearInterval, process: { env },
@@ -177,10 +183,14 @@ test("Claude decides the focus from the cached facts, the brand brief, the profi
   assert.equal(json(focus.decidedBy), json({ provider: "anthropic", model: "claude-sonnet-5-5" }));
   const [decisionCall, planCall] = session.trace.filter((entry) => entry.step === "focus");
   assert.equal(session.trace.length, 3, "the facts trace is kept; the decision and the plan are two calls");
-  assert.equal(json([decisionCall.provider, decisionCall.operation, decisionCall.outcome, decisionCall.skillVersions, decisionCall.cacheWriteTokens]), json(["anthropic", "draft2_focus", "ok", { focus: "12", discovery: "1", arcs: "1", narratives: "4", spine: "1" }, 900]));
-  assert.equal(json([planCall.operation, planCall.outcome, planCall.effort, planCall.skillVersions]), json(["draft2_focus_plan", "ok", "high", { focus: "12", spine: "1" }]), "a classic telling: the planner reads the focus and spine skills only");
+  assert.equal(json([decisionCall.provider, decisionCall.operation, decisionCall.outcome, decisionCall.skillVersions, decisionCall.cacheWriteTokens]), json(["anthropic", "draft2_focus", "ok", { focus: "13", discovery: "1", arcs: "1", narratives: "4", spine: "1" }, 900]));
+  assert.equal(json([planCall.operation, planCall.outcome, planCall.effort, planCall.skillVersions]), json(["draft2_focus_plan", "ok", "high", { focus: "13", levers: "1", spine: "1" }]), "a classic telling: the planner reads the focus, levers and spine skills only");
   assert.equal(json([focus.values?.spine?.beats.length, focus.values?.direction, focus.reasons?.spine, focus.staleDirections]), json([7, PLAN.direction, "Why spine.", false]), "the plan's spine, directions and reasons join the decision");
   assert.equal(json(Object.keys((h.calls[1].contents as { focus: Record<string, unknown> }).focus)), json(["line", "interest", "audience", "framing", "readerConsequence", "structure", "goal", "voice"]), "the planner reads the decision, the interest first, without the empty directions");
+  const planContents = h.calls[1].contents as { eligibleLevers: string[]; recentLevers: string[] };
+  assert.ok(planContents.eligibleLevers.includes("counterintuitive") && !planContents.eligibleLevers.includes("stat") && !planContents.eligibleLevers.includes("quick-list"), "the levers these facts can carry: no figure, so no statistic; an arc, so no list");
+  assert.equal(json(planContents.recentLevers), json([]), "no carousel of this Topic published with a lever yet");
+  assert.equal(json([focus.values?.levers, focus.reasons?.levers]), json([PLAN.levers, "Why levers."]), "the plan's levers and their reason join the decision");
   assert.equal(json((h.calls[1].contents as { material?: unknown }).material), json(focusTypes.focusMaterial(INVENTORY as never)), "the planner reads People and places too: the visual direction shows the people with a verified portrait through it");
   assert.equal(focus.deliberation?.approaches.length, 3, "the tellings Claude compared stay on the focus for the editor");
   assert.equal(json([focus.values?.narrative, focus.inventoryVersion, h.reviewCalls.length]), json([focusTypes.CLASSIC_NARRATIVE, 2, 0]), "a classic story is not reviewed");
@@ -365,5 +375,15 @@ test("after the editor changes how the story is told, Claude rewrites the plan f
   assert.equal(json([contents.task, contents.focus.narrative?.form, "spine" in contents.focus, contents.editorChoices]), json(["plan", "character-guide", true, {}]), "the planner reads the decision, the earlier spine and the parts the editor owns (none here)");
   assert.equal(json((call.contents as { material?: unknown }).material), json(focusTypes.focusMaterial(INVENTORY as never)), "and People and places, as found now");
   const last = session.trace[session.trace.length - 1];
-  assert.equal(json([last.operation, last.outcome, last.effort, last.skillVersions]), json(["draft2_focus_plan", "ok", "high", { focus: "12", spine: "1", narratives: "4" }]));
+  assert.equal(json([last.operation, last.outcome, last.effort, last.skillVersions]), json(["draft2_focus_plan", "ok", "high", { focus: "13", levers: "1", spine: "1", narratives: "4" }]));
+});
+
+test("the plan reads the Topic's last published levers, and a primary these facts cannot carry is asked for again with the list", async () => {
+  const h = harness({ answers: [answer()], plans: [{ ...PLAN, levers: { ...PLAN.levers, primary: "stat" } }, PLAN], recentLevers: ["pride", "counterintuitive"] });
+  const session = await h.decide();
+  const plans = h.calls.filter((call) => call.schemaName === "draft2_focus_plan");
+  assert.equal(plans.length, 2, "asked again once");
+  assert.equal(json((plans[0].contents as { recentLevers: string[] }).recentLevers), json(["pride", "counterintuitive"]));
+  assert.match(String((plans[1].contents as { correction?: string }).correction), /primary lever is free or one of this story's levers/);
+  assert.equal(session.focus?.values?.levers?.primary, "counterintuitive");
 });

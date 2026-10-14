@@ -13,6 +13,7 @@ import {
   type Draft2Focus, type Draft2FocusField, type Draft2FocusFinding, type Draft2ConceptArc, type Draft2FocusConcept, type Draft2FocusMaterial, type Draft2FocusNarrative, type Draft2FocusValues, type Draft2FocusVoice, type Draft2NarrativeForm,
 } from "@/app/modules/draft2/draft2-focus.types";
 import { TONE_KEYS, toneWords, type ToneKey } from "@/app/modules/draft2/skills/tone";
+import { DRAFT2_LEVER_GROUPS, DRAFT2_LEVERS, FREE_LEVER, LEVER_PAID_BY, MAX_LEVER_ALTERNATIVES, eligibleLevers, leverName, type Draft2FocusLevers, type Draft2LeverPaidBy } from "@/app/modules/draft2/draft2-levers.types";
 import {
   OPENING_GATE, OPENING_MAX_ROUNDS, OPENING_STALL_MS, openingResumeRound,
   type Draft2Opening, type Draft2OpeningCandidate, type Draft2OpeningCriterion,
@@ -769,6 +770,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const focusInventory = session?.inventory ?? undefined;
   const material = focusInventory?.status === "ready" ? focusMaterial(focusInventory) : undefined;
   const focusProblems = focus?.values ? focusFindings(focus.values, material) : [];
+  const focusLevers = focus?.values ? eligibleLevers(session?.facts ?? [], focus.values) : [];
   const focusStalled = !running && focus?.status === "running" && now > 0 && now - Date.parse(session?.updatedAt ?? "") > OPENING_STALL_MS;
   const focusReady = Boolean(focus?.values) && focus?.status !== "running" && focusProblems.length === 0;
   const focusStatus = running === "focus" ? FOCUS_STATUS.running : focusStalled ? { label: "Stopped", tone: "warning" as const }
@@ -1021,6 +1023,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
           focus={focus}
           findings={focusProblems}
           material={material}
+          eligibleLevers={focusLevers}
           saving={savingFocus}
           locked={running !== undefined || savingFocus !== undefined}
           onSave={(field, value) => { void saveFocus(field, { value }); }}
@@ -1428,7 +1431,7 @@ const OPENING_DISPLAY: FunnelDisplay<Draft2OpeningCandidate> = {
   plural: "openings",
   gate: OPENING_GATE,
   labels: CRITERION_LABEL,
-  lines: (candidate) => ({ title: candidate.cover.headline, details: [candidate.cover.subheadline, `Slide 2 · ${candidate.slide2.headline}`] }),
+  lines: (candidate) => ({ title: candidate.cover.headline, details: [candidate.cover.subheadline, `Slide 2 · ${candidate.slide2.headline}`, ...(candidate.lever ? [`Lever · ${leverName(candidate.lever)}`] : [])] }),
   proposal: (candidate) => `${candidate.cover.headline} · slide 2: ${candidate.slide2.headline}`,
   cards: (candidate) => <div className={styles.openingCards}>
     <SlideCard label="Cover" headline={candidate.cover.headline} text={candidate.cover.subheadline} factIds={candidate.cover.factIds} />
@@ -1661,6 +1664,7 @@ function ChosenVersion<C extends FunnelCandidate>({ version, run, names, display
       <StatusBadge tone={tone}>{label}</StatusBadge>
       {score ? <strong>{score.overall}/100</strong> : null}
       {candidate.angle ? <span>{candidate.angle}</span> : null}
+      {"lever" in candidate && typeof candidate.lever === "string" ? <span className={styles.factMeta}>Lever · {leverName(candidate.lever)}</span> : null}
       <span className={styles.factMeta}>{versionOrigin(version, names)}</span>
     </div>
     {score ? <ScoreRow score={score} display={display} /> : null}
@@ -2096,6 +2100,7 @@ function focusValueText(field: Draft2FocusField, values: Draft2FocusValues): str
     }
     case "visualDirection": return values.visualDirection ?? "";
     case "spine": return values.spine ? `${values.spine.beats.length} beats · ${values.spine.beats.map((beat) => beat.role).join(" › ")}` : "none";
+    case "levers": return values.levers ? [leverName(values.levers.primary), ...values.levers.alternatives.map(leverName)].join(" · ") : "none";
   }
 }
 
@@ -2104,11 +2109,13 @@ function focusValueText(field: Draft2FocusField, values: Draft2FocusValues): str
  * beside Claude's value. Selects save when they change, text when it loses
  * focus; the controls wait while a change is saved or a step runs.
  */
-function FocusView({ focus, findings, material, saving, locked, onSave, onReset, onRewritePlan }: {
+function FocusView({ focus, findings, material, eligibleLevers: levers, saving, locked, onSave, onReset, onRewritePlan }: {
   focus: Draft2Focus;
   findings: readonly Draft2FocusFinding[];
   /** People and places' material as it stands: the brand's characters the editor allows, the story's people. */
   material?: Draft2FocusMaterial;
+  /** The levers this story's facts, gravity and structure can carry. */
+  eligibleLevers: readonly string[];
   saving?: Draft2FocusField;
   locked: boolean;
   onSave: (field: Draft2FocusField, value: unknown) => void;
@@ -2212,6 +2219,10 @@ function FocusView({ focus, findings, material, saving, locked, onSave, onReset,
           ? <div><Button variant="quiet" size="compact" busy={saving === "narrative"} disabled={locked} onClick={() => onSave("narrative", focus.narrativeReview!.proposed)}>Use Claude’s {NARRATIVE_LABEL[focus.narrativeReview.proposed.form].split(":")[0].toLowerCase()}</Button></div> : null}
       </div>
       <div className={`${styles.focusField} ${styles.focusWide}`}>
+        <FocusLevers key={key("levers")} levers={values.levers} eligible={levers} description={about("levers", values.levers ? "The mechanism the cover uses to stop the reader, a guide, never a formula: the opening writes about a third of its first openings on it, a fifth on each alternative, and the rest free." : "Decided before levers: decide again or rewrite the plan for Claude to choose them, or choose here.")} disabled={locked} onCommit={(next) => onSave("levers", next)} />
+        {reset("levers")}
+      </div>
+      <div className={`${styles.focusField} ${styles.focusWide}`}>
         <FormField label="Spine" description={about("spine", values.spine ? "One beat per slide, decided after the concept and the form: the words and the images both follow it, and the judges score each slide against its beat." : "Decided before spines: decide again for Claude to write the beats.")}>
           {values.spine ? <ol>
             {values.spine.beats.map((beat, index) => <li key={`${beat.slide}-${index}`}>
@@ -2231,6 +2242,60 @@ function FocusView({ focus, findings, material, saving, locked, onSave, onReset,
       </div>
     </div>
   </div>;
+}
+
+const PAID_BY_LABEL: Record<Draft2LeverPaidBy, string> = { slide2: "Slide 2", middle: "A middle slide", penultimate: "The penultimate slide", last: "The last slide" };
+
+/**
+ * The hook's lever, saved as a whole: the primary (or free), up to two
+ * alternatives and where the promise is kept. The choices are this story's
+ * levers by group, plus any lever already chosen.
+ */
+function FocusLevers({ levers, eligible, description, disabled, onCommit }: {
+  levers: Draft2FocusLevers | undefined;
+  eligible: readonly string[];
+  description?: string;
+  disabled: boolean;
+  onCommit: (levers: Pick<Draft2FocusLevers, "primary" | "alternatives" | "paidBy">) => void;
+}) {
+  const current = levers ?? { primary: FREE_LEVER, alternatives: [], factIds: [], paidBy: "slide2" as const };
+  const commit = (next: Partial<Pick<Draft2FocusLevers, "primary" | "alternatives" | "paidBy">>) => onCommit({ primary: current.primary, alternatives: current.alternatives, paidBy: current.paidBy, ...next });
+  const options = (keep: string | undefined, skip: readonly string[]) => DRAFT2_LEVER_GROUPS.map((group) => {
+    const shown = DRAFT2_LEVERS.filter((lever) => lever.group === group.id && !skip.includes(lever.id) && (eligible.includes(lever.id) || lever.id === keep));
+    return shown.length ? <optgroup key={group.id} label={group.label}>{shown.map((lever) => <option key={lever.id} value={lever.id}>{lever.name}</option>)}</optgroup> : null;
+  });
+  const alternative = (index: number) => {
+    const value = current.alternatives[index] ?? "";
+    const others = [current.primary, ...current.alternatives.filter((_, position) => position !== index)];
+    return <FormField key={index} label={`Alternative ${index + 1}`}>
+      <select value={value} disabled={disabled || current.primary === FREE_LEVER} onChange={(event) => {
+        const alternatives = [...current.alternatives];
+        alternatives[index] = event.target.value;
+        commit({ alternatives: alternatives.filter(Boolean) });
+      }}>
+        <option value="">None</option>
+        {options(value, others)}
+      </select>
+    </FormField>;
+  };
+  return <fieldset className={styles.focusVoice}>
+    <legend className={styles.focusLegend}>Hook lever</legend>
+    <div className={styles.voiceDials}>
+      <FormField label="Primary">
+        <select value={current.primary} disabled={disabled} onChange={(event) => commit({ primary: event.target.value, alternatives: event.target.value === FREE_LEVER ? [] : current.alternatives.filter((entry) => entry !== event.target.value) })}>
+          <option value={FREE_LEVER}>Free: the story’s own tension</option>
+          {options(current.primary, [])}
+        </select>
+      </FormField>
+      {Array.from({ length: MAX_LEVER_ALTERNATIVES }, (_, index) => alternative(index))}
+      <FormField label="Its promise is kept on">
+        <select value={current.paidBy} disabled={disabled || current.primary === FREE_LEVER} onChange={(event) => commit({ paidBy: event.target.value as Draft2LeverPaidBy })}>
+          {LEVER_PAID_BY.map((position) => <option key={position} value={position}>{PAID_BY_LABEL[position]}</option>)}
+        </select>
+      </FormField>
+    </div>
+    {description ? <p className={styles.factMeta}>{description}</p> : null}
+  </fieldset>;
 }
 
 /** The judge's look at the premise, in one line for the field's description. */

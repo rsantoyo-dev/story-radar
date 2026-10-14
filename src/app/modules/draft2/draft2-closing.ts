@@ -33,8 +33,8 @@ function closingTarget(session: Draft2SessionRow, stopped: Draft2Closing | undef
   const chosen = chosenId ? openingVersions(opening.rounds).find((version) => version.candidate.id === chosenId) : undefined;
   if (!chosen) throw new Draft2InputError("The opening has no version to end yet. Choose an opening first.");
   if (!opening.focus) throw new Draft2InputError("This opening was written before the Focus step. Write the opening again first.");
-  const { id, cover, slide2 } = chosen.candidate;
-  return { opening: { id, cover, slide2 }, focus: opening.focus, shape: closingShape(opening.focus.values.structure.kind) };
+  const { id, cover, slide2, lever } = chosen.candidate;
+  return { opening: { id, cover, slide2, ...(lever ? { lever } : {}) }, focus: opening.focus, shape: closingShape(opening.focus.values.structure.kind) };
 }
 
 /** The Closing on the shared funnel: its plan, gate, roles, prompts and contract. */
