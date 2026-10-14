@@ -96,3 +96,38 @@ plus facts and focus in, up to 8k tokens out). About a minute. Set
 - Tests: `draft2-review.types.test.ts`, `draft2-review.test.ts` (the run in
   a sandbox with both answers mocked, the program's refusals, apply, undo,
   decline, apply-all, a stale review, failures).
+
+## Review v3: only what must change (2026-10-14)
+
+The first real Salut St-Jean review (Mon Vieux-Saint-Jean la nuit) showed the
+pass doing more than a polish. Luna, the reader, missed the event's name; Sol,
+the editor, put it in the cover's headline ("Six incontournables vous
+attendent samedi soir au Vieux-Saint-Jean" became "Mon Vieux-Saint-Jean la
+nuit : six incontournables"), dropped the closing's date and hours to avoid
+repeating the cover, and the autopilot applied all three patches. The skill
+itself asked for "the cover and the turn before the rest". The editor's
+verdict: the review weakened the hook and changed what worked; it should
+change only what is necessary (repeated words, details), and Claude should
+do it.
+
+- **Claude edits** by default (`reviewModels`: the Anthropic runtime model,
+  effort medium, 16,000 output tokens since its thinking shares the
+  ceiling); `DRAFT2_MODEL_REVIEW_JUDGE` names another, Sol for instance.
+  Luna stays the reader. Every step's own gate is still Sol's.
+- **Each patch names its kind** (`REVIEW_PATCH_KINDS`): truth, repetition,
+  detail or style; a kind the parser does not know is style.
+- **The autopilot applies only truth, repetition and detail**
+  (`REVIEW_NECESSARY_KINDS`); a style patch stays proposed until the editor
+  applies or declines it. The editor's own apply-all takes every proposed
+  patch. The canvas shows each patch's kind.
+- **The program's own rules** (`reviewPatchRules`, beside the owning step's
+  checks): a patch on the cover's headline is refused unless its kind is
+  truth (the Opening's gate chose that hook; a missing name goes in the
+  subheadline), and a patch that drops a figure the facts give (a date, a
+  time, a price) is refused.
+- **Review skill v3:** the last polish, not a rewrite; what a patch may
+  change (the four kinds) and what it never does (the cover's headline but
+  for truth, a figure the facts give, restructuring, splitting or shortening
+  a slide that works, a new fact); the reader's reactions are signals, not
+  orders; fewer patches are better. The editor role is "careful", no longer
+  "demanding".

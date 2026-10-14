@@ -1,20 +1,21 @@
 import "server-only";
 import { withCreativeTextBudget } from "../stories/creative-text-meter";
 import { generateOpenAiStructuredResponse } from "../stories/openai-structured-response";
+import { generateAnthropicStructuredResponse } from "../stories/anthropic-structured-response";
+import { getAnthropicRuntimeConfig, requireAnthropicApiKey } from "../stories/anthropic.config";
 import { getCreativeProfile } from "../stories/creative-profile.repository";
 import { activeDraft2Session, claimDraft2Session, getDraft2Session, touchDraft2Session, updateDraft2Session, type Draft2SessionPatch } from "./draft2-session.repository";
 import { draft2DevTrace } from "./draft2-dev-trace";
 import { traceCost } from "./draft2-trace-cost";
 import { Draft2BusyError, Draft2InputError, type Draft2Fact, type Draft2TraceEntry } from "./draft2-facts.types";
 import { factsSnapshot, failedCall, funnelVersions, type FunnelCandidate, type FunnelRole, type FunnelRun } from "./draft2-funnel";
-import { draft2SolModel } from "./draft2-models";
 import { focusForModels, focusItemCount, type Draft2FocusSnapshot } from "./draft2-focus.types";
 import { mechanicalOpeningIssues, type Draft2Opening, type Draft2OpeningCandidate } from "./draft2-opening.types";
 import { mechanicalClosingIssues, type Draft2Closing, type Draft2ClosingCandidate } from "./draft2-closing.types";
 import { mechanicalDeckIssues, type Draft2Deck, type Draft2DeckCandidate } from "./draft2-deck.types";
 import { carouselSlides, type Draft2CarouselSlide } from "./draft2-visual.types";
 import {
-  DRAFT2_READER_SCHEMA, DRAFT2_REVIEW_SCHEMA, parseReaderAnswer, parseReviewAnswer, patchedClosing, patchedDeck, patchedOpening, reviewCurrent, reviewPatches, sameWords, slideText,
+  DRAFT2_READER_SCHEMA, DRAFT2_REVIEW_SCHEMA, REVIEW_NECESSARY_KINDS, parseReaderAnswer, parseReviewAnswer, patchedClosing, patchedDeck, patchedOpening, reviewCurrent, reviewPatchRules, reviewPatches, sameWords, slideText,
   type Draft2Review, type Draft2ReviewPatch,
 } from "./draft2-review.types";
 import { brandBrief, composeInstructions, creativeSkills } from "./skills/draft2-skills";
@@ -23,6 +24,8 @@ import type { Draft2SessionRow } from "@/db/schema";
 
 const READER_MAX_OUTPUT_TOKENS = 4_000;
 const EDITOR_MAX_OUTPUT_TOKENS = 8_000;
+/** Claude's thinking counts against the same ceiling as its answer. */
+const CLAUDE_EDITOR_MAX_OUTPUT_TOKENS = 16_000;
 const READER_TIMEOUT_MS = 90_000;
 const EDITOR_TIMEOUT_MS = 240_000;
 const HEARTBEAT_MS = 30_000;
@@ -30,11 +33,18 @@ const DEFAULT_READER_MODEL = "gpt-6-luna";
 
 export type Draft2ReviewInput = { topicId: string; storyId: string; sessionId: string };
 
-/** The reader: the cheap judge by default (DRAFT2_MODEL_REVIEW_READER, else DRAFT2_MODEL_JUDGE); the editor: Sol by default, the independent gate (DRAFT2_MODEL_REVIEW_JUDGE). */
-export function reviewModels(env: Record<string, string | undefined>): { reader: string; editor: string } {
+/**
+ * The reader: the cheap judge by default (DRAFT2_MODEL_REVIEW_READER, else
+ * DRAFT2_MODEL_JUDGE). The editor: Claude by default since 2026-10-14, the
+ * editor's choice for a last polish that changes only what must change
+ * (every step's own gate stays Sol's); DRAFT2_MODEL_REVIEW_JUDGE names another
+ * model, OpenAI's or Anthropic's by its name.
+ */
+export function reviewModels(env: Record<string, string | undefined>): { reader: FunnelRole; editor: FunnelRole } {
+  const editor = env.DRAFT2_MODEL_REVIEW_JUDGE?.trim() || getAnthropicRuntimeConfig().model;
   return {
-    reader: env.DRAFT2_MODEL_REVIEW_READER?.trim() || env.DRAFT2_MODEL_JUDGE?.trim() || DEFAULT_READER_MODEL,
-    editor: env.DRAFT2_MODEL_REVIEW_JUDGE?.trim() || draft2SolModel(env as NodeJS.ProcessEnv),
+    reader: { provider: "openai", model: env.DRAFT2_MODEL_REVIEW_READER?.trim() || env.DRAFT2_MODEL_JUDGE?.trim() || DEFAULT_READER_MODEL },
+    editor: { provider: /^claude-/i.test(editor) ? "anthropic" : "openai", model: editor },
   };
 }
 
@@ -104,6 +114,7 @@ export async function reviewDraft2Carousel({ topicId, storyId, sessionId }: Draf
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) throw new Draft2InputError("OPENAI_API_KEY is not configured: the review needs the reader and the editor.");
   const models = reviewModels(process.env);
+  const anthropicKey = models.editor.provider === "anthropic" ? requireAnthropicApiKey() : undefined;
   const earlier = session.review ?? undefined;
   const startedAt = new Date().toISOString();
   const running: Draft2Review = {
@@ -122,20 +133,27 @@ export async function reviewDraft2Carousel({ topicId, storyId, sessionId }: Draf
   const call = async (role: FunnelRole, operation: string, request: { instructions: string; contents: Record<string, unknown>; schema: Record<string, unknown>; maxOutputTokens: number; reasoningEffort: "low" | "medium"; timeoutMs: number; skillVersions: Record<string, string> }) => {
     const at = new Date().toISOString();
     const begin = Date.now();
-    draft2DevTrace({ step: "review", round: 1, provider: "openai", model: role.model, operation, phase: "request", detail: { contents: request.contents } });
+    const provider = role.provider;
+    draft2DevTrace({ step: "review", round: 1, provider, model: role.model, operation, phase: "request", detail: { contents: request.contents } });
     try {
-      const answered = await generateOpenAiStructuredResponse({
-        apiKey, model: role.model, instructions: request.instructions, contents: request.contents, schema: request.schema, schemaName: operation,
-        maxOutputTokens: request.maxOutputTokens, reasoningEffort: request.reasoningEffort, timeoutMs: request.timeoutMs, auditContext,
-      });
+      const answered = provider === "anthropic"
+        ? await generateAnthropicStructuredResponse({
+          apiKey: anthropicKey!, model: role.model, instructions: request.instructions, contents: request.contents, schema: request.schema, schemaName: operation,
+          maxOutputTokens: CLAUDE_EDITOR_MAX_OUTPUT_TOKENS, effort: request.reasoningEffort, timeoutMs: request.timeoutMs, auditContext,
+        })
+        : await generateOpenAiStructuredResponse({
+          apiKey, model: role.model, instructions: request.instructions, contents: request.contents, schema: request.schema, schemaName: operation,
+          maxOutputTokens: request.maxOutputTokens, reasoningEffort: request.reasoningEffort, timeoutMs: request.timeoutMs, auditContext,
+        });
+      const cacheWriteTokens = "cacheWriteTokens" in answered ? answered.cacheWriteTokens : undefined;
       const durationMs = Date.now() - begin;
-      trace.push({ at, step: "review", round: 1, provider: "openai", model: role.model, operation, durationMs, usage: answered.usage, cachedInputTokens: answered.cachedInputTokens, answerCharacters: answered.text.length, outcome: "ok", skillVersions: request.skillVersions, effort: request.reasoningEffort, ...traceCost("openai", role.model, answered.usage, answered.cachedInputTokens) });
-      draft2DevTrace({ step: "review", round: 1, provider: "openai", model: role.model, operation, phase: "response", durationMs, detail: { usage: answered.usage, answer: answered.text } });
+      trace.push({ at, step: "review", round: 1, provider, model: role.model, operation, durationMs, usage: answered.usage, cachedInputTokens: answered.cachedInputTokens, ...(cacheWriteTokens ? { cacheWriteTokens } : {}), answerCharacters: answered.text.length, outcome: "ok", skillVersions: request.skillVersions, effort: request.reasoningEffort, ...traceCost(provider, role.model, answered.usage, answered.cachedInputTokens, cacheWriteTokens) });
+      draft2DevTrace({ step: "review", round: 1, provider, model: role.model, operation, phase: "response", durationMs, detail: { usage: answered.usage, answer: answered.text } });
       return answered.text;
     } catch (error) {
       const note = error instanceof Error ? error.message : "unknown error";
-      trace.push({ at, step: "review", round: 1, provider: "openai", model: role.model, operation, durationMs: Date.now() - begin, outcome: "error", note, ...failedCall(error), skillVersions: request.skillVersions, effort: request.reasoningEffort });
-      draft2DevTrace({ step: "review", round: 1, provider: "openai", model: role.model, operation, phase: "error", durationMs: Date.now() - begin, detail: { error: note } });
+      trace.push({ at, step: "review", round: 1, provider, model: role.model, operation, durationMs: Date.now() - begin, outcome: "error", note, ...failedCall(error), skillVersions: request.skillVersions, effort: request.reasoningEffort });
+      draft2DevTrace({ step: "review", round: 1, provider, model: role.model, operation, phase: "error", durationMs: Date.now() - begin, detail: { error: note } });
       throw error;
     }
   };
@@ -148,14 +166,14 @@ export async function reviewDraft2Carousel({ topicId, storyId, sessionId }: Draf
       const emojis = profile.allowEmojis ? Math.max(0, profile.maxEmojis) : 0;
       const slides = carousel.map(({ slide, label, headline, text, practical, cta }) => ({ slide, label, headline, text, ...(practical ? { practical } : {}), ...(cta ? { cta } : {}) }));
       // 1. The reader: the audience's member, no rubric, the cheap model.
-      const readerBy: FunnelRole = { provider: "openai", model: models.reader };
+      const readerBy = models.reader;
       const reader = composeInstructions("carousel-reader", [], brief);
       const readerAnswer = await call(readerBy, "draft2_review_read", {
         instructions: reader.instructions, contents: { task: "read", slides }, schema: DRAFT2_READER_SCHEMA, maxOutputTokens: READER_MAX_OUTPUT_TOKENS, reasoningEffort: "low", timeoutMs: READER_TIMEOUT_MS, skillVersions: reader.skillVersions,
       });
       const read = parseReaderAnswer(readerAnswer, carousel);
-      // 2. The editor: the whole carousel, the focus, the reader's reactions and the facts; the independent gate by default.
-      const editorBy: FunnelRole = { provider: "openai", model: models.editor };
+      // 2. The editor: the whole carousel, the focus, the reader's reactions and the facts; Claude by default, changing only what must change.
+      const editorBy = models.editor;
       const editor = composeInstructions("carousel-editor", [REVIEW_SKILL, ...creativeSkills(chosen.focus.values)], brief);
       const editorAnswer = await call(editorBy, "draft2_review", {
         instructions: `${editor.instructions}\n\n# Verified facts\n${JSON.stringify(factsSnapshot(facts))}`,
@@ -163,10 +181,10 @@ export async function reviewDraft2Carousel({ topicId, storyId, sessionId }: Draf
         schema: DRAFT2_REVIEW_SCHEMA, maxOutputTokens: EDITOR_MAX_OUTPUT_TOKENS, reasoningEffort: "medium", timeoutMs: EDITOR_TIMEOUT_MS, skillVersions: editor.skillVersions,
       });
       const answer = parseReviewAnswer(editorAnswer, carousel);
-      // 3. The program: a patch that breaks the owning step's rules is refused with the rule, before anyone sees it as a choice.
+      // 3. The program: a patch that breaks the review's own rules or the owning step's is refused with the rule, before anyone sees it as a choice.
       const patches = reviewPatches(answer, carousel).map((patch) => {
         if (patch.status !== "proposed") return patch;
-        const findings = patchFindings(session, chosen, patch, facts, emojis);
+        const findings = [...reviewPatchRules(patch, facts), ...patchFindings(session, chosen, patch, facts, emojis)];
         return findings.length ? { ...patch, status: "refused" as const, note: findings.join(" ") } : patch;
       });
       const now = new Date().toISOString();
@@ -233,7 +251,10 @@ export async function decideDraft2ReviewPatch({ topicId, sessionId, patchId, act
   const review = session.review;
   if (!review?.editor) throw new Draft2InputError("Read the carousel before deciding on its patches.");
   if (review.status === "running") throw new Draft2BusyError("The carousel is being read; decide when the review finishes.");
-  const ids = action === "apply-all" ? review.editor.patches.filter((patch) => patch.status === "proposed").map((patch) => patch.id) : patchId ? [patchId] : [];
+  // The autopilot applies only what must change (truth, repetition, detail); a style patch waits for the editor.
+  const ids = action === "apply-all"
+    ? review.editor.patches.filter((patch) => patch.status === "proposed" && (by !== "autopilot" || REVIEW_NECESSARY_KINDS.includes(patch.kind ?? "style"))).map((patch) => patch.id)
+    : patchId ? [patchId] : [];
   if (!ids.length) {
     if (action === "apply-all") return session;
     throw new Draft2InputError("Name the patch to decide on.");

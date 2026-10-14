@@ -1,5 +1,5 @@
-import { Draft2ResponseError } from "./draft2-facts.types";
-import type { FunnelRole } from "./draft2-funnel";
+import { Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
+import { numbersIn, statedNumbers, type FunnelRole } from "./draft2-funnel";
 import type { Draft2CarouselSlide } from "./draft2-visual.types";
 import type { Draft2OpeningCandidate } from "./draft2-opening.types";
 import type { Draft2ClosingCandidate } from "./draft2-closing.types";
@@ -28,6 +28,17 @@ export const REVIEW_SUMMARY_MAX_CHARACTERS = 600;
 /** The slide texts a patch may replace; the parser keeps only those a slide has. */
 export const REVIEW_PATCH_FIELDS = ["headline", "subheadline", "body", "practical", "cta"] as const;
 export type Draft2ReviewPatchField = (typeof REVIEW_PATCH_FIELDS)[number];
+/**
+ * Why a patch changes a text. The review fixes what must change: a claim the
+ * facts do not carry (truth), a word or a fact repeated without purpose
+ * (repetition), a detail the reader needs that the facts give (detail).
+ * Anything else is style: proposed for the editor, never applied by the
+ * autopilot.
+ */
+export const REVIEW_PATCH_KINDS = ["truth", "repetition", "detail", "style"] as const;
+export type Draft2ReviewPatchKind = (typeof REVIEW_PATCH_KINDS)[number];
+/** The kinds the autopilot applies on its own; a style patch waits for the editor. */
+export const REVIEW_NECESSARY_KINDS: readonly Draft2ReviewPatchKind[] = ["truth", "repetition", "detail"];
 /** The step whose chosen candidate a slide belongs to. */
 export type Draft2ReviewOwner = "opening" | "closing" | "deck";
 
@@ -49,6 +60,8 @@ export type Draft2ReviewPatch = {
   slide: string;
   owner: Draft2ReviewOwner;
   field: Draft2ReviewPatchField;
+  /** Why it changes the text; absent on a patch written before kinds (read as style). */
+  kind?: Draft2ReviewPatchKind;
   /** The slide's text as the review read it; an apply checks it still is. */
   before: string;
   after: string;
@@ -127,8 +140,9 @@ export const DRAFT2_REVIEW_SCHEMA: Record<string, unknown> = {
       type: "array",
       items: {
         type: "object",
-        properties: { slide: { type: "string" }, field: { type: "string" }, before: { type: "string" }, after: { type: "string" }, reason: { type: "string" } },
-        required: ["slide", "field", "before", "after", "reason"],
+        // The kind is a string the parser checks: no enum inside an array, for Claude's compiled grammar.
+        properties: { slide: { type: "string" }, field: { type: "string" }, kind: { type: "string" }, before: { type: "string" }, after: { type: "string" }, reason: { type: "string" } },
+        required: ["slide", "field", "kind", "before", "after", "reason"],
         additionalProperties: false,
       },
     },
@@ -270,9 +284,11 @@ export function parseReviewAnswer(answer: string, carousel: readonly Draft2Carou
     const before = typeof patch.before === "string" ? patch.before.trim() : "";
     const after = text(patch.after, REVIEW_PATCH_MAX_CHARACTERS);
     const reason = clip(patch.reason, REVIEW_LINE_MAX_CHARACTERS);
+    // A patch that names no kind the review knows claims no necessity: it is style.
+    const kind = REVIEW_PATCH_KINDS.find((entry) => entry === (typeof patch.kind === "string" ? patch.kind.trim().toLowerCase() : "")) ?? "style";
     if (!slide || !field || !slideFields(slide).includes(field) || !after || !reason) continue;
     if (patches.some((existing) => existing.slide === slide.slide && existing.field === field)) continue;
-    patches.push({ slide: slide.slide, field, before, after, reason });
+    patches.push({ slide: slide.slide, field, kind, before, after, reason });
   }
   return {
     scores: { ...Object.fromEntries(REVIEW_CRITERIA.map((criterion) => [criterion, value(criterion)])), overall: value("overall") } as Draft2ReviewScore,
@@ -294,6 +310,24 @@ export function reviewPatches(answer: Draft2ReviewAnswer, carousel: readonly Dra
     if (sameWords(patch.after, current)) return { ...base, status: "refused", note: "The replacement is the same text." };
     return base;
   });
+}
+
+/**
+ * The review's own rules on a patch, beside the owning step's: the cover's
+ * headline passed the Opening's gate, so the review changes it only to fix a
+ * fact; and a patch never drops a figure the facts give (a date, a time, a
+ * price), the reader's plan. Each broken rule is a line.
+ */
+export function reviewPatchRules(patch: Pick<Draft2ReviewPatch, "slide" | "field" | "kind" | "before" | "after">, facts: readonly Draft2Fact[]): string[] {
+  const rules: string[] = [];
+  if (patch.slide === "cover" && patch.field === "headline" && patch.kind !== "truth") {
+    rules.push("The cover's headline passed the Opening's gate: the review changes it only to fix a fact; a missing name or detail goes in the subheadline.");
+  }
+  const stated = statedNumbers(facts);
+  const kept = new Set(numbersIn(patch.after).map((number) => number.digits));
+  const dropped = [...new Set(numbersIn(patch.before).filter((number) => stated.has(number.digits) && !kept.has(number.digits)).map((number) => number.written))];
+  if (dropped.length) rules.push(`It drops ${dropped.join(", ")}, which the facts give: a patch keeps the dates, times and prices a slide carries.`);
+  return rules;
 }
 
 /** The opening with one of its texts replaced. */

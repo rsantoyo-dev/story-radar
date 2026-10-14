@@ -55,8 +55,15 @@ const EDITOR = {
 
 type Row = Record<string, unknown> & { review: Draft2Review | null; trace: types.Draft2TraceEntry[]; updatedAt: Date };
 
-function harness({ session, reader = READER, editor = EDITOR, env = { OPENAI_API_KEY: "sk-test" } }: { session?: Record<string, unknown>; reader?: unknown; editor?: unknown; env?: Record<string, string> } = {}) {
+function harness({ session, reader = READER, editor = EDITOR, env = { OPENAI_API_KEY: "sk-test", ANTHROPIC_API_KEY: "ak-test" } }: { session?: Record<string, unknown>; reader?: unknown; editor?: unknown; env?: Record<string, string> } = {}) {
   const calls: Record<string, unknown>[] = [];
+  /** The reader's and the editor's answers, whichever provider is asked; each call is kept with its provider. */
+  const respond = async (provider: string, input: Record<string, unknown>) => {
+    calls.push({ ...input, provider });
+    const answer = input.schemaName === "draft2_review_read" ? reader : editor;
+    if (answer instanceof Error) throw answer;
+    return { text: JSON.stringify(answer), usage: { promptTokens: 300, outputTokens: 120, thoughtsTokens: 0, totalTokens: 420 }, cachedInputTokens: 0 };
+  };
   let row: Row = { id: sessionId, topicId, storyId, step: "deck", status: "needs-review", facts, focus: { status: "ready", version: 2, values: VALUES, edited: [], lineOptions: [] }, opening: OPENING, closing: CLOSING, deck: DECK, review: null, error: null, trace: [], updatedAt: new Date(), ...session };
   const mocks: Record<string, unknown> = {
     "server-only": {},
@@ -66,12 +73,12 @@ function harness({ session, reader = READER, editor = EDITOR, env = { OPENAI_API
     "./draft2-dev-trace": { draft2DevTrace: () => undefined },
     "../stories/creative-text-meter": { withCreativeTextBudget: async (_context: unknown, work: () => Promise<unknown>) => work() },
     "../stories/creative-profile.repository": { getCreativeProfile: async () => profile },
-    "../stories/openai-structured-response": { generateOpenAiStructuredResponse: async (input: Record<string, unknown>) => {
-      calls.push(input);
-      const answer = input.schemaName === "draft2_review_read" ? reader : editor;
-      if (answer instanceof Error) throw answer;
-      return { text: JSON.stringify(answer), usage: { promptTokens: 300, outputTokens: 120, thoughtsTokens: 0, totalTokens: 420 }, cachedInputTokens: 0 };
-    } },
+    "../stories/openai-structured-response": { generateOpenAiStructuredResponse: async (input: Record<string, unknown>) => respond("openai", input) },
+    "../stories/anthropic-structured-response": { generateAnthropicStructuredResponse: async (input: Record<string, unknown>) => respond("anthropic", input) },
+    "../stories/anthropic.config": {
+      getAnthropicRuntimeConfig: () => ({ model: "claude-sonnet-5-5", ...(env.ANTHROPIC_API_KEY ? { apiKey: env.ANTHROPIC_API_KEY } : {}) }),
+      requireAnthropicApiKey: () => { if (!env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY is not configured."); return env.ANTHROPIC_API_KEY; },
+    },
     "./draft2-session.repository": {
       activeDraft2Session: async () => undefined,
       getDraft2Session: async (topic: string, id: string) => topic === topicId && id === row.id ? row : undefined,
@@ -84,7 +91,7 @@ function harness({ session, reader = READER, editor = EDITOR, env = { OPENAI_API
   return {
     review: () => (exports.reviewDraft2Carousel as (input: unknown) => Promise<Row>)({ topicId, storyId, sessionId }),
     decide: (action: string, patchId?: string, by?: string) => (exports.decideDraft2ReviewPatch as (input: unknown) => Promise<Row>)({ topicId, sessionId, patchId, action, by }),
-    models: () => (exports.reviewModels as (env: Record<string, string>) => { reader: string; editor: string })(env),
+    models: () => (exports.reviewModels as (env: Record<string, string>) => { reader: { provider: string; model: string }; editor: { provider: string; model: string } })(env),
     calls,
     row: () => row,
   };
@@ -101,16 +108,17 @@ test("the review reads the chosen carousel: a reader of the audience first, then
   assert.match(String(readerCall.instructions), /^You are one reader of the publication described below/);
   assert.equal("review" in (readerCall.instructions as string ? {} : {}), false);
   assert.doesNotMatch(String(readerCall.instructions), /# Reviewing a carousel/, "the reader knows no rubric");
-  assert.equal(json([editorCall.schemaName, editorCall.model, editorCall.reasoningEffort]), json(["draft2_review", "gpt-6.1-sol", "medium"]), "the editor is Sol by default: the independent gate");
-  assert.match(String(editorCall.instructions), /You are the demanding editor of a finished social carousel[^]*# Reviewing a carousel[^]*# Verified facts/);
+  assert.equal(json([editorCall.provider, editorCall.schemaName, editorCall.model, editorCall.effort]), json(["anthropic", "draft2_review", "claude-sonnet-5-5", "medium"]), "the editor is Claude by default: a last polish that changes only what must change");
+  assert.match(String(editorCall.instructions), /You are the careful editor of a finished social carousel[^]*# Reviewing a carousel[^]*# Verified facts/);
   const contents = editorCall.contents as { task: string; slides: { slide: string }[]; reader: { verdict: string }; focus: { audience: string } };
   assert.equal(json([contents.task, contents.slides.length, contents.reader.verdict, contents.focus.audience]), json(["review", 6, "I would go.", "Families in Vieux-Longueuil"]));
   assert.equal(json(review.reader?.reactions.map((reaction) => reaction.swipe)), json([true, true, true, false, true, true]));
   assert.equal(json([review.editor?.verdict, review.editor?.scores.overall, review.editor?.strengths]), json(["patch", 87, ["The roof pays the wait."]]));
   assert.equal(json(review.editor?.patches.map((patch) => [patch.id, patch.owner, patch.status])), json([["p1", "opening", "proposed"], ["p2", "opening", "refused"], ["p3", "deck", "refused"]]));
-  assert.match(review.editor!.patches[1].note ?? "", /headline/i, "a cover headline over eight words breaks the opening's rule");
+  assert.match(review.editor!.patches[1].note ?? "", /passed the Opening's gate[^]*headline has/i, "a style patch on the cover's headline breaks the review's rule, and one over eight words the opening's");
+  assert.equal(json(review.editor?.patches.map((patch) => patch.kind)), json(["style", "style", "style"]), "a patch that names no kind claims no necessity");
   assert.match(review.editor!.patches[2].note ?? "", /quoted "Tools for grown hands\."/);
-  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.outcome, entry.effort, entry.skillVersions])), json([["review", "draft2_review_read", "ok", "low", {}], ["review", "draft2_review", "ok", "medium", { review: "2" }]]));
+  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.outcome, entry.effort, entry.skillVersions])), json([["review", "draft2_review_read", "ok", "low", {}], ["review", "draft2_review", "ok", "medium", { review: "3" }]]));
 });
 
 test("a patch applied edits the chosen version in place, in its step and in the copies the later steps keep; the review keeps what it replaced, and an undo restores it", async () => {
@@ -137,11 +145,13 @@ test("a patch applied edits the chosen version in place, in its step and in the 
   await assert.rejects(h.decide("undo", "p1"), /not applied/);
 });
 
-test("apply-all applies every proposed patch for the autopilot and nothing else; a carousel that changed since the reading refuses a patch", async () => {
-  const h = harness({ editor: { ...EDITOR, patches: [EDITOR.patches[0], { slide: "last", field: "cta", before: "Save this for Saturday.", after: "Save this for the weekend.", reason: "Wider." }] } });
+test("the autopilot applies only what must change (truth, repetition, detail); a style patch waits, and the editor's apply-all takes it; a carousel that changed since the reading refuses a patch", async () => {
+  const h = harness({ editor: { ...EDITOR, patches: [{ ...EDITOR.patches[0], kind: "style" }, { slide: "last", field: "cta", kind: "repetition", before: "Save this for Saturday.", after: "Save this for the weekend.", reason: "Saturday is said twice." }] } });
   await h.review();
-  const all = await h.decide("apply-all", undefined, "autopilot");
-  assert.equal(json(all.review!.editor!.patches.map((patch) => [patch.status, patch.appliedBy])), json([["applied", "autopilot"], ["applied", "autopilot"]]));
+  const automatic = await h.decide("apply-all", undefined, "autopilot");
+  assert.equal(json(automatic.review!.editor!.patches.map((patch) => [patch.kind, patch.status, patch.appliedBy ?? null])), json([["style", "proposed", null], ["repetition", "applied", "autopilot"]]));
+  const all = await h.decide("apply-all", undefined, "editor");
+  assert.equal(json(all.review!.editor!.patches.map((patch) => [patch.status, patch.appliedBy])), json([["applied", "editor"], ["applied", "autopilot"]]), "the editor's apply-all takes the style patch too");
   assert.equal((all.closing as { candidates: { last: { cta: string } }[] }).candidates[0].last.cta, "Save this for the weekend.");
   assert.equal((all.deck as { closing: { last: { cta: string } } }).closing.last.cta, "Save this for the weekend.", "the deck's copy of the closing follows");
   assert.equal((await h.decide("apply-all", undefined, "autopilot")).review!.version, all.review!.version, "nothing left to apply changes nothing");
@@ -160,5 +170,25 @@ test("the review needs a finished, consistent carousel and the OpenAI key; a fai
   assert.equal(json([row.status, row.review?.status, row.step]), json(["failed", "failed", "review"]));
   assert.match(String(row.review?.error), /HTTP 429/);
   assert.equal(row.trace[row.trace.length - 1].outcome, "error");
-  assert.equal(json(harness({ env: { OPENAI_API_KEY: "k", DRAFT2_MODEL_JUDGE: "gpt-6-luna", DRAFT2_MODEL_REVIEW_JUDGE: "gpt-6-astra" } }).models()), json({ reader: "gpt-6-luna", editor: "gpt-6-astra" }), "the editor's model is the review's own knob, never the cheap judge by accident");
+  await assert.rejects(harness({ env: { OPENAI_API_KEY: "k" } }).review(), /ANTHROPIC_API_KEY is not configured/, "Claude edits by default");
+  assert.equal(json(harness().models()), json({ reader: { provider: "openai", model: "gpt-6-luna" }, editor: { provider: "anthropic", model: "claude-sonnet-5-5" } }));
+  assert.equal(json(harness({ env: { OPENAI_API_KEY: "k", DRAFT2_MODEL_JUDGE: "gpt-6-luna", DRAFT2_MODEL_REVIEW_JUDGE: "gpt-6.1-sol" } }).models()), json({ reader: { provider: "openai", model: "gpt-6-luna" }, editor: { provider: "openai", model: "gpt-6.1-sol" } }), "the editor's model is the review's own knob, Sol again by name; never the cheap judge by accident");
+});
+
+test("the review's own rules: the cover's headline changes only for truth, and no patch drops a figure the facts give", () => {
+  const rules = (patch: Record<string, unknown>) => reviewTypes.reviewPatchRules({ slide: "cover", field: "headline", kind: "style", before: "The library opens its doors again", after: "The library reopens", ...patch } as never, facts);
+  assert.match(rules({}).join(" "), /passed the Opening's gate/);
+  assert.deepEqual(rules({ kind: "truth" }), [], "a fact to fix may touch the hook");
+  assert.deepEqual(rules({ field: "subheadline" }), [], "the subheadline is where a missing name goes");
+  const withFigures = [...facts, { id: "f4", claim: "The fair runs Saturday 17 October, from 18h to 2h.", evidence: "Saturday 17 October, from 18h to 2h", kind: "date", status: "established", importance: 80 } as types.Draft2Fact];
+  const closing = { slide: "last", field: "body", kind: "repetition", before: "Saturday 17 October, from 18h to 2h, shops stay open later.", after: "Shops stay open later." };
+  assert.match(reviewTypes.reviewPatchRules(closing as never, withFigures).join(" "), /drops 17, 18, 2, which the facts give/);
+  assert.deepEqual(reviewTypes.reviewPatchRules({ ...closing, after: "Saturday 17 October, 18h to 2h. Shops stay open later too." } as never, withFigures), [], "the plan kept, the ambiguity fixed");
+  assert.deepEqual(reviewTypes.reviewPatchRules({ ...closing, before: "Over 300 stands, shops stay open later.", after: "Shops stay open later." } as never, withFigures), [], "a figure no fact gives may go");
+});
+
+test("a patch's kind is read in any case; one the review does not know is style", async () => {
+  const h = harness({ editor: { ...EDITOR, patches: [{ ...EDITOR.patches[0], kind: " Truth " }, { slide: "last", field: "cta", kind: "vibe", before: "Save this for Saturday.", after: "Save it for Saturday.", reason: "Softer." }] } });
+  const session = await h.review();
+  assert.equal(json(session.review!.editor!.patches.map((patch) => [patch.kind, patch.status])), json([["truth", "proposed"], ["style", "proposed"]]));
 });

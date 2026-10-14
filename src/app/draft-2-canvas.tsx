@@ -2606,7 +2606,7 @@ function ReviewView({ review, current, saving, locked, onDecide }: {
     {editor?.patches.length ? <>
       <p className={styles.factMeta}><strong>Patches</strong> · {proposedPatches(review).length} to decide</p>
       <ol>{editor.patches.map((patch) => <li key={patch.id} className={styles.focusField}>
-        <p><strong>{patch.slide} · {patch.field}</strong> · {patch.status}{patch.appliedBy ? ` by the ${patch.appliedBy}` : ""}</p>
+        <p><strong>{patch.slide} · {patch.field}</strong>{patch.kind ? ` · ${patch.kind}` : ""} · {patch.status}{patch.appliedBy ? ` by the ${patch.appliedBy}` : ""}{patch.status === "proposed" && (patch.kind ?? "style") === "style" ? " · the autopilot leaves style to you" : ""}</p>
         <p><del>{patch.before}</del></p>
         <p><ins>{patch.after}</ins></p>
         <p className={styles.factMeta}>{patch.reason}{patch.note ? ` · ${patch.note}` : ""}</p>
