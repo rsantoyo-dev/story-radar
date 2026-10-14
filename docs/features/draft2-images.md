@@ -367,3 +367,13 @@ model, which can only draw another map.
   model the card is pasted by the program and never to draw a map itself.
 - **Words covered by a pasted photo or map** now ask for a new image
   (`rework`): an edit keeps the words where they were.
+
+## 15. The editor casts each image (2026-10-14)
+
+"Another image" on a slide that does not rest on verified material shows the
+brand's characters as checkboxes ("Brand characters in this image"),
+preselected with the slide's cast; the request sends `characterIds` with
+the regenerate action, `editorCast` checks them against the inventory's
+roster, and the slide keeps the new cast, whose reference images go with the
+request (a new image or an edit). What they do goes in "What to change"
+("Jo dances the line dance").

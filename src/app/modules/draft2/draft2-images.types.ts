@@ -449,7 +449,7 @@ export function imagesNote(slides: readonly Draft2SlideImage[]): string | undefi
 
 /** The editor's decisions: another image of a slide (optionally an edit of the one shown), or the version a slide shows. */
 export type Draft2ImagesAction =
-  | { action: "regenerate"; slide: string; instruction?: string; edit: boolean }
+  | { action: "regenerate"; slide: string; instruction?: string; edit: boolean; characterIds?: string[] }
   | { action: "choose"; slide: string; version: number }
   | { action: "map"; slide: string; position: MapPanelPosition };
 
@@ -467,7 +467,9 @@ export function parseImagesAction(value: unknown): Draft2ImagesAction {
     const instruction = typeof body.instruction === "string" ? oneLine(body.instruction) : "";
     if (instruction.length > IMAGE_INSTRUCTION_MAX_CHARACTERS) throw new Draft2InputError(`Keep the instruction under ${IMAGE_INSTRUCTION_MAX_CHARACTERS} characters.`);
     if (body.edit === true && !instruction) throw new Draft2InputError("Say what to change in the image.");
-    return { action: "regenerate", slide, ...(instruction ? { instruction } : {}), edit: body.edit === true };
+    // The editor's cast for this image, checked against the brand's characters where the session is read.
+    const characterIds = Array.isArray(body.characterIds) ? body.characterIds.filter((entry): entry is string => typeof entry === "string") : undefined;
+    return { action: "regenerate", slide, ...(instruction ? { instruction } : {}), edit: body.edit === true, ...(characterIds ? { characterIds } : {}) };
   }
   if (body.action === "map") {
     const position = MAP_PANEL_POSITIONS.find((entry) => entry === body.position);

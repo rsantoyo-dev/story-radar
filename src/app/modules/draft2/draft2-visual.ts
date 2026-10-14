@@ -4,9 +4,10 @@ import { DRAFT2_VISUAL_ROLES } from "./draft2-models";
 import { Draft2InputError } from "./draft2-facts.types";
 import { focusForModels, focusNarrative, visualFocus, type Draft2FocusSnapshot } from "./draft2-focus.types";
 import { funnelVersions } from "./draft2-funnel";
+import { getDraft2Session, updateDraft2Session } from "./draft2-session.repository";
 import { inventoryForModels, type Draft2CharacterChoice, type Draft2Inventory } from "./draft2-inventory.types";
 import {
-  VISUAL_GATE, avoidTerms, carouselSlides, mechanicalVisualIssues, parseVisualCandidates, parseVisualEvaluation, sameVisual, visualEvaluationSchema, visualExploreRequest,
+  VISUAL_GATE, avoidTerms, carouselSlides, editorCast, mechanicalVisualIssues, parseVisualCandidates, parseVisualEvaluation, sameVisual, visualEvaluationSchema, visualExploreRequest,
   visualJudgeRequest, visualLayout, visualModeLine, visualPlan, visualRefineRequest, visualSchema,
   type Draft2CarouselSlide, type Draft2Visual, type Draft2VisualCandidate, type Draft2VisualCharacter, type Draft2VisualIssue, type Draft2VisualMode, type Draft2VisualScore,
 } from "./draft2-visual.types";
@@ -115,4 +116,29 @@ export function runDraft2Visual(input: FunnelStepInput): Promise<Draft2SessionRo
 /** Records the editor's pick among every script the run scored, beside the judge's scores. */
 export function recordVisualChoice(input: { topicId: string; sessionId: string; candidateId: string }): Promise<Draft2SessionRow> {
   return recordFunnelChoice(VISUAL_STEP, input);
+}
+
+/**
+ * The editor's cast on one slide of the chosen visual script (editorCast):
+ * the chosen version is edited where the run keeps it, so the next images
+ * run reads it. Images already made keep theirs; the Images step casts each
+ * new image on its own.
+ */
+export async function editVisualCharacters({ topicId, sessionId, slide, characterIds }: { topicId: string; sessionId: string; slide: string; characterIds: unknown }): Promise<Draft2SessionRow> {
+  const session = await getDraft2Session(topicId, sessionId);
+  if (!session) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
+  const visual = session.visual;
+  if (!visual || visual.status === "running" || visual.status === "paused") throw new Draft2InputError("Finish the visual script first.");
+  const chosenId = visual.editorChoiceId ?? visual.winnerId;
+  const chosen = chosenId ? funnelVersions(visual.rounds).find((version) => version.candidate.id === chosenId)?.candidate : undefined;
+  if (!chosen) throw new Draft2InputError("Choose a visual script first.");
+  const target = chosen.slides.find((entry) => entry.slide === slide);
+  if (!target) throw new Draft2InputError(`${slide} is not one of this script's slides.`);
+  const cast = editorCast(characterIds, session.inventory?.roster ?? [], target.need);
+  const candidate: Draft2VisualCandidate = { ...chosen, slides: chosen.slides.map((entry) => entry.slide === slide ? { ...entry, characterIds: cast } : entry) };
+  const replace = (entry: Draft2VisualCandidate) => entry.id === candidate.id ? candidate : entry;
+  const edited: Draft2Visual = { ...visual, rounds: visual.rounds.map((round) => ({ ...round, candidates: round.candidates.map(replace) })), candidates: visual.candidates.map(replace) };
+  const updated = await updateDraft2Session(session.id, { visual: edited });
+  if (!updated) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
+  return updated;
 }

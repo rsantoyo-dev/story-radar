@@ -340,3 +340,28 @@ day in the data (Salut St-Jean and Salut Brossard, the old values kept in
 the session's scratch backup), with the "anonymous people" allowance
 limited to everyday activities in neutral settings. v1's prompt opener no
 longer offers "a photorealistic scene": the identity sets the medium.
+
+## Brand characters on any slide, chosen by the editor (2026-10-14)
+
+The editor wants the brand's characters (Jo for Salut St-Jean; two for Hello
+Austin) selectable on each image, in the visual script and in the images,
+not only as the carousel's narrator: "a veces no quiero que sea el narrador,
+ella podría ser la que baila"; and preselected by the AI now and then, when
+the image merits it.
+
+- **Visuals skill v7:** a character may take part in one slide's action
+  (the reader's stand-in dancing the line dance, tasting, trying the thing)
+  without narrating, two on a slide when the brand has two, within the
+  brand's rules on its characters: its own reference style in the graphic
+  area, never inserted into a documentary photograph, never as if it
+  attended the real event or stood at a named place, never on a slide that
+  rests on a verified photo or map.
+- **The program** no longer flags a character cast on a slide without a
+  narrator plan (CHARACTER_OFF_PLAN keeps only a planned narrator who never
+  appears); the editor's characterChoice still wins ("off": none).
+- **The editor's cast** (`editorCast`): the brand's characters with a
+  reference image, each once, at most two, none on verified material; an
+  empty list takes them off. On the chosen script, "Brand characters per
+  image" under the Visual script edits the chosen version in place
+  (`editVisualCharacters`, PATCH visual `{ slide, characterIds }`); the next
+  images run reads it. Images already made keep their cast.

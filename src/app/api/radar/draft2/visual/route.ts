@@ -1,7 +1,7 @@
 import { authorizeRadarCollector } from "@/app/api/radar/radar-api-auth";
 import { requireActiveRequestTopic } from "@/app/api/radar/radar-topic";
 import { noStoreJson } from "@/app/api/radar/creative-route-error";
-import { recordVisualChoice, runDraft2Visual } from "@/app/modules/draft2/draft2-visual";
+import { editVisualCharacters, recordVisualChoice, runDraft2Visual } from "@/app/modules/draft2/draft2-visual";
 import { DRAFT2_UUID_PATTERN, draft2ErrorResponse } from "../draft2-route";
 
 export const runtime = "nodejs";
@@ -35,10 +35,20 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   const denied = await authorizeRadarCollector(request);
   if (denied) return denied;
-  const body = await request.json().catch(() => null) as { sessionId?: unknown; candidateId?: unknown } | null;
+  const body = await request.json().catch(() => null) as { sessionId?: unknown; candidateId?: unknown; slide?: unknown; characterIds?: unknown } | null;
   const sessionId = typeof body?.sessionId === "string" ? body.sessionId : "";
   const candidateId = typeof body?.candidateId === "string" ? body.candidateId : "";
   if (!DRAFT2_UUID_PATTERN.test(sessionId)) return noStoreJson({ error: "sessionId must be a valid UUID" }, 400);
+  // The editor's cast on one slide of the chosen script, or the editor's choice of script.
+  if (typeof body?.slide === "string") {
+    if (!/^[a-z0-9]{1,24}$/i.test(body.slide)) return noStoreJson({ error: "slide names a slide, such as s2" }, 400);
+    try {
+      const topicId = await requireActiveRequestTopic(request);
+      return noStoreJson({ session: await editVisualCharacters({ topicId, sessionId, slide: body.slide, characterIds: body.characterIds }) });
+    } catch (error) {
+      return draft2ErrorResponse(error, "cast the slide's characters");
+    }
+  }
   if (!CANDIDATE_ID_PATTERN.test(candidateId)) return noStoreJson({ error: "candidateId must name a candidate, such as c3" }, 400);
   try {
     const topicId = await requireActiveRequestTopic(request);

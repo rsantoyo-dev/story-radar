@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Draft2ResponseError } from "./draft2-facts.types";
-import {
+import { editorCast,
   forbiddenElement,
   VISUAL_CRITERIA, VISUAL_LONG_PLAN, VISUAL_PLAN, avoidTerms, carouselSlides, deckCarousel, mechanicalVisualIssues, parseVisualCandidates, parseVisualEvaluation, sameCarouselWords, sameVisual,
   visualExploreRequest, visualJudgeRequest, visualLayout, visualModeLine, visualPlan, visualRefineRequest, visualSchema,
@@ -146,9 +146,10 @@ test("a clean script has no finding; it has one slide per carousel slide, in ord
   assert.deepEqual(findings(withSlide("s1", { beat: "" })), ["BEAT_MISSING c1 s1"]);
 });
 
-test("characters come from the roster, follow the plan and the editor's choice, and stay off slides that rest on verified material", () => {
-  assert.deepEqual(findings(withSlide("s1", { characterIds: ["char-jo"], need: "character-reference" })), ["CHARACTER_UNKNOWN c1", "CHARACTER_OFF_PLAN c1"]);
-  assert.deepEqual(findings(script("c1", { characterPlan: { use: false, characterIds: [], role: "" } })), ["CHARACTER_OFF_PLAN c1", "CHARACTER_OFF_PLAN c1"]);
+test("characters come from the roster, follow the editor's choice, may take part in a slide without narrating, and stay off slides that rest on verified material", () => {
+  assert.deepEqual(findings(withSlide("s1", { characterIds: ["char-jo"], need: "character-reference" })), ["CHARACTER_UNKNOWN c1"]);
+  assert.deepEqual(findings(script("c1", { characterPlan: { use: false, characterIds: [], role: "" } })), [], "a character in one slide's action, with no narrator, is a participant");
+  assert.deepEqual(findings(script("c1", { slides: script("c1").slides.map((entry) => ({ ...entry, characterIds: [], need: "generic-illustration" as const })) })), ["CHARACTER_OFF_PLAN c1"], "a narrator the plan names must appear");
   assert.deepEqual(findings(script("c1"), { characterChoice: "off" }), ["CHARACTER_CHOICE c1"]);
   const noCharacter = script("c1", { characterPlan: { use: false, characterIds: [], role: "" }, slides: script("c1").slides.map((entry) => ({ ...entry, characterIds: [], need: "generic-illustration" as const })) });
   assert.deepEqual(findings(noCharacter), []);
@@ -281,4 +282,14 @@ test("the carousel as it stands, and whether a script's words are still its word
   assert.ok(!sameCarouselWords(carousel, carousel.map((slide) => slide.slide === "last" ? { ...slide, cta: "Save this." } : slide)), "a patched call to action");
   assert.ok(!sameCarouselWords(carousel, carousel.map((slide) => slide.slide === "s1" ? { ...slide, practical: "Sat · 10 a.m." } : slide)), "a patched practical line");
   assert.ok(!sameCarouselWords(carousel, carousel.slice(0, -1)), "a slide fewer");
+});
+
+test("the editor's cast for an image: the brand's characters, each once, at most two, never on a verified photo or map", () => {
+  const roster = [{ id: "char-jo" }, { id: "char-mia" }, { id: "char-leo" }];
+  assert.deepEqual(editorCast(["char-jo", "char-jo"], roster, "generic-illustration"), ["char-jo"]);
+  assert.deepEqual(editorCast([], roster, "real-photo"), [], "taking every character off is always possible");
+  assert.throws(() => editorCast(["char-zed"], roster, "generic-illustration"), /char-zed is not one of the brand's characters/);
+  assert.throws(() => editorCast(["char-jo", "char-mia", "char-leo"], roster, "generic-illustration"), /At most 2 characters/);
+  assert.throws(() => editorCast(["char-jo"], roster, "verified-map"), /stay off it/);
+  assert.throws(() => editorCast("char-jo", roster, "generic-illustration"), /list of their ids/);
 });

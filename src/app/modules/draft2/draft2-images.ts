@@ -60,6 +60,7 @@ import { anchorNoun, type Draft2FocusNarrative, type Draft2FocusValues } from ".
 import { resolveCreativeVisualGuidance } from "../stories/creative-visual-guidance";
 import type { Draft2Inventory, Draft2InventoryEntity } from "./draft2-inventory.types";
 import type { Draft2CarouselSlide, Draft2VisualCandidate } from "./draft2-visual.types";
+import { editorCast } from "./draft2-visual.types";
 import { brandBrief, composeInstructions } from "./skills/draft2-skills";
 import { IMAGES_SKILL } from "./skills/images";
 import type { Draft2SessionRow } from "@/db/schema";
@@ -898,7 +899,9 @@ export async function editDraft2Images({ topicId, sessionId, input }: { topicId:
   const slide = images.slides.find((entry) => entry.slide === action.slide);
   if (!slide) throw new Draft2InputError(`${action.slide} is not one of this carousel's slides.`);
   const now = new Date();
-  const changed = action.action === "choose" ? chosenSlide(slide, action.version) : action.action === "map" ? movedMapSlide(slide, action.position, now) : regeneratedSlide(slide, action, now);
+  // The editor's cast for the next image of this slide, when they name one: the brand's characters, at most two, never on verified material.
+  const cast = action.action === "regenerate" && action.characterIds ? { ...slide, characterIds: editorCast(action.characterIds, session.inventory?.roster ?? [], slide.need) } : slide;
+  const changed = action.action === "choose" ? chosenSlide(slide, action.version) : action.action === "map" ? movedMapSlide(slide, action.position, now) : regeneratedSlide(cast, action, now);
   const slides = images.slides.map((entry) => entry === slide ? changed : entry);
   const settled = slides.every(slideSettled);
   const status = settled ? settledStatus(slides) : "paused";

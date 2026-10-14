@@ -124,6 +124,7 @@ function harness({ writes, judgments, session }: { writes: ((contents: Contents,
   return {
     run: (options: { resume?: boolean } = {}) => exports.runDraft2Visual({ topicId, storyId, sessionId, ...options }),
     choose: (candidateId: string) => exports.recordVisualChoice({ topicId, sessionId, candidateId }),
+    cast: (slide: string, characterIds: unknown) => exports.editVisualCharacters({ topicId, sessionId, slide, characterIds }),
     calls,
     judgeCalls: () => calls.filter((call) => call.role === "judge").map((call) => call.input.contents as Contents),
     row: () => row,
@@ -143,7 +144,7 @@ test("Claude scripts the chosen carousel and Sol judges it; both read the focus,
   assert.match(String(claude.input.instructions), /# The publication[^]*# Visual identity\nSALUT LONGUEUIL — CREATIVE IDENTITY[^]*- Visual mode: illustration-editorial\./);
   assert.ok(String(claude.input.instructions).includes(visuals.VISUALS_SKILL.text));
   assert.equal(json([(claude.input.contents as Contents).candidatesWanted, claude.input.effort, (sol.input.contents as Contents).proposalsWanted, sol.input.reasoningEffort]), json([2, "medium", 1, "medium"]));
-  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.skillVersions])), json([["visual", "draft2_visual", { visuals: "6" }], ["visual", "draft2_visual_review", { visuals: "6" }]]));
+  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.skillVersions])), json([["visual", "draft2_visual", { visuals: "7" }], ["visual", "draft2_visual_review", { visuals: "7" }]]));
   const visual = session.visual!;
   assert.equal(json([session.status, visual.status, visual.winnerId, visual.deckId, visual.inventoryVersion, visual.characterChoice, visual.mode, visual.carousel?.length]), json(["ready", "ready", "c2", "c3", 4, "auto", "illustration-editorial", 6]));
 });
@@ -208,4 +209,20 @@ test("the editor can choose any script of the run", async () => {
   const h = harness({ writes: [writer()], judgments: [judge("accept", "c1", { c1: 96 })] });
   await h.run();
   assert.equal((await h.choose("c2")).visual?.editorChoiceId, "c2");
+});
+
+test("the editor casts the brand's characters on a slide of the chosen script, in place where the run keeps it; a verified slide keeps them off", async () => {
+  const h = harness({ writes: [writer()], judgments: [judge("accept", "c2", { c2: 96 })] });
+  const session = await h.run();
+  const chosenId = session.visual!.editorChoiceId ?? session.visual!.winnerId!;
+  const chosen = funnel.funnelVersions(session.visual!.rounds).find((version) => version.candidate.id === chosenId)!.candidate as visualTypes.Draft2VisualCandidate;
+  const target = chosen.slides.find((slide) => slide.need !== "real-photo" && slide.need !== "verified-map")!;
+  const cast = await h.cast(target.slide, ["char-mia"]);
+  const edited = funnel.funnelVersions(cast.visual!.rounds).find((version) => version.candidate.id === chosenId)!.candidate as visualTypes.Draft2VisualCandidate;
+  assert.equal(json(edited.slides.find((slide) => slide.slide === target.slide)!.characterIds), json(["char-mia"]));
+  assert.equal(json((cast.visual!.candidates.find((candidate) => candidate.id === chosenId) as visualTypes.Draft2VisualCandidate | undefined)?.slides.find((slide) => slide.slide === target.slide)?.characterIds ?? ["char-mia"]), json(["char-mia"]), "the run's last candidates follow");
+  const off = await h.cast(target.slide, []);
+  assert.equal(json((funnel.funnelVersions(off.visual!.rounds).find((version) => version.candidate.id === chosenId)!.candidate as visualTypes.Draft2VisualCandidate).slides.find((slide) => slide.slide === target.slide)!.characterIds), json([]));
+  await assert.rejects(h.cast(target.slide, ["char-zed"]), /char-zed is not one of the brand's characters/);
+  await assert.rejects(h.cast("s9", ["char-mia"]), /s9 is not one of this script's slides/);
 });

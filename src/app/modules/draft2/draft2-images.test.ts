@@ -426,6 +426,23 @@ test("the editor moves a map card to another corner: a new image is made around 
   await assert.rejects(h.decide({ action: "map", slide: "cover", position: "top-right" }), /has no verified map card to move/);
 });
 
+test("the editor casts the brand's characters on a slide's next image: their references go with the request, and taking them off leaves none; an unknown character is refused", async () => {
+  const h = harness();
+  await h.run();
+  const cast = await h.decide({ action: "regenerate", slide: "last", instruction: "Jo dances the line dance", edit: false, characterIds: ["char-jo"] });
+  assert.equal(json(cast.images!.slides[2].characterIds), json(["char-jo"]));
+  await h.run({ resume: true });
+  const last = h.calls.submits.filter((submit) => submit.prompt.startsWith("PROMPT 3:")).at(-1)!;
+  assert.ok(last.files.includes("jo.png"), "Jo's reference image goes with the request");
+  assert.equal(json(h.calls.prompts.filter((entry) => entry.order === 3).at(-1)!.characters), json(["Jo"]));
+  assert.match(last.prompt, /Requested change: "Jo dances the line dance"/);
+  const uncast = await h.decide({ action: "regenerate", slide: "s1", edit: false, characterIds: [] });
+  assert.equal(json(uncast.images!.slides[1].characterIds), json([]));
+  await h.run({ resume: true });
+  assert.ok(!h.calls.submits.filter((submit) => submit.prompt.startsWith("PROMPT 2:")).at(-1)!.files.includes("jo.png"), "taken off: no reference");
+  await assert.rejects(h.decide({ action: "regenerate", slide: "s1", edit: false, characterIds: ["char-zed"] }), /char-zed is not one of the brand's characters/);
+});
+
 test("images wait for a finished visual script, and for fal and Sol to be configured", async () => {
   await assert.rejects(harness({ session: { visual: null } }).run(), (error: Error) => error instanceof types.Draft2InputError && /Finish the visual script first/.test(error.message));
   await assert.rejects(harness({ session: { facts: [] } }).run(), /Images build only on verified facts/);

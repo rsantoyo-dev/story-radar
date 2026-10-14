@@ -1,4 +1,4 @@
-import { comparableText } from "./draft2-facts.types";
+import { comparableText, Draft2InputError } from "./draft2-facts.types";
 import type { Draft2FocusSnapshot } from "./draft2-focus.types";
 import {
   funnelEvaluationSchema, funnelExploreRequest, funnelJudgeRequest, funnelParseCandidates, funnelParseEvaluation, funnelRecord, funnelRefineRequest,
@@ -378,6 +378,23 @@ export function avoidTerms(identity: { avoid?: readonly { items: readonly string
 }
 
 /**
+ * The editor's cast for one image: the brand's characters with a reference
+ * image, each once, at most VISUAL_MAX_CHARACTERS_PER_SLIDE, and none on a
+ * slide that rests on a verified photo or map (the brand's character never
+ * stands beside a real person's photo or at a named place). An empty list
+ * takes every character off.
+ */
+export function editorCast(value: unknown, roster: readonly { id: string }[], need: Draft2VisualNeed): string[] {
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) throw new Draft2InputError("Name the characters as a list of their ids.");
+  const ids = [...new Set(value as string[])];
+  const unknown = ids.filter((id) => !roster.some((character) => character.id === id));
+  if (unknown.length) throw new Draft2InputError(`${unknown.join(", ")} ${unknown.length === 1 ? "is" : "are"} not one of the brand's characters with a reference image.`);
+  if (ids.length > VISUAL_MAX_CHARACTERS_PER_SLIDE) throw new Draft2InputError(`At most ${VISUAL_MAX_CHARACTERS_PER_SLIDE} characters on one image.`);
+  if (ids.length && (need === "real-photo" || need === "verified-map")) throw new Draft2InputError("This slide rests on a verified photo or map: the brand's characters stay off it.");
+  return ids;
+}
+
+/**
  * The program's findings on each script, before the judge; any one keeps the
  * script from winning. One slide per carousel position, in order; each
  * direction within its length, with its beat; characters from the Topic's
@@ -417,9 +434,8 @@ export function mechanicalVisualIssues(candidates: readonly Draft2VisualCandidat
     const plan = candidate.characterPlan;
     const used = new Set(candidate.slides.flatMap((slide) => slide.characterIds));
     for (const id of new Set([...plan.characterIds, ...used])) if (!roster.has(id)) add("CHARACTER_UNKNOWN", undefined, `${id} is not one of the Topic's characters with a reference image.`);
-    if (!plan.use && used.size) add("CHARACTER_OFF_PLAN", undefined, "The plan says no character narrates, but slides cast one.");
+    // A character may take part in one slide's action without narrating the carousel; a narrator the plan names must appear.
     if (plan.use && !used.size) add("CHARACTER_OFF_PLAN", undefined, "The plan has a character narrate, but no slide casts one.");
-    for (const id of used) if (!plan.characterIds.includes(id)) add("CHARACTER_OFF_PLAN", undefined, `${id} appears on a slide but is not in the plan.`);
     if (characterChoice === "off" && (plan.use || used.size)) add("CHARACTER_CHOICE", undefined, "The editor chose no character for this story.");
     if (characterChoice === "on" && !used.size) add("CHARACTER_CHOICE", undefined, "The editor chose to have the brand's character narrate.");
     const concept = headlineKey(candidate.concept);
