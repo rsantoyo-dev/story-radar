@@ -757,6 +757,13 @@
       "when": 1791860822881,
       "tag": "0108_hard_sharon_ventura",
       "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1792008522799,
+      "tag": "0109_story_photo_rights",
+      "breakpoints": true
     }
   ]
 }

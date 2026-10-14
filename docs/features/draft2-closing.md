@@ -156,3 +156,9 @@ the slide gives the reader (the plan, the result, the choice), never one
 more item or a fact the slides already told. The visuals skill (v5) treats
 the words as fixed inputs and reports such a flaw in the summary for the
 editor, not as OFF_BEAT against the script.
+
+## Closings v3: no verdict on the people a story names (2026-10-14)
+
+The penultimate headline states the answer; the last slide's meaning is
+never a verdict on a named party; the fairness skill joins the writer and
+the judge. See draft2-news-integrity.md.

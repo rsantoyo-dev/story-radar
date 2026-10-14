@@ -5,7 +5,7 @@ import { photoLedVisualDirection, storyReferencePrompt, type StoryGenerationRefe
 
 const reference = (purpose: StoryGenerationReference["purpose"]): StoryGenerationReference => ({
   id: "photo", topicId: "t", storyId: "s", name: "sansonnets", description: "Forest trail in the park", provenance: "Own photo",
-  purpose, objectKey: "private/photo", sha256: "hash", contentType: "image/webp", fileName: "photo.webp", active: true, providerTransmissionAllowed: true,
+  purpose, objectKey: "private/photo", sha256: "hash", contentType: "image/webp", fileName: "photo.webp", active: true, providerTransmissionAllowed: true, publicationRights: "own",
 });
 
 test("an attached place photo takes precedence over symbolic motifs and 'do not depict the real place'", () => {

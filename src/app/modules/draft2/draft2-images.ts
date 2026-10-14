@@ -19,6 +19,7 @@ import { compositeMapPanel, mapInsetVisualDirection, mapPaletteFromBrand, mapPan
 import { requestsGeographicReconstruction, requestsPlacePhotograph } from "../stories/creative-evidence-guardrails";
 import { photoLedVisualDirection, storyReferencePrompt } from "../stories/story-reference-generation";
 import { currentPortraitFocus, loadDocumentaryPortraitPhoto, loadStoryReferenceImages, resolveStoryReferences } from "../stories/manage-story-photos";
+import { publishablePhoto } from "../stories/story-materials.types";
 import { snapshotsForCreativeCharacterIds } from "../stories/creative-characters.repository";
 import { charactersForImageGeneration } from "../stories/creative-character-generation";
 import { listActivatedBrandReferences } from "../stories/creative-brand-references.repository";
@@ -260,10 +261,9 @@ async function imageRequest(ctx: Context, slide: Draft2SlideImage, attempt: Draf
   const map = slide.material.find(isMap);
   const placeEntry = slide.material.find(isPlacePhoto);
   const storyEntries = slide.material.filter(isStoryPhoto);
-  if (pasted && !pasted.sha256) {
-    const [reference] = await resolveStoryReferences(ctx.topicId, ctx.storyId, [{ id: pasted.storyPhotoId, purpose: "documentary-portrait" }]);
-    pasted.sha256 = reference.sha256;
-  }
+  // The photo pasted on the slide, read again: its hash, and whether the publication may still publish it.
+  const pastedReference = pasted ? (await resolveStoryReferences(ctx.topicId, ctx.storyId, [{ id: pasted.storyPhotoId, purpose: "documentary-portrait" }]))[0] : undefined;
+  if (pasted && !pasted.sha256 && pastedReference) pasted.sha256 = pastedReference.sha256;
   if (pasted) attempt.portrait = attemptPortrait(slide, attempt, pasted);
   if (map && !map.panel) {
     map.panel = await mapPanel(ctx, slide, map).catch(() => undefined);
@@ -279,6 +279,9 @@ async function imageRequest(ctx: Context, slide: Draft2SlideImage, attempt: Draf
   const placeFile = placeEntry && !base ? await placePhoto(ctx, placeEntry).catch(() => undefined) : undefined;
   if (placeEntry && !base && !placeFile) note(slide, `The verified photo of ${placeEntry.name} could not be fetched again, so the slide shows a generic scene of its kind.`);
   const storyRefs = storyEntries.length ? await resolveStoryReferences(ctx.topicId, ctx.storyId, storyEntries.map((entry) => ({ id: entry.storyPhotoId, purpose: entry.purpose }))) : [];
+  // A photo the editor declared reference only since the run began is never published, pasted or adapted.
+  const unpublishable = [pastedReference, ...storyRefs].find((reference) => reference && !publishablePhoto(reference.publicationRights));
+  if (unpublishable) throw new Draft2InputError(`${unpublishable.name} is reference only: declare its publication rights in People & places, or make the visual script again without it.`);
   const characters = charactersForImageGeneration(slide.characterIds.flatMap((id) => ctx.characters.get(id) ?? []));
   const campaignCharacters = charactersForImageGeneration([...ctx.characters.values()]);
   // On a map slide the card is the only geography: a direction that mentions a map, a plan or a real view gives way to the scene.

@@ -131,3 +131,9 @@ do it.
   a slide that works, a new fact); the reader's reactions are signals, not
   orders; fewer patches are better. The editor role is "careful", no longer
   "demanding".
+
+## Review v4: fairness and guards (2026-10-14)
+
+A judgement, irony or insinuation about a named party is a truth patch, and
+no patch takes the focus's guards off the cover or slide 2. See
+draft2-news-integrity.md.

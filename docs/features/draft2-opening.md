@@ -767,3 +767,10 @@ was 18): one short line with the one draw that makes the promise credible (a
 date, a price, a count, a limit), never a sentence of details. The images
 step letters the cover with the headline dominant (`COVER_PROMPT`,
 draft2-images.md §13).
+
+## Hooks v8: the cause, exact terms and the guards (2026-10-14)
+
+The cover says the cause of a sanction or ruling when it is the draw, names
+things as the facts do and the place readers recognize; the cover or slide 2
+cites every guard's facts (`GUARD_LATE`) and states them (`MISLEADS`). The
+fairness skill joins the writer and the judge. See draft2-news-integrity.md.

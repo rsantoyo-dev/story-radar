@@ -552,3 +552,9 @@ photo or map; when the story is about people with a portrait, the direction
 says the images show them that way, each on their slides, and never asks
 for faceless or anonymous images of them; a person without a verified
 portrait is never shown.
+
+## Focus v14: guards (2026-10-14)
+
+The plan names the guards: what a reader who stops at the cover could wrongly
+believe and the facts that prevent it, which the opening states on the cover
+or slide 2. See draft2-news-integrity.md.

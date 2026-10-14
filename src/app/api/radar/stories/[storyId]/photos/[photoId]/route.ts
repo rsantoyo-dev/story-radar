@@ -1,14 +1,14 @@
 import { authorizeRadarCollector } from "@/app/api/radar/radar-api-auth";
 import { requireActiveRequestTopic, topicRequestErrorResponse } from "@/app/api/radar/radar-topic";
 import { creativeRouteErrorResponse, noStoreJson } from "@/app/api/radar/creative-route-error";
-import { findStoryPhoto, revokeStoryPhoto, setStoryPhotoFocus } from "@/app/modules/stories/story-materials.repository";
+import { findStoryPhoto, revokeStoryPhoto, setStoryPhotoFocus, setStoryPhotoRights } from "@/app/modules/stories/story-materials.repository";
 import { readPrivateR2ImageFile } from "@/app/modules/stories/r2-storage";
-import { parsePhotoFocus, STORY_UUID } from "@/app/modules/stories/story-materials.types";
+import { parsePhotoFocus, parsePhotoRights, STORY_UUID } from "@/app/modules/stories/story-materials.types";
 export const runtime = "nodejs";
 type Context = { params: Promise<{ storyId: string; photoId: string }> };
 export async function GET(request: Request, context: Context) { return handle(request, context, false); }
 export async function DELETE(request: Request, context: Context) { return handle(request, context, true); }
-/** Sets where the photo's subject is ({ focus: { x, y } }), or clears it ({ focus: null }). */
+/** Sets where the photo's subject is ({ focus: { x, y } }) or clears it ({ focus: null }), or declares its publication rights ({ publicationRights }). */
 export async function PATCH(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
@@ -16,10 +16,11 @@ export async function PATCH(request: Request, context: Context) {
   if (!STORY_UUID.test(storyId) || !STORY_UUID.test(photoId)) return noStoreJson({ error: "Invalid photo ID" }, 400);
   try {
     const topicId = await requireActiveRequestTopic(request);
-    const body = await request.json().catch(() => undefined) as { focus?: unknown } | undefined;
-    if (!body || !("focus" in body)) return noStoreJson({ error: "focus is required" }, 400);
+    const body = await request.json().catch(() => undefined) as { focus?: unknown; publicationRights?: unknown } | undefined;
+    if (body && "publicationRights" in body) return noStoreJson(await setStoryPhotoRights(topicId, storyId, photoId, parsePhotoRights(body.publicationRights)));
+    if (!body || !("focus" in body)) return noStoreJson({ error: "focus or publicationRights is required" }, 400);
     return noStoreJson(await setStoryPhotoFocus(topicId, storyId, photoId, parsePhotoFocus(body.focus)));
-  } catch (error) { return topicRequestErrorResponse(error) ?? creativeRouteErrorResponse(error, "frame story photo"); }
+  } catch (error) { return topicRequestErrorResponse(error) ?? creativeRouteErrorResponse(error, "update story photo"); }
 }
 async function handle(request: Request, context: Context, revoke: boolean) {
   const unauthorized = await authorizeRadarCollector(request);

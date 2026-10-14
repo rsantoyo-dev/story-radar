@@ -35,7 +35,7 @@ const inventory: Pick<Draft2Inventory, "entities" | "storyPhotos"> = {
     material({ id: "e3", name: "Jean Tremblay", kind: "person", person: { status: "rejected", candidates: [] } }),
     material({ id: "e4", name: "Pomerleau", kind: "organization" }),
   ],
-  storyPhotos: [{ id: "p1", name: "Reading room", description: "", provenance: "Editor", transmissionAllowed: true }],
+  storyPhotos: [{ id: "p1", name: "Reading room", description: "", provenance: "Editor", transmissionAllowed: true, rights: "own" as const }],
 };
 const characters = [{ id: "char-mia", name: "Mia", description: "An illustrated local presenter in a mustard coat" }];
 
@@ -164,7 +164,7 @@ test("verified material backs what a slide asks for, and the strict modes genera
   assert.deepEqual(findings(withSlide("s1", { need: "verified-map", references: ["e2"] })), []);
   assert.deepEqual(findings(withSlide("s1", { need: "verified-map", references: ["p1"] })), ["NEED_MISMATCH c1 s1"], "a story photo is no map");
   assert.deepEqual(findings(withSlide("s1", { need: "real-photo", references: ["p1"] })), []);
-  const given = { ...inventory, entities: inventory.entities.map((entity) => entity.id === "e3" ? { ...entity, storyPhoto: { id: "p1", name: "Reading room", provenance: "Editor", transmissionAllowed: true } } : entity) };
+  const given = { ...inventory, entities: inventory.entities.map((entity) => entity.id === "e3" ? { ...entity, storyPhoto: { id: "p1", name: "Reading room", provenance: "Editor", transmissionAllowed: true, rights: "own" as const } } : entity) };
   assert.deepEqual(findings(withSlide("slide2", { need: "real-photo", references: ["e3"], direction: direction("Tremblay at the desk, from the front") }), { inventory: given }), [], "the story photo the editor gave him is his portrait");
   assert.deepEqual(findings(withSlide("s1", { need: "real-photo", references: ["p1"] }), { inventory: given }), ["REFERENCE_UNKNOWN c1 s1", "NEED_MISMATCH c1 s1"], "a person's photo is never a free reference");
   assert.deepEqual(findings(withSlide("s1", { need: "real-photo", references: ["e2"], characterIds: ["char-mia"] })), ["NEED_MISMATCH c1 s1"], "the character stays off a verified photo");

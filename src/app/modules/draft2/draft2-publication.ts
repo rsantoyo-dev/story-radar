@@ -90,7 +90,8 @@ export async function prepareDraft2Publication({ topicId, storyId, sessionId, ac
   if (target.issues.length && !acknowledgeIssues) {
     throw new Draft2InputError(`Look at ${target.issues.length === 1 ? "this image" : "these images"} before publishing, then approve again: ${target.issues.join(" ")}`);
   }
-  const caption = [captionText(target.caption.text), target.credits.join("\n")].filter(Boolean).join("\n\n");
+  // The text v1 freezes and posts with its hashtags: the caption, then the source line and the credits (captionPostText's order).
+  const caption = [captionText(target.caption.text), [target.source ?? "", ...target.credits].filter(Boolean).join("\n")].filter(Boolean).join("\n\n");
   const hashtags = target.caption.hashtags.map((tag) => `#${normalHashtag(tag)}`);
   const snapshotHash = createHash("sha256").update(JSON.stringify({
     imagesRunId: target.imagesRunId, slides: target.slides.map(({ slide, version, sha256 }) => [slide, version, sha256]), caption, hashtags,

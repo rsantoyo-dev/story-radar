@@ -19,6 +19,7 @@ import {
   type Draft2Review, type Draft2ReviewPatch,
 } from "./draft2-review.types";
 import { brandBrief, composeInstructions, creativeSkills } from "./skills/draft2-skills";
+import { FAIRNESS_SKILL } from "./skills/fairness";
 import { REVIEW_SKILL } from "./skills/review";
 import type { Draft2SessionRow } from "@/db/schema";
 
@@ -174,7 +175,7 @@ export async function reviewDraft2Carousel({ topicId, storyId, sessionId }: Draf
       const read = parseReaderAnswer(readerAnswer, carousel);
       // 2. The editor: the whole carousel, the focus, the reader's reactions and the facts; Claude by default, changing only what must change.
       const editorBy = models.editor;
-      const editor = composeInstructions("carousel-editor", [REVIEW_SKILL, ...creativeSkills(chosen.focus.values)], brief);
+      const editor = composeInstructions("carousel-editor", [REVIEW_SKILL, FAIRNESS_SKILL, ...creativeSkills(chosen.focus.values)], brief);
       const editorAnswer = await call(editorBy, "draft2_review", {
         instructions: `${editor.instructions}\n\n# Verified facts\n${JSON.stringify(factsSnapshot(facts))}`,
         contents: { task: "review", slides, focus: focusForModels(chosen.focus.values), reader: read, limits: { patches: 6 } },

@@ -81,7 +81,7 @@ export type FunnelStep<C extends FunnelCandidate, S extends FunnelScore, I exten
   /** Who played a stored run that records no roles. */
   earlierRoles?: { writer: Draft2Provider; judge: Draft2Provider };
   /** What the run follows (the focus, the opening…), from the session: an input error when a prerequisite is missing. A continued run passes the run it continues. */
-  snapshot: (session: Draft2SessionRow, continuing: R | undefined) => Snapshot;
+  snapshot: (session: Draft2SessionRow, continuing: R | undefined) => Snapshot | Promise<Snapshot>;
   /** What a new run records besides the funnel's bookkeeping: the snapshots it follows (and what of the profile it ran under). */
   newRun: (snapshot: Snapshot, profile: CreativeProfile) => Partial<R>;
   setup: (input: { snapshot: Snapshot; profile: CreativeProfile; facts: readonly Draft2Fact[]; plan: readonly FunnelPlanRound[] }) => FunnelSetup<C, S, I>;
@@ -141,7 +141,7 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
   const stopped = current && (current.status === "paused" || current.status === "running") ? current : ended;
   const nothingToContinue = `There is no paused or stopped ${def.noun} to continue. Write the ${def.noun} again.`;
   if (resume && !stopped) throw new Draft2InputError(nothingToContinue);
-  const snapshot = def.snapshot(session, resume ? stopped : undefined);
+  const snapshot = await def.snapshot(session, resume ? stopped : undefined);
   // The plan may still grow by extra rounds while the run goes, when its best stays under the floor; never past the cap.
   let plan: FunnelPlanRound[] = [...(typeof def.plan === "function" ? def.plan(snapshot) : def.plan), ...Array.from({ length: extraRounds }, () => FUNNEL_EXTRA_ROUND)];
   let maxRounds = plan.length;

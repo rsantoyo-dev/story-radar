@@ -22,11 +22,16 @@ import type { Draft2Skill } from "./draft2-skills";
  * focus's, and a sixth criterion scores how well the opening follows it.
  * Version 7, 2026-10-14: the cover is a strong headline and little else; the
  * subheadline is one short line of at most 12 words, never a sentence of
- * details.
+ * details. Version 8, the same day, after an auditor read a cover on a
+ * resto-bar's liquor-permit suspension: the cover hid the cause behind a
+ * teaser, shortened "permis d'alcool" to "permis" and left the reader free to
+ * believe the bar had closed. The cover says the cause when it is the draw,
+ * names things as the facts do and the place readers recognize, and the
+ * cover or slide 2 states the focus's guards (MISLEADS when it does not).
  */
 export const HOOKS_SKILL: Draft2Skill = {
   name: "hooks",
-  version: "7",
+  version: "8",
   text: `# Openings for social carousels
 
 An opening is the cover (headline + subheadline) and slide 2 (headline + body).
@@ -61,6 +66,16 @@ opening follows it:
 The reader consequence and the direction are guidance, not facts: every
 sentence still rests on the verified facts it cites.
 
+## What the reader must not misread
+The focus may name guards: what a reader who stops at the cover could
+wrongly believe, each with the facts that prevent it (a suspension read as a
+closure, a decision about past years read as today's news). The cover or
+slide 2 states each one in plain words and cites its facts: what the measure
+is and is not, whether it has started, the period the events belong to. A
+guard the headline cannot hold goes in the subheadline or slide 2, never
+later. The program refuses an opening that does not cite a guard's facts;
+the judge names one whose words leave the misreading open (MISLEADS).
+
 ## Cover headline
 - At most 8 words, a complete thought with a verb, readable at a glance on a
   phone. The story's tension, consequence or surprise for *this* audience,
@@ -74,12 +89,22 @@ sentence still rests on the verified facts it cites.
   alleges it). The subheadline and slide 2 carry qualifiers and attribution.
 - Never a question the deck does not answer, never a number the facts do not
   state, never a famous name as the only draw.
+- When the news is a sanction, a closure, a ruling or an accusation, its
+  cause is usually what stops the reader: say it on the cover (in the
+  subheadline when the headline cannot hold it), with the qualifier or
+  source the facts give it; never hide it behind a teaser ("the reason fits
+  in two facts").
+- Name things as the facts do: a liquor permit stays a liquor permit, never
+  a bare "permit" a reader could take for another one; a shortened noun that
+  blurs what is at stake misleads.
+- Name the place this audience recognizes (the neighbourhood, the area, the
+  venue) when the facts give it: a local reader places the story at once.
 
 ## Cover subheadline
 - At most 12 words, one short line: the one concrete draw that makes the
-  promise credible (a date, a price, a count, a limit), never a sentence of
-  details; the headline carries the cover and the details belong to the
-  slides after it. Carries any qualifier the claim needs ("could",
+  promise credible (a date, a price, a count, a limit, or the cause when the
+  headline states the consequence), never a sentence of details; the
+  headline carries the cover and the details belong to the slides after it. Carries any qualifier the claim needs ("could",
   "proposed", "reported"). Never restates the headline.
 
 ## Slide 2
@@ -149,7 +174,7 @@ Each part cites the ids of the facts it rests on ("cover.factIds", "slide2.factI
 
 On a revision round, each candidate names the version it revises ("revises"), shown in "previousVersions" with its scores. Score the revision in full against the skill, not only the issues raised before, and name in an issue anything it does worse than the version it revises.
 
-Mark an issue "material" when the opening states something the facts do not: an allegation, estimate or proposal stated as established; a qualifier or limit dropped so the claim reads broader; a number, cause, consequence, quote or name the facts do not give. A material issue keeps the opening from winning. Style, clarity, tension and voice are never material.
+Mark an issue "material" when the opening states something the facts do not: an allegation, estimate or proposal stated as established; a qualifier or limit dropped so the claim reads broader; a number, cause, consequence, quote or name the facts do not give. Name an opening whose cover and slide 2 leave open a misreading the focus guards against in a MISLEADS issue, also material. A material issue keeps the opening from winning. Style, clarity, tension and voice are never material.
 
 When \`proposalsWanted\` asks for them, also write that many openings of your own in "proposals": a full cover and slide 2 citing fact ids, each a different angle from every candidate you scored, written to meet the skill's thresholds; in the next round each competes as you wrote it and as the writer edited it. Otherwise "proposals" is an empty list.`,
 } as const;

@@ -3,9 +3,21 @@ export type StoryReferencePurpose = typeof STORY_REFERENCE_PURPOSES[number];
 export type StoryReferenceSelection = { id: string; purpose: StoryReferencePurpose };
 /** A point in a photo as fractions of its width and height, from the top left. */
 export type PhotoFocus = { x: number; y: number };
+/**
+ * What the publication may do with a story photo, as the editor declares it:
+ * its own photo, or one a license lets it publish (a free license included),
+ * may appear in a published image; a reference-only photo informs the work
+ * and is never published, not even adapted. Photos saved before the
+ * declaration are reference only until the editor says otherwise.
+ */
+export const STORY_PHOTO_RIGHTS = ["own", "licensed", "reference"] as const;
+export type StoryPhotoRights = typeof STORY_PHOTO_RIGHTS[number];
+/** Whether a photo may appear in a published image; one without a declaration (an older snapshot) may not. */
+export const publishablePhoto = (rights: StoryPhotoRights | undefined): boolean => rights === "own" || rights === "licensed";
 export type StoryReferencePhoto = {
   id: string; name: string; description: string; provenance: string;
   providerTransmissionAllowed: boolean; active: boolean;
+  publicationRights: StoryPhotoRights;
   /** Where the subject is; crops keep this point. Absent: automatic framing. */
   focus?: PhotoFocus;
 };
@@ -22,6 +34,12 @@ export type StoryContentEdition = {
   original: { title: string; text: string };
 };
 export class StoryMaterialValidationError extends Error {}
+/** The editor's declaration of a photo's rights, from untrusted input. */
+export function parsePhotoRights(value: unknown): StoryPhotoRights {
+  const rights = STORY_PHOTO_RIGHTS.find((entry) => entry === value);
+  if (!rights) throw new StoryMaterialValidationError("Say what the publication may do with this photo: our own, licensed, or reference only.");
+  return rights;
+}
 export class StoryMaterialConflictError extends Error {}
 export const STORY_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export function materialText(value: unknown, label: string, max: number): string {

@@ -1,7 +1,7 @@
 "use client";
 import Image from "next/image";
 import { useEffect, useState } from "react";
-import { STORY_REFERENCE_PURPOSES, type PhotoFocus, type StoryReferencePhoto, type StoryReferenceSelection } from "./modules/stories/story-materials.types";
+import { STORY_PHOTO_RIGHTS, STORY_REFERENCE_PURPOSES, type PhotoFocus, type StoryPhotoRights, type StoryReferencePhoto, type StoryReferenceSelection } from "./modules/stories/story-materials.types";
 import type { CommonsPersonCandidate } from "./modules/stories/commons-person-photos";
 import { Button, FormField, InlineNotice, LoadingState } from "./ui/primitives";
 import styles from "./radar-dashboard.generated.module.css";
@@ -23,6 +23,17 @@ export function useStoryPhotos({ topicId, storyId, secret }: Scope) {
     return () => controller.abort();
   }, [topicId, storyId, secret, reload]);
   return { photos, error, refresh: () => setReload(value => value + 1) };
+}
+/** What the publication may do with a photo, as the editor reads it. */
+export const PHOTO_RIGHTS_LABEL: Record<StoryPhotoRights, string> = {
+  own: "Our own photo: it may be published",
+  licensed: "Licensed (a free license included): it may be published, with its credit",
+  reference: "Reference only: never published",
+};
+async function saveRights(scope: Scope, id: string, publicationRights: string): Promise<void> {
+  const response = await fetch(photoUrl(scope, id), { method: "PATCH", headers: { Authorization: `Bearer ${scope.secret.trim()}`, "Content-Type": "application/json" }, body: JSON.stringify({ publicationRights }) });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error ?? "Could not save the photo's rights");
 }
 async function saveFocus(scope: Scope, photo: StoryReferencePhoto, focus: PhotoFocus | null): Promise<void> {
   const response = await fetch(photoUrl(scope, photo.id), { method: "PATCH", headers: { Authorization: `Bearer ${scope.secret.trim()}`, "Content-Type": "application/json" }, body: JSON.stringify({ focus }) });
@@ -134,6 +145,12 @@ export function StoryPhotosPanel({ onChanged, ...scope }: Scope & {
     } catch (error) { setMessageIsError(true); setMessage(error instanceof Error ? error.message : "Upload failed"); }
     finally { setBusy(false); }
   }
+  async function declareRights(id: string, publicationRights: string) {
+    setBusy(true); setMessage(""); setMessageIsError(false);
+    try { await saveRights(scope, id, publicationRights); refresh(); }
+    catch (error) { setMessageIsError(true); setMessage(error instanceof Error ? error.message : "Could not save the photo's rights"); }
+    finally { setBusy(false); }
+  }
   async function revoke(id: string) {
     setBusy(true); setMessage(""); setMessageIsError(false);
     try {
@@ -146,11 +163,14 @@ export function StoryPhotosPanel({ onChanged, ...scope }: Scope & {
   }
   return <section className={styles.storyMaterials}>
     <h3>Story reference photos</h3>
-    <p>Story evidence photos stay with this Story. They are separate from Topic brand references and fictional characters. Choose their use on each draft slide before image generation. For reused photos, record the photographer, file page, license and any changes in the source field.</p>
+    <p>Story evidence photos stay with this Story. They are separate from Topic brand references and fictional characters. Choose their use on each draft slide before image generation. For reused photos, record the photographer, file page, license and any changes in the source field. Only a photo that is your own or licensed for publication appears in a published image; a photo from another outlet’s article is reference only.</p>
     {error ? <p role="alert">{error}</p> : null}
     <div className={styles.storyPhotoGrid}>{photos.map(photo => <article className={styles.storyPhotoCard} key={photo.id}>
       <PhotoPreview scope={scope} photo={photo} onFocusSaved={refresh} disabled={busy} />
       <strong>{photo.name}</strong><p>{photo.description}</p><small>{photo.provenance}</small>
+      {photo.active ? <label>Publication<select value={photo.publicationRights} disabled={busy} onChange={(event) => { void declareRights(photo.id, event.target.value); }}>
+        {STORY_PHOTO_RIGHTS.map((rights) => <option key={rights} value={rights}>{PHOTO_RIGHTS_LABEL[rights]}</option>)}
+      </select></label> : null}
       {photo.active ? <button type="button" disabled={busy} onClick={() => revoke(photo.id)}>Remove from future generation</button> : <span>Removed · history preserved</span>}
     </article>)}</div>
     <CommonsPersonSearch scope={scope} disabled={busy} onImported={refresh} />
@@ -159,6 +179,10 @@ export function StoryPhotosPanel({ onChanged, ...scope }: Scope & {
       <label>Name<input name="name" maxLength={150} required disabled={busy} /></label>
       <label>What does this photo show?<textarea name="description" maxLength={1000} required rows={2} disabled={busy} /></label>
       <label>Source, photographer, license and permission to use<textarea name="provenance" maxLength={1000} required rows={2} disabled={busy} placeholder="Photographer · license and license URL · original file URL · resized for this carousel" /></label>
+      <label>What may we do with it?<select name="publicationRights" required defaultValue="" disabled={busy}>
+        <option value="" disabled>Choose…</option>
+        {STORY_PHOTO_RIGHTS.map((rights) => <option key={rights} value={rights}>{PHOTO_RIGHTS_LABEL[rights]}</option>)}
+      </select></label>
       <label><input name="providerTransmissionAllowed" type="checkbox" value="true" required disabled={busy} /> I have permission to use this photo and send it to the image-generation provider.</label>
       <button type="submit" disabled={busy}>{busy ? "Saving…" : "Add photo"}</button>
     </form>

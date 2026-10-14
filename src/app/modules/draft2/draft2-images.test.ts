@@ -68,7 +68,7 @@ type Review = (slide: string, version: number) => Record<string, unknown>;
 const clean: Review = () => ({ transcription: "", textCovered: false, textNote: "", storyNote: "The walk reads." });
 
 /** polls: how many times fal answers "generating" before an image is done; clock: a fake clock each poll moves by pollMs. */
-function harness({ session, polls = 1, reviewOf = clean, clock, pollMs = 30_000 }: { session?: Record<string, unknown>; polls?: number; reviewOf?: Review; clock?: { now: number }; pollMs?: number } = {}) {
+function harness({ session, polls = 1, reviewOf = clean, clock, pollMs = 30_000, rights = {} }: { session?: Record<string, unknown>; polls?: number; reviewOf?: Review; clock?: { now: number }; pollMs?: number; rights?: Record<string, string> } = {}) {
   const calls = {
     submits: [] as { endpoint: string; prompt: string; files: string[]; width?: number; height?: number }[],
     reviews: [] as { slide: string; contents: Record<string, unknown> }[],
@@ -143,7 +143,7 @@ function harness({ session, polls = 1, reviewOf = clean, clock, pollMs = 30_000 
     },
     "../stories/story-reference-generation": storyRefs,
     "../stories/manage-story-photos": {
-      resolveStoryReferences: async (_topic: string, _story: string, selections: { id: string; purpose: string }[]) => selections.map((selection) => ({ ...selection, name: selection.id, description: "", provenance: "Editor", providerTransmissionAllowed: true, active: true, topicId, storyId, objectKey: `story/${selection.id}`, sha256: "c".repeat(64), contentType: "image/png", fileName: `${selection.id}.png` })),
+      resolveStoryReferences: async (_topic: string, _story: string, selections: { id: string; purpose: string }[]) => selections.map((selection) => ({ ...selection, name: selection.id, description: "", provenance: "Editor", providerTransmissionAllowed: true, publicationRights: rights[selection.id] ?? "own", active: true, topicId, storyId, objectKey: `story/${selection.id}`, sha256: "c".repeat(64), contentType: "image/png", fileName: `${selection.id}.png` })),
       loadStoryReferenceImages: async (references: { id: string }[]) => references.map((reference) => new File([Buffer.from(reference.id)], `${reference.id}.png`, { type: "image/png" })),
       loadDocumentaryPortraitPhoto: async () => Buffer.from("portrait"),
       currentPortraitFocus: async () => undefined,
@@ -340,6 +340,20 @@ test("the editor asks for an edit of the image shown, which is made and reviewed
   assert.equal(json([chosen.images!.slides[0].chosenVersion, chosen.images!.status, chosen.status]), json([1, "ready", "ready"]));
   await assert.rejects(h.decide({ action: "choose", slide: "cover", version: 9 }), /has no finished version 9/);
   await assert.rejects(h.decide({ action: "regenerate", slide: "s9" }), /s9 is not one of this carousel's slides/);
+});
+
+test("a photo the editor declared reference only since the run began is never published: the slide's attempt fails and says why", async () => {
+  const inventory: Draft2Inventory = {
+    ...INVENTORY,
+    entities: [{ id: "e1", name: "Catherine Fournier", kind: "person", role: "subject", description: "", factIds: ["f1"], person: { status: "confirmed", candidates: [], confirmed: { entityId: "Q1", name: "Catherine Fournier", thumbnailUrl: "u", author: "A", license: "CC BY 4.0", commonsUrl: "c", storyPhotoId: "55555555-5555-4555-8555-555555555555" } } }],
+  };
+  const script = { ...SCRIPT, slides: [scriptSlide("cover", { need: "real-photo", references: ["e1"] }), scriptSlide("s1"), scriptSlide("last")] };
+  const visual = { ...VISUAL, candidates: [script], rounds: [{ ...VISUAL.rounds[0], candidates: [script] }] };
+  const h = harness({ session: { visual, inventory }, rights: { "55555555-5555-4555-8555-555555555555": "reference" } });
+  const session = await h.run();
+  const cover = session.images!.slides[0];
+  assert.equal(json([cover.attempts[0].status, /55555555-5555-4555-8555-555555555555 is reference only: declare its publication rights/.test(cover.attempts[0].error ?? "")]), json(["failed", true]));
+  assert.equal(h.calls.submits.some((submit) => submit.prompt.startsWith("PROMPT 1:")), false, "nothing is sent for it");
 });
 
 test("a real person's portrait and a verified map are pasted after generation, under the page number and the logo, and Sol is told where", async () => {

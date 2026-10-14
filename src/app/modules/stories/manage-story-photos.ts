@@ -6,7 +6,7 @@ import { db } from "@/db/client";
 import { storyReferencePhotos } from "@/db/schema";
 import { buildStoryReferenceObjectKey, deletePrivateR2Object, putPrivateR2Object, readPrivateR2ImageFile } from "./r2-storage";
 import { findStoryPhoto, publicStoryPhoto, requireStoryMembership } from "./story-materials.repository";
-import { materialText, parseStoryReferences, StoryMaterialValidationError } from "./story-materials.types";
+import { materialText, parsePhotoRights, parseStoryReferences, StoryMaterialValidationError } from "./story-materials.types";
 import type { StoryGenerationReference } from "./story-reference-generation";
 
 export async function uploadStoryPhoto(topicId: string, storyId: string, form: FormData) {
@@ -17,6 +17,7 @@ export async function uploadStoryPhoto(topicId: string, storyId: string, form: F
   const description = materialText(form.get("description"), "Description", 1000);
   const provenance = materialText(form.get("provenance"), "Source / permission", 1000);
   if (form.get("providerTransmissionAllowed") !== "true") throw new StoryMaterialValidationError("Confirm permission to use and send this photo to the image provider.");
+  const publicationRights = parsePhotoRights(form.get("publicationRights"));
   const bytes = Buffer.from(await image.arrayBuffer());
   let normalized: Buffer;
   try {
@@ -29,7 +30,7 @@ export async function uploadStoryPhoto(topicId: string, storyId: string, form: F
   const objectKey = buildStoryReferenceObjectKey(topicId, storyId, id);
   await putPrivateR2Object({ objectKey, body: normalized, contentType: "image/webp" });
   try {
-    const [row] = await db.insert(storyReferencePhotos).values({ id, topicId, storyId, name, description, provenance, providerTransmissionAllowed: true, objectKey, sha256: createHash("sha256").update(normalized).digest("hex"), fileName: `${id}.webp`, fileSize: normalized.length }).returning();
+    const [row] = await db.insert(storyReferencePhotos).values({ id, topicId, storyId, name, description, provenance, providerTransmissionAllowed: true, publicationRights, objectKey, sha256: createHash("sha256").update(normalized).digest("hex"), fileName: `${id}.webp`, fileSize: normalized.length }).returning();
     return publicStoryPhoto(row);
   } catch (error) { await deletePrivateR2Object(objectKey).catch(() => undefined); throw error; }
 }

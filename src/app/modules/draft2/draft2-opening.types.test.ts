@@ -123,6 +123,16 @@ test("a number must be stated by the facts the candidate cites, compared without
   assert.equal(issue.detail, "7, 12 are not stated by the facts this candidate cites.");
 });
 
+test("what the cover alone could make a reader wrongly believe is prevented before the reader can stop: every fact of a guard on the cover or slide 2", () => {
+  const guards = [{ misreading: "The program already spent $1.5 trillion.", factIds: ["f3"] }];
+  const late = mechanicalOpeningIssues([candidate("c1")], facts, { guards });
+  assert.deepEqual(codes(late), ["GUARD_LATE c1 slide2"]);
+  assert.equal(late[0].detail, "A reader who stops here could believe \"The program already spent $1.5 trillion.\": the cover or slide 2 must state what prevents it, citing f3.");
+  assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1", { slide2: { body: "The Pentagon says it could reach $1.5 trillion in contracts by 2030.", factIds: ["f2", "f3"] } })], facts, { guards })), [], "slide 2 states it with its fact");
+  assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1")], facts, { guards: [{ misreading: "Awards always take a week.", factIds: ["f1", "f2"] }] })), [], "the cover and slide 2 together carry both facts");
+  assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1")], facts)), [], "a story without guards");
+});
+
 test("two candidates with the same cover headline are duplicates; the later one is flagged", () => {
   const issues = mechanicalOpeningIssues([candidate("c1"), candidate("c2", { cover: { headline: "PENTAGON buyers now judge five-minute videos!" } }), candidate("c3", { cover: { headline: "Your demo video is now the bid" } })], facts);
   assert.deepEqual(codes(issues), ["DUPLICATE_CANDIDATE c2 cover"]);

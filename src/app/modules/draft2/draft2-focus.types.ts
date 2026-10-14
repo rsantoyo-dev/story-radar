@@ -54,6 +54,15 @@ export const FOCUS_STEPS_MIN_ITEMS = 2;
 export const FOCUS_MAX_ITEMS = 12;
 const MAX_CONSEQUENCE_FACTS = 10;
 /**
+ * Guards: what a reader who stops at the cover could wrongly believe and the
+ * facts that prevent it (a suspension read as a closure, a decision about
+ * past years read as news of today). The plan names them; the opening states
+ * each on the cover or slide 2, citing every fact the guard names.
+ */
+export const FOCUS_MAX_GUARDS = 3;
+export const FOCUS_GUARD_MAX_CHARACTERS = 300;
+export const FOCUS_GUARD_MAX_FACTS = 2;
+/**
  * How the carousel is told across its slides. classic: one story told slide
  * by slide, each image its own; character-guide: a guide (the brand's
  * character, a figure from the story or an anonymous one) leads the reader
@@ -237,6 +246,9 @@ export type Draft2FocusLine = { id: string; revision: number; name: string; obje
 
 export type Draft2FocusVoice = { gravity: Draft2FocusGravity } & Record<ToneKey, number>;
 
+/** A misreading the cover alone could cause, and the one or two facts whose words prevent it. */
+export type Draft2FocusGuard = { misreading: string; factIds: string[] };
+
 export type Draft2FocusValues = {
   /** The editorial line the story serves; null when the Topic has none. */
   line: Draft2FocusLine | null;
@@ -259,6 +271,8 @@ export type Draft2FocusValues = {
   levers?: Draft2FocusLevers;
   /** The story in beats, one per slide, that the words and the images both follow. Absent on a focus decided before spines. */
   spine?: Draft2FocusSpine;
+  /** What the cover alone could make a reader wrongly believe, and the facts the cover or slide 2 must state to prevent it; Claude's, written with the plan. Absent when there is none, or on a focus planned before guards. */
+  guards?: Draft2FocusGuard[];
   /** What in the facts makes this audience stop, in one line: Claude's deliberation, read by every step. Absent on a focus decided before it. */
   interest?: string;
   /** How the images tell this story within the brand's visual identity: the world they live in, who leads them, what recurs. The visual script follows it. Absent on a focus decided before the field existed. */
@@ -459,6 +473,15 @@ export const DRAFT2_FOCUS_PLAN_SCHEMA: Record<string, unknown> = {
       required: ["primary", "alternatives", "factIds", "paidBy"],
       additionalProperties: false,
     },
+    guards: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { misreading: { type: "string" }, factIds: factIdsSchema },
+        required: ["misreading", "factIds"],
+        additionalProperties: false,
+      },
+    },
     spine: {
       type: "object",
       properties: {
@@ -492,7 +515,7 @@ export const DRAFT2_FOCUS_PLAN_SCHEMA: Record<string, unknown> = {
       additionalProperties: false,
     },
   },
-  required: ["levers", "spine", "direction", "visualDirection", "reasons"],
+  required: ["levers", "guards", "spine", "direction", "visualDirection", "reasons"],
   additionalProperties: false,
 };
 
@@ -703,17 +726,30 @@ export function parseFocusPlan(answer: string, { known, structure, eligibleLever
   if (!direction) throw new Draft2ResponseError(`The direction is missing or longer than ${FOCUS_DIRECTION_MAX_CHARACTERS} characters`);
   if (!visualDirection) throw new Draft2ResponseError(`The visual direction is missing or longer than ${FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS} characters`);
   const levers = editorChoices.levers ? editorChoices.levers as Draft2FocusLevers : parsePlanLevers(body.levers, { eligible: eligibleLevers, known });
+  const guards = parseGuards(body.guards, known);
   const given = record(body.reasons);
   const reasons: Partial<Record<Draft2FocusField, string>> = {};
   for (const field of FOCUS_PLAN_FIELDS) {
     const reason = text(given[field], REASON_MAX_CHARACTERS);
     if (reason && !(field in editorChoices)) reasons[field] = reason;
   }
-  return { levers, spine, direction, visualDirection, reasons };
+  return { levers, guards, spine, direction, visualDirection, reasons };
 }
 
-/** The levers, the spine and the two directions, as the second call writes them from the decision. */
-export type Draft2FocusPlan = { levers: Draft2FocusLevers; spine: Draft2FocusSpine; direction: string; visualDirection: string; reasons?: Partial<Record<Draft2FocusField, string>> };
+/** The guards an answer names, the valid ones: a misreading with one or two verified facts, each once, at most three; any other is left out. */
+export function parseGuards(value: unknown, known: ReadonlySet<string>): Draft2FocusGuard[] {
+  const guards: Draft2FocusGuard[] = [];
+  for (const entry of Array.isArray(value) ? value : []) {
+    const body = record(entry);
+    const misreading = text(body.misreading, FOCUS_GUARD_MAX_CHARACTERS);
+    const factIds = knownFactIds(body.factIds, known, FOCUS_GUARD_MAX_FACTS);
+    if (misreading && factIds.length && !guards.some((guard) => guard.misreading === misreading)) guards.push({ misreading, factIds });
+  }
+  return guards.slice(0, FOCUS_MAX_GUARDS);
+}
+
+/** The levers, the guards, the spine and the two directions, as the second call writes them from the decision. */
+export type Draft2FocusPlan = { levers: Draft2FocusLevers; guards?: Draft2FocusGuard[]; spine: Draft2FocusSpine; direction: string; visualDirection: string; reasons?: Partial<Record<Draft2FocusField, string>> };
 
 /**
  * The focus with its plan: the spine and the directions become Claude's (a
@@ -731,11 +767,17 @@ export function focusWithPlan(focus: Draft2Focus, plan: Draft2FocusPlan, now: Da
     ...(owned("visualDirection") ? {} : { visualDirection: plan.visualDirection }),
   };
   const reasons = Object.fromEntries(Object.entries(plan.reasons ?? {}).filter(([field]) => !owned(field as Draft2FocusField)));
+  // The guards are always Claude's latest: a plan with none leaves none from an earlier one.
+  const guarded = (values: Draft2FocusValues): Draft2FocusValues => {
+    const next = { ...values };
+    delete next.guards;
+    return plan.guards?.length ? { ...next, guards: plan.guards } : next;
+  };
   return {
     ...focus,
     version: bump ? focus.version + 1 : focus.version,
-    values: { ...focus.values, ...written },
-    ...(focus.ai ? { ai: { ...focus.ai, levers: plan.levers, spine: plan.spine, direction: plan.direction, visualDirection: plan.visualDirection } } : {}),
+    values: guarded({ ...focus.values, ...written }),
+    ...(focus.ai ? { ai: guarded({ ...focus.ai, levers: plan.levers, spine: plan.spine, direction: plan.direction, visualDirection: plan.visualDirection }) } : {}),
     reasons: { ...focus.reasons, ...reasons },
     staleDirections: false,
     updatedAt: now.toISOString(),
@@ -1136,6 +1178,7 @@ export function focusForModels(values: Draft2FocusValues) {
     ...(focusConcept(values).arc !== "classic" ? { concept: conceptForModels(focusConcept(values)) } : {}),
     ...(focusNarrative(values).form !== "classic" ? { narrative: narrativeForModels(focusNarrative(values), structure, Boolean(values.visualDirection)) } : {}),
     ...(values.levers ? { levers: leversForModels(values.levers) } : {}),
+    ...(values.guards?.length ? { guards: values.guards.map(({ misreading, factIds }) => ({ misreading, factIds })) } : {}),
     ...(values.spine ? { spine: spineForModels(values.spine) } : {}),
     direction: values.direction,
     ...(values.visualDirection ? { visualDirection: values.visualDirection } : {}),

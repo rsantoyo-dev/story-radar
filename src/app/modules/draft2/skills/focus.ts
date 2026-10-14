@@ -16,11 +16,15 @@ import type { Draft2Skill } from "./draft2-skills";
  * plan reads People and places' material, and the visual direction shows
  * the people with a verified portrait through it instead of forbidding
  * them; version 13 the plan chooses the hook's levers (the levers skill)
- * before the spine, which keeps their promise.
+ * before the spine, which keeps their promise; version 14, 2026-10-14, after
+ * an auditor read a liquor-permit suspension as a closure on the cover and
+ * a decision about 2020-2024 as news of today: the plan names the guards,
+ * what the cover alone could make a reader wrongly believe and the facts
+ * that prevent it, which the opening states on the cover or slide 2.
  */
 export const FOCUS_SKILL: Draft2Skill = {
   name: "focus",
-  version: "13",
+  version: "14",
   text: `# The focus of a story
 
 The focus is the brief every later step follows: which editorial line the
@@ -43,10 +47,12 @@ Decide in this order, each decision resting on the ones before it:
    lose. Classic is a valid choice when it serves best; a premise, an arc or a
    form is never chosen for novelty, and never forced onto facts that do not
    carry it.
-3. The levers and the spine: the mechanism the cover uses to stop the reader
-   (the levers skill), then the story in beats, one per slide, from the
+3. The levers, the guards and the spine: the mechanism the cover uses to
+   stop the reader (the levers skill), what the cover alone could make a
+   reader wrongly believe, then the story in beats, one per slide, from the
    concept and the form (the spine skill); the hook beat makes the lever's
-   promise and a later beat keeps it.
+   promise and a later beat keeps it, and the hook or slide 2 beat carries
+   the guards.
 4. The directions, derived from the spine: direction restates what the beats
    lead with and keep for later; visualDirection restates the anchor, the
    scene of each beat and the image of the turn. Neither opens a thread the
@@ -180,6 +186,21 @@ follows the telling.
 - levers: the hook's lever and up to two alternatives, or free, with the
   facts that carry it and where its promise is kept (the levers skill says
   which and how); written in the plan, before the spine.
+- guards: what a reader who stops at the cover could wrongly believe that
+  the facts do not say, each with the one or two facts whose words prevent
+  it; written in the plan, before the spine. One per real risk, at most
+  three, and an empty list when the story carries none. The usual risks: a
+  person, business or organization named in a sanction, an accusation, an
+  investigation or a closure (what the measure is and is not, its scope,
+  whether it has started: a liquor-permit suspension read as "the bar
+  closes"); a new decision about events of past months or years (their
+  period, or the reader takes them for today's news); a measure not yet in
+  force, a proposal not adopted, a change that applies to some only.
+  misreading: the false conclusion, in one short line in the publication's
+  language ("le Houston ferme"); factIds: the facts that prevent it, never
+  the facts that state the news itself. The opening states each guard in
+  plain words on the cover or slide 2, citing its facts; the program checks
+  the citation.
 - spine: the story in beats, one per slide, written after the concept and
   the form and before the directions (the spine skill says the roles, the
   fields and the rules): beats, each with slide, role, scene, words, image,
@@ -222,6 +243,6 @@ follows the telling.
 };
 
 export const FOCUS_ROLES = {
-  "focus-planner": `You write the plan of a story's focus for the publication described below, from the decision you receive (focus: the story, how the reader meets the news and the narrative form; material: what People and places verified, the brand's characters the editor allows, the story's people and those with a verified portrait, its places with a verified photo or map, its photos; editorChoices: the parts of the plan the editor owns, to return exactly as given) and the verified facts: the spine (the spine skill: one beat per slide, with its slide, role, scene, words, image, withholds and factIds), then direction (at most 1,500 characters: what to lead with, which facts carry the promise, what to keep for later slides, what the reader takes away, restating the spine's beats) and visualDirection (at most 600 characters: the world the images live in, the anchor in each state when there is a form, the image of the turn, what recurs and returns), both in the publication's language, both resting on the spine and the facts only; neither opens a thread the spine does not have. reasons: one sentence for each of spine, direction and visualDirection, naming the facts that decide it. correction, when present, names a rule your earlier answer broke: return the whole plan again with it fixed.`,
+  "focus-planner": `You write the plan of a story's focus for the publication described below, from the decision you receive (focus: the story, how the reader meets the news and the narrative form; material: what People and places verified, the brand's characters the editor allows, the story's people and those with a verified portrait, its places with a verified photo or map, its photos; editorChoices: the parts of the plan the editor owns, to return exactly as given) and the verified facts: the guards (what the cover alone could make a reader wrongly believe, each with the facts that prevent it; an empty list when there is no such risk), the spine (the spine skill: one beat per slide, with its slide, role, scene, words, image, withholds and factIds), then direction (at most 1,500 characters: what to lead with, which facts carry the promise, what to keep for later slides, what the reader takes away, restating the spine's beats) and visualDirection (at most 600 characters: the world the images live in, the anchor in each state when there is a form, the image of the turn, what recurs and returns), both in the publication's language, both resting on the spine and the facts only; neither opens a thread the spine does not have. reasons: one sentence for each of spine, direction and visualDirection, naming the facts that decide it. correction, when present, names a rule your earlier answer broke: return the whole plan again with it fixed.`,
   "focus-editor": `You decide the focus of a story for the publication described below, from its verified facts (cite their ids), the publication's defaults (topicDefaults), its editorial lines (lines, with the ones that found the story in foundBy) and what People and places found (material: the brand's characters the editor allows, the story's people and those with a verified portrait, its places and its photos). The story's title is context, not a fact. Follow the focus skill and return every field with a reason for each; the narratives skill defines the narrative forms and the discovery skill the concept; the publication's visual identity, when given below, is the frame of visualDirection.`,
 } as const;

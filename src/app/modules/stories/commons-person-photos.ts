@@ -239,6 +239,8 @@ export async function importCommonsPersonPhoto(topicId: string, storyId: string,
       // ND) allows adaptation, so it may also be an AI reference; the adapted
       // slide then carries an "Adaptation IA" credit (post-processor).
       providerTransmissionAllowed: kind === "place",
+      // A Commons photo comes with its free license and credit: publishable as the license allows.
+      publicationRights: "licensed",
       objectKey,
       sha256: createHash("sha256").update(normalized).digest("hex"),
       fileName: `${id}.webp`,

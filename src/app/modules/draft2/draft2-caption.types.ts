@@ -78,6 +78,11 @@ export type Draft2Caption = FunnelRun<Draft2CaptionCandidate, Draft2CaptionScore
   credits?: string[];
   /** The editor left the photo credits out of the post, at their own responsibility (the photos' licenses may ask for them). It stays with the next run. */
   creditsHidden?: true;
+  /** Where the story was reported (its sources' addresses), and the line the post shows for them; absent on a run written before the source line. */
+  sources?: string[];
+  source?: string;
+  /** The editor left the source out of the post. It stays with the next run. */
+  sourceHidden?: true;
   rules?: Draft2CaptionRules;
   previousRuns?: Draft2CaptionRun[];
 };
@@ -138,10 +143,38 @@ export function parseCaptionEvaluation(answer: string, candidateIds: readonly st
 
 /** The credits the post shows: those the shown images owe, or none when the editor left them out. */
 export const shownCredits = (caption: Pick<Draft2Caption, "credits" | "creditsHidden"> | null | undefined): string[] => caption?.creditsHidden ? [] : caption?.credits ?? [];
+/** The source line the post shows, unless the editor left it out. */
+export const shownSource = (caption: Pick<Draft2Caption, "source" | "sourceHidden"> | null | undefined): string | undefined => caption?.sourceHidden ? undefined : caption?.source;
 
-/** The text v1 posts (publicationPostText): the caption, a blank line and the credits, a blank line and the hashtags. */
-export function captionPostText({ text, credits, hashtags }: { text: string; credits: readonly string[]; hashtags: readonly string[] }): string {
-  return [captionText(text), credits.join("\n"), hashtags.map((tag) => `#${normalHashtag(tag)}`).join(" ")].filter(Boolean).join("\n\n");
+/** The most sources a post credits; a story merged from more names its first ones. */
+export const CAPTION_MAX_SOURCES = 3;
+/** Addresses that are the publication's own (its owned content), never a source to credit. */
+const OWN_HOSTS = /(^|\.)presscraftor\.local$/u;
+
+/** The addresses of the story's sources, as a post credits them: the host without "www.", once each, the publication's own content left out. */
+export function captionSourceHosts(urls: readonly string[]): string[] {
+  const hosts: string[] = [];
+  for (const url of urls) {
+    let host: string;
+    try { host = new URL(url).hostname.toLowerCase().replace(/^www\./u, ""); } catch { continue; }
+    if (host && !OWN_HOSTS.test(host) && !hosts.includes(host)) hosts.push(host);
+  }
+  return hosts.slice(0, CAPTION_MAX_SOURCES);
+}
+
+/** The line that credits where the story was reported, in the publication's language ("Source : journaldemontreal.com"); none without a source. */
+export function captionSourceLine(hosts: readonly string[], language: string): string | undefined {
+  if (!hosts.length) return undefined;
+  const several = hosts.length > 1;
+  const label = /^(fr|french|fran[cç]ais)/iu.test(language.trim()) ? `${several ? "Sources" : "Source"}\u00a0:`
+    : /^(es|spanish|espa[nñ]ol)/iu.test(language.trim()) ? `${several ? "Fuentes" : "Fuente"}:`
+      : `${several ? "Sources" : "Source"}:`;
+  return `${label} ${hosts.join(", ")}`;
+}
+
+/** The text v1 posts (publicationPostText): the caption, a blank line and the source line and the credits, a blank line and the hashtags. */
+export function captionPostText({ text, source, credits, hashtags }: { text: string; source?: string; credits: readonly string[]; hashtags: readonly string[] }): string {
+  return [captionText(text), [source ?? "", ...credits].filter(Boolean).join("\n"), hashtags.map((tag) => `#${normalHashtag(tag)}`).join(" ")].filter(Boolean).join("\n\n");
 }
 
 const EMOJI = /\p{Extended_Pictographic}/gu;
@@ -149,8 +182,8 @@ const MENTION = /(?:^|[^\p{L}\p{N}_.])@([A-Za-z0-9._]{1,30})/gu;
 const HASHTAG_IN_TEXT = /(?:^|\s)#[\p{L}\p{N}_]+/u;
 /** The caption talks about the carousel instead of the story, in the publications' languages. */
 const NARRATION = /\b(swipe|glisse[sz]?|faites défiler|desliza|en este carrusel|dans ce carrousel|in this carousel|on the next slides?|slide \d+|diapositive \d+)\b/iu;
-/** A credit line the program adds itself. */
-const CREDIT = /(©|\b(?:photo|photos|crédit|crédits|credit|credits|foto|fotos)\s*:)/iu;
+/** A credit or source line the program adds itself. */
+const CREDIT = /(©|\b(?:photo|photos|crédit|crédits|credit|credits|foto|fotos|source|sources|fuente|fuentes)\s*:)/iu;
 
 /**
  * The program's findings on each caption, before the judge; any one keeps a
@@ -158,10 +191,10 @@ const CREDIT = /(©|\b(?:photo|photos|crédit|crédits|credit|credits|foto|fotos
  * within Instagram's limit; the brand's emoji allowance; 5 to 8 well-formed
  * hashtags, none inside the text; every account the editor confirmed tagged,
  * and no other @handle; no talk of the carousel's slides; blank lines in a
- * long caption; no credit line (the program adds them).
+ * long caption; no credit or source line (the program adds them).
  */
-export function mechanicalCaptionIssues(candidates: readonly Draft2CaptionCandidate[], facts: readonly Draft2Fact[], { credits, mentions, rules }: {
-  credits: readonly string[]; mentions: readonly { handle: string }[]; rules: Draft2CaptionRules;
+export function mechanicalCaptionIssues(candidates: readonly Draft2CaptionCandidate[], facts: readonly Draft2Fact[], { source, credits, mentions, rules }: {
+  source?: string; credits: readonly string[]; mentions: readonly { handle: string }[]; rules: Draft2CaptionRules;
 }): Draft2CaptionIssue[] {
   const byId = new Map(facts.map((fact) => [fact.id, fact]));
   const allowed = new Set(mentions.map((mention) => mention.handle.replace(/^@/u, "").toLowerCase()));
@@ -172,8 +205,8 @@ export function mechanicalCaptionIssues(candidates: readonly Draft2CaptionCandid
     if (!candidate.factIds.length) add("NO_FACTS", "The caption cites no fact; every claim rests on verified facts.");
     const unknown = candidate.factIds.filter((id) => !byId.has(id));
     if (unknown.length) add("FACT_UNKNOWN", `Cites ${unknown.join(", ")}, which ${unknown.length === 1 ? "is not a verified fact" : "are not verified facts"}.`);
-    const post = captionPostText({ text: candidate.text, credits, hashtags: candidate.hashtags });
-    if (post.length > CAPTION_MAX_CHARACTERS) add("TEXT_TOO_LONG", `The post has ${post.length} characters with its credits and hashtags; Instagram takes ${CAPTION_MAX_CHARACTERS}.`);
+    const post = captionPostText({ text: candidate.text, source, credits, hashtags: candidate.hashtags });
+    if (post.length > CAPTION_MAX_CHARACTERS) add("TEXT_TOO_LONG", `The post has ${post.length} characters with its source, credits and hashtags; Instagram takes ${CAPTION_MAX_CHARACTERS}.`);
     const emojis = candidate.text.match(EMOJI)?.length ?? 0;
     if (emojis > rules.emojis) add("TOO_MANY_EMOJIS", rules.emojis ? `The caption uses ${emojis} emojis; the publication allows ${rules.emojis}.` : "The publication allows no emoji.");
     if (candidate.hashtags.length < CAPTION_MIN_HASHTAGS || candidate.hashtags.length > CAPTION_MAX_HASHTAGS) add("HASHTAG_COUNT", `The caption has ${candidate.hashtags.length} hashtags; it takes ${CAPTION_MIN_HASHTAGS} to ${CAPTION_MAX_HASHTAGS}.`);
@@ -195,7 +228,7 @@ export function mechanicalCaptionIssues(candidates: readonly Draft2CaptionCandid
     const narration = NARRATION.exec(candidate.text);
     if (narration) add("NARRATES_CAROUSEL", `"${narration[0]}" talks about the carousel; the caption talks about the story.`);
     if (candidate.text.length > CAPTION_SPACING_THRESHOLD && !candidate.text.includes("\n\n")) add("NO_SPACING", "A caption this long needs blank lines between its parts.");
-    if (CREDIT.test(candidate.text)) add("CREDIT_IN_TEXT", "The photo credits are added after the text by the program; leave them out.");
+    if (CREDIT.test(candidate.text)) add("CREDIT_IN_TEXT", "The source and the photo credits are added after the text by the program; leave them out.");
     const key = headlineKey(candidate.text.split("\n")[0] ?? "");
     const earlier = keys.get(key);
     if (earlier && !(candidate.proposalOf && earlier.proposalOf === candidate.proposalOf)) add("DUPLICATE_CANDIDATE", `The caption opens like ${earlier.id}.`);

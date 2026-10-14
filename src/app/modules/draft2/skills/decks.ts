@@ -6,11 +6,13 @@ import type { Draft2Skill } from "./draft2-skills";
  * text. Its numbers mirror the constants in draft2-deck.types.ts (a test
  * keeps them together); a change to the text is a new version. It carries
  * what the v1 carousels taught: too much text per slide, fine print and
- * recaps lose the reader.
+ * recaps lose the reader. Version 2, 2026-10-14, after an auditor found
+ * "Les incidents dépassent la drogue" where the facts gave "more than 15
+ * fights and assaults in three years": a headline states its slide's fact.
  */
 export const DECKS_SKILL: Draft2Skill = {
   name: "decks",
-  version: "1",
+  version: "2",
   text: `# Decks for social carousels
 
 The deck is the middle of the carousel: the slides after slide 2 and before
@@ -45,6 +47,10 @@ judged against the opening and the closing it connects.
 - Never repeat the cover, slide 2, the closing or another deck slide; never
   a recap or a summary label ("In summary", "En bref", "En resumen").
 - Vary how headlines open; never two in a row with the same word.
+- A headline states its slide's fact in concrete terms (who did what, the
+  number, the consequence), so a reader who reads only the headlines follows
+  the story: never a comment on the facts ("The nuance is in the 'may'"), a
+  comparison without its terms ("Incidents go beyond drugs") or a riddle.
 
 ## Facts
 - Every sentence rests on the verified facts cited by id. Numbers, names,
@@ -61,7 +67,8 @@ judged against the opening and the closing it connects.
 - coverage: does the deck carry what the promise and the closing need, with
   the most important facts, and leave out what neither needs?
 - pacing: one idea per slide, short, the right number of slides?
-- clarity: instant comprehension on a phone, no jargon, no inside knowledge.
+- clarity: instant comprehension on a phone, headlines that state their
+  facts, no jargon, no inside knowledge.
 - grounding: nothing intensified beyond the facts; qualifiers kept.
 - voice: the voice the focus sets (its gravity and tone) in the
   publication's language.

@@ -22,10 +22,13 @@ import type { Draft2Skill } from "./draft2-skills";
  * when the image merits it; the editor casts each slide too. Version 8: a
  * verified map slide may carry a character in the graphic area beside the
  * card, consulting the practical information; a verified photo never.
+ * Version 9, 2026-10-14: a story photo on a real-photo slide is pasted
+ * unchanged (a model's redraw of a real bar's façade passed for it, logo
+ * included), and only photos the publication may publish are offered.
  */
 export const VISUALS_SKILL: Draft2Skill = {
   name: "visuals",
-  version: "8",
+  version: "9",
   text: `# Visual scripts for social carousels
 
 A visual script is the sequence of images a carousel is made of, written as
@@ -146,6 +149,11 @@ the end.
 - A named real place appears only through its verified photo or map, in
   references; otherwise as a generic scene of its kind, unnamed and
   unrecognizable.
+- A story photo on a "real-photo" slide is pasted unchanged, like a
+  portrait: the slide is designed around it and the direction never asks to
+  redraw, restore or extend it. On any other slide the image model adapts it
+  as the slide's subject. peopleAndPlaces offers only the photos the
+  publication may publish; a photo kept as reference only is never shown.
 - A generic scene of an everyday activity (people walking a trail, shopping
   at a market, in a setting nobody could take for the named place) is not a
   reconstruction, and often the best way to tell a story without verified

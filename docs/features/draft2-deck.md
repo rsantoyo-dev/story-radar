@@ -133,3 +133,9 @@ spine's middle beats (`deckShape(structure, slide2FactIds, spine)`, clamped
 to the deck's 2–5 range), and the deck writer and judge read the spine skill:
 each slide is its middle beat, in order, and the turn's slide leaves room for
 its image. A list or a procedure keeps its items as before.
+
+## Decks v2: headlines that state their facts (2026-10-14)
+
+A headline states its slide's fact, never a comment on the facts or a
+comparison without its terms; the fairness skill joins the writer and the
+judge. See draft2-news-integrity.md.

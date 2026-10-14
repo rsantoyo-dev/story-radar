@@ -11,6 +11,7 @@ import {
 } from "./draft2-closing.types";
 import { brandBrief, composeInstructions, creativeSkills } from "./skills/draft2-skills";
 import { CLOSINGS_SKILL } from "./skills/closings";
+import { FAIRNESS_SKILL } from "./skills/fairness";
 import type { Draft2SessionRow } from "@/db/schema";
 
 /** What a closing run ends and follows: the opening as the editor chose it, the focus that opening followed, and the shape its structure asks for. */
@@ -54,8 +55,8 @@ const CLOSING_STEP: FunnelStep<Draft2ClosingCandidate, Draft2ClosingScore, Draft
     const brief = `${brandBrief(profile)}\n\n${callToActionBrief({ style: profile.callToActionStyle, emojis })}`;
     const values = focus.values;
     return {
-      writer: composeInstructions("closing-writer", [CLOSINGS_SKILL, ...creativeSkills(values)], brief),
-      judge: composeInstructions("closing-judge", [CLOSINGS_SKILL, ...creativeSkills(values)], brief),
+      writer: composeInstructions("closing-writer", [CLOSINGS_SKILL, FAIRNESS_SKILL, ...creativeSkills(values)], brief),
+      judge: composeInstructions("closing-judge", [CLOSINGS_SKILL, FAIRNESS_SKILL, ...creativeSkills(values)], brief),
       context: { focus: focusForModels(values), opening: openingForClosing(opening), shape },
       schemas: { writer: closingSchema(shape), judge: closingEvaluationSchema(shape) },
       parseCandidates: (text) => parseClosingCandidates(text, shape),

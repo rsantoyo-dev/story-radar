@@ -408,3 +408,10 @@ characters again" (in each slide's "Another image" and in the script's cast
 panel) is the inventory action `roster`: it reads the Topic's characters with
 a reference image and keeps the inventory's version, since a new character
 is a new choice, not a change to what the steps read.
+
+## 18. Photo rights, and real photos pasted unchanged (2026-10-14)
+
+A story photo a real-photo slide rests on is pasted unchanged; a photo the
+editor keeps as reference only is never shown, and an attempt fails, saying
+why, on one declared reference only since the run began. See
+draft2-news-integrity.md.

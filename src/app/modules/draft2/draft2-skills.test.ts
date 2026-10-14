@@ -39,7 +39,7 @@ test("instructions are the role, then each skill, then the brand brief, and reco
   assert.deepEqual(writer.skillVersions, { hooks: "7" });
   assert.equal(composeInstructions("opening-judge", [skill]).instructions, `${OPENING_ROLES["opening-judge"]}\n\n## Shared craft\n\n## Judge only`, "a role reads its own part after the shared text");
   assert.deepEqual(Object.keys(DRAFT2_ROLES).sort(), ["caption-judge", "caption-writer", "carousel-editor", "carousel-reader", "closing-judge", "closing-writer", "deck-judge", "deck-writer", "extractor", "focus-concept-judge", "focus-editor", "focus-narrative-judge", "focus-planner", "image-judge", "mention-finder", "opening-judge", "opening-writer", "people-finder", "reviewer", "visual-judge", "visual-writer"]);
-  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@2", "focus@13", "narratives@4", "discovery@1", "arcs@1", "spine@1", "levers@1", "hooks@7", "closings@2", "decks@1", "review@3", "visuals@8", "images@4", "captions@2"]);
+  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@2", "focus@14", "narratives@4", "discovery@1", "arcs@1", "spine@1", "levers@1", "fairness@1", "hooks@8", "closings@3", "decks@2", "review@4", "visuals@9", "images@4", "captions@3"]);
 });
 
 test("the Facts prompts keep their words (the reviewer's say the article is context and name earlierReview since v2): the extractor reads its rules, the reviewer its checklist", () => {
@@ -113,7 +113,7 @@ test("the focus skill names every field and value the contract accepts, and the 
   const { instructions, skillVersions } = composeInstructions("focus-editor", [FOCUS_SKILL], brandBrief(profile));
   assert.ok(instructions.startsWith(FOCUS_ROLES["focus-editor"]));
   assert.ok(instructions.endsWith(`${toneLine(profile)}.`), "the brand brief, with the tone defaults, comes last");
-  assert.deepEqual(skillVersions, { focus: "13" });
+  assert.deepEqual(skillVersions, { focus: "14" });
   assert.match(FOCUS_SKILL.text, /readerConsequence: one sentence of at most 300 characters/);
   assert.match(FOCUS_SKILL.text, /- correction, when present, names a rule your earlier answer broke/);
   assert.match(FOCUS_SKILL.text, /visualDirection: one or two sentences, at most 600 characters/);
@@ -140,7 +140,7 @@ test("closings: one action the goal decides and the publication words, a grave s
   const { instructions, skillVersions } = composeInstructions("closing-writer", [CLOSINGS_SKILL], `${brandBrief(profile)}\n\n${callToActionBrief({ style: "Warm.", emojis: 0 })}`);
   assert.ok(instructions.startsWith(CLOSING_ROLES["closing-writer"]));
   assert.ok(instructions.endsWith("# Calls to action\n- The publication's style (its voice and wording; the focus's goal decides the action): Warm.\n- Emojis: none."));
-  assert.deepEqual(skillVersions, { closings: "2" });
+  assert.deepEqual(skillVersions, { closings: "3" });
 });
 
 test("the decks rubric states the shapes, limits and thresholds the program enforces", () => {
@@ -152,7 +152,7 @@ test("the decks rubric states the shapes, limits and thresholds the program enfo
   assert.match(DECKS_SKILL.text, /never\s+a recap or a summary label/);
   assert.match(DECK_ROLES["deck-writer"], /each a different path from slide 2 to the closing/);
   assert.match(DECK_ROLES["deck-judge"], /"part": "s1" for the first deck slide/);
-  assert.deepEqual(composeInstructions("deck-judge", [DECKS_SKILL], brandBrief(profile)).skillVersions, { decks: "1" });
+  assert.deepEqual(composeInstructions("deck-judge", [DECKS_SKILL], brandBrief(profile)).skillVersions, { decks: "2" });
 });
 
 test("the visual scripts rubric states the limits and thresholds the program enforces, and v1's rules on people, places and characters", () => {
@@ -178,7 +178,7 @@ test("the visual scripts rubric states the limits and thresholds the program enf
   assert.match(VISUALS_SKILL.text, /The image model letters each slide's words inside the image/);
   assert.match(VISUALS_SKILL.text, /is not a\s+reconstruction/);
   assert.match(VISUAL_ROLES["visual-judge"], /"REPETITIVE"/);
-  assert.deepEqual(composeInstructions("visual-writer", [VISUALS_SKILL], brandBrief(profile)).skillVersions, { visuals: "8" });
+  assert.deepEqual(composeInstructions("visual-writer", [VISUALS_SKILL], brandBrief(profile)).skillVersions, { visuals: "9" });
   assert.match(VISUALS_SKILL.text, /The script follows the focus's visualDirection when it has one/);
   assert.match(VISUAL_ROLES["visual-writer"], /ids c1, c2…/);
   assert.deepEqual(composeInstructions("people-finder", [], brandBrief(profile)).skillVersions, {}, "the finder reads its role and the brand brief, no skill");
@@ -203,6 +203,6 @@ test("the captions rubric keeps the caption's numbers, and tags every account th
   assert.match(CAPTION_ROLES["caption-writer"], new RegExp(`ids c1…c${CAPTION_CANDIDATES}`));
   assert.match(CAPTION_ROLES["caption-writer"], /"text" keeps its line breaks/);
   assert.match(CAPTION_ROLES["mention-finder"], /Never invent a username to fill the list/);
-  assert.deepEqual(composeInstructions("caption-writer", [CAPTIONS_SKILL], brandBrief(profile)).skillVersions, { captions: "2" });
+  assert.deepEqual(composeInstructions("caption-writer", [CAPTIONS_SKILL], brandBrief(profile)).skillVersions, { captions: "3" });
   assert.deepEqual(composeInstructions("mention-finder", [], brandBrief(profile)).skillVersions, {}, "the finder reads its role and the brand brief, no skill");
 });

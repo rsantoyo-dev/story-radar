@@ -19,7 +19,7 @@ import { comparableText, Draft2BusyError, Draft2InputError, type Draft2Fact, typ
 import { factsSnapshot, failedCall } from "./draft2-funnel";
 import {
   DRAFT2_INVENTORY_SCHEMA, INVENTORY_MAX_PEOPLE_LOOKUPS, INVENTORY_MAX_PLACE_LOOKUPS, carriedDecisions, decidedInventory, inventoryEntity, keptPlaceRejections, parseInventoryAction,
-  parseInventoryEntities, personEntity, rejectedEntity, reopenedEntity, storyPhotosDiffer, withStoryPhoto, withStoryPhotos,
+  parseInventoryEntities, personEntity, rejectedEntity, reopenedEntity, storyPhotoRightsDiffer, storyPhotosDiffer, withStoryPhoto, withStoryPhotos,
   type Draft2GooglePlace, type Draft2Inventory, type Draft2InventoryEntity, type Draft2InventoryStoryPhoto, type Draft2PlacePhoto,
 } from "./draft2-inventory.types";
 import { OPENING_STALL_MS } from "./draft2-opening.types";
@@ -39,7 +39,7 @@ const factsVerified = (session: Draft2SessionRow) => Boolean(session.facts?.leng
 /** The story photos the editor attached (and Commons portraits they confirmed), active ones only. */
 async function storyPhotos(topicId: string, storyId: string): Promise<Draft2InventoryStoryPhoto[]> {
   const photos = await listStoryPhotos(topicId, storyId);
-  return photos.filter((photo) => photo.active).map((photo) => ({ id: photo.id, name: photo.name, description: photo.description, provenance: photo.provenance, transmissionAllowed: photo.providerTransmissionAllowed }));
+  return photos.filter((photo) => photo.active).map((photo) => ({ id: photo.id, name: photo.name, description: photo.description, provenance: photo.provenance, transmissionAllowed: photo.providerTransmissionAllowed, rights: photo.publicationRights }));
 }
 
 /** The Topic's characters with a reference image, as the visual script may cast them. */
@@ -287,8 +287,11 @@ export async function editDraft2Inventory({ topicId, sessionId, input }: { topic
     next = { ...inventory, roster: fresh, updatedAt: now.toISOString() };
   } else if (action.action === "photos") {
     const refreshed = withStoryPhotos(inventory, await storyPhotos(topicId, session.storyId));
-    if (!storyPhotosDiffer(refreshed, inventory)) return session;
-    next = { ...refreshed, version: inventory.version + 1, updatedAt: now.toISOString() };
+    // A declaration of rights alone keeps the version: the steps read the same photos, and the image step refuses one that may not be published.
+    if (!storyPhotosDiffer(refreshed, inventory)) {
+      if (!storyPhotoRightsDiffer(refreshed, inventory)) return session;
+      next = { ...refreshed, updatedAt: now.toISOString() };
+    } else next = { ...refreshed, version: inventory.version + 1, updatedAt: now.toISOString() };
   } else if (action.action === "photo") {
     const entity = inventoryEntity(inventory, action.entityId);
     const photos = await storyPhotos(topicId, session.storyId);
@@ -301,7 +304,7 @@ export async function editDraft2Inventory({ topicId, sessionId, input }: { topic
     if (!candidate) throw new Draft2InputError(`${action.candidateId} is not one of the Commons candidates for ${entity.name}.`);
     const photo = await importCommonsPersonPhoto(topicId, session.storyId, candidate.entityId, "person");
     next = decidedInventory(inventory, entity.id, (current) => ({ ...current, person: { ...current.person!, status: "confirmed", confirmed: { ...candidate, storyPhotoId: photo.id } } }), now);
-    next = { ...next, storyPhotos: [...next.storyPhotos.filter((entry) => entry.id !== photo.id), { id: photo.id, name: photo.name, description: photo.description, provenance: photo.provenance, transmissionAllowed: photo.providerTransmissionAllowed }] };
+    next = { ...next, storyPhotos: [...next.storyPhotos.filter((entry) => entry.id !== photo.id), { id: photo.id, name: photo.name, description: photo.description, provenance: photo.provenance, transmissionAllowed: photo.providerTransmissionAllowed, rights: photo.publicationRights }] };
   } else {
     const entity = inventoryEntity(inventory, action.entityId);
     next = decidedInventory(inventory, entity.id, action.action === "reject" ? rejectedEntity : reopenedEntity, now);

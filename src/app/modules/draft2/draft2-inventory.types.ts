@@ -1,5 +1,6 @@
 import { comparableText, Draft2InputError, Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
 import type { Draft2Provider } from "./draft2-models";
+import { publishablePhoto, type StoryPhotoRights } from "../stories/story-materials.types";
 
 /**
  * People and places, the Draft 2 step before the visual script: who and
@@ -74,10 +75,15 @@ export type Draft2GooglePlace = {
   exactName: boolean;
 };
 
-/** A photo already attached to the story, by the editor or from Commons. */
-export type Draft2InventoryStoryPhoto = { id: string; name: string; description: string; provenance: string; transmissionAllowed: boolean };
+/**
+ * A photo already attached to the story, by the editor or from Commons, with
+ * what the publication may do with it: only one that is its own or licensed
+ * appears in a published image. A snapshot taken before the declaration has
+ * no rights and reads as reference only.
+ */
+export type Draft2InventoryStoryPhoto = { id: string; name: string; description: string; provenance: string; transmissionAllowed: boolean; rights?: StoryPhotoRights };
 /** A story photo as it is linked to a person or place. */
-export type Draft2LinkedPhoto = Pick<Draft2InventoryStoryPhoto, "id" | "name" | "provenance" | "transmissionAllowed">;
+export type Draft2LinkedPhoto = Pick<Draft2InventoryStoryPhoto, "id" | "name" | "provenance" | "transmissionAllowed" | "rights">;
 
 export type Draft2InventoryEntity = {
   /** e1, e2…, stable while the story's names do not change. */
@@ -194,7 +200,7 @@ export function parseInventoryEntities(answer: string, facts: readonly Draft2Fac
 }
 
 const sameEntity = (a: Draft2InventoryEntity, b: Draft2InventoryEntity) => a.kind === b.kind && comparableText(a.name) === comparableText(b.name);
-const linkedPhoto = ({ id, name, provenance, transmissionAllowed }: Draft2LinkedPhoto): Draft2LinkedPhoto => ({ id, name, provenance, transmissionAllowed });
+const linkedPhoto = ({ id, name, provenance, transmissionAllowed, rights }: Draft2LinkedPhoto): Draft2LinkedPhoto => ({ id, name, provenance, transmissionAllowed, ...(rights ? { rights } : {}) });
 
 /**
  * What a new search keeps from the last one, by name: the editor's decision
@@ -322,6 +328,20 @@ export function storyPhotosDiffer(a: Pick<Draft2Inventory, "entities" | "storyPh
   return key(a) !== key(b);
 }
 
+/**
+ * Whether only the editor's declarations of rights differ: the photos and
+ * their links are the same, so the steps read the same material and the
+ * version stays (a photo declared reference only is refused where it would
+ * be published, at the image step).
+ */
+export function storyPhotoRightsDiffer(a: Pick<Draft2Inventory, "entities" | "storyPhotos">, b: Pick<Draft2Inventory, "entities" | "storyPhotos">): boolean {
+  const key = (inventory: Pick<Draft2Inventory, "entities" | "storyPhotos">) => JSON.stringify([
+    inventory.storyPhotos.map((photo) => [photo.id, photo.rights ?? null]),
+    inventory.entities.map((entity) => entity.storyPhoto ? [entity.storyPhoto.id, entity.storyPhoto.rights ?? null] : null),
+  ]);
+  return key(a) !== key(b);
+}
+
 /** The inventory after one decision, one version more. */
 export function decidedInventory(inventory: Draft2Inventory, entityId: string | undefined, change: (entity: Draft2InventoryEntity) => Draft2InventoryEntity, now: Date, characters?: Draft2CharacterChoice): Draft2Inventory {
   return {
@@ -341,26 +361,29 @@ export function awaitsConfirmation(entity: Draft2InventoryEntity): boolean {
 /**
  * What the visual script may show of each entity: a portrait (a confirmed
  * person, or one the editor linked a story photo to), a photo (a verified
- * place's, or the editor's) or a map (a verified place's), or nothing.
+ * place's, or the editor's) or a map (a verified place's), or nothing. An
+ * editor's photo counts only when the publication may publish it.
  */
 export type Draft2VisualMaterial = { portrait: boolean; photo: boolean; map: boolean };
 export function entityMaterial(entity: Draft2InventoryEntity): Draft2VisualMaterial {
   const place = entity.kind === "place" && entity.place?.status === "verified" ? entity.place : undefined;
+  const linked = Boolean(entity.storyPhoto) && publishablePhoto(entity.storyPhoto?.rights);
   return {
-    portrait: entity.kind === "person" && (Boolean(entity.storyPhoto) || (entity.person?.status === "confirmed" && Boolean(entity.person.confirmed))),
-    photo: entity.kind === "place" && (Boolean(entity.storyPhoto) || Boolean(place?.photo)),
+    portrait: entity.kind === "person" && (linked || (entity.person?.status === "confirmed" && Boolean(entity.person.confirmed))),
+    photo: entity.kind === "place" && (linked || Boolean(place?.photo)),
     map: Boolean(place?.map),
   };
 }
 
 /**
- * The story photos a script may use by their own id: those the editor
- * allowed sent to an image model, except a person's (a confirmed or linked
- * portrait), which appears only as their portrait, through their entity.
+ * The story photos a script may use by their own id: those the publication
+ * may publish and the editor allowed sent to an image model, except a
+ * person's (a confirmed or linked portrait), which appears only as their
+ * portrait, through their entity. A reference-only photo is never one.
  */
 export function referencePhotos(inventory: Pick<Draft2Inventory, "entities" | "storyPhotos">): Draft2InventoryStoryPhoto[] {
   const portraits = new Set(inventory.entities.filter((entity) => entity.kind === "person").flatMap((entity) => [entity.storyPhoto?.id, entity.person?.confirmed?.storyPhotoId]).filter(Boolean));
-  return inventory.storyPhotos.filter((photo) => photo.transmissionAllowed && !portraits.has(photo.id));
+  return inventory.storyPhotos.filter((photo) => photo.transmissionAllowed && publishablePhoto(photo.rights) && !portraits.has(photo.id));
 }
 
 /** The inventory as the visual script's models read it: who and where, what each may show, and the story's own photos. */

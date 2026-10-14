@@ -26,6 +26,14 @@ export const storyReferencePhotos = pgTable("story_reference_photos", {
   description: text("description").notNull(),
   provenance: text("provenance").notNull(),
   providerTransmissionAllowed: boolean("provider_transmission_allowed").notNull().default(false),
+  /**
+   * What the publication may do with the photo, as the editor declares it:
+   * "own" and "licensed" may appear in a published image; "reference" informs
+   * the work and is never published. Rows saved before the declaration are
+   * "reference" (Commons imports, licensed by construction, were set to
+   * "licensed" by the migration).
+   */
+  publicationRights: text("publication_rights").$type<"own" | "licensed" | "reference">().notNull().default("reference"),
   active: boolean("active").notNull().default(true),
   objectKey: text("object_key").notNull(),
   sha256: text("sha256").notNull(),
@@ -45,6 +53,7 @@ export const storyReferencePhotos = pgTable("story_reference_photos", {
   foreignKey({ columns: [table.topicId, table.storyId], foreignColumns: [topicStories.topicId, topicStories.storyId] }).onDelete("cascade"),
   uniqueIndex("story_reference_object_unique").on(table.objectKey),
   check("story_reference_photo_focus_check", sql`(${table.focusX} IS NULL AND ${table.focusY} IS NULL) OR (${table.focusX} BETWEEN 0 AND 1 AND ${table.focusY} BETWEEN 0 AND 1)`),
+  check("story_reference_photo_rights_check", sql`${table.publicationRights} IN ('own', 'licensed', 'reference')`),
 ]);
 
 /**

@@ -211,3 +211,9 @@ v1's candidate checks apply unchanged: the draft and every image approved,
 - Instagram's own tag on the images (user tags) and collaborators: the
   caption's @mentions only.
 - A carousel of more than 10 slides cannot be published as one post.
+
+## 9. The source line (2026-10-14)
+
+The post names where the story was reported ("Source : journaldemontreal.com")
+after the caption and before the credits; the editor may leave it out per
+post. See draft2-news-integrity.md.

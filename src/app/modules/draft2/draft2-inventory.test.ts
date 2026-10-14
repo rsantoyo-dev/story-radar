@@ -30,8 +30,8 @@ const SCOPE = { municipality: "Longueuil", region: "Québec", country: "Canada",
 const photoEvidence = (provider?: "openverse") => ({ evidence: { placeId: "Q1", sourceUrl: "https://commons.wikimedia.org/wiki/File:y.jpg", resourceUrl: "https://upload.wikimedia.org/y.jpg", author: "B. Lens", license: "CC BY 4.0", licenseUrl: "https://creativecommons.org/licenses/by/4.0/", attribution: "B. Lens · CC BY 4.0", captureDate: "2024", retrievedAt: "2026-10-10T12:00:00.000Z", sha256: "abc", width: 2000, height: 1300, contentType: "image/jpeg", ...(provider ? { provider } : {}) }, bytes: Buffer.from("x") });
 
 type Row = Record<string, unknown> & { inventory: Draft2Inventory | null; trace: types.Draft2TraceEntry[]; updatedAt: Date };
-type StoryPhoto = { id: string; name: string; description: string; provenance: string; providerTransmissionAllowed: boolean; active: boolean };
-const STORY_PHOTOS: StoryPhoto[] = [{ id: "p1", name: "Reading room", description: "The editor's photo", provenance: "Editor", providerTransmissionAllowed: true, active: true }, { id: "p0", name: "Old", description: "", provenance: "", providerTransmissionAllowed: true, active: false }];
+type StoryPhoto = { id: string; name: string; description: string; provenance: string; providerTransmissionAllowed: boolean; active: boolean; publicationRights?: string };
+const STORY_PHOTOS: StoryPhoto[] = [{ id: "p1", name: "Reading room", description: "The editor's photo", provenance: "Editor", providerTransmissionAllowed: true, active: true, publicationRights: "own" }, { id: "p0", name: "Old", description: "", provenance: "", providerTransmissionAllowed: true, active: false }];
 /** A Google Places match (google-maps-provider.ts, GooglePlaceCandidate). */
 const googleMatch = (name: string, address: string) => ({ id: "gp-1", name, address, sourceUrl: "https://www.google.com/maps/search/?api=1&query=x", latitude: 45.53, longitude: -73.51, matchesScope: true, exactName: true, pointSuitable: true, namedPoint: true, photos: [], attributions: [], exclusions: [] });
 
@@ -70,7 +70,7 @@ function harness({ session, scope = SCOPE, peopleFail = false, contact = "editor
     "../stories/creative-profile.repository": { getCreativeProfile: async () => profile },
     "../stories/commons-person-photos": {
       searchCommonsPeople: async (_topic: string, _story: string, name: string) => { calls.search.push(name); if (peopleFail) throw new Error("Configure a contact for Wikimedia requests."); return [CANDIDATE]; },
-      importCommonsPersonPhoto: async (_topic: string, _story: string, entityId: string, kind: string) => { calls.imported.push(`${entityId}:${kind}`); return { id: "photo-1", name: "Catherine Fournier", description: "Commons portrait", provenance: "Photo: A. Photographer", providerTransmissionAllowed: false, active: true }; },
+      importCommonsPersonPhoto: async (_topic: string, _story: string, entityId: string, kind: string) => { calls.imported.push(`${entityId}:${kind}`); return { id: "photo-1", name: "Catherine Fournier", description: "Commons portrait", provenance: "Photo: A. Photographer", providerTransmissionAllowed: false, active: true, publicationRights: "licensed" }; },
     },
     "../stories/creative-documentary-providers": { providerLanguage: () => "fr", documentaryProviders: () => ({
       resolve: async (mention: { name: string }) => {
@@ -209,7 +209,7 @@ test("the editor gives a person or place one of the story's photos and takes it 
   await h.find();
   const linked = await h.decide({ action: "photo", entityId: "e3", storyPhotoId: "p1" });
   const quarter = linked.inventory!.entities[2];
-  assert.equal(json([quarter.storyPhoto, linked.inventory!.version]), json([{ id: "p1", name: "Reading room", provenance: "Editor", transmissionAllowed: true }, 2]));
+  assert.equal(json([quarter.storyPhoto, linked.inventory!.version]), json([{ id: "p1", name: "Reading room", provenance: "Editor", transmissionAllowed: true, rights: "own" }, 2]));
   assert.equal(json(inventoryTypes.entityMaterial(quarter)), json({ portrait: false, photo: true, map: false }), "a place Wikidata missed shows the editor's photo");
   const portrait = await h.decide({ action: "photo", entityId: "e1", storyPhotoId: "p1" });
   assert.equal(inventoryTypes.entityMaterial(portrait.inventory!.entities[0]).portrait, true);
@@ -222,6 +222,20 @@ test("the editor gives a person or place one of the story's photos and takes it 
   assert.equal(json([refreshed.inventory!.version, refreshed.inventory!.storyPhotos.map((photo) => photo.id), refreshed.inventory!.entities[2].storyPhoto]), json([5, ["p2"], undefined]), "a removed photo's link is dropped");
   await assert.rejects(h.decide({ action: "photo", entityId: "e3", storyPhotoId: "p1" }), /not one of the story's photos/);
   await assert.rejects(h.decide({ action: "photo", entityId: "e4", storyPhotoId: "p2" }), /e4 is not one of this story's people or places/);
+});
+
+test("a photo the editor declares reference only is never shown: the declaration alone keeps the version, and declaring it again brings it back", async () => {
+  const h = harness({ wikidataMisses: ["Vieux-Longueuil"] });
+  await h.find();
+  const linked = await h.decide({ action: "photo", entityId: "e3", storyPhotoId: "p1" });
+  assert.equal(inventoryTypes.entityMaterial(linked.inventory!.entities[2]).photo, true);
+  h.setPhotos([{ ...STORY_PHOTOS[0], publicationRights: "reference" }]);
+  const declared = await h.decide({ action: "photos" });
+  assert.equal(json([declared.inventory!.version, declared.inventory!.storyPhotos[0].rights, declared.inventory!.entities[2].storyPhoto?.rights]), json([2, "reference", "reference"]), "the same photos: the version a visual script follows stays");
+  assert.equal(json([inventoryTypes.entityMaterial(declared.inventory!.entities[2]).photo, inventoryTypes.referencePhotos(declared.inventory!)]), json([false, []]), "reference only: neither the place's photo nor a photo of its own");
+  assert.equal((await h.decide({ action: "photos" })).inventory!.version, 2, "nothing changed");
+  h.setPhotos([{ ...STORY_PHOTOS[0], publicationRights: "own" }]);
+  assert.equal(inventoryTypes.entityMaterial((await h.decide({ action: "photos" })).inventory!.entities[2]).photo, true);
 });
 
 test("the editor sets a wrong place aside and takes it back; a new search keeps it aside while it finds the same match, and keeps the photos given", async () => {

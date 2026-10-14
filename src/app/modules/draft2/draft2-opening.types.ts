@@ -1,5 +1,5 @@
 import { comparableText, type Draft2Fact } from "./draft2-facts.types";
-import type { Draft2FocusSnapshot } from "./draft2-focus.types";
+import type { Draft2FocusGuard, Draft2FocusSnapshot } from "./draft2-focus.types";
 import { FREE_LEVER, leverName, leverSupported, stockPhraseIn } from "./draft2-levers.types";
 import {
   criterionOf, factsSnapshot, funnelAcceptedWinner, funnelBestClean, funnelBestVersions, funnelEvaluationSchema, funnelExploreRequest, funnelFactIds,
@@ -74,9 +74,9 @@ export const OPENING_CRITERIA = ["tension", "payoff", "clarity", "grounding", "v
 export const OPENING_MECHANICAL_CODES = [
   "FACT_UNKNOWN", "NO_FACTS", "COVER_TOO_LONG", "SUBHEADLINE_TOO_LONG", "SLIDE2_HEADLINE_TOO_LONG", "SLIDE2_BODY_TOO_LONG",
   "ATTRIBUTION_ON_COVER", "SLIDE2_RESTATES_COVER", "SLIDE2_NO_NEW_FACT", "UNSUPPORTED_NUMBER", "DUPLICATE_CANDIDATE",
-  "LEVER_UNKNOWN", "LEVER_UNSUPPORTED", "STOCK_PHRASE",
+  "LEVER_UNKNOWN", "LEVER_UNSUPPORTED", "STOCK_PHRASE", "GUARD_LATE",
 ] as const;
-export const OPENING_JUDGE_CODES = ["WEAK_TENSION", "PROMISE_NOT_PAID", "UNCLEAR", "OVERCLAIMS", "OFF_VOICE", "OFF_FOCUS", "LABEL_NOT_HOOK", "OTHER"] as const;
+export const OPENING_JUDGE_CODES = ["WEAK_TENSION", "PROMISE_NOT_PAID", "UNCLEAR", "OVERCLAIMS", "OFF_VOICE", "OFF_FOCUS", "LABEL_NOT_HOOK", "MISLEADS", "OTHER"] as const;
 export const OPENING_ISSUE_CODES = [...OPENING_MECHANICAL_CODES, ...OPENING_JUDGE_CODES] as const;
 /** The acceptance rule: overall ≥ 95 and no criterion below 85. */
 export const OPENING_GATE: FunnelGate = { criteria: OPENING_CRITERIA, accept: OPENING_ACCEPT_SCORE, floor: OPENING_CRITERION_FLOOR };
@@ -217,7 +217,7 @@ const ATTRIBUTION = /\b(according to|says?|said|reports?|reported|claims?|selon|
  * them or free, and the facts its cover cites must carry what the program
  * can check of it (a figure). No cover uses a stock formula.
  */
-export function mechanicalOpeningIssues(candidates: readonly Draft2OpeningCandidate[], facts: readonly Draft2Fact[], { itemCount, eligibleLevers }: { itemCount?: number; eligibleLevers?: readonly string[] } = {}): Draft2OpeningIssue[] {
+export function mechanicalOpeningIssues(candidates: readonly Draft2OpeningCandidate[], facts: readonly Draft2Fact[], { itemCount, eligibleLevers, guards = [] }: { itemCount?: number; eligibleLevers?: readonly string[]; guards?: readonly Draft2FocusGuard[] } = {}): Draft2OpeningIssue[] {
   const byId = new Map(facts.map((fact) => [fact.id, fact]));
   const headlines = new Map<string, Draft2OpeningCandidate>();
   const issues: Draft2OpeningIssue[] = [];
@@ -261,6 +261,12 @@ export function mechanicalOpeningIssues(candidates: readonly Draft2OpeningCandid
     }
     const stock = stockPhraseIn(`${cover.headline} ${cover.subheadline}`);
     if (stock) add("STOCK_PHRASE", "cover", `The cover uses the stock formula "${stock}": write the lever's mechanism in the story's own words.`);
+    // What the cover alone could make a reader wrongly believe is prevented before the reader can stop: on the cover or slide 2.
+    const carried = new Set([...cover.factIds, ...slide2.factIds]);
+    for (const guard of guards) {
+      const missing = guard.factIds.filter((id) => !carried.has(id));
+      if (missing.length) add("GUARD_LATE", "slide2", `A reader who stops here could believe "${guard.misreading}": the cover or slide 2 must state what prevents it, citing ${missing.join(", ")}.`);
+    }
     // A proposal's original and the writer's edit may share a headline on purpose: the edit kept what worked.
     const key = headlineKey(cover.headline);
     const earlier = headlines.get(key);

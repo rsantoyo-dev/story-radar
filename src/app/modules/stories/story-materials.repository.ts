@@ -2,7 +2,7 @@ import "server-only";
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { storyContentRevisions, storyReferencePhotos, topicStories } from "@/db/schema";
-import { StoryMaterialConflictError, StoryMaterialValidationError, parseContentEdit, type PhotoFocus, type StoryReferencePhoto } from "./story-materials.types";
+import { StoryMaterialConflictError, StoryMaterialValidationError, parseContentEdit, type PhotoFocus, type StoryPhotoRights, type StoryReferencePhoto } from "./story-materials.types";
 
 export async function requireStoryMembership(topicId: string, storyId: string) {
   const [row] = await db.select({ id: topicStories.id }).from(topicStories).where(and(eq(topicStories.topicId, topicId), eq(topicStories.storyId, storyId))).limit(1);
@@ -27,7 +27,7 @@ export async function saveStoryContentRevision(topicId: string, storyId: string,
   if (!saved) throw new StoryMaterialConflictError("Another editor saved first. Reopen the content before saving.");
 }
 export function publicStoryPhoto(row: typeof storyReferencePhotos.$inferSelect): StoryReferencePhoto {
-  return { id: row.id, name: row.name, description: row.description, provenance: row.provenance, active: row.active, providerTransmissionAllowed: row.providerTransmissionAllowed,
+  return { id: row.id, name: row.name, description: row.description, provenance: row.provenance, active: row.active, providerTransmissionAllowed: row.providerTransmissionAllowed, publicationRights: row.publicationRights,
     ...(row.focusX !== null && row.focusY !== null ? { focus: { x: row.focusX, y: row.focusY } } : {}) };
 }
 export async function listStoryPhotos(topicId: string, storyId: string) {
@@ -41,6 +41,12 @@ export async function findStoryPhoto(topicId: string, storyId: string, id: strin
 /** Sets or clears where the photo's subject is. Framing only: the bytes and their hash never change. */
 export async function setStoryPhotoFocus(topicId: string, storyId: string, id: string, focus: PhotoFocus | null) {
   const [row] = await db.update(storyReferencePhotos).set({ focusX: focus?.x ?? null, focusY: focus?.y ?? null }).where(and(eq(storyReferencePhotos.topicId, topicId), eq(storyReferencePhotos.storyId, storyId), eq(storyReferencePhotos.id, id))).returning();
+  if (!row) throw new StoryMaterialValidationError("Photo not found in this story.");
+  return publicStoryPhoto(row);
+}
+/** The editor's declaration of what the publication may do with the photo. The bytes, the hash and the history never change. */
+export async function setStoryPhotoRights(topicId: string, storyId: string, id: string, rights: StoryPhotoRights) {
+  const [row] = await db.update(storyReferencePhotos).set({ publicationRights: rights }).where(and(eq(storyReferencePhotos.topicId, topicId), eq(storyReferencePhotos.storyId, storyId), eq(storyReferencePhotos.id, id))).returning();
   if (!row) throw new StoryMaterialValidationError("Photo not found in this story.");
   return publicStoryPhoto(row);
 }

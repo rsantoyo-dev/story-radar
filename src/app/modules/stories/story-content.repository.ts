@@ -2,12 +2,13 @@ import "server-only";
 import { latestContentRevision } from "./story-materials.repository";
 import type { StoryContentEdition } from "./story-materials.types";
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import {
   stories,
   storyContentEnrichments,
+  storySources,
   topicStories,
 } from "@/db/schema";
 
@@ -323,4 +324,10 @@ export async function failStoryContentEnrichment(
       updatedAt,
     })
     .where(eq(storyContentEnrichments.storyId, storyId));
+}
+
+/** The addresses the story was collected from, every source merged into it, first collected first: where it was reported. */
+export async function storySourceUrls(storyId: string): Promise<string[]> {
+  const rows = await db.select({ url: storySources.sourceUrl }).from(storySources).where(eq(storySources.storyId, storyId)).orderBy(asc(storySources.createdAt));
+  return rows.map((row) => row.url);
 }

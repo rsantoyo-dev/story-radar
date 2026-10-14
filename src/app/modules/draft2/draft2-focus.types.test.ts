@@ -302,7 +302,7 @@ test("People and places as the focus reads them: the brand's characters only whi
   assert.deepEqual([material.characters.map((character) => [character.id, character.name, character.description.length]), material.people, material.places], [[["char-jo", "Jo", 300]], ["Catherine Fournier"], [{ name: "Parc des Parulines", verifiedPhoto: false, map: true }]]);
   assert.deepEqual(focusMaterial({ ...inventory, characters: "off" }).characters, [], "characters the editor turned off are not offered");
   assert.deepEqual(material.portraits, [], "a person without a verified portrait is never shown");
-  const portrait = { ...inventory, entities: [{ ...inventory.entities[0], storyPhoto: { id: "p1", name: "Catherine Fournier", provenance: "Photo: Ville", transmissionAllowed: false } }, inventory.entities[1]] } as unknown as Draft2Inventory;
+  const portrait = { ...inventory, entities: [{ ...inventory.entities[0], storyPhoto: { id: "p1", name: "Catherine Fournier", provenance: "Photo: Ville", transmissionAllowed: false, rights: "licensed" as const } }, inventory.entities[1]] } as unknown as Draft2Inventory;
   assert.deepEqual(focusMaterial(portrait).portraits, ["Catherine Fournier"], "a story photo the editor gave them is their portrait");
   assert.equal(JSON.stringify(focusDecisionRequest({ title: "t", today: "2026-10-12", profile: { framingStrategy: "auto", storyStructure: "auto", conversionGoal: "followers" }, lines: [], foundBy: [], material }).material), JSON.stringify(material));
 });
@@ -458,6 +458,18 @@ test("the models read the spine between the telling and the directions; the edit
   assert.throws(() => parseFocusPlan(JSON.stringify({ spine: { beats: ARC_SPINE.beats.slice(0, 2) }, direction: "x", visualDirection: "y", reasons: {} }), { known, structure: arc }), (error: Error) => error instanceof Draft2ResponseError && /4 to 10 beats/.test(error.message));
   const kept = parseFocusPlan(JSON.stringify({ levers: freeLevers, spine: ARC_SPINE, direction: "Claude's direction.", visualDirection: "Claude's images.", reasons: { spine: "s", direction: "d", visualDirection: "v" } }), { known, structure: arc, editorChoices: { spine: shorter, direction: "Mine." } });
   assert.deepEqual([kept.spine.beats.length, kept.direction, kept.visualDirection, kept.reasons], [6, "Mine.", "Claude's images.", { visualDirection: "v" }], "the parts the editor owns are kept as given, without a reason of Claude's");
+  const guarded = parseFocusPlan(JSON.stringify({ levers: freeLevers, guards: [
+    { misreading: " The bar is closed. ", factIds: ["f2", "f9", "f3", "f1"] },
+    { misreading: "The bar is closed.", factIds: ["f1"] },
+    { misreading: "These events are this week's.", factIds: ["f9"] },
+    { misreading: "", factIds: ["f1"] },
+  ], spine: ARC_SPINE, direction: "d", visualDirection: "v", reasons: {} }), { known, structure: arc });
+  assert.deepEqual(guarded.guards, [{ misreading: "The bar is closed.", factIds: ["f2", "f3"] }], "a misreading with one or two verified facts, once; one without a known fact or a line is left out");
+  assert.deepEqual(parseFocusPlan(JSON.stringify({ levers: freeLevers, spine: ARC_SPINE, direction: "d", visualDirection: "v", reasons: {} }), { known, structure: arc }).guards, [], "an answer without guards has none");
+  const withGuards = focusWithPlan(focus, { ...guarded, guards: guarded.guards }, NOW);
+  assert.deepEqual([withGuards.values?.guards, withGuards.ai?.guards, focusForModels(withGuards.values!).guards], [guarded.guards, guarded.guards, [{ misreading: "The bar is closed.", factIds: ["f2", "f3"] }]], "Claude's, read by every step");
+  const cleared = focusWithPlan(withGuards, { ...guarded, guards: [] }, NOW);
+  assert.deepEqual(["guards" in cleared.values!, "guards" in cleared.ai!, "guards" in focusForModels(cleared.values!)], [false, false, false], "a plan with none leaves none from the earlier one");
   assert.deepEqual(focusFindings({ ...focus.values!, structure: { kind: "steps", itemFactIds: ["f1", "f2"] } }).map((finding) => finding.code), ["SPINE_SHAPE"], "a spine for another structure is a finding until Claude decides again");
   assert.equal(spineShapeProblem(ARC_SPINE.beats as Draft2SpineBeat[], { kind: "arc", itemFactIds: [] }), undefined);
 });
@@ -476,7 +488,7 @@ test("the decision and the plan are two answers: the decision carries no directi
   };
   assert.equal(enumsInArrays(DRAFT2_FOCUS_SCHEMA), 0, "the decision schema");
   assert.equal(enumsInArrays(DRAFT2_FOCUS_PLAN_SCHEMA), 0, "the plan schema");
-  assert.deepEqual((DRAFT2_FOCUS_PLAN_SCHEMA.required as string[]).sort(), ["direction", "levers", "reasons", "spine", "visualDirection"]);
+  assert.deepEqual((DRAFT2_FOCUS_PLAN_SCHEMA.required as string[]).sort(), ["direction", "guards", "levers", "reasons", "spine", "visualDirection"]);
   assert.ok(JSON.stringify(DRAFT2_FOCUS_SCHEMA).length < 3_600, `the decision schema stays small (${JSON.stringify(DRAFT2_FOCUS_SCHEMA).length} characters)`);
 });
 

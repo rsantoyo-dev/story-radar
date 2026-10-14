@@ -1,7 +1,7 @@
 import { Draft2InputError } from "./draft2-facts.types";
 import { funnelVersions } from "./draft2-funnel";
 import { shownAttempt, slideSettled, type Draft2Images, type Draft2SlideImage } from "./draft2-images.types";
-import { captionPostText, shownCredits, type Draft2Caption, type Draft2CaptionCandidate } from "./draft2-caption.types";
+import { captionPostText, shownCredits, shownSource, type Draft2Caption, type Draft2CaptionCandidate } from "./draft2-caption.types";
 import { confirmedMentions, sameMentions, type Draft2Mentions } from "./draft2-mentions.types";
 
 /**
@@ -44,6 +44,8 @@ export type Draft2Publication = {
 export type Draft2PublicationTarget = {
   slides: (Draft2PublishedSlide & { image: Draft2SlideImage })[];
   caption: Draft2CaptionCandidate;
+  /** The line that credits where the story was reported, when the post shows it. */
+  source?: string;
   credits: string[];
   /** Slides whose shown image did not pass Sol's review, in a line each. */
   issues: string[];
@@ -79,13 +81,13 @@ export function publicationTarget(session: { images?: Draft2Images | null; capti
   });
   return {
     slides: shown.map(({ slide, attempt }) => ({ slide: slide.slide, label: slide.label, order: slide.order, version: attempt!.version, sha256: attempt!.sha256!, image: slide })),
-    caption: chosen.candidate, credits: shownCredits(caption), issues, imagesRunId: images.runId,
+    caption: chosen.candidate, ...(shownSource(caption) ? { source: shownSource(caption) } : {}), credits: shownCredits(caption), issues, imagesRunId: images.runId,
   };
 }
 
-/** The text the target posts: the caption, its credits and its hashtags (captionPostText). */
-export const targetPostText = (target: Pick<Draft2PublicationTarget, "caption" | "credits">) =>
-  captionPostText({ text: target.caption.text, credits: target.credits, hashtags: target.caption.hashtags });
+/** The text the target posts: the caption, its source and credits, and its hashtags (captionPostText). */
+export const targetPostText = (target: Pick<Draft2PublicationTarget, "caption" | "source" | "credits">) =>
+  captionPostText({ text: target.caption.text, source: target.source, credits: target.credits, hashtags: target.caption.hashtags });
 
 /**
  * Whether the approved copy is still the carousel as it stands: the same

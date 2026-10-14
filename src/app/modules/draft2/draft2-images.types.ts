@@ -10,6 +10,7 @@ import {
 import type { CreativeUnit, CreativeUnitRole } from "../stories/creative-content.types";
 import type { PortraitBox, PortraitFit, PortraitSubject } from "../stories/creative-portrait-composite";
 import { MAP_PANEL_POSITIONS, type MapPanelPosition } from "../stories/map-panel-position";
+import { publishablePhoto } from "../stories/story-materials.types";
 import type { Draft2SessionRow } from "@/db/schema";
 
 /**
@@ -271,8 +272,11 @@ export function slideUnit(carousel: readonly Draft2CarouselSlide[], index: numbe
  * through the story photo the editor gave it (adapted by the model, or
  * pasted when it may not be sent), its map on a map slide, else its
  * verified photo as the model's identity reference; a story photo as the
- * model's subject. A pasted photo is the only photo on its slide, and a
- * slide has one place photo or map; what cannot be shown is noted.
+ * model's subject. On a slide that rests on a real photo (real-photo), the
+ * story photo is pasted unchanged: a model's redraw of a real place would
+ * pass for it. A photo the publication may not publish (reference only) is
+ * never shown. A pasted photo is the only photo on its slide, and a slide
+ * has one place photo or map; what cannot be shown is noted.
  */
 export function slideMaterial(slide: Draft2VisualSlide, inventory: Pick<Draft2Inventory, "entities" | "storyPhotos">): { material: Draft2SlideMaterial[]; notes: string[] } {
   const material: Draft2SlideMaterial[] = [];
@@ -280,25 +284,32 @@ export function slideMaterial(slide: Draft2VisualSlide, inventory: Pick<Draft2In
   const usable = new Set(referencePhotos(inventory).map((photo) => photo.id));
   for (const id of slide.references) {
     const entity = inventory.entities.find((entry) => entry.id === id);
+    // The editor's photo of this person or place, when the publication may publish it.
+    const linked = entity?.storyPhoto && publishablePhoto(entity.storyPhoto.rights) ? entity.storyPhoto : undefined;
+    const referenceOnly = entity?.storyPhoto && !linked ? ` (${entity.storyPhoto.name} is reference only: declare its publication rights to show it)` : "";
     if (entity?.kind === "person") {
-      const storyPhotoId = entity.storyPhoto?.id ?? (entity.person?.status === "confirmed" ? entity.person.confirmed?.storyPhotoId : undefined);
+      const storyPhotoId = linked?.id ?? (entity.person?.status === "confirmed" ? entity.person.confirmed?.storyPhotoId : undefined);
       if (storyPhotoId) material.push({ kind: "pasted-photo", storyPhotoId, name: entity.name, person: true, entityId: entity.id });
-      else notes.push(`${entity.name} has no confirmed portrait, so the slide does not show them.`);
+      else notes.push(`${entity.name} has no confirmed portrait${referenceOnly}, so the slide does not show them.`);
       continue;
     }
     if (entity?.kind === "place") {
       const verified = entity.place?.status === "verified" ? entity.place : undefined;
       if (slide.need === "verified-map" && verified?.map) material.push({ kind: "map", entityId: entity.id, name: entity.name, source: verified.google ? "google" : "wikidata" });
-      else if (entity.storyPhoto) {
-        material.push(entity.storyPhoto.transmissionAllowed
-          ? { kind: "story-photo", storyPhotoId: entity.storyPhoto.id, name: entity.name, purpose: "place" }
-          : { kind: "pasted-photo", storyPhotoId: entity.storyPhoto.id, name: entity.name, person: false, entityId: entity.id });
+      else if (linked) {
+        material.push(linked.transmissionAllowed && slide.need !== "real-photo"
+          ? { kind: "story-photo", storyPhotoId: linked.id, name: entity.name, purpose: "place" }
+          : { kind: "pasted-photo", storyPhotoId: linked.id, name: entity.name, person: false, entityId: entity.id });
       } else if (verified?.photo) material.push({ kind: "place-photo", entityId: entity.id, name: entity.name });
-      else notes.push(`${entity.name} has no verified photo or map, so the slide shows a generic scene of its kind.`);
+      else notes.push(`${entity.name} has no verified photo or map${referenceOnly}, so the slide shows a generic scene of its kind.`);
       continue;
     }
     const photo = inventory.storyPhotos.find((entry) => entry.id === id);
-    if (photo && usable.has(photo.id)) material.push({ kind: "story-photo", storyPhotoId: photo.id, name: photo.name, purpose: "subject" });
+    if (photo && usable.has(photo.id)) {
+      material.push(slide.need === "real-photo"
+        ? { kind: "pasted-photo", storyPhotoId: photo.id, name: photo.name, person: false }
+        : { kind: "story-photo", storyPhotoId: photo.id, name: photo.name, purpose: "subject" });
+    } else if (photo && !publishablePhoto(photo.rights)) notes.push(`${photo.name} is reference only, so the slide does not show it: declare its publication rights to show it.`);
   }
   const pasted = material.find((entry) => entry.kind === "pasted-photo");
   if (pasted) {

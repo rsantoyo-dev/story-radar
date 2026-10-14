@@ -79,7 +79,7 @@ const judge = (verdict: "accept" | "revise", winnerId: string, overall: Record<s
 type Call = { provider: string; role: "writer" | "judge"; input: Record<string, unknown> };
 type Row = Record<string, unknown> & { caption: Draft2Caption | null; trace: types.Draft2TraceEntry[] };
 
-function harness({ writes = [], judgments = [], session }: { writes?: ((contents: WriterContents) => unknown)[]; judgments?: ((contents: JudgeContents) => unknown)[]; session?: Record<string, unknown> } = {}) {
+function harness({ writes = [], judgments = [], session, sources = [] }: { writes?: ((contents: WriterContents) => unknown)[]; judgments?: ((contents: JudgeContents) => unknown)[]; session?: Record<string, unknown>; sources?: string[] } = {}) {
   const calls: Call[] = [];
   let row: Row = { id: sessionId, topicId, storyId, step: "images", status: "ready", facts, visual: VISUAL, inventory: INVENTORY, images: IMAGES, mentions: MENTIONS, caption: null, error: null, trace: [], updatedAt: new Date(), ...session };
   let write = 0;
@@ -111,6 +111,7 @@ function harness({ writes = [], judgments = [], session }: { writes?: ((contents
     "../stories/creative-text-meter": { withCreativeTextBudget: async (_context: unknown, work: () => Promise<unknown>) => work() },
     "../stories/anthropic.config": { getAnthropicRuntimeConfig: () => ({ apiKey: "k", model: "claude-sonnet-5-5" }), requireAnthropicApiKey: () => "k" },
     "../stories/creative-profile.repository": { getCreativeProfile: async () => profile },
+    "../stories/story-content.repository": { storySourceUrls: async (id: string) => id === storyId ? sources : [] },
     "../stories/openai-structured-response": { generateOpenAiStructuredResponse: async (input: Record<string, unknown>) => ({ ...answer("openai", input), cachedInputTokens: 900 }) },
     "../stories/anthropic-structured-response": { generateAnthropicStructuredResponse: async (input: Record<string, unknown>) => ({ ...answer("anthropic", input), cachedInputTokens: 0 }) },
     "./draft2-session.repository": {
@@ -127,6 +128,7 @@ function harness({ writes = [], judgments = [], session }: { writes?: ((contents
     choose: (candidateId: string) => exports.recordCaptionChoice({ topicId, sessionId, candidateId }) as Promise<Row>,
     credits: (images: Pick<Draft2Images, "slides">, inventory: unknown) => exports.captionCredits(images, inventory) as string[],
     showCredits: (shown: boolean) => exports.recordCaptionCredits({ topicId, sessionId, shown }) as Promise<Row>,
+    showSource: (shown: boolean) => exports.recordCaptionSource({ topicId, sessionId, shown }) as Promise<Row>,
     calls,
     row: () => row,
   };
@@ -146,7 +148,7 @@ test("Claude writes three captions for the finished carousel and Sol judges them
     assert.ok(String(call.input.instructions).includes("- Emojis: at most 3 in the whole caption."));
     assert.ok(String(call.input.instructions).includes("the same single action, stated once (Save this for Saturday.)"));
   }
-  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.skillVersions])), json([["caption", "draft2_caption", { captions: "2" }], ["caption", "draft2_caption_review", { captions: "2" }]]));
+  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.skillVersions])), json([["caption", "draft2_caption", { captions: "3", fairness: "1" }], ["caption", "draft2_caption_review", { captions: "3", fairness: "1" }]]));
   const run = session.caption!;
   assert.equal(json([session.step, session.status, run.status, run.winnerId, run.imagesRunId, run.mentionsVersion, run.credits, run.rules]),
     json(["caption", "ready", "ready", "c2", "run-1", 4, [], { emojis: 3, ctaStyle: "One warm, concrete step", cta: "Save this for Saturday.", grave: false }]));
@@ -227,6 +229,30 @@ test("the editor shows or leaves out the photo credits: no provider call, the ch
   assert.equal((await h.showCredits(true)).caption?.creditsHidden, undefined);
   await assert.rejects(harness({ session: { caption: { ...next.caption, status: "running" } } }).showCredits(false), (error: Error) => error instanceof types.Draft2BusyError && /The caption is being written/.test(error.message));
   await assert.rejects(harness().showCredits(false), /Write the caption first/);
+});
+
+test("the post names where the story was reported, after the caption and before the credits: the models know the line, it counts toward the limit, and the editor may leave it out", async () => {
+  const h = harness({ writes: [writer, writer], judgments: [judge("accept", "c1", { c1: 96 }), judge("accept", "c1", { c1: 96 })], sources: ["https://www.journaldemontreal.com/2026/10/14/houston", "https://presscraftor.local/owned-content/1", "https://journaldemontreal.com/autre"] });
+  const session = await h.run();
+  const line = "Source\u00a0: journaldemontreal.com";
+  assert.equal(json([session.caption?.sources, session.caption?.source, (h.calls[0].input.context as { source?: string }).source]), json([["journaldemontreal.com"], line, line]), "one host once, the publication's own content left out, in the publication's language");
+  assert.equal(captionTypes.captionPostText({ text: "Le Houston perd son permis d'alcool.", source: session.caption?.source, credits: ["Photo : A. Lens"], hashtags: ["Brossard"] }), `Le Houston perd son permis d'alcool.\n\n${line}\nPhoto : A. Lens\n\n#Brossard`);
+  const calls = h.calls.length;
+  const hidden = await h.showSource(false);
+  assert.equal(json([hidden.caption?.sourceHidden, captionTypes.shownSource(hidden.caption), h.calls.length]), json([true, undefined, calls]), "left out with no provider call");
+  const next = await h.run();
+  assert.equal(json([next.caption?.sourceHidden, next.caption?.source]), json([true, line]), "a new run keeps the editor's choice and its line");
+  assert.equal(captionTypes.shownSource((await h.showSource(true)).caption), line);
+  await assert.rejects(harness().showSource(false), /Write the caption first/);
+  assert.equal((await harness({ writes: [writer], judgments: [judge("accept", "c1", { c1: 96 })] }).run()).caption?.source, undefined, "a story without an outside source has no line");
+});
+
+test("the source line reads in the publication's language and names at most three hosts", () => {
+  assert.equal(captionTypes.captionSourceLine(["a.com", "b.org"], "English"), "Sources: a.com, b.org");
+  assert.equal(captionTypes.captionSourceLine(["a.com"], "Spanish"), "Fuente: a.com");
+  assert.equal(captionTypes.captionSourceLine(["a.com"], "french"), "Source\u00a0: a.com");
+  assert.equal(captionTypes.captionSourceLine([], "French"), undefined);
+  assert.equal(json(captionTypes.captionSourceHosts(["https://www.a.com/x", "not a url", "https://b.org/y", "https://c.net", "https://d.io", "https://A.com/z"])), json(["a.com", "b.org", "c.net"]));
 });
 
 test("the editor can choose any caption of the run", async () => {

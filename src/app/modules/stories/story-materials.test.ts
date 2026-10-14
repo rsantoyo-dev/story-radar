@@ -15,7 +15,7 @@ import { createHash } from "node:crypto";
 
 const id = "00000000-0000-4000-8000-000000000001";
 const other = "00000000-0000-4000-8000-000000000002";
-const ref: StoryGenerationReference = { id, topicId: id, storyId: id, name: "Actual dish", description: "Corn arepas", provenance: "Author's photo", purpose: "result", objectKey: "private/photo", sha256: "hash", contentType: "image/webp", fileName: "photo.webp", active: true, providerTransmissionAllowed: true };
+const ref: StoryGenerationReference = { id, topicId: id, storyId: id, name: "Actual dish", description: "Corn arepas", provenance: "Author's photo", purpose: "result", objectKey: "private/photo", sha256: "hash", contentType: "image/webp", fileName: "photo.webp", active: true, providerTransmissionAllowed: true, publicationRights: "own" };
 
 test("content edits require a bounded title, body and optimistic revision", () => {
   assert.throws(() => input.parseContentEdit({ title: "Title", text: "Body" }), /revision/);
@@ -147,7 +147,7 @@ test("a story photo alone selects the reference endpoint and freezes its snapsho
   assert.equal(result.referenceSnapshot.story[0], ref);
 });
 
-test("upload normalizes real image bytes privately and never returns an object key", async () => {
+test("upload normalizes real image bytes privately, records what the publication may do with it, and never returns an object key", async () => {
   const sharp = (await import("sharp")).default;
   const original = await sharp({ create: { width: 128, height: 96, channels: 3, background: "red" } }).png().toBuffer();
   let stored: Uint8Array | undefined;
@@ -171,8 +171,12 @@ test("upload normalizes real image bytes privately and never returns an object k
   await assert.rejects(service.uploadStoryPhoto(id, id, form), /Confirm permission/);
   assert.equal(stored, undefined);
   form.set("providerTransmissionAllowed", "true");
+  await assert.rejects(service.uploadStoryPhoto(id, id, form), /our own, licensed, or reference only/, "the editor says what the publication may do with it");
+  assert.equal(stored, undefined);
+  form.set("publicationRights", "own");
   const result = await service.uploadStoryPhoto(id, id, form) as Record<string, unknown>;
   assert.equal(result.objectKey, undefined);
+  assert.equal(row.publicationRights, "own");
   assert.equal((await sharp(Buffer.from(stored!)).metadata()).format, "webp");
   assert.equal(row.sha256, createHash("sha256").update(stored!).digest("hex"));
 });
@@ -199,6 +203,7 @@ test("a photo's focal point is framing only: set, cleared and range-checked, its
     await client.exec(`CREATE TABLE topic_stories (id uuid, topic_id uuid, story_id uuid, review_decision text DEFAULT 'approved', UNIQUE(topic_id,story_id)); CREATE TABLE creative_units(id uuid); INSERT INTO topic_stories(id,topic_id,story_id) VALUES ('${id}','${id}','${id}');`);
     await client.exec(readFileSync(new URL("../../../../drizzle/0069_wet_lake.sql", import.meta.url), "utf8"));
     await client.exec(readFileSync(new URL("../../../../drizzle/0088_sleepy_puma.sql", import.meta.url), "utf8"));
+    await client.exec(readFileSync(new URL("../../../../drizzle/0109_story_photo_rights.sql", import.meta.url), "utf8"));
     await client.exec(`INSERT INTO story_reference_photos(id,topic_id,story_id,name,description,provenance,object_key,sha256,file_name,file_size) VALUES ('${id}','${id}','${id}','Jo','Jo and the dog','Own photo','private/jo','abc','jo.webp',10);`);
     const repository = load("./story-materials.repository.ts", { "@/db/client": { db: drizzle(client) }, "@/db/schema": schema, "./story-materials.types": input });
     const framed = await repository.setStoryPhotoFocus(id, id, id, { x: 0.4, y: 0.72 }) as input.StoryReferencePhoto;
@@ -215,3 +220,28 @@ test("a photo's focal point is framing only: set, cleared and range-checked, its
     assert.equal((repository.publicStoryPhoto(await repository.findStoryPhoto(id, id, id)) as unknown as input.StoryReferencePhoto).focus, undefined);
   } finally { await client.close(); }
 });
+
+test("a photo's publication rights: reference only until the editor declares them, Commons imports licensed, declared and checked", async () => {
+  const client = new PGlite();
+  try {
+    await client.exec(`CREATE TABLE topic_stories (id uuid, topic_id uuid, story_id uuid, review_decision text DEFAULT 'approved', UNIQUE(topic_id,story_id)); CREATE TABLE creative_units(id uuid); INSERT INTO topic_stories(id,topic_id,story_id) VALUES ('${id}','${id}','${id}');`);
+    await client.exec(readFileSync(new URL("../../../../drizzle/0069_wet_lake.sql", import.meta.url), "utf8"));
+    await client.exec(readFileSync(new URL("../../../../drizzle/0088_sleepy_puma.sql", import.meta.url), "utf8"));
+    await client.exec(`INSERT INTO story_reference_photos(id,topic_id,story_id,name,description,provenance,object_key,sha256,file_name,file_size) VALUES
+      ('${id}','${id}','${id}','houston bar','The bar','rs','private/bar','abc','bar.webp',10),
+      ('${other}','${id}','${id}','Jo','A portrait','Photo: Ann · CC BY-SA 4.0 (https://example.org) · https://commons.wikimedia.org/x · via Wikimedia Commons','private/jo','def','jo.webp',10);`);
+    await client.exec(readFileSync(new URL("../../../../drizzle/0109_story_photo_rights.sql", import.meta.url), "utf8"));
+    const repository = load("./story-materials.repository.ts", { "@/db/client": { db: drizzle(client) }, "@/db/schema": schema, "./story-materials.types": input });
+    const read = async (photoId: string) => (repository.publicStoryPhoto(await repository.findStoryPhoto(id, id, photoId)) as unknown as input.StoryReferencePhoto).publicationRights;
+    assert.equal(await read(id), "reference", "a photo saved before the declaration is reference only");
+    assert.equal(await read(other), "licensed", "a Commons import comes with its license");
+    assert.equal((await repository.setStoryPhotoRights(id, id, id, "own") as input.StoryReferencePhoto).publicationRights, "own");
+    await assert.rejects(repository.setStoryPhotoRights(other, id, id, "own"), /not found/);
+    await assert.rejects(client.exec(`UPDATE story_reference_photos SET publication_rights = 'borrowed'`), /story_reference_photo_rights_check/);
+    assert.deepEqual(input.STORY_PHOTO_RIGHTS.map((rights) => input.publishablePhoto(rights)), [true, true, false]);
+    assert.equal(input.publishablePhoto(undefined), false, "a snapshot without a declaration is reference only");
+    assert.equal(input.parsePhotoRights("licensed"), "licensed");
+    assert.throws(() => input.parsePhotoRights("mine"), /our own, licensed, or reference only/);
+  } finally { await client.close(); }
+});
+

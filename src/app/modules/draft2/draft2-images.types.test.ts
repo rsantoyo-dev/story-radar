@@ -49,24 +49,33 @@ test("a slide as v1's prompt builder reads it: the cover's text as its subheadli
   assert.equal(json(story.storyReferences), json([{ id: "p1", purpose: "place" }]));
 });
 
-test("what a slide shows of its references: a person's portrait pasted, a place's map on a map slide, its story photo, its verified photo, or a note", () => {
-  const linked = { id: "p9", name: "The kiosk", provenance: "Editor", transmissionAllowed: true };
+test("what a slide shows of its references: a person's portrait pasted, a place's map on a map slide, its story photo (pasted unchanged on a real-photo slide), its verified photo, or a note; a reference-only photo never", () => {
+  const linked = { id: "p9", name: "The kiosk", provenance: "Editor", transmissionAllowed: true, rights: "own" as const };
   const material = (slide: Partial<Draft2VisualSlide>, entities: Draft2InventoryEntity[], photos: Draft2Inventory["storyPhotos"] = []) => slideMaterial(scriptSlide("s1", slide), inventory(entities, photos));
   assert.equal(json(material({ need: "real-photo", references: ["e1"] }, [person()]).material), json([{ kind: "pasted-photo", storyPhotoId: "photo-portrait", name: "Catherine Fournier", person: true, entityId: "e1" }]));
   assert.equal(material({ need: "real-photo", references: ["e1"] }, [person({ person: { status: "none", candidates: [] }, storyPhoto: { ...linked, id: "p7" } })]).material[0]?.kind, "pasted-photo", "the editor's photo of them is their portrait");
   assert.match(material({ references: ["e1"] }, [person({ person: { status: "rejected", candidates: [] } })]).notes[0], /has no confirmed portrait, so the slide does not show them/);
   assert.equal(json(material({ need: "verified-map", references: ["e2"] }, [place({ google: { placeId: "g1", name: "Parc", address: "166 chemin du Clocher", latitude: 45.3, longitude: -73.2, sourceUrl: "s", exactName: true } })]).material), json([{ kind: "map", entityId: "e2", name: "Parc des Parulines", source: "google" }]));
   assert.equal(material({ need: "verified-map", references: ["e2"] }, [place()]).material[0]?.kind, "map", "Wikidata's coordinates make a map too");
-  assert.equal(json(material({ need: "real-photo", references: ["e2"] }, [place({ status: "not-found", map: false, photo: undefined, wikidataId: undefined }, { storyPhoto: linked })]).material), json([{ kind: "story-photo", storyPhotoId: "p9", name: "Parc des Parulines", purpose: "place" }]));
-  assert.equal(material({ need: "real-photo", references: ["e2"] }, [place({}, { storyPhoto: { ...linked, transmissionAllowed: false } })]).material[0]?.kind, "pasted-photo", "a photo that may not be sent is pasted unchanged");
+  const missed = place({ status: "not-found", map: false, photo: undefined, wikidataId: undefined }, { storyPhoto: linked });
+  assert.equal(json(material({ need: "real-photo", references: ["e2"] }, [missed]).material), json([{ kind: "pasted-photo", storyPhotoId: "p9", name: "Parc des Parulines", person: false, entityId: "e2" }]), "a slide that rests on the real photo shows it unchanged: a redraw would pass for the place");
+  assert.equal(json(material({ references: ["e2"] }, [missed]).material), json([{ kind: "story-photo", storyPhotoId: "p9", name: "Parc des Parulines", purpose: "place" }]), "elsewhere the model adapts it");
+  const referenceOnly = material({ need: "real-photo", references: ["e2"] }, [place({ status: "not-found", map: false, photo: undefined, wikidataId: undefined }, { storyPhoto: { ...linked, rights: "reference" as const } })]);
+  assert.equal(json([referenceOnly.material, /The kiosk is reference only/.test(referenceOnly.notes[0])]), json([[], true]), "a photo the publication may not publish is never shown, not even adapted");
+  assert.equal(material({ need: "real-photo", references: ["e2"] }, [place({}, { storyPhoto: { ...linked, rights: undefined } })]).material[0]?.kind, "place-photo", "an undeclared photo gives way to the place's verified photo");
+  assert.equal(material({ need: "real-photo", references: ["e2"] }, [place({}, { storyPhoto: { ...linked, transmissionAllowed: false, rights: "licensed" as const } })]).material[0]?.kind, "pasted-photo", "a photo that may not be sent is pasted unchanged");
   assert.equal(material({ need: "real-photo", references: ["e2"] }, [place()]).material[0]?.kind, "place-photo");
   assert.match(material({ references: ["e2"] }, [place({ status: "rejected" })]).notes[0], /has no verified photo or map, so the slide shows a generic scene/);
-  const photos = ["p1", "p2", "p3", "p4"].map((id) => ({ id, name: id, description: "", provenance: "Editor", transmissionAllowed: true }));
+  const photos = ["p1", "p2", "p3", "p4"].map((id) => ({ id, name: id, description: "", provenance: "Editor", transmissionAllowed: true, rights: "own" as const }));
   const many = material({ references: ["p1", "p2", "p3", "p4"] }, [], photos);
   assert.equal(json([many.material.length, many.notes.length]), json([3, 1]), "three story photos a slide at most");
   const both = material({ need: "real-photo", references: ["e1", "p1"] }, [person()], photos);
   assert.equal(json([both.material.map((entry) => entry.kind), /left out/.test(both.notes[0])]), json([["pasted-photo"], true]), "a real photo is the only photo on its slide");
-  assert.equal(json(material({ references: ["photo-portrait"] }, [person()], [{ id: "photo-portrait", name: "Portrait", description: "", provenance: "Commons", transmissionAllowed: true }]).material), json([]), "a person's photo is never a free reference");
+  assert.equal(json(material({ references: ["photo-portrait"] }, [person()], [{ id: "photo-portrait", name: "Portrait", description: "", provenance: "Commons", transmissionAllowed: true, rights: "own" as const }]).material), json([]), "a person's photo is never a free reference");
+  assert.equal(json(material({ need: "real-photo", references: ["p1"] }, [], photos).material), json([{ kind: "pasted-photo", storyPhotoId: "p1", name: "p1", person: false }]), "a story photo a real-photo slide rests on is pasted unchanged");
+  assert.equal(json(material({ references: ["p1"] }, [], photos).material), json([{ kind: "story-photo", storyPhotoId: "p1", name: "p1", purpose: "subject" }]));
+  const kept = material({ need: "real-photo", references: ["p1"] }, [], [{ ...photos[0], rights: "reference" as const }]);
+  assert.equal(json([kept.material, kept.notes]), json([[], ["p1 is reference only, so the slide does not show it: declare its publication rights to show it."]]));
 });
 
 const visualRun = (overrides: Partial<Draft2Visual> = {}): Draft2Visual => ({

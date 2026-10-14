@@ -25,7 +25,7 @@ import { REVIEW_CRITERIA, proposedPatches, reviewCurrent, type Draft2Review } fr
 import { INVENTORY_CHARACTER_CHOICES, awaitsConfirmation, type Draft2CharacterChoice, type Draft2Inventory, type Draft2InventoryEntity, type Draft2InventoryStoryPhoto } from "@/app/modules/draft2/draft2-inventory.types";
 import { VISUAL_GATE, VISUAL_MAX_CHARACTERS_PER_SLIDE, VISUAL_MAX_ROUNDS, deckCarousel, sameCarouselWords, visualPlan, type Draft2Visual, type Draft2VisualCandidate, type Draft2VisualCriterion, type Draft2VisualRecurring, type Draft2VisualShot } from "@/app/modules/draft2/draft2-visual.types";
 import { IMAGES_MAX_REQUESTS, draft2ImageDownloads, latestAttempt, shownAttempt, slideSettled, type Draft2ImageAttempt, type Draft2ImageReview, type Draft2Images, type Draft2SlideImage } from "@/app/modules/draft2/draft2-images.types";
-import { CAPTION_GATE, CAPTION_MAX_CHARACTERS, CAPTION_MAX_ROUNDS, captionPostText, shownCredits, type Draft2Caption, type Draft2CaptionCandidate, type Draft2CaptionCriterion } from "@/app/modules/draft2/draft2-caption.types";
+import { CAPTION_GATE, CAPTION_MAX_CHARACTERS, CAPTION_MAX_ROUNDS, captionPostText, shownCredits, shownSource, type Draft2Caption, type Draft2CaptionCandidate, type Draft2CaptionCriterion } from "@/app/modules/draft2/draft2-caption.types";
 import { confirmedMentions, mentionEntities, sameMentions, type Draft2MentionAccount, type Draft2MentionStatus, type Draft2Mentions } from "@/app/modules/draft2/draft2-mentions.types";
 import { publicationCurrent, publicationTarget, targetPostText, type Draft2Publication, type Draft2PublicationTarget } from "@/app/modules/draft2/draft2-publication.types";
 import {
@@ -42,6 +42,7 @@ import {
   type ScreenStep,
 } from "./draft-2-canvas-shell";
 import { StoryPhotosPanel } from "./story-photos-panel";
+import { publishablePhoto } from "./modules/stories/story-materials.types";
 import { RunPublishActions } from "./run-publish-actions";
 import { PublicationChannelsPanel } from "./publication-channels-panel";
 import styles from "./draft-2-canvas.generated.module.css";
@@ -756,12 +757,13 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   }
 
   /** Shows the photo credits after the caption, or leaves them out at the editor's responsibility: the post's text changes; no provider call. */
-  async function showCaptionCredits(shown: boolean) {
+  // Whether the post shows the photo credits, or the line naming where the story was reported, after the caption.
+  async function showCaptionCredits(shown: boolean, part: "credits" | "source" = "credits") {
     if (!session || choosing || running) return;
-    setChoosing({ step: "caption", id: "credits" }); setChoiceError(undefined);
+    setChoosing({ step: "caption", id: part }); setChoiceError(undefined);
     try {
       const response = await fetch(`/api/radar/draft2/caption?topicId=${encodeURIComponent(topicId)}`, {
-        method: "PATCH", cache: "no-store", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: session.id, credits: shown ? "shown" : "hidden" }),
+        method: "PATCH", cache: "no-store", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: session.id, [part]: shown ? "shown" : "hidden" }),
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "Could not record your choice.");
@@ -1249,7 +1251,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
           {running === "caption" ? "Writing and judging…" : caption ? "Write the caption again" : "Write the caption"}
         </Button>
       </>,
-      how: <p>The post’s text for the finished carousel, in the publication’s voice: an opening line that stops the reader, short lines with blank lines between them, the emojis the brand allows, the closing’s one call to action, the accounts you tag and 5 to 8 hashtags at the end. The program adds the photo credits after the text, unless you leave them out. {today.caption.writer} writes three captions; {today.caption.judge} scores them and proposes one of its own; {today.caption.writer} revises the best and edits {today.caption.judge}’s, which also competes as {today.caption.judge} wrote it, for {today.caption.judge}’s pick. Accepted at 95/100 with no criterion below 85.</p>,
+      how: <p>The post’s text for the finished carousel, in the publication’s voice: an opening line that stops the reader, short lines with blank lines between them, the emojis the brand allows, the closing’s one call to action, the accounts you tag and 5 to 8 hashtags at the end. The program adds the source (where the story was reported) and the photo credits after the text, unless you leave them out. {today.caption.writer} writes three captions; {today.caption.judge} scores them and proposes one of its own; {today.caption.writer} revises the best and edits {today.caption.judge}’s, which also competes as {today.caption.judge} wrote it, for {today.caption.judge}’s pick. Accepted at 95/100 with no criterion below 85.</p>,
       body: <>
         <section className={styles.screenSection} aria-label="Accounts to tag">
           <SectionHeader level={2} title="Accounts to tag" description="Claude proposes the Instagram accounts of the story’s people, places and organizations; Instagram says which exist and what they are called; only the accounts you tag reach the caption. On Facebook an @username stays plain text." actions={
@@ -1278,6 +1280,10 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
           {caption?.credits?.length && running !== "caption" ? <div>
             <label className={styles.factMeta}><input type="checkbox" checked={!caption.creditsHidden} disabled={running !== undefined || choosing !== undefined || caption.status === "running"} onChange={(event) => { void showCaptionCredits(event.target.checked); }} /> Show the photo credits after the caption</label>
             {caption.creditsHidden ? <p className={styles.factMeta}>Left out of this post at your responsibility: the licenses of its photos may ask for a credit ({caption.credits.join("; ")}).</p> : null}
+          </div> : null}
+          {caption?.source && running !== "caption" ? <div>
+            <label className={styles.factMeta}><input type="checkbox" checked={!caption.sourceHidden} disabled={running !== undefined || choosing !== undefined || caption.status === "running"} onChange={(event) => { void showCaptionCredits(event.target.checked, "source"); }} /> Show the source after the caption ({caption.source})</label>
+            {caption.sourceHidden ? <p className={styles.factMeta}>Left out of this post: the story was reported by {caption.sources?.join(", ") ?? "another outlet"}, and naming it is what keeps the post fair to its reporting.</p> : null}
           </div> : null}
           {caption && running !== "caption" ? <FunnelRunView
             run={caption}
@@ -1551,6 +1557,7 @@ const CLOSING_DISPLAY: FunnelDisplay<Draft2ClosingCandidate> = {
 /** The caption's display: each caption by its opening line, and the chosen one as the post will read, with the credits the program adds (unless the editor left them out) and its hashtags. */
 function captionDisplayFor(caption: Draft2Caption | undefined): FunnelDisplay<Draft2CaptionCandidate> {
   const credits = shownCredits(caption);
+  const source = shownSource(caption);
   const opening = (candidate: Draft2CaptionCandidate) => candidate.text.split("\n")[0] ?? "";
   return {
     noun: "caption",
@@ -1559,7 +1566,7 @@ function captionDisplayFor(caption: Draft2Caption | undefined): FunnelDisplay<Dr
     labels: CAPTION_CRITERION_LABEL,
     lines: (candidate) => ({ title: opening(candidate), details: [`${[...candidate.text].length} characters · ${candidate.hashtags.map((tag) => `#${tag}`).join(" ")}`] }),
     proposal: opening,
-    cards: (candidate) => <CaptionPost text={captionPostText({ text: candidate.text, credits, hashtags: candidate.hashtags })} factIds={candidate.factIds} />,
+    cards: (candidate) => <CaptionPost text={captionPostText({ text: candidate.text, source, credits, hashtags: candidate.hashtags })} factIds={candidate.factIds} />,
   };
 }
 
@@ -1774,7 +1781,7 @@ function InventoryView({ inventory, story, saving, locked, onDecide }: {
     </div> : null}
     {organizations.length ? <p className={styles.factMeta}>Organizations, never drawn and never named in an image (no logos): {organizations.map((entity) => entity.name).join(", ")}.</p> : null}
     <p className={styles.factMeta}>{inventory.storyPhotos.length
-      ? `The story’s photos: ${inventory.storyPhotos.map((photo) => `${photo.name}${photo.transmissionAllowed ? "" : " (documentary portrait only)"}`).join(", ")}. Give each one to its person or place above.`
+      ? `The story’s photos: ${inventory.storyPhotos.map((photo) => `${photo.name}${!publishablePhoto(photo.rights) ? " (reference only: never published)" : photo.transmissionAllowed ? "" : " (documentary portrait only)"}`).join(", ")}. Give each one to its person or place above; only a photo that is your own or licensed appears in an image (declare it under the story’s photos).`
       : "No photo of the story yet. Photos added on the story’s page appear here when this screen opens."}</p>
     {photosReadable ? <div><Button variant="quiet" size="compact" busy={saving === "photos"} disabled={locked} onClick={() => onDecide({ action: "photos" })}>Read the story’s photos again</Button></div> : null}
     <details>
@@ -1792,7 +1799,7 @@ function StoryPhotoChoice({ entity, photos, locked, onDecide }: { entity: Draft2
   return <FormField label={person ? "Their photo from the story" : "Its photo from the story"} description={person ? "Pasted unchanged as a documentary portrait, never redrawn. Check it is them." : "Shows this place. Check it is the place."}>
     <select value={entity.storyPhoto?.id ?? ""} disabled={locked} onChange={(event) => onDecide({ action: "photo", entityId: entity.id, storyPhotoId: event.target.value || null })}>
       <option value="">No story photo</option>
-      {photos.map((photo) => <option key={photo.id} value={photo.id}>{photo.name}{photo.transmissionAllowed ? "" : " · documentary only"}</option>)}
+      {photos.map((photo) => <option key={photo.id} value={photo.id}>{photo.name}{!publishablePhoto(photo.rights) ? " · reference only" : photo.transmissionAllowed ? "" : " · documentary only"}</option>)}
       {entity.storyPhoto && !photos.some((photo) => photo.id === entity.storyPhoto?.id) ? <option value={entity.storyPhoto.id}>{entity.storyPhoto.name} · removed</option> : null}
     </select>
   </FormField>;
@@ -1812,7 +1819,7 @@ function PersonItem({ entity, photos, saving, locked, onDecide }: { entity: Draf
     {entity.description ? <p className={styles.factMeta}>{entity.description}</p> : null}
     {person?.note ? <p className={styles.factMeta}>{person.note}</p> : null}
     {status === "confirmed" && person?.confirmed ? <p className={styles.factMeta}>{person.confirmed.name}{person.confirmed.description ? ` · ${person.confirmed.description}` : ""} · {person.confirmed.author} · {person.confirmed.license}</p> : null}
-    {entity.storyPhoto ? <p className={styles.factMeta}>Story photo · {entity.storyPhoto.name} · {entity.storyPhoto.provenance}</p> : null}
+    {entity.storyPhoto ? <p className={styles.factMeta}>Story photo · {entity.storyPhoto.name} · {entity.storyPhoto.provenance}{publishablePhoto(entity.storyPhoto.rights) ? "" : " · reference only: it is not shown until you declare it your own or licensed"}</p> : null}
     {status === "candidates" ? <ul className={styles.candidateList}>
       {person!.candidates.map((candidate) => <li key={candidate.entityId} className={styles.candidate}>
         <Image className={styles.candidateThumb} src={candidate.thumbnailUrl} alt={`Wikimedia Commons photo of ${candidate.name}`} width={160} height={120} unoptimized />
@@ -1856,7 +1863,7 @@ function PlaceItem({ entity, photos, locked, onDecide }: { entity: Draft2Invento
     {found && place?.google ? <p className={styles.factMeta}>Google Maps · {place.google.name} · {place.google.address} · <a href={place.google.sourceUrl} target="_blank" rel="noreferrer">Map ↗</a>{place.google.exactName ? "" : " · Google’s name differs from the story’s: check it is the same place"}</p> : null}
     {found ? <p className={styles.factMeta}>{place?.map ? "A map can be drawn." : "No coordinates for a map."}{status === "rejected" ? " Set aside: the script shows nothing of this match." : ""}</p> : null}
     {place?.note ? <p className={styles.factMeta}>{place.note}</p> : null}
-    {entity.storyPhoto ? <p className={styles.factMeta}>Story photo · {entity.storyPhoto.name} · {entity.storyPhoto.provenance}</p> : null}
+    {entity.storyPhoto ? <p className={styles.factMeta}>Story photo · {entity.storyPhoto.name} · {entity.storyPhoto.provenance}{publishablePhoto(entity.storyPhoto.rights) ? "" : " · reference only: it is not shown until you declare it your own or licensed"}</p> : null}
     <StoryPhotoChoice entity={entity} photos={photos} locked={locked} onDecide={onDecide} />
     <ActionRow>
       {status === "verified" ? <Button variant="quiet" size="compact" disabled={locked} onClick={() => onDecide({ action: "reject", entityId: entity.id })}>Not this place</Button> : null}
@@ -2333,6 +2340,11 @@ function FocusView({ focus, findings, material, eligibleLevers: levers, saving, 
         <FocusLevers key={key("levers")} levers={values.levers} eligible={levers} description={about("levers", values.levers ? "The mechanism the cover uses to stop the reader, a guide, never a formula: the opening writes about a third of its first openings on it, a fifth on each alternative, and the rest free." : "Decided before levers: decide again or rewrite the plan for Claude to choose them, or choose here.")} disabled={locked} onCommit={(next) => onSave("levers", next)} />
         {reset("levers")}
       </div>
+      {values.guards?.length ? <div className={`${styles.focusField} ${styles.focusWide}`}>
+        <FormField label="Misreadings to prevent" description="What a reader who stops at the cover could wrongly believe, and the facts that prevent it. Claude names them with the plan; the opening states each on the cover or slide 2, and the program checks that it cites their facts.">
+          <ul>{values.guards.map((guard) => <li key={guard.misreading}>{guard.misreading} <em>Facts:</em> {guard.factIds.join(", ")}</li>)}</ul>
+        </FormField>
+      </div> : null}
       <div className={`${styles.focusField} ${styles.focusWide}`}>
         <FormField label="Spine" description={about("spine", values.spine ? "One beat per slide, decided after the concept and the form: the words and the images both follow it, and the judges score each slide against its beat." : "Decided before spines: decide again for Claude to write the beats.")}>
           {values.spine ? <ol>

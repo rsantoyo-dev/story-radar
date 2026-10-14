@@ -2741,7 +2741,7 @@
   gap: density(1);
   @ds-typo(body);
 }
-.storyMaterialForm input:not([type="checkbox"]), .storyMaterialForm textarea, .storyPhotoCard select {
+.storyMaterialForm input:not([type="checkbox"]), .storyMaterialForm textarea, .storyMaterialForm select, .storyPhotoCard select {
   @ds-input(outlined neutral);
   padding: density(2);
   border-radius: radius(2);

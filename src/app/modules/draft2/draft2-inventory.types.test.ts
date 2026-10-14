@@ -67,14 +67,14 @@ test("what the visual script may show: a confirmed portrait, a verified place's 
   assert.deepEqual(entityMaterial(confirmed), { portrait: true, photo: false, map: false });
   assert.deepEqual(entityMaterial(person("candidates")), { portrait: false, photo: false, map: false }, "a candidate waiting for the editor shows nothing");
   assert.deepEqual(entityMaterial(place), { portrait: false, photo: true, map: true });
-  const forModels = inventoryForModels({ ...inventory([confirmed, person("candidates"), place, { id: "e4", name: "Pomerleau", kind: "organization", role: "mentioned", description: "", factIds: ["f2"] }]), storyPhotos: [{ id: "p1", name: "Opening day", description: "", provenance: "Editor", transmissionAllowed: true }, { id: "photo-1", name: "Fournier", description: "", provenance: "Commons", transmissionAllowed: false }] });
+  const forModels = inventoryForModels({ ...inventory([confirmed, person("candidates"), place, { id: "e4", name: "Pomerleau", kind: "organization", role: "mentioned", description: "", factIds: ["f2"] }]), storyPhotos: [{ id: "p1", name: "Opening day", description: "", provenance: "Editor", transmissionAllowed: true, rights: "own" as const }, { id: "photo-1", name: "Fournier", description: "", provenance: "Commons", transmissionAllowed: false, rights: "licensed" as const }] });
   assert.deepEqual(forModels.entities.map((entity) => entity.verifiedMaterial), [
     ["documentary portrait (a real photo pasted unchanged)"], ["none: never depict them; tell the story without showing them"], ["verified place photo", "verified map"], ["none: organizations are never drawn, no logos"],
   ]);
   assert.deepEqual(forModels.storyPhotos.map((photo) => photo.id), ["p1"], "a portrait travels with its person, never as a story photo the model may read");
 });
 
-const PHOTO: Draft2InventoryStoryPhoto = { id: "p1", name: "Reading room", description: "The editor's photo", provenance: "Editor", transmissionAllowed: true };
+const PHOTO: Draft2InventoryStoryPhoto = { id: "p1", name: "Reading room", description: "The editor's photo", provenance: "Editor", transmissionAllowed: true, rights: "own" as const };
 const verifiedPlace = (google?: string): Draft2InventoryEntity => ({
   id: "e2", name: "Rue Saint-Charles", kind: "place", role: "secondary", description: "", factIds: ["f1"],
   place: { status: "verified", wikidataId: "Q1", map: true, ...(google ? { google: { placeId: google, name: "Rue Saint-Charles", address: "Rue Saint-Charles, Longueuil, QC", latitude: 45.5, longitude: -73.5, sourceUrl: "https://www.google.com/maps/search/?api=1", exactName: true } } : {}) },
@@ -111,7 +111,7 @@ test("the editor's decisions on places and story photos are contracts: reject an
   assert.equal(json(withStoryPhoto(withStoryPhoto(verifiedPlace(), PHOTO), null)), json(verifiedPlace()));
   const refreshed = withStoryPhotos(inventory([withStoryPhoto(verifiedPlace(), PHOTO)]), []);
   assert.equal(json([refreshed.entities[0].storyPhoto, refreshed.storyPhotos, refreshed.version]), json([undefined, [], 3]), "a removed photo's link is dropped; the version is the caller's");
-  const stored = { ...inventory([withStoryPhoto(verifiedPlace(), PHOTO)]), storyPhotos: [{ transmissionAllowed: true, provenance: "Editor", name: "Reading room", id: "p1", description: "The editor's photo" }] };
+  const stored = { ...inventory([withStoryPhoto(verifiedPlace(), PHOTO)]), storyPhotos: [{ transmissionAllowed: true, rights: "own" as const, provenance: "Editor", name: "Reading room", id: "p1", description: "The editor's photo" }] };
   assert.equal(storyPhotosDiffer(stored, withStoryPhotos(stored, [PHOTO])), false, "a stored row's keys in another order are the same photos");
   assert.equal(storyPhotosDiffer(stored, withStoryPhotos(stored, [{ ...PHOTO, name: "Hall" }])), true);
 });

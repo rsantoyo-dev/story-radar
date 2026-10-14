@@ -13,11 +13,15 @@ import type { Draft2Skill } from "./draft2-skills";
  * schedule to save space: a patch names its kind (truth, repetition, detail,
  * style), the cover's headline changes only for truth, no figure the facts
  * give is dropped, nothing that works is restructured, and the reader's
- * reactions are signals, not orders.
+ * reactions are signals, not orders. Version 4, the same day, after an
+ * auditor found a verdict on a sanctioned bar in the closing and the bar's
+ * misreading ("it closed") left open until slide 6: a judgement, irony or
+ * insinuation about a named party is a truth patch, and no patch takes the
+ * focus's guards off the cover or slide 2.
  */
 export const REVIEW_SKILL: Draft2Skill = {
   name: "review",
-  version: "3",
+  version: "4",
   text: `# Reviewing a carousel
 
 A carousel is read one swipe at a time, on a phone, by someone who did not ask
@@ -57,8 +61,9 @@ in the kinds below is needed.
 
 ## What a patch may change, named as its kind
 - truth: a claim the facts do not carry, an allegation stated as a fact, a
-  qualifier or an attribution lost, or two facts run together so that they
-  say what neither says.
+  qualifier or an attribution lost, two facts run together so that they say
+  what neither says, or a judgement, irony or insinuation about a person or
+  business the story names (the fairness skill).
 - repetition: a word or a fact repeated without purpose, on one slide or from
   one slide to the next.
 - detail: a name, a date, a place or a price the facts give, that the reader
@@ -78,6 +83,8 @@ in the kinds below is needed.
 - It never restructures a slide that works: no merging or splitting ideas for
   rhythm, no shortening to save space, no new order.
 - It never adds a fact the slide does not cite.
+- It never takes off the cover or slide 2 what the focus's guards ask them
+  to state (what the measure is and is not, the period of the events).
 - A reader's reaction is a signal, not an order: act on it only when the fix
   is one of the kinds above and costs nothing that works.
 

@@ -11,6 +11,7 @@ import {
 } from "./draft2-opening.types";
 import { brandBrief, composeInstructions, creativeSkills } from "./skills/draft2-skills";
 import { HOOKS_SKILL } from "./skills/hooks";
+import { FAIRNESS_SKILL } from "./skills/fairness";
 import { LEVERS_SKILL } from "./skills/levers";
 import type { Draft2SessionRow } from "@/db/schema";
 
@@ -54,13 +55,13 @@ const OPENING_STEP: FunnelStep<Draft2OpeningCandidate, Draft2OpeningScore, Draft
     // The levers this story can carry; the plan's choice spreads the new openings over them, and a free hook always competes.
     const levers = eligibleLevers(facts, focus.values);
     return {
-      writer: composeInstructions("opening-writer", [HOOKS_SKILL, LEVERS_SKILL, ...creativeSkills(focus.values)], brief),
-      judge: composeInstructions("opening-judge", [HOOKS_SKILL, LEVERS_SKILL, ...creativeSkills(focus.values)], brief),
+      writer: composeInstructions("opening-writer", [HOOKS_SKILL, LEVERS_SKILL, FAIRNESS_SKILL, ...creativeSkills(focus.values)], brief),
+      judge: composeInstructions("opening-judge", [HOOKS_SKILL, LEVERS_SKILL, FAIRNESS_SKILL, ...creativeSkills(focus.values)], brief),
       context: { focus: focusForModels(focus.values), eligibleLevers: levers },
       schemas: { writer: DRAFT2_OPENING_SCHEMA, judge: DRAFT2_OPENING_EVALUATION_SCHEMA },
       parseCandidates: parseOpeningCandidates,
       parseEvaluation: parseOpeningEvaluation,
-      mechanical: (candidates) => mechanicalOpeningIssues(candidates, facts, { itemCount, eligibleLevers: levers }),
+      mechanical: (candidates) => mechanicalOpeningIssues(candidates, facts, { itemCount, eligibleLevers: levers, guards: focus.values.guards }),
       explore: (wanted, last, versions) => ({ ...openingExploreRequest(wanted, last, versions), levers: { spread: leverSpread(focus.values.levers, wanted) } }),
       refine: openingRefineRequest,
       judgeRequest: openingJudgeRequest,

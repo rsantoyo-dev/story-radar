@@ -9,10 +9,14 @@ import type { Draft2Skill } from "./draft2-skills";
  * publication's style words it, and a grave story may end without one.
  * Version 2: a one-slide closing's headline names what the slide gives,
  * because the image step cannot repair a headline at odds with its slide.
+ * Version 3, 2026-10-14, after an auditor read "La nuance est dans le
+ * « peut »" and "Un engagement, pas un résultat" on a story about a bar's
+ * sanction: the headlines state their facts, and what the story means for
+ * the reader is never a verdict on the people it names.
  */
 export const CLOSINGS_SKILL: Draft2Skill = {
   name: "closings",
-  version: "2",
+  version: "3",
   text: `# Closings for social carousels
 
 A closing is how the story ends. The opening made a promise (the cover) and
@@ -41,11 +45,17 @@ opening it ends: a closing that could end any story is weak.
 - Headline at most 8 words; body at most 30 words.
 - It resolves: never a restatement of the cover or slide 2, never a new
   subject the story did not set up.
+- Its headline states the answer in concrete terms (who, what, the number,
+  the consequence): never a comment on the facts ("The nuance is in the
+  'may'") or a riddle.
 
 ## Last slide
 - Headline at most 8 words; body at most 25 words (40 for the plan or the
   result of a one-slide closing).
-- What the story means for the reader, in their terms, from the facts.
+- What the story means for the reader, in their terms, from the facts;
+  never a verdict on a person or business the story names ("A promise, not a
+  result"): their commitment or response is stated plainly, attributed (the
+  fairness skill).
   Never a recap, a summary label ("In summary", "En bref", "En resumen") or
   a list of what the slides said.
 - cta: the one call to action, at most 14 words, in its own field.
