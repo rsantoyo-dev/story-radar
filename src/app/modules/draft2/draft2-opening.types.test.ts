@@ -123,13 +123,14 @@ test("a number must be stated by the facts the candidate cites, compared without
   assert.equal(issue.detail, "7, 12 are not stated by the facts this candidate cites.");
 });
 
-test("what the cover alone could make a reader wrongly believe is prevented before the reader can stop: every fact of a guard on the cover or slide 2", () => {
+test("what the cover alone could make a reader wrongly believe is prevented before the reader can stop: one of a guard's facts on the cover or slide 2", () => {
   const guards = [{ misreading: "The program already spent $1.5 trillion.", factIds: ["f3"] }];
   const late = mechanicalOpeningIssues([candidate("c1")], facts, { guards });
   assert.deepEqual(codes(late), ["GUARD_LATE c1 slide2"]);
   assert.equal(late[0].detail, "A reader who stops here could believe \"The program already spent $1.5 trillion.\": the cover or slide 2 must state what prevents it, citing f3.");
   assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1", { slide2: { body: "The Pentagon says it could reach $1.5 trillion in contracts by 2030.", factIds: ["f2", "f3"] } })], facts, { guards })), [], "slide 2 states it with its fact");
-  assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1")], facts, { guards: [{ misreading: "Awards always take a week.", factIds: ["f1", "f2"] }] })), [], "the cover and slide 2 together carry both facts");
+  assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1")], facts, { guards: [{ misreading: "The program already spent $1.5 trillion.", factIds: ["f3", "f2"] }] })), [], "either fact prevents it: slide 2 cites f2");
+  assert.equal(mechanicalOpeningIssues([candidate("c1", { slide2: { factIds: ["f2"] } })], facts, { guards: [{ misreading: "x", factIds: ["f3", "f9"] }] })[0].detail, "A reader who stops here could believe \"x\": the cover or slide 2 must state what prevents it, citing f3 or f9.");
   assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1")], facts)), [], "a story without guards");
 });
 

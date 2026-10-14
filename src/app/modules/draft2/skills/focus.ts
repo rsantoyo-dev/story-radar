@@ -20,11 +20,14 @@ import type { Draft2Skill } from "./draft2-skills";
  * an auditor read a liquor-permit suspension as a closure on the cover and
  * a decision about 2020-2024 as news of today: the plan names the guards,
  * what the cover alone could make a reader wrongly believe and the facts
- * that prevent it, which the opening states on the cover or slide 2.
+ * that prevent it, which the opening states on the cover or slide 2; version
+ * 15, the same day, after the first run named three guards of two facts each
+ * and no opening could carry them: at most two, only the risks the cover's
+ * subject invites, each fact enough on its own.
  */
 export const FOCUS_SKILL: Draft2Skill = {
   name: "focus",
-  version: "14",
+  version: "15",
   text: `# The focus of a story
 
 The focus is the brief every later step follows: which editorial line the
@@ -188,8 +191,11 @@ follows the telling.
   which and how); written in the plan, before the spine.
 - guards: what a reader who stops at the cover could wrongly believe that
   the facts do not say, each with the one or two facts whose words prevent
-  it; written in the plan, before the spine. One per real risk, at most
-  three, and an empty list when the story carries none. The usual risks: a
+  it; written in the plan, before the spine. Only a misreading the cover's
+  own subject invites and that would wrong someone or mislead the reader
+  about what happened or when; never every generalization a reader could
+  make. At most two, and an empty list when the story carries none. The
+  usual risks: a
   person, business or organization named in a sanction, an accusation, an
   investigation or a closure (what the measure is and is not, its scope,
   whether it has started: a liquor-permit suspension read as "the bar
@@ -197,10 +203,10 @@ follows the telling.
   period, or the reader takes them for today's news); a measure not yet in
   force, a proposal not adopted, a change that applies to some only.
   misreading: the false conclusion, in one short line in the publication's
-  language ("le Houston ferme"); factIds: the facts that prevent it, never
-  the facts that state the news itself. The opening states each guard in
-  plain words on the cover or slide 2, citing its facts; the program checks
-  the citation.
+  language ("le Houston ferme"); factIds: one or two facts, each of which
+  prevents it on its own, never the facts that state the news itself. The
+  opening states each guard in plain words on the cover or slide 2, citing
+  one of its facts; the program checks the citation.
 - spine: the story in beats, one per slide, written after the concept and
   the form and before the directions (the spine skill says the roles, the
   fields and the rules): beats, each with slide, role, scene, words, image,

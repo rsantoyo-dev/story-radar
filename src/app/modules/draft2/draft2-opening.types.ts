@@ -261,11 +261,10 @@ export function mechanicalOpeningIssues(candidates: readonly Draft2OpeningCandid
     }
     const stock = stockPhraseIn(`${cover.headline} ${cover.subheadline}`);
     if (stock) add("STOCK_PHRASE", "cover", `The cover uses the stock formula "${stock}": write the lever's mechanism in the story's own words.`);
-    // What the cover alone could make a reader wrongly believe is prevented before the reader can stop: on the cover or slide 2.
+    // What the cover alone could make a reader wrongly believe is prevented before the reader can stop: on the cover or slide 2, by one of the guard's facts.
     const carried = new Set([...cover.factIds, ...slide2.factIds]);
     for (const guard of guards) {
-      const missing = guard.factIds.filter((id) => !carried.has(id));
-      if (missing.length) add("GUARD_LATE", "slide2", `A reader who stops here could believe "${guard.misreading}": the cover or slide 2 must state what prevents it, citing ${missing.join(", ")}.`);
+      if (!guard.factIds.some((id) => carried.has(id))) add("GUARD_LATE", "slide2", `A reader who stops here could believe "${guard.misreading}": the cover or slide 2 must state what prevents it, citing ${guard.factIds.join(" or ")}.`);
     }
     // A proposal's original and the writer's edit may share a headline on purpose: the edit kept what worked.
     const key = headlineKey(cover.headline);

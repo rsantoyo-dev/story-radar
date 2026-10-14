@@ -28,10 +28,13 @@ import type { Draft2Skill } from "./draft2-skills";
  * believe the bar had closed. The cover says the cause when it is the draw,
  * names things as the facts do and the place readers recognize, and the
  * cover or slide 2 states the focus's guards (MISLEADS when it does not).
+ * Version 9: a guard is prevented with what the facts say (what the measure
+ * is, when it starts, the period), never a reassurance they do not give
+ * ("it is not closed"); one of its facts is enough.
  */
 export const HOOKS_SKILL: Draft2Skill = {
   name: "hooks",
-  version: "8",
+  version: "9",
   text: `# Openings for social carousels
 
 An opening is the cover (headline + subheadline) and slide 2 (headline + body).
@@ -70,11 +73,14 @@ sentence still rests on the verified facts it cites.
 The focus may name guards: what a reader who stops at the cover could
 wrongly believe, each with the facts that prevent it (a suspension read as a
 closure, a decision about past years read as today's news). The cover or
-slide 2 states each one in plain words and cites its facts: what the measure
-is and is not, whether it has started, the period the events belong to. A
-guard the headline cannot hold goes in the subheadline or slide 2, never
-later. The program refuses an opening that does not cite a guard's facts;
-the judge names one whose words leave the misreading open (MISLEADS).
+slide 2 prevents each one in plain words, citing one of its facts, with what
+the facts say: what the measure is (a liquor-permit suspension of 21 days),
+when it starts, the period the events belong to. Never a reassurance the
+facts do not give ("the bar is not closed", "it stays open"): that is a
+claim of its own. A guard the headline cannot hold goes in the subheadline
+or slide 2, never later. The program refuses an opening that cites none of a
+guard's facts; the judge names one whose words leave the misreading open
+(MISLEADS).
 
 ## Cover headline
 - At most 8 words, a complete thought with a verb, readable at a glance on a

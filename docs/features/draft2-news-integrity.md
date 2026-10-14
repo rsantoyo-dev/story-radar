@@ -18,15 +18,17 @@ to prevent every point, not to fix one post. Each point had one origin.
 ## Guards (focus v14, hooks v8)
 
 The focus plan names `guards`: what a reader who stops at the cover could
-wrongly believe, each with the one or two facts whose words prevent it ("le
-Houston ferme" → the liquor-permit fact and the start-at-the-police's-
-discretion fact). At most three, none when the story carries no such risk.
+wrongly believe, each with one or two facts, each enough to prevent it ("le
+Houston ferme" → the start-at-the-police's-discretion fact). At most two,
+only risks the cover's subject invites, none when the story carries none.
 They are Claude's (not an editable focus field), written in the plan call
 before the spine, kept in `values.guards` and `ai.guards`, and read by every
 step through `focusForModels`. A plan with none clears the earlier ones.
 
-The opening must cite every fact of each guard on the cover or slide 2:
-`mechanicalOpeningIssues` reports `GUARD_LATE` otherwise (blocking). The
+The opening must cite one of each guard's facts on the cover or slide 2:
+`mechanicalOpeningIssues` reports `GUARD_LATE` otherwise (blocking). It says
+what the facts say (what the measure is, when it starts, the period), never
+a reassurance they do not give ("the bar is not closed"; hooks v9). The
 judge names an opening whose words leave the misreading open in a
 `MISLEADS` issue, a material one. Review v4 never takes a guard off the
 cover or slide 2. The canvas shows the guards under the levers
@@ -112,3 +114,16 @@ have none, so their approvals stay current.
 - Source line: `draft2-caption*.ts`, `stories/story-content.repository.ts`
   (`storySourceUrls`), the caption route, `draft2-publication*.ts`,
   `skills/captions.ts` v3; the funnel's snapshot may now be asynchronous.
+
+### The first run (2026-10-14)
+
+Re-running the Houston story from Focus: the plan named three guards of two
+facts each, and the first version required every fact of every guard on the
+cover or slide 2; all fifteen openings failed the check (44 findings) and
+Claude's revision ran out of output tokens. The openings themselves already
+carried the auditor's points ("21 jours sans permis d'alcool au Quartier
+DIX30", the start at the police's discretion and the 2020–2024 period on
+slide 2), but some wrote "il n'est pas fermé", which the facts do not say.
+Focus v15 and hooks v9: at most two guards, one fact enough, and no
+reassurance the facts do not give.
+

@@ -57,9 +57,10 @@ const MAX_CONSEQUENCE_FACTS = 10;
  * Guards: what a reader who stops at the cover could wrongly believe and the
  * facts that prevent it (a suspension read as a closure, a decision about
  * past years read as news of today). The plan names them; the opening states
- * each on the cover or slide 2, citing every fact the guard names.
+ * each on the cover or slide 2, citing one of the facts the guard names (each
+ * is enough to prevent it).
  */
-export const FOCUS_MAX_GUARDS = 3;
+export const FOCUS_MAX_GUARDS = 2;
 export const FOCUS_GUARD_MAX_CHARACTERS = 300;
 export const FOCUS_GUARD_MAX_FACTS = 2;
 /**
@@ -246,7 +247,7 @@ export type Draft2FocusLine = { id: string; revision: number; name: string; obje
 
 export type Draft2FocusVoice = { gravity: Draft2FocusGravity } & Record<ToneKey, number>;
 
-/** A misreading the cover alone could cause, and the one or two facts whose words prevent it. */
+/** A misreading the cover alone could cause, and the one or two facts whose words prevent it, each enough on its own. */
 export type Draft2FocusGuard = { misreading: string; factIds: string[] };
 
 export type Draft2FocusValues = {
@@ -736,7 +737,7 @@ export function parseFocusPlan(answer: string, { known, structure, eligibleLever
   return { levers, guards, spine, direction, visualDirection, reasons };
 }
 
-/** The guards an answer names, the valid ones: a misreading with one or two verified facts, each once, at most three; any other is left out. */
+/** The guards an answer names, the valid ones: a misreading with one or two verified facts, each once, at most two; any other is left out. */
 export function parseGuards(value: unknown, known: ReadonlySet<string>): Draft2FocusGuard[] {
   const guards: Draft2FocusGuard[] = [];
   for (const entry of Array.isArray(value) ? value : []) {
