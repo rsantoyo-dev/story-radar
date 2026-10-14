@@ -1210,6 +1210,8 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
           saving={choosing?.step === "visual" ? choosing.id : undefined}
           locked={running !== undefined || choosing !== undefined}
           onCast={(slide, characterIds) => { void castScriptSlide(slide, characterIds); }}
+          onRefresh={() => { void decideInventory({ action: "roster" }); }}
+          refreshing={savingInventory === "roster"}
         /> : null}
         {!visual && available.visual && !running ? <EmptyState title="No visual script yet">Write the visual script: the carousel’s images as one visual story, before any image is made.</EmptyState> : null}
       </>,
@@ -1234,7 +1236,8 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
         {session?.step === "images" && session.error && running !== "images" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
         {imageError ? <InlineNotice tone="error" title="Your decision was not saved">{imageError}</InlineNotice> : null}
         {imagesDownload ? <InlineNotice tone={imagesDownload.tone} title={imagesDownload.tone === "error" ? "The download failed" : undefined}>{imagesDownload.text}</InlineNotice> : null}
-        {images && session && running !== "images" ? <ImagesView images={images} characters={inventory?.roster ?? []} story={{ topicId, sessionId: session.id, secret }} saving={savingImage} locked={running !== undefined || savingImage !== undefined} onDecide={(input) => { void decideImage(input); }} /> : null}
+        {inventoryError ? <InlineNotice tone="error" title="The brand's characters were not read again">{inventoryError}</InlineNotice> : null}
+        {images && session && running !== "images" ? <ImagesView images={images} characters={inventory?.roster ?? []} story={{ topicId, sessionId: session.id, secret }} saving={savingImage} locked={running !== undefined || savingImage !== undefined} onDecide={(input) => { void decideImage(input); }} onRefreshCharacters={() => { void decideInventory({ action: "roster" }); }} refreshingCharacters={savingInventory === "roster"} /> : null}
         {!images && available.images && !running ? <EmptyState title="No images yet">Make the images: each slide from the chosen visual script, reviewed one by one.</EmptyState> : null}
       </>,
     },
@@ -1867,9 +1870,11 @@ function PlaceItem({ entity, photos, locked, onDecide }: { entity: Draft2Invento
  * review, and the editor's choices: another image (with what to
  * change, optionally as an edit of the one shown), or another version.
  */
-function ImagesView({ images, characters, story, saving, locked, onDecide }: {
+function ImagesView({ images, characters, story, saving, locked, onDecide, onRefreshCharacters, refreshingCharacters }: {
   /** The brand's characters with a reference image, for casting a slide's next image. */
   characters: readonly { id: string; name: string }[];
+  onRefreshCharacters: () => void;
+  refreshingCharacters: boolean;
   images: Draft2Images;
   /** Where the images are read from; the secret authorizes it when the editor is not signed in. */
   story: { topicId: string; sessionId: string; secret: string };
@@ -1885,7 +1890,7 @@ function ImagesView({ images, characters, story, saving, locked, onDecide }: {
     <p className={styles.factMeta}>{shown} of {images.slides.length} slides · from visual script {images.visualId} · {images.quality} quality · {images.model}{costMicros ? ` · ≈US$${(costMicros / 1_000_000).toFixed(2)} in images` : ""}</p>
     {plate ? <p className={styles.factMeta}>Anchor plate · {plate.anchor} · {plate.status === "generated" ? "drawn once without words; every slide that carries the anchor takes it as a reference" : plate.status === "failed" ? `could not be made${plate.error ? ` (${clip(plate.error, 120)})` : ""}; the slides keep the anchor by the script’s words alone` : "being drawn before the slides"}</p> : null}
     {master ? <p className={styles.factMeta}>Master scene · {master.anchor} · {master.status === "generated" ? `drawn once, ${master.width}×${master.height}, without words; each slide is redrawn from its section` : master.status === "failed" ? `could not be made${master.error ? ` (${clip(master.error, 120)})` : ""}; each slide is drawn on its own from the script` : "being drawn before the slides"}</p> : null}
-    <ol className={styles.imageGrid}>{images.slides.map((slide) => <SlideImageCard key={slide.slide} slide={slide} characters={characters} runId={images.runId} story={story} saving={saving === slide.slide} locked={locked} onDecide={onDecide} />)}</ol>
+    <ol className={styles.imageGrid}>{images.slides.map((slide) => <SlideImageCard key={slide.slide} slide={slide} characters={characters} runId={images.runId} story={story} saving={saving === slide.slide} locked={locked} onDecide={onDecide} onRefreshCharacters={onRefreshCharacters} refreshingCharacters={refreshingCharacters} />)}</ol>
   </div>;
 }
 
@@ -1902,9 +1907,11 @@ function ImageReviewLines({ review }: { review: Draft2ImageReview }) {
 }
 
 /** One slide: its image, its versions, the review, what it could not show, and another image. */
-function SlideImageCard({ slide, characters, runId, story, saving, locked, onDecide }: {
+function SlideImageCard({ slide, characters, runId, story, saving, locked, onDecide, onRefreshCharacters, refreshingCharacters }: {
   slide: Draft2SlideImage;
   characters: readonly { id: string; name: string }[];
+  onRefreshCharacters: () => void;
+  refreshingCharacters: boolean;
   runId: string;
   story: { topicId: string; sessionId: string; secret: string };
   saving: boolean;
@@ -1952,7 +1959,7 @@ function SlideImageCard({ slide, characters, runId, story, saving, locked, onDec
       <FormField label="What to change" description="Optional for a new image; needed to edit this one.">
         <textarea value={instruction} maxLength={600} rows={2} disabled={locked || pending} onChange={(event) => setInstruction(event.target.value)} />
       </FormField>
-      {castable ? <CastChoice characters={characters} selected={selected} disabled={locked || pending} label="Brand characters in this image" description="Say what they do in “What to change”, for instance: Jo dances the line dance." onChange={setCast} /> : null}
+      {castable ? <CastChoice characters={characters} selected={selected} disabled={locked || pending} label="Brand characters in this image" description="Say what they do in “What to change”, for instance: Jo dances the line dance." onChange={setCast} onRefresh={onRefreshCharacters} refreshing={refreshingCharacters} /> : null}
       <label className={styles.factMeta}><input type="checkbox" checked={edit} disabled={locked || pending || !shown} onChange={(event) => setEdit(event.target.checked)} /> Edit this image, keeping its layout</label>
       <ActionRow>
         <Button size="compact" variant="secondary" busy={saving} disabled={locked || pending || (edit && !instruction.trim())} onClick={() => onDecide({ action: "regenerate", slide: slide.slide, instruction, edit, ...(castable ? { characterIds: selected } : {}) })}>{edit ? "Edit the image" : "Make another image"}</Button>
@@ -1964,13 +1971,16 @@ function SlideImageCard({ slide, characters, runId, story, saving, locked, onDec
 const MAP_POSITION_LABEL: Record<MapPanelPosition, string> = { "bottom-right": "Bottom right", "top-right": "Top right", "bottom-left": "Bottom left" };
 
 /** The brand's characters as checkboxes, at most two on an image. */
-function CastChoice({ characters, selected, disabled, label, description, onChange }: {
+function CastChoice({ characters, selected, disabled, label, description, onChange, onRefresh, refreshing }: {
   characters: readonly { id: string; name: string }[];
   selected: readonly string[];
   disabled: boolean;
   label: string;
   description?: string;
   onChange: (characterIds: string[]) => void;
+  /** Reads the brand's characters again, for one the editor just added; nothing made so far changes. */
+  onRefresh?: () => void;
+  refreshing?: boolean;
 }) {
   return <fieldset className={styles.focusVoice}>
     <legend className={styles.focusLegend}>{label}</legend>
@@ -1981,6 +1991,7 @@ function CastChoice({ characters, selected, disabled, label, description, onChan
       </label>;
     })}
     {description ? <p className={styles.factMeta}>{description}</p> : null}
+    {onRefresh ? <div><Button variant="quiet" size="compact" busy={refreshing} disabled={disabled} onClick={onRefresh}>Read the brand’s characters again</Button></div> : null}
   </fieldset>;
 }
 
@@ -1990,12 +2001,14 @@ function CastChoice({ characters, selected, disabled, label, description, onChan
  * take part in one slide's action. The next images run reads the cast; a
  * slide that rests on a verified photo or map keeps them off.
  */
-function ScriptCast({ visual, characters, saving, locked, onCast }: {
+function ScriptCast({ visual, characters, saving, locked, onCast, onRefresh, refreshing }: {
   visual: Draft2Visual;
   characters: readonly { id: string; name: string }[];
   saving?: string;
   locked: boolean;
   onCast: (slide: string, characterIds: string[]) => void;
+  onRefresh: () => void;
+  refreshing: boolean;
 }) {
   const chosenId = visual.editorChoiceId ?? visual.winnerId;
   const chosen = chosenId ? funnelVersions(visual.rounds).find((version) => version.candidate.id === chosenId)?.candidate : undefined;
@@ -2003,6 +2016,7 @@ function ScriptCast({ visual, characters, saving, locked, onCast }: {
   return <details className={styles.focusField}>
     <summary>Brand characters per image</summary>
     <p className={styles.factMeta}>Who appears on each slide of {chosen.id}, narrating or taking part in its action. The next images use it; images already made keep theirs (cast them in Images).</p>
+    <div><Button variant="quiet" size="compact" busy={refreshing} disabled={locked} onClick={onRefresh}>Read the brand’s characters again</Button></div>
     <ol className={styles.factList}>{chosen.slides.map((slide) => {
       const words = visual.carousel?.find((entry) => entry.slide === slide.slide);
       const verified = slide.need === "real-photo" || slide.need === "verified-map";

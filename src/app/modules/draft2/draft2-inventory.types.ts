@@ -238,6 +238,7 @@ export type Draft2InventoryAction =
   | { action: "reopen"; entityId: string }
   | { action: "photo"; entityId: string; storyPhotoId: string | null }
   | { action: "photos" }
+  | { action: "roster" }
   | { action: "characters"; characters: Draft2CharacterChoice };
 
 /** The editor's decision as a contract; anything else is an input error. */
@@ -249,6 +250,7 @@ export function parseInventoryAction(value: unknown): Draft2InventoryAction {
     return { action: "characters", characters };
   }
   if (body.action === "photos") return { action: "photos" };
+  if (body.action === "roster") return { action: "roster" };
   const entityId = typeof body.entityId === "string" && /^e\d{1,3}$/.test(body.entityId) ? body.entityId : undefined;
   if (!entityId) throw new Draft2InputError("Name the person or place (entityId, such as e2).");
   if (body.action === "confirm") {
@@ -263,7 +265,7 @@ export function parseInventoryAction(value: unknown): Draft2InventoryAction {
     return { action: "photo", entityId, storyPhotoId };
   }
   if (body.action === "reject" || body.action === "reopen") return { action: body.action, entityId };
-  throw new Draft2InputError("The action is confirm, reject, reopen, photo, photos or characters.");
+  throw new Draft2InputError("The action is confirm, reject, reopen, photo, photos, roster or characters.");
 }
 
 /** The person an action names, which must be a person the search looked up. */

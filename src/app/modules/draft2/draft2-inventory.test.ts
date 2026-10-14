@@ -51,6 +51,7 @@ function harness({ session, scope = SCOPE, peopleFail = false, contact = "editor
   const calls: { search: string[]; resolve: string[]; openverse: string[]; imported: string[]; google: string[]; claude: Record<string, unknown>[] } = { search: [], resolve: [], openverse: [], imported: [], google: [], claude: [] };
   let row: Row = { id: sessionId, topicId, storyId, step: "deck", status: "ready", facts: storyFacts, inventory: null, error: null, trace: [], updatedAt: new Date(), ...session };
   let photos = STORY_PHOTOS;
+  let characters = [{ id: "char-mia", name: "Mia", description: "An illustrated local presenter", referenceFingerprint: "x" }];
   const profile = { name: "Salut Longueuil", language: "French", region: "Longueuil", platform: "Instagram", audience: "Residents", brandPersonality: [], formality: 30, humor: 40, energy: 60, optimism: 60, provocation: 30, geoScope: scope, geoProviderContact: contact };
   const mocks: Record<string, unknown> = {
     "server-only": {},
@@ -89,7 +90,7 @@ function harness({ session, scope = SCOPE, peopleFail = false, contact = "editor
     "../stories/openverse-place-photo": { openverseEnabled: () => true, openversePlacePhoto: async (input: { place: { name: string } }) => { calls.openverse.push(input.place.name); return photoEvidence("openverse"); } },
     "../stories/creative-place-visual": { placeScopeComplete: (value?: { municipality?: string; region?: string; country?: string }) => Boolean(value?.municipality && value.region && value.country) },
     "../stories/story-materials.repository": { listStoryPhotos: async () => photos },
-    "../stories/creative-characters.repository": { listCreativeCharacterRoster: async () => [{ id: "char-mia", name: "Mia", description: "An illustrated local presenter", referenceFingerprint: "x" }] },
+    "../stories/creative-characters.repository": { listCreativeCharacterRoster: async () => characters },
     "./draft2-session.repository": {
       activeDraft2Session: async () => undefined,
       getDraft2Session: async (topic: string, id: string) => topic === topicId && id === row.id ? row : undefined,
@@ -106,6 +107,8 @@ function harness({ session, scope = SCOPE, peopleFail = false, contact = "editor
     row: () => row,
     /** The story's photos from now on, as the editor added or removed some. */
     setPhotos: (next: StoryPhoto[]) => { photos = next; },
+    /** The brand's characters with a reference image from now on, as the editor added one. */
+    setCharacters: (next: typeof characters) => { characters = next; },
   };
 }
 
@@ -233,4 +236,14 @@ test("the editor sets a wrong place aside and takes it back; a new search keeps 
   assert.equal(back.inventory!.entities[1].place?.status, "verified");
   await assert.rejects(h.decide({ action: "reopen", entityId: "e2" }), /has no decision to take back/);
   await assert.rejects(h.decide({ action: "reject", entityId: "e4" }), /e4 is not one of this story's people or places/);
+});
+
+test("the brand's characters are read again after the editor adds one, and the version a visual script follows stays", async () => {
+  const h = harness();
+  const found = await h.find();
+  const version = found.inventory!.version;
+  assert.equal(await h.decide({ action: "roster" }), h.row(), "nothing new: the session as it was");
+  h.setCharacters([{ id: "char-mia", name: "Mia", description: "An illustrated local presenter", referenceFingerprint: "x" }, { id: "char-elvis", name: "Elvis", description: "An illustrated music fan", referenceFingerprint: "y" }]);
+  const read = await h.decide({ action: "roster" });
+  assert.equal(json([read.inventory!.roster.map((character) => character.name), read.inventory!.version]), json([["Mia", "Elvis"], version]), "a new character is a new choice: nothing made so far goes stale");
 });

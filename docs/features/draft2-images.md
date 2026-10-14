@@ -396,3 +396,14 @@ card's label as words "not in the slide", and the card printed
   invented, unverified or a mock-up.
 - A labelled card prints the address only when it says something the name
   does not (`mapLabelLines`).
+
+## 17. A character the editor just added (2026-10-14)
+
+The editor added Elvis to Salut St-Jean's characters while a session was at
+the Images step: the cast checkboxes read the roster People and places saved,
+so Elvis was not offered, and running People and places again would have
+moved its version and made the script and images stale. "Read the brand's
+characters again" (in each slide's "Another image" and in the script's cast
+panel) is the inventory action `roster`: it reads the Topic's characters with
+a reference image and keeps the inventory's version, since a new character
+is a new choice, not a change to what the steps read.

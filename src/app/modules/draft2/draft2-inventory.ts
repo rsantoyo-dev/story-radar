@@ -264,8 +264,10 @@ export async function findDraft2Inventory({ topicId, storyId, sessionId }: { top
  * candidates or a place's match, take that back, link one of the story's
  * photos to a person or place (or unlink it), read the story's photos again
  * after the editor added one, or say whether the brand's characters may
- * narrate (which reads the roster again). A decision that changes nothing
- * keeps the version, which a visual script records.
+ * narrate (which reads the roster again), or read the brand's characters
+ * again after the editor added one. A decision that changes nothing keeps the
+ * version, which a visual script records; so does a roster read again, since
+ * a new character is a new choice, not a change to what the steps read.
  */
 export async function editDraft2Inventory({ topicId, sessionId, input }: { topicId: string; sessionId: string; input: unknown }): Promise<Draft2SessionRow> {
   const action = parseInventoryAction(input);
@@ -279,6 +281,10 @@ export async function editDraft2Inventory({ topicId, sessionId, input }: { topic
   let next: Draft2Inventory;
   if (action.action === "characters") {
     next = { ...decidedInventory(inventory, undefined, (entity) => entity, now, action.characters), roster: await roster(topicId) };
+  } else if (action.action === "roster") {
+    const fresh = await roster(topicId);
+    if (JSON.stringify(fresh) === JSON.stringify(inventory.roster)) return session;
+    next = { ...inventory, roster: fresh, updatedAt: now.toISOString() };
   } else if (action.action === "photos") {
     const refreshed = withStoryPhotos(inventory, await storyPhotos(topicId, session.storyId));
     if (!storyPhotosDiffer(refreshed, inventory)) return session;
