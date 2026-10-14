@@ -377,3 +377,22 @@ the regenerate action, `editorCast` checks them against the inventory's
 roster, and the slide keeps the new cast, whose reference images go with the
 request (a new image or an edit). What they do goes in "What to change"
 ("Jo dances the line dance").
+
+## 16. Room around the map card, and the card's words are not the slide's (2026-10-14)
+
+With the card moved top right, every new image of the St-Jean last slide set
+its title's last line to about 57% of the width while the card starts at
+54%: the card hid the end of "pratique". The zone the prompt reserved started
+at 52%, and the model set its words just past it; the editor's edits kept
+that layout. The review also counted the real map's street names and the
+card's label as words "not in the slide", and the card printed
+"Vieux-Saint-Jean" twice (an area has no street address).
+
+- The zone an inset card asks the model to keep free is 72 px wider than the
+  card on every side (it was 24), so words set close to its edge still miss
+  it. A band keeps 24.
+- Images skill v4: the words printed on a pasted verified map or photo are
+  left out of the transcription, and the pasted material is never flagged as
+  invented, unverified or a mock-up.
+- A labelled card prints the address only when it says something the name
+  does not (`mapLabelLines`).

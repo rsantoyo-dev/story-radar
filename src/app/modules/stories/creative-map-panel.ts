@@ -112,7 +112,8 @@ export function mapInsetVisualDirection(direction: string, asksForGeography: boo
 
 /** Appended to the slide's image prompt. The map itself is never an input. */
 export function mapPanelZonePrompt(layout: MapPanelLayout = "inset", position?: MapPanelPosition): string {
-  const margin = 24;
+  // An inset card asks for more room than it covers: the model sets its words close to the edge it is given, and a slight overrun must still miss the card.
+  const margin = layout === "band" ? 24 : 72;
   const mat = placedMat(layout, position);
   const zone = {
     left: Math.max(0, mat.left - margin),
@@ -170,6 +171,12 @@ function fittedLine(text: string, maxSize: number, minSize: number, width: numbe
   return { text: line, size };
 }
 
+/** The lines a labelled card prints: the name, and the address when it says something else (an area such as "Vieux-Saint-Jean" has none). */
+export function mapLabelLines(label: MapLabel): string[] {
+  const name = label.name.trim(), address = label.address.trim();
+  return address && address.toLowerCase() !== name.toLowerCase() ? [name, address] : [name];
+}
+
 /** The place's name and street address under the map, in the card's ink; drawn locally, never by the model. */
 function labelSvg(label: MapLabel, layout: MapPanelLayout, ink: string): Buffer {
   const { width } = MATS[layout];
@@ -177,7 +184,10 @@ function labelSvg(label: MapLabel, layout: MapPanelLayout, ink: string): Buffer 
   const textWidth = width - 2 * pad;
   const name = fittedLine(label.name.trim(), 24, 17, textWidth);
   const address = fittedLine(label.address.trim(), 19, 14, textWidth);
-  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${LABEL_BAND}"><text x="${pad}" y="30" font-family="Arial, Helvetica, sans-serif" font-size="${name.size}" font-weight="700" fill="${ink}">${escapeXml(name.text)}</text><text x="${pad}" y="56" font-family="Arial, Helvetica, sans-serif" font-size="${address.size}" fill="${ink}" fill-opacity="0.78">${escapeXml(address.text)}</text></svg>`);
+  const second = mapLabelLines(label).length > 1
+    ? `<text x="${pad}" y="56" font-family="Arial, Helvetica, sans-serif" font-size="${address.size}" fill="${ink}" fill-opacity="0.78">${escapeXml(address.text)}</text>`
+    : "";
+  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${LABEL_BAND}"><text x="${pad}" y="${second ? 30 : 42}" font-family="Arial, Helvetica, sans-serif" font-size="${name.size}" font-weight="700" fill="${ink}">${escapeXml(name.text)}</text>${second}</svg>`);
 }
 
 export async function compositeMapPanel({ image, map, matColor, layout = "inset", position, label, ink = "#1f2933" }: {

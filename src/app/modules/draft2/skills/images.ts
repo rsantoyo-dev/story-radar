@@ -10,11 +10,14 @@ import type { Draft2Skill } from "./draft2-skills";
  * 2026-10-14, adds inventedDetails: what the image shows that the slide's
  * facts and words do not give (a market stall for "various vendors", Parisian
  * façades for the Vieux-Saint-Jean), and asks for a scene that passes for a
- * photograph of a named event or place to be named as invented.
+ * photograph of a named event or place to be named as invented. Version 4:
+ * the words on a pasted verified map or photo (its streets, the place's name
+ * printed under it) are not the slide's text, and the pasted material is
+ * never flagged as invented.
  */
 export const IMAGES_SKILL: Draft2Skill = {
   name: "images",
-  version: "3",
+  version: "4",
   text: `# Reviewing a carousel slide image
 
 You see one finished slide: the image the model made, with the publication's
@@ -24,7 +27,9 @@ and, on some slides, a verified photo or map pasted unchanged.
 - transcription: every word of the slide's own text as it appears in the
   image, line by line, in reading order, exactly as drawn (a misspelling, a
   missing accent or a doubled word stays as it is). Leave out the page
-  number and the publication's own logo.
+  number, the publication's own logo, and every word printed on a pasted
+  verified map or photo (verifiedMap, verifiedPhoto: the map's streets and
+  credits, the place's name under the map): they are not the slide's text.
 - textCovered: true when the logo, the page number, a pasted photo or a map
   covers or touches any of the slide's words.
 - textNote: lettering that is broken, cut at an edge, illegible on a phone,
@@ -45,7 +50,9 @@ and, on some slides, a verified photo or map pasted unchanged.
 - A scene that could pass for a photograph of a named event, show, venue or
   place without its verified material (its stage, its public, its stalls,
   its street) is an invented view of it: say so in inventedNamedSubject,
-  even when no one in it is identifiable.
+  even when no one in it is identifiable. The verified map card or photo
+  pasted at the region you are given is real: never flag it as invented,
+  unverified or a mock-up.
 Judge only what you can see.`,
 };
 

@@ -8,7 +8,7 @@ import ts from "typescript";
 import sharp from "sharp";
 
 import * as policy from "./creative-documentary";
-import { compositeMapPanel, MAP_INSET_SCENE_DIRECTION, MAP_PANEL_MAP, MAP_PANEL_MAT, mapInsetVisualDirection, mapPaletteFromBrand, mapPanelLayout, mapPanelMap, mapPanelMat, mapPanelRegion, mapPanelZonePrompt, streetAddress } from "./creative-map-panel";
+import { mapLabelLines, compositeMapPanel, MAP_INSET_SCENE_DIRECTION, MAP_PANEL_MAP, MAP_PANEL_MAT, mapInsetVisualDirection, mapPaletteFromBrand, mapPanelLayout, mapPanelMap, mapPanelMat, mapPanelRegion, mapPanelZonePrompt, streetAddress } from "./creative-map-panel";
 
 const requireLocal = createRequire(import.meta.url);
 function load(file: string, imports: Record<string, unknown>) {
@@ -142,13 +142,21 @@ test("a pasted map counts as verified imagery, so the slide is not told the plac
   assert.equal(images.slideHasVerifiedImagery({ placeVisual: {} }), false);
 });
 
+test("a labelled card prints the address only when it says something the name does not", () => {
+  assert.deepEqual(mapLabelLines({ name: "Parc des Parulines", address: "166 chemin du Clocher" }), ["Parc des Parulines", "166 chemin du Clocher"]);
+  assert.deepEqual(mapLabelLines({ name: "Vieux-Saint-Jean", address: "vieux-saint-jean " }), ["Vieux-Saint-Jean"]);
+  assert.deepEqual(mapLabelLines({ name: "Vieux-Saint-Jean", address: "" }), ["Vieux-Saint-Jean"]);
+});
+
 test("a labelled map card prints the place's name and street address under the map, clear of the page counter", async () => {
   assert.equal(mapPanelLayout({ panelLayout: "inset-labelled" }), "inset-labelled");
   assert.equal(streetAddress("360 Rue McGinnis, Saint-Jean-sur-Richelieu, QC J2X 3H6, Canada"), "360 Rue McGinnis");
   const mat = mapPanelMat("inset-labelled"), inner = mapPanelMap("inset-labelled");
   assert.deepEqual(mapPanelMap("inset-labelled"), { ...mapPanelMap("inset"), height: mapPanelMap("inset").height }, "the map itself keeps its size");
   assert.ok(mat.top + mat.height < 1270, "the card ends above the page counter");
-  assert.match(mapPanelZonePrompt("inset-labelled"), new RegExp(`to ${Math.round(((mat.top + mat.height + 24) / 1350) * 100)}% of the height`), "the model keeps the whole card free");
+  assert.match(mapPanelZonePrompt("inset-labelled"), new RegExp(`to ${Math.round(((mat.top + mat.height + 72) / 1350) * 100)}% of the height`), "the model keeps the whole card free, with room to spare");
+  const [, from] = /from (\d+)% to \d+% of the width/.exec(mapPanelZonePrompt("inset-labelled", "top-right")) ?? [];
+  assert.ok(Number(from) <= Math.round(((mat.left - 64) / 1080) * 100), `the zone starts well before the card, so words set close to its edge miss it: ${from}%`);
 
   const base = await sharp({ create: { width: 1080, height: 1350, channels: 3, background: "#C8A070" } }).png().toBuffer();
   const map = await sharp({ create: { width: 840, height: 528, channels: 3, background: "#3A7BD5" } }).png().toBuffer();
