@@ -370,8 +370,9 @@ model, which can only draw another map.
 
 ## 15. The editor casts each image (2026-10-14)
 
-"Another image" on a slide that does not rest on verified material shows the
-brand's characters as checkboxes ("Brand characters in this image"),
+"Another image" on a slide that does not rest on a verified photo shows the
+brand's characters as checkboxes (a map slide shows them too since
+2026-10-14: the characters stand beside the card, see draft2-visual.md) ("Brand characters in this image"),
 preselected with the slide's cast; the request sends `characterIds` with
 the regenerate action, `editorCast` checks them against the inventory's
 roster, and the slide keeps the new cast, whose reference images go with the

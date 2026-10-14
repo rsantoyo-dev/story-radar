@@ -167,7 +167,8 @@ test("verified material backs what a slide asks for, and the strict modes genera
   const given = { ...inventory, entities: inventory.entities.map((entity) => entity.id === "e3" ? { ...entity, storyPhoto: { id: "p1", name: "Reading room", provenance: "Editor", transmissionAllowed: true } } : entity) };
   assert.deepEqual(findings(withSlide("slide2", { need: "real-photo", references: ["e3"], direction: direction("Tremblay at the desk, from the front") }), { inventory: given }), [], "the story photo the editor gave him is his portrait");
   assert.deepEqual(findings(withSlide("s1", { need: "real-photo", references: ["p1"] }), { inventory: given }), ["REFERENCE_UNKNOWN c1 s1", "NEED_MISMATCH c1 s1"], "a person's photo is never a free reference");
-  assert.deepEqual(findings(withSlide("s1", { need: "real-photo", references: ["e2"], characterIds: ["char-mia"] })), ["NEED_MISMATCH c1 s1"], "the character stays off verified material");
+  assert.deepEqual(findings(withSlide("s1", { need: "real-photo", references: ["e2"], characterIds: ["char-mia"] })), ["NEED_MISMATCH c1 s1"], "the character stays off a verified photo");
+  assert.deepEqual(findings(withSlide("s1", { need: "verified-map", references: ["e2"], characterIds: ["char-mia"] })), [], "a character may stand beside a map card");
   assert.deepEqual(findings(withSlide("s2", { need: "typography", shot: "typography" })), []);
   const plain = script("c1", { characterPlan: { use: false, characterIds: [], role: "" }, slides: script("c1").slides.map((entry) => ({ ...entry, characterIds: [], ...(entry.slide === "cover" ? { need: "typography" as const, shot: "typography" as const } : { need: "generic-illustration" as const }) })) });
   assert.deepEqual(findings(plain), ["COVER_TYPOGRAPHY c1 cover"]);
@@ -284,12 +285,13 @@ test("the carousel as it stands, and whether a script's words are still its word
   assert.ok(!sameCarouselWords(carousel, carousel.slice(0, -1)), "a slide fewer");
 });
 
-test("the editor's cast for an image: the brand's characters, each once, at most two, never on a verified photo or map", () => {
+test("the editor's cast for an image: the brand's characters, each once, at most two, never on a verified photo, beside a map card", () => {
   const roster = [{ id: "char-jo" }, { id: "char-mia" }, { id: "char-leo" }];
   assert.deepEqual(editorCast(["char-jo", "char-jo"], roster, "generic-illustration"), ["char-jo"]);
   assert.deepEqual(editorCast([], roster, "real-photo"), [], "taking every character off is always possible");
   assert.throws(() => editorCast(["char-zed"], roster, "generic-illustration"), /char-zed is not one of the brand's characters/);
   assert.throws(() => editorCast(["char-jo", "char-mia", "char-leo"], roster, "generic-illustration"), /At most 2 characters/);
-  assert.throws(() => editorCast(["char-jo"], roster, "verified-map"), /stay off it/);
+  assert.throws(() => editorCast(["char-jo"], roster, "real-photo"), /verified photo: the brand's characters stay off it/);
+  assert.deepEqual(editorCast(["char-jo"], roster, "verified-map"), ["char-jo"], "a map slide may carry a character beside the card");
   assert.throws(() => editorCast("char-jo", roster, "generic-illustration"), /list of their ids/);
 });

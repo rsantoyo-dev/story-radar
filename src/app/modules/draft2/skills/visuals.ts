@@ -19,11 +19,13 @@ import type { Draft2Skill } from "./draft2-skills";
  * promise at its strongest and the end never calmer. Version 7, the same
  * day: a brand character may take part in one slide's action (Jo dancing the
  * line dance) without narrating the carousel, two when the brand has two,
- * when the image merits it; the editor casts each slide too.
+ * when the image merits it; the editor casts each slide too. Version 8: a
+ * verified map slide may carry a character in the graphic area beside the
+ * card, consulting the practical information; a verified photo never.
  */
 export const VISUALS_SKILL: Draft2Skill = {
   name: "visuals",
-  version: "7",
+  version: "8",
   text: `# Visual scripts for social carousels
 
 A visual script is the sequence of images a carousel is made of, written as
@@ -182,8 +184,10 @@ the end.
   characterIds and say what it does in the beat and the direction, in its
   own reference style, in the brand's graphic area: never inserted into a
   documentary photograph, never as if it attended the real event or stood at
-  a named place, never on a slide that rests on a verified photo or map. The
-  editor may cast or uncast any slide afterwards.
+  a named place, never on a slide that rests on a verified photo. On a
+  verified map slide it may stand in the graphic area beside the card, as
+  the reader's guide consulting the practical information, never inside a
+  scene of the place. The editor may cast or uncast any slide afterwards.
 
 ## Brand
 - The brand's identity rules the medium, the style, the palette, the

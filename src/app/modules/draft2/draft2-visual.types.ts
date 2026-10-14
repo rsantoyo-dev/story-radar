@@ -380,9 +380,10 @@ export function avoidTerms(identity: { avoid?: readonly { items: readonly string
 /**
  * The editor's cast for one image: the brand's characters with a reference
  * image, each once, at most VISUAL_MAX_CHARACTERS_PER_SLIDE, and none on a
- * slide that rests on a verified photo or map (the brand's character never
- * stands beside a real person's photo or at a named place). An empty list
- * takes every character off.
+ * slide that rests on a verified photo (the brand's character never stands
+ * beside a real person's photo or in a real place's). A map slide may carry
+ * one, in the graphic area beside the card, consulting the practical
+ * information. An empty list takes every character off.
  */
 export function editorCast(value: unknown, roster: readonly { id: string }[], need: Draft2VisualNeed): string[] {
   if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) throw new Draft2InputError("Name the characters as a list of their ids.");
@@ -390,7 +391,7 @@ export function editorCast(value: unknown, roster: readonly { id: string }[], ne
   const unknown = ids.filter((id) => !roster.some((character) => character.id === id));
   if (unknown.length) throw new Draft2InputError(`${unknown.join(", ")} ${unknown.length === 1 ? "is" : "are"} not one of the brand's characters with a reference image.`);
   if (ids.length > VISUAL_MAX_CHARACTERS_PER_SLIDE) throw new Draft2InputError(`At most ${VISUAL_MAX_CHARACTERS_PER_SLIDE} characters on one image.`);
-  if (ids.length && (need === "real-photo" || need === "verified-map")) throw new Draft2InputError("This slide rests on a verified photo or map: the brand's characters stay off it.");
+  if (ids.length && need === "real-photo") throw new Draft2InputError("This slide rests on a verified photo: the brand's characters stay off it.");
   return ids;
 }
 
@@ -497,7 +498,7 @@ export function mechanicalVisualIssues(candidates: readonly Draft2VisualCandidat
       if (slide.need === "real-photo" && !photoBacked) add("NEED_MISMATCH", part, `${label} asks for a real photo without a verified portrait, place photo or story photo.`);
       if (slide.need === "verified-map" && !mapBacked) add("NEED_MISMATCH", part, `${label} asks for a map without a verified place that can be mapped.`);
       if (slide.need === "character-reference" && !slide.characterIds.length) add("NEED_MISMATCH", part, `${label} is a character slide that casts no character.`);
-      if ((slide.need === "real-photo" || slide.need === "verified-map") && slide.characterIds.length) add("NEED_MISMATCH", part, `${label} rests on verified material; the brand's character stays off it.`);
+      if (slide.need === "real-photo" && slide.characterIds.length) add("NEED_MISMATCH", part, `${label} rests on a verified photo; the brand's character stays off it.`);
       if (strict && !["real-photo", "verified-map", "typography"].includes(slide.need)) add("STRICT_MODE", part, `Under the ${mode} visual mode nothing is generated: ${label} must be a real photo, a verified map or typography.`);
       if (strict && slide.characterIds.length) add("STRICT_MODE", part, `Under the ${mode} visual mode no character is drawn on ${label}.`);
       if (!strict && slide.slide === "cover" && slide.need === "typography") add("COVER_TYPOGRAPHY", part, "The cover is always an image, never a typography card.");

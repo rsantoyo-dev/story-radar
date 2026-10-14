@@ -355,7 +355,8 @@ the image merits it.
   brand's rules on its characters: its own reference style in the graphic
   area, never inserted into a documentary photograph, never as if it
   attended the real event or stood at a named place, never on a slide that
-  rests on a verified photo or map.
+  rests on a verified photo or map (since v8, a map slide may carry one: see
+  below).
 - **The program** no longer flags a character cast on a slide without a
   narrator plan (CHARACTER_OFF_PLAN keeps only a planned narrator who never
   appears); the editor's characterChoice still wins ("off": none).
@@ -365,3 +366,25 @@ the image merits it.
   image" under the Visual script edits the chosen version in place
   (`editVisualCharacters`, PATCH visual `{ slide, characterIds }`); the next
   images run reads it. Images already made keep their cast.
+
+## Characters beside a map card (2026-10-14)
+
+Salut St-Jean's last slide rests on the verified map of the Vieux-Saint-Jean,
+and the editor wanted Jo or Elvis there: the cast panel refused it. A map
+card is the program's paste in the brand's graphic area, not a documentary
+scene of the place, so a character beside it misleads no one, as long as it
+does not seem to stand at the place.
+
+- **Visuals skill v8:** on a verified map slide a character may stand in the
+  graphic area beside the card, as the reader's guide consulting the practical
+  information, never inside a scene of the place. A verified photo keeps them
+  off, as before: the brand's character never stands beside a real person's
+  photo or in a real place's.
+- **The program:** `NEED_MISMATCH` flags a character only on a `real-photo`
+  slide, and `editorCast` refuses a cast only there.
+- **Images:** a map slide with a character adds one line to the prompt: the
+  characters stand beside the card's zone, in their own reference style,
+  never inside a scene of the place, never in front of the card.
+- **Canvas:** the script's cast panel and the slide's "Another image" offer
+  the characters on map slides too.
+

@@ -300,6 +300,8 @@ async function imageRequest(ctx: Context, slide: Draft2SlideImage, attempt: Draf
   if (base) prompt += `\n\nIMAGE EDIT v1\nThe LAST input image is the base image to edit. Preserve its layout, copy and protagonist except for this requested change (data): ${JSON.stringify(attempt.instruction ?? "")}\nEND IMAGE EDIT`;
   else if (section) prompt += masterSectionPrompt(ctx);
   else if (attempt.instruction) prompt += `\nRequested change: ${JSON.stringify(attempt.instruction)}`;
+  // A character on a map slide is the reader's guide beside the card, never someone standing at the place.
+  if (panel && slide.characterIds.length) prompt += "\nThe brand's characters on this slide stand in the graphic area beside the map card's zone, as the reader's guide consulting the practical information, in their own reference style: never inside a scene of the place, never in front of the card.";
   // An editor who asks to move or fix the map means the card the program pastes: the model never draws one.
   if (panel && attempt.instruction) prompt += "\nThe verified map card is placed by the program after generation, in the zone kept for it: never draw a map, a plan, streets or a route yourself, whatever the requested change says about the map.";
   if (prompt.length > MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS) throw new Draft2InputError(`${slide.label}'s image prompt is longer than ${MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS} characters.`);

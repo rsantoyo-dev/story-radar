@@ -401,7 +401,7 @@ test("an image made before its photo was fitted keeps the slide's layout when ed
   assert.equal(json([h.calls.located.length, fit?.source, slide.attempts[2].portrait]), json([2, "ai", { layout: fit?.layout, crop: fit?.crop }]), "a fresh image of a photo not fitted yet is fitted first");
 });
 
-test("the editor moves a map card to another corner: a new image is made around it, with its zone and its paste there; asking the model about the map never makes it draw one, and a direction about a plan gives way to the scene", async () => {
+test("the editor moves a map card to another corner: a new image is made around it, with its zone and its paste there; asking the model about the map never makes it draw one, a direction about a plan gives way to the scene, and a character stands beside the card", async () => {
   const inventory: Draft2Inventory = {
     ...INVENTORY,
     entities: [{ id: "e2", name: "Vieux-Saint-Jean", kind: "place", role: "subject", description: "", factIds: ["f1"], place: { status: "verified", map: true, google: { placeId: "g1", name: "Vieux-Saint-Jean", address: "Vieux-Saint-Jean, Saint-Jean", latitude: 45.3, longitude: -73.2, sourceUrl: "s", exactName: true } } }],
@@ -424,6 +424,11 @@ test("the editor moves a map card to another corner: a new image is made around 
   await h.run({ resume: true });
   assert.match(h.calls.submits.filter((submit) => submit.prompt.startsWith("PROMPT 2:")).at(-1)!.prompt, /never draw a map, a plan, streets or a route yourself/);
   await assert.rejects(h.decide({ action: "map", slide: "cover", position: "top-right" }), /has no verified map card to move/);
+  await h.decide({ action: "regenerate", slide: "s1", edit: false, characterIds: ["char-jo"] });
+  await h.run({ resume: true });
+  const withJo = h.calls.submits.filter((submit) => submit.prompt.startsWith("PROMPT 2:")).at(-1)!;
+  assert.ok(withJo.files.includes("jo.png"), "a character may stand beside the map card");
+  assert.match(withJo.prompt, /beside the map card's zone, as the reader's guide/);
 });
 
 test("the editor casts the brand's characters on a slide's next image: their references go with the request, and taking them off leaves none; an unknown character is refused", async () => {

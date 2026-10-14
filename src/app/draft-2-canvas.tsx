@@ -1922,7 +1922,8 @@ function SlideImageCard({ slide, characters, runId, story, saving, locked, onDec
   const [edit, setEdit] = useState(false);
   // The cast for the next image: the slide's own until the editor changes it.
   const [cast, setCast] = useState<string[]>();
-  const castable = characters.length > 0 && slide.need !== "real-photo" && slide.need !== "verified-map";
+  // A verified photo keeps the brand's characters off; a map slide may carry one beside the card.
+  const castable = characters.length > 0 && slide.need !== "real-photo";
   const selected = cast ?? slide.characterIds;
   const shown = shownAttempt(slide);
   const latest = latestAttempt(slide);
@@ -1999,7 +2000,8 @@ function CastChoice({ characters, selected, disabled, label, description, onChan
  * The brand's characters on each slide of the chosen visual script, as the
  * script cast them or as the editor changes them: a character may narrate or
  * take part in one slide's action. The next images run reads the cast; a
- * slide that rests on a verified photo or map keeps them off.
+ * slide that rests on a verified photo keeps them off, a map slide may carry
+ * one beside the card.
  */
 function ScriptCast({ visual, characters, saving, locked, onCast, onRefresh, refreshing }: {
   visual: Draft2Visual;
@@ -2019,10 +2021,10 @@ function ScriptCast({ visual, characters, saving, locked, onCast, onRefresh, ref
     <div><Button variant="quiet" size="compact" busy={refreshing} disabled={locked} onClick={onRefresh}>Read the brand’s characters again</Button></div>
     <ol className={styles.factList}>{chosen.slides.map((slide) => {
       const words = visual.carousel?.find((entry) => entry.slide === slide.slide);
-      const verified = slide.need === "real-photo" || slide.need === "verified-map";
+      const verified = slide.need === "real-photo";
       return <li key={slide.slide} className={styles.factItem}>
         <p className={styles.factMeta}><strong>{words?.label ?? slide.slide}</strong>{words ? ` · ${words.headline}` : ""}</p>
-        {verified ? <p className={styles.factMeta}>Rests on a verified photo or map: no character.</p>
+        {verified ? <p className={styles.factMeta}>Rests on a verified photo: no character.</p>
           : <CastChoice characters={characters} selected={slide.characterIds} disabled={locked || saving === `cast-${slide.slide}`} label="Characters" onChange={(characterIds) => onCast(slide.slide, characterIds)} />}
       </li>;
     })}</ol>
