@@ -1,7 +1,10 @@
 /**
  * Guided brand setup: identity → sources → channels. Each step is derived from
  * the brand's records; identity also needs the editor's explicit confirmation,
- * because a fresh creative profile is filled with generic defaults.
+ * because a fresh creative profile is filled with generic defaults. Channels
+ * are optional (2026-10-15): a brand without a Facebook Page or Instagram
+ * account yet is set up, collects and drafts, and connects one later from
+ * Channels; publishing asks for it then.
  */
 export type TopicSetupStep = "identity" | "sources" | "channels";
 
@@ -22,6 +25,7 @@ export type TopicSetupSignals = {
 export type TopicSetupStatus = {
   identity: { done: boolean; confirmed: boolean; missing: string[] };
   sources: { done: boolean; count: number };
+  /** Done when a channel is connected; a brand may finish its setup without one. */
   channels: { done: boolean; via: "facebook" | "instagram" | null };
   /** The first step still to do, or "finish" when only the final confirmation remains. */
   nextStep: TopicSetupStep | "finish" | "done";
@@ -47,7 +51,7 @@ export function topicSetupStatus(signals: TopicSetupSignals): TopicSetupStatus {
   const sources = { done: count > 0, count };
   const via = signals.facebookPage ? "facebook" as const : signals.instagramDirect ? "instagram" as const : null;
   const channels = { done: via !== null, via };
-  const readyToComplete = identity.done && sources.done && channels.done;
+  const readyToComplete = identity.done && sources.done;
   const completed = signals.completedAt !== null;
   const nextStep = completed ? "done"
     : !identity.done ? "identity"

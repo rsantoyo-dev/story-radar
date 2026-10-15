@@ -9,7 +9,7 @@ import {
 
 type Context = { params: Promise<{ topicId: string }> };
 
-/** The brand's guided setup progress (identity → sources → channels). */
+/** The brand's guided setup progress (identity → sources → channels, which are optional). */
 export async function GET(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;

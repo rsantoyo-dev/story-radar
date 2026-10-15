@@ -17,7 +17,7 @@ type Step = "identity" | "sources" | "channels" | "finish";
 const STEPS: { id: Step; title: string; summary: string }[] = [
   { id: "identity", title: "Identity", summary: "Who the brand is" },
   { id: "sources", title: "Sources", summary: "Where stories come from" },
-  { id: "channels", title: "Channels", summary: "Where it publishes" },
+  { id: "channels", title: "Channels", summary: "Where it publishes · optional" },
   { id: "finish", title: "Ready", summary: "Open the studio" },
 ];
 
@@ -43,6 +43,8 @@ function firstOpenStep(status: TopicSetupStatus): Step {
  * A brand opens the studio only after its guided setup: identity, sources and
  * channels, one step at a time, resumable. Each step embeds the screen that
  * owns that configuration; "Continue" unlocks once the step is really done.
+ * Channels are optional: the editor may skip them and connect a Facebook Page
+ * or Instagram account later from Channels, before publishing.
  */
 export function TopicSetupWizard({ topic, topics, account, themeStyle, initialStatus, meta }: {
   topic: { id: string; name: string };
@@ -117,8 +119,8 @@ export function TopicSetupWizard({ topic, topics, account, themeStyle, initialSt
     const next = await refresh();
     if (!next) return;
     if (current === "sources" && next.sources.done) setStep("channels");
-    else if (current === "channels" && next.channels.done) setStep("finish");
-    else setNotice({ tone: "error", text: current === "sources" ? "Add at least one source first." : "Connect a Facebook Page or an Instagram account first." });
+    else if (current === "channels") setStep("finish");
+    else setNotice({ tone: "error", text: "Add at least one source first." });
   }
 
   async function finish() {
@@ -128,7 +130,8 @@ export function TopicSetupWizard({ topic, topics, account, themeStyle, initialSt
 
   const reachable = (target: Step) => {
     const order = STEPS.map((item) => item.id);
-    return order.slice(0, order.indexOf(target)).every((previous) => previous === "finish" || stepDone(status, previous));
+    // Channels are optional: the final step does not wait for them.
+    return order.slice(0, order.indexOf(target)).every((previous) => previous === "finish" || previous === "channels" || stepDone(status, previous));
   };
 
   return <main className={styles.setupPage} style={themeStyle}>
@@ -205,8 +208,8 @@ export function TopicSetupWizard({ topic, topics, account, themeStyle, initialSt
     {step === "channels" ? <section className={styles.setupStep} aria-labelledby="setup-channels">
       <div className={styles.setupIntro}>
         <h2 id="setup-channels">3. Where does {topic.name} publish?</h2>
-        <p>Connect the brand&rsquo;s Facebook Page; its linked Instagram account publishes through it. You can connect Instagram directly instead.</p>
-        <p className={status.channels.done ? styles.setupOk : undefined}>{status.channels.via === "facebook" ? "Facebook Page connected." : status.channels.via === "instagram" ? "Instagram connected." : "No channel connected yet."}</p>
+        <p>Connect the brand&rsquo;s Facebook Page; its linked Instagram account publishes through it. You can connect Instagram directly instead, or skip this for now: the brand collects and drafts stories without a channel, and you connect one later in Channels, before publishing.</p>
+        <p className={status.channels.done ? styles.setupOk : undefined}>{status.channels.via === "facebook" ? "Facebook Page connected." : status.channels.via === "instagram" ? "Instagram connected." : "No channel connected yet. This step is optional."}</p>
       </div>
       <div className={styles.setupPanel}>
         <FacebookConnectionPanel topicId={topic.id} secret={SIGNED_IN_CREDENTIAL} disabled={busy} selectionId={facebookSelectionId}
@@ -218,7 +221,7 @@ export function TopicSetupWizard({ topic, topics, account, themeStyle, initialSt
       </div>
       <footer className={styles.setupFooter}>
         <button type="button" className={styles.setupGhost} disabled={busy} onClick={() => setStep("sources")}>Back</button>
-        <button type="button" className={styles.setupPrimary} disabled={busy || !status.channels.done} onClick={() => void continueFrom("channels")}>Continue</button>
+        <button type="button" className={styles.setupPrimary} disabled={busy} onClick={() => void continueFrom("channels")}>{status.channels.done ? "Continue" : "Skip for now"}</button>
       </footer>
     </section> : null}
 
@@ -228,7 +231,7 @@ export function TopicSetupWizard({ topic, topics, account, themeStyle, initialSt
         <ul className={styles.setupSummary}>
           <li data-done={status.identity.done}>Identity {status.identity.done ? "confirmed" : "to finish"}</li>
           <li data-done={status.sources.done}>{status.sources.count} {status.sources.count === 1 ? "source" : "sources"}</li>
-          <li data-done={status.channels.done}>{status.channels.via === "facebook" ? "Facebook Page" : status.channels.via === "instagram" ? "Instagram" : "No channel"} {status.channels.done ? "connected" : "yet"}</li>
+          <li data-done={status.channels.done}>{status.channels.via === "facebook" ? "Facebook Page connected" : status.channels.via === "instagram" ? "Instagram connected" : "No channel yet: connect one in Channels before publishing"}</li>
         </ul>
         <p>Next: Today collects and ranks this brand&rsquo;s stories. Pick one and Press Craftor drafts it, designs it, and waits for your approval before publishing.</p>
       </div>

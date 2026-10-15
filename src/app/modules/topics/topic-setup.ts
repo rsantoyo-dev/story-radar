@@ -55,10 +55,10 @@ export async function confirmTopicIdentity(topicId: string): Promise<TopicSetupS
   return getTopicSetupStatus(topicId);
 }
 
-/** Opens the dashboard for this brand once identity, sources and channels are in place. */
+/** Opens the dashboard for this brand once identity and sources are in place; a channel can be connected later. */
 export async function completeTopicSetup(topicId: string): Promise<TopicSetupStatus> {
   const status = await getTopicSetupStatus(topicId);
-  if (!status.readyToComplete) throw new TopicSetupError("Finish identity, sources and channels first.");
+  if (!status.readyToComplete) throw new TopicSetupError("Finish identity and sources first.");
   await db.execute(sql`UPDATE topics SET setup_completed_at = coalesce(setup_completed_at, now()), updated_at = now() WHERE id = ${topicId}::uuid`);
   return getTopicSetupStatus(topicId);
 }

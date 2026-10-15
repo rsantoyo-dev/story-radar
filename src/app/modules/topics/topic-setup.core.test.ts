@@ -35,6 +35,14 @@ describe("guided brand setup", () => {
     assert.equal(topicSetupStatus({ ...channels, completedAt: "2026-10-07T13:00:00Z" }).nextStep, "done");
   });
 
+  it("lets a brand finish its setup without a channel, still offering the channel step first", () => {
+    const status = topicSetupStatus({ ...fresh, hasLogo: true, identityConfirmedAt: "2026-10-15T17:48:05Z", rssSources: 2 });
+    assert.deepEqual([status.channels.done, status.channels.via], [false, null]);
+    assert.equal(status.nextStep, "channels");
+    assert.equal(status.readyToComplete, true);
+    assert.equal(topicSetupStatus({ ...fresh, identityConfirmedAt: "2026-10-15T17:48:05Z", hasLogo: true }).readyToComplete, false, "sources are still required");
+  });
+
   it("does not count a confirmed identity that lost its logo", () => {
     const status = topicSetupStatus({ ...fresh, identityConfirmedAt: "2026-10-07T12:00:00Z" });
     assert.equal(status.identity.confirmed, true);
