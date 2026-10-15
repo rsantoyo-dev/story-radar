@@ -13,7 +13,7 @@
  * pass queries the container before deciding, and never re-sends blindly.
  */
 
-import { classifyMetaGraphError } from "./meta-verification";
+import { classifyMetaGraphError, metaErrorDetail } from "./meta-verification";
 import { MetaGraphApiError } from "./meta-token-response";
 import { destinationAccountId, type PublicationChannel } from "./publication-channel";
 import {
@@ -582,33 +582,34 @@ function classifyPublishError(error: unknown, platform = "Instagram"): {
   }
   if (error instanceof MetaGraphApiError) {
     const kind = classifyMetaGraphError(error.graphError);
+    // Meta's own words, so the editor and the record say why (2026-10-15: a bare "HTTP 400" or "lack of permission" left the cause unknown).
+    const detail = metaErrorDetail(error.graphError);
+    const said = (message: string) => detail ? `${message} ${detail}` : message;
     if (kind === "auth") {
       return {
         kind: "permission",
         terminal: "suspended",
-        message:
-          `${platform} rejected the request: the account authorization is no longer valid. Reconnect and verify again.`,
+        message: said(`${platform} rejected the request: the account authorization is no longer valid. Reconnect and verify again.`),
       };
     }
     if (kind === "permission" || error.status === 403) {
       return {
         kind: "permission",
         terminal: "suspended",
-        message:
-          `${platform} rejected the request for lack of publishing permission.`,
+        message: said(`${platform} rejected the request for lack of publishing permission.`),
       };
     }
     if (error.status === 429) {
       return {
         kind: "rate-limit",
         terminal: "suspended",
-        message: `${platform} rate-limited this account. Try again later.`,
+        message: said(`${platform} rate-limited this account. Try again later.`),
       };
     }
     return {
       kind: "retryable",
       terminal: "failed",
-      message: `${platform} rejected the request (HTTP ${error.status}).`,
+      message: said(`${platform} rejected the request (HTTP ${error.status}).`),
     };
   }
   return {

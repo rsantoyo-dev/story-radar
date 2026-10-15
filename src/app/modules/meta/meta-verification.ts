@@ -22,6 +22,8 @@ type ParsedOAuthError = {
   code?: number;
   error_subcode?: number;
   message?: string;
+  error_user_title?: string;
+  error_user_msg?: string;
 };
 
 export function classifyMetaGraphError(
@@ -43,6 +45,27 @@ export function classifyMetaGraphError(
   }
   if (/permission/iu.test(error.message ?? "")) return "permission";
   return "unknown";
+}
+
+/**
+ * Meta's own words on a rejected request, for the editor and the job's
+ * record: the title and text it shows people when it gives them, its
+ * message, and its code and subcode. Addresses and anything token-like are
+ * cut out, and the line stays short. Undefined when Meta said nothing usable.
+ */
+export function metaErrorDetail(graphError: unknown): string | undefined {
+  const error = extractOAuthError(graphError);
+  if (!error) return undefined;
+  const words = [...new Set([error.error_user_title, error.error_user_msg, error.message].map((part) => part?.trim()).filter((part): part is string => Boolean(part)))];
+  const text = words.join(" — ")
+    .replace(/https?:\/\/\S+/gu, "")
+    .replace(/[A-Za-z0-9_-]{40,}/gu, "…")
+    .replace(/\s+/gu, " ")
+    .trim()
+    .slice(0, 240);
+  const codes = [error.code !== undefined ? `code ${error.code}` : "", error.error_subcode !== undefined ? `subcode ${error.error_subcode}` : ""].filter(Boolean).join(", ");
+  if (!text && !codes) return undefined;
+  return `Meta: ${text ? `“${text}”` : "no message"}${codes ? ` (${codes})` : ""}.`;
 }
 
 export function describeMetaVerificationError(
@@ -75,5 +98,7 @@ function extractOAuthError(graphError: unknown): ParsedOAuthError | undefined {
         : typeof nested.error_message === "string"
           ? nested.error_message
           : undefined,
+    error_user_title: typeof nested.error_user_title === "string" ? nested.error_user_title : undefined,
+    error_user_msg: typeof nested.error_user_msg === "string" ? nested.error_user_msg : undefined,
   };
 }

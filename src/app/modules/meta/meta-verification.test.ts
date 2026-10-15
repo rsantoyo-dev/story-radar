@@ -54,3 +54,15 @@ test("describeMetaVerificationError prefers Meta's own message", () => {
 test("describeMetaVerificationError falls back when no message is present", () => {
   assert.equal(describeMetaVerificationError(undefined, "fallback"), "fallback");
 });
+
+test("Meta's own words on a rejected request: its title and text for people, its message, its code and subcode; no address or token", async () => {
+  const { metaErrorDetail } = await import("./meta-verification");
+  assert.equal(
+    metaErrorDetail({ error: { message: "(#10) Application does not have permission for this action", type: "OAuthException", code: 10, error_subcode: 2207051, error_user_title: "Action blocked", error_user_msg: "This account is restricted from publishing." } }),
+    "Meta: “Action blocked — This account is restricted from publishing. — (#10) Application does not have permission for this action” (code 10, subcode 2207051).",
+  );
+  assert.equal(metaErrorDetail({ error: { message: "Bad request, see https://developers.facebook.com/docs/x token=EAAGm0PX4ZCpsBAKZCZCZCZCZCZCZCZCZCZCZCZCZCZCZCZCZCZCZCZCZCZCZCZCZ", code: 100 } }), "Meta: “Bad request, see token=…” (code 100).");
+  assert.equal(metaErrorDetail({ error: { code: 9 } }), "Meta: no message (code 9).");
+  assert.equal(metaErrorDetail({}), undefined);
+  assert.equal(metaErrorDetail(undefined), undefined);
+});
