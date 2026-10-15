@@ -7,6 +7,7 @@ import { getCreativeProfile } from "../stories/creative-profile.repository";
 import { activeDraft2Session, claimDraft2Session, getDraft2Session, touchDraft2Session, updateDraft2Session, type Draft2SessionPatch } from "./draft2-session.repository";
 import { draft2DevTrace } from "./draft2-dev-trace";
 import { traceCost } from "./draft2-trace-cost";
+import type { Draft2Reader } from "./draft2-address.types";
 import { Draft2BusyError, Draft2InputError, type Draft2Fact, type Draft2TraceEntry } from "./draft2-facts.types";
 import { factsSnapshot, failedCall, funnelVersions, type FunnelCandidate, type FunnelRole, type FunnelRun } from "./draft2-funnel";
 import { focusForModels, focusItemCount, type Draft2FocusSnapshot } from "./draft2-focus.types";
@@ -20,6 +21,7 @@ import {
 } from "./draft2-review.types";
 import { brandBrief, composeInstructions, creativeSkills } from "./skills/draft2-skills";
 import { FAIRNESS_SKILL } from "./skills/fairness";
+import { READER_SKILL } from "./skills/reader";
 import { REVIEW_SKILL } from "./skills/review";
 import type { Draft2SessionRow } from "@/db/schema";
 
@@ -79,21 +81,21 @@ function chosenOf<C extends FunnelCandidate>(run: FunnelRun<C>, id: string): C {
  * step's own checks and the context that step recorded; empty when the patch
  * keeps every rule.
  */
-function patchFindings(session: Draft2SessionRow, chosen: Chosen, patch: Pick<Draft2ReviewPatch, "owner" | "slide" | "field" | "after">, facts: readonly Draft2Fact[], emojis: number): string[] {
+function patchFindings(session: Draft2SessionRow, chosen: Chosen, patch: Pick<Draft2ReviewPatch, "owner" | "slide" | "field" | "after">, facts: readonly Draft2Fact[], emojis: number, reader: Draft2Reader): string[] {
   const values = chosen.focus.values;
   const itemCount = focusItemCount(values);
   if (patch.owner === "opening") {
     const candidate = patchedOpening(chosenOf<Draft2OpeningCandidate>(chosen.opening, chosen.openingId), patch.slide, patch.field, patch.after);
-    return mechanicalOpeningIssues([candidate], facts, { itemCount }).map((issue) => issue.detail);
+    return mechanicalOpeningIssues([candidate], facts, { itemCount, reader }).map((issue) => issue.detail);
   }
   if (patch.owner === "closing") {
     const candidate = patchedClosing(chosenOf<Draft2ClosingCandidate>(chosen.closing, chosen.closingId), patch.slide, patch.field, patch.after);
     if (!chosen.closing.opening || !chosen.closing.shape) return ["This closing does not record the opening and the shape it was written for."];
-    return mechanicalClosingIssues([candidate], facts, { opening: chosen.closing.opening, shape: chosen.closing.shape, grave: values.voice.gravity === "grave", itemCount, emojis }).map((issue) => issue.detail);
+    return mechanicalClosingIssues([candidate], facts, { opening: chosen.closing.opening, shape: chosen.closing.shape, grave: values.voice.gravity === "grave", itemCount, emojis, reader }).map((issue) => issue.detail);
   }
   const candidate = patchedDeck(chosen.deckCandidate, patch.slide, patch.field, patch.after);
   if (!chosen.deck.opening || !chosen.deck.closing || !chosen.deck.shape) return ["This deck does not record what it connects."];
-  return mechanicalDeckIssues([candidate], facts, { opening: chosen.deck.opening, closing: chosen.deck.closing, shape: chosen.deck.shape, itemCount, emojis }).map((issue) => issue.detail);
+  return mechanicalDeckIssues([candidate], facts, { opening: chosen.deck.opening, closing: chosen.deck.closing, shape: chosen.deck.shape, itemCount, emojis, reader }).map((issue) => issue.detail);
 }
 
 /**
@@ -175,7 +177,7 @@ export async function reviewDraft2Carousel({ topicId, storyId, sessionId }: Draf
       const read = parseReaderAnswer(readerAnswer, carousel);
       // 2. The editor: the whole carousel, the focus, the reader's reactions and the facts; Claude by default, changing only what must change.
       const editorBy = models.editor;
-      const editor = composeInstructions("carousel-editor", [REVIEW_SKILL, FAIRNESS_SKILL, ...creativeSkills(chosen.focus.values)], brief);
+      const editor = composeInstructions("carousel-editor", [REVIEW_SKILL, FAIRNESS_SKILL, READER_SKILL, ...creativeSkills(chosen.focus.values)], brief);
       const editorAnswer = await call(editorBy, "draft2_review", {
         instructions: `${editor.instructions}\n\n# Verified facts\n${JSON.stringify(factsSnapshot(facts))}`,
         contents: { task: "review", slides, focus: focusForModels(chosen.focus.values), reader: read, limits: { patches: 6 } },
@@ -185,7 +187,7 @@ export async function reviewDraft2Carousel({ topicId, storyId, sessionId }: Draf
       // 3. The program: a patch that breaks the review's own rules or the owning step's is refused with the rule, before anyone sees it as a choice.
       const patches = reviewPatches(answer, carousel).map((patch) => {
         if (patch.status !== "proposed") return patch;
-        const findings = [...reviewPatchRules(patch, facts), ...patchFindings(session, chosen, patch, facts, emojis)];
+        const findings = [...reviewPatchRules(patch, facts), ...patchFindings(session, chosen, patch, facts, emojis, { address: profile.readerAddress, language: profile.language })];
         return findings.length ? { ...patch, status: "refused" as const, note: findings.join(" ") } : patch;
       });
       const now = new Date().toISOString();

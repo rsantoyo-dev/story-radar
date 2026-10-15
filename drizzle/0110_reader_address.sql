@@ -1,0 +1,2 @@
+ALTER TABLE "creative_profiles" ADD COLUMN "reader_address" text DEFAULT 'informal' NOT NULL;--> statement-breakpoint
+ALTER TABLE "creative_profiles" ADD CONSTRAINT "creative_profiles_reader_address_check" CHECK ("creative_profiles"."reader_address" IN ('informal', 'formal'));

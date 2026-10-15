@@ -378,6 +378,14 @@ export function CreativeProfilePanel({
               <small>Steps prefer an ordered sequence when the source provides them; a list gives each enumerated item its own slide. Missing steps or items are never invented. A single brief can override this in Creative Studio.</small>
             </label>
             <label className={styles.field}>
+              <span>Address the reader</span>
+              <select value={draft.readerAddress ?? "informal"} onChange={event => updateDraft({ readerAddress: event.target.value as CreativeProfile["readerAddress"] })}>
+                <option value="informal">Informal — tu, tú: closer to the reader</option>
+                <option value="formal">Formal — vous, usted</option>
+              </select>
+              <small>Every post uses one form on every slide, in its call to action and in its caption, never both. Languages without the distinction (English) are not affected.</small>
+            </label>
+            <label className={styles.field}>
               <span>Show content name on cover</span>
               <input type="checkbox" checked={draft.requireCoverTitle ?? false} onChange={event => updateDraft({ requireCoverTitle: event.target.checked })} />
               <small>Keep the recipe, guide or project name visible alongside the hook. Editable in the cover subtitle.</small>

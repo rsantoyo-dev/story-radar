@@ -1,3 +1,4 @@
+import { addressBreaches, addressFinding, type Draft2Reader } from "./draft2-address.types";
 import { comparableText, type Draft2Fact } from "./draft2-facts.types";
 import type { Draft2FocusSnapshot, Draft2FocusStructureKind } from "./draft2-focus.types";
 import {
@@ -51,7 +52,7 @@ export const DECK_RESTATEMENT_OVERLAP = 0.5;
 export const DECK_CRITERIA = ["flow", "coverage", "pacing", "clarity", "grounding", "voice", "focus"] as const;
 export const DECK_MECHANICAL_CODES = [
   "FACT_UNKNOWN", "NO_FACTS", "HEADLINE_TOO_LONG", "BODY_TOO_LONG", "PRACTICAL_TOO_LONG", "PRACTICAL_OUTSIDE_LIST", "SLIDE_COUNT", "ITEM_OUT_OF_PLACE",
-  "RESTATES_SLIDE", "RECAP_LABEL", "UNSUPPORTED_NUMBER", "TOO_MANY_EMOJIS", "DUPLICATE_CANDIDATE",
+  "RESTATES_SLIDE", "RECAP_LABEL", "UNSUPPORTED_NUMBER", "TOO_MANY_EMOJIS", "DUPLICATE_CANDIDATE", "WRONG_ADDRESS",
 ] as const;
 export const DECK_JUDGE_CODES = ["BREAKS_FLOW", "GAP", "OVERLOADED", "REPEATS", "WRONG_LENGTH", "UNCLEAR", "OVERCLAIMS", "OFF_VOICE", "OFF_FOCUS", "OTHER"] as const;
 export const DECK_ISSUE_CODES = [...DECK_MECHANICAL_CODES, ...DECK_JUDGE_CODES] as const;
@@ -178,8 +179,8 @@ const EMOJI = /\p{Extended_Pictographic}/gu;
  * steps' items in order, one per slide); no slide repeats another slide of
  * the carousel or sums up; emojis stay within the publication's allowance.
  */
-export function mechanicalDeckIssues(candidates: readonly Draft2DeckCandidate[], facts: readonly Draft2Fact[], { opening, closing, shape, itemCount, emojis }: {
-  opening: Draft2ClosingOpening; closing: Draft2DeckClosing; shape: Draft2DeckShape; itemCount?: number; emojis: number;
+export function mechanicalDeckIssues(candidates: readonly Draft2DeckCandidate[], facts: readonly Draft2Fact[], { opening, closing, shape, itemCount, emojis, reader }: {
+  opening: Draft2ClosingOpening; closing: Draft2DeckClosing; shape: Draft2DeckShape; itemCount?: number; emojis: number; reader?: Draft2Reader;
 }): Draft2DeckIssue[] {
   const byId = new Map(facts.map((fact) => [fact.id, fact]));
   const fixed = [
@@ -212,6 +213,8 @@ export function mechanicalDeckIssues(candidates: readonly Draft2DeckCandidate[],
       if (funnelWordCount(slide.body) > bodyLimit) add("BODY_TOO_LONG", part, `${label}'s body has ${funnelWordCount(slide.body)} words; the limit is ${bodyLimit}${isList ? ", the practical line apart" : ""}.`);
       if (slide.practical && !isList) add("PRACTICAL_OUTSIDE_LIST", part, `${label} has a practical line; only a list's items do.`);
       if (funnelWordCount(slide.practical) > DECK_PRACTICAL_MAX_WORDS) add("PRACTICAL_TOO_LONG", part, `${label}'s practical line has ${funnelWordCount(slide.practical)} words; the limit is ${DECK_PRACTICAL_MAX_WORDS}.`);
+      const address = addressBreaches(`${slide.headline}\n${slide.body}\n${slide.practical}`, reader);
+      if (address.length && reader) add("WRONG_ADDRESS", part, `${label}: ${addressFinding(address, reader)}`);
       const item = shape.items[index];
       if (item && !slide.factIds.includes(item)) add("ITEM_OUT_OF_PLACE", part, `${label} should carry the ${shape.kind === "list" ? "item" : "step"} that starts with ${item}, in order.`);
       const recap = RECAP.exec(`${slide.headline} ${slide.body}`);

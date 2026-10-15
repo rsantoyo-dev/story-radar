@@ -261,6 +261,8 @@ export const creativeProfiles = pgTable(
       .default(DEFAULT_CREATIVE_CONVERSION_GOAL)
       .notNull(),
     requireCoverTitle: boolean("require_cover_title").default(false).notNull(),
+    /** How the posts address the reader where the language distinguishes it: informal (tu, tú) or formal (vous, usted). */
+    readerAddress: text("reader_address").$type<"informal" | "formal">().default("informal").notNull(),
     storyStructure: text("story_structure").$type<"auto" | "hook-steps" | "hook-list">().default("auto").notNull(),
     framingStrategy: text("framing_strategy")
       .$type<CreativeFramingStrategy>()
@@ -294,6 +296,7 @@ export const creativeProfiles = pgTable(
   },
   (table) => [
     uniqueIndex("creative_profiles_topic_id_unique").on(table.topicId),
+    check("creative_profiles_reader_address_check", sql`${table.readerAddress} IN ('informal', 'formal')`),
     check(
       "creative_profiles_dimensions_check",
       sql`${table.formality} BETWEEN 0 AND 100

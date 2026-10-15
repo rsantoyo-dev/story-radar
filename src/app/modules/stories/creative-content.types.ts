@@ -594,6 +594,15 @@ export const DEFAULT_CREATIVE_CAROUSEL_CHROME_SETTINGS = {
   accentColor: "#E8A83E",
 } as const satisfies CreativeCarouselChromeSettings;
 
+/**
+ * How the publication addresses its reader where the language distinguishes
+ * it (French tu/vous, Spanish tú/usted): informal (the default, closer to the
+ * reader) or formal. One form in a whole post, never both.
+ */
+export const CREATIVE_READER_ADDRESSES = ["informal", "formal"] as const;
+export type CreativeReaderAddress = (typeof CREATIVE_READER_ADDRESSES)[number];
+export const DEFAULT_CREATIVE_READER_ADDRESS: CreativeReaderAddress = "informal";
+
 export type CreativeProfile = {
   id: string;
   name: string;
@@ -619,6 +628,8 @@ export type CreativeProfile = {
   framingStrategy: CreativeFramingStrategy;
   /** Presentation preference; never authorizes inventing source steps. */
   requireCoverTitle?: boolean;
+  /** How the posts address the reader (tu or vous, tú or usted); absent reads as informal. */
+  readerAddress?: CreativeReaderAddress;
   storyStructure?: CreativeStoryStructure;
   visualFidelityMode: VisualFidelityMode;
   /** Operational contact; excluded from editorial policy and generation hashes. */

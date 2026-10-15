@@ -1,4 +1,5 @@
 import { comparableText, type Draft2Fact } from "./draft2-facts.types";
+import { addressBreaches, addressFinding, type Draft2Reader } from "./draft2-address.types";
 import type { Draft2FocusGuard, Draft2FocusSnapshot } from "./draft2-focus.types";
 import { FREE_LEVER, leverName, leverSupported, stockPhraseIn } from "./draft2-levers.types";
 import {
@@ -74,7 +75,7 @@ export const OPENING_CRITERIA = ["tension", "payoff", "clarity", "grounding", "v
 export const OPENING_MECHANICAL_CODES = [
   "FACT_UNKNOWN", "NO_FACTS", "COVER_TOO_LONG", "SUBHEADLINE_TOO_LONG", "SLIDE2_HEADLINE_TOO_LONG", "SLIDE2_BODY_TOO_LONG",
   "ATTRIBUTION_ON_COVER", "SLIDE2_RESTATES_COVER", "SLIDE2_NO_NEW_FACT", "UNSUPPORTED_NUMBER", "DUPLICATE_CANDIDATE",
-  "LEVER_UNKNOWN", "LEVER_UNSUPPORTED", "STOCK_PHRASE", "GUARD_LATE",
+  "LEVER_UNKNOWN", "LEVER_UNSUPPORTED", "STOCK_PHRASE", "GUARD_LATE", "WRONG_ADDRESS",
 ] as const;
 export const OPENING_JUDGE_CODES = ["WEAK_TENSION", "PROMISE_NOT_PAID", "UNCLEAR", "OVERCLAIMS", "OFF_VOICE", "OFF_FOCUS", "LABEL_NOT_HOOK", "MISLEADS", "OTHER"] as const;
 export const OPENING_ISSUE_CODES = [...OPENING_MECHANICAL_CODES, ...OPENING_JUDGE_CODES] as const;
@@ -217,7 +218,7 @@ const ATTRIBUTION = /\b(according to|says?|said|reports?|reported|claims?|selon|
  * them or free, and the facts its cover cites must carry what the program
  * can check of it (a figure). No cover uses a stock formula.
  */
-export function mechanicalOpeningIssues(candidates: readonly Draft2OpeningCandidate[], facts: readonly Draft2Fact[], { itemCount, eligibleLevers, guards = [] }: { itemCount?: number; eligibleLevers?: readonly string[]; guards?: readonly Draft2FocusGuard[] } = {}): Draft2OpeningIssue[] {
+export function mechanicalOpeningIssues(candidates: readonly Draft2OpeningCandidate[], facts: readonly Draft2Fact[], { itemCount, eligibleLevers, guards = [], reader }: { itemCount?: number; eligibleLevers?: readonly string[]; guards?: readonly Draft2FocusGuard[]; reader?: Draft2Reader } = {}): Draft2OpeningIssue[] {
   const byId = new Map(facts.map((fact) => [fact.id, fact]));
   const headlines = new Map<string, Draft2OpeningCandidate>();
   const issues: Draft2OpeningIssue[] = [];
@@ -261,6 +262,10 @@ export function mechanicalOpeningIssues(candidates: readonly Draft2OpeningCandid
     }
     const stock = stockPhraseIn(`${cover.headline} ${cover.subheadline}`);
     if (stock) add("STOCK_PHRASE", "cover", `The cover uses the stock formula "${stock}": write the lever's mechanism in the story's own words.`);
+    for (const [part, value] of [["cover", `${cover.headline}\n${cover.subheadline}`], ["slide2", `${slide2.headline}\n${slide2.body}`]] as const) {
+      const words = addressBreaches(value, reader);
+      if (words.length && reader) add("WRONG_ADDRESS", part, addressFinding(words, reader));
+    }
     // What the cover alone could make a reader wrongly believe is prevented before the reader can stop: on the cover or slide 2, by one of the guard's facts.
     const carried = new Set([...cover.factIds, ...slide2.factIds]);
     for (const guard of guards) {

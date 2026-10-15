@@ -7,11 +7,14 @@ import type { Draft2Skill } from "./draft2-skills";
  * beside its own rubric. Version 1, 2026-10-14, after an auditor read the
  * Salut Brossard carousel on a resto-bar's liquor-permit suspension: its last
  * slide answered the bar's commitment with "Un engagement, pas un résultat",
- * the publication's own doubt, in a story about organized crime.
+ * the publication's own doubt, in a story about organized crime. Version 2,
+ * 2026-10-15: a slide told that a man sold cocaine at the bar without saying
+ * he was arrested and pleaded guilty in 2023, so the sale read as ongoing; a
+ * past action keeps its outcome when the facts give one.
  */
 export const FAIRNESS_SKILL: Draft2Skill = {
   name: "fairness",
-  version: "1",
+  version: "2",
   text: `# Fairness to the people a story names
 
 When the story names a person, a business or an organization that is
@@ -34,6 +37,10 @@ publication and keeps the reader's trust.
   in force.
 - A new decision about events of past months or years keeps their dates:
   the reader must not take them for today's news.
+- A past action keeps its outcome when the facts give one: a man the facts
+  say sold drugs at the bar and was arrested and pleaded guilty in 2023 is
+  told with it ("il a plaidé coupable en 2023"). Without it, the action reads
+  as still going on, against him and against the place.
 - A sentence that judges, insinuates or reads as an attack beyond the facts
   is a material error: it keeps a candidate from winning.`,
 };

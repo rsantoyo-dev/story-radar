@@ -39,7 +39,7 @@ test("instructions are the role, then each skill, then the brand brief, and reco
   assert.deepEqual(writer.skillVersions, { hooks: "7" });
   assert.equal(composeInstructions("opening-judge", [skill]).instructions, `${OPENING_ROLES["opening-judge"]}\n\n## Shared craft\n\n## Judge only`, "a role reads its own part after the shared text");
   assert.deepEqual(Object.keys(DRAFT2_ROLES).sort(), ["caption-judge", "caption-writer", "carousel-editor", "carousel-reader", "closing-judge", "closing-writer", "deck-judge", "deck-writer", "extractor", "focus-concept-judge", "focus-editor", "focus-narrative-judge", "focus-planner", "image-judge", "mention-finder", "opening-judge", "opening-writer", "people-finder", "reviewer", "visual-judge", "visual-writer"]);
-  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@2", "focus@15", "narratives@4", "discovery@1", "arcs@1", "spine@1", "levers@1", "fairness@1", "hooks@9", "closings@3", "decks@2", "review@4", "visuals@9", "images@4", "captions@3"]);
+  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@2", "focus@15", "narratives@4", "discovery@1", "arcs@1", "spine@1", "levers@1", "fairness@2", "reader@1", "hooks@9", "closings@3", "decks@2", "review@5", "visuals@9", "images@4", "captions@3"]);
 });
 
 test("the Facts prompts keep their words (the reviewer's say the article is context and name earlierReview since v2): the extractor reads its rules, the reviewer its checklist", () => {
@@ -83,6 +83,7 @@ test("the brand brief gives the publication's voice in plain words and nothing a
     "# The publication",
     "- Name: Example Daily.",
     "- Language: write every reader-facing word in French; the article may be in another language.",
+    "- Address the reader as \"tu\" (ton, ta, tes, toi; imperatives such as \"découvre\", \"suis\"), the same on every slide, in the call to action and in the caption: never \"vous\", \"votre\", \"vos\" or an imperative in \"-ez\", never both forms in one post.",
     "- Region: Montréal, Québec.",
     "- Platform: Instagram.",
     "- Audience: Parents who plan their weekend on Thursday.",
@@ -92,6 +93,9 @@ test("the brand brief gives the publication's voice in plain words and nothing a
   const sparse = brandBrief({ ...profile, region: "  ", brandPersonality: [], formality: 0, provocation: 100 });
   assert.ok(!sparse.includes("Region") && !sparse.includes("Brand personality"), "empty fields are left out");
   assert.match(sparse, /formality 1\/100: casual;.*provocation 100\/100: provocative, never insulting\./);
+  assert.match(brandBrief({ ...profile, readerAddress: "formal" }), /Address the reader as "vous"/, "a formal publication");
+  assert.match(brandBrief({ ...profile, language: "Spanish" }), /Address the reader as "tú"/, "Spanish keeps the informal form by default");
+  assert.ok(!brandBrief({ ...profile, language: "English" }).includes("Address the reader"), "English has no such distinction");
 });
 
 test("the openings follow the focus: framing, structure, goal and voice, scored as a criterion, guidance never evidence", () => {

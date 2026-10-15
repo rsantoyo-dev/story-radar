@@ -16,6 +16,7 @@ import type { Draft2CarouselSlide } from "./draft2-visual.types";
 import { brandBrief, composeInstructions, discoverySkills } from "./skills/draft2-skills";
 import { CAPTIONS_SKILL } from "./skills/captions";
 import { FAIRNESS_SKILL } from "./skills/fairness";
+import { READER_SKILL } from "./skills/reader";
 import { adaptationCreditLine, placePhotoAdaptationCreditLine, portraitCreditLine } from "../stories/creative-portrait-composite";
 import type { CreativeProfile } from "../stories/creative-content.types";
 import { storySourceUrls } from "../stories/story-content.repository";
@@ -130,8 +131,8 @@ const CAPTION_STEP: FunnelStep<Draft2CaptionCandidate, Draft2CaptionScore, Draft
     const brief = `${brandBrief(profile)}\n\n${captionRulesBrief(rules)}`;
     return {
       // A discovery story's caption keeps the premise's question and states the news plainly.
-      writer: composeInstructions("caption-writer", [CAPTIONS_SKILL, FAIRNESS_SKILL, ...(snapshot.focus.values.concept?.arc === "discovery" ? discoverySkills(snapshot.focus.values.concept) : [])], brief),
-      judge: composeInstructions("caption-judge", [CAPTIONS_SKILL, FAIRNESS_SKILL, ...(snapshot.focus.values.concept?.arc === "discovery" ? discoverySkills(snapshot.focus.values.concept) : [])], brief),
+      writer: composeInstructions("caption-writer", [CAPTIONS_SKILL, FAIRNESS_SKILL, READER_SKILL, ...(snapshot.focus.values.concept?.arc === "discovery" ? discoverySkills(snapshot.focus.values.concept) : [])], brief),
+      judge: composeInstructions("caption-judge", [CAPTIONS_SKILL, FAIRNESS_SKILL, READER_SKILL, ...(snapshot.focus.values.concept?.arc === "discovery" ? discoverySkills(snapshot.focus.values.concept) : [])], brief),
       context: {
         focus: focusForModels(snapshot.focus.values), carousel: snapshot.carousel, mentions: snapshot.mentions, ...(source ? { source } : {}), credits: snapshot.credits,
         limits: { postCharacters: CAPTION_MAX_CHARACTERS, hashtags: { min: CAPTION_MIN_HASHTAGS, max: CAPTION_MAX_HASHTAGS } },
@@ -139,7 +140,7 @@ const CAPTION_STEP: FunnelStep<Draft2CaptionCandidate, Draft2CaptionScore, Draft
       schemas: { writer: CAPTION_SCHEMA, judge: CAPTION_EVALUATION_SCHEMA },
       parseCandidates: parseCaptionCandidates,
       parseEvaluation: parseCaptionEvaluation,
-      mechanical: (candidates) => mechanicalCaptionIssues(candidates, facts, { source, credits: snapshot.credits, mentions: snapshot.mentions, rules }),
+      mechanical: (candidates) => mechanicalCaptionIssues(candidates, facts, { source, credits: snapshot.credits, mentions: snapshot.mentions, rules, reader: { address: profile.readerAddress, language: profile.language } }),
       explore: captionExploreRequest,
       refine: captionRefineRequest,
       judgeRequest: captionJudgeRequest,

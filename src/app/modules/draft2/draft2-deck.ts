@@ -13,6 +13,7 @@ import {
 import { brandBrief, composeInstructions, creativeSkills } from "./skills/draft2-skills";
 import { DECKS_SKILL } from "./skills/decks";
 import { FAIRNESS_SKILL } from "./skills/fairness";
+import { READER_SKILL } from "./skills/reader";
 import type { Draft2SessionRow } from "@/db/schema";
 
 /** What a deck run connects and follows: the opening and the closing as the editor chose them, the focus they followed, and the deck's shape. */
@@ -63,13 +64,13 @@ const DECK_STEP: FunnelStep<Draft2DeckCandidate, Draft2DeckScore, Draft2DeckIssu
     const brief = brandBrief(profile);
     const values = focus.values;
     return {
-      writer: composeInstructions("deck-writer", [DECKS_SKILL, FAIRNESS_SKILL, ...creativeSkills(values)], brief),
-      judge: composeInstructions("deck-judge", [DECKS_SKILL, FAIRNESS_SKILL, ...creativeSkills(values)], brief),
+      writer: composeInstructions("deck-writer", [DECKS_SKILL, FAIRNESS_SKILL, READER_SKILL, ...creativeSkills(values)], brief),
+      judge: composeInstructions("deck-judge", [DECKS_SKILL, FAIRNESS_SKILL, READER_SKILL, ...creativeSkills(values)], brief),
       context: { focus: focusForModels(values), opening: openingForClosing(opening), closing: closingForDeck(closing), deck: shapeForModels(shape), emojis },
       schemas: { writer: DRAFT2_DECK_SCHEMA, judge: DRAFT2_DECK_EVALUATION_SCHEMA },
       parseCandidates: parseDeckCandidates,
       parseEvaluation: parseDeckEvaluation,
-      mechanical: (candidates) => mechanicalDeckIssues(candidates, facts, { opening, closing, shape, itemCount: focusItemCount(values), emojis }),
+      mechanical: (candidates) => mechanicalDeckIssues(candidates, facts, { opening, closing, shape, itemCount: focusItemCount(values), emojis, reader: { address: profile.readerAddress, language: profile.language } }),
       explore: deckExploreRequest,
       refine: deckRefineRequest,
       judgeRequest: (round, candidates, mechanical, revised) => deckJudgeRequest(plan, round, candidates, mechanical, revised),

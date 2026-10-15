@@ -127,3 +127,34 @@ slide 2), but some wrote "il n'est pas fermé", which the facts do not say.
 Focus v15 and hooks v9: at most two guards, one fact enough, and no
 reassurance the facts do not give.
 
+## One form of address, outcomes and acronyms (2026-10-15)
+
+The auditor's next read of the Houston post: the last slide said "Pour vos
+sorties, retenez…" above "Suis Salut Brossard…" (vous and tu in one slide,
+the problem the Brossard grid had across posts); slide 4 told that a man
+sold cocaine at the bar without saying he was arrested and pleaded guilty
+in 2023, so the sale read as ongoing; and it named the Longueuil police only
+as "SPAL".
+
+- **The brand sets the form of address** (`creative_profiles.reader_address`,
+  migration 0110): informal (tu, tú; the default, closer to the reader) or
+  formal (vous, usted), in the creative profile ("Address the reader"). The
+  brand brief tells every writer and judge the form; English and other
+  languages without the distinction are not affected.
+- **The program refuses the other form** (`draft2-address.types.ts`,
+  `WRONG_ADDRESS` in the opening, closing, deck and caption, and in the
+  review's patch checks): vous, votre, vos and French imperatives in "-ez"
+  in an informal post (chez, assez and names inside a sentence excepted),
+  tu, toi, ta, tes, t' in a formal one; usted in an informal Spanish post,
+  tú, tu, te, ti in a formal one. Words in quotation marks are someone
+  else's and never count.
+- **Reader skill v1** (composed beside the fairness skill): one form in the
+  whole post; organizations by the names the audience knows ("la police de
+  Longueuil"), an acronym only after its full name once; plain words over
+  jargon.
+- **Fairness v2:** a past action keeps its outcome when the facts give one
+  ("il a plaidé coupable en 2023").
+- **Review v5:** a past action without its outcome is a truth patch; an
+  organization named only by an acronym the audience may not know is a
+  detail patch. Both are applied by the autopilot.
+

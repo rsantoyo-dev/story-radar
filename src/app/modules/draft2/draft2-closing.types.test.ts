@@ -35,6 +35,15 @@ const codes = (issues: Draft2ClosingIssue[]) => issues.map((issue) => [issue.cod
 const findings = (overrides: ClosingOverrides, options: Partial<Parameters<typeof mechanicalClosingIssues>[2]> = {}) =>
   codes(mechanicalClosingIssues([closing("c1", overrides)], facts, { ...rules, ...options }));
 
+test("one form of address on the whole closing, its call to action included: a tu publication never says vous", () => {
+  const reader = { address: "informal" as const, language: "French" };
+  const mixed = { last: { headline: "Avant de sortir", body: "Pour vos sorties, retenez les mesures du bar.", cta: "Suis Salut Brossard pour chaque décision qui touche tes soirées." } };
+  assert.deepEqual(findings(mixed, { reader }), ["WRONG_ADDRESS c1 last"]);
+  assert.match(mechanicalClosingIssues([closing("c1", mixed)], facts, { ...rules, reader })[0].detail, /addresses its reader as "tu".*"vos", "retenez" are the other form/);
+  assert.deepEqual(findings({ last: { body: "Pour tes sorties, retiens les mesures du bar.", cta: "Suis Salut Brossard pour chaque décision qui touche tes soirées." } }, { reader }), []);
+  assert.deepEqual(findings(mixed), [], "a publication without a form set: no rule");
+});
+
 test("an arc ends on two slides, a list or steps on one; the schemas ask for exactly that shape", () => {
   assert.equal(closingShape("arc"), "two-slides");
   assert.equal(closingShape("list"), "one-slide");

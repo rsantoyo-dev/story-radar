@@ -1,3 +1,4 @@
+import { addressBreaches, addressFinding, type Draft2Reader } from "./draft2-address.types";
 import { comparableText, type Draft2Fact } from "./draft2-facts.types";
 import type { Draft2FocusSnapshot } from "./draft2-focus.types";
 import {
@@ -40,7 +41,7 @@ export const CAPTION_SPACING_THRESHOLD = 240;
 export const CAPTION_CRITERIA = ["hook", "scan", "grounding", "voice", "action", "hashtags", "fit"] as const;
 export const CAPTION_MECHANICAL_CODES = [
   "FACT_UNKNOWN", "NO_FACTS", "TEXT_TOO_LONG", "TOO_MANY_EMOJIS", "HASHTAG_COUNT", "HASHTAG_FORMAT", "HASHTAG_IN_TEXT", "UNVERIFIED_MENTION", "MENTION_MISSING",
-  "UNSUPPORTED_NUMBER", "NARRATES_CAROUSEL", "NO_SPACING", "CREDIT_IN_TEXT", "DUPLICATE_CANDIDATE",
+  "UNSUPPORTED_NUMBER", "NARRATES_CAROUSEL", "NO_SPACING", "CREDIT_IN_TEXT", "DUPLICATE_CANDIDATE", "WRONG_ADDRESS",
 ] as const;
 export const CAPTION_JUDGE_CODES = ["WEAK_HOOK", "DENSE", "OVERCLAIMS", "OFF_VOICE", "CTA_MISMATCH", "WEAK_HASHTAGS", "REPEATS_SLIDES", "OFF_FOCUS", "OTHER"] as const;
 export const CAPTION_ISSUE_CODES = [...CAPTION_MECHANICAL_CODES, ...CAPTION_JUDGE_CODES] as const;
@@ -193,8 +194,8 @@ const CREDIT = /(©|\b(?:photo|photos|crédit|crédits|credit|credits|foto|fotos
  * and no other @handle; no talk of the carousel's slides; blank lines in a
  * long caption; no credit or source line (the program adds them).
  */
-export function mechanicalCaptionIssues(candidates: readonly Draft2CaptionCandidate[], facts: readonly Draft2Fact[], { source, credits, mentions, rules }: {
-  source?: string; credits: readonly string[]; mentions: readonly { handle: string }[]; rules: Draft2CaptionRules;
+export function mechanicalCaptionIssues(candidates: readonly Draft2CaptionCandidate[], facts: readonly Draft2Fact[], { source, credits, mentions, rules, reader }: {
+  source?: string; credits: readonly string[]; mentions: readonly { handle: string }[]; rules: Draft2CaptionRules; reader?: Draft2Reader;
 }): Draft2CaptionIssue[] {
   const byId = new Map(facts.map((fact) => [fact.id, fact]));
   const allowed = new Set(mentions.map((mention) => mention.handle.replace(/^@/u, "").toLowerCase()));
@@ -229,6 +230,8 @@ export function mechanicalCaptionIssues(candidates: readonly Draft2CaptionCandid
     if (narration) add("NARRATES_CAROUSEL", `"${narration[0]}" talks about the carousel; the caption talks about the story.`);
     if (candidate.text.length > CAPTION_SPACING_THRESHOLD && !candidate.text.includes("\n\n")) add("NO_SPACING", "A caption this long needs blank lines between its parts.");
     if (CREDIT.test(candidate.text)) add("CREDIT_IN_TEXT", "The source and the photo credits are added after the text by the program; leave them out.");
+    const address = addressBreaches(candidate.text, reader);
+    if (address.length && reader) add("WRONG_ADDRESS", addressFinding(address, reader));
     const key = headlineKey(candidate.text.split("\n")[0] ?? "");
     const earlier = keys.get(key);
     if (earlier && !(candidate.proposalOf && earlier.proposalOf === candidate.proposalOf)) add("DUPLICATE_CANDIDATE", `The caption opens like ${earlier.id}.`);

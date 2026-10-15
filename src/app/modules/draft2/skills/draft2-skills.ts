@@ -15,6 +15,8 @@ import { REVIEW_ROLES, REVIEW_SKILL } from "./review";
 import { SPINE_SKILL } from "./spine";
 import { VISUAL_ROLES, VISUALS_SKILL } from "./visuals";
 import { toneLine } from "./tone";
+import { addressBrief } from "../draft2-address.types";
+import { READER_SKILL } from "./reader";
 
 /**
  * Skills: the editorial craft Draft 2's models read, one versioned text per
@@ -23,7 +25,7 @@ import { toneLine } from "./tone";
  * skill, so they work from one rubric; every provider call records the
  * skill versions its instructions were composed from.
  */
-export type Draft2SkillName = "facts" | "focus" | "narratives" | "discovery" | "arcs" | "spine" | "levers" | "fairness" | "hooks" | "closings" | "decks" | "review" | "visuals" | "images" | "captions";
+export type Draft2SkillName = "facts" | "focus" | "narratives" | "discovery" | "arcs" | "spine" | "levers" | "fairness" | "reader" | "hooks" | "closings" | "decks" | "review" | "visuals" | "images" | "captions";
 export type Draft2Role = "extractor" | "reviewer" | "focus-editor" | "focus-planner" | "focus-narrative-judge" | "focus-concept-judge" | "opening-writer" | "opening-judge" | "closing-writer" | "closing-judge" | "deck-writer" | "deck-judge"
   | "people-finder" | "visual-writer" | "visual-judge" | "image-judge" | "caption-writer" | "caption-judge" | "mention-finder" | "carousel-reader" | "carousel-editor";
 
@@ -36,7 +38,7 @@ export type Draft2Skill = {
   roleText?: Partial<Record<Draft2Role, string>>;
 };
 
-export const DRAFT2_SKILLS: Record<Draft2SkillName, Draft2Skill> = { facts: FACTS_SKILL, focus: FOCUS_SKILL, narratives: NARRATIVES_SKILL, discovery: DISCOVERY_SKILL, arcs: ARCS_SKILL, spine: SPINE_SKILL, levers: LEVERS_SKILL, fairness: FAIRNESS_SKILL, hooks: HOOKS_SKILL, closings: CLOSINGS_SKILL, decks: DECKS_SKILL, review: REVIEW_SKILL, visuals: VISUALS_SKILL, images: IMAGES_SKILL, captions: CAPTIONS_SKILL };
+export const DRAFT2_SKILLS: Record<Draft2SkillName, Draft2Skill> = { facts: FACTS_SKILL, focus: FOCUS_SKILL, narratives: NARRATIVES_SKILL, discovery: DISCOVERY_SKILL, arcs: ARCS_SKILL, spine: SPINE_SKILL, levers: LEVERS_SKILL, fairness: FAIRNESS_SKILL, reader: READER_SKILL, hooks: HOOKS_SKILL, closings: CLOSINGS_SKILL, decks: DECKS_SKILL, review: REVIEW_SKILL, visuals: VISUALS_SKILL, images: IMAGES_SKILL, captions: CAPTIONS_SKILL };
 
 /** Each role's own instructions: who it is and what it receives. */
 export const DRAFT2_ROLES: Record<Draft2Role, string> = { ...FACTS_ROLES, ...FOCUS_ROLES, ...NARRATIVE_ROLES, ...DISCOVERY_ROLES, ...OPENING_ROLES, ...CLOSING_ROLES, ...DECK_ROLES, ...REVIEW_ROLES, ...VISUAL_ROLES, ...IMAGE_ROLES, ...CAPTION_ROLES };
@@ -69,13 +71,14 @@ const clause = (value: string | undefined) => oneLine(value).replace(/[.\s]+$/, 
  * read. Visual guidance, call-to-action style and conversion goal stay out:
  * the opening has no call to action and no image yet.
  */
-export function brandBrief(profile: Pick<CreativeProfile, "name" | "language" | "region" | "platform" | "audience" | "brandPersonality" | "formality" | "humor" | "energy" | "optimism" | "provocation">): string {
+export function brandBrief(profile: Pick<CreativeProfile, "name" | "language" | "region" | "platform" | "audience" | "brandPersonality" | "formality" | "humor" | "energy" | "optimism" | "provocation" | "readerAddress">): string {
   const personality = (profile.brandPersonality ?? []).map(clause).filter((word) => word.length > 0);
   const line = (label: string, value: string | undefined) => clause(value) ? `- ${label}: ${clause(value)}.` : undefined;
   return [
     "# The publication",
     line("Name", profile.name),
     clause(profile.language) ? `- Language: write every reader-facing word in ${clause(profile.language)}; the article may be in another language.` : undefined,
+    addressBrief({ address: profile.readerAddress, language: profile.language ?? "" }),
     line("Region", profile.region),
     line("Platform", profile.platform),
     line("Audience", profile.audience),

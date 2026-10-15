@@ -148,7 +148,7 @@ test("Claude writes three captions for the finished carousel and Sol judges them
     assert.ok(String(call.input.instructions).includes("- Emojis: at most 3 in the whole caption."));
     assert.ok(String(call.input.instructions).includes("the same single action, stated once (Save this for Saturday.)"));
   }
-  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.skillVersions])), json([["caption", "draft2_caption", { captions: "3", fairness: "1" }], ["caption", "draft2_caption_review", { captions: "3", fairness: "1" }]]));
+  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.skillVersions])), json([["caption", "draft2_caption", { captions: "3", fairness: "2", reader: "1" }], ["caption", "draft2_caption_review", { captions: "3", fairness: "2", reader: "1" }]]));
   const run = session.caption!;
   assert.equal(json([session.step, session.status, run.status, run.winnerId, run.imagesRunId, run.mentionsVersion, run.credits, run.rules]),
     json(["caption", "ready", "ready", "c2", "run-1", 4, [], { emojis: 3, ctaStyle: "One warm, concrete step", cta: "Save this for Saturday.", grave: false }]));

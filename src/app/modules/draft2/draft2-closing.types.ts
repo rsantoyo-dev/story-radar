@@ -1,3 +1,4 @@
+import { addressBreaches, addressFinding, type Draft2Reader } from "./draft2-address.types";
 import { comparableText, type Draft2Fact } from "./draft2-facts.types";
 import { leverForModels } from "./draft2-levers.types";
 import type { Draft2FocusSnapshot, Draft2FocusStructureKind } from "./draft2-focus.types";
@@ -46,7 +47,7 @@ export const CLOSING_RESTATEMENT_OVERLAP = 0.5;
 export const CLOSING_CRITERIA = ["resolution", "meaning", "action", "continuity", "grounding", "voice", "focus"] as const;
 export const CLOSING_MECHANICAL_CODES = [
   "FACT_UNKNOWN", "NO_FACTS", "PENULTIMATE_HEADLINE_TOO_LONG", "PENULTIMATE_BODY_TOO_LONG", "LAST_HEADLINE_TOO_LONG", "LAST_BODY_TOO_LONG",
-  "CTA_TOO_LONG", "CTA_MISSING", "RECAP_LABEL", "RESTATES_OPENING", "UNSUPPORTED_NUMBER", "TOO_MANY_EMOJIS", "DUPLICATE_CANDIDATE",
+  "CTA_TOO_LONG", "CTA_MISSING", "RECAP_LABEL", "RESTATES_OPENING", "UNSUPPORTED_NUMBER", "TOO_MANY_EMOJIS", "DUPLICATE_CANDIDATE", "WRONG_ADDRESS",
 ] as const;
 export const CLOSING_JUDGE_CODES = ["UNRESOLVED", "RECAP", "WEAK_MEANING", "OFF_GOAL", "BREAKS_CONTINUITY", "OVERCLAIMS", "OFF_VOICE", "OFF_FOCUS", "OTHER"] as const;
 export const CLOSING_ISSUE_CODES = [...CLOSING_MECHANICAL_CODES, ...CLOSING_JUDGE_CODES] as const;
@@ -192,8 +193,8 @@ const EMOJI = /\p{Extended_Pictographic}/gu;
  * action unless the story is grave, must not be a summary label, must not
  * repeat the opening, and keeps to the publication's emoji allowance.
  */
-export function mechanicalClosingIssues(candidates: readonly Draft2ClosingCandidate[], facts: readonly Draft2Fact[], { opening, shape, grave, itemCount, emojis }: {
-  opening: Draft2ClosingOpening; shape: Draft2ClosingShape; grave: boolean; itemCount?: number; emojis: number;
+export function mechanicalClosingIssues(candidates: readonly Draft2ClosingCandidate[], facts: readonly Draft2Fact[], { opening, shape, grave, itemCount, emojis, reader }: {
+  opening: Draft2ClosingOpening; shape: Draft2ClosingShape; grave: boolean; itemCount?: number; emojis: number; reader?: Draft2Reader;
 }): Draft2ClosingIssue[] {
   const byId = new Map(facts.map((fact) => [fact.id, fact]));
   const openingSlides = [
@@ -226,6 +227,11 @@ export function mechanicalClosingIssues(candidates: readonly Draft2ClosingCandid
       if (words > limit) add(code, part, `The ${label} has ${words} words; the limit is ${limit}.`);
     }
     if (!last.cta && !grave) add("CTA_MISSING", "last", "The last slide has no call to action; only a grave story may end without one.");
+    // One form of address on the whole post: the call to action and the slide above it included ("Pour vos sorties…" over "Suis Salut Brossard").
+    for (const [part, value] of [...(penultimate ? [["penultimate", `${penultimate.headline}\n${penultimate.body}`] as const] : []), ["last", `${last.headline}\n${last.body}\n${last.cta}`] as const]) {
+      const words = addressBreaches(value, reader);
+      if (words.length && reader) add("WRONG_ADDRESS", part, addressFinding(words, reader));
+    }
     for (const [part, value] of [...(penultimate ? [["penultimate", `${penultimate.headline} ${penultimate.body}`] as const] : []), ["last", `${last.headline} ${last.body}`] as const]) {
       const recap = RECAP.exec(value);
       if (recap) add("RECAP_LABEL", part, `"${recap[0]}" sums up instead of ending the story.`);

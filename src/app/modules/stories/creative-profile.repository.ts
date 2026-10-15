@@ -10,6 +10,8 @@ import { creativeBrandAssets, creativeProfiles, topics } from "@/db/schema";
 import {
   CREATIVE_CONVERSION_GOALS,
   CREATIVE_FRAMING_STRATEGIES,
+  CREATIVE_READER_ADDRESSES,
+  DEFAULT_CREATIVE_READER_ADDRESS,
   DEFAULT_CREATIVE_BRAND_OVERLAY_SETTINGS,
   DEFAULT_CREATIVE_CAROUSEL_CHROME_SETTINGS,
   DEFAULT_CREATIVE_CONVERSION_GOAL,
@@ -26,6 +28,7 @@ import {
   type CreativeConversionGoal,
   type CreativeFramingStrategy,
   type CreativeGeoScope,
+  type CreativeReaderAddress,
   type CreativeStoryStructure,
   type CreativeProfile,
   type EditableCreativeProfile,
@@ -73,6 +76,7 @@ const DEFAULT_PROFILE: EditableCreativeProfile = {
   conversionGoal: DEFAULT_CREATIVE_CONVERSION_GOAL,
   framingStrategy: DEFAULT_CREATIVE_FRAMING_STRATEGY,
   requireCoverTitle: false,
+  readerAddress: DEFAULT_CREATIVE_READER_ADDRESS,
   storyStructure: "auto",
   visualFidelityMode: DEFAULT_VISUAL_FIDELITY_MODE,
   geoScope: { ...DEFAULT_CREATIVE_GEO_SCOPE },
@@ -292,6 +296,7 @@ export function parseCreativeProfileInput(value: unknown): EditableCreativeProfi
     conversionGoal: value.conversionGoal,
     framingStrategy: value.framingStrategy,
     requireCoverTitle: value.requireCoverTitle,
+    readerAddress: value.readerAddress,
     storyStructure: value.storyStructure,
     visualFidelityMode: value.visualFidelityMode,
     geoProviderContact: value.geoProviderContact,
@@ -334,6 +339,7 @@ function validateCreativeProfile(
     conversionGoal: conversionGoalValue(value.conversionGoal),
     framingStrategy: framingStrategyValue(value.framingStrategy),
     requireCoverTitle: booleanValue(value.requireCoverTitle ?? false, "requireCoverTitle"),
+    readerAddress: readerAddressValue(value.readerAddress),
     storyStructure: storyStructureValue(value.storyStructure),
     visualFidelityMode: visualFidelityModeValue(value.visualFidelityMode),
     geoProviderContact: geographicContactValue(value.geoProviderContact),
@@ -415,6 +421,7 @@ function mapCreativeProfile(
     conversionGoal: conversionGoalValue(profile.conversionGoal),
     framingStrategy: framingStrategyValue(profile.framingStrategy),
     requireCoverTitle: profile.requireCoverTitle ?? false,
+    readerAddress: readerAddressValue(profile.readerAddress),
     storyStructure: storyStructureValue(profile.storyStructure),
     visualFidelityMode: visualFidelityModeValue(profile.visualFidelityMode),
     geoProviderContact: profile.geoProviderContact ?? "",
@@ -552,6 +559,14 @@ export class CreativeProfileValidationError extends Error {}
 function geographicContactValue(value: unknown): string {
   try { return parseGeoContact(value); }
   catch { throw new CreativeProfileValidationError("Geographic contact must be a valid email address"); }
+}
+
+/** How the posts address the reader; a profile saved before the choice is informal. */
+export function readerAddressValue(value: unknown): CreativeReaderAddress {
+  if (value === undefined || value === null) return DEFAULT_CREATIVE_READER_ADDRESS;
+  const address = CREATIVE_READER_ADDRESSES.find((entry) => entry === value);
+  if (address) return address;
+  throw new CreativeProfileValidationError("readerAddress must be informal or formal");
 }
 
 export function storyStructureValue(value: unknown): CreativeStoryStructure {

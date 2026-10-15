@@ -17,11 +17,14 @@ import type { Draft2Skill } from "./draft2-skills";
  * auditor found a verdict on a sanctioned bar in the closing and the bar's
  * misreading ("it closed") left open until slide 6: a judgement, irony or
  * insinuation about a named party is a truth patch, and no patch takes the
- * focus's guards off the cover or slide 2.
+ * focus's guards off the cover or slide 2. Version 5, 2026-10-15: a past
+ * action told without the outcome the facts give is a truth patch, and an
+ * organization named only by an acronym the audience may not know is a
+ * detail patch.
  */
 export const REVIEW_SKILL: Draft2Skill = {
   name: "review",
-  version: "4",
+  version: "5",
   text: `# Reviewing a carousel
 
 A carousel is read one swipe at a time, on a phone, by someone who did not ask
@@ -62,12 +65,16 @@ in the kinds below is needed.
 ## What a patch may change, named as its kind
 - truth: a claim the facts do not carry, an allegation stated as a fact, a
   qualifier or an attribution lost, two facts run together so that they say
-  what neither says, or a judgement, irony or insinuation about a person or
-  business the story names (the fairness skill).
+  what neither says, a judgement, irony or insinuation about a person or
+  business the story names (the fairness skill), or a past action told
+  without the outcome the facts give, so that it reads as still going on
+  ("arrested, he pleaded guilty in 2023").
 - repetition: a word or a fact repeated without purpose, on one slide or from
   one slide to the next.
 - detail: a name, a date, a place or a price the facts give, that the reader
-  needs and the carousel lacks or gets wrong.
+  needs and the carousel lacks or gets wrong, or an organization named only
+  by an acronym the audience may not know ("la police de Longueuil" for "le
+  SPAL", or its full name once; the reader skill).
 - style: anything else. Propose one only for a slide that clearly fails a
   reader of this audience, never for a slide named in strengths, never for
   taste. A style patch waits for the editor: the autopilot never applies it.
