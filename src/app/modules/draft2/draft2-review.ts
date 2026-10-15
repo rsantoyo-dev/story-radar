@@ -79,23 +79,33 @@ function chosenOf<C extends FunnelCandidate>(run: FunnelRun<C>, id: string): C {
 /**
  * What the program finds wrong with a patched candidate, with the owning
  * step's own checks and the context that step recorded; empty when the patch
- * keeps every rule.
+ * keeps every rule. Only what the patch brings counts: a finding the chosen
+ * version already had (a rule newer than the carousel, such as abbreviations
+ * since 2026-10-15) never refuses a patch elsewhere in it.
  */
 function patchFindings(session: Draft2SessionRow, chosen: Chosen, patch: Pick<Draft2ReviewPatch, "owner" | "slide" | "field" | "after">, facts: readonly Draft2Fact[], emojis: number, reader: Draft2Reader): string[] {
   const values = chosen.focus.values;
   const itemCount = focusItemCount(values);
+  const brought = (before: readonly { detail: string }[], after: readonly { detail: string }[]) => {
+    const had = new Set(before.map((issue) => issue.detail));
+    return after.map((issue) => issue.detail).filter((detail) => !had.has(detail));
+  };
   if (patch.owner === "opening") {
-    const candidate = patchedOpening(chosenOf<Draft2OpeningCandidate>(chosen.opening, chosen.openingId), patch.slide, patch.field, patch.after);
-    return mechanicalOpeningIssues([candidate], facts, { itemCount, reader }).map((issue) => issue.detail);
+    const current = chosenOf<Draft2OpeningCandidate>(chosen.opening, chosen.openingId);
+    const check = (candidate: Draft2OpeningCandidate) => mechanicalOpeningIssues([candidate], facts, { itemCount, reader });
+    return brought(check(current), check(patchedOpening(current, patch.slide, patch.field, patch.after)));
   }
   if (patch.owner === "closing") {
-    const candidate = patchedClosing(chosenOf<Draft2ClosingCandidate>(chosen.closing, chosen.closingId), patch.slide, patch.field, patch.after);
     if (!chosen.closing.opening || !chosen.closing.shape) return ["This closing does not record the opening and the shape it was written for."];
-    return mechanicalClosingIssues([candidate], facts, { opening: chosen.closing.opening, shape: chosen.closing.shape, grave: values.voice.gravity === "grave", itemCount, emojis, reader }).map((issue) => issue.detail);
+    const rules = { opening: chosen.closing.opening, shape: chosen.closing.shape, grave: values.voice.gravity === "grave", itemCount, emojis, reader };
+    const current = chosenOf<Draft2ClosingCandidate>(chosen.closing, chosen.closingId);
+    const check = (candidate: Draft2ClosingCandidate) => mechanicalClosingIssues([candidate], facts, rules);
+    return brought(check(current), check(patchedClosing(current, patch.slide, patch.field, patch.after)));
   }
-  const candidate = patchedDeck(chosen.deckCandidate, patch.slide, patch.field, patch.after);
   if (!chosen.deck.opening || !chosen.deck.closing || !chosen.deck.shape) return ["This deck does not record what it connects."];
-  return mechanicalDeckIssues([candidate], facts, { opening: chosen.deck.opening, closing: chosen.deck.closing, shape: chosen.deck.shape, itemCount, emojis, reader }).map((issue) => issue.detail);
+  const rules = { opening: chosen.deck.opening, closing: chosen.deck.closing, shape: chosen.deck.shape, itemCount, emojis, reader };
+  const check = (candidate: Draft2DeckCandidate) => mechanicalDeckIssues([candidate], facts, rules);
+  return brought(check(chosen.deckCandidate), check(patchedDeck(chosen.deckCandidate, patch.slide, patch.field, patch.after)));
 }
 
 /**

@@ -1,3 +1,4 @@
+import { abbreviationBreaches, abbreviationFinding, explainedAbbreviations } from "./draft2-abbreviations.types";
 import { addressBreaches, addressFinding, type Draft2Reader } from "./draft2-address.types";
 import { comparableText, type Draft2Fact } from "./draft2-facts.types";
 import type { Draft2FocusSnapshot, Draft2FocusStructureKind } from "./draft2-focus.types";
@@ -52,7 +53,7 @@ export const DECK_RESTATEMENT_OVERLAP = 0.5;
 export const DECK_CRITERIA = ["flow", "coverage", "pacing", "clarity", "grounding", "voice", "focus"] as const;
 export const DECK_MECHANICAL_CODES = [
   "FACT_UNKNOWN", "NO_FACTS", "HEADLINE_TOO_LONG", "BODY_TOO_LONG", "PRACTICAL_TOO_LONG", "PRACTICAL_OUTSIDE_LIST", "SLIDE_COUNT", "ITEM_OUT_OF_PLACE",
-  "RESTATES_SLIDE", "RECAP_LABEL", "UNSUPPORTED_NUMBER", "TOO_MANY_EMOJIS", "DUPLICATE_CANDIDATE", "WRONG_ADDRESS",
+  "RESTATES_SLIDE", "RECAP_LABEL", "UNSUPPORTED_NUMBER", "TOO_MANY_EMOJIS", "DUPLICATE_CANDIDATE", "WRONG_ADDRESS", "ABBREVIATION",
 ] as const;
 export const DECK_JUDGE_CODES = ["BREAKS_FLOW", "GAP", "OVERLOADED", "REPEATS", "WRONG_LENGTH", "UNCLEAR", "OVERCLAIMS", "OFF_VOICE", "OFF_FOCUS", "OTHER"] as const;
 export const DECK_ISSUE_CODES = [...DECK_MECHANICAL_CODES, ...DECK_JUDGE_CODES] as const;
@@ -183,6 +184,7 @@ export function mechanicalDeckIssues(candidates: readonly Draft2DeckCandidate[],
   opening: Draft2ClosingOpening; closing: Draft2DeckClosing; shape: Draft2DeckShape; itemCount?: number; emojis: number; reader?: Draft2Reader;
 }): Draft2DeckIssue[] {
   const byId = new Map(facts.map((fact) => [fact.id, fact]));
+  const explained = explainedAbbreviations(facts);
   const fixed = [
     ["the cover", `${opening.cover.headline} ${opening.cover.subheadline}`],
     ["slide 2", `${opening.slide2.headline} ${opening.slide2.body}`],
@@ -215,6 +217,10 @@ export function mechanicalDeckIssues(candidates: readonly Draft2DeckCandidate[],
       if (funnelWordCount(slide.practical) > DECK_PRACTICAL_MAX_WORDS) add("PRACTICAL_TOO_LONG", part, `${label}'s practical line has ${funnelWordCount(slide.practical)} words; the limit is ${DECK_PRACTICAL_MAX_WORDS}.`);
       const address = addressBreaches(`${slide.headline}\n${slide.body}\n${slide.practical}`, reader);
       if (address.length && reader) add("WRONG_ADDRESS", part, `${label}: ${addressFinding(address, reader)}`);
+      // The reader has seen the opening and the deck's slides before this one: an abbreviation spelled out there may return.
+      const seen = [opening.cover.headline, opening.cover.subheadline, opening.slide2.headline, opening.slide2.body, ...slides.slice(0, index).flatMap((earlier) => [earlier.headline, earlier.body, earlier.practical])].join("\n");
+      const abbreviations = abbreviationBreaches(`${slide.headline}\n${slide.body}\n${slide.practical}`, explained, seen);
+      if (abbreviations.length) add("ABBREVIATION", part, `${label}: ${abbreviationFinding(abbreviations, explained)}`);
       const item = shape.items[index];
       if (item && !slide.factIds.includes(item)) add("ITEM_OUT_OF_PLACE", part, `${label} should carry the ${shape.kind === "list" ? "item" : "step"} that starts with ${item}, in order.`);
       const recap = RECAP.exec(`${slide.headline} ${slide.body}`);

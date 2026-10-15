@@ -158,3 +158,39 @@ as "SPAL".
   organization named only by an acronym the audience may not know is a
   detail patch. Both are applied by the autopilot.
 
+
+## Abbreviations the reader does not know (2026-10-15)
+
+A Fogón Lab carousel on why onions make you cry kept its English source's
+"LF" (lachrymatory factor) and "LFS" (the enzyme that makes it) on the cover
+and five slides, in Spanish, after only "El LF, lo que irrita". Reader v1
+allowed an acronym after its full name; the writers took the allowance
+without even writing the name.
+
+- **The program refuses them** (`draft2-abbreviations.types.ts`,
+  `ABBREVIATION` in the opening, closing, deck and caption): an abbreviation
+  the facts spell out ("Lachrymatory factor (LF)", "LFS (lachrymatory factor
+  synthase)", "Service de police de l'agglomération de Longueuil (SPAL)") is
+  one the source had to explain to its own readers. The post names the thing
+  instead, or spells the abbreviation out itself before using it, in its own
+  language, the abbreviation's letters those of the name ("la Régie des
+  alcools, des courses et des jeux (RACJ)", on that slide or one the reader
+  saw before: the cover for slide 2, the opening and earlier slides for the
+  deck and the closing; the caption on its own). "Factor lacrimógeno (LF)"
+  does not spell LF. The finding names what the abbreviation stands for.
+- **Never refused:** everyday abbreviations (DJ, TV, ADN, GPS, COVID…, a
+  short list in the module), one the facts use without spelling it out, a
+  single letter, a formula, a Roman numeral, words in quotation marks.
+- **Reader skill v2:** no abbreviation the reader would not say themselves;
+  name the thing or say what it does; never initials from another language.
+  The focus planner reads it too: the spine's words are what the writers
+  say.
+- **Review:** a patch is refused only for the findings it brings. A rule the
+  chosen version already breaks (one newer than the carousel) no longer
+  refuses every patch on that version.
+
+Run over every stored session, the check finds what the auditor and the
+editor saw: RACJ and SPAL in the Houston post, LF and LFS in the onion
+carousel, and PSL, CJE, PMSD and CNESST elsewhere. A carousel written before
+the rule keeps its abbreviations until the editor edits those slides by hand
+(the edit shows the finding) and makes their images again.

@@ -353,3 +353,11 @@ test("the number of items a list or steps focus names counts as a stated number,
   assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1", list)], facts, { itemCount: 3 })), []);
   assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1", { cover: { headline: "4 ways the Pentagon buys faster" } })], facts, { itemCount: 3 })), ["UNSUPPORTED_NUMBER c1 cover"], "only the focus's own count");
 });
+
+test("no abbreviation the facts had to spell out: the program refuses the source's initials on the cover and slide 2", () => {
+  const explaining: Draft2Fact[] = [...facts, { id: "f4", claim: "Lachrymatory factor (LF) is formed when an onion is cut.", evidence: "LF is actually formed when the onion is cut.", kind: "event", status: "established", importance: 60 }];
+  const issues = mechanicalOpeningIssues([candidate("c1", { slide2: { headline: "El LF sale al aire" } })], explaining);
+  assert.deepEqual(codes(issues), ["ABBREVIATION c1 slide2"]);
+  assert.match(issues[0].detail, /^"LF" \(Lachrymatory factor\) is an abbreviation the source had to explain/u);
+  assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1")], explaining)), [], "one the facts use without spelling it out (DOD) is not refused");
+});

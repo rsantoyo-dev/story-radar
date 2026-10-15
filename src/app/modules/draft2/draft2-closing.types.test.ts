@@ -163,3 +163,10 @@ test("the call-to-action brief carries the publication's style and emoji allowan
   ].join("\n"));
   assert.match(callToActionBrief({ style: " ", emojis: 0 }), /sets no style[^]*Emojis: none\./);
 });
+
+test("the closing never uses an abbreviation the facts had to spell out", () => {
+  const explaining: Draft2Fact[] = [...facts, { id: "f4", claim: "Le Service de police de l'agglomération de Longueuil (SPAL) enquête.", evidence: "", kind: "event", status: "established", importance: 50 }];
+  const issues = mechanicalClosingIssues([closing("c1", { last: { body: "Le SPAL veille sur tes soirées." } })], explaining, rules);
+  assert.deepEqual(codes(issues), ["ABBREVIATION c1 last"]);
+  assert.match(issues[0].detail, /^"SPAL" \(Service de police de l'agglomération de Longueuil\)/u);
+});

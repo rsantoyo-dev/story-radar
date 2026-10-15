@@ -1,3 +1,4 @@
+import { abbreviationBreaches, abbreviationFinding, explainedAbbreviations } from "./draft2-abbreviations.types";
 import { addressBreaches, addressFinding, type Draft2Reader } from "./draft2-address.types";
 import { comparableText, type Draft2Fact } from "./draft2-facts.types";
 import { leverForModels } from "./draft2-levers.types";
@@ -47,7 +48,7 @@ export const CLOSING_RESTATEMENT_OVERLAP = 0.5;
 export const CLOSING_CRITERIA = ["resolution", "meaning", "action", "continuity", "grounding", "voice", "focus"] as const;
 export const CLOSING_MECHANICAL_CODES = [
   "FACT_UNKNOWN", "NO_FACTS", "PENULTIMATE_HEADLINE_TOO_LONG", "PENULTIMATE_BODY_TOO_LONG", "LAST_HEADLINE_TOO_LONG", "LAST_BODY_TOO_LONG",
-  "CTA_TOO_LONG", "CTA_MISSING", "RECAP_LABEL", "RESTATES_OPENING", "UNSUPPORTED_NUMBER", "TOO_MANY_EMOJIS", "DUPLICATE_CANDIDATE", "WRONG_ADDRESS",
+  "CTA_TOO_LONG", "CTA_MISSING", "RECAP_LABEL", "RESTATES_OPENING", "UNSUPPORTED_NUMBER", "TOO_MANY_EMOJIS", "DUPLICATE_CANDIDATE", "WRONG_ADDRESS", "ABBREVIATION",
 ] as const;
 export const CLOSING_JUDGE_CODES = ["UNRESOLVED", "RECAP", "WEAK_MEANING", "OFF_GOAL", "BREAKS_CONTINUITY", "OVERCLAIMS", "OFF_VOICE", "OFF_FOCUS", "OTHER"] as const;
 export const CLOSING_ISSUE_CODES = [...CLOSING_MECHANICAL_CODES, ...CLOSING_JUDGE_CODES] as const;
@@ -197,6 +198,7 @@ export function mechanicalClosingIssues(candidates: readonly Draft2ClosingCandid
   opening: Draft2ClosingOpening; shape: Draft2ClosingShape; grave: boolean; itemCount?: number; emojis: number; reader?: Draft2Reader;
 }): Draft2ClosingIssue[] {
   const byId = new Map(facts.map((fact) => [fact.id, fact]));
+  const explained = explainedAbbreviations(facts);
   const openingSlides = [
     ["cover", longWords(`${opening.cover.headline} ${opening.cover.subheadline}`)],
     ["slide 2", longWords(`${opening.slide2.headline} ${opening.slide2.body}`)],
@@ -231,6 +233,10 @@ export function mechanicalClosingIssues(candidates: readonly Draft2ClosingCandid
     for (const [part, value] of [...(penultimate ? [["penultimate", `${penultimate.headline}\n${penultimate.body}`] as const] : []), ["last", `${last.headline}\n${last.body}\n${last.cta}`] as const]) {
       const words = addressBreaches(value, reader);
       if (words.length && reader) add("WRONG_ADDRESS", part, addressFinding(words, reader));
+      // The reader has seen the opening (and the slide above the last): an abbreviation spelled out there may return.
+      const seen = [opening.cover.headline, opening.cover.subheadline, opening.slide2.headline, opening.slide2.body, ...(part === "last" && penultimate ? [penultimate.headline, penultimate.body] : [])].join("\n");
+      const abbreviations = abbreviationBreaches(value, explained, seen);
+      if (abbreviations.length) add("ABBREVIATION", part, abbreviationFinding(abbreviations, explained));
     }
     for (const [part, value] of [...(penultimate ? [["penultimate", `${penultimate.headline} ${penultimate.body}`] as const] : []), ["last", `${last.headline} ${last.body}`] as const]) {
       const recap = RECAP.exec(value);

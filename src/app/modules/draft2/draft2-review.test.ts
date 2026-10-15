@@ -118,7 +118,7 @@ test("the review reads the chosen carousel: a reader of the audience first, then
   assert.match(review.editor!.patches[1].note ?? "", /passed the Opening's gate[^]*headline has/i, "a style patch on the cover's headline breaks the review's rule, and one over eight words the opening's");
   assert.equal(json(review.editor?.patches.map((patch) => patch.kind)), json(["style", "style", "style"]), "a patch that names no kind claims no necessity");
   assert.match(review.editor!.patches[2].note ?? "", /quoted "Tools for grown hands\."/);
-  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.outcome, entry.effort, entry.skillVersions])), json([["review", "draft2_review_read", "ok", "low", {}], ["review", "draft2_review", "ok", "medium", { review: "5", fairness: "2", reader: "1" }]]));
+  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.outcome, entry.effort, entry.skillVersions])), json([["review", "draft2_review_read", "ok", "low", {}], ["review", "draft2_review", "ok", "medium", { review: "5", fairness: "2", reader: "2" }]]));
 });
 
 test("a patch applied edits the chosen version in place, in its step and in the copies the later steps keep; the review keeps what it replaced, and an undo restores it", async () => {
@@ -191,4 +191,16 @@ test("a patch's kind is read in any case; one the review does not know is style"
   const h = harness({ editor: { ...EDITOR, patches: [{ ...EDITOR.patches[0], kind: " Truth " }, { slide: "last", field: "cta", kind: "vibe", before: "Save this for Saturday.", after: "Save it for Saturday.", reason: "Softer." }] } });
   const session = await h.review();
   assert.equal(json(session.review!.editor!.patches.map((patch) => [patch.kind, patch.status])), json([["truth", "proposed"], ["style", "proposed"]]));
+});
+
+test("a patch is refused only for what it brings: a rule the chosen version already breaks (an abbreviation) never refuses a patch elsewhere, and a patch that adds one is refused", async () => {
+  const explaining = [...facts, { id: "f4", claim: "La Bibliothèque du Vieux-Longueuil (BVL) rouvre samedi.", evidence: "", kind: "event", status: "established", importance: 50 }];
+  const breaking = { ...opening, cover: { ...opening.cover, subheadline: "Saturday, at the BVL." } };
+  const elsewhere = harness({ session: { facts: explaining, opening: run(breaking, {}) }, editor: { ...EDITOR, patches: [EDITOR.patches[0]] } });
+  const kept = await elsewhere.review();
+  assert.equal(json(kept.review?.editor?.patches.map((patch) => [patch.id, patch.status])), json([["p1", "proposed"]]));
+  const adding = harness({ session: { facts: explaining }, editor: { ...EDITOR, patches: [{ ...EDITOR.patches[0], after: "Under twelve, the BVL is free." }] } });
+  const refused = (await adding.review()).review?.editor?.patches[0];
+  assert.equal(refused?.status, "refused");
+  assert.match(String(refused?.note), /"BVL" .* is an abbreviation the source had to explain/u);
 });

@@ -184,7 +184,7 @@ test("Claude decides the focus from the cached facts, the brand brief, the profi
   const [decisionCall, planCall] = session.trace.filter((entry) => entry.step === "focus");
   assert.equal(session.trace.length, 3, "the facts trace is kept; the decision and the plan are two calls");
   assert.equal(json([decisionCall.provider, decisionCall.operation, decisionCall.outcome, decisionCall.skillVersions, decisionCall.cacheWriteTokens]), json(["anthropic", "draft2_focus", "ok", { focus: "15", discovery: "1", arcs: "1", narratives: "4", spine: "1" }, 900]));
-  assert.equal(json([planCall.operation, planCall.outcome, planCall.effort, planCall.skillVersions]), json(["draft2_focus_plan", "ok", "high", { focus: "15", levers: "1", spine: "1" }]), "a classic telling: the planner reads the focus, levers and spine skills only");
+  assert.equal(json([planCall.operation, planCall.outcome, planCall.effort, planCall.skillVersions]), json(["draft2_focus_plan", "ok", "high", { focus: "15", levers: "1", spine: "1", reader: "2" }]), "a classic telling: the planner reads the focus, levers, spine and reader skills only");
   assert.equal(json([focus.values?.spine?.beats.length, focus.values?.direction, focus.reasons?.spine, focus.staleDirections]), json([7, PLAN.direction, "Why spine.", false]), "the plan's spine, directions and reasons join the decision");
   assert.equal(json(Object.keys((h.calls[1].contents as { focus: Record<string, unknown> }).focus)), json(["line", "interest", "audience", "framing", "readerConsequence", "structure", "goal", "voice"]), "the planner reads the decision, the interest first, without the empty directions");
   const planContents = h.calls[1].contents as { eligibleLevers: string[]; recentLevers: string[] };
@@ -375,7 +375,7 @@ test("after the editor changes how the story is told, Claude rewrites the plan f
   assert.equal(json([contents.task, contents.focus.narrative?.form, "spine" in contents.focus, contents.editorChoices]), json(["plan", "character-guide", true, {}]), "the planner reads the decision, the earlier spine and the parts the editor owns (none here)");
   assert.equal(json((call.contents as { material?: unknown }).material), json(focusTypes.focusMaterial(INVENTORY as never)), "and People and places, as found now");
   const last = session.trace[session.trace.length - 1];
-  assert.equal(json([last.operation, last.outcome, last.effort, last.skillVersions]), json(["draft2_focus_plan", "ok", "high", { focus: "15", levers: "1", spine: "1", narratives: "4" }]));
+  assert.equal(json([last.operation, last.outcome, last.effort, last.skillVersions]), json(["draft2_focus_plan", "ok", "high", { focus: "15", levers: "1", spine: "1", reader: "2", narratives: "4" }]));
 });
 
 test("the plan reads the Topic's last published levers, and a primary these facts cannot carry is asked for again with the list", async () => {

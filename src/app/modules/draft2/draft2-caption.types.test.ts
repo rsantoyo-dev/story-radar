@@ -87,3 +87,9 @@ test("the rules each model reads: the emoji allowance, the closing's call to act
   assert.equal(captionRulesBrief(RULES), "# The post\n- Emojis: at most 2 in the whole caption.\n- The call to action: the closing's, the same single action, stated once (Save this for Saturday.).\n- The publication's call-to-action style (its voice; the action is the closing's): Warm, one clear step");
   assert.equal(captionRulesBrief({ emojis: 0, ctaStyle: " ", cta: "", grave: true }), "# The post\n- Emojis: none.\n- The story is grave: no call to action.");
 });
+
+test("the caption never uses an abbreviation the facts had to spell out", () => {
+  const explaining: Draft2Fact[] = [...facts, { id: "f3", claim: "La Bibliothèque du Vieux-Longueuil (BVL) rouvre samedi.", evidence: "", kind: "event", status: "established", importance: 50 }];
+  const text = TEXT.replace("The Vieux-Longueuil library", "The BVL");
+  assert.deepEqual(mechanicalCaptionIssues([caption("c1", { text })], explaining, { credits: [], mentions: [], rules: RULES }).map((issue) => `${issue.candidateId}:${issue.code}`), ["c1:ABBREVIATION"]);
+});

@@ -139,3 +139,12 @@ test("an arc's deck takes its number of middle slides from the focus's spine whe
   assert.deepEqual([deckShape({ kind: "arc", itemFactIds: [] }, []).min, deckShape({ kind: "arc", itemFactIds: [] }, []).max], [2, 5], "no spine: the range as before");
   assert.deepEqual(deckShape({ kind: "list", itemFactIds: ["f2", "f3", "f5"] }, ["f2"], beats(1)).items, ["f3", "f5"], "a list keeps its items whatever the spine says");
 });
+
+test("a deck slide never uses an abbreviation the facts had to spell out", () => {
+  const explaining: Draft2Fact[] = [...facts, { id: "f6", claim: "The Department of Defense (DOD) buys software.", evidence: "the Department of Defense (DOD)", kind: "event", status: "established", importance: 50 }];
+  const issues = mechanicalDeckIssues([deck("d1")], explaining, { opening, closing, shape: arc, emojis: 2 });
+  assert.deepEqual(codes(issues), ["ABBREVIATION d1 s3"]);
+  assert.match(issues[0].detail, /^Deck slide 3: "DOD" \(Department of Defense\)/u);
+  const spelled = { ...opening, slide2: { ...opening.slide2, body: "An official of the Department of Defense (DOD) says awards took less than a week." } };
+  assert.deepEqual(codes(mechanicalDeckIssues([deck("d1")], explaining, { opening: spelled, closing, shape: arc, emojis: 2 })), [], "slide 2 spelled it out before");
+});

@@ -28,6 +28,7 @@ import { DISCOVERY_SKILL } from "./skills/discovery";
 import { ARCS_SKILL } from "./skills/arcs";
 import { SPINE_SKILL } from "./skills/spine";
 import { LEVERS_SKILL } from "./skills/levers";
+import { READER_SKILL } from "./skills/reader";
 import type { Draft2SessionRow } from "@/db/schema";
 
 /** Every field and a reason for each, with Claude's thinking, which the API counts against the same ceiling. */
@@ -254,7 +255,8 @@ async function focusCall<T>({ apiKey, model, trace, verifiedFacts, auditContext,
  */
 function planCall(focus: Draft2Focus, { facts, title, brief, editorChoices, material, recentLevers }: { facts: readonly Draft2Fact[]; title: string; brief: string; editorChoices: Record<string, unknown>; material?: Draft2FocusMaterial; recentLevers: readonly string[] }) {
   const values = focus.values!;
-  const planner = composeInstructions("focus-planner", [FOCUS_SKILL, LEVERS_SKILL, SPINE_SKILL, ...creativeSkills(values)], brief);
+  // The spine's words are what the writers say: the reader's words, never the source's abbreviations.
+  const planner = composeInstructions("focus-planner", [FOCUS_SKILL, LEVERS_SKILL, SPINE_SKILL, READER_SKILL, ...creativeSkills(values)], brief);
   // The levers this story's facts, gravity and structure can carry; the publication's last ones, for the plan to vary.
   const eligible = eligibleLevers(facts, values);
   const owned = Object.fromEntries(Object.entries(editorChoices).filter(([key]) => (FOCUS_PLAN_FIELDS as readonly string[]).includes(key)));
