@@ -1,5 +1,6 @@
 import "server-only";
 
+import { metaReturnBaseUrl } from "./meta-return-url";
 import {
   deriveMetaIntegrationHealth,
   requestOriginFromHeaders,
@@ -57,12 +58,17 @@ export function getMetaFacebookOAuthRedirectUri(): string {
   return `${requireRadarAppUrl()}/api/radar/meta/facebook/callback`;
 }
 
-/** Where the browser lands after the OAuth dialog completes or fails. */
+/** The origin the editor works from, where a Meta dialog hands the browser back (metaReturnBaseUrl). */
+function editorAppUrl(): string {
+  return metaReturnBaseUrl({ BETTER_AUTH_URL: process.env.BETTER_AUTH_URL, RADAR_APP_URL: process.env.RADAR_APP_URL }) ?? requireRadarAppUrl();
+}
+
+/** Where the browser lands after the OAuth dialog completes or fails: back where the editor works. */
 export function metaConnectReturnUrl(
   topicId: string,
   outcome: { connected: true } | { error: string },
 ): string {
-  const url = new URL(requireRadarAppUrl());
+  const url = new URL(editorAppUrl());
   url.searchParams.set("metaTopicId", topicId);
   if ("connected" in outcome) {
     url.searchParams.set("metaConnected", "1");
@@ -83,7 +89,7 @@ export function metaFacebookConnectReturnUrl(
   topicId: string,
   outcome: { selectionId: string } | { error: string },
 ): string {
-  const url = new URL(requireRadarAppUrl());
+  const url = new URL(editorAppUrl());
   url.searchParams.set("metaTopicId", topicId);
   url.searchParams.set("metaChannel", "facebook");
   if ("selectionId" in outcome) {
