@@ -3782,3 +3782,79 @@ button.sidebarTopicAvatar:focus-visible { outline: border(focus-soft); outline-o
 .urgentBanner h2 { @ds-typo(title-sm); margin: 0; color: palette(dark-main); }
 .urgentBannerEyebrow { @ds-typo(eyebrow); margin: 0; color: palette(warning-dark); }
 .navBadgeUrgent { background: palette(warning-main); color: palette(warning-contrast); }
+
+/* Instagram performance: what each post earned, the trend, how posts grow, what works, every post with its image. */
+.insights { display: grid; gap: density(4); margin-bottom: density(6); }
+.insightsHeader { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: density(3); }
+.insightsEyebrow { @ds-typo (eyebrow); margin: 0; color: palette(primary-dark); }
+.insightsTitle { @ds-typo (section-title); margin: 0; color: palette(dark-main); }
+.insightsLead { @ds-typo (compact); max-width: 46rem; margin: 0; color: palette(tertiary-dark); }
+.insightsControls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: density(2); }
+.insightsSegment { display: inline-flex; flex-wrap: wrap; gap: density(1); }
+.insightsField { @ds-typo (meta-strong); display: grid; gap: density(1); color: palette(tertiary-dark); }
+.insightsField select, .insightsField input { @ds-input (field); min-width: 9rem; color: palette(dark-main); }
+.insightsKpis { display: grid; grid-template-columns: xs(repeat(2, minmax(0, 1fr))) lg(repeat(4, minmax(0, 1fr))); gap: density(3); }
+.insightsKpi { @ds-surface (card); display: grid; align-content: start; gap: density(1); min-width: 0; padding: density(3) density(4); }
+.insightsKpiLabel { @ds-typo (eyebrow); color: palette(tertiary-main); }
+.insightsKpiValue { @ds-typo (figure); color: palette(dark-main); }
+.insightsKpiNote { @ds-typo (meta); margin: 0; color: palette(tertiary-dark); }
+.insightsDelta { @ds-typo (meta-strong); color: palette(tertiary-dark); }
+.insightsDelta[data-tone="up"] { color: palette(success-dark); }
+.insightsDelta[data-tone="down"] { color: palette(error-dark); }
+.insightsBest { display: flex; align-items: center; gap: density(3); }
+.insightsBestImage { width: 2.75rem; height: 3.4rem; flex: none; border-radius: radius(1); background: palette(surface-light); object-fit: cover; }
+.insightsCharts { display: grid; grid-template-columns: xs(minmax(0, 1fr)) lg(repeat(2, minmax(0, 1fr))); gap: density(3); }
+.insightsCard { @ds-surface (card); display: grid; align-content: start; gap: density(3); min-width: 0; padding: density(4); }
+.insightsCardGrid { display: grid; align-content: start; gap: density(3); min-width: 0; }
+.insightsCardTitle { @ds-typo (title-sm); margin: 0; color: palette(dark-main); }
+.insightsCardNote { @ds-typo (meta); margin: 0; color: palette(tertiary-dark); }
+.insightsChart { display: block; width: 100%; height: auto; overflow: visible; }
+.insightsAxis { stroke: palette(dark-main, 0.16); }
+.insightsGrid { stroke: palette(dark-main, 0.06); }
+.insightsAxisLabel { @ds-typo (fine); fill: palette(tertiary-dark); }
+.insightsBar { fill: palette(primary-main, 0.45); transition: fill 150ms ease; }
+.insightsBar:hover { fill: palette(primary-main, 0.75); }
+.insightsBarActive { fill: palette(error-main); }
+.insightsTrendLine { fill: none; stroke: palette(warning-dark); stroke-linejoin: round; stroke-width: 2.5; }
+.insightsCurveMedian { fill: none; stroke: palette(dark-main); stroke-linecap: round; stroke-linejoin: round; stroke-width: 3; }
+.insightsCurveA { fill: none; stroke: palette(primary-main); stroke-linejoin: round; stroke-width: 2; }
+.insightsCurveB { fill: none; stroke: palette(success-main); stroke-linejoin: round; stroke-width: 2; }
+.insightsCurveC { fill: none; stroke: palette(secondary-main); stroke-linejoin: round; stroke-width: 2; }
+.insightsCurveSelected { fill: none; stroke: palette(error-main); stroke-dasharray: 6 4; stroke-linejoin: round; stroke-width: 2.5; }
+.insightsLegend { @ds-typo (meta); display: flex; flex-wrap: wrap; gap: density(1) density(4); margin: 0; padding: 0; color: palette(tertiary-dark); list-style: none; }
+.insightsLegend li { display: inline-flex; align-items: center; gap: density(1); }
+.insightsSwatch { width: 0.875rem; height: 0.25rem; flex: none; border-radius: radius(pill); background: palette(dark-main); }
+.insightsSwatch[data-series="bar"] { height: 0.625rem; background: palette(primary-main, 0.45); }
+.insightsSwatch[data-series="trend"] { background: palette(warning-dark); }
+.insightsSwatch[data-series="a"] { background: palette(primary-main); }
+.insightsSwatch[data-series="b"] { background: palette(success-main); }
+.insightsSwatch[data-series="c"] { background: palette(secondary-main); }
+.insightsSwatch[data-series="selected"] { background: palette(error-main); }
+.insightsBreakdown { display: grid; gap: density(2); margin: 0; padding: 0; list-style: none; }
+.insightsBreakdownRow { @ds-typo (compact); display: grid; grid-template-columns: minmax(7rem, 11rem) minmax(0, 1fr) auto; align-items: center; gap: density(3); color: palette(dark-main); }
+.insightsBreakdownTrack { height: 0.625rem; overflow: hidden; border-radius: radius(pill); background: palette(surface-light); }
+.insightsBreakdownFill { display: block; height: 100%; border-radius: radius(pill); background: palette(primary-main, 0.7); }
+.insightsBreakdownValue { @ds-typo (meta-strong); color: palette(tertiary-dark); white-space: nowrap; }
+.insightsPostsHeader { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: density(3); }
+.insightsGridPosts { display: grid; grid-template-columns: repeat(auto-fill, minmax(12.5rem, 1fr)); gap: density(3); }
+.insightsPost { @ds-surface (card); display: grid; grid-template-rows: auto 1fr; min-width: 0; overflow: hidden; }
+.insightsPostImage { position: relative; display: block; aspect-ratio: 4 / 5; overflow: hidden; background: palette(surface-light); }
+.insightsPostImage img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.insightsRank { @ds-typo (badge); position: absolute; top: density(2); left: density(2); padding: density(1) density(2); border-radius: radius(pill); background: palette(dark-main, 0.78); color: palette(light-light); }
+.insightsPostBody { display: grid; align-content: start; gap: density(2); padding: density(3); }
+.insightsPostValue { display: flex; align-items: baseline; gap: density(1); }
+.insightsPostValue strong { @ds-typo (title); color: palette(dark-main); }
+.insightsPostValue span { @ds-typo (meta); color: palette(tertiary-dark); }
+.insightsPostMeta { @ds-typo (meta); margin: 0; color: palette(tertiary-dark); }
+.insightsPostCaption { @ds-typo (compact); display: -webkit-box; margin: 0; overflow: hidden; color: palette(dark-main); -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.insightsSpark { display: block; width: 100%; height: 1.75rem; }
+.insightsSparkLine { fill: none; stroke: palette(primary-main); stroke-linejoin: round; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.insightsSparkMedian { fill: none; stroke: palette(dark-main, 0.3); stroke-dasharray: 3 3; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.insightsPlaceholder { @ds-typo (meta); display: grid; place-items: center; width: 100%; height: 100%; background: palette(surface-light); color: palette(tertiary-main); }
+.insightsDetail { display: grid; grid-template-columns: xs(minmax(0, 1fr)) md(minmax(10rem, 16rem) minmax(0, 1fr)); align-items: start; gap: density(4); }
+.insightsDetailImage { width: 100%; aspect-ratio: 4 / 5; border-radius: radius(2); background: palette(surface-light); object-fit: cover; }
+.insightsTable { @ds-typo (compact); width: 100%; border-collapse: collapse; color: palette(dark-main); }
+.insightsTable th, .insightsTable td { padding: density(1) density(2); border-bottom: border(hairline); text-align: right; white-space: nowrap; }
+.insightsTable th:first-child, .insightsTable td:first-child { text-align: left; }
+.insightsTable thead th { @ds-typo (meta-strong); color: palette(tertiary-dark); }
+.insightsEmpty { @ds-typo (compact); margin: 0; color: palette(tertiary-dark); }

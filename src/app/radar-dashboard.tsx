@@ -18,6 +18,7 @@ import { EditorialLinesPanel, type EditorialLinesData, type EditorialLineSelecti
 import { periodError } from "./editorial-period-controls";
 import { CreativeProfilePanel } from "./creative-profile-panel";
 import { InstagramGalleryPanel } from "./instagram-gallery-panel";
+import { InstagramInsightsPanel } from "./instagram-insights-panel";
 import { FacebookConnectionPanel } from "./facebook-connection-panel";
 import { MetaConnectionPanel } from "./meta-connection-panel";
 import { EditorialProfilePanel } from "./editorial-profile-panel";
@@ -1862,6 +1863,7 @@ export function RadarDashboard({
         </div>
 
         <div id="editorial-instagram" className={styles.anchorTarget} hidden={activeView !== "results" && !(activeView === "publications" && ["#editorial-instagram", "#publications/history"].includes(activeNavHash))}>
+          <InstagramInsightsPanel key={`insights-${selectedTopicId}`} topicId={selectedTopicId} secret={panelSecret} refreshToken={metaRefreshToken} />
           <InstagramGalleryPanel
             key={selectedTopicId}
             topicId={selectedTopicId}
