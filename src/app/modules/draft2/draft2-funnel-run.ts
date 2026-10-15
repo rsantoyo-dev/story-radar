@@ -132,7 +132,9 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
   if (!facts.length || !factsVerified) throw new Draft2InputError(`The ${def.noun} builds only on verified facts. Verify the facts first.`);
   const current = runOf<R>(session, def.step);
   // An extra round the editor asks for: the best version revised once more, at most FUNNEL_MAX_EXTRA_ROUNDS times per run.
-  if (resume && more && (current?.extraRounds ?? 0) >= FUNNEL_MAX_EXTRA_ROUNDS) throw new Draft2InputError(`This ${def.noun} already had its ${FUNNEL_MAX_EXTRA_ROUNDS} extra rounds. Write it again.`);
+  // An idea of the editor's waiting to be developed always earns its round, past the cap: the editor asked for it.
+  const editorIdea = Boolean(current?.rounds.at(-1)?.evaluation?.proposals?.some((proposal) => proposal.byEditor));
+  if (resume && more && !editorIdea && (current?.extraRounds ?? 0) >= FUNNEL_MAX_EXTRA_ROUNDS) throw new Draft2InputError(`This ${def.noun} already had its ${FUNNEL_MAX_EXTRA_ROUNDS} extra rounds. Write it again.`);
   // A new run starts with none of the earlier run's extra rounds; a continued one keeps its own, and one more when the editor asks.
   const extraRounds = resume ? (current?.extraRounds ?? 0) + (more ? 1 : 0) : 0;
   // A run left "running" passed the busy check only because its heartbeat stopped: its request or server died.

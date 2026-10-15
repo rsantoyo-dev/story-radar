@@ -42,6 +42,8 @@ import {
   type ScreenStep,
 } from "./draft-2-canvas-shell";
 import { StoryPhotosPanel } from "./story-photos-panel";
+import { HandEdits, OwnOpening, type HandEditChange, type HandEditField } from "./draft-2-hand-edits";
+import type { Draft2EditStep, Draft2OwnOpening } from "./modules/draft2/draft2-edits.types";
 import { publishablePhoto } from "./modules/stories/story-materials.types";
 import { RunPublishActions } from "./run-publish-actions";
 import { PublicationChannelsPanel } from "./publication-channels-panel";
@@ -738,6 +740,62 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
     }
   }
 
+  /** One call of the editor's hand on a finished step; the session it returns, or nothing when it failed (the error is shown on the step). */
+  async function patchEdit(step: Draft2EditStep, input: Record<string, unknown>): Promise<Draft2SessionView | undefined> {
+    if (!session) return undefined;
+    const response = await fetch(`/api/radar/draft2/edit?topicId=${encodeURIComponent(topicId)}`, {
+      method: "PATCH", cache: "no-store", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: session.id, ...input }),
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error ?? "Your change was not saved.");
+    setSession(body.session as Draft2SessionView);
+    return body.session as Draft2SessionView;
+  }
+
+  /** The editor's changes by hand to a step's chosen version, one text at a time. No provider call. */
+  async function saveHandEdits(step: Draft2EditStep, changes: HandEditChange[]): Promise<boolean> {
+    if (!session || choosing || running) return false;
+    setChoosing({ step, id: "edit" }); setChoiceError(undefined);
+    try {
+      for (const change of changes) await patchEdit(step, { action: "edit", step, ...change });
+      return true;
+    } catch (cause) {
+      setChoiceError({ step, message: cause instanceof Error ? cause.message : "Your change was not saved." });
+      return false;
+    } finally {
+      setChoosing(undefined);
+    }
+  }
+
+  async function undoHandEdit(step: Draft2EditStep, editId: string) {
+    if (!session || choosing || running) return;
+    setChoosing({ step, id: "edit" }); setChoiceError(undefined);
+    try {
+      await patchEdit(step, { action: "undo", step, editId });
+    } catch (cause) {
+      setChoiceError({ step, message: cause instanceof Error ? cause.message : "Your change was not undone." });
+    } finally {
+      setChoosing(undefined);
+    }
+  }
+
+  /** The editor's own opening: chosen as it is, or set beside the judge's proposals and developed in one more round. */
+  async function submitOwnOpening(mode: "use" | "develop", opening: Draft2OwnOpening): Promise<boolean> {
+    if (!session || choosing || running) return false;
+    setChoosing({ step: "opening", id: "own" }); setChoiceError(undefined);
+    let next: Draft2SessionView | undefined;
+    try {
+      next = await patchEdit("opening", { action: "own-opening", mode, ...opening });
+    } catch (cause) {
+      setChoiceError({ step: "opening", message: cause instanceof Error ? cause.message : "Your opening was not saved." });
+      return false;
+    } finally {
+      setChoosing(undefined);
+    }
+    if (mode === "develop" && next) await runStep("opening", { continuing: true, more: true, on: next });
+    return true;
+  }
+
   /** Casts the brand's characters on one slide of the chosen visual script; the next images run reads it. No provider call. */
   async function castScriptSlide(slide: string, characterIds: string[]) {
     if (!session || choosing || running) return;
@@ -1079,6 +1137,10 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
           locked={running !== undefined || session.opening.status === "running"}
           onChoose={(candidateId) => { void choose("opening", candidateId); }}
         /> : null}
+        {session?.opening && running !== "opening" && finishedRun(session.opening) ? <>
+          {chosenCandidate(session.opening) ? <HandEdits key={`opening-${chosenCandidate(session.opening)!.id}`} fields={openingFields(chosenCandidate(session.opening)!)} edits={session.opening.edits} locked={running !== undefined} busy={choosing?.step === "opening"} onSave={(changes) => saveHandEdits("opening", changes)} onUndo={(editId) => { void undoHandEdit("opening", editId); }} /> : null}
+          <OwnOpening writer={today.opening.writer} locked={running !== undefined} busy={choosing?.step === "opening"} onSubmit={submitOwnOpening} />
+        </> : null}
         {!session?.opening && available.opening && !running ? <EmptyState title="No opening yet">Write the opening: the cover and slide 2, the promise and its first payoff, judged as one.</EmptyState> : null}
       </>,
     },
@@ -1106,6 +1168,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
           locked={running !== undefined || closing.status === "running"}
           onChoose={(candidateId) => { void choose("closing", candidateId); }}
         /> : null}
+        {closing && running !== "closing" && finishedRun(closing) && chosenCandidate(closing) ? <HandEdits key={`closing-${chosenCandidate(closing)!.id}`} fields={closingFields(chosenCandidate(closing)!)} edits={closing.edits} locked={running !== undefined} busy={choosing?.step === "closing"} onSave={(changes) => saveHandEdits("closing", changes)} onUndo={(editId) => { void undoHandEdit("closing", editId); }} /> : null}
         {!closing && available.closing && !running ? <EmptyState title="No closing yet">Write the closing: the ending that pays the cover’s promise and gives the reader one thing to do.</EmptyState> : null}
       </>,
     },
@@ -1133,6 +1196,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
           locked={running !== undefined || deck.status === "running"}
           onChoose={(candidateId) => { void choose("deck", candidateId); }}
         /> : null}
+        {deck && running !== "deck" && finishedRun(deck) && chosenCandidate(deck) ? <HandEdits key={`deck-${chosenCandidate(deck)!.id}`} fields={deckFields(chosenCandidate(deck)!)} edits={deck.edits} locked={running !== undefined} busy={choosing?.step === "deck"} onSave={(changes) => saveHandEdits("deck", changes)} onUndo={(editId) => { void undoHandEdit("deck", editId); }} /> : null}
         {!deck && available.deck && !running ? <EmptyState title="No deck yet">Write the deck: the slides between slide 2 and the closing, one idea each.</EmptyState> : null}
       </>,
     },
@@ -1206,6 +1270,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
           locked={running !== undefined || visual.status === "running"}
           onChoose={(candidateId) => { void choose("visual", candidateId); }}
         /> : null}
+        {visual && running !== "visual" && finishedRun(visual) && chosenCandidate(visual) ? <HandEdits key={`visual-${chosenCandidate(visual)!.id}`} fields={visualFields(chosenCandidate(visual)!, visual.carousel ?? [])} edits={visual.edits} locked={running !== undefined} busy={choosing?.step === "visual"} onSave={(changes) => saveHandEdits("visual", changes)} onUndo={(editId) => { void undoHandEdit("visual", editId); }} /> : null}
         {visual && running !== "visual" && visual.status !== "running" && inventory?.roster.length ? <ScriptCast
           visual={visual}
           characters={inventory.roster}
@@ -1292,6 +1357,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
             locked={running !== undefined || caption.status === "running"}
             onChoose={(candidateId) => { void choose("caption", candidateId); }}
           /> : null}
+          {caption && running !== "caption" && finishedRun(caption) && chosenCandidate(caption) ? <HandEdits key={`caption-${chosenCandidate(caption)!.id}`} fields={captionFields(chosenCandidate(caption)!)} edits={caption.edits} locked={running !== undefined} busy={choosing?.step === "caption"} onSave={(changes) => saveHandEdits("caption", changes)} onUndo={(editId) => { void undoHandEdit("caption", editId); }} /> : null}
           {!caption && captionReady && !running ? <EmptyState title="No caption yet">Write the caption: the post’s text, in the publication’s voice, with the accounts you tag.</EmptyState> : null}
         </section>
       </>,
@@ -1461,12 +1527,47 @@ type FunnelDisplay<C extends FunnelCandidate> = {
   cards: (candidate: C, run: FunnelRun<C, FunnelScore, FunnelIssue> & Partial<Pick<Draft2Deck, "opening" | "closing">> & Partial<Pick<Draft2Visual, "carousel" | "characters">>) => ReactNode;
 };
 
+/** A finished run of a step: never edited while it is written. */
+const finishedRun = (run: { status: string }) => run.status !== "running" && run.status !== "paused";
+/** The version a step's later steps follow: the editor's choice, else the winner. */
+function chosenCandidate<C extends { id: string }>(run: { rounds: readonly { candidates: readonly C[] }[]; editorChoiceId?: string; winnerId?: string }): C | undefined {
+  const id = run.editorChoiceId ?? run.winnerId;
+  return id ? run.rounds.flatMap((round) => round.candidates).filter((candidate) => candidate.id === id).at(-1) : undefined;
+}
+const openingFields = (candidate: Draft2OpeningCandidate): HandEditField[] => [
+  { slide: "cover", field: "headline", label: "Cover · headline", value: candidate.cover.headline },
+  { slide: "cover", field: "subheadline", label: "Cover · subheadline", value: candidate.cover.subheadline },
+  { slide: "slide2", field: "headline", label: "Slide 2 · headline", value: candidate.slide2.headline },
+  { slide: "slide2", field: "body", label: "Slide 2 · text", value: candidate.slide2.body, multiline: true },
+];
+const closingFields = (candidate: Draft2ClosingCandidate): HandEditField[] => [
+  ...(candidate.penultimate ? [
+    { slide: "penultimate", field: "headline", label: "Penultimate · headline", value: candidate.penultimate.headline },
+    { slide: "penultimate", field: "body", label: "Penultimate · text", value: candidate.penultimate.body, multiline: true },
+  ] : []),
+  { slide: "last", field: "headline", label: "Last · headline", value: candidate.last.headline },
+  { slide: "last", field: "body", label: "Last · text", value: candidate.last.body, multiline: true },
+  { slide: "last", field: "cta", label: "Last · call to action", value: candidate.last.cta },
+];
+const deckFields = (candidate: Draft2DeckCandidate): HandEditField[] => candidate.slides.flatMap((slide, index) => [
+  { slide: `s${index + 1}`, field: "headline", label: `Deck slide ${index + 1} · headline`, value: slide.headline },
+  { slide: `s${index + 1}`, field: "body", label: `Deck slide ${index + 1} · text`, value: slide.body, multiline: true },
+  ...(slide.practical ? [{ slide: `s${index + 1}`, field: "practical", label: `Deck slide ${index + 1} · practical line`, value: slide.practical }] : []),
+]);
+const captionFields = (candidate: Draft2CaptionCandidate): HandEditField[] => [
+  { slide: "post", field: "text", label: "Caption", value: candidate.text, multiline: true },
+  { slide: "post", field: "hashtags", label: "Hashtags", value: candidate.hashtags.map((tag) => `#${tag}`).join(" ") },
+];
+const visualFields = (candidate: Draft2VisualCandidate, carousel: readonly { slide: string; label: string }[]): HandEditField[] => candidate.slides.map((slide) => ({
+  slide: slide.slide, field: "direction", label: `${carousel.find((entry) => entry.slide === slide.slide)?.label ?? slide.slide} · image direction`, value: slide.direction, multiline: true,
+}));
+
 const OPENING_DISPLAY: FunnelDisplay<Draft2OpeningCandidate> = {
   noun: "opening",
   plural: "openings",
   gate: OPENING_GATE,
   labels: CRITERION_LABEL,
-  lines: (candidate) => ({ title: candidate.cover.headline, details: [candidate.cover.subheadline, `Slide 2 · ${candidate.slide2.headline}`, ...(candidate.lever ? [`Lever · ${leverName(candidate.lever)}`] : [])] }),
+  lines: (candidate) => ({ title: candidate.cover.headline, details: [candidate.cover.subheadline, `Slide 2 · ${candidate.slide2.headline}`, ...(candidate.lever ? [`Lever · ${leverName(candidate.lever)}`] : []), ...(candidate.byEditor ? ["Yours"] : [])] }),
   proposal: (candidate) => `${candidate.cover.headline} · slide 2: ${candidate.slide2.headline}`,
   cards: (candidate) => <div className={styles.openingCards}>
     <SlideCard label="Cover" headline={candidate.cover.headline} text={candidate.cover.subheadline} factIds={candidate.cover.factIds} />

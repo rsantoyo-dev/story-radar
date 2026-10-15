@@ -27,7 +27,17 @@ export type FunnelCandidate = {
   proposalOf?: string;
   /** The proposal exactly as the judge wrote it, competing beside the writer's edit. */
   asProposed?: boolean;
+  /** Written by the editor: their own version, or their idea set beside the judge's proposals for the writer to develop. */
+  byEditor?: true;
 };
+
+/**
+ * One text of a run's chosen version the editor changed by hand, kept so it
+ * can be undone: where (the slide and the field, as the carousel names
+ * them), what it said and says now, and what the program found on it then
+ * (shown to the editor, never blocking: the editor has the last word).
+ */
+export type FunnelEditorEdit = { id: string; candidateId: string; slide: string; field: string; before: string; after: string; at: string; findings: string[]; undoneAt?: string };
 
 export type FunnelIssue = {
   code: string;
@@ -147,6 +157,8 @@ export type FunnelRun<C extends FunnelCandidate = FunnelCandidate, S extends Fun
   /** Set by the editor; wins over winnerId downstream. */
   editorChoiceId?: string;
   editorChoiceAt?: string;
+  /** The editor's changes by hand to the chosen version, oldest first. */
+  edits?: FunnelEditorEdit[];
   error?: string;
   /** The round a paused run continues from. */
   resumeRound?: number;
@@ -221,6 +233,15 @@ export function funnelVersions<C extends FunnelCandidate, S extends FunnelScore,
     }
   }
   return [...byId.values()];
+}
+
+/** A run with one version's text replaced wherever the run keeps that version: its rounds and its last candidates. */
+export function funnelWithCandidate<C extends FunnelCandidate, R extends { rounds: readonly FunnelRound<C, never, never>[] | readonly FunnelRound<C>[]; candidates: readonly C[] }>(run: R, candidate: C): R {
+  return {
+    ...run,
+    rounds: run.rounds.map((round) => ({ ...round, candidates: round.candidates.map((entry) => entry.id === candidate.id ? candidate : entry) })),
+    candidates: run.candidates.map((entry) => entry.id === candidate.id ? candidate : entry),
+  };
 }
 
 /** Whether the judge named a material factual error on a version: it states something the facts do not. */

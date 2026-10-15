@@ -9,7 +9,7 @@ import { draft2DevTrace } from "./draft2-dev-trace";
 import { traceCost } from "./draft2-trace-cost";
 import type { Draft2Reader } from "./draft2-address.types";
 import { Draft2BusyError, Draft2InputError, type Draft2Fact, type Draft2TraceEntry } from "./draft2-facts.types";
-import { factsSnapshot, failedCall, funnelVersions, type FunnelCandidate, type FunnelRole, type FunnelRun } from "./draft2-funnel";
+import { factsSnapshot, failedCall, funnelVersions, funnelWithCandidate, type FunnelCandidate, type FunnelRole, type FunnelRun } from "./draft2-funnel";
 import { focusForModels, focusItemCount, type Draft2FocusSnapshot } from "./draft2-focus.types";
 import { mechanicalOpeningIssues, type Draft2Opening, type Draft2OpeningCandidate } from "./draft2-opening.types";
 import { mechanicalClosingIssues, type Draft2Closing, type Draft2ClosingCandidate } from "./draft2-closing.types";
@@ -206,14 +206,7 @@ export async function reviewDraft2Carousel({ topicId, storyId, sessionId }: Draf
 export type Draft2ReviewAction = "apply" | "decline" | "undo" | "apply-all";
 
 /** A step's run with one version's text replaced wherever the run keeps that version (its rounds and its last candidates). */
-function withCandidate<C extends FunnelCandidate, R extends FunnelRun<C, never, never> | FunnelRun<C>>(run: R, candidate: C): R {
-  const current = run as FunnelRun<C>;
-  return {
-    ...run,
-    rounds: current.rounds.map((round) => ({ ...round, candidates: round.candidates.map((entry) => entry.id === candidate.id ? candidate : entry) })),
-    candidates: current.candidates.map((entry) => entry.id === candidate.id ? candidate : entry),
-  } as R;
-}
+const withCandidate = <C extends FunnelCandidate, R extends FunnelRun<C, never, never> | FunnelRun<C>>(run: R, candidate: C): R => funnelWithCandidate(run as FunnelRun<C>, candidate) as R;
 
 /**
  * One text of the chosen carousel replaced (or restored), in the owning step
