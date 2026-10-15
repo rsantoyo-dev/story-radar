@@ -353,6 +353,15 @@ export function patchedDeck(candidate: Draft2DeckCandidate, slide: string, field
   return { ...candidate, slides: candidate.slides.map((entry, position) => position === index ? { ...entry, [field]: after } : entry) };
 }
 
+/** A carousel copy (the review's, the visual script's) with one slide's text replaced: its headline, practical line, call to action, or text. */
+export function carouselWithText(carousel: readonly Draft2CarouselSlide[], slide: string, field: string, text: string): Draft2CarouselSlide[] {
+  return carousel.map((entry) => entry.slide !== slide ? entry
+    : field === "headline" ? { ...entry, headline: text }
+      : field === "practical" ? { ...entry, practical: text }
+        : field === "cta" ? { ...entry, cta: text }
+          : { ...entry, text });
+}
+
 /** Whether a review read the versions chosen now and the focus they follow. */
 export function reviewCurrent(review: Pick<Draft2Review, "openingId" | "closingId" | "deckId"> | null | undefined, ids: { openingId?: string; closingId?: string; deckId?: string }): boolean {
   return Boolean(review && review.openingId === ids.openingId && review.closingId === ids.closingId && review.deckId === ids.deckId);

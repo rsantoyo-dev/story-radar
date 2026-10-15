@@ -145,6 +145,18 @@ test("a patch applied edits the chosen version in place, in its step and in the 
   await assert.rejects(h.decide("undo", "p1"), /not applied/);
 });
 
+test("a patch applied after the visual script reaches the script's copy of the words, which the images letter; its undo too; a script of other versions keeps its own", async () => {
+  const visual = (ids: Record<string, string>) => ({ status: "ready", ...ids, carousel: [{ slide: "slide2", label: "Slide 2", headline: "Free for kids", text: "Under twelve, admission is free.", factIds: ["f2"] }] });
+  const copy = (row: Row) => (row.visual as { carousel: { text: string }[] }).carousel[0].text;
+  const h = harness({ session: { visual: visual({ openingId: "c1", closingId: "k1", deckId: "d1" }) } });
+  await h.review();
+  assert.equal(copy(await h.decide("apply", "p1")), "Kids under twelve get in free.");
+  assert.equal(copy(await h.decide("undo", "p1")), "Under twelve, admission is free.");
+  const other = harness({ session: { visual: visual({ openingId: "c0", closingId: "k1", deckId: "d1" }) } });
+  await other.review();
+  assert.equal(copy(await other.decide("apply", "p1")), "Under twelve, admission is free.");
+});
+
 test("the autopilot applies only what must change (truth, repetition, detail); a style patch waits, and the editor's apply-all takes it; a carousel that changed since the reading refuses a patch", async () => {
   const h = harness({ editor: { ...EDITOR, patches: [{ ...EDITOR.patches[0], kind: "style" }, { slide: "last", field: "cta", kind: "repetition", before: "Save this for Saturday.", after: "Save this for the weekend.", reason: "Saturday is said twice." }] } });
   await h.review();

@@ -39,7 +39,7 @@ test("instructions are the role, then each skill, then the brand brief, and reco
   assert.deepEqual(writer.skillVersions, { hooks: "7" });
   assert.equal(composeInstructions("opening-judge", [skill]).instructions, `${OPENING_ROLES["opening-judge"]}\n\n## Shared craft\n\n## Judge only`, "a role reads its own part after the shared text");
   assert.deepEqual(Object.keys(DRAFT2_ROLES).sort(), ["caption-judge", "caption-writer", "carousel-editor", "carousel-reader", "closing-judge", "closing-writer", "deck-judge", "deck-writer", "extractor", "focus-concept-judge", "focus-editor", "focus-narrative-judge", "focus-planner", "image-judge", "mention-finder", "opening-judge", "opening-writer", "people-finder", "reviewer", "visual-judge", "visual-writer"]);
-  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@2", "focus@15", "narratives@4", "discovery@1", "arcs@1", "spine@1", "levers@1", "fairness@2", "reader@2", "hooks@9", "closings@3", "decks@2", "review@5", "visuals@9", "images@4", "captions@3"]);
+  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@2", "focus@15", "narratives@4", "discovery@1", "arcs@1", "spine@1", "levers@1", "fairness@2", "reader@2", "hooks@9", "closings@3", "decks@2", "review@5", "visuals@9", "images@5", "captions@3"]);
 });
 
 test("the Facts prompts keep their words (the reviewer's say the article is context and name earlierReview since v2): the extractor reads its rules, the reviewer its checklist", () => {
@@ -194,7 +194,7 @@ test("the image review rubric asks for the words as drawn, what covers them, the
   assert.match(IMAGES_SKILL.text, /is real: never flag it as invented,\s+unverified or a mock-up/);
   assert.match(IMAGES_SKILL.text, /never blocks the image/);
   assert.match(IMAGE_ROLES["image-judge"], /from what is visible in the image only/);
-  assert.deepEqual(composeInstructions("image-judge", [IMAGES_SKILL], brandBrief(profile)).skillVersions, { images: "4" });
+  assert.deepEqual(composeInstructions("image-judge", [IMAGES_SKILL], brandBrief(profile)).skillVersions, { images: "5" });
 });
 
 test("the captions rubric keeps the caption's numbers, and tags every account the editor confirmed, no other", () => {

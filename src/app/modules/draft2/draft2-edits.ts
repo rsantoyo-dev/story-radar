@@ -9,9 +9,9 @@ import { focusItemCount } from "./draft2-focus.types";
 import { funnelVersions, funnelWithCandidate, type FunnelCandidate, type FunnelEditorEdit, type FunnelRun } from "./draft2-funnel";
 import { shownAttempt } from "./draft2-images.types";
 import { mechanicalOpeningIssues, type Draft2Opening, type Draft2OpeningCandidate } from "./draft2-opening.types";
-import { deckIndex, patchedClosing, patchedDeck, patchedOpening, reviewCurrent, type Draft2ReviewPatchField } from "./draft2-review.types";
+import { carouselWithText, deckIndex, patchedClosing, patchedDeck, patchedOpening, reviewCurrent, type Draft2ReviewPatchField } from "./draft2-review.types";
 import { activeDraft2Session, getDraft2Session, updateDraft2Session, type Draft2SessionPatch } from "./draft2-session.repository";
-import type { Draft2CarouselSlide, Draft2VisualCandidate } from "./draft2-visual.types";
+import type { Draft2VisualCandidate } from "./draft2-visual.types";
 import type { CreativeProfile } from "../stories/creative-content.types";
 import type { Draft2SessionRow } from "@/db/schema";
 
@@ -78,15 +78,6 @@ function withText(step: Draft2EditStep, candidate: FunnelCandidate, slide: strin
   return edited;
 }
 
-/** A carousel copy with one slide's text replaced (headline, its text, practical line or call to action). */
-function carouselWith(carousel: readonly Draft2CarouselSlide[], slide: string, field: Draft2EditField, text: string): Draft2CarouselSlide[] {
-  return carousel.map((entry) => entry.slide !== slide ? entry
-    : field === "headline" ? { ...entry, headline: text }
-      : field === "practical" ? { ...entry, practical: text }
-        : field === "cta" ? { ...entry, cta: text }
-          : { ...entry, text });
-}
-
 const chosenId = (run: { editorChoiceId?: string; winnerId?: string } | null | undefined) => run?.editorChoiceId ?? run?.winnerId;
 
 /**
@@ -108,10 +99,10 @@ function changed(session: Draft2SessionRow, step: Draft2EditStep, run: AnyRun, c
   }
   if (step === "opening" || step === "closing" || step === "deck") {
     const ids = { openingId: chosenId(session.opening), closingId: chosenId(session.closing), deckId: chosenId(session.deck) };
-    if (session.review && reviewCurrent(session.review, ids)) changes.review = { ...session.review, carousel: carouselWith(session.review.carousel, slide, field, text) };
+    if (session.review && reviewCurrent(session.review, ids)) changes.review = { ...session.review, carousel: carouselWithText(session.review.carousel, slide, field, text) };
     const visual = session.visual;
     if (visual?.carousel && visual.openingId === ids.openingId && visual.closingId === ids.closingId && visual.deckId === ids.deckId) {
-      changes.visual = { ...visual, carousel: carouselWith(visual.carousel, slide, field, text) };
+      changes.visual = { ...visual, carousel: carouselWithText(visual.carousel, slide, field, text) };
     }
   }
   return changes as Draft2SessionPatch;

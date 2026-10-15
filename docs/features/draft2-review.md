@@ -137,3 +137,12 @@ do it.
 A judgement, irony or insinuation about a named party is a truth patch, and
 no patch takes the focus's guards off the cover or slide 2. See
 draft2-news-integrity.md.
+
+## A patch applied after the images reaches them (2026-10-15)
+
+A review run again after the visual script, on the Fogón Lab onion carousel,
+had its headline patch applied to the closing and to the review's copy, but
+not to the visual script's copy of the words, which the images letter: the
+new last slide still read the old headline. An applied patch (and its undo)
+now updates the visual script's copy too when the script reads the same
+versions, as a hand edit always did (`carouselWithText`, shared by both).

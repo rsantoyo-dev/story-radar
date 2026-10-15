@@ -416,3 +416,13 @@ A story photo a real-photo slide rests on is pasted unchanged; a photo the
 editor keeps as reference only is never shown, and an attempt fails, saying
 why, on one declared reference only since the run began. See
 draft2-news-integrity.md.
+
+## 19. The transcription is a proofreader's (2026-10-15)
+
+On the Fogón Lab onion carousel the image model lettered "manejıar" (a
+dotless ı) for "manejar", and Sol transcribed "manejar": the slide passed,
+and an image edit asked to fix the word copied it again from its base. Images
+skill v5 asks for the transcription letter by letter, an extra, missing or
+swapped letter, a dotless ı or a wrong accent kept as drawn, never corrected.
+A word the image model keeps misspelling is better replaced in the copy and
+the slide made again from scratch: an edit keeps the base's lettering.

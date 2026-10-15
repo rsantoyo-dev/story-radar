@@ -16,9 +16,8 @@ import { mechanicalClosingIssues, type Draft2Closing, type Draft2ClosingCandidat
 import { mechanicalDeckIssues, type Draft2Deck, type Draft2DeckCandidate } from "./draft2-deck.types";
 import { carouselSlides, type Draft2CarouselSlide } from "./draft2-visual.types";
 import {
-  DRAFT2_READER_SCHEMA, DRAFT2_REVIEW_SCHEMA, REVIEW_NECESSARY_KINDS, parseReaderAnswer, parseReviewAnswer, patchedClosing, patchedDeck, patchedOpening, reviewCurrent, reviewPatchRules, reviewPatches, sameWords, slideText,
-  type Draft2Review, type Draft2ReviewPatch,
-} from "./draft2-review.types";
+  DRAFT2_READER_SCHEMA, DRAFT2_REVIEW_SCHEMA, REVIEW_NECESSARY_KINDS, carouselWithText, parseReaderAnswer, parseReviewAnswer, patchedClosing, patchedDeck, patchedOpening, reviewCurrent, reviewPatchRules, reviewPatches, sameWords, slideText,
+  type Draft2Review, type Draft2ReviewPatch } from "./draft2-review.types";
 import { brandBrief, composeInstructions, creativeSkills } from "./skills/draft2-skills";
 import { FAIRNESS_SKILL } from "./skills/fairness";
 import { READER_SKILL } from "./skills/reader";
@@ -241,7 +240,12 @@ function patched(session: Draft2SessionRow, chosen: Chosen, patch: Draft2ReviewP
     changes.deck = withCandidate(chosen.deck, patchedDeck(chosen.deckCandidate, patch.slide, patch.field, after));
   }
   const review = session.review!;
-  changes.review = { ...review, carousel: review.carousel.map((slide) => slide.slide !== patch.slide ? slide : patch.field === "headline" ? { ...slide, headline: after } : patch.field === "cta" ? { ...slide, cta: after } : patch.field === "practical" ? { ...slide, practical: after } : { ...slide, text: after }) };
+  changes.review = { ...review, carousel: carouselWithText(review.carousel, patch.slide, patch.field, after) };
+  // A visual script that reads these versions keeps its own copy of the words, which its images letter: it takes the patch too, as a hand edit's.
+  const visual = session.visual;
+  if (visual?.carousel && visual.openingId === chosen.openingId && visual.closingId === chosen.closingId && visual.deckId === chosen.deckId) {
+    changes.visual = { ...visual, carousel: carouselWithText(visual.carousel, patch.slide, patch.field, after) };
+  }
   return changes;
 }
 

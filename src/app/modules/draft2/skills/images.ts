@@ -13,11 +13,13 @@ import type { Draft2Skill } from "./draft2-skills";
  * photograph of a named event or place to be named as invented. Version 4:
  * the words on a pasted verified map or photo (its streets, the place's name
  * printed under it) are not the slide's text, and the pasted material is
- * never flagged as invented.
+ * never flagged as invented. Version 5, 2026-10-15: a Fogón Lab slide
+ * lettered "manejıar" passed twice because the transcription read it as
+ * "manejar": the transcription is a proofreader's, letter by letter.
  */
 export const IMAGES_SKILL: Draft2Skill = {
   name: "images",
-  version: "4",
+  version: "5",
   text: `# Reviewing a carousel slide image
 
 You see one finished slide: the image the model made, with the publication's
@@ -25,8 +27,11 @@ logo and the small page number added afterwards where the brand puts them,
 and, on some slides, a verified photo or map pasted unchanged.
 
 - transcription: every word of the slide's own text as it appears in the
-  image, line by line, in reading order, exactly as drawn (a misspelling, a
-  missing accent or a doubled word stays as it is). Leave out the page
+  image, line by line, in reading order, exactly as drawn. Read it as a
+  proofreader, letter by letter: a misspelled word, an extra, missing or
+  swapped letter, a dotless ı ("manejıar" for "manejar"), a missing or wrong
+  accent or a doubled word stays as it is; never correct a word to what it
+  should say. Leave out the page
   number, the publication's own logo, and every word printed on a pasted
   verified map or photo (verifiedMap, verifiedPhoto: the map's streets and
   credits, the place's name under the map): they are not the slide's text.
