@@ -12,6 +12,9 @@ import {
   CREATIVE_BRAND_UI_ROLES,
   CREATIVE_CAROUSEL_CHROME_STYLES,
   CREATIVE_CAROUSEL_CHROME_STYLE_LABELS,
+  CREATIVE_LOGO_FORMS,
+  CREATIVE_LOGO_TONES,
+  CREATIVE_LOGO_VERSIONS_MAX,
   type BrandContributionAspect,
   type CreativeBrandContribution,
   type CreativeBrandPaletteColor,
@@ -20,12 +23,16 @@ import {
   type CreativeCharacter,
   type CreativeCarouselChromeStyle,
   type CreativeCharacterReferenceImage,
+  type CreativeBrandLogoVersion,
+  type CreativeLogoForm,
+  type CreativeLogoTone,
   type CreativeProfile,
 } from "./modules/stories/creative-content.types";
 import { buildCreativeCarouselChromePreviewSvg } from "./modules/stories/creative-carousel-chrome-svg";
 import { contrastRatio } from "@/design/color/oklch";
 import { deriveBrandUiPalette } from "@/design/topic-themes";
 import styles from "./creative-draft-workspace.generated.module.css";
+import { Button } from "./ui/primitives";
 
 // Shared editing primitives for the topic creative profile. These live outside
 // the draft workspace so the topic-level Creative profile panel can reuse them
@@ -619,24 +626,40 @@ function CarouselChromePaletteSelect({
   );
 }
 
+const LOGO_FORM_LABELS: Record<CreativeLogoForm, string> = { full: "Full logo", symbol: "Symbol only" };
+const LOGO_TONE_LABELS: Record<CreativeLogoTone, string> = {
+  positive: "Light backgrounds (positive)",
+  negative: "Dark backgrounds (negative)",
+  alpha: "Any background (alpha)",
+};
+
 export function BrandOverlayEditor({
   overlay,
   topicId,
   secret,
   disabled,
   uploading,
+  uploadingVersion,
   onChange,
   onUpload,
+  onUploadVersion,
 }: {
   overlay: CreativeProfile["brandOverlay"];
   topicId: string;
   secret: string;
   disabled: boolean;
   uploading: boolean;
+  uploadingVersion: boolean;
   onChange: (values: Partial<CreativeProfile["brandOverlay"]>) => void;
   onUpload: (file: File) => void;
+  onUploadVersion: (file: File) => void;
 }) {
   const hasAsset = Boolean(overlay.assetId);
+  const versions = overlay.versions ?? [];
+  const hasSymbol = versions.some((version) => version.form === "symbol");
+  const versionsFull = versions.length >= CREATIVE_LOGO_VERSIONS_MAX;
+  const updateVersion = (index: number, values: Partial<CreativeBrandLogoVersion>) =>
+    onChange({ versions: versions.map((version, at) => (at === index ? { ...version, ...values } : version)) });
 
   return (
     <section className={styles.brandOverlayPanel} aria-labelledby="brand-logo-title">
@@ -686,6 +709,20 @@ export function BrandOverlayEditor({
                 {overlay.asset.width}×{overlay.asset.height} · PNG
               </span>
             </div>
+          ) : null}
+          {overlay.asset ? (
+            <label className={styles.carouselChromeSelect}>
+              <span>Made for</span>
+              <select
+                value={overlay.mainTone ?? "alpha"}
+                disabled={disabled}
+                onChange={(event) => onChange({ mainTone: event.target.value as CreativeLogoTone })}
+              >
+                {CREATIVE_LOGO_TONES.map((tone) => (
+                  <option key={tone} value={tone}>{LOGO_TONE_LABELS[tone]}</option>
+                ))}
+              </select>
+            </label>
           ) : (
             <p className={styles.brandAssetHint}>
               A transparent background gives the cleanest result.
@@ -738,6 +775,26 @@ export function BrandOverlayEditor({
               ))}
             </div>
           </div>
+
+          {overlay.scope === "all-units" ? (
+            <div className={styles.brandControlGroup}>
+              <label className={styles.carouselChromeSelect}>
+                <span>Inner slides show</span>
+                <select
+                  value={overlay.innerForm ?? "full"}
+                  onChange={(event) => onChange({ innerForm: event.target.value as CreativeLogoForm })}
+                >
+                  <option value="full">The full logo</option>
+                  <option value="symbol">The symbol alone</option>
+                </select>
+              </label>
+              {overlay.innerForm === "symbol" && !hasSymbol ? (
+                <small className={styles.brandEnableHint}>
+                  Add a version shaped “Symbol only” below; until then the inner slides show the full logo.
+                </small>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className={styles.brandControlGroup}>
             <span className={styles.brandControlLabel}>
@@ -860,6 +917,100 @@ export function BrandOverlayEditor({
             </p>
           )}
         </fieldset>
+      </div>
+
+      <div className={styles.logoVersions}>
+        <div>
+          <span className={styles.brandControlLabel}>Logo versions</span>
+          <p className={styles.brandAssetHint}>
+            Other versions of the same logo: positive for light backgrounds,
+            negative for dark ones, the symbol alone for the inner slides. On
+            each slide the program measures the image where the logo goes: a
+            light background takes a version made for light backgrounds, a dark
+            one a version made for dark ones, a mixed one a version made for
+            any; a version that would vanish there gives way to one that reads.
+            The cover always shows a full logo, and the main logo above is one
+            of the choices.
+          </p>
+        </div>
+        {versions.length ? (
+          <ul className={styles.logoVersionList}>
+            {versions.map((version, index) => {
+              const asset = overlay.versionAssets?.find((entry) => entry.id === version.assetId);
+              return (
+                <li key={version.assetId} className={styles.logoVersionCard}>
+                  <div className={`${styles.brandAssetPreview} ${styles.logoVersionPreview}`} data-tone={version.tone}>
+                    <BrandAssetPreview
+                      topicId={topicId}
+                      secret={secret}
+                      assetId={version.assetId}
+                      fileName={asset?.fileName ?? "Logo version"}
+                      width={asset?.width ?? 320}
+                      height={asset?.height ?? 160}
+                    />
+                  </div>
+                  <div className={styles.brandAssetMeta} title={asset?.fileName}>
+                    <strong>{asset?.fileName ?? "Logo version"}</strong>
+                    <span>{asset ? `${asset.width}×${asset.height} · PNG` : "PNG"}</span>
+                  </div>
+                  <label className={styles.carouselChromeSelect}>
+                    <span>Shape</span>
+                    <select
+                      value={version.form}
+                      disabled={disabled}
+                      onChange={(event) => updateVersion(index, { form: event.target.value as CreativeLogoForm })}
+                    >
+                      {CREATIVE_LOGO_FORMS.map((form) => (
+                        <option key={form} value={form}>{LOGO_FORM_LABELS[form]}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className={styles.carouselChromeSelect}>
+                    <span>Made for</span>
+                    <select
+                      value={version.tone}
+                      disabled={disabled}
+                      onChange={(event) => updateVersion(index, { tone: event.target.value as CreativeLogoTone })}
+                    >
+                      {CREATIVE_LOGO_TONES.map((tone) => (
+                        <option key={tone} value={tone}>{LOGO_TONE_LABELS[tone]}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <Button
+                    variant="quiet"
+                    size="compact"
+                    disabled={disabled}
+                    onClick={() => onChange({ versions: versions.filter((_, at) => at !== index) })}
+                  >
+                    Remove
+                  </Button>
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
+        <label
+          className={`${styles.brandUpload} ${
+            disabled || versionsFull ? styles.brandUploadDisabled : ""
+          }`}
+        >
+          <input
+            type="file"
+            accept="image/png,.png"
+            disabled={disabled || versionsFull}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.currentTarget.value = "";
+              if (file) onUploadVersion(file);
+            }}
+          />
+          {uploadingVersion
+            ? "Uploading version…"
+            : versionsFull
+              ? `${CREATIVE_LOGO_VERSIONS_MAX} versions at most`
+              : "Add a version (PNG)"}
+        </label>
       </div>
     </section>
   );

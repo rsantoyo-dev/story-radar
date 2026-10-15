@@ -2,6 +2,12 @@ import {
   CREATIVE_BRAND_BACKDROP_MODES,
   CREATIVE_BRAND_PLACEMENTS,
   CREATIVE_BRAND_SCOPES,
+  CREATIVE_LOGO_FORMS,
+  CREATIVE_LOGO_TONES,
+  CREATIVE_LOGO_VERSIONS_MAX,
+  type CreativeBrandLogoVersion,
+  type CreativeLogoForm,
+  type CreativeLogoTone,
   DEFAULT_CREATIVE_BRAND_OVERLAY_SETTINGS,
   type CreativeBrandBackdropMode,
   type CreativeBrandOverlay,
@@ -93,7 +99,31 @@ export function parseCreativeBrandOverlaySettings(
       0,
       100,
     ),
+    ...logoVersionsValue(value.versions),
+    ...(value.innerForm === undefined || value.innerForm === null ? {} : { innerForm: enumValue(value.innerForm, CREATIVE_LOGO_FORMS, "brandOverlay.innerForm") as CreativeLogoForm }),
+    ...(value.mainTone === undefined || value.mainTone === null ? {} : { mainTone: enumValue(value.mainTone, CREATIVE_LOGO_TONES, "brandOverlay.mainTone") as CreativeLogoTone }),
   };
+}
+
+/** The logo's other versions: each an uploaded PNG once, its form and the backgrounds it suits; none when absent. */
+function logoVersionsValue(value: unknown): { versions?: CreativeBrandLogoVersion[] } {
+  if (value === undefined || value === null) return {};
+  if (!Array.isArray(value) || value.length > CREATIVE_LOGO_VERSIONS_MAX) {
+    throw new CreativeBrandOverlayValidationError(`brandOverlay.versions must be a list of at most ${CREATIVE_LOGO_VERSIONS_MAX} logo versions`);
+  }
+  const versions: CreativeBrandLogoVersion[] = [];
+  for (const entry of value) {
+    if (!isRecord(entry)) throw new CreativeBrandOverlayValidationError("Each logo version must be an object");
+    const assetId = optionalUuid(entry.assetId, "brandOverlay.versions.assetId");
+    if (!assetId) throw new CreativeBrandOverlayValidationError("Each logo version needs its uploaded PNG");
+    if (versions.some((version) => version.assetId === assetId)) continue;
+    versions.push({
+      assetId,
+      form: enumValue(entry.form, CREATIVE_LOGO_FORMS, "brandOverlay.versions.form") as CreativeLogoForm,
+      tone: enumValue(entry.tone, CREATIVE_LOGO_TONES, "brandOverlay.versions.tone") as CreativeLogoTone,
+    });
+  }
+  return versions.length ? { versions } : {};
 }
 
 function enumValue(

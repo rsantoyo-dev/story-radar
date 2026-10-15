@@ -12,8 +12,9 @@ import {
 } from "../stories/creative-content.types";
 import { buildCreativeCarouselChrome, compositeCreativeCarouselChrome } from "../stories/creative-carousel-chrome";
 import { computeCreativeBrandPromptExclusionRect, creativeCanvasDimensions, shouldApplyCreativeBrandOverlay } from "../stories/creative-brand-overlay";
+import { creativeLogoVersionsForSlide, creativeLogoZoneSize } from "../stories/creative-brand-logo-versions";
 import { creativeBrandOverlaySnapshot, findCreativeBrandAsset } from "../stories/creative-brand-assets.repository";
-import { compositeStoredCreativeBrand, isTransientFalSubmitError } from "../stories/manage-creative-assets";
+import { compositeStoredCreativeBrandVersion, isTransientFalSubmitError } from "../stories/manage-creative-assets";
 import { compositeDocumentaryPortrait, fitPortrait, portraitAccent, portraitLayoutForSlide, portraitPhotoRegion, portraitZonePrompt, type PortraitFit, type PortraitSubject } from "../stories/creative-portrait-composite";
 import { compositeMapPanel, mapInsetVisualDirection, mapPaletteFromBrand, mapPanelRegion, mapPanelZonePrompt, streetAddress } from "../stories/creative-map-panel";
 import { requestsGeographicReconstruction, requestsPlacePhotograph } from "../stories/creative-evidence-guardrails";
@@ -103,6 +104,8 @@ type Context = {
   profile: CreativeProfile;
   overlay?: CreativeBrandOverlay;
   brandSnapshot?: CreativeBrandOverlaySnapshot;
+  /** Each version of the logo as stored, read once per request by its sha256. */
+  logos: Map<string, Promise<Uint8Array>>;
   characters: Map<string, CreativeCharacterSnapshot>;
   brandSelections: Map<number, BrandReferenceSelection>;
   units: CreativeUnit[];
@@ -142,18 +145,40 @@ const storyConcept = (script: Draft2VisualCandidate) =>
   [script.concept, script.cast ? `When a slide shows them, the recurring cast looks the same on every slide: ${script.cast}` : ""]
     .map((part) => part.trim().replace(/[.\s]+$/u, "")).filter(Boolean).join(". ") + ".";
 
-/** The Topic's logo as v1 composites it (resolveCreativeBrandGeneration): off, or its settings with the stored PNG they point to. */
+/**
+ * The Topic's logo as v1 composites it (resolveCreativeBrandGeneration): off,
+ * or its settings with the stored PNG they point to, and the stored PNG of
+ * each of its versions, from which every slide receives the one that reads
+ * best there.
+ */
 async function brandOverlay(topicId: string, profile: CreativeProfile): Promise<{ overlay?: CreativeBrandOverlay; snapshot?: CreativeBrandOverlaySnapshot }> {
   const overlay = profile.brandOverlay;
   if (!overlay?.enabled) return {};
   if (!overlay.assetId || !overlay.asset) throw new Draft2InputError("The brand's logo is on but has no PNG. Upload and save the logo in the creative profile, or turn it off.");
   const stored = await findCreativeBrandAsset(topicId, overlay.assetId);
   if (!stored || stored.id !== overlay.asset.id) throw new Draft2InputError("The brand's logo is no longer available for this topic. Choose and save a current logo in the creative profile.");
+  const versions = await Promise.all((overlay.versions ?? []).map(async (version) => {
+    const asset = await findCreativeBrandAsset(topicId, version.assetId);
+    if (!asset) throw new Draft2InputError("A version of the brand's logo is no longer available for this topic. Remove it from the creative profile, or upload it again.");
+    return { form: version.form, tone: version.tone, asset };
+  }));
   const settings = {
     enabled: overlay.enabled, scope: overlay.scope, placement: overlay.placement, sizePercent: overlay.sizePercent, insetPercent: overlay.insetPercent,
     backdropMode: overlay.backdropMode, backdropColor: overlay.backdropColor, backdropOpacity: overlay.backdropOpacity,
+    ...(overlay.innerForm ? { innerForm: overlay.innerForm } : {}), ...(overlay.mainTone ? { mainTone: overlay.mainTone } : {}),
   };
-  return { overlay: { ...settings, assetId: stored.id, asset: overlay.asset }, snapshot: creativeBrandOverlaySnapshot(settings, stored) };
+  return { overlay: { ...settings, assetId: stored.id, asset: overlay.asset }, snapshot: creativeBrandOverlaySnapshot(settings, stored, versions) };
+}
+
+/**
+ * The logo's slot on a slide, for the prompt and the page number: the
+ * settings with the proportions that hold every version the slide may
+ * receive (the symbol's square on an inner slide, the full logo's band on
+ * the cover).
+ */
+function overlayFor(ctx: Pick<Context, "overlay" | "brandSnapshot">, order: number): CreativeBrandOverlay | undefined {
+  if (!ctx.overlay?.asset || !ctx.brandSnapshot) return ctx.overlay;
+  return { ...ctx.overlay, asset: { ...ctx.overlay.asset, ...creativeLogoZoneSize(creativeLogoVersionsForSlide(ctx.brandSnapshot, order)) } };
 }
 
 function googleConfig(): GoogleMapsConfig | undefined {
@@ -167,9 +192,10 @@ function googleConfig(): GoogleMapsConfig | undefined {
 
 /** The page number as v1 paints it: the same geometry the prompt reserved, moved beside the logo where the logo is. */
 function chromeFor(ctx: Context, order: number) {
-  const asset = ctx.overlay?.asset;
-  const logoZone = ctx.overlay && asset && shouldApplyCreativeBrandOverlay(ctx.overlay, order)
-    ? computeCreativeBrandPromptExclusionRect({ settings: ctx.overlay, canvasWidth: OUTPUT.width, canvasHeight: OUTPUT.height, logoWidth: asset.width, logoHeight: asset.height })
+  const overlay = overlayFor(ctx, order);
+  const asset = overlay?.asset;
+  const logoZone = overlay && asset && shouldApplyCreativeBrandOverlay(overlay, order)
+    ? computeCreativeBrandPromptExclusionRect({ settings: overlay, canvasWidth: OUTPUT.width, canvasHeight: OUTPUT.height, logoWidth: asset.width, logoHeight: asset.height })
     : undefined;
   return buildCreativeCarouselChrome({ aspectRatio: "4:5", unitOrder: order, totalSlides: ctx.carousel.length, settings: ctx.profile.carouselChrome, logoExclusionZone: logoZone });
 }
@@ -288,7 +314,7 @@ async function imageRequest(ctx: Context, slide: Draft2SlideImage, attempt: Draf
   const direction = panel ? mapInsetVisualDirection(unit.visualDirection, asksForGeography(unit.visualDirection)) : photoLedVisualDirection(unit.visualDirection, storyRefs);
   const built = buildCreativeImagePrompt({
     draft: ctx.draft, unit: { ...unit, visualDirection: direction, characterIds: slide.characterIds }, brief: ctx.brief, characters, campaignCharacters,
-    brandOverlay: ctx.overlay, carouselChromeSettings: ctx.profile.carouselChrome,
+    brandOverlay: overlayFor(ctx, slide.order), carouselChromeSettings: ctx.profile.carouselChrome,
     profileVisual: { name: ctx.profile.name, visualGuidance: ctx.profile.visualGuidance, creativeIdentity: ctx.profile.creativeIdentity, brandPalette: ctx.profile.brandPalette },
     verifiedImagery: Boolean(pasted || panel || placeFile || storyRefs.some((reference) => reference.purpose !== "style")),
   });
@@ -540,7 +566,7 @@ function attemptPortrait(slide: Draft2SlideImage, attempt: Draft2ImageAttempt, p
   return pasted.portrait ? { layout: pasted.portrait.layout, ...(pasted.portrait.crop ? { crop: pasted.portrait.crop } : {}) } : { layout: portraitLayoutForSlide(slide.order) };
 }
 
-/** v1's post-production, in v1's order: the pasted photo, the map panel, the page number, the logo. */
+/** v1's post-production, in v1's order: the pasted photo, the map panel, the page number, the logo (the version that reads best there). */
 async function finish(ctx: Context, slide: Draft2SlideImage, attempt: Draft2ImageAttempt, image: Uint8Array): Promise<Uint8Array> {
   let out: Uint8Array = image;
   const pasted = slide.material.find(isPasted);
@@ -564,7 +590,11 @@ async function finish(ctx: Context, slide: Draft2SlideImage, attempt: Draft2Imag
   }
   const chrome = chromeFor(ctx, slide.order);
   if (chrome.overlay) out = await compositeCreativeCarouselChrome({ image: out, chrome });
-  if (ctx.brandSnapshot && logoApplies(ctx, slide.order)) out = await compositeStoredCreativeBrand({ image: out, snapshot: ctx.brandSnapshot });
+  if (ctx.brandSnapshot && logoApplies(ctx, slide.order)) {
+    const logo = await compositeStoredCreativeBrandVersion({ image: out, snapshot: ctx.brandSnapshot, order: slide.order, logos: ctx.logos });
+    out = logo.body;
+    attempt.logo = { form: logo.version.form, tone: logo.version.tone, assetId: logo.version.assetId };
+  }
   return out;
 }
 
@@ -762,7 +792,7 @@ async function imagesContext({ topicId, storyId, sessionId, run, target, facts, 
   } as unknown as CreativeBrief;
   return {
     topicId, storyId, sessionId, run, script: target.script, carousel: target.carousel, inventory: target.inventory, facts, profile,
-    ...(overlay ? { overlay } : {}), ...(snapshot ? { brandSnapshot: snapshot } : {}), characters, brandSelections, units, draft, brief, fal, descriptor,
+    ...(overlay ? { overlay } : {}), ...(snapshot ? { brandSnapshot: snapshot } : {}), logos: new Map(), characters, brandSelections, units, draft, brief, fal, descriptor,
     ...(googleConfig() ? { google: googleConfig() } : {}), signal, trace, narrative: visualNarrative(target.visual),
   };
 }

@@ -38,6 +38,7 @@ import { parseCreativeGeoScopeInput } from "./creative-geo-scope-validation";
 import { invalidateApprovalsForVisualPolicyChange } from "./creative-visual-policy-invalidation";
 import {
   findCreativeBrandAsset,
+  listCreativeBrandAssets,
   publicCreativeBrandAsset,
   type StoredCreativeBrandAsset,
 } from "./creative-brand-assets.repository";
@@ -90,7 +91,7 @@ export async function getCreativeProfile(
   const existing = await findStoredCreativeProfile(topicId);
 
   if (existing) {
-    return mapCreativeProfile(existing.profile, existing.brandAsset);
+    return withLogoVersionAssets(topicId, mapCreativeProfile(existing.profile, existing.brandAsset));
   }
 
   const [topic] = await db
@@ -118,7 +119,7 @@ export async function getCreativeProfile(
     throw new Error("The creative profile could not be initialized");
   }
 
-  return mapCreativeProfile(concurrent.profile, concurrent.brandAsset);
+  return withLogoVersionAssets(topicId, mapCreativeProfile(concurrent.profile, concurrent.brandAsset));
 }
 
 /** UI theme reads must not initialize a creative profile as a side effect. */
@@ -126,7 +127,7 @@ export async function readStoredCreativeProfile(
   topicId: string,
 ): Promise<CreativeProfile | undefined> {
   const existing = await findStoredCreativeProfile(topicId);
-  return existing ? mapCreativeProfile(existing.profile, existing.brandAsset) : undefined;
+  return existing ? withLogoVersionAssets(topicId, mapCreativeProfile(existing.profile, existing.brandAsset)) : undefined;
 }
 
 export type VisualPolicyChangeResult = {
@@ -176,6 +177,12 @@ export async function saveCreativeProfile(
     throw new CreativeProfileValidationError(
       "brandOverlay.assetId must belong to the selected topic",
     );
+  }
+  // Every version of the logo is one of this topic's uploaded PNGs.
+  for (const version of brandOverlay.versions ?? []) {
+    if (!(await findCreativeBrandAsset(topicId, version.assetId))) {
+      throw new CreativeProfileValidationError("A logo version must be one of this topic's uploaded logos");
+    }
   }
 
   // Read the row before the upsert so a visual-policy change (mode or
@@ -238,7 +245,7 @@ export async function saveCreativeProfile(
   const resolvedBrandAsset = saved.brandAssetId
     ? await findCreativeBrandAsset(topicId, saved.brandAssetId)
     : undefined;
-  const mapped = mapCreativeProfile(saved, resolvedBrandAsset ?? brandAsset);
+  const mapped = await withLogoVersionAssets(topicId, mapCreativeProfile(saved, resolvedBrandAsset ?? brandAsset));
 
   // Run on EVERY save, not only when this call changed the policy: the pass is
   // idempotent (it selects stale approvals from stored state), so a retry
@@ -369,6 +376,14 @@ async function findStoredCreativeProfile(topicId: string): Promise<
     .where(eq(creativeProfiles.topicId, topicId))
     .limit(1);
   return row;
+}
+
+/** The profile with the uploaded PNG of each version of its logo, for the editor's previews. */
+async function withLogoVersionAssets(topicId: string, profile: CreativeProfile): Promise<CreativeProfile> {
+  const versions = profile.brandOverlay.versions ?? [];
+  if (!versions.length) return profile;
+  const versionAssets = await listCreativeBrandAssets(topicId, versions.map((version) => version.assetId));
+  return { ...profile, brandOverlay: { ...profile.brandOverlay, versionAssets } };
 }
 
 function mapCreativeProfile(

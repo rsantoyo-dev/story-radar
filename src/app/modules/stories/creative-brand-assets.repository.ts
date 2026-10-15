@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { creativeBrandAssets } from "@/db/schema";
@@ -9,6 +9,8 @@ import type {
   CreativeBrandAsset,
   CreativeBrandOverlaySettings,
   CreativeBrandOverlaySnapshot,
+  CreativeLogoForm,
+  CreativeLogoTone,
 } from "./creative-content.types";
 
 export type StoredCreativeBrandAsset =
@@ -104,16 +106,44 @@ export function publicCreativeBrandAsset(
 export function creativeBrandOverlaySnapshot(
   settings: CreativeBrandOverlaySettings,
   asset: StoredCreativeBrandAsset,
+  versions: readonly { form: CreativeLogoForm; tone: CreativeLogoTone; asset: StoredCreativeBrandAsset }[] = [],
 ): CreativeBrandOverlaySnapshot {
+  const stored = (entry: StoredCreativeBrandAsset) => ({
+    ...publicCreativeBrandAsset(entry),
+    objectKey: entry.objectKey,
+    sha256: entry.sha256,
+  });
+  // The main logo is one of the versions: a full logo, made for the backgrounds the editor said (any by default).
+  const logoVersions = versions.length
+    ? [
+        ...(versions.some((version) => version.asset.id === asset.id) ? [] : [{ form: "full" as const, tone: settings.mainTone ?? "alpha", asset }]),
+        ...versions,
+      ].map((version) => ({ form: version.form, tone: version.tone, asset: stored(version.asset) }))
+    : undefined;
   return {
     ...settings,
     compositorVersion: 1,
-    asset: {
-      ...publicCreativeBrandAsset(asset),
-      objectKey: asset.objectKey,
-      sha256: asset.sha256,
-    },
+    asset: stored(asset),
+    ...(logoVersions ? { logoVersions } : {}),
   };
+}
+
+/** The public metadata of the given logos of a topic, in no particular order; another topic's are never returned. */
+export async function listCreativeBrandAssets(
+  topicId: string,
+  assetIds: readonly string[],
+): Promise<CreativeBrandAsset[]> {
+  if (!assetIds.length) return [];
+  const rows = await db
+    .select()
+    .from(creativeBrandAssets)
+    .where(
+      and(
+        eq(creativeBrandAssets.topicId, topicId),
+        inArray(creativeBrandAssets.id, [...assetIds]),
+      ),
+    );
+  return rows.map(publicCreativeBrandAsset);
 }
 
 export class CreativeBrandAssetNotFoundError extends Error {}

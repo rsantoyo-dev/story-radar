@@ -300,6 +300,20 @@ export type CreativeBrandReference = {
   updatedAt: Date;
 };
 
+/**
+ * Versions of the brand's logo (2026-10-15): the full logo or its symbol
+ * alone, for light backgrounds (positive), dark ones (negative) or any
+ * (alpha, full colour). The cover shows the full logo; the inner slides the
+ * form the brand chooses; on each slide the compositor places the version
+ * that stands out most against what is behind it.
+ */
+export const CREATIVE_LOGO_FORMS = ["full", "symbol"] as const;
+export type CreativeLogoForm = (typeof CREATIVE_LOGO_FORMS)[number];
+export const CREATIVE_LOGO_TONES = ["positive", "negative", "alpha"] as const;
+export type CreativeLogoTone = (typeof CREATIVE_LOGO_TONES)[number];
+export type CreativeBrandLogoVersion = { assetId: string; form: CreativeLogoForm; tone: CreativeLogoTone };
+export const CREATIVE_LOGO_VERSIONS_MAX = 8;
+
 export type CreativeBrandOverlaySettings = {
   enabled: boolean;
   scope: CreativeBrandScope;
@@ -311,11 +325,19 @@ export type CreativeBrandOverlaySettings = {
   backdropMode: CreativeBrandBackdropMode;
   backdropColor: string;
   backdropOpacity: number;
+  /** Other versions of the logo the compositor may choose from; the main logo (assetId) is always one. */
+  versions?: CreativeBrandLogoVersion[];
+  /** What the inner slides show when the logo is on every slide: the full logo, or its symbol alone. */
+  innerForm?: CreativeLogoForm;
+  /** The backgrounds the main logo (assetId) is made for; any (alpha) when absent. */
+  mainTone?: CreativeLogoTone;
 };
 
 export type CreativeBrandOverlay = CreativeBrandOverlaySettings & {
   assetId?: string;
   asset?: CreativeBrandAsset;
+  /** Read only: the uploaded PNG of each version, for the editor's previews. */
+  versionAssets?: CreativeBrandAsset[];
 };
 
 /**
@@ -326,6 +348,8 @@ export type CreativeBrandOverlaySnapshot = CreativeBrandOverlaySettings & {
   /** Selects the immutable geometry/composition policy used for this batch. */
   compositorVersion: 1;
   asset: CreativeBrandAsset & { objectKey: string; sha256: string };
+  /** The versions the compositor chooses from, the main logo among them; absent on a snapshot with one logo. */
+  logoVersions?: { form: CreativeLogoForm; tone: CreativeLogoTone; asset: CreativeBrandAsset & { objectKey: string; sha256: string } }[];
 };
 
 export const DEFAULT_CREATIVE_BRAND_OVERLAY_SETTINGS = {

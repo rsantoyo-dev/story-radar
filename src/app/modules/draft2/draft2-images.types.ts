@@ -7,7 +7,7 @@ import {
   CREATIVE_IMAGE_REVIEW_SCHEMA, imageReviewIssues, parseImageReviewAnswer,
   type CreativeImageReviewAnswer, type CreativeImageReviewInput,
 } from "../stories/creative-image-review";
-import type { CreativeUnit, CreativeUnitRole } from "../stories/creative-content.types";
+import type { CreativeLogoForm, CreativeLogoTone, CreativeUnit, CreativeUnitRole } from "../stories/creative-content.types";
 import type { PortraitBox, PortraitFit, PortraitSubject } from "../stories/creative-portrait-composite";
 import { MAP_PANEL_POSITIONS, type MapPanelPosition } from "../stories/map-panel-position";
 import { publishablePhoto } from "../stories/story-materials.types";
@@ -75,6 +75,8 @@ export type Draft2ImageAttempt = {
   referenceImages?: number;
   /** The verified place photo the model received as its identity reference, by the place's name. */
   placePhoto?: string;
+  /** The version of the brand's logo composited on it: the one that read best against the image there. */
+  logo?: { form: CreativeLogoForm; tone: CreativeLogoTone; assetId: string };
   expectedText?: string;
   sha256?: string;
   safetyFlag?: boolean;

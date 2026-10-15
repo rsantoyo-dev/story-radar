@@ -12,6 +12,7 @@ import * as imageModels from "../stories/creative-image-models";
 import * as falCost from "../stories/fal-image-cost";
 import * as storyRefs from "../stories/story-reference-generation";
 import * as brandOverlayModule from "../stories/creative-brand-overlay";
+import * as logoVersionsModule from "../stories/creative-brand-logo-versions";
 import * as contentTypes from "../stories/creative-content.types";
 import * as geoContact from "../stories/creative-geo-contact";
 import * as characterGeneration from "../stories/creative-character-generation";
@@ -54,6 +55,7 @@ const VISUAL: Draft2Visual = {
 };
 const INVENTORY: Draft2Inventory = { status: "ready", version: 2, entities: [], storyPhotos: [], characters: "auto", roster: [{ id: "char-jo", name: "Jo", description: "An illustrated guide" }] };
 const ASSET = { id: "logo-1", fileName: "logo.png", contentType: "image/png", fileSize: 10, width: 400, height: 200, createdAt: new Date(0) };
+const SYMBOL = { ...ASSET, id: "sym-1", fileName: "symbol.png", width: 300, height: 300 };
 const profile = {
   name: "Salut St-Jean", language: "French", region: "Saint-Jean", platform: "Instagram", audience: "Families", brandPersonality: ["warm"], formality: 30, humor: 40, energy: 60, optimism: 60, provocation: 20,
   visualGuidance: "", creativeIdentity: { avoid: [{ category: "Marks", items: ["Polaroid frames"] }], allowed: [], acceptance: [] }, brandPalette: [{ name: "Navy", color: "#173F52", role: "primary" }, { name: "Cream", color: "#F6F0E4", role: "surface" }, { name: "Gold", color: "#E3A62F", role: "secondary" }],
@@ -68,7 +70,7 @@ type Review = (slide: string, version: number) => Record<string, unknown>;
 const clean: Review = () => ({ transcription: "", textCovered: false, textNote: "", storyNote: "The walk reads." });
 
 /** polls: how many times fal answers "generating" before an image is done; clock: a fake clock each poll moves by pollMs. */
-function harness({ session, polls = 1, reviewOf = clean, clock, pollMs = 30_000, rights = {} }: { session?: Record<string, unknown>; polls?: number; reviewOf?: Review; clock?: { now: number }; pollMs?: number; rights?: Record<string, string> } = {}) {
+function harness({ session, polls = 1, reviewOf = clean, clock, pollMs = 30_000, rights = {}, overlay }: { session?: Record<string, unknown>; polls?: number; reviewOf?: Review; clock?: { now: number }; pollMs?: number; rights?: Record<string, string>; overlay?: Record<string, unknown> } = {}) {
   const calls = {
     submits: [] as { endpoint: string; prompt: string; files: string[]; width?: number; height?: number }[],
     reviews: [] as { slide: string; contents: Record<string, unknown> }[],
@@ -79,6 +81,8 @@ function harness({ session, polls = 1, reviewOf = clean, clock, pollMs = 30_000,
     located: [] as string[],
     zones: [] as string[],
     portraits: [] as Record<string, unknown>[],
+    /** The logo's slot each page number moves beside. */
+    chromeZones: [] as { order: number; width: number; height: number }[],
   };
   const r2 = new Map<string, Buffer>();
   const pollsLeft = new Map<string, number>();
@@ -114,22 +118,37 @@ function harness({ session, polls = 1, reviewOf = clean, clock, pollMs = 30_000,
     "./draft2-dev-trace": { draft2DevTrace: () => undefined },
     "./draft2-inventory": { placeMention: (entity: { name: string }) => ({ name: entity.name, kind: "named", role: "event", excerpt: entity.name, municipality: "", region: "", country: "", purpose: "location" }) },
     "../stories/creative-text-meter": { withCreativeTextBudget: async (_context: unknown, work: () => Promise<unknown>) => work() },
-    "../stories/creative-profile.repository": { getCreativeProfile: async () => profile },
+    "../stories/creative-profile.repository": { getCreativeProfile: async () => (overlay ? { ...profile, brandOverlay: { ...profile.brandOverlay, ...overlay } } : profile) },
     "../stories/build-creative-image-prompt": { buildCreativeImagePrompt: (input: { unit: { order: number; visualDirection: string; headline: string }; characters: { name: string }[]; verifiedImagery: boolean; brandOverlay?: unknown; draft: { concept: string }; brief: { tone: unknown } }) => {
-      calls.prompts.push({ order: input.unit.order, characters: input.characters.map((character) => character.name), verifiedImagery: input.verifiedImagery, logo: Boolean(input.brandOverlay), concept: input.draft.concept, tone: input.brief.tone, direction: input.unit.visualDirection });
+      const zone = (input.brandOverlay as { asset?: { width: number; height: number } } | undefined)?.asset;
+      calls.prompts.push({ order: input.unit.order, characters: input.characters.map((character) => character.name), verifiedImagery: input.verifiedImagery, logo: Boolean(input.brandOverlay), zone: zone ? [zone.width, zone.height] : null, concept: input.draft.concept, tone: input.brief.tone, direction: input.unit.visualDirection });
       return { prompt: `PROMPT ${input.unit.order}: ${input.unit.visualDirection}`, expectedText: expected(input.unit) };
     } },
     "../stories/creative-content.types": contentTypes,
     "../stories/creative-carousel-chrome": {
-      buildCreativeCarouselChrome: (input: { unitOrder: number; totalSlides: number }) => ({ copy: {}, overlay: { order: input.unitOrder, total: input.totalSlides }, promptReservation: "<CHROME>" }),
+      buildCreativeCarouselChrome: (input: { unitOrder: number; totalSlides: number; logoExclusionZone?: { width: number; height: number } }) => {
+        if (input.logoExclusionZone) calls.chromeZones.push({ order: input.unitOrder, width: input.logoExclusionZone.width, height: input.logoExclusionZone.height });
+        return { copy: {}, overlay: { order: input.unitOrder, total: input.totalSlides }, promptReservation: "<CHROME>" };
+      },
       compositeCreativeCarouselChrome: async ({ image, chrome }: { image: Uint8Array; chrome: { overlay: { order: number; total: number } } }) => Buffer.from(`${Buffer.from(image).toString()}|${chrome.overlay.order}/${chrome.overlay.total}`),
     },
     "../stories/creative-brand-overlay": brandOverlayModule,
+    "../stories/creative-brand-logo-versions": logoVersionsModule,
     "../stories/creative-brand-assets.repository": {
-      findCreativeBrandAsset: async () => ({ ...ASSET, objectKey: "brand/logo.png", sha256: "b".repeat(64) }),
-      creativeBrandOverlaySnapshot: (settings: Record<string, unknown>, asset: Record<string, unknown>) => ({ ...settings, compositorVersion: 1, asset }),
+      findCreativeBrandAsset: async (_topicId: string, id: string) => ({ ...(id === SYMBOL.id ? SYMBOL : ASSET), objectKey: `brand/${id}.png`, sha256: "b".repeat(64) }),
+      // As the repository builds it: the main logo first, a full one for the backgrounds the brand said, then the versions.
+      creativeBrandOverlaySnapshot: (settings: Record<string, unknown>, asset: Record<string, unknown>, versions: Record<string, unknown>[] = []) => ({
+        ...settings, compositorVersion: 1, asset, ...(versions.length ? { logoVersions: [{ form: "full", tone: settings.mainTone ?? "alpha", asset }, ...versions] } : {}),
+      }),
     },
-    "../stories/manage-creative-assets": { compositeStoredCreativeBrand: step("logo"), isTransientFalSubmitError: () => false },
+    "../stories/manage-creative-assets": {
+      // The first version the slide may receive stands for the one the compositor measures as reading best.
+      compositeStoredCreativeBrandVersion: async (input: { image: Uint8Array; snapshot: Parameters<typeof logoVersionsModule.creativeLogoVersionsForSlide>[0]; order: number }) => {
+        const chosen = logoVersionsModule.creativeLogoVersionsForSlide(input.snapshot, input.order)[0];
+        return { body: await step("logo")(input), version: { assetId: chosen.asset.id, form: chosen.form, tone: chosen.tone } };
+      },
+      isTransientFalSubmitError: () => false,
+    },
     "../stories/creative-portrait-composite": {
       compositeDocumentaryPortrait: async (input: { image: Uint8Array; layout?: string; crop?: unknown }) => { calls.portraits.push({ layout: input.layout, crop: input.crop }); return step("portrait")(input); },
       portraitAccent: () => "#E3A62F", portraitLayoutForSlide: () => "rounded-left", fitPortrait,
@@ -354,6 +373,17 @@ test("a photo the editor declared reference only since the run began is never pu
   const cover = session.images!.slides[0];
   assert.equal(json([cover.attempts[0].status, /55555555-5555-4555-8555-555555555555 is reference only: declare its publication rights/.test(cover.attempts[0].error ?? "")]), json(["failed", true]));
   assert.equal(h.calls.submits.some((submit) => submit.prompt.startsWith("PROMPT 1:")), false, "nothing is sent for it");
+});
+
+test("with the symbol on the inner slides, the cover keeps the full logo's slot and the others the symbol's square, for the prompt and the page number; each slide records the version placed", async () => {
+  const h = harness({ overlay: { scope: "all-units", innerForm: "symbol", versions: [{ assetId: SYMBOL.id, form: "symbol", tone: "negative" }] } });
+  const session = await h.run();
+  assert.equal(json(h.calls.prompts.map((prompt) => [prompt.order, prompt.zone])), json([[1, [400, 200]], [2, [300, 300]], [3, [300, 300]]]));
+  const [cover, inner] = [h.calls.chromeZones.find((zone) => zone.order === 1)!, h.calls.chromeZones.find((zone) => zone.order === 2)!];
+  assert.ok(inner.height > cover.height, "the page number moves beside the symbol's taller slot");
+  assert.equal(json(session.images!.slides.map((slide) => slide.attempts[0].logo)), json([
+    { form: "full", tone: "alpha", assetId: ASSET.id }, { form: "symbol", tone: "negative", assetId: SYMBOL.id }, { form: "symbol", tone: "negative", assetId: SYMBOL.id },
+  ]));
 });
 
 test("a real person's portrait and a verified map are pasted after generation, under the page number and the logo, and Sol is told where", async () => {

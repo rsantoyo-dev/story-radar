@@ -79,6 +79,8 @@ import {
   type CreativeBrandOverlay,
   type CreativeBrandOverlaySettings,
   type CreativeBrandOverlaySnapshot,
+  type CreativeLogoForm,
+  type CreativeLogoTone,
   type CreativeCarouselChromeSettings,
   type CreativeCarouselChromeSnapshot,
   type CreativeCharacterSnapshot,
@@ -93,6 +95,7 @@ import {
   creativeBrandOverlaySnapshot,
   findCreativeBrandAsset,
 } from "./creative-brand-assets.repository";
+import { chooseCreativeLogoVersion, creativeLogoVersionsForSlide } from "./creative-brand-logo-versions";
 import {
   appendCreativeBrandContract,
   buildCreativeBrandExclusionZonePrompt,
@@ -1441,7 +1444,7 @@ async function creativePostProcessorForAsset({
   };
 }
 
-/** Composites the brand's stored logo from its immutable snapshot (the logo's sha256 is checked first). Draft 2 finishes its slides with it too. */
+/** Composites the brand's stored logo from its immutable snapshot (the logo's sha256 is checked first). */
 export async function compositeStoredCreativeBrand({
   image,
   snapshot,
@@ -1449,32 +1452,7 @@ export async function compositeStoredCreativeBrand({
   image: Uint8Array;
   snapshot: CreativeBrandOverlaySnapshot;
 }): Promise<Buffer> {
-  let logo: File;
-  try {
-    logo = await readPrivateR2ImageFile({
-      objectKey: snapshot.asset.objectKey,
-      contentType: snapshot.asset.contentType,
-      fileName: snapshot.asset.fileName,
-    });
-  } catch (error) {
-    if (
-      error instanceof R2StorageConfigurationError ||
-      error instanceof R2StorageValidationError ||
-      (error instanceof R2StorageObjectError && !error.retryable)
-    ) {
-      throw new CreativeBrandPostProcessError(
-        `The stored brand logo cannot be loaded: ${errorMessage(error)}`,
-      );
-    }
-    throw error;
-  }
-  const logoBytes = new Uint8Array(await logo.arrayBuffer());
-  const actualSha256 = createHash("sha256").update(logoBytes).digest("hex");
-  if (actualSha256 !== snapshot.asset.sha256) {
-    throw new CreativeBrandPostProcessError(
-      "The stored brand logo no longer matches its immutable snapshot.",
-    );
-  }
+  const logoBytes = await readStoredCreativeBrandLogo(snapshot.asset);
 
   try {
     const composited = await compositeCreativeBrandOverlaySnapshot({
@@ -1491,6 +1469,80 @@ export async function compositeStoredCreativeBrand({
       `The brand logo could not be composited: ${errorMessage(error)}`,
     );
   }
+}
+
+/**
+ * Draft 2's logo: on each slide, of the versions its form allows, the one
+ * that stands out most against what the image shows where it goes
+ * (creative-brand-logo-versions.ts). Each version's sha256 is checked; a
+ * request reads each PNG once through `logos`.
+ */
+export async function compositeStoredCreativeBrandVersion({
+  image,
+  snapshot,
+  order,
+  logos = new Map(),
+}: {
+  image: Uint8Array;
+  snapshot: CreativeBrandOverlaySnapshot;
+  order: number;
+  logos?: Map<string, Promise<Uint8Array>>;
+}): Promise<{ body: Buffer; version: { assetId: string; form: CreativeLogoForm; tone: CreativeLogoTone } }> {
+  const versions = creativeLogoVersionsForSlide(snapshot, order);
+  const bytes = await Promise.all(versions.map(({ asset }) => {
+    const cached = logos.get(asset.sha256);
+    if (cached) return cached;
+    const read = readStoredCreativeBrandLogo(asset);
+    logos.set(asset.sha256, read);
+    // A failed read is tried again on the next poll, not remembered.
+    read.catch(() => logos.delete(asset.sha256));
+    return read;
+  }));
+
+  try {
+    const { index } = await chooseCreativeLogoVersion({ image, settings: snapshot, versions, logos: bytes });
+    const chosen = versions[index];
+    const composited = await compositeCreativeBrandOverlaySnapshot({ image, logo: bytes[index], snapshot });
+    return { body: composited.body, version: { assetId: chosen.asset.id, form: chosen.form, tone: chosen.tone } };
+  } catch (error) {
+    if (!(error instanceof CreativeBrandOverlayError)) throw error;
+    throw new CreativeBrandPostProcessError(
+      `The brand logo could not be composited: ${errorMessage(error)}`,
+    );
+  }
+}
+
+/** A stored logo PNG, checked against the sha256 its snapshot recorded; an unrecoverable storage error is final, a transient one retryable. */
+async function readStoredCreativeBrandLogo(
+  asset: CreativeBrandOverlaySnapshot["asset"],
+): Promise<Uint8Array> {
+  let logo: File;
+  try {
+    logo = await readPrivateR2ImageFile({
+      objectKey: asset.objectKey,
+      contentType: asset.contentType,
+      fileName: asset.fileName,
+    });
+  } catch (error) {
+    if (
+      error instanceof R2StorageConfigurationError ||
+      error instanceof R2StorageValidationError ||
+      (error instanceof R2StorageObjectError && !error.retryable)
+    ) {
+      throw new CreativeBrandPostProcessError(
+        `The stored brand logo cannot be loaded: ${errorMessage(error)}`,
+      );
+    }
+    throw error;
+  }
+  const logoBytes = new Uint8Array(await logo.arrayBuffer());
+  const actualSha256 = createHash("sha256").update(logoBytes).digest("hex");
+  if (actualSha256 !== asset.sha256) {
+    throw new CreativeBrandPostProcessError(
+      "The stored brand logo no longer matches its immutable snapshot.",
+    );
+  }
+  return logoBytes;
 }
 
 function assetInputForUnit(characters: CreativeCharacterSnapshot[], brand: GenerationReferences["brand"] = [], story: NonNullable<GenerationReferences["story"]> = [], model: CreativeImageModelDescriptor = creativeImageModel(resolveDefaultCreativeImageModel())) {

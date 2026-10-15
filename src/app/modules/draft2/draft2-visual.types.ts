@@ -220,10 +220,15 @@ const PLACEMENT_WORDS: Record<string, string> = {
 };
 export function visualLayout(profile: Pick<CreativeProfile, "brandOverlay" | "carouselChrome">, carousel: readonly Pick<Draft2CarouselSlide, "slide">[]): Draft2VisualLayout {
   const overlay = profile.brandOverlay;
+  const place = overlay ? PLACEMENT_WORDS[overlay.placement] ?? overlay.placement : "";
+  // The inner slides carry the brand's symbol alone when the brand chose it and has one: a square, where the full logo is a band.
+  const symbol = overlay?.scope === "all-units" && overlay.innerForm === "symbol" && (overlay.versions ?? []).some((version) => version.form === "symbol");
   const logo = overlay?.enabled && overlay.asset
     ? {
       slides: overlay.scope === "all-units" ? carousel.map((slide) => slide.slide) : carousel.slice(0, 1).map((slide) => slide.slide),
-      area: `${PLACEMENT_WORDS[overlay.placement] ?? overlay.placement}, about ${overlay.sizePercent}% of the slide's width, plus a margin`,
+      area: symbol
+        ? `${place}: on the cover the full logo, about ${overlay.sizePercent}% of the slide's width; on the other slides the brand's symbol alone, a square about ${overlay.sizePercent}% of the slide's width; plus a margin`
+        : `${place}, about ${overlay.sizePercent}% of the slide's width, plus a margin`,
     }
     : null;
   return {

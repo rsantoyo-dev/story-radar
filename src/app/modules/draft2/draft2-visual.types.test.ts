@@ -99,6 +99,9 @@ test("the layout tells the script what is added afterwards: the words the image 
   const everywhere = visualLayout({ brandOverlay: { ...overlay, scope: "all-units" }, carouselChrome: { ...chrome, enabled: false } } as unknown as Parameters<typeof visualLayout>[0], carousel);
   assert.deepEqual([everywhere.logo?.slides.length, everywhere.numbering], [6, null]);
   assert.equal(visualLayout({ brandOverlay: { ...overlay, enabled: false }, carouselChrome: chrome } as unknown as Parameters<typeof visualLayout>[0], carousel).logo, null, "no logo when it is off");
+  const symbol = { ...overlay, scope: "all-units", innerForm: "symbol", versions: [{ assetId: "s", form: "symbol", tone: "negative" }] };
+  assert.match(String(visualLayout({ brandOverlay: symbol, carouselChrome: chrome } as unknown as Parameters<typeof visualLayout>[0], carousel).logo?.area), /on the cover the full logo.*on the other slides the brand's symbol alone, a square about 12%/u);
+  assert.doesNotMatch(String(visualLayout({ brandOverlay: { ...symbol, versions: [] }, carouselChrome: chrome } as unknown as Parameters<typeof visualLayout>[0], carousel).logo?.area), /symbol/u, "no symbol uploaded: the full logo everywhere");
 });
 
 test("continuity does not replace progression: each slide names its subject and what it shows first, no subject leads two slides in a row, and the recurring element leads at most two and returns once at the end", () => {

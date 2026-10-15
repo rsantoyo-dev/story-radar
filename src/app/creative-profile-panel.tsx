@@ -20,6 +20,7 @@ import {
   VISUAL_FIDELITY_MODES,
   type CreativeBrandAsset,
   type CreativeBrandPaletteColor,
+  type CreativeLogoForm,
   type CreativeProfile,
 } from "./modules/stories/creative-content.types";
 import { BrandPaletteAssistant } from "./creative-palette-assistant";
@@ -57,9 +58,16 @@ const DIMENSIONS = [
   "provocation",
 ] as const;
 
-type Busy = "save" | "brand" | undefined;
+type Busy = "save" | "brand" | "brand-version" | undefined;
 
 export type CreativeProfileSection = "profile" | "voice" | "visual" | "assets";
+
+/** A version noticeably squarer than the main logo is its symbol; any other, the full logo in another tone. */
+function guessLogoForm(version: CreativeBrandAsset, main: CreativeBrandAsset | undefined): CreativeLogoForm {
+  if (!main) return "full";
+  const spread = (asset: CreativeBrandAsset) => Math.abs(Math.log(asset.width / asset.height));
+  return spread(main) - spread(version) > Math.log(1.25) ? "symbol" : "full";
+}
 
 export function CreativeProfilePanel({
   topicId,
@@ -211,6 +219,46 @@ export function CreativeProfilePanel({
       setNotice(
         "Brand logo uploaded. Choose its placement, then save the creative profile.",
       );
+    } catch (uploadError) {
+      setError(getErrorMessage(uploadError));
+    } finally {
+      setBusy(undefined);
+    }
+  }
+
+  /** Another version of the logo: uploaded like the logo, listed with its shape guessed and meant for any background until the editor says otherwise. */
+  async function handleUploadBrandVersion(file: File) {
+    if (!draft || busy) return;
+    if (file.type !== "image/png" && !file.name.toLowerCase().endsWith(".png")) {
+      setError("A logo version must be a PNG image.");
+      return;
+    }
+    setBusy("brand-version");
+    setError(undefined);
+    setNotice(undefined);
+    try {
+      const body = new FormData();
+      body.append("image", file);
+      const asset = await requestJson<CreativeBrandAsset>(
+        `/api/radar/creative-profile/brand-assets?topicId=${encodeURIComponent(topicId)}`,
+        secret,
+        { method: "POST", body },
+      );
+      setDraft((current) => {
+        if (!current) return current;
+        const overlay = current.brandOverlay;
+        const versions = (overlay.versions ?? []).filter((version) => version.assetId !== asset.id);
+        return {
+          ...current,
+          brandOverlay: {
+            ...overlay,
+            versions: [...versions, { assetId: asset.id, form: guessLogoForm(asset, overlay.asset), tone: "alpha" }],
+            versionAssets: [...(overlay.versionAssets ?? []).filter((entry) => entry.id !== asset.id), asset],
+          },
+        };
+      });
+      setDirty(true);
+      setNotice("Logo version uploaded. Say its shape and the backgrounds it is made for, then save the creative profile.");
     } catch (uploadError) {
       setError(getErrorMessage(uploadError));
     } finally {
@@ -586,8 +634,10 @@ export function CreativeProfilePanel({
             secret={secret}
             disabled={disabled || busy === "save"}
             uploading={busy === "brand"}
+            uploadingVersion={busy === "brand-version"}
             onChange={updateBrandOverlay}
             onUpload={handleUploadBrandAsset}
+            onUploadVersion={handleUploadBrandVersion}
           />
           <BrandReferenceLibrary
             topicId={topicId}

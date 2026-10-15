@@ -75,7 +75,8 @@ and keyed on `creative_assets` rows) is rewritten.
   2. the map panel;
   3. the page number (`buildCreativeCarouselChrome`, with the same logo
      exclusion zone the prompt reserved);
-  4. the logo (`compositeStoredCreativeBrand`, now exported).
+  4. the logo: the version that reads best there
+     (`compositeStoredCreativeBrandVersion`, see `logo-versions.md`).
 - **Provider:** `submitFalImage` / `pollFalImage` with `IMAGES_QUALITY`
   (low); the endpoint follows the references (text-to-image, or edit).
 - **Cost:** `estimateFalImageCost` and `recordUsageCharge`, idempotency key
