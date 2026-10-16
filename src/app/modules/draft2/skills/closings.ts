@@ -16,7 +16,7 @@ import type { Draft2Skill } from "./draft2-skills";
  */
 export const CLOSINGS_SKILL: Draft2Skill = {
   name: "closings",
-  version: "3",
+  version: "4",
   text: `# Closings for social carousels
 
 A closing is how the story ends. The opening made a promise (the cover) and
@@ -99,6 +99,10 @@ opening it ends: a closing that could end any story is weak.
   publication's language.
 - focus: does it follow the focus: its framing, reader consequence,
   structure, audience and goal?
+- originality: does the ending land in a way the reader has not met on this
+  subject (what it means for them said freshly, an earned return, a call to
+  action that is this story's), rather than a recap and a formula? The
+  originality standard's scale applies.
 A closing is accepted only when overall ≥ 95 and no criterion is below 85.
 
 ## Revisions

@@ -25,7 +25,7 @@ const candidate = (id: string, overrides: CandidateOverrides = {}): Draft2Openin
 });
 
 const score = (candidateId: string, overall: number, overrides: Partial<Draft2OpeningScore> = {}): Draft2OpeningScore =>
-  ({ candidateId, tension: overall, payoff: overall, clarity: overall, grounding: overall, voice: overall, focus: overall, overall, note: "Why.", ...overrides });
+  ({ candidateId, tension: overall, payoff: overall, clarity: overall, grounding: overall, voice: overall, focus: overall, originality: overall, overall, note: "Why.", ...overrides });
 
 const evaluation = (overrides: Partial<Draft2OpeningEvaluation> = {}): Draft2OpeningEvaluation =>
   ({ verdict: "accept", winnerId: "c1", scores: [score("c1", 96), score("c2", 95), score("c3", 80)], issues: [], suggestions: [], summary: "Strong.", ...overrides });
@@ -257,7 +257,7 @@ test("a revision that scores lower, or picks up a program finding, is a regressi
     evaluation: evaluation({ verdict: "revise", winnerId: "c2.2", scores: [score("c1.2", 80, { voice: 72, tension: 90 }), score("c2.2", 88)] }),
   })]);
   assert.deepEqual(openingRegressions(revisions, before), [
-    { candidateId: "c1.2", previousId: "c1", from: 84, to: 80, worse: ["payoff 84 → 80", "clarity 84 → 80", "grounding 84 → 80", "voice 84 → 72", "focus 84 → 80"] },
+    { candidateId: "c1.2", previousId: "c1", from: 84, to: 80, worse: ["payoff 84 → 80", "clarity 84 → 80", "grounding 84 → 80", "voice 84 → 72", "focus 84 → 80", "originality 84 → 80"] },
     { candidateId: "c2.2", previousId: "c2", from: 80, to: 88, worse: ["COVER_TOO_LONG"] },
   ]);
   const improved = openingVersions([judgedRound(2, [{ ...candidate("c1.2"), revisionOf: "c1" }], { "c1.2": 90 })]);
@@ -293,7 +293,7 @@ test("the writer refines with each target's scores and issues, any earlier attem
   assert.equal(target.id, "c1", "c1.2 scored lower, so c1 is revised again");
   assert.equal(target.scores?.overall, 84);
   assert.deepEqual(target.issues.map((issue) => issue.code), ["WEAK_TENSION"]);
-  assert.deepEqual(target.earlierAttempts, [{ id: "c1.2", coverHeadline: "A flatter headline", overall: 78, worse: ["tension 84 → 78", "payoff 84 → 78", "clarity 84 → 78", "grounding 84 → 78", "voice 84 → 78", "focus 84 → 78"] }]);
+  assert.deepEqual(target.earlierAttempts, [{ id: "c1.2", coverHeadline: "A flatter headline", overall: 78, worse: ["tension 84 → 78", "payoff 84 → 78", "clarity 84 → 78", "grounding 84 → 78", "voice 84 → 78", "focus 84 → 78", "originality 84 → 78"] }]);
   assert.equal(request.instruction, OPENING_REVISION_INSTRUCTION);
   assert.match(OPENING_REVISION_INSTRUCTION, /Never make the writing flatter or more bureaucratic/);
   const withAngles = openingRefineRequest(openingTargets(versions, 2), versions, regressions, first, 2);
@@ -334,7 +334,7 @@ test("an earlier run is summarized without its rounds, keeping the editor's choi
 });
 
 test("focus is a criterion like the others: parsed, inside the gate, and absent only from scores stored before the Focus step", () => {
-  assert.deepEqual([...OPENING_CRITERIA], ["tension", "payoff", "clarity", "grounding", "voice", "focus"]);
+  assert.deepEqual([...OPENING_CRITERIA], ["tension", "payoff", "clarity", "grounding", "voice", "focus", "originality"]);
   const answer = (scores: unknown[]) => JSON.stringify({ verdict: "accept", winnerId: "c1", summary: "x", suggestions: [], proposals: [], issues: [], scores });
   assert.equal(parseOpeningEvaluation(answer([score("c1", 96, { focus: 88 })]), ["c1"]).scores[0].focus, 88);
   const { focus: _focus, ...withoutFocus } = score("c1", 96);

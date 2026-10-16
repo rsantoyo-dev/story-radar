@@ -45,7 +45,7 @@ export const CTA_MAX_WORDS = 14;
 /** A closing slide repeats the cover or slide 2 when this share of their longer words is the same. */
 export const CLOSING_RESTATEMENT_OVERLAP = 0.5;
 
-export const CLOSING_CRITERIA = ["resolution", "meaning", "action", "continuity", "grounding", "voice", "focus"] as const;
+export const CLOSING_CRITERIA = ["resolution", "meaning", "action", "continuity", "grounding", "voice", "focus", "originality"] as const;
 export const CLOSING_MECHANICAL_CODES = [
   "FACT_UNKNOWN", "NO_FACTS", "PENULTIMATE_HEADLINE_TOO_LONG", "PENULTIMATE_BODY_TOO_LONG", "LAST_HEADLINE_TOO_LONG", "LAST_BODY_TOO_LONG",
   "CTA_TOO_LONG", "CTA_MISSING", "RECAP_LABEL", "RESTATES_OPENING", "UNSUPPORTED_NUMBER", "TOO_MANY_EMOJIS", "DUPLICATE_CANDIDATE", "WRONG_ADDRESS", "ABBREVIATION",
@@ -76,6 +76,8 @@ export type Draft2ClosingScore = FunnelScore & {
   grounding: number;
   voice: number;
   focus: number;
+  /** Against the predictable ending of this subject (the judges' originality standard); absent on scores stored before it was scored. */
+  originality?: number;
 };
 
 export type Draft2ClosingEvaluation = FunnelEvaluation<Draft2ClosingCandidate, Draft2ClosingScore, Draft2ClosingIssue>;

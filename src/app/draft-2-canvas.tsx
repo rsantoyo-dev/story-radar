@@ -233,9 +233,9 @@ const FACT_STATUS: Record<Draft2Fact["status"], { label: string; tone: StatusTon
   disputed: { label: "Disputed", tone: "warning" },
 };
 
-const CRITERION_LABEL: Record<Draft2OpeningCriterion, string> = { tension: "Tension", payoff: "Payoff", clarity: "Clarity", grounding: "Grounding", voice: "Voice", focus: "Focus" };
-const CLOSING_CRITERION_LABEL: Record<Draft2ClosingCriterion, string> = { resolution: "Resolution", meaning: "Meaning", action: "Action", continuity: "Continuity", grounding: "Grounding", voice: "Voice", focus: "Focus" };
-const DECK_CRITERION_LABEL: Record<Draft2DeckCriterion, string> = { flow: "Flow", coverage: "Coverage", pacing: "Pacing", clarity: "Clarity", grounding: "Grounding", voice: "Voice", focus: "Focus" };
+const CRITERION_LABEL: Record<Draft2OpeningCriterion, string> = { tension: "Tension", payoff: "Payoff", clarity: "Clarity", grounding: "Grounding", voice: "Voice", focus: "Focus", originality: "Originality" };
+const CLOSING_CRITERION_LABEL: Record<Draft2ClosingCriterion, string> = { resolution: "Resolution", meaning: "Meaning", action: "Action", continuity: "Continuity", grounding: "Grounding", voice: "Voice", focus: "Focus", originality: "Originality" };
+const DECK_CRITERION_LABEL: Record<Draft2DeckCriterion, string> = { flow: "Flow", coverage: "Coverage", pacing: "Pacing", clarity: "Clarity", grounding: "Grounding", voice: "Voice", focus: "Focus", originality: "Originality" };
 const VISUAL_CRITERION_LABEL: Record<Draft2VisualCriterion, string> = { fidelity: "Fidelity", continuity: "Identity", brand: "Brand", truth: "Truth", craft: "Craft", originality: "Originality" };
 const RECURRING_LABEL: Record<Draft2VisualRecurring, string> = { none: "", accent: "Recurring element as an accent", focus: "Recurring element leads", callback: "The recurring element returns" };
 const CHARACTER_CHOICE_LABEL: Record<Draft2CharacterChoice, string> = { auto: "Claude decides in each script", on: "A brand character narrates", off: "No brand character" };
@@ -2819,7 +2819,7 @@ function ReviewView({ review, current, saving, locked, onDecide }: {
   return <div className={styles.focusBody}>
     <p className={styles.factMeta}>Review v{review.version} · {read}{reader ? ` · reader ${by(review.readerBy)}` : ""}{editor ? ` · editor ${by(review.editorBy)}` : ""}{current ? "" : " · the opening, the closing or the deck changed since: read the carousel again"}</p>
     {editor ? <>
-      <p className={styles.factMeta}><strong>{editor.verdict === "ready" ? "Ready" : "Patch"} · {editor.scores.overall}/100</strong> · {REVIEW_CRITERIA.map((criterion) => `${criterion} ${editor.scores[criterion]}`).join(" · ")}</p>
+      <p className={styles.factMeta}><strong>{editor.verdict === "ready" ? "Ready" : "Patch"} · {editor.scores.overall}/100</strong> · {REVIEW_CRITERIA.filter((criterion) => editor.scores[criterion] !== undefined).map((criterion) => `${criterion} ${editor.scores[criterion]}`).join(" · ")}</p>
       <p>{editor.summary}</p>
       {editor.strengths.length ? <><p className={styles.factMeta}><strong>What works, and must stay</strong></p><ul>{editor.strengths.map((strength, index) => <li key={index}>{strength}</li>)}</ul></> : null}
     </> : null}

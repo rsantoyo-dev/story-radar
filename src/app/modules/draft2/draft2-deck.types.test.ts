@@ -36,7 +36,7 @@ const deck = (id: string, slides: Draft2DeckSlide[] = [
   slide("Speed is the selling point", "A DOD official says some awards came within a week of the review.", ["f2"]),
 ]): Draft2DeckCandidate => ({ id, slides, angle: "From the pitch to the award" });
 const score = (candidateId: string, overall: number, overrides: Partial<Draft2DeckScore> = {}): Draft2DeckScore =>
-  ({ candidateId, flow: overall, coverage: overall, pacing: overall, clarity: overall, grounding: overall, voice: overall, focus: overall, overall, note: "Why.", ...overrides });
+  ({ candidateId, flow: overall, coverage: overall, pacing: overall, clarity: overall, grounding: overall, voice: overall, focus: overall, originality: overall, overall, note: "Why.", ...overrides });
 const codes = (issues: Draft2DeckIssue[]) => issues.map((issue) => [issue.code, issue.candidateId, issue.part].filter(Boolean).join(" "));
 const findings = (candidate: Draft2DeckCandidate, options: Partial<Parameters<typeof mechanicalDeckIssues>[2]> = {}) =>
   codes(mechanicalDeckIssues([candidate], facts, { opening, closing, shape: arc, emojis: 2, ...options }));
@@ -72,7 +72,7 @@ test("the judge scores every deck criterion and names slides s1, s2…", () => {
   assert.deepEqual(parsed.issues.map((issue) => [issue.code, issue.part ?? null]), [["OVERLOADED", "s2"], ["GAP", null]]);
   assert.deepEqual(parsed.proposals?.map((proposal) => proposal.id), ["p1"], "one deck of the judge's own");
   assert.equal(DECK_PARTS.length, 17);
-  assert.deepEqual([...DECK_CRITERIA], ["flow", "coverage", "pacing", "clarity", "grounding", "voice", "focus"]);
+  assert.deepEqual([...DECK_CRITERIA], ["flow", "coverage", "pacing", "clarity", "grounding", "voice", "focus", "originality"]);
 });
 
 test("a clean deck has no finding; the slide count and every slide's limits and facts are checked", () => {

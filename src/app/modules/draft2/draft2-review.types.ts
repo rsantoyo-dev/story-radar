@@ -18,7 +18,7 @@ import type { Draft2DeckCandidate } from "./draft2-deck.types";
  * the review keeps the text it replaced, so an undo restores it. Everything
  * here is pure: contracts, schemas, parsers and the patched candidates.
  */
-export const REVIEW_CRITERIA = ["tension", "clarity", "grace", "flow", "turn", "truth"] as const;
+export const REVIEW_CRITERIA = ["tension", "clarity", "grace", "flow", "turn", "truth", "originality"] as const;
 export type Draft2ReviewCriterion = (typeof REVIEW_CRITERIA)[number];
 export const REVIEW_MAX_PATCHES = 6;
 export const REVIEW_MAX_STRENGTHS = 6;

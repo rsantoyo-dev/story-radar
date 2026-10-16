@@ -69,7 +69,7 @@ const writer = () => (contents: WriterContents) => contents.task === "revise"
   ] }
   : { candidates: PATHS.slice(0, contents.candidatesWanted).map((headline, index) => deck(`c${index + 1}`, headline)) };
 const score = (candidateId: string, overall: number): Draft2DeckScore =>
-  ({ candidateId, flow: overall, coverage: overall, pacing: overall, clarity: overall, grounding: overall, voice: overall, focus: overall, overall, note: "Why." });
+  ({ candidateId, flow: overall, coverage: overall, pacing: overall, clarity: overall, grounding: overall, voice: overall, focus: overall, originality: overall, overall, note: "Why." });
 const judge = (verdict: "accept" | "revise", winnerId: string, overall: Record<string, number>) => (contents: JudgeContents) => ({
   verdict, winnerId, summary: `${verdict} ${winnerId}.`, issues: [], suggestions: [],
   scores: contents.candidates.map((candidate) => score(candidate.id, overall[candidate.id] ?? 70)),
@@ -139,7 +139,7 @@ test("Claude writes the deck between the chosen opening and closing, and Sol jud
   }), "the closing the editor would see (the judge's winner, c2), and the opening it ends");
   assert.equal(json([(claude.input.contents as WriterContents).candidatesWanted, claude.input.effort, (sol.input.contents as JudgeContents).proposalsWanted, sol.input.reasoningEffort]), json([4, "medium", 1, "medium"]));
   assert.ok(String(claude.input.instructions).includes(decks.DECKS_SKILL.text));
-  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.skillVersions])), json([["deck", "draft2_deck", { decks: "2", fairness: "2", reader: "2" }], ["deck", "draft2_deck_review", { decks: "2", fairness: "2", reader: "2" }]]));
+  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.skillVersions])), json([["deck", "draft2_deck", { decks: "3", fairness: "2", reader: "2" }], ["deck", "draft2_deck_review", { decks: "3", fairness: "2", reader: "2" }]]));
   assert.equal(json([session.step, session.status, session.deck?.winnerId, session.deck?.opening?.id, session.deck?.closing?.id, session.deck?.shape?.kind]), json(["deck", "ready", "c2", "c1", "c2", "arc"]));
 });
 

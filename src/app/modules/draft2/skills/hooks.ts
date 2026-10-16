@@ -34,7 +34,7 @@ import type { Draft2Skill } from "./draft2-skills";
  */
 export const HOOKS_SKILL: Draft2Skill = {
   name: "hooks",
-  version: "9",
+  version: "10",
   text: `# Openings for social carousels
 
 An opening is the cover (headline + subheadline) and slide 2 (headline + body).
@@ -147,6 +147,10 @@ guard's facts; the judge names one whose words leave the misreading open
 - focus: does the opening follow the focus: its framing, reader
   consequence, structure, audience and goal? A strong opening that ignores
   the focus the editor approved misses its brief.
+- originality: is this the angle, the device or the image a reader has not
+  met on this subject, within the facts, as the originality standard scales
+  it? A title formula, a stock promise or the first angle anyone would take
+  caps at 70, however clean.
 An opening is accepted only when overall ≥ 95 and no criterion is below 85.
 
 ## Revisions

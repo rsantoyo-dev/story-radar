@@ -29,7 +29,7 @@ const closing = (id: string, overrides: ClosingOverrides = {}): Draft2ClosingCan
   angle: overrides.angle ?? "Show, don't file",
 });
 const score = (candidateId: string, overall: number, overrides: Partial<Draft2ClosingScore> = {}): Draft2ClosingScore =>
-  ({ candidateId, resolution: overall, meaning: overall, action: overall, continuity: overall, grounding: overall, voice: overall, focus: overall, overall, note: "Why.", ...overrides });
+  ({ candidateId, resolution: overall, meaning: overall, action: overall, continuity: overall, grounding: overall, voice: overall, focus: overall, originality: overall, overall, note: "Why.", ...overrides });
 const rules = { opening, shape: "two-slides" as const, grave: false, emojis: 2 };
 const codes = (issues: Draft2ClosingIssue[]) => issues.map((issue) => [issue.code, issue.candidateId, issue.part].filter(Boolean).join(" "));
 const findings = (overrides: ClosingOverrides, options: Partial<Parameters<typeof mechanicalClosingIssues>[2]> = {}) =>

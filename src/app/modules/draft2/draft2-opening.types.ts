@@ -72,7 +72,7 @@ export const SLIDE2_BODY_MAX_WORDS = 30;
 export const SLIDE2_RESTATEMENT_OVERLAP = 0.5;
 
 /** "focus" came with the Focus step: scores stored before it have none, and read as passing on it. */
-export const OPENING_CRITERIA = ["tension", "payoff", "clarity", "grounding", "voice", "focus"] as const;
+export const OPENING_CRITERIA = ["tension", "payoff", "clarity", "grounding", "voice", "focus", "originality"] as const;
 export const OPENING_MECHANICAL_CODES = [
   "FACT_UNKNOWN", "NO_FACTS", "COVER_TOO_LONG", "SUBHEADLINE_TOO_LONG", "SLIDE2_HEADLINE_TOO_LONG", "SLIDE2_BODY_TOO_LONG",
   "ATTRIBUTION_ON_COVER", "SLIDE2_RESTATES_COVER", "SLIDE2_NO_NEW_FACT", "UNSUPPORTED_NUMBER", "DUPLICATE_CANDIDATE",
@@ -103,6 +103,8 @@ export type Draft2OpeningScore = FunnelScore & {
   voice: number;
   /** How well the opening follows the story's focus; absent on scores stored before the Focus step. */
   focus?: number;
+  /** Against the predictable telling of this subject (the judges' originality standard); absent on scores stored before it was scored. */
+  originality?: number;
 };
 
 export type Draft2OpeningEvaluation = FunnelEvaluation<Draft2OpeningCandidate, Draft2OpeningScore, Draft2OpeningIssue>;

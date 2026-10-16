@@ -29,7 +29,7 @@ test("the reader's answer: a reaction per known slide in the carousel's order, t
 
 test("the editor's answer: integer scores clamped, a verdict and a summary, strengths, and patches only for texts the slides have", () => {
   const answer = parseReviewAnswer(JSON.stringify({
-    scores: { tension: 88, clarity: 101, grace: 0, flow: 90, turn: 85, truth: 97, overall: 89 },
+    scores: { tension: 88, clarity: 101, grace: 0, flow: 90, turn: 85, truth: 97, originality: 86, overall: 89 },
     verdict: "patch", summary: "Close; the cover promises less than the story gives.", strengths: ["The penultimate pays the roof."],
     patches: [
       { slide: "cover", field: "headline", before: "The library opens its doors again", after: "The library is back, two years later", reason: "Name the wait." },
@@ -39,7 +39,7 @@ test("the editor's answer: integer scores clamped, a verdict and a summary, stre
       { slide: "cover", field: "headline", before: "dup", after: "dup2", reason: "a second patch on the same text is dropped" },
     ],
   }), carousel);
-  assert.deepEqual(answer.scores, { tension: 88, clarity: 100, grace: 1, flow: 90, turn: 85, truth: 97, overall: 89 });
+  assert.deepEqual(answer.scores, { tension: 88, clarity: 100, grace: 1, flow: 90, turn: 85, truth: 97, originality: 86, overall: 89 });
   assert.deepEqual([answer.verdict, answer.strengths], ["patch", ["The penultimate pays the roof."]]);
   assert.deepEqual(answer.patches.map((patch) => `${patch.slide}.${patch.field}`), ["cover.headline", "s1.practical", "last.cta"], "slide 2 has no subheadline; one patch per text");
   const patches = reviewPatches(answer, carousel);

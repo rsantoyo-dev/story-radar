@@ -50,7 +50,7 @@ export const DECK_PRACTICAL_MAX_WORDS = 14;
 /** A deck slide repeats another slide of the carousel when this share of their longer words is the same. */
 export const DECK_RESTATEMENT_OVERLAP = 0.5;
 
-export const DECK_CRITERIA = ["flow", "coverage", "pacing", "clarity", "grounding", "voice", "focus"] as const;
+export const DECK_CRITERIA = ["flow", "coverage", "pacing", "clarity", "grounding", "voice", "focus", "originality"] as const;
 export const DECK_MECHANICAL_CODES = [
   "FACT_UNKNOWN", "NO_FACTS", "HEADLINE_TOO_LONG", "BODY_TOO_LONG", "PRACTICAL_TOO_LONG", "PRACTICAL_OUTSIDE_LIST", "SLIDE_COUNT", "ITEM_OUT_OF_PLACE",
   "RESTATES_SLIDE", "RECAP_LABEL", "UNSUPPORTED_NUMBER", "TOO_MANY_EMOJIS", "DUPLICATE_CANDIDATE", "WRONG_ADDRESS", "ABBREVIATION",
@@ -73,7 +73,7 @@ export type Draft2DeckSlide = {
 };
 export type Draft2DeckCandidate = FunnelCandidate & { slides: Draft2DeckSlide[] };
 export type Draft2DeckIssue = FunnelIssue & { code: Draft2DeckIssueCode };
-export type Draft2DeckScore = FunnelScore & { flow: number; coverage: number; pacing: number; clarity: number; grounding: number; voice: number; focus: number };
+export type Draft2DeckScore = FunnelScore & { flow: number; coverage: number; pacing: number; clarity: number; grounding: number; voice: number; focus: number; /** Against the expected sequence of statements (the judges' originality standard); absent on scores stored before it was scored. */ originality?: number };
 export type Draft2DeckEvaluation = FunnelEvaluation<Draft2DeckCandidate, Draft2DeckScore, Draft2DeckIssue>;
 export type Draft2DeckRound = FunnelRound<Draft2DeckCandidate, Draft2DeckScore, Draft2DeckIssue>;
 export type Draft2DeckVersion = FunnelVersion<Draft2DeckCandidate, Draft2DeckScore, Draft2DeckIssue>;

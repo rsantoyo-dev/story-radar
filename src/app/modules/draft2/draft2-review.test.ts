@@ -44,7 +44,7 @@ const READER = {
   follow: true, comment: "Finally!", share: false, stoppedAt: null, verdict: "I would go.",
 };
 const EDITOR = {
-  scores: { tension: 86, clarity: 90, grace: 84, flow: 88, turn: 80, truth: 97, overall: 87 }, verdict: "patch", summary: "Close; slide 4 loses the reader.",
+  scores: { tension: 86, clarity: 90, grace: 84, flow: 88, turn: 80, truth: 97, originality: 82, overall: 87 }, verdict: "patch", summary: "Close; slide 4 loses the reader.",
   strengths: ["The roof pays the wait."],
   patches: [
     { slide: "slide2", field: "body", before: "Under twelve, admission is free.", after: "Kids under twelve get in free.", reason: "Plainer, in the audience's words." },
@@ -118,7 +118,7 @@ test("the review reads the chosen carousel: a reader of the audience first, then
   assert.match(review.editor!.patches[1].note ?? "", /passed the Opening's gate[^]*headline has/i, "a style patch on the cover's headline breaks the review's rule, and one over eight words the opening's");
   assert.equal(json(review.editor?.patches.map((patch) => patch.kind)), json(["style", "style", "style"]), "a patch that names no kind claims no necessity");
   assert.match(review.editor!.patches[2].note ?? "", /quoted "Tools for grown hands\."/);
-  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.outcome, entry.effort, entry.skillVersions])), json([["review", "draft2_review_read", "ok", "low", {}], ["review", "draft2_review", "ok", "medium", { review: "5", fairness: "2", reader: "2" }]]));
+  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.outcome, entry.effort, entry.skillVersions])), json([["review", "draft2_review_read", "ok", "low", {}], ["review", "draft2_review", "ok", "medium", { review: "6", fairness: "2", reader: "2" }]]));
 });
 
 test("a patch applied edits the chosen version in place, in its step and in the copies the later steps keep; the review keeps what it replaced, and an undo restores it", async () => {

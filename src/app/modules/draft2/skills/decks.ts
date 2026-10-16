@@ -12,7 +12,7 @@ import type { Draft2Skill } from "./draft2-skills";
  */
 export const DECKS_SKILL: Draft2Skill = {
   name: "decks",
-  version: "2",
+  version: "3",
   text: `# Decks for social carousels
 
 The deck is the middle of the carousel: the slides after slide 2 and before
@@ -74,6 +74,10 @@ judged against the opening and the closing it connects.
   publication's language.
 - focus: does it follow the focus: its framing, structure, audience and
   goal?
+- originality: do the middle slides carry their facts with angles, details
+  or turns the reader has not met in stories like this one, within the
+  facts, rather than the expected sequence of statements? The originality
+  standard's scale applies.
 A deck is accepted only when overall ≥ 95 and no criterion is below 85.
 
 ## Revisions

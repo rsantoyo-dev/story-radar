@@ -24,7 +24,7 @@ import type { Draft2Skill } from "./draft2-skills";
  */
 export const REVIEW_SKILL: Draft2Skill = {
   name: "review",
-  version: "5",
+  version: "6",
   text: `# Reviewing a carousel
 
 A carousel is read one swipe at a time, on a phone, by someone who did not ask
@@ -58,6 +58,9 @@ works as it is, even where you would have written it otherwise.
 - turn: does one slide change the story or the reader's understanding, and is
   it visible as such?
 - truth: nothing the facts do not carry; qualifiers and attribution kept?
+- originality: read whole, is this a telling the reader has not met on this
+  subject (its angle, its turn, its voice, its images' idea), within the
+  facts? A carousel that could have been any publication's caps at 80.
 The verdict is "ready" when a reader of this audience would finish the
 carousel and want more, or when nothing must change; "patch" when a change
 in the kinds below is needed.
