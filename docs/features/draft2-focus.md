@@ -577,3 +577,17 @@ in the creative profile, read by every Draft 2 run:
   brand brief every writer and judge reads ("Writing rules, the publication's
   own (they win over a general habit)"): vocabulary, how a technical term is
   introduced, who never speaks in the text.
+
+## Addendum, 2026-10-15: the Focus decides, the Spine plans
+
+The second call (the levers, the guards, the spine and the two directions)
+moved to its own step, the Spine, between the Focus and the Opening
+(`planDraft2Spine`, `POST /api/radar/draft2/spine`; brief
+`docs/features/draft2-spine.md`). "Decide the focus" is one Claude call and
+the judge's reviews; a spine the editor owns stays, Claude's earlier plan goes
+with the decision it followed, and the Spine step writes a new one (the
+autopilot does it; the Opening waits for a spine that is current). The
+focus route's `PATCH rewrite: "plan"` keeps working through the same
+function. The Focus screen keeps the decision's fields; the lever, the
+guards, the beats (editable one by one) and the directions are on the Spine
+screen.

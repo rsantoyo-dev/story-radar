@@ -26,7 +26,8 @@ Two provider calls, then the program:
    independent gate by default: `DRAFT2_MODEL_REVIEW_JUDGE`, else Sol,
    effort medium). It reads the slides, the focus (interest, spine, voice),
    the reader's reactions and the verified facts; scores tension, clarity,
-   grace, flow, turn and truth (1–100, plus an overall); gives a verdict,
+   grace, flow, turn, truth and originality (1–100, plus an overall; the
+   originality standard since review v6, 2026-10-15); gives a verdict,
    `ready` or `patch`; names what works and must survive any change; and
    writes up to six patches: one slide, one text (headline, subheadline,
    body, practical, cta), the exact text replaced, the replacement, why.

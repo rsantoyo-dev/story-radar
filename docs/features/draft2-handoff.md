@@ -534,3 +534,40 @@ and the review skill (v2), and the error now says what the reader named.
 Lesson, the third time: a cheap model deviates on answer format; a parser must
 resolve every deviation whose meaning is unambiguous and stay strict on the
 rest, and a new structured call needs one real run before it is believed.
+
+### Addendum, 2026-10-15: the spine as the contract (step, fix pass, fewer rounds, originality)
+
+After the Fogón Lab avocado story ($1.87, 23.5 min, the visual unaccepted
+after five rounds) the editor approved a five-part plan; brief
+`docs/features/draft2-spine.md`. Measured first on the 23 stories Luna judged
+since 2026-10-11 (`scripts/draft2-inspect/inspect-proposals.mts`): the
+judge's proposals produce winners (deck 11 of 22, opening 5 of 23, closing
+5 of 23, visual 6 of 22), so they stay; the visual was never accepted (22 of
+22, 4.6 rounds, $14.3 of writing against $0.96 of judging).
+
+- **The Spine is a step** between the Focus and the Opening (Story group,
+  twelve steps). The Focus decides the story and its telling in one call; the
+  Spine writes the plan (lever and where it is paid, guards, one beat per
+  slide, the two directions) in one call, claimed as the step `spine`. The
+  screen edits every beat, the lever and the directions in place; a changed
+  telling marks the plan "Changed since"; the autopilot writes it after the
+  Focus and again when missing or stale; the Opening waits for it.
+- **The visual script executes the spine** (visuals v10): each slide's beat is
+  the spine's image line, bound by the program on every parse; criteria
+  fidelity, identity, brand, truth, craft, originality; one script plus the
+  judge's, two rounds at medium, no extra round on the funnel's own.
+- **The fix pass**: what the program flagged goes back to the writer once
+  (medium) before the judge reads the round; never fatal; recorded on the
+  round (`fix`) and the trace (`<writer>_fix`).
+- **Extra rounds only while a round improves** (`funnelRoundImproved`), where
+  the step allows them (`autoExtraRounds`).
+- **Standards**: every writer checks itself before answering
+  (`WRITER_STANDARD`); the opening, closing, deck, visual and Review judges
+  score **originality** against the predictable telling, never against the
+  facts (`JUDGE_STANDARD`; hooks v10, closings v4, decks v3, review v6).
+
+Expected per story: ≈ $1.35–1.45 and 14–16 min (visual ≈ $0.20, 3 min). Watch
+on the first stories: acceptance per step under the originality floor, how
+many findings the fix pass clears, whether the visual reaches 90 with the
+spine bound, and whether the Spine's beat editor is enough or the editor
+wants to add or remove beats.

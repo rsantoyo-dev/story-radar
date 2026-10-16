@@ -34,9 +34,9 @@ effort for real.
 ## 2. Autopilot ("Run to images", the canvas)
 
 One button runs every step to the images without stopping, from where the
-session stands: Facts when they are not verified, Focus, People and places,
-accounts to tag, Opening, Closing, Deck, Review (its patches applied), Visual
-script, Images. The caption
+session stands: Facts when they are not verified, People and places, Focus,
+Spine (written again when the telling changed), accounts to tag, Opening,
+Closing, Deck, Review (its patches applied), Visual script, Images. The caption
 stays manual: it tags the accounts the editor confirms, and the editor
 approves the carousel for publishing (AGENTS.md §21 keeps that approval).
 
@@ -151,6 +151,14 @@ judgment in real runs).
   matched inside "diálogo"; the checks now use Unicode-aware boundaries.
 
 ## 6. Extra rounds: the floor and "one more round"
+
+Since 2026-10-15 an extra round on the funnel's own needs the last round to
+have raised the run's best clean score (`funnelRoundImproved`), and the step
+to allow it (`autoExtraRounds`; the visual script takes none). The editor's
+"One more round" is unchanged. In the same change, the writer fixes what the
+program flagged before the judge reads a round (the fix pass, `<writer>_fix`
+on the trace), so a round seldom loses its candidates to findings. Brief:
+`docs/features/draft2-spine.md`.
 
 The gate (95) stays the goal. An unaccepted run whose best version is at or
 above `FUNNEL_ACCEPTABLE_SCORE` (90) is acceptable for the editor to

@@ -388,3 +388,14 @@ does not seem to stand at the place.
 - **Canvas:** the script's cast panel and the slide's "Another image" offer
   the characters on map slides too.
 
+## Addendum, 2026-10-15: the script executes the spine (visuals v10)
+
+Each slide's beat is the spine's image line, bound by the program on every
+parse (`spineImageLines`, `bindSpineBeats`); the models receive the same map
+as `spineBeats`. The judge scores fidelity to the beat, identity, brand,
+truth, craft and originality (`PREDICTABLE` names a stock image); it never
+asks for another narrative than the spine's. One script plus the judge's
+proposal, then the best revised beside the proposal as written and as
+edited, both rounds at medium, and no extra round on the funnel's own. Why:
+22 real runs under the earlier rubric, none accepted. Brief:
+`docs/features/draft2-spine.md`.
