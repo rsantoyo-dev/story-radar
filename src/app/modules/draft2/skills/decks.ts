@@ -12,7 +12,7 @@ import type { Draft2Skill } from "./draft2-skills";
  */
 export const DECKS_SKILL: Draft2Skill = {
   name: "decks",
-  version: "3",
+  version: "4",
   text: `# Decks for social carousels
 
 The deck is the middle of the carousel: the slides after slide 2 and before
@@ -78,7 +78,9 @@ judged against the opening and the closing it connects.
   or turns the reader has not met in stories like this one, within the
   facts, rather than the expected sequence of statements? The originality
   standard's scale applies.
-A deck is accepted only when overall ≥ 95 and no criterion is below 85.
+A deck is accepted only when overall ≥ 95 and no criterion is below 85, except
+originality, which may be as low as 75: the steps of a procedure and the items
+of a list leave it less room. It still counts in the overall.
 
 ## Revisions
 After the first round, the best decks are revised, and the judge's own deck

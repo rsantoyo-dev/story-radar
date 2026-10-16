@@ -326,20 +326,20 @@ test("regression: a revision that scores lower, or loses grounding the overall d
   const h = harness({
     writes: [writer(), writer(), writer()],
     judgments: [
-      // Scores at or above the floor the funnel works to, so no extra round joins: this test is about regressions.
-      judge("revise", "c3", { c3: 92, c5: 88, c1: 87 }),
-      judge("revise", "c5.2", { "c3.2": score("c3.2", 86, { voice: 72, grounding: 94 }), "c5.2": 89, "c1.2": score("c1.2", 87, { grounding: 70, tension: 88 }) }),
-      judge("revise", "c5.3", { "c3.3": 91, "c5.3": 90 }),
+      // Under the floor, so every planned round runs; the third does not raise the best, so no extra round joins: this test is about regressions.
+      judge("revise", "c3", { c3: 88, c5: 85, c1: 84 }),
+      judge("revise", "c5.2", { "c3.2": score("c3.2", 84, { voice: 72, grounding: 94 }), "c5.2": 86, "c1.2": score("c1.2", 84, { grounding: 70, tension: 88 }) }),
+      judge("revise", "c5.3", { "c3.3": 87, "c5.3": 87 }),
     ],
   });
   const session = await h.run();
   assert.equal(json(session.opening?.rounds[1].regressions?.map((regression) => [regression.candidateId, regression.previousId, regression.worse])), json([
-    ["c3.2", "c3", ["tension 92 → 86", "payoff 92 → 86", "clarity 92 → 86", "voice 92 → 72", "focus 92 → 86", "originality 92 → 86"]],
-    ["c1.2", "c1", ["grounding 87 → 70"]],
+    ["c3.2", "c3", ["tension 88 → 84", "payoff 88 → 84", "clarity 88 → 84", "voice 88 → 72", "focus 88 → 84", "originality 88 → 84"]],
+    ["c1.2", "c1", ["grounding 84 → 70"]],
   ]));
   const third = h.writerCalls()[2];
   assert.equal(json(third.openings?.map((target) => target.id)), json(["c3", "c5.2"]), "round 3 refines c3 again, not the weaker c3.2");
-  assert.equal(json((third.openings?.[0] as unknown as { earlierAttempts: { id: string; overall: number }[] }).earlierAttempts.map((attempt) => [attempt.id, attempt.overall])), json([["c3.2", 86]]), "the writer sees the attempt that came out worse");
+  assert.equal(json((third.openings?.[0] as unknown as { earlierAttempts: { id: string; overall: number }[] }).earlierAttempts.map((attempt) => [attempt.id, attempt.overall])), json([["c3.2", 84]]), "the writer sees the attempt that came out worse");
   assert.equal(json(session.opening?.rounds[2].regressions?.map((regression) => regression.candidateId)), json(["c3.3"]));
   assert.equal(session.opening?.winnerId, "c3", "the best version so far is still the first round's");
 });
@@ -732,4 +732,19 @@ test("no extra round on its own when the last round did not raise the best: the 
   const session = await flat.run();
   assert.equal(json([session.opening?.status, session.opening?.rounds.length, session.opening?.extraRounds ?? 0, session.opening?.winnerId]), json(["needs-review", 3, 0, "c1.3"]), "three rounds, no extra; a tie goes to the later round");
   assert.match(String(session.error), /under 90\/100\. The last round did not raise the best, so no extra round was taken\./);
+});
+
+test("acceptable and no longer improving: the planned rounds left are not run, and the editor can still continue the run with them", async () => {
+  const h = harness({
+    writes: [writer(), writer(), writer()],
+    judgments: [judge("revise", "c1", { c1: 92, c2: 88 }), judge("revise", "c1.2", { "c1.2": 92 }), judge("accept", "c1.3", { "c1.3": 96 })],
+  });
+  const session = await h.run();
+  assert.equal(json([session.opening?.status, session.opening?.rounds.length, session.opening?.winnerId]), json(["needs-review", 2, "c1.2"]), "round 2 did not raise the best (92): round 3 is not run");
+  assert.match(String(session.error), /after 2 rounds\. The last round did not raise the best, so the planned round after it was not run\./);
+  const continued = await h.run({ resume: true });
+  assert.equal(json([continued.opening?.status, continued.opening?.rounds.length, continued.opening?.winnerId]), json(["ready", 3, "c1.3"]), "the same run takes its third round when asked");
+
+  const rising = harness({ writes: [writer(), writer(), writer()], judgments: [judge("revise", "c1", { c1: 90 }), judge("revise", "c1.2", { "c1.2": 92 }), judge("revise", "c1.3", { "c1.3": 93 })] });
+  assert.equal((await rising.run()).opening?.rounds.length, 3, "a round that raised the best earns the next planned one");
 });

@@ -11,6 +11,10 @@ import { anchorNoun, narrativeUsesMaster, spineBeats, type Draft2FocusNarrative,
 import type { Draft2ClosingOpening } from "./draft2-closing.types";
 import type { Draft2Deck, Draft2DeckCandidate, Draft2DeckClosing } from "./draft2-deck.types";
 import type { CreativeProfile } from "../stories/creative-content.types";
+import { avoidTerms, forbiddenElement, mentionsTerm } from "./draft2-image-rules";
+
+/** The image rules every step shares (draft2-image-rules.ts), where the visual script's callers have always found them. */
+export { avoidTerms, forbiddenElement };
 
 /**
  * Visual script, the Draft 2 step after the deck and the people-and-places
@@ -379,21 +383,6 @@ export function parseVisualEvaluation(answer: string, candidateIds: readonly str
   return funnelParseEvaluation(answer, candidateIds, { criteria: VISUAL_CRITERIA, codes: VISUAL_ISSUE_CODES, parts: positions, parseProposal: visualFrom, maxProposals: 1 });
 }
 
-/** Elements no image may carry: they would be drawn as words, logos or interface. */
-// Word boundaries that know accented letters: JavaScript's \b takes "á" for a boundary, so \blogo\b matched inside "diálogo" and blocked a real run's slide.
-const WORD_START = "(?<![\\p{L}\\p{N}_])";
-const WORD_END = "(?![\\p{L}\\p{N}_])";
-const FORBIDDEN = new RegExp(`${WORD_START}(logos?|watermarks?|captions?|subtitles?|hashtags?|swipe|page numbers?|signage|(?:text|words|letters|lettering) (?:that )?(?:reads?|says?|saying))${WORD_END}`, "iu");
-/** A direction that keeps a corner for the logo added afterwards ("esquina libre para logo", "logo abajo a la derecha, libre", "logo en haut à gauche dégagé"), or rules an element out ("no logos", "sin texto", "aucun logo ni interface", "pas de visage, de logo ni de lieu"), does not ask for it (in the publications' languages). */
-const ALLOWED = new RegExp([
-  `${WORD_START}(?:espacio|zona|área|hueco|esquina|margen|rincón|room|space|zone|area|corner|margin|espace|coin|marge|emplacement|réserve)${WORD_END}[^.;]{0,60}?${WORD_START}logos?${WORD_END}`,
-  `${WORD_START}logos?${WORD_END}[^.;]{0,60}?${WORD_START}(?:se añade|añadid[oa]|added|afterwards|después|luego|libre|libres|free|clear|empty|vacío|vacía|reservad[oa]s?|dégagée?s?|libérée?s?|réservée?s?|ajoutée?s?|ensuite|plus tard|hors cadre|hors image)${WORD_END}`,
-  `${WORD_START}(?:sin|no|without|never|nunca|ningún|ninguna|sans|aucune?|pas d[e']|jamais|ni)${WORD_END}[^.;]{0,60}?${WORD_START}(?:logos?|watermarks?|captions?|subtitles?|hashtags?|signage|page numbers?|text|words|letters|lettering|texte|légendes?|filigranes?)${WORD_END}`,
-].join("|"), "giu");
-/** The forbidden element a direction asks for, if any: words, logos, signs or interface the image would have to carry. */
-export function forbiddenElement(direction: string): string | undefined {
-  return FORBIDDEN.exec(direction.replace(ALLOWED, " "))?.[0];
-}
 
 /** A name as a direction might write it: the full name and, for a person, the surname when it is distinctive. */
 function nameForms(name: string, kind: "person" | "place" | "organization"): string[] {
@@ -402,12 +391,7 @@ function nameForms(name: string, kind: "person" | "place" | "organization"): str
   const surname = parts.length > 1 ? parts[parts.length - 1] : "";
   return [full, ...(kind === "person" && [...surname].length >= 4 ? [surname] : [])];
 }
-const mentions = (text: string, form: string) => new RegExp(`(?:^|[^\\p{L}\\p{N}])${form.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:$|[^\\p{L}\\p{N}])`, "u").test(text);
 
-/** The avoid items worth matching in a direction: short phrases the identity lists, compared as written. */
-export function avoidTerms(identity: { avoid?: readonly { items: readonly string[] }[] } | null | undefined): string[] {
-  return [...new Set((identity?.avoid ?? []).flatMap((group) => group.items).map((item) => comparableText(item).replace(/[.;:,]+$/u, "").trim()).filter((item) => [...item].length >= 4 && item.split(" ").length <= 4))];
-}
 
 /**
  * The editor's cast for one image: the brand's characters with a reference
@@ -536,14 +520,14 @@ export function mechanicalVisualIssues(candidates: readonly Draft2VisualCandidat
       if (!strict && slide.slide === "cover" && slide.need === "typography") add("COVER_TYPOGRAPHY", part, "The cover is always an image, never a typography card.");
       const direction = comparableText(slide.direction);
       for (const { entity, material } of entities.values()) {
-        const named = nameForms(entity.name, entity.kind).some((form) => mentions(direction, form));
+        const named = nameForms(entity.name, entity.kind).some((form) => mentionsTerm(direction, form));
         if (!named) continue;
         const referenced = slide.references.includes(entity.id);
         if (entity.kind === "person" && !(referenced && material.portrait)) add("UNVERIFIED_PERSON", part, `${label}'s direction names ${entity.name}; a real person appears only through a confirmed documentary portrait in the slide's references.`);
         if (entity.kind === "place" && !(referenced && (material.photo || material.map))) add("UNVERIFIED_PLACE", part, `${label}'s direction names ${entity.name}; a real place appears only through its verified photo or map in the slide's references.`);
         if (entity.kind === "organization") add("ORGANIZATION_NAMED", part, `${label}'s direction names ${entity.name}; show what it does, never its name, logo or signs.`);
       }
-      const avoided = avoid.find((term) => mentions(direction, term));
+      const avoided = avoid.find((term) => mentionsTerm(direction, term));
       if (avoided) add("AVOID_TERM", part, `${label}'s direction asks for "${avoided}", which the brand's identity avoids.`);
       const forbidden = forbiddenElement(slide.direction);
       if (forbidden) add("FORBIDDEN_ELEMENT", part, `${label}'s direction asks for "${forbidden}"; images carry no words, logos, signs or interface.`);

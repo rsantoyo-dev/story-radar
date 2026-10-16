@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Draft2ResponseError } from "./draft2-facts.types";
 import {
-  DRAFT2_READER_SCHEMA, DRAFT2_REVIEW_SCHEMA, REVIEW_CRITERIA, deckIndex, parseReaderAnswer, parseReviewAnswer, patchField, patchOwner, patchedClosing, patchedDeck, patchedOpening, proposedPatches, resolveSlide, reviewCurrent, reviewPatches, slideFields, slideText,
+  DRAFT2_READER_SCHEMA, DRAFT2_REVIEW_SCHEMA, REVIEW_CRITERIA, deckIndex, locateQuote, parseReaderAnswer, parseReviewAnswer, patchField, patchOwner, patchedClosing, patchedDeck, patchedOpening, proposedPatches, resolveSlide, reviewCurrent, reviewPatches, slideFields, slideText,
   type Draft2Review,
 } from "./draft2-review.types";
 import type { Draft2CarouselSlide } from "./draft2-visual.types";
@@ -101,4 +101,21 @@ test("a reader or an editor who names slides their own way is understood: by id 
   assert.deepEqual([patchField("text", carousel[0]), patchField("text", carousel[2]), patchField("Subtitle", carousel[0]), patchField("call to action", carousel[4]), patchField("practical line", carousel[2]), patchField("headline", carousel[1]), patchField("footer", carousel[1])], ["subheadline", "body", "subheadline", "cta", "practical", "headline", undefined]);
   const patched = parseReviewAnswer(JSON.stringify({ scores: Object.fromEntries([...REVIEW_CRITERIA, "overall"].map((key) => [key, 90])), verdict: "patch", summary: "x", strengths: [], patches: [{ slide: "Slide 3", field: "text", before: "A reading room and a workshop.", after: "A reading room, and a workshop.", reason: "r".repeat(400) }] }), carousel);
   assert.deepEqual(patched.patches.map((patch) => `${patch.slide}.${patch.field}.${patch.reason.length}`), ["s1.body.300"], "the third slide's text is the first deck slide's body; a long reason is cut");
+});
+
+test("a patch on the text it quoted: a sentence of a body is that part of the body, a text on another slide moves the patch there; a quote that is nowhere is refused", () => {
+  const json = (value: unknown) => JSON.stringify(value);
+  assert.deepEqual(locateQuote(carousel, "penultimate", "body", " the mayor  said"), { slide: "penultimate", field: "body", text: "The roof came first, the mayor said.", part: true });
+  assert.deepEqual(locateQuote(carousel, "slide2", "body", "A reading room and a workshop."), { slide: "s1", field: "body", text: "A reading room and a workshop.", part: false });
+  assert.equal(locateQuote(carousel, "penultimate", "body", "the roof"), undefined, "too short to find as a part");
+  const answer = { scores: { tension: 90, clarity: 90, grace: 90, flow: 90, turn: 90, truth: 90, originality: 90, overall: 90 }, verdict: "patch" as const, summary: "x", strengths: [] };
+  const [part, moved, nowhere] = reviewPatches({ ...answer, patches: [
+    { slide: "penultimate", field: "body", kind: "detail", before: "the mayor said.", after: "the mayor told the council.", reason: "Say where." },
+    { slide: "slide2", field: "body", kind: "repetition", before: "A reading room and a workshop.", after: "A reading room, then a workshop.", reason: "Rhythm." },
+    { slide: "last", field: "body", kind: "truth", before: "The doors stay open all night.", after: "Doors open at ten.", reason: "x" },
+  ] }, carousel);
+  assert.equal(json([part.status, part.before, part.after, part.note]), json(["proposed", "The roof came first, the mayor said.", "The roof came first, the mayor told the council.", "It quoted part of the text: the patch replaces that part."]));
+  assert.equal(json([moved.status, moved.slide, moved.owner, moved.before]), json(["proposed", "s1", "deck", "A reading room and a workshop."]));
+  assert.match(moved.note ?? "", /named slide2's body; the text it quoted is s1's body/);
+  assert.equal(nowhere.status, "refused");
 });

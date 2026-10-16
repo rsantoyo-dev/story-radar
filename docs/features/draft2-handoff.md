@@ -571,3 +571,16 @@ on the first stories: acceptance per step under the originality floor, how
 many findings the fix pass clears, whether the visual reaches 90 with the
 spine bound, and whether the Spine's beat editor is enough or the editor
 wants to add or remove beats.
+
+### Addendum, 2026-10-16: six changes after the first story under the spine
+
+Brief: `docs/features/draft2-spine.md` §8. In short: the spine's image lines
+are checked (a subject per beat, avoided terms, words asked of the image, the
+same subject twice: asked again once, then shown to the editor, spine skill
+v2); planned rounds stop when the best is at 90+ and a round did not raise it;
+the deck's originality floor is 75 (`FunnelGate.floors`); the Review finds a
+partial quote or a quote on another slide; the autopilot's log says why it
+writes a step again; and `DRAFT2_SHADOW_JUDGE_EFFORT=low` with
+`scripts/draft2-inspect/inspect-shadow.mts` measures Luna at low effort. The
+older shadow runs (2026-10-10/11, Luna at medium beside Sol) read: same winner
+12 of 16 rounds, Luna 1–3 points lower, its judgment 30–45 % faster.

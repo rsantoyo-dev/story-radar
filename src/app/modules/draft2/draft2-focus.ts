@@ -13,7 +13,7 @@ import { traceCost } from "./draft2-trace-cost";
 import { draft2DevTrace } from "./draft2-dev-trace";
 import { Draft2BusyError, Draft2InputError, Draft2ResponseError, type Draft2Fact, type Draft2TraceEntry } from "./draft2-facts.types";
 import {
-  CLASSIC_CONCEPT, CLASSIC_NARRATIVE, DRAFT2_FOCUS_PLAN_SCHEMA, DRAFT2_FOCUS_SCHEMA, DRAFT2_NARRATIVE_REVIEW_SCHEMA, FOCUS_PLAN_FIELDS, applyFocusEdit, conceptReviewRequest, decidedFocus, editorChoicesOf, focusDecisionRequest, focusForModels, focusLine, focusMaterial, focusToday,
+  CLASSIC_CONCEPT, CLASSIC_NARRATIVE, DRAFT2_FOCUS_PLAN_SCHEMA, focusWithSpineProblems, DRAFT2_FOCUS_SCHEMA, DRAFT2_NARRATIVE_REVIEW_SCHEMA, FOCUS_PLAN_FIELDS, applyFocusEdit, conceptReviewRequest, decidedFocus, editorChoicesOf, focusDecisionRequest, focusForModels, focusLine, focusMaterial, focusToday,
   focusWithPlan, narrativeReviewRequest, parseFocusDecision, parseFocusPlan, parseNarrativeReview, resetFocusField,
   type Draft2CreativeReview, type Draft2Focus, type Draft2FocusField, type Draft2FocusMaterial,
 } from "./draft2-focus.types";
@@ -22,6 +22,7 @@ import { OPENING_STALL_MS, openingFactsSnapshot } from "./draft2-opening.types";
 import { visualModeLine, type Draft2VisualMode } from "./draft2-visual.types";
 import { resolveCreativeVisualGuidance } from "../stories/creative-visual-guidance";
 import { brandBrief, composeInstructions, creativeSkills, type Draft2Skill } from "./skills/draft2-skills";
+import { avoidTerms } from "./draft2-image-rules";
 import { FOCUS_SKILL } from "./skills/focus";
 import { NARRATIVES_SKILL } from "./skills/narratives";
 import { DISCOVERY_SKILL } from "./skills/discovery";
@@ -170,7 +171,8 @@ export async function decideDraft2Focus({ topicId, storyId, sessionId }: Draft2F
       });
       const told = decidedFocus(focus, decision, { provider: "anthropic", model }, new Date());
       // The judge's reviews of the telling. A spine the editor owns stays (parseFocusDecision kept it); Claude's earlier spine and directions go with the decision they followed, and the Spine step writes new ones.
-      return { ...(await reviewChoices(told)), inventoryVersion: inventory.version };
+      // A spine the editor owns stays through the decision: its image problems are read again with the brand's avoid list as it stands.
+      return { ...focusWithSpineProblems(await reviewChoices(told), avoidTerms(profile.creativeIdentity)), inventoryVersion: inventory.version };
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "The focus step failed.";
@@ -196,8 +198,10 @@ export async function editDraft2Focus({ topicId, sessionId, field, value, reset 
   const deciding = focus.status === "running" && session.status === "running" && Date.now() - new Date(session.updatedAt).getTime() < OPENING_STALL_MS;
   if (deciding) throw new Draft2BusyError("Claude is deciding the focus; change it when it finishes.");
   const now = new Date();
-  const next = reset ? resetFocusField(focus, field, now) : applyFocusEdit(focus, field, value, now);
-  if (next === focus) return session;
+  const edited = reset ? resetFocusField(focus, field, now) : applyFocusEdit(focus, field, value, now);
+  if (edited === focus) return session;
+  // A beat the editor changed: what its image line would make the images pay for is shown again, never blocking.
+  const next = field === "spine" ? focusWithSpineProblems(edited, avoidTerms((await getCreativeProfile(topicId)).creativeIdentity)) : edited;
   const updated = await updateDraft2Session(session.id, { focus: next });
   if (!updated) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
   return updated;
@@ -211,7 +215,7 @@ export async function editDraft2Focus({ topicId, sessionId, field, value, reset 
 async function focusCall<T>({ apiKey, model, trace, verifiedFacts, auditContext, operation, instructions, skillVersions, contents, schema, effort, maxOutputTokens, parse, again }: {
   apiKey: string; model: string; trace: Draft2TraceEntry[]; verifiedFacts: unknown; auditContext: { runId: string; topicId: string; storyId: string };
   operation: string; instructions: string; skillVersions: Record<string, string>; contents: Record<string, unknown>; schema: Record<string, unknown>;
-  effort: "medium" | "high"; maxOutputTokens: number; parse: (answer: string) => T; again: string;
+  effort: "medium" | "high"; maxOutputTokens: number; parse: (answer: string, attempt: number) => T; again: string;
 }): Promise<T> {
   let correction: string | undefined;
   for (let attempt = 1; attempt <= FOCUS_ATTEMPTS; attempt++) {
@@ -232,7 +236,7 @@ async function focusCall<T>({ apiKey, model, trace, verifiedFacts, auditContext,
     trace.push({ at, step: "focus", round: attempt, provider: "anthropic", model, operation, durationMs, usage: answered.usage, cachedInputTokens: answered.cachedInputTokens, ...(answered.cacheWriteTokens ? { cacheWriteTokens: answered.cacheWriteTokens } : {}), answerCharacters: answered.text.length, outcome: "ok", skillVersions, effort, ...traceCost("anthropic", model, answered.usage, answered.cachedInputTokens, answered.cacheWriteTokens) });
     draft2DevTrace({ step: "focus", round: attempt, provider: "anthropic", model, operation, phase: "response", durationMs, detail: { usage: answered.usage, answer: answered.text } });
     try {
-      return parse(answered.text);
+      return parse(answered.text, attempt);
     } catch (error) {
       // An answer outside the contract (a field too long, a value it does not accept) is asked for again once, with the rule it broke; a second one fails the step.
       if (!(error instanceof Draft2ResponseError) || attempt === FOCUS_ATTEMPTS) throw error;
@@ -248,7 +252,7 @@ async function focusCall<T>({ apiKey, model, trace, verifiedFacts, auditContext,
  * focus and spine skills, and the skills its telling needs), its request and
  * its parse, honoring the parts of the plan the editor owns.
  */
-function planCall(focus: Draft2Focus, { facts, title, brief, editorChoices, material, recentLevers }: { facts: readonly Draft2Fact[]; title: string; brief: string; editorChoices: Record<string, unknown>; material?: Draft2FocusMaterial; recentLevers: readonly string[] }) {
+function planCall(focus: Draft2Focus, { facts, title, brief, editorChoices, material, recentLevers, avoid = [] }: { facts: readonly Draft2Fact[]; title: string; brief: string; editorChoices: Record<string, unknown>; material?: Draft2FocusMaterial; recentLevers: readonly string[]; avoid?: readonly string[] }) {
   const values = focus.values!;
   // The spine's words are what the writers say: the reader's words, never the source's abbreviations.
   const planner = composeInstructions("focus-planner", [FOCUS_SKILL, LEVERS_SKILL, SPINE_SKILL, READER_SKILL, ...creativeSkills(values)], brief);
@@ -262,7 +266,8 @@ function planCall(focus: Draft2Focus, { facts, title, brief, editorChoices, mate
     skillVersions: planner.skillVersions,
     // People and places' material: the visual direction shows the people with a verified portrait through it, never anyone else.
     contents: { task: "plan", title, focus: told, ...(material ? { material } : {}), eligibleLevers: eligible, recentLevers, editorChoices: owned } as Record<string, unknown>,
-    parse: (answer: string) => parseFocusPlan(answer, { known: new Set(facts.map((fact) => fact.id)), structure: values.structure, eligibleLevers: eligible, editorChoices: owned }),
+    // The first answer's image lines are checked and asked for again with what they break; the second's problems go to the editor as notes.
+    parse: (answer: string, attempt: number) => parseFocusPlan(answer, { known: new Set(facts.map((fact) => fact.id)), structure: values.structure, eligibleLevers: eligible, editorChoices: owned, ...(attempt < FOCUS_ATTEMPTS ? { imageCheck: { avoid } } : {}) }),
   };
 }
 
@@ -288,6 +293,7 @@ export async function planDraft2Spine({ topicId, storyId, sessionId }: Draft2Foc
   const [profile, content, recentLevers] = await Promise.all([getCreativeProfile(topicId), getStoryContent(topicId, storyId), recentDraft2Levers(topicId, session.id)]);
   const brief = [brandBrief(profile), `# Visual identity\n${resolveCreativeVisualGuidance(profile)}`, visualModeLine(profile.visualFidelityMode as Draft2VisualMode)].join("\n\n");
   const facts = session.facts ?? [];
+  const avoid = avoidTerms(profile.creativeIdentity);
   const claimed = await claimDraft2Session(session.id, { step: "spine", error: null });
   if (!claimed) throw new Draft2BusyError("A Draft 2 run is already in progress for this story.");
   const trace: Draft2TraceEntry[] = [...session.trace];
@@ -296,7 +302,7 @@ export async function planDraft2Spine({ topicId, storyId, sessionId }: Draft2Foc
   let plan;
   try {
     plan = await withCreativeTextBudget({ topicId, storyId, runId: session.id }, () => focusCall({
-      apiKey, model, trace, verifiedFacts: openingFactsSnapshot(facts), auditContext, operation: "draft2_focus_plan", ...planCall(focus, { facts, title: content.title, brief, editorChoices: editorChoicesOf(focus), recentLevers, ...(session.inventory?.status === "ready" ? { material: focusMaterial(session.inventory) } : {}) }),
+      apiKey, model, trace, verifiedFacts: openingFactsSnapshot(facts), auditContext, operation: "draft2_focus_plan", ...planCall(focus, { facts, title: content.title, brief, editorChoices: editorChoicesOf(focus), recentLevers, avoid, ...(session.inventory?.status === "ready" ? { material: focusMaterial(session.inventory) } : {}) }),
       schema: DRAFT2_FOCUS_PLAN_SCHEMA, effort: "high", maxOutputTokens: PLAN_MAX_OUTPUT_TOKENS, again: PLAN_AGAIN,
     }));
   } catch (error) {
@@ -307,7 +313,7 @@ export async function planDraft2Spine({ topicId, storyId, sessionId }: Draft2Foc
   } finally {
     clearInterval(heartbeat);
   }
-  const updated = await updateDraft2Session(session.id, { focus: focusWithPlan(focus, plan, new Date()), trace, status: "ready", error: null });
+  const updated = await updateDraft2Session(session.id, { focus: focusWithSpineProblems(focusWithPlan(focus, plan, new Date()), avoid), trace, status: "ready", error: null });
   if (!updated) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
   return updated;
 }

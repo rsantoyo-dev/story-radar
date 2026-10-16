@@ -57,7 +57,9 @@ export const DECK_MECHANICAL_CODES = [
 ] as const;
 export const DECK_JUDGE_CODES = ["BREAKS_FLOW", "GAP", "OVERLOADED", "REPEATS", "WRONG_LENGTH", "UNCLEAR", "OVERCLAIMS", "OFF_VOICE", "OFF_FOCUS", "OTHER"] as const;
 export const DECK_ISSUE_CODES = [...DECK_MECHANICAL_CODES, ...DECK_JUDGE_CODES] as const;
-export const DECK_GATE: FunnelGate = { criteria: DECK_CRITERIA, accept: DECK_ACCEPT_SCORE, floor: DECK_CRITERION_FLOOR };
+/** A deck's originality may be lower than its other criteria: a procedure's steps or a list's items leave it less room (a real recipe deck scored 73–77 on it with 88 overall). It still counts in the overall. */
+export const DECK_ORIGINALITY_FLOOR = 75;
+export const DECK_GATE: FunnelGate = { criteria: DECK_CRITERIA, accept: DECK_ACCEPT_SCORE, floor: DECK_CRITERION_FLOOR, floors: { originality: DECK_ORIGINALITY_FLOOR } };
 /** The parts an issue may name: the deck's slides, s1 being the slide after slide 2. */
 export const DECK_PARTS = Array.from({ length: DECK_MAX_SLIDES }, (_, index) => `s${index + 1}`);
 

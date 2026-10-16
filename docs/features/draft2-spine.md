@@ -121,3 +121,54 @@ more often; the floor for it can be revisited with data).
   `draft-2-canvas.tsx` (`SpineView`, `SpineBeats`, the autopilot order).
 - Tests: the funnel's, each step's harness (the fix pass echoed), the visual
   types' binding test, the focus tests on the two steps, the canvas core.
+
+## 8. Addendum, 2026-10-16: after the first story under the spine
+
+The corn story (Fogón Lab, session a1debb9a, 40 facts, 7 slides): $1.38 of
+text and $0.31 of images, 24 minutes of model time. The visual script went
+from 11 minutes and $0.67 to 2.5 minutes and $0.14, at 88 instead of 82; the
+writer's self-check cut the Opening's first-round findings from 20 to 1.
+Nothing was accepted (92, 92, 88, 88), and Luna's judgments were 53 % of the
+time. Six changes, approved by the editor:
+
+1. **The spine's image lines are checked** (`draft2-spine-checks.ts`, spine
+   skill v2). Each beat names its image's dominant `subject`; the program
+   flags a term the brand's identity avoids, words or numbers asked of the
+   image ("numbered cards", "with labels": the image model letters only the
+   slide's words) and the same subject on two consecutive beats (a plural's
+   "s" ignored: "un grano" and "dos granos" are one subject). Claude's first
+   plan with a problem is asked again with it; what is left after the second,
+   and what a hand edit introduces, shows on the Spine screen as "What the
+   images would pay for", never blocking (`focus.spineProblems`). Three of
+   the corn story's five visual issues and both failed images came from such
+   lines. The image rules both places read live in `draft2-image-rules.ts`
+   (the visual script's `forbiddenElement` and `avoidTerms` moved there).
+2. **Planned rounds stop when the best is acceptable and stopped rising**: a
+   round after the first that does not raise the best clean score, with that
+   score at 90 or more, ends the run "needs-review"; the editor can continue
+   with the rounds left. Today only the Opening has a third planned round; in
+   23 Opening runs no third-round proposal ever won.
+3. **A criterion's own floor** (`FunnelGate.floors`, `criterionFloor`): the
+   deck's originality passes at 75 (decks v4); every other criterion keeps 85.
+4. **The Review finds what it quoted** (`locateQuote`): a sentence of a body
+   is that part of the body (the patch becomes the whole text with that part
+   replaced), a text on another slide moves the patch there, and the note says
+   so. Two of the corn story's three patches were refused for quoting one
+   sentence.
+5. **The autopilot says why it writes a step again**: "its last run ended with
+   no clean version" or "what it follows changed since" in its log; a step
+   that ends twice in a row with no clean version stops the run with what to
+   do. (The corn story's closing ran twice: its first run ended with every
+   version flagged, and the next autopilot start wrote it again without
+   saying so.)
+6. **Luna at low effort, measured before anything changes**:
+   `DRAFT2_SHADOW_JUDGE_EFFORT=low` records a second judgment of every round
+   beside the real one, deciding nothing; `npx tsx
+   scripts/draft2-inspect/inspect-shadow.mts [since]` reads them (same
+   winner, best-score difference, accepts, judge time). Decide after three to
+   five stories whether round 1, or every round, can run at low.
+
+Observed, not changed: the fix pass did not clear word-count findings (the
+closing's 31-word body stayed at 31; the cover at 9 words stayed at 9): Claude
+at medium miscounts. Options when it matters: a second fix attempt for
+length findings only, or the text split into numbered words in the request.

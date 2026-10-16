@@ -145,8 +145,11 @@ export type FunnelShadowJudgment = {
   error?: string;
 };
 
-/** A step's acceptance rule: overall at least `accept` and every criterion at least `floor`. */
-export type FunnelGate = { criteria: readonly string[]; accept: number; floor: number };
+/** A step's acceptance rule: overall at least `accept` and every criterion at least `floor`, or at least its own floor in `floors`. */
+export type FunnelGate = { criteria: readonly string[]; accept: number; floor: number; floors?: Readonly<Partial<Record<string, number>>> };
+
+/** The floor one criterion must reach: its own, else the gate's. */
+export const criterionFloor = (gate: FunnelGate, criterion: string): number => gate.floors?.[criterion] ?? gate.floor;
 
 /** A run of a funnel step, as the session keeps it. */
 export type FunnelRun<C extends FunnelCandidate = FunnelCandidate, S extends FunnelScore = FunnelScore, I extends FunnelIssue = FunnelIssue> = {
@@ -190,7 +193,7 @@ export const criterionOf = (score: FunnelScore, criterion: string): number | und
 
 /** Whether a score meets the gate (a criterion the score predates does not count). */
 export function funnelScorePasses(score: FunnelScore, gate: FunnelGate): boolean {
-  return score.overall >= gate.accept && gate.criteria.every((criterion) => (criterionOf(score, criterion) ?? gate.floor) >= gate.floor);
+  return score.overall >= gate.accept && gate.criteria.every((criterion) => (criterionOf(score, criterion) ?? criterionFloor(gate, criterion)) >= criterionFloor(gate, criterion));
 }
 
 /** Candidates that may not win: any program finding, or a material factual error the judge named. */
@@ -528,7 +531,7 @@ export function funnelJudgeRequest<C extends FunnelCandidate>(task: string, plan
 /** Why a run ends without an accepted candidate: the best version's weak criteria and what is left to fix on it. */
 export function funnelReviewNote(best: AnyVersion | undefined, last: FunnelRound | undefined, lead: string, gate: FunnelGate, article: string): string {
   const score = best?.score;
-  const weak = score ? gate.criteria.flatMap((criterion) => { const value = criterionOf(score, criterion); return value !== undefined && value < gate.floor ? [`${criterion} ${value}`] : []; }) : [];
+  const weak = score ? gate.criteria.flatMap((criterion) => { const value = criterionOf(score, criterion); return value !== undefined && value < criterionFloor(gate, criterion) ? [`${criterion} ${value}`] : []; }) : [];
   const standing = best && score
     ? `The best version, ${best.candidate.id}, scored ${score.overall}/100${weak.length ? ` (${weak.join(", ")})` : ""}.`
     : "Every version has a program finding.";

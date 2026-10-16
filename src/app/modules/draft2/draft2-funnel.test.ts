@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { funnelParseEvaluation, funnelRefineRequest, numbersIn, statedNumbers } from "./draft2-funnel";
+import { criterionFloor, funnelParseEvaluation, funnelRefineRequest, funnelScorePasses, numbersIn, statedNumbers } from "./draft2-funnel";
+import { DECK_GATE } from "./draft2-deck.types";
 import { Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
 
 const facts: Draft2Fact[] = [{ id: "f1", claim: "Doors open at 10 a.m. for 1,200 visitors.", evidence: "10 a.m. … 1,200 visitors", kind: "event", status: "established", importance: 80 }];
@@ -59,4 +60,13 @@ test("the judge says what must survive revision: keep is read on every score and
   assert.equal(request.openings[0].scores.keep, "The irony of the empty hall.", "the keep travels with the candidate's scores");
   const bare = funnelRefineRequest(words, [{ ...target, score: { ...parsed.scores[1], candidateId: "c1" } }], [target], [], undefined) as { instruction: string };
   assert.equal(bare.instruction, "Revise each opening.", "no keep, no note");
+});
+
+test("a criterion may have its own floor: the deck's originality passes at 75, every other criterion at 85", () => {
+  const score = (overrides: Record<string, number> = {}) => ({ candidateId: "c1", flow: 96, coverage: 96, pacing: 96, clarity: 96, grounding: 96, voice: 96, focus: 96, originality: 96, overall: 96, note: "", ...overrides });
+  assert.deepEqual([criterionFloor(DECK_GATE, "originality"), criterionFloor(DECK_GATE, "flow")], [75, 85]);
+  assert.equal(funnelScorePasses(score({ originality: 76 }), DECK_GATE), true, "a procedure's deck at 76 originality can be accepted");
+  assert.equal(funnelScorePasses(score({ originality: 74 }), DECK_GATE), false);
+  assert.equal(funnelScorePasses(score({ flow: 84 }), DECK_GATE), false, "the other criteria keep 85");
+  assert.equal(funnelScorePasses(score({ originality: undefined as unknown as number }), DECK_GATE), true, "a score stored before originality was scored");
 });

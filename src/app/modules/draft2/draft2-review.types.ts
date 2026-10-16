@@ -296,18 +296,59 @@ export function parseReviewAnswer(answer: string, carousel: readonly Draft2Carou
   };
 }
 
+/** A text as the review compares it: one space between words. */
+const flat = (value: string) => value.replace(/\s+/g, " ").trim();
+/** A quote shorter than this is too short to find as a part of a text. */
+const MIN_PART_QUOTE_CHARACTERS = 12;
+const occurrences = (text: string, part: string) => { let count = 0; for (let at = text.indexOf(part); at >= 0; at = text.indexOf(part, at + part.length)) count++; return count; };
+
 /**
- * The patches as the review keeps them: numbered, each with its owner, and
- * refused at once when the text it replaces is not the slide's (the editor
- * misquoted it) or when its replacement is the same text.
+ * Where the text a patch quotes is in the carousel: the named slide's text,
+ * whole or as one part of it (an editor quotes the sentence it changes, not
+ * the whole body); else the one other slide's text that has it (an editor
+ * that names the wrong slide). Undefined when it is nowhere, or in more than
+ * one place: then the review misquoted the carousel.
+ */
+export function locateQuote(carousel: readonly Draft2CarouselSlide[], slide: string, field: Draft2ReviewPatchField, quote: string): { slide: string; field: Draft2ReviewPatchField; text: string; part: boolean } | undefined {
+  const wanted = flat(quote);
+  if (!wanted) return undefined;
+  const places = carousel.flatMap((entry) => slideFields(entry).map((name) => ({ slide: entry.slide, field: name, text: slideText(entry, name) })));
+  const whole = (place: { text: string }) => sameWords(place.text, wanted);
+  const within = (place: { text: string }) => wanted.length >= MIN_PART_QUOTE_CHARACTERS && occurrences(flat(place.text), wanted) === 1;
+  const named = places.find((place) => place.slide === slide && place.field === field);
+  if (named && (whole(named) || within(named))) return { ...named, part: !whole(named) };
+  const elsewhere = places.filter((place) => place !== named && (whole(place) || within(place)));
+  return elsewhere.length === 1 ? { ...elsewhere[0], part: !whole(elsewhere[0]) } : undefined;
+}
+
+/**
+ * The patches as the review keeps them: numbered, each with its owner, each
+ * on the text it quoted: a part of a text becomes the whole text with that
+ * part replaced, a text found on another slide moves the patch there, and
+ * the note says so. Refused at once when the quote is nowhere in the
+ * carousel (the editor misquoted it) or when the replacement is the same
+ * text. The first real reviews lost two of three patches to quoting a
+ * sentence of the body instead of the whole body.
  */
 export function reviewPatches(answer: Draft2ReviewAnswer, carousel: readonly Draft2CarouselSlide[]): Draft2ReviewPatch[] {
   return answer.patches.map((patch, index) => {
-    const slide = carousel.find((candidate) => candidate.slide === patch.slide)!;
-    const current = slideText(slide, patch.field);
-    const base: Draft2ReviewPatch = { id: `p${index + 1}`, owner: patchOwner(patch.slide), status: "proposed", ...patch, before: current };
-    if (!sameWords(patch.before, current)) return { ...base, status: "refused", note: `The review quoted "${patch.before.slice(0, 80)}", and the slide says "${current.slice(0, 80)}".` };
-    if (sameWords(patch.after, current)) return { ...base, status: "refused", note: "The replacement is the same text." };
+    const id = `p${index + 1}`;
+    const found = locateQuote(carousel, patch.slide, patch.field, patch.before);
+    if (!found) {
+      const current = slideText(carousel.find((candidate) => candidate.slide === patch.slide)!, patch.field);
+      return { id, owner: patchOwner(patch.slide), status: "refused", ...patch, before: current, note: `The review quoted "${patch.before.slice(0, 80)}", and the slide says "${current.slice(0, 80)}".` };
+    }
+    const text = flat(found.text);
+    const quoted = flat(patch.before);
+    const at = text.indexOf(quoted);
+    const after = found.part ? flat(`${text.slice(0, at)}${patch.after}${text.slice(at + quoted.length)}`) : patch.after;
+    const moved = found.slide !== patch.slide || found.field !== patch.field;
+    const note = [
+      moved ? `The review named ${patch.slide}'s ${patch.field}; the text it quoted is ${found.slide}'s ${found.field}.` : "",
+      found.part ? "It quoted part of the text: the patch replaces that part." : "",
+    ].filter(Boolean).join(" ");
+    const base: Draft2ReviewPatch = { id, owner: patchOwner(found.slide), status: "proposed", ...patch, slide: found.slide, field: found.field, before: found.text, after, ...(note ? { note } : {}) };
+    if (sameWords(after, found.text)) return { ...base, status: "refused", note: "The replacement is the same text." };
     return base;
   });
 }

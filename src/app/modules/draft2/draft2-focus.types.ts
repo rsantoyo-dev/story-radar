@@ -4,6 +4,7 @@ import { entityMaterial, referencePhotos, type Draft2CharacterChoice, type Draft
 import { editedLevers, leversForModels, parsePlanLevers, type Draft2FocusLevers } from "./draft2-levers.types";
 import type { Draft2Provider } from "./draft2-models";
 import { TONE_KEYS, toneLine, toneValue, type ToneKey } from "./skills/tone";
+import { spineImageProblems, type Draft2SpineProblem } from "./draft2-spine-checks";
 
 /**
  * Focus, the second Draft 2 step: what the story is for, decided once the
@@ -192,6 +193,8 @@ export const FOCUS_BEAT_SCENE_MAX_CHARACTERS = 240;
 export const FOCUS_BEAT_WORDS_MAX_CHARACTERS = 200;
 export const FOCUS_BEAT_IMAGE_MAX_CHARACTERS = 240;
 export const FOCUS_BEAT_WITHHOLDS_MAX_CHARACTERS = 160;
+/** The image's dominant subject, in a few words: the program compares consecutive beats' subjects. */
+export const FOCUS_BEAT_SUBJECT_MAX_CHARACTERS = 120;
 const MAX_BEAT_FACTS = 6;
 export type Draft2SpineRole = (typeof FOCUS_SPINE_ROLES)[number];
 export type Draft2SpinePosition = (typeof FOCUS_SPINE_POSITIONS)[number];
@@ -207,6 +210,8 @@ export type Draft2SpineBeat = {
   words: string;
   /** What the image adds that the words cannot say; never an illustration of them. */
   image: string;
+  /** The image's dominant subject, in a few words; never the previous beat's. Absent on spines written before spine v2. */
+  subject?: string;
   /** What this slide keeps for the next one, the open loop; empty on the last slide only. */
   withholds: string;
   /** The verified facts the beat rests on; a hook may rest on none. */
@@ -317,7 +322,17 @@ export type Draft2Focus = {
   staleDirections?: boolean;
   /** Claude's deliberation on the last decision: the interest it found and the ways to tell the story it compared, the chosen one first. */
   deliberation?: Draft2FocusDeliberation;
+  /** What the spine's image lines would make the images pay for (spineImageProblems), for the editor; never blocking. Absent when there is none. */
+  spineProblems?: Draft2SpineProblem[];
 };
+
+/** The focus with its spine's image problems as they stand now, the brand's avoid terms given: recomputed when the spine is written, edited or kept by a decision. */
+export function focusWithSpineProblems(focus: Draft2Focus, avoid: readonly string[]): Draft2Focus {
+  const problems = focus.values?.spine ? spineImageProblems(focus.values.spine.beats, { avoid }) : [];
+  const { spineProblems, ...rest } = focus;
+  void spineProblems;
+  return problems.length ? { ...rest, spineProblems: problems } : rest;
+}
 
 /** What makes the story worth telling to this audience, and the tellings compared before one was chosen. */
 export type Draft2FocusDeliberation = { interest: string; approaches: string[] };
@@ -498,10 +513,11 @@ export const DRAFT2_FOCUS_PLAN_SCHEMA: Record<string, unknown> = {
               scene: { type: "string" },
               words: { type: "string" },
               image: { type: "string" },
+              subject: { type: "string" },
               withholds: { type: "string" },
               factIds: factIdsSchema,
             },
-            required: ["slide", "role", "scene", "words", "image", "withholds", "factIds"],
+            required: ["slide", "role", "scene", "words", "image", "subject", "withholds", "factIds"],
             additionalProperties: false,
           },
         },
@@ -702,7 +718,9 @@ function spineFrom(value: unknown, structure: { kind: Draft2FocusStructureKind; 
     const factIds = known
       ? knownFactIds(body.factIds, known, MAX_BEAT_FACTS)
       : (Array.isArray(body.factIds) ? body.factIds : []).filter((id): id is string => typeof id === "string" && id.trim().length > 0).map((id) => id.trim()).slice(0, MAX_BEAT_FACTS);
-    return { slide: slide!, role: role!, scene: scene!, words: words!, image: image!, withholds, factIds };
+    // The subject is a short planning field: cut to its limit, never fatal; a spine written before it has none.
+    const subject = typeof body.subject === "string" ? body.subject.replace(/\s+/g, " ").trim().slice(0, FOCUS_BEAT_SUBJECT_MAX_CHARACTERS) : "";
+    return { slide: slide!, role: role!, scene: scene!, words: words!, image: image!, ...(subject ? { subject } : {}), withholds, factIds };
   });
   const problem = spineShapeProblem(beats, structure);
   if (problem) fail(problem);
@@ -721,11 +739,19 @@ export const spineBeats = (spine: Draft2FocusSpine | undefined, position: Draft2
  * (editorChoices) is kept as given, whatever the answer says for it. A broken
  * rule is a response error, asked for again with the rule it broke.
  */
-export function parseFocusPlan(answer: string, { known, structure, eligibleLevers = [], editorChoices = {} }: { known: ReadonlySet<string>; structure: Draft2FocusValues["structure"]; eligibleLevers?: readonly string[]; editorChoices?: Record<string, unknown> }): Draft2FocusPlan {
+export function parseFocusPlan(answer: string, { known, structure, eligibleLevers = [], editorChoices = {}, imageCheck }: {
+  known: ReadonlySet<string>; structure: Draft2FocusValues["structure"]; eligibleLevers?: readonly string[]; editorChoices?: Record<string, unknown>;
+  /** Check Claude's image lines (spineImageProblems): a problem is a response error, asked for again with the rule. The second answer is not checked: its problems go to the editor as notes. */
+  imageCheck?: { avoid: readonly string[] };
+}): Draft2FocusPlan {
   let parsed: unknown;
   try { parsed = JSON.parse(answer); } catch { throw new Draft2ResponseError("The plan answer is not valid JSON"); }
   const body = record(parsed);
   const spine = editorChoices.spine ? editorChoices.spine as Draft2FocusSpine : spineFrom(body.spine, structure, known, (message) => { throw new Draft2ResponseError(message); });
+  if (imageCheck && !editorChoices.spine) {
+    const problems = spineImageProblems(spine.beats, imageCheck);
+    if (problems.length) throw new Draft2ResponseError(`The spine's image lines: ${problems.map((problem) => problem.detail).join("; ")}`);
+  }
   const direction = typeof editorChoices.direction === "string" ? editorChoices.direction : text(body.direction, FOCUS_DIRECTION_MAX_CHARACTERS);
   const visualDirection = typeof editorChoices.visualDirection === "string" ? editorChoices.visualDirection : text(body.visualDirection, FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS);
   if (!direction) throw new Draft2ResponseError(`The direction is missing or longer than ${FOCUS_DIRECTION_MAX_CHARACTERS} characters`);
@@ -1195,8 +1221,9 @@ export function focusForModels(values: Draft2FocusValues) {
 
 /** The spine as the models read it: each beat with its slide, role, scene, the words' job, what the image adds, what it withholds and its facts. */
 export function spineForModels(spine: Draft2FocusSpine) {
-  return spine.beats.map(({ slide, role, scene, words, image, withholds, factIds }) => ({
+  return spine.beats.map(({ slide, role, scene, words, image, subject, withholds, factIds }) => ({
     slide, role, scene, words, image,
+    ...(subject ? { subject } : {}),
     ...(withholds ? { withholds } : {}),
     ...(factIds.length ? { factIds } : {}),
   }));

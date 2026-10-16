@@ -9,7 +9,7 @@ import type { StoryContentResponse } from "@/app/radar-dashboard";
 import type { Draft2Fact, Draft2FactsEvaluation, Draft2FactsRound, Draft2SessionStatus, Draft2TraceEntry } from "@/app/modules/draft2/draft2-facts.types";
 import {
   CLASSIC_CONCEPT, CLASSIC_NARRATIVE, FOCUS_ANCHOR_MAX_CHARACTERS, FOCUS_CONCEPT_ARCS, FOCUS_MAX_REVEALS, FOCUS_PREMISE_MAX_CHARACTERS, FOCUS_REVEAL_MAX_CHARACTERS, focusConcept, FOCUS_AUDIENCE_MAX_CHARACTERS, FOCUS_CONSEQUENCE_MAX_CHARACTERS, FOCUS_DIRECTION_MAX_CHARACTERS, FOCUS_FRAMINGS, FOCUS_GOALS, FOCUS_GRAVITIES,
-  FOCUS_BEAT_IMAGE_MAX_CHARACTERS, FOCUS_BEAT_SCENE_MAX_CHARACTERS, FOCUS_BEAT_WITHHOLDS_MAX_CHARACTERS, FOCUS_BEAT_WORDS_MAX_CHARACTERS, FOCUS_SPINE_ROLES,
+  FOCUS_BEAT_IMAGE_MAX_CHARACTERS, FOCUS_BEAT_SCENE_MAX_CHARACTERS, FOCUS_BEAT_SUBJECT_MAX_CHARACTERS, FOCUS_BEAT_WITHHOLDS_MAX_CHARACTERS, FOCUS_BEAT_WORDS_MAX_CHARACTERS, FOCUS_SPINE_ROLES,
   FOCUS_NARRATIVE_ENDINGS, FOCUS_NARRATIVE_FORMS, FOCUS_PROGRESSION_MAX_CHARACTERS, FOCUS_STRUCTURES, FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS, focusFindings, focusMaterial, focusNarrative, visualDirectionChanged, wordsFollowFocus,
   type Draft2Focus, type Draft2FocusField, type Draft2FocusFinding, type Draft2ConceptArc, type Draft2FocusConcept, type Draft2FocusMaterial, type Draft2FocusNarrative, type Draft2FocusSpine, type Draft2FocusValues, type Draft2FocusVoice, type Draft2NarrativeForm, type Draft2SpineBeat, type Draft2SpineRole,
 } from "@/app/modules/draft2/draft2-focus.types";
@@ -30,7 +30,7 @@ import { CAPTION_GATE, CAPTION_MAX_CHARACTERS, CAPTION_MAX_ROUNDS, captionPostTe
 import { confirmedMentions, mentionEntities, sameMentions, type Draft2MentionAccount, type Draft2MentionStatus, type Draft2Mentions } from "@/app/modules/draft2/draft2-mentions.types";
 import { publicationCurrent, publicationTarget, targetPostText, type Draft2Publication, type Draft2PublicationTarget } from "@/app/modules/draft2/draft2-publication.types";
 import {
-  FUNNEL_ACCEPTABLE_SCORE, FUNNEL_MAX_EXTRA_ROUNDS, criterionOf, funnelAcceptedWinner, funnelBestVersions, funnelExtendable, funnelResumeRound, funnelScorePasses, funnelVersions, hasMaterialError,
+  FUNNEL_ACCEPTABLE_SCORE, FUNNEL_MAX_EXTRA_ROUNDS, criterionFloor, criterionOf, funnelAcceptedWinner, funnelBestVersions, funnelExtendable, funnelResumeRound, funnelScorePasses, funnelVersions, hasMaterialError,
   type FunnelCandidate, type FunnelGate, type FunnelIssue, type FunnelRegression, type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion,
 } from "@/app/modules/draft2/draft2-funnel";
 import { DRAFT2_OPENING_EARLIER_ROLES, DRAFT2_OPENING_ROLES, draft2ModelName, type Draft2Cast, type Draft2FunnelStepName } from "@/app/modules/draft2/draft2-models";
@@ -88,9 +88,11 @@ const FOLLOW_UNREACHABLE_MS = 3 * 60_000;
 class Draft2LostRequest extends Error {}
 
 /** One step the autopilot ran, how it ended, and what it took. */
-type AutopilotEntry = { step: Draft2RunStep; status: "ready" | "needs-review" | "failed"; ms: number; startedAt: string; /** The best score a funnel step reached. */ score?: number };
+type AutopilotEntry = { step: Draft2RunStep; status: "ready" | "needs-review" | "failed"; ms: number; startedAt: string; /** The best score a funnel step reached. */ score?: number; /** Why a step that had run was written again. */ reason?: string };
 type Autopilot = { active: boolean; startedAt: string; current?: Draft2RunStep; steps: AutopilotEntry[]; outcome?: string; finishedAt?: string; /** The step the run stops after ("Run to here"); the images otherwise. */ until?: Draft2StepKey };
-type AutopilotNext = { step: Exclude<Draft2RunStep, "publication">; continuing?: boolean } | { done: true } | { blocked: string };
+type AutopilotNext = { step: Exclude<Draft2RunStep, "publication">; continuing?: boolean; /** Why a step that had run is written again. */ reason?: string } | { done: true } | { blocked: string };
+/** The reason the autopilot writes again a funnel step whose last run ended with nothing that may win. */
+const NO_CLEAN_VERSION = "its last run ended with no clean version";
 const STEP_TITLE: Record<Draft2RunStep, string> = {
   facts: "Facts", focus: "Focus", spine: "Spine", inventory: "People and places", mentions: "Accounts to tag", opening: "Opening", closing: "Closing", deck: "Deck", review: "Review", visual: "Visual script", images: "Images", caption: "Caption", publication: "Publish",
 };
@@ -108,7 +110,9 @@ function runNeeds(step: Exclude<Draft2RunStep, "publication">, run: { status: st
   if (!run) return { step };
   if (run.status === "paused" || run.status === "running") return { step, continuing: true };
   if (run.status === "failed") return { blocked: `The ${noun} failed${run.error ? `: ${run.error}` : "."} Run it again once it is fixed.` };
-  if (!(run.editorChoiceId ?? run.winnerId) || changed) return { step };
+  // Written again, and the log says why: a run with no version that may win, or one written for what changed since.
+  if (!(run.editorChoiceId ?? run.winnerId)) return { step, reason: NO_CLEAN_VERSION };
+  if (changed) return { step, reason: "what it follows changed since" };
   return undefined;
 }
 
@@ -563,14 +567,19 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
         show({ outcome: state.steps.length ? `Reached the ${STEP_TITLE[until as Draft2RunStep].toLowerCase()}, as you asked; the steps after it wait for you.` : `The ${STEP_TITLE[until as Draft2RunStep].toLowerCase()} is already done; nothing to run before it.` });
         break;
       }
-      if (next.step === previous) { show({ outcome: `The ${STEP_TITLE[next.step].toLowerCase()} step did not advance; look at it before going on.` }); break; }
+      if (next.step === previous) {
+        show({ outcome: next.reason === NO_CLEAN_VERSION
+          ? `The ${STEP_TITLE[next.step].toLowerCase()} ended again with no clean version: every version has a program finding or a factual error. Choose one, edit it by hand, or write it again.`
+          : `The ${STEP_TITLE[next.step].toLowerCase()} step did not advance; look at it before going on.` });
+        break;
+      }
       previous = next.step;
       show({ current: next.step });
       const begin = Date.now();
       const result = await runStep(next.step, { continuing: next.continuing, on: current });
       const status: AutopilotEntry["status"] = result ? stepOutcome(result, next.step) : "failed";
       const score = result && (next.step === "opening" || next.step === "closing" || next.step === "deck" || next.step === "visual") ? bestScoreOf(result[next.step] as FunnelRun | null) : undefined;
-      show({ current: undefined, steps: [...state.steps, { step: next.step, status, ms: Date.now() - begin, startedAt: new Date(begin).toISOString(), ...(score !== undefined ? { score } : {}) }] });
+      show({ current: undefined, steps: [...state.steps, { step: next.step, status, ms: Date.now() - begin, startedAt: new Date(begin).toISOString(), ...(score !== undefined ? { score } : {}), ...(next.reason ? { reason: next.reason } : {}) }] });
       if (!result || status === "failed") { show({ outcome: `The ${STEP_TITLE[next.step].toLowerCase()} step failed; the run stopped there.` }); break; }
       current = result;
       // The review's patches are applied as the editor wrote them; the Review screen shows each and undoes any.
@@ -1871,7 +1880,7 @@ function ScoreRow<C extends FunnelCandidate>({ score, display }: { score: Funnel
     {display.gate.criteria.map((criterion) => {
       // A score stored before a criterion existed (the opening's focus) has none.
       const value = criterionOf(score, criterion);
-      return value === undefined ? null : <span key={criterion} data-low={value < display.gate.floor ? "" : undefined}>{display.labels[criterion] ?? criterion} <strong>{value}</strong></span>;
+      return value === undefined ? null : <span key={criterion} data-low={value < criterionFloor(display.gate, criterion) ? "" : undefined}>{display.labels[criterion] ?? criterion} <strong>{value}</strong></span>;
     })}
     <span>Overall <strong>{score.overall}</strong></span>
   </p>;
@@ -2505,6 +2514,7 @@ function SpineView({ focus, findings, eligibleLevers: levers, saving, locked, on
   return <div className={styles.focusBody}>
     <p className={styles.factMeta}>Spine on focus v{focus.version}{values.spine ? ` · ${values.spine.beats.length} beats` : ""}{values.levers ? ` · lever: ${leverName(values.levers.primary).toLowerCase()}, paid by ${PAID_BY_LABEL[values.levers.paidBy].toLowerCase()}` : ""}. The opening, the deck, the closing and the visual script follow it.</p>
     {findings.length ? <InlineNotice tone="warning" title="The opening waits for this">{findings.map((finding) => finding.detail).join(" ")}</InlineNotice> : null}
+    {focus.spineProblems?.length ? <InlineNotice tone="info" title="What the images would pay for">{focus.spineProblems.map((problem) => `${problem.detail}.`).join(" ")} Change these beats here, or the visual script and the images will carry them.</InlineNotice> : null}
     <div className={styles.focusGrid}>
       <div className={`${styles.focusField} ${styles.focusWide}`}>
         <FocusLevers key={key("levers")} levers={values.levers} eligible={levers} description={about("levers", values.levers ? "The mechanism the cover uses to stop the reader, a guide, never a formula: the opening writes about a third of its first openings on it, a fifth on each alternative, and the rest free." : "No lever yet: write the spine for Claude to choose one, or choose here.")} disabled={locked} onCommit={(next) => onSave("levers", next)} />
@@ -2546,6 +2556,7 @@ function SpineBeats({ spine, disabled, onCommit }: { spine: Draft2FocusSpine; di
       <FocusText label="Scene" value={beat.scene} max={FOCUS_BEAT_SCENE_MAX_CHARACTERS} disabled={disabled} onCommit={(value) => commit(index, { scene: value })} />
       <FocusText label="Words’ job" value={beat.words} max={FOCUS_BEAT_WORDS_MAX_CHARACTERS} disabled={disabled} onCommit={(value) => commit(index, { words: value })} />
       <FocusText label="Image adds" value={beat.image} max={FOCUS_BEAT_IMAGE_MAX_CHARACTERS} disabled={disabled} onCommit={(value) => commit(index, { image: value })} />
+      <FocusText label="Image’s subject" value={beat.subject ?? ""} max={FOCUS_BEAT_SUBJECT_MAX_CHARACTERS} allowEmpty disabled={disabled} onCommit={(value) => commit(index, { subject: value })} />
       <FocusText label="Withholds" value={beat.withholds} max={FOCUS_BEAT_WITHHOLDS_MAX_CHARACTERS} allowEmpty disabled={disabled} onCommit={(value) => commit(index, { withholds: value })} />
       <FocusText label="Facts" value={beat.factIds.join(", ")} max={120} allowEmpty disabled={disabled} onCommit={(value) => commit(index, { factIds: value.split(/[\s,]+/).filter(Boolean) })} />
     </li>)}
@@ -2819,7 +2830,7 @@ function AutopilotView({ autopilot, trace, now }: { autopilot: Autopilot; trace:
   return <div className={styles.focusBody}>
     {autopilot.steps.length ? <ol className={styles.autopilotList}>
       {autopilot.steps.map((entry) => <li key={entry.startedAt} data-status={entry.status}>
-        <strong>{STEP_TITLE[entry.step]}</strong> · {entry.status === "ready" ? `done${entry.score !== undefined ? ` · ${entry.score}` : ""}` : entry.status === "needs-review" ? (entry.score === undefined ? "look at it" : entry.score >= FUNNEL_ACCEPTABLE_SCORE ? `acceptable · ${entry.score}` : `under ${FUNNEL_ACCEPTABLE_SCORE} · ${entry.score}, look at it`) : "failed"} · {minutes(entry.ms)} · {usd(costOf(entry))}
+        <strong>{STEP_TITLE[entry.step]}</strong> · {entry.status === "ready" ? `done${entry.score !== undefined ? ` · ${entry.score}` : ""}` : entry.status === "needs-review" ? (entry.score === undefined ? "look at it" : entry.score >= FUNNEL_ACCEPTABLE_SCORE ? `acceptable · ${entry.score}` : `under ${FUNNEL_ACCEPTABLE_SCORE} · ${entry.score}, look at it`) : "failed"} · {minutes(entry.ms)} · {usd(costOf(entry))}{entry.reason ? ` · written again: ${entry.reason}` : ""}
       </li>)}
     </ol> : null}
     {autopilot.current ? <LoadingState>{STEP_TITLE[autopilot.current]} is running; open its step on the rail to follow it.</LoadingState> : null}

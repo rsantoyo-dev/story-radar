@@ -39,7 +39,7 @@ test("instructions are the role, then each skill, then the brand brief, and reco
   assert.deepEqual(writer.skillVersions, { hooks: "7" });
   assert.equal(composeInstructions("opening-judge", [skill]).instructions, `${OPENING_ROLES["opening-judge"]}\n\n${JUDGE_STANDARD}\n\n## Shared craft\n\n## Judge only`, "a judge reads the originality standard, then its own part after the shared text");
   assert.deepEqual(Object.keys(DRAFT2_ROLES).sort(), ["caption-judge", "caption-writer", "carousel-editor", "carousel-reader", "closing-judge", "closing-writer", "deck-judge", "deck-writer", "extractor", "focus-concept-judge", "focus-editor", "focus-narrative-judge", "focus-planner", "image-judge", "mention-finder", "opening-judge", "opening-writer", "people-finder", "reviewer", "visual-judge", "visual-writer"]);
-  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@2", "focus@15", "narratives@4", "discovery@1", "arcs@1", "spine@1", "levers@1", "fairness@2", "reader@2", "hooks@10", "closings@4", "decks@3", "review@6", "visuals@10", "images@5", "captions@3"]);
+  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@2", "focus@15", "narratives@4", "discovery@1", "arcs@1", "spine@2", "levers@1", "fairness@2", "reader@2", "hooks@10", "closings@4", "decks@4", "review@6", "visuals@10", "images@5", "captions@3"]);
 });
 
 test("the Facts prompts keep their words (the reviewer's say the article is context and name earlierReview since v2): the extractor reads its rules, the reviewer its checklist", () => {
@@ -162,7 +162,7 @@ test("the decks rubric states the shapes, limits and thresholds the program enfo
   assert.match(DECKS_SKILL.text, /never\s+a recap or a summary label/);
   assert.match(DECK_ROLES["deck-writer"], /each a different path from slide 2 to the closing/);
   assert.match(DECK_ROLES["deck-judge"], /"part": "s1" for the first deck slide/);
-  assert.deepEqual(composeInstructions("deck-judge", [DECKS_SKILL], brandBrief(profile)).skillVersions, { decks: "3" });
+  assert.deepEqual(composeInstructions("deck-judge", [DECKS_SKILL], brandBrief(profile)).skillVersions, { decks: "4" });
 });
 
 test("the visual scripts rubric states the limits and thresholds the program enforces, and v1's rules on people, places and characters", () => {

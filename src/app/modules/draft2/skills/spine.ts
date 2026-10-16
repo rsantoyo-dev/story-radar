@@ -10,10 +10,14 @@ import type { Draft2Skill } from "./draft2-skills";
  * the words. The editor's version of 2026-10-12: eight classic moments
  * (hook, setup, inciting incident, rising action, turning point, climax,
  * resolution, payoff) as an adaptable sequence, never a mandatory count.
+ * Version 2, 2026-10-16: each beat names its image's dominant subject, and
+ * an image line asks for no words or numbers and nothing the brand avoids;
+ * the program checks both (draft2-spine-checks.ts), since the first story
+ * under the bound spine lost its visual and two images to such lines.
  */
 export const SPINE_SKILL: Draft2Skill = {
   name: "spine",
-  version: "1",
+  version: "2",
   text: `# The spine
 
 The spine is the carousel's story in beats, one per slide, written before any
@@ -55,6 +59,12 @@ story takes the ones it needs, in this order, and may repeat rising:
 - image: what the image adds that the words cannot say, at most 240
   characters: the scale, the consequence, the moment before or after, the
   detail that proves it, a contrast; never an illustration of the words.
+  It never asks the image for numbers, labels, captions, a logo or any
+  words (numbered cards, labelled steps): the image model letters only the
+  slide's own words. It never asks for what the brand's identity avoids.
+- subject: the image's dominant subject, in a few words ("a corn kernel",
+  "a rolled tortilla"), never the previous beat's: two slides in a row
+  never show the same thing, even at another scale.
 - withholds: what this slide keeps for the next one, the open loop, at most
   160 characters; empty on the last slide only.
 - factIds: the verified facts this beat rests on; a hook may rest on none.

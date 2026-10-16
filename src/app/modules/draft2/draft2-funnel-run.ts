@@ -466,6 +466,13 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
         // The best version so far, kept on the row in case a later call fails.
         const best = funnelBestVersions(funnelVersions(run.rounds))[0];
         if (best) run.winnerId = best.candidate.id;
+        // Acceptable and no longer improving: the planned rounds left would revise the same version again (in 23 real Opening runs, no
+        // third-round proposal ever won). The editor can still continue the run with the rounds left.
+        if (round > 1 && (best?.score?.overall ?? 0) >= FUNNEL_ACCEPTABLE_SCORE && !funnelRoundImproved(funnelVersions(run.rounds), round)) {
+          const left = maxRounds - round;
+          await needsReview(`${judgeName} did not accept ${def.article} after ${round} rounds. The last round did not raise the best, so the ${left === 1 ? "planned round after it was" : `${left} planned rounds after it were`} not run.`);
+          return;
+        }
         lastRoundMs = Date.now() - roundStartedAt;
         await checkpoint();
       }

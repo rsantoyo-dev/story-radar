@@ -3,7 +3,7 @@ import test from "node:test";
 import { Draft2InputError, Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
 import {
   CLASSIC_CONCEPT, CLASSIC_NARRATIVE, DRAFT2_FOCUS_PLAN_SCHEMA, DRAFT2_FOCUS_SCHEMA, focusConcept, FOCUS_FIELDS, applyFocusEdit, decidedFocus, editorChoicesOf, focusDecisionRequest, focusFindings, focusForModels, focusItemCount, focusLine,
-  anchorNoun, focusMaterial, focusToday, focusWithPlan, narrativeUsesMaster, parseFocusDecision, parseFocusPlan, parseNarrativeReview, resetFocusField, spineShapeProblem, visualDirectionChanged, visualFocus, wordsFollowFocus,
+  anchorNoun, focusMaterial, focusToday, focusWithPlan, focusWithSpineProblems, narrativeUsesMaster, parseFocusDecision, parseFocusPlan, parseNarrativeReview, resetFocusField, spineShapeProblem, visualDirectionChanged, visualFocus, wordsFollowFocus,
   type Draft2Focus, type Draft2FocusLine, type Draft2FocusMaterial, type Draft2FocusNarrative, type Draft2FocusValues, type Draft2SpineBeat,
 } from "./draft2-focus.types";
 import type { Draft2Inventory } from "./draft2-inventory.types";
@@ -539,4 +539,22 @@ test("the visual direction is the visual script's own: changing it asks for a ne
   assert.deepEqual(followed, { version: words.version, values: { ...words.values, visualDirection: "Each personality by their documentary portrait, one per slide." } }, "the words' focus, with the visual direction as it stands");
   assert.equal(visualFocus(words, focus), words, "the same direction keeps the words' snapshot");
   assert.equal(visualDirectionChanged(followed, portraits), false);
+});
+
+test("the plan's image lines: Claude's first answer is asked again when a beat repeats the subject before it or asks the image for words; each beat's subject is kept; the problems stay on the focus for the editor", () => {
+  const json = (value: unknown) => JSON.stringify(value);
+  const known = new Set(["f1", "f2", "f3"]);
+  const arc = { kind: "arc" as const, itemFactIds: [] };
+  const levers = { primary: "free", alternatives: [], factIds: [], paidBy: "slide2" };
+  const withSubjects = { beats: ARC_SPINE.beats.map((beat, index) => ({ ...beat, subject: ["a founder's laptop", "the founder's laptops", "a dark screen", "a calendar", "a vast figure", "a signed award", "an empty hall"][index] })) };
+  const plan = (spine: unknown) => JSON.stringify({ levers, spine, direction: "d", visualDirection: "v", reasons: {} });
+  assert.throws(() => parseFocusPlan(plan(withSubjects), { known, structure: arc, imageCheck: { avoid: [] } }), (error: Error) => error instanceof Draft2ResponseError && /^The spine's image lines: Beats 1 and 2 \(cover, slide2\) show the same dominant subject/.test(error.message));
+  const numbered = { beats: ARC_SPINE.beats.map((beat, index) => index === 3 ? { ...beat, image: "Four numbered cards on cream." } : beat) };
+  assert.throws(() => parseFocusPlan(plan(numbered), { known, structure: arc, imageCheck: { avoid: [] } }), /Beat 4 \(middle\) asks the image for "numbered"/);
+  const kept = parseFocusPlan(plan(withSubjects), { known, structure: arc });
+  assert.equal(json(kept.spine.beats.slice(0, 2).map((beat) => beat.subject)), json(["a founder's laptop", "the founder's laptops"]), "the second answer is not checked: its problems go to the editor");
+  const focus = { status: "ready", version: 1, edited: [], lineOptions: [], values: { spine: kept.spine } } as unknown as Draft2Focus;
+  assert.equal(json(focusWithSpineProblems(focus, []).spineProblems?.map((problem) => [problem.code, problem.beat])), json([["SPINE_SAME_SUBJECT", 2]]));
+  assert.equal("spineProblems" in focusWithSpineProblems({ ...focus, spineProblems: [{ code: "SPINE_SAME_SUBJECT", beat: 2, detail: "x" }], values: { spine: ARC_SPINE } } as unknown as Draft2Focus, []), false, "a clean spine clears the earlier problems");
+  assert.equal(focusForModels({ ...decided().values!, spine: kept.spine }).spine?.[0].subject, "a founder's laptop", "the models read each beat's subject");
 });
