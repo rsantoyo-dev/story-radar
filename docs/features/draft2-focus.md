@@ -558,3 +558,22 @@ portrait is never shown.
 The plan names the guards: what a reader who stops at the cover could wrongly
 believe and the facts that prevent it, which the opening states on the cover
 or slide 2. See draft2-news-integrity.md.
+
+## The brand's narrative forms and writing rules (2026-10-15)
+
+Fogón Lab's character, Chispa, must never be named in a post's words; the
+character-guide form made it the guide ("Chispa mira…"). Two brand settings
+in the creative profile, read by every Draft 2 run:
+
+- **Narrative forms** (Basics → Strategy; `creative_profiles.narrative_forms`,
+  migration 0111, null = every form): the forms a story may take, classic
+  always among them. The focus decision is told the forms the brand keeps
+  (`narrativeForms` in its request), a form it turned off is a response
+  error asked for again, the focus records the forms (`Draft2Focus.narrativeForms`)
+  and the editor's choice is refused outside them; the canvas offers only
+  those.
+- **Writing rules** (Voice; `creative_profiles.writing_guidance`, at most
+  3,000 characters): the brand's own rules, one per line, at the end of the
+  brand brief every writer and judge reads ("Writing rules, the publication's
+  own (they win over a general habit)"): vocabulary, how a technical term is
+  introduced, who never speaks in the text.

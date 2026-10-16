@@ -627,6 +627,16 @@ export const CREATIVE_READER_ADDRESSES = ["informal", "formal"] as const;
 export type CreativeReaderAddress = (typeof CREATIVE_READER_ADDRESSES)[number];
 export const DEFAULT_CREATIVE_READER_ADDRESS: CreativeReaderAddress = "informal";
 
+/**
+ * The narrative forms a Draft 2 story may take (2026-10-15: a brand may turn
+ * some off; Fogón Lab's character never guides the reader). Classic is
+ * always one of them.
+ */
+export const CREATIVE_NARRATIVE_FORMS = ["classic", "character-guide", "traveling-object", "panorama", "follow-the-line"] as const;
+export type CreativeNarrativeForm = (typeof CREATIVE_NARRATIVE_FORMS)[number];
+/** The brand's own writing rules (vocabulary, technical terms, who never speaks in the text), for every writer and judge. */
+export const CREATIVE_WRITING_GUIDANCE_MAX_LENGTH = 3_000;
+
 export type CreativeProfile = {
   id: string;
   name: string;
@@ -654,6 +664,10 @@ export type CreativeProfile = {
   requireCoverTitle?: boolean;
   /** How the posts address the reader (tu or vous, tú or usted); absent reads as informal. */
   readerAddress?: CreativeReaderAddress;
+  /** The brand's own writing rules, in its words, for every writer and judge of its posts; empty when it has none. */
+  writingGuidance?: string;
+  /** The narrative forms the brand's stories may take; absent: all of them. Classic is always one. */
+  narrativeForms?: CreativeNarrativeForm[];
   storyStructure?: CreativeStoryStructure;
   visualFidelityMode: VisualFidelityMode;
   /** Operational contact; excluded from editorial policy and generation hashes. */

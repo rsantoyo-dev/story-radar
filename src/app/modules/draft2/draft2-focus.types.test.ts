@@ -245,6 +245,20 @@ test("a narrative form outside the contract or the material is a response error,
   rejects(guide({ progression: "x".repeat(301) }), /progression is missing or longer than 300/);
 });
 
+test("a publication's own narrative forms: one it turned off is asked for again, the request names the forms it keeps, and the editor cannot choose it either", () => {
+  const forms = ["classic", "traveling-object", "panorama", "follow-the-line"] as const;
+  assert.throws(() => parseFocusDecision(answer({ narrative: guide() }), { facts, lines, material: MATERIAL, narrativeForms: forms }),
+    (error: Error) => error instanceof Draft2ResponseError && /does not tell its stories as character-guide; the narrative form is one of classic, traveling-object, panorama, follow-the-line/.test(error.message));
+  assert.deepEqual(parseFocusDecision(answer({ narrative: { form: "classic", anchorKind: "figure", characterId: null, anchor: "x", anchorFactIds: [], progression: "x", ending: "resolves" } }), { facts, lines, material: MATERIAL, narrativeForms: ["classic"] }).values.narrative, CLASSIC_NARRATIVE, "classic is always allowed");
+  const request = focusDecisionRequest({ title: "t", today: "d", profile: { framingStrategy: "auto", storyStructure: "auto", conversionGoal: "saves", narrativeForms: [...forms] }, lines: [], foundBy: [] });
+  assert.deepEqual((request as { narrativeForms?: { allowed: string[] } }).narrativeForms?.allowed, [...forms]);
+  assert.equal("narrativeForms" in focusDecisionRequest({ title: "t", today: "d", profile: { framingStrategy: "auto", storyStructure: "auto", conversionGoal: "saves" }, lines: [], foundBy: [] }), false, "every form allowed: the request says nothing");
+  const focus = { ...decided({}), narrativeForms: [...forms] };
+  assert.throws(() => applyFocusEdit(focus, "narrative", { form: "character-guide", anchorKind: "character", characterId: "char-jo", anchor: "Jo", progression: "p", ending: "returns" }, NOW),
+    (error: Error) => error instanceof Draft2InputError && /does not tell its stories as character-guide: turn the form on in its creative profile first/.test(error.message));
+  assert.equal(applyFocusEdit(focus, "narrative", { form: "traveling-object", anchorKind: "object", anchor: "A pumpkin bucket", progression: "" }, NOW).values?.narrative?.form, "traveling-object");
+});
+
 test("Claude's other anchors are offered to the editor: valid ones only, never a person of the story, at most three", () => {
   const { alternatives } = parseFocusDecision(answer({ anchorAlternatives: [
     { kind: "object", anchor: "The rally sheet", factIds: ["f1", "f9"] }, { kind: "figure", anchor: "Catherine Fournier", factIds: [] }, { kind: "person", anchor: "A bat", factIds: [] },

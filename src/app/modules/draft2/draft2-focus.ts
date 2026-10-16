@@ -83,7 +83,8 @@ export async function decideDraft2Focus({ topicId, storyId, sessionId }: Draft2F
   const foundBy = [...new Set(found.map((entry) => entry.context.lineId))].filter((id) => lines.some((line) => line.id === id));
   const timezone = lines.find((line) => line.id === foundBy[0])?.timezone ?? lines[0]?.timezone;
   const earlier: Draft2Focus = session.focus ?? { status: "running", version: 0, edited: [], lineOptions };
-  const focus: Draft2Focus = { ...earlier, status: "running", error: undefined, lineOptions };
+  // The forms the publication allows now, for the decision and for the editor's choice after it.
+  const focus: Draft2Focus = { ...earlier, status: "running", error: undefined, lineOptions, narrativeForms: profile.narrativeForms };
   const editorChoices = editorChoicesOf(focus);
 
   const claimed = await claimDraft2Session(session.id, { step: "focus", focus, error: null });
@@ -165,7 +166,7 @@ export async function decideDraft2Focus({ topicId, storyId, sessionId }: Draft2F
       // Two calls, each asked again once when its answer breaks a rule: the story and how it is told, then the plan (the spine and the directions) from that decision.
       const decision = await focusCall({
         apiKey, model, trace, verifiedFacts, auditContext, operation: "draft2_focus", instructions, skillVersions, contents, schema: DRAFT2_FOCUS_SCHEMA, effort: "high", maxOutputTokens: MAX_OUTPUT_TOKENS,
-        parse: (answer) => parseFocusDecision(answer, { facts, lines: lineOptions, editorChoices, material }), again: DECISION_AGAIN,
+        parse: (answer) => parseFocusDecision(answer, { facts, lines: lineOptions, editorChoices, material, narrativeForms: profile.narrativeForms }), again: DECISION_AGAIN,
       });
       const told = decidedFocus(focus, decision, { provider: "anthropic", model }, new Date());
       // The judge's reviews of the telling and the plan written from it run side by side; a telling the judge sent back to classic gets its plan written again.

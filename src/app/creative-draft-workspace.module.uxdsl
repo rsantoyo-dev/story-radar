@@ -1263,6 +1263,22 @@
   width: 72px;
 }
 
+/* A row of checkboxes, such as the narrative forms a brand allows. */
+.checkRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: density(2) density(5);
+  color: palette(primary-dark);
+  @ds-typo (meta-strong);
+}
+
+.checkRow label {
+  display: flex;
+  align-items: center;
+  gap: density(2);
+}
+
 .section {
   @ds-surface (card);
   margin-top: density(5);

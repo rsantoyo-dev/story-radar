@@ -71,7 +71,7 @@ const clause = (value: string | undefined) => oneLine(value).replace(/[.\s]+$/, 
  * read. Visual guidance, call-to-action style and conversion goal stay out:
  * the opening has no call to action and no image yet.
  */
-export function brandBrief(profile: Pick<CreativeProfile, "name" | "language" | "region" | "platform" | "audience" | "brandPersonality" | "formality" | "humor" | "energy" | "optimism" | "provocation" | "readerAddress">): string {
+export function brandBrief(profile: Pick<CreativeProfile, "name" | "language" | "region" | "platform" | "audience" | "brandPersonality" | "formality" | "humor" | "energy" | "optimism" | "provocation" | "readerAddress" | "writingGuidance">): string {
   const personality = (profile.brandPersonality ?? []).map(clause).filter((word) => word.length > 0);
   const line = (label: string, value: string | undefined) => clause(value) ? `- ${label}: ${clause(value)}.` : undefined;
   return [
@@ -84,5 +84,13 @@ export function brandBrief(profile: Pick<CreativeProfile, "name" | "language" | 
     line("Audience", profile.audience),
     personality.length ? `- Brand personality: ${personality.join(", ")}.` : undefined,
     `- Tone, the publication's defaults for an ordinary story (the story's gravity sets the ceiling): ${toneLine(profile)}.`,
+    writingRules(profile.writingGuidance),
   ].filter((entry) => entry !== undefined).join("\n");
+}
+
+/** The brand's own writing rules, as it wrote them, under the brief: they win over a general habit of the skills. */
+function writingRules(guidance: string | undefined): string | undefined {
+  const lines = (guidance ?? "").split("\n").map((entry) => entry.trim()).filter(Boolean);
+  if (!lines.length) return undefined;
+  return ["- Writing rules, the publication's own (they win over a general habit):", ...lines.map((entry) => `  ${entry}`)].join("\n");
 }

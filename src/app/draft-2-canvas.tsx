@@ -2694,7 +2694,7 @@ function FocusNarrative({ focus, material, description, disabled, onCommit }: {
     <div className={styles.focusGrid}>
       <FormField label="Form">
         <select value={form} disabled={disabled} onChange={(event) => switchForm(event.target.value as Draft2NarrativeForm)}>
-          {FOCUS_NARRATIVE_FORMS.map((entry) => <option key={entry} value={entry}>{NARRATIVE_LABEL[entry]}</option>)}
+          {FOCUS_NARRATIVE_FORMS.filter((entry) => !focus.narrativeForms || focus.narrativeForms.includes(entry) || entry === form).map((entry) => <option key={entry} value={entry}>{NARRATIVE_LABEL[entry]}</option>)}
         </select>
       </FormField>
       {settled ? <FormField label={FORM_ANCHOR[form].label} description={form === "character-guide" && material?.characterChoice === "off" ? "The brand’s characters are off in People and places." : undefined}>

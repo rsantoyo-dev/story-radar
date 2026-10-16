@@ -263,6 +263,10 @@ export const creativeProfiles = pgTable(
     requireCoverTitle: boolean("require_cover_title").default(false).notNull(),
     /** How the posts address the reader where the language distinguishes it: informal (tu, tú) or formal (vous, usted). */
     readerAddress: text("reader_address").$type<"informal" | "formal">().default("informal").notNull(),
+    /** The brand's own writing rules for every writer and judge (vocabulary, technical terms, who never speaks in the text). */
+    writingGuidance: text("writing_guidance").default("").notNull(),
+    /** The narrative forms the brand's stories may take; null: all of them. */
+    narrativeForms: text("narrative_forms").array(),
     storyStructure: text("story_structure").$type<"auto" | "hook-steps" | "hook-list">().default("auto").notNull(),
     framingStrategy: text("framing_strategy")
       .$type<CreativeFramingStrategy>()
@@ -297,6 +301,7 @@ export const creativeProfiles = pgTable(
   (table) => [
     uniqueIndex("creative_profiles_topic_id_unique").on(table.topicId),
     check("creative_profiles_reader_address_check", sql`${table.readerAddress} IN ('informal', 'formal')`),
+    check("creative_profiles_narrative_forms_check", sql`${table.narrativeForms} IS NULL OR ${table.narrativeForms} <@ ARRAY['classic', 'character-guide', 'traveling-object', 'panorama', 'follow-the-line']::text[]`),
     check(
       "creative_profiles_dimensions_check",
       sql`${table.formality} BETWEEN 0 AND 100

@@ -1,6 +1,7 @@
 import "server-only";
 import { creativeIdentityIsEmpty, CreativeIdentityValidationError, parseCreativeIdentityInput, type CreativeIdentity } from "./creative-identity";
 import { parseGeoContact } from "./creative-geo-contact";
+import { CreativeWritingValidationError, narrativeFormsField, writingGuidanceValue } from "./creative-writing-validation";
 
 import { eq, sql } from "drizzle-orm";
 
@@ -78,6 +79,7 @@ const DEFAULT_PROFILE: EditableCreativeProfile = {
   framingStrategy: DEFAULT_CREATIVE_FRAMING_STRATEGY,
   requireCoverTitle: false,
   readerAddress: DEFAULT_CREATIVE_READER_ADDRESS,
+  writingGuidance: "",
   storyStructure: "auto",
   visualFidelityMode: DEFAULT_VISUAL_FIDELITY_MODE,
   geoScope: { ...DEFAULT_CREATIVE_GEO_SCOPE },
@@ -168,7 +170,9 @@ export async function saveCreativeProfile(
   options: { preserveExistingBrandOverlay?: boolean } = {},
 ): Promise<SaveCreativeProfileResult> {
   const profile = validateCreativeProfile(input);
-  const { brandOverlay, ...profileFields } = profile;
+  const { brandOverlay, ...validFields } = profile;
+  // Every form allowed is stored as null, so turning them all back on clears an earlier restriction.
+  const profileFields = { ...validFields, narrativeForms: validFields.narrativeForms ?? null };
   const brandAssetId = brandOverlay.assetId ?? null;
   const brandAsset = brandAssetId
     ? await findCreativeBrandAsset(topicId, brandAssetId)
@@ -304,6 +308,8 @@ export function parseCreativeProfileInput(value: unknown): EditableCreativeProfi
     framingStrategy: value.framingStrategy,
     requireCoverTitle: value.requireCoverTitle,
     readerAddress: value.readerAddress,
+    writingGuidance: value.writingGuidance,
+    narrativeForms: value.narrativeForms,
     storyStructure: value.storyStructure,
     visualFidelityMode: value.visualFidelityMode,
     geoProviderContact: value.geoProviderContact,
@@ -347,6 +353,8 @@ function validateCreativeProfile(
     framingStrategy: framingStrategyValue(value.framingStrategy),
     requireCoverTitle: booleanValue(value.requireCoverTitle ?? false, "requireCoverTitle"),
     readerAddress: readerAddressValue(value.readerAddress),
+    writingGuidance: writing(() => writingGuidanceValue(value.writingGuidance)),
+    ...writing(() => narrativeFormsField(value.narrativeForms)),
     storyStructure: storyStructureValue(value.storyStructure),
     visualFidelityMode: visualFidelityModeValue(value.visualFidelityMode),
     geoProviderContact: geographicContactValue(value.geoProviderContact),
@@ -437,6 +445,8 @@ function mapCreativeProfile(
     framingStrategy: framingStrategyValue(profile.framingStrategy),
     requireCoverTitle: profile.requireCoverTitle ?? false,
     readerAddress: readerAddressValue(profile.readerAddress),
+    writingGuidance: profile.writingGuidance ?? "",
+    ...writing(() => narrativeFormsField(profile.narrativeForms)),
     storyStructure: storyStructureValue(profile.storyStructure),
     visualFidelityMode: visualFidelityModeValue(profile.visualFidelityMode),
     geoProviderContact: profile.geoProviderContact ?? "",
@@ -582,6 +592,16 @@ export function readerAddressValue(value: unknown): CreativeReaderAddress {
   const address = CREATIVE_READER_ADDRESSES.find((entry) => entry === value);
   if (address) return address;
   throw new CreativeProfileValidationError("readerAddress must be informal or formal");
+}
+
+/** A writing setting read through its own rules; a broken one is the profile's validation error. */
+function writing<T>(parse: () => T): T {
+  try {
+    return parse();
+  } catch (error) {
+    if (error instanceof CreativeWritingValidationError) throw new CreativeProfileValidationError(error.message);
+    throw error;
+  }
 }
 
 export function storyStructureValue(value: unknown): CreativeStoryStructure {

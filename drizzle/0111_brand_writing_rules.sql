@@ -1,0 +1,3 @@
+ALTER TABLE "creative_profiles" ADD COLUMN "writing_guidance" text DEFAULT '' NOT NULL;--> statement-breakpoint
+ALTER TABLE "creative_profiles" ADD COLUMN "narrative_forms" text[];--> statement-breakpoint
+ALTER TABLE "creative_profiles" ADD CONSTRAINT "creative_profiles_narrative_forms_check" CHECK ("creative_profiles"."narrative_forms" IS NULL OR "creative_profiles"."narrative_forms" <@ ARRAY['classic', 'character-guide', 'traveling-object', 'panorama', 'follow-the-line']::text[]);

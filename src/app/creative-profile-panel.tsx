@@ -16,11 +16,14 @@ import {
 import {
   CREATIVE_CONVERSION_GOALS,
   CREATIVE_FRAMING_STRATEGIES,
+  CREATIVE_NARRATIVE_FORMS,
   CREATIVE_VISUAL_GUIDANCE_MAX_LENGTH,
+  CREATIVE_WRITING_GUIDANCE_MAX_LENGTH,
   VISUAL_FIDELITY_MODES,
   type CreativeBrandAsset,
   type CreativeBrandPaletteColor,
   type CreativeLogoForm,
+  type CreativeNarrativeForm,
   type CreativeProfile,
 } from "./modules/stories/creative-content.types";
 import { BrandPaletteAssistant } from "./creative-palette-assistant";
@@ -61,6 +64,14 @@ const DIMENSIONS = [
 type Busy = "save" | "brand" | "brand-version" | undefined;
 
 export type CreativeProfileSection = "profile" | "voice" | "visual" | "assets";
+
+const NARRATIVE_FORM_LABELS: Record<CreativeNarrativeForm, string> = {
+  classic: "Classic",
+  "character-guide": "Character guide",
+  "traveling-object": "Traveling object",
+  panorama: "Panorama",
+  "follow-the-line": "Follow the line",
+};
 
 /** A version noticeably squarer than the main logo is its symbol; any other, the full logo in another tone. */
 function guessLogoForm(version: CreativeBrandAsset, main: CreativeBrandAsset | undefined): CreativeLogoForm {
@@ -144,6 +155,14 @@ export function CreativeProfilePanel({
     );
     setDirty(true);
     setNotice(undefined);
+  }
+
+  /** A narrative form turned on or off; every form on again clears the restriction. Classic always stays. */
+  function toggleNarrativeForm(form: CreativeNarrativeForm, on: boolean) {
+    if (!draft) return;
+    const current = draft.narrativeForms ?? [...CREATIVE_NARRATIVE_FORMS];
+    const next = CREATIVE_NARRATIVE_FORMS.filter((entry) => entry === "classic" || (entry === form ? on : current.includes(entry)));
+    updateDraft({ narrativeForms: next.length === CREATIVE_NARRATIVE_FORMS.length ? undefined : next });
   }
 
   function updateBrandOverlay(
@@ -433,6 +452,23 @@ export function CreativeProfilePanel({
               </select>
               <small>Every post uses one form on every slide, in its call to action and in its caption, never both. Languages without the distinction (English) are not affected.</small>
             </label>
+            <div className={styles.field}>
+              <span>Narrative forms</span>
+              <div className={styles.checkRow} role="group" aria-label="Narrative forms">
+                {CREATIVE_NARRATIVE_FORMS.map((form) => (
+                  <label key={form}>
+                    <input
+                      type="checkbox"
+                      checked={form === "classic" || !draft.narrativeForms || draft.narrativeForms.includes(form)}
+                      disabled={form === "classic"}
+                      onChange={(event) => toggleNarrativeForm(form, event.target.checked)}
+                    />
+                    {NARRATIVE_FORM_LABELS[form]}
+                  </label>
+                ))}
+              </div>
+              <small>The forms a Draft 2 story may take. Classic is always on; a form turned off is never proposed, and the editor cannot choose it either.</small>
+            </div>
             <label className={styles.field}>
               <span>Show content name on cover</span>
               <input type="checkbox" checked={draft.requireCoverTitle ?? false} onChange={event => updateDraft({ requireCoverTitle: event.target.checked })} />
@@ -568,6 +604,18 @@ export function CreativeProfilePanel({
               </label>
             ))}
           </div>
+          <TextAreaField
+            label="Writing rules"
+            value={draft.writingGuidance ?? ""}
+            onChange={(writingGuidance) => updateDraft({ writingGuidance })}
+            rows={6}
+            maxLength={CREATIVE_WRITING_GUIDANCE_MAX_LENGTH}
+          />
+          <p className={styles.profileGuideHint}>
+            The brand&rsquo;s own rules, one per line, for everyone who writes
+            or judges its posts: the words to use and to avoid, how a technical
+            term is introduced, who never speaks in the text.
+          </p>
           <div className={styles.emojiRow}>
             <label>
               <input

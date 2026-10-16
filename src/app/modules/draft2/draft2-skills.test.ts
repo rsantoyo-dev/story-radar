@@ -98,6 +98,12 @@ test("the brand brief gives the publication's voice in plain words and nothing a
   assert.ok(!brandBrief({ ...profile, language: "English" }).includes("Address the reader"), "English has no such distinction");
 });
 
+test("the brand brief ends with the brand's own writing rules, one per line, as it wrote them; none when it has none", () => {
+  const rules = "Español latino neutro: café (no marrón), semilla o pepa (no hueso).\n\n  Chispa nunca se nombra en el texto. ";
+  assert.match(brandBrief({ ...profile, writingGuidance: rules }), /- Writing rules, the publication's own \(they win over a general habit\):\n  Español latino neutro: café \(no marrón\), semilla o pepa \(no hueso\)\.\n  Chispa nunca se nombra en el texto\.$/u);
+  assert.ok(!brandBrief({ ...profile, writingGuidance: "  " }).includes("Writing rules"));
+});
+
 test("the openings follow the focus: framing, structure, goal and voice, scored as a criterion, guidance never evidence", () => {
   assert.match(HOOKS_SKILL.text, /## Focus\nEvery story arrives with its focus/);
   assert.match(HOOKS_SKILL.text, /framing "reader-consequence": the cover opens with the reader consequence/);
