@@ -116,7 +116,13 @@ export function deckShape(structure: { kind: Draft2FocusStructureKind; itemFactI
     const fixed = middle ? Math.min(DECK_ARC_MAX_SLIDES, Math.max(DECK_ARC_MIN_SLIDES, middle)) : undefined;
     return { kind: "arc", min: fixed ?? DECK_ARC_MIN_SLIDES, max: fixed ?? DECK_ARC_MAX_SLIDES, items: [] };
   }
-  const items = structure.itemFactIds.filter((id) => !slide2FactIds.includes(id)).slice(0, DECK_MAX_SLIDES);
+  // With a spine that fits the list, its middle beats say how many items the deck carries: all of them when the spine gives each item a
+  // middle beat (slide 2 may cite an item's fact in passing, "two free outings", without being its slide), else all but the one slide 2
+  // covers (the first it cites, else the first item). A real list lost Jardin céleste this way: slide 2 cited it for the free/paid split.
+  const middle = spine ? spine.beats.filter((beat) => beat.slide === "middle").length : 0;
+  const all = structure.itemFactIds;
+  const onSlide2 = middle === all.length ? [] : middle === all.length - 1 ? [all.find((id) => slide2FactIds.includes(id)) ?? all[0]] : all.filter((id) => slide2FactIds.includes(id));
+  const items = all.filter((id) => !onSlide2.includes(id)).slice(0, DECK_MAX_SLIDES);
   return { kind: structure.kind, min: items.length, max: items.length, items };
 }
 

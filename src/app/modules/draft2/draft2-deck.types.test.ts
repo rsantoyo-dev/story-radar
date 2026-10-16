@@ -148,3 +148,12 @@ test("a deck slide never uses an abbreviation the facts had to spell out", () =>
   const spelled = { ...opening, slide2: { ...opening.slide2, body: "An official of the Department of Defense (DOD) says awards took less than a week." } };
   assert.deepEqual(codes(mechanicalDeckIssues([deck("d1")], explaining, { opening: spelled, closing, shape: arc, emojis: 2 })), [], "slide 2 spelled it out before");
 });
+
+test("a list's items follow the spine: one deck slide per middle beat, whatever slide 2 cites in passing", () => {
+  const middle = (count: number) => ({ beats: [{ slide: "cover" }, { slide: "slide2" }, ...Array.from({ length: count }, () => ({ slide: "middle" })), { slide: "last" }] });
+  const list = { kind: "list" as const, itemFactIds: ["f1", "f10", "f17", "f14", "f20"] };
+  assert.deepEqual(deckShape(list, ["f25", "f2", "f10", "f15"], middle(5)).items, ["f1", "f10", "f17", "f14", "f20"], "five middle beats: five slides, though slide 2 cited f10 for the free/paid split");
+  assert.deepEqual(deckShape(list, ["f25", "f10"], middle(4)).items, ["f1", "f17", "f14", "f20"], "four middle beats: slide 2 covers the item it cites");
+  assert.deepEqual(deckShape(list, ["f25"], middle(4)).items, ["f10", "f17", "f14", "f20"], "four middle beats and no item cited: the first item is slide 2's");
+  assert.deepEqual(deckShape(list, ["f10", "f17"]).items, ["f1", "f14", "f20"], "no spine: the items slide 2 does not cite, as before");
+});
