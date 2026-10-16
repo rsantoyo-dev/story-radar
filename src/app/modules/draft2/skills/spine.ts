@@ -14,10 +14,17 @@ import type { Draft2Skill } from "./draft2-skills";
  * an image line asks for no words or numbers and nothing the brand avoids;
  * the program checks both (draft2-spine-checks.ts), since the first story
  * under the bound spine lost its visual and two images to such lines.
+ * Version 4, 2026-10-16, after the spaghetti story's spine (the editor: "the
+ * spine is the most important now"): the last beat pays the promise in the
+ * reader's hands, as the goal asks, never with the study's limits (the same
+ * fault as the Brossard closing); one link of a mechanism per beat; the guard
+ * on slide 2 unless the cover's headline makes the claim it prevents; the
+ * images a sequence, not a series (the program counts one subject on more
+ * than two thirds of the beats), and no figure asked of an image.
  */
 export const SPINE_SKILL: Draft2Skill = {
   name: "spine",
-  version: "3",
+  version: "4",
   text: `# The spine
 
 The spine is the carousel's story in beats, one per slide, written before any
@@ -42,7 +49,7 @@ story takes the ones it needs, in this order, and may repeat rising:
   reveal and its words step back.
 - climax: the moment of highest tension or of the main discovery.
 - resolution: the consequences, the loose ends closed.
-- payoff: the reward of the promise, what it means for the reader; the last
+- payoff: the reward of the promise, what the reader takes away; the last
   slide is a payoff or a resolution. A payoff may also come earlier when a
   promise is paid before the end.
 
@@ -60,8 +67,9 @@ story takes the ones it needs, in this order, and may repeat rising:
   characters: the scale, the consequence, the moment before or after, the
   detail that proves it, a contrast; never an illustration of the words.
   It never asks the image for numbers, labels, captions, a logo or any
-  words (numbered cards, labelled steps): the image model letters only the
-  slide's own words. It never asks for what the brand's identity avoids.
+  words (numbered cards, labelled steps, a big figure, a percentage): the
+  image model letters only the slide's own words; a number belongs to the
+  words. It never asks for what the brand's identity avoids.
 - subject: the image's dominant subject, in a few words ("a corn kernel",
   "a rolled tortilla"), never the previous beat's: two slides in a row
   never show the same thing, even at another scale.
@@ -79,6 +87,21 @@ story takes the ones it needs, in this order, and may repeat rising:
 - The turning point or the climax is the strongest true thing the facts
   hold, placed where it pulls hardest, never later than it must be; a
   surprise the facts do not support is not a twist.
+- The last beat pays the cover's promise in the reader's hands, as the
+  focus's goal asks: for saves, what the reader keeps and uses (the steps,
+  the rule, the plan, the schedule); for shares, the one thing they would
+  send someone; for discussion, the question the facts leave to them; for
+  followers, what it changes for them that no other post told them. What
+  the finding does not cover is a clause inside it when the reader needs it
+  ("with round spaghetti, not linguini"), never the beat's job; what the
+  result might explain someday elsewhere (other materials, future research)
+  is not a reward for this reader. A last beat of limits recaps the study;
+  it pays nothing.
+- One step per middle beat: each changes what the reader knows or can do.
+  Two beats in a row that explain links of one mechanism (what the twist
+  does, then what the untwisting does) are one beat; a middle that reads as
+  a lesson has too many beats. The arc's two to five middle beats are a
+  range, not a target: fewer, stronger slides beat a complete explanation.
 - With a narrative form, each scene names the anchor's state on that slide.
   With a discovery premise, the beats are its reveals and the news is the
   last. With an arc concept, the beats are its beats.
@@ -90,6 +113,17 @@ story takes the ones it needs, in this order, and may repeat rising:
 - No beat adds an aside the reader would not assume (what a study did not
   test, a detail of another source): a guard is only for a misreading the
   cover itself invites.
+- A guard's fact goes in the slide2 beat's words, the first thing a reader
+  who swipes meets; the cover's words carry it only when the cover's
+  headline itself would make the claim the guard prevents (a suspension that
+  reads as a closure). A cover that spends its subheadline on a qualifier
+  gives up its pull.
+- The images are a sequence, not a series: from beat to beat the dominant
+  subject moves with the story (the place, the tool, the people's trace, a
+  comparison, the consequence), within what the facts hold. The story's
+  main object is the subject of at most two thirds of the beats, however
+  its state changes; a narrative form's anchor recurs by design and is not
+  counted. The program counts the subjects.
 - The words name a source once ("a Penn State study") and then tell the
   facts; a researcher's or a spokesperson's name never in the words of the
   cover's or a headline's beat, and at most once in the carousel, for their

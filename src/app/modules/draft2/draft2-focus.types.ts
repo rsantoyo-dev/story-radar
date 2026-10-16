@@ -326,9 +326,12 @@ export type Draft2Focus = {
   spineProblems?: Draft2SpineProblem[];
 };
 
+/** What recurs on every slide by design, so a series check does not count it: a narrative form's anchor (the guide, the object, the place, the line); nothing for a classic telling. */
+export const spineRecurring = (narrative: Pick<Draft2FocusNarrative, "form" | "anchor"> | undefined): string => narrative && narrative.form !== "classic" ? narrative.anchor : "";
+
 /** The focus with its spine's image problems as they stand now, the brand's avoid terms given: recomputed when the spine is written, edited or kept by a decision. */
 export function focusWithSpineProblems(focus: Draft2Focus, avoid: readonly string[]): Draft2Focus {
-  const problems = focus.values?.spine ? spineImageProblems(focus.values.spine.beats, { avoid }) : [];
+  const problems = focus.values?.spine ? spineImageProblems(focus.values.spine.beats, { avoid, recurring: spineRecurring(focus.values.narrative) }) : [];
   const { spineProblems, ...rest } = focus;
   void spineProblems;
   return problems.length ? { ...rest, spineProblems: problems } : rest;
@@ -742,7 +745,7 @@ export const spineBeats = (spine: Draft2FocusSpine | undefined, position: Draft2
 export function parseFocusPlan(answer: string, { known, structure, eligibleLevers = [], editorChoices = {}, imageCheck }: {
   known: ReadonlySet<string>; structure: Draft2FocusValues["structure"]; eligibleLevers?: readonly string[]; editorChoices?: Record<string, unknown>;
   /** Check Claude's image lines (spineImageProblems): a problem is a response error, asked for again with the rule. The second answer is not checked: its problems go to the editor as notes. */
-  imageCheck?: { avoid: readonly string[] };
+  imageCheck?: { avoid: readonly string[]; recurring?: string };
 }): Draft2FocusPlan {
   let parsed: unknown;
   try { parsed = JSON.parse(answer); } catch { throw new Draft2ResponseError("The plan answer is not valid JSON"); }

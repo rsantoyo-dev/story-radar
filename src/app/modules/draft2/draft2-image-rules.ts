@@ -19,14 +19,17 @@ const FORBIDDEN = new RegExp(`${WORD_START}(logos?|watermarks?|captions?|subtitl
 const ALLOWED = new RegExp([
   `${WORD_START}(?:espacio|zona|área|hueco|esquina|margen|rincón|room|space|zone|area|corner|margin|espace|coin|marge|emplacement|réserve)${WORD_END}[^.;]{0,60}?${WORD_START}logos?${WORD_END}`,
   `${WORD_START}logos?${WORD_END}[^.;]{0,60}?${WORD_START}(?:se añade|añadid[oa]|added|afterwards|después|luego|libre|libres|free|clear|empty|vacío|vacía|reservad[oa]s?|dégagée?s?|libérée?s?|réservée?s?|ajoutée?s?|ensuite|plus tard|hors cadre|hors image)${WORD_END}`,
-  `${WORD_START}(?:sin|no|without|never|nunca|ningún|ninguna|sans|aucune?|pas d[e']|jamais|ni)${WORD_END}[^.;]{0,60}?${WORD_START}(?:logos?|watermarks?|captions?|subtitles?|hashtags?|signage|page numbers?|text|texto|words|letters|lettering|texte|légendes?|filigranes?|números?|cifras|chiffres|etiquetas?|étiquettes?|labels?)${WORD_END}`,
+  `${WORD_START}(?:sin|no|without|never|nunca|ningún|ninguna|sans|aucune?|pas d[e']|jamais|ni)${WORD_END}[^.;]{0,60}?${WORD_START}(?:logos?|watermarks?|captions?|subtitles?|hashtags?|signage|page numbers?|text|texto|words|letters|lettering|texte|légendes?|filigranes?|números?|cifras?|chiffres?|dígitos?|digits|porcentajes?|percentages?|pourcentages?|estadísticas?|statistics?|statistiques?|etiquetas?|étiquettes?|labels?)${WORD_END}`,
 ].join("|"), "giu");
 /**
  * Words asked of the image beyond the slide's own: numbered or labelled
  * things, "with text", "con números" (a real spine asked for "tarjetas
- * numeradas con iconos" and the image lettered digits the slide never had).
+ * numeradas con iconos" and the image lettered digits the slide never had),
+ * and a figure for its own sake: "una cifra grande en ocre", a big number, a
+ * percentage or statistics (the spaghetti story's climax, 2026-10-16). A
+ * quantity of things ("un gran número de granos") is not a figure.
  */
-const WORDS_ASKED = new RegExp(`${WORD_START}(?:numerad[oa]s?|numbered|numérotée?s?|etiquetad[oa]s?|labell?ed|étiquetée?s?|rotulad[oa]s?|con (?:texto|números|cifras|etiquetas|rótulos|letreros|leyendas)|with (?:text|numbers|digits|labels|captions|signs|legends)|avec (?:du texte|des chiffres|des étiquettes|des légendes))${WORD_END}`, "iu");
+const WORDS_ASKED = new RegExp(`${WORD_START}(?:numerad[oa]s?|numbered|numérotée?s?|etiquetad[oa]s?|labell?ed|étiquetée?s?|rotulad[oa]s?|con (?:texto|números|cifras|etiquetas|rótulos|letreros|leyendas)|with (?:text|numbers|digits|labels|captions|signs|legends)|avec (?:du texte|des chiffres|des étiquettes|des légendes)|cifras?|chiffres?|dígitos?|digits|porcentajes?|percentages?|pourcentages?|estadísticas?|statistics?|statistiques?|números? (?:grandes?|enormes?|gigantes?|destacad[oa]s?)|(?:big|giant|huge|bold) (?:numbers?|figures?|stats?))${WORD_END}`, "iu");
 
 /** The forbidden element a direction asks for, if any: words, logos, signs or interface the image would have to carry. */
 export function forbiddenElement(direction: string): string | undefined {

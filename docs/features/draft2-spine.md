@@ -226,3 +226,46 @@ carousel was planned alone. Now:
   specks that read as microbes; the image review flags both.
 - The topbar shows a model other than the default chosen in Models ("Writer
   GPT-6.1 Sol"), since the browser remembers the last choice.
+
+## 11. Addendum, 2026-10-16: the spine pays, moves and varies (spine v4)
+
+The spaghetti story (Fogón Lab, "Lo que dice el estudio") had a good causal
+chain but four faults the later steps could not fix, since every judge after
+the Spine scores fidelity to its beats. The editor: "the spine is the most
+important now". The editor's copy of that spine was fixed by hand (six
+beats, both directions); these rules keep the next one from needing it.
+
+- **The last beat pays the promise** in the reader's hands, as the focus's
+  goal asks: for saves, the steps, the rule or the plan the reader keeps;
+  for shares, the one thing they would send; for discussion, the question
+  the facts leave to them; for followers, what it changes for them. What
+  the finding does not cover is a clause inside it, never its job; what the
+  result might explain elsewhere someday is not a reward. The spaghetti
+  spine ended on the model's limits ("round rods, linguini differs, other
+  rods"), the same fault as the Brossard closing.
+- **One step per middle beat**: two beats in a row that explain links of one
+  mechanism are one beat; the arc's two to five middle beats are a range,
+  not a target. The spaghetti spine had three mechanism beats in a row and
+  its own risk note said "sounds like a lesson".
+- **The guard on slide 2**, the first thing a reader who swipes meets; on
+  the cover only when the cover's headline itself makes the claim the guard
+  prevents (a suspension read as a closure). The opening's program check
+  (`GUARD_LATE`, cover or slide 2) is unchanged. The spaghetti cover spent
+  its subheadline on "with dry spaghetti and a machine".
+- **A sequence, not a series** (`SPINE_SERIES`, `spineSeries` in
+  `draft2-spine-checks.ts`): one subject word (plural "s" dropped, function
+  words ignored) on more than two thirds of the beats that name a subject,
+  four or more, is a problem; a narrative form's anchor is not counted
+  (`spineRecurring`). Like the other image checks, the first plan answer
+  that breaks it is asked again once with the rule (one more call, only
+  then); the second answer's problems and the editor's edits are shown as
+  notes, never blocking. The spaghetti spine had "espagueti" on seven of
+  seven beats; the edited one has it on four of six.
+- **No figure asked of an image**: `wordsAskedOfImage` now catches "una
+  cifra", a big number, "números grandes", a percentage, statistics and
+  "chiffres" (the climax asked for "una cifra grande en ocre"); "un gran
+  número de granos" is a quantity and passes, and a negation ("sin cifra")
+  asks for nothing.
+
+No judge or fixed call was added. Spine v4 changes the plan's instructions
+only; spines already written keep their beats.

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { sameSpineSubject, spineImageProblems } from "./draft2-spine-checks";
+import { sameSpineSubject, spineImageProblems, spineSeries } from "./draft2-spine-checks";
+import { spineRecurring } from "./draft2-focus.types";
 import { avoidTerms, forbiddenElement, mentionsTerm, wordsAskedOfImage } from "./draft2-image-rules";
 import type { Draft2SpinePosition } from "./draft2-focus.types";
 
@@ -31,6 +32,14 @@ test("words asked of the image, in the publications' languages; a negation asks 
   assert.equal(wordsAskedOfImage("Tarjetas con números grandes"), "con números");
   assert.equal(wordsAskedOfImage("Tarjetas sin números ni texto, solo objetos"), undefined);
   assert.equal(wordsAskedOfImage("A bowl of lime water on teal"), undefined);
+  // A figure for its own sake: the spaghetti story's climax asked for one, and the check missed it.
+  assert.equal(wordsAskedOfImage("Dos mitades limpias frente a frente, con una cifra grande en ocre como único acento"), "cifra");
+  assert.equal(wordsAskedOfImage("Un plato con un porcentaje enorme encima"), "porcentaje");
+  assert.equal(wordsAskedOfImage("A jar beside a big number in ochre"), "big number");
+  assert.equal(wordsAskedOfImage("Un bol y, encima, números grandes flotando"), "números grandes");
+  assert.equal(wordsAskedOfImage("Un grand chiffre au-dessus du bol"), "chiffre");
+  assert.equal(wordsAskedOfImage("Un gran número de granos sobre la mesa"), undefined, "a quantity of things is not a figure");
+  assert.equal(wordsAskedOfImage("La máquina de pinzas, sin cifra ni rótulo"), undefined, "a figure ruled out asks for nothing");
   assert.equal(forbiddenElement("A plain card, the logo added afterwards"), undefined);
   assert.equal(forbiddenElement("A card with the logo in the corner"), "logo");
   assert.equal(mentionsTerm("iconos genericos de microbios", "iconos genericos"), true);
@@ -39,4 +48,30 @@ test("words asked of the image, in the publications' languages; a negation asks 
   assert.equal(sameSpineSubject("un grano de maíz", "dos granos de maíz"), true, "the real run's slide 2 and s1");
   assert.equal(sameSpineSubject("the rolled tortilla", "The rolled tortilla, whole"), true);
   assert.equal(sameSpineSubject("four step cards", "a rolled tortilla"), false);
+});
+
+test("a series, not a sequence: one subject on more than two thirds of the beats, a form's anchor not counted", () => {
+  // The spaghetti story's spine as Claude wrote it: the noodle on all seven slides, each in another state.
+  const series = [
+    "un espagueti doblado con fragmentos", "espagueti con grieta en el centro", "espagueti retorcido en espiral", "espagueti destorciéndose con partículas",
+    "dos ondas en un espagueti", "dos mitades limpias de espagueti", "Chispa con espagueti entero y partido",
+  ].map((subject, index) => beat(index === 0 ? "cover" : index === 1 ? "slide2" : index === 5 ? "penultimate" : index === 6 ? "last" : "middle", "Una imagen plana.", subject));
+  assert.deepEqual(spineSeries(series), { word: "espagueti", beats: [1, 2, 3, 4, 5, 6, 7], total: 7 });
+  const problem = spineImageProblems(series).find((entry) => entry.code === "SPINE_SERIES");
+  assert.equal(problem?.beat, 7, "named on the last beat it holds");
+  assert.match(problem!.detail, /"espagueti" is the dominant subject of 7 of 7 beats \(1, 2, 3, 4, 5, 6, 7\); keep it on at most 4/);
+  // The editor's version: the kitchen table and the waves along the rod beside the noodle; four of six, two thirds, is a sequence.
+  const sequence = [
+    "un espagueti doblado con fragmentos", "una mesa de cocina llena de trozos", "espagueti retorcido en espiral", "dos ondas que recorren la varilla",
+    "la máquina de pinzas con el espagueti partido", "espagueti torcido junto a una linguini",
+  ].map((subject, index) => beat(index === 0 ? "cover" : index === 1 ? "slide2" : index === 4 ? "penultimate" : index === 5 ? "last" : "middle", "Una imagen plana.", subject));
+  assert.equal(spineSeries(sequence), undefined);
+  // Words that name no subject never make a series: "with" on five of five English subjects.
+  assert.equal(spineSeries(["a kernel with dots", "hands with a tortilla", "a pot with lime", "ash with lime water", "a plate with beans"].map((subject) => beat("middle", "x", subject))), undefined);
+  // A traveling object or a guide recurs by design: its anchor is not counted, and a classic telling has none.
+  const travels = ["the coffee cup on a desk", "the coffee cup in a car", "the coffee cup at a market", "the coffee cup in the rain"].map((subject) => beat("middle", "x", subject));
+  assert.equal(spineSeries(travels)?.word, "coffee");
+  assert.equal(spineSeries(travels, { recurring: spineRecurring({ form: "traveling-object", anchor: "The coffee cup" }) }), undefined);
+  assert.equal(spineRecurring({ form: "classic", anchor: "" }), "");
+  assert.equal(spineSeries(series.slice(0, 3)), undefined, "fewer than four subjects are not counted");
 });
