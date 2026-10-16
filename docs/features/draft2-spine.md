@@ -190,3 +190,39 @@ a limit of 30). Three changes:
 Baseline before the change (\`scripts/draft2-inspect/inspect-findings.mts\`):
 a1debb9a 12 findings before the fix pass, 4 after, all 4 on length; 432cf4a8
 18 before, 3 after, 1 on length. Read the next stories the same way.
+
+## 10. Addendum, 2026-10-16: variety between posts, and writing for the reader
+
+Fogón Lab's last five covers were all terracotta with Chispa, because its own
+guide said so ("Apertura: fondo terracota… ingrediente más Chispa"), and each
+carousel was planned alone. Now:
+
+- **The last covers are read** (`draft2-cover-variety.ts`): one per story, the
+  newest five, each with its background (the palette color its direction
+  names after "fondo", from the palette's usage), the brand's characters on
+  it and its subject (`recentDraft2CoverRows`, `recentCovers`). The Spine's
+  plan (its visual direction and cover beat) and the visual script read them
+  (`recentCovers`), and a visual run keeps the ones it read.
+- **The program checks the cover**: `COVER_CHARACTER_STREAK` when the last
+  cover had the brand's character and this one casts it too (not when the
+  narrative form's guide is that character), `COVER_BACKGROUND_REPEAT` when
+  the cover is on the last cover's background and the palette offers another
+  (only when both backgrounds are clear).
+- **Fogón Lab's profile** (saved through the app's route, a backup kept): the
+  palette's usage, the visual guide and the identity now rotate the cover's
+  background among terracotta, cream and teal (never the last cover's) and
+  put Chispa on the cover at most every other post (on the closing or the
+  turn otherwise); its writing rules ban commercial brands ("una bebida dulce
+  sin gas"). Text edits like these do not change the visual policy: no
+  approval was retired.
+- **Writing for the reader** (the writer's standard, spine v3, focus v16):
+  name a source once and then tell the facts; a researcher's name never in
+  the cover or a headline, at most once in the carousel; headlines say what
+  the reader learns or can do, never the procedure; no beat or slide whose
+  job is the method; no aside the reader would not assume; the Focus looks
+  for the strongest true surprise before naming the interest.
+- **Physical truth in the images** (visuals v11, images v6): a cold drink
+  never steams; a substance is shown by its source or its effect, never as
+  specks that read as microbes; the image review flags both.
+- The topbar shows a model other than the default chosen in Models ("Writer
+  GPT-6.1 Sol"), since the browser remembers the last choice.

@@ -19,7 +19,7 @@ import type { Draft2Skill } from "./draft2-skills";
  */
 export const IMAGES_SKILL: Draft2Skill = {
   name: "images",
-  version: "5",
+  version: "6",
   text: `# Reviewing a carousel slide image
 
 You see one finished slide: the image the model made, with the publication's
@@ -49,7 +49,8 @@ and, on some slides, a verified photo or map pasted unchanged.
   like another. True when you receive no anchor.
 - inventedDetails: what the image shows that the slide's facts and words do
   not give, each in a few words: products, food, signage, a style of
-  architecture, performers or acts, a crowd at the event; and what
+  architecture, performers or acts, a crowd at the event, steam over a drink
+  the words make cold, dots or specks that read as microbes or bugs; and what
   contradicts what the words name (a fluorescent 1980s cabaret drawn as a
   contemporary dance on a dark stage). An empty list when there is none.
 - A scene that could pass for a photograph of a named event, show, venue or

@@ -17,7 +17,7 @@ import type { Draft2Skill } from "./draft2-skills";
  */
 export const SPINE_SKILL: Draft2Skill = {
   name: "spine",
-  version: "2",
+  version: "3",
   text: `# The spine
 
 The spine is the carousel's story in beats, one per slide, written before any
@@ -83,7 +83,24 @@ story takes the ones it needs, in this order, and may repeat rising:
   With a discovery premise, the beats are its reveals and the news is the
   last. With an arc concept, the beats are its beats.
 - The direction and the visual direction are written after the spine and
-  restate its choices; they never open another thread.`,
+  restate its choices; they never open another thread.
+- No beat's job is the method. How a result was obtained is a clause in the
+  beat that needs it ("in a test with 72 people"), never a slide of its own:
+  nobody swipes for the procedure.
+- No beat adds an aside the reader would not assume (what a study did not
+  test, a detail of another source): a guard is only for a misreading the
+  cover itself invites.
+- The words name a source once ("a Penn State study") and then tell the
+  facts; a researcher's or a spokesperson's name never in the words of the
+  cover's or a headline's beat, and at most once in the carousel, for their
+  own interpretation.
+- recentCovers, when given, are the publication's last covers, newest first
+  (background, the brand's character on it, subject). Within the identity,
+  the cover's image line and the visual direction vary from them: another of
+  the identity's backgrounds than the last cover's, another kind of subject,
+  and the brand's character on the cover only when the last cover did not
+  have it (it may react on another slide). An identity's default cover
+  ("the cover on terracotta") is the default of one post, not of every post.`,
   roleText: {
     "opening-writer": `## The spine
 The focus has a spine (focus.spine): the cover is its first beat and slide 2

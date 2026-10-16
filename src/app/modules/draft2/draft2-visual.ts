@@ -4,7 +4,9 @@ import { DRAFT2_VISUAL_ROLES } from "./draft2-models";
 import { Draft2InputError } from "./draft2-facts.types";
 import { focusForModels, focusNarrative, visualFocus, type Draft2FocusSnapshot } from "./draft2-focus.types";
 import { funnelVersions } from "./draft2-funnel";
-import { getDraft2Session, updateDraft2Session } from "./draft2-session.repository";
+import { getDraft2Session, recentDraft2CoverRows, updateDraft2Session } from "./draft2-session.repository";
+import { coverVarietyIssues, recentCovers, recentCoversForModels, type Draft2RecentCover } from "./draft2-cover-variety";
+import { getCreativeProfile } from "../stories/creative-profile.repository";
 import { inventoryForModels, type Draft2CharacterChoice, type Draft2Inventory } from "./draft2-inventory.types";
 import {
   VISUAL_GATE, avoidTerms, bindSpineBeats, carouselSlides, editorCast, mechanicalVisualIssues, parseVisualCandidates, parseVisualEvaluation, sameVisual, spineImageLines, visualEvaluationSchema, visualExploreRequest, visualFixRequest,
@@ -26,6 +28,8 @@ type VisualSnapshot = {
   inventory: Draft2Inventory;
   characters: Draft2VisualCharacter[];
   characterChoice: Draft2CharacterChoice;
+  /** The publication's last covers, newest first: the script varies its cover from them. */
+  recentCovers: Draft2RecentCover[];
 };
 
 /**
@@ -36,7 +40,7 @@ type VisualSnapshot = {
  * be the ones chosen, the people and places as last found, and the visual
  * direction as the focus has it now (the rest of the focus is the words').
  */
-function visualTarget(session: Draft2SessionRow, stopped: Draft2Visual | undefined): VisualSnapshot {
+function visualTarget(session: Draft2SessionRow, stopped: Draft2Visual | undefined): Omit<VisualSnapshot, "recentCovers"> {
   const inventory = session.inventory;
   if (stopped) {
     const { carousel, deckId, openingId, closingId, focus, characters, characterChoice } = stopped;
@@ -75,11 +79,18 @@ const VISUAL_STEP: FunnelStep<Draft2VisualCandidate, Draft2VisualScore, Draft2Vi
   autoExtraRounds: false,
   operations: { writer: "draft2_visual", judge: "draft2_visual_review" },
   roles: DRAFT2_VISUAL_ROLES,
-  snapshot: visualTarget,
-  newRun: ({ carousel, deckId, openingId, closingId, focus, inventory, characters, characterChoice }, profile) => ({
+  // A continued run keeps the covers it read; a new one reads the publication's last covers, with the palette that names their backgrounds.
+  snapshot: async (session, stopped) => {
+    const target = visualTarget(session, stopped);
+    if (stopped) return { ...target, recentCovers: stopped.recentCovers ?? [] };
+    const [rows, profile] = await Promise.all([recentDraft2CoverRows(session.topicId, session.id), getCreativeProfile(session.topicId)]);
+    return { ...target, recentCovers: recentCovers(rows, { palette: profile.brandPalette ?? [], roster: target.inventory.roster ?? [] }) };
+  },
+  newRun: ({ carousel, deckId, openingId, closingId, focus, inventory, characters, characterChoice, recentCovers: covers }, profile) => ({
     carousel, deckId, openingId, closingId, focus, inventoryVersion: inventory.version, characters, characterChoice, mode: profile.visualFidelityMode as Draft2VisualMode,
+    ...(covers.length ? { recentCovers: covers } : {}),
   }),
-  setup: ({ snapshot: { carousel, focus, inventory, characters, characterChoice }, profile, plan }) => {
+  setup: ({ snapshot: { carousel, focus, inventory, characters, characterChoice, recentCovers: covers }, profile, plan }) => {
     const mode = profile.visualFidelityMode as Draft2VisualMode;
     // The identity in full (not v1's 1,400-character excerpt for text prompts): the script is where it is applied.
     const brief = [brandBrief(profile), `# Visual identity\n${resolveCreativeVisualGuidance(profile)}`, visualModeLine(mode)].join("\n\n");
@@ -91,11 +102,18 @@ const VISUAL_STEP: FunnelStep<Draft2VisualCandidate, Draft2VisualScore, Draft2Vi
       writer: composeInstructions("visual-writer", [VISUALS_SKILL, ...creativeSkills(focus.values)], brief),
       judge: composeInstructions("visual-judge", [VISUALS_SKILL, ...creativeSkills(focus.values)], brief),
       // The layout: the image model letters the words, and the logo and the page number are added afterwards, where the Topic puts them.
-      context: { focus: focusForModels(focus.values), carousel, ...(Object.keys(beats).length ? { spineBeats: beats } : {}), layout: visualLayout(profile, carousel), peopleAndPlaces: inventoryForModels(inventory), characters, characterChoice },
+      context: { focus: focusForModels(focus.values), carousel, ...(Object.keys(beats).length ? { spineBeats: beats } : {}), ...(covers.length ? { recentCovers: recentCoversForModels(covers) } : {}), layout: visualLayout(profile, carousel), peopleAndPlaces: inventoryForModels(inventory), characters, characterChoice },
       schemas: { writer: visualSchema(positions), judge: visualEvaluationSchema(positions) },
       parseCandidates: (text) => bindSpineBeats(parseVisualCandidates(text), beats),
       parseEvaluation: (text, ids) => { const evaluation = parseVisualEvaluation(text, ids, positions); return evaluation.proposals ? { ...evaluation, proposals: bindSpineBeats(evaluation.proposals, beats) } : evaluation; },
-      mechanical: (candidates) => mechanicalVisualIssues(candidates, { carousel, inventory, characters, characterChoice, mode, avoid, narrative: focusNarrative(focus.values) }),
+      mechanical: (candidates) => {
+        const narrative = focusNarrative(focus.values);
+        return [
+          ...mechanicalVisualIssues(candidates, { carousel, inventory, characters, characterChoice, mode, avoid, narrative }),
+          // Variety between posts: the brand's character never on two covers in a row, the last cover's background not again.
+          ...coverVarietyIssues(candidates, { recent: covers, palette: profile.brandPalette ?? [], characterAnchor: narrative.anchorKind === "character" ? narrative.characterId : null }),
+        ];
+      },
       explore: visualExploreRequest,
       refine: visualRefineRequest,
       fix: visualFixRequest,

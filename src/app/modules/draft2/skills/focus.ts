@@ -27,7 +27,7 @@ import type { Draft2Skill } from "./draft2-skills";
  */
 export const FOCUS_SKILL: Draft2Skill = {
   name: "focus",
-  version: "15",
+  version: "16",
   text: `# The focus of a story
 
 The focus is the brief every later step follows: which editorial line the
@@ -67,7 +67,10 @@ follows the telling.
 ## Deliberation
 - interest: what in these facts would make this audience stop and read, in
   one line of at most 200 characters, in the publication's language; every
-  step reads it.
+  step reads it. Before naming it, find the facts that most contradict what
+  this audience believes or does (a habit that does not work, a result that
+  overturns a common belief): the strongest true surprise usually beats a
+  comparison or a summary, and is never buried in the closing as a limit.
 - approaches: two to four ways to tell this story compared, one line of at
   most 160 characters each, the classic telling among them and the chosen
   one first: the telling, what the reader would feel on the cover, what it

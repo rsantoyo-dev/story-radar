@@ -6,7 +6,8 @@ import { getAnthropicRuntimeConfig, requireAnthropicApiKey } from "../stories/an
 import { getCreativeProfile } from "../stories/creative-profile.repository";
 import { getStoryContent } from "../stories/story-content.repository";
 import { activeEditorialLines, storyCollectionContexts } from "../editorial-lines/editorial-lines.repository";
-import { activeDraft2Session, claimDraft2Session, getDraft2Session, recentDraft2Levers, touchDraft2Session, updateDraft2Session } from "./draft2-session.repository";
+import { activeDraft2Session, claimDraft2Session, getDraft2Session, recentDraft2CoverRows, recentDraft2Levers, touchDraft2Session, updateDraft2Session } from "./draft2-session.repository";
+import { recentCovers, recentCoversForModels, type Draft2RecentCover } from "./draft2-cover-variety";
 import { eligibleLevers } from "./draft2-levers.types";
 import { failedCall } from "./draft2-funnel";
 import { traceCost } from "./draft2-trace-cost";
@@ -252,7 +253,7 @@ async function focusCall<T>({ apiKey, model, trace, verifiedFacts, auditContext,
  * focus and spine skills, and the skills its telling needs), its request and
  * its parse, honoring the parts of the plan the editor owns.
  */
-function planCall(focus: Draft2Focus, { facts, title, brief, editorChoices, material, recentLevers, avoid = [] }: { facts: readonly Draft2Fact[]; title: string; brief: string; editorChoices: Record<string, unknown>; material?: Draft2FocusMaterial; recentLevers: readonly string[]; avoid?: readonly string[] }) {
+function planCall(focus: Draft2Focus, { facts, title, brief, editorChoices, material, recentLevers, avoid = [], covers = [] }: { facts: readonly Draft2Fact[]; title: string; brief: string; editorChoices: Record<string, unknown>; material?: Draft2FocusMaterial; recentLevers: readonly string[]; avoid?: readonly string[]; covers?: readonly Draft2RecentCover[] }) {
   const values = focus.values!;
   // The spine's words are what the writers say: the reader's words, never the source's abbreviations.
   const planner = composeInstructions("focus-planner", [FOCUS_SKILL, LEVERS_SKILL, SPINE_SKILL, READER_SKILL, ...creativeSkills(values)], brief);
@@ -265,7 +266,7 @@ function planCall(focus: Draft2Focus, { facts, title, brief, editorChoices, mate
     instructions: planner.instructions,
     skillVersions: planner.skillVersions,
     // People and places' material: the visual direction shows the people with a verified portrait through it, never anyone else.
-    contents: { task: "plan", title, focus: told, ...(material ? { material } : {}), eligibleLevers: eligible, recentLevers, editorChoices: owned } as Record<string, unknown>,
+    contents: { task: "plan", title, focus: told, ...(material ? { material } : {}), eligibleLevers: eligible, recentLevers, ...(covers.length ? { recentCovers: recentCoversForModels(covers) } : {}), editorChoices: owned } as Record<string, unknown>,
     // The first answer's image lines are checked and asked for again with what they break; the second's problems go to the editor as notes.
     parse: (answer: string, attempt: number) => parseFocusPlan(answer, { known: new Set(facts.map((fact) => fact.id)), structure: values.structure, eligibleLevers: eligible, editorChoices: owned, ...(attempt < FOCUS_ATTEMPTS ? { imageCheck: { avoid } } : {}) }),
   };
@@ -290,10 +291,12 @@ export async function planDraft2Spine({ topicId, storyId, sessionId }: Draft2Foc
   if (await activeDraft2Session(topicId, storyId)) throw new Draft2BusyError("A Draft 2 run is already in progress for this story.");
   const apiKey = requireAnthropicApiKey();
   const model = getAnthropicRuntimeConfig().model;
-  const [profile, content, recentLevers] = await Promise.all([getCreativeProfile(topicId), getStoryContent(topicId, storyId), recentDraft2Levers(topicId, session.id)]);
+  const [profile, content, recentLevers, coverRows] = await Promise.all([getCreativeProfile(topicId), getStoryContent(topicId, storyId), recentDraft2Levers(topicId, session.id), recentDraft2CoverRows(topicId, session.id)]);
   const brief = [brandBrief(profile), `# Visual identity\n${resolveCreativeVisualGuidance(profile)}`, visualModeLine(profile.visualFidelityMode as Draft2VisualMode)].join("\n\n");
   const facts = session.facts ?? [];
   const avoid = avoidTerms(profile.creativeIdentity);
+  // The publication's last covers: the plan's visual direction and cover beat vary from them.
+  const covers = recentCovers(coverRows, { palette: profile.brandPalette ?? [], roster: session.inventory?.roster ?? [] });
   const claimed = await claimDraft2Session(session.id, { step: "spine", error: null });
   if (!claimed) throw new Draft2BusyError("A Draft 2 run is already in progress for this story.");
   const trace: Draft2TraceEntry[] = [...session.trace];
@@ -302,7 +305,7 @@ export async function planDraft2Spine({ topicId, storyId, sessionId }: Draft2Foc
   let plan;
   try {
     plan = await withCreativeTextBudget({ topicId, storyId, runId: session.id }, () => focusCall({
-      apiKey, model, trace, verifiedFacts: openingFactsSnapshot(facts), auditContext, operation: "draft2_focus_plan", ...planCall(focus, { facts, title: content.title, brief, editorChoices: editorChoicesOf(focus), recentLevers, avoid, ...(session.inventory?.status === "ready" ? { material: focusMaterial(session.inventory) } : {}) }),
+      apiKey, model, trace, verifiedFacts: openingFactsSnapshot(facts), auditContext, operation: "draft2_focus_plan", ...planCall(focus, { facts, title: content.title, brief, editorChoices: editorChoicesOf(focus), recentLevers, avoid, covers, ...(session.inventory?.status === "ready" ? { material: focusMaterial(session.inventory) } : {}) }),
       schema: DRAFT2_FOCUS_PLAN_SCHEMA, effort: "high", maxOutputTokens: PLAN_MAX_OUTPUT_TOKENS, again: PLAN_AGAIN,
     }));
   } catch (error) {

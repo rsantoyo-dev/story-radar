@@ -1106,6 +1106,11 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
 
   // "Run to here": on a step's screen before the images, the autopilot runs every step up to this one and stops.
   const runToHere = current && current !== "images" && (AUTOPILOT_ORDER as readonly string[]).includes(current) ? current : undefined;
+  // A model other than the default, chosen in the Models card, shows beside the autopilot on every screen: the browser remembers the last choice for the next story.
+  const chosenModels = session ? session.models : pendingModels;
+  const modelsBadge = chosenModels?.writer || chosenModels?.judge
+    ? <StatusBadge tone="warning">{[chosenModels.writer ? `Writer ${optionName(chosenModels.writer.model)}` : "", chosenModels.judge ? `Judge ${optionName(chosenModels.judge.model)}` : ""].filter(Boolean).join(" · ")}</StatusBadge>
+    : null;
   const autopilotButtons = <>
     {autopilot?.active ? <Button variant="secondary" size="compact" disabled={stopRequested.current} onClick={() => { stopRequested.current = true; }}>Stop after this step</Button> : null}
     {runToHere && !autopilot?.active ? <Button variant="secondary" size="compact" disabled={!text.length || session === undefined || running !== undefined} onClick={() => { void runAutopilot({ until: runToHere }); }}>Run to here</Button> : null}
@@ -1485,7 +1490,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
         {liveScreen && liveScreen !== current ? <ScreenLink href={hrefOf(liveScreen)} onNavigate={() => navigate(liveScreen)} className={styles.livePill}>{stepOf(liveScreen).title} running</ScreenLink> : null}
         {current !== "facts" ? <Button variant="quiet" size="compact" aria-expanded={sourceShown} aria-controls="draft2-source" onClick={() => showSource(!sourceOpen)}>Article</Button> : null}
         {/* The overview has the autopilot's own card; a narrow window keeps the bar to the article and the way back. */}
-        {current ? <span className={styles.topbarAutopilot}>{autopilotButtons}</span> : null}
+        {current ? <span className={styles.topbarAutopilot}>{modelsBadge}{autopilotButtons}</span> : null}
       </div> : null}
     </header>
     {error ? <InlineNotice tone="error" title="Could not open the canvas" className={styles.notice}>{error} <Link href={back}>Back to the story</Link></InlineNotice> : null}

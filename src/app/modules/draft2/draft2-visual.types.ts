@@ -11,6 +11,7 @@ import { anchorNoun, narrativeUsesMaster, spineBeats, type Draft2FocusNarrative,
 import type { Draft2ClosingOpening } from "./draft2-closing.types";
 import type { Draft2Deck, Draft2DeckCandidate, Draft2DeckClosing } from "./draft2-deck.types";
 import type { CreativeProfile } from "../stories/creative-content.types";
+import type { Draft2RecentCover } from "./draft2-cover-variety";
 import { avoidTerms, forbiddenElement, mentionsTerm } from "./draft2-image-rules";
 
 /** The image rules every step shares (draft2-image-rules.ts), where the visual script's callers have always found them. */
@@ -93,6 +94,7 @@ export const VISUAL_MECHANICAL_CODES = [
   "TOO_MANY_CHARACTERS", "REFERENCE_UNKNOWN", "NEED_MISMATCH", "STRICT_MODE", "COVER_TYPOGRAPHY", "UNVERIFIED_PERSON", "UNVERIFIED_PLACE",
   "ORGANIZATION_NAMED", "AVOID_TERM", "FORBIDDEN_ELEMENT", "DUPLICATE_CANDIDATE", "SAME_SHOT", "SHOT_MISMATCH",
   "SUBJECT_MISSING", "DISCOVERY_MISSING", "SAME_SUBJECT", "RECURRING_DOMINANT", "CALLBACK_MISPLACED", "ANCHOR_MISSING", "SECTION_MISSING",
+  "COVER_CHARACTER_STREAK", "COVER_BACKGROUND_REPEAT",
 ] as const;
 export const VISUAL_JUDGE_CODES = [
   "ILLUSTRATES_TEXT", "BREAKS_CONTINUITY", "REPETITIVE", "MOTIF_DEPENDENCY", "OFF_BEAT", "PREDICTABLE", "TOO_ABSTRACT", "OFF_BRAND", "LOOKS_AI", "CONTRADICTS_FACTS", "CROWDS_TEXT", "VAGUE",
@@ -168,6 +170,8 @@ export type Draft2Visual = FunnelRun<Draft2VisualCandidate, Draft2VisualScore, D
   characters?: Draft2VisualCharacter[];
   characterChoice?: Draft2CharacterChoice;
   mode?: Draft2VisualMode;
+  /** The publication's last covers the run read, newest first, so a continued run checks the same ones (draft2-cover-variety.ts). */
+  recentCovers?: Draft2RecentCover[];
   previousRuns?: Draft2VisualRun[];
 };
 export type Draft2VisualRun = Omit<Draft2Visual, "rounds" | "previousRuns">;

@@ -22,7 +22,7 @@ import type { Draft2Skill } from "./draft2-skills";
  */
 export const VISUALS_SKILL: Draft2Skill = {
   name: "visuals",
-  version: "10",
+  version: "11",
   text: `# Visual scripts for social carousels
 
 A visual script is the sequence of images a carousel is made of. The story
@@ -215,6 +215,24 @@ turn and the end, because the spine put them there.
   headline, which dominates; never a calm, empty establishing shot of a
   story about a night out. The last image returns changed: never calmer or
   emptier than the cover it answers.
+
+## Variety between posts
+- recentCovers, when given, are the publication's last covers, newest first:
+  their background, the brand's character on them, their subject. A reader
+  scrolling the feed sees them side by side. The cover's background is
+  another of the identity's backgrounds than the last cover's, its subject
+  another kind of thing, and the brand's character is on the cover only when
+  the last cover did not have it (it may react on another slide instead).
+  The program checks the character and the background
+  (COVER_CHARACTER_STREAK, COVER_BACKGROUND_REPEAT).
+
+## Physical truth
+- Food and drink are shown in the state the words and facts give: a cold
+  drink with condensation and never steam, a hot dish steaming, ice that is
+  ice.
+- A substance (a compound, a nutrient, a molecule, an extract) is shown by
+  its source or its effect (a chili, a glass of milk, a face that cools),
+  never as dots, specks or particles that read as microbes or bugs.
 
 ## Scoring (1–100 each; overall is the judge's weighted call)
 - fidelity: does each direction realize its slide's beat from the spine,

@@ -281,7 +281,7 @@ test("every slide is made from v1's prompt, finished with v1's post-production i
   assert.equal(json(h.calls.reviews.map((entry) => [entry.slide, (entry.contents.addedAfterwards as Record<string, unknown>).logo, (entry.contents.addedAfterwards as Record<string, unknown>).pageNumber])), json([["cover", true, "1/3"], ["s1", false, "2/3"], ["last", false, "3/3"]]));
   assert.equal(json((h.calls.reviews[1].contents as { approvedFictionalCharacters: unknown }).approvedFictionalCharacters), json([{ name: "Jo", description: "An illustrated guide" }]));
   assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.note, entry.skillVersions])), json([
-    ["images", "draft2_image_review", "Cover", { images: "5" }], ["images", "draft2_image_review", "Slide 2", { images: "5" }], ["images", "draft2_image_review", "Slide 3", { images: "5" }],
+    ["images", "draft2_image_review", "Cover", { images: "6" }], ["images", "draft2_image_review", "Slide 2", { images: "6" }], ["images", "draft2_image_review", "Slide 3", { images: "6" }],
   ]));
   const file = await h.file({ runId: images.runId, slide: "cover", version: 1 });
   assert.equal(Buffer.from(await file.arrayBuffer()).toString(), `raw:${request(0)}|1/3|logo`);

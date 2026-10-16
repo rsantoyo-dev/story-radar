@@ -97,6 +97,14 @@ export async function recentDraft2Levers(topicId: string, exceptSessionId: strin
   return rows.map((row) => row.lever);
 }
 
+/** The Topic's other sessions with a visual script, newest first, for the variety between posts (draft2-cover-variety.ts reads one cover per story). */
+export async function recentDraft2CoverRows(topicId: string, exceptSessionId: string, limit = 20): Promise<{ storyId: string; createdAt: Date; visual: Draft2Visual | null }[]> {
+  return db.select({ storyId: draft2Sessions.storyId, createdAt: draft2Sessions.createdAt, visual: draft2Sessions.visual }).from(draft2Sessions)
+    .where(and(eq(draft2Sessions.topicId, topicId), ne(draft2Sessions.id, exceptSessionId), sql`${draft2Sessions.visual} is not null`))
+    .orderBy(desc(draft2Sessions.createdAt))
+    .limit(limit);
+}
+
 /** One session, only within the topic the request may use. */
 export async function getDraft2Session(topicId: string, id: string): Promise<Draft2SessionRow | undefined> {
   const [row] = await db.select().from(draft2Sessions)

@@ -80,7 +80,7 @@ const judge = (verdict: "accept" | "revise", winnerId: string, overall: Record<s
 type Call = { provider: string; role: "writer" | "judge"; input: Record<string, unknown> };
 type Row = Record<string, unknown> & { visual: Draft2Visual | null; trace: types.Draft2TraceEntry[] };
 
-function harness({ writes, judgments, session }: { writes: ((contents: Contents, carousel: Draft2CarouselSlide[]) => unknown)[]; judgments: ((contents: Contents, carousel: Draft2CarouselSlide[]) => unknown)[]; session?: Record<string, unknown> }) {
+function harness({ writes, judgments, session, coverRows = [] }: { coverRows?: unknown[]; writes: ((contents: Contents, carousel: Draft2CarouselSlide[]) => unknown)[]; judgments: ((contents: Contents, carousel: Draft2CarouselSlide[]) => unknown)[]; session?: Record<string, unknown> }) {
   const calls: Call[] = [];
   let row: Row = { id: sessionId, topicId, storyId, step: "inventory", status: "ready", facts, focus: null, opening: OPENING, closing: CLOSING, deck: deckRun(), inventory: INVENTORY, visual: null, error: null, threads: {}, trace: [], ...session };
   let write = 0;
@@ -115,6 +115,7 @@ function harness({ writes, judgments, session }: { writes: ((contents: Contents,
     "../stories/openai-structured-response": { generateOpenAiStructuredResponse: async (input: Record<string, unknown>) => ({ ...answer("openai", input), cachedInputTokens: 900 }) },
     "../stories/anthropic-structured-response": { generateAnthropicStructuredResponse: async (input: Record<string, unknown>) => ({ ...answer("anthropic", input), cachedInputTokens: 0 }) },
     "./draft2-session.repository": {
+      recentDraft2CoverRows: async () => coverRows,
       activeDraft2Session: async () => undefined,
       getDraft2Session: async (topic: string, id: string) => topic === topicId && id === row.id ? row : undefined,
       claimDraft2Session: async (_id: string, patch: Record<string, unknown>) => { row = { ...row, ...patch, status: "running" }; return row; },
@@ -146,7 +147,7 @@ test("Claude scripts the chosen carousel and Sol judges it; both read the focus,
   assert.match(String(claude.input.instructions), /# The publication[^]*# Visual identity\nSALUT LONGUEUIL — CREATIVE IDENTITY[^]*- Visual mode: illustration-editorial\./);
   assert.ok(String(claude.input.instructions).includes(visuals.VISUALS_SKILL.text));
   assert.equal(json([(claude.input.contents as Contents).candidatesWanted, claude.input.effort, (sol.input.contents as Contents).proposalsWanted, sol.input.reasoningEffort]), json([1, "medium", 1, "medium"]), "one script, and the judge's proposal");
-  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.skillVersions])), json([["visual", "draft2_visual", { visuals: "10" }], ["visual", "draft2_visual_review", { visuals: "10" }]]));
+  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.skillVersions])), json([["visual", "draft2_visual", { visuals: "11" }], ["visual", "draft2_visual_review", { visuals: "11" }]]));
   const visual = session.visual!;
   assert.equal(json([session.status, visual.status, visual.winnerId, visual.deckId, visual.inventoryVersion, visual.characterChoice, visual.mode, visual.carousel?.length]), json(["ready", "ready", "c1", "c3", 4, "auto", "illustration-editorial", 6]));
 });
@@ -233,4 +234,13 @@ test("the editor casts the brand's characters on a slide of the chosen script, i
   assert.equal(json((funnel.funnelVersions(off.visual!.rounds).find((version) => version.candidate.id === chosenId)!.candidate as visualTypes.Draft2VisualCandidate).slides.find((slide) => slide.slide === target.slide)!.characterIds), json([]));
   await assert.rejects(h.cast(target.slide, ["char-zed"]), /char-zed is not one of the brand's characters/);
   await assert.rejects(h.cast("s9", ["char-mia"]), /s9 is not one of this script's slides/);
+});
+
+test("the script reads the publication's last covers, and the run keeps them", async () => {
+  const cover = { slide: "cover", beat: "b", subject: "an onion", discovery: "d", recurring: "none", shot: "wide", headlineLink: "", direction: "Fondo terracota, una cebolla.", need: "generic-illustration", characterIds: [], references: [] };
+  const coverRows = [{ storyId: "99999999-9999-4999-8999-999999999999", createdAt: "2026-10-15T10:00:00Z", visual: { winnerId: "c1", rounds: [{ round: 1, candidates: [{ id: "c1", angle: "a", concept: "c", protagonist: "", motif: "", cast: "c", characterPlan: { use: false, characterIds: [], role: "" }, slides: [cover] }], mechanical: [], at: "t" }] } }];
+  const h = harness({ writes: [writer()], judgments: [judge("accept", "c1", { c1: 96 })], coverRows });
+  const session = await h.run();
+  assert.equal(json((h.calls[0].input.context as { recentCovers?: unknown }).recentCovers), json([{ background: "unknown", character: "none", subject: "an onion" }]), "the writer reads them; this profile's palette names no background");
+  assert.equal(session.visual?.recentCovers?.length, 1);
 });
