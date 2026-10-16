@@ -3,7 +3,7 @@ import test from "node:test";
 import { Draft2ResponseError } from "./draft2-facts.types";
 import { editorCast,
   forbiddenElement,
-  VISUAL_CRITERIA, VISUAL_LONG_PLAN, VISUAL_PLAN, avoidTerms, carouselSlides, deckCarousel, mechanicalVisualIssues, parseVisualCandidates, parseVisualEvaluation, sameCarouselWords, sameVisual,
+  VISUAL_CRITERIA, VISUAL_LONG_PLAN, VISUAL_PLAN, avoidTerms, bindSpineBeats, carouselSlides, deckCarousel, mechanicalVisualIssues, parseVisualCandidates, parseVisualEvaluation, sameCarouselWords, sameVisual, spineImageLines,
   visualExploreRequest, visualJudgeRequest, visualLayout, visualModeLine, visualPlan, visualRefineRequest, visualSchema,
   type Draft2CarouselSlide, type Draft2VisualCandidate, type Draft2VisualIssue, type Draft2VisualRound, type Draft2VisualScore, type Draft2VisualSlide,
 } from "./draft2-visual.types";
@@ -63,20 +63,20 @@ const rules: Parameters<typeof mechanicalVisualIssues>[1] = { carousel, inventor
 const codes = (issues: Draft2VisualIssue[]) => issues.map((issue) => [issue.code, issue.candidateId, issue.part].filter(Boolean).join(" "));
 const findings = (candidate: Draft2VisualCandidate, options: Partial<typeof rules> = {}) => codes(mechanicalVisualIssues([candidate], { ...rules, ...options }));
 const withSlide = (position: string, overrides: Partial<Draft2VisualSlide>) => script("c1", { slides: script("c1").slides.map((entry) => entry.slide === position ? { ...entry, ...overrides } : entry) });
-const score = (candidateId: string, overall: number): Draft2VisualScore => ({ candidateId, narrative: overall, progression: overall, beat: overall, continuity: overall, brand: overall, truth: overall, craft: overall, focus: overall, overall, note: "Why." });
+const score = (candidateId: string, overall: number): Draft2VisualScore => ({ candidateId, fidelity: overall, continuity: overall, brand: overall, truth: overall, craft: overall, originality: overall, overall, note: "Why." });
 
-test("the carousel in order, from the opening, the deck and the closing; two scripts, and a third round on the best", () => {
+test("the carousel in order, from the opening, the deck and the closing; one script and the judge's, then the best revised beside it: two rounds for any length", () => {
   assert.deepEqual(carousel.map((entry) => [entry.slide, entry.label]), [["cover", "Cover"], ["slide2", "Slide 2"], ["s1", "Slide 3"], ["s2", "Slide 4"], ["penultimate", "Slide 5"], ["last", "Slide 6"]]);
   assert.equal(carousel[5].cta, "Follow us for what opens near you.");
   assert.deepEqual(carouselSlides(opening, deck, { ...closing, penultimate: undefined }).map((entry) => entry.slide).slice(-1), ["last"]);
   assert.equal(visualPlan(carousel), VISUAL_PLAN);
   assert.equal(visualPlan(Array.from({ length: 11 })), VISUAL_LONG_PLAN);
-  assert.deepEqual(VISUAL_PLAN.map((round) => [round.fresh, round.revise, round.proposals, round.effort ?? "high"]), [[2, 0, 1, "medium"], [0, 2, 0, "high"], [0, 1, 0, "high"]]);
-  assert.deepEqual(VISUAL_LONG_PLAN.map((round) => [round.fresh, round.revise, round.proposals, round.effort ?? "high"]), [[2, 0, 1, "medium"], [0, 1, 0, "high"], [0, 1, 0, "high"]]);
+  assert.deepEqual(VISUAL_PLAN.map((round) => [round.fresh, round.revise, round.proposals, round.effort ?? "high"]), [[1, 0, 1, "medium"], [0, 1, 0, "medium"]], "one script and the judge's, then the best revised at medium");
+  assert.equal(VISUAL_LONG_PLAN, VISUAL_PLAN, "a long carousel runs the same plan");
   const judged = { round: 1, candidates: [], mechanical: [], at: "t", evaluation: {} };
   const unjudged = { ...judged, round: 2, evaluation: undefined };
-  assert.equal(funnelExtendable({ status: "needs-review", rounds: [judged, { ...judged, round: 2 }] }, VISUAL_PLAN.length), true, "a run that ended after two rounds takes the third");
-  assert.equal(funnelExtendable({ status: "needs-review", rounds: [judged, { ...judged, round: 2 }, { ...judged, round: 3 }] }, VISUAL_PLAN.length), false, "a run that had every round");
+  assert.equal(funnelExtendable({ status: "needs-review", rounds: [judged] }, VISUAL_PLAN.length), true, "a run that ended after one round takes the second");
+  assert.equal(funnelExtendable({ status: "needs-review", rounds: [judged, { ...judged, round: 2 }] }, VISUAL_PLAN.length), false, "a run that had every round");
   assert.equal(funnelExtendable({ status: "ready", rounds: [judged] }, VISUAL_PLAN.length), false, "an accepted run");
   assert.equal(funnelExtendable({ status: "needs-review", rounds: [judged, unjudged] }, VISUAL_PLAN.length), false, "a round left unjudged is a stopped run's to continue");
   const schema = visualSchema(carousel.map((entry) => entry.slide)) as { properties: { candidates: { items: { properties: { slides: { minItems: number; items: { properties: { slide: { enum: string[] } } } } } } } } };
@@ -133,7 +133,7 @@ test("the writer's answer becomes scripts; a slide missing a part is rejected; t
   const evaluation = parseVisualEvaluation(JSON.stringify({ verdict: "revise", winnerId: "c1", summary: "x", suggestions: [], proposals: [script("p1")], scores: [score("c1", 90)],
     issues: [{ code: "ILLUSTRATES_TEXT", candidateId: "c1", part: "s2", detail: "Repeats the words.", material: false }, { code: "LOOKS_AI", candidateId: "c1", part: "slide9", detail: "Glossy." }] }), ["c1"], carousel.map((entry) => entry.slide));
   assert.deepEqual(evaluation.issues.map((issue) => [issue.code, issue.part ?? null]), [["ILLUSTRATES_TEXT", "s2"], ["LOOKS_AI", null]]);
-  assert.deepEqual([...VISUAL_CRITERIA], ["narrative", "progression", "beat", "continuity", "brand", "truth", "craft", "focus"]);
+  assert.deepEqual([...VISUAL_CRITERIA], ["fidelity", "continuity", "brand", "truth", "craft", "originality"], "the narrative is the spine's, judged at the Focus; the images are judged on executing it, and on their originality");
   const [open] = parseVisualCandidates(JSON.stringify({ candidates: [{ ...script("c1"), protagonist: "", motif: "" }] }));
   assert.equal(json([open.protagonist, open.motif]), json(["", ""]), "the protagonist and the motif are optional: the identity can carry the continuity alone");
   const noSubject = { ...script("c1"), slides: script("c1").slides.map(({ subject, ...rest }) => { void subject; return rest; }) };
@@ -297,4 +297,16 @@ test("the editor's cast for an image: the brand's characters, each once, at most
   assert.throws(() => editorCast(["char-jo"], roster, "real-photo"), /verified photo: the brand's characters stay off it/);
   assert.deepEqual(editorCast(["char-jo"], roster, "verified-map"), ["char-jo"], "a map slide may carry a character beside the card");
   assert.throws(() => editorCast("char-jo", roster, "generic-illustration"), /list of their ids/);
+});
+
+test("each slide's beat is the spine's image line: the cover's and slide 2's beats, the middle beats in order for the deck's slides, the closing's; a slide the spine does not cover keeps the writer's", () => {
+  const beat = (slide: "cover" | "slide2" | "middle" | "penultimate" | "last", image: string) => ({ slide, role: "setup" as const, scene: "s", words: "w", image, withholds: "", factIds: [] });
+  const spine = { beats: [beat("cover", "The closed door at dawn."), beat("slide2", "The ribbon, cut."), beat("middle", "A child's hand on a low shelf."), beat("penultimate", "Lamps on at nine."), beat("last", " The same door, open. ")] };
+  const lines = spineImageLines(spine, carousel);
+  assert.deepEqual(lines, { cover: "The closed door at dawn.", slide2: "The ribbon, cut.", s1: "A child's hand on a low shelf.", penultimate: "Lamps on at nine.", last: "The same door, open." }, "s2 has no middle beat: no line");
+  assert.deepEqual(spineImageLines(undefined, carousel), {}, "no spine binds nothing");
+  const [bound] = bindSpineBeats([script("c1")], lines);
+  assert.deepEqual(bound.slides.map((slide) => slide.beat), ["The closed door at dawn.", "The ribbon, cut.", "A child's hand on a low shelf.", script("c1").slides[3].beat, "Lamps on at nine.", "The same door, open."], "the writer's beat survives only where the spine has none");
+  assert.equal(bound.id, "c1");
+  assert.deepEqual(bindSpineBeats([script("c1")], {})[0], script("c1"), "nothing to bind, nothing changed");
 });

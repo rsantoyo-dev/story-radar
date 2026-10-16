@@ -79,7 +79,7 @@ test("what a slide shows of its references: a person's portrait pasted, a place'
 });
 
 const visualRun = (overrides: Partial<Draft2Visual> = {}): Draft2Visual => ({
-  status: "needs-review", winnerId: "c4", candidates: [script()], rounds: [{ round: 1, candidates: [script()], mechanical: [], at: "t", evaluation: { verdict: "revise", winnerId: "c4", scores: [{ candidateId: "c4", narrative: 94, progression: 94, beat: 94, continuity: 94, brand: 94, truth: 94, craft: 94, focus: 94, overall: 94, note: "x" }], issues: [], suggestions: [], summary: "x" } }],
+  status: "needs-review", winnerId: "c4", candidates: [script()], rounds: [{ round: 1, candidates: [script()], mechanical: [], at: "t", evaluation: { verdict: "revise", winnerId: "c4", scores: [{ candidateId: "c4", fidelity: 94, continuity: 94, brand: 94, truth: 94, craft: 94, originality: 94, overall: 94, note: "x" }], issues: [], suggestions: [], summary: "x" } }],
   carousel, deckId: "c3", inventoryVersion: 3, mode: "illustration-editorial", ...overrides,
 });
 

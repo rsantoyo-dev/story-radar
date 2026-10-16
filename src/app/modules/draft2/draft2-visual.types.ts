@@ -7,7 +7,7 @@ import {
   type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion, type FunnelWords,
 } from "./draft2-funnel";
 import { entityMaterial, referencePhotos, type Draft2CharacterChoice, type Draft2Inventory } from "./draft2-inventory.types";
-import { anchorNoun, narrativeUsesMaster, type Draft2FocusNarrative } from "./draft2-focus.types";
+import { anchorNoun, narrativeUsesMaster, spineBeats, type Draft2FocusNarrative, type Draft2FocusSpine, type Draft2SpinePosition } from "./draft2-focus.types";
 import type { Draft2ClosingOpening } from "./draft2-closing.types";
 import type { Draft2Deck, Draft2DeckCandidate, Draft2DeckClosing } from "./draft2-deck.types";
 import type { CreativeProfile } from "../stories/creative-content.types";
@@ -27,39 +27,41 @@ import type { CreativeProfile } from "../stories/creative-content.types";
  * letters each slide's words itself, and the logo and the page number are
  * added afterwards (layout): the script composes around them. On the
  * shared funnel (draft2-funnel.ts), Claude writes and Sol judges:
- *   3 scripts → Sol scores, proposes 1 → 2 revised + 1 original + 1 edit → the best revised once more → Sol's pick
- *   (2 scripts, then 1 revised, then the best once more, for a carousel of more than 10 slides).
- * The third round revises only the best: by then Sol's script, as written
- * and as edited, is usually two near-identical versions of one idea, and its
- * remaining issues are precise fixes rather than a new direction.
+ *   1 script → the judge scores it, proposes 1 → the best revised + the proposal as written + as edited → the judge's pick
+ * Two rounds and no extra round on the funnel's own (visuals v10,
+ * 2026-10-15): the spine decides the story each image tells (each slide's
+ * beat is the spine's image line, bound by the program), so the script
+ * executes rather than invents, and in 22 real runs a third round never
+ * raised a visual script's best.
  * The output keeps v1's slide contract (visualDirection, visualNeed,
  * characterIds, references) so a later image step can reuse v1's generator.
  * Everything here is pure: contracts, schemas, parsing, the mechanical
  * checks and the requests.
  */
-/** Two scripts in the first round: the focus fixes the visual approach, so they differ in execution, not in direction. */
-export const VISUAL_CANDIDATES = 2;
-/** The most scripts one round writes: the two best revised beside the judge's proposal as edited (the schema's and the parser's ceiling). */
+/** One script in the first round: the spine fixes what each image tells, so a second script would differ in execution only; the judge's proposal is the second idea. */
+export const VISUAL_CANDIDATES = 1;
+/** The most scripts one round writes: the best revised beside the judge's proposal as written and as edited (the schema's and the parser's ceiling). */
 export const VISUAL_ROUND_MAX_CANDIDATES = 3;
-export const VISUAL_LONG_CANDIDATES = 2;
-/** A carousel longer than this explores two scripts: each script carries one direction per slide. */
-export const VISUAL_LONG_CAROUSEL = 10;
+/**
+ * Two rounds: the script and the judge's proposal, then the best revised
+ * beside the proposal as written and as edited. Both rounds think at medium:
+ * a visual revision at high took 50 s and 7,400 output tokens on average in
+ * real runs, for scripts the judge did not accept.
+ */
 export const VISUAL_PLAN: readonly FunnelPlanRound[] = [
   { revise: 0, fresh: VISUAL_CANDIDATES, proposals: 1, effort: "medium" },
-  { revise: 2, fresh: 0, proposals: 0 },
-  { revise: 1, fresh: 0, proposals: 0 },
+  { revise: 1, fresh: 0, proposals: 0, effort: "medium" },
 ];
-export const VISUAL_LONG_PLAN: readonly FunnelPlanRound[] = [
-  { revise: 0, fresh: VISUAL_LONG_CANDIDATES, proposals: 1, effort: "medium" },
-  { revise: 1, fresh: 0, proposals: 0 },
-  { revise: 1, fresh: 0, proposals: 0 },
-];
-export const VISUAL_MAX_ROUNDS = 3;
+/** A long carousel runs the same plan since visuals v10; kept for the stored runs' plan lookups. */
+export const VISUAL_LONG_CAROUSEL = 10;
+export const VISUAL_LONG_PLAN: readonly FunnelPlanRound[] = VISUAL_PLAN;
+export const VISUAL_MAX_ROUNDS = 2;
 export const VISUAL_ACCEPT_SCORE = 95;
 export const VISUAL_CRITERION_FLOOR = 85;
 export const VISUAL_DIRECTION_MAX_CHARACTERS = 700;
 export const VISUAL_DIRECTION_MIN_CHARACTERS = 60;
-export const VISUAL_BEAT_MAX_CHARACTERS = 200;
+/** A beat is the spine's image line (FOCUS_BEAT_IMAGE_MAX_CHARACTERS) when the focus has a spine. */
+export const VISUAL_BEAT_MAX_CHARACTERS = 240;
 const CONCEPT_MAX_CHARACTERS = 300;
 const MOTIF_MAX_CHARACTERS = 300;
 const CAST_MAX_CHARACTERS = 400;
@@ -80,7 +82,8 @@ const PROTAGONIST_MAX_CHARACTERS = 300;
 export const VISUAL_SUBJECT_MAX_CHARACTERS = 160;
 export const VISUAL_DISCOVERY_MAX_CHARACTERS = 240;
 
-export const VISUAL_CRITERIA = ["narrative", "progression", "beat", "continuity", "brand", "truth", "craft", "focus"] as const;
+/** Fidelity to the spine's beats, one identity, the brand, the truth, the craft and the originality of the images; the narrative itself is the spine's, judged at the Focus (visuals v10). */
+export const VISUAL_CRITERIA = ["fidelity", "continuity", "brand", "truth", "craft", "originality"] as const;
 export const VISUAL_MECHANICAL_CODES = [
   "SLIDE_ORDER", "DIRECTION_TOO_LONG", "DIRECTION_TOO_SHORT", "BEAT_MISSING", "CHARACTER_UNKNOWN", "CHARACTER_OFF_PLAN", "CHARACTER_CHOICE",
   "TOO_MANY_CHARACTERS", "REFERENCE_UNKNOWN", "NEED_MISMATCH", "STRICT_MODE", "COVER_TYPOGRAPHY", "UNVERIFIED_PERSON", "UNVERIFIED_PLACE",
@@ -88,7 +91,7 @@ export const VISUAL_MECHANICAL_CODES = [
   "SUBJECT_MISSING", "DISCOVERY_MISSING", "SAME_SUBJECT", "RECURRING_DOMINANT", "CALLBACK_MISPLACED", "ANCHOR_MISSING", "SECTION_MISSING",
 ] as const;
 export const VISUAL_JUDGE_CODES = [
-  "ILLUSTRATES_TEXT", "BREAKS_CONTINUITY", "REPETITIVE", "MOTIF_DEPENDENCY", "OFF_BEAT", "TOO_ABSTRACT", "OFF_BRAND", "LOOKS_AI", "CONTRADICTS_FACTS", "CROWDS_TEXT", "VAGUE",
+  "ILLUSTRATES_TEXT", "BREAKS_CONTINUITY", "REPETITIVE", "MOTIF_DEPENDENCY", "OFF_BEAT", "PREDICTABLE", "TOO_ABSTRACT", "OFF_BRAND", "LOOKS_AI", "CONTRADICTS_FACTS", "CROWDS_TEXT", "VAGUE",
   "CHARACTER_MISUSED", "OFF_FOCUS", "UNVERIFIED_SCENE", "INVENTED_DETAIL", "OTHER",
 ] as const;
 export const VISUAL_ISSUE_CODES = [...VISUAL_MECHANICAL_CODES, ...VISUAL_JUDGE_CODES] as const;
@@ -110,7 +113,7 @@ export type Draft2VisualCharacter = { id: string; name: string; description: str
 export type Draft2VisualSlide = {
   /** The carousel position: cover, slide2, s1… (the deck's slides), penultimate, last. */
   slide: string;
-  /** What happens in this image, as an action; never the slide's words again. */
+  /** What this image adds to the story: the spine's image line for the slide, bound by the program when the focus has a spine (spineImageLines); the writer's own otherwise. Never the slide's words again. */
   beat: string;
   /** The image's dominant subject: who or what it is about (scripts before visuals v3 have none). */
   subject: string;
@@ -142,7 +145,7 @@ export type Draft2VisualCandidate = FunnelCandidate & {
   slides: Draft2VisualSlide[];
 };
 export type Draft2VisualIssue = FunnelIssue & { code: Draft2VisualIssueCode };
-export type Draft2VisualScore = FunnelScore & { narrative: number; progression: number; beat: number; continuity: number; brand: number; truth: number; craft: number; focus: number };
+export type Draft2VisualScore = FunnelScore & { fidelity: number; continuity: number; brand: number; truth: number; craft: number; originality: number };
 export type Draft2VisualEvaluation = FunnelEvaluation<Draft2VisualCandidate, Draft2VisualScore, Draft2VisualIssue>;
 export type Draft2VisualRound = FunnelRound<Draft2VisualCandidate, Draft2VisualScore, Draft2VisualIssue>;
 export type Draft2VisualVersion = FunnelVersion<Draft2VisualCandidate, Draft2VisualScore, Draft2VisualIssue>;
@@ -238,8 +241,32 @@ export function visualLayout(profile: Pick<CreativeProfile, "brandOverlay" | "ca
   };
 }
 
-/** The plan a carousel asks for: three scripts, or two for a long one. */
-export const visualPlan = (carousel: readonly unknown[]): readonly FunnelPlanRound[] => carousel.length > VISUAL_LONG_CAROUSEL ? VISUAL_LONG_PLAN : VISUAL_PLAN;
+/** The plan a carousel asks for: the same for every length since visuals v10 (the carousel stays a parameter for the stored runs' lookups). */
+export const visualPlan = (carousel: readonly unknown[]): readonly FunnelPlanRound[] => { void carousel; return VISUAL_PLAN; };
+
+/**
+ * The spine's image line for each carousel slide: the cover's and slide 2's
+ * beats, the middle beats in order for the deck's slides, the penultimate's
+ * and the last's. A slide past the middle beats has none (the writer's own
+ * beat stands); a focus without a spine binds nothing.
+ */
+export function spineImageLines(spine: Draft2FocusSpine | undefined, carousel: readonly Pick<Draft2CarouselSlide, "slide">[]): Record<string, string> {
+  if (!spine) return {};
+  const middle = spineBeats(spine, "middle");
+  const lines: Record<string, string> = {};
+  for (const { slide } of carousel) {
+    const index = /^s(\d+)$/.exec(slide);
+    const beat = index ? middle[Number(index[1]) - 1] : spineBeats(spine, slide as Draft2SpinePosition)[0];
+    if (beat?.image.trim()) lines[slide] = beat.image.trim();
+  }
+  return lines;
+}
+
+/** The scripts with each slide's beat bound to the spine's image line where the spine has one: the words and the images follow one plan, whatever the writer or the judge wrote there. */
+export function bindSpineBeats<C extends Pick<Draft2VisualCandidate, "slides">>(candidates: readonly C[], lines: Record<string, string>): C[] {
+  if (!Object.keys(lines).length) return [...candidates];
+  return candidates.map((candidate) => ({ ...candidate, slides: candidate.slides.map((slide) => lines[slide.slide] ? { ...slide, beat: lines[slide.slide] } : slide) }));
+}
 
 const idList = { type: "array", maxItems: 6, items: { type: "string" } };
 

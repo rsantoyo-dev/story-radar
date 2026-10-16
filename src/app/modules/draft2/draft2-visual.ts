@@ -7,7 +7,7 @@ import { funnelVersions } from "./draft2-funnel";
 import { getDraft2Session, updateDraft2Session } from "./draft2-session.repository";
 import { inventoryForModels, type Draft2CharacterChoice, type Draft2Inventory } from "./draft2-inventory.types";
 import {
-  VISUAL_GATE, avoidTerms, carouselSlides, editorCast, mechanicalVisualIssues, parseVisualCandidates, parseVisualEvaluation, sameVisual, visualEvaluationSchema, visualExploreRequest, visualFixRequest,
+  VISUAL_GATE, avoidTerms, bindSpineBeats, carouselSlides, editorCast, mechanicalVisualIssues, parseVisualCandidates, parseVisualEvaluation, sameVisual, spineImageLines, visualEvaluationSchema, visualExploreRequest, visualFixRequest,
   visualJudgeRequest, visualLayout, visualModeLine, visualPlan, visualRefineRequest, visualSchema,
   type Draft2CarouselSlide, type Draft2Visual, type Draft2VisualCandidate, type Draft2VisualCharacter, type Draft2VisualIssue, type Draft2VisualMode, type Draft2VisualScore,
 } from "./draft2-visual.types";
@@ -71,6 +71,8 @@ const VISUAL_STEP: FunnelStep<Draft2VisualCandidate, Draft2VisualScore, Draft2Vi
   plural: "visual scripts",
   plan: ({ carousel }) => visualPlan(carousel),
   gate: VISUAL_GATE,
+  // No extra round on the funnel's own: in 22 real runs the extra rounds never raised a visual script's best (the editor may still ask for one).
+  autoExtraRounds: false,
   operations: { writer: "draft2_visual", judge: "draft2_visual_review" },
   roles: DRAFT2_VISUAL_ROLES,
   snapshot: visualTarget,
@@ -83,14 +85,16 @@ const VISUAL_STEP: FunnelStep<Draft2VisualCandidate, Draft2VisualScore, Draft2Vi
     const brief = [brandBrief(profile), `# Visual identity\n${resolveCreativeVisualGuidance(profile)}`, visualModeLine(mode)].join("\n\n");
     const positions = carousel.map((slide) => slide.slide);
     const avoid = avoidTerms(profile.creativeIdentity);
+    // Each slide's beat is the spine's image line, whatever the writer or the judge wrote there: the words and the images follow one plan.
+    const beats = spineImageLines(focus.values.spine, carousel);
     return {
       writer: composeInstructions("visual-writer", [VISUALS_SKILL, ...creativeSkills(focus.values)], brief),
       judge: composeInstructions("visual-judge", [VISUALS_SKILL, ...creativeSkills(focus.values)], brief),
       // The layout: the image model letters the words, and the logo and the page number are added afterwards, where the Topic puts them.
-      context: { focus: focusForModels(focus.values), carousel, layout: visualLayout(profile, carousel), peopleAndPlaces: inventoryForModels(inventory), characters, characterChoice },
+      context: { focus: focusForModels(focus.values), carousel, ...(Object.keys(beats).length ? { spineBeats: beats } : {}), layout: visualLayout(profile, carousel), peopleAndPlaces: inventoryForModels(inventory), characters, characterChoice },
       schemas: { writer: visualSchema(positions), judge: visualEvaluationSchema(positions) },
-      parseCandidates: parseVisualCandidates,
-      parseEvaluation: (text, ids) => parseVisualEvaluation(text, ids, positions),
+      parseCandidates: (text) => bindSpineBeats(parseVisualCandidates(text), beats),
+      parseEvaluation: (text, ids) => { const evaluation = parseVisualEvaluation(text, ids, positions); return evaluation.proposals ? { ...evaluation, proposals: bindSpineBeats(evaluation.proposals, beats) } : evaluation; },
       mechanical: (candidates) => mechanicalVisualIssues(candidates, { carousel, inventory, characters, characterChoice, mode, avoid, narrative: focusNarrative(focus.values) }),
       explore: visualExploreRequest,
       refine: visualRefineRequest,
@@ -105,9 +109,10 @@ const VISUAL_STEP: FunnelStep<Draft2VisualCandidate, Draft2VisualScore, Draft2Vi
  * Runs the visual script on a session whose deck is finished and whose
  * people and places are found: the carousel's images as one visual story,
  * in the brand's identity, with real people and places only through their
- * verified material. Claude writes three scripts (two for a long carousel);
- * Sol scores them and proposes one of its own; Claude revises the best and
- * edits Sol's, which also competes as Sol wrote it, for Sol's pick. Pausing,
+ * verified material, executing the focus's spine (each slide's beat is the
+ * spine's image line). Claude writes one script; the judge scores it and
+ * proposes one of its own; Claude revises the best and edits the judge's,
+ * which also competes as written, for the judge's pick: two rounds. Pausing,
  * continuing and the heartbeat are the funnel's (draft2-funnel-run.ts).
  */
 export function runDraft2Visual(input: FunnelStepInput): Promise<Draft2SessionRow> {

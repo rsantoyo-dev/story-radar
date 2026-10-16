@@ -51,7 +51,7 @@ const SCRIPT: Draft2VisualCandidate = {
 const VISUAL: Draft2Visual = {
   status: "needs-review", winnerId: "c4", candidates: [SCRIPT], carousel, deckId: "c3", inventoryVersion: 2, mode: "illustration-editorial",
   focus: { version: 1, values: { voice: { gravity: "light", formality: 30, humor: 60, energy: 70, optimism: 70, provocation: 20 } } as never },
-  rounds: [{ round: 1, candidates: [SCRIPT], mechanical: [], at: "t", evaluation: { verdict: "revise", winnerId: "c4", scores: [{ candidateId: "c4", narrative: 94, progression: 94, beat: 94, continuity: 94, brand: 94, truth: 94, craft: 94, focus: 94, overall: 94, note: "x" }], issues: [], suggestions: [], summary: "x" } }],
+  rounds: [{ round: 1, candidates: [SCRIPT], mechanical: [], at: "t", evaluation: { verdict: "revise", winnerId: "c4", scores: [{ candidateId: "c4", fidelity: 94, continuity: 94, brand: 94, truth: 94, craft: 94, originality: 94, overall: 94, note: "x" }], issues: [], suggestions: [], summary: "x" } }],
 };
 const INVENTORY: Draft2Inventory = { status: "ready", version: 2, entities: [], storyPhotos: [], characters: "auto", roster: [{ id: "char-jo", name: "Jo", description: "An illustrated guide" }] };
 const ASSET = { id: "logo-1", fileName: "logo.png", contentType: "image/png", fileSize: 10, width: 400, height: 200, createdAt: new Date(0) };
