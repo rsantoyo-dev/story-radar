@@ -90,6 +90,8 @@ function harness({ writes, judgments, session, secondsPerCall }: { writes: ((con
   class FakeDate extends Date { static now() { return clock; } }
   const usage = { promptTokens: 100, outputTokens: 50, thoughtsTokens: 0, totalTokens: 150 };
   const answer = (provider: string, input: Record<string, unknown>) => {
+    // The fix pass: the flagged candidates come back as they are (this harness fixes nothing), and the call stays out of the scripted ones.
+    if (String(input.schemaName).endsWith("_fix")) return { text: JSON.stringify({ candidates: (input.contents as Record<string, unknown[]>).closings ?? [] }), provider, model: input.model, usage };
     const role = input.schemaName === "draft2_closing" ? "writer" : "judge";
     calls.push({ provider, role, input });
     clock += (secondsPerCall ?? 0) * 1_000;

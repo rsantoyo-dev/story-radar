@@ -10,9 +10,9 @@ import { draft2ModelName, draft2RevisionEffort, draft2RoleModel, draft2ShadowJud
 import { traceCostMicros } from "./draft2-trace-cost";
 import { Draft2BusyError, Draft2InputError, type Draft2Fact, type Draft2TraceEntry } from "./draft2-facts.types";
 import {
-  FUNNEL_ACCEPTABLE_SCORE, FUNNEL_EXTRA_ROUND, FUNNEL_MAX_EXTRA_ROUNDS, factsSnapshot, failedCall, funnelAcceptedWinner, funnelBestVersions, funnelExtendable, funnelFreshWanted, funnelRegressions,
-  funnelRenumberedProposals, funnelResumeRound, funnelReviewNote, funnelRunSummary, funnelTargets, funnelVersions, funnelWrittenCandidates,
-  type FunnelCandidate, type FunnelEvaluation, type FunnelGate, type FunnelIssue, type FunnelPlanRound, type FunnelRegression, type FunnelRole,
+  FUNNEL_ACCEPTABLE_SCORE, FUNNEL_EXTRA_ROUND, FUNNEL_MAX_EXTRA_ROUNDS, factsSnapshot, failedCall, funnelAcceptedWinner, funnelBestVersions, funnelExtendable, funnelFixedCandidates, funnelFreshWanted, funnelRegressions,
+  funnelRenumberedProposals, funnelResumeRound, funnelReviewNote, funnelRoundImproved, funnelRunSummary, funnelTargets, funnelVersions, funnelWrittenCandidates,
+  type FunnelCandidate, type FunnelEvaluation, type FunnelFixPass, type FunnelGate, type FunnelIssue, type FunnelPlanRound, type FunnelRegression, type FunnelRole,
   type FunnelRound, type FunnelRun, type FunnelScore, type FunnelShadowJudgment, type FunnelVersion,
 } from "./draft2-funnel";
 import type { CreativeProfile } from "../stories/creative-content.types";
@@ -41,6 +41,8 @@ const WRITER_ESTIMATE_MS: Record<Draft2Effort, number> = { low: 30_000, medium: 
 const TIMED_OUT = /did not respond within/u;
 /** Shows the run is alive between checkpoints, well inside OPENING_STALL_MS. */
 const HEARTBEAT_MS = 30_000;
+/** What the fix pass takes before this run has measured one: the flagged candidates back once, at medium effort. */
+const FIX_ESTIMATE_MS = 40_000;
 
 type Composed = { instructions: string; skillVersions: Record<string, string> };
 /** The session columns a funnel step lives in. */
@@ -59,6 +61,8 @@ export type FunnelSetup<C extends FunnelCandidate, S extends FunnelScore, I exte
   mechanical: (candidates: readonly C[]) => I[];
   explore: (candidatesWanted: number, last: FunnelRound<C, S, I> | undefined, versions: readonly FunnelVersion<C, S, I>[]) => Record<string, unknown>;
   refine: (targets: readonly FunnelVersion<C, S, I>[], versions: readonly FunnelVersion<C, S, I>[], regressions: readonly FunnelRegression[], last: FunnelRound<C, S, I> | undefined, newCandidates: number, proposals: readonly C[]) => Record<string, unknown>;
+  /** What the writer receives for the fix pass: the flagged candidates with the program's findings on each (funnelFixRequest). Without it the step has no fix pass. */
+  fix?: (flagged: readonly C[], findings: readonly I[]) => Record<string, unknown>;
   judgeRequest: (round: number, candidates: readonly C[], mechanical: readonly I[], revised: readonly FunnelVersion<C, S, I>[]) => Record<string, unknown>;
   /** Whether an edit of a proposal changed nothing (it is then dropped). */
   same: (a: C, b: C) => boolean;
@@ -75,6 +79,8 @@ export type FunnelStep<C extends FunnelCandidate, S extends FunnelScore, I exten
   /** The rounds, the same for every run, or chosen from what the run follows (the deck's depend on the story's structure). */
   plan: readonly FunnelPlanRound[] | ((snapshot: Snapshot) => readonly FunnelPlanRound[]);
   gate: FunnelGate;
+  /** Whether a run under the floor takes extra rounds on its own (the default); false leaves them to the editor ("One more round"). */
+  autoExtraRounds?: boolean;
   operations: { writer: string; judge: string };
   /** Who writes and who judges a new run. */
   roles: { writer: Draft2Provider; judge: Draft2Provider };
@@ -309,6 +315,32 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
     }
   }
 
+  /**
+   * The fix pass: the program's findings on a round's candidates go back to
+   * the writer once, at medium effort, to fix only what they name; the judge
+   * then reads the fixed versions. A flagged candidate can never win, so the
+   * pass saves the round its findings would have cost (real round ones lost
+   * nine of fifteen openings to findings). It never fails the run: a
+   * malformed answer, a provider error or no time left leaves the candidates
+   * as they were, and the round says so.
+   */
+  async function fixPass(round: number, candidates: C[], mechanical: I[]): Promise<{ candidates: C[]; mechanical: I[]; fix: FunnelFixPass } | undefined> {
+    const flagged = new Set(mechanical.flatMap((issue) => issue.candidateId ? [issue.candidateId] : []));
+    if (!flagged.size || !setup.fix) return undefined;
+    const fix: FunnelFixPass = { candidateIds: [...flagged], findingsBefore: mechanical.length, findingsAfter: mechanical.length };
+    if (Date.now() - startedAt + FIX_ESTIMATE_MS + expectedJudgeMs(effortFor(round, "judge")) > ROUTE_LIMIT_MS - 15_000) return { candidates, mechanical, fix: { ...fix, skipped: "no time left in this request" } };
+    const begin = Date.now();
+    try {
+      const request = { ...setup.writer, contents: setup.fix(candidates.filter((candidate) => flagged.has(candidate.id)), mechanical), schema: setup.schemas.writer };
+      const answered = await ask(roles.writer, round, `${def.operations.writer}_fix`, request, { effort: "medium", kind: "writer" });
+      const fixedCandidates = funnelFixedCandidates(candidates, flagged, setup.parseCandidates(answered.text));
+      const after = setup.mechanical(fixedCandidates);
+      return { candidates: fixedCandidates, mechanical: after, fix: { ...fix, findingsAfter: after.length, durationMs: Date.now() - begin } };
+    } catch (error) {
+      return { candidates, mechanical, fix: { ...fix, durationMs: Date.now() - begin, skipped: error instanceof Error ? error.message.slice(0, 200) : "the fix pass failed" } };
+    }
+  }
+
   if (spent) {
     // Nothing left to run (see above): no provider call; the run ends unaccepted with its best version, as its last round would have.
     const best = funnelBestVersions(funnelVersions(run.rounds))[0];
@@ -362,7 +394,10 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
           const revisions = candidates.filter((candidate) => candidate.revisionOf).length;
           const kind = revisions === 0 ? "explore" : revisions === candidates.length ? "refine" : "mixed";
           mechanical = setup.mechanical(candidates);
-          run.rounds.push({ round, kind, candidates, mechanical, at: new Date().toISOString() });
+          // 1b. The fix pass: what the program flagged goes back to the writer once, with its findings, before the judge reads the round.
+          const fixed = await fixPass(round, candidates, mechanical);
+          if (fixed) ({ candidates, mechanical } = fixed);
+          run.rounds.push({ round, kind, candidates, mechanical, ...(fixed ? { fix: fixed.fix } : {}), at: new Date().toISOString() });
           run.candidates = candidates;
           await checkpoint();
           if (Date.now() - startedAt > TIME_BUDGET_MS) {
@@ -406,8 +441,10 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
         if (round === maxRounds) {
           const best = funnelBestVersions(funnelVersions(run.rounds))[0];
           const bestScore = best?.score?.overall ?? 0;
-          // Under the floor the funnel works to, one more round on its own (the best version revised against its issues), never past the cap.
-          if (bestScore < FUNNEL_ACCEPTABLE_SCORE && (run.extraRounds ?? 0) < FUNNEL_MAX_EXTRA_ROUNDS) {
+          // Under the floor the funnel works to, one more round on its own (the best version revised against its issues), never past the cap,
+          // only where the step allows it, and only while the last round still raised the best: a round that did not improve would not be improved on.
+          const improved = funnelRoundImproved(funnelVersions(run.rounds), round);
+          if (bestScore < FUNNEL_ACCEPTABLE_SCORE && def.autoExtraRounds !== false && improved && (run.extraRounds ?? 0) < FUNNEL_MAX_EXTRA_ROUNDS) {
             run.extraRounds = (run.extraRounds ?? 0) + 1;
             plan = [...plan, FUNNEL_EXTRA_ROUND];
             maxRounds = plan.length;
@@ -416,11 +453,14 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
             await checkpoint();
             continue;
           }
-          // The note's lead: the rounds, and, under the floor, that the extra rounds are spent too.
+          // The note's lead: the rounds, and, under the floor, that the extra rounds are spent too, or why none was taken.
           const extra = run.extraRounds ?? 0;
+          const why = bestScore >= FUNNEL_ACCEPTABLE_SCORE || extra >= FUNNEL_MAX_EXTRA_ROUNDS ? ""
+            : def.autoExtraRounds === false ? " This step takes no extra round on its own; ask for one if a revision would help."
+            : !improved ? " The last round did not raise the best, so no extra round was taken." : "";
           await needsReview(bestScore >= FUNNEL_ACCEPTABLE_SCORE
             ? `${judgeName} did not accept ${def.article} after ${maxRounds} rounds.`
-            : `${judgeName} did not accept ${def.article} after ${maxRounds} rounds${extra ? ` (${extra} extra)` : ""}, and the best stays under ${FUNNEL_ACCEPTABLE_SCORE}/100.`);
+            : `${judgeName} did not accept ${def.article} after ${maxRounds} rounds${extra ? ` (${extra} extra)` : ""}, and the best stays under ${FUNNEL_ACCEPTABLE_SCORE}/100.${why}`);
           return;
         }
         // The best version so far, kept on the row in case a later call fails.

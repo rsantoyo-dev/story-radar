@@ -86,9 +86,14 @@ export type FunnelRound<C extends FunnelCandidate = FunnelCandidate, S extends F
   evaluation?: FunnelEvaluation<C, S, I>;
   /** Revisions that came out worse than the version they revised; that version stays the better one. */
   regressions?: FunnelRegression[];
+  /** The writer's fix pass before the judge: what the program flagged, sent back once with its findings, and what stood after. Absent when nothing was flagged. */
+  fix?: FunnelFixPass;
   shadow?: FunnelShadowJudgment;
   at: string;
 };
+
+/** The fix pass of a round: the candidates the program flagged, how many findings they had and how many stood after the writer's fix, or why the pass did not run. */
+export type FunnelFixPass = { candidateIds: string[]; findingsBefore: number; findingsAfter: number; durationMs?: number; skipped?: string };
 
 /** One version of a candidate with what the round it was written in found on it. */
 export type FunnelVersion<C extends FunnelCandidate = FunnelCandidate, S extends FunnelScore = FunnelScore, I extends FunnelIssue = FunnelIssue> = {
@@ -378,7 +383,57 @@ export type FunnelWords<C extends FunnelCandidate, K extends string = string> = 
   revise: string;
   develop: string;
   newCandidates: (count: number) => string;
+  /** The fix pass's instruction, when the step says it its own way (FUNNEL_FIX_INSTRUCTION otherwise). */
+  fix?: string;
 };
+
+/** The writer's instruction for the fix pass: the program's findings, and nothing else, fixed in place. */
+export const FUNNEL_FIX_INSTRUCTION = "Fix only what each finding names, in as few words as possible: keep the candidate's idea, its device, its angle, its headline where no finding concerns it, and everything else exactly as it is. Count the words of what you change against the limits. Return each listed candidate under its own id, every part complete, and nothing else.";
+
+/**
+ * What the writer receives for the fix pass, before the judge reads a round:
+ * the candidates the program flagged, each with the findings on it. A flagged
+ * candidate can never win, so fixing it costs one short call and saves the
+ * round its findings would have cost.
+ */
+export function funnelFixRequest<C extends FunnelCandidate, K extends string>(words: FunnelWords<C, K>, flagged: readonly C[], findings: readonly FunnelIssue[]) {
+  return {
+    task: "fix",
+    [words.listKey]: flagged.map((candidate) => ({
+      ...shownCandidate(candidate),
+      findings: findings.filter((issue) => issue.candidateId === candidate.id).map(({ code, part, detail }) => ({ code, ...(part ? { part } : {}), detail })),
+    })),
+    instruction: words.fix ?? FUNNEL_FIX_INSTRUCTION,
+  };
+}
+
+/**
+ * The round's candidates with the writer's fixes in place: a flagged
+ * candidate the answer brings back under its id takes the fixed parts and
+ * keeps its id and its bookkeeping (what it revises, which proposal it comes
+ * from); one the answer misses stays as it was, never fatal.
+ */
+export function funnelFixedCandidates<C extends FunnelCandidate>(candidates: readonly C[], flagged: ReadonlySet<string>, answer: readonly C[]): C[] {
+  return candidates.map((candidate) => {
+    if (!flagged.has(candidate.id)) return candidate;
+    const fixed = answer.find((entry) => entry.id === candidate.id);
+    if (!fixed) return candidate;
+    const { revisionOf, proposalOf, asProposed, byEditor } = candidate;
+    return { ...fixed, id: candidate.id, ...(revisionOf ? { revisionOf } : {}), ...(proposalOf ? { proposalOf } : {}), ...(asProposed ? { asProposed } : {}), ...(byEditor ? { byEditor } : {}) };
+  });
+}
+
+/**
+ * Whether a round raised the run's best clean score: the best among its own
+ * versions beats the best of every round before it. The floor's extra rounds
+ * are earned only this way: a round that did not improve the best would not
+ * be improved on by one more revision of the same version (22 visual runs
+ * took their extra rounds and ended, most often, on an earlier version).
+ */
+export function funnelRoundImproved(versions: readonly AnyVersion[], round: number): boolean {
+  const best = (entries: readonly AnyVersion[]) => funnelBestVersions(entries)[0]?.score?.overall ?? 0;
+  return best(versions.filter((version) => version.round === round)) > best(versions.filter((version) => version.round < round));
+}
 
 /** A candidate tried so far, as a request lists it: its id, its label and its score. */
 export type FunnelTried = { id: string; overall?: number } & Record<string, unknown>;

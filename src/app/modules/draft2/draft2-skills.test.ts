@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { brandBrief, composeInstructions, DRAFT2_ROLES, DRAFT2_SKILLS, type Draft2Skill } from "./skills/draft2-skills";
+import { brandBrief, composeInstructions, DRAFT2_ROLES, DRAFT2_SKILLS, JUDGE_STANDARD, WRITER_STANDARD, type Draft2Skill } from "./skills/draft2-skills";
 import { FACTS_ROLES, FACTS_SKILL } from "./skills/facts";
 import { CLOSING_ROLES, CLOSINGS_SKILL } from "./skills/closings";
 import { DECK_ROLES, DECKS_SKILL } from "./skills/decks";
@@ -35,9 +35,9 @@ const profile = {
 test("instructions are the role, then each skill, then the brand brief, and record the skill versions", () => {
   const skill: Draft2Skill = { name: "hooks", version: "7", text: "## Shared craft", roleText: { "opening-judge": "## Judge only" } };
   const writer = composeInstructions("opening-writer", [skill], "# Brand");
-  assert.equal(writer.instructions, `${OPENING_ROLES["opening-writer"]}\n\n## Shared craft\n\n# Brand`);
+  assert.equal(writer.instructions, `${OPENING_ROLES["opening-writer"]}\n\n${WRITER_STANDARD}\n\n## Shared craft\n\n# Brand`, "a writer reads its standard after its role");
   assert.deepEqual(writer.skillVersions, { hooks: "7" });
-  assert.equal(composeInstructions("opening-judge", [skill]).instructions, `${OPENING_ROLES["opening-judge"]}\n\n## Shared craft\n\n## Judge only`, "a role reads its own part after the shared text");
+  assert.equal(composeInstructions("opening-judge", [skill]).instructions, `${OPENING_ROLES["opening-judge"]}\n\n${JUDGE_STANDARD}\n\n## Shared craft\n\n## Judge only`, "a judge reads the originality standard, then its own part after the shared text");
   assert.deepEqual(Object.keys(DRAFT2_ROLES).sort(), ["caption-judge", "caption-writer", "carousel-editor", "carousel-reader", "closing-judge", "closing-writer", "deck-judge", "deck-writer", "extractor", "focus-concept-judge", "focus-editor", "focus-narrative-judge", "focus-planner", "image-judge", "mention-finder", "opening-judge", "opening-writer", "people-finder", "reviewer", "visual-judge", "visual-writer"]);
   assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@2", "focus@15", "narratives@4", "discovery@1", "arcs@1", "spine@1", "levers@1", "fairness@2", "reader@2", "hooks@9", "closings@3", "decks@2", "review@5", "visuals@9", "images@5", "captions@3"]);
 });

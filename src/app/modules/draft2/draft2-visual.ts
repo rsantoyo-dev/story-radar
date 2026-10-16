@@ -7,7 +7,7 @@ import { funnelVersions } from "./draft2-funnel";
 import { getDraft2Session, updateDraft2Session } from "./draft2-session.repository";
 import { inventoryForModels, type Draft2CharacterChoice, type Draft2Inventory } from "./draft2-inventory.types";
 import {
-  VISUAL_GATE, avoidTerms, carouselSlides, editorCast, mechanicalVisualIssues, parseVisualCandidates, parseVisualEvaluation, sameVisual, visualEvaluationSchema, visualExploreRequest,
+  VISUAL_GATE, avoidTerms, carouselSlides, editorCast, mechanicalVisualIssues, parseVisualCandidates, parseVisualEvaluation, sameVisual, visualEvaluationSchema, visualExploreRequest, visualFixRequest,
   visualJudgeRequest, visualLayout, visualModeLine, visualPlan, visualRefineRequest, visualSchema,
   type Draft2CarouselSlide, type Draft2Visual, type Draft2VisualCandidate, type Draft2VisualCharacter, type Draft2VisualIssue, type Draft2VisualMode, type Draft2VisualScore,
 } from "./draft2-visual.types";
@@ -94,6 +94,7 @@ const VISUAL_STEP: FunnelStep<Draft2VisualCandidate, Draft2VisualScore, Draft2Vi
       mechanical: (candidates) => mechanicalVisualIssues(candidates, { carousel, inventory, characters, characterChoice, mode, avoid, narrative: focusNarrative(focus.values) }),
       explore: visualExploreRequest,
       refine: visualRefineRequest,
+      fix: visualFixRequest,
       judgeRequest: (round, candidates, mechanical, revised) => visualJudgeRequest(plan, round, candidates, mechanical, revised),
       same: sameVisual,
     };

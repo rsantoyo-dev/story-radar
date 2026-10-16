@@ -5,7 +5,7 @@ import { Draft2InputError } from "./draft2-facts.types";
 import { focusForModels, focusItemCount, type Draft2FocusSnapshot } from "./draft2-focus.types";
 import { openingVersions } from "./draft2-opening.types";
 import {
-  CLOSING_GATE, CLOSING_ROUND_PLAN, callToActionBrief, closingEvaluationSchema, closingExploreRequest, closingJudgeRequest, closingRefineRequest, closingSchema,
+  CLOSING_GATE, CLOSING_ROUND_PLAN, callToActionBrief, closingEvaluationSchema, closingExploreRequest, closingJudgeRequest, closingFixRequest, closingRefineRequest, closingSchema,
   closingShape, mechanicalClosingIssues, openingForClosing, parseClosingCandidates, parseClosingEvaluation, sameClosing,
   type Draft2Closing, type Draft2ClosingCandidate, type Draft2ClosingIssue, type Draft2ClosingOpening, type Draft2ClosingScore, type Draft2ClosingShape,
 } from "./draft2-closing.types";
@@ -65,6 +65,7 @@ const CLOSING_STEP: FunnelStep<Draft2ClosingCandidate, Draft2ClosingScore, Draft
       mechanical: (candidates) => mechanicalClosingIssues(candidates, facts, { opening, shape, grave: values.voice.gravity === "grave", itemCount: focusItemCount(values), emojis, reader: { address: profile.readerAddress, language: profile.language } }),
       explore: closingExploreRequest,
       refine: closingRefineRequest,
+      fix: closingFixRequest,
       judgeRequest: closingJudgeRequest,
       same: sameClosing,
     };

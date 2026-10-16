@@ -3,7 +3,7 @@ import { addressBreaches, addressFinding, type Draft2Reader } from "./draft2-add
 import { comparableText, type Draft2Fact } from "./draft2-facts.types";
 import type { Draft2FocusSnapshot, Draft2FocusStructureKind } from "./draft2-focus.types";
 import {
-  funnelEvaluationSchema, funnelExploreRequest, funnelFactIds, funnelJudgeRequest, funnelParseCandidates, funnelParseEvaluation, funnelRecord,
+  funnelEvaluationSchema, funnelExploreRequest, funnelFixRequest, funnelFactIds, funnelJudgeRequest, funnelParseCandidates, funnelParseEvaluation, funnelRecord,
   funnelRefineRequest, funnelText, funnelWordCount, headlineKey, longWords, numbersIn, statedNumbers, wordOverlap,
   type FunnelCandidate, type FunnelEvaluation, type FunnelGate, type FunnelIssue, type FunnelPlanRound, type FunnelRegression, type FunnelRole,
   type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion, type FunnelWords,
@@ -267,6 +267,9 @@ export const DECK_WORDS: FunnelWords<Draft2DeckCandidate, "decks"> = {
   develop: DECK_DEVELOP_INSTRUCTION,
   newCandidates: newDecksInstruction,
 };
+
+/** The fix pass's request: the flagged decks with the program's findings on each, to fix in place before the judge reads the round. */
+export const deckFixRequest = (flagged: readonly Draft2DeckCandidate[], findings: readonly FunnelIssue[]) => funnelFixRequest(DECK_WORDS, flagged, findings);
 
 export function deckExploreRequest(candidatesWanted: number, last?: Draft2DeckRound, versions: readonly Draft2DeckVersion[] = []) {
   return funnelExploreRequest(DECK_WORDS, candidatesWanted, last, versions);

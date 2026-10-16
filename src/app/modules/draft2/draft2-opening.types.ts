@@ -4,7 +4,7 @@ import { addressBreaches, addressFinding, type Draft2Reader } from "./draft2-add
 import type { Draft2FocusGuard, Draft2FocusSnapshot } from "./draft2-focus.types";
 import { FREE_LEVER, leverName, leverSupported, stockPhraseIn } from "./draft2-levers.types";
 import {
-  criterionOf, factsSnapshot, funnelAcceptedWinner, funnelBestClean, funnelBestVersions, funnelEvaluationSchema, funnelExploreRequest, funnelFactIds,
+  criterionOf, factsSnapshot, funnelAcceptedWinner, funnelBestClean, funnelBestVersions, funnelEvaluationSchema, funnelExploreRequest, funnelFixRequest, funnelFactIds,
   funnelFreshWanted, funnelJudgeRequest, funnelParseCandidates, funnelParseEvaluation, funnelRecord, funnelRefineRequest, funnelRegressions,
   funnelRenumbered, funnelRenumberedProposals, funnelResumeRound, funnelReviewNote, funnelRunSummary, funnelScorePasses, funnelTargets, funnelText,
   funnelVersions, funnelWordCount, funnelWrittenCandidates, hasMaterialError as funnelHasMaterialError, headlineKey, longWords, numbersIn, statedNumbers, wordOverlap,
@@ -411,6 +411,9 @@ export const OPENING_WORDS: FunnelWords<Draft2OpeningCandidate, "openings"> = {
 };
 
 /** What the writer receives for new angles only (the facts travel apart, where its provider caches them); after a round, what was tried and what went wrong. */
+/** The fix pass's request: the flagged openings with the program's findings on each, to fix in place before the judge reads the round. */
+export const openingFixRequest = (flagged: readonly Draft2OpeningCandidate[], findings: readonly FunnelIssue[]) => funnelFixRequest(OPENING_WORDS, flagged, findings);
+
 export function openingExploreRequest(candidatesWanted: number, last?: Draft2OpeningRound, versions: readonly Draft2OpeningVersion[] = []) {
   return funnelExploreRequest(OPENING_WORDS, candidatesWanted, last, versions);
 }

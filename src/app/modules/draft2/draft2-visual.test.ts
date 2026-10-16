@@ -87,6 +87,8 @@ function harness({ writes, judgments, session }: { writes: ((contents: Contents,
   let judgment = 0;
   const usage = { promptTokens: 100, outputTokens: 50, thoughtsTokens: 0, totalTokens: 150 };
   const answer = (provider: string, input: Record<string, unknown>) => {
+    // The fix pass: the flagged candidates come back as they are (this harness fixes nothing), and the call stays out of the scripted ones.
+    if (String(input.schemaName).endsWith("_fix")) return { text: JSON.stringify({ candidates: (input.contents as Record<string, unknown[]>).scripts ?? [] }), provider, model: input.model, usage };
     const role = input.schemaName === "draft2_visual" ? "writer" : "judge";
     calls.push({ provider, role, input });
     // Claude's cached context block, or the context at the tail of Sol's instructions (its prefix cache).

@@ -4,7 +4,7 @@ import { comparableText, type Draft2Fact } from "./draft2-facts.types";
 import { leverForModels } from "./draft2-levers.types";
 import type { Draft2FocusSnapshot, Draft2FocusStructureKind } from "./draft2-focus.types";
 import { type FunnelPlanRound,
-  funnelEvaluationSchema, funnelExploreRequest, funnelFactIds, funnelJudgeRequest, funnelParseCandidates, funnelParseEvaluation, funnelRecord,
+  funnelEvaluationSchema, funnelExploreRequest, funnelFixRequest, funnelFactIds, funnelJudgeRequest, funnelParseCandidates, funnelParseEvaluation, funnelRecord,
   funnelRefineRequest, funnelText, funnelWordCount, headlineKey, longWords, numbersIn, statedNumbers, wordOverlap,
   type FunnelCandidate, type FunnelEvaluation, type FunnelGate, type FunnelIssue, type FunnelRegression, type FunnelRole, type FunnelRound,
   type FunnelRun, type FunnelScore, type FunnelVersion, type FunnelWords,
@@ -288,6 +288,9 @@ export const CLOSING_WORDS: FunnelWords<Draft2ClosingCandidate, "closings"> = {
   develop: CLOSING_DEVELOP_INSTRUCTION,
   newCandidates: newClosingsInstruction,
 };
+
+/** The fix pass's request: the flagged closings with the program's findings on each, to fix in place before the judge reads the round. */
+export const closingFixRequest = (flagged: readonly Draft2ClosingCandidate[], findings: readonly FunnelIssue[]) => funnelFixRequest(CLOSING_WORDS, flagged, findings);
 
 export function closingExploreRequest(candidatesWanted: number, last?: Draft2ClosingRound, versions: readonly Draft2ClosingVersion[] = []) {
   return funnelExploreRequest(CLOSING_WORDS, candidatesWanted, last, versions);

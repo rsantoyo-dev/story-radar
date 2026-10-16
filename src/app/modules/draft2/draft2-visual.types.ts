@@ -1,7 +1,7 @@
 import { comparableText, Draft2InputError } from "./draft2-facts.types";
 import type { Draft2FocusSnapshot } from "./draft2-focus.types";
 import {
-  funnelEvaluationSchema, funnelExploreRequest, funnelJudgeRequest, funnelParseCandidates, funnelParseEvaluation, funnelRecord, funnelRefineRequest,
+  funnelEvaluationSchema, funnelExploreRequest, funnelFixRequest, funnelJudgeRequest, funnelParseCandidates, funnelParseEvaluation, funnelRecord, funnelRefineRequest,
   funnelText, funnelVersions, headlineKey, longWords, wordOverlap,
   type FunnelCandidate, type FunnelEvaluation, type FunnelGate, type FunnelIssue, type FunnelPlanRound, type FunnelRegression, type FunnelRole,
   type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion, type FunnelWords,
@@ -556,6 +556,9 @@ export const VISUAL_WORDS: FunnelWords<Draft2VisualCandidate, "scripts"> = {
   develop: VISUAL_DEVELOP_INSTRUCTION,
   newCandidates: newScriptsInstruction,
 };
+
+/** The fix pass's request: the flagged scripts with the program's findings on each, to fix in place before the judge reads the round. */
+export const visualFixRequest = (flagged: readonly Draft2VisualCandidate[], findings: readonly FunnelIssue[]) => funnelFixRequest(VISUAL_WORDS, flagged, findings);
 
 export function visualExploreRequest(candidatesWanted: number, last?: Draft2VisualRound, versions: readonly Draft2VisualVersion[] = []) {
   return funnelExploreRequest(VISUAL_WORDS, candidatesWanted, last, versions);

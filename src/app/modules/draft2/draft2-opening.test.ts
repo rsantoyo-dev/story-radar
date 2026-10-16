@@ -63,6 +63,7 @@ const candidates = (overrides: Record<string, string> = {}, count = HEADLINES.le
 
 type Opening = { id: string; cover: Draft2OpeningCandidate["cover"]; slide2: Draft2OpeningCandidate["slide2"]; angle: string };
 type WriterContents = { task: string; verifiedFacts: unknown[]; openings?: Opening[]; develop?: Opening[]; candidatesWanted?: number; newAngles?: number; anglesSoFar?: { id: string }[]; feedback?: unknown; instruction?: string; suggestions?: string[] };
+type FixContents = { task: "fix"; openings: (Opening & { findings: { code: string; part?: string; detail: string }[] })[]; instruction: string };
 type JudgeContents = { round: number; candidates: ({ id: string; revises?: string } & Record<string, unknown>)[]; previousVersions?: { id: string; scores?: Draft2OpeningScore }[]; proposalsWanted?: number };
 
 /** An opening with the fixtures' clean cover and slide 2, under another headline. */
@@ -98,8 +99,10 @@ type Call = { provider: "openai" | "anthropic"; role: "writer" | "judge"; input:
 type Row = Record<string, unknown> & { opening: Draft2Opening | null; focus: Draft2Focus | null; threads: types.Draft2Threads; trace: types.Draft2TraceEntry[] };
 
 /** The orchestrator with both providers, the profile and the database replaced; `writes` and `judgments` decide each round. */
-function harness({ writes, judgments, failAt, session, busy = false, claimRefused = false, secondsPerCall, env = {} }: {
+function harness({ writes, judgments, fixes, failAt, session, busy = false, claimRefused = false, secondsPerCall, env = {} }: {
   writes: ((contents: WriterContents) => unknown)[];
+  /** Answers the fix pass (the flagged openings with their findings); without it the harness hands them back as they are, uncounted. */
+  fixes?: (contents: FixContents) => unknown;
   judgments: ((contents: JudgeContents) => unknown)[];
   /** That call fails: overloaded, or with the error given (a cut-off carries its usage). */
   failAt?: { role: "writer" | "judge"; call: number; error?: Error };
@@ -127,6 +130,12 @@ function harness({ writes, judgments, failAt, session, busy = false, claimRefuse
   const usage = { promptTokens: 100, outputTokens: 50, thoughtsTokens: 0, totalTokens: 150 };
   /** Whichever provider plays a role, the role's script answers: the writer writes, the judge judges. */
   const answer = (provider: Call["provider"], input: Record<string, unknown>) => {
+    if (String(input.schemaName).endsWith("_fix")) {
+      const fixContents = input.contents as FixContents;
+      if (!fixes) return { text: JSON.stringify({ candidates: fixContents.openings }), provider, model: input.model, usage };
+      calls.push({ provider, role: "writer", input });
+      return { text: JSON.stringify(fixes(fixContents)), provider, model: input.model, usage };
+    }
     const role = input.schemaName === "draft2_opening" ? "writer" : "judge";
     calls.push({ provider, role, input });
     tick();
@@ -691,4 +700,36 @@ test("a story arc: the writer and the judge read the arcs skill with their own p
   assert.ok(!String(writerCall.input.instructions).includes(DISCOVERY_SKILL.text), "no discovery skill for an arc");
   assert.equal(json(session.trace.filter((entry) => entry.step === "opening").map((entry) => entry.skillVersions)), json([{ hooks: "9", levers: "1", fairness: "2", reader: "2", arcs: "1" }, { hooks: "9", levers: "1", fairness: "2", reader: "2", arcs: "1" }]));
   assert.equal(json((writerCall.input.context as { focus: { concept?: unknown } }).focus.concept), json({ arc: "cause-effect", factIds: ["f1"], beats: concept.reveals }));
+});
+
+test("the fix pass: what the program flagged goes back to the writer once, with its findings, before the judge reads the round; the fixed version competes", async () => {
+  const long = "A headline of far too many words for any cover of this publication to carry";
+  const h = harness({
+    writes: [writer({ c1: long })],
+    fixes: (contents) => ({ candidates: contents.openings.map((opening) => ({ ...opening, cover: { ...opening.cover, headline: "Pentagon buyers now judge videos" } })) }),
+    judgments: [judge("accept", "c1", { c1: 96 })],
+  });
+  const session = await h.run();
+  assert.equal(json([session.opening?.status, session.opening?.winnerId]), json(["ready", "c1"]), "the fixed c1 is clean and wins");
+  assert.equal(h.calls.map((call) => `${call.role}:${call.input.schemaName}:${call.input.effort ?? call.input.reasoningEffort}`).join(","), "writer:draft2_opening:medium,writer:draft2_opening_fix:medium,judge:draft2_opening_review:medium", "writer, fix, judge");
+  const fix = h.calls[1].input.contents as FixContents;
+  assert.equal(json([fix.task, fix.openings.map((opening) => opening.id), fix.openings[0].findings.map((finding) => finding.code)]), json(["fix", ["c1"], ["COVER_TOO_LONG"]]), "only the flagged opening, with its findings");
+  assert.match(fix.instruction, /Fix only what each finding names/);
+  const round = session.opening!.rounds[0];
+  assert.equal(json([round.fix?.candidateIds, round.fix?.findingsBefore, round.fix?.findingsAfter, round.mechanical.length, round.candidates[0].cover.headline]), json([["c1"], 1, 0, 0, "Pentagon buyers now judge videos"]), "the round records the pass and keeps the fixed version");
+  assert.equal(json(session.trace.filter((entry) => entry.step === "opening").map((entry) => entry.operation)), json(["draft2_opening", "draft2_opening_fix", "draft2_opening_review"]), "the pass is on the trace");
+
+  const unfixed = harness({ writes: [writer({ c1: long })], judgments: [judge("accept", "c2", { c1: 90, c2: 96 })] });
+  const stood = await unfixed.run();
+  assert.equal(json([stood.opening?.winnerId, stood.opening?.rounds[0].fix?.findingsAfter, stood.opening?.rounds[0].mechanical.map((issue) => issue.code)]), json(["c2", 1, ["COVER_TOO_LONG"]]), "a pass that fixes nothing leaves the finding, and the clean candidate wins");
+});
+
+test("no extra round on its own when the last round did not raise the best: the revision would not either", async () => {
+  const flat = harness({
+    writes: [writer(), writer(), writer()],
+    judgments: [judge("revise", "c1", { c1: 80, c2: 78 }), judge("revise", "c1.2", { "c1.2": 84 }), judge("revise", "c1.3", { "c1.3": 84 })],
+  });
+  const session = await flat.run();
+  assert.equal(json([session.opening?.status, session.opening?.rounds.length, session.opening?.extraRounds ?? 0, session.opening?.winnerId]), json(["needs-review", 3, 0, "c1.3"]), "three rounds, no extra; a tie goes to the later round");
+  assert.match(String(session.error), /under 90\/100\. The last round did not raise the best, so no extra round was taken\./);
 });

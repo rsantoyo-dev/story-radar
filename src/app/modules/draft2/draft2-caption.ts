@@ -8,7 +8,7 @@ import { shownAttempt, slideSettled, type Draft2ImagesRun } from "./draft2-image
 import { confirmedMentions, sameMentions } from "./draft2-mentions.types";
 import {
   CAPTION_EVALUATION_SCHEMA, CAPTION_GATE, CAPTION_MAX_CHARACTERS, CAPTION_MAX_HASHTAGS, CAPTION_MIN_HASHTAGS, CAPTION_PLAN, CAPTION_SCHEMA,
-  captionExploreRequest, captionJudgeRequest, captionRefineRequest, captionRulesBrief, captionSourceHosts, captionSourceLine, mechanicalCaptionIssues, parseCaptionCandidates, parseCaptionEvaluation, sameCaption,
+  captionExploreRequest, captionJudgeRequest, captionFixRequest, captionRefineRequest, captionRulesBrief, captionSourceHosts, captionSourceLine, mechanicalCaptionIssues, parseCaptionCandidates, parseCaptionEvaluation, sameCaption,
   type Draft2Caption, type Draft2CaptionCandidate, type Draft2CaptionIssue, type Draft2CaptionRules, type Draft2CaptionScore,
 } from "./draft2-caption.types";
 import type { Draft2Inventory } from "./draft2-inventory.types";
@@ -143,6 +143,7 @@ const CAPTION_STEP: FunnelStep<Draft2CaptionCandidate, Draft2CaptionScore, Draft
       mechanical: (candidates) => mechanicalCaptionIssues(candidates, facts, { source, credits: snapshot.credits, mentions: snapshot.mentions, rules, reader: { address: profile.readerAddress, language: profile.language } }),
       explore: captionExploreRequest,
       refine: captionRefineRequest,
+      fix: captionFixRequest,
       judgeRequest: captionJudgeRequest,
       same: sameCaption,
     };

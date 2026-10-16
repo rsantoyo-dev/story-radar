@@ -53,9 +53,33 @@ export const spineSkills = (spine: unknown): Draft2Skill[] => spine ? [SPINE_SKI
 /** All of them, in the order the instructions read them: the concept (how the reader meets the news), the narrative form, then the spine both follow. */
 export const creativeSkills = (values: { concept?: { arc: string }; narrative?: { form: string }; spine?: unknown }): Draft2Skill[] => [...discoverySkills(values.concept), ...narrativeSkills(values.narrative), ...spineSkills(values.spine)];
 
-/** Role instructions + the skills the role reads + the Topic's brand brief, in that order. */
+/**
+ * What every writer reads after its role: the editor's standard. The writer
+ * checks its own candidates against the hard rules before it answers (the
+ * program's findings cost a round each; real first rounds lost nine openings
+ * of fifteen to them), and hands in nothing it would not defend at 95/100.
+ */
+export const WRITER_STANDARD = `## Your standard
+You are the best carousel writer this publication has, and you hand in only what you would defend at 95/100. Before you answer, check every candidate yourself: count the words of each headline, subheadline, body and call to action against the skill's limits; make sure every number and every claim rests on a fact the candidate cites, with that fact's qualifier and attribution kept; keep each guard the focus names; cite no fact id inside a text; and ask the image for no logo, page number, swipe cue or other words. One strong candidate beats two safe ones, and a predictable candidate is a weak one: within the facts, take the angle, the device or the image the reader has not met. The judge is independent and never lenient; your own check saves the round a flaw would cost.`;
+
+/**
+ * What the judges who score originality read after their role: originality
+ * is scored against the predictable telling, never as a licence to leave the
+ * facts. The editor's ask (2026-10-15): the publication rewards creativity,
+ * always inside the facts.
+ */
+export const JUDGE_STANDARD = `## Originality
+Score originality against the predictable telling of this subject for this audience: the angle, the device, the image or the structure a reader has not met in stories like this one. 95 and above only for a telling the reader has not seen on this subject; 85 to 94 for a fresh angle, device or image inside a familiar frame; 70 to 84 for competent but predictable work; below 70 for a formula (a title-formula headline, a stock scene, a recap ending, "N things you need to know"). Originality never excuses a claim the facts do not carry, a dropped qualifier, sensationalism or a joke on a grave story: those fall under grounding, truth and voice, and a candidate that fails them is not original, it is wrong. Within the facts, reward the surprising true angle, the earned unexpected image and the voice that sounds like a person; never reward loudness.`;
+
+/** The judges whose skill scores originality. */
+const ORIGINALITY_JUDGES: readonly Draft2Role[] = ["opening-judge", "closing-judge", "deck-judge", "visual-judge", "carousel-editor"];
+
+/** The standard a role reads after its own instructions: the writers' check, the judges' originality; nothing for the other roles. */
+export const roleStandard = (role: Draft2Role): string => role.endsWith("-writer") ? WRITER_STANDARD : ORIGINALITY_JUDGES.includes(role) ? JUDGE_STANDARD : "";
+
+/** Role instructions + the role's standard + the skills the role reads + the Topic's brand brief, in that order. */
 export function composeInstructions(role: Draft2Role, skills: readonly Draft2Skill[], brandBrief?: string): { instructions: string; skillVersions: Record<string, string> } {
-  const parts = [DRAFT2_ROLES[role], ...skills.flatMap((skill) => [skill.text, skill.roleText?.[role] ?? ""]), brandBrief ?? ""];
+  const parts = [DRAFT2_ROLES[role], roleStandard(role), ...skills.flatMap((skill) => [skill.text, skill.roleText?.[role] ?? ""]), brandBrief ?? ""];
   return {
     instructions: parts.map((part) => part.trim()).filter((part) => part.length > 0).join("\n\n"),
     skillVersions: Object.fromEntries(skills.map((skill) => [skill.name, skill.version])),

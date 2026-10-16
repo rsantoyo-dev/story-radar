@@ -5,7 +5,7 @@ import { Draft2InputError } from "./draft2-facts.types";
 import { focusFindings, focusForModels, focusItemCount, focusMaterial, type Draft2FocusSnapshot } from "./draft2-focus.types";
 import { eligibleLevers, leverSpread } from "./draft2-levers.types";
 import {
-  DRAFT2_OPENING_EVALUATION_SCHEMA, DRAFT2_OPENING_SCHEMA, OPENING_GATE, OPENING_ROUND_PLAN, mechanicalOpeningIssues, openingExploreRequest,
+  DRAFT2_OPENING_EVALUATION_SCHEMA, DRAFT2_OPENING_SCHEMA, OPENING_GATE, OPENING_ROUND_PLAN, mechanicalOpeningIssues, openingExploreRequest, openingFixRequest,
   openingJudgeRequest, openingRefineRequest, parseOpeningCandidates, parseOpeningEvaluation, sameOpening,
   type Draft2Opening, type Draft2OpeningCandidate, type Draft2OpeningIssue, type Draft2OpeningScore,
 } from "./draft2-opening.types";
@@ -65,6 +65,7 @@ const OPENING_STEP: FunnelStep<Draft2OpeningCandidate, Draft2OpeningScore, Draft
       mechanical: (candidates) => mechanicalOpeningIssues(candidates, facts, { itemCount, eligibleLevers: levers, guards: focus.values.guards, reader: { address: profile.readerAddress, language: profile.language } }),
       explore: (wanted, last, versions) => ({ ...openingExploreRequest(wanted, last, versions), levers: { spread: leverSpread(focus.values.levers, wanted) } }),
       refine: openingRefineRequest,
+      fix: openingFixRequest,
       judgeRequest: openingJudgeRequest,
       same: sameOpening,
     };

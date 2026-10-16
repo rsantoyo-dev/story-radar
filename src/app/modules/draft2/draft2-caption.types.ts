@@ -3,7 +3,7 @@ import { addressBreaches, addressFinding, type Draft2Reader } from "./draft2-add
 import { comparableText, type Draft2Fact } from "./draft2-facts.types";
 import type { Draft2FocusSnapshot } from "./draft2-focus.types";
 import {
-  funnelEvaluationSchema, funnelExploreRequest, funnelFactIds, funnelJudgeRequest, funnelParseCandidates, funnelParseEvaluation, funnelRecord,
+  funnelEvaluationSchema, funnelExploreRequest, funnelFixRequest, funnelFactIds, funnelJudgeRequest, funnelParseCandidates, funnelParseEvaluation, funnelRecord,
   funnelRefineRequest, funnelText, headlineKey, numbersIn, statedNumbers,
   type FunnelCandidate, type FunnelEvaluation, type FunnelGate, type FunnelIssue, type FunnelPlanRound, type FunnelRegression, type FunnelRole,
   type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion, type FunnelWords,
@@ -262,6 +262,9 @@ export const CAPTION_WORDS: FunnelWords<Draft2CaptionCandidate, "captions"> = {
   develop: CAPTION_DEVELOP_INSTRUCTION,
   newCandidates: newCaptionsInstruction,
 };
+
+/** The fix pass's request: the flagged captions with the program's findings on each, to fix in place before the judge reads the round. */
+export const captionFixRequest = (flagged: readonly Draft2CaptionCandidate[], findings: readonly FunnelIssue[]) => funnelFixRequest(CAPTION_WORDS, flagged, findings);
 
 export function captionExploreRequest(candidatesWanted: number, last?: Draft2CaptionRound, versions: readonly Draft2CaptionVersion[] = []) {
   return funnelExploreRequest(CAPTION_WORDS, candidatesWanted, last, versions);
