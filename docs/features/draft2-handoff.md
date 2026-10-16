@@ -584,3 +584,16 @@ writes a step again; and `DRAFT2_SHADOW_JUDGE_EFFORT=low` with
 `scripts/draft2-inspect/inspect-shadow.mts` measures Luna at low effort. The
 older shadow runs (2026-10-10/11, Luna at medium beside Sol) read: same winner
 12 of 16 rounds, Luna 1–3 points lower, its judgment 30–45 % faster.
+
+### Addendum, 2026-10-16: the editor chooses the writer and the judge
+
+A **Models** card on the overview and the Facts screen chooses who writes and
+who judges the funnel steps (Opening, Closing, Deck, visual script, caption):
+Default, Claude Sonnet 5.5, Claude Opus 5.5, GPT-6.1 Sol or GPT-6 Luna, each
+with its list price. The choice is kept on the session (`draft2_sessions.models`,
+migration 0112, applied), sent with the Facts request before a session
+exists, remembered in the browser for the next story, and applies to new runs
+only. Any provider plays either role; a Claude judge reads its schema without
+enums inside arrays. Brief: `docs/features/draft2-model-choice.md`, with the
+measured split that argues against Sol writing and Sonnet judging (judging at
+Sol's or Sonnet's price is twenty times Luna's, about +$0.90 a story).

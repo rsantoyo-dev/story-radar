@@ -33,7 +33,7 @@ import {
   FUNNEL_ACCEPTABLE_SCORE, FUNNEL_MAX_EXTRA_ROUNDS, criterionFloor, criterionOf, funnelAcceptedWinner, funnelBestVersions, funnelExtendable, funnelResumeRound, funnelScorePasses, funnelVersions, hasMaterialError,
   type FunnelCandidate, type FunnelGate, type FunnelIssue, type FunnelRegression, type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion,
 } from "@/app/modules/draft2/draft2-funnel";
-import { DRAFT2_OPENING_EARLIER_ROLES, DRAFT2_OPENING_ROLES, draft2ModelName, type Draft2Cast, type Draft2FunnelStepName } from "@/app/modules/draft2/draft2-models";
+import { DRAFT2_MODEL_OPTIONS, DRAFT2_OPENING_EARLIER_ROLES, DRAFT2_OPENING_ROLES, castWithChoice, draft2ModelName, parseDraft2ModelChoice, type Draft2Cast, type Draft2FunnelStepName, type Draft2ModelChoice } from "@/app/modules/draft2/draft2-models";
 import {
   adjacentDraft2Steps, AUTOPILOT_ORDER, autopilotRuns, contentStatusLabel, DRAFT_2_STEPS, draft2RailState, draft2StepFromPath, draft2StepHref, draft2StepPhase, minutes, paragraphs, sessionMetrics, sourceHost, stepMetrics, storyHref, traceUsageLine, usd, wordCount,
   type Draft2StepKey,
@@ -69,6 +69,8 @@ type Draft2SessionView = {
   mentions: Draft2Mentions | null;
   caption: Draft2Caption | null;
   publication: Draft2Publication | null;
+  /** The editor's choice of the funnel's writer and judge; null or absent: today's cast. */
+  models?: Draft2ModelChoice | null;
   trace: Draft2TraceEntry[];
   error: string | null;
   updatedAt: string;
@@ -104,6 +106,10 @@ function screenOfRun(step: Draft2RunStep | undefined): Draft2StepKey | undefined
 
 /** Where the article panel's open or closed state is kept between visits, for this browser only. */
 const SOURCE_PANEL_KEY = "press-craftor:draft2-source-panel";
+/** The last models the editor chose, the default for a story that has no session yet. */
+const MODELS_KEY = "press-craftor:draft2-models";
+/** A choice as the routes take it: each role's model id. */
+const modelIds = (choice: Draft2ModelChoice | null | undefined) => ({ ...(choice?.writer ? { writer: choice.writer.model } : {}), ...(choice?.judge ? { judge: choice.judge.model } : {}) });
 
 /** A funnel run as the autopilot reads it: nothing yet, stopped (to continue), failed (stop), finished for something that changed since (write again), or finished. */
 function runNeeds(step: Exclude<Draft2RunStep, "publication">, run: { status: string; winnerId?: string; editorChoiceId?: string; error?: string } | null | undefined, changed: boolean, noun: string): AutopilotNext | undefined {
@@ -367,6 +373,10 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const [content, setContent] = useState<StoryContentResponse>();
   const [error, setError] = useState<string>();
   const [session, setSession] = useState<Draft2SessionView | null>();
+  // The models chosen before the story has a session (sent with the facts, which create it); a session keeps its own.
+  const [pendingModels, setPendingModels] = useState<Draft2ModelChoice>({});
+  const [savingModels, setSavingModels] = useState(false);
+  const [modelsError, setModelsError] = useState<string>();
   // Who plays each part in a run started now, as the server names them with the session it loads first.
   const [cast, setCast] = useState<Draft2Cast>();
   const [running, setRunning] = useState<Draft2RunStep>();
@@ -496,7 +506,8 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
     setRunning(step); setRunError(undefined); setChoiceError(undefined); setFocusError(undefined); setMentionError(undefined);
     try {
       if (step === "facts") {
-        const next = await postStep("facts", { storyId });
+        // A new session: it keeps the models chosen now (the current session's, else the ones chosen before it existed).
+        const next = await postStep("facts", { storyId, models: modelIds(on?.models ?? pendingModels) });
         setSession(next);
         return next;
       }
@@ -589,6 +600,25 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
       }
     }
     show({ active: false, current: undefined, finishedAt: new Date().toISOString() });
+  }
+
+  /** The models chosen in the Models card: kept on the session (its next runs), or until the facts create it; remembered as the default for the next story. */
+  async function chooseModels(next: Draft2ModelChoice) {
+    try { window.localStorage.setItem(MODELS_KEY, JSON.stringify(modelIds(next))); } catch { /* storage unavailable */ }
+    if (!session) { setPendingModels(next); return; }
+    setSavingModels(true); setModelsError(undefined);
+    try {
+      const response = await fetch(`/api/radar/draft2/session?topicId=${encodeURIComponent(topicId)}`, {
+        method: "PATCH", cache: "no-store", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: session.id, models: modelIds(next) }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? "Could not save the models.");
+      setSession(body.session as Draft2SessionView);
+    } catch (cause) {
+      setModelsError(cause instanceof Error ? cause.message : "Could not save the models.");
+    } finally {
+      setSavingModels(false);
+    }
   }
 
   /** Saves one focus field the editor changed, or gives it back to Claude's value; one change at a time. */
@@ -998,6 +1028,12 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   useScreenTitle(current ? DRAFT_2_STEPS.find((step) => step.key === current)?.title : undefined, content?.title);
   // The article beside the screens: kept open between visits on a wide window, where it docks.
   const [sourceOpen, setSourceOpen] = useState(false);
+  // The models the editor chose last, the default before this story has a session.
+  useEffect(() => {
+    let stored: Draft2ModelChoice = {};
+    try { const saved = window.localStorage.getItem(MODELS_KEY); if (saved) stored = parseDraft2ModelChoice(JSON.parse(saved)); } catch { /* storage unavailable */ }
+    if (stored.writer || stored.judge) void Promise.resolve().then(() => setPendingModels(stored));
+  }, []);
   useEffect(() => {
     let stored = false;
     try { stored = window.localStorage.getItem(SOURCE_PANEL_KEY) === "open" && window.matchMedia("(min-width: 1280px)").matches; } catch { /* storage unavailable */ }
@@ -1078,7 +1114,8 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   </>;
 
   // The names a run started now goes by: the funnel steps' writers and judges, the facts' extractor and reviewer, the images' reviewer.
-  const today = todayNames(cast);
+  // The names the screens give the funnel's writer and judge: the session's choice (or the one waiting for the facts), else today's cast.
+  const today = todayNames(cast ? castWithChoice(cast, session ? session.models : pendingModels) : undefined);
   const factsCast = { extractor: draft2ModelName(cast?.facts.extractor.model, "openai"), reviewer: draft2ModelName(cast?.facts.reviewer.model, "anthropic") };
   const imageReviewer = draft2ModelName(cast?.imageReview.model, "openai");
   const focusReviewer = draft2ModelName(cast?.focusReview?.model, "openai");
@@ -1090,6 +1127,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
       </Button>,
       how: <p>{factsCast.extractor} extracts the facts; {factsCast.reviewer} checks them against the article; they loop on {factsCast.reviewer}’s suggestions, at most three extractions. Running the facts again starts a new session: every later step starts over from the new facts, and the earlier session stays as history.</p>,
       body: <>
+        <ModelsCard choice={session ? session.models : pendingModels} cast={cast} saving={savingModels} locked={running !== undefined || Boolean(autopilot?.active)} error={modelsError} onChange={(next) => { void chooseModels(next); }} />
         {running === "facts" ? <LoadingState>{factsCast.extractor} is extracting; {factsCast.reviewer} reviews each round. This can take a minute or two.</LoadingState> : null}
         {runError?.step === "facts" ? <InlineNotice tone="error" title="The facts step stopped">{runError.message}</InlineNotice> : null}
         {session?.step === "facts" && session.error && running !== "facts" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
@@ -1477,6 +1515,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
             <PipelineStrip steps={screenSteps} />
             <p className={styles.screenVitals}>{doneSteps} of {DRAFT_2_STEPS.length} steps done{totals.calls ? ` · ${minutes(totals.ms)} in ${totals.calls} provider calls · ${usd(totals.costMicros)}` : ""}</p>
           </header>
+          <ModelsCard choice={session ? session.models : pendingModels} cast={cast} saving={savingModels} locked={running !== undefined || Boolean(autopilot?.active)} error={modelsError} onChange={(next) => { void chooseModels(next); }} />
           <section className={styles.autopilotCard} aria-labelledby="draft2-autopilot-title">
             <div className={styles.autopilotHead}>
               <div>
@@ -2818,6 +2857,57 @@ function FocusNarrative({ focus, material, description, disabled, onCommit }: {
 }
 
 /** The autopilot's log: each step it ran, how it ended, what it took in time and in the meter's cost, and where it stands. */
+const price = (value: number) => (value < 1 ? value.toFixed(2) : String(value));
+const optionName = (model: string | undefined) => DRAFT2_MODEL_OPTIONS.find((entry) => entry.model === model)?.name ?? draft2ModelName(model);
+
+/**
+ * Who writes and who judges this story's next funnel runs (the opening, the
+ * closing, the deck, the visual script and the caption): the editor's choice,
+ * kept on the session (or until the facts create it), else today's cast. Each
+ * model shows its list price; the descriptions say what the roles cost in the
+ * last real stories, so the choice is made with the numbers in view.
+ */
+function ModelsCard({ choice, cast, saving, locked, error, onChange }: {
+  choice: Draft2ModelChoice | null | undefined;
+  cast?: Draft2Cast;
+  saving: boolean;
+  locked: boolean;
+  error?: string;
+  onChange: (next: Draft2ModelChoice) => void;
+}) {
+  const today = cast?.funnel.opening;
+  const set = (part: "writer" | "judge", model: string) => {
+    const option = DRAFT2_MODEL_OPTIONS.find((entry) => entry.model === model);
+    const next: Draft2ModelChoice = { ...(choice ?? {}) };
+    if (option) next[part] = { provider: option.provider, model: option.model }; else delete next[part];
+    onChange(next);
+  };
+  const writer = choice?.writer?.model ?? today?.writer.model;
+  const judge = choice?.judge?.model ?? today?.judge.model;
+  const select = (part: "writer" | "judge") => <select value={choice?.[part]?.model ?? ""} disabled={locked || saving} onChange={(event) => set(part, event.target.value)}>
+    <option value="">{`Default · ${today ? optionName(today[part].model) : "as configured"}`}</option>
+    {DRAFT2_MODEL_OPTIONS.map((entry) => <option key={entry.model} value={entry.model}>{`${entry.name} · $${price(entry.input)} in / $${price(entry.output)} out per million tokens`}</option>)}
+  </select>;
+  return <section className={styles.autopilotCard} aria-labelledby="draft2-models-title">
+    <div className={styles.autopilotHead}>
+      <div>
+        <h2 id="draft2-models-title" className={styles.autopilotTitle}>Models</h2>
+        <p className={styles.autopilotIntro}>Who writes and who judges the opening, the closing, the deck, the visual script and the caption in this story’s next runs. A run in progress keeps the models it started with; the facts, the focus, the spine, the review and the image reviews keep theirs.</p>
+      </div>
+    </div>
+    <div className={styles.focusGrid}>
+      <div className={styles.focusField}>
+        <FormField label="Writer" description="Writing is about three quarters of a story’s text cost: Claude Sonnet wrote the last stories for about $1.10 each. Sol costs the same per token, Opus twice as much, Luna a twentieth.">{select("writer")}</FormField>
+      </div>
+      <div className={styles.focusField}>
+        <FormField label="Judge" description="Luna judged the last stories for about $0.06 each, in about 90,000 output tokens. At Sol’s or Sonnet’s price the same judgments would cost about $0.90.">{select("judge")}</FormField>
+      </div>
+    </div>
+    {writer && writer === judge ? <InlineNotice tone="warning" title="One model writes and judges">A model judging its own writing tends to be lenient: the gate is only as strict as the judge.</InlineNotice> : null}
+    {error ? <InlineNotice tone="error" title="The models were not saved">{error}</InlineNotice> : null}
+  </section>;
+}
+
 function AutopilotView({ autopilot, trace, now }: { autopilot: Autopilot; trace: readonly Draft2TraceEntry[]; now: number }) {
   // A step's cost: the calls of its trace step made while it ran (the accounts to tag have their own trace step).
   const costOf = (entry: AutopilotEntry) => {

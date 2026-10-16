@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { draft2Cast, draft2ModelName, draft2RevisionEffort, draft2RoleModel, draft2ShadowJudgeEffort, draft2ShadowJudgeModel } from "./draft2-models";
+import { castWithChoice, draft2Cast, draft2ModelName, draft2RevisionEffort, draft2RoleModel, draft2ShadowJudgeEffort, draft2ShadowJudgeModel, parseDraft2ModelChoice } from "./draft2-models";
 
 const defaults = { anthropic: "claude-sonnet-5-5", openai: "gpt-6.1-sol" };
 
@@ -58,4 +58,14 @@ test("today's cast reads the environment the runs read: the judge's variable mov
   assert.equal(extractor.facts.extractor.model, "gpt-6-astra");
   assert.equal(extractor.funnel.visual.judge.model, "gpt-6-astra", "the judges default to Sol's model");
   assert.equal(extractor.funnel.visual.writer.model, "claude-opus-5-5");
+});
+
+test("the editor's choice of writer and judge: only the offered models are kept, a role left out stays today's, and every funnel step takes it", () => {
+  assert.deepEqual(parseDraft2ModelChoice({ writer: "gpt-6.1-sol", judge: "claude-sonnet-5-5" }), { writer: { provider: "openai", model: "gpt-6.1-sol" }, judge: { provider: "anthropic", model: "claude-sonnet-5-5" } });
+  assert.deepEqual(parseDraft2ModelChoice({ writer: { provider: "openai", model: "gpt-6-luna" }, judge: "claude-fable-5-1" }), { writer: { provider: "openai", model: "gpt-6-luna" } }, "a model not offered is left out, as the stored shape is read back");
+  assert.deepEqual(parseDraft2ModelChoice(null), {});
+  const cast = draft2Cast({ DRAFT2_MODEL_JUDGE: "gpt-6-luna" }, "claude-sonnet-5-5");
+  assert.equal(castWithChoice(cast, undefined), cast);
+  const chosen = castWithChoice(cast, { judge: { provider: "anthropic", model: "claude-opus-5-5" } });
+  assert.deepEqual([chosen.funnel.opening.writer.model, chosen.funnel.opening.judge.model, chosen.funnel.visual.judge.model, chosen.facts.reviewer.model], ["claude-sonnet-5-5", "claude-opus-5-5", "claude-opus-5-5", "claude-sonnet-5-5"], "the funnel's judges change; the facts keep theirs");
 });

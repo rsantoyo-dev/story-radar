@@ -11,7 +11,7 @@ import { traceCostMicros } from "./draft2-trace-cost";
 import { Draft2BusyError, Draft2InputError, type Draft2Fact, type Draft2TraceEntry } from "./draft2-facts.types";
 import {
   FUNNEL_ACCEPTABLE_SCORE, FUNNEL_EXTRA_ROUND, FUNNEL_MAX_EXTRA_ROUNDS, factsSnapshot, failedCall, funnelAcceptedWinner, funnelBestVersions, funnelExtendable, funnelFixedCandidates, funnelFreshWanted, funnelRegressions,
-  funnelRenumberedProposals, funnelResumeRound, funnelReviewNote, funnelRoundImproved, funnelRunSummary, funnelTargets, funnelVersions, funnelWrittenCandidates,
+  funnelRenumberedProposals, funnelResumeRound, funnelSchemaWithoutArrayEnums, funnelReviewNote, funnelRoundImproved, funnelRunSummary, funnelTargets, funnelVersions, funnelWrittenCandidates,
   type FunnelCandidate, type FunnelEvaluation, type FunnelFixPass, type FunnelGate, type FunnelIssue, type FunnelPlanRound, type FunnelRegression, type FunnelRole,
   type FunnelRound, type FunnelRun, type FunnelScore, type FunnelShadowJudgment, type FunnelVersion,
 } from "./draft2-funnel";
@@ -169,7 +169,8 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
   const earlier = def.earlierRoles ?? def.roles;
   const roles = resume && stopped
     ? { writer: stopped.writer ?? modelOf(earlier.writer, "writer"), judge: stopped.judge ?? modelOf(earlier.judge, "judge") }
-    : { writer: modelOf(def.roles.writer, "writer"), judge: modelOf(def.roles.judge, "judge") };
+    // The editor's choice on the session (the canvas's Models) wins over today's cast for a new run.
+    : { writer: session.models?.writer ?? modelOf(def.roles.writer, "writer"), judge: session.models?.judge ?? modelOf(def.roles.judge, "judge") };
   // The notes name the model that judges this run (gpt-6-luna is Luna), not its provider.
   const judgeName = draft2ModelName(roles.judge.model, roles.judge.provider);
   const profile = await getCreativeProfile(topicId);
@@ -413,7 +414,8 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
           await pause(round, true);
           return;
         }
-        const judgeRequest = { ...setup.judge, contents: setup.judgeRequest(round, candidates, mechanical, targets), schema: setup.schemas.judge };
+        // A Claude judge's strict schema compiles to a grammar with a size limit: the parser checks the codes and the proposals' values instead.
+        const judgeRequest = { ...setup.judge, contents: setup.judgeRequest(round, candidates, mechanical, targets), schema: roles.judge.provider === "anthropic" ? funnelSchemaWithoutArrayEnums(setup.schemas.judge) : setup.schemas.judge };
         const ids = candidates.map((candidate) => candidate.id);
         // The shadow judgment, when the environment asks for one (another effort, another model, or both), runs beside the real one and never decides.
         const shadowEffort = draft2ShadowJudgeEffort(process.env) ?? judgeEffort;

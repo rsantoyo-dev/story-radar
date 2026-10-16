@@ -778,3 +778,21 @@ export function failedCall(error: unknown): Pick<Draft2TraceEntry, "usage" | "an
     ...(typeof failed.details?.stopReason === "string" ? { stopReason: failed.details.stopReason } : {}),
   };
 }
+
+/**
+ * A schema with every enum inside an array's items removed (the values stay
+ * the parser's to check). Anthropic's strict schemas compile to a grammar with
+ * a size limit, and enums inside arrays are what grows it: the Focus failed
+ * on one (HTTP 400 "The compiled grammar is too large"). A judge played by
+ * Claude reads its evaluation schema this way; codes it names outside the
+ * contract become OTHER and a proposal with a value outside it is dropped.
+ */
+export function funnelSchemaWithoutArrayEnums(schema: Record<string, unknown>): Record<string, unknown> {
+  const strip = (node: unknown, inArray: boolean): unknown => {
+    if (Array.isArray(node)) return node.map((entry) => strip(entry, inArray));
+    if (!node || typeof node !== "object") return node;
+    const entries = Object.entries(node as Record<string, unknown>).filter(([key]) => !(inArray && key === "enum"));
+    return Object.fromEntries(entries.map(([key, value]) => [key, key === "items" ? strip(value, true) : key === "properties" ? Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([name, property]) => [name, strip(property, inArray)])) : strip(value, inArray)]));
+  };
+  return strip(schema, false) as Record<string, unknown>;
+}

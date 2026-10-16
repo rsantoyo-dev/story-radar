@@ -139,3 +139,41 @@ export const DRAFT2_CAPTION_ROLES: { writer: Draft2Provider; judge: Draft2Provid
 const FUNNEL_STEP_ROLES: Record<Draft2FunnelStepName, { writer: Draft2Provider; judge: Draft2Provider }> = {
   opening: DRAFT2_OPENING_ROLES, closing: DRAFT2_CLOSING_ROLES, deck: DRAFT2_DECK_ROLES, visual: DRAFT2_VISUAL_ROLES, caption: DRAFT2_CAPTION_ROLES,
 };
+
+/** A model the editor may choose for the funnel's writer or judge, with its list price per million tokens (the cost meter's rates, creative-text-cost.ts). */
+export type Draft2ModelOption = { model: string; provider: Draft2Provider; name: string; input: number; output: number };
+export const DRAFT2_MODEL_OPTIONS: readonly Draft2ModelOption[] = [
+  { model: "claude-sonnet-5-5", provider: "anthropic", name: "Claude Sonnet 5.5", input: 2, output: 10 },
+  { model: "claude-opus-5-5", provider: "anthropic", name: "Claude Opus 5.5", input: 4, output: 20 },
+  { model: "gpt-6.1-sol", provider: "openai", name: "GPT-6.1 Sol", input: 2, output: 10 },
+  { model: "gpt-6-luna", provider: "openai", name: "GPT-6 Luna", input: 0.1, output: 0.5 },
+];
+
+/**
+ * The editor's choice of who writes and who judges a session's funnel steps
+ * (Opening, Closing, Deck, Visual script, Caption), kept on the session; a
+ * role left out runs on today's cast (the environment). A run records the
+ * models it started with, so a run in progress keeps them whatever the choice
+ * says later.
+ */
+export type Draft2ModelChoice = { writer?: Draft2ModelRole; judge?: Draft2ModelRole };
+
+/** The choice as the canvas sends it ({ writer: "gpt-6.1-sol", judge: "claude-sonnet-5-5" }, a role's model id or nothing): only the offered models are kept. */
+export function parseDraft2ModelChoice(value: unknown): Draft2ModelChoice {
+  const body = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  const pick = (entry: unknown): Draft2ModelRole | undefined => {
+    const id = typeof entry === "string" ? entry : entry && typeof entry === "object" ? (entry as { model?: unknown }).model : undefined;
+    const option = DRAFT2_MODEL_OPTIONS.find((candidate) => candidate.model === id);
+    return option ? { provider: option.provider, model: option.model } : undefined;
+  };
+  const writer = pick(body.writer);
+  const judge = pick(body.judge);
+  return { ...(writer ? { writer } : {}), ...(judge ? { judge } : {}) };
+}
+
+/** Today's cast with the session's choice in place: every funnel step's writer and judge. */
+export function castWithChoice(cast: Draft2Cast, choice: Draft2ModelChoice | null | undefined): Draft2Cast {
+  if (!choice?.writer && !choice?.judge) return cast;
+  const funnel = Object.fromEntries(Object.entries(cast.funnel).map(([step, roles]) => [step, { writer: choice.writer ?? roles.writer, judge: choice.judge ?? roles.judge }])) as Draft2Cast["funnel"];
+  return { ...cast, funnel };
+}

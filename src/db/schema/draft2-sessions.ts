@@ -14,6 +14,7 @@ import type { Draft2Publication } from "@/app/modules/draft2/draft2-publication.
 import type { Draft2Review } from "@/app/modules/draft2/draft2-review.types";
 import type { Draft2Focus } from "@/app/modules/draft2/draft2-focus.types";
 import type { Draft2Opening } from "@/app/modules/draft2/draft2-opening.types";
+import type { Draft2ModelChoice } from "@/app/modules/draft2/draft2-models";
 
 /**
  * One run of the Draft 2 pipeline for a story. Vercel functions keep nothing
@@ -55,6 +56,8 @@ export const draft2Sessions = pgTable("draft2_sessions", {
   caption: jsonb("caption").$type<Draft2Caption>(),
   /** Step 10: what the editor approved and the v1 draft and batch it was copied into for v1's publication. */
   publication: jsonb("publication").$type<Draft2Publication>(),
+  /** The editor's choice of the funnel steps' writer and judge models (the canvas's "Models"); null: today's cast. */
+  models: jsonb("models").$type<Draft2ModelChoice>(),
   threads: jsonb("threads").$type<Draft2Threads>().notNull().default(sql`'{}'::jsonb`),
   trace: jsonb("trace").$type<Draft2TraceEntry[]>().notNull().default(sql`'[]'::jsonb`),
   error: text("error"),

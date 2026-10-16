@@ -748,3 +748,17 @@ test("acceptable and no longer improving: the planned rounds left are not run, a
   const rising = harness({ writes: [writer(), writer(), writer()], judgments: [judge("revise", "c1", { c1: 90 }), judge("revise", "c1.2", { "c1.2": 92 }), judge("revise", "c1.3", { "c1.3": 93 })] });
   assert.equal((await rising.run()).opening?.rounds.length, 3, "a round that raised the best earns the next planned one");
 });
+
+test("the editor's models: a new run writes with the session's writer and judges with its judge; a Claude judge reads its schema without enums inside arrays; the run records both", async () => {
+  const models = { writer: { provider: "openai", model: "gpt-6.1-sol" }, judge: { provider: "anthropic", model: "claude-sonnet-5-5" } };
+  const h = harness({ writes: [writer()], judgments: [judge("accept", "c1", { c1: 96 })], session: { models } });
+  const session = await h.run();
+  assert.equal(h.calls.map((call) => `${call.role}:${call.provider}:${String(call.input.model)}`).join(","), "writer:openai:gpt-6.1-sol,judge:anthropic:claude-sonnet-5-5");
+  assert.equal(json([session.opening?.status, session.opening?.writer, session.opening?.judge]), json(["ready", models.writer, models.judge]));
+  assert.ok(!/"code":\{"type":"string","enum"/.test(JSON.stringify(h.calls[1].input.schema)), "the issue codes carry no enum for a Claude judge");
+  assert.equal(h.calls[0].input.reasoningEffort, "medium", "Sol writes at medium");
+  const plain = harness({ writes: [writer()], judgments: [judge("accept", "c1", { c1: 96 })] });
+  await plain.run();
+  assert.equal(plain.calls.map((call) => call.provider).join(","), "anthropic,openai", "no choice: today's cast");
+  assert.match(JSON.stringify(plain.calls[1].input.schema), /"code":\{"type":"string","enum"/, "Sol's schema keeps its enums");
+});
