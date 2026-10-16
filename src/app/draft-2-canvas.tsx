@@ -10,8 +10,8 @@ import type { Draft2Fact, Draft2FactsEvaluation, Draft2FactsRound, Draft2Session
 import {
   CLASSIC_CONCEPT, CLASSIC_NARRATIVE, FOCUS_ANCHOR_MAX_CHARACTERS, FOCUS_CONCEPT_ARCS, FOCUS_MAX_REVEALS, FOCUS_PREMISE_MAX_CHARACTERS, FOCUS_REVEAL_MAX_CHARACTERS, focusConcept, FOCUS_AUDIENCE_MAX_CHARACTERS, FOCUS_CONSEQUENCE_MAX_CHARACTERS, FOCUS_DIRECTION_MAX_CHARACTERS, FOCUS_FRAMINGS, FOCUS_GOALS, FOCUS_GRAVITIES,
   FOCUS_BEAT_IMAGE_MAX_CHARACTERS, FOCUS_BEAT_SCENE_MAX_CHARACTERS, FOCUS_BEAT_SUBJECT_MAX_CHARACTERS, FOCUS_BEAT_WITHHOLDS_MAX_CHARACTERS, FOCUS_BEAT_WORDS_MAX_CHARACTERS, FOCUS_SPINE_ROLES,
-  FOCUS_NARRATIVE_ENDINGS, FOCUS_NARRATIVE_FORMS, FOCUS_PROGRESSION_MAX_CHARACTERS, FOCUS_STRUCTURES, FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS, focusFindings, focusMaterial, focusNarrative, visualDirectionChanged, wordsFollowFocus,
-  type Draft2Focus, type Draft2FocusField, type Draft2FocusFinding, type Draft2ConceptArc, type Draft2FocusConcept, type Draft2FocusMaterial, type Draft2FocusNarrative, type Draft2FocusSpine, type Draft2FocusValues, type Draft2FocusVoice, type Draft2NarrativeForm, type Draft2SpineBeat, type Draft2SpineRole,
+  FOCUS_NARRATIVE_ENDINGS, FOCUS_NARRATIVE_FORMS, FOCUS_PLAN_NOTES_MAX_CHARACTERS, FOCUS_PROGRESSION_MAX_CHARACTERS, FOCUS_STRUCTURES, FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS, focusFindings, focusMaterial, focusNarrative, visualDirectionChanged, wordsFollowFocus,
+  type Draft2Focus, type Draft2FocusField, type Draft2FocusFinding, type Draft2ConceptArc, type Draft2FocusConcept, type Draft2FocusMaterial, type Draft2FocusNarrative, type Draft2FocusSpine, type Draft2FocusValues, type Draft2FocusVoice, type Draft2NarrativeForm, type Draft2PlanNotes, type Draft2SpineBeat, type Draft2SpineRole,
 } from "@/app/modules/draft2/draft2-focus.types";
 import { TONE_KEYS, toneWords, type ToneKey } from "@/app/modules/draft2/skills/tone";
 import { MAP_PANEL_POSITIONS, type MapPanelPosition } from "@/app/modules/stories/map-panel-position";
@@ -500,7 +500,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
    * up. A run that pauses, or whose request is lost, goes on from its last
    * checkpoint in a new request until it finishes.
    */
-  async function runStep(step: Exclude<Draft2RunStep, "publication">, { continuing = false, more = false, on = session }: { continuing?: boolean; more?: boolean; on?: Draft2SessionView | null } = {}): Promise<Draft2SessionView | undefined> {
+  async function runStep(step: Exclude<Draft2RunStep, "publication">, { continuing = false, more = false, on = session, notes }: { continuing?: boolean; more?: boolean; on?: Draft2SessionView | null; /** The editor's notes for a spine rewrite. */ notes?: string } = {}): Promise<Draft2SessionView | undefined> {
     if (runningRef.current || (step !== "facts" && !on)) return undefined;
     runningRef.current = step;
     setRunning(step); setRunError(undefined); setChoiceError(undefined); setFocusError(undefined); setMentionError(undefined);
@@ -512,7 +512,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
         return next;
       }
       if (step === "focus" || step === "spine" || step === "inventory" || step === "mentions" || step === "review") {
-        const next = await postStep(step, { storyId, sessionId: on?.id });
+        const next = await postStep(step, { storyId, sessionId: on?.id, ...(step === "spine" && notes?.trim() ? { notes } : {}) });
         setSession(next);
         return next;
       }
@@ -1183,7 +1183,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
       actions: <Button variant="primary" size="compact" busy={running === "spine"} disabled={!factsVerified || !focusReady || running !== undefined || savingFocus !== undefined} onClick={() => { void runStep("spine"); }}>
         {running === "spine" ? "Writing…" : focus?.values?.spine ? "Rewrite the spine" : "Write the spine"}
       </Button>,
-      how: <p>Claude reads the focus as it stands (the story, its interest, how it is told) and writes the plan the words and the images follow: the hook’s lever and where its promise is paid, the misreadings the cover must prevent, one beat per slide (what the slide’s words do, what its image adds, what it withholds for the next, the facts it rests on) and the two directions. Every writer and judge after this step reads the spine: the opening and the deck follow its beats, the visual script executes each beat’s image line. Edit any beat, the lever or a direction; your changes stay yours when Claude writes the spine again.</p>,
+      how: <p>Claude reads the focus as it stands (the story, its interest, how it is told) and writes the plan the words and the images follow: the hook’s lever and where its promise is paid, the misreadings the cover must prevent, one beat per slide (what the slide’s words do, what its image adds, what it withholds for the next, the facts it rests on) and the two directions. Every writer and judge after this step reads the spine: the opening and the deck follow its beats, the visual script executes each beat’s image line. Edit any beat, the lever or a direction; your changes stay yours when Claude writes the spine again. Or write notes for Claude: it rewrites the plan as it stands, your changes in it, to follow them.</p>,
       body: <>
         {!factsVerified && !running ? needs("facts", "The spine builds on verified facts; verify them first.") : null}
         {factsVerified && !focusReady && !running ? needs("focus", focus?.values ? "Fix the focus first: see its notes." : "The spine is written from the focus; decide it first.") : null}
@@ -1192,6 +1192,11 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
         {spineFailed && session?.error ? <InlineNotice tone="error" title="The last spine failed">{session.error}{focus?.values?.spine ? " The spine below is the one from before it." : ""}</InlineNotice> : null}
         {focusError ? <InlineNotice tone="error" title="Your change was not saved">{focusError}</InlineNotice> : null}
         {focus?.values?.spine && focus.staleDirections && !spineRunning ? <InlineNotice tone="info" title="The spine was written for another telling">You changed how the story is told; the spine and the directions still follow what Claude decided before. Rewrite the spine to follow it, or edit the beats yourself.</InlineNotice> : null}
+        {focus?.values?.spine ? <SpineNotes
+          last={focus.planNotes?.at(-1)}
+          disabled={!factsVerified || !focusReady || running !== undefined || savingFocus !== undefined}
+          onSubmit={async (notes) => Boolean(await runStep("spine", { notes }))}
+        /> : null}
         {focus?.values && !spineRunning ? <SpineView
           focus={focus}
           findings={spineFindings}
@@ -2536,6 +2541,32 @@ const PAID_BY_LABEL: Record<Draft2LeverPaidBy, string> = { slide2: "Slide 2", mi
  * change stays the editor's when Claude writes the spine again; a part given
  * back goes to Claude's value.
  */
+/**
+ * The editor's notes for Claude on the spine, in their own words (2026-10-16:
+ * "a field to give suggestions and recreate"): Claude rewrites the plan as it
+ * stands, the editor's changes in it, to follow them within the facts, and
+ * says what it did with each under Beats. The typed notes stay until a rewrite
+ * succeeds; the last ones are shown.
+ */
+function SpineNotes({ last, disabled, onSubmit }: { last?: Draft2PlanNotes; disabled: boolean; onSubmit: (notes: string) => Promise<boolean> }) {
+  const [notes, setNotes] = useState("");
+  const [sending, setSending] = useState(false);
+  return <div className={styles.focusBody}>
+    <FormField label="Notes for Claude" description="What to change, in your words: a beat, an attribution, a word to avoid, what the cover promises, a background. Claude rewrites the spine and both directions from the plan as it stands, your changes in it, following your notes within the verified facts; a note the facts do not hold stays out, and Claude says so under Beats. One Claude call; the opening and every step after it follow the new spine.">
+      <textarea value={notes} rows={4} maxLength={FOCUS_PLAN_NOTES_MAX_CHARACTERS} disabled={disabled} onChange={(event) => setNotes(event.target.value)} />
+    </FormField>
+    <ActionRow>
+      <Button size="compact" variant="secondary" busy={sending} disabled={disabled || !notes.trim()} onClick={() => {
+        setSending(true);
+        void onSubmit(notes).then((done) => { if (done) setNotes(""); }).finally(() => setSending(false));
+      }}>
+        {sending ? "Rewriting…" : "Rewrite with these notes"}
+      </Button>
+    </ActionRow>
+    {last ? <p className={styles.factMeta}>Your last notes, on focus v{last.focusVersion}: “{clip(last.text, 280)}”</p> : null}
+  </div>;
+}
+
 function SpineView({ focus, findings, eligibleLevers: levers, saving, locked, onSave, onReset }: {
   focus: Draft2Focus;
   findings: readonly Draft2FocusFinding[];

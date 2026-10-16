@@ -195,6 +195,9 @@ export const FOCUS_BEAT_IMAGE_MAX_CHARACTERS = 240;
 export const FOCUS_BEAT_WITHHOLDS_MAX_CHARACTERS = 160;
 /** The image's dominant subject, in a few words: the program compares consecutive beats' subjects. */
 export const FOCUS_BEAT_SUBJECT_MAX_CHARACTERS = 120;
+/** The editor's notes for a rewrite of the plan (2026-10-16: "a field to give suggestions and recreate"), and how many past notes the focus keeps. */
+export const FOCUS_PLAN_NOTES_MAX_CHARACTERS = 2_000;
+export const FOCUS_PLAN_NOTES_KEPT = 10;
 const MAX_BEAT_FACTS = 6;
 export type Draft2SpineRole = (typeof FOCUS_SPINE_ROLES)[number];
 export type Draft2SpinePosition = (typeof FOCUS_SPINE_POSITIONS)[number];
@@ -324,7 +327,20 @@ export type Draft2Focus = {
   deliberation?: Draft2FocusDeliberation;
   /** What the spine's image lines would make the images pay for (spineImageProblems), for the editor; never blocking. Absent when there is none. */
   spineProblems?: Draft2SpineProblem[];
+  /** The editor's notes the plan was rewritten with, oldest first, the last few: what was asked and on which focus version. Claude's answer to the last is the spine's reason. */
+  planNotes?: Draft2PlanNotes[];
 };
+
+export type Draft2PlanNotes = { at: string; text: string; focusVersion: number };
+
+/** The editor's notes for a rewrite, as typed: trimmed, line breaks kept; empty is none; too long is an input error. */
+export function parsePlanNotes(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string") throw new Draft2InputError("The notes are text.");
+  const text = value.replace(/\r\n?/g, "\n").replace(/[ \t]+\n/g, "\n").trim();
+  if ([...text].length > FOCUS_PLAN_NOTES_MAX_CHARACTERS) throw new Draft2InputError(`Keep the notes under ${FOCUS_PLAN_NOTES_MAX_CHARACTERS.toLocaleString("en")} characters.`);
+  return text || undefined;
+}
 
 /** What recurs on every slide by design, so a series check does not count it: a narrative form's anchor (the guide, the object, the place, the line); nothing for a classic telling. */
 export const spineRecurring = (narrative: Pick<Draft2FocusNarrative, "form" | "anchor"> | undefined): string => narrative && narrative.form !== "classic" ? narrative.anchor : "";
@@ -791,9 +807,10 @@ export type Draft2FocusPlan = { levers: Draft2FocusLevers; guards?: Draft2FocusG
  * the directions are no longer stale. Within a decision the version does not
  * move again (the decision moved it); a rewrite the editor asked for does.
  */
-export function focusWithPlan(focus: Draft2Focus, plan: Draft2FocusPlan, now: Date, { bump = true } = {}): Draft2Focus {
+export function focusWithPlan(focus: Draft2Focus, plan: Draft2FocusPlan, now: Date, { bump = true, notes }: { bump?: boolean; notes?: string } = {}): Draft2Focus {
   if (!focus.values) throw new Draft2InputError("Decide the focus before rewriting its plan.");
-  const owned = (field: Draft2FocusField) => focus.edited.includes(field);
+  // A rewrite with the editor's notes starts from the plan as it stands, the editor's changes in it, so the whole new plan is written and becomes Claude's.
+  const owned = (field: Draft2FocusField) => !notes && focus.edited.includes(field);
   const written: Partial<Draft2FocusValues> = {
     ...(owned("levers") ? {} : { levers: plan.levers }),
     ...(owned("spine") ? {} : { spine: plan.spine }),
@@ -815,6 +832,10 @@ export function focusWithPlan(focus: Draft2Focus, plan: Draft2FocusPlan, now: Da
     reasons: { ...focus.reasons, ...reasons },
     staleDirections: false,
     updatedAt: now.toISOString(),
+    ...(notes ? {
+      edited: focus.edited.filter((field) => !FOCUS_PLAN_FIELDS.includes(field)),
+      planNotes: [...(focus.planNotes ?? []), { at: now.toISOString(), text: notes, focusVersion: focus.version }].slice(-FOCUS_PLAN_NOTES_KEPT),
+    } : {}),
   };
 }
 

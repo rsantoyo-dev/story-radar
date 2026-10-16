@@ -21,10 +21,14 @@ import type { Draft2Skill } from "./draft2-skills";
  * on slide 2 unless the cover's headline makes the claim it prevents; the
  * images a sequence, not a series (the program counts one subject on more
  * than two thirds of the beats), and no figure asked of an image.
+ * Version 5, the same day: the editor's notes (the Spine screen's "Rewrite
+ * with these notes"): the planner revises the plan the focus already carries
+ * to follow them, within the facts and these rules, and says in the spine's
+ * reason what it did with each.
  */
 export const SPINE_SKILL: Draft2Skill = {
   name: "spine",
-  version: "4",
+  version: "5",
   text: `# The spine
 
 The spine is the carousel's story in beats, one per slide, written before any
@@ -136,6 +140,18 @@ story takes the ones it needs, in this order, and may repeat rising:
   have it (it may react on another slide). An identity's default cover
   ("the cover on terracotta") is the default of one post, not of every post.`,
   roleText: {
+    "focus-planner": `## The editor's notes
+notes, when present, are the editor's instructions on the plan the focus
+already carries (focus.levers, guards, spine, direction and
+visualDirection), in the editor's words. Return the whole plan revised:
+follow every note within the verified facts and the rules above, and keep
+what no note touches as it is, word for word where it still fits. A beat a
+note changes may change what the beats around it withhold, and the
+directions restate the revised beats. A note is guidance, never a fact: a
+name, a date, a number or a claim the facts do not give stays out, and so
+does a note that would break a rule above or the brand's identity.
+reasons.spine says, in one or two sentences, what you did with each note
+and which you could not follow, and why.`,
     "opening-writer": `## The spine
 The focus has a spine (focus.spine): the cover is its first beat and slide 2
 its second. The cover's words do what the hook beat's words say and promise

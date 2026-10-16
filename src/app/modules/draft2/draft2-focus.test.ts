@@ -148,6 +148,8 @@ function harness({ answers = [], plans = [], reviews = [], session, busy = false
     rewrite: () => exports.rewriteDraft2FocusPlan({ topicId, storyId, sessionId }),
     /** The Spine step: the plan written from the focus as it stands. */
     plan: () => exports.planDraft2Spine({ topicId, storyId, sessionId }),
+    /** The Spine step with the editor's notes: the plan as it stands, revised to follow them. */
+    planWithNotes: (notes: string) => exports.planDraft2Spine({ topicId, storyId, sessionId, notes }),
     /** The decision calls alone, without the plan calls between them. */
     decisions: () => calls.filter((call) => call.schemaName === "draft2_focus"),
     calls,
@@ -186,7 +188,7 @@ test("Claude decides the focus from the cached facts, the brand brief, the profi
   assert.equal(json(focus.decidedBy), json({ provider: "anthropic", model: "claude-sonnet-5-5" }));
   const [decisionCall] = session.trace.filter((entry) => entry.step === "focus");
   assert.equal(session.trace.length, 2, "the facts trace is kept; the decision is one call, and the plan is the Spine step's");
-  assert.equal(json([decisionCall.provider, decisionCall.operation, decisionCall.outcome, decisionCall.skillVersions, decisionCall.cacheWriteTokens]), json(["anthropic", "draft2_focus", "ok", { focus: "16", discovery: "1", arcs: "1", narratives: "4", spine: "4" }, 900]));
+  assert.equal(json([decisionCall.provider, decisionCall.operation, decisionCall.outcome, decisionCall.skillVersions, decisionCall.cacheWriteTokens]), json(["anthropic", "draft2_focus", "ok", { focus: "16", discovery: "1", arcs: "1", narratives: "4", spine: "5" }, 900]));
   assert.equal(json([focus.values?.spine, focus.values?.levers, focus.staleDirections]), json([undefined, undefined, false]), "no plan yet: the Spine step writes it");
   assert.equal(focus.deliberation?.approaches.length, 3, "the tellings Claude compared stay on the focus for the editor");
   assert.equal(json([focus.values?.narrative, focus.inventoryVersion, h.reviewCalls.length]), json([focusTypes.CLASSIC_NARRATIVE, 2, 0]), "a classic story is not reviewed");
@@ -195,7 +197,7 @@ test("Claude decides the focus from the cached facts, the brand brief, the profi
   const planned = await h.plan();
   const planCall = planned.trace[planned.trace.length - 1];
   assert.equal(json([planned.step, planned.status, planned.error]), json(["spine", "ready", null]), "the Spine step claims the session and ends it ready");
-  assert.equal(json([planCall.operation, planCall.outcome, planCall.effort, planCall.skillVersions]), json(["draft2_focus_plan", "ok", "high", { focus: "16", levers: "1", spine: "4", reader: "2" }]), "a classic telling: the planner reads the focus, levers, spine and reader skills only");
+  assert.equal(json([planCall.operation, planCall.outcome, planCall.effort, planCall.skillVersions]), json(["draft2_focus_plan", "ok", "high", { focus: "16", levers: "1", spine: "5", reader: "2" }]), "a classic telling: the planner reads the focus, levers, spine and reader skills only");
   const spined = planned.focus!;
   assert.equal(json([spined.version, spined.values?.spine?.beats.length, spined.values?.direction, spined.reasons?.spine, spined.staleDirections]), json([2, 7, PLAN.direction, "Why spine.", false]), "the plan's spine, directions and reasons join the decision, and the version moves");
   assert.equal(json(Object.keys((h.calls[1].contents as { focus: Record<string, unknown> }).focus)), json(["line", "interest", "audience", "framing", "readerConsequence", "structure", "goal", "voice"]), "the planner reads the decision, the interest first, without the empty directions");
@@ -390,7 +392,46 @@ test("after the editor changes how the story is told, Claude rewrites the plan f
   assert.equal(json([contents.task, contents.focus.narrative?.form, "spine" in contents.focus, contents.editorChoices]), json(["plan", "character-guide", true, {}]), "the planner reads the decision, the earlier spine and the parts the editor owns (none here)");
   assert.equal(json((call.contents as { material?: unknown }).material), json(focusTypes.focusMaterial(INVENTORY as never)), "and People and places, as found now");
   const last = session.trace[session.trace.length - 1];
-  assert.equal(json([last.operation, last.outcome, last.effort, last.skillVersions]), json(["draft2_focus_plan", "ok", "high", { focus: "16", levers: "1", spine: "4", reader: "2", narratives: "4" }]));
+  assert.equal(json([last.operation, last.outcome, last.effort, last.skillVersions]), json(["draft2_focus_plan", "ok", "high", { focus: "16", levers: "1", spine: "5", reader: "2", narratives: "4" }]));
+});
+
+test("with the editor's notes, Claude revises the plan as it stands, the editor's changes in it; the whole new plan is Claude's and the notes are kept", async () => {
+  const revised = { ...PLAN, direction: "Name the study once on slide 2; tell the facts after it without attribution.", reasons: { ...PLAN.reasons, spine: "Moved the attribution to slide 2 as asked; left out the year, which no fact gives." } };
+  const h = harness({ answers: [answer()], plans: [PLAN, revised] });
+  await h.decide();
+  await h.plan();
+  // The editor changed a beat and the direction by hand before writing notes.
+  const handBeats = ARC_SPINE.beats.map((beat, index) => index === 0 ? { ...beat, scene: "The editor's own cover scene." } : beat);
+  await h.edit("spine", { value: { beats: handBeats } });
+  const before = (await h.edit("direction", { value: "The editor's direction." })).focus!;
+  assert.deepEqual(before.edited, ["spine", "direction"]);
+  const notes = "Attribute once, on slide 2, to the original study.\nNever say \"critical temperature\".";
+  const focus = (await h.planWithNotes(notes)).focus!;
+  const call = h.calls[h.calls.length - 1];
+  const contents = call.contents as { notes?: string; editorChoices: unknown; focus: { spine?: { scene: string }[]; direction?: string } };
+  assert.equal(contents.notes, notes, "the notes go to the planner as written");
+  assert.equal(json(contents.editorChoices), "{}", "nothing is held back: the planner revises the whole plan");
+  assert.equal(json([contents.focus.spine?.[0]?.scene, contents.focus.direction]), json(["The editor's own cover scene.", "The editor's direction."]), "from the plan as it stands, the editor's changes in it");
+  assert.match(String(call.instructions), /## The editor's notes/);
+  assert.equal(focus.values?.direction, revised.direction, "Claude's revised plan replaces the editor's direction");
+  assert.equal(json(focus.values?.spine), json(focus.ai?.spine), "and the spine is Claude's");
+  assert.deepEqual(focus.edited, [], "the plan's fields are Claude's again");
+  assert.equal(focus.reasons?.spine, revised.reasons.spine, "Claude says what it did with each note");
+  assert.equal(json(focus.planNotes?.map((entry) => [entry.text, entry.focusVersion])), json([[notes, before.version]]));
+  assert.equal(focus.version, before.version + 1);
+  // A rewrite without notes keeps a hand edit made after it, as before.
+  await h.edit("direction", { value: "Edited again by hand." });
+  const plain = (await h.plan()).focus!;
+  assert.equal(plain.values?.direction, "Edited again by hand.");
+  assert.equal(plain.planNotes?.length, 1, "a rewrite without notes adds none");
+});
+
+test("the notes as the route reads them: trimmed, line breaks kept, empty is none, too long refused", () => {
+  assert.equal(focusTypes.parsePlanNotes("  Attribute once.\r\nNo jargon.  "), "Attribute once.\nNo jargon.");
+  assert.equal(focusTypes.parsePlanNotes("   "), undefined);
+  assert.equal(focusTypes.parsePlanNotes(undefined), undefined);
+  assert.throws(() => focusTypes.parsePlanNotes("x".repeat(focusTypes.FOCUS_PLAN_NOTES_MAX_CHARACTERS + 1)), /under 2,000 characters/);
+  assert.throws(() => focusTypes.parsePlanNotes(42), /The notes are text/);
 });
 
 test("the plan reads the Topic's last published levers, and a primary these facts cannot carry is asked for again with the list", async () => {

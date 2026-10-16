@@ -269,3 +269,34 @@ beats, both directions); these rules keep the next one from needing it.
 
 No judge or fixed call was added. Spine v4 changes the plan's instructions
 only; spines already written keep their beats.
+
+## 12. Addendum, 2026-10-16: notes for Claude (spine v5)
+
+The editor's ask, after hand-applying a list of notes to the popcorn story's
+spine: "we should have a field to give suggestions and recreate". Editing
+every beat by hand fits exact wording; notes fit intent ("attribute once, on
+slide 2", "never say critical temperature", "pay the jump on the cover").
+
+- **The Spine screen** has a "Notes for Claude" field above the plan and a
+  "Rewrite with these notes" button (only once a spine exists). The typed
+  notes stay in the field until a rewrite succeeds; the last notes are shown
+  under it with the focus version they were written on.
+- **The request**: POST /api/radar/draft2/spine takes `notes` (at most 2,000
+  characters, `parsePlanNotes`). `planDraft2Spine` sends them to the planner
+  as `notes` beside the focus, which already carries the plan as it stands
+  (levers, guards, spine, directions), the editor's hand changes in it.
+  Nothing is held back as the editor's (`editorChoices` is empty), so the
+  planner returns the whole plan revised.
+- **The rule** (spine skill v5, the planner's part): follow every note within
+  the verified facts and the spine's rules; keep what no note touches, word
+  for word where it still fits; a name, date, number or claim the facts do
+  not give stays out (the popcorn notes asked for "2015", which no fact
+  holds); `reasons.spine` says what was done with each note and what could
+  not be followed. The reason shows under Beats.
+- **After it**: the plan's fields are Claude's again (`edited` loses levers,
+  spine and the directions), the focus version moves (the opening and every
+  step after it see the change), and the notes are kept on the focus
+  (`planNotes`, the last ten, with time and version). A later rewrite without
+  notes works as before: it keeps hand edits and adds no notes.
+- **Cost**: one plan call, plus one more only when the first answer breaks a
+  rule the program checks (the image checks, the shape).

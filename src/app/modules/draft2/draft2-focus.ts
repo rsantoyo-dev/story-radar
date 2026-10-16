@@ -253,7 +253,7 @@ async function focusCall<T>({ apiKey, model, trace, verifiedFacts, auditContext,
  * focus and spine skills, and the skills its telling needs), its request and
  * its parse, honoring the parts of the plan the editor owns.
  */
-function planCall(focus: Draft2Focus, { facts, title, brief, editorChoices, material, recentLevers, avoid = [], covers = [] }: { facts: readonly Draft2Fact[]; title: string; brief: string; editorChoices: Record<string, unknown>; material?: Draft2FocusMaterial; recentLevers: readonly string[]; avoid?: readonly string[]; covers?: readonly Draft2RecentCover[] }) {
+function planCall(focus: Draft2Focus, { facts, title, brief, editorChoices, material, recentLevers, avoid = [], covers = [], notes }: { facts: readonly Draft2Fact[]; title: string; brief: string; editorChoices: Record<string, unknown>; material?: Draft2FocusMaterial; recentLevers: readonly string[]; avoid?: readonly string[]; covers?: readonly Draft2RecentCover[]; notes?: string }) {
   const values = focus.values!;
   // The spine's words are what the writers say: the reader's words, never the source's abbreviations.
   const planner = composeInstructions("focus-planner", [FOCUS_SKILL, LEVERS_SKILL, SPINE_SKILL, READER_SKILL, ...creativeSkills(values)], brief);
@@ -266,7 +266,8 @@ function planCall(focus: Draft2Focus, { facts, title, brief, editorChoices, mate
     instructions: planner.instructions,
     skillVersions: planner.skillVersions,
     // People and places' material: the visual direction shows the people with a verified portrait through it, never anyone else.
-    contents: { task: "plan", title, focus: told, ...(material ? { material } : {}), eligibleLevers: eligible, recentLevers, ...(covers.length ? { recentCovers: recentCoversForModels(covers) } : {}), editorChoices: owned } as Record<string, unknown>,
+    // The editor's notes on the plan the focus already carries: the planner revises it to follow them (the spine skill's "editor's notes").
+    contents: { task: "plan", title, focus: told, ...(material ? { material } : {}), eligibleLevers: eligible, recentLevers, ...(covers.length ? { recentCovers: recentCoversForModels(covers) } : {}), editorChoices: owned, ...(notes ? { notes } : {}) } as Record<string, unknown>,
     // The first answer's image lines are checked and asked for again with what they break; the second's problems go to the editor as notes.
     parse: (answer: string, attempt: number) => parseFocusPlan(answer, { known: new Set(facts.map((fact) => fact.id)), structure: values.structure, eligibleLevers: eligible, editorChoices: owned, ...(attempt < FOCUS_ATTEMPTS ? { imageCheck: { avoid, recurring: spineRecurring(values.narrative) } } : {}) }),
   };
@@ -281,9 +282,11 @@ function planCall(focus: Draft2Focus, { facts, title, brief, editorChoices, mate
  * Claude's, the focus version moves and the stale mark clears. The Opening
  * and every step after it read the spine through the focus version they
  * follow. The session is claimed as the step "spine" while it runs; a failure
- * keeps the focus as it was, with the trace.
+ * keeps the focus as it was, with the trace. With the editor's notes, Claude
+ * revises the plan as it stands (the editor's changes in it) to follow them,
+ * and the whole new plan is Claude's; the notes are kept on the focus.
  */
-export async function planDraft2Spine({ topicId, storyId, sessionId }: Draft2FocusInput): Promise<Draft2SessionRow> {
+export async function planDraft2Spine({ topicId, storyId, sessionId, notes }: Draft2FocusInput & { notes?: string }): Promise<Draft2SessionRow> {
   const session = await getDraft2Session(topicId, sessionId);
   if (!session || session.storyId !== storyId) throw new Draft2InputError("This Draft 2 session was not found for the story. Reload the canvas.");
   const focus = session.focus;
@@ -305,7 +308,7 @@ export async function planDraft2Spine({ topicId, storyId, sessionId }: Draft2Foc
   let plan;
   try {
     plan = await withCreativeTextBudget({ topicId, storyId, runId: session.id }, () => focusCall({
-      apiKey, model, trace, verifiedFacts: openingFactsSnapshot(facts), auditContext, operation: "draft2_focus_plan", ...planCall(focus, { facts, title: content.title, brief, editorChoices: editorChoicesOf(focus), recentLevers, avoid, covers, ...(session.inventory?.status === "ready" ? { material: focusMaterial(session.inventory) } : {}) }),
+      apiKey, model, trace, verifiedFacts: openingFactsSnapshot(facts), auditContext, operation: "draft2_focus_plan", ...planCall(focus, { facts, title: content.title, brief, editorChoices: notes ? {} : editorChoicesOf(focus), recentLevers, avoid, covers, notes, ...(session.inventory?.status === "ready" ? { material: focusMaterial(session.inventory) } : {}) }),
       schema: DRAFT2_FOCUS_PLAN_SCHEMA, effort: "high", maxOutputTokens: PLAN_MAX_OUTPUT_TOKENS, again: PLAN_AGAIN,
     }));
   } catch (error) {
@@ -316,7 +319,7 @@ export async function planDraft2Spine({ topicId, storyId, sessionId }: Draft2Foc
   } finally {
     clearInterval(heartbeat);
   }
-  const updated = await updateDraft2Session(session.id, { focus: focusWithSpineProblems(focusWithPlan(focus, plan, new Date()), avoid), trace, status: "ready", error: null });
+  const updated = await updateDraft2Session(session.id, { focus: focusWithSpineProblems(focusWithPlan(focus, plan, new Date(), { notes }), avoid), trace, status: "ready", error: null });
   if (!updated) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
   return updated;
 }
