@@ -111,6 +111,21 @@ export const DRAFT_2_PHASES = [
 
 export const draft2StepPhase = (step: Draft2StepKey) => DRAFT_2_PHASES.find((phase) => (phase.steps as readonly string[]).includes(step))!;
 
+/** The steps the autopilot runs, in order: the accounts to tag (a run of the caption's screen) come after the spine, before the words. */
+export const AUTOPILOT_ORDER = ["facts", "inventory", "focus", "spine", "mentions", "opening", "closing", "deck", "review", "visual", "images"] as const;
+
+/**
+ * Whether the autopilot runs a step on its way to a target ("Run to here" on
+ * a step's screen): every step up to the target, the target included. No
+ * target, or one past the images (the caption, the publish), runs to the
+ * images, as "Run to images" always did.
+ */
+export function autopilotRuns(step: string, until: string | undefined): boolean {
+  const order: readonly string[] = AUTOPILOT_ORDER;
+  const limit = until === undefined ? -1 : order.indexOf(until);
+  return limit < 0 || order.indexOf(step) <= limit;
+}
+
 /** The screens before and after one: the overview comes before the first step; the last step has none after it. */
 export function adjacentDraft2Steps(step: Draft2StepKey | undefined): { previous?: Draft2StepKey | "overview"; next?: Draft2StepKey } {
   if (!step) return { next: DRAFT_2_STEPS[0].key };

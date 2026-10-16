@@ -35,7 +35,7 @@ import {
 } from "@/app/modules/draft2/draft2-funnel";
 import { DRAFT2_OPENING_EARLIER_ROLES, DRAFT2_OPENING_ROLES, draft2ModelName, type Draft2Cast, type Draft2FunnelStepName } from "@/app/modules/draft2/draft2-models";
 import {
-  adjacentDraft2Steps, contentStatusLabel, DRAFT_2_STEPS, draft2RailState, draft2StepFromPath, draft2StepHref, draft2StepPhase, minutes, paragraphs, sessionMetrics, sourceHost, stepMetrics, storyHref, traceUsageLine, usd, wordCount,
+  adjacentDraft2Steps, AUTOPILOT_ORDER, autopilotRuns, contentStatusLabel, DRAFT_2_STEPS, draft2RailState, draft2StepFromPath, draft2StepHref, draft2StepPhase, minutes, paragraphs, sessionMetrics, sourceHost, stepMetrics, storyHref, traceUsageLine, usd, wordCount,
   type Draft2StepKey,
 } from "./draft-2-canvas.core";
 import {
@@ -89,7 +89,7 @@ class Draft2LostRequest extends Error {}
 
 /** One step the autopilot ran, how it ended, and what it took. */
 type AutopilotEntry = { step: Draft2RunStep; status: "ready" | "needs-review" | "failed"; ms: number; startedAt: string; /** The best score a funnel step reached. */ score?: number };
-type Autopilot = { active: boolean; startedAt: string; current?: Draft2RunStep; steps: AutopilotEntry[]; outcome?: string; finishedAt?: string };
+type Autopilot = { active: boolean; startedAt: string; current?: Draft2RunStep; steps: AutopilotEntry[]; outcome?: string; finishedAt?: string; /** The step the run stops after ("Run to here"); the images otherwise. */ until?: Draft2StepKey };
 type AutopilotNext = { step: Exclude<Draft2RunStep, "publication">; continuing?: boolean } | { done: true } | { blocked: string };
 const STEP_TITLE: Record<Draft2RunStep, string> = {
   facts: "Facts", focus: "Focus", spine: "Spine", inventory: "People and places", mentions: "Accounts to tag", opening: "Opening", closing: "Closing", deck: "Deck", review: "Review", visual: "Visual script", images: "Images", caption: "Caption", publication: "Publish",
@@ -539,15 +539,16 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
 
   /**
    * Runs every step to the images without stopping, from wherever the session
-   * stands: each step keeps the judge's winner; a step that ends under the
-   * gate is marked and the run goes on; a failure, or a step that needs the
-   * editor, stops it. The editor reviews at the end: re-runs or chooses in
-   * any step, confirms the accounts, writes the caption and approves.
+   * stands, or to the step the editor named ("Run to here" on its screen):
+   * each step keeps the judge's winner; a step that ends under the gate is
+   * marked and the run goes on; a failure, or a step that needs the editor,
+   * stops it. The editor reviews at the end: re-runs or chooses in any step,
+   * confirms the accounts, writes the caption and approves.
    */
-  async function runAutopilot() {
+  async function runAutopilot({ until }: { until?: Draft2StepKey } = {}) {
     if (runningRef.current || autopilot?.active) return;
     stopRequested.current = false;
-    let state: Autopilot = { active: true, startedAt: new Date().toISOString(), steps: [] };
+    let state: Autopilot = { active: true, startedAt: new Date().toISOString(), steps: [], ...(until ? { until } : {}) };
     const show = (change: Partial<Autopilot>) => { state = { ...state, ...change }; setAutopilot(state); };
     show({});
     let current: Draft2SessionView | null = session ?? null;
@@ -557,6 +558,11 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
       const next = nextAutopilotStep(current, Date.now());
       if ("done" in next) { show({ outcome: "The images are made. Confirm the accounts to tag, write the caption and approve the carousel for publishing." }); break; }
       if ("blocked" in next) { show({ outcome: next.blocked }); break; }
+      // Past the step the editor named: stop there, with what was run.
+      if (until && !autopilotRuns(next.step, until)) {
+        show({ outcome: state.steps.length ? `Reached the ${STEP_TITLE[until as Draft2RunStep].toLowerCase()}, as you asked; the steps after it wait for you.` : `The ${STEP_TITLE[until as Draft2RunStep].toLowerCase()} is already done; nothing to run before it.` });
+        break;
+      }
       if (next.step === previous) { show({ outcome: `The ${STEP_TITLE[next.step].toLowerCase()} step did not advance; look at it before going on.` }); break; }
       previous = next.step;
       show({ current: next.step });
@@ -1052,10 +1058,13 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const stoppedAt = session ? new Date(session.updatedAt).toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit" }) : "";
   const traceOf = (screen: Draft2StepKey) => (session?.trace ?? []).filter((entry) => entry.step === screen || (screen === "caption" && entry.step === "mentions"));
 
+  // "Run to here": on a step's screen before the images, the autopilot runs every step up to this one and stops.
+  const runToHere = current && current !== "images" && (AUTOPILOT_ORDER as readonly string[]).includes(current) ? current : undefined;
   const autopilotButtons = <>
     {autopilot?.active ? <Button variant="secondary" size="compact" disabled={stopRequested.current} onClick={() => { stopRequested.current = true; }}>Stop after this step</Button> : null}
+    {runToHere && !autopilot?.active ? <Button variant="secondary" size="compact" disabled={!text.length || session === undefined || running !== undefined} onClick={() => { void runAutopilot({ until: runToHere }); }}>Run to here</Button> : null}
     <Button variant="primary" size="compact" busy={autopilot?.active} disabled={!text.length || session === undefined || running !== undefined || autopilot?.active} onClick={() => { void runAutopilot(); }}>
-      {autopilot?.active ? `Running ${autopilot.current ? STEP_TITLE[autopilot.current].toLowerCase() : ""}…` : "Run to images"}
+      {autopilot?.active ? `Running ${autopilot.current ? STEP_TITLE[autopilot.current].toLowerCase() : ""}…${autopilot.until ? ` to the ${STEP_TITLE[autopilot.until as Draft2RunStep].toLowerCase()}` : ""}` : "Run to images"}
     </Button>
   </>;
 

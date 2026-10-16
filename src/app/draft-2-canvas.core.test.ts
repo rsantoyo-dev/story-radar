@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  adjacentDraft2Steps, DRAFT_2_PHASES, DRAFT_2_STEPS, draft2RailState, draft2StepForKey, draft2StepFromPath, draft2StepHref, draft2StepNumber, draft2StepPhase,
+  adjacentDraft2Steps, AUTOPILOT_ORDER, autopilotRuns, DRAFT_2_PHASES, DRAFT_2_STEPS, draft2RailState, draft2StepForKey, draft2StepFromPath, draft2StepHref, draft2StepNumber, draft2StepPhase,
   minutes, sessionMetrics, stepMetrics, usd, draft2Href, paragraphs, sourceHost, storyHref, traceUsageLine, wordCount,
 } from "./draft-2-canvas.core";
 
@@ -116,4 +116,13 @@ test("the anchor plate's charge counts with the images'", () => {
   const images = { slides: [{ attempts: [{ costMicros: 30_000 }, { costMicros: 20_000 }] }], anchorPlate: { costMicros: 5_000 }, masterPlate: { costMicros: 7_000 } };
   assert.equal(stepMetrics([], images).images.costMicros, 62_000, "the plates' charges count with the slides'");
   assert.equal(sessionMetrics([], images).costMicros, 62_000);
+});
+
+test("run to here: the autopilot runs every step up to the one on screen, the accounts to tag before the words; no target, or one past the images, runs to the images", () => {
+  assert.deepEqual(AUTOPILOT_ORDER.filter((step) => autopilotRuns(step, "spine")), ["facts", "inventory", "focus", "spine"]);
+  assert.deepEqual(AUTOPILOT_ORDER.filter((step) => autopilotRuns(step, "opening")), ["facts", "inventory", "focus", "spine", "mentions", "opening"], "the accounts to tag run before the opening");
+  assert.equal(autopilotRuns("mentions", "spine"), false, "the accounts to tag are past the spine");
+  assert.equal(AUTOPILOT_ORDER.filter((step) => autopilotRuns(step, undefined)).length, AUTOPILOT_ORDER.length);
+  assert.equal(AUTOPILOT_ORDER.filter((step) => autopilotRuns(step, "caption")).length, AUTOPILOT_ORDER.length, "the caption is not an autopilot step: run to the images");
+  assert.equal(autopilotRuns("images", "publish"), true);
 });
