@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { criterionFloor, funnelEvaluationSchema, funnelParseEvaluation, funnelRefineRequest, funnelSchemaWithoutArrayEnums, funnelScorePasses, numbersIn, statedNumbers } from "./draft2-funnel";
+import { criterionFloor, lengthHint, funnelEvaluationSchema, funnelParseEvaluation, funnelRefineRequest, funnelSchemaWithoutArrayEnums, funnelScorePasses, numbersIn, statedNumbers } from "./draft2-funnel";
 import { DECK_GATE } from "./draft2-deck.types";
 import { Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
 
@@ -88,4 +88,10 @@ test("a Claude judge's evaluation schema has no enum inside an array, and keeps 
   assert.deepEqual(stripped.properties.verdict, { type: "string", enum: ["accept", "revise"] }, "an enum outside an array stays");
   assert.deepEqual(stripped.properties.issues.items?.properties.code, { type: "string" });
   assert.deepEqual((schema.required as string[]), (stripped as unknown as { required: string[] }).required);
+});
+
+test("a length finding says how many words to remove, at least: one more than the excess, so the fixed text ends under its limit", () => {
+  assert.equal(lengthHint("The penultimate body has 31 words; the limit is 30."), "The penultimate body has 31 words; the limit is 30. Remove at least 2 words.");
+  assert.equal(lengthHint("Slide 3's headline has 10 words; the limit is 8."), "Slide 3's headline has 10 words; the limit is 8. Remove at least 3 words.");
+  assert.equal(lengthHint("The cover cites f9, which is not a verified fact."), "The cover cites f9, which is not a verified fact.", "any other finding stays as it is");
 });

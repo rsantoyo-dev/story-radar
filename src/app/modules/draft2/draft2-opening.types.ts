@@ -68,6 +68,8 @@ export const COVER_HEADLINE_MAX_WORDS = 8;
 export const COVER_SUBHEADLINE_MAX_WORDS = 12;
 export const SLIDE2_HEADLINE_MAX_WORDS = 8;
 export const SLIDE2_BODY_MAX_WORDS = 30;
+/** The opening's word limits as the writer reads them in each request (the program checks the same constants). */
+export const OPENING_WORD_LIMITS = { coverHeadline: COVER_HEADLINE_MAX_WORDS, coverSubheadline: COVER_SUBHEADLINE_MAX_WORDS, slide2Headline: SLIDE2_HEADLINE_MAX_WORDS, slide2Body: SLIDE2_BODY_MAX_WORDS } as const;
 /** Slide 2 restates the cover when this share of their longer words is the same. */
 export const SLIDE2_RESTATEMENT_OVERLAP = 0.5;
 

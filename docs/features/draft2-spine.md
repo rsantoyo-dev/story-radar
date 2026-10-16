@@ -172,3 +172,21 @@ Observed, not changed: the fix pass did not clear word-count findings (the
 closing's 31-word body stayed at 31; the cover at 9 words stayed at 9): Claude
 at medium miscounts. Options when it matters: a second fix attempt for
 length findings only, or the text split into numbered words in the request.
+
+## 9. Addendum, 2026-10-16: a word of margin
+
+The writer's self-check (§5) cut the Opening's first-round findings from 20–23
+to 1–15 a story, but what survived was almost always length: Claude miscounts,
+and a fix pass asked to "fix the length" returned the same count (31 words for
+a limit of 30). Three changes:
+
+- The writer's standard asks for every text at least one word under its limit.
+- Every writer request carries the step's limits as numbers (\`wordLimits\`:
+  \`OPENING_WORD_LIMITS\`, \`closingWordLimits(shape)\`, \`deckWordLimits(shape)\`),
+  beside the task, in new candidates, revisions and fixes.
+- A length finding in the fix pass says how many words to remove at least,
+  one more than the excess (\`lengthHint\`: "Remove at least 2 words.").
+
+Baseline before the change (\`scripts/draft2-inspect/inspect-findings.mts\`):
+a1debb9a 12 findings before the fix pass, 4 after, all 4 on length; 432cf4a8
+18 before, 3 after, 1 on length. Read the next stories the same way.

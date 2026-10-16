@@ -91,6 +91,11 @@ export type Draft2DeckClosing = Pick<Draft2ClosingCandidate, "id" | "penultimate
  */
 export type Draft2DeckShape = { kind: Draft2FocusStructureKind; min: number; max: number; items: string[] };
 
+/** The deck's word limits for its shape, per slide, as the writer reads them in each request (the program checks the same constants). */
+export const deckWordLimits = (shape: Pick<Draft2DeckShape, "kind">): Readonly<Record<string, number>> => shape.kind === "list"
+  ? { headline: DECK_HEADLINE_MAX_WORDS, body: DECK_ITEM_SENTENCE_MAX_WORDS, practical: DECK_PRACTICAL_MAX_WORDS }
+  : { headline: DECK_HEADLINE_MAX_WORDS, body: DECK_BODY_MAX_WORDS, practical: DECK_PRACTICAL_MAX_WORDS };
+
 export type Draft2Deck = FunnelRun<Draft2DeckCandidate, Draft2DeckScore, Draft2DeckIssue> & {
   writer?: FunnelRole;
   judge?: FunnelRole;

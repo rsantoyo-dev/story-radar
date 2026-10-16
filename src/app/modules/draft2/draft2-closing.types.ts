@@ -59,6 +59,11 @@ export type Draft2ClosingIssueCode = (typeof CLOSING_ISSUE_CODES)[number];
 /** two-slides: an arc ends on the penultimate and the last slide; one-slide: a list or steps ends on the last. */
 export type Draft2ClosingShape = "two-slides" | "one-slide";
 
+/** The closing's word limits for its shape, as the writer reads them in each request (the program checks the same constants). */
+export const closingWordLimits = (shape: Draft2ClosingShape): Readonly<Record<string, number>> => shape === "one-slide"
+  ? { lastHeadline: LAST_HEADLINE_MAX_WORDS, lastBody: LAST_PLAN_BODY_MAX_WORDS, cta: CTA_MAX_WORDS }
+  : { penultimateHeadline: PENULTIMATE_HEADLINE_MAX_WORDS, penultimateBody: PENULTIMATE_BODY_MAX_WORDS, lastHeadline: LAST_HEADLINE_MAX_WORDS, lastBody: LAST_BODY_MAX_WORDS, cta: CTA_MAX_WORDS };
+
 export type Draft2ClosingCandidate = FunnelCandidate & {
   /** Two-slides only: the slide before the last, which pays the cover's promise in full. */
   penultimate?: { headline: string; body: string; factIds: string[] };

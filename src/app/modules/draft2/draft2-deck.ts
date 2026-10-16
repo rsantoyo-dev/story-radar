@@ -6,7 +6,7 @@ import { focusForModels, focusItemCount, type Draft2FocusSnapshot } from "./draf
 import { funnelVersions } from "./draft2-funnel";
 import { openingForClosing, type Draft2ClosingOpening } from "./draft2-closing.types";
 import {
-  DECK_GATE, DRAFT2_DECK_EVALUATION_SCHEMA, DRAFT2_DECK_SCHEMA, closingForDeck, deckExploreRequest, deckJudgeRequest, deckFixRequest, deckPlan, deckRefineRequest, deckShape,
+  DECK_GATE, DRAFT2_DECK_EVALUATION_SCHEMA, DRAFT2_DECK_SCHEMA, closingForDeck, deckExploreRequest, deckJudgeRequest, deckWordLimits, deckFixRequest, deckPlan, deckRefineRequest, deckShape,
   mechanicalDeckIssues, parseDeckCandidates, parseDeckEvaluation, sameDeck, shapeForModels,
   type Draft2Deck, type Draft2DeckCandidate, type Draft2DeckClosing, type Draft2DeckIssue, type Draft2DeckScore, type Draft2DeckShape,
 } from "./draft2-deck.types";
@@ -74,6 +74,7 @@ const DECK_STEP: FunnelStep<Draft2DeckCandidate, Draft2DeckScore, Draft2DeckIssu
       explore: deckExploreRequest,
       refine: deckRefineRequest,
       fix: deckFixRequest,
+      wordLimits: deckWordLimits(shape),
       judgeRequest: (round, candidates, mechanical, revised) => deckJudgeRequest(plan, round, candidates, mechanical, revised),
       same: sameDeck,
     };

@@ -63,6 +63,8 @@ export type FunnelSetup<C extends FunnelCandidate, S extends FunnelScore, I exte
   refine: (targets: readonly FunnelVersion<C, S, I>[], versions: readonly FunnelVersion<C, S, I>[], regressions: readonly FunnelRegression[], last: FunnelRound<C, S, I> | undefined, newCandidates: number, proposals: readonly C[]) => Record<string, unknown>;
   /** What the writer receives for the fix pass: the flagged candidates with the program's findings on each (funnelFixRequest). Without it the step has no fix pass. */
   fix?: (flagged: readonly C[], findings: readonly I[]) => Record<string, unknown>;
+  /** Each text's word limit for this run, sent with every writer request (new candidates, revisions, fixes), so the writer reads the numbers beside the task. */
+  wordLimits?: Readonly<Record<string, number>>;
   judgeRequest: (round: number, candidates: readonly C[], mechanical: readonly I[], revised: readonly FunnelVersion<C, S, I>[]) => Record<string, unknown>;
   /** Whether an edit of a proposal changed nothing (it is then dropped). */
   same: (a: C, b: C) => boolean;
@@ -241,6 +243,8 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
    * cache reads them (as a string input after the format block they never
    * matched: real runs cached Sol's instructions only).
    */
+  /** A writer request with the step's word limits beside its task. */
+  const withLimits = (contents: Record<string, unknown>) => setup.wordLimits ? { ...contents, wordLimits: setup.wordLimits } : contents;
   const solInstructions = (instructions: string) => `${instructions}\n\n# Context\nThe same on every call of this run: the step's context, then the verified facts.\n${JSON.stringify({ ...setup.context, verifiedFacts })}`;
 
   /**
@@ -332,7 +336,7 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
     if (Date.now() - startedAt + FIX_ESTIMATE_MS + expectedJudgeMs(effortFor(round, "judge")) > ROUTE_LIMIT_MS - 15_000) return { candidates, mechanical, fix: { ...fix, skipped: "no time left in this request" } };
     const begin = Date.now();
     try {
-      const request = { ...setup.writer, contents: setup.fix(candidates.filter((candidate) => flagged.has(candidate.id)), mechanical), schema: setup.schemas.writer };
+      const request = { ...setup.writer, contents: withLimits(setup.fix(candidates.filter((candidate) => flagged.has(candidate.id)), mechanical)), schema: setup.schemas.writer };
       const answered = await ask(roles.writer, round, `${def.operations.writer}_fix`, request, { effort: "medium", kind: "writer" });
       const fixedCandidates = funnelFixedCandidates(candidates, flagged, setup.parseCandidates(answered.text));
       const after = setup.mechanical(fixedCandidates);
@@ -386,9 +390,9 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
           const fresh = funnelFreshWanted(round, targets, plan);
           // The judge's proposals from the last round, which this round sets beside the writer's edits.
           const proposals = round > 1 ? last?.evaluation?.proposals ?? [] : [];
-          const writerContents = targets.length || proposals.length
+          const writerContents = withLimits(targets.length || proposals.length
             ? setup.refine(targets, before, run.rounds.flatMap((entry) => entry.regressions ?? []), last, fresh, proposals)
-            : setup.explore(fresh, last, before);
+            : setup.explore(fresh, last, before));
           const answered = await ask(roles.writer, round, def.operations.writer, { ...setup.writer, contents: writerContents, schema: setup.schemas.writer });
           const answer = setup.parseCandidates(answered.text);
           candidates = funnelWrittenCandidates(targets.map((target) => target.candidate), answer, round, fresh, before, proposals, setup.same, def.plural);

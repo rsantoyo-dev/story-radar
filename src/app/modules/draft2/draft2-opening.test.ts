@@ -201,7 +201,8 @@ test("Claude writes and Sol judges; both read the focus and the facts snapshot w
   const [claude, sol] = h.calls;
   assert.equal(claude.input.history, undefined, "the writer gets no transcript");
   assert.equal(json(claude.input.context), json({ focus: focusTypes.focusForModels(FOCUS_VALUES), eligibleLevers: leverTypes.eligibleLevers(facts, FOCUS_VALUES), verifiedFacts: openingTypes.openingFactsSnapshot(facts) }), "the focus, this story's levers and the facts travel as Claude's cached context");
-  assert.deepEqual(Object.keys(claude.input.contents as object), ["task", "candidatesWanted", "levers"]);
+  assert.deepEqual(Object.keys(claude.input.contents as object), ["task", "candidatesWanted", "levers", "wordLimits"]);
+  assert.equal(json((claude.input.contents as { wordLimits: unknown }).wordLimits), json({ coverHeadline: 8, coverSubheadline: 12, slide2Headline: 8, slide2Body: 30 }), "the limits as numbers beside the task");
   assert.equal(json((claude.input.contents as { levers: unknown }).levers), json({ spread: [{ lever: "free", count: 15 }] }), "a focus decided before levers: every opening is free");
   assert.equal((claude.input.contents as WriterContents).candidatesWanted, 15, "the first round explores fifteen hooks");
   assert.equal(claude.input.effort, "medium", "round 1's fifteen openings are written with medium effort");

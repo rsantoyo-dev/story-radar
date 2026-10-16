@@ -391,7 +391,7 @@ export type FunnelWords<C extends FunnelCandidate, K extends string = string> = 
 };
 
 /** The writer's instruction for the fix pass: the program's findings, and nothing else, fixed in place. */
-export const FUNNEL_FIX_INSTRUCTION = "Fix only what each finding names, in as few words as possible: keep the candidate's idea, its device, its angle, its headline where no finding concerns it, and everything else exactly as it is. Count the words of what you change against the limits. Return each listed candidate under its own id, every part complete, and nothing else.";
+export const FUNNEL_FIX_INSTRUCTION = "Fix only what each finding names, in as few words as possible; a length finding says how many words to remove at least: remove them, so the text ends under its limit, and count again: keep the candidate's idea, its device, its angle, its headline where no finding concerns it, and everything else exactly as it is. Count the words of what you change against the limits. Return each listed candidate under its own id, every part complete, and nothing else.";
 
 /**
  * What the writer receives for the fix pass, before the judge reads a round:
@@ -399,12 +399,23 @@ export const FUNNEL_FIX_INSTRUCTION = "Fix only what each finding names, in as f
  * candidate can never win, so fixing it costs one short call and saves the
  * round its findings would have cost.
  */
+/**
+ * A length finding ("has 31 words; the limit is 30") with the words to remove
+ * at least, one more than the excess, so the fixed text ends under its limit:
+ * the first fix passes asked only to fix the length and Claude, miscounting,
+ * returned the same count.
+ */
+export function lengthHint(detail: string): string {
+  const length = /has (\d+) words?; the limit is (\d+)/.exec(detail);
+  return length ? `${detail} Remove at least ${Number(length[1]) - Number(length[2]) + 1} words.` : detail;
+}
+
 export function funnelFixRequest<C extends FunnelCandidate, K extends string>(words: FunnelWords<C, K>, flagged: readonly C[], findings: readonly FunnelIssue[]) {
   return {
     task: "fix",
     [words.listKey]: flagged.map((candidate) => ({
       ...shownCandidate(candidate),
-      findings: findings.filter((issue) => issue.candidateId === candidate.id).map(({ code, part, detail }) => ({ code, ...(part ? { part } : {}), detail })),
+      findings: findings.filter((issue) => issue.candidateId === candidate.id).map(({ code, part, detail }) => ({ code, ...(part ? { part } : {}), detail: lengthHint(detail) })),
     })),
     instruction: words.fix ?? FUNNEL_FIX_INSTRUCTION,
   };
