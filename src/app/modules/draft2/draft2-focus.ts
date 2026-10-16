@@ -76,8 +76,8 @@ export async function decideDraft2Focus({ topicId, storyId, sessionId }: Draft2F
   const apiKey = requireAnthropicApiKey();
   const model = getAnthropicRuntimeConfig().model;
 
-  const [profile, lines, found, content, recentLevers] = await Promise.all([
-    getCreativeProfile(topicId), activeEditorialLines(topicId), storyCollectionContexts(topicId, storyId), getStoryContent(topicId, storyId), recentDraft2Levers(topicId, session.id),
+  const [profile, lines, found, content] = await Promise.all([
+    getCreativeProfile(topicId), activeEditorialLines(topicId), storyCollectionContexts(topicId, storyId), getStoryContent(topicId, storyId),
   ]);
   const lineOptions = lines.map(focusLine);
   const foundBy = [...new Set(found.map((entry) => entry.context.lineId))].filter((id) => lines.some((line) => line.id === id));
@@ -163,20 +163,14 @@ export async function decideDraft2Focus({ topicId, storyId, sessionId }: Draft2F
   let decided: Draft2Focus;
   try {
     decided = await withCreativeTextBudget({ topicId, storyId, runId: session.id }, async () => {
-      // Two calls, each asked again once when its answer breaks a rule: the story and how it is told, then the plan (the spine and the directions) from that decision.
+      // One call, asked again once when its answer breaks a rule: the story and how it is told. The plan (the levers, the spine and the directions) is the Spine step's, written from the decision as it stands after the reviews.
       const decision = await focusCall({
         apiKey, model, trace, verifiedFacts, auditContext, operation: "draft2_focus", instructions, skillVersions, contents, schema: DRAFT2_FOCUS_SCHEMA, effort: "high", maxOutputTokens: MAX_OUTPUT_TOKENS,
         parse: (answer) => parseFocusDecision(answer, { facts, lines: lineOptions, editorChoices, material, narrativeForms: profile.narrativeForms }), again: DECISION_AGAIN,
       });
       const told = decidedFocus(focus, decision, { provider: "anthropic", model }, new Date());
-      // The judge's reviews of the telling and the plan written from it run side by side; a telling the judge sent back to classic gets its plan written again.
-      const plan = (telling: Draft2Focus) => focusCall({
-        apiKey, model, trace, verifiedFacts, auditContext, operation: "draft2_focus_plan", ...planCall(telling, { facts, title: content.title, brief, editorChoices, material, recentLevers }),
-        schema: DRAFT2_FOCUS_PLAN_SCHEMA, effort: "high", maxOutputTokens: PLAN_MAX_OUTPUT_TOKENS, again: PLAN_AGAIN,
-      });
-      const [reviewed, planned] = await Promise.all([reviewChoices(told), plan(told)]);
-      const flipped = reviewed.values?.concept?.arc !== told.values?.concept?.arc || reviewed.values?.narrative?.form !== told.values?.narrative?.form;
-      return { ...focusWithPlan(reviewed, flipped ? await plan(reviewed) : planned, new Date(), { bump: false }), inventoryVersion: inventory.version };
+      // The judge's reviews of the telling. A spine the editor owns stays (parseFocusDecision kept it); Claude's earlier spine and directions go with the decision they followed, and the Spine step writes new ones.
+      return { ...(await reviewChoices(told)), inventoryVersion: inventory.version };
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "The focus step failed.";
@@ -273,26 +267,32 @@ function planCall(focus: Draft2Focus, { facts, title, brief, editorChoices, mate
 }
 
 /**
- * Rewrites the plan (the spine and the two directions) from how the story is
- * now told, after the editor changed its concept, its form or its spine: one
- * Claude call; a part of the plan the editor owns stays theirs, the rest
- * becomes Claude's again, the version moves and the stale mark clears. The
- * Opening and the steps after it read the new plan through the focus version
- * they follow.
+ * The Spine step: Claude writes the plan from the focus as it stands (the
+ * story, its interest, how it is told): the hook's lever and where it is
+ * paid, the misreadings the cover must prevent, one beat per slide and the
+ * two directions. One Claude call, asked again once when its answer breaks a
+ * rule; a part of the plan the editor owns stays theirs, the rest becomes
+ * Claude's, the focus version moves and the stale mark clears. The Opening
+ * and every step after it read the spine through the focus version they
+ * follow. The session is claimed as the step "spine" while it runs; a failure
+ * keeps the focus as it was, with the trace.
  */
-export async function rewriteDraft2FocusPlan({ topicId, storyId, sessionId }: Draft2FocusInput): Promise<Draft2SessionRow> {
+export async function planDraft2Spine({ topicId, storyId, sessionId }: Draft2FocusInput): Promise<Draft2SessionRow> {
   const session = await getDraft2Session(topicId, sessionId);
   if (!session || session.storyId !== storyId) throw new Draft2InputError("This Draft 2 session was not found for the story. Reload the canvas.");
   const focus = session.focus;
-  if (!focus?.values) throw new Draft2InputError("Decide the focus before rewriting its plan.");
+  if (!focus?.values) throw new Draft2InputError("Decide the focus before writing its spine.");
   if (await activeDraft2Session(topicId, storyId)) throw new Draft2BusyError("A Draft 2 run is already in progress for this story.");
   const apiKey = requireAnthropicApiKey();
   const model = getAnthropicRuntimeConfig().model;
   const [profile, content, recentLevers] = await Promise.all([getCreativeProfile(topicId), getStoryContent(topicId, storyId), recentDraft2Levers(topicId, session.id)]);
   const brief = [brandBrief(profile), `# Visual identity\n${resolveCreativeVisualGuidance(profile)}`, visualModeLine(profile.visualFidelityMode as Draft2VisualMode)].join("\n\n");
   const facts = session.facts ?? [];
+  const claimed = await claimDraft2Session(session.id, { step: "spine", error: null });
+  if (!claimed) throw new Draft2BusyError("A Draft 2 run is already in progress for this story.");
   const trace: Draft2TraceEntry[] = [...session.trace];
   const auditContext = { runId: session.id, topicId, storyId };
+  const heartbeat = setInterval(() => { void touchDraft2Session(session.id).catch(() => undefined); }, HEARTBEAT_MS);
   let plan;
   try {
     plan = await withCreativeTextBudget({ topicId, storyId, runId: session.id }, () => focusCall({
@@ -300,10 +300,17 @@ export async function rewriteDraft2FocusPlan({ topicId, storyId, sessionId }: Dr
       schema: DRAFT2_FOCUS_PLAN_SCHEMA, effort: "high", maxOutputTokens: PLAN_MAX_OUTPUT_TOKENS, again: PLAN_AGAIN,
     }));
   } catch (error) {
-    await updateDraft2Session(session.id, { trace }).catch(() => undefined);
+    const message = error instanceof Error ? error.message : "The spine step failed.";
+    // The focus from before stands; the session says the spine failed.
+    await updateDraft2Session(session.id, { trace, status: "failed", error: message }).catch(() => undefined);
     throw error;
+  } finally {
+    clearInterval(heartbeat);
   }
-  const updated = await updateDraft2Session(session.id, { focus: focusWithPlan(focus, plan, new Date()), trace });
+  const updated = await updateDraft2Session(session.id, { focus: focusWithPlan(focus, plan, new Date()), trace, status: "ready", error: null });
   if (!updated) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
   return updated;
 }
+
+/** The plan rewritten after the editor changed how the story is told: the Spine step, under the name the focus route's PATCH keeps. */
+export const rewriteDraft2FocusPlan = planDraft2Spine;

@@ -9,8 +9,9 @@ import type { StoryContentResponse } from "@/app/radar-dashboard";
 import type { Draft2Fact, Draft2FactsEvaluation, Draft2FactsRound, Draft2SessionStatus, Draft2TraceEntry } from "@/app/modules/draft2/draft2-facts.types";
 import {
   CLASSIC_CONCEPT, CLASSIC_NARRATIVE, FOCUS_ANCHOR_MAX_CHARACTERS, FOCUS_CONCEPT_ARCS, FOCUS_MAX_REVEALS, FOCUS_PREMISE_MAX_CHARACTERS, FOCUS_REVEAL_MAX_CHARACTERS, focusConcept, FOCUS_AUDIENCE_MAX_CHARACTERS, FOCUS_CONSEQUENCE_MAX_CHARACTERS, FOCUS_DIRECTION_MAX_CHARACTERS, FOCUS_FRAMINGS, FOCUS_GOALS, FOCUS_GRAVITIES,
+  FOCUS_BEAT_IMAGE_MAX_CHARACTERS, FOCUS_BEAT_SCENE_MAX_CHARACTERS, FOCUS_BEAT_WITHHOLDS_MAX_CHARACTERS, FOCUS_BEAT_WORDS_MAX_CHARACTERS, FOCUS_SPINE_ROLES,
   FOCUS_NARRATIVE_ENDINGS, FOCUS_NARRATIVE_FORMS, FOCUS_PROGRESSION_MAX_CHARACTERS, FOCUS_STRUCTURES, FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS, focusFindings, focusMaterial, focusNarrative, visualDirectionChanged, wordsFollowFocus,
-  type Draft2Focus, type Draft2FocusField, type Draft2FocusFinding, type Draft2ConceptArc, type Draft2FocusConcept, type Draft2FocusMaterial, type Draft2FocusNarrative, type Draft2FocusValues, type Draft2FocusVoice, type Draft2NarrativeForm,
+  type Draft2Focus, type Draft2FocusField, type Draft2FocusFinding, type Draft2ConceptArc, type Draft2FocusConcept, type Draft2FocusMaterial, type Draft2FocusNarrative, type Draft2FocusSpine, type Draft2FocusValues, type Draft2FocusVoice, type Draft2NarrativeForm, type Draft2SpineBeat, type Draft2SpineRole,
 } from "@/app/modules/draft2/draft2-focus.types";
 import { TONE_KEYS, toneWords, type ToneKey } from "@/app/modules/draft2/skills/tone";
 import { MAP_PANEL_POSITIONS, type MapPanelPosition } from "@/app/modules/stories/map-panel-position";
@@ -73,7 +74,7 @@ type Draft2SessionView = {
   updatedAt: string;
 };
 
-type Draft2RunStep = "facts" | "focus" | "opening" | "closing" | "deck" | "review" | "inventory" | "visual" | "images" | "mentions" | "caption" | "publication";
+type Draft2RunStep = "facts" | "focus" | "spine" | "opening" | "closing" | "deck" | "review" | "inventory" | "visual" | "images" | "mentions" | "caption" | "publication";
 /** The steps that run on the funnel, in rounds that can pause and continue. */
 type Draft2FunnelStep = "opening" | "closing" | "deck" | "visual" | "caption";
 
@@ -91,7 +92,7 @@ type AutopilotEntry = { step: Draft2RunStep; status: "ready" | "needs-review" | 
 type Autopilot = { active: boolean; startedAt: string; current?: Draft2RunStep; steps: AutopilotEntry[]; outcome?: string; finishedAt?: string };
 type AutopilotNext = { step: Exclude<Draft2RunStep, "publication">; continuing?: boolean } | { done: true } | { blocked: string };
 const STEP_TITLE: Record<Draft2RunStep, string> = {
-  facts: "Facts", focus: "Focus", inventory: "People and places", mentions: "Accounts to tag", opening: "Opening", closing: "Closing", deck: "Deck", review: "Review", visual: "Visual script", images: "Images", caption: "Caption", publication: "Publish",
+  facts: "Facts", focus: "Focus", spine: "Spine", inventory: "People and places", mentions: "Accounts to tag", opening: "Opening", closing: "Closing", deck: "Deck", review: "Review", visual: "Visual script", images: "Images", caption: "Caption", publication: "Publish",
 };
 
 /** The screen a run belongs to: the accounts to tag are part of the caption's screen, the approval of the publish screen. */
@@ -137,7 +138,15 @@ function nextAutopilotStep(session: Draft2SessionView | null, now: number): Auto
   if (!focus?.values || (focus.status === "running" && stale)) return { step: "focus" };
   if (focus.status === "running") return { blocked: "The focus is being decided." };
   const findings = focusFindings(focus.values, focusMaterial(inventory));
-  if (findings.length) return { blocked: `Fix the focus first: ${findings.map((finding) => finding.detail).join(" ")}` };
+  const focusOwn = findings.filter((finding) => finding.field !== "spine");
+  if (focusOwn.length) return { blocked: `Fix the focus first: ${focusOwn.map((finding) => finding.detail).join(" ")}` };
+  // The spine: the plan the words and the images follow, written from the focus; a focus decided or changed since needs it again.
+  const spineRunning = session.step === "spine" && session.status === "running";
+  if (spineRunning && !stale) return { blocked: "The spine is being written." };
+  if (session.step === "spine" && session.status === "failed") return { blocked: `The spine failed${session.error ? `: ${session.error}` : "."} Write it again once it is fixed.` };
+  if (!focus.values.spine || focus.staleDirections || spineRunning) return { step: "spine" };
+  const spineFindings = findings.filter((finding) => finding.field === "spine");
+  if (spineFindings.length) return { blocked: `Fix the spine first: ${spineFindings.map((finding) => finding.detail).join(" ")}` };
   const mentions = session.mentions;
   if (!mentions || mentions.status === "failed" || (mentions.status === "running" && stale)) return { step: "mentions" };
   const opening = session.opening;
@@ -487,7 +496,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
         setSession(next);
         return next;
       }
-      if (step === "focus" || step === "inventory" || step === "mentions" || step === "review") {
+      if (step === "focus" || step === "spine" || step === "inventory" || step === "mentions" || step === "review") {
         const next = await postStep(step, { storyId, sessionId: on?.id });
         setSession(next);
         return next;
@@ -585,23 +594,6 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
     }
   }
 
-  /** The plan (the spine and the two directions) rewritten from how the story is now told, after the editor changed its concept, form or spine: one Claude call. */
-  async function rewritePlan() {
-    if (!session || running || savingFocus) return;
-    setSavingFocus("direction"); setFocusError(undefined);
-    try {
-      const response = await fetch(`/api/radar/draft2/focus?topicId=${encodeURIComponent(topicId)}`, {
-        method: "PATCH", cache: "no-store", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: session.id, storyId, rewrite: "plan" }),
-      });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error ?? "Could not rewrite the plan.");
-      setSession(body.session as Draft2SessionView);
-    } catch (cause) {
-      setFocusError(cause instanceof Error ? cause.message : "Could not rewrite the plan.");
-    } finally {
-      setSavingFocus(undefined);
-    }
-  }
 
   /** One decision on a review patch (apply, decline, undo), or every proposed patch applied for the autopilot. No model call. */
   async function decideReviewPatch(action: "apply" | "decline" | "undo" | "apply-all", patchId?: string, by: "editor" | "autopilot" = "editor", on: Draft2SessionView | null | undefined = session): Promise<Draft2SessionView | undefined> {
@@ -851,7 +843,20 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const focusProblems = focus?.values ? focusFindings(focus.values, material) : [];
   const focusLevers = focus?.values ? eligibleLevers(session?.facts ?? [], focus.values) : [];
   const focusStalled = !running && focus?.status === "running" && now > 0 && now - Date.parse(session?.updatedAt ?? "") > OPENING_STALL_MS;
-  const focusReady = Boolean(focus?.values) && focus?.status !== "running" && focusProblems.length === 0;
+  // The focus's own findings; the spine's are the Spine step's.
+  const focusOwnProblems = focusProblems.filter((finding) => finding.field !== "spine");
+  const spineFindings = focusProblems.filter((finding) => finding.field === "spine");
+  const focusReady = Boolean(focus?.values) && focus?.status !== "running" && focusOwnProblems.length === 0;
+  // The spine: the plan written from the focus; written again after the telling changed.
+  const spineRunning = running === "spine" || (session?.step === "spine" && session.status === "running" && now > 0 && now - Date.parse(session.updatedAt) <= OPENING_STALL_MS);
+  const spineFailed = session?.step === "spine" && session.status === "failed" && running !== "spine";
+  const spineReady = Boolean(focus?.values?.spine) && !focus?.staleDirections && spineFindings.length === 0;
+  const spineStatus = spineRunning ? { label: "Writing", tone: "info" as const }
+    : spineFailed ? { label: "Failed", tone: "error" as const }
+    : !focus?.values?.spine ? undefined
+    : focus.staleDirections ? { label: "Changed since", tone: "warning" as const }
+    : spineFindings.length ? { label: "Needs a fix", tone: "warning" as const }
+    : { label: `${focus.values.spine.beats.length} beats`, tone: "success" as const };
   const focusStatus = running === "focus" ? FOCUS_STATUS.running : focusStalled ? { label: "Stopped", tone: "warning" as const }
     : focus?.values && focusProblems.length && focus.status !== "running" ? { label: "Needs a fix", tone: "warning" as const } : focus ? FOCUS_STATUS[focus.status] : undefined;
   // An opening written with another focus, or before the Focus step; a new visual direction alone asks only for a new visual script.
@@ -956,7 +961,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const { target: publishable, blocker: publishBlocker } = publicationState(session);
   const approvedCurrent = publicationCurrent(publication, publishable);
   const publishStatus = running === "publication" ? { label: "Approving", tone: "info" as const } : approvedCurrent ? { label: "Approved", tone: "success" as const } : publication ? { label: "Changed since", tone: "warning" as const } : undefined;
-  const stepStatus: Partial<Record<string, { label: string; tone: StatusTone }>> = { facts: factsStatus, focus: focusStatus, opening: openingStatus, closing: closingStatus, deck: deckStatus, review: reviewStatus, inventory: inventoryStatus, visual: visualStatus, images: imagesStatus, caption: captionStatus, publish: publishStatus };
+  const stepStatus: Partial<Record<string, { label: string; tone: StatusTone }>> = { facts: factsStatus, focus: focusStatus, spine: spineStatus, opening: openingStatus, closing: closingStatus, deck: deckStatus, review: reviewStatus, inventory: inventoryStatus, visual: visualStatus, images: imagesStatus, caption: captionStatus, publish: publishStatus };
   // What each step took so far, this run's and earlier ones: time inside calls and the meter's cost.
   const metrics = stepMetrics(session?.trace ?? [], session?.images);
   const totals = sessionMetrics(session?.trace ?? [], session?.images);
@@ -995,7 +1000,8 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const available: Record<Draft2StepKey, boolean> = {
     facts: text.length > 0,
     focus: factsVerified && inventory?.status === "ready",
-    opening: factsVerified && focusReady,
+    spine: factsVerified && focusReady,
+    opening: factsVerified && focusReady && spineReady,
     closing: factsVerified && closingReady,
     deck: factsVerified && deckReady,
     review: factsVerified && reviewReady,
@@ -1015,6 +1021,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const summaries: Partial<Record<Draft2StepKey, string>> = {
     facts: session?.facts?.length ? `${session.facts.length} facts${factsVerified ? ", verified" : ", not verified yet"}` : undefined,
     focus: focus?.values ? [focus.values.line?.name, FRAMING_LABEL[focus.values.framing], STRUCTURE_LABEL[focus.values.structure.kind].split(":")[0], `goal: ${GOAL_LABEL[focus.values.goal].toLowerCase()}`].filter(Boolean).join(" · ") : undefined,
+    spine: focus?.values?.spine ? `${focus.values.spine.beats.length} beats · lever: ${leverName(focus.values.levers?.primary).toLowerCase()}${focus.staleDirections ? " · changed since" : ""}` : undefined,
     opening: openingChosen ? `“${openingChosen.candidate.cover.headline}”${scored(openingChosen)}` : undefined,
     closing: closingChosen ? `“${closingChosen.candidate.last.headline}”${scored(closingChosen)}` : undefined,
     deck: deckChosen ? `${deckChosen.candidate.slides.length} ${deckChosen.candidate.slides.length === 1 ? "slide" : "slides"} between slide 2 and the closing${scored(deckChosen)}` : undefined,
@@ -1100,16 +1107,39 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
         {focusError ? <InlineNotice tone="error" title="Your change was not saved">{focusError}</InlineNotice> : null}
         {focus?.values && running !== "focus" ? <FocusView
           focus={focus}
-          findings={focusProblems}
+          findings={focusOwnProblems}
           material={material}
+          saving={savingFocus}
+          locked={running !== undefined || savingFocus !== undefined}
+          onSave={(field, value) => { void saveFocus(field, { value }); }}
+          onReset={(field) => { void saveFocus(field, { reset: true }); }}
+        /> : null}
+        {!focus?.values && factsVerified && running !== "focus" ? <EmptyState title="No focus yet">Decide the focus: Claude proposes what the story is for, and every field stays yours to change.</EmptyState> : null}
+      </>,
+    },
+    spine: {
+      actions: <Button variant="primary" size="compact" busy={running === "spine"} disabled={!factsVerified || !focusReady || running !== undefined || savingFocus !== undefined} onClick={() => { void runStep("spine"); }}>
+        {running === "spine" ? "Writing…" : focus?.values?.spine ? "Rewrite the spine" : "Write the spine"}
+      </Button>,
+      how: <p>Claude reads the focus as it stands (the story, its interest, how it is told) and writes the plan the words and the images follow: the hook’s lever and where its promise is paid, the misreadings the cover must prevent, one beat per slide (what the slide’s words do, what its image adds, what it withholds for the next, the facts it rests on) and the two directions. Every writer and judge after this step reads the spine: the opening and the deck follow its beats, the visual script executes each beat’s image line. Edit any beat, the lever or a direction; your changes stay yours when Claude writes the spine again.</p>,
+      body: <>
+        {!factsVerified && !running ? needs("facts", "The spine builds on verified facts; verify them first.") : null}
+        {factsVerified && !focusReady && !running ? needs("focus", focus?.values ? "Fix the focus first: see its notes." : "The spine is written from the focus; decide it first.") : null}
+        {spineRunning ? <LoadingState>Claude writes the spine: the lever, the beats and the directions. About half a minute.</LoadingState> : null}
+        {runError?.step === "spine" ? <InlineNotice tone="error" title="The spine step stopped">{runError.message}</InlineNotice> : null}
+        {spineFailed && session?.error ? <InlineNotice tone="error" title="The last spine failed">{session.error}{focus?.values?.spine ? " The spine below is the one from before it." : ""}</InlineNotice> : null}
+        {focusError ? <InlineNotice tone="error" title="Your change was not saved">{focusError}</InlineNotice> : null}
+        {focus?.values?.spine && focus.staleDirections && !spineRunning ? <InlineNotice tone="info" title="The spine was written for another telling">You changed how the story is told; the spine and the directions still follow what Claude decided before. Rewrite the spine to follow it, or edit the beats yourself.</InlineNotice> : null}
+        {focus?.values && !spineRunning ? <SpineView
+          focus={focus}
+          findings={spineFindings}
           eligibleLevers={focusLevers}
           saving={savingFocus}
           locked={running !== undefined || savingFocus !== undefined}
           onSave={(field, value) => { void saveFocus(field, { value }); }}
           onReset={(field) => { void saveFocus(field, { reset: true }); }}
-          onRewritePlan={() => { void rewritePlan(); }}
         /> : null}
-        {!focus?.values && factsVerified && running !== "focus" ? <EmptyState title="No focus yet">Decide the focus: Claude proposes what the story is for, and every field stays yours to change.</EmptyState> : null}
+        {focus?.values && !focus.values.spine && !spineRunning ? <EmptyState title="No spine yet">Write the spine: Claude plans the lever, the beats and the directions from the focus, and every beat stays yours to change.</EmptyState> : null}
       </>,
     },
     opening: {
@@ -1124,6 +1154,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
       body: <>
         {!factsVerified && !running ? needs("facts", "The opening builds only on verified facts; verify them first.") : null}
         {factsVerified && !focusReady && !running ? needs("focus", focus?.values && focus.status !== "running" ? "The opening waits until the focus is fixed: see its notes." : "The opening follows the story’s focus; decide it first.") : null}
+        {factsVerified && focusReady && !spineReady && !running ? needs("spine", focus?.values?.spine ? (focus.staleDirections ? "The spine was written for another telling; write it again first." : "Fix the spine first: see its notes.") : "The opening follows the spine; write it first.") : null}
         {focusChanged && running !== "opening" && focus ? <InlineNotice tone="info" title="The focus changed">{openingFocusVersion ? `This opening followed focus v${openingFocusVersion}; the focus is now v${focus.version}.` : "This opening was written before the Focus step."} Write it again to follow the focus as it stands.</InlineNotice> : null}
         {running === "opening" ? <LoadingState>{following ? `${following} Following the run on the server…` : pausedRound ? `Continuing with round ${pausedRound} in a new request…` : `${today.opening.writer} writes fifteen openings; ${today.opening.judge} judges each round. This can take a few minutes.`}</LoadingState> : null}
         {stalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {stoppedAt}: its request or the server ended. Continue from round {resumeRound} picks it up at its last checkpoint; a round already written is judged, not written again.</InlineNotice> : null}
@@ -2328,19 +2359,15 @@ function focusValueText(field: Draft2FocusField, values: Draft2FocusValues): str
  * beside Claude's value. Selects save when they change, text when it loses
  * focus; the controls wait while a change is saved or a step runs.
  */
-function FocusView({ focus, findings, material, eligibleLevers: levers, saving, locked, onSave, onReset, onRewritePlan }: {
+function FocusView({ focus, findings, material, saving, locked, onSave, onReset }: {
   focus: Draft2Focus;
   findings: readonly Draft2FocusFinding[];
   /** People and places' material as it stands: the brand's characters the editor allows, the story's people. */
   material?: Draft2FocusMaterial;
-  /** The levers this story's facts, gravity and structure can carry. */
-  eligibleLevers: readonly string[];
   saving?: Draft2FocusField;
   locked: boolean;
   onSave: (field: Draft2FocusField, value: unknown) => void;
   onReset: (field: Draft2FocusField) => void;
-  /** Claude rewrites the plan, the spine and the two directions, from the concept and the form as they now stand; a part the editor owns stays theirs. */
-  onRewritePlan: () => void;
 }) {
   const values = focus.values!;
   const decided = focus.decidedAt ? new Date(focus.decidedAt).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" }) : undefined;
@@ -2363,7 +2390,7 @@ function FocusView({ focus, findings, material, eligibleLevers: levers, saving, 
       <p className={styles.factMeta}><strong>Tellings Claude compared, the chosen one first:</strong></p>
       <ol>{focus.deliberation.approaches.map((approach, index) => <li key={index}>{approach}</li>)}</ol>
     </div> : null}
-    <p className={styles.factMeta}>Focus v{focus.version}{decided ? ` · decided by Claude, ${decided}` : ""}{focus.edited.length ? ` · ${focus.edited.length} of your ${focus.edited.length === 1 ? "change" : "changes"} kept` : ""}. The opening follows this version.</p>
+    <p className={styles.factMeta}>Focus v{focus.version}{decided ? ` · decided by Claude, ${decided}` : ""}{focus.edited.length ? ` · ${focus.edited.length} of your ${focus.edited.length === 1 ? "change" : "changes"} kept` : ""}. The spine is written from it; the opening follows both.</p>
     {findings.length ? <InlineNotice tone="warning" title="The opening waits for this">{findings.map((finding) => finding.detail).join(" ")}</InlineNotice> : null}
     <div className={styles.focusGrid}>
       <div className={styles.focusField}>
@@ -2422,10 +2449,6 @@ function FocusView({ focus, findings, material, eligibleLevers: levers, saving, 
         {reset("voice")}
       </div>
       <div className={`${styles.focusField} ${styles.focusWide}`}>
-        <FocusText key={key("direction")} label="Direction" description={about("direction")} value={values.direction} max={FOCUS_DIRECTION_MAX_CHARACTERS} rows={5} disabled={locked} onCommit={(value) => onSave("direction", value)} />
-        {reset("direction")}
-      </div>
-      <div className={`${styles.focusField} ${styles.focusWide}`}>
         <FocusConcept key={key("concept")} focus={focus} description={about("concept", values.concept ? conceptReviewLine(focus) : "Decided before concepts: decide again for Claude to propose premises, or choose here.")} disabled={locked} onCommit={(concept) => onSave("concept", concept)} />
         {reset("concept")}
         {focus.conceptReview?.verdict === "classic" && focus.conceptReview.proposed && focusConcept(values).arc === "classic"
@@ -2437,38 +2460,88 @@ function FocusView({ focus, findings, material, eligibleLevers: levers, saving, 
         {focus.narrativeReview?.verdict === "classic" && focus.narrativeReview.proposed && focusNarrative(values).form === "classic"
           ? <div><Button variant="quiet" size="compact" busy={saving === "narrative"} disabled={locked} onClick={() => onSave("narrative", focus.narrativeReview!.proposed)}>Use Claude’s {NARRATIVE_LABEL[focus.narrativeReview.proposed.form].split(":")[0].toLowerCase()}</Button></div> : null}
       </div>
+    </div>
+  </div>;
+}
+
+const PAID_BY_LABEL: Record<Draft2LeverPaidBy, string> = { slide2: "Slide 2", middle: "A middle slide", penultimate: "The penultimate slide", last: "The last slide" };
+
+/**
+ * The Spine step: the plan Claude wrote from the focus, every part of it the
+ * editor's to change: the hook's lever and where it is paid, the misreadings
+ * the cover prevents, the beats (one per slide) and the two directions. A
+ * change stays the editor's when Claude writes the spine again; a part given
+ * back goes to Claude's value.
+ */
+function SpineView({ focus, findings, eligibleLevers: levers, saving, locked, onSave, onReset }: {
+  focus: Draft2Focus;
+  findings: readonly Draft2FocusFinding[];
+  /** The levers this story's facts, gravity and structure can carry. */
+  eligibleLevers: readonly string[];
+  saving?: Draft2FocusField;
+  locked: boolean;
+  onSave: (field: Draft2FocusField, value: unknown) => void;
+  onReset: (field: Draft2FocusField) => void;
+}) {
+  const values = focus.values!;
+  const edited = (field: Draft2FocusField) => focus.edited.includes(field);
+  const about = (field: Draft2FocusField, detail?: string) => [
+    edited(field) ? `Your choice. Claude’s: ${focus.ai ? clip(focusValueText(field, focus.ai)) : "none"}.` : focus.reasons?.[field],
+    detail,
+  ].filter(Boolean).join(" ") || undefined;
+  const reset = (field: Draft2FocusField) => edited(field)
+    ? <div><Button variant="quiet" size="compact" busy={saving === field} disabled={locked} onClick={() => onReset(field)}>Use Claude’s</Button></div>
+    : null;
+  const key = (field: Draft2FocusField) => `${field}-${focus.version}`;
+  return <div className={styles.focusBody}>
+    <p className={styles.factMeta}>Spine on focus v{focus.version}{values.spine ? ` · ${values.spine.beats.length} beats` : ""}{values.levers ? ` · lever: ${leverName(values.levers.primary).toLowerCase()}, paid by ${PAID_BY_LABEL[values.levers.paidBy].toLowerCase()}` : ""}. The opening, the deck, the closing and the visual script follow it.</p>
+    {findings.length ? <InlineNotice tone="warning" title="The opening waits for this">{findings.map((finding) => finding.detail).join(" ")}</InlineNotice> : null}
+    <div className={styles.focusGrid}>
       <div className={`${styles.focusField} ${styles.focusWide}`}>
-        <FocusLevers key={key("levers")} levers={values.levers} eligible={levers} description={about("levers", values.levers ? "The mechanism the cover uses to stop the reader, a guide, never a formula: the opening writes about a third of its first openings on it, a fifth on each alternative, and the rest free." : "Decided before levers: decide again or rewrite the plan for Claude to choose them, or choose here.")} disabled={locked} onCommit={(next) => onSave("levers", next)} />
+        <FocusLevers key={key("levers")} levers={values.levers} eligible={levers} description={about("levers", values.levers ? "The mechanism the cover uses to stop the reader, a guide, never a formula: the opening writes about a third of its first openings on it, a fifth on each alternative, and the rest free." : "No lever yet: write the spine for Claude to choose one, or choose here.")} disabled={locked} onCommit={(next) => onSave("levers", next)} />
         {reset("levers")}
       </div>
       {values.guards?.length ? <div className={`${styles.focusField} ${styles.focusWide}`}>
-        <FormField label="Misreadings to prevent" description="What a reader who stops at the cover could wrongly believe, and the facts that prevent it. Claude names them with the plan; the opening states each on the cover or slide 2, and the program checks that it cites their facts.">
+        <FormField label="Misreadings to prevent" description="What a reader who stops at the cover could wrongly believe, and the facts that prevent it. Claude names them with the spine; the opening states each on the cover or slide 2, and the program checks that it cites their facts.">
           <ul>{values.guards.map((guard) => <li key={guard.misreading}>{guard.misreading} <em>Facts:</em> {guard.factIds.join(", ")}</li>)}</ul>
         </FormField>
       </div> : null}
       <div className={`${styles.focusField} ${styles.focusWide}`}>
-        <FormField label="Spine" description={about("spine", values.spine ? "One beat per slide, decided after the concept and the form: the words and the images both follow it, and the judges score each slide against its beat." : "Decided before spines: decide again for Claude to write the beats.")}>
-          {values.spine ? <ol>
-            {values.spine.beats.map((beat, index) => <li key={`${beat.slide}-${index}`}>
-              <strong>{beat.slide} · {beat.role}</strong> {beat.scene}
-              <br /><em>Words:</em> {beat.words} <em>Image:</em> {beat.image}{beat.withholds ? <> <em>Withholds:</em> {beat.withholds}</> : null}{beat.factIds.length ? <> <em>Facts:</em> {beat.factIds.join(", ")}</> : null}
-            </li>)}
-          </ol> : null}
+        <FormField label="Beats" description={about("spine", values.spine ? "One beat per slide: what happens, what the words do, what the image adds (the visual script executes it as written), what the slide withholds for the next, and its facts. The turn is the turning-point or climax beat." : "No spine yet: write it for Claude to plan the beats.")}>
+          {values.spine ? <SpineBeats key={key("spine")} spine={values.spine} disabled={locked} onCommit={(spine) => onSave("spine", spine)} /> : null}
         </FormField>
         {reset("spine")}
-        {focus.staleDirections
-          ? <InlineNotice tone="info" title="The plan was written for another telling">You changed how the story is told; the spine and the directions still follow what Claude decided before. <Button variant="quiet" size="compact" busy={saving === "direction"} disabled={locked} onClick={onRewritePlan}>Rewrite the plan</Button></InlineNotice>
-          : null}
       </div>
       <div className={`${styles.focusField} ${styles.focusWide}`}>
-        <FocusText key={key("visualDirection")} label="Visual direction" description={about("visualDirection", values.visualDirection ? "The visual script follows it: the world the images live in, who leads them, what recurs. Changing it asks for a new visual script, never for new words." : "Decided before this field existed: decide again for Claude to set it, or write it.")} value={values.visualDirection ?? ""} max={FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS} rows={3} disabled={locked} onCommit={(value) => onSave("visualDirection", value)} />
+        <FocusText key={key("direction")} label="Direction" description={about("direction", "What to lead with, what to leave out, what the reader takes away: the words follow it.")} value={values.direction} max={FOCUS_DIRECTION_MAX_CHARACTERS} rows={5} allowEmpty disabled={locked} onCommit={(value) => onSave("direction", value)} />
+        {reset("direction")}
+      </div>
+      <div className={`${styles.focusField} ${styles.focusWide}`}>
+        <FocusText key={key("visualDirection")} label="Visual direction" description={about("visualDirection", values.visualDirection ? "The visual script follows it: the world the images live in, who leads them, what recurs. Changing it asks for a new visual script, never for new words." : "No visual direction yet: write the spine for Claude to set it, or write it.")} value={values.visualDirection ?? ""} max={FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS} rows={3} allowEmpty disabled={locked} onCommit={(value) => onSave("visualDirection", value)} />
         {reset("visualDirection")}
       </div>
     </div>
   </div>;
 }
 
-const PAID_BY_LABEL: Record<Draft2LeverPaidBy, string> = { slide2: "Slide 2", middle: "A middle slide", penultimate: "The penultimate slide", last: "The last slide" };
+/** The beats, each editable in place: its role, its scene, the words' job, what the image adds, what it withholds and its facts; a change saves the whole spine, which the program checks against the structure. */
+function SpineBeats({ spine, disabled, onCommit }: { spine: Draft2FocusSpine; disabled: boolean; onCommit: (spine: Draft2FocusSpine) => void }) {
+  const commit = (index: number, patch: Partial<Draft2SpineBeat>) => onCommit({ beats: spine.beats.map((beat, position) => position === index ? { ...beat, ...patch } : beat) });
+  return <ol>
+    {spine.beats.map((beat, index) => <li key={`${beat.slide}-${index}`} className={`${styles.focusField} ${styles.focusWide}`}>
+      <FormField label={`${index + 1} · ${beat.slide}`} description={beat.factIds.length ? `Facts · ${beat.factIds.join(", ")}` : "No fact: a hook may rest on none."}>
+        <select value={beat.role} disabled={disabled} onChange={(event) => commit(index, { role: event.target.value as Draft2SpineRole })}>
+          {FOCUS_SPINE_ROLES.map((role) => <option key={role} value={role}>{role}</option>)}
+        </select>
+      </FormField>
+      <FocusText label="Scene" value={beat.scene} max={FOCUS_BEAT_SCENE_MAX_CHARACTERS} disabled={disabled} onCommit={(value) => commit(index, { scene: value })} />
+      <FocusText label="Words’ job" value={beat.words} max={FOCUS_BEAT_WORDS_MAX_CHARACTERS} disabled={disabled} onCommit={(value) => commit(index, { words: value })} />
+      <FocusText label="Image adds" value={beat.image} max={FOCUS_BEAT_IMAGE_MAX_CHARACTERS} disabled={disabled} onCommit={(value) => commit(index, { image: value })} />
+      <FocusText label="Withholds" value={beat.withholds} max={FOCUS_BEAT_WITHHOLDS_MAX_CHARACTERS} allowEmpty disabled={disabled} onCommit={(value) => commit(index, { withholds: value })} />
+      <FocusText label="Facts" value={beat.factIds.join(", ")} max={120} allowEmpty disabled={disabled} onCommit={(value) => commit(index, { factIds: value.split(/[\s,]+/).filter(Boolean) })} />
+    </li>)}
+  </ol>;
+}
 
 /**
  * The hook's lever, saved as a whole: the primary (or free), up to two

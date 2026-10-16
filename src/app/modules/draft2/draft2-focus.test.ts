@@ -145,6 +145,8 @@ function harness({ answers = [], plans = [], reviews = [], session, busy = false
     decide: () => exports.decideDraft2Focus({ topicId, storyId, sessionId }),
     edit: (field: string, change: { value?: unknown; reset?: boolean }) => exports.editDraft2Focus({ topicId, sessionId, field, ...change }),
     rewrite: () => exports.rewriteDraft2FocusPlan({ topicId, storyId, sessionId }),
+    /** The Spine step: the plan written from the focus as it stands. */
+    plan: () => exports.planDraft2Spine({ topicId, storyId, sessionId }),
     /** The decision calls alone, without the plan calls between them. */
     decisions: () => calls.filter((call) => call.schemaName === "draft2_focus"),
     calls,
@@ -181,19 +183,27 @@ test("Claude decides the focus from the cached facts, the brand brief, the profi
   assert.equal(json(focus.lineOptions.map((line) => line.name)), json(["Guides", "Actualidad"]));
   assert.equal(focus.reasons?.goal, "Why goal.");
   assert.equal(json(focus.decidedBy), json({ provider: "anthropic", model: "claude-sonnet-5-5" }));
-  const [decisionCall, planCall] = session.trace.filter((entry) => entry.step === "focus");
-  assert.equal(session.trace.length, 3, "the facts trace is kept; the decision and the plan are two calls");
+  const [decisionCall] = session.trace.filter((entry) => entry.step === "focus");
+  assert.equal(session.trace.length, 2, "the facts trace is kept; the decision is one call, and the plan is the Spine step's");
   assert.equal(json([decisionCall.provider, decisionCall.operation, decisionCall.outcome, decisionCall.skillVersions, decisionCall.cacheWriteTokens]), json(["anthropic", "draft2_focus", "ok", { focus: "15", discovery: "1", arcs: "1", narratives: "4", spine: "1" }, 900]));
+  assert.equal(json([focus.values?.spine, focus.values?.levers, focus.staleDirections]), json([undefined, undefined, false]), "no plan yet: the Spine step writes it");
+  assert.equal(focus.deliberation?.approaches.length, 3, "the tellings Claude compared stay on the focus for the editor");
+  assert.equal(json([focus.values?.narrative, focus.inventoryVersion, h.reviewCalls.length]), json([focusTypes.CLASSIC_NARRATIVE, 2, 0]), "a classic story is not reviewed");
+
+  // The Spine step: one call writes the plan from the decision as it stands.
+  const planned = await h.plan();
+  const planCall = planned.trace[planned.trace.length - 1];
+  assert.equal(json([planned.step, planned.status, planned.error]), json(["spine", "ready", null]), "the Spine step claims the session and ends it ready");
   assert.equal(json([planCall.operation, planCall.outcome, planCall.effort, planCall.skillVersions]), json(["draft2_focus_plan", "ok", "high", { focus: "15", levers: "1", spine: "1", reader: "2" }]), "a classic telling: the planner reads the focus, levers, spine and reader skills only");
-  assert.equal(json([focus.values?.spine?.beats.length, focus.values?.direction, focus.reasons?.spine, focus.staleDirections]), json([7, PLAN.direction, "Why spine.", false]), "the plan's spine, directions and reasons join the decision");
+  const spined = planned.focus!;
+  assert.equal(json([spined.version, spined.values?.spine?.beats.length, spined.values?.direction, spined.reasons?.spine, spined.staleDirections]), json([2, 7, PLAN.direction, "Why spine.", false]), "the plan's spine, directions and reasons join the decision, and the version moves");
   assert.equal(json(Object.keys((h.calls[1].contents as { focus: Record<string, unknown> }).focus)), json(["line", "interest", "audience", "framing", "readerConsequence", "structure", "goal", "voice"]), "the planner reads the decision, the interest first, without the empty directions");
   const planContents = h.calls[1].contents as { eligibleLevers: string[]; recentLevers: string[] };
   assert.ok(planContents.eligibleLevers.includes("counterintuitive") && !planContents.eligibleLevers.includes("stat") && !planContents.eligibleLevers.includes("quick-list"), "the levers these facts can carry: no figure, so no statistic; an arc, so no list");
   assert.equal(json(planContents.recentLevers), json([]), "no carousel of this Topic published with a lever yet");
-  assert.equal(json([focus.values?.levers, focus.reasons?.levers]), json([PLAN.levers, "Why levers."]), "the plan's levers and their reason join the decision");
+  assert.equal(json([spined.values?.levers, spined.reasons?.levers]), json([PLAN.levers, "Why levers."]), "the plan's levers and their reason join the decision");
   assert.equal(json((h.calls[1].contents as { material?: unknown }).material), json(focusTypes.focusMaterial(INVENTORY as never)), "the planner reads People and places too: the visual direction shows the people with a verified portrait through it");
-  assert.equal(focus.deliberation?.approaches.length, 3, "the tellings Claude compared stay on the focus for the editor");
-  assert.equal(json([focus.values?.narrative, focus.inventoryVersion, h.reviewCalls.length]), json([focusTypes.CLASSIC_NARRATIVE, 2, 0]), "a classic story is not reviewed");
+  await assert.rejects(harness().plan(), /Decide the focus before writing its spine/);
 });
 
 test("deciding again keeps the editor's fields: Claude receives them as choices and the program keeps them whatever it answers", async () => {
@@ -202,8 +212,9 @@ test("deciding again keeps the editor's fields: Claude receives them as choices 
   await h.edit("goal", { value: "saves" });
   const session = await h.decide();
   assert.equal(json((h.decisions()[1].contents as { editorChoices: unknown }).editorChoices), json({ goal: "saves" }));
-  assert.equal(json([session.focus?.values?.goal, session.focus?.ai?.goal, session.focus?.values?.direction]), json(["saves", "followers", PLAN.direction]), "the direction is the plan's, whatever the decision answer carried");
+  assert.equal(json([session.focus?.values?.goal, session.focus?.ai?.goal]), json(["saves", "followers"]));
   assert.equal(json([session.focus?.version, session.focus?.edited]), json([3, ["goal"]]), "decided, edited, decided again");
+  assert.equal((await h.plan()).focus?.values?.direction, PLAN.direction, "the direction is the plan's, whatever the decision answer carried");
   assert.equal("goal" in (session.focus?.reasons ?? {}), false, "the goal is the editor's, with no reason of Claude's");
 });
 
@@ -246,7 +257,7 @@ test("an edit is saved with no provider call; a reset gives the field back; neit
   assert.equal(json([edited.focus?.values?.audience, edited.focus?.edited, edited.focus?.version]), json(["Parents in Laval", ["audience"], 2]));
   const reset = await h.edit("audience", { reset: true });
   assert.equal(json([reset.focus?.values?.audience, reset.focus?.edited, reset.focus?.version]), json(["Founders who sell software to the Pentagon", [], 3]));
-  assert.equal(h.calls.length, 2, "no provider call beyond the decision's two");
+  assert.equal(h.calls.length, 1, "no provider call beyond the decision");
   await assert.rejects(h.edit("goal", { value: "virality" }), (error: Error) => error instanceof types.Draft2InputError && /goal is one of/.test(error.message));
   const deciding = harness({ session: { ...h.row(), status: "running", focus: { ...h.row().focus, status: "running" } } });
   await assert.rejects(deciding.edit("goal", { value: "saves" }), (error: Error) => error instanceof types.Draft2BusyError && /Claude is deciding/.test(error.message));
@@ -259,7 +270,7 @@ test("an answer outside the contract is asked for again once, with the rule it b
   const h = harness({ answers: [answer({ readerConsequence: { text: "x".repeat(301), factIds: ["f1"] } }), answer()] });
   const session = await h.decide();
   assert.equal(session.status, "ready");
-  assert.equal(h.calls.length, 3, "the decision twice, then the plan");
+  assert.equal(h.calls.length, 2, "the decision twice");
   const retry = h.calls[1].contents as { correction: string; story: { title: string } };
   assert.match(retry.correction, /^The focus's reader consequence is longer than 300 characters\. Return the whole decision again, every field and every reason/);
   assert.equal(retry.story.title, "Pentagon buys AI by video", "the whole request travels again");
@@ -267,16 +278,18 @@ test("an answer outside the contract is asked for again once, with the rule it b
   assert.equal(h.calls[1].instructions, h.calls[0].instructions, "the same instructions and cached facts");
   assert.equal((session.focus as Draft2Focus).values?.readerConsequence?.text, "A five-minute video can now open a Pentagon contract.");
   const focusTrace = (session.trace as types.Draft2TraceEntry[]).filter((entry) => entry.step === "focus");
-  assert.equal(json(focusTrace.map((entry) => [entry.round, entry.operation, entry.outcome, entry.effort])), json([[1, "draft2_focus", "ok", "high"], [2, "draft2_focus", "ok", "high"], [1, "draft2_focus_plan", "ok", "high"]]), "every call is on the trace: they were paid");
+  assert.equal(json(focusTrace.map((entry) => [entry.round, entry.operation, entry.outcome, entry.effort])), json([[1, "draft2_focus", "ok", "high"], [2, "draft2_focus", "ok", "high"]]), "every call is on the trace: they were paid");
 });
 
-test("a second plan outside the contract fails the step, with the decision and both plan calls on the trace", async () => {
+test("a second plan outside the contract fails the Spine step, with both plan calls on the trace and the focus as it was decided", async () => {
   const h = harness({ answers: [answer()], plans: [{ ...PLAN, direction: "" }, { ...PLAN, visualDirection: "" }] });
-  await assert.rejects(h.decide(), /visual direction is missing or longer than/);
-  assert.equal(h.calls.length, 3);
+  const decided = await h.decide();
+  await assert.rejects(h.plan(), /visual direction is missing or longer than/);
+  assert.equal(h.calls.length, 3, "the decision, then the plan twice");
   assert.match(String((h.calls[2].contents as { correction: string }).correction), /^The direction is missing or longer than 1500 characters\. Return the whole plan again/);
   const last = h.last();
-  assert.equal(json([last.status, (last.focus as Draft2Focus).status, last.focus && (last.focus as Draft2Focus).values]), json(["failed", "failed", undefined]), "a decision whose plan fails is no decision");
+  assert.equal(json([last.step, last.status, (last.focus as Draft2Focus).version, (last.focus as Draft2Focus).values?.spine]), json(["spine", "failed", decided.focus!.version, undefined]), "the spine failed; the focus stands as decided");
+  assert.match(String(last.error), /visual direction is missing/);
   assert.equal((last.trace as types.Draft2TraceEntry[]).filter((entry) => entry.step === "focus").length, 3);
 });
 
@@ -360,6 +373,7 @@ test("after the editor changes how the story is told, Claude rewrites the plan f
   const again = { ...PLAN, direction: "Lead with the guide's first stop; keep the award for the climax.", visualDirection: "Jo at one laptop in an empty hall, lit at the end." };
   const h = harness({ answers: [answer()], plans: [PLAN, again] });
   await h.decide();
+  await h.plan();
   const edited = (await h.edit("narrative", { value: GUIDE })).focus!;
   assert.equal(edited.staleDirections, true, "a new form leaves Claude's plan behind");
   const session = await h.rewrite();
@@ -380,7 +394,8 @@ test("after the editor changes how the story is told, Claude rewrites the plan f
 
 test("the plan reads the Topic's last published levers, and a primary these facts cannot carry is asked for again with the list", async () => {
   const h = harness({ answers: [answer()], plans: [{ ...PLAN, levers: { ...PLAN.levers, primary: "stat" } }, PLAN], recentLevers: ["pride", "counterintuitive"] });
-  const session = await h.decide();
+  await h.decide();
+  const session = await h.plan();
   const plans = h.calls.filter((call) => call.schemaName === "draft2_focus_plan");
   assert.equal(plans.length, 2, "asked again once");
   assert.equal(json((plans[0].contents as { recentLevers: string[] }).recentLevers), json(["pride", "counterintuitive"]));
