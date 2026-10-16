@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  adjacentDraft2Steps, AUTOPILOT_ORDER, autopilotRuns, DRAFT_2_PHASES, DRAFT_2_STEPS, draft2RailState, draft2StepForKey, draft2StepFromPath, draft2StepHref, draft2StepNumber, draft2StepPhase,
+  adjacentDraft2Steps, AUTOPILOT_ORDER, autopilotRuns, DRAFT_2_PHASES, DRAFT_2_STEPS, ranAt, draft2RailState, draft2StepForKey, draft2StepFromPath, draft2StepHref, draft2StepNumber, draft2StepPhase,
   minutes, sessionMetrics, stepMetrics, usd, draft2Href, paragraphs, sourceHost, storyHref, traceUsageLine, wordCount,
 } from "./draft-2-canvas.core";
 
@@ -125,4 +125,15 @@ test("run to here: the autopilot runs every step up to the one on screen, the ac
   assert.equal(AUTOPILOT_ORDER.filter((step) => autopilotRuns(step, undefined)).length, AUTOPILOT_ORDER.length);
   assert.equal(AUTOPILOT_ORDER.filter((step) => autopilotRuns(step, "caption")).length, AUTOPILOT_ORDER.length, "the caption is not an autopilot step: run to the images");
   assert.equal(autopilotRuns("images", "publish"), true);
+});
+
+test("when a step last ran: its last call's end, said as the time today or the date and time on another day", () => {
+  const call = (step: string, at: string, durationMs: number) => ({ step, at, provider: "openai" as const, durationMs, outcome: "ok" as const });
+  const metrics = stepMetrics([call("deck", "2026-10-16T13:56:00.000Z", 60_000), call("deck", "2026-10-16T14:28:00.000Z", 90_000), call("review", "2026-10-16T14:29:00.000Z", 7_000), call("mentions", "2026-10-16T13:04:00.000Z", 2_000)]);
+  assert.equal(metrics.deck.lastAt, "2026-10-16T14:29:30.000Z", "the latest call's end, whatever the order");
+  assert.equal(metrics.caption.lastAt, "2026-10-16T13:04:02.000Z", "the accounts to tag count with the caption");
+  const now = new Date("2026-10-16T15:00:00.000Z");
+  assert.equal(ranAt(metrics.deck.lastAt, now, "America/Toronto"), "10:29");
+  assert.equal(ranAt("2026-10-16T03:25:00.000Z", now, "America/Toronto"), "Oct 15, 23:25", "another day: the date too");
+  assert.equal(ranAt(undefined, now), "");
 });

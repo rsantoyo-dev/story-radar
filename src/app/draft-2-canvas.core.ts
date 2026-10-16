@@ -173,6 +173,8 @@ const CHARACTERS_PER_TOKEN = 3.5;
 /** What the trace line reads of one provider call (draft2-facts.types.ts, Draft2TraceEntry). */
 export type TraceCall = {
   step?: string;
+  /** When the call started (ISO); its end is this plus durationMs. */
+  at?: string;
   provider: "openai" | "anthropic";
   effort?: string;
   costMicros?: number;
@@ -214,7 +216,7 @@ export const usd = (micros: number) => `$${(micros / 1_000_000).toFixed(2)}`;
 /** A duration as the canvas shows it: seconds under a minute, else minutes with one decimal. */
 export const minutes = (ms: number) => ms >= 60_000 ? `${(ms / 60_000).toFixed(1)} min` : `${Math.round(ms / 1000)} s`;
 
-export type StepMetrics = { ms: number; costMicros: number; calls: number };
+export type StepMetrics = { ms: number; costMicros: number; calls: number; /** When the step's last call ended (ISO): the step last ran then. */ lastAt?: string };
 /** The trace's step for each canvas step: the accounts to tag belong to the caption step; publishing makes no provider call. */
 const METRICS_STEP: Record<string, string> = { mentions: "caption" };
 
@@ -230,13 +232,15 @@ type ImageCharges = { slides: { attempts: { costMicros?: number }[] }[]; anchorP
  */
 export function stepMetrics(trace: readonly TraceCall[], images?: ImageCharges | null): Record<string, StepMetrics> {
   const metrics: Record<string, StepMetrics> = {};
-  const add = (step: string, ms: number, costMicros: number, calls: number) => {
+  const add = (step: string, ms: number, costMicros: number, calls: number, endedAt?: string) => {
     const entry = metrics[step] ?? (metrics[step] = { ms: 0, costMicros: 0, calls: 0 });
     entry.ms += ms; entry.costMicros += costMicros; entry.calls += calls;
+    if (endedAt && (!entry.lastAt || endedAt > entry.lastAt)) entry.lastAt = endedAt;
   };
   for (const call of trace) {
     if (!call.step) continue;
-    add(METRICS_STEP[call.step] ?? call.step, call.durationMs, call.costMicros ?? 0, 1);
+    const started = call.at ? Date.parse(call.at) : NaN;
+    add(METRICS_STEP[call.step] ?? call.step, call.durationMs, call.costMicros ?? 0, 1, Number.isFinite(started) ? new Date(started + call.durationMs).toISOString() : undefined);
   }
   for (const slide of images?.slides ?? []) for (const attempt of slide.attempts) if (attempt.costMicros) add("images", 0, attempt.costMicros, 0);
   if (images?.anchorPlate?.costMicros) add("images", 0, images.anchorPlate.costMicros, 0);
@@ -250,4 +254,18 @@ export function sessionMetrics(trace: readonly TraceCall[], images?: ImageCharge
   const ms = steps.reduce((sum, step) => sum + step.ms, 0);
   const openaiMs = trace.filter((call) => call.step && call.provider === "openai").reduce((sum, call) => sum + call.durationMs, 0);
   return { ms, costMicros: steps.reduce((sum, step) => sum + step.costMicros, 0), calls: steps.reduce((sum, step) => sum + step.calls, 0), openaiShare: ms ? openaiMs / ms : 0 };
+}
+
+/**
+ * When something ran, as the canvas says it: the time alone on the day it is
+ * now ("10:33"), else the date and the time ("Oct 15, 23:25"), on a 24-hour
+ * clock. The time zone is the viewer's unless one is given (the tests').
+ */
+export function ranAt(iso: string | undefined, now: Date, timeZone?: string): string {
+  const at = iso ? new Date(iso) : undefined;
+  if (!at || Number.isNaN(at.getTime())) return "";
+  const zone = timeZone ? { timeZone } : {};
+  const day = (date: Date) => date.toLocaleDateString("en-CA", zone);
+  const time = at.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", ...zone });
+  return day(at) === day(now) ? time : `${at.toLocaleDateString("en-US", { month: "short", day: "numeric", ...zone })}, ${time}`;
 }

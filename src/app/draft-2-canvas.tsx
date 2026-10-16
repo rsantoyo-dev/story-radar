@@ -35,7 +35,7 @@ import {
 } from "@/app/modules/draft2/draft2-funnel";
 import { DRAFT2_MODEL_OPTIONS, DRAFT2_OPENING_EARLIER_ROLES, DRAFT2_OPENING_ROLES, castWithChoice, draft2ModelName, parseDraft2ModelChoice, type Draft2Cast, type Draft2FunnelStepName, type Draft2ModelChoice } from "@/app/modules/draft2/draft2-models";
 import {
-  adjacentDraft2Steps, AUTOPILOT_ORDER, autopilotRuns, contentStatusLabel, DRAFT_2_STEPS, draft2RailState, draft2StepFromPath, draft2StepHref, draft2StepPhase, minutes, paragraphs, sessionMetrics, sourceHost, stepMetrics, storyHref, traceUsageLine, usd, wordCount,
+  adjacentDraft2Steps, AUTOPILOT_ORDER, autopilotRuns, contentStatusLabel, DRAFT_2_STEPS, ranAt, draft2RailState, draft2StepFromPath, draft2StepHref, draft2StepPhase, minutes, paragraphs, sessionMetrics, sourceHost, stepMetrics, storyHref, traceUsageLine, usd, wordCount,
   type Draft2StepKey,
 } from "./draft-2-canvas.core";
 import {
@@ -1091,7 +1091,8 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
       status: stepStatus[step.key],
       state: draft2RailState(stepStatus[step.key], { live: liveScreen === step.key, available: available[step.key] }),
       summary: summaries[step.key],
-      vitals: metric ? [metric.calls ? `${minutes(metric.ms)} in ${metric.calls} ${metric.calls === 1 ? "call" : "calls"}` : "", usd(metric.costMicros)].filter(Boolean).join(" · ") : undefined,
+      // When the step last ran, once the page knows the clock (never in the server's render, so the time is the viewer's).
+      vitals: metric ? [metric.calls ? `${minutes(metric.ms)} in ${metric.calls} ${metric.calls === 1 ? "call" : "calls"}` : "", usd(metric.costMicros), now > 0 && metric.lastAt ? `last run ${ranAt(metric.lastAt, new Date(now))}` : ""].filter(Boolean).join(" · ") : undefined,
       cost: metric ? usd(metric.costMicros) : undefined,
       href: hrefOf(step.key),
     };
@@ -2920,7 +2921,7 @@ function AutopilotView({ autopilot, trace, now }: { autopilot: Autopilot; trace:
   return <div className={styles.focusBody}>
     {autopilot.steps.length ? <ol className={styles.autopilotList}>
       {autopilot.steps.map((entry) => <li key={entry.startedAt} data-status={entry.status}>
-        <strong>{STEP_TITLE[entry.step]}</strong> · {entry.status === "ready" ? `done${entry.score !== undefined ? ` · ${entry.score}` : ""}` : entry.status === "needs-review" ? (entry.score === undefined ? "look at it" : entry.score >= FUNNEL_ACCEPTABLE_SCORE ? `acceptable · ${entry.score}` : `under ${FUNNEL_ACCEPTABLE_SCORE} · ${entry.score}, look at it`) : "failed"} · {minutes(entry.ms)} · {usd(costOf(entry))}{entry.reason ? ` · written again: ${entry.reason}` : ""}
+        <strong>{STEP_TITLE[entry.step]}</strong> · {now > 0 ? `${ranAt(entry.startedAt, new Date(now))} · ` : ""}{entry.status === "ready" ? `done${entry.score !== undefined ? ` · ${entry.score}` : ""}` : entry.status === "needs-review" ? (entry.score === undefined ? "look at it" : entry.score >= FUNNEL_ACCEPTABLE_SCORE ? `acceptable · ${entry.score}` : `under ${FUNNEL_ACCEPTABLE_SCORE} · ${entry.score}, look at it`) : "failed"} · {minutes(entry.ms)} · {usd(costOf(entry))}{entry.reason ? ` · written again: ${entry.reason}` : ""}
       </li>)}
     </ol> : null}
     {autopilot.current ? <LoadingState>{STEP_TITLE[autopilot.current]} is running; open its step on the rail to follow it.</LoadingState> : null}
