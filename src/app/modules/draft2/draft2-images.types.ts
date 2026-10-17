@@ -2,6 +2,7 @@ import { Draft2InputError, Draft2ResponseError, type Draft2Fact } from "./draft2
 import { funnelVersions } from "./draft2-funnel";
 import { referencePhotos, type Draft2Inventory } from "./draft2-inventory.types";
 import type { Draft2CarouselSlide, Draft2Visual, Draft2VisualCandidate, Draft2VisualNeed, Draft2VisualShot, Draft2VisualSlide } from "./draft2-visual.types";
+import { brandFontChoice } from "../stories/brand-fonts";
 import { focusNarrative, focusPresentation, narrativeUsesMaster, type Draft2FocusNarrative, type Draft2Presentation } from "./draft2-focus.types";
 import {
   CREATIVE_IMAGE_REVIEW_SCHEMA, imageReviewIssues, parseImageReviewAnswer,
@@ -67,6 +68,43 @@ export const WORDS_ALIGNS = ["left", "center", "right"] as const;
 export const WORDS_BACKGROUNDS = ["none", "card", "band"] as const;
 /** The sizes the editor may set, in slide pixels. */
 export const WORDS_SIZE = { headline: [28, 160], text: [18, 80] } as const;
+/** The narrowest box the words may have, in slide pixels. */
+export const WORDS_MIN_WIDTH = 240;
+
+/**
+ * A layout as the editor sends it, checked: the box kept inside the slide and
+ * no narrower than WORDS_MIN_WIDTH, a known alignment and background, each
+ * role's font one of the catalog's at one of its weights, its size within
+ * WORDS_SIZE, colours as #rrggbb, the opacity between 0 and 1.
+ */
+export function parseWordsLayout(value: unknown): Draft2WordsLayout {
+  const body = record(value);
+  const box = record(body.box);
+  const number = (entry: unknown, fallback: number) => typeof entry === "number" && Number.isFinite(entry) ? entry : fallback;
+  const clamp = (entry: number, min: number, max: number) => Math.round(Math.min(max, Math.max(min, entry)));
+  const width = clamp(number(box.width, 936), WORDS_MIN_WIDTH, 1080);
+  const color = (entry: unknown, fallback: string) => typeof entry === "string" && /^#[0-9a-f]{6}$/iu.test(entry.trim()) ? entry.trim() : fallback;
+  const role = (entry: unknown, [min, max]: readonly [number, number], fallback: Draft2WordsRole): Draft2WordsRole => {
+    const given = record(entry);
+    const choice = brandFontChoice(given, { font: fallback.font, weight: fallback.weight });
+    return { ...choice, size: clamp(number(given.size, fallback.size), min, max), color: color(given.color, fallback.color) };
+  };
+  const background = record(body.background);
+  return {
+    box: { left: clamp(number(box.left, 72), 0, 1080 - width), top: clamp(number(box.top, 64), 0, 1300), width },
+    align: WORDS_ALIGNS.find((entry) => entry === body.align) ?? "left",
+    headline: role(body.headline, WORDS_SIZE.headline, { font: "liberation-sans", weight: 700, size: 66, color: "#1b1f24" }),
+    text: role(body.text, WORDS_SIZE.text, { font: "liberation-sans", weight: 400, size: 38, color: "#1b1f24" }),
+    background: {
+      kind: WORDS_BACKGROUNDS.find((entry) => entry === background.kind) ?? "none",
+      color: color(background.color, "#ffffff"),
+      opacity: Math.min(1, Math.max(0, number(background.opacity, 0.92))),
+    },
+  };
+}
+
+/** A layout's style without its place: what "apply to every slide" carries, each slide keeping its own box. */
+export const withStyleOf = (layout: Draft2WordsLayout, style: Draft2WordsLayout): Draft2WordsLayout => ({ ...style, box: layout.box });
 
 /** The words a slide shows, from the carousel's slide. */
 export const slideWordsOf = (slide: Pick<Draft2CarouselSlide, "headline" | "text" | "practical" | "cta">): Draft2SlideWords => ({
@@ -575,6 +613,7 @@ export type Draft2ImagesAction =
   | { action: "words" }
   | { action: "scene"; instruction?: string }
   | { action: "cut"; offset: Draft2CutOffset }
+  | { action: "layout"; slide: string; layout: Draft2WordsLayout; all: boolean }
   | { action: "regenerate"; slide: string; instruction?: string; edit: boolean; characterIds?: string[] }
   | { action: "choose"; slide: string; version: number }
   | { action: "map"; slide: string; position: MapPanelPosition };
@@ -590,6 +629,12 @@ export function parseImagesAction(value: unknown): Draft2ImagesAction {
     const instruction = typeof body.instruction === "string" ? oneLine(body.instruction) : "";
     if (instruction.length > IMAGE_INSTRUCTION_MAX_CHARACTERS) throw new Draft2InputError(`Keep the instruction under ${IMAGE_INSTRUCTION_MAX_CHARACTERS} characters.`);
     return { action: "scene", ...(instruction ? { instruction } : {}) };
+  }
+  // The editor's layout for a slide's words (where they sit and how they look), or its style for every slide.
+  if (body.action === "layout") {
+    const slide = typeof body.slide === "string" && /^[a-z0-9]{1,24}$/i.test(body.slide) ? body.slide : undefined;
+    if (!slide) throw new Draft2InputError("Name the slide (such as cover or s2).");
+    return { action: "layout", slide, layout: parseWordsLayout(body.layout), all: body.all === true };
   }
   if (body.action === "cut") {
     const offset = record(body.offset);
@@ -615,7 +660,7 @@ export function parseImagesAction(value: unknown): Draft2ImagesAction {
     if (!position) throw new Draft2InputError(`The map card goes ${MAP_PANEL_POSITIONS.join(", ")}.`);
     return { action: "map", slide, position };
   }
-  throw new Draft2InputError("The action is regenerate, choose, map, words, scene or cut.");
+  throw new Draft2InputError("The action is regenerate, choose, map, words, scene, cut or layout.");
 }
 
 /**

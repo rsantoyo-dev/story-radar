@@ -6,7 +6,7 @@ import { generateOpenAiStructuredResponse } from "../stories/openai-structured-r
 import { getCreativeProfile } from "../stories/creative-profile.repository";
 import { buildCreativeImagePrompt } from "../stories/build-creative-image-prompt";
 import { creativeImageModelVisibleText } from "../stories/creative-image-prompt-contracts";
-import { drawWords, setSlideWords, textBandFor, textBandPrompt, wordsPalette, type Draft2TextBand, type Draft2WordsPalette } from "./draft2-text-layer";
+import { drawWords, setSlideWords, textBandFor, textBandPrompt, wordsBlockBottom, wordsPalette, type Draft2TextBand, type Draft2WordsPalette } from "./draft2-text-layer";
 import { DEFAULT_WORDS_STYLE, type CreativeWordsStyle } from "../stories/brand-fonts";
 import { focusPresentation, type Draft2Presentation } from "./draft2-focus.types";
 import {
@@ -59,7 +59,7 @@ import {
   COVER_PROGRAM_PROMPT, COVER_PROMPT, DRAFT2_IMAGE_REVIEW_SCHEMA, DRAFT2_PORTRAIT_SUBJECT_SCHEMA, IMAGE_SUBMISSION_GRACE_MS, IMAGE_SUBMIT_CONCURRENCY, IMAGES_QUALITY, PORTRAIT_LOCATOR_INSTRUCTIONS, focusSubject, parsePortraitSubject,
   awaitsReview, chosenSlide, correctionFor, draft2ImageDownloads, draft2ImageReview, imageBaseFile, imageFile, imagePromptFile, imagesNote, imagesTarget, latestAttempt, mapFile,
   movedMapSlide, newImagesRun, parseDraft2ImageReview, parseImagesAction, regeneratedSlide, settledStatus, shownAttempt, slideFacts, slideSettled, slideUnit, slideWordsOf, slidesWithChangedWords,
-  type Draft2ImageAttempt, type Draft2ImageReview, type Draft2Images, type Draft2ImagesRun, type Draft2MapPanel, type Draft2PortraitFit, type Draft2SlideImage, type Draft2SlideMaterial,
+  type Draft2ImageAttempt, type Draft2ImageReview, type Draft2WordsLayout, withStyleOf, type Draft2Images, type Draft2ImagesRun, type Draft2MapPanel, type Draft2PortraitFit, type Draft2SlideImage, type Draft2SlideMaterial,
 } from "./draft2-images.types";
 import { OPENING_STALL_MS } from "./draft2-opening.types";
 import { anchorNoun, type Draft2FocusNarrative, type Draft2FocusValues } from "./draft2-focus.types";
@@ -1037,6 +1037,7 @@ export async function editDraft2Images({ topicId, sessionId, input }: { topicId:
   if (action.action === "words") return setChangedWords({ topicId, session, images });
   if (action.action === "scene") return remakeScene({ session, images, instruction: action.instruction });
   if (action.action === "cut") return cutSceneAgain({ topicId, session, images, offset: action.offset });
+  if (action.action === "layout") return applyWordsLayout({ topicId, session, images, slide: action.slide, layout: action.layout, all: action.all });
   const slide = images.slides.find((entry) => entry.slide === action.slide);
   if (!slide) throw new Draft2InputError(`${action.slide} is not one of this carousel's slides.`);
   const now = new Date();
@@ -1109,6 +1110,89 @@ async function setChangedWords({ topicId, session, images }: { topicId: string; 
   const updated = await updateDraft2Session(session.id, { images: next, ...(session.step === "images" ? { status: status === "ready" ? "ready" : "needs-review", error: next.error ?? null } : {}) });
   if (!updated) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
   return updated;
+}
+
+/** The images' context for an editor's action that sets words again on stored images: no model is called. */
+async function editContext(topicId: string, session: Draft2SessionRow, run: Draft2ImagesRun): Promise<Context> {
+  let fal: Context["fal"];
+  try {
+    fal = getFalImageRuntimeConfig("4:5", IMAGES_QUALITY);
+  } catch (error) {
+    if (error instanceof FalImageConfigurationError) throw new Draft2InputError("FAL_KEY is not configured.");
+    throw error;
+  }
+  return imagesContext({
+    topicId, storyId: session.storyId, sessionId: session.id, run, target: imagesTarget(session), facts: session.facts ?? [], profile: await getCreativeProfile(topicId), fal,
+    descriptor: creativeImageModel(resolveDefaultCreativeImageModel()), signal: new AbortController().signal, trace: [...session.trace],
+  });
+}
+
+/** The image a slide shows, before its overlays, read and checked: what the words are set again on. */
+async function shownBase(ctx: Context, slide: Draft2SlideImage): Promise<{ shown: Draft2ImageAttempt; base: Uint8Array }> {
+  const shown = shownAttempt(slide);
+  if (!shown) throw new Draft2InputError(`${slide.label} has no image yet.`);
+  const name = imageBaseFile(slide.slide, shown.version);
+  const base = new Uint8Array(await (await readPrivateR2ImageFile({ objectKey: objectKey(ctx, name), contentType: "image/png", fileName: name })).arrayBuffer());
+  return { shown, base };
+}
+
+/**
+ * The editor's layout for a slide's words (2026-10-17, the editor: "a graphic
+ * editor of the text object: move it, size it, background or not, styles"),
+ * set on the image the slide shows: a new version, no model, no cost, the
+ * earlier ones kept and the image's review kept. With all, the layout's style
+ * (fonts, sizes, colours, background, alignment) goes to every slide whose
+ * words the program set, each keeping its own box.
+ */
+async function applyWordsLayout({ topicId, session, images, slide: name, layout, all }: { topicId: string; session: Draft2SessionRow; images: Draft2Images; slide: string; layout: Draft2WordsLayout; all: boolean }): Promise<Draft2SessionRow> {
+  if (images.presentation?.text !== "program") throw new Draft2InputError("The image model lettered these words: only words the program set can be moved or restyled.");
+  if (!images.slides.every(slideSettled)) throw new Draft2InputError("The slides are still being made; edit the words when they finish.");
+  if (!images.slides.some((entry) => entry.slide === name)) throw new Draft2InputError(`${name} is not one of this carousel's slides.`);
+  const ctx = await editContext(topicId, session, withoutHistory(images));
+  const now = new Date().toISOString();
+  const slides = await Promise.all(images.slides.map(async (slide) => {
+    const own = slide.slide === name;
+    const current = shownAttempt(slide);
+    if (!own && (!all || !current?.wordsLayout)) return slide;
+    const { shown, base } = await shownBase(ctx, slide);
+    const next = own ? layout : withStyleOf(shown.wordsLayout!, layout);
+    const attempt: Draft2ImageAttempt = {
+      version: Math.max(...slide.attempts.map((entry) => entry.version)) + 1, kind: "words", status: "generated", baseVersion: shown.version,
+      ...(shown.portrait ? { portrait: shown.portrait } : {}), wordsLayout: next, queuedAt: now, costMicros: 0,
+    };
+    const final = await finish(ctx, slide, attempt, base);
+    const sha256 = hash(final);
+    await putPrivateR2Object({ objectKey: objectKey(ctx, imageFile(slide.slide, attempt.version)), body: final, contentType: "image/png", metadata: { sha256 } });
+    await putPrivateR2Object({ objectKey: objectKey(ctx, imageBaseFile(slide.slide, attempt.version)), body: base, contentType: "image/png", metadata: { sha256: hash(base) } });
+    const review = wordsSetAgainReview(shown.review, shown.version);
+    Object.assign(attempt, { sha256, expectedText: creativeImageModelVisibleText(ctx.units[slide.order - 1]), completedAt: new Date().toISOString(), ...(review ? { review } : {}) });
+    return { ...slide, attempts: [...slide.attempts, attempt], chosenVersion: undefined };
+  }));
+  const status = settledStatus(slides);
+  const next: Draft2Images = { ...images, slides, status, updatedAt: now, error: imagesNote(slides) };
+  const updated = await updateDraft2Session(session.id, { images: next, ...(session.step === "images" ? { status: status === "ready" ? "ready" : "needs-review", error: next.error ?? null } : {}) });
+  if (!updated) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
+  return updated;
+}
+
+/**
+ * A slide with a layout's words set on the image it shows, as the editor
+ * tries it: nothing is stored. Returns a JPEG of the finished slide (its words,
+ * the page number, the logo) and where the block of words ends, for the box.
+ */
+export async function previewDraft2Words({ topicId, sessionId, slide: name, layout }: { topicId: string; sessionId: string; slide: string; layout: Draft2WordsLayout }): Promise<{ image: Uint8Array; bottom: number }> {
+  const session = await getDraft2Session(topicId, sessionId);
+  const images = session?.images;
+  if (!session || !images) throw new Draft2InputError("Generate the images first.");
+  if (images.presentation?.text !== "program") throw new Draft2InputError("The image model lettered these words.");
+  const slide = images.slides.find((entry) => entry.slide === name);
+  if (!slide) throw new Draft2InputError(`${name} is not one of this carousel's slides.`);
+  const ctx = await editContext(topicId, session, withoutHistory(images));
+  const { shown, base } = await shownBase(ctx, slide);
+  const attempt: Draft2ImageAttempt = { version: 0, kind: "words", status: "generated", ...(shown.portrait ? { portrait: shown.portrait } : {}), wordsLayout: layout, queuedAt: new Date().toISOString() };
+  const final = await finish(ctx, slide, attempt, base);
+  const image = new Uint8Array(await sharp(Buffer.from(final)).resize({ width: 864 }).jpeg({ quality: 84 }).toBuffer());
+  return { image, bottom: wordsBlockBottom(wordsFor(ctx, slide), layout) };
 }
 
 /** A panorama's scene the editor can act on: made, under the editor's panorama, in the run that stands. */

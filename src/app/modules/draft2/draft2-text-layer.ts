@@ -188,6 +188,11 @@ function drawSheet(words: Draft2SlideWords, layout: Draft2WordsLayout): { png: B
   return { png: canvas.toBuffer("image/png"), bottom: top + height + padding };
 }
 
+/** Where a layout's block of words ends on the slide (its box's bottom), for the editor's box. */
+export function wordsBlockBottom(words: Draft2SlideWords, layout: Draft2WordsLayout): number {
+  return drawSheet(words, layout).bottom;
+}
+
 /** The slide with a layout's words set on it. */
 export async function drawWords({ image, words, layout }: { image: Uint8Array; words: Draft2SlideWords; layout: Draft2WordsLayout }): Promise<Uint8Array> {
   const { png } = drawSheet(words, layout);

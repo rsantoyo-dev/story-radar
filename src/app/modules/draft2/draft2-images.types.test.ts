@@ -277,3 +277,24 @@ test("a panorama's scene cut again: centred, moved within the scene, smaller sec
   assert.deepEqual(parseImagesAction({ action: "scene", instruction: "  Sin fondo ocre: un mesón crema. " }), { action: "scene", instruction: "Sin fondo ocre: un mesón crema." });
   assert.deepEqual(parseImagesAction({ action: "cut", offset: { x: 12, y: "x", scale: 0.9 } }), { action: "cut", offset: { x: 12, y: 0, scale: 0.9 } });
 });
+
+test("the editor's layout for a slide's words, checked: the box inside the slide, known fonts at their weights, sizes and colours in range; a style for every slide keeps each box", async () => {
+  const { parseWordsLayout, withStyleOf } = await import("./draft2-images.types");
+  const sent = {
+    box: { left: 1000, top: -40, width: 90 }, align: "center",
+    headline: { font: "fraunces-soft", weight: 850, size: 400, color: "#F6F0E4" },
+    text: { font: "comic-sans", weight: 500, size: 10, color: "red" },
+    background: { kind: "band", color: "#963F2D", opacity: 3 },
+  };
+  const layout = parseWordsLayout(sent);
+  assert.deepEqual(layout.box, { left: 840, top: 0, width: 240 }, "no narrower than 240, inside the slide");
+  assert.deepEqual([layout.align, layout.headline], ["center", { font: "fraunces-soft", weight: 900, size: 160, color: "#F6F0E4" }], "the nearest weight, the largest size");
+  assert.deepEqual(layout.text, { font: "liberation-sans", weight: 400, size: 18, color: "#1b1f24" }, "an unknown font and colour fall back");
+  assert.deepEqual(layout.background, { kind: "band", color: "#963F2D", opacity: 1 });
+  assert.equal(parseWordsLayout({ align: "justify", background: { kind: "glow" } }).align, "left");
+  const mine = { ...layout, box: { left: 72, top: 900, width: 600 } };
+  assert.deepEqual(withStyleOf(mine, layout).box, mine.box, "another slide keeps its place");
+  assert.deepEqual(withStyleOf(mine, layout).headline, layout.headline, "and takes the style");
+  assert.deepEqual(parseImagesAction({ action: "layout", slide: "s1", layout: sent, all: true }).action, "layout");
+  assert.throws(() => parseImagesAction({ action: "layout", layout: sent }), /Name the slide/);
+});

@@ -155,3 +155,33 @@ outside the last cut).
   with what the editor asks to change in its prompt, the earlier one in the
   plate's history; every slide's next version waits as a section of it, and
   the canvas continues the run. Nothing earlier is overwritten.
+
+## Phase 3, 2026-10-17: the words as an object
+
+The editor: "the texts must be editable graphically: move them, size them,
+adjust them by hand, a background or not, styles: a graphic editor of the
+text object that sits on top".
+
+- **"Words: place and style"** on every slide whose words the program set
+  (`WordsEditor`): the slide as the server sets it, with the box of the words
+  over it. Drag the box to move the words, its right edge to widen or narrow
+  them (no narrower than 240 px); the arrow keys move it (Shift for larger
+  steps). Controls: alignment; the headline's and the text's font (the 34
+  bundled families), weight, size in slide pixels and colour; what sits
+  behind the words (none, a card, a band across the slide), its colour and
+  opacity.
+- **What shows is what is published**: each change is tried on the server a
+  moment after the last one (`POST /api/radar/draft2/images/words`,
+  `previewDraft2Words`): the image the slide shows, before its overlays, with
+  the words set as tried, the page number and the logo; nothing stored, no
+  model. `X-Words-Bottom` gives the block's height for the box.
+- **Apply** (`PATCH /images { action: "layout", slide, layout, all }`):
+  a new version from the same image, free, the image's review kept with its
+  issues about the words dropped (`applyWordsLayout`). "Give every slide this
+  style" carries fonts, sizes, colours, background and alignment to every
+  slide the program lettered, each keeping its own box (`withStyleOf`).
+- **Checked**: `parseWordsLayout` keeps the box inside the slide, snaps a
+  font to the catalog and its weight to the nearest it has, bounds the sizes
+  (headline 28–160, text 18–80), and takes colours as `#rrggbb`.
+- Styles in `draft-2-canvas.module.uxdsl` use the theme's tokens: the box's
+  edge is `border(dashed-primary)`, its focus the shared `border(focus)` ring.

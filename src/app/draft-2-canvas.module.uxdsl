@@ -227,6 +227,12 @@
 /* A panorama's scene: the one wide image the slides are cut from, at its own proportions, with its cuts drawn on it. */
 .sceneFrame { display: grid; place-items: center; overflow: hidden; border-radius: radius(1); background: palette(light-light); }
 .sceneFill { display: block; width: 100%; height: auto; }
+/* A slide's words as an object: the slide as the server sets them, and the box the editor drags and widens. */
+.wordsStage { position: relative; display: grid; place-items: center; aspect-ratio: 4 / 5; overflow: hidden; border-radius: radius(1); background: palette(light-light); touch-action: none; }
+.wordsBox { position: absolute; border: border(dashed-primary); border-radius: radius(1); cursor: move; touch-action: none; }
+.wordsBox:focus-visible { outline: border(focus); outline-offset: space(1); }
+.wordsHandle { position: absolute; top: 50%; right: -8px; width: 14px; height: 36px; transform: translateY(-50%); border-radius: radius(1); background: palette(primary-main); cursor: ew-resize; touch-action: none; }
+.wordsControls { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); gap: density(2); }
 /* The caption: the post as it will read, its line breaks and blank lines kept. */
 .captionPost { display: grid; gap: density(2); max-width: 60ch; padding: density(4); border: border(control); border-radius: radius(2); }
 .captionText { @ds-typo (body); margin: 0; color: palette(dark-main); white-space: pre-wrap; overflow-wrap: anywhere; }
