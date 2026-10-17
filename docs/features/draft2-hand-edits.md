@@ -51,3 +51,16 @@ the own opening), `src/app/api/radar/draft2/edit/route.ts` (PATCH),
 `draft2-funnel.ts` (`byEditor`, `FunnelEditorEdit`, `funnelWithCandidate`),
 `draft2-funnel-run.ts` (the idea's round past the cap), the opening writer's
 role (`skills/hooks.ts`).
+
+## Addendum, 2026-10-17: a hand edit cites the facts that state its numbers
+
+A hand edit of the Saint-Jean closing wrote the police line, which no fact
+the slide cited gave, and the program's finding ("450, 3599222 is not stated
+by the facts") could only be shown: an edit changes words, not citations.
+Now `applyEdit` cites, with the edit, the verified facts that state the
+numbers the new text brings and the cited facts do not (`factsCitedByHand`,
+three at most, never a disputed fact); the edit records them
+(`citedFactIds`) and an undo takes them off again; the copies the later
+steps keep follow. The editor's other words still cite nothing: a claim
+without a figure stays theirs. Hashtags and visual directions are not read
+for numbers.

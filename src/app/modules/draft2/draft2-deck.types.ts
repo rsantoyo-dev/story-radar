@@ -1,7 +1,7 @@
 import { abbreviationBreaches, abbreviationFinding, explainedAbbreviations } from "./draft2-abbreviations.types";
 import { addressBreaches, addressFinding, type Draft2Reader } from "./draft2-address.types";
 import { comparableText, type Draft2Fact } from "./draft2-facts.types";
-import type { Draft2FocusSnapshot, Draft2FocusStructureKind } from "./draft2-focus.types";
+import { beatFactsFinding, beatFactsMissing, type Draft2FocusSnapshot, type Draft2FocusStructureKind } from "./draft2-focus.types";
 import {
   funnelEvaluationSchema, funnelExploreRequest, funnelFixRequest, funnelFactIds, funnelJudgeRequest, funnelParseCandidates, funnelParseEvaluation, funnelRecord,
   funnelRefineRequest, funnelText, funnelWordCount, headlineKey, longWords, numbersIn, statedNumbers, wordOverlap,
@@ -62,7 +62,7 @@ export const DECK_RESTATEMENT_OVERLAP = 0.5;
 export const DECK_CRITERIA = ["flow", "coverage", "pacing", "clarity", "grounding", "voice", "focus", "originality"] as const;
 export const DECK_MECHANICAL_CODES = [
   "FACT_UNKNOWN", "NO_FACTS", "HEADLINE_TOO_LONG", "BODY_TOO_LONG", "PRACTICAL_TOO_LONG", "PRACTICAL_OUTSIDE_LIST", "SLIDE_COUNT", "ITEM_OUT_OF_PLACE",
-  "RESTATES_SLIDE", "RECAP_LABEL", "UNSUPPORTED_NUMBER", "TOO_MANY_EMOJIS", "DUPLICATE_CANDIDATE", "WRONG_ADDRESS", "ABBREVIATION",
+  "RESTATES_SLIDE", "RECAP_LABEL", "UNSUPPORTED_NUMBER", "TOO_MANY_EMOJIS", "DUPLICATE_CANDIDATE", "WRONG_ADDRESS", "ABBREVIATION", "BEAT_FACTS_MISSING",
 ] as const;
 export const DECK_JUDGE_CODES = ["BREAKS_FLOW", "GAP", "OVERLOADED", "REPEATS", "WRONG_LENGTH", "UNCLEAR", "OVERCLAIMS", "OFF_VOICE", "OFF_FOCUS", "OTHER"] as const;
 export const DECK_ISSUE_CODES = [...DECK_MECHANICAL_CODES, ...DECK_JUDGE_CODES] as const;
@@ -203,8 +203,10 @@ const EMOJI = /\p{Extended_Pictographic}/gu;
  * steps' items in order, one per slide); no slide repeats another slide of
  * the carousel or sums up; emojis stay within the publication's allowance.
  */
-export function mechanicalDeckIssues(candidates: readonly Draft2DeckCandidate[], facts: readonly Draft2Fact[], { opening, closing, shape, itemCount, emojis, reader }: {
+export function mechanicalDeckIssues(candidates: readonly Draft2DeckCandidate[], facts: readonly Draft2Fact[], { opening, closing, shape, itemCount, emojis, reader, beats }: {
   opening: Draft2ClosingOpening; closing: Draft2DeckClosing; shape: Draft2DeckShape; itemCount?: number; emojis: number; reader?: Draft2Reader;
+  /** The facts the spine's middle beats rest on, in order (slide 1, 2…): each slide cites enough of its own (BEAT_FACTS_MISSING). */
+  beats?: readonly (readonly string[] | undefined)[];
 }): Draft2DeckIssue[] {
   const byId = new Map(facts.map((fact) => [fact.id, fact]));
   const explained = explainedAbbreviations(facts);
@@ -233,6 +235,10 @@ export function mechanicalDeckIssues(candidates: readonly Draft2DeckCandidate[],
       if (!slide.factIds.length) add("NO_FACTS", part, `${label} cites no fact; every sentence rests on verified facts.`);
       const unknown = slide.factIds.filter((id) => !byId.has(id));
       if (unknown.length) add("FACT_UNKNOWN", part, `${label} cites ${unknown.join(", ")}, which ${unknown.length === 1 ? "is not a verified fact" : "are not verified facts"}.`);
+      // The slide carries the facts its spine beat rests on.
+      const beat = beats?.[index];
+      const missingBeat = beatFactsMissing(slide.factIds, beat);
+      if (missingBeat.length && beat) add("BEAT_FACTS_MISSING", part, beatFactsFinding(label, missingBeat, beat, facts));
       if (funnelWordCount(slide.headline) > DECK_HEADLINE_MAX_WORDS) add("HEADLINE_TOO_LONG", part, `${label}'s headline has ${funnelWordCount(slide.headline)} words; the limit is ${DECK_HEADLINE_MAX_WORDS}.`);
       const bodyLimit = isList ? DECK_ITEM_SENTENCE_MAX_WORDS : DECK_BODY_MAX_WORDS;
       if (funnelWordCount(slide.body) > bodyLimit) add("BODY_TOO_LONG", part, `${label}'s body has ${funnelWordCount(slide.body)} words; the limit is ${bodyLimit}${isList ? ", the practical line apart" : ""}.`);

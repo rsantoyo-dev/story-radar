@@ -3,7 +3,8 @@ import test from "node:test";
 import { Draft2InputError, Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
 import {
   CLASSIC_CONCEPT, CLASSIC_NARRATIVE, DRAFT2_FOCUS_PLAN_SCHEMA, DRAFT2_FOCUS_SCHEMA, focusConcept, FOCUS_FIELDS, applyFocusEdit, decidedFocus, editorChoicesOf, focusDecisionRequest, focusFindings, focusForModels, focusItemCount, focusLine,
-  anchorNoun, focusMaterial, focusToday, focusWithPlan, focusWithSpineProblems, narrativeUsesMaster, parseFocusDecision, parseFocusPlan, parseNarrativeReview, resetFocusField, spineShapeProblem, visualDirectionChanged, visualFocus, wordsFollowFocus,
+  anchorNoun, beatFactsFinding, beatFactsMissing, focusMaterial, focusToday, focusWithPlan, focusWithSpineProblems, narrativeUsesMaster, parseFocusDecision, parseFocusPlan, parseNarrativeReview, resetFocusField, spineBeatFactIds, spineMiddleFactIds, spineShapeProblem,
+  spineUnusedFacts, visualDirectionChanged, visualFocus, wordsFollowFocus,
   type Draft2Focus, type Draft2FocusLine, type Draft2FocusMaterial, type Draft2FocusNarrative, type Draft2FocusValues, type Draft2SpineBeat,
 } from "./draft2-focus.types";
 import type { Draft2Inventory } from "./draft2-inventory.types";
@@ -557,4 +558,37 @@ test("the plan's image lines: Claude's first answer is asked again when a beat r
   assert.equal(json(focusWithSpineProblems(focus, []).spineProblems?.map((problem) => [problem.code, problem.beat])), json([["SPINE_SAME_SUBJECT", 2]]));
   assert.equal("spineProblems" in focusWithSpineProblems({ ...focus, spineProblems: [{ code: "SPINE_SAME_SUBJECT", beat: 2, detail: "x" }], values: { spine: ARC_SPINE } } as unknown as Draft2Focus, []), false, "a clean spine clears the earlier problems");
   assert.equal(focusForModels({ ...decided().values!, spine: kept.spine }).spine?.[0].subject, "a founder's laptop", "the models read each beat's subject");
+});
+
+test("the spine covers the story: a fact it depends on has a beat or a guard, or the plan is asked again once and the opening waits; each slide knows the facts its beat rests on", () => {
+  const arrests: Draft2Fact = { id: "f9", claim: "Two suspects, 16 and 19, were arrested on 10 September.", evidence: "arrested", kind: "event", status: "established", importance: 98 };
+  const rumour: Draft2Fact = { id: "f10", claim: "A rumour the article disputes.", evidence: "", kind: "event", status: "disputed", importance: 95 };
+  const important = [...facts, arrests, rumour];
+  assert.deepEqual(spineUnusedFacts(ARC_SPINE as never, [], important).map((fact) => fact.id), ["f9"], "f1 (90) has beats, f2 and f3 are under 85, a disputed fact never counts");
+  assert.deepEqual(spineUnusedFacts(ARC_SPINE as never, [{ factIds: ["f9"] }], important), [], "a guard's fact is placed");
+  const known = new Set(["f1", "f2", "f3", "f9"]);
+  const arc = { kind: "arc" as const, itemFactIds: [] };
+  const freeLevers = { primary: "free", alternatives: [], factIds: [], paidBy: "slide2" as const };
+  const plan = { levers: freeLevers, spine: ARC_SPINE, direction: "d", visualDirection: "v", reasons: {} };
+  const message = "The spine leaves out facts the story depends on: f9 (Two suspects, 16 and 19, were arrested on 10 September.). Give each a beat, or fold it into one.";
+  assert.throws(() => parseFocusPlan(JSON.stringify(plan), { known, structure: arc, coverage: important }), (error: Error) => error instanceof Draft2ResponseError && error.message === message);
+  const covering = { ...plan, spine: { beats: ARC_SPINE.beats.map((beat, index) => index === 5 ? { ...beat, factIds: [...beat.factIds, "f9"] } : beat) } };
+  assert.deepEqual(parseFocusPlan(JSON.stringify(covering), { known, structure: arc, coverage: important }).spine.beats[5].factIds, ["f1", "f2", "f9"]);
+  assert.equal(parseFocusPlan(JSON.stringify(plan), { known, structure: arc, coverage: important, editorChoices: { spine: ARC_SPINE } }).spine.beats.length, 7, "a spine the editor owns is theirs: not asked again");
+  assert.equal(parseFocusPlan(JSON.stringify(plan), { known, structure: arc }).spine.beats.length, 7, "the last attempt is not checked: its gaps go to the editor as a finding");
+  const values = decided().values!;
+  assert.deepEqual(focusFindings(values, undefined, important).map((finding) => [finding.field, finding.code, finding.detail]), [["spine", "SPINE_FACT_UNUSED", message]]);
+  assert.deepEqual(focusFindings(values, undefined, facts), [], "every fact of importance 85 or more has a beat");
+  assert.deepEqual(focusFindings(values), [], "without the facts there is nothing to cover");
+  assert.deepEqual(
+    ["cover", "slide2", "s1", "s3", "penultimate", "last", "s4"].map((slide) => spineBeatFactIds(values.spine, slide)),
+    [["f1"], ["f1"], ["f2"], ["f3"], ["f1", "f2"], [], undefined], "the cover's, slide 2's, the middle beats' in order, the closing's; none for a slide the spine does not have");
+  assert.equal(spineBeatFactIds(undefined, "cover"), undefined);
+  assert.deepEqual(spineMiddleFactIds(values.spine), [["f2"], ["f2"], ["f3"]]);
+  assert.deepEqual(beatFactsMissing(["f4"], ["f1", "f2", "f3", "f4", "f5", "f6"]), ["f1", "f2", "f3", "f5", "f6"], "a beat of six needs three cited");
+  assert.deepEqual(beatFactsMissing(["f4", "f1", "f6"], ["f1", "f2", "f3", "f4", "f5", "f6"]), [], "three of six is enough");
+  assert.deepEqual(beatFactsMissing(["f9"], ["f1", "f2"]), ["f1", "f2"], "a beat of two needs one");
+  assert.deepEqual(beatFactsMissing(["f1"], ["f1"]), []);
+  assert.deepEqual([beatFactsMissing([], []), beatFactsMissing(["f1"], undefined)], [[], []], "a beat without facts, or no spine, asks nothing");
+  assert.equal(beatFactsFinding("Slide 2", ["f2"], ["f1", "f2"], facts), "Slide 2 leaves out the facts its beat rests on: f2 (A DOD official says awards took less than a week.). State at least 1 of the beat's 2, and cite them.");
 });

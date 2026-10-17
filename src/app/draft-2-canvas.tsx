@@ -154,7 +154,7 @@ function nextAutopilotStep(session: Draft2SessionView | null, now: number): Auto
   if (waiting && !focus?.values) return { blocked: `${waiting} ${waiting === 1 ? "person waits" : "people wait"} for you in People and places: confirm or reject ${waiting === 1 ? "them" : "each"}, then run the autopilot again.` };
   if (!focus?.values || (focus.status === "running" && stale)) return { step: "focus" };
   if (focus.status === "running") return { blocked: "The focus is being decided." };
-  const findings = focusFindings(focus.values, focusMaterial(inventory));
+  const findings = focusFindings(focus.values, focusMaterial(inventory), session.facts ?? undefined);
   const focusOwn = findings.filter((finding) => finding.field !== "spine");
   if (focusOwn.length) return { blocked: `Fix the focus first: ${focusOwn.map((finding) => finding.detail).join(" ")}` };
   // The spine: the plan the words and the images follow, written from the focus; a focus decided or changed since needs it again.
@@ -608,6 +608,12 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
         const patchedSession = await decideReviewPatch("apply-all", undefined, "autopilot", result);
         if (patchedSession) current = patchedSession;
       }
+      // A review under the acceptable score is the editor's to read before the images are made: its patches and the reader's reactions say what the words still lack (a 68 went on to the images once, 2026-10-17).
+      const reviewed = next.step === "review" ? current.review?.editor?.scores.overall : undefined;
+      if (reviewed !== undefined && reviewed < FUNNEL_ACCEPTABLE_SCORE) {
+        show({ outcome: `The review scored the carousel ${reviewed}/100, under ${FUNNEL_ACCEPTABLE_SCORE}: read its patches and the reader’s reactions, fix the words by hand or write a step again, then run the autopilot to the images.` });
+        break;
+      }
     }
     show({ active: false, current: undefined, finishedAt: new Date().toISOString() });
   }
@@ -923,7 +929,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   // People and places as the focus reads them: the narrative's anchor is checked against them as they stand now.
   const focusInventory = session?.inventory ?? undefined;
   const material = focusInventory?.status === "ready" ? focusMaterial(focusInventory) : undefined;
-  const focusProblems = focus?.values ? focusFindings(focus.values, material) : [];
+  const focusProblems = focus?.values ? focusFindings(focus.values, material, session?.facts ?? undefined) : [];
   const focusLevers = focus?.values ? eligibleLevers(session?.facts ?? [], focus.values) : [];
   const focusStalled = !running && focus?.status === "running" && now > 0 && now - Date.parse(session?.updatedAt ?? "") > OPENING_STALL_MS;
   // The focus's own findings; the spine's are the Spine step's.
@@ -1583,7 +1589,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
             <div className={styles.autopilotHead}>
               <div>
                 <h2 id="draft2-autopilot-title" className={styles.autopilotTitle}>Autopilot</h2>
-                <p className={styles.autopilotIntro}>Runs every step to the images, from where the story stands: the facts if they are not verified, the people and places, the focus, the accounts to tag, the opening, the closing, the deck, the visual script and the images. Before the focus chooses the narrative form, it waits for you if people in People and places wait for your confirmation. Each step keeps {commonJudge ? `${commonJudge}’s` : "its judge’s"} winner; 95 is the goal, a step that ends from {FUNNEL_ACCEPTABLE_SCORE} is acceptable and marked for you, and one under {FUNNEL_ACCEPTABLE_SCORE} takes up to {FUNNEL_MAX_EXTRA_ROUNDS} extra rounds on its own before the run goes on; a failure, or a step that needs you, stops it. You review at the end: re-run or choose in any step, confirm the accounts, write the caption and approve.</p>
+                <p className={styles.autopilotIntro}>Runs every step to the images, from where the story stands: the facts if they are not verified, the people and places, the focus, the accounts to tag, the opening, the closing, the deck, the visual script and the images. Before the focus chooses the narrative form, it waits for you if people in People and places wait for your confirmation. Each step keeps {commonJudge ? `${commonJudge}’s` : "its judge’s"} winner; 95 is the goal, a step that ends from {FUNNEL_ACCEPTABLE_SCORE} is acceptable and marked for you, and one under {FUNNEL_ACCEPTABLE_SCORE} takes up to {FUNNEL_MAX_EXTRA_ROUNDS} extra rounds on its own before the run goes on; a failure, a step that needs you, or a review under {FUNNEL_ACCEPTABLE_SCORE} stops it. You review at the end: re-run or choose in any step, confirm the accounts, write the caption and approve.</p>
               </div>
               <ActionRow>{autopilotButtons}</ActionRow>
             </div>

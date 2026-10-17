@@ -2,7 +2,7 @@ import "server-only";
 import { recordFunnelChoice, runFunnelStep, type FunnelStep, type FunnelStepInput } from "./draft2-funnel-run";
 import { DRAFT2_CLOSING_ROLES } from "./draft2-models";
 import { Draft2InputError } from "./draft2-facts.types";
-import { focusForModels, focusItemCount, type Draft2FocusSnapshot } from "./draft2-focus.types";
+import { focusForModels, focusItemCount, spineBeatFactIds, type Draft2FocusSnapshot } from "./draft2-focus.types";
 import { openingVersions } from "./draft2-opening.types";
 import {
   CLOSING_GATE, closingPlan, callToActionBrief, closingEvaluationSchema, closingExploreRequest, closingJudgeRequest, closingWordLimits, closingFixRequest, closingRefineRequest, closingSchema,
@@ -62,7 +62,7 @@ const CLOSING_STEP: FunnelStep<Draft2ClosingCandidate, Draft2ClosingScore, Draft
       schemas: { writer: closingSchema(shape), judge: closingEvaluationSchema(shape) },
       parseCandidates: (text) => parseClosingCandidates(text, shape),
       parseEvaluation: (text, ids) => parseClosingEvaluation(text, ids, shape),
-      mechanical: (candidates) => mechanicalClosingIssues(candidates, facts, { opening, shape, grave: values.voice.gravity === "grave", itemCount: focusItemCount(values), emojis, reader: { address: profile.readerAddress, language: profile.language } }),
+      mechanical: (candidates) => mechanicalClosingIssues(candidates, facts, { opening, shape, grave: values.voice.gravity === "grave", itemCount: focusItemCount(values), emojis, reader: { address: profile.readerAddress, language: profile.language }, beats: { penultimate: spineBeatFactIds(values.spine, "penultimate"), last: spineBeatFactIds(values.spine, "last") } }),
       explore: closingExploreRequest,
       refine: closingRefineRequest,
       fix: closingFixRequest,

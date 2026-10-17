@@ -2,7 +2,7 @@ import "server-only";
 import { recordFunnelChoice, runFunnelStep, type FunnelStep, type FunnelStepInput } from "./draft2-funnel-run";
 import { DRAFT2_DECK_ROLES } from "./draft2-models";
 import { Draft2InputError } from "./draft2-facts.types";
-import { focusForModels, focusItemCount, type Draft2FocusSnapshot } from "./draft2-focus.types";
+import { focusForModels, focusItemCount, spineMiddleFactIds, type Draft2FocusSnapshot } from "./draft2-focus.types";
 import { funnelVersions } from "./draft2-funnel";
 import { openingForClosing, type Draft2ClosingOpening } from "./draft2-closing.types";
 import {
@@ -70,7 +70,7 @@ const DECK_STEP: FunnelStep<Draft2DeckCandidate, Draft2DeckScore, Draft2DeckIssu
       schemas: { writer: DRAFT2_DECK_SCHEMA, judge: DRAFT2_DECK_EVALUATION_SCHEMA },
       parseCandidates: parseDeckCandidates,
       parseEvaluation: parseDeckEvaluation,
-      mechanical: (candidates) => mechanicalDeckIssues(candidates, facts, { opening, closing, shape, itemCount: focusItemCount(values), emojis, reader: { address: profile.readerAddress, language: profile.language } }),
+      mechanical: (candidates) => mechanicalDeckIssues(candidates, facts, { opening, closing, shape, itemCount: focusItemCount(values), emojis, reader: { address: profile.readerAddress, language: profile.language }, beats: spineMiddleFactIds(values.spine) }),
       explore: deckExploreRequest,
       refine: deckRefineRequest,
       fix: deckFixRequest,

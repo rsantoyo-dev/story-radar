@@ -4,9 +4,9 @@ import { mechanicalCaptionIssues, type Draft2Caption, type Draft2CaptionCandidat
 import { mechanicalClosingIssues, type Draft2Closing, type Draft2ClosingCandidate } from "./draft2-closing.types";
 import { mechanicalDeckIssues, type Draft2Deck, type Draft2DeckCandidate } from "./draft2-deck.types";
 import { nextEditId, parseHashtags, undoableEdit, type Draft2EditField, type Draft2EditInput, type Draft2EditStep, type Draft2OwnOpening } from "./draft2-edits.types";
-import { Draft2BusyError, Draft2InputError } from "./draft2-facts.types";
+import { Draft2BusyError, Draft2InputError, type Draft2Fact } from "./draft2-facts.types";
 import { focusItemCount } from "./draft2-focus.types";
-import { funnelVersions, funnelWithCandidate, type FunnelCandidate, type FunnelEditorEdit, type FunnelRun } from "./draft2-funnel";
+import { funnelVersions, funnelWithCandidate, numbersIn, statedNumbers, type FunnelCandidate, type FunnelEditorEdit, type FunnelRun } from "./draft2-funnel";
 import { shownAttempt } from "./draft2-images.types";
 import { mechanicalOpeningIssues, type Draft2Opening, type Draft2OpeningCandidate } from "./draft2-opening.types";
 import { carouselWithText, deckIndex, patchedClosing, patchedDeck, patchedOpening, reviewCurrent, type Draft2ReviewPatchField } from "./draft2-review.types";
@@ -78,6 +78,62 @@ function withText(step: Draft2EditStep, candidate: FunnelCandidate, slide: strin
   return edited;
 }
 
+/** The facts a slide of a step's version cites; none for a visual script's direction. */
+function slideFactIds(step: Draft2EditStep, candidate: FunnelCandidate, slide: string): string[] | undefined {
+  if (step === "opening") { const opening = candidate as Draft2OpeningCandidate; return slide === "cover" ? opening.cover.factIds : opening.slide2.factIds; }
+  if (step === "closing") { const closing = candidate as Draft2ClosingCandidate; return slide === "penultimate" ? closing.penultimate?.factIds : closing.last.factIds; }
+  if (step === "deck") return (candidate as Draft2DeckCandidate).slides[deckIndex(slide) ?? -1]?.factIds;
+  if (step === "caption") return (candidate as Draft2CaptionCandidate).factIds;
+  return undefined;
+}
+
+/** The version with one slide's facts replaced. */
+function withFactIds(step: Draft2EditStep, candidate: FunnelCandidate, slide: string, factIds: string[]): FunnelCandidate {
+  if (step === "opening") {
+    const opening = candidate as Draft2OpeningCandidate;
+    const edited: Draft2OpeningCandidate = slide === "cover" ? { ...opening, cover: { ...opening.cover, factIds } } : { ...opening, slide2: { ...opening.slide2, factIds } };
+    return edited;
+  }
+  if (step === "closing") {
+    const closing = candidate as Draft2ClosingCandidate;
+    const edited: Draft2ClosingCandidate = slide === "penultimate" && closing.penultimate ? { ...closing, penultimate: { ...closing.penultimate, factIds } } : { ...closing, last: { ...closing.last, factIds } };
+    return edited;
+  }
+  if (step === "deck") {
+    const index = deckIndex(slide);
+    const deck = candidate as Draft2DeckCandidate;
+    const edited: Draft2DeckCandidate = { ...deck, slides: deck.slides.map((entry, at) => at === index ? { ...entry, factIds } : entry) };
+    return edited;
+  }
+  if (step === "caption") {
+    const edited: Draft2CaptionCandidate = { ...(candidate as Draft2CaptionCandidate), factIds };
+    return edited;
+  }
+  return candidate;
+}
+
+/** How many facts a hand edit cites on its own. */
+export const CITED_BY_HAND_MAX = 3;
+
+/**
+ * The verified facts that state the numbers a hand-written text brings and
+ * the slide's cited facts do not (a phone number, a date, an age): cited with
+ * the edit, three at most, so the words rest on the facts the way the
+ * writer's do and the number is no finding. The editor's other words cite
+ * nothing: a claim without a figure stays theirs. A hand edit of the
+ * Saint-Jean closing wrote the police line no cited fact gave (2026-10-17).
+ */
+export function factsCitedByHand(text: string, cited: readonly string[], facts: readonly Draft2Fact[]): string[] {
+  const added: string[] = [];
+  const stated = () => statedNumbers(facts.filter((fact) => cited.includes(fact.id) || added.includes(fact.id)));
+  for (const { digits } of numbersIn(text)) {
+    if (added.length >= CITED_BY_HAND_MAX || stated().has(digits)) continue;
+    const fact = facts.find((entry) => entry.status !== "disputed" && !cited.includes(entry.id) && !added.includes(entry.id) && statedNumbers([entry]).has(digits));
+    if (fact) added.push(fact.id);
+  }
+  return added;
+}
+
 const chosenId = (run: { editorChoiceId?: string; winnerId?: string } | null | undefined) => run?.editorChoiceId ?? run?.winnerId;
 
 /**
@@ -147,10 +203,14 @@ async function applyEdit(session: Draft2SessionRow, step: Draft2EditStep, slide:
   const candidate = chosenOf(run, step);
   const before = editableText(step, candidate, slide, field);
   if (before.replace(/\s+/g, " ").trim() === text.replace(/\s+/g, " ").trim()) throw new Draft2InputError("This text already says that.");
-  const next = withText(step, candidate, slide, field, text);
+  const written = withText(step, candidate, slide, field, text);
+  // The numbers the editor writes rest on the facts that state them: cited with the edit, so the slide carries its sources as the writer's would.
+  const cited = field === "hashtags" ? undefined : slideFactIds(step, written, slide);
+  const citedFactIds = cited ? factsCitedByHand(text, cited, session.facts ?? []) : [];
+  const next = cited && citedFactIds.length ? withFactIds(step, written, slide, [...cited, ...citedFactIds]) : written;
   const profile = await getCreativeProfile(session.topicId);
   const findings = findingsOf(session, step, next, slide, profile);
-  const edit: FunnelEditorEdit = { id: nextEditId(run.edits), candidateId: candidate.id, slide, field, before, after: editableText(step, next, slide, field), at: new Date().toISOString(), findings };
+  const edit: FunnelEditorEdit = { id: nextEditId(run.edits), candidateId: candidate.id, slide, field, before, after: editableText(step, next, slide, field), at: new Date().toISOString(), findings, ...(citedFactIds.length ? { citedFactIds } : {}) };
   return changed(session, step, run, next, slide, field, edit.after, [...(run.edits ?? []), edit]);
 }
 
@@ -164,7 +224,10 @@ function undoEdit(session: Draft2SessionRow, step: Draft2EditStep, editId: strin
   if (editableText(step, version.candidate, edit.slide, field).replace(/\s+/g, " ").trim() !== edit.after.replace(/\s+/g, " ").trim()) {
     throw new Draft2InputError("The text no longer says what this change wrote; undo is not possible.");
   }
-  const restored = withText(step, version.candidate, edit.slide, field, edit.before);
+  const written = withText(step, version.candidate, edit.slide, field, edit.before);
+  // The facts the edit cited for its numbers go with it.
+  const cited = edit.citedFactIds?.length ? slideFactIds(step, written, edit.slide) : undefined;
+  const restored = cited ? withFactIds(step, written, edit.slide, cited.filter((id) => !edit.citedFactIds!.includes(id))) : written;
   const edits = (run.edits ?? []).map((entry) => entry.id === edit.id ? { ...entry, undoneAt: new Date().toISOString() } : entry);
   return changed(session, step, run, restored, edit.slide, field, edit.before, edits);
 }

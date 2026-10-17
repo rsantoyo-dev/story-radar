@@ -16,7 +16,8 @@ import { mechanicalClosingIssues, type Draft2Closing, type Draft2ClosingCandidat
 import { mechanicalDeckIssues, type Draft2Deck, type Draft2DeckCandidate } from "./draft2-deck.types";
 import { carouselSlides, type Draft2CarouselSlide } from "./draft2-visual.types";
 import {
-  DRAFT2_READER_SCHEMA, DRAFT2_REVIEW_SCHEMA, REVIEW_NECESSARY_KINDS, carouselWithText, parseReaderAnswer, parseReviewAnswer, patchedClosing, patchedDeck, patchedOpening, reviewCurrent, reviewPatchRules, reviewPatches, sameWords, slideText,
+  DRAFT2_READER_SCHEMA, DRAFT2_REVIEW_SCHEMA, DRAFT2_REVIEW_SHORTEN_SCHEMA, REVIEW_MAX_PATCHES, REVIEW_NECESSARY_KINDS, carouselWithText, lengthOnly, parseReaderAnswer, parseReviewAnswer, parseShortenAnswer, patchedClosing, patchedDeck, patchedOpening,
+  reviewCurrent, reviewPatchRules, reviewPatches, reviewWordLimits, sameWords, slideText,
   type Draft2Review, type Draft2ReviewPatch } from "./draft2-review.types";
 import { brandBrief, composeInstructions, creativeSkills } from "./skills/draft2-skills";
 import { FAIRNESS_SKILL } from "./skills/fairness";
@@ -26,6 +27,8 @@ import type { Draft2SessionRow } from "@/db/schema";
 
 const READER_MAX_OUTPUT_TOKENS = 4_000;
 const EDITOR_MAX_OUTPUT_TOKENS = 8_000;
+/** The replacement alone, shortened. */
+const SHORTEN_MAX_OUTPUT_TOKENS = 1_000;
 /** Claude's thinking counts against the same ceiling as its answer. */
 const CLAUDE_EDITOR_MAX_OUTPUT_TOKENS = 16_000;
 const READER_TIMEOUT_MS = 90_000;
@@ -187,18 +190,45 @@ export async function reviewDraft2Carousel({ topicId, storyId, sessionId }: Draf
       // 2. The editor: the whole carousel, the focus, the reader's reactions and the facts; Claude by default, changing only what must change.
       const editorBy = models.editor;
       const editor = composeInstructions("carousel-editor", [REVIEW_SKILL, FAIRNESS_SKILL, READER_SKILL, ...creativeSkills(chosen.focus.values)], brief);
+      const editorInstructions = `${editor.instructions}\n\n# Verified facts\n${JSON.stringify(factsSnapshot(facts))}`;
+      // The word limits each slide's text keeps, so a patch is written within them (the Saint-Jean review lost both its truth patches to a 30-word body, 2026-10-17).
+      const limits = { patches: REVIEW_MAX_PATCHES, words: reviewWordLimits(carousel, { deck: chosen.deck.shape ?? undefined, closing: chosen.closing.shape ?? undefined }) };
       const editorAnswer = await call(editorBy, "draft2_review", {
-        instructions: `${editor.instructions}\n\n# Verified facts\n${JSON.stringify(factsSnapshot(facts))}`,
-        contents: { task: "review", slides, focus: focusForModels(chosen.focus.values), reader: read, limits: { patches: 6 } },
+        instructions: editorInstructions,
+        contents: { task: "review", slides, focus: focusForModels(chosen.focus.values), reader: read, limits },
         schema: DRAFT2_REVIEW_SCHEMA, maxOutputTokens: EDITOR_MAX_OUTPUT_TOKENS, reasoningEffort: "medium", timeoutMs: EDITOR_TIMEOUT_MS, skillVersions: editor.skillVersions,
       });
       const answer = parseReviewAnswer(editorAnswer, carousel);
-      // 3. The program: a patch that breaks the review's own rules or the owning step's is refused with the rule, before anyone sees it as a choice.
-      const patches = reviewPatches(answer, carousel).map((patch) => {
-        if (patch.status !== "proposed") return patch;
-        const findings = [...reviewPatchRules(patch, facts), ...patchFindings(session, chosen, patch, facts, emojis, { address: profile.readerAddress, language: profile.language })];
-        return findings.length ? { ...patch, status: "refused" as const, note: findings.join(" ") } : patch;
-      });
+      // 3. The program: a patch that breaks the review's own rules or the owning step's is refused with the rule, before anyone sees it as a choice; one over its slide's word limit alone is asked shorter once, the same change within the limit.
+      const address = { address: profile.readerAddress, language: profile.language };
+      const headlineOf = (slide: string) => carousel.find((entry) => entry.slide === slide)?.headline;
+      const checked = (patch: Draft2ReviewPatch) => [...reviewPatchRules(patch, facts, headlineOf(patch.slide)), ...patchFindings(session, chosen, patch, facts, emojis, address)];
+      /** The editor's own patch within the limit, or nothing when the call fails or answers nothing usable: the refusal stands. */
+      const shorten = async (patch: Draft2ReviewPatch, limit: number, findings: string[]): Promise<string | undefined> => {
+        try {
+          const shortAnswer = await call(editorBy, "draft2_review_shorten", {
+            instructions: editorInstructions,
+            contents: { task: "shorten", slide: patch.slide, field: patch.field, headline: headlineOf(patch.slide), before: patch.before, after: patch.after, reason: patch.reason, limit, findings },
+            schema: DRAFT2_REVIEW_SHORTEN_SCHEMA, maxOutputTokens: SHORTEN_MAX_OUTPUT_TOKENS, reasoningEffort: "low", timeoutMs: READER_TIMEOUT_MS, skillVersions: editor.skillVersions,
+          });
+          return parseShortenAnswer(shortAnswer);
+        } catch { return undefined; }
+      };
+      const patches: Draft2ReviewPatch[] = [];
+      for (const patch of reviewPatches(answer, carousel)) {
+        if (patch.status !== "proposed") { patches.push(patch); continue; }
+        let findings = checked(patch);
+        const limit = limits.words[patch.slide]?.[patch.field];
+        if (lengthOnly(findings) && limit) {
+          const shorter = await shorten(patch, limit, findings);
+          if (shorter) {
+            const again: Draft2ReviewPatch = { ...patch, after: shorter, note: [patch.note, `Shortened to the slide's limit of ${limit} words.`].filter(Boolean).join(" ") };
+            findings = checked(again);
+            if (!findings.length) { patches.push(again); continue; }
+          }
+        }
+        patches.push(findings.length ? { ...patch, status: "refused" as const, note: findings.join(" ") } : patch);
+      }
       const now = new Date().toISOString();
       return { ...running, status: "ready", reader: read, readerBy, editor: { ...answer, patches }, editorBy, updatedAt: now };
     });

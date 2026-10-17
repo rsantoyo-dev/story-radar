@@ -147,3 +147,35 @@ not to the visual script's copy of the words, which the images letter: the
 new last slide still read the old headline. An applied patch (and its undo)
 now updates the visual script's copy too when the script reads the same
 versions, as a hand edit always did (`carouselWithText`, shared by both).
+
+## The editor reads the limits, a long patch is asked shorter, a weak review stops the autopilot (2026-10-17)
+
+The Saint-Jean fraud review (a cashier who spared an 80-year-old a 4,000 $
+loss) scored the carousel 68 and wrote two truth patches, 40 and 33 words on
+a 30-word body: both were refused for length and the fault stayed; its third
+patch, applied, opened a body with the slide's headline; and the autopilot
+went on to the images with the 68.
+
+- **The editor reads the limits.** `limits.words` gives each slide's word
+  limit per text (`reviewWordLimits`: the Opening's, the Deck's for its
+  shape, the Closing's for its shape), and the review skill (v7) asks for the
+  replacement within it from the start, cutting elsewhere in the same text
+  when the fix needs room.
+- **A patch over its limit alone is asked shorter once.** When every finding
+  on a patch is a length finding (`lengthOnly`), one more call
+  (`draft2_review_shorten`, the editor's model at low effort, the same rules
+  and facts) returns the same change within the limit
+  (`DRAFT2_REVIEW_SHORTEN_SCHEMA`, `parseShortenAnswer`, the skill's task
+  "shorten"); the patch is checked again and offered with the note
+  "Shortened to the slide's limit of N words", or refused as before when it
+  is still over or when the call fails (the trace keeps the error). A patch
+  refused for anything else besides is not asked.
+- **No text repeats its slide's headline** (`reviewPatchRules` with the
+  headline): a body or subheadline whose replacement contains the headline
+  (twelve letters or more) is refused: the body says what the headline does
+  not.
+- **The autopilot stops on a review under 90** (`FUNNEL_ACCEPTABLE_SCORE`),
+  after applying the necessary patches: the editor reads the patches and the
+  reader's reactions, fixes the words by hand or writes a step again, then
+  runs the autopilot to the images. A run started again goes on from the
+  review as it stands.

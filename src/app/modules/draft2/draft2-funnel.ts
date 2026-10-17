@@ -37,7 +37,11 @@ export type FunnelCandidate = {
  * them), what it said and says now, and what the program found on it then
  * (shown to the editor, never blocking: the editor has the last word).
  */
-export type FunnelEditorEdit = { id: string; candidateId: string; slide: string; field: string; before: string; after: string; at: string; findings: string[]; undoneAt?: string };
+export type FunnelEditorEdit = {
+  id: string; candidateId: string; slide: string; field: string; before: string; after: string; at: string; findings: string[]; undoneAt?: string;
+  /** The facts the edit cited for the numbers it states (factsCitedByHand); an undo takes them off again. */
+  citedFactIds?: string[];
+};
 
 export type FunnelIssue = {
   code: string;

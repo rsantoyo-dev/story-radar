@@ -269,7 +269,7 @@ function planCall(focus: Draft2Focus, { facts, title, brief, editorChoices, mate
     // The editor's notes on the plan the focus already carries: the planner revises it to follow them (the spine skill's "editor's notes").
     contents: { task: "plan", title, focus: told, ...(material ? { material } : {}), eligibleLevers: eligible, recentLevers, ...(covers.length ? { recentCovers: recentCoversForModels(covers) } : {}), editorChoices: owned, ...(notes ? { notes } : {}) } as Record<string, unknown>,
     // The first answer's image lines are checked and asked for again with what they break; the second's problems go to the editor as notes.
-    parse: (answer: string, attempt: number) => parseFocusPlan(answer, { known: new Set(facts.map((fact) => fact.id)), structure: values.structure, eligibleLevers: eligible, editorChoices: owned, ...(attempt < FOCUS_ATTEMPTS ? { imageCheck: { avoid, recurring: spineRecurring(values.narrative) } } : {}) }),
+    parse: (answer: string, attempt: number) => parseFocusPlan(answer, { known: new Set(facts.map((fact) => fact.id)), structure: values.structure, eligibleLevers: eligible, editorChoices: owned, ...(attempt < FOCUS_ATTEMPTS ? { imageCheck: { avoid, recurring: spineRecurring(values.narrative) }, coverage: facts } : {}) }),
   };
 }
 

@@ -379,3 +379,12 @@ test("v3: five openings in two rounds, each a different angle; a cover that says
   assert.match(similar[0].detail, /says what c1's says in other words \(\d+% of their longer words shared\): pull on another lever or angle/);
   assert.deepEqual(mechanicalOpeningIssues(openings, facts).filter((issue) => issue.code === "SIMILAR_CANDIDATE"), [], "v2 does not check");
 });
+
+test("the cover and slide 2 carry the facts their spine beats rest on: half of them cited, three at most, or the facts left out are named", () => {
+  const beats = { cover: ["f1", "f3"], slide2: ["f1", "f2", "f3"] };
+  const issues = mechanicalOpeningIssues([candidate("c1")], facts, { beats });
+  assert.deepEqual(codes(issues), ["BEAT_FACTS_MISSING c1 slide2"], "the cover cites one of its two; slide 2 one of its three, and three need two");
+  assert.equal(issues[0].detail, "Slide 2 leaves out the facts its beat rests on: f1 (The program reviews product videos no longer than five minutes.); f3 (The program could reach $1.5 trillion in contracts by 2030.). State at least 2 of the beat's 3, and cite them.");
+  assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1", { slide2: { factIds: ["f2", "f3"] } })], facts, { beats })), []);
+  assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1")], facts, { beats: { cover: [] } })), [], "a beat without facts, or no spine, asks nothing");
+});

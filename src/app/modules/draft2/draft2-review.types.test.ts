@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Draft2ResponseError } from "./draft2-facts.types";
 import {
-  DRAFT2_READER_SCHEMA, DRAFT2_REVIEW_SCHEMA, REVIEW_CRITERIA, deckIndex, locateQuote, parseReaderAnswer, parseReviewAnswer, patchField, patchOwner, patchedClosing, patchedDeck, patchedOpening, proposedPatches, resolveSlide, reviewCurrent, reviewPatches, slideFields, slideText,
+  DRAFT2_READER_SCHEMA, DRAFT2_REVIEW_SCHEMA, DRAFT2_REVIEW_SHORTEN_SCHEMA, REVIEW_CRITERIA, deckIndex, lengthOnly, locateQuote, parseReaderAnswer, parseReviewAnswer, parseShortenAnswer, patchField, patchOwner, patchedClosing, patchedDeck, patchedOpening, proposedPatches, resolveSlide, reviewCurrent,
+  reviewPatches, reviewWordLimits, slideFields, slideText,
   type Draft2Review,
 } from "./draft2-review.types";
 import type { Draft2CarouselSlide } from "./draft2-visual.types";
@@ -118,4 +119,20 @@ test("a patch on the text it quoted: a sentence of a body is that part of the bo
   assert.equal(json([moved.status, moved.slide, moved.owner, moved.before]), json(["proposed", "s1", "deck", "A reading room and a workshop."]));
   assert.match(moved.note ?? "", /named slide2's body; the text it quoted is s1's body/);
   assert.equal(nowhere.status, "refused");
+});
+
+test("the word limits the editor reads, per slide and text, as the steps set them for the carousel's shapes; a refusal for length alone; the shortened replacement", () => {
+  assert.deepEqual(reviewWordLimits(carousel, { deck: { kind: "arc" }, closing: "two-slides" }), {
+    cover: { headline: 8, subheadline: 12 }, slide2: { headline: 8, body: 30 }, s1: { headline: 8, body: 30, practical: 14 }, penultimate: { headline: 8, body: 30 }, last: { headline: 8, body: 25, cta: 14 },
+  });
+  const oneSlide = reviewWordLimits(carousel.filter((slide) => slide.slide !== "penultimate"), { deck: { kind: "list" }, closing: "one-slide" });
+  assert.deepEqual([oneSlide.s1, oneSlide.last, "penultimate" in oneSlide], [{ headline: 8, body: 12, practical: 14 }, { headline: 8, body: 40, cta: 14 }, false], "a list's items and a one-slide closing have their own");
+  assert.deepEqual(reviewWordLimits(carousel, {}).s1.body, 30, "an older run without shapes is read as an arc with a two-slide closing");
+  assert.equal(lengthOnly(["The slide 2 body has 33 words; the limit is 30."]), true);
+  assert.equal(lengthOnly(["The slide 2 body has 33 words; the limit is 30.", "It drops 17, which the facts give: a patch keeps the dates, times and prices a slide carries."]), false);
+  assert.equal(lengthOnly([]), false);
+  assert.equal(parseShortenAnswer(JSON.stringify({ after: "  Shorter.  " })), "Shorter.");
+  assert.throws(() => parseShortenAnswer(JSON.stringify({ after: "" })), (error: Error) => error instanceof Draft2ResponseError && /shortened replacement is missing or longer than 400/.test(error.message));
+  assert.throws(() => parseShortenAnswer(JSON.stringify({ after: "x".repeat(401) })), Draft2ResponseError);
+  assert.deepEqual((DRAFT2_REVIEW_SHORTEN_SCHEMA as { required: string[] }).required, ["after"]);
 });

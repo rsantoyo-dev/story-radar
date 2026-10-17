@@ -626,3 +626,20 @@ after three extractions, the Facts screen offers **Use these facts**
 the session is ready, the verdict records `accepted: { by: "editor", at }`
 and keeps its issues in view, and only a list the program finds nothing on
 can be taken (a flagged one must run again).
+
+### Addendum, 2026-10-17: the nets after the Saint-Jean carousel
+
+The same story's carousel, finished and reviewed, had left out the fraud's
+mechanism, the arrests and the date, and the autopilot went on to the images
+with a review of 68 ("we are putting so many agents and reviews on this, it
+cannot be that something like this gets past us"). Five nets, in the program
+(one new model call, only when needed): the spine must cover every fact of
+importance 85 or more (`SPINE_FACT_UNUSED`: the planner asked again once,
+then the Opening blocked until the editor places the fact); each slide must
+cite its beat's facts (`BEAT_FACTS_MISSING`: half, three at most, a
+mechanical finding of the Opening, Deck and Closing); the review reads each
+slide's word limits, a patch over them alone is asked shorter once
+(`draft2_review_shorten`), and a body never repeats its headline; the
+autopilot stops on a review under 90; a hand edit cites the facts that state
+its numbers (`citedFactIds`). See draft2-spine.md §13, draft2-review.md,
+draft2-hand-edits.md, draft2-autopilot.md.

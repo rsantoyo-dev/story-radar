@@ -170,3 +170,11 @@ test("the closing never uses an abbreviation the facts had to spell out", () => 
   assert.deepEqual(codes(issues), ["ABBREVIATION c1 last"]);
   assert.match(issues[0].detail, /^"SPAL" \(Service de police de l'agglomération de Longueuil\)/u);
 });
+
+test("the penultimate and the last slide carry the facts their spine beats rest on", () => {
+  const beats = { penultimate: ["f1", "f3"], last: ["f1", "f3"] };
+  assert.deepEqual(findings({}, { beats }), ["BEAT_FACTS_MISSING c1 last"], "the penultimate cites one of its two; the last cites f2 alone");
+  assert.match(mechanicalClosingIssues([closing("c1")], facts, { ...rules, beats })[0].detail, /^The last slide leaves out the facts its beat rests on: f1 \(The program reviews[^)]*\); f3 \(The program could reach[^)]*\)\. State at least 1 of the beat's 2, and cite them\.$/);
+  assert.deepEqual(findings({ last: { factIds: ["f2", "f3"] } }, { beats }), []);
+  assert.deepEqual(findings({}, { beats: { last: [] } }), [], "a beat without facts asks nothing");
+});

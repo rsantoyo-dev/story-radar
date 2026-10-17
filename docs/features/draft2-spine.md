@@ -300,3 +300,34 @@ slide 2", "never say critical temperature", "pay the jump on the cover").
   notes works as before: it keeps hand edits and adds no notes.
 - **Cost**: one plan call, plus one more only when the first answer breaks a
   rule the program checks (the image checks, the shape).
+
+## 13. Addendum, 2026-10-17: the spine covers the story, and each slide carries its beat
+
+The Saint-Jean fraud story went through every step and the review and still
+left out what it was about: the spine gave no beat to the arrests (the
+second most important fact, 98) nor to the date, and slide 2, whose beat
+rested on six facts (the call, the fake policeman, the 4,000 $ demand, the
+victim's age, the guards), cited three and left the mechanism to no slide.
+Two program checks, no new model call:
+
+- **The spine covers the facts the story depends on** (`spineUnusedFacts`):
+  a fact of importance 85 or more (`SPINE_COVERAGE_IMPORTANCE`), not
+  disputed, that no beat and no guard cites. On the planner's first attempt a
+  gap is a response error ("The spine leaves out facts the story depends on:
+  f2 (…). Give each a beat, or fold it into one"), asked again with the rule
+  like the image checks (`parseFocusPlan`'s `coverage`); the second answer's
+  gaps become a `spine` finding (`SPINE_FACT_UNUSED`, `focusFindings` with
+  the facts) that blocks the Opening ("Fix the spine first") until the editor
+  adds the fact to a beat by hand or rewrites the plan with a note. A spine
+  the editor owns is not asked again.
+- **Each slide carries its beat's facts** (`BEAT_FACTS_MISSING`, a
+  mechanical finding of the Opening, the Deck and the Closing): a slide
+  cites at least half of its beat's facts, three at most
+  (`beatFactsRequired`); the finding names the facts left out with their
+  claims. The cover and slide 2 read the cover and slide2 beats, deck slide N
+  the Nth middle beat (`spineBeatFactIds`, `spineMiddleFactIds`), the
+  penultimate and the last their own. As every mechanical finding it keeps
+  the version from winning and sends it back once in the fix pass. Hand edits
+  and review patches are not checked for it: they change words, not
+  citations (a hand edit cites the facts that state its numbers, see
+  draft2-hand-edits.md).

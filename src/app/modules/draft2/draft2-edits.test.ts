@@ -146,3 +146,21 @@ test("nothing is edited while a run goes, or before the step has a chosen versio
   await assert.rejects(harness({ session: { caption: null } }).edit({ action: "edit", step: "caption", slide: "post", field: "text", text: "x" }), /no caption to edit yet/);
   await assert.rejects(harness({ session: { deck: { ...run(deck, {}), winnerId: undefined } } }).edit({ action: "edit", step: "deck", slide: "s1", field: "headline", text: "x" }), /Choose a version of the deck/);
 });
+
+test("a hand edit cites the verified facts that state its numbers, so the slide carries its sources and the number is no finding; an undo takes them off again", async () => {
+  const line = { id: "f4", claim: "The police line is 450 3599222.", evidence: "450 3599222", kind: "event", status: "established", importance: 50 };
+  const disputed = { id: "f5", claim: "Doors open at 9.", evidence: "", kind: "event", status: "disputed", importance: 50 };
+  const h = harness({ session: { facts: [...facts, line, disputed] } });
+  const edited = await h.edit({ action: "edit", step: "closing", slide: "last", field: "body", text: "Un doute ? Appelle le 450 3599222, dès 9 h." });
+  const [record] = (edited.closing as funnel.FunnelRun).edits!;
+  assert.equal(json([(chosen(edited, "closing").last as { factIds: string[] }).factIds, record.citedFactIds]), json([["f1", "f4"], ["f4"]]), "the line's fact is cited with the edit; a disputed fact never is");
+  assert.ok(record.findings.some((finding) => /9 is not stated by the facts/.test(finding)), "the hour no verified fact gives stays a finding");
+  assert.ok(!record.findings.some((finding) => /450/.test(finding)), "the line is no finding");
+  assert.equal(json((edited.deck as { closing: { last: { factIds: string[] } } }).closing.last.factIds), json(["f1", "f4"]), "the deck's copy of the closing follows");
+  const undone = await h.edit({ action: "undo", step: "closing", editId: "edit1" });
+  assert.equal(json((chosen(undone, "closing").last as { factIds: string[] }).factIds), json(["f1"]));
+  const deckEdit = await h.edit({ action: "edit", step: "deck", slide: "s1", field: "body", text: "Des tables calmes, et une ligne au 450 3599222." });
+  assert.equal(json(((chosen(deckEdit, "deck").slides as { factIds: string[] }[])[0]).factIds), json(["f1", "f4"]), "a deck slide cites the same way");
+  const tags = await h.edit({ action: "edit", step: "caption", slide: "post", field: "hashtags", text: "#Longueuil450" });
+  assert.equal(json((chosen(tags, "caption") as { factIds: string[] }).factIds), json(["f1"]), "hashtags are not read for numbers");
+});

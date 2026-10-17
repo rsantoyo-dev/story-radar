@@ -2,7 +2,7 @@ import "server-only";
 import { recordFunnelChoice, runFunnelStep, type FunnelStep, type FunnelStepInput } from "./draft2-funnel-run";
 import { DRAFT2_OPENING_EARLIER_ROLES, DRAFT2_OPENING_ROLES } from "./draft2-models";
 import { Draft2InputError } from "./draft2-facts.types";
-import { focusFindings, focusForModels, focusItemCount, focusMaterial, type Draft2FocusSnapshot } from "./draft2-focus.types";
+import { focusFindings, focusForModels, focusItemCount, focusMaterial, spineBeatFactIds, type Draft2FocusSnapshot } from "./draft2-focus.types";
 import { eligibleLevers, leverSpread } from "./draft2-levers.types";
 import {
   DRAFT2_OPENING_EVALUATION_SCHEMA, DRAFT2_OPENING_SCHEMA, OPENING_DISTINCT_INSTRUCTION, OPENING_GATE, openingPlan, mechanicalOpeningIssues, OPENING_WORD_LIMITS, openingExploreRequest, openingFixRequest,
@@ -32,7 +32,7 @@ function openingFocus(session: Draft2SessionRow, stopped: Draft2Opening | undefi
   if (!focus?.values) throw new Draft2InputError("The opening follows the story's focus. Decide the focus first.");
   if (focus.status === "running") throw new Draft2InputError("The focus was still being decided when its request ended. Decide it again first.");
   // The narrative's anchor is checked against People and places as they stand now.
-  const findings = focusFindings(focus.values, session.inventory ? focusMaterial(session.inventory) : undefined);
+  const findings = focusFindings(focus.values, session.inventory ? focusMaterial(session.inventory) : undefined, session.facts ?? undefined);
   if (findings.length) throw new Draft2InputError(`Fix the focus first: ${findings.map((finding) => finding.detail).join(" ")}`);
   return { version: focus.version, values: focus.values };
 }
@@ -64,7 +64,7 @@ const OPENING_STEP: FunnelStep<Draft2OpeningCandidate, Draft2OpeningScore, Draft
       schemas: { writer: DRAFT2_OPENING_SCHEMA, judge: DRAFT2_OPENING_EVALUATION_SCHEMA },
       parseCandidates: parseOpeningCandidates,
       parseEvaluation: parseOpeningEvaluation,
-      mechanical: (candidates) => mechanicalOpeningIssues(candidates, facts, { itemCount, eligibleLevers: levers, guards: focus.values.guards, reader: { address: profile.readerAddress, language: profile.language }, distinct }),
+      mechanical: (candidates) => mechanicalOpeningIssues(candidates, facts, { itemCount, eligibleLevers: levers, guards: focus.values.guards, reader: { address: profile.readerAddress, language: profile.language }, distinct, beats: { cover: spineBeatFactIds(focus.values.spine, "cover"), slide2: spineBeatFactIds(focus.values.spine, "slide2") } }),
       explore: (wanted, last, versions) => ({ ...openingExploreRequest(wanted, last, versions), levers: { spread: leverSpread(focus.values.levers, wanted) }, ...(distinct ? { instruction: OPENING_DISTINCT_INSTRUCTION } : {}) }),
       refine: openingRefineRequest,
       fix: openingFixRequest,

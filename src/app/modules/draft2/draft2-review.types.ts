@@ -1,9 +1,9 @@
-import { Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
+import { Draft2ResponseError, comparableText, type Draft2Fact } from "./draft2-facts.types";
 import { numbersIn, statedNumbers, type FunnelRole } from "./draft2-funnel";
 import type { Draft2CarouselSlide } from "./draft2-visual.types";
-import type { Draft2OpeningCandidate } from "./draft2-opening.types";
-import type { Draft2ClosingCandidate } from "./draft2-closing.types";
-import type { Draft2DeckCandidate } from "./draft2-deck.types";
+import { OPENING_WORD_LIMITS, type Draft2OpeningCandidate } from "./draft2-opening.types";
+import { closingWordLimits, type Draft2ClosingCandidate, type Draft2ClosingShape } from "./draft2-closing.types";
+import { deckWordLimits, type Draft2DeckCandidate, type Draft2DeckShape } from "./draft2-deck.types";
 
 /**
  * Review, the step between the Deck and the visual script: the whole
@@ -122,6 +122,35 @@ export const DRAFT2_READER_SCHEMA: Record<string, unknown> = {
   required: ["reactions", "follow", "comment", "share", "stoppedAt", "verdict"],
   additionalProperties: false,
 };
+
+/**
+ * The word limits a patch keeps, per slide and text, as the owning steps set
+ * them: the editor reads them beside the slides (limits.words), and a patch
+ * over one is asked shorter once before it is refused. The Saint-Jean fraud
+ * review (2026-10-17) lost both its truth patches, 40 and 33 words on a
+ * 30-word body, and the carousel kept the fault.
+ */
+export function reviewWordLimits(carousel: readonly Pick<Draft2CarouselSlide, "slide" | "practical">[], shapes: { deck?: Pick<Draft2DeckShape, "kind">; closing?: Draft2ClosingShape }): Record<string, Record<string, number>> {
+  const deck = deckWordLimits(shapes.deck ?? { kind: "arc" });
+  const closing = closingWordLimits(shapes.closing ?? "two-slides");
+  return Object.fromEntries(carousel.map((slide) => {
+    switch (slide.slide) {
+      case "cover": return [slide.slide, { headline: OPENING_WORD_LIMITS.coverHeadline, subheadline: OPENING_WORD_LIMITS.coverSubheadline }];
+      case "slide2": return [slide.slide, { headline: OPENING_WORD_LIMITS.slide2Headline, body: OPENING_WORD_LIMITS.slide2Body }];
+      case "penultimate": return [slide.slide, { headline: closing.penultimateHeadline, body: closing.penultimateBody }];
+      case "last": return [slide.slide, { headline: closing.lastHeadline, body: closing.lastBody, cta: closing.cta }];
+      default: return [slide.slide, { headline: deck.headline, body: deck.body, ...(slide.practical !== undefined ? { practical: deck.practical } : {}) }];
+    }
+  }));
+}
+
+/** A finding that refuses a patch for its length alone: the owning step's word limit. */
+export const REVIEW_LENGTH_FINDING = /has \d+ words; the limit is \d+/;
+/** Whether every finding on a patch is its length: then the same change is asked shorter once. */
+export const lengthOnly = (findings: readonly string[]) => findings.length > 0 && findings.every((finding) => REVIEW_LENGTH_FINDING.test(finding));
+
+/** The editor's answer when asked to shorten a patch to its slide's limit: the replacement alone. */
+export const DRAFT2_REVIEW_SHORTEN_SCHEMA: Record<string, unknown> = { type: "object", properties: { after: { type: "string" } }, required: ["after"], additionalProperties: false };
 
 /** The editor's answer: the scores, the verdict, what works, and the patches (no enum inside an array: the parser checks slide and field). */
 export const DRAFT2_REVIEW_SCHEMA: Record<string, unknown> = {
@@ -296,8 +325,17 @@ export function parseReviewAnswer(answer: string, carousel: readonly Draft2Carou
   };
 }
 
+/** The shortened replacement, within the patch's length; missing or too long is a response error. */
+export function parseShortenAnswer(answer: string): string {
+  const after = text(parseObject(answer, "shorten").after, REVIEW_PATCH_MAX_CHARACTERS);
+  if (!after) throw new Draft2ResponseError(`The shortened replacement is missing or longer than ${REVIEW_PATCH_MAX_CHARACTERS} characters`);
+  return after;
+}
+
 /** A text as the review compares it: one space between words. */
 const flat = (value: string) => value.replace(/\s+/g, " ").trim();
+/** A text reduced to its letters and digits, to find one inside another. */
+const letters = (value: string) => comparableText(value).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 /** A quote shorter than this is too short to find as a part of a text. */
 const MIN_PART_QUOTE_CHARACTERS = 12;
 const occurrences = (text: string, part: string) => { let count = 0; for (let at = text.indexOf(part); at >= 0; at = text.indexOf(part, at + part.length)) count++; return count; };
@@ -356,13 +394,19 @@ export function reviewPatches(answer: Draft2ReviewAnswer, carousel: readonly Dra
 /**
  * The review's own rules on a patch, beside the owning step's: the cover's
  * headline passed the Opening's gate, so the review changes it only to fix a
- * fact; and a patch never drops a figure the facts give (a date, a time, a
- * price), the reader's plan. Each broken rule is a line.
+ * fact; a patch never drops a figure the facts give (a date, a time, a
+ * price), the reader's plan; and a text never repeats its slide's headline
+ * (a Saint-Jean review patch opened a body with the headline, 2026-10-17).
+ * Each broken rule is a line.
  */
-export function reviewPatchRules(patch: Pick<Draft2ReviewPatch, "slide" | "field" | "kind" | "before" | "after">, facts: readonly Draft2Fact[]): string[] {
+export function reviewPatchRules(patch: Pick<Draft2ReviewPatch, "slide" | "field" | "kind" | "before" | "after">, facts: readonly Draft2Fact[], headline?: string): string[] {
   const rules: string[] = [];
   if (patch.slide === "cover" && patch.field === "headline" && patch.kind !== "truth") {
     rules.push("The cover's headline passed the Opening's gate: the review changes it only to fix a fact; a missing name or detail goes in the subheadline.");
+  }
+  if (headline && patch.field !== "headline") {
+    const title = letters(headline);
+    if (title.length >= MIN_PART_QUOTE_CHARACTERS && letters(patch.after).includes(title)) rules.push(`It repeats the slide's headline ("${headline}") in the ${patch.field}: the ${patch.field} says what the headline does not.`);
   }
   const stated = statedNumbers(facts);
   const kept = new Set(numbersIn(patch.after).map((number) => number.digits));

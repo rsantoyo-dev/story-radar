@@ -342,6 +342,61 @@ export function parsePlanNotes(value: unknown): string | undefined {
   return text || undefined;
 }
 
+/**
+ * The facts a slide's beat rests on: the cover's, slide 2's, the middle
+ * beats' in order (s1, s2…), the penultimate's, the last's; none without a
+ * spine or for a slide the spine does not cover.
+ */
+export function spineBeatFactIds(spine: Pick<Draft2FocusSpine, "beats"> | undefined, slide: string): string[] | undefined {
+  if (!spine) return undefined;
+  const middle = /^s(\d+)$/.exec(slide);
+  const beat = middle ? spine.beats.filter((entry) => entry.slide === "middle")[Number(middle[1]) - 1] : spine.beats.find((entry) => entry.slide === slide);
+  return beat?.factIds;
+}
+
+/** The middle beats' facts in order (deck slide 1, 2…); none without a spine. */
+export const spineMiddleFactIds = (spine: Pick<Draft2FocusSpine, "beats"> | undefined): string[][] | undefined =>
+  spine?.beats.filter((entry) => entry.slide === "middle").map((entry) => entry.factIds);
+
+/** How many of its beat's facts a slide must cite: half, rounded up, three at most. */
+export const BEAT_FACTS_REQUIRED_MAX = 3;
+export const beatFactsRequired = (count: number) => Math.min(BEAT_FACTS_REQUIRED_MAX, Math.ceil(count / 2));
+
+/**
+ * The beat's facts a slide leaves out when it cites fewer than required (a
+ * Saint-Jean fraud story's slide 2 cited the guards and the victim's age and
+ * left the call, the fake policeman and the 4 000 $ demand, the story's
+ * mechanism, to no slide, 2026-10-17); empty when it cites enough.
+ */
+export function beatFactsMissing(cited: readonly string[], beatFactIds: readonly string[] | undefined): string[] {
+  if (!beatFactIds?.length) return [];
+  const missing = beatFactIds.filter((id) => !cited.includes(id));
+  return beatFactIds.length - missing.length >= beatFactsRequired(beatFactIds.length) ? [] : missing;
+}
+
+/** The finding for a slide that leaves out its beat's facts, naming them with their claims cut short. */
+export function beatFactsFinding(label: string, missing: readonly string[], beatFactIds: readonly string[], facts: readonly Pick<Draft2Fact, "id" | "claim">[]): string {
+  const named = missing.map((id) => { const claim = facts.find((fact) => fact.id === id)?.claim ?? ""; return claim ? `${id} (${claim.length > 80 ? `${claim.slice(0, 77)}…` : claim})` : id; });
+  return `${label} leaves out the facts its beat rests on: ${named.join("; ")}. State at least ${beatFactsRequired(beatFactIds.length)} of the beat's ${beatFactIds.length}, and cite them.`;
+}
+
+/** A fact this important (the extractor's scale) must have a beat, or a guard, in the spine. */
+export const SPINE_COVERAGE_IMPORTANCE = 85;
+
+/**
+ * The facts the story depends on that the spine leaves to no beat and no
+ * guard (a Saint-Jean fraud story's spine left its date and its arrests, the
+ * second most important fact, to none, 2026-10-17); never a disputed fact.
+ */
+export function spineUnusedFacts(spine: Pick<Draft2FocusSpine, "beats">, guards: readonly Pick<Draft2FocusGuard, "factIds">[], facts: readonly Pick<Draft2Fact, "id" | "importance" | "status" | "claim">[]): Pick<Draft2Fact, "id" | "importance" | "status" | "claim">[] {
+  const placed = new Set([...spine.beats.flatMap((beat) => beat.factIds), ...guards.flatMap((guard) => guard.factIds)]);
+  return facts.filter((fact) => fact.importance >= SPINE_COVERAGE_IMPORTANCE && fact.status !== "disputed" && !placed.has(fact.id));
+}
+
+/** The response error (or finding) for a spine that leaves important facts out. */
+export const spineUnusedDetail = (unused: readonly Pick<Draft2Fact, "id" | "claim">[]) =>
+  `The spine leaves out facts the story depends on: ${unused.map((fact) => `${fact.id} (${fact.claim.length > 80 ? `${fact.claim.slice(0, 77)}…` : fact.claim})`).join("; ")}. Give each a beat, or fold it into one.`;
+
 /** What recurs on every slide by design, so a series check does not count it: a narrative form's anchor (the guide, the object, the place, the line); nothing for a classic telling. */
 export const spineRecurring = (narrative: Pick<Draft2FocusNarrative, "form" | "anchor"> | undefined): string => narrative && narrative.form !== "classic" ? narrative.anchor : "";
 
@@ -399,7 +454,7 @@ export function visualDirectionChanged(script: Draft2FocusSnapshot | undefined, 
   return (script.values.visualDirection ?? "") !== (focus.values.visualDirection ?? "");
 }
 
-export type Draft2FocusFindingCode = "NO_READER_CONSEQUENCE" | "TOO_FEW_ITEMS" | "NARRATIVE_CHARACTER_UNAVAILABLE" | "NARRATIVE_REAL_PERSON" | "CONCEPT_GRAVITY" | "CONCEPT_REAL_PERSON" | "SPINE_SHAPE";
+export type Draft2FocusFindingCode = "NO_READER_CONSEQUENCE" | "TOO_FEW_ITEMS" | "NARRATIVE_CHARACTER_UNAVAILABLE" | "NARRATIVE_REAL_PERSON" | "CONCEPT_GRAVITY" | "CONCEPT_REAL_PERSON" | "SPINE_SHAPE" | "SPINE_FACT_UNUSED";
 /** What the program finds wrong with a focus; any one keeps the Opening from starting. */
 export type Draft2FocusFinding = { field: Draft2FocusField; code: Draft2FocusFindingCode; detail: string };
 
@@ -758,10 +813,12 @@ export const spineBeats = (spine: Draft2FocusSpine | undefined, position: Draft2
  * (editorChoices) is kept as given, whatever the answer says for it. A broken
  * rule is a response error, asked for again with the rule it broke.
  */
-export function parseFocusPlan(answer: string, { known, structure, eligibleLevers = [], editorChoices = {}, imageCheck }: {
+export function parseFocusPlan(answer: string, { known, structure, eligibleLevers = [], editorChoices = {}, imageCheck, coverage }: {
   known: ReadonlySet<string>; structure: Draft2FocusValues["structure"]; eligibleLevers?: readonly string[]; editorChoices?: Record<string, unknown>;
   /** Check Claude's image lines (spineImageProblems): a problem is a response error, asked for again with the rule. The second answer is not checked: its problems go to the editor as notes. */
   imageCheck?: { avoid: readonly string[]; recurring?: string };
+  /** Check that every important fact has a beat or a guard (spineUnusedFacts): a gap is a response error, asked for again with the rule; the second answer's gaps go to the editor as findings. */
+  coverage?: readonly Pick<Draft2Fact, "id" | "importance" | "status" | "claim">[];
 }): Draft2FocusPlan {
   let parsed: unknown;
   try { parsed = JSON.parse(answer); } catch { throw new Draft2ResponseError("The plan answer is not valid JSON"); }
@@ -777,6 +834,10 @@ export function parseFocusPlan(answer: string, { known, structure, eligibleLever
   if (!visualDirection) throw new Draft2ResponseError(`The visual direction is missing or longer than ${FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS} characters`);
   const levers = editorChoices.levers ? editorChoices.levers as Draft2FocusLevers : parsePlanLevers(body.levers, { eligible: eligibleLevers, known });
   const guards = parseGuards(body.guards, known);
+  if (coverage && !editorChoices.spine) {
+    const unused = spineUnusedFacts(spine, guards, coverage);
+    if (unused.length) throw new Draft2ResponseError(spineUnusedDetail(unused));
+  }
   const given = record(body.reasons);
   const reasons: Partial<Record<Draft2FocusField, string>> = {};
   for (const field of FOCUS_PLAN_FIELDS) {
@@ -1182,8 +1243,13 @@ export function resetFocusField(focus: Draft2Focus, field: Draft2FocusField, now
  * material, the narrative's anchor is checked too: a brand character that is
  * no longer available, or a real person of the story as the anchor.
  */
-export function focusFindings(values: Draft2FocusValues, material?: Draft2FocusMaterial): Draft2FocusFinding[] {
+export function focusFindings(values: Draft2FocusValues, material?: Draft2FocusMaterial, facts?: readonly Pick<Draft2Fact, "id" | "importance" | "status" | "claim">[]): Draft2FocusFinding[] {
   const findings: Draft2FocusFinding[] = [];
+  // Every fact the story depends on has a beat or a guard; the Opening waits until it does (the editor can add it to a beat by hand).
+  if (values.spine && facts) {
+    const unused = spineUnusedFacts(values.spine, values.guards ?? [], facts);
+    if (unused.length) findings.push({ field: "spine", code: "SPINE_FACT_UNUSED", detail: spineUnusedDetail(unused) });
+  }
   if (values.framing === "reader-consequence" && !values.readerConsequence?.text) {
     findings.push({ field: "readerConsequence", code: "NO_READER_CONSEQUENCE", detail: "The framing leads with the reader consequence, and the focus has none: write it, choose another framing, or decide again." });
   }

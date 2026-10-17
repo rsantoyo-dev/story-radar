@@ -20,11 +20,15 @@ import type { Draft2Skill } from "./draft2-skills";
  * focus's guards off the cover or slide 2. Version 5, 2026-10-15: a past
  * action told without the outcome the facts give is a truth patch, and an
  * organization named only by an acronym the audience may not know is a
- * detail patch.
+ * detail patch. Version 7, 2026-10-17, after the Saint-Jean fraud review lost
+ * both its truth patches (40 and 33 words on a 30-word body) and applied one
+ * that opened a body with its headline: the editor reads each slide's word
+ * limits (limits.words), a patch over its limit alone is asked shorter once
+ * (task "shorten"), and no text repeats its slide's headline.
  */
 export const REVIEW_SKILL: Draft2Skill = {
   name: "review",
-  version: "6",
+  version: "7",
   text: `# Reviewing a carousel
 
 A carousel is read one swipe at a time, on a phone, by someone who did not ask
@@ -93,6 +97,8 @@ in the kinds below is needed.
 - It never restructures a slide that works: no merging or splitting ideas for
   rhythm, no shortening to save space, no new order.
 - It never adds a fact the slide does not cite.
+- It never repeats the slide's headline in its body or subheadline: the body
+  says what the headline does not.
 - It never takes off the cover or slide 2 what the focus's guards ask them
   to state (what the measure is and is not, the period of the events).
 - A reader's reaction is a signal, not an order: act on it only when the fix
@@ -104,9 +110,14 @@ in the kinds below is needed.
   text of the cover, body for the text of every other slide; practical; cta),
   its kind, the exact text it replaces (copied as the carousel shows it) and
   the replacement, with one line on why. The program refuses a patch that
-  misquotes the slide or breaks the step\x27s own rules (a cover headline over
-  eight words, a number the cited facts do not state, a fact the slide does
-  not cite), so keep a replacement at the length of the text it replaces.
+  misquotes the slide or breaks the step\x27s own rules (a number the cited
+  facts do not state, a fact the slide does not cite). Each slide\x27s word
+  limit per text is in limits.words: write the replacement within it from
+  the start, cutting elsewhere in the same text when the fix needs room; a
+  replacement over it is asked shorter once, then refused.
+- Asked to shorten (task "shorten", with the slide, the text, the patch and
+  its limit): return the same change within the limit, dropping no figure,
+  qualifier or attribution the facts give, as the replacement alone (after).
 - The smallest change that fixes the fault. Name what works in strengths
   first: a patch must not cost any of it.
 - Fewer is better, at most six: a carousel that needs none gets none.

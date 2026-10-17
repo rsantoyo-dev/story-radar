@@ -55,12 +55,14 @@ const EDITOR = {
 
 type Row = Record<string, unknown> & { review: Draft2Review | null; trace: types.Draft2TraceEntry[]; updatedAt: Date };
 
-function harness({ session, reader = READER, editor = EDITOR, env = { OPENAI_API_KEY: "sk-test", ANTHROPIC_API_KEY: "ak-test" } }: { session?: Record<string, unknown>; reader?: unknown; editor?: unknown; env?: Record<string, string> } = {}) {
+const SHORTEN = { after: "Kids under twelve get in free." };
+
+function harness({ session, reader = READER, editor = EDITOR, shorten = SHORTEN, env = { OPENAI_API_KEY: "sk-test", ANTHROPIC_API_KEY: "ak-test" } }: { session?: Record<string, unknown>; reader?: unknown; editor?: unknown; shorten?: unknown; env?: Record<string, string> } = {}) {
   const calls: Record<string, unknown>[] = [];
-  /** The reader's and the editor's answers, whichever provider is asked; each call is kept with its provider. */
+  /** The reader's, the editor's and the shortening answers, whichever provider is asked; each call is kept with its provider. */
   const respond = async (provider: string, input: Record<string, unknown>) => {
     calls.push({ ...input, provider });
-    const answer = input.schemaName === "draft2_review_read" ? reader : editor;
+    const answer = input.schemaName === "draft2_review_read" ? reader : input.schemaName === "draft2_review_shorten" ? shorten : editor;
     if (answer instanceof Error) throw answer;
     return { text: JSON.stringify(answer), usage: { promptTokens: 300, outputTokens: 120, thoughtsTokens: 0, totalTokens: 420 }, cachedInputTokens: 0 };
   };
@@ -110,15 +112,16 @@ test("the review reads the chosen carousel: a reader of the audience first, then
   assert.doesNotMatch(String(readerCall.instructions), /# Reviewing a carousel/, "the reader knows no rubric");
   assert.equal(json([editorCall.provider, editorCall.schemaName, editorCall.model, editorCall.effort]), json(["anthropic", "draft2_review", "claude-sonnet-5-5", "medium"]), "the editor is Claude by default: a last polish that changes only what must change");
   assert.match(String(editorCall.instructions), /You are the careful editor of a finished social carousel[^]*# Reviewing a carousel[^]*# Verified facts/);
-  const contents = editorCall.contents as { task: string; slides: { slide: string }[]; reader: { verdict: string }; focus: { audience: string } };
+  const contents = editorCall.contents as { task: string; slides: { slide: string }[]; reader: { verdict: string }; focus: { audience: string }; limits: unknown };
   assert.equal(json([contents.task, contents.slides.length, contents.reader.verdict, contents.focus.audience]), json(["review", 6, "I would go.", "Families in Vieux-Longueuil"]));
+  assert.equal(json(contents.limits), json({ patches: 6, words: { cover: { headline: 8, subheadline: 12 }, slide2: { headline: 8, body: 30 }, s1: { headline: 8, body: 30 }, s2: { headline: 8, body: 30 }, penultimate: { headline: 8, body: 30 }, last: { headline: 8, body: 25, cta: 14 } } }), "the editor reads each slide's word limits, per text");
   assert.equal(json(review.reader?.reactions.map((reaction) => reaction.swipe)), json([true, true, true, false, true, true]));
   assert.equal(json([review.editor?.verdict, review.editor?.scores.overall, review.editor?.strengths]), json(["patch", 87, ["The roof pays the wait."]]));
   assert.equal(json(review.editor?.patches.map((patch) => [patch.id, patch.owner, patch.status])), json([["p1", "opening", "proposed"], ["p2", "opening", "refused"], ["p3", "deck", "refused"]]));
   assert.match(review.editor!.patches[1].note ?? "", /passed the Opening's gate[^]*headline has/i, "a style patch on the cover's headline breaks the review's rule, and one over eight words the opening's");
   assert.equal(json(review.editor?.patches.map((patch) => patch.kind)), json(["style", "style", "style"]), "a patch that names no kind claims no necessity");
   assert.match(review.editor!.patches[2].note ?? "", /quoted "Tools for grown hands\."/);
-  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.outcome, entry.effort, entry.skillVersions])), json([["review", "draft2_review_read", "ok", "low", {}], ["review", "draft2_review", "ok", "medium", { review: "6", fairness: "2", reader: "2" }]]));
+  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.outcome, entry.effort, entry.skillVersions])), json([["review", "draft2_review_read", "ok", "low", {}], ["review", "draft2_review", "ok", "medium", { review: "7", fairness: "2", reader: "2" }]]));
 });
 
 test("a patch applied edits the chosen version in place, in its step and in the copies the later steps keep; the review keeps what it replaced, and an undo restores it", async () => {
@@ -215,4 +218,38 @@ test("a patch is refused only for what it brings: a rule the chosen version alre
   const refused = (await adding.review()).review?.editor?.patches[0];
   assert.equal(refused?.status, "refused");
   assert.match(String(refused?.note), /"BVL" .* is an abbreviation the source had to explain/u);
+});
+
+test("a patch over its slide's word limit alone is asked shorter once, the same change within the limit; one still too long, or that the editor cannot shorten, is refused with the rule", async () => {
+  const long = { slide: "slide2", field: "body", kind: "truth", before: "Under twelve, admission is free.", after: "Children under twelve years of age get in free of charge on every single day of the week, while their parents pay the usual price at the front door of the library building.", reason: "The facts say children." };
+  const h = harness({ editor: { ...EDITOR, patches: [long] }, shorten: { after: "Children under twelve get in free; their parents pay at the door." } });
+  const session = await h.review();
+  const [patch] = session.review!.editor!.patches;
+  assert.equal(json([patch.status, patch.kind, patch.after, patch.note]), json(["proposed", "truth", "Children under twelve get in free; their parents pay at the door.", "Shortened to the slide's limit of 30 words."]));
+  const shortenCall = h.calls[2];
+  const contents = shortenCall.contents as { task: string; slide: string; field: string; headline: string; before: string; after: string; limit: number; findings: string[] };
+  assert.equal(json([shortenCall.provider, shortenCall.schemaName, shortenCall.effort, contents.task, contents.slide, contents.field, contents.headline, contents.limit]), json(["anthropic", "draft2_review_shorten", "low", "shorten", "slide2", "body", "Free for kids", 30]), "the editor's model at low effort, with the slide, the limit and the finding");
+  assert.match(contents.findings[0], /has 33 words; the limit is 30/);
+  assert.match(String(shortenCall.instructions), /# Reviewing a carousel[^]*# Verified facts/, "the same rules and facts");
+  assert.equal(json(session.trace.map((entry) => [entry.operation, entry.outcome, entry.effort])), json([["draft2_review_read", "ok", "low"], ["draft2_review", "ok", "medium"], ["draft2_review_shorten", "ok", "low"]]));
+  const still = (await harness({ editor: { ...EDITOR, patches: [long] }, shorten: { after: long.after } }).review()).review!.editor!.patches[0];
+  assert.equal(still.status, "refused");
+  assert.match(still.note ?? "", /has 33 words; the limit is 30/);
+  const failing = await harness({ editor: { ...EDITOR, patches: [long] }, shorten: new Error("boom") }).review();
+  assert.equal(failing.review!.editor!.patches[0].status, "refused", "a failed shortening leaves the refusal; the review goes on");
+  assert.equal(json(failing.trace.map((entry) => [entry.operation, entry.outcome])), json([["draft2_review_read", "ok"], ["draft2_review", "ok"], ["draft2_review_shorten", "error"]]));
+  const other = await harness({ editor: { ...EDITOR, patches: [{ ...long, after: "Children under twelve years of age get in free of charge on every single day of the week, while their parents pay the usual price at the front door, the BVL says." }] }, session: { facts: [...facts, { id: "f4", claim: "La Bibliothèque du Vieux-Longueuil (BVL) rouvre samedi.", evidence: "", kind: "event", status: "established", importance: 50 }] } }).review();
+  assert.equal(json([other.review!.editor!.patches[0].status, other.calls === undefined, other.trace.length]), json(["refused", true, 2]), "a patch refused for more than its length is not asked shorter");
+});
+
+test("a patch that repeats the slide's headline in its body is refused: the body says what the headline does not", async () => {
+  const h = harness({ editor: { ...EDITOR, patches: [{ slide: "s1", field: "body", kind: "detail", before: "Quiet tables by the windows.", after: "A reading room: quiet tables by the windows and a bench.", reason: "Name the room." }] } });
+  const [patch] = (await h.review()).review!.editor!.patches;
+  assert.equal(patch.status, "refused");
+  assert.match(patch.note ?? "", /^It repeats the slide's headline \("A reading room"\) in the body: the body says what the headline does not\.$/);
+  const rule = (after: string, headline: string) => reviewTypes.reviewPatchRules({ slide: "s1", field: "body", kind: "detail", before: "x", after } as never, facts, headline);
+  assert.equal(rule("A reading room: quiet tables.", "A reading room").length, 1);
+  assert.deepEqual(rule("A workshop: tools made for small hands.", "A workshop"), [], "a headline too short to find as a part counts for nothing");
+  assert.deepEqual(rule("Quiet tables in the reading room.", "A reading room"), [], "the headline's words in another order are no repetition");
+  assert.deepEqual(reviewTypes.reviewPatchRules({ slide: "s1", field: "headline", kind: "detail", before: "x", after: "A reading room" } as never, facts, "A reading room"), [], "the headline itself is not its own repetition");
 });

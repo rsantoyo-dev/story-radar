@@ -1,7 +1,7 @@
 import { abbreviationBreaches, abbreviationFinding, explainedAbbreviations } from "./draft2-abbreviations.types";
 import { comparableText, type Draft2Fact } from "./draft2-facts.types";
 import { addressBreaches, addressFinding, type Draft2Reader } from "./draft2-address.types";
-import type { Draft2FocusGuard, Draft2FocusSnapshot } from "./draft2-focus.types";
+import { beatFactsFinding, beatFactsMissing, type Draft2FocusGuard, type Draft2FocusSnapshot } from "./draft2-focus.types";
 import { FREE_LEVER, leverName, leverSupported, stockPhraseIn } from "./draft2-levers.types";
 import {
   criterionOf, factsSnapshot, funnelAcceptedWinner, funnelBestClean, funnelBestVersions, funnelEvaluationSchema, funnelExploreRequest, funnelFixRequest, funnelFactIds,
@@ -98,7 +98,7 @@ export const OPENING_CRITERIA = ["tension", "payoff", "clarity", "grounding", "v
 export const OPENING_MECHANICAL_CODES = [
   "FACT_UNKNOWN", "NO_FACTS", "COVER_TOO_LONG", "SUBHEADLINE_TOO_LONG", "SLIDE2_HEADLINE_TOO_LONG", "SLIDE2_BODY_TOO_LONG",
   "ATTRIBUTION_ON_COVER", "SLIDE2_RESTATES_COVER", "SLIDE2_NO_NEW_FACT", "UNSUPPORTED_NUMBER", "DUPLICATE_CANDIDATE",
-  "LEVER_UNKNOWN", "LEVER_UNSUPPORTED", "STOCK_PHRASE", "GUARD_LATE", "WRONG_ADDRESS", "ABBREVIATION", "SIMILAR_CANDIDATE",
+  "LEVER_UNKNOWN", "LEVER_UNSUPPORTED", "STOCK_PHRASE", "GUARD_LATE", "WRONG_ADDRESS", "ABBREVIATION", "SIMILAR_CANDIDATE", "BEAT_FACTS_MISSING",
 ] as const;
 export const OPENING_JUDGE_CODES = ["WEAK_TENSION", "PROMISE_NOT_PAID", "UNCLEAR", "OVERCLAIMS", "OFF_VOICE", "OFF_FOCUS", "LABEL_NOT_HOOK", "MISLEADS", "OTHER"] as const;
 export const OPENING_ISSUE_CODES = [...OPENING_MECHANICAL_CODES, ...OPENING_JUDGE_CODES] as const;
@@ -243,7 +243,7 @@ const ATTRIBUTION = /\b(according to|says?|said|reports?|reported|claims?|selon|
  * them or free, and the facts its cover cites must carry what the program
  * can check of it (a figure). No cover uses a stock formula.
  */
-export function mechanicalOpeningIssues(candidates: readonly Draft2OpeningCandidate[], facts: readonly Draft2Fact[], { itemCount, eligibleLevers, guards = [], reader, distinct = false }: { itemCount?: number; eligibleLevers?: readonly string[]; guards?: readonly Draft2FocusGuard[]; reader?: Draft2Reader; /** v3: new openings of one round must differ in angle, not only in wording (SIMILAR_CANDIDATE). */ distinct?: boolean } = {}): Draft2OpeningIssue[] {
+export function mechanicalOpeningIssues(candidates: readonly Draft2OpeningCandidate[], facts: readonly Draft2Fact[], { itemCount, eligibleLevers, guards = [], reader, distinct = false, beats }: { itemCount?: number; eligibleLevers?: readonly string[]; guards?: readonly Draft2FocusGuard[]; reader?: Draft2Reader; /** v3: new openings of one round must differ in angle, not only in wording (SIMILAR_CANDIDATE). */ distinct?: boolean; /** The facts the spine's cover and slide 2 beats rest on: each slide cites enough of its own (BEAT_FACTS_MISSING). */ beats?: { cover?: readonly string[]; slide2?: readonly string[] } } = {}): Draft2OpeningIssue[] {
   const byId = new Map(facts.map((fact) => [fact.id, fact]));
   const explained = explainedAbbreviations(facts);
   const headlines = new Map<string, Draft2OpeningCandidate>();
@@ -296,6 +296,12 @@ export function mechanicalOpeningIssues(candidates: readonly Draft2OpeningCandid
       // Slide 2's reader has seen the cover: an abbreviation the cover spelled out may return there.
       const abbreviations = abbreviationBreaches(value, explained, part === "slide2" ? `${cover.headline}\n${cover.subheadline}` : "");
       if (abbreviations.length) add("ABBREVIATION", part, abbreviationFinding(abbreviations, explained));
+    }
+    // Each slide carries the facts its spine beat rests on: a slide that spends its words elsewhere leaves the story's mechanism to no one.
+    for (const [part, ids, label] of [["cover", cover.factIds, "The cover"], ["slide2", slide2.factIds, "Slide 2"]] as const) {
+      const beat = beats?.[part];
+      const missing = beatFactsMissing(ids, beat);
+      if (missing.length && beat) add("BEAT_FACTS_MISSING", part, beatFactsFinding(label, missing, beat, facts));
     }
     // What the cover alone could make a reader wrongly believe is prevented before the reader can stop: on the cover or slide 2, by one of the guard's facts.
     const carried = new Set([...cover.factIds, ...slide2.factIds]);

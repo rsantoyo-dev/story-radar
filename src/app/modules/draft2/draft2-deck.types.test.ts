@@ -159,3 +159,10 @@ test("a list's items follow the spine: one deck slide per middle beat, whatever 
   assert.deepEqual(deckShape(list, ["f25"], middle(4)).items, ["f10", "f17", "f14", "f20"], "four middle beats and no item cited: the first item is slide 2's");
   assert.deepEqual(deckShape(list, ["f10", "f17"]).items, ["f1", "f14", "f20"], "no spine: the items slide 2 does not cite, as before");
 });
+
+test("each deck slide carries the facts its spine beat rests on, the middle beats in order", () => {
+  const beats = [["f1"], ["f4", "f2", "f3"], undefined];
+  assert.deepEqual(findings(deck("c1"), { beats }), ["BEAT_FACTS_MISSING c1 s2"], "slide 2 cites one of its beat's three; slide 3 has no beat");
+  assert.match(mechanicalDeckIssues([deck("c1")], facts, { opening, closing, shape: arc, emojis: 2, beats })[0].detail, /^Deck slide 2 leaves out the facts its beat rests on: f2 \(A DOD official says awards took less than a week\.\); f3 \(Startups can apply without a past contract\.\)\. State at least 2 of the beat's 3, and cite them\.$/);
+  assert.deepEqual(findings(deck("c1"), { beats: [["f1"], ["f4", "f2"]] }), [], "a beat of two needs one");
+});

@@ -2,7 +2,7 @@ import { abbreviationBreaches, abbreviationFinding, explainedAbbreviations } fro
 import { addressBreaches, addressFinding, type Draft2Reader } from "./draft2-address.types";
 import { comparableText, type Draft2Fact } from "./draft2-facts.types";
 import { leverForModels } from "./draft2-levers.types";
-import type { Draft2FocusSnapshot, Draft2FocusStructureKind } from "./draft2-focus.types";
+import { beatFactsFinding, beatFactsMissing, type Draft2FocusSnapshot, type Draft2FocusStructureKind } from "./draft2-focus.types";
 import { type FunnelPlanRound,
   funnelEvaluationSchema, funnelExploreRequest, funnelFixRequest, funnelFactIds, funnelJudgeRequest, funnelParseCandidates, funnelParseEvaluation, funnelRecord,
   funnelRefineRequest, funnelText, funnelWordCount, headlineKey, longWords, numbersIn, statedNumbers, wordOverlap,
@@ -55,7 +55,7 @@ export const CLOSING_RESTATEMENT_OVERLAP = 0.5;
 export const CLOSING_CRITERIA = ["resolution", "meaning", "action", "continuity", "grounding", "voice", "focus", "originality"] as const;
 export const CLOSING_MECHANICAL_CODES = [
   "FACT_UNKNOWN", "NO_FACTS", "PENULTIMATE_HEADLINE_TOO_LONG", "PENULTIMATE_BODY_TOO_LONG", "LAST_HEADLINE_TOO_LONG", "LAST_BODY_TOO_LONG",
-  "CTA_TOO_LONG", "CTA_MISSING", "RECAP_LABEL", "RESTATES_OPENING", "UNSUPPORTED_NUMBER", "TOO_MANY_EMOJIS", "DUPLICATE_CANDIDATE", "WRONG_ADDRESS", "ABBREVIATION",
+  "CTA_TOO_LONG", "CTA_MISSING", "RECAP_LABEL", "RESTATES_OPENING", "UNSUPPORTED_NUMBER", "TOO_MANY_EMOJIS", "DUPLICATE_CANDIDATE", "WRONG_ADDRESS", "ABBREVIATION", "BEAT_FACTS_MISSING",
 ] as const;
 export const CLOSING_JUDGE_CODES = ["UNRESOLVED", "RECAP", "WEAK_MEANING", "OFF_GOAL", "BREAKS_CONTINUITY", "OVERCLAIMS", "OFF_VOICE", "OFF_FOCUS", "OTHER"] as const;
 export const CLOSING_ISSUE_CODES = [...CLOSING_MECHANICAL_CODES, ...CLOSING_JUDGE_CODES] as const;
@@ -208,8 +208,10 @@ const EMOJI = /\p{Extended_Pictographic}/gu;
  * action unless the story is grave, must not be a summary label, must not
  * repeat the opening, and keeps to the publication's emoji allowance.
  */
-export function mechanicalClosingIssues(candidates: readonly Draft2ClosingCandidate[], facts: readonly Draft2Fact[], { opening, shape, grave, itemCount, emojis, reader }: {
+export function mechanicalClosingIssues(candidates: readonly Draft2ClosingCandidate[], facts: readonly Draft2Fact[], { opening, shape, grave, itemCount, emojis, reader, beats }: {
   opening: Draft2ClosingOpening; shape: Draft2ClosingShape; grave: boolean; itemCount?: number; emojis: number; reader?: Draft2Reader;
+  /** The facts the spine's penultimate and last beats rest on: each slide cites enough of its own (BEAT_FACTS_MISSING). */
+  beats?: { penultimate?: readonly string[]; last?: readonly string[] };
 }): Draft2ClosingIssue[] {
   const byId = new Map(facts.map((fact) => [fact.id, fact]));
   const explained = explainedAbbreviations(facts);
@@ -243,6 +245,12 @@ export function mechanicalClosingIssues(candidates: readonly Draft2ClosingCandid
       if (words > limit) add(code, part, `The ${label} has ${words} words; the limit is ${limit}.`);
     }
     if (!last.cta && !grave) add("CTA_MISSING", "last", "The last slide has no call to action; only a grave story may end without one.");
+    // Each slide carries the facts its spine beat rests on: a slide that spends its words elsewhere leaves them to no one.
+    for (const [part, ids, label] of [...(penultimate ? [["penultimate", penultimate.factIds, "The penultimate slide"] as const] : []), ["last", last.factIds, "The last slide"] as const]) {
+      const beat = beats?.[part];
+      const missing = beatFactsMissing(ids, beat);
+      if (missing.length && beat) add("BEAT_FACTS_MISSING", part, beatFactsFinding(label, missing, beat, facts));
+    }
     // One form of address on the whole post: the call to action and the slide above it included ("Pour vos sorties…" over "Suis Salut Brossard").
     for (const [part, value] of [...(penultimate ? [["penultimate", `${penultimate.headline}\n${penultimate.body}`] as const] : []), ["last", `${last.headline}\n${last.body}\n${last.cta}`] as const]) {
       const words = addressBreaches(value, reader);

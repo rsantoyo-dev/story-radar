@@ -206,3 +206,13 @@ rule: "95 es la meta; menos de 90 amerita otra ronda").
 - A server queue for the autopilot (today it runs in the tab).
 - Calibrating the judge with the editor's choices (`editorChoiceId`).
 - Steps in parallel (one claim per story).
+
+## Addendum, 2026-10-17: a review under 90 stops the run
+
+After applying the review's necessary patches, the autopilot stops when the
+review's overall score is under `FUNNEL_ACCEPTABLE_SCORE` (90): "The review
+scored the carousel N/100, under 90: read its patches and the reader's
+reactions, fix the words by hand or write a step again, then run the
+autopilot to the images." The Saint-Jean fraud carousel had gone on to the
+images with a 68. A run started again goes on from the review as it stands
+(the review is read again only when the chosen versions changed).
