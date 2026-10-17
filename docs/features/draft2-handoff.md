@@ -638,8 +638,9 @@ importance 85 or more (`SPINE_FACT_UNUSED`: the planner asked again once,
 then the Opening blocked until the editor places the fact); each slide must
 cite its beat's facts (`BEAT_FACTS_MISSING`: half, three at most, a
 mechanical finding of the Opening, Deck and Closing); the review reads each
-slide's word limits, a patch over them alone is asked shorter once
-(`draft2_review_shorten`), and a body never repeats its headline; the
+slide's word limits, a patch over them alone is asked shorter, twice at
+most with the program's word count (`draft2_review_shorten`), and a body
+never repeats its headline; the
 autopilot stops on a review under 90; a hand edit cites the facts that state
 its numbers (`citedFactIds`). See draft2-spine.md §13, draft2-review.md,
 draft2-hand-edits.md, draft2-autopilot.md.

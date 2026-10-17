@@ -161,15 +161,20 @@ went on to the images with the 68.
   shape, the Closing's for its shape), and the review skill (v7) asks for the
   replacement within it from the start, cutting elsewhere in the same text
   when the fix needs room.
-- **A patch over its limit alone is asked shorter once.** When every finding
-  on a patch is a length finding (`lengthOnly`), one more call
+- **A patch over its limit alone is asked shorter, twice at most.** When
+  every finding on a patch is a length finding (`lengthOnly`), one more call
   (`draft2_review_shorten`, the editor's model at low effort, the same rules
   and facts) returns the same change within the limit
   (`DRAFT2_REVIEW_SHORTEN_SCHEMA`, `parseShortenAnswer`, the skill's task
-  "shorten"); the patch is checked again and offered with the note
-  "Shortened to the slide's limit of N words", or refused as before when it
-  is still over or when the call fails (the trace keeps the error). A patch
-  refused for anything else besides is not asked.
+  "shorten"). The ask states the limit, the program's count of the
+  replacement and how it counts (every group of characters between spaces,
+  "4 000 $" is three words): the first Saint-Jean reviews under this net
+  lost their patches because the model's count was not the program's. The
+  patch is checked again and offered with the note "Shortened to the slide's
+  limit of N words"; still over, it is asked once more with the count of
+  that answer, then refused as before, as it is when the call fails (the
+  trace keeps the error). A patch refused for anything else besides is not
+  asked.
 - **No text repeats its slide's headline** (`reviewPatchRules` with the
   headline): a body or subheadline whose replacement contains the headline
   (twelve letters or more) is refused: the body says what the headline does
