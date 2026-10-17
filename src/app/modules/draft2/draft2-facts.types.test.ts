@@ -34,6 +34,10 @@ test("the mechanical check compares evidence with the article ignoring quotes, d
   assert.deepEqual(mechanicalFactIssues(invented, article).map((issue) => [issue.code, issue.factId]), [
     ["EVIDENCE_NOT_FOUND", "f1"], ["WRONG_ATTRIBUTION", "f2"], ["DUPLICATE", "f3"],
   ]);
+  // The headline is part of the article: an outcome stated only there is grounded in it.
+  const headline = parseDraft2Facts(JSON.stringify({ facts: [fact({ claim: "A cashier spared an 80-year-old a 4,000 $ loss.", evidence: "une caissière évite une perte de 4 000 $ à un octogénaire" })] }));
+  assert.deepEqual(mechanicalFactIssues(headline, article, "Fraude du faux policier : une caissière évite une perte de 4 000 $ à un octogénaire"), []);
+  assert.deepEqual(mechanicalFactIssues(headline, article).map((issue) => issue.code), ["EVIDENCE_NOT_FOUND"], "without the headline the excerpt is not in the article");
 });
 
 test("the reviewer's verdict is parsed strictly and only counts when the program found nothing", () => {

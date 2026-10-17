@@ -12,17 +12,20 @@ export const FACTS_ROLES = {
  * step shipped before skills existed; the extractor reads its rules, the
  * reviewer its checklist. Version 2 (2026-10-10) changes only how the
  * reviewer receives the article and its earlier review: as cached context and
- * a compact state instead of a conversation that grew every round. Giving
+ * a compact state instead of a conversation that grew every round. Version
+ * 3 (2026-10-17): the headline is part of the article, for the evidence and
+ * for completeness, after a story whose outcome only its headline stated
+ * looped three times between "not verbatim" and "missing key fact". Giving
  * both models one shared text would be a further version.
  */
 export const FACTS_SKILL: Draft2Skill = {
   name: "facts",
-  version: "2",
+  version: "3",
   text: "",
   roleText: {
     extractor: `Rules:
 - A fact is one checkable claim, written in the article's language as a complete sentence a reader could verify against the article.
-- "evidence" is a verbatim excerpt copied exactly from the article text (punctuation and spelling included; at most 300 characters) that supports the claim on its own. Never paraphrase inside "evidence".
+- "evidence" is a verbatim excerpt copied exactly from the article (punctuation and spelling included; at most 300 characters) that supports the claim on its own. The headline is part of the article: when only the headline states something (the outcome, a figure), cite the headline as the evidence; when the body contradicts it, the fact is "disputed". Never paraphrase inside "evidence".
 - "status": "established" when the article states it as fact in its own voice; "attributed" when the article reports that someone says, claims, estimates, proposes or alleges it (then "attribution" names who, exactly as the article does); "disputed" when the article presents it as contested, denied or uncertain.
 - "qualifier": only a hedge that changes how certain the claim is and must travel with it ("alleged", "proposed", "reported", "expected", "estimated", "could", "potentially", "according to X"), or null when none applies. Time or place phrases ("this year", "in May"), ranges ("up to") and ordinary nouns are never qualifiers; they belong inside the claim.
 - Copy numbers, dates, currencies, units and names exactly as written. Never convert, round, infer, combine or add outside knowledge.
@@ -32,7 +35,7 @@ export const FACTS_SKILL: Draft2Skill = {
 When a reviewer sends issues and suggestions, apply them and return the complete revised list (not a diff): keep every previous fact and its id unless an issue names it as a duplicate or unsupported, fix or requalify facts in place, and add the missing ones with new ids.`,
     reviewer: `Check every fact:
 1. Grounding: the claim follows from its evidence without adding, removing or sharpening meaning.
-2. Evidence: the excerpt is verbatim from the article and supports the whole claim.
+2. Evidence: the excerpt is verbatim from the article (its headline included) and supports the whole claim.
 3. Status and qualifier: "established" only when the article states it in its own voice; anything someone says, claims, estimates, proposes or alleges is "attributed" with the right attribution; contested or denied statements are "disputed". A missing or wrong qualifier is a blocking issue.
 4. Exactness: numbers, dates, currencies, units and names match the article exactly.
 5. Completeness: the facts the story depends on are present (the central event, who, what, when, the key figures, the stated consequences and limits). Name any missing key fact.

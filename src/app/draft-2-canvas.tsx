@@ -142,7 +142,7 @@ function nextAutopilotStep(session: Draft2SessionView | null, now: number): Auto
   const factsVerified = Boolean(session.facts?.length) && (session.step !== "facts" || session.status === "ready");
   if (!factsVerified) {
     if (session.step === "facts" && session.status === "running" && !stale) return { blocked: "The facts are still being verified." };
-    if (session.step === "facts" && session.status === "needs-review" && session.facts?.length) return { blocked: "The reviewer did not accept the facts after three extractions: review them, then run the facts again." };
+    if (session.step === "facts" && session.status === "needs-review" && session.facts?.length) return { blocked: "The reviewer did not accept the facts after three extractions: review them, then run the facts again or use them as they stand." };
     return { step: "facts" };
   }
   // People and places come first: the focus chooses the narrative form with them.
@@ -617,6 +617,22 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
     try { window.localStorage.setItem(MODELS_KEY, JSON.stringify(next)); } catch { /* storage unavailable */ }
     if (!session) { setPendingModels(next); return; }
     await saveSessionChoice({ models: next }, "Could not save the models.");
+  }
+
+  /** The editor takes the facts the reviewer did not accept after three extractions: the next steps build on them, the reviewer's remaining issues stay in view. */
+  async function acceptFacts() {
+    if (!session || running) return;
+    setRunError(undefined);
+    try {
+      const response = await fetch(`/api/radar/draft2/facts?topicId=${encodeURIComponent(topicId)}`, {
+        method: "PATCH", cache: "no-store", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: session.id, action: "accept" }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? "Could not take the facts.");
+      setSession(body.session as Draft2SessionView);
+    } catch (cause) {
+      setRunError({ step: "facts", message: cause instanceof Error ? cause.message : "Could not take the facts." });
+    }
   }
 
   /** The pipeline chosen in the Models card (v2 or v3): kept on the session, or until the facts create it; remembered as the default for the next story. */
@@ -1160,9 +1176,12 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const commonJudge = new Set(FUNNEL_STEPS.map((step) => today[step].judge)).size === 1 ? today.opening.judge : undefined;
   const screens: Record<Draft2StepKey, { actions?: ReactNode; how: ReactNode; body: ReactNode }> = {
     facts: {
-      actions: <Button variant="primary" size="compact" busy={running === "facts"} disabled={!text.length || session === undefined || running !== undefined} onClick={() => { void runStep("facts"); }}>
-        {running === "facts" ? "Extracting and verifying…" : session ? "Run the facts again" : "Extract and verify facts"}
-      </Button>,
+      actions: <>
+        {session?.step === "facts" && session.status === "needs-review" && session.facts?.length && !running ? <Button variant="secondary" size="compact" title="Take the list as it stands: every later step builds only on these facts; the reviewer’s remaining issues stay in view" onClick={() => { void acceptFacts(); }}>Use these facts</Button> : null}
+        <Button variant="primary" size="compact" busy={running === "facts"} disabled={!text.length || session === undefined || running !== undefined} onClick={() => { void runStep("facts"); }}>
+          {running === "facts" ? "Extracting and verifying…" : session ? "Run the facts again" : "Extract and verify facts"}
+        </Button>
+      </>,
       how: <p>{factsCast.extractor} extracts the facts; {factsCast.reviewer} checks them against the article; they loop on {factsCast.reviewer}’s suggestions, at most three extractions. Running the facts again starts a new session: every later step starts over from the new facts, and the earlier session stays as history.</p>,
       body: <>
         <ModelsCard choice={session ? session.models : pendingModels} pipeline={pipeline} cast={cast} saving={savingModels} locked={running !== undefined || Boolean(autopilot?.active)} error={modelsError} onChange={(next) => { void chooseModels(next); }} onPipeline={(next) => { void choosePipeline(next); }} />
@@ -1624,7 +1643,7 @@ function FactsSessionView({ session, verified }: { session: Draft2SessionView; v
       </li>)}
     </ol> : null}
     {session.facts?.length ? <div>
-      <SectionHeader level={3} title={`${session.facts.length} facts`} description={verified ? "Verified: the next steps build only on these." : "The latest list; not verified yet."} />
+      <SectionHeader level={3} title={`${session.facts.length} facts`} description={verified ? (session.evaluation?.accepted ? "Taken as they stand by you: the next steps build only on these; what the reviewer still wanted is above." : "Verified: the next steps build only on these.") : "The latest list; not verified yet."} />
       <ol className={styles.factList}>
         {session.facts.map((fact) => <li key={fact.id} className={styles.factItem}>
           <div className={styles.factHead}>

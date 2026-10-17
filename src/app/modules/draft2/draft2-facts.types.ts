@@ -47,6 +47,8 @@ export type Draft2FactsEvaluation = {
   /** Concrete instructions for the extractor's next pass. */
   suggestions: string[];
   summary: string;
+  /** The editor took the list as it stands after the reviewer's last "revise" (acceptDraft2Facts): its issues stay in view, the next steps build on these facts. */
+  accepted?: { by: "editor"; at: string };
 };
 
 export type Draft2FactsRound = {
@@ -235,9 +237,14 @@ export function comparableText(value: string): string {
     .toLowerCase();
 }
 
-/** The program's own findings: evidence that is not in the article, and repeated claims. These never depend on a model. */
-export function mechanicalFactIssues(facts: readonly Draft2Fact[], articleText: string): Draft2FactsIssue[] {
-  const article = comparableText(articleText);
+/**
+ * The program's own findings: evidence that is not in the article (its
+ * headline included: a story's outcome may be stated only there, as a
+ * Saint-Jean fraud story's "évite une perte de 4 000 $" was, 2026-10-17),
+ * and repeated claims. These never depend on a model.
+ */
+export function mechanicalFactIssues(facts: readonly Draft2Fact[], articleText: string, title = ""): Draft2FactsIssue[] {
+  const article = comparableText(`${title}\n${articleText}`);
   const issues: Draft2FactsIssue[] = [];
   const claims = new Map<string, string>();
   for (const fact of facts) {

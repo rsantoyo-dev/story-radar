@@ -15,10 +15,12 @@ const article = "The program reviews product videos no longer than five minutes.
 type Call = { provider: "openai" | "anthropic"; input: Record<string, unknown> };
 
 /** The orchestrator with both providers and the database replaced; `answers` decide each round. */
-function harness({ reviews, extractions, failExtractionAt }: {
+function harness({ reviews, extractions, failExtractionAt, title = "Story" }: {
   reviews: ("valid" | "revise")[];
   extractions?: string[];
   failExtractionAt?: number;
+  /** The story's headline, part of the article the program and the models read. */
+  title?: string;
 }) {
   const calls: Call[] = [];
   const sessions: Record<string, unknown>[] = [];
@@ -36,7 +38,7 @@ function harness({ reviews, extractions, failExtractionAt }: {
     "server-only": {},
     "./draft2-facts.types": types,
     "./draft2-dev-trace": { draft2DevTrace: () => undefined },
-    "../stories/story-content.repository": { getStoryContent: async () => ({ title: "Story", url: "https://example.com/a", text: article, contentStatus: "full", source: "article" }) },
+    "../stories/story-content.repository": { getStoryContent: async () => ({ title, url: "https://example.com/a", text: article, contentStatus: "full", source: "article" }) },
     "../stories/creative-text-meter": { withCreativeTextBudget: async (_context: unknown, work: () => Promise<unknown>) => work() },
     "../stories/anthropic.config": { getAnthropicRuntimeConfig: () => ({ apiKey: "k", model: "claude-sonnet-5-5" }), requireAnthropicApiKey: () => "k" },
     "../stories/openai-structured-response": { generateOpenAiStructuredResponse: async (input: Record<string, unknown>) => {
@@ -53,12 +55,16 @@ function harness({ reviews, extractions, failExtractionAt }: {
     "./draft2-session.repository": {
       activeDraft2Session: async () => undefined,
       createDraft2Session: async (input: Record<string, unknown>) => { const row = { id: "session-1", ...input, status: "running", rounds: [], threads: {}, trace: [] }; sessions.push(row); return row; },
+      getDraft2Session: async (topic: string, id: string) => topic === topicId && sessions.length && sessions[sessions.length - 1].id === id ? sessions[sessions.length - 1] : undefined,
       updateDraft2Session: async (_id: string, patch: Record<string, unknown>) => { const row = { ...sessions[sessions.length - 1], ...patch }; sessions.push(row); return row; },
     },
   };
   vm.runInNewContext(code, { exports, Date, JSON, Error, Object, Array, Math, Number, String, Set, Map, Promise, console, process: { env: { OPENAI_API_KEY: "sk-test" } },
     require: (name: string) => name in mocks ? mocks[name] : localRequire(name) });
-  return { run: () => exports.runDraft2Facts({ topicId, storyId }), calls, sessions, last: () => sessions[sessions.length - 1] };
+  return {
+    run: () => exports.runDraft2Facts({ topicId, storyId }), calls, sessions, last: () => sessions[sessions.length - 1],
+    accept: (sessionId = "session-1") => exports.acceptDraft2Facts({ topicId, sessionId }),
+  };
 }
 
 test("facts the reviewer accepts on the first round are ready after one extraction and one review", async () => {
@@ -128,4 +134,29 @@ test("a provider failure marks the session failed with its trace and surfaces th
   assert.equal(trace.length, 3);
   assert.equal(trace[2].outcome, "error");
   assert.equal((h.last().facts as types.Draft2Fact[]).length, 2, "the first round's facts are not lost");
+});
+
+test("the headline is part of the article: a fact whose only evidence is the headline is grounded, so the extractor and the reviewer no longer loop on it", async () => {
+  const h = harness({ reviews: ["valid"], extractions: ["Pentagon buyers now judge five-minute videos"], title: "Pentagon buyers now judge five-minute videos" });
+  const session = await h.run();
+  assert.equal(session.status, "ready");
+  assert.deepEqual((session.rounds as types.Draft2FactsRound[])[0].mechanical, [], "no EVIDENCE_NOT_FOUND on the headline's words");
+});
+
+test("the editor takes a list the reviewer did not accept: the session is ready, the verdict records who took it and keeps the issues; a running, ready or program-flagged list is refused", async () => {
+  const h = harness({ reviews: ["revise", "revise", "revise"] });
+  await h.run();
+  const taken = await h.accept();
+  assert.equal(taken.status, "ready");
+  assert.equal(taken.error, null);
+  const evaluation = taken.evaluation as types.Draft2FactsEvaluation;
+  assert.equal(json([evaluation.verdict, evaluation.accepted?.by, evaluation.issues.length]), json(["revise", "editor", 1]), "the reviewer's verdict and issues stay in view");
+  assert.equal((await h.accept()).status, "ready", "taking it again changes nothing");
+  const flagged = harness({ reviews: ["revise", "revise", "revise"], extractions: ["reviews product videos no longer than five minutes", "reviews product videos no longer than five minutes", "not in the article"] });
+  await flagged.run();
+  await assert.rejects(flagged.accept(), /The program still finds EVIDENCE_NOT_FOUND \(f1\) on this list: run the facts again/);
+  const running = harness({ reviews: [] });
+  running.sessions.push({ id: "session-1", topicId, storyId, step: "facts", status: "running", facts: [], evaluation: null, rounds: [], trace: [] });
+  await assert.rejects(running.accept(), /not waiting for you/);
+  await assert.rejects(running.accept("session-9"), /was not found/);
 });

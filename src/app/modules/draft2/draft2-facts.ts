@@ -4,7 +4,7 @@ import { withCreativeTextBudget } from "../stories/creative-text-meter";
 import { generateOpenAiStructuredResponse } from "../stories/openai-structured-response";
 import { generateAnthropicStructuredResponse } from "../stories/anthropic-structured-response";
 import { getAnthropicRuntimeConfig, requireAnthropicApiKey } from "../stories/anthropic.config";
-import { activeDraft2Session, createDraft2Session, updateDraft2Session } from "./draft2-session.repository";
+import { activeDraft2Session, createDraft2Session, getDraft2Session, updateDraft2Session } from "./draft2-session.repository";
 import type { Draft2ModelChoice, Draft2Pipeline } from "./draft2-models";
 import { draft2DevTrace } from "./draft2-dev-trace";
 import {
@@ -103,7 +103,7 @@ export async function runDraft2Facts({ topicId, storyId, models, pipeline }: Dra
         facts = merged.facts;
         if (merged.restored.length) draft2DevTrace({ step: "facts", round, provider: "openai", model: extractorModel, operation: "draft2_facts", phase: "response", detail: { restoredByProgram: merged.restored } });
         if (extracted.responseId) threads.openai = { model: extractorModel, responseId: extracted.responseId };
-        mechanical = mechanicalFactIssues(facts, articleText);
+        mechanical = mechanicalFactIssues(facts, articleText, content.title);
         rounds.push({ round, facts, mechanical, ...(merged.restored.length ? { restored: merged.restored } : {}), at: new Date().toISOString() });
         await checkpoint({ facts });
 
@@ -136,4 +136,26 @@ export async function runDraft2Facts({ topicId, storyId, models, pipeline }: Dra
     throw error;
   }
   return (await updateDraft2Session(session.id, {})) ?? session;
+}
+
+/**
+ * The editor takes the facts as they stand after the reviewer's last
+ * "revise" (three extractions without acceptance), so the next steps can
+ * build on them: every fact listed is grounded (the program found nothing on
+ * the last round); what the reviewer still wanted (a missing key fact, a
+ * duplicate, a qualifier) stays in view on the Facts screen. A Saint-Jean
+ * fraud story looped three times on an outcome its body never states.
+ */
+export async function acceptDraft2Facts({ topicId, sessionId }: { topicId: string; sessionId: string }): Promise<Draft2SessionRow> {
+  const session = await getDraft2Session(topicId, sessionId);
+  if (!session) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
+  if (session.step !== "facts" || session.status === "running") throw new Draft2InputError("The facts are not waiting for you: they are being verified, or a later step already runs on them.");
+  if (session.status === "ready") return session;
+  if (!session.facts?.length || !session.evaluation) throw new Draft2InputError("There is no list to take: extract the facts first.");
+  const last = session.rounds[session.rounds.length - 1];
+  if (last?.mechanical.length) throw new Draft2InputError(`The program still finds ${last.mechanical.map((issue) => `${issue.code}${issue.factId ? ` (${issue.factId})` : ""}`).join(", ")} on this list: run the facts again.`);
+  const evaluation: Draft2FactsEvaluation = { ...session.evaluation, accepted: { by: "editor", at: new Date().toISOString() } };
+  const updated = await updateDraft2Session(session.id, { status: "ready", evaluation, error: null });
+  if (!updated) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
+  return updated;
 }

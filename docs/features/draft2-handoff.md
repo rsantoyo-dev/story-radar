@@ -610,3 +610,19 @@ efforts; the shadow judgment removed after 48 measured rounds; the writer,
 the judge and each one's effort chosen per step. Phase 2 waits: the Spine's
 three sketches, the Closing and the Deck as one step with a one-round
 Review, and the side-by-side view.
+
+### Addendum, 2026-10-17: the headline is part of the article; the editor can take the facts
+
+A Saint-Jean fraud story (the cashier who spared an 80-year-old a 4,000 $
+loss) looped three times in three runs: the outcome is stated only in the
+headline, the extractor cited the headline, the program refused it as not
+verbatim (it searched the body only), the fact was dropped, and the reviewer
+refused the list for the missing key fact. Two changes: the program's
+verbatim check reads the headline with the body (`mechanicalFactIssues(facts,
+text, title)`, facts skill v3 says so to both models, a body that contradicts
+the headline makes the fact "disputed"); and when the reviewer still refuses
+after three extractions, the Facts screen offers **Use these facts**
+(`acceptDraft2Facts`, `PATCH /api/radar/draft2/facts { action: "accept" }`):
+the session is ready, the verdict records `accepted: { by: "editor", at }`
+and keeps its issues in view, and only a list the program finds nothing on
+can be taken (a flagged one must run again).
