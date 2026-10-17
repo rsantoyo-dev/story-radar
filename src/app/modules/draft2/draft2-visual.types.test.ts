@@ -73,6 +73,7 @@ test("the carousel in order, from the opening, the deck and the closing; one scr
   assert.equal(visualPlan(Array.from({ length: 11 })), VISUAL_LONG_PLAN);
   assert.deepEqual(VISUAL_PLAN.map((round) => [round.fresh, round.revise, round.proposals, round.effort ?? "high"]), [[1, 0, 1, "medium"], [0, 1, 0, "medium"]], "one script and the judge's, then the best revised at medium");
   assert.equal(VISUAL_LONG_PLAN, VISUAL_PLAN, "a long carousel runs the same plan");
+  assert.deepEqual(visualPlan(carousel, "v3").map((round) => [round.fresh, round.revise, round.proposals, round.effort, round.judgeEffort]), [[1, 0, 0, "medium", "low"]], "v3: one script, one round, the judge at low, no proposal");
   const judged = { round: 1, candidates: [], mechanical: [], at: "t", evaluation: {} };
   const unjudged = { ...judged, round: 2, evaluation: undefined };
   assert.equal(funnelExtendable({ status: "needs-review", rounds: [judged] }, VISUAL_PLAN.length), true, "a run that ended after one round takes the second");

@@ -5,12 +5,17 @@ generator and one for the evaluator, so the user chooses the model."
 
 ## What the editor sees
 
-A **Models** card on the overview (above the autopilot) and at the top of the
-Facts screen, with two selects:
+A **Pipeline and models** card on the overview (above the autopilot) and at
+the top of the Facts screen (since 2026-10-16; `draft2-v3.md`):
 
-- **Writer**: who writes the Opening, the Closing, the Deck, the visual script
-  and the caption.
-- **Judge**: who judges them (and proposes its own candidates).
+- **Pipeline**: v2 or v3, the recipe the story's next runs follow.
+- **Every step**: a writer and a judge for every funnel step.
+- **One row per step** (Opening, Closing, Deck, Visual script, Caption): its
+  own writer, judge, and each one's effort, over the row for every step and
+  the step's plan, so one story can judge the Opening with Sol while Luna
+  judges the rest and the results compare step by step.
+
+Each model select offers:
 
 Each select offers "Default" (today's cast from the environment: Claude
 Sonnet 5.5 writes, `DRAFT2_MODEL_JUDGE` or Sol judges) and the models the cost
@@ -34,7 +39,10 @@ own models.
 ## How it works
 
 - The choice lives on the session (`draft2_sessions.models`, migration 0112,
-  `Draft2ModelChoice`: `{ writer?, judge? }`, each `{ provider, model }`).
+  `Draft2ModelChoice`: `{ writer?, judge?, steps? }`, each role `{ provider,
+  model }`, each step `{ writer?, judge?, writerEffort?, judgeEffort? }`;
+  `draft2StepChoice` resolves a step's), and the pipeline beside it
+  (`draft2_sessions.pipeline`, migration 0113).
   Before the story has a session, the canvas holds it and sends it with the
   Facts request, which creates the session with it; it is also remembered in
   the browser as the default for the next story.

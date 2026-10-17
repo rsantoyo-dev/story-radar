@@ -53,7 +53,7 @@ const DECK_STEP: FunnelStep<Draft2DeckCandidate, Draft2DeckScore, Draft2DeckIssu
   noun: "deck",
   article: "a deck",
   plural: "decks",
-  plan: ({ shape }) => deckPlan(shape),
+  plan: ({ shape }, pipeline) => deckPlan(shape, pipeline),
   gate: DECK_GATE,
   operations: { writer: "draft2_deck", judge: "draft2_deck_review" },
   roles: DRAFT2_DECK_ROLES,

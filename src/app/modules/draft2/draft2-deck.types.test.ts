@@ -48,6 +48,8 @@ test("an arc's deck runs 2 to 5 slides; a list's or steps' carries the items sli
   assert.deepEqual(deckShape({ kind: "steps", itemFactIds: ["f3", "f4"] }, ["f9"]).items, ["f3", "f4"], "slide 2 gave what the reader needs first; every step remains");
   assert.equal(deckPlan(arc), DECK_ARC_PLAN);
   assert.equal(deckPlan(list), DECK_ITEMS_PLAN);
+  assert.deepEqual(deckPlan(arc, "v3").map((round) => [round.fresh, round.revise, round.proposals, round.effort, round.judgeEffort]), [[4, 0, 1, "medium", "low"], [0, 2, 0, "medium", "low"]], "v3: the same rounds, the writer at medium and the judge at low");
+  assert.deepEqual(deckPlan(list, "v3").map((round) => [round.fresh, round.revise, round.judgeEffort]), [[2, 0, "low"], [0, 1, "low"]]);
   assert.deepEqual(DECK_ARC_PLAN.map((round) => [round.fresh, round.revise, round.proposals, round.effort ?? "high"]), [[4, 0, 1, "medium"], [0, 2, 0, "high"]]);
   assert.deepEqual(DECK_ITEMS_PLAN.map((round) => [round.fresh, round.revise, round.proposals, round.effort ?? "high"]), [[2, 0, 1, "medium"], [0, 1, 0, "high"]]);
   assert.deepEqual(shapeForModels(arc), { kind: "arc", slides: "2 to 5" });

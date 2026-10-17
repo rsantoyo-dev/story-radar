@@ -2,7 +2,7 @@ import nextEnv from "@next/env";
 import { neon } from "@neondatabase/serverless";
 nextEnv.loadEnvConfig(process.cwd(), true);
 const sql = neon(process.env.DATABASE_URL!);
-// Read-only: the shadow judgments (DRAFT2_SHADOW_JUDGE_EFFORT / DRAFT2_SHADOW_JUDGE_MODEL) beside the real ones, round by round and per step:
+// Read-only: the shadow judgments stored before 2026-10-16 (the shadow was removed with v3; see draft2-v3.md) beside the real ones, round by round and per step:
 // the same winner or not, the best score's difference, the verdicts, and the judge's time at each setting. Usage: npx tsx scripts/draft2-inspect/inspect-shadow.mts [since YYYY-MM-DD]
 const since = process.argv[2] ?? new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
 type Score = { candidateId: string; overall: number };

@@ -33,7 +33,10 @@ import {
   FUNNEL_ACCEPTABLE_SCORE, FUNNEL_MAX_EXTRA_ROUNDS, criterionFloor, criterionOf, funnelAcceptedWinner, funnelBestVersions, funnelExtendable, funnelResumeRound, funnelScorePasses, funnelVersions, hasMaterialError,
   type FunnelCandidate, type FunnelGate, type FunnelIssue, type FunnelRegression, type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion,
 } from "@/app/modules/draft2/draft2-funnel";
-import { DRAFT2_MODEL_OPTIONS, DRAFT2_OPENING_EARLIER_ROLES, DRAFT2_OPENING_ROLES, castWithChoice, draft2ModelName, parseDraft2ModelChoice, type Draft2Cast, type Draft2FunnelStepName, type Draft2ModelChoice } from "@/app/modules/draft2/draft2-models";
+import {
+  DEFAULT_DRAFT2_PIPELINE, DRAFT2_EFFORTS, DRAFT2_FUNNEL_STEP_NAMES, DRAFT2_MODEL_OPTIONS, DRAFT2_OPENING_EARLIER_ROLES, DRAFT2_OPENING_ROLES, castWithChoice, draft2ChoiceIsEmpty, draft2ModelName, draft2StepChoice, parseDraft2ModelChoice, parseDraft2Pipeline,
+  type Draft2Cast, type Draft2Effort, type Draft2FunnelStepName, type Draft2ModelChoice, type Draft2Pipeline, type Draft2StepChoice,
+} from "@/app/modules/draft2/draft2-models";
 import {
   adjacentDraft2Steps, AUTOPILOT_ORDER, autopilotRuns, contentStatusLabel, dashboardHref, DRAFT_2_STEPS, ranAt, draft2RailState, draft2StepFromPath, draft2StepHref, draft2StepPhase, minutes, paragraphs, sessionMetrics, sourceHost, stepMetrics, storyHref, traceUsageLine, usd, wordCount,
   type Draft2StepKey,
@@ -71,6 +74,8 @@ type Draft2SessionView = {
   publication: Draft2Publication | null;
   /** The editor's choice of the funnel's writer and judge; null or absent: today's cast. */
   models?: Draft2ModelChoice | null;
+  /** The pipeline the session runs on; absent on a session stored before pipelines (v2). */
+  pipeline?: Draft2Pipeline;
   trace: Draft2TraceEntry[];
   error: string | null;
   updatedAt: string;
@@ -108,8 +113,10 @@ function screenOfRun(step: Draft2RunStep | undefined): Draft2StepKey | undefined
 const SOURCE_PANEL_KEY = "press-craftor:draft2-source-panel";
 /** The last models the editor chose, the default for a story that has no session yet. */
 const MODELS_KEY = "press-craftor:draft2-models";
-/** A choice as the routes take it: each role's model id. */
-const modelIds = (choice: Draft2ModelChoice | null | undefined) => ({ ...(choice?.writer ? { writer: choice.writer.model } : {}), ...(choice?.judge ? { judge: choice.judge.model } : {}) });
+/** The last pipeline the editor chose, the default for a story that has no session yet. */
+const PIPELINE_KEY = "press-craftor:draft2-pipeline";
+/** The rounds a run's plan had when it started; a run stored before pipelines ran the step's v2 plan. */
+const planRounds = (run: { plannedRounds?: number } | null | undefined, v2Rounds: number) => run?.plannedRounds ?? v2Rounds;
 
 /** A funnel run as the autopilot reads it: nothing yet, stopped (to continue), failed (stop), finished for something that changed since (write again), or finished. */
 function runNeeds(step: Exclude<Draft2RunStep, "publication">, run: { status: string; winnerId?: string; editorChoiceId?: string; error?: string } | null | undefined, changed: boolean, noun: string): AutopilotNext | undefined {
@@ -373,8 +380,9 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const [content, setContent] = useState<StoryContentResponse>();
   const [error, setError] = useState<string>();
   const [session, setSession] = useState<Draft2SessionView | null>();
-  // The models chosen before the story has a session (sent with the facts, which create it); a session keeps its own.
+  // The models and the pipeline chosen before the story has a session (sent with the facts, which create it); a session keeps its own.
   const [pendingModels, setPendingModels] = useState<Draft2ModelChoice>({});
+  const [pendingPipeline, setPendingPipeline] = useState<Draft2Pipeline>(DEFAULT_DRAFT2_PIPELINE);
   const [savingModels, setSavingModels] = useState(false);
   const [modelsError, setModelsError] = useState<string>();
   // Who plays each part in a run started now, as the server names them with the session it loads first.
@@ -508,8 +516,8 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
     setRunning(step); setRunError(undefined); setChoiceError(undefined); setFocusError(undefined); setMentionError(undefined);
     try {
       if (step === "facts") {
-        // A new session: it keeps the models chosen now (the current session's, else the ones chosen before it existed).
-        const next = await postStep("facts", { storyId, models: modelIds(on?.models ?? pendingModels) });
+        // A new session: it keeps the models and the pipeline chosen now (the current session's, else the ones chosen before it existed).
+        const next = await postStep("facts", { storyId, models: on?.models ?? pendingModels, pipeline: on?.pipeline ?? pendingPipeline });
         setSession(next);
         return next;
       }
@@ -606,18 +614,30 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
 
   /** The models chosen in the Models card: kept on the session (its next runs), or until the facts create it; remembered as the default for the next story. */
   async function chooseModels(next: Draft2ModelChoice) {
-    try { window.localStorage.setItem(MODELS_KEY, JSON.stringify(modelIds(next))); } catch { /* storage unavailable */ }
+    try { window.localStorage.setItem(MODELS_KEY, JSON.stringify(next)); } catch { /* storage unavailable */ }
     if (!session) { setPendingModels(next); return; }
+    await saveSessionChoice({ models: next }, "Could not save the models.");
+  }
+
+  /** The pipeline chosen in the Models card (v2 or v3): kept on the session, or until the facts create it; remembered as the default for the next story. */
+  async function choosePipeline(next: Draft2Pipeline) {
+    try { window.localStorage.setItem(PIPELINE_KEY, next); } catch { /* storage unavailable */ }
+    if (!session) { setPendingPipeline(next); return; }
+    await saveSessionChoice({ pipeline: next }, "Could not save the pipeline.");
+  }
+
+  async function saveSessionChoice(patch: { models?: Draft2ModelChoice; pipeline?: Draft2Pipeline }, failure: string) {
+    if (!session) return;
     setSavingModels(true); setModelsError(undefined);
     try {
       const response = await fetch(`/api/radar/draft2/session?topicId=${encodeURIComponent(topicId)}`, {
-        method: "PATCH", cache: "no-store", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: session.id, models: modelIds(next) }),
+        method: "PATCH", cache: "no-store", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: session.id, ...patch }),
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(body.error ?? "Could not save the models.");
+      if (!response.ok) throw new Error(body.error ?? failure);
       setSession(body.session as Draft2SessionView);
     } catch (cause) {
-      setModelsError(cause instanceof Error ? cause.message : "Could not save the models.");
+      setModelsError(cause instanceof Error ? cause.message : failure);
     } finally {
       setSavingModels(false);
     }
@@ -916,7 +936,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const chosenOpeningId = session?.opening?.editorChoiceId ?? session?.opening?.winnerId;
   const openingFinished = Boolean(session?.opening && chosenOpeningId && session.opening.status !== "running" && session.opening.status !== "paused");
   const closingReady = openingFinished && Boolean(session?.opening?.focus);
-  const closingResumable = closing && (closing.status === "paused" || closingStalled) && funnelResumeRound(closing) <= continuableUpTo(closing, CLOSING_MAX_ROUNDS);
+  const closingResumable = closing && (closing.status === "paused" || closingStalled) && funnelResumeRound(closing) <= continuableUpTo(closing, planRounds(closing, CLOSING_MAX_ROUNDS));
   const closingResumeRound = closingResumable && closing ? funnelResumeRound(closing) : undefined;
   const closingPausedRound = closing?.status === "paused" ? funnelResumeRound(closing) : undefined;
   // A closing written for another opening than the one chosen now.
@@ -928,7 +948,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const chosenClosingId = closing?.editorChoiceId ?? closing?.winnerId;
   const closingFinished = Boolean(closing && chosenClosingId && closing.status !== "running" && closing.status !== "paused");
   const deckReady = closingFinished && !closingOpeningChanged;
-  const deckResumable = deck && (deck.status === "paused" || deckStalled) && funnelResumeRound(deck) <= continuableUpTo(deck, DECK_MAX_ROUNDS);
+  const deckResumable = deck && (deck.status === "paused" || deckStalled) && funnelResumeRound(deck) <= continuableUpTo(deck, planRounds(deck, DECK_MAX_ROUNDS));
   const deckResumeRound = deckResumable && deck ? funnelResumeRound(deck) : undefined;
   const deckPausedRound = deck?.status === "paused" ? funnelResumeRound(deck) : undefined;
   // A deck written for another closing or opening than the ones chosen now.
@@ -964,9 +984,9 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const visualWordsChanged = Boolean(visual?.carousel && carouselNow && !sameCarouselWords(visual.carousel, carouselNow));
   const visualDirectionNew = Boolean(visual?.deckId && visualDirectionChanged(visual.focus, focus));
   const visualChanged = Boolean(visual?.deckId && ((chosenDeckId && visual.deckId !== chosenDeckId) || (inventory && visual.inventoryVersion !== inventory.version) || visualWordsChanged || visualDirectionNew));
-  const visualResumable = visual && (visual.status === "paused" || visualStalled) && funnelResumeRound(visual) <= continuableUpTo(visual, VISUAL_MAX_ROUNDS);
+  const visualResumable = visual && (visual.status === "paused" || visualStalled) && funnelResumeRound(visual) <= continuableUpTo(visual, planRounds(visual, VISUAL_MAX_ROUNDS));
   // A run that ended unaccepted before the step had its third round takes it, while it still follows the deck and the people and places.
-  const visualExtendable = Boolean(visual && !visualChanged && funnelExtendable(visual, visualPlan(visual.carousel ?? []).length + (visual.extraRounds ?? 0)));
+  const visualExtendable = Boolean(visual && !visualChanged && funnelExtendable(visual, planRounds(visual, visualPlan(visual.carousel ?? []).length) + (visual.extraRounds ?? 0)));
   const visualResumeRound = (visualResumable || visualExtendable) && visual ? funnelResumeRound(visual) : undefined;
   const visualPausedRound = visual?.status === "paused" ? funnelResumeRound(visual) : undefined;
   const visualDisplay = visualDisplayFor(inventory);
@@ -996,7 +1016,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const imagesFinished = Boolean(images && images.status !== "running" && images.status !== "paused" && images.slides.every((slide) => slideSettled(slide) && shownAttempt(slide)));
   const imagesScriptGone = Boolean(images && !funnelVersions(visual?.rounds ?? []).some((version) => version.candidate.id === images.visualId));
   const captionReady = imagesFinished && !imagesScriptGone;
-  const captionResumable = caption && (caption.status === "paused" || captionStalled) && funnelResumeRound(caption) <= continuableUpTo(caption, CAPTION_MAX_ROUNDS);
+  const captionResumable = caption && (caption.status === "paused" || captionStalled) && funnelResumeRound(caption) <= continuableUpTo(caption, planRounds(caption, CAPTION_MAX_ROUNDS));
   const captionResumeRound = captionResumable && caption ? funnelResumeRound(caption) : undefined;
   const captionPausedRound = caption?.status === "paused" ? funnelResumeRound(caption) : undefined;
   // A caption written for other images, or tagging other accounts, than the ones now.
@@ -1012,7 +1032,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   // What each step took so far, this run's and earlier ones: time inside calls and the meter's cost.
   const metrics = stepMetrics(session?.trace ?? [], session?.images);
   const totals = sessionMetrics(session?.trace ?? [], session?.images);
-  const resumable = session?.opening && (session.opening.status === "paused" || stalled) && openingResumeRound(session.opening) <= continuableUpTo(session.opening, OPENING_MAX_ROUNDS);
+  const resumable = session?.opening && (session.opening.status === "paused" || stalled) && openingResumeRound(session.opening) <= continuableUpTo(session.opening, planRounds(session.opening, OPENING_MAX_ROUNDS));
   const resumeRound = resumable && session?.opening ? openingResumeRound(session.opening) : undefined;
   const pausedRound = session?.opening?.status === "paused" ? openingResumeRound(session.opening) : undefined;
 
@@ -1030,11 +1050,19 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   useScreenTitle(current ? DRAFT_2_STEPS.find((step) => step.key === current)?.title : undefined, content?.title);
   // The article beside the screens: kept open between visits on a wide window, where it docks.
   const [sourceOpen, setSourceOpen] = useState(false);
-  // The models the editor chose last, the default before this story has a session.
+  // The models and the pipeline the editor chose last, the defaults before this story has a session.
   useEffect(() => {
     let stored: Draft2ModelChoice = {};
-    try { const saved = window.localStorage.getItem(MODELS_KEY); if (saved) stored = parseDraft2ModelChoice(JSON.parse(saved)); } catch { /* storage unavailable */ }
-    if (stored.writer || stored.judge) void Promise.resolve().then(() => setPendingModels(stored));
+    let pipeline: Draft2Pipeline | undefined;
+    try {
+      const saved = window.localStorage.getItem(MODELS_KEY);
+      if (saved) stored = parseDraft2ModelChoice(JSON.parse(saved));
+      pipeline = parseDraft2Pipeline(window.localStorage.getItem(PIPELINE_KEY));
+    } catch { /* storage unavailable */ }
+    void Promise.resolve().then(() => {
+      if (!draft2ChoiceIsEmpty(stored)) setPendingModels(stored);
+      if (pipeline) setPendingPipeline(pipeline);
+    });
   }, []);
   useEffect(() => {
     let stored = false;
@@ -1108,11 +1136,13 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
 
   // "Run to here": on a step's screen before the images, the autopilot runs every step up to this one and stops.
   const runToHere = current && current !== "images" && (AUTOPILOT_ORDER as readonly string[]).includes(current) ? current : undefined;
-  // A model other than the default, chosen in the Models card, shows beside the autopilot on every screen: the browser remembers the last choice for the next story.
+  // The pipeline, and a model other than the default chosen in the Models card, show beside the autopilot on every screen: the browser remembers the last choice for the next story.
   const chosenModels = session ? session.models : pendingModels;
-  const modelsBadge = chosenModels?.writer || chosenModels?.judge
-    ? <StatusBadge tone="warning">{[chosenModels.writer ? `Writer ${optionName(chosenModels.writer.model)}` : "", chosenModels.judge ? `Judge ${optionName(chosenModels.judge.model)}` : ""].filter(Boolean).join(" · ")}</StatusBadge>
-    : null;
+  const pipeline: Draft2Pipeline = session ? session.pipeline ?? "v2" : pendingPipeline;
+  const modelsBadge = <>
+    <StatusBadge tone={pipeline === "v3" ? "info" : "neutral"}>{pipeline}</StatusBadge>
+    {!draft2ChoiceIsEmpty(chosenModels) ? <StatusBadge tone="warning">{choiceSummary(chosenModels)}</StatusBadge> : null}
+  </>;
   const autopilotButtons = <>
     {autopilot?.active ? <Button variant="secondary" size="compact" disabled={stopRequested.current} onClick={() => { stopRequested.current = true; }}>Stop after this step</Button> : null}
     {runToHere && !autopilot?.active ? <Button variant="secondary" size="compact" disabled={!text.length || session === undefined || running !== undefined} onClick={() => { void runAutopilot({ until: runToHere }); }}>Run to here</Button> : null}
@@ -1135,7 +1165,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
       </Button>,
       how: <p>{factsCast.extractor} extracts the facts; {factsCast.reviewer} checks them against the article; they loop on {factsCast.reviewer}’s suggestions, at most three extractions. Running the facts again starts a new session: every later step starts over from the new facts, and the earlier session stays as history.</p>,
       body: <>
-        <ModelsCard choice={session ? session.models : pendingModels} cast={cast} saving={savingModels} locked={running !== undefined || Boolean(autopilot?.active)} error={modelsError} onChange={(next) => { void chooseModels(next); }} />
+        <ModelsCard choice={session ? session.models : pendingModels} pipeline={pipeline} cast={cast} saving={savingModels} locked={running !== undefined || Boolean(autopilot?.active)} error={modelsError} onChange={(next) => { void chooseModels(next); }} onPipeline={(next) => { void choosePipeline(next); }} />
         {running === "facts" ? <LoadingState>{factsCast.extractor} is extracting; {factsCast.reviewer} reviews each round. This can take a minute or two.</LoadingState> : null}
         {runError?.step === "facts" ? <InlineNotice tone="error" title="The facts step stopped">{runError.message}</InlineNotice> : null}
         {session?.step === "facts" && session.error && running !== "facts" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
@@ -1214,7 +1244,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
     opening: {
       actions: <>
         {resumeRound && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("opening", { continuing: true }); }}>Continue from round {resumeRound}</Button> : null}
-        {moreRoundAvailable(session?.opening, OPENING_MAX_ROUNDS) && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("opening", { continuing: true, more: true }); }}>One more round</Button> : null}
+        {moreRoundAvailable(session?.opening, planRounds(session?.opening, OPENING_MAX_ROUNDS)) && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("opening", { continuing: true, more: true }); }}>One more round</Button> : null}
         <Button variant="primary" size="compact" busy={running === "opening"} disabled={!factsVerified || !focusReady || running !== undefined || savingFocus !== undefined} onClick={() => { void runStep("opening"); }}>
           {running === "opening" ? "Writing and judging…" : session?.opening ? "Write the opening again" : "Write the opening"}
         </Button>
@@ -1247,7 +1277,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
     closing: {
       actions: <>
         {closingResumeRound && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("closing", { continuing: true }); }}>Continue from round {closingResumeRound}</Button> : null}
-        {moreRoundAvailable(closing, CLOSING_MAX_ROUNDS) && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("closing", { continuing: true, more: true }); }}>One more round</Button> : null}
+        {moreRoundAvailable(closing, planRounds(closing, CLOSING_MAX_ROUNDS)) && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("closing", { continuing: true, more: true }); }}>One more round</Button> : null}
         <Button variant="primary" size="compact" busy={running === "closing"} disabled={!factsVerified || !closingReady || running !== undefined || savingFocus !== undefined} onClick={() => { void runStep("closing"); }}>
           {running === "closing" ? "Writing and judging…" : closing ? "Write the closing again" : "Write the closing"}
         </Button>
@@ -1275,7 +1305,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
     deck: {
       actions: <>
         {deckResumeRound && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("deck", { continuing: true }); }}>Continue from round {deckResumeRound}</Button> : null}
-        {moreRoundAvailable(deck, DECK_MAX_ROUNDS) && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("deck", { continuing: true, more: true }); }}>One more round</Button> : null}
+        {moreRoundAvailable(deck, planRounds(deck, DECK_MAX_ROUNDS)) && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("deck", { continuing: true, more: true }); }}>One more round</Button> : null}
         <Button variant="primary" size="compact" busy={running === "deck"} disabled={!factsVerified || !deckReady || running !== undefined || savingFocus !== undefined} onClick={() => { void runStep("deck"); }}>
           {running === "deck" ? "Writing and judging…" : deck ? "Write the deck again" : "Write the deck"}
         </Button>
@@ -1341,7 +1371,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
     visual: {
       actions: <>
         {visualResumeRound && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("visual", { continuing: true }); }}>{visualExtendable ? `Continue with round ${visualResumeRound}` : `Continue from round ${visualResumeRound}`}</Button> : null}
-        {!visualResumeRound && moreRoundAvailable(visual, visualPlan(visual?.carousel ?? []).length) && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("visual", { continuing: true, more: true }); }}>One more round</Button> : null}
+        {!visualResumeRound && moreRoundAvailable(visual, planRounds(visual, visualPlan(visual?.carousel ?? []).length)) && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("visual", { continuing: true, more: true }); }}>One more round</Button> : null}
         <Button variant="primary" size="compact" busy={running === "visual"} disabled={!factsVerified || !visualReady || running !== undefined || savingInventory !== undefined} onClick={() => { void runStep("visual"); }}>
           {running === "visual" ? "Writing and judging…" : visual ? "Write the visual script again" : "Write the visual script"}
         </Button>
@@ -1411,7 +1441,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
     caption: {
       actions: <>
         {captionResumeRound && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("caption", { continuing: true }); }}>Continue from round {captionResumeRound}</Button> : null}
-        {moreRoundAvailable(caption, CAPTION_MAX_ROUNDS) && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("caption", { continuing: true, more: true }); }}>One more round</Button> : null}
+        {moreRoundAvailable(caption, planRounds(caption, CAPTION_MAX_ROUNDS)) && !running ? <Button variant="secondary" size="compact" onClick={() => { void runStep("caption", { continuing: true, more: true }); }}>One more round</Button> : null}
         <Button variant="primary" size="compact" busy={running === "caption"} disabled={!factsVerified || !captionReady || running !== undefined || savingMention !== undefined || mentionsSearching} onClick={() => { void runStep("caption"); }}>
           {running === "caption" ? "Writing and judging…" : caption ? "Write the caption again" : "Write the caption"}
         </Button>
@@ -1529,7 +1559,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
             <PipelineStrip steps={screenSteps} />
             <p className={styles.screenVitals}>{doneSteps} of {DRAFT_2_STEPS.length} steps done{totals.calls ? ` · ${minutes(totals.ms)} in ${totals.calls} provider calls · ${usd(totals.costMicros)}` : ""}</p>
           </header>
-          <ModelsCard choice={session ? session.models : pendingModels} cast={cast} saving={savingModels} locked={running !== undefined || Boolean(autopilot?.active)} error={modelsError} onChange={(next) => { void chooseModels(next); }} />
+          <ModelsCard choice={session ? session.models : pendingModels} pipeline={pipeline} cast={cast} saving={savingModels} locked={running !== undefined || Boolean(autopilot?.active)} error={modelsError} onChange={(next) => { void chooseModels(next); }} onPipeline={(next) => { void choosePipeline(next); }} />
           <section className={styles.autopilotCard} aria-labelledby="draft2-autopilot-title">
             <div className={styles.autopilotHead}>
               <div>
@@ -2900,51 +2930,111 @@ function FocusNarrative({ focus, material, description, disabled, onCommit }: {
 const price = (value: number) => (value < 1 ? value.toFixed(2) : String(value));
 const optionName = (model: string | undefined) => DRAFT2_MODEL_OPTIONS.find((entry) => entry.model === model)?.name ?? draft2ModelName(model);
 
+/** How the badge names a choice: the models chosen for every step, or "per step" when the steps differ. */
+function choiceSummary(choice: Draft2ModelChoice | null | undefined): string {
+  const parts = [choice?.writer ? `Writer ${optionName(choice.writer.model)}` : "", choice?.judge ? `Judge ${optionName(choice.judge.model)}` : ""].filter(Boolean);
+  if (Object.keys(choice?.steps ?? {}).length) parts.push("models per step");
+  return parts.join(" · ");
+}
+
+const PIPELINE_LABEL: Record<Draft2Pipeline, string> = {
+  v2: "v2 · in use: 15 openings in 3 rounds, judges at medium, two visual rounds",
+  v3: "v3 · adjusting: 5 distinct openings in 2 rounds, judges at low, one visual script",
+};
+const EFFORT_LABEL: Record<Draft2Effort, string> = { low: "Low", medium: "Medium", high: "High" };
+const FUNNEL_STEP_LABEL: Record<Draft2FunnelStepName, string> = { opening: "Opening", closing: "Closing", deck: "Deck", visual: "Visual script", caption: "Caption" };
+
 /**
- * Who writes and who judges this story's next funnel runs (the opening, the
- * closing, the deck, the visual script and the caption): the editor's choice,
- * kept on the session (or until the facts create it), else today's cast. Each
- * model shows its list price; the descriptions say what the roles cost in the
- * last real stories, so the choice is made with the numbers in view.
+ * The pipeline this story's next runs follow (v2 or v3), and who writes and
+ * who judges each funnel step (the opening, the closing, the deck, the visual
+ * script and the caption) and how hard each thinks: the editor's choice, kept
+ * on the session (or until the facts create it), else today's cast and the
+ * step's plan. A row for every step sets a model on each; a step's own row
+ * wins over it, so one story can judge the Opening with Sol and the rest
+ * with Luna and compare the results step by step. Each model shows its list
+ * price; the descriptions say what the roles cost in the last real stories.
  */
-function ModelsCard({ choice, cast, saving, locked, error, onChange }: {
+function ModelsCard({ choice, pipeline, cast, saving, locked, error, onChange, onPipeline }: {
   choice: Draft2ModelChoice | null | undefined;
+  pipeline: Draft2Pipeline;
   cast?: Draft2Cast;
   saving: boolean;
   locked: boolean;
   error?: string;
   onChange: (next: Draft2ModelChoice) => void;
+  onPipeline: (next: Draft2Pipeline) => void;
 }) {
-  const today = cast?.funnel.opening;
-  const set = (part: "writer" | "judge", model: string) => {
-    const option = DRAFT2_MODEL_OPTIONS.find((entry) => entry.model === model);
+  const disabled = locked || saving;
+  const modelOf = (id: string) => { const option = DRAFT2_MODEL_OPTIONS.find((entry) => entry.model === id); return option ? { provider: option.provider, model: option.model } : undefined; };
+  /** The model for every step: a step without its own choice follows it. */
+  const setAll = (part: "writer" | "judge", id: string) => {
     const next: Draft2ModelChoice = { ...(choice ?? {}) };
-    if (option) next[part] = { provider: option.provider, model: option.model }; else delete next[part];
+    const role = modelOf(id);
+    if (role) next[part] = role; else delete next[part];
     onChange(next);
   };
-  const writer = choice?.writer?.model ?? today?.writer.model;
-  const judge = choice?.judge?.model ?? today?.judge.model;
-  const select = (part: "writer" | "judge") => <select value={choice?.[part]?.model ?? ""} disabled={locked || saving} onChange={(event) => set(part, event.target.value)}>
-    <option value="">{`Default · ${today ? optionName(today[part].model) : "as configured"}`}</option>
-    {DRAFT2_MODEL_OPTIONS.map((entry) => <option key={entry.model} value={entry.model}>{`${entry.name} · $${price(entry.input)} in / $${price(entry.output)} out per million tokens`}</option>)}
+  /** One step's own writer, judge or effort; a step with nothing of its own is left out of the choice. */
+  const setStep = (step: Draft2FunnelStepName, part: keyof Draft2StepChoice, value: string) => {
+    const steps = { ...(choice?.steps ?? {}) };
+    const own: Draft2StepChoice = { ...(steps[step] ?? {}) };
+    if (part === "writer" || part === "judge") { const role = modelOf(value); if (role) own[part] = role; else delete own[part]; }
+    else { const effort = DRAFT2_EFFORTS.find((entry) => entry === value); if (effort) own[part] = effort; else delete own[part]; }
+    if (Object.keys(own).length) steps[step] = own; else delete steps[step];
+    const next: Draft2ModelChoice = { ...(choice ?? {}) };
+    if (Object.keys(steps).length) next.steps = steps; else delete next.steps;
+    onChange(next);
+  };
+  const modelOptions = DRAFT2_MODEL_OPTIONS.map((entry) => <option key={entry.model} value={entry.model}>{`${entry.name} · $${price(entry.input)} in / $${price(entry.output)} out per million tokens`}</option>);
+  const allSelect = (part: "writer" | "judge") => <select value={choice?.[part]?.model ?? ""} disabled={disabled} onChange={(event) => setAll(part, event.target.value)}>
+    <option value="">{`Default · ${cast ? optionName(cast.funnel.opening[part].model) : "as configured"}`}</option>
+    {modelOptions}
   </select>;
+  const stepSelect = (step: Draft2FunnelStepName, part: "writer" | "judge") => {
+    const inherited = choice?.[part] ?? cast?.funnel[step][part];
+    return <select value={choice?.steps?.[step]?.[part]?.model ?? ""} disabled={disabled} onChange={(event) => setStep(step, part, event.target.value)}>
+      <option value="">{`Default · ${inherited ? optionName(inherited.model) : "as configured"}`}</option>
+      {modelOptions}
+    </select>;
+  };
+  const effortSelect = (step: Draft2FunnelStepName, part: "writerEffort" | "judgeEffort") => <select value={choice?.steps?.[step]?.[part] ?? ""} disabled={disabled} onChange={(event) => setStep(step, part, event.target.value)}>
+    <option value="">{`The plan's · ${pipeline === "v3" ? (part === "judgeEffort" ? "low" : "medium") : (part === "judgeEffort" ? "medium" : "medium, then high")}`}</option>
+    {DRAFT2_EFFORTS.map((effort) => <option key={effort} value={effort}>{EFFORT_LABEL[effort]}</option>)}
+  </select>;
+  const sameModel = DRAFT2_FUNNEL_STEP_NAMES.filter((step) => { const chosen = draft2StepChoice(choice, step); const writer = chosen.writer?.model ?? cast?.funnel[step].writer.model; const judge = chosen.judge?.model ?? cast?.funnel[step].judge.model; return writer && writer === judge; });
   return <section className={styles.autopilotCard} aria-labelledby="draft2-models-title">
     <div className={styles.autopilotHead}>
       <div>
-        <h2 id="draft2-models-title" className={styles.autopilotTitle}>Models</h2>
-        <p className={styles.autopilotIntro}>Who writes and who judges the opening, the closing, the deck, the visual script and the caption in this story’s next runs. A run in progress keeps the models it started with; the facts, the focus, the spine, the review and the image reviews keep theirs.</p>
+        <h2 id="draft2-models-title" className={styles.autopilotTitle}>Pipeline and models</h2>
+        <p className={styles.autopilotIntro}>The pipeline this story’s next runs follow, and who writes and who judges each step, how hard. A run in progress keeps what it started with; the facts, the focus, the spine, the review and the image reviews keep their own models.</p>
       </div>
     </div>
     <div className={styles.focusGrid}>
       <div className={styles.focusField}>
-        <FormField label="Writer" description="Writing is about three quarters of a story’s text cost: Claude Sonnet wrote the last stories for about $1.10 each. Sol costs the same per token, Opus twice as much, Luna a twentieth.">{select("writer")}</FormField>
-      </div>
-      <div className={styles.focusField}>
-        <FormField label="Judge" description="Luna judged the last stories for about $0.06 each, in about 90,000 output tokens. At Sol’s or Sonnet’s price the same judgments would cost about $0.90.">{select("judge")}</FormField>
+        <FormField label="Pipeline" description="v2 stays as it is; v3 is the recipe being adjusted over the same engine. A session keeps its pipeline, and every run records the one it ran on.">
+          <select value={pipeline} disabled={disabled} onChange={(event) => { const next = parseDraft2Pipeline(event.target.value); if (next) onPipeline(next); }}>
+            {(["v3", "v2"] as const).map((entry) => <option key={entry} value={entry}>{PIPELINE_LABEL[entry]}</option>)}
+          </select>
+        </FormField>
       </div>
     </div>
-    {writer && writer === judge ? <InlineNotice tone="warning" title="One model writes and judges">A model judging its own writing tends to be lenient: the gate is only as strict as the judge.</InlineNotice> : null}
-    {error ? <InlineNotice tone="error" title="The models were not saved">{error}</InlineNotice> : null}
+    <fieldset className={styles.focusVoice}>
+      <legend className={styles.focusLegend}>Every step</legend>
+      <div className={styles.focusGrid}>
+        <div className={styles.focusField}><FormField label="Writer" description="Writing is about three quarters of a story’s text cost: Claude Sonnet wrote the last stories for about $1.10 each. Sol costs the same per token, Opus twice as much, Luna a twentieth.">{allSelect("writer")}</FormField></div>
+        <div className={styles.focusField}><FormField label="Judge" description="Luna judged the last stories for about $0.06 each. At Sol’s or Sonnet’s price the same judgments would cost about $0.90.">{allSelect("judge")}</FormField></div>
+      </div>
+    </fieldset>
+    {DRAFT2_FUNNEL_STEP_NAMES.map((step) => <fieldset key={step} className={styles.focusVoice}>
+      <legend className={styles.focusLegend}>{FUNNEL_STEP_LABEL[step]}</legend>
+      <div className={styles.focusGrid}>
+        <div className={styles.focusField}><FormField label="Writer">{stepSelect(step, "writer")}</FormField></div>
+        <div className={styles.focusField}><FormField label="Writer’s effort">{effortSelect(step, "writerEffort")}</FormField></div>
+        <div className={styles.focusField}><FormField label="Judge">{stepSelect(step, "judge")}</FormField></div>
+        <div className={styles.focusField}><FormField label="Judge’s effort">{effortSelect(step, "judgeEffort")}</FormField></div>
+      </div>
+    </fieldset>)}
+    {sameModel.length ? <InlineNotice tone="warning" title="One model writes and judges">{sameModel.map((step) => FUNNEL_STEP_LABEL[step]).join(", ")}: a model judging its own writing tends to be lenient; the gate is only as strict as the judge.</InlineNotice> : null}
+    {error ? <InlineNotice tone="error" title="The choice was not saved">{error}</InlineNotice> : null}
   </section>;
 }
 

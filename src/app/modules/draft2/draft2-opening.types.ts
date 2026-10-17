@@ -53,6 +53,26 @@ export const OPENING_ROUND_PLAN: readonly FunnelPlanRound[] = [
   { revise: 3, fresh: 0, proposals: 1 },
   { revise: 2, fresh: 0, proposals: 0 },
 ];
+/**
+ * v3 (2026-10-16): five openings, each on a different lever or angle (the
+ * program refuses two variants of one phrase: SIMILAR_CANDIDATE), the judge
+ * at low effort proposing two; then the best revised against every finding
+ * at once beside the two proposals, as written and edited, for the final
+ * pick. Of the 7 winners measured under v2, 4 were proposals and 3 round-1
+ * openings; none came from a later round's new angle, and the third round
+ * raised the best by a point or two at most.
+ */
+export const OPENING_CANDIDATES_V3 = 5;
+export const OPENING_PLAN_V3: readonly FunnelPlanRound[] = [
+  { revise: 0, fresh: OPENING_CANDIDATES_V3, proposals: 2, effort: "medium", judgeEffort: "low" },
+  { revise: 1, fresh: 0, proposals: 0, effort: "medium", judgeEffort: "low" },
+];
+/** The plan a run follows, by its pipeline. */
+export const openingPlan = (pipeline: "v2" | "v3"): readonly FunnelPlanRound[] => pipeline === "v3" ? OPENING_PLAN_V3 : OPENING_ROUND_PLAN;
+/** What the v3 writer reads with its first round: five openings that differ in what they pull on, never in wording alone. */
+export const OPENING_DISTINCT_INSTRUCTION = "Each of the five openings pulls on a different lever or angle of the story's tension, named in `angle`: five ways in, never five variants of one phrase. The program refuses a cover whose words are mostly another candidate's.";
+/** Two covers sharing this share of their longer words are one angle in two wordings. */
+export const OPENING_SIMILAR_OVERLAP = 0.5;
 const MAX_PROPOSALS = Math.max(...OPENING_ROUND_PLAN.map((plan) => plan.proposals));
 export const OPENING_MAX_ROUNDS = OPENING_ROUND_PLAN.length;
 /**
@@ -78,7 +98,7 @@ export const OPENING_CRITERIA = ["tension", "payoff", "clarity", "grounding", "v
 export const OPENING_MECHANICAL_CODES = [
   "FACT_UNKNOWN", "NO_FACTS", "COVER_TOO_LONG", "SUBHEADLINE_TOO_LONG", "SLIDE2_HEADLINE_TOO_LONG", "SLIDE2_BODY_TOO_LONG",
   "ATTRIBUTION_ON_COVER", "SLIDE2_RESTATES_COVER", "SLIDE2_NO_NEW_FACT", "UNSUPPORTED_NUMBER", "DUPLICATE_CANDIDATE",
-  "LEVER_UNKNOWN", "LEVER_UNSUPPORTED", "STOCK_PHRASE", "GUARD_LATE", "WRONG_ADDRESS", "ABBREVIATION",
+  "LEVER_UNKNOWN", "LEVER_UNSUPPORTED", "STOCK_PHRASE", "GUARD_LATE", "WRONG_ADDRESS", "ABBREVIATION", "SIMILAR_CANDIDATE",
 ] as const;
 export const OPENING_JUDGE_CODES = ["WEAK_TENSION", "PROMISE_NOT_PAID", "UNCLEAR", "OVERCLAIMS", "OFF_VOICE", "OFF_FOCUS", "LABEL_NOT_HOOK", "MISLEADS", "OTHER"] as const;
 export const OPENING_ISSUE_CODES = [...OPENING_MECHANICAL_CODES, ...OPENING_JUDGE_CODES] as const;
@@ -223,10 +243,12 @@ const ATTRIBUTION = /\b(according to|says?|said|reports?|reported|claims?|selon|
  * them or free, and the facts its cover cites must carry what the program
  * can check of it (a figure). No cover uses a stock formula.
  */
-export function mechanicalOpeningIssues(candidates: readonly Draft2OpeningCandidate[], facts: readonly Draft2Fact[], { itemCount, eligibleLevers, guards = [], reader }: { itemCount?: number; eligibleLevers?: readonly string[]; guards?: readonly Draft2FocusGuard[]; reader?: Draft2Reader } = {}): Draft2OpeningIssue[] {
+export function mechanicalOpeningIssues(candidates: readonly Draft2OpeningCandidate[], facts: readonly Draft2Fact[], { itemCount, eligibleLevers, guards = [], reader, distinct = false }: { itemCount?: number; eligibleLevers?: readonly string[]; guards?: readonly Draft2FocusGuard[]; reader?: Draft2Reader; /** v3: new openings of one round must differ in angle, not only in wording (SIMILAR_CANDIDATE). */ distinct?: boolean } = {}): Draft2OpeningIssue[] {
   const byId = new Map(facts.map((fact) => [fact.id, fact]));
   const explained = explainedAbbreviations(facts);
   const headlines = new Map<string, Draft2OpeningCandidate>();
+  /** The new openings seen so far with their covers' longer words, for the similarity check. */
+  const covers: { candidate: Draft2OpeningCandidate; words: Set<string> }[] = [];
   const issues: Draft2OpeningIssue[] = [];
   for (const candidate of candidates) {
     const add = (code: Draft2OpeningIssueCode, part: "cover" | "slide2" | undefined, detail: string) =>
@@ -285,6 +307,13 @@ export function mechanicalOpeningIssues(candidates: readonly Draft2OpeningCandid
     const earlier = headlines.get(key);
     if (earlier && !(candidate.proposalOf && earlier.proposalOf === candidate.proposalOf)) add("DUPLICATE_CANDIDATE", "cover", `The cover headline repeats ${earlier.id}'s.`);
     else if (!earlier) headlines.set(key, candidate);
+    // v3: a new opening whose cover shares most of its longer words with an earlier new one is the same angle in other words (a revision or a proposal's edit is left alone).
+    if (distinct && !candidate.revisionOf && !candidate.proposalOf && !earlier) {
+      const words = longWords(`${cover.headline} ${cover.subheadline}`);
+      const alike = covers.find((seen) => wordOverlap(seen.words, words) >= OPENING_SIMILAR_OVERLAP);
+      if (alike) add("SIMILAR_CANDIDATE", "cover", `The cover says what ${alike.candidate.id}'s says in other words (${Math.round(wordOverlap(alike.words, words) * 100)}% of their longer words shared): pull on another lever or angle of the story.`);
+      else covers.push({ candidate, words });
+    }
   }
   return issues;
 }
@@ -433,9 +462,9 @@ export function openingRefineRequest(targets: readonly Draft2OpeningVersion[], v
   return funnelRefineRequest(OPENING_WORDS, targets, versions, regressions, last, newAngles, proposals);
 }
 
-/** What the judge receives each round, beside the facts: the candidates, the versions they revise with their scores, the program's findings. */
-export function openingJudgeRequest(round: number, candidates: readonly Draft2OpeningCandidate[], mechanical: readonly Draft2OpeningIssue[], revised: readonly Draft2OpeningVersion[]) {
-  return funnelJudgeRequest(OPENING_WORDS.task, OPENING_ROUND_PLAN, round, candidates, mechanical, revised);
+/** What the judge receives each round, beside the facts: the candidates, the versions they revise with their scores, the program's findings; the run's plan says how many proposals the round asks. */
+export function openingJudgeRequest(plan: readonly FunnelPlanRound[], round: number, candidates: readonly Draft2OpeningCandidate[], mechanical: readonly Draft2OpeningIssue[], revised: readonly Draft2OpeningVersion[]) {
+  return funnelJudgeRequest(OPENING_WORDS.task, plan, round, candidates, mechanical, revised);
 }
 
 /** Why a run ends without an accepted opening: the best version's weak criteria and what is left to fix on it. */

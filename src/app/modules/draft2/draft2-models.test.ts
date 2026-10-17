@@ -1,26 +1,41 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { castWithChoice, draft2Cast, draft2ModelName, draft2RevisionEffort, draft2RoleModel, draft2ShadowJudgeEffort, draft2ShadowJudgeModel, parseDraft2ModelChoice } from "./draft2-models";
+import { castWithChoice, draft2Cast, draft2ChoiceIsEmpty, draft2ModelName, draft2RevisionEffort, draft2RoleModel, draft2StepChoice, parseDraft2ModelChoice, parseDraft2Pipeline } from "./draft2-models";
 
 const defaults = { anthropic: "claude-sonnet-5-5", openai: "gpt-6.1-sol" };
 
-test("a revision round's writer thinks at high and its judge judges at medium unless the environment says otherwise, per role", () => {
+test("a revision round's efforts by pipeline: v2 writes at high and judges at medium, v3 writes at medium and judges at low, unless the environment says otherwise, per role", () => {
   assert.deepEqual([draft2RevisionEffort("writer", {}), draft2RevisionEffort("judge", {})], ["high", "medium"]);
+  assert.deepEqual([draft2RevisionEffort("writer", {}, "v3"), draft2RevisionEffort("judge", {}, "v3")], ["medium", "low"]);
   const env = { DRAFT2_REVISION_EFFORT_JUDGE: " High ", DRAFT2_REVISION_EFFORT_WRITER: "nonsense" };
   assert.deepEqual([draft2RevisionEffort("writer", env), draft2RevisionEffort("judge", env)], ["high", "high"], "an unknown value is ignored");
+  assert.deepEqual([draft2RevisionEffort("writer", env, "v3"), draft2RevisionEffort("judge", env, "v3")], ["medium", "high"], "the environment wins over the pipeline's default");
 });
 
-test("the shadow judgment's model comes from the environment when it is one of the judge's provider", () => {
-  assert.equal(draft2ShadowJudgeModel({}, "openai"), undefined);
-  assert.equal(draft2ShadowJudgeModel({ DRAFT2_SHADOW_JUDGE_MODEL: "gpt-6-luna" }, "openai"), "gpt-6-luna");
-  assert.equal(draft2ShadowJudgeModel({ DRAFT2_SHADOW_JUDGE_MODEL: "gpt-6-luna" }, "anthropic"), undefined, "a GPT model cannot shadow a Claude judge");
-  assert.equal(draft2ShadowJudgeModel({ DRAFT2_SHADOW_JUDGE_MODEL: "claude-opus-5-5" }, "anthropic"), "claude-opus-5-5");
+test("a pipeline is v2 or v3", () => {
+  assert.equal(parseDraft2Pipeline("v3"), "v3");
+  assert.equal(parseDraft2Pipeline("v2"), "v2");
+  assert.equal(parseDraft2Pipeline("v1"), undefined);
+  assert.equal(parseDraft2Pipeline(null), undefined);
 });
 
-test("the shadow judgment's effort comes from the environment, or there is none", () => {
-  assert.equal(draft2ShadowJudgeEffort({}), undefined);
-  assert.equal(draft2ShadowJudgeEffort({ DRAFT2_SHADOW_JUDGE_EFFORT: "medium" }), "medium");
-  assert.equal(draft2ShadowJudgeEffort({ DRAFT2_SHADOW_JUDGE_EFFORT: "xhigh" }), undefined);
+test("the editor's choice per step: a step's own writer, judge and efforts over the choice for every step; only the offered models and the three efforts are kept", () => {
+  const choice = parseDraft2ModelChoice({
+    judge: "gpt-6-luna",
+    steps: { opening: { judge: "gpt-6.1-sol", judgeEffort: "High", writerEffort: "xhigh" }, visual: { writer: { provider: "anthropic", model: "claude-opus-5-5" } }, deck: { judge: "claude-fable-5-1" }, caption: "nonsense" },
+  });
+  assert.deepEqual(choice, {
+    judge: { provider: "openai", model: "gpt-6-luna" },
+    steps: { opening: { judge: { provider: "openai", model: "gpt-6.1-sol" }, judgeEffort: "high" }, visual: { writer: { provider: "anthropic", model: "claude-opus-5-5" } } },
+  }, "an unknown effort, a model not offered and a step with nothing are left out");
+  assert.deepEqual(draft2StepChoice(choice, "opening"), { judge: { provider: "openai", model: "gpt-6.1-sol" }, judgeEffort: "high" }, "the step's own judge wins over the one for every step");
+  assert.deepEqual(draft2StepChoice(choice, "closing"), { judge: { provider: "openai", model: "gpt-6-luna" } }, "a step without its own follows the choice for every step");
+  assert.deepEqual(draft2StepChoice(choice, "visual"), { writer: { provider: "anthropic", model: "claude-opus-5-5" }, judge: { provider: "openai", model: "gpt-6-luna" } });
+  assert.equal(draft2ChoiceIsEmpty(parseDraft2ModelChoice({ steps: { opening: { judgeEffort: "turbo" } } })), true);
+  assert.equal(draft2ChoiceIsEmpty(choice), false);
+  const cast = draft2Cast({}, "claude-sonnet-5-5");
+  const chosen = castWithChoice(cast, choice);
+  assert.deepEqual([chosen.funnel.opening.judge.model, chosen.funnel.closing.judge.model, chosen.funnel.visual.writer.model, chosen.funnel.deck.writer.model], ["gpt-6.1-sol", "gpt-6-luna", "claude-opus-5-5", "claude-sonnet-5-5"]);
 });
 
 test("a step's role runs on the model the environment names for it, when it is one of the role's provider", () => {

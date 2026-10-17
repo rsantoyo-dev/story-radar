@@ -137,8 +137,8 @@ non-secret values as of this handoff:
 | `CREATIVE_ANTHROPIC_MODEL` | claude-sonnet-5-5 | the writer everywhere (default too) |
 | `DRAFT2_MODEL_JUDGE` | gpt-6-luna | the judge of every funnel step (Luna, $0.10/$0.50 per M); per-step `DRAFT2_MODEL_<STEP>_JUDGE` wins |
 | `DRAFT2_MODEL_WRITER`, `DRAFT2_MODEL_<STEP>_WRITER` | unset | writer overrides (the provider must fit the model: a `claude-…` or a `gpt-…` name) |
-| `DRAFT2_REVISION_EFFORT_JUDGE` / `_WRITER` | unset (medium / high) | effort of revision rounds |
-| `DRAFT2_SHADOW_JUDGE_EFFORT`, `DRAFT2_SHADOW_JUDGE_MODEL` | unset | a parallel judgment recorded on `round.shadow`, deciding nothing |
+| `DRAFT2_REVISION_EFFORT_JUDGE` / `_WRITER` | unset (v2: medium / high; v3: low / medium) | effort of revision rounds, over the pipeline's default |
+| `DRAFT2_SHADOW_JUDGE_EFFORT`, `DRAFT2_SHADOW_JUDGE_MODEL` | removed 2026-10-16 | the shadow judgment is gone; `inspect-shadow.mts` reads the rounds stored before |
 | `DRAFT2_EXTRACTOR_MODEL` | unset (gpt-6.1-sol) | Facts extractor and image reviews stay on Sol |
 | `CLOUDFLARE_R2_OBJECT_PREFIX` | story-radar-images (was press-craftor until 2026-10-11 evening) | the same as production now, so both environments read each other's images; the dev server must be restarted to pick the change up |
 
@@ -597,3 +597,16 @@ only. Any provider plays either role; a Claude judge reads its schema without
 enums inside arrays. Brief: `docs/features/draft2-model-choice.md`, with the
 measured split that argues against Sol writing and Sonnet judging (judging at
 Sol's or Sonnet's price is twenty times Luna's, about +$0.90 a story).
+
+### Addendum, 2026-10-16 evening: v3, a recipe over the same engine
+
+Brief: `docs/features/draft2-v3.md`. A session runs on a pipeline (`v2`, as
+it was; `v3`, being adjusted), chosen in the "Pipeline and models" card and
+remembered by the browser; every run records its pipeline, plan length and
+efforts. v3, phase 1: the judges at low effort and the writer at medium on
+every round, five distinct openings in two rounds (`SIMILAR_CANDIDATE`), one
+visual script in one round, the same closing, deck and caption rounds at v3's
+efforts; the shadow judgment removed after 48 measured rounds; the writer,
+the judge and each one's effort chosen per step. Phase 2 waits: the Spine's
+three sketches, the Closing and the Deck as one step with a one-round
+Review, and the side-by-side view.

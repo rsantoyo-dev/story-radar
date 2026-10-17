@@ -1,0 +1,2 @@
+ALTER TABLE "draft2_sessions" ADD COLUMN "pipeline" text DEFAULT 'v2' NOT NULL;--> statement-breakpoint
+ALTER TABLE "draft2_sessions" ADD CONSTRAINT "draft2_sessions_pipeline_check" CHECK ("draft2_sessions"."pipeline" IN ('v2','v3'));

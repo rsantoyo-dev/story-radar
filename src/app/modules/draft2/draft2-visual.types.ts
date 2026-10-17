@@ -60,6 +60,15 @@ export const VISUAL_PLAN: readonly FunnelPlanRound[] = [
 /** A long carousel runs the same plan since visuals v10; kept for the stored runs' plan lookups. */
 export const VISUAL_LONG_CAROUSEL = 10;
 export const VISUAL_LONG_PLAN: readonly FunnelPlanRound[] = VISUAL_PLAN;
+/**
+ * v3 (2026-10-16): one script, one round, the judge at low effort and no
+ * proposal: the spine already decides what each image shows, so the script
+ * executes it and the judge reads it for the editor (48 shadow rounds: Luna
+ * at low named the same winner as at medium on every visual script).
+ */
+export const VISUAL_PLAN_V3: readonly FunnelPlanRound[] = [
+  { revise: 0, fresh: VISUAL_CANDIDATES, proposals: 0, effort: "medium", judgeEffort: "low" },
+];
 export const VISUAL_MAX_ROUNDS = 2;
 export const VISUAL_ACCEPT_SCORE = 95;
 export const VISUAL_CRITERION_FLOOR = 85;
@@ -249,8 +258,8 @@ export function visualLayout(profile: Pick<CreativeProfile, "brandOverlay" | "ca
   };
 }
 
-/** The plan a carousel asks for: the same for every length since visuals v10 (the carousel stays a parameter for the stored runs' lookups). */
-export const visualPlan = (carousel: readonly unknown[]): readonly FunnelPlanRound[] => { void carousel; return VISUAL_PLAN; };
+/** The plan a carousel asks for: by the pipeline, the same for every length since visuals v10 (the carousel stays a parameter for the stored runs' lookups). */
+export const visualPlan = (carousel: readonly unknown[], pipeline: "v2" | "v3" = "v2"): readonly FunnelPlanRound[] => { void carousel; return pipeline === "v3" ? VISUAL_PLAN_V3 : VISUAL_PLAN; };
 
 /**
  * The spine's image line for each carousel slide: the cover's and slide 2's

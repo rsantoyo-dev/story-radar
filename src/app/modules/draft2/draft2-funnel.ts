@@ -115,7 +115,7 @@ export type FunnelRole = { provider: Draft2Provider; model: string };
  * (high unless the round says otherwise: a wide round thinks less per
  * candidate so it fits a call's time and output).
  */
-export type FunnelPlanRound = { revise: number; fresh: number; proposals: number; effort?: "low" | "medium" | "high" };
+export type FunnelPlanRound = { revise: number; fresh: number; proposals: number; effort?: "low" | "medium" | "high"; /** The judge's effort when it differs from the writer's (v3: the judges judge at low). */ judgeEffort?: "low" | "medium" | "high" };
 /** An extra round the editor asks for once the plan's rounds are spent: the best version revised once more against its remaining issues. */
 export const FUNNEL_EXTRA_ROUND: FunnelPlanRound = { revise: 1, fresh: 0, proposals: 0 };
 /** How many extra rounds one run may take, on its own (under the floor) and at the editor's request together: the cap that keeps a run from looping. */
@@ -127,7 +127,7 @@ export const FUNNEL_MAX_EXTRA_ROUNDS = 2;
  */
 export const FUNNEL_ACCEPTABLE_SCORE = 90;
 
-/** A second judgment of a round at another effort or by another model, recorded beside the real one and deciding nothing (draft2ShadowJudgeEffort, draft2ShadowJudgeModel). */
+/** A second judgment of a round at another effort or by another model, recorded on rounds run before 2026-10-16 (the shadow was removed once it had been measured; `scripts/draft2-inspect/inspect-shadow.mts` reads them). */
 export type FunnelShadowJudgment = {
   effort: "low" | "medium" | "high";
   model: string;
@@ -174,6 +174,12 @@ export type FunnelRun<C extends FunnelCandidate = FunnelCandidate, S extends Fun
   extraRounds?: number;
   writer?: FunnelRole;
   judge?: FunnelRole;
+  /** The pipeline the run started on (its plan and default efforts); a run stored before pipelines ran on v2. */
+  pipeline?: "v2" | "v3";
+  /** How many rounds the run's plan had when it started, so the canvas and a continue request read the plan the run follows. */
+  plannedRounds?: number;
+  /** The efforts the editor chose for this step when the run started (over its plan), kept so a continued run keeps them. */
+  efforts?: { writer?: "low" | "medium" | "high"; judge?: "low" | "medium" | "high" };
 };
 
 /** The facts both models receive on every call, the same in every round so it is read from the prompt cache. */

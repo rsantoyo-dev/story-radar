@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
 import {
-  OPENING_CANDIDATES, OPENING_CRITERIA, OPENING_DEVELOP_INSTRUCTION, OPENING_REVISION_INSTRUCTION, bestOpeningVersions, hasMaterialError, mechanicalOpeningIssues, openingAcceptedWinner, openingExploreRequest, openingFactsSnapshot,
+  OPENING_CANDIDATES, OPENING_CRITERIA, OPENING_PLAN_V3, OPENING_ROUND_PLAN, openingPlan, OPENING_DEVELOP_INSTRUCTION, OPENING_REVISION_INSTRUCTION, bestOpeningVersions, hasMaterialError, mechanicalOpeningIssues, openingAcceptedWinner, openingExploreRequest, openingFactsSnapshot,
   openingFreshWanted, openingIsAccepted, openingJudgeRequest, openingRefineRequest, openingRegressions, openingReviewNote, openingRunSummary, openingScorePasses, openingTargets,
   openingVersions, openingWordCount, parseOpeningCandidates, parseOpeningEvaluation, renumberedCandidates, renumberedProposals, writtenCandidates,
   type Draft2OpeningCandidate, type Draft2OpeningEvaluation, type Draft2OpeningIssue, type Draft2OpeningRound, type Draft2OpeningScore,
@@ -222,11 +222,11 @@ test("each proposal competes twice, as the judge wrote it and as the writer edit
   assert.equal(written[1].cover.headline, written[3].cover.headline, "the edit may keep the headline that worked");
   assert.deepEqual(mechanicalOpeningIssues(written, facts).filter((issue) => issue.code === "DUPLICATE_CANDIDATE"), [], "an original and its edit share a headline on purpose");
   assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1"), candidate("c2")], facts)), ["DUPLICATE_CANDIDATE c2 cover"], "unrelated openings still may not repeat one");
-  const judged = openingJudgeRequest(2, written, [], openingTargets(versions, 2));
+  const judged = openingJudgeRequest(OPENING_ROUND_PLAN, 2, written, [], openingTargets(versions, 2));
   assert.equal(judged.candidates.some((entry) => "proposalOf" in entry || "asProposed" in entry), false, "the judge scores its own ideas blind");
   assert.equal(judged.proposalsWanted, 1);
-  assert.equal(openingJudgeRequest(1, [candidate("c1")], [], []).proposalsWanted, 3);
-  assert.equal("proposalsWanted" in openingJudgeRequest(3, [candidate("c1")], [], []), false, "the final round only decides");
+  assert.equal(openingJudgeRequest(OPENING_ROUND_PLAN, 1, [candidate("c1")], [], []).proposalsWanted, 3);
+  assert.equal("proposalsWanted" in openingJudgeRequest(OPENING_ROUND_PLAN, 3, [candidate("c1")], [], []), false, "the final round only decides");
   const request = openingRefineRequest(openingTargets(versions, 2), versions, [], first, 0, proposals);
   assert.deepEqual(request.develop?.map((proposal) => proposal.id), ["p1", "p2"]);
   assert.equal(request.instruction, `${OPENING_REVISION_INSTRUCTION} ${OPENING_DEVELOP_INSTRUCTION}`);
@@ -306,11 +306,11 @@ test("the writer refines with each target's scores and issues, any earlier attem
 
 test("the judge sees each revision beside the version it revises, with that version's scores", () => {
   const versions = openingVersions([judgedRound(1, [candidate("c1")], { c1: 84 })]);
-  const request = openingJudgeRequest(2, [{ ...candidate("c1.2"), revisionOf: "c1" }], [], openingTargets(versions, 2));
+  const request = openingJudgeRequest(OPENING_ROUND_PLAN, 2, [{ ...candidate("c1.2"), revisionOf: "c1" }], [], openingTargets(versions, 2));
   assert.equal(JSON.stringify(request.candidates.map((entry) => [entry.id, entry.revises])), JSON.stringify([["c1.2", "c1"]]));
   assert.equal("revisionOf" in request.candidates[0], false, "the models read revises, not the program's field");
   assert.equal(request.previousVersions?.[0].scores?.overall, 84);
-  assert.equal("previousVersions" in openingJudgeRequest(1, [candidate("c1")], [], []), false);
+  assert.equal("previousVersions" in openingJudgeRequest(OPENING_ROUND_PLAN, 1, [candidate("c1")], [], []), false);
   assert.equal("verifiedFacts" in request, false, "the facts travel as the cached context, not in each round's contents");
 });
 
@@ -360,4 +360,22 @@ test("no abbreviation the facts had to spell out: the program refuses the source
   assert.deepEqual(codes(issues), ["ABBREVIATION c1 slide2"]);
   assert.match(issues[0].detail, /^"LF" \(Lachrymatory factor\) is an abbreviation the source had to explain/u);
   assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1")], explaining)), [], "one the facts use without spelling it out (DOD) is not refused");
+});
+
+test("v3: five openings in two rounds, each a different angle; a cover that says what another says in other words is refused, a revision or a proposal's edit never", () => {
+  assert.deepEqual(OPENING_PLAN_V3.map((round) => [round.fresh, round.revise, round.proposals, round.effort, round.judgeEffort]), [[5, 0, 2, "medium", "low"], [0, 1, 0, "medium", "low"]]);
+  assert.equal(openingPlan("v3"), OPENING_PLAN_V3);
+  assert.equal(openingPlan("v2"), OPENING_ROUND_PLAN);
+  const cover = (id: string, headline: string, subheadline: string, extra: Partial<Draft2OpeningCandidate> = {}) => ({ ...candidate(id), cover: { headline, subheadline, factIds: ["f1"] }, ...extra });
+  const openings = [
+    cover("c1", "Your demo video is now the bid", "Product demos replace months of paperwork in the program."),
+    cover("c2", "Your demo video becomes the bid now", "Product demos replace months of paperwork in the program."),
+    cover("c3", "Weeks, not years, to a Pentagon award", "Awards came within days for several startups."),
+    cover("c1.2", "Your demo video is now the bid", "Product demos replace months of paperwork in the program.", { revisionOf: "c1" }),
+    cover("c4", "Your demo video is now the bid", "Product demos replace months of paperwork in the program.", { proposalOf: "p1" }),
+  ];
+  const similar = mechanicalOpeningIssues(openings, facts, { distinct: true }).filter((issue) => issue.code === "SIMILAR_CANDIDATE");
+  assert.deepEqual(similar.map((issue) => [issue.candidateId, issue.part]), [["c2", "cover"]]);
+  assert.match(similar[0].detail, /says what c1's says in other words \(\d+% of their longer words shared\): pull on another lever or angle/);
+  assert.deepEqual(mechanicalOpeningIssues(openings, facts).filter((issue) => issue.code === "SIMILAR_CANDIDATE"), [], "v2 does not check");
 });

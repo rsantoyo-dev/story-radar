@@ -5,7 +5,7 @@ import { Draft2InputError } from "./draft2-facts.types";
 import { focusFindings, focusForModels, focusItemCount, focusMaterial, type Draft2FocusSnapshot } from "./draft2-focus.types";
 import { eligibleLevers, leverSpread } from "./draft2-levers.types";
 import {
-  DRAFT2_OPENING_EVALUATION_SCHEMA, DRAFT2_OPENING_SCHEMA, OPENING_GATE, OPENING_ROUND_PLAN, mechanicalOpeningIssues, OPENING_WORD_LIMITS, openingExploreRequest, openingFixRequest,
+  DRAFT2_OPENING_EVALUATION_SCHEMA, DRAFT2_OPENING_SCHEMA, OPENING_DISTINCT_INSTRUCTION, OPENING_GATE, openingPlan, mechanicalOpeningIssues, OPENING_WORD_LIMITS, openingExploreRequest, openingFixRequest,
   openingJudgeRequest, openingRefineRequest, parseOpeningCandidates, parseOpeningEvaluation, sameOpening,
   type Draft2Opening, type Draft2OpeningCandidate, type Draft2OpeningIssue, type Draft2OpeningScore,
 } from "./draft2-opening.types";
@@ -43,18 +43,20 @@ const OPENING_STEP: FunnelStep<Draft2OpeningCandidate, Draft2OpeningScore, Draft
   noun: "opening",
   article: "an opening",
   plural: "openings",
-  plan: OPENING_ROUND_PLAN,
+  plan: (_focus, pipeline) => openingPlan(pipeline),
   gate: OPENING_GATE,
   operations: { writer: "draft2_opening", judge: "draft2_opening_review" },
   roles: DRAFT2_OPENING_ROLES,
   earlierRoles: DRAFT2_OPENING_EARLIER_ROLES,
   snapshot: openingFocus,
   newRun: (focus) => ({ focus }),
-  setup: ({ snapshot: focus, profile, facts }) => {
+  setup: ({ snapshot: focus, profile, facts, plan, pipeline }) => {
     const brief = brandBrief(profile);
     const itemCount = focusItemCount(focus.values);
     // The levers this story can carry; the plan's choice spreads the new openings over them, and a free hook always competes.
     const levers = eligibleLevers(facts, focus.values);
+    // v3: five openings that differ in angle, not in wording alone (the program's SIMILAR_CANDIDATE, fixed in the fix pass).
+    const distinct = pipeline === "v3";
     return {
       writer: composeInstructions("opening-writer", [HOOKS_SKILL, LEVERS_SKILL, FAIRNESS_SKILL, READER_SKILL, ...creativeSkills(focus.values)], brief),
       judge: composeInstructions("opening-judge", [HOOKS_SKILL, LEVERS_SKILL, FAIRNESS_SKILL, READER_SKILL, ...creativeSkills(focus.values)], brief),
@@ -62,12 +64,12 @@ const OPENING_STEP: FunnelStep<Draft2OpeningCandidate, Draft2OpeningScore, Draft
       schemas: { writer: DRAFT2_OPENING_SCHEMA, judge: DRAFT2_OPENING_EVALUATION_SCHEMA },
       parseCandidates: parseOpeningCandidates,
       parseEvaluation: parseOpeningEvaluation,
-      mechanical: (candidates) => mechanicalOpeningIssues(candidates, facts, { itemCount, eligibleLevers: levers, guards: focus.values.guards, reader: { address: profile.readerAddress, language: profile.language } }),
-      explore: (wanted, last, versions) => ({ ...openingExploreRequest(wanted, last, versions), levers: { spread: leverSpread(focus.values.levers, wanted) } }),
+      mechanical: (candidates) => mechanicalOpeningIssues(candidates, facts, { itemCount, eligibleLevers: levers, guards: focus.values.guards, reader: { address: profile.readerAddress, language: profile.language }, distinct }),
+      explore: (wanted, last, versions) => ({ ...openingExploreRequest(wanted, last, versions), levers: { spread: leverSpread(focus.values.levers, wanted) }, ...(distinct ? { instruction: OPENING_DISTINCT_INSTRUCTION } : {}) }),
       refine: openingRefineRequest,
       fix: openingFixRequest,
       wordLimits: OPENING_WORD_LIMITS,
-      judgeRequest: openingJudgeRequest,
+      judgeRequest: (round, candidates, mechanical, revised) => openingJudgeRequest(plan, round, candidates, mechanical, revised),
       same: sameOpening,
     };
   },

@@ -28,6 +28,13 @@ export const CAPTION_PLAN: readonly FunnelPlanRound[] = [
   { revise: 0, fresh: CAPTION_CANDIDATES, proposals: 1, effort: "medium" },
   { revise: 1, fresh: 0, proposals: 0 },
 ];
+/** v3 (2026-10-16): the same two rounds, the writer at medium on both and the judge at low. */
+export const CAPTION_PLAN_V3: readonly FunnelPlanRound[] = [
+  { revise: 0, fresh: CAPTION_CANDIDATES, proposals: 1, effort: "medium", judgeEffort: "low" },
+  { revise: 1, fresh: 0, proposals: 0, effort: "medium", judgeEffort: "low" },
+];
+/** The plan a run follows, by its pipeline. */
+export const captionPlan = (pipeline: "v2" | "v3"): readonly FunnelPlanRound[] => pipeline === "v3" ? CAPTION_PLAN_V3 : CAPTION_PLAN;
 export const CAPTION_MAX_ROUNDS = CAPTION_PLAN.length;
 export const CAPTION_ACCEPT_SCORE = 95;
 export const CAPTION_CRITERION_FLOOR = 85;
@@ -274,8 +281,8 @@ export function captionRefineRequest(targets: readonly Draft2CaptionVersion[], v
   return funnelRefineRequest(CAPTION_WORDS, targets, versions, regressions, last, newCaptions, proposals);
 }
 
-export function captionJudgeRequest(round: number, candidates: readonly Draft2CaptionCandidate[], mechanical: readonly Draft2CaptionIssue[], revised: readonly Draft2CaptionVersion[]) {
-  return funnelJudgeRequest(CAPTION_WORDS.task, CAPTION_PLAN, round, candidates, mechanical, revised);
+export function captionJudgeRequest(plan: readonly FunnelPlanRound[], round: number, candidates: readonly Draft2CaptionCandidate[], mechanical: readonly Draft2CaptionIssue[], revised: readonly Draft2CaptionVersion[]) {
+  return funnelJudgeRequest(CAPTION_WORDS.task, plan, round, candidates, mechanical, revised);
 }
 
 /** The publication's rules for the post, added to the brand brief for both models. */

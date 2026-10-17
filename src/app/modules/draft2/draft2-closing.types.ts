@@ -31,6 +31,13 @@ export const CLOSING_ROUND_PLAN: readonly FunnelPlanRound[] = [
   { revise: 0, fresh: CLOSING_CANDIDATES, proposals: 2, effort: "medium" },
   { revise: 2, fresh: 0, proposals: 0 },
 ];
+/** v3 (2026-10-16): the same two rounds, the writer at medium on both and the judge at low. */
+export const CLOSING_PLAN_V3: readonly FunnelPlanRound[] = [
+  { revise: 0, fresh: CLOSING_CANDIDATES, proposals: 2, effort: "medium", judgeEffort: "low" },
+  { revise: 2, fresh: 0, proposals: 0, effort: "medium", judgeEffort: "low" },
+];
+/** The plan a run follows, by its pipeline. */
+export const closingPlan = (pipeline: "v2" | "v3"): readonly FunnelPlanRound[] => pipeline === "v3" ? CLOSING_PLAN_V3 : CLOSING_ROUND_PLAN;
 const MAX_PROPOSALS = Math.max(...CLOSING_ROUND_PLAN.map((plan) => plan.proposals));
 export const CLOSING_MAX_ROUNDS = CLOSING_ROUND_PLAN.length;
 export const CLOSING_ACCEPT_SCORE = 95;
@@ -307,8 +314,8 @@ export function closingRefineRequest(targets: readonly Draft2ClosingVersion[], v
   return funnelRefineRequest(CLOSING_WORDS, targets, versions, regressions, last, newClosings, proposals);
 }
 
-export function closingJudgeRequest(round: number, candidates: readonly Draft2ClosingCandidate[], mechanical: readonly Draft2ClosingIssue[], revised: readonly Draft2ClosingVersion[]) {
-  return funnelJudgeRequest(CLOSING_WORDS.task, CLOSING_ROUND_PLAN, round, candidates, mechanical, revised);
+export function closingJudgeRequest(plan: readonly FunnelPlanRound[], round: number, candidates: readonly Draft2ClosingCandidate[], mechanical: readonly Draft2ClosingIssue[], revised: readonly Draft2ClosingVersion[]) {
+  return funnelJudgeRequest(CLOSING_WORDS.task, plan, round, candidates, mechanical, revised);
 }
 
 /** The opening as the closing's models read it: its four texts, with the facts each part cites. */

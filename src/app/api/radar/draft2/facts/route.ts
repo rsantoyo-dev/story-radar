@@ -1,4 +1,4 @@
-import { parseDraft2ModelChoice } from "@/app/modules/draft2/draft2-models";
+import { parseDraft2ModelChoice, parseDraft2Pipeline } from "@/app/modules/draft2/draft2-models";
 import { authorizeRadarCollector } from "@/app/api/radar/radar-api-auth";
 import { requireActiveRequestTopic } from "@/app/api/radar/radar-topic";
 import { noStoreJson } from "@/app/api/radar/creative-route-error";
@@ -18,12 +18,12 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const denied = await authorizeRadarCollector(request);
   if (denied) return denied;
-  const body = await request.json().catch(() => null) as { storyId?: unknown; models?: unknown } | null;
+  const body = await request.json().catch(() => null) as { storyId?: unknown; models?: unknown; pipeline?: unknown } | null;
   const storyId = typeof body?.storyId === "string" ? body.storyId : "";
   if (!DRAFT2_UUID_PATTERN.test(storyId)) return noStoreJson({ error: "storyId must be a valid UUID" }, 400);
   try {
     const topicId = await requireActiveRequestTopic(request);
-    return noStoreJson({ session: await runDraft2Facts({ topicId, storyId, models: parseDraft2ModelChoice(body?.models) }) });
+    return noStoreJson({ session: await runDraft2Facts({ topicId, storyId, models: parseDraft2ModelChoice(body?.models), pipeline: parseDraft2Pipeline(body?.pipeline) }) });
   } catch (error) {
     return draft2ErrorResponse(error, "run the Draft 2 facts step");
   }

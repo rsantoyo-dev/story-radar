@@ -10,7 +10,7 @@ import type { Draft2Inventory } from "./draft2-inventory.types";
 import type { Draft2Visual } from "./draft2-visual.types";
 import type { Draft2Images } from "./draft2-images.types";
 import type { Draft2Mentions } from "./draft2-mentions.types";
-import type { Draft2ModelChoice } from "./draft2-models";
+import { draft2ChoiceIsEmpty, type Draft2ModelChoice, type Draft2Pipeline } from "./draft2-models";
 import type { Draft2Caption } from "./draft2-caption.types";
 import type { Draft2Publication } from "./draft2-publication.types";
 import type { Draft2Focus } from "./draft2-focus.types";
@@ -28,9 +28,9 @@ const aliveSince = () => sql`CASE WHEN ${draft2Sessions.step} IN ('opening', 'fo
   THEN now() - make_interval(secs => ${OPENING_STALL_MS / 1_000})
   ELSE now() - make_interval(mins => ${ACTIVE_WINDOW_MINUTES}) END`;
 
-export async function createDraft2Session(input: { topicId: string; storyId: string; step: "facts"; models?: Draft2ModelChoice }): Promise<Draft2SessionRow> {
-  const models = input.models?.writer || input.models?.judge ? input.models : null;
-  const [row] = await db.insert(draft2Sessions).values({ topicId: input.topicId, storyId: input.storyId, step: input.step, status: "running", models }).returning();
+export async function createDraft2Session(input: { topicId: string; storyId: string; step: "facts"; models?: Draft2ModelChoice; pipeline?: Draft2Pipeline }): Promise<Draft2SessionRow> {
+  const models = draft2ChoiceIsEmpty(input.models) ? null : input.models ?? null;
+  const [row] = await db.insert(draft2Sessions).values({ topicId: input.topicId, storyId: input.storyId, step: input.step, status: "running", models, ...(input.pipeline ? { pipeline: input.pipeline } : {}) }).returning();
   return row;
 }
 
@@ -51,6 +51,7 @@ export type Draft2SessionPatch = Partial<{
   mentions: Draft2Mentions | null;
   caption: Draft2Caption | null;
   models: Draft2ModelChoice | null;
+  pipeline: Draft2Pipeline;
   publication: Draft2Publication | null;
   threads: Draft2Threads;
   trace: Draft2TraceEntry[];

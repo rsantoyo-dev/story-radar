@@ -150,7 +150,7 @@ test("the requests name closings: new ones, revisions with their last headlines,
   assert.deepEqual(Object.keys(refine), ["task", "closings", "develop", "suggestions", "instruction"]);
   assert.match(refine.instruction, /^Revise each closing in closings[^]*Edit each proposal in develop/);
   assert.equal(refine.closings[0].id, "c1");
-  const judged = closingJudgeRequest(1, [closing("c1")], [], []);
+  const judged = closingJudgeRequest(CLOSING_ROUND_PLAN, 1, [closing("c1")], [], []);
   assert.deepEqual([judged.task, judged.proposalsWanted], ["closings", 2]);
   assert.deepEqual(openingForClosing(opening), { cover: opening.cover, slide2: opening.slide2 });
 });

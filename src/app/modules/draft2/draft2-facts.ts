@@ -5,7 +5,7 @@ import { generateOpenAiStructuredResponse } from "../stories/openai-structured-r
 import { generateAnthropicStructuredResponse } from "../stories/anthropic-structured-response";
 import { getAnthropicRuntimeConfig, requireAnthropicApiKey } from "../stories/anthropic.config";
 import { activeDraft2Session, createDraft2Session, updateDraft2Session } from "./draft2-session.repository";
-import type { Draft2ModelChoice } from "./draft2-models";
+import type { Draft2ModelChoice, Draft2Pipeline } from "./draft2-models";
 import { draft2DevTrace } from "./draft2-dev-trace";
 import {
   DRAFT2_FACTS_MAX_ROUNDS, DRAFT2_FACTS_REVIEW_SCHEMA, DRAFT2_FACTS_SCHEMA, Draft2BusyError, Draft2InputError, draft2FactsAreValid, mechanicalFactIssues, mergeRevisedFacts,
@@ -30,14 +30,14 @@ const REVIEWER_MAX_OUTPUT_TOKENS = 12_000;
 const EXTRACTOR = composeInstructions("extractor", [FACTS_SKILL]);
 const REVIEWER = composeInstructions("reviewer", [FACTS_SKILL]);
 
-export type Draft2FactsInput = { topicId: string; storyId: string; /** The editor's choice of the funnel's writer and judge, kept on the new session. */ models?: Draft2ModelChoice };
+export type Draft2FactsInput = { topicId: string; storyId: string; /** The editor's choice of the funnel's writer and judge, kept on the new session. */ models?: Draft2ModelChoice; /** The pipeline the new session runs on (v2 or v3); the table's default (v2) when absent. */ pipeline?: Draft2Pipeline };
 
 /**
  * Runs the Facts step for a story: extract, check, revise, at most three
  * extractions. Every provider call is checkpointed on the session so the
  * conversations survive for the next step and a failure keeps its trace.
  */
-export async function runDraft2Facts({ topicId, storyId, models }: Draft2FactsInput): Promise<Draft2SessionRow> {
+export async function runDraft2Facts({ topicId, storyId, models, pipeline }: Draft2FactsInput): Promise<Draft2SessionRow> {
   const content = await getStoryContent(topicId, storyId);
   const articleText = content.text?.trim() ?? "";
   if (!articleText) throw new Draft2InputError("The story has no article text yet. Prepare the content in the studio first.");
@@ -49,7 +49,7 @@ export async function runDraft2Facts({ topicId, storyId, models }: Draft2FactsIn
   const anthropicApiKey = requireAnthropicApiKey();
   const reviewerModel = getAnthropicRuntimeConfig().model;
 
-  const session = await createDraft2Session({ topicId, storyId, step: "facts", models });
+  const session = await createDraft2Session({ topicId, storyId, step: "facts", models, pipeline });
   const auditContext = { runId: session.id, topicId, storyId };
   const article = { title: content.title, url: content.url, text: articleText };
   const startedAt = Date.now();

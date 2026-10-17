@@ -7,7 +7,7 @@ import { funnelVersions } from "./draft2-funnel";
 import { shownAttempt, slideSettled, type Draft2ImagesRun } from "./draft2-images.types";
 import { confirmedMentions, sameMentions } from "./draft2-mentions.types";
 import {
-  CAPTION_EVALUATION_SCHEMA, CAPTION_GATE, CAPTION_MAX_CHARACTERS, CAPTION_MAX_HASHTAGS, CAPTION_MIN_HASHTAGS, CAPTION_PLAN, CAPTION_SCHEMA,
+  CAPTION_EVALUATION_SCHEMA, CAPTION_GATE, CAPTION_MAX_CHARACTERS, CAPTION_MAX_HASHTAGS, CAPTION_MIN_HASHTAGS, captionPlan, CAPTION_SCHEMA,
   captionExploreRequest, captionJudgeRequest, captionFixRequest, captionRefineRequest, captionRulesBrief, captionSourceHosts, captionSourceLine, mechanicalCaptionIssues, parseCaptionCandidates, parseCaptionEvaluation, sameCaption,
   type Draft2Caption, type Draft2CaptionCandidate, type Draft2CaptionIssue, type Draft2CaptionRules, type Draft2CaptionScore,
 } from "./draft2-caption.types";
@@ -119,13 +119,13 @@ const CAPTION_STEP: FunnelStep<Draft2CaptionCandidate, Draft2CaptionScore, Draft
   noun: "caption",
   article: "a caption",
   plural: "captions",
-  plan: CAPTION_PLAN,
+  plan: (_snapshot, pipeline) => captionPlan(pipeline),
   gate: CAPTION_GATE,
   operations: { writer: "draft2_caption", judge: "draft2_caption_review" },
   roles: DRAFT2_CAPTION_ROLES,
   snapshot: captionTarget,
   newRun: (snapshot, profile) => { const source = sourceOf(snapshot, profile); return { ...snapshot, ...(source ? { source } : {}), rules: captionRules(profile, snapshot) }; },
-  setup: ({ snapshot, profile, facts }) => {
+  setup: ({ snapshot, profile, facts, plan }) => {
     const rules = captionRules(profile, snapshot);
     const source = sourceOf(snapshot, profile);
     const brief = `${brandBrief(profile)}\n\n${captionRulesBrief(rules)}`;
@@ -144,7 +144,7 @@ const CAPTION_STEP: FunnelStep<Draft2CaptionCandidate, Draft2CaptionScore, Draft
       explore: captionExploreRequest,
       refine: captionRefineRequest,
       fix: captionFixRequest,
-      judgeRequest: captionJudgeRequest,
+      judgeRequest: (round, candidates, mechanical, revised) => captionJudgeRequest(plan, round, candidates, mechanical, revised),
       same: sameCaption,
     };
   },

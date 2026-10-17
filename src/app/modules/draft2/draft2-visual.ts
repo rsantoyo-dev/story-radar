@@ -73,7 +73,7 @@ const VISUAL_STEP: FunnelStep<Draft2VisualCandidate, Draft2VisualScore, Draft2Vi
   noun: "visual script",
   article: "a visual script",
   plural: "visual scripts",
-  plan: ({ carousel }) => visualPlan(carousel),
+  plan: ({ carousel }, pipeline) => visualPlan(carousel, pipeline),
   gate: VISUAL_GATE,
   // No extra round on the funnel's own: in 22 real runs the extra rounds never raised a visual script's best (the editor may still ask for one).
   autoExtraRounds: false,

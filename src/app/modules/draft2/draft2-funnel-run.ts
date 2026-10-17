@@ -6,14 +6,14 @@ import { getAnthropicRuntimeConfig, requireAnthropicApiKey } from "../stories/an
 import { getCreativeProfile } from "../stories/creative-profile.repository";
 import { activeDraft2Session, claimDraft2Session, getDraft2Session, touchDraft2Session, updateDraft2Session, type Draft2SessionPatch } from "./draft2-session.repository";
 import { draft2DevTrace } from "./draft2-dev-trace";
-import { draft2ModelName, draft2RevisionEffort, draft2RoleModel, draft2ShadowJudgeEffort, draft2ShadowJudgeModel, draft2SolModel, type Draft2Effort, type Draft2Provider } from "./draft2-models";
+import { draft2ModelName, draft2RevisionEffort, draft2RoleModel, draft2SolModel, draft2StepChoice, type Draft2Effort, type Draft2Pipeline, type Draft2Provider } from "./draft2-models";
 import { traceCostMicros } from "./draft2-trace-cost";
 import { Draft2BusyError, Draft2InputError, type Draft2Fact, type Draft2TraceEntry } from "./draft2-facts.types";
 import {
   FUNNEL_ACCEPTABLE_SCORE, FUNNEL_EXTRA_ROUND, FUNNEL_MAX_EXTRA_ROUNDS, factsSnapshot, failedCall, funnelAcceptedWinner, funnelBestVersions, funnelExtendable, funnelFixedCandidates, funnelFreshWanted, funnelRegressions,
   funnelRenumberedProposals, funnelResumeRound, funnelSchemaWithoutArrayEnums, funnelReviewNote, funnelRoundImproved, funnelRunSummary, funnelTargets, funnelVersions, funnelWrittenCandidates,
   type FunnelCandidate, type FunnelEvaluation, type FunnelFixPass, type FunnelGate, type FunnelIssue, type FunnelPlanRound, type FunnelRegression, type FunnelRole,
-  type FunnelRound, type FunnelRun, type FunnelScore, type FunnelShadowJudgment, type FunnelVersion,
+  type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion,
 } from "./draft2-funnel";
 import type { CreativeProfile } from "../stories/creative-content.types";
 import type { Draft2SessionRow } from "@/db/schema";
@@ -45,6 +45,8 @@ const HEARTBEAT_MS = 30_000;
 const FIX_ESTIMATE_MS = 40_000;
 
 type Composed = { instructions: string; skillVersions: Record<string, string> };
+/** How the notes count rounds. */
+const roundsText = (count: number) => count === 1 ? "one round" : `${count} rounds`;
 /** The session columns a funnel step lives in. */
 export type FunnelColumn = "opening" | "closing" | "deck" | "visual" | "caption";
 
@@ -78,8 +80,8 @@ export type FunnelStep<C extends FunnelCandidate, S extends FunnelScore, I exten
   noun: string;
   article: string;
   plural: string;
-  /** The rounds, the same for every run, or chosen from what the run follows (the deck's depend on the story's structure). */
-  plan: readonly FunnelPlanRound[] | ((snapshot: Snapshot) => readonly FunnelPlanRound[]);
+  /** The rounds, by the pipeline the run starts on (v2's or v3's), and from what the run follows when the step needs it (the deck's depend on the story's structure). */
+  plan: (snapshot: Snapshot, pipeline: Draft2Pipeline) => readonly FunnelPlanRound[];
   gate: FunnelGate;
   /** Whether a run under the floor takes extra rounds on its own (the default); false leaves them to the editor ("One more round"). */
   autoExtraRounds?: boolean;
@@ -92,7 +94,7 @@ export type FunnelStep<C extends FunnelCandidate, S extends FunnelScore, I exten
   snapshot: (session: Draft2SessionRow, continuing: R | undefined) => Snapshot | Promise<Snapshot>;
   /** What a new run records besides the funnel's bookkeeping: the snapshots it follows (and what of the profile it ran under). */
   newRun: (snapshot: Snapshot, profile: CreativeProfile) => Partial<R>;
-  setup: (input: { snapshot: Snapshot; profile: CreativeProfile; facts: readonly Draft2Fact[]; plan: readonly FunnelPlanRound[] }) => FunnelSetup<C, S, I>;
+  setup: (input: { snapshot: Snapshot; profile: CreativeProfile; facts: readonly Draft2Fact[]; plan: readonly FunnelPlanRound[]; pipeline: Draft2Pipeline }) => FunnelSetup<C, S, I>;
 };
 
 export type FunnelStepInput = {
@@ -146,14 +148,17 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
   // A new run starts with none of the earlier run's extra rounds; a continued one keeps its own, and one more when the editor asks.
   const extraRounds = resume ? (current?.extraRounds ?? 0) + (more ? 1 : 0) : 0;
   // A run left "running" passed the busy check only because its heartbeat stopped: its request or server died.
-  // A run that ended unaccepted continues only with rounds its plan gained since (or an extra round); a plan chosen per run is known once the snapshot is (checked below).
-  const ended = current && funnelExtendable(current, (typeof def.plan === "function" ? Infinity : def.plan.length) + extraRounds) ? current : undefined;
+  // A run that ended unaccepted continues only with rounds its plan gained since (or an extra round); the rounds its plan had are on the run (checked exactly below).
+  const ended = current && funnelExtendable(current, (current.plannedRounds ?? Infinity) + extraRounds) ? current : undefined;
   const stopped = current && (current.status === "paused" || current.status === "running") ? current : ended;
   const nothingToContinue = `There is no paused or stopped ${def.noun} to continue. Write the ${def.noun} again.`;
   if (resume && !stopped) throw new Draft2InputError(nothingToContinue);
   const snapshot = await def.snapshot(session, resume ? stopped : undefined);
+  // The pipeline the run follows: the one it started on, else the session's (a session stored before pipelines is v2).
+  const pipeline: Draft2Pipeline = resume && stopped ? stopped.pipeline ?? "v2" : session.pipeline ?? "v2";
   // The plan may still grow by extra rounds while the run goes, when its best stays under the floor; never past the cap.
-  let plan: FunnelPlanRound[] = [...(typeof def.plan === "function" ? def.plan(snapshot) : def.plan), ...Array.from({ length: extraRounds }, () => FUNNEL_EXTRA_ROUND)];
+  const planned = def.plan(snapshot, pipeline);
+  let plan: FunnelPlanRound[] = [...planned, ...Array.from({ length: extraRounds }, () => FUNNEL_EXTRA_ROUND)];
   let maxRounds = plan.length;
   // A paused or stopped run whose next round is past the rounds it may have (its plan and its own extra rounds), with every round judged, has
   // nothing left to run: it ends as its last round would have. Runs started before a new run stopped inheriting extra rounds paused this way.
@@ -167,16 +172,18 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
   // Each role's model: the provider's default, or the one the environment names for this step and role (draft2RoleModel).
   const defaults: Record<Draft2Provider, string> = { openai: draft2SolModel(process.env), anthropic: getAnthropicRuntimeConfig().model };
   const modelOf = (provider: Draft2Provider, role: "writer" | "judge"): FunnelRole => ({ provider, model: draft2RoleModel(def.step, role, provider, process.env, defaults) });
-  // A run keeps the roles (and models) it started with; a new run takes today's.
+  // A run keeps the roles (and models) it started with; a new run takes today's, under the editor's choice for this step (the canvas's Models).
   const earlier = def.earlierRoles ?? def.roles;
+  const chosen = draft2StepChoice(session.models, def.step);
   const roles = resume && stopped
     ? { writer: stopped.writer ?? modelOf(earlier.writer, "writer"), judge: stopped.judge ?? modelOf(earlier.judge, "judge") }
-    // The editor's choice on the session (the canvas's Models) wins over today's cast for a new run.
-    : { writer: session.models?.writer ?? modelOf(def.roles.writer, "writer"), judge: session.models?.judge ?? modelOf(def.roles.judge, "judge") };
+    : { writer: chosen.writer ?? modelOf(def.roles.writer, "writer"), judge: chosen.judge ?? modelOf(def.roles.judge, "judge") };
+  // The efforts the editor chose for this step, over its plan: a continued run keeps the ones it started with.
+  const efforts = resume && stopped ? stopped.efforts ?? {} : { ...(chosen.writerEffort ? { writer: chosen.writerEffort } : {}), ...(chosen.judgeEffort ? { judge: chosen.judgeEffort } : {}) };
   // The notes name the model that judges this run (gpt-6-luna is Luna), not its provider.
   const judgeName = draft2ModelName(roles.judge.model, roles.judge.provider);
   const profile = await getCreativeProfile(topicId);
-  const setup = def.setup({ snapshot, profile, facts, plan });
+  const setup = def.setup({ snapshot, profile, facts, plan, pipeline });
   const verifiedFacts = factsSnapshot(facts);
 
   const trace: Draft2TraceEntry[] = [...session.trace];
@@ -185,7 +192,7 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
   const run = (resume && stopped
     ? { ...stopped, status: "running", resumeRound: undefined, error: undefined, ...roles, ...(extraRounds ? { extraRounds } : {}) }
     : {
-      status: "running", rounds: [], candidates: [], ...roles, ...def.newRun(snapshot, profile),
+      status: "running", rounds: [], candidates: [], ...roles, pipeline, plannedRounds: planned.length, ...(Object.keys(efforts).length ? { efforts } : {}), ...def.newRun(snapshot, profile),
       ...(current ? { previousRuns: [...(current.previousRuns ?? []), funnelRunSummary(current)] } : {}),
     }) as R;
   const claimed = await claimDraft2Session(session.id, { step: def.step, [def.step]: run, error: null } as unknown as Draft2SessionPatch);
@@ -233,8 +240,11 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
     await checkpoint({ status: "needs-review", error: note });
   }
 
-  /** The effort a round runs a role at: the plan's, else the revision default (draft2RevisionEffort, from the environment). */
-  const effortFor = (round: number, roleKind: "writer" | "judge"): Draft2Effort => plan[round - 1]?.effort ?? draft2RevisionEffort(roleKind, process.env);
+  /** The effort a round runs a role at: the editor's choice for this step, else the plan's (the judge's own when the round names one), else the pipeline's revision default (draft2RevisionEffort). */
+  const effortFor = (round: number, roleKind: "writer" | "judge"): Draft2Effort => {
+    const entry = plan[round - 1];
+    return efforts[roleKind] ?? (roleKind === "judge" ? entry?.judgeEffort ?? entry?.effort : entry?.effort) ?? draft2RevisionEffort(roleKind, process.env, pipeline);
+  };
   /** What is left of the route's time for one call: never more than CALL_TIMEOUT_MS, never less than a minute. */
   const callTimeoutMs = () => Math.max(MIN_CALL_TIMEOUT_MS, Math.min(CALL_TIMEOUT_MS, ROUTE_LIMIT_MS - (Date.now() - startedAt) - 10_000));
   /**
@@ -251,12 +261,12 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
    * One structured call to a role's model, with the step's context and the
    * verified facts where its provider caches them: Claude's cached context
    * block, or the tail of Sol's instructions. The effort is the round's (or
-   * the shadow judgment's), and the timeout what is left of the route's time.
+   * the fix pass's), and the timeout what is left of the route's time.
    */
   function ask(role: FunnelRole, round: number, operation: string, request: Composed & { contents: Record<string, unknown>; schema: Record<string, unknown> }, options: { effort?: Draft2Effort; kind?: "writer" | "judge" } = {}) {
     const { instructions, skillVersions, contents, schema } = request;
     const roleKind = options.kind ?? (role === roles.judge ? "judge" : "writer");
-    // The round's effort, for the writer and the judge alike (or the shadow judgment's); Sol writing a stored run keeps medium.
+    // The round's effort for the role (or the fix pass's); Sol writing a stored run keeps medium.
     const effort = options.effort ?? effortFor(round, roleKind);
     const timeoutMs = callTimeoutMs();
     if (role.provider === "anthropic") {
@@ -271,29 +281,6 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
       apiKey: openAiApiKey, model: role.model, instructions: solInstructions(instructions), contents,
       schema, schemaName: operation, maxOutputTokens: MAX_OUTPUT_TOKENS, reasoningEffort, timeoutMs, auditContext,
     }));
-  }
-
-  /**
-   * The shadow judgment of a round: the judge's request again, at another
-   * effort or by another model of the judge's provider (draft2ShadowJudgeEffort,
-   * draft2ShadowJudgeModel), in parallel with the real one. Its verdict,
-   * winner, scores and issues are kept on the round for comparison and
-   * decide nothing; a failure is kept as a note. Never throws.
-   */
-  async function shadowJudgment(round: number, request: Composed & { contents: Record<string, unknown>; schema: Record<string, unknown> }, ids: readonly string[], effort: Draft2Effort, model: string): Promise<FunnelShadowJudgment> {
-    const begin = Date.now();
-    try {
-      const answered = await ask({ provider: roles.judge.provider, model }, round, `${def.operations.judge}_shadow`, request, { effort, kind: "judge" });
-      const parsed = setup.parseEvaluation(answered.text, ids);
-      return {
-        effort, model, durationMs: Date.now() - begin, verdict: parsed.verdict, winnerId: parsed.winnerId,
-        scores: parsed.scores.map((score) => ({ candidateId: score.candidateId, overall: score.overall })),
-        issues: parsed.issues.slice(0, 12).map((issue) => ({ code: issue.code, ...(issue.candidateId ? { candidateId: issue.candidateId } : {}), detail: issue.detail.slice(0, 160) })),
-        proposals: parsed.proposals?.length ?? 0,
-      };
-    } catch (error) {
-      return { effort, model, durationMs: Date.now() - begin, error: error instanceof Error ? error.message.slice(0, 200) : "The shadow judgment failed." };
-    }
   }
 
   /** One provider call: traced on the console in development, recorded on the session always, with its effort and what it cost. */
@@ -352,8 +339,8 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
     const rounds = run.rounds.length;
     const extra = run.extraRounds ?? 0;
     await needsReview((best?.score?.overall ?? 0) >= FUNNEL_ACCEPTABLE_SCORE
-      ? `${judgeName} did not accept ${def.article} after ${rounds} rounds.`
-      : `${judgeName} did not accept ${def.article} after ${rounds} rounds${extra ? ` (${extra} extra)` : ""}, and the best stays under ${FUNNEL_ACCEPTABLE_SCORE}/100.`);
+      ? `${judgeName} did not accept ${def.article} after ${roundsText(rounds)}.`
+      : `${judgeName} did not accept ${def.article} after ${roundsText(rounds)}${extra ? ` (${extra} extra)` : ""}, and the best stays under ${FUNNEL_ACCEPTABLE_SCORE}/100.`);
     return (await updateDraft2Session(session.id, {})) ?? claimed;
   }
 
@@ -421,17 +408,11 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
         // A Claude judge's strict schema compiles to a grammar with a size limit: the parser checks the codes and the proposals' values instead.
         const judgeRequest = { ...setup.judge, contents: setup.judgeRequest(round, candidates, mechanical, targets), schema: roles.judge.provider === "anthropic" ? funnelSchemaWithoutArrayEnums(setup.schemas.judge) : setup.schemas.judge };
         const ids = candidates.map((candidate) => candidate.id);
-        // The shadow judgment, when the environment asks for one (another effort, another model, or both), runs beside the real one and never decides.
-        const shadowEffort = draft2ShadowJudgeEffort(process.env) ?? judgeEffort;
-        const shadowModel = draft2ShadowJudgeModel(process.env, roles.judge.provider) ?? roles.judge.model;
-        const [judged, shadow] = await Promise.all([
-          ask(roles.judge, round, def.operations.judge, judgeRequest),
-          shadowEffort !== judgeEffort || shadowModel !== roles.judge.model ? shadowJudgment(round, judgeRequest, ids, shadowEffort, shadowModel) : Promise.resolve(undefined),
-        ]);
+        const judged = await ask(roles.judge, round, def.operations.judge, judgeRequest);
         const judgment = setup.parseEvaluation(judged.text, ids);
         const evaluation = judgment.proposals ? { ...judgment, proposals: funnelRenumberedProposals(judgment.proposals, run.rounds) } : judgment;
         const index = run.rounds.findIndex((entry) => entry.round === round);
-        run.rounds[index] = { ...run.rounds[index], evaluation, ...(shadow ? { shadow: { ...shadow, ...(shadow.winnerId ? { agrees: shadow.winnerId === evaluation.winnerId } : {}) } } : {}) };
+        run.rounds[index] = { ...run.rounds[index], evaluation };
         // A revision that came out worse never replaces the version it revised: the better one stays in front.
         const regressions = funnelRegressions(funnelVersions(run.rounds).filter((version) => version.round === round), before, def.gate.criteria);
         if (regressions.length) run.rounds[index] = { ...run.rounds[index], regressions };
@@ -465,8 +446,8 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
             : def.autoExtraRounds === false ? " This step takes no extra round on its own; ask for one if a revision would help."
             : !improved ? " The last round did not raise the best, so no extra round was taken." : "";
           await needsReview(bestScore >= FUNNEL_ACCEPTABLE_SCORE
-            ? `${judgeName} did not accept ${def.article} after ${maxRounds} rounds.`
-            : `${judgeName} did not accept ${def.article} after ${maxRounds} rounds${extra ? ` (${extra} extra)` : ""}, and the best stays under ${FUNNEL_ACCEPTABLE_SCORE}/100.${why}`);
+            ? `${judgeName} did not accept ${def.article} after ${roundsText(maxRounds)}.`
+            : `${judgeName} did not accept ${def.article} after ${roundsText(maxRounds)}${extra ? ` (${extra} extra)` : ""}, and the best stays under ${FUNNEL_ACCEPTABLE_SCORE}/100.${why}`);
           return;
         }
         // The best version so far, kept on the row in case a later call fails.
@@ -476,7 +457,7 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
         // third-round proposal ever won). The editor can still continue the run with the rounds left.
         if (round > 1 && (best?.score?.overall ?? 0) >= FUNNEL_ACCEPTABLE_SCORE && !funnelRoundImproved(funnelVersions(run.rounds), round)) {
           const left = maxRounds - round;
-          await needsReview(`${judgeName} did not accept ${def.article} after ${round} rounds. The last round did not raise the best, so the ${left === 1 ? "planned round after it was" : `${left} planned rounds after it were`} not run.`);
+          await needsReview(`${judgeName} did not accept ${def.article} after ${roundsText(round)}. The last round did not raise the best, so the ${left === 1 ? "planned round after it was" : `${left} planned rounds after it were`} not run.`);
           return;
         }
         lastRoundMs = Date.now() - roundStartedAt;

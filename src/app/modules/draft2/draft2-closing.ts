@@ -5,7 +5,7 @@ import { Draft2InputError } from "./draft2-facts.types";
 import { focusForModels, focusItemCount, type Draft2FocusSnapshot } from "./draft2-focus.types";
 import { openingVersions } from "./draft2-opening.types";
 import {
-  CLOSING_GATE, CLOSING_ROUND_PLAN, callToActionBrief, closingEvaluationSchema, closingExploreRequest, closingJudgeRequest, closingWordLimits, closingFixRequest, closingRefineRequest, closingSchema,
+  CLOSING_GATE, closingPlan, callToActionBrief, closingEvaluationSchema, closingExploreRequest, closingJudgeRequest, closingWordLimits, closingFixRequest, closingRefineRequest, closingSchema,
   closingShape, mechanicalClosingIssues, openingForClosing, parseClosingCandidates, parseClosingEvaluation, sameClosing,
   type Draft2Closing, type Draft2ClosingCandidate, type Draft2ClosingIssue, type Draft2ClosingOpening, type Draft2ClosingScore, type Draft2ClosingShape,
 } from "./draft2-closing.types";
@@ -45,13 +45,13 @@ const CLOSING_STEP: FunnelStep<Draft2ClosingCandidate, Draft2ClosingScore, Draft
   noun: "closing",
   article: "a closing",
   plural: "closings",
-  plan: CLOSING_ROUND_PLAN,
+  plan: (_snapshot, pipeline) => closingPlan(pipeline),
   gate: CLOSING_GATE,
   operations: { writer: "draft2_closing", judge: "draft2_closing_review" },
   roles: DRAFT2_CLOSING_ROLES,
   snapshot: closingTarget,
   newRun: ({ opening, focus, shape }) => ({ opening, focus, shape }),
-  setup: ({ snapshot: { opening, focus, shape }, profile, facts }) => {
+  setup: ({ snapshot: { opening, focus, shape }, profile, facts, plan }) => {
     const emojis = profile.allowEmojis ? Math.max(0, profile.maxEmojis) : 0;
     const brief = `${brandBrief(profile)}\n\n${callToActionBrief({ style: profile.callToActionStyle, emojis })}`;
     const values = focus.values;
@@ -67,7 +67,7 @@ const CLOSING_STEP: FunnelStep<Draft2ClosingCandidate, Draft2ClosingScore, Draft
       refine: closingRefineRequest,
       fix: closingFixRequest,
       wordLimits: closingWordLimits(shape),
-      judgeRequest: closingJudgeRequest,
+      judgeRequest: (round, candidates, mechanical, revised) => closingJudgeRequest(plan, round, candidates, mechanical, revised),
       same: sameClosing,
     };
   },

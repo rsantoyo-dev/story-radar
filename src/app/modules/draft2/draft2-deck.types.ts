@@ -35,6 +35,15 @@ export const DECK_ITEMS_PLAN: readonly FunnelPlanRound[] = [
   { revise: 0, fresh: DECK_ITEMS_CANDIDATES, proposals: 1, effort: "medium" },
   { revise: 1, fresh: 0, proposals: 0 },
 ];
+/** v3 (2026-10-16): the same rounds, the writer at medium on both and the judge at low. */
+export const DECK_ARC_PLAN_V3: readonly FunnelPlanRound[] = [
+  { revise: 0, fresh: DECK_ARC_CANDIDATES, proposals: 1, effort: "medium", judgeEffort: "low" },
+  { revise: 2, fresh: 0, proposals: 0, effort: "medium", judgeEffort: "low" },
+];
+export const DECK_ITEMS_PLAN_V3: readonly FunnelPlanRound[] = [
+  { revise: 0, fresh: DECK_ITEMS_CANDIDATES, proposals: 1, effort: "medium", judgeEffort: "low" },
+  { revise: 1, fresh: 0, proposals: 0, effort: "medium", judgeEffort: "low" },
+];
 export const DECK_MAX_ROUNDS = 2;
 export const DECK_ARC_MIN_SLIDES = 2;
 export const DECK_ARC_MAX_SLIDES = 5;
@@ -127,7 +136,8 @@ export function deckShape(structure: { kind: Draft2FocusStructureKind; itemFactI
 }
 
 /** The plan a shape asks for: four decks for an arc, two for a list or steps. */
-export const deckPlan = (shape: Pick<Draft2DeckShape, "kind">): readonly FunnelPlanRound[] => shape.kind === "arc" ? DECK_ARC_PLAN : DECK_ITEMS_PLAN;
+export const deckPlan = (shape: Pick<Draft2DeckShape, "kind">, pipeline: "v2" | "v3" = "v2"): readonly FunnelPlanRound[] =>
+  pipeline === "v3" ? (shape.kind === "arc" ? DECK_ARC_PLAN_V3 : DECK_ITEMS_PLAN_V3) : (shape.kind === "arc" ? DECK_ARC_PLAN : DECK_ITEMS_PLAN);
 
 const factIds = { type: "array", maxItems: 10, items: { type: "string" } };
 const slideSchema = {
