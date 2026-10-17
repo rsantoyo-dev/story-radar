@@ -32,6 +32,7 @@ export * from "./workspace-credit-entries";
 
 export * from "./editorial-lines";
 
+export * from "./photo-bank";
 export * from "./story-materials";
 export * from "./daily-editorial-plans";
 export * from "./daily-preparation-runs";

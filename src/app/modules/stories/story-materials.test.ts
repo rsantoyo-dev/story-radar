@@ -48,6 +48,8 @@ test("changing a photo or its use invalidates image carry, a copy edit does not"
   assert.equal(canCarryImageUnits([unit], [{ ...unit, storyReferences: [{ id, purpose: "step" }] }]), false);
   assert.equal(canCarryImageUnits([unit], [{ ...unit, storyReferences: [] }]), false);
 });
+/** The story photos the upload service gave the photo bank. */
+const banked: Record<string, unknown>[] = [];
 const requireLocal = createRequire(import.meta.url);
 function load(file: string, mocks: Record<string, unknown>) {
   const exports: Record<string, (...args: unknown[]) => Promise<unknown>> = {};
@@ -91,6 +93,7 @@ test("photo loading rejects cross-story IDs, revoked consent and mismatched byte
   let reads = 0;
   const reference = { ...ref, sha256: createHash("sha256").update(bytes).digest("hex") };
   const service = load("./manage-story-photos.ts", {
+    "../photo-bank/photo-bank": { bankStoryPhotoQuietly: async (row: Record<string, unknown>) => { banked.push(row); return "bank-1"; } },
     "@/db/client": {}, "@/db/schema": schema, "./story-materials.types": input,
     "./story-materials.repository": {
       findStoryPhoto: async (topicId: string, storyId: string) => topicId === id && storyId === id ? { ...reference, providerTransmissionAllowed: allowed } : undefined,
@@ -114,6 +117,7 @@ test("a photo that may not be sent to the model (e.g. a Commons portrait) is usa
   let reads = 0;
   const reference = { ...ref, sha256: createHash("sha256").update(bytes).digest("hex") };
   const service = load("./manage-story-photos.ts", {
+    "../photo-bank/photo-bank": { bankStoryPhotoQuietly: async (row: Record<string, unknown>) => { banked.push(row); return "bank-1"; } },
     "@/db/client": {}, "@/db/schema": schema, "./story-materials.types": input,
     "./story-materials.repository": {
       findStoryPhoto: async () => ({ ...reference, active: true, providerTransmissionAllowed: false }),
@@ -153,6 +157,7 @@ test("upload normalizes real image bytes privately, records what the publication
   let stored: Uint8Array | undefined;
   let row: Record<string, unknown> = {};
   const service = load("./manage-story-photos.ts", {
+    "../photo-bank/photo-bank": { bankStoryPhotoQuietly: async (row: Record<string, unknown>) => { banked.push(row); return "bank-1"; } },
     "@/db/client": { db: { insert: () => ({ values: (value: Record<string, unknown>) => { row = value; return { returning: async () => [{ ...value, active: true }] }; } }) } },
     "@/db/schema": schema, "./story-materials.types": input,
     "./story-materials.repository": {
@@ -179,6 +184,8 @@ test("upload normalizes real image bytes privately, records what the publication
   assert.equal(row.publicationRights, "own");
   assert.equal((await sharp(Buffer.from(stored!)).metadata()).format, "webp");
   assert.equal(row.sha256, createHash("sha256").update(stored!).digest("hex"));
+  assert.equal(banked.at(-1)?.id, row.id, "the photo enters the workspace's photo bank");
+  assert.equal(result.bankPhotoId === undefined ? "bank-1" : result.bankPhotoId, "bank-1");
 });
 
 test("photo identity takes priority over generic scene styling, while style-only inputs remain inspiration", () => {
@@ -204,6 +211,8 @@ test("a photo's focal point is framing only: set, cleared and range-checked, its
     await client.exec(readFileSync(new URL("../../../../drizzle/0069_wet_lake.sql", import.meta.url), "utf8"));
     await client.exec(readFileSync(new URL("../../../../drizzle/0088_sleepy_puma.sql", import.meta.url), "utf8"));
     await client.exec(readFileSync(new URL("../../../../drizzle/0109_story_photo_rights.sql", import.meta.url), "utf8"));
+    // 0114's column on this table; the photo bank's own tables are not needed here.
+    await client.exec(`ALTER TABLE story_reference_photos ADD COLUMN bank_photo_id uuid;`);
     await client.exec(`INSERT INTO story_reference_photos(id,topic_id,story_id,name,description,provenance,object_key,sha256,file_name,file_size) VALUES ('${id}','${id}','${id}','Jo','Jo and the dog','Own photo','private/jo','abc','jo.webp',10);`);
     const repository = load("./story-materials.repository.ts", { "@/db/client": { db: drizzle(client) }, "@/db/schema": schema, "./story-materials.types": input });
     const framed = await repository.setStoryPhotoFocus(id, id, id, { x: 0.4, y: 0.72 }) as input.StoryReferencePhoto;
@@ -231,6 +240,8 @@ test("a photo's publication rights: reference only until the editor declares the
       ('${id}','${id}','${id}','houston bar','The bar','rs','private/bar','abc','bar.webp',10),
       ('${other}','${id}','${id}','Jo','A portrait','Photo: Ann · CC BY-SA 4.0 (https://example.org) · https://commons.wikimedia.org/x · via Wikimedia Commons','private/jo','def','jo.webp',10);`);
     await client.exec(readFileSync(new URL("../../../../drizzle/0109_story_photo_rights.sql", import.meta.url), "utf8"));
+    // 0114's column on this table; the photo bank's own tables are not needed here.
+    await client.exec(`ALTER TABLE story_reference_photos ADD COLUMN bank_photo_id uuid;`);
     const repository = load("./story-materials.repository.ts", { "@/db/client": { db: drizzle(client) }, "@/db/schema": schema, "./story-materials.types": input });
     const read = async (photoId: string) => (repository.publicStoryPhoto(await repository.findStoryPhoto(id, id, photoId)) as unknown as input.StoryReferencePhoto).publicationRights;
     assert.equal(await read(id), "reference", "a photo saved before the declaration is reference only");

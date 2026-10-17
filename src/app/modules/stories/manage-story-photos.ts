@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { storyReferencePhotos } from "@/db/schema";
 import { buildStoryReferenceObjectKey, deletePrivateR2Object, putPrivateR2Object, readPrivateR2ImageFile } from "./r2-storage";
+import { bankStoryPhotoQuietly } from "../photo-bank/photo-bank";
 import { findStoryPhoto, publicStoryPhoto, requireStoryMembership } from "./story-materials.repository";
 import { materialText, parsePhotoRights, parseStoryReferences, StoryMaterialValidationError } from "./story-materials.types";
 import type { StoryGenerationReference } from "./story-reference-generation";
@@ -31,7 +32,9 @@ export async function uploadStoryPhoto(topicId: string, storyId: string, form: F
   await putPrivateR2Object({ objectKey, body: normalized, contentType: "image/webp" });
   try {
     const [row] = await db.insert(storyReferencePhotos).values({ id, topicId, storyId, name, description, provenance, providerTransmissionAllowed: true, publicationRights, objectKey, sha256: createHash("sha256").update(normalized).digest("hex"), fileName: `${id}.webp`, fileSize: normalized.length }).returning();
-    return publicStoryPhoto(row);
+    // Every photo a story receives enters the workspace's photo bank, where a later story about the same place or person finds it.
+    const bankPhotoId = await bankStoryPhotoQuietly(row);
+    return publicStoryPhoto(bankPhotoId ? { ...row, bankPhotoId } : row);
   } catch (error) { await deletePrivateR2Object(objectKey).catch(() => undefined); throw error; }
 }
 export async function resolveStoryReferences(topicId: string, storyId: string, input: unknown): Promise<StoryGenerationReference[]> {

@@ -7,6 +7,7 @@ export type DashboardView =
   | "identity"
   | "strategy"
   | "sources"
+  | "photos"
   | "channels"
   | "topics"
   | "admin";
@@ -21,6 +22,7 @@ export function dashboardViewFromHash(hash: string): DashboardView {
   if (hash === "#editorial-creative" || hash.startsWith("#creative-profile-") || hash.startsWith("#identity")) return "identity";
   if (["#editorial", "#editorial-lenses", "#preferences"].includes(hash) || hash.startsWith("#strategy")) return "strategy";
   if (hash.startsWith("#sources")) return "sources";
+  if (hash.startsWith("#photo-bank")) return "photos";
   if (hash === "#editorial-meta" || hash.startsWith("#channels")) return "channels";
   if (hash === "#settings" || hash.startsWith("#admin")) return "admin";
   return "today";
@@ -35,6 +37,7 @@ export const DASHBOARD_VIEW_TITLES: Record<DashboardView, string> = {
   identity: "Creative identity",
   strategy: "Editorial strategy",
   sources: "Sources",
+  photos: "Photo bank",
   channels: "Channels",
   topics: "Brands",
   admin: "Administration",

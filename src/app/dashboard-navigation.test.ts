@@ -13,6 +13,7 @@ test("daily and brand destinations resolve to the intended view", () => {
   assert.equal(dashboardViewFromHash("#identity"), "identity");
   assert.equal(dashboardViewFromHash("#strategy/lines"), "strategy");
   assert.equal(dashboardViewFromHash("#sources/documents"), "sources");
+  assert.equal(dashboardViewFromHash("#photo-bank"), "photos");
   assert.equal(dashboardViewFromHash("#channels"), "channels");
   assert.equal(dashboardViewFromHash("#admin"), "admin");
 });

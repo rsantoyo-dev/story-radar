@@ -7,8 +7,10 @@ import * as funnel from "./draft2-funnel";
 import * as inventoryTypes from "./draft2-inventory.types";
 import * as openingTypes from "./draft2-opening.types";
 import * as skills from "./skills/draft2-skills";
+import * as bankTypes from "../photo-bank/photo-bank.types";
 import { loadInSandbox } from "./draft2-test-sandbox";
 import type { Draft2Inventory } from "./draft2-inventory.types";
+import type { PhotoBankPhoto, PhotoBankSubject, PhotoBankView } from "../photo-bank/photo-bank.types";
 
 const topicId = "11111111-1111-4111-8111-111111111111";
 const storyId = "22222222-2222-4222-8222-222222222222";
@@ -30,12 +32,12 @@ const SCOPE = { municipality: "Longueuil", region: "Québec", country: "Canada",
 const photoEvidence = (provider?: "openverse") => ({ evidence: { placeId: "Q1", sourceUrl: "https://commons.wikimedia.org/wiki/File:y.jpg", resourceUrl: "https://upload.wikimedia.org/y.jpg", author: "B. Lens", license: "CC BY 4.0", licenseUrl: "https://creativecommons.org/licenses/by/4.0/", attribution: "B. Lens · CC BY 4.0", captureDate: "2024", retrievedAt: "2026-10-10T12:00:00.000Z", sha256: "abc", width: 2000, height: 1300, contentType: "image/jpeg", ...(provider ? { provider } : {}) }, bytes: Buffer.from("x") });
 
 type Row = Record<string, unknown> & { inventory: Draft2Inventory | null; trace: types.Draft2TraceEntry[]; updatedAt: Date };
-type StoryPhoto = { id: string; name: string; description: string; provenance: string; providerTransmissionAllowed: boolean; active: boolean; publicationRights?: string };
+type StoryPhoto = { id: string; name: string; description: string; provenance: string; providerTransmissionAllowed: boolean; active: boolean; publicationRights?: string; bankPhotoId?: string };
 const STORY_PHOTOS: StoryPhoto[] = [{ id: "p1", name: "Reading room", description: "The editor's photo", provenance: "Editor", providerTransmissionAllowed: true, active: true, publicationRights: "own" }, { id: "p0", name: "Old", description: "", provenance: "", providerTransmissionAllowed: true, active: false }];
 /** A Google Places match (google-maps-provider.ts, GooglePlaceCandidate). */
 const googleMatch = (name: string, address: string) => ({ id: "gp-1", name, address, sourceUrl: "https://www.google.com/maps/search/?api=1&query=x", latitude: 45.53, longitude: -73.51, matchesScope: true, exactName: true, pointSuitable: true, namedPoint: true, photos: [], attributions: [], exclusions: [] });
 
-function harness({ session, scope = SCOPE, peopleFail = false, contact = "editor@example.com", google = false, wikidataMisses = [], googlePlaces = {}, storyFacts = facts }: {
+function harness({ session, scope = SCOPE, peopleFail = false, contact = "editor@example.com", google = false, wikidataMisses = [], googlePlaces = {}, storyFacts = facts, bank = { subjects: [], photos: [] }, bankWikidata = {}, bankFails = false }: {
   session?: Record<string, unknown>;
   scope?: typeof SCOPE | { municipality: string; region: string; country: string; validatedLocationId: null };
   peopleFail?: boolean;
@@ -47,8 +49,13 @@ function harness({ session, scope = SCOPE, peopleFail = false, contact = "editor
   wikidataMisses?: string[];
   googlePlaces?: Record<string, ReturnType<typeof googleMatch>>;
   storyFacts?: types.Draft2Fact[];
+  /** The workspace's photo bank, as loadPhotoBank reads it. */
+  bank?: PhotoBankView;
+  /** Bank photos of people Wikidata knows, by Wikidata id. */
+  bankWikidata?: Record<string, string>;
+  bankFails?: boolean;
 } = {}) {
-  const calls: { search: string[]; resolve: string[]; openverse: string[]; imported: string[]; google: string[]; claude: Record<string, unknown>[] } = { search: [], resolve: [], openverse: [], imported: [], google: [], claude: [] };
+  const calls: { search: string[]; resolve: string[]; openverse: string[]; imported: string[]; google: string[]; claude: Record<string, unknown>[]; bank: unknown[][] } = { search: [], resolve: [], openverse: [], imported: [], google: [], claude: [], bank: [] };
   let row: Row = { id: sessionId, topicId, storyId, step: "deck", status: "ready", facts: storyFacts, inventory: null, error: null, trace: [], updatedAt: new Date(), ...session };
   let photos = STORY_PHOTOS;
   let characters = [{ id: "char-mia", name: "Mia", description: "An illustrated local presenter", referenceFingerprint: "x" }];
@@ -90,6 +97,25 @@ function harness({ session, scope = SCOPE, peopleFail = false, contact = "editor
     "../stories/openverse-place-photo": { openverseEnabled: () => true, openversePlacePhoto: async (input: { place: { name: string } }) => { calls.openverse.push(input.place.name); return photoEvidence("openverse"); } },
     "../stories/creative-place-visual": { placeScopeComplete: (value?: { municipality?: string; region?: string; country?: string }) => Boolean(value?.municipality && value.region && value.country) },
     "../stories/story-materials.repository": { listStoryPhotos: async () => photos },
+    "../photo-bank/photo-bank.types": bankTypes,
+    "../observability/logger": { createLogger: () => ({ debug: () => undefined, info: () => undefined, warn: () => undefined, error: () => undefined }) },
+    "../photo-bank/photo-bank": {
+      workspaceOfTopic: async () => "default",
+      syncPhotoBankQuietly: async (workspaceId: string) => { calls.bank.push(["sync", workspaceId]); },
+      loadPhotoBank: async () => { if (bankFails) throw new Error("R2 is down"); return bank; },
+      // The story's copy of a bank photo: one of its photos, naming the bank photo.
+      copyBankPhotoToStory: async (_topic: string, _story: string, bankPhotoId: string) => {
+        calls.bank.push(["copy", bankPhotoId]);
+        const source = bank.photos.find((entry) => entry.id === bankPhotoId);
+        const copy = { id: `copy-${bankPhotoId}`, name: source?.name ?? bankPhotoId, description: "", provenance: source?.provenance ?? "", providerTransmissionAllowed: source?.transmissionAllowed ?? false, active: true, publicationRights: source?.rights ?? "licensed", bankPhotoId };
+        photos = [...photos.filter((entry) => entry.id !== copy.id), copy];
+        return copy;
+      },
+      fileStoryPhoto: async (_topic: string, _story: string, storyPhotoId: string, subject: unknown) => { calls.bank.push(["file", storyPhotoId, subject]); },
+      untagStoryPhoto: async (_topic: string, _story: string, storyPhotoId: string, subject: unknown) => { calls.bank.push(["untag", storyPhotoId, subject]); },
+      confirmBankSubject: async (_topic: string, subjectId: string, options: unknown) => { calls.bank.push(["confirm", subjectId, options]); },
+      bankPhotoOfWikidata: async (_topic: string, _kind: string, wikidataId: string) => bankWikidata[wikidataId],
+    },
     "../stories/creative-characters.repository": { listCreativeCharacterRoster: async () => characters },
     "./draft2-session.repository": {
       activeDraft2Session: async () => undefined,
@@ -260,4 +286,78 @@ test("the brand's characters are read again after the editor adds one, and the v
   h.setCharacters([{ id: "char-mia", name: "Mia", description: "An illustrated local presenter", referenceFingerprint: "x" }, { id: "char-elvis", name: "Elvis", description: "An illustrated music fan", referenceFingerprint: "y" }]);
   const read = await h.decide({ action: "roster" });
   assert.equal(json([read.inventory!.roster.map((character) => character.name), read.inventory!.version]), json([["Mia", "Elvis"], version]), "a new character is a new choice: nothing made so far goes stale");
+});
+
+const bankSubject = (n: number, overrides: Partial<PhotoBankSubject>): PhotoBankSubject => ({ id: `00000000-0000-4000-8000-00000000010${n}`, kind: "place", name: "x", aliases: [], consent: false, confirmed: false, ...overrides });
+const bankPhoto = (id: string, subjectIds: string[], overrides: Partial<PhotoBankPhoto> = {}): PhotoBankPhoto => ({
+  id, name: id, description: "", provenance: "Ricardo Santoyo", rights: "own", transmissionAllowed: true, source: "upload", subjectIds, uses: 0, retired: false, createdAt: "2026-10-13T00:00:00.000Z", ...overrides,
+});
+const STREET = bankSubject(1, { name: "Rue Saint-Charles", wikidataId: "Q111" });
+const MAYOR = bankSubject(2, { kind: "person", name: "Catherine Fournier", wikidataId: "Q3048791" });
+const BANK: PhotoBankView = {
+  subjects: [STREET, MAYOR],
+  photos: [
+    bankPhoto("b-street", [STREET.id], { uses: 1 }),
+    bankPhoto("b-street-ref", [STREET.id], { rights: "reference" }),
+    bankPhoto("b-mayor", [MAYOR.id], { rights: "licensed", transmissionAllowed: false, source: "commons", provenance: "Photo: A. Photographer · via Wikimedia Commons" }),
+  ],
+};
+
+test("the photo bank first: a place matched by its Wikidata id takes the bank's photo on its own, as the story's copy, before the Commons photo; a person's wait for the editor", async () => {
+  const h = harness({ bank: BANK });
+  const session = await h.find();
+  assert.equal(json(h.calls.bank.slice(0, 2)), json([["sync", "default"], ["copy", "b-street"]]), "the story photos the bank lacks come in first; then the street takes its photo");
+  const [mayor, street, quarter] = session.inventory!.entities;
+  assert.equal(json([street.place?.status, street.place?.photo?.source, street.storyPhoto?.id, street.bank?.by, street.bank?.linked]), json(["verified", "commons", "copy-b-street", "wikidata", { bankPhotoId: "b-street", storyPhotoId: "copy-b-street", by: "program" }]));
+  assert.equal(json(street.bank?.photos.map((photo) => [photo.id, photo.hold ?? ""])), json([["b-street-ref", "reference only: declare it your own or licensed to publish it"], ["b-street", ""]]), "every photo offered, unused first, with why the program would not give it");
+  assert.equal(inventoryTypes.entityMaterial(street).photo, true);
+  assert.ok(session.inventory!.storyPhotos.some((photo) => photo.id === "copy-b-street" && photo.bankPhotoId === "b-street"), "the copy is one of the story's photos");
+  assert.equal(json([mayor.person?.status, mayor.storyPhoto, mayor.bank?.by, mayor.bank?.photos.map((photo) => photo.id), mayor.bank?.needsConsent]), json(["candidates", undefined, "wikidata", ["b-mayor"], undefined]), "Wikidata knows her: no consent to record, but the editor confirms her once");
+  assert.equal(quarter.bank, undefined, "the bank has nothing of it");
+});
+
+test("the editor uses a bank photo: the story's copy, the person confirmed once (their next stories take it on their own), consent asked for a person Wikidata does not know", async () => {
+  const h = harness({ bank: BANK });
+  await h.find();
+  const used = await h.decide({ action: "bank", entityId: "e1", bankPhotoId: "b-mayor" });
+  const mayor = used.inventory!.entities[0];
+  assert.equal(json([mayor.storyPhoto?.id, mayor.bank?.linked, inventoryTypes.entityMaterial(mayor).portrait, used.inventory!.version]), json(["copy-b-mayor", { bankPhotoId: "b-mayor", storyPhotoId: "copy-b-mayor", by: "editor" }, true, 2]));
+  assert.equal(json(h.calls.bank.at(-1)), json(["confirm", MAYOR.id, { input: { kind: "person", name: "Catherine Fournier" }, consent: false }]));
+  assert.equal(inventoryTypes.awaitsConfirmation(mayor), false, "the autopilot does not wait for her any more");
+  await assert.rejects(h.decide({ action: "bank", entityId: "e3", bankPhotoId: "b-mayor" }), /not one the photo bank offers for Vieux-Longueuil/);
+  const PRIVATE = { ...BANK, subjects: [STREET, { ...MAYOR, wikidataId: undefined }] };
+  const p = harness({ bank: PRIVATE, peopleFail: true });
+  const found = await p.find();
+  assert.equal(found.inventory!.entities[0].bank?.needsConsent, true);
+  await assert.rejects(p.decide({ action: "bank", entityId: "e1", bankPhotoId: "b-mayor" }), /Record that Catherine Fournier agreed to appear in your posts/);
+  const consented = await p.decide({ action: "bank", entityId: "e1", bankPhotoId: "b-mayor", consent: true });
+  assert.equal(json([consented.inventory!.entities[0].bank?.needsConsent, p.calls.bank.at(-1)]), json([undefined, ["confirm", MAYOR.id, { input: { kind: "person", name: "Catherine Fournier" }, consent: true }]]));
+});
+
+test("the editor's choices teach the bank: a photo given is filed under its place, one taken back is forgotten there, and the bank's photo taken off is not given again", async () => {
+  const h = harness({ bank: BANK, wikidataMisses: ["Vieux-Longueuil"] });
+  await h.find();
+  await h.decide({ action: "photo", entityId: "e3", storyPhotoId: "p1" });
+  assert.equal(json(h.calls.bank.at(-1)), json(["file", "p1", { kind: "place", name: "Vieux-Longueuil" }]));
+  await h.decide({ action: "photo", entityId: "e3", storyPhotoId: null });
+  assert.equal(json(h.calls.bank.at(-1)), json(["untag", "p1", { kind: "place", name: "Vieux-Longueuil" }]));
+  const calls = h.calls.bank.length;
+  const off = await h.decide({ action: "photo", entityId: "e2", storyPhotoId: null });
+  const street = off.inventory!.entities[1];
+  assert.equal(json([street.storyPhoto, street.bank?.declined, street.bank?.linked]), json([undefined, true, undefined]));
+  assert.equal(h.calls.bank.length, calls, "the bank's own photo is not forgotten: only not given here");
+  const again = await h.find();
+  assert.equal(json([again.inventory!.entities[1].storyPhoto, again.inventory!.entities[1].bank?.declined]), json([undefined, true]), "a new search does not give it again");
+  const back = await h.decide({ action: "bank", entityId: "e2", bankPhotoId: "b-street" });
+  assert.equal(json([back.inventory!.entities[1].storyPhoto?.id, back.inventory!.entities[1].bank?.declined]), json(["copy-b-street", undefined]), "the editor may still choose it");
+});
+
+test("a portrait an earlier story imported from Commons comes from the bank; a bank that cannot be read leaves the lookups as they were", async () => {
+  const h = harness({ bankWikidata: { Q3048791: "b-mayor" }, bank: BANK });
+  await h.find();
+  const confirmed = await h.decide({ action: "confirm", entityId: "e1", candidateId: "Q3048791" });
+  assert.deepEqual(h.calls.imported, [], "Commons is not asked again");
+  assert.equal(json([confirmed.inventory!.entities[0].person?.status, confirmed.inventory!.entities[0].person?.confirmed?.storyPhotoId]), json(["confirmed", "copy-b-mayor"]));
+  const down = await harness({ bank: BANK, bankFails: true }).find();
+  assert.equal(json([down.status, down.inventory!.entities.map((entity) => entity.bank ?? null), down.inventory!.entities[1].place?.photo?.source]), json(["ready", [null, null, null, null], "commons"]));
 });

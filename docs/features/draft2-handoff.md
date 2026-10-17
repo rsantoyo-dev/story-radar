@@ -644,3 +644,16 @@ never repeats its headline; the
 autopilot stops on a review under 90; a hand edit cites the facts that state
 its numbers (`citedFactIds`). See draft2-spine.md §13, draft2-review.md,
 draft2-hand-edits.md, draft2-autopilot.md.
+
+### Addendum, 2026-10-17: the photo bank (People and places looks there first)
+
+The editor's photos of Jo at Les Parulines, given to the park in one story,
+were not found three days later by another story about the same park (same
+Google place id). A workspace-level photo bank now keeps every story photo
+(uploads and Commons imports) once, filed under the places and people the
+editor gave it to; People and places matches each place and person to it
+first (Google or Wikidata id, then name), gives a place a photo on its own
+(the story's copy, the least used one the publication may publish, before the
+Commons photo) and offers a person's for the editor to confirm once, with
+consent recorded for a person Wikidata does not know. History came in by
+`syncPhotoBank`. See photo-bank.md; page: Dashboard → Brand → Photo bank.

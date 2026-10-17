@@ -2817,6 +2817,73 @@
   cursor: not-allowed;
 }
 
+/* The photo bank (photo-bank-panel.tsx): the places and people with their photos, and the photos not given to anyone. */
+.bankToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: density(3);
+  margin-top: density(4);
+}
+.bankSection {
+  display: grid;
+  gap: density(3);
+  margin-top: density(5);
+}
+.bankSection > summary {
+  @ds-button(link);
+  @ds-typo(small-strong);
+}
+.bankSubject {
+  @ds-surface(flat neutral);
+  display: grid;
+  gap: density(2);
+  padding: density(3);
+  border: border(hairline);
+  border-radius: radius(2);
+  min-width: 0;
+}
+.bankSubjectHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: density(2);
+  @ds-typo(small);
+  color: palette(tertiary-main);
+}
+.bankSubjectHead strong {
+  @ds-typo(small-strong);
+  color: palette(dark-main);
+}
+.bankSubjectHead a {
+  color: palette(primary-dark);
+}
+.bankMeta {
+  margin: 0;
+  @ds-typo(caption);
+  color: palette(tertiary-main);
+}
+.bankTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: density(1);
+}
+.bankAdd, .bankAddNew {
+  display: grid;
+  gap: density(2);
+}
+.bankAdd label, .bankAddNew label {
+  display: grid;
+  gap: density(1);
+  @ds-typo(small);
+}
+.bankAdd select, .bankAddNew input {
+  @ds-input(outlined neutral);
+  padding: density(2);
+  border-radius: radius(2);
+  width: 100%;
+}
+
 .dailyPlanner {
   @ds-surface(contained light);
   padding: density(5);

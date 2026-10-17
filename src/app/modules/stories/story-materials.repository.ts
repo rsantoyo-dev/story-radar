@@ -28,7 +28,7 @@ export async function saveStoryContentRevision(topicId: string, storyId: string,
 }
 export function publicStoryPhoto(row: typeof storyReferencePhotos.$inferSelect): StoryReferencePhoto {
   return { id: row.id, name: row.name, description: row.description, provenance: row.provenance, active: row.active, providerTransmissionAllowed: row.providerTransmissionAllowed, publicationRights: row.publicationRights,
-    ...(row.focusX !== null && row.focusY !== null ? { focus: { x: row.focusX, y: row.focusY } } : {}) };
+    ...(row.focusX !== null && row.focusY !== null ? { focus: { x: row.focusX, y: row.focusY } } : {}), ...(row.bankPhotoId ? { bankPhotoId: row.bankPhotoId } : {}) };
 }
 export async function listStoryPhotos(topicId: string, storyId: string) {
   await requireStoryMembership(topicId, storyId);

@@ -3,9 +3,10 @@ import test from "node:test";
 import { Draft2InputError, Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
 import {
   awaitsConfirmation, carriedDecisions, decidedInventory, entityMaterial, inventoryEntity, inventoryForModels, keptPlaceRejections, parseInventoryAction, parseInventoryEntities, personEntity,
-  referencePhotos, rejectedEntity, reopenedEntity, storyPhotosDiffer, withStoryPhoto, withStoryPhotos,
+  referencePhotos, rejectedEntity, reopenedEntity, storyPhotosDiffer, withStoryPhoto, withStoryPhotos, bankMatches, bankOffer,
   type Draft2Inventory, type Draft2InventoryEntity, type Draft2InventoryStoryPhoto,
 } from "./draft2-inventory.types";
+import type { PhotoBankPhoto, PhotoBankSubject } from "../photo-bank/photo-bank.types";
 
 const facts: Draft2Fact[] = [
   { id: "f1", claim: "Mayor Catherine Fournier opened the new library on Rue Saint-Charles.", evidence: "Mayor Catherine Fournier opened the new library on Rue Saint-Charles", kind: "event", status: "established", importance: 90 },
@@ -136,4 +137,30 @@ test("a person waits for the editor only while their candidates are open and no 
   assert.equal(awaitsConfirmation(withStoryPhoto(person("candidates"), PHOTO)), false, "the story photo the editor gave them is their portrait");
   assert.equal(awaitsConfirmation(person("none")), false);
   assert.equal(awaitsConfirmation(verifiedPlace()), false);
+});
+
+test("the photo bank's offer: matched by the place's ids or the person's name, its photos in order, the one given on its own, nothing given over the editor's photo or refusal", () => {
+  const park: PhotoBankSubject = { id: "s-park", kind: "place", name: "Parc naturel des Parulines", aliases: [], googlePlaceId: "ChIJNZk2Ru2h", consent: false, confirmed: false };
+  const jo: PhotoBankSubject = { id: "s-jo", kind: "person", name: "Jo", aliases: [], consent: true, confirmed: true };
+  const shot = (id: string, subjectIds: string[], overrides: Partial<PhotoBankPhoto> = {}): PhotoBankPhoto => ({ id, name: id, description: "", provenance: "Ricardo", rights: "own", transmissionAllowed: true, source: "upload", subjectIds, uses: 0, retired: false, createdAt: "2026-10-13T00:00:00.000Z", ...overrides });
+  const bank = { subjects: [park, jo], photos: [shot("entrance", [park.id, jo.id]), shot("pond", [park.id], { uses: 3 })] };
+  const place: Draft2InventoryEntity = { id: "e3", name: "Parc des Parulines", kind: "place", role: "subject", description: "", factIds: ["f1"], place: { status: "verified", google: { placeId: "ChIJNZk2Ru2h", name: "Parc naturel des Parulines", address: "166 Chem. du Clocher", latitude: 45.3, longitude: -73.2, sourceUrl: "x", exactName: false }, map: true } };
+  const walker: Draft2InventoryEntity = { id: "e1", name: "Jo", kind: "person", role: "subject", description: "", factIds: ["f1"], person: { status: "none", candidates: [] } };
+  const matches = bankMatches([place, walker, { ...place, id: "e4", name: "Pomerleau", kind: "organization", place: undefined }], bank.subjects);
+  assert.deepEqual([...matches.entries()].map(([id, match]) => [id, match.subject.id, match.by]), [["e3", "s-park", "google"], ["e1", "s-jo", "name"]]);
+  const alone = bankOffer(place, matches.get("e3")!, bank, { storySubjectIds: new Set(["s-park"]), storyPhotos: [] });
+  assert.equal(alone.take, "pond", "Jo is not in this story: the park's photo with Jo waits for the editor");
+  assert.deepEqual(alone.bank.photos.map((photo) => [photo.id, photo.alsoShows, photo.hold ?? ""]), [["entrance", ["Jo"], "Jo appears in it and is not in this story"], ["pond", [], ""]]);
+  assert.equal(bankOffer(place, matches.get("e3")!, bank, { storySubjectIds: new Set(["s-park", "s-jo"]), storyPhotos: [] }).take, "entrance", "with Jo in the story, the least used");
+  assert.equal(bankOffer(walker, matches.get("e1")!, bank, { storySubjectIds: new Set(["s-park", "s-jo"]), storyPhotos: [] }).take, "entrance", "a person confirmed once, who agreed, takes theirs");
+  const given = { ...place, storyPhoto: { id: "copy", name: "pond", provenance: "Ricardo", transmissionAllowed: true, rights: "own" as const } };
+  const kept = bankOffer(given, matches.get("e3")!, bank, { storySubjectIds: new Set(["s-park"]), storyPhotos: [{ id: "copy", name: "pond", description: "", provenance: "Ricardo", transmissionAllowed: true, rights: "own", bankPhotoId: "pond" }] });
+  assert.equal(JSON.stringify([kept.take, kept.bank.linked]), JSON.stringify([undefined, { bankPhotoId: "pond", storyPhotoId: "copy", by: "editor" }]), "a photo it already has: nothing more given, the bank's named");
+  const refused = bankOffer({ ...place, bank: { subjectId: "s-park", name: "Parc naturel des Parulines", by: "google", photos: [], declined: true } }, matches.get("e3")!, bank, { storySubjectIds: new Set(["s-park"]), storyPhotos: [] });
+  assert.equal(JSON.stringify([refused.take, refused.bank.declined]), JSON.stringify([undefined, true]), "the editor took it off: never given again");
+  const byName = bankMatches([{ ...place, place: { status: "not-found", map: false } }], bank.subjects).get("e3")!;
+  assert.ok(byName, "Parc des Parulines: the park's words in order");
+  assert.equal(JSON.stringify([byName.by, bankOffer(place, byName, bank, { storySubjectIds: new Set(["s-park"]), storyPhotos: [] }).take]), JSON.stringify(["name", undefined]), "a name alone is only offered");
+  assert.deepEqual(parseInventoryAction({ action: "bank", entityId: "e3", bankPhotoId: "00000000-0000-4000-8000-000000000001", consent: true }), { action: "bank", entityId: "e3", bankPhotoId: "00000000-0000-4000-8000-000000000001", consent: true });
+  assert.throws(() => parseInventoryAction({ action: "bank", entityId: "e3", bankPhotoId: "a photo" }), /bankPhotoId/);
 });

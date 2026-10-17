@@ -13,6 +13,7 @@ import { resolveGeoContact } from "./creative-geo-contact";
 import { getCreativeProfile } from "./creative-profile.repository";
 import { buildStoryReferenceObjectKey, deletePrivateR2Object, putPrivateR2Object } from "./r2-storage";
 import { publicStoryPhoto, requireStoryMembership } from "./story-materials.repository";
+import { bankStoryPhotoQuietly } from "../photo-bank/photo-bank";
 import { StoryMaterialValidationError } from "./story-materials.types";
 
 /**
@@ -246,7 +247,9 @@ export async function importCommonsPersonPhoto(topicId: string, storyId: string,
       fileName: `${id}.webp`,
       fileSize: normalized.byteLength,
     }).returning();
-    return publicStoryPhoto(row);
+    // Into the workspace's photo bank, filed under this person or place: the next story that names them takes it from there.
+    const bankPhotoId = await bankStoryPhotoQuietly(row);
+    return publicStoryPhoto(bankPhotoId ? { ...row, bankPhotoId } : row);
   } catch (error) {
     await deletePrivateR2Object(objectKey).catch(() => undefined);
     throw error;

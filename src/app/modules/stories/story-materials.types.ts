@@ -20,6 +20,8 @@ export type StoryReferencePhoto = {
   publicationRights: StoryPhotoRights;
   /** Where the subject is; crops keep this point. Absent: automatic framing. */
   focus?: PhotoFocus;
+  /** The workspace photo bank's photo this one is, or is a copy of (photo-bank.ts). */
+  bankPhotoId?: string;
 };
 /** A focal point from untrusted input, rounded; null clears it. */
 export function parsePhotoFocus(value: unknown): PhotoFocus | null {

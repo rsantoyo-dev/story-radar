@@ -213,6 +213,8 @@
 .candidateList { display: grid; gap: density(2); margin: 0; padding: 0; list-style: none; }
 .candidate { display: grid; grid-template-columns: minmax(0, 10rem) minmax(0, 1fr); gap: density(3); align-items: start; }
 .candidateThumb { width: 100%; height: auto; border-radius: radius(1); object-fit: cover; }
+/* What the workspace's photo bank has of a person or place, above the story's own photos. */
+.bankOffer { display: grid; grid-template-columns: minmax(0, 1fr); gap: density(2); }
 /* The visual script: each slide's words above its beat and art direction. */
 .visualBody { display: grid; gap: density(2); }
 .visualSlide { display: flex; flex-direction: column; gap: density(1); padding: density(3); border: border(control); border-radius: radius(2); }

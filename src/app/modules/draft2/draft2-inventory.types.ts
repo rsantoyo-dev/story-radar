@@ -1,6 +1,10 @@
 import { comparableText, Draft2InputError, Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
 import type { Draft2Provider } from "./draft2-models";
 import { publishablePhoto, type StoryPhotoRights } from "../stories/story-materials.types";
+import {
+  matchSubject, mayShow, photoHold, photoToTake, photosInOrder, queryOfEntity, takesPhotoOnItsOwn,
+  type PhotoBankMatch, type PhotoBankMatchBy, type PhotoBankSubject, type PhotoBankView,
+} from "../photo-bank/photo-bank.types";
 
 /**
  * People and places, the Draft 2 step before the visual script: who and
@@ -13,10 +17,12 @@ import { publishablePhoto, type StoryPhotoRights } from "../stories/story-materi
  * Commons or Openverse photo and its coordinates, else in Google Maps for
  * its map. When the lookups find nothing, the editor links one of the
  * story's own photos (uploaded, or found on Commons under another name) to
- * the person or place. Organizations are never drawn (no logos). The editor
- * also says whether the brand's characters may narrate. Everything here is
- * pure: contracts, the schema, parsing, the editor's decisions and what the
- * visual script may use.
+ * the person or place. Before any of that, the workspace's photo bank
+ * (photo-bank.types.ts) offers the photos earlier stories gave the same place
+ * or person, and gives one on its own where it may. Organizations are never
+ * drawn (no logos). The editor also says whether the brand's characters may
+ * narrate. Everything here is pure: contracts, the schema, parsing, the
+ * editor's decisions and what the visual script may use.
  */
 export const INVENTORY_KINDS = ["person", "place", "organization"] as const;
 export const INVENTORY_ROLES = ["subject", "secondary", "mentioned"] as const;
@@ -81,9 +87,47 @@ export type Draft2GooglePlace = {
  * appears in a published image. A snapshot taken before the declaration has
  * no rights and reads as reference only.
  */
-export type Draft2InventoryStoryPhoto = { id: string; name: string; description: string; provenance: string; transmissionAllowed: boolean; rights?: StoryPhotoRights };
+export type Draft2InventoryStoryPhoto = {
+  id: string; name: string; description: string; provenance: string; transmissionAllowed: boolean; rights?: StoryPhotoRights;
+  /** The photo bank's photo it is, or is a copy of. */
+  bankPhotoId?: string;
+};
 /** A story photo as it is linked to a person or place. */
 export type Draft2LinkedPhoto = Pick<Draft2InventoryStoryPhoto, "id" | "name" | "provenance" | "transmissionAllowed" | "rights">;
+
+/** A photo the workspace's photo bank offers a story's person or place. */
+export type Draft2BankPhoto = {
+  id: string;
+  name: string;
+  provenance: string;
+  rights: StoryPhotoRights;
+  transmissionAllowed: boolean;
+  /** The other places and people it shows, by the bank's names. */
+  alsoShows: string[];
+  /** The stories that have it. */
+  uses: number;
+  /** Why the program does not give it on its own (reference only, someone not in the story in it…); absent when it may. */
+  hold?: string;
+};
+
+/**
+ * What the photo bank has of a story's person or place: the place or person
+ * it matched (by Google Maps or Wikidata id, or by name) and its photos in the
+ * order they are offered.
+ */
+export type Draft2BankMatch = {
+  subjectId: string;
+  /** The bank's name for them. */
+  name: string;
+  by: PhotoBankMatchBy;
+  photos: Draft2BankPhoto[];
+  /** A person Wikidata does not know whose consent to appear is not recorded: the editor records it when choosing their photo. */
+  needsConsent?: true;
+  /** The bank photo the story has for them (the story's copy), and who gave it. */
+  linked?: { bankPhotoId: string; storyPhotoId: string; by: "program" | "editor" };
+  /** The editor took the bank's photo off: none is given on its own again. */
+  declined?: true;
+};
 
 export type Draft2InventoryEntity = {
   /** e1, e2…, stable while the story's names do not change. */
@@ -122,8 +166,11 @@ export type Draft2InventoryEntity = {
   /**
    * One of the story's photos the editor says shows them: a person's is only
    * ever a documentary portrait, pasted unchanged; a place's is its photo.
+   * A photo the bank gave is one too: the story's copy of it.
    */
   storyPhoto?: Draft2LinkedPhoto;
+  /** What the workspace's photo bank has of them. */
+  bank?: Draft2BankMatch;
 };
 
 export type Draft2Inventory = {
@@ -215,8 +262,53 @@ export function carriedDecisions(entities: readonly Draft2InventoryEntity[], ear
     if (!before) return entity;
     const decided = before.person && (before.person.status === "confirmed" || before.person.status === "rejected") ? { person: before.person } : {};
     const photo = before.storyPhoto && (photos ? photos.find((entry) => entry.id === before.storyPhoto!.id) : before.storyPhoto);
-    return { ...entity, ...decided, ...(photo ? { storyPhoto: linkedPhoto(photo) } : {}) };
+    // What the photo bank said stays until the bank is read again (bankOffer): who gave the bank's photo, and that the editor took it off.
+    return { ...entity, ...decided, ...(photo ? { storyPhoto: linkedPhoto(photo) } : {}), ...(before.bank ? { bank: before.bank } : {}) };
   });
+}
+
+/** The bank's place or person each of the story's people and places is, by entity id (photo-bank.types.ts, matchSubject). */
+export function bankMatches(entities: readonly Draft2InventoryEntity[], subjects: readonly PhotoBankSubject[]): Map<string, PhotoBankMatch> {
+  const matches = new Map<string, PhotoBankMatch>();
+  for (const entity of entities) {
+    const query = queryOfEntity(entity);
+    const match = query ? matchSubject(query, subjects) : undefined;
+    if (match) matches.set(entity.id, match);
+  }
+  return matches;
+}
+
+/**
+ * What the bank offers one of the story's people or places, and the photo the
+ * program gives it on its own (`take`, a bank photo id): only when the match
+ * may take one (a place by its ids, a person the editor confirmed once and the
+ * bank may show), the entity has no photo yet, the editor did not take the
+ * bank's off, a person has no confirmed Commons portrait, and one photo is
+ * free to give (photo-bank.types.ts, photoToTake). The photo the story already
+ * has from the bank is named, with who gave it.
+ */
+export function bankOffer(entity: Draft2InventoryEntity, match: PhotoBankMatch, bank: PhotoBankView, { storySubjectIds, storyPhotos }: { storySubjectIds: ReadonlySet<string>; storyPhotos: readonly Draft2InventoryStoryPhoto[] }): { bank: Draft2BankMatch; take?: string } {
+  const subjectId = match.subject.id;
+  const context = { subjectId, storySubjectIds, subjects: bank.subjects };
+  const mine = photosInOrder(bank.photos.filter((photo) => !photo.retired && photo.subjectIds.includes(subjectId)));
+  const photos: Draft2BankPhoto[] = mine.map((photo) => {
+    const hold = photoHold(photo, context);
+    const alsoShows = photo.subjectIds.filter((id) => id !== subjectId).map((id) => bank.subjects.find((subject) => subject.id === id)?.name).filter((name): name is string => Boolean(name));
+    return { id: photo.id, name: photo.name, provenance: photo.provenance, rights: photo.rights, transmissionAllowed: photo.transmissionAllowed, alsoShows, uses: photo.uses, ...(hold ? { hold } : {}) };
+  });
+  const earlier = entity.bank?.subjectId === subjectId ? entity.bank : undefined;
+  const current = entity.storyPhoto ? storyPhotos.find((photo) => photo.id === entity.storyPhoto!.id) : undefined;
+  const linkedBank = current?.bankPhotoId && photos.some((photo) => photo.id === current.bankPhotoId) ? current.bankPhotoId : undefined;
+  const linked = linkedBank && current ? { bankPhotoId: linkedBank, storyPhotoId: current.id, by: earlier?.linked?.storyPhotoId === current.id ? earlier.linked.by : "editor" as const } : undefined;
+  const offered: Draft2BankMatch = {
+    subjectId, name: match.subject.name, by: match.by, photos,
+    ...(match.subject.kind === "person" && !mayShow(match.subject) ? { needsConsent: true as const } : {}),
+    ...(linked ? { linked } : {}),
+    ...(earlier?.declined ? { declined: true as const } : {}),
+  };
+  const portraitConfirmed = entity.kind === "person" && entity.person?.status === "confirmed";
+  const take = !entity.storyPhoto && !offered.declined && !portraitConfirmed && takesPhotoOnItsOwn(match) ? photoToTake(mine, context)?.id : undefined;
+  return { bank: offered, ...(take ? { take } : {}) };
 }
 
 /** A place the editor set aside stays aside when a new search finds the same match again (the same Wikidata item and Google place). */
@@ -240,6 +332,7 @@ export function keptPlaceRejections(entities: readonly Draft2InventoryEntity[], 
  */
 export type Draft2InventoryAction =
   | { action: "confirm"; entityId: string; candidateId: string }
+  | { action: "bank"; entityId: string; bankPhotoId: string; consent: boolean }
   | { action: "reject"; entityId: string }
   | { action: "reopen"; entityId: string }
   | { action: "photo"; entityId: string; storyPhotoId: string | null }
@@ -264,6 +357,11 @@ export function parseInventoryAction(value: unknown): Draft2InventoryAction {
     if (!candidateId) throw new Draft2InputError("Name the Commons candidate (a Wikidata id, such as Q42).");
     return { action: "confirm", entityId, candidateId };
   }
+  if (body.action === "bank") {
+    const bankPhotoId = typeof body.bankPhotoId === "string" && /^[\w-]{1,64}$/.test(body.bankPhotoId) ? body.bankPhotoId : undefined;
+    if (!bankPhotoId) throw new Draft2InputError("Name the photo bank's photo (bankPhotoId).");
+    return { action: "bank", entityId, bankPhotoId, consent: body.consent === true };
+  }
   if (body.action === "photo") {
     if (body.storyPhotoId === null) return { action: "photo", entityId, storyPhotoId: null };
     const storyPhotoId = typeof body.storyPhotoId === "string" && /^[\w-]{1,64}$/.test(body.storyPhotoId) ? body.storyPhotoId : undefined;
@@ -271,7 +369,7 @@ export function parseInventoryAction(value: unknown): Draft2InventoryAction {
     return { action: "photo", entityId, storyPhotoId };
   }
   if (body.action === "reject" || body.action === "reopen") return { action: body.action, entityId };
-  throw new Draft2InputError("The action is confirm, reject, reopen, photo, photos, roster or characters.");
+  throw new Draft2InputError("The action is confirm, reject, reopen, photo, bank, photos, roster or characters.");
 }
 
 /** The person an action names, which must be a person the search looked up. */

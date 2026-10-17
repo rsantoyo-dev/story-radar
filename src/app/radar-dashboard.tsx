@@ -19,6 +19,7 @@ import { periodError } from "./editorial-period-controls";
 import { CreativeProfilePanel } from "./creative-profile-panel";
 import { InstagramGalleryPanel } from "./instagram-gallery-panel";
 import { InstagramInsightsPanel } from "./instagram-insights-panel";
+import { PhotoBankPanel } from "./photo-bank-panel";
 import { FacebookConnectionPanel } from "./facebook-connection-panel";
 import { MetaConnectionPanel } from "./meta-connection-panel";
 import { EditorialProfilePanel } from "./editorial-profile-panel";
@@ -150,7 +151,7 @@ type StoryReviewView = {
   publicationFilter?: PublicationFilter;
 };
 
-type NavigationGlyph = "today" | "discover" | "production" | "publications" | "results" | "identity" | "strategy" | "sources" | "channels" | "help" | "admin";
+type NavigationGlyph = "today" | "discover" | "production" | "publications" | "results" | "identity" | "strategy" | "sources" | "photos" | "channels" | "help" | "admin";
 
 function NavGlyph({ name }: { name: NavigationGlyph }) {
   const shapes = {
@@ -162,6 +163,7 @@ function NavGlyph({ name }: { name: NavigationGlyph }) {
     identity: <><path d="m12 2 2.3 6.7L21 11l-6.7 2.3L12 20l-2.3-6.7L3 11l6.7-2.3z"/><path d="M19 19v3M17.5 20.5h3"/></>,
     strategy: <><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="8" cy="6" r="2" fill="currentColor" stroke="none"/><circle cx="16" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="11" cy="18" r="2" fill="currentColor" stroke="none"/></>,
     sources: <><path d="M4 20a16 16 0 0 0-2-2M4 12a8 8 0 0 1 8 8M4 4a16 16 0 0 1 16 16"/><circle cx="4" cy="20" r="1" fill="currentColor" stroke="none"/></>,
+    photos: <><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></>,
     channels: <><circle cx="6" cy="12" r="3"/><circle cx="18" cy="5" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 10.5 6.8-4M8.6 13.5l6.8 4"/></>,
     help: <><circle cx="12" cy="12" r="10"/><path d="M9.3 9a3 3 0 0 1 5.4 1.8c0 2-2.7 2.5-2.7 4.2M12 18h.01"/></>,
     admin: <><circle cx="12" cy="12" r="3"/><path d="M10 2h4l.7 2.4 2.2 1 2.2-1.2 2.8 2.8-1.2 2.2 1 2.2L24 12l-2.3.7-1 2.2 1.2 2.2-2.8 2.8-2.2-1.2-2.2 1L14 22h-4l-.7-2.3-2.2-1-2.2 1.2-2.8-2.8 1.2-2.2-1-2.2L0 12l2.3-.7 1-2.2-1.2-2.2 2.8-2.8 2.2 1.2 2.2-1z"/></>,
@@ -1595,6 +1597,7 @@ export function RadarDashboard({
             ["#identity", "Creative identity", "identity"],
             ["#strategy", "Editorial strategy", "strategy"],
             ["#sources", "Sources", "sources"],
+            ["#photo-bank", "Photo bank", "photos"],
             ["#channels", "Channels", "channels"],
           ] as const).map(([hash, label, icon]) => {
             const view = dashboardViewFromHash(hash);
@@ -1708,7 +1711,7 @@ export function RadarDashboard({
           </div>
           <div className={styles.contextBar}>
             <div className={styles.contextHeading}>
-              <span>{activeView === "topics" || activeView === "admin" ? "Workspace" : <>{selectedTopicName} · {activeView === "today" || activeView === "discover" || activeView === "production" || activeView === "publications" || activeView === "results" ? "Daily work" : "Brand"}</>}</span>
+              <span>{activeView === "topics" || activeView === "admin" || activeView === "photos" ? "Workspace" : <>{selectedTopicName} · {activeView === "today" || activeView === "discover" || activeView === "production" || activeView === "publications" || activeView === "results" ? "Daily work" : "Brand"}</>}</span>
               <strong>{DASHBOARD_VIEW_TITLES[activeView]}</strong>
             </div>
             {contextTabs.length > 0 ? <nav className={styles.contextTabs} aria-label={`${DASHBOARD_VIEW_TITLES[activeView]} options`}>
@@ -1899,6 +1902,10 @@ export function RadarDashboard({
               </button>
             </div>
           </form>
+        </div>
+
+        <div id="photo-bank" className={styles.anchorTarget} hidden={activeView !== "photos"}>
+          <PhotoBankPanel key={`photo-bank-${selectedTopicId}`} topicId={selectedTopicId} secret={panelSecret} active={activeView === "photos" && canAuthenticate} />
         </div>
 
         <div id="activity" className={styles.anchorTarget} hidden={activeView !== "admin" || activeNavHash !== "#admin/activity"}>

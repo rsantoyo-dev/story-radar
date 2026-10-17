@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
-import { boolean, check, foreignKey, integer, jsonb, pgTable, real, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, check, foreignKey, index, integer, jsonb, pgTable, real, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { photoBankPhotos } from "./photo-bank";
 import { topicStories } from "./topic-stories";
 
 /** Append-only editorial copies; never overwrite the publisher's shared story. */
@@ -48,10 +49,13 @@ export const storyReferencePhotos = pgTable("story_reference_photos", {
    */
   focusX: real("focus_x"),
   focusY: real("focus_y"),
+  /** The workspace photo bank's photo this one is, or is a copy of (photo-bank.ts); null for a photo not in the bank yet. */
+  bankPhotoId: uuid("bank_photo_id").references(() => photoBankPhotos.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, table => [
   foreignKey({ columns: [table.topicId, table.storyId], foreignColumns: [topicStories.topicId, topicStories.storyId] }).onDelete("cascade"),
   uniqueIndex("story_reference_object_unique").on(table.objectKey),
+  index("story_reference_bank_photo_idx").on(table.bankPhotoId),
   check("story_reference_photo_focus_check", sql`(${table.focusX} IS NULL AND ${table.focusY} IS NULL) OR (${table.focusX} BETWEEN 0 AND 1 AND ${table.focusY} BETWEEN 0 AND 1)`),
   check("story_reference_photo_rights_check", sql`${table.publicationRights} IN ('own', 'licensed', 'reference')`),
 ]);

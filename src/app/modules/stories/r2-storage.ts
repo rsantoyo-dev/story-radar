@@ -564,6 +564,18 @@ export async function readPrivateR2ImageIfPresent(objectKey: string, signal?: Ab
   }
 }
 
+/**
+ * A photo of a workspace's photo bank: content-addressed (its sha256), so the
+ * same bytes are one object, and permanent, outside every retention class.
+ */
+export function buildPhotoBankObjectKey(workspaceId: string, sha256: string): string {
+  if (!/^[0-9a-f]{64}$/.test(sha256)) throw new R2StorageValidationError("The photo's sha256 is invalid");
+  const { objectPrefix } = getR2Client().configuration;
+  const key = [objectPrefix, "workspaces", safeKeySegment(workspaceId, "workspace ID"), "photo-bank", `${sha256}.webp`].join("/");
+  assertObjectKey(key);
+  return key;
+}
+
 /** Private immutable photo belonging to one story in one topic. */
 export function buildStoryReferenceObjectKey(topicId: string, storyId: string, photoId: string): string {
   const { objectPrefix } = getR2Client().configuration;

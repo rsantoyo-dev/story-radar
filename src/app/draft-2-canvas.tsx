@@ -2030,12 +2030,12 @@ function InventoryView({ inventory, story, saving, locked, onDecide }: {
     </FormField>
     {inventory.entities.length ? null : <p className={styles.factMeta}>The facts name no person, place or organization.</p>}
     {people.length ? <div className={styles.openingGroup}>
-      <SectionHeader level={3} title="People" description="Never generated. A confirmed Commons photo, or one of the story’s photos you give them, can appear as a documentary portrait, pasted unchanged; anyone else is told without being shown." />
-      <ol className={styles.factList}>{people.map((entity) => <PersonItem key={entity.id} entity={entity} photos={inventory.storyPhotos} saving={saving === entity.id} locked={locked} onDecide={onDecide} />)}</ol>
+      <SectionHeader level={3} title="People" description="Never generated. Their photo from your photo bank, a confirmed Commons photo, or one of the story’s photos you give them, can appear as a documentary portrait, pasted unchanged; anyone else is told without being shown." />
+      <ol className={styles.factList}>{people.map((entity) => <PersonItem key={entity.id} entity={entity} photos={inventory.storyPhotos} story={story} saving={saving === entity.id} locked={locked} onDecide={onDecide} />)}</ol>
     </div> : null}
     {places.length ? <div className={styles.openingGroup}>
-      <SectionHeader level={3} title="Places" description="A real place appears only through its verified photo or map, or one of the story’s photos you give it; otherwise as a generic scene of its kind." />
-      <ol className={styles.factList}>{places.map((entity) => <PlaceItem key={entity.id} entity={entity} photos={inventory.storyPhotos} locked={locked} onDecide={onDecide} />)}</ol>
+      <SectionHeader level={3} title="Places" description="A real place appears only through its photo from your photo bank (first, before Commons), its verified photo or map, or one of the story’s photos you give it; otherwise as a generic scene of its kind." />
+      <ol className={styles.factList}>{places.map((entity) => <PlaceItem key={entity.id} entity={entity} photos={inventory.storyPhotos} story={story} locked={locked} onDecide={onDecide} />)}</ol>
     </div> : null}
     {organizations.length ? <p className={styles.factMeta}>Organizations, never drawn and never named in an image (no logos): {organizations.map((entity) => entity.name).join(", ")}.</p> : null}
     <p className={styles.factMeta}>{inventory.storyPhotos.length
@@ -2063,21 +2063,80 @@ function StoryPhotoChoice({ entity, photos, locked, onDecide }: { entity: Draft2
   </FormField>;
 }
 
-/** A person and their Commons candidates: confirm the one that is them, or say none is; or give them one of the story's photos. */
-function PersonItem({ entity, photos, saving, locked, onDecide }: { entity: Draft2InventoryEntity; photos: readonly Draft2InventoryStoryPhoto[]; saving: boolean; locked: boolean; onDecide: (input: Record<string, unknown>) => void }) {
+/** Where the bank's photos are read from; the secret authorizes it when the editor is not signed in. */
+type BankScope = { topicId: string; secret: string };
+const BANK_MATCH_LABEL = { google: "the same Google Maps place", wikidata: "the same Wikidata item", name: "by name: check it is the same" } as const;
+const BANK_RIGHTS_LABEL = { own: "our own", licensed: "licensed", reference: "reference only" } as const;
+/** Whether the story photo an entity has is the copy the photo bank gave it. */
+const fromBank = (entity: Draft2InventoryEntity) => Boolean(entity.storyPhoto && entity.bank?.linked?.storyPhotoId === entity.storyPhoto.id);
+
+/** A private photo of the bank, fetched with the editor's credentials. */
+function PrivateThumb({ url, secret, alt }: { url: string; secret: string; alt: string }) {
+  const [src, setSrc] = useState("");
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    let objectUrl = "";
+    fetch(url, { headers: { Authorization: `Bearer ${secret}` }, cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("The photo is unavailable.");
+        const blob = await response.blob();
+        if (!controller.signal.aborted) { objectUrl = URL.createObjectURL(blob); setSrc(objectUrl); }
+      })
+      .catch(() => { if (!controller.signal.aborted) setFailed(true); });
+    return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [url, secret]);
+  return src ? <Image className={styles.candidateThumb} src={src} alt={alt} width={160} height={120} unoptimized /> : <p className={styles.factMeta}>{failed ? "Could not load the photo." : "Loading…"}</p>;
+}
+
+/**
+ * What the workspace's photo bank has of a person or place: the photos
+ * earlier stories gave them, the one this story has, why one was not given on
+ * its own, and the editor's choice. A person Wikidata does not know needs
+ * their consent recorded before their photo is used.
+ */
+function BankOffer({ entity, story, locked, onDecide }: { entity: Draft2InventoryEntity; story: BankScope; locked: boolean; onDecide: (input: Record<string, unknown>) => void }) {
+  const [consent, setConsent] = useState(false);
+  const bank = entity.bank;
+  if (!bank?.photos.length) return null;
+  const linked = fromBank(entity) ? bank.linked : undefined;
+  const person = entity.kind === "person";
+  return <div className={styles.bankOffer}>
+    <p className={styles.factMeta}>Your photo bank · {bank.name} · {bank.by === "name" ? (person ? "by their name: check it is them" : BANK_MATCH_LABEL.name) : BANK_MATCH_LABEL[bank.by]}{linked ? (linked.by === "program" ? " · its photo was given on its own: choose another or take it off below" : " · you chose its photo") : bank.declined ? " · you took its photo off: none is given on its own" : ""}</p>
+    {bank.needsConsent ? <label className={styles.factMeta}><input type="checkbox" checked={consent} disabled={locked} onChange={(event) => setConsent(event.target.checked)} /> {bank.name} agreed to appear in our posts (recorded in the photo bank, asked once)</label> : null}
+    <ul className={styles.candidateList}>{bank.photos.map((photo) => {
+      const inStory = linked?.bankPhotoId === photo.id;
+      return <li key={photo.id} className={styles.candidate}>
+        <PrivateThumb url={`/api/radar/photo-bank/photos/${encodeURIComponent(photo.id)}?topicId=${encodeURIComponent(story.topicId)}`} secret={story.secret} alt={`${photo.name}, from the photo bank`} />
+        <div>
+          <p className={styles.factClaim}>{photo.name}</p>
+          <p className={styles.factMeta}>{photo.provenance} · {BANK_RIGHTS_LABEL[photo.rights]}{photo.alsoShows.length ? ` · also shows ${photo.alsoShows.join(", ")}` : ""} · {photo.uses === 1 ? "in 1 story" : `in ${photo.uses} stories`}</p>
+          {photo.hold && !inStory ? <p className={styles.factMeta}>Not given on its own: {photo.hold}.</p> : null}
+          {inStory ? <StatusBadge tone="success">In this story</StatusBadge>
+            : <Button variant="secondary" size="compact" disabled={locked || !publishablePhoto(photo.rights) || Boolean(bank.needsConsent && !consent)}
+              onClick={() => onDecide({ action: "bank", entityId: entity.id, bankPhotoId: photo.id, ...(bank.needsConsent ? { consent: true } : {}) })}>Use this photo</Button>}
+        </div>
+      </li>;
+    })}</ul>
+  </div>;
+}
+
+/** A person and their Commons candidates: confirm the one that is them, or say none is; or give them one of the story's photos or the photo bank's. */
+function PersonItem({ entity, photos, story, saving, locked, onDecide }: { entity: Draft2InventoryEntity; photos: readonly Draft2InventoryStoryPhoto[]; story: BankScope; saving: boolean; locked: boolean; onDecide: (input: Record<string, unknown>) => void }) {
   const person = entity.person;
   const status = person?.status;
   return <li className={styles.factItem}>
     <div className={styles.factHead}>
       <span className={styles.factId}>{entity.id}</span>
       <strong>{entity.name}</strong>
-      <StatusBadge tone={status === "confirmed" || entity.storyPhoto ? "success" : status === "candidates" ? "warning" : "neutral"}>{status === "confirmed" ? "Portrait confirmed" : entity.storyPhoto ? "Story photo" : status === "candidates" ? "Confirm the photo" : status === "rejected" ? "No photo" : status === "none" ? "Not on Commons" : "Not checked"}</StatusBadge>
+      <StatusBadge tone={status === "confirmed" || entity.storyPhoto ? "success" : status === "candidates" ? "warning" : "neutral"}>{status === "confirmed" ? "Portrait confirmed" : entity.storyPhoto ? (fromBank(entity) ? "Photo bank" : "Story photo") : status === "candidates" ? "Confirm the photo" : status === "rejected" ? "No photo" : status === "none" ? "Not on Commons" : "Not checked"}</StatusBadge>
       <span className={styles.factMeta}>{entity.role} · {entity.factIds.join(", ")}</span>
     </div>
     {entity.description ? <p className={styles.factMeta}>{entity.description}</p> : null}
     {person?.note ? <p className={styles.factMeta}>{person.note}</p> : null}
     {status === "confirmed" && person?.confirmed ? <p className={styles.factMeta}>{person.confirmed.name}{person.confirmed.description ? ` · ${person.confirmed.description}` : ""} · {person.confirmed.author} · {person.confirmed.license}</p> : null}
-    {entity.storyPhoto ? <p className={styles.factMeta}>Story photo · {entity.storyPhoto.name} · {entity.storyPhoto.provenance}{publishablePhoto(entity.storyPhoto.rights) ? "" : " · reference only: it is not shown until you declare it your own or licensed"}</p> : null}
+    {entity.storyPhoto ? <p className={styles.factMeta}>{fromBank(entity) ? "From your photo bank" : "Story photo"} · {entity.storyPhoto.name} · {entity.storyPhoto.provenance}{publishablePhoto(entity.storyPhoto.rights) ? "" : " · reference only: it is not shown until you declare it your own or licensed"}</p> : null}
+    {status !== "confirmed" ? <BankOffer entity={entity} story={story} locked={locked} onDecide={onDecide} /> : null}
     {status === "candidates" ? <ul className={styles.candidateList}>
       {person!.candidates.map((candidate) => <li key={candidate.entityId} className={styles.candidate}>
         <Image className={styles.candidateThumb} src={candidate.thumbnailUrl} alt={`Wikimedia Commons photo of ${candidate.name}`} width={160} height={120} unoptimized />
@@ -2105,7 +2164,7 @@ const PLACE_STATUS_LABEL = { verified: "Verified", "not-found": "Not found", una
  * Google Maps' match for its map. The editor sets a wrong match aside, or
  * gives the place one of the story's photos.
  */
-function PlaceItem({ entity, photos, locked, onDecide }: { entity: Draft2InventoryEntity; photos: readonly Draft2InventoryStoryPhoto[]; locked: boolean; onDecide: (input: Record<string, unknown>) => void }) {
+function PlaceItem({ entity, photos, story, locked, onDecide }: { entity: Draft2InventoryEntity; photos: readonly Draft2InventoryStoryPhoto[]; story: BankScope; locked: boolean; onDecide: (input: Record<string, unknown>) => void }) {
   const place = entity.place;
   const status = place?.status;
   const found = status === "verified" || status === "rejected";
@@ -2113,7 +2172,7 @@ function PlaceItem({ entity, photos, locked, onDecide }: { entity: Draft2Invento
     <div className={styles.factHead}>
       <span className={styles.factId}>{entity.id}</span>
       <strong>{entity.name}</strong>
-      <StatusBadge tone={status === "verified" || entity.storyPhoto ? "success" : status === "unavailable" ? "warning" : "neutral"}>{status !== "verified" && entity.storyPhoto ? "Story photo" : status ? PLACE_STATUS_LABEL[status] : "Not checked"}</StatusBadge>
+      <StatusBadge tone={status === "verified" || entity.storyPhoto ? "success" : status === "unavailable" ? "warning" : "neutral"}>{fromBank(entity) ? "Photo bank" : status !== "verified" && entity.storyPhoto ? "Story photo" : status ? PLACE_STATUS_LABEL[status] : "Not checked"}</StatusBadge>
       <span className={styles.factMeta}>{entity.role} · {entity.factIds.join(", ")}</span>
     </div>
     {entity.description ? <p className={styles.factMeta}>{entity.description}</p> : null}
@@ -2121,7 +2180,8 @@ function PlaceItem({ entity, photos, locked, onDecide }: { entity: Draft2Invento
     {found && place?.google ? <p className={styles.factMeta}>Google Maps · {place.google.name} · {place.google.address} · <a href={place.google.sourceUrl} target="_blank" rel="noreferrer">Map ↗</a>{place.google.exactName ? "" : " · Google’s name differs from the story’s: check it is the same place"}</p> : null}
     {found ? <p className={styles.factMeta}>{place?.map ? "A map can be drawn." : "No coordinates for a map."}{status === "rejected" ? " Set aside: the script shows nothing of this match." : ""}</p> : null}
     {place?.note ? <p className={styles.factMeta}>{place.note}</p> : null}
-    {entity.storyPhoto ? <p className={styles.factMeta}>Story photo · {entity.storyPhoto.name} · {entity.storyPhoto.provenance}{publishablePhoto(entity.storyPhoto.rights) ? "" : " · reference only: it is not shown until you declare it your own or licensed"}</p> : null}
+    {entity.storyPhoto ? <p className={styles.factMeta}>{fromBank(entity) ? "From your photo bank" : "Story photo"} · {entity.storyPhoto.name} · {entity.storyPhoto.provenance}{publishablePhoto(entity.storyPhoto.rights) ? (place?.photo ? " · shown instead of the Commons photo" : "") : " · reference only: it is not shown until you declare it your own or licensed"}</p> : null}
+    <BankOffer entity={entity} story={story} locked={locked} onDecide={onDecide} />
     <StoryPhotoChoice entity={entity} photos={photos} locked={locked} onDecide={onDecide} />
     <ActionRow>
       {status === "verified" ? <Button variant="quiet" size="compact" disabled={locked} onClick={() => onDecide({ action: "reject", entityId: entity.id })}>Not this place</Button> : null}
