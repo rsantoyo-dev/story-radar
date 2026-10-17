@@ -15,7 +15,7 @@ import type { Draft2ClosingCandidate, Draft2ClosingOpening } from "./draft2-clos
  * the closing, so the carousel reads as one story from the cover to the
  * call to action. On the shared funnel (draft2-funnel.ts), a candidate is a
  * whole deck. For an arc, the development from slide 2's first payoff to the
- * penultimate's resolution, in 2 to 5 slides the writer chooses; for a list
+ * penultimate's resolution, in 1 to 5 slides the writer chooses; for a list
  * or steps, one slide per item or step slide 2 did not cover, in order.
  * Claude writes, Sol judges and proposes a deck of its own:
  *   arc:          4 decks → Sol scores, proposes 1 → 2 revised + 1 original + 1 edit → Sol's pick
@@ -45,7 +45,8 @@ export const DECK_ITEMS_PLAN_V3: readonly FunnelPlanRound[] = [
   { revise: 1, fresh: 0, proposals: 0, effort: "medium", judgeEffort: "low" },
 ];
 export const DECK_MAX_ROUNDS = 2;
-export const DECK_ARC_MIN_SLIDES = 2;
+/** One since 2026-10-17: a short story's arc may have a single middle slide (FOCUS_SPINE_ARC_MIDDLE_MIN). */
+export const DECK_ARC_MIN_SLIDES = 1;
 export const DECK_ARC_MAX_SLIDES = 5;
 /** v1's ceiling: a carousel has at most 20 slides, so a list at most 18 items. */
 export const DECK_MAX_SLIDES = 17;
@@ -118,7 +119,7 @@ export type Draft2Deck = FunnelRun<Draft2DeckCandidate, Draft2DeckScore, Draft2D
 };
 export type Draft2DeckRun = Omit<Draft2Deck, "rounds" | "previousRuns">;
 
-/** The deck's shape for a story: an arc runs 2 to 5 slides, or exactly its spine's middle beats when the focus has a spine; a list or steps carries each item or step slide 2 did not cite, in order. */
+/** The deck's shape for a story: an arc runs 1 to 5 slides, or exactly its spine's middle beats when the focus has a spine; a list or steps carries each item or step slide 2 did not cite, in order. */
 export function deckShape(structure: { kind: Draft2FocusStructureKind; itemFactIds: readonly string[] }, slide2FactIds: readonly string[], spine?: { beats: readonly { slide: string }[] }): Draft2DeckShape {
   if (structure.kind === "arc") {
     const middle = spine ? spine.beats.filter((beat) => beat.slide === "middle").length : 0;

@@ -331,3 +331,30 @@ Two program checks, no new model call:
   and review patches are not checked for it: they change words, not
   citations (a hand edit cites the facts that state its numbers, see
   draft2-hand-edits.md).
+
+## 14. Addendum, 2026-10-17: as many slides as the story needs (spine v6)
+
+The editor: "some carousels come out longer than they need; it should be
+just right for the news." The Milan boulevard notice (Salut Brossard: two-way
+traffic from 16 October, about two weeks, may change) showed the cause. The
+planner's first answer had one middle beat and the shape rule refused it
+("an arc's deck has 2 to 5 middle beats"); the second answer padded to six
+slides, giving the start hour and the project name a slide each and calling
+"the schedule may be adjusted" the turning point.
+
+- **Shape**: an arc has 1 to 5 middle beats (`FOCUS_SPINE_ARC_MIDDLE_MIN`
+  = 1), so a short story runs five slides: cover, slide 2, one middle,
+  penultimate, last. The Deck's arc range follows (`DECK_ARC_MIN_SLIDES` = 1;
+  a test keeps the two equal). Lists and procedures are unchanged: one
+  middle beat per item. No arc runs with no middle beat: the Deck step has
+  no "nothing to write" path.
+- **Rule** (spine v6, focus v17, decks v5): count what the reader must
+  learn, one step per slide, and stop. A fact too small for its own slide is
+  a clause in the beat that needs it, cited there, so the coverage check
+  (§13) still finds it. A slide added to reach a count, to give an image room
+  or to restate is padding.
+- **No invented turn**: a story with no change of direction (a notice, a
+  schedule) has a climax, what changes for the reader, not a turning point;
+  a qualifier is a clause, never the turn.
+- The later steps already handled short carousels: a two-item list runs four
+  slides.

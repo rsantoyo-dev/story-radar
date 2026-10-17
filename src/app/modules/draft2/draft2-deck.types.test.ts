@@ -41,8 +41,10 @@ const codes = (issues: Draft2DeckIssue[]) => issues.map((issue) => [issue.code, 
 const findings = (candidate: Draft2DeckCandidate, options: Partial<Parameters<typeof mechanicalDeckIssues>[2]> = {}) =>
   codes(mechanicalDeckIssues([candidate], facts, { opening, closing, shape: arc, emojis: 2, ...options }));
 
-test("an arc's deck runs 2 to 5 slides; a list's or steps' carries the items slide 2 did not cite, in order", () => {
-  assert.deepEqual(arc, { kind: "arc", min: 2, max: 5, items: [] });
+test("an arc's deck runs 1 to 5 slides; a list's or steps' carries the items slide 2 did not cite, in order", () => {
+  assert.deepEqual(arc, { kind: "arc", min: 1, max: 5, items: [] });
+  const oneMiddle = { beats: [{ slide: "cover" }, { slide: "slide2" }, { slide: "middle" }, { slide: "penultimate" }, { slide: "last" }] };
+  assert.deepEqual(deckShape({ kind: "arc", itemFactIds: [] }, [], oneMiddle), { kind: "arc", min: 1, max: 1, items: [] }, "a short story's spine with one middle beat asks for exactly one deck slide");
   const list = deckShape({ kind: "list", itemFactIds: ["f2", "f3", "f5"] }, opening.slide2.factIds);
   assert.deepEqual(list, { kind: "list", min: 2, max: 2, items: ["f3", "f5"] }, "slide 2 already carried the item that starts with f2");
   assert.deepEqual(deckShape({ kind: "steps", itemFactIds: ["f3", "f4"] }, ["f9"]).items, ["f3", "f4"], "slide 2 gave what the reader needs first; every step remains");
@@ -52,7 +54,7 @@ test("an arc's deck runs 2 to 5 slides; a list's or steps' carries the items sli
   assert.deepEqual(deckPlan(list, "v3").map((round) => [round.fresh, round.revise, round.judgeEffort]), [[2, 0, "low"], [0, 1, "low"]]);
   assert.deepEqual(DECK_ARC_PLAN.map((round) => [round.fresh, round.revise, round.proposals, round.effort ?? "high"]), [[4, 0, 1, "medium"], [0, 2, 0, "high"]]);
   assert.deepEqual(DECK_ITEMS_PLAN.map((round) => [round.fresh, round.revise, round.proposals, round.effort ?? "high"]), [[2, 0, 1, "medium"], [0, 1, 0, "high"]]);
-  assert.deepEqual(shapeForModels(arc), { kind: "arc", slides: "2 to 5" });
+  assert.deepEqual(shapeForModels(arc), { kind: "arc", slides: "1 to 5" });
   assert.deepEqual(shapeForModels(list), { kind: "list", slides: 2, items: ["f3", "f5"] });
   assert.deepEqual(closingForDeck({ ...closing, penultimate: undefined }), { last: closing.last }, "a one-slide closing has no penultimate to show");
 });
@@ -79,7 +81,7 @@ test("the judge scores every deck criterion and names slides s1, s2…", () => {
 
 test("a clean deck has no finding; the slide count and every slide's limits and facts are checked", () => {
   assert.deepEqual(findings(deck("c1")), []);
-  assert.deepEqual(findings(deck("c1", deck("c1").slides.slice(0, 1))), ["SLIDE_COUNT c1"], "an arc's middle takes at least two slides");
+  assert.deepEqual(findings(deck("c1", deck("c1").slides.slice(0, 1))), [], "since 2026-10-17 an arc's middle may be one slide: a short story needs no more");
   const long = (words: number) => Array.from({ length: words }, () => "word").join(" ");
   const [first, ...rest] = deck("c1").slides;
   assert.deepEqual(findings(deck("c1", [{ ...first, headline: long(9) }, ...rest])), ["HEADLINE_TOO_LONG c1 s1"]);
@@ -138,7 +140,7 @@ test("an arc's deck takes its number of middle slides from the focus's spine whe
   const beats = (middle: number) => ({ beats: [{ slide: "cover" }, { slide: "slide2" }, ...Array.from({ length: middle }, () => ({ slide: "middle" })), { slide: "penultimate" }, { slide: "last" }] });
   assert.deepEqual([deckShape({ kind: "arc", itemFactIds: [] }, [], beats(3)).min, deckShape({ kind: "arc", itemFactIds: [] }, [], beats(3)).max], [3, 3], "three middle beats, three slides");
   assert.deepEqual([deckShape({ kind: "arc", itemFactIds: [] }, [], beats(7)).min, deckShape({ kind: "arc", itemFactIds: [] }, [], beats(7)).max], [5, 5], "clamped to the deck's range");
-  assert.deepEqual([deckShape({ kind: "arc", itemFactIds: [] }, []).min, deckShape({ kind: "arc", itemFactIds: [] }, []).max], [2, 5], "no spine: the range as before");
+  assert.deepEqual([deckShape({ kind: "arc", itemFactIds: [] }, []).min, deckShape({ kind: "arc", itemFactIds: [] }, []).max], [1, 5], "no spine: the deck's whole range");
   assert.deepEqual(deckShape({ kind: "list", itemFactIds: ["f2", "f3", "f5"] }, ["f2"], beats(1)).items, ["f3", "f5"], "a list keeps its items whatever the spine says");
 });
 

@@ -9,10 +9,13 @@ import type { Draft2Skill } from "./draft2-skills";
  * recaps lose the reader. Version 2, 2026-10-14, after an auditor found
  * "Les incidents dépassent la drogue" where the facts gave "more than 15
  * fights and assaults in three years": a headline states its slide's fact.
+ * Version 5, 2026-10-17 (the editor: "some carousels come out longer than
+ * they need; it should be just right for the news"): an arc runs 1 to 5
+ * slides, and a slide that only fills is cut.
  */
 export const DECKS_SKILL: Draft2Skill = {
   name: "decks",
-  version: "4",
+  version: "5",
   text: `# Decks for social carousels
 
 The deck is the middle of the carousel: the slides after slide 2 and before
@@ -23,9 +26,10 @@ something new and the closing arrives as the natural end. It is written and
 judged against the opening and the closing it connects.
 
 ## Shape
-- "arc": the development of one story, in 2 to 5 slides. Choose how many
-  the facts need: no slide that only fills, no idea squeezed into another's
-  slide. Each slide follows from the one before and leads to the next; the
+- "arc": the development of one story, in 1 to 5 slides. Choose how many
+  the facts need, and the fewest that carry them: no slide that only fills
+  or restates, no idea squeezed into another's slide; a short notice may
+  need one. Each slide follows from the one before and leads to the next; the
   last deck slide sets up the penultimate's resolution without spending it.
 - "list": one slide per item in "items", in that order, each starting with
   that item's first fact. Headline: what the reader gets to do or enjoy

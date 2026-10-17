@@ -489,6 +489,15 @@ test("the models read the spine between the telling and the directions; the edit
   assert.equal(spineShapeProblem(ARC_SPINE.beats as Draft2SpineBeat[], { kind: "arc", itemFactIds: [] }), undefined);
 });
 
+test("a short story's arc runs five slides, one middle beat; none in the middle is still too few", () => {
+  const arc = { kind: "arc" as const, itemFactIds: [] };
+  // The Milan boulevard notice: cover, slide 2, what changes and since when, how long it lasts, the card to keep.
+  const notice = [ARC_SPINE.beats[0], ARC_SPINE.beats[1], { ...ARC_SPINE.beats[2], role: "climax" }, ARC_SPINE.beats[5], ARC_SPINE.beats[6]] as Draft2SpineBeat[];
+  assert.equal(spineShapeProblem(notice, arc), undefined, "one middle beat is enough for a notice");
+  const bare = [ARC_SPINE.beats[0], ARC_SPINE.beats[1], ARC_SPINE.beats[5], ARC_SPINE.beats[6]] as Draft2SpineBeat[];
+  assert.match(spineShapeProblem(bare, arc) ?? "", /An arc's deck has 1 to 5 middle beats; this spine has 0/);
+});
+
 test("the decision and the plan are two answers: the decision carries no directions and no spine, and neither schema puts an enum inside an array (the compiled grammar has a size limit)", () => {
   const bare = parseFocusDecision(answer({ direction: undefined, visualDirection: undefined, spine: undefined }), { facts, lines });
   assert.deepEqual([bare.values.direction, "visualDirection" in bare.values, "spine" in bare.values], ["", false, false]);

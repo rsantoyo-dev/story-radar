@@ -85,7 +85,7 @@ const DECK_STEP: FunnelStep<Draft2DeckCandidate, Draft2DeckScore, Draft2DeckIssu
  * Runs the Deck step on a session whose closing is finished: the slides
  * between slide 2 and the closing the editor chose (else the judge's
  * winner), following the focus both ends followed. For an arc, Claude
- * writes four decks of two to five slides; for a list or steps, two decks
+ * writes four decks of one to five slides; for a list or steps, two decks
  * carrying the items slide 2 did not cover, one per slide. Sol scores them
  * and proposes a deck of its own; Claude revises the best (two, or one) and
  * edits Sol's, which also competes as Sol wrote it, for Sol's pick. Pausing,

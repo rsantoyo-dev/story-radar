@@ -24,11 +24,17 @@ import type { Draft2Skill } from "./draft2-skills";
  * Version 5, the same day: the editor's notes (the Spine screen's "Rewrite
  * with these notes"): the planner revises the plan the focus already carries
  * to follow them, within the facts and these rules, and says in the spine's
- * reason what it did with each.
+ * reason what it did with each. Version 6, 2026-10-17 (the editor: "some
+ * carousels come out longer than they need; it should be just right for the
+ * news"): as many slides as the story needs, an arc from one middle beat;
+ * a fact too small for a slide is a clause in another beat; a notice's
+ * climax is what changes for the reader, never a qualifier dressed as a
+ * twist (the Milan boulevard notice padded to six slides around "the two
+ * weeks may change").
  */
 export const SPINE_SKILL: Draft2Skill = {
   name: "spine",
-  version: "5",
+  version: "6",
   text: `# The spine
 
 The spine is the carousel's story in beats, one per slide, written before any
@@ -83,14 +89,24 @@ story takes the ones it needs, in this order, and may repeat rising:
 
 ## Rules
 - Four to ten beats, one per slide: one cover, one slide2, the deck's middle
-  slides (two to five for an arc; one per item or step otherwise, the first
+  slides (one to five for an arc; one per item or step otherwise, the first
   item allowed on slide2), one penultimate for an arc, one last.
+- As many slides as the story needs, never more. Count what the reader
+  must learn, one step per slide, and stop: a short notice (a road change, a
+  schedule, one decision) runs five slides, an arc with one middle beat; a
+  rich story runs up to ten. A fact too small for a slide of its own (the
+  hour it starts, the project it belongs to) is a clause in the beat that
+  needs it, cited there. A slide added to reach a count, to give an image
+  room or to restate is padding, and the reader feels it.
 - Every beat rests on the facts; the spine orders them and adds none. A beat
   that would need a fact the list does not have is a beat the story does not
   have.
 - The turning point or the climax is the strongest true thing the facts
   hold, placed where it pulls hardest, never later than it must be; a
-  surprise the facts do not support is not a twist.
+  surprise the facts do not support is not a twist. A story with no change
+  of direction (a notice, a schedule) has a climax, not a turning point:
+  what changes for the reader. A qualifier ("the dates may change") is a
+  clause, never the turn.
 - The last beat pays the cover's promise in the reader's hands, as the
   focus's goal asks: for saves, what the reader keeps and uses (the steps,
   the rule, the plan, the schedule); for shares, the one thing they would
@@ -104,7 +120,7 @@ story takes the ones it needs, in this order, and may repeat rising:
 - One step per middle beat: each changes what the reader knows or can do.
   Two beats in a row that explain links of one mechanism (what the twist
   does, then what the untwisting does) are one beat; a middle that reads as
-  a lesson has too many beats. The arc's two to five middle beats are a
+  a lesson has too many beats. The arc's one to five middle beats are a
   range, not a target: fewer, stronger slides beat a complete explanation.
 - With a narrative form, each scene names the anchor's state on that slide.
   With a discovery premise, the beats are its reveals and the news is the

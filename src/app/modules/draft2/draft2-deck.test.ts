@@ -135,11 +135,11 @@ test("Claude writes the deck between the chosen opening and closing, and Sol jud
   const [claude, sol] = h.calls;
   assert.equal(json(claude.input.context), json({
     focus: focusTypes.focusForModels(VALUES), opening: closingTypes.openingForClosing(CLOSING.opening!), closing: deckTypes.closingForDeck(closingCandidate("c2")),
-    deck: { kind: "arc", slides: "2 to 5" }, emojis: 2, verifiedFacts: funnel.factsSnapshot(facts),
+    deck: { kind: "arc", slides: "1 to 5" }, emojis: 2, verifiedFacts: funnel.factsSnapshot(facts),
   }), "the closing the editor would see (the judge's winner, c2), and the opening it ends");
   assert.equal(json([(claude.input.contents as WriterContents).candidatesWanted, claude.input.effort, (sol.input.contents as JudgeContents).proposalsWanted, sol.input.reasoningEffort]), json([4, "medium", 1, "medium"]));
   assert.ok(String(claude.input.instructions).includes(decks.DECKS_SKILL.text));
-  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.skillVersions])), json([["deck", "draft2_deck", { decks: "4", fairness: "2", reader: "2" }], ["deck", "draft2_deck_review", { decks: "4", fairness: "2", reader: "2" }]]));
+  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.skillVersions])), json([["deck", "draft2_deck", { decks: "5", fairness: "2", reader: "2" }], ["deck", "draft2_deck_review", { decks: "5", fairness: "2", reader: "2" }]]));
   assert.equal(json([session.step, session.status, session.deck?.winnerId, session.deck?.opening?.id, session.deck?.closing?.id, session.deck?.shape?.kind]), json(["deck", "ready", "c2", "c1", "c2", "arc"]));
 });
 

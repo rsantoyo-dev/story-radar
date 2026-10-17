@@ -186,8 +186,13 @@ export const FOCUS_SPINE_ROLES = ["hook", "setup", "inciting", "rising", "turnin
 export const FOCUS_SPINE_POSITIONS = ["cover", "slide2", "middle", "penultimate", "last"] as const;
 export const FOCUS_SPINE_MIN_BEATS = 4;
 export const FOCUS_SPINE_MAX_BEATS = 10;
-/** An arc's deck runs this many middle slides: the Deck's own range (a test keeps them equal). */
-export const FOCUS_SPINE_ARC_MIDDLE_MIN = 2;
+/**
+ * An arc's deck runs this many middle slides: the Deck's own range (a test
+ * keeps them equal). One since 2026-10-17: a short notice (the Milan
+ * boulevard's two-way traffic) was refused with one middle beat and padded to
+ * six slides on the second answer; the carousel is as long as the story needs.
+ */
+export const FOCUS_SPINE_ARC_MIDDLE_MIN = 1;
 export const FOCUS_SPINE_ARC_MIDDLE_MAX = 5;
 export const FOCUS_BEAT_SCENE_MAX_CHARACTERS = 240;
 export const FOCUS_BEAT_WORDS_MAX_CHARACTERS = 200;

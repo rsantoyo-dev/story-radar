@@ -23,11 +23,12 @@ import type { Draft2Skill } from "./draft2-skills";
  * that prevent it, which the opening states on the cover or slide 2; version
  * 15, the same day, after the first run named three guards of two facts each
  * and no opening could carry them: at most two, only the risks the cover's
- * subject invites, each fact enough on its own.
+ * subject invites, each fact enough on its own. Version 17, 2026-10-17:
+ * an arc's deck has one to five middle beats, as many as the story needs.
  */
 export const FOCUS_SKILL: Draft2Skill = {
   name: "focus",
-  version: "16",
+  version: "17",
   text: `# The focus of a story
 
 The focus is the brief every later step follows: which editorial line the
@@ -214,8 +215,8 @@ follows the telling.
   the form and before the directions (the spine skill says the roles, the
   fields and the rules): beats, each with slide, role, scene, words, image,
   withholds and factIds. Four to ten beats; the first the cover's hook, the
-  second slide2, then the deck's middle beats (two to five for an arc, one
-  per item or step otherwise), one penultimate for an arc, one last (a payoff
+  second slide2, then the deck's middle beats (one to five for an arc, as
+  many as the story needs; one per item or step otherwise), one penultimate for an arc, one last (a payoff
   or a resolution); a turning point or a climax among them, placed where it
   pulls hardest and never later than it must be.
 - visualDirection: one or two sentences, at most 600 characters, on how the
