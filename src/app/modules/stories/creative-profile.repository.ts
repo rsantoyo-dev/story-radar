@@ -1,3 +1,4 @@
+import { parseCreativeWordsStyle } from "./brand-fonts";
 import "server-only";
 import { creativeIdentityIsEmpty, CreativeIdentityValidationError, parseCreativeIdentityInput, type CreativeIdentity } from "./creative-identity";
 import { parseGeoContact } from "./creative-geo-contact";
@@ -67,6 +68,7 @@ const DEFAULT_PROFILE: EditableCreativeProfile = {
   brandPalette: cloneDefaultPalette(),
   carouselChrome: { ...DEFAULT_CREATIVE_CAROUSEL_CHROME_SETTINGS },
   brandOverlay: { ...DEFAULT_CREATIVE_BRAND_OVERLAY_SETTINGS },
+  wordsStyle: null,
   brandPersonality: ["insightful", "clear", "clever", "practical"],
   formality: 45,
   humor: 45,
@@ -296,6 +298,7 @@ export function parseCreativeProfileInput(value: unknown): EditableCreativeProfi
     brandPalette: value.brandPalette,
     carouselChrome: value.carouselChrome,
     brandOverlay: value.brandOverlay,
+    wordsStyle: value.wordsStyle,
     brandPersonality: value.brandPersonality,
     formality: value.formality,
     humor: value.humor,
@@ -336,6 +339,7 @@ function validateCreativeProfile(
       brandPalette,
     ),
     brandOverlay: parseCreativeBrandOverlayInput(value.brandOverlay),
+    wordsStyle: parseCreativeWordsStyle(value.wordsStyle),
     brandPersonality: textList(
       value.brandPersonality,
       "brandPersonality",
@@ -433,6 +437,7 @@ function mapCreativeProfile(
           }
         : {}),
     },
+    wordsStyle: parseCreativeWordsStyle(profile.wordsStyle),
     brandPersonality: profile.brandPersonality,
     formality: profile.formality,
     humor: profile.humor,

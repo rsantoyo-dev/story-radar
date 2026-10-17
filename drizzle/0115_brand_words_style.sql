@@ -1,0 +1,1 @@
+ALTER TABLE "creative_profiles" ADD COLUMN "words_style" jsonb;

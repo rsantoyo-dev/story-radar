@@ -6,7 +6,8 @@ import { generateOpenAiStructuredResponse } from "../stories/openai-structured-r
 import { getCreativeProfile } from "../stories/creative-profile.repository";
 import { buildCreativeImagePrompt } from "../stories/build-creative-image-prompt";
 import { creativeImageModelVisibleText } from "../stories/creative-image-prompt-contracts";
-import { setSlideWords, textBandFor, textBandPrompt, wordsPalette, type Draft2TextBand, type Draft2WordsPalette } from "./draft2-text-layer";
+import { drawWords, setSlideWords, textBandFor, textBandPrompt, wordsPalette, type Draft2TextBand, type Draft2WordsPalette } from "./draft2-text-layer";
+import { DEFAULT_WORDS_STYLE, type CreativeWordsStyle } from "../stories/brand-fonts";
 import { focusPresentation, type Draft2Presentation } from "./draft2-focus.types";
 import {
   MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS,
@@ -100,6 +101,8 @@ type Context = {
   presentation: Draft2Presentation;
   /** The colours the program sets the words in: the palette's darkest and lightest. */
   wordsPalette: Draft2WordsPalette;
+  /** The brand's fonts for the words: its headline and text families, else the bundled Liberation Sans. */
+  wordsStyle: CreativeWordsStyle;
   topicId: string;
   storyId: string;
   sessionId: string;
@@ -651,7 +654,13 @@ async function finish(ctx: Context, slide: Draft2SlideImage, attempt: Draft2Imag
   // The program's words, before the page number and the logo, in the band the prompt kept calm.
   if (ctx.presentation.text === "program") {
     const words = wordsFor(ctx, slide);
-    out = (await setSlideWords({ image: out, words, band: textBandOf(ctx, slide, attempt), palette: ctx.wordsPalette, cover: slide.order === 1 })).image;
+    // A layout the attempt already carries (the editor's, or the one its words are set again with) is kept; otherwise the program chooses one.
+    if (attempt.wordsLayout) out = await drawWords({ image: out, words, layout: attempt.wordsLayout });
+    else {
+      const set = await setSlideWords({ image: out, words, band: textBandOf(ctx, slide, attempt), palette: ctx.wordsPalette, style: ctx.wordsStyle, cover: slide.order === 1 });
+      out = set.image;
+      attempt.wordsLayout = set.layout;
+    }
     attempt.words = words;
   }
   const chrome = chromeFor(ctx, slide.order);
@@ -882,7 +891,7 @@ async function imagesContext({ topicId, storyId, sessionId, run, target, facts, 
     topicId, storyId, sessionId, run, script: target.script, carousel: target.carousel, inventory: target.inventory, facts, profile,
     ...(overlay ? { overlay } : {}), ...(snapshot ? { brandSnapshot: snapshot } : {}), logos: new Map(), characters, brandSelections, units, draft, brief, fal, descriptor,
     ...(googleConfig() ? { google: googleConfig() } : {}), signal, trace, narrative: visualNarrative(target.visual),
-    presentation: run.presentation ?? focusPresentation(undefined), wordsPalette: wordsPalette(profile.brandPalette),
+    presentation: run.presentation ?? focusPresentation(undefined), wordsPalette: wordsPalette(profile.brandPalette), wordsStyle: profile.wordsStyle ?? DEFAULT_WORDS_STYLE,
   };
 }
 
@@ -1082,7 +1091,7 @@ async function setChangedWords({ topicId, session, images }: { topicId: string; 
     const base = new Uint8Array(await (await readPrivateR2ImageFile({ objectKey: objectKey(ctx, baseName), contentType: "image/png", fileName: baseName })).arrayBuffer());
     const attempt: Draft2ImageAttempt = {
       version: Math.max(...slide.attempts.map((entry) => entry.version)) + 1, kind: "words", status: "generated", baseVersion: shown.version,
-      ...(shown.portrait ? { portrait: shown.portrait } : {}), queuedAt: now, costMicros: 0,
+      ...(shown.portrait ? { portrait: shown.portrait } : {}), ...(shown.wordsLayout ? { wordsLayout: shown.wordsLayout } : {}), queuedAt: now, costMicros: 0,
     };
     const final = await finish(ctx, slide, attempt, base);
     const sha256 = hash(final);

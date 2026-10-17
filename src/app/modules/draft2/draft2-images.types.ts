@@ -48,6 +48,26 @@ export type Draft2ImageAttemptStatus = "queued" | "submitting" | "generating" | 
 /** A slide's words as the program sets them on its image. */
 export type Draft2SlideWords = { headline: string; text: string; practical?: string; cta?: string };
 
+/**
+ * How the program sets a slide's words (2026-10-17): the block's box on the
+ * 1080 × 1350 slide (its height follows the words), its alignment, the
+ * headline's and the text's font, size and colour, and what sits behind them.
+ * The program writes one for every slide it letters; the editor moves,
+ * resizes and restyles it, and the words are set again on the same image.
+ */
+export type Draft2WordsRole = { font: string; weight: number; size: number; color: string };
+export type Draft2WordsLayout = {
+  box: { left: number; top: number; width: number };
+  align: "left" | "center" | "right";
+  headline: Draft2WordsRole;
+  text: Draft2WordsRole;
+  background: { kind: "none" | "card" | "band"; color: string; opacity: number };
+};
+export const WORDS_ALIGNS = ["left", "center", "right"] as const;
+export const WORDS_BACKGROUNDS = ["none", "card", "band"] as const;
+/** The sizes the editor may set, in slide pixels. */
+export const WORDS_SIZE = { headline: [28, 160], text: [18, 80] } as const;
+
 /** The words a slide shows, from the carousel's slide. */
 export const slideWordsOf = (slide: Pick<Draft2CarouselSlide, "headline" | "text" | "practical" | "cta">): Draft2SlideWords => ({
   headline: slide.headline, text: slide.text, ...(slide.practical ? { practical: slide.practical } : {}), ...(slide.cta ? { cta: slide.cta } : {}),
@@ -112,6 +132,8 @@ export type Draft2ImageAttempt = {
   expectedText?: string;
   /** The words the program set on it (the focus's textMode "program"); absent when the image model lettered them. */
   words?: Draft2SlideWords;
+  /** How it set them: the layout the editor starts from to move or restyle them. */
+  wordsLayout?: Draft2WordsLayout;
   sha256?: string;
   safetyFlag?: boolean;
   costMicros?: number;

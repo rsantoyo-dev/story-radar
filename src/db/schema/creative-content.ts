@@ -237,6 +237,8 @@ export const creativeProfiles = pgTable(
       .$type<CreativeCarouselChromeSettings>()
       .default(DEFAULT_CREATIVE_CAROUSEL_CHROME_SETTINGS)
       .notNull(),
+    /** The fonts the program sets the words of the brand's slides in (headline and text); null: the bundled Liberation Sans. */
+    wordsStyle: jsonb("words_style").$type<import("@/app/modules/stories/brand-fonts").CreativeWordsStyle>(),
     brandAssetId: uuid("brand_asset_id").references(
       () => creativeBrandAssets.id,
       { onDelete: "set null" },

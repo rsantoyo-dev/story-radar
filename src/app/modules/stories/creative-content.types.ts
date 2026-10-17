@@ -1,4 +1,5 @@
 import type { CreativeHookSelection } from "./creative-hook-policy";
+import type { CreativeWordsStyle } from "./brand-fonts";
 export const MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS = 30_000;
 
 import type {
@@ -650,6 +651,8 @@ export type CreativeProfile = {
   brandPalette: CreativeBrandPaletteColor[];
   carouselChrome: CreativeCarouselChromeSettings;
   brandOverlay: CreativeBrandOverlay;
+  /** The fonts the program sets the words of the brand's slides in (brand-fonts.ts); null: the bundled Liberation Sans. */
+  wordsStyle: CreativeWordsStyle | null;
   brandPersonality: string[];
   formality: number;
   humor: number;

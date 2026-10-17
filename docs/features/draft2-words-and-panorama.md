@@ -101,3 +101,33 @@ from above at one scale, each step the next drop along it). Since then:
   (`parseFocusPlan`'s `clip`); a beat count over the cap still fails.
 - **Why an answer was refused** is the note of its call in the trace
   ("Refused by the program: …"), no longer only on the dev console.
+
+## Phase 1, 2026-10-17: the brand's fonts
+
+The editor: "fonts preloaded and per brand, two kinds… some 30 to choose
+from", and "eventually we take the words off the other images too".
+
+- **The fonts** (`brand-fonts.ts`): 33 open Google Fonts families plus the
+  bundled Liberation Sans, in `fonts/brand/<dir>/` with their licenses (OFL;
+  Roboto Slab Apache 2.0): display serifs (Fraunces Soft, Fraunces, DM Serif
+  Display, Playfair Display, Young Serif, Gloock, Abril Fatface), text serifs,
+  slabs, sans, condensed and handwritten faces. A variable family is one file
+  whose weight is the `wght` axis; Fraunces Soft sets `SOFT` 100 (rounded
+  serifs), and the optical size follows the size the words are drawn at.
+- **Drawn by Skia** (`@napi-rs/canvas`, now a direct dependency and a server
+  external package): it reads each font from its file on every host. The
+  Pango that sharp ships draws with macOS's own fonts and ignored the bundled
+  files on the editor's machine, so the first version's words were in a
+  fallback face locally. `brand-fonts.server.ts` registers the catalog once.
+- **The brand's choice**: the creative profile's "Words on slides" (Visual
+  tab) sets one family and weight for the headlines and one for the text
+  (`creative_profiles.words_style`, migration 0115, nullable; absent:
+  Liberation Sans). Fogón Lab's guide describes "a very heavy display serif
+  with soft rounded serifs" and "a clean geometric sans of medium weight":
+  Fraunces Soft Black and DM Sans Medium.
+- **The layout** (`Draft2WordsLayout`): the program now writes one for every
+  slide it letters: the block's box, alignment, each role's font, weight,
+  size and colour, and the background (none, a card or a band, its colour and
+  opacity). `autoWordsLayout` chooses it as before (the band, calm or card,
+  sizes fit together); `drawWords` draws any layout. Words set again keep the
+  layout of the version they come from.

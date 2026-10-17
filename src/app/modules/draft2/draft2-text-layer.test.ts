@@ -49,3 +49,20 @@ test("the words set in the band: straight on a calm field in the colour that rea
   const cover = await setSlideWords({ image: teal, words: { headline: "¿Por qué el espagueti casi nunca se parte en dos?", text: "Un físico famoso pasó una noche intentándolo." }, band, palette, cover: true });
   assert.ok(await changedPixels(teal, cover.image, band) > await changedPixels(teal, plain.image, { ...band, height: 1 }), "a cover's words are set too");
 });
+
+test("a layout sets the words where it says, in the brand's fonts: in its box, centred when asked, a band across the slide", async () => {
+  const { drawWords, autoWordsLayout } = await import("./draft2-text-layer");
+  const teal = new Uint8Array(await sharp({ create: { width: 1080, height: 1350, channels: 3, background: "#185B5C" } }).png().toBuffer());
+  const words = { headline: "Torcido, el rebote pierde fuerza", text: "Al torcerlo hace falta doblarlo menos." };
+  const style = { headline: { font: "fraunces-soft", weight: 900 }, text: { font: "dm-sans", weight: 500 } };
+  const auto = await autoWordsLayout({ image: teal, words, band: textBandFor({}), palette: { ink: "#253746", paper: "#F6F0E4" }, style });
+  assert.deepEqual([auto.headline.font, auto.headline.weight, auto.text.font, auto.text.weight, auto.background.kind], ["fraunces-soft", 900, "dm-sans", 500, "none"], "the brand's fonts, on the calm teal with no card");
+  // Moved low and narrow, centred: nothing above the box changes.
+  const low = { ...auto, box: { left: 240, top: 900, width: 600 }, align: "center" as const };
+  const moved = await drawWords({ image: teal, words, layout: low });
+  assert.equal(await changedPixels(teal, moved, { left: 0, top: 0, width: 1080, height: 880 }), 0, "nothing above its box");
+  assert.ok(await changedPixels(teal, moved, { left: 240, top: 900, width: 600, height: 300 }) > 2_000, "the words in its box");
+  // A band runs the whole width behind the words.
+  const banded = await drawWords({ image: teal, words, layout: { ...low, background: { kind: "band", color: "#F6F0E4", opacity: 1 } } });
+  assert.ok(await changedPixels(teal, banded, { left: 0, top: 905, width: 60, height: 40 }) > 2_000, "the band reaches the slide's edge");
+});

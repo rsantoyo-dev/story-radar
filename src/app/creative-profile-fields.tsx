@@ -1,5 +1,6 @@
 "use client";
 
+import { BRAND_FONTS, DEFAULT_WORDS_STYLE, FONT_WEIGHT_NAME, brandFontById, brandFontChoice, type BrandFontCategory, type BrandFontChoice, type CreativeWordsStyle } from "@/app/modules/stories/brand-fonts";
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 
@@ -2294,5 +2295,73 @@ function CharacterReferencePreview({
     />
   ) : (
     <div className={styles.referencePreviewPlaceholder}>Loading</div>
+  );
+}
+
+const FONT_CATEGORY_LABELS: Record<BrandFontCategory, string> = {
+  "display serif": "Display serif", serif: "Serif", slab: "Slab serif", sans: "Sans", condensed: "Condensed", handwritten: "Handwritten",
+};
+
+/**
+ * The brand's fonts for the words the program sets on its slides (the focus
+ * has the program set them): one family and weight for the headlines, one for
+ * the text, from the fonts the server bundles.
+ */
+export function WordsStyleEditor({
+  style,
+  disabled,
+  onChange,
+}: {
+  style: CreativeWordsStyle | null;
+  disabled: boolean;
+  onChange: (style: CreativeWordsStyle) => void;
+}) {
+  const current = style ?? DEFAULT_WORDS_STYLE;
+  const categories = [...new Set(BRAND_FONTS.map((font) => font.category))];
+  const role = (key: keyof CreativeWordsStyle, label: string) => {
+    const choice = current[key];
+    const font = brandFontById(choice.font) ?? brandFontById(DEFAULT_WORDS_STYLE[key].font)!;
+    const set = (next: Partial<BrandFontChoice>) => onChange({ ...current, [key]: brandFontChoice({ ...choice, ...next }, DEFAULT_WORDS_STYLE[key]) });
+    return (
+      <div className={styles.carouselChromeOptions}>
+        <label className={styles.carouselChromeSelect}>
+          <span>{label}</span>
+          <select value={font.id} onChange={(event) => set({ font: event.target.value })}>
+            {categories.map((category) => (
+              <optgroup key={category} label={FONT_CATEGORY_LABELS[category]}>
+                {BRAND_FONTS.filter((entry) => entry.category === category).map((entry) => (
+                  <option key={entry.id} value={entry.id}>{entry.name}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </label>
+        <label className={styles.carouselChromeSelect}>
+          <span>Weight</span>
+          <select value={choice.weight} onChange={(event) => set({ weight: Number(event.target.value) })}>
+            {font.weights.map((weight) => (
+              <option key={weight} value={weight}>{FONT_WEIGHT_NAME[weight] ?? weight}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+    );
+  };
+  return (
+    <section className={styles.carouselChromePanel} aria-labelledby="words-style-title">
+      <header className={styles.brandOverlayHeader}>
+        <div>
+          <strong id="words-style-title">Words on slides</strong>
+          <p>
+            The fonts the program sets each slide&apos;s words in, when a story&apos;s focus has the program set them:
+            one for the headlines, one for the text and the call to action. Every font is open and bundled with the app.
+          </p>
+        </div>
+      </header>
+      <fieldset className={styles.carouselChromeControls} disabled={disabled}>
+        {role("headline", "Headlines")}
+        {role("text", "Text")}
+      </fieldset>
+    </section>
   );
 }

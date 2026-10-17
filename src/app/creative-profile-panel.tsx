@@ -7,6 +7,7 @@ import {
   BrandPaletteEditor,
   BrandReferenceLibrary,
   CarouselNumberingEditor,
+  WordsStyleEditor,
   ListField,
   SupportingCharactersEditor,
   TextAreaField,
@@ -200,6 +201,10 @@ export function CreativeProfilePanel({
     });
     setDirty(true);
     setNotice(undefined);
+  }
+
+  function updateWordsStyle(wordsStyle: CreativeProfile["wordsStyle"]) {
+    setDraft((current) => (current ? { ...current, wordsStyle } : current));
   }
 
   function updateCarouselChrome(
@@ -699,6 +704,14 @@ export function CreativeProfilePanel({
             topicId={topicId}
             secret={secret}
             disabled={controlsDisabled}
+          />
+        </Group>
+
+        <Group section={section} tab="visual" title="Words on slides" id="creative-profile-words">
+          <WordsStyleEditor
+            style={draft.wordsStyle ?? null}
+            disabled={controlsDisabled}
+            onChange={updateWordsStyle}
           />
         </Group>
 
